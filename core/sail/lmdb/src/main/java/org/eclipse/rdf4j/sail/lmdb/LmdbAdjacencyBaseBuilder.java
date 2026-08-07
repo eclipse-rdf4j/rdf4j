@@ -84,14 +84,20 @@ final class LmdbAdjacencyBaseBuilder {
 		Objects.requireNonNull(sourceFamily, "sourceFamily");
 		Objects.requireNonNull(coverage, "coverage");
 		Objects.requireNonNull(account, "account");
-		if (buildThreads < 1 || buildThreads > LmdbReferenceNodeLocator.PLANE_COUNT) {
-			throw new IllegalArgumentException("buildThreads must be between 1 and 4: " + buildThreads);
+		if (buildThreads < 1) {
+			throw new IllegalArgumentException("buildThreads must be positive: " + buildThreads);
 		}
+		int scannerCount = sourceFamily.workerScannerCount();
+		if (scannerCount <= 0) {
+			throw new IllegalArgumentException("worker scanner count must be positive: " + scannerCount);
+		}
+		int legacyBuildThreads = Math.min(Math.min(buildThreads, scannerCount),
+				LmdbReferenceNodeLocator.PLANE_COUNT);
 		int activeStreams = sourceFamily.activeStreamCount();
 		if (activeStreams < 0 || activeStreams > LmdbReferenceNodeLocator.PLANE_COUNT) {
 			throw new IllegalArgumentException("active stream count must be between 0 and 4: " + activeStreams);
 		}
-		int effectiveBuildThreads = Math.min(buildThreads, Math.max(1, activeStreams));
+		int effectiveBuildThreads = Math.min(legacyBuildThreads, Math.max(1, activeStreams));
 		long buildStarted = System.nanoTime();
 		if (metrics != null) {
 			metrics.beginParallelBuild(effectiveBuildThreads);
@@ -99,7 +105,7 @@ final class LmdbAdjacencyBaseBuilder {
 		boolean telemetryFinished = false;
 		try {
 			LmdbInMemoryAdjacencyIndex index = buildInternal(sourceFamily, coverage, account, baseArenaRegionBytes,
-					workspaceRegionBytes, buildThreads, metrics, buildStarted);
+					workspaceRegionBytes, legacyBuildThreads, metrics, buildStarted);
 			telemetryFinished = true;
 			return index;
 		} finally {
@@ -851,7 +857,8 @@ final class LmdbAdjacencyBaseBuilder {
 		if (activeStreams < 0 || activeStreams > LmdbReferenceNodeLocator.PLANE_COUNT) {
 			throw new IllegalArgumentException("active stream count must be between 0 and 4: " + activeStreams);
 		}
-		int workerCount = Math.min(requestedThreads, Math.max(1, activeStreams));
+		int workerCount = Math.min(Math.min(requestedThreads, sourceFamily.workerScannerCount()),
+				Math.max(1, activeStreams));
 		AtomicBoolean cancelled = new AtomicBoolean();
 		if (workerCount == 1) {
 			for (int plane = 0; plane < LmdbReferenceNodeLocator.PLANE_COUNT; plane++) {
@@ -868,14 +875,19 @@ final class LmdbAdjacencyBaseBuilder {
 			return thread;
 		});
 		ExecutorCompletionService<Void> completion = new ExecutorCompletionService<>(executor);
-		List<Future<Void>> futures = new ArrayList<>(LmdbReferenceNodeLocator.PLANE_COUNT);
+		List<Future<Void>> futures = new ArrayList<>(workerCount);
+		AtomicInteger nextPlane = new AtomicInteger();
 		boolean cancelSourceFamily = false;
 		boolean restoreInterrupt = false;
 		try {
-			for (int plane = 0; plane < LmdbReferenceNodeLocator.PLANE_COUNT; plane++) {
-				int taskPlane = plane;
+			for (int worker = 0; worker < workerCount; worker++) {
+				int workerOrdinal = worker;
 				futures.add(completion.submit(() -> {
-					task.run(taskPlane, sourceFamily.scanner(taskPlane), cancelled);
+					AdjacencySourceScanner scanner = sourceFamily.workerScanner(workerOrdinal);
+					int plane;
+					while ((plane = nextPlane.getAndIncrement()) < LmdbReferenceNodeLocator.PLANE_COUNT) {
+						task.run(plane, scanner, cancelled);
+					}
 					return null;
 				}));
 			}

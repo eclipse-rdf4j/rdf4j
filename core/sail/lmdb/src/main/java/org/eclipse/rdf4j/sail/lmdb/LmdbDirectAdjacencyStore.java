@@ -1153,7 +1153,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			LmdbInMemoryAdjacencyIndex index;
 			long baseRevision;
 			GapMarker capturedGap;
-			try (LmdbAdjacencyBuildTxnFamily sourceFamily = new LmdbAdjacencyBuildTxnFamily(tripleStore)) {
+			int sourceWorkers = legacyBase ? LmdbReferenceNodeLocator.PLANE_COUNT : options.buildThreads();
+			try (LmdbAdjacencyBuildTxnFamily sourceFamily = new LmdbAdjacencyBuildTxnFamily(tripleStore,
+					sourceWorkers)) {
 				baseRevision = sourceFamily.snapshotRevision();
 				capturedGap = emergencyGap.get();
 				account.beginProgressLogging();

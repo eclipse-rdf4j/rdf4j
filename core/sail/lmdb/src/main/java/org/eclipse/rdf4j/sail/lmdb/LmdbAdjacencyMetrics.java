@@ -61,7 +61,16 @@ final class LmdbAdjacencyMetrics {
 	private final LongAdder shadowComparisons = new LongAdder();
 	private final LongAdder shadowMismatches = new LongAdder();
 	private final AtomicLong activeBuildThreads = new AtomicLong();
+	private final AtomicLong desiredBuildThreads = new AtomicLong();
 	private final AtomicLong lastBuildThreads = new AtomicLong();
+	private final AtomicLong maximumBuildConcurrency = new AtomicLong();
+	private final AtomicLong plannedBuildRanges = new AtomicLong();
+	private final AtomicLong completedBuildRanges = new AtomicLong();
+	private final AtomicLong buildScratchHighWaterBytes = new AtomicLong();
+	private final AtomicLong cursorRowsScanned = new AtomicLong();
+	private final AtomicLong cursorRowsMatched = new AtomicLong();
+	private final AtomicLong cursorRowsSkipped = new AtomicLong();
+	private final AtomicLong cursorSeeks = new AtomicLong();
 	private final AtomicLong pass1SourceVisits = new AtomicLong();
 	private final AtomicLong pass1Nanos = new AtomicLong();
 	private final AtomicLong pass3SourceVisits = new AtomicLong();
@@ -101,17 +110,54 @@ final class LmdbAdjacencyMetrics {
 	}
 
 	void beginParallelBuild(int threads) {
-		if (threads < 1 || threads > LmdbReferenceNodeLocator.PLANE_COUNT) {
-			throw new IllegalArgumentException("build thread count must be between 1 and 4: " + threads);
+		beginParallelBuild(threads, threads, 0);
+	}
+
+	void beginParallelBuild(int desiredThreads, int effectiveThreads, long plannedRanges) {
+		if (desiredThreads < 1) {
+			throw new IllegalArgumentException("desired build thread count must be positive: " + desiredThreads);
 		}
+		if (effectiveThreads < 1 || effectiveThreads > desiredThreads) {
+			throw new IllegalArgumentException("effective build thread count must be between 1 and desired: "
+					+ effectiveThreads + "/" + desiredThreads);
+		}
+		requireNonNegative("planned build ranges", plannedRanges);
 		pass1SourceVisits.set(0);
 		pass1Nanos.set(0);
 		pass3SourceVisits.set(0);
 		pass3Nanos.set(0);
 		buildElapsedNanos.set(0);
 		projectedBuildNanos.set(Long.MAX_VALUE);
-		lastBuildThreads.set(threads);
-		activeBuildThreads.set(threads);
+		desiredBuildThreads.set(desiredThreads);
+		lastBuildThreads.set(effectiveThreads);
+		maximumBuildConcurrency.set(0);
+		plannedBuildRanges.set(plannedRanges);
+		completedBuildRanges.set(0);
+		buildScratchHighWaterBytes.set(0);
+		cursorRowsScanned.set(0);
+		cursorRowsMatched.set(0);
+		cursorRowsSkipped.set(0);
+		cursorSeeks.set(0);
+		activeBuildThreads.set(effectiveThreads);
+	}
+
+	void recordRangePass(long completedRanges, long maximumConcurrency) {
+		requireNonNegative("completed build ranges", completedRanges);
+		requireNonNegative("maximum build concurrency", maximumConcurrency);
+		completedBuildRanges.addAndGet(completedRanges);
+		maximumBuildConcurrency.accumulateAndGet(maximumConcurrency, Math::max);
+	}
+
+	void recordBuildScratchHighWater(long bytes) {
+		requireNonNegative("build scratch high-water bytes", bytes);
+		buildScratchHighWaterBytes.accumulateAndGet(bytes, Math::max);
+	}
+
+	void recordCursorTelemetry(AdjacencySourceScanner.Telemetry telemetry) {
+		cursorRowsScanned.set(telemetry.cursorRowsScanned());
+		cursorRowsMatched.set(telemetry.cursorRowsMatched());
+		cursorRowsSkipped.set(telemetry.cursorRowsSkipped());
+		cursorSeeks.set(telemetry.cursorSeeks());
 	}
 
 	void recordPass1(long sourceVisits, long nanos) {
@@ -166,7 +212,10 @@ final class LmdbAdjacencyMetrics {
 				lookupHits.sum(), plannerStatsHits.sum(), exactMisses.sum(), Map.copyOf(byReason), buildsStarted.sum(),
 				buildsCompleted.sum(),
 				buildsAborted.sum(),
-				shadowComparisons.sum(), shadowMismatches.sum(), activeBuildThreads.get(), lastBuildThreads.get(),
+				shadowComparisons.sum(), shadowMismatches.sum(), activeBuildThreads.get(), desiredBuildThreads.get(),
+				lastBuildThreads.get(), maximumBuildConcurrency.get(), plannedBuildRanges.get(),
+				completedBuildRanges.get(), buildScratchHighWaterBytes.get(), cursorRowsScanned.get(),
+				cursorRowsMatched.get(), cursorRowsSkipped.get(), cursorSeeks.get(),
 				pass1SourceVisits.get(), pass1Nanos.get(), pass3SourceVisits.get(), pass3Nanos.get(),
 				buildElapsedNanos.get(), projectedBuildNanos.get());
 	}
@@ -230,7 +279,16 @@ final class LmdbAdjacencyMetrics {
 		final long shadowComparisons;
 		final long shadowMismatches;
 		final long activeBuildThreads;
+		final long desiredBuildThreads;
 		final long lastBuildThreads;
+		final long maximumBuildConcurrency;
+		final long plannedBuildRanges;
+		final long completedBuildRanges;
+		final long buildScratchHighWaterBytes;
+		final long cursorRowsScanned;
+		final long cursorRowsMatched;
+		final long cursorRowsSkipped;
+		final long cursorSeeks;
 		final long pass1SourceVisits;
 		final long pass1Nanos;
 		final long pass3SourceVisits;
@@ -245,7 +303,10 @@ final class LmdbAdjacencyMetrics {
 				long lookupHits, long plannerStatsHits, long exactMisses, Map<FallbackReason, Long> fallbacksByReason,
 				long buildsStarted,
 				long buildsCompleted, long buildsAborted, long shadowComparisons, long shadowMismatches,
-				long activeBuildThreads, long lastBuildThreads, long pass1SourceVisits, long pass1Nanos,
+				long activeBuildThreads, long desiredBuildThreads, long lastBuildThreads,
+				long maximumBuildConcurrency, long plannedBuildRanges, long completedBuildRanges,
+				long buildScratchHighWaterBytes, long cursorRowsScanned, long cursorRowsMatched,
+				long cursorRowsSkipped, long cursorSeeks, long pass1SourceVisits, long pass1Nanos,
 				long pass3SourceVisits, long pass3Nanos, long buildElapsedNanos, long projectedBuildNanos) {
 			this.state = state;
 			this.baseRevision = baseRevision;
@@ -273,7 +334,16 @@ final class LmdbAdjacencyMetrics {
 			this.shadowComparisons = shadowComparisons;
 			this.shadowMismatches = shadowMismatches;
 			this.activeBuildThreads = activeBuildThreads;
+			this.desiredBuildThreads = desiredBuildThreads;
 			this.lastBuildThreads = lastBuildThreads;
+			this.maximumBuildConcurrency = maximumBuildConcurrency;
+			this.plannedBuildRanges = plannedBuildRanges;
+			this.completedBuildRanges = completedBuildRanges;
+			this.buildScratchHighWaterBytes = buildScratchHighWaterBytes;
+			this.cursorRowsScanned = cursorRowsScanned;
+			this.cursorRowsMatched = cursorRowsMatched;
+			this.cursorRowsSkipped = cursorRowsSkipped;
+			this.cursorSeeks = cursorSeeks;
 			this.pass1SourceVisits = pass1SourceVisits;
 			this.pass1Nanos = pass1Nanos;
 			this.pass3SourceVisits = pass3SourceVisits;

@@ -17,54 +17,73 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 
 /**
- * Four thread-confined LMDB scanners pinned to one exact data revision. The complete transaction family is created
- * under one TxnManager read lock and then cross-checked before any scan, so neither a commit nor a map resize can split
- * the authoritative LMDB image between sibling scanners.
+ * Thread-confined LMDB scanners pinned to one exact data revision. The first four retain plane-scanner compatibility;
+ * additional scanners are owned by predicate-range workers. The complete transaction family is created under one
+ * TxnManager read lock and then cross-checked before any scan, so neither a commit nor a map resize can split the
+ * authoritative LMDB image between sibling scanners.
  */
 final class LmdbAdjacencyBuildTxnFamily implements AdjacencySourceFamily {
 
 	private static final int STREAM_COUNT = LmdbReferenceNodeLocator.PLANE_COUNT;
 
-	private final Txn[] transactions = new Txn[STREAM_COUNT];
-	private final LmdbAdjacencyTripleStoreScanner[] scanners = new LmdbAdjacencyTripleStoreScanner[STREAM_COUNT];
+	private final Txn[] transactions;
+	private final LmdbAdjacencyTripleStoreScanner[] scanners;
+	private final boolean[] activePlanes = new boolean[STREAM_COUNT];
 	private final AtomicBoolean closed = new AtomicBoolean();
 
 	private final long snapshotRevision;
 	private final int activeStreamCount;
 
 	LmdbAdjacencyBuildTxnFamily(TripleStore tripleStore) throws IOException {
+		this(tripleStore, STREAM_COUNT);
+	}
+
+	LmdbAdjacencyBuildTxnFamily(TripleStore tripleStore, int requestedWorkerScanners) throws IOException {
+		if (requestedWorkerScanners <= 0) {
+			throw new IllegalArgumentException("requested worker scanner count must be positive: "
+					+ requestedWorkerScanners);
+		}
 		TxnManager txnManager = tripleStore.getTxnManager();
-		Txn[] openedTransactions = txnManager.createReadTxnPinnedFamily(STREAM_COUNT, tripleStore::getDataRevision);
-		System.arraycopy(openedTransactions, 0, transactions, 0, STREAM_COUNT);
+		int availableReaders = txnManager.availableReadTxnSlots(TripleStore.MAX_READERS, 1);
+		int scannerCount = Math.min(requestedWorkerScanners, availableReaders);
+		if (scannerCount == 0) {
+			throw new IOException("insufficient LMDB reader slots for adjacency build while preserving one foreground "
+					+ "reader");
+		}
+		transactions = txnManager.createReadTxnPinnedFamily(scannerCount, tripleStore::getDataRevision);
+		scanners = new LmdbAdjacencyTripleStoreScanner[scannerCount];
 		long revision = transactions[0].snapshotRevision();
 		try {
-			for (int plane = 0; plane < STREAM_COUNT; plane++) {
-				Txn txn = transactions[plane];
+			for (int worker = 0; worker < scannerCount; worker++) {
+				Txn txn = transactions[worker];
 				if (txn.snapshotRevision() != revision) {
 					throw new IOException("sibling adjacency transactions crossed a commit: expected revision "
-							+ revision + " but plane " + plane + " pinned " + txn.snapshotRevision());
+							+ revision + " but worker " + worker + " pinned " + txn.snapshotRevision());
 				}
-				scanners[plane] = new LmdbAdjacencyTripleStoreScanner(tripleStore, txn, revision, true);
+				scanners[worker] = new LmdbAdjacencyTripleStoreScanner(tripleStore, txn, revision, true);
 			}
 			long snapshotId = scanners[0].snapshotId();
-			for (int plane = 1; plane < STREAM_COUNT; plane++) {
-				if (scanners[plane].snapshotId() != snapshotId) {
-					throw new IOException("sibling adjacency transactions have different LMDB snapshot IDs: plane 0="
-							+ snapshotId + ", plane " + plane + "=" + scanners[plane].snapshotId());
+			for (int worker = 1; worker < scannerCount; worker++) {
+				if (scanners[worker].snapshotId() != snapshotId) {
+					throw new IOException("sibling adjacency transactions have different LMDB snapshot IDs: worker 0="
+							+ snapshotId + ", worker " + worker + "=" + scanners[worker].snapshotId());
 				}
 			}
+			activePlanes[LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT] = tripleStore.hasTriples(transactions[0],
+					-1, -1, -1, -1, true);
+			activePlanes[LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT] = activePlanes[LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT];
+			activePlanes[LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED] = tripleStore.hasTriples(transactions[0],
+					-1, -1, -1, -1, false);
+			activePlanes[LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED] = activePlanes[LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED];
 			int streams = 0;
-			if (tripleStore.hasTriples(transactions[LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT],
-					-1, -1, -1, -1, true)) {
-				streams += 2;
-			}
-			if (tripleStore.hasTriples(transactions[LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED],
-					-1, -1, -1, -1, false)) {
-				streams += 2;
+			for (boolean activePlane : activePlanes) {
+				if (activePlane) {
+					streams++;
+				}
 			}
 			activeStreamCount = streams;
 		} catch (IOException | RuntimeException | Error e) {
-			for (int i = STREAM_COUNT - 1; i >= 0; i--) {
+			for (int i = transactions.length - 1; i >= 0; i--) {
 				transactions[i].close();
 			}
 			throw e;
@@ -82,7 +101,37 @@ final class LmdbAdjacencyBuildTxnFamily implements AdjacencySourceFamily {
 		if (plane < 0 || plane >= STREAM_COUNT) {
 			throw new IllegalArgumentException("plane out of range: " + plane);
 		}
-		return scanners[plane];
+		return scanners[plane % scanners.length];
+	}
+
+	@Override
+	public int workerScannerCount() {
+		return scanners.length;
+	}
+
+	@Override
+	public AdjacencySourceScanner workerScanner(int worker) {
+		if (worker < 0 || worker >= scanners.length) {
+			throw new IllegalArgumentException("worker out of range: " + worker);
+		}
+		return scanners[worker];
+	}
+
+	@Override
+	public boolean isPlaneActive(int plane) {
+		if (plane < 0 || plane >= STREAM_COUNT) {
+			throw new IllegalArgumentException("plane out of range: " + plane);
+		}
+		return activePlanes[plane];
+	}
+
+	@Override
+	public AdjacencySourceScanner.Telemetry telemetry() {
+		AdjacencySourceScanner.Telemetry total = AdjacencySourceScanner.Telemetry.EMPTY;
+		for (LmdbAdjacencyTripleStoreScanner scanner : scanners) {
+			total = total.plus(scanner.telemetry());
+		}
+		return total;
 	}
 
 	@Override
@@ -105,8 +154,8 @@ final class LmdbAdjacencyBuildTxnFamily implements AdjacencySourceFamily {
 		if (!closed.compareAndSet(false, true)) {
 			return;
 		}
-		for (int plane = STREAM_COUNT - 1; plane >= 0; plane--) {
-			transactions[plane].close();
+		for (int worker = transactions.length - 1; worker >= 0; worker--) {
+			transactions[worker].close();
 		}
 	}
 }

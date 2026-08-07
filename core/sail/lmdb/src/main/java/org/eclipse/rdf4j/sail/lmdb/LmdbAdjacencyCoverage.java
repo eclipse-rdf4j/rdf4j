@@ -57,6 +57,14 @@ final class LmdbAdjacencyCoverage {
 				new long[0]);
 	}
 
+	/** Build-internal coverage view materialized once for one immutable predicate-range task. */
+	static LmdbAdjacencyCoverage selectedRange(long[] sortedRawPredicateIds, int fromInclusive, int toExclusive) {
+		Objects.checkFromToIndex(fromInclusive, toExclusive, sortedRawPredicateIds.length);
+		return new LmdbAdjacencyCoverage(Arrays.copyOfRange(sortedRawPredicateIds, fromInclusive, toExclusive),
+				Set.of(),
+				new long[0]);
+	}
+
 	boolean isFull() {
 		return selectedRawPredicateIds == null;
 	}
@@ -78,6 +86,34 @@ final class LmdbAdjacencyCoverage {
 	long[] selectedRawPredicateIdsCopy() {
 		return selectedRawPredicateIds == null ? null
 				: Arrays.copyOf(selectedRawPredicateIds, selectedRawPredicateIds.length);
+	}
+
+	int selectedPredicateCount() {
+		return selectedRawPredicateIds == null ? 0 : selectedRawPredicateIds.length;
+	}
+
+	long selectedPredicateAt(int index) {
+		if (selectedRawPredicateIds == null) {
+			throw new IllegalStateException("FULL coverage has no selected-predicate array");
+		}
+		return selectedRawPredicateIds[index];
+	}
+
+	int firstSelectedPredicateAfter(long rawPredicateId) {
+		if (selectedRawPredicateIds == null) {
+			throw new IllegalStateException("FULL coverage has no selected-predicate successor");
+		}
+		int low = 0;
+		int high = selectedRawPredicateIds.length;
+		while (low < high) {
+			int middle = low + high >>> 1;
+			if (Long.compareUnsigned(selectedRawPredicateIds[middle], rawPredicateId) <= 0) {
+				low = middle + 1;
+			} else {
+				high = middle;
+			}
+		}
+		return low;
 	}
 
 	/** Unsigned-merges predicates selected after the base snapshot while retaining coverage classification metadata. */

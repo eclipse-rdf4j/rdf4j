@@ -16,6 +16,137 @@ import java.util.Arrays;
 /** Mutable heap scratch for at most one page (or one row awaiting extent splitting). */
 final class CsfPageData {
 
+	/** Reusable offset/length view used by the bootstrap splitter without copying page payload arrays. */
+	static final class View {
+		private CsfPageData source;
+		private int rowFrom;
+		private int fiberFrom;
+		private int contextFrom;
+		int rowCount;
+		int fiberCount;
+		int quadCount;
+
+		void whole(CsfPageData source) {
+			rows(source, 0, source.rowCount);
+		}
+
+		void rows(CsfPageData source, int fromRow, int toRow) {
+			if (source == null || fromRow < 0 || toRow < fromRow || toRow > source.rowCount) {
+				throw new IllegalArgumentException("invalid CSF row view");
+			}
+			this.source = source;
+			this.rowFrom = fromRow;
+			this.rowCount = toRow - fromRow;
+			this.fiberFrom = source.rowFiberStarts[fromRow];
+			int fiberTo = source.rowFiberStarts[toRow];
+			this.fiberCount = fiberTo - fiberFrom;
+			this.contextFrom = source.fiberContextStarts[fiberFrom];
+			this.quadCount = source.fiberContextStarts[fiberTo] - contextFrom;
+		}
+
+		void rowFibers(CsfPageData source, int rowIndex, int fromFiber, int toFiber, int fromContextInFirst,
+				int toContextInLast) {
+			if (source == null || rowIndex < 0 || rowIndex >= source.rowCount || fromFiber < 0
+					|| toFiber <= fromFiber || toFiber > source.rowFiberCounts[rowIndex]) {
+				throw new IllegalArgumentException("invalid CSF row-fibre view");
+			}
+			int sourceFiberFrom = source.rowFiberStarts[rowIndex] + fromFiber;
+			int sourceFiberTo = source.rowFiberStarts[rowIndex] + toFiber;
+			int firstCount = source.fiberContextCounts[sourceFiberFrom];
+			int lastCount = source.fiberContextCounts[sourceFiberTo - 1];
+			if (fromContextInFirst < 0 || fromContextInFirst >= firstCount || toContextInLast <= 0
+					|| toContextInLast > lastCount
+					|| sourceFiberFrom == sourceFiberTo - 1 && fromContextInFirst >= toContextInLast) {
+				throw new IllegalArgumentException("invalid CSF context view");
+			}
+			this.source = source;
+			this.rowFrom = rowIndex;
+			this.rowCount = 1;
+			this.fiberFrom = sourceFiberFrom;
+			this.fiberCount = sourceFiberTo - sourceFiberFrom;
+			this.contextFrom = source.fiberContextStarts[sourceFiberFrom] + fromContextInFirst;
+			int contextTo = source.fiberContextStarts[sourceFiberTo - 1] + toContextInLast;
+			this.quadCount = contextTo - contextFrom;
+		}
+
+		boolean isEmpty() {
+			return rowCount == 0;
+		}
+
+		long row(int index) {
+			checkIndex(index, rowCount, "row");
+			return source.rows[rowFrom + index];
+		}
+
+		int rowFiberStart(int index) {
+			checkIndex(index, rowCount, "row");
+			return index == 0 ? 0 : source.rowFiberStarts[rowFrom + index] - fiberFrom;
+		}
+
+		int rowFiberCount(int index) {
+			checkIndex(index, rowCount, "row");
+			return rowCount == 1 ? fiberCount : source.rowFiberCounts[rowFrom + index];
+		}
+
+		int rowQuadCount(int index) {
+			checkIndex(index, rowCount, "row");
+			return rowCount == 1 ? quadCount : source.rowQuadCounts[rowFrom + index];
+		}
+
+		long neighbor(int index) {
+			checkIndex(index, fiberCount, "fiber");
+			return source.neighbors[fiberFrom + index];
+		}
+
+		int fiberContextStart(int index) {
+			checkIndex(index, fiberCount, "fiber");
+			return index == 0 ? 0 : source.fiberContextStarts[fiberFrom + index] - contextFrom;
+		}
+
+		int fiberContextCount(int index) {
+			checkIndex(index, fiberCount, "fiber");
+			int start = index == 0 ? contextFrom : source.fiberContextStarts[fiberFrom + index];
+			int end = index == fiberCount - 1 ? contextFrom + quadCount
+					: source.fiberContextStarts[fiberFrom + index + 1];
+			return end - start;
+		}
+
+		long context(int index) {
+			checkIndex(index, quadCount, "context");
+			return source.contexts[contextFrom + index];
+		}
+
+		CsfPageData materialize() {
+			CsfPageData copy = new CsfPageData();
+			for (int rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+				int firstFiber = rowFiberStart(rowIndex);
+				int fibers = rowFiberCount(rowIndex);
+				int firstContext = fiberContextStart(firstFiber);
+				int quads = rowQuadCount(rowIndex);
+				long[] neighbors = new long[fibers];
+				int[] contextStarts = new int[fibers];
+				int[] contextCounts = new int[fibers];
+				long[] contexts = new long[quads];
+				for (int fiberIndex = 0; fiberIndex < fibers; fiberIndex++) {
+					neighbors[fiberIndex] = neighbor(firstFiber + fiberIndex);
+					contextStarts[fiberIndex] = fiberContextStart(firstFiber + fiberIndex) - firstContext;
+					contextCounts[fiberIndex] = fiberContextCount(firstFiber + fiberIndex);
+				}
+				for (int contextIndex = 0; contextIndex < quads; contextIndex++) {
+					contexts[contextIndex] = context(firstContext + contextIndex);
+				}
+				copy.appendRow(row(rowIndex), neighbors, contextStarts, contextCounts, contexts, fibers, quads);
+			}
+			return copy;
+		}
+
+		private static void checkIndex(int index, int length, String label) {
+			if (index < 0 || index >= length) {
+				throw new IndexOutOfBoundsException(label + " index " + index + " of " + length);
+			}
+		}
+	}
+
 	long[] rows = new long[16];
 	int[] rowFiberStarts = new int[17];
 	int[] rowFiberCounts = new int[16];
@@ -28,6 +159,7 @@ final class CsfPageData {
 	int rowCount;
 	int fiberCount;
 	int quadCount;
+	private boolean rowOpen;
 
 	boolean isEmpty() {
 		return rowCount == 0;
@@ -37,12 +169,63 @@ final class CsfPageData {
 		rowCount = 0;
 		fiberCount = 0;
 		quadCount = 0;
+		rowOpen = false;
 		rowFiberStarts[0] = 0;
 		fiberContextStarts[0] = 0;
 	}
 
+	void beginRow(long row) {
+		if (rowOpen) {
+			throw new IllegalStateException("previous CSF scratch row has not ended");
+		}
+		if (rowCount > 0 && Long.compareUnsigned(rows[rowCount - 1], row) >= 0) {
+			throw new IllegalStateException("page rows must be strictly unsigned ascending");
+		}
+		ensureRows(rowCount + 1);
+		rows[rowCount] = row;
+		rowFiberStarts[rowCount] = fiberCount;
+		rowFiberCounts[rowCount] = 0;
+		rowQuadCounts[rowCount] = 0;
+		rowOpen = true;
+	}
+
+	void appendPair(long neighbor, long context) {
+		if (!rowOpen) {
+			throw new IllegalStateException("pair outside a CSF scratch row");
+		}
+		int rowFiberFrom = rowFiberStarts[rowCount];
+		if (fiberCount == rowFiberFrom || neighbors[fiberCount - 1] != neighbor) {
+			ensureFibers(fiberCount + 1);
+			neighbors[fiberCount] = neighbor;
+			fiberContextStarts[fiberCount] = quadCount;
+			fiberContextCounts[fiberCount] = 0;
+			fiberCount++;
+			rowFiberCounts[rowCount]++;
+		}
+		ensureContexts(quadCount + 1);
+		contexts[quadCount++] = context;
+		fiberContextCounts[fiberCount - 1]++;
+		rowQuadCounts[rowCount]++;
+	}
+
+	void endRow() {
+		if (!rowOpen) {
+			throw new IllegalStateException("no open CSF scratch row");
+		}
+		if (rowFiberCounts[rowCount] == 0 || rowQuadCounts[rowCount] == 0) {
+			throw new IllegalStateException("a CSF row must contain at least one fibre and one context membership");
+		}
+		rowCount++;
+		rowFiberStarts[rowCount] = fiberCount;
+		fiberContextStarts[fiberCount] = quadCount;
+		rowOpen = false;
+	}
+
 	void appendRow(long row, long[] rowNeighbors, int[] contextStarts, int[] contextCounts, long[] rowContexts,
 			int fibers, int quads) {
+		if (rowOpen) {
+			throw new IllegalStateException("cannot append a complete row while a scratch row is open");
+		}
 		if (fibers <= 0 || quads <= 0) {
 			throw new IllegalArgumentException("a CSF row must contain at least one fibre and one context membership");
 		}
@@ -87,21 +270,50 @@ final class CsfPageData {
 		if (fromRow < 0 || toRow < fromRow || toRow > source.rowCount) {
 			throw new IllegalArgumentException("invalid row slice");
 		}
-		for (int row = fromRow; row < toRow; row++) {
-			int fs = source.rowFiberStarts[row];
-			int fc = source.rowFiberCounts[row];
-			int qs = source.fiberContextStarts[fs];
-			int qc = source.rowQuadCounts[row];
-			long[] n = Arrays.copyOfRange(source.neighbors, fs, fs + fc);
-			int[] starts = new int[fc];
-			int[] counts = new int[fc];
-			for (int f = 0; f < fc; f++) {
-				starts[f] = source.fiberContextStarts[fs + f] - qs;
-				counts[f] = source.fiberContextCounts[fs + f];
-			}
-			long[] c = Arrays.copyOfRange(source.contexts, qs, qs + qc);
-			appendRow(source.rows[row], n, starts, counts, c, fc, qc);
+		if (fromRow == toRow) {
+			return;
 		}
+		if (source == this) {
+			throw new IllegalArgumentException("a CSF page cannot append a row slice from itself");
+		}
+		if (rowCount > 0 && Long.compareUnsigned(rows[rowCount - 1], source.rows[fromRow]) >= 0) {
+			throw new IllegalStateException("page rows must be strictly unsigned ascending");
+		}
+
+		int copiedRows = toRow - fromRow;
+		int sourceFiberFrom = source.rowFiberStarts[fromRow];
+		int sourceFiberTo = source.rowFiberStarts[toRow];
+		int copiedFibers = sourceFiberTo - sourceFiberFrom;
+		int sourceContextFrom = source.fiberContextStarts[sourceFiberFrom];
+		int sourceContextTo = source.fiberContextStarts[sourceFiberTo];
+		int copiedContexts = sourceContextTo - sourceContextFrom;
+		int targetRowFrom = rowCount;
+		int targetFiberFrom = fiberCount;
+		int targetContextFrom = quadCount;
+
+		ensureRows(Math.addExact(rowCount, copiedRows));
+		ensureFibers(Math.addExact(fiberCount, copiedFibers));
+		ensureContexts(Math.addExact(quadCount, copiedContexts));
+		System.arraycopy(source.rows, fromRow, rows, targetRowFrom, copiedRows);
+		System.arraycopy(source.rowFiberCounts, fromRow, rowFiberCounts, targetRowFrom, copiedRows);
+		System.arraycopy(source.rowQuadCounts, fromRow, rowQuadCounts, targetRowFrom, copiedRows);
+		for (int row = 0; row < copiedRows; row++) {
+			rowFiberStarts[targetRowFrom + row] = targetFiberFrom
+					+ source.rowFiberStarts[fromRow + row] - sourceFiberFrom;
+		}
+		System.arraycopy(source.neighbors, sourceFiberFrom, neighbors, targetFiberFrom, copiedFibers);
+		System.arraycopy(source.fiberContextCounts, sourceFiberFrom, fiberContextCounts, targetFiberFrom,
+				copiedFibers);
+		for (int fiber = 0; fiber < copiedFibers; fiber++) {
+			fiberContextStarts[targetFiberFrom + fiber] = targetContextFrom
+					+ source.fiberContextStarts[sourceFiberFrom + fiber] - sourceContextFrom;
+		}
+		System.arraycopy(source.contexts, sourceContextFrom, contexts, targetContextFrom, copiedContexts);
+		rowCount += copiedRows;
+		fiberCount += copiedFibers;
+		quadCount += copiedContexts;
+		rowFiberStarts[rowCount] = fiberCount;
+		fiberContextStarts[fiberCount] = quadCount;
 	}
 
 	CsfPageData rowSlice(int rowIndex, int fromFiber, int toFiber, int fromContextInFirst, int toContextInLast) {

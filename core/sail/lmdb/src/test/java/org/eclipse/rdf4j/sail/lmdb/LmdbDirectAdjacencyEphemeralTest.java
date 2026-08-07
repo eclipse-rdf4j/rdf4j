@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -124,6 +125,42 @@ class LmdbDirectAdjacencyEphemeralTest {
 				System.setProperty(LmdbPrefixRunPlan.ENABLED_PROPERTY, previous);
 			}
 		}
+	}
+
+	@Test
+	void selectedScansEmitOnlyCoveredPredicateRunsOnDefaultIndexes() throws Exception {
+		long selected = uri(20);
+		tripleStore.startTransaction();
+		for (int subject = 1; subject <= 4; subject++) {
+			for (int object = 0; object < 8; object++) {
+				tripleStore.storeTriple(uri(subject), uri(10), uri(1_000 + subject * 10 + object), 0, true);
+				tripleStore.storeTriple(uri(subject), uri(30), uri(3_000 + subject * 10 + object), 0, true);
+			}
+			tripleStore.storeTriple(uri(subject), selected, uri(2_000 + subject), 0, true);
+		}
+		tripleStore.commit();
+
+		LmdbAdjacencyCoverage coverage = LmdbAdjacencyCoverage.selected(new long[] { selected }, Set.of());
+		try (Txn txn = tripleStore.getTxnManager().createReadTxnPinned(tripleStore::getDataRevision)) {
+			LmdbAdjacencyTripleStoreScanner scanner = new LmdbAdjacencyTripleStoreScanner(tripleStore, txn,
+					tripleStore.getDataRevision());
+			List<Long> outgoingPredicates = new ArrayList<>();
+			List<Long> incomingPredicates = new ArrayList<>();
+			scanner.scanOutgoing(true, coverage, collectingPredicates(outgoingPredicates));
+			scanner.scanIncoming(true, coverage, collectingPredicates(incomingPredicates));
+
+			assertThat(outgoingPredicates).containsExactly(selected, selected, selected, selected);
+			assertThat(incomingPredicates).containsExactly(selected, selected, selected, selected);
+			Object telemetry = scanner.getClass().getDeclaredMethod("telemetry").invoke(scanner);
+			assertThat(invokeLong(telemetry, "cursorRowsScanned")).isLessThanOrEqualTo(16);
+			assertThat(invokeLong(telemetry, "cursorRowsMatched")).isEqualTo(8);
+			assertThat(invokeLong(telemetry, "cursorRowsSkipped")).isEqualTo(8);
+			assertThat(invokeLong(telemetry, "cursorSeeks")).isGreaterThanOrEqualTo(9);
+		}
+	}
+
+	private static long invokeLong(Object target, String method) throws ReflectiveOperationException {
+		return (long) target.getClass().getDeclaredMethod(method).invoke(target);
 	}
 
 	@Test
@@ -233,6 +270,23 @@ class LmdbDirectAdjacencyEphemeralTest {
 			assertThat(LmdbAdjacencyRunCodec.contextAt(index.arenaCatalog(), index.contextCatalog(), handle, i))
 					.isEqualTo(expected.get(i)[1]);
 		}
+	}
+
+	private static AdjacencySourceScanner.GroupConsumer collectingPredicates(List<Long> predicates) {
+		return new AdjacencySourceScanner.GroupConsumer() {
+			@Override
+			public void begin(long key, long predicate, int plane) {
+				predicates.add(predicate);
+			}
+
+			@Override
+			public void pair(long neighbor, long context) {
+			}
+
+			@Override
+			public void end() {
+			}
+		};
 	}
 
 	@Test

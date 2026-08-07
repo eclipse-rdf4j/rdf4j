@@ -31,6 +31,24 @@ class LmdbPagedCsfBaseBuilderTest {
 	}
 
 	@Test
+	void refusesOneByteBelowTheMeasuredExactBuildHighWaterWithoutLeaking() throws IOException {
+		LmdbAdjacencyMemoryAccount measuring = new LmdbAdjacencyMemoryAccount(1L << 30);
+		long exactHighWater;
+		try (LmdbInMemoryAdjacencyIndex ignored = LmdbPagedCsfBaseBuilder.build(new SyntheticScanner(),
+				LmdbAdjacencyCoverage.full(), measuring, 1L << 20, 1L << 16)) {
+			exactHighWater = measuring.highWaterBytes();
+			assertThat(exactHighWater).isPositive();
+		}
+		assertThat(measuring.totalChargedBytes()).isZero();
+
+		LmdbAdjacencyMemoryAccount refused = new LmdbAdjacencyMemoryAccount(exactHighWater - 1);
+		assertThatThrownBy(() -> LmdbPagedCsfBaseBuilder.build(new SyntheticScanner(),
+				LmdbAdjacencyCoverage.full(), refused, 1L << 20, 1L << 16))
+						.isInstanceOf(LmdbAdjacencyMemoryRefusedException.class);
+		assertThat(refused.totalChargedBytes()).isZero();
+	}
+
+	@Test
 	void preservesTheLegacyRunApiWhileStoringRawContextFibresInCsf() throws IOException {
 		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
 		try (LmdbInMemoryAdjacencyIndex base = LmdbPagedCsfBaseBuilder.build(new SyntheticScanner(),

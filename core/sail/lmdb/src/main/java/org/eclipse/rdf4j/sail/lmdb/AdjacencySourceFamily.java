@@ -12,15 +12,41 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 /**
- * Thread-confined source scanners over one exact base-build snapshot. The primary scanner serves Pass 0 and plane zero;
- * every other plane has its own scanner and pinned transaction so Passes 1 and 3 may run concurrently without sharing
- * an LMDB cursor or transaction.
+ * Thread-confined source scanners over one exact base-build snapshot. The primary scanner serves Pass 0. Plane scanners
+ * retain the original four-plane contract for compatibility, while worker scanners allow a range-partitioned builder to
+ * own one scanner and pinned transaction per platform worker.
  */
 interface AdjacencySourceFamily extends AutoCloseable {
 
 	AdjacencySourceScanner primary();
 
 	AdjacencySourceScanner scanner(int plane);
+
+	/** Number of thread-confined scanners that may be used concurrently by a range build. */
+	default int workerScannerCount() {
+		return LmdbReferenceNodeLocator.PLANE_COUNT;
+	}
+
+	/** Returns the scanner owned exclusively by one range worker for the duration of a pass. */
+	default AdjacencySourceScanner workerScanner(int worker) {
+		if (worker < 0 || worker >= workerScannerCount()) {
+			throw new IllegalArgumentException("worker out of range: " + worker);
+		}
+		return scanner(worker);
+	}
+
+	/** Whether a logical plane contains source rows at this pinned snapshot. */
+	default boolean isPlaneActive(int plane) {
+		if (plane < 0 || plane >= LmdbReferenceNodeLocator.PLANE_COUNT) {
+			throw new IllegalArgumentException("plane out of range: " + plane);
+		}
+		return true;
+	}
+
+	/** Aggregates worker-local scanner telemetry after all range workers have joined. */
+	default AdjacencySourceScanner.Telemetry telemetry() {
+		return AdjacencySourceScanner.Telemetry.EMPTY;
+	}
 
 	int activeStreamCount();
 

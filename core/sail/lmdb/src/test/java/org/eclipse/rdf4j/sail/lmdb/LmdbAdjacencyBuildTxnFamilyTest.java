@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -51,6 +52,169 @@ class LmdbAdjacencyBuildTxnFamilyTest {
 			assertPlanes(family.scanner(LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED), false, false,
 					LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED);
 		}
+	}
+
+	@Test
+	void workerFamilyClampsToReaderSlotsAndPreservesOneForegroundReader(@TempDir File dataDir) throws Exception {
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
+		TxnManager txnManager = tripleStore.getTxnManager();
+		List<TxnManager.Txn> occupied = new ArrayList<>();
+		try {
+			while (txnManager.availableReadTxnSlots(TripleStore.MAX_READERS, 1) > 2) {
+				occupied.add(txnManager.createReadTxn());
+			}
+			assertThat(txnManager.availableReadTxnSlots(TripleStore.MAX_READERS, 1)).isEqualTo(2);
+
+			try (LmdbAdjacencyBuildTxnFamily family = new LmdbAdjacencyBuildTxnFamily(tripleStore, 8)) {
+				assertThat(family.workerScannerCount()).isEqualTo(2);
+				assertThat(family.scanner(LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT)).isNotNull();
+				assertThat(family.scanner(LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED)).isNotNull();
+				assertThat(txnManager.availableReadTxnSlots(TripleStore.MAX_READERS, 1)).isZero();
+			}
+
+			assertThat(txnManager.availableReadTxnSlots(TripleStore.MAX_READERS, 1)).isEqualTo(2);
+		} finally {
+			for (int i = occupied.size() - 1; i >= 0; i--) {
+				occupied.get(i).close();
+			}
+		}
+	}
+
+	@Test
+	void oneSkewedPredicateIsPartitionedAcrossRecursiveRowRanges(@TempDir File dataDir) throws Exception {
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
+		long predicate = uri(10);
+		tripleStore.startTransaction();
+		for (int i = 0; i < 4_096; i++) {
+			tripleStore.storeTriple(uri(1_000 + i), predicate, uri(10_000 + i), 0, true);
+		}
+		tripleStore.commit();
+
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
+		LmdbAdjacencyMetrics metrics = new LmdbAdjacencyMetrics();
+		try (LmdbAdjacencyBuildTxnFamily family = new LmdbAdjacencyBuildTxnFamily(tripleStore, 8);
+				LmdbInMemoryAdjacencyIndex index = LmdbPagedCsfBaseBuilder.build(family,
+						LmdbAdjacencyCoverage.full(), account, 1L << 20, 1L << 16, 8, metrics)) {
+			LmdbAdjacencyMetrics.Snapshot snapshot = metrics.snapshot("test", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+					0, 0, 0, 0, 0);
+			assertThat(snapshot.plannedBuildRanges).isGreaterThan(4);
+			assertThat(snapshot.lastBuildThreads).isGreaterThan(4);
+			assertThat(index.statementCount()).isEqualTo(4_096);
+			assertThat(index.incidenceCount()).isEqualTo(8_192);
+			assertThat(index.findRun(uri(1_000), LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT, predicate))
+					.isPositive();
+			assertThat(index.findRun(uri(14_095), LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT, predicate))
+					.isPositive();
+		}
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@Test
+	void oneSupernodeIsPartitionedIntoOneLogicalContinuationChain(@TempDir File dataDir) throws Exception {
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
+		long subject = uri(1_000);
+		long predicate = uri(10);
+		long object = uri(10_000);
+		tripleStore.startTransaction();
+		for (int i = 0; i < 4_096; i++) {
+			tripleStore.storeTriple(subject, predicate, object, uri(20_000 + i), true);
+		}
+		tripleStore.commit();
+
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
+		LmdbAdjacencyMetrics metrics = new LmdbAdjacencyMetrics();
+		try (LmdbAdjacencyBuildTxnFamily family = new LmdbAdjacencyBuildTxnFamily(tripleStore, 8);
+				LmdbInMemoryAdjacencyIndex index = LmdbPagedCsfBaseBuilder.build(family,
+						LmdbAdjacencyCoverage.full(), account, 1L << 20, 1L << 16, 8, metrics)) {
+			LmdbAdjacencyMetrics.Snapshot snapshot = metrics.snapshot("test", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+					0, 0, 0, 0, 0);
+			assertThat(snapshot.plannedBuildRanges).isGreaterThan(4);
+			assertThat(snapshot.lastBuildThreads).isGreaterThan(4);
+			assertThat(index.statementCount()).isEqualTo(4_096);
+			assertThat(index.incidenceCount()).isEqualTo(8_192);
+
+			long outgoing = index.findRun(subject, LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT, predicate);
+			long incoming = index.findRun(object, LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT, predicate);
+			assertThat(LmdbAdjacencyRunCodec.edgeCount(index.arenaCatalog(), outgoing)).isEqualTo(4_096);
+			assertThat(LmdbAdjacencyRunCodec.edgeCount(index.arenaCatalog(), incoming)).isEqualTo(4_096);
+			assertThat(LmdbAdjacencyRunCodec.contextAt(index.arenaCatalog(), index.contextCatalog(), outgoing, 0))
+					.isEqualTo(uri(20_000));
+			assertThat(LmdbAdjacencyRunCodec.contextAt(index.arenaCatalog(), index.contextCatalog(), outgoing, 4_095))
+					.isEqualTo(uri(24_095));
+		}
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@Test
+	void oneSelectedPredicateUsesRecursivePrefixRangesWithoutVisitingUnselectedRows(@TempDir File dataDir)
+			throws Exception {
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc"), null);
+		long selectedPredicate = uri(10);
+		tripleStore.startTransaction();
+		for (int subject = 0; subject < 1_024; subject++) {
+			for (int predicate = 0; predicate < 8; predicate++) {
+				tripleStore.storeTriple(uri(1_000 + subject), uri(10 + predicate),
+						uri(100_000 + subject * 8L + predicate), 0, true);
+			}
+		}
+		tripleStore.commit();
+
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
+		LmdbAdjacencyMetrics metrics = new LmdbAdjacencyMetrics();
+		try (LmdbAdjacencyBuildTxnFamily family = new LmdbAdjacencyBuildTxnFamily(tripleStore, 8);
+				LmdbInMemoryAdjacencyIndex index = LmdbPagedCsfBaseBuilder.build(family,
+						LmdbAdjacencyCoverage.selected(new long[] { selectedPredicate }, Set.of()), account,
+						1L << 20, 1L << 16, 8, metrics)) {
+			LmdbAdjacencyMetrics.Snapshot snapshot = metrics.snapshot("test", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+					0, 0, 0, 0, 0);
+			assertThat(snapshot.lastBuildThreads).isGreaterThan(4);
+			assertThat(snapshot.plannedBuildRanges).isGreaterThan(4);
+			assertThat(snapshot.cursorRowsSkipped).isZero();
+			assertThat(snapshot.cursorRowsScanned)
+					.as("only selected prefix rows plus bounded Pass-0 predicate seeks should be decoded")
+					.isLessThan(4_500);
+			assertThat(index.statementCount()).isEqualTo(1_024);
+			assertThat(index.incidenceCount()).isEqualTo(2_048);
+			assertThat(index.findRun(uri(1_000), LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT,
+					selectedPredicate)).isPositive();
+		}
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@Test
+	void selectedCoverageOnDefaultIndexesSeeksAcrossUncoveredSubjectPredicateRuns(@TempDir File dataDir)
+			throws Exception {
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
+		long selectedPredicate = uri(14);
+		tripleStore.startTransaction();
+		for (int subject = 0; subject < 256; subject++) {
+			for (int predicate = 0; predicate < 8; predicate++) {
+				tripleStore.storeTriple(uri(1_000 + subject), uri(10 + predicate),
+						uri(100_000 + subject * 8L + predicate), 0, true);
+			}
+		}
+		tripleStore.commit();
+
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
+		LmdbAdjacencyMetrics metrics = new LmdbAdjacencyMetrics();
+		try (LmdbAdjacencyBuildTxnFamily family = new LmdbAdjacencyBuildTxnFamily(tripleStore, 8);
+				LmdbInMemoryAdjacencyIndex index = LmdbPagedCsfBaseBuilder.build(family,
+						LmdbAdjacencyCoverage.selected(new long[] { selectedPredicate }, Set.of()), account,
+						1L << 20, 1L << 16, 8, metrics)) {
+			LmdbAdjacencyMetrics.Snapshot snapshot = metrics.snapshot("test", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+					0, 0, 0, 0, 0);
+			assertThat(snapshot.lastBuildThreads).isGreaterThan(4);
+			assertThat(snapshot.cursorRowsSkipped).isPositive();
+			assertThat(snapshot.cursorSeeks).isGreaterThan(256);
+			assertThat(snapshot.cursorRowsScanned)
+					.as("spoc should touch bounded run sentinels, not all eight predicates in every subject")
+					.isLessThan(2_300);
+			assertThat(index.statementCount()).isEqualTo(256);
+			assertThat(index.incidenceCount()).isEqualTo(512);
+			assertThat(index.findRun(uri(1_255), LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT,
+					selectedPredicate)).isPositive();
+		}
+		assertThat(account.totalChargedBytes()).isZero();
 	}
 
 	private static void assertPlanes(AdjacencySourceScanner scanner, boolean outgoing, boolean explicit,

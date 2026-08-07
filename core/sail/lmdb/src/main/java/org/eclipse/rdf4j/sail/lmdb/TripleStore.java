@@ -129,6 +129,7 @@ class TripleStore implements Closeable {
 	 * The default triple indexes.
 	 */
 	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,posc";
+	static final int MAX_READERS = 256;
 	private static final boolean REUSE_ALIGNED_WRITE_CURSOR = true;
 	private static final long PREPARED_WRITE_BYTES_PER_INDEX_ENTRY = 256L;
 	private static final int GLOBAL_ENCODE_BLOCK_STATEMENTS = 64 * 1024;
@@ -264,7 +265,7 @@ class TripleStore implements Closeable {
 
 		// 1 for contexts and 48 for all possible triple indexes (24 explicit + 24 inferred)
 		E(mdb_env_set_maxdbs(env, 1 + 96));
-		E(mdb_env_set_maxreaders(env, 256));
+		E(mdb_env_set_maxreaders(env, MAX_READERS));
 
 		// Open environment
 		int flags = MDB_NOTLS;
@@ -2465,6 +2466,28 @@ class TripleStore implements Closeable {
 	}
 
 	/**
+	 * Opens a bounded scan on the exact configured index named by {@code range}. Unlike the public pattern-range path,
+	 * this internal form deliberately does not reselect by bound mask: adjacency planning may choose a
+	 * predicate-leading index for an otherwise unbound scan, and the worker must replay that exact key space.
+	 */
+	RecordIterator getTriplesRangeUsingIndex(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+			LmdbKeyRange range) throws IOException {
+		TripleIndex selected = null;
+		for (TripleIndex index : indexes) {
+			if (index.toString().equals(range.indexFieldSeq())) {
+				selected = index;
+				break;
+			}
+		}
+		if (selected == null) {
+			throw new IllegalStateException("Key range names an unconfigured index: " + range.indexFieldSeq());
+		}
+		boolean rangeSearch = selected.getPatternScore(subj, pred, obj, context) > 0;
+		return new LmdbRecordIterator(selected, rangeSearch, subj, pred, obj, context, explicit, txn, cursorPool,
+				false, range);
+	}
+
+	/**
 	 * Creates an iterator in retained mode: close() only marks it exhausted, so the owner can re-aim it at the next
 	 * probe with {@link #resetTriples} and must eventually call {@code dispose()}.
 	 */
@@ -2530,6 +2553,82 @@ class TripleStore implements Closeable {
 			}
 		}
 		return n == tuples.length ? tuples : Arrays.copyOf(tuples, n);
+	}
+
+	record OrderedSplit(byte[] key, boolean startsWithContinuation, long continuationPredicate,
+			long continuationRow) {
+	}
+
+	/**
+	 * Plans raw existing-key boundaries and classifies whether each boundary falls inside one logical
+	 * {@code (predicate,row)} group. This is the skew fallback for adjacency bootstrap: ordinary prefix boundaries are
+	 * preferred, but a single supernode can only be divided at raw key positions. Classification compares the snapped
+	 * key with its immediate predecessor on the same database, so a boundary at the first key of a new group is never
+	 * mislabeled as a continuation.
+	 */
+	List<OrderedSplit> planOrderedSplits(Txn txnRef, LmdbPrefixRunPlan plan, boolean explicit, int targetSplits,
+			int rowField) throws IOException {
+		return planOrderedSplits(txnRef, plan, -1, -1, -1, -1, explicit, targetSplits, rowField);
+	}
+
+	List<OrderedSplit> planOrderedSplits(Txn txnRef, LmdbPrefixRunPlan plan, long subj, long pred, long obj,
+			long context, boolean explicit, int targetSplits, int rowField) throws IOException {
+		if (rowField != TripleIndex.SUBJ_IDX && rowField != TripleIndex.OBJ_IDX) {
+			throw new IllegalArgumentException("adjacency row field must be subject or object: " + rowField);
+		}
+		List<byte[]> splitKeys = planBalancedSplitKeys(txnRef, plan.index(), subj, pred, obj, context, explicit,
+				targetSplits);
+		if (splitKeys.isEmpty()) {
+			return List.of();
+		}
+
+		StampedLongAdderLockManager lockManager = txnRef.lockManager();
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("interrupted while classifying adjacency split keys", e);
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			long txn = txnRef.get();
+			TripleIndex index = plan.index();
+			int dbi = index.getDB(explicit);
+			MDBVal keyData = MDBVal.malloc(stack);
+			MDBVal valueData = MDBVal.malloc(stack);
+			ByteBuffer keyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, dbi, pp));
+			long cursor = pp.get(0);
+			try {
+				List<OrderedSplit> result = new ArrayList<>(splitKeys.size());
+				long[] current = new long[4];
+				long[] previous = new long[4];
+				for (byte[] splitKey : splitKeys) {
+					keyBuffer.clear();
+					keyBuffer.put(splitKey).flip();
+					keyData.mv_data(keyBuffer);
+					if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) != MDB_SUCCESS) {
+						continue;
+					}
+					byte[] actualKey = copyKey(keyData);
+					index.keyToQuad(keyData.mv_data().duplicate(), current);
+					boolean continuation = false;
+					if (mdb_cursor_get(cursor, keyData, valueData, MDB_PREV) == MDB_SUCCESS) {
+						index.keyToQuad(keyData.mv_data().duplicate(), previous);
+						continuation = previous[TripleIndex.PRED_IDX] == current[TripleIndex.PRED_IDX]
+								&& previous[rowField] == current[rowField];
+					}
+					result.add(new OrderedSplit(actualKey, continuation, current[TripleIndex.PRED_IDX],
+							current[rowField]));
+				}
+				return result;
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
 	}
 
 	/**

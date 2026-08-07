@@ -58,6 +58,73 @@ final class PackedLongVector {
 	private PackedLongVector() {
 	}
 
+	/** Rewindable primitive source used by the allocation-free sizing and native-write path. */
+	interface SequentialValues {
+		int size();
+
+		void reset();
+
+		long next();
+	}
+
+	/** Per-encoder bounded scratch. One instance is sufficient for vectors of every supported size. */
+	static final class WriteScratch {
+		private final long[] block = new long[BLOCK_SIZE];
+		private int mode;
+		private int type;
+		private int width;
+		private int count;
+		private long base;
+		private int lanes;
+		private int encodedBytes;
+	}
+
+	static int measure(SequentialValues values, Hint hint, WriteScratch scratch) {
+		int count = values.size();
+		if (count < 0) {
+			throw new IllegalArgumentException("vector size must not be negative: " + count);
+		}
+		int blockCount = (count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+		int directoryBytes = Math.multiplyExact(blockCount + 1, Integer.BYTES);
+		int total = Math.addExact(HEADER_BYTES, directoryBytes);
+		values.reset();
+		for (int block = 0; block < blockCount; block++) {
+			int blockLength = Math.min(BLOCK_SIZE, count - block * BLOCK_SIZE);
+			fillBlock(values, scratch.block, blockLength);
+			planBlock(scratch.block, blockLength, hint, scratch);
+			total = Math.addExact(total, scratch.encodedBytes);
+		}
+		return total;
+	}
+
+	/** Writes exactly {@code byteLength} bytes. The target may contain data from a recycled native slab. */
+	static void writeNative(long address, int byteLength, SequentialValues values, Hint hint, WriteScratch scratch) {
+		if (address == 0) {
+			throw new IllegalArgumentException("native vector address must not be zero");
+		}
+		int count = values.size();
+		int blockCount = (count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+		int directoryBytes = Math.multiplyExact(blockCount + 1, Integer.BYTES);
+		int blockAt = Math.addExact(HEADER_BYTES, directoryBytes);
+		UnsafeAccess.clear(address, byteLength);
+		UnsafeAccess.putIntLE(address, count);
+		UnsafeAccess.putIntLE(address + Integer.BYTES, blockCount);
+		values.reset();
+		for (int block = 0; block < blockCount; block++) {
+			UnsafeAccess.putIntLE(address + HEADER_BYTES + (long) block * Integer.BYTES, blockAt);
+			int blockLength = Math.min(BLOCK_SIZE, count - block * BLOCK_SIZE);
+			fillBlock(values, scratch.block, blockLength);
+			planBlock(scratch.block, blockLength, hint, scratch);
+			writeBlockNative(address + blockAt, scratch.block, scratch);
+			blockAt = Math.addExact(blockAt, scratch.encodedBytes);
+		}
+		UnsafeAccess.putIntLE(address + HEADER_BYTES + (long) blockCount * Integer.BYTES, blockAt);
+		if (blockAt != byteLength) {
+			throw new IllegalStateException(
+					"native vector encoder length mismatch: measured=" + byteLength + ", written=" + blockAt);
+		}
+	}
+
 	static byte[] encode(long[] values, int from, int count, Hint hint) {
 		if (from < 0 || count < 0 || from > values.length - count) {
 			throw new IllegalArgumentException("invalid vector range");
@@ -132,6 +199,108 @@ final class PackedLongVector {
 			}
 		}
 		return new BlockPlan(best.mode, best.type, best.width, count, best.base, best.lanes, best.bytes);
+	}
+
+	private static void fillBlock(SequentialValues values, long[] block, int count) {
+		for (int i = 0; i < count; i++) {
+			block[i] = values.next();
+		}
+	}
+
+	private static void planBlock(long[] values, int count, Hint hint, WriteScratch scratch) {
+		long base = values[0];
+		for (int i = 1; i < count; i++) {
+			if (Long.compareUnsigned(values[i], base) < 0) {
+				base = values[i];
+			}
+		}
+		long maxDelta = 0;
+		for (int i = 0; i < count; i++) {
+			long delta = values[i] - base;
+			if (Long.compareUnsigned(delta, maxDelta) > 0) {
+				maxDelta = delta;
+			}
+		}
+		setPlan(scratch, MODE_FOR_RAW, 0, unsignedWidth(maxDelta), count, base, count);
+
+		int type = compoundType(values[0]);
+		if (type >= 0) {
+			long payloadBase = values[0] >>> 7;
+			boolean sameType = true;
+			for (int i = 1; i < count; i++) {
+				if (compoundType(values[i]) != type) {
+					sameType = false;
+					break;
+				}
+				payloadBase = Math.min(payloadBase, values[i] >>> 7);
+			}
+			if (sameType) {
+				long maxPayloadDelta = 0;
+				for (int i = 0; i < count; i++) {
+					maxPayloadDelta = Math.max(maxPayloadDelta, (values[i] >>> 7) - payloadBase);
+				}
+				considerPlan(scratch, MODE_FOR_TYPED_PAYLOAD, type, unsignedWidth(maxPayloadDelta), count,
+						payloadBase, count);
+			}
+		}
+
+		if (hint != Hint.SORTED_SEQUENTIAL_IDS) {
+			return;
+		}
+		boolean sorted = true;
+		maxDelta = 0;
+		for (int i = 1; i < count; i++) {
+			if (Long.compareUnsigned(values[i - 1], values[i]) > 0) {
+				sorted = false;
+				break;
+			}
+			long delta = values[i] - values[i - 1];
+			if (Long.compareUnsigned(delta, maxDelta) > 0) {
+				maxDelta = delta;
+			}
+		}
+		if (sorted) {
+			considerPlan(scratch, MODE_DELTA_RAW, 0, unsignedWidth(maxDelta), count, values[0], count - 1);
+		}
+
+		if (type >= 0) {
+			long previous = values[0] >>> 7;
+			long maxPayloadDelta = 0;
+			boolean typedSorted = true;
+			for (int i = 1; i < count; i++) {
+				long value = values[i];
+				long payload = value >>> 7;
+				if (compoundType(value) != type || payload < previous) {
+					typedSorted = false;
+					break;
+				}
+				maxPayloadDelta = Math.max(maxPayloadDelta, payload - previous);
+				previous = payload;
+			}
+			if (typedSorted) {
+				considerPlan(scratch, MODE_DELTA_TYPED_PAYLOAD, type, unsignedWidth(maxPayloadDelta), count,
+						values[0] >>> 7, count - 1);
+			}
+		}
+	}
+
+	private static void setPlan(WriteScratch scratch, int mode, int type, int width, int count, long base,
+			int lanes) {
+		scratch.mode = mode;
+		scratch.type = type;
+		scratch.width = width;
+		scratch.count = count;
+		scratch.base = base;
+		scratch.lanes = lanes;
+		scratch.encodedBytes = Math.addExact(BLOCK_HEADER_BYTES, packedBytes(lanes, width));
+	}
+
+	private static void considerPlan(WriteScratch scratch, int mode, int type, int width, int count, long base,
+			int lanes) {
+		int encodedBytes = Math.addExact(BLOCK_HEADER_BYTES, packedBytes(lanes, width));
+		if (encodedBytes < scratch.encodedBytes) {
+			setPlan(scratch, mode, type, width, count, base, lanes);
+		}
 	}
 
 	private static Candidate forRaw(long[] values, int from, int count) {
@@ -264,6 +433,42 @@ final class PackedLongVector {
 		}
 	}
 
+	private static void writeBlockNative(long address, long[] values, WriteScratch plan) {
+		UnsafeAccess.putByte(address, (byte) (plan.mode | plan.type << TYPE_SHIFT));
+		UnsafeAccess.putByte(address + 1, (byte) plan.width);
+		UnsafeAccess.putShortLE(address + 2, (short) plan.count);
+		UnsafeAccess.putLongLE(address + 4, plan.base);
+		long payload = address + BLOCK_HEADER_BYTES;
+		if (plan.lanes == 0 || plan.width == 0) {
+			return;
+		}
+		switch (plan.mode) {
+		case MODE_FOR_RAW:
+			for (int i = 0; i < plan.count; i++) {
+				writeBits(payload, (long) i * plan.width, plan.width, values[i] - plan.base);
+			}
+			break;
+		case MODE_FOR_TYPED_PAYLOAD:
+			for (int i = 0; i < plan.count; i++) {
+				writeBits(payload, (long) i * plan.width, plan.width, (values[i] >>> 7) - plan.base);
+			}
+			break;
+		case MODE_DELTA_RAW:
+			for (int i = 1; i < plan.count; i++) {
+				writeBits(payload, (long) (i - 1) * plan.width, plan.width, values[i] - values[i - 1]);
+			}
+			break;
+		case MODE_DELTA_TYPED_PAYLOAD:
+			for (int i = 1; i < plan.count; i++) {
+				writeBits(payload, (long) (i - 1) * plan.width, plan.width,
+						(values[i] >>> 7) - (values[i - 1] >>> 7));
+			}
+			break;
+		default:
+			throw new IllegalStateException("unknown packed-vector mode: " + plan.mode);
+		}
+	}
+
 	private static int compoundType(long value) {
 		if ((value & 1L) != 0) {
 			return -1; // RDF4J inlined doubles use the complete odd 64-bit lane
@@ -301,6 +506,26 @@ final class PackedLongVector {
 			int mask = (1 << take) - 1;
 			int bits = (int) v & mask;
 			target[payloadAt + byteIndex] |= (byte) (bits << within);
+			v >>>= take;
+			remaining -= take;
+			at += take;
+		}
+	}
+
+	private static void writeBits(long payloadAddress, long bitOffset, int width, long value) {
+		if (width == 0) {
+			return;
+		}
+		int remaining = width;
+		long at = bitOffset;
+		long v = value;
+		while (remaining > 0) {
+			long address = payloadAddress + (at >>> 3);
+			int within = (int) (at & 7);
+			int take = Math.min(remaining, 8 - within);
+			int mask = (1 << take) - 1;
+			int bits = (int) v & mask;
+			UnsafeAccess.putByte(address, (byte) (UnsafeAccess.getUnsignedByte(address) | bits << within));
 			v >>>= take;
 			remaining -= take;
 			at += take;

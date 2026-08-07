@@ -133,6 +133,57 @@ class CompactCsfPageTest {
 	}
 
 	@Test
+	void directNativeEncodingMatchesTheHeapOracle() throws Exception {
+		CsfPageData data = new CsfPageData();
+		data.appendRow(id(1, 1), new long[] { id(36, 10), id(1, 20) }, new int[] { 0, 1 },
+				new int[] { 1, 3 }, new long[] { id(2, 100), id(2, 200), id(2, 201), id(2, 202) }, 2, 4);
+		data.appendRow(id(1, 2), new long[] { id(36, 30) }, new int[] { 0 }, new int[] { 2 },
+				new long[] { id(2, 300), id(2, 301) }, 1, 2);
+
+		CompactCsfPageEncoder encoder = new CompactCsfPageEncoder();
+		CompactCsfPageEncoder.PageImage oracle = encoder.tryEncode(data, true, 17);
+		Class<?> layoutType = Class.forName(CompactCsfPageEncoder.class.getName() + "$Layout");
+		Object layout = layoutType.getDeclaredConstructor().newInstance();
+		assertThat(CompactCsfPageEncoder.class
+				.getDeclaredMethod("tryMeasure", CsfPageData.class, boolean.class, int.class, layoutType)
+				.invoke(encoder, data, true, 17, layout)).isEqualTo(true);
+
+		long address = UnsafeAccess.allocateZeroed(oracle.capacity() + PackedLongVector.READ_TAIL_PADDING);
+		try {
+			CompactCsfPageEncoder.class
+					.getDeclaredMethod("writeNative", CsfPageData.class, layoutType, long.class)
+					.invoke(encoder, data, layout, address);
+			byte[] actual = new byte[oracle.usedBytes()];
+			UnsafeAccess.copyToArray(address, actual, 0, actual.length);
+			assertThat(actual).containsExactly(oracle.bytes());
+		} finally {
+			UnsafeAccess.free(address);
+		}
+	}
+
+	@Test
+	void directNativeEncodingOfOffsetViewsMatchesTheHeapOracle() {
+		CsfPageData data = new CsfPageData();
+		data.appendRow(id(1, 1), new long[] { id(1, 10) }, new int[] { 0 }, new int[] { 1 },
+				new long[] { id(2, 100) }, 1, 1);
+		data.appendRow(id(1, 2), new long[] { id(1, 20), id(1, 30), id(1, 40) }, new int[] { 0, 3, 4 },
+				new int[] { 3, 1, 4 },
+				new long[] { id(2, 200), id(2, 201), id(2, 202), id(2, 300), id(2, 400), id(2, 401),
+						id(2, 402), id(2, 403) },
+				3, 8);
+		data.appendRow(id(1, 3), new long[] { id(1, 50), id(1, 60) }, new int[] { 0, 2 },
+				new int[] { 2, 2 }, new long[] { id(2, 500), id(2, 501), id(2, 600), id(2, 601) }, 2, 4);
+
+		CsfPageData.View rowView = new CsfPageData.View();
+		rowView.rows(data, 1, 3);
+		assertDirectViewMatchesHeapOracle(rowView, false, 21);
+
+		CsfPageData.View fiberView = new CsfPageData.View();
+		fiberView.rowFibers(data, 1, 0, 3, 1, 3);
+		assertDirectViewMatchesHeapOracle(fiberView, true, 22);
+	}
+
+	@Test
 	void singleContextRowsCopyFullAndPartialRanges() {
 		assertSingleContextCopy(new long[] { 0, 0, 0, 0, 0, 0 });
 		assertSingleContextCopy(new long[] { id(2, 100), id(2, 101), id(2, 102), id(2, 103), id(2, 104),
@@ -282,6 +333,23 @@ class CompactCsfPageTest {
 			assertThat(copiedNeighbors).containsExactly(neighbors[1], neighbors[2], neighbors[3], neighbors[4]);
 			assertThat(copiedContexts).containsExactly(sourceContexts[1], sourceContexts[2], sourceContexts[3],
 					sourceContexts[4]);
+		} finally {
+			UnsafeAccess.free(address);
+		}
+	}
+
+	private static void assertDirectViewMatchesHeapOracle(CsfPageData.View view, boolean continuation, int pageId) {
+		CompactCsfPageEncoder encoder = new CompactCsfPageEncoder();
+		CompactCsfPageEncoder.PageImage oracle = encoder.tryEncode(view.materialize(), continuation, pageId);
+		CompactCsfPageEncoder.Layout layout = new CompactCsfPageEncoder.Layout();
+		assertThat(encoder.tryMeasure(view, continuation, pageId, layout)).isTrue();
+
+		long address = UnsafeAccess.allocateZeroed(oracle.capacity() + PackedLongVector.READ_TAIL_PADDING);
+		try {
+			encoder.writeNative(view, layout, address);
+			byte[] actual = new byte[oracle.usedBytes()];
+			UnsafeAccess.copyToArray(address, actual, 0, actual.length);
+			assertThat(actual).containsExactly(oracle.bytes());
 		} finally {
 			UnsafeAccess.free(address);
 		}

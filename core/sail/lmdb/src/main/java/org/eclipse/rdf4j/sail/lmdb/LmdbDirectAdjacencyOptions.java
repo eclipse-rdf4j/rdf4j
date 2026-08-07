@@ -122,8 +122,9 @@ final class LmdbDirectAdjacencyOptions {
 		long supernodeEdges = positiveLongProperty(properties, SUPERNODE_EDGES_PROPERTY, 1_048_576L);
 		long supernodeChunkEdges = positiveLongProperty(properties, SUPERNODE_CHUNK_EDGES_PROPERTY, 65_536L);
 		long supernodeTargetBytes = positiveLongProperty(properties, SUPERNODE_TARGET_BYTES_PROPERTY, 67_108_864L);
+		int visibleProcessors = Math.max(1, availableProcessors);
 		int buildThreads = boundedIntProperty(properties, BUILD_THREADS_PROPERTY,
-				Math.min(4, Math.max(1, availableProcessors)), 1, 4);
+				Math.max(1, visibleProcessors - 1), 1, visibleProcessors);
 		long buildTargetMillis = positiveLongProperty(properties, BUILD_TARGET_MILLIS_PROPERTY, 43_200_000L);
 		long buildRetryMillis = positiveLongProperty(properties, BUILD_RETRY_MILLIS_PROPERTY, 60_000L);
 		long shadowSampleEvery = positiveLongProperty(properties, SHADOW_SAMPLE_EVERY_PROPERTY, 10_000L);

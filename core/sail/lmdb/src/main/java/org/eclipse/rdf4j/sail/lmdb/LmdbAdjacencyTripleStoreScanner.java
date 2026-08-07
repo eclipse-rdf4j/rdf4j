@@ -15,7 +15,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -38,6 +41,11 @@ import org.slf4j.LoggerFactory;
 final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 
 	private static final int[] PREDICATE_PREFIX_FIELDS = { TripleIndex.PRED_IDX };
+	private static final int[] OUTGOING_PREDICATE_ROW_FIELDS = { TripleIndex.PRED_IDX, TripleIndex.SUBJ_IDX };
+	private static final int[] OUTGOING_ROW_PREDICATE_FIELDS = { TripleIndex.SUBJ_IDX, TripleIndex.PRED_IDX };
+	private static final int[] INCOMING_PREDICATE_ROW_FIELDS = { TripleIndex.PRED_IDX, TripleIndex.OBJ_IDX };
+	private static final int[] INCOMING_ROW_PREDICATE_FIELDS = { TripleIndex.OBJ_IDX, TripleIndex.PRED_IDX };
+	private static final int BATCH_ROWS = 2_048;
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbAdjacencyTripleStoreScanner.class);
 
@@ -52,6 +60,12 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 	private final long initialTxnVersion;
 
 	private final boolean allowRevisionAdvance;
+
+	private long[] quadBatch;
+	private long cursorRowsScanned;
+	private long cursorRowsMatched;
+	private long cursorRowsSkipped;
+	private long cursorSeeks;
 
 	LmdbAdjacencyTripleStoreScanner(TripleStore tripleStore, Txn txn, long snapshotRevision) {
 		this(tripleStore, txn, snapshotRevision, false);
@@ -76,6 +90,187 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 	public boolean supportsOrderedScan(boolean outgoing) {
 		String indexName = tripleStore.getIndexName(outgoing ? StatementOrder.S : StatementOrder.P, -1, -1, -1, -1);
 		return indexName.startsWith(outgoing ? "sp" : "po");
+	}
+
+	@Override
+	public boolean supportsPredicatePartitionedScan(boolean outgoing) {
+		String indexName = tripleStore.getIndexName(outgoing ? StatementOrder.S : StatementOrder.P, -1, 0, -1, -1);
+		return indexName.startsWith(outgoing ? "ps" : "po");
+	}
+
+	@Override
+	public ScanRange[] planRanges(int plane, LmdbAdjacencyCoverage coverage, int targetRanges) throws IOException {
+		boolean outgoing = plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
+				|| plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED;
+		boolean explicit = plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
+				|| plane == LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT;
+		if (plane < 0 || plane >= LmdbReferenceNodeLocator.PLANE_COUNT) {
+			throw new IllegalArgumentException("plane out of range: " + plane);
+		}
+		if (targetRanges <= 1) {
+			return NO_SCAN_RANGES;
+		}
+
+		int[] preferred = outgoing ? OUTGOING_PREDICATE_ROW_FIELDS : INCOMING_PREDICATE_ROW_FIELDS;
+		int[] fallback = outgoing ? OUTGOING_ROW_PREDICATE_FIELDS : INCOMING_ROW_PREDICATE_FIELDS;
+		LmdbPrefixRunPlan prefixPlan = tripleStore.prefixRunPlan(preferred, -1, -1, -1, -1);
+		if (!coverage.isFull()) {
+			return planSelectedPredicateRanges(prefixPlan, coverage, explicit, outgoing, targetRanges);
+		}
+		if (prefixPlan == null) {
+			prefixPlan = tripleStore.prefixRunPlan(fallback, -1, -1, -1, -1);
+		}
+		if (prefixPlan == null) {
+			return NO_SCAN_RANGES;
+		}
+
+		long[][] splitValues = tripleStore.planPrefixRunSplitValues(txn, prefixPlan, -1, -1, -1, -1,
+				explicit, targetRanges - 1, prefixPlan.prefixLength());
+		int minimumUsefulSplits = Math.min(targetRanges - 1, Math.max(1, targetRanges / 2));
+		if (splitValues == null || splitValues.length < minimumUsefulSplits) {
+			int rowField = outgoing ? TripleIndex.SUBJ_IDX : TripleIndex.OBJ_IDX;
+			List<TripleStore.OrderedSplit> rawSplits = tripleStore.planOrderedSplits(txn, prefixPlan, explicit,
+					targetRanges - 1, rowField);
+			if (rawSplits.isEmpty()) {
+				return NO_SCAN_RANGES;
+			}
+			return rawRanges(prefixPlan.index().toString(), rawSplits, null, null, false, 0);
+		}
+		String indexName = prefixPlan.index().toString();
+		ScanRange[] ranges = new ScanRange[splitValues.length + 1];
+		byte[] low = null;
+		for (int i = 0; i < splitValues.length; i++) {
+			byte[] high = encodePrefix(splitValues[i]);
+			if (low != null && Arrays.compareUnsigned(low, high) >= 0) {
+				throw new IOException("adjacency split prefixes are not strictly ascending on " + indexName);
+			}
+			ranges[i] = ScanRange.ordinary(new LmdbKeyRange(low, high, indexName));
+			low = high;
+		}
+		ranges[ranges.length - 1] = ScanRange.ordinary(new LmdbKeyRange(low, null, indexName));
+		return ranges;
+	}
+
+	private ScanRange[] planSelectedPredicateRanges(LmdbPrefixRunPlan prefixPlan, LmdbAdjacencyCoverage coverage,
+			boolean explicit, boolean outgoing, int targetRanges) throws IOException {
+		int predicateCount = coverage.selectedPredicateCount();
+		if (predicateCount == 0 || predicateCount > targetRanges || prefixPlan == null
+				|| !prefixPlan.index().toString().startsWith("p")) {
+			return NO_SCAN_RANGES;
+		}
+		ArrayList<ScanRange> ranges = new ArrayList<>(targetRanges);
+		int basePartitions = targetRanges / predicateCount;
+		int extraPartitions = targetRanges % predicateCount;
+		for (int ordinal = 0; ordinal < predicateCount; ordinal++) {
+			long predicate = coverage.selectedPredicateAt(ordinal);
+			int partitions = basePartitions + (ordinal < extraPartitions ? 1 : 0);
+			addSelectedPredicateRanges(ranges, prefixPlan, explicit, outgoing, predicate, partitions);
+		}
+		return ranges.toArray(ScanRange[]::new);
+	}
+
+	private void addSelectedPredicateRanges(List<ScanRange> target, LmdbPrefixRunPlan prefixPlan, boolean explicit,
+			boolean outgoing, long predicate, int targetPartitions) throws IOException {
+		String indexName = prefixPlan.index().toString();
+		byte[] predicateLow = encodePrefix(new long[] { predicate });
+		byte[] predicateHigh = prefixSuccessor(predicateLow);
+		long[][] splitValues = tripleStore.planPrefixRunSplitValues(txn, prefixPlan, -1, predicate, -1, -1,
+				explicit, targetPartitions - 1, prefixPlan.prefixLength());
+		int minimumUsefulSplits = Math.min(targetPartitions - 1, Math.max(1, targetPartitions / 2));
+		if (splitValues == null || splitValues.length < minimumUsefulSplits) {
+			int rowField = outgoing ? TripleIndex.SUBJ_IDX : TripleIndex.OBJ_IDX;
+			List<TripleStore.OrderedSplit> rawSplits = tripleStore.planOrderedSplits(txn, prefixPlan, -1, predicate,
+					-1, -1, explicit, targetPartitions - 1, rowField);
+			if (!rawSplits.isEmpty()) {
+				target.addAll(Arrays.asList(rawRanges(indexName, rawSplits, predicateLow, predicateHigh, true,
+						predicate)));
+				return;
+			}
+		}
+		byte[] low = predicateLow;
+		if (splitValues != null) {
+			for (long[] splitValue : splitValues) {
+				byte[] high = encodePrefix(splitValue);
+				if (Arrays.compareUnsigned(low, high) < 0
+						&& (predicateHigh == null || Arrays.compareUnsigned(high, predicateHigh) < 0)) {
+					target.add(ScanRange.predicateRange(new LmdbKeyRange(low, high, indexName), predicate));
+					low = high;
+				}
+			}
+		}
+		target.add(ScanRange.predicateRange(new LmdbKeyRange(low, predicateHigh, indexName), predicate));
+	}
+
+	private static ScanRange[] rawRanges(String indexName, List<TripleStore.OrderedSplit> splits, byte[] firstLow,
+			byte[] finalHigh, boolean predicateConstrained, long predicate) {
+		ScanRange[] ranges = new ScanRange[splits.size() + 1];
+		byte[] low = firstLow;
+		TripleStore.OrderedSplit lower = null;
+		for (int i = 0; i <= splits.size(); i++) {
+			byte[] high = i < splits.size() ? splits.get(i).key() : finalHigh;
+			LmdbKeyRange keyRange = new LmdbKeyRange(low, high, indexName);
+			if (lower != null && lower.startsWithContinuation()) {
+				ranges[i] = predicateConstrained
+						? ScanRange.predicateContinuation(keyRange, predicate, lower.continuationRow())
+						: new ScanRange(keyRange, true, lower.continuationPredicate(), lower.continuationRow());
+			} else {
+				ranges[i] = predicateConstrained ? ScanRange.predicateRange(keyRange, predicate)
+						: ScanRange.ordinary(keyRange);
+			}
+			if (i < splits.size()) {
+				lower = splits.get(i);
+				low = high;
+			}
+		}
+		return ranges;
+	}
+
+	@Override
+	public void scanRange(int plane, LmdbAdjacencyCoverage coverage, ScanRange range, GroupConsumer consumer)
+			throws IOException {
+		if (range == null) {
+			AdjacencySourceScanner.super.scanRange(plane, coverage, null, consumer);
+			return;
+		}
+		boolean outgoing = plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
+				|| plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED;
+		boolean explicit = plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
+				|| plane == LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT;
+		if (plane < 0 || plane >= LmdbReferenceNodeLocator.PLANE_COUNT) {
+			throw new IllegalArgumentException("plane out of range: " + plane);
+		}
+		cursorSeeks++;
+		try (RecordIterator it = tripleStore.getTriplesRangeUsingIndex(txn, -1, -1, -1, -1, explicit,
+				range.keyRange())) {
+			if (coverage.isFull()) {
+				scanBatched(it, outgoing, explicit, consumer);
+			} else {
+				scanBatchedCovered(it, outgoing, explicit, coverage,
+						range.predicateConstrained() ? range.constrainedPredicate() : 0, consumer);
+			}
+		}
+	}
+
+	private static byte[] encodePrefix(long[] values) {
+		int bytes = 0;
+		for (long value : values) {
+			bytes = Math.addExact(bytes, Varint.calcLengthUnsigned(value));
+		}
+		ByteBuffer buffer = ByteBuffer.allocate(bytes);
+		Varint.writeListUnsigned(buffer, values);
+		return buffer.array();
+	}
+
+	private static byte[] prefixSuccessor(byte[] prefix) {
+		byte[] successor = Arrays.copyOf(prefix, prefix.length);
+		for (int i = successor.length - 1; i >= 0; i--) {
+			int value = Byte.toUnsignedInt(successor[i]);
+			if (value != 0xff) {
+				successor[i] = (byte) (value + 1);
+				return Arrays.copyOf(successor, i + 1);
+			}
+		}
+		return null;
 	}
 
 	@Override
@@ -122,8 +317,11 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 		if (prefixPlan != null) {
 			// Pass 0 only needs one row per predicate. A predicate-leading index lets LMDB skip the remaining rows in
 			// each predicate run instead of decoding every statement in the incoming stream.
+			cursorSeeks++;
 			try (LmdbPrefixRunCursor it = tripleStore.getPrefixRuns(txn, prefixPlan, -1, -1, -1, -1, explicit, false)) {
 				while (it.next()) {
+					cursorRowsScanned++;
+					cursorRowsMatched++;
 					long predicate = it.quad()[TripleIndex.PRED_IDX];
 					if (size > 0 && Long.compareUnsigned(buffer[size - 1], predicate) > 0) {
 						throw new IOException("predicate stream is not unsigned ascending");
@@ -136,21 +334,26 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 			}
 		} else {
 			try (RecordIterator it = incomingIterator(explicit)) {
-				long[] quad;
+				long[] batch = quadBatch();
 				long last = 0;
 				boolean any = false;
-				while ((quad = it.next()) != null) {
-					long predicate = quad[TripleIndex.PRED_IDX];
-					if (!any || predicate != last) {
-						if (any && Long.compareUnsigned(last, predicate) > 0) {
-							throw new IOException("predicate stream is not unsigned ascending");
+				int rows;
+				while ((rows = it.fill(batch, BATCH_ROWS)) > 0) {
+					cursorRowsScanned += rows;
+					cursorRowsMatched += rows;
+					for (int row = 0; row < rows; row++) {
+						long predicate = batch[row * 4 + TripleIndex.PRED_IDX];
+						if (!any || predicate != last) {
+							if (any && Long.compareUnsigned(last, predicate) > 0) {
+								throw new IOException("predicate stream is not unsigned ascending");
+							}
+							if (size == buffer.length) {
+								buffer = java.util.Arrays.copyOf(buffer, buffer.length * 2);
+							}
+							buffer[size++] = predicate;
+							last = predicate;
+							any = true;
 						}
-						if (size == buffer.length) {
-							buffer = java.util.Arrays.copyOf(buffer, buffer.length * 2);
-						}
-						buffer[size++] = predicate;
-						last = predicate;
-						any = true;
 					}
 				}
 			}
@@ -172,18 +375,97 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 
 	@Override
 	public void scanOutgoing(boolean explicit, GroupConsumer consumer) throws IOException {
-		long scanned = 0;
+		cursorSeeks++;
 		try (RecordIterator it = tripleStore.getTriples(txn, StatementOrder.S, -1, -1, -1, -1, explicit)) {
-			long[] quad;
+			scanBatched(it, true, explicit, consumer);
+		}
+	}
+
+	@Override
+	public void scanOutgoing(boolean explicit, LmdbAdjacencyCoverage coverage, GroupConsumer consumer)
+			throws IOException {
+		if (coverage.isFull()) {
+			scanOutgoing(explicit, consumer);
+			return;
+		}
+		if (coverage.selectedPredicateCount() == 0) {
+			return;
+		}
+		long firstPredicate = coverage.selectedPredicateAt(0);
+		String selectedIndex = tripleStore.getIndexName(StatementOrder.S, -1, firstPredicate, -1, -1);
+		if (selectedIndex.startsWith("ps")) {
+			for (int i = 0; i < coverage.selectedPredicateCount(); i++) {
+				long predicate = coverage.selectedPredicateAt(i);
+				cursorSeeks++;
+				try (RecordIterator it = tripleStore.getTriples(txn, StatementOrder.S, -1, predicate, -1, -1,
+						explicit)) {
+					scanBatched(it, true, explicit, consumer);
+				}
+			}
+			return;
+		}
+		scanSelectedOutgoingFromSubjectIndex(explicit, coverage, consumer);
+	}
+
+	@Override
+	public void scanIncoming(boolean explicit, GroupConsumer consumer) throws IOException {
+		try (RecordIterator it = incomingIterator(explicit)) {
+			scanBatched(it, false, explicit, consumer);
+		}
+	}
+
+	@Override
+	public void scanIncoming(boolean explicit, LmdbAdjacencyCoverage coverage, GroupConsumer consumer)
+			throws IOException {
+		if (coverage.isFull()) {
+			scanIncoming(explicit, consumer);
+			return;
+		}
+		for (int i = 0; i < coverage.selectedPredicateCount(); i++) {
+			long predicate = coverage.selectedPredicateAt(i);
+			cursorSeeks++;
+			try (RecordIterator it = tripleStore.getTriples(txn, StatementOrder.P, -1, predicate, -1, -1,
+					explicit)) {
+				scanBatched(it, false, explicit, consumer);
+			}
+		}
+	}
+
+	private void scanSelectedOutgoingFromSubjectIndex(boolean explicit, LmdbAdjacencyCoverage coverage,
+			GroupConsumer consumer) throws IOException {
+		cursorSeeks++;
+		try (RecordIterator it = tripleStore.getTriples(txn, StatementOrder.S, -1, -1, -1, -1, explicit)) {
 			boolean inGroup = false;
 			long groupSubject = 0;
 			long groupPredicate = 0;
+			long scanned = 0;
+			long[] quad;
 			while ((quad = it.next()) != null) {
+				cursorRowsScanned++;
 				if (++scanned % 100_000_000 == 0 && logger.isInfoEnabled()) {
-					logger.info("scanOutgoing: {}", scanned);
+					logger.info("scanSelectedOutgoing: {}", scanned);
 				}
 				long subject = quad[TripleIndex.SUBJ_IDX];
 				long predicate = quad[TripleIndex.PRED_IDX];
+				if (!coverage.covers(predicate)) {
+					cursorRowsSkipped++;
+					if (inGroup) {
+						consumer.end();
+						inGroup = false;
+					}
+					int next = coverage.firstSelectedPredicateAfter(predicate);
+					if (next < coverage.selectedPredicateCount()) {
+						cursorSeeks++;
+						it.seekForward(subject, coverage.selectedPredicateAt(next), 0, 0);
+					} else if (subject != -1L) {
+						cursorSeeks++;
+						it.seekForward(subject + 1, 0, 0, 0);
+					} else {
+						break;
+					}
+					continue;
+				}
+				cursorRowsMatched++;
 				if (!inGroup || subject != groupSubject || predicate != groupPredicate) {
 					if (inGroup) {
 						consumer.end();
@@ -203,41 +485,111 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 		}
 	}
 
-	@Override
-	public void scanIncoming(boolean explicit, GroupConsumer consumer) throws IOException {
-		try (RecordIterator it = incomingIterator(explicit)) {
-			long[] quad;
-			boolean inGroup = false;
-			long groupObject = 0;
-			long groupPredicate = 0;
-			long scanned = 0;
-			while ((quad = it.next()) != null) {
+	private void scanBatched(RecordIterator it, boolean outgoing, boolean explicit, GroupConsumer consumer) {
+		long[] batch = quadBatch();
+		boolean inGroup = false;
+		long groupKey = 0;
+		long groupPredicate = 0;
+		long scanned = 0;
+		int rows;
+		while ((rows = it.fill(batch, BATCH_ROWS)) > 0) {
+			cursorRowsScanned += rows;
+			cursorRowsMatched += rows;
+			for (int row = 0; row < rows; row++) {
+				int offset = row * 4;
 				if (++scanned % 100_000_000 == 0 && logger.isInfoEnabled()) {
-					logger.info("scanIncoming: {}", scanned);
+					logger.info(outgoing ? "scanOutgoing: {}" : "scanIncoming: {}", scanned);
 				}
-				long object = quad[TripleIndex.OBJ_IDX];
-				long predicate = quad[TripleIndex.PRED_IDX];
-				if (!inGroup || object != groupObject || predicate != groupPredicate) {
+				long key = batch[offset + (outgoing ? TripleIndex.SUBJ_IDX : TripleIndex.OBJ_IDX)];
+				long predicate = batch[offset + TripleIndex.PRED_IDX];
+				if (!inGroup || key != groupKey || predicate != groupPredicate) {
 					if (inGroup) {
 						consumer.end();
 					}
-					consumer.begin(object, predicate,
-							explicit ? LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT
-									: LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED);
-					groupObject = object;
+					consumer.begin(key, predicate, plane(outgoing, explicit));
+					groupKey = key;
 					groupPredicate = predicate;
 					inGroup = true;
 				}
-				consumer.pair(quad[TripleIndex.SUBJ_IDX], Math.max(0, quad[TripleIndex.CONTEXT_IDX]));
+				int neighborField = outgoing ? TripleIndex.OBJ_IDX : TripleIndex.SUBJ_IDX;
+				consumer.pair(batch[offset + neighborField],
+						Math.max(0, batch[offset + TripleIndex.CONTEXT_IDX]));
 			}
-			if (inGroup) {
-				consumer.end();
-			}
+		}
+		if (inGroup) {
+			consumer.end();
 		}
 	}
 
+	private void scanBatchedCovered(RecordIterator it, boolean outgoing, boolean explicit,
+			LmdbAdjacencyCoverage coverage, long constrainedPredicate, GroupConsumer consumer) {
+		long[] batch = quadBatch();
+		boolean inGroup = false;
+		long groupKey = 0;
+		long groupPredicate = 0;
+		int rows;
+		while ((rows = it.fill(batch, BATCH_ROWS)) > 0) {
+			cursorRowsScanned += rows;
+			for (int row = 0; row < rows; row++) {
+				int offset = row * 4;
+				long predicate = batch[offset + TripleIndex.PRED_IDX];
+				if (constrainedPredicate != 0 && predicate != constrainedPredicate) {
+					throw new IllegalStateException("predicate-bounded LMDB range for " + constrainedPredicate
+							+ " emitted " + predicate);
+				}
+				if (!coverage.covers(predicate)) {
+					cursorRowsSkipped++;
+					if (inGroup) {
+						consumer.end();
+						inGroup = false;
+					}
+					continue;
+				}
+				cursorRowsMatched++;
+				long key = batch[offset + (outgoing ? TripleIndex.SUBJ_IDX : TripleIndex.OBJ_IDX)];
+				if (!inGroup || key != groupKey || predicate != groupPredicate) {
+					if (inGroup) {
+						consumer.end();
+					}
+					consumer.begin(key, predicate, plane(outgoing, explicit));
+					groupKey = key;
+					groupPredicate = predicate;
+					inGroup = true;
+				}
+				int neighborField = outgoing ? TripleIndex.OBJ_IDX : TripleIndex.SUBJ_IDX;
+				consumer.pair(batch[offset + neighborField],
+						Math.max(0, batch[offset + TripleIndex.CONTEXT_IDX]));
+			}
+		}
+		if (inGroup) {
+			consumer.end();
+		}
+	}
+
+	private static int plane(boolean outgoing, boolean explicit) {
+		if (outgoing) {
+			return explicit ? LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
+					: LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED;
+		}
+		return explicit ? LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT
+				: LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED;
+	}
+
 	private RecordIterator incomingIterator(boolean explicit) throws IOException {
+		cursorSeeks++;
 		return tripleStore.getTriples(txn, StatementOrder.P, -1, -1, -1, -1, explicit);
+	}
+
+	private long[] quadBatch() {
+		if (quadBatch == null) {
+			quadBatch = new long[BATCH_ROWS * 4];
+		}
+		return quadBatch;
+	}
+
+	@Override
+	public Telemetry telemetry() {
+		return new Telemetry(cursorRowsScanned, cursorRowsMatched, cursorRowsSkipped, cursorSeeks);
 	}
 
 	@Override

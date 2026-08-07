@@ -72,7 +72,7 @@ import org.openjdk.jmh.runner.options.TimeValue;
 @State(Scope.Benchmark)
 @Warmup(iterations = 4, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 4)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" }) // , "-Drdf4j.lmdb.janinoCodegen.enabled=false" })
+@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
 @Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
@@ -100,6 +100,8 @@ public class ThemeQueryBenchmark {
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
 	private static final String TRIPLE_INDEXES_PROPERTY = "triple.indexes";
 	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
+	private static final String JANINO_CODEGEN_ENABLED_PROPERTY = "rdf4j.lmdb.janinoCodegen.enabled";
+	private static final String JANINO_CODEGEN_THRESHOLD_ROWS_PROPERTY = "rdf4j.lmdb.janinoCodegen.thresholdRows";
 	private static final String COUNT_BINDING_NAME = "count";
 	static final String WAIT_FOR_SKETCHES_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketches";
 	static final String WAIT_FOR_SKETCHES_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketchesTimeoutSeconds";
@@ -107,6 +109,13 @@ public class ThemeQueryBenchmark {
 	static final String WAIT_FOR_DIRECT_ADJACENCY_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacencyTimeoutSeconds";
 	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 60L;
 	private static final long DEFAULT_WAIT_FOR_DIRECT_ADJACENCY_TIMEOUT_SECONDS = 300L;
+
+	/**
+	 * Matched control for the query execution engine. The enabled trial also pins the Janino activation threshold to
+	 * zero in {@link #setup()} so compilation is eligible from the first observed row.
+	 */
+	@Param({ "false", "true" })
+	public String z_z_janinoEnabled;
 
 	@Param({
 			"0",
@@ -127,15 +136,15 @@ public class ThemeQueryBenchmark {
 
 	@Param({
 			"MEDICAL_RECORDS",
-//			"SOCIAL_MEDIA",
-//			"LIBRARY",
-//			"ENGINEERING",
-//			"HIGHLY_CONNECTED",
-//			"TRAIN",
-//			"ELECTRICAL_GRID",
-//			"PHARMA",
-//			"ADAPTIVE_FILTER_PLACEMENT",
-//			"ANALYTICS"
+			"SOCIAL_MEDIA",
+			"LIBRARY",
+			"ENGINEERING",
+			"HIGHLY_CONNECTED",
+			"TRAIN",
+			"ELECTRICAL_GRID",
+			"PHARMA",
+			"ADAPTIVE_FILTER_PLACEMENT",
+			"ANALYTICS"
 	})
 	public String themeName;
 
@@ -145,6 +154,9 @@ public class ThemeQueryBenchmark {
 	private Theme theme;
 	private String query;
 	private long expected;
+	private String previousJaninoCodegenEnabled;
+	private String previousJaninoCodegenThresholdRows;
+	private boolean janinoPropertiesConfigured;
 
 	public static void main(String[] args) throws RunnerException {
 		var opt = new OptionsBuilder()
@@ -172,11 +184,12 @@ public class ThemeQueryBenchmark {
 		if (!storeDirectory.exists() && !storeDirectory.mkdirs()) {
 			throw new IOException("Unable to create fixed LMDB benchmark directory: " + storeDirectory);
 		}
-		storeConfig = ConfigUtil.createConfig();
-		storeConfig.setSketchEstimatorEnabled(waitForSketchesEnabled());
-		store = new LmdbStore(storeDirectory, storeConfig);
-		repository = new SailRepository(store);
+		configureJaninoCodegen();
 		try {
+			storeConfig = ConfigUtil.createConfig();
+			storeConfig.setSketchEstimatorEnabled(waitForSketchesEnabled());
+			store = new LmdbStore(storeDirectory, storeConfig);
+			repository = new SailRepository(store);
 			ensureDataLoadedAndValidated();
 			ensureSketchesAvailable(storeDirectory);
 			waitForSketchesIfEnabled();
@@ -185,7 +198,10 @@ public class ThemeQueryBenchmark {
 				captureQueryPlanSnapshot();
 			}
 		} catch (IOException | RuntimeException e) {
-			repository.shutDown();
+			if (repository != null) {
+				repository.shutDown();
+			}
+			restoreJaninoCodegenProperties();
 			throw e;
 		}
 
@@ -247,6 +263,39 @@ public class ThemeQueryBenchmark {
 	private String queryDescription() {
 		return themeName + " query " + z_queryIndex + " ("
 				+ ThemeQueryCatalog.benchmarkQueryFor(theme, z_queryIndex).getName() + ")";
+	}
+
+	private void configureJaninoCodegen() {
+		if (z_z_janinoEnabled == null) {
+			return;
+		}
+		if (!"false".equals(z_z_janinoEnabled) && !"true".equals(z_z_janinoEnabled)) {
+			throw new IllegalStateException("Unsupported Janino benchmark parameter: " + z_z_janinoEnabled);
+		}
+		previousJaninoCodegenEnabled = System.getProperty(JANINO_CODEGEN_ENABLED_PROPERTY);
+		previousJaninoCodegenThresholdRows = System.getProperty(JANINO_CODEGEN_THRESHOLD_ROWS_PROPERTY);
+		System.setProperty(JANINO_CODEGEN_ENABLED_PROPERTY, z_z_janinoEnabled);
+		System.setProperty(JANINO_CODEGEN_THRESHOLD_ROWS_PROPERTY, "0");
+		janinoPropertiesConfigured = true;
+	}
+
+	private void restoreJaninoCodegenProperties() {
+		if (!janinoPropertiesConfigured) {
+			return;
+		}
+		restoreProperty(JANINO_CODEGEN_ENABLED_PROPERTY, previousJaninoCodegenEnabled);
+		restoreProperty(JANINO_CODEGEN_THRESHOLD_ROWS_PROPERTY, previousJaninoCodegenThresholdRows);
+		previousJaninoCodegenEnabled = null;
+		previousJaninoCodegenThresholdRows = null;
+		janinoPropertiesConfigured = false;
+	}
+
+	private static void restoreProperty(String property, String previousValue) {
+		if (previousValue == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, previousValue);
+		}
 	}
 
 	private void ensureDataLoadedAndValidated() throws IOException {
@@ -536,6 +585,7 @@ public class ThemeQueryBenchmark {
 		}
 		store = null;
 		storeConfig = null;
+		restoreJaninoCodegenProperties();
 //		restoreBenchmarkEstimatorProperties();
 	}
 

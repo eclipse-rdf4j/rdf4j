@@ -83,6 +83,40 @@ class PackedLongVectorTest {
 	}
 
 	@Test
+	void allocationFreeNativeWriterMatchesHeapBytesForEveryHint() {
+		java.util.Random random = new java.util.Random(0x5eed5eedL);
+		PackedLongVector.WriteScratch scratch = new PackedLongVector.WriteScratch();
+		for (PackedLongVector.Hint hint : PackedLongVector.Hint.values()) {
+			for (int size : new int[] { 0, 1, 255, 256, 257, 1_025 }) {
+				long[] values = new long[size];
+				for (int i = 0; i < size; i++) {
+					values[i] = hint == PackedLongVector.Hint.SORTED_SEQUENTIAL_IDS
+							? id(12, (1L << 48) + i * 17L)
+							: switch (i & 7) {
+							case 0 -> 0;
+							case 1 -> -1L;
+							case 2 -> Long.MIN_VALUE;
+							default -> random.nextLong();
+							};
+				}
+				byte[] expected = PackedLongVector.encode(values, 0, values.length, hint);
+				ArrayValues source = new ArrayValues(values);
+				assertThat(PackedLongVector.measure(source, hint, scratch)).isEqualTo(expected.length);
+				long address = UnsafeAccess.allocate(expected.length + PackedLongVector.READ_TAIL_PADDING);
+				try {
+					UnsafeAccess.UNSAFE.setMemory(address, expected.length, (byte) 0x5a);
+					PackedLongVector.writeNative(address, expected.length, source, hint, scratch);
+					byte[] actual = new byte[expected.length];
+					UnsafeAccess.copyToArray(address, actual, 0, actual.length);
+					assertThat(actual).as("hint=%s size=%s", hint, size).containsExactly(expected);
+				} finally {
+					UnsafeAccess.free(address);
+				}
+			}
+		}
+	}
+
+	@Test
 	void partialBlocksAtEveryWidthEndAtTheirExactDeclaredPayload() {
 		for (int width = 1; width <= Long.SIZE; width++) {
 			long[] values = valuesRequiringWidth(PackedLongVector.BLOCK_SIZE - 5, width);
@@ -215,5 +249,29 @@ class PackedLongVectorTest {
 
 	private static long id(int type, long payload) {
 		return payload << 7 | (long) type << 1;
+	}
+
+	private static final class ArrayValues implements PackedLongVector.SequentialValues {
+		private final long[] values;
+		private int index;
+
+		private ArrayValues(long[] values) {
+			this.values = values;
+		}
+
+		@Override
+		public int size() {
+			return values.length;
+		}
+
+		@Override
+		public void reset() {
+			index = 0;
+		}
+
+		@Override
+		public long next() {
+			return values[index++];
+		}
 	}
 }

@@ -326,6 +326,23 @@ class TxnManager {
 	}
 
 	/**
+	 * Conservative number of additional tracked readers that may be opened while preserving {@code reservedSlots} for
+	 * foreground work. Reset transactions in the pool do not appear in {@link #active} and do not hold an active LMDB
+	 * reader slot.
+	 */
+	int availableReadTxnSlots(int maxReaders, int reservedSlots) {
+		if (maxReaders <= 0) {
+			throw new IllegalArgumentException("maxReaders must be positive: " + maxReaders);
+		}
+		if (reservedSlots < 0 || reservedSlots >= maxReaders) {
+			throw new IllegalArgumentException("reserved reader slots out of range: " + reservedSlots);
+		}
+		synchronized (active) {
+			return Math.max(0, maxReaders - reservedSlots - active.size());
+		}
+	}
+
+	/**
 	 * The oldest data revision any active pinned read transaction is snapshotted at, or {@link Long#MAX_VALUE} when no
 	 * pinned transaction is open — the CSR generation-retention watermark.
 	 */

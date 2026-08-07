@@ -209,13 +209,17 @@ class LmdbDirectAdjacencyOptionsTest {
 	}
 
 	@Test
-	void buildThreadsDefaultToProcessorBoundedFourAndRejectOutOfRangeValues() {
+	void buildThreadsLeaveOneForegroundProcessorAndAllowAllVisibleProcessorsExplicitly() {
 		LmdbStoreConfig config = new LmdbStoreConfig();
 
-		assertThat(LmdbDirectAdjacencyOptions.resolve(config, 8 * GIB, NO_PROPERTIES, 16).buildThreads()).isEqualTo(4);
-		assertThat(LmdbDirectAdjacencyOptions.resolve(config, 8 * GIB, NO_PROPERTIES, 2).buildThreads()).isEqualTo(2);
+		assertThat(LmdbDirectAdjacencyOptions.resolve(config, 8 * GIB, NO_PROPERTIES, 16).buildThreads()).isEqualTo(15);
+		assertThat(LmdbDirectAdjacencyOptions.resolve(config, 8 * GIB, NO_PROPERTIES, 2).buildThreads()).isEqualTo(1);
+		assertThat(LmdbDirectAdjacencyOptions.resolve(config, 8 * GIB, NO_PROPERTIES, 1).buildThreads()).isEqualTo(1);
 
-		Map<String, String> tooMany = Map.of(LmdbDirectAdjacencyOptions.BUILD_THREADS_PROPERTY, "5");
+		Map<String, String> allProcessors = Map.of(LmdbDirectAdjacencyOptions.BUILD_THREADS_PROPERTY, "16");
+		assertThat(LmdbDirectAdjacencyOptions.resolve(config, 8 * GIB, allProcessors::get, 16).buildThreads())
+				.isEqualTo(16);
+		Map<String, String> tooMany = Map.of(LmdbDirectAdjacencyOptions.BUILD_THREADS_PROPERTY, "17");
 		assertThatIllegalArgumentException()
 				.isThrownBy(() -> LmdbDirectAdjacencyOptions.resolve(config, 8 * GIB, tooMany::get, 16));
 		Map<String, String> tooFew = Map.of(LmdbDirectAdjacencyOptions.BUILD_THREADS_PROPERTY, "0");

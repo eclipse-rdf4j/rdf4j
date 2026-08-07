@@ -521,14 +521,19 @@ final class CsfShard {
 		final long quadCount;
 		final long firstRow;
 		final long lastRow;
+		final boolean startsWithContinuation;
+		final long[] pageFingerprints;
 
 		Plan(int pageCount, long pageCapacityBytes, long usedPageBytes, long rowCount, long quadCount, long firstRow,
-				long lastRow) {
+				long lastRow, boolean startsWithContinuation, long[] pageFingerprints) {
 			if (pageCount <= 0 || pageCount > MAX_PAGES || rowCount < 0 || quadCount <= 0 || quadCount < rowCount) {
 				throw new IllegalArgumentException("invalid CSF shard plan");
 			}
 			if (Long.compareUnsigned(firstRow, lastRow) > 0) {
 				throw new IllegalArgumentException("CSF shard row fences are reversed");
+			}
+			if (pageFingerprints == null || pageFingerprints.length != pageCount) {
+				throw new IllegalArgumentException("CSF shard plan must retain one fingerprint per page");
 			}
 			this.pageCount = pageCount;
 			this.pageCapacityBytes = pageCapacityBytes;
@@ -537,6 +542,8 @@ final class CsfShard {
 			this.quadCount = quadCount;
 			this.firstRow = firstRow;
 			this.lastRow = lastRow;
+			this.startsWithContinuation = startsWithContinuation;
+			this.pageFingerprints = pageFingerprints;
 		}
 
 		long nativeBytes() {
@@ -555,6 +562,7 @@ final class CsfShard {
 		private long emittedUsed;
 		private long emittedRows;
 		private long emittedQuads;
+		private boolean pageReserved;
 		private boolean transferred;
 
 		private Writer(Plan plan, ImmutablePagedQuadCsfIndex.MemoryReservation reservation) {
@@ -577,26 +585,60 @@ final class CsfShard {
 		}
 
 		void emit(CompactCsfPageEncoder.PageImage image, long firstRowOrdinal, int uniqueRows) {
+			long pageAddress = reservePage(image.capacity(), pageFingerprint(image.bytes()));
+			byte[] bytes = image.bytes();
+			UnsafeAccess.copyFromArray(bytes, 0, pageAddress, bytes.length);
+			commitPage(image.firstRow(), image.capacity(), image.usedBytes(), image.quadCount(), firstRowOrdinal,
+					uniqueRows, image.continuation());
+		}
+
+		long reserve(CompactCsfPageEncoder.Layout layout) {
+			return reservePage(layout.capacity, layout.fingerprint);
+		}
+
+		void commit(CompactCsfPageEncoder.Layout layout, long firstRowOrdinal, int uniqueRows) {
+			commitPage(layout.firstRow, layout.capacity, layout.usedBytes, layout.quadCount, firstRowOrdinal,
+					uniqueRows, (layout.flags & CompactCsfPageFormat.FLAG_CONTINUATION) != 0);
+		}
+
+		private long reservePage(int capacity, long fingerprint) {
+			if (pageReserved) {
+				throw mismatch("already has a reserved page");
+			}
 			if (emittedPages >= plan.pageCount) {
-				throw new IllegalStateException("CSF shard emitted too many pages");
+				throw mismatch("emitted too many pages");
+			}
+			if (plan.pageFingerprints[emittedPages] != fingerprint) {
+				throw mismatch("page " + emittedPages + " layout/content fingerprint changed");
 			}
 			long offset = Math.addExact(pageArea, emittedCapacity);
-			if (offset + image.capacity() > plan.nativeBytes()) {
-				throw new IllegalStateException("CSF shard page capacities exceed the exact plan");
+			if (offset + capacity > plan.nativeBytes()) {
+				throw mismatch("page capacities exceed the exact plan");
 			}
-			byte[] bytes = image.bytes();
-			long pageAddress = address + offset;
-			UnsafeAccess.copyFromArray(bytes, 0, pageAddress, bytes.length);
+			pageReserved = true;
+			return address + offset;
+		}
+
+		private void commitPage(long firstRow, int capacity, int usedBytes, int quadCount, long firstRowOrdinal,
+				int uniqueRows, boolean continuation) {
+			if (!pageReserved) {
+				throw mismatch("page was not reserved before commit");
+			}
+			if (emittedPages == 0 && continuation != plan.startsWithContinuation) {
+				throw mismatch("continuation start changed after sizing");
+			}
+			long pageAddress = address + Math.addExact(pageArea, emittedCapacity);
 			long entry = address + HEADER_BYTES + (long) emittedPages * ENTRY_BYTES;
 			UnsafeAccess.putLongLE(entry + PAGE_ADDRESS_AT, pageAddress);
-			UnsafeAccess.putLongLE(entry + FIRST_ROW_AT, image.firstRow());
+			UnsafeAccess.putLongLE(entry + FIRST_ROW_AT, firstRow);
 			UnsafeAccess.putLongLE(entry + FIRST_ROW_ORDINAL_AT, firstRowOrdinal);
 			UnsafeAccess.putIntLE(entry + UNIQUE_ROWS_AT, uniqueRows);
 			emittedPages++;
-			emittedCapacity = Math.addExact(emittedCapacity, image.capacity());
-			emittedUsed = Math.addExact(emittedUsed, image.usedBytes());
+			emittedCapacity = Math.addExact(emittedCapacity, capacity);
+			emittedUsed = Math.addExact(emittedUsed, usedBytes);
 			emittedRows = Math.addExact(emittedRows, uniqueRows);
-			emittedQuads = Math.addExact(emittedQuads, image.quadCount());
+			emittedQuads = Math.addExact(emittedQuads, quadCount);
+			pageReserved = false;
 		}
 
 		CsfShard finish() {
@@ -613,6 +655,18 @@ final class CsfShard {
 					reservation);
 			transferred = true;
 			return shard;
+		}
+
+		private static IllegalStateException mismatch(String detail) {
+			return new IllegalStateException("CSF shard sizing/materialization mismatch: " + detail);
+		}
+
+		private static long pageFingerprint(byte[] bytes) {
+			long fingerprint = 0xcbf29ce484222325L;
+			for (byte value : bytes) {
+				fingerprint = (fingerprint ^ Byte.toUnsignedLong(value)) * 0x100000001b3L;
+			}
+			return fingerprint;
 		}
 
 		@Override

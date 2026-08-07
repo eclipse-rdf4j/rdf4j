@@ -113,9 +113,18 @@ class LmdbDirectAdjacencySnapshotTest {
 
 		LmdbAdjacencyMetrics.Snapshot metrics = direct.snapshotMetrics();
 		assertThat(metrics.activeBuildThreads).isZero();
-		assertThat(metrics.lastBuildThreads).isEqualTo(1);
-		assertThat(metrics.pass1SourceVisits).isEqualTo(3);
-		assertThat(metrics.pass3SourceVisits).isEqualTo(3);
+		long desiredWorkers = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+		assertThat(metrics.desiredBuildThreads).isEqualTo(desiredWorkers);
+		assertThat(metrics.lastBuildThreads).isEqualTo(Math.min(2, desiredWorkers));
+		assertThat(metrics.maximumBuildConcurrency).isBetween(1L, metrics.lastBuildThreads);
+		assertThat(metrics.plannedBuildRanges).isEqualTo(2);
+		assertThat(metrics.completedBuildRanges).isEqualTo(4);
+		assertThat(metrics.buildScratchHighWaterBytes).isPositive();
+		assertThat(metrics.cursorRowsScanned).isPositive();
+		assertThat(metrics.cursorRowsMatched).isPositive();
+		assertThat(metrics.cursorSeeks).isPositive();
+		assertThat(metrics.pass1SourceVisits).isEqualTo(4);
+		assertThat(metrics.pass3SourceVisits).isEqualTo(4);
 		assertThat(metrics.pass1Nanos).isPositive();
 		assertThat(metrics.pass3Nanos).isPositive();
 		assertThat(metrics.buildElapsedNanos).isGreaterThanOrEqualTo(metrics.pass1Nanos + metrics.pass3Nanos);

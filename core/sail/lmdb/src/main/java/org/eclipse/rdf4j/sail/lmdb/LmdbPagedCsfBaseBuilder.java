@@ -12,8 +12,19 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.Charge;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
@@ -34,7 +45,12 @@ final class LmdbPagedCsfBaseBuilder {
 
 	private static final long ARRAY_HEADER_BYTES = 16;
 	private static final long REFERENCE_BYTES = 8;
+	private static final int RANGES_PER_WORKER = 4;
+	private static final long MODELED_WORKER_SCRATCH_BYTES = 1L << 20;
+	private static final long MODELED_RANGE_METADATA_BYTES = 128;
 	private static final Logger log = LoggerFactory.getLogger(LmdbPagedCsfBaseBuilder.class);
+	private static final ImmutablePagedQuadCsfIndex.MemoryReservation UNCHARGED_RESERVATION = () -> {
+	};
 
 	private LmdbPagedCsfBaseBuilder() {
 	}
@@ -48,18 +64,18 @@ final class LmdbPagedCsfBaseBuilder {
 
 	static LmdbInMemoryAdjacencyIndex build(AdjacencySourceFamily sourceFamily, LmdbAdjacencyCoverage coverage,
 			LmdbAdjacencyMemoryAccount account, long baseArenaRegionBytes, long ignoredWorkspaceRegionBytes,
-			int ignoredBuildThreads, LmdbAdjacencyMetrics metrics) throws IOException {
+			int requestedBuildThreads, LmdbAdjacencyMetrics metrics) throws IOException {
 		Objects.requireNonNull(sourceFamily, "sourceFamily");
 		Objects.requireNonNull(coverage, "coverage");
 		Objects.requireNonNull(account, "account");
-		long started = System.nanoTime();
-		if (metrics != null) {
-			metrics.beginParallelBuild(1);
+		if (requestedBuildThreads <= 0) {
+			throw new IllegalArgumentException("build thread count must be positive: " + requestedBuildThreads);
 		}
+		long started = System.nanoTime();
 		boolean telemetryFinished = false;
 		try {
 			LmdbInMemoryAdjacencyIndex result = buildInternal(sourceFamily, coverage, account, baseArenaRegionBytes,
-					metrics, started);
+					metrics, started, requestedBuildThreads);
 			telemetryFinished = true;
 			return result;
 		} finally {
@@ -71,7 +87,7 @@ final class LmdbPagedCsfBaseBuilder {
 
 	private static LmdbInMemoryAdjacencyIndex buildInternal(AdjacencySourceFamily sourceFamily,
 			LmdbAdjacencyCoverage coverage, LmdbAdjacencyMemoryAccount account, long baseArenaRegionBytes,
-			LmdbAdjacencyMetrics metrics, long started) throws IOException {
+			LmdbAdjacencyMetrics metrics, long started, int requestedBuildThreads) throws IOException {
 		long baseRevision = validateSourceFamily(sourceFamily);
 		AdjacencySourceScanner primary = Objects.requireNonNull(sourceFamily.primary(), "sourceFamily.primary()");
 
@@ -90,24 +106,35 @@ final class LmdbPagedCsfBaseBuilder {
 		validateSourceFamily(sourceFamily);
 		long[] sortedPredicates = predicates.toArray();
 		long[] sortedContexts = contexts.toArray();
-		long buildScratchBytes = ImmutablePagedQuadCsfIndex.modeledBuildScratchBytes(sortedPredicates.length);
+		ScanPlan scanPlan = planRanges(sourceFamily, coverage, sortedPredicates, requestedBuildThreads);
+		int effectiveBuildThreads = effectiveBuildThreads(sourceFamily, requestedBuildThreads, scanPlan);
+		if (metrics != null) {
+			metrics.beginParallelBuild(requestedBuildThreads, effectiveBuildThreads, scanPlan.ranges.length);
+		}
+		long buildScratchBytes = modeledParallelScratchBytes(sortedPredicates.length, effectiveBuildThreads, scanPlan);
 		Charge buildScratchCharge = account.tryCharge(MemoryKind.BUILD_COUNTERS, buildScratchBytes);
 		if (buildScratchCharge == null) {
 			throw new LmdbAdjacencyMemoryRefusedException(
 					"paged CSF build-workspace reservation of " + buildScratchBytes + " bytes refused");
 		}
 		try (buildScratchCharge) {
+			if (metrics != null) {
+				metrics.recordBuildScratchHighWater(buildScratchBytes);
+			}
+			PredicateOrdinalMap predicateOrdinals = new PredicateOrdinalMap(sortedPredicates);
 
 			ScanTotals sizingTotals;
+			ImmutablePagedQuadCsfIndex.BuildPlan[] fragmentPlans;
 			ImmutablePagedQuadCsfIndex.BuildPlan csfPlan;
 			long pass1Started = System.nanoTime();
-			try (ImmutablePagedQuadCsfIndex.Builder sizing = ImmutablePagedQuadCsfIndex
-					.sizingBuilder(sortedPredicates.length)) {
-				sizingTotals = scanAll(sourceFamily, coverage, sortedPredicates, sizing);
-				csfPlan = sizing.finishPlan();
-			}
+			SizingPass sizing = sizeRanges(sourceFamily, scanPlan, sortedPredicates, predicateOrdinals,
+					effectiveBuildThreads);
+			sizingTotals = sizing.totals;
+			fragmentPlans = sizing.fragmentPlans;
+			csfPlan = ImmutablePagedQuadCsfIndex.mergeBuildPlans(fragmentPlans);
 			if (metrics != null) {
-				metrics.recordPass1(sizingTotals.groups, System.nanoTime() - pass1Started);
+				metrics.recordPass1(sizingTotals.sourceVisits, System.nanoTime() - pass1Started);
+				metrics.recordRangePass(sizing.execution.completedRanges, sizing.execution.maximumConcurrency);
 			}
 			validateSymmetry(sizingTotals);
 			validateSourceFamily(sourceFamily);
@@ -167,14 +194,22 @@ final class LmdbPagedCsfBaseBuilder {
 
 				ScanTotals emittedTotals;
 				long pass2Started = System.nanoTime();
-				try (ImmutablePagedQuadCsfIndex.Builder materializing = ImmutablePagedQuadCsfIndex
-						.materializingBuilder(csfPlan, csfBudget)) {
-					emittedTotals = scanAll(sourceFamily, coverage, sortedPredicates, materializing);
-					csf = materializing.finishIndex();
+				ImmutablePagedQuadCsfIndex[] fragments = null;
+				MaterializationPass materialization;
+				try {
+					materialization = materializeRanges(sourceFamily, scanPlan, predicateOrdinals,
+							fragmentPlans, effectiveBuildThreads, csfBudget);
+					emittedTotals = materialization.totals;
+					fragments = materialization.fragments;
+					csf = ImmutablePagedQuadCsfIndex.mergeMaterializedFragments(csfPlan, fragments, csfBudget);
+				} finally {
+					closeFragments(fragments);
 				}
 				csfBudget.assertExhausted();
 				if (metrics != null) {
-					metrics.recordPass3(emittedTotals.groups, System.nanoTime() - pass2Started);
+					metrics.recordPass3(emittedTotals.sourceVisits, System.nanoTime() - pass2Started);
+					metrics.recordRangePass(materialization.execution.completedRanges,
+							materialization.execution.maximumConcurrency);
 				}
 				validateSourceFamily(sourceFamily);
 				if (!sizingTotals.equals(emittedTotals)) {
@@ -216,6 +251,7 @@ final class LmdbPagedCsfBaseBuilder {
 				csf.close();
 				csf = null;
 				if (metrics != null) {
+					metrics.recordCursorTelemetry(sourceFamily.telemetry());
 					metrics.finishParallelBuild(System.nanoTime() - started);
 				}
 				success = true;
@@ -242,50 +278,137 @@ final class LmdbPagedCsfBaseBuilder {
 		}
 	}
 
-	private static ScanTotals scanAll(AdjacencySourceFamily sourceFamily, LmdbAdjacencyCoverage coverage,
-			long[] sortedPredicates, ImmutablePagedQuadCsfIndex.Builder target) throws IOException {
-		ScanTotals totals = new ScanTotals();
-		for (int plane = 0; plane < ImmutablePagedQuadCsfIndex.PLANE_COUNT; plane++) {
-			log.info("Scanning plane " + plane);
-			AdjacencySourceScanner scanner = sourceFamily.scanner(plane);
-			int expectedPlane = plane;
-			scanPlane(scanner, plane, new AdjacencySourceScanner.GroupConsumer() {
-				private boolean accepted;
+	private static SizingPass sizeRanges(AdjacencySourceFamily sourceFamily, ScanPlan scanPlan,
+			long[] sortedPredicates, PredicateOrdinalMap predicateOrdinals, int workerCount) throws IOException {
+		ScanRange[] ranges = scanPlan.ranges;
+		ImmutablePagedQuadCsfIndex.BuildPlan[] plans = new ImmutablePagedQuadCsfIndex.BuildPlan[ranges.length];
+		ScanTotals[] rangeTotals = new ScanTotals[ranges.length];
+		RangeExecution execution = runRangeTasks(sourceFamily, workerCount, ranges, (range, scanner, cancelled) -> {
+			log.debug("Sizing adjacency range {} in plane {}", range.ordinal, range.plane);
+			try (ImmutablePagedQuadCsfIndex.Builder builder = ImmutablePagedQuadCsfIndex
+					.sizingBuilder(sortedPredicates.length)) {
+				rangeTotals[range.ordinal] = scanPlane(scanner, range.plane, range.coverage, range.sourceRange,
+						predicateOrdinals, builder, cancelled);
+				plans[range.ordinal] = builder.finishPlan();
+			}
+		});
+		return new SizingPass(plans, ScanTotals.merge(rangeTotals), execution);
+	}
 
-				@Override
-				public void begin(long key, long predicate, int sourcePlane) {
-					if (sourcePlane != expectedPlane) {
-						throw new IllegalStateException(
-								"source reported plane " + sourcePlane + " while scanning " + expectedPlane);
-					}
-					long ordinal = unsignedIndexOf(sortedPredicates, predicate);
-					accepted = ordinal >= 0 && coverage.covers(predicate);
-					if (accepted) {
-						target.beginRow(ordinal, expectedPlane, key);
-						totals.groups = Math.incrementExact(totals.groups);
-					}
-				}
-
-				@Override
-				public void pair(long neighbor, long context) {
-					if (accepted) {
-						target.pair(neighbor, context);
-						totals.pairs[expectedPlane] = Math.incrementExact(totals.pairs[expectedPlane]);
-					}
-				}
-
-				@Override
-				public void end() {
-					if (accepted) {
-						target.endRow();
-					}
-					accepted = false;
-				}
-			});
-			scanner.ensureSnapshotValid();
-			target.finishPlane(plane);
+	private static MaterializationPass materializeRanges(AdjacencySourceFamily sourceFamily, ScanPlan scanPlan,
+			PredicateOrdinalMap predicateOrdinals,
+			ImmutablePagedQuadCsfIndex.BuildPlan[] fragmentPlans, int workerCount,
+			LmdbAdjacencyCsfMemoryBudget budget) throws IOException {
+		ScanRange[] ranges = scanPlan.ranges;
+		ImmutablePagedQuadCsfIndex[] fragments = new ImmutablePagedQuadCsfIndex[ranges.length];
+		ScanTotals[] rangeTotals = new ScanTotals[ranges.length];
+		ImmutablePagedQuadCsfIndex.MemoryBudget shardOnlyBudget = (nativeBytes, modeledJavaBytes) -> nativeBytes == 0
+				? UNCHARGED_RESERVATION
+				: budget.reserve(nativeBytes, modeledJavaBytes);
+		try {
+			RangeExecution execution = runRangeTasks(sourceFamily, workerCount, ranges,
+					(range, scanner, cancelled) -> {
+						log.debug("Materializing adjacency range {} in plane {}", range.ordinal, range.plane);
+						try (ImmutablePagedQuadCsfIndex.Builder builder = ImmutablePagedQuadCsfIndex
+								.materializingBuilder(fragmentPlans[range.ordinal], shardOnlyBudget)) {
+							rangeTotals[range.ordinal] = scanPlane(scanner, range.plane, range.coverage,
+									range.sourceRange, predicateOrdinals, builder, cancelled);
+							fragments[range.ordinal] = builder.finishIndex();
+						}
+					});
+			return new MaterializationPass(fragments, ScanTotals.merge(rangeTotals), execution);
+		} catch (IOException | RuntimeException | Error failure) {
+			closeFragments(fragments);
+			throw failure;
 		}
+	}
+
+	private static ScanTotals scanPlane(AdjacencySourceScanner scanner, int expectedPlane,
+			LmdbAdjacencyCoverage coverage, AdjacencySourceScanner.ScanRange sourceRange,
+			PredicateOrdinalMap predicateOrdinals,
+			ImmutablePagedQuadCsfIndex.Builder target, AtomicBoolean cancelled) throws IOException {
+		ScanTotals totals = new ScanTotals();
+		int constrainedOrdinal = sourceRange != null && sourceRange.predicateConstrained()
+				? predicateOrdinals.get(sourceRange.constrainedPredicate())
+				: -1;
+		if (sourceRange != null && sourceRange.predicateConstrained() && constrainedOrdinal < 0) {
+			throw new IllegalStateException(
+					"planned source range constrains a predicate outside the build catalog: "
+							+ sourceRange.constrainedPredicate());
+		}
+		AdjacencySourceScanner.GroupConsumer consumer = new AdjacencySourceScanner.GroupConsumer() {
+			private boolean accepted;
+			private boolean firstGroup = true;
+
+			@Override
+			public void begin(long key, long predicate, int sourcePlane) {
+				checkCancelled(cancelled);
+				if (sourcePlane != expectedPlane) {
+					throw new IllegalStateException(
+							"source reported plane " + sourcePlane + " while scanning " + expectedPlane);
+				}
+				if (sourceRange != null && sourceRange.predicateConstrained()
+						&& predicate != sourceRange.constrainedPredicate()) {
+					throw new IllegalStateException("predicate-bounded source range for "
+							+ sourceRange.constrainedPredicate() + " emitted " + predicate);
+				}
+				int ordinal = constrainedOrdinal >= 0 ? constrainedOrdinal : predicateOrdinals.get(predicate);
+				accepted = ordinal >= 0 && coverage.covers(predicate);
+				if (accepted) {
+					boolean continuation = firstGroup && sourceRange != null
+							&& sourceRange.startsWithContinuation();
+					if (continuation) {
+						if (predicate != sourceRange.continuationPredicate()
+								|| key != sourceRange.continuationRow()) {
+							throw new IllegalStateException("planned continuation boundary expected predicate/row "
+									+ sourceRange.continuationPredicate() + "/" + sourceRange.continuationRow()
+									+ " but source began " + predicate + "/" + key);
+						}
+						target.beginContinuationRow(ordinal, expectedPlane, key);
+					} else {
+						target.beginRow(ordinal, expectedPlane, key);
+					}
+					totals.groups = Math.incrementExact(totals.groups);
+				}
+				firstGroup = false;
+			}
+
+			@Override
+			public void pair(long neighbor, long context) {
+				totals.sourceVisits = Math.incrementExact(totals.sourceVisits);
+				if ((totals.sourceVisits & 0xffff) == 0) {
+					checkCancelled(cancelled);
+				}
+				if (accepted) {
+					target.pair(neighbor, context);
+					totals.pairs[expectedPlane] = Math.incrementExact(totals.pairs[expectedPlane]);
+				}
+			}
+
+			@Override
+			public void end() {
+				if (accepted) {
+					target.endRow();
+				}
+				accepted = false;
+			}
+		};
+		scanner.scanRange(expectedPlane, coverage, sourceRange, consumer);
+		checkCancelled(cancelled);
+		scanner.ensureSnapshotValid();
+		target.finishPlane(expectedPlane);
 		return totals;
+	}
+
+	private static void closeFragments(ImmutablePagedQuadCsfIndex[] fragments) {
+		if (fragments == null) {
+			return;
+		}
+		for (ImmutablePagedQuadCsfIndex fragment : fragments) {
+			if (fragment != null) {
+				fragment.close();
+			}
+		}
 	}
 
 	private static LmdbAdjacencyArenaSizingPlan dictionaryPlan(long regionBytes, long[] predicates,
@@ -325,35 +448,205 @@ final class LmdbPagedCsfBaseBuilder {
 			}
 			scanner.ensureSnapshotValid();
 		}
+		for (int worker = 0; worker < sourceFamily.workerScannerCount(); worker++) {
+			AdjacencySourceScanner scanner = Objects.requireNonNull(sourceFamily.workerScanner(worker),
+					"sourceFamily.workerScanner(" + worker + ")");
+			if (scanner.snapshotRevision() != revision || scanner.snapshotId() != snapshotId) {
+				throw new IOException("adjacency worker scanners do not share one snapshot");
+			}
+			scanner.ensureSnapshotValid();
+		}
 		return revision;
 	}
 
-	private static void scanPlane(AdjacencySourceScanner scanner, int plane,
-			AdjacencySourceScanner.GroupConsumer consumer) throws IOException {
-		switch (plane) {
-		case 0 -> scanner.scanOutgoing(true, consumer);
-		case 1 -> scanner.scanIncoming(true, consumer);
-		case 2 -> scanner.scanOutgoing(false, consumer);
-		case 3 -> scanner.scanIncoming(false, consumer);
-		default -> throw new IllegalArgumentException("plane out of range: " + plane);
+	private static ScanPlan planRanges(AdjacencySourceFamily sourceFamily, LmdbAdjacencyCoverage coverage,
+			long[] sortedPredicates, int requestedThreads) throws IOException {
+		List<ScanRange> ranges = new ArrayList<>();
+		boolean partitioned = false;
+		long copiedPredicateIds = 0;
+		long sourceMetadataBytes = 0;
+		AdjacencySourceScanner primary = sourceFamily.primary();
+		int targetRanges = Math.toIntExact(
+				Math.min(Integer.MAX_VALUE, Math.multiplyExact((long) requestedThreads, RANGES_PER_WORKER)));
+		int predicateTargetRanges = Math.min(sortedPredicates.length, targetRanges);
+		for (int plane = 0; plane < ImmutablePagedQuadCsfIndex.PLANE_COUNT; plane++) {
+			if (!sourceFamily.isPlaneActive(plane)) {
+				continue;
+			}
+			AdjacencySourceScanner.ScanRange[] sourceRanges = primary.planRanges(plane, coverage, targetRanges);
+			if (sourceRanges.length > 0) {
+				partitioned |= sourceRanges.length > 1;
+				for (AdjacencySourceScanner.ScanRange sourceRange : sourceRanges) {
+					sourceMetadataBytes = Math.addExact(sourceMetadataBytes, sourceRange.modeledBytes());
+					ranges.add(new ScanRange(ranges.size(), plane, coverage, 0, sortedPredicates.length,
+							sourceRange));
+				}
+				continue;
+			}
+			boolean outgoing = plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
+					|| plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED;
+			if (predicateTargetRanges > 1 && primary.supportsPredicatePartitionedScan(outgoing)) {
+				partitioned = true;
+				copiedPredicateIds = Math.addExact(copiedPredicateIds, sortedPredicates.length);
+				for (int range = 0; range < predicateTargetRanges; range++) {
+					int from = (int) ((long) range * sortedPredicates.length / predicateTargetRanges);
+					int to = (int) ((long) (range + 1) * sortedPredicates.length / predicateTargetRanges);
+					ranges.add(new ScanRange(ranges.size(), plane,
+							LmdbAdjacencyCoverage.selectedRange(sortedPredicates, from, to), from, to, null));
+				}
+			} else {
+				ranges.add(new ScanRange(ranges.size(), plane, coverage, 0, sortedPredicates.length, null));
+			}
+		}
+		if (ranges.isEmpty()) {
+			// mergeBuildPlans requires one exact empty fragment. No source row can match an empty predicate catalog.
+			ranges.add(new ScanRange(0, LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT,
+					LmdbAdjacencyCoverage.selectedRange(sortedPredicates, 0, 0), 0, 0, null));
+		}
+		long metadataBytes = Math.addExact(Math.multiplyExact((long) ranges.size(), MODELED_RANGE_METADATA_BYTES),
+				Math.addExact(arrayBytes(copiedPredicateIds, Long.BYTES), sourceMetadataBytes));
+		return new ScanPlan(ranges.toArray(ScanRange[]::new), partitioned, metadataBytes);
+	}
+
+	private static long modeledParallelScratchBytes(int predicateCount, int workerCount, ScanPlan scanPlan) {
+		return Math.addExact(PredicateOrdinalMap.modeledBytes(predicateCount),
+				Math.addExact(ImmutablePagedQuadCsfIndex.modeledBuildScratchBytes(predicateCount),
+						Math.addExact(Math.multiplyExact((long) workerCount, MODELED_WORKER_SCRATCH_BYTES),
+								scanPlan.metadataBytes)));
+	}
+
+	private static int effectiveBuildThreads(AdjacencySourceFamily sourceFamily, int requestedThreads,
+			ScanPlan scanPlan) {
+		int activeStreams = sourceFamily.activeStreamCount();
+		if (activeStreams < 0 || activeStreams > ImmutablePagedQuadCsfIndex.PLANE_COUNT) {
+			throw new IllegalArgumentException("active stream count must be between 0 and 4: " + activeStreams);
+		}
+		int scannerCount = sourceFamily.workerScannerCount();
+		if (scannerCount <= 0) {
+			throw new IllegalArgumentException("worker scanner count must be positive: " + scannerCount);
+		}
+		int usefulWork = scanPlan.partitioned ? scanPlan.ranges.length : Math.max(1, activeStreams);
+		return Math.max(1,
+				Math.min(Math.min(requestedThreads, scannerCount), Math.min(scanPlan.ranges.length, usefulWork)));
+	}
+
+	@FunctionalInterface
+	private interface RangeTask {
+		void run(ScanRange range, AdjacencySourceScanner scanner, AtomicBoolean cancelled) throws IOException;
+	}
+
+	private static RangeExecution runRangeTasks(AdjacencySourceFamily sourceFamily, int workerCount, ScanRange[] ranges,
+			RangeTask task) throws IOException {
+		AtomicBoolean cancelled = new AtomicBoolean();
+		AtomicInteger activeWorkers = new AtomicInteger();
+		AtomicInteger maximumConcurrency = new AtomicInteger();
+		AtomicInteger completedRanges = new AtomicInteger();
+		if (workerCount == 1) {
+			AdjacencySourceScanner scanner = sourceFamily.workerScanner(0);
+			for (ScanRange range : ranges) {
+				runRangeTask(task, range, scanner, cancelled, activeWorkers, maximumConcurrency, completedRanges);
+			}
+			return new RangeExecution(completedRanges.get(), maximumConcurrency.get());
+		}
+
+		AtomicInteger threadNumber = new AtomicInteger();
+		ExecutorService executor = Executors.newFixedThreadPool(workerCount, runnable -> {
+			Thread thread = new Thread(runnable,
+					"lmdb-paged-csf-build-" + threadNumber.incrementAndGet());
+			thread.setDaemon(true);
+			return thread;
+		});
+		ExecutorCompletionService<Void> completion = new ExecutorCompletionService<>(executor);
+		List<Future<Void>> futures = new ArrayList<>(workerCount);
+		AtomicInteger nextRange = new AtomicInteger();
+		boolean cancelSourceFamily = false;
+		boolean restoreInterrupt = false;
+		try {
+			for (int worker = 0; worker < workerCount; worker++) {
+				int workerOrdinal = worker;
+				futures.add(completion.submit(() -> {
+					AdjacencySourceScanner scanner = sourceFamily.workerScanner(workerOrdinal);
+					int ordinal;
+					while ((ordinal = nextRange.getAndIncrement()) < ranges.length) {
+						checkCancelled(cancelled);
+						runRangeTask(task, ranges[ordinal], scanner, cancelled, activeWorkers,
+								maximumConcurrency, completedRanges);
+					}
+					return null;
+				}));
+			}
+			for (int completed = 0; completed < futures.size(); completed++) {
+				completion.take().get();
+			}
+		} catch (InterruptedException e) {
+			cancelTasks(cancelled, futures);
+			cancelSourceFamily = true;
+			restoreInterrupt = true;
+			throw new IOException("parallel paged CSF build interrupted", e);
+		} catch (ExecutionException | CancellationException e) {
+			cancelTasks(cancelled, futures);
+			cancelSourceFamily = true;
+			Throwable cause = e instanceof ExecutionException ? e.getCause() : e;
+			rethrowWorkerFailure(cause);
+		} finally {
+			executor.shutdownNow();
+			boolean interruptedWhileJoining = false;
+			boolean terminated = false;
+			while (!terminated) {
+				try {
+					terminated = executor.awaitTermination(1, TimeUnit.MINUTES);
+				} catch (InterruptedException e) {
+					interruptedWhileJoining = true;
+					cancelTasks(cancelled, futures);
+				}
+			}
+			if (cancelSourceFamily) {
+				sourceFamily.cancel();
+			}
+			if (interruptedWhileJoining || restoreInterrupt) {
+				Thread.currentThread().interrupt();
+			}
+		}
+		return new RangeExecution(completedRanges.get(), maximumConcurrency.get());
+	}
+
+	private static void runRangeTask(RangeTask task, ScanRange range, AdjacencySourceScanner scanner,
+			AtomicBoolean cancelled, AtomicInteger activeWorkers, AtomicInteger maximumConcurrency,
+			AtomicInteger completedRanges) throws IOException {
+		int active = activeWorkers.incrementAndGet();
+		maximumConcurrency.accumulateAndGet(active, Math::max);
+		try {
+			task.run(range, scanner, cancelled);
+			completedRanges.incrementAndGet();
+		} finally {
+			activeWorkers.decrementAndGet();
 		}
 	}
 
-	private static long unsignedIndexOf(long[] sorted, long key) {
-		int low = 0;
-		int high = sorted.length - 1;
-		while (low <= high) {
-			int mid = (low + high) >>> 1;
-			int comparison = Long.compareUnsigned(sorted[mid], key);
-			if (comparison < 0) {
-				low = mid + 1;
-			} else if (comparison > 0) {
-				high = mid - 1;
-			} else {
-				return mid;
-			}
+	private static void cancelTasks(AtomicBoolean cancelled, List<Future<Void>> futures) {
+		cancelled.set(true);
+		for (Future<Void> future : futures) {
+			future.cancel(true);
 		}
-		return -1;
+	}
+
+	private static void checkCancelled(AtomicBoolean cancelled) {
+		if (cancelled.get() || Thread.currentThread().isInterrupted()) {
+			throw new CancellationException("parallel paged CSF build cancelled");
+		}
+	}
+
+	private static void rethrowWorkerFailure(Throwable failure) throws IOException {
+		if (failure instanceof IOException e) {
+			throw e;
+		}
+		if (failure instanceof RuntimeException e) {
+			throw e;
+		}
+		if (failure instanceof Error e) {
+			throw e;
+		}
+		throw new IOException("parallel paged CSF worker failed", failure);
 	}
 
 	private static long arrayBytes(long length, long elementBytes) {
@@ -364,9 +657,86 @@ final class LmdbPagedCsfBaseBuilder {
 		return Math.addExact(value, 7) & -8L;
 	}
 
+	private static final class PredicateOrdinalMap {
+		private final long[] rawIds;
+		private final int[] ordinalsPlusOne;
+		private final int mask;
+
+		private PredicateOrdinalMap(long[] sortedPredicates) {
+			int capacity = tableCapacity(sortedPredicates.length);
+			rawIds = new long[capacity];
+			ordinalsPlusOne = new int[capacity];
+			mask = capacity - 1;
+			for (int ordinal = 0; ordinal < sortedPredicates.length; ordinal++) {
+				long rawId = sortedPredicates[ordinal];
+				int slot = slot(rawId);
+				while (ordinalsPlusOne[slot] != 0) {
+					slot = (slot + 1) & mask;
+				}
+				rawIds[slot] = rawId;
+				ordinalsPlusOne[slot] = ordinal + 1;
+			}
+		}
+
+		private int get(long rawId) {
+			int slot = slot(rawId);
+			int ordinal;
+			while ((ordinal = ordinalsPlusOne[slot]) != 0) {
+				if (rawIds[slot] == rawId) {
+					return ordinal - 1;
+				}
+				slot = (slot + 1) & mask;
+			}
+			return -1;
+		}
+
+		private int slot(long rawId) {
+			long mixed = rawId;
+			mixed = (mixed ^ mixed >>> 30) * 0xbf58476d1ce4e5b9L;
+			mixed = (mixed ^ mixed >>> 27) * 0x94d049bb133111ebL;
+			mixed ^= mixed >>> 31;
+			return (int) mixed & mask;
+		}
+
+		private static long modeledBytes(int size) {
+			int capacity = tableCapacity(size);
+			return Math.addExact(64L,
+					Math.addExact(arrayBytes(capacity, Long.BYTES), arrayBytes(capacity, Integer.BYTES)));
+		}
+
+		private static int tableCapacity(int size) {
+			long required = Math.max(2L, Math.multiplyExact((long) size, 2L));
+			if (required > 1L << 30) {
+				throw new IllegalArgumentException("predicate catalog is too large for a primitive ordinal table: "
+						+ size);
+			}
+			int capacity = 2;
+			while (capacity < required) {
+				capacity <<= 1;
+			}
+			return capacity;
+		}
+	}
+
 	private static final class ScanTotals {
 		private long groups;
+		private long sourceVisits;
 		private final long[] pairs = new long[ImmutablePagedQuadCsfIndex.PLANE_COUNT];
+
+		static ScanTotals merge(ScanTotals[] parts) {
+			ScanTotals merged = new ScanTotals();
+			for (ScanTotals part : parts) {
+				if (part == null) {
+					throw new IllegalStateException("parallel CSF pass did not produce every plane total");
+				}
+				merged.groups = Math.addExact(merged.groups, part.groups);
+				merged.sourceVisits = Math.addExact(merged.sourceVisits, part.sourceVisits);
+				for (int plane = 0; plane < merged.pairs.length; plane++) {
+					merged.pairs[plane] = Math.addExact(merged.pairs[plane], part.pairs[plane]);
+				}
+			}
+			return merged;
+		}
 
 		long totalPairs() {
 			long total = 0;
@@ -378,18 +748,55 @@ final class LmdbPagedCsfBaseBuilder {
 
 		@Override
 		public boolean equals(Object object) {
-			return object instanceof ScanTotals other && groups == other.groups && Arrays.equals(pairs, other.pairs);
+			return object instanceof ScanTotals other && groups == other.groups && sourceVisits == other.sourceVisits
+					&& Arrays.equals(pairs, other.pairs);
 		}
 
 		@Override
 		public int hashCode() {
-			return 31 * Long.hashCode(groups) + Arrays.hashCode(pairs);
+			int result = 31 * Long.hashCode(groups) + Long.hashCode(sourceVisits);
+			return 31 * result + Arrays.hashCode(pairs);
 		}
 
 		@Override
 		public String toString() {
-			return "ScanTotals[groups=" + groups + ", pairs=" + Arrays.toString(pairs) + "]";
+			return "ScanTotals[groups=" + groups + ", sourceVisits=" + sourceVisits + ", pairs="
+					+ Arrays.toString(pairs) + "]";
 		}
+	}
+
+	private record ScanRange(int ordinal, int plane, LmdbAdjacencyCoverage coverage, int predicateFrom,
+			int predicateTo, AdjacencySourceScanner.ScanRange sourceRange) {
+		private ScanRange {
+			Objects.requireNonNull(coverage, "coverage");
+			if (ordinal < 0 || plane < 0 || plane >= ImmutablePagedQuadCsfIndex.PLANE_COUNT || predicateFrom < 0
+					|| predicateTo < predicateFrom) {
+				throw new IllegalArgumentException("invalid adjacency scan range");
+			}
+		}
+	}
+
+	private record ScanPlan(ScanRange[] ranges, boolean partitioned, long metadataBytes) {
+		private ScanPlan {
+			Objects.requireNonNull(ranges, "ranges");
+			if (ranges.length == 0) {
+				throw new IllegalArgumentException("scan plan must contain at least one range");
+			}
+			if (metadataBytes < 0) {
+				throw new IllegalArgumentException("scan-plan metadata bytes must be nonnegative");
+			}
+		}
+	}
+
+	private record RangeExecution(int completedRanges, int maximumConcurrency) {
+	}
+
+	private record SizingPass(ImmutablePagedQuadCsfIndex.BuildPlan[] fragmentPlans, ScanTotals totals,
+			RangeExecution execution) {
+	}
+
+	private record MaterializationPass(ImmutablePagedQuadCsfIndex[] fragments, ScanTotals totals,
+			RangeExecution execution) {
 	}
 
 	private static final class LongList {

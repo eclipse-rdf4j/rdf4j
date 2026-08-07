@@ -172,6 +172,129 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		return new Builder(plan.predicateCount, plan, Objects.requireNonNull(budget, "budget"));
 	}
 
+	/**
+	 * Deterministically concatenates independently sized ordered fragments. Input order is the source range order;
+	 * shards are regrouped by partition while retaining that order within every partition.
+	 */
+	public static BuildPlan mergeBuildPlans(BuildPlan[] fragments) {
+		Objects.requireNonNull(fragments, "fragments");
+		if (fragments.length == 0) {
+			throw new IllegalArgumentException("at least one CSF build fragment is required");
+		}
+		int predicateCount = Objects.requireNonNull(fragments[0], "fragments[0]").predicateCount;
+		int partitionCount = Math.multiplyExact(predicateCount, PLANE_COUNT);
+		int[] starts = new int[partitionCount];
+		int[] counts = new int[partitionCount];
+		long[] rows = new long[partitionCount];
+		long[] quads = new long[partitionCount];
+		long shardCount = 0;
+		for (int fragmentIndex = 0; fragmentIndex < fragments.length; fragmentIndex++) {
+			BuildPlan fragment = Objects.requireNonNull(fragments[fragmentIndex], "fragments[" + fragmentIndex + "]");
+			if (fragment.predicateCount != predicateCount) {
+				throw new IllegalArgumentException("CSF fragments have different predicate counts");
+			}
+			for (int partition = 0; partition < partitionCount; partition++) {
+				counts[partition] = Math.addExact(counts[partition], fragment.partitionShardCounts[partition]);
+				rows[partition] = Math.addExact(rows[partition], fragment.partitionRowCounts[partition]);
+				quads[partition] = Math.addExact(quads[partition], fragment.partitionQuadCounts[partition]);
+			}
+			shardCount = Math.addExact(shardCount, fragment.shardPlans.length);
+		}
+		CsfShard.Plan[] mergedShards = new CsfShard.Plan[Math.toIntExact(shardCount)];
+		int output = 0;
+		for (int partition = 0; partition < partitionCount; partition++) {
+			starts[partition] = output;
+			boolean haveFence = false;
+			long previousLastRow = 0;
+			for (BuildPlan fragment : fragments) {
+				int source = fragment.partitionShardStarts[partition];
+				int end = source + fragment.partitionShardCounts[partition];
+				for (; source < end; source++) {
+					CsfShard.Plan shard = fragment.shardPlans[source];
+					int fenceComparison = haveFence ? Long.compareUnsigned(previousLastRow, shard.firstRow) : -1;
+					if (haveFence && (fenceComparison > 0
+							|| fenceComparison == 0 && !shard.startsWithContinuation)) {
+						throw new IllegalArgumentException("CSF fragments are not strictly row ordered in partition "
+								+ partition);
+					}
+					mergedShards[output++] = shard;
+					previousLastRow = shard.lastRow;
+					haveFence = true;
+				}
+			}
+			if (output - starts[partition] != counts[partition]) {
+				throw new IllegalStateException("CSF fragment shard merge count changed");
+			}
+		}
+		if (output != mergedShards.length) {
+			throw new IllegalStateException("CSF fragment merge produced " + output + " of " + mergedShards.length
+					+ " shards");
+		}
+		return new BuildPlan(predicateCount, starts, counts, rows, quads, mergedShards);
+	}
+
+	/**
+	 * Creates one root over independently materialized fragment shards. The returned root retains every shard, so the
+	 * transient fragment roots may be closed immediately after this method returns.
+	 */
+	public static ImmutablePagedQuadCsfIndex mergeMaterializedFragments(BuildPlan mergedPlan,
+			ImmutablePagedQuadCsfIndex[] fragments, MemoryBudget budget) {
+		Objects.requireNonNull(mergedPlan, "mergedPlan");
+		Objects.requireNonNull(fragments, "fragments");
+		Objects.requireNonNull(budget, "budget");
+		MemoryReservation rootReservation = requireReservation(budget.reserve(0,
+				modeledIndexBytes(mergedPlan.predicateCount, mergedPlan.shardPlans.length,
+						Math.toIntExact(mergedPlan.totalPageCount))));
+		CsfShard[] mergedShards = new CsfShard[mergedPlan.shardPlans.length];
+		int retained = 0;
+		try {
+			for (int partition = 0; partition < mergedPlan.partitionShardStarts.length; partition++) {
+				int output = mergedPlan.partitionShardStarts[partition];
+				for (int fragmentIndex = 0; fragmentIndex < fragments.length; fragmentIndex++) {
+					ImmutablePagedQuadCsfIndex fragment = Objects.requireNonNull(fragments[fragmentIndex],
+							"fragments[" + fragmentIndex + "]");
+					if (fragment.predicateCount != mergedPlan.predicateCount) {
+						throw new IllegalArgumentException(
+								"materialized CSF fragments have different predicate counts");
+					}
+					int source = fragment.partitionShardStarts[partition];
+					int end = source + fragment.partitionShardCounts[partition];
+					for (; source < end; source++) {
+						CsfShard shard = fragment.shards[source];
+						CsfShard.Plan expected = mergedPlan.shardPlans[output];
+						if (shard.nativeBytes() != expected.nativeBytes()
+								|| shard.usedPageBytes() != expected.usedPageBytes
+								|| shard.rowCount() != expected.rowCount || shard.quadCount() != expected.quadCount
+								|| shard.firstRow() != expected.firstRow || shard.lastRow() != expected.lastRow) {
+							throw new IllegalStateException(
+									"CSF fragment materialization differs from merged sizing plan at shard "
+											+ output);
+						}
+						shard.retain();
+						mergedShards[output++] = shard;
+						retained++;
+					}
+				}
+				if (output != mergedPlan.partitionShardStarts[partition]
+						+ mergedPlan.partitionShardCounts[partition]) {
+					throw new IllegalStateException("CSF materialized fragments changed partition shard count");
+				}
+			}
+			return new ImmutablePagedQuadCsfIndex(mergedPlan.predicateCount,
+					mergedPlan.partitionShardStarts.clone(), mergedPlan.partitionShardCounts.clone(),
+					mergedPlan.partitionRowCounts.clone(), mergedPlan.partitionQuadCounts.clone(), mergedShards,
+					rootReservation);
+		} catch (RuntimeException | Error failure) {
+			for (int i = 0; i < retained; i++) {
+				if (mergedShards[i] != null) {
+					mergedShards[i].release();
+				}
+			}
+			rootReservation.close();
+			throw failure;
+		}
+	}
+
 	/** Conservative peak heap reservation for the two-pass base build. */
 	public static long modeledBuildScratchBytes(int predicateCount) {
 		if (predicateCount < 0 || predicateCount > Integer.MAX_VALUE / PLANE_COUNT) {
@@ -1283,12 +1406,14 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		private final PartitionAccumulator[] partitions;
 		private final PageSink sink;
 		private final BuildPlan materializationPlan;
-		private final RowAccumulator current = new RowAccumulator();
+		private PartitionAccumulator currentAccumulator;
 		private boolean rowOpen;
 		private int currentPartition;
 		private long currentRow;
 		private long lastNeighbor;
 		private long lastContext;
+		private int currentFibers;
+		private int currentQuads;
 		private boolean hasPair;
 		private boolean partialRow;
 		private long partialRowOrdinal;
@@ -1317,6 +1442,15 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		}
 
 		public void beginRow(long predicateOrdinal, int plane, long rawRowId) {
+			beginRow(predicateOrdinal, plane, rawRowId, false);
+		}
+
+		/** Starts a fragment whose first source key lies inside a row begun by the preceding source range. */
+		public void beginContinuationRow(long predicateOrdinal, int plane, long rawRowId) {
+			beginRow(predicateOrdinal, plane, rawRowId, true);
+		}
+
+		private void beginRow(long predicateOrdinal, int plane, long rawRowId, boolean continuation) {
 			ensureActive();
 			if (rowOpen) {
 				throw new IllegalStateException("previous CSF row has not ended");
@@ -1329,11 +1463,21 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 			currentPartition = Math.toIntExact(predicateOrdinal * PLANE_COUNT + plane);
 			currentRow = rawRowId;
-			partition(currentPartition).validateNextRow(rawRowId);
-			current.clear();
+			PartitionAccumulator partition = partition(currentPartition);
+			if (continuation) {
+				partialRowOrdinal = partition.beginContinuation(rawRowId);
+			} else {
+				partition.validateNextRow(rawRowId);
+			}
+			partition.beginInputRow(rawRowId);
+			currentAccumulator = partition;
 			hasPair = false;
-			partialRow = false;
-			partialRowOrdinal = -1;
+			currentFibers = 0;
+			currentQuads = 0;
+			partialRow = continuation;
+			if (!continuation) {
+				partialRowOrdinal = -1;
+			}
 			rowOpen = true;
 		}
 
@@ -1348,17 +1492,18 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 					throw new IllegalStateException("row pairs must be strictly unsigned (neighbor,context) ascending");
 				}
 			}
-			if (!current.isEmpty() && current.roughBytes() >= ROW_CHUNK_ROUGH_BYTES) {
-				PartitionAccumulator partition = partition(currentPartition);
-				if (!partialRow) {
-					partialRowOrdinal = partition.acceptRow(currentRow);
-					partition.flushPending();
-					partialRow = true;
-				}
-				partition.emitExtent(current.toPage(currentRow), partialRowOrdinal);
-				current.clear();
+			if (currentQuads > 0 && currentRowRoughBytes() >= ROW_CHUNK_ROUGH_BYTES) {
+				partialRowOrdinal = currentAccumulator.emitPartialInputRow(partialRow, partialRowOrdinal);
+				partialRow = true;
+				currentAccumulator.beginInputRow(currentRow);
+				currentFibers = 0;
+				currentQuads = 0;
 			}
-			current.add(rawNeighborId, rawContextId);
+			if (currentQuads == 0 || lastNeighbor != rawNeighborId) {
+				currentFibers++;
+			}
+			currentAccumulator.appendPair(rawNeighborId, rawContextId);
+			currentQuads++;
 			lastNeighbor = rawNeighborId;
 			lastContext = rawContextId;
 			hasPair = true;
@@ -1368,18 +1513,16 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			if (!rowOpen) {
 				throw new IllegalStateException("no open CSF row");
 			}
-			if (!hasPair || current.isEmpty()) {
+			if (!hasPair || currentQuads == 0) {
 				throw new IllegalStateException("CSF source emitted an empty row");
 			}
-			PartitionAccumulator partition = partition(currentPartition);
-			if (partialRow) {
-				partition.emitExtent(current.toPage(currentRow), partialRowOrdinal);
-				partition.finishExtent();
-			} else {
-				partition.addNormalRow(currentRow, current.toPage(currentRow));
-			}
-			current.clear();
+			currentAccumulator.endInputRow(partialRow, partialRowOrdinal);
+			currentAccumulator = null;
 			rowOpen = false;
+		}
+
+		private long currentRowRoughBytes() {
+			return 24L + (long) currentFibers * 16L + (long) currentQuads * Long.BYTES;
 		}
 
 		public void finishPlane(int plane) {
@@ -2038,6 +2181,16 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	private interface PageSink {
 		void emit(int partition, CompactCsfPageEncoder.PageImage image, long firstRowOrdinal, int uniqueRows);
 
+		default void emitMeasured(int partition, CompactCsfPageEncoder encoder, CsfPageData.View data,
+				CompactCsfPageEncoder.Layout layout, long firstRowOrdinal, int uniqueRows) {
+			boolean continuation = (layout.flags & CompactCsfPageFormat.FLAG_CONTINUATION) != 0;
+			CompactCsfPageEncoder.PageImage image = encoder.tryEncode(data.materialize(), continuation, layout.pageId);
+			if (image == null) {
+				throw new IllegalStateException("measured CSF page did not produce a heap oracle image");
+			}
+			emit(partition, image, firstRowOrdinal, uniqueRows);
+		}
+
 		void finish();
 	}
 
@@ -2058,6 +2211,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	private static final class MutableShardPlan {
+		long[] pageFingerprints = new long[16];
 		int pages;
 		long capacity;
 		long used;
@@ -2066,6 +2220,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		long firstRow;
 		long lastRow;
 		long firstGlobalRowOrdinal;
+		boolean startsWithContinuation;
 		boolean started;
 
 		void add(CompactCsfPageEncoder.PageImage image, long firstRowOrdinal, int uniqueRows) {
@@ -2073,7 +2228,10 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				started = true;
 				firstRow = image.firstRow();
 				firstGlobalRowOrdinal = firstRowOrdinal;
+				startsWithContinuation = image.continuation();
 			}
+			ensurePageCapacity();
+			pageFingerprints[pages] = pageFingerprint(image.bytes());
 			pages++;
 			capacity = Math.addExact(capacity, image.capacity());
 			used = Math.addExact(used, image.usedBytes());
@@ -2082,8 +2240,40 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			lastRow = image.lastRow();
 		}
 
+		void add(CompactCsfPageEncoder.Layout layout, long firstRowOrdinal, int uniqueRows) {
+			if (!started) {
+				started = true;
+				firstRow = layout.firstRow;
+				firstGlobalRowOrdinal = firstRowOrdinal;
+				startsWithContinuation = (layout.flags & CompactCsfPageFormat.FLAG_CONTINUATION) != 0;
+			}
+			ensurePageCapacity();
+			pageFingerprints[pages] = layout.fingerprint;
+			pages++;
+			capacity = Math.addExact(capacity, layout.capacity);
+			used = Math.addExact(used, layout.usedBytes);
+			rows = Math.addExact(rows, uniqueRows);
+			quads = Math.addExact(quads, layout.quadCount);
+			lastRow = layout.lastRow;
+		}
+
 		CsfShard.Plan seal() {
-			return new CsfShard.Plan(pages, capacity, used, rows, quads, firstRow, lastRow);
+			return new CsfShard.Plan(pages, capacity, used, rows, quads, firstRow, lastRow,
+					startsWithContinuation, Arrays.copyOf(pageFingerprints, pages));
+		}
+
+		private void ensurePageCapacity() {
+			if (pages == pageFingerprints.length) {
+				pageFingerprints = Arrays.copyOf(pageFingerprints, pageFingerprints.length * 2);
+			}
+		}
+
+		private static long pageFingerprint(byte[] bytes) {
+			long fingerprint = 0xcbf29ce484222325L;
+			for (byte value : bytes) {
+				fingerprint = (fingerprint ^ Byte.toUnsignedLong(value)) * 0x100000001b3L;
+			}
+			return fingerprint;
 		}
 	}
 
@@ -2112,6 +2302,22 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				current[partition] = shard;
 			}
 			shard.add(image, firstRowOrdinal, uniqueRows);
+		}
+
+		@Override
+		public void emitMeasured(int partition, CompactCsfPageEncoder encoder, CsfPageData.View data,
+				CompactCsfPageEncoder.Layout layout, long firstRowOrdinal, int uniqueRows) {
+			MutableShardPlan shard = current[partition];
+			boolean continuation = (layout.flags & CompactCsfPageFormat.FLAG_CONTINUATION) != 0;
+			if (shard == null) {
+				shard = new MutableShardPlan();
+				current[partition] = shard;
+			} else if ((shard.pages >= targetPages && !continuation) || shard.pages >= CsfShard.MAX_PAGES) {
+				seal(partition);
+				shard = new MutableShardPlan();
+				current[partition] = shard;
+			}
+			shard.add(layout, firstRowOrdinal, uniqueRows);
 		}
 
 		@Override
@@ -2218,6 +2424,48 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		}
 
 		@Override
+		public void emitMeasured(int partition, CompactCsfPageEncoder encoder, CsfPageData.View data,
+				CompactCsfPageEncoder.Layout layout, long firstRowOrdinal, int uniqueRows) {
+			CsfShard.Writer writer = writer(partition, firstRowOrdinal);
+			int globalShard = nextShardInPartition[partition];
+			CsfShard.Plan shardPlan = plan.shardPlans[globalShard];
+			long pageAddress = writer.reserve(layout);
+			encoder.writeNative(data, layout, pageAddress);
+			writer.commit(layout, firstRowOrdinal - shardFirstGlobalOrdinals[partition], uniqueRows);
+			completePage(partition, globalShard, shardPlan, writer);
+		}
+
+		private CsfShard.Writer writer(int partition, long firstRowOrdinal) {
+			CsfShard.Writer writer = writers[partition];
+			int globalShard = nextShardInPartition[partition];
+			int partitionEnd = plan.partitionShardStarts[partition] + plan.partitionShardCounts[partition];
+			if (writer == null) {
+				if (globalShard >= partitionEnd) {
+					throw mismatch("partition " + partition + " emitted an unexpected shard");
+				}
+				CsfShard.Plan shardPlan = plan.shardPlans[globalShard];
+				MemoryReservation reservation = requireReservation(
+						budget.reserve(shardPlan.nativeBytes(), CsfShard.MODELED_JAVA_BYTES));
+				writer = CsfShard.writer(shardPlan, reservation);
+				writers[partition] = writer;
+				shardFirstGlobalOrdinals[partition] = firstRowOrdinal;
+			}
+			return writer;
+		}
+
+		private void completePage(int partition, int globalShard, CsfShard.Plan shardPlan, CsfShard.Writer writer) {
+			int emitted = ++emittedPagesInShard[partition];
+			if (emitted == shardPlan.pageCount) {
+				shards[globalShard] = writer.finish();
+				writers[partition] = null;
+				emittedPagesInShard[partition] = 0;
+				nextShardInPartition[partition]++;
+			} else if (emitted > shardPlan.pageCount) {
+				throw mismatch("partition " + partition + " overfilled shard " + globalShard);
+			}
+		}
+
+		@Override
 		public void finish() {
 			for (int partition = 0; partition < writers.length; partition++) {
 				if (writers[partition] != null) {
@@ -2291,7 +2539,10 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		private final int partition;
 		private final PageSink sink;
 		private final CompactCsfPageEncoder encoder = new CompactCsfPageEncoder();
-		private CsfPageData pending = new CsfPageData();
+		private final CompactCsfPageEncoder.Layout layout = new CompactCsfPageEncoder.Layout();
+		private final CsfPageData pending = new CsfPageData();
+		private final CsfPageData.View pageView = new CsfPageData.View();
+		private final CsfPageData.View candidateView = new CsfPageData.View();
 		private long pendingFirstRowOrdinal;
 		private long acceptedRows;
 		private long acceptedQuads;
@@ -2310,6 +2561,16 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 		}
 
+		long beginContinuation(long row) {
+			if (hasRow || acceptedRows != 0 || acceptedQuads != 0 || !pending.isEmpty() || extentOpen) {
+				throw new IllegalStateException("a continuation row must be first in its CSF fragment partition");
+			}
+			lastRow = row;
+			hasRow = true;
+			extentOpen = true;
+			return 0;
+		}
+
 		long acceptRow(long row) {
 			validateNextRow(row);
 			long ordinal = acceptedRows;
@@ -2319,22 +2580,52 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			return ordinal;
 		}
 
-		void addNormalRow(long row, CsfPageData rowData) {
-			long ordinal = acceptRow(row);
-			acceptedQuads = Math.addExact(acceptedQuads, rowData.quadCount);
-			if (pending.isEmpty()) {
+		void beginInputRow(long row) {
+			pending.beginRow(row);
+		}
+
+		void appendPair(long neighbor, long context) {
+			pending.appendPair(neighbor, context);
+		}
+
+		long emitPartialInputRow(boolean continuation, long rowOrdinal) {
+			pending.endRow();
+			int rowIndex = pending.rowCount - 1;
+			long quads = pending.rowQuadCounts[rowIndex];
+			if (!continuation) {
+				rowOrdinal = acceptRow(pending.rows[rowIndex]);
+				if (rowIndex > 0) {
+					emitRows(pending, 0, rowIndex, pendingFirstRowOrdinal);
+				}
+			}
+			acceptedQuads = Math.addExact(acceptedQuads, quads);
+			emitSingleRow(pending, rowIndex, rowOrdinal);
+			pending.clear();
+			return rowOrdinal;
+		}
+
+		void endInputRow(boolean partial, long rowOrdinal) {
+			pending.endRow();
+			int rowIndex = pending.rowCount - 1;
+			acceptedQuads = Math.addExact(acceptedQuads, pending.rowQuadCounts[rowIndex]);
+			if (partial) {
+				if (rowIndex != 0) {
+					throw new IllegalStateException("a continued CSF row must be isolated in page scratch");
+				}
+				emitSingleRow(pending, rowIndex, rowOrdinal);
+				finishExtent();
+				pending.clear();
+				return;
+			}
+
+			long ordinal = acceptRow(pending.rows[rowIndex]);
+			if (pending.rowCount == 1) {
 				pendingFirstRowOrdinal = ordinal;
 			}
-			pending.appendRowsFrom(rowData, 0, 1);
 			if (pending.rowCount >= CompactCsfPageFormat.MAX_ROWS_PER_PAGE
 					|| pending.roughBytes() >= PENDING_PAGE_ROUGH_BYTES) {
 				flushPending();
 			}
-		}
-
-		void emitExtent(CsfPageData data, long rowOrdinal) {
-			acceptedQuads = Math.addExact(acceptedQuads, data.quadCount);
-			emitSingleRow(data, rowOrdinal);
 		}
 
 		void finishExtent() {
@@ -2345,66 +2636,69 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			if (pending.isEmpty()) {
 				return;
 			}
-			CsfPageData remaining = pending;
-			long firstOrdinal = pendingFirstRowOrdinal;
-			pending = new CsfPageData();
-			while (!remaining.isEmpty()) {
-				CompactCsfPageEncoder.PageImage whole = encoder.tryEncode(remaining, false, 0);
-				if (whole != null) {
-					sink.emit(partition, whole, firstOrdinal, remaining.rowCount);
+			try {
+				emitRows(pending, 0, pending.rowCount, pendingFirstRowOrdinal);
+			} finally {
+				pending.clear();
+			}
+		}
+
+		private void emitRows(CsfPageData data, int fromRow, int toRow, long firstOrdinal) {
+			while (fromRow < toRow) {
+				pageView.rows(data, fromRow, toRow);
+				if (encoder.tryMeasure(pageView, false, 0, layout)) {
+					sink.emitMeasured(partition, encoder, pageView, layout, firstOrdinal, toRow - fromRow);
 					return;
 				}
-				if (remaining.rowCount == 1) {
-					emitSingleRow(remaining, firstOrdinal);
+				if (toRow - fromRow == 1) {
+					emitSingleRow(data, fromRow, firstOrdinal);
 					finishExtent();
 					return;
 				}
-				int prefixRows = largestRowPrefix(remaining);
-				if (prefixRows <= 0 || prefixRows >= remaining.rowCount) {
+				int prefixRows = largestRowPrefix(data, fromRow, toRow);
+				if (prefixRows <= 0 || prefixRows >= toRow - fromRow) {
 					throw new IllegalStateException("unable to split an oversized CSF page by row");
 				}
-				CsfPageData prefix = new CsfPageData();
-				prefix.appendRowsFrom(remaining, 0, prefixRows);
-				sink.emit(partition, requireImage(prefix, false), firstOrdinal, prefixRows);
-				CsfPageData suffix = new CsfPageData();
-				suffix.appendRowsFrom(remaining, prefixRows, remaining.rowCount);
-				remaining = suffix;
+				pageView.rows(data, fromRow, fromRow + prefixRows);
+				emitPage(pageView, false, firstOrdinal, prefixRows);
+				fromRow += prefixRows;
 				firstOrdinal += prefixRows;
 			}
 		}
 
-		private void emitSingleRow(CsfPageData row, long rowOrdinal) {
-			if (row.rowCount != 1) {
-				throw new IllegalArgumentException("extent emission requires one CSF row");
+		private void emitSingleRow(CsfPageData data, int rowIndex, long rowOrdinal) {
+			if (rowIndex < 0 || rowIndex >= data.rowCount) {
+				throw new IllegalArgumentException("extent row is out of range");
 			}
-			CompactCsfPageEncoder.PageImage image = encoder.tryEncode(row, extentOpen, 0);
-			if (image != null) {
-				emitExtentImage(image, rowOrdinal);
+			pageView.rows(data, rowIndex, rowIndex + 1);
+			if (encoder.tryMeasure(pageView, extentOpen, 0, layout)) {
+				emitExtentPage(pageView, rowOrdinal);
 				return;
 			}
-			if (row.fiberCount > 1) {
+			int rowFibers = data.rowFiberCounts[rowIndex];
+			if (rowFibers > 1) {
 				int fromFiber = 0;
-				while (fromFiber < row.fiberCount) {
-					int toFiber = largestFiberPrefix(row, fromFiber);
+				while (fromFiber < rowFibers) {
+					int toFiber = largestFiberPrefix(data, rowIndex, fromFiber);
 					if (toFiber <= fromFiber) {
-						CsfPageData oneFiber = row.rowSlice(0, fromFiber, fromFiber + 1, 0,
-								row.fiberContextCounts[fromFiber]);
-						emitSplitContextFiber(oneFiber, rowOrdinal);
+						emitSplitContextFiber(data, rowIndex, fromFiber, rowOrdinal);
 						fromFiber++;
 						continue;
 					}
-					CsfPageData slice = row.rowSlice(0, fromFiber, toFiber, 0,
-							row.fiberContextCounts[toFiber - 1]);
-					emitExtentImage(requireImage(slice, extentOpen), rowOrdinal);
+					int fiberBase = data.rowFiberStarts[rowIndex];
+					pageView.rowFibers(data, rowIndex, fromFiber, toFiber, 0,
+							data.fiberContextCounts[fiberBase + toFiber - 1]);
+					emitExtentPage(pageView, rowOrdinal);
 					fromFiber = toFiber;
 				}
 				return;
 			}
-			emitSplitContextFiber(row, rowOrdinal);
+			emitSplitContextFiber(data, rowIndex, 0, rowOrdinal);
 		}
 
-		private void emitSplitContextFiber(CsfPageData oneFiber, long rowOrdinal) {
-			int total = oneFiber.fiberContextCounts[0];
+		private void emitSplitContextFiber(CsfPageData data, int rowIndex, int rowFiber, long rowOrdinal) {
+			int sourceFiber = data.rowFiberStarts[rowIndex] + rowFiber;
+			int total = data.fiberContextCounts[sourceFiber];
 			int from = 0;
 			while (from < total) {
 				int low = from + 1;
@@ -2412,8 +2706,8 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				int best = -1;
 				while (low <= high) {
 					int mid = (low + high) >>> 1;
-					CsfPageData candidate = oneFiber.rowSlice(0, 0, 1, from, mid);
-					if (encoder.tryEncode(candidate, extentOpen, 0) != null) {
+					candidateView.rowFibers(data, rowIndex, rowFiber, rowFiber + 1, from, mid);
+					if (encoder.tryMeasure(candidateView, extentOpen, 0, layout)) {
 						best = mid;
 						low = mid + 1;
 					} else {
@@ -2423,21 +2717,20 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				if (best <= from) {
 					throw new IllegalStateException("one context coordinate cannot fit in a 64-KiB CSF page");
 				}
-				CsfPageData slice = oneFiber.rowSlice(0, 0, 1, from, best);
-				emitExtentImage(requireImage(slice, extentOpen), rowOrdinal);
+				pageView.rowFibers(data, rowIndex, rowFiber, rowFiber + 1, from, best);
+				emitExtentPage(pageView, rowOrdinal);
 				from = best;
 			}
 		}
 
-		private int largestRowPrefix(CsfPageData data) {
+		private int largestRowPrefix(CsfPageData data, int fromRow, int toRow) {
 			int low = 1;
-			int high = data.rowCount - 1;
+			int high = toRow - fromRow - 1;
 			int best = 0;
 			while (low <= high) {
 				int mid = (low + high) >>> 1;
-				CsfPageData prefix = new CsfPageData();
-				prefix.appendRowsFrom(data, 0, mid);
-				if (encoder.tryEncode(prefix, false, 0) != null) {
+				candidateView.rows(data, fromRow, fromRow + mid);
+				if (encoder.tryMeasure(candidateView, false, 0, layout)) {
 					best = mid;
 					low = mid + 1;
 				} else {
@@ -2447,14 +2740,17 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			return best;
 		}
 
-		private int largestFiberPrefix(CsfPageData row, int fromFiber) {
+		private int largestFiberPrefix(CsfPageData data, int rowIndex, int fromFiber) {
+			int rowFibers = data.rowFiberCounts[rowIndex];
 			int low = fromFiber + 1;
-			int high = row.fiberCount;
+			int high = rowFibers;
 			int best = fromFiber;
 			while (low <= high) {
 				int mid = (low + high) >>> 1;
-				CsfPageData slice = row.rowSlice(0, fromFiber, mid, 0, row.fiberContextCounts[mid - 1]);
-				if (encoder.tryEncode(slice, extentOpen, 0) != null) {
+				int fiberBase = data.rowFiberStarts[rowIndex];
+				candidateView.rowFibers(data, rowIndex, fromFiber, mid, 0,
+						data.fiberContextCounts[fiberBase + mid - 1]);
+				if (encoder.tryMeasure(candidateView, extentOpen, 0, layout)) {
 					best = mid;
 					low = mid + 1;
 				} else {
@@ -2464,76 +2760,16 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			return best;
 		}
 
-		private void emitExtentImage(CompactCsfPageEncoder.PageImage image, long rowOrdinal) {
-			sink.emit(partition, image, rowOrdinal, extentOpen ? 0 : 1);
+		private void emitExtentPage(CsfPageData.View data, long rowOrdinal) {
+			emitPage(data, extentOpen, rowOrdinal, extentOpen ? 0 : 1);
 			extentOpen = true;
 		}
 
-		private CompactCsfPageEncoder.PageImage requireImage(CsfPageData data, boolean continuation) {
-			CompactCsfPageEncoder.PageImage image = encoder.tryEncode(data, continuation, 0);
-			if (image == null) {
+		private void emitPage(CsfPageData.View data, boolean continuation, long rowOrdinal, int uniqueRows) {
+			if (!encoder.tryMeasure(data, continuation, 0, layout)) {
 				throw new IllegalStateException("CSF split still exceeds the maximum page capacity");
 			}
-			return image;
-		}
-	}
-
-	private static final class RowAccumulator {
-		private long[] neighbors = new long[16];
-		private int[] contextStarts = new int[16];
-		private int[] contextCounts = new int[16];
-		private long[] contexts = new long[32];
-		private int fibers;
-		private int quads;
-
-		boolean isEmpty() {
-			return quads == 0;
-		}
-
-		void clear() {
-			fibers = 0;
-			quads = 0;
-		}
-
-		long roughBytes() {
-			return 16L + (long) fibers * 16L + (long) quads * Long.BYTES;
-		}
-
-		void add(long neighbor, long context) {
-			if (fibers == 0 || neighbors[fibers - 1] != neighbor) {
-				ensureFibers(fibers + 1);
-				neighbors[fibers] = neighbor;
-				contextStarts[fibers] = quads;
-				contextCounts[fibers] = 0;
-				fibers++;
-			}
-			ensureContexts(quads + 1);
-			contexts[quads++] = context;
-			contextCounts[fibers - 1]++;
-		}
-
-		CsfPageData toPage(long row) {
-			CsfPageData data = new CsfPageData();
-			data.appendRow(row, Arrays.copyOf(neighbors, fibers), Arrays.copyOf(contextStarts, fibers),
-					Arrays.copyOf(contextCounts, fibers), Arrays.copyOf(contexts, quads), fibers, quads);
-			return data;
-		}
-
-		private void ensureFibers(int required) {
-			if (required <= neighbors.length) {
-				return;
-			}
-			int capacity = Math.max(required, neighbors.length + (neighbors.length >>> 1) + 8);
-			neighbors = Arrays.copyOf(neighbors, capacity);
-			contextStarts = Arrays.copyOf(contextStarts, capacity);
-			contextCounts = Arrays.copyOf(contextCounts, capacity);
-		}
-
-		private void ensureContexts(int required) {
-			if (required <= contexts.length) {
-				return;
-			}
-			contexts = Arrays.copyOf(contexts, Math.max(required, contexts.length + (contexts.length >>> 1) + 16));
+			sink.emitMeasured(partition, encoder, data, layout, rowOrdinal, uniqueRows);
 		}
 	}
 }

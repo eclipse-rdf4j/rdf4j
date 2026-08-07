@@ -15,6 +15,181 @@ import java.util.Arrays;
 
 /** Encodes one immutable columnar CSF page image. */
 final class CompactCsfPageEncoder {
+	private static final int ROW_IDS = 0;
+	private static final int ROW_FIBER_STARTS = 1;
+	private static final int ROW_QUAD_COUNTS = 2;
+	private static final int FIRST_NEIGHBORS = 3;
+	private static final int NEIGHBOR_TAILS = 4;
+	private static final int CONTEXT_COUNTS = 5;
+	private static final int FIRST_CONTEXTS = 6;
+	private static final int CONTEXT_TAILS = 7;
+
+	private final PackedLongVector.WriteScratch vectorScratch = new PackedLongVector.WriteScratch();
+	private final VectorValues vectorValues = new VectorValues();
+	private final CsfPageData.View wholeView = new CsfPageData.View();
+
+	boolean tryMeasure(CsfPageData data, boolean continuation, int pageId, Layout layout) {
+		wholeView.whole(data);
+		return tryMeasure(wholeView, continuation, pageId, layout);
+	}
+
+	boolean tryMeasure(CsfPageData.View data, boolean continuation, int pageId, Layout layout) {
+		if (data.isEmpty()) {
+			throw new IllegalArgumentException("cannot encode an empty page");
+		}
+		if (data.rowCount > CompactCsfPageFormat.MAX_ROWS_PER_PAGE) {
+			return false;
+		}
+
+		long fingerprint = 0x9e3779b97f4a7c15L;
+		boolean rowNeighborOne = true;
+		boolean rowQuadEqualsNeighbor = true;
+		for (int row = 0; row < data.rowCount; row++) {
+			rowNeighborOne &= data.rowFiberCount(row) == 1;
+			rowQuadEqualsNeighbor &= data.rowQuadCount(row) == data.rowFiberCount(row);
+			fingerprint = mix(fingerprint, data.row(row));
+			fingerprint = mix(fingerprint, data.rowFiberCount(row));
+			fingerprint = mix(fingerprint, data.rowQuadCount(row));
+		}
+		boolean contextCountOne = true;
+		boolean allOrderedIntegers = true;
+		long commonContext = data.context(0);
+		boolean oneCommonContext = true;
+		for (int fiber = 0; fiber < data.fiberCount; fiber++) {
+			contextCountOne &= data.fiberContextCount(fiber) == 1;
+			allOrderedIntegers &= isOrderedInteger(data.neighbor(fiber));
+			fingerprint = mix(fingerprint, data.neighbor(fiber));
+			fingerprint = mix(fingerprint, data.fiberContextCount(fiber));
+		}
+		for (int i = 0; i < data.quadCount; i++) {
+			oneCommonContext &= data.context(i) == commonContext;
+			fingerprint = mix(fingerprint, data.context(i));
+		}
+		oneCommonContext &= contextCountOne;
+
+		layout.reset();
+		layout.flags = (continuation ? CompactCsfPageFormat.FLAG_CONTINUATION : 0)
+				| (rowNeighborOne ? CompactCsfPageFormat.FLAG_ROW_NEIGHBOR_ONE : 0)
+				| (rowQuadEqualsNeighbor ? CompactCsfPageFormat.FLAG_ROW_QUAD_EQUALS_NEIGHBOR : 0)
+				| (contextCountOne ? CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE : 0)
+				| (oneCommonContext ? CompactCsfPageFormat.FLAG_COMMON_CONTEXT : 0)
+				| (allOrderedIntegers ? CompactCsfPageFormat.FLAG_ALL_ORDERED_INTEGER_NEIGHBORS : 0);
+		layout.pageId = pageId;
+		layout.commonContext = oneCommonContext ? commonContext : 0;
+		layout.rowCount = data.rowCount;
+		layout.fiberCount = data.fiberCount;
+		layout.quadCount = data.quadCount;
+		layout.firstRow = data.row(0);
+		layout.lastRow = data.row(data.rowCount - 1);
+		layout.firstNeighbor = data.neighbor(0);
+		layout.lastNeighbor = data.neighbor(data.fiberCount - 1);
+
+		int cursor = CompactCsfPageFormat.HEADER_BYTES;
+		cursor = measureSection(data, layout, ROW_IDS, PackedLongVector.Hint.SORTED_RANDOM_ACCESS_IDS, cursor);
+		if (!rowNeighborOne) {
+			cursor = measureSection(data, layout, ROW_FIBER_STARTS,
+					PackedLongVector.Hint.SORTED_RANDOM_ACCESS_VALUES, cursor);
+		}
+		if (!rowQuadEqualsNeighbor) {
+			cursor = measureSection(data, layout, ROW_QUAD_COUNTS, PackedLongVector.Hint.COUNTS_OR_DELTAS,
+					cursor);
+		}
+		cursor = measureSection(data, layout, FIRST_NEIGHBORS, PackedLongVector.Hint.UNSORTED_IDS, cursor);
+		if (data.fiberCount != data.rowCount) {
+			cursor = measureSection(data, layout, NEIGHBOR_TAILS, PackedLongVector.Hint.COUNTS_OR_DELTAS,
+					cursor);
+		}
+		if (!contextCountOne) {
+			cursor = measureSection(data, layout, CONTEXT_COUNTS, PackedLongVector.Hint.COUNTS_OR_DELTAS,
+					cursor);
+		}
+		if (!oneCommonContext) {
+			cursor = measureSection(data, layout, FIRST_CONTEXTS, PackedLongVector.Hint.UNSORTED_IDS, cursor);
+		}
+		if (data.quadCount != data.fiberCount) {
+			cursor = measureSection(data, layout, CONTEXT_TAILS, PackedLongVector.Hint.COUNTS_OR_DELTAS, cursor);
+		}
+
+		layout.usedBytes = LeBytes.align8(cursor);
+		layout.classIndex = NativeSlabAllocator.classForUsedBytes(layout.usedBytes);
+		if (layout.classIndex < 0) {
+			return false;
+		}
+		layout.capacity = NativeSlabAllocator.capacityForClass(layout.classIndex);
+		layout.fingerprint = mix(mix(mix(fingerprint, layout.flags), layout.pageId), layout.usedBytes);
+		return true;
+	}
+
+	void writeNative(CsfPageData data, Layout layout, long address) {
+		wholeView.whole(data);
+		writeNative(wholeView, layout, address);
+	}
+
+	void writeNative(CsfPageData.View data, Layout layout, long address) {
+		if (address == 0) {
+			throw new IllegalArgumentException("native page address must not be zero");
+		}
+		if (data.rowCount != layout.rowCount || data.fiberCount != layout.fiberCount
+				|| data.quadCount != layout.quadCount || data.row(0) != layout.firstRow
+				|| data.row(data.rowCount - 1) != layout.lastRow || data.neighbor(0) != layout.firstNeighbor
+				|| data.neighbor(data.fiberCount - 1) != layout.lastNeighbor) {
+			throw new IllegalStateException("page data changed after native layout measurement");
+		}
+
+		UnsafeAccess.clear(address, layout.usedBytes);
+		UnsafeAccess.putIntLE(address + CompactCsfPageFormat.MAGIC_AT, CompactCsfPageFormat.MAGIC);
+		UnsafeAccess.putShortLE(address + CompactCsfPageFormat.VERSION_AT, (short) CompactCsfPageFormat.VERSION);
+		UnsafeAccess.putShortLE(address + CompactCsfPageFormat.FLAGS_AT, (short) layout.flags);
+		UnsafeAccess.putIntLE(address + CompactCsfPageFormat.CAPACITY_AT, layout.capacity);
+		UnsafeAccess.putIntLE(address + CompactCsfPageFormat.USED_AT, layout.usedBytes);
+		UnsafeAccess.putIntLE(address + CompactCsfPageFormat.PAGE_ID_AT, layout.pageId);
+		UnsafeAccess.putIntLE(address + CompactCsfPageFormat.NEXT_EXTENT_AT, CompactCsfPageFormat.NO_PAGE);
+		UnsafeAccess.putIntLE(address + CompactCsfPageFormat.ROW_COUNT_AT, layout.rowCount);
+		UnsafeAccess.putIntLE(address + CompactCsfPageFormat.FIBER_COUNT_AT, layout.fiberCount);
+		UnsafeAccess.putIntLE(address + CompactCsfPageFormat.QUAD_COUNT_AT, layout.quadCount);
+		UnsafeAccess.putLongLE(address + CompactCsfPageFormat.FIRST_ROW_AT, layout.firstRow);
+		UnsafeAccess.putLongLE(address + CompactCsfPageFormat.LAST_ROW_AT, layout.lastRow);
+		UnsafeAccess.putLongLE(address + CompactCsfPageFormat.FIRST_NEIGHBOR_AT, layout.firstNeighbor);
+		UnsafeAccess.putLongLE(address + CompactCsfPageFormat.LAST_NEIGHBOR_AT, layout.lastNeighbor);
+		UnsafeAccess.putLongLE(address + CompactCsfPageFormat.COMMON_CONTEXT_AT, layout.commonContext);
+		writeSection(address, CompactCsfPageFormat.ROW_IDS_OFFSET_AT, layout, ROW_IDS);
+		writeSection(address, CompactCsfPageFormat.ROW_FIBER_STARTS_OFFSET_AT, layout, ROW_FIBER_STARTS);
+		writeSection(address, CompactCsfPageFormat.ROW_QUAD_COUNTS_OFFSET_AT, layout, ROW_QUAD_COUNTS);
+		writeSection(address, CompactCsfPageFormat.FIRST_NEIGHBORS_OFFSET_AT, layout, FIRST_NEIGHBORS);
+		writeSection(address, CompactCsfPageFormat.NEIGHBOR_TAILS_OFFSET_AT, layout, NEIGHBOR_TAILS);
+		writeSection(address, CompactCsfPageFormat.CONTEXT_COUNTS_OFFSET_AT, layout, CONTEXT_COUNTS);
+		writeSection(address, CompactCsfPageFormat.FIRST_CONTEXTS_OFFSET_AT, layout, FIRST_CONTEXTS);
+		writeSection(address, CompactCsfPageFormat.CONTEXT_TAILS_OFFSET_AT, layout, CONTEXT_TAILS);
+		UnsafeAccess.putIntLE(address + CompactCsfPageFormat.FORMAT_HASH_AT, CompactCsfPageFormat.FORMAT_HASH);
+
+		for (int section = 0; section < layout.offsets.length; section++) {
+			if (layout.lengths[section] > 0) {
+				vectorValues.configure(data, section);
+				PackedLongVector.writeNative(address + layout.offsets[section], layout.lengths[section], vectorValues,
+						hint(section), vectorScratch);
+			}
+		}
+	}
+
+	private int measureSection(CsfPageData.View data, Layout layout, int section, PackedLongVector.Hint hint,
+			int cursor) {
+		vectorValues.configure(data, section);
+		int length = PackedLongVector.measure(vectorValues, hint, vectorScratch);
+		int offset = LeBytes.align8(cursor);
+		layout.offsets[section] = offset;
+		layout.lengths[section] = length;
+		return Math.addExact(offset, length);
+	}
+
+	private static PackedLongVector.Hint hint(int section) {
+		return switch (section) {
+		case ROW_IDS -> PackedLongVector.Hint.SORTED_RANDOM_ACCESS_IDS;
+		case ROW_FIBER_STARTS -> PackedLongVector.Hint.SORTED_RANDOM_ACCESS_VALUES;
+		case ROW_QUAD_COUNTS, NEIGHBOR_TAILS, CONTEXT_COUNTS, CONTEXT_TAILS -> PackedLongVector.Hint.COUNTS_OR_DELTAS;
+		case FIRST_NEIGHBORS, FIRST_CONTEXTS -> PackedLongVector.Hint.UNSORTED_IDS;
+		default -> throw new IllegalArgumentException("unknown CSF page section: " + section);
+		};
+	}
 
 	PageImage tryEncode(CsfPageData data, boolean continuation, int pageId) {
 		if (data.isEmpty()) {
@@ -192,6 +367,11 @@ final class CompactCsfPageEncoder {
 		LeBytes.putInt(page, offsetField + 4, length);
 	}
 
+	private static void writeSection(long address, int offsetField, Layout layout, int section) {
+		UnsafeAccess.putIntLE(address + offsetField, layout.offsets[section]);
+		UnsafeAccess.putIntLE(address + offsetField + Integer.BYTES, layout.lengths[section]);
+	}
+
 	private static long[] toLongs(int[] source, int length) {
 		long[] values = new long[length];
 		for (int i = 0; i < length; i++) {
@@ -206,6 +386,120 @@ final class CompactCsfPageEncoder {
 		}
 		int type = (int) (id >>> 1 & 0x3f);
 		return type >= 36 && type <= 44;
+	}
+
+	private static long mix(long fingerprint, long value) {
+		long mixed = fingerprint ^ value * 0x9e3779b97f4a7c15L;
+		return Long.rotateLeft(mixed, 27) * 0x94d049bb133111ebL + 0x2545f4914f6cdd1dL;
+	}
+
+	static final class Layout {
+		final int[] offsets = new int[8];
+		final int[] lengths = new int[8];
+		int flags;
+		int classIndex;
+		int capacity;
+		int usedBytes;
+		int pageId;
+		long commonContext;
+		long firstRow;
+		long lastRow;
+		long firstNeighbor;
+		long lastNeighbor;
+		int rowCount;
+		int fiberCount;
+		int quadCount;
+		long fingerprint;
+
+		void reset() {
+			Arrays.fill(offsets, 0);
+			Arrays.fill(lengths, 0);
+			flags = 0;
+			classIndex = -1;
+			capacity = 0;
+			usedBytes = 0;
+			pageId = 0;
+			commonContext = 0;
+			firstRow = 0;
+			lastRow = 0;
+			firstNeighbor = 0;
+			lastNeighbor = 0;
+			rowCount = 0;
+			fiberCount = 0;
+			quadCount = 0;
+			fingerprint = 0;
+		}
+	}
+
+	private static final class VectorValues implements PackedLongVector.SequentialValues {
+		private CsfPageData.View data;
+		private int section;
+		private int size;
+		private int index;
+		private int group;
+		private int withinGroup;
+
+		void configure(CsfPageData.View data, int section) {
+			this.data = data;
+			this.section = section;
+			this.size = switch (section) {
+			case ROW_IDS, ROW_FIBER_STARTS, ROW_QUAD_COUNTS, FIRST_NEIGHBORS -> data.rowCount;
+			case NEIGHBOR_TAILS -> data.fiberCount - data.rowCount;
+			case CONTEXT_COUNTS, FIRST_CONTEXTS -> data.fiberCount;
+			case CONTEXT_TAILS -> data.quadCount - data.fiberCount;
+			default -> throw new IllegalArgumentException("unknown CSF page section: " + section);
+			};
+			reset();
+		}
+
+		@Override
+		public int size() {
+			return size;
+		}
+
+		@Override
+		public void reset() {
+			index = 0;
+			group = 0;
+			withinGroup = 1;
+		}
+
+		@Override
+		public long next() {
+			if (index >= size) {
+				throw new IllegalStateException("packed-vector source advanced beyond its declared size");
+			}
+			index++;
+			return switch (section) {
+			case ROW_IDS -> data.row(index - 1);
+			case ROW_FIBER_STARTS -> Integer.toUnsignedLong(data.rowFiberStart(index - 1));
+			case ROW_QUAD_COUNTS -> Integer.toUnsignedLong(data.rowQuadCount(index - 1));
+			case FIRST_NEIGHBORS -> data.neighbor(data.rowFiberStart(index - 1));
+			case NEIGHBOR_TAILS -> nextNeighborTail();
+			case CONTEXT_COUNTS -> Integer.toUnsignedLong(data.fiberContextCount(index - 1));
+			case FIRST_CONTEXTS -> data.context(data.fiberContextStart(index - 1));
+			case CONTEXT_TAILS -> nextContextTail();
+			default -> throw new IllegalStateException("unknown CSF page section: " + section);
+			};
+		}
+
+		private long nextNeighborTail() {
+			while (withinGroup >= data.rowFiberCount(group)) {
+				group++;
+				withinGroup = 1;
+			}
+			int at = data.rowFiberStart(group) + withinGroup++;
+			return data.neighbor(at) - data.neighbor(at - 1);
+		}
+
+		private long nextContextTail() {
+			while (withinGroup >= data.fiberContextCount(group)) {
+				group++;
+				withinGroup = 1;
+			}
+			int at = data.fiberContextStart(group) + withinGroup++;
+			return data.context(at) - data.context(at - 1);
+		}
 	}
 
 	record PageImage(byte[] bytes, int classIndex, int capacity, int usedBytes, long firstRow, long lastRow,
