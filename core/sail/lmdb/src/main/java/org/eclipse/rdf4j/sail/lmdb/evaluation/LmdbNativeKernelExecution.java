@@ -73,6 +73,8 @@ final class LmdbNativeKernelExecution {
 		LmdbNativeKernelLowering.OUTPUT_MODS_LOWERINGS.set(0L);
 		LmdbNativeKernelLowering.HASH_JOIN_LOWERINGS.set(0L);
 		LmdbNativeKernelLowering.WCOJ_LOWERINGS.set(0L);
+		LmdbNativeKernelLowering.ROW_EXISTS_LOWERINGS.set(0L);
+		LmdbNativeKernelLowering.AGG_RESIDUAL_LOWERINGS.set(0L);
 		SHAPE_OPENS.clear();
 	}
 
@@ -372,6 +374,11 @@ final class LmdbNativeKernelExecution {
 
 	private static RowCursor tryOpenRows(SlotPlan arg, RowState row, TupleExpr originalExpr, boolean preferScans,
 			int[] distinctSlots, OrderedMods ordered) throws IOException {
+		return tryOpenRows(arg, row, originalExpr, preferScans, distinctSlots, ordered, null);
+	}
+
+	private static RowCursor tryOpenRows(SlotPlan arg, RowState row, TupleExpr originalExpr, boolean preferScans,
+			int[] distinctSlots, OrderedMods ordered, java.util.Set<Long> scanPredicates) throws IOException {
 		if (!LmdbNativeJaninoCodegen.enabled()) {
 			if (ordered != null) {
 				return null;
@@ -387,11 +394,11 @@ final class LmdbNativeKernelExecution {
 		try {
 			LmdbNativeKernelLowering.Lowered lowered = ordered != null
 					? LmdbNativeKernelLowering.lowerOrderedRows(arg, row, preferScans, ordered.orderSlots,
-							ordered.ascending, ordered.limit, ordered.offset, ordered.strictCompare)
+							ordered.ascending, ordered.limit, ordered.offset, ordered.strictCompare, scanPredicates)
 					: distinctSlots != null
 							? LmdbNativeKernelLowering.lowerDistinctRows(arg, row, originalExpr, preferScans,
-									distinctSlots)
-							: LmdbNativeKernelLowering.lowerRows(arg, row, originalExpr, preferScans);
+									distinctSlots, scanPredicates)
+							: LmdbNativeKernelLowering.lowerRows(arg, row, originalExpr, preferScans, scanPredicates);
 			if (lowered == null) {
 				if (ordered != null) {
 					// Quiet: the ordinary ladder still sorts outside the kernel; see tryOpenOrderedRows.
@@ -426,15 +433,35 @@ final class LmdbNativeKernelExecution {
 				return null;
 			}
 			probe = row.source.newProbe();
-			NativeLmdbQuerySource.NativeAdjacency[] views = lowered.bindings.requestAdjacencies(probe);
+			NativeLmdbQuerySource.NativeAdjacency[] partial = lowered.bindings.requestAdjacenciesPartial(probe);
+			int unavailable = 0;
+			for (NativeLmdbQuerySource.NativeAdjacency view : partial) {
+				if (view == null) {
+					unavailable++;
+				}
+			}
+			NativeLmdbQuerySource.NativeAdjacency[] views = unavailable == 0 ? partial : null;
 			recordAdjacencyBindings(row, lowered.bindings, views, "irKernel");
 			if (views == null) {
-				// See the aggregate rung: retry once without views before giving the plan back to the ladder.
 				probe.close();
 				probe = null;
 				kernel.close();
+				// Per-pattern mixed binding (M10): when only SOME views are unavailable, re-lower with exactly
+				// their predicates preferring scans, keeping every available view adjacency-served.
+				if (scanPredicates == null && !preferScans && unavailable < partial.length
+						&& LmdbNativeKernelLowering.mixedBindingEnabled()
+						&& LmdbNativeKernelLowering.scanSourcesEnabled()) {
+					java.util.Set<Long> failed = new java.util.HashSet<>();
+					for (int i = 0; i < partial.length; i++) {
+						if (partial[i] == null) {
+							failed.add(lowered.bindings.adjacencies[i].predicate);
+						}
+					}
+					return tryOpenRows(arg, row, originalExpr, false, distinctSlots, ordered, failed);
+				}
+				// See the aggregate rung: retry once without views before giving the plan back to the ladder.
 				if (!preferScans && LmdbNativeKernelLowering.scanSourcesEnabled()) {
-					return tryOpenRows(arg, row, originalExpr, true, distinctSlots, ordered);
+					return tryOpenRows(arg, row, originalExpr, true, distinctSlots, ordered, null);
 				}
 				if (ordered != null) {
 					return null;

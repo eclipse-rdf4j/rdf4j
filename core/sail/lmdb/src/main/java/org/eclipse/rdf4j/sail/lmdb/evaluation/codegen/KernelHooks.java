@@ -54,4 +54,21 @@ public interface KernelHooks {
 	 * primitive while preserving datatype promotion, arbitrary-precision integers and decimals, and type errors.
 	 */
 	void accumulateNumeric(int aggregateId, int groupId, long valueId);
+
+	/**
+	 * Installs one engine-slot value into the residual scratch row before {@link #testResidual(int)} (M10 aggregate
+	 * residual tier). The generated code installs every slot in the residual's read mask, so stale scratch values can
+	 * never be read.
+	 */
+	default void residualSlot(int engineSlot, long id) {
+		throw new UnsupportedOperationException("residual filters are not supported by this hook implementation");
+	}
+
+	/**
+	 * Evaluates the registered engine-side residual predicate {@code residualId} against the installed scratch row —
+	 * pre-aggregation only; a false drops the producer row before it reaches the accumulators.
+	 */
+	default boolean testResidual(int residualId) {
+		throw new UnsupportedOperationException("residual filters are not supported by this hook implementation");
+	}
 }

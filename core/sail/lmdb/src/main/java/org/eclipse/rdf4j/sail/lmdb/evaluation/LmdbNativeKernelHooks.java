@@ -46,6 +46,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	private final LmdbNativeValueCodec codec;
 	private final LmdbNativeKernelBindings.FilterHook[] filters;
 	private final LmdbNativeKernelBindings.BindHook[] binds;
+	private final MaskedFilter[] residuals;
 	private final ValueComparator comparator = new ValueComparator();
 	private final AggKind[] numericKinds;
 	private final Literal[][] numericSums;
@@ -70,6 +71,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		this.codec = liveRow.source.nativeValueCodec();
 		this.filters = filterHooks;
 		this.binds = bindings.bindHooks;
+		this.residuals = bindings.kernelResiduals;
 		int aggregateCount = bindings.groupLayout == null ? 0 : bindings.groupLayout.outs.length;
 		this.numericKinds = new AggKind[aggregateCount];
 		this.numericSums = new Literal[aggregateCount][];
@@ -172,6 +174,18 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	}
 
 	@Override
+	public void residualSlot(int engineSlot, long id) {
+		scratch.replaceSlot(engineSlot, id);
+	}
+
+	@Override
+	public boolean testResidual(int residualId) {
+		// Every slot in the residual's read mask was just installed by residualSlot calls, so the scratch row is
+		// exactly the row the interpreted chain's own FilterCursor would present.
+		return residuals[residualId].filter.accept(scratch);
+	}
+
+	@Override
 	public int compareValues(long left, long right) {
 		if (codec != null && left != UNKNOWN && left != NULL_CONTEXT_ID && right != UNKNOWN
 				&& right != NULL_CONTEXT_ID) {
@@ -262,6 +276,17 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		for (LmdbNativeKernelBindings.FilterHook hook : filters) {
 			try {
 				hook.source.filter.close();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
+			}
+		}
+		for (MaskedFilter residual : residuals) {
+			try {
+				residual.filter.close();
 			} catch (RuntimeException | Error problem) {
 				if (failure == null) {
 					failure = problem;

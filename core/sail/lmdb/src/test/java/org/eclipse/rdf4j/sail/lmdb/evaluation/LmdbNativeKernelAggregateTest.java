@@ -149,6 +149,15 @@ public class LmdbNativeKernelAggregateTest {
 	private static final String HASH_JOIN_TWO_KEY_QUERY = "PREFIX ex: <" + EX + ">\n"
 			+ "SELECT ?a ?b WHERE { ?a ex:knows ?b . ?b ex:knows ?a }";
 
+	// M10 row-rung EXISTS: the sticky EXISTS filter on a plain row shape must run as an in-kernel witness
+	// (ROW_EXISTS_LOWERINGS witness) instead of an engine-side residual, and match the generic evaluator.
+	private static final String ROW_EXISTS_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?a ?b WHERE { ?a ex:knows ?b . ?b ex:knows ?c\n"
+			+ "  FILTER EXISTS { ?a ex:dislikes ?d } }";
+	private static final String ROW_NOT_EXISTS_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?a ?b WHERE { ?a ex:knows ?b . ?b ex:knows ?c\n"
+			+ "  FILTER NOT EXISTS { ?a ex:dislikes ?d } }";
+
 	// M9 kernel WCOJ: the triangle is the classic cyclic core — the interpreted leapfrog is disabled in this class
 	// (WCOJ_FLAG=false), so the kernel's Intersect lowering is what serves it (WCOJ_LOWERINGS witness). The fixture
 	// holds two directed 3-cycles (p0-p1-p2 and p3-p4-p5), so the triangle query has exactly 6 rotations.
@@ -701,6 +710,24 @@ public class LmdbNativeKernelAggregateTest {
 		} finally {
 			System.clearProperty("rdf4j.lmdb.nativeHashJoin.minRows");
 		}
+	}
+
+	@Test
+	public void rowExistsFilterRunsAsAnInKernelWitnessAndMatchesGeneric() {
+		List<String> expectedExists = genericRows(ROW_EXISTS_QUERY);
+		List<String> expectedNotExists = genericRows(ROW_NOT_EXISTS_QUERY);
+		assertFalse(expectedExists.isEmpty(), "fixture must produce EXISTS-filtered rows");
+		assertFalse(expectedNotExists.isEmpty(), "fixture must produce NOT-EXISTS-filtered rows");
+		warmRowSeeds();
+		for (int round = 0; round < 300
+				&& (KernelExecutionTestAccess.opened() == 0L
+						|| KernelExecutionTestAccess.rowExistsLowerings() == 0L); round++) {
+			rows(ROW_EXISTS_QUERY);
+		}
+		assertTrue(KernelExecutionTestAccess.rowExistsLowerings() > 0L,
+				"the sticky EXISTS filter was not lowered to an in-kernel witness on the row rung");
+		assertEquals(expectedExists, rows(ROW_EXISTS_QUERY));
+		assertEquals(expectedNotExists, rows(ROW_NOT_EXISTS_QUERY));
 	}
 
 	@Test

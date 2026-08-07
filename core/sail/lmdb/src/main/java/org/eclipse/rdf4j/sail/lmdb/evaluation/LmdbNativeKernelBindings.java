@@ -150,6 +150,8 @@ final class LmdbNativeKernelBindings {
 	final KernelGroupLayout groupLayout; // null for row-side lowerings
 	final boolean hooksRequired; // exact numeric and min/max outputs need hooks even without filter hooks
 	final int distinctExpected;
+	/** Engine-side residual predicates run in-kernel through {@code hooks.testResidual} (M10 aggregate tier). */
+	final MaskedFilter[] kernelResiduals;
 
 	LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
 			DomainRequest[] keyDomains, FilterHook[] filterHooks, int[] columnEngineSlots,
@@ -200,6 +202,16 @@ final class LmdbNativeKernelBindings {
 			DomainRequest[] keyDomains, FilterHook[] filterHooks, BindHook[] bindHooks, int[] columnEngineSlots,
 			List<MaskedFilter> residualFilters, StatementOrder[] scanOrders, PlanRequest[] planRequests,
 			KernelGroupLayout groupLayout, boolean hooksRequired, int distinctExpected) {
+		this(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, bindHooks, columnEngineSlots,
+				residualFilters, scanOrders, planRequests, groupLayout, hooksRequired, distinctExpected,
+				new MaskedFilter[0]);
+	}
+
+	LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
+			DomainRequest[] keyDomains, FilterHook[] filterHooks, BindHook[] bindHooks, int[] columnEngineSlots,
+			List<MaskedFilter> residualFilters, StatementOrder[] scanOrders, PlanRequest[] planRequests,
+			KernelGroupLayout groupLayout, boolean hooksRequired, int distinctExpected,
+			MaskedFilter[] kernelResiduals) {
 		this.adjacencies = adjacencies;
 		this.constants = constants;
 		this.entrySlotIds = entrySlotIds;
@@ -213,10 +225,11 @@ final class LmdbNativeKernelBindings {
 		this.groupLayout = groupLayout;
 		this.hooksRequired = hooksRequired;
 		this.distinctExpected = distinctExpected;
+		this.kernelResiduals = kernelResiduals;
 	}
 
 	boolean needsHooks() {
-		return filterHooks.length > 0 || bindHooks.length > 0 || hooksRequired;
+		return filterHooks.length > 0 || bindHooks.length > 0 || kernelResiduals.length > 0 || hooksRequired;
 	}
 
 	/**
@@ -225,13 +238,28 @@ final class LmdbNativeKernelBindings {
 	 */
 	NativeLmdbQuerySource.NativeAdjacency[] requestAdjacencies(NativeLmdbQuerySource.NativeProbe probe)
 			throws java.io.IOException {
+		NativeLmdbQuerySource.NativeAdjacency[] views = requestAdjacenciesPartial(probe);
+		for (NativeLmdbQuerySource.NativeAdjacency view : views) {
+			if (view == null) {
+				return null;
+			}
+		}
+		return views;
+	}
+
+	/**
+	 * As {@link #requestAdjacencies} but returns the partial array — a null at every unavailable index — so the caller
+	 * can re-lower with per-pattern mixed binding (M10) instead of abandoning every available view.
+	 */
+	NativeLmdbQuerySource.NativeAdjacency[] requestAdjacenciesPartial(NativeLmdbQuerySource.NativeProbe probe)
+			throws java.io.IOException {
 		NativeLmdbQuerySource.NativeAdjacency[] views = new NativeLmdbQuerySource.NativeAdjacency[adjacencies.length];
 		for (int i = 0; i < adjacencies.length; i++) {
 			AdjacencyRequest request = adjacencies[i];
 			NativeLmdbQuerySource.NativeAdjacency view = probe.adjacency(request.predicate, request.bySubject);
 			if (view == null
 					|| (request.needsKeyEnum && (!view.supportsKeyEnumeration() || view.keyCount() < 0))) {
-				return null;
+				continue;
 			}
 			views[i] = view;
 		}

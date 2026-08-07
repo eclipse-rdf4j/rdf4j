@@ -108,6 +108,10 @@ final class LmdbNativeParallelKernelRows {
 		if (bindings.bindHooks.length > 0) {
 			return debugDecline("bind-hook");
 		}
+		// Kernel residual predicates run the shared engine-side filter instance; no fork SPI yet (M10 v1).
+		if (bindings.kernelResiduals.length > 0) {
+			return debugDecline("kernel-residual");
+		}
 		if (!LmdbNativeKernelPartitions.residualsForkable(bindings.residualFilters)) {
 			return debugDecline("residual-filter-not-forkable");
 		}

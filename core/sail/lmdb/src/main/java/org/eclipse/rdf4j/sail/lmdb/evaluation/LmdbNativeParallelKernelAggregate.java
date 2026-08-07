@@ -122,6 +122,10 @@ final class LmdbNativeParallelKernelAggregate {
 		if (bindings.bindHooks.length > 0) {
 			return debugDecline("bind-hook");
 		}
+		// Kernel residual predicates run the shared engine-side filter instance; no fork SPI yet (M10 v1).
+		if (bindings.kernelResiduals.length > 0) {
+			return debugDecline("kernel-residual");
+		}
 		if (!bindings.residualFilters.isEmpty()) {
 			return debugDecline("residual-filter");
 		}

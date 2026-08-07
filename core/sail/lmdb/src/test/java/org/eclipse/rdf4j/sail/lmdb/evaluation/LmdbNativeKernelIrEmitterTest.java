@@ -227,6 +227,31 @@ class LmdbNativeKernelIrEmitterTest {
 		assertRows(rows, new long[][] { { 7, 9 }, { 7, 300 }, { 7, 384 } });
 	}
 
+	// M10 aggregate residual tier: the generated code installs every masked slot then asks hooks.testResidual; a
+	// false drops the row before it reaches the terminal.
+	@Test
+	void filterResidualInstallsSlotsAndDropsRefusedRows() throws Exception {
+		TestHooks hooks = new TestHooks() {
+			private long installed;
+
+			@Override
+			public void residualSlot(int engineSlot, long id) {
+				installed = id;
+			}
+
+			@Override
+			public boolean testResidual(int residualId) {
+				return installed % 2 == 0;
+			}
+		};
+		Kernel ir = new Kernel(1, List.of(
+				new EnumerateDomain(0, 0),
+				new LmdbNativeKernelIr.FilterResidual(0, new Operand[] { Operand.col(0) }, new int[] { 0 })),
+				emit(0));
+		assertRows(run(ir, context().domains(new long[] { 2, 3, 4 }).hooks(hooks)),
+				new long[][] { { 2 }, { 4 } });
+	}
+
 	@Test
 	void enumerateEntrySeedsSingleRowFromEntrySlots() throws Exception {
 		Kernel ir = new Kernel(1, List.of(new EnumerateEntry(), new BindAlias(Operand.entry(0), 0)), emit(0));
@@ -1423,7 +1448,7 @@ class LmdbNativeKernelIrEmitterTest {
 	}
 
 	/** Programmable hook implementation: numeric value of an id is the id itself; value order is signed. */
-	private static final class TestHooks implements KernelHooks {
+	private static class TestHooks implements KernelHooks {
 		LongPredicate filterAccept = id -> true;
 		LongUnaryOperator bindCompute = a -> a;
 		final Map<Long, Double> numericSums = new HashMap<>();

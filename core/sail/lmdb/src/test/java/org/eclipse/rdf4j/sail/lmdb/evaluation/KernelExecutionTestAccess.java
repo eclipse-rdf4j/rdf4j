@@ -76,6 +76,14 @@ public final class KernelExecutionTestAccess {
 		return LmdbNativeKernelLowering.WCOJ_LOWERINGS.get();
 	}
 
+	public static long rowExistsLowerings() {
+		return LmdbNativeKernelLowering.ROW_EXISTS_LOWERINGS.get();
+	}
+
+	public static long aggResidualLowerings() {
+		return LmdbNativeKernelLowering.AGG_RESIDUAL_LOWERINGS.get();
+	}
+
 	public static void resetMetrics() {
 		LmdbNativeKernelExecution.resetMetrics();
 	}

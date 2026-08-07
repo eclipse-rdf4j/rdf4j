@@ -72,9 +72,18 @@ class LmdbNativeIrKernelParallelTest {
 			+ "?inproc <" + EX + "creator> ?person . "
 			+ "?person <" + EX + "name> ?pname }";
 
-	/** The EXISTS filter's memo and probe state cannot fork a worker copy, so parallel must still decline. */
+	/** Since M10 this lowers to a stateless in-kernel Exists witness, which partitions safely. */
 	private static final String EXISTS_QUERY = "SELECT ?s ?v WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
 			+ "q> ?v . FILTER EXISTS { ?m <" + EX + "r> ?x } }";
+
+	/**
+	 * An EXISTS disjunction cannot become an in-kernel witness (the IR has no OR-of-witnesses node), so it stays an
+	 * engine-side residual whose memoized probe state cannot fork — the parallel rung must keep declining it. The plain
+	 * {@link #EXISTS_QUERY} stopped being such a shape in M10: its filter lowers to a stateless in-kernel witness,
+	 * which partitions safely.
+	 */
+	private static final String EXISTS_DISJUNCTION_QUERY = "SELECT ?s ?v WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
+			+ "q> ?v . FILTER (EXISTS { ?m <" + EX + "r> ?x } || EXISTS { ?m <" + EX + "q2> ?x }) }";
 
 	/**
 	 * The slot-against-slot inequality compiles to a forkable native compare filter (parity plan
@@ -292,19 +301,39 @@ class LmdbNativeIrKernelParallelTest {
 	@Test
 	void filterHookKernelDeclinesParallelButKeepsTheSequentialKernel() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
-		List<String> expected = rows(EXISTS_QUERY);
+		List<String> expected = rows(EXISTS_DISJUNCTION_QUERY);
 		assertThat(expected).isNotEmpty();
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 
 		KernelExecutionTestAccess.resetMetrics();
 		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300 && KernelExecutionTestAccess.opened() == 0; round++) {
-			assertThat(rows(EXISTS_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(rows(EXISTS_DISJUNCTION_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
 		}
 		assertThat(KernelExecutionTestAccess.opened()).as("sequential kernel still serves").isGreaterThan(0);
 		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get())
-				.as("shared filter-hook state would race across workers; parallel must decline")
+				.as("shared residual state would race across workers; parallel must decline")
 				.isEqualTo(parallelBefore);
+	}
+
+	/** M10: the plain EXISTS shape now carries a STATELESS in-kernel witness, so it partitions safely. */
+	@Test
+	void witnessExistsKernelRunsParallelWithExactResults() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(EXISTS_QUERY);
+		assertThat(expected).isNotEmpty();
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+
+		KernelExecutionTestAccess.resetMetrics();
+		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
+		for (int round = 0; round < 300
+				&& LmdbNativeParallelKernelRows.PARALLEL_RUNS.get() == parallelBefore; round++) {
+			assertThat(rows(EXISTS_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+		}
+		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get())
+				.as("a witness-EXISTS kernel has no shared filter state and must partition")
+				.isGreaterThan(parallelBefore);
+		assertThat(rows(EXISTS_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test

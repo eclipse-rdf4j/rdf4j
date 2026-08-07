@@ -213,9 +213,10 @@ class LmdbNativeKernelLoweringTest {
 		MaskedFilter hookTier = new MaskedFilter(
 				new CachedCompareFilter(2, 300L, false, Compare.CompareOp.LT, false, bindings -> true, null),
 				1L << 2);
-		// residual tier: sticky mask (as EXISTS-bearing filters are marked)
-		MaskedFilter residual = new MaskedFilter(new OrderedSlotCompareFilter(0, 1, Compare.CompareOp.LT,
-				bindings -> true, true, true), -1L);
+		// residual tier: a sticky generic predicate nothing can lower — since M10 a sticky filter with a usable
+		// batchReadMask takes the witness tail's id-then-hook treatment instead, so only an opaque lambda stays
+		// residual
+		MaskedFilter residual = new MaskedFilter(bindings -> true, -1L);
 		MultiJoinPlan plan = new MultiJoinPlan(
 				new SlotPlan[] { pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(1), Term.slot(2)) },
 				new MaskedFilter[] { idTier, hookTier, residual });
@@ -455,6 +456,83 @@ class LmdbNativeKernelLoweringTest {
 					"flag off must keep the probe chain: " + lowered.kernel.shapeKey());
 		} finally {
 			System.clearProperty(LmdbNativeKernelLowering.WCOJ_KERNEL_PROPERTY);
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	/**
+	 * M10 row-rung EXISTS: a sticky EXISTS filter on the row rung must lower to the in-kernel {@code Exists} witness
+	 * (the aggregate rung has done this since plan 21) instead of falling to the engine-side residual tier, which
+	 * blocks the DISTINCT/ORDER sinks and the parallel rungs.
+	 */
+	@Test
+	void rowRungLowersAStickyExistsFilterToAnInKernelWitness() {
+		MultiJoinPlan join = new MultiJoinPlan(
+				new SlotPlan[] { pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(1), Term.slot(2)) },
+				new MaskedFilter[0]);
+		StatementPatternExistsFilter exists = new StatementPatternExistsFilter(new StubSource(), Term.slot(0),
+				Term.constant(PRED + 4), Term.constant(17L), Term.unbound(), ContextConstraint.UNRESTRICTED, false);
+		FilterPlan plan = new FilterPlan(join, exists, -1L);
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
+			assertNotNull(lowered, "the EXISTS-bearing chain must still lower");
+			assertTrue(lowered.kernel.shapeKey().contains("ex{"),
+					"expected an in-kernel Exists witness in the shape key: " + lowered.kernel.shapeKey());
+			assertTrue(lowered.bindings.residualFilters.isEmpty(),
+					"the sticky filter must not fall to the residual tier");
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	/**
+	 * M10 per-pattern mixed binding: when bind time reports one predicate's views unavailable, the re-lower keeps every
+	 * other pattern adjacency-served and swaps ONLY the unavailable predicate's pattern to a direct LMDB scan.
+	 */
+	@Test
+	void mixedBindingLowersOnlyTheUnavailablePredicateAsScan() {
+		PatternPlan available = pattern(Term.slot(0), Term.slot(1));
+		PatternPlan unavailable = new PatternPlan(Term.slot(1), Term.constant(PRED + 2), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 10D);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { available, unavailable }, new MaskedFilter[0]);
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null,
+					false, java.util.Set.of(PRED + 2));
+			assertNotNull(lowered, "the mixed re-lower must still produce a kernel");
+			String key = lowered.kernel.shapeKey();
+			assertTrue(key.contains("EA(") || key.contains("P(a"),
+					"the available predicate must keep its adjacency route: " + key);
+			assertTrue(key.contains("SQ("), "the unavailable predicate must lower as a scan: " + key);
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	/**
+	 * M10 aggregate residual tier: a producer filter neither the id tier nor the hook tier can lower (an opaque
+	 * engine-side predicate with a usable read mask) must keep the aggregate kernel — running through
+	 * {@code hooks.testResidual} — instead of declining the whole aggregation.
+	 */
+	@Test
+	void aggregateResidualFilterKeepsTheKernelInsteadOfDeclining() {
+		// four read slots: one past the hook tier's three-argument ceiling, so only the residual tier can serve
+		MultiJoinPlan plan = new MultiJoinPlan(
+				new SlotPlan[] { pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(1), Term.slot(2)),
+						pattern(Term.slot(2), Term.slot(3)) },
+				new MaskedFilter[] { new MaskedFilter(bindings -> true, 0b1111L) });
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = lowerCounting(plan, 2);
+			assertNotNull(lowered, "an opaque producer filter must take the residual tier, not decline");
+			assertTrue(lowered.kernel.shapeKey().contains("fr0("),
+					"expected a FilterResidual node in the shape key: " + lowered.kernel.shapeKey());
+			assertEquals(1, lowered.bindings.kernelResiduals.length);
+		} finally {
 			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
 		}
 	}

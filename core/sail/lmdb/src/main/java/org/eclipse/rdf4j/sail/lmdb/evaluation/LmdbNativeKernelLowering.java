@@ -207,6 +207,51 @@ final class LmdbNativeKernelLowering {
 	/** Simple-cycle cores lowered through the kernel Intersect seam (M9 witness). */
 	static final AtomicLong WCOJ_LOWERINGS = new AtomicLong();
 
+	/**
+	 * Enables lowering sticky EXISTS filters on the ROW rung to the in-kernel {@code Exists} witness (three-tier parity
+	 * plan, M10) — the aggregate rung has done this since plan 21; the row rung used to push them to the engine-side
+	 * residual tier, which blocks the DISTINCT/ORDER sinks and parallel execution. Kill switch, default ON — a filter
+	 * the witness machinery refuses still falls back to the residual tier, never a decline.
+	 */
+	static final String ROW_EXISTS_PROPERTY = "rdf4j.lmdb.janinoCodegen.rowExists";
+
+	static boolean rowExistsEnabled() {
+		return Boolean.parseBoolean(System.getProperty(ROW_EXISTS_PROPERTY, "true"));
+	}
+
+	/** Row-rung sticky EXISTS filters lowered to in-kernel witnesses (M10 witness). */
+	static final AtomicLong ROW_EXISTS_LOWERINGS = new AtomicLong();
+
+	/**
+	 * Enables the aggregate rung's residual filter tier (three-tier parity plan, M10): a producer filter neither the id
+	 * tier nor the hook tier can lower runs in-kernel through {@code hooks.testResidual} — the engine-side predicate
+	 * over an installed scratch row — instead of declining the whole aggregate kernel. Pre-aggregation placement only;
+	 * HAVING keeps its own seam (M7). Kill switch, default ON.
+	 */
+	static final String AGG_RESIDUAL_PROPERTY = "rdf4j.lmdb.janinoCodegen.aggResidual";
+
+	static boolean aggResidualEnabled() {
+		return Boolean.parseBoolean(System.getProperty(AGG_RESIDUAL_PROPERTY, "true"));
+	}
+
+	/** Aggregate-rung filters kept in-kernel through the residual tier (M10 witness). */
+	static final AtomicLong AGG_RESIDUAL_LOWERINGS = new AtomicLong();
+
+	/**
+	 * Enables per-pattern mixed binding (three-tier parity plan, M10): when bind time reports SOME adjacency views
+	 * unavailable, the kernel re-lowers with only THOSE predicates' patterns preferring direct LMDB scans, keeping
+	 * every available view adjacency-served — instead of the all-or-nothing global scan retry. Kill switch, default ON;
+	 * the global retry remains the fallback when the mixed re-lower still cannot bind.
+	 */
+	static final String MIXED_BINDING_PROPERTY = "rdf4j.lmdb.janinoCodegen.mixedBinding";
+
+	static boolean mixedBindingEnabled() {
+		return Boolean.parseBoolean(System.getProperty(MIXED_BINDING_PROPERTY, "true"));
+	}
+
+	/** Patterns lowered as scans because exactly their predicate's views were unavailable (M10 witness). */
+	static final AtomicLong MIXED_BINDING_LOWERINGS = new AtomicLong();
+
 	private static final int MAX_CHILDREN = 12;
 	private static final int MAX_HOOK_ARGS = 3;
 	/** Rows of a multi-variable VALUES table the lowering will unroll into generated source. */
@@ -258,6 +303,17 @@ final class LmdbNativeKernelLowering {
 	 * declines into working kernels rather than a fallback to the interpreted engine.
 	 */
 	static Lowered lowerRows(SlotPlan arg, RowState row, TupleExpr declineTarget, boolean preferScans) {
+		return lowerRows(arg, row, declineTarget, preferScans, null);
+	}
+
+	/**
+	 * As above with per-pattern mixed binding (three-tier parity plan, M10): {@code scanPredicates} names the
+	 * predicates whose adjacency views bind time reported unavailable, and ONLY the patterns over those predicates
+	 * prefer the direct LMDB scan — every other pattern keeps its adjacency route, instead of the all-or-nothing global
+	 * {@code preferScans} retry.
+	 */
+	static Lowered lowerRows(SlotPlan arg, RowState row, TupleExpr declineTarget, boolean preferScans,
+			java.util.Set<Long> scanPredicates) {
 		// OPTIONAL chains nest left-deep: LeftJoin(LeftJoin(core, r1), r2) applies r1 then r2 — peel arms in
 		// application order, along with any FilterPlan wrappers (group-level filters over the optional vars),
 		// which degrade through the ordinary three tiers (plan 22, M3).
@@ -277,7 +333,7 @@ final class LmdbNativeKernelLowering {
 				break;
 			}
 		}
-		return lowerRowCore(arg, core, optionalArms, outerFilters, row, declineTarget, preferScans);
+		return lowerRowCore(arg, core, optionalArms, outerFilters, row, declineTarget, preferScans, scanPredicates);
 	}
 
 	/**
@@ -290,6 +346,11 @@ final class LmdbNativeKernelLowering {
 	 */
 	static Lowered lowerDistinctRows(SlotPlan arg, RowState row, TupleExpr declineTarget, boolean preferScans,
 			int[] distinctSlots) {
+		return lowerDistinctRows(arg, row, declineTarget, preferScans, distinctSlots, null);
+	}
+
+	static Lowered lowerDistinctRows(SlotPlan arg, RowState row, TupleExpr declineTarget, boolean preferScans,
+			int[] distinctSlots, java.util.Set<Long> scanPredicates) {
 		List<MaskedFilter> outerFilters = new ArrayList<>(0);
 		SlotPlan core = arg;
 		while (core instanceof FilterPlan) {
@@ -314,6 +375,7 @@ final class LmdbNativeKernelLowering {
 		}
 		Builder builder = new Builder(row, "");
 		builder.preferScans = preferScans;
+		builder.scanPredicates = scanPredicates;
 		builder.distinctRetainedMask = retained;
 		List<MaskedFilter> coreFilters = new ArrayList<>(0);
 		if (!builder.lowerJoinOperand(core, coreFilters, row)) {
@@ -352,10 +414,17 @@ final class LmdbNativeKernelLowering {
 	 */
 	static Lowered lowerOrderedRows(SlotPlan arg, RowState row, boolean preferScans, int[] orderSlots,
 			boolean[] orderAscending, long limit, long offset, boolean strictCompare) {
+		return lowerOrderedRows(arg, row, preferScans, orderSlots, orderAscending, limit, offset, strictCompare,
+				null);
+	}
+
+	static Lowered lowerOrderedRows(SlotPlan arg, RowState row, boolean preferScans, int[] orderSlots,
+			boolean[] orderAscending, long limit, long offset, boolean strictCompare,
+			java.util.Set<Long> scanPredicates) {
 		if (!outputModsEnabled()) {
 			return null;
 		}
-		Lowered lowered = lowerRows(arg, row, null, preferScans);
+		Lowered lowered = lowerRows(arg, row, null, preferScans, scanPredicates);
 		if (lowered == null || lowered.planBridgeReason != null) {
 			// Bridge-fed kernels bring no fusion win over the engine-side sort machinery; let the ladder serve.
 			declineQuiet("order-sink:" + (lowered == null ? "lowering-declined" : "plan-bridge"));
@@ -796,9 +865,11 @@ final class LmdbNativeKernelLowering {
 	 * the aggregate rung's strict one, so a filter still never causes a decline here.
 	 */
 	private static Lowered lowerRowCore(SlotPlan original, SlotPlan core, List<SlotPlan> optionalArms,
-			List<MaskedFilter> outerFilters, RowState row, TupleExpr declineTarget, boolean preferScans) {
+			List<MaskedFilter> outerFilters, RowState row, TupleExpr declineTarget, boolean preferScans,
+			java.util.Set<Long> scanPredicates) {
 		Builder builder = new Builder(row, "");
 		builder.preferScans = preferScans;
+		builder.scanPredicates = scanPredicates;
 		List<MaskedFilter> coreFilters = new ArrayList<>(0);
 		if (!builder.lowerJoinOperand(core, coreFilters, row)) {
 			return rowDeclineOrBridge(original, row, declineTarget, builder.reason);
@@ -892,6 +963,8 @@ final class LmdbNativeKernelLowering {
 		final String reasonPrefix;
 		/** Try a direct LMDB scan before any adjacency view; set on the rungs' retry after a bind-time view failure. */
 		boolean preferScans;
+		/** Predicates whose adjacency views bind time reported unavailable (M10 mixed binding); null = none. */
+		java.util.Set<Long> scanPredicates;
 		long assuredMask;
 		String reason;
 
@@ -1025,6 +1098,8 @@ final class LmdbNativeKernelLowering {
 		final List<Integer> columnEngineSlots = new ArrayList<>();
 		final List<Integer> columnOrderedDomains = new ArrayList<>();
 		final List<MaskedFilter> residualFilters = new ArrayList<>();
+		/** Aggregate-rung residual predicates dispatched by index through {@code hooks.testResidual} (M10). */
+		final List<MaskedFilter> kernelResiduals = new ArrayList<>();
 		final List<StatementOrder> scanOrders = new ArrayList<>();
 
 		final int[] slotColumn;
@@ -1684,6 +1759,13 @@ final class LmdbNativeKernelLowering {
 			if (preferScans && lowerPatternAsScan(pattern)) {
 				return true;
 			}
+			// Per-pattern mixed binding (M10): only the patterns whose predicate's views bind time reported
+			// unavailable prefer the scan; everything else keeps its adjacency route.
+			if (scanPredicates != null && pattern.p.isConstant() && !pattern.p.hasSlot()
+					&& scanPredicates.contains(pattern.p.constant) && lowerPatternAsScan(pattern)) {
+				MIXED_BINDING_LOWERINGS.incrementAndGet();
+				return true;
+			}
 			// Context work the adjacency run's context column can express (M7): a constant GRAPH restriction, a
 			// projected or already-bound graph variable, and the named-graph default exclusion. A fixed dataset
 			// (context SET membership) and a bind-constant graph term stay out.
@@ -2071,7 +2153,48 @@ final class LmdbNativeKernelLowering {
 			if (lowerHookFilter(masked)) {
 				return;
 			}
+			if (lowerRowWitness(masked)) {
+				return;
+			}
 			residualFilters.add(masked);
+		}
+
+		/**
+		 * Row-rung sticky EXISTS pushdown (M10): reuses the aggregate rung's witness machinery to lower an
+		 * EXISTS-bearing filter (mask {@code < 0}) to an in-kernel {@code Exists} node. A refused witness must leave
+		 * ZERO trace — partially registered adjacency requests would make the bind request views the kernel never reads
+		 * (and decline the open when one is unavailable) — so every registry the attempt can grow is rolled back to its
+		 * mark on failure and the filter falls to the residual tier as before.
+		 */
+		private boolean lowerRowWitness(MaskedFilter masked) {
+			if (!rowExistsEnabled() || masked.mask >= 0L || !reasonPrefix.isEmpty()) {
+				return false;
+			}
+			int adjacencyMark = adjacencies.size();
+			int constantMark = constants.size();
+			int entryMark = entrySlotIds.size();
+			int scratchMark = scratchColumns;
+			int witnessMark = witnessNodes.size();
+			String reasonBefore = reason;
+			if (lowerWitness(masked.filter, false)) {
+				ROW_EXISTS_LOWERINGS.incrementAndGet();
+				return true;
+			}
+			while (adjacencies.size() > adjacencyMark) {
+				adjacencies.remove(adjacencies.size() - 1);
+			}
+			while (constants.size() > constantMark) {
+				constants.remove(constants.size() - 1);
+			}
+			while (entrySlotIds.size() > entryMark) {
+				entrySlotIds.remove(entrySlotIds.size() - 1);
+			}
+			while (witnessNodes.size() > witnessMark) {
+				witnessNodes.remove(witnessNodes.size() - 1);
+			}
+			scratchColumns = scratchMark;
+			reason = reasonBefore;
+			return false;
 		}
 
 		private boolean lowerIdFilter(NativeBooleanFilter filter) {
@@ -2617,10 +2740,49 @@ final class LmdbNativeKernelLowering {
 				if (lowerIdFilter(filter) || lowerHookFilter(masked)) {
 					return true;
 				}
+				if (lowerKernelResidual(masked)) {
+					return true;
+				}
 				reason = reasonPrefix + "filter:" + filter.getClass().getSimpleName();
 				return false;
 			}
 			return lowerWitness(filter, false);
+		}
+
+		/**
+		 * Aggregate residual tier (M10): a producer filter with a usable read mask that neither the id tier nor the
+		 * hook tier can lower runs in-kernel through {@code hooks.testResidual}. Pre-aggregation placement — the
+		 * FilterResidual node sits at the depth of its deepest operand, exactly where the interpreted chain would run
+		 * the filter, so a false drops the row before accumulation.
+		 */
+		private boolean lowerKernelResidual(MaskedFilter masked) {
+			if (!aggResidualEnabled()) {
+				return false;
+			}
+			long mask = masked.mask;
+			int width = Long.bitCount(mask);
+			if (mask < 0L || width == 0 || width > 8) {
+				return false;
+			}
+			Operand[] args = new Operand[width];
+			int[] slots = new int[width];
+			int maxDepth = -1;
+			int i = 0;
+			for (long m = mask; m != 0L; m &= m - 1) {
+				int slot = Long.numberOfTrailingZeros(m);
+				Operand operand = slotOperand(slot);
+				if (operand == null) {
+					return false;
+				}
+				args[i] = operand;
+				slots[i] = slot;
+				i++;
+				maxDepth = Math.max(maxDepth, operandDepth(operand));
+			}
+			kernelResiduals.add(masked);
+			placeFilter(new LmdbNativeKernelIr.FilterResidual(kernelResiduals.size() - 1, args, slots), maxDepth);
+			AGG_RESIDUAL_LOWERINGS.incrementAndGet();
+			return true;
 		}
 
 		private boolean lowerWitness(NativeBooleanFilter filter, boolean negated) {
@@ -3326,7 +3488,7 @@ final class LmdbNativeKernelLowering {
 					scanOrders.toArray(new StatementOrder[0]),
 					planRequests.toArray(new LmdbNativeKernelBindings.PlanRequest[0]),
 					new LmdbNativeKernelBindings.KernelGroupLayout(groupSlots.clone(), outs), hooksRequired,
-					distinctExpected);
+					distinctExpected, kernelResiduals.toArray(new MaskedFilter[0]));
 			return new Lowered(kernel, bindings);
 		}
 
@@ -3349,6 +3511,8 @@ final class LmdbNativeKernelLowering {
 				pipeline.addAll(nodesPerDepth.get(d));
 				pipeline.addAll(filtersPerDepth.get(d));
 			}
+			// Row-rung sticky EXISTS witnesses (M10): appended after every producer, like buildAggregate does.
+			pipeline.addAll(witnessNodes);
 			int[] emitColumns = new int[columnEngineSlots.size()];
 			for (int i = 0; i < emitColumns.length; i++) {
 				emitColumns[i] = i;

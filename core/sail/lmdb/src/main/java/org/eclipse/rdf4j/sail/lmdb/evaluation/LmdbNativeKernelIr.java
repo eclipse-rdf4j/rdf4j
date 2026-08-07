@@ -555,6 +555,43 @@ final class LmdbNativeKernelIr {
 		}
 	}
 
+	/**
+	 * Engine-side residual predicate (M10 aggregate residual tier): installs every slot in the filter's read mask into
+	 * the hook scratch row, then asks {@code hooks.testResidual}. Pre-aggregation placement only — a false drops the
+	 * producer row before accumulation, exactly like the interpreted chain's own filter placement.
+	 */
+	static final class FilterResidual extends Node {
+		final int residualId;
+		final Operand[] args;
+		final int[] engineSlots;
+
+		FilterResidual(int residualId, Operand[] args, int[] engineSlots) {
+			if (args.length != engineSlots.length || args.length == 0) {
+				throw new IllegalArgumentException("residual args must pair with engine slots");
+			}
+			this.residualId = residualId;
+			this.args = args;
+			this.engineSlots = engineSlots;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("fr").append(residualId).append('(');
+			for (int i = 0; i < args.length; i++) {
+				key.append(i == 0 ? "" : ",").append(engineSlots[i]).append('=').append(args[i].token());
+			}
+			key.append(");");
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.hooks = true;
+			for (Operand arg : args) {
+				requirements.operand(arg);
+			}
+		}
+	}
+
 	/** Id-decidable equality/inequality guard. */
 	static final class FilterCompareId extends Node {
 		final boolean negated; // false = require equal, true = require not equal
@@ -1514,7 +1551,8 @@ final class LmdbNativeKernelIr {
 	/** True for the row-level guard nodes, which neither produce a column nor branch the pipeline. */
 	static boolean isFilter(Node node) {
 		return node instanceof FilterCompareId || node instanceof FilterInConstants
-				|| node instanceof FilterRangeUnsigned || node instanceof FilterValue;
+				|| node instanceof FilterRangeUnsigned || node instanceof FilterValue
+				|| node instanceof FilterResidual;
 	}
 
 	static final class Kernel {

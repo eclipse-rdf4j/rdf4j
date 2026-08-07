@@ -2439,6 +2439,23 @@ final class LmdbNativeKernelEmitter {
 						.append(next(nextTemplate, indent + "    "))
 						.append(indent)
 						.append("}\n");
+			} else if (node instanceof LmdbNativeKernelIr.FilterResidual) {
+				LmdbNativeKernelIr.FilterResidual residual = (LmdbNativeKernelIr.FilterResidual) node;
+				for (int i = 0; i < residual.args.length; i++) {
+					body.append(indent)
+							.append("hooks.residualSlot(")
+							.append(residual.engineSlots[i])
+							.append(", ")
+							.append(residual.args[i].token())
+							.append(");\n");
+				}
+				body.append(indent)
+						.append("if (hooks.testResidual(")
+						.append(residual.residualId)
+						.append(")) {\n")
+						.append(next(nextTemplate, indent + "    "))
+						.append(indent)
+						.append("}\n");
 			} else if (node instanceof FilterValue) {
 				FilterValue filter = (FilterValue) node;
 				String[] args = { "-1L", "-1L", "-1L" };
