@@ -28,11 +28,32 @@ import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 final class LmdbPagedCsfConsolidator {
 
 	private static final long FIXED_WORKSPACE_BYTES = 16L << 20;
-	private static final long WORKSPACE_BYTES_PER_SOURCE_ROW = 72;
+
+	/**
+	 * Modelled transient workspace per overlay source row, charged before any of it is allocated (invariant I17).
+	 * <p>
+	 * Derivation. {@code LatestRows} keeps five parallel arrays per row — key, plane, predicate, generation, and
+	 * generation row — costing 8 + 1 + 8 + 4 + 4 = 25 bytes. {@code OverlayUpdates} adds its record, partition and
+	 * order arrays over the same rows, and the node-predicate partition adds one more index array per plane. Rounding
+	 * the sum up to a power of two and doubling it for the copies a growing array holds live during {@code
+	 * Arrays.copyOf} gives 160.
+	 * <p>
+	 * This is a charging model, not a measurement: it is deliberately generous, because under-charging would let the
+	 * account's total drift below actual use, and the cap exists to keep the process alive. A test pins the formula and
+	 * the refusal behaviour rather than any live object size, since per-field byte figures are assumptions about JVM
+	 * layout rather than stable facts.
+	 */
+	private static final long WORKSPACE_BYTES_PER_SOURCE_ROW = 160;
 	private static final long BASE_OBJECT_BYTES = 8L << 10;
 
+	/**
+	 * {@code nodePredicateRewrite} is null when the old base had no projection, and also when the projection needed no
+	 * rewrite at all — the no-change fast path shares the previous structure rather than producing a new one, so there
+	 * are no shared or replaced page counts to report.
+	 */
 	record Result(LmdbInMemoryAdjacencyIndex base, ImmutablePagedQuadCsfIndex.RewriteResult rewrite,
-			int foldedGenerationCount, int foldedRowCount) {
+			ImmutablePagedQuadCsfIndex.RewriteResult nodePredicateRewrite, int foldedGenerationCount,
+			int foldedRowCount) {
 	}
 
 	private LmdbPagedCsfConsolidator() {
@@ -65,6 +86,9 @@ final class LmdbPagedCsfConsolidator {
 			long[] foldedExtraSelected = overlays.extraSelectedSnapshot();
 			LmdbAdjacencyCoverage coverage = oldBase.coverage().withAdditionalSelected(foldedExtraSelected);
 			OverlayUpdates updates = latest.toUpdates(predicates, state.contextCatalog());
+			LmdbNodePredicateIndex oldNodePredicates = oldBase.nodePredicateIndexOrNull();
+			LmdbNodePredicateUpdates nodePredicateUpdates = oldNodePredicates == null ? null
+					: new LmdbNodePredicateUpdates(latest, oldNodePredicates);
 
 			LmdbAdjacencyContextCatalog oldContexts = state.contextCatalog();
 			LmdbAdjacencyArenaSizingPlan contextPlan = oldContexts.hasExtensions()
@@ -92,6 +116,8 @@ final class LmdbPagedCsfConsolidator {
 			}
 
 			ImmutablePagedQuadCsfIndex.RewriteResult rewrite = null;
+			ImmutablePagedQuadCsfIndex.RewriteResult nodePredicateRewrite = null;
+			LmdbNodePredicateIndex newNodePredicates = null;
 			LmdbAdjacencyArena contextArena = null;
 			LmdbAdjacencyArenaCatalog catalog = null;
 			LmdbAdjacencySharedCharge sharedDictionaryCharge = null;
@@ -100,6 +126,16 @@ final class LmdbPagedCsfConsolidator {
 				ImmutablePagedQuadCsfIndex.MemoryBudget budget = accountBudget(account);
 				rewrite = oldBase.csfBase().rewrite(Math.toIntExact(predicates.size()), updates, budget);
 				ImmutablePagedQuadCsfIndex newCsf = rewrite.index();
+				if (oldNodePredicates != null) {
+					if (nodePredicateUpdates.size() == 0) {
+						newNodePredicates = oldNodePredicates.retainedCopy();
+					} else {
+						nodePredicateRewrite = oldNodePredicates.rewrite(nodePredicateUpdates,
+								nodePredicateBudget(account));
+						newNodePredicates = LmdbNodePredicateIndex.wrap(nodePredicateRewrite.index(),
+								oldNodePredicates.planeMask());
+					}
+				}
 
 				LmdbAdjacencyContextCatalog contexts = oldContexts;
 				if (contextPlan != null) {
@@ -132,10 +168,11 @@ final class LmdbPagedCsfConsolidator {
 				}
 				LmdbInMemoryAdjacencyIndex replacement = new LmdbInMemoryAdjacencyIndex(state.appliedRevision(),
 						catalog,
-						predicates, contexts, coverage, null, newCsf, keyIndexes, new long[0],
+						predicates, contexts, coverage, null, newCsf, newNodePredicates, keyIndexes, new long[0],
 						new LmdbInlineIncomingIndex[0], sharedDictionaryCharge, ownedNative, persistentMetadata,
 						statements, incidences, state.planeStatistics().flattened());
 				catalog = null;
+				newNodePredicates = null;
 				sharedDictionaryCharge = null;
 				contextCharge = null;
 				if (contextArena != null) {
@@ -144,8 +181,11 @@ final class LmdbPagedCsfConsolidator {
 				}
 				newCsf.close(); // replacement arena catalog owns its retained root reference
 				transferred = true;
-				return new Result(replacement, rewrite, overlays.generationCount(), latest.size);
+				return new Result(replacement, rewrite, nodePredicateRewrite, overlays.generationCount(), latest.size);
 			} finally {
+				if (newNodePredicates != null) {
+					newNodePredicates.close();
+				}
 				if (!transferred && rewrite != null) {
 					rewrite.index().close();
 				}
@@ -185,6 +225,35 @@ final class LmdbPagedCsfConsolidator {
 		};
 	}
 
+	/**
+	 * Second budget for the projection rewrite, so its bytes land under their own memory kinds instead of being folded
+	 * into the primary rewrite's.
+	 * <p>
+	 * Two budgets, one account. Both call {@code account.tryCharge}, which tests the single global limit against the
+	 * running total across every kind, so a rewrite whose two halves each fit alone but not together is still refused.
+	 * A budget that owned an independent allowance would let the pair overshoot the cap by up to the size of the
+	 * smaller half.
+	 */
+	private static ImmutablePagedQuadCsfIndex.MemoryBudget nodePredicateBudget(LmdbAdjacencyMemoryAccount account) {
+		return (nativeBytes, modeledJavaBytes) -> {
+			Charge nativeCharge = account.tryCharge(MemoryKind.NODE_PREDICATE_NATIVE, nativeBytes);
+			if (nativeCharge == null) {
+				throw new LmdbAdjacencyMemoryRefusedException(
+						"node-predicate rewrite native reservation of " + nativeBytes + " bytes refused");
+			}
+			Charge metadataCharge = account.tryCharge(MemoryKind.NODE_PREDICATE_JAVA, modeledJavaBytes);
+			if (metadataCharge == null) {
+				nativeCharge.close();
+				throw new LmdbAdjacencyMemoryRefusedException(
+						"node-predicate rewrite metadata reservation of " + modeledJavaBytes + " bytes refused");
+			}
+			return () -> {
+				metadataCharge.close();
+				nativeCharge.close();
+			};
+		};
+	}
+
 	private static long modeledBaseMetadataBytes(LmdbAdjacencyPredicateCatalog predicates,
 			LmdbAdjacencyContextCatalog contexts, LmdbAdjacencyCoverage coverage, int partitions) {
 		long bytes = BASE_OBJECT_BYTES;
@@ -203,7 +272,7 @@ final class LmdbPagedCsfConsolidator {
 		return (Math.addExact(16, Math.multiplyExact(length, width)) + 7) & -8L;
 	}
 
-	private static final class LatestRows {
+	private static final class LatestRows implements LmdbNodePredicateUpdates.ChangedRows {
 		long[] keys;
 		byte[] planes;
 		long[] predicates;
@@ -322,6 +391,31 @@ final class LmdbPagedCsfConsolidator {
 			}
 			mergeSort(order, new int[retained], 0, retained, records, partitions, keys);
 			return new OverlayUpdates(this, contexts, records, partitions, order);
+		}
+
+		@Override
+		public int size() {
+			return size;
+		}
+
+		@Override
+		public long keyAt(int index) {
+			return keys[index];
+		}
+
+		@Override
+		public int planeAt(int index) {
+			return Byte.toUnsignedInt(planes[index]);
+		}
+
+		@Override
+		public long predicateAt(int index) {
+			return predicates[index];
+		}
+
+		@Override
+		public boolean tombstoneAt(int index) {
+			return tombstone(index);
 		}
 
 		boolean tombstone(int record) {

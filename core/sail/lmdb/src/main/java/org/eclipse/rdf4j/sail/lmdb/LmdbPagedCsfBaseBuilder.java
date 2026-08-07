@@ -62,10 +62,24 @@ final class LmdbPagedCsfBaseBuilder {
 				ignoredWorkspaceRegionBytes, 1, null);
 	}
 
+	/**
+	 * Builds with the optional node-predicate projection enabled. Direct callers of the builder are exercising the
+	 * structure itself; the store passes {@link LmdbDirectAdjacencyOptions#nodePredicateProjectionEnabled()} through
+	 * the explicit overload instead, so the shipped default stays off until the flip decision is taken on evidence.
+	 */
 	static LmdbInMemoryAdjacencyIndex build(AdjacencySourceFamily sourceFamily, LmdbAdjacencyCoverage coverage,
 			LmdbAdjacencyMemoryAccount account, long baseArenaRegionBytes, long ignoredWorkspaceRegionBytes,
 			int requestedBuildThreads, LmdbAdjacencyMetrics metrics) throws IOException {
+		return build(sourceFamily, coverage, account, baseArenaRegionBytes, ignoredWorkspaceRegionBytes,
+				requestedBuildThreads, metrics, LmdbNodePredicateOptions.OUTGOING);
+	}
+
+	static LmdbInMemoryAdjacencyIndex build(AdjacencySourceFamily sourceFamily, LmdbAdjacencyCoverage coverage,
+			LmdbAdjacencyMemoryAccount account, long baseArenaRegionBytes, long ignoredWorkspaceRegionBytes,
+			int requestedBuildThreads, LmdbAdjacencyMetrics metrics, LmdbNodePredicateOptions nodePredicateOptions)
+			throws IOException {
 		Objects.requireNonNull(sourceFamily, "sourceFamily");
+		Objects.requireNonNull(nodePredicateOptions, "nodePredicateOptions");
 		Objects.requireNonNull(coverage, "coverage");
 		Objects.requireNonNull(account, "account");
 		if (requestedBuildThreads <= 0) {
@@ -75,7 +89,7 @@ final class LmdbPagedCsfBaseBuilder {
 		boolean telemetryFinished = false;
 		try {
 			LmdbInMemoryAdjacencyIndex result = buildInternal(sourceFamily, coverage, account, baseArenaRegionBytes,
-					metrics, started, requestedBuildThreads);
+					metrics, started, requestedBuildThreads, nodePredicateOptions);
 			telemetryFinished = true;
 			return result;
 		} finally {
@@ -87,7 +101,8 @@ final class LmdbPagedCsfBaseBuilder {
 
 	private static LmdbInMemoryAdjacencyIndex buildInternal(AdjacencySourceFamily sourceFamily,
 			LmdbAdjacencyCoverage coverage, LmdbAdjacencyMemoryAccount account, long baseArenaRegionBytes,
-			LmdbAdjacencyMetrics metrics, long started, int requestedBuildThreads) throws IOException {
+			LmdbAdjacencyMetrics metrics, long started, int requestedBuildThreads,
+			LmdbNodePredicateOptions nodePredicateOptions) throws IOException {
 		long baseRevision = validateSourceFamily(sourceFamily);
 		AdjacencySourceScanner primary = Objects.requireNonNull(sourceFamily.primary(), "sourceFamily.primary()");
 
@@ -176,6 +191,7 @@ final class LmdbPagedCsfBaseBuilder {
 
 			LmdbAdjacencyArena dictionaryArena = null;
 			ImmutablePagedQuadCsfIndex csf = null;
+			LmdbNodePredicateIndex nodePredicateIndex = null;
 			LmdbAdjacencyArenaCatalog catalog = null;
 			LmdbAdjacencySharedCharge sharedDictionaryCharge = null;
 			Charge persistentWrapperMetadata = null;
@@ -224,6 +240,26 @@ final class LmdbPagedCsfBaseBuilder {
 							+ csf.nativeBytes() + "/" + csfPlan.nativeBytes());
 				}
 
+				// FULL coverage can answer <node> ?predicate ?object exactly. Build only the compact node->predicate
+				// projection; selected-predicate bases must continue to decline that query shape.
+				//
+				// The projection is optional derived state, so its memory refusal must cost only the projection. Left
+				// uncaught it unwinds this whole build into MaintenanceState.MEMORY_REFUSED, which — unlike the
+				// neighbouring abort path — never retriggers, so a store near its cap would permanently lose all
+				// adjacency because a small sidecar did not fit. LmdbNodePredicateIndex.build releases every partial
+				// charge before throwing, so the account is already clean here.
+				if (coverage.isFull() && nodePredicateOptions.enabled()) {
+					try {
+						nodePredicateIndex = LmdbNodePredicateIndex.build(csf, predicateCatalog, account,
+								nodePredicateOptions);
+					} catch (LmdbAdjacencyMemoryRefusedException e) {
+						nodePredicateIndex = null;
+						log.warn("Node-predicate projection refused by the memory account; the paged adjacency base "
+								+ "is published without it and bound-node predicate enumeration will fall back to "
+								+ "LMDB: {}", e.getMessage());
+					}
+				}
+
 				LmdbAdjacencyKeyIndex[] keyIndexes = new LmdbAdjacencyKeyIndex[partitionCount];
 				for (int predicate = 0; predicate < sortedPredicates.length; predicate++) {
 					for (int plane = 0; plane < ImmutablePagedQuadCsfIndex.PLANE_COUNT; plane++) {
@@ -238,14 +274,16 @@ final class LmdbPagedCsfBaseBuilder {
 				long statements = Math.addExact(sizingTotals.pairs[0], sizingTotals.pairs[2]);
 				long incidences = sizingTotals.totalPairs();
 				LmdbInMemoryAdjacencyIndex index = new LmdbInMemoryAdjacencyIndex(baseRevision, catalog,
-						predicateCatalog, contextCatalog, coverage, null, csf, keyIndexes, new long[0],
+						predicateCatalog, contextCatalog, coverage, null, csf, nodePredicateIndex, keyIndexes,
+						new long[0],
 						new LmdbInlineIncomingIndex[0], sharedDictionaryCharge, new Charge[0],
 						persistentWrapperMetadata, statements, incidences,
 						LmdbAdjacencyPlaneStatistics.fromCsf(sortedPredicates, csf));
 				catalog = null;
+				nodePredicateIndex = null;
 				sharedDictionaryCharge = null;
 				persistentWrapperMetadata = null;
-				// Catalog now owns both native structures.
+				// The catalog owns the primary CSF; the base owns the subject projection.
 				dictionaryArena.close();
 				dictionaryArena = null;
 				csf.close();
@@ -258,6 +296,9 @@ final class LmdbPagedCsfBaseBuilder {
 				return index;
 			} finally {
 				if (!success) {
+					if (nodePredicateIndex != null) {
+						nodePredicateIndex.close();
+					}
 					if (catalog != null) {
 						catalog.close();
 					}

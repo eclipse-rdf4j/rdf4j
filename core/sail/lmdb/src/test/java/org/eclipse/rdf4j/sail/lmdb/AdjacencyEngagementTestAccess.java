@@ -59,6 +59,22 @@ public final class AdjacencyEngagementTestAccess {
 		return LmdbDirectAdjacencyStore.KERNEL_VIEWS_SERVED.get();
 	}
 
+	/**
+	 * Native bytes charged to the optional node-predicate projection; zero when adjacency is disabled or the projection
+	 * was not built. This is the charged figure, which is what consumes the cap, not the finished structure's
+	 * self-reported model — the build plan is deliberately conservative and the two differ.
+	 */
+	public static long nodePredicateNativeBytes(LmdbStore store) {
+		LmdbDirectAdjacencyStore adjacency = adjacency(store);
+		return adjacency == null ? 0L : adjacency.snapshotMetrics().nodePredicateNativeBytes;
+	}
+
+	/** Modelled Java bytes charged to the node-predicate projection; zero when it was not built. */
+	public static long nodePredicateJavaBytes(LmdbStore store) {
+		LmdbDirectAdjacencyStore adjacency = adjacency(store);
+		return adjacency == null ? 0L : adjacency.snapshotMetrics().nodePredicateJavaBytes;
+	}
+
 	/** Human-readable list of the fallback reasons with a nonzero count, or {@code "-"} when there are none. */
 	public static String fallbackSummary(LmdbStore store) {
 		LmdbDirectAdjacencyStore adjacency = adjacency(store);

@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbDirectAdjacencyCommitDelta.SealedDirectDe
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
+import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.AdjacencyAccessObserver;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -71,6 +72,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	static final String PARALLEL_ROW_PATH_PROPERTY = "rdf4j.lmdb.directAdjacency.parallelRowPath.enabled";
 	static final String SCAN_AGGREGATES_PROPERTY = "rdf4j.lmdb.directAdjacency.scanAggregates.enabled";
 	static final String PLANNER_STATS_PROPERTY = "rdf4j.lmdb.directAdjacency.plannerStats.enabled";
+	static final String NODE_PREDICATE_SERVE_PROPERTY = "rdf4j.lmdb.directAdjacency.nodePredicateProjection.serve.enabled";
 	private static final ThreadLocal<Boolean> BASE_FORMAT_OVERRIDE = new ThreadLocal<>();
 	/** Kernel adjacency views served; one increment per successful operator bind, never per row lookup. */
 	static final AtomicLong KERNEL_VIEWS_SERVED = new AtomicLong();
@@ -126,6 +128,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final ExecutorService maintenanceExecutor;
 	private final AtomicBoolean rebuildPending = new AtomicBoolean();
 	private final AtomicBoolean quiescentRebuildPending = new AtomicBoolean();
+	/**
+	 * Set once the projection has been proven inconsistent with the authoritative rows. It gates serving rather than
+	 * destroying the structure, and it clears on the next successful publication, so a fault degrades this one
+	 * capability temporarily instead of permanently.
+	 */
+	private final AtomicBoolean nodePredicateInconsistent = new AtomicBoolean();
 
 	/** Sealed commits awaiting apply, strictly revision ascending; drained on the maintenance executor. */
 	private final ArrayDeque<SealedDirectDelta> applyQueue = new ArrayDeque<>();
@@ -554,15 +562,32 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			publishedReplacement = true;
 			maintenanceState = MaintenanceState.ACTIVE;
 			logger.debug("Folded {} overlay generations / {} rows into paged CSF: {} shared shards, {} replaced, "
-					+ "{} newly allocated native bytes", result.foldedGenerationCount(), result.foldedRowCount(),
-					result.rewrite().sharedShardCount(), result.rewrite().replacedShardCount(),
-					result.rewrite().allocatedNativeBytes());
+					+ "{} newly allocated native bytes; node-predicate projection: {}", result.foldedGenerationCount(),
+					result.foldedRowCount(), result.rewrite().sharedShardCount(), result.rewrite().replacedShardCount(),
+					result.rewrite().allocatedNativeBytes(), describeNodePredicateRewrite(result));
 		} finally {
 			publicationLock.unlock();
 			if (!publishedReplacement) {
 				result.base().close();
 			}
 		}
+	}
+
+	/**
+	 * Distinguishes the three outcomes the projection can have during a fold-down, which the primary rewrite's counters
+	 * cannot express: no projection at all, a rewrite with its own shared/replaced page counts, and the no-change fast
+	 * path that shares the previous structure and therefore allocates nothing.
+	 */
+	private static String describeNodePredicateRewrite(LmdbPagedCsfConsolidator.Result result) {
+		if (result.base().nodePredicateIndexOrNull() == null) {
+			return "absent";
+		}
+		ImmutablePagedQuadCsfIndex.RewriteResult rewrite = result.nodePredicateRewrite();
+		if (rewrite == null) {
+			return "shared (no rows changed)";
+		}
+		return rewrite.sharedShardCount() + " shared shards, " + rewrite.replacedShardCount() + " replaced, "
+				+ rewrite.allocatedNativeBytes() + " newly allocated native bytes";
 	}
 
 	private void consolidateOverlayOnly(LmdbAdjacencyPublishedState state, LmdbAdjacencyOverlaySet overlays,
@@ -1165,7 +1190,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 						? LmdbAdjacencyBaseBuilder.build(sourceFamily, coverage, account, baseArenaRegionBytes,
 								workspaceRegionBytes, options.buildThreads(), metrics)
 						: LmdbPagedCsfBaseBuilder.build(sourceFamily, coverage, account, baseArenaRegionBytes,
-								workspaceRegionBytes, options.buildThreads(), metrics);
+								workspaceRegionBytes, options.buildThreads(), metrics, nodePredicateOptions());
 			}
 			Runnable interleave = afterBuildScanForTest;
 			if (interleave != null) {
@@ -1181,6 +1206,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 			if (published) {
 				lastBuildFailureDescription = "<none>";
+				// A freshly derived projection supersedes the corrupt one, so this capability comes back.
+				nodePredicateInconsistent.set(false);
 				metrics.recordBuildCompleted();
 				logger.info("Published in-memory adjacency structures: format={}, snapshotRevision={}, {}", baseFormat,
 						baseRevision, account.memoryUsageSummary());
@@ -1756,23 +1783,22 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 
 		if (!predicateBound && subjectBound != objectBound) {
-			// bound node, unbound predicate: reference keys under FULL coverage only
+			// Bound node, unbound predicate requires a complete node-to-predicate projection for the requested plane.
 			if (order != null) {
 				metrics.recordFallback(FallbackReason.INDEX_ORDER_INCOMPATIBLE);
 				observe(observer, false, FallbackReason.INDEX_ORDER_INCOMPATIBLE.name(), order, subject, predicate,
 						object, context);
 				return null;
 			}
-			if (!base.coverage().isFull() || !base.supportsPredicateEnumeration()) {
-				// The compact base deliberately omits the duplicate node-to-all-predicates locator. LMDB remains the
-				// authoritative fallback for this shape while bound-predicate rows stay accelerated.
+			long key = subjectBound ? subject : object;
+			int plane = plane(subjectBound, explicit);
+			if (!nodePredicateServingEnabled() || !base.coverage().isFull()
+					|| !base.supportsPredicateEnumeration(plane)) {
 				metrics.recordFallback(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
 				observe(observer, false, FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE.name(), order, subject,
 						predicate, object, context);
 				return null;
 			}
-			long key = subjectBound ? subject : object;
-			int plane = plane(subjectBound, explicit);
 			for (PendingTable pending : state.pending()) {
 				if (pending.revision() <= view.snapshotRevision() && pending.touchesNode(key, plane)) {
 					metrics.recordFallback(FallbackReason.PENDING_ROW);
@@ -1793,14 +1819,21 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 						context);
 				return null;
 			}
+			int direction = subjectBound ? LmdbDirectAdjacencyIterator.BY_SUBJECT
+					: LmdbDirectAdjacencyIterator.BY_OBJECT;
 			if (options.mode() == DirectAdjacencyMode.SHADOW) {
+				if (shadowSampleDue(txn)) {
+					shadowCompare(view, txn, subject, predicate, object, context, explicit,
+							new LmdbDirectNodeIterator(view, plane, key, context, direction,
+									this::onNodePredicateInconsistency),
+							direction);
+				}
 				observe(observer, false, "MODE_SHADOW", order, subject, predicate, object, context);
 				return null;
 			}
 			metrics.recordHit();
 			observe(observer, true, "BOUND_NODE_PREDICATE_ENUMERATION", order, subject, predicate, object, context);
-			return new LmdbDirectNodeIterator(view, plane, key, context,
-					subjectBound ? LmdbDirectAdjacencyIterator.BY_SUBJECT : LmdbDirectAdjacencyIterator.BY_OBJECT);
+			return new LmdbDirectNodeIterator(view, plane, key, context, direction, this::onNodePredicateInconsistency);
 		}
 
 		if (predicateBound && !subjectBound && !objectBound) {
@@ -1950,6 +1983,41 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return configured == null || Boolean.parseBoolean(configured);
 	}
 
+	/**
+	 * Records a projection inconsistency once, degrades this capability, and schedules the rebuild that restores it.
+	 * <p>
+	 * The rebuild is essential, not decorative: without it the store would decline this shape forever, which is exactly
+	 * the permanent-degradation failure the containment work in milestone A2 removed from the build path.
+	 */
+	void onNodePredicateInconsistency(String detail) {
+		if (!nodePredicateInconsistent.compareAndSet(false, true)) {
+			return;
+		}
+		metrics.recordNodePredicateInconsistency();
+		logger.error("Node-predicate projection is inconsistent with the authoritative adjacency rows ({}); "
+				+ "bound-node predicate enumeration falls back to LMDB and a rebuild has been scheduled", detail);
+		scheduleQuiescentRebuild();
+	}
+
+	/**
+	 * Whether any consumer may serve an answer out of the node-predicate projection right now.
+	 * <p>
+	 * Deliberately re-read on every call, unlike the build-time switch it complements. A build-time option resolves
+	 * once during base construction and therefore cannot protect a store that is already open; the risk this feature
+	 * carries is wrong answers rather than slowness, so there has to be a switch that makes every consumer decline
+	 * immediately without waiting for a rebuild.
+	 */
+	boolean nodePredicateServingEnabled() {
+		return !nodePredicateInconsistent.get()
+				&& Boolean.parseBoolean(System.getProperty(NODE_PREDICATE_SERVE_PROPERTY, "false"));
+	}
+
+	/** The plane set a base built by this store may hold, resolved once at construction. */
+	private LmdbNodePredicateOptions nodePredicateOptions() {
+		return LmdbNodePredicateOptions.of(options.nodePredicateProjectionEnabled(),
+				options.nodePredicateProjectionIncomingEnabled());
+	}
+
 	static boolean plannerStatsEnabled() {
 		String configured = System.getProperty(PLANNER_STATS_PROPERTY);
 		return configured == null || Boolean.parseBoolean(configured);
@@ -1979,28 +2047,50 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return bySubject ? order == StatementOrder.O : order == StatementOrder.S;
 	}
 
+	/**
+	 * Whether this probe is the sampled one. Returns false when there is no transaction, which is an honest limitation
+	 * rather than an oversight: the parallel-worker path opens without one, so a clean shadow run says nothing about
+	 * parallel workers.
+	 */
+	private boolean shadowSampleDue(Txn txn) {
+		if (txn == null) {
+			return false;
+		}
+		return shadowProbes.incrementAndGet() % options.shadowSampleEvery() == 0;
+	}
+
 	private void maybeShadowCompare(LmdbAdjacencyReadView view, Txn txn, long subject, long predicate, long object,
 			long context, boolean explicit, ResolvedRow row, long key, int direction) throws IOException {
-		if (txn == null) {
+		if (!shadowSampleDue(txn)) {
 			return;
 		}
-		long probe = shadowProbes.incrementAndGet();
-		if (probe % options.shadowSampleEvery() != 0) {
-			return;
+		RecordIterator iterator = null;
+		if (row.handle > 0) {
+			LmdbDirectAdjacencyIterator rowIterator = new LmdbDirectAdjacencyIterator();
+			rowIterator.init(view, row.catalog, view.state().contextCatalog(), row.handle, key, predicate, context,
+					direction, "direct-shadow");
+			iterator = rowIterator;
 		}
+		shadowCompare(view, txn, subject, predicate, object, context, explicit, iterator, direction);
+	}
+
+	/**
+	 * Compares one sampled access against the authoritative disk trees, degrades the whole index on disagreement, and
+	 * closes {@code directIterator}. A null iterator means the derived path proved the answer empty.
+	 */
+	private void shadowCompare(LmdbAdjacencyReadView view, Txn txn, long subject, long predicate, long object,
+			long context, boolean explicit, RecordIterator directIterator, int direction) throws IOException {
 		metrics.recordShadowComparison();
 		List<long[]> direct = new ArrayList<>();
-		if (row.handle > 0) {
-			LmdbDirectAdjacencyIterator iterator = new LmdbDirectAdjacencyIterator();
-			iterator.init(view, row.catalog, view.state().contextCatalog(), row.handle, key, predicate, context,
-					direction, "direct-shadow");
+		if (directIterator != null) {
 			try {
 				long[] quad;
-				while ((quad = iterator.next()) != null) {
-					direct.add(quad.clone());
+				while ((quad = directIterator.next()) != null) {
+					direct.add(new long[] { quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
+							quad[TripleIndex.OBJ_IDX], Math.max(0, quad[TripleIndex.CONTEXT_IDX]) });
 				}
 			} finally {
-				iterator.close();
+				directIterator.close();
 			}
 		}
 		List<long[]> lmdb = new ArrayList<>();
@@ -2400,6 +2490,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.BUILD_OUTPUT),
 				account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.JAVA_METADATA), account.totalChargedBytes(),
 				account.highWaterBytes(), options.requestedMaxBytes(), options.memoryLimitBytes(),
-				options.effectiveMaxBytes());
+				options.effectiveMaxBytes(),
+				account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.NODE_PREDICATE_NATIVE),
+				account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.NODE_PREDICATE_JAVA));
 	}
 }

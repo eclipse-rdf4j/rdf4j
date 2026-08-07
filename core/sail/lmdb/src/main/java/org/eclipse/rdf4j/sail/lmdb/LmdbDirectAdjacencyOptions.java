@@ -51,6 +51,8 @@ final class LmdbDirectAdjacencyOptions {
 	static final String BUILD_TARGET_MILLIS_PROPERTY = "rdf4j.lmdb.directAdjacency.buildTargetMillis";
 	static final String BUILD_RETRY_MILLIS_PROPERTY = "rdf4j.lmdb.directAdjacency.buildRetryMillis";
 	static final String SHADOW_SAMPLE_EVERY_PROPERTY = "rdf4j.lmdb.directAdjacency.shadowSampleEvery";
+	static final String NODE_PREDICATE_PROJECTION_PROPERTY = "rdf4j.lmdb.directAdjacency.nodePredicateProjection.enabled";
+	static final String NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY = "rdf4j.lmdb.directAdjacency.nodePredicateProjection.incoming.enabled";
 
 	private final DirectAdjacencyMode mode;
 	private final DirectAdjacencyCoverage coverage;
@@ -71,12 +73,15 @@ final class LmdbDirectAdjacencyOptions {
 	private final long buildTargetMillis;
 	private final long buildRetryMillis;
 	private final long shadowSampleEvery;
+	private final boolean nodePredicateProjectionEnabled;
+	private final boolean nodePredicateProjectionIncomingEnabled;
 
 	private LmdbDirectAdjacencyOptions(DirectAdjacencyMode mode, DirectAdjacencyCoverage coverage,
 			Set<IRI> selectedPredicates, boolean buildOnStart, long requestedMaxBytes, long memoryLimitBytes,
 			long effectiveMaxBytes, long commitMaxBytes, long sealWarnMillis, int maxDeltaGenerations,
 			long supernodeEdges, long supernodeChunkEdges, long supernodeTargetBytes, int buildThreads,
-			long buildTargetMillis, long buildRetryMillis, long shadowSampleEvery) {
+			long buildTargetMillis, long buildRetryMillis, long shadowSampleEvery,
+			boolean nodePredicateProjectionEnabled, boolean nodePredicateProjectionIncomingEnabled) {
 		this.mode = mode;
 		this.coverage = coverage;
 		this.selectedPredicates = selectedPredicates;
@@ -96,6 +101,8 @@ final class LmdbDirectAdjacencyOptions {
 		this.buildTargetMillis = buildTargetMillis;
 		this.buildRetryMillis = buildRetryMillis;
 		this.shadowSampleEvery = shadowSampleEvery;
+		this.nodePredicateProjectionEnabled = nodePredicateProjectionEnabled;
+		this.nodePredicateProjectionIncomingEnabled = nodePredicateProjectionIncomingEnabled;
 	}
 
 	static LmdbDirectAdjacencyOptions resolve(LmdbStoreConfig config) {
@@ -128,13 +135,16 @@ final class LmdbDirectAdjacencyOptions {
 		long buildTargetMillis = positiveLongProperty(properties, BUILD_TARGET_MILLIS_PROPERTY, 43_200_000L);
 		long buildRetryMillis = positiveLongProperty(properties, BUILD_RETRY_MILLIS_PROPERTY, 60_000L);
 		long shadowSampleEvery = positiveLongProperty(properties, SHADOW_SAMPLE_EVERY_PROPERTY, 10_000L);
+		boolean nodePredicateProjection = booleanProperty(properties, NODE_PREDICATE_PROJECTION_PROPERTY, false);
+		boolean nodePredicateProjectionIncoming = nodePredicateProjection
+				&& booleanProperty(properties, NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY, false);
 
 		return new LmdbDirectAdjacencyOptions(config.getDirectAdjacencyMode(), config.getDirectAdjacencyCoverage(),
 				config.getDirectAdjacencyPredicates(), config.getDirectAdjacencyBuildOnStart(), requestedMaxBytes,
 				memoryLimitBytes, effectiveMaxBytes, commitMaxBytes, sealWarnMillis, maxDeltaGenerations,
 				supernodeEdges,
 				supernodeChunkEdges, supernodeTargetBytes, buildThreads, buildTargetMillis, buildRetryMillis,
-				shadowSampleEvery);
+				shadowSampleEvery, nodePredicateProjection, nodePredicateProjectionIncoming);
 	}
 
 	/**
@@ -240,6 +250,26 @@ final class LmdbDirectAdjacencyOptions {
 		return parsed;
 	}
 
+	/**
+	 * Resolves a boolean switch exactly once. Only the literal strings {@code true} and {@code false} (ignoring case
+	 * and surrounding whitespace) are accepted; anything else is a configuration mistake and is reported rather than
+	 * silently read as {@code false}, which is what {@link Boolean#parseBoolean(String)} would do.
+	 */
+	private static boolean booleanProperty(UnaryOperator<String> properties, String name, boolean defaultValue) {
+		String value = properties.apply(name);
+		if (value == null || value.isEmpty()) {
+			return defaultValue;
+		}
+		String trimmed = value.trim();
+		if (trimmed.equalsIgnoreCase("true")) {
+			return true;
+		}
+		if (trimmed.equalsIgnoreCase("false")) {
+			return false;
+		}
+		throw new IllegalArgumentException("Invalid " + name + " value: " + value);
+	}
+
 	private static int boundedIntProperty(UnaryOperator<String> properties, String name, int defaultValue, int min,
 			int max) {
 		String value = properties.apply(name);
@@ -338,5 +368,28 @@ final class LmdbDirectAdjacencyOptions {
 
 	long shadowSampleEvery() {
 		return shadowSampleEvery;
+	}
+
+	/**
+	 * Whether a FULL-coverage paged base builds the optional outgoing node-to-predicate projection.
+	 * <p>
+	 * Unlike its neighbours in this property family, this one resolves once at store construction rather than on every
+	 * call. A per-call read would let one store hold some bases with the projection and some without, which is safe but
+	 * makes an A/B measurement irreproducible: whether a query is accelerated would depend on when its base happened to
+	 * be built. {@link LmdbDirectAdjacencyStore#nodePredicateServingEnabled()} is the per-call companion that can stop
+	 * a store which is already running.
+	 */
+	boolean nodePredicateProjectionEnabled() {
+		return nodePredicateProjectionEnabled;
+	}
+
+	/**
+	 * Whether the projection also covers the incoming planes, whose row domain is distinct objects including referenced
+	 * literals and therefore costs materially more than the outgoing side. Implies
+	 * {@link #nodePredicateProjectionEnabled()}: incoming alone is not a supported configuration, because the incoming
+	 * planes live in the same structure.
+	 */
+	boolean nodePredicateProjectionIncomingEnabled() {
+		return nodePredicateProjectionIncomingEnabled;
 	}
 }

@@ -62,13 +62,17 @@ class LmdbDirectAdjacencyConsolidationTest {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
-		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30, name -> null, 4);
+		// Consolidation must carry the node-predicate projection across a fold-down, so build it and serve from it.
+		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30,
+				name -> LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY.equals(name) ? "true" : null, 4);
+		System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, "true");
 		store = new LmdbDirectAdjacencyStore(tripleStore, null, new AtomicBoolean(false), options);
 		tripleStore.setDirectAdjacencyCommitHooks(store.commitListener(), store.newCommitDelta());
 	}
 
 	@AfterEach
 	void tearDown() throws Exception {
+		System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
 		if (store != null) {
 			store.close();
 		}
@@ -156,6 +160,50 @@ class LmdbDirectAdjacencyConsolidationTest {
 		}
 	}
 
+	/**
+	 * A projection rewrite that the memory account refuses must not cost anything that was already working. The primary
+	 * rewrite has already allocated by that point, so the unpublishable half has to be released, the previous base has
+	 * to stay authoritative and exact, and bounded overlay coalescing has to run instead of the fold-down.
+	 * <p>
+	 * The refusal is injected at the projection's own memory kind rather than through the cap, because the fold-down's
+	 * transient workspace peak is orders of magnitude larger than any persistent charge: a cap low enough to refuse a
+	 * small derived index is breached during the workspace phase instead.
+	 */
+	@Test
+	void aRefusedProjectionRewriteLeavesThePreviousBaseAuthoritative() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+		LmdbInMemoryAdjacencyIndex baseBeforeFold = store.publishedStateForTest().base();
+		assertThat(baseBeforeFold.nodePredicateIndexOrNull()).isNotNull();
+
+		store.memoryAccount().refuseKindForTest(LmdbAdjacencyMemoryAccount.MemoryKind.NODE_PREDICATE_NATIVE);
+		// Each commit introduces a predicate the node did not have, so the projection genuinely has to be rewritten.
+		// Adding more objects under an existing predicate would take the no-change fast path, which shares the previous
+		// structure and never consults a budget at all.
+		int commits = store.options().maxDeltaGenerations() + 1;
+		for (int i = 1; i <= commits; i++) {
+			commitAdd(S1, uri(500 + i), uri(1000 + i));
+			store.pauseApplierForTest(false);
+		}
+
+		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
+		assertThat(state.base()).as("the fold-down must not have published a replacement").isSameAs(baseBeforeFold);
+		assertThat(state.overlays()).as("bounded overlay coalescing runs instead").isNotNull();
+		assertThat(state.overlays().generationCount())
+				.isLessThanOrEqualTo(store.options().maxDeltaGenerations());
+		assertThat(store.maintenanceState()).isEqualTo(LmdbDirectAdjacencyStore.MaintenanceState.ACTIVE);
+
+		// No capability is silently lost: reads stay exact and the projection still serves the enumeration shape.
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, S1, P1)).hasSize(1);
+			assertThat(probe(view, S1, -1)).hasSize(commits + 1);
+		}
+		// The refused half released everything it had taken; only the live projection remains charged.
+		assertThat(store.memoryAccount().chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.NODE_PREDICATE_NATIVE))
+				.isEqualTo(baseBeforeFold.nodePredicateIndex().nativeBytes());
+	}
+
 	@Test
 	void pagedConsolidationFoldsDeletesNewPredicatesAndContextExtensions() throws Exception {
 		long appendedPredicate = uri(50); // unsigned-before P1, but its new ordinal must append after P1
@@ -191,6 +239,10 @@ class LmdbDirectAdjacencyConsolidationTest {
 			assertThat(appended).hasSize(1);
 			assertThat(appended.get(0)[2]).isEqualTo(addedObject);
 			assertThat(appended.get(0)[3]).isEqualTo(G1);
+			// Predicate ordinals are append-stable rather than globally raw-sorted. The S->P projection stores raw IDs,
+			// so node enumeration still emits the newly appended lower raw predicate first after consolidation.
+			assertThat(probe(view, S1, -1)).extracting(row -> row[1])
+					.containsExactly(appendedPredicate, P1, P1);
 			RecordIterator incoming = store.tryOpen(view, null, -1, appendedPredicate, addedObject, G1, true);
 			assertThat(incoming).isNotNull();
 			incoming.close();

@@ -131,10 +131,18 @@ class LmdbDirectAdjacencyQueryTest {
 		System.clearProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY);
 		System.clearProperty(LmdbDirectAdjacencyStore.PLANNER_STATS_PROPERTY);
 		System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+		System.clearProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY);
+		System.clearProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY);
+		System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
 	}
 
 	private void openStore(DirectAdjacencyMode mode, DirectAdjacencyCoverage coverage, List<IRI> selected)
 			throws IOException {
+		// The node-predicate projection ships off by default (both the build-time and the per-call switch), so every
+		// test in this class that exercises bound-node/unbound-predicate serving turns it on here rather than
+		// individually. Tests that need it off set the properties themselves after this helper returns.
+		System.setProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY, "true");
+		System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, "true");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setDirectAdjacencyMode(mode)
 				.setDirectAdjacencyMaxBytes(1L << 30);
@@ -620,8 +628,8 @@ class LmdbDirectAdjacencyQueryTest {
 					new long[] { s1, p3, inline42, 0 }));
 		}
 		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE))
-				.isEqualTo(fallbackBefore + 1);
-		assertThat(direct.snapshotMetrics().lookupHits).isEqualTo(hitsBefore);
+				.isEqualTo(fallbackBefore);
+		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
 	}
 
 	@Test

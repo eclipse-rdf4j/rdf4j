@@ -62,13 +62,18 @@ class LmdbDirectAdjacencyCommitTest {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
-		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30, name -> null, 4);
+		// This class asserts bound-node/unbound-predicate serving across commits, which needs both node-predicate
+		// switches: the build-time one through the pure resolution seam, the per-call one as a system property.
+		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30,
+				name -> LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY.equals(name) ? "true" : null, 4);
+		System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, "true");
 		store = new LmdbDirectAdjacencyStore(tripleStore, null, new AtomicBoolean(false), options);
 		tripleStore.setDirectAdjacencyCommitHooks(store.commitListener(), store.newCommitDelta());
 	}
 
 	@AfterEach
 	void tearDown() throws Exception {
+		System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
 		if (store != null) {
 			store.close();
 		}
@@ -186,12 +191,12 @@ class LmdbDirectAdjacencyCommitTest {
 				assertThat(probe(view, S2, P1, -1, -1, true)).hasSize(1);
 				// A touched unbound-predicate row falls back before the first result.
 				assertDeclined(view, S1, -1, -1, -1, true);
-				// Paged CSF deliberately has no node-to-all-predicates locator, including for untouched rows.
+				// The untouched subject is served by the base S->P projection while the touched subject declines.
 				long enumerationBefore = store.snapshotMetrics()
 						.fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
-				assertDeclined(view, S2, -1, -1, -1, true);
+				assertThat(probe(view, S2, -1, -1, -1, true)).hasSize(1);
 				assertThat(store.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE))
-						.isGreaterThan(enumerationBefore);
+						.isEqualTo(enumerationBefore);
 			}
 		} finally {
 			store.pauseApplierForTest(false);
@@ -235,14 +240,16 @@ class LmdbDirectAdjacencyCommitTest {
 			assertThat(probe(newView, S1, P1, -1, -1, true)).isEmpty();
 			assertThat(store.snapshotMetrics().exactMisses).isGreaterThan(missesBefore);
 			assertThat(probe(oldView, S1, P1, -1, -1, true)).hasSize(1);
-			// The surviving predicate remains directly addressable while paged node enumeration falls back to LMDB.
+			// The overlay tombstone removes P1 while the base projection and generation merge retain P2.
 			assertThat(probe(newView, S1, P2, -1, -1, true)).hasSize(1);
 			long enumerationBefore = store.snapshotMetrics()
 					.fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
-			assertDeclined(newView, S1, -1, -1, -1, true);
+			List<long[]> current = probe(newView, S1, -1, -1, -1, true);
+			assertThat(current).hasSize(1);
+			assertThat(current.get(0)[1]).isEqualTo(P2);
 			assertThat(store.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE))
-					.isGreaterThan(enumerationBefore);
-			assertThat(probe(oldView, S1, P2, -1, -1, true)).hasSize(1);
+					.isEqualTo(enumerationBefore);
+			assertThat(probe(oldView, S1, -1, -1, -1, true)).hasSize(2);
 		}
 	}
 
@@ -257,6 +264,8 @@ class LmdbDirectAdjacencyCommitTest {
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
 			assertThat(probe(view, S1, P1, -1, -1, false)).isEmpty();
 			assertThat(probe(view, S1, P1, -1, -1, true)).hasSize(1);
+			assertThat(probe(view, S1, -1, -1, -1, false)).isEmpty();
+			assertThat(probe(view, S1, -1, -1, -1, true)).extracting(row -> row[1]).containsExactly(P1);
 			assertThat(probe(view, -1, P1, O1, -1, true)).hasSize(1);
 			assertThat(probe(view, -1, P1, O1, -1, false)).isEmpty();
 		}
@@ -279,8 +288,12 @@ class LmdbDirectAdjacencyCommitTest {
 			// bound-context probes use the appended catalog segment exactly
 			assertThat(probe(newView, S3, P3, -1, G2, true)).hasSize(1);
 			assertThat(probe(newView, -1, P3, O1, -1, true)).hasSize(1);
+			// The generation node range contributes an overlay-only subject and predicate to enumeration.
+			assertThat(probe(newView, S3, -1, -1, -1, true)).extracting(row -> row[1])
+					.containsExactly(P3);
 			// the old snapshot proves the row empty (new node is absent from the base locator)
 			assertThat(probe(oldView, S3, P3, -1, -1, true)).isEmpty();
+			assertThat(probe(oldView, S3, -1, -1, -1, true)).isEmpty();
 			// the old view's catalog does not contain G2: bound-context probe proves emptiness
 			assertThat(probe(oldView, S1, P1, -1, G2, true)).isEmpty();
 		}

@@ -96,7 +96,7 @@ class LmdbAdjacencyBuildTxnFamilyTest {
 				LmdbInMemoryAdjacencyIndex index = LmdbPagedCsfBaseBuilder.build(family,
 						LmdbAdjacencyCoverage.full(), account, 1L << 20, 1L << 16, 8, metrics)) {
 			LmdbAdjacencyMetrics.Snapshot snapshot = metrics.snapshot("test", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-					0, 0, 0, 0, 0);
+					0, 0, 0, 0, 0, 0, 0);
 			assertThat(snapshot.plannedBuildRanges).isGreaterThan(4);
 			assertThat(snapshot.lastBuildThreads).isGreaterThan(4);
 			assertThat(index.statementCount()).isEqualTo(4_096);
@@ -127,7 +127,7 @@ class LmdbAdjacencyBuildTxnFamilyTest {
 				LmdbInMemoryAdjacencyIndex index = LmdbPagedCsfBaseBuilder.build(family,
 						LmdbAdjacencyCoverage.full(), account, 1L << 20, 1L << 16, 8, metrics)) {
 			LmdbAdjacencyMetrics.Snapshot snapshot = metrics.snapshot("test", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-					0, 0, 0, 0, 0);
+					0, 0, 0, 0, 0, 0, 0);
 			assertThat(snapshot.plannedBuildRanges).isGreaterThan(4);
 			assertThat(snapshot.lastBuildThreads).isGreaterThan(4);
 			assertThat(index.statementCount()).isEqualTo(4_096);
@@ -166,7 +166,7 @@ class LmdbAdjacencyBuildTxnFamilyTest {
 						LmdbAdjacencyCoverage.selected(new long[] { selectedPredicate }, Set.of()), account,
 						1L << 20, 1L << 16, 8, metrics)) {
 			LmdbAdjacencyMetrics.Snapshot snapshot = metrics.snapshot("test", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-					0, 0, 0, 0, 0);
+					0, 0, 0, 0, 0, 0, 0);
 			assertThat(snapshot.lastBuildThreads).isGreaterThan(4);
 			assertThat(snapshot.plannedBuildRanges).isGreaterThan(4);
 			assertThat(snapshot.cursorRowsSkipped).isZero();
@@ -202,7 +202,7 @@ class LmdbAdjacencyBuildTxnFamilyTest {
 						LmdbAdjacencyCoverage.selected(new long[] { selectedPredicate }, Set.of()), account,
 						1L << 20, 1L << 16, 8, metrics)) {
 			LmdbAdjacencyMetrics.Snapshot snapshot = metrics.snapshot("test", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-					0, 0, 0, 0, 0);
+					0, 0, 0, 0, 0, 0, 0);
 			assertThat(snapshot.lastBuildThreads).isGreaterThan(4);
 			assertThat(snapshot.cursorRowsSkipped).isPositive();
 			assertThat(snapshot.cursorSeeks).isGreaterThan(256);
