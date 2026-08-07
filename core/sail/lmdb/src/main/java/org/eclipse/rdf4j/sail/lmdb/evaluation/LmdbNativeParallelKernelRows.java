@@ -173,10 +173,24 @@ final class LmdbNativeParallelKernelRows {
 			reservation.close();
 			return debugDecline("snapshot-unavailable");
 		}
+		// Hash-build kernels replicate the table per worker (M10B): charge the ledger for every replica up front,
+		// and keep the sequential kernel when the ledger refuses.
+		org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashLedger = null;
+		long hashBytes = LmdbNativeKernelExecution.hashBuildBytesEstimate(lowered.kernel);
+		if (hashBytes > 0L) {
+			hashLedger = row.memoryScope
+					.ledger(LmdbNativeHashJoin.queryMemory())
+					.reserve(hashBytes * threads, null);
+			if (hashLedger == null) {
+				LmdbNativeParallelPipelines.closeSources(sources, null);
+				reservation.close();
+				return debugDecline("hash-admission");
+			}
+		}
 		LmdbNativeKernelIr.Kernel workerKernelFinal = workerKernel;
 		Supplier<JaninoKernel> workerFactory = () -> kernelFactory.apply(workerKernelFinal);
 		return start(lowered, rootAdjacency, rootDomain, domains, rootKeys, sources, threads, row, workerFactory,
-				reservation, emit);
+				reservation, emit, hashLedger);
 	}
 
 	/** Non-negative saturating addition; both mods fields are non-negative by {@code OutputMods} construction. */
@@ -193,7 +207,8 @@ final class LmdbNativeParallelKernelRows {
 	 */
 	private static RowCursor start(LmdbNativeKernelLowering.Lowered lowered, int rootAdjacency, int rootDomain,
 			long[][] domains, long rootKeys, NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row,
-			Supplier<JaninoKernel> kernelFactory, LmdbNativeParallelPipelines.TaskReservation reservation, Emit emit) {
+			Supplier<JaninoKernel> kernelFactory, LmdbNativeParallelPipelines.TaskReservation reservation, Emit emit,
+			org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashLedger) {
 		ConcurrentLinkedQueue<long[]> ranges = LmdbNativeKernelPartitions.ranges(rootKeys, threads, RANGES_PER_WORKER);
 		ArrayBlockingQueue<Page> output = new ArrayBlockingQueue<>(threads * 2);
 		AtomicReference<Throwable> failure = new AtomicReference<>();
@@ -225,7 +240,8 @@ final class LmdbNativeParallelKernelRows {
 			}
 		}
 		if (emit.mods.orderKeys != null) {
-			return startOrdered(lowered, sources, threads, row, reservation, emit, output, failure, cancelled, tasks);
+			return startOrdered(lowered, sources, threads, row, reservation, emit, output, failure, cancelled, tasks,
+					hashLedger);
 		}
 		Page first = null;
 		int endedWorkers = 0;
@@ -245,6 +261,9 @@ final class LmdbNativeParallelKernelRows {
 		}
 		if (first == null && failure.get() != null) {
 			abandon(sources, reservation, tasks, cancelled, interrupted);
+			if (hashLedger != null) {
+				hashLedger.close();
+			}
 			Throwable problem = failure.get();
 			if (problem instanceof Error) {
 				throw (Error) problem;
@@ -256,7 +275,7 @@ final class LmdbNativeParallelKernelRows {
 		}
 		PARALLEL_RUNS.incrementAndGet();
 		return new ParallelKernelRowCursor(row, lowered.bindings.columnEngineSlots, sources, reservation, output,
-				failure, cancelled, tasks, threads, first, endedWorkers, emit);
+				failure, cancelled, tasks, threads, first, endedWorkers, emit, hashLedger);
 	}
 
 	/** Cancels the worker group pre-handoff and releases every resource; close failures surface as errors only. */
@@ -284,7 +303,8 @@ final class LmdbNativeParallelKernelRows {
 	private static RowCursor startOrdered(LmdbNativeKernelLowering.Lowered lowered,
 			NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row,
 			LmdbNativeParallelPipelines.TaskReservation reservation, Emit emit, ArrayBlockingQueue<Page> output,
-			AtomicReference<Throwable> failure, AtomicBoolean cancelled, CountDownLatch tasks) {
+			AtomicReference<Throwable> failure, AtomicBoolean cancelled, CountDownLatch tasks,
+			org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashLedger) {
 		int[] columnSlots = lowered.bindings.columnEngineSlots;
 		int stride = columnSlots.length;
 		ArrayList<Page> pages = new ArrayList<>();
@@ -311,6 +331,9 @@ final class LmdbNativeParallelKernelRows {
 						new LmdbNativeKernelPartitions.ParallelKernelDecline("ordered-result-too-large"));
 			}
 			abandon(sources, reservation, tasks, cancelled, interrupted);
+			if (hashLedger != null) {
+				hashLedger.close();
+			}
 			Throwable problem = failure.get();
 			if (problem instanceof Error) {
 				throw (Error) problem;
@@ -323,6 +346,10 @@ final class LmdbNativeParallelKernelRows {
 		awaitTasks(tasks);
 		Throwable cleanupFailure = LmdbNativeParallelPipelines.closeSources(sources, null);
 		reservation.close();
+		if (hashLedger != null) {
+			// per-worker tables are gone with their kernel instances; the replicas' charge releases here
+			hashLedger.close();
+		}
 		if (cleanupFailure instanceof RuntimeException) {
 			throw (RuntimeException) cleanupFailure;
 		}
@@ -606,10 +633,14 @@ final class LmdbNativeParallelKernelRows {
 		private int activeMark = -1;
 		private boolean closed;
 
+		private final org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashLedger;
+
 		ParallelKernelRowCursor(RowState row, int[] columnSlots, NativeLmdbQuerySource.ParallelSource[] sources,
 				LmdbNativeParallelPipelines.TaskReservation reservation, ArrayBlockingQueue<Page> output,
 				AtomicReference<Throwable> failure, AtomicBoolean cancelled, CountDownLatch tasks, int threads,
-				Page first, int endedWorkers, Emit emit) {
+				Page first, int endedWorkers, Emit emit,
+				org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashLedger) {
+			this.hashLedger = hashLedger;
 			this.row = row;
 			this.columnSlots = columnSlots;
 			this.sources = sources;
@@ -740,6 +771,9 @@ final class LmdbNativeParallelKernelRows {
 			active = null;
 			Throwable cleanupFailure = LmdbNativeParallelPipelines.closeSources(sources, null);
 			reservation.close();
+			if (hashLedger != null) {
+				hashLedger.close();
+			}
 			if (cleanupFailure instanceof RuntimeException) {
 				throw (RuntimeException) cleanupFailure;
 			}

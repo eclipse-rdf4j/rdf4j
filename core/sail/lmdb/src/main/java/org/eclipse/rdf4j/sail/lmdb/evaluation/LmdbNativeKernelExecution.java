@@ -601,7 +601,7 @@ final class LmdbNativeKernelExecution {
 	}
 
 	/** Estimated ledger charge for the kernel's in-kernel hash builds (M8), or 0 when the kernel has none. */
-	private static long hashBuildBytesEstimate(LmdbNativeKernelIr.Kernel kernel) {
+	static long hashBuildBytesEstimate(LmdbNativeKernelIr.Kernel kernel) {
 		long bytes = 0L;
 		for (LmdbNativeKernelIr.Node node : kernel.pipeline) {
 			if (node instanceof LmdbNativeKernelIr.HashBuild) {

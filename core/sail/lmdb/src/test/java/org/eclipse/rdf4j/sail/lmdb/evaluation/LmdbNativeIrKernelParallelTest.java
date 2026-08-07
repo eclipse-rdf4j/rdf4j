@@ -97,6 +97,14 @@ class LmdbNativeIrKernelParallelTest {
 	private static final String DOMAIN_ROOT_QUERY = "SELECT ?s ?v ?w WHERE { ?s <" + EX + "t> <" + EX
 			+ "X> . ?s <" + EX + "p> ?m . ?m <" + EX + "q> ?v . OPTIONAL { ?m <" + EX + "r> ?w } }";
 
+	/** M10B: the WCOJ Intersect kernel is stateless per row, so the root edge enumeration partitions. */
+	private static final String TRIANGLE_QUERY = "SELECT ?x ?y ?z WHERE { ?x <" + EX + "c> ?y . ?y <" + EX
+			+ "c> ?z . ?z <" + EX + "c> ?x }";
+
+	/** M10B: a hash-build kernel partitions the probe root; each worker replicates the (small) build table. */
+	private static final String HASH_JOIN_QUERY = "SELECT ?s ?m ?v WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
+			+ "q> ?v }";
+
 	@TempDir
 	File dataDir;
 
@@ -142,6 +150,16 @@ class LmdbNativeIrKernelParallelTest {
 			// plan-32 acceptance fixture (fresh predicates/classes so the counts above stay untouched): 100 persons,
 			// 200 Articles, 150 Inproceedings; persons 0..49 author both kinds, 50..74 only Articles, 75..99 only
 			// Inproceedings; several works per person so DISTINCT actually collapses duplicates.
+			// M10B WCOJ-parallel fixture: 200 disjoint directed 3-cycles on a fresh predicate, 600 root keys.
+			IRI c = vf.createIRI(EX, "c");
+			for (int i = 0; i < 200; i++) {
+				IRI ta = vf.createIRI(EX, "tri" + i + "a");
+				IRI tb = vf.createIRI(EX, "tri" + i + "b");
+				IRI tc = vf.createIRI(EX, "tri" + i + "c");
+				conn.add(ta, c, tb);
+				conn.add(tb, c, tc);
+				conn.add(tc, c, ta);
+			}
 			IRI creator = vf.createIRI(EX, "creator");
 			IRI name = vf.createIRI(EX, "name");
 			IRI classA = vf.createIRI(EX, "A");
@@ -314,6 +332,63 @@ class LmdbNativeIrKernelParallelTest {
 		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get())
 				.as("shared residual state would race across workers; parallel must decline")
 				.isEqualTo(parallelBefore);
+	}
+
+	/** M10B: the triangle's Intersect levels carry no cross-row state, so the root edge enumeration partitions. */
+	@Test
+	void wcojKernelRunsParallelWithExactResults() {
+		// the interpreted leapfrog sits above the kernel in the ladder; disable it so the kernel route serves
+		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+		try {
+			wcojKernelParallelBody();
+		} finally {
+			System.clearProperty("rdf4j.lmdb.wcoj.enabled");
+		}
+	}
+
+	private void wcojKernelParallelBody() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(TRIANGLE_QUERY);
+		assertThat(expected).hasSize(600);
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+
+		KernelExecutionTestAccess.resetMetrics();
+		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
+		for (int round = 0; round < 300
+				&& LmdbNativeParallelKernelRows.PARALLEL_RUNS.get() == parallelBefore; round++) {
+			assertThat(rows(TRIANGLE_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+		}
+		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get())
+				.as("a WCOJ kernel must partition its root edge enumeration")
+				.isGreaterThan(parallelBefore);
+		assertThat(KernelExecutionTestAccess.wcojLowerings()).isGreaterThan(0);
+		assertThat(rows(TRIANGLE_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	/** M10B: hash-build kernels partition the probe root; each worker replicates the build table. */
+	@Test
+	void hashJoinKernelRunsParallelWithExactResults() {
+		System.setProperty("rdf4j.lmdb.nativeHashJoin.minRows", "0");
+		try {
+			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+			List<String> expected = rows(HASH_JOIN_QUERY);
+			assertThat(expected).isNotEmpty();
+			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+
+			KernelExecutionTestAccess.resetMetrics();
+			long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
+			for (int round = 0; round < 300
+					&& LmdbNativeParallelKernelRows.PARALLEL_RUNS.get() == parallelBefore; round++) {
+				assertThat(rows(HASH_JOIN_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+			}
+			assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get())
+					.as("a hash-build kernel must partition its probe root")
+					.isGreaterThan(parallelBefore);
+			assertThat(KernelExecutionTestAccess.hashJoinLowerings()).isGreaterThan(0);
+			assertThat(rows(HASH_JOIN_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+		} finally {
+			System.clearProperty("rdf4j.lmdb.nativeHashJoin.minRows");
+		}
 	}
 
 	/** M10: the plain EXISTS shape now carries a STATELESS in-kernel witness, so it partitions safely. */

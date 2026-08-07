@@ -49,17 +49,35 @@ final class LmdbNativeKernelPartitions {
 	 * enumeration of the same view would see the window instead of the whole and silently drop rows.
 	 */
 	static int partitionableRootAdjacency(List<Node> pipeline) {
-		if (pipeline.isEmpty() || !(pipeline.get(0) instanceof EnumerateAdjKeys)) {
+		// A hash-build preamble runs once per worker (per-worker table replication, M10B); the partitionable root is
+		// the first LOOP producer after it.
+		int start = 0;
+		while (start < pipeline.size() && pipeline.get(start) instanceof LmdbNativeKernelIr.HashBuild) {
+			start++;
+		}
+		if (start >= pipeline.size() || !(pipeline.get(start) instanceof EnumerateAdjKeys)) {
 			return -1;
 		}
-		int rootAdjacency = ((EnumerateAdjKeys) pipeline.get(0)).adjacency;
-		for (int i = 1; i < pipeline.size(); i++) {
+		int rootAdjacency = ((EnumerateAdjKeys) pipeline.get(start)).adjacency;
+		return enumeratesAdjacencyElsewhere(pipeline, start, rootAdjacency) ? -1 : rootAdjacency;
+	}
+
+	private static boolean enumeratesAdjacencyElsewhere(List<Node> pipeline, int rootIndex, int rootAdjacency) {
+		for (int i = 0; i < pipeline.size(); i++) {
+			if (i == rootIndex) {
+				continue;
+			}
 			Node node = pipeline.get(i);
 			if (node instanceof EnumerateAdjKeys && ((EnumerateAdjKeys) node).adjacency == rootAdjacency) {
-				return -1;
+				return true;
+			}
+			if (node instanceof LmdbNativeKernelIr.HashBuild
+					&& enumeratesAdjacencyElsewhere(((LmdbNativeKernelIr.HashBuild) node).pipeline, -1,
+							rootAdjacency)) {
+				return true;
 			}
 		}
-		return rootAdjacency;
+		return false;
 	}
 
 	/**
@@ -70,11 +88,18 @@ final class LmdbNativeKernelPartitions {
 	 * domains, but every DISTINCT aggregate already declines the parallel rungs.)
 	 */
 	static int partitionableRootDomain(List<Node> pipeline) {
-		if (pipeline.isEmpty() || !(pipeline.get(0) instanceof EnumerateDomain)) {
+		int start = 0;
+		while (start < pipeline.size() && pipeline.get(start) instanceof LmdbNativeKernelIr.HashBuild) {
+			start++;
+		}
+		if (start >= pipeline.size() || !(pipeline.get(start) instanceof EnumerateDomain)) {
 			return -1;
 		}
-		int rootDomain = ((EnumerateDomain) pipeline.get(0)).domain;
-		for (int i = 1; i < pipeline.size(); i++) {
+		int rootDomain = ((EnumerateDomain) pipeline.get(start)).domain;
+		for (int i = 0; i < pipeline.size(); i++) {
+			if (i == start) {
+				continue;
+			}
 			Node node = pipeline.get(i);
 			if (node instanceof EnumerateDomain && ((EnumerateDomain) node).domain == rootDomain) {
 				return -1;
