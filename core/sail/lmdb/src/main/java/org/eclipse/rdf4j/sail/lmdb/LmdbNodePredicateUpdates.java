@@ -19,9 +19,10 @@ import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 /**
  * Complete node-to-predicate row replacements derived from final overlay row states.
  * <p>
- * Only outgoing rows participate. An object/context-only replacement under an already-present predicate is filtered
- * out, so the projection is rewritten exclusively for true absent/present transitions. The resulting updates are
- * strictly ordered by {@code (plane,unsigned subject)} as required by the paged-CSF rewriter.
+ * Only rows in planes the projection actually stores participate. An object/context-only replacement under an
+ * already-present predicate is filtered out, so the projection is rewritten exclusively for true absent/present
+ * transitions. The resulting updates are strictly ordered by {@code (plane, unsigned key)} as the paged-CSF rewriter
+ * requires.
  */
 final class LmdbNodePredicateUpdates implements ImmutablePagedQuadCsfIndex.RowUpdateSource {
 
@@ -85,7 +86,9 @@ final class LmdbNodePredicateUpdates implements ImmutablePagedQuadCsfIndex.RowUp
 			while (record < sourceSize && rows.keyAt(record) == key && rows.planeAt(record) == plane) {
 				record++;
 			}
-			if (!isOutgoingPlane(plane)) {
+			if (!oldIndex.supportsPlane(plane)) {
+				// A plane the projection does not store has nothing to rewrite. Following the index's own mask rather
+				// than a hard-coded direction is what lets the incoming planes be enabled without touching this code.
 				continue;
 			}
 			candidateKeys[groupCount] = key;
@@ -103,27 +106,26 @@ final class LmdbNodePredicateUpdates implements ImmutablePagedQuadCsfIndex.RowUp
 		this.pairCounts = new long[groupCount];
 		Arrays.fill(pairCounts, -1);
 
+		// The rewriter consumes updates partition-major, so the changed groups are stably partitioned by plane in
+		// ascending plane order. A counting sort keeps it stable and generalizes to all four planes: within a plane the
+		// groups are already in ascending unsigned key order because the source rows were.
 		int[] changed = new int[groupCount];
 		int changedCount = 0;
-		int explicitCount = 0;
+		int[] planeCounts = new int[ImmutablePagedQuadCsfIndex.PLANE_COUNT];
 		for (int group = 0; group < groupCount; group++) {
 			if (changesIncidence(group)) {
 				changed[changedCount++] = group;
-				if (Byte.toUnsignedInt(planes[group]) == LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT) {
-					explicitCount++;
-				}
+				planeCounts[Byte.toUnsignedInt(planes[group])]++;
 			}
 		}
+		int[] planeCursor = new int[ImmutablePagedQuadCsfIndex.PLANE_COUNT];
+		for (int plane = 1; plane < planeCursor.length; plane++) {
+			planeCursor[plane] = planeCursor[plane - 1] + planeCounts[plane - 1];
+		}
 		this.order = new int[changedCount];
-		int explicit = 0;
-		int inferred = explicitCount;
 		for (int i = 0; i < changedCount; i++) {
 			int group = changed[i];
-			if (Byte.toUnsignedInt(planes[group]) == LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT) {
-				order[explicit++] = group;
-			} else {
-				order[inferred++] = group;
-			}
+			order[planeCursor[Byte.toUnsignedInt(planes[group])]++] = group;
 		}
 		for (int i = 1; i < order.length; i++) {
 			if (compareGroup(order[i - 1], order[i], planes, keys) >= 0) {
@@ -311,11 +313,6 @@ final class LmdbNodePredicateUpdates implements ImmutablePagedQuadCsfIndex.RowUp
 		comparison = Integer.compare(rows.planeAt(left), rows.planeAt(right));
 		return comparison != 0 ? comparison
 				: Long.compareUnsigned(rows.predicateAt(left), rows.predicateAt(right));
-	}
-
-	private static boolean isOutgoingPlane(int plane) {
-		return plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
-				|| plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED;
 	}
 
 	private static int compareGroup(int left, int right, byte[] planes, long[] keys) {

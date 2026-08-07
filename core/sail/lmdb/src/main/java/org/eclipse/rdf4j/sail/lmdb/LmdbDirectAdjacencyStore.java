@@ -1807,13 +1807,17 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					return null;
 				}
 			}
-			if (!ValueIds.isReference(key)) {
-				if (subjectBound) {
-					// subjects are never inlined: nothing can match an inlined subject key
-					metrics.recordExactMiss();
-					observe(observer, true, "EXACT_EMPTY", order, subject, predicate, object, context);
-					return options.mode() == DirectAdjacencyMode.SHADOW ? null : EmptyRecordIterator.INSTANCE;
-				}
+			if (!ValueIds.isReference(key) && subjectBound) {
+				// subjects are never inlined: nothing can match an inlined subject key
+				metrics.recordExactMiss();
+				observe(observer, true, "EXACT_EMPTY", order, subject, predicate, object, context);
+				return options.mode() == DirectAdjacencyMode.SHADOW ? null : EmptyRecordIterator.INSTANCE;
+			}
+			if (!ValueIds.isReference(key) && !base.usesPagedCsf()) {
+				// A legacy base keeps inlined incoming keys in separate inline planes that the node iterator cannot
+				// enumerate; it resolves a header reference and would read an inlined key as "no predicates at all".
+				// A paged base has no such split: its incoming planes are keyed by the raw object id, inlined or not,
+				// so the projection covers them and the lookup below is exact.
 				metrics.recordFallback(FallbackReason.INLINE_NOT_COVERED);
 				observe(observer, false, FallbackReason.INLINE_NOT_COVERED.name(), order, subject, predicate, object,
 						context);

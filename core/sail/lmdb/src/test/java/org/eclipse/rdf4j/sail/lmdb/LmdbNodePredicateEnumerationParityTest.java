@@ -84,14 +84,36 @@ class LmdbNodePredicateEnumerationParityTest {
 	/** -1 is "any context"; 0 is the default graph; G1/G2 are named graphs; G_ABSENT is in no statement. */
 	private static final long[] CONTEXTS = { -1, 0, G1, G2, uri(9999) };
 
+	private File dataDir;
+
 	@BeforeEach
 	void setUp(@TempDir File dataDir) throws Exception {
+		this.dataDir = dataDir;
+		openStore(false);
+	}
+
+	/** Opens the store with the outgoing projection on and the incoming planes gated by {@code incoming}. */
+	private void openStore(boolean incoming) throws Exception {
+		if (store != null) {
+			store.close();
+			store = null;
+		}
+		if (tripleStore != null) {
+			tripleStore.close();
+		}
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
-		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30,
-				name -> LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY.equals(name) ? "true" : null, 4);
+		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30, name -> {
+			if (LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY.equals(name)) {
+				return "true";
+			}
+			if (LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY.equals(name)) {
+				return String.valueOf(incoming);
+			}
+			return null;
+		}, 4);
 		System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, "true");
 		store = new LmdbDirectAdjacencyStore(tripleStore, null, new AtomicBoolean(false), options);
 		tripleStore.setDirectAdjacencyCommitHooks(store.commitListener(), store.newCommitDelta());
@@ -333,6 +355,93 @@ class LmdbNodePredicateEnumerationParityTest {
 			assertThat(adjacency).isNotNull().hasSize(1);
 			assertThat(adjacency).usingElementComparator(ROW_ORDER)
 					.containsExactlyElementsOf(fromDiskTrees(txn, S_ONE_PREDICATE, -1, true));
+		}
+	}
+
+	/**
+	 * Gate D milestone D1: with the incoming switch on, the reverse direction {@code ?s ?p <o>} is served and agrees
+	 * with the disk trees, including for an inlined literal object.
+	 * <p>
+	 * The inlined object is the interesting case and the plan predicted it would have to stay declining. It does not: a
+	 * paged base has no separate inline incoming structure, so its incoming planes are keyed by the raw object id
+	 * whether or not that id is inlined, and the projection covers them uniformly. See {@code Surprises & Discoveries}.
+	 */
+	@Test
+	void incomingPlanesAgreeWithTheDiskTreesWhenEnabled() throws Exception {
+		openStore(true);
+		loadBaseFixture();
+		assertThat(store.buildNowForTest()).isTrue();
+		LmdbNodePredicateIndex projection = store.publishedStateForTest().base().nodePredicateIndexOrNull();
+		assertThat(projection).isNotNull();
+		assertThat(projection.supportsPlane(LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT)).isTrue();
+		assertThat(projection.supportsPlane(LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED)).isTrue();
+
+		int served = 0;
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			for (long object : new long[] { O1, O2, O_INLINE, uri(4242) }) {
+				for (long context : CONTEXTS) {
+					for (boolean explicit : new boolean[] { true, false }) {
+						List<long[]> adjacency = fromAdjacencyIncoming(txn, object, context, explicit);
+						if (adjacency == null) {
+							continue;
+						}
+						served++;
+						assertThat(adjacency)
+								.as("object=%s context=%s explicit=%s", Long.toUnsignedString(object),
+										Long.toUnsignedString(context), explicit)
+								.usingElementComparator(ROW_ORDER)
+								.containsExactlyElementsOf(fromDiskTreesIncoming(txn, object, context, explicit));
+					}
+				}
+			}
+			assertThat(served).as("the incoming comparison must not be vacuous").isPositive();
+			assertThat(fromAdjacencyIncoming(txn, O_INLINE, -1, true))
+					.as("an inlined literal object must be served, not declined")
+					.isNotNull()
+					.isNotEmpty();
+		}
+	}
+
+	/**
+	 * With the incoming switch off the incoming planes must cost nothing at all — not merely go unpublished. A plane
+	 * outside the mask is skipped before any key-domain cursor, merge pass or page is created, so the whole projection
+	 * is strictly smaller than the same fixture with incoming on, and the reverse direction declines.
+	 */
+	@Test
+	void incomingPlanesCostNothingWhenDisabled() throws Exception {
+		loadBaseFixture();
+		assertThat(store.buildNowForTest()).isTrue();
+		LmdbNodePredicateIndex outgoingOnly = store.publishedStateForTest().base().nodePredicateIndex();
+		assertThat(outgoingOnly.supportsPlane(LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT)).isFalse();
+		assertThat(outgoingOnly.rowCount(LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT)).isZero();
+		assertThat(outgoingOnly.incidenceCount(LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT)).isZero();
+		long outgoingOnlyBytes = store.memoryAccount()
+				.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.NODE_PREDICATE_NATIVE);
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			assertThat(fromAdjacencyIncoming(txn, O1, -1, true)).as("the reverse direction must decline").isNull();
+		}
+
+		openStore(true);
+		assertThat(store.buildNowForTest()).isTrue();
+		long withIncomingBytes = store.memoryAccount()
+				.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.NODE_PREDICATE_NATIVE);
+		assertThat(withIncomingBytes)
+				.as("the incoming planes must add real bytes, so their absence is a real saving")
+				.isGreaterThan(outgoingOnlyBytes);
+	}
+
+	private List<long[]> fromAdjacencyIncoming(Txn txn, long object, long context, boolean explicit)
+			throws IOException {
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			RecordIterator it = store.tryOpen(view, txn, -1, -1, object, context, explicit);
+			return it == null ? null : drain(it);
+		}
+	}
+
+	private List<long[]> fromDiskTreesIncoming(Txn txn, long object, long context, boolean explicit)
+			throws IOException {
+		try (RecordIterator it = tripleStore.getTriples(txn, -1, -1, object, context, explicit)) {
+			return drain(it);
 		}
 	}
 
