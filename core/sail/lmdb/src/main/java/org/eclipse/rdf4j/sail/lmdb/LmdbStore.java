@@ -281,25 +281,32 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		logger.debug("Data dir is " + dataDir);
 
 		try {
-			StoreProperties properties = new StoreProperties(dataDir);
-			// ensure that it is an error if an unsupported version of LmdbStore already exists
-			if (new File(dataDir, "lmdbrdf.ver").exists()) {
-				throw new SailException("Directory contains data from an older unsupported version of LmdbStore");
-			}
+			StoreProperties properties;
 			boolean updateVersion = false;
-			if (properties.load()) {
-				if (!String.valueOf(VERSION).equals(properties.getVersion())) {
-					updateVersion = upgradeStore(dataDir, properties.getVersion());
+			if (LegacyStoreProperties.hasLegacyMarker(dataDir)) {
+				if (new File(dataDir, StoreProperties.FILE_NAME).isFile()) {
+					throw new SailException(
+							"Directory contains both legacy and current LMDB store metadata");
 				}
+				properties = LegacyStoreProperties.open(dataDir);
+				logger.info("Opening RDF4J {} LMDB store in format-preserving legacy mode",
+						properties.getVersion());
 			} else {
-				properties.setVersion(String.valueOf(VERSION));
+				properties = new StoreProperties(dataDir);
+				if (properties.load()) {
+					if (!String.valueOf(VERSION).equals(properties.getVersion())) {
+						updateVersion = upgradeStore(dataDir, properties.getVersion());
+					}
+				} else {
+					properties.setVersion(String.valueOf(VERSION));
+				}
 			}
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
 			backingStore = new LmdbSailStore(dataDir, properties, config, useSketchBasedJoinEstimator);
 
 			// update version afer loading and potential internal migration within value and triple store
-			if (updateVersion) {
+			if (!properties.isLegacy() && updateVersion) {
 				properties.setVersion(String.valueOf(VERSION));
 			}
 			properties.save();

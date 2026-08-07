@@ -270,7 +270,8 @@ class TripleStore implements Closeable {
 	private void initIndexes(Set<String> indexSpecs) throws IOException {
 		for (String fieldSeq : TripleIndex.orderIndexSpecs(indexSpecs)) {
 			logger.trace("Initializing index '{}'...", fieldSeq);
-			indexes.add(new TripleIndex(getIndexName(fieldSeq), fieldSeq, true, env, writeTxn));
+			indexes.add(new TripleIndex(getIndexName(fieldSeq), fieldSeq, true, env, writeTxn,
+					properties.isLegacy()));
 		}
 	}
 
@@ -305,6 +306,15 @@ class TripleStore implements Closeable {
 		return fieldSeq;
 	}
 
+	/**
+	 * Classifies an ID as a literal using the value store's on-disk format, because a legacy 5.3.x literal is
+	 * identified by its low two bits rather than by the current ID tags. A triple store may be created without a value
+	 * store, in which case only the current format can apply.
+	 */
+	private boolean isLiteralId(long id) {
+		return valueStore != null ? valueStore.isLiteral(id) : ValueStoreFormat.CURRENT.isLiteral(id);
+	}
+
 	private void reindex(Set<String> currentIndexSpecs, Set<String> newIndexSpecs)
 			throws IOException, SailException {
 		Map<String, TripleIndex> currentIndexes = new HashMap<>();
@@ -329,7 +339,7 @@ class TripleStore implements Closeable {
 						logger.debug("Initializing new index '{}'...", fieldSeq);
 
 						TripleIndex addedIndex = new TripleIndex(getIndexName(fieldSeq), fieldSeq, true, env,
-								writeTxn);
+								writeTxn, properties.isLegacy());
 						RecordIterator[] sourceIter = { null };
 						try {
 							sourceIter[0] = new LmdbRecordIterator(sourceIndex, false, -1, -1, -1, -1,
@@ -585,15 +595,9 @@ class TripleStore implements Closeable {
 									it.remove();
 									continue;
 								}
-								if (component != 2) {
-									// optimization: ensure that literals are only tested if they appear in object
-									// position
-									switch (ValueIds.getIdType(id)) {
-									case ValueIds.T_DOUBLE:
-									case ValueIds.T_LITERAL:
-										// id is a literal, don't test it
-										continue;
-									}
+								if (component != 2 && isLiteralId(id)) {
+									// literals can only appear in object position
+									continue;
 								}
 
 								long subj = component == 0 ? id : -1, pred = component == 1 ? id : -1,

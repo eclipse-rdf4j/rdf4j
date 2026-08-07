@@ -53,9 +53,15 @@ class TripleIndex {
 	private final int dbiExplicit, dbiInferred;
 	private final int[] indexMap;
 	private final long env;
+	private final boolean legacyDatabaseNames;
 	private String name;
 
 	TripleIndex(String name, String fieldSeq, boolean createInferredIndex, long env, long writeTxn) throws IOException {
+		this(name, fieldSeq, createInferredIndex, env, writeTxn, false);
+	}
+
+	TripleIndex(String name, String fieldSeq, boolean createInferredIndex, long env, long writeTxn,
+			boolean legacyDatabaseNames) throws IOException {
 		this.name = name;
 		this.fieldSeq = fieldSeq.toCharArray();
 		this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
@@ -64,6 +70,7 @@ class TripleIndex {
 		this.leadingFieldValueAccessor = this.fieldValueAccessors[0];
 		this.indexMap = getIndexes(this.fieldSeq);
 		this.env = env;
+		this.legacyDatabaseNames = legacyDatabaseNames;
 		// open database and use native sort order without comparator
 		dbiExplicit = openDatabaseWithTxn(writeTxn, getName(true), MDB_CREATE);
 		if (createInferredIndex) {
@@ -78,6 +85,13 @@ class TripleIndex {
 	}
 
 	String getName(boolean explicit) {
+		return databaseName(name, explicit, legacyDatabaseNames);
+	}
+
+	static String databaseName(String name, boolean explicit, boolean legacyDatabaseNames) {
+		if (legacyDatabaseNames) {
+			return name + (explicit ? "" : "-inf");
+		}
 		return name + (explicit ? name : name + "-inf");
 	}
 
