@@ -2333,6 +2333,12 @@ final class LmdbNativeKernelLowering {
 			if (!hashJoinablePattern(first) || !hashJoinablePattern(second)) {
 				return false;
 			}
+			// A slot already produced upstream means this MultiJoin is a NESTED group (an OPTIONAL arm, a witness
+			// join) evaluated correlated — the cost gate's static estimates describe uncorrelated evaluation, so a
+			// hash choice here replaces a correlated probe with a full build (the outerAccumulate inversion, M11).
+			if (anyProducedSlotColumned(first) || anyProducedSlotColumned(second)) {
+				return false;
+			}
 			LmdbNativeHashJoin.KernelHashPlan plan = LmdbNativeHashJoin.tryPlanKernel(first, second, row);
 			if (plan == null) {
 				return false;
@@ -2389,7 +2395,7 @@ final class LmdbNativeKernelLowering {
 				}
 				PatternPlan pattern = (PatternPlan) child;
 				if (!hashJoinablePattern(pattern) || !pattern.s.hasSlot() || !pattern.o.hasSlot()
-						|| pattern.hasRuntimeBoundSlot(row)) {
+						|| pattern.hasRuntimeBoundSlot(row) || anyProducedSlotColumned(pattern)) {
 					return false;
 				}
 				long produced = pattern.producedMask();
@@ -2504,6 +2510,17 @@ final class LmdbNativeKernelLowering {
 			joinOperands += children.length;
 			WCOJ_LOWERINGS.incrementAndGet();
 			return true;
+		}
+
+		/** True when any slot this pattern produces already has a pipeline column (nested/correlated re-entry). */
+		private boolean anyProducedSlotColumned(PatternPlan pattern) {
+			for (long mask = pattern.producedMask(); mask != 0L; mask &= mask - 1) {
+				int slot = Long.numberOfTrailingZeros(mask);
+				if (slot < slotColumn.length && slotColumn[slot] >= 0) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		/**

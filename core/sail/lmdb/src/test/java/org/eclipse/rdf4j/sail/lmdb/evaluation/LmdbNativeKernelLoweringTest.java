@@ -389,6 +389,35 @@ class LmdbNativeKernelLoweringTest {
 		}
 	}
 
+	/**
+	 * M11 inversion fix (outerAccumulate, janino 103ms vs 12.5ms): an OPTIONAL arm's two-pattern group re-enters the
+	 * MultiJoin lowering with a slot already produced by the core — the hash cost gate's static estimates describe
+	 * UNCORRELATED evaluation, so choosing hash there replaces a correlated probe with a full build. The hash sink must
+	 * refuse whenever any produced slot of either pattern already has a column.
+	 */
+	@Test
+	void hashJoinSinkRefusesWhenASlotIsAlreadyProducedUpstream() {
+		PatternPlan core = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100_000D);
+		PatternPlan armProbe = new PatternPlan(Term.slot(1), Term.constant(PRED + 2), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100_000D);
+		PatternPlan armBuild = new PatternPlan(Term.slot(2), Term.constant(PRED + 4), Term.slot(3), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100D);
+		LeftJoinPlan plan = new LeftJoinPlan(core,
+				new MultiJoinPlan(new SlotPlan[] { armProbe, armBuild }, new MaskedFilter[0]));
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
+			if (lowered != null) {
+				assertFalse(lowered.kernel.shapeKey().contains("hb0("),
+						"a correlated group must keep its probe chain: " + lowered.kernel.shapeKey());
+			}
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
 	/** The kernel hash sink honors its kill switch: flag off keeps the probe chain. */
 	@Test
 	void hashJoinKernelFlagOffKeepsTheProbeChain() {
