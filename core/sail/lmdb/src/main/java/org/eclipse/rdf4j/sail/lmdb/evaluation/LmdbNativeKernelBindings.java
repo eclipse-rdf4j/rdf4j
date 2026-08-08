@@ -136,7 +136,24 @@ final class LmdbNativeKernelBindings {
 		}
 	}
 
+	/**
+	 * One node-to-predicate enumerator, index-aligned with the IR's {@code EnumeratePredicates.view} id. Unlike a
+	 * per-predicate adjacency request there is nothing to name but the direction: the whole point of the structure is
+	 * that the predicate is not known until run time.
+	 */
+	record NodePredicateRequest(boolean bySubject) {
+	}
+
+	/** One dynamic {@code (node, runtime predicate)} probe, index-aligned with {@code ProbeVariable.view}. */
+	record DynamicRequest(boolean bySubject) {
+	}
+
+	private static final NodePredicateRequest[] NO_NODE_PREDICATE_REQUESTS = {};
+	private static final DynamicRequest[] NO_DYNAMIC_REQUESTS = {};
+
 	final AdjacencyRequest[] adjacencies;
+	final NodePredicateRequest[] nodePredicateRequests;
+	final DynamicRequest[] dynamicRequests;
 	final long[] constants;
 	final int[] entrySlotIds;
 	final DomainRequest[] keyDomains;
@@ -212,6 +229,19 @@ final class LmdbNativeKernelBindings {
 			List<MaskedFilter> residualFilters, StatementOrder[] scanOrders, PlanRequest[] planRequests,
 			KernelGroupLayout groupLayout, boolean hooksRequired, int distinctExpected,
 			MaskedFilter[] kernelResiduals) {
+		this(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, bindHooks, columnEngineSlots,
+				residualFilters, scanOrders, planRequests, groupLayout, hooksRequired, distinctExpected,
+				kernelResiduals, NO_NODE_PREDICATE_REQUESTS, NO_DYNAMIC_REQUESTS);
+	}
+
+	LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
+			DomainRequest[] keyDomains, FilterHook[] filterHooks, BindHook[] bindHooks, int[] columnEngineSlots,
+			List<MaskedFilter> residualFilters, StatementOrder[] scanOrders, PlanRequest[] planRequests,
+			KernelGroupLayout groupLayout, boolean hooksRequired, int distinctExpected,
+			MaskedFilter[] kernelResiduals, NodePredicateRequest[] nodePredicateRequests,
+			DynamicRequest[] dynamicRequests) {
+		this.nodePredicateRequests = nodePredicateRequests;
+		this.dynamicRequests = dynamicRequests;
 		this.adjacencies = adjacencies;
 		this.constants = constants;
 		this.entrySlotIds = entrySlotIds;
@@ -226,6 +256,57 @@ final class LmdbNativeKernelBindings {
 		this.hooksRequired = hooksRequired;
 		this.distinctExpected = distinctExpected;
 		this.kernelResiduals = kernelResiduals;
+	}
+
+	/**
+	 * Returns a copy carrying the variable-predicate view requests. A copy rather than a mutation because bindings are
+	 * shared across parallel workers and every open of the same plan; nothing about them may become per-open state.
+	 */
+	LmdbNativeKernelBindings withVariablePredicateRequests(NodePredicateRequest[] nodePredicates,
+			DynamicRequest[] dynamics) {
+		if (nodePredicates.length == 0 && dynamics.length == 0) {
+			return this;
+		}
+		return new LmdbNativeKernelBindings(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, bindHooks,
+				columnEngineSlots, residualFilters, scanOrders, planRequests, groupLayout, hooksRequired,
+				distinctExpected, kernelResiduals, nodePredicates, dynamics);
+	}
+
+	/**
+	 * Requests every variable-predicate view this kernel needs, or {@code null} when any is unavailable.
+	 * <p>
+	 * Deliberately all-or-nothing, with no partial variant. Per-predicate adjacency views can be individually missing
+	 * and the mixed-binding path re-lowers only those patterns; these are all-or-nothing per direction, so a missing
+	 * one means the whole open declines to the interpreted path.
+	 */
+	static VariablePredicateViews requestVariablePredicateViews(LmdbNativeKernelBindings bindings,
+			NativeLmdbQuerySource.NativeProbe probe) throws java.io.IOException {
+		if (bindings.nodePredicateRequests.length == 0 && bindings.dynamicRequests.length == 0) {
+			return VariablePredicateViews.NONE;
+		}
+		NativeLmdbQuerySource.NodePredicates[] nodePredicates = new NativeLmdbQuerySource.NodePredicates[bindings.nodePredicateRequests.length];
+		for (int i = 0; i < nodePredicates.length; i++) {
+			nodePredicates[i] = probe.nodePredicates(bindings.nodePredicateRequests[i].bySubject());
+			if (nodePredicates[i] == null) {
+				return null;
+			}
+		}
+		NativeLmdbQuerySource.DynamicAdjacency[] dynamics = new NativeLmdbQuerySource.DynamicAdjacency[bindings.dynamicRequests.length];
+		for (int i = 0; i < dynamics.length; i++) {
+			dynamics[i] = probe.dynamicAdjacency(bindings.dynamicRequests[i].bySubject());
+			if (dynamics[i] == null) {
+				return null;
+			}
+		}
+		return new VariablePredicateViews(nodePredicates, dynamics);
+	}
+
+	/** The resolved views for one open; owned by the probe that produced them and never cached in a plan. */
+	record VariablePredicateViews(NativeLmdbQuerySource.NodePredicates[] nodePredicates,
+			NativeLmdbQuerySource.DynamicAdjacency[] dynamics) {
+
+		static final VariablePredicateViews NONE = new VariablePredicateViews(
+				new NativeLmdbQuerySource.NodePredicates[0], new NativeLmdbQuerySource.DynamicAdjacency[0]);
 	}
 
 	boolean needsHooks() {
@@ -361,6 +442,11 @@ final class LmdbNativeKernelBindings {
 
 	KernelContext context(NativeLmdbQuerySource.NativeAdjacency[] views, long[][] domains, RowState row,
 			KernelHooks hooks, KernelScanner scanner) {
+		return context(views, domains, row, hooks, scanner, VariablePredicateViews.NONE);
+	}
+
+	KernelContext context(NativeLmdbQuerySource.NativeAdjacency[] views, long[][] domains, RowState row,
+			KernelHooks hooks, KernelScanner scanner, VariablePredicateViews variablePredicateViews) {
 		long[] entrySlots = new long[entrySlotIds.length];
 		for (int i = 0; i < entrySlots.length; i++) {
 			entrySlots[i] = row.slots[entrySlotIds[i]];
@@ -369,7 +455,8 @@ final class LmdbNativeKernelBindings {
 		for (int i = 0; i < plans.length; i++) {
 			plans[i] = new BoundPlan(planRequests[i], row);
 		}
-		return new KernelContext(views, constants, entrySlots, domains, hooks, scanner, plans, distinctExpected);
+		return new KernelContext(views, constants, entrySlots, domains, hooks, scanner, plans, distinctExpected,
+				variablePredicateViews.nodePredicates(), variablePredicateViews.dynamics());
 	}
 
 	/** Runtime wrapper that isolates an interpreted producer from the row receiving generated-kernel output. */

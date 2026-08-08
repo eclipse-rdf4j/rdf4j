@@ -3570,6 +3570,26 @@ class LmdbSailStore implements SailStore {
 					return directAdjacency.adjacency(view, predicate, bySubject, explicit, observer);
 				}
 
+				@Override
+				public NativeLmdbQuerySource.NodePredicates nodePredicates(boolean bySubject) throws IOException {
+					checkOpen();
+					LmdbAdjacencyReadView view = variablePredicateView();
+					return view == null ? null
+							: directAdjacency.bindNodePredicates(view, bySubject, explicit, null);
+				}
+
+				@Override
+				public NativeLmdbQuerySource.DynamicAdjacency dynamicAdjacency(boolean bySubject) throws IOException {
+					checkOpen();
+					LmdbAdjacencyReadView view = variablePredicateView();
+					return view == null ? null
+							: directAdjacency.bindDynamicAdjacency(view, bySubject, explicit, null);
+				}
+
+				private LmdbAdjacencyReadView variablePredicateView() throws IOException {
+					return !hasStatementsInSource() || directAdjacency == null ? null : exactAdjacencyView(false);
+				}
+
 				private void observeAdjacency(AdjacencyAccessObserver observer, boolean used, String reason,
 						long predicate, boolean bySubject) {
 					if (observer != null) {
@@ -4414,6 +4434,42 @@ class LmdbSailStore implements SailStore {
 					}
 					observeAdjacency(observer, false, adjacencyUnavailableReason(), predicate, bySubject);
 					return null;
+				} catch (RuntimeException | Error failure) {
+					close();
+					throw failure;
+				}
+			}
+
+			@Override
+			public NativeLmdbQuerySource.NodePredicates nodePredicates(boolean bySubject) throws IOException {
+				return variablePredicateEligible()
+						? directAdjacency.bindNodePredicates(adjacencyView, bySubject, explicit, null)
+						: null;
+			}
+
+			@Override
+			public NativeLmdbQuerySource.DynamicAdjacency dynamicAdjacency(boolean bySubject) throws IOException {
+				return variablePredicateEligible()
+						? directAdjacency.bindDynamicAdjacency(adjacencyView, bySubject, explicit, null)
+						: null;
+			}
+
+			/**
+			 * Same gate the fixed-predicate view uses, hoisted so both variable-predicate views observe it. The read
+			 * stamp is taken here for the same reason it is taken there: the view must stay valid for this probe's
+			 * lifetime, and each parallel worker owns its own probe.
+			 */
+			private boolean variablePredicateEligible() throws IOException {
+				if (closed) {
+					throw new SailException("Probe has been closed");
+				}
+				if (!stampHeld) {
+					readStamp = acquireNativeSourceReadLock();
+					stampHeld = true;
+				}
+				try {
+					assertNativeSourceOpen();
+					return hasStatementsInSource() && directEligible();
 				} catch (RuntimeException | Error failure) {
 					close();
 					throw failure;

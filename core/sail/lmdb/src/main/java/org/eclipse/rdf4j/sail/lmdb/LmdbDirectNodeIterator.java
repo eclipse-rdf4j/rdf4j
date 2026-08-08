@@ -320,6 +320,41 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 	}
 
 	/**
+	 * Sums the statements this iterator would emit, without decoding a single edge.
+	 * <p>
+	 * Exact only because the run encoding already gives every {@code (neighbour, context)} pair its own position, so a
+	 * statement repeated across two named graphs occupies two positions and needs no correction. The caller must have
+	 * proven there is no context restriction and no bound neighbour: this counts whole runs and cannot see either.
+	 * <p>
+	 * Reuses {@link #advanceGroup()} rather than re-deriving the merge. That is the whole point: a separate counting
+	 * walk would have to repeat tombstone handling, newest-generation-wins and base fallback, and any drift between the
+	 * two would show up as a count that disagrees with the rows the very same query would return.
+	 */
+	long countStatements() {
+		if (boundContext >= 0) {
+			throw new IllegalStateException("countStatements cannot honour a context restriction");
+		}
+		long total = 0;
+		while (advanceGroup()) {
+			total = Math.addExact(total, end);
+			pos = end;
+		}
+		return total;
+	}
+
+	/**
+	 * Whether this iterator would emit anything, stopping at the first surviving group. Same preconditions as
+	 * {@link #countStatements()}; a group that survives the merge is never empty, because the builder rejects an empty
+	 * row and a tombstoned group is skipped inside the merge.
+	 */
+	boolean hasAnyStatement() {
+		if (boundContext >= 0) {
+			throw new IllegalStateException("hasAnyStatement cannot honour a context restriction");
+		}
+		return advanceGroup();
+	}
+
+	/**
 	 * Reports the inconsistency to the owner before throwing, so that the store degrades and schedules a rebuild even
 	 * though this iterator's caller sees only the exception.
 	 */

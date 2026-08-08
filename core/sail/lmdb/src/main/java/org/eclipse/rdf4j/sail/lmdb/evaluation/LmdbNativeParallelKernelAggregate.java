@@ -519,6 +519,11 @@ final class LmdbNativeParallelKernelAggregate {
 			if (views == null) {
 				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-adjacency-unavailable");
 			}
+			LmdbNativeKernelBindings.VariablePredicateViews variableViews = LmdbNativeKernelBindings
+					.requestVariablePredicateViews(bindings, probe);
+			if (variableViews == null) {
+				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-node-predicates-unavailable");
+			}
 			if (lowered.kernel.requirements.scans > 0) {
 				scanner = new LmdbNativeKernelScanner(workerRow, bindings.scanOrders);
 			}
@@ -568,7 +573,7 @@ final class LmdbNativeParallelKernelAggregate {
 						windowDomains[rootDomain] = Arrays.copyOfRange(domains[rootDomain],
 								Math.toIntExact(range[0]), Math.toIntExact(range[1]));
 					}
-					kernel.bind(bindings.context(windowViews, windowDomains, workerRow, hooks, scanner));
+					kernel.bind(bindings.context(windowViews, windowDomains, workerRow, hooks, scanner, variableViews));
 					int filled;
 					while ((filled = kernel.fill(buffer, FILL_ROWS)) > 0) {
 						for (int r = 0; r < filled; r++) {

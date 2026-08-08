@@ -1784,7 +1784,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 		if (!predicateBound && subjectBound != objectBound) {
 			// Bound node, unbound predicate requires a complete node-to-predicate projection for the requested plane.
-			if (order != null) {
+			//
+			// Predicate order is served rather than refused: the projection orders rows by unsigned key and then by
+			// unsigned predicate, and the merge in the iterator picks the smallest predicate across the base and every
+			// applicable generation, so the stream is already predicate-major. Object order is a different claim and
+			// stays refused, because object order only holds *within* one predicate group.
+			if (order != null && order != StatementOrder.P) {
 				metrics.recordFallback(FallbackReason.INDEX_ORDER_INCOMPATIBLE);
 				observe(observer, false, FallbackReason.INDEX_ORDER_INCOMPATIBLE.name(), order, subject, predicate,
 						object, context);
@@ -1792,20 +1797,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 			long key = subjectBound ? subject : object;
 			int plane = plane(subjectBound, explicit);
-			if (!nodePredicateServingEnabled() || !base.coverage().isFull()
-					|| !base.supportsPredicateEnumeration(plane)) {
-				metrics.recordFallback(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
-				observe(observer, false, FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE.name(), order, subject,
-						predicate, object, context);
+			FallbackReason enumerationDecline = nodePredicateDecline(view, key, plane);
+			if (enumerationDecline != null) {
+				metrics.recordFallback(enumerationDecline);
+				observe(observer, false, enumerationDecline.name(), order, subject, predicate, object, context);
 				return null;
-			}
-			for (PendingTable pending : state.pending()) {
-				if (pending.revision() <= view.snapshotRevision() && pending.touchesNode(key, plane)) {
-					metrics.recordFallback(FallbackReason.PENDING_ROW);
-					observe(observer, false, FallbackReason.PENDING_ROW.name(), order, subject, predicate, object,
-							context);
-					return null;
-				}
 			}
 			if (!ValueIds.isReference(key) && subjectBound) {
 				// subjects are never inlined: nothing can match an inlined subject key
@@ -1988,6 +1984,26 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	/**
+	 * The reason a bound-node/unbound-predicate access cannot be served out of the projection, or {@code null} when it
+	 * can. Shared by the iterator branch and the count/existence shortcuts so the two can never disagree about what is
+	 * servable — a count that engages where the equivalent iterator declines would be a count of a different thing.
+	 */
+	private FallbackReason nodePredicateDecline(LmdbAdjacencyReadView view, long key, int plane) {
+		LmdbAdjacencyPublishedState state = view.state();
+		LmdbInMemoryAdjacencyIndex base = state.base();
+		if (!nodePredicateServingEnabled() || !base.coverage().isFull()
+				|| !base.supportsPredicateEnumeration(plane)) {
+			return FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE;
+		}
+		for (PendingTable pending : state.pending()) {
+			if (pending.revision() <= view.snapshotRevision() && pending.touchesNode(key, plane)) {
+				return FallbackReason.PENDING_ROW;
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * Records a projection inconsistency once, degrades this capability, and schedules the rebuild that restores it.
 	 * <p>
 	 * The rebuild is essential, not decorative: without it the store would decline this shape forever, which is exactly
@@ -2153,6 +2169,108 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				NativeLmdbQuerySource.UNKNOWN_ID, predicate, NativeLmdbQuerySource.UNKNOWN_ID,
 				NativeLmdbQuerySource.UNKNOWN_ID);
 		return adjacency;
+	}
+
+	/**
+	 * Binds the node-predicate enumerator for one direction, or {@code null} when the compiled path may not use it.
+	 * <p>
+	 * The eligibility rule is the fixed-predicate one plus a strictly stronger condition: <em>no applicable overlay
+	 * generation</em>. With a variable predicate the compiler cannot know at bind time which predicates a kernel will
+	 * touch, so unlike the fixed-predicate path it cannot pre-check overlay applicability, and a kernel cannot restart
+	 * after partial output. The interpreted row path already merges generations correctly, so the compiled path
+	 * declines to it rather than risking a stale row.
+	 */
+	NativeLmdbQuerySource.NodePredicates bindNodePredicates(LmdbAdjacencyReadView view, boolean bySubject,
+			boolean explicit, AdjacencyAccessObserver observer) {
+		int plane = plane(bySubject, explicit);
+		String decline = variablePredicateDeclineReason(view, plane, true);
+		if (decline != null) {
+			observeVariablePredicate(observer, false, decline, bySubject);
+			return null;
+		}
+		metrics.recordHit();
+		KERNEL_VIEWS_SERVED.incrementAndGet();
+		observeVariablePredicate(observer, true, "NODE_PREDICATE_VIEW", bySubject);
+		LmdbAdjacencyPublishedState state = view.state();
+		return new LmdbDirectNodePredicates(state.base(), state.base().nodePredicateIndex(), state.contextCatalog(),
+				plane, this::onNodePredicateInconsistency);
+	}
+
+	/**
+	 * Binds the dynamic {@code (node, runtime predicate)} probe for one direction, or {@code null} when the compiled
+	 * path may not use it. Deliberately does not require the projection: resolving one already-known predicate goes to
+	 * the primary index and works whether or not the sidecar exists or was refused.
+	 */
+	NativeLmdbQuerySource.DynamicAdjacency bindDynamicAdjacency(LmdbAdjacencyReadView view, boolean bySubject,
+			boolean explicit, AdjacencyAccessObserver observer) {
+		int plane = plane(bySubject, explicit);
+		String decline = variablePredicateDeclineReason(view, plane, false);
+		if (decline != null) {
+			observeVariablePredicate(observer, false, decline, bySubject);
+			return null;
+		}
+		metrics.recordHit();
+		KERNEL_VIEWS_SERVED.incrementAndGet();
+		observeVariablePredicate(observer, true, "DYNAMIC_ADJACENCY_VIEW", bySubject);
+		LmdbAdjacencyPublishedState state = view.state();
+		return new LmdbDirectNodePredicates(state.base(), state.base().nodePredicateIndexOrNull(),
+				state.contextCatalog(), plane, this::onNodePredicateInconsistency);
+	}
+
+	/** The stable reason a variable-predicate view cannot be bound, or {@code null} when it can. */
+	private String variablePredicateDeclineReason(LmdbAdjacencyReadView view, int plane, boolean needsProjection) {
+		if (view == null || !view.servesSnapshot() || closed) {
+			return closed ? "STORE_CLOSED" : "VIEW_DOES_NOT_SERVE_SNAPSHOT";
+		}
+		if (options.mode() != DirectAdjacencyMode.PREFER) {
+			return "MODE_" + options.mode();
+		}
+		if (writeTransactionBlocksAdjacency()) {
+			return FallbackReason.READ_YOUR_WRITES.name();
+		}
+		LmdbAdjacencyPublishedState state = view.state();
+		if (view.snapshotRevision() > state.appliedRevision()) {
+			return FallbackReason.KERNEL_REQUIRES_COMPLETE_REVISION.name();
+		}
+		for (PendingTable pending : state.pending()) {
+			if (pending.revision() <= view.snapshotRevision()) {
+				return FallbackReason.KERNEL_REQUIRES_COMPLETE_REVISION.name();
+			}
+		}
+		LmdbAdjacencyOverlaySet overlays = state.overlays();
+		if (overlays != null) {
+			for (int i = 0; i < overlays.generationCount(); i++) {
+				if (overlays.generation(i).revision() <= view.snapshotRevision()) {
+					return "VARIABLE_PREDICATE_REQUIRES_NO_OVERLAY";
+				}
+			}
+		}
+		LmdbInMemoryAdjacencyIndex base = state.base();
+		if (!base.coverage().isFull()) {
+			// A runtime predicate is unknown at bind time, so nothing weaker than full coverage can prove absence.
+			return FallbackReason.PLANE_NOT_COVERED.name();
+		}
+		if (needsProjection
+				&& (!nodePredicateServingEnabled() || !base.supportsPredicateEnumeration(plane)
+						|| base.nodePredicateIndexOrNull() == null)) {
+			return FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE.name();
+		}
+		if (!base.usesPagedCsf()) {
+			// The legacy base resolves rows through a header locator that an inlined key cannot address, and its
+			// enumeration order is base ordinals rather than raw ids. Compiled access binds against paged bases only.
+			return "VARIABLE_PREDICATE_REQUIRES_PAGED_BASE";
+		}
+		return null;
+	}
+
+	private void observeVariablePredicate(AdjacencyAccessObserver observer, boolean used, String reason,
+			boolean bySubject) {
+		if (!used) {
+			metrics.recordFallback(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
+		}
+		observe(observer, used, reason, bySubject ? StatementOrder.S : StatementOrder.O,
+				NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID,
+				NativeLmdbQuerySource.UNKNOWN_ID);
 	}
 
 	LmdbPrefixRunPlan tryPrefixRunPlan(LmdbAdjacencyReadView view, int[] prefixFields, long subject, long predicate,
@@ -2397,11 +2515,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private long tryCountInternal(LmdbAdjacencyReadView view, long subject, long predicate, long object, long context,
 			boolean explicit, boolean existenceOnly) {
 		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER
-				|| writeTransactionBlocksAdjacency() || predicate <= 0) {
+				|| writeTransactionBlocksAdjacency()) {
 			return -1;
 		}
 		boolean subjectBound = subject > 0;
 		boolean objectBound = object > 0;
+		if (predicate <= 0) {
+			return countNodeStatements(view, subject, object, context, explicit, subjectBound, objectBound,
+					existenceOnly);
+		}
 		if (!subjectBound && !objectBound) {
 			if (!scanAggregatesEnabled() || context >= 0 || view.snapshotRevision() != view.state().appliedRevision()
 					|| !planeCovered(view, predicate)) {
@@ -2472,6 +2594,63 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		metrics.recordHit();
 		return matches;
+	}
+
+	/**
+	 * Counts (or proves the existence of) the statements of one bound node across every predicate, without
+	 * materialising any of them.
+	 * <p>
+	 * The preconditions are narrow on purpose, because the projection records that a predicate exists
+	 * <em>somewhere</em> on a node with no memory of which context or which object it came from:
+	 * <ul>
+	 * <li>exactly one endpoint bound, so a single plane is precisely identified;
+	 * <li>the other endpoint unbound, since a bound neighbour would need per-edge comparison;
+	 * <li>no context restriction, since a predicate may exist on this node only outside the requested graph — the
+	 * whole-row figure would then be strictly too large;
+	 * <li>the same eligibility the iterator branch uses, so the count and the rows can never disagree.
+	 * </ul>
+	 * Multiplicity across named graphs needs no correction: the run encoding already gives each object-and-context pair
+	 * its own position, so summing run lengths counts statements rather than distinct objects. Outside these conditions
+	 * this declines and the caller iterates.
+	 */
+	private long countNodeStatements(LmdbAdjacencyReadView view, long subject, long object, long context,
+			boolean explicit, boolean subjectBound, boolean objectBound, boolean existenceOnly) {
+		if (subjectBound == objectBound || context >= 0) {
+			return -1;
+		}
+		long key = subjectBound ? subject : object;
+		int plane = plane(subjectBound, explicit);
+		FallbackReason decline = nodePredicateDecline(view, key, plane);
+		if (decline != null) {
+			metrics.recordFallback(decline);
+			return -1;
+		}
+		if (!ValueIds.isReference(key)) {
+			if (subjectBound) {
+				// subjects are never inlined: nothing can match an inlined subject key
+				metrics.recordExactMiss();
+				return 0;
+			}
+			if (!view.state().base().usesPagedCsf()) {
+				metrics.recordFallback(FallbackReason.INLINE_NOT_COVERED);
+				return -1;
+			}
+		}
+		int direction = subjectBound ? LmdbDirectAdjacencyIterator.BY_SUBJECT
+				: LmdbDirectAdjacencyIterator.BY_OBJECT;
+		LmdbDirectNodeIterator iterator = new LmdbDirectNodeIterator(view, plane, key, context, direction,
+				this::onNodePredicateInconsistency);
+		try {
+			long count = existenceOnly ? (iterator.hasAnyStatement() ? 1 : 0) : iterator.countStatements();
+			if (count == 0) {
+				metrics.recordExactMiss();
+			} else {
+				metrics.recordHit();
+			}
+			return count;
+		} finally {
+			iterator.close();
+		}
 	}
 
 	private static boolean planeCovered(LmdbAdjacencyReadView view, long rawPredicate) {

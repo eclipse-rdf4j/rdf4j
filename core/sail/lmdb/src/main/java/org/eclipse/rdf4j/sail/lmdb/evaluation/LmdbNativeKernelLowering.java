@@ -252,6 +252,12 @@ final class LmdbNativeKernelLowering {
 	/** Patterns lowered as scans because exactly their predicate's views were unavailable (M10 witness). */
 	static final AtomicLong MIXED_BINDING_LOWERINGS = new AtomicLong();
 
+	/**
+	 * Patterns with a variable predicate lowered into a compiled enumeration or dynamic probe. Process-wide, and the
+	 * witness a benchmark cell uses to prove the shape stopped falling out of the compiled path entirely.
+	 */
+	static final AtomicLong VARIABLE_PREDICATE_LOWERINGS = new AtomicLong();
+
 	private static final int MAX_CHILDREN = 12;
 	private static final int MAX_HOOK_ARGS = 3;
 	/** Rows of a multi-variable VALUES table the lowering will unroll into generated source. */
@@ -1093,6 +1099,8 @@ final class LmdbNativeKernelLowering {
 		}
 
 		final List<LmdbNativeKernelBindings.AdjacencyRequest> adjacencies = new ArrayList<>();
+		final List<LmdbNativeKernelBindings.NodePredicateRequest> nodePredicateRequests = new ArrayList<>();
+		final List<LmdbNativeKernelBindings.DynamicRequest> dynamicRequests = new ArrayList<>();
 		final List<LmdbNativeKernelBindings.FilterHook> filterHooks = new ArrayList<>();
 		final List<LmdbNativeKernelBindings.BindHook> bindHooks = new ArrayList<>();
 		final List<Integer> columnEngineSlots = new ArrayList<>();
@@ -1160,6 +1168,33 @@ final class LmdbNativeKernelLowering {
 		private int adjacency(long predicate, boolean bySubject, boolean needsKeyEnum) {
 			adjacencies.add(new LmdbNativeKernelBindings.AdjacencyRequest(predicate, bySubject, needsKeyEnum));
 			return adjacencies.size() - 1;
+		}
+
+		/** One enumerator per direction, reused across every pattern in this kernel that enumerates that direction. */
+		private int nodePredicateView(boolean bySubject) {
+			for (int i = 0; i < nodePredicateRequests.size(); i++) {
+				if (nodePredicateRequests.get(i).bySubject() == bySubject) {
+					return i;
+				}
+			}
+			nodePredicateRequests.add(new LmdbNativeKernelBindings.NodePredicateRequest(bySubject));
+			return nodePredicateRequests.size() - 1;
+		}
+
+		private int dynamicView(boolean bySubject) {
+			for (int i = 0; i < dynamicRequests.size(); i++) {
+				if (dynamicRequests.get(i).bySubject() == bySubject) {
+					return i;
+				}
+			}
+			dynamicRequests.add(new LmdbNativeKernelBindings.DynamicRequest(bySubject));
+			return dynamicRequests.size() - 1;
+		}
+
+		private LmdbNativeKernelBindings withVariablePredicateRequests(LmdbNativeKernelBindings bindings) {
+			return bindings.withVariablePredicateRequests(
+					nodePredicateRequests.toArray(new LmdbNativeKernelBindings.NodePredicateRequest[0]),
+					dynamicRequests.toArray(new LmdbNativeKernelBindings.DynamicRequest[0]));
 		}
 
 		private int scan(StatementOrder order) {
@@ -1773,6 +1808,12 @@ final class LmdbNativeKernelLowering {
 					|| pattern.contexts.isFixed();
 			boolean ctxLowerable = ctxBearing && contextColumnsEnabled() && !pattern.contexts.isFixed()
 					&& !(pattern.c.isConstant() && pattern.c.hasSlot());
+			boolean variablePredicate = !pattern.p.isConstant() && !pattern.hasRepeatedSlot()
+					&& !pattern.s.bindConstant && !pattern.o.bindConstant && (!ctxBearing || ctxLowerable)
+					&& pattern.statementOrder == null;
+			if (variablePredicate && lowerVariablePredicatePattern(pattern, ctxLowerable)) {
+				return true;
+			}
 			if (pattern.hasRepeatedSlot() || !pattern.p.isConstant() || pattern.p.hasSlot()
 					|| pattern.s.bindConstant || pattern.o.bindConstant || (ctxBearing && !ctxLowerable)) {
 				// No adjacency view can express this pattern. A direct LMDB scan can, for a subset of the reasons.
@@ -1878,6 +1919,91 @@ final class LmdbNativeKernelLowering {
 			}
 			reason = reasonPrefix + "pattern-shape";
 			return false;
+		}
+
+		/**
+		 * Lowers a pattern whose predicate is a variable, or returns false so the caller falls through to a scan and
+		 * then to a stable decline.
+		 * <p>
+		 * Two shapes only, and both need exactly one endpoint available. When the predicate variable is still fresh the
+		 * pattern becomes an enumeration of the node's predicate row; when it has already been assigned a column or
+		 * arrives through the initial bindings, it becomes a dynamic probe. Everything else — both endpoints bound,
+		 * both endpoints fresh, a predicate term that is simultaneously a constant and a variable, and every repeated
+		 * variable, which {@code hasRepeatedSlot} has already excluded — declines, because taking the "fresh variable"
+		 * branch for any of them would overwrite a binding that already exists.
+		 */
+		private boolean lowerVariablePredicatePattern(PatternPlan pattern, boolean ctxLowerable) {
+			if (!LmdbNativeKernelIr.nodePredicatesEnabled()) {
+				return false;
+			}
+			if (pattern.p.isConstant() || !pattern.p.hasSlot()) {
+				// A predicate term that is both a constant and a variable means something the pattern plan owns, not
+				// the adjacency layer; a predicate that is neither cannot be written anywhere.
+				return false;
+			}
+			Operand ctxMatch = null;
+			boolean ctxProject = false;
+			boolean ctxExclude = pattern.namedContextScope;
+			if (ctxLowerable) {
+				if (pattern.c.isConstant()) {
+					ctxMatch = Operand.constant(constantIndex(pattern.c.constant));
+				} else if (pattern.c.hasSlot()) {
+					Operand bound = slotOperand(pattern.c.slot);
+					if (bound != null) {
+						ctxMatch = bound;
+					} else {
+						ctxProject = true;
+					}
+				}
+			}
+			boolean ctxActive = ctxMatch != null || ctxProject || ctxExclude;
+			Operand subject = operandOf(pattern.s);
+			Operand object = operandOf(pattern.o);
+			// Exactly one endpoint available; the other must be a fresh variable this node will write.
+			boolean bySubject;
+			Operand key;
+			int valueSlot;
+			if (subject != null && object == null && pattern.o.hasSlot() && slotFresh(pattern.o.slot)) {
+				bySubject = true;
+				key = subject;
+				valueSlot = pattern.o.slot;
+			} else if (object != null && subject == null && pattern.s.hasSlot() && slotFresh(pattern.s.slot)) {
+				bySubject = false;
+				key = object;
+				valueSlot = pattern.s.slot;
+			} else {
+				return false;
+			}
+			Operand predicate = slotOperand(pattern.p.slot);
+			if (predicate != null) {
+				// Already bound: one dynamic probe, the fixed-predicate probe with the predicate read at run time.
+				int view = dynamicView(bySubject);
+				int valueColumn = newColumn(valueSlot);
+				currentDepthNodes().add(new LmdbNativeKernelIr.ProbeVariable(view, key, predicate, valueColumn,
+						ctxProject ? newColumn(pattern.c.slot) : -1, ctxMatch, ctxExclude));
+				if (!bySubject) {
+					assuredMask |= 1L << pattern.s.slot;
+				}
+				witnessCtxLowering(ctxActive);
+				VARIABLE_PREDICATE_LOWERINGS.incrementAndGet();
+				return true;
+			}
+			if (!slotFresh(pattern.p.slot)) {
+				// Assigned to a column at a depth this node cannot read, or otherwise unusable: decline rather than
+				// take the fresh branch and overwrite it.
+				return false;
+			}
+			int view = nodePredicateView(bySubject);
+			int predicateColumn = newColumn(pattern.p.slot);
+			int valueColumn = newColumn(valueSlot);
+			currentDepthNodes().add(new LmdbNativeKernelIr.EnumeratePredicates(view, key, predicateColumn, valueColumn,
+					ctxProject ? newColumn(pattern.c.slot) : -1, ctxMatch, ctxExclude));
+			if (!bySubject) {
+				assuredMask |= 1L << pattern.s.slot;
+			}
+			witnessCtxLowering(ctxActive);
+			VARIABLE_PREDICATE_LOWERINGS.incrementAndGet();
+			return true;
 		}
 
 		private void witnessCtxLowering(boolean ctxActive) {
@@ -3506,7 +3632,7 @@ final class LmdbNativeKernelLowering {
 					planRequests.toArray(new LmdbNativeKernelBindings.PlanRequest[0]),
 					new LmdbNativeKernelBindings.KernelGroupLayout(groupSlots.clone(), outs), hooksRequired,
 					distinctExpected, kernelResiduals.toArray(new MaskedFilter[0]));
-			return new Lowered(kernel, bindings);
+			return new Lowered(kernel, withVariablePredicateRequests(bindings));
 		}
 
 		// ------------------------------------------------------------------
@@ -3558,7 +3684,7 @@ final class LmdbNativeKernelLowering {
 					bindHooks.toArray(new LmdbNativeKernelBindings.BindHook[0]), columnArray, residualFilters,
 					scanOrders.toArray(new StatementOrder[0]),
 					planRequests.toArray(new LmdbNativeKernelBindings.PlanRequest[0]), null, false, 16);
-			return new Lowered(kernel, bindings);
+			return new Lowered(kernel, withVariablePredicateRequests(bindings));
 		}
 	}
 }

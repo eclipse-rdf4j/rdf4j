@@ -222,6 +222,25 @@ public interface NativeLmdbQuerySource {
 		}
 
 		/**
+		 * A borrowed, revision-valid view of every node's predicate row for this direction, or {@code null} when the
+		 * projection cannot serve the complete probe stage. The returned object belongs to this probe, is invalid once
+		 * it closes, and must never be cached in a plan or a reusable kernel object: a fresh instance is allocated per
+		 * request because the cursors inside are mutable and each parallel worker creates its own probe, which makes
+		 * worker confinement structural rather than a matter of discipline.
+		 */
+		default NodePredicates nodePredicates(boolean bySubject) throws IOException {
+			return null;
+		}
+
+		/**
+		 * A borrowed, revision-valid view resolving {@code (node, runtime predicate)} pairs for this direction, or
+		 * {@code null} when the store cannot serve them. Same ownership contract as {@link #nodePredicates(boolean)}.
+		 */
+		default DynamicAdjacency dynamicAdjacency(boolean bySubject) throws IOException {
+			return null;
+		}
+
+		/**
 		 * Observer-aware form of {@link #adjacency(long, boolean)}. Implementations with richer eligibility state
 		 * should override this method and publish the exact reason the complete view was served or declined.
 		 */
@@ -243,23 +262,16 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/**
-	 * Read-only primitive view over one immutable adjacency entry, addressed through opaque long run handles (plan 27,
-	 * invariant I7). A successful {@link #find(long)} returns a positive run handle; positions and sizes within a run
-	 * are {@code long} so a group may exceed {@code Integer.MAX_VALUE} incidences. Contexts use id {@code 0} for the
-	 * null graph. {@code int} appears only for caller-bounded batch lengths, never for edge-scale positions.
+	 * Read-only access to the runs of one immutable adjacency structure, addressed through opaque long run handles
+	 * (plan 27, invariant I7). Positions and sizes within a run are {@code long} so a run may exceed
+	 * {@code Integer.MAX_VALUE} incidences. Contexts use id {@code 0} for the null graph. {@code int} appears only for
+	 * caller-bounded batch lengths, never for edge-scale positions.
+	 * <p>
+	 * Extracted from {@link NativeAdjacency} so that the structures which produce run handles a different way — a
+	 * dynamic {@code (node, predicate)} probe, a node's predicate row — can be read by exactly the same code. A run is
+	 * a run regardless of how its handle was found.
 	 */
-	interface NativeAdjacency {
-
-		/** The key has provably no run in this view. */
-		long NOT_FOUND = -1L;
-
-		/** This view cannot answer for the key; the caller must use the store path. */
-		long NOT_COVERED = -2L;
-
-		/**
-		 * The positive opaque run handle for the key, or {@link #NOT_FOUND} / {@link #NOT_COVERED}.
-		 */
-		long find(long key);
+	interface RunView {
 
 		/** Number of incidences in the run. */
 		long size(long runHandle);
@@ -302,6 +314,100 @@ public interface NativeLmdbQuerySource {
 			return -1L;
 		}
 
+		/**
+		 * True when every run lists its entries sorted by (neighbor, context), so equal neighbors are adjacent and
+		 * consumers may deduplicate a run with a previous-value check.
+		 */
+		default boolean runsNeighborOrdered() {
+			return false;
+		}
+	}
+
+	/**
+	 * A run view keyed by one node and one <em>runtime</em> predicate, for patterns whose predicate is a variable.
+	 * <p>
+	 * Backed by the primary predicate-first index and therefore usable whether or not the optional node-to-predicate
+	 * projection exists or was refused: resolving one already-known predicate needs no transpose. It is deliberately a
+	 * separate interface from {@link NodePredicates} for that reason — folding the two together would make dynamic
+	 * probing falsely depend on an optional structure, and would let a gap in that structure turn into a missing result
+	 * rather than a decline.
+	 */
+	interface DynamicAdjacency extends RunView {
+
+		/** The pair has provably no run in this view. */
+		long NOT_FOUND = -1L;
+
+		/** This view cannot answer for the pair; the caller must use the store path. */
+		long NOT_COVERED = -2L;
+
+		/**
+		 * The positive opaque run handle for {@code (node, rawPredicate)}, or {@link #NOT_FOUND} /
+		 * {@link #NOT_COVERED}.
+		 */
+		long runFor(long node, long rawPredicate);
+	}
+
+	/**
+	 * The predicates attached to one node, together with the run each of them resolves to.
+	 * <p>
+	 * Requires the node-to-predicate projection. The contract that matters is <em>total resolution</em>: every
+	 * predicate {@link #copyRow} returns carries a valid run handle. A predicate the projection lists whose
+	 * authoritative run is absent is structural corruption, never an ordinary miss, so {@code copyRow} raises rather
+	 * than returning a non-positive handle — generated code therefore contains no branch that skips such a predicate,
+	 * which would silently convert corruption into an incomplete answer.
+	 */
+	interface NodePredicates extends RunView {
+
+		/** The node has provably no predicates in this view. */
+		long NOT_FOUND = -1L;
+
+		/** This view cannot answer for the node; the caller must use the store path. */
+		long NOT_COVERED = -2L;
+
+		/** The positive opaque row handle for {@code node}, or {@link #NOT_FOUND} / {@link #NOT_COVERED}. */
+		long find(long node);
+
+		/**
+		 * How many predicates the node has. Deliberately not called an edge count: {@link RunView#size(long)} on the
+		 * same object means the number of statements under <em>one</em> of those predicates, and the two figures are
+		 * one call apart.
+		 */
+		long rowSize(long rowHandle);
+
+		/**
+		 * Copies up to {@code length} predicates of {@code node} starting at {@code fromOffset}, together with the run
+		 * handle each resolves to, and returns the copied count. {@code node} is passed explicitly rather than derived
+		 * from state left behind by {@link #find(long)} because two nested enumerations share one view, and an inner
+		 * lookup would otherwise overwrite the node an outer copy still needs.
+		 *
+		 * @throws IllegalStateException if a listed predicate has no authoritative run
+		 */
+		int copyRow(long node, long rowHandle, long fromOffset, int length, long[] predicateTarget, int predicateOffset,
+				long[] runTarget, int runOffset);
+
+		/** Advisory mean number of statements per predicate on a node, for cost admission. */
+		default double meanPredicateDegree() {
+			return Double.NaN;
+		}
+	}
+
+	/**
+	 * Read-only primitive view over one immutable adjacency entry for one fixed predicate and direction (plan 27,
+	 * invariant I7). A successful {@link #find(long)} returns a positive run handle.
+	 */
+	interface NativeAdjacency extends RunView {
+
+		/** The key has provably no run in this view. */
+		long NOT_FOUND = -1L;
+
+		/** This view cannot answer for the key; the caller must use the store path. */
+		long NOT_COVERED = -2L;
+
+		/**
+		 * The positive opaque run handle for the key, or {@link #NOT_FOUND} / {@link #NOT_COVERED}.
+		 */
+		long find(long key);
+
 		/** True when this view can enumerate its distinct keys through {@link #keyCount()} and {@link #keyAt(long)}. */
 		default boolean supportsKeyEnumeration() {
 			return false;
@@ -315,14 +421,6 @@ public interface NativeLmdbQuerySource {
 		/** The key at the given ordinal; only valid when {@link #supportsKeyEnumeration()} is true. */
 		default long keyAt(long keyOrdinal) {
 			throw new UnsupportedOperationException("key enumeration is not supported by this adjacency view");
-		}
-
-		/**
-		 * True when every run lists its entries sorted by (neighbor, context), so equal neighbors are adjacent and
-		 * consumers may deduplicate a run with a previous-value check.
-		 */
-		default boolean runsNeighborOrdered() {
-			return false;
 		}
 	}
 
