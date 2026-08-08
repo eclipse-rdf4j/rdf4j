@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -664,7 +665,7 @@ public class LmdbNativeOrderedFactorizedTest {
 		}
 	}
 
-	@Test
+	@RepeatedTest(100)
 	public void topKPreservesHiddenTailOrderKey() {
 		Map<String, String> previous = setProperties(Map.of(
 				"rdf4j.lmdb.orderedFactorizedRows.enabled", "false",
