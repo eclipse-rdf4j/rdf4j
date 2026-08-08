@@ -162,6 +162,33 @@ public class ThreeTierParityBenchmark {
 		return state.run(ThreeTierParityCorpus.ALL_PREDICATES);
 	}
 
+	// --- Node-to-predicate projection shapes -------------------------------------------------------------------
+
+	@Benchmark
+	public long classPredicateMatrix(FoafState state) {
+		return state.run(ThreeTierParityCorpus.CLASS_PREDICATE_MATRIX);
+	}
+
+	@Benchmark
+	public long repeatedNodeDump(FoafState state) {
+		return state.run(ThreeTierParityCorpus.REPEATED_NODE_DUMP);
+	}
+
+	@Benchmark
+	public long variablePredicateJoin(FoafState state) {
+		return state.run(ThreeTierParityCorpus.VARIABLE_PREDICATE_JOIN);
+	}
+
+	@Benchmark
+	public long incomingEdgeDump(FoafState state) {
+		return state.run(ThreeTierParityCorpus.INCOMING_EDGE_DUMP);
+	}
+
+	@Benchmark
+	public long outDegreeHistogram(FoafState state) {
+		return state.run(ThreeTierParityCorpus.OUT_DEGREE_HISTOGRAM);
+	}
+
 	// --- Cyclic (worst-case-optimal) shapes ---------------------------------------------------------------------
 
 	@Benchmark

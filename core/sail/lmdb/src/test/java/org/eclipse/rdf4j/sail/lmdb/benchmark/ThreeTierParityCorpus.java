@@ -80,6 +80,46 @@ public enum ThreeTierParityCorpus {
 	ALL_PREDICATES("allPredicates", Dataset.FOAF,
 			"SELECT DISTINCT ?p WHERE { ?s ?p ?o }"),
 
+	// --- Node-to-predicate projection shapes (ExecPlan .agent/node-predicate-projection-execplan.md, A6) --------
+	//
+	// The pre-existing nodeEdgeDump cell above cannot measure this work: it dumps one seed node, so all three
+	// regimes finish in about 17 microseconds and tie inside their own error bars. These five cells give the shape
+	// enough headroom to show a difference, and the last of them is deliberately a control rather than a target.
+
+	/**
+	 * The flagship. A type lookup joined to an unbound-predicate dump of every matching instance, grouped by type and
+	 * predicate — the shape a schema-discovery or profiling tool runs, and the one where the projection replaces "try
+	 * every predicate in the store at every node" with one row read per node.
+	 *
+	 * <p>
+	 * The classes are supplied as a {@code VALUES} list rather than left as a free {@code ?s a ?t}. That is not
+	 * cosmetic: with both sides unbound the planner roots the whole query on {@code ?s ?p ?o}, evaluates it as a scan
+	 * with no subject in hand, and the projection is never consulted at all — the first draft of this cell measured
+	 * exactly that and recorded zero adjacency engagement in every regime. Naming the classes makes the type lookup the
+	 * smaller side, which is what puts a bound node in front of the dump.
+	 */
+	CLASS_PREDICATE_MATRIX("classPredicateMatrix", Dataset.FOAF,
+			"SELECT ?t ?p (COUNT(*) AS ?n) WHERE { VALUES ?t { foaf:Person foaf:Organization } "
+					+ "?s a ?t . ?s ?p ?o } GROUP BY ?t ?p"),
+	/** The same dump as {@code nodeEdgeDump} but over a batch of seeds, so the per-node cost is actually measurable. */
+	REPEATED_NODE_DUMP("repeatedNodeDump", Dataset.FOAF,
+			"SELECT ?s ?p ?o WHERE { VALUES ?s { " + FoafData.seedBatch(64) + " } ?s ?p ?o }"),
+	/** A variable-predicate dump driven by a correlated outer row rather than by a constant key. */
+	VARIABLE_PREDICATE_JOIN("variablePredicateJoin", Dataset.FOAF,
+			"SELECT ?p ?o WHERE { " + FoafData.SEED_PERSON + " foaf:knows ?m . ?m ?p ?o }"),
+	/** The reverse direction, {@code ?s ?p <o>}; serves only once the incoming planes are switched on (Gate D). */
+	INCOMING_EDGE_DUMP("incomingEdgeDump", Dataset.FOAF,
+			"SELECT ?s ?p WHERE { ?s ?p " + FoafData.SEED_PERSON + " }"),
+	/**
+	 * A control, not a target, and worth stating plainly because an earlier draft of this work had it backwards. All
+	 * three positions are unbound; the compiled enumerator requires a bound key; and a whole-projection root enumerator
+	 * is out of scope because the projection deliberately exposes no key-domain accessor. This cell proves the
+	 * projection causes no regression on a shape it does not serve, and its variable-predicate lowering count must stay
+	 * at zero.
+	 */
+	OUT_DEGREE_HISTOGRAM("outDegreeHistogram", Dataset.FOAF,
+			"SELECT ?s (COUNT(*) AS ?d) WHERE { ?s ?p ?o } GROUP BY ?s"),
+
 	// --- Cyclic (worst-case-optimal) shapes, identical to FoafCliqueQueryBenchmark ------------------------------
 
 	CYCLE3("cycle3", Dataset.FOAF, QueryScenario.CYCLE3),
