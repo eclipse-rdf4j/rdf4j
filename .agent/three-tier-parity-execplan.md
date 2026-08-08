@@ -699,7 +699,7 @@ New test/benchmark files (M0, all delivered 2026-08-04 and all test scope):
     public static String state(LmdbStore store)
     public static boolean buildNow(LmdbStore store)
 
-`core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/ThreeTierRegime.java` — the ladder, with `parse`, `paramValue`, `adjacencyMode`, `janinoEnabled`, `pin`/`pinnedRegime`, `applyProperties`, `applyTo(LmdbStoreConfig)` and `restore`.
+`core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/ThreeTierRegime.java` — the ladder, with `parse`, `paramValue`, `adjacencyMode`, `z_z_janinoEnabled`, `pin`/`pinnedRegime`, `applyProperties`, `applyTo(LmdbStoreConfig)` and `restore`.
 
 `.../benchmark/ThreeTierParityCorpus.java` — the 41-cell enum with `benchmarkMethodName()`, `dataset()`, `query()`, `of(Dataset)` and `byBenchmarkMethod(String)`, plus the nested `Dataset` enum and the `FoafData` / `CorrelatedData` constant holders.
 

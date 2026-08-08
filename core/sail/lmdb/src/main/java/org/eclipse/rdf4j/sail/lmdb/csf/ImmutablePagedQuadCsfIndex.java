@@ -394,6 +394,47 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		return packLocalReference(globalPage, localRow);
 	}
 
+	/** Benchmark-only equivalent of the production cursor path, with an exact decoded-page sidecar. */
+	long findLocalReference(long predicateOrdinal, int plane, long rawRowId, AcceleratedLookupCursor cursor) {
+		Objects.requireNonNull(cursor, "cursor");
+		int partition = partitionIndex(predicateOrdinal, plane);
+		int count = partitionShardCounts[partition];
+		if (count == 0) {
+			return 0;
+		}
+		int floor;
+		int localPage;
+		if (cursor.covers(this, partition, rawRowId)) {
+			floor = cursor.shard;
+			localPage = cursor.localPage;
+		} else {
+			int start = partitionShardStarts[partition];
+			floor = floorShard(start, count, rawRowId);
+			if (floor < start) {
+				return 0;
+			}
+			while (floor > start && shards[floor - 1].firstRow() == rawRowId) {
+				floor--;
+			}
+			CsfShard shard = shards[floor];
+			localPage = shard.floorPage(rawRowId);
+			if (localPage < 0) {
+				return 0;
+			}
+			if (cursor.owner != this || cursor.shard != floor || cursor.localPage != localPage) {
+				shard.page(localPage, cursor.page);
+				cursor.pageChanged(this, partition, floor, localPage);
+			}
+		}
+		CompactCsfPageReader page = cursor.page;
+		int localRow = cursor.findRow(rawRowId);
+		if (localRow < 0 || page.continuation()) {
+			return 0;
+		}
+		int globalPage = Math.addExact(shardFirstPageIds[floor], localPage);
+		return packLocalReference(globalPage, localRow);
+	}
+
 	public long packHandle(long localReference) {
 		if (localReference <= 0 || localReference > MAX_LOCAL_REFERENCE) {
 			throw new IllegalArgumentException("invalid CSF local reference: " + localReference);
@@ -1708,6 +1749,132 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				}
 			}
 			return -1;
+		}
+	}
+
+	/**
+	 * Experimental decoded-page lookup cursor used by the row-directory benchmark. It keeps the established packed
+	 * probe/decode threshold, but replaces the steady decoded-row binary search with one exact page-local sidecar. The
+	 * ordinary {@link LookupCursor} remains byte-for-byte on its existing lookup path until benchmark evidence is
+	 * strong enough to select a production policy.
+	 */
+	static final class AcceleratedLookupCursor {
+		private final CompactCsfPageReader page = new CompactCsfPageReader();
+		private final CsfRowLookupAccelerators.Kind decodedLookupKind;
+		private ImmutablePagedQuadCsfIndex owner;
+		private long pageFirstRow;
+		private long pageLastRow;
+		private int partition = -1;
+		private int shard = -1;
+		private int localPage = -1;
+		private int pageLookups;
+		private int decodedRowCount;
+		private int lastRowOrdinal = -1;
+		private boolean reusablePage;
+		private long[] decodedRows;
+		private CsfRowLookupAccelerators.Index decodedLookup;
+
+		AcceleratedLookupCursor(CsfRowLookupAccelerators.Kind decodedLookupKind) {
+			this.decodedLookupKind = Objects.requireNonNull(decodedLookupKind, "decodedLookupKind");
+		}
+
+		private void pageChanged(ImmutablePagedQuadCsfIndex owner, int partition, int shard, int localPage) {
+			this.owner = owner;
+			this.pageFirstRow = page.firstRow();
+			this.pageLastRow = page.lastRow();
+			this.partition = partition;
+			this.shard = shard;
+			this.localPage = localPage;
+			pageLookups = 0;
+			decodedRowCount = 0;
+			lastRowOrdinal = -1;
+			reusablePage = !page.continuation();
+			decodedLookup = null;
+		}
+
+		private boolean covers(ImmutablePagedQuadCsfIndex owner, int partition, long row) {
+			return reusablePage && this.owner == owner && this.partition == partition
+					&& Long.compareUnsigned(pageFirstRow, row) <= 0
+					&& Long.compareUnsigned(row, pageLastRow) <= 0;
+		}
+
+		private int findRow(long row) {
+			if (decodedRowCount != 0) {
+				return findDecodedRow(row);
+			}
+			int rowCount = page.rowCount();
+			int packedProbes = Integer.SIZE - Integer.numberOfLeadingZeros(rowCount);
+			if ((long) pageLookups++ * packedProbes >= rowCount) {
+				if (decodedRows == null) {
+					decodedRows = new long[CompactCsfPageFormat.MAX_ROWS_PER_PAGE];
+				}
+				page.copyRowsTo(decodedRows);
+				decodedRowCount = rowCount;
+				if (decodedLookupKind == CsfRowLookupAccelerators.Kind.BINARY) {
+					decodedLookup = null;
+				} else {
+					CsfRowLookupAccelerators.Index built = CsfRowLookupAccelerators.build(decodedLookupKind,
+							decodedRows, rowCount);
+					decodedLookup = built.kind() == CsfRowLookupAccelerators.Kind.BINARY ? null : built;
+				}
+				return findDecodedRow(row);
+			}
+			return page.findRow(row);
+		}
+
+		private int findDecodedRow(long target) {
+			int low = 0;
+			int high = decodedRowCount - 1;
+			if (lastRowOrdinal >= 0) {
+				int comparison = Long.compareUnsigned(decodedRows[lastRowOrdinal], target);
+				if (comparison == 0) {
+					return lastRowOrdinal;
+				}
+				int adjacent = lastRowOrdinal + (comparison < 0 ? 1 : -1);
+				if (adjacent >= 0 && adjacent < decodedRowCount) {
+					int adjacentComparison = Long.compareUnsigned(decodedRows[adjacent], target);
+					if (adjacentComparison == 0) {
+						lastRowOrdinal = adjacent;
+						return adjacent;
+					}
+					if ((comparison < 0 && adjacentComparison > 0)
+							|| (comparison > 0 && adjacentComparison < 0)) {
+						return -1;
+					}
+				}
+				if (decodedLookup == null) {
+					if (comparison < 0) {
+						low = Math.min(decodedRowCount, adjacent + 1);
+					} else {
+						high = Math.max(-1, adjacent - 1);
+					}
+				}
+			}
+			int found = decodedLookup != null ? decodedLookup.find(target)
+					: binarySearchUnsigned(decodedRows, low, high, target);
+			if (found >= 0) {
+				lastRowOrdinal = found;
+			}
+			return found;
+		}
+
+		private static int binarySearchUnsigned(long[] rows, int low, int high, long target) {
+			while (low <= high) {
+				int mid = low + high >>> 1;
+				int comparison = Long.compareUnsigned(rows[mid], target);
+				if (comparison < 0) {
+					low = mid + 1;
+				} else if (comparison > 0) {
+					high = mid - 1;
+				} else {
+					return mid;
+				}
+			}
+			return -1;
+		}
+
+		CsfRowLookupAccelerators.Kind selectedKind() {
+			return decodedLookup != null ? decodedLookup.kind() : CsfRowLookupAccelerators.Kind.BINARY;
 		}
 	}
 

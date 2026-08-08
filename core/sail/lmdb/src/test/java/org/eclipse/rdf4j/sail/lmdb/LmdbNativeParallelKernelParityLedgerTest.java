@@ -96,11 +96,17 @@ public class LmdbNativeParallelKernelParityLedgerTest {
 		PARITY_LEDGER.put("residual-filter-not-forkable", "as filter-not-forkable, for post-emission residuals");
 		PARITY_LEDGER.put("bind-hook",
 				"a computed BIND is an ExtensionPlan, which the interpreted aggregation refuses with non-pattern-child");
+		// Honest caveat, not a parity claim: a kernel residual comes from a filter the IR could not express, and the
+		// interpreted engine holds the same predicate as an ordinary MaskedFilter. If that filter happens to be
+		// forkable, the interpreted engine WOULD parallelize where the kernel declines. Not observed anywhere in the
+		// corpus, so it is a theoretical gap rather than a measured one; close it by giving kernel residuals the same
+		// fork treatment plan 31 gave hook filters, if a real shape ever reports it.
 		PARITY_LEDGER.put("kernel-residual",
-				"engine-side residual predicates run the shared filter instance; no fork SPI, as for filter-not-forkable");
+				"POTENTIAL GAP (unobserved): engine-side residual predicates run the shared filter instance and have no"
+						+ " fork SPI yet, whereas the interpreted engine would fork the same predicate if forkable");
 		PARITY_LEDGER.put("residual-filter",
-				"the sequential aggregate drain never consults residual filters, so carrying one is a lowering bug;"
-						+ " declined defensively rather than ignored");
+				"the sequential aggregate drain never consults residual filters, so an aggregate lowering that carries"
+						+ " one is a lowering bug; declined defensively rather than silently ignored");
 		PARITY_LEDGER.put("correlated-entry",
 				"the interpreted engine refuses correlated entries too (LmdbNativeParallelPipelines reason"
 						+ " correlated-entry)");
