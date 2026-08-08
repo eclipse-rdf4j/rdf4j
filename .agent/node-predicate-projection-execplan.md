@@ -12,7 +12,9 @@ Until recently that in-memory mirror could not answer one common shape at all: "
 
 After this ExecPlan, three things are true that are not true today. First, that sidecar is safe: it can no longer take the entire adjacency index down with it when memory is tight, it has an off switch, its memory cost is visible in the logs, and there is a test that proves the answers it produces are identical to the answers the authoritative disk trees produce. Second, the query compiler can see variable predicates. Today any SPARQL pattern whose predicate is a variable falls out of the compiled fast path entirely; after this work, patterns with a bound subject or object and a variable predicate compile and run in parallel like every other shape. Third, the reverse direction — "which predicates point at this object", written `?s ?p <o>` — becomes available behind its own switch.
 
-You can see each of these working. The safety work is visible as a test that starves the memory budget and observes the store still coming up healthy. The compiler work is visible as a benchmark cell whose kernel-open count moves from zero to non-zero and whose runtime drops below both interpreted tiers with non-overlapping error bars. The reverse direction is visible as a query shape that stops declining.
+You can see each of these working. The safety work is visible as a test that starves the memory budget and observes the store still coming up healthy. The compiler work is visible as a benchmark cell whose count of compiled variable-predicate patterns moves from zero to non-zero, and as a per-cell route ledger that records which execution route every affected shape takes in each configuration. The reverse direction is visible as a query shape that stops declining.
+
+One sentence of this paragraph has been rewritten after the work was measured, and the original is worth keeping in view because the difference is the main finding. It read that the compiler work would be visible as a cell "whose kernel-open count moves from zero to non-zero and whose runtime drops below both interpreted tiers with non-overlapping error bars". Neither half survived contact with a measurement. The kernel-open count could not move, because the flagship cell's other half already compiles with every switch off; and the runtime rose rather than fell, by a factor of 2.85 with disjoint intervals. All three capabilities therefore ship behind switches that default to off. The mechanism, the numbers and what would have to change are in `Outcomes & Retrospective`; the short version is that a node's statements are already contiguous in the subject-ordered disk tree, so a transpose cannot beat it at a plain dump — its purpose is the wildcard traversal that cannot go to disk at all, and that consumer does not exist yet.
 
 ## Progress
 
@@ -26,15 +28,17 @@ You can see each of these working. The safety work is visible as a test that sta
 - [x] (2026-08-07 22:53Z) Milestone A3 — the two memory kinds now feed `memoryUsageSummary()` (so both lifecycle log lines carry them), the metrics snapshot, and the benchmark-facing test-access class, all reporting the *charged* bytes rather than `modeledJavaBytes()`. The consolidator gained a second budget drawing on the same account and the same global cap, and its projection rewrite record is logged instead of dropped. The 160-byte workspace constant now carries its derivation.
 - [x] (2026-08-07 23:05Z) Milestone A4 — `LmdbNodePredicateEnumerationParityTest` compares the served multiset against the disk trees at all four lifecycle points over a deliberately built fixture (one-predicate node, 300-predicate node, inferred plane, named graphs, inlined object, overlay-only node, tombstoned node, post-base predicate), plus focused tests for the chunked and one-predicate branches and for a context restriction. 6/0/0. Lifetime and transaction coverage not yet added; see `Outcomes & Retrospective`.
 - [x] (2026-08-07 23:04Z) Milestone A5 — shadow mode now compares this shape (the comparator was split so any iterator can be compared, and the no-transaction early return is documented as the parallel-worker gap it is). A dedicated `LmdbNodePredicateInconsistencyException` replaces the bare `IllegalStateException`, the store degrades only this capability, schedules the rebuild that restores it, and counts once per fault; `LmdbNodePredicateRecoveryTest` asserts the five-step sequence in order. The stale census baseline is not yet corrected — with the switches default-off the cell still declines, so the removal remains true and only its stated reason is wrong.
-- [ ] Milestone A6 — benchmark cells and a per-cell route ledger, captured as a red baseline.
-- [ ] Milestone B1 — count, degree, and existence shortcuts, each gated by an explicit eligibility rule, plus predicate-ordered streaming.
-- [ ] Flip F1 — decide whether outgoing projection construction becomes the default.
-- [ ] Milestone C1 — the two query-engine interfaces and their store implementations, with a total-resolution contract.
-- [ ] Milestone C2 — the two compiler nodes and their generated code, with bounded buffers.
-- [ ] Milestone C3 — pattern lowering, binding requests, and the parallel worker rungs.
-- [ ] Flip F2 — decide whether compiled predicate enumeration becomes the default.
+- [x] (2026-08-08 08:22Z) Milestone A6 — five cells added to `ThreeTierParityCorpus`, `ThreeTierParityBenchmark` and `AdjacencyQueryShapeBenchmark`, and a per-cell route ledger added to the census. The ledger pins each cell's route in the adjacency and Janino regimes, in both configurations, plus the projection's decline count and the variable-predicate lowering count; the census gained a second test that runs the same sweep with every switch on. `ThreeTierEngagementCensusTest` 4/0/0 (1 skipped, the opt-in theme half), `AdjacencyQueryShapeBenchmarkTest` 1/0/0.
+- [x] (2026-08-08 08:10Z) Milestone B1 — count, existence and predicate-ordered streaming, each behind the same eligibility gate the iterator branch uses, so a count can never engage where the equivalent iterator declines. `LmdbNodePredicateShortcutTest` 7/0/0.
+- [x] (2026-08-08 08:31Z) Milestone C1 — `RunView` extracted, `DynamicAdjacency` and `NodePredicates` added beside `NativeAdjacency`, `LmdbDirectNodePredicates` implements both over one plane of one published base, and the total-resolution contract is proven by fault injection in all three rungs. `LmdbNodePredicateKernelFaultTest` 3/0/0.
+- [x] (2026-08-08 08:27Z) Milestone C2 — `EnumeratePredicates` and `ProbeVariable` with bounded-chunk row reads and per-node scratch, proven against the real generated Java. `LmdbNativeNodePredicateKernelTest` 8/0/0.
+- [x] (2026-08-08 08:09Z) Milestone C3 — lowering dispatch, the two binding request kinds, and both parallel rungs; the binding truth table agrees with the ordinary evaluator on all fifteen shapes. `LmdbNativeVariablePredicateKernelTest` 2/0/0.
+- [x] (2026-08-08 08:39Z) Milestone A4 completion — the four lifetime and transaction tests (`LmdbNodePredicateLifetimeTest` 4/0/0) and the randomised statement-level oracle for the update companion (`LmdbNodePredicateUpdatesTest` 5/0/0), both of which the earlier A4 entry recorded as outstanding.
+- [x] (2026-08-08 09:05Z) Flip F1 — outgoing construction stays **off** by default. See the Decision Log.
+- [x] (2026-08-08 09:05Z) Flip F2 — compiled predicate enumeration stays **off** by default. See the Decision Log.
 - [x] (2026-08-07 23:13Z) Milestone D1 — the projection is plane-generic end to end: `emit` walks the plane mask, the updates companion follows `supportsPlane` instead of a hard-coded direction and stably partitions by plane with a counting sort, and the store's inline guard is narrowed to legacy bases. Parity extended to the incoming direction including an inlined literal object; a zero-cost test proves the incoming planes add real bytes when on and none when off.
-- [ ] Flip F3 — decide the incoming default separately, because its memory cost is more than double the outgoing side.
+- [x] (2026-08-08 09:05Z) Flip F3 — incoming planes stay **off** by default. See the Decision Log.
+- [x] (2026-08-08 09:20Z) Full-module gate — `core/sail/lmdb` runs 3132 tests in 13 minutes 23 seconds with 4 skipped and one failure, `LmdbNativeFactorizedAdjacencyMemoTest.tailBranchSkipsValueMemoWhenProbeIsCacheBacked`. The previous full run of this module, on 2026-08-07, reported 3101 tests and no failures, so this work adds 31 tests and leaves one failing. That failure is triaged in `Surprises & Discoveries` and is not caused by this work: a repeat full-module run with every test class added or modified in this session excluded fails on the same test with the same assertion, and the test passes in isolation, alongside the census, and alongside its immediate predecessors. It is recorded rather than silenced.
 
 Note on honesty of this list. Milestones A1 and A2 are partly retroactive. The sidecar and its wiring were written before this plan existed and before any test proved the wiring correct; A1 and A2 bring already-written code under contract rather than adding new behaviour. That is recorded here rather than presented as fresh work.
 
@@ -86,6 +90,34 @@ Note on honesty of this list. Milestones A1 and A2 are partly retroactive. The s
 - Observation: A fold-down does not exercise the projection rewrite at all unless the commits change which predicates a node has.
   Evidence: The first version of the consolidator refusal test committed twelve additional objects under an existing predicate on an existing subject and never reached the budget: `LmdbNodePredicateUpdates.size()` was zero, so the no-change fast path shared the previous structure through `retainedCopy()`. Only commits that introduce or remove a predicate on a node produce a rewrite. This is the same fast path lifecycle point 4 of the parity suite exists to cover, and it is why that point is worth its own comparison rather than being folded into point 3.
 
+- Observation: The flagship benchmark cell measured nothing until its classes were named. With both sides of `?s a ?t . ?s ?p ?o` unbound the planner roots the whole query on the unbound-predicate pattern, evaluates it as a scan with no subject in hand, and never consults the projection at all.
+  Evidence: the first census run of the new cells printed `classPredicateMatrix 62 0 0 0 0 0 0 0 lmdb only` — zero adjacency engagement, zero kernels and, decisively, zero `PREDICATE_ENUMERATION_INCOMPLETE` declines in every regime and in both configurations. A cell that never even asks cannot show a difference when the answer changes. Supplying the classes as a `VALUES` list makes the type lookup the smaller side; the same cell then records 608 declines with the switches off and 610 plane hits with them on.
+  Consequence: this is also why the plan's own `nodeEdgeDump` baseline was misleading in the opposite direction. That cell does ask — one decline per run — but answers in 17 microseconds, so the decline is invisible in the score. A cell needs both properties to be an instrument: it must ask, and it must be big enough for the answer to matter.
+
+- Observation: "Capture a red baseline" is the wrong acceptance for two of the five new cells, because a kernel already compiles them while the projection is off.
+  Evidence: with every switch off the census records `repeatedNodeDump ... jan:kernels=1 np:decl=64` and `variablePredicateJoin ... jan:kernels=1 np:decl=5`. The `VALUES`-driven and join-driven halves of those shapes compile perfectly well without any projection; what the projection changes is that the dump inside them stops declining. The route is therefore unchanged by the flip and the decline counter is what carries the claim, which is exactly why the ledger records four facts per cell rather than one.
+
+- Observation: A lone triple pattern never compiles, so the incoming dump serves interpreted even with every switch on, and its ledger row says so.
+  Evidence: with the projection on the census records `incomingEdgeDump 6 1 0 1 0 0 0 0 adjacency` — the planes serve it, no kernel opens, and no variable-predicate pattern lowers. The compiled tier takes shapes with something to fuse; one scan is not one. This is a property of the kernel admission rule rather than of this work, and the ledger pins it rather than pretending the cell will compile.
+
+- Observation: "Each rung must fail rather than emit an incomplete result" is satisfied in two different ways depending on when the fault is noticed, and only one of them is an exception.
+  Evidence: `LmdbNativeParallelKernelRows` captures a worker failure in an `AtomicReference` and, if nothing has yet reached the query thread, returns null — a decline — for every non-`Error` failure; its comment reads "Every failure before the cursor exists declines exactly — nothing has been emitted." Once pages have been handed over, `ParallelKernelRowCursor.next()` rethrows instead. Both are correct: a decline re-runs the shape interpreted, which then declines the projection too (the store has degraded) and answers from the disk trees in full. The acceptance is therefore written as "never a short answer" rather than "always throws", and the test allows either outcome while requiring the fault to have been detected, so it cannot pass vacuously.
+
+- Observation: The incoming planes cost about the same as the outgoing ones, not "more than double" as this plan assumed throughout. The assumption was reasonable and wrong.
+  Evidence: over the shared multi-theme store with full coverage, the projection's charge is 12,359,912 bytes for the outgoing planes and 24,349,520 for all four — so the incoming half adds 11,989,608 bytes, which is 0.97 times the outgoing half rather than more than 2. The reasoning behind the assumption was that the incoming row domain is distinct objects including referenced literals and is therefore the larger domain; what that overlooked is that the structure stores predicates per row, and a typical object participates in far fewer distinct predicates than a typical subject. More rows, shorter rows, similar total.
+  Consequence: the F3 decision no longer rests on memory asymmetry, and its rationale is rewritten to rest on what was actually measured — that the incoming cell is unchanged by the switch, so the cost buys nothing yet, whatever its size. Build time is the sharper asymmetry: the incoming planes add 63 percentage points to a build that the outgoing planes have already doubled.
+
+- Observation: Projection construction roughly doubles the entire base build, which is worse than the "serial tail" framing suggested.
+  Evidence: over the same store, `nodePredicates=DISABLED` builds in 800.785 ms, `OUTGOING` in 1616.311 ms and `ALL_PLANES` in 2124.994 ms. The projection is not a tail on a long build; it is as long as the build. It runs single-threaded after the parallel primary build has finished, so it does not benefit from the build threads the primary index uses, and its two complete merges across every predicate's key list touch the same volume of data the parallel build just finished touching.
+  Consequence: moving construction inside the parallel build is the single highest-value follow-up for anyone who wants this default flipped, and it is independent of the read-path question.
+
+- Observation: The one failure in the full-module gate belongs to an unrelated test and is not caused by this work. It is an order-sensitive assertion on a process-wide counter, which is a shape that fails for reasons no single test controls.
+  Evidence: `LmdbNativeFactorizedAdjacencyMemoTest.tailBranchSkipsValueMemoWhenProbeIsCacheBacked` asserts that `JoinDispatchTestAccess.factorizedEngaged()` increases across its query; in the full run it read 383 before and 383 after. Five things place it outside this work. It passes in isolation, 1/0/0. It passes together with both census tests, 5/0/0, so the largest new interaction is not the trigger. It passes with the two classes that immediately precede it in suite order, 45/0/0. Its query is `?s ex:p1 ?a . ?a ex:p2 ?y` — two *constant* predicates — so the variable-predicate lowering added here cannot fire for it, and every other change in this milestone set is inert without a variable predicate. Every test in the module that sets `rdf4j.lmdb.janinoCodegen.thresholdRows` without clearing it runs after it, so the obvious leak path is ruled out. Decisively, a full-module run with every test class added or modified in this session excluded still fails on the same test with the same assertion, and the same assertion failed once before this work existed, in `logs/mvnf/20260805-092453-verify.log`.
+  Consequence: recorded rather than fixed. Making an unrelated test pass by adjusting it, without understanding which of the several hundred tests before it perturbs the dispatch decision, is the kind of change that hides a real defect rather than removing one. The durable fix is for that test to isolate its counter rather than assume nothing else in the JVM moved it, and it belongs to whoever owns the factorized-rows path.
+
+- Observation: A print in a JMH `@TearDown(Level.Trial)` never reaches the result file, and this repository already knew that.
+  Evidence: the first build-cost run produced its timing rows but not one `### adjacency build cost:` line. `ThreeTierParityFixtures.Fixture.engagementSinceLastReport` carries a comment saying exactly this — "JMH stops forwarding a forked JVM's output before trial teardown runs, so a once-per-trial summary never reaches the result file" — which is why the parity harness reports per iteration. Moving the print inside the measured method fixed it; the cost is a handful of lines next to a multi-second build.
+
 - Observation: The corruption-recovery sequence cannot be observed by simply querying twice, because the rebuild it schedules is asynchronous and wins the race.
   Evidence: The first version of `LmdbNodePredicateRecoveryTest` saw the second query served again, from a base the maintenance thread had already republished. Parking the scheduled rebuild on `afterBuildScanForTest` makes the degraded window deterministic, but it also drops the whole index (`quiescentRebuild` publishes an UNAVAILABLE state before waiting for readers), so a null result during that window no longer distinguishes "this capability is degraded" from "everything is briefly gone". The test therefore asserts the gate itself alongside the outcome.
 
@@ -108,7 +140,7 @@ Note on honesty of this list. Milestones A1 and A2 are partly retroactive. The s
   Date/Author: 2026-08-07, Claude.
 
 - Decision: Ship all four switches defaulting to off, and treat outgoing construction, compiled enumeration, and incoming planes as three separate default decisions rather than one.
-  Rationale: The three capabilities have different costs and different evidence. Outgoing construction costs build time and memory; compiled enumeration costs compiler surface and risk; incoming planes cost more than double the outgoing memory. Bundling them would mean a single benchmark number silently deciding three questions.
+  Rationale: The three capabilities have different costs and different evidence. Outgoing construction costs build time and memory; compiled enumeration costs compiler surface and risk; incoming planes cost their own memory again on top of the outgoing side. Bundling them would mean a single benchmark number silently deciding three questions. (This decision was taken before any of the three was measured, and it earned its keep: the three ended up failing their bars for three different reasons.)
   Date/Author: 2026-08-07, Claude.
 
 - Decision: Add a fourth switch, a per-call serving gate, distinct from the build-time construction switch.
@@ -139,13 +171,57 @@ Note on honesty of this list. Milestones A1 and A2 are partly retroactive. The s
   Rationale: With a variable predicate the compiler cannot know at bind time which predicates a kernel will touch, so it cannot pre-check overlay applicability the way the fixed-predicate path does. Merging overlay generations inside a random-access lookup is possible but belongs in a later increment; the interpreted row path already covers that case correctly, so the compiled path declines to it.
   Date/Author: 2026-08-07, Claude.
 
+- Decision: Flip F2 — compiled predicate enumeration stays off by default, because the shape it serves gets slower rather than faster.
+  Rationale: the flagship cell, which is the one cell whose route the switch actually changes, runs at 1.673 ± 0.144 ms with the switches off and 4.768 ± 0.156 ms with them on. Those intervals are disjoint by a wide margin, so this is a measured 2.85-times regression, not noise. The mechanism is understood and is not a bug to be fixed by tuning. Dumping one node's edges is the shape the subject-ordered disk tree is *best* at: the statements are already contiguous and sorted, so the whole dump is one seek plus a sequential walk. The projection replaces that with one binary search to find the node's predicate row, and then, per predicate, a catalogue lookup to turn a raw predicate id into an ordinal plus a second binary search to find that predicate's run — roughly eleven random in-memory probes for a node that the B-tree serves in one. The transpose is the right structure for a wildcard traversal that cannot go to disk at all; it is the wrong structure for a dump that can.
+  Date/Author: 2026-08-08, Claude.
+
+- Decision: Flip F1 — outgoing projection construction stays off by default.
+  Rationale: everything the flip bar asks for is green except the one thing that would justify paying for it. Differential parity is clean at all four lifecycle points, the route ledger matches exactly in both configurations, the control cell shows no regression (4.447 ± 0.381 ms off versus 4.277 ± 0.113 ms on, overlapping), refusal is contained and corruption recovers. But the shapes the projection serves either get slower (the flagship, above) or do not move at all: the repeated node dump is 0.285 ± 0.029 ms off and 0.284 ± 0.009 ms on, and the incoming dump is 0.016 ± 0.001 ms in both. Turning construction on by default would spend build time and steady-state memory to make one shape worse and the rest identical. The capability is delivered, tested and one property away; the default is not the place for it yet.
+  Date/Author: 2026-08-08, Claude.
+
+- Decision: Flip F3 — incoming planes stay off by default, on measured grounds that are not the grounds this plan predicted.
+  Rationale: the plan expected the decision to turn on memory asymmetry, and it does not. Measured over the multi-theme store, the incoming planes add 11,989,608 bytes against the outgoing planes' 12,359,912 — the same size, not the "more than double" this document assumed in four places, for the reason recorded in `Surprises & Discoveries`. The decision instead rests on the return: the incoming cell is 0.016 ± 0.001 ms in both configurations, unchanged, because a lone triple pattern never compiles and the interpreted incoming dump already matches the disk trees on a six-row answer. Nothing measured gets better, and the build gets 63 percentage points longer on top of a build the outgoing planes have already doubled. This is the outcome the plan named in advance as the honest one: incoming remains opt-in, and it stays in the tree because the bidirectional wildcard search this projection exists to enable needs it, not because a benchmark asked for it.
+  Date/Author: 2026-08-08, Claude.
+
+- Decision: Give the flagship benchmark cell an explicit `VALUES` list of classes instead of a free class variable.
+  Rationale: measured, not assumed. The free form never consults the projection, for the reason recorded in `Surprises & Discoveries`, so as an instrument it was worthless — it would have reported "no change" whatever this work did. Naming two classes keeps the query a genuine schema-profiling shape, keeps the grouping by type and predicate that the milestone asks for, and makes the type lookup the smaller side so a bound node actually reaches the dump.
+  Date/Author: 2026-08-08, Claude.
+
+- Decision: Make the route ledger record four facts per cell — the route in the adjacency regime, the route in the Janino regime, whether the projection declines while off, and whether a variable-predicate pattern compiles while on — rather than a single expected route.
+  Rationale: two of the five cells compile a kernel in both configurations, so their route does not move and a route-only ledger would have asserted nothing about them. The decline counter and the lowering counter are what actually change, and pinning all four means an unexpected change in any of them fails a test rather than passing unnoticed. It also makes the control cell's claim exact: it must stay on the same route *and* record no declines *and* compile nothing.
+  Date/Author: 2026-08-08, Claude.
+
+- Decision: State the milestone C1 fault-injection acceptance as "never a short answer" rather than "the rung always throws", and require the test to prove the fault was detected.
+  Rationale: the row-parallel rung declines rather than throwing when the fault is noticed before any page reaches the query thread, and that is the correct behaviour — nothing has been emitted, so re-running from the disk trees is both safe and exact. Demanding an exception would have forced a change that made the system worse. Requiring the inconsistency counter to have moved is what keeps the weaker assertion honest: without it the test would pass on a day the injection stopped landing.
+  Date/Author: 2026-08-08, Claude.
+
+- Decision: Inject the C1 fault at the structure through the existing corruption hook rather than through a mock view.
+  Rationale: a mock proves the interface contract, which is the easier half. The claim that matters is that the real store implementation, the real generated kernels and the real degradation path hold the contract together, and only a real corrupted projection exercises all three. The hook already existed for the milestone A5 recovery test, so this cost no new production surface.
+  Date/Author: 2026-08-08, Claude.
+
+- Decision: Build the randomised update oracle on complete statements and have it count its own non-vacuity.
+  Rationale: the subtlety the oracle exists for — deleting one object while another statement keeps the predicate on the node — only appears if the oracle models objects. An oracle over pairs would agree with a buggy implementation for the same wrong reason. The counter is there because agreement is cheap to obtain by accident: across the seeds the test now requires at least one real rewrite and at least one deletion whose predicate survived, so "40 seeds passed" cannot mean "40 seeds did nothing".
+  Date/Author: 2026-08-08, Claude.
+
 - Decision: Treat the `?s ?p ?o` grouped-by-subject benchmark cell as a control rather than a target.
   Rationale: All three positions of that pattern are unbound, and the enumerator requires a bound key. A whole-projection root enumerator would be needed to serve it, and the projection deliberately exposes no key-domain accessor. Keeping the cell as a control proves the sidecar causes no regression on shapes it does not serve.
   Date/Author: 2026-08-07, Claude.
 
 ## Outcomes & Retrospective
 
-Not yet started. This section is to be written at the end of each gate and again at completion, comparing what was achieved against the Purpose section above.
+Written at completion, 2026-08-08, against the three claims in the Purpose section.
+
+The first claim holds. The sidecar is safe. A memory refusal now costs the projection and nothing else, where before it destroyed the entire adjacency index for the life of the process with no retry; there are four switches, all off by default, one of which stops a store that is already running; the two memory kinds appear in both lifecycle log lines and in the metrics snapshot, reporting the charged figure rather than the structure's self-report, because the charge is what consumes the cap; a differential suite compares the served multiset against the disk trees at four lifecycle points over a deliberately built fixture, and four further tests cover what that suite cannot see — a pinned view across a fold-down, release-after-last-lease, two workers with independent cursors, and reads taken inside a write transaction through both of its endings. A corrupted projection degrades this one capability, schedules a rebuild, and recovers, which is asserted as a five-step sequence rather than as five independent facts.
+
+The third claim holds. The reverse direction exists, is plane-generic end to end, is covered by the parity suite including an inlined literal object, and costs nothing measurable when its switch is off. The `?s ?p <o>` cell stops declining the moment the switch is on: `incomingEdgeDump` goes from `np:decl=1, lmdb only` to `np:decl=0, adjacency`.
+
+The second claim holds structurally and fails on its headline number, and that is the honest summary of this work. The compiler really can see variable predicates now: a pattern with a bound endpoint and a variable predicate lowers to one of two new IR nodes, compiles to real generated Java that reads the node's predicate row in bounded chunks with per-node scratch, binds all-or-nothing per direction, and runs in both parallel rungs; the binding truth table agrees with the ordinary evaluator on all fifteen shapes including every aliasing case; and the total-resolution contract holds under fault injection in all three rungs. What does not hold is the sentence in the Purpose section that says the flagship cell's "runtime drops below both interpreted tiers with non-overlapping error bars". It rises: 1.673 ± 0.144 ms becomes 4.768 ± 0.156 ms, a 2.85-times regression with disjoint intervals. All three switches therefore ship off, and this document records why rather than leaving a designed, tested and lowered capability silently disabled.
+
+The reason is worth stating precisely, because it is a property of the problem rather than a defect to be tuned away. A node's outgoing statements are already contiguous and sorted in the subject-ordered disk tree, so dumping them is one seek and a sequential walk — the single shape a B-tree is best at. The projection replaces that with a binary search for the node's predicate row and then, per predicate, a catalogue lookup to turn a raw id into an ordinal plus a second binary search for that predicate's run: roughly eleven random in-memory probes where the tree does one sequential one. On top of that, building it doubles the base build (800.785 ms to 1616.311 ms over the multi-theme store, and 2124.994 ms with the incoming planes), because it runs on the build thread after the parallel primary build has finished — the same serial-tail shape a previous milestone spent its whole length eliminating.
+
+What this means for the next contributor. The projection is not a faster way to do what LMDB already does well; it is the only way to do something LMDB cannot do at all, which is wildcard traversal that never touches disk. The design document this plan inlines asks for exactly that: expanding a frontier without a predicate in hand, where the alternative is trying every predicate in the store at every node reached. That consumer does not exist yet, so the primitive currently has no workload that plays to it, which is why every measured cell either regresses or is unchanged. Two concrete follow-ups would change the arithmetic. First, the per-predicate run resolution is the whole cost of the read path and is pure indirection: if a row could carry its runs alongside its predicates the dump would become one pass, but that means storing pointers into the main index, which the current design deliberately refuses because a pointer goes stale on every base rewrite — so it needs a generation-stamped handle rather than a raw one. Second, construction should move into the parallel build rather than trailing it, which would remove most of the doubled build time without changing anything about correctness.
+
+Three smaller lessons, all of them paid for. A benchmark cell is only an instrument if it *asks the question* and is *large enough for the answer to matter*: the pre-existing `nodeEdgeDump` cell had the first property and not the second, and the first draft of the flagship had the second and not the first, and both reported "no difference" for opposite reasons. A route ledger has to record more than a route, because two of the five cells compile in both configurations and only their decline counters move. And an acceptance written as "the rung must fail" was wrong: declining before anything has been emitted is the better behaviour, so the acceptance became "never a short answer", with a detection counter to keep the weaker claim honest.
 
 ## Context and Orientation
 
@@ -291,7 +367,9 @@ Distinct-predicate listing and predicate histograms are explicitly not routed he
 
 The decision to make outgoing construction default-on requires all of: no differential mismatches from milestone A4 or from a shadow run; the route ledger from A6 matching exactly; no regression across the whole affected benchmark corpus rather than only the new cells; an accepted build-time cost; an accepted steady-state memory percentage; and demonstrated refusal and corruption recovery.
 
-The build-time cost deserves explicit measurement rather than assumption. Projection construction performs two complete merges across every predicate's key list, on the build thread, after the parallel primary build has finished — which is exactly the shape of serial tail that a recent piece of work spent an entire milestone eliminating. The build-only benchmark measures it with the switch on and off.
+The build-time cost deserves explicit measurement rather than assumption. Projection construction performs two complete merges across every predicate's key list, on the build thread, after the parallel primary build has finished — which is exactly the shape of serial tail that a recent piece of work spent an entire milestone eliminating. The build-only benchmark measures it with the switch on and off, through a `nodePredicates` parameter added to it for this purpose.
+
+Outcome: outgoing construction stays off. Every prerequisite on that list is met except the one that would pay for the rest. Parity is clean, the route ledger matches in both configurations, refusal and corruption recovery are demonstrated, and the control cell shows no regression. But the build-time cost is not "accepted": construction more than doubles the whole base build, 800.785 ms to 1616.311 ms over the multi-theme store, because it is single-threaded work as large as the parallel build it follows. And the shapes it serves either regress or stand still. The full numbers and the mechanism are in `Artifacts and Notes` and `Outcomes & Retrospective`.
 
 ### Gate C, milestone C1: two interfaces and their store implementations
 
@@ -333,6 +411,8 @@ The parallel rungs need almost nothing, and the reason is worth recording. Parti
 
 Engagement of the flagship cell with non-overlapping error bars is necessary but not sufficient. Independent forks are used and confidence intervals are reported on the ratio between the enabled and disabled regimes rather than on either alone. The full bar adds: no differential mismatches; the route ledger matching for every cell; no regression across the whole affected corpus including the control cell; accepted build-time and memory costs; demonstrated refusal and corruption recovery; and no new declines for the shapes actually implemented.
 
+Outcome: compiled predicate enumeration stays off, and it fails at the first hurdle rather than at any of the added ones. The flagship's intervals are indeed non-overlapping — in the wrong direction, 1.673 ± 0.144 ms becoming 4.768 ± 0.156 ms. Everything else on the bar is green, which is worth saying plainly: the shape compiles, agrees with the interpreter on all fifteen binding combinations, engages in both parallel rungs, declines nothing it used to serve, and leaves the control cell untouched. It is simply slower, for a structural reason set out in `Outcomes & Retrospective`.
+
 ### Gate D, milestone D1: incoming planes
 
 At the end of this milestone the projection can cover incoming planes, at no cost whatsoever when its switch is off.
@@ -345,7 +425,9 @@ The parity suite from milestone A4 extends to incoming planes before any incomin
 
 ### Flip F3
 
-The incoming default is decided separately, because the row domain for incoming planes is distinct objects including referenced literals, and the memory cost is expected to exceed double the outgoing side. It requires incoming parity green, the incoming cells engaging, and an accepted memory percentage on the theme fixture. If the economics do not justify it, the honest outcome is that incoming remains opt-in, and this plan records that rather than leaving a designed, tested, and lowered capability silently disabled with no explanation.
+The incoming default is decided separately, because the row domain for incoming planes is distinct objects including referenced literals rather than distinct subjects. It requires incoming parity green, the incoming cells engaging, and an accepted memory percentage on the theme fixture.
+
+Outcome: incoming stays off. Parity is green and the incoming cell does stop declining, but it does not get faster — 0.016 ± 0.001 ms with the switch off and on — and the planes add 11,989,608 bytes and 63 percentage points of build time. The memory prediction that motivated separating this decision turned out to be wrong in the projection's favour and made no difference to the verdict; see `Surprises & Discoveries`. This is the honest outcome the paragraph above anticipated: incoming remains opt-in, recorded here rather than left as a designed, tested and lowered capability that is silently disabled with no explanation.
 
 ## Concrete Steps
 
@@ -381,7 +463,47 @@ Every new Java file begins with the standard Eclipse Distribution License header
 
 Commits are file-scoped and prefixed `GH-0000`, because no GitHub issue number is associated with this branch. Never use `git add -A`; roughly 400 untracked artifacts live at the repository root and must be preserved.
 
-This section is updated as milestones complete, with the actual commands used and short transcripts of what they printed.
+The nine focused suites that cover this work, in the order they were written. Each takes under a second of test time; the twenty-odd seconds each command reports is the root install that precedes it:
+
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNodePredicateIndexTest
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNodePredicateSwitchTest
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNodePredicateUpdatesTest
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNodePredicateEnumerationParityTest
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNodePredicateLifetimeTest
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNodePredicateRecoveryTest
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNodePredicateShortcutTest
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNativeNodePredicateKernelTest
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNodePredicateKernelFaultTest
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNativeVariablePredicateKernelTest
+
+The census, which is where the route ledger lives and which runs both configurations:
+
+    python3 .codex/skills/mvnf/scripts/mvnf.py ThreeTierEngagementCensusTest --retain-logs
+
+Expect `tests=4, failures=0, errors=0, skipped=1`; the skip is the opt-in theme half. The per-cell table it prints to standard output is captured in the Surefire report and is the ledger's readable form.
+
+The flip evidence, one JMH run per cell per configuration in the Janino regime. The first invocation packages the benchmark jar, so the rest pass `--no-build`:
+
+    ./scripts/run-single-benchmark.sh --module core/sail/lmdb \
+        --class org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityBenchmark \
+        --method 'classPredicateMatrix$' --param regime=janino \
+        --warmup-iterations 3 --measurement-iterations 5 --forks 1 \
+        --jvm-arg -Drdf4j.lmdb.threeTierParity.foafPeople=2000
+
+For the enabled configuration, add the four switches as JVM arguments:
+
+    --jvm-arg -Drdf4j.lmdb.directAdjacency.nodePredicateProjection.enabled=true
+    --jvm-arg -Drdf4j.lmdb.directAdjacency.nodePredicateProjection.incoming.enabled=true
+    --jvm-arg -Drdf4j.lmdb.directAdjacency.nodePredicateProjection.serve.enabled=true
+    --jvm-arg -Drdf4j.lmdb.janinoCodegen.nodePredicates=true
+
+The build-time and memory cost, over the shared multi-theme store, comes from the build-only benchmark's new `nodePredicates` parameter:
+
+    ./scripts/run-single-benchmark.sh --module core/sail/lmdb \
+        --class org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyBuildBenchmark --method 'build$' \
+        --param nodePredicates=DISABLED --param buildThreads=auto --param coverage=FULL
+
+Each trial additionally prints a line beginning `### adjacency build cost:` carrying the projection's native and Java bytes and its share of the total charge, which is the figure the memory half of the flip decisions turns on.
 
 ## Validation and Acceptance
 
@@ -401,11 +523,13 @@ For milestone A6, the benchmark run produces the five new cells with error bars,
 
 For milestone B1, a query restricted to one named graph over a node whose predicates are spread across two graphs returns the smaller, correct count, where a naive row-length shortcut would return the larger one. An ordered request by predicate is served rather than declined; an ordered request by object for the same shape is still declined.
 
-For milestones C1 through C3, the flagship benchmark cell's kernel-open count moves from zero to non-zero and its compiled time falls below both interpreted tiers with non-overlapping intervals. The fault-injection double causes all three kernel rungs to fail rather than under-report. The binding truth table agrees with the ordinary evaluator on every combination.
+For milestones C1 through C3, the witness is the flagship cell's *variable-predicate lowering* count, not its kernel-open count. That is a correction to this section rather than a restatement of it, and the reason is measured: the flagship's `VALUES`-driven type lookup already compiles to a kernel with every switch off, so its kernel-open count is one in both configurations and could never have moved from zero. What does move from zero to non-zero is the number of patterns with a variable predicate that reached a compiled enumeration, which is the thing this gate is actually about. The fault-injection test causes all three kernel rungs to either fail or decline with the disk trees answering in full, and never to return a short result; it additionally asserts the injected fault was detected, so it cannot pass by never reaching it. The binding truth table agrees with the ordinary evaluator on every combination.
 
 For milestone D1, the incoming dump cell stops declining, the parity suite passes for incoming planes, and with the incoming switch off the incoming memory charge is zero.
 
-The final gate for the whole plan is one full-module run, expected green against the current baseline of roughly 3,073 tests with zero failures and zero errors, followed by the three-regime benchmark sweep and a theme-fixture run of the three analytics queries identified in milestone A6.
+For milestone A6, the census prints a per-cell table for both configurations and asserts a four-part ledger row for each of the five new cells; the run reports `tests=4, failures=0, errors=0, skipped=1`, the skip being the opt-in theme half. The route ledger is the deliverable, not a red baseline: two of the five cells compile in both configurations, so their decline and lowering counters rather than their route carry the claim.
+
+The final gate for the whole plan is one full-module run, expected green against the current baseline with zero failures and zero errors, plus the flip sweep and the build-cost sweep whose transcripts appear in `Artifacts and Notes`. The theme-fixture run of the three analytics queries named in milestone A6 was not performed, and should not be read as omitted evidence: those queries are targets for a projection that is enabled, every switch ships off, and the flip evidence already shows the enabled configuration losing on a cheaper corpus. Running them would measure the shipped default, which is byte-identical to the configuration measured before this work.
 
 ## Idempotence and Recovery
 
@@ -431,6 +555,48 @@ The matching engagement line from `benchmark-results/tier-m11-adjacency-r1-2026-
         fallbacks=PREDICATE_ENUMERATION_INCOMPLETE=96376
 
 The second and third lines of the first excerpt are the reason milestone B1 explicitly does not route distinct-predicate listing or predicate histograms through the projection: those are already served by an existing prefix-run path at roughly 117 times the disk-tree speed, and adding a second route would be more work for the same answer.
+
+The route ledger in its readable form, from `ThreeTierEngagementCensusTest`. Left half is the adjacency regime, right half the Janino regime; `np:decl` counts `PREDICATE_ENUMERATION_INCOMPLETE` fallbacks and `np:lower` counts variable-predicate patterns that compiled. With every switch off:
+
+    cell                        rows adj:planes adj:views jan:planes jan:views jan:kernels np:decl np:lower  served by
+    nodeEdgeDump                  17          0         0          0         0           0       1        0  lmdb only
+    classPredicateMatrix          16          2         0          1         1           1     608        0  adjacency+janino
+    repeatedNodeDump            1057          0         0          0         0           1      64        0  janino
+    variablePredicateJoin         72          2         0          2         1           1       5        0  adjacency+janino
+    incomingEdgeDump               6          0         0          0         0           0       1        0  lmdb only
+    outDegreeHistogram          5028          0         0          0         0           0       0        0  lmdb only
+
+...and with all four on. Every row count is identical, which is the correctness floor; what moves is that the declines go to zero, the planes start serving, and three cells compile a variable-predicate pattern:
+
+    classPredicateMatrix          16        610         0          2         2           1       0        1  adjacency+janino
+    repeatedNodeDump            1057         64         0         16        16           1       0        1  adjacency+janino
+    variablePredicateJoin         72          7         0          3         2           1       0        1  adjacency+janino
+    incomingEdgeDump               6          1         0          1         0           0       0        0  adjacency
+    outDegreeHistogram          5028          0         0          0         0           0       0        0  lmdb only
+
+The flip evidence, from `benchmark-results/node-predicate-flip-2026-08-08.txt`. Janino regime, 2000-person FOAF store, three warm-up and five measured iterations in one fork per cell:
+
+    cell                    switches off        switches on         verdict
+    classPredicateMatrix    1.673 ± 0.144 ms    4.768 ± 0.156 ms    2.85x slower, intervals disjoint
+    repeatedNodeDump        0.285 ± 0.029 ms    0.284 ± 0.009 ms    unchanged
+    incomingEdgeDump        0.016 ± 0.001 ms    0.016 ± 0.001 ms    unchanged
+    outDegreeHistogram      4.447 ± 0.381 ms    4.277 ± 0.113 ms    unchanged (the control)
+
+The build-time half, from `benchmark-results/node-predicate-build-cost-2026-08-08.txt`, over the shared multi-theme store with full coverage and the parallel build:
+
+    nodePredicates=DISABLED      800.785 ms/op
+    nodePredicates=OUTGOING     1616.311 ms/op    +102%
+    nodePredicates=ALL_PLANES   2124.994 ms/op    +165%
+
+That is the serial-tail cost the plan asked to have measured rather than assumed, and it is worse than assumed: building the outgoing projection roughly doubles the whole base build, because it runs on the build thread after the parallel primary build has finished.
+
+The memory half comes from the same run, printed by the benchmark itself because a JMH teardown print never reaches the result file:
+
+    ### adjacency build cost: nodePredicates=DISABLED   projectionNativeBytes=0        projectionJavaBytes=0     totalChargedBytes=60582176 projectionShare=0.00%
+    ### adjacency build cost: nodePredicates=OUTGOING   projectionNativeBytes=12352768 projectionJavaBytes=7144  totalChargedBytes=72942088 projectionShare=16.94%
+    ### adjacency build cost: nodePredicates=ALL_PLANES projectionNativeBytes=24338688 projectionJavaBytes=10832 totalChargedBytes=84931696 projectionShare=28.67%
+
+The outgoing planes add 20.4 per cent to the base's steady-state charge; the incoming planes add essentially the same amount again, which contradicts this plan's standing assumption and is recorded as a discovery rather than quietly corrected.
 
 Further transcripts are added here as milestones complete, kept short and focused on what proves success.
 
@@ -506,4 +672,14 @@ At the end of milestone C3, in `core/sail/lmdb/src/main/java/org/eclipse/rdf4j/s
 
 ---
 
-Revision note. This document is the first revision, created 2026-08-07. It supersedes an earlier informal draft in two substantive ways, recorded here because the reasoning matters more than the change. First, the earlier draft treated a single benchmark result as deciding one default, when in fact three separable capabilities were being enabled at once; the plan now carries three explicit flip decisions and ships every switch off. Second, the earlier draft described count and existence shortcuts as exact when they are exact only for unrestricted patterns, and described generated code that would skip a predicate whose run could not be resolved — which would have converted structural corruption into a silently incomplete answer, directly contradicting the recovery behaviour specified in milestone A5. Both are corrected above.
+Revision note, second revision, 2026-08-08. The plan is now complete: every milestone is delivered and all three flip decisions are taken. Four kinds of change were made to this document, and all four are corrections of things it previously asserted without evidence, which is why they are listed rather than folded in silently.
+
+First, the `Purpose` section's promise for the compiler work has been rewritten. It said the work would be visible as a benchmark cell whose kernel-open count moved from zero to non-zero and whose runtime dropped below both interpreted tiers. Neither half survived measurement — the count could not move because the flagship's other half already compiles, and the runtime rose by a factor of 2.85 — so the promise now names the witness that does move, the count of compiled variable-predicate patterns, and the paragraph immediately below it keeps the original wording in view and explains what happened. Rewriting a purpose to match a result is dangerous; leaving a purpose that the delivered work does not meet is worse, and quietly deleting the original would be worst of all.
+
+Second, all three flips resolved to "stays off", each for a different reason, and each is written into the `Decision Log` with its numbers and into its `Plan of Work` section as an outcome. The `Validation and Acceptance` entry for gate C is corrected in place to name the witness that could actually move.
+
+Third, the plan's standing assumption that the incoming planes would cost more than double the outgoing ones is wrong: measured, they cost about the same. The three places that repeated it are corrected, and the discovery — including why the reasoning behind the assumption was plausible — is recorded rather than erased.
+
+Fourth, the acceptance for the milestone C1 fault injection was rephrased from "each rung must fail" to "no rung may return a short answer", because the row-parallel rung correctly declines when it notices the fault before anything has been emitted, and demanding an exception would have made the system worse. The corresponding test allows either outcome and separately asserts the fault was detected, so the weaker phrasing cannot be satisfied vacuously.
+
+Revision note, first revision, 2026-08-07. It supersedes an earlier informal draft in two substantive ways, recorded here because the reasoning matters more than the change. First, the earlier draft treated a single benchmark result as deciding one default, when in fact three separable capabilities were being enabled at once; the plan now carries three explicit flip decisions and ships every switch off. Second, the earlier draft described count and existence shortcuts as exact when they are exact only for unrestricted patterns, and described generated code that would skip a predicate whose run could not be resolved — which would have converted structural corruption into a silently incomplete answer, directly contradicting the recovery behaviour specified in milestone A5. Both are corrected above.
