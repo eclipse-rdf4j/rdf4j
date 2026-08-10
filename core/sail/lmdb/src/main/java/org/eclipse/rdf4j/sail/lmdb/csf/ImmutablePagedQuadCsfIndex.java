@@ -734,27 +734,23 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 			return new PageWindow(0, 0, update, update + 1);
 		}
-		CompactCsfPageReader page = shard.page(floor);
-		int localRow = page.findRow(row);
-		if (localRow >= 0 && !page.continuation()) {
+		boolean continuation = shard.pageIsContinuation(floor);
+		int localRow = shard.findRow(floor, row);
+		if (localRow >= 0 && !continuation) {
 			int to = floor + 1;
 			if (localRow == 0) {
-				while (to < pageCount) {
-					CompactCsfPageReader continuation = shard.page(to);
-					if (!continuation.continuation() || continuation.rowAt(0) != row) {
-						break;
-					}
+				while (to < pageCount && shard.pageIsContinuation(to, row)) {
 					to++;
 				}
 			}
 			return new PageWindow(floor, to, update, update + 1);
 		}
-		if (!page.continuation() && Long.compareUnsigned(row, page.lastRow()) <= 0) {
+		if (!continuation && Long.compareUnsigned(row, shard.pageLastRow(floor)) <= 0) {
 			return new PageWindow(floor, floor + 1, update, update + 1);
 		}
 
 		int after = floor + 1;
-		while (after < pageCount && shard.page(after).continuation()) {
+		while (after < pageCount && shard.pageIsContinuation(after)) {
 			after++;
 		}
 		if (after < pageCount) {
@@ -763,19 +759,15 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 			return new PageWindow(after, after, update, update + 1);
 		}
-		if (!page.continuation() && !hasContinuationAfter(shard, floor)) {
+		if (!continuation && !hasContinuationAfter(shard, floor)) {
 			return new PageWindow(floor, floor + 1, update, update + 1);
 		}
 		return new PageWindow(after, after, update, update + 1);
 	}
 
 	private static boolean hasContinuationAfter(CsfShard shard, int page) {
-		if (page < 0 || page + 1 >= shard.pageCount()) {
-			return false;
-		}
-		CompactCsfPageReader current = shard.page(page);
-		CompactCsfPageReader next = shard.page(page + 1);
-		return !current.continuation() && next.continuation() && next.rowAt(0) == current.rowAt(0);
+		return page >= 0 && page + 1 < shard.pageCount() && !shard.pageIsContinuation(page)
+				&& shard.pageIsContinuation(page + 1, shard.pageFirstRow(page));
 	}
 
 	private List<CompactCsfPageEncoder.PageImage> collectReplacementPages(CsfShard source, PageWindow window,
@@ -817,24 +809,25 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	private static void emitBasePageRow(Builder target, PageRows baseRows, long[] neighbors, long[] contexts) {
-		target.beginRow(0, 0, baseRows.row());
-		CompactCsfPageReader first = baseRows.source.page(baseRows.page);
+		long logicalRow = baseRows.row();
+		target.beginRow(0, 0, logicalRow);
+		CompactCsfPageReader reader = baseRows.reader;
 		int localRow = baseRows.localRow;
 		long total = 0;
 		int page = baseRows.page;
 		int row = localRow;
 		do {
-			CompactCsfPageReader reader = baseRows.source.page(page);
+			baseRows.source.page(page, reader);
 			total = Math.addExact(total, reader.rowQuadCount(row));
 			page++;
 			row = 0;
-		} while (localRow == 0 && page < baseRows.toPage && baseRows.source.page(page).continuation()
-				&& baseRows.source.page(page).rowAt(0) == first.rowAt(localRow));
+		} while (localRow == 0 && page < baseRows.toPage
+				&& baseRows.source.pageIsContinuation(page, logicalRow));
 		long copiedTotal = 0;
 		page = baseRows.page;
 		row = localRow;
 		while (copiedTotal < total) {
-			CompactCsfPageReader reader = baseRows.source.page(page);
+			baseRows.source.page(page, reader);
 			int pageEdges = reader.rowQuadCount(row);
 			int from = 0;
 			while (from < pageEdges) {
@@ -893,7 +886,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	private static boolean continuation(CsfShard.PageSpec page) {
-		return page.image != null ? page.image.continuation() : page.source.page(page.sourcePage).continuation();
+		return page.image != null ? page.image.continuation() : page.source.pageIsContinuation(page.sourcePage);
 	}
 
 	private static final class PageWindow {
@@ -914,6 +907,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	private final class PageRows {
 		private final CsfShard source;
 		private final int toPage;
+		private final CompactCsfPageReader reader = new CompactCsfPageReader();
 		private int page;
 		private int localRow;
 		private boolean ready;
@@ -943,7 +937,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 			ready = false;
 			while (page < toPage) {
-				CompactCsfPageReader reader = source.page(page);
+				source.page(page, reader);
 				if (reader.continuation()) {
 					page++;
 					localRow = 0;
@@ -1070,6 +1064,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 
 	private final class BaseGroupRows {
 		private final int shardEnd;
+		private final CompactCsfPageReader reader = new CompactCsfPageReader();
 		private int shardIndex;
 		private int localPage;
 		private int localRow;
@@ -1106,14 +1101,14 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			while (shardIndex < shardEnd) {
 				CsfShard shard = shards[shardIndex];
 				while (localPage < shard.pageCount()) {
-					CompactCsfPageReader page = shard.page(localPage);
-					if (page.continuation()) {
+					shard.page(localPage, reader);
+					if (reader.continuation()) {
 						localPage++;
 						localRow = 0;
 						continue;
 					}
-					if (localRow < page.rowCount()) {
-						row = page.rowAt(localRow);
+					if (localRow < reader.rowCount()) {
+						row = reader.rowAt(localRow);
 						localReference = packLocalReference(shardFirstPageIds[shardIndex] + localPage, localRow);
 						localRow++;
 						ready = true;
@@ -1225,11 +1220,6 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 		}
 		return floor;
-	}
-
-	private CompactCsfPageReader page(int globalPageId) {
-		int shard = shardForPage(globalPageId);
-		return shards[shard].page(globalPageId - shardFirstPageIds[shard]);
 	}
 
 	private void page(int globalPageId, CompactCsfPageReader target) {
@@ -1644,8 +1634,9 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	/**
-	 * Caller-owned page decoder for repeated row lookup. Hot pages are decoded lazily after packed probes have cost as
-	 * much as one bulk decode; one-off and sparse probes remain allocation-free.
+	 * Caller-owned state for repeated row lookup. Pages use a radix directory only when it fits in their existing slab
+	 * slack; otherwise a cursor may build one lazily after packed probes have paid its measured break-even cost.
+	 * One-off and sparse probes remain allocation-free.
 	 */
 	public static final class LookupCursor {
 
@@ -1657,9 +1648,21 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		/** Global page id; replaces separate shard/local-page fields on the hot cursor. */
 		private int globalPage = -1;
 		private int rowCount;
+		/** Positive: page-slack radix delta/bits; zero or negative: unaccelerated lookup count. */
+		private int rowRadixState;
 		private boolean reusablePage;
+		/** Created only when a non-indexed page reaches its measured promotion threshold. */
+		private AdaptiveRowRadixState adaptiveRowRadix;
 
 		private void pageChanged(ImmutablePagedQuadCsfIndex owner, int partition, int globalPage, long pageAddress) {
+			AdaptiveRowRadixState adaptive = adaptiveRowRadix;
+			if (adaptive != null) {
+				if (CsfAdaptiveMemory.underPressure() && adaptive.radix != null) {
+					adaptive.radix = null;
+					CsfAdaptiveMemory.released();
+				}
+				adaptive.resetForPage();
+			}
 			this.owner = owner;
 			this.pageFirstRow = UnsafeAccess.getLongLE(pageAddress + CompactCsfPageFormat.FIRST_ROW_AT);
 			this.pageLastRow = UnsafeAccess.getLongLE(pageAddress + CompactCsfPageFormat.LAST_ROW_AT);
@@ -1668,6 +1671,16 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			this.rowCount = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_COUNT_AT);
 			int rowIdsOffset = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_IDS_OFFSET_AT);
 			this.rowIdsAddress = pageAddress + rowIdsOffset;
+			int descriptor = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ACCELERATOR_DESCRIPTOR_AT);
+			int bits = CompactCsfPageAccelerators.rowRadixBits(descriptor);
+			if (bits == 0) {
+				this.rowRadixState = 0;
+			} else {
+				int acceleratorOffset = UnsafeAccess
+						.getIntLE(pageAddress + CompactCsfPageFormat.ACCELERATOR_OFFSET_AT);
+				int delta = acceleratorOffset - rowIdsOffset;
+				this.rowRadixState = delta << 4 | bits;
+			}
 			int flags = UnsafeAccess.getUnsignedShortLE(pageAddress + CompactCsfPageFormat.FLAGS_AT);
 			this.reusablePage = (flags & CompactCsfPageFormat.FLAG_CONTINUATION) == 0;
 		}
@@ -1679,12 +1692,62 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		}
 
 		private int findRowCached(long row) {
-			/*
-			 * SORTED_RANDOM_ACCESS_IDS vectors carry the block-local radix directory, making direct packed lookup
-			 * faster than decoding 1,024 longs and binary-searching them (and allocation-free). Old vectors fall back
-			 * to the codec's bounded packed binary search. Do not resurrect the old hot-page promotion here.
-			 */
-			return PackedLongVector.nativeBinarySearchUnsigned(rowIdsAddress, rowCount, row);
+			int state = rowRadixState;
+			if (state > 0) {
+				int bits = state & 0xf;
+				long radixAddress = rowIdsAddress + (state >>> 4);
+				return PackedLongVector.nativeBinarySearchUnsigned(rowIdsAddress, rowCount, row, radixAddress, bits);
+			}
+			AdaptiveRowRadixState adaptive = adaptiveRowRadix;
+			if (adaptive != null && adaptive.ready) {
+				return PackedLongVector.nativeBinarySearchUnsigned(rowIdsAddress, rowCount, row, adaptive.radix,
+						adaptive.bits);
+			}
+			int result = PackedLongVector.nativeBinarySearchUnsigned(rowIdsAddress, rowCount, row);
+			if (reusablePage && rowCount >= CompactCsfPageAccelerators.MIN_INDEXED_ROWS
+					&& (adaptive == null || !adaptive.refused)) {
+				int lookups = state == 0 ? 1 : -state + 1;
+				rowRadixState = -lookups;
+				int packedProbes = Integer.SIZE - Integer.numberOfLeadingZeros(rowCount - 1);
+				int savedProbes = Math.max(1, packedProbes - 2);
+				int breakEven = Math.max(16, (rowCount + savedProbes - 1) / savedProbes);
+				if (lookups >= breakEven) {
+					promoteRowRadix();
+				}
+			}
+			return result;
+		}
+
+		private void promoteRowRadix() {
+			AdaptiveRowRadixState adaptive = adaptiveRowRadix;
+			if (adaptive == null) {
+				adaptive = new AdaptiveRowRadixState();
+				adaptiveRowRadix = adaptive;
+			}
+			int bits = rowCount >= PackedLongVector.BLOCK_SIZE ? 7 : rowCount >= 128 ? 6 : 5;
+			int bytes = PackedLongVector.externalSearchRadixBytes(rowCount, bits);
+			byte[] radix = CsfAdaptiveMemory.tryByteArray(adaptive.radix, bytes);
+			if (radix == null) {
+				adaptive.refused = true;
+				return;
+			}
+			PackedLongVector.writeExternalSearchRadix(rowIdsAddress, rowCount, radix, bits);
+			adaptive.radix = radix;
+			adaptive.bits = (byte) bits;
+			adaptive.ready = true;
+		}
+
+		private static final class AdaptiveRowRadixState {
+			byte[] radix;
+			byte bits;
+			boolean ready;
+			boolean refused;
+
+			void resetForPage() {
+				bits = 0;
+				ready = false;
+				refused = false;
+			}
 		}
 	}
 

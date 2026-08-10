@@ -15,8 +15,8 @@ package org.eclipse.rdf4j.sail.lmdb.csf;
 final class CompactCsfPageFormat {
 
 	static final int MAGIC = 0x50435346; // PCSF
-	static final int VERSION = 2;
-	static final int FORMAT_HASH = 0x6d6f4f32;
+	static final int VERSION = 3;
+	static final int FORMAT_HASH = 0x72b9c4e1;
 	static final int HEADER_BYTES = 160;
 
 	static final int FLAG_CONTINUATION = 1;
@@ -62,6 +62,10 @@ final class CompactCsfPageFormat {
 	static final int CONTEXT_TAILS_OFFSET_AT = 136;
 	static final int CONTEXT_TAILS_LENGTH_AT = 140;
 	static final int FORMAT_HASH_AT = 144;
+	/* Optional accelerators consume only unused bytes in the already-selected slab capacity class. */
+	static final int ACCELERATOR_OFFSET_AT = 148;
+	static final int ACCELERATOR_LENGTH_AT = 152;
+	static final int ACCELERATOR_DESCRIPTOR_AT = 156;
 
 	static final int NO_PAGE = -1;
 	static final int MAX_ROWS_PER_PAGE = 1024;

@@ -117,6 +117,112 @@ class PackedLongVectorTest {
 	}
 
 	@Test
+	void newlyEncodedVectorsNeverCarryDatasetSizedInternalSidecars() {
+		long[] values = new long[1_025];
+		for (int i = 0; i < values.length; i++) {
+			values[i] = id(12, (1L << 42) + i * 17L);
+		}
+		int expectedBlocks = (values.length + PackedLongVector.BLOCK_SIZE - 1) / PackedLongVector.BLOCK_SIZE;
+		for (PackedLongVector.Hint hint : PackedLongVector.Hint.values()) {
+			byte[] encoded = PackedLongVector.encode(values, 0, values.length, hint);
+			assertThat(LeBytes.getInt(encoded, Integer.BYTES))
+					.as("hint=%s", hint)
+					.isEqualTo(expectedBlocks);
+		}
+	}
+
+	@Test
+	void externalRowRadixHasNativeAndHeapParityWithoutChangingTheVector() {
+		java.util.Random random = new java.util.Random(0x714d1aL);
+		for (int size : new int[] { 64, 255, 256, 257, 512, 1_024 }) {
+			long[] values = new long[size];
+			long value = 7;
+			for (int i = 0; i < size; i++) {
+				value += 1 + random.nextInt(31);
+				values[i] = value;
+			}
+			byte[] encoded = PackedLongVector.encode(values, 0, values.length,
+					PackedLongVector.Hint.SORTED_RANDOM_ACCESS_IDS);
+			long vector = UnsafeAccess.allocateZeroed(encoded.length + PackedLongVector.READ_TAIL_PADDING);
+			try {
+				UnsafeAccess.copyFromArray(encoded, 0, vector, encoded.length);
+				for (int bits = 4; bits <= 7; bits++) {
+					int radixBytes = PackedLongVector.externalSearchRadixBytes(size, bits);
+					long nativeRadix = UnsafeAccess.allocateZeroed(radixBytes);
+					byte[] heapRadix = new byte[radixBytes];
+					try {
+						PackedLongVector.writeExternalSearchRadix(vector, size, nativeRadix, bits);
+						PackedLongVector.writeExternalSearchRadix(vector, size, heapRadix, bits);
+						for (int i = 0; i < size; i++) {
+							long target = values[i];
+							assertThat(PackedLongVector.nativeBinarySearchUnsigned(vector, size, target,
+									nativeRadix, bits)).isEqualTo(i);
+							assertThat(PackedLongVector.nativeBinarySearchUnsigned(vector, size, target,
+									heapRadix, bits)).isEqualTo(i);
+						}
+						for (int i = 0; i < 128; i++) {
+							long target = values[random.nextInt(size)] + random.nextInt(9) - 4;
+							int expected = referenceSearchUnsigned(values, target);
+							assertThat(PackedLongVector.nativeBinarySearchUnsigned(vector, size, target,
+									nativeRadix, bits)).isEqualTo(expected);
+							assertThat(PackedLongVector.nativeBinarySearchUnsigned(vector, size, target,
+									heapRadix, bits)).isEqualTo(expected);
+						}
+					} finally {
+						UnsafeAccess.free(nativeRadix);
+					}
+				}
+			} finally {
+				UnsafeAccess.free(vector);
+			}
+		}
+	}
+
+	@Test
+	void externalCumulativePrefixesHaveNativeAndHeapParity() {
+		java.util.Random random = new java.util.Random(0x51decaL);
+		int size = 4_097;
+		long[] deltas = new long[size];
+		for (int i = 0; i < size; i++) {
+			deltas[i] = random.nextInt(65);
+		}
+		byte[] encoded = PackedLongVector.encode(deltas, 0, deltas.length,
+				PackedLongVector.Hint.CUMULATIVE_DELTAS);
+		long vector = UnsafeAccess.allocateZeroed(encoded.length + PackedLongVector.READ_TAIL_PADDING);
+		try {
+			UnsafeAccess.copyFromArray(encoded, 0, vector, encoded.length);
+			for (int shift = 0; shift <= 6; shift++) {
+				int entries = PackedLongVector.externalPrefixEntries(size, shift);
+				if (entries == 0) {
+					continue;
+				}
+				long nativePrefix = UnsafeAccess.allocateZeroed((long) entries * Long.BYTES);
+				long[] heapPrefix = new long[entries];
+				try {
+					PackedLongVector.writeExternalBlockPrefixes(vector, size, nativePrefix, shift);
+					PackedLongVector.writeExternalBlockPrefixes(vector, size, heapPrefix, shift);
+					for (int round = 0; round < 1_000; round++) {
+						int from = random.nextInt(size + 1);
+						int length = random.nextInt(size - from + 1);
+						long expected = 0;
+						for (int i = 0; i < length; i++) {
+							expected += deltas[from + i];
+						}
+						assertThat(PackedLongVector.nativeRangeSum(vector, size, from, length,
+								nativePrefix, shift)).isEqualTo(expected);
+						assertThat(PackedLongVector.nativeRangeSum(vector, size, from, length,
+								heapPrefix, shift)).isEqualTo(expected);
+					}
+				} finally {
+					UnsafeAccess.free(nativePrefix);
+				}
+			}
+		} finally {
+			UnsafeAccess.free(vector);
+		}
+	}
+
+	@Test
 	void partialBlocksAtEveryWidthEndAtTheirExactDeclaredPayload() {
 		for (int width = 1; width <= Long.SIZE; width++) {
 			long[] values = valuesRequiringWidth(PackedLongVector.BLOCK_SIZE - 5, width);

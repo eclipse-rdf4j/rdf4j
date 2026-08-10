@@ -1,0 +1,171 @@
+diff a/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativePatternPlan.java b/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativePatternPlan.java	(rejected hunks)
+@@ -99,7 +99,7 @@ final class PatternPlan implements SlotPlan {
+ 
+ 	/** The raw quad cursor for this pattern under the current row, without the row-binding wrapper. */
+ 	PatternCursor openRaw(RowState row) throws IOException {
+-		return openRaw(row, null);
++		return openRaw(row, null, null);
+ 	}
+ 
+ 	/**
+@@ -107,7 +107,13 @@ final class PatternPlan implements SlotPlan {
+ 	 * repositioned across probes instead of re-created.
+ 	 */
+ 	PatternCursor openRaw(RowState row, NativeLmdbQuerySource.NativeProbe probe) throws IOException {
+-		return openRaw(row, probe, false);
++		return openRaw(row, probe, null);
++	}
++
++	/** Reopens the pattern into a caller-owned cursor, eliminating two wrapper allocations per join probe. */
++	PatternCursor openRaw(RowState row, NativeLmdbQuerySource.NativeProbe probe, PatternCursor reusable)
++			throws IOException {
++		return openRaw(row, probe, false, reusable);
+ 	}
+ 
+ 	/**
+@@ -116,11 +122,11 @@ final class PatternPlan implements SlotPlan {
+ 	 * that multiplicity.
+ 	 */
+ 	PatternCursor openRawForExistence(RowState row) throws IOException {
+-		return openRaw(row, null, true);
++		return openRaw(row, null, true, null);
+ 	}
+ 
+-	private PatternCursor openRaw(RowState row, NativeLmdbQuerySource.NativeProbe probe, boolean existenceOnly)
+-			throws IOException {
++	private PatternCursor openRaw(RowState row, NativeLmdbQuerySource.NativeProbe probe, boolean existenceOnly,
++			PatternCursor reusable) throws IOException {
+ 		if (contexts.isEmpty()) {
+ 			return PatternCursor.empty();
+ 		}
+@@ -133,19 +139,19 @@ final class PatternPlan implements SlotPlan {
+ 			return PatternCursor.empty();
+ 		}
+ 		if (doesNotProduceBindings(row.slots) && (existenceOnly || atMostOneQuadCanMatch(context))) {
+-			return openAsExistenceCheck(row.source, subj, pred, obj, context, accessObserver);
++			return openAsExistenceCheck(row.source, subj, pred, obj, context, accessObserver, reusable);
+ 		}
+ 		if (contexts.isFixed()) {
+ 			if (context != UNKNOWN) {
+ 				if (!contexts.contains(context)) {
+ 					return PatternCursor.empty();
+ 				}
+-				return PatternCursor.single(
++				return singleCursor(reusable,
+ 						openIterator(row.source, probe, subj, pred, obj, context, accessObserver, row.lmdbScanOnly));
+ 			}
+-			return openContexts(row.source, probe, subj, pred, obj, contexts.ids, accessObserver, row.lmdbScanOnly);
++			return openContexts(row.source, probe, subj, pred, obj, contexts.ids, accessObserver, row.lmdbScanOnly, reusable);
+ 		}
+-		return PatternCursor.single(
++		return singleCursor(reusable,
+ 				openIterator(row.source, probe, subj, pred, obj, context, accessObserver, row.lmdbScanOnly));
+ 	}
+ 
+@@ -208,12 +214,25 @@ final class PatternPlan implements SlotPlan {
+ 				return PatternCursor.single(
+ 						openIterator(row.source, probe, subj, pred, obj, context, accessObserver, row.lmdbScanOnly));
+ 			}
+-			return openContexts(row.source, probe, subj, pred, obj, contexts.ids, accessObserver, row.lmdbScanOnly);
++			return openContexts(row.source, probe, subj, pred, obj, contexts.ids, accessObserver, row.lmdbScanOnly, null);
+ 		}
+ 		return PatternCursor.single(
+ 				openIterator(row.source, probe, subj, pred, obj, context, accessObserver, row.lmdbScanOnly));
+ 	}
+ 
++	private static PatternCursor singleCursor(PatternCursor reusable, RecordIterator iterator) {
++		return reusable == null ? PatternCursor.single(iterator) : reusable.resetSingle(iterator);
++	}
++
++	private static PatternCursor existsCursor(PatternCursor reusable, boolean exists, long subj, long pred,
++			long obj, long context) {
++		if (!exists) {
++			return PatternCursor.empty();
++		}
++		return reusable == null ? PatternCursor.exists(true, subj, pred, obj, context)
++				: reusable.resetExists(subj, pred, obj, context);
++	}
++
+ 	private RecordIterator openIterator(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
+ 			long subj, long pred, long obj, long context,
+ 			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean lmdbScanOnly) throws IOException {
+@@ -233,10 +252,14 @@ final class PatternPlan implements SlotPlan {
+ 
+ 	private PatternCursor openContexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
+ 			long subj, long pred, long obj, long[] contextIds,
+-			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean lmdbScanOnly) throws IOException {
++			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean lmdbScanOnly,
++			PatternCursor reusable) throws IOException {
+ 		if (statementOrder == null) {
+-			return PatternCursor.contexts(source, probe, subj, pred, obj, contextIds, range, accessObserver,
+-					lmdbScanOnly);
++			return reusable == null
++					? PatternCursor.contexts(source, probe, subj, pred, obj, contextIds, range, accessObserver,
++							lmdbScanOnly)
++					: reusable.resetContexts(source, probe, subj, pred, obj, contextIds, range, accessObserver,
++							lmdbScanOnly);
+ 		}
+ 		List<RecordIterator> iterators = new ArrayList<>(contextIds.length);
+ 		try {
+@@ -245,7 +268,7 @@ final class PatternPlan implements SlotPlan {
+ 						? source.lmdbStatements(statementOrder, subj, pred, obj, contextId, accessObserver)
+ 						: source.statements(statementOrder, subj, pred, obj, contextId, accessObserver));
+ 			}
+-			return PatternCursor.single(OrderedRecordIterator.merge(iterators, statementOrder));
++			return singleCursor(reusable, OrderedRecordIterator.merge(iterators, statementOrder));
+ 		} catch (IOException | RuntimeException | Error e) {
+ 			for (RecordIterator iterator : iterators) {
+ 				iterator.close();
+@@ -484,24 +507,25 @@ final class PatternPlan implements SlotPlan {
+ 	}
+ 
+ 	PatternCursor openAsExistenceCheck(NativeLmdbQuerySource source, long subj, long pred, long obj,
+-			long context, NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver) throws IOException {
++			long context, NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, PatternCursor reusable)
++			throws IOException {
+ 		if (contexts.isFixed()) {
+ 			if (context != UNKNOWN) {
+-				return PatternCursor.exists(contexts.contains(context) && source.has(subj, pred, obj, context),
++				return existsCursor(reusable, contexts.contains(context) && source.has(subj, pred, obj, context),
+ 						subj,
+ 						pred, obj, context);
+ 			}
+ 			for (long contextId : contexts.ids) {
+ 				if (source.has(subj, pred, obj, contextId)) {
+-					return PatternCursor.exists(true, subj, pred, obj, contextId);
++					return existsCursor(reusable, true, subj, pred, obj, contextId);
+ 				}
+ 			}
+ 			return PatternCursor.empty();
+ 		}
+ 		if (namedContextScope && context == UNKNOWN) {
+-			return PatternCursor.single(source.statements(subj, pred, obj, context, accessObserver));
++			return singleCursor(reusable, source.statements(subj, pred, obj, context, accessObserver));
+ 		}
+-		return PatternCursor.exists(source.has(subj, pred, obj, context), subj, pred, obj, context);
++		return existsCursor(reusable, source.has(subj, pred, obj, context), subj, pred, obj, context);
+ 	}
+ 
+ 	boolean doesNotProduceBindings(long[] slots) {
+@@ -561,8 +585,11 @@ final class PatternRowCursor implements RowCursor {
+ 	@Override
+ 	public boolean next() throws IOException {
+ 		release();
+-		long[] quad;
+-		while ((quad = cursor.next()) != null) {
++		while (true) {
++			long[] quad = cursor.next();
++			if (quad == null) {
++				return false;
++			}
+ 			int mark = row.mark();
+ 			if (pattern.bind(quad, row)) {
+ 				activeMark = mark;
+@@ -570,7 +597,6 @@ final class PatternRowCursor implements RowCursor {
+ 			}
+ 			row.rollback(mark);
+ 		}
+-		return false;
+ 	}
+ 
+ 	@Override

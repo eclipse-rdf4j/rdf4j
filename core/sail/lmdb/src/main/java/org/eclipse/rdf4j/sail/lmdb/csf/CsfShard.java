@@ -174,9 +174,14 @@ final class CsfShard {
 
 			long outputPageBytes = 0;
 			long rowOrdinal = 0;
+			CompactCsfPageReader sourceReader = new CompactCsfPageReader();
 			for (int i = from; i < to; i++) {
 				PageSpec spec = pages[i];
-				CompactCsfPageReader source = spec.shared() ? spec.source.page(spec.sourcePage) : null;
+				CompactCsfPageReader source = null;
+				if (spec.shared()) {
+					spec.source.page(spec.sourcePage, sourceReader);
+					source = sourceReader;
+				}
 				CompactCsfPageEncoder.PageImage image = spec.image;
 				int capacity = image != null ? image.capacity() : source.capacity();
 				int used = image != null ? image.usedBytes() : source.usedBytes();
@@ -263,12 +268,6 @@ final class CsfShard {
 		return retainedPhysicalBytes;
 	}
 
-	CompactCsfPageReader page(int localPage) {
-		CompactCsfPageReader reader = new CompactCsfPageReader();
-		page(localPage, reader);
-		return reader;
-	}
-
 	void page(int localPage, CompactCsfPageReader target) {
 		if (localPage < 0 || localPage >= pageCount) {
 			throw new IllegalArgumentException("local page out of range: " + localPage + " of " + pageCount);
@@ -298,49 +297,47 @@ final class CsfShard {
 			throw new IllegalStateException("CSF shard page address is null");
 		}
 		if (!validated[localPage]) {
-			CompactCsfPageReader validator = new CompactCsfPageReader();
-			validator.resolve(pageAddress);
+			CompactCsfPageReader.validatePage(pageAddress);
 			validated[localPage] = true;
 		}
 		return pageAddress;
 	}
 
-	/** Random row-id access without allocating a transient page reader after the page's one-time validation. */
+	/** Random row-id access without allocating a transient page reader after one-time validation. */
 	long rowAt(int localPage, int localRow) {
-		if (localPage < 0 || localPage >= pageCount) {
-			throw new IllegalArgumentException("local page out of range: " + localPage + " of " + pageCount);
-		}
-		long pageAddress = UnsafeAccess.getLongLE(entry(localPage) + PAGE_ADDRESS_AT);
-		if (pageAddress == 0) {
-			throw new IllegalStateException("CSF shard page address is null");
-		}
-		if (!validated[localPage]) {
-			CompactCsfPageReader validator = new CompactCsfPageReader();
-			validator.resolve(pageAddress);
-			validated[localPage] = true;
-			return validator.rowAt(localRow);
-		}
-		return CompactCsfPageReader.trustedRowAt(pageAddress, localRow);
+		return CompactCsfPageReader.trustedRowAt(validatedPageAddress(localPage), localRow);
 	}
 
-	/**
-	 * Header-only test of whether the page at {@code localPage} is an extent continuation of {@code expectedRow}. Reads
-	 * only the page's flags and first-row header words, without binding vectors or validating the page, so extent-chain
-	 * peeks do not disturb (and later force re-resolution of) a caller's working reader.
-	 */
+	boolean pageIsContinuation(int localPage) {
+		long pageAddress = validatedPageAddress(localPage);
+		return (UnsafeAccess.getUnsignedShortLE(pageAddress + CompactCsfPageFormat.FLAGS_AT)
+				& CompactCsfPageFormat.FLAG_CONTINUATION) != 0;
+	}
+
 	boolean pageIsContinuation(int localPage, long expectedRow) {
-		if (localPage < 0 || localPage >= pageCount) {
-			throw new IllegalArgumentException("local page out of range: " + localPage + " of " + pageCount);
+		long pageAddress = validatedPageAddress(localPage);
+		return (UnsafeAccess.getUnsignedShortLE(pageAddress + CompactCsfPageFormat.FLAGS_AT)
+				& CompactCsfPageFormat.FLAG_CONTINUATION) != 0
+				&& UnsafeAccess.getLongLE(pageAddress + CompactCsfPageFormat.FIRST_ROW_AT) == expectedRow;
+	}
+
+	long pageLastRow(int localPage) {
+		return UnsafeAccess.getLongLE(validatedPageAddress(localPage) + CompactCsfPageFormat.LAST_ROW_AT);
+	}
+
+	int findRow(int localPage, long row) {
+		long pageAddress = validatedPageAddress(localPage);
+		int rows = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_COUNT_AT);
+		long rowIds = pageAddress
+				+ UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_IDS_OFFSET_AT);
+		int descriptor = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ACCELERATOR_DESCRIPTOR_AT);
+		int bits = CompactCsfPageAccelerators.rowRadixBits(descriptor);
+		if (bits == 0) {
+			return PackedLongVector.nativeBinarySearchUnsigned(rowIds, rows, row);
 		}
-		long pageAddress = UnsafeAccess.getLongLE(entry(localPage) + PAGE_ADDRESS_AT);
-		if (pageAddress == 0) {
-			throw new IllegalStateException("CSF shard page address is null");
-		}
-		int flags = UnsafeAccess.getUnsignedShortLE(pageAddress + CompactCsfPageFormat.FLAGS_AT);
-		if ((flags & CompactCsfPageFormat.FLAG_CONTINUATION) == 0) {
-			return false;
-		}
-		return UnsafeAccess.getLongLE(pageAddress + CompactCsfPageFormat.FIRST_ROW_AT) == expectedRow;
+		long radix = pageAddress
+				+ UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ACCELERATOR_OFFSET_AT);
+		return PackedLongVector.nativeBinarySearchUnsigned(rowIds, rows, row, radix, bits);
 	}
 
 	long pageFirstRow(int localPage) {
@@ -420,9 +417,14 @@ final class CsfShard {
 		long firstRow = 0;
 		long lastRow = 0;
 		int maxDepth = 0;
+		CompactCsfPageReader sourceReader = new CompactCsfPageReader();
 		for (int i = from; i < to; i++) {
 			PageSpec spec = pages[i];
-			CompactCsfPageReader source = spec.shared() ? spec.source.page(spec.sourcePage) : null;
+			CompactCsfPageReader source = null;
+			if (spec.shared()) {
+				spec.source.page(spec.sourcePage, sourceReader);
+				source = sourceReader;
+			}
 			CompactCsfPageEncoder.PageImage image = spec.image;
 			int pageCapacity = image != null ? image.capacity() : source.capacity();
 			int pageUsed = image != null ? image.usedBytes() : source.usedBytes();

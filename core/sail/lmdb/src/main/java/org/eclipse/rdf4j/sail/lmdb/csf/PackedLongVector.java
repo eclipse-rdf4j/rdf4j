@@ -62,6 +62,11 @@ final class PackedLongVector {
 		SORTED_SEQUENTIAL_IDS,
 		SORTED_RANDOM_ACCESS_IDS,
 		SORTED_RANDOM_ACCESS_VALUES,
+		/** Random-access counts: independently decodable, but never cumulative-indexed. */
+		COUNTS_RANDOM_ACCESS,
+		/** Delta/count lanes consumed cumulatively; page-slack or hot-cursor prefixes may accelerate them. */
+		CUMULATIVE_DELTAS,
+		/** Legacy alias retained for source compatibility; encoded without persistent metadata. */
 		COUNTS_OR_DELTAS
 	}
 
@@ -298,6 +303,21 @@ final class PackedLongVector {
 	 * immutable vector.
 	 */
 	static int nativeBinarySearchUnsigned(long address, int size, long target) {
+		return nativeBinarySearchUnsigned(address, size, target, 0, null, 0);
+	}
+
+	/** Exact unsigned lookup using a page-slack native radix directory when one is available. */
+	static int nativeBinarySearchUnsigned(long address, int size, long target, long radixAddress, int radixBits) {
+		return nativeBinarySearchUnsigned(address, size, target, radixAddress, null, radixBits);
+	}
+
+	/** Exact unsigned lookup using a hot-cursor heap radix directory when one has earned promotion. */
+	static int nativeBinarySearchUnsigned(long address, int size, long target, byte[] radix, int radixBits) {
+		return nativeBinarySearchUnsigned(address, size, target, 0, radix, radixBits);
+	}
+
+	private static int nativeBinarySearchUnsigned(long address, int size, long target, long radixAddress,
+			byte[] radix, int radixBits) {
 		int storedBlockCount = UnsafeAccess.getIntLE(address + Integer.BYTES);
 		int blockCount = storedBlockCount & BLOCK_COUNT_MASK;
 		if (blockCount == 0) {
@@ -386,28 +406,34 @@ final class PackedLongVector {
 
 		int low = 0;
 		int high = count - 1;
-		if (storedBlockCount < 0) {
-			int radixBits = decodeSearchRadixBits(storedBlockCount);
+		boolean externalRadix = radixAddress != 0 || radix != null;
+		if (externalRadix || storedBlockCount < 0) {
+			if (!externalRadix) {
+				radixBits = decodeSearchRadixBits(storedBlockCount);
+			}
 			int radixStride = 1 << radixBits;
 			int bucket = radixBucket(targetResidual, width, radixBits);
-			long radixAddress = address + HEADER_BYTES + (long) (blockCount + 1) * Integer.BYTES
-					+ (long) candidate * radixStride;
-			low = nativeSearchBoundary(radixAddress, bucket, count, radixStride);
-			int end = nativeSearchBoundary(radixAddress, bucket + 1, count, radixStride);
-			int lane = end - 1;
-			if (lane < low) {
-				return -1;
+			if (radix != null) {
+				int radixAt = candidate * radixStride;
+				low = arraySearchBoundary(radix, radixAt, bucket, count, radixStride, payload, width, radixBits);
+				int end = arraySearchBoundary(radix, radixAt, bucket + 1, count, radixStride, payload, width,
+						radixBits);
+				high = verifyRadixTail(payload, width, typed, type, targetKey, blockStart, low, end);
+				if (high < -1) {
+					return -high - 2;
+				}
+			} else {
+				long blockRadix = radixAddress != 0 ? radixAddress + (long) candidate * radixStride
+						: address + HEADER_BYTES + (long) (blockCount + 1) * Integer.BYTES
+								+ (long) candidate * radixStride;
+				low = nativeSearchBoundary(blockRadix, bucket, count, radixStride, payload, width, radixBits);
+				int end = nativeSearchBoundary(blockRadix, bucket + 1, count, radixStride, payload, width,
+						radixBits);
+				high = verifyRadixTail(payload, width, typed, type, targetKey, blockStart, low, end);
+				if (high < -1) {
+					return -high - 2;
+				}
 			}
-			long residual = readBits(payload, lane * width, width);
-			long key = typed ? residual << 7 | (long) type << 1 : residual;
-			int comparison = Long.compareUnsigned(key, targetKey);
-			if (comparison == 0) {
-				return blockStart + lane;
-			}
-			if (comparison < 0) {
-				return -1;
-			}
-			high = lane - 1;
 		}
 		while (low <= high) {
 			int lane = low + high >>> 1;
@@ -425,7 +451,24 @@ final class PackedLongVector {
 		return -1;
 	}
 
-	private static int nativeSearchBoundary(long radixAddress, int bucket, int count, int stride) {
+	/** Returns a binary-search high lane, or {@code -ordinal-2} when the bucket tail itself is an exact hit. */
+	private static int verifyRadixTail(long payload, int width, boolean typed, int type, long targetKey,
+			int blockStart, int low, int end) {
+		int lane = end - 1;
+		if (lane < low) {
+			return -1;
+		}
+		long residual = readBits(payload, lane * width, width);
+		long key = typed ? residual << 7 | (long) type << 1 : residual;
+		int comparison = Long.compareUnsigned(key, targetKey);
+		if (comparison == 0) {
+			return -(blockStart + lane) - 2;
+		}
+		return comparison < 0 ? -1 : lane - 1;
+	}
+
+	private static int nativeSearchBoundary(long radixAddress, int bucket, int count, int stride, long payload,
+			int width, int radixBits) {
 		if (bucket <= 0) {
 			return 0;
 		}
@@ -433,7 +476,205 @@ final class PackedLongVector {
 			return count;
 		}
 		int boundary = UnsafeAccess.getUnsignedByte(radixAddress + bucket);
-		return boundary == 0 ? count : boundary;
+		return boundary != 0 || count < BLOCK_SIZE ? boundary
+				: zeroSearchBoundary(bucket, payload, width, radixBits);
+	}
+
+	private static int arraySearchBoundary(byte[] radix, int radixAt, int bucket, int count, int stride,
+			long payload, int width, int radixBits) {
+		if (bucket <= 0) {
+			return 0;
+		}
+		if (bucket >= stride) {
+			return count;
+		}
+		int boundary = UnsafeAccess.getUnsignedByte(radix, radixAt + bucket);
+		return boundary != 0 || count < BLOCK_SIZE ? boundary
+				: zeroSearchBoundary(bucket, payload, width, radixBits);
+	}
+
+	/* A byte can encode lane 0 or the full-block terminal lane 256 as zero; inspect lane zero only in that case. */
+	private static int zeroSearchBoundary(int bucket, long payload, int width, int radixBits) {
+		long firstResidual = width == 0 ? 0 : readBits(payload, 0, width);
+		return radixBucket(firstResidual, width, radixBits) >= bucket ? 0 : BLOCK_SIZE;
+	}
+
+	static int nativeBlockCount(long address) {
+		return UnsafeAccess.getIntLE(address + Integer.BYTES) & BLOCK_COUNT_MASK;
+	}
+
+	static int externalSearchRadixBytes(int size, int radixBits) {
+		if (radixBits < 1 || radixBits > 12) {
+			throw new IllegalArgumentException("search radix bits out of range: " + radixBits);
+		}
+		int blockCount = (size + BLOCK_SIZE - 1) >>> 8;
+		return Math.multiplyExact(blockCount, 1 << radixBits);
+	}
+
+	/** Writes a block-local high-bit directory into native page slack. */
+	static void writeExternalSearchRadix(long vectorAddress, int size, long radixAddress, int radixBits) {
+		int bytes = externalSearchRadixBytes(size, radixBits);
+		UnsafeAccess.clear(radixAddress, bytes);
+		int stride = 1 << radixBits;
+		int blockCount = nativeBlockCount(vectorAddress);
+		for (int block = 0; block < blockCount; block++) {
+			long blockAddress = vectorAddress
+					+ UnsafeAccess.getIntLE(vectorAddress + HEADER_BYTES + (long) block * Integer.BYTES);
+			writeExternalSearchRadixBlock(blockAddress, radixAddress + (long) block * stride, null, 0,
+					radixBits);
+		}
+	}
+
+	/** Writes a block-local high-bit directory into a reusable hot-cursor array. */
+	static void writeExternalSearchRadix(long vectorAddress, int size, byte[] radix, int radixBits) {
+		int bytes = externalSearchRadixBytes(size, radixBits);
+		if (radix.length < bytes) {
+			throw new IllegalArgumentException("search radix target is too small: " + radix.length + " < " + bytes);
+		}
+		Arrays.fill(radix, 0, bytes, (byte) 0);
+		int stride = 1 << radixBits;
+		int blockCount = nativeBlockCount(vectorAddress);
+		for (int block = 0; block < blockCount; block++) {
+			long blockAddress = vectorAddress
+					+ UnsafeAccess.getIntLE(vectorAddress + HEADER_BYTES + (long) block * Integer.BYTES);
+			writeExternalSearchRadixBlock(blockAddress, 0, radix, block * stride, radixBits);
+		}
+	}
+
+	static void writeExternalSearchRadix(byte[] page, int vectorAt, int size, int radixAt, int radixBits) {
+		int bytes = externalSearchRadixBytes(size, radixBits);
+		Arrays.fill(page, radixAt, radixAt + bytes, (byte) 0);
+		int stride = 1 << radixBits;
+		int blockCount = (size + BLOCK_SIZE - 1) >>> 8;
+		for (int block = 0; block < blockCount; block++) {
+			int blockAt = vectorAt + LeBytes.getInt(page, vectorAt + HEADER_BYTES + block * Integer.BYTES);
+			int mode = page[blockAt] & MODE_MASK;
+			if ((mode & MODE_DELTA_RAW) != 0) {
+				throw new IllegalStateException("external search radix requires FOR blocks");
+			}
+			int width = page[blockAt + 1] & 0xff;
+			int count = LeBytes.getUnsignedShort(page, blockAt + 2);
+			int payloadAt = blockAt + BLOCK_HEADER_BYTES;
+			int nextBucket = 1;
+			for (int lane = 0; lane < count; lane++) {
+				long residual = width == 0 ? 0 : readBits(page, payloadAt, (long) lane * width, width);
+				int bucket = radixBucket(residual, width, radixBits);
+				while (nextBucket <= bucket) {
+					page[radixAt + block * stride + nextBucket++] = (byte) lane;
+				}
+			}
+			while (nextBucket < stride) {
+				page[radixAt + block * stride + nextBucket++] = (byte) count;
+			}
+		}
+	}
+
+	private static void writeExternalSearchRadixBlock(long blockAddress, long nativeRadix, byte[] heapRadix,
+			int heapAt, int radixBits) {
+		int header = UnsafeAccess.getIntLE(blockAddress);
+		if ((header & MODE_DELTA_RAW) != 0) {
+			throw new IllegalStateException("external search radix requires FOR blocks");
+		}
+		int width = header >>> Byte.SIZE & 0xff;
+		int count = header >>> Short.SIZE;
+		long payload = blockAddress + BLOCK_HEADER_BYTES;
+		int stride = 1 << radixBits;
+		int nextBucket = 1;
+		for (int lane = 0; lane < count; lane++) {
+			long residual = width == 0 ? 0 : readBits(payload, lane * width, width);
+			int bucket = radixBucket(residual, width, radixBits);
+			while (nextBucket <= bucket) {
+				if (heapRadix == null) {
+					UnsafeAccess.putByte(nativeRadix + nextBucket, (byte) lane);
+				} else {
+					heapRadix[heapAt + nextBucket] = (byte) lane;
+				}
+				nextBucket++;
+			}
+		}
+		while (nextBucket < stride) {
+			if (heapRadix == null) {
+				UnsafeAccess.putByte(nativeRadix + nextBucket, (byte) count);
+			} else {
+				heapRadix[heapAt + nextBucket] = (byte) count;
+			}
+			nextBucket++;
+		}
+	}
+
+	static int externalPrefixEntries(int size, int strideShift) {
+		if (strideShift < 0 || strideShift > 6) {
+			throw new IllegalArgumentException("prefix stride shift out of range: " + strideShift);
+		}
+		int blockCount = (size + BLOCK_SIZE - 1) >>> 8;
+		return blockCount >>> strideShift;
+	}
+
+	static int externalPrefixBytes(int size, int strideShift) {
+		return Math.multiplyExact(externalPrefixEntries(size, strideShift), Long.BYTES);
+	}
+
+	/** Writes wrapped prefixes into native page slack; prefix zero remains implicit. */
+	static void writeExternalBlockPrefixes(long vectorAddress, int size, long prefixAddress, int strideShift) {
+		int entries = externalPrefixEntries(size, strideShift);
+		UnsafeAccess.clear(prefixAddress, (long) entries * Long.BYTES);
+		int stride = 1 << strideShift;
+		int blockCount = nativeBlockCount(vectorAddress);
+		long sum = 0;
+		int output = 0;
+		for (int block = 0; block < blockCount; block++) {
+			long blockAddress = vectorAddress
+					+ UnsafeAccess.getIntLE(vectorAddress + HEADER_BYTES + (long) block * Integer.BYTES);
+			sum = sumNativeBlock(blockAddress, 0, expectedBlockCount(size, block), sum);
+			if (((block + 1) & (stride - 1)) == 0) {
+				UnsafeAccess.putLongLE(prefixAddress + (long) output++ * Long.BYTES, sum);
+			}
+		}
+		if (output != entries) {
+			throw new IllegalStateException("external prefix encoder length mismatch");
+		}
+	}
+
+	/** Writes wrapped prefixes into a reusable hot-reader array. */
+	static void writeExternalBlockPrefixes(long vectorAddress, int size, long[] prefixes, int strideShift) {
+		int entries = externalPrefixEntries(size, strideShift);
+		if (prefixes.length < entries) {
+			throw new IllegalArgumentException("prefix target is too small: " + prefixes.length + " < " + entries);
+		}
+		int stride = 1 << strideShift;
+		int blockCount = nativeBlockCount(vectorAddress);
+		long sum = 0;
+		int output = 0;
+		for (int block = 0; block < blockCount; block++) {
+			long blockAddress = vectorAddress
+					+ UnsafeAccess.getIntLE(vectorAddress + HEADER_BYTES + (long) block * Integer.BYTES);
+			sum = sumNativeBlock(blockAddress, 0, expectedBlockCount(size, block), sum);
+			if (((block + 1) & (stride - 1)) == 0) {
+				prefixes[output++] = sum;
+			}
+		}
+		if (output != entries) {
+			throw new IllegalStateException("external prefix encoder length mismatch");
+		}
+	}
+
+	static void writeExternalBlockPrefixes(byte[] page, int vectorAt, int size, int prefixAt, int strideShift) {
+		int entries = externalPrefixEntries(size, strideShift);
+		Arrays.fill(page, prefixAt, prefixAt + entries * Long.BYTES, (byte) 0);
+		int stride = 1 << strideShift;
+		int blockCount = (size + BLOCK_SIZE - 1) >>> 8;
+		long sum = 0;
+		int output = 0;
+		for (int block = 0; block < blockCount; block++) {
+			int blockAt = vectorAt + LeBytes.getInt(page, vectorAt + HEADER_BYTES + block * Integer.BYTES);
+			sum = sumArrayBlock(page, blockAt, expectedBlockCount(size, block), sum);
+			if (((block + 1) & (stride - 1)) == 0) {
+				LeBytes.putLong(page, prefixAt + output++ * Long.BYTES, sum);
+			}
+		}
+		if (output != entries) {
+			throw new IllegalStateException("external prefix encoder length mismatch");
+		}
 	}
 
 	/**
@@ -444,6 +685,24 @@ final class PackedLongVector {
 	static void nativeCopyCumulative(long address, int size, int fromOrdinal, int skipped, int length, long initial,
 			long[] target, int targetOffset) {
 		long value = initial + nativeRangeSum(address, size, fromOrdinal, skipped);
+		target[targetOffset] = value;
+		if (length > 1) {
+			nativePrefixSum(address, size, fromOrdinal + skipped, length - 1, value, target, targetOffset + 1);
+		}
+	}
+
+	static void nativeCopyCumulative(long address, int size, int fromOrdinal, int skipped, int length, long initial,
+			long[] target, int targetOffset, long prefixAddress, int prefixStrideShift) {
+		long value = initial + nativeRangeSum(address, size, fromOrdinal, skipped, prefixAddress, prefixStrideShift);
+		target[targetOffset] = value;
+		if (length > 1) {
+			nativePrefixSum(address, size, fromOrdinal + skipped, length - 1, value, target, targetOffset + 1);
+		}
+	}
+
+	static void nativeCopyCumulative(long address, int size, int fromOrdinal, int skipped, int length, long initial,
+			long[] target, int targetOffset, long[] prefixes, int prefixStrideShift) {
+		long value = initial + nativeRangeSum(address, size, fromOrdinal, skipped, prefixes, prefixStrideShift);
 		target[targetOffset] = value;
 		if (length > 1) {
 			nativePrefixSum(address, size, fromOrdinal + skipped, length - 1, value, target, targetOffset + 1);
@@ -462,6 +721,63 @@ final class PackedLongVector {
 		}
 		return nativePrefixValue(address, size, fromOrdinal + length)
 				- nativePrefixValue(address, size, fromOrdinal);
+	}
+
+	static long nativeRangeSum(long address, int size, int fromOrdinal, int length, long prefixAddress,
+			int prefixStrideShift) {
+		if (prefixAddress == 0 || length == 0) {
+			return nativeRangeSum(address, size, fromOrdinal, length);
+		}
+		if (length <= 32 && (fromOrdinal >>> 8) == ((fromOrdinal + length - 1) >>> 8)) {
+			return nativeSum(address, size, fromOrdinal, length, 0);
+		}
+		return nativeExternalPrefixValue(address, size, fromOrdinal + length, prefixAddress, null,
+				prefixStrideShift)
+				- nativeExternalPrefixValue(address, size, fromOrdinal, prefixAddress, null, prefixStrideShift);
+	}
+
+	static long nativeRangeSum(long address, int size, int fromOrdinal, int length, long[] prefixes,
+			int prefixStrideShift) {
+		if (prefixes == null || length == 0) {
+			return nativeRangeSum(address, size, fromOrdinal, length);
+		}
+		if (length <= 32 && (fromOrdinal >>> 8) == ((fromOrdinal + length - 1) >>> 8)) {
+			return nativeSum(address, size, fromOrdinal, length, 0);
+		}
+		return nativeExternalPrefixValue(address, size, fromOrdinal + length, 0, prefixes, prefixStrideShift)
+				- nativeExternalPrefixValue(address, size, fromOrdinal, 0, prefixes, prefixStrideShift);
+	}
+
+	private static long nativeExternalPrefixValue(long address, int size, int endOrdinal, long prefixAddress,
+			long[] prefixes, int strideShift) {
+		if (endOrdinal <= 0) {
+			return 0;
+		}
+		int blockCount = nativeBlockCount(address);
+		int block = endOrdinal >>> 8;
+		int lane = endOrdinal & (BLOCK_SIZE - 1);
+		if (block > blockCount || block == blockCount && lane != 0) {
+			throw new IllegalArgumentException("prefix ordinal out of range: " + endOrdinal + " of " + size);
+		}
+		int stride = 1 << strideShift;
+		int anchor = block & -stride;
+		long sum = 0;
+		if (anchor != 0) {
+			int prefixIndex = anchor / stride - 1;
+			sum = prefixes == null ? UnsafeAccess.getLongLE(prefixAddress + (long) prefixIndex * Long.BYTES)
+					: prefixes[prefixIndex];
+		}
+		for (int b = anchor; b < block; b++) {
+			long blockAddress = address
+					+ UnsafeAccess.getIntLE(address + HEADER_BYTES + (long) b * Integer.BYTES);
+			sum = sumNativeBlock(blockAddress, 0, expectedBlockCount(size, b), sum);
+		}
+		if (lane != 0) {
+			long blockAddress = address
+					+ UnsafeAccess.getIntLE(address + HEADER_BYTES + (long) block * Integer.BYTES);
+			sum = sumNativeBlock(blockAddress, 0, lane, sum);
+		}
+		return sum;
 	}
 
 	/** Wrapped sum of logical lanes in {@code [0,endOrdinal)}, decoding at most one 64-value segment. */
@@ -556,12 +872,17 @@ final class PackedLongVector {
 	}
 
 	private static boolean searchIndexed(Hint hint, int blockCount) {
-		return blockCount != 0
-				&& (hint == Hint.SORTED_RANDOM_ACCESS_IDS || hint == Hint.SORTED_RANDOM_ACCESS_VALUES);
+		/*
+		 * Search metadata inside every vector scales with the complete dataset. Compact pages instead use free slab
+		 * slack, and hot cursors may build a tiny reusable directory after measured reuse. Keep reading the historical
+		 * flagged form, but never emit it for new vectors.
+		 */
+		return false;
 	}
 
 	private static boolean prefixIndexed(Hint hint, int blockCount) {
-		return blockCount > 1 && hint == Hint.COUNTS_OR_DELTAS;
+		/* Same policy as searchIndexed: no dataset-sized cumulative sidecars in newly encoded vectors. */
+		return false;
 	}
 
 	private static long addBlockValues(long sum, long[] values, int count) {
@@ -1454,7 +1775,10 @@ final class PackedLongVector {
 
 		/* Last searched block descriptor. Readers are explicitly single-cursor state. */
 		private int cachedSearchBlock = -1;
-		private long cachedBlockAddress;
+		/** Lazy heap radix retained only after enough packed probes have paid its construction cost. */
+		private byte[] adaptiveSearchRadix;
+		/** Negative: observed unindexed searches; positive: radix bits; MIN_VALUE: ineligible/refused. */
+		private int adaptiveSearchState;
 		private int cachedBlockHeader;
 		private long cachedBlockBase;
 		private long cachedBlockPayload;
@@ -1511,6 +1835,11 @@ final class PackedLongVector {
 			searchHintIndex = -1;
 			smallDirectoryReady = false;
 			cachedSearchBlock = -1;
+			adaptiveSearchState = 0;
+			if (adaptiveSearchRadix != null && CsfAdaptiveMemory.underPressure()) {
+				adaptiveSearchRadix = null;
+				CsfAdaptiveMemory.released();
+			}
 		}
 
 		int size() {
@@ -1532,11 +1861,12 @@ final class PackedLongVector {
 				return hint;
 			}
 			int block = cachedSearchBlock;
-			if (block >= 0 && Long.compareUnsigned(target, cachedBlockFirst) >= 0
-					&& (block + 1 == blockCount || Long.compareUnsigned(target, cachedBlockUpper) < 0)) {
-				return searchCachedBlock(target);
-			}
-			return searchWholeVector(target);
+			int result = block >= 0 && Long.compareUnsigned(target, cachedBlockFirst) >= 0
+					&& (block + 1 == blockCount || Long.compareUnsigned(target, cachedBlockUpper) < 0)
+							? searchCachedBlock(target)
+							: searchWholeVector(target);
+			recordAdaptiveSearchUse();
+			return result;
 		}
 
 		private int searchWholeVector(long target) {
@@ -1627,7 +1957,6 @@ final class PackedLongVector {
 
 		private void cacheSearchBlock(int block, long blockAddress, int header, long base) {
 			cachedSearchBlock = block;
-			cachedBlockAddress = blockAddress;
 			cachedBlockHeader = header;
 			cachedBlockBase = base;
 			cachedBlockPayload = blockAddress + BLOCK_HEADER_BYTES;
@@ -1680,13 +2009,27 @@ final class PackedLongVector {
 			if (width < Long.SIZE && targetResidual >>> width != 0) {
 				return rememberLastLane(blockStart, count, width, prefix, typed, type);
 			}
-			if (!searchIndexed) {
+			int adaptiveBits = adaptiveSearchState > 0 ? adaptiveSearchState : 0;
+			if (!searchIndexed && adaptiveBits == 0) {
 				return binarySearchForBlock(targetKey, prefix, typed, type, width, blockStart, 0, count - 1);
 			}
 
-			int bucket = radixBucket(targetResidual, width, searchRadixBits);
-			long radixAddress = searchRadixAddress + (long) cachedSearchBlock * searchRadixStride;
-			int end = searchBoundary(radixAddress, bucket + 1, count);
+			int radixBits = adaptiveBits != 0 ? adaptiveBits : searchRadixBits;
+			int radixStride = 1 << radixBits;
+			int bucket = radixBucket(targetResidual, width, radixBits);
+			int end;
+			int low;
+			if (adaptiveBits != 0) {
+				int radixAt = cachedSearchBlock * radixStride;
+				end = arraySearchBoundary(adaptiveSearchRadix, radixAt, bucket + 1, count, radixStride,
+						cachedBlockPayload, width, radixBits);
+				low = arraySearchBoundary(adaptiveSearchRadix, radixAt, bucket, count, radixStride,
+						cachedBlockPayload, width, radixBits);
+			} else {
+				long radixAddress = searchRadixAddress + (long) cachedSearchBlock * searchRadixStride;
+				end = searchBoundary(radixAddress, bucket + 1, count);
+				low = searchBoundary(radixAddress, bucket, count);
+			}
 			int candidate = end - 1;
 			if (candidate < 0) {
 				return -1;
@@ -1701,8 +2044,43 @@ final class PackedLongVector {
 				return rememberFloor(blockStart + candidate, prefix + key);
 			}
 
-			int low = searchBoundary(radixAddress, bucket, count);
 			return binarySearchForBlock(targetKey, prefix, typed, type, width, blockStart, low, candidate - 1);
+		}
+
+		private void recordAdaptiveSearchUse() {
+			if (searchIndexed || size < CompactCsfPageAccelerators.MIN_INDEXED_ROWS
+					|| adaptiveSearchState > 0 || adaptiveSearchState == Integer.MIN_VALUE) {
+				return;
+			}
+			int lookups = adaptiveSearchState == 0 ? 1 : -adaptiveSearchState + 1;
+			adaptiveSearchState = -lookups;
+			int packedProbes = Integer.SIZE - Integer.numberOfLeadingZeros(Math.min(size, BLOCK_SIZE) - 1);
+			int savedProbes = Math.max(1, packedProbes - 2);
+			int breakEven = Math.max(32, (size + savedProbes - 1) / savedProbes);
+			if (lookups >= breakEven) {
+				promoteAdaptiveSearchRadix();
+			}
+		}
+
+		private void promoteAdaptiveSearchRadix() {
+			for (int block = 0; block < blockCount; block++) {
+				long blockAddress = address
+						+ UnsafeAccess.getIntLE(address + HEADER_BYTES + (long) block * Integer.BYTES);
+				if ((UnsafeAccess.getUnsignedByte(blockAddress) & MODE_DELTA_RAW) != 0) {
+					adaptiveSearchState = Integer.MIN_VALUE;
+					return;
+				}
+			}
+			int bits = searchRadixBits(blockCount);
+			int bytes = externalSearchRadixBytes(size, bits);
+			byte[] radix = CsfAdaptiveMemory.tryByteArray(adaptiveSearchRadix, bytes);
+			if (radix == null) {
+				adaptiveSearchState = Integer.MIN_VALUE;
+				return;
+			}
+			writeExternalSearchRadix(address, size, radix, bits);
+			adaptiveSearchRadix = radix;
+			adaptiveSearchState = bits;
 		}
 
 		private int binarySearchForBlock(long targetKey, long prefix, boolean typed, int type, int width,

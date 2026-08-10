@@ -1,0 +1,153 @@
+diff a/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativePatternTerms.java b/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativePatternTerms.java	(rejected hunks)
+@@ -108,20 +108,25 @@ final class ContextConstraint {
+ final class PatternCursor implements AutoCloseable {
+ 	static final PatternCursor EMPTY = new PatternCursor(null, null, UNKNOWN, UNKNOWN, UNKNOWN, null);
+ 
+-	final NativeLmdbQuerySource source;
+-	final NativeLmdbQuerySource.NativeProbe probe;
+-	final long subj;
+-	final long pred;
+-	final long obj;
+-	final long[] contexts;
+-	final LmdbKeyRange range;
+-	final NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver;
+-	final boolean lmdbScanOnly;
++	NativeLmdbQuerySource source;
++	NativeLmdbQuerySource.NativeProbe probe;
++	long subj;
++	long pred;
++	long obj;
++	long[] contexts;
++	LmdbKeyRange range;
++	NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver;
++	boolean lmdbScanOnly;
+ 	int contextIndex;
+ 	RecordIterator current;
+ 	long[] syntheticRow;
++	boolean syntheticPending;
+ 	boolean closed;
+ 
++	PatternCursor() {
++		this(null, null, UNKNOWN, UNKNOWN, UNKNOWN, null);
++	}
++
+ 	PatternCursor(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
+ 			long pred, long obj, long[] contexts) {
+ 		this(source, probe, subj, pred, obj, contexts, null, null);
+@@ -136,6 +141,52 @@ final class PatternCursor implements AutoCloseable {
+ 	PatternCursor(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
+ 			long pred, long obj, long[] contexts, LmdbKeyRange range,
+ 			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean lmdbScanOnly) {
++		configure(source, probe, subj, pred, obj, contexts, range, accessObserver, lmdbScanOnly);
++	}
++
++	/** Reinitializes this caller-owned cursor without allocating another wrapper for every join probe. */
++	PatternCursor resetSingle(RecordIterator iterator) {
++		prepareReset();
++		configure(null, null, UNKNOWN, UNKNOWN, UNKNOWN, null, null, null, false);
++		current = iterator;
++		return this;
++	}
++
++	PatternCursor resetContexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
++			long pred, long obj, long[] contexts, LmdbKeyRange range,
++			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean lmdbScanOnly) {
++		prepareReset();
++		configure(source, probe, subj, pred, obj, contexts, range, accessObserver, lmdbScanOnly);
++		return this;
++	}
++
++	PatternCursor resetExists(long subj, long pred, long obj, long context) {
++		prepareReset();
++		configure(null, null, UNKNOWN, UNKNOWN, UNKNOWN, null, null, null, false);
++		if (syntheticRow == null) {
++			syntheticRow = new long[4];
++		}
++		syntheticRow[0] = subj;
++		syntheticRow[1] = pred;
++		syntheticRow[2] = obj;
++		syntheticRow[3] = context;
++		syntheticPending = true;
++		return this;
++	}
++
++	private void prepareReset() {
++		if (current != null) {
++			current.close();
++			current = null;
++		}
++		contextIndex = 0;
++		syntheticPending = false;
++		closed = false;
++	}
++
++	private void configure(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
++			long pred, long obj, long[] contexts, LmdbKeyRange range,
++			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean lmdbScanOnly) {
+ 		this.source = source;
+ 		this.probe = probe;
+ 		this.subj = subj;
+@@ -145,6 +196,8 @@ final class PatternCursor implements AutoCloseable {
+ 		this.range = range;
+ 		this.accessObserver = accessObserver;
+ 		this.lmdbScanOnly = lmdbScanOnly;
++		this.contextIndex = 0;
++		this.closed = false;
+ 	}
+ 
+ 	static PatternCursor empty() {
+@@ -194,19 +247,17 @@ final class PatternCursor implements AutoCloseable {
+ 		if (!exists) {
+ 			return empty();
+ 		}
+-		PatternCursor cursor = new PatternCursor(null, null, UNKNOWN, UNKNOWN, UNKNOWN, null);
+-		cursor.syntheticRow = new long[] { subj, pred, obj, context };
+-		return cursor;
++		return new PatternCursor(null, null, UNKNOWN, UNKNOWN, UNKNOWN, null)
++				.resetExists(subj, pred, obj, context);
+ 	}
+ 
+ 	long[] next() throws IOException {
+ 		if (closed) {
+ 			return null;
+ 		}
+-		if (syntheticRow != null) {
+-			long[] row = syntheticRow;
+-			syntheticRow = null;
+-			return row;
++		if (syntheticPending) {
++			syntheticPending = false;
++			return syntheticRow;
+ 		}
+ 		while (true) {
+ 			if (current == null) {
+@@ -233,9 +284,9 @@ final class PatternCursor implements AutoCloseable {
+ 		if (closed) {
+ 			return 0;
+ 		}
+-		if (syntheticRow != null) {
++		if (syntheticPending) {
+ 			System.arraycopy(syntheticRow, 0, buffer, 0, 4);
+-			syntheticRow = null;
++			syntheticPending = false;
+ 			return 1;
+ 		}
+ 		while (true) {
+@@ -266,7 +317,7 @@ final class PatternCursor implements AutoCloseable {
+ 	 * not {@code UNKNOWN}.
+ 	 */
+ 	boolean seekForward(long subj, long pred, long obj, long context) {
+-		if (closed || syntheticRow != null || contexts != null || current == null) {
++		if (closed || syntheticPending || contexts != null || current == null) {
+ 			return false;
+ 		}
+ 		return current.seekForward(subj, pred, obj, context);
+@@ -280,7 +331,7 @@ final class PatternCursor implements AutoCloseable {
+ 				current.close();
+ 				current = null;
+ 			}
+-			syntheticRow = null;
++			syntheticPending = false;
+ 		}
+ 	}
+ }
