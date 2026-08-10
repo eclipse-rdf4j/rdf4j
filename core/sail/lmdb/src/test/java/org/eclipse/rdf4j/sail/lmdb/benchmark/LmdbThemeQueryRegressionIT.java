@@ -1927,7 +1927,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
-	@Disabled
+	@Disabled("Legacy query optimizer behavior; superseded by the query optimizer rewrite in progress")
 	void medicalPatientsWithMedsOrObservationsExcludingCodeAvoidsUnboundLeftGuards(@TempDir Path dataDir)
 			throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;

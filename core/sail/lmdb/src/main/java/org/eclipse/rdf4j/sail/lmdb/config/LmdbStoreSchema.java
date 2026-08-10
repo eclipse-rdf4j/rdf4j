@@ -135,6 +135,11 @@ public class LmdbStoreSchema {
 	public final static IRI INLINE_LITERALS;
 
 	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#orderedNumericIds</tt>
+	 */
+	public final static IRI ORDERED_NUMERIC_IDS;
+
+	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#directAdjacencyMode</tt>
 	 */
 	public final static IRI DIRECT_ADJACENCY_MODE;
@@ -192,6 +197,7 @@ public class LmdbStoreSchema {
 		BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = factory.createIRI(NAMESPACE,
 				"backgroundRawSamplingMaxMillisPerCycle");
 		INLINE_LITERALS = factory.createIRI(NAMESPACE, "inlineLiterals");
+		ORDERED_NUMERIC_IDS = factory.createIRI(NAMESPACE, "orderedNumericIds");
 		DIRECT_ADJACENCY_MODE = factory.createIRI(NAMESPACE, "directAdjacencyMode");
 		DIRECT_ADJACENCY_COVERAGE = factory.createIRI(NAMESPACE, "directAdjacencyCoverage");
 		DIRECT_ADJACENCY_PREDICATE = factory.createIRI(NAMESPACE, "directAdjacencyPredicate");
