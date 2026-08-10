@@ -1089,9 +1089,20 @@ final class AdaptiveJoinCursor implements RowCursor {
 	final AdaptiveFilterSession session;
 	final int depth;
 	final int[] replaySlots;
+	final PatternPlan patternRight;
 	RowCursor rightCursor;
 	NativeLmdbQuerySource.NativeProbe rightProbe;
-	ArrayList<long[]> materialized;
+	PatternCursor patternCursor;
+	boolean patternRightActive;
+	long[] patternBatch;
+	int patternBatchRows;
+	int patternBatchPosition;
+	int patternScalarRows;
+	int patternMark = -1;
+	long[] replayValues;
+	int replayRows;
+	boolean capturingReplay;
+	boolean replayDisabled;
 	boolean rightMaterialized;
 	int replayIndex = -1;
 	int replayMark = -1;
@@ -1103,6 +1114,7 @@ final class AdaptiveJoinCursor implements RowCursor {
 		this.row = row;
 		this.session = session;
 		this.depth = depth;
+		this.patternRight = right instanceof PatternPlan pattern ? pattern : null;
 		long readMask = memoReadMask(right);
 		this.replaySlots = readMask >= 0L && (readMask & leftProducedMask) == 0L
 				? slotsOf(right.producedMask())
@@ -1115,18 +1127,28 @@ final class AdaptiveJoinCursor implements RowCursor {
 			return replayNext();
 		}
 		while (true) {
-			if (rightCursor != null) {
+			if (patternRightActive) {
+				if (nextPatternRight()) {
+					session.joinRow();
+					if (capturingReplay) {
+						recordReplay();
+					}
+					return true;
+				}
+				closePatternRight();
+				if (finishCapturedRight()) {
+					return replayNext();
+				}
+			} else if (rightCursor != null) {
 				if (rightCursor.next()) {
 					session.joinRow();
-					if (materialized != null) {
-						record();
+					if (capturingReplay) {
+						recordReplay();
 					}
 					return true;
 				}
 				closeRight();
-				if (materialized != null) {
-					rightMaterialized = true;
-					replayIndex = -1;
+				if (finishCapturedRight()) {
 					return replayNext();
 				}
 			}
@@ -1135,30 +1157,106 @@ final class AdaptiveJoinCursor implements RowCursor {
 			}
 			rightCursor = openRight();
 			session.rightOpened();
-			if (replaySlots != null && materialized == null && !rightMaterialized) {
-				materialized = new ArrayList<>();
+			if (replaySlots != null && !rightMaterialized && !replayDisabled) {
+				capturingReplay = true;
 			}
 		}
 	}
 
 	RowCursor openRight() throws IOException {
-		if (right instanceof PatternPlan pattern) {
+		if (patternRight != null) {
 			if (rightProbe == null) {
 				rightProbe = row.source.newProbe();
 			}
-			return pattern.open(row, rightProbe);
+			if (patternCursor == null) {
+				patternCursor = new PatternCursor();
+			}
+			PatternCursor raw = patternRight.openRaw(row, rightProbe, patternCursor);
+			if (raw == PatternCursor.EMPTY) {
+				return EmptyCursor.INSTANCE;
+			}
+			patternRightActive = true;
+			patternBatchRows = 0;
+			patternBatchPosition = 0;
+			patternScalarRows = 0;
+			return null;
 		}
 		return right.open(row);
+	}
+
+	private boolean finishCapturedRight() {
+		if (!capturingReplay) {
+			return false;
+		}
+		capturingReplay = false;
+		rightMaterialized = true;
+		replayIndex = -1;
+		return true;
+	}
+
+	private boolean nextPatternRight() throws IOException {
+		releasePatternBinding();
+		while (true) {
+			if (patternBatch != null) {
+				if (patternBatchPosition >= patternBatchRows) {
+					patternBatchRows = patternCursor.fill(patternBatch, JoinCursor.PATTERN_BATCH_ROWS);
+					patternBatchPosition = 0;
+					if (patternBatchRows == 0) {
+						return false;
+					}
+				}
+				int offset = patternBatchPosition++ << 2;
+				if (bindPattern(patternBatch, offset)) {
+					return true;
+				}
+				continue;
+			}
+			long[] quad = patternCursor.next();
+			if (quad == null) {
+				return false;
+			}
+			if (++patternScalarRows > JoinCursor.SCALAR_PATTERN_ROWS) {
+				patternBatch = new long[JoinCursor.PATTERN_BATCH_ROWS * 4];
+			}
+			if (bindPattern(quad, 0)) {
+				return true;
+			}
+		}
+	}
+
+	private boolean bindPattern(long[] quad, int offset) {
+		int mark = row.mark();
+		if (patternRight.bind(quad, offset, row)) {
+			patternMark = mark;
+			return true;
+		}
+		row.rollback(mark);
+		return false;
+	}
+
+	private void releasePatternBinding() {
+		if (patternMark >= 0) {
+			row.rollback(patternMark);
+			patternMark = -1;
+		}
+	}
+
+	private void closePatternRight() {
+		releasePatternBinding();
+		patternCursor.close();
+		patternRightActive = false;
+		patternBatchRows = 0;
+		patternBatchPosition = 0;
 	}
 
 	boolean replayNext() throws IOException {
 		while (true) {
 			if (replayIndex >= 0) {
 				releaseReplay();
-				while (replayIndex < materialized.size()) {
-					long[] values = materialized.get(replayIndex++);
+				while (replayIndex < replayRows) {
+					int rowIndex = replayIndex++;
 					int mark = row.mark();
-					if (bindReplay(values)) {
+					if (bindReplay(rowIndex)) {
 						replayMark = mark;
 						session.replayedRow();
 						return true;
@@ -1174,9 +1272,10 @@ final class AdaptiveJoinCursor implements RowCursor {
 		}
 	}
 
-	boolean bindReplay(long[] values) {
+	boolean bindReplay(int rowIndex) {
+		int offset = rowIndex * replaySlots.length;
 		for (int i = 0; i < replaySlots.length; i++) {
-			long value = values[i];
+			long value = replayValues[offset + i];
 			if (value != UNKNOWN && !row.bind(replaySlots[i], value)) {
 				return false;
 			}
@@ -1184,17 +1283,39 @@ final class AdaptiveJoinCursor implements RowCursor {
 		return true;
 	}
 
-	void record() {
-		if (materialized.size() >= MAX_MATERIALIZED_ROWS) {
-			materialized = null;
+	void recordReplay() {
+		if (replayRows >= MAX_MATERIALIZED_ROWS) {
+			capturingReplay = false;
+			replayDisabled = true;
+			replayValues = null;
+			replayRows = 0;
 			return;
 		}
-		long[] values = new long[replaySlots.length];
-		for (int i = 0; i < replaySlots.length; i++) {
-			values[i] = row.slots[replaySlots[i]];
+		int width = replaySlots.length;
+		if (width != 0) {
+			ensureReplayCapacity(replayRows + 1, width);
+			int offset = replayRows * width;
+			for (int i = 0; i < width; i++) {
+				replayValues[offset + i] = row.slots[replaySlots[i]];
+			}
 		}
-		materialized.add(values);
+		replayRows++;
 		session.materializedRow();
+	}
+
+	private void ensureReplayCapacity(int requiredRows, int width) {
+		int required = Math.multiplyExact(requiredRows, width);
+		if (replayValues != null && replayValues.length >= required) {
+			return;
+		}
+		int currentRows = replayValues == null ? 0 : replayValues.length / width;
+		int grownRows = currentRows == 0 ? Math.min(16, MAX_MATERIALIZED_ROWS)
+				: Math.min(MAX_MATERIALIZED_ROWS, currentRows << 1);
+		if (grownRows < requiredRows) {
+			grownRows = requiredRows;
+		}
+		replayValues = replayValues == null ? new long[Math.multiplyExact(grownRows, width)]
+				: Arrays.copyOf(replayValues, Math.multiplyExact(grownRows, width));
 	}
 
 	void releaseReplay() {
@@ -1212,10 +1333,14 @@ final class AdaptiveJoinCursor implements RowCursor {
 			rightProbe.close();
 			rightProbe = null;
 		}
+		replayValues = null;
 		leftCursor.close();
 	}
 
 	void closeRight() {
+		if (patternRightActive) {
+			closePatternRight();
+		}
 		if (rightCursor != null) {
 			rightCursor.close();
 			rightCursor = null;

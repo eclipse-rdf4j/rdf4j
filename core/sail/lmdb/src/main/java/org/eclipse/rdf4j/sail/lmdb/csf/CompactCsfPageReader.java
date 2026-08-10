@@ -15,7 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.csf;
 import java.util.Arrays;
 
 /** Allocation-light decoder for one immutable compact CSF page. */
-final class CompactCsfPageReader {
+class CompactCsfPageReader {
 
 	private long address;
 	private int flags;
@@ -24,14 +24,20 @@ final class CompactCsfPageReader {
 	private int fiberCount;
 	private int quadCount;
 
-	private final PackedLongVector.Reader rowIds = new PackedLongVector.Reader();
-	private final PackedLongVector.Reader rowFiberStarts = new PackedLongVector.Reader();
-	private final PackedLongVector.Reader rowQuadCounts = new PackedLongVector.Reader();
-	private final PackedLongVector.Reader firstNeighbors = new PackedLongVector.Reader();
-	private final PackedLongVector.Reader neighborTails = new PackedLongVector.Reader();
-	private final PackedLongVector.Reader contextCounts = new PackedLongVector.Reader();
-	private final PackedLongVector.Reader firstContexts = new PackedLongVector.Reader();
-	private final PackedLongVector.Reader contextTails = new PackedLongVector.Reader();
+	/*
+	 * Keep the eight immutable vector section offsets directly in the page reader. The old representation allocated
+	 * eight large PackedLongVector.Reader objects for every CompactCsfPageReader even though seven columns never use
+	 * mutable search state. Stateless native helpers make one page cursor one object rather than a nine-object graph;
+	 * 16-bit page-local offsets quarter the vector metadata footprint versus native addresses.
+	 */
+	private char rowIdsOffset;
+	private char rowFiberStartsOffset;
+	private char rowQuadCountsOffset;
+	private char firstNeighborsOffset;
+	private char neighborTailsOffset;
+	private char contextCountsOffset;
+	private char firstContextsOffset;
+	private char contextTailsOffset;
 
 	private static final int[] VECTOR_OFFSET_FIELDS = {
 			CompactCsfPageFormat.ROW_IDS_OFFSET_AT,
@@ -135,23 +141,55 @@ final class CompactCsfPageReader {
 			}
 			validateVectorSections();
 		}
-		vector(CompactCsfPageFormat.ROW_IDS_OFFSET_AT, rowCount, true, rowIds, validate);
-		vector(CompactCsfPageFormat.ROW_FIBER_STARTS_OFFSET_AT, rowCount,
-				!flag(CompactCsfPageFormat.FLAG_ROW_NEIGHBOR_ONE), rowFiberStarts, validate);
-		vector(CompactCsfPageFormat.ROW_QUAD_COUNTS_OFFSET_AT, rowCount,
-				!flag(CompactCsfPageFormat.FLAG_ROW_QUAD_EQUALS_NEIGHBOR), rowQuadCounts, validate);
-		vector(CompactCsfPageFormat.FIRST_NEIGHBORS_OFFSET_AT, rowCount, true, firstNeighbors, validate);
-		vector(CompactCsfPageFormat.NEIGHBOR_TAILS_OFFSET_AT, fiberCount - rowCount, fiberCount != rowCount,
-				neighborTails, validate);
-		vector(CompactCsfPageFormat.CONTEXT_COUNTS_OFFSET_AT, fiberCount,
-				!flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE), contextCounts, validate);
-		vector(CompactCsfPageFormat.FIRST_CONTEXTS_OFFSET_AT, fiberCount,
-				!flag(CompactCsfPageFormat.FLAG_COMMON_CONTEXT), firstContexts, validate);
-		vector(CompactCsfPageFormat.CONTEXT_TAILS_OFFSET_AT, quadCount - fiberCount, quadCount != fiberCount,
-				contextTails, validate);
+		rowIdsOffset = vector(CompactCsfPageFormat.ROW_IDS_OFFSET_AT, rowCount, true, validate);
+		rowFiberStartsOffset = vector(CompactCsfPageFormat.ROW_FIBER_STARTS_OFFSET_AT, rowCount,
+				!flag(CompactCsfPageFormat.FLAG_ROW_NEIGHBOR_ONE), validate);
+		rowQuadCountsOffset = vector(CompactCsfPageFormat.ROW_QUAD_COUNTS_OFFSET_AT, rowCount,
+				!flag(CompactCsfPageFormat.FLAG_ROW_QUAD_EQUALS_NEIGHBOR), validate);
+		firstNeighborsOffset = vector(CompactCsfPageFormat.FIRST_NEIGHBORS_OFFSET_AT, rowCount, true, validate);
+		neighborTailsOffset = vector(CompactCsfPageFormat.NEIGHBOR_TAILS_OFFSET_AT, fiberCount - rowCount,
+				fiberCount != rowCount, validate);
+		contextCountsOffset = vector(CompactCsfPageFormat.CONTEXT_COUNTS_OFFSET_AT, fiberCount,
+				!flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE), validate);
+		firstContextsOffset = vector(CompactCsfPageFormat.FIRST_CONTEXTS_OFFSET_AT, fiberCount,
+				!flag(CompactCsfPageFormat.FLAG_COMMON_CONTEXT), validate);
+		contextTailsOffset = vector(CompactCsfPageFormat.CONTEXT_TAILS_OFFSET_AT, quadCount - fiberCount,
+				quadCount != fiberCount, validate);
 		if (validate) {
 			validateRowFiberTerminals();
 		}
+	}
+
+	private long rowIdsAddress() {
+		return address + rowIdsOffset;
+	}
+
+	private long rowFiberStartsAddress() {
+		return address + rowFiberStartsOffset;
+	}
+
+	private long rowQuadCountsAddress() {
+		return address + rowQuadCountsOffset;
+	}
+
+	private long firstNeighborsAddress() {
+		return address + firstNeighborsOffset;
+	}
+
+	private long neighborTailsAddress() {
+		return address + neighborTailsOffset;
+	}
+
+	private long contextCountsAddress() {
+		return address + contextCountsOffset;
+	}
+
+	private long firstContextsAddress() {
+		return address + firstContextsOffset;
+	}
+
+	private long contextTailsAddress() {
+		return address + contextTailsOffset;
 	}
 
 	long address() {
@@ -216,18 +254,31 @@ final class CompactCsfPageReader {
 
 	long rowAt(int rowIndex) {
 		checkRow(rowIndex);
-		return rowIds.get(rowIndex);
+		return PackedLongVector.nativeGet(rowIdsAddress(), rowIndex);
+	}
+
+	/**
+	 * Reads one row id from a page that has already passed structural validation, without materializing a page-reader
+	 * object. This is the random-access primitive behind immutable key-domain probes.
+	 */
+	static long trustedRowAt(long pageAddress, int rowIndex) {
+		int rows = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_COUNT_AT);
+		if (rowIndex < 0 || rowIndex >= rows) {
+			throw new IllegalArgumentException("row index out of range: " + rowIndex + " of " + rows);
+		}
+		int vectorOffset = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_IDS_OFFSET_AT);
+		return PackedLongVector.nativeGet(pageAddress + vectorOffset, rowIndex);
 	}
 
 	int findRow(long row) {
-		return rowIds.binarySearchUnsigned(row);
+		return PackedLongVector.nativeBinarySearchUnsigned(rowIdsAddress(), rowCount, row);
 	}
 
 	void copyRowsTo(long[] target) {
 		if (target.length < rowCount) {
 			throw new IllegalArgumentException("row target contains " + target.length + " lanes, expected " + rowCount);
 		}
-		rowIds.copy(0, rowCount, target, 0);
+		PackedLongVector.nativeCopy(rowIdsAddress(), rowCount, 0, rowCount, target, 0);
 	}
 
 	int rowNeighborCount(int rowIndex) {
@@ -239,7 +290,7 @@ final class CompactCsfPageReader {
 		checkRow(rowIndex);
 		return flag(CompactCsfPageFormat.FLAG_ROW_QUAD_EQUALS_NEIGHBOR)
 				? rowFiberOffset(rowIndex + 1) - rowFiberOffset(rowIndex)
-				: Math.toIntExact(rowQuadCounts.get(rowIndex));
+				: Math.toIntExact(PackedLongVector.nativeGet(rowQuadCountsAddress(), rowIndex));
 	}
 
 	int rowFiberStart(int rowIndex) {
@@ -250,7 +301,7 @@ final class CompactCsfPageReader {
 	int fiberContextCount(int fiberOrdinal) {
 		checkFiber(fiberOrdinal);
 		return flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE) ? 1
-				: Math.toIntExact(contextCounts.get(fiberOrdinal));
+				: Math.toIntExact(PackedLongVector.nativeGet(contextCountsAddress(), fiberOrdinal));
 	}
 
 	long neighborAtFiber(int rowIndex, int localFiber) {
@@ -260,35 +311,31 @@ final class CompactCsfPageReader {
 		if (localFiber < 0 || localFiber >= count) {
 			throw new IllegalArgumentException("local fiber out of range: " + localFiber + " of " + count);
 		}
-		long neighbor = firstNeighbors.get(rowIndex);
+		long neighbor = PackedLongVector.nativeGet(firstNeighborsAddress(), rowIndex);
 		if (localFiber == 0) {
 			return neighbor;
 		}
 		int tail = rowFiberStart - rowIndex;
-		for (int i = 0; i < localFiber; i++) {
-			neighbor += neighborTails.get(tail + i);
-		}
-		return neighbor;
+		return neighbor + PackedLongVector.nativeRangeSum(neighborTailsAddress(), fiberCount - rowCount, tail,
+				localFiber);
 	}
 
 	long contextAt(int fiberOrdinal, int localContext) {
 		checkFiber(fiberOrdinal);
 		int count = flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE) ? 1
-				: Math.toIntExact(contextCounts.get(fiberOrdinal));
+				: Math.toIntExact(PackedLongVector.nativeGet(contextCountsAddress(), fiberOrdinal));
 		if (localContext < 0 || localContext >= count) {
 			throw new IllegalArgumentException("local context out of range: " + localContext + " of " + count);
 		}
 		long context = flag(CompactCsfPageFormat.FLAG_COMMON_CONTEXT)
 				? UnsafeAccess.getLongLE(address + CompactCsfPageFormat.COMMON_CONTEXT_AT)
-				: firstContexts.get(fiberOrdinal);
+				: PackedLongVector.nativeGet(firstContextsAddress(), fiberOrdinal);
 		if (localContext == 0) {
 			return context;
 		}
 		int tail = contextStart(fiberOrdinal) - fiberOrdinal;
-		for (int i = 0; i < localContext; i++) {
-			context += contextTails.get(tail + i);
-		}
-		return context;
+		return context + PackedLongVector.nativeRangeSum(contextTailsAddress(), quadCount - fiberCount, tail,
+				localContext);
 	}
 
 	long neighborAtOrdinal(int rowIndex, int ordinal) {
@@ -306,7 +353,7 @@ final class CompactCsfPageReader {
 		int rowFiberEnd = rowFiberOffset(rowIndex + 1);
 		int rowFibers = rowFiberEnd - rowFiberStart;
 		int rowQuads = flag(CompactCsfPageFormat.FLAG_ROW_QUAD_EQUALS_NEIGHBOR) ? rowFibers
-				: Math.toIntExact(rowQuadCounts.get(rowIndex));
+				: Math.toIntExact(PackedLongVector.nativeGet(rowQuadCountsAddress(), rowIndex));
 		if (fromOrdinal < 0 || fromOrdinal > rowQuads || length < 0) {
 			throw new IllegalArgumentException("invalid row copy range");
 		}
@@ -328,16 +375,17 @@ final class CompactCsfPageReader {
 		}
 		int fiberContextStart = contextStart(rowFiberStart);
 		int neighborTailStart = rowFiberStart - rowIndex;
-		long currentNeighbor = firstNeighbors.get(rowIndex);
+		long currentNeighbor = PackedLongVector.nativeGet(firstNeighborsAddress(), rowIndex);
 		int ordinal = 0;
 		int out = 0;
 		for (int localFiber = 0; localFiber < rowFibers && out < copied; localFiber++) {
 			if (localFiber > 0) {
-				currentNeighbor += neighborTails.get(neighborTailStart + localFiber - 1);
+				currentNeighbor += PackedLongVector.nativeGet(neighborTailsAddress(),
+						neighborTailStart + localFiber - 1);
 			}
 			int fiber = rowFiberStart + localFiber;
 			int contexts = flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE) ? 1
-					: Math.toIntExact(contextCounts.get(fiber));
+					: Math.toIntExact(PackedLongVector.nativeGet(contextCountsAddress(), fiber));
 			int end = ordinal + contexts;
 			if (end <= fromOrdinal) {
 				ordinal = end;
@@ -350,11 +398,11 @@ final class CompactCsfPageReader {
 			if (contextTarget != null) {
 				currentContext = flag(CompactCsfPageFormat.FLAG_COMMON_CONTEXT)
 						? UnsafeAccess.getLongLE(address + CompactCsfPageFormat.COMMON_CONTEXT_AT)
-						: firstContexts.get(fiber);
+						: PackedLongVector.nativeGet(firstContextsAddress(), fiber);
 			}
 			for (int c = 0; c < contexts && out < copied; c++) {
 				if (contextTarget != null && c > 0) {
-					currentContext += contextTails.get(contextTailStart + c - 1);
+					currentContext += PackedLongVector.nativeGet(contextTailsAddress(), contextTailStart + c - 1);
 				}
 				if (c < contextFrom) {
 					continue;
@@ -381,26 +429,17 @@ final class CompactCsfPageReader {
 		int firstFiber = rowFiberStart + fromOrdinal;
 		if (neighborTarget != null) {
 			int neighborTailStart = rowFiberStart - rowIndex;
-			long neighbor = firstNeighbors.get(rowIndex);
-			for (int skipped = 0; skipped < fromOrdinal; skipped++) {
-				neighbor += neighborTails.get(neighborTailStart + skipped);
-			}
-			neighborTarget[neighborOffset] = neighbor;
-			if (length > 1) {
-				neighborTails.copy(neighborTailStart + fromOrdinal, length - 1, neighborTarget,
-						neighborOffset + 1);
-				for (int i = 1; i < length; i++) {
-					neighbor += neighborTarget[neighborOffset + i];
-					neighborTarget[neighborOffset + i] = neighbor;
-				}
-			}
+			long firstNeighbor = PackedLongVector.nativeGet(firstNeighborsAddress(), rowIndex);
+			PackedLongVector.nativeCopyCumulative(neighborTailsAddress(), fiberCount - rowCount,
+					neighborTailStart, fromOrdinal, length, firstNeighbor, neighborTarget, neighborOffset);
 		}
 		if (contextTarget != null) {
 			if (flag(CompactCsfPageFormat.FLAG_COMMON_CONTEXT)) {
 				long commonContext = UnsafeAccess.getLongLE(address + CompactCsfPageFormat.COMMON_CONTEXT_AT);
 				Arrays.fill(contextTarget, contextOffset, contextOffset + length, commonContext);
 			} else {
-				firstContexts.copy(firstFiber, length, contextTarget, contextOffset);
+				PackedLongVector.nativeCopy(firstContextsAddress(), fiberCount, firstFiber, length, contextTarget,
+						contextOffset);
 			}
 		}
 	}
@@ -411,21 +450,22 @@ final class CompactCsfPageReader {
 		int rowFiberEnd = rowFiberOffset(rowIndex + 1);
 		int rowFibers = rowFiberEnd - rowFiberStart;
 		int rowQuads = flag(CompactCsfPageFormat.FLAG_ROW_QUAD_EQUALS_NEIGHBOR) ? rowFibers
-				: Math.toIntExact(rowQuadCounts.get(rowIndex));
+				: Math.toIntExact(PackedLongVector.nativeGet(rowQuadCountsAddress(), rowIndex));
 		if (fromOrdinal < 0 || fromOrdinal > rowQuads) {
 			throw new IllegalArgumentException("fromOrdinal out of range");
 		}
 		int fiberContextStart = contextStart(rowFiberStart);
 		int neighborTailStart = rowFiberStart - rowIndex;
-		long currentNeighbor = firstNeighbors.get(rowIndex);
+		long currentNeighbor = PackedLongVector.nativeGet(firstNeighborsAddress(), rowIndex);
 		int ordinal = 0;
 		for (int localFiber = 0; localFiber < rowFibers; localFiber++) {
 			if (localFiber > 0) {
-				currentNeighbor += neighborTails.get(neighborTailStart + localFiber - 1);
+				currentNeighbor += PackedLongVector.nativeGet(neighborTailsAddress(),
+						neighborTailStart + localFiber - 1);
 			}
 			int fiber = rowFiberStart + localFiber;
 			int contexts = flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE) ? 1
-					: Math.toIntExact(contextCounts.get(fiber));
+					: Math.toIntExact(PackedLongVector.nativeGet(contextCountsAddress(), fiber));
 			int end = ordinal + contexts;
 			int neighborCmp = Long.compareUnsigned(currentNeighbor, neighbor);
 			if (neighborCmp < 0 || end <= fromOrdinal) {
@@ -439,11 +479,11 @@ final class CompactCsfPageReader {
 			int startContext = Math.max(0, fromOrdinal - ordinal);
 			long currentContext = flag(CompactCsfPageFormat.FLAG_COMMON_CONTEXT)
 					? UnsafeAccess.getLongLE(address + CompactCsfPageFormat.COMMON_CONTEXT_AT)
-					: firstContexts.get(fiber);
+					: PackedLongVector.nativeGet(firstContextsAddress(), fiber);
 			int contextTailStart = fiberContextStart - fiber;
 			for (int c = 0; c < contexts; c++) {
 				if (c > 0) {
-					currentContext += contextTails.get(contextTailStart + c - 1);
+					currentContext += PackedLongVector.nativeGet(contextTailsAddress(), contextTailStart + c - 1);
 				}
 				if (c >= startContext && Long.compareUnsigned(currentContext, context) >= 0) {
 					return ordinal + c;
@@ -461,21 +501,22 @@ final class CompactCsfPageReader {
 		int end = rowFiberOffset(rowIndex + 1);
 		int fibers = end - start;
 		int quads = flag(CompactCsfPageFormat.FLAG_ROW_QUAD_EQUALS_NEIGHBOR) ? fibers
-				: Math.toIntExact(rowQuadCounts.get(rowIndex));
+				: Math.toIntExact(PackedLongVector.nativeGet(rowQuadCountsAddress(), rowIndex));
 		if (targetOrdinal < 0 || targetOrdinal >= quads) {
 			throw new IllegalArgumentException("row ordinal out of range: " + targetOrdinal + " of " + quads);
 		}
 		int fiberContextStart = contextStart(start);
 		int neighborTailStart = start - rowIndex;
-		long currentNeighbor = firstNeighbors.get(rowIndex);
+		long currentNeighbor = PackedLongVector.nativeGet(firstNeighborsAddress(), rowIndex);
 		int ordinal = 0;
 		for (int localFiber = 0; localFiber < fibers; localFiber++) {
 			if (localFiber > 0) {
-				currentNeighbor += neighborTails.get(neighborTailStart + localFiber - 1);
+				currentNeighbor += PackedLongVector.nativeGet(neighborTailsAddress(),
+						neighborTailStart + localFiber - 1);
 			}
 			int fiber = start + localFiber;
 			int contexts = flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE) ? 1
-					: Math.toIntExact(contextCounts.get(fiber));
+					: Math.toIntExact(PackedLongVector.nativeGet(contextCountsAddress(), fiber));
 			if (targetOrdinal < ordinal + contexts) {
 				if (!contextValue) {
 					return currentNeighbor;
@@ -483,10 +524,10 @@ final class CompactCsfPageReader {
 				int localContext = targetOrdinal - ordinal;
 				long currentContext = flag(CompactCsfPageFormat.FLAG_COMMON_CONTEXT)
 						? UnsafeAccess.getLongLE(address + CompactCsfPageFormat.COMMON_CONTEXT_AT)
-						: firstContexts.get(fiber);
+						: PackedLongVector.nativeGet(firstContextsAddress(), fiber);
 				int contextTailStart = fiberContextStart - fiber;
 				for (int c = 0; c < localContext; c++) {
-					currentContext += contextTails.get(contextTailStart + c);
+					currentContext += PackedLongVector.nativeGet(contextTailsAddress(), contextTailStart + c);
 				}
 				return currentContext;
 			}
@@ -500,46 +541,47 @@ final class CompactCsfPageReader {
 		if (flag(CompactCsfPageFormat.FLAG_ROW_NEIGHBOR_ONE)) {
 			return rowOrdinal;
 		}
-		return rowOrdinal == rowCount ? fiberCount : Math.toIntExact(rowFiberStarts.get(rowOrdinal));
+		return rowOrdinal == rowCount ? fiberCount
+				: Math.toIntExact(PackedLongVector.nativeGet(rowFiberStartsAddress(), rowOrdinal));
 	}
 
 	private int contextStart(int fiberOrdinal) {
 		if (flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE)) {
 			return fiberOrdinal;
 		}
-		int start = 0;
-		for (int fiber = 0; fiber < fiberOrdinal; fiber++) {
-			start = Math.addExact(start, Math.toIntExact(contextCounts.get(fiber)));
-		}
-		return start;
+		return Math.toIntExact(PackedLongVector.nativePrefixValue(contextCountsAddress(), fiberCount, fiberOrdinal));
 	}
 
 	private void validateRowFiberTerminals() {
 		if (!flag(CompactCsfPageFormat.FLAG_ROW_NEIGHBOR_ONE)
-				&& (rowFiberStarts.get(0) != 0 || rowFiberStarts.get(rowCount - 1) >= fiberCount)) {
+				&& (PackedLongVector.nativeGet(rowFiberStartsAddress(), 0) != 0
+						|| PackedLongVector.nativeGet(rowFiberStartsAddress(), rowCount - 1) >= fiberCount)) {
 			throw new IllegalStateException("row-fibre starts do not span the page fibre count");
 		}
 	}
 
-	private void vector(int offsetField, int expectedSize, boolean required, PackedLongVector.Reader target,
-			boolean validate) {
-		int offset = UnsafeAccess.getIntLE(address + offsetField);
-		int length = UnsafeAccess.getIntLE(address + offsetField + 4);
+	private char vector(int offsetField, int expectedSize, boolean required, boolean validate) {
+		long section = UnsafeAccess.getLongLE(address + offsetField);
+		int offset = (int) section;
+		int length = (int) (section >>> Integer.SIZE);
 		if (offset == 0 || length == 0) {
 			if (validate && required) {
 				throw new IllegalStateException("required CSF vector is absent at field " + offsetField);
 			}
-			target.clear();
-			return;
+			return 0;
 		}
 		if (validate && (offset < CompactCsfPageFormat.HEADER_BYTES || length < 12 || offset > usedBytes - length)) {
 			throw new IllegalStateException("CSF vector range is outside the page");
 		}
-		target.resolve(address + offset, length, validate);
-		if (validate && target.size() != expectedSize) {
-			throw new IllegalStateException(
-					"CSF vector contains " + target.size() + " values, expected " + expectedSize);
+		long vectorAddress = address + offset;
+		if (validate) {
+			int actualSize = PackedLongVector.nativeSize(vectorAddress, length, true);
+			if (actualSize != expectedSize) {
+				throw new IllegalStateException(
+						"CSF vector contains " + actualSize + " values, expected " + expectedSize);
+			}
 		}
+		return (char) offset;
 	}
 
 	private void validateVectorSections() {

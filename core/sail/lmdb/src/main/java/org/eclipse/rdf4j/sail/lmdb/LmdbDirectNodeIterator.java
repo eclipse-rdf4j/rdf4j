@@ -108,8 +108,7 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 				this.nodePredicateIndex = base.nodePredicateIndex();
 				this.nodePredicateCursor = new ImmutablePagedQuadCsfIndex.RowCursor();
 				this.baseSearchContext = new LmdbReferenceNodeLocator.SearchContext();
-				ImmutablePagedQuadCsfIndex.LookupCursor lookup = new ImmutablePagedQuadCsfIndex.LookupCursor();
-				long localReference = nodePredicateIndex.findLocalReference(plane, key, lookup);
+				long localReference = nodePredicateIndex.findLocalReference(plane, key, baseSearchContext.csfCursor());
 				if (localReference == 0) {
 					this.baseGroupCount = 0;
 				} else {

@@ -14,30 +14,13 @@ package org.eclipse.rdf4j.sail.lmdb.csf;
 
 import java.util.Arrays;
 
-/**
- * Independently decodable 256-value block-packed long vector.
- * <p>
- * Blocks choose the smallest of raw frame-of-reference, common-LMDB-type payload frame-of-reference, raw delta and
- * common-LMDB-type payload delta encodings. Any non-double LMDB ID can use the typed-payload modes: the six-bit type
- * tag is stored once per block and the 56-bit payload is packed independently. This covers references and inlined
- * integer/date/string families without remapping RDF4J IDs. Delta blocks are used only when the caller states that
- * values are unsigned sorted. All arithmetic deliberately uses two's-complement wraparound; when unsigned differences
- * require the high bit, the selected width becomes 64 and the value remains lossless.
- */
+/** Independently decodable 256-value block-packed long vector. */
 final class PackedLongVector {
 
 	static final int BLOCK_SIZE = 256;
 
 	private static final int HEADER_BYTES = 8;
 	private static final int BLOCK_HEADER_BYTES = 12;
-
-	/**
-	 * Number of readable bytes every native caller must guarantee after the logical end of a vector so that
-	 * {@link #readLittleEndian(long, int)} can satisfy any tail read with a single 64-bit load. A one-byte tail read at
-	 * the final byte touches seven bytes past it, so {@code Long.BYTES} of trailing padding is sufficient and also
-	 * keeps allocations 8-byte aligned. Native CSF pages uphold this through {@code CsfShard}'s trailing allocation
-	 * pad.
-	 */
 	static final int READ_TAIL_PADDING = Long.BYTES;
 
 	private static final int MODE_FOR_RAW = 0;
@@ -46,6 +29,33 @@ final class PackedLongVector {
 	private static final int MODE_DELTA_TYPED_PAYLOAD = 3;
 	private static final int MODE_MASK = 0x03;
 	private static final int TYPE_SHIFT = 2;
+
+	/*
+	 * Search-indexed vectors reserve 256 bytes per packed block between the offset directory and block data. Entry i is
+	 * the first lane whose top-eight residual bits are at least i. A zero byte in entries 1..255 means lane 256. The
+	 * flag lives in the vector-level block-count word, leaving every packed block byte-for-byte unchanged and the
+	 * scalar decode hot path free of index-format branches.
+	 */
+	private static final int SEARCH_INDEXED_FLAG = Integer.MIN_VALUE;
+	private static final int SEARCH_RADIX_BITS_SHIFT = 29;
+	private static final int SEARCH_RADIX_BITS_MASK = 0x60000000;
+	/**
+	 * Counts/deltas vectors with at least two blocks carry cumulative block sums immediately after any search radix.
+	 * Entry {@code i} is the wrapped sum of every logical lane before block {@code i}. This lets callers skip thousands
+	 * of deltas by decoding at most the two edge blocks instead of replaying every preceding lane.
+	 */
+	private static final int PREFIX_SUM_INDEXED_FLAG = 0x10000000;
+	private static final int BLOCK_COUNT_MASK = 0x0fffffff;
+	private static final int MIN_SEARCH_RADIX_BITS = 8;
+	/*
+	 * Three compact in-block prefix checkpoints split 256 lanes into four 64-value ranges. Zero means the prefix does
+	 * not fit u16.
+	 */
+	private static final int MICRO_PREFIX_1 = 64;
+	private static final int MICRO_PREFIX_2 = 128;
+	private static final int MICRO_PREFIX_3 = 192;
+	private static final int MICRO_PREFIX_BYTES_PER_BLOCK = 3 * Short.BYTES;
+	private static final long MAX_ENCODED_MICRO_PREFIX = 0xfffeL;
 
 	enum Hint {
 		UNSORTED_IDS,
@@ -58,7 +68,6 @@ final class PackedLongVector {
 	private PackedLongVector() {
 	}
 
-	/** Rewindable primitive source used by the allocation-free sizing and native-write path. */
 	interface SequentialValues {
 		int size();
 
@@ -67,7 +76,6 @@ final class PackedLongVector {
 		long next();
 	}
 
-	/** Per-encoder bounded scratch. One instance is sufficient for vectors of every supported size. */
 	static final class WriteScratch {
 		private final long[] block = new long[BLOCK_SIZE];
 		private int mode;
@@ -86,7 +94,16 @@ final class PackedLongVector {
 		}
 		int blockCount = (count + BLOCK_SIZE - 1) / BLOCK_SIZE;
 		int directoryBytes = Math.multiplyExact(blockCount + 1, Integer.BYTES);
+		boolean indexed = searchIndexed(hint, blockCount);
+		boolean prefixIndexed = prefixIndexed(hint, blockCount);
 		int total = Math.addExact(HEADER_BYTES, directoryBytes);
+		if (indexed) {
+			int radixBytes = 1 << searchRadixBits(blockCount);
+			total = Math.addExact(total, Math.multiplyExact(blockCount, radixBytes));
+		}
+		if (prefixIndexed) {
+			total = Math.addExact(total, prefixMetadataBytes(blockCount));
+		}
 		values.reset();
 		for (int block = 0; block < blockCount; block++) {
 			int blockLength = Math.min(BLOCK_SIZE, count - block * BLOCK_SIZE);
@@ -97,7 +114,6 @@ final class PackedLongVector {
 		return total;
 	}
 
-	/** Writes exactly {@code byteLength} bytes. The target may contain data from a recycled native slab. */
 	static void writeNative(long address, int byteLength, SequentialValues values, Hint hint, WriteScratch scratch) {
 		if (address == 0) {
 			throw new IllegalArgumentException("native vector address must not be zero");
@@ -105,16 +121,43 @@ final class PackedLongVector {
 		int count = values.size();
 		int blockCount = (count + BLOCK_SIZE - 1) / BLOCK_SIZE;
 		int directoryBytes = Math.multiplyExact(blockCount + 1, Integer.BYTES);
-		int blockAt = Math.addExact(HEADER_BYTES, directoryBytes);
+		boolean indexed = searchIndexed(hint, blockCount);
+		boolean prefixIndexed = prefixIndexed(hint, blockCount);
+		int radixBits = searchRadixBits(blockCount);
+		int radixStride = 1 << radixBits;
+		int radixBytes = indexed ? Math.multiplyExact(blockCount, radixStride) : 0;
+		int prefixBytes = prefixIndexed ? prefixMetadataBytes(blockCount) : 0;
+		int blockAt = Math.addExact(Math.addExact(Math.addExact(HEADER_BYTES, directoryBytes), radixBytes),
+				prefixBytes);
 		UnsafeAccess.clear(address, byteLength);
 		UnsafeAccess.putIntLE(address, count);
-		UnsafeAccess.putIntLE(address + Integer.BYTES, blockCount);
+		int storedBlockCount = indexed ? encodeStoredBlockCount(blockCount, radixBits) : blockCount;
+		if (prefixIndexed) {
+			storedBlockCount |= PREFIX_SUM_INDEXED_FLAG;
+		}
+		UnsafeAccess.putIntLE(address + Integer.BYTES, storedBlockCount);
+		long radixBase = address + HEADER_BYTES + directoryBytes;
+		long prefixBase = radixBase + radixBytes;
+		long prefix = 0;
+		if (prefixIndexed) {
+			UnsafeAccess.putLongLE(prefixBase, 0);
+		}
 		values.reset();
 		for (int block = 0; block < blockCount; block++) {
 			UnsafeAccess.putIntLE(address + HEADER_BYTES + (long) block * Integer.BYTES, blockAt);
 			int blockLength = Math.min(BLOCK_SIZE, count - block * BLOCK_SIZE);
 			fillBlock(values, scratch.block, blockLength);
 			planBlock(scratch.block, blockLength, hint, scratch);
+			if (indexed) {
+				writeSearchRadixNative(radixBase + (long) block * radixStride, scratch.block, scratch, radixBits);
+			}
+			if (prefixIndexed) {
+				writeMicroPrefixesNative(prefixBase, blockCount, block, scratch.block, blockLength);
+				prefix = addBlockValues(prefix, scratch.block, blockLength);
+				if (block + 1 < blockCount) {
+					UnsafeAccess.putLongLE(prefixBase + (long) (block + 1) * Long.BYTES, prefix);
+				}
+			}
 			writeBlockNative(address + blockAt, scratch.block, scratch);
 			blockAt = Math.addExact(blockAt, scratch.encodedBytes);
 		}
@@ -140,7 +183,13 @@ final class PackedLongVector {
 
 		BlockPlan[] plans = new BlockPlan[blockCount];
 		int directoryBytes = Math.multiplyExact(blockCount + 1, Integer.BYTES);
-		int total = Math.addExact(HEADER_BYTES, directoryBytes);
+		boolean indexed = searchIndexed(hint, blockCount);
+		boolean prefixIndexed = prefixIndexed(hint, blockCount);
+		int radixBits = searchRadixBits(blockCount);
+		int radixStride = 1 << radixBits;
+		int radixBytes = indexed ? Math.multiplyExact(blockCount, radixStride) : 0;
+		int prefixBytes = prefixIndexed ? prefixMetadataBytes(blockCount) : 0;
+		int total = Math.addExact(Math.addExact(Math.addExact(HEADER_BYTES, directoryBytes), radixBytes), prefixBytes);
 		for (int block = 0; block < blockCount; block++) {
 			int blockFrom = from + block * BLOCK_SIZE;
 			int blockLength = Math.min(BLOCK_SIZE, count - block * BLOCK_SIZE);
@@ -151,13 +200,34 @@ final class PackedLongVector {
 
 		byte[] encoded = new byte[total];
 		LeBytes.putInt(encoded, 0, count);
-		LeBytes.putInt(encoded, 4, blockCount);
-		int blockAt = HEADER_BYTES + directoryBytes;
+		int storedBlockCount = indexed ? encodeStoredBlockCount(blockCount, radixBits) : blockCount;
+		if (prefixIndexed) {
+			storedBlockCount |= PREFIX_SUM_INDEXED_FLAG;
+		}
+		LeBytes.putInt(encoded, 4, storedBlockCount);
+		int blockAt = HEADER_BYTES + directoryBytes + radixBytes + prefixBytes;
+		int radixAt = HEADER_BYTES + directoryBytes;
+		int prefixAt = radixAt + radixBytes;
+		long prefix = 0;
+		if (prefixIndexed) {
+			LeBytes.putLong(encoded, prefixAt, 0);
+		}
 		for (int block = 0; block < blockCount; block++) {
 			LeBytes.putInt(encoded, HEADER_BYTES + block * Integer.BYTES, blockAt);
 			int blockFrom = from + block * BLOCK_SIZE;
-			writeBlock(encoded, blockAt, values, blockFrom, plans[block]);
-			blockAt += plans[block].encodedBytes();
+			BlockPlan plan = plans[block];
+			if (indexed) {
+				writeSearchRadix(encoded, radixAt + block * radixStride, values, blockFrom, plan, radixBits);
+			}
+			if (prefixIndexed) {
+				writeMicroPrefixes(encoded, prefixAt, blockCount, block, values, blockFrom, plan.count);
+				prefix = addBlockValues(prefix, values, blockFrom, plan.count);
+				if (block + 1 < blockCount) {
+					LeBytes.putLong(encoded, prefixAt + (block + 1) * Long.BYTES, prefix);
+				}
+			}
+			writeBlock(encoded, blockAt, values, blockFrom, plan);
+			blockAt += plan.encodedBytes();
 		}
 		LeBytes.putInt(encoded, HEADER_BYTES + blockCount * Integer.BYTES, blockAt);
 		if (blockAt != encoded.length) {
@@ -166,20 +236,423 @@ final class PackedLongVector {
 		return encoded;
 	}
 
-	/**
-	 * Creates an allocation-free reader over one off-heap vector.
-	 * <p>
-	 * The backing memory must provide at least {@link #READ_TAIL_PADDING} readable bytes after
-	 * {@code address + byteLength}: the reader decodes tail values with a single 64-bit load that may touch up to seven
-	 * bytes past the vector's logical end. Native CSF pages guarantee this via {@code CsfShard}'s trailing allocation
-	 * pad; callers allocating their own buffers must add {@link #READ_TAIL_PADDING} bytes.
-	 */
 	static Reader reader(long address, int byteLength) {
 		return new Reader(address, byteLength);
 	}
 
 	static ArrayReader reader(byte[] encoded) {
 		return new ArrayReader(encoded);
+	}
+
+	/**
+	 * Validates one native vector and returns its logical value count. This is the allocation-free binding primitive
+	 * used by {@link CompactCsfPageReader}: page readers keep only native section addresses instead of allocating one
+	 * mutable {@link Reader} object per column.
+	 */
+	static int nativeSize(long address, int byteLength, boolean validate) {
+		if (address == 0 || byteLength < HEADER_BYTES + Integer.BYTES) {
+			throw new IllegalStateException("packed vector is shorter than its header and directory");
+		}
+		int size = UnsafeAccess.getIntLE(address);
+		int storedBlockCount = UnsafeAccess.getIntLE(address + Integer.BYTES);
+		boolean indexed = storedBlockCount < 0;
+		boolean prefixIndexed = (storedBlockCount & PREFIX_SUM_INDEXED_FLAG) != 0;
+		int radixBits = indexed ? decodeSearchRadixBits(storedBlockCount) : MIN_SEARCH_RADIX_BITS;
+		int blockCount = storedBlockCount & BLOCK_COUNT_MASK;
+		if (validate) {
+			validateNativeLayout(address, size, blockCount, byteLength, indexed, prefixIndexed, radixBits);
+		}
+		return size;
+	}
+
+	/** Bounds-free scalar access for an already validated native vector. */
+	static long nativeGet(long address, int ordinal) {
+		int block = ordinal >>> 8;
+		int blockAt = UnsafeAccess.getIntLE(address + HEADER_BYTES + (long) block * Integer.BYTES);
+		return decodeNative(address + blockAt, ordinal & (BLOCK_SIZE - 1));
+	}
+
+	/** Allocation-free range decode for an already validated native vector. */
+	static int nativeCopy(long address, int size, int fromOrdinal, int length, long[] target, int targetOffset) {
+		int remaining = length;
+		int source = fromOrdinal;
+		int output = targetOffset;
+		while (remaining > 0) {
+			int block = source >>> 8;
+			int lane = source & (BLOCK_SIZE - 1);
+			int blockValueCount = expectedBlockCount(size, block);
+			int take = Math.min(remaining, blockValueCount - lane);
+			int blockAt = UnsafeAccess.getIntLE(address + HEADER_BYTES + (long) block * Integer.BYTES);
+			decodeNativeRange(address + blockAt, blockValueCount, lane, take, target, output);
+			source += take;
+			output += take;
+			remaining -= take;
+		}
+		return length;
+	}
+
+	/**
+	 * Exact unsigned lookup used by compact page row directories. Unlike {@link Reader#binarySearchUnsigned(long)},
+	 * this variant deliberately carries no mutable memo object: a page lookup cursor already decides when a page is hot
+	 * enough to decode, and cold/sparse probes should not allocate a 100+ byte search state object merely to touch one
+	 * immutable vector.
+	 */
+	static int nativeBinarySearchUnsigned(long address, int size, long target) {
+		int storedBlockCount = UnsafeAccess.getIntLE(address + Integer.BYTES);
+		int blockCount = storedBlockCount & BLOCK_COUNT_MASK;
+		if (blockCount == 0) {
+			return -1;
+		}
+
+		int candidate = -1;
+		long blockAddress = 0;
+		int header = 0;
+		long base = 0;
+		if (blockCount <= 4) {
+			for (int block = 0; block < blockCount; block++) {
+				long probeAddress = address
+						+ UnsafeAccess.getIntLE(address + HEADER_BYTES + (long) block * Integer.BYTES);
+				int probeHeader = UnsafeAccess.getIntLE(probeAddress);
+				long probeBase = UnsafeAccess.getLongLE(probeAddress + 4);
+				if (Long.compareUnsigned(firstNativeValue(probeHeader, probeBase), target) > 0) {
+					break;
+				}
+				candidate = block;
+				blockAddress = probeAddress;
+				header = probeHeader;
+				base = probeBase;
+			}
+		} else {
+			int low = 0;
+			int high = blockCount - 1;
+			while (low <= high) {
+				int block = low + high >>> 1;
+				long probeAddress = address
+						+ UnsafeAccess.getIntLE(address + HEADER_BYTES + (long) block * Integer.BYTES);
+				int probeHeader = UnsafeAccess.getIntLE(probeAddress);
+				long probeBase = UnsafeAccess.getLongLE(probeAddress + 4);
+				if (Long.compareUnsigned(firstNativeValue(probeHeader, probeBase), target) <= 0) {
+					candidate = block;
+					blockAddress = probeAddress;
+					header = probeHeader;
+					base = probeBase;
+					low = block + 1;
+				} else {
+					high = block - 1;
+				}
+			}
+		}
+		if (candidate < 0) {
+			return -1;
+		}
+
+		int mode = header & MODE_MASK;
+		int width = header >>> Byte.SIZE & 0xff;
+		int count = header >>> Short.SIZE;
+		long payload = blockAddress + BLOCK_HEADER_BYTES;
+		int blockStart = candidate << 8;
+		if ((mode & MODE_DELTA_RAW) != 0) {
+			boolean typed = mode == MODE_DELTA_TYPED_PAYLOAD;
+			int type = header >>> TYPE_SHIFT & 0x3f;
+			long value = base;
+			for (int lane = 0; lane < count; lane++) {
+				long restored = typed ? restoreTypedId(value, type) : value;
+				int comparison = Long.compareUnsigned(restored, target);
+				if (comparison == 0) {
+					return blockStart + lane;
+				}
+				if (comparison > 0) {
+					return -1;
+				}
+				if (lane + 1 < count && width != 0) {
+					value += readBits(payload, lane * width, width);
+				}
+			}
+			return -1;
+		}
+
+		boolean typed = (mode & MODE_FOR_TYPED_PAYLOAD) != 0;
+		int type = header >>> TYPE_SHIFT & 0x3f;
+		long prefix = typed ? base << 7 : base;
+		long targetKey = target - prefix;
+		long targetResidual = typed ? targetKey >>> 7 : targetKey;
+		if (width == 0) {
+			long key = typed ? (long) type << 1 : 0;
+			return targetKey == key ? blockStart : -1;
+		}
+		if (width < Long.SIZE && targetResidual >>> width != 0) {
+			return -1;
+		}
+
+		int low = 0;
+		int high = count - 1;
+		if (storedBlockCount < 0) {
+			int radixBits = decodeSearchRadixBits(storedBlockCount);
+			int radixStride = 1 << radixBits;
+			int bucket = radixBucket(targetResidual, width, radixBits);
+			long radixAddress = address + HEADER_BYTES + (long) (blockCount + 1) * Integer.BYTES
+					+ (long) candidate * radixStride;
+			low = nativeSearchBoundary(radixAddress, bucket, count, radixStride);
+			int end = nativeSearchBoundary(radixAddress, bucket + 1, count, radixStride);
+			int lane = end - 1;
+			if (lane < low) {
+				return -1;
+			}
+			long residual = readBits(payload, lane * width, width);
+			long key = typed ? residual << 7 | (long) type << 1 : residual;
+			int comparison = Long.compareUnsigned(key, targetKey);
+			if (comparison == 0) {
+				return blockStart + lane;
+			}
+			if (comparison < 0) {
+				return -1;
+			}
+			high = lane - 1;
+		}
+		while (low <= high) {
+			int lane = low + high >>> 1;
+			long residual = readBits(payload, lane * width, width);
+			long key = typed ? residual << 7 | (long) type << 1 : residual;
+			int comparison = Long.compareUnsigned(key, targetKey);
+			if (comparison < 0) {
+				low = lane + 1;
+			} else if (comparison > 0) {
+				high = lane - 1;
+			} else {
+				return blockStart + lane;
+			}
+		}
+		return -1;
+	}
+
+	private static int nativeSearchBoundary(long radixAddress, int bucket, int count, int stride) {
+		if (bucket <= 0) {
+			return 0;
+		}
+		if (bucket >= stride) {
+			return count;
+		}
+		int boundary = UnsafeAccess.getUnsignedByte(radixAddress + bucket);
+		return boundary == 0 ? count : boundary;
+	}
+
+	/**
+	 * Decodes a slice of a delta-valued vector directly into cumulative absolute values. This fuses the old
+	 * get-per-skipped-lane prefix walk, bulk delta copy, and second prefix-sum pass used by
+	 * {@link CompactCsfPageReader#copySingleContextRange(int, int, int, int, long[], int, long[], int)}.
+	 */
+	static void nativeCopyCumulative(long address, int size, int fromOrdinal, int skipped, int length, long initial,
+			long[] target, int targetOffset) {
+		long value = initial + nativeRangeSum(address, size, fromOrdinal, skipped);
+		target[targetOffset] = value;
+		if (length > 1) {
+			nativePrefixSum(address, size, fromOrdinal + skipped, length - 1, value, target, targetOffset + 1);
+		}
+	}
+
+	/** Wrapped sum of {@code length} logical lanes, using block and in-block prefix checkpoints when useful. */
+	static long nativeRangeSum(long address, int size, int fromOrdinal, int length) {
+		if (length == 0) {
+			return 0;
+		}
+		int storedBlockCount = UnsafeAccess.getIntLE(address + Integer.BYTES);
+		if ((storedBlockCount & PREFIX_SUM_INDEXED_FLAG) == 0 || length <= 32
+				|| prefixSegment(fromOrdinal) == prefixSegment(fromOrdinal + length - 1)) {
+			return nativeSum(address, size, fromOrdinal, length, 0);
+		}
+		return nativePrefixValue(address, size, fromOrdinal + length)
+				- nativePrefixValue(address, size, fromOrdinal);
+	}
+
+	/** Wrapped sum of logical lanes in {@code [0,endOrdinal)}, decoding at most one 64-value segment. */
+	static long nativePrefixValue(long address, int size, int endOrdinal) {
+		if (endOrdinal <= 0) {
+			return 0;
+		}
+		int storedBlockCount = UnsafeAccess.getIntLE(address + Integer.BYTES);
+		int blockCount = storedBlockCount & BLOCK_COUNT_MASK;
+		if ((storedBlockCount & PREFIX_SUM_INDEXED_FLAG) == 0) {
+			return nativeSum(address, size, 0, endOrdinal, 0);
+		}
+		int block = endOrdinal >>> 8;
+		int lane = endOrdinal & (BLOCK_SIZE - 1);
+		long prefixAddress = prefixIndexAddress(address, storedBlockCount, blockCount);
+		if (block == blockCount) {
+			block--;
+			lane = expectedBlockCount(size, block);
+		}
+		long prefix = UnsafeAccess.getLongLE(prefixAddress + (long) block * Long.BYTES);
+		if (lane == 0) {
+			return prefix;
+		}
+		long blockAddress = address
+				+ UnsafeAccess.getIntLE(address + HEADER_BYTES + (long) block * Integer.BYTES);
+		long microAddress = microPrefixAddress(prefixAddress, blockCount, block);
+		int fromLane = 0;
+		if (lane >= MICRO_PREFIX_3) {
+			int encoded = UnsafeAccess.getUnsignedShortLE(microAddress + 2L * Short.BYTES);
+			if (encoded != 0) {
+				prefix += Integer.toUnsignedLong(encoded - 1);
+				fromLane = MICRO_PREFIX_3;
+			}
+		}
+		if (fromLane == 0 && lane >= MICRO_PREFIX_2) {
+			int encoded = UnsafeAccess.getUnsignedShortLE(microAddress + Short.BYTES);
+			if (encoded != 0) {
+				prefix += Integer.toUnsignedLong(encoded - 1);
+				fromLane = MICRO_PREFIX_2;
+			}
+		}
+		if (fromLane == 0 && lane >= MICRO_PREFIX_1) {
+			int encoded = UnsafeAccess.getUnsignedShortLE(microAddress);
+			if (encoded != 0) {
+				prefix += Integer.toUnsignedLong(encoded - 1);
+				fromLane = MICRO_PREFIX_1;
+			}
+		}
+		return sumNativeBlock(blockAddress, fromLane, lane - fromLane, prefix);
+	}
+
+	private static int prefixSegment(int ordinal) {
+		int lane = ordinal & (BLOCK_SIZE - 1);
+		return (ordinal >>> 8) * 4
+				+ (lane < MICRO_PREFIX_1 ? 0 : lane < MICRO_PREFIX_2 ? 1 : lane < MICRO_PREFIX_3 ? 2 : 3);
+	}
+
+	private static long nativeSum(long address, int size, int fromOrdinal, int length, long initial) {
+		long sum = initial;
+		int source = fromOrdinal;
+		int remaining = length;
+		while (remaining > 0) {
+			int block = source >>> 8;
+			int lane = source & (BLOCK_SIZE - 1);
+			int take = Math.min(remaining, expectedBlockCount(size, block) - lane);
+			long blockAddress = address
+					+ UnsafeAccess.getIntLE(address + HEADER_BYTES + (long) block * Integer.BYTES);
+			sum = sumNativeBlock(blockAddress, lane, take, sum);
+			source += take;
+			remaining -= take;
+		}
+		return sum;
+	}
+
+	private static void nativePrefixSum(long address, int size, int fromOrdinal, int length, long initial,
+			long[] target, int targetOffset) {
+		long value = initial;
+		int source = fromOrdinal;
+		int remaining = length;
+		int output = targetOffset;
+		while (remaining > 0) {
+			int block = source >>> 8;
+			int lane = source & (BLOCK_SIZE - 1);
+			int take = Math.min(remaining, expectedBlockCount(size, block) - lane);
+			long blockAddress = address
+					+ UnsafeAccess.getIntLE(address + HEADER_BYTES + (long) block * Integer.BYTES);
+			value = prefixNativeBlock(blockAddress, lane, take, value, target, output);
+			source += take;
+			output += take;
+			remaining -= take;
+		}
+	}
+
+	private static boolean searchIndexed(Hint hint, int blockCount) {
+		return blockCount != 0
+				&& (hint == Hint.SORTED_RANDOM_ACCESS_IDS || hint == Hint.SORTED_RANDOM_ACCESS_VALUES);
+	}
+
+	private static boolean prefixIndexed(Hint hint, int blockCount) {
+		return blockCount > 1 && hint == Hint.COUNTS_OR_DELTAS;
+	}
+
+	private static long addBlockValues(long sum, long[] values, int count) {
+		for (int i = 0; i < count; i++) {
+			sum += values[i];
+		}
+		return sum;
+	}
+
+	private static long addBlockValues(long sum, long[] values, int from, int count) {
+		int end = from + count;
+		for (int i = from; i < end; i++) {
+			sum += values[i];
+		}
+		return sum;
+	}
+
+	private static int prefixMetadataBytes(int blockCount) {
+		int bytes = Math.addExact(Math.multiplyExact(blockCount, Long.BYTES),
+				Math.multiplyExact(blockCount, MICRO_PREFIX_BYTES_PER_BLOCK));
+		return bytes + 7 & -8;
+	}
+
+	private static long microPrefixAddress(long prefixAddress, int blockCount, int block) {
+		return prefixAddress + (long) blockCount * Long.BYTES
+				+ (long) block * MICRO_PREFIX_BYTES_PER_BLOCK;
+	}
+
+	private static int encodeMicroPrefix(long value) {
+		return Long.compareUnsigned(value, MAX_ENCODED_MICRO_PREFIX) <= 0 ? (int) value + 1 : 0;
+	}
+
+	private static long localPrefix(long[] values, int from, int count, int checkpoint) {
+		if (count < checkpoint) {
+			return -1;
+		}
+		long sum = 0;
+		for (int i = 0; i < checkpoint; i++) {
+			sum += values[from + i];
+		}
+		return sum;
+	}
+
+	private static void writeMicroPrefixesNative(long prefixAddress, int blockCount, int block, long[] values,
+			int count) {
+		long at = microPrefixAddress(prefixAddress, blockCount, block);
+		long first = localPrefix(values, 0, count, MICRO_PREFIX_1);
+		long second = localPrefix(values, 0, count, MICRO_PREFIX_2);
+		long third = localPrefix(values, 0, count, MICRO_PREFIX_3);
+		UnsafeAccess.putShortLE(at, (short) (first < 0 ? 0 : encodeMicroPrefix(first)));
+		UnsafeAccess.putShortLE(at + Short.BYTES, (short) (second < 0 ? 0 : encodeMicroPrefix(second)));
+		UnsafeAccess.putShortLE(at + 2L * Short.BYTES, (short) (third < 0 ? 0 : encodeMicroPrefix(third)));
+	}
+
+	private static void writeMicroPrefixes(byte[] target, int prefixAt, int blockCount, int block, long[] values,
+			int from, int count) {
+		int at = prefixAt + blockCount * Long.BYTES + block * MICRO_PREFIX_BYTES_PER_BLOCK;
+		long first = localPrefix(values, from, count, MICRO_PREFIX_1);
+		long second = localPrefix(values, from, count, MICRO_PREFIX_2);
+		long third = localPrefix(values, from, count, MICRO_PREFIX_3);
+		LeBytes.putShort(target, at, first < 0 ? 0 : encodeMicroPrefix(first));
+		LeBytes.putShort(target, at + Short.BYTES, second < 0 ? 0 : encodeMicroPrefix(second));
+		LeBytes.putShort(target, at + 2 * Short.BYTES, third < 0 ? 0 : encodeMicroPrefix(third));
+	}
+
+	private static int searchRadixBits(int blockCount) {
+		if (blockCount == 2) {
+			return 9;
+		}
+		if (blockCount == 3 || blockCount == 4) {
+			return 10;
+		}
+		return MIN_SEARCH_RADIX_BITS;
+	}
+
+	private static int encodeStoredBlockCount(int blockCount, int radixBits) {
+		return SEARCH_INDEXED_FLAG | (radixBits - MIN_SEARCH_RADIX_BITS) << SEARCH_RADIX_BITS_SHIFT
+				| blockCount;
+	}
+
+	private static int decodeSearchRadixBits(int storedBlockCount) {
+		return MIN_SEARCH_RADIX_BITS
+				+ ((storedBlockCount & SEARCH_RADIX_BITS_MASK) >>> SEARCH_RADIX_BITS_SHIFT);
+	}
+
+	private static long prefixIndexAddress(long address, int storedBlockCount, int blockCount) {
+		long metadata = address + HEADER_BYTES + (long) (blockCount + 1) * Integer.BYTES;
+		if (storedBlockCount < 0) {
+			metadata += (long) blockCount << decodeSearchRadixBits(storedBlockCount);
+		}
+		return metadata;
 	}
 
 	private static BlockPlan planBlock(long[] values, int from, int count, Hint hint) {
@@ -317,8 +790,7 @@ final class PackedLongVector {
 				maxDelta = delta;
 			}
 		}
-		int width = unsignedWidth(maxDelta);
-		return candidate(MODE_FOR_RAW, 0, width, base, count);
+		return candidate(MODE_FOR_RAW, 0, unsignedWidth(maxDelta), base, count);
 	}
 
 	private static Candidate forTypedPayload(long[] values, int from, int count) {
@@ -332,20 +804,13 @@ final class PackedLongVector {
 			if (compoundType(value) != type) {
 				return null;
 			}
-			long payload = value >>> 7;
-			if (payload < base) {
-				base = payload;
-			}
+			base = Math.min(base, value >>> 7);
 		}
 		long maxDelta = 0;
 		for (int i = 0; i < count; i++) {
-			long delta = (values[from + i] >>> 7) - base;
-			if (delta > maxDelta) {
-				maxDelta = delta;
-			}
+			maxDelta = Math.max(maxDelta, (values[from + i] >>> 7) - base);
 		}
-		int width = unsignedWidth(maxDelta);
-		return candidate(MODE_FOR_TYPED_PAYLOAD, type, width, base, count);
+		return candidate(MODE_FOR_TYPED_PAYLOAD, type, unsignedWidth(maxDelta), base, count);
 	}
 
 	private static Candidate deltaRaw(long[] values, int from, int count) {
@@ -359,8 +824,7 @@ final class PackedLongVector {
 				maxDelta = delta;
 			}
 		}
-		int width = unsignedWidth(maxDelta);
-		return candidate(MODE_DELTA_RAW, 0, width, values[from], Math.max(0, count - 1));
+		return candidate(MODE_DELTA_RAW, 0, unsignedWidth(maxDelta), values[from], Math.max(0, count - 1));
 	}
 
 	private static Candidate deltaTypedPayload(long[] values, int from, int count) {
@@ -379,20 +843,58 @@ final class PackedLongVector {
 			if (payload < previous) {
 				return null;
 			}
-			long delta = payload - previous;
-			if (delta > maxDelta) {
-				maxDelta = delta;
-			}
+			maxDelta = Math.max(maxDelta, payload - previous);
 			previous = payload;
 		}
-		int width = unsignedWidth(maxDelta);
-		return candidate(MODE_DELTA_TYPED_PAYLOAD, type, width, values[from] >>> 7,
+		return candidate(MODE_DELTA_TYPED_PAYLOAD, type, unsignedWidth(maxDelta), values[from] >>> 7,
 				Math.max(0, count - 1));
 	}
 
 	private static Candidate candidate(int mode, int type, int width, long base, int lanes) {
-		int payload = packedBytes(lanes, width);
-		return new Candidate(mode, type, width, base, lanes, Math.addExact(BLOCK_HEADER_BYTES, payload));
+		return new Candidate(mode, type, width, base, lanes,
+				Math.addExact(BLOCK_HEADER_BYTES, packedBytes(lanes, width)));
+	}
+
+	private static void writeSearchRadix(byte[] target, int at, long[] values, int from, BlockPlan plan,
+			int radixBits) {
+		int nextBucket = 1;
+		for (int lane = 0; lane < plan.count; lane++) {
+			long residual = switch (plan.mode) {
+			case MODE_FOR_RAW -> values[from + lane] - plan.base;
+			case MODE_FOR_TYPED_PAYLOAD -> (values[from + lane] >>> 7) - plan.base;
+			default -> throw new IllegalStateException("search radix requires a FOR block");
+			};
+			int bucket = radixBucket(residual, plan.width, radixBits);
+			while (nextBucket <= bucket) {
+				target[at + nextBucket++] = (byte) lane;
+			}
+		}
+		while (nextBucket < 1 << radixBits) {
+			target[at + nextBucket++] = (byte) plan.count;
+		}
+	}
+
+	private static void writeSearchRadixNative(long address, long[] values, WriteScratch plan, int radixBits) {
+		int nextBucket = 1;
+		for (int lane = 0; lane < plan.count; lane++) {
+			long residual = switch (plan.mode) {
+			case MODE_FOR_RAW -> values[lane] - plan.base;
+			case MODE_FOR_TYPED_PAYLOAD -> (values[lane] >>> 7) - plan.base;
+			default -> throw new IllegalStateException("search radix requires a FOR block");
+			};
+			int bucket = radixBucket(residual, plan.width, radixBits);
+			while (nextBucket <= bucket) {
+				UnsafeAccess.putByte(address + nextBucket++, (byte) lane);
+			}
+		}
+		while (nextBucket < 1 << radixBits) {
+			UnsafeAccess.putByte(address + nextBucket++, (byte) plan.count);
+		}
+	}
+
+	private static int radixBucket(long residual, int width, int radixBits) {
+		return width >= radixBits ? (int) (residual >>> (width - radixBits))
+				: (int) (residual << (radixBits - width));
 	}
 
 	private static void writeBlock(byte[] target, int at, long[] values, int from, BlockPlan plan) {
@@ -471,7 +973,7 @@ final class PackedLongVector {
 
 	private static int compoundType(long value) {
 		if ((value & 1L) != 0) {
-			return -1; // RDF4J inlined doubles use the complete odd 64-bit lane
+			return -1;
 		}
 		return (int) (value >>> 1 & 0x3f);
 	}
@@ -532,43 +1034,299 @@ final class PackedLongVector {
 		}
 	}
 
-	private static long readBits(long payloadAddress, long bitOffset, int width) {
-		if (width == 0) {
-			return 0;
-		}
+	/** Extracts one non-zero-width packed lane. All zero-width modes are discharged by their callers. */
+	private static long readBits(long payloadAddress, int bitOffset, int width) {
 		long byteAddress = payloadAddress + (bitOffset >>> 3);
-		int within = (int) (bitOffset & 7);
-		int byteCount = (within + width + 7) >>> 3;
-		long value = readLittleEndian(byteAddress, Math.min(byteCount, Long.BYTES)) >>> within;
-		if (byteCount > Long.BYTES) {
+		int within = bitOffset & 7;
+		long value = UnsafeAccess.getLongLE(byteAddress) >>> within;
+		if (within + width > Long.SIZE) {
 			value |= (long) UnsafeAccess.getUnsignedByte(byteAddress + Long.BYTES) << (Long.SIZE - within);
 		}
-		return width == Long.SIZE ? value : value & (-1L >>> (Long.SIZE - width));
+		return value & (-1L >>> -width);
 	}
 
-	/**
-	 * Reads {@code byteCount} little-endian bytes at {@code address} as an unsigned value using a single 64-bit load
-	 * and a width mask.
-	 * <p>
-	 * The load always touches eight bytes, so {@code address} must have at least {@link #READ_TAIL_PADDING} readable
-	 * bytes of headroom past the region being decoded (see {@link #reader(long, int)}). Bytes beyond {@code byteCount}
-	 * are cleared by the mask, and any higher bits the caller does not consume are dropped by its own width mask, so
-	 * the extra bytes are never observed. {@code byteCount} is always in {@code [1, 8]} at both call sites; the
-	 * assertion documents that contract without adding a branch to the hot path.
-	 */
-	private static long readLittleEndian(long address, int byteCount) {
-//		assert byteCount >= 1 && byteCount <= Long.BYTES : "byte count out of range: " + byteCount;
-		return UnsafeAccess.getLongLE(address) & (-1L >>> ((Long.BYTES - byteCount) << 3));
-	}
-
-	private static long readPackedWord(long payload, int payloadBytes, int wordIndex) {
-		int byteOffset = wordIndex << 3;
-		int remaining = payloadBytes - byteOffset;
-		if (remaining <= 0) {
-			throw new IllegalStateException("packed decoder advanced beyond its declared payload");
+	private static long sumPacked(long payloadAddress, int lanes, int width) {
+		if (lanes == 0 || width == 0) {
+			return 0;
 		}
-		long address = payload + byteOffset;
-		return remaining >= Long.BYTES ? UnsafeAccess.getLongLE(address) : readLittleEndian(address, remaining);
+		if (width == Long.SIZE) {
+			long sum = 0;
+			long address = payloadAddress;
+			for (int lane = 0; lane < lanes; lane++, address += Long.BYTES) {
+				sum += UnsafeAccess.getLongLE(address);
+			}
+			return sum;
+		}
+		long mask = -1L >>> -width;
+		long wordAddress = payloadAddress;
+		long word = UnsafeAccess.getLongLE(wordAddress);
+		long sum = 0;
+		int shift = 0;
+		for (int lane = 0; lane < lanes; lane++) {
+			int advanced = shift + width;
+			long value = word >>> shift;
+			if (advanced >= Long.SIZE) {
+				wordAddress += Long.BYTES;
+				word = UnsafeAccess.getLongLE(wordAddress);
+				value |= word << (Long.SIZE - shift);
+				advanced -= Long.SIZE;
+			}
+			sum += value & mask;
+			shift = advanced;
+		}
+		return sum;
+	}
+
+	private static long firstNativeValue(int header, long base) {
+		return (header & MODE_FOR_TYPED_PAYLOAD) == 0 ? base
+				: restoreTypedId(base, header >>> TYPE_SHIFT & 0x3f);
+	}
+
+	/** Scalar native decode shared by the stateful and allocation-free readers. */
+	private static long decodeNative(long blockAddress, int lane) {
+		int header = UnsafeAccess.getIntLE(blockAddress);
+		int width = header >>> Byte.SIZE & 0xff;
+		long base = UnsafeAccess.getLongLE(blockAddress + 4);
+		long payload = blockAddress + BLOCK_HEADER_BYTES;
+		if ((header & MODE_DELTA_RAW) != 0) {
+			long value = base + sumPacked(payload, lane, width);
+			return (header & MODE_FOR_TYPED_PAYLOAD) == 0 ? value
+					: restoreTypedId(value, header >>> TYPE_SHIFT & 0x3f);
+		}
+		if (width == 0) {
+			return (header & MODE_FOR_TYPED_PAYLOAD) == 0 ? base
+					: restoreTypedId(base, header >>> TYPE_SHIFT & 0x3f);
+		}
+		long value = base + readBits(payload, lane * width, width);
+		return (header & MODE_FOR_TYPED_PAYLOAD) == 0 ? value
+				: restoreTypedId(value, header >>> TYPE_SHIFT & 0x3f);
+	}
+
+	private static void decodeNativeRange(long blockAddress, int valueCount, int fromLane, int length,
+			long[] target, int targetOffset) {
+		int header = UnsafeAccess.getIntLE(blockAddress);
+		int mode = header & MODE_MASK;
+		int type = header >>> TYPE_SHIFT & 0x3f;
+		int width = header >>> Byte.SIZE & 0xff;
+		long base = UnsafeAccess.getLongLE(blockAddress + 4);
+		long payload = blockAddress + BLOCK_HEADER_BYTES;
+		switch (mode) {
+		case MODE_FOR_RAW:
+			unpackForRaw(payload, valueCount, fromLane, length, width, base, target, targetOffset);
+			break;
+		case MODE_FOR_TYPED_PAYLOAD:
+			unpackForTyped(payload, valueCount, fromLane, length, width, base, type, target, targetOffset);
+			break;
+		case MODE_DELTA_RAW: {
+			if (width == 0) {
+				Arrays.fill(target, targetOffset, targetOffset + length, base);
+				break;
+			}
+			long value = base + sumPacked(payload, fromLane, width);
+			int end = targetOffset + length;
+			for (int output = targetOffset, lane = fromLane; output < end; output++, lane++) {
+				if (output != targetOffset) {
+					value += readBits(payload, (lane - 1) * width, width);
+				}
+				target[output] = value;
+			}
+			break;
+		}
+		case MODE_DELTA_TYPED_PAYLOAD: {
+			if (width == 0) {
+				Arrays.fill(target, targetOffset, targetOffset + length, restoreTypedId(base, type));
+				break;
+			}
+			long value = base + sumPacked(payload, fromLane, width);
+			int end = targetOffset + length;
+			for (int output = targetOffset, lane = fromLane; output < end; output++, lane++) {
+				if (output != targetOffset) {
+					value += readBits(payload, (lane - 1) * width, width);
+				}
+				target[output] = restoreTypedId(value, type);
+			}
+			break;
+		}
+		default:
+			throw new IllegalStateException("unknown packed-vector mode: " + mode);
+		}
+	}
+
+	/** Adds {@code length} logical lanes from one packed block to {@code sum}. */
+	private static long sumNativeBlock(long blockAddress, int fromLane, int length, long sum) {
+		int header = UnsafeAccess.getIntLE(blockAddress);
+		int mode = header & MODE_MASK;
+		int type = header >>> TYPE_SHIFT & 0x3f;
+		int width = header >>> Byte.SIZE & 0xff;
+		long base = UnsafeAccess.getLongLE(blockAddress + 4);
+		long payload = blockAddress + BLOCK_HEADER_BYTES;
+		boolean typed = (mode & MODE_FOR_TYPED_PAYLOAD) != 0;
+
+		if ((mode & MODE_DELTA_RAW) != 0) {
+			if (width == 0) {
+				long decoded = typed ? restoreTypedId(base, type) : base;
+				return sum + decoded * length;
+			}
+			long logical = base + sumPacked(payload, fromLane, width);
+			int end = fromLane + length;
+			for (int lane = fromLane; lane < end; lane++) {
+				sum += typed ? restoreTypedId(logical, type) : logical;
+				if (lane + 1 < end) {
+					logical += readBits(payload, lane * width, width);
+				}
+			}
+			return sum;
+		}
+
+		if (width == 0) {
+			long value = typed ? restoreTypedId(base, type) : base;
+			for (int i = 0; i < length; i++) {
+				sum += value;
+			}
+			return sum;
+		}
+		if (width == Long.SIZE) {
+			long source = payload + ((long) fromLane << 3);
+			long end = source + ((long) length << 3);
+			if (typed) {
+				for (; source < end; source += Long.BYTES) {
+					sum += restoreTypedId(base + UnsafeAccess.getLongLE(source), type);
+				}
+			} else {
+				for (; source < end; source += Long.BYTES) {
+					sum += base + UnsafeAccess.getLongLE(source);
+				}
+			}
+			return sum;
+		}
+
+		long mask = -1L >>> -width;
+		long bitPosition = (long) fromLane * width;
+		long wordAddress = payload + ((bitPosition >>> 6) << 3);
+		long word = UnsafeAccess.getLongLE(wordAddress);
+		int shift = (int) bitPosition & 63;
+		for (int i = 0; i < length; i++) {
+			int advanced = shift + width;
+			long residual = word >>> shift;
+			if (advanced >= Long.SIZE) {
+				wordAddress += Long.BYTES;
+				word = UnsafeAccess.getLongLE(wordAddress);
+				residual |= word << (Long.SIZE - shift);
+				advanced -= Long.SIZE;
+			}
+			long decoded = base + (residual & mask);
+			sum += typed ? restoreTypedId(decoded, type) : decoded;
+			shift = advanced;
+		}
+		return sum;
+	}
+
+	private static long sumArrayBlock(byte[] encoded, int blockAt, int count, long sum) {
+		int encodedMode = encoded[blockAt] & 0xff;
+		int mode = encodedMode & MODE_MASK;
+		int type = encodedMode >>> TYPE_SHIFT;
+		int width = encoded[blockAt + 1] & 0xff;
+		long base = LeBytes.getLong(encoded, blockAt + 4);
+		int payloadAt = blockAt + BLOCK_HEADER_BYTES;
+		boolean typed = (mode & MODE_FOR_TYPED_PAYLOAD) != 0;
+		if ((mode & MODE_DELTA_RAW) != 0) {
+			long value = base;
+			for (int lane = 0; lane < count; lane++) {
+				sum += typed ? restoreTypedId(value, type) : value;
+				if (lane + 1 < count) {
+					value += readBits(encoded, payloadAt, (long) lane * width, width);
+				}
+			}
+			return sum;
+		}
+		for (int lane = 0; lane < count; lane++) {
+			long value = base + readBits(encoded, payloadAt, (long) lane * width, width);
+			sum += typed ? restoreTypedId(value, type) : value;
+		}
+		return sum;
+	}
+
+	/** Prefix-adds {@code length} logical lanes from one block into {@code target}. */
+	private static long prefixNativeBlock(long blockAddress, int fromLane, int length, long value, long[] target,
+			int targetOffset) {
+		int header = UnsafeAccess.getIntLE(blockAddress);
+		int mode = header & MODE_MASK;
+		int type = header >>> TYPE_SHIFT & 0x3f;
+		int width = header >>> Byte.SIZE & 0xff;
+		long base = UnsafeAccess.getLongLE(blockAddress + 4);
+		long payload = blockAddress + BLOCK_HEADER_BYTES;
+		boolean typed = (mode & MODE_FOR_TYPED_PAYLOAD) != 0;
+
+		if ((mode & MODE_DELTA_RAW) != 0) {
+			if (width == 0) {
+				long decoded = typed ? restoreTypedId(base, type) : base;
+				for (int i = 0; i < length; i++) {
+					value += decoded;
+					target[targetOffset + i] = value;
+				}
+				return value;
+			}
+			long logical = base + sumPacked(payload, fromLane, width);
+			for (int i = 0, lane = fromLane; i < length; i++, lane++) {
+				value += typed ? restoreTypedId(logical, type) : logical;
+				target[targetOffset + i] = value;
+				if (i + 1 < length) {
+					logical += readBits(payload, lane * width, width);
+				}
+			}
+			return value;
+		}
+
+		if (width == 0) {
+			long decoded = typed ? restoreTypedId(base, type) : base;
+			int end = targetOffset + length;
+			for (int output = targetOffset; output < end; output++) {
+				value += decoded;
+				target[output] = value;
+			}
+			return value;
+		}
+		if (width == Long.SIZE) {
+			long source = payload + ((long) fromLane << 3);
+			int end = targetOffset + length;
+			if (typed) {
+				for (int output = targetOffset; output < end; output++, source += Long.BYTES) {
+					value += restoreTypedId(base + UnsafeAccess.getLongLE(source), type);
+					target[output] = value;
+				}
+			} else {
+				for (int output = targetOffset; output < end; output++, source += Long.BYTES) {
+					value += base + UnsafeAccess.getLongLE(source);
+					target[output] = value;
+				}
+			}
+			return value;
+		}
+
+		long mask = -1L >>> -width;
+		long bitPosition = (long) fromLane * width;
+		long wordAddress = payload + ((bitPosition >>> 6) << 3);
+		long word = UnsafeAccess.getLongLE(wordAddress);
+		int shift = (int) bitPosition & 63;
+		for (int i = 0; i < length; i++) {
+			int advanced = shift + width;
+			long residual = word >>> shift;
+			if (advanced >= Long.SIZE) {
+				wordAddress += Long.BYTES;
+				word = UnsafeAccess.getLongLE(wordAddress);
+				residual |= word << (Long.SIZE - shift);
+				advanced -= Long.SIZE;
+			}
+			long decoded = base + (residual & mask);
+			value += typed ? restoreTypedId(decoded, type) : decoded;
+			target[targetOffset + i] = value;
+			shift = advanced;
+		}
+		return value;
+	}
+
+	private static long readLittleEndian(long address, int byteCount) {
+		return UnsafeAccess.getLongLE(address) & (-1L >>> ((Long.BYTES - byteCount) << 3));
 	}
 
 	private static void unpackForRaw(long payload, int valueCount, int fromLane, int length, int width, long base,
@@ -586,38 +1344,28 @@ final class PackedLongVector {
 			return;
 		}
 
-		int payloadBytes = packedBytes(valueCount, width);
+		/*
+		 * Native vectors guarantee an eight-byte readable tail. Read whole packed words unconditionally, including at
+		 * block tails; the width mask drops bytes belonging to the next block (or allocation padding). This avoids the
+		 * old remaining-byte calculation, partial-word mask, highLoaded state and second bounds branch per lane.
+		 */
+		long mask = -1L >>> -width;
 		long bitPosition = (long) fromLane * width;
-		int wordIndex = (int) (bitPosition >>> 6);
-		int bitShift = (int) (bitPosition & (Long.SIZE - 1));
-		long low = readPackedWord(payload, payloadBytes, wordIndex);
-		long high = 0;
-		boolean highLoaded = false;
-		long mask = -1L >>> (Long.SIZE - width);
+		long wordAddress = payload + ((bitPosition >>> 6) << 3);
+		long word = UnsafeAccess.getLongLE(wordAddress);
+		int shift = (int) bitPosition & 63;
 		int end = targetOffset + length;
 		for (int output = targetOffset; output < end; output++) {
-			long residual;
-			if (bitShift <= Long.SIZE - width) {
-				residual = low >>> bitShift & mask;
-			} else {
-				high = readPackedWord(payload, payloadBytes, wordIndex + 1);
-				highLoaded = true;
-				residual = (low >>> bitShift | high << (Long.SIZE - bitShift)) & mask;
-			}
-			target[output] = base + residual;
-			if (output + 1 == end) {
-				break;
-			}
-
-			int advanced = bitShift + width;
+			int advanced = shift + width;
+			long residual = word >>> shift;
 			if (advanced >= Long.SIZE) {
-				wordIndex++;
-				bitShift = advanced - Long.SIZE;
-				low = highLoaded ? high : readPackedWord(payload, payloadBytes, wordIndex);
-				highLoaded = false;
-			} else {
-				bitShift = advanced;
+				wordAddress += Long.BYTES;
+				word = UnsafeAccess.getLongLE(wordAddress);
+				residual |= word << (Long.SIZE - shift);
+				advanced -= Long.SIZE;
 			}
+			target[output] = base + (residual & mask);
+			shift = advanced;
 		}
 	}
 
@@ -636,38 +1384,23 @@ final class PackedLongVector {
 			return;
 		}
 
-		int payloadBytes = packedBytes(valueCount, width);
+		long mask = -1L >>> -width;
 		long bitPosition = (long) fromLane * width;
-		int wordIndex = (int) (bitPosition >>> 6);
-		int bitShift = (int) (bitPosition & (Long.SIZE - 1));
-		long low = readPackedWord(payload, payloadBytes, wordIndex);
-		long high = 0;
-		boolean highLoaded = false;
-		long mask = -1L >>> (Long.SIZE - width);
+		long wordAddress = payload + ((bitPosition >>> 6) << 3);
+		long word = UnsafeAccess.getLongLE(wordAddress);
+		int shift = (int) bitPosition & 63;
 		int end = targetOffset + length;
 		for (int output = targetOffset; output < end; output++) {
-			long residual;
-			if (bitShift <= Long.SIZE - width) {
-				residual = low >>> bitShift & mask;
-			} else {
-				high = readPackedWord(payload, payloadBytes, wordIndex + 1);
-				highLoaded = true;
-				residual = (low >>> bitShift | high << (Long.SIZE - bitShift)) & mask;
-			}
-			target[output] = restoreTypedId(base + residual, type);
-			if (output + 1 == end) {
-				break;
-			}
-
-			int advanced = bitShift + width;
+			int advanced = shift + width;
+			long residual = word >>> shift;
 			if (advanced >= Long.SIZE) {
-				wordIndex++;
-				bitShift = advanced - Long.SIZE;
-				low = highLoaded ? high : readPackedWord(payload, payloadBytes, wordIndex);
-				highLoaded = false;
-			} else {
-				bitShift = advanced;
+				wordAddress += Long.BYTES;
+				word = UnsafeAccess.getLongLE(wordAddress);
+				residual |= word << (Long.SIZE - shift);
+				advanced -= Long.SIZE;
 			}
+			target[output] = restoreTypedId(base + (residual & mask), type);
+			shift = advanced;
 		}
 	}
 
@@ -699,14 +1432,34 @@ final class PackedLongVector {
 	private record BlockPlan(int mode, int type, int width, int count, long base, int lanes, int encodedBytes) {
 	}
 
-	/** Allocation-free reader over one off-heap vector. */
 	static final class Reader {
 		private long address;
 		private int size;
 		private int blockCount;
-		/** Last value resolved by {@link #binarySearchUnsigned(long)}; readers are single-cursor state, not shared. */
+		private boolean searchIndexed;
+		private int searchRadixBits;
+		private int searchRadixStride;
+		private long searchRadixAddress;
+
 		private int searchHintIndex = -1;
 		private long searchHintValue;
+
+		/* Lazy page-local directory for the actual findRow shape: at most four 256-lane blocks. */
+		private boolean smallDirectoryReady;
+		private long smallBlockOffsets;
+		private long searchFence0;
+		private long searchFence1;
+		private long searchFence2;
+		private long searchFence3;
+
+		/* Last searched block descriptor. Readers are explicitly single-cursor state. */
+		private int cachedSearchBlock = -1;
+		private long cachedBlockAddress;
+		private int cachedBlockHeader;
+		private long cachedBlockBase;
+		private long cachedBlockPayload;
+		private long cachedBlockFirst;
+		private long cachedBlockUpper;
 
 		Reader() {
 		}
@@ -719,31 +1472,45 @@ final class PackedLongVector {
 			resolve(address, byteLength, true);
 		}
 
-		/**
-		 * Binds this reader to one off-heap vector. When {@code validate} is set the native directory layout is fully
-		 * checked; otherwise only the cheap header-length guard runs, trusting a layout that was validated on the
-		 * page's first materialization (see {@link CompactCsfPageReader#bindTrusted(long)}).
-		 */
 		void resolve(long address, int byteLength, boolean validate) {
 			if (address == 0 || byteLength < HEADER_BYTES + Integer.BYTES) {
 				throw new IllegalStateException("packed vector is shorter than its header and directory");
 			}
 			int resolvedSize = UnsafeAccess.getIntLE(address);
-			int resolvedBlockCount = UnsafeAccess.getIntLE(address + 4);
+			int storedBlockCount = UnsafeAccess.getIntLE(address + 4);
+			boolean indexed = storedBlockCount < 0;
+			boolean prefixIndexed = (storedBlockCount & PREFIX_SUM_INDEXED_FLAG) != 0;
+			int radixBits = indexed ? decodeSearchRadixBits(storedBlockCount) : MIN_SEARCH_RADIX_BITS;
+			int resolvedBlockCount = storedBlockCount & BLOCK_COUNT_MASK;
 			if (validate) {
-				validateNativeLayout(address, resolvedSize, resolvedBlockCount, byteLength);
+				validateNativeLayout(address, resolvedSize, resolvedBlockCount, byteLength, indexed, prefixIndexed,
+						radixBits);
 			}
 			this.address = address;
 			this.size = resolvedSize;
 			this.blockCount = resolvedBlockCount;
-			this.searchHintIndex = -1;
+			this.searchIndexed = indexed;
+			this.searchRadixBits = radixBits;
+			this.searchRadixStride = 1 << radixBits;
+			this.searchRadixAddress = address + HEADER_BYTES + (long) (resolvedBlockCount + 1) * Integer.BYTES;
+			resetSearchState();
 		}
 
 		void clear() {
 			address = 0;
 			size = 0;
 			blockCount = 0;
+			searchIndexed = false;
+			searchRadixBits = MIN_SEARCH_RADIX_BITS;
+			searchRadixStride = 1 << MIN_SEARCH_RADIX_BITS;
+			searchRadixAddress = 0;
+			resetSearchState();
+		}
+
+		private void resetSearchState() {
 			searchHintIndex = -1;
+			smallDirectoryReady = false;
+			cachedSearchBlock = -1;
 		}
 
 		int size() {
@@ -754,136 +1521,280 @@ final class PackedLongVector {
 			if (ordinal < 0 || ordinal >= size) {
 				throw new IllegalArgumentException("vector ordinal out of range: " + ordinal + " of " + size);
 			}
-			int block = ordinal / BLOCK_SIZE;
-			int lane = ordinal - block * BLOCK_SIZE;
+			int block = ordinal >>> 8;
 			int blockAt = UnsafeAccess.getIntLE(address + HEADER_BYTES + (long) block * Integer.BYTES);
-			return decodeNative(address + blockAt, lane);
+			return decodeNative(address + blockAt, ordinal & (BLOCK_SIZE - 1));
 		}
 
 		int binarySearchUnsigned(long target) {
-			// callers re-probe the same or a nearby row far more often than a random one, so
-			// resolve repeats from the memo and gallop out from the last position before
-			// falling back to a binary search over the remaining window; the memo fast path
-			// stays in this small dispatch method so the JIT can inline it into callers
 			int hint = searchHintIndex;
-			if (hint < 0) {
-				return searchWindow(target, 0, size - 1, -1, 0);
-			}
-			int hintComparison = Long.compareUnsigned(searchHintValue, target);
-			if (hintComparison == 0) {
+			if (hint >= 0 && searchHintValue == target) {
 				return hint;
 			}
-			return hintComparison < 0 ? gallopForward(target, hint) : gallopBackward(target, hint);
+			int block = cachedSearchBlock;
+			if (block >= 0 && Long.compareUnsigned(target, cachedBlockFirst) >= 0
+					&& (block + 1 == blockCount || Long.compareUnsigned(target, cachedBlockUpper) < 0)) {
+				return searchCachedBlock(target);
+			}
+			return searchWholeVector(target);
 		}
 
-		private int gallopForward(long target, int hint) {
-			int floorIndex = hint;
-			long floorValue = searchHintValue;
-			int low = hint + 1;
-			int high = size - 1;
-			for (int step = 1;; step <<= 1) {
-				int probe = hint + step;
-				if (probe > high || probe < 0) {
-					break;
+		private int searchWholeVector(long target) {
+			if (blockCount == 0) {
+				return -1;
+			}
+			int block;
+			long blockAddress;
+			int header;
+			long base;
+			if (blockCount <= 4) {
+				ensureSmallDirectory();
+				if (Long.compareUnsigned(target, searchFence0) < 0) {
+					return -1;
 				}
-				long value = get(probe);
-				int comparison = Long.compareUnsigned(value, target);
-				if (comparison < 0) {
-					floorIndex = probe;
-					floorValue = value;
-					low = probe + 1;
-				} else if (comparison > 0) {
-					high = probe - 1;
-					break;
-				} else {
-					searchHintIndex = probe;
-					searchHintValue = value;
-					return probe;
+				block = switch (blockCount) {
+				case 1 -> 0;
+				case 2 -> Long.compareUnsigned(target, searchFence1) < 0 ? 0 : 1;
+				case 3 -> Long.compareUnsigned(target, searchFence1) < 0 ? 0
+						: Long.compareUnsigned(target, searchFence2) < 0 ? 1 : 2;
+				case 4 -> Long.compareUnsigned(target, searchFence2) < 0
+						? (Long.compareUnsigned(target, searchFence1) < 0 ? 0 : 1)
+						: (Long.compareUnsigned(target, searchFence3) < 0 ? 2 : 3);
+				default -> throw new AssertionError();
+				};
+				int blockAt = (int) (smallBlockOffsets >>> (block << 4)) & 0xffff;
+				blockAddress = address + blockAt;
+				header = UnsafeAccess.getIntLE(blockAddress);
+				base = UnsafeAccess.getLongLE(blockAddress + 4);
+			} else {
+				int low = 0;
+				int high = blockCount - 1;
+				int candidate = -1;
+				blockAddress = 0;
+				header = 0;
+				base = 0;
+				while (low <= high) {
+					int probe = low + high >>> 1;
+					long probeAddress = address
+							+ UnsafeAccess.getIntLE(address + HEADER_BYTES + (long) probe * Integer.BYTES);
+					int probeHeader = UnsafeAccess.getIntLE(probeAddress);
+					long probeBase = UnsafeAccess.getLongLE(probeAddress + 4);
+					long first = firstNativeValue(probeHeader, probeBase);
+					if (Long.compareUnsigned(first, target) <= 0) {
+						candidate = probe;
+						blockAddress = probeAddress;
+						header = probeHeader;
+						base = probeBase;
+						low = probe + 1;
+					} else {
+						high = probe - 1;
+					}
+				}
+				if (candidate < 0) {
+					return -1;
+				}
+				block = candidate;
+			}
+			cacheSearchBlock(block, blockAddress, header, base);
+			return searchCachedBlock(target);
+		}
+
+		private void ensureSmallDirectory() {
+			if (smallDirectoryReady) {
+				return;
+			}
+			long packedOffsets = 0;
+			for (int block = 0; block < blockCount; block++) {
+				int blockAt = UnsafeAccess.getIntLE(address + HEADER_BYTES + (long) block * Integer.BYTES);
+				if ((blockAt & ~0xffff) != 0) {
+					throw new IllegalStateException("small packed vector exceeds its 16-bit local directory");
+				}
+				packedOffsets |= (long) blockAt << (block << 4);
+				long blockAddress = address + blockAt;
+				int header = UnsafeAccess.getIntLE(blockAddress);
+				long first = firstNativeValue(header, UnsafeAccess.getLongLE(blockAddress + 4));
+				switch (block) {
+				case 0 -> searchFence0 = first;
+				case 1 -> searchFence1 = first;
+				case 2 -> searchFence2 = first;
+				case 3 -> searchFence3 = first;
+				default -> throw new AssertionError();
 				}
 			}
-			return searchWindow(target, low, high, floorIndex, floorValue);
+			smallBlockOffsets = packedOffsets;
+			smallDirectoryReady = true;
 		}
 
-		private int gallopBackward(long target, int hint) {
-			int low = 0;
-			int high = hint - 1;
-			int floorIndex = -1;
-			long floorValue = 0;
-			for (int step = 1;; step <<= 1) {
-				int probe = hint - step;
-				if (probe < 0) {
-					break;
-				}
-				long value = get(probe);
-				int comparison = Long.compareUnsigned(value, target);
-				if (comparison > 0) {
-					high = probe - 1;
-				} else if (comparison < 0) {
-					floorIndex = probe;
-					floorValue = value;
-					low = probe + 1;
-					break;
+		private void cacheSearchBlock(int block, long blockAddress, int header, long base) {
+			cachedSearchBlock = block;
+			cachedBlockAddress = blockAddress;
+			cachedBlockHeader = header;
+			cachedBlockBase = base;
+			cachedBlockPayload = blockAddress + BLOCK_HEADER_BYTES;
+			cachedBlockFirst = firstNativeValue(header, base);
+			if (block + 1 < blockCount) {
+				if (blockCount <= 4) {
+					cachedBlockUpper = switch (block + 1) {
+					case 1 -> searchFence1;
+					case 2 -> searchFence2;
+					case 3 -> searchFence3;
+					default -> throw new AssertionError();
+					};
 				} else {
-					searchHintIndex = probe;
-					searchHintValue = value;
-					return probe;
+					long nextAddress = address + UnsafeAccess
+							.getIntLE(address + HEADER_BYTES + (long) (block + 1) * Integer.BYTES);
+					int nextHeader = UnsafeAccess.getIntLE(nextAddress);
+					cachedBlockUpper = firstNativeValue(nextHeader, UnsafeAccess.getLongLE(nextAddress + 4));
 				}
 			}
-			return searchWindow(target, low, high, floorIndex, floorValue);
 		}
 
-		private int searchWindow(long target, int low, int high, int floorIndex, long floorValue) {
-			int cachedBlock = -1;
-			int cachedMode = -1;
-			int cachedType = 0;
-			int cachedWidth = 0;
-			long cachedBlockAddress = 0;
-			long cachedBase = 0;
-			long cachedPayload = 0;
+		private int searchCachedBlock(long target) {
+			int header = cachedBlockHeader;
+			int mode = header & MODE_MASK;
+			int width = header >>> Byte.SIZE & 0xff;
+			int count = header >>> Short.SIZE;
+			if ((mode & MODE_DELTA_RAW) != 0) {
+				return searchDeltaBlock(target, mode, width, count);
+			}
+			int blockStart = cachedSearchBlock << 8;
+			boolean typed = (mode & MODE_FOR_TYPED_PAYLOAD) != 0;
+			int type = header >>> TYPE_SHIFT & 0x3f;
+			long base = cachedBlockBase;
+			long prefix = typed ? base << 7 : base;
+			if (Long.compareUnsigned(target, cachedBlockFirst) < 0) {
+				return -1;
+			}
+			long targetKey = target - prefix;
+			long targetResidual = typed ? targetKey >>> 7 : targetKey;
+
+			if (width == 0) {
+				long key = typed ? (long) type << 1 : 0;
+				if (targetKey == key) {
+					return rememberHit(blockStart, prefix + key);
+				}
+				return Long.compareUnsigned(key, targetKey) < 0
+						? rememberFloor(blockStart + count - 1, prefix + key)
+						: -1;
+			}
+			if (width < Long.SIZE && targetResidual >>> width != 0) {
+				return rememberLastLane(blockStart, count, width, prefix, typed, type);
+			}
+			if (!searchIndexed) {
+				return binarySearchForBlock(targetKey, prefix, typed, type, width, blockStart, 0, count - 1);
+			}
+
+			int bucket = radixBucket(targetResidual, width, searchRadixBits);
+			long radixAddress = searchRadixAddress + (long) cachedSearchBlock * searchRadixStride;
+			int end = searchBoundary(radixAddress, bucket + 1, count);
+			int candidate = end - 1;
+			if (candidate < 0) {
+				return -1;
+			}
+			long residual = readBits(cachedBlockPayload, candidate * width, width);
+			long key = typed ? residual << 7 | (long) type << 1 : residual;
+			int comparison = Long.compareUnsigned(key, targetKey);
+			if (comparison == 0) {
+				return rememberHit(blockStart + candidate, prefix + key);
+			}
+			if (comparison < 0) {
+				return rememberFloor(blockStart + candidate, prefix + key);
+			}
+
+			int low = searchBoundary(radixAddress, bucket, count);
+			return binarySearchForBlock(targetKey, prefix, typed, type, width, blockStart, low, candidate - 1);
+		}
+
+		private int binarySearchForBlock(long targetKey, long prefix, boolean typed, int type, int width,
+				int blockStart, int low, int high) {
+			int floorLane = low - 1;
+			long floorKey = 0;
+			boolean floorKnown = false;
 			while (low <= high) {
-				int mid = low + high >>> 1;
-				int block = mid >>> 8;
-				if (block != cachedBlock) {
-					int blockAt = UnsafeAccess
-							.getIntLE(address + HEADER_BYTES + (long) block * Integer.BYTES);
-					cachedBlockAddress = address + blockAt;
-					int encodedMode = UnsafeAccess.getUnsignedByte(cachedBlockAddress);
-					cachedMode = encodedMode & MODE_MASK;
-					cachedType = encodedMode >>> TYPE_SHIFT;
-					cachedWidth = UnsafeAccess.getUnsignedByte(cachedBlockAddress + 1);
-					cachedBase = UnsafeAccess.getLongLE(cachedBlockAddress + 4);
-					cachedPayload = cachedBlockAddress + BLOCK_HEADER_BYTES;
-					cachedBlock = block;
-				}
-				int lane = mid & (BLOCK_SIZE - 1);
-				long value;
-				if (cachedMode == MODE_FOR_RAW) {
-					value = cachedBase + readBits(cachedPayload, (long) lane * cachedWidth, cachedWidth);
-				} else if (cachedMode == MODE_FOR_TYPED_PAYLOAD) {
-					value = restoreTypedId(
-							cachedBase + readBits(cachedPayload, (long) lane * cachedWidth, cachedWidth),
-							cachedType);
-				} else {
-					value = decodeNative(cachedBlockAddress, lane);
-				}
-				int comparison = Long.compareUnsigned(value, target);
+				int lane = low + high >>> 1;
+				long residual = readBits(cachedBlockPayload, lane * width, width);
+				long key = typed ? residual << 7 | (long) type << 1 : residual;
+				int comparison = Long.compareUnsigned(key, targetKey);
 				if (comparison < 0) {
-					floorIndex = mid;
-					floorValue = value;
-					low = mid + 1;
+					floorLane = lane;
+					floorKey = key;
+					floorKnown = true;
+					low = lane + 1;
 				} else if (comparison > 0) {
-					high = mid - 1;
+					high = lane - 1;
 				} else {
-					searchHintIndex = mid;
-					searchHintValue = value;
-					return mid;
+					return rememberHit(blockStart + lane, prefix + key);
 				}
 			}
-			if (floorIndex >= 0) {
-				searchHintIndex = floorIndex;
-				searchHintValue = floorValue;
+			if (floorLane < 0) {
+				return -1;
 			}
+			if (!floorKnown) {
+				long residual = readBits(cachedBlockPayload, floorLane * width, width);
+				floorKey = typed ? residual << 7 | (long) type << 1 : residual;
+			}
+			return rememberFloor(blockStart + floorLane, prefix + floorKey);
+		}
+
+		private int searchDeltaBlock(long target, int mode, int width, int count) {
+			int blockStart = cachedSearchBlock << 8;
+			boolean typed = mode == MODE_DELTA_TYPED_PAYLOAD;
+			int type = cachedBlockHeader >>> TYPE_SHIFT & 0x3f;
+			long value = cachedBlockBase;
+			if (width == 0) {
+				long restored = typed ? restoreTypedId(value, type) : value;
+				int comparison = Long.compareUnsigned(restored, target);
+				return comparison == 0 ? rememberHit(blockStart, restored)
+						: comparison < 0 ? rememberFloor(blockStart + count - 1, restored) : -1;
+			}
+			int floorLane = -1;
+			long floorValue = 0;
+			for (int lane = 0; lane < count; lane++) {
+				long restored = typed ? restoreTypedId(value, type) : value;
+				int comparison = Long.compareUnsigned(restored, target);
+				if (comparison == 0) {
+					return rememberHit(blockStart + lane, restored);
+				}
+				if (comparison > 0) {
+					break;
+				}
+				floorLane = lane;
+				floorValue = restored;
+				if (lane + 1 < count) {
+					value += readBits(cachedBlockPayload, lane * width, width);
+				}
+			}
+			return floorLane >= 0 ? rememberFloor(blockStart + floorLane, floorValue) : -1;
+		}
+
+		private int rememberLastLane(int blockStart, int count, int width, long prefix, boolean typed, int type) {
+			int lane = count - 1;
+			long residual = readBits(cachedBlockPayload, lane * width, width);
+			long key = typed ? residual << 7 | (long) type << 1 : residual;
+			return rememberFloor(blockStart + lane, prefix + key);
+		}
+
+		private int rememberHit(int ordinal, long value) {
+			searchHintIndex = ordinal;
+			searchHintValue = value;
+			return ordinal;
+		}
+
+		private int rememberFloor(int ordinal, long value) {
+			searchHintIndex = ordinal;
+			searchHintValue = value;
 			return -1;
+		}
+
+		private int searchBoundary(long radixAddress, int bucket, int count) {
+			if (bucket <= 0) {
+				return 0;
+			}
+			if (bucket >= searchRadixStride) {
+				return count;
+			}
+			int boundary = UnsafeAccess.getUnsignedByte(radixAddress + bucket);
+			return boundary == 0 ? count : boundary;
 		}
 
 		int copy(int fromOrdinal, int length, long[] target, int targetOffset) {
@@ -897,8 +1808,8 @@ final class PackedLongVector {
 			int source = fromOrdinal;
 			int output = targetOffset;
 			while (remaining > 0) {
-				int block = source / BLOCK_SIZE;
-				int lane = source - block * BLOCK_SIZE;
+				int block = source >>> 8;
+				int lane = source & (BLOCK_SIZE - 1);
 				int blockValueCount = expectedBlockCount(size, block);
 				int take = Math.min(remaining, blockValueCount - lane);
 				int blockAt = UnsafeAccess.getIntLE(address + HEADER_BYTES + (long) block * Integer.BYTES);
@@ -911,87 +1822,16 @@ final class PackedLongVector {
 		}
 
 		private long decodeNative(long blockAddress, int lane) {
-			int encodedMode = UnsafeAccess.getUnsignedByte(blockAddress);
-			int mode = encodedMode & MODE_MASK;
-			int type = encodedMode >>> TYPE_SHIFT;
-			int width = UnsafeAccess.getUnsignedByte(blockAddress + 1);
-			long base = UnsafeAccess.getLongLE(blockAddress + 4);
-			long payload = blockAddress + BLOCK_HEADER_BYTES;
-			long value;
-			switch (mode) {
-			case MODE_FOR_RAW:
-				value = base + readBits(payload, (long) lane * width, width);
-				break;
-			case MODE_FOR_TYPED_PAYLOAD:
-				value = restoreTypedId(base + readBits(payload, (long) lane * width, width), type);
-				break;
-			case MODE_DELTA_RAW:
-				value = base;
-				for (int i = 0; i < lane; i++) {
-					value += readBits(payload, (long) i * width, width);
-				}
-				break;
-			case MODE_DELTA_TYPED_PAYLOAD:
-				long p = base;
-				for (int i = 0; i < lane; i++) {
-					p += readBits(payload, (long) i * width, width);
-				}
-				value = restoreTypedId(p, type);
-				break;
-			default:
-				throw new IllegalStateException("unknown packed-vector mode: " + mode);
-			}
-			return value;
+			return PackedLongVector.decodeNative(blockAddress, lane);
 		}
 
 		private void decodeNativeRange(long blockAddress, int valueCount, int fromLane, int length, long[] target,
 				int targetOffset) {
-			int encodedMode = UnsafeAccess.getUnsignedByte(blockAddress);
-			int mode = encodedMode & MODE_MASK;
-			int type = encodedMode >>> TYPE_SHIFT;
-			int width = UnsafeAccess.getUnsignedByte(blockAddress + 1);
-			long base = UnsafeAccess.getLongLE(blockAddress + 4);
-			long payload = blockAddress + BLOCK_HEADER_BYTES;
-			switch (mode) {
-			case MODE_FOR_RAW:
-				unpackForRaw(payload, valueCount, fromLane, length, width, base, target, targetOffset);
-				break;
-			case MODE_FOR_TYPED_PAYLOAD:
-				unpackForTyped(payload, valueCount, fromLane, length, width, base, type, target, targetOffset);
-				break;
-			case MODE_DELTA_RAW: {
-				long value = base;
-				for (int lane = 0; lane < fromLane; lane++) {
-					value += readBits(payload, (long) lane * width, width);
-				}
-				for (int i = 0; i < length; i++) {
-					if (i > 0) {
-						value += readBits(payload, (long) (fromLane + i - 1) * width, width);
-					}
-					target[targetOffset + i] = value;
-				}
-				break;
-			}
-			case MODE_DELTA_TYPED_PAYLOAD: {
-				long value = base;
-				for (int lane = 0; lane < fromLane; lane++) {
-					value += readBits(payload, (long) lane * width, width);
-				}
-				for (int i = 0; i < length; i++) {
-					if (i > 0) {
-						value += readBits(payload, (long) (fromLane + i - 1) * width, width);
-					}
-					target[targetOffset + i] = restoreTypedId(value, type);
-				}
-				break;
-			}
-			default:
-				throw new IllegalStateException("unknown packed-vector mode: " + mode);
-			}
+			PackedLongVector.decodeNativeRange(blockAddress, valueCount, fromLane, length, target, targetOffset);
 		}
+
 	}
 
-	/** Byte-array reader used by codec tests and the sizing/materialization parity checks. */
 	static final class ArrayReader {
 		private final byte[] encoded;
 		private final int size;
@@ -1003,8 +1843,12 @@ final class PackedLongVector {
 				throw new IllegalStateException("packed vector is shorter than its header and directory");
 			}
 			this.size = LeBytes.getInt(this.encoded, 0);
-			this.blockCount = LeBytes.getInt(this.encoded, 4);
-			validateArrayHeaderAndDirectory(this.encoded, size, blockCount);
+			int storedBlockCount = LeBytes.getInt(this.encoded, 4);
+			boolean indexed = storedBlockCount < 0;
+			boolean prefixIndexed = (storedBlockCount & PREFIX_SUM_INDEXED_FLAG) != 0;
+			int radixBits = indexed ? decodeSearchRadixBits(storedBlockCount) : MIN_SEARCH_RADIX_BITS;
+			this.blockCount = storedBlockCount & BLOCK_COUNT_MASK;
+			validateArrayHeaderAndDirectory(this.encoded, size, blockCount, indexed, prefixIndexed, radixBits);
 		}
 
 		int size() {
@@ -1015,8 +1859,8 @@ final class PackedLongVector {
 			if (ordinal < 0 || ordinal >= size) {
 				throw new IllegalArgumentException("vector ordinal out of range: " + ordinal + " of " + size);
 			}
-			int block = ordinal / BLOCK_SIZE;
-			int lane = ordinal - block * BLOCK_SIZE;
+			int block = ordinal >>> 8;
+			int lane = ordinal & (BLOCK_SIZE - 1);
 			int blockAt = LeBytes.getInt(encoded, HEADER_BYTES + block * Integer.BYTES);
 			int blockEnd = LeBytes.getInt(encoded, HEADER_BYTES + (block + 1) * Integer.BYTES);
 			int encodedMode = encoded[blockAt] & 0xff;
@@ -1050,14 +1894,41 @@ final class PackedLongVector {
 		}
 	}
 
-	private static void validateNativeLayout(long address, int size, int blockCount, int byteLength) {
-		int directoryEnd = validateHeader(size, blockCount, byteLength);
-		int previous = directoryEnd;
+	private static void validateNativeLayout(long address, int size, int blockCount, int byteLength,
+			boolean indexed, boolean prefixIndexed, int radixBits) {
+		int blockDataStart = validateHeader(size, blockCount, byteLength, indexed, prefixIndexed, radixBits);
+		if (indexed) {
+			int radixStride = 1 << radixBits;
+			long radixBase = address + HEADER_BYTES + (long) (blockCount + 1) * Integer.BYTES;
+			for (int block = 0; block < blockCount; block++) {
+				validateNativeSearchRadix(radixBase + (long) block * radixStride,
+						expectedBlockCount(size, block), radixStride);
+			}
+		}
+		long prefixAddress = prefixIndexed
+				? prefixIndexAddress(address, UnsafeAccess.getIntLE(address + Integer.BYTES), blockCount)
+				: 0;
+		long prefix = 0;
+		if (prefixIndexed && UnsafeAccess.getLongLE(prefixAddress) != 0) {
+			throw new IllegalStateException("malformed packed-vector prefix-sum origin");
+		}
+		int previous = blockDataStart;
 		for (int entry = 0; entry <= blockCount; entry++) {
 			int offset = UnsafeAccess.getIntLE(address + HEADER_BYTES + (long) entry * Integer.BYTES);
-			validateDirectoryEntry(entry, offset, directoryEnd, previous, byteLength);
+			validateDirectoryEntry(entry, offset, blockDataStart, previous, byteLength);
 			if (entry > 0) {
-				validateNativeBlock(address + previous, offset - previous, expectedBlockCount(size, entry - 1));
+				int block = entry - 1;
+				int count = expectedBlockCount(size, block);
+				long blockAddress = address + previous;
+				validateNativeBlock(blockAddress, offset - previous, count);
+				if (prefixIndexed) {
+					validateNativeMicroPrefixes(prefixAddress, blockCount, block, blockAddress, count);
+					prefix = sumNativeBlock(blockAddress, 0, count, prefix);
+					if (entry < blockCount
+							&& UnsafeAccess.getLongLE(prefixAddress + (long) entry * Long.BYTES) != prefix) {
+						throw new IllegalStateException("malformed packed-vector prefix sum at block " + entry);
+					}
+				}
 			}
 			previous = offset;
 		}
@@ -1072,33 +1943,134 @@ final class PackedLongVector {
 		validateBlock(encodedMode, mode, width, count, expectedCount, blockBytes);
 	}
 
-	private static void validateArrayHeaderAndDirectory(byte[] encoded, int size, int blockCount) {
-		int directoryEnd = validateHeader(size, blockCount, encoded.length);
-		int previous = directoryEnd;
+	private static void validateNativeMicroPrefixes(long prefixAddress, int blockCount, int block,
+			long blockAddress, int count) {
+		long at = microPrefixAddress(prefixAddress, blockCount, block);
+		validateMicroPrefix(UnsafeAccess.getUnsignedShortLE(at), nativeMicroPrefix(blockAddress, count, MICRO_PREFIX_1),
+				block, MICRO_PREFIX_1);
+		validateMicroPrefix(UnsafeAccess.getUnsignedShortLE(at + Short.BYTES),
+				nativeMicroPrefix(blockAddress, count, MICRO_PREFIX_2), block, MICRO_PREFIX_2);
+		validateMicroPrefix(UnsafeAccess.getUnsignedShortLE(at + 2L * Short.BYTES),
+				nativeMicroPrefix(blockAddress, count, MICRO_PREFIX_3), block, MICRO_PREFIX_3);
+	}
+
+	private static int nativeMicroPrefix(long blockAddress, int count, int checkpoint) {
+		return count < checkpoint ? 0 : encodeMicroPrefix(sumNativeBlock(blockAddress, 0, checkpoint, 0));
+	}
+
+	private static void validateMicroPrefix(int actual, int expected, int block, int checkpoint) {
+		if (actual != expected) {
+			throw new IllegalStateException(
+					"malformed packed-vector micro prefix at block " + block + ", lane " + checkpoint);
+		}
+	}
+
+	private static void validateNativeSearchRadix(long address, int count, int radixStride) {
+		int previous = 0;
+		for (int bucket = 1; bucket < radixStride; bucket++) {
+			int boundary = UnsafeAccess.getUnsignedByte(address + bucket);
+			boundary = boundary == 0 ? count : boundary;
+			if (boundary < previous || boundary > count) {
+				throw new IllegalStateException("malformed packed-vector search radix at bucket " + bucket);
+			}
+			previous = boundary;
+		}
+	}
+
+	private static void validateArrayHeaderAndDirectory(byte[] encoded, int size, int blockCount,
+			boolean indexed, boolean prefixIndexed, int radixBits) {
+		int blockDataStart = validateHeader(size, blockCount, encoded.length, indexed, prefixIndexed, radixBits);
+		if (indexed) {
+			int radixStride = 1 << radixBits;
+			int radixBase = HEADER_BYTES + (blockCount + 1) * Integer.BYTES;
+			for (int block = 0; block < blockCount; block++) {
+				validateArraySearchRadix(encoded, radixBase + block * radixStride,
+						expectedBlockCount(size, block), radixStride);
+			}
+		}
+		int prefixAt = HEADER_BYTES + (blockCount + 1) * Integer.BYTES
+				+ (indexed ? blockCount * (1 << radixBits) : 0);
+		long prefix = 0;
+		if (prefixIndexed && LeBytes.getLong(encoded, prefixAt) != 0) {
+			throw new IllegalStateException("malformed packed-vector prefix-sum origin");
+		}
+		int previous = blockDataStart;
 		for (int entry = 0; entry <= blockCount; entry++) {
 			int offset = LeBytes.getInt(encoded, HEADER_BYTES + entry * Integer.BYTES);
-			validateDirectoryEntry(entry, offset, directoryEnd, previous, encoded.length);
+			validateDirectoryEntry(entry, offset, blockDataStart, previous, encoded.length);
+			if (entry > 0) {
+				int block = entry - 1;
+				int encodedMode = encoded[previous] & 0xff;
+				int mode = encodedMode & MODE_MASK;
+				int width = encoded[previous + 1] & 0xff;
+				int count = LeBytes.getUnsignedShort(encoded, previous + 2);
+				validateBlock(encodedMode, mode, width, count, expectedBlockCount(size, block),
+						offset - previous);
+				if (prefixIndexed) {
+					validateArrayMicroPrefixes(encoded, prefixAt, blockCount, block, previous, count);
+					prefix = sumArrayBlock(encoded, previous, count, prefix);
+					if (entry < blockCount && LeBytes.getLong(encoded, prefixAt + entry * Long.BYTES) != prefix) {
+						throw new IllegalStateException("malformed packed-vector prefix sum at block " + entry);
+					}
+				}
+			}
 			previous = offset;
 		}
 		validateTerminalOffset(previous, encoded.length);
 	}
 
-	private static int validateHeader(int size, int blockCount, int byteLength) {
-		long expectedBlocks = size < 0 ? -1 : (size + (long) BLOCK_SIZE - 1) / BLOCK_SIZE;
-		if (size < 0 || blockCount < 0 || blockCount != expectedBlocks) {
-			throw new IllegalStateException("malformed packed vector header: " + size + "/" + blockCount);
-		}
-		long directoryEndLong = Math.addExact(HEADER_BYTES,
-				Math.multiplyExact((long) blockCount + 1, Integer.BYTES));
-		if (directoryEndLong > byteLength) {
-			throw new IllegalStateException("packed vector directory exceeds its declared section");
-		}
-		return (int) directoryEndLong;
+	private static void validateArrayMicroPrefixes(byte[] encoded, int prefixAt, int blockCount, int block,
+			int blockAt, int count) {
+		int at = prefixAt + blockCount * Long.BYTES + block * MICRO_PREFIX_BYTES_PER_BLOCK;
+		validateMicroPrefix(LeBytes.getUnsignedShort(encoded, at),
+				arrayMicroPrefix(encoded, blockAt, count, MICRO_PREFIX_1), block, MICRO_PREFIX_1);
+		validateMicroPrefix(LeBytes.getUnsignedShort(encoded, at + Short.BYTES),
+				arrayMicroPrefix(encoded, blockAt, count, MICRO_PREFIX_2), block, MICRO_PREFIX_2);
+		validateMicroPrefix(LeBytes.getUnsignedShort(encoded, at + 2 * Short.BYTES),
+				arrayMicroPrefix(encoded, blockAt, count, MICRO_PREFIX_3), block, MICRO_PREFIX_3);
 	}
 
-	private static void validateDirectoryEntry(int entry, int offset, int directoryEnd, int previous,
+	private static int arrayMicroPrefix(byte[] encoded, int blockAt, int count, int checkpoint) {
+		return count < checkpoint ? 0 : encodeMicroPrefix(sumArrayBlock(encoded, blockAt, checkpoint, 0));
+	}
+
+	private static void validateArraySearchRadix(byte[] encoded, int at, int count, int radixStride) {
+		int previous = 0;
+		for (int bucket = 1; bucket < radixStride; bucket++) {
+			int boundary = encoded[at + bucket] & 0xff;
+			boundary = boundary == 0 ? count : boundary;
+			if (boundary < previous || boundary > count) {
+				throw new IllegalStateException("malformed packed-vector search radix at bucket " + bucket);
+			}
+			previous = boundary;
+		}
+	}
+
+	private static int validateHeader(int size, int blockCount, int byteLength, boolean indexed,
+			boolean prefixIndexed, int radixBits) {
+		long expectedBlocks = size < 0 ? -1 : (size + (long) BLOCK_SIZE - 1) / BLOCK_SIZE;
+		if (size < 0 || blockCount < 0 || blockCount != expectedBlocks
+				|| indexed && radixBits != searchRadixBits(blockCount) || prefixIndexed && blockCount <= 1) {
+			throw new IllegalStateException("malformed packed vector header: " + size + "/" + blockCount);
+		}
+		long blockDataStart = Math.addExact(HEADER_BYTES,
+				Math.multiplyExact((long) blockCount + 1, Integer.BYTES));
+		if (indexed) {
+			blockDataStart = Math.addExact(blockDataStart,
+					Math.multiplyExact((long) blockCount, 1L << radixBits));
+		}
+		if (prefixIndexed) {
+			blockDataStart = Math.addExact(blockDataStart, prefixMetadataBytes(blockCount));
+		}
+		if (blockDataStart > byteLength) {
+			throw new IllegalStateException("packed vector directory exceeds its declared section");
+		}
+		return (int) blockDataStart;
+	}
+
+	private static void validateDirectoryEntry(int entry, int offset, int blockDataStart, int previous,
 			int byteLength) {
-		if (offset < directoryEnd || offset > byteLength || entry == 0 && offset != directoryEnd
+		if (offset < blockDataStart || offset > byteLength || entry == 0 && offset != blockDataStart
 				|| entry > 0 && offset <= previous) {
 			throw new IllegalStateException("malformed packed vector directory entry " + entry + ": " + offset);
 		}

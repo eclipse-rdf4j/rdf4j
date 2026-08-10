@@ -4966,14 +4966,42 @@ class LmdbSailStore implements SailStore {
 
 			@Override
 			public int fill(long[] buffer, int maxRows) {
-				if (closed) {
+				if (closed || maxRows <= 0) {
 					return 0;
 				}
 				try {
 					assertNativeSourceOpen();
-					int rows = delegate.fill(buffer, maxRows);
-					if (rows < maxRows) {
-						close();
+					if (batch == null) {
+						int rows = delegate.fill(buffer, maxRows);
+						if (rows < maxRows) {
+							close();
+						}
+						return rows;
+					}
+
+					// next() may already have prefetched rows into batch. Drain those first, then refill the same
+					// buffer as scratch. This makes switching from scalar next() to fill() lossless and avoids a
+					// second staging array in adaptive join cursors.
+					int rows = 0;
+					while (rows < maxRows) {
+						int available = batchCount - batchPos;
+						if (available != 0) {
+							int take = Math.min(available, maxRows - rows);
+							System.arraycopy(batch, batchPos << 2, buffer, rows << 2, take << 2);
+							batchPos += take;
+							rows += take;
+							continue;
+						}
+						if (exhausted) {
+							close();
+							break;
+						}
+						int requested = Math.min(BATCH_ROWS, maxRows - rows);
+						batchCount = delegate.fill(batch, requested);
+						batchPos = 0;
+						if (batchCount < requested) {
+							exhausted = true;
+						}
 					}
 					return rows;
 				} catch (RuntimeException | Error e) {

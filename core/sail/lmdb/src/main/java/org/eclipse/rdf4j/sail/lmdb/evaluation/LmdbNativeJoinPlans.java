@@ -17,7 +17,6 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.slotsOf;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -741,6 +740,8 @@ final class JoinPlan implements SlotPlan {
 final class JoinCursor implements RowCursor {
 	/** Abandon materialization beyond this many rows and fall back to re-opening the right side per left row. */
 	static final int MAX_MATERIALIZED_ROWS = 1 << 16;
+	static final int SCALAR_PATTERN_ROWS = 2;
+	static final int PATTERN_BATCH_ROWS = 256;
 
 	final RowCursor leftCursor;
 	final SlotPlan right;
@@ -764,7 +765,20 @@ final class JoinCursor implements RowCursor {
 	NativeLmdbQuerySource.NativeProbe rightProbe;
 	PathResultMemo pathMemo;
 	boolean pathMemoInitialized;
-	ArrayList<long[]> materialized;
+	/** Reused for the common correlated PatternPlan right side. Binding/batching lives in this cursor too. */
+	final PatternPlan patternRight;
+	PatternCursor patternCursor;
+	boolean patternRightActive;
+	long[] patternBatch;
+	int patternBatchRows;
+	int patternBatchPosition;
+	int patternScalarRows;
+	int patternMark = -1;
+	/** Flat row-major replay storage: no ArrayList and no long[] object per captured right row. */
+	long[] replayValues;
+	int replayRows;
+	boolean capturingReplay;
+	boolean replayDisabled;
 	boolean rightMaterialized;
 	int replayIndex = -1;
 	int replayMark = -1;
@@ -781,6 +795,7 @@ final class JoinCursor implements RowCursor {
 		this.row = row;
 		this.pathTargets = pathTargets;
 		this.ownsPathTargets = ownsPathTargets;
+		this.patternRight = right instanceof PatternPlan pattern ? pattern : null;
 		long readMask = memoReadMask(right);
 		this.replaySlots = readMask >= 0L && (readMask & leftProducedMask) == 0L
 				? slotsOf(right.producedMask())
@@ -797,18 +812,26 @@ final class JoinCursor implements RowCursor {
 			return replayNext();
 		}
 		while (true) {
-			if (rightCursor != null) {
+			if (patternRightActive) {
+				if (nextPatternRight()) {
+					if (capturingReplay) {
+						recordReplay();
+					}
+					return true;
+				}
+				closePatternRight();
+				if (finishCapturedRight()) {
+					return replayNext();
+				}
+			} else if (rightCursor != null) {
 				if (rightCursor.next()) {
-					if (materialized != null) {
-						record();
+					if (capturingReplay) {
+						recordReplay();
 					}
 					return true;
 				}
 				closeRight();
-				if (materialized != null) {
-					// the right stream is now fully captured; replay it for the remaining left rows
-					rightMaterialized = true;
-					replayIndex = -1;
+				if (finishCapturedRight()) {
 					return replayNext();
 				}
 			}
@@ -816,8 +839,8 @@ final class JoinCursor implements RowCursor {
 				return false;
 			}
 			rightCursor = openRight();
-			if (replaySlots != null && materialized == null && !rightMaterialized) {
-				materialized = new ArrayList<>();
+			if (replaySlots != null && !rightMaterialized && !replayDisabled) {
+				capturingReplay = true;
 			}
 		}
 	}
@@ -832,12 +855,23 @@ final class JoinCursor implements RowCursor {
 			}
 			return JoinPlan.openWithTargets(right, row, pathTargets);
 		}
-		if (right instanceof PatternPlan || right instanceof PathPlan) {
+		if (patternRight != null || right instanceof PathPlan) {
 			if (rightProbe == null) {
 				rightProbe = row.source.newProbe();
 			}
-			if (right instanceof PatternPlan) {
-				return ((PatternPlan) right).open(row, rightProbe);
+			if (patternRight != null) {
+				if (patternCursor == null) {
+					patternCursor = new PatternCursor();
+				}
+				PatternCursor raw = patternRight.openRaw(row, rightProbe, patternCursor);
+				if (raw == PatternCursor.EMPTY) {
+					return EmptyCursor.INSTANCE;
+				}
+				patternRightActive = true;
+				patternBatchRows = 0;
+				patternBatchPosition = 0;
+				patternScalarRows = 0;
+				return null;
 			}
 			if (!pathMemoInitialized) {
 				pathMemo = replaySlots == null ? PathResultMemo.tryCreate((PathPlan) right, row) : null;
@@ -854,14 +888,81 @@ final class JoinCursor implements RowCursor {
 		return right.open(row);
 	}
 
+	private boolean finishCapturedRight() {
+		if (!capturingReplay) {
+			return false;
+		}
+		// The first right stream is now fully captured. Replay starts with the next left row.
+		capturingReplay = false;
+		rightMaterialized = true;
+		replayIndex = -1;
+		return true;
+	}
+
+	private boolean nextPatternRight() throws IOException {
+		releasePatternBinding();
+		while (true) {
+			if (patternBatch != null) {
+				if (patternBatchPosition >= patternBatchRows) {
+					patternBatchRows = patternCursor.fill(patternBatch, PATTERN_BATCH_ROWS);
+					patternBatchPosition = 0;
+					if (patternBatchRows == 0) {
+						return false;
+					}
+				}
+				int offset = patternBatchPosition++ << 2;
+				if (bindPattern(patternBatch, offset)) {
+					return true;
+				}
+				continue;
+			}
+			long[] quad = patternCursor.next();
+			if (quad == null) {
+				return false;
+			}
+			if (++patternScalarRows > SCALAR_PATTERN_ROWS) {
+				// Allocate only after observing the third row: zero-, one- and two-row probes stay allocation-free.
+				patternBatch = new long[PATTERN_BATCH_ROWS * 4];
+			}
+			if (bindPattern(quad, 0)) {
+				return true;
+			}
+		}
+	}
+
+	private boolean bindPattern(long[] quad, int offset) {
+		int mark = row.mark();
+		if (patternRight.bind(quad, offset, row)) {
+			patternMark = mark;
+			return true;
+		}
+		row.rollback(mark);
+		return false;
+	}
+
+	private void releasePatternBinding() {
+		if (patternMark >= 0) {
+			row.rollback(patternMark);
+			patternMark = -1;
+		}
+	}
+
+	private void closePatternRight() {
+		releasePatternBinding();
+		patternCursor.close();
+		patternRightActive = false;
+		patternBatchRows = 0;
+		patternBatchPosition = 0;
+	}
+
 	boolean replayNext() throws IOException {
 		while (true) {
 			if (replayIndex >= 0) {
 				releaseReplay();
-				while (replayIndex < materialized.size()) {
-					long[] values = materialized.get(replayIndex++);
+				while (replayIndex < replayRows) {
+					int rowIndex = replayIndex++;
 					int mark = row.mark();
-					if (bindReplay(values)) {
+					if (bindReplay(rowIndex)) {
 						replayMark = mark;
 						return true;
 					}
@@ -876,9 +977,10 @@ final class JoinCursor implements RowCursor {
 		}
 	}
 
-	boolean bindReplay(long[] values) {
+	boolean bindReplay(int rowIndex) {
+		int offset = rowIndex * replaySlots.length;
 		for (int i = 0; i < replaySlots.length; i++) {
-			long value = values[i];
+			long value = replayValues[offset + i];
 			if (value != UNKNOWN && !row.bind(replaySlots[i], value)) {
 				return false;
 			}
@@ -886,16 +988,39 @@ final class JoinCursor implements RowCursor {
 		return true;
 	}
 
-	void record() {
-		if (materialized.size() >= MAX_MATERIALIZED_ROWS) {
-			materialized = null;
+	void recordReplay() {
+		if (replayRows >= MAX_MATERIALIZED_ROWS) {
+			// Latch the refusal. The old null sentinel restarted materialization on the next left row.
+			capturingReplay = false;
+			replayDisabled = true;
+			replayValues = null;
+			replayRows = 0;
 			return;
 		}
-		long[] values = new long[replaySlots.length];
-		for (int i = 0; i < replaySlots.length; i++) {
-			values[i] = row.slots[replaySlots[i]];
+		int width = replaySlots.length;
+		if (width != 0) {
+			ensureReplayCapacity(replayRows + 1, width);
+			int offset = replayRows * width;
+			for (int i = 0; i < width; i++) {
+				replayValues[offset + i] = row.slots[replaySlots[i]];
+			}
 		}
-		materialized.add(values);
+		replayRows++;
+	}
+
+	private void ensureReplayCapacity(int requiredRows, int width) {
+		int required = Math.multiplyExact(requiredRows, width);
+		if (replayValues != null && replayValues.length >= required) {
+			return;
+		}
+		int currentRows = replayValues == null ? 0 : replayValues.length / width;
+		int grownRows = currentRows == 0 ? Math.min(16, MAX_MATERIALIZED_ROWS)
+				: Math.min(MAX_MATERIALIZED_ROWS, currentRows << 1);
+		if (grownRows < requiredRows) {
+			grownRows = requiredRows;
+		}
+		replayValues = replayValues == null ? new long[Math.multiplyExact(grownRows, width)]
+				: Arrays.copyOf(replayValues, Math.multiplyExact(grownRows, width));
 	}
 
 	void releaseReplay() {
@@ -920,6 +1045,7 @@ final class JoinCursor implements RowCursor {
 			rightProbe.close();
 			rightProbe = null;
 		}
+		replayValues = null;
 		try {
 			leftCursor.close();
 		} finally {
@@ -930,6 +1056,9 @@ final class JoinCursor implements RowCursor {
 	}
 
 	void closeRight() {
+		if (patternRightActive) {
+			closePatternRight();
+		}
 		if (rightCursor != null) {
 			rightCursor.close();
 			rightCursor = null;

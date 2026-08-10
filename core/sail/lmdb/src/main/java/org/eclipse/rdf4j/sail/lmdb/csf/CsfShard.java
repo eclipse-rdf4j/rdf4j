@@ -286,6 +286,44 @@ final class CsfShard {
 	}
 
 	/**
+	 * Returns one page address after its one-time structural validation. Row-directory lookup cursors use this lean
+	 * binding path so they do not have to inherit the eight-column state of a full {@link CompactCsfPageReader}.
+	 */
+	long validatedPageAddress(int localPage) {
+		if (localPage < 0 || localPage >= pageCount) {
+			throw new IllegalArgumentException("local page out of range: " + localPage + " of " + pageCount);
+		}
+		long pageAddress = UnsafeAccess.getLongLE(entry(localPage) + PAGE_ADDRESS_AT);
+		if (pageAddress == 0) {
+			throw new IllegalStateException("CSF shard page address is null");
+		}
+		if (!validated[localPage]) {
+			CompactCsfPageReader validator = new CompactCsfPageReader();
+			validator.resolve(pageAddress);
+			validated[localPage] = true;
+		}
+		return pageAddress;
+	}
+
+	/** Random row-id access without allocating a transient page reader after the page's one-time validation. */
+	long rowAt(int localPage, int localRow) {
+		if (localPage < 0 || localPage >= pageCount) {
+			throw new IllegalArgumentException("local page out of range: " + localPage + " of " + pageCount);
+		}
+		long pageAddress = UnsafeAccess.getLongLE(entry(localPage) + PAGE_ADDRESS_AT);
+		if (pageAddress == 0) {
+			throw new IllegalStateException("CSF shard page address is null");
+		}
+		if (!validated[localPage]) {
+			CompactCsfPageReader validator = new CompactCsfPageReader();
+			validator.resolve(pageAddress);
+			validated[localPage] = true;
+			return validator.rowAt(localRow);
+		}
+		return CompactCsfPageReader.trustedRowAt(pageAddress, localRow);
+	}
+
+	/**
 	 * Header-only test of whether the page at {@code localPage} is an extent continuation of {@code expectedRow}. Reads
 	 * only the page's flags and first-row header words, without binding vectors or validating the page, so extent-chain
 	 * peeks do not disturb (and later force re-resolution of) a caller's working reader.
