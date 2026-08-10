@@ -1638,48 +1638,33 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	 * slack; otherwise a cursor may build one lazily after packed probes have paid its measured break-even cost.
 	 * One-off and sparse probes remain allocation-free.
 	 */
-	public static final class LookupCursor {
+	public static final class LookupCursor extends PackedLongVector.NativeSearchState {
 
 		private ImmutablePagedQuadCsfIndex owner;
-		private long rowIdsAddress;
 		private long pageFirstRow;
 		private long pageLastRow;
 		private int partition = -1;
 		/** Global page id; replaces separate shard/local-page fields on the hot cursor. */
 		private int globalPage = -1;
-		private int rowCount;
-		/** Positive: page-slack radix delta/bits; zero or negative: unaccelerated lookup count. */
-		private int rowRadixState;
 		private boolean reusablePage;
-		/** Created only when a non-indexed page reaches its measured promotion threshold. */
-		private AdaptiveRowRadixState adaptiveRowRadix;
 
 		private void pageChanged(ImmutablePagedQuadCsfIndex owner, int partition, int globalPage, long pageAddress) {
-			AdaptiveRowRadixState adaptive = adaptiveRowRadix;
-			if (adaptive != null) {
-				if (CsfAdaptiveMemory.underPressure() && adaptive.radix != null) {
-					adaptive.radix = null;
-					CsfAdaptiveMemory.released();
-				}
-				adaptive.resetForPage();
-			}
 			this.owner = owner;
 			this.pageFirstRow = UnsafeAccess.getLongLE(pageAddress + CompactCsfPageFormat.FIRST_ROW_AT);
 			this.pageLastRow = UnsafeAccess.getLongLE(pageAddress + CompactCsfPageFormat.LAST_ROW_AT);
 			this.partition = partition;
 			this.globalPage = globalPage;
-			this.rowCount = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_COUNT_AT);
+			int rowCount = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_COUNT_AT);
 			int rowIdsOffset = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_IDS_OFFSET_AT);
-			this.rowIdsAddress = pageAddress + rowIdsOffset;
+			long rowIdsAddress = pageAddress + rowIdsOffset;
 			int descriptor = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ACCELERATOR_DESCRIPTOR_AT);
 			int bits = CompactCsfPageAccelerators.rowRadixBits(descriptor);
 			if (bits == 0) {
-				this.rowRadixState = 0;
+				bindUnindexedSearch(rowIdsAddress, rowCount);
 			} else {
-				int acceleratorOffset = UnsafeAccess
-						.getIntLE(pageAddress + CompactCsfPageFormat.ACCELERATOR_OFFSET_AT);
-				int delta = acceleratorOffset - rowIdsOffset;
-				this.rowRadixState = delta << 4 | bits;
+				long radixAddress = pageAddress
+						+ UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ACCELERATOR_OFFSET_AT);
+				bindNativeSearch(rowIdsAddress, rowCount, radixAddress, bits);
 			}
 			int flags = UnsafeAccess.getUnsignedShortLE(pageAddress + CompactCsfPageFormat.FLAGS_AT);
 			this.reusablePage = (flags & CompactCsfPageFormat.FLAG_CONTINUATION) == 0;
@@ -1692,62 +1677,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		}
 
 		private int findRowCached(long row) {
-			int state = rowRadixState;
-			if (state > 0) {
-				int bits = state & 0xf;
-				long radixAddress = rowIdsAddress + (state >>> 4);
-				return PackedLongVector.nativeBinarySearchUnsigned(rowIdsAddress, rowCount, row, radixAddress, bits);
-			}
-			AdaptiveRowRadixState adaptive = adaptiveRowRadix;
-			if (adaptive != null && adaptive.ready) {
-				return PackedLongVector.nativeBinarySearchUnsigned(rowIdsAddress, rowCount, row, adaptive.radix,
-						adaptive.bits);
-			}
-			int result = PackedLongVector.nativeBinarySearchUnsigned(rowIdsAddress, rowCount, row);
-			if (reusablePage && rowCount >= CompactCsfPageAccelerators.MIN_INDEXED_ROWS
-					&& (adaptive == null || !adaptive.refused)) {
-				int lookups = state == 0 ? 1 : -state + 1;
-				rowRadixState = -lookups;
-				int packedProbes = Integer.SIZE - Integer.numberOfLeadingZeros(rowCount - 1);
-				int savedProbes = Math.max(1, packedProbes - 2);
-				int breakEven = Math.max(16, (rowCount + savedProbes - 1) / savedProbes);
-				if (lookups >= breakEven) {
-					promoteRowRadix();
-				}
-			}
-			return result;
-		}
-
-		private void promoteRowRadix() {
-			AdaptiveRowRadixState adaptive = adaptiveRowRadix;
-			if (adaptive == null) {
-				adaptive = new AdaptiveRowRadixState();
-				adaptiveRowRadix = adaptive;
-			}
-			int bits = rowCount >= PackedLongVector.BLOCK_SIZE ? 7 : rowCount >= 128 ? 6 : 5;
-			int bytes = PackedLongVector.externalSearchRadixBytes(rowCount, bits);
-			byte[] radix = CsfAdaptiveMemory.tryByteArray(adaptive.radix, bytes);
-			if (radix == null) {
-				adaptive.refused = true;
-				return;
-			}
-			PackedLongVector.writeExternalSearchRadix(rowIdsAddress, rowCount, radix, bits);
-			adaptive.radix = radix;
-			adaptive.bits = (byte) bits;
-			adaptive.ready = true;
-		}
-
-		private static final class AdaptiveRowRadixState {
-			byte[] radix;
-			byte bits;
-			boolean ready;
-			boolean refused;
-
-			void resetForPage() {
-				bits = 0;
-				ready = false;
-				refused = false;
-			}
+			return binarySearchUnsigned(row);
 		}
 	}
 

@@ -304,8 +304,7 @@ class PackedLongVectorTest {
 		byte[] badWidth = encoded.clone();
 		int firstBlock = LeBytes.getInt(badWidth, 8);
 		badWidth[firstBlock + 1] = 65;
-		PackedLongVector.ArrayReader badWidthReader = PackedLongVector.reader(badWidth);
-		assertThatThrownBy(() -> badWidthReader.get(0)).isInstanceOf(IllegalStateException.class);
+		assertThatThrownBy(() -> PackedLongVector.reader(badWidth)).isInstanceOf(IllegalStateException.class);
 	}
 
 	private static void assertRoundTrip(long[] values, PackedLongVector.Hint hint) {

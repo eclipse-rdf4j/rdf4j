@@ -306,9 +306,205 @@ final class PackedLongVector {
 		return nativeBinarySearchUnsigned(address, size, target, 0, null, 0);
 	}
 
-	/** Exact unsigned lookup using a page-slack native radix directory when one is available. */
+	/**
+	 * Exact unsigned lookup using a native block-local radix directory. This is the compact-page row-id hot path:
+	 * row-id vectors are sorted FOR blocks, contain at most four 256-lane blocks, and the radix is known to be native.
+	 * Keep it separate from the compatibility/heap dispatcher so C2 sees neither nullable-array nor delta-mode
+	 * branches.
+	 */
 	static int nativeBinarySearchUnsigned(long address, int size, long target, long radixAddress, int radixBits) {
-		return nativeBinarySearchUnsigned(address, size, target, radixAddress, null, radixBits);
+		int blockCount = size + (BLOCK_SIZE - 1) >>> 8;
+		if (blockCount == 0) {
+			return -1;
+		}
+
+		int block;
+		long blockAddress;
+		int header;
+		long base;
+		long directory = address + HEADER_BYTES;
+		if (blockCount == 1) {
+			block = 0;
+			blockAddress = address + UnsafeAccess.getIntLE(directory);
+			header = UnsafeAccess.getIntLE(blockAddress);
+			base = UnsafeAccess.getLongLE(blockAddress + 4);
+		} else if (blockCount == 2) {
+			long probeAddress = address + UnsafeAccess.getIntLE(directory + Integer.BYTES);
+			int probeHeader = UnsafeAccess.getIntLE(probeAddress);
+			long probeBase = UnsafeAccess.getLongLE(probeAddress + 4);
+			if (Long.compareUnsigned(target, firstNativeValue(probeHeader, probeBase)) < 0) {
+				block = 0;
+				blockAddress = address + UnsafeAccess.getIntLE(directory);
+				header = UnsafeAccess.getIntLE(blockAddress);
+				base = UnsafeAccess.getLongLE(blockAddress + 4);
+			} else {
+				block = 1;
+				blockAddress = probeAddress;
+				header = probeHeader;
+				base = probeBase;
+			}
+		} else if (blockCount == 3) {
+			long probeAddress = address + UnsafeAccess.getIntLE(directory + Integer.BYTES);
+			int probeHeader = UnsafeAccess.getIntLE(probeAddress);
+			long probeBase = UnsafeAccess.getLongLE(probeAddress + 4);
+			if (Long.compareUnsigned(target, firstNativeValue(probeHeader, probeBase)) < 0) {
+				block = 0;
+				blockAddress = address + UnsafeAccess.getIntLE(directory);
+				header = UnsafeAccess.getIntLE(blockAddress);
+				base = UnsafeAccess.getLongLE(blockAddress + 4);
+			} else {
+				long thirdAddress = address + UnsafeAccess.getIntLE(directory + 2L * Integer.BYTES);
+				int thirdHeader = UnsafeAccess.getIntLE(thirdAddress);
+				long thirdBase = UnsafeAccess.getLongLE(thirdAddress + 4);
+				if (Long.compareUnsigned(target, firstNativeValue(thirdHeader, thirdBase)) < 0) {
+					block = 1;
+					blockAddress = probeAddress;
+					header = probeHeader;
+					base = probeBase;
+				} else {
+					block = 2;
+					blockAddress = thirdAddress;
+					header = thirdHeader;
+					base = thirdBase;
+				}
+			}
+		} else if (blockCount == 4) {
+			long middleAddress = address + UnsafeAccess.getIntLE(directory + 2L * Integer.BYTES);
+			int middleHeader = UnsafeAccess.getIntLE(middleAddress);
+			long middleBase = UnsafeAccess.getLongLE(middleAddress + 4);
+			if (Long.compareUnsigned(target, firstNativeValue(middleHeader, middleBase)) < 0) {
+				long secondAddress = address + UnsafeAccess.getIntLE(directory + Integer.BYTES);
+				int secondHeader = UnsafeAccess.getIntLE(secondAddress);
+				long secondBase = UnsafeAccess.getLongLE(secondAddress + 4);
+				if (Long.compareUnsigned(target, firstNativeValue(secondHeader, secondBase)) < 0) {
+					block = 0;
+					blockAddress = address + UnsafeAccess.getIntLE(directory);
+					header = UnsafeAccess.getIntLE(blockAddress);
+					base = UnsafeAccess.getLongLE(blockAddress + 4);
+				} else {
+					block = 1;
+					blockAddress = secondAddress;
+					header = secondHeader;
+					base = secondBase;
+				}
+			} else {
+				long fourthAddress = address + UnsafeAccess.getIntLE(directory + 3L * Integer.BYTES);
+				int fourthHeader = UnsafeAccess.getIntLE(fourthAddress);
+				long fourthBase = UnsafeAccess.getLongLE(fourthAddress + 4);
+				if (Long.compareUnsigned(target, firstNativeValue(fourthHeader, fourthBase)) < 0) {
+					block = 2;
+					blockAddress = middleAddress;
+					header = middleHeader;
+					base = middleBase;
+				} else {
+					block = 3;
+					blockAddress = fourthAddress;
+					header = fourthHeader;
+					base = fourthBase;
+				}
+			}
+		} else {
+			// Generic vectors are not compact-page row directories; retain logarithmic block selection.
+			int lowBlock = 0;
+			int highBlock = blockCount - 1;
+			int candidate = -1;
+			blockAddress = 0;
+			header = 0;
+			base = 0;
+			while (lowBlock <= highBlock) {
+				int probe = lowBlock + highBlock >>> 1;
+				long probeAddress = address + UnsafeAccess.getIntLE(directory + (long) probe * Integer.BYTES);
+				int probeHeader = UnsafeAccess.getIntLE(probeAddress);
+				long probeBase = UnsafeAccess.getLongLE(probeAddress + 4);
+				if (Long.compareUnsigned(firstNativeValue(probeHeader, probeBase), target) <= 0) {
+					candidate = probe;
+					blockAddress = probeAddress;
+					header = probeHeader;
+					base = probeBase;
+					lowBlock = probe + 1;
+				} else {
+					highBlock = probe - 1;
+				}
+			}
+			if (candidate < 0) {
+				return -1;
+			}
+			block = candidate;
+		}
+
+		// Sorted random-access row ids are always FOR encoded. Reject a target before this block's base cheaply.
+		int mode = header & MODE_MASK;
+		int width = header >>> Byte.SIZE & 0xff;
+		int count = header >>> Short.SIZE;
+		int type = header >>> TYPE_SHIFT & 0x3f;
+		boolean typed = (mode & MODE_FOR_TYPED_PAYLOAD) != 0;
+		long targetResidual;
+		if (typed) {
+			if ((target & 0x7fL) != (long) type << 1) {
+				return -1;
+			}
+			long payloadTarget = target >>> 7;
+			if (payloadTarget < base) {
+				return -1;
+			}
+			targetResidual = payloadTarget - base;
+		} else {
+			if (Long.compareUnsigned(target, base) < 0) {
+				return -1;
+			}
+			targetResidual = target - base;
+		}
+		int blockStart = block << 8;
+		if (width == 0) {
+			return targetResidual == 0 ? blockStart : -1;
+		}
+		if (width < Long.SIZE && targetResidual >>> width != 0) {
+			return -1;
+		}
+
+		long payload = blockAddress + BLOCK_HEADER_BYTES;
+		int stride = 1 << radixBits;
+		int bucket = radixBucket(targetResidual, width, radixBits);
+		long blockRadix = radixAddress + (long) block * stride;
+		int low = bucket == 0 ? 0 : UnsafeAccess.getUnsignedByte(blockRadix + bucket);
+		if (low == 0 && bucket != 0) {
+			low = BLOCK_SIZE;
+		}
+		int nextBucket = bucket + 1;
+		int end = nextBucket == stride ? count : UnsafeAccess.getUnsignedByte(blockRadix + nextBucket);
+		if (end == 0 && nextBucket != 0) {
+			end = BLOCK_SIZE;
+		}
+		if (end > count) {
+			end = count;
+		}
+		int high = end - 1;
+		if (high < low) {
+			return -1;
+		}
+
+		// The tail is the overwhelmingly likely exact lane for high-precision directories; check it before searching.
+		long residual = readBits(payload, high * width, width);
+		if (residual == targetResidual) {
+			return blockStart + high;
+		}
+		if (Long.compareUnsigned(residual, targetResidual) < 0) {
+			return -1;
+		}
+		high--;
+		while (low <= high) {
+			int lane = low + high >>> 1;
+			residual = readBits(payload, lane * width, width);
+			int comparison = Long.compareUnsigned(residual, targetResidual);
+			if (comparison < 0) {
+				low = lane + 1;
+			} else if (comparison > 0) {
+				high = lane - 1;
+			} else {
+				return blockStart + lane;
+			}
+		}
+		return -1;
 	}
 
 	/** Exact unsigned lookup using a hot-cursor heap radix directory when one has earned promotion. */
@@ -1751,6 +1947,318 @@ final class PackedLongVector {
 	}
 
 	private record BlockPlan(int mode, int type, int width, int count, long base, int lanes, int encodedBytes) {
+	}
+
+	/**
+	 * Mutable search-only state for a caller-owned compact-page cursor. The state is embedded in that cursor (not
+	 * allocated per page), preloads the at-most-four row-block fences once on page change, and retains the last block
+	 * descriptor. Optional radix storage remains separately admitted by {@link CsfAdaptiveMemory}.
+	 */
+	/** Allocates one reusable search state only after its owning cursor has demonstrated page-local reuse. */
+	static NativeSearchState tryNativeSearchState() {
+		if (!CsfAdaptiveMemory.admitOptionalObject(256)) {
+			return null;
+		}
+		try {
+			NativeSearchState state = new NativeSearchState();
+			CsfAdaptiveMemory.recordPromotion();
+			return state;
+		} catch (OutOfMemoryError refused) {
+			CsfAdaptiveMemory.recordRefusal();
+			return null;
+		}
+	}
+
+	static class NativeSearchState {
+		private static final int EXACT_HASH_LOAD_SHIFT = 3; // 8 slots per immutable row; 24 B/row with decoded keys.
+
+		private long searchAddress;
+		private int searchSize;
+		private int searchBlockCount;
+		private long searchBlockOffsets;
+		private long searchFence0;
+		private long searchFence1;
+		private long searchFence2;
+		private long searchFence3;
+		private long nativeRadixAddress;
+		private int radixBits;
+		private int radixStride;
+
+		private int cachedBlock = -1;
+		private int cachedHeader;
+		private long cachedBase;
+		private long cachedPayload;
+		private long cachedFirst;
+		private long cachedUpper;
+
+		private long lastTarget;
+		private int lastResult = Integer.MIN_VALUE;
+		private int packedLookups;
+		private int hashPromotionAt;
+		private boolean hashReady;
+		private boolean hashRefused;
+		private long[] decodedRows;
+		private short[] exactHash;
+		private int exactHashMask;
+		private int pressureCheckCountdown;
+
+		final void bindNativeSearch(long address, int size, long radixAddress, int bits) {
+			bindSearch(address, size, radixAddress, bits);
+		}
+
+		final void bindUnindexedSearch(long address, int size) {
+			bindSearch(address, size, 0, 0);
+		}
+
+		private void bindSearch(long address, int size, long radixAddress, int bits) {
+			if ((decodedRows != null || exactHash != null) && --pressureCheckCountdown <= 0) {
+				pressureCheckCountdown = 64;
+				if (CsfAdaptiveMemory.underPressure()) {
+					if (decodedRows != null) {
+						decodedRows = null;
+						CsfAdaptiveMemory.released();
+					}
+					if (exactHash != null) {
+						exactHash = null;
+						CsfAdaptiveMemory.released();
+					}
+				}
+			}
+			searchAddress = address;
+			searchSize = size;
+			searchBlockCount = size + (BLOCK_SIZE - 1) >>> 8;
+			nativeRadixAddress = radixAddress;
+			radixBits = bits;
+			radixStride = bits == 0 ? 0 : 1 << bits;
+			cachedBlock = -1;
+			lastResult = Integer.MIN_VALUE;
+			packedLookups = 0;
+			hashReady = false;
+			hashRefused = false;
+			int divisor = bits >= 7 ? 16 : bits >= 5 ? 24 : 32;
+			hashPromotionAt = Math.max(32, (size + divisor - 1) / divisor);
+
+			long offsets = 0;
+			long directory = address + HEADER_BYTES;
+			for (int block = 0; block < searchBlockCount; block++) {
+				int blockAt = UnsafeAccess.getIntLE(directory + (long) block * Integer.BYTES);
+				if ((blockAt & ~0xffff) != 0 || block >= 4) {
+					throw new IllegalStateException("compact row vector exceeds its four-block/u16 search state");
+				}
+				offsets |= (long) blockAt << (block << 4);
+				long blockAddress = address + blockAt;
+				int header = UnsafeAccess.getIntLE(blockAddress);
+				long first = firstNativeValue(header, UnsafeAccess.getLongLE(blockAddress + 4));
+				switch (block) {
+				case 0 -> searchFence0 = first;
+				case 1 -> searchFence1 = first;
+				case 2 -> searchFence2 = first;
+				case 3 -> searchFence3 = first;
+				default -> throw new AssertionError();
+				}
+			}
+			searchBlockOffsets = offsets;
+		}
+
+		final int binarySearchUnsigned(long target) {
+			if (lastResult != Integer.MIN_VALUE && target == lastTarget) {
+				return lastResult;
+			}
+			if (hashReady) {
+				return rememberSearch(target, searchExactHash(target));
+			}
+			int result = searchPacked(target);
+			if (!hashRefused && searchSize >= CompactCsfPageAccelerators.MIN_INDEXED_ROWS
+					&& ++packedLookups == hashPromotionAt) {
+				promoteExactHash();
+			}
+			return rememberSearch(target, result);
+		}
+
+		private int searchExactHash(long target) {
+			short[] table = exactHash;
+			long[] rows = decodedRows;
+			int mask = exactHashMask;
+			int slot = exactHash(target) & mask;
+			for (;;) {
+				int entry = table[slot] & 0xffff;
+				if (entry == 0) {
+					return -1;
+				}
+				int ordinal = entry - 1;
+				if (rows[ordinal] == target) {
+					return ordinal;
+				}
+				slot = slot + 1 & mask;
+			}
+		}
+
+		private void promoteExactHash() {
+			int tableLength = 1;
+			int requiredSlots = searchSize << EXACT_HASH_LOAD_SHIFT;
+			while (tableLength < requiredSlots) {
+				tableLength <<= 1;
+			}
+			long[] rows = CsfAdaptiveMemory.tryLongArray(decodedRows, searchSize);
+			short[] table = CsfAdaptiveMemory.tryShortArray(exactHash, tableLength);
+			if (rows == null || table == null) {
+				hashRefused = true;
+				return;
+			}
+			nativeCopy(searchAddress, searchSize, 0, searchSize, rows, 0);
+			Arrays.fill(table, 0, tableLength, (short) 0);
+			int mask = tableLength - 1;
+			for (int ordinal = 0; ordinal < searchSize; ordinal++) {
+				long value = rows[ordinal];
+				int slot = exactHash(value) & mask;
+				while (table[slot] != 0) {
+					slot = slot + 1 & mask;
+				}
+				table[slot] = (short) (ordinal + 1);
+			}
+			decodedRows = rows;
+			exactHash = table;
+			exactHashMask = mask;
+			hashReady = true;
+			pressureCheckCountdown = 64;
+		}
+
+		private int searchPacked(long target) {
+			int block = cachedBlock;
+			if (block < 0 || Long.compareUnsigned(target, cachedFirst) < 0
+					|| block + 1 < searchBlockCount && Long.compareUnsigned(target, cachedUpper) >= 0) {
+				if (searchBlockCount == 0 || Long.compareUnsigned(target, searchFence0) < 0) {
+					return -1;
+				}
+				block = switch (searchBlockCount) {
+				case 1 -> 0;
+				case 2 -> Long.compareUnsigned(target, searchFence1) < 0 ? 0 : 1;
+				case 3 -> Long.compareUnsigned(target, searchFence1) < 0 ? 0
+						: Long.compareUnsigned(target, searchFence2) < 0 ? 1 : 2;
+				case 4 -> Long.compareUnsigned(target, searchFence2) < 0
+						? (Long.compareUnsigned(target, searchFence1) < 0 ? 0 : 1)
+						: (Long.compareUnsigned(target, searchFence3) < 0 ? 2 : 3);
+				default -> throw new AssertionError();
+				};
+				cacheBlock(block);
+			}
+			return searchCachedForBlock(target);
+		}
+
+		private void cacheBlock(int block) {
+			int blockAt = (int) (searchBlockOffsets >>> (block << 4)) & 0xffff;
+			long blockAddress = searchAddress + blockAt;
+			int header = UnsafeAccess.getIntLE(blockAddress);
+			long base = UnsafeAccess.getLongLE(blockAddress + 4);
+			cachedBlock = block;
+			cachedHeader = header;
+			cachedBase = base;
+			cachedPayload = blockAddress + BLOCK_HEADER_BYTES;
+			cachedFirst = firstNativeValue(header, base);
+			if (block + 1 < searchBlockCount) {
+				cachedUpper = switch (block + 1) {
+				case 1 -> searchFence1;
+				case 2 -> searchFence2;
+				case 3 -> searchFence3;
+				default -> throw new AssertionError();
+				};
+			}
+		}
+
+		private int searchCachedForBlock(long target) {
+			int header = cachedHeader;
+			int width = header >>> Byte.SIZE & 0xff;
+			int count = header >>> Short.SIZE;
+			int type = header >>> TYPE_SHIFT & 0x3f;
+			boolean typed = (header & MODE_FOR_TYPED_PAYLOAD) != 0;
+			long targetResidual;
+			if (typed) {
+				if ((target & 0x7fL) != (long) type << 1) {
+					return -1;
+				}
+				long payloadTarget = target >>> 7;
+				long base = cachedBase;
+				if (payloadTarget < base) {
+					return -1;
+				}
+				targetResidual = payloadTarget - base;
+			} else {
+				long base = cachedBase;
+				if (Long.compareUnsigned(target, base) < 0) {
+					return -1;
+				}
+				targetResidual = target - base;
+			}
+			int blockStart = cachedBlock << 8;
+			if (width == 0) {
+				return targetResidual == 0 ? blockStart : -1;
+			}
+			if (width < Long.SIZE && targetResidual >>> width != 0) {
+				return -1;
+			}
+			if (radixBits == 0) {
+				return binarySearchResidual(targetResidual, width, blockStart, 0, count - 1);
+			}
+
+			int bucket = radixBucket(targetResidual, width, radixBits);
+			long radix = nativeRadixAddress + (long) cachedBlock * radixStride;
+			int low = bucket == 0 ? 0 : UnsafeAccess.getUnsignedByte(radix + bucket);
+			int next = bucket + 1;
+			int end = next == radixStride ? count : UnsafeAccess.getUnsignedByte(radix + next);
+			if (low == 0 && bucket != 0) {
+				low = BLOCK_SIZE;
+			}
+			if (end == 0) {
+				end = BLOCK_SIZE;
+			}
+			if (end > count) {
+				end = count;
+			}
+			int high = end - 1;
+			if (high < low) {
+				return -1;
+			}
+			long residual = readBits(cachedPayload, high * width, width);
+			if (residual == targetResidual) {
+				return blockStart + high;
+			}
+			if (Long.compareUnsigned(residual, targetResidual) < 0) {
+				return -1;
+			}
+			return binarySearchResidual(targetResidual, width, blockStart, low, high - 1);
+		}
+
+		private int binarySearchResidual(long targetResidual, int width, int blockStart, int low, int high) {
+			while (low <= high) {
+				int lane = low + high >>> 1;
+				long residual = readBits(cachedPayload, lane * width, width);
+				int comparison = Long.compareUnsigned(residual, targetResidual);
+				if (comparison < 0) {
+					low = lane + 1;
+				} else if (comparison > 0) {
+					high = lane - 1;
+				} else {
+					return blockStart + lane;
+				}
+			}
+			return -1;
+		}
+
+		private int rememberSearch(long target, int result) {
+			lastTarget = target;
+			lastResult = result;
+			return result;
+		}
+
+		private static int exactHash(long value) {
+			value ^= value >>> Integer.SIZE;
+			value *= 0x9e3779b97f4a7c15L;
+			return (int) (value >>> Integer.SIZE);
+		}
+
+		final boolean exactHashReady() {
+			return hashReady;
+		}
 	}
 
 	static final class Reader {

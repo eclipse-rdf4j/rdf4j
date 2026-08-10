@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JoinDispatchTestAccess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -85,7 +86,7 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 		System.clearProperty("rdf4j.lmdb.parallel.enabled");
 	}
 
-	@Test
+	@RepeatedTest(100)
 	void tailBranchSkipsValueMemoWhenProbeIsCacheBacked() {
 		System.setProperty(NATIVE_FLAG, "true");
 		// steer dispatch to the factorized rows path: the chunk pipeline and parallel pipelines sit above it

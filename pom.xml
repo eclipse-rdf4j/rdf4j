@@ -1250,7 +1250,7 @@
 					<version>3.5.4</version>
 					<configuration>
 						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
-						<argLine>@{argLine} ${mockito.javaagent} -Xmx4G -Djava.awt.headless=true</argLine>
+						<argLine>@{argLine} ${mockito.javaagent} -Xmx8G -Djava.awt.headless=true</argLine>
 						<systemPropertyVariables>
 							<rdf4j.test.outputDirectory>${project.build.directory}</rdf4j.test.outputDirectory>
 							<rdf4j.test.tmpDirectory>${rdf4j.test.tmpDirectory}</rdf4j.test.tmpDirectory>
@@ -1265,7 +1265,7 @@
 						<forkCount>1</forkCount>
 						<reuseForks>true</reuseForks>
 						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
-						<argLine>@{argLine} ${mockito.javaagent} -Xmx4G -Djava.awt.headless=true</argLine>
+						<argLine>@{argLine} ${mockito.javaagent} -Xmx8G -Djava.awt.headless=true</argLine>
 						<systemPropertyVariables>
 							<rdf4j.test.outputDirectory>${project.build.directory}</rdf4j.test.outputDirectory>
 							<rdf4j.test.tmpDirectory>${rdf4j.test.tmpDirectory}</rdf4j.test.tmpDirectory>

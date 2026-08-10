@@ -70,7 +70,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 30, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 4)
+@Warmup(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 4)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
 @Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
@@ -114,7 +114,7 @@ public class ThemeQueryBenchmark {
 	 * Matched control for the query execution engine. The enabled trial also pins the Janino activation threshold to
 	 * zero in {@link #setup()} so compilation is eligible from the first observed row.
 	 */
-	@Param({  "true" })
+	@Param({ "false", "true" })
 	public String z_z_janinoEnabled;
 
 	@Param({
