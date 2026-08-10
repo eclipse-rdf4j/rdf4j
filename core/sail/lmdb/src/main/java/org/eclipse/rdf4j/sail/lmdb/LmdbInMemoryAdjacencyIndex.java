@@ -227,7 +227,25 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 	 * Base-row lookup retaining the reference-node group position in the caller-owned {@code searchContext}.
 	 */
 	long findRun(long rawKey, int plane, long rawPredicateId, LmdbReferenceNodeLocator.SearchContext searchContext) {
-		return findRunByOrdinal(rawKey, plane, bindPredicate(rawPredicateId), searchContext);
+		return findRunByOrdinal(rawKey, plane, bindPredicate(rawPredicateId, searchContext), searchContext);
+	}
+
+	/**
+	 * {@link #bindPredicate(long)} memoized on the caller-owned {@code searchContext}. A probe keeps one context for
+	 * its lifetime and re-opens against the same bound predicate, so the coverage check and the predicate-catalog
+	 * binary search would otherwise repeat on every open.
+	 */
+	private long bindPredicate(long rawPredicateId, LmdbReferenceNodeLocator.SearchContext searchContext) {
+		if (searchContext == null) {
+			return bindPredicate(rawPredicateId);
+		}
+		long memoized = searchContext.memoizedPredicateOrdinal(this, rawPredicateId);
+		if (memoized != Long.MIN_VALUE) {
+			return memoized;
+		}
+		long ordinal = bindPredicate(rawPredicateId);
+		searchContext.memoizePredicateOrdinal(this, rawPredicateId, ordinal);
+		return ordinal;
 	}
 
 	/**

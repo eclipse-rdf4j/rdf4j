@@ -51,6 +51,13 @@ final class CompactCsfPageReader {
 	 */
 	static final java.util.concurrent.atomic.LongAdder DECODES = new java.util.concurrent.atomic.LongAdder();
 
+	/**
+	 * Measurement gate for {@link #DECODES}, which is read only by tests. {@code -Drdf4j.lmdb.hotCounters=false}
+	 * switches it off so its per-rebind cost can be sized. Default on.
+	 */
+	private static final boolean COUNT_DECODES = !"false"
+			.equalsIgnoreCase(System.getProperty("rdf4j.lmdb.hotCounters"));
+
 	CompactCsfPageReader() {
 	}
 
@@ -82,7 +89,9 @@ final class CompactCsfPageReader {
 			// header and vector sections for that address, so re-binding would be pure repeated work
 			return;
 		}
-		DECODES.increment();
+		if (COUNT_DECODES) {
+			DECODES.increment();
+		}
 		this.address = address;
 		if (validate) {
 			if (UnsafeAccess.getIntLE(address + CompactCsfPageFormat.MAGIC_AT) != CompactCsfPageFormat.MAGIC) {

@@ -82,8 +82,17 @@ final class LmdbAdjacencyMetrics {
 	private static final long TARGET_20B_SOURCE_VISITS = sourceVisitsForStatements(20_000_000_000L);
 	private static final BigInteger LONG_MAX = BigInteger.valueOf(Long.MAX_VALUE);
 
+	/**
+	 * Measurement gate for the per-lookup diagnostic counters. These feed only the close-time decline census and tests,
+	 * never a runtime decision, so {@code -Drdf4j.lmdb.hotCounters=false} can switch them off to size their hot-path
+	 * cost. Default on, so the census and existing tests are unaffected.
+	 */
+	static final boolean HOT_COUNTERS = !"false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.hotCounters"));
+
 	void recordHit() {
-		lookupHits.increment();
+		if (HOT_COUNTERS) {
+			lookupHits.increment();
+		}
 	}
 
 	void recordPlannerStatsHit() {
@@ -91,7 +100,9 @@ final class LmdbAdjacencyMetrics {
 	}
 
 	void recordExactMiss() {
-		exactMisses.increment();
+		if (HOT_COUNTERS) {
+			exactMisses.increment();
+		}
 	}
 
 	void recordFallback(FallbackReason reason) {

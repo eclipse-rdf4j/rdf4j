@@ -2163,7 +2163,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			return null;
 		}
 		metrics.recordHit();
-		KERNEL_VIEWS_SERVED.incrementAndGet();
+		if (LmdbAdjacencyMetrics.HOT_COUNTERS) {
+			KERNEL_VIEWS_SERVED.incrementAndGet();
+		}
 		observe(observer, true, "COMPLETE_ADJACENCY_VIEW",
 				bySubject ? StatementOrder.S : StatementOrder.O,
 				NativeLmdbQuerySource.UNKNOWN_ID, predicate, NativeLmdbQuerySource.UNKNOWN_ID,
@@ -2189,7 +2191,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			return null;
 		}
 		metrics.recordHit();
-		KERNEL_VIEWS_SERVED.incrementAndGet();
+		if (LmdbAdjacencyMetrics.HOT_COUNTERS) {
+			KERNEL_VIEWS_SERVED.incrementAndGet();
+		}
 		observeVariablePredicate(observer, true, "NODE_PREDICATE_VIEW", bySubject);
 		LmdbAdjacencyPublishedState state = view.state();
 		return new LmdbDirectNodePredicates(state.base(), state.base().nodePredicateIndex(), state.contextCatalog(),
@@ -2210,7 +2214,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			return null;
 		}
 		metrics.recordHit();
-		KERNEL_VIEWS_SERVED.incrementAndGet();
+		if (LmdbAdjacencyMetrics.HOT_COUNTERS) {
+			KERNEL_VIEWS_SERVED.incrementAndGet();
+		}
 		observeVariablePredicate(observer, true, "DYNAMIC_ADJACENCY_VIEW", bySubject);
 		LmdbAdjacencyPublishedState state = view.state();
 		return new LmdbDirectNodePredicates(state.base(), state.base().nodePredicateIndexOrNull(),

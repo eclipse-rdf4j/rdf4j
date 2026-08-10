@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.csf;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -1654,6 +1655,15 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	 * much as one bulk decode; one-off and sparse probes remain allocation-free.
 	 */
 	public static final class LookupCursor {
+
+		/**
+		 * Optional page-local row directory built once a hot page has been decoded. {@code BINARY} keeps the historical
+		 * decoded binary search and leaves {@link #decodedLookup} permanently null, so the default path is unchanged.
+		 * Any other value is an experimental measurement mode selected by {@code -Drdf4j.lmdb.csfRowLookup=<kind>}; see
+		 * {@link CsfRowLookupAccelerators.Kind}.
+		 */
+		private static final CsfRowLookupAccelerators.Kind DECODED_LOOKUP_KIND = configuredDecodedLookupKind();
+
 		private final CompactCsfPageReader page = new CompactCsfPageReader();
 		private ImmutablePagedQuadCsfIndex owner;
 		private long pageFirstRow;
@@ -1666,6 +1676,19 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		private int lastRowOrdinal = -1;
 		private boolean reusablePage;
 		private long[] decodedRows;
+		private CsfRowLookupAccelerators.Index decodedLookup;
+
+		private static CsfRowLookupAccelerators.Kind configuredDecodedLookupKind() {
+			String configured = System.getProperty("rdf4j.lmdb.csfRowLookup");
+			if (configured == null || configured.isEmpty()) {
+				return CsfRowLookupAccelerators.Kind.BINARY;
+			}
+			try {
+				return CsfRowLookupAccelerators.Kind.valueOf(configured.trim().toUpperCase(Locale.ROOT));
+			} catch (IllegalArgumentException e) {
+				throw new IllegalArgumentException("unknown rdf4j.lmdb.csfRowLookup value: " + configured, e);
+			}
+		}
 
 		private void pageChanged(ImmutablePagedQuadCsfIndex owner, int partition, int shard, int localPage) {
 			this.owner = owner;
@@ -1678,6 +1701,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			decodedRowCount = 0;
 			lastRowOrdinal = -1;
 			reusablePage = !page.continuation();
+			decodedLookup = null;
 		}
 
 		private boolean covers(ImmutablePagedQuadCsfIndex owner, int partition, long row) {
@@ -1698,6 +1722,11 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				}
 				page.copyRowsTo(decodedRows);
 				decodedRowCount = rowCount;
+				if (DECODED_LOOKUP_KIND != CsfRowLookupAccelerators.Kind.BINARY) {
+					CsfRowLookupAccelerators.Index built = CsfRowLookupAccelerators.build(DECODED_LOOKUP_KIND,
+							decodedRows, rowCount);
+					decodedLookup = built.kind() == CsfRowLookupAccelerators.Kind.BINARY ? null : built;
+				}
 				return findDecodedRow(row);
 			}
 			return page.findRow(row);
@@ -1723,13 +1752,16 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 						return -1;
 					}
 				}
-				if (comparison < 0) {
-					low = Math.min(decodedRowCount, adjacent + 1);
-				} else {
-					high = Math.max(-1, adjacent - 1);
+				if (decodedLookup == null) {
+					if (comparison < 0) {
+						low = Math.min(decodedRowCount, adjacent + 1);
+					} else {
+						high = Math.max(-1, adjacent - 1);
+					}
 				}
 			}
-			int found = binarySearchUnsigned(decodedRows, low, high, target);
+			int found = decodedLookup != null ? decodedLookup.find(target)
+					: binarySearchUnsigned(decodedRows, low, high, target);
 			if (found >= 0) {
 				lastRowOrdinal = found;
 			}

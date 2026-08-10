@@ -113,6 +113,42 @@ public class Values {
 		};
 	}
 
+	/**
+	 * The core datatype encoded by an inlined literal id, derived from the id's type bits alone — no unpacking, no
+	 * value resolution. Every inlined id encodes an XSD core datatype. Returns {@code null} when the id is not an
+	 * inlined literal id (reference ids carry no datatype information).
+	 */
+	public static XSD coreDatatypeOfInlined(long id) {
+		if (!ValueIds.isInlined(id)) {
+			return null;
+		}
+		int idType = ValueIds.getIdType(id);
+		return switch (idType) {
+		case ValueIds.T_DOUBLE -> XSD.DOUBLE;
+		case ValueIds.T_DECIMAL -> XSD.DECIMAL;
+		case ValueIds.T_FLOAT -> XSD.FLOAT;
+		case ValueIds.T_INTEGER, ValueIds.T_ORD_INTEGER -> XSD.INTEGER;
+		case ValueIds.T_LONG, ValueIds.T_ORD_LONG -> XSD.LONG;
+		case ValueIds.T_INT, ValueIds.T_ORD_INT -> XSD.INT;
+		case ValueIds.T_SHORT, ValueIds.T_ORD_SHORT -> XSD.SHORT;
+		case ValueIds.T_BYTE, ValueIds.T_ORD_BYTE -> XSD.BYTE;
+		case ValueIds.T_UNSIGNEDLONG -> XSD.UNSIGNED_LONG;
+		case ValueIds.T_UNSIGNEDINT -> XSD.UNSIGNED_INT;
+		case ValueIds.T_UNSIGNEDSHORT -> XSD.UNSIGNED_SHORT;
+		case ValueIds.T_UNSIGNEDBYTE -> XSD.UNSIGNED_BYTE;
+		case ValueIds.T_POSITIVE_INTEGER, ValueIds.T_ORD_POSITIVE_INTEGER -> XSD.POSITIVE_INTEGER;
+		case ValueIds.T_NEGATIVE_INTEGER, ValueIds.T_ORD_NEGATIVE_INTEGER -> XSD.NEGATIVE_INTEGER;
+		case ValueIds.T_NON_NEGATIVE_INTEGER, ValueIds.T_ORD_NON_NEGATIVE_INTEGER -> XSD.NON_NEGATIVE_INTEGER;
+		case ValueIds.T_NON_POSITIVE_INTEGER, ValueIds.T_ORD_NON_POSITIVE_INTEGER -> XSD.NON_POSITIVE_INTEGER;
+		case ValueIds.T_SHORTSTRING -> XSD.STRING;
+		case ValueIds.T_DATETIME -> XSD.DATETIME;
+		case ValueIds.T_DATETIMESTAMP -> XSD.DATETIMESTAMP;
+		case ValueIds.T_DATE -> XSD.DATE;
+		case ValueIds.T_BOOLEAN -> XSD.BOOLEAN;
+		default -> throw new IllegalArgumentException("Invalid inlined id " + id + " with id type: " + idType);
+		};
+	}
+
 	public static Literal unpackLiteral(long value, ValueFactory valueFactory) {
 		int idType = ValueIds.getIdType(value);
 		return switch (idType) {

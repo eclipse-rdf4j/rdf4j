@@ -178,6 +178,32 @@ final class LmdbReferenceNodeLocator {
 		private long outgoingInferredPosition = -1;
 		private long incomingInferredPosition = -1;
 
+		/**
+		 * Memo for the last predicate binding resolved through this context. A probe re-opens against the same bound
+		 * predicate for its whole lifetime, so without this the dense-ordinal binary search in the predicate catalog
+		 * repeats on every open. Keyed on the owning base so a snapshot change cannot serve a stale ordinal.
+		 */
+		private Object boundPredicateOwner;
+		private long boundRawPredicate;
+		private long boundPredicateOrdinal;
+
+		/**
+		 * Returns the memoized dense ordinal for {@code rawPredicateId} under {@code owner}, or {@link Long#MIN_VALUE}
+		 * when this context has not resolved that pairing yet.
+		 */
+		long memoizedPredicateOrdinal(Object owner, long rawPredicateId) {
+			if (boundPredicateOwner == owner && boundRawPredicate == rawPredicateId) {
+				return boundPredicateOrdinal;
+			}
+			return Long.MIN_VALUE;
+		}
+
+		void memoizePredicateOrdinal(Object owner, long rawPredicateId, long ordinal) {
+			boundPredicateOwner = owner;
+			boundRawPredicate = rawPredicateId;
+			boundPredicateOrdinal = ordinal;
+		}
+
 		ImmutablePagedQuadCsfIndex.LookupCursor csfCursor() {
 			return csfCursor;
 		}

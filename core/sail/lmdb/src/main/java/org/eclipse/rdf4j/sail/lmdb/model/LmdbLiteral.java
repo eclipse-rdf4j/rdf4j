@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
+import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 
 public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
@@ -203,17 +204,48 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	@Override
 	public IRI getDatatype() {
-		init();
+		if (!initialized) {
+			CoreDatatype.XSD inlinedDatatype = inlinedCoreDatatype();
+			if (inlinedDatatype != null) {
+				return datatype;
+			}
+			init();
+		}
 		return datatype;
 	}
 
 	@Override
 	public CoreDatatype getCoreDatatype() {
-		init();
-		if (coreDatatype == null) {
-			coreDatatype = CoreDatatype.from(datatype);
+		CoreDatatype coreDatatype = this.coreDatatype;
+		if (coreDatatype != null) {
+			return coreDatatype;
 		}
+		if (!initialized) {
+			coreDatatype = inlinedCoreDatatype();
+			if (coreDatatype != null) {
+				return coreDatatype;
+			}
+			init();
+		}
+		coreDatatype = CoreDatatype.from(datatype);
+		this.coreDatatype = coreDatatype;
 		return coreDatatype;
+	}
+
+	/**
+	 * Inlined literal ids encode their XSD core datatype in the id's type bits, so the datatype is known without
+	 * resolving the value. Returns {@code null} (leaving the fields untouched) when the id is not an inlined id.
+	 */
+	private CoreDatatype.XSD inlinedCoreDatatype() {
+		if (internalID == UNKNOWN_ID) {
+			return null;
+		}
+		CoreDatatype.XSD inlinedDatatype = Values.coreDatatypeOfInlined(internalID);
+		if (inlinedDatatype != null) {
+			datatype = inlinedDatatype.getIri();
+			coreDatatype = inlinedDatatype;
+		}
+		return inlinedDatatype;
 	}
 
 	public void setDatatype(IRI datatype) {

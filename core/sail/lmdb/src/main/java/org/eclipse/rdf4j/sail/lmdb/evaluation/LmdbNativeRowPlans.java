@@ -385,8 +385,7 @@ final class MinusCursor implements RowCursor {
 	final AdjacencyIntersectionProbe adjacencyProbe;
 	/** Build-once hash anti-join for multi-operator right sides (Milestone 5); single patterns use the probes above. */
 	final SubplanMarkProbe markProbe;
-	HashMap<GroupKey, Boolean> memo;
-	GroupKey probe;
+	LongVerdictMemo memo;
 
 	MinusCursor(RowCursor leftCursor, SlotPlan right, long sharedMask, RowState row) {
 		this.leftCursor = leftCursor;
@@ -485,13 +484,11 @@ final class MinusCursor implements RowCursor {
 			return openAndCheckRight();
 		}
 		if (memo == null) {
-			memo = new HashMap<>();
-			probe = new GroupKey(new long[memoSlots.length]);
+			memo = new LongVerdictMemo(memoSlots.length);
 		}
-		probe.refill(row.slots, memoSlots);
-		Boolean cached = memo.get(probe);
-		if (cached != null) {
-			return cached;
+		int cached = memo.get(row.slots, memoSlots);
+		if (cached != LongVerdictMemo.ABSENT) {
+			return cached == 1;
 		}
 		// The per-key memo stays the O(1) front; the plane views answer memo misses (the masked lookups reproduce
 		// openCorrelatedRight, which is exact for a single-pattern right side).
@@ -499,7 +496,7 @@ final class MinusCursor implements RowCursor {
 			int served = adjacencyProbe.test(row, sharedMask | row.baseBindingMask);
 			if (served >= 0) {
 				boolean result = served == 1;
-				memo.put(probe.storedCopy(), result);
+				memo.put(row.slots, memoSlots, result);
 				return result;
 			}
 		}
@@ -508,7 +505,7 @@ final class MinusCursor implements RowCursor {
 		if (membershipProbe != null) {
 			membershipProbe.recordDirectResult(result);
 		}
-		memo.put(probe.storedCopy(), result);
+		memo.put(row.slots, memoSlots, result);
 		return result;
 	}
 

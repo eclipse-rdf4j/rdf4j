@@ -64,6 +64,7 @@ public class TripleIndex {
 	private final String fieldSeqString;
 	private final IndexKeyWriters.KeyWriter keyWriter;
 	private final IndexKeyWriters.MatcherFactory matcherFactory;
+	private final IndexQuadMatchers.QuadMatcher quadMatcher;
 	final StatementFieldValueAccessor[] fieldValueAccessors;
 	final StatementFieldValueAccessor leadingFieldValueAccessor;
 	private final int dbiExplicit, dbiInferred;
@@ -77,6 +78,7 @@ public class TripleIndex {
 		this.fieldSeqString = fieldSeq;
 		this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
 		this.matcherFactory = IndexKeyWriters.matcherFactory(fieldSeq);
+		this.quadMatcher = IndexQuadMatchers.forFieldSeq(fieldSeq);
 		this.fieldValueAccessors = createFieldValueAccessors(this.fieldSeq);
 		this.leadingFieldValueAccessor = this.fieldValueAccessors[0];
 		this.indexMap = getIndexes(this.fieldSeq);
@@ -427,21 +429,8 @@ public class TripleIndex {
 
 	int keyToQuadMatchStatus(long keyAddress, int rangePrefixLength, long matchSubj, long matchPred, long matchObj,
 			long matchContext, long[] quad) {
-		int offset = 0;
-		for (int i = 0; i < indexMap.length; i++) {
-			long fieldAddress = keyAddress + offset;
-			int firstByte = LmdbUtil.getByte(fieldAddress) & 0xFF;
-			long value = Varint.readUnsigned(fieldAddress, firstByte);
-			offset += Varint.firstToLength(firstByte);
-
-			int field = indexMap[i];
-			long expected = expectedValue(field, matchSubj, matchPred, matchObj, matchContext);
-			quad[field] = value;
-			if (expected != -1 && value != expected) {
-				return i < rangePrefixLength ? KEY_OUT_OF_RANGE : KEY_FILTERED;
-			}
-		}
-		return KEY_MATCH;
+		return quadMatcher.matchStatus(keyAddress, rangePrefixLength, matchSubj, matchPred, matchObj, matchContext,
+				quad);
 	}
 
 	private static long expectedValue(int field, long matchSubj, long matchPred, long matchObj, long matchContext) {
