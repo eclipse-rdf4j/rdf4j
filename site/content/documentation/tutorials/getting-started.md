@@ -410,7 +410,7 @@ for (Statement st : aboutVanGogh) {
   // the property predicate can be anything, but it's always an IRI
   IRI predicate = st.getPredicate();
 
-  // the property value could be an IRI, a BNode, a Literal, or an RDF-star Triple. In RDF4J, Value is
+  // the property value could be an IRI, a BNode, a Literal, or an RDF 1.2 TripleTerm. In RDF4J, Value is
   // is the supertype of all possible kinds of RDF values.
   Value object = st.getObject();
 
@@ -425,7 +425,7 @@ for (Statement st : aboutVanGogh) {
     // it's an IRI. Just print out the local part (without the namespace)
     System.out.println(((IRI) object).getLocalName());
   } else {
-    // it's a blank node or an RDF-star Triple. Just print it out as-is.
+    // it's a blank node or an RDF 1.2 TripleTerm. Just print it out as-is.
     System.out.println(object);
   }
 }
