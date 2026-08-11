@@ -101,12 +101,14 @@ public class LmdbNativePrimitiveGroupingTest {
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
+			connection.begin();
 			for (int i = 0; i < 600; i++) {
 				IRI subject = vf.createIRI(EX, "s" + i);
 				IRI predicate = vf.createIRI(EX, "p" + (i % 3));
 				IRI object = vf.createIRI(EX, "o" + (i % 5));
 				connection.add(subject, predicate, object);
 			}
+			connection.commit();
 		}
 		resetCounters();
 	}
@@ -166,12 +168,14 @@ public class LmdbNativePrimitiveGroupingTest {
 		try {
 			try (SailRepositoryConnection connection = contextRepository.getConnection()) {
 				ValueFactory vf = connection.getValueFactory();
+				connection.begin();
 				for (int i = 0; i < 600; i++) {
 					connection.add(vf.createIRI(EX, "context-subject/" + i),
 							vf.createIRI(EX, "context-predicate/" + (i % 3)),
 							vf.createIRI(EX, "context-object/" + (i % 5)),
 							vf.createIRI(EX, "context/" + (i % 7)));
 				}
+				connection.commit();
 			}
 			resetCounters();
 			try (SailRepositoryConnection connection = contextRepository.getConnection()) {
@@ -239,6 +243,7 @@ public class LmdbNativePrimitiveGroupingTest {
 		try {
 			try (SailRepositoryConnection connection = floatingRepository.getConnection()) {
 				ValueFactory vf = connection.getValueFactory();
+				connection.begin();
 				for (int predicate = 0; predicate < 2; predicate++) {
 					IRI p = vf.createIRI(EX, "floating-p" + predicate);
 					for (int row = 0; row < 6; row++) {
@@ -246,6 +251,7 @@ public class LmdbNativePrimitiveGroupingTest {
 								vf.createLiteral(0.1d));
 					}
 				}
+				connection.commit();
 			}
 			String query = "SELECT ?p (SUM(?v) AS ?sum) WHERE { ?s ?p ?v } GROUP BY ?p";
 			resetCounters();

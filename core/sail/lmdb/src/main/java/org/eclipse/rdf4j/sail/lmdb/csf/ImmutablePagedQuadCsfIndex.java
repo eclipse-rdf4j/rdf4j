@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.csf;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -361,6 +362,40 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		if (count == 0) {
 			return 0;
 		}
+		if (!cursor.covers(this, partition, rawRowId)) {
+			int start = partitionShardStarts[partition];
+			int floor = floorShard(start, count, rawRowId);
+			if (floor < start) {
+				return 0;
+			}
+			while (floor > start && shards[floor - 1].firstRow() == rawRowId) {
+				floor--;
+			}
+			CsfShard shard = shards[floor];
+			int localPage = shard.floorPage(rawRowId);
+			if (localPage < 0) {
+				return 0;
+			}
+			int globalPage = Math.addExact(shardFirstPageIds[floor], localPage);
+			if (cursor.owner != this || cursor.globalPage != globalPage) {
+				cursor.pageChanged(this, partition, globalPage, shard.validatedPageAddress(localPage));
+			}
+		}
+		int localRow = cursor.findRowCached(rawRowId);
+		if (localRow < 0 || !cursor.reusablePage) {
+			return 0;
+		}
+		return packLocalReference(cursor.globalPage, localRow);
+	}
+
+	/** Benchmark-only equivalent of the production cursor path, with an exact decoded-page sidecar. */
+	long findLocalReference(long predicateOrdinal, int plane, long rawRowId, AcceleratedLookupCursor cursor) {
+		Objects.requireNonNull(cursor, "cursor");
+		int partition = partitionIndex(predicateOrdinal, plane);
+		int count = partitionShardCounts[partition];
+		if (count == 0) {
+			return 0;
+		}
 		int floor;
 		int localPage;
 		if (cursor.covers(this, partition, rawRowId)) {
@@ -381,12 +416,12 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				return 0;
 			}
 			if (cursor.owner != this || cursor.shard != floor || cursor.localPage != localPage) {
-				shard.page(localPage, cursor.page);
+				shard.page(localPage, cursor);
 				cursor.pageChanged(this, partition, floor, localPage);
 			}
 		}
-		CompactCsfPageReader page = cursor.page;
-		int localRow = cursor.findRow(rawRowId);
+		CompactCsfPageReader page = cursor;
+		int localRow = cursor.findRowCached(rawRowId);
 		if (localRow < 0 || page.continuation()) {
 			return 0;
 		}
@@ -699,27 +734,23 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 			return new PageWindow(0, 0, update, update + 1);
 		}
-		CompactCsfPageReader page = shard.page(floor);
-		int localRow = page.findRow(row);
-		if (localRow >= 0 && !page.continuation()) {
+		boolean continuation = shard.pageIsContinuation(floor);
+		int localRow = shard.findRow(floor, row);
+		if (localRow >= 0 && !continuation) {
 			int to = floor + 1;
 			if (localRow == 0) {
-				while (to < pageCount) {
-					CompactCsfPageReader continuation = shard.page(to);
-					if (!continuation.continuation() || continuation.rowAt(0) != row) {
-						break;
-					}
+				while (to < pageCount && shard.pageIsContinuation(to, row)) {
 					to++;
 				}
 			}
 			return new PageWindow(floor, to, update, update + 1);
 		}
-		if (!page.continuation() && Long.compareUnsigned(row, page.lastRow()) <= 0) {
+		if (!continuation && Long.compareUnsigned(row, shard.pageLastRow(floor)) <= 0) {
 			return new PageWindow(floor, floor + 1, update, update + 1);
 		}
 
 		int after = floor + 1;
-		while (after < pageCount && shard.page(after).continuation()) {
+		while (after < pageCount && shard.pageIsContinuation(after)) {
 			after++;
 		}
 		if (after < pageCount) {
@@ -728,19 +759,15 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 			return new PageWindow(after, after, update, update + 1);
 		}
-		if (!page.continuation() && !hasContinuationAfter(shard, floor)) {
+		if (!continuation && !hasContinuationAfter(shard, floor)) {
 			return new PageWindow(floor, floor + 1, update, update + 1);
 		}
 		return new PageWindow(after, after, update, update + 1);
 	}
 
 	private static boolean hasContinuationAfter(CsfShard shard, int page) {
-		if (page < 0 || page + 1 >= shard.pageCount()) {
-			return false;
-		}
-		CompactCsfPageReader current = shard.page(page);
-		CompactCsfPageReader next = shard.page(page + 1);
-		return !current.continuation() && next.continuation() && next.rowAt(0) == current.rowAt(0);
+		return page >= 0 && page + 1 < shard.pageCount() && !shard.pageIsContinuation(page)
+				&& shard.pageIsContinuation(page + 1, shard.pageFirstRow(page));
 	}
 
 	private List<CompactCsfPageEncoder.PageImage> collectReplacementPages(CsfShard source, PageWindow window,
@@ -782,24 +809,25 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	private static void emitBasePageRow(Builder target, PageRows baseRows, long[] neighbors, long[] contexts) {
-		target.beginRow(0, 0, baseRows.row());
-		CompactCsfPageReader first = baseRows.source.page(baseRows.page);
+		long logicalRow = baseRows.row();
+		target.beginRow(0, 0, logicalRow);
+		CompactCsfPageReader reader = baseRows.reader;
 		int localRow = baseRows.localRow;
 		long total = 0;
 		int page = baseRows.page;
 		int row = localRow;
 		do {
-			CompactCsfPageReader reader = baseRows.source.page(page);
+			baseRows.source.page(page, reader);
 			total = Math.addExact(total, reader.rowQuadCount(row));
 			page++;
 			row = 0;
-		} while (localRow == 0 && page < baseRows.toPage && baseRows.source.page(page).continuation()
-				&& baseRows.source.page(page).rowAt(0) == first.rowAt(localRow));
+		} while (localRow == 0 && page < baseRows.toPage
+				&& baseRows.source.pageIsContinuation(page, logicalRow));
 		long copiedTotal = 0;
 		page = baseRows.page;
 		row = localRow;
 		while (copiedTotal < total) {
-			CompactCsfPageReader reader = baseRows.source.page(page);
+			baseRows.source.page(page, reader);
 			int pageEdges = reader.rowQuadCount(row);
 			int from = 0;
 			while (from < pageEdges) {
@@ -858,7 +886,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	private static boolean continuation(CsfShard.PageSpec page) {
-		return page.image != null ? page.image.continuation() : page.source.page(page.sourcePage).continuation();
+		return page.image != null ? page.image.continuation() : page.source.pageIsContinuation(page.sourcePage);
 	}
 
 	private static final class PageWindow {
@@ -879,6 +907,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	private final class PageRows {
 		private final CsfShard source;
 		private final int toPage;
+		private final CompactCsfPageReader reader = new CompactCsfPageReader();
 		private int page;
 		private int localRow;
 		private boolean ready;
@@ -908,7 +937,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 			ready = false;
 			while (page < toPage) {
-				CompactCsfPageReader reader = source.page(page);
+				source.page(page, reader);
 				if (reader.continuation()) {
 					page++;
 					localRow = 0;
@@ -1035,6 +1064,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 
 	private final class BaseGroupRows {
 		private final int shardEnd;
+		private final CompactCsfPageReader reader = new CompactCsfPageReader();
 		private int shardIndex;
 		private int localPage;
 		private int localRow;
@@ -1071,14 +1101,14 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			while (shardIndex < shardEnd) {
 				CsfShard shard = shards[shardIndex];
 				while (localPage < shard.pageCount()) {
-					CompactCsfPageReader page = shard.page(localPage);
-					if (page.continuation()) {
+					shard.page(localPage, reader);
+					if (reader.continuation()) {
 						localPage++;
 						localRow = 0;
 						continue;
 					}
-					if (localRow < page.rowCount()) {
-						row = page.rowAt(localRow);
+					if (localRow < reader.rowCount()) {
+						row = reader.rowAt(localRow);
 						localReference = packLocalReference(shardFirstPageIds[shardIndex] + localPage, localRow);
 						localRow++;
 						ready = true;
@@ -1190,11 +1220,6 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 		}
 		return floor;
-	}
-
-	private CompactCsfPageReader page(int globalPageId) {
-		int shard = shardForPage(globalPageId);
-		return shards[shard].page(globalPageId - shardFirstPageIds[shard]);
 	}
 
 	private void page(int globalPageId, CompactCsfPageReader target) {
@@ -1609,11 +1634,61 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	/**
-	 * Caller-owned page decoder for repeated row lookup. Hot pages are decoded lazily after packed probes have cost as
-	 * much as one bulk decode; one-off and sparse probes remain allocation-free.
+	 * Caller-owned state for repeated row lookup. Pages use a radix directory only when it fits in their existing slab
+	 * slack; otherwise a cursor may build one lazily after packed probes have paid its measured break-even cost.
+	 * One-off and sparse probes remain allocation-free.
 	 */
-	public static final class LookupCursor {
-		private final CompactCsfPageReader page = new CompactCsfPageReader();
+	public static final class LookupCursor extends PackedLongVector.NativeSearchState {
+
+		private ImmutablePagedQuadCsfIndex owner;
+		private long pageFirstRow;
+		private long pageLastRow;
+		private int partition = -1;
+		/** Global page id; replaces separate shard/local-page fields on the hot cursor. */
+		private int globalPage = -1;
+		private boolean reusablePage;
+
+		private void pageChanged(ImmutablePagedQuadCsfIndex owner, int partition, int globalPage, long pageAddress) {
+			this.owner = owner;
+			this.pageFirstRow = UnsafeAccess.getLongLE(pageAddress + CompactCsfPageFormat.FIRST_ROW_AT);
+			this.pageLastRow = UnsafeAccess.getLongLE(pageAddress + CompactCsfPageFormat.LAST_ROW_AT);
+			this.partition = partition;
+			this.globalPage = globalPage;
+			int rowCount = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_COUNT_AT);
+			int rowIdsOffset = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_IDS_OFFSET_AT);
+			long rowIdsAddress = pageAddress + rowIdsOffset;
+			int descriptor = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ACCELERATOR_DESCRIPTOR_AT);
+			int bits = CompactCsfPageAccelerators.rowRadixBits(descriptor);
+			if (bits == 0) {
+				bindUnindexedSearch(rowIdsAddress, rowCount);
+			} else {
+				long radixAddress = pageAddress
+						+ UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ACCELERATOR_OFFSET_AT);
+				bindNativeSearch(rowIdsAddress, rowCount, radixAddress, bits);
+			}
+			int flags = UnsafeAccess.getUnsignedShortLE(pageAddress + CompactCsfPageFormat.FLAGS_AT);
+			this.reusablePage = (flags & CompactCsfPageFormat.FLAG_CONTINUATION) == 0;
+		}
+
+		private boolean covers(ImmutablePagedQuadCsfIndex owner, int partition, long row) {
+			return reusablePage && this.owner == owner && this.partition == partition
+					&& Long.compareUnsigned(pageFirstRow, row) <= 0
+					&& Long.compareUnsigned(row, pageLastRow) <= 0;
+		}
+
+		private int findRowCached(long row) {
+			return binarySearchUnsigned(row);
+		}
+	}
+
+	/**
+	 * Experimental decoded-page lookup cursor used by the row-directory benchmark. It keeps the established packed
+	 * probe/decode threshold, but replaces the steady decoded-row binary search with one exact page-local sidecar. The
+	 * ordinary {@link LookupCursor} remains byte-for-byte on its existing lookup path until benchmark evidence is
+	 * strong enough to select a production policy.
+	 */
+	static final class AcceleratedLookupCursor extends CompactCsfPageReader {
+		private final CsfRowLookupAccelerators.Kind decodedLookupKind;
 		private ImmutablePagedQuadCsfIndex owner;
 		private long pageFirstRow;
 		private long pageLastRow;
@@ -1625,18 +1700,24 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		private int lastRowOrdinal = -1;
 		private boolean reusablePage;
 		private long[] decodedRows;
+		private CsfRowLookupAccelerators.Index decodedLookup;
+
+		AcceleratedLookupCursor(CsfRowLookupAccelerators.Kind decodedLookupKind) {
+			this.decodedLookupKind = Objects.requireNonNull(decodedLookupKind, "decodedLookupKind");
+		}
 
 		private void pageChanged(ImmutablePagedQuadCsfIndex owner, int partition, int shard, int localPage) {
 			this.owner = owner;
-			this.pageFirstRow = page.firstRow();
-			this.pageLastRow = page.lastRow();
+			this.pageFirstRow = this.firstRow();
+			this.pageLastRow = this.lastRow();
 			this.partition = partition;
 			this.shard = shard;
 			this.localPage = localPage;
 			pageLookups = 0;
 			decodedRowCount = 0;
 			lastRowOrdinal = -1;
-			reusablePage = !page.continuation();
+			reusablePage = !this.continuation();
+			decodedLookup = null;
 		}
 
 		private boolean covers(ImmutablePagedQuadCsfIndex owner, int partition, long row) {
@@ -1645,21 +1726,28 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 					&& Long.compareUnsigned(row, pageLastRow) <= 0;
 		}
 
-		private int findRow(long row) {
+		private int findRowCached(long row) {
 			if (decodedRowCount != 0) {
 				return findDecodedRow(row);
 			}
-			int rowCount = page.rowCount();
+			int rowCount = this.rowCount();
 			int packedProbes = Integer.SIZE - Integer.numberOfLeadingZeros(rowCount);
 			if ((long) pageLookups++ * packedProbes >= rowCount) {
 				if (decodedRows == null) {
 					decodedRows = new long[CompactCsfPageFormat.MAX_ROWS_PER_PAGE];
 				}
-				page.copyRowsTo(decodedRows);
+				this.copyRowsTo(decodedRows);
 				decodedRowCount = rowCount;
+				if (decodedLookupKind == CsfRowLookupAccelerators.Kind.BINARY) {
+					decodedLookup = null;
+				} else {
+					CsfRowLookupAccelerators.Index built = CsfRowLookupAccelerators.build(decodedLookupKind,
+							decodedRows, rowCount);
+					decodedLookup = built.kind() == CsfRowLookupAccelerators.Kind.BINARY ? null : built;
+				}
 				return findDecodedRow(row);
 			}
-			return page.findRow(row);
+			return super.findRow(row);
 		}
 
 		private int findDecodedRow(long target) {
@@ -1682,13 +1770,16 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 						return -1;
 					}
 				}
-				if (comparison < 0) {
-					low = Math.min(decodedRowCount, adjacent + 1);
-				} else {
-					high = Math.max(-1, adjacent - 1);
+				if (decodedLookup == null) {
+					if (comparison < 0) {
+						low = Math.min(decodedRowCount, adjacent + 1);
+					} else {
+						high = Math.max(-1, adjacent - 1);
+					}
 				}
 			}
-			int found = binarySearchUnsigned(decodedRows, low, high, target);
+			int found = decodedLookup != null ? decodedLookup.find(target)
+					: binarySearchUnsigned(decodedRows, low, high, target);
 			if (found >= 0) {
 				lastRowOrdinal = found;
 			}
@@ -1709,11 +1800,14 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 			return -1;
 		}
+
+		CsfRowLookupAccelerators.Kind selectedKind() {
+			return decodedLookup != null ? decodedLookup.kind() : CsfRowLookupAccelerators.Kind.BINARY;
+		}
 	}
 
 	/** Reusable resolved logical row; all methods are allocation-free after construction. */
-	public static final class RowCursor {
-		private final CompactCsfPageReader page = new CompactCsfPageReader();
+	public static final class RowCursor extends CompactCsfPageReader {
 		private ImmutablePagedQuadCsfIndex owner;
 		private long localReference;
 		private int firstPageId;
@@ -1730,8 +1824,12 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		 * {@link #locate} binary-searches these instead of re-walking (and re-decoding) the chain from its first page
 		 * on every scalar access — that walk is where one address used to be resolved hundreds of times per query.
 		 */
-		private int[] extentPageIds = new int[4];
-		private long[] extentStarts = new long[4];
+		/*
+		 * Continuation metadata is uncommon and therefore allocated only after a row actually crosses a page. The first
+		 * page already lives in firstPageId/firstLocalRow, so ordinary single-page cursors stay a single object.
+		 */
+		private int[] extentPageIds;
+		private long[] extentStarts;
 		private int extentCount;
 
 		public long edgeCount() {
@@ -1746,12 +1844,12 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 
 		public long neighborAt(long ordinal) {
 			locate(ordinal, false);
-			return page.neighborAtOrdinal(locatedLocalRow, locatedLocalOrdinal);
+			return this.neighborAtOrdinal(locatedLocalRow, locatedLocalOrdinal);
 		}
 
 		public long contextAt(long ordinal) {
 			locate(ordinal, false);
-			return page.contextAtOrdinal(locatedLocalRow, locatedLocalOrdinal);
+			return this.contextAtOrdinal(locatedLocalRow, locatedLocalOrdinal);
 		}
 
 		public int copy(long fromOrdinal, int length, long[] neighborTarget, int neighborOffset,
@@ -1766,7 +1864,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 			if (singlePageRow) {
 				loadPage(firstPageId);
-				return page.copyRow(firstLocalRow, Math.toIntExact(fromOrdinal), copied, neighborTarget, neighborOffset,
+				return this.copyRow(firstLocalRow, Math.toIntExact(fromOrdinal), copied, neighborTarget, neighborOffset,
 						contextTarget, contextOffset);
 			}
 			int output = 0;
@@ -1774,10 +1872,10 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				loadPage(extentPageIds[index]);
 				int localRow = index == 0 ? firstLocalRow : 0;
 				long global = extentStarts[index];
-				int pageEdges = page.rowQuadCount(localRow);
+				int pageEdges = this.rowQuadCount(localRow);
 				int localFrom = (int) Math.max(0, fromOrdinal - global);
 				int take = Math.min(copied - output, pageEdges - localFrom);
-				int got = page.copyRow(localRow, localFrom, take, neighborTarget,
+				int got = this.copyRow(localRow, localFrom, take, neighborTarget,
 						neighborTarget == null ? 0 : neighborOffset + output, contextTarget,
 						contextTarget == null ? 0 : contextOffset + output);
 				if (got != take) {
@@ -1795,7 +1893,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 			if (singlePageRow) {
 				loadPage(firstPageId);
-				return page.lowerBound(firstLocalRow, Math.toIntExact(fromOrdinal), neighbor, context);
+				return this.lowerBound(firstLocalRow, Math.toIntExact(fromOrdinal), neighbor, context);
 			}
 			if (fromOrdinal == edgeCount) {
 				return edgeCount;
@@ -1804,9 +1902,9 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				loadPage(extentPageIds[index]);
 				int localRow = index == 0 ? firstLocalRow : 0;
 				long global = extentStarts[index];
-				int pageEdges = page.rowQuadCount(localRow);
+				int pageEdges = this.rowQuadCount(localRow);
 				int localFrom = (int) Math.max(0, fromOrdinal - global);
-				int found = page.lowerBound(localRow, localFrom, neighbor, context);
+				int found = this.lowerBound(localRow, localFrom, neighbor, context);
 				if (found < pageEdges) {
 					return global + found;
 				}
@@ -1826,24 +1924,26 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			int pageId = unpackPageId(localReference);
 			int localRow = unpackLocalRow(localReference);
 			loadPage(pageId);
-			if (localRow >= page.rowCount() || page.continuation()) {
+			if (localRow >= this.rowCount() || this.continuation()) {
 				throw new IllegalArgumentException("CSF handle does not identify a first-row coordinate");
 			}
-			long row = page.rowCount() == 1 ? page.firstRow() : 0;
-			long count = page.rowQuadCount(localRow);
-			boolean ordered = page.allOrderedIntegerNeighbors();
+			long row = this.rowCount() == 1 ? this.firstRow() : 0;
+			long count = this.rowQuadCount(localRow);
+			boolean ordered = this.allOrderedIntegerNeighbors();
 			extentCount = 0;
-			addExtent(pageId, 0L);
 			int currentPage = nextExtentPageId(pageId, row);
 			boolean singlePage = currentPage == CompactCsfPageFormat.NO_PAGE;
+			if (!singlePage) {
+				addExtent(pageId, 0L);
+			}
 			while (currentPage != CompactCsfPageFormat.NO_PAGE) {
 				addExtent(currentPage, count);
 				loadPage(currentPage);
-				if (page.firstRow() != row) {
+				if (this.firstRow() != row) {
 					throw new IllegalStateException("CSF extent chain changes row coordinate");
 				}
-				count = Math.addExact(count, page.rowQuadCount(0));
-				ordered &= page.allOrderedIntegerNeighbors();
+				count = Math.addExact(count, this.rowQuadCount(0));
+				ordered &= this.allOrderedIntegerNeighbors();
 				currentPage = nextExtentPageId(currentPage, row);
 			}
 			this.localReference = localReference;
@@ -1892,7 +1992,10 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		}
 
 		private void addExtent(int pageId, long start) {
-			if (extentCount == extentPageIds.length) {
+			if (extentPageIds == null) {
+				extentPageIds = new int[4];
+				extentStarts = new long[4];
+			} else if (extentCount == extentPageIds.length) {
 				extentPageIds = Arrays.copyOf(extentPageIds, extentCount * 2);
 				extentStarts = Arrays.copyOf(extentStarts, extentCount * 2);
 			}
@@ -1908,7 +2011,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		}
 
 		private int nextExtentPageId(int pageId, long expectedRow) {
-			if (page.rowCount() != 1) {
+			if (this.rowCount() != 1) {
 				return CompactCsfPageFormat.NO_PAGE;
 			}
 			int next = pageId + 1;
@@ -1922,7 +2025,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 
 		private void loadPage(int pageId) {
 			if (loadedPageId != pageId) {
-				owner.page(pageId, page);
+				owner.page(pageId, this);
 				loadedPageId = pageId;
 			}
 		}
@@ -1997,11 +2100,10 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 			long firstOrdinal = shard.pageFirstRowOrdinal(page);
 			int localRow = Math.toIntExact(localOrdinal - firstOrdinal);
-			CompactCsfPageReader reader = shard.page(page);
-			if (localRow < 0 || localRow >= reader.rowCount()) {
+			if (localRow < 0 || localRow >= shard.pageUniqueRows(page)) {
 				throw new IllegalStateException("row ordinal is outside its directory page");
 			}
-			return reader.rowAt(localRow);
+			return shard.rowAt(page, localRow);
 		}
 
 		public boolean contains(long key) {
@@ -2023,11 +2125,11 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	/** Allocation-free-after-construction sequential cursor over one {@link KeyDomain}. */
-	public static final class KeyCursor {
+	public static final class KeyCursor extends CompactCsfPageReader {
 		private final ImmutablePagedQuadCsfIndex owner;
 		private final int shardEnd;
-		private final CompactCsfPageReader page = new CompactCsfPageReader();
-		private final CompactCsfPageReader extentPage = new CompactCsfPageReader();
+		/** Allocated only for the uncommon multi-page-row path. */
+		private CompactCsfPageReader extentPage;
 		private int shardIndex;
 		private int localPage;
 		private int localRow;
@@ -2052,13 +2154,13 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				CsfShard shard = owner.shards[shardIndex];
 				while (localPage < shard.pageCount()) {
 					load(shard);
-					if (page.continuation()) {
+					if (this.continuation()) {
 						localPage++;
 						localRow = 0;
 						continue;
 					}
-					if (localRow < page.rowCount()) {
-						key = page.rowAt(localRow);
+					if (localRow < this.rowCount()) {
+						key = this.rowAt(localRow);
 						firstPageId = owner.shardFirstPageIds[shardIndex] + localPage;
 						firstLocalRow = localRow;
 						localReference = packLocalReference(firstPageId, firstLocalRow);
@@ -2108,11 +2210,11 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			int pageId = firstPageId;
 			int row = firstLocalRow;
 			int output = 0;
-			CompactCsfPageReader reader = page;
+			CompactCsfPageReader reader = this;
 			while (pageId != CompactCsfPageFormat.NO_PAGE && output < requested) {
 				if (pageId != firstPageId) {
-					owner.page(pageId, extentPage);
-					reader = extentPage;
+					reader = extentPage();
+					owner.page(pageId, reader);
 					if (!reader.continuation() || reader.firstRow() != key) {
 						throw new IllegalStateException("CSF extent chain changes row coordinate");
 					}
@@ -2138,15 +2240,16 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		}
 
 		private long countEdges() {
-			long count = page.rowQuadCount(firstLocalRow);
-			int next = nextExtentPageId(firstPageId, page);
+			long count = this.rowQuadCount(firstLocalRow);
+			int next = nextExtentPageId(firstPageId, this);
 			while (next != CompactCsfPageFormat.NO_PAGE) {
-				owner.page(next, extentPage);
-				if (!extentPage.continuation() || extentPage.firstRow() != key) {
+				CompactCsfPageReader extent = extentPage();
+				owner.page(next, extent);
+				if (!extent.continuation() || extent.firstRow() != key) {
 					throw new IllegalStateException("CSF extent chain changes row coordinate");
 				}
-				count = Math.addExact(count, extentPage.rowQuadCount(0));
-				next = nextExtentPageId(next, extentPage);
+				count = Math.addExact(count, extent.rowQuadCount(0));
+				next = nextExtentPageId(next, extent);
 			}
 			return count;
 		}
@@ -2163,9 +2266,18 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			return owner.isExtentContinuation(next, key) ? next : CompactCsfPageFormat.NO_PAGE;
 		}
 
+		private CompactCsfPageReader extentPage() {
+			CompactCsfPageReader reader = extentPage;
+			if (reader == null) {
+				reader = new CompactCsfPageReader();
+				extentPage = reader;
+			}
+			return reader;
+		}
+
 		private void load(CsfShard shard) {
 			if (loadedShard != shardIndex || loadedPage != localPage) {
-				shard.page(localPage, page);
+				shard.page(localPage, this);
 				loadedShard = shardIndex;
 				loadedPage = localPage;
 			}

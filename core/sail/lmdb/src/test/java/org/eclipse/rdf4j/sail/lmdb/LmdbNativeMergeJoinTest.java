@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,16 +54,23 @@ class LmdbNativeMergeJoinTest {
 	File dataDir;
 
 	SailRepository repository;
+	private String previousJaninoEnabled;
 
 	@BeforeEach
 	void setUp() {
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		previousJaninoEnabled = System.getProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY);
+		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
+		repository = new SailRepository(new LmdbStore(dataDir, config));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI key = vf.createIRI(EX, "key");
+			connection.begin();
 			for (int i = 0; i < 200; i++) {
 				connection.add(vf.createIRI(EX, "row" + i), key, vf.createIRI(EX, "key" + (i % 20)));
 			}
+			connection.commit();
 		}
 		System.setProperty(NativeBatch.ENABLED_PROPERTY, "true");
 		System.setProperty(NativeBatch.ROWS_PROPERTY, "31");
@@ -81,6 +89,11 @@ class LmdbNativeMergeJoinTest {
 		System.clearProperty(LmdbNativeHashJoin.ENABLED_PROPERTY);
 		System.clearProperty(LmdbNativeHashJoin.MIN_ROWS_PROPERTY);
 		System.clearProperty(PARALLEL_FLAG);
+		if (previousJaninoEnabled == null) {
+			System.clearProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY);
+		} else {
+			System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, previousJaninoEnabled);
+		}
 		repository.shutDown();
 	}
 
@@ -89,6 +102,7 @@ class LmdbNativeMergeJoinTest {
 			ValueFactory vf = connection.getValueFactory();
 			IRI dense = vf.createIRI(EX, "p");
 			IRI sparse = vf.createIRI(EX, "q");
+			connection.begin();
 			for (int i = 0; i < 3000; i++) {
 				IRI subject = vf.createIRI(EX, "subject" + i);
 				connection.add(subject, dense, vf.createIRI(EX, "object" + i));
@@ -96,6 +110,7 @@ class LmdbNativeMergeJoinTest {
 					connection.add(subject, sparse, vf.createIRI(EX, "value" + i));
 				}
 			}
+			connection.commit();
 		}
 	}
 
@@ -244,6 +259,7 @@ class LmdbNativeMergeJoinTest {
 			IRI predicate = vf.createIRI(EX, "sparseWalkP");
 			IRI marker = vf.createIRI(EX, "marker");
 			IRI next = vf.createIRI(EX, "next");
+			connection.begin();
 			for (int i = 0; i < 3000; i++) {
 				IRI subject = vf.createIRI(EX, "sparseWalk" + i);
 				IRI value = vf.createIRI(EX, "walkValue" + i);
@@ -253,6 +269,7 @@ class LmdbNativeMergeJoinTest {
 					connection.add(subject, predicate, marker);
 				}
 			}
+			connection.commit();
 		}
 		System.setProperty(PARALLEL_FLAG, "false");
 		// the selective marker pattern roots the chain; the (?a, ?p) walk skips ~30 keys between matches

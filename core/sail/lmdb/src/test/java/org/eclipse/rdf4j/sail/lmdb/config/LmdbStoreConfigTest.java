@@ -49,6 +49,8 @@ class LmdbStoreConfigTest {
 
 	private static final IRI INLINE_LITERALS = Values.iri(LmdbStoreSchema.NAMESPACE + "inlineLiterals");
 
+	private static final IRI ORDERED_NUMERIC_IDS = Values.iri(LmdbStoreSchema.NAMESPACE + "orderedNumericIds");
+
 	private static final IRI SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorSubjectBucketCount");
 
@@ -373,6 +375,20 @@ class LmdbStoreConfigTest {
 	@Test
 	void inlineLiteralsDefaultsToEnabled() {
 		assertThat(new LmdbStoreConfig().getInlineLiterals()).isTrue();
+	}
+
+	@Test
+	void orderedNumericIdsFalseSurvivesConfigurationRoundTrip() {
+		LmdbStoreConfig original = new LmdbStoreConfig().setOrderedNumericIds(false);
+		Model exportedModel = new LinkedHashModel();
+		Resource implNode = original.export(exportedModel);
+
+		assertThat(exportedModel.contains(implNode, ORDERED_NUMERIC_IDS, Values.literal(false))).isTrue();
+
+		LmdbStoreConfig parsed = new LmdbStoreConfig();
+		parsed.parse(exportedModel, implNode);
+
+		assertThat(parsed.getOrderedNumericIds()).isFalse();
 	}
 
 	@ParameterizedTest

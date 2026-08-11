@@ -25,11 +25,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Supplier;
 
 import org.codehaus.janino.SimpleCompiler;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,8 +41,8 @@ import org.slf4j.LoggerFactory;
  * Mirrors the proven {@code LmdbNativeSpecialization} lifecycle: per-store-id-space caches with weak owners, a single
  * daemon compiler thread, an interpreted-rows admission threshold, and LRU eviction. Kernels are compiled once per
  * canonical plan-shape key and instantiated per cursor open; compile failure marks the shape failed (no retry storm)
- * and the caller falls back to the interpreter — a compile problem must never fail a query. Generated source can be
- * dumped for debugging via {@code rdf4j.lmdb.janinoCodegen.dumpDir}.
+ * and the caller falls back to the interpreter by default. Validation can opt into synchronous compilation and strict
+ * failure propagation. Generated source can be dumped for debugging via {@code rdf4j.lmdb.janinoCodegen.dumpDir}.
  */
 @Experimental
 final class LmdbNativeJaninoCodegen {
@@ -48,6 +51,8 @@ final class LmdbNativeJaninoCodegen {
 	static final String THRESHOLD_ROWS_PROPERTY = "rdf4j.lmdb.janinoCodegen.thresholdRows";
 	static final String MAX_ENTRIES_PROPERTY = "rdf4j.lmdb.janinoCodegen.maxEntries";
 	static final String DUMP_DIR_PROPERTY = "rdf4j.lmdb.janinoCodegen.dumpDir";
+	static final String SYNCHRONOUS_PROPERTY = "rdf4j.lmdb.janinoCodegen.synchronous";
+	static final String FAIL_ON_ERROR_PROPERTY = "rdf4j.lmdb.janinoCodegen.failOnError";
 
 	static final long DEFAULT_THRESHOLD_ROWS = 128;
 	static final int DEFAULT_MAX_ENTRIES = 512;
@@ -63,6 +68,9 @@ final class LmdbNativeJaninoCodegen {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbNativeJaninoCodegen.class);
 	private static final Object CACHE_REGISTRY_LOCK = new Object();
+	private static final ReentrantReadWriteLock COMPILER_LIFECYCLE_LOCK = new ReentrantReadWriteLock();
+	private static final Lock COMPILER_LIFECYCLE_READ = COMPILER_LIFECYCLE_LOCK.readLock();
+	private static final Lock COMPILER_LIFECYCLE_WRITE = COMPILER_LIFECYCLE_LOCK.writeLock();
 	private static final Object DEFAULT_CACHE_OWNER = new Object();
 	private static final WeakHashMap<Object, StoreCache> STORE_CACHES = new WeakHashMap<>();
 	private static volatile ExecutorService compiler;
@@ -75,35 +83,59 @@ final class LmdbNativeJaninoCodegen {
 		return Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"));
 	}
 
+	static boolean synchronous() {
+		return Boolean.parseBoolean(System.getProperty(SYNCHRONOUS_PROPERTY, "false"));
+	}
+
+	static boolean failOnError() {
+		return Boolean.parseBoolean(System.getProperty(FAIL_ON_ERROR_PROPERTY, "false"));
+	}
+
 	/**
 	 * Returns a fresh kernel instance for the shape, or null when the caller must stay on the interpreted path (flag
-	 * off, below threshold, compile pending, or compile failed). The source supplier runs on the compiler thread and
-	 * only for the first request of a shape.
+	 * off, below threshold, compile pending, or compile failed). The source supplier runs once for the first request of
+	 * a shape: on the compiler thread by default, or on the requesting thread in synchronous validation mode.
 	 */
 	static JaninoKernel kernel(Object cacheOwner, String shapeKey, String className, Supplier<String> sourceSupplier,
 			long observedRows) {
 		if (!enabled() || observedRows < Long.getLong(THRESHOLD_ROWS_PROPERTY, DEFAULT_THRESHOLD_ROWS)) {
 			return null;
 		}
-		StoreCache cache = storeCache(cacheOwner);
-		Entry entry;
-		synchronized (cache) {
-			entry = cache.entries.get(shapeKey);
-			if (entry == null) {
-				CACHE_MISSES.incrementAndGet();
-				evictForEntryLimit(cache);
-				entry = new Entry();
-				cache.entries.put(shapeKey, entry);
-				schedule(entry, shapeKey, className, sourceSupplier);
-			} else if (entry.constructor != null) {
-				CACHE_HITS.incrementAndGet();
+		COMPILER_LIFECYCLE_READ.lock();
+		try {
+			StoreCache cache = storeCache(cacheOwner);
+			Entry entry;
+			boolean created = false;
+			synchronized (cache) {
+				entry = cache.entries.get(shapeKey);
+				if (entry == null) {
+					CACHE_MISSES.incrementAndGet();
+					evictForEntryLimit(cache);
+					entry = new Entry(shapeKey);
+					cache.entries.put(shapeKey, entry);
+					created = true;
+				} else if (entry.constructor != null) {
+					CACHE_HITS.incrementAndGet();
+				}
 			}
+			if (created) {
+				if (synchronous()) {
+					compile(entry, shapeKey, className, sourceSupplier);
+				} else {
+					schedule(entry, shapeKey, className, sourceSupplier);
+				}
+			}
+			if (synchronous()) {
+				awaitReady(entry.ready);
+			}
+			return instantiate(entry);
+		} finally {
+			COMPILER_LIFECYCLE_READ.unlock();
 		}
 //		System.out.println("Janino kernel cache: " + CACHE_HITS.get() + " hits, " + CACHE_MISSES.get() + " misses, "
 //				+ EVICTIONS.get() + " evictions, " + COMPILATIONS.get() + " compilations, "
 //				+ COMPILE_FAILURES.get() + " failures, " + KERNEL_INSTANTIATIONS.get() + " instantiations, "
 //				+ FALLBACKS.get() + " fallbacks");
-		return instantiate(entry);
 	}
 
 	/** Returns the exact gate/cache state that explains a null result from {@link #kernel}. */
@@ -156,32 +188,42 @@ final class LmdbNativeJaninoCodegen {
 	/** Test hook: waits for the shape's compile to finish, then returns a fresh instance or null. */
 	static JaninoKernel awaitKernel(Object cacheOwner, String shapeKey, long timeout, TimeUnit unit)
 			throws InterruptedException {
-		StoreCache cache;
-		synchronized (CACHE_REGISTRY_LOCK) {
-			cache = STORE_CACHES.get(cacheOwner == null ? DEFAULT_CACHE_OWNER : cacheOwner);
-		}
-		if (cache == null) {
-			return null;
-		}
-		Entry entry;
-		synchronized (cache) {
-			entry = cache.entries.get(shapeKey);
-		}
-		if (entry == null) {
-			return null;
-		}
-		entry.ready.await(timeout, unit);
+		COMPILER_LIFECYCLE_READ.lock();
+		try {
+			StoreCache cache;
+			synchronized (CACHE_REGISTRY_LOCK) {
+				cache = STORE_CACHES.get(cacheOwner == null ? DEFAULT_CACHE_OWNER : cacheOwner);
+			}
+			if (cache == null) {
+				return null;
+			}
+			Entry entry;
+			synchronized (cache) {
+				entry = cache.entries.get(shapeKey);
+			}
+			if (entry == null) {
+				return null;
+			}
+			entry.ready.await(timeout, unit);
 //		System.out.println("Janino kernel cache: " + CACHE_HITS.get() + " hits, " + CACHE_MISSES.get() + " misses, "
 //				+ EVICTIONS.get() + " evictions, " + COMPILATIONS.get() + " compilations, "
 //				+ COMPILE_FAILURES.get() + " failures, " + KERNEL_INSTANTIATIONS.get() + " instantiations, "
 //				+ FALLBACKS.get() + " fallbacks");
-		return instantiate(entry);
+			return instantiate(entry);
+		} finally {
+			COMPILER_LIFECYCLE_READ.unlock();
+		}
 	}
 
 	/** Test hook that waits for every compilation submitted before this call, without timing-based sleeps. */
 	static boolean awaitCompilationsForTests(long timeout, TimeUnit unit) throws InterruptedException {
 		CountDownLatch barrier = new CountDownLatch(1);
-		compiler().execute(barrier::countDown);
+		COMPILER_LIFECYCLE_READ.lock();
+		try {
+			compiler().execute(barrier::countDown);
+		} finally {
+			COMPILER_LIFECYCLE_READ.unlock();
+		}
 		return barrier.await(timeout, unit);
 	}
 
@@ -189,6 +231,9 @@ final class LmdbNativeJaninoCodegen {
 		Constructor<?> constructor = entry.constructor;
 		if (constructor == null) {
 			FALLBACKS.incrementAndGet();
+			if (failOnError() && entry.ready.getCount() == 0L && entry.compileProblem != null) {
+				throw new ValidationException("compile", entry.shapeKey, entry.compileProblem);
+			}
 			return null;
 		}
 		try {
@@ -200,48 +245,107 @@ final class LmdbNativeJaninoCodegen {
 //					+ COMPILE_FAILURES.get() + " failures, " + KERNEL_INSTANTIATIONS.get() + " instantiations, "
 //					+ FALLBACKS.get() + " fallbacks");
 			return kernel;
-		} catch (ReflectiveOperationException problem) {
+		} catch (ReflectiveOperationException | LinkageError | ClassCastException problem) {
 			entry.instantiationFailure = problem.toString();
 			FALLBACKS.incrementAndGet();
 			logger.debug("kernel instantiation failed", problem);
+			if (failOnError()) {
+				throw new ValidationException("construction", entry.shapeKey, problem);
+			}
 			return null;
 		}
 	}
 
 	private static void schedule(Entry entry, String shapeKey, String className, Supplier<String> sourceSupplier) {
-		compiler().execute(() -> {
-			long start = System.nanoTime();
-			String source = null;
-			try {
-				source = sourceSupplier.get();
-				SimpleCompiler janino = new SimpleCompiler();
-				janino.setParentClassLoader(JaninoKernel.class.getClassLoader());
-				janino.cook(source);
-				Class<?> kernelClass = janino.getClassLoader().loadClass(className);
-				Constructor<?> constructor = kernelClass.getDeclaredConstructor();
-				// Sanity: the generated class must implement the SPI before we publish it.
-				JaninoKernel probe = (JaninoKernel) constructor.newInstance();
-				probe.close();
-				dump(className, source, null);
-				entry.compileFailure = null;
-				entry.constructor = constructor;
-				COMPILATIONS.incrementAndGet();
+		compiler().execute(() -> compile(entry, shapeKey, className, sourceSupplier));
+	}
+
+	private static void compile(Entry entry, String shapeKey, String className, Supplier<String> sourceSupplier) {
+		long start = System.nanoTime();
+		String source = null;
+		try {
+			source = sourceSupplier.get();
+			SimpleCompiler janino = new SimpleCompiler();
+			janino.setParentClassLoader(JaninoKernel.class.getClassLoader());
+			janino.cook(source);
+			Class<?> kernelClass = janino.getClassLoader().loadClass(className);
+			Constructor<?> constructor = kernelClass.getDeclaredConstructor();
+			// Sanity: the generated class must implement the SPI before we publish it.
+			JaninoKernel probe = (JaninoKernel) constructor.newInstance();
+			probe.close();
+			dump(className, source, null);
+			entry.compileFailure = null;
+			entry.compileProblem = null;
+			entry.constructor = constructor;
+			COMPILATIONS.incrementAndGet();
 //				System.out.println("Janino kernel cache: " + CACHE_HITS.get() + " hits, " + CACHE_MISSES.get()
 //						+ " misses, "
 //						+ EVICTIONS.get() + " evictions, " + COMPILATIONS.get() + " compilations, "
 //						+ COMPILE_FAILURES.get() + " failures, " + KERNEL_INSTANTIATIONS.get() + " instantiations, "
 //						+ FALLBACKS.get() + " fallbacks");
-			} catch (Throwable problem) {
-				entry.compileFailure = problem.toString();
-				COMPILE_FAILURES.incrementAndGet();
-				dump(className, source, problem);
-				logger.debug("Janino kernel compile failed for shape {}: {}", shapeKey, problem.toString());
-				// The failed entry stays cached so the shape is not recompiled on every call; callers fall back.
-			} finally {
-				COMPILE_NANOS.addAndGet(System.nanoTime() - start);
-				entry.ready.countDown();
+		} catch (Throwable problem) {
+			entry.compileFailure = problem.toString();
+			entry.compileProblem = problem;
+			COMPILE_FAILURES.incrementAndGet();
+			dump(className, source, problem);
+			logger.debug("Janino kernel compile failed for shape {}: {}", shapeKey, problem.toString());
+			// The failed entry stays cached so the shape is not recompiled on every call; callers fall back.
+		} finally {
+			COMPILE_NANOS.addAndGet(System.nanoTime() - start);
+			entry.ready.countDown();
+		}
+	}
+
+	private static void awaitReady(CountDownLatch ready) {
+		boolean interrupted = false;
+		while (true) {
+			try {
+				ready.await();
+				break;
+			} catch (InterruptedException e) {
+				interrupted = true;
 			}
-		});
+		}
+		if (interrupted) {
+			Thread.currentThread().interrupt();
+		}
+	}
+
+	static void bind(JaninoKernel kernel, KernelContext context, String route) {
+		try {
+			kernel.bind(context);
+		} catch (RuntimeException | Error problem) {
+			throwIfStrict("bind", route, problem);
+			throw problem;
+		}
+	}
+
+	static int fill(JaninoKernel kernel, long[] rowBuffer, int maxRows, String route) {
+		try {
+			return kernel.fill(rowBuffer, maxRows);
+		} catch (RuntimeException | Error problem) {
+			throwIfStrict("execution", route, problem);
+			throw problem;
+		}
+	}
+
+	private static void throwIfStrict(String stage, String route, Throwable problem) {
+		if (problem instanceof ValidationException validationException) {
+			throw validationException;
+		}
+		if (problem instanceof LmdbNativeKernelBindings.PlanFailure
+				|| problem instanceof EncounterOrderFallback) {
+			return;
+		}
+		if (failOnError()) {
+			throw new ValidationException(stage, route, problem);
+		}
+	}
+
+	static void rethrowValidationFailure(Throwable problem) {
+		if (problem instanceof ValidationException validationException) {
+			throw validationException;
+		}
 	}
 
 	private static void dump(String className, String source, Throwable problem) {
@@ -303,17 +407,29 @@ final class LmdbNativeJaninoCodegen {
 	}
 
 	static void resetForTests() {
-		synchronized (CACHE_REGISTRY_LOCK) {
-			STORE_CACHES.clear();
+		COMPILER_LIFECYCLE_WRITE.lock();
+		try {
+			drainCompilerForReset();
+			synchronized (CACHE_REGISTRY_LOCK) {
+				STORE_CACHES.clear();
+			}
+			COMPILATIONS.set(0L);
+			COMPILE_FAILURES.set(0L);
+			COMPILE_NANOS.set(0L);
+			KERNEL_INSTANTIATIONS.set(0L);
+			CACHE_HITS.set(0L);
+			CACHE_MISSES.set(0L);
+			EVICTIONS.set(0L);
+			FALLBACKS.set(0L);
+		} finally {
+			COMPILER_LIFECYCLE_WRITE.unlock();
 		}
-		COMPILATIONS.set(0L);
-		COMPILE_FAILURES.set(0L);
-		COMPILE_NANOS.set(0L);
-		KERNEL_INSTANTIATIONS.set(0L);
-		CACHE_HITS.set(0L);
-		CACHE_MISSES.set(0L);
-		EVICTIONS.set(0L);
-		FALLBACKS.set(0L);
+	}
+
+	private static void drainCompilerForReset() {
+		CountDownLatch barrier = new CountDownLatch(1);
+		compiler().execute(barrier::countDown);
+		awaitReady(barrier);
 	}
 
 	private static final class StoreCache {
@@ -321,9 +437,23 @@ final class LmdbNativeJaninoCodegen {
 	}
 
 	private static final class Entry {
+		final String shapeKey;
 		final CountDownLatch ready = new CountDownLatch(1);
 		volatile Constructor<?> constructor;
 		volatile String compileFailure;
 		volatile String instantiationFailure;
+		volatile Throwable compileProblem;
+
+		private Entry(String shapeKey) {
+			this.shapeKey = shapeKey;
+		}
+	}
+
+	static final class ValidationException extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+
+		private ValidationException(String stage, String route, Throwable cause) {
+			super("Janino " + stage + " failed for " + route, cause);
+		}
 	}
 }

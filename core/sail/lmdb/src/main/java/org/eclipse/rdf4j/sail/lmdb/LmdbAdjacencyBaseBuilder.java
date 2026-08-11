@@ -121,7 +121,7 @@ final class LmdbAdjacencyBaseBuilder {
 			throws IOException {
 		AdjacencySourceScanner primary = Objects.requireNonNull(sourceFamily.primary(), "sourceFamily.primary()");
 		if (!primary.supportsOrderedScan(true) || !primary.supportsOrderedScan(false)) {
-			throw new IllegalStateException(
+			throw new LmdbAdjacencyBuildUnavailableException(
 					"NOT_BUILDABLE_WITH_INDEX_CONFIG: a required direction cannot stream its grouping order");
 		}
 		long baseRevision = validateSourceFamily(sourceFamily);
@@ -981,7 +981,7 @@ final class LmdbAdjacencyBaseBuilder {
 			boolean outgoing = plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
 					|| plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED;
 			if (!scanner.supportsOrderedScan(outgoing)) {
-				throw new IllegalStateException(
+				throw new LmdbAdjacencyBuildUnavailableException(
 						"NOT_BUILDABLE_WITH_INDEX_CONFIG: plane " + plane + " cannot stream its grouping order");
 			}
 			if (scanner.snapshotRevision() != revision || scanner.snapshotId() != snapshotId) {

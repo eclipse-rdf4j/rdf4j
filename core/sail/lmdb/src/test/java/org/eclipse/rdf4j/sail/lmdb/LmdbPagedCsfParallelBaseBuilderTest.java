@@ -201,7 +201,7 @@ class LmdbPagedCsfParallelBaseBuilderTest {
 				LmdbInMemoryAdjacencyIndex ignored = LmdbPagedCsfBaseBuilder.build(family,
 						LmdbAdjacencyCoverage.full(), account, 1L << 20, 1L << 16, 8, metrics)) {
 			LmdbAdjacencyMetrics.Snapshot snapshot = metrics.snapshot("test", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-					0, 0, 0, 0, 0);
+					0, 0, 0, 0, 0, 0, 0);
 			assertThat(longField(snapshot, "desiredBuildThreads")).isEqualTo(8);
 			assertThat(longField(snapshot, "lastBuildThreads")).isEqualTo(8);
 			assertThat(longField(snapshot, "maximumBuildConcurrency")).isGreaterThan(4);

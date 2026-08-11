@@ -60,6 +60,7 @@ final class LmdbAdjacencyMetrics {
 	private final LongAdder buildsAborted = new LongAdder();
 	private final LongAdder shadowComparisons = new LongAdder();
 	private final LongAdder shadowMismatches = new LongAdder();
+	private final LongAdder nodePredicateInconsistencies = new LongAdder();
 	private final AtomicLong activeBuildThreads = new AtomicLong();
 	private final AtomicLong desiredBuildThreads = new AtomicLong();
 	private final AtomicLong lastBuildThreads = new AtomicLong();
@@ -81,8 +82,17 @@ final class LmdbAdjacencyMetrics {
 	private static final long TARGET_20B_SOURCE_VISITS = sourceVisitsForStatements(20_000_000_000L);
 	private static final BigInteger LONG_MAX = BigInteger.valueOf(Long.MAX_VALUE);
 
+	/**
+	 * Measurement gate for the per-lookup diagnostic counters. These feed only the close-time decline census and tests,
+	 * never a runtime decision, so {@code -Drdf4j.lmdb.hotCounters=false} can switch them off to size their hot-path
+	 * cost. Default on, so the census and existing tests are unaffected.
+	 */
+	static final boolean HOT_COUNTERS = !"false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.hotCounters"));
+
 	void recordHit() {
-		lookupHits.increment();
+		if (HOT_COUNTERS) {
+			lookupHits.increment();
+		}
 	}
 
 	void recordPlannerStatsHit() {
@@ -90,7 +100,9 @@ final class LmdbAdjacencyMetrics {
 	}
 
 	void recordExactMiss() {
-		exactMisses.increment();
+		if (HOT_COUNTERS) {
+			exactMisses.increment();
+		}
 	}
 
 	void recordFallback(FallbackReason reason) {
@@ -190,6 +202,15 @@ final class LmdbAdjacencyMetrics {
 		shadowComparisons.increment();
 	}
 
+	/**
+	 * Counted once per detection, not once per subsequent fallback: after the first inconsistency every later query for
+	 * this shape declines before touching the projection, and counting those declines here would make one structural
+	 * fault look like a storm of them.
+	 */
+	void recordNodePredicateInconsistency() {
+		nodePredicateInconsistencies.increment();
+	}
+
 	void recordShadowMismatch() {
 		shadowMismatches.increment();
 	}
@@ -197,7 +218,8 @@ final class LmdbAdjacencyMetrics {
 	Snapshot snapshot(String state, long baseRevision, long appliedRevision, long currentDataRevision,
 			long gapFromRevision, long emergencyGapFromRevision, long activeViews, long baseBytes,
 			long buildCounterBytes, long buildOutputBytes, long javaMetadataBytes, long totalChargedBytes,
-			long highWaterBytes, long configuredMaxBytes, long detectedMemoryLimitBytes, long effectiveMaxBytes) {
+			long highWaterBytes, long configuredMaxBytes, long detectedMemoryLimitBytes, long effectiveMaxBytes,
+			long nodePredicateNativeBytes, long nodePredicateJavaBytes) {
 		EnumMap<FallbackReason, Long> byReason = new EnumMap<>(FallbackReason.class);
 		for (FallbackReason reason : REASONS) {
 			long count = fallbacks.get(reason.ordinal());
@@ -217,7 +239,8 @@ final class LmdbAdjacencyMetrics {
 				completedBuildRanges.get(), buildScratchHighWaterBytes.get(), cursorRowsScanned.get(),
 				cursorRowsMatched.get(), cursorRowsSkipped.get(), cursorSeeks.get(),
 				pass1SourceVisits.get(), pass1Nanos.get(), pass3SourceVisits.get(), pass3Nanos.get(),
-				buildElapsedNanos.get(), projectedBuildNanos.get());
+				buildElapsedNanos.get(), projectedBuildNanos.get(), nodePredicateNativeBytes, nodePredicateJavaBytes,
+				nodePredicateInconsistencies.sum());
 	}
 
 	static long sourceVisitsForStatements(long statementCount) {
@@ -295,6 +318,12 @@ final class LmdbAdjacencyMetrics {
 		final long pass3Nanos;
 		final long buildElapsedNanos;
 		final long projectedBuildNanos;
+		/** Native pages of the optional node-predicate projection, charged separately from the primary index. */
+		final long nodePredicateNativeBytes;
+		/** Modelled Java metadata of the node-predicate projection. */
+		final long nodePredicateJavaBytes;
+		/** Times the projection was proven inconsistent with the authoritative rows; one per detection. */
+		final long nodePredicateInconsistencies;
 
 		private Snapshot(String state, long baseRevision, long appliedRevision, long currentDataRevision,
 				long gapFromRevision, long emergencyGapFromRevision, long activeViews, long baseBytes,
@@ -307,7 +336,8 @@ final class LmdbAdjacencyMetrics {
 				long maximumBuildConcurrency, long plannedBuildRanges, long completedBuildRanges,
 				long buildScratchHighWaterBytes, long cursorRowsScanned, long cursorRowsMatched,
 				long cursorRowsSkipped, long cursorSeeks, long pass1SourceVisits, long pass1Nanos,
-				long pass3SourceVisits, long pass3Nanos, long buildElapsedNanos, long projectedBuildNanos) {
+				long pass3SourceVisits, long pass3Nanos, long buildElapsedNanos, long projectedBuildNanos,
+				long nodePredicateNativeBytes, long nodePredicateJavaBytes, long nodePredicateInconsistencies) {
 			this.state = state;
 			this.baseRevision = baseRevision;
 			this.appliedRevision = appliedRevision;
@@ -350,6 +380,9 @@ final class LmdbAdjacencyMetrics {
 			this.pass3Nanos = pass3Nanos;
 			this.buildElapsedNanos = buildElapsedNanos;
 			this.projectedBuildNanos = projectedBuildNanos;
+			this.nodePredicateNativeBytes = nodePredicateNativeBytes;
+			this.nodePredicateJavaBytes = nodePredicateJavaBytes;
+			this.nodePredicateInconsistencies = nodePredicateInconsistencies;
 		}
 
 		long fallbacks(FallbackReason reason) {

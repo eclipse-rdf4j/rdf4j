@@ -3570,6 +3570,26 @@ class LmdbSailStore implements SailStore {
 					return directAdjacency.adjacency(view, predicate, bySubject, explicit, observer);
 				}
 
+				@Override
+				public NativeLmdbQuerySource.NodePredicates nodePredicates(boolean bySubject) throws IOException {
+					checkOpen();
+					LmdbAdjacencyReadView view = variablePredicateView();
+					return view == null ? null
+							: directAdjacency.bindNodePredicates(view, bySubject, explicit, null);
+				}
+
+				@Override
+				public NativeLmdbQuerySource.DynamicAdjacency dynamicAdjacency(boolean bySubject) throws IOException {
+					checkOpen();
+					LmdbAdjacencyReadView view = variablePredicateView();
+					return view == null ? null
+							: directAdjacency.bindDynamicAdjacency(view, bySubject, explicit, null);
+				}
+
+				private LmdbAdjacencyReadView variablePredicateView() throws IOException {
+					return !hasStatementsInSource() || directAdjacency == null ? null : exactAdjacencyView(false);
+				}
+
 				private void observeAdjacency(AdjacencyAccessObserver observer, boolean used, String reason,
 						long predicate, boolean bySubject) {
 					if (observer != null) {
@@ -4420,6 +4440,42 @@ class LmdbSailStore implements SailStore {
 				}
 			}
 
+			@Override
+			public NativeLmdbQuerySource.NodePredicates nodePredicates(boolean bySubject) throws IOException {
+				return variablePredicateEligible()
+						? directAdjacency.bindNodePredicates(adjacencyView, bySubject, explicit, null)
+						: null;
+			}
+
+			@Override
+			public NativeLmdbQuerySource.DynamicAdjacency dynamicAdjacency(boolean bySubject) throws IOException {
+				return variablePredicateEligible()
+						? directAdjacency.bindDynamicAdjacency(adjacencyView, bySubject, explicit, null)
+						: null;
+			}
+
+			/**
+			 * Same gate the fixed-predicate view uses, hoisted so both variable-predicate views observe it. The read
+			 * stamp is taken here for the same reason it is taken there: the view must stay valid for this probe's
+			 * lifetime, and each parallel worker owns its own probe.
+			 */
+			private boolean variablePredicateEligible() throws IOException {
+				if (closed) {
+					throw new SailException("Probe has been closed");
+				}
+				if (!stampHeld) {
+					readStamp = acquireNativeSourceReadLock();
+					stampHeld = true;
+				}
+				try {
+					assertNativeSourceOpen();
+					return hasStatementsInSource() && directEligible();
+				} catch (RuntimeException | Error failure) {
+					close();
+					throw failure;
+				}
+			}
+
 			private String adjacencyUnavailableReason() {
 				return directAdjacencyUnavailableReason();
 			}
@@ -4910,14 +4966,42 @@ class LmdbSailStore implements SailStore {
 
 			@Override
 			public int fill(long[] buffer, int maxRows) {
-				if (closed) {
+				if (closed || maxRows <= 0) {
 					return 0;
 				}
 				try {
 					assertNativeSourceOpen();
-					int rows = delegate.fill(buffer, maxRows);
-					if (rows < maxRows) {
-						close();
+					if (batch == null) {
+						int rows = delegate.fill(buffer, maxRows);
+						if (rows < maxRows) {
+							close();
+						}
+						return rows;
+					}
+
+					// next() may already have prefetched rows into batch. Drain those first, then refill the same
+					// buffer as scratch. This makes switching from scalar next() to fill() lossless and avoids a
+					// second staging array in adaptive join cursors.
+					int rows = 0;
+					while (rows < maxRows) {
+						int available = batchCount - batchPos;
+						if (available != 0) {
+							int take = Math.min(available, maxRows - rows);
+							System.arraycopy(batch, batchPos << 2, buffer, rows << 2, take << 2);
+							batchPos += take;
+							rows += take;
+							continue;
+						}
+						if (exhausted) {
+							close();
+							break;
+						}
+						int requested = Math.min(BATCH_ROWS, maxRows - rows);
+						batchCount = delegate.fill(batch, requested);
+						batchPos = 0;
+						if (batchCount < requested) {
+							exhausted = true;
+						}
 					}
 					return rows;
 				} catch (RuntimeException | Error e) {

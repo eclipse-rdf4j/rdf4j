@@ -62,6 +62,7 @@ public class LmdbNativeFactorizedTailAggregationTest {
 			ValueFactory vf = conn.getValueFactory();
 			IRI p1 = vf.createIRI(EX, "p1");
 			IRI p2 = vf.createIRI(EX, "p2");
+			conn.begin();
 			// hub1: 3 p1-branches, 2 p2-branches (one p2 value duplicated via a second hub)
 			IRI hub1 = vf.createIRI(EX, "hub1");
 			conn.add(hub1, p1, vf.createIRI(EX, "a1"));
@@ -95,6 +96,7 @@ public class LmdbNativeFactorizedTailAggregationTest {
 			conn.add(hub1, pn0, vf.createLiteral(10));
 			conn.add(hub2, pn0, vf.createLiteral(20));
 			conn.add(hub3, pn0, vf.createLiteral(40));
+			conn.commit();
 		}
 	}
 

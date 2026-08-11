@@ -231,6 +231,62 @@ class CompactCsfPageTest {
 	}
 
 	@Test
+	void pageSlackAcceleratorsNeverChangeTheSelectedNativeCapacityClass() {
+		CompactCsfPageEncoder.PageImage image = acceleratedPage();
+		int descriptor = LeBytes.getInt(image.bytes(), CompactCsfPageFormat.ACCELERATOR_DESCRIPTOR_AT);
+		int acceleratorOffset = LeBytes.getInt(image.bytes(), CompactCsfPageFormat.ACCELERATOR_OFFSET_AT);
+		int acceleratorLength = LeBytes.getInt(image.bytes(), CompactCsfPageFormat.ACCELERATOR_LENGTH_AT);
+
+		assertThat(descriptor).isNotZero();
+		assertThat(acceleratorLength).isPositive();
+		assertThat(acceleratorOffset + acceleratorLength).isEqualTo(image.usedBytes());
+		int baselineClass = NativeSlabAllocator.classForUsedBytes(acceleratorOffset);
+		assertThat(baselineClass).isEqualTo(image.classIndex());
+		assertThat(NativeSlabAllocator.capacityForClass(baselineClass)).isEqualTo(image.capacity());
+	}
+
+	@Test
+	void malformedAcceleratorDescriptorLengthAndOffsetFailClosed() {
+		CompactCsfPageEncoder.PageImage image = acceleratedPage();
+
+		byte[] badDescriptor = image.bytes().clone();
+		LeBytes.putInt(badDescriptor, CompactCsfPageFormat.ACCELERATOR_DESCRIPTOR_AT, 1 << 20);
+		assertMalformed(badDescriptor);
+
+		byte[] badLength = image.bytes().clone();
+		int length = LeBytes.getInt(badLength, CompactCsfPageFormat.ACCELERATOR_LENGTH_AT);
+		LeBytes.putInt(badLength, CompactCsfPageFormat.ACCELERATOR_LENGTH_AT, length + Long.BYTES);
+		assertMalformed(badLength);
+
+		byte[] badOffset = image.bytes().clone();
+		int offset = LeBytes.getInt(badOffset, CompactCsfPageFormat.ACCELERATOR_OFFSET_AT);
+		LeBytes.putInt(badOffset, CompactCsfPageFormat.ACCELERATOR_OFFSET_AT, offset + Long.BYTES);
+		assertMalformed(badOffset);
+	}
+
+	@Test
+	void statelessValidationAndTrustedBindingMatchTheValidatingReader() {
+		CompactCsfPageEncoder.PageImage image = encodeRows(257);
+		long address = UnsafeAccess.allocateZeroed(image.capacity() + PackedLongVector.READ_TAIL_PADDING);
+		try {
+			UnsafeAccess.copyFromArray(image.bytes(), 0, address, image.bytes().length);
+			CompactCsfPageReader.validatePage(address);
+			CompactCsfPageReader validating = new CompactCsfPageReader(address);
+			CompactCsfPageReader trusted = new CompactCsfPageReader();
+			trusted.bindTrusted(address);
+
+			assertThat(trusted.rowCount()).isEqualTo(validating.rowCount());
+			assertThat(trusted.firstRow()).isEqualTo(validating.firstRow());
+			assertThat(trusted.lastRow()).isEqualTo(validating.lastRow());
+			for (int row : new int[] { 0, 1, 127, 128, 255, 256 }) {
+				assertThat(trusted.rowAt(row)).isEqualTo(validating.rowAt(row));
+			}
+		} finally {
+			UnsafeAccess.free(address);
+		}
+	}
+
+	@Test
 	void malformedCapacityFlagsSectionOverlapAndVectorDirectoryFailClosed() {
 		CompactCsfPageEncoder.PageImage image = encodeRows(2);
 
@@ -271,6 +327,16 @@ class CompactCsfPageTest {
 		} finally {
 			UnsafeAccess.free(address);
 		}
+	}
+
+	private static CompactCsfPageEncoder.PageImage acceleratedPage() {
+		for (int rows : new int[] { 64, 128, 256, 257, 512, 768, 1_024 }) {
+			CompactCsfPageEncoder.PageImage image = encodeRows(rows);
+			if (LeBytes.getInt(image.bytes(), CompactCsfPageFormat.ACCELERATOR_DESCRIPTOR_AT) != 0) {
+				return image;
+			}
+		}
+		throw new AssertionError("test data did not leave page-class slack for an accelerator");
 	}
 
 	private static CompactCsfPageEncoder.PageImage encodeRows(int rows) {

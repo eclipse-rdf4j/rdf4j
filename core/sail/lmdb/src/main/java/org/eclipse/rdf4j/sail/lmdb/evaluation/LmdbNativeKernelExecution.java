@@ -138,6 +138,13 @@ final class LmdbNativeKernelExecution {
 			probe = row.source.newProbe();
 			NativeLmdbQuerySource.NativeAdjacency[] views = lowered.bindings.requestAdjacencies(probe);
 			recordAdjacencyBindings(row, lowered.bindings, views, "irAggregate");
+			LmdbNativeKernelBindings.VariablePredicateViews variableViews = LmdbNativeKernelBindings
+					.requestVariablePredicateViews(lowered.bindings, probe);
+			if (variableViews == null) {
+				// All-or-nothing per direction: a missing enumerator declines the whole open, never one operator.
+				DECLINED.incrementAndGet();
+				return null;
+			}
 			if (views == null) {
 				// A view is missing or cannot enumerate its keys — a bind-time fact the lowering could not have known.
 				// Retry once with scan sources preferred, which expresses the same patterns without any view. Once
@@ -188,12 +195,13 @@ final class LmdbNativeKernelExecution {
 			scanner = lowered.kernel.requirements.scans > 0
 					? new LmdbNativeKernelScanner(row, lowered.bindings.scanOrders)
 					: null;
-			kernel.bind(lowered.bindings.context(views, domains, row, hooks, scanner));
+			LmdbNativeJaninoCodegen.bind(kernel,
+					lowered.bindings.context(views, domains, row, hooks, scanner, variableViews), "irAggregate");
 			int stride = lowered.kernel.stride();
 			long[] buffer = new long[stride * FILL_ROWS];
 			List<BindingSet> results = new ArrayList<>();
 			int filled;
-			while ((filled = kernel.fill(buffer, FILL_ROWS)) > 0) {
+			while ((filled = LmdbNativeJaninoCodegen.fill(kernel, buffer, FILL_ROWS, "irAggregate")) > 0) {
 				for (int r = 0; r < filled; r++) {
 					results.add(emitter.kernelGroupRow(buffer, r * stride, lowered.bindings.groupLayout, hooks));
 				}
@@ -209,6 +217,7 @@ final class LmdbNativeKernelExecution {
 			}
 			return results;
 		} catch (RuntimeException | IOException problem) {
+			LmdbNativeJaninoCodegen.rethrowValidationFailure(problem);
 			if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 				System.err.println("[ir-aggregate] decline: exception " + problem);
 			}
@@ -433,6 +442,12 @@ final class LmdbNativeKernelExecution {
 				return null;
 			}
 			probe = row.source.newProbe();
+			LmdbNativeKernelBindings.VariablePredicateViews variableViews = LmdbNativeKernelBindings
+					.requestVariablePredicateViews(lowered.bindings, probe);
+			if (variableViews == null) {
+				DECLINED.incrementAndGet();
+				return null;
+			}
 			NativeLmdbQuerySource.NativeAdjacency[] partial = lowered.bindings.requestAdjacenciesPartial(probe);
 			int unavailable = 0;
 			for (NativeLmdbQuerySource.NativeAdjacency view : partial) {
@@ -549,7 +564,8 @@ final class LmdbNativeKernelExecution {
 					return null;
 				}
 			}
-			kernel.bind(lowered.bindings.context(views, domains, row, hooks, scanner));
+			LmdbNativeJaninoCodegen.bind(kernel,
+					lowered.bindings.context(views, domains, row, hooks, scanner, variableViews), "irKernel");
 			OPENED.incrementAndGet();
 			if (row.runtimePlan != null) {
 				SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
@@ -562,6 +578,7 @@ final class LmdbNativeKernelExecution {
 			return new KernelRowCursor(kernel, probe, scanner, hooks, row, lowered.bindings.columnEngineSlots,
 					lowered.bindings.residualFilters, hashReservation);
 		} catch (RuntimeException problem) {
+			LmdbNativeJaninoCodegen.rethrowValidationFailure(problem);
 			if (probe != null) {
 				probe.close();
 			}
@@ -687,7 +704,7 @@ final class LmdbNativeKernelExecution {
 			while (true) {
 				if (bufferPos == bufferRows) {
 					try {
-						bufferRows = kernel.fill(buffer, FILL_ROWS);
+						bufferRows = LmdbNativeJaninoCodegen.fill(kernel, buffer, FILL_ROWS, "irKernel");
 					} catch (LmdbNativeKernelBindings.PlanFailure problem) {
 						throw problem.ioCause();
 					}

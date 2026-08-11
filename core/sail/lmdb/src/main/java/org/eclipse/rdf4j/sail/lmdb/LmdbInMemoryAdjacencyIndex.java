@@ -42,6 +42,7 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 	private final LmdbAdjacencyCoverage coverage;
 	private final LmdbReferenceNodeLocator locator;
 	private final ImmutablePagedQuadCsfIndex csfBase; // non-owning; retained by arenaCatalog
+	private final LmdbNodePredicateIndex nodePredicateIndex; // owning, paged FULL bases only
 	private final LmdbAdjacencyKeyIndex[] keyIndexes; // predicateOrdinal * 4 + plane
 	private final long[] inlinePlaneKeys;
 	private final LmdbInlineIncomingIndex[] inlinePlanes;
@@ -57,7 +58,7 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 			LmdbAdjacencyCoverage coverage, LmdbReferenceNodeLocator locator, LmdbAdjacencyKeyIndex[] keyIndexes,
 			long[] inlinePlaneKeys, LmdbInlineIncomingIndex[] inlinePlanes, Charge baseCharge, Charge metadataCharge,
 			long statementCount, long incidenceCount, LmdbAdjacencyPlaneStatistics planeStatistics) {
-		this(baseRevision, arenaCatalog, predicateCatalog, contextCatalog, coverage, locator, null, keyIndexes,
+		this(baseRevision, arenaCatalog, predicateCatalog, contextCatalog, coverage, locator, null, null, keyIndexes,
 				inlinePlaneKeys, inlinePlanes, new LmdbAdjacencySharedCharge(baseCharge), new Charge[0], metadataCharge,
 				statementCount, incidenceCount, planeStatistics);
 	}
@@ -68,6 +69,18 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 			LmdbAdjacencyKeyIndex[] keyIndexes, long[] inlinePlaneKeys, LmdbInlineIncomingIndex[] inlinePlanes,
 			LmdbAdjacencySharedCharge sharedBaseCharge, Charge[] ownedNativeCharges, Charge metadataCharge,
 			long statementCount, long incidenceCount, LmdbAdjacencyPlaneStatistics planeStatistics) {
+		this(baseRevision, arenaCatalog, predicateCatalog, contextCatalog, coverage, locator, csfBase, null, keyIndexes,
+				inlinePlaneKeys, inlinePlanes, sharedBaseCharge, ownedNativeCharges, metadataCharge, statementCount,
+				incidenceCount, planeStatistics);
+	}
+
+	LmdbInMemoryAdjacencyIndex(long baseRevision, LmdbAdjacencyArenaCatalog arenaCatalog,
+			LmdbAdjacencyPredicateCatalog predicateCatalog, LmdbAdjacencyContextCatalog contextCatalog,
+			LmdbAdjacencyCoverage coverage, LmdbReferenceNodeLocator locator, ImmutablePagedQuadCsfIndex csfBase,
+			LmdbNodePredicateIndex nodePredicateIndex, LmdbAdjacencyKeyIndex[] keyIndexes,
+			long[] inlinePlaneKeys, LmdbInlineIncomingIndex[] inlinePlanes,
+			LmdbAdjacencySharedCharge sharedBaseCharge, Charge[] ownedNativeCharges, Charge metadataCharge,
+			long statementCount, long incidenceCount, LmdbAdjacencyPlaneStatistics planeStatistics) {
 		this.baseRevision = baseRevision;
 		this.arenaCatalog = arenaCatalog;
 		this.predicateCatalog = predicateCatalog;
@@ -75,6 +88,13 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 		this.coverage = coverage;
 		this.locator = locator;
 		this.csfBase = csfBase;
+		if (nodePredicateIndex != null && csfBase == null) {
+			throw new IllegalArgumentException("node-predicate projection requires a paged-CSF base");
+		}
+		if (nodePredicateIndex != null && !coverage.isFull()) {
+			throw new IllegalArgumentException("node-predicate projection requires FULL predicate coverage");
+		}
+		this.nodePredicateIndex = nodePredicateIndex;
 		this.keyIndexes = keyIndexes;
 		this.inlinePlaneKeys = inlinePlaneKeys;
 		this.inlinePlanes = inlinePlanes;
@@ -126,9 +146,47 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 		return sharedBaseCharge;
 	}
 
-	/** The compact CSF intentionally omits the old all-predicates-per-node locator. */
+	/**
+	 * Retained for source compatibility with callers that require predicate enumeration for every node direction. A
+	 * paged base currently has only the outgoing subject projection, so only the legacy base satisfies that stronger
+	 * capability.
+	 */
 	boolean supportsPredicateEnumeration() {
 		return csfBase == null;
+	}
+
+	/** Returns whether this base can enumerate every predicate for a bound node in {@code plane}. */
+	boolean supportsPredicateEnumeration(int plane) {
+		if (csfBase == null) {
+			return true;
+		}
+		return nodePredicateIndex != null && nodePredicateIndex.supportsPlane(plane);
+	}
+
+	/**
+	 * Returns this base's node-predicate projection, which must exist.
+	 * <p>
+	 * The returned reference is <em>borrowed and non-owning</em>. Its lifetime is this base's reference count, so it is
+	 * valid only while the caller holds a read-view lease on the publication that contains this base. Only
+	 * {@link #close()} may close the projection: the consolidator's no-change fast path publishes a new base that
+	 * shares one underlying CSF with the old one, so a consumer that closed what it merely read would free memory
+	 * another live base is still using.
+	 */
+	LmdbNodePredicateIndex nodePredicateIndex() {
+		if (nodePredicateIndex == null) {
+			throw new IllegalStateException("base index has no node-predicate projection");
+		}
+		return nodePredicateIndex;
+	}
+
+	/**
+	 * Returns this base's node-predicate projection, or {@code null} when it has none. Same borrowed, non-owning
+	 * contract as {@link #nodePredicateIndex()}. Callers that only need to test for presence must use this rather than
+	 * {@link #supportsPredicateEnumeration(int)}, which answers {@code true} for a legacy base that has no projection
+	 * at all.
+	 */
+	LmdbNodePredicateIndex nodePredicateIndexOrNull() {
+		return nodePredicateIndex;
 	}
 
 	LmdbAdjacencyKeyIndex keyIndex(long predicateOrdinal, int plane) {
@@ -169,7 +227,25 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 	 * Base-row lookup retaining the reference-node group position in the caller-owned {@code searchContext}.
 	 */
 	long findRun(long rawKey, int plane, long rawPredicateId, LmdbReferenceNodeLocator.SearchContext searchContext) {
-		return findRunByOrdinal(rawKey, plane, bindPredicate(rawPredicateId), searchContext);
+		return findRunByOrdinal(rawKey, plane, bindPredicate(rawPredicateId, searchContext), searchContext);
+	}
+
+	/**
+	 * {@link #bindPredicate(long)} memoized on the caller-owned {@code searchContext}. A probe keeps one context for
+	 * its lifetime and re-opens against the same bound predicate, so the coverage check and the predicate-catalog
+	 * binary search would otherwise repeat on every open.
+	 */
+	private long bindPredicate(long rawPredicateId, LmdbReferenceNodeLocator.SearchContext searchContext) {
+		if (searchContext == null) {
+			return bindPredicate(rawPredicateId);
+		}
+		long memoized = searchContext.memoizedPredicateOrdinal(this, rawPredicateId);
+		if (memoized != Long.MIN_VALUE) {
+			return memoized;
+		}
+		long ordinal = bindPredicate(rawPredicateId);
+		searchContext.memoizePredicateOrdinal(this, rawPredicateId, ordinal);
+		return ordinal;
 	}
 
 	/**
@@ -255,6 +331,9 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 			}
 		} while (!refs.compareAndSet(current, current - 1));
 		if (current == 1) {
+			if (nodePredicateIndex != null) {
+				nodePredicateIndex.close();
+			}
 			arenaCatalog.close();
 			sharedBaseCharge.close();
 			for (Charge nativeCharge : ownedNativeCharges) {

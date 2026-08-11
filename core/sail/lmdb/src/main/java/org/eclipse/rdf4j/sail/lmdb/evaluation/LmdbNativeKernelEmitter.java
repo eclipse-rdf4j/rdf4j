@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Emit;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateAdjKeys;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateDomain;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateEntry;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumeratePredicates;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Exists;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterCompareId;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterInConstants;
@@ -41,6 +42,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PathExpand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PlanRows;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Probe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeClose;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeVariable;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ScanQuad;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
 
@@ -71,6 +73,13 @@ final class LmdbNativeKernelEmitter {
 		private int nextPipelineId;
 		/** Number of {@code LeftGroup} nodes emitted, each of which owns one {@code lgN} match flag field. */
 		private int nextLeftGroupId;
+		private int nextPredicateEnumId;
+
+		/**
+		 * Predicates read per {@code copyRow} call. Sized so an ordinary node's whole row fits in one call while a
+		 * supernode-class row still costs a bounded, per-node allocation rather than one proportional to its width.
+		 */
+		private static final int PREDICATE_CHUNK = 64;
 
 		Emission(Kernel kernel) {
 			this.kernel = kernel;
@@ -128,6 +137,26 @@ final class LmdbNativeKernelEmitter {
 		private void emitFields(StringBuilder source) {
 			for (int i = 0; i < kernel.requirements.adjacencies; i++) {
 				source.append("    private NativeLmdbQuerySource.NativeAdjacency a").append(i).append(";\n");
+			}
+			for (int i = 0; i < kernel.requirements.nodePredicateViews; i++) {
+				source.append("    private NativeLmdbQuerySource.NodePredicates np").append(i).append(";\n");
+			}
+			for (int i = 0; i < kernel.requirements.dynamicViews; i++) {
+				source.append("    private NativeLmdbQuerySource.DynamicAdjacency dy").append(i).append(";\n");
+			}
+			// Scratch is per enumerating node, never per view: two nested enumerations share a view, and a shared
+			// buffer would let the inner one overwrite predicates the outer has not processed yet.
+			for (int i = 0; i < nextPredicateEnumId; i++) {
+				source.append("    private final long[] epP")
+						.append(i)
+						.append(" = new long[")
+						.append(PREDICATE_CHUNK)
+						.append("];\n");
+				source.append("    private final long[] epR")
+						.append(i)
+						.append(" = new long[")
+						.append(PREDICATE_CHUNK)
+						.append("];\n");
 			}
 			for (int i = 0; i < kernel.requirements.constants; i++) {
 				source.append("    private long c").append(i).append(";\n");
@@ -300,6 +329,16 @@ final class LmdbNativeKernelEmitter {
 			source.append("    public void bind(KernelContext context) {\n");
 			for (int i = 0; i < kernel.requirements.adjacencies; i++) {
 				source.append("        a").append(i).append(" = context.adjacencies[").append(i).append("];\n");
+			}
+			for (int i = 0; i < kernel.requirements.nodePredicateViews; i++) {
+				source.append("        np").append(i).append(" = context.nodePredicates[").append(i).append("];\n");
+			}
+			for (int i = 0; i < kernel.requirements.dynamicViews; i++) {
+				source.append("        dy")
+						.append(i)
+						.append(" = context.dynamicAdjacencies[")
+						.append(i)
+						.append("];\n");
 			}
 			for (int i = 0; i < kernel.requirements.constants; i++) {
 				source.append("        c").append(i).append(" = context.constants[").append(i).append("];\n");
@@ -1693,12 +1732,24 @@ final class LmdbNativeKernelEmitter {
 			if (node instanceof EnumerateAdjKeys) {
 				return ((EnumerateAdjKeys) node).ctxActive();
 			}
+			if (node instanceof EnumeratePredicates) {
+				return ((EnumeratePredicates) node).ctxActive();
+			}
+			if (node instanceof ProbeVariable) {
+				return ((ProbeVariable) node).ctxActive();
+			}
 			return false;
 		}
 
 		private static int ctxColOf(Node node) {
 			if (node instanceof Probe) {
 				return ((Probe) node).ctxCol;
+			}
+			if (node instanceof EnumeratePredicates) {
+				return ((EnumeratePredicates) node).ctxCol;
+			}
+			if (node instanceof ProbeVariable) {
+				return ((ProbeVariable) node).ctxCol;
 			}
 			return node instanceof EnumerateAdjKeys ? ((EnumerateAdjKeys) node).ctxCol : -1;
 		}
@@ -1713,6 +1764,12 @@ final class LmdbNativeKernelEmitter {
 			if (node instanceof Probe) {
 				match = ((Probe) node).ctxMatch;
 				exclude = ((Probe) node).ctxExcludeDefault;
+			} else if (node instanceof EnumeratePredicates) {
+				match = ((EnumeratePredicates) node).ctxMatch;
+				exclude = ((EnumeratePredicates) node).ctxExcludeDefault;
+			} else if (node instanceof ProbeVariable) {
+				match = ((ProbeVariable) node).ctxMatch;
+				exclude = ((ProbeVariable) node).ctxExcludeDefault;
 			} else {
 				match = ((EnumerateAdjKeys) node).ctxMatch;
 				exclude = ((EnumerateAdjKeys) node).ctxExcludeDefault;
@@ -2347,6 +2404,132 @@ final class LmdbNativeKernelEmitter {
 						.append(probe.valueCol)
 						.append(" = ")
 						.append(a)
+						.append(".neighborAt(rh, i);\n")
+						.append(next(nextTemplate, probeInner));
+				closeCtxEntry(body, indent + "            ", probe);
+				body.append(indent)
+						.append("        }\n")
+						.append(indent)
+						.append("    }\n")
+						.append(indent)
+						.append("}\n");
+			} else if (node instanceof EnumeratePredicates) {
+				EnumeratePredicates enumerate = (EnumeratePredicates) node;
+				String v = "np" + enumerate.view;
+				int scratch = nextPredicateEnumId++;
+				String predicates = "epP" + scratch;
+				String runs = "epR" + scratch;
+				body.append(indent)
+						.append("long key = ")
+						.append(enumerate.key.token())
+						.append(";\n")
+						.append(indent)
+						.append("if (key != -1L) {\n")
+						.append(indent)
+						.append("    long rowH = ")
+						.append(v)
+						.append(".find(key);\n")
+						.append(indent)
+						.append("    if (rowH > 0L) {\n")
+						.append(indent)
+						.append("        long rowSize = ")
+						.append(v)
+						.append(".rowSize(rowH);\n")
+						.append(indent)
+						// The row is read in bounded chunks, never as one array the size of the row: a pathological
+						// node must not force a large uncharged allocation inside every parallel worker, and the row
+						// length is a long that has no business being narrowed to an array size.
+						.append("        for (long ro = 0L; ro < rowSize; ) {\n")
+						.append(indent)
+						.append("            int rn = ")
+						.append(v)
+						.append(".copyRow(key, rowH, ro, ")
+						.append(PREDICATE_CHUNK)
+						.append(", ")
+						.append(predicates)
+						.append(", 0, ")
+						.append(runs)
+						.append(", 0);\n")
+						.append(indent)
+						.append("            if (rn <= 0) {\n")
+						.append(indent)
+						.append("                break;\n")
+						.append(indent)
+						.append("            }\n")
+						.append(indent)
+						.append("            for (int pi = 0; pi < rn; pi++) {\n")
+						.append(indent)
+						.append("                v")
+						.append(enumerate.predicateCol)
+						.append(" = ")
+						.append(predicates)
+						.append("[pi];\n")
+						// Total resolution: copyRow raises rather than returning a non-positive handle, so there is
+						// deliberately no branch here that would skip a predicate and under-report.
+						.append(indent)
+						.append("                long rh = ")
+						.append(runs)
+						.append("[pi];\n")
+						.append(indent)
+						.append("                long end = ")
+						.append(v)
+						.append(".size(rh);\n")
+						.append(indent)
+						.append("                for (long i = 0L; i < end; i++) {\n");
+				String enumInner = indent + "                    ";
+				enumInner = emitCtxEntry(body, enumInner, enumerate, v, "i");
+				body.append(enumInner)
+						.append("v")
+						.append(enumerate.valueCol)
+						.append(" = ")
+						.append(v)
+						.append(".neighborAt(rh, i);\n")
+						.append(next(nextTemplate, enumInner));
+				closeCtxEntry(body, indent + "                    ", enumerate);
+				body.append(indent)
+						.append("                }\n")
+						.append(indent)
+						.append("            }\n")
+						.append(indent)
+						.append("            ro += rn;\n")
+						.append(indent)
+						.append("        }\n")
+						.append(indent)
+						.append("    }\n")
+						.append(indent)
+						.append("}\n");
+			} else if (node instanceof ProbeVariable) {
+				ProbeVariable probe = (ProbeVariable) node;
+				String v = "dy" + probe.view;
+				body.append(indent)
+						.append("long key = ")
+						.append(probe.key.token())
+						.append(";\n")
+						.append(indent)
+						.append("long pred = ")
+						.append(probe.predicate.token())
+						.append(";\n")
+						.append(indent)
+						.append("if (key != -1L && pred != -1L) {\n")
+						.append(indent)
+						.append("    long rh = ")
+						.append(v)
+						.append(".runFor(key, pred);\n")
+						.append(indent)
+						.append("    if (rh > 0L) {\n")
+						.append(indent)
+						.append("        long end = ")
+						.append(v)
+						.append(".size(rh);\n")
+						.append(indent)
+						.append("        for (long i = 0L; i < end; i++) {\n");
+				String probeInner = indent + "            ";
+				probeInner = emitCtxEntry(body, probeInner, probe, v, "i");
+				body.append(probeInner)
+						.append("v")
+						.append(probe.valueCol)
+						.append(" = ")
+						.append(v)
 						.append(".neighborAt(rh, i);\n")
 						.append(next(nextTemplate, probeInner));
 				closeCtxEntry(body, indent + "            ", probe);

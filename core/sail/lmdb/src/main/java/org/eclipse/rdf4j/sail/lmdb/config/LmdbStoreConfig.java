@@ -615,6 +615,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (!inlineLiterals) {
 			m.add(implNode, LmdbStoreSchema.INLINE_LITERALS, vf.createLiteral(false));
 		}
+		if (!orderedNumericIds) {
+			m.add(implNode, LmdbStoreSchema.ORDERED_NUMERIC_IDS, vf.createLiteral(false));
+		}
 		if (sketchEstimatorEnabled != null) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_ENABLED, vf.createLiteral(sketchEstimatorEnabled));
 		}
@@ -840,6 +843,17 @@ public class LmdbStoreConfig extends BaseSailConfig {
 						} catch (IllegalArgumentException e) {
 							throw new SailConfigException(
 									"Boolean value required for " + LmdbStoreSchema.INLINE_LITERALS
+											+ " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.ORDERED_NUMERIC_IDS, null))
+					.ifPresent(lit -> {
+						try {
+							setOrderedNumericIds(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Boolean value required for " + LmdbStoreSchema.ORDERED_NUMERIC_IDS
 											+ " property, found " + lit);
 						}
 					});

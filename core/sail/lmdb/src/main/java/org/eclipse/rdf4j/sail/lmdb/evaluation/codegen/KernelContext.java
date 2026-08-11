@@ -38,6 +38,17 @@ public final class KernelContext {
 	public final KernelPlan[] plans;
 	/** Bounded planner estimate used to size per-group DISTINCT sets before their first insertion. */
 	public final int distinctExpected;
+	/**
+	 * Node-to-predicate enumerators in the order the generator referenced them; empty when the kernel needs none.
+	 * Unlike {@link #adjacencies}, which are per-predicate and can be individually missing, these are all-or-nothing
+	 * per direction, so a missing one declines the whole open rather than one operator.
+	 */
+	public final NativeLmdbQuerySource.NodePredicates[] nodePredicates;
+	/** Dynamic {@code (node, runtime predicate)} probes in generator order; empty when the kernel needs none. */
+	public final NativeLmdbQuerySource.DynamicAdjacency[] dynamicAdjacencies;
+
+	private static final NativeLmdbQuerySource.NodePredicates[] NO_NODE_PREDICATES = {};
+	private static final NativeLmdbQuerySource.DynamicAdjacency[] NO_DYNAMIC_ADJACENCIES = {};
 
 	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
 			long[][] keyDomains) {
@@ -61,6 +72,16 @@ public final class KernelContext {
 
 	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
 			long[][] keyDomains, KernelHooks hooks, KernelScanner scanner, KernelPlan[] plans, int distinctExpected) {
+		this(adjacencies, constants, entrySlots, keyDomains, hooks, scanner, plans, distinctExpected,
+				NO_NODE_PREDICATES, NO_DYNAMIC_ADJACENCIES);
+	}
+
+	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
+			long[][] keyDomains, KernelHooks hooks, KernelScanner scanner, KernelPlan[] plans, int distinctExpected,
+			NativeLmdbQuerySource.NodePredicates[] nodePredicates,
+			NativeLmdbQuerySource.DynamicAdjacency[] dynamicAdjacencies) {
+		this.nodePredicates = nodePredicates == null ? NO_NODE_PREDICATES : nodePredicates;
+		this.dynamicAdjacencies = dynamicAdjacencies == null ? NO_DYNAMIC_ADJACENCIES : dynamicAdjacencies;
 		this.adjacencies = adjacencies;
 		this.constants = constants;
 		this.entrySlots = entrySlots;

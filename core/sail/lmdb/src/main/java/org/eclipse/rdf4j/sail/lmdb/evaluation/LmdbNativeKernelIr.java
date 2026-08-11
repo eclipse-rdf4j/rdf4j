@@ -118,7 +118,17 @@ final class LmdbNativeKernelIr {
 		int domains;
 		int scans;
 		int plans;
+		int nodePredicateViews;
+		int dynamicViews;
 		boolean hooks;
+
+		void nodePredicateView(int index) {
+			nodePredicateViews = Math.max(nodePredicateViews, index + 1);
+		}
+
+		void dynamicView(int index) {
+			dynamicViews = Math.max(dynamicViews, index + 1);
+		}
 
 		void adjacency(int index) {
 			adjacencies = Math.max(adjacencies, index + 1);
@@ -458,6 +468,167 @@ final class LmdbNativeKernelIr {
 		void requirements(Requirements requirements) {
 			requirements.adjacency(adjacency);
 			requirements.operand(key);
+			if (ctxMatch != null) {
+				requirements.operand(ctxMatch);
+			}
+		}
+	}
+
+	/**
+	 * Enumerate every predicate of one bound node and, for each, expand its run: the compiled form of {@code <s> ?p ?o}
+	 * and {@code ?s ?p <o>}.
+	 * <p>
+	 * Two loops rather than one. The outer reads the node's predicate row in bounded chunks — never as one array the
+	 * size of the row — for three reasons: it preserves the chunking discipline the wide-node fixture exists to
+	 * exercise, it stops a pathological node from forcing a large uncharged allocation inside every parallel worker,
+	 * and it avoids narrowing a 64-bit row length to a 32-bit array size on an invariant nobody has stated. The inner
+	 * loop over each run is byte-for-byte the fixed-predicate probe's inner loop.
+	 */
+	static final class EnumeratePredicates extends Node {
+		final int view;
+		final Operand key;
+		/** Destination column for the raw predicate id. */
+		final int predicateCol;
+		/** Destination column for the far endpoint (object when keyed by subject, subject when keyed by object). */
+		final int valueCol;
+		/** Destination column for the run entry's context id, or -1 when the context is not projected. */
+		final int ctxCol;
+		/** Only entries whose context equals this operand's value are produced; null = no restriction. */
+		final Operand ctxMatch;
+		/** Named-graph scope: entries in the default graph (context id 0) are skipped. */
+		final boolean ctxExcludeDefault;
+
+		EnumeratePredicates(int view, Operand key, int predicateCol, int valueCol) {
+			this(view, key, predicateCol, valueCol, -1, null, false);
+		}
+
+		EnumeratePredicates(int view, Operand key, int predicateCol, int valueCol, int ctxCol, Operand ctxMatch,
+				boolean ctxExcludeDefault) {
+			if (predicateCol < 0 || valueCol < 0) {
+				throw new IllegalArgumentException("predicate enumeration must write both the predicate and the value");
+			}
+			if (predicateCol == valueCol) {
+				throw new IllegalArgumentException("predicate and value cannot share a column");
+			}
+			this.view = view;
+			this.key = key;
+			this.predicateCol = predicateCol;
+			this.valueCol = valueCol;
+			this.ctxCol = ctxCol;
+			this.ctxMatch = ctxMatch;
+			this.ctxExcludeDefault = ctxExcludeDefault;
+		}
+
+		boolean ctxActive() {
+			return ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("EP(n")
+					.append(view)
+					.append(',')
+					.append(this.key.token())
+					.append("->p")
+					.append(predicateCol)
+					.append(",x")
+					.append(valueCol);
+			if (ctxActive()) {
+				key.append(",g")
+						.append(ctxCol)
+						.append(',')
+						.append(ctxMatch == null ? "_" : ctxMatch.token())
+						.append(ctxExcludeDefault ? ",n" : "");
+			}
+			key.append(");");
+		}
+
+		@Override
+		void produced(BitSet columns) {
+			columns.set(predicateCol);
+			columns.set(valueCol);
+			if (ctxCol >= 0) {
+				columns.set(ctxCol);
+			}
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.nodePredicateView(view);
+			requirements.operand(key);
+			if (ctxMatch != null) {
+				requirements.operand(ctxMatch);
+			}
+		}
+	}
+
+	/**
+	 * Expand the run of one bound node under one <em>runtime</em> predicate: the compiled form of a pattern whose
+	 * predicate variable is already bound by an earlier operator. Identical to {@link Probe} except that the predicate
+	 * comes from an operand instead of being fixed at bind time, which is why it needs the dynamic view rather than a
+	 * per-predicate one.
+	 */
+	static final class ProbeVariable extends Node {
+		final int view;
+		final Operand key;
+		final Operand predicate;
+		final int valueCol;
+		final int ctxCol;
+		final Operand ctxMatch;
+		final boolean ctxExcludeDefault;
+
+		ProbeVariable(int view, Operand key, Operand predicate, int valueCol) {
+			this(view, key, predicate, valueCol, -1, null, false);
+		}
+
+		ProbeVariable(int view, Operand key, Operand predicate, int valueCol, int ctxCol, Operand ctxMatch,
+				boolean ctxExcludeDefault) {
+			this.view = view;
+			this.key = key;
+			this.predicate = predicate;
+			this.valueCol = valueCol;
+			this.ctxCol = ctxCol;
+			this.ctxMatch = ctxMatch;
+			this.ctxExcludeDefault = ctxExcludeDefault;
+		}
+
+		boolean ctxActive() {
+			return ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("PV(d")
+					.append(view)
+					.append(',')
+					.append(this.key.token())
+					.append(',')
+					.append(predicate.token())
+					.append("->")
+					.append(valueCol);
+			if (ctxActive()) {
+				key.append(",g")
+						.append(ctxCol)
+						.append(',')
+						.append(ctxMatch == null ? "_" : ctxMatch.token())
+						.append(ctxExcludeDefault ? ",n" : "");
+			}
+			key.append(");");
+		}
+
+		@Override
+		void produced(BitSet columns) {
+			columns.set(valueCol);
+			if (ctxCol >= 0) {
+				columns.set(ctxCol);
+			}
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.dynamicView(view);
+			requirements.operand(key);
+			requirements.operand(predicate);
 			if (ctxMatch != null) {
 				requirements.operand(ctxMatch);
 			}
@@ -1546,6 +1717,19 @@ final class LmdbNativeKernelIr {
 
 	static boolean probeCloseSeekEnabled() {
 		return !"false".equals(System.getProperty(PROBE_CLOSE_SEEK_PROPERTY));
+	}
+
+	/**
+	 * Enables compiled predicate enumeration and dynamic predicate probing — the lowering of patterns whose predicate
+	 * is a variable. Off by default, as its own decision separate from whether the underlying projection is built at
+	 * all: this switch costs compiler surface and risk, the construction switch costs build time and memory, and
+	 * bundling them would let one benchmark number silently decide two questions. Read at lowering time, so a pattern
+	 * either compiles or records a stable decline.
+	 */
+	static final String NODE_PREDICATES_PROPERTY = "rdf4j.lmdb.janinoCodegen.nodePredicates";
+
+	static boolean nodePredicatesEnabled() {
+		return Boolean.parseBoolean(System.getProperty(NODE_PREDICATES_PROPERTY, "false"));
 	}
 
 	/**

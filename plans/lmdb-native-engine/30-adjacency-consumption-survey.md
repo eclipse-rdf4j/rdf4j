@@ -36,7 +36,7 @@ engage the structures and enumerates the gaps and the new capabilities the struc
 | `SELECT DISTINCT ?s { ?s :p ?o }` | NO | `ROOT_SCAN` |
 | `COUNT(*)` over one predicate | NO | `ROOT_SCAN` |
 | degree per subject (`GROUP BY ?s COUNT`) | NO | `ROOT_SCAN` |
-| node edge dump (`<s> ?p ?o`) | NO | `PREDICATE_ENUMERATION_INCOMPLETE` |
+| node edge dump (`<s> ?p ?o`) | NO by default; see the superseded note below | `PREDICATE_ENUMERATION_INCOMPLETE` |
 | two-hop from seed | YES (probes) | — |
 | star join | probes YES, leading scan NO | `ROOT_SCAN` |
 | chain join, open-ended | probes YES, leading scan NO | `ROOT_SCAN` |
@@ -119,3 +119,26 @@ iterator and per-plane accounting), then 3 (eligibility holes; small, Routine A 
 with 4, 5, 8, 9 as milestones attached where they fit. `AdjacencyQueryShapeBenchmark` provides the paired-run
 acceptance workloads; the census test pins engagement (counters observable via
 `LmdbDirectAdjacencyStore.snapshotMetrics()` and `JoinDispatchTestAccess`).
+
+## Superseded note: the node edge dump row (2026-08-08)
+
+The `<s> ?p ?o` row of the table above said the shape cannot engage adjacency. That is no longer a statement about
+capability, and this note records the change so the table is not read as current fact.
+
+A node-to-predicate projection now exists — a sidecar CSF with one synthetic predicate, keyed by node, holding that
+node's sorted predicate list and nothing else — and the whole path above it is built: the interpreted row iterator,
+count and existence shortcuts, predicate-ordered streaming, two compiler IR nodes, and both parallel kernel rungs.
+The work is described in full in `.agent/node-predicate-projection-execplan.md`.
+
+Every part of it ships behind switches that default to off, so the table's `NO` remains what an operator sees out of
+the box. The reason the switches are off is worth carrying back here, because it changes what this survey should
+recommend. Measured, enabling the projection makes the flagship dump-and-group shape 2.85 times *slower* (1.673 ±
+0.144 ms to 4.768 ± 0.156 ms), leaves the other dump shapes unchanged, and roughly doubles the adjacency base build.
+A node's outgoing statements are already contiguous and sorted in the subject-ordered disk tree, so a transpose
+cannot beat a single seek plus a sequential walk; it replaces that with one lookup per predicate. The projection's
+value is item 6 of this survey's own list — wildcard and bidirectional traversal that never touches disk, where the
+alternative is trying every predicate in the store at every node reached — and not the dump shapes in this table.
+
+Two changes would alter that arithmetic and are the right next steps for anyone picking this up: resolving a
+predicate's run without a second lookup (which needs a generation-stamped handle, since a raw pointer into the main
+index goes stale on every base rewrite), and building the projection inside the parallel build rather than after it.

@@ -83,6 +83,11 @@ final class UnsafeAccess {
 		return UNSAFE.getByte(address) & 0xff;
 	}
 
+	/** Bounds-free byte-array load for internally validated packed directories. */
+	static int getUnsignedByte(byte[] array, int index) {
+		return UNSAFE.getByte(array, BYTE_ARRAY_BASE + index) & 0xff;
+	}
+
 	static void putByte(long address, byte value) {
 		UNSAFE.putByte(address, value);
 	}

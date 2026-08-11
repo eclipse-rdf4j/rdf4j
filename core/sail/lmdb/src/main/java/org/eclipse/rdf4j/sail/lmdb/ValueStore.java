@@ -1381,7 +1381,7 @@ public class ValueStore extends AbstractValueFactory {
 				// unpack inlined values if possible
 				if (ValueIds.isInlined(id)) {
 					Literal unpacked = Values.unpackLiteral(id, this);
-					return new LmdbLiteral(revision, unpacked.getLabel(), unpacked.getDatatype(), id);
+					return new LmdbLiteral(revision, unpacked.getLabel(), Values.coreDatatypeOfInlined(id), id);
 				}
 
 				if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
@@ -1416,7 +1416,8 @@ public class ValueStore extends AbstractValueFactory {
 		if (ValueIds.isInlined(id)) {
 			Literal unpacked = Values.unpackLiteral(id, this);
 			((LmdbLiteral) value).setLabel(unpacked.getLabel());
-			((LmdbLiteral) value).setDatatype(unpacked.getDatatype());
+			// the id's type bits are authoritative for the (XSD core) datatype of an inlined literal
+			((LmdbLiteral) value).setDatatype(Values.coreDatatypeOfInlined(id));
 			((LmdbLiteral) value).setBaseDirection(unpacked.getBaseDirection());
 			return true;
 		}

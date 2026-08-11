@@ -59,6 +59,43 @@ public final class AdjacencyEngagementTestAccess {
 		return LmdbDirectAdjacencyStore.KERNEL_VIEWS_SERVED.get();
 	}
 
+	/**
+	 * Native bytes charged to the optional node-predicate projection; zero when adjacency is disabled or the projection
+	 * was not built. This is the charged figure, which is what consumes the cap, not the finished structure's
+	 * self-reported model — the build plan is deliberately conservative and the two differ.
+	 */
+	public static long nodePredicateNativeBytes(LmdbStore store) {
+		LmdbDirectAdjacencyStore adjacency = adjacency(store);
+		return adjacency == null ? 0L : adjacency.snapshotMetrics().nodePredicateNativeBytes;
+	}
+
+	/** Modelled Java bytes charged to the node-predicate projection; zero when it was not built. */
+	public static long nodePredicateJavaBytes(LmdbStore store) {
+		LmdbDirectAdjacencyStore adjacency = adjacency(store);
+		return adjacency == null ? 0L : adjacency.snapshotMetrics().nodePredicateJavaBytes;
+	}
+
+	/**
+	 * How often a bound-node/unbound-predicate access fell back to the disk trees because the node-predicate projection
+	 * could not serve it. This is the counter that distinguishes "the projection answered this shape" from "the shape
+	 * was answered, by LMDB, and nothing about the projection was exercised" — two outcomes a wall-clock score cannot
+	 * tell apart when the shape is cheap.
+	 */
+	public static long predicateEnumerationFallbacks(LmdbStore store) {
+		LmdbDirectAdjacencyStore adjacency = adjacency(store);
+		return adjacency == null ? 0L
+				: adjacency.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
+	}
+
+	/** Gates construction of the outgoing node-predicate projection; resolved once when a base is built. */
+	public static final String NODE_PREDICATE_PROJECTION_PROPERTY = LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY;
+
+	/** Gates the incoming planes of that projection; only meaningful together with the outgoing switch. */
+	public static final String NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY = LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY;
+
+	/** Gates every consumer, re-read per call so a running store can be stopped without a rebuild. */
+	public static final String NODE_PREDICATE_SERVE_PROPERTY = LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY;
+
 	/** Human-readable list of the fallback reasons with a nonzero count, or {@code "-"} when there are none. */
 	public static String fallbackSummary(LmdbStore store) {
 		LmdbDirectAdjacencyStore adjacency = adjacency(store);

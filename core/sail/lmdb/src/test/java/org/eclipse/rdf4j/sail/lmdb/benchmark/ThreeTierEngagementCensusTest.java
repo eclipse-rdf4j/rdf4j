@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityCorpus.Dataset;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityFixtures.Fixture;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JoinDispatchTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIrTestAccess;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -83,8 +84,16 @@ class ThreeTierEngagementCensusTest {
 
 	/**
 	 * Cells the adjacency tier is known to serve today, recorded from the baseline census run of 2026-08-04: every
-	 * generated-dataset cell except the {@code <s> ?p ?o} node edge dump, which the paged adjacency base cannot answer
-	 * and which the plan deliberately leaves declining to LMDB.
+	 * generated-dataset cell except the {@code <s> ?p ?o} node edge dump.
+	 *
+	 * <p>
+	 * That exception used to be a statement about capability — the compact base kept no node-to-all-predicates
+	 * directory, so the shape could not be answered at all. It is now a statement about configuration. A paged base can
+	 * answer it out of the node-predicate projection, but that projection ships behind switches that all default to
+	 * off, and the census deliberately measures the default configuration. Turn on
+	 * {@code rdf4j.lmdb.directAdjacency.nodePredicateProjection.enabled} together with its {@code .serve.enabled}
+	 * companion and this cell serves; leave them alone and it declines with {@code PREDICATE_ENUMERATION_INCOMPLETE},
+	 * which is what this baseline records.
 	 *
 	 * <p>
 	 * The theme cells are absent because the theme half of the census is opt-in and has no recorded baseline yet.
@@ -117,9 +126,113 @@ class ThreeTierEngagementCensusTest {
 		Set<ThreeTierParityCorpus> served = EnumSet.noneOf(ThreeTierParityCorpus.class);
 		served.addAll(ThreeTierParityCorpus.of(Dataset.FOAF));
 		served.addAll(ThreeTierParityCorpus.of(Dataset.CORRELATED));
+		// Declines by configuration, not by capability; see the field comment above.
 		served.remove(ThreeTierParityCorpus.NODE_EDGE_DUMP);
+		// The node-predicate cells are governed by the route ledger instead, which pins their route exactly in both
+		// configurations rather than only asserting "served today, must still serve tomorrow". Calling the factory
+		// rather than reading ROUTE_LEDGER keeps this independent of static initialisation order.
+		served.removeAll(routeLedger().keySet());
 		return served;
 	}
+
+	/**
+	 * Which tier actually produced a cell's rows, as opposed to which tier was merely available.
+	 *
+	 * <p>
+	 * This distinction is the whole reason the census exists. A higher tier is allowed to decline a shape and fall back
+	 * to the tier below, which produces identical timings — satisfying "never slower" while proving nothing.
+	 */
+	enum Route {
+		/** Neither the adjacency planes nor a generated kernel touched the query. */
+		LMDB_ONLY,
+		/** Interpreted operators read the adjacency planes; no generated kernel ran. */
+		ADJACENCY,
+		/** A generated Janino kernel ran. */
+		KERNEL;
+
+		static Route of(Observation observation) {
+			if (observation.servedByKernel()) {
+				return KERNEL;
+			}
+			return observation.servedByAdjacency() ? ADJACENCY : LMDB_ONLY;
+		}
+	}
+
+	/**
+	 * The per-cell route ledger for the node-to-predicate projection cells (ExecPlan
+	 * {@code .agent/node-predicate-projection-execplan.md}, milestone A6).
+	 *
+	 * <p>
+	 * The acceptance for those cells is deliberately not "every new cell is red". That would be wrong: a bound-node
+	 * cell engages the interpreted row path as soon as construction is switched on, and the compiled path needs a third
+	 * switch on top. What matters is that a route never changes by accident, so each cell records the route it takes
+	 * with the switches off and the route it takes with them on, in both the adjacency and the Janino regime, together
+	 * with whether the projection declined and whether a variable-predicate pattern compiled.
+	 *
+	 * <p>
+	 * A cell listed here is exempt from {@link #ADJACENCY_SERVED}, because this ledger is strictly stronger: it asserts
+	 * equality in both directions rather than "used to serve and still does".
+	 */
+	private static final Map<ThreeTierParityCorpus, Ledger> ROUTE_LEDGER = routeLedger();
+
+	private static Map<ThreeTierParityCorpus, Ledger> routeLedger() {
+		Map<ThreeTierParityCorpus, Ledger> ledger = new EnumMap<>(ThreeTierParityCorpus.class);
+		// The flagship: a bounded type lookup joined to an unbound-predicate dump of each matching instance. The type
+		// half engages the planes either way, so the route alone says nothing here — what moves is the decline count,
+		// which is one per matching instance while the switches are off and zero once they are on.
+		ledger.put(ThreeTierParityCorpus.CLASS_PREDICATE_MATRIX,
+				new Ledger(Route.ADJACENCY, Route.KERNEL, Route.ADJACENCY, Route.KERNEL, true, true));
+		// A kernel already compiles the VALUES-driven half of this shape while the projection is off, so the Janino
+		// route does not move; what moves is that the dump itself stops declining and starts reading the planes,
+		// which is why the decline and lowering counters carry the claim here rather than the route alone.
+		ledger.put(ThreeTierParityCorpus.REPEATED_NODE_DUMP,
+				new Ledger(Route.LMDB_ONLY, Route.KERNEL, Route.ADJACENCY, Route.KERNEL, true, true));
+		ledger.put(ThreeTierParityCorpus.VARIABLE_PREDICATE_JOIN,
+				new Ledger(Route.ADJACENCY, Route.KERNEL, Route.ADJACENCY, Route.KERNEL, true, true));
+		// The reverse direction additionally needs the incoming planes, which are their own switch. It stays
+		// interpreted even when it serves: a lone triple pattern is one scan, and the compiled tier only takes shapes
+		// with something to fuse.
+		ledger.put(ThreeTierParityCorpus.INCOMING_EDGE_DUMP,
+				new Ledger(Route.LMDB_ONLY, Route.LMDB_ONLY, Route.ADJACENCY, Route.ADJACENCY, true, false));
+		// The control. All three positions unbound, so there is no key to look up: the projection must never be
+		// consulted and nothing may compile through it, in either configuration. Its route must not move either — a
+		// shape the projection does not serve must not become slower or differently routed because it exists.
+		ledger.put(ThreeTierParityCorpus.OUT_DEGREE_HISTOGRAM,
+				new Ledger(Route.LMDB_ONLY, Route.LMDB_ONLY, Route.LMDB_ONLY, Route.LMDB_ONLY, false, false));
+		return ledger;
+	}
+
+	/**
+	 * One ledger row: the route with the projection switches off, the route with them on, whether the projection is
+	 * expected to record a decline while off, and whether a variable-predicate pattern is expected to compile while on.
+	 */
+	private record Ledger(Route offAdjacency, Route offJanino, Route onAdjacency, Route onJanino,
+			boolean declinesWhileOff, boolean compilesWhileOn) {
+
+		Route expected(boolean projectionOn, ThreeTierRegime regime) {
+			if (regime == ThreeTierRegime.LMDB) {
+				return Route.LMDB_ONLY;
+			}
+			boolean janino = regime == ThreeTierRegime.JANINO;
+			if (projectionOn) {
+				return janino ? onJanino : onAdjacency;
+			}
+			return janino ? offJanino : offAdjacency;
+		}
+	}
+
+	/**
+	 * The four switches that together turn the node-to-predicate projection on: build the outgoing planes, build the
+	 * incoming ones, let consumers serve out of them, and let the compiler lower a variable predicate. They are four
+	 * switches rather than one because they enable three separable capabilities with different costs — build time and
+	 * memory, compiler surface and risk, and roughly the same memory again for the reverse direction — and one
+	 * benchmark number must not silently decide three questions.
+	 */
+	private static final List<String> PROJECTION_PROPERTIES = List.of(
+			AdjacencyEngagementTestAccess.NODE_PREDICATE_PROJECTION_PROPERTY,
+			AdjacencyEngagementTestAccess.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY,
+			AdjacencyEngagementTestAccess.NODE_PREDICATE_SERVE_PROPERTY,
+			LmdbNativeKernelIrTestAccess.NODE_PREDICATES_PROPERTY);
 
 	private static final List<String> CENSUS_PROPERTIES = List.of(
 			ThreeTierRegime.NATIVE_ENGINE_PROPERTY,
@@ -160,16 +273,37 @@ class ThreeTierEngagementCensusTest {
 
 	@Test
 	void generatedDatasetCellsEngageTheTiersTheyClaim() {
-		census("FOAF + CORRELATED", List.of(Dataset.FOAF, Dataset.CORRELATED));
+		census("FOAF + CORRELATED", List.of(Dataset.FOAF, Dataset.CORRELATED), false);
+	}
+
+	/**
+	 * The same census with every node-predicate switch on, which is the only configuration in which the projection
+	 * cells can be measured at all.
+	 *
+	 * <p>
+	 * It runs as its own test rather than as a second phase of the default census because the construction switch is
+	 * resolved once when a base is built: flipping it inside a live store changes nothing, so each configuration needs
+	 * its own freshly opened fixtures. Only the FOAF cells are visited, since every projection cell lives there.
+	 */
+	@Test
+	void nodePredicateCellsTakeTheirLedgeredRouteWithTheProjectionOn() {
+		Map<String, String> previous = new LinkedHashMap<>();
+		PROJECTION_PROPERTIES.forEach(property -> previous.put(property, System.getProperty(property)));
+		PROJECTION_PROPERTIES.forEach(property -> System.setProperty(property, "true"));
+		try {
+			census("FOAF, projection on", List.of(Dataset.FOAF), true);
+		} finally {
+			ThreeTierRegime.restore(previous);
+		}
 	}
 
 	@Test
 	@EnabledIfSystemProperty(named = THEME_CENSUS_PROPERTY, matches = "(?i)true")
 	void themeCellsEngageTheTiersTheyClaim() {
-		census("THEME", List.of(Dataset.THEME));
+		census("THEME", List.of(Dataset.THEME), false);
 	}
 
-	private void census(String label, List<Dataset> datasets) {
+	private void census(String label, List<Dataset> datasets, boolean projectionOn) {
 		Map<String, String> previous = new LinkedHashMap<>();
 		CENSUS_PROPERTIES.forEach(property -> previous.put(property, System.getProperty(property)));
 		System.setProperty(ThreeTierParityFixtures.FOAF_PEOPLE_PROPERTY, CENSUS_FOAF_PEOPLE);
@@ -194,6 +328,7 @@ class ThreeTierEngagementCensusTest {
 		assertRowCountParity(cells, observations);
 		assertLmdbRegimeIsAdjacencyFree(cells, observations);
 		assertRecordedServiceHolds(cells, observations);
+		assertRouteLedgerHolds(cells, observations, projectionOn);
 	}
 
 	/** Runs every cell once under one regime and records the engagement deltas around each execution. */
@@ -213,6 +348,8 @@ class ThreeTierEngagementCensusTest {
 				long adjacencyBefore = adjacency(store);
 				long kernelViewsBefore = AdjacencyEngagementTestAccess.kernelViewsServed();
 				long kernelOpensBefore = kernelOpens();
+				long enumerationDeclinesBefore = AdjacencyEngagementTestAccess.predicateEnumerationFallbacks(store);
+				long variablePredicateBefore = LmdbNativeKernelIrTestAccess.variablePredicateLowerings();
 
 				long rows = fixture.execute(cell);
 
@@ -220,7 +357,9 @@ class ThreeTierEngagementCensusTest {
 						adjacency(store) - adjacencyBefore,
 						AdjacencyEngagementTestAccess.kernelViewsServed() - kernelViewsBefore,
 						kernelOpens() - kernelOpensBefore,
-						AdjacencyEngagementTestAccess.adjacencyPresent(store)));
+						AdjacencyEngagementTestAccess.adjacencyPresent(store),
+						AdjacencyEngagementTestAccess.predicateEnumerationFallbacks(store) - enumerationDeclinesBefore,
+						LmdbNativeKernelIrTestAccess.variablePredicateLowerings() - variablePredicateBefore));
 			}
 		} finally {
 			fixtures.values().forEach(Fixture::close);
@@ -290,11 +429,55 @@ class ThreeTierEngagementCensusTest {
 				"no corpus cell activated a generated kernel, so the Janino regime is not being measured");
 	}
 
+	/**
+	 * The per-cell route ledger. Unlike {@link #assertRecordedServiceHolds}, which only catches a cell that stops
+	 * serving, this asserts the route in both directions: a cell that starts serving unexpectedly fails too. That
+	 * matters here because the whole risk of this feature is a wrong answer rather than a slow one, and a shape quietly
+	 * taking a new route is exactly how a wrong answer would first appear.
+	 */
+	private void assertRouteLedgerHolds(List<ThreeTierParityCorpus> cells,
+			Map<ThreeTierRegime, Map<ThreeTierParityCorpus, Observation>> observations, boolean projectionOn) {
+		for (ThreeTierParityCorpus cell : cells) {
+			Ledger ledger = ROUTE_LEDGER.get(cell);
+			if (ledger == null) {
+				continue;
+			}
+			for (ThreeTierRegime regime : ThreeTierRegime.values()) {
+				Observation observation = observations.get(regime).get(cell);
+				assertEquals(ledger.expected(projectionOn, regime), Route.of(observation),
+						cell.benchmarkMethodName() + " took an unexpected route in the " + regime
+								+ " regime with the projection switches "
+								+ (projectionOn ? "on" : "off"));
+			}
+			Observation adjacency = observations.get(ThreeTierRegime.ADJACENCY).get(cell);
+			if (!projectionOn && ledger.declinesWhileOff()) {
+				assertTrue(adjacency.enumerationDeclineDelta() > 0,
+						cell.benchmarkMethodName() + " must record a PREDICATE_ENUMERATION_INCOMPLETE fallback while"
+								+ " the projection is off; recording none means the shape never even asked");
+			}
+			if (projectionOn) {
+				assertEquals(0L, adjacency.enumerationDeclineDelta(),
+						cell.benchmarkMethodName() + " still declined the projection with every switch on");
+			}
+			Observation janino = observations.get(ThreeTierRegime.JANINO).get(cell);
+			long expectedLowerings = projectionOn && ledger.compilesWhileOn() ? 1L : 0L;
+			if (expectedLowerings == 0L) {
+				assertEquals(0L, janino.variablePredicateDelta(),
+						cell.benchmarkMethodName() + " compiled a variable-predicate pattern where none was expected");
+			} else {
+				assertTrue(janino.variablePredicateDelta() > 0,
+						cell.benchmarkMethodName() + " compiled no variable-predicate pattern, so the compiled route"
+								+ " above was reached some other way and this cell proves nothing");
+			}
+		}
+	}
+
 	private void print(String label, List<ThreeTierParityCorpus> cells,
 			Map<ThreeTierRegime, Map<ThreeTierParityCorpus, Observation>> observations) {
 		System.out.printf("%n=== three-tier engagement census: %s ===%n", label);
-		System.out.printf("%-38s %10s %10s %10s %10s %10s %10s  %s%n",
-				"cell", "rows", "adj:planes", "adj:views", "jan:planes", "jan:views", "jan:kernels", "served by");
+		System.out.printf("%-38s %10s %10s %10s %10s %10s %10s %8s %8s  %s%n",
+				"cell", "rows", "adj:planes", "adj:views", "jan:planes", "jan:views", "jan:kernels", "np:decl",
+				"np:lower", "served by");
 		for (ThreeTierParityCorpus cell : cells) {
 			Observation adjacency = observations.get(ThreeTierRegime.ADJACENCY).get(cell);
 			Observation janino = observations.get(ThreeTierRegime.JANINO).get(cell);
@@ -305,17 +488,18 @@ class ThreeTierEngagementCensusTest {
 			if (janino.servedByKernel()) {
 				servedBy.add("janino");
 			}
-			System.out.printf("%-38s %10d %10d %10d %10d %10d %10d  %s%n",
+			System.out.printf("%-38s %10d %10d %10d %10d %10d %10d %8d %8d  %s%n",
 					cell.benchmarkMethodName(), adjacency.rows(),
 					adjacency.adjacencyDelta(), adjacency.kernelViewDelta(),
 					janino.adjacencyDelta(), janino.kernelViewDelta(), janino.kernelOpenDelta(),
+					adjacency.enumerationDeclineDelta(), janino.variablePredicateDelta(),
 					servedBy.isEmpty() ? "lmdb only" : String.join("+", servedBy));
 		}
 	}
 
 	/** Engagement counters observed around one execution of one cell under one regime. */
 	private record Observation(long rows, long adjacencyDelta, long kernelViewDelta, long kernelOpenDelta,
-			boolean adjacencyPresent) {
+			boolean adjacencyPresent, long enumerationDeclineDelta, long variablePredicateDelta) {
 
 		boolean servedByAdjacency() {
 			return adjacencyDelta > 0 || kernelViewDelta > 0;

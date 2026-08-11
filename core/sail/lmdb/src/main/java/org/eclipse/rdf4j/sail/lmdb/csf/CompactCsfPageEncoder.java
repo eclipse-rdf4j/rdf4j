@@ -91,31 +91,37 @@ final class CompactCsfPageEncoder {
 					PackedLongVector.Hint.SORTED_RANDOM_ACCESS_VALUES, cursor);
 		}
 		if (!rowQuadEqualsNeighbor) {
-			cursor = measureSection(data, layout, ROW_QUAD_COUNTS, PackedLongVector.Hint.COUNTS_OR_DELTAS,
+			cursor = measureSection(data, layout, ROW_QUAD_COUNTS, PackedLongVector.Hint.COUNTS_RANDOM_ACCESS,
 					cursor);
 		}
 		cursor = measureSection(data, layout, FIRST_NEIGHBORS, PackedLongVector.Hint.UNSORTED_IDS, cursor);
 		if (data.fiberCount != data.rowCount) {
-			cursor = measureSection(data, layout, NEIGHBOR_TAILS, PackedLongVector.Hint.COUNTS_OR_DELTAS,
+			cursor = measureSection(data, layout, NEIGHBOR_TAILS, PackedLongVector.Hint.CUMULATIVE_DELTAS,
 					cursor);
 		}
 		if (!contextCountOne) {
-			cursor = measureSection(data, layout, CONTEXT_COUNTS, PackedLongVector.Hint.COUNTS_OR_DELTAS,
+			cursor = measureSection(data, layout, CONTEXT_COUNTS, PackedLongVector.Hint.CUMULATIVE_DELTAS,
 					cursor);
 		}
 		if (!oneCommonContext) {
 			cursor = measureSection(data, layout, FIRST_CONTEXTS, PackedLongVector.Hint.UNSORTED_IDS, cursor);
 		}
 		if (data.quadCount != data.fiberCount) {
-			cursor = measureSection(data, layout, CONTEXT_TAILS, PackedLongVector.Hint.COUNTS_OR_DELTAS, cursor);
+			cursor = measureSection(data, layout, CONTEXT_TAILS, PackedLongVector.Hint.CUMULATIVE_DELTAS, cursor);
 		}
 
-		layout.usedBytes = LeBytes.align8(cursor);
-		layout.classIndex = NativeSlabAllocator.classForUsedBytes(layout.usedBytes);
+		int baselineUsedBytes = LeBytes.align8(cursor);
+		layout.classIndex = NativeSlabAllocator.classForUsedBytes(baselineUsedBytes);
 		if (layout.classIndex < 0) {
 			return false;
 		}
 		layout.capacity = NativeSlabAllocator.capacityForClass(layout.classIndex);
+		selectFreeAccelerators(layout, layout.capacity - baselineUsedBytes);
+		layout.acceleratorOffset = layout.acceleratorDescriptor == 0 ? 0 : baselineUsedBytes;
+		layout.usedBytes = Math.addExact(baselineUsedBytes, layout.acceleratorLength);
+		if (layout.usedBytes > layout.capacity) {
+			throw new IllegalStateException("zero-cost accelerator crossed the selected page capacity class");
+		}
 		layout.fingerprint = mix(mix(mix(fingerprint, layout.flags), layout.pageId), layout.usedBytes);
 		return true;
 	}
@@ -161,6 +167,10 @@ final class CompactCsfPageEncoder {
 		writeSection(address, CompactCsfPageFormat.FIRST_CONTEXTS_OFFSET_AT, layout, FIRST_CONTEXTS);
 		writeSection(address, CompactCsfPageFormat.CONTEXT_TAILS_OFFSET_AT, layout, CONTEXT_TAILS);
 		UnsafeAccess.putIntLE(address + CompactCsfPageFormat.FORMAT_HASH_AT, CompactCsfPageFormat.FORMAT_HASH);
+		UnsafeAccess.putIntLE(address + CompactCsfPageFormat.ACCELERATOR_OFFSET_AT, layout.acceleratorOffset);
+		UnsafeAccess.putIntLE(address + CompactCsfPageFormat.ACCELERATOR_LENGTH_AT, layout.acceleratorLength);
+		UnsafeAccess.putIntLE(address + CompactCsfPageFormat.ACCELERATOR_DESCRIPTOR_AT,
+				layout.acceleratorDescriptor);
 
 		for (int section = 0; section < layout.offsets.length; section++) {
 			if (layout.lengths[section] > 0) {
@@ -169,6 +179,7 @@ final class CompactCsfPageEncoder {
 						hint(section), vectorScratch);
 			}
 		}
+		writeNativeAccelerators(layout, address);
 	}
 
 	private int measureSection(CsfPageData.View data, Layout layout, int section, PackedLongVector.Hint hint,
@@ -185,7 +196,8 @@ final class CompactCsfPageEncoder {
 		return switch (section) {
 		case ROW_IDS -> PackedLongVector.Hint.SORTED_RANDOM_ACCESS_IDS;
 		case ROW_FIBER_STARTS -> PackedLongVector.Hint.SORTED_RANDOM_ACCESS_VALUES;
-		case ROW_QUAD_COUNTS, NEIGHBOR_TAILS, CONTEXT_COUNTS, CONTEXT_TAILS -> PackedLongVector.Hint.COUNTS_OR_DELTAS;
+		case ROW_QUAD_COUNTS -> PackedLongVector.Hint.COUNTS_RANDOM_ACCESS;
+		case NEIGHBOR_TAILS, CONTEXT_COUNTS, CONTEXT_TAILS -> PackedLongVector.Hint.CUMULATIVE_DELTAS;
 		case FIRST_NEIGHBORS, FIRST_CONTEXTS -> PackedLongVector.Hint.UNSORTED_IDS;
 		default -> throw new IllegalArgumentException("unknown CSF page section: " + section);
 		};
@@ -268,20 +280,20 @@ final class CompactCsfPageEncoder {
 						PackedLongVector.Hint.SORTED_RANDOM_ACCESS_VALUES);
 		vectors[2] = rowQuadCounts == null ? null
 				: PackedLongVector.encode(rowQuadCounts, 0, rowQuadCounts.length,
-						PackedLongVector.Hint.COUNTS_OR_DELTAS);
+						PackedLongVector.Hint.COUNTS_RANDOM_ACCESS);
 		vectors[3] = PackedLongVector.encode(firstNeighbors, 0, firstNeighbors.length,
 				PackedLongVector.Hint.UNSORTED_IDS);
 		vectors[4] = neighborTails.length == 0 ? null
 				: PackedLongVector.encode(neighborTails, 0, neighborTails.length,
-						PackedLongVector.Hint.COUNTS_OR_DELTAS);
+						PackedLongVector.Hint.CUMULATIVE_DELTAS);
 		vectors[5] = contextCounts == null ? null
 				: PackedLongVector.encode(contextCounts, 0, contextCounts.length,
-						PackedLongVector.Hint.COUNTS_OR_DELTAS);
+						PackedLongVector.Hint.CUMULATIVE_DELTAS);
 		byte[] encodedFirstContexts = firstContexts == null ? null
 				: PackedLongVector.encode(firstContexts, 0, firstContexts.length, PackedLongVector.Hint.UNSORTED_IDS);
 		byte[] encodedContextTails = contextTails.length == 0 ? null
 				: PackedLongVector.encode(contextTails, 0, contextTails.length,
-						PackedLongVector.Hint.COUNTS_OR_DELTAS);
+						PackedLongVector.Hint.CUMULATIVE_DELTAS);
 
 		int[] offsets = new int[8];
 		int[] lengths = new int[8];
@@ -306,12 +318,24 @@ final class CompactCsfPageEncoder {
 			lengths[7] = encodedContextTails.length;
 			cursor = Math.addExact(cursor, encodedContextTails.length);
 		}
-		int used = LeBytes.align8(cursor);
-		int classIndex = NativeSlabAllocator.classForUsedBytes(used);
+		int baselineUsedBytes = LeBytes.align8(cursor);
+		int classIndex = NativeSlabAllocator.classForUsedBytes(baselineUsedBytes);
 		if (classIndex < 0) {
 			return null;
 		}
 		int capacity = NativeSlabAllocator.capacityForClass(classIndex);
+		Layout oracleLayout = new Layout();
+		System.arraycopy(offsets, 0, oracleLayout.offsets, 0, offsets.length);
+		System.arraycopy(lengths, 0, oracleLayout.lengths, 0, lengths.length);
+		oracleLayout.rowCount = data.rowCount;
+		oracleLayout.fiberCount = data.fiberCount;
+		oracleLayout.quadCount = data.quadCount;
+		selectFreeAccelerators(oracleLayout, capacity - baselineUsedBytes);
+		oracleLayout.acceleratorOffset = oracleLayout.acceleratorDescriptor == 0 ? 0 : baselineUsedBytes;
+		int used = Math.addExact(baselineUsedBytes, oracleLayout.acceleratorLength);
+		if (NativeSlabAllocator.classForUsedBytes(used) != classIndex) {
+			throw new IllegalStateException("heap-oracle accelerator crossed the original page capacity class");
+		}
 		byte[] page = new byte[used];
 		int flags = (continuation ? CompactCsfPageFormat.FLAG_CONTINUATION : 0)
 				| (rowNeighborOne ? CompactCsfPageFormat.FLAG_ROW_NEIGHBOR_ONE : 0)
@@ -344,6 +368,10 @@ final class CompactCsfPageEncoder {
 		writeSection(page, CompactCsfPageFormat.FIRST_CONTEXTS_OFFSET_AT, offsets[6], lengths[6]);
 		writeSection(page, CompactCsfPageFormat.CONTEXT_TAILS_OFFSET_AT, offsets[7], lengths[7]);
 		LeBytes.putInt(page, CompactCsfPageFormat.FORMAT_HASH_AT, CompactCsfPageFormat.FORMAT_HASH);
+		LeBytes.putInt(page, CompactCsfPageFormat.ACCELERATOR_OFFSET_AT, oracleLayout.acceleratorOffset);
+		LeBytes.putInt(page, CompactCsfPageFormat.ACCELERATOR_LENGTH_AT, oracleLayout.acceleratorLength);
+		LeBytes.putInt(page, CompactCsfPageFormat.ACCELERATOR_DESCRIPTOR_AT,
+				oracleLayout.acceleratorDescriptor);
 
 		for (int i = 0; i < vectors.length; i++) {
 			if (vectors[i] != null) {
@@ -356,10 +384,215 @@ final class CompactCsfPageEncoder {
 		if (encodedContextTails != null) {
 			System.arraycopy(encodedContextTails, 0, page, offsets[7], encodedContextTails.length);
 		}
+		writeArrayAccelerators(oracleLayout, page);
 
 		return new PageImage(page, classIndex, capacity, used, data.rows[0], data.rows[data.rowCount - 1],
 				data.neighbors[0], data.neighbors[data.fiberCount - 1], data.rowCount, data.fiberCount,
 				data.quadCount, continuation);
+	}
+
+	private static void selectFreeAccelerators(Layout layout, int slackBytes) {
+		int available = slackBytes & -Long.BYTES;
+		int used = 0;
+		int descriptor = 0;
+
+		/* First provision a useful minimum for every applicable operation. */
+		int rowBits = 0;
+		if (layout.rowCount >= CompactCsfPageAccelerators.MIN_INDEXED_ROWS) {
+			int bytes = PackedLongVector.externalSearchRadixBytes(layout.rowCount,
+					CompactCsfPageAccelerators.MIN_ROW_RADIX_BITS);
+			if (bytes <= available) {
+				rowBits = CompactCsfPageAccelerators.MIN_ROW_RADIX_BITS;
+				descriptor = CompactCsfPageAccelerators.withCode(descriptor,
+						CompactCsfPageAccelerators.ROW_RADIX_CODE_SHIFT,
+						CompactCsfPageAccelerators.rowRadixCode(rowBits));
+				available -= bytes;
+				used += bytes;
+			}
+		}
+
+		int neighborShift = provisionSparsePrefix(layout.fiberCount - layout.rowCount, available);
+		if (neighborShift >= 0) {
+			int bytes = PackedLongVector.externalPrefixBytes(layout.fiberCount - layout.rowCount, neighborShift);
+			descriptor = CompactCsfPageAccelerators.withCode(descriptor,
+					CompactCsfPageAccelerators.NEIGHBOR_PREFIX_CODE_SHIFT,
+					CompactCsfPageAccelerators.prefixCode(neighborShift));
+			available -= bytes;
+			used += bytes;
+		}
+		int contextCountShift = provisionSparsePrefix(layout.lengths[CONTEXT_COUNTS] == 0 ? 0 : layout.fiberCount,
+				available);
+		if (contextCountShift >= 0) {
+			int bytes = PackedLongVector.externalPrefixBytes(layout.fiberCount, contextCountShift);
+			descriptor = CompactCsfPageAccelerators.withCode(descriptor,
+					CompactCsfPageAccelerators.CONTEXT_COUNT_PREFIX_CODE_SHIFT,
+					CompactCsfPageAccelerators.prefixCode(contextCountShift));
+			available -= bytes;
+			used += bytes;
+		}
+		int contextTailCount = layout.quadCount - layout.fiberCount;
+		int contextTailShift = provisionSparsePrefix(contextTailCount, available);
+		if (contextTailShift >= 0) {
+			int bytes = PackedLongVector.externalPrefixBytes(contextTailCount, contextTailShift);
+			descriptor = CompactCsfPageAccelerators.withCode(descriptor,
+					CompactCsfPageAccelerators.CONTEXT_TAIL_PREFIX_CODE_SHIFT,
+					CompactCsfPageAccelerators.prefixCode(contextTailShift));
+			available -= bytes;
+			used += bytes;
+		}
+
+		/* Spend remaining free bytes on row-directory precision, then densify cumulative anchors round-robin. */
+		while (rowBits != 0 && rowBits < CompactCsfPageAccelerators.MAX_ROW_RADIX_BITS) {
+			int current = PackedLongVector.externalSearchRadixBytes(layout.rowCount, rowBits);
+			int next = PackedLongVector.externalSearchRadixBytes(layout.rowCount, rowBits + 1);
+			int delta = next - current;
+			if (delta > available) {
+				break;
+			}
+			rowBits++;
+			descriptor = CompactCsfPageAccelerators.withCode(descriptor,
+					CompactCsfPageAccelerators.ROW_RADIX_CODE_SHIFT,
+					CompactCsfPageAccelerators.rowRadixCode(rowBits));
+			available -= delta;
+			used += delta;
+		}
+
+		boolean upgraded;
+		do {
+			upgraded = false;
+			if (neighborShift > 0) {
+				int current = PackedLongVector.externalPrefixBytes(layout.fiberCount - layout.rowCount,
+						neighborShift);
+				int next = PackedLongVector.externalPrefixBytes(layout.fiberCount - layout.rowCount,
+						neighborShift - 1);
+				int delta = next - current;
+				if (delta <= available) {
+					neighborShift--;
+					descriptor = CompactCsfPageAccelerators.withCode(descriptor,
+							CompactCsfPageAccelerators.NEIGHBOR_PREFIX_CODE_SHIFT,
+							CompactCsfPageAccelerators.prefixCode(neighborShift));
+					available -= delta;
+					used += delta;
+					upgraded = true;
+				}
+			}
+			if (contextCountShift > 0) {
+				int current = PackedLongVector.externalPrefixBytes(layout.fiberCount, contextCountShift);
+				int next = PackedLongVector.externalPrefixBytes(layout.fiberCount, contextCountShift - 1);
+				int delta = next - current;
+				if (delta <= available) {
+					contextCountShift--;
+					descriptor = CompactCsfPageAccelerators.withCode(descriptor,
+							CompactCsfPageAccelerators.CONTEXT_COUNT_PREFIX_CODE_SHIFT,
+							CompactCsfPageAccelerators.prefixCode(contextCountShift));
+					available -= delta;
+					used += delta;
+					upgraded = true;
+				}
+			}
+			if (contextTailShift > 0) {
+				int current = PackedLongVector.externalPrefixBytes(contextTailCount, contextTailShift);
+				int next = PackedLongVector.externalPrefixBytes(contextTailCount, contextTailShift - 1);
+				int delta = next - current;
+				if (delta <= available) {
+					contextTailShift--;
+					descriptor = CompactCsfPageAccelerators.withCode(descriptor,
+							CompactCsfPageAccelerators.CONTEXT_TAIL_PREFIX_CODE_SHIFT,
+							CompactCsfPageAccelerators.prefixCode(contextTailShift));
+					available -= delta;
+					used += delta;
+					upgraded = true;
+				}
+			}
+		} while (upgraded);
+
+		layout.acceleratorDescriptor = descriptor;
+		layout.acceleratorLength = used;
+	}
+
+	private static int provisionSparsePrefix(int valueCount, int availableBytes) {
+		int blockCount = (valueCount + PackedLongVector.BLOCK_SIZE - 1) / PackedLongVector.BLOCK_SIZE;
+		if (blockCount < 2) {
+			return -1;
+		}
+		int shift = Math.min(CompactCsfPageAccelerators.MAX_PREFIX_STRIDE_SHIFT,
+				Integer.SIZE - 1 - Integer.numberOfLeadingZeros(blockCount));
+		while (shift >= 0) {
+			int bytes = PackedLongVector.externalPrefixBytes(valueCount, shift);
+			if (bytes > 0 && bytes <= availableBytes) {
+				return shift;
+			}
+			shift--;
+		}
+		return -1;
+	}
+
+	private static void writeNativeAccelerators(Layout layout, long pageAddress) {
+		if (layout.acceleratorDescriptor == 0) {
+			return;
+		}
+		int descriptor = layout.acceleratorDescriptor;
+		long cursor = pageAddress + layout.acceleratorOffset;
+		int rowBits = CompactCsfPageAccelerators.rowRadixBits(descriptor);
+		if (rowBits != 0) {
+			PackedLongVector.writeExternalSearchRadix(pageAddress + layout.offsets[ROW_IDS], layout.rowCount, cursor,
+					rowBits);
+			cursor += PackedLongVector.externalSearchRadixBytes(layout.rowCount, rowBits);
+		}
+		cursor = writeNativePrefix(layout, pageAddress, cursor, NEIGHBOR_TAILS,
+				layout.fiberCount - layout.rowCount, CompactCsfPageAccelerators.NEIGHBOR_PREFIX_CODE_SHIFT);
+		cursor = writeNativePrefix(layout, pageAddress, cursor, CONTEXT_COUNTS,
+				layout.lengths[CONTEXT_COUNTS] == 0 ? 0 : layout.fiberCount,
+				CompactCsfPageAccelerators.CONTEXT_COUNT_PREFIX_CODE_SHIFT);
+		cursor = writeNativePrefix(layout, pageAddress, cursor, CONTEXT_TAILS,
+				layout.quadCount - layout.fiberCount,
+				CompactCsfPageAccelerators.CONTEXT_TAIL_PREFIX_CODE_SHIFT);
+		if (cursor != pageAddress + layout.acceleratorOffset + layout.acceleratorLength) {
+			throw new IllegalStateException("native accelerator encoder length mismatch");
+		}
+	}
+
+	private static long writeNativePrefix(Layout layout, long pageAddress, long cursor, int section, int valueCount,
+			int descriptorShift) {
+		int shift = CompactCsfPageAccelerators.prefixStrideShift(layout.acceleratorDescriptor, descriptorShift);
+		if (shift < 0) {
+			return cursor;
+		}
+		PackedLongVector.writeExternalBlockPrefixes(pageAddress + layout.offsets[section], valueCount, cursor, shift);
+		return cursor + PackedLongVector.externalPrefixBytes(valueCount, shift);
+	}
+
+	private static void writeArrayAccelerators(Layout layout, byte[] page) {
+		if (layout.acceleratorDescriptor == 0) {
+			return;
+		}
+		int descriptor = layout.acceleratorDescriptor;
+		int cursor = layout.acceleratorOffset;
+		int rowBits = CompactCsfPageAccelerators.rowRadixBits(descriptor);
+		if (rowBits != 0) {
+			PackedLongVector.writeExternalSearchRadix(page, layout.offsets[ROW_IDS], layout.rowCount, cursor, rowBits);
+			cursor += PackedLongVector.externalSearchRadixBytes(layout.rowCount, rowBits);
+		}
+		cursor = writeArrayPrefix(layout, page, cursor, NEIGHBOR_TAILS, layout.fiberCount - layout.rowCount,
+				CompactCsfPageAccelerators.NEIGHBOR_PREFIX_CODE_SHIFT);
+		cursor = writeArrayPrefix(layout, page, cursor, CONTEXT_COUNTS,
+				layout.lengths[CONTEXT_COUNTS] == 0 ? 0 : layout.fiberCount,
+				CompactCsfPageAccelerators.CONTEXT_COUNT_PREFIX_CODE_SHIFT);
+		cursor = writeArrayPrefix(layout, page, cursor, CONTEXT_TAILS, layout.quadCount - layout.fiberCount,
+				CompactCsfPageAccelerators.CONTEXT_TAIL_PREFIX_CODE_SHIFT);
+		if (cursor != layout.acceleratorOffset + layout.acceleratorLength) {
+			throw new IllegalStateException("array accelerator encoder length mismatch");
+		}
+	}
+
+	private static int writeArrayPrefix(Layout layout, byte[] page, int cursor, int section, int valueCount,
+			int descriptorShift) {
+		int shift = CompactCsfPageAccelerators.prefixStrideShift(layout.acceleratorDescriptor, descriptorShift);
+		if (shift < 0) {
+			return cursor;
+		}
+		PackedLongVector.writeExternalBlockPrefixes(page, layout.offsets[section], valueCount, cursor, shift);
+		return cursor + PackedLongVector.externalPrefixBytes(valueCount, shift);
 	}
 
 	private static void writeSection(byte[] page, int offsetField, int offset, int length) {
@@ -400,6 +633,9 @@ final class CompactCsfPageEncoder {
 		int classIndex;
 		int capacity;
 		int usedBytes;
+		int acceleratorOffset;
+		int acceleratorLength;
+		int acceleratorDescriptor;
 		int pageId;
 		long commonContext;
 		long firstRow;
@@ -418,6 +654,9 @@ final class CompactCsfPageEncoder {
 			classIndex = -1;
 			capacity = 0;
 			usedBytes = 0;
+			acceleratorOffset = 0;
+			acceleratorLength = 0;
+			acceleratorDescriptor = 0;
 			pageId = 0;
 			commonContext = 0;
 			firstRow = 0;

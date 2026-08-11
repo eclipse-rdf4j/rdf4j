@@ -666,10 +666,15 @@ public class LmdbNativeOrderedFactorizedTest {
 
 	@Test
 	public void topKPreservesHiddenTailOrderKey() {
+		// Codegen has to be pinned off alongside the other rival paths: this shape's kernel is compiled in the
+		// background, so from whichever execution the compile happens to land on, the kernel serves the query and
+		// the interpreted factorized path under test stops running. That makes the assertion below a function of
+		// how many queries the JVM has already run rather than of this query.
 		Map<String, String> previous = setProperties(Map.of(
 				"rdf4j.lmdb.orderedFactorizedRows.enabled", "false",
 				NativeBatch.ENABLED_PROPERTY, "false",
-				"rdf4j.lmdb.parallel.enabled", "false"));
+				"rdf4j.lmdb.parallel.enabled", "false",
+				LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false"));
 		try {
 			String query = "PREFIX ex: <" + EX + ">\n"
 					+ "SELECT ?s ?y WHERE { ?s ex:p1 ?x . ?x ex:p2 ?y . ?y ex:p3 ?z } "

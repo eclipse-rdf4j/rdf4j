@@ -40,7 +40,13 @@ final class LmdbAdjacencyMemoryAccount {
 		BUILD_COUNTERS,
 		BUILD_OUTPUT,
 		CONSOLIDATION_OUTPUT,
-		JAVA_METADATA
+		JAVA_METADATA,
+		/**
+		 * Native pages of the optional node-predicate projection, kept apart from {@link #BASE} so its cost is visible.
+		 */
+		NODE_PREDICATE_NATIVE,
+		/** Modelled Java metadata of the node-predicate projection, kept apart from {@link #JAVA_METADATA}. */
+		NODE_PREDICATE_JAVA
 	}
 
 	private final long maxBytes;
@@ -56,6 +62,21 @@ final class LmdbAdjacencyMemoryAccount {
 	private long refusedBytes;
 
 	private long refusedCount;
+
+	private MemoryKind refusedKindForTest;
+
+	/**
+	 * Test seam: refuses every future reservation for {@code kind} as though the hard limit had been reached, and
+	 * counts it as a refusal exactly like a real one.
+	 * <p>
+	 * This exists because a plain cap cannot single out one structure. The build's transient workspace peak is orders
+	 * of magnitude larger than any persistent charge, so a cap low enough to refuse a small derived index is breached
+	 * during the workspace phase instead, and a cap that clears the workspace leaves ample headroom. Starving one kind
+	 * is the only way to exercise a derived index's refusal path deterministically.
+	 */
+	void refuseKindForTest(MemoryKind kind) {
+		this.refusedKindForTest = kind;
+	}
 
 	/**
 	 * One exclusive owner of a live memory charge. The owner follows the allocation through reservation adjustment,
@@ -211,6 +232,11 @@ final class LmdbAdjacencyMemoryAccount {
 	 */
 	synchronized boolean tryReserve(MemoryKind kind, long bytes) {
 		requireKindAndNonNegative(kind, bytes);
+		if (refusedKindForTest != null && refusedKindForTest == kind) {
+			refusedBytes += bytes;
+			refusedCount++;
+			return false;
+		}
 		long newTotal = Math.addExact(totalChargedBytes, bytes);
 		if (newTotal > maxBytes) {
 			refusedBytes = Math.addExact(refusedBytes, bytes);

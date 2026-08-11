@@ -19,7 +19,6 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.slotsOf;
 
 import java.io.IOException;
-import java.util.ArrayList;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
@@ -83,12 +82,25 @@ final class LeftJoinCursor implements RowCursor {
 	final RowCursor leftCursor;
 	final SlotPlan right;
 	final RowState row;
-	RowCursor rightCursor;
 	final int[] replaySlots;
 	final PatternPayloadProbe payloadProbe;
 	final RightMemoProbe rightMemo;
+	final PatternPlan patternRight;
+	RowCursor rightCursor;
 	NativeLmdbQuerySource.NativeProbe rightProbe;
-	ArrayList<long[]> materialized;
+	PatternCursor patternCursor;
+	boolean patternRightActive;
+	LmdbAdaptiveLongArray patternBatchMemory;
+	int patternBatchCapacityRows;
+	int patternBatchRows;
+	int patternBatchPosition;
+	int patternScalarRows;
+	boolean patternBatchRefused;
+	int patternMark = -1;
+	LmdbAdaptiveLongArray replayMemory;
+	int replayRows;
+	boolean capturingReplay;
+	boolean replayDisabled;
 	boolean rightMaterialized;
 	int replayIndex = -1;
 	int replayMark = -1;
@@ -103,6 +115,7 @@ final class LeftJoinCursor implements RowCursor {
 		this.leftCursor = leftCursor;
 		this.right = right;
 		this.row = row;
+		this.patternRight = right instanceof PatternPlan pattern ? pattern : null;
 		long readMask = memoReadMask(right);
 		this.replaySlots = Boolean.parseBoolean(System.getProperty(LEFTJOIN_REPLAY_ENABLED, "true"))
 				&& readMask >= 0L && (readMask & leftProducedMask) == 0L
@@ -119,30 +132,38 @@ final class LeftJoinCursor implements RowCursor {
 			return replayNext();
 		}
 		while (true) {
-			if (rightCursor != null) {
+			if (patternRightActive) {
+				if (nextPatternRight()) {
+					matchedCurrentLeft = true;
+					if (payloadProbe != null) {
+						payloadProbe.recordDirectMatch();
+					}
+					if (capturingReplay) {
+						recordReplay();
+					}
+					return true;
+				}
+				closePatternRight();
+				if (finishCapturedRight()) {
+					return finishFirstMaterializedLeft();
+				}
+				if (!matchedCurrentLeft) {
+					nullExtendedPending = true;
+				}
+			} else if (rightCursor != null) {
 				if (rightCursor.next()) {
 					matchedCurrentLeft = true;
 					if (!rightCursorFromPayload && payloadProbe != null) {
 						payloadProbe.recordDirectMatch();
 					}
-					if (materialized != null) {
-						record();
+					if (capturingReplay) {
+						recordReplay();
 					}
 					return true;
 				}
 				closeRight();
-				if (materialized != null) {
-					rightMaterialized = true;
-					LEFTJOIN_REPLAY_MATERIALIZATIONS.incrementAndGet();
-					if (!matchedCurrentLeft) {
-						nullExtendedPending = true;
-					}
-					if (nullExtendedPending) {
-						nullExtendedPending = false;
-						return true;
-					}
-					replayIndex = -1;
-					return replayNext();
+				if (finishCapturedRight()) {
+					return finishFirstMaterializedLeft();
 				}
 				if (!matchedCurrentLeft) {
 					nullExtendedPending = true;
@@ -157,10 +178,32 @@ final class LeftJoinCursor implements RowCursor {
 			}
 			matchedCurrentLeft = false;
 			rightCursor = openRight();
-			if (replaySlots != null && materialized == null && !rightMaterialized) {
-				materialized = new ArrayList<>();
+			if (replaySlots != null && !rightMaterialized && !replayDisabled) {
+				capturingReplay = true;
 			}
 		}
+	}
+
+	private boolean finishCapturedRight() {
+		if (!capturingReplay) {
+			return false;
+		}
+		capturingReplay = false;
+		rightMaterialized = true;
+		LEFTJOIN_REPLAY_MATERIALIZATIONS.incrementAndGet();
+		replayIndex = -1;
+		return true;
+	}
+
+	private boolean finishFirstMaterializedLeft() throws IOException {
+		if (!matchedCurrentLeft) {
+			nullExtendedPending = true;
+		}
+		if (nullExtendedPending) {
+			nullExtendedPending = false;
+			return true;
+		}
+		return replayNext();
 	}
 
 	RowCursor openRight() throws IOException {
@@ -178,29 +221,108 @@ final class LeftJoinCursor implements RowCursor {
 				return memoized;
 			}
 		}
-		if (right instanceof PatternPlan) {
+		if (patternRight != null) {
 			if (rightProbe == null) {
 				rightProbe = row.source.newProbe();
 			}
-			RowCursor cursor = ((PatternPlan) right).open(row, rightProbe);
+			if (patternCursor == null) {
+				patternCursor = new PatternCursor();
+			}
+			PatternCursor raw = patternRight.openRaw(row, rightProbe, patternCursor);
 			if (!rightProbeCacheBacked && AdjacencyIntersectionProbe.enabled() && rightProbe.adjacencyCacheBacked()) {
-				// the adjacency cache answers this probe in O(1): a query-local payload hash would only duplicate
-				// it in memory (same rule as the chunk pipeline's cache-backed latch)
 				rightProbeCacheBacked = true;
 			}
-			return cursor;
+			if (raw == PatternCursor.EMPTY) {
+				return EmptyCursor.INSTANCE;
+			}
+			patternRightActive = true;
+			patternBatchRows = 0;
+			patternBatchPosition = 0;
+			patternScalarRows = 0;
+			return null;
 		}
 		return right.open(row);
+	}
+
+	private boolean nextPatternRight() throws IOException {
+		releasePatternBinding();
+		while (true) {
+			if (patternBatchMemory != null) {
+				long[] patternBatch = patternBatchMemory.values();
+				if (patternBatchPosition >= patternBatchRows) {
+					patternBatchRows = patternCursor.fill(patternBatch, patternBatchCapacityRows);
+					patternBatchPosition = 0;
+					if (patternBatchRows == 0) {
+						return false;
+					}
+				}
+				int offset = patternBatchPosition++ << 2;
+				if (bindPattern(patternBatch, offset)) {
+					return true;
+				}
+				continue;
+			}
+			long[] quad = patternCursor.next();
+			if (quad == null) {
+				return false;
+			}
+			if (++patternScalarRows > JoinCursor.SCALAR_PATTERN_ROWS && !patternBatchRefused) {
+				tryEnablePatternBatch();
+			}
+			if (bindPattern(quad, 0)) {
+				return true;
+			}
+		}
+	}
+
+	private void tryEnablePatternBatch() {
+		LmdbAdaptiveLongArray memory = LmdbAdaptiveLongArray.tryCreate(row, JoinCursor.PATTERN_BATCH_ROWS * 4);
+		int rows = JoinCursor.PATTERN_BATCH_ROWS;
+		if (memory == null) {
+			rows = 64;
+			memory = LmdbAdaptiveLongArray.tryCreate(row, rows * 4);
+		}
+		if (memory == null) {
+			patternBatchRefused = true;
+			return;
+		}
+		patternBatchMemory = memory;
+		patternBatchCapacityRows = rows;
+	}
+
+	private boolean bindPattern(long[] quad, int offset) {
+		int mark = row.mark();
+		if (patternRight.bind(quad, offset, row)) {
+			patternMark = mark;
+			return true;
+		}
+		row.rollback(mark);
+		return false;
+	}
+
+	private void releasePatternBinding() {
+		if (patternMark >= 0) {
+			row.rollback(patternMark);
+			patternMark = -1;
+		}
+	}
+
+	private void closePatternRight() {
+		releasePatternBinding();
+		patternCursor.close();
+		patternRightActive = false;
+		patternBatchRows = 0;
+		patternBatchPosition = 0;
 	}
 
 	boolean replayNext() throws IOException {
 		while (true) {
 			if (replayIndex >= 0) {
 				releaseReplay();
-				while (replayIndex < materialized.size()) {
-					long[] values = materialized.get(replayIndex++);
+				while (replayIndex < replayRows) {
+					int rowIndex = replayIndex++;
 					int mark = row.mark();
-					if (bindReplay(values)) {
+					if (bindReplay(rowIndex)) {
 						replayMatchedCurrentLeft = true;
 						replayMark = mark;
 						return true;
@@ -220,9 +342,15 @@ final class LeftJoinCursor implements RowCursor {
 		}
 	}
 
-	boolean bindReplay(long[] values) {
+	boolean bindReplay(int rowIndex) {
+		int width = replaySlots.length;
+		if (width == 0) {
+			return true;
+		}
+		int offset = rowIndex * width;
+		long[] replayValues = replayMemory.values();
 		for (int i = 0; i < replaySlots.length; i++) {
-			long value = values[i];
+			long value = replayValues[offset + i];
 			if (value != UNKNOWN && !row.bind(replaySlots[i], value)) {
 				return false;
 			}
@@ -230,16 +358,53 @@ final class LeftJoinCursor implements RowCursor {
 		return true;
 	}
 
-	void record() {
-		if (materialized.size() >= JoinCursor.MAX_MATERIALIZED_ROWS) {
-			materialized = null;
+	void recordReplay() {
+		if (replayRows >= JoinCursor.MAX_MATERIALIZED_ROWS) {
+			disableReplay();
 			return;
 		}
-		long[] values = new long[replaySlots.length];
-		for (int i = 0; i < replaySlots.length; i++) {
-			values[i] = row.slots[replaySlots[i]];
+		int width = replaySlots.length;
+		if (width != 0) {
+			if (!ensureReplayCapacity(replayRows + 1, width)) {
+				disableReplay();
+				return;
+			}
+			long[] replayValues = replayMemory.values();
+			int offset = replayRows * width;
+			for (int i = 0; i < width; i++) {
+				replayValues[offset + i] = row.slots[replaySlots[i]];
+			}
 		}
-		materialized.add(values);
+		replayRows++;
+	}
+
+	private boolean ensureReplayCapacity(int requiredRows, int width) {
+		int required = Math.multiplyExact(requiredRows, width);
+		if (replayMemory != null && replayMemory.length() >= required) {
+			return true;
+		}
+		int currentRows = replayMemory == null ? 0 : replayMemory.length() / width;
+		int grownRows = currentRows == 0 ? Math.min(16, JoinCursor.MAX_MATERIALIZED_ROWS)
+				: Math.min(JoinCursor.MAX_MATERIALIZED_ROWS, currentRows << 1);
+		if (grownRows < requiredRows) {
+			grownRows = requiredRows;
+		}
+		int grownLength = Math.multiplyExact(grownRows, width);
+		if (replayMemory == null) {
+			replayMemory = LmdbAdaptiveLongArray.tryCreate(row, grownLength);
+			return replayMemory != null;
+		}
+		return replayMemory.ensureCapacity(grownLength);
+	}
+
+	private void disableReplay() {
+		capturingReplay = false;
+		replayDisabled = true;
+		if (replayMemory != null) {
+			replayMemory.close();
+			replayMemory = null;
+		}
+		replayRows = 0;
 	}
 
 	void releaseReplay() {
@@ -263,10 +428,21 @@ final class LeftJoinCursor implements RowCursor {
 		if (rightMemo != null) {
 			rightMemo.close();
 		}
+		if (patternBatchMemory != null) {
+			patternBatchMemory.close();
+			patternBatchMemory = null;
+		}
+		if (replayMemory != null) {
+			replayMemory.close();
+			replayMemory = null;
+		}
 		leftCursor.close();
 	}
 
 	void closeRight() {
+		if (patternRightActive) {
+			closePatternRight();
+		}
 		if (rightCursor != null) {
 			rightCursor.close();
 			rightCursor = null;
