@@ -71,6 +71,7 @@ public class OrderByBenchmark {
 
 	private static final String EX = "http://example.com/order-by/";
 	private static final String NATIVE_ENABLED = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final String JANINO_ENABLED = "rdf4j.lmdb.janinoCodegen.enabled";
 	private static final String BATCH_ENABLED = "rdf4j.lmdb.nativeBatch.enabled";
 	private static final String PARALLEL_ENABLED = "rdf4j.lmdb.parallel.enabled";
 	private static final String PARALLEL_MIN_ROOT_ESTIMATE = "rdf4j.lmdb.parallel.minRootEstimate";
@@ -157,7 +158,7 @@ public class OrderByBenchmark {
 
 		private void captureProperties() {
 			previousProperties = new LinkedHashMap<>();
-			for (String property : List.of(NATIVE_ENABLED, BATCH_ENABLED, PARALLEL_ENABLED,
+			for (String property : List.of(NATIVE_ENABLED, JANINO_ENABLED, BATCH_ENABLED, PARALLEL_ENABLED,
 					PARALLEL_MIN_ROOT_ESTIMATE, SORT_MAX_BYTES)) {
 				previousProperties.put(property, System.getProperty(property));
 			}
@@ -165,6 +166,7 @@ public class OrderByBenchmark {
 
 		private static void configure() {
 			System.setProperty(NATIVE_ENABLED, "true");
+			System.setProperty(JANINO_ENABLED, "false");
 			System.setProperty(BATCH_ENABLED, "true");
 			System.setProperty(PARALLEL_ENABLED, "true");
 			System.setProperty(PARALLEL_MIN_ROOT_ESTIMATE, "50000");

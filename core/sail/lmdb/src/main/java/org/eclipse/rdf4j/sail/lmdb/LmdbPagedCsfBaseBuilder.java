@@ -481,7 +481,7 @@ final class LmdbPagedCsfBaseBuilder {
 					"sourceFamily.scanner(" + plane + ")");
 			boolean outgoing = plane == 0 || plane == 2;
 			if (!scanner.supportsOrderedScan(outgoing)) {
-				throw new IllegalStateException(
+				throw new LmdbAdjacencyBuildUnavailableException(
 						"NOT_BUILDABLE_WITH_INDEX_CONFIG: plane " + plane + " cannot stream its grouping order");
 			}
 			if (scanner.snapshotRevision() != revision || scanner.snapshotId() != snapshotId) {

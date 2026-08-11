@@ -686,6 +686,7 @@ public class LmdbSailStoreTest {
 		IRI f2 = F.createIRI("urn:f2");
 
 		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.begin();
 			for (int i = 0; i < 10000; i++) {
 				BNode c = F.createBNode();
 				BNode f = F.createBNode();
@@ -694,6 +695,7 @@ public class LmdbSailStoreTest {
 				conn.add(f, d, f1);
 				conn.add(F.createBNode(), b, F.createBNode());
 			}
+			conn.commit();
 
 			String actual = conn.prepareTupleQuery(
 					"select ?b where { ?a ?b ?c. ?c ?d ?f. }")

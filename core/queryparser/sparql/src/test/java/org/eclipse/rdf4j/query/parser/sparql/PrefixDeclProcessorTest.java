@@ -26,7 +26,7 @@ public class PrefixDeclProcessorTest {
 
 	@Test
 	public void testEveryPnLocalEscapeIsUnescaped() {
-		String escapable = "_~.-!$&'()*+,;=:/?#@%";
+		String escapable = "_~.-!$&'()*+,;=/?#@%";
 		StringBuilder qname = new StringBuilder("ex:");
 		StringBuilder expected = new StringBuilder("urn:test:");
 

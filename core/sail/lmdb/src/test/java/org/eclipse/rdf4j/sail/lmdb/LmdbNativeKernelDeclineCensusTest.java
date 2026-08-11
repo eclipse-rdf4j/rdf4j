@@ -81,6 +81,7 @@ public class LmdbNativeKernelDeclineCensusTest {
 
 	/** Repeats per query, so an asynchronous compile has landed before the reading run. */
 	private static final int WARMUP_RUNS = 6;
+	private static final String SYNCHRONOUS_CODEGEN_PROPERTY = "rdf4j.lmdb.janinoCodegen.synchronous";
 
 	/**
 	 * Per-run wall-clock cap. {@code explain} defaults to sixty seconds per query
@@ -277,7 +278,7 @@ public class LmdbNativeKernelDeclineCensusTest {
 	/** Distinct {@code nativeExecutionPath} tags a query records, across the whole explain tree. */
 	private static Set<String> executionPaths(String query) {
 		Set<String> paths = new LinkedHashSet<>();
-		for (int run = 0; run < WARMUP_RUNS; run++) {
+		for (int run = 0; run < warmupRuns(); run++) {
 			paths.clear();
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				org.eclipse.rdf4j.query.TupleQuery prepared = connection.prepareTupleQuery(query);
@@ -307,7 +308,7 @@ public class LmdbNativeKernelDeclineCensusTest {
 	 */
 	private static Set<String> declineReasons(String query) {
 		Set<String> reasons = new LinkedHashSet<>();
-		for (int run = 0; run < WARMUP_RUNS; run++) {
+		for (int run = 0; run < warmupRuns(); run++) {
 			reasons.clear();
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				org.eclipse.rdf4j.query.TupleQuery prepared = connection.prepareTupleQuery(query);
@@ -325,6 +326,13 @@ public class LmdbNativeKernelDeclineCensusTest {
 			}
 		}
 		return reasons;
+	}
+
+	private static int warmupRuns() {
+		// Synchronous validation has no compile-pending window to warm through; repeating every telemetry query would
+		// only execute the same already-compiled shape six times and make the strict full-suite profile needlessly
+		// slow.
+		return Boolean.getBoolean(SYNCHRONOUS_CODEGEN_PROPERTY) ? 1 : WARMUP_RUNS;
 	}
 
 	private static String renderCensus(int pairCount, Map<String, Set<String>> capabilityDeclines,

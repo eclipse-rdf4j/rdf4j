@@ -18,7 +18,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -39,10 +42,52 @@ public class LmdbNativeSpecializationTest {
 
 	@AfterEach
 	public void tearDown() {
+		LmdbNativeSpecialization.beforeCompileForTest = null;
 		System.clearProperty(LmdbNativeSpecialization.ENABLED_PROPERTY);
 		System.clearProperty(LmdbNativeSpecialization.THRESHOLD_ROWS_PROPERTY);
 		System.clearProperty(LmdbNativeSpecialization.MAX_ENTRIES_PROPERTY);
 		System.clearProperty(LmdbNativeSpecialization.MAX_BYTES_PROPERTY);
+	}
+
+	@Test
+	public void resetWaitsForPreviouslySubmittedCompilation() throws Exception {
+		CountDownLatch compileEntered = new CountDownLatch(1);
+		CountDownLatch releaseCompile = new CountDownLatch(1);
+		LmdbNativeSpecialization.beforeCompileForTest = () -> {
+			compileEntered.countDown();
+			try {
+				releaseCompile.await();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(e);
+			}
+		};
+
+		Object owner = new Object();
+		assertThat(LmdbNativeSpecialization.filterKernel(owner, 3, 1L, 1L)).isNull();
+		assertThat(compileEntered.await(30, TimeUnit.SECONDS)).isTrue();
+		CompletableFuture<Void> reset = CompletableFuture.runAsync(LmdbNativeSpecialization::resetForTests);
+		boolean resetWaited;
+		try {
+			reset.get(1, TimeUnit.SECONDS);
+			resetWaited = false;
+		} catch (TimeoutException expected) {
+			resetWaited = true;
+		} finally {
+			releaseCompile.countDown();
+		}
+		reset.get(30, TimeUnit.SECONDS);
+
+		// Drain and reset once more even on the pre-fix path so no old compiler work contaminates later tests.
+		LmdbNativeSpecialization.beforeCompileForTest = null;
+		Object barrierOwner = new Object();
+		assertThat(LmdbNativeSpecialization.filterKernel(barrierOwner, 4, 1L, 1L)).isNull();
+		assertThat(LmdbNativeSpecialization.awaitFilterKernel(barrierOwner, 4, 1L, 30, TimeUnit.SECONDS)).isNotNull();
+		LmdbNativeSpecialization.resetForTests();
+
+		assertThat(resetWaited).as("reset must await compiler work submitted before it began").isTrue();
+		assertThat(LmdbNativeSpecialization.COMPILATIONS).hasValue(0L);
+		assertThat(LmdbNativeSpecialization.COMPILE_FAILURES).hasValue(0L);
 	}
 
 	@Test

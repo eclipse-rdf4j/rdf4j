@@ -53,6 +53,8 @@ final class LmdbDirectAdjacencyOptions {
 	static final String SHADOW_SAMPLE_EVERY_PROPERTY = "rdf4j.lmdb.directAdjacency.shadowSampleEvery";
 	static final String NODE_PREDICATE_PROJECTION_PROPERTY = "rdf4j.lmdb.directAdjacency.nodePredicateProjection.enabled";
 	static final String NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY = "rdf4j.lmdb.directAdjacency.nodePredicateProjection.incoming.enabled";
+	static final String SYNCHRONOUS_MAINTENANCE_PROPERTY = "rdf4j.lmdb.directAdjacency.synchronousMaintenance";
+	static final String FAIL_ON_MAINTENANCE_ERROR_PROPERTY = "rdf4j.lmdb.directAdjacency.failOnMaintenanceError";
 
 	private final DirectAdjacencyMode mode;
 	private final DirectAdjacencyCoverage coverage;
@@ -75,13 +77,16 @@ final class LmdbDirectAdjacencyOptions {
 	private final long shadowSampleEvery;
 	private final boolean nodePredicateProjectionEnabled;
 	private final boolean nodePredicateProjectionIncomingEnabled;
+	private final boolean synchronousMaintenance;
+	private final boolean failOnMaintenanceError;
 
 	private LmdbDirectAdjacencyOptions(DirectAdjacencyMode mode, DirectAdjacencyCoverage coverage,
 			Set<IRI> selectedPredicates, boolean buildOnStart, long requestedMaxBytes, long memoryLimitBytes,
 			long effectiveMaxBytes, long commitMaxBytes, long sealWarnMillis, int maxDeltaGenerations,
 			long supernodeEdges, long supernodeChunkEdges, long supernodeTargetBytes, int buildThreads,
 			long buildTargetMillis, long buildRetryMillis, long shadowSampleEvery,
-			boolean nodePredicateProjectionEnabled, boolean nodePredicateProjectionIncomingEnabled) {
+			boolean nodePredicateProjectionEnabled, boolean nodePredicateProjectionIncomingEnabled,
+			boolean synchronousMaintenance, boolean failOnMaintenanceError) {
 		this.mode = mode;
 		this.coverage = coverage;
 		this.selectedPredicates = selectedPredicates;
@@ -103,6 +108,8 @@ final class LmdbDirectAdjacencyOptions {
 		this.shadowSampleEvery = shadowSampleEvery;
 		this.nodePredicateProjectionEnabled = nodePredicateProjectionEnabled;
 		this.nodePredicateProjectionIncomingEnabled = nodePredicateProjectionIncomingEnabled;
+		this.synchronousMaintenance = synchronousMaintenance;
+		this.failOnMaintenanceError = failOnMaintenanceError;
 	}
 
 	static LmdbDirectAdjacencyOptions resolve(LmdbStoreConfig config) {
@@ -138,13 +145,16 @@ final class LmdbDirectAdjacencyOptions {
 		boolean nodePredicateProjection = booleanProperty(properties, NODE_PREDICATE_PROJECTION_PROPERTY, false);
 		boolean nodePredicateProjectionIncoming = nodePredicateProjection
 				&& booleanProperty(properties, NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY, false);
+		boolean synchronousMaintenance = booleanProperty(properties, SYNCHRONOUS_MAINTENANCE_PROPERTY, false);
+		boolean failOnMaintenanceError = booleanProperty(properties, FAIL_ON_MAINTENANCE_ERROR_PROPERTY, false);
 
 		return new LmdbDirectAdjacencyOptions(config.getDirectAdjacencyMode(), config.getDirectAdjacencyCoverage(),
 				config.getDirectAdjacencyPredicates(), config.getDirectAdjacencyBuildOnStart(), requestedMaxBytes,
 				memoryLimitBytes, effectiveMaxBytes, commitMaxBytes, sealWarnMillis, maxDeltaGenerations,
 				supernodeEdges,
 				supernodeChunkEdges, supernodeTargetBytes, buildThreads, buildTargetMillis, buildRetryMillis,
-				shadowSampleEvery, nodePredicateProjection, nodePredicateProjectionIncoming);
+				shadowSampleEvery, nodePredicateProjection, nodePredicateProjectionIncoming, synchronousMaintenance,
+				failOnMaintenanceError);
 	}
 
 	/**
@@ -391,5 +401,13 @@ final class LmdbDirectAdjacencyOptions {
 	 */
 	boolean nodePredicateProjectionIncomingEnabled() {
 		return nodePredicateProjectionIncomingEnabled;
+	}
+
+	boolean synchronousMaintenance() {
+		return synchronousMaintenance;
+	}
+
+	boolean failOnMaintenanceError() {
+		return failOnMaintenanceError;
 	}
 }

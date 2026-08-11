@@ -35,6 +35,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
@@ -83,11 +85,16 @@ final class LmdbNativeSpecialization {
 	private static final MethodTypeDesc MTD_ACCEPT = MethodTypeDesc.of(ClassDesc.ofDescriptor("Z"), CD_ROW);
 
 	private static final Object CACHE_REGISTRY_LOCK = new Object();
+	private static final ReentrantReadWriteLock COMPILER_LIFECYCLE_LOCK = new ReentrantReadWriteLock();
+	private static final Lock COMPILER_LIFECYCLE_READ = COMPILER_LIFECYCLE_LOCK.readLock();
+	private static final Lock COMPILER_LIFECYCLE_WRITE = COMPILER_LIFECYCLE_LOCK.writeLock();
 	private static final Object DEFAULT_CACHE_OWNER = new Object();
 	/** Weak keys and owner-free values ensure generated kernels never retain a closed store or its id space. */
 	private static final WeakHashMap<Object, StoreCache> STORE_CACHES = new WeakHashMap<>();
 	private static final AtomicInteger CLASS_IDS = new AtomicInteger();
 	private static volatile ExecutorService compiler;
+	/** Test-only interleaving hook: runs on the compiler thread immediately before hidden-class construction. */
+	static volatile Runnable beforeCompileForTest;
 
 	private LmdbNativeSpecialization() {
 	}
@@ -135,23 +142,28 @@ final class LmdbNativeSpecialization {
 		if (normalizedMask < 0L) {
 			return null;
 		}
-		StoreCache cache = storeCache(cacheOwner);
-		KernelKey key = new KernelKey(slotCount, normalizedMask);
-		Entry entry;
-		synchronized (cache) {
-			entry = cache.entries.get(key);
-			if (entry == null) {
-				CACHE_MISSES.incrementAndGet();
-				evictForEntryLimit(cache);
-				entry = new Entry();
-				cache.entries.put(key, entry);
-				schedule(cache, key, entry);
-			} else if (entry.kernel != null) {
-				CACHE_HITS.incrementAndGet();
-				return entry.kernel;
+		COMPILER_LIFECYCLE_READ.lock();
+		try {
+			StoreCache cache = storeCache(cacheOwner);
+			KernelKey key = new KernelKey(slotCount, normalizedMask);
+			Entry entry;
+			synchronized (cache) {
+				entry = cache.entries.get(key);
+				if (entry == null) {
+					CACHE_MISSES.incrementAndGet();
+					evictForEntryLimit(cache);
+					entry = new Entry();
+					cache.entries.put(key, entry);
+					schedule(cache, key, entry);
+				} else if (entry.kernel != null) {
+					CACHE_HITS.incrementAndGet();
+					return entry.kernel;
+				}
 			}
+			return entry.kernel;
+		} finally {
+			COMPILER_LIFECYCLE_READ.unlock();
 		}
-		return entry.kernel;
 	}
 
 	static NativeBatchFilterKernel awaitFilterKernel(int slotCount, long timeout, TimeUnit unit)
@@ -179,6 +191,10 @@ final class LmdbNativeSpecialization {
 	private static void schedule(StoreCache cache, KernelKey key, Entry entry) {
 		compiler().execute(() -> {
 			try {
+				Runnable compileHook = beforeCompileForTest;
+				if (compileHook != null) {
+					compileHook.run();
+				}
 				CompiledKernel compiled = compile(key);
 				synchronized (cache) {
 					if (cache.entries.get(key) != entry) {
@@ -320,17 +336,40 @@ final class LmdbNativeSpecialization {
 	}
 
 	static void resetForTests() {
-		synchronized (CACHE_REGISTRY_LOCK) {
-			STORE_CACHES.clear();
+		COMPILER_LIFECYCLE_WRITE.lock();
+		try {
+			drainCompilerForReset();
+			synchronized (CACHE_REGISTRY_LOCK) {
+				STORE_CACHES.clear();
+			}
+			resetMetrics();
+			INTERPRETER_ROWS.set(0L);
+			SPECIALIZED_ROWS.set(0L);
+			COMPILATIONS.set(0L);
+			COMPILE_FAILURES.set(0L);
+			EVICTIONS.set(0L);
+			GENERATED_BYTES.set(0L);
+			BYTE_REJECTIONS.set(0L);
+		} finally {
+			COMPILER_LIFECYCLE_WRITE.unlock();
 		}
-		resetMetrics();
-		INTERPRETER_ROWS.set(0L);
-		SPECIALIZED_ROWS.set(0L);
-		COMPILATIONS.set(0L);
-		COMPILE_FAILURES.set(0L);
-		EVICTIONS.set(0L);
-		GENERATED_BYTES.set(0L);
-		BYTE_REJECTIONS.set(0L);
+	}
+
+	private static void drainCompilerForReset() {
+		CountDownLatch barrier = new CountDownLatch(1);
+		compiler().execute(barrier::countDown);
+		boolean interrupted = false;
+		while (true) {
+			try {
+				barrier.await();
+				break;
+			} catch (InterruptedException e) {
+				interrupted = true;
+			}
+		}
+		if (interrupted) {
+			Thread.currentThread().interrupt();
+		}
 	}
 
 	static SpecializationMetrics metricsSnapshot() {

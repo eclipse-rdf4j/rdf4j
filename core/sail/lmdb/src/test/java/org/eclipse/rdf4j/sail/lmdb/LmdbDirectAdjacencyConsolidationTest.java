@@ -417,6 +417,43 @@ class LmdbDirectAdjacencyConsolidationTest {
 	}
 
 	@Test
+	void quiescentRebuildWaitsForAnAcquisitionBeforeItReturnsTheView() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+		long revision = tripleStore.getDataRevision();
+		CountDownLatch acquisitionValidated = new CountDownLatch(1);
+		CountDownLatch releaseAcquisition = new CountDownLatch(1);
+		CountDownLatch rebuildStarted = new CountDownLatch(1);
+		store.beforeExactViewReturnForTest = () -> {
+			store.beforeExactViewReturnForTest = null;
+			acquisitionValidated.countDown();
+			try {
+				releaseAcquisition.await();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(e);
+			}
+		};
+		store.beforeQuiescentBuildForTest = rebuildStarted::countDown;
+
+		CompletableFuture<LmdbAdjacencyReadView> acquiring = CompletableFuture
+				.supplyAsync(() -> store.acquire(revision));
+		assertThat(acquisitionValidated.await(30, TimeUnit.SECONDS)).isTrue();
+		store.scheduleQuiescentRebuild();
+		try {
+			assertThat(rebuildStarted.await(1, TimeUnit.SECONDS))
+					.as("replacement construction must wait for an acquisition capable of returning the old state")
+					.isFalse();
+		} finally {
+			releaseAcquisition.countDown();
+			try (LmdbAdjacencyReadView acquired = acquiring.get(30, TimeUnit.SECONDS)) {
+				assertThat(acquired.isExact()).isTrue();
+			}
+		}
+		assertThat(rebuildStarted.await(30, TimeUnit.SECONDS)).isTrue();
+	}
+
+	@Test
 	void repeatedRebuildsAndCloseLeakNoChargedBytes() throws Exception {
 		commitAdd(S1, P1, O_BASE);
 		assertThat(store.buildNowForTest()).isTrue();
