@@ -20,6 +20,16 @@ import org.junit.jupiter.api.Test;
 class PackedLongVectorTest {
 
 	@Test
+	void pageLocalExactHashRetainsTheProvenEarlyPromotionPolicy() {
+		assertThat(PackedLongVector.exactHashPromotionThreshold(1_024, 7)).isEqualTo(64);
+		assertThat(PackedLongVector.exactHashPromotionThreshold(1_024, 5)).isEqualTo(43);
+		assertThat(PackedLongVector.exactHashPromotionThreshold(1_024, 0)).isEqualTo(32);
+		assertThat(PackedLongVector.exactHashPromotionThreshold(256, 7)).isEqualTo(32);
+		assertThat(PackedLongVector.exactHashPromotionThreshold(256, 5)).isEqualTo(32);
+		assertThat(PackedLongVector.exactHashPromotionThreshold(256, 0)).isEqualTo(32);
+	}
+
+	@Test
 	void blockBoundariesRoundTripAt255256And257Values() {
 		for (int size : new int[] { 255, 256, 257 }) {
 			long[] values = new long[size];

@@ -521,10 +521,10 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	/**
-	 * Creates a query/cursor-owned lookup bound to one immutable partition. Cold probes retain the exact ordinary
-	 * lookup path. Regular affine key domains are resolved arithmetically without auxiliary memory, and genuinely hot
-	 * irregular domains may promote to an exact key-to-run dictionary admitted by {@link CsfAdaptiveMemory}. No
-	 * accelerator is retained by the index itself.
+	 * Creates a query/cursor-owned batch lookup bound to one immutable partition. Sorted frontiers merge with the
+	 * physical key/run stream without auxiliary memory; only repeated unsorted batches may promote to an exact
+	 * key-to-run dictionary admitted by {@link CsfAdaptiveMemory}. Scalar direct-adjacency probes intentionally use the
+	 * ordinary page-local lookup path instead. No accelerator is retained by the index itself.
 	 */
 	public PartitionLookup partitionLookup(long predicateOrdinal, int plane) {
 		return new PartitionLookup(this, partitionIndex(predicateOrdinal, plane));
@@ -1709,15 +1709,17 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	/**
-	 * Query-owned exact lookup for one immutable {@code (predicate, plane)} partition. The cold path has no optional
-	 * arrays. Affine key domains use arithmetic rank plus ordinal-to-page routing; irregular domains retain the normal
-	 * packed lookup until their measured use justifies a bounded exact hash. The exact dictionary is never attached to
-	 * the immutable index and is shed on memory pressure or {@link #close()}.
+	 * Batch/frontier lookup for one immutable {@code (predicate, plane)} partition. Scalar point probes deliberately
+	 * stay on the proven page-local lookup policy: allowing scalar calls to build this O(partitionRows) dictionary made
+	 * short-lived queries pay two ephemeral hashes for the same keys. Sorted batches use a memory-neutral merge; only
+	 * repeated unsorted/sparse batches can promote this query-owned partition dictionary. The dictionary is shed on
+	 * memory pressure or {@link #close()}.
 	 */
 	public static final class PartitionLookup implements AutoCloseable {
 
-		private static final int MIN_PROMOTION_PROBES = 512;
-		private static final int MAX_PROMOTION_PROBES = 65536;
+		private static final int MIN_BATCH_PROMOTION_PROBES = 8192;
+		private static final int MAX_BATCH_PROMOTION_PROBES = 1 << 20;
+		private static final int MIN_BATCH_CALLS_FOR_PROMOTION = 2;
 		private static final int PRESSURE_CHECK_INTERVAL = 256;
 
 		private final ImmutablePagedQuadCsfIndex owner;
@@ -1735,7 +1737,8 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		private long affineFirst;
 		private long affineStride;
 
-		private long probes;
+		private long batchProbes;
+		private int batchCalls;
 		private long lastKey;
 		private long lastReference;
 		private long claimedBytes;
@@ -1776,21 +1779,15 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				// Once a partition has paid for an exact dictionary, the hash probe is cheaper than maintaining a
 				// mutable last-key memo on every random lookup. Keep that memo exclusively on the cold hierarchy.
 				checkPressure();
-				return exactReady ? findExact(key) : findColdAndObserve(key);
+				return exactReady ? findExact(key) : findCold(key);
 			}
 			if (haveLast && key == lastKey) {
 				return lastReference;
 			}
-			long reference = findColdAndObserve(key);
+			long reference = findCold(key);
 			lastKey = key;
 			lastReference = reference;
 			haveLast = true;
-			return reference;
-		}
-
-		private long findColdAndObserve(long key) {
-			long reference = findCold(key);
-			observe(1);
 			return reference;
 		}
 
@@ -1818,11 +1815,11 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				found = findSortedBatch(keys, keyOffset, count, references, referenceOffset);
 				if (found < 0) {
 					found = findColdBatch(keys, keyOffset, count, references, referenceOffset);
-					observe(count);
+					observeBatch(count);
 				}
 			} else {
 				found = findColdBatch(keys, keyOffset, count, references, referenceOffset);
-				observe(count);
+				observeBatch(count);
 			}
 			if (count > 0) {
 				lastKey = keys[keyOffset + count - 1];
@@ -1928,6 +1925,14 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			return affine;
 		}
 
+		int observedBatchCalls() {
+			return batchCalls;
+		}
+
+		long observedBatchProbes() {
+			return batchProbes;
+		}
+
 		private long findCold(long key) {
 			if (rowCount == 0) {
 				return 0;
@@ -1997,12 +2002,13 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 		}
 
-		private void observe(int work) {
+		private void observeBatch(int work) {
 			if (work <= 0 || exactReady || affine || promotionRefused) {
 				return;
 			}
-			probes = Math.min(Integer.MAX_VALUE, probes + work);
-			if (probes >= promotionAt) {
+			batchCalls = Math.min(Integer.MAX_VALUE, batchCalls + 1);
+			batchProbes = Math.min(Integer.MAX_VALUE, batchProbes + work);
+			if (batchCalls >= MIN_BATCH_CALLS_FOR_PROMOTION && batchProbes >= promotionAt) {
 				promoteExact();
 			}
 		}
@@ -2141,12 +2147,13 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			if (rows <= 0) {
 				return Integer.MAX_VALUE;
 			}
-			// The build is O(rows); require roughly one observed point probe per row before paying it. This is a
-			// cost-derived break-even guard rather than a universal tiny counter, while the cap still lets very hot
-			// large
-			// partitions promote when their arrays fit the configured adaptive-memory limits.
-			long threshold = Math.max(MIN_PROMOTION_PROBES, rows);
-			return (int) Math.min(MAX_PROMOTION_PROBES, threshold);
+			// Page-local hashes make the remaining packed fallback substantially cheaper. A partition dictionary
+			// therefore needs considerably more reuse than one probe per row to repay its complete key-cursor scan,
+			// allocation and hash build. Four batch probes per row is conservative for the measured 8K--64K
+			// partitions, while the larger cap prevents a single large batch from promoting a huge partition.
+			long scaledRows = rows > Long.MAX_VALUE / 4L ? Long.MAX_VALUE : rows * 4L;
+			long threshold = Math.max(MIN_BATCH_PROMOTION_PROBES, scaledRows);
+			return (int) Math.min(MAX_BATCH_PROMOTION_PROBES, threshold);
 		}
 
 		private boolean tryPromoteAffine() {

@@ -1954,6 +1954,11 @@ final class PackedLongVector {
 	 * allocated per page), preloads the at-most-four row-block fences once on page change, and retains the last block
 	 * descriptor. Optional radix storage remains separately admitted by {@link CsfAdaptiveMemory}.
 	 */
+	static int exactHashPromotionThreshold(int size, int radixBits) {
+		int divisor = radixBits >= 7 ? 16 : radixBits >= 5 ? 24 : 32;
+		return Math.max(32, (size + divisor - 1) / divisor);
+	}
+
 	/** Allocates one reusable search state only after its owning cursor has demonstrated page-local reuse. */
 	static NativeSearchState tryNativeSearchState() {
 		if (!CsfAdaptiveMemory.admitOptionalObject(256)) {
@@ -2029,11 +2034,12 @@ final class PackedLongVector {
 			packedLookups = 0;
 			hashReady = false;
 			hashRefused = false;
-			// Building the decoded-key/hash sidecar costs O(size), so require approximately the measured
-			// break-even number of packed probes rather than promoting after a universally tiny counter. A
-			// stronger free-slab radix needs fewer probes to justify replacement; an unindexed page needs more.
-			int divisor = bits >= 7 ? 8 : bits >= 5 ? 6 : 4;
-			hashPromotionAt = Math.max(64, (size + divisor - 1) / divisor);
+			// Page-local exact promotion is deliberately early. The arrays cover only the currently reused
+			// compact page, so their O(pageRows) build is small and amortizes inside the common scalar-probe
+			// workload long before a partition-wide accelerator could pay back its O(partitionRows) scan.
+			// These are the empirically proven pre-partition-policy thresholds: a strong free-slab radix needs
+			// roughly one probe per 16 rows, a medium radix one per 24 rows, and an unindexed page one per 32.
+			hashPromotionAt = exactHashPromotionThreshold(size, bits);
 
 			long offsets = 0;
 			long directory = address + HEADER_BYTES;

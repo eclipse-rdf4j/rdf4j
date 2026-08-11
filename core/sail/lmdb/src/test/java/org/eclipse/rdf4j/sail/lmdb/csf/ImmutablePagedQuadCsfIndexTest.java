@@ -192,6 +192,70 @@ class ImmutablePagedQuadCsfIndexTest {
 	}
 
 	@Test
+	void scalarPartitionProbesNeverBuildTheEphemeralPartitionDictionary() {
+		List<Row> rows = irregularRows(2_500);
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows);
+				ImmutablePagedQuadCsfIndex.PartitionLookup lookup = index.partitionLookup(0, 0)) {
+			ImmutablePagedQuadCsfIndex.LookupCursor expectedCursor = new ImmutablePagedQuadCsfIndex.LookupCursor();
+			try {
+				for (int repetition = 0; repetition < 20; repetition++) {
+					for (Row row : rows) {
+						assertThat(lookup.find(row.row))
+								.isEqualTo(index.findLocalReference(0, 0, row.row, expectedCursor));
+					}
+				}
+			} finally {
+				expectedCursor.close();
+			}
+			assertThat(lookup.exactDictionaryReady()).isFalse();
+			assertThat(lookup.affine()).isFalse();
+			assertThat(lookup.observedBatchCalls()).isZero();
+			assertThat(lookup.observedBatchProbes()).isZero();
+		}
+	}
+
+	@Test
+	void onlyRepeatedUnsortedBatchesCanPromoteThePartitionDictionary() {
+		List<Row> rows = irregularRows(2_500);
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows);
+				ImmutablePagedQuadCsfIndex.PartitionLookup lookup = index.partitionLookup(0, 0)) {
+			long[] probes = new long[5_000];
+			long[] references = new long[probes.length];
+			for (int i = 0; i < probes.length; i++) {
+				probes[i] = rows.get(i * 37 % rows.size()).row;
+			}
+			lookup.findBatch(probes, 0, probes.length, references, 0);
+			assertThat(lookup.exactDictionaryReady()).isFalse();
+			assertThat(lookup.observedBatchCalls()).isEqualTo(1);
+			assertThat(lookup.observedBatchProbes()).isEqualTo(probes.length);
+
+			long refusalsBefore = CsfAdaptiveMemory.refusals();
+			lookup.findBatch(probes, 0, probes.length, references, 0);
+			assertThat(lookup.exactDictionaryReady() || lookup.affine()
+					|| CsfAdaptiveMemory.refusals() > refusalsBefore).isTrue();
+		}
+	}
+
+	@Test
+	void sortedMergeBatchesDoNotHeatThePartitionDictionary() {
+		List<Row> rows = irregularRows(2_500);
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows);
+				ImmutablePagedQuadCsfIndex.PartitionLookup lookup = index.partitionLookup(0, 0)) {
+			long[] probes = new long[512];
+			long[] references = new long[probes.length];
+			for (int i = 0; i < probes.length; i++) {
+				probes[i] = rows.get(400 + i / 4).row;
+			}
+			for (int repetition = 0; repetition < 32; repetition++) {
+				lookup.findBatch(probes, 0, probes.length, references, 0);
+			}
+			assertThat(lookup.exactDictionaryReady()).isFalse();
+			assertThat(lookup.observedBatchCalls()).isZero();
+			assertThat(lookup.observedBatchProbes()).isZero();
+		}
+	}
+
+	@Test
 	void affinePromotionVerifiesEveryKeyBeforeActivating() {
 		List<Row> rows = new ArrayList<>();
 		for (int i = 0; i < 700; i++) {
@@ -200,10 +264,13 @@ class ImmutablePagedQuadCsfIndexTest {
 		}
 		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows);
 				ImmutablePagedQuadCsfIndex.PartitionLookup lookup = index.partitionLookup(0, 0)) {
-			for (int i = 0; i < rows.size() + 64; i++) {
-				long key = rows.get(i % rows.size()).row;
-				assertThat(lookup.find(key)).isNotZero();
+			long[] probes = new long[4_096];
+			long[] references = new long[probes.length];
+			for (int i = 0; i < probes.length; i++) {
+				probes[i] = rows.get(i * 37 % rows.size()).row;
 			}
+			lookup.findBatch(probes, 0, probes.length, references, 0);
+			lookup.findBatch(probes, 0, probes.length, references, 0);
 			assertThat(lookup.affine()).isFalse();
 			for (Row row : rows) {
 				assertThat(lookup.find(row.row)).isEqualTo(index.findLocalReference(0, 0, row.row));
@@ -217,11 +284,14 @@ class ImmutablePagedQuadCsfIndexTest {
 		long before = CsfAdaptiveMemory.claimedBytes();
 		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows)) {
 			ImmutablePagedQuadCsfIndex.PartitionLookup lookup = index.partitionLookup(0, 0);
-			for (int i = 0; i < rows.size() + 64; i++) {
-				lookup.find(rows.get(i % rows.size()).row);
+			long[] probes = new long[5_000];
+			long[] references = new long[probes.length];
+			for (int i = 0; i < probes.length; i++) {
+				probes[i] = rows.get(i * 37 % rows.size()).row;
 			}
-			boolean promoted = lookup.exactDictionaryReady();
-			if (promoted) {
+			lookup.findBatch(probes, 0, probes.length, references, 0);
+			lookup.findBatch(probes, 0, probes.length, references, 0);
+			if (lookup.exactDictionaryReady()) {
 				assertThat(CsfAdaptiveMemory.claimedBytes()).isGreaterThan(before);
 			}
 			lookup.close();

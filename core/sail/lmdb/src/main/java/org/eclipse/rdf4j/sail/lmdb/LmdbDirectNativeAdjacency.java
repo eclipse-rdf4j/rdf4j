@@ -60,9 +60,9 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	/** Index 0 is the base catalog; index i+1 is generation i's catalog of the retained state. */
 	private final LmdbAdjacencyArenaCatalog[] sources;
 	private final ContextCatalog contexts;
-	/** CSF base eligible for a query-owned direct dictionary; null for absent predicates and legacy bases. */
+	/** CSF base eligible for batch/frontier lookup; null for absent predicates and legacy bases. */
 	private final ImmutablePagedQuadCsfIndex baseCsf;
-	/** Allocated only when a true point probe occurs; key/run enumeration never needs this dictionary. */
+	/** Allocated only by a genuine batch/frontier request; scalar probes retain the page-local parent path. */
 	private ImmutablePagedQuadCsfIndex.PartitionLookup basePartitionLookup;
 	private boolean closed;
 	/** Exact one-entry provenance memo for repeated probes and key-run consumers. */
@@ -179,11 +179,9 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		if (baseAbsent) {
 			return NOT_FOUND;
 		}
-		ImmutablePagedQuadCsfIndex.PartitionLookup direct = partitionLookup();
-		if (direct != null) {
-			long localReference = direct.find(key);
-			return localReference == 0 ? NOT_FOUND : packHandle(0, sources[0].packCsfHandle(localReference));
-		}
+		// Scalar probes deliberately retain the proven parent path. It owns one reusable page-local LookupCursor
+		// and promotes only the pages that this query actually revisits. Constructing/observing a partition-wide
+		// lookup here delayed that transition and could trigger an O(partition) build on every short-lived query.
 		long handle = base.findRunByOrdinal(key, plane, basePredicateOrdinal, searchContext);
 		if (handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
 			throw new IllegalStateException(
