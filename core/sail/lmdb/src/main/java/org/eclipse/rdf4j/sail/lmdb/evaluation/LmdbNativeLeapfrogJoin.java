@@ -764,6 +764,10 @@ final class LmdbNativeLeapfrogJoin {
 					&& adjacencyBySubject[patternIndex] == bySubject) {
 				return cached;
 			}
+			if (cached != null) {
+				adjacencies[patternIndex] = null;
+				cached.close();
+			}
 			NativeLmdbQuerySource.NativeAdjacency built = probe(patternIndex).adjacency(pred, bySubject);
 			if (built != null) {
 				adjacencies[patternIndex] = built;
@@ -994,8 +998,13 @@ final class LmdbNativeLeapfrogJoin {
 
 		@Override
 		public void close() {
+			Throwable failure = null;
 			if (parallel != null) {
-				parallel.close();
+				try {
+					parallel.close();
+				} catch (RuntimeException | Error problem) {
+					failure = problem;
+				}
 				parallel = null;
 			}
 			if (levels != null) {
@@ -1003,9 +1012,33 @@ final class LmdbNativeLeapfrogJoin {
 					level.release(row);
 				}
 			}
+			for (int i = 0; i < adjacencies.length; i++) {
+				NativeLmdbQuerySource.NativeAdjacency adjacency = adjacencies[i];
+				adjacencies[i] = null;
+				if (adjacency == null) {
+					continue;
+				}
+				try {
+					adjacency.close();
+				} catch (RuntimeException | Error problem) {
+					if (failure == null) {
+						failure = problem;
+					} else if (failure != problem) {
+						failure.addSuppressed(problem);
+					}
+				}
+			}
 			for (int i = 0; i < probes.length; i++) {
 				if (probes[i] != null) {
-					probes[i].close();
+					try {
+						probes[i].close();
+					} catch (RuntimeException | Error problem) {
+						if (failure == null) {
+							failure = problem;
+						} else if (failure != problem) {
+							failure.addSuppressed(problem);
+						}
+					}
 					probes[i] = null;
 				}
 			}
@@ -1013,6 +1046,12 @@ final class LmdbNativeLeapfrogJoin {
 				plan.closeConsumedFilters();
 			}
 			exhausted = true;
+			if (failure instanceof Error) {
+				throw (Error) failure;
+			}
+			if (failure != null) {
+				throw (RuntimeException) failure;
+			}
 		}
 	}
 
@@ -1643,8 +1682,21 @@ final class LmdbNativeLeapfrogJoin {
 			return new ArrayFrontier(Frontier.EMPTY_VALUES, null);
 		}
 		long[] keys = new long[(int) count];
-		for (int i = 0; i < keys.length; i++) {
-			keys[i] = adjacency.keyAt(i);
+		int size = 0;
+		try (NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor = adjacency.openKeyRunCursor()) {
+			if (cursor == null) {
+				return null;
+			}
+			while (cursor.advance()) {
+				if (size == keys.length) {
+					throw new IllegalStateException("adjacency key cursor exceeded its declared cardinality " + count);
+				}
+				keys[size++] = cursor.key();
+			}
+		}
+		if (size != keys.length) {
+			throw new IllegalStateException(
+					"adjacency key cursor produced " + size + " of " + keys.length + " declared keys");
 		}
 		FRONTIERS_ENUMERATED.incrementAndGet();
 		return new ArrayFrontier(keys, null);

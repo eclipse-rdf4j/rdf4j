@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -74,6 +75,8 @@ final class LmdbNativeKernelEmitter {
 		/** Number of {@code LeftGroup} nodes emitted, each of which owns one {@code lgN} match flag field. */
 		private int nextLeftGroupId;
 		private int nextPredicateEnumId;
+		private int nextKeyRunCursorId;
+		private final IdentityHashMap<EnumerateAdjKeys, Integer> keyRunCursorIds = new IdentityHashMap<>();
 
 		/**
 		 * Predicates read per {@code copyRow} call. Sized so an ordinary node's whole row fits in one call while a
@@ -130,6 +133,16 @@ final class LmdbNativeKernelEmitter {
 			return source.toString();
 		}
 
+		private int keyRunCursorId(EnumerateAdjKeys enumerate) {
+			Integer existing = keyRunCursorIds.get(enumerate);
+			if (existing != null) {
+				return existing;
+			}
+			int id = nextKeyRunCursorId++;
+			keyRunCursorIds.put(enumerate, id);
+			return id;
+		}
+
 		// ------------------------------------------------------------------
 		// Class skeleton
 		// ------------------------------------------------------------------
@@ -137,6 +150,11 @@ final class LmdbNativeKernelEmitter {
 		private void emitFields(StringBuilder source) {
 			for (int i = 0; i < kernel.requirements.adjacencies; i++) {
 				source.append("    private NativeLmdbQuerySource.NativeAdjacency a").append(i).append(";\n");
+			}
+			for (int i = 0; i < nextKeyRunCursorId; i++) {
+				source.append("    private NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor ak")
+						.append(i)
+						.append(";\n");
 			}
 			for (int i = 0; i < kernel.requirements.nodePredicateViews; i++) {
 				source.append("    private NativeLmdbQuerySource.NodePredicates np").append(i).append(";\n");
@@ -439,6 +457,18 @@ final class LmdbNativeKernelEmitter {
 
 		private void emitClose(StringBuilder source) {
 			source.append("    public void close() {\n");
+			for (int i = 0; i < nextKeyRunCursorId; i++) {
+				source.append("        if (ak")
+						.append(i)
+						.append(" != null) {\n")
+						.append("            ak")
+						.append(i)
+						.append(".close();\n")
+						.append("            ak")
+						.append(i)
+						.append(" = null;\n")
+						.append("        }\n");
+			}
 			for (int i = 0; i < kernel.requirements.plans; i++) {
 				source.append("        if (pc")
 						.append(i)
@@ -1227,19 +1257,22 @@ final class LmdbNativeKernelEmitter {
 			int valueCol;
 			int keyCol = -1;
 			String keyToken = null;
+			EnumerateAdjKeys keyEnumeration = null;
 			if (producer instanceof Probe) {
 				Probe probe = (Probe) producer;
 				adjacency = probe.adjacency;
 				valueCol = probe.valueCol;
 				keyToken = probe.key.token();
 			} else {
-				EnumerateAdjKeys enumerate = (EnumerateAdjKeys) producer;
-				adjacency = enumerate.adjacency;
-				valueCol = enumerate.valueCol;
-				keyCol = enumerate.keyCol;
+				keyEnumeration = (EnumerateAdjKeys) producer;
+				adjacency = keyEnumeration.adjacency;
+				valueCol = keyEnumeration.valueCol;
+				keyCol = keyEnumeration.keyCol;
 			}
 			String a = "a" + adjacency;
-			// Probe pauses at (run position, slice offset); key enumeration adds the key index in front of those.
+			String keyRunCursor = keyEnumeration == null ? null : "ak" + keyRunCursorId(keyEnumeration);
+			// Probe pauses at (run position, slice offset). Key enumeration retains its physical key/run cursor and
+			// uses the same two counters; stA remains reserved so the state layout stays stable across kernel shapes.
 			String keyState = "stA" + stateIndex;
 			String runState = keyToken != null ? "stA" + stateIndex : "stB" + stateIndex;
 			String sliceState = keyToken != null ? "stB" + stateIndex : "stC" + stateIndex;
@@ -1256,48 +1289,48 @@ final class LmdbNativeKernelEmitter {
 
 			String indent = "        ";
 			String open;
+			String runSizeExpression;
 			if (keyToken != null) {
 				body.append(indent).append("long key = ").append(keyToken).append(";\n");
 				body.append(indent).append("if (key != -1L) {\n");
 				body.append(indent).append("    long rh = ").append(a).append(".find(key);\n");
 				body.append(indent).append("    if (rh > 0L) {\n");
 				open = indent + "        ";
+				runSizeExpression = a + ".size(rh)";
 			} else {
-				body.append(indent).append("long kc = ").append(a).append(".keyCount();\n");
-				body.append(indent).append("if (").append(keyState).append(" < 0) {\n");
-				body.append(indent).append("    ").append(keyState).append(" = 0;\n");
-				body.append(indent).append("}\n");
+				body.append(indent).append("if (").append(keyRunCursor).append(" == null) {\n");
 				body.append(indent)
-						.append("for (; ")
-						.append(keyState)
-						.append(" < kc; ")
-						.append(keyState)
-						.append("++) {\n");
-				body.append(indent)
-						.append("    v")
-						.append(keyCol)
+						.append("    ")
+						.append(keyRunCursor)
 						.append(" = ")
 						.append(a)
-						.append(".keyAt(")
-						.append(keyState)
-						.append(");\n");
+						.append(".openKeyRunCursor();\n");
+				body.append(indent).append("}\n");
+				body.append(indent).append("if (").append(keyRunCursor).append(" != null) {\n");
+				body.append(indent).append("    while (true) {\n");
+				body.append(indent).append("        if (").append(runState).append(" < 0) {\n");
+				body.append(indent).append("            if (!").append(keyRunCursor).append(".advance()) {\n");
+				body.append(indent).append("                break;\n");
+				body.append(indent).append("            }\n");
+				body.append(indent).append("            ").append(runState).append(" = 0;\n");
+				body.append(indent).append("        }\n");
 				body.append(indent)
-						.append("    long rh = ")
-						.append(a)
-						.append(".find(v")
+						.append("        v")
 						.append(keyCol)
-						.append(");\n");
-				body.append(indent).append("    if (rh <= 0L) {\n");
-				body.append(indent).append("        continue;\n");
-				body.append(indent).append("    }\n");
-				open = indent + "    ";
+						.append(" = ")
+						.append(keyRunCursor)
+						.append(".key();\n");
+				open = indent + "        ";
+				runSizeExpression = keyRunCursor + ".runSize()";
 			}
 
 			boolean ctx = ctxActive(producer);
-			body.append(open).append("long rend = ").append(a).append(".size(rh);\n");
-			body.append(open).append("if (").append(runState).append(" < 0) {\n");
-			body.append(open).append("    ").append(runState).append(" = 0;\n");
-			body.append(open).append("}\n");
+			body.append(open).append("long rend = ").append(runSizeExpression).append(";\n");
+			if (keyToken != null) {
+				body.append(open).append("if (").append(runState).append(" < 0) {\n");
+				body.append(open).append("    ").append(runState).append(" = 0;\n");
+				body.append(open).append("}\n");
+			}
 			body.append(open).append("while (").append(runState).append(" < rend) {\n");
 			String loop = open + "    ";
 			body.append(loop)
@@ -1313,17 +1346,33 @@ final class LmdbNativeKernelEmitter {
 				body.append(loop).append("    cvec = new long[rn];\n");
 			}
 			body.append(loop).append("}\n");
-			body.append(loop)
-					.append(a)
-					.append(".copyNeighbors(rh, ")
-					.append(runState)
-					.append(", rn, tvec, 0);\n");
-			if (ctx) {
+			if (keyRunCursor == null) {
 				body.append(loop)
 						.append(a)
-						.append(".copyContexts(rh, ")
+						.append(".copyNeighbors(rh, ")
 						.append(runState)
-						.append(", rn, cvec, 0);\n");
+						.append(", rn, tvec, 0);\n");
+			} else {
+				body.append(loop)
+						.append(keyRunCursor)
+						.append(".copyNeighbors(")
+						.append(runState)
+						.append(", rn, tvec, 0);\n");
+			}
+			if (ctx) {
+				if (keyRunCursor == null) {
+					body.append(loop)
+							.append(a)
+							.append(".copyContexts(rh, ")
+							.append(runState)
+							.append(", rn, cvec, 0);\n");
+				} else {
+					body.append(loop)
+							.append(keyRunCursor)
+							.append(".copyContexts(")
+							.append(runState)
+							.append(", rn, cvec, 0);\n");
+				}
 			}
 			body.append(loop).append("int cnt = rn;\n");
 			boolean selected = false;
@@ -1373,8 +1422,13 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("    }\n");
 				body.append(indent).append("}\n");
 			} else {
+				body.append(indent).append("    }\n");
+				body.append(indent).append("    ").append(keyRunCursor).append(".close();\n");
+				body.append(indent).append("    ").append(keyRunCursor).append(" = null;\n");
 				body.append(indent).append("}\n");
 				body.append(indent).append(keyState).append(" = -1;\n");
+				body.append(indent).append(runState).append(" = -1;\n");
+				body.append(indent).append(sliceState).append(" = -1;\n");
 			}
 		}
 
@@ -1384,6 +1438,7 @@ final class LmdbNativeKernelEmitter {
 			int keyCol = -1;
 			String keyToken = null;
 			boolean leftProbe = producer instanceof LeftProbe;
+			EnumerateAdjKeys keyEnumeration = null;
 			if (producer instanceof Probe) {
 				Probe probe = (Probe) producer;
 				adjacency = probe.adjacency;
@@ -1395,12 +1450,13 @@ final class LmdbNativeKernelEmitter {
 				valueCol = probe.valueCol;
 				keyToken = probe.key.token();
 			} else {
-				EnumerateAdjKeys enumerate = (EnumerateAdjKeys) producer;
-				adjacency = enumerate.adjacency;
-				valueCol = enumerate.valueCol;
-				keyCol = enumerate.keyCol;
+				keyEnumeration = (EnumerateAdjKeys) producer;
+				adjacency = keyEnumeration.adjacency;
+				valueCol = keyEnumeration.valueCol;
+				keyCol = keyEnumeration.keyCol;
 			}
 			String a = "a" + adjacency;
+			String keyRunCursor = keyEnumeration == null ? null : "ak" + keyRunCursorId(keyEnumeration);
 
 			List<Node> vectorized = new ArrayList<>();
 			List<Node> residual = new ArrayList<>();
@@ -1414,6 +1470,7 @@ final class LmdbNativeKernelEmitter {
 
 			String indent = "        ";
 			String open;
+			String runSizeExpression;
 			if (leftProbe) {
 				body.append(indent).append("boolean matched = false;\n");
 			}
@@ -1423,23 +1480,22 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("    long rh = ").append(a).append(".find(key);\n");
 				body.append(indent).append("    if (rh > 0L) {\n");
 				open = indent + "        ";
+				runSizeExpression = a + ".size(rh)";
 			} else {
-				body.append(indent).append("long kc = ").append(a).append(".keyCount();\n");
-				body.append(indent).append("for (long kx = 0L; kx < kc; kx++) {\n");
-				body.append(indent).append("    v").append(keyCol).append(" = ").append(a).append(".keyAt(kx);\n");
+				body.append(indent).append(keyRunCursor).append(" = ").append(a).append(".openKeyRunCursor();\n");
+				body.append(indent).append("if (").append(keyRunCursor).append(" != null) {\n");
+				body.append(indent).append("    while (").append(keyRunCursor).append(".advance()) {\n");
 				body.append(indent)
-						.append("    long rh = ")
-						.append(a)
-						.append(".find(v")
+						.append("        v")
 						.append(keyCol)
-						.append(");\n");
-				body.append(indent).append("    if (rh <= 0L) {\n");
-				body.append(indent).append("        continue;\n");
-				body.append(indent).append("    }\n");
-				open = indent + "    ";
+						.append(" = ")
+						.append(keyRunCursor)
+						.append(".key();\n");
+				open = indent + "        ";
+				runSizeExpression = keyRunCursor + ".runSize()";
 			}
 
-			body.append(open).append("long rend = ").append(a).append(".size(rh);\n");
+			body.append(open).append("long rend = ").append(runSizeExpression).append(";\n");
 			body.append(open).append("long rpos = 0L;\n");
 			if (leftProbe) {
 				// A non-empty run suppresses the null arm regardless of what the trailing filters later reject,
@@ -1455,7 +1511,8 @@ final class LmdbNativeKernelEmitter {
 				body.append(open).append("if (rend > rpos) {\n");
 				body.append(open).append("    updateBy(rend - rpos);\n");
 				body.append(open).append("}\n");
-				closeVectorTail(body, indent, keyToken != null, leftProbe, valueCol, filters, nextTemplate);
+				closeVectorTail(body, indent, keyToken != null, keyRunCursor, leftProbe, valueCol, filters,
+						nextTemplate);
 				return;
 			}
 			boolean ctx = ctxActive(producer);
@@ -1474,9 +1531,17 @@ final class LmdbNativeKernelEmitter {
 				body.append(loop).append("    cvec = new long[rn];\n");
 			}
 			body.append(loop).append("}\n");
-			body.append(loop).append(a).append(".copyNeighbors(rh, rpos, rn, tvec, 0);\n");
+			if (keyRunCursor == null) {
+				body.append(loop).append(a).append(".copyNeighbors(rh, rpos, rn, tvec, 0);\n");
+			} else {
+				body.append(loop).append(keyRunCursor).append(".copyNeighbors(rpos, rn, tvec, 0);\n");
+			}
 			if (ctx) {
-				body.append(loop).append(a).append(".copyContexts(rh, rpos, rn, cvec, 0);\n");
+				if (keyRunCursor == null) {
+					body.append(loop).append(a).append(".copyContexts(rh, rpos, rn, cvec, 0);\n");
+				} else {
+					body.append(loop).append(keyRunCursor).append(".copyContexts(rpos, rn, cvec, 0);\n");
+				}
 			}
 			body.append(loop).append("int cnt = rn;\n");
 			boolean selected = false;
@@ -1493,7 +1558,8 @@ final class LmdbNativeKernelEmitter {
 				body.append(loop).append("}\n");
 				body.append(loop).append("rpos = rpos + rn;\n");
 				body.append(open).append("}\n");
-				closeVectorTail(body, indent, keyToken != null, leftProbe, valueCol, filters, nextTemplate);
+				closeVectorTail(body, indent, keyToken != null, keyRunCursor, leftProbe, valueCol, filters,
+						nextTemplate);
 				return;
 			}
 			body.append(loop).append("for (int ti = 0; ti < cnt; ti++) {\n");
@@ -1521,7 +1587,7 @@ final class LmdbNativeKernelEmitter {
 			body.append(loop).append("}\n");
 			body.append(loop).append("rpos = rpos + rn;\n");
 			body.append(open).append("}\n");
-			closeVectorTail(body, indent, keyToken != null, leftProbe, valueCol, filters, nextTemplate);
+			closeVectorTail(body, indent, keyToken != null, keyRunCursor, leftProbe, valueCol, filters, nextTemplate);
 		}
 
 		/**
@@ -1558,9 +1624,17 @@ final class LmdbNativeKernelEmitter {
 		 * there, exactly as they do in the scalar emitter where they are ordinary nodes below the probe — including
 		 * hook filters, which see the {@code -1} that means "unbound".
 		 */
-		private void closeVectorTail(StringBuilder body, String indent, boolean keyed, boolean leftProbe, int valueCol,
-				List<Node> filters, String nextTemplate) {
-			if (keyed) {
+		private void closeVectorTail(StringBuilder body, String indent, boolean keyed, String keyRunCursor,
+				boolean leftProbe, int valueCol, List<Node> filters, String nextTemplate) {
+			if (keyRunCursor != null) {
+				// Close the physical key/run loop, release the cursor before leaving its null guard, and clear the
+				// field so
+				// the kernel-wide close method remains idempotent.
+				body.append(indent).append("    }\n");
+				body.append(indent).append("    ").append(keyRunCursor).append(".close();\n");
+				body.append(indent).append("    ").append(keyRunCursor).append(" = null;\n");
+				body.append(indent).append("}\n");
+			} else if (keyed) {
 				body.append(indent).append("    }\n");
 				body.append(indent).append("}\n");
 			} else {
@@ -1797,6 +1871,29 @@ final class LmdbNativeKernelEmitter {
 					.append("long ctx = ")
 					.append(view)
 					.append(".contextAt(rh, ")
+					.append(index)
+					.append(");\n");
+			String condition = ctxCondition(node);
+			if (condition != null) {
+				body.append(indent).append("if (").append(condition).append(") {\n");
+				indent = indent + "    ";
+			}
+			int ctxCol = ctxColOf(node);
+			if (ctxCol >= 0) {
+				body.append(indent).append("v").append(ctxCol).append(" = ctx;\n");
+			}
+			return indent;
+		}
+
+		private static String emitKeyRunCtxEntry(StringBuilder body, String indent, Node node, String cursor,
+				String index) {
+			if (!ctxActive(node)) {
+				return indent;
+			}
+			body.append(indent)
+					.append("long ctx = ")
+					.append(cursor)
+					.append(".contextAt(")
 					.append(index)
 					.append(");\n");
 			String condition = ctxCondition(node);
@@ -2051,49 +2148,89 @@ final class LmdbNativeKernelEmitter {
 			if (node instanceof EnumerateAdjKeys) {
 				EnumerateAdjKeys enumerate = (EnumerateAdjKeys) node;
 				String view = "a" + enumerate.adjacency;
-				body.append(indent).append("long kc = ").append(view).append(".keyCount();\n");
-				body.append(indent).append("if (").append(a).append(" < 0) {\n");
-				body.append(indent).append("    ").append(a).append(" = 0;\n");
-				body.append(indent).append("}\n");
-				body.append(indent).append("for (; ").append(a).append(" < kc; ").append(a).append("++) {\n");
+				String cursor = "ak" + keyRunCursorId(enumerate);
+				if (enumerate.valueCol < 0) {
+					body.append(indent).append("if (").append(cursor).append(" == null) {\n");
+					body.append(indent)
+							.append("    ")
+							.append(cursor)
+							.append(" = ")
+							.append(view)
+							.append(".openKeyRunCursor();\n");
+					body.append(indent).append("}\n");
+					body.append(indent).append("if (").append(cursor).append(" != null) {\n");
+					body.append(indent).append("    while (true) {\n");
+					body.append(indent).append("        if (").append(a).append(" < 0) {\n");
+					body.append(indent).append("            if (!").append(cursor).append(".advance()) {\n");
+					body.append(indent).append("                break;\n");
+					body.append(indent).append("            }\n");
+					body.append(indent).append("            ").append(a).append(" = 0;\n");
+					body.append(indent).append("        }\n");
+					body.append(indent)
+							.append("        v")
+							.append(enumerate.keyCol)
+							.append(" = ")
+							.append(cursor)
+							.append(".key();\n");
+					body.append(next(nextTemplate, indent + "        "));
+					body.append(indent).append("        if (full) {\n");
+					if (tailmost) {
+						body.append(indent).append("            ").append(a).append(" = -1;\n");
+					}
+					body.append(indent).append("            return;\n");
+					body.append(indent).append("        }\n");
+					body.append(indent).append("        ").append(a).append(" = -1;\n");
+					body.append(indent).append("    }\n");
+					body.append(indent).append("    ").append(cursor).append(".close();\n");
+					body.append(indent).append("    ").append(cursor).append(" = null;\n");
+					body.append(indent).append("}\n");
+					body.append(indent).append(a).append(" = -1;\n");
+					return true;
+				}
+				body.append(indent).append("if (").append(cursor).append(" == null) {\n");
 				body.append(indent)
-						.append("    v")
-						.append(enumerate.keyCol)
+						.append("    ")
+						.append(cursor)
 						.append(" = ")
 						.append(view)
-						.append(".keyAt(")
-						.append(a)
-						.append(");\n");
+						.append(".openKeyRunCursor();\n");
+				body.append(indent).append("}\n");
+				body.append(indent).append("if (").append(cursor).append(" != null) {\n");
+				body.append(indent).append("    while (true) {\n");
+				body.append(indent).append("        if (").append(b).append(" < 0) {\n");
+				body.append(indent).append("            if (!").append(cursor).append(".advance()) {\n");
+				body.append(indent).append("                break;\n");
+				body.append(indent).append("            }\n");
+				body.append(indent).append("            ").append(b).append(" = 0;\n");
+				body.append(indent).append("        }\n");
 				body.append(indent)
-						.append("    long rh = ")
-						.append(view)
-						.append(".find(v")
+						.append("        v")
 						.append(enumerate.keyCol)
-						.append(");\n");
-				body.append(indent).append("    if (rh <= 0L) {\n");
-				body.append(indent).append("        continue;\n");
-				body.append(indent).append("    }\n");
-				body.append(indent).append("    long end = ").append(view).append(".size(rh);\n");
-				body.append(indent).append("    if (").append(b).append(" < 0) {\n");
-				body.append(indent).append("        ").append(b).append(" = 0;\n");
-				body.append(indent).append("    }\n");
-				body.append(indent).append("    for (; ").append(b).append(" < end; ").append(b).append("++) {\n");
-				String enumInner = emitCtxEntry(body, indent + "        ", enumerate, view, b);
+						.append(" = ")
+						.append(cursor)
+						.append(".key();\n");
+				body.append(indent).append("        long end = ").append(cursor).append(".runSize();\n");
+				body.append(indent).append("        for (; ").append(b).append(" < end; ").append(b).append("++) {\n");
+				String enumInner = emitKeyRunCtxEntry(body, indent + "            ", enumerate, cursor, b);
 				body.append(enumInner)
 						.append("v")
 						.append(enumerate.valueCol)
 						.append(" = ")
-						.append(view)
-						.append(".neighborAt(rh, ")
+						.append(cursor)
+						.append(".neighborAt(")
 						.append(b)
 						.append(");\n");
 				body.append(next(nextTemplate, enumInner));
-				closeCtxEntry(body, indent + "        ", enumerate);
-				emitPause(body, indent + "        ", b, tailmost);
+				closeCtxEntry(body, indent + "            ", enumerate);
+				emitPause(body, indent + "            ", b, tailmost);
+				body.append(indent).append("        }\n");
+				body.append(indent).append("        ").append(b).append(" = -1;\n");
 				body.append(indent).append("    }\n");
-				body.append(indent).append("    ").append(b).append(" = -1;\n");
+				body.append(indent).append("    ").append(cursor).append(".close();\n");
+				body.append(indent).append("    ").append(cursor).append(" = null;\n");
 				body.append(indent).append("}\n");
 				body.append(indent).append(a).append(" = -1;\n");
+				body.append(indent).append(b).append(" = -1;\n");
 				return true;
 			}
 			return false;
@@ -2312,52 +2449,53 @@ final class LmdbNativeKernelEmitter {
 			}
 			if (node instanceof EnumerateAdjKeys) {
 				EnumerateAdjKeys enumerate = (EnumerateAdjKeys) node;
-				String a = "a" + enumerate.adjacency;
+				String adjacency = "a" + enumerate.adjacency;
+				String cursor = "ak" + keyRunCursorId(enumerate);
+				if (enumerate.valueCol < 0) {
+					body.append(indent)
+							.append(cursor)
+							.append(" = ")
+							.append(adjacency)
+							.append(".openKeyRunCursor();\n");
+					body.append(indent).append("if (").append(cursor).append(" != null) {\n");
+					body.append(indent).append("    while (").append(cursor).append(".advance()) {\n");
+					body.append(indent)
+							.append("        v")
+							.append(enumerate.keyCol)
+							.append(" = ")
+							.append(cursor)
+							.append(".key();\n");
+					body.append(next(nextTemplate, indent + "        "));
+					body.append(indent).append("    }\n");
+					body.append(indent).append("    ").append(cursor).append(".close();\n");
+					body.append(indent).append("    ").append(cursor).append(" = null;\n");
+					body.append(indent).append("}\n");
+					return;
+				}
+				body.append(indent).append(cursor).append(" = ").append(adjacency).append(".openKeyRunCursor();\n");
+				body.append(indent).append("if (").append(cursor).append(" != null) {\n");
+				body.append(indent).append("    while (").append(cursor).append(".advance()) {\n");
 				body.append(indent)
-						.append("long kc = ")
-						.append(a)
-						.append(".keyCount();\n")
-						.append(indent)
-						.append("for (long k = 0L; k < kc; k++) {\n")
-						.append(indent)
-						.append("    v")
+						.append("        v")
 						.append(enumerate.keyCol)
 						.append(" = ")
-						.append(a)
-						.append(".keyAt(k);\n");
-				if (enumerate.valueCol >= 0) {
-					body.append(indent)
-							.append("    long rh = ")
-							.append(a)
-							.append(".find(v")
-							.append(enumerate.keyCol)
-							.append(");\n")
-							.append(indent)
-							.append("    if (rh <= 0L) {\n")
-							.append(indent)
-							.append("        continue;\n")
-							.append(indent)
-							.append("    }\n")
-							.append(indent)
-							.append("    long end = ")
-							.append(a)
-							.append(".size(rh);\n")
-							.append(indent)
-							.append("    for (long i = 0L; i < end; i++) {\n");
-					String enumInner = indent + "        ";
-					enumInner = emitCtxEntry(body, enumInner, enumerate, a, "i");
-					body.append(enumInner)
-							.append("v")
-							.append(enumerate.valueCol)
-							.append(" = ")
-							.append(a)
-							.append(".neighborAt(rh, i);\n")
-							.append(next(nextTemplate, enumInner));
-					closeCtxEntry(body, indent + "        ", enumerate);
-					body.append(indent).append("    }\n");
-				} else {
-					body.append(next(nextTemplate, indent + "    "));
-				}
+						.append(cursor)
+						.append(".key();\n");
+				body.append(indent).append("        long end = ").append(cursor).append(".runSize();\n");
+				body.append(indent).append("        for (long i = 0L; i < end; i++) {\n");
+				String enumInner = emitKeyRunCtxEntry(body, indent + "            ", enumerate, cursor, "i");
+				body.append(enumInner)
+						.append("v")
+						.append(enumerate.valueCol)
+						.append(" = ")
+						.append(cursor)
+						.append(".neighborAt(i);\n")
+						.append(next(nextTemplate, enumInner));
+				closeCtxEntry(body, indent + "            ", enumerate);
+				body.append(indent).append("        }\n");
+				body.append(indent).append("    }\n");
+				body.append(indent).append("    ").append(cursor).append(".close();\n");
+				body.append(indent).append("    ").append(cursor).append(" = null;\n");
 				body.append(indent).append("}\n");
 			} else if (node instanceof EnumerateDomain) {
 				EnumerateDomain enumerate = (EnumerateDomain) node;

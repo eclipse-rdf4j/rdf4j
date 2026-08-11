@@ -324,6 +324,36 @@ final class PathPlan implements SlotPlan {
 		}
 		return copied;
 	}
+
+	/** Closes a query-owned adjacency set and preserves every cleanup failure. */
+	static Throwable closeAdjacencies(NativeLmdbQuerySource.NativeAdjacency[] views, Throwable failure) {
+		if (views == null) {
+			return failure;
+		}
+		for (int i = 0; i < views.length; i++) {
+			NativeLmdbQuerySource.NativeAdjacency view = views[i];
+			views[i] = null;
+			if (view == null) {
+				continue;
+			}
+			try {
+				view.close();
+			} catch (RuntimeException | Error problem) {
+				failure = addCloseFailure(failure, problem);
+			}
+		}
+		return failure;
+	}
+
+	static Throwable addCloseFailure(Throwable failure, Throwable problem) {
+		if (failure == null) {
+			return problem;
+		}
+		if (failure != problem) {
+			failure.addSuppressed(problem);
+		}
+		return failure;
+	}
 }
 
 /**
@@ -1238,18 +1268,22 @@ final class PathParallelExpansion implements AutoCloseable {
 				if (!readySignalled) {
 					ready.countDown();
 				}
+				Throwable cleanupFailure = PathPlan.closeAdjacencies(adjacencies, null);
 				try {
 					if (probe != null) {
 						probe.close();
 					}
 				} catch (RuntimeException | Error failure) {
-					recordFailure(failure);
+					cleanupFailure = PathPlan.addCloseFailure(cleanupFailure, failure);
 				} finally {
 					try {
 						source.close();
 					} catch (RuntimeException | Error failure) {
-						recordFailure(failure);
+						cleanupFailure = PathPlan.addCloseFailure(cleanupFailure, failure);
 					}
+				}
+				if (cleanupFailure != null) {
+					recordFailure(cleanupFailure);
 				}
 			}
 		}
@@ -1287,33 +1321,43 @@ final class PathParallelExpansion implements AutoCloseable {
 				} else {
 					PathPlan.CURSOR_EXPANSIONS.addAndGet(to - from);
 				}
-				for (int frontierIndex = from; frontierIndex < to; frontierIndex++) {
-					long near = task.frontier[frontierIndex];
-					if (cached != null) {
-						long run = cached.find(near);
-						if (run <= 0L) {
-							continue;
-						}
-						long runSize = cached.size(run);
-						boolean withContexts = !plan.acceptsAllContexts();
-						for (long offset = 0L; offset < runSize;) {
-							int batch = (int) Math.min(PathPlan.BATCH_ROWS, runSize - offset);
-							int copied = PathPlan.copyRunBatch(cached, run, offset, batch, buffer, withContexts);
-							if (copied <= 0) {
-								break;
+				if (cached != null) {
+					boolean withContexts = !plan.acceptsAllContexts();
+					int handleOffset = 3 * PathPlan.BATCH_ROWS;
+					for (int keyBase = from; keyBase < to;) {
+						int keys = Math.min(PathPlan.BATCH_ROWS, to - keyBase);
+						cached.findBatch(task.frontier, keyBase, keys, buffer, handleOffset);
+						for (int keyIndex = 0; keyIndex < keys; keyIndex++) {
+							long run = buffer[handleOffset + keyIndex];
+							if (run <= 0L) {
+								continue;
 							}
-							for (int i = 0; i < copied; i++) {
-								if (withContexts && !plan.acceptsContext(buffer[PathPlan.BATCH_ROWS + i])) {
-									continue;
+							long runSize = cached.size(run);
+							for (long offset = 0L; offset < runSize;) {
+								int batch = (int) Math.min(PathPlan.BATCH_ROWS, runSize - offset);
+								int copied = PathPlan.copyRunBatch(cached, run, offset, batch, buffer,
+										withContexts);
+								if (copied <= 0) {
+									break;
 								}
-								if (size == delta.length) {
-									delta = Arrays.copyOf(delta, delta.length * 2);
+								for (int i = 0; i < copied; i++) {
+									if (withContexts
+											&& !plan.acceptsContext(buffer[PathPlan.BATCH_ROWS + i])) {
+										continue;
+									}
+									if (size == delta.length) {
+										delta = Arrays.copyOf(delta, delta.length * 2);
+									}
+									delta[size++] = buffer[i];
 								}
-								delta[size++] = buffer[i];
+								offset += copied;
 							}
-							offset += copied;
 						}
-					} else {
+						keyBase += keys;
+					}
+				} else {
+					for (int frontierIndex = from; frontierIndex < to; frontierIndex++) {
+						long near = task.frontier[frontierIndex];
 						try (PatternCursor cursor = plan.openStep(source, probe, near, nearPos, step.predicate)) {
 							int rows;
 							while ((rows = cursor.fill(buffer, PathPlan.BATCH_ROWS)) > 0) {
@@ -1590,95 +1634,107 @@ final class PathCursor implements RowCursor {
 		}
 
 		NativeLmdbQuerySource.NativeAdjacency[] forward = new NativeLmdbQuerySource.NativeAdjacency[plan.steps.length];
-		String[] forwardReasons = new String[plan.steps.length];
-		boolean forwardComplete = true;
-		for (int i = 0; i < plan.steps.length; i++) {
-			int stepIndex = i;
-			PathStep step = plan.steps[i];
-			boolean forwardBySubject = step.nearPos(false) == TripleIndex.SUBJ_IDX;
-			forward[i] = probe().adjacency(step.predicate, forwardBySubject,
-					(used, reason, requestedOrder, subj, pred, obj, context) -> forwardReasons[stepIndex] = reason);
-			forwardComplete &= forward[i] != null;
-		}
-		if (!forwardComplete) {
+		NativeLmdbQuerySource.NativeAdjacency[] backwardViews = null;
+		try {
+			String[] forwardReasons = new String[plan.steps.length];
+			boolean forwardComplete = true;
 			for (int i = 0; i < plan.steps.length; i++) {
-				reportBidirectionalAdjacency(i, false, false,
-						bidirectionalUnavailableReason("FORWARD", i, forward[i], forwardReasons[i]));
-				reportBidirectionalAdjacency(i, true, false,
-						bidirectionalNotUsedReason("BACKWARD", i, true, "FORWARD_VIEW_SET_INCOMPLETE"));
+				int stepIndex = i;
+				PathStep step = plan.steps[i];
+				boolean forwardBySubject = step.nearPos(false) == TripleIndex.SUBJ_IDX;
+				forward[i] = probe().adjacency(step.predicate, forwardBySubject,
+						(used, reason, requestedOrder, subj, pred, obj, context) -> forwardReasons[stepIndex] = reason);
+				forwardComplete &= forward[i] != null;
 			}
-			return BIDIRECTIONAL_UNAVAILABLE;
-		}
+			if (!forwardComplete) {
+				for (int i = 0; i < plan.steps.length; i++) {
+					reportBidirectionalAdjacency(i, false, false,
+							bidirectionalUnavailableReason("FORWARD", i, forward[i], forwardReasons[i]));
+					reportBidirectionalAdjacency(i, true, false,
+							bidirectionalNotUsedReason("BACKWARD", i, true, "FORWARD_VIEW_SET_INCOMPLETE"));
+				}
+				return BIDIRECTIONAL_UNAVAILABLE;
+			}
 
-		int directHitStep = directForwardHitStep(forward);
-		if (directHitStep >= 0) {
-			bidirectionalDirectHits++;
-			for (int i = 0; i < plan.steps.length; i++) {
-				boolean checked = i <= directHitStep;
-				String forwardReason = i == directHitStep
-						? "PATH_BIDIRECTIONAL_DIRECT_FORWARD_HIT[step=" + i + ",direction=" + direction(i, false)
-								+ "]"
-						: checked
-								? "PATH_BIDIRECTIONAL_DIRECT_FORWARD_PROBE_MISS[step=" + i + ",direction="
-										+ direction(i, false) + "]"
-								: bidirectionalNotUsedReason("FORWARD", i, false,
-										"DIRECT_FORWARD_HIT_AT_STEP_" + directHitStep);
-				reportBidirectionalAdjacency(i, false, checked, forwardReason);
-				reportBidirectionalAdjacency(i, true, false,
-						bidirectionalNotUsedReason("BACKWARD", i, true,
-								"DIRECT_FORWARD_HIT_AT_STEP_" + directHitStep));
-			}
-			return BIDIRECTIONAL_FOUND;
-		}
-
-		NativeLmdbQuerySource.NativeAdjacency[] backwardViews = new NativeLmdbQuerySource.NativeAdjacency[plan.steps.length];
-		String[] backwardReasons = new String[plan.steps.length];
-		boolean backwardComplete = true;
-		for (int i = 0; i < plan.steps.length; i++) {
-			int stepIndex = i;
-			PathStep step = plan.steps[i];
-			boolean backwardBySubject = step.nearPos(true) == TripleIndex.SUBJ_IDX;
-			backwardViews[i] = probe().adjacency(step.predicate, backwardBySubject,
-					(used, reason, requestedOrder, subj, pred, obj, context) -> backwardReasons[stepIndex] = reason);
-			backwardComplete &= backwardViews[i] != null;
-		}
-		if (!backwardComplete) {
-			for (int i = 0; i < plan.steps.length; i++) {
-				reportBidirectionalAdjacency(i, false, false,
-						bidirectionalUnavailableReason("FORWARD", i, forward[i], forwardReasons[i]));
-				reportBidirectionalAdjacency(i, true, false,
-						bidirectionalUnavailableReason("BACKWARD", i, backwardViews[i], backwardReasons[i]));
-			}
-			return BIDIRECTIONAL_UNAVAILABLE;
-		}
-		for (int i = 0; i < plan.steps.length; i++) {
-			reportBidirectionalAdjacency(i, false, true,
-					"PATH_BIDIRECTIONAL_FORWARD_ADJACENCY[step=" + i + ",direction=" + direction(i, false) + "]");
-			reportBidirectionalAdjacency(i, true, true,
-					"PATH_BIDIRECTIONAL_BACKWARD_ADJACENCY[step=" + i + ",direction=" + direction(i, true) + "]");
-		}
-
-		bidirectionalSearches++;
-		LongHashSet forwardSeen = new LongHashSet(64);
-		LongHashSet backwardSeen = new LongHashSet(64);
-		forwardSeen.add(startId);
-		backwardSeen.add(targetId);
-		long[] forwardFrontier = { startId };
-		long[] backwardFrontier = { targetId };
-		while (forwardFrontier.length > 0 && backwardFrontier.length > 0) {
-			boolean expandForward = forwardFrontier.length <= backwardFrontier.length;
-			if (expandForward) {
-				forwardFrontier = expandBidirectionalLevel(forwardFrontier, forwardSeen, backwardSeen, forward,
-						false);
-			} else {
-				backwardFrontier = expandBidirectionalLevel(backwardFrontier, backwardSeen, forwardSeen,
-						backwardViews, true);
-			}
-			if (bidirectionalMeet) {
+			int directHitStep = directForwardHitStep(forward);
+			if (directHitStep >= 0) {
+				bidirectionalDirectHits++;
+				for (int i = 0; i < plan.steps.length; i++) {
+					boolean checked = i <= directHitStep;
+					String forwardReason = i == directHitStep
+							? "PATH_BIDIRECTIONAL_DIRECT_FORWARD_HIT[step=" + i + ",direction="
+									+ direction(i, false) + "]"
+							: checked
+									? "PATH_BIDIRECTIONAL_DIRECT_FORWARD_PROBE_MISS[step=" + i
+											+ ",direction=" + direction(i, false) + "]"
+									: bidirectionalNotUsedReason("FORWARD", i, false,
+											"DIRECT_FORWARD_HIT_AT_STEP_" + directHitStep);
+					reportBidirectionalAdjacency(i, false, checked, forwardReason);
+					reportBidirectionalAdjacency(i, true, false,
+							bidirectionalNotUsedReason("BACKWARD", i, true,
+									"DIRECT_FORWARD_HIT_AT_STEP_" + directHitStep));
+				}
 				return BIDIRECTIONAL_FOUND;
 			}
+
+			backwardViews = new NativeLmdbQuerySource.NativeAdjacency[plan.steps.length];
+			String[] backwardReasons = new String[plan.steps.length];
+			boolean backwardComplete = true;
+			for (int i = 0; i < plan.steps.length; i++) {
+				int stepIndex = i;
+				PathStep step = plan.steps[i];
+				boolean backwardBySubject = step.nearPos(true) == TripleIndex.SUBJ_IDX;
+				backwardViews[i] = probe().adjacency(step.predicate, backwardBySubject,
+						(used, reason, requestedOrder, subj, pred, obj,
+								context) -> backwardReasons[stepIndex] = reason);
+				backwardComplete &= backwardViews[i] != null;
+			}
+			if (!backwardComplete) {
+				for (int i = 0; i < plan.steps.length; i++) {
+					reportBidirectionalAdjacency(i, false, false,
+							bidirectionalUnavailableReason("FORWARD", i, forward[i], forwardReasons[i]));
+					reportBidirectionalAdjacency(i, true, false,
+							bidirectionalUnavailableReason("BACKWARD", i, backwardViews[i], backwardReasons[i]));
+				}
+				return BIDIRECTIONAL_UNAVAILABLE;
+			}
+			for (int i = 0; i < plan.steps.length; i++) {
+				reportBidirectionalAdjacency(i, false, true,
+						"PATH_BIDIRECTIONAL_FORWARD_ADJACENCY[step=" + i + ",direction=" + direction(i, false)
+								+ "]");
+				reportBidirectionalAdjacency(i, true, true,
+						"PATH_BIDIRECTIONAL_BACKWARD_ADJACENCY[step=" + i + ",direction=" + direction(i, true)
+								+ "]");
+			}
+
+			bidirectionalSearches++;
+			LongHashSet forwardSeen = new LongHashSet(64);
+			LongHashSet backwardSeen = new LongHashSet(64);
+			forwardSeen.add(startId);
+			backwardSeen.add(targetId);
+			long[] forwardFrontier = { startId };
+			long[] backwardFrontier = { targetId };
+			while (forwardFrontier.length > 0 && backwardFrontier.length > 0) {
+				boolean expandForward = forwardFrontier.length <= backwardFrontier.length;
+				if (expandForward) {
+					forwardFrontier = expandBidirectionalLevel(forwardFrontier, forwardSeen, backwardSeen, forward,
+							false);
+				} else {
+					backwardFrontier = expandBidirectionalLevel(backwardFrontier, backwardSeen, forwardSeen,
+							backwardViews, true);
+				}
+				if (bidirectionalMeet) {
+					return BIDIRECTIONAL_FOUND;
+				}
+			}
+			return BIDIRECTIONAL_NOT_FOUND;
+		} finally {
+			Throwable failure = PathPlan.closeAdjacencies(backwardViews, null);
+			failure = PathPlan.closeAdjacencies(forward, failure);
+			if (failure != null) {
+				rethrowCloseFailure(failure);
+			}
 		}
-		return BIDIRECTIONAL_NOT_FOUND;
 	}
 
 	private int directForwardHitStep(NativeLmdbQuerySource.NativeAdjacency[] forward) {
@@ -1726,41 +1782,47 @@ final class PathCursor implements RowCursor {
 		}
 		long[] next = new long[Math.max(16, current.length)];
 		int nextSize = 0;
+		int handleOffset = 3 * PathPlan.BATCH_ROWS;
 		for (int stepIndex = 0; stepIndex < plan.steps.length; stepIndex++) {
 			PathPlan.ADJACENCY_EXPANSIONS.addAndGet(current.length);
 			NativeLmdbQuerySource.NativeAdjacency view = views[stepIndex];
-			for (long near : current) {
-				long run = view.find(near);
-				if (run <= 0L) {
-					continue;
-				}
-				long runSize = view.size(run);
-				boolean withContexts = !plan.acceptsAllContexts();
-				for (long offset = 0L; offset < runSize;) {
-					int batch = (int) Math.min(PathPlan.BATCH_ROWS, runSize - offset);
-					int copied = PathPlan.copyRunBatch(view, run, offset, batch, buffer, withContexts);
-					if (copied <= 0) {
-						break;
+			boolean withContexts = !plan.acceptsAllContexts();
+			for (int keyBase = 0; keyBase < current.length;) {
+				int keys = Math.min(PathPlan.BATCH_ROWS, current.length - keyBase);
+				view.findBatch(current, keyBase, keys, buffer, handleOffset);
+				for (int keyIndex = 0; keyIndex < keys; keyIndex++) {
+					long run = buffer[handleOffset + keyIndex];
+					if (run <= 0L) {
+						continue;
 					}
-					for (int i = 0; i < copied; i++) {
-						if (withContexts && !plan.acceptsContext(buffer[PathPlan.BATCH_ROWS + i])) {
-							continue;
+					long runSize = view.size(run);
+					for (long offset = 0L; offset < runSize;) {
+						int batch = (int) Math.min(PathPlan.BATCH_ROWS, runSize - offset);
+						int copied = PathPlan.copyRunBatch(view, run, offset, batch, buffer, withContexts);
+						if (copied <= 0) {
+							break;
 						}
-						long far = buffer[i];
-						if (!ownSeen.add(far)) {
-							continue;
+						for (int i = 0; i < copied; i++) {
+							if (withContexts && !plan.acceptsContext(buffer[PathPlan.BATCH_ROWS + i])) {
+								continue;
+							}
+							long far = buffer[i];
+							if (!ownSeen.add(far)) {
+								continue;
+							}
+							if (oppositeSeen.contains(far)) {
+								bidirectionalMeet = true;
+								return EMPTY_FRONTIER;
+							}
+							if (nextSize == next.length) {
+								next = Arrays.copyOf(next, nextSize * 2);
+							}
+							next[nextSize++] = far;
 						}
-						if (oppositeSeen.contains(far)) {
-							bidirectionalMeet = true;
-							return EMPTY_FRONTIER;
-						}
-						if (nextSize == next.length) {
-							next = Arrays.copyOf(next, nextSize * 2);
-						}
-						next[nextSize++] = far;
+						offset += copied;
 					}
-					offset += copied;
 				}
+				keyBase += keys;
 			}
 		}
 		return nextSize == 0 ? EMPTY_FRONTIER : Arrays.copyOf(next, nextSize);
@@ -2215,29 +2277,37 @@ final class PathCursor implements RowCursor {
 	void expandCachedLevel(long[] currentLevel, NativeLmdbQuerySource.NativeAdjacency cached) {
 		PathPlan.ADJACENCY_EXPANSIONS.addAndGet(currentLevel.length);
 		boolean withContexts = !plan.acceptsAllContexts();
-		for (long near : currentLevel) {
-			long run = cached.find(near);
-			if (run <= 0L) {
-				continue;
-			}
-			long runSize = cached.size(run);
-			for (long offset = 0L; offset < runSize;) {
-				int batch = (int) Math.min(PathPlan.BATCH_ROWS, runSize - offset);
-				int copied = PathPlan.copyRunBatch(cached, run, offset, batch, buffer, withContexts);
-				if (copied <= 0) {
-					break;
+		// The fourth quarter of the existing quad scratch is otherwise unused by copyRunBatch. Reuse it for a bounded
+		// key-to-run batch so a whole frontier amortizes partition/page routing without another heap allocation.
+		int handleOffset = 3 * PathPlan.BATCH_ROWS;
+		for (int keyBase = 0; keyBase < currentLevel.length;) {
+			int keys = Math.min(PathPlan.BATCH_ROWS, currentLevel.length - keyBase);
+			cached.findBatch(currentLevel, keyBase, keys, buffer, handleOffset);
+			for (int keyIndex = 0; keyIndex < keys; keyIndex++) {
+				long run = buffer[handleOffset + keyIndex];
+				if (run <= 0L) {
+					continue;
 				}
-				for (int i = 0; i < copied; i++) {
-					if (withContexts && !plan.acceptsContext(buffer[PathPlan.BATCH_ROWS + i])) {
-						continue;
+				long runSize = cached.size(run);
+				for (long offset = 0L; offset < runSize;) {
+					int batch = (int) Math.min(PathPlan.BATCH_ROWS, runSize - offset);
+					int copied = PathPlan.copyRunBatch(cached, run, offset, batch, buffer, withContexts);
+					if (copied <= 0) {
+						break;
 					}
-					long far = buffer[i];
-					if (!discovered.contains(far)) {
-						pushNextLevel(far);
+					for (int i = 0; i < copied; i++) {
+						if (withContexts && !plan.acceptsContext(buffer[PathPlan.BATCH_ROWS + i])) {
+							continue;
+						}
+						long far = buffer[i];
+						if (!discovered.contains(far)) {
+							pushNextLevel(far);
+						}
 					}
+					offset += copied;
 				}
-				offset += copied;
 			}
+			keyBase += keys;
 		}
 	}
 
@@ -2384,6 +2454,7 @@ final class PathCursor implements RowCursor {
 		} catch (RuntimeException | Error problem) {
 			failure = addCloseFailure(failure, problem);
 		}
+		failure = PathPlan.closeAdjacencies(adjacencies, failure);
 		if (parallelExpansion != null) {
 			PathParallelExpansion expansion = parallelExpansion;
 			parallelExpansion = null;

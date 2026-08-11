@@ -105,6 +105,7 @@ final class LmdbNativeKernelExecution {
 		LmdbNativeKernelScanner scanner = null;
 		JaninoKernel kernel = null;
 		LmdbNativeKernelHooks hooks = null;
+		NativeLmdbQuerySource.NativeAdjacency[] views = null;
 		try {
 			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(arg, row, groupSlots,
 					aggregates, LmdbNativeKernelLowering.recognizeHaving(havingCondition, aggregates), explainTarget,
@@ -136,7 +137,7 @@ final class LmdbNativeKernelExecution {
 				return null;
 			}
 			probe = row.source.newProbe();
-			NativeLmdbQuerySource.NativeAdjacency[] views = lowered.bindings.requestAdjacencies(probe);
+			views = lowered.bindings.requestAdjacencies(probe);
 			recordAdjacencyBindings(row, lowered.bindings, views, "irAggregate");
 			LmdbNativeKernelBindings.VariablePredicateViews variableViews = LmdbNativeKernelBindings
 					.requestVariablePredicateViews(lowered.bindings, probe);
@@ -228,21 +229,37 @@ final class LmdbNativeKernelExecution {
 			}
 			return null;
 		} finally {
+			Throwable failure = null;
 			try {
 				if (hooks != null) {
 					hooks.closeFilters();
 				}
-			} finally {
-				if (scanner != null) {
-					scanner.close();
-				}
-				if (probe != null) {
-					probe.close();
-				}
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
+			}
+			try {
 				if (kernel != null) {
 					kernel.close();
 				}
+			} catch (RuntimeException | Error problem) {
+				failure = addFailure(failure, problem);
 			}
+			try {
+				if (scanner != null) {
+					scanner.close();
+				}
+			} catch (RuntimeException | Error problem) {
+				failure = addFailure(failure, problem);
+			}
+			failure = LmdbNativeKernelBindings.closeAdjacencies(views, failure);
+			try {
+				if (probe != null) {
+					probe.close();
+				}
+			} catch (RuntimeException | Error problem) {
+				failure = addFailure(failure, problem);
+			}
+			rethrowFailure(failure);
 		}
 	}
 
@@ -399,7 +416,13 @@ final class LmdbNativeKernelExecution {
 			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL, "disabled");
 			return null;
 		}
+
 		NativeLmdbQuerySource.NativeProbe probe = null;
+		JaninoKernel kernel = null;
+		LmdbNativeKernelScanner scanner = null;
+		LmdbNativeKernelHooks hooks = null;
+		NativeLmdbQuerySource.NativeAdjacency[] views = null;
+		org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation = null;
 		try {
 			LmdbNativeKernelLowering.Lowered lowered = ordered != null
 					? LmdbNativeKernelLowering.lowerOrderedRows(arg, row, preferScans, ordered.orderSlots,
@@ -407,7 +430,8 @@ final class LmdbNativeKernelExecution {
 					: distinctSlots != null
 							? LmdbNativeKernelLowering.lowerDistinctRows(arg, row, originalExpr, preferScans,
 									distinctSlots, scanPredicates)
-							: LmdbNativeKernelLowering.lowerRows(arg, row, originalExpr, preferScans, scanPredicates);
+							: LmdbNativeKernelLowering.lowerRows(arg, row, originalExpr, preferScans,
+									scanPredicates);
 			if (lowered == null) {
 				if (ordered != null) {
 					// Quiet: the ordinary ladder still sorts outside the kernel; see tryOpenOrderedRows.
@@ -421,14 +445,14 @@ final class LmdbNativeKernelExecution {
 				return null;
 			}
 			PLANNED.incrementAndGet();
-			// Ask for the compiled kernel BEFORE touching the store: while the shape is below threshold or its
-			// compile is pending, this open must not disturb probe accounting or CSR admission at all.
+
+			// Ask for the compiled kernel BEFORE touching the store: while the shape is below threshold or its compile
+			// is pending, this open must not disturb probe accounting or CSR admission at all.
 			String shapeKey = lowered.kernel.shapeKey();
 			long opens = SHAPE_OPENS.computeIfAbsent(shapeKey, key -> new AtomicLong()).incrementAndGet();
 			long observedRows = opens * ROWS_PER_OPEN_ESTIMATE;
-			JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(CACHE_OWNER, shapeKey,
-					lowered.kernel.className(), () -> LmdbNativeKernelEmitter.emit(lowered.kernel),
-					observedRows);
+			kernel = LmdbNativeJaninoCodegen.kernel(CACHE_OWNER, shapeKey, lowered.kernel.className(),
+					() -> LmdbNativeKernelEmitter.emit(lowered.kernel), observedRows);
 			if (kernel == null) {
 				if (ordered != null) {
 					return null;
@@ -441,6 +465,7 @@ final class LmdbNativeKernelExecution {
 						"below-threshold-or-pending");
 				return null;
 			}
+
 			probe = row.source.newProbe();
 			LmdbNativeKernelBindings.VariablePredicateViews variableViews = LmdbNativeKernelBindings
 					.requestVariablePredicateViews(lowered.bindings, probe);
@@ -448,33 +473,32 @@ final class LmdbNativeKernelExecution {
 				DECLINED.incrementAndGet();
 				return null;
 			}
-			NativeLmdbQuerySource.NativeAdjacency[] partial = lowered.bindings.requestAdjacenciesPartial(probe);
+
+			views = lowered.bindings.requestAdjacenciesPartial(probe);
 			int unavailable = 0;
-			for (NativeLmdbQuerySource.NativeAdjacency view : partial) {
+			for (NativeLmdbQuerySource.NativeAdjacency view : views) {
 				if (view == null) {
 					unavailable++;
 				}
 			}
-			NativeLmdbQuerySource.NativeAdjacency[] views = unavailable == 0 ? partial : null;
-			recordAdjacencyBindings(row, lowered.bindings, views, "irKernel");
-			if (views == null) {
-				probe.close();
-				probe = null;
-				kernel.close();
-				// Per-pattern mixed binding (M10): when only SOME views are unavailable, re-lower with exactly
-				// their predicates preferring scans, keeping every available view adjacency-served.
-				if (scanPredicates == null && !preferScans && unavailable < partial.length
+			NativeLmdbQuerySource.NativeAdjacency[] completeViews = unavailable == 0 ? views : null;
+			recordAdjacencyBindings(row, lowered.bindings, completeViews, "irKernel");
+			if (completeViews == null) {
+				// Per-pattern mixed binding (M10): when only SOME views are unavailable, re-lower with exactly their
+				// predicates preferring scans, keeping every available view adjacency-served. This open's partial views
+				// are closed by the finally block before the recursive attempt starts returning rows.
+				if (scanPredicates == null && !preferScans && unavailable < views.length
 						&& LmdbNativeKernelLowering.mixedBindingEnabled()
 						&& LmdbNativeKernelLowering.scanSourcesEnabled()) {
 					java.util.Set<Long> failed = new java.util.HashSet<>();
-					for (int i = 0; i < partial.length; i++) {
-						if (partial[i] == null) {
+					for (int i = 0; i < views.length; i++) {
+						if (views[i] == null) {
 							failed.add(lowered.bindings.adjacencies[i].predicate);
 						}
 					}
 					return tryOpenRows(arg, row, originalExpr, false, distinctSlots, ordered, failed);
 				}
-				// See the aggregate rung: retry once without views before giving the plan back to the ladder.
+				// Retry once without views before giving the plan back to the ordinary ladder.
 				if (!preferScans && LmdbNativeKernelLowering.scanSourcesEnabled()) {
 					return tryOpenRows(arg, row, originalExpr, true, distinctSlots, ordered, null);
 				}
@@ -489,30 +513,24 @@ final class LmdbNativeKernelExecution {
 				DECLINED.incrementAndGet();
 				return null;
 			}
+
 			long[][] domains = lowered.bindings.materializeDomains(probe, row, "irKernel");
 			if (!alignedInputsOrdered(lowered, views, domains)) {
 				// The aligned dedup tier is compiled against grouped emission; a bind-time input that cannot promise
-				// its order (an unordered view or domain) must not run that shape. Quiet toward the decline census —
-				// the ordinary ladder still serves the query.
-				probe.close();
-				probe = null;
-				kernel.close();
+				// its order must not run that shape. The ordinary ladder remains exact.
 				if (row.runtimePlan != null) {
 					row.runtimePlan.janinoDeclined("BIND_INPUT_UNAVAILABLE[route=irKernel,resource=orderedInput]");
 				}
 				DECLINED.incrementAndGet();
 				return null;
 			}
-			// The parallel rung may request a worker kernel VARIANT (offset folded into the limit); every requested
-			// shape compiles through the same cache under its own shape key, so the sequential shape stays untouched.
+
+			// Workers create their own probes and adjacency views. The query-thread views are used only to choose the
+			// partitioning root and are closed by this method if the parallel cursor is accepted.
 			RowCursor parallel = LmdbNativeParallelKernelRows.tryOpen(lowered, views, domains, arg, row, originalExpr,
 					variant -> LmdbNativeJaninoCodegen.kernel(CACHE_OWNER, variant.shapeKey(), variant.className(),
 							() -> LmdbNativeKernelEmitter.emit(variant), observedRows));
 			if (parallel != null) {
-				// the workers own their probes and kernel instances; the sequential pair is surplus
-				kernel.close();
-				probe.close();
-				probe = null;
 				OPENED.incrementAndGet();
 				if (row.runtimePlan != null) {
 					SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
@@ -525,40 +543,27 @@ final class LmdbNativeKernelExecution {
 				}
 				return parallel;
 			}
-			LmdbNativeKernelHooks hooks = lowered.bindings.needsHooks()
-					? new LmdbNativeKernelHooks(row, lowered.bindings)
-					: null;
+
+			hooks = lowered.bindings.needsHooks() ? new LmdbNativeKernelHooks(row, lowered.bindings) : null;
 			if (hooks != null) {
 				LmdbNativeKernelIr.OutputMods mods = lowered.kernel.terminal.mods;
 				if (mods.orderKeys != null && mods.valueOrder) {
-					// Align the value comparator with the consumer's strict/extended evaluation mode, exactly like
-					// the interpreted sort's AggContext comparator (M7 OutputMods).
 					hooks.orderComparatorStrict(lowered.strictOrderCompare);
 				}
 			}
-			// A scan-bearing kernel opens LMDB cursors of its own; the row cursor owns that scanner and closes it.
-			LmdbNativeKernelScanner scanner = lowered.kernel.requirements.scans > 0
+			scanner = lowered.kernel.requirements.scans > 0
 					? new LmdbNativeKernelScanner(row, lowered.bindings.scanOrders)
 					: null;
-			// In-kernel hash builds charge their estimated footprint to the query-shared memory ledger up front
-			// (M8); a refusal declines this open quietly and the ladder (including the interpreted hash join with
-			// its own admission) serves instead.
-			org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation = null;
+
 			long hashBuildBytes = hashBuildBytesEstimate(lowered.kernel);
 			if (hashBuildBytes > 0L) {
 				hashReservation = row.memoryScope
 						.ledger(LmdbNativeHashJoin.queryMemory())
 						.reserve(hashBuildBytes, null);
 				if (hashReservation == null) {
-					if (scanner != null) {
-						scanner.close();
-					}
-					probe.close();
-					probe = null;
-					kernel.close();
 					if (row.runtimePlan != null) {
-						row.runtimePlan.janinoDeclined("HASH_BUILD_ADMISSION[route=irKernel,bytes="
-								+ hashBuildBytes + "]");
+						row.runtimePlan.janinoDeclined(
+								"HASH_BUILD_ADMISSION[route=irKernel,bytes=" + hashBuildBytes + "]");
 					}
 					DECLINED.incrementAndGet();
 					return null;
@@ -575,8 +580,17 @@ final class LmdbNativeKernelExecution {
 						activationRoute(ordered == null ? "irKernel" : "irKernelTopK", lowered), actualOrder);
 				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, actualOrder);
 			}
-			return new KernelRowCursor(kernel, probe, scanner, hooks, row, lowered.bindings.columnEngineSlots,
-					lowered.bindings.residualFilters, hashReservation);
+
+			KernelRowCursor cursor = new KernelRowCursor(kernel, probe, scanner, hooks, views, row,
+					lowered.bindings.columnEngineSlots, lowered.bindings.residualFilters, hashReservation);
+			// Ownership has moved to the cursor. Null every local so the finally block cannot double-close it.
+			kernel = null;
+			probe = null;
+			scanner = null;
+			hooks = null;
+			views = null;
+			hashReservation = null;
+			return cursor;
 		} catch (RuntimeException problem) {
 			LmdbNativeJaninoCodegen.rethrowValidationFailure(problem);
 			if (probe != null) {
@@ -588,6 +602,64 @@ final class LmdbNativeKernelExecution {
 						+ problem.getClass().getName() + ",message=" + String.valueOf(problem.getMessage()) + "]");
 			}
 			return null;
+		} finally {
+			Throwable failure = null;
+			try {
+				if (hooks != null) {
+					hooks.closeFilters();
+				}
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
+			}
+			try {
+				if (kernel != null) {
+					kernel.close();
+				}
+			} catch (RuntimeException | Error problem) {
+				failure = addFailure(failure, problem);
+			}
+			try {
+				if (scanner != null) {
+					scanner.close();
+				}
+			} catch (RuntimeException | Error problem) {
+				failure = addFailure(failure, problem);
+			}
+			failure = LmdbNativeKernelBindings.closeAdjacencies(views, failure);
+			try {
+				if (probe != null) {
+					probe.close();
+				}
+			} catch (RuntimeException | Error problem) {
+				failure = addFailure(failure, problem);
+			}
+			try {
+				if (hashReservation != null) {
+					hashReservation.close();
+				}
+			} catch (RuntimeException | Error problem) {
+				failure = addFailure(failure, problem);
+			}
+			rethrowFailure(failure);
+		}
+	}
+
+	private static Throwable addFailure(Throwable failure, Throwable problem) {
+		if (failure == null) {
+			return problem;
+		}
+		if (failure != problem) {
+			failure.addSuppressed(problem);
+		}
+		return failure;
+	}
+
+	private static void rethrowFailure(Throwable failure) {
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (failure instanceof Error error) {
+			throw error;
 		}
 	}
 
@@ -665,6 +737,7 @@ final class LmdbNativeKernelExecution {
 		private final LmdbNativeKernelScanner scanner;
 		private final RowState row;
 		private final LmdbNativeKernelHooks hooks;
+		private final NativeLmdbQuerySource.NativeAdjacency[] views;
 		private final int[] columnSlots;
 		private final List<MaskedFilter> residualFilters;
 		private final long[] buffer;
@@ -675,19 +748,22 @@ final class LmdbNativeKernelExecution {
 		private final org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation;
 
 		KernelRowCursor(JaninoKernel kernel, NativeLmdbQuerySource.NativeProbe probe,
-				LmdbNativeKernelScanner scanner, LmdbNativeKernelHooks hooks, RowState row, int[] columnSlots,
+				LmdbNativeKernelScanner scanner, LmdbNativeKernelHooks hooks,
+				NativeLmdbQuerySource.NativeAdjacency[] views, RowState row, int[] columnSlots,
 				List<MaskedFilter> residualFilters) {
-			this(kernel, probe, scanner, hooks, row, columnSlots, residualFilters, null);
+			this(kernel, probe, scanner, hooks, views, row, columnSlots, residualFilters, null);
 		}
 
 		KernelRowCursor(JaninoKernel kernel, NativeLmdbQuerySource.NativeProbe probe,
-				LmdbNativeKernelScanner scanner, LmdbNativeKernelHooks hooks, RowState row, int[] columnSlots,
+				LmdbNativeKernelScanner scanner, LmdbNativeKernelHooks hooks,
+				NativeLmdbQuerySource.NativeAdjacency[] views, RowState row, int[] columnSlots,
 				List<MaskedFilter> residualFilters,
 				org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation) {
 			this.kernel = kernel;
 			this.probe = probe;
 			this.scanner = scanner;
 			this.hooks = hooks;
+			this.views = views;
 			this.row = row;
 			this.columnSlots = columnSlots;
 			this.residualFilters = residualFilters;
@@ -749,36 +825,47 @@ final class LmdbNativeKernelExecution {
 				row.rollback(activeMark);
 				activeMark = -1;
 			}
-			try {
-				// residual filters and hook-invoked filters run without an owning FilterCursor here, so this
-				// cursor owns their release (lazily acquired semijoin/membership probes hold native read stamps)
-				Throwable failure = null;
-				for (MaskedFilter residual : residualFilters) {
-					try {
-						residual.filter.close();
-					} catch (RuntimeException | Error problem) {
-						failure = failure == null ? problem : failure;
-					}
+			Throwable failure = null;
+			for (MaskedFilter residual : residualFilters) {
+				try {
+					residual.filter.close();
+				} catch (RuntimeException | Error problem) {
+					failure = addFailure(failure, problem);
 				}
+			}
+			try {
 				if (hooks != null) {
 					hooks.closeFilters();
 				}
-				if (failure instanceof RuntimeException runtimeException) {
-					throw runtimeException;
-				}
-				if (failure != null) {
-					throw (Error) failure;
-				}
-			} finally {
+			} catch (RuntimeException | Error problem) {
+				failure = addFailure(failure, problem);
+			}
+			try {
 				kernel.close();
+			} catch (RuntimeException | Error problem) {
+				failure = addFailure(failure, problem);
+			}
+			try {
 				if (scanner != null) {
 					scanner.close();
 				}
+			} catch (RuntimeException | Error problem) {
+				failure = addFailure(failure, problem);
+			}
+			failure = LmdbNativeKernelBindings.closeAdjacencies(views, failure);
+			try {
 				probe.close();
+			} catch (RuntimeException | Error problem) {
+				failure = addFailure(failure, problem);
+			}
+			try {
 				if (hashReservation != null) {
 					hashReservation.close();
 				}
+			} catch (RuntimeException | Error problem) {
+				failure = addFailure(failure, problem);
 			}
+			rethrowFailure(failure);
 		}
 	}
 }

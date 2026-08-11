@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -127,6 +128,104 @@ class ImmutablePagedQuadCsfIndexTest {
 				assertThat(keys.contains(rows.get(i).row)).isTrue();
 			}
 			assertThat(keys.contains(id(1, 2))).isFalse();
+		}
+	}
+
+	@Test
+	void keyCursorPreservesDirectReferenceAndRunAcrossOrdinalWindows() {
+		List<Row> rows = new ArrayList<>();
+		for (int i = 0; i < 2_500; i++) {
+			rows.add(new Row(id(1, i * 5L + 1),
+					new long[] { id(1, 100_000L + i * 3L), id(1, 100_001L + i * 3L) },
+					new long[] { 0, id(1, 9) }));
+		}
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows)) {
+			long from = 777;
+			long to = 1_333;
+			ImmutablePagedQuadCsfIndex.KeyCursor cursor = index.keyDomain(0, 0).cursor(from, to);
+			for (long ordinal = from; ordinal < to; ordinal++) {
+				assertThat(cursor.advance()).isTrue();
+				Row expected = rows.get(Math.toIntExact(ordinal));
+				assertThat(cursor.key()).isEqualTo(expected.row);
+				assertThat(cursor.localReference()).isEqualTo(index.findLocalReference(0, 0, expected.row));
+				assertThat(cursor.edgeCount()).isEqualTo(expected.neighbours.length);
+				long[] neighbours = new long[expected.neighbours.length];
+				long[] contexts = new long[expected.contexts.length];
+				assertThat(cursor.copyPairs(0, neighbours.length, neighbours, 0, contexts, 0))
+						.isEqualTo(neighbours.length);
+				assertThat(neighbours).containsExactly(expected.neighbours);
+				assertThat(contexts).containsExactly(expected.contexts);
+			}
+			assertThat(cursor.advance()).isFalse();
+		}
+	}
+
+	@Test
+	void partitionLookupBatchMatchesScalarForSortedSparseDuplicateAndShuffledKeys() {
+		List<Row> rows = irregularRows(2_500);
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows);
+				ImmutablePagedQuadCsfIndex.PartitionLookup lookup = index.partitionLookup(0, 0)) {
+			long[] sorted = new long[384];
+			for (int i = 0; i < sorted.length; i++) {
+				int row = 400 + i / 3;
+				sorted[i] = i % 3 == 2 ? rows.get(row).row + 2 : rows.get(row).row;
+			}
+			Arrays.sort(sorted);
+			assertBatchEqualsScalar(index, lookup, sorted);
+
+			long[] sparse = new long[64];
+			for (int i = 0; i < sparse.length; i++) {
+				sparse[i] = rows.get(i * 37).row;
+			}
+			assertBatchEqualsScalar(index, lookup, sparse);
+
+			long[] shuffled = sorted.clone();
+			Random random = new Random(0x5eed);
+			for (int i = shuffled.length - 1; i > 0; i--) {
+				int other = random.nextInt(i + 1);
+				long swap = shuffled[i];
+				shuffled[i] = shuffled[other];
+				shuffled[other] = swap;
+			}
+			assertBatchEqualsScalar(index, lookup, shuffled);
+		}
+	}
+
+	@Test
+	void affinePromotionVerifiesEveryKeyBeforeActivating() {
+		List<Row> rows = new ArrayList<>();
+		for (int i = 0; i < 700; i++) {
+			long payload = 100L + i * 4L + (i == 351 ? 1 : 0);
+			rows.add(new Row(id(1, payload), new long[] { id(1, 10_000L + i) }, new long[] { 0 }));
+		}
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows);
+				ImmutablePagedQuadCsfIndex.PartitionLookup lookup = index.partitionLookup(0, 0)) {
+			for (int i = 0; i < rows.size() + 64; i++) {
+				long key = rows.get(i % rows.size()).row;
+				assertThat(lookup.find(key)).isNotZero();
+			}
+			assertThat(lookup.affine()).isFalse();
+			for (Row row : rows) {
+				assertThat(lookup.find(row.row)).isEqualTo(index.findLocalReference(0, 0, row.row));
+			}
+		}
+	}
+
+	@Test
+	void partitionLookupReleasesAdaptiveClaimOnClose() {
+		List<Row> rows = irregularRows(2_500);
+		long before = CsfAdaptiveMemory.claimedBytes();
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows)) {
+			ImmutablePagedQuadCsfIndex.PartitionLookup lookup = index.partitionLookup(0, 0);
+			for (int i = 0; i < rows.size() + 64; i++) {
+				lookup.find(rows.get(i % rows.size()).row);
+			}
+			boolean promoted = lookup.exactDictionaryReady();
+			if (promoted) {
+				assertThat(CsfAdaptiveMemory.claimedBytes()).isGreaterThan(before);
+			}
+			lookup.close();
+			assertThat(CsfAdaptiveMemory.claimedBytes()).isEqualTo(before);
 		}
 	}
 
@@ -430,6 +529,31 @@ class ImmutablePagedQuadCsfIndexTest {
 			feed(materializing, predicate, plane, rows);
 			return materializing.finishIndex();
 		}
+	}
+
+	private static List<Row> irregularRows(int count) {
+		List<Row> rows = new ArrayList<>(count);
+		long payload = 100;
+		for (int i = 0; i < count; i++) {
+			payload += 2L + (i * 17L % 11L);
+			rows.add(new Row(id(1, payload), new long[] { id(1, 1_000_000L + i) }, new long[] { 0 }));
+		}
+		return rows;
+	}
+
+	private static void assertBatchEqualsScalar(ImmutablePagedQuadCsfIndex index,
+			ImmutablePagedQuadCsfIndex.PartitionLookup lookup, long[] keys) {
+		long[] actual = new long[keys.length];
+		int found = lookup.findBatch(keys, 0, keys.length, actual, 0);
+		int expectedFound = 0;
+		for (int i = 0; i < keys.length; i++) {
+			long expected = index.findLocalReference(0, 0, keys[i]);
+			assertThat(actual[i]).isEqualTo(expected);
+			if (expected != 0) {
+				expectedFound++;
+			}
+		}
+		assertThat(found).isEqualTo(expectedFound);
 	}
 
 	private static void feed(ImmutablePagedQuadCsfIndex.Builder builder, long predicate, int plane, List<Row> rows) {

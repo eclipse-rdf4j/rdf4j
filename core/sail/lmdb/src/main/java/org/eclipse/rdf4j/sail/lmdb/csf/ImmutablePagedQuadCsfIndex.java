@@ -356,8 +356,11 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 
 	/** Allocation-free lookup using a caller-owned page decoder. */
 	public long findLocalReference(long predicateOrdinal, int plane, long rawRowId, LookupCursor cursor) {
-		Objects.requireNonNull(cursor, "cursor");
-		int partition = partitionIndex(predicateOrdinal, plane);
+		return findLocalReferenceByPartition(partitionIndex(predicateOrdinal, plane), rawRowId,
+				Objects.requireNonNull(cursor, "cursor"));
+	}
+
+	private long findLocalReferenceByPartition(int partition, long rawRowId, LookupCursor cursor) {
 		int count = partitionShardCounts[partition];
 		if (count == 0) {
 			return 0;
@@ -386,6 +389,68 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			return 0;
 		}
 		return packLocalReference(cursor.globalPage, localRow);
+	}
+
+	private long localReferenceAtOrdinal(int partition, long ordinal, OrdinalCursor cursor) {
+		long rows = partitionRowCounts[partition];
+		if (ordinal < 0 || ordinal >= rows) {
+			throw new IllegalArgumentException("row ordinal out of range: " + ordinal + " of " + rows);
+		}
+		if (cursor.globalPage >= 0 && ordinal >= cursor.firstOrdinal && ordinal < cursor.endOrdinal) {
+			return packLocalReference(cursor.globalPage, Math.toIntExact(ordinal - cursor.firstOrdinal));
+		}
+
+		int start = partitionShardStarts[partition];
+		int end = start + partitionShardCounts[partition];
+		int low = start;
+		int high = end - 1;
+		int shardIndex = -1;
+		while (low <= high) {
+			int mid = low + high >>> 1;
+			if (shardFirstRowOrdinals[mid] <= ordinal) {
+				shardIndex = mid;
+				low = mid + 1;
+			} else {
+				high = mid - 1;
+			}
+		}
+		while (shardIndex >= start && shards[shardIndex].rowCount() == 0) {
+			shardIndex--;
+		}
+		if (shardIndex < start) {
+			throw new IllegalStateException("row ordinal maps only to continuation shards");
+		}
+		CsfShard shard = shards[shardIndex];
+		long localOrdinal = ordinal - shardFirstRowOrdinals[shardIndex];
+		low = 0;
+		high = shard.pageCount() - 1;
+		int page = -1;
+		while (low <= high) {
+			int mid = low + high >>> 1;
+			if (shard.pageFirstRowOrdinal(mid) <= localOrdinal) {
+				page = mid;
+				low = mid + 1;
+			} else {
+				high = mid - 1;
+			}
+		}
+		while (page >= 0 && shard.pageUniqueRows(page) == 0) {
+			page--;
+		}
+		if (page < 0) {
+			throw new IllegalStateException("row ordinal maps only to continuation pages");
+		}
+		long pageFirst = shardFirstRowOrdinals[shardIndex] + shard.pageFirstRowOrdinal(page);
+		int uniqueRows = shard.pageUniqueRows(page);
+		int localRow = Math.toIntExact(ordinal - pageFirst);
+		if (localRow < 0 || localRow >= uniqueRows) {
+			throw new IllegalStateException("row ordinal is outside its directory page");
+		}
+		int globalPage = Math.addExact(shardFirstPageIds[shardIndex], page);
+		cursor.firstOrdinal = pageFirst;
+		cursor.endOrdinal = pageFirst + uniqueRows;
+		cursor.globalPage = globalPage;
+		return packLocalReference(globalPage, localRow);
 	}
 
 	/** Benchmark-only equivalent of the production cursor path, with an exact decoded-page sidecar. */
@@ -453,6 +518,16 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 
 	public KeyDomain keyDomain(long predicateOrdinal, int plane) {
 		return new KeyDomain(this, partitionIndex(predicateOrdinal, plane));
+	}
+
+	/**
+	 * Creates a query/cursor-owned lookup bound to one immutable partition. Cold probes retain the exact ordinary
+	 * lookup path. Regular affine key domains are resolved arithmetically without auxiliary memory, and genuinely hot
+	 * irregular domains may promote to an exact key-to-run dictionary admitted by {@link CsfAdaptiveMemory}. No
+	 * accelerator is retained by the index itself.
+	 */
+	public PartitionLookup partitionLookup(long predicateOrdinal, int plane) {
+		return new PartitionLookup(this, partitionIndex(predicateOrdinal, plane));
 	}
 
 	/**
@@ -1634,19 +1709,535 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	/**
+	 * Query-owned exact lookup for one immutable {@code (predicate, plane)} partition. The cold path has no optional
+	 * arrays. Affine key domains use arithmetic rank plus ordinal-to-page routing; irregular domains retain the normal
+	 * packed lookup until their measured use justifies a bounded exact hash. The exact dictionary is never attached to
+	 * the immutable index and is shed on memory pressure or {@link #close()}.
+	 */
+	public static final class PartitionLookup implements AutoCloseable {
+
+		private static final int MIN_PROMOTION_PROBES = 512;
+		private static final int MAX_PROMOTION_PROBES = 65536;
+		private static final int PRESSURE_CHECK_INTERVAL = 256;
+
+		private final ImmutablePagedQuadCsfIndex owner;
+		private final int partition;
+		private final KeyDomain keyDomain;
+		private final long rowCount;
+		private final int promotionAt;
+		private final boolean singlePage;
+		private final int singlePageId;
+		private final long singlePageAddress;
+
+		private LookupCursor packedCursor;
+		private OrdinalCursor ordinalCursor;
+		private boolean affine;
+		private long affineFirst;
+		private long affineStride;
+
+		private long probes;
+		private long lastKey;
+		private long lastReference;
+		private long claimedBytes;
+		private long[] exactKeys;
+		private long[] exactReferences;
+		private short[] exactShortSlots;
+		private int[] exactIntSlots;
+		private int exactMask;
+		private int pressureCountdown = PRESSURE_CHECK_INTERVAL;
+		private boolean exactReady;
+		private boolean promotionRefused;
+		private boolean closed;
+		private boolean haveLast;
+
+		private PartitionLookup(ImmutablePagedQuadCsfIndex owner, int partition) {
+			this.owner = owner;
+			this.partition = partition;
+			this.keyDomain = new KeyDomain(owner, partition);
+			this.rowCount = owner.partitionRowCounts[partition];
+			this.promotionAt = promotionThreshold(rowCount);
+			int shardStart = owner.partitionShardStarts[partition];
+			if (owner.partitionShardCounts[partition] == 1 && owner.shards[shardStart].pageCount() == 1
+					&& owner.shards[shardStart].pageUniqueRows(0) > 0) {
+				this.singlePage = true;
+				this.singlePageId = owner.shardFirstPageIds[shardStart];
+				this.singlePageAddress = owner.shards[shardStart].validatedPageAddress(0);
+			} else {
+				this.singlePage = false;
+				this.singlePageId = -1;
+				this.singlePageAddress = 0;
+			}
+		}
+
+		/** Returns a positive local u40 page/row coordinate, or zero when the key is absent. */
+		public long find(long key) {
+			ensureOpen();
+			if (exactReady) {
+				// Once a partition has paid for an exact dictionary, the hash probe is cheaper than maintaining a
+				// mutable last-key memo on every random lookup. Keep that memo exclusively on the cold hierarchy.
+				checkPressure();
+				return exactReady ? findExact(key) : findColdAndObserve(key);
+			}
+			if (haveLast && key == lastKey) {
+				return lastReference;
+			}
+			long reference = findColdAndObserve(key);
+			lastKey = key;
+			lastReference = reference;
+			haveLast = true;
+			return reference;
+		}
+
+		private long findColdAndObserve(long key) {
+			long reference = findCold(key);
+			observe(1);
+			return reference;
+		}
+
+		/**
+		 * Resolves a bounded batch to positive local references, writing zero for misses. A hot partition builds at
+		 * most one exact dictionary and then resolves the complete batch with independent cache-friendly hash probes.
+		 */
+		public int findBatch(long[] keys, int keyOffset, int count, long[] references, int referenceOffset) {
+			Objects.requireNonNull(keys, "keys");
+			Objects.requireNonNull(references, "references");
+			if (keyOffset < 0 || count < 0 || keyOffset > keys.length - count || referenceOffset < 0
+					|| referenceOffset > references.length - count) {
+				throw new IllegalArgumentException("invalid partition lookup batch range");
+			}
+			ensureOpen();
+			checkPressure();
+			int found;
+			if (exactReady) {
+				found = findExactBatch(keys, keyOffset, count, references, referenceOffset);
+			} else if (!affine && count >= 32 && unsignedNondecreasing(keys, keyOffset, count)) {
+				// A sorted frontier can merge with the physical key/run stream without paying one point probe per
+				// key. Do not let one large, one-shot batch trigger an O(partition) exact dictionary before this
+				// memory-neutral path has had its chance. Only a sparse batch that falls back to scalar probes counts
+				// toward hash promotion.
+				found = findSortedBatch(keys, keyOffset, count, references, referenceOffset);
+				if (found < 0) {
+					found = findColdBatch(keys, keyOffset, count, references, referenceOffset);
+					observe(count);
+				}
+			} else {
+				found = findColdBatch(keys, keyOffset, count, references, referenceOffset);
+				observe(count);
+			}
+			if (count > 0) {
+				lastKey = keys[keyOffset + count - 1];
+				lastReference = references[referenceOffset + count - 1];
+				haveLast = true;
+			}
+			return found;
+		}
+
+		private int findExactBatch(long[] keys, int keyOffset, int count, long[] references, int referenceOffset) {
+			int found = 0;
+			for (int i = 0; i < count; i++) {
+				long reference = findExact(keys[keyOffset + i]);
+				references[referenceOffset + i] = reference;
+				if (reference != 0) {
+					found++;
+				}
+			}
+			return found;
+		}
+
+		private int findColdBatch(long[] keys, int keyOffset, int count, long[] references, int referenceOffset) {
+			int found = 0;
+			for (int i = 0; i < count; i++) {
+				long reference = findCold(keys[keyOffset + i]);
+				references[referenceOffset + i] = reference;
+				if (reference != 0) {
+					found++;
+				}
+			}
+			return found;
+		}
+
+		/**
+		 * Merge-probes a locally sorted frontier against a bounded physical key/run cursor. The two ordinal searches
+		 * are paid once per batch. We use this path only when the covered key span is small enough that sequential
+		 * decoding is provably bounded relative to the number of probes; sparse sorted batches retain scalar page
+		 * routing.
+		 *
+		 * @return found count, or {@code -1} when the key span is too wide for a merge probe
+		 */
+		private int findSortedBatch(long[] keys, int keyOffset, int count, long[] references, int referenceOffset) {
+			Arrays.fill(references, referenceOffset, referenceOffset + count, 0L);
+			if (count == 0 || rowCount == 0) {
+				return 0;
+			}
+			long firstKey = keys[keyOffset];
+			long lastBatchKey = keys[keyOffset + count - 1];
+			long from = keyDomain.lowerBoundOrdinal(firstKey);
+			long end = keyDomain.lowerBoundOrdinal(lastBatchKey);
+			if (end < rowCount && keyDomain.keyAt(end) == lastBatchKey) {
+				end++;
+			}
+			long span = end - from;
+			long maximumSpan = Math.max(512L, (long) count << 3);
+			if (span < 0 || span > maximumSpan) {
+				return -1;
+			}
+			if (span == 0) {
+				return 0;
+			}
+			KeyCursor cursor = new KeyCursor(owner, partition, false, from, end);
+			boolean ready = cursor.advance();
+			int query = 0;
+			int found = 0;
+			while (query < count && ready) {
+				long target = keys[keyOffset + query];
+				long candidate = cursor.key();
+				int comparison = Long.compareUnsigned(candidate, target);
+				if (comparison < 0) {
+					ready = cursor.advance();
+					continue;
+				}
+				if (comparison > 0) {
+					query++;
+					continue;
+				}
+				long reference = cursor.localReference();
+				do {
+					references[referenceOffset + query] = reference;
+					found++;
+					query++;
+				} while (query < count && keys[keyOffset + query] == target);
+				ready = cursor.advance();
+			}
+			return found;
+		}
+
+		private static boolean unsignedNondecreasing(long[] keys, int offset, int count) {
+			for (int i = 1; i < count; i++) {
+				if (Long.compareUnsigned(keys[offset + i - 1], keys[offset + i]) > 0) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		public boolean exactDictionaryReady() {
+			return exactReady;
+		}
+
+		public boolean affine() {
+			return affine;
+		}
+
+		private long findCold(long key) {
+			if (rowCount == 0) {
+				return 0;
+			}
+			if (affine) {
+				if (rowCount == 1) {
+					return key == affineFirst ? localReferenceAtOrdinal(0) : 0;
+				}
+				long delta = key - affineFirst;
+				if (Long.remainderUnsigned(delta, affineStride) == 0) {
+					long ordinal = Long.divideUnsigned(delta, affineStride);
+					if (Long.compareUnsigned(ordinal, rowCount) < 0
+							&& affineFirst + ordinal * affineStride == key) {
+						return localReferenceAtOrdinal(ordinal);
+					}
+				}
+				return 0;
+			}
+			LookupCursor cursor = packedCursor();
+			if (singlePage) {
+				if (Long.compareUnsigned(key, cursor.pageFirstRow) < 0
+						|| Long.compareUnsigned(key, cursor.pageLastRow) > 0) {
+					return 0;
+				}
+				int localRow = cursor.findRowCached(key);
+				return localRow < 0 ? 0 : packLocalReference(singlePageId, localRow);
+			}
+			return owner.findLocalReferenceByPartition(partition, key, cursor);
+		}
+
+		private LookupCursor packedCursor() {
+			LookupCursor cursor = packedCursor;
+			if (cursor == null) {
+				cursor = new LookupCursor();
+				if (singlePage) {
+					cursor.pageChanged(owner, partition, singlePageId, singlePageAddress);
+				}
+				packedCursor = cursor;
+			}
+			return cursor;
+		}
+
+		private long localReferenceAtOrdinal(long ordinal) {
+			if (singlePage) {
+				return packLocalReference(singlePageId, Math.toIntExact(ordinal));
+			}
+			OrdinalCursor cursor = ordinalCursor;
+			if (cursor == null) {
+				cursor = new OrdinalCursor();
+				ordinalCursor = cursor;
+			}
+			return owner.localReferenceAtOrdinal(partition, ordinal, cursor);
+		}
+
+		private long findExact(long key) {
+			int slot = mix(key) & exactMask;
+			for (;;) {
+				int entry = exactShortSlots != null ? exactShortSlots[slot] & 0xffff : exactIntSlots[slot];
+				if (entry == 0) {
+					return 0;
+				}
+				int ordinal = entry - 1;
+				if (exactKeys[ordinal] == key) {
+					return exactReferences[ordinal];
+				}
+				slot = slot + 1 & exactMask;
+			}
+		}
+
+		private void observe(int work) {
+			if (work <= 0 || exactReady || affine || promotionRefused) {
+				return;
+			}
+			probes = Math.min(Integer.MAX_VALUE, probes + work);
+			if (probes >= promotionAt) {
+				promoteExact();
+			}
+		}
+
+		private void promoteExact() {
+			if (rowCount <= 0 || rowCount > Integer.MAX_VALUE) {
+				promotionRefused = true;
+				return;
+			}
+			if (tryPromoteAffine()) {
+				return;
+			}
+			// A single-page partition already promotes its page-local NativeSearchState after reuse. Building a second
+			// partition hash would duplicate the decoded keys and hash table without removing any outer routing.
+			if (singlePage) {
+				promotionRefused = true;
+				return;
+			}
+			int count = (int) rowCount;
+			long requiredSlots = Math.max(2L, (long) count << 1);
+			if (requiredSlots > 1L << 30) {
+				promotionRefused = true;
+				return;
+			}
+			int tableLength = 1;
+			while (tableLength < requiredSlots) {
+				tableLength <<= 1;
+			}
+			boolean shortSlots = count <= 0xffff - 1;
+			long slotBytes = shortSlots ? CsfAdaptiveMemory.shortArrayBytes(tableLength)
+					: CsfAdaptiveMemory.intArrayBytes(tableLength);
+			long bytes = Math.addExact(Math.multiplyExact(CsfAdaptiveMemory.longArrayBytes(count), 2L), slotBytes);
+			long claim = CsfAdaptiveMemory.tryClaim(bytes);
+			if (claim == 0) {
+				promotionRefused = true;
+				return;
+			}
+			long[] keys = CsfAdaptiveMemory.tryLongArray(null, count);
+			long[] references = CsfAdaptiveMemory.tryLongArray(null, count);
+			short[] shortTable = shortSlots ? CsfAdaptiveMemory.tryShortArray(null, tableLength) : null;
+			int[] intTable = shortSlots ? null : CsfAdaptiveMemory.tryIntArray(null, tableLength);
+			if (keys == null || references == null || shortSlots && shortTable == null
+					|| !shortSlots && intTable == null) {
+				CsfAdaptiveMemory.releaseClaim(claim);
+				promotionRefused = true;
+				return;
+			}
+			try {
+				KeyCursor cursor = new KeyCursor(owner, partition, false);
+				int ordinal = 0;
+				int mask = tableLength - 1;
+				while (cursor.advance()) {
+					if (ordinal >= count) {
+						throw new IllegalStateException("partition key cursor exceeded its row count");
+					}
+					long key = cursor.key();
+					keys[ordinal] = key;
+					references[ordinal] = cursor.localReference();
+					int slot = mix(key) & mask;
+					if (shortSlots) {
+						while (shortTable[slot] != 0) {
+							slot = slot + 1 & mask;
+						}
+						shortTable[slot] = (short) (ordinal + 1);
+					} else {
+						while (intTable[slot] != 0) {
+							slot = slot + 1 & mask;
+						}
+						intTable[slot] = ordinal + 1;
+					}
+					ordinal++;
+				}
+				if (ordinal != count) {
+					throw new IllegalStateException(
+							"partition key cursor produced " + ordinal + " of " + count + " rows");
+				}
+				exactKeys = keys;
+				exactReferences = references;
+				exactShortSlots = shortTable;
+				exactIntSlots = intTable;
+				exactMask = mask;
+				claimedBytes = claim;
+				exactReady = true;
+				pressureCountdown = PRESSURE_CHECK_INTERVAL;
+				CsfAdaptiveMemory.recordPromotion();
+			} catch (RuntimeException | Error failure) {
+				CsfAdaptiveMemory.releaseClaim(claim);
+				throw failure;
+			}
+		}
+
+		private void checkPressure() {
+			if (exactReady && --pressureCountdown <= 0) {
+				pressureCountdown = PRESSURE_CHECK_INTERVAL;
+				if (CsfAdaptiveMemory.underPressure()) {
+					dropExact();
+					promotionRefused = true;
+				}
+			}
+		}
+
+		private void dropExact() {
+			exactReady = false;
+			exactKeys = null;
+			exactReferences = null;
+			exactShortSlots = null;
+			exactIntSlots = null;
+			exactMask = 0;
+			if (claimedBytes != 0) {
+				long claim = claimedBytes;
+				claimedBytes = 0;
+				CsfAdaptiveMemory.releaseClaim(claim);
+			}
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				dropExact();
+				LookupCursor cursor = packedCursor;
+				packedCursor = null;
+				if (cursor != null) {
+					cursor.close();
+				}
+			}
+		}
+
+		private void ensureOpen() {
+			if (closed) {
+				throw new IllegalStateException("partition lookup is closed");
+			}
+		}
+
+		private static int promotionThreshold(long rows) {
+			if (rows <= 0) {
+				return Integer.MAX_VALUE;
+			}
+			// The build is O(rows); require roughly one observed point probe per row before paying it. This is a
+			// cost-derived break-even guard rather than a universal tiny counter, while the cap still lets very hot
+			// large
+			// partitions promote when their arrays fit the configured adaptive-memory limits.
+			long threshold = Math.max(MIN_PROMOTION_PROBES, rows);
+			return (int) Math.min(MAX_PROMOTION_PROBES, threshold);
+		}
+
+		private boolean tryPromoteAffine() {
+			AffineLayout candidate = affineCandidate(owner, partition, rowCount);
+			if (!candidate.affine) {
+				return false;
+			}
+			KeyCursor cursor = new KeyCursor(owner, partition, false);
+			long ordinal = 0;
+			while (cursor.advance()) {
+				if (cursor.key() != candidate.first + ordinal * candidate.stride) {
+					return false;
+				}
+				ordinal++;
+			}
+			if (ordinal != rowCount) {
+				throw new IllegalStateException(
+						"affine verification produced " + ordinal + " of " + rowCount + " rows");
+			}
+			affineFirst = candidate.first;
+			affineStride = candidate.stride;
+			affine = true;
+			CsfAdaptiveMemory.recordPromotion();
+			return true;
+		}
+
+		/** Cheap necessary test only; {@link #tryPromoteAffine()} verifies every key before activating it. */
+		private static AffineLayout affineCandidate(ImmutablePagedQuadCsfIndex owner, int partition, long rows) {
+			if (rows == 0) {
+				return AffineLayout.NONE;
+			}
+			KeyDomain domain = new KeyDomain(owner, partition);
+			long first = domain.keyAt(0);
+			if (rows == 1) {
+				return new AffineLayout(true, first, 0);
+			}
+			long second = domain.keyAt(1);
+			long stride = second - first;
+			if (stride == 0 || first + (rows - 1) * stride != domain.keyAt(rows - 1)) {
+				return new AffineLayout(false, first, stride);
+			}
+			long quarter = rows >>> 2;
+			long middle = rows >>> 1;
+			long threeQuarter = rows - 1 - quarter;
+			if (domain.keyAt(quarter) != first + quarter * stride
+					|| domain.keyAt(middle) != first + middle * stride
+					|| domain.keyAt(threeQuarter) != first + threeQuarter * stride) {
+				return new AffineLayout(false, first, stride);
+			}
+			return new AffineLayout(true, first, stride);
+		}
+
+		private static int mix(long value) {
+			// One 64-bit Fibonacci multiply is enough for an open-addressed table whose capacity is a power of two.
+			// LMDB IDs often share low tag bits, so fold the high product half back into the low half before masking.
+			long mixed = value * 0x9E3779B97F4A7C15L;
+			return (int) (mixed ^ mixed >>> 32);
+		}
+
+		private record AffineLayout(boolean affine, long first, long stride) {
+			private static final AffineLayout NONE = new AffineLayout(false, 0, 0);
+		}
+	}
+
+	private static final class OrdinalCursor {
+		long firstOrdinal;
+		long endOrdinal;
+		int globalPage = -1;
+	}
+
+	/**
 	 * Caller-owned state for repeated row lookup. Pages use a radix directory only when it fits in their existing slab
 	 * slack; otherwise a cursor may build one lazily after packed probes have paid its measured break-even cost.
 	 * One-off and sparse probes remain allocation-free.
 	 */
-	public static final class LookupCursor extends PackedLongVector.NativeSearchState {
+	public static final class LookupCursor implements AutoCloseable {
 
 		private ImmutablePagedQuadCsfIndex owner;
+		private long rowIdsAddress;
+		private long rowRadixAddress;
 		private long pageFirstRow;
 		private long pageLastRow;
 		private int partition = -1;
 		/** Global page id; replaces separate shard/local-page fields on the hot cursor. */
 		private int globalPage = -1;
+		private int rowCount;
+		private int rowRadixBits;
+		private int pageLookups;
 		private boolean reusablePage;
+		/** Created only after a cursor has reused a page; optional exact arrays remain pressure-admitted. */
+		private PackedLongVector.NativeSearchState searchState;
 
 		private void pageChanged(ImmutablePagedQuadCsfIndex owner, int partition, int globalPage, long pageAddress) {
 			this.owner = owner;
@@ -1654,20 +2245,20 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			this.pageLastRow = UnsafeAccess.getLongLE(pageAddress + CompactCsfPageFormat.LAST_ROW_AT);
 			this.partition = partition;
 			this.globalPage = globalPage;
-			int rowCount = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_COUNT_AT);
+			this.rowCount = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_COUNT_AT);
 			int rowIdsOffset = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_IDS_OFFSET_AT);
-			long rowIdsAddress = pageAddress + rowIdsOffset;
+			this.rowIdsAddress = pageAddress + rowIdsOffset;
 			int descriptor = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ACCELERATOR_DESCRIPTOR_AT);
-			int bits = CompactCsfPageAccelerators.rowRadixBits(descriptor);
-			if (bits == 0) {
-				bindUnindexedSearch(rowIdsAddress, rowCount);
-			} else {
-				long radixAddress = pageAddress
-						+ UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ACCELERATOR_OFFSET_AT);
-				bindNativeSearch(rowIdsAddress, rowCount, radixAddress, bits);
-			}
+			this.rowRadixBits = CompactCsfPageAccelerators.rowRadixBits(descriptor);
+			this.rowRadixAddress = rowRadixBits == 0 ? 0
+					: pageAddress + UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ACCELERATOR_OFFSET_AT);
 			int flags = UnsafeAccess.getUnsignedShortLE(pageAddress + CompactCsfPageFormat.FLAGS_AT);
 			this.reusablePage = (flags & CompactCsfPageFormat.FLAG_CONTINUATION) == 0;
+			this.pageLookups = 0;
+			PackedLongVector.NativeSearchState state = searchState;
+			if (state != null) {
+				bindSearchState(state);
+			}
 		}
 
 		private boolean covers(ImmutablePagedQuadCsfIndex owner, int partition, long row) {
@@ -1677,7 +2268,47 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		}
 
 		private int findRowCached(long row) {
-			return binarySearchUnsigned(row);
+			PackedLongVector.NativeSearchState state = searchState;
+			if (state != null) {
+				return state.binarySearchUnsigned(row);
+			}
+			int result = rowRadixBits == 0
+					? PackedLongVector.nativeBinarySearchUnsigned(rowIdsAddress, rowCount, row)
+					: PackedLongVector.nativeBinarySearchUnsigned(rowIdsAddress, rowCount, row, rowRadixAddress,
+							rowRadixBits);
+			if (reusablePage && rowCount >= CompactCsfPageAccelerators.MIN_INDEXED_ROWS && ++pageLookups == 2) {
+				state = PackedLongVector.tryNativeSearchState();
+				if (state != null) {
+					searchState = state;
+					bindSearchState(state);
+				}
+			}
+			return result;
+		}
+
+		private void bindSearchState(PackedLongVector.NativeSearchState state) {
+			if (rowRadixBits == 0) {
+				state.bindUnindexedSearch(rowIdsAddress, rowCount);
+			} else {
+				state.bindNativeSearch(rowIdsAddress, rowCount, rowRadixAddress, rowRadixBits);
+			}
+		}
+
+		@Override
+		public void close() {
+			PackedLongVector.NativeSearchState state = searchState;
+			searchState = null;
+			if (state != null) {
+				state.close();
+			}
+			owner = null;
+			partition = -1;
+			globalPage = -1;
+			rowIdsAddress = 0;
+			rowRadixAddress = 0;
+			rowCount = 0;
+			pageLookups = 0;
+			reusablePage = false;
 		}
 	}
 
@@ -2050,7 +2681,17 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		 * keeps its shard and page position, so a full domain walk does not repeat two binary searches per key.
 		 */
 		public KeyCursor cursor() {
-			return new KeyCursor(owner, partition);
+			return new KeyCursor(owner, partition, true, 0, keyCount());
+		}
+
+		/** Opens a cursor already positioned at the ordinal window, without replaying preceding pages. */
+		public KeyCursor cursor(long fromOrdinal, long toOrdinal) {
+			long count = keyCount();
+			if (fromOrdinal < 0 || toOrdinal < fromOrdinal || toOrdinal > count) {
+				throw new IllegalArgumentException(
+						"invalid key cursor window: [" + fromOrdinal + ", " + toOrdinal + ") of " + count);
+			}
+			return new KeyCursor(owner, partition, true, fromOrdinal, toOrdinal);
 		}
 
 		public long keyAt(long ordinal) {
@@ -2106,6 +2747,20 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			return shard.rowAt(page, localRow);
 		}
 
+		public long lowerBoundOrdinal(long key) {
+			long low = 0;
+			long high = keyCount();
+			while (low < high) {
+				long mid = (low + high) >>> 1;
+				if (Long.compareUnsigned(keyAt(mid), key) < 0) {
+					low = mid + 1;
+				} else {
+					high = mid;
+				}
+			}
+			return low;
+		}
+
 		public boolean contains(long key) {
 			long low = 0;
 			long high = keyCount() - 1;
@@ -2128,6 +2783,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	public static final class KeyCursor extends CompactCsfPageReader {
 		private final ImmutablePagedQuadCsfIndex owner;
 		private final int shardEnd;
+		private final long endOrdinal;
 		/** Allocated only for the uncommon multi-page-row path. */
 		private CompactCsfPageReader extentPage;
 		private int shardIndex;
@@ -2140,16 +2796,47 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		private int firstPageId;
 		private int firstLocalRow;
 		private long edgeCount;
+		private long cachedPairOrdinal = -1;
+		private long cachedNeighbor;
+		private long cachedContext;
+		private final boolean includeEdgeCount;
+		private long ordinal;
 		private boolean ready;
 
-		private KeyCursor(ImmutablePagedQuadCsfIndex owner, int partition) {
+		private KeyCursor(ImmutablePagedQuadCsfIndex owner, int partition, boolean includeEdgeCount) {
+			this(owner, partition, includeEdgeCount, 0, owner.partitionRowCounts[partition]);
+		}
+
+		private KeyCursor(ImmutablePagedQuadCsfIndex owner, int partition, boolean includeEdgeCount,
+				long fromOrdinal, long toOrdinal) {
 			this.owner = owner;
-			this.shardIndex = owner.partitionShardStarts[partition];
-			this.shardEnd = shardIndex + owner.partitionShardCounts[partition];
+			int shardStart = owner.partitionShardStarts[partition];
+			this.shardIndex = shardStart;
+			this.shardEnd = shardStart + owner.partitionShardCounts[partition];
+			this.includeEdgeCount = includeEdgeCount;
+			long rows = owner.partitionRowCounts[partition];
+			if (fromOrdinal < 0 || toOrdinal < fromOrdinal || toOrdinal > rows) {
+				throw new IllegalArgumentException(
+						"invalid key cursor window: [" + fromOrdinal + ", " + toOrdinal + ") of " + rows);
+			}
+			this.ordinal = fromOrdinal;
+			this.endOrdinal = toOrdinal;
+			if (fromOrdinal == toOrdinal) {
+				this.shardIndex = shardEnd;
+			} else if (fromOrdinal != 0) {
+				long reference = owner.localReferenceAtOrdinal(partition, fromOrdinal, new OrdinalCursor());
+				int pageId = unpackPageId(reference);
+				this.shardIndex = owner.shardForPage(pageId);
+				this.localPage = pageId - owner.shardFirstPageIds[shardIndex];
+				this.localRow = unpackLocalRow(reference);
+			}
 		}
 
 		public boolean advance() {
 			ready = false;
+			if (ordinal >= endOrdinal) {
+				return false;
+			}
 			while (shardIndex < shardEnd) {
 				CsfShard shard = owner.shards[shardIndex];
 				while (localPage < shard.pageCount()) {
@@ -2164,8 +2851,13 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 						firstPageId = owner.shardFirstPageIds[shardIndex] + localPage;
 						firstLocalRow = localRow;
 						localReference = packLocalReference(firstPageId, firstLocalRow);
-						edgeCount = countEdges();
+						// Counting a continuation chain can touch several pages. Defer it until a consumer actually
+						// asks
+						// for the run; key-only enumeration then remains a pure sequential row-id walk.
+						edgeCount = -1;
+						cachedPairOrdinal = -1;
 						localRow++;
+						ordinal++;
 						ready = true;
 						return true;
 					}
@@ -2191,14 +2883,24 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		}
 
 		public long edgeCount() {
-			ensureReady();
+			ensureRunReady();
 			return edgeCount;
+		}
+
+		public long neighborAt(long ordinal) {
+			ensurePair(ordinal);
+			return cachedNeighbor;
+		}
+
+		public long contextAt(long ordinal) {
+			ensurePair(ordinal);
+			return cachedContext;
 		}
 
 		/** Bulk-decodes the current logical row without resolving its page/row coordinate again. */
 		public int copyPairs(long fromOrdinal, int length, long[] neighborTarget, int neighborOffset,
 				long[] contextTarget, int contextOffset) {
-			ensureReady();
+			ensureRunReady();
 			if (length < 0 || fromOrdinal < 0 || fromOrdinal > edgeCount) {
 				throw new IllegalArgumentException("invalid CSF key-cursor copy range");
 			}
@@ -2237,6 +2939,42 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				row = 0;
 			}
 			return output;
+		}
+
+		private void ensurePair(long ordinal) {
+			ensureRunReady();
+			if (ordinal < 0 || ordinal >= edgeCount) {
+				throw new IllegalArgumentException("run ordinal out of range: " + ordinal + " of " + edgeCount);
+			}
+			if (cachedPairOrdinal == ordinal) {
+				return;
+			}
+			long global = 0;
+			int pageId = firstPageId;
+			int row = firstLocalRow;
+			CompactCsfPageReader reader = this;
+			while (pageId != CompactCsfPageFormat.NO_PAGE) {
+				if (pageId != firstPageId) {
+					reader = extentPage();
+					owner.page(pageId, reader);
+					if (!reader.continuation() || reader.firstRow() != key) {
+						throw new IllegalStateException("CSF extent chain changes row coordinate");
+					}
+				}
+				int pageEdges = reader.rowQuadCount(row);
+				long pageEnd = global + pageEdges;
+				if (ordinal < pageEnd) {
+					int local = (int) (ordinal - global);
+					cachedNeighbor = reader.neighborAtOrdinal(row, local);
+					cachedContext = reader.contextAtOrdinal(row, local);
+					cachedPairOrdinal = ordinal;
+					return;
+				}
+				global = pageEnd;
+				pageId = nextExtentPageId(pageId, reader);
+				row = 0;
+			}
+			throw new IllegalStateException("CSF extent chain ended before ordinal " + ordinal);
 		}
 
 		private long countEdges() {
@@ -2286,6 +3024,16 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		private void ensureReady() {
 			if (!ready) {
 				throw new IllegalStateException("key cursor is not positioned on a row");
+			}
+		}
+
+		private void ensureRunReady() {
+			ensureReady();
+			if (!includeEdgeCount) {
+				throw new IllegalStateException("coordinate-only key cursor does not resolve run contents");
+			}
+			if (edgeCount < 0) {
+				edgeCount = countEdges();
 			}
 		}
 	}

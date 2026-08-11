@@ -213,9 +213,11 @@ public interface NativeLmdbQuerySource {
 		}
 
 		/**
-		 * Returns a borrowed, immutable, revision-valid adjacency view for this predicate and direction, or
-		 * {@code null} when no cache entry can serve the complete probe stage. Implementations must hold whatever
-		 * snapshot/read lease makes the view valid until this probe closes.
+		 * Returns an immutable, revision-valid adjacency view for this predicate and direction, or {@code null} when no
+		 * cache entry can serve the complete probe stage. The probe owns every returned view and closes any view the
+		 * consumer leaves open when the probe closes. Consumers should nevertheless close a view as soon as its
+		 * operator is done, because doing so promptly releases optional query-local accelerators. Implementations must
+		 * hold whatever snapshot/read lease makes the view valid until this probe closes.
 		 */
 		default NativeAdjacency adjacency(long predicate, boolean bySubject) throws IOException {
 			return null;
@@ -395,7 +397,7 @@ public interface NativeLmdbQuerySource {
 	 * Read-only primitive view over one immutable adjacency entry for one fixed predicate and direction (plan 27,
 	 * invariant I7). A successful {@link #find(long)} returns a positive run handle.
 	 */
-	interface NativeAdjacency extends RunView {
+	interface NativeAdjacency extends RunView, AutoCloseable {
 
 		/** The key has provably no run in this view. */
 		long NOT_FOUND = -1L;
@@ -404,9 +406,61 @@ public interface NativeLmdbQuerySource {
 		long NOT_COVERED = -2L;
 
 		/**
+		 * Forward-only enumeration that preserves the physical run resolved together with the logical key. The cursor
+		 * is deliberately also the run reader: a CSF implementation can copy the row through the page coordinate it
+		 * already has instead of converting that coordinate to a key and immediately searching the same index again.
+		 */
+		interface KeyRunCursor extends AutoCloseable {
+
+			boolean advance();
+
+			long key();
+
+			long runHandle();
+
+			long runSize();
+
+			long neighborAt(long runOffset);
+
+			long contextAt(long runOffset);
+
+			int copyNeighbors(long runOffset, int length, long[] target, int targetOffset);
+
+			int copyContexts(long runOffset, int length, long[] target, int targetOffset);
+
+			@Override
+			default void close() {
+			}
+		}
+
+		/**
 		 * The positive opaque run handle for the key, or {@link #NOT_FOUND} / {@link #NOT_COVERED}.
 		 */
 		long find(long key);
+
+		/**
+		 * Resolves a bounded key batch. Implementations may group probes by page, merge a sorted batch with their key
+		 * cursor, or consult an adaptive partition dictionary. The default retains exact scalar semantics.
+		 *
+		 * @return the number of positive handles written
+		 */
+		default int findBatch(long[] keys, int keyOffset, int count, long[] runHandles, int runOffset) {
+			Objects.requireNonNull(keys, "keys");
+			Objects.requireNonNull(runHandles, "runHandles");
+			if (keyOffset < 0 || count < 0 || keyOffset > keys.length - count || runOffset < 0
+					|| runOffset > runHandles.length - count) {
+				throw new IllegalArgumentException("invalid adjacency batch range");
+			}
+			int found = 0;
+			for (int i = 0; i < count; i++) {
+				long handle = find(keys[keyOffset + i]);
+				runHandles[runOffset + i] = handle;
+				if (handle > 0) {
+					found++;
+				}
+			}
+			return found;
+		}
 
 		/** True when this view can enumerate its distinct keys through {@link #keyCount()} and {@link #keyAt(long)}. */
 		default boolean supportsKeyEnumeration() {
@@ -421,6 +475,172 @@ public interface NativeLmdbQuerySource {
 		/** The key at the given ordinal; only valid when {@link #supportsKeyEnumeration()} is true. */
 		default long keyAt(long keyOrdinal) {
 			throw new UnsupportedOperationException("key enumeration is not supported by this adjacency view");
+		}
+
+		/**
+		 * First key ordinal whose unsigned value is at least {@code key}. Implementations with a partition-level row
+		 * directory may override this; the generic fallback performs one logarithmic ordinal search and is used only
+		 * for explicit cursor seeks, never for the sequential enumeration hot path.
+		 */
+		default long lowerBoundKeyOrdinal(long key) {
+			long low = 0;
+			long high = keyCount();
+			if (high < 0) {
+				throw new UnsupportedOperationException("key enumeration is not supported by this adjacency view");
+			}
+			while (low < high) {
+				long mid = (low + high) >>> 1;
+				if (Long.compareUnsigned(keyAt(mid), key) < 0) {
+					low = mid + 1;
+				} else {
+					high = mid;
+				}
+			}
+			return low;
+		}
+
+		/**
+		 * Opens a key-and-run cursor. The fallback is intentionally only one object per enumeration, not per key;
+		 * native implementations override it to preserve their physical row coordinates and avoid every
+		 * {@code keyAt -> find} round trip. It still emits every logical key when a fallback lookup returns no run,
+		 * exposing a zero-sized run so key-only consumers retain complete domain semantics.
+		 */
+		default KeyRunCursor openKeyRunCursor() {
+			if (!supportsKeyEnumeration()) {
+				return null;
+			}
+			NativeAdjacency adjacency = this;
+			return new KeyRunCursor() {
+				private final long count = adjacency.keyCount();
+				private long ordinal;
+				private long key;
+				private long handle;
+				private long size;
+
+				@Override
+				public boolean advance() {
+					if (ordinal >= count) {
+						return false;
+					}
+					key = adjacency.keyAt(ordinal++);
+					handle = adjacency.find(key);
+					size = handle > 0 ? adjacency.size(handle) : 0;
+					return true;
+				}
+
+				@Override
+				public long key() {
+					return key;
+				}
+
+				@Override
+				public long runHandle() {
+					return handle;
+				}
+
+				@Override
+				public long runSize() {
+					return size;
+				}
+
+				@Override
+				public long neighborAt(long runOffset) {
+					return adjacency.neighborAt(handle, runOffset);
+				}
+
+				@Override
+				public long contextAt(long runOffset) {
+					return adjacency.contextAt(handle, runOffset);
+				}
+
+				@Override
+				public int copyNeighbors(long runOffset, int length, long[] target, int targetOffset) {
+					return adjacency.copyNeighbors(handle, runOffset, length, target, targetOffset);
+				}
+
+				@Override
+				public int copyContexts(long runOffset, int length, long[] target, int targetOffset) {
+					return adjacency.copyContexts(handle, runOffset, length, target, targetOffset);
+				}
+			};
+		}
+
+		/**
+		 * Opens a cursor over the key-ordinal window {@code [fromOrdinal, toOrdinal)}. Native implementations should
+		 * position directly at {@code fromOrdinal}; the fallback preserves correctness with one initial forward skip.
+		 */
+		default KeyRunCursor openKeyRunCursor(long fromOrdinal, long toOrdinal) {
+			long count = keyCount();
+			if (fromOrdinal < 0 || toOrdinal < fromOrdinal || count < 0 || toOrdinal > count) {
+				throw new IllegalArgumentException(
+						"invalid key-run window: [" + fromOrdinal + ", " + toOrdinal + ") of " + count);
+			}
+			KeyRunCursor delegate = openKeyRunCursor();
+			if (delegate == null) {
+				return null;
+			}
+			return new KeyRunCursor() {
+				private long ordinal;
+
+				@Override
+				public boolean advance() {
+					while (ordinal < fromOrdinal) {
+						if (!delegate.advance()) {
+							return false;
+						}
+						ordinal++;
+					}
+					if (ordinal >= toOrdinal || !delegate.advance()) {
+						return false;
+					}
+					ordinal++;
+					return true;
+				}
+
+				@Override
+				public long key() {
+					return delegate.key();
+				}
+
+				@Override
+				public long runHandle() {
+					return delegate.runHandle();
+				}
+
+				@Override
+				public long runSize() {
+					return delegate.runSize();
+				}
+
+				@Override
+				public long neighborAt(long runOffset) {
+					return delegate.neighborAt(runOffset);
+				}
+
+				@Override
+				public long contextAt(long runOffset) {
+					return delegate.contextAt(runOffset);
+				}
+
+				@Override
+				public int copyNeighbors(long runOffset, int length, long[] target, int targetOffset) {
+					return delegate.copyNeighbors(runOffset, length, target, targetOffset);
+				}
+
+				@Override
+				public int copyContexts(long runOffset, int length, long[] target, int targetOffset) {
+					return delegate.copyContexts(runOffset, length, target, targetOffset);
+				}
+
+				@Override
+				public void close() {
+					delegate.close();
+				}
+			};
+		}
+
+		@Override
+		default void close() {
 		}
 	}
 

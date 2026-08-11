@@ -96,48 +96,61 @@ final class LmdbAdjacencyKeyIndex {
 	}
 
 	Cursor cursor() {
-		return new Cursor(keys, csfKeys, capacity);
+		return cursor(0, capacity);
+	}
+
+	Cursor cursor(long fromOrdinal, long toOrdinal) {
+		if (fromOrdinal < 0 || toOrdinal < fromOrdinal || toOrdinal > capacity) {
+			throw new IllegalArgumentException(
+					"invalid key cursor window: [" + fromOrdinal + ", " + toOrdinal + ") of " + capacity);
+		}
+		return new Cursor(keys, csfKeys, fromOrdinal, toOrdinal);
 	}
 
 	boolean contains(long key) {
+		long ordinal = lowerBoundOrdinal(key);
+		return ordinal < capacity && keyAt(ordinal) == key;
+	}
+
+	/** First ordinal whose unsigned key is at least {@code key}. */
+	long lowerBoundOrdinal(long key) {
 		if (csfKeys != null) {
-			return csfKeys.contains(key);
+			return csfKeys.lowerBoundOrdinal(key);
 		}
 		long low = 0;
-		long high = capacity - 1;
-		while (low <= high) {
+		long high = capacity;
+		while (low < high) {
 			long mid = (low + high) >>> 1;
-			int comparison = Long.compareUnsigned(keyAt(mid), key);
-			if (comparison < 0) {
+			if (Long.compareUnsigned(keys.get(LmdbAdjacencyArena.U64_LE, mid * Long.BYTES), key) < 0) {
 				low = mid + 1;
-			} else if (comparison > 0) {
-				high = mid - 1;
 			} else {
-				return true;
+				high = mid;
 			}
 		}
-		return false;
+		return low;
 	}
 
 	/** Forward-only base-key cursor; a CSF cursor also exposes the row's direct local run reference. */
 	static final class Cursor {
 		private final MemorySegment keys;
 		private final ImmutablePagedQuadCsfIndex.KeyCursor csf;
-		private final long capacity;
+		private final long endOrdinal;
 		private long ordinal;
 		private long key;
 
-		private Cursor(MemorySegment keys, ImmutablePagedQuadCsfIndex.KeyDomain csfKeys, long capacity) {
+		private Cursor(MemorySegment keys, ImmutablePagedQuadCsfIndex.KeyDomain csfKeys, long fromOrdinal,
+				long toOrdinal) {
 			this.keys = keys;
-			this.csf = csfKeys == null ? null : csfKeys.cursor();
-			this.capacity = capacity;
+			this.csf = csfKeys == null ? null : csfKeys.cursor(fromOrdinal, toOrdinal);
+			this.ordinal = fromOrdinal;
+			this.endOrdinal = toOrdinal;
 		}
 
 		boolean advance() {
 			if (csf != null) {
 				return csf.advance();
 			}
-			if (ordinal >= capacity) {
+			if (ordinal >= endOrdinal) {
 				return false;
 			}
 			key = keys.get(LmdbAdjacencyArena.U64_LE, ordinal++ * Long.BYTES);
@@ -166,11 +179,30 @@ final class LmdbAdjacencyKeyIndex {
 			return csf.edgeCount();
 		}
 
-		int copyDirectPairs(long fromOrdinal, int length, long[] neighborTarget, long[] contextTarget) {
+		long directNeighborAt(long ordinal) {
 			if (csf == null) {
 				throw new IllegalStateException("legacy key domains do not encode run rows");
 			}
-			return csf.copyPairs(fromOrdinal, length, neighborTarget, 0, contextTarget, 0);
+			return csf.neighborAt(ordinal);
+		}
+
+		long directContextAt(long ordinal) {
+			if (csf == null) {
+				throw new IllegalStateException("legacy key domains do not encode run rows");
+			}
+			return csf.contextAt(ordinal);
+		}
+
+		int copyDirectPairs(long fromOrdinal, int length, long[] neighborTarget, int neighborOffset,
+				long[] contextTarget, int contextOffset) {
+			if (csf == null) {
+				throw new IllegalStateException("legacy key domains do not encode run rows");
+			}
+			return csf.copyPairs(fromOrdinal, length, neighborTarget, neighborOffset, contextTarget, contextOffset);
+		}
+
+		int copyDirectPairs(long fromOrdinal, int length, long[] neighborTarget, long[] contextTarget) {
+			return copyDirectPairs(fromOrdinal, length, neighborTarget, 0, contextTarget, 0);
 		}
 	}
 }

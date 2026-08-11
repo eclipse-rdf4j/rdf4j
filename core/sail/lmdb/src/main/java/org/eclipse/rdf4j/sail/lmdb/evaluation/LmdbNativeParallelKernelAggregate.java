@@ -514,10 +514,11 @@ final class LmdbNativeParallelKernelAggregate {
 				? LmdbNativeKernelPartitions.forkFilterHooks(bindings.filterHooks)
 				: null;
 		NativeLmdbQuerySource.NativeProbe probe = null;
+		NativeLmdbQuerySource.NativeAdjacency[] views = null;
 		LmdbNativeKernelScanner scanner = null;
 		try {
 			probe = source.newProbe();
-			NativeLmdbQuerySource.NativeAdjacency[] views = bindings.requestAdjacencies(probe);
+			views = bindings.requestAdjacencies(probe);
 			if (views == null) {
 				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-adjacency-unavailable");
 			}
@@ -591,21 +592,49 @@ final class LmdbNativeParallelKernelAggregate {
 			}
 			return merged;
 		} finally {
+			Throwable closeFailure = null;
 			try {
 				if (scanner != null) {
 					scanner.close();
 				}
-			} finally {
-				try {
-					if (probe != null) {
-						probe.close();
-					}
-				} finally {
-					if (forkedHooks != null) {
-						LmdbNativeKernelPartitions.closeForkedHooks(forkedHooks, null);
-					}
-				}
+			} catch (RuntimeException | Error problem) {
+				closeFailure = addCloseFailure(closeFailure, problem);
 			}
+			closeFailure = LmdbNativeKernelBindings.closeAdjacencies(views, closeFailure);
+			try {
+				if (probe != null) {
+					probe.close();
+				}
+			} catch (RuntimeException | Error problem) {
+				closeFailure = addCloseFailure(closeFailure, problem);
+			}
+			try {
+				if (forkedHooks != null) {
+					LmdbNativeKernelPartitions.closeForkedHooks(forkedHooks, null);
+				}
+			} catch (RuntimeException | Error problem) {
+				closeFailure = addCloseFailure(closeFailure, problem);
+			}
+			rethrowCloseFailure(closeFailure);
+		}
+	}
+
+	private static Throwable addCloseFailure(Throwable failure, Throwable problem) {
+		if (failure == null) {
+			return problem;
+		}
+		if (failure != problem) {
+			failure.addSuppressed(problem);
+		}
+		return failure;
+	}
+
+	private static void rethrowCloseFailure(Throwable failure) {
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (failure instanceof Error error) {
+			throw error;
 		}
 	}
 

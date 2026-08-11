@@ -27,6 +27,7 @@ final class LmdbDirectAdjacencyRootIterator implements RecordIterator {
 	private static final int COPY_EDGES = 256;
 
 	private LmdbAdjacencyReadView view;
+	private LmdbDirectNativeAdjacency adjacency;
 	private final LmdbDirectNativeAdjacency.RootScanCursor cursor;
 	private final long predicate;
 	private final long boundContext;
@@ -40,20 +41,46 @@ final class LmdbDirectAdjacencyRootIterator implements RecordIterator {
 
 	LmdbDirectAdjacencyRootIterator(LmdbAdjacencyReadView view, LmdbDirectNativeAdjacency adjacency,
 			long predicate, long boundContext, boolean bySubject) {
-		view.retainLease();
-		boolean initialized = false;
+		LmdbDirectNativeAdjacency.RootScanCursor resolvedCursor = null;
+		boolean leaseHeld = false;
 		try {
-			this.view = view;
-			this.cursor = adjacency.rootScanCursor();
-			this.predicate = predicate;
-			this.boundContext = boundContext;
-			this.bySubject = bySubject;
-			initialized = true;
-		} finally {
-			if (!initialized) {
-				view.releaseLease();
+			view.retainLease();
+			leaseHeld = true;
+			resolvedCursor = adjacency.rootScanCursor();
+		} catch (RuntimeException | Error failure) {
+			if (resolvedCursor != null) {
+				try {
+					resolvedCursor.close();
+				} catch (RuntimeException | Error cleanup) {
+					if (cleanup != failure) {
+						failure.addSuppressed(cleanup);
+					}
+				}
 			}
+			try {
+				adjacency.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			if (leaseHeld) {
+				try {
+					view.releaseLease();
+				} catch (RuntimeException | Error cleanup) {
+					if (cleanup != failure) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+			}
+			throw failure;
 		}
+		this.view = view;
+		this.adjacency = adjacency;
+		this.cursor = resolvedCursor;
+		this.predicate = predicate;
+		this.boundContext = boundContext;
+		this.bySubject = bySubject;
 	}
 
 	@Override
@@ -128,10 +155,35 @@ final class LmdbDirectAdjacencyRootIterator implements RecordIterator {
 
 	@Override
 	public void close() {
+		Throwable failure = null;
+		LmdbDirectNativeAdjacency ownedAdjacency = adjacency;
+		adjacency = null;
+		if (ownedAdjacency != null) {
+			try {
+				cursor.close();
+				ownedAdjacency.close();
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
+			}
+		}
 		LmdbAdjacencyReadView owned = view;
 		if (owned != null) {
 			view = null;
-			owned.releaseLease();
+			try {
+				owned.releaseLease();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
+			}
+		}
+		if (failure instanceof Error) {
+			throw (Error) failure;
+		}
+		if (failure != null) {
+			throw (RuntimeException) failure;
 		}
 	}
 }

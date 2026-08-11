@@ -322,10 +322,35 @@ final class LmdbNativeKernelBindings {
 		NativeLmdbQuerySource.NativeAdjacency[] views = requestAdjacenciesPartial(probe);
 		for (NativeLmdbQuerySource.NativeAdjacency view : views) {
 			if (view == null) {
+				closeAdjacencies(views, null);
 				return null;
 			}
 		}
 		return views;
+	}
+
+	/** Closes query-owned adjacency views, preserving all cleanup failures. */
+	static Throwable closeAdjacencies(NativeLmdbQuerySource.NativeAdjacency[] views, Throwable failure) {
+		if (views == null) {
+			return failure;
+		}
+		for (int i = 0; i < views.length; i++) {
+			NativeLmdbQuerySource.NativeAdjacency view = views[i];
+			views[i] = null;
+			if (view == null) {
+				continue;
+			}
+			try {
+				view.close();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
+			}
+		}
+		return failure;
 	}
 
 	/**
@@ -338,8 +363,11 @@ final class LmdbNativeKernelBindings {
 		for (int i = 0; i < adjacencies.length; i++) {
 			AdjacencyRequest request = adjacencies[i];
 			NativeLmdbQuerySource.NativeAdjacency view = probe.adjacency(request.predicate, request.bySubject);
-			if (view == null
-					|| (request.needsKeyEnum && (!view.supportsKeyEnumeration() || view.keyCount() < 0))) {
+			if (view == null) {
+				continue;
+			}
+			if (request.needsKeyEnum && (!view.supportsKeyEnumeration() || view.keyCount() < 0)) {
+				view.close();
 				continue;
 			}
 			views[i] = view;
@@ -405,33 +433,35 @@ final class LmdbNativeKernelBindings {
 
 	private static long[] materializeNativeDomain(NativeLmdbQuerySource.NativeProbe probe, DomainRequest request)
 			throws java.io.IOException {
-		NativeLmdbQuerySource.NativeAdjacency adjacency = probe.adjacency(request.predicate, request.bySubject);
-		if (adjacency == null) {
-			return null;
-		}
-		long handle = adjacency.find(request.key);
-		if (handle == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
-			return null;
-		}
-		if (handle == NativeLmdbQuerySource.NativeAdjacency.NOT_FOUND) {
-			return new long[0];
-		}
-		long size = adjacency.size(handle);
-		if (size < 0L || size > Integer.MAX_VALUE) {
-			throw new java.io.IOException("native key domain is too large to materialize: " + size);
-		}
-		long[] values = new long[(int) size];
-		int copied = 0;
-		while (copied < values.length) {
-			int batch = Math.min(values.length - copied, 8192);
-			int count = adjacency.copyNeighbors(handle, copied, batch, values, copied);
-			if (count <= 0 || count > batch) {
-				throw new java.io.IOException(
-						"native adjacency copied " + count + " of " + batch + " requested domain values");
+		try (NativeLmdbQuerySource.NativeAdjacency adjacency = probe.adjacency(request.predicate,
+				request.bySubject)) {
+			if (adjacency == null) {
+				return null;
 			}
-			copied += count;
+			long handle = adjacency.find(request.key);
+			if (handle == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
+				return null;
+			}
+			if (handle == NativeLmdbQuerySource.NativeAdjacency.NOT_FOUND) {
+				return new long[0];
+			}
+			long size = adjacency.size(handle);
+			if (size < 0L || size > Integer.MAX_VALUE) {
+				throw new java.io.IOException("native key domain is too large to materialize: " + size);
+			}
+			long[] values = new long[(int) size];
+			int copied = 0;
+			while (copied < values.length) {
+				int batch = Math.min(values.length - copied, 8192);
+				int count = adjacency.copyNeighbors(handle, copied, batch, values, copied);
+				if (count <= 0 || count > batch) {
+					throw new java.io.IOException(
+							"native adjacency copied " + count + " of " + batch + " requested domain values");
+				}
+				copied += count;
+			}
+			return values;
 		}
-		return values;
 	}
 
 	/** Assembles the runtime context for {@code JaninoKernel.bind}, snapshotting correlated entry slot values. */
