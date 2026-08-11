@@ -1954,6 +1954,11 @@ final class PackedLongVector {
 	 * allocated per page), preloads the at-most-four row-block fences once on page change, and retains the last block
 	 * descriptor. Optional radix storage remains separately admitted by {@link CsfAdaptiveMemory}.
 	 */
+	static int exactHashPromotionThreshold(int size, int radixBits) {
+		int divisor = radixBits >= 7 ? 16 : radixBits >= 5 ? 24 : 32;
+		return Math.max(32, (size + divisor - 1) / divisor);
+	}
+
 	/** Allocates one reusable search state only after its owning cursor has demonstrated page-local reuse. */
 	static NativeSearchState tryNativeSearchState() {
 		if (!CsfAdaptiveMemory.admitOptionalObject(256)) {
@@ -1969,7 +1974,7 @@ final class PackedLongVector {
 		}
 	}
 
-	static class NativeSearchState {
+	static final class NativeSearchState {
 		private static final int EXACT_HASH_LOAD_SHIFT = 3; // 8 slots per immutable row; 24 B/row with decoded keys.
 
 		private long searchAddress;
@@ -2000,6 +2005,7 @@ final class PackedLongVector {
 		private long[] decodedRows;
 		private short[] exactHash;
 		private int exactHashMask;
+		private long claimedBytes;
 		private int pressureCheckCountdown;
 
 		final void bindNativeSearch(long address, int size, long radixAddress, int bits) {
@@ -2011,17 +2017,10 @@ final class PackedLongVector {
 		}
 
 		private void bindSearch(long address, int size, long radixAddress, int bits) {
-			if ((decodedRows != null || exactHash != null) && --pressureCheckCountdown <= 0) {
+			if (claimedBytes != 0 && --pressureCheckCountdown <= 0) {
 				pressureCheckCountdown = 64;
 				if (CsfAdaptiveMemory.underPressure()) {
-					if (decodedRows != null) {
-						decodedRows = null;
-						CsfAdaptiveMemory.released();
-					}
-					if (exactHash != null) {
-						exactHash = null;
-						CsfAdaptiveMemory.released();
-					}
+					dropExactHash();
 				}
 			}
 			searchAddress = address;
@@ -2035,8 +2034,12 @@ final class PackedLongVector {
 			packedLookups = 0;
 			hashReady = false;
 			hashRefused = false;
-			int divisor = bits >= 7 ? 16 : bits >= 5 ? 24 : 32;
-			hashPromotionAt = Math.max(32, (size + divisor - 1) / divisor);
+			// Page-local exact promotion is deliberately early. The arrays cover only the currently reused
+			// compact page, so their O(pageRows) build is small and amortizes inside the common scalar-probe
+			// workload long before a partition-wide accelerator could pay back its O(partitionRows) scan.
+			// These are the empirically proven pre-partition-policy thresholds: a strong free-slab radix needs
+			// roughly one probe per 16 rows, a medium radix one per 24 rows, and an unindexed page one per 32.
+			hashPromotionAt = exactHashPromotionThreshold(size, bits);
 
 			long offsets = 0;
 			long directory = address + HEADER_BYTES;
@@ -2099,11 +2102,32 @@ final class PackedLongVector {
 			while (tableLength < requiredSlots) {
 				tableLength <<= 1;
 			}
-			long[] rows = CsfAdaptiveMemory.tryLongArray(decodedRows, searchSize);
-			short[] table = CsfAdaptiveMemory.tryShortArray(exactHash, tableLength);
-			if (rows == null || table == null) {
-				hashRefused = true;
-				return;
+			long[] rows = decodedRows;
+			short[] table = exactHash;
+			if (rows == null || rows.length < searchSize || table == null || table.length < tableLength) {
+				long newBytes = Math.addExact(CsfAdaptiveMemory.longArrayBytes(searchSize),
+						CsfAdaptiveMemory.shortArrayBytes(tableLength));
+				long newClaim = CsfAdaptiveMemory.tryClaim(newBytes);
+				if (newClaim == 0) {
+					hashRefused = true;
+					return;
+				}
+				long[] newRows = CsfAdaptiveMemory.tryLongArray(null, searchSize);
+				short[] newTable = CsfAdaptiveMemory.tryShortArray(null, tableLength);
+				if (newRows == null || newTable == null) {
+					CsfAdaptiveMemory.releaseClaim(newClaim);
+					hashRefused = true;
+					return;
+				}
+				long oldClaim = claimedBytes;
+				rows = newRows;
+				table = newTable;
+				decodedRows = rows;
+				exactHash = table;
+				claimedBytes = newClaim;
+				if (oldClaim != 0) {
+					CsfAdaptiveMemory.releaseClaim(oldClaim);
+				}
 			}
 			nativeCopy(searchAddress, searchSize, 0, searchSize, rows, 0);
 			Arrays.fill(table, 0, tableLength, (short) 0);
@@ -2121,6 +2145,25 @@ final class PackedLongVector {
 			exactHashMask = mask;
 			hashReady = true;
 			pressureCheckCountdown = 64;
+		}
+
+		private void dropExactHash() {
+			hashReady = false;
+			decodedRows = null;
+			exactHash = null;
+			exactHashMask = 0;
+			long claim = claimedBytes;
+			claimedBytes = 0;
+			if (claim != 0) {
+				CsfAdaptiveMemory.releaseClaim(claim);
+			}
+		}
+
+		final void close() {
+			dropExactHash();
+			searchAddress = 0;
+			searchSize = 0;
+			lastResult = Integer.MIN_VALUE;
 		}
 
 		private int searchPacked(long target) {

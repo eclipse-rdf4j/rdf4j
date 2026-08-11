@@ -2107,6 +2107,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (context > 0L && view.state().overlays() == null
 				&& view.state().contextCatalog().ordinalForRaw(context) < 0) {
 			// a bound context absent from the read view's catalog proves no row can match
+			adjacency.close();
 			metrics.recordExactMiss();
 			observe(observer, true, "EXACT_EMPTY", order, subject, predicate, object, context);
 			return EmptyRecordIterator.INSTANCE;
@@ -2525,6 +2526,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		long wholePlaneRows = -1;
 		if (plan.wholePlaneCount()) {
 			if (view.snapshotRevision() != view.state().appliedRevision()) {
+				adjacency.close();
 				return null;
 			}
 			wholePlaneRows = view.state().planeStatistics().quadCount(predicate, plane(true, explicit));
@@ -2567,7 +2569,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		for (int i = 0; i < generationCount; i++) {
 			sources[i + 1] = overlays.generation(i).catalog();
 		}
-		return new LmdbDirectNativeAdjacency(this, view, predicate, basePredicateOrdinal, plane(bySubject, explicit),
+		return new LmdbDirectNativeAdjacency(view, predicate, basePredicateOrdinal, plane(bySubject, explicit),
 				sources, state.contextCatalog());
 	}
 

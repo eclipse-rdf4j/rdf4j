@@ -16,43 +16,71 @@ final class LmdbDirectAdjacencyPrefixRunCursor implements LmdbPrefixRunCursor {
 
 	private final LmdbAdjacencyReadView view;
 	private final LmdbDirectNativeAdjacency adjacency;
-	private final LmdbDirectNativeAdjacency.RootScanCursor rootCursor;
+	private LmdbDirectNativeAdjacency.RootScanCursor rootCursor;
 	private final long predicate;
 	private final boolean countRunRows;
 	private final long wholePlaneRows;
 	private final long[] quad = new long[4];
 
+	private final long keyCount;
 	private long nextOrdinal;
-	private long randomAccessKeyCount;
 	private long runRowCount;
 	private long keysScanned;
 	private long prefixesEmitted;
 	private long rowsCounted;
 	private long stopSubject;
 	private boolean hasStop;
-	private boolean randomAccess;
+	private boolean stopAfterCurrent;
 	private boolean closed;
 
 	LmdbDirectAdjacencyPrefixRunCursor(LmdbAdjacencyReadView view,
 			LmdbDirectNativeAdjacency adjacency, long predicate, boolean countRunRows,
 			long wholePlaneRows) {
+		long resolvedKeyCount = 0;
+		LmdbDirectNativeAdjacency.RootScanCursor resolvedCursor = null;
+		boolean leaseHeld = false;
+		try {
+			view.retainLease();
+			leaseHeld = true;
+			resolvedKeyCount = adjacency.keyCount();
+			resolvedCursor = adjacency.rootScanCursor(0, resolvedKeyCount);
+			LmdbPrefixRunPlan.OPENED.incrementAndGet();
+			LmdbPrefixRunPlan.ADJACENCY_OPENED.incrementAndGet();
+		} catch (RuntimeException | Error failure) {
+			if (resolvedCursor != null) {
+				try {
+					resolvedCursor.close();
+				} catch (RuntimeException | Error cleanup) {
+					if (cleanup != failure) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+			}
+			try {
+				adjacency.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			if (leaseHeld) {
+				try {
+					view.releaseLease();
+				} catch (RuntimeException | Error cleanup) {
+					if (cleanup != failure) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+			}
+			throw failure;
+		}
 		this.view = view;
 		this.adjacency = adjacency;
-		this.rootCursor = adjacency.rootScanCursor();
+		this.keyCount = resolvedKeyCount;
+		this.rootCursor = resolvedCursor;
 		this.predicate = predicate;
 		this.countRunRows = countRunRows;
 		this.wholePlaneRows = wholePlaneRows;
-		view.retainLease();
-		boolean success = false;
-		try {
-			LmdbPrefixRunPlan.OPENED.incrementAndGet();
-			LmdbPrefixRunPlan.ADJACENCY_OPENED.incrementAndGet();
-			success = true;
-		} finally {
-			if (!success) {
-				view.releaseLease();
-			}
-		}
 	}
 
 	@Override
@@ -60,24 +88,14 @@ final class LmdbDirectAdjacencyPrefixRunCursor implements LmdbPrefixRunCursor {
 		if (closed) {
 			return false;
 		}
-		if (wholePlaneRows == 0) {
+		if (wholePlaneRows == 0 || stopAfterCurrent) {
 			close();
 			return false;
 		}
-		while (randomAccess ? nextOrdinal < randomAccessKeyCount : rootCursor.advance()) {
-			long subject;
-			long run;
-			long size;
-			if (randomAccess) {
-				subject = adjacency.keyAt(nextOrdinal++);
-				run = adjacency.find(subject);
-				size = run > 0 ? adjacency.size(run) : 0;
-			} else {
-				subject = rootCursor.key();
-				run = rootCursor.run();
-				size = rootCursor.size();
-				nextOrdinal++;
-			}
+		while (rootCursor.advance()) {
+			long subject = rootCursor.key();
+			long size = rootCursor.size();
+			nextOrdinal++;
 			if (hasStop && Long.compareUnsigned(subject, stopSubject) >= 0) {
 				close();
 				return false;
@@ -88,15 +106,15 @@ final class LmdbDirectAdjacencyPrefixRunCursor implements LmdbPrefixRunCursor {
 			}
 			quad[TripleIndex.SUBJ_IDX] = subject;
 			quad[TripleIndex.PRED_IDX] = predicate;
-			quad[TripleIndex.OBJ_IDX] = randomAccess ? adjacency.neighborAt(run, 0) : rootCursor.neighborAt(0);
-			quad[TripleIndex.CONTEXT_IDX] = randomAccess ? adjacency.contextAt(run, 0) : rootCursor.contextAt(0);
+			quad[TripleIndex.OBJ_IDX] = rootCursor.neighborAt(0);
+			quad[TripleIndex.CONTEXT_IDX] = rootCursor.contextAt(0);
 			runRowCount = wholePlaneRows >= 0 ? wholePlaneRows : countRunRows ? size : 1;
 			prefixesEmitted++;
 			if (countRunRows) {
 				rowsCounted = Math.addExact(rowsCounted, runRowCount);
 			}
 			if (wholePlaneRows >= 0) {
-				closeAfterCurrentPrefix();
+				stopAfterCurrent = true;
 			}
 			return true;
 		}
@@ -106,25 +124,19 @@ final class LmdbDirectAdjacencyPrefixRunCursor implements LmdbPrefixRunCursor {
 
 	@Override
 	public boolean seekTo(long value) {
-		if (closed) {
+		if (closed || stopAfterCurrent) {
 			return false;
 		}
-		if (!randomAccess) {
-			randomAccess = true;
-			randomAccessKeyCount = adjacency.keyCount();
+		long lowerBound = adjacency.lowerBoundKeyOrdinal(value);
+		long ordinal = Math.max(nextOrdinal, lowerBound);
+		if (ordinal >= keyCount) {
+			nextOrdinal = keyCount;
+			return false;
 		}
-		long low = nextOrdinal;
-		long high = randomAccessKeyCount;
-		while (low < high) {
-			long mid = (low + high) >>> 1;
-			if (Long.compareUnsigned(adjacency.keyAt(mid), value) < 0) {
-				low = mid + 1;
-			} else {
-				high = mid;
-			}
-		}
-		nextOrdinal = low;
-		return nextOrdinal < randomAccessKeyCount;
+		rootCursor.close();
+		rootCursor = adjacency.rootScanCursor(ordinal, keyCount);
+		nextOrdinal = ordinal;
+		return true;
 	}
 
 	@Override
@@ -132,12 +144,7 @@ final class LmdbDirectAdjacencyPrefixRunCursor implements LmdbPrefixRunCursor {
 		if (prefixValues != null && prefixValues.length > 0) {
 			return seekTo(prefixValues[0]);
 		}
-		return !closed && (!randomAccess || nextOrdinal < randomAccessKeyCount);
-	}
-
-	private void closeAfterCurrentPrefix() {
-		randomAccess = true;
-		randomAccessKeyCount = nextOrdinal;
+		return !closed && !stopAfterCurrent && nextOrdinal < keyCount;
 	}
 
 	@Override
@@ -188,6 +195,27 @@ final class LmdbDirectAdjacencyPrefixRunCursor implements LmdbPrefixRunCursor {
 		LmdbPrefixRunPlan.PREFIXES_EMITTED.addAndGet(prefixesEmitted);
 		LmdbPrefixRunPlan.ADJACENCY_PREFIXES_EMITTED.addAndGet(prefixesEmitted);
 		LmdbPrefixRunPlan.RUN_ROWS_COUNTED.addAndGet(rowsCounted);
-		view.releaseLease();
+		Throwable failure = null;
+		try {
+			rootCursor.close();
+			adjacency.close();
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+		}
+		try {
+			view.releaseLease();
+		} catch (RuntimeException | Error problem) {
+			if (failure == null) {
+				failure = problem;
+			} else if (failure != problem) {
+				failure.addSuppressed(problem);
+			}
+		}
+		if (failure instanceof Error) {
+			throw (Error) failure;
+		}
+		if (failure != null) {
+			throw (RuntimeException) failure;
+		}
 	}
 }

@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbReferenceNodeLocator.SearchContext;
+import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 
 /**
@@ -29,7 +30,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
  * the probe, so this adapter holds no extra lease.
  * <p>
  * Predicate-wide key enumeration reads the base's compact native key domain directly. When applicable delta generations
- * exist, the adapter materializes only their domain-changing keys and merge-walks those insertions and tombstones
+ * exist, the adapter materializes only the keys touched by those retained deltas and merge-walks their newest handles
  * against the base. Base cardinalities and ordinals remain {@code long}; no full-domain heap copy is made.
  */
 final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdjacency {
@@ -37,8 +38,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	private static final int SOURCE_SHIFT = 48;
 	private static final long LOCAL_MASK = (1L << SOURCE_SHIFT) - 1;
 	private static final long[] NO_KEYS = {};
-	private static final byte DOMAIN_DELETE = 0;
-	private static final byte DOMAIN_INSERT = 1;
+	private static final long DOMAIN_TOMBSTONE = NativeLmdbQuerySource.NativeAdjacency.NOT_FOUND;
 
 	/**
 	 * Runs up to this many edges are decoded once per handle into flat buffers; kernels then read plain arrays instead
@@ -47,8 +47,12 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	 */
 	private static final int MATERIALIZE_MAX_EDGES = 8192;
 
-	private final LmdbDirectAdjacencyStore store;
-	private final LmdbAdjacencyReadView view;
+	private final LmdbInMemoryAdjacencyIndex base;
+	private final LmdbAdjacencyOverlaySet overlays;
+	private final long snapshotRevision;
+	private final int applicableGenerationCount;
+	private final boolean baseOnly;
+	private final boolean baseAbsent;
 	private final long predicate;
 	private final long basePredicateOrdinal;
 	private final int plane;
@@ -56,6 +60,22 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	/** Index 0 is the base catalog; index i+1 is generation i's catalog of the retained state. */
 	private final LmdbAdjacencyArenaCatalog[] sources;
 	private final ContextCatalog contexts;
+	/** CSF base eligible for batch/frontier lookup; null for absent predicates and legacy bases. */
+	private final ImmutablePagedQuadCsfIndex baseCsf;
+	/** Allocated only by a genuine batch/frontier request; scalar probes retain the page-local parent path. */
+	private ImmutablePagedQuadCsfIndex.PartitionLookup basePartitionLookup;
+	private boolean closed;
+	/** Exact one-entry provenance memo for repeated probes and key-run consumers. */
+	private boolean memoValid;
+	private long memoKey;
+	private long memoRun;
+	/**
+	 * Intrusive ownership link used by {@code NativeProbe}. The adjacency object is already allocated per requested
+	 * view, so keeping probe ownership here avoids a second wrapper/node allocation. Individual consumers may still
+	 * close a view early; probe close is idempotent and releases anything they leave behind.
+	 */
+	private LmdbDirectNativeAdjacency probeNext;
+	private boolean probeOwned;
 
 	/** One non-shared group-search hint for this operator-owned adjacency request. */
 	private final SearchContext searchContext = new SearchContext();
@@ -70,25 +90,53 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	private long[] neighborBuf;
 	private long[] contextBuf;
 
-	/** Sorted keys whose presence at this snapshot differs from the base; empty means direct base enumeration. */
+	/**
+	 * Every key touched by an applicable overlay generation, unsigned sorted. The parallel run array contains the
+	 * newest authoritative packed kernel handle, or {@link #DOMAIN_TOMBSTONE}. It is proportional to retained delta
+	 * rows rather than the immutable base and lets enumeration merge physical handles without {@code keyAt -> find}.
+	 */
 	private long[] domainChangeKeys;
-	private byte[] domainChangeKinds;
+	private long[] domainChangeRuns;
+	/** Prefix sum of logical-domain cardinality changes for {@link #domainChangeKeys}. */
+	private int[] domainCountDeltaPrefix;
 	private long domainKeyCount;
 	private long enumeratedOrdinal = -1;
 	private long enumerationBaseOrdinal;
 	private int enumerationChangeIndex;
 	private long enumeratedKey;
 
-	LmdbDirectNativeAdjacency(LmdbDirectAdjacencyStore store, LmdbAdjacencyReadView view, long predicate,
+	LmdbDirectNativeAdjacency(LmdbAdjacencyReadView view, long predicate,
 			long basePredicateOrdinal, int plane, LmdbAdjacencyArenaCatalog[] sources, ContextCatalog contexts) {
-		this.store = store;
-		this.view = view;
+		this.base = view.state().base();
+		this.overlays = view.state().overlays();
+		this.snapshotRevision = view.snapshotRevision();
+		this.applicableGenerationCount = applicableGenerationCount(overlays, snapshotRevision);
+		this.baseOnly = applicableGenerationCount == 0;
+		this.baseAbsent = basePredicateOrdinal < 0;
 		this.predicate = predicate;
 		this.basePredicateOrdinal = basePredicateOrdinal;
 		this.plane = plane;
-		this.baseKeys = view.state().base().keyIndex(basePredicateOrdinal, plane);
+		this.baseKeys = base.keyIndex(basePredicateOrdinal, plane);
 		this.sources = sources;
 		this.contexts = contexts;
+		this.baseCsf = !baseAbsent && base.usesPagedCsf() ? base.csfBase() : null;
+	}
+
+	private static int applicableGenerationCount(LmdbAdjacencyOverlaySet overlays, long snapshotRevision) {
+		if (overlays == null) {
+			return 0;
+		}
+		int low = 0;
+		int high = overlays.generationCount();
+		while (low < high) {
+			int middle = low + high >>> 1;
+			if (overlays.generation(middle).revision() <= snapshotRevision) {
+				low = middle + 1;
+			} else {
+				high = middle;
+			}
+		}
+		return low;
 	}
 
 	static long packHandle(int sourceIndex, long runHandle) {
@@ -106,8 +154,170 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 
 	@Override
 	public long find(long key) {
-		// source index i+1 in the returned handle corresponds to generation i, matching sources[] by construction
-		return store.kernelFind(view, key, plane, predicate, basePredicateOrdinal, searchContext);
+		ensureOpen();
+		if (key <= 0) {
+			return NOT_FOUND;
+		}
+		if (memoValid && memoKey == key) {
+			return memoRun;
+		}
+		long result = findUnmemoized(key);
+		rememberFind(key, result);
+		return result;
+	}
+
+	private long findUnmemoized(long key) {
+		for (int i = applicableGenerationCount - 1; i >= 0; i--) {
+			long found = overlays.generation(i).find(key, plane, predicate);
+			if (found == LmdbAdjacencyDeltaGeneration.ROW_TOMBSTONE) {
+				return NOT_FOUND;
+			}
+			if (found != LmdbAdjacencyDeltaGeneration.NO_VERSION) {
+				return packHandle(i + 1, found);
+			}
+		}
+		if (baseAbsent) {
+			return NOT_FOUND;
+		}
+		// Scalar probes deliberately retain the proven parent path. It owns one reusable page-local LookupCursor
+		// and promotes only the pages that this query actually revisits. Constructing/observing a partition-wide
+		// lookup here delayed that transition and could trigger an O(partition) build on every short-lived query.
+		long handle = base.findRunByOrdinal(key, plane, basePredicateOrdinal, searchContext);
+		if (handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
+			throw new IllegalStateException(
+					"kernel adjacency observed an uncovered row despite the completeness rule");
+		}
+		return handle == LmdbInMemoryAdjacencyIndex.NOT_FOUND ? NOT_FOUND : packHandle(0, handle);
+	}
+
+	@Override
+	public int findBatch(long[] keys, int keyOffset, int count, long[] runHandles, int runOffset) {
+		ensureOpen();
+		if (keys == null || runHandles == null) {
+			throw new NullPointerException(keys == null ? "keys" : "runHandles");
+		}
+		if (keyOffset < 0 || count < 0 || keyOffset > keys.length - count || runOffset < 0
+				|| runOffset > runHandles.length - count) {
+			throw new IllegalArgumentException("invalid adjacency batch range");
+		}
+		if (count == 0) {
+			return 0;
+		}
+
+		ImmutablePagedQuadCsfIndex.PartitionLookup direct = partitionLookup();
+		if (direct != null) {
+			direct.findBatch(keys, keyOffset, count, runHandles, runOffset);
+			for (int i = 0; i < count; i++) {
+				int at = runOffset + i;
+				long localReference = runHandles[at];
+				runHandles[at] = localReference == 0 ? NOT_FOUND
+						: packHandle(0, sources[0].packCsfHandle(localReference));
+			}
+		} else if (baseAbsent) {
+			Arrays.fill(runHandles, runOffset, runOffset + count, NOT_FOUND);
+		} else {
+			for (int i = 0; i < count; i++) {
+				long key = keys[keyOffset + i];
+				long handle = key <= 0 ? LmdbInMemoryAdjacencyIndex.NOT_FOUND
+						: base.findRunByOrdinal(key, plane, basePredicateOrdinal, searchContext);
+				if (handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
+					throw new IllegalStateException(
+							"kernel adjacency observed an uncovered row despite the completeness rule");
+				}
+				runHandles[runOffset + i] = handle == LmdbInMemoryAdjacencyIndex.NOT_FOUND ? NOT_FOUND
+						: packHandle(0, handle);
+			}
+		}
+
+		if (!baseOnly) {
+			for (int i = 0; i < count; i++) {
+				long key = keys[keyOffset + i];
+				if (key <= 0) {
+					runHandles[runOffset + i] = NOT_FOUND;
+					continue;
+				}
+				for (int generationIndex = applicableGenerationCount - 1; generationIndex >= 0; generationIndex--) {
+					long found = overlays.generation(generationIndex).find(key, plane, predicate);
+					if (found == LmdbAdjacencyDeltaGeneration.ROW_TOMBSTONE) {
+						runHandles[runOffset + i] = NOT_FOUND;
+						break;
+					}
+					if (found != LmdbAdjacencyDeltaGeneration.NO_VERSION) {
+						runHandles[runOffset + i] = packHandle(generationIndex + 1, found);
+						break;
+					}
+				}
+			}
+		}
+		int found = 0;
+		for (int i = 0; i < count; i++) {
+			if (runHandles[runOffset + i] > 0) {
+				found++;
+			}
+		}
+		rememberFind(keys[keyOffset + count - 1], runHandles[runOffset + count - 1]);
+		return found;
+	}
+
+	private void rememberFind(long key, long run) {
+		memoKey = key;
+		memoRun = run;
+		memoValid = true;
+	}
+
+	private void ensureOpen() {
+		if (closed) {
+			throw new IllegalStateException("native adjacency is closed");
+		}
+	}
+
+	private ImmutablePagedQuadCsfIndex.PartitionLookup partitionLookup() {
+		ImmutablePagedQuadCsfIndex csf = baseCsf;
+		if (csf == null) {
+			return null;
+		}
+		if (closed) {
+			throw new IllegalStateException("native adjacency is closed");
+		}
+		ImmutablePagedQuadCsfIndex.PartitionLookup lookup = basePartitionLookup;
+		if (lookup == null) {
+			lookup = csf.partitionLookup(basePredicateOrdinal, plane);
+			basePartitionLookup = lookup;
+		}
+		return lookup;
+	}
+
+	@Override
+	public void close() {
+		if (!closed) {
+			closed = true;
+			ImmutablePagedQuadCsfIndex.PartitionLookup lookup = basePartitionLookup;
+			basePartitionLookup = null;
+			if (lookup != null) {
+				lookup.close();
+			}
+			searchContext.close();
+			memoValid = false;
+			domainChangeKeys = null;
+			domainChangeRuns = null;
+			domainCountDeltaPrefix = null;
+			neighborBuf = null;
+			contextBuf = null;
+		}
+	}
+
+	/** Links this newly-created view into one probe-owned intrusive list and returns the new list head. */
+	LmdbDirectNativeAdjacency attachToProbe(LmdbDirectNativeAdjacency head) {
+		if (!probeOwned) {
+			probeOwned = true;
+			probeNext = head;
+			return this;
+		}
+		return head;
+	}
+
+	LmdbDirectNativeAdjacency probeNext() {
+		return probeNext;
 	}
 
 	private void resolve(long runHandle) {
@@ -249,101 +459,227 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 				contextTarget, contextOffset);
 	}
 
+	@Override
+	public long lowerBoundKeyOrdinal(long key) {
+		ensureOpen();
+		prepareKeyDomain();
+		long baseOrdinal = baseKeys == null ? 0 : baseKeys.lowerBoundOrdinal(key);
+		if (domainChangeKeys.length == 0) {
+			return baseOrdinal;
+		}
+		int low = 0;
+		int high = domainChangeKeys.length;
+		while (low < high) {
+			int middle = low + high >>> 1;
+			if (Long.compareUnsigned(domainChangeKeys[middle], key) < 0) {
+				low = middle + 1;
+			} else {
+				high = middle;
+			}
+		}
+		return Math.addExact(baseOrdinal, domainCountDeltaPrefix[low]);
+	}
+
+	@Override
+	public NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor openKeyRunCursor() {
+		return rootScanCursor(0, keyCount());
+	}
+
+	@Override
+	public NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor openKeyRunCursor(long fromOrdinal, long toOrdinal) {
+		long count = keyCount();
+		if (fromOrdinal < 0 || toOrdinal < fromOrdinal || toOrdinal > count) {
+			throw new IllegalArgumentException(
+					"invalid key-run window: [" + fromOrdinal + ", " + toOrdinal + ") of " + count);
+		}
+		return rootScanCursor(fromOrdinal, toOrdinal);
+	}
+
 	RootScanCursor rootScanCursor() {
-		return new RootScanCursor(view.state().overlays() == null && baseKeys != null ? baseKeys.cursor() : null);
+		return rootScanCursor(0, keyCount());
+	}
+
+	RootScanCursor rootScanCursor(long fromOrdinal, long toOrdinal) {
+		prepareKeyDomain();
+		boolean merged = domainChangeKeys.length != 0;
+		long baseCount = baseKeys == null ? 0 : baseKeys.keyCount();
+		LmdbAdjacencyKeyIndex.Cursor baseCursor = baseKeys == null ? null
+				: baseKeys.cursor(merged ? 0 : fromOrdinal, merged ? baseCount : toOrdinal);
+		return new RootScanCursor(baseCursor, fromOrdinal, toOrdinal, merged);
 	}
 
 	/**
-	 * Root-scan cursor that uses row coordinates already present in a paged-CSF key domain as run handles. A composed
-	 * snapshot with overlays keeps the general key-domain/find path so generation replacement and tombstone semantics
-	 * stay centralized in {@link #find(long)}.
+	 * Coordinate-preserving key/run cursor. Untouched base rows keep their CSF page/local-row coordinate. Keys touched
+	 * by retained generations carry the authoritative generation handle prepared once for the domain merge, so neither
+	 * branch performs the old {@code keyAt -> find} round trip.
 	 */
-	final class RootScanCursor {
+	final class RootScanCursor implements NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor {
+		private static final long SIZE_UNKNOWN = Long.MIN_VALUE;
+
 		private final LmdbAdjacencyKeyIndex.Cursor baseCursor;
-		private final long generalKeyCount;
-		private long generalOrdinal;
+		private final long fromOrdinal;
+		private final long toOrdinal;
+		private final boolean merged;
+		private long emittedOrdinal;
+		private int changeIndex;
+		private boolean baseReady;
 		private long key;
 		private long run;
-		private long size;
+		private long size = SIZE_UNKNOWN;
 		private boolean directBaseRun;
-		private final long[] scalarNeighbor = new long[1];
-		private final long[] scalarContext = new long[1];
-		private long scalarOrdinal = -1;
 
-		private RootScanCursor(LmdbAdjacencyKeyIndex.Cursor baseCursor) {
+		private RootScanCursor(LmdbAdjacencyKeyIndex.Cursor baseCursor, long fromOrdinal, long toOrdinal,
+				boolean merged) {
 			this.baseCursor = baseCursor;
-			this.generalKeyCount = baseCursor == null ? keyCount() : 0;
+			this.fromOrdinal = fromOrdinal;
+			this.toOrdinal = toOrdinal;
+			this.merged = merged;
+			this.emittedOrdinal = merged ? 0 : fromOrdinal;
 		}
 
-		boolean advance() {
-			while (baseCursor != null ? baseCursor.advance() : generalOrdinal < generalKeyCount) {
-				if (baseCursor != null) {
-					key = baseCursor.key();
-					directBaseRun = baseCursor.hasDirectRunReference();
-					if (directBaseRun) {
-						run = 0;
-						size = baseCursor.directRunSize();
-					} else {
-						run = find(key);
-					}
-				} else {
-					key = keyAt(generalOrdinal++);
-					run = find(key);
-					directBaseRun = false;
-				}
-				if (!directBaseRun && run > 0) {
-					size = LmdbDirectNativeAdjacency.this.size(run);
-				}
-				if ((directBaseRun || run > 0) && size > 0) {
-					scalarOrdinal = -1;
+		@Override
+		public boolean advance() {
+			while (emittedOrdinal < toOrdinal && nextCandidate()) {
+				long ordinal = emittedOrdinal++;
+				if (ordinal >= fromOrdinal && run > 0) {
+					rememberFind(key, run);
 					return true;
 				}
 			}
 			return false;
 		}
 
-		long key() {
+		private boolean nextCandidate() {
+			if (!merged) {
+				if (baseCursor == null || !baseCursor.advance()) {
+					return false;
+				}
+				bindBaseCandidate();
+				return true;
+			}
+			while (true) {
+				if (!baseReady && baseCursor != null) {
+					baseReady = baseCursor.advance();
+				}
+				boolean hasChange = changeIndex < domainChangeKeys.length;
+				if (!baseReady && !hasChange) {
+					return false;
+				}
+				if (!hasChange) {
+					bindBaseCandidate();
+					baseReady = false;
+					return true;
+				}
+				long changedKey = domainChangeKeys[changeIndex];
+				if (!baseReady) {
+					long changedRun = domainChangeRuns[changeIndex++];
+					if (changedRun > 0) {
+						bindChangedCandidate(changedKey, changedRun);
+						return true;
+					}
+					continue;
+				}
+				long baseKey = baseCursor.key();
+				int comparison = Long.compareUnsigned(baseKey, changedKey);
+				if (comparison < 0) {
+					bindBaseCandidate();
+					baseReady = false;
+					return true;
+				}
+				if (comparison > 0) {
+					long changedRun = domainChangeRuns[changeIndex++];
+					if (changedRun > 0) {
+						bindChangedCandidate(changedKey, changedRun);
+						return true;
+					}
+					continue;
+				}
+				// Replacement or tombstone consumes the matching base coordinate.
+				baseReady = false;
+				long changedRun = domainChangeRuns[changeIndex++];
+				if (changedRun > 0) {
+					bindChangedCandidate(changedKey, changedRun);
+					return true;
+				}
+			}
+		}
+
+		private void bindBaseCandidate() {
+			key = baseCursor.key();
+			directBaseRun = baseCursor.hasDirectRunReference();
+			if (directBaseRun) {
+				run = packHandle(0, sources[0].packCsfHandle(baseCursor.directRunReference()));
+			} else {
+				long baseHandle = base.findRunByOrdinal(key, plane, basePredicateOrdinal, searchContext);
+				run = baseHandle > 0 ? packHandle(0, baseHandle) : NOT_FOUND;
+			}
+			size = SIZE_UNKNOWN;
+		}
+
+		private void bindChangedCandidate(long changedKey, long changedRun) {
+			key = changedKey;
+			directBaseRun = false;
+			run = changedRun;
+			size = SIZE_UNKNOWN;
+		}
+
+		@Override
+		public long key() {
 			return key;
+		}
+
+		@Override
+		public long runHandle() {
+			return run;
 		}
 
 		long run() {
 			return run;
 		}
 
+		@Override
+		public long runSize() {
+			long current = size;
+			if (current == SIZE_UNKNOWN) {
+				current = directBaseRun ? baseCursor.directRunSize() : LmdbDirectNativeAdjacency.this.size(run);
+				size = current;
+			}
+			return current;
+		}
+
 		long size() {
-			return size;
+			return runSize();
 		}
 
 		int copyPairs(long runOffset, int length, long[] neighborTarget, long[] contextTarget) {
-			return directBaseRun ? baseCursor.copyDirectPairs(runOffset, length, neighborTarget, contextTarget)
-					: LmdbDirectNativeAdjacency.this.copyPairs(run, runOffset, length, neighborTarget, 0, contextTarget,
-							0);
+			return directBaseRun
+					? baseCursor.copyDirectPairs(runOffset, length, neighborTarget, 0, contextTarget, 0)
+					: LmdbDirectNativeAdjacency.this.copyPairs(run, runOffset, length, neighborTarget, 0,
+							contextTarget, 0);
 		}
 
-		long neighborAt(long runOffset) {
-			if (directBaseRun) {
-				ensureScalar(runOffset);
-				return scalarNeighbor[0];
-			}
-			return LmdbDirectNativeAdjacency.this.neighborAt(run, runOffset);
+		@Override
+		public int copyNeighbors(long runOffset, int length, long[] target, int targetOffset) {
+			return directBaseRun ? baseCursor.copyDirectPairs(runOffset, length, target, targetOffset, null, 0)
+					: LmdbDirectNativeAdjacency.this.copyNeighbors(run, runOffset, length, target, targetOffset);
 		}
 
-		long contextAt(long runOffset) {
-			if (directBaseRun) {
-				ensureScalar(runOffset);
-				return scalarContext[0];
-			}
-			return LmdbDirectNativeAdjacency.this.contextAt(run, runOffset);
+		@Override
+		public int copyContexts(long runOffset, int length, long[] target, int targetOffset) {
+			return directBaseRun ? baseCursor.copyDirectPairs(runOffset, length, null, 0, target, targetOffset)
+					: LmdbDirectNativeAdjacency.this.copyContexts(run, runOffset, length, target, targetOffset);
 		}
 
-		private void ensureScalar(long runOffset) {
-			if (scalarOrdinal != runOffset) {
-				int copied = baseCursor.copyDirectPairs(runOffset, 1, scalarNeighbor, scalarContext);
-				if (copied != 1) {
-					throw new IllegalStateException("CSF root row ended before scalar ordinal " + runOffset);
-				}
-				scalarOrdinal = runOffset;
-			}
+		@Override
+		public long neighborAt(long runOffset) {
+			return directBaseRun ? baseCursor.directNeighborAt(runOffset)
+					: LmdbDirectNativeAdjacency.this.neighborAt(run, runOffset);
+		}
+
+		@Override
+		public long contextAt(long runOffset) {
+			return directBaseRun ? baseCursor.directContextAt(runOffset)
+					: LmdbDirectNativeAdjacency.this.contextAt(run, runOffset);
 		}
 	}
 
@@ -403,12 +739,14 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 
 	@Override
 	public long keyCount() {
+		ensureOpen();
 		prepareKeyDomain();
 		return domainKeyCount;
 	}
 
 	@Override
 	public long keyAt(long keyOrdinal) {
+		ensureOpen();
 		prepareKeyDomain();
 		if (keyOrdinal < 0 || keyOrdinal >= domainKeyCount) {
 			throw new IllegalArgumentException("key ordinal out of range: " + keyOrdinal + " of " + domainKeyCount);
@@ -432,21 +770,17 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 			return;
 		}
 		long baseCount = baseKeys == null ? 0 : baseKeys.keyCount();
-		LmdbAdjacencyOverlaySet overlays = view.state().overlays();
-		if (overlays == null) {
+		if (applicableGenerationCount == 0) {
 			domainChangeKeys = NO_KEYS;
-			domainChangeKinds = new byte[0];
+			domainChangeRuns = NO_KEYS;
+			domainCountDeltaPrefix = new int[1];
 			domainKeyCount = baseCount;
 			return;
 		}
 
-		long snapshot = view.snapshotRevision();
 		int candidateCount = 0;
-		for (int generationIndex = 0; generationIndex < overlays.generationCount(); generationIndex++) {
+		for (int generationIndex = 0; generationIndex < applicableGenerationCount; generationIndex++) {
 			LmdbAdjacencyDeltaGeneration generation = overlays.generation(generationIndex);
-			if (generation.revision() > snapshot) {
-				break;
-			}
 			for (int row = 0; row < generation.rowCount(); row++) {
 				if (generation.rowPlaneAt(row) == plane && generation.rowPredicateAt(row) == predicate) {
 					candidateCount = Math.incrementExact(candidateCount);
@@ -455,18 +789,16 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		}
 		if (candidateCount == 0) {
 			domainChangeKeys = NO_KEYS;
-			domainChangeKinds = new byte[0];
+			domainChangeRuns = NO_KEYS;
+			domainCountDeltaPrefix = new int[1];
 			domainKeyCount = baseCount;
 			return;
 		}
 
 		long[] candidates = new long[candidateCount];
 		int candidate = 0;
-		for (int generationIndex = 0; generationIndex < overlays.generationCount(); generationIndex++) {
+		for (int generationIndex = 0; generationIndex < applicableGenerationCount; generationIndex++) {
 			LmdbAdjacencyDeltaGeneration generation = overlays.generation(generationIndex);
-			if (generation.revision() > snapshot) {
-				break;
-			}
 			for (int row = 0; row < generation.rowCount(); row++) {
 				if (generation.rowPlaneAt(row) == plane && generation.rowPredicateAt(row) == predicate) {
 					candidates[candidate++] = generation.rowKeyAt(row);
@@ -476,27 +808,31 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		sortUnsigned(candidates);
 
 		long[] changedKeys = new long[candidates.length];
-		byte[] changedKinds = new byte[candidates.length];
+		long[] changedRuns = new long[candidates.length];
+		int[] changedDeltaPrefix = new int[candidates.length + 1];
 		int changed = 0;
+		int cumulativeDelta = 0;
 		long count = baseCount;
 		for (int i = 0; i < candidates.length;) {
 			long key = candidates[i];
 			do {
 				i++;
 			} while (i < candidates.length && candidates[i] == key);
+			long run = findUnmemoized(key);
+			boolean presentAtSnapshot = run > 0;
 			boolean presentInBase = baseKeys != null && baseKeys.contains(key);
-			boolean presentAtSnapshot = store.kernelFind(view, key, plane, predicate, basePredicateOrdinal,
-					searchContext) != NativeLmdbQuerySource.NativeAdjacency.NOT_FOUND;
-			if (presentAtSnapshot == presentInBase) {
-				continue;
-			}
 			changedKeys[changed] = key;
-			changedKinds[changed] = presentAtSnapshot ? DOMAIN_INSERT : DOMAIN_DELETE;
-			count = presentAtSnapshot ? Math.incrementExact(count) : Math.decrementExact(count);
-			changed++;
+			changedRuns[changed] = presentAtSnapshot ? run : DOMAIN_TOMBSTONE;
+			if (presentAtSnapshot != presentInBase) {
+				int delta = presentAtSnapshot ? 1 : -1;
+				cumulativeDelta = Math.addExact(cumulativeDelta, delta);
+				count = presentAtSnapshot ? Math.incrementExact(count) : Math.decrementExact(count);
+			}
+			changedDeltaPrefix[++changed] = cumulativeDelta;
 		}
 		domainChangeKeys = changed == 0 ? NO_KEYS : Arrays.copyOf(changedKeys, changed);
-		domainChangeKinds = changed == 0 ? new byte[0] : Arrays.copyOf(changedKinds, changed);
+		domainChangeRuns = changed == 0 ? NO_KEYS : Arrays.copyOf(changedRuns, changed);
+		domainCountDeltaPrefix = changed == 0 ? new int[1] : Arrays.copyOf(changedDeltaPrefix, changed + 1);
 		domainKeyCount = count;
 	}
 
@@ -513,9 +849,10 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 				return;
 			}
 			long changedKey = domainChangeKeys[enumerationChangeIndex];
+			long changedRun = domainChangeRuns[enumerationChangeIndex];
 			if (!hasBase) {
-				byte kind = domainChangeKinds[enumerationChangeIndex++];
-				if (kind == DOMAIN_INSERT) {
+				enumerationChangeIndex++;
+				if (changedRun > 0) {
 					emitEnumeratedKey(changedKey);
 					return;
 				}
@@ -529,20 +866,20 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 				return;
 			}
 			if (comparison > 0) {
-				byte kind = domainChangeKinds[enumerationChangeIndex++];
-				if (kind == DOMAIN_INSERT) {
+				enumerationChangeIndex++;
+				if (changedRun > 0) {
 					emitEnumeratedKey(changedKey);
 					return;
 				}
 				continue;
 			}
 			enumerationBaseOrdinal++;
-			byte kind = domainChangeKinds[enumerationChangeIndex++];
-			if (kind == DOMAIN_INSERT) {
+			enumerationChangeIndex++;
+			if (changedRun > 0) {
 				emitEnumeratedKey(changedKey);
 				return;
 			}
-			// A deletion consumes the matching base key without emitting it.
+			// A tombstone consumes the matching base key without emitting it.
 		}
 	}
 

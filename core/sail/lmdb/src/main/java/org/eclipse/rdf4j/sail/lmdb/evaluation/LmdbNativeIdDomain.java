@@ -63,9 +63,10 @@ final class AdjacencyKeyDomain implements LmdbNativeIdDomain {
 
 	private final NativeLmdbQuerySource.NativeAdjacency adjacency;
 	private final long keyCount;
-	private long ordinal = -1;
+	private NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor;
 	private long current;
 	private boolean positioned;
+	private boolean exhausted;
 	private boolean closed;
 
 	AdjacencyKeyDomain(NativeLmdbQuerySource.NativeAdjacency adjacency, long keyCount) {
@@ -80,12 +81,17 @@ final class AdjacencyKeyDomain implements LmdbNativeIdDomain {
 
 	@Override
 	public boolean advance() {
-		if (closed || ordinal + 1 >= keyCount) {
+		if (closed || exhausted) {
 			positioned = false;
-			ordinal = keyCount;
 			return false;
 		}
-		current = adjacency.keyAt(++ordinal);
+		NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor currentCursor = cursor();
+		if (currentCursor == null || !currentCursor.advance()) {
+			exhausted = true;
+			positioned = false;
+			return false;
+		}
+		current = currentCursor.key();
 		positioned = true;
 		return true;
 	}
@@ -95,23 +101,21 @@ final class AdjacencyKeyDomain implements LmdbNativeIdDomain {
 		if (closed || keyCount == 0) {
 			return false;
 		}
-		if (!positioned && ordinal >= keyCount) {
-			if (Long.compareUnsigned(current, id) < 0) {
-				return false;
-			}
-			ordinal = -1;
-		}
 		if (positioned) {
 			int comparison = Long.compareUnsigned(current, id);
-			if (comparison == 0) {
+			if (comparison >= 0) {
+				if (comparison > 0) {
+					openAt(id);
+					return advance();
+				}
 				return true;
 			}
-			if (comparison > 0) {
-				// Preserve correctness for a non-monotonic caller. The SIP consumer proves monotonicity before it
-				// borrows this cursor, so its hot path never restarts key enumeration.
-				ordinal = -1;
-				positioned = false;
+			// Monotone seeks continue from the current physical cursor without another directory search.
+		} else if (cursor == null || exhausted) {
+			if (exhausted && Long.compareUnsigned(current, id) < 0) {
+				return false;
 			}
+			openAt(id);
 		}
 		while (advance()) {
 			if (Long.compareUnsigned(current, id) >= 0) {
@@ -136,8 +140,39 @@ final class AdjacencyKeyDomain implements LmdbNativeIdDomain {
 
 	@Override
 	public void close() {
+		if (closed) {
+			return;
+		}
 		closed = true;
 		positioned = false;
+		NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor currentCursor = cursor;
+		cursor = null;
+		if (currentCursor != null) {
+			currentCursor.close();
+		}
+	}
+
+	private NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor() {
+		NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor currentCursor = cursor;
+		if (currentCursor == null) {
+			currentCursor = adjacency.openKeyRunCursor();
+			cursor = currentCursor;
+		}
+		return currentCursor;
+	}
+
+	private void openAt(long id) {
+		NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor currentCursor = cursor;
+		cursor = null;
+		if (currentCursor != null) {
+			currentCursor.close();
+		}
+		long ordinal = adjacency.lowerBoundKeyOrdinal(id);
+		positioned = false;
+		exhausted = ordinal >= keyCount;
+		if (!exhausted) {
+			cursor = adjacency.openKeyRunCursor(ordinal, keyCount);
+		}
 	}
 }
 

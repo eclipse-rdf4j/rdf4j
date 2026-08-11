@@ -474,14 +474,49 @@ final class AdjacencyIntersectionProbe implements java.io.Closeable {
 
 	@Override
 	public void close() {
+		Throwable failure = null;
+		NativeLmdbQuerySource.NativeAdjacency ownedOutgoing = outgoing;
+		NativeLmdbQuerySource.NativeAdjacency ownedIncoming = incoming;
 		outgoing = null;
 		incoming = null;
+		if (ownedOutgoing != null) {
+			try {
+				ownedOutgoing.close();
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
+			}
+		}
+		if (ownedIncoming != null && ownedIncoming != ownedOutgoing) {
+			try {
+				ownedIncoming.close();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
+			}
+		}
 		NativeLmdbQuerySource.NativeProbe ownedProbe = probe;
 		probe = null;
 		if (ownedProbe != null) {
 			ACTIVE_PROBES.decrementAndGet();
 			ACTIVE_TRACES.remove(this);
-			ownedProbe.close();
+			try {
+				ownedProbe.close();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
+			}
+		}
+		if (failure instanceof Error) {
+			throw (Error) failure;
+		}
+		if (failure != null) {
+			throw (RuntimeException) failure;
 		}
 	}
 }

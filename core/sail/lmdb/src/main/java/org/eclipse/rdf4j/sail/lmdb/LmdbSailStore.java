@@ -1650,6 +1650,34 @@ class LmdbSailStore implements SailStore {
 		return new LmdbTripleTermIterator(valueStore.getTripleTerms(subjID, predID, objID), valueStore);
 	}
 
+	/** Closes the intrusive list of query-owned adjacency views without allocating ownership wrappers. */
+	private static Throwable closeProbeAdjacencies(LmdbDirectNativeAdjacency adjacency, Throwable failure) {
+		LmdbDirectNativeAdjacency current = adjacency;
+		while (current != null) {
+			LmdbDirectNativeAdjacency next = current.probeNext();
+			try {
+				current.close();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
+			}
+			current = next;
+		}
+		return failure;
+	}
+
+	private static void rethrowProbeCloseFailure(Throwable failure) {
+		if (failure instanceof Error) {
+			throw (Error) failure;
+		}
+		if (failure != null) {
+			throw (RuntimeException) failure;
+		}
+	}
+
 	private final class LmdbSailSource extends BackingSailSource {
 
 		private final boolean explicit;
@@ -3495,6 +3523,7 @@ class LmdbSailStore implements SailStore {
 				private final LmdbDirectAdjacencyIterator retainedDirect = new LmdbDirectAdjacencyIterator();
 				private LmdbRecordIterator retained;
 				private RecordIterator currentDirect;
+				private LmdbDirectNativeAdjacency ownedAdjacencies;
 				private boolean servedDirect;
 				private boolean closed;
 
@@ -3567,7 +3596,12 @@ class LmdbSailStore implements SailStore {
 						observeAdjacency(observer, false, parallelAdjacencyUnavailableReason(), predicate, bySubject);
 						return null;
 					}
-					return directAdjacency.adjacency(view, predicate, bySubject, explicit, observer);
+					NativeLmdbQuerySource.NativeAdjacency result = directAdjacency.adjacency(view, predicate,
+							bySubject, explicit, observer);
+					if (result instanceof LmdbDirectNativeAdjacency direct) {
+						ownedAdjacencies = direct.attachToProbe(ownedAdjacencies);
+					}
+					return result;
 				}
 
 				@Override
@@ -3606,14 +3640,37 @@ class LmdbSailStore implements SailStore {
 					}
 					closed = true;
 					servedDirect = false;
+					Throwable failure = null;
 					try {
 						closeCurrentDirect();
-					} finally {
+					} catch (RuntimeException | Error problem) {
+						failure = problem;
+					}
+					try {
 						if (retained != null) {
 							retained.dispose();
-							retained = null;
+						}
+					} catch (RuntimeException | Error problem) {
+						if (failure == null) {
+							failure = problem;
+						} else if (failure != problem) {
+							failure.addSuppressed(problem);
+						}
+					} finally {
+						retained = null;
+					}
+					failure = closeProbeAdjacencies(ownedAdjacencies, failure);
+					ownedAdjacencies = null;
+					try {
+						searchContext.close();
+					} catch (RuntimeException | Error problem) {
+						if (failure == null) {
+							failure = problem;
+						} else if (failure != problem) {
+							failure.addSuppressed(problem);
 						}
 					}
+					rethrowProbeCloseFailure(failure);
 				}
 			};
 		}
@@ -4338,6 +4395,7 @@ class LmdbSailStore implements SailStore {
 			private boolean stampHeld;
 			private LmdbRecordIterator retained;
 			private RecordIterator currentDirect;
+			private LmdbDirectNativeAdjacency ownedAdjacencies;
 			private boolean closed;
 			private boolean servedDirect;
 			private long adjacencyDomainPredicate;
@@ -4430,7 +4488,12 @@ class LmdbSailStore implements SailStore {
 						return null;
 					}
 					if (directEligible()) {
-						return directAdjacency.adjacency(adjacencyView, predicate, bySubject, explicit, observer);
+						NativeLmdbQuerySource.NativeAdjacency result = directAdjacency.adjacency(adjacencyView,
+								predicate, bySubject, explicit, observer);
+						if (result instanceof LmdbDirectNativeAdjacency direct) {
+							ownedAdjacencies = direct.attachToProbe(ownedAdjacencies);
+						}
+						return result;
 					}
 					observeAdjacency(observer, false, adjacencyUnavailableReason(), predicate, bySubject);
 					return null;
@@ -4497,21 +4560,49 @@ class LmdbSailStore implements SailStore {
 				closed = true;
 				servedDirect = false;
 				adjacencyDomainPredicate = 0L;
+				Throwable failure = null;
 				try {
 					closeCurrentDirect();
+				} catch (RuntimeException | Error problem) {
+					failure = problem;
+				}
+				try {
+					if (retained != null) {
+						retained.dispose();
+					}
+				} catch (RuntimeException | Error problem) {
+					if (failure == null) {
+						failure = problem;
+					} else if (failure != problem) {
+						failure.addSuppressed(problem);
+					}
 				} finally {
+					retained = null;
+				}
+				failure = closeProbeAdjacencies(ownedAdjacencies, failure);
+				ownedAdjacencies = null;
+				try {
+					searchContext.close();
+				} catch (RuntimeException | Error problem) {
+					if (failure == null) {
+						failure = problem;
+					} else if (failure != problem) {
+						failure.addSuppressed(problem);
+					}
+				}
+				if (stampHeld) {
+					stampHeld = false;
 					try {
-						if (retained != null) {
-							retained.dispose();
-						}
-					} finally {
-						retained = null;
-						if (stampHeld) {
-							stampHeld = false;
-							nativeSourceLock.unlockRead(readStamp);
+						nativeSourceLock.unlockRead(readStamp);
+					} catch (RuntimeException | Error problem) {
+						if (failure == null) {
+							failure = problem;
+						} else if (failure != problem) {
+							failure.addSuppressed(problem);
 						}
 					}
 				}
+				rethrowProbeCloseFailure(failure);
 			}
 		}
 

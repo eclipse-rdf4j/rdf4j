@@ -75,8 +75,13 @@ final class LmdbDirectAdjacencyPredicatePrefixRunCursor implements LmdbPrefixRun
 			}
 			NativeLmdbQuerySource.NativeAdjacency adjacency = store.bindRetainedAdjacency(view, predicate, true,
 					explicit);
-			if (adjacency == null || !bindRepresentative(adjacency, predicate)) {
+			if (adjacency == null) {
 				throw new IllegalStateException("active predicate has no adjacency representative: " + predicate);
+			}
+			try (adjacency) {
+				if (!bindRepresentative(adjacency, predicate)) {
+					throw new IllegalStateException("active predicate has no adjacency representative: " + predicate);
+				}
 			}
 			runRowCount = countRunRows ? statementCount : 1;
 			prefixesEmitted++;
@@ -90,20 +95,22 @@ final class LmdbDirectAdjacencyPredicatePrefixRunCursor implements LmdbPrefixRun
 	}
 
 	private boolean bindRepresentative(NativeLmdbQuerySource.NativeAdjacency adjacency, long predicate) {
-		long keyCount = adjacency.keyCount();
-		for (long ordinal = 0; ordinal < keyCount; ordinal++) {
-			long subject = adjacency.keyAt(ordinal);
-			long run = adjacency.find(subject);
-			if (run <= 0 || adjacency.size(run) <= 0) {
-				continue;
+		try (NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor = adjacency.openKeyRunCursor()) {
+			if (cursor == null) {
+				return false;
 			}
-			quad[TripleIndex.SUBJ_IDX] = subject;
-			quad[TripleIndex.PRED_IDX] = predicate;
-			quad[TripleIndex.OBJ_IDX] = adjacency.neighborAt(run, 0);
-			quad[TripleIndex.CONTEXT_IDX] = adjacency.contextAt(run, 0);
-			return true;
+			while (cursor.advance()) {
+				if (cursor.runSize() <= 0) {
+					continue;
+				}
+				quad[TripleIndex.SUBJ_IDX] = cursor.key();
+				quad[TripleIndex.PRED_IDX] = predicate;
+				quad[TripleIndex.OBJ_IDX] = cursor.neighborAt(0);
+				quad[TripleIndex.CONTEXT_IDX] = cursor.contextAt(0);
+				return true;
+			}
+			return false;
 		}
-		return false;
 	}
 
 	@Override

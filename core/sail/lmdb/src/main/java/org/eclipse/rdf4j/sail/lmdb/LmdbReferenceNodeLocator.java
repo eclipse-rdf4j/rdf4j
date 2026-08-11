@@ -212,6 +212,15 @@ final class LmdbReferenceNodeLocator {
 			return csfCursor;
 		}
 
+		void close() {
+			ImmutablePagedQuadCsfIndex.LookupCursor cursor = csfCursor;
+			csfCursor = null;
+			if (cursor != null) {
+				cursor.close();
+			}
+			boundPredicateOwner = null;
+		}
+
 		private boolean pageMatches(int type, long pageNumber, long pageReference) {
 			return pageType == type && this.pageNumber == pageNumber && this.pageReference == pageReference;
 		}
