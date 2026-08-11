@@ -19,6 +19,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.LongAdder;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -484,21 +485,29 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 			}
 		}
 	}
+	static LongAdder scannedIn = new LongAdder();
+	static LongAdder scannedOut = new LongAdder();
+
+	long scanned = 0;
 
 	private void scanBatched(RecordIterator it, boolean outgoing, boolean explicit, GroupConsumer consumer) {
 		long[] batch = quadBatch();
 		boolean inGroup = false;
 		long groupKey = 0;
 		long groupPredicate = 0;
-		long scanned = 0;
 		int rows;
 		while ((rows = it.fill(batch, BATCH_ROWS)) > 0) {
 			cursorRowsScanned += rows;
 			cursorRowsMatched += rows;
 			for (int row = 0; row < rows; row++) {
-				int offset = row * 4;
-				if (++scanned % 100_000_000 == 0 && logger.isInfoEnabled()) {
-					logger.info(outgoing ? "scanOutgoing: {}" : "scanIncoming: {}", scanned);
+                if (outgoing) {
+                    scannedOut.increment();
+                } else {
+                    scannedIn.increment();
+                }
+                int offset = row * 4;
+				if (++scanned % 10_000_000 == 0 && logger.isInfoEnabled()) {
+					logger.info(outgoing ? "scanOutgoing: {}" : "scanIncoming: {}", outgoing ? scannedOut.sum() : scannedIn.sum());
 				}
 				long key = batch[offset + (outgoing ? TripleIndex.SUBJ_IDX : TripleIndex.OBJ_IDX)];
 				long predicate = batch[offset + TripleIndex.PRED_IDX];

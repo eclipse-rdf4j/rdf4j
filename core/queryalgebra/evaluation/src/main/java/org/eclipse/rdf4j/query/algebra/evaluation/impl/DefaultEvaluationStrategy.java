@@ -1479,6 +1479,51 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			}
 		}
 
+		int size = compiledArgs.size();
+
+		if(size == 1) {
+			QueryValueEvaluationStep expr = compiledArgs.get(0);
+			return bindings -> {
+
+					try {
+						// return first result that does not produce an error on
+						// evaluation.
+						return expr.evaluate(bindings);
+
+					} catch (QueryEvaluationException ignored) {
+					}
+
+
+				throw new ValueExprEvaluationException(
+						"COALESCE arguments do not evaluate to a value: " + node.getSignature());
+			};
+		}
+
+
+		if(size == 2) {
+			QueryValueEvaluationStep expr = compiledArgs.get(0);
+			QueryValueEvaluationStep expr2 = compiledArgs.get(1);
+
+			return bindings -> {
+
+				try {
+					return expr.evaluate(bindings);
+				} catch (QueryEvaluationException ignored) {
+				}
+
+				try {
+					return expr2.evaluate(bindings);
+				} catch (QueryEvaluationException ignored) {
+				}
+
+
+				throw new ValueExprEvaluationException(
+						"COALESCE arguments do not evaluate to a value: " + node.getSignature());
+			};
+		}
+
+		System.out.println(size);
+
 		return bindings -> {
 
 			for (QueryValueEvaluationStep expr : compiledArgs) {

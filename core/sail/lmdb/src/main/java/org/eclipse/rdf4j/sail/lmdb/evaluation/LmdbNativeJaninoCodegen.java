@@ -49,8 +49,8 @@ final class LmdbNativeJaninoCodegen {
 	static final String MAX_ENTRIES_PROPERTY = "rdf4j.lmdb.janinoCodegen.maxEntries";
 	static final String DUMP_DIR_PROPERTY = "rdf4j.lmdb.janinoCodegen.dumpDir";
 
-	static final long DEFAULT_THRESHOLD_ROWS = 32_768L;
-	static final int DEFAULT_MAX_ENTRIES = 128;
+	static final long DEFAULT_THRESHOLD_ROWS = 128;
+	static final int DEFAULT_MAX_ENTRIES = 512;
 
 	static final AtomicLong COMPILATIONS = new AtomicLong();
 	static final AtomicLong COMPILE_FAILURES = new AtomicLong();
