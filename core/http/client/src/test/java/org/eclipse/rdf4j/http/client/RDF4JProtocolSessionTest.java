@@ -18,11 +18,13 @@ import static org.mockserver.model.HttpResponse.response;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.List;
 import java.util.concurrent.Executors;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClients;
+import org.eclipse.rdf4j.http.protocol.LmdbRuntimeProperty;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -66,6 +68,39 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		additionalHeaders.put(testHeader, testValue);
 		session.setAdditionalHttpHeaders(additionalHeaders);
 		return session;
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void liveLmdbPropertiesUseServerEndpointJsonFormAndAdditionalHeaders(String factoryName,
+			MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		String path = "/rdf4j-server/system/lmdb/properties";
+		String json = "{\"name\":\"rdf4j.lmdb.nativeQueryEngine.enabled\",\"group\":\"Planning\","
+				+ "\"label\":\"Native query engine\",\"description\":\"Native\",\"defaultEnabled\":true,"
+				+ "\"enabled\":false,\"explicitlySet\":true}";
+		client.when(request().withMethod("GET").withPath(path))
+				.respond(response().withStatusCode(200)
+						.withContentType(MediaType.APPLICATION_JSON)
+						.withBody("[" + json + "]"));
+		client.when(request().withMethod("POST").withPath(path))
+				.respond(response().withStatusCode(200)
+						.withContentType(MediaType.APPLICATION_JSON)
+						.withBody(json));
+
+		List<LmdbRuntimeProperty> listed = getRDF4JSession().getLmdbRuntimeProperties();
+		LmdbRuntimeProperty updated = getRDF4JSession()
+				.setLmdbRuntimeProperty("rdf4j.lmdb.nativeQueryEngine.enabled", false);
+
+		assertThat(listed).hasSize(1);
+		assertThat(updated.enabled()).isFalse();
+		client.verify(request().withMethod("GET").withPath(path).withHeader(testHeader, testValue));
+		client.verify(request().withMethod("POST")
+				.withPath(path)
+				.withHeader(testHeader, testValue)
+				.withHeader("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
+				.withBody("name=rdf4j.lmdb.nativeQueryEngine.enabled&enabled=false"));
 	}
 
 	@ParameterizedTest(name = "[{0}]")

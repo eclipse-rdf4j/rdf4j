@@ -255,12 +255,14 @@ final class LmdbNativeParallelKernelRows {
 		AtomicBoolean cancelled = new AtomicBoolean();
 		CountDownLatch startup = new CountDownLatch(threads);
 		CountDownLatch tasks = new CountDownLatch(threads);
+		LmdbFusedSipFactorizedRuntime.Session fusedParent = LmdbFusedSipFactorizedRuntime.currentOrNull();
 		ArrayList<Future<?>> futures = new ArrayList<>(threads);
 		for (int w = 0; w < threads; w++) {
 			NativeLmdbQuerySource source = sources[w];
 			try {
 				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-					try {
+					try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
+							.inherit(fusedParent)) {
 						runWorker(lowered, rootAdjacency, rootDomain, rootScan, domains, source, row, ranges,
 								scanQueue, output, kernelFactory, failure, cancelled, startup);
 					} catch (Throwable t) {

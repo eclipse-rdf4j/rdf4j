@@ -91,8 +91,7 @@ class LmdbRecordIterator implements RecordIterator {
 	 * Skip-scan (leapfrog step): after this many consecutive KEY_FILTERED keys, seek past the non-matching run with
 	 * MDB_SET_RANGE instead of stepping key by key. Short mismatch runs keep the cheaper MDB_NEXT.
 	 */
-	private static final boolean SKIP_SCAN_ENABLED = !"false"
-			.equals(System.getProperty("rdf4j.lmdb.skipScan.enabled"));
+	private final boolean skipScanEnabled = !"false".equals(System.getProperty("rdf4j.lmdb.skipScan.enabled"));
 	private static final int SKIP_MIN_RUN = 4;
 	private int consecutiveFiltered;
 	private long[] skipKeyValues;
@@ -483,7 +482,7 @@ class LmdbRecordIterator implements RecordIterator {
 	 * cursor-get result code, or MDB_NOTFOUND when no later key in the range can match.
 	 */
 	private int advancePastFiltered(long keyAddress) {
-		if (!SKIP_SCAN_ENABLED || ++consecutiveFiltered < SKIP_MIN_RUN) {
+		if (!skipScanEnabled || ++consecutiveFiltered < SKIP_MIN_RUN) {
 			return mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 		}
 		if (skipKeyBuf == null) {

@@ -147,6 +147,10 @@ public final class LmdbFactorizedBatch {
 		long[] parents = levelCount == 0 ? roots : levels[levelCount - 1].values;
 		Level previous = levelCount == 0 ? null : levels[levelCount - 1];
 		long rejected = 0;
+		long candidates = 0;
+		long optionalNulls = 0;
+		long flatEquivalent = 0;
+		long multiplicityExtra = 0;
 		for (int parent = 0; parent < parentCount; parent++) {
 			long key = parents[parent];
 			int rootOrdinal = previous == null ? parent : previous.rootOrdinals[parent];
@@ -154,11 +158,14 @@ public final class LmdbFactorizedBatch {
 			if (previous != null && !previous.validAt(parent)) {
 				if (optional) {
 					level.append(UNBOUND, parentMultiplicity, rootOrdinal, parent, false);
+					optionalNulls++;
+					flatEquivalent = saturatedAdd(flatEquivalent, parentMultiplicity);
 				}
 				level.offsets[parent + 1] = level.valueCount;
 				continue;
 			}
 			int size = reader.bindSize(key);
+			candidates += Math.max(0, size);
 			int before = level.valueCount;
 			for (int i = 0; i < size; i++) {
 				long value = reader.neighborAt(i);
@@ -168,13 +175,21 @@ public final class LmdbFactorizedBatch {
 				}
 				long multiplicity = saturatedMultiply(parentMultiplicity, reader.multiplicityAt(i));
 				level.append(value, multiplicity, rootOrdinal, parent, true);
+				flatEquivalent = saturatedAdd(flatEquivalent, multiplicity);
+				if (multiplicity > 1) {
+					multiplicityExtra = saturatedAdd(multiplicityExtra, multiplicity - 1);
+				}
 			}
 			if (level.valueCount == before && optional) {
 				level.append(UNBOUND, parentMultiplicity, rootOrdinal, parent, false);
+				optionalNulls++;
+				flatEquivalent = saturatedAdd(flatEquivalent, parentMultiplicity);
 			}
 			level.offsets[parent + 1] = level.valueCount;
 		}
 		levelCount++;
+		LmdbFusedKernelRuntime.recordFactorizedLevel(rootCount, parentCount, candidates, level.valueCount, rejected,
+				optionalNulls, flatEquivalent, multiplicityExtra);
 		if (rejected > 0) {
 			LmdbFusedKernelRuntime.factorizedRowsAvoided(rejected);
 		}
@@ -187,6 +202,7 @@ public final class LmdbFactorizedBatch {
 		if (domain == LmdbNativeSipFilter.ALL) {
 			return level.valueCount;
 		}
+		int originalCount = level.valueCount;
 		int out = 0;
 		int inputStart = 0;
 		for (int parent = 0; parent < level.parentCount; parent++) {
@@ -209,12 +225,17 @@ public final class LmdbFactorizedBatch {
 			level.offsets[parent + 1] = out;
 		}
 		level.valueCount = out;
+		long rejected = originalCount - out;
+		if (rejected > 0) {
+			LmdbFusedKernelRuntime.factorizedRowsAvoided(rejected);
+		}
 		return out;
 	}
 
 	/** Relocated filter execution at a factorized level. */
 	public int filter(int levelOrdinal, LongPredicate predicate, boolean preserveOptional) {
 		Level level = level(levelOrdinal);
+		int originalCount = level.valueCount;
 		int out = 0;
 		int inputStart = 0;
 		for (int parent = 0; parent < level.parentCount; parent++) {
@@ -235,6 +256,10 @@ public final class LmdbFactorizedBatch {
 			level.offsets[parent + 1] = out;
 		}
 		level.valueCount = out;
+		long rejected = originalCount - out;
+		if (rejected > 0) {
+			LmdbFusedKernelRuntime.factorizedRowsAvoided(rejected);
+		}
 		return out;
 	}
 
@@ -280,6 +305,7 @@ public final class LmdbFactorizedBatch {
 
 	/** Lazily flattens only at a semantic/output boundary; no row array is materialized. */
 	public FlatCursor flatCursor() {
+		LmdbFusedKernelRuntime.materializationBoundary(sumLeafMultiplicity());
 		return new FlatCursor(this);
 	}
 

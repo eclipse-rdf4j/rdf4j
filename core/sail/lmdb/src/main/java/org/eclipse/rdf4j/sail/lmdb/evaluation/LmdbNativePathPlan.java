@@ -79,7 +79,10 @@ final class PathPlan implements SlotPlan {
 	/** Frontier nodes expanded through per-node record cursors, aggregated once per level or worker slice. */
 	static final AtomicLong CURSOR_EXPANSIONS = new AtomicLong();
 
-	static final boolean ENABLED = !"false".equals(System.getProperty("rdf4j.lmdb.nativePath.enabled"));
+	static boolean enabled() {
+		return !"false".equals(System.getProperty("rdf4j.lmdb.nativePath.enabled"));
+	}
+
 	static final String MEMO_ENABLED_PROPERTY = "rdf4j.lmdb.nativePath.memo.enabled";
 	static final String MEMO_MAX_VALUES_PROPERTY = "rdf4j.lmdb.nativePath.memo.maxValues";
 	static final String TARGETS_ENABLED_PROPERTY = "rdf4j.lmdb.nativePath.targets.enabled";

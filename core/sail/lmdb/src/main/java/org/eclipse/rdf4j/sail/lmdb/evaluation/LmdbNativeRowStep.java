@@ -408,9 +408,28 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		}
 		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(originalExpr, arg, layout, row.boundMask());
 		LmdbNativeExplain.addRuntimeMetric(originalExpr, "nativeInvocationsActual", 1L);
-		List<BindingSet> result = evaluateAllInitialized(base, row);
-		row.completeRuntimePlan();
-		return result;
+		LmdbFusedSipFactorizedRuntime.Session inherited = LmdbFusedSipFactorizedRuntime.currentOrNull();
+		boolean ownsSession = inherited == null;
+		LmdbFusedSipFactorizedRuntime.Session session = ownsSession
+				? LmdbFusedSipFactorizedRuntime.create(System.identityHashCode(arg), row.runtimePlan != null)
+				: inherited;
+		boolean completed = false;
+		try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session)) {
+			List<BindingSet> result = evaluateAllInitialized(base, row);
+			session.recordMaterializationBoundary(result.size());
+			completed = true;
+			return result;
+		} finally {
+			if (row.runtimePlan != null) {
+				row.runtimePlan.fusedTelemetry(session.telemetry());
+			}
+			if (completed) {
+				row.completeRuntimePlan();
+			}
+			if (ownsSession) {
+				session.close();
+			}
+		}
 	}
 
 	private List<BindingSet> evaluateAllInitialized(BindingSet base, RowState row) {
@@ -1221,8 +1240,14 @@ final class NativeExistsValueStep implements QueryValueEvaluationStep {
 				row.boundMask());
 		LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeInvocationsActual", 1L);
 		LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_BARE_EXISTS);
+		LmdbFusedSipFactorizedRuntime.Session inherited = LmdbFusedSipFactorizedRuntime.currentOrNull();
+		boolean ownsSession = inherited == null;
+		LmdbFusedSipFactorizedRuntime.Session session = ownsSession
+				? LmdbFusedSipFactorizedRuntime.create(System.identityHashCode(step.arg), row.runtimePlan != null)
+				: inherited;
 		boolean exists;
-		try (NativeExistsPatternCursor cursor = new NativeExistsPatternCursor(existsPlan, row)) {
+		try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session);
+				NativeExistsPatternCursor cursor = new NativeExistsPatternCursor(existsPlan, row)) {
 			if (row.runtimePlan != null) {
 				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_BARE_EXISTS, existsPlan.patterns);
 				row.runtimePlan.janinoDeclined("UNSUPPORTED_ROUTE[bareExists]");
@@ -1232,6 +1257,13 @@ final class NativeExistsValueStep implements QueryValueEvaluationStep {
 			exists = cursor.exists();
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
+		} finally {
+			if (row.runtimePlan != null) {
+				row.runtimePlan.fusedTelemetry(session.telemetry());
+			}
+			if (ownsSession) {
+				session.close();
+			}
 		}
 		row.completeRuntimePlan();
 		return BooleanLiteral.valueOf(exists);
@@ -1464,6 +1496,9 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 	RowState row;
 	RowCursor cursor;
 	BindingSet next;
+	LmdbFusedSipFactorizedRuntime.Session fusedSession;
+	boolean ownsFusedSession;
+	long emittedRows;
 
 	NativeBareRowsIteration(NativeBareRowsStep step, BindingSet base) {
 		this.step = step;
@@ -1483,7 +1518,12 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 				finish(true);
 				return false;
 			}
-			if (cursor.next()) {
+			boolean advanced;
+			try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(fusedSession)) {
+				advanced = cursor.next();
+			}
+			if (advanced) {
+				emittedRows++;
 				next = step.snapshot(row.slots, base);
 				return true;
 			}
@@ -1508,17 +1548,24 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, step.arg, step.layout,
 				row.boundMask());
 		LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeInvocationsActual", 1L);
-		if (step.bulk.constantFalseFor(base)) {
-			LmdbNativeExplain.recordExecutionPath(step.originalExpr,
-					LmdbNativeAttemptMetrics.PATH_CONSTANT_FALSE_FILTER);
-			return false;
+		LmdbFusedSipFactorizedRuntime.Session inherited = LmdbFusedSipFactorizedRuntime.currentOrNull();
+		ownsFusedSession = inherited == null;
+		fusedSession = ownsFusedSession
+				? LmdbFusedSipFactorizedRuntime.create(System.identityHashCode(step.arg), row.runtimePlan != null)
+				: inherited;
+		try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(fusedSession)) {
+			if (step.bulk.constantFalseFor(base)) {
+				LmdbNativeExplain.recordExecutionPath(step.originalExpr,
+						LmdbNativeAttemptMetrics.PATH_CONSTANT_FALSE_FILTER);
+				return false;
+			}
+			cursor = step.arg.open(row);
+			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_BARE_DIRECT);
+			if (row.runtimePlan != null) {
+				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_BARE_DIRECT, new SlotPlan[] { step.arg });
+			}
+			return true;
 		}
-		cursor = step.arg.open(row);
-		LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_BARE_DIRECT);
-		if (row.runtimePlan != null) {
-			row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_BARE_DIRECT, new SlotPlan[] { step.arg });
-		}
-		return true;
 	}
 
 	@Override
@@ -1552,15 +1599,31 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 	private void closeResources(boolean completed) {
 		RowCursor activeCursor = cursor;
 		RowState activeRow = row;
+		LmdbFusedSipFactorizedRuntime.Session activeSession = fusedSession;
 		cursor = null;
 		try {
-			if (activeCursor != null) {
+			if (activeSession != null) {
+				try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
+						.attach(activeSession)) {
+					if (activeCursor != null) {
+						activeCursor.close();
+					}
+					activeSession.recordMaterializationBoundary(emittedRows);
+					if (activeRow != null && activeRow.runtimePlan != null) {
+						activeRow.runtimePlan.fusedTelemetry(activeSession.telemetry());
+					}
+				}
+			} else if (activeCursor != null) {
 				activeCursor.close();
 			}
 			if (completed && activeRow != null) {
 				activeRow.completeRuntimePlan();
 			}
 		} finally {
+			if (ownsFusedSession && activeSession != null) {
+				activeSession.close();
+			}
+			fusedSession = null;
 			step = null;
 			base = null;
 			row = null;

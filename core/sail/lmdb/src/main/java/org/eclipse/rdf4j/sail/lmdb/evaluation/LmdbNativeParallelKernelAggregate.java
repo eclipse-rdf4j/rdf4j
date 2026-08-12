@@ -275,12 +275,14 @@ final class LmdbNativeParallelKernelAggregate {
 				? new ConcurrentLinkedQueue<>(Arrays.asList(scanPartitions))
 				: null;
 		AtomicReference<Throwable> failure = new AtomicReference<>();
+		LmdbFusedSipFactorizedRuntime.Session fusedParent = LmdbFusedSipFactorizedRuntime.currentOrNull();
 		ArrayList<Future<HashMap<LongsKey, Partial>>> futures = new ArrayList<>(threads);
 		for (int w = 0; w < threads; w++) {
 			NativeLmdbQuerySource source = sources[w];
 			try {
 				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-					try {
+					try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
+							.inherit(fusedParent)) {
 						return runWorker(lowered, workerAggregate, rootAdjacency, rootDomain, rootScan, domains,
 								source, emitter, ranges, scanQueue, kernelFactory, failure);
 					} catch (Throwable t) {

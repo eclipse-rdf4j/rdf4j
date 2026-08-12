@@ -86,9 +86,25 @@ final class LmdbNativeKernelExecution {
 	static List<BindingSet> tryEvaluateAggregate(SlotPlan arg, RowState row,
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
 			ValueExpr havingCondition) {
-		try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.enter(0L)) {
+		LmdbFusedSipFactorizedRuntime.Session inherited = LmdbFusedSipFactorizedRuntime.currentOrNull();
+		if (inherited != null) {
 			return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, havingCondition,
 					false);
+		}
+		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(
+				System.identityHashCode(arg), Long.getLong("rdf4j.lmdb.native.fused.maxBytes", 8L << 20),
+				row.runtimePlan != null);
+		try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session)) {
+			List<BindingSet> result = tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget,
+					havingCondition,
+					false);
+			if (result != null) {
+				session.recordMaterializationBoundary(result.size());
+			}
+			return result;
+		} finally {
+			publishFusedTelemetry(row.runtimePlan, session);
+			session.close();
 		}
 	}
 
@@ -274,7 +290,7 @@ final class LmdbNativeKernelExecution {
 					"no-fusion-opportunity");
 			return null;
 		}
-		return tryOpenRows(arg, row, originalExpr, false, null, null);
+		return openWithFusedRuntime(arg, row, () -> tryOpenRows(arg, row, originalExpr, false, null, null));
 	}
 
 	/** The consumer's ORDER BY / LIMIT / OFFSET, offered to the kernel terminal (M7 OutputMods). */
@@ -305,8 +321,8 @@ final class LmdbNativeKernelExecution {
 		if (!hasFusionOpportunity(arg) || !LmdbNativeJaninoCodegen.enabled()) {
 			return null;
 		}
-		return tryOpenRows(arg, row, originalExpr, false, null,
-				new OrderedMods(orderSlots, orderAscending, limit, offset, strictCompare));
+		return openWithFusedRuntime(arg, row, () -> tryOpenRows(arg, row, originalExpr, false, null,
+				new OrderedMods(orderSlots, orderAscending, limit, offset, strictCompare)));
 	}
 
 	/**
@@ -321,7 +337,38 @@ final class LmdbNativeKernelExecution {
 			// attempt against PATH_IR_KERNEL would double-count in the decline census.
 			return null;
 		}
-		return tryOpenRows(arg, row, originalExpr, false, distinctSlots, null);
+		return openWithFusedRuntime(arg, row,
+				() -> tryOpenRows(arg, row, originalExpr, false, distinctSlots, null));
+	}
+
+	@FunctionalInterface
+	private interface RowCursorFactory {
+		RowCursor open() throws IOException;
+	}
+
+	private static RowCursor openWithFusedRuntime(SlotPlan arg, RowState row, RowCursorFactory factory)
+			throws IOException {
+		if (LmdbFusedSipFactorizedRuntime.currentOrNull() != null) {
+			// The enclosing native invocation owns one session for all strategies. Do not split telemetry or memory
+			// accounting merely because this particular producer happens to be a generated kernel.
+			return factory.open();
+		}
+		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(
+				System.identityHashCode(arg), row.runtimePlan != null);
+		RowCursor cursor;
+		try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session)) {
+			cursor = factory.open();
+		} catch (IOException | RuntimeException | Error problem) {
+			publishFusedTelemetry(row.runtimePlan, session);
+			session.close();
+			throw problem;
+		}
+		if (cursor == null) {
+			publishFusedTelemetry(row.runtimePlan, session);
+			session.close();
+			return null;
+		}
+		return new FusedRuntimeRowCursor(cursor, session, row.runtimePlan);
 	}
 
 	/**
@@ -648,6 +695,13 @@ final class LmdbNativeKernelExecution {
 		}
 	}
 
+	private static void publishFusedTelemetry(LmdbNativeRuntimePlan.Invocation runtimePlan,
+			LmdbFusedSipFactorizedRuntime.Session session) {
+		if (runtimePlan != null && session != null) {
+			runtimePlan.fusedTelemetry(session.telemetry());
+		}
+	}
+
 	private static Throwable addFailure(Throwable failure, Throwable problem) {
 		if (failure == null) {
 			return problem;
@@ -734,6 +788,52 @@ final class LmdbNativeKernelExecution {
 											+ ",keyEnumerationRequired=" + request.needsKeyEnum + "]",
 							null, NativeLmdbQuerySource.UNKNOWN_ID, request.predicate,
 							NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID);
+		}
+	}
+
+	/** Keeps the query-local fused runtime attached for every cursor pull and publishes it exactly once on close. */
+	private static final class FusedRuntimeRowCursor implements RowCursor {
+		private final RowCursor delegate;
+		private final LmdbFusedSipFactorizedRuntime.Session session;
+		private final LmdbNativeRuntimePlan.Invocation runtimePlan;
+		private long emittedRows;
+		private boolean closed;
+
+		private FusedRuntimeRowCursor(RowCursor delegate, LmdbFusedSipFactorizedRuntime.Session session,
+				LmdbNativeRuntimePlan.Invocation runtimePlan) {
+			this.delegate = delegate;
+			this.session = session;
+			this.runtimePlan = runtimePlan;
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session)) {
+				boolean hasNext = delegate.next();
+				if (hasNext) {
+					emittedRows++;
+				}
+				return hasNext;
+			}
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			Throwable failure = null;
+			try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session)) {
+				delegate.close();
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
+			} finally {
+				session.recordMaterializationBoundary(emittedRows);
+				publishFusedTelemetry(runtimePlan, session);
+				session.close();
+			}
+			rethrowFailure(failure);
 		}
 	}
 

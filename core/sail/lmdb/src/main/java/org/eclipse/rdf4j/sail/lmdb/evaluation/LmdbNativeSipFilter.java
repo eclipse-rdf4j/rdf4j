@@ -28,6 +28,15 @@ final class LmdbNativeSipFilter {
 	interface Domain {
 		boolean mayContain(long value);
 
+		default String representation() {
+			return getClass().getSimpleName().toUpperCase();
+		}
+
+		/** Approximate query-owned bytes; borrowed input arrays may report zero at the install site instead. */
+		default long estimatedBytes() {
+			return 0L;
+		}
+
 		default boolean exact() {
 			return false;
 		}
@@ -58,11 +67,26 @@ final class LmdbNativeSipFilter {
 		}
 	}
 
-	static final Domain ALL = value -> true;
+	static final Domain ALL = new Domain() {
+		@Override
+		public boolean mayContain(long value) {
+			return true;
+		}
+
+		@Override
+		public String representation() {
+			return "ALL";
+		}
+	};
 	static final Domain EMPTY = new Domain() {
 		@Override
 		public boolean mayContain(long value) {
 			return false;
+		}
+
+		@Override
+		public String representation() {
+			return "EMPTY";
 		}
 
 		@Override
@@ -117,6 +141,39 @@ final class LmdbNativeSipFilter {
 			return new Affine(data[offset], stride, unique);
 		}
 		return new Sorted(data, offset, unique);
+	}
+
+	/** Exact view over an already unsigned-sorted borrowed array. It never compacts or rewrites caller storage. */
+	static Domain borrowedSorted(long[] values, int from, int length) {
+		Objects.checkFromIndexSize(from, length, values.length);
+		if (length == 0) {
+			return EMPTY;
+		}
+		if (length == 1) {
+			return new Singleton(values[from]);
+		}
+		long previous = values[from];
+		boolean allEqual = true;
+		long stride = values[from + 1] - previous;
+		boolean affine = stride != 0;
+		for (int i = 1; i < length; i++) {
+			long value = values[from + i];
+			if (Long.compareUnsigned(previous, value) > 0) {
+				throw new IllegalArgumentException("SIP exact domain must be unsigned sorted");
+			}
+			allEqual &= value == previous;
+			if (i > 1 && value - previous != stride) {
+				affine = false;
+			}
+			previous = value;
+		}
+		if (allEqual) {
+			return new Singleton(values[from]);
+		}
+		if (affine) {
+			return new Affine(values[from], stride, length);
+		}
+		return new Sorted(values, from, length);
 	}
 
 	static Builder builder(int expectedValues, long maximumBytes, boolean allowBloom) {
@@ -225,15 +282,15 @@ final class LmdbNativeSipFilter {
 			if (!sorted) {
 				Arrays.sort(values, 0, size);
 				// Arrays.sort is signed. Rotate once to unsigned order.
-				int firstNegative = 0;
-				while (firstNegative < size && values[firstNegative] >= 0) {
-					firstNegative++;
+				int firstNonNegative = 0;
+				while (firstNonNegative < size && values[firstNonNegative] < 0) {
+					firstNonNegative++;
 				}
-				if (firstNegative != 0 && firstNegative != size) {
+				if (firstNonNegative != 0 && firstNonNegative != size) {
 					long[] rotated = new long[values.length];
-					int negatives = size - firstNegative;
-					System.arraycopy(values, firstNegative, rotated, 0, negatives);
-					System.arraycopy(values, 0, rotated, negatives, firstNegative);
+					int nonNegative = size - firstNonNegative;
+					System.arraycopy(values, firstNonNegative, rotated, 0, nonNegative);
+					System.arraycopy(values, 0, rotated, nonNegative, firstNonNegative);
 					values = rotated;
 				}
 			}
@@ -292,6 +349,16 @@ final class LmdbNativeSipFilter {
 		}
 
 		@Override
+		public String representation() {
+			return "INTERSECTION";
+		}
+
+		@Override
+		public long estimatedBytes() {
+			return saturatedBytes(left.estimatedBytes(), right.estimatedBytes());
+		}
+
+		@Override
 		public boolean exact() {
 			return left.exact() && right.exact();
 		}
@@ -309,6 +376,16 @@ final class LmdbNativeSipFilter {
 		}
 
 		@Override
+		public String representation() {
+			return "UNION";
+		}
+
+		@Override
+		public long estimatedBytes() {
+			return saturatedBytes(left.estimatedBytes(), right.estimatedBytes());
+		}
+
+		@Override
 		public boolean exact() {
 			return left.exact() && right.exact();
 		}
@@ -322,6 +399,11 @@ final class LmdbNativeSipFilter {
 	}
 
 	private record Singleton(long value) implements Domain {
+		@Override
+		public String representation() {
+			return "SINGLETON";
+		}
+
 		@Override
 		public boolean mayContain(long candidate) {
 			return candidate == value;
@@ -344,6 +426,11 @@ final class LmdbNativeSipFilter {
 	}
 
 	private record Affine(long first, long stride, int count) implements Domain {
+		@Override
+		public String representation() {
+			return "AFFINE";
+		}
+
 		@Override
 		public boolean mayContain(long value) {
 			long delta = value - first;
@@ -379,6 +466,16 @@ final class LmdbNativeSipFilter {
 	}
 
 	private record Sorted(long[] values, int offset, int length) implements Domain {
+		@Override
+		public String representation() {
+			return "EXACT_SORTED";
+		}
+
+		@Override
+		public long estimatedBytes() {
+			return (long) length * Long.BYTES;
+		}
+
 		@Override
 		public boolean mayContain(long value) {
 			int low = offset;
@@ -447,6 +544,16 @@ final class LmdbNativeSipFilter {
 	}
 
 	private record Bloom(long[] words, int mask, int hashCount, long cardinality) implements Domain {
+		@Override
+		public String representation() {
+			return "BLOOM";
+		}
+
+		@Override
+		public long estimatedBytes() {
+			return (long) words.length * Long.BYTES;
+		}
+
 		static Domain build(long[] values, int size, long maximumBytes) {
 			int wordCount = 1;
 			long maxWords = Math.max(1, maximumBytes / Long.BYTES);
@@ -484,6 +591,11 @@ final class LmdbNativeSipFilter {
 		public long cardinalityUpperBound() {
 			return cardinality;
 		}
+	}
+
+	private static long saturatedBytes(long left, long right) {
+		long sum = left + right;
+		return sum < 0 || sum < left ? Long.MAX_VALUE : sum;
 	}
 
 	private static long mix(long value) {

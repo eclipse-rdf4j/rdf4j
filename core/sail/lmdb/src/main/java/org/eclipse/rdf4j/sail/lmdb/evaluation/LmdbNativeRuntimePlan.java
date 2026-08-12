@@ -177,6 +177,7 @@ final class LmdbNativeRuntimePlan {
 		private String adaptiveReason;
 		private String adaptiveEpochs = "[]";
 		private Integer adaptiveFinalDepth;
+		private LmdbFusedSipFactorizedRuntime.Telemetry fusedTelemetry = LmdbFusedSipFactorizedRuntime.Telemetry.EMPTY;
 		private boolean completed;
 		private long opens = 1L;
 		private SlotPlan[] lastRenderedOrder;
@@ -393,6 +394,16 @@ final class LmdbNativeRuntimePlan {
 			publishIfAllowed();
 		}
 
+		void fusedTelemetry(LmdbFusedSipFactorizedRuntime.Telemetry telemetry) {
+			if (telemetry == null) {
+				return;
+			}
+			synchronized (this) {
+				fusedTelemetry = telemetry;
+			}
+			publishIfAllowed();
+		}
+
 		void publish() {
 			publishIfAllowed();
 		}
@@ -454,6 +465,7 @@ final class LmdbNativeRuntimePlan {
 			out.append("\n    adjacencySIP:")
 					.append("\n      used: ")
 					.append(adjacencyUsed)
+					.append("\n      scope: planner/interpreted")
 					.append("\n      state: ")
 					.append(adjacencyState)
 					.append("\n      reason: ")
@@ -470,12 +482,179 @@ final class LmdbNativeRuntimePlan {
 			out.append("\n    adaptiveFilterPlacement:")
 					.append("\n      used: ")
 					.append(adaptiveUsed)
+					.append("\n      scope: planner/interpreted")
 					.append("\n      reason: ")
 					.append(adaptiveReason)
 					.append("\n      epochs: ")
 					.append(adaptiveEpochs)
 					.append("\n      finalDepth: ")
 					.append(adaptiveFinalDepth == null ? "<not applicable>" : adaptiveFinalDepth);
+			renderRuntimeSip(out, fusedTelemetry);
+			renderFactorization(out, fusedTelemetry.factorization());
+			renderRuntimeFilters(out, fusedTelemetry);
+		}
+
+		private static void renderRuntimeSip(StringBuilder out, LmdbFusedSipFactorizedRuntime.Telemetry telemetry) {
+			boolean used = telemetry.runtimeSipUsed();
+			String reason;
+			if (used) {
+				reason = "ACTIVATED";
+			} else if (telemetry.activeDomainCount() > 0) {
+				reason = "DOMAINS_INSTALLED_BUT_NOT_CONSUMED";
+			} else if (!telemetry.domains().isEmpty()) {
+				reason = "NO_USEFUL_DOMAIN[all domains are ALL]";
+			} else {
+				reason = "NOT_ATTEMPTED[no generated/runtime SIP domain installed]";
+			}
+			out.append("\n    runtimeSIP:")
+					.append("\n      used: ")
+					.append(used)
+					.append("\n      scope: generated/factorized")
+					.append("\n      reason: ")
+					.append(reason)
+					.append("\n      activeDomains: ")
+					.append(telemetry.activeDomainCount())
+					.append("\n      installedDomains: ")
+					.append(telemetry.domains().size())
+					.append("\n      membershipTests: ")
+					.append(telemetry.sipTests())
+					.append("\n      rowsRejectedBeforeProbe: ")
+					.append(telemetry.sipRejects())
+					.append("\n      bypassedTests: ")
+					.append(telemetry.sipBypasses())
+					.append("\n      rejectionRatio: ")
+					.append(formatRatio(telemetry.sipRejectionRatio()))
+					.append("\n      retainedBytes: ")
+					.append(telemetry.retainedBytes())
+					.append("\n      memoryRefusals: ")
+					.append(telemetry.memoryRefusals())
+					.append("\n      domains:");
+			if (telemetry.domains().isEmpty()) {
+				out.append("\n        <none>");
+			} else {
+				int rendered = 0;
+				for (LmdbFusedSipFactorizedRuntime.DomainTelemetry domain : telemetry.domains()) {
+					if (rendered++ == 16) {
+						out.append("\n        ... (remaining domains omitted)");
+						break;
+					}
+					out.append("\n        ")
+							.append(domain.id())
+							.append(":")
+							.append("\n          label: ")
+							.append(domain.label())
+							.append("\n          producer: ")
+							.append(domain.producer())
+							.append("\n          representation: ")
+							.append(domain.representation())
+							.append("\n          exact: ")
+							.append(domain.exact())
+							.append("\n          cardinalityUpperBound: ")
+							.append(domain.cardinalityUpperBound())
+							.append("\n          buildNanos: ")
+							.append(domain.buildNanos())
+							.append("\n          claimedBytes: ")
+							.append(domain.claimedBytes())
+							.append("\n          estimatedRepresentationBytes: ")
+							.append(domain.estimatedBytes())
+							.append("\n          consumers: ")
+							.append(domain.consumers())
+							.append("\n          tests: ")
+							.append(domain.tests())
+							.append("\n          rejects: ")
+							.append(domain.rejects());
+				}
+			}
+		}
+
+		private static void renderFactorization(StringBuilder out,
+				LmdbFusedSipFactorizedRuntime.FactorizationTelemetry telemetry) {
+			out.append("\n    factorization:")
+					.append("\n      used: ")
+					.append(telemetry.used())
+					.append("\n      scope: native/generated")
+					.append("\n      modes: ")
+					.append(telemetry.modes())
+					.append("\n      rootRows: ")
+					.append(telemetry.rootRows())
+					.append("\n      parentRows: ")
+					.append(telemetry.parentRows())
+					.append("\n      candidateRows: ")
+					.append(telemetry.candidateRows())
+					.append("\n      storedLanes: ")
+					.append(telemetry.storedLanes())
+					.append("\n      flatEquivalentRows: ")
+					.append(telemetry.flatEquivalentRows())
+					.append("\n      rowsRejectedBeforeMaterialization: ")
+					.append(telemetry.rejectedBeforeMaterialization())
+					.append("\n      optionalNullLanes: ")
+					.append(telemetry.optionalNullLanes())
+					.append("\n      multiplicityExtra: ")
+					.append(telemetry.multiplicityExtra())
+					.append("\n      materializationBoundaries: ")
+					.append(telemetry.materializationBoundaries())
+					.append("\n      flattenedRows: ")
+					.append(telemetry.flattenedRows())
+					.append("\n      compressionRatio: ")
+					.append(formatRatio(telemetry.compressionRatio()))
+					.append("\n      admissionRefusals: ")
+					.append(telemetry.refusals());
+		}
+
+		private static void renderRuntimeFilters(StringBuilder out,
+				LmdbFusedSipFactorizedRuntime.Telemetry telemetry) {
+			boolean used = telemetry.filters().stream().anyMatch(LmdbFusedSipFactorizedRuntime.FilterTelemetry::used);
+			out.append("\n    runtimeFilterPlacement:")
+					.append("\n      used: ")
+					.append(used)
+					.append("\n      scope: generated/factorized")
+					.append("\n      reason: ")
+					.append(used ? "ACTIVATED" : "NOT_ATTEMPTED[no generated/factorized filter placement observed]")
+					.append("\n      filtersRelocated: ")
+					.append(telemetry.filtersRelocated())
+					.append("\n      tests: ")
+					.append(telemetry.relocatedFilterTests())
+					.append("\n      filters:");
+			if (telemetry.filters().isEmpty()) {
+				out.append("\n        <none>");
+			} else {
+				int rendered = 0;
+				for (LmdbFusedSipFactorizedRuntime.FilterTelemetry filter : telemetry.filters()) {
+					if (rendered++ == 16) {
+						out.append("\n        ... (remaining filters omitted)");
+						break;
+					}
+					out.append("\n        ")
+							.append(filter.id())
+							.append(":")
+							.append("\n          label: ")
+							.append(filter.label())
+							.append("\n          originalStage: ")
+							.append(filter.originalStage())
+							.append("\n          selectedStage: ")
+							.append(filter.selectedStage())
+							.append("\n          learned: ")
+							.append(filter.learned())
+							.append("\n          placements: ")
+							.append(filter.placements())
+							.append("\n          moves: ")
+							.append(filter.moves())
+							.append("\n          observations: ")
+							.append(filter.observations())
+							.append("\n          tested: ")
+							.append(filter.tested())
+							.append("\n          accepted: ")
+							.append(filter.accepted())
+							.append("\n          elapsedNanos: ")
+							.append(filter.elapsedNanos())
+							.append("\n          downstreamRowsAvoided: ")
+							.append(filter.downstreamRowsAvoided());
+				}
+			}
+		}
+
+		private static String formatRatio(double value) {
+			return String.format(java.util.Locale.ROOT, "%.4f", value);
 		}
 
 		private static void appendOrder(StringBuilder out, List<String> order, String indent) {

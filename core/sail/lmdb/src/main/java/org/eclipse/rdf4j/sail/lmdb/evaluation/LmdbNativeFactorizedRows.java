@@ -74,10 +74,14 @@ final class LmdbNativeFactorizedRows {
 	/** Tail-branch enum scans whose per-key value memo was skipped because the probe is adjacency-cache-backed. */
 	static final AtomicLong CACHE_BACKED_MEMO_SKIPS = new AtomicLong();
 
-	static final boolean ENABLED = !"false".equals(System.getProperty("rdf4j.lmdb.factorizedRows.enabled"));
+	static boolean enabled() {
+		return !"false".equals(System.getProperty("rdf4j.lmdb.factorizedRows.enabled"));
+	}
+
 	/** Separately benchmarkable migration step: batched fills + per-key quad memo for the flat prefix depths. */
-	static final boolean CHUNKED_PREFIX_ENABLED = !"false"
-			.equals(System.getProperty("rdf4j.lmdb.factorizedRows.chunkedPrefix.enabled"));
+	static boolean chunkedPrefixEnabled() {
+		return !"false".equals(System.getProperty("rdf4j.lmdb.factorizedRows.chunkedPrefix.enabled"));
+	}
 
 	static final int BATCH_ROWS = 1024;
 	static final int MEMO_MAX_ENTRIES = 1 << 16;
@@ -273,7 +277,7 @@ final class LmdbNativeFactorizedRows {
 			}
 		}
 		PrefixDepth[] prefixDepths = null;
-		if (CHUNKED_PREFIX_ENABLED && allPrefixDepthsArePatterns) {
+		if (chunkedPrefixEnabled() && allPrefixDepthsArePatterns) {
 			prefixDepths = new PrefixDepth[flatCount];
 			for (int d = 0; d < flatCount; d++) {
 				ArrayList<NativeBooleanFilter> depthFilters = new ArrayList<>();
@@ -314,7 +318,7 @@ final class LmdbNativeFactorizedRows {
 	}
 
 	private static Split analyzeSplit(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived, long seedMask) {
-		if (!ENABLED) {
+		if (!enabled()) {
 			return null;
 		}
 		SlotPlan[] order = derived.order;
@@ -422,6 +426,7 @@ final class LmdbNativeFactorizedRows {
 	void recordEngagement() {
 		if (!engagementRecorded) {
 			engagementRecorded = true;
+			LmdbFusedSipFactorizedRuntime.current().markFactorizationMode("FACTORIZED_ROWS");
 			metrics.recordFactorizedRowsEngaged();
 		}
 	}

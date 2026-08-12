@@ -156,6 +156,9 @@
 	<variable name="query-timeout.label">Query timeout (seconds)</variable>
 	<variable name="query-language.label">Query Language</variable>
 	<variable name="query-string.label">Query</variable>
+	<variable name="lmdb-runtime-features.label">LMDB runtime features</variable>
+	<variable name="lmdb-runtime-features.help">Changes apply globally to subsequent LMDB queries on this server.</variable>
+	<variable name="refresh.label">Refresh</variable>
 	<variable name="update-string.label">Update</variable>
 	<variable name="subject.label">Subject</variable>
 	<variable name="upload-file.desc">

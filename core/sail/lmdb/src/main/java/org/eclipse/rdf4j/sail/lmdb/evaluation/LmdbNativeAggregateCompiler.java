@@ -138,7 +138,7 @@ final class LmdbNativeAggregateCompiler {
 			kind = LmdbNativeExplain.KIND_AGGREGATE;
 		} else {
 			step = compiler.compileRowRoot(expr);
-			if (step == null && BARE_FRAGMENTS_ENABLED) {
+			if (step == null && bareFragmentsEnabled()) {
 				// bare BGP fragments (no Projection root): a fresh planner, because the row-root
 				// attempt may have allocated slot state that must not leak into this compile
 				step = new LmdbNativeAggregatePlanner(context, strategy, source).compileBareRoot(expr);
@@ -149,8 +149,9 @@ final class LmdbNativeAggregateCompiler {
 	}
 
 	/** Native claim for projection-less BGP fragments (the deleted legacy compiler's shapes). */
-	static final boolean BARE_FRAGMENTS_ENABLED = !"false"
-			.equals(System.getProperty("rdf4j.lmdb.bareFragments.enabled"));
+	static boolean bareFragmentsEnabled() {
+		return !"false".equals(System.getProperty("rdf4j.lmdb.bareFragments.enabled"));
+	}
 
 	private static String physicalPlan(QueryEvaluationStep step) {
 		if (step instanceof LmdbNativePhysicalPlan) {

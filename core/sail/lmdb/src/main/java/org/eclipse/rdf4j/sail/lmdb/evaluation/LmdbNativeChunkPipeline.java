@@ -41,7 +41,10 @@ import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 @Experimental
 final class LmdbNativeChunkPipeline {
 
-	static final boolean ENABLED = !"false".equals(System.getProperty("rdf4j.lmdb.chunkPipeline.enabled"));
+	static boolean enabled() {
+		return !"false".equals(System.getProperty("rdf4j.lmdb.chunkPipeline.enabled"));
+	}
+
 	static final String EXTERNAL_ROOT_CANDIDATE_PROPERTY = "rdf4j.lmdb.chunkPipeline.externalRoot.experimental";
 
 	/** Default-on external-root worker batching; literal {@code false} retains the rollout kill switch. */
@@ -111,7 +114,7 @@ final class LmdbNativeChunkPipeline {
 	 */
 	static RowCursor tryOpenPrefix(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived, int flatCount,
 			RowState row, FactorizedTail.MemoBudget memoBudget) throws IOException {
-		if (!ENABLED || flatCount == 0 || row.source == null) {
+		if (!enabled() || flatCount == 0 || row.source == null) {
 			return null;
 		}
 		for (int d = 0; d < flatCount; d++) {
@@ -172,7 +175,7 @@ final class LmdbNativeChunkPipeline {
 	 */
 	static RowCursor tryOpenPrefixFrom(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived, int flatCount,
 			RowState row, RowCursor leftmost, FactorizedTail.MemoBudget memoBudget) {
-		if (!ENABLED || flatCount == 0 || row.source == null) {
+		if (!enabled() || flatCount == 0 || row.source == null) {
 			return null;
 		}
 		for (int d = 0; d < flatCount; d++) {

@@ -1024,7 +1024,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 * PathIteration remains the semantics oracle.
 	 */
 	SlotPlan compilePath(ArbitraryLengthPath alp) {
-		if (!PathPlan.ENABLED || alp.getMinLength() > 1L) {
+		if (!PathPlan.enabled() || alp.getMinLength() > 1L) {
 			return null;
 		}
 		List<CompiledPathStep> alternatives = new ArrayList<>(2);

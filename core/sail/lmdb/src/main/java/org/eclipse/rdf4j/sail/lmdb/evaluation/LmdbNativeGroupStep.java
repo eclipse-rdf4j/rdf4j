@@ -292,9 +292,28 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		}
 		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(explainTarget, arg, layout, row.boundMask());
 		LmdbNativeExplain.addRuntimeMetric(explainTarget, "nativeInvocationsActual", 1L);
-		List<BindingSet> result = evaluateInitialized(row);
-		row.completeRuntimePlan();
-		return result;
+		LmdbFusedSipFactorizedRuntime.Session inherited = LmdbFusedSipFactorizedRuntime.currentOrNull();
+		boolean ownsSession = inherited == null;
+		LmdbFusedSipFactorizedRuntime.Session session = ownsSession
+				? LmdbFusedSipFactorizedRuntime.create(System.identityHashCode(arg), row.runtimePlan != null)
+				: inherited;
+		boolean completed = false;
+		try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session)) {
+			List<BindingSet> result = evaluateInitialized(row);
+			session.recordMaterializationBoundary(result.size());
+			completed = true;
+			return result;
+		} finally {
+			if (row.runtimePlan != null) {
+				row.runtimePlan.fusedTelemetry(session.telemetry());
+			}
+			if (completed) {
+				row.completeRuntimePlan();
+			}
+			if (ownsSession) {
+				session.close();
+			}
+		}
 	}
 
 	private List<BindingSet> evaluateInitialized(RowState row) {

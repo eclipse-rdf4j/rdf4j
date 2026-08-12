@@ -635,7 +635,8 @@ final class LmdbNativeKernelEmitter {
 		}
 
 		private void emitBind(StringBuilder source) {
-			source.append("    public void bind(KernelContext context) {\n");
+			source.append("    public void bind(KernelContext context) {\n")
+					.append("        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.markNestedKernelFactorization();\n");
 			for (int i = 0; i < kernel.requirements.adjacencies; i++) {
 				source.append("        a").append(i).append(" = context.adjacencies[").append(i).append("];\n");
 			}
@@ -698,6 +699,7 @@ final class LmdbNativeKernelEmitter {
 				source.append("        dom")
 						.append(i)
 						.append(" = context.keyDomains[")
+
 						.append(i)
 						.append("];\n")
 						.append("        domO")
@@ -709,7 +711,20 @@ final class LmdbNativeKernelEmitter {
 						.append(i)
 						.append(" = context.keyDomainLengths[")
 						.append(i)
-						.append("];\n");
+						.append("];\n")
+						.append("        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.installExactDomain(")
+						.append(i)
+						.append(", \"keyDomain[")
+						.append(i)
+						.append("]\", \"KernelContext.keyDomains[")
+						.append(i)
+						.append("]\", dom")
+						.append(i)
+						.append(", domO")
+						.append(i)
+						.append(", domL")
+						.append(i)
+						.append(");\n");
 			}
 			source.append("        hooks = context.hooks;\n");
 			if (kernel.requirements.scans > 0) {
