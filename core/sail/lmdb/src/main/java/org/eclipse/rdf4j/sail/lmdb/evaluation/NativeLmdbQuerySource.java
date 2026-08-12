@@ -406,9 +406,9 @@ public interface NativeLmdbQuerySource {
 		long NOT_COVERED = -2L;
 
 		/**
-		 * Borrowed immutable array slice for a bound run. The backing array belongs to the immutable adjacency
-		 * generation and remains valid for the lifetime of the view that supplied it. Implementations return false when
-		 * their packed representation cannot expose a zero-copy slice; callers then retain the exact copy fallback.
+		 * Borrowed immutable array slice for a bound run. The backing array belongs to the immutable adjacency generation
+		 * and remains valid for the lifetime of the view that supplied it. Implementations return false when their packed
+		 * representation cannot expose a zero-copy slice; callers then retain the exact copy fallback.
 		 */
 		final class NeighborSlice {
 			private long[] values;

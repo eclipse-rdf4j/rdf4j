@@ -72,8 +72,7 @@ class LmdbDecodedNativeAdjacencyPromotionTest {
 
 	@Test
 	void laterQueryBindsConcreteDecodedAdjacencyAndBorrowsItsRun() throws IOException {
-		// One query may be hot but cannot retain a whole-partition decode by itself. Two complete view lifetimes earn
-		// it.
+		// One query may be hot but cannot retain a whole-partition decode by itself. Two complete view lifetimes earn it.
 		for (int lifetime = 0; lifetime < 2; lifetime++) {
 			try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision());
 					NativeLmdbQuerySource.NativeAdjacency adjacency = store.adjacency(view, PREDICATE, true, true)) {
@@ -91,7 +90,8 @@ class LmdbDecodedNativeAdjacencyPromotionTest {
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision());
 				NativeLmdbQuerySource.NativeAdjacency adjacency = store.adjacency(view, PREDICATE, true, true)) {
 			assertThat(adjacency).isInstanceOf(LmdbDecodedNativeAdjacency.class);
-			NativeLmdbQuerySource.NativeAdjacency.NeighborSlice slice = new NativeLmdbQuerySource.NativeAdjacency.NeighborSlice();
+			NativeLmdbQuerySource.NativeAdjacency.NeighborSlice slice =
+					new NativeLmdbQuerySource.NativeAdjacency.NeighborSlice();
 			assertThat(adjacency.borrowNeighbors(FIRST_SUBJECT, slice)).isTrue();
 			assertThat(slice.length()).isEqualTo(1);
 			assertThat(slice.values()[slice.offset()]).isEqualTo(FIRST_OBJECT);

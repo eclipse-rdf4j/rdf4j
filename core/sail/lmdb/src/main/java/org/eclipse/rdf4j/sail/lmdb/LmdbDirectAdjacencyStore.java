@@ -460,8 +460,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				try {
 					acceleration.run();
 				} catch (RuntimeException | Error failure) {
-					logger.warn("Optional direct-adjacency acceleration failed; retaining the exact packed path",
-							failure);
+					logger.warn("Optional direct-adjacency acceleration failed; retaining the exact packed path", failure);
 				}
 			});
 		} catch (RejectedExecutionException ignored) {
@@ -1784,8 +1783,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				if (state.servingState() != AdjacencyServingState.ROW_EXACT || state.base() == null) {
 					return fallback(snapshotRevision,
 							state.servingState() == AdjacencyServingState.CLOSED ? FallbackReason.DISABLED
-									: FallbackReason.BUILDING,
-							lifetimeId);
+									: FallbackReason.BUILDING, lifetimeId);
 				}
 				if (!state.tryRetain()) {
 					continue;
@@ -2439,8 +2437,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	/**
-	 * Binds the concrete decoded CSR only when it is already installed and semantically complete for this snapshot. The
-	 * type choice happens before any anonymous run-cursor adapter is created, allowing generated kernels to select
+	 * Binds the concrete decoded CSR only when it is already installed and semantically complete for this snapshot.
+	 * The type choice happens before any anonymous run-cursor adapter is created, allowing generated kernels to select
 	 * their concrete {@code bindSize/neighborAtInt} method at bind time.
 	 */
 	private NativeLmdbQuerySource.NativeAdjacency bindCompleteNativeAdjacency(LmdbAdjacencyReadView view,

@@ -147,7 +147,7 @@ final class LmdbNativeKernelEmitter {
 				source.append(method);
 			}
 			source.append("}\n");
-			return source.toString();
+			return LmdbNativeGeneratedSourceOptimizer.optimize(source.toString());
 		}
 
 		private int keyRunCursorId(EnumerateAdjKeys enumerate) {
@@ -198,10 +198,10 @@ final class LmdbNativeKernelEmitter {
 					|| aggregate.mods.limit >= 0
 					|| aggregate.mods.offset != 0
 					|| kernel.pipeline.size() != 2
-					|| !(kernel.pipeline.get(0)instanceof EnumerateAdjKeys root)
+					|| !(kernel.pipeline.get(0) instanceof EnumerateAdjKeys root)
 					|| root.valueCol >= 0
 					|| root.ctxActive()
-					|| !(kernel.pipeline.get(1)instanceof Exists exists)
+					|| !(kernel.pipeline.get(1) instanceof Exists exists)
 					|| exists.negated) {
 				return null;
 			}
@@ -278,7 +278,7 @@ final class LmdbNativeKernelEmitter {
 					.append("        }\n")
 					.append("        flatCount = matchedRoots;\n")
 					.append("    }\n\n");
-			return body.toString();
+			return LmdbNativeGeneratedSourceOptimizer.optimize(body.toString());
 		}
 
 		private void emitFlatExistsNodesDirect(StringBuilder body, List<Node> nodes, int index, String indent,
@@ -460,15 +460,9 @@ final class LmdbNativeKernelEmitter {
 				source.append("    private long e").append(i).append(";\n");
 			}
 			for (int i = 0; i < kernel.requirements.domains; i++) {
-				source.append("    private long[] dom")
-						.append(i)
-						.append(";\n")
-						.append("    private int domO")
-						.append(i)
-						.append(";\n")
-						.append("    private int domL")
-						.append(i)
-						.append(";\n");
+				source.append("    private long[] dom").append(i).append(";\n")
+						.append("    private int domO").append(i).append(";\n")
+						.append("    private int domL").append(i).append(";\n");
 			}
 			// Emitted after the pipeline has been rendered, so the count is final by the time this runs.
 			for (int i = 0; i < nextLeftGroupId; i++) {
@@ -695,20 +689,10 @@ final class LmdbNativeKernelEmitter {
 				source.append("        e").append(i).append(" = context.entrySlots[").append(i).append("];\n");
 			}
 			for (int i = 0; i < kernel.requirements.domains; i++) {
-				source.append("        dom")
-						.append(i)
-						.append(" = context.keyDomains[")
-						.append(i)
+				source.append("        dom").append(i).append(" = context.keyDomains[").append(i).append("];\n")
+						.append("        domO").append(i).append(" = context.keyDomainOffsets[").append(i)
 						.append("];\n")
-						.append("        domO")
-						.append(i)
-						.append(" = context.keyDomainOffsets[")
-						.append(i)
-						.append("];\n")
-						.append("        domL")
-						.append(i)
-						.append(" = context.keyDomainLengths[")
-						.append(i)
+						.append("        domL").append(i).append(" = context.keyDomainLengths[").append(i)
 						.append("];\n");
 			}
 			source.append("        hooks = context.hooks;\n");
@@ -2348,18 +2332,9 @@ final class LmdbNativeKernelEmitter {
 			boolean tailmost = tailmostAt(stateIndex);
 			if (node instanceof EnumerateDomain) {
 				EnumerateDomain enumerate = (EnumerateDomain) node;
-				body.append(indent)
-						.append("long[] dom = dom")
-						.append(enumerate.domain)
-						.append(";\n")
-						.append(indent)
-						.append("int domO = domO")
-						.append(enumerate.domain)
-						.append(";\n")
-						.append(indent)
-						.append("int domL = domL")
-						.append(enumerate.domain)
-						.append(";\n");
+				body.append(indent).append("long[] dom = dom").append(enumerate.domain).append(";\n")
+						.append(indent).append("int domO = domO").append(enumerate.domain).append(";\n")
+						.append(indent).append("int domL = domL").append(enumerate.domain).append(";\n");
 				body.append(indent).append("if (").append(a).append(" < 0) {\n");
 				body.append(indent).append("    ").append(a).append(" = 0;\n");
 				body.append(indent).append("}\n");
@@ -2669,7 +2644,7 @@ final class LmdbNativeKernelEmitter {
 			for (int i = 0; i < 4; i++) {
 				terms.append(i == 0 ? "" : ", ").append(scan.terms[i] == null ? "-1L" : scan.terms[i].token());
 			}
-			return terms.toString();
+			return LmdbNativeGeneratedSourceOptimizer.optimize(terms.toString());
 		}
 
 		/** Allocates a scan's staging buffer on first use, so a kernel that never reaches the scan never pays. */
@@ -2806,7 +2781,7 @@ final class LmdbNativeKernelEmitter {
 				method.append("        return false;\n");
 			}
 			method.append("    }\n\n");
-			return method.toString();
+			return LmdbNativeGeneratedSourceOptimizer.optimize(method.toString());
 		}
 
 		/** Renders the continuation statement at the given indent (replacing the %I% indent placeholder). */

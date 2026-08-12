@@ -369,14 +369,16 @@ final class LmdbNativeKernelBindings {
 		if (bindings.nodePredicateRequests.length == 0 && bindings.dynamicRequests.length == 0) {
 			return VariablePredicateViews.NONE;
 		}
-		NativeLmdbQuerySource.NodePredicates[] nodePredicates = new NativeLmdbQuerySource.NodePredicates[bindings.nodePredicateRequests.length];
+		NativeLmdbQuerySource.NodePredicates[] nodePredicates =
+				new NativeLmdbQuerySource.NodePredicates[bindings.nodePredicateRequests.length];
 		for (int i = 0; i < nodePredicates.length; i++) {
 			nodePredicates[i] = probe.nodePredicates(bindings.nodePredicateRequests[i].bySubject());
 			if (nodePredicates[i] == null) {
 				return null;
 			}
 		}
-		NativeLmdbQuerySource.DynamicAdjacency[] dynamics = new NativeLmdbQuerySource.DynamicAdjacency[bindings.dynamicRequests.length];
+		NativeLmdbQuerySource.DynamicAdjacency[] dynamics =
+				new NativeLmdbQuerySource.DynamicAdjacency[bindings.dynamicRequests.length];
 		for (int i = 0; i < dynamics.length; i++) {
 			dynamics[i] = probe.dynamicAdjacency(bindings.dynamicRequests[i].bySubject());
 			if (dynamics[i] == null) {
@@ -538,7 +540,8 @@ final class LmdbNativeKernelBindings {
 			if (adjacency == null) {
 				return null;
 			}
-			NativeLmdbQuerySource.NativeAdjacency.NeighborSlice borrowed = new NativeLmdbQuerySource.NativeAdjacency.NeighborSlice();
+			NativeLmdbQuerySource.NativeAdjacency.NeighborSlice borrowed =
+					new NativeLmdbQuerySource.NativeAdjacency.NeighborSlice();
 			if (adjacency.borrowNeighbors(request.key, borrowed)) {
 				long[] borrowedValues = borrowed.values();
 				if (borrowedValues == null) {

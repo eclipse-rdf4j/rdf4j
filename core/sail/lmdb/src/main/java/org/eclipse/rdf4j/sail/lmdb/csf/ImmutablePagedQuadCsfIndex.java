@@ -2068,8 +2068,8 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 
 			/**
-			 * Immutable backing array for the currently bound run. The returned array belongs to the pinned immutable
-			 * base generation and must never be modified by the caller.
+			 * Immutable backing array for the currently bound run. The returned array belongs to the pinned immutable base
+			 * generation and must never be modified by the caller.
 			 */
 			public long[] neighborArray() {
 				ensureBound();
@@ -2172,10 +2172,9 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		}
 
 		/**
-		 * Records one complete query/view lifetime and schedules expensive work away from the query thread. Promotion
-		 * is deliberately forbidden after only one lifetime: a single short query may issue many probes but cannot
-		 * amortize a retained whole-partition decode. Callers batch all local probes and invoke this once from their
-		 * idempotent close.
+		 * Records one complete query/view lifetime and schedules expensive work away from the query thread. Promotion is
+		 * deliberately forbidden after only one lifetime: a single short query may issue many probes but cannot amortize a
+		 * retained whole-partition decode. Callers batch all local probes and invoke this once from their idempotent close.
 		 */
 		public void observeQuery(long work, long lifetimeId, Executor executor) {
 			Objects.requireNonNull(executor, "executor");

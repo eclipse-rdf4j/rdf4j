@@ -317,8 +317,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 			long probes = observedBaseProbes;
 			observedBaseProbes = 0L;
 			if (probes >= MIN_SHARED_OBSERVATION && baseOnly && baseCsf != null) {
-				baseCsf.sharedPartitionLookup(basePredicateOrdinal, plane)
-						.observeQuery(probes, lifetimeId, adaptiveExecutor);
+				baseCsf.sharedPartitionLookup(basePredicateOrdinal, plane).observeQuery(probes, lifetimeId, adaptiveExecutor);
 			}
 			ImmutablePagedQuadCsfIndex.PartitionLookup lookup = basePartitionLookup;
 			basePartitionLookup = null;

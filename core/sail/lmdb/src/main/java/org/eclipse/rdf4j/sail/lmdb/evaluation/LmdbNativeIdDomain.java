@@ -57,6 +57,17 @@ public interface LmdbNativeIdDomain extends AutoCloseable {
 		}
 		return new UnionIdDomain(domains.clone());
 	}
+
+	/** Lazily intersects two unsigned-sorted domains without materializing an intermediate array. */
+	default LmdbNativeIdDomain intersect(LmdbNativeIdDomain other) {
+		return LmdbNativeSipDomains.intersect(this, other);
+	}
+
+	/** Applies a no-false-negative SIP filter while preserving multiplicity and ownership. */
+	default LmdbNativeIdDomain filter(LmdbNativeSipFilter.Domain filter) {
+		return LmdbNativeSipDomains.filter(this, filter);
+	}
+
 }
 
 final class AdjacencyKeyDomain implements LmdbNativeIdDomain {
@@ -370,4 +381,5 @@ final class ArrayIdDomain implements LmdbNativeIdDomain {
 		closed = true;
 		index = ids.length;
 	}
+
 }
