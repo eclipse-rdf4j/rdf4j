@@ -43,6 +43,7 @@ class LmdbNativeSlotPlanIdentityTest {
 				.containsExactly(left, right)
 				.doesNotContain(SingletonPlan.INSTANCE);
 	}
+
 	@Test
 	void orderingAndAttemptBorrowCannotResurrectTheIdentityBarrier() {
 		SlotPlan values = SlotPlan.values(new ValuesRow[] {

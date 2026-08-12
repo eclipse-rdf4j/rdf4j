@@ -262,10 +262,8 @@ final class AdjacencyIntersectionProbe implements java.io.Closeable {
 	static final String STREAM_KEYS_PROPERTY = "rdf4j.lmdb.adjacencySemijoin.streamKeys";
 	static final String STREAM_MIN_PROBES_PROPERTY = "rdf4j.lmdb.adjacencySemijoin.streamMinProbes";
 	static final String STREAM_MIN_REJECTS_PROPERTY = "rdf4j.lmdb.adjacencySemijoin.streamMinRejects";
-	static final String STREAM_MIN_REJECTION_PERCENT_PROPERTY =
-			"rdf4j.lmdb.adjacencySemijoin.streamMinRejectionPercent";
-	static final String STREAM_DENSE_MIN_PROBES_PROPERTY =
-			"rdf4j.lmdb.adjacencySemijoin.streamDenseMinProbes";
+	static final String STREAM_MIN_REJECTION_PERCENT_PROPERTY = "rdf4j.lmdb.adjacencySemijoin.streamMinRejectionPercent";
+	static final String STREAM_DENSE_MIN_PROBES_PROPERTY = "rdf4j.lmdb.adjacencySemijoin.streamDenseMinProbes";
 	static final String STREAM_MIN_KEY_COUNT_PROPERTY = "rdf4j.lmdb.adjacencySemijoin.streamMinKeyCount";
 	private static final StreamConfig STREAM_CONFIG = StreamConfig.fromSystemProperties();
 	/** Verdicts answered from the planes (either polarity). */
@@ -588,8 +586,8 @@ final class AdjacencyIntersectionProbe implements java.io.Closeable {
 
 	/**
 	 * Conservative admission for the forward merge-semijoin. The scalar path samples real query keys first. A stream
-	 * starts early when it rejects enough probes, or later when a long monotone packed-key stream can amortize one cursor
-	 * even if every key exists. Unordered, decoded/affine, and very small domains stay on direct lookup.
+	 * starts early when it rejects enough probes, or later when a long monotone packed-key stream can amortize one
+	 * cursor even if every key exists. Unordered, decoded/affine, and very small domains stay on direct lookup.
 	 */
 	private record StreamConfig(int minimumProbes, int minimumRejects, int minimumPercent, int denseMinimumProbes,
 			int minimumKeyCount) {

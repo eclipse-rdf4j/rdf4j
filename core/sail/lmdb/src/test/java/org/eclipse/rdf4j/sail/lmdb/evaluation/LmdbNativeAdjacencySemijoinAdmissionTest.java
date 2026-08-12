@@ -19,8 +19,8 @@ class LmdbNativeAdjacencySemijoinAdmissionTest {
 
 	@Test
 	void allHitSampleNeverPaysForAKeyCursor() {
-		AdjacencyIntersectionProbe.StreamAdmission admission =
-				new AdjacencyIntersectionProbe.StreamAdmission(4, 2, 25, 16, 0);
+		AdjacencyIntersectionProbe.StreamAdmission admission = new AdjacencyIntersectionProbe.StreamAdmission(4, 2, 25,
+				16, 0);
 		CountingAdjacency adjacency = new CountingAdjacency(10_000L);
 
 		for (int i = 0; i < 8; i++) {
@@ -34,8 +34,8 @@ class LmdbNativeAdjacencySemijoinAdmissionTest {
 
 	@Test
 	void selectiveMonotoneSampleAdmitsStreamingOnlyAfterMeasuredBenefit() {
-		AdjacencyIntersectionProbe.StreamAdmission admission =
-				new AdjacencyIntersectionProbe.StreamAdmission(4, 2, 25, 16, 0);
+		AdjacencyIntersectionProbe.StreamAdmission admission = new AdjacencyIntersectionProbe.StreamAdmission(4, 2, 25,
+				16, 0);
 		CountingAdjacency adjacency = new CountingAdjacency(10_000L);
 
 		admission.observe(adjacency, 1L, 1);
@@ -49,8 +49,8 @@ class LmdbNativeAdjacencySemijoinAdmissionTest {
 
 	@Test
 	void longDenseMonotoneStreamAdmitsOnlyAfterSetupCanBeAmortized() {
-		AdjacencyIntersectionProbe.StreamAdmission admission =
-				new AdjacencyIntersectionProbe.StreamAdmission(4, 2, 25, 6, 0);
+		AdjacencyIntersectionProbe.StreamAdmission admission = new AdjacencyIntersectionProbe.StreamAdmission(4, 2, 25,
+				6, 0);
 		CountingAdjacency adjacency = new CountingAdjacency(10_000L);
 
 		for (int i = 0; i < 5; i++) {
@@ -64,8 +64,8 @@ class LmdbNativeAdjacencySemijoinAdmissionTest {
 
 	@Test
 	void smallPartitionKeepsThePageLocalPointLookup() {
-		AdjacencyIntersectionProbe.StreamAdmission admission =
-				new AdjacencyIntersectionProbe.StreamAdmission(4, 2, 25, 6, 32);
+		AdjacencyIntersectionProbe.StreamAdmission admission = new AdjacencyIntersectionProbe.StreamAdmission(4, 2, 25,
+				6, 32);
 		CountingAdjacency adjacency = new CountingAdjacency(16L);
 
 		for (int i = 0; i < 8; i++) {
@@ -77,8 +77,8 @@ class LmdbNativeAdjacencySemijoinAdmissionTest {
 
 	@Test
 	void backwardsOuterOrderRefusesTheForwardMerge() {
-		AdjacencyIntersectionProbe.StreamAdmission admission =
-				new AdjacencyIntersectionProbe.StreamAdmission(4, 2, 25, 16, 0);
+		AdjacencyIntersectionProbe.StreamAdmission admission = new AdjacencyIntersectionProbe.StreamAdmission(4, 2, 25,
+				16, 0);
 		CountingAdjacency adjacency = new CountingAdjacency(10_000L);
 
 		admission.observe(adjacency, 10L, 0);
