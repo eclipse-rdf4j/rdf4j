@@ -339,8 +339,8 @@ public class LocalRepositoryManager extends RepositoryManager {
 			try {
 				RepositoryInfo repInfo = getRepositoryInfo(name);
 				result.add(repInfo);
-			} catch (Exception logged){
-				logger.error("Skipping repo {} due to: {}",name,logged.getMessage(), logged);
+			} catch (Exception logged) {
+				logger.error("Skipping repo {} due to: {}", name, logged.getMessage(), logged);
 			}
 		}
 		return result;

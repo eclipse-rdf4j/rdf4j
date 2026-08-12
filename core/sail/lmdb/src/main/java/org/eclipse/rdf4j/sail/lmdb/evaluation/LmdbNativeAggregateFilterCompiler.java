@@ -117,11 +117,11 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	 * above the join when nothing in R or the conditions reads their targets, which keeps the pattern set flattenable.
 	 */
 	SlotPlan compileLeftJoinFilterAsInnerJoin(Filter filter, boolean duplicateInsensitive) {
-		if (!(filter.getArg() instanceof LeftJoin) || !isRepeatable(filter.getCondition())) {
+		if (!(filter.getArg() instanceof LeftJoin) || !isNativeRepeatable(filter.getCondition())) {
 			return null;
 		}
 		LeftJoin leftJoin = (LeftJoin) filter.getArg();
-		if (leftJoin.hasCondition() && !isRepeatable(leftJoin.getCondition())) {
+		if (leftJoin.hasCondition() && !isNativeRepeatable(leftJoin.getCondition())) {
 			return null;
 		}
 		Set<String> rightOnly = rightOnlyBindingNames(leftJoin);
@@ -156,12 +156,19 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			requiredAggregateNames = required;
 			left = compileTuple(leftArg, duplicateInsensitive);
 			if (left != null) {
-				// a filter reading only the optional side's variables evaluates identically per right row, so
-				// it can constrain the right pattern directly — ideally as exact index probes
-				if (leftJoin.getRightArg() instanceof StatementPattern
-						&& leftJoin.getRightArg()
-								.getBindingNames()
-								.containsAll(VarNameCollector.process(filter.getCondition()))) {
+				Set<String> filterNames = VarNameCollector.process(filter.getCondition());
+				boolean rightOnlyFilter = leftJoin.getRightArg().getBindingNames().containsAll(filterNames);
+				// A null-rejecting range on the optional side can be fused into the right physical scan even when
+				// the producer is wrapped in an extension or join. This performs both the LEFT JOIN -> JOIN rewrite
+				// and the runtime-filter relocation in one semantics-preserving step.
+				if (rightOnlyFilter) {
+					right = compileTupleWithRangeFilter(leftJoin.getRightArg(), filter.getCondition(),
+							duplicateInsensitive);
+					conditionFolded = right != null;
+				}
+				// Exact-value membership conditions can likewise constrain the right pattern through reverse
+				// probes rather than materializing all optional rows and filtering afterwards.
+				if (right == null && rightOnlyFilter && leftJoin.getRightArg() instanceof StatementPattern) {
 					right = compileFilterIntoStatementPattern((StatementPattern) leftJoin.getRightArg(),
 							filter.getCondition());
 					conditionFolded = right != null;
@@ -222,42 +229,13 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		return true;
 	}
 
-	/** The plain variable/constant copies of an extension, or null when an element is not a simple copy. */
-	CopyBinding[] compileExtensionCopies(Extension extension) {
-		CopyBinding[] copies = new CopyBinding[extension.getElements().size()];
-		for (int i = 0; i < copies.length; i++) {
-			ExtensionElem elem = extension.getElements().get(i);
-			ValueExpr expression = elem.getExpr();
-			if (expression instanceof Var) {
-				Var sourceVar = (Var) expression;
-				if (sourceVar.hasValue()) {
-					long id = idOf(sourceVar.getValue());
-					if (id == UNKNOWN) {
-						return null;
-					}
-					copies[i] = CopyBinding.constant(slot(elem.getName()), id);
-				} else {
-					copies[i] = CopyBinding.slot(slot(elem.getName()), slot(sourceVar.getName()));
-				}
-			} else {
-				LmdbNativeCompiledInlineId computed = LmdbNativeExpressionCompiler
-						.compileInlineId(expression, source, this::slot,
-								strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
-				if (computed == null) {
-					return null;
-				}
-				copies[i] = CopyBinding.computed(slot(elem.getName()), computed);
-			}
-		}
-		return copies;
-	}
-
 	SlotPlan compileFactorizedLeftJoinFilter(Filter filter, boolean duplicateInsensitive) {
-		if (!duplicateInsensitive || !(filter.getArg() instanceof LeftJoin) || !isRepeatable(filter.getCondition())) {
+		if (!duplicateInsensitive || !(filter.getArg() instanceof LeftJoin)
+				|| !isNativeRepeatable(filter.getCondition())) {
 			return null;
 		}
 		LeftJoin leftJoin = (LeftJoin) filter.getArg();
-		if (leftJoin.hasCondition() && !isRepeatable(leftJoin.getCondition())) {
+		if (leftJoin.hasCondition() && !isNativeRepeatable(leftJoin.getCondition())) {
 			return null;
 		}
 		Set<String> rightNames = rightOnlyBindingNames(leftJoin);
@@ -583,6 +561,30 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	 */
 	static boolean isRepeatable(ValueExpr expr) {
 		return QueryEvaluationUtility.isRepeatableWithinPreparation(expr);
+	}
+
+	/**
+	 * Snapshot-local EXISTS over one statement pattern is deterministic for fixed bindings even though the generic
+	 * expression classifier conservatively treats EXISTS as a scope-sensitive operator. Recognizing this narrow form
+	 * lets a null-rejecting OPTIONAL become an inner join while retaining the EXISTS exactly at its algebraic scope;
+	 * the resulting direct adjacency semijoin is especially important for grouped OPTIONAL+EXISTS shapes.
+	 */
+	static boolean isNativeRepeatable(ValueExpr expr) {
+		if (expr instanceof Exists) {
+			return ((Exists) expr).getSubQuery() instanceof StatementPattern;
+		}
+		if (expr instanceof Not) {
+			return isNativeRepeatable(((Not) expr).getArg());
+		}
+		if (expr instanceof And) {
+			return isNativeRepeatable(((And) expr).getLeftArg())
+					&& isNativeRepeatable(((And) expr).getRightArg());
+		}
+		if (expr instanceof Or) {
+			return isNativeRepeatable(((Or) expr).getLeftArg())
+					&& isNativeRepeatable(((Or) expr).getRightArg());
+		}
+		return isRepeatable(expr);
 	}
 
 	NativeBooleanFilter compileListMember(ListMemberOperator list) {

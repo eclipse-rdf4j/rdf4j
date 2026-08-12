@@ -303,13 +303,6 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (!isBareRowFragment(node)) {
 			return null;
 		}
-		// An OPTIONAL fragment may bind optional-only variables. If any such variable is also bound outside its left
-		// join the OPTIONAL is not well designed and must defer to the generic evaluator (null). Otherwise the returned
-		// set drives the runtime guard that still delegates when such a variable arrives as an external base binding.
-		Set<String> optionalOnlyNames = wellDesignedOptionalOnlyNames(node);
-		if (optionalOnlyNames == null) {
-			return null;
-		}
 		this.requiredAggregateNames = VarNameCollector.process(node);
 		SlotPlan arg = compileTuple(node, false);
 		if (arg == null) {
@@ -326,24 +319,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		boolean strictCompare = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
 		layout.freeze(slotNames);
-		if (containsLeftJoin(node)) {
-			LmdbNativeAggregateCompiler.LEFTJOIN_BARE_FRAGMENTS.incrementAndGet();
-		}
 		return NativeRowsStep.bareFragment(source, arg, layout, sourceSlots, targetNames, strictCompare, strategy,
-				expr, context, optionalOnlyNames);
-	}
-
-	private static boolean containsLeftJoin(TupleExpr node) {
-		if (node instanceof LeftJoin) {
-			return true;
-		}
-		if (node instanceof Filter) {
-			return containsLeftJoin(((Filter) node).getArg());
-		}
-		if (node instanceof Join) {
-			return containsLeftJoin(((Join) node).getLeftArg()) || containsLeftJoin(((Join) node).getRightArg());
-		}
-		return false;
+				expr, context);
 	}
 
 	/**
@@ -358,13 +335,6 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (node instanceof Join) {
 			Join join = (Join) node;
 			return isBareRowFragment(join.getLeftArg()) && isBareRowFragment(join.getRightArg());
-		}
-		if (node instanceof LeftJoin) {
-			// A projection-less OPTIONAL fragment: claim it so the native left-join operator runs it as one step
-			// instead of the generic LeftJoinIterator re-opening the right side per left row. compileTuple is the
-			// real gate — it returns null (generic fallback) for any arm it cannot express.
-			LeftJoin leftJoin = (LeftJoin) node;
-			return isBareRowFragment(leftJoin.getLeftArg()) && isBareRowFragment(leftJoin.getRightArg());
 		}
 		return node instanceof StatementPattern || node instanceof BindingSetAssignment;
 	}
@@ -1214,6 +1184,47 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		if (expr instanceof Filter) {
 			Filter filter = (Filter) expr;
+			SlotPlan joinedValuesSip = compileFilterOverJoinedValues(filter, duplicateInsensitive);
+			if (joinedValuesSip != null) {
+				return joinedValuesSip;
+			}
+			ConstantFilter exactDomain = extractConstantFilter(filter.getCondition());
+			if (exactDomain != null && exactDomain.ids.length > 0) {
+				Set<String> previousRequired = requiredAggregateNames;
+				java.util.HashSet<String> required = new java.util.HashSet<>(previousRequired);
+				required.add(exactDomain.variable);
+				requiredAggregateNames = required;
+				try {
+					// Unlike folding a VALUES join, pushing an IN/OR-of-equals predicate into its statement pattern
+					// preserves the complete multiset: the constants are deduplicated by extractConstantFilter and
+					// each matching statement is still emitted exactly once. It is therefore safe for grouped/non-
+					// distinct aggregates as well as duplicate-insensitive ones.
+					SlotPlan domainDriven = compileTupleWithConstantFilter(filter.getArg(), exactDomain.variable,
+							exactDomain.ids, exactDomain.values, duplicateInsensitive);
+					if (domainDriven != null) {
+						return domainDriven;
+					}
+				} finally {
+					requiredAggregateNames = previousRequired;
+				}
+			}
+			// Relocate an ordered numeric range to the physical statement scan even when the producer is nested
+			// below an inner join, extension or union. The range-constrained pattern then becomes the selective
+			// producer and values outside the range never enter the factorized/native pipeline.
+			Set<String> previousRequiredForRange = requiredAggregateNames;
+			java.util.HashSet<String> rangeRequired = new java.util.HashSet<>(previousRequiredForRange);
+			rangeRequired.addAll(VarNameCollector.process(filter.getCondition()));
+			requiredAggregateNames = rangeRequired;
+			try {
+				SlotPlan rangeDriven = compileTupleWithRangeFilter(filter.getArg(), filter.getCondition(),
+						duplicateInsensitive);
+				if (rangeDriven != null) {
+					return rangeDriven;
+				}
+			} finally {
+				requiredAggregateNames = previousRequiredForRange;
+			}
+
 			if (filter.getArg() instanceof StatementPattern) {
 				// Exact-value membership conditions (OR-of-equals / IN over one variable) absorb the filter
 				// into per-value index probes; the compiled plan enforces the condition itself, via
@@ -1276,7 +1287,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return SlotPlan.extension(arg, copies);
 		}
 		if (expr instanceof BindingSetAssignment) {
-			return compileValues((BindingSetAssignment) expr);
+			return compileValuesOrIdentity((BindingSetAssignment) expr, duplicateInsensitive);
 		}
 		return null;
 	}

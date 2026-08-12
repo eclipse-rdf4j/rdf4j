@@ -2132,7 +2132,8 @@ final class LmdbNativeKernelLowering {
 			int domain = keyDomains.size() - 1;
 			int column = newColumn(slot);
 			markOrderedDomain(column, domain);
-			currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateDomain(domain, column));
+			currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateDomain(domain, column, true,
+					"MultiValuePattern(slot=" + slot + ")"));
 			return lowerPatternInline(plan.fallback);
 		}
 
@@ -2185,8 +2186,10 @@ final class LmdbNativeKernelLowering {
 				for (int i = 0; i < domain.length; i++) {
 					indices[i] = constantIndex(domain[i]);
 				}
-				placeFilter(new LmdbNativeKernelIr.FilterInConstants(alreadyBound, indices),
-						operandDepth(alreadyBound));
+				keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(domain.clone()));
+				int sipDomain = keyDomains.size() - 1;
+				placeFilter(new LmdbNativeKernelIr.FilterInConstants(alreadyBound, indices, sipDomain,
+						"ValuesMembership(slot=" + slot + ")"), operandDepth(alreadyBound));
 				return true;
 			}
 			openDepth();
@@ -2372,7 +2375,10 @@ final class LmdbNativeKernelLowering {
 					}
 					indices[i] = constantIndex(membership.accepted[i]);
 				}
-				placeFilter(new LmdbNativeKernelIr.FilterInConstants(slotSide, indices), operandDepth(slotSide));
+				keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(membership.accepted.clone()));
+				int sipDomain = keyDomains.size() - 1;
+				placeFilter(new LmdbNativeKernelIr.FilterInConstants(slotSide, indices, sipDomain,
+						"ValueSetFilter(slot=" + membership.slot + ")"), operandDepth(slotSide));
 				return true;
 			}
 			return false;
@@ -2420,11 +2426,198 @@ final class LmdbNativeKernelLowering {
 
 		private void placeFilter(Node filterNode, int filterDepth) {
 			int placementDepth = Math.max(filterDepth, filterDepthFloor);
+			// The algebraic filter is encountered at the current lowering depth. The selected depth is the earliest
+			// semantically legal point after accounting for operand availability and OPTIONAL/MINUS floors. Keep this
+			// metadata on the IR node so Janino telemetry reports the semantic relocation that actually happened; the
+			// old
+			// generated-source regex pass could neither prove nor observe this relationship.
+			filterNode.filterPlacement(depth(), placementDepth);
 			if (placementDepth < 0) {
 				entryDepthFilters.add(filterNode);
 			} else {
 				filtersPerDepth.get(placementDepth).add(filterNode);
 			}
+		}
+
+		/**
+		 * Marks exact domains that feed a later adjacency operation. This is true domain-driven SIP: the producer
+		 * enumerates only values admitted by the upstream relation, so no per-row membership test is needed. Keeping
+		 * the relationship in the IR gives the emitter an exact producer/consumer edge instead of asking a source-text
+		 * regex to guess one from local variable names.
+		 */
+		private static void markDomainDrivenEnumerations(List<Node> pipeline) {
+			// Container nodes own immutable child lists. Rebuild them after recursively annotating their branches so
+			// UNION/OPTIONAL/EXISTS kernels receive the same producer-consumer SIP edges as a flat MultiJoin. This is
+			// essential for VALUES-driven UNION branches and anti-semi witnesses, which previously installed domains
+			// but
+			// could never name a consumer.
+			for (int at = 0; at < pipeline.size(); at++) {
+				Node node = pipeline.get(at);
+				if (node instanceof LmdbNativeKernelIr.Exists exists) {
+					ArrayList<Node> nested = new ArrayList<>(exists.pipeline);
+					markDomainDrivenEnumerations(nested);
+					pipeline.set(at, new LmdbNativeKernelIr.Exists(exists.negated, nested));
+				} else if (node instanceof LmdbNativeKernelIr.LeftGroup group) {
+					ArrayList<Node> arm = new ArrayList<>(group.arm);
+					markDomainDrivenEnumerations(arm);
+					pipeline.set(at, new LmdbNativeKernelIr.LeftGroup(arm));
+				} else if (node instanceof LmdbNativeKernelIr.Union union) {
+					ArrayList<List<Node>> branches = new ArrayList<>(union.branches.size());
+					for (List<Node> branch : union.branches) {
+						ArrayList<Node> mutable = new ArrayList<>(branch);
+						markDomainDrivenEnumerations(mutable);
+						branches.add(mutable);
+					}
+					pipeline.set(at, new LmdbNativeKernelIr.Union(branches));
+				}
+			}
+			for (int at = 0; at < pipeline.size(); at++) {
+				Node node = pipeline.get(at);
+				int producedColumn;
+				if (node instanceof LmdbNativeKernelIr.EnumerateDomain enumerate) {
+					if (enumerate.sipDriven) {
+						continue;
+					}
+					producedColumn = enumerate.col;
+				} else if (node instanceof LmdbNativeKernelIr.EnumerateAdjKeys enumerate) {
+					if (enumerate.sipDriven) {
+						continue;
+					}
+					producedColumn = enumerate.keyCol;
+				} else {
+					continue;
+				}
+				java.util.BitSet aliases = new java.util.BitSet();
+				aliases.set(producedColumn);
+				String consumer = null;
+				for (int next = at + 1; next < pipeline.size() && consumer == null; next++) {
+					Node candidate = pipeline.get(next);
+					if (candidate instanceof LmdbNativeKernelIr.BindAlias alias
+							&& alias.source.kind == LmdbNativeKernelIr.Operand.COL
+							&& aliases.get(alias.source.index)) {
+						aliases.set(alias.dstCol);
+						continue;
+					}
+					consumer = domainConsumer(candidate, aliases);
+				}
+				if (consumer != null) {
+					if (node instanceof LmdbNativeKernelIr.EnumerateDomain enumerate) {
+						pipeline.set(at, new LmdbNativeKernelIr.EnumerateDomain(enumerate.domain, enumerate.col, true,
+								consumer));
+					} else {
+						LmdbNativeKernelIr.EnumerateAdjKeys enumerate = (LmdbNativeKernelIr.EnumerateAdjKeys) node;
+						pipeline.set(at, new LmdbNativeKernelIr.EnumerateAdjKeys(enumerate.adjacency,
+								enumerate.keyCol, enumerate.valueCol, enumerate.ctxCol, enumerate.ctxMatch,
+								enumerate.ctxExcludeDefault, true, consumer));
+					}
+				}
+			}
+		}
+
+		private static String domainConsumer(Node node, java.util.BitSet aliases) {
+			if (node instanceof LmdbNativeKernelIr.Probe probe && operandIn(probe.key, aliases)) {
+				return "Probe(adjacency=" + probe.adjacency + ")";
+			}
+			if (node instanceof LmdbNativeKernelIr.LeftProbe probe && operandIn(probe.key, aliases)) {
+				return "LeftProbe(adjacency=" + probe.adjacency + ")";
+			}
+			if (node instanceof LmdbNativeKernelIr.ProbeClose probe
+					&& (operandIn(probe.key, aliases) || operandIn(probe.target, aliases))) {
+				return "ProbeClose(adjacency=" + probe.adjacency + ")";
+			}
+			if (node instanceof LmdbNativeKernelIr.PathExpand path && operandIn(path.source, aliases)) {
+				return "PathExpand(adjacency=" + path.adjacency + ")";
+			}
+			if (node instanceof LmdbNativeKernelIr.Intersect intersection) {
+				for (int i = 0; i < intersection.keys.length; i++) {
+					if (operandIn(intersection.keys[i], aliases)) {
+						return "Intersect(adjacency=" + intersection.adjacencies[i] + ")";
+					}
+				}
+			}
+			if (node instanceof LmdbNativeKernelIr.Exists exists) {
+				for (Node nested : exists.pipeline) {
+					String consumer = domainConsumer(nested, aliases);
+					if (consumer != null) {
+						return (exists.negated ? "NotExists/" : "Exists/") + consumer;
+					}
+				}
+			}
+			if (node instanceof LmdbNativeKernelIr.LeftGroup group) {
+				for (Node nested : group.arm) {
+					String consumer = domainConsumer(nested, aliases);
+					if (consumer != null) {
+						return "Optional/" + consumer;
+					}
+				}
+			}
+			if (node instanceof LmdbNativeKernelIr.Union union) {
+				for (List<Node> branch : union.branches) {
+					for (Node nested : branch) {
+						String consumer = domainConsumer(nested, aliases);
+						if (consumer != null) {
+							return "Union/" + consumer;
+						}
+					}
+				}
+			}
+			return null;
+		}
+
+		private static boolean operandIn(LmdbNativeKernelIr.Operand operand, java.util.BitSet columns) {
+			return operand.kind == LmdbNativeKernelIr.Operand.COL && columns.get(operand.index);
+		}
+
+		/**
+		 * Replaces a sorted domain producer immediately followed by a bound adjacency probe with one batch semijoin.
+		 * The first {@link Kernel} construction has already performed the DISTINCT-root existential rewrite before this
+		 * pass runs, so its very hot {@code root -> Exists(chain)} shape is deliberately left intact. Every other
+		 * matched pair saves one generated method transition and one scalar row-directory lookup per key; direct CSF
+		 * views merge the sorted batch with their physical key cursor.
+		 */
+		private static List<Node> fuseSipBatchProbes(List<Node> input) {
+			ArrayList<Node> nested = new ArrayList<>(input.size());
+			for (Node node : input) {
+				if (node instanceof LmdbNativeKernelIr.Exists exists) {
+					nested.add(new LmdbNativeKernelIr.Exists(exists.negated, fuseSipBatchProbes(exists.pipeline)));
+				} else if (node instanceof LmdbNativeKernelIr.LeftGroup group) {
+					nested.add(new LmdbNativeKernelIr.LeftGroup(fuseSipBatchProbes(group.arm)));
+				} else if (node instanceof LmdbNativeKernelIr.Union union) {
+					ArrayList<List<Node>> branches = new ArrayList<>(union.branches.size());
+					for (List<Node> branch : union.branches) {
+						branches.add(fuseSipBatchProbes(branch));
+					}
+					nested.add(new LmdbNativeKernelIr.Union(branches));
+				} else {
+					nested.add(node);
+				}
+			}
+
+			ArrayList<Node> fused = new ArrayList<>(nested.size());
+			for (int at = 0; at < nested.size(); at++) {
+				Node producer = nested.get(at);
+				if (at + 1 < nested.size() && nested.get(at + 1)instanceof LmdbNativeKernelIr.Probe probe
+						&& probe.key.kind == LmdbNativeKernelIr.Operand.COL) {
+					if (producer instanceof LmdbNativeKernelIr.EnumerateDomain domain
+							&& domain.col == probe.key.index && domain.sipDriven) {
+						fused.add(new LmdbNativeKernelIr.SipDomainProbe(domain.domain, probe.adjacency,
+								domain.col, probe.valueCol, probe.ctxCol, probe.ctxMatch,
+								probe.ctxExcludeDefault));
+						at++;
+						continue;
+					}
+					if (producer instanceof LmdbNativeKernelIr.EnumerateAdjKeys keys
+							&& keys.valueCol < 0 && keys.keyCol == probe.key.index && keys.sipDriven) {
+						fused.add(new LmdbNativeKernelIr.SipKeyProbe(keys.adjacency, probe.adjacency,
+								keys.keyCol, probe.valueCol, probe.ctxCol, probe.ctxMatch,
+								probe.ctxExcludeDefault));
+						at++;
+						continue;
+					}
+				}
+				fused.add(producer);
+			}
+			return List.copyOf(fused);
 		}
 
 		// ------------------------------------------------------------------
@@ -3488,11 +3681,15 @@ final class LmdbNativeKernelLowering {
 				for (int i = 0; i < indices.length; i++) {
 					indices[i] = constantIndex(plan.constants[i]);
 				}
-				pipeline.add(new LmdbNativeKernelIr.FilterInConstants(bound, indices));
+				keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(plan.constants.clone()));
+				int sipDomain = keyDomains.size() - 1;
+				pipeline.add(new LmdbNativeKernelIr.FilterInConstants(bound, indices, sipDomain,
+						"WitnessMembership(slot=" + slot + ")"));
 			} else {
 				int column = scratchColumn();
 				keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(plan.constants.clone()));
-				pipeline.add(new LmdbNativeKernelIr.EnumerateDomain(keyDomains.size() - 1, column));
+				pipeline.add(new LmdbNativeKernelIr.EnumerateDomain(keyDomains.size() - 1, column, true,
+						"WitnessMultiValue(slot=" + slot + ")"));
 				witnessCols.put(slot, column);
 			}
 			return lowerWitnessPatternPlan(plan.fallback, witnessCols, pipeline);
@@ -3610,6 +3807,7 @@ final class LmdbNativeKernelLowering {
 				pipeline.addAll(filtersPerDepth.get(d));
 			}
 			pipeline.addAll(witnessNodes);
+			markDomainDrivenEnumerations(pipeline);
 			int columnCount = columnEngineSlots.size() + scratchColumns;
 			if (columnCount == 0 || columnCount > 64) {
 				reason = "agg:no-columns";
@@ -3623,7 +3821,14 @@ final class LmdbNativeKernelLowering {
 				terminal = terminal.having(having.outputIndex, having.op, having.threshold);
 				HAVING_SINKS.incrementAndGet();
 			}
-			Kernel kernel = new Kernel(columnCount, pipeline, terminal);
+			// Let the semantic Kernel constructor first fold COUNT(DISTINCT root) into its existential fast shape. SIP
+			// batching is then applied to the remaining ordinary producer/probe pairs, so it cannot pessimize that
+			// proven
+			// sub-millisecond path.
+			Kernel semanticKernel = new Kernel(columnCount, pipeline, terminal);
+			List<Node> sipPipeline = fuseSipBatchProbes(semanticKernel.pipeline);
+			Kernel kernel = sipPipeline.equals(semanticKernel.pipeline) ? semanticKernel
+					: new Kernel(columnCount, sipPipeline, semanticKernel.terminal);
 			long[] constantArray = new long[constants.size()];
 			for (int i = 0; i < constantArray.length; i++) {
 				constantArray[i] = constants.get(i);
@@ -3669,6 +3874,7 @@ final class LmdbNativeKernelLowering {
 			}
 			// Row-rung sticky EXISTS witnesses (M10): appended after every producer, like buildAggregate does.
 			pipeline.addAll(witnessNodes);
+			markDomainDrivenEnumerations(pipeline);
 			int[] emitColumns = new int[columnEngineSlots.size()];
 			for (int i = 0; i < emitColumns.length; i++) {
 				emitColumns[i] = i;

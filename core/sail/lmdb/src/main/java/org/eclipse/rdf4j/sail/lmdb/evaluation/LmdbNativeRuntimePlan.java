@@ -498,7 +498,9 @@ final class LmdbNativeRuntimePlan {
 			boolean used = telemetry.runtimeSipUsed();
 			String reason;
 			if (used) {
-				reason = "ACTIVATED";
+				reason = telemetry.sipTests() == 0 && telemetry.sipDrivenRows() > 0
+						? "ACTIVATED[DOMAIN_DRIVEN]"
+						: "ACTIVATED";
 			} else if (telemetry.activeDomainCount() > 0) {
 				reason = "DOMAINS_INSTALLED_BUT_NOT_CONSUMED";
 			} else if (!telemetry.domains().isEmpty()) {
@@ -518,6 +520,8 @@ final class LmdbNativeRuntimePlan {
 					.append(telemetry.domains().size())
 					.append("\n      membershipTests: ")
 					.append(telemetry.sipTests())
+					.append("\n      domainDrivenRows: ")
+					.append(telemetry.sipDrivenRows())
 					.append("\n      rowsRejectedBeforeProbe: ")
 					.append(telemetry.sipRejects())
 					.append("\n      bypassedTests: ")
@@ -562,7 +566,9 @@ final class LmdbNativeRuntimePlan {
 							.append("\n          tests: ")
 							.append(domain.tests())
 							.append("\n          rejects: ")
-							.append(domain.rejects());
+							.append(domain.rejects())
+							.append("\n          drivenRows: ")
+							.append(domain.drivenRows());
 				}
 			}
 		}

@@ -99,6 +99,22 @@ final class LmdbNativeKernelIr {
 
 	abstract static class Node {
 
+		/**
+		 * Filter placement metadata is deliberately outside the canonical shape. The generated program is already
+		 * distinguished by the node's position in the pipeline; these fields only explain how far a filter moved from
+		 * its algebraic scope to the earliest depth where every operand is available.
+		 */
+		int originalFilterStage = -1;
+		int selectedFilterStage = -1;
+
+		final <T extends Node> T filterPlacement(int originalStage, int selectedStage) {
+			this.originalFilterStage = originalStage;
+			this.selectedFilterStage = selectedStage;
+			@SuppressWarnings("unchecked")
+			T self = (T) this;
+			return self;
+		}
+
 		/** Appends this node's canonical rendering to the shape key. */
 		abstract void key(StringBuilder key);
 
@@ -170,13 +186,21 @@ final class LmdbNativeKernelIr {
 		final Operand ctxMatch;
 		/** Named-graph scope: entries in the default graph (context id 0) are skipped. */
 		final boolean ctxExcludeDefault;
+		/** The enumerated key domain deliberately drives a later adjacency consumer. */
+		final boolean sipDriven;
+		final String sipConsumer;
 
 		EnumerateAdjKeys(int adjacency, int keyCol, int valueCol) {
-			this(adjacency, keyCol, valueCol, -1, null, false);
+			this(adjacency, keyCol, valueCol, -1, null, false, false, null);
 		}
 
 		EnumerateAdjKeys(int adjacency, int keyCol, int valueCol, int ctxCol, Operand ctxMatch,
 				boolean ctxExcludeDefault) {
+			this(adjacency, keyCol, valueCol, ctxCol, ctxMatch, ctxExcludeDefault, false, null);
+		}
+
+		EnumerateAdjKeys(int adjacency, int keyCol, int valueCol, int ctxCol, Operand ctxMatch,
+				boolean ctxExcludeDefault, boolean sipDriven, String sipConsumer) {
 			if (valueCol < 0 && (ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault)) {
 				throw new IllegalArgumentException("context access needs the neighbor run expanded");
 			}
@@ -186,6 +210,8 @@ final class LmdbNativeKernelIr {
 			this.ctxCol = ctxCol;
 			this.ctxMatch = ctxMatch;
 			this.ctxExcludeDefault = ctxExcludeDefault;
+			this.sipDriven = sipDriven;
+			this.sipConsumer = sipConsumer;
 		}
 
 		boolean ctxActive() {
@@ -201,6 +227,9 @@ final class LmdbNativeKernelIr {
 						.append(',')
 						.append(ctxMatch == null ? "_" : ctxMatch.token())
 						.append(ctxExcludeDefault ? ",n" : "");
+			}
+			if (sipDriven) {
+				key.append(",sip");
 			}
 			key.append(");");
 		}
@@ -374,15 +403,32 @@ final class LmdbNativeKernelIr {
 	static final class EnumerateDomain extends Node {
 		final int domain;
 		final int col;
+		/**
+		 * True when this domain is not merely a root/value producer but is deliberately driving an index probe that
+		 * would otherwise scan or enumerate a wider relation. This is the domain-driven form of SIP: no membership test
+		 * is necessary because only members are ever presented to the consumer.
+		 */
+		final boolean sipDriven;
+		final String consumer;
 
 		EnumerateDomain(int domain, int col) {
+			this(domain, col, false, null);
+		}
+
+		EnumerateDomain(int domain, int col, boolean sipDriven, String consumer) {
 			this.domain = domain;
 			this.col = col;
+			this.sipDriven = sipDriven;
+			this.consumer = consumer;
 		}
 
 		@Override
 		void key(StringBuilder key) {
-			key.append("ED(d").append(domain).append(",k").append(col).append(");");
+			key.append("ED(d").append(domain).append(",k").append(col);
+			if (sipDriven) {
+				key.append(",sip");
+			}
+			key.append(");");
 		}
 
 		@Override
@@ -410,6 +456,145 @@ final class LmdbNativeKernelIr {
 	}
 
 	/** Expand: look a key up in a CSR view and loop its neighbor run into a fresh column. NULL keys match nothing. */
+	/**
+	 * Fused sideways-information-passing operator whose producer is one binding-owned sorted domain. The domain is
+	 * consumed in bounded batches by
+	 * {@link NativeLmdbQuerySource.NativeAdjacency#findBatch(long[], int, int, long[], int)}; missing keys are rejected
+	 * before any run is opened and positive handles are expanded directly. This replaces
+	 * {@code EnumerateDomain -> Probe}, avoiding a scalar packed lookup and a generated-method call per domain value.
+	 */
+	static final class SipDomainProbe extends Node {
+		final int domain;
+		final int probeAdjacency;
+		final int keyCol;
+		final int valueCol;
+		final int ctxCol;
+		final Operand ctxMatch;
+		final boolean ctxExcludeDefault;
+
+		SipDomainProbe(int domain, int probeAdjacency, int keyCol, int valueCol, int ctxCol,
+				Operand ctxMatch, boolean ctxExcludeDefault) {
+			this.domain = domain;
+			this.probeAdjacency = probeAdjacency;
+			this.keyCol = keyCol;
+			this.valueCol = valueCol;
+			this.ctxCol = ctxCol;
+			this.ctxMatch = ctxMatch;
+			this.ctxExcludeDefault = ctxExcludeDefault;
+		}
+
+		boolean ctxActive() {
+			return ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("SDP(d")
+					.append(domain)
+					.append("->a")
+					.append(probeAdjacency)
+					.append(",k")
+					.append(keyCol)
+					.append("->")
+					.append(valueCol);
+			if (ctxActive()) {
+				key.append(",g")
+						.append(ctxCol)
+						.append(',')
+						.append(ctxMatch == null ? "_" : ctxMatch.token())
+						.append(ctxExcludeDefault ? ",n" : "");
+			}
+			key.append(");");
+		}
+
+		@Override
+		void produced(BitSet columns) {
+			columns.set(keyCol);
+			columns.set(valueCol);
+			if (ctxCol >= 0) {
+				columns.set(ctxCol);
+			}
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.domain(domain);
+			requirements.adjacency(probeAdjacency);
+			if (ctxMatch != null) {
+				requirements.operand(ctxMatch);
+			}
+		}
+	}
+
+	/**
+	 * Fused sideways-information-passing operator: enumerate the distinct keys of one adjacency, resolve the complete
+	 * key batch against a second adjacency with {@code findBatch}, discard misses, and expand only positive runs. This
+	 * replaces {@code EnumerateAdjKeys -> Probe} and therefore avoids both materializing a key domain and one scalar
+	 * packed lookup per root key.
+	 */
+	static final class SipKeyProbe extends Node {
+		final int domainAdjacency;
+		final int probeAdjacency;
+		final int keyCol;
+		final int valueCol;
+		final int ctxCol;
+		final Operand ctxMatch;
+		final boolean ctxExcludeDefault;
+
+		SipKeyProbe(int domainAdjacency, int probeAdjacency, int keyCol, int valueCol, int ctxCol,
+				Operand ctxMatch, boolean ctxExcludeDefault) {
+			this.domainAdjacency = domainAdjacency;
+			this.probeAdjacency = probeAdjacency;
+			this.keyCol = keyCol;
+			this.valueCol = valueCol;
+			this.ctxCol = ctxCol;
+			this.ctxMatch = ctxMatch;
+			this.ctxExcludeDefault = ctxExcludeDefault;
+		}
+
+		boolean ctxActive() {
+			return ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("SKP(a")
+					.append(domainAdjacency)
+					.append("->a")
+					.append(probeAdjacency)
+					.append(",k")
+					.append(keyCol)
+					.append("->")
+					.append(valueCol);
+			if (ctxActive()) {
+				key.append(",g")
+						.append(ctxCol)
+						.append(',')
+						.append(ctxMatch == null ? "_" : ctxMatch.token())
+						.append(ctxExcludeDefault ? ",n" : "");
+			}
+			key.append(");");
+		}
+
+		@Override
+		void produced(BitSet columns) {
+			columns.set(keyCol);
+			columns.set(valueCol);
+			if (ctxCol >= 0) {
+				columns.set(ctxCol);
+			}
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.adjacency(domainAdjacency);
+			requirements.adjacency(probeAdjacency);
+			if (ctxMatch != null) {
+				requirements.operand(ctxMatch);
+			}
+		}
+	}
+
 	static final class Probe extends Node {
 		final int adjacency;
 		final Operand key;
@@ -791,13 +976,24 @@ final class LmdbNativeKernelIr {
 	static final class FilterInConstants extends Node {
 		final Operand value;
 		final int[] constantIndices;
+		/**
+		 * Binding-owned exact domain used for SIP telemetry and non-tiny membership implementations; -1 = plain guard.
+		 */
+		final int domain;
+		final String consumer;
 
 		FilterInConstants(Operand value, int[] constantIndices) {
+			this(value, constantIndices, -1, null);
+		}
+
+		FilterInConstants(Operand value, int[] constantIndices, int domain, String consumer) {
 			if (constantIndices.length == 0) {
 				throw new IllegalArgumentException("IN filter needs at least one constant");
 			}
 			this.value = value;
 			this.constantIndices = constantIndices;
+			this.domain = domain;
+			this.consumer = consumer;
 		}
 
 		@Override
@@ -805,6 +1001,9 @@ final class LmdbNativeKernelIr {
 			key.append("in(").append(value.token());
 			for (int index : constantIndices) {
 				key.append(",c").append(index);
+			}
+			if (domain >= 0) {
+				key.append(",d").append(domain);
 			}
 			key.append(");");
 		}
@@ -814,6 +1013,9 @@ final class LmdbNativeKernelIr {
 			requirements.operand(value);
 			for (int index : constantIndices) {
 				requirements.constantIndex(index);
+			}
+			if (domain >= 0) {
+				requirements.domain(domain);
 			}
 		}
 	}

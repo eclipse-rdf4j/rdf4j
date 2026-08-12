@@ -180,6 +180,11 @@ final class LmdbNativeSipFilter {
 		return new Builder(expectedValues, maximumBytes, allowBloom);
 	}
 
+	/** Metadata-only domain used to publish SIP performed by a specialized operator. */
+	static Domain descriptor(String representation, boolean exact, long cardinalityUpperBound) {
+		return new Descriptor(Objects.requireNonNull(representation), exact, Math.max(0L, cardinalityUpperBound));
+	}
+
 	static Domain and(Domain left, Domain right) {
 		if (left == ALL)
 			return right;
@@ -590,6 +595,13 @@ final class LmdbNativeSipFilter {
 		@Override
 		public long cardinalityUpperBound() {
 			return cardinality;
+		}
+	}
+
+	private record Descriptor(String representation, boolean exact, long cardinalityUpperBound) implements Domain {
+		@Override
+		public boolean mayContain(long value) {
+			return true;
 		}
 	}
 
