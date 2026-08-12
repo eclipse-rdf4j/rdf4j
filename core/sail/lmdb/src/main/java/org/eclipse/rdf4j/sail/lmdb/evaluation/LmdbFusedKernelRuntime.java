@@ -36,8 +36,9 @@ public final class LmdbFusedKernelRuntime {
 
 	public static void installExactDomain(int token, long[] unsignedSortedValues, int offset, int length) {
 		if (unsignedSortedValues == null || length <= 0) {
-			LmdbFusedSipFactorizedRuntime.current().installDomain(token,
-					length == 0 ? LmdbNativeSipFilter.EMPTY : LmdbNativeSipFilter.ALL);
+			LmdbFusedSipFactorizedRuntime.current()
+					.installDomain(token,
+							length == 0 ? LmdbNativeSipFilter.EMPTY : LmdbNativeSipFilter.ALL);
 			return;
 		}
 		LmdbNativeSipFilter.Domain domain = LmdbNativeSipFilter.sorted(unsignedSortedValues, offset, length, false);

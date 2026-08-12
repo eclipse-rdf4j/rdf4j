@@ -46,8 +46,15 @@ class LmdbFactorizedBatchTest {
 		batch.addRoot(1);
 		batch.addRoot(2);
 		LmdbFactorizedBatch.Level level = batch.expand(new LmdbFactorizedBatch.RunReader() {
-			@Override public int bindSize(long key) { return key == 1 ? 0 : 1; }
-			@Override public long neighborAt(int ordinal) { return 22; }
+			@Override
+			public int bindSize(long key) {
+				return key == 1 ? 0 : 1;
+			}
+
+			@Override
+			public long neighborAt(int ordinal) {
+				return 22;
+			}
 		}, true);
 		assertEquals(2, level.valueCount());
 		assertFalse(level.validAt(0));
@@ -58,8 +65,21 @@ class LmdbFactorizedBatchTest {
 		private final int size;
 		private final int scale;
 		private long key;
-		SyntheticRun(int size, int scale) { this.size = size; this.scale = scale; }
-		@Override public int bindSize(long key) { this.key = key; return size; }
-		@Override public long neighborAt(int ordinal) { return key * scale + ordinal; }
+
+		SyntheticRun(int size, int scale) {
+			this.size = size;
+			this.scale = scale;
+		}
+
+		@Override
+		public int bindSize(long key) {
+			this.key = key;
+			return size;
+		}
+
+		@Override
+		public long neighborAt(int ordinal) {
+			return key * scale + ordinal;
+		}
 	}
 }

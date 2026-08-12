@@ -44,7 +44,10 @@ public final class LmdbFactorizedBatch {
 
 	public static final class FactorizationRefused extends RuntimeException {
 		private static final long serialVersionUID = 1L;
-		FactorizationRefused() { super(null, null, false, false); }
+
+		FactorizationRefused() {
+			super(null, null, false, false);
+		}
 	}
 
 	private static final MemoryAccount UNBOUNDED = bytes -> true;
@@ -456,7 +459,6 @@ public final class LmdbFactorizedBatch {
 			parentOrdinals[to] = parentOrdinals[from];
 			setValid(to, validAt(from));
 		}
-
 
 		private void setValid(int ordinal, boolean valid) {
 			long mask = 1L << ordinal;

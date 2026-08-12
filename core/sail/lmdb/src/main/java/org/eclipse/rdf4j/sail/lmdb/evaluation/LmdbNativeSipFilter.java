@@ -124,16 +124,22 @@ final class LmdbNativeSipFilter {
 	}
 
 	static Domain and(Domain left, Domain right) {
-		if (left == ALL) return right;
-		if (right == ALL) return left;
-		if (left == EMPTY || right == EMPTY) return EMPTY;
+		if (left == ALL)
+			return right;
+		if (right == ALL)
+			return left;
+		if (left == EMPTY || right == EMPTY)
+			return EMPTY;
 		return new And(left, right);
 	}
 
 	static Domain or(Domain left, Domain right) {
-		if (left == ALL || right == ALL) return ALL;
-		if (left == EMPTY) return right;
-		if (right == EMPTY) return left;
+		if (left == ALL || right == ALL)
+			return ALL;
+		if (left == EMPTY)
+			return right;
+		if (right == EMPTY)
+			return left;
 		return new Or(left, right);
 	}
 
@@ -279,19 +285,36 @@ final class LmdbNativeSipFilter {
 		}
 	}
 
-
 	private record And(Domain left, Domain right) implements Domain {
-		@Override public boolean mayContain(long value) { return left.mayContain(value) && right.mayContain(value); }
-		@Override public boolean exact() { return left.exact() && right.exact(); }
-		@Override public long cardinalityUpperBound() {
+		@Override
+		public boolean mayContain(long value) {
+			return left.mayContain(value) && right.mayContain(value);
+		}
+
+		@Override
+		public boolean exact() {
+			return left.exact() && right.exact();
+		}
+
+		@Override
+		public long cardinalityUpperBound() {
 			return Math.min(left.cardinalityUpperBound(), right.cardinalityUpperBound());
 		}
 	}
 
 	private record Or(Domain left, Domain right) implements Domain {
-		@Override public boolean mayContain(long value) { return left.mayContain(value) || right.mayContain(value); }
-		@Override public boolean exact() { return left.exact() && right.exact(); }
-		@Override public long cardinalityUpperBound() {
+		@Override
+		public boolean mayContain(long value) {
+			return left.mayContain(value) || right.mayContain(value);
+		}
+
+		@Override
+		public boolean exact() {
+			return left.exact() && right.exact();
+		}
+
+		@Override
+		public long cardinalityUpperBound() {
 			long a = left.cardinalityUpperBound(), b = right.cardinalityUpperBound();
 			long sum = a + b;
 			return sum < 0 || sum < a ? Long.MAX_VALUE : sum;

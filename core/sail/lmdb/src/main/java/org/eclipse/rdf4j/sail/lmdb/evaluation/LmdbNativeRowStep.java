@@ -218,12 +218,20 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	String entryPath;
 	QueryEvaluationStep genericStep;
 
-	/** A bare BGP fragment: no projection, distinct, order, or slice — snapshot rows over the whole slot layout. */
+	/** A bare BGP fragment with no optional-only variables (no OPTIONAL, or none binding new names). */
 	static NativeBareRowsStep bareFragment(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
 			int[] sourceSlots, String[] targetNames, boolean strictCompare, LmdbNativeEvaluationStrategy strategy,
 			TupleExpr originalExpr, QueryEvaluationContext context) {
+		return bareFragment(source, arg, layout, sourceSlots, targetNames, strictCompare, strategy, originalExpr,
+				context, Set.of());
+	}
+
+	/** A bare BGP fragment: no projection, distinct, order, or slice — snapshot rows over the whole slot layout. */
+	static NativeBareRowsStep bareFragment(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
+			int[] sourceSlots, String[] targetNames, boolean strictCompare, LmdbNativeEvaluationStrategy strategy,
+			TupleExpr originalExpr, QueryEvaluationContext context, Set<String> optionalOnlyNames) {
 		NativeRowsStep bulk = new NativeRowsStep(source, arg, layout, sourceSlots, targetNames, false, new int[0],
-				new boolean[0], 0L, -1L, strictCompare, strategy, originalExpr, context, Set.of(), null, null);
+				new boolean[0], 0L, -1L, strictCompare, strategy, originalExpr, context, optionalOnlyNames, null, null);
 		bulk.snapshotRows = true;
 		bulk.entryPath = LmdbNativeAttemptMetrics.PATH_BARE_BULK;
 		return new NativeBareRowsStep(source, arg, layout, originalExpr, bulk);
@@ -1164,6 +1172,14 @@ final class NativeBareRowsStep implements QueryEvaluationStep, LmdbNativePhysica
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		if (bindings == null || bindings.isEmpty()) {
 			return bulk.evaluate(bindings);
+		}
+		// A base binding for an optional-only variable can turn a well-designed OPTIONAL badly designed at runtime;
+		// the per-call native path cannot honor that binding, so defer to the generic evaluator (mirrors the guard in
+		// NativeRowsStep.evaluate for the bulk path).
+		if (bulk.hasOptionalOnlyBinding(bindings)) {
+			LmdbNativeExplain.recordExecutionPath(originalExpr,
+					LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK + "(optionalOnlyBinding)");
+			return bulk.genericStep().evaluate(bindings);
 		}
 		return new NativeBareRowsIteration(this, bindings);
 	}

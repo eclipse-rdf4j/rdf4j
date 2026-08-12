@@ -87,7 +87,8 @@ final class LmdbNativeKernelExecution {
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
 			ValueExpr havingCondition) {
 		try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.enter(0L)) {
-			return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, havingCondition, false);
+			return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, havingCondition,
+					false);
 		}
 	}
 

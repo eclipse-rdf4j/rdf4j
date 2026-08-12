@@ -485,6 +485,7 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 			}
 		}
 	}
+
 	static LongAdder scannedIn = new LongAdder();
 	static LongAdder scannedOut = new LongAdder();
 
@@ -500,14 +501,15 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 			cursorRowsScanned += rows;
 			cursorRowsMatched += rows;
 			for (int row = 0; row < rows; row++) {
-                if (outgoing) {
-                    scannedOut.increment();
-                } else {
-                    scannedIn.increment();
-                }
-                int offset = row * 4;
+				if (outgoing) {
+					scannedOut.increment();
+				} else {
+					scannedIn.increment();
+				}
+				int offset = row * 4;
 				if (++scanned % 10_000_000 == 0 && logger.isInfoEnabled()) {
-					logger.info(outgoing ? "scanOutgoing: {}" : "scanIncoming: {}", outgoing ? scannedOut.sum() : scannedIn.sum());
+					logger.info(outgoing ? "scanOutgoing: {}" : "scanIncoming: {}",
+							outgoing ? scannedOut.sum() : scannedIn.sum());
 				}
 				long key = batch[offset + (outgoing ? TripleIndex.SUBJ_IDX : TripleIndex.OBJ_IDX)];
 				long predicate = batch[offset + TripleIndex.PRED_IDX];

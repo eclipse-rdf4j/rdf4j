@@ -211,8 +211,7 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 
 	/** One generated probe site's mutable row binding; all large state remains immutable and base-owned. */
 	public final class DecodedBoundRunCursor implements NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor {
-		private final ImmutablePagedQuadCsfIndex.SharedPartitionLookup.DecodedRunCursor decoded =
-				new ImmutablePagedQuadCsfIndex.SharedPartitionLookup.DecodedRunCursor();
+		private final ImmutablePagedQuadCsfIndex.SharedPartitionLookup.DecodedRunCursor decoded = new ImmutablePagedQuadCsfIndex.SharedPartitionLookup.DecodedRunCursor();
 		private long token;
 
 		private DecodedBoundRunCursor(ImmutablePagedQuadCsfIndex.SharedPartitionLookup lookup) {

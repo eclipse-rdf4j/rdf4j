@@ -76,7 +76,8 @@ final class LmdbNativeGeneratedSourceOptimizer {
 	}
 
 	private static void collectDefinitions(String line, Set<String> defined) {
-		Matcher matcher = Pattern.compile("\\b(?:long|int|boolean|double|Object|var)\\s+([A-Za-z_$][\\w$]*)").matcher(line);
+		Matcher matcher = Pattern.compile("\\b(?:long|int|boolean|double|Object|var)\\s+([A-Za-z_$][\\w$]*)")
+				.matcher(line);
 		while (matcher.find()) {
 			defined.add(matcher.group(1));
 		}

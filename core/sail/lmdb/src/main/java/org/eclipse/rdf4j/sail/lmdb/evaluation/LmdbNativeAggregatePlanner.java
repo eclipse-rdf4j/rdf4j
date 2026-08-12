@@ -303,6 +303,13 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (!isBareRowFragment(node)) {
 			return null;
 		}
+		// An OPTIONAL fragment may bind optional-only variables. If any such variable is also bound outside its left
+		// join the OPTIONAL is not well designed and must defer to the generic evaluator (null). Otherwise the returned
+		// set drives the runtime guard that still delegates when such a variable arrives as an external base binding.
+		Set<String> optionalOnlyNames = wellDesignedOptionalOnlyNames(node);
+		if (optionalOnlyNames == null) {
+			return null;
+		}
 		this.requiredAggregateNames = VarNameCollector.process(node);
 		SlotPlan arg = compileTuple(node, false);
 		if (arg == null) {
@@ -319,8 +326,24 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		boolean strictCompare = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
 		layout.freeze(slotNames);
+		if (containsLeftJoin(node)) {
+			LmdbNativeAggregateCompiler.LEFTJOIN_BARE_FRAGMENTS.incrementAndGet();
+		}
 		return NativeRowsStep.bareFragment(source, arg, layout, sourceSlots, targetNames, strictCompare, strategy,
-				expr, context);
+				expr, context, optionalOnlyNames);
+	}
+
+	private static boolean containsLeftJoin(TupleExpr node) {
+		if (node instanceof LeftJoin) {
+			return true;
+		}
+		if (node instanceof Filter) {
+			return containsLeftJoin(((Filter) node).getArg());
+		}
+		if (node instanceof Join) {
+			return containsLeftJoin(((Join) node).getLeftArg()) || containsLeftJoin(((Join) node).getRightArg());
+		}
+		return false;
 	}
 
 	/**
@@ -335,6 +358,13 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (node instanceof Join) {
 			Join join = (Join) node;
 			return isBareRowFragment(join.getLeftArg()) && isBareRowFragment(join.getRightArg());
+		}
+		if (node instanceof LeftJoin) {
+			// A projection-less OPTIONAL fragment: claim it so the native left-join operator runs it as one step
+			// instead of the generic LeftJoinIterator re-opening the right side per left row. compileTuple is the
+			// real gate — it returns null (generic fallback) for any arm it cannot express.
+			LeftJoin leftJoin = (LeftJoin) node;
+			return isBareRowFragment(leftJoin.getLeftArg()) && isBareRowFragment(leftJoin.getRightArg());
 		}
 		return node instanceof StatementPattern || node instanceof BindingSetAssignment;
 	}

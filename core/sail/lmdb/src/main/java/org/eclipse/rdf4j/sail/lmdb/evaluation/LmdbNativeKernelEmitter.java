@@ -198,10 +198,10 @@ final class LmdbNativeKernelEmitter {
 					|| aggregate.mods.limit >= 0
 					|| aggregate.mods.offset != 0
 					|| kernel.pipeline.size() != 2
-					|| !(kernel.pipeline.get(0) instanceof EnumerateAdjKeys root)
+					|| !(kernel.pipeline.get(0)instanceof EnumerateAdjKeys root)
 					|| root.valueCol >= 0
 					|| root.ctxActive()
-					|| !(kernel.pipeline.get(1) instanceof Exists exists)
+					|| !(kernel.pipeline.get(1)instanceof Exists exists)
 					|| exists.negated) {
 				return null;
 			}
@@ -460,9 +460,15 @@ final class LmdbNativeKernelEmitter {
 				source.append("    private long e").append(i).append(";\n");
 			}
 			for (int i = 0; i < kernel.requirements.domains; i++) {
-				source.append("    private long[] dom").append(i).append(";\n")
-						.append("    private int domO").append(i).append(";\n")
-						.append("    private int domL").append(i).append(";\n");
+				source.append("    private long[] dom")
+						.append(i)
+						.append(";\n")
+						.append("    private int domO")
+						.append(i)
+						.append(";\n")
+						.append("    private int domL")
+						.append(i)
+						.append(";\n");
 			}
 			// Emitted after the pipeline has been rendered, so the count is final by the time this runs.
 			for (int i = 0; i < nextLeftGroupId; i++) {
@@ -689,10 +695,20 @@ final class LmdbNativeKernelEmitter {
 				source.append("        e").append(i).append(" = context.entrySlots[").append(i).append("];\n");
 			}
 			for (int i = 0; i < kernel.requirements.domains; i++) {
-				source.append("        dom").append(i).append(" = context.keyDomains[").append(i).append("];\n")
-						.append("        domO").append(i).append(" = context.keyDomainOffsets[").append(i)
+				source.append("        dom")
+						.append(i)
+						.append(" = context.keyDomains[")
+						.append(i)
 						.append("];\n")
-						.append("        domL").append(i).append(" = context.keyDomainLengths[").append(i)
+						.append("        domO")
+						.append(i)
+						.append(" = context.keyDomainOffsets[")
+						.append(i)
+						.append("];\n")
+						.append("        domL")
+						.append(i)
+						.append(" = context.keyDomainLengths[")
+						.append(i)
 						.append("];\n");
 			}
 			source.append("        hooks = context.hooks;\n");
@@ -2332,9 +2348,18 @@ final class LmdbNativeKernelEmitter {
 			boolean tailmost = tailmostAt(stateIndex);
 			if (node instanceof EnumerateDomain) {
 				EnumerateDomain enumerate = (EnumerateDomain) node;
-				body.append(indent).append("long[] dom = dom").append(enumerate.domain).append(";\n")
-						.append(indent).append("int domO = domO").append(enumerate.domain).append(";\n")
-						.append(indent).append("int domL = domL").append(enumerate.domain).append(";\n");
+				body.append(indent)
+						.append("long[] dom = dom")
+						.append(enumerate.domain)
+						.append(";\n")
+						.append(indent)
+						.append("int domO = domO")
+						.append(enumerate.domain)
+						.append(";\n")
+						.append(indent)
+						.append("int domL = domL")
+						.append(enumerate.domain)
+						.append(";\n");
 				body.append(indent).append("if (").append(a).append(" < 0) {\n");
 				body.append(indent).append("    ").append(a).append(" = 0;\n");
 				body.append(indent).append("}\n");

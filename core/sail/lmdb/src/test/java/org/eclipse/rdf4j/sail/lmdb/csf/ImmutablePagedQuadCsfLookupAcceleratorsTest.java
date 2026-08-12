@@ -73,8 +73,7 @@ class ImmutablePagedQuadCsfLookupAcceleratorsTest {
 
 			assertTrue(lookup.neighborsDecoded());
 			assertEquals("exact-slot-hash+decoded-neighbors", lookup.acceleratorKind());
-			ImmutablePagedQuadCsfIndex.SharedPartitionLookup.DecodedRunCursor cursor =
-					new ImmutablePagedQuadCsfIndex.SharedPartitionLookup.DecodedRunCursor();
+			ImmutablePagedQuadCsfIndex.SharedPartitionLookup.DecodedRunCursor cursor = new ImmutablePagedQuadCsfIndex.SharedPartitionLookup.DecodedRunCursor();
 			assertTrue(cursor.attach(lookup));
 			assertEquals(fanOut, cursor.bindSize(rows[0]));
 			assertEquals((1L << 48) | 1L, cursor.neighborAtInt(0));

@@ -1481,26 +1481,24 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 		int size = compiledArgs.size();
 
-		if(size == 1) {
+		if (size == 1) {
 			QueryValueEvaluationStep expr = compiledArgs.get(0);
 			return bindings -> {
 
-					try {
-						// return first result that does not produce an error on
-						// evaluation.
-						return expr.evaluate(bindings);
+				try {
+					// return first result that does not produce an error on
+					// evaluation.
+					return expr.evaluate(bindings);
 
-					} catch (QueryEvaluationException ignored) {
-					}
-
+				} catch (QueryEvaluationException ignored) {
+				}
 
 				throw new ValueExprEvaluationException(
 						"COALESCE arguments do not evaluate to a value: " + node.getSignature());
 			};
 		}
 
-
-		if(size == 2) {
+		if (size == 2) {
 			QueryValueEvaluationStep expr = compiledArgs.get(0);
 			QueryValueEvaluationStep expr2 = compiledArgs.get(1);
 
@@ -1515,7 +1513,6 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 					return expr2.evaluate(bindings);
 				} catch (QueryEvaluationException ignored) {
 				}
-
 
 				throw new ValueExprEvaluationException(
 						"COALESCE arguments do not evaluate to a value: " + node.getSignature());

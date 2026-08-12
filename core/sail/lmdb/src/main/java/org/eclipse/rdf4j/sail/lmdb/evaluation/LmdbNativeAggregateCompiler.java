@@ -65,6 +65,12 @@ final class LmdbNativeAggregateCompiler {
 	static final AtomicLong LEFTJOIN_MEMO_MATERIALIZATIONS = new AtomicLong();
 	/** Test observability: correlated OPTIONAL fragments answered by ONE key-unbound sweep instead of per-key runs. */
 	static final AtomicLong LEFTJOIN_SWEEP_BUILDS = new AtomicLong();
+	/**
+	 * Test observability: projection-less OPTIONAL (LeftJoin) subtrees the bare-fragment route claimed for the native
+	 * engine while the generic evaluator still owns the enclosing operators (e.g. GROUP BY / BIND). Before this route
+	 * existed such a LeftJoin ran as the generic {@code LeftJoinIterator}, re-opening a native pattern per left row.
+	 */
+	static final AtomicLong LEFTJOIN_BARE_FRAGMENTS = new AtomicLong();
 	/** Test observability: sweeps drained through a batch join strategy instead of per-row nested loops. */
 	static final AtomicLong LEFTJOIN_SWEEP_BATCHES = new AtomicLong();
 	/** Test observability: null-rejecting filters over a left join compiled as an inner join instead. */

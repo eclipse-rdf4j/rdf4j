@@ -1477,7 +1477,6 @@ final class AdaptiveOwningCursor implements RowCursor {
 		throw (Error) failure;
 	}
 
-
 	/**
 	 * Chooses a stable factorized filter stage from runtime selectivity/cost feedback. The returned stage is fixed when
 	 * a kernel is bound, so generated loops contain no dynamic relocation branch.

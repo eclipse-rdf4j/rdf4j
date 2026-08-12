@@ -348,7 +348,7 @@ class LmdbNativeRowStepIterationTest {
 		ValuesPlan values = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { 0 }, new long[] { 10L }) });
 		MultiJoinPlan join = new MultiJoinPlan(new SlotPlan[] { values, pattern(0, P1, 1) }, new MaskedFilter[0]);
 		NativeBareRowsStep rows = NativeRowsStep.bareFragment(source, join, layout, new int[] { 0, 1 },
-				new String[] { "subject", "object" }, true, null, new SingletonSet(), null);
+				new String[] { "subject", "object" }, true, null, new SingletonSet(), null, java.util.Set.of());
 
 		assertThat(rows.existsStep()).as("VALUES remains on the ordinary evaluator until its row semantics are proven")
 				.isNull();
@@ -384,7 +384,8 @@ class LmdbNativeRowStepIterationTest {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "object", 1), null);
 		layout.freeze(List.of("subject", "object"));
 		NativeBareRowsStep rows = NativeRowsStep.bareFragment(source, pattern(0, P1, 1), layout,
-				new int[] { 0, 1 }, new String[] { "subject", "object" }, true, null, new SingletonSet(), null);
+				new int[] { 0, 1 }, new String[] { "subject", "object" }, true, null, new SingletonSet(), null,
+				java.util.Set.of());
 		QueryValueEvaluationStep exists = rows.existsStep();
 		CyclicBarrier start = new CyclicBarrier(2);
 		ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -563,7 +564,7 @@ class LmdbNativeRowStepIterationTest {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("x", 0), null);
 		layout.freeze(List.of("x"));
 		return NativeRowsStep.bareFragment(source, plan, layout, new int[] { 0 }, new String[] { "x" }, true, null,
-				explanationTarget, null);
+				explanationTarget, null, java.util.Set.of());
 	}
 
 	private static Value dependentForeignValue(QueryEvaluationStep step, String value, CyclicBarrier start)

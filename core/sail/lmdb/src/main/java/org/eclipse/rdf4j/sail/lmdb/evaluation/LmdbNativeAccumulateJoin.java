@@ -268,7 +268,7 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 					new MaskedFilter[0]);
 			NativeBareRowsStep sweep = NativeRowsStep.bareFragment(step.source, combined, step.layout,
 					step.bulk.sourceSlots, step.bulk.targetNames, step.bulk.strictCompare, step.bulk.strategy,
-					step.bulk.originalExpr, step.bulk.context);
+					step.bulk.originalExpr, step.bulk.context, java.util.Set.of());
 			FRAGMENT_EXECUTIONS.incrementAndGet();
 			Map<List<Value>, List<BindingSet>> result = new HashMap<>();
 			try (CloseableIteration<BindingSet> iteration = sweep.evaluate(EmptyBindingSet.getInstance())) {

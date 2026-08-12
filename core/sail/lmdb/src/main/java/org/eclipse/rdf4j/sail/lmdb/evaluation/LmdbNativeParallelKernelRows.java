@@ -239,7 +239,8 @@ final class LmdbNativeParallelKernelRows {
 	 * page before handoff (order is a whole-result property) and returns a materialized cursor.
 	 */
 	private static RowCursor start(LmdbNativeKernelLowering.Lowered lowered, int rootAdjacency, int rootDomain,
-			int rootScan, LmdbNativeKernelBindings.BoundDomains domains, long rootKeys, LmdbRootScanPartition[] scanPartitions,
+			int rootScan, LmdbNativeKernelBindings.BoundDomains domains, long rootKeys,
+			LmdbRootScanPartition[] scanPartitions,
 			NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row,
 			Supplier<JaninoKernel> kernelFactory, LmdbNativeParallelPipelines.TaskReservation reservation, Emit emit,
 			org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashLedger) {
