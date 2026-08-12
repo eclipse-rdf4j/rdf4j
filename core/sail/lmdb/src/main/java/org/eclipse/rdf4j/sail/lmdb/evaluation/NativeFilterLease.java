@@ -70,7 +70,10 @@ final class NativeFilterLease {
 			return new FilterPlan(borrow(filter.arg), borrow(filter.filter), filter.filterMask);
 		}
 		if (plan instanceof JoinPlan join) {
-			return new JoinPlan(borrow(join.left), borrow(join.right));
+			// Reapply relational identity/flattening while cloning the attempt. Otherwise an unused VALUES
+			// table that was folded to SingletonPlan can be resurrected as a nested JoinPlan barrier here,
+			// after the planner already produced a Janino-lowerable flat shape.
+			return SlotPlan.join(borrow(join.left), borrow(join.right));
 		}
 		if (plan instanceof LeftJoinPlan leftJoin) {
 			return new LeftJoinPlan(borrow(leftJoin.left), borrow(leftJoin.right));

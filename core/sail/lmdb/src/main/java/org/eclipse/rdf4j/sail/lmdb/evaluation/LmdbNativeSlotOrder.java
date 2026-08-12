@@ -482,9 +482,14 @@ final class LmdbNativeOrderPlanner {
 		}
 		if (plan instanceof JoinPlan) {
 			JoinPlan join = (JoinPlan) plan;
+			// Singleton is the relational identity. Do not preserve it as an ordering barrier: doing so
+			// recreates exactly the nested JoinPlan shape that prevents otherwise-flat aggregate pipelines
+			// from reaching Janino after unused VALUES elimination.
 			if (join.left == SingletonPlan.INSTANCE) {
-				NativeOrderedPlan right = best(join.right, requested, row);
-				return new NativeOrderedPlan(new JoinPlan(join.left, right.plan), right.order);
+				return best(join.right, requested, row);
+			}
+			if (join.right == SingletonPlan.INSTANCE) {
+				return best(join.left, requested, row);
 			}
 			NativeOrderedPlan left = best(join.left, requested, row);
 			return new NativeOrderedPlan(new JoinPlan(left.plan, join.right), left.order.withBarrier());

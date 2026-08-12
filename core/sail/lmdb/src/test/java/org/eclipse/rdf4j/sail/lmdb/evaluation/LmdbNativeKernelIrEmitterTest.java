@@ -58,6 +58,8 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PathExpand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PlanRows;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Probe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeClose;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
@@ -710,6 +712,42 @@ class LmdbNativeKernelIrEmitterTest {
 	// ------------------------------------------------------------------
 	// Compositions
 	// ------------------------------------------------------------------
+
+	@Test
+	void sipDomainProbeKeepsDecodedCursorFastPathAndGenericBatchFallback() {
+		Kernel ir = new Kernel(2,
+				List.of(new SipDomainProbe(0, 0, 0, 1, -1, null, false)),
+				emit(0, 1));
+
+		String source = LmdbNativeKernelEmitter.emit(ir);
+		assertTrue(source.contains("instanceof LmdbDecodedNativeAdjacency"),
+				"SIP binding must select the decoded target once; source:\n" + source);
+		assertTrue(source.contains(".openDecodedBoundRunCursor()"),
+				"decoded SIP must open the concrete cursor; source:\n" + source);
+		assertTrue(source.contains(".bindSize(sipKey)"),
+				"decoded SIP must fuse key lookup and run-size retrieval; source:\n" + source);
+		assertTrue(source.contains(".neighborAtInt(i)"),
+				"decoded SIP must retain the int-indexed CSR hot loop; source:\n" + source);
+		assertTrue(source.contains(".findBatch(sipDomain"),
+				"non-decoded views must retain the exact batch fallback; source:\n" + source);
+	}
+
+	@Test
+	void sipKeyProbeKeepsDecodedCursorFastPathAndGenericBatchFallback() {
+		Kernel ir = new Kernel(2,
+				List.of(new SipKeyProbe(0, 1, 0, 1, -1, null, false)),
+				emit(0, 1));
+
+		String source = LmdbNativeKernelEmitter.emit(ir);
+		assertTrue(source.contains(".fillKeys(sipK"),
+				"the physical key-domain producer must remain streaming; source:\n" + source);
+		assertTrue(source.contains(".bindSize(sipKey)"),
+				"decoded probe targets must avoid generic batch handles; source:\n" + source);
+		assertTrue(source.contains(".neighborAtInt(i)"),
+				"decoded probe targets must retain direct CSR iteration; source:\n" + source);
+		assertTrue(source.contains(".findBatch(sipK"),
+				"non-decoded probe targets must retain the batch fallback; source:\n" + source);
+	}
 
 	@Test
 	void flatRootExistsEmitsConcreteDecodedAndExactFallbackPaths() {

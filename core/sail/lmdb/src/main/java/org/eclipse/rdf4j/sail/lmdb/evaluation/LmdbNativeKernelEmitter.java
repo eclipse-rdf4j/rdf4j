@@ -47,6 +47,8 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Probe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeClose;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeVariable;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ScanQuad;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
 
 /**
@@ -82,6 +84,24 @@ final class LmdbNativeKernelEmitter {
 		private int nextBoundRunCursorId;
 		private final IdentityHashMap<Probe, Integer> boundRunCursorIds = new IdentityHashMap<>();
 		private final List<Probe> boundRunCursorNodes = new ArrayList<>();
+		/** Exact-domain guards that keep a direct primitive comparison but publish one aggregated SIP observation. */
+		private final IdentityHashMap<FilterInConstants, Integer> sipFilterSiteIds = new IdentityHashMap<>();
+		private final List<FilterInConstants> sipFilterSites = new ArrayList<>();
+		/** Exact domains that drive an adjacency operation and therefore need no scalar membership test. */
+		private final IdentityHashMap<EnumerateDomain, Integer> sipDrivenSiteIds = new IdentityHashMap<>();
+		private final List<EnumerateDomain> sipDrivenSites = new ArrayList<>();
+		/** Physical adjacency-key domains that drive a later probe without being copied into KernelContext arrays. */
+		private final IdentityHashMap<EnumerateAdjKeys, Integer> implicitSipDrivenSiteIds = new IdentityHashMap<>();
+		private final List<EnumerateAdjKeys> implicitSipDrivenSites = new ArrayList<>();
+		/** Fused sorted-domain/key-domain batches that probe another adjacency with findBatch. */
+		private final IdentityHashMap<Node, Integer> sipBatchProbeSiteIds = new IdentityHashMap<>();
+		private final List<Node> sipBatchProbeSites = new ArrayList<>();
+		/**
+		 * Semantically lowered filter sites; counters are primitive fields and are published once when the kernel
+		 * closes.
+		 */
+		private final IdentityHashMap<Node, Integer> runtimeFilterSiteIds = new IdentityHashMap<>();
+		private final List<Node> runtimeFilterSites = new ArrayList<>();
 		private FlatRootExists flatRootExistsShape;
 
 		/**
@@ -109,7 +129,7 @@ final class LmdbNativeKernelEmitter {
 
 			StringBuilder source = new StringBuilder(8192);
 			source.append("package org.eclipse.rdf4j.sail.lmdb.gen;\n\n");
-			if (flatRootExists != null) {
+			if (flatRootExists != null || !sipBatchProbeSites.isEmpty()) {
 				source.append("import org.eclipse.rdf4j.sail.lmdb.LmdbDecodedNativeAdjacency;\n");
 			}
 			source.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;\n")
@@ -169,6 +189,104 @@ final class LmdbNativeKernelEmitter {
 			boundRunCursorIds.put(probe, id);
 			boundRunCursorNodes.add(probe);
 			return id;
+		}
+
+		private int sipFilterSite(FilterInConstants filter) {
+			if (filter.domain < 0) {
+				return -1;
+			}
+			Integer existing = sipFilterSiteIds.get(filter);
+			if (existing != null) {
+				return existing;
+			}
+			int id = sipFilterSites.size();
+			sipFilterSiteIds.put(filter, id);
+			sipFilterSites.add(filter);
+			return id;
+		}
+
+		private int sipDrivenSite(EnumerateDomain enumerate) {
+			if (!enumerate.sipDriven) {
+				return -1;
+			}
+			Integer existing = sipDrivenSiteIds.get(enumerate);
+			if (existing != null) {
+				return existing;
+			}
+			int id = sipDrivenSites.size();
+			sipDrivenSiteIds.put(enumerate, id);
+			sipDrivenSites.add(enumerate);
+			return id;
+		}
+
+		private int implicitSipDrivenSite(EnumerateAdjKeys enumerate) {
+			if (!enumerate.sipDriven) {
+				return -1;
+			}
+			Integer existing = implicitSipDrivenSiteIds.get(enumerate);
+			if (existing != null) {
+				return existing;
+			}
+			int id = implicitSipDrivenSites.size();
+			implicitSipDrivenSiteIds.put(enumerate, id);
+			implicitSipDrivenSites.add(enumerate);
+			return id;
+		}
+
+		private int runtimeFilterSite(Node filter) {
+			Integer existing = runtimeFilterSiteIds.get(filter);
+			if (existing != null) {
+				return existing;
+			}
+			int id = runtimeFilterSites.size();
+			runtimeFilterSiteIds.put(filter, id);
+			runtimeFilterSites.add(filter);
+			return id;
+		}
+
+		private int sipBatchProbeSite(Node probe) {
+			Integer existing = sipBatchProbeSiteIds.get(probe);
+			if (existing != null) {
+				return existing;
+			}
+			int id = sipBatchProbeSites.size();
+			sipBatchProbeSiteIds.put(probe, id);
+			sipBatchProbeSites.add(probe);
+			return id;
+		}
+
+		private static int sipBatchProbeAdjacency(Node node) {
+			if (node instanceof SipDomainProbe probe) {
+				return probe.probeAdjacency;
+			}
+			return ((SipKeyProbe) node).probeAdjacency;
+		}
+
+		private static int filterKey(Node filter) {
+			StringBuilder shape = new StringBuilder();
+			filter.key(shape);
+			int hash = 0x811c9dc5;
+			for (int i = 0; i < shape.length(); i++) {
+				hash ^= shape.charAt(i);
+				hash *= 0x01000193;
+			}
+			return hash;
+		}
+
+		private static String filterLabel(Node filter) {
+			StringBuilder shape = new StringBuilder();
+			filter.key(shape);
+			return shape.length() <= 160 ? shape.toString() : shape.substring(0, 157) + "...";
+		}
+
+		private static String javaString(String value) {
+			if (value == null) {
+				return "";
+			}
+			return value.replace("\\", "\\\\")
+					.replace("\"", "\\\"")
+					.replace("\n", "\\n")
+					.replace("\r", "\\r");
 		}
 
 		/** One global COUNT(*) over unique root keys with an existential linear probe chain. */
@@ -278,7 +396,7 @@ final class LmdbNativeKernelEmitter {
 					.append("        }\n")
 					.append("        flatCount = matchedRoots;\n")
 					.append("    }\n\n");
-			return LmdbNativeGeneratedSourceOptimizer.optimize(body.toString());
+			return body.toString();
 		}
 
 		private void emitFlatExistsNodesDirect(StringBuilder body, List<Node> nodes, int index, String indent,
@@ -391,8 +509,33 @@ final class LmdbNativeKernelEmitter {
 				emitFlatExistsNodesDirect(body, nodes, index + 1, indent, decoded, nested);
 				return;
 			}
-			body.append(indent).append("if (").append(scalarFilterCondition(node)).append(") {\n");
+			int filterSite = runtimeFilterSite(node);
+			int sipSite = node instanceof FilterInConstants ? sipFilterSite((FilterInConstants) node) : -1;
+			body.append(indent)
+					.append("rfTest")
+					.append(filterSite)
+					.append("++;\n")
+					.append(indent)
+					.append("factorCandidates++;\n");
+			if (sipSite >= 0) {
+				body.append(indent).append("sipTest").append(sipSite).append("++;\n");
+			}
+			body.append(indent)
+					.append("if (")
+					.append(scalarFilterCondition(node))
+					.append(") {\n")
+					.append(indent)
+					.append("    rfAccept")
+					.append(filterSite)
+					.append("++;\n");
 			emitFlatExistsNodesDirect(body, nodes, index + 1, indent + "    ", decoded, boundColumns);
+			body.append(indent)
+					.append("} else {\n")
+					.append(indent)
+					.append("    factorRejected++;\n");
+			if (sipSite >= 0) {
+				body.append(indent).append("    sipReject").append(sipSite).append("++;\n");
+			}
 			body.append(indent).append("}\n");
 		}
 
@@ -433,6 +576,33 @@ final class LmdbNativeKernelEmitter {
 							.append("];\n");
 				}
 			}
+			for (int i = 0; i < sipBatchProbeSites.size(); i++) {
+				source.append("    private final long[] sipK")
+						.append(i)
+						.append(" = new long[")
+						.append(KEY_CHUNK)
+						.append("];\n")
+						.append("    private final long[] sipH")
+						.append(i)
+						.append(" = new long[")
+						.append(KEY_CHUNK)
+						.append("];\n")
+						.append("    private NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor sipC")
+						.append(i)
+						.append(";\n")
+						.append("    private boolean sipDecoded")
+						.append(i)
+						.append(";\n")
+						.append("    private LmdbDecodedNativeAdjacency.DecodedBoundRunCursor sipDR")
+						.append(i)
+						.append(";\n")
+						.append("    private long sipBatchTests")
+						.append(i)
+						.append(";\n")
+						.append("    private long sipBatchRejects")
+						.append(i)
+						.append(";\n");
+			}
 			for (int i = 0; i < kernel.requirements.nodePredicateViews; i++) {
 				source.append("    private NativeLmdbQuerySource.NodePredicates np").append(i).append(";\n");
 			}
@@ -469,6 +639,32 @@ final class LmdbNativeKernelEmitter {
 						.append("    private int domL")
 						.append(i)
 						.append(";\n");
+			}
+			for (int i = 0; i < sipFilterSites.size(); i++) {
+				source.append("    private long sipTest")
+						.append(i)
+						.append(";\n")
+						.append("    private long sipReject")
+						.append(i)
+						.append(";\n");
+			}
+			for (int i = 0; i < sipDrivenSites.size(); i++) {
+				source.append("    private long sipDriven").append(i).append(";\n");
+			}
+			for (int i = 0; i < implicitSipDrivenSites.size(); i++) {
+				source.append("    private long implicitSipDriven").append(i).append(";\n");
+			}
+			for (int i = 0; i < runtimeFilterSites.size(); i++) {
+				source.append("    private long rfTest")
+						.append(i)
+						.append(";\n")
+						.append("    private long rfAccept")
+						.append(i)
+						.append(";\n");
+			}
+			if (!runtimeFilterSites.isEmpty()) {
+				source.append("    private long factorCandidates;\n")
+						.append("    private long factorRejected;\n");
 			}
 			// Emitted after the pipeline has been rendered, so the count is final by the time this runs.
 			for (int i = 0; i < nextLeftGroupId; i++) {
@@ -640,6 +836,15 @@ final class LmdbNativeKernelEmitter {
 			for (int i = 0; i < kernel.requirements.adjacencies; i++) {
 				source.append("        a").append(i).append(" = context.adjacencies[").append(i).append("];\n");
 			}
+			for (int i = 0; i < sipBatchProbeSites.size(); i++) {
+				int adjacency = sipBatchProbeAdjacency(sipBatchProbeSites.get(i));
+				source.append("        sipDecoded").append(i).append(" = a").append(adjacency)
+						.append(" instanceof LmdbDecodedNativeAdjacency;\n")
+						.append("        if (sipDecoded").append(i).append(") {\n")
+						.append("            sipDR").append(i).append(" = ((LmdbDecodedNativeAdjacency) a")
+						.append(adjacency).append(").openDecodedBoundRunCursor();\n")
+						.append("        }\n");
+			}
 			if (flatRootExistsShape != null && !boundRunCursorNodes.isEmpty()) {
 				source.append("        flatDecoded = ");
 				for (int i = 0; i < boundRunCursorNodes.size(); i++) {
@@ -699,7 +904,6 @@ final class LmdbNativeKernelEmitter {
 				source.append("        dom")
 						.append(i)
 						.append(" = context.keyDomains[")
-
 						.append(i)
 						.append("];\n")
 						.append("        domO")
@@ -724,6 +928,47 @@ final class LmdbNativeKernelEmitter {
 						.append(i)
 						.append(", domL")
 						.append(i)
+						.append(");\n");
+			}
+			for (FilterInConstants filter : sipFilterSites) {
+				source.append(
+						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.registerDomainConsumer(")
+						.append(filter.domain)
+						.append(", \"")
+						.append(javaString(filter.consumer == null ? "exact-membership" : filter.consumer))
+						.append("\");\n");
+			}
+			for (EnumerateDomain enumerate : sipDrivenSites) {
+				source.append(
+						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.registerDomainConsumer(")
+						.append(enumerate.domain)
+						.append(", \"")
+						.append(javaString(enumerate.consumer == null ? "domain-driven" : enumerate.consumer))
+						.append("\");\n");
+			}
+			for (Node batch : sipBatchProbeSites) {
+				if (batch instanceof SipDomainProbe probe) {
+					source.append(
+							"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.registerDomainConsumer(")
+							.append(probe.domain)
+							.append(", \"BatchProbe(adjacency=")
+							.append(probe.probeAdjacency)
+							.append(")\");\n");
+				}
+			}
+			for (int i = 0; i < runtimeFilterSites.size(); i++) {
+				Node filter = runtimeFilterSites.get(i);
+				int selected = filter.selectedFilterStage >= 0 ? filter.selectedFilterStage : i;
+				int original = filter.originalFilterStage >= 0 ? filter.originalFilterStage : selected;
+				source.append(
+						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordGeneratedFilterPlacement(")
+						.append(filterKey(filter))
+						.append(", \"")
+						.append(javaString(filterLabel(filter)))
+						.append("\", ")
+						.append(original)
+						.append(", ")
+						.append(selected)
 						.append(");\n");
 			}
 			source.append("        hooks = context.hooks;\n");
@@ -820,6 +1065,98 @@ final class LmdbNativeKernelEmitter {
 
 		private void emitClose(StringBuilder source) {
 			source.append("    public void close() {\n");
+			for (int i = 0; i < sipFilterSites.size(); i++) {
+				FilterInConstants filter = sipFilterSites.get(i);
+				source.append("        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordSipBatch(")
+						.append(filter.domain)
+						.append(", \"")
+						.append(javaString(filter.consumer == null ? "exact-membership" : filter.consumer))
+						.append("\", sipTest")
+						.append(i)
+						.append(", sipReject")
+						.append(i)
+						.append(");\n");
+			}
+			for (int i = 0; i < sipDrivenSites.size(); i++) {
+				EnumerateDomain enumerate = sipDrivenSites.get(i);
+				source.append(
+						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordDomainDriven(")
+						.append(enumerate.domain)
+						.append(", \"")
+						.append(javaString(enumerate.consumer == null ? "domain-driven" : enumerate.consumer))
+						.append("\", sipDriven")
+						.append(i)
+						.append(");\n");
+			}
+			for (int i = 0; i < implicitSipDrivenSites.size(); i++) {
+				EnumerateAdjKeys enumerate = implicitSipDrivenSites.get(i);
+				source.append(
+						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordImplicitDomainDriven(\"")
+						.append("adjacency-key-domain[a=")
+						.append(enumerate.adjacency)
+						.append("]\", \"physical adjacency key cursor\", \"")
+						.append(javaString(
+								enumerate.sipConsumer == null ? "domain-driven probe" : enumerate.sipConsumer))
+						.append("\", \"ADJACENCY_KEY_DOMAIN\", true, Long.MAX_VALUE, implicitSipDriven")
+						.append(i)
+						.append(");\n");
+			}
+			for (int i = 0; i < sipBatchProbeSites.size(); i++) {
+				Node batch = sipBatchProbeSites.get(i);
+				if (batch instanceof SipDomainProbe probe) {
+					source.append(
+							"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordSipBatch(")
+							.append(probe.domain)
+							.append(", \"BatchProbe(adjacency=")
+							.append(probe.probeAdjacency)
+							.append(")\", sipBatchTests")
+							.append(i)
+							.append(", sipBatchRejects")
+							.append(i)
+							.append(");\n");
+				} else {
+					SipKeyProbe probe = (SipKeyProbe) batch;
+					source.append(
+							"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordImplicitSip(\"")
+							.append("adjacency-key-batch[a=")
+							.append(probe.domainAdjacency)
+							.append("]\", \"physical adjacency key cursor\", \"BatchProbe(adjacency=")
+							.append(probe.probeAdjacency)
+							.append(")\", \"ADJACENCY_BATCH_SEMIJOIN\", true, Long.MAX_VALUE, sipBatchTests")
+							.append(i)
+							.append(", sipBatchRejects")
+							.append(i)
+							.append(");\n");
+				}
+			}
+
+			for (int i = 0; i < runtimeFilterSites.size(); i++) {
+				Node filter = runtimeFilterSites.get(i);
+				int selected = filter.selectedFilterStage >= 0 ? filter.selectedFilterStage : i;
+				int original = filter.originalFilterStage >= 0 ? filter.originalFilterStage : selected;
+				source.append(
+						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.observeGeneratedFilter(")
+						.append(filterKey(filter))
+						.append(", \"")
+						.append(javaString(filterLabel(filter)))
+						.append("\", ")
+						.append(original)
+						.append(", ")
+						.append(selected)
+						.append(", rfTest")
+						.append(i)
+						.append(", rfAccept")
+						.append(i)
+						.append(", 0L, rfTest")
+						.append(i)
+						.append(" - rfAccept")
+						.append(i)
+						.append(");\n");
+			}
+			if (!runtimeFilterSites.isEmpty()) {
+				source.append(
+						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordFactorizedLevel(0L, 0L, factorCandidates, factorCandidates - factorRejected, factorRejected, 0L, factorCandidates, 0L);\n");
+			}
 			for (int i = 0; i < nextBoundRunCursorId; i++) {
 				source.append("        if (ar")
 						.append(i)
@@ -852,6 +1189,28 @@ final class LmdbNativeKernelEmitter {
 						.append(i)
 						.append(".close();\n")
 						.append("            ak")
+						.append(i)
+						.append(" = null;\n")
+						.append("        }\n");
+			}
+			for (int i = 0; i < sipBatchProbeSites.size(); i++) {
+				source.append("        if (sipC")
+						.append(i)
+						.append(" != null) {\n")
+						.append("            sipC")
+						.append(i)
+						.append(".close();\n")
+						.append("            sipC")
+						.append(i)
+						.append(" = null;\n")
+						.append("        }\n")
+						.append("        if (sipDR")
+						.append(i)
+						.append(" != null) {\n")
+						.append("            sipDR")
+						.append(i)
+						.append(".close();\n")
+						.append("            sipDR")
 						.append(i)
 						.append(" = null;\n")
 						.append("        }\n");
@@ -1779,7 +2138,50 @@ final class LmdbNativeKernelEmitter {
 			body.append(loop).append("int cnt = rn;\n");
 			boolean selected = false;
 			for (Node filter : vectorized) {
-				body.append(loop).append("cnt = ").append(vectorFilterCall(filter, valueCol, selected)).append(";\n");
+				int filterSite = runtimeFilterSite(filter);
+				int sipSite = filter instanceof FilterInConstants ? sipFilterSite((FilterInConstants) filter) : -1;
+				body.append(loop)
+						.append("int vb")
+						.append(filterSite)
+						.append(" = cnt;\n")
+						.append(loop)
+						.append("rfTest")
+						.append(filterSite)
+						.append(" += vb")
+						.append(filterSite)
+						.append(";\n")
+						.append(loop)
+						.append("factorCandidates += vb")
+						.append(filterSite)
+						.append(";\n");
+				if (sipSite >= 0) {
+					body.append(loop)
+							.append("sipTest")
+							.append(sipSite)
+							.append(" += vb")
+							.append(filterSite)
+							.append(";\n");
+				}
+				body.append(loop)
+						.append("cnt = ")
+						.append(vectorFilterCall(filter, valueCol, selected))
+						.append(";\n")
+						.append(loop)
+						.append("rfAccept")
+						.append(filterSite)
+						.append(" += cnt;\n")
+						.append(loop)
+						.append("factorRejected += vb")
+						.append(filterSite)
+						.append(" - cnt;\n");
+				if (sipSite >= 0) {
+					body.append(loop)
+							.append("sipReject")
+							.append(sipSite)
+							.append(" += vb")
+							.append(filterSite)
+							.append(" - cnt;\n");
+				}
 				selected = true;
 			}
 			body.append(loop).append("if (").append(sliceState).append(" < 0) {\n");
@@ -1948,7 +2350,50 @@ final class LmdbNativeKernelEmitter {
 			body.append(loop).append("int cnt = rn;\n");
 			boolean selected = false;
 			for (Node filter : vectorized) {
-				body.append(loop).append("cnt = ").append(vectorFilterCall(filter, valueCol, selected)).append(";\n");
+				int filterSite = runtimeFilterSite(filter);
+				int sipSite = filter instanceof FilterInConstants ? sipFilterSite((FilterInConstants) filter) : -1;
+				body.append(loop)
+						.append("int vb")
+						.append(filterSite)
+						.append(" = cnt;\n")
+						.append(loop)
+						.append("rfTest")
+						.append(filterSite)
+						.append(" += vb")
+						.append(filterSite)
+						.append(";\n")
+						.append(loop)
+						.append("factorCandidates += vb")
+						.append(filterSite)
+						.append(";\n");
+				if (sipSite >= 0) {
+					body.append(loop)
+							.append("sipTest")
+							.append(sipSite)
+							.append(" += vb")
+							.append(filterSite)
+							.append(";\n");
+				}
+				body.append(loop)
+						.append("cnt = ")
+						.append(vectorFilterCall(filter, valueCol, selected))
+						.append(";\n")
+						.append(loop)
+						.append("rfAccept")
+						.append(filterSite)
+						.append(" += cnt;\n")
+						.append(loop)
+						.append("factorRejected += vb")
+						.append(filterSite)
+						.append(" - cnt;\n");
+				if (sipSite >= 0) {
+					body.append(loop)
+							.append("sipReject")
+							.append(sipSite)
+							.append(" += vb")
+							.append(filterSite)
+							.append(" - cnt;\n");
+				}
 				selected = true;
 			}
 			if (bulkCountTail()) {
@@ -2132,6 +2577,43 @@ final class LmdbNativeKernelEmitter {
 		}
 
 		/**
+		 * Emits one semantically placed scalar guard. Counters are kernel fields so the hot loop performs only
+		 * primitive increments; the query runtime receives one aggregated observation from {@code close()}. Exact
+		 * IN/VALUES guards retain their direct OR comparison while also accounting for the SIP domain that justified
+		 * the placement.
+		 */
+		private void emitScalarFilterGuard(StringBuilder body, Node node, String nextTemplate, String indent) {
+			int filterSite = runtimeFilterSite(node);
+			int sipSite = node instanceof FilterInConstants ? sipFilterSite((FilterInConstants) node) : -1;
+			body.append(indent)
+					.append("rfTest")
+					.append(filterSite)
+					.append("++;\n")
+					.append(indent)
+					.append("factorCandidates++;\n");
+			if (sipSite >= 0) {
+				body.append(indent).append("sipTest").append(sipSite).append("++;\n");
+			}
+			body.append(indent)
+					.append("if (")
+					.append(scalarFilterCondition(node))
+					.append(") {\n")
+					.append(indent)
+					.append("    rfAccept")
+					.append(filterSite)
+					.append("++;\n")
+					.append(next(nextTemplate, indent + "    "))
+					.append(indent)
+					.append("} else {\n")
+					.append(indent)
+					.append("    factorRejected++;\n");
+			if (sipSite >= 0) {
+				body.append(indent).append("    sipReject").append(sipSite).append("++;\n");
+			}
+			body.append(indent).append("}\n");
+		}
+
+		/**
 		 * Emits {@code updateBy(long n)}, the factorized counterpart of {@code update()}: it resolves the group exactly
 		 * as {@code update()} does and then folds {@code n} rows into the counting accumulators at once. Only reachable
 		 * when {@link #bulkCountTail()} holds, which is what makes the shortcut sound.
@@ -2211,6 +2693,12 @@ final class LmdbNativeKernelEmitter {
 			if (node instanceof Probe) {
 				return ((Probe) node).ctxActive();
 			}
+			if (node instanceof SipDomainProbe) {
+				return ((SipDomainProbe) node).ctxActive();
+			}
+			if (node instanceof SipKeyProbe) {
+				return ((SipKeyProbe) node).ctxActive();
+			}
 			if (node instanceof EnumerateAdjKeys) {
 				return ((EnumerateAdjKeys) node).ctxActive();
 			}
@@ -2226,6 +2714,12 @@ final class LmdbNativeKernelEmitter {
 		private static int ctxColOf(Node node) {
 			if (node instanceof Probe) {
 				return ((Probe) node).ctxCol;
+			}
+			if (node instanceof SipDomainProbe) {
+				return ((SipDomainProbe) node).ctxCol;
+			}
+			if (node instanceof SipKeyProbe) {
+				return ((SipKeyProbe) node).ctxCol;
 			}
 			if (node instanceof EnumeratePredicates) {
 				return ((EnumeratePredicates) node).ctxCol;
@@ -2246,6 +2740,12 @@ final class LmdbNativeKernelEmitter {
 			if (node instanceof Probe) {
 				match = ((Probe) node).ctxMatch;
 				exclude = ((Probe) node).ctxExcludeDefault;
+			} else if (node instanceof SipDomainProbe) {
+				match = ((SipDomainProbe) node).ctxMatch;
+				exclude = ((SipDomainProbe) node).ctxExcludeDefault;
+			} else if (node instanceof SipKeyProbe) {
+				match = ((SipKeyProbe) node).ctxMatch;
+				exclude = ((SipKeyProbe) node).ctxExcludeDefault;
 			} else if (node instanceof EnumeratePredicates) {
 				match = ((EnumeratePredicates) node).ctxMatch;
 				exclude = ((EnumeratePredicates) node).ctxExcludeDefault;
@@ -2363,6 +2863,7 @@ final class LmdbNativeKernelEmitter {
 			boolean tailmost = tailmostAt(stateIndex);
 			if (node instanceof EnumerateDomain) {
 				EnumerateDomain enumerate = (EnumerateDomain) node;
+				int sipSite = sipDrivenSite(enumerate);
 				body.append(indent)
 						.append("long[] dom = dom")
 						.append(enumerate.domain)
@@ -2379,6 +2880,9 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("    ").append(a).append(" = 0;\n");
 				body.append(indent).append("}\n");
 				body.append(indent).append("for (; ").append(a).append(" < domL; ").append(a).append("++) {\n");
+				if (sipSite >= 0) {
+					body.append(indent).append("    sipDriven").append(sipSite).append("++;\n");
+				}
 				body.append(indent)
 						.append("    v")
 						.append(enumerate.col)
@@ -2589,6 +3093,7 @@ final class LmdbNativeKernelEmitter {
 			}
 			if (node instanceof EnumerateAdjKeys) {
 				EnumerateAdjKeys enumerate = (EnumerateAdjKeys) node;
+				int implicitSipSite = implicitSipDrivenSite(enumerate);
 				String view = "a" + enumerate.adjacency;
 				String cursor = "ak" + keyRunCursorId(enumerate);
 				if (enumerate.valueCol < 0) {
@@ -2614,6 +3119,12 @@ final class LmdbNativeKernelEmitter {
 							.append(" = ")
 							.append(cursor)
 							.append(".key();\n");
+					if (implicitSipSite >= 0) {
+						body.append(indent)
+								.append("        implicitSipDriven")
+								.append(implicitSipSite)
+								.append("++;\n");
+					}
 					body.append(next(nextTemplate, indent + "        "));
 					body.append(indent).append("        if (full) {\n");
 					if (tailmost) {
@@ -2651,6 +3162,12 @@ final class LmdbNativeKernelEmitter {
 						.append(" = ")
 						.append(cursor)
 						.append(".key();\n");
+				if (implicitSipSite >= 0) {
+					body.append(indent)
+							.append("        implicitSipDriven")
+							.append(implicitSipSite)
+							.append("++;\n");
+				}
 				body.append(indent).append("        long end = ").append(cursor).append(".runSize();\n");
 				body.append(indent).append("        for (; ").append(b).append(" < end; ").append(b).append("++) {\n");
 				String enumInner = emitKeyRunCtxEntry(body, indent + "            ", enumerate, cursor, b);
@@ -2684,7 +3201,7 @@ final class LmdbNativeKernelEmitter {
 			for (int i = 0; i < 4; i++) {
 				terms.append(i == 0 ? "" : ", ").append(scan.terms[i] == null ? "-1L" : scan.terms[i].token());
 			}
-			return LmdbNativeGeneratedSourceOptimizer.optimize(terms.toString());
+			return terms.toString();
 		}
 
 		/** Allocates a scan's staging buffer on first use, so a kernel that never reaches the scan never pays. */
@@ -2821,12 +3338,148 @@ final class LmdbNativeKernelEmitter {
 				method.append("        return false;\n");
 			}
 			method.append("    }\n\n");
-			return LmdbNativeGeneratedSourceOptimizer.optimize(method.toString());
+			return method.toString();
 		}
 
 		/** Renders the continuation statement at the given indent (replacing the %I% indent placeholder). */
 		private static String next(String template, String indent) {
 			return indent + template.replace("%I%", indent) + "\n";
+		}
+
+		private void emitSipDomainProbe(StringBuilder body, SipDomainProbe probe, String nextTemplate) {
+			String indent = "        ";
+			int site = sipBatchProbeSite(probe);
+			String adjacency = "a" + probe.probeAdjacency;
+			String decodedCursor = "sipDR" + site;
+			body.append(indent).append("long[] sipDomain = dom").append(probe.domain).append(";\n")
+					.append(indent).append("int sipDomainOffset = domO").append(probe.domain).append(";\n")
+					.append(indent).append("int sipDomainLength = domL").append(probe.domain).append(";\n")
+					.append(indent).append("if (sipDecoded").append(site).append(") {\n")
+					.append(indent).append("    for (int sipIndex = 0; sipIndex < sipDomainLength; sipIndex++) {\n")
+					.append(indent).append("        long sipKey = sipDomain[sipDomainOffset + sipIndex];\n")
+					.append(indent).append("        sipBatchTests").append(site).append("++;\n")
+					.append(indent).append("        int end = ").append(decodedCursor).append(".bindSize(sipKey);\n")
+					.append(indent).append("        if (end < 0) {\n")
+					.append(indent).append("            sipBatchRejects").append(site).append("++;\n")
+					.append(indent).append("        } else {\n")
+					.append(indent).append("            v").append(probe.keyCol).append(" = sipKey;\n")
+					.append(indent).append("            for (int i = 0; i < end; i++) {\n");
+			String decodedInner = emitBoundCtxEntry(body, indent + "                ", probe, decodedCursor, "i");
+			body.append(decodedInner).append("v").append(probe.valueCol).append(" = ")
+					.append(decodedCursor).append(".neighborAtInt(i);\n")
+					.append(next(nextTemplate, decodedInner));
+			closeCtxEntry(body, indent + "                ", probe);
+			body.append(indent).append("            }\n")
+					.append(indent).append("        }\n")
+					.append(indent).append("    }\n")
+					.append(indent).append("} else {\n")
+					.append(indent).append("    for (int sipBase = 0; sipBase < sipDomainLength; sipBase += ")
+					.append(KEY_CHUNK).append(") {\n")
+					.append(indent).append("        int sipCount = sipDomainLength - sipBase;\n")
+					.append(indent).append("        if (sipCount > ").append(KEY_CHUNK).append(") sipCount = ")
+					.append(KEY_CHUNK).append(";\n")
+					.append(indent).append("        int sipFound = ").append(adjacency)
+					.append(".findBatch(sipDomain, sipDomainOffset + sipBase, sipCount, sipH")
+					.append(site).append(", 0);\n")
+					.append(indent).append("        sipBatchTests").append(site).append(" += sipCount;\n")
+					.append(indent).append("        sipBatchRejects").append(site).append(" += sipCount - sipFound;\n")
+					.append(indent).append("        for (int sipIndex = 0; sipIndex < sipCount; sipIndex++) {\n")
+					.append(indent).append("            long rh = sipH").append(site).append("[sipIndex];\n")
+					.append(indent).append("            if (rh > 0L) {\n")
+					.append(indent).append("                v").append(probe.keyCol)
+					.append(" = sipDomain[sipDomainOffset + sipBase + sipIndex];\n")
+					.append(indent).append("                long end = ").append(adjacency).append(".size(rh);\n")
+					.append(indent).append("                for (long i = 0L; i < end; i++) {\n");
+			String genericInner = emitCtxEntry(body, indent + "                    ", probe, adjacency, "i");
+			body.append(genericInner).append("v").append(probe.valueCol).append(" = ")
+					.append(adjacency).append(".neighborAt(rh, i);\n")
+					.append(next(nextTemplate, genericInner));
+			closeCtxEntry(body, indent + "                    ", probe);
+			body.append(indent).append("                }\n")
+					.append(indent).append("            }\n")
+					.append(indent).append("        }\n")
+					.append(indent).append("    }\n")
+					.append(indent).append("}\n");
+		}
+
+		private void emitSipKeyProbe(StringBuilder body, SipKeyProbe probe, String nextTemplate) {
+			String indent = "        ";
+			int site = sipBatchProbeSite(probe);
+			String domainAdjacency = "a" + probe.domainAdjacency;
+			String adjacency = "a" + probe.probeAdjacency;
+			String decodedCursor = "sipDR" + site;
+			body.append(indent)
+					.append("sipC")
+					.append(site)
+					.append(" = ")
+					.append(domainAdjacency)
+					.append(".openKeyRunCursor();\n")
+					.append(indent)
+					.append("if (sipC")
+					.append(site)
+					.append(" != null) {\n")
+					.append(indent)
+					.append("    int sipCount;\n")
+					.append(indent)
+					.append("    while ((sipCount = sipC")
+					.append(site)
+					.append(".fillKeys(sipK")
+					.append(site)
+					.append(", 0, sipK")
+					.append(site)
+					.append(".length)) > 0) {\n")
+					.append(indent).append("        if (sipDecoded").append(site).append(") {\n")
+					.append(indent).append("            for (int sipIndex = 0; sipIndex < sipCount; sipIndex++) {\n")
+					.append(indent).append("                long sipKey = sipK").append(site).append("[sipIndex];\n")
+					.append(indent).append("                sipBatchTests").append(site).append("++;\n")
+					.append(indent).append("                int end = ").append(decodedCursor).append(".bindSize(sipKey);\n")
+					.append(indent).append("                if (end < 0) {\n")
+					.append(indent).append("                    sipBatchRejects").append(site).append("++;\n")
+					.append(indent).append("                } else {\n")
+					.append(indent).append("                    v").append(probe.keyCol).append(" = sipKey;\n")
+					.append(indent).append("                    for (int i = 0; i < end; i++) {\n");
+			String decodedInner = emitBoundCtxEntry(body, indent + "                        ", probe, decodedCursor, "i");
+			body.append(decodedInner).append("v").append(probe.valueCol).append(" = ")
+					.append(decodedCursor).append(".neighborAtInt(i);\n")
+					.append(next(nextTemplate, decodedInner));
+			closeCtxEntry(body, indent + "                        ", probe);
+			body.append(indent).append("                    }\n")
+					.append(indent).append("                }\n")
+					.append(indent).append("            }\n")
+					.append(indent).append("        } else {\n")
+					.append(indent).append("            int sipFound = ").append(adjacency)
+					.append(".findBatch(sipK").append(site).append(", 0, sipCount, sipH")
+					.append(site).append(", 0);\n")
+					.append(indent).append("            sipBatchTests").append(site).append(" += sipCount;\n")
+					.append(indent).append("            sipBatchRejects").append(site).append(" += sipCount - sipFound;\n")
+					.append(indent).append("            for (int sipIndex = 0; sipIndex < sipCount; sipIndex++) {\n")
+					.append(indent).append("                long rh = sipH").append(site).append("[sipIndex];\n")
+					.append(indent).append("                if (rh > 0L) {\n")
+					.append(indent).append("                    v").append(probe.keyCol).append(" = sipK")
+					.append(site).append("[sipIndex];\n")
+					.append(indent).append("                    long end = ").append(adjacency).append(".size(rh);\n")
+					.append(indent).append("                    for (long i = 0L; i < end; i++) {\n");
+			String genericInner = emitCtxEntry(body, indent + "                        ", probe, adjacency, "i");
+			body.append(genericInner).append("v").append(probe.valueCol).append(" = ")
+					.append(adjacency).append(".neighborAt(rh, i);\n")
+					.append(next(nextTemplate, genericInner));
+			closeCtxEntry(body, indent + "                        ", probe);
+			body.append(indent).append("                    }\n")
+					.append(indent).append("                }\n")
+					.append(indent).append("            }\n")
+					.append(indent).append("        }\n")
+					.append(indent)
+					.append("    }\n")
+					.append(indent)
+					.append("    sipC")
+					.append(site)
+					.append(".close();\n")
+					.append(indent)
+					.append("    sipC")
+					.append(site)
+					.append(" = null;\n")
+					.append(indent)
+					.append("}\n");
 		}
 
 		private void emitNode(StringBuilder body, Node node, String nextTemplate, boolean booleanMode, int stateIndex) {
@@ -2889,8 +3542,17 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append(cursor).append(" = null;\n");
 				return;
 			}
+			if (node instanceof SipDomainProbe) {
+				emitSipDomainProbe(body, (SipDomainProbe) node, nextTemplate);
+				return;
+			}
+			if (node instanceof SipKeyProbe) {
+				emitSipKeyProbe(body, (SipKeyProbe) node, nextTemplate);
+				return;
+			}
 			if (node instanceof EnumerateAdjKeys) {
 				EnumerateAdjKeys enumerate = (EnumerateAdjKeys) node;
+				int implicitSipSite = implicitSipDrivenSite(enumerate);
 				String adjacency = "a" + enumerate.adjacency;
 				String cursor = "ak" + keyRunCursorId(enumerate);
 				if (enumerate.valueCol < 0) {
@@ -2917,6 +3579,12 @@ final class LmdbNativeKernelEmitter {
 							.append(" = ")
 							.append(keyBuffer)
 							.append("[kj];\n");
+					if (implicitSipSite >= 0) {
+						body.append(indent)
+								.append("            implicitSipDriven")
+								.append(implicitSipSite)
+								.append("++;\n");
+					}
 					body.append(next(nextTemplate, indent + "            "));
 					body.append(indent).append("        }\n");
 					body.append(indent).append("    }\n");
@@ -2934,6 +3602,12 @@ final class LmdbNativeKernelEmitter {
 						.append(" = ")
 						.append(cursor)
 						.append(".key();\n");
+				if (implicitSipSite >= 0) {
+					body.append(indent)
+							.append("        implicitSipDriven")
+							.append(implicitSipSite)
+							.append("++;\n");
+				}
 				body.append(indent).append("        long end = ").append(cursor).append(".runSize();\n");
 				body.append(indent).append("        for (long i = 0L; i < end; i++) {\n");
 				String enumInner = emitKeyRunCtxEntry(body, indent + "            ", enumerate, cursor, "i");
@@ -2952,6 +3626,7 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("}\n");
 			} else if (node instanceof EnumerateDomain) {
 				EnumerateDomain enumerate = (EnumerateDomain) node;
+				int sipSite = sipDrivenSite(enumerate);
 				body.append(indent)
 						.append("long[] dom = dom")
 						.append(enumerate.domain)
@@ -2965,8 +3640,11 @@ final class LmdbNativeKernelEmitter {
 						.append(enumerate.domain)
 						.append(";\n")
 						.append(indent)
-						.append("for (int i = 0; i < domL; i++) {\n")
-						.append(indent)
+						.append("for (int i = 0; i < domL; i++) {\n");
+				if (sipSite >= 0) {
+					body.append(indent).append("    sipDriven").append(sipSite).append("++;\n");
+				}
+				body.append(indent)
 						.append("    v")
 						.append(enumerate.col)
 						.append(" = dom[domO + i];\n")
@@ -3227,55 +3905,10 @@ final class LmdbNativeKernelEmitter {
 						.append("}\n");
 			} else if (node instanceof Intersect) {
 				emitIntersect(body, (Intersect) node, nextTemplate, indent);
-			} else if (node instanceof FilterCompareId) {
-				FilterCompareId filter = (FilterCompareId) node;
-				body.append(indent)
-						.append("if (")
-						.append(filter.left.token())
-						.append(filter.negated ? " != " : " == ")
-						.append(filter.right.token())
-						.append(") {\n")
-						.append(next(nextTemplate, indent + "    "))
-						.append(indent)
-						.append("}\n");
-			} else if (node instanceof FilterInConstants) {
-				FilterInConstants filter = (FilterInConstants) node;
-				body.append(indent).append("if (");
-				for (int i = 0; i < filter.constantIndices.length; i++) {
-					body.append(i == 0 ? "" : " || ")
-							.append(filter.value.token())
-							.append(" == c")
-							.append(filter.constantIndices[i]);
-				}
-				body.append(") {\n")
-						.append(next(nextTemplate, indent + "    "))
-						.append(indent)
-						.append("}\n");
-			} else if (node instanceof FilterRangeUnsigned) {
-				FilterRangeUnsigned filter = (FilterRangeUnsigned) node;
-				String value = filter.value.token();
-				body.append(indent)
-						.append("if (Long.compareUnsigned(")
-						.append(value)
-						.append(", c")
-						.append(filter.lowConstant)
-						.append(") >= 0 && Long.compareUnsigned(")
-						.append(value)
-						.append(", c")
-						.append(filter.highConstant)
-						.append(") <= 0) {\n")
-						.append(next(nextTemplate, indent + "    "))
-						.append(indent)
-						.append("}\n");
-			} else if (node instanceof FilterDateCompare) {
-				FilterDateCompare filter = (FilterDateCompare) node;
-				body.append(indent)
-						.append("if (")
-						.append(scalarFilterCondition(filter))
-						.append(") {\n")
-						.append(next(nextTemplate, indent + "    "))
-						.append(indent)
-						.append("}\n");
+			} else if (node instanceof FilterCompareId || node instanceof FilterInConstants
+					|| node instanceof FilterRangeUnsigned || node instanceof FilterDateCompare
+					|| node instanceof FilterValue) {
+				emitScalarFilterGuard(body, node, nextTemplate, indent);
 			} else if (node instanceof LmdbNativeKernelIr.FilterResidual) {
 				LmdbNativeKernelIr.FilterResidual residual = (LmdbNativeKernelIr.FilterResidual) node;
 				for (int i = 0; i < residual.args.length; i++) {
@@ -3286,30 +3919,26 @@ final class LmdbNativeKernelEmitter {
 							.append(residual.args[i].token())
 							.append(");\n");
 				}
+				int filterSite = runtimeFilterSite(residual);
 				body.append(indent)
+						.append("rfTest")
+						.append(filterSite)
+						.append("++;\n")
+						.append(indent)
+						.append("factorCandidates++;\n")
+						.append(indent)
 						.append("if (hooks.testResidual(")
 						.append(residual.residualId)
 						.append(")) {\n")
+						.append(indent)
+						.append("    rfAccept")
+						.append(filterSite)
+						.append("++;\n")
 						.append(next(nextTemplate, indent + "    "))
 						.append(indent)
-						.append("}\n");
-			} else if (node instanceof FilterValue) {
-				FilterValue filter = (FilterValue) node;
-				String[] args = { "-1L", "-1L", "-1L" };
-				for (int i = 0; i < filter.args.length; i++) {
-					args[i] = filter.args[i].token();
-				}
-				body.append(indent)
-						.append("if (hooks.testFilter(")
-						.append(filter.filterId)
-						.append(", ")
-						.append(args[0])
-						.append(", ")
-						.append(args[1])
-						.append(", ")
-						.append(args[2])
-						.append(")) {\n")
-						.append(next(nextTemplate, indent + "    "))
+						.append("} else {\n")
+						.append(indent)
+						.append("    factorRejected++;\n")
 						.append(indent)
 						.append("}\n");
 			} else if (node instanceof LeftProbe) {

@@ -59,6 +59,12 @@ public class LmdbNativeJaninoAggregateTest {
 			+ "HAVING (COUNT(DISTINCT ?a) >= 1)\n"
 			+ "ORDER BY DESC(?n) ?interest\n";
 
+	private static final String UNUSED_VALUES_QUERY = "PREFIX ex: <http://example.org/>\n"
+			+ "SELECT (COUNT(DISTINCT ?a) AS ?n) WHERE {\n"
+			+ "  VALUES ?unused { 55 }\n"
+			+ "  ?a ex:interest ?interest .\n"
+			+ "}\n";
+
 	private final Map<String, String> savedProperties = new TreeMap<>();
 	private File dataDir;
 	private SailRepository repository;
@@ -143,6 +149,33 @@ public class LmdbNativeJaninoAggregateTest {
 		} finally {
 			System.setProperty(NATIVE_FLAG, "true");
 		}
+	}
+
+	private long count(String query) {
+		try (SailRepositoryConnection connection = repository.getConnection();
+				TupleQueryResult tupleResult = connection.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+			assertTrue(tupleResult.hasNext());
+			return ((Literal) tupleResult.next().getValue("n")).longValue();
+		}
+	}
+
+	@Test
+	public void unusedValuesIdentityDoesNotBlockJaninoLowering() {
+		long expected;
+		System.setProperty(NATIVE_FLAG, "false");
+		try {
+			expected = count(UNUSED_VALUES_QUERY);
+		} finally {
+			System.setProperty(NATIVE_FLAG, "true");
+		}
+
+		for (int round = 0; round < 300 && LmdbNativeJaninoAggregate.OPENED.get() == 0L; round++) {
+			count(UNUSED_VALUES_QUERY);
+		}
+		assertTrue(LmdbNativeJaninoAggregate.PLANNED.get() > 0L, "unused VALUES aggregate was never recognized");
+		assertTrue(LmdbNativeJaninoAggregate.OPENED.get() > 0L,
+				"SingletonPlan identity leaked into the IR lowering boundary");
+		assertEquals(expected, count(UNUSED_VALUES_QUERY));
 	}
 
 	@Test
