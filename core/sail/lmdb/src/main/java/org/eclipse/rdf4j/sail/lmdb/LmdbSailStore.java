@@ -3126,6 +3126,8 @@ class LmdbSailStore implements SailStore {
 		private final ParallelSnapshotLease lease;
 		private final boolean adjacencyEligible;
 		private final long adjacencyRevision;
+		/** Parent query/view lifetime; all same-snapshot siblings contribute to one promotion lifetime. */
+		private final long adjacencyLifetimeId;
 		private final long pinnedTxnVersion;
 		private final boolean directRowPathEnabled;
 		private final AtomicBoolean closed = new AtomicBoolean();
@@ -3134,13 +3136,14 @@ class LmdbSailStore implements SailStore {
 		private volatile boolean adjacencyViewResolved;
 
 		ParallelSnapshotSource(Txn txn, boolean explicit, long snapshotId, ParallelSnapshotLease lease,
-				boolean adjacencyEligible, long adjacencyRevision) {
+				boolean adjacencyEligible, long adjacencyRevision, long adjacencyLifetimeId) {
 			this.txn = txn;
 			this.explicit = explicit;
 			this.snapshotId = snapshotId;
 			this.lease = lease;
 			this.adjacencyEligible = adjacencyEligible;
 			this.adjacencyRevision = adjacencyRevision;
+			this.adjacencyLifetimeId = adjacencyLifetimeId;
 			this.pinnedTxnVersion = txn.version();
 			this.directRowPathEnabled = parallelRowPathEnabled();
 			lease.retain();
@@ -3157,7 +3160,7 @@ class LmdbSailStore implements SailStore {
 				synchronized (this) {
 					if (!adjacencyViewResolved) {
 						if (adjacencyEligible && directAdjacency != null) {
-							adjacencyView = directAdjacency.acquire(adjacencyRevision);
+							adjacencyView = directAdjacency.acquire(adjacencyRevision, adjacencyLifetimeId);
 						}
 						adjacencyViewResolved = true;
 					}
@@ -4782,7 +4785,8 @@ class LmdbSailStore implements SailStore {
 									&& adjacencyView.isExact();
 							pending[i] = new ParallelSnapshotSource(siblingTxn, explicit, siblingSnapshotId, lease,
 									siblingAdjacencyEligible,
-									siblingAdjacencyEligible ? adjacencyView.snapshotRevision() : -1L);
+									siblingAdjacencyEligible ? adjacencyView.snapshotRevision() : -1L,
+									siblingAdjacencyEligible ? adjacencyView.lifetimeId() : 0L);
 							transferred = true;
 						} finally {
 							if (!transferred) {

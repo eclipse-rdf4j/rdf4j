@@ -12,15 +12,74 @@
 package org.eclipse.rdf4j.sail.lmdb.csf;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.sail.lmdb.csf.CsfRowLookupAccelerators.Kind;
 import org.junit.jupiter.api.Test;
 
 class ImmutablePagedQuadCsfLookupAcceleratorsTest {
+
+	@Test
+	void sharedDecodedCsrRequiresTwoQueryLifetimesAndIsPublishedByTheExecutor() {
+		long[] rows = sequentialRows(1_024, 3_000_000);
+		try (ImmutablePagedQuadCsfIndex index = build(rows)) {
+			assertNull(index.sharedPartitionLookupIfPresent(0, 0));
+			ImmutablePagedQuadCsfIndex.SharedPartitionLookup lookup = index.sharedPartitionLookup(0, 0);
+			assertSame(lookup, index.sharedPartitionLookupIfPresent(0, 0));
+			AtomicInteger tasks = new AtomicInteger();
+			java.util.concurrent.Executor direct = task -> {
+				tasks.incrementAndGet();
+				task.run();
+			};
+
+			lookup.observeQuery(10_000, 1L, direct);
+			assertEquals(1, lookup.observedLifetimes());
+			assertEquals(0, tasks.get(), "one query lifetime must not retain a whole-partition decode");
+			assertFalse(lookup.neighborsDecoded());
+
+			lookup.observeQuery(10_000, 1L, direct);
+			assertEquals(1, lookup.observedLifetimes(), "two views from one query are one lifetime");
+			assertEquals(0, tasks.get());
+
+			lookup.observeQuery(10_000, 2L, direct);
+			assertEquals(2, lookup.observedLifetimes());
+			assertEquals(1, tasks.get());
+			assertTrue(lookup.neighborsDecoded());
+		}
+	}
+
+	@Test
+	void irregularSmallKeyPartitionCanDecodeAContinuationRow() {
+		long[] rows = {
+				0x0000_0000_0000_0102L,
+				0x0000_0001_0000_0002L,
+				0x0001_0000_0000_0002L
+		};
+		int fanOut = 10_000;
+		try (ImmutablePagedQuadCsfIndex index = buildWithWideFirstRow(rows, fanOut)) {
+			ImmutablePagedQuadCsfIndex.SharedPartitionLookup lookup = index.sharedPartitionLookup(0, 0);
+			java.util.concurrent.Executor direct = Runnable::run;
+
+			lookup.observeQuery(9_000, 11L, direct);
+			assertFalse(lookup.neighborsDecoded());
+			lookup.observeQuery(9_000, 12L, direct);
+
+			assertTrue(lookup.neighborsDecoded());
+			assertEquals("exact-slot-hash+decoded-neighbors", lookup.acceleratorKind());
+			ImmutablePagedQuadCsfIndex.SharedPartitionLookup.DecodedRunCursor cursor = new ImmutablePagedQuadCsfIndex.SharedPartitionLookup.DecodedRunCursor();
+			assertTrue(cursor.attach(lookup));
+			assertEquals(fanOut, cursor.bindSize(rows[0]));
+			assertEquals((1L << 48) | 1L, cursor.neighborAtInt(0));
+			assertEquals(((long) fanOut << 48) | 1L, cursor.neighborAtInt(fanOut - 1));
+		}
+	}
 
 	@Test
 	void everyStrategyMatchesThePackedPageLookupAcrossPageChanges() {
@@ -94,21 +153,57 @@ class ImmutablePagedQuadCsfLookupAcceleratorsTest {
 	}
 
 	private static ImmutablePagedQuadCsfIndex build(long[] rows) {
+		int[] fanOut = new int[rows.length];
+		Arrays.fill(fanOut, 1);
+		return build(rows, fanOut);
+	}
+
+	private static ImmutablePagedQuadCsfIndex buildWithWideFirstRow(long[] rows, int fanOut) {
 		ImmutablePagedQuadCsfIndex.BuildPlan plan;
 		try (ImmutablePagedQuadCsfIndex.Builder sizing = ImmutablePagedQuadCsfIndex.sizingBuilder(1)) {
-			feed(sizing, rows);
+			feedWideFirstRow(sizing, rows, fanOut);
 			plan = sizing.finishPlan();
 		}
 		try (ImmutablePagedQuadCsfIndex.Builder materializing = ImmutablePagedQuadCsfIndex.materializingBuilder(plan)) {
-			feed(materializing, rows);
+			feedWideFirstRow(materializing, rows, fanOut);
 			return materializing.finishIndex();
 		}
 	}
 
-	private static void feed(ImmutablePagedQuadCsfIndex.Builder builder, long[] rows) {
+	private static void feedWideFirstRow(ImmutablePagedQuadCsfIndex.Builder builder, long[] rows, int fanOut) {
 		for (int i = 0; i < rows.length; i++) {
 			builder.beginRow(0, 0, rows[i]);
-			builder.pair((10_000L + i) << 7 | 2L, 0);
+			int edges = i == 0 ? fanOut : 1;
+			for (int edge = 0; edge < edges; edge++) {
+				long neighbor = i == 0 ? ((long) edge + 1L) << 48 | 1L : (40_000L + i) << 7 | 2L;
+				builder.pair(neighbor, 0);
+			}
+			builder.endRow();
+		}
+	}
+
+	private static ImmutablePagedQuadCsfIndex build(long[] rows, int[] fanOut) {
+		ImmutablePagedQuadCsfIndex.BuildPlan plan;
+		try (ImmutablePagedQuadCsfIndex.Builder sizing = ImmutablePagedQuadCsfIndex.sizingBuilder(1)) {
+			feed(sizing, rows, fanOut);
+			plan = sizing.finishPlan();
+		}
+		try (ImmutablePagedQuadCsfIndex.Builder materializing = ImmutablePagedQuadCsfIndex.materializingBuilder(plan)) {
+			feed(materializing, rows, fanOut);
+			return materializing.finishIndex();
+		}
+	}
+
+	private static void feed(ImmutablePagedQuadCsfIndex.Builder builder, long[] rows, int[] fanOut) {
+		if (rows.length != fanOut.length) {
+			throw new IllegalArgumentException("row and fan-out arrays differ");
+		}
+		for (int i = 0; i < rows.length; i++) {
+			builder.beginRow(0, 0, rows[i]);
+			long firstNeighbor = i == 0 ? 20_000L : 30_000L + i;
+			for (int edge = 0; edge < fanOut[i]; edge++) {
+				builder.pair((firstNeighbor + edge) << 7 | 2L, 0);
+			}
 			builder.endRow();
 		}
 	}

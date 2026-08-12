@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -476,7 +477,7 @@ class LmdbNativeKernelIrEmitterTest {
 						new AggregateOutput[] { AggregateOutput.countDistinctOrdered(0, 0) },
 						null, OutputMods.none()));
 		String source = LmdbNativeKernelEmitter.emit(ir);
-		assertTrue(source.contains("KernelRuntime.unsignedNondecreasing(dom0)"), source);
+		assertTrue(source.contains("KernelRuntime.unsignedNondecreasing(dom0, domO0, domL0)"), source);
 		assertTrue(source.contains("new KernelRuntime.LongHashSet(distinctExpected)"), source);
 
 		assertRows(run(ir, context().domains(new long[] { 5, 5, 7, 9 }).distinctExpected(64)),
@@ -513,6 +514,67 @@ class LmdbNativeKernelIrEmitterTest {
 				new LmdbNativeKernelBindings.FilterHook[0], new int[0], List.of());
 
 		assertArrayEquals(new long[] { 2L, 3L }, bindings.materializeDomains(probe)[0]);
+	}
+
+	@Test
+	void decodedStoreDomainIsBorrowedAsAnOffsetSliceAndEnumeratedWithoutCopy() throws Exception {
+		long[] backing = { 99L, 2L, 3L, 88L };
+		NativeLmdbQuerySource.NativeAdjacency adjacency = new NativeLmdbQuerySource.NativeAdjacency() {
+			@Override
+			public boolean borrowNeighbors(long key, NeighborSlice target) {
+				assertEquals(1L, key);
+				target.bind(backing, 1, 2);
+				return true;
+			}
+
+			@Override
+			public long find(long key) {
+				throw new AssertionError("borrowed domain must not perform a second point lookup");
+			}
+
+			@Override
+			public long size(long runHandle) {
+				throw new AssertionError("borrowed domain must not resolve a copied run");
+			}
+
+			@Override
+			public long neighborAt(long runHandle, long runOffset) {
+				throw new AssertionError("borrowed domain must enumerate the CSR slice directly");
+			}
+
+			@Override
+			public long contextAt(long runHandle, long runOffset) {
+				return 0;
+			}
+		};
+		NativeLmdbQuerySource.NativeProbe probe = new NativeLmdbQuerySource.NativeProbe() {
+			@Override
+			public RecordIterator open(long subj, long pred, long obj, long context) {
+				throw new AssertionError("borrowed adjacency should avoid the LMDB iterator");
+			}
+
+			@Override
+			public NativeLmdbQuerySource.NativeAdjacency adjacency(long predicate, boolean bySubject) {
+				return adjacency;
+			}
+
+			@Override
+			public void close() {
+			}
+		};
+		LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
+				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
+				new LmdbNativeKernelBindings.DomainRequest[] {
+						new LmdbNativeKernelBindings.DomainRequest(77L, 1L, true) },
+				new LmdbNativeKernelBindings.FilterHook[0], new int[0], List.of());
+
+		LmdbNativeKernelBindings.BoundDomains domains = bindings.bindDomains(probe, null, null);
+		assertSame(backing, domains.values[0]);
+		assertEquals(1, domains.offsets[0]);
+		assertEquals(2, domains.lengths[0]);
+
+		Kernel ir = new Kernel(1, List.of(new EnumerateDomain(0, 0)), emit(0));
+		assertRows(run(ir, context().domainSlices(domains)), new long[][] { { 2L }, { 3L } });
 	}
 
 	@Test
@@ -648,6 +710,33 @@ class LmdbNativeKernelIrEmitterTest {
 	// ------------------------------------------------------------------
 	// Compositions
 	// ------------------------------------------------------------------
+
+	@Test
+	void flatRootExistsEmitsConcreteDecodedAndExactFallbackPaths() {
+		Kernel ir = new Kernel(2,
+				List.of(new EnumerateAdjKeys(0, 0, -1),
+						new Exists(false, List.of(new Probe(1, Operand.col(0), 1)))),
+				new Aggregate(new int[0], new AggregateOutput[] { AggregateOutput.countStar() }, null,
+						OutputMods.none()));
+
+		String source = LmdbNativeKernelEmitter.emit(ir);
+		assertTrue(source.contains("instanceof LmdbDecodedNativeAdjacency"),
+				"bind must select the concrete decoded path once; source:\n" + source);
+		assertTrue(source.contains("LmdbDecodedNativeAdjacency.DecodedBoundRunCursor"),
+				"the generated class must own a concrete decoded cursor; source:\n" + source);
+		assertTrue(source.contains(".openDecodedBoundRunCursor()"),
+				"decoded bindings must open the concrete cursor; source:\n" + source);
+		assertTrue(source.contains(".bindSize("),
+				"the decoded loop must fuse row binding and size retrieval; source:\n" + source);
+		assertTrue(source.contains(".neighborAtInt("),
+				"the decoded loop must use the integer-indexed neighbor hot path; source:\n" + source);
+		assertTrue(source.contains(".openBoundRunCursor()"),
+				"the exact generic fallback must remain available; source:\n" + source);
+		assertTrue(source.contains(".bind("),
+				"the fallback loop must retain exact bound-row lookup; source:\n" + source);
+		assertTrue(source.contains(".neighborAt("),
+				"the fallback loop must retain exact neighbor access; source:\n" + source);
+	}
 
 	@Test
 	void unionLeftProbeExistsIntoGroupedCountDistinct() throws Exception {
@@ -1274,6 +1363,8 @@ class LmdbNativeKernelIrEmitterTest {
 		private long[] constants = new long[0];
 		private long[] entries = new long[0];
 		private long[][] domains = new long[0][];
+		private int[] domainOffsets = new int[0];
+		private int[] domainLengths = new int[0];
 		private KernelHooks hooks;
 		private KernelPlan[] plans = new KernelPlan[0];
 		private int distinctExpected = 16;
@@ -1295,6 +1386,18 @@ class LmdbNativeKernelIrEmitterTest {
 
 		ContextBuilder domains(long[]... domains) {
 			this.domains = domains;
+			this.domainOffsets = new int[domains.length];
+			this.domainLengths = new int[domains.length];
+			for (int i = 0; i < domains.length; i++) {
+				this.domainLengths[i] = domains[i].length;
+			}
+			return this;
+		}
+
+		ContextBuilder domainSlices(LmdbNativeKernelBindings.BoundDomains domains) {
+			this.domains = domains.values;
+			this.domainOffsets = domains.offsets;
+			this.domainLengths = domains.lengths;
 			return this;
 		}
 
@@ -1314,7 +1417,8 @@ class LmdbNativeKernelIrEmitterTest {
 		}
 
 		KernelContext build() {
-			return new KernelContext(adjacencies, constants, entries, domains, hooks, null, plans, distinctExpected);
+			return new KernelContext(adjacencies, constants, entries, domains, domainOffsets, domainLengths, hooks,
+					null, plans, distinctExpected, null, null);
 		}
 	}
 

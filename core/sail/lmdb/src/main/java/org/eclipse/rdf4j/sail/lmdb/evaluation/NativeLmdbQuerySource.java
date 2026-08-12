@@ -406,6 +406,67 @@ public interface NativeLmdbQuerySource {
 		long NOT_COVERED = -2L;
 
 		/**
+		 * Borrowed immutable array slice for a bound run. The backing array belongs to the immutable adjacency
+		 * generation and remains valid for the lifetime of the view that supplied it. Implementations return false when
+		 * their packed representation cannot expose a zero-copy slice; callers then retain the exact copy fallback.
+		 */
+		final class NeighborSlice {
+			private long[] values;
+			private int offset;
+			private int length;
+
+			public long[] values() {
+				return values;
+			}
+
+			public int offset() {
+				return offset;
+			}
+
+			public int length() {
+				return length;
+			}
+
+			public void bind(long[] values, int offset, int length) {
+				Objects.requireNonNull(values, "values");
+				if (offset < 0 || length < 0 || offset > values.length - length) {
+					throw new IllegalArgumentException("invalid borrowed neighbor slice");
+				}
+				this.values = values;
+				this.offset = offset;
+				this.length = length;
+			}
+
+			public void clear() {
+				values = null;
+				offset = 0;
+				length = 0;
+			}
+		}
+
+		/**
+		 * Mutable binding of one logical key to its run. Generated kernels reuse one cursor per probe site so the
+		 * adjacency implementation can retain its row-resolution state across the size and value reads.
+		 */
+		interface BoundRunCursor extends AutoCloseable {
+
+			/** Binds {@code key} and returns its run size, or a non-positive missing/not-covered sentinel. */
+			long bind(long key);
+
+			long neighborAt(long runOffset);
+
+			long contextAt(long runOffset);
+
+			int copyNeighbors(long runOffset, int length, long[] target, int targetOffset);
+
+			int copyContexts(long runOffset, int length, long[] target, int targetOffset);
+
+			@Override
+			default void close() {
+			}
+		}
+
+		/**
 		 * Forward-only enumeration that preserves the physical run resolved together with the logical key. The cursor
 		 * is deliberately also the run reader: a CSF implementation can copy the row through the page coordinate it
 		 * already has instead of converting that coordinate to a key and immediately searching the same index again.
@@ -413,6 +474,27 @@ public interface NativeLmdbQuerySource {
 		interface KeyRunCursor extends AutoCloseable {
 
 			boolean advance();
+
+			/** Advances once and returns the next key, or {@code -1} when exhausted. */
+			default long nextKey() {
+				return advance() ? key() : -1L;
+			}
+
+			/**
+			 * Copies up to {@code maximum} successive keys. Implementations with a physical key cursor may override the
+			 * scalar fallback with one concrete traversal loop.
+			 */
+			default int fillKeys(long[] target, int targetOffset, int maximum) {
+				Objects.requireNonNull(target, "target");
+				if (targetOffset < 0 || maximum < 0 || targetOffset > target.length - maximum) {
+					throw new IllegalArgumentException("invalid key-run batch target range");
+				}
+				int copied = 0;
+				while (copied < maximum && advance()) {
+					target[targetOffset + copied++] = key();
+				}
+				return copied;
+			}
 
 			long key();
 
@@ -437,6 +519,50 @@ public interface NativeLmdbQuerySource {
 		 * The positive opaque run handle for the key, or {@link #NOT_FOUND} / {@link #NOT_COVERED}.
 		 */
 		long find(long key);
+
+		/** Attempts to expose the key's neighbor run as a borrowed immutable array slice. */
+		default boolean borrowNeighbors(long key, NeighborSlice target) {
+			Objects.requireNonNull(target, "target");
+			target.clear();
+			return false;
+		}
+
+		/**
+		 * Opens a reusable bound-run cursor. The generic form preserves the exact {@link #find(long)} and
+		 * {@link RunView} semantics; specialized immutable views can retain a cheaper physical row binding.
+		 */
+		default BoundRunCursor openBoundRunCursor() {
+			NativeAdjacency adjacency = this;
+			return new BoundRunCursor() {
+				private long handle;
+
+				@Override
+				public long bind(long key) {
+					handle = adjacency.find(key);
+					return handle > 0 ? adjacency.size(handle) : handle;
+				}
+
+				@Override
+				public long neighborAt(long runOffset) {
+					return adjacency.neighborAt(handle, runOffset);
+				}
+
+				@Override
+				public long contextAt(long runOffset) {
+					return adjacency.contextAt(handle, runOffset);
+				}
+
+				@Override
+				public int copyNeighbors(long runOffset, int length, long[] target, int targetOffset) {
+					return adjacency.copyNeighbors(handle, runOffset, length, target, targetOffset);
+				}
+
+				@Override
+				public int copyContexts(long runOffset, int length, long[] target, int targetOffset) {
+					return adjacency.copyContexts(handle, runOffset, length, target, targetOffset);
+				}
+			};
+		}
 
 		/**
 		 * Resolves a bounded key batch. Implementations may group probes by page, merge a sorted batch with their key

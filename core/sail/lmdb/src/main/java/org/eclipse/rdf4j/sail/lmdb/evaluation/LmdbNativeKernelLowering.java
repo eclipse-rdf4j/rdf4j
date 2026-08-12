@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
@@ -2400,8 +2401,20 @@ final class LmdbNativeKernelLowering {
 				filterDepth = Math.max(filterDepth, operandDepth(operand));
 				out++;
 			}
+			NativeBooleanFilter delegate = masked.filter;
+			if (delegate instanceof RecordingNativeBooleanFilter) {
+				delegate = ((RecordingNativeBooleanFilter) delegate).delegate;
+			}
 			filterHooks.add(new LmdbNativeKernelBindings.FilterHook(masked, argSlots));
-			placeFilter(new LmdbNativeKernelIr.FilterValue(filterHooks.size() - 1, args), filterDepth);
+			int filterId = filterHooks.size() - 1;
+			if (bits == 1 && delegate instanceof CachedCompareFilter compare && compare.slot == argSlots[0]
+					&& ValueIds.getIdType(compare.constant) == ValueIds.T_DATE) {
+				placeFilter(new LmdbNativeKernelIr.FilterDateCompare(filterId, args[0],
+						constantIndex(compare.constant), irCompareOp(compare.op), compare.constantOnLeft,
+						compare.checkBound), filterDepth);
+				return true;
+			}
+			placeFilter(new LmdbNativeKernelIr.FilterValue(filterId, args), filterDepth);
 			return true;
 		}
 

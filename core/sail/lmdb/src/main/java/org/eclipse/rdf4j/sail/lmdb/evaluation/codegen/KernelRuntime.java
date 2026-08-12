@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 
 /**
  * Shared primitive data structures used by runtime-generated kernels. Keeping these as ordinary reviewed Java (instead
@@ -45,9 +46,68 @@ public final class KernelRuntime {
 		return size;
 	}
 
+	/**
+	 * Fast exact comparison for two inlined {@code xsd:date} ids when their timezone fields are identical. XSD date
+	 * ordering is partial when timezone information differs or is absent on only one side, so every such case delegates
+	 * to the already registered value hook. The direct branch allocates nothing and never decodes an RDF value.
+	 */
+	public static boolean testDateCompare(long candidate, long constant, int op, boolean constantOnLeft,
+			boolean checkBound, KernelHooks hooks, int filterId) {
+		if (candidate == -1L) {
+			return !checkBound && hooks.testFilter(filterId, candidate, -1L, -1L);
+		}
+		if (ValueIds.getIdType(candidate) == ValueIds.T_DATE && ValueIds.getIdType(constant) == ValueIds.T_DATE) {
+			long candidatePayload = ValueIds.getValue(candidate);
+			long constantPayload = ValueIds.getValue(constant);
+			if ((candidatePayload >>> 49 & 0x7fL) == (constantPayload >>> 49 & 0x7fL)) {
+				int candidateKey = dateKey(candidatePayload);
+				int constantKey = dateKey(constantPayload);
+				int comparison = Integer.compare(candidateKey, constantKey);
+				if (constantOnLeft) {
+					comparison = -comparison;
+				}
+				return compareResult(comparison, op);
+			}
+		}
+		return hooks.testFilter(filterId, candidate, -1L, -1L);
+	}
+
+	private static int dateKey(long payload) {
+		int year = (int) (payload & 0x1fffL);
+		int month = (int) (payload >>> 13 & 0x0fL);
+		int day = (int) (payload >>> 17 & 0x1fL);
+		return year << 9 | month << 5 | day;
+	}
+
+	private static boolean compareResult(int comparison, int op) {
+		switch (op) {
+		case 0:
+			return comparison == 0;
+		case 1:
+			return comparison != 0;
+		case 2:
+			return comparison < 0;
+		case 3:
+			return comparison <= 0;
+		case 4:
+			return comparison > 0;
+		default:
+			return comparison >= 0;
+		}
+	}
+
 	/** True when the array is in unsigned nondecreasing order, including adjacent duplicate ids. */
 	public static boolean unsignedNondecreasing(long[] values) {
-		for (int i = 1; i < values.length; i++) {
+		return unsignedNondecreasing(values, 0, values.length);
+	}
+
+	/** True when one immutable array slice is in unsigned nondecreasing order. */
+	public static boolean unsignedNondecreasing(long[] values, int offset, int length) {
+		if (offset < 0 || length < 0 || offset > values.length - length) {
+			throw new IllegalArgumentException("invalid unsigned-order slice");
+		}
+		int end = offset + length;
+		for (int i = offset + 1; i < end; i++) {
 			if (Long.compareUnsigned(values[i - 1], values[i]) > 0) {
 				return false;
 			}

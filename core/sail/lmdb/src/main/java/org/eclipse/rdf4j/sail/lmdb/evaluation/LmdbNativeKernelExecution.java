@@ -170,7 +170,8 @@ final class LmdbNativeKernelExecution {
 				AGG_DECLINED.incrementAndGet();
 				return null;
 			}
-			long[][] domains = lowered.bindings.materializeDomains(probe, row, "irAggregate");
+			LmdbNativeKernelBindings.BoundDomains domains = lowered.bindings.bindDomains(probe, row,
+					"irAggregate");
 			// The parallel rung may request a worker kernel VARIANT (HAVING and output mods stripped); every requested
 			// shape compiles through the same cache under its own shape key, so the sequential shape stays untouched.
 			List<BindingSet> parallel = LmdbNativeParallelKernelAggregate
@@ -514,7 +515,7 @@ final class LmdbNativeKernelExecution {
 				return null;
 			}
 
-			long[][] domains = lowered.bindings.materializeDomains(probe, row, "irKernel");
+			LmdbNativeKernelBindings.BoundDomains domains = lowered.bindings.bindDomains(probe, row, "irKernel");
 			if (!alignedInputsOrdered(lowered, views, domains)) {
 				// The aligned dedup tier is compiled against grouped emission; a bind-time input that cannot promise
 				// its order must not run that shape. The ordinary ladder remains exact.
@@ -669,7 +670,7 @@ final class LmdbNativeKernelExecution {
 	 * grouped-emission assumption does not hold on this store. Kernels without an aligned prefix skip the check.
 	 */
 	private static boolean alignedInputsOrdered(LmdbNativeKernelLowering.Lowered lowered,
-			NativeLmdbQuerySource.NativeAdjacency[] views, long[][] domains) {
+			NativeLmdbQuerySource.NativeAdjacency[] views, LmdbNativeKernelBindings.BoundDomains domains) {
 		if (!(lowered.kernel.terminal instanceof LmdbNativeKernelIr.Emit)
 				|| ((LmdbNativeKernelIr.Emit) lowered.kernel.terminal).alignedCount == 0) {
 			return true;
@@ -679,9 +680,12 @@ final class LmdbNativeKernelExecution {
 				return false;
 			}
 		}
-		for (long[] domain : domains) {
-			for (int i = 1; domain != null && i < domain.length; i++) {
-				if (Long.compareUnsigned(domain[i - 1], domain[i]) > 0) {
+		for (int domainIndex = 0; domainIndex < domains.count(); domainIndex++) {
+			long[] domain = domains.values[domainIndex];
+			int offset = domains.offsets[domainIndex];
+			int length = domains.lengths[domainIndex];
+			for (int i = 1; i < length; i++) {
+				if (Long.compareUnsigned(domain[offset + i - 1], domain[offset + i]) > 0) {
 					return false;
 				}
 			}

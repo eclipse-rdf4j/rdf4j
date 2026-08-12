@@ -59,6 +59,11 @@ public final class AdjacencyEngagementTestAccess {
 		return LmdbDirectAdjacencyStore.KERNEL_VIEWS_SERVED.get();
 	}
 
+	/** Concrete decoded-CSR adjacency views handed to generated kernels. Process-wide, not per store. */
+	public static long decodedKernelViewsServed() {
+		return LmdbDirectAdjacencyStore.DECODED_KERNEL_VIEWS_SERVED.get();
+	}
+
 	/**
 	 * Native bytes charged to the optional node-predicate projection; zero when adjacency is disabled or the projection
 	 * was not built. This is the charged figure, which is what consumes the cap, not the finished structure's

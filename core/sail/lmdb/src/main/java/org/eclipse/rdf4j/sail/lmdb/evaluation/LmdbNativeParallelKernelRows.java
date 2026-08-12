@@ -82,7 +82,8 @@ final class LmdbNativeParallelKernelRows {
 	 * demands a worker variant with the offset folded into the limit (see class javadoc).
 	 */
 	static RowCursor tryOpen(LmdbNativeKernelLowering.Lowered lowered,
-			NativeLmdbQuerySource.NativeAdjacency[] queryViews, long[][] domains, SlotPlan arg, RowState row,
+			NativeLmdbQuerySource.NativeAdjacency[] queryViews,
+			LmdbNativeKernelBindings.BoundDomains domains, SlotPlan arg, RowState row,
 			TupleExpr explainTarget, Function<LmdbNativeKernelIr.Kernel, JaninoKernel> kernelFactory) {
 		if (!enabled() || !LmdbNativeParallelPipelines.enabled()) {
 			return null;
@@ -160,7 +161,7 @@ final class LmdbNativeParallelKernelRows {
 				return debugDecline(explainTarget, "root-scan-not-splittable");
 			}
 		} else {
-			rootKeys = rootAdjacency >= 0 ? queryViews[rootAdjacency].keyCount() : domains[rootDomain].length;
+			rootKeys = rootAdjacency >= 0 ? queryViews[rootAdjacency].keyCount() : domains.length(rootDomain);
 			if (rootKeys < 2L * desiredWorkers) {
 				return debugDecline(explainTarget, "root-too-small");
 			}
@@ -238,7 +239,8 @@ final class LmdbNativeParallelKernelRows {
 	 * page before handoff (order is a whole-result property) and returns a materialized cursor.
 	 */
 	private static RowCursor start(LmdbNativeKernelLowering.Lowered lowered, int rootAdjacency, int rootDomain,
-			int rootScan, long[][] domains, long rootKeys, LmdbRootScanPartition[] scanPartitions,
+			int rootScan, LmdbNativeKernelBindings.BoundDomains domains, long rootKeys,
+			LmdbRootScanPartition[] scanPartitions,
 			NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row,
 			Supplier<JaninoKernel> kernelFactory, LmdbNativeParallelPipelines.TaskReservation reservation, Emit emit,
 			org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashLedger) {
@@ -435,7 +437,8 @@ final class LmdbNativeParallelKernelRows {
 	}
 
 	private static void runWorker(LmdbNativeKernelLowering.Lowered lowered, int rootAdjacency, int rootDomain,
-			int rootScan, long[][] domains, NativeLmdbQuerySource source, RowState consumerRow, Queue<long[]> ranges,
+			int rootScan, LmdbNativeKernelBindings.BoundDomains domains,
+			NativeLmdbQuerySource source, RowState consumerRow, Queue<long[]> ranges,
 			Queue<LmdbRootScanPartition> scanQueue,
 			ArrayBlockingQueue<Page> output, Supplier<JaninoKernel> kernelFactory, AtomicReference<Throwable> failure,
 			AtomicBoolean cancelled, CountDownLatch startup) throws IOException, InterruptedException {
@@ -534,7 +537,7 @@ final class LmdbNativeParallelKernelRows {
 				}
 				try {
 					NativeLmdbQuerySource.NativeAdjacency[] windowViews = views;
-					long[][] windowDomains = domains;
+					LmdbNativeKernelBindings.BoundDomains windowDomains = domains;
 					if (rootScan >= 0) {
 						// the scanner is per worker and re-aimed per unit; the generated code is untouched, exactly as
 						// a key window leaves it untouched for an adjacency root
@@ -544,9 +547,7 @@ final class LmdbNativeParallelKernelRows {
 						windowViews[rootAdjacency] = new LmdbNativeKernelPartitions.KeyWindowView(views[rootAdjacency],
 								range[0], range[1]);
 					} else {
-						windowDomains = domains.clone();
-						windowDomains[rootDomain] = Arrays.copyOfRange(domains[rootDomain],
-								Math.toIntExact(range[0]), Math.toIntExact(range[1]));
+						windowDomains = domains.window(rootDomain, range[0], range[1]);
 					}
 					LmdbNativeJaninoCodegen.bind(kernel,
 							bindings.context(windowViews, windowDomains, workerRow, hooks, scanner, variableViews),

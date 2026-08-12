@@ -13,6 +13,8 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
+import java.util.Objects;
+import java.util.concurrent.Executor;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbReferenceNodeLocator.SearchContext;
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
@@ -39,6 +41,8 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	private static final long LOCAL_MASK = (1L << SOURCE_SHIFT) - 1;
 	private static final long[] NO_KEYS = {};
 	private static final long DOMAIN_TOMBSTONE = NativeLmdbQuerySource.NativeAdjacency.NOT_FOUND;
+	/** Avoid creating shared partition bookkeeping for tiny, effectively one-off views. */
+	private static final long MIN_SHARED_OBSERVATION = 64L;
 
 	/**
 	 * Runs up to this many edges are decoded once per handle into flat buffers; kernels then read plain arrays instead
@@ -50,6 +54,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	private final LmdbInMemoryAdjacencyIndex base;
 	private final LmdbAdjacencyOverlaySet overlays;
 	private final long snapshotRevision;
+	private final long lifetimeId;
 	private final int applicableGenerationCount;
 	private final boolean baseOnly;
 	private final boolean baseAbsent;
@@ -62,6 +67,8 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	private final ContextCatalog contexts;
 	/** CSF base eligible for batch/frontier lookup; null for absent predicates and legacy bases. */
 	private final ImmutablePagedQuadCsfIndex baseCsf;
+	/** Store-owned executor; expensive shared verification/decode never runs on the query thread. */
+	private final Executor adaptiveExecutor;
 	/** Allocated only by a genuine batch/frontier request; scalar probes retain the page-local parent path. */
 	private ImmutablePagedQuadCsfIndex.PartitionLookup basePartitionLookup;
 	private boolean closed;
@@ -104,12 +111,16 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	private long enumerationBaseOrdinal;
 	private int enumerationChangeIndex;
 	private long enumeratedKey;
+	/** Base probes sampled by this one query-owned view and reported once from {@link #close()}. */
+	private long observedBaseProbes;
 
 	LmdbDirectNativeAdjacency(LmdbAdjacencyReadView view, long predicate,
-			long basePredicateOrdinal, int plane, LmdbAdjacencyArenaCatalog[] sources, ContextCatalog contexts) {
+			long basePredicateOrdinal, int plane, LmdbAdjacencyArenaCatalog[] sources, ContextCatalog contexts,
+			Executor adaptiveExecutor) {
 		this.base = view.state().base();
 		this.overlays = view.state().overlays();
 		this.snapshotRevision = view.snapshotRevision();
+		this.lifetimeId = view.lifetimeId();
 		this.applicableGenerationCount = applicableGenerationCount(overlays, snapshotRevision);
 		this.baseOnly = applicableGenerationCount == 0;
 		this.baseAbsent = basePredicateOrdinal < 0;
@@ -120,6 +131,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		this.sources = sources;
 		this.contexts = contexts;
 		this.baseCsf = !baseAbsent && base.usesPagedCsf() ? base.csfBase() : null;
+		this.adaptiveExecutor = Objects.requireNonNull(adaptiveExecutor, "adaptiveExecutor");
 	}
 
 	private static int applicableGenerationCount(LmdbAdjacencyOverlaySet overlays, long snapshotRevision) {
@@ -183,6 +195,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		// and promotes only the pages that this query actually revisits. Constructing/observing a partition-wide
 		// lookup here delayed that transition and could trigger an O(partition) build on every short-lived query.
 		long handle = base.findRunByOrdinal(key, plane, basePredicateOrdinal, searchContext);
+		recordBaseProbes(1L);
 		if (handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
 			throw new IllegalStateException(
 					"kernel adjacency observed an uncovered row despite the completeness rule");
@@ -207,6 +220,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		ImmutablePagedQuadCsfIndex.PartitionLookup direct = partitionLookup();
 		if (direct != null) {
 			direct.findBatch(keys, keyOffset, count, runHandles, runOffset);
+			recordBaseProbes(count);
 			for (int i = 0; i < count; i++) {
 				int at = runOffset + i;
 				long localReference = runHandles[at];
@@ -227,6 +241,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 				runHandles[runOffset + i] = handle == LmdbInMemoryAdjacencyIndex.NOT_FOUND ? NOT_FOUND
 						: packHandle(0, handle);
 			}
+			recordBaseProbes(count);
 		}
 
 		if (!baseOnly) {
@@ -265,6 +280,14 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		memoValid = true;
 	}
 
+	private void recordBaseProbes(long probes) {
+		if (!baseOnly || baseCsf == null || probes <= 0) {
+			return;
+		}
+		long current = observedBaseProbes;
+		observedBaseProbes = current > Long.MAX_VALUE - probes ? Long.MAX_VALUE : current + probes;
+	}
+
 	private void ensureOpen() {
 		if (closed) {
 			throw new IllegalStateException("native adjacency is closed");
@@ -291,6 +314,12 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	public void close() {
 		if (!closed) {
 			closed = true;
+			long probes = observedBaseProbes;
+			observedBaseProbes = 0L;
+			if (probes >= MIN_SHARED_OBSERVATION && baseOnly && baseCsf != null) {
+				baseCsf.sharedPartitionLookup(basePredicateOrdinal, plane)
+						.observeQuery(probes, lifetimeId, adaptiveExecutor);
+			}
 			ImmutablePagedQuadCsfIndex.PartitionLookup lookup = basePartitionLookup;
 			basePartitionLookup = null;
 			if (lookup != null) {
@@ -358,6 +387,9 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 			throw new IllegalStateException("neighbor decode returned " + copied + " of " + cachedCount + " edges");
 		}
 		neighborsMaterialized = true;
+		// The full run was genuinely decoded and consumed by this view. Count that work once, not once per later
+		// neighborAt call, so a repeatedly copied bind-time domain can earn a shared immutable CSR across queries.
+		recordBaseProbes(cachedCount);
 		return true;
 	}
 
@@ -403,7 +435,9 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		if (materializeNeighbors(runHandle)) {
 			return neighborBuf[(int) runOffset];
 		}
-		return LmdbAdjacencyRunCodec.neighborAt(runCursor, runOffset);
+		long neighbor = LmdbAdjacencyRunCodec.neighborAt(runCursor, runOffset);
+		recordBaseProbes(1L);
+		return neighbor;
 	}
 
 	@Override
@@ -426,7 +460,9 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 			}
 			return copied;
 		}
-		return LmdbAdjacencyRunCodec.copy(contexts, runCursor, runOffset, copied, target, targetOffset, null, 0);
+		int decoded = LmdbAdjacencyRunCodec.copy(contexts, runCursor, runOffset, copied, target, targetOffset, null, 0);
+		recordBaseProbes(decoded);
+		return decoded;
 	}
 
 	@Override

@@ -17,6 +17,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -114,6 +117,12 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	private final long modeledJavaBytes;
 	private final MemoryReservation indexReservation;
 	private final AtomicLong references = new AtomicLong(1);
+	/**
+	 * Lazily created, immutable-base-owned lookup accelerators. The array is one reference per physical (predicate,
+	 * plane) partition, while each entry starts as a tiny counter/descriptor and acquires optional key-sized storage
+	 * only after reuse across query lifetimes proves that the build will amortize.
+	 */
+	private volatile SharedPartitionLookup[] sharedPartitionLookups;
 
 	private ImmutablePagedQuadCsfIndex(int predicateCount, int[] partitionShardStarts, int[] partitionShardCounts,
 			long[] partitionRowCounts, long[] partitionQuadCounts, CsfShard[] shards,
@@ -396,7 +405,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		if (ordinal < 0 || ordinal >= rows) {
 			throw new IllegalArgumentException("row ordinal out of range: " + ordinal + " of " + rows);
 		}
-		if (cursor.globalPage >= 0 && ordinal >= cursor.firstOrdinal && ordinal < cursor.endOrdinal) {
+		if (cursor != null && cursor.globalPage >= 0 && ordinal >= cursor.firstOrdinal && ordinal < cursor.endOrdinal) {
 			return packLocalReference(cursor.globalPage, Math.toIntExact(ordinal - cursor.firstOrdinal));
 		}
 
@@ -447,9 +456,11 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			throw new IllegalStateException("row ordinal is outside its directory page");
 		}
 		int globalPage = Math.addExact(shardFirstPageIds[shardIndex], page);
-		cursor.firstOrdinal = pageFirst;
-		cursor.endOrdinal = pageFirst + uniqueRows;
-		cursor.globalPage = globalPage;
+		if (cursor != null) {
+			cursor.firstOrdinal = pageFirst;
+			cursor.endOrdinal = pageFirst + uniqueRows;
+			cursor.globalPage = globalPage;
+		}
 		return packLocalReference(globalPage, localRow);
 	}
 
@@ -528,6 +539,51 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	 */
 	public PartitionLookup partitionLookup(long predicateOrdinal, int plane) {
 		return new PartitionLookup(this, partitionIndex(predicateOrdinal, plane));
+	}
+
+	/**
+	 * Returns the immutable-base-owned accelerator for one partition. Unlike {@link PartitionLookup}, this object
+	 * survives individual query/cursor closes, so an O(partition) verification or dictionary build is paid at most once
+	 * per immutable base generation and can be amortized by later queries. Optional arrays remain globally bounded by
+	 * {@link CsfAdaptiveMemory}; zero-memory affine layouts are retained unconditionally.
+	 */
+	public SharedPartitionLookup sharedPartitionLookup(long predicateOrdinal, int plane) {
+		return sharedPartitionLookupByIndex(partitionIndex(predicateOrdinal, plane));
+	}
+
+	/**
+	 * Returns an already-created immutable-base accelerator without allocating one. Binding code uses this probe to
+	 * select the decoded concrete adjacency only after another query has actually earned and installed it; a cold
+	 * one-off query therefore does not create base-owned lookup bookkeeping merely by opening a view.
+	 */
+	public SharedPartitionLookup sharedPartitionLookupIfPresent(long predicateOrdinal, int plane) {
+		int partition = partitionIndex(predicateOrdinal, plane);
+		SharedPartitionLookup[] lookups = sharedPartitionLookups;
+		return lookups == null ? null : lookups[partition];
+	}
+
+	private SharedPartitionLookup sharedPartitionLookupByIndex(int partition) {
+		SharedPartitionLookup[] lookups = sharedPartitionLookups;
+		if (lookups == null) {
+			synchronized (this) {
+				lookups = sharedPartitionLookups;
+				if (lookups == null) {
+					lookups = new SharedPartitionLookup[partitionRowCounts.length];
+					sharedPartitionLookups = lookups;
+				}
+			}
+		}
+		SharedPartitionLookup lookup = lookups[partition];
+		if (lookup == null) {
+			synchronized (lookups) {
+				lookup = lookups[partition];
+				if (lookup == null) {
+					lookup = new SharedPartitionLookup(this, partition);
+					lookups[partition] = lookup;
+				}
+			}
+		}
+		return lookup;
 	}
 
 	/**
@@ -1251,6 +1307,15 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			throw new IllegalStateException("CSF index released more times than retained");
 		}
 		if (remaining == 0) {
+			SharedPartitionLookup[] lookups = sharedPartitionLookups;
+			sharedPartitionLookups = null;
+			if (lookups != null) {
+				for (SharedPartitionLookup lookup : lookups) {
+					if (lookup != null) {
+						lookup.close();
+					}
+				}
+			}
 			for (CsfShard shard : shards) {
 				shard.release();
 			}
@@ -1705,6 +1770,1124 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			if (finished) {
 				throw new IllegalStateException("CSF builder is finished");
 			}
+		}
+	}
+
+	/**
+	 * Cross-query accelerator for one immutable partition. The cold lookup remains the ordinary caller-owned
+	 * {@link LookupCursor}, including its early page-local exact hash. Reuse is sampled outside the per-probe hot path;
+	 * once enough work has accumulated, this object verifies progressively stronger immutable layouts:
+	 *
+	 * <ol>
+	 * <li>an affine key domain ({@code key[i] = first + i * stride}) — zero key-sized memory;</li>
+	 * <li>a dense normalized bitmap plus rank directory — usually well below 0.2 byte per key;</li>
+	 * <li>a sparse exact key-to-ordinal hash — only for very hot irregular partitions and only under the global
+	 * adaptive-memory budget.</li>
+	 * </ol>
+	 *
+	 * Accelerators are owned by the immutable base rather than by a query. Therefore a full partition scan is paid at
+	 * most once per base generation and warm queries do not rebuild the same dictionary on every connection close.
+	 */
+	public static final class SharedPartitionLookup implements AutoCloseable {
+
+		private static final int MIN_ANALYSIS_PROBES = 256;
+		private static final int MAX_ANALYSIS_PROBES = 4096;
+		private static final int MIN_EXACT_PROBES = 8192;
+		/** Minimum cross-query work before retaining a decoded neighbor CSR for a hot immutable partition. */
+		private static final int MIN_DECODE_PROBES = 4096;
+		private static final int DENSE_RANGE_FACTOR = 4;
+		private static final long PRESSURE_SAMPLE_MASK = 4095L;
+
+		private final ImmutablePagedQuadCsfIndex owner;
+		private final int partition;
+		private final long rowCount;
+		private final long analysisAt;
+		private final long exactAt;
+		private final long decodeAt;
+		private final boolean directOrdinalLayout;
+		private final int firstDirectoryPage;
+		private final AtomicLong observedProbes = new AtomicLong();
+		/** First query/view lifetime that contributed sampled work; ids are positive and process-unique. */
+		private final AtomicLong firstObservedLifetime = new AtomicLong();
+		/** Becomes true after work from a second distinct lifetime, and never returns to false. */
+		private final AtomicBoolean multipleObservedLifetimes = new AtomicBoolean();
+		/** At most one expensive partition analysis/decode task may be queued or running. */
+		private final AtomicBoolean promotionScheduled = new AtomicBoolean();
+
+		/** One immutable object publication makes concurrent reads race-free when optional arrays are shed. */
+		private volatile SharedAccelerator accelerator;
+		/** Optional fully decoded neighbor CSR. It is published only after both arrays are complete. */
+		private volatile DecodedNeighbors decodedNeighbors;
+		private volatile boolean analyzedSparse;
+		private volatile boolean promotionRefused;
+		/** Retry boundary after a transient decoded-CSR memory refusal. */
+		private volatile long decodedRetryAt;
+		private volatile boolean decodedPermanentlyRefused;
+		private volatile boolean closed;
+
+		private SharedPartitionLookup(ImmutablePagedQuadCsfIndex owner, int partition) {
+			this.owner = owner;
+			this.partition = partition;
+			this.rowCount = owner.partitionRowCounts[partition];
+			this.analysisAt = analysisThreshold(rowCount);
+			this.exactAt = exactThreshold(rowCount);
+			this.decodeAt = decodeThreshold(rowCount);
+			this.decodedRetryAt = decodeAt;
+			DirectOrdinalLayout layout = directOrdinalLayout(owner, partition, rowCount);
+			this.directOrdinalLayout = layout.direct;
+			this.firstDirectoryPage = layout.firstPage;
+		}
+
+		/** Returns a positive local u40 page/row coordinate, or zero for a miss. */
+		public long find(long key, LookupCursor coldCursor) {
+			Objects.requireNonNull(coldCursor, "coldCursor");
+			SharedAccelerator current = accelerator;
+			if (current != null) {
+				return current.find(key);
+			}
+			return owner.findLocalReferenceByPartition(partition, key, coldCursor);
+		}
+
+		/** Sentinel returned by {@link #findDecodedOrdinal(long)} while no decoded CSR is installed. */
+		public static final long DECODED_INACTIVE = Long.MIN_VALUE;
+
+		/**
+		 * Returns {@code ordinal + 1} for a hit in the decoded neighbor CSR, zero for a miss, or
+		 * {@link #DECODED_INACTIVE} while this partition still uses its packed representation. The positive token is
+		 * intentionally independent of page coordinates so a caller can encode it in an opaque run handle.
+		 */
+		public long findDecodedOrdinal(long key) {
+			DecodedNeighbors decoded = decodedNeighbors;
+			if (decoded == null) {
+				return DECODED_INACTIVE;
+			}
+			long ordinal = decoded.mapper.findOrdinal(key);
+			return ordinal < 0 ? 0 : ordinal + 1;
+		}
+
+		/** Binds one caller-owned cursor to a decoded run without constructing or unpacking an opaque page handle. */
+		public long bindDecoded(long key, DecodedRunCursor target) {
+			Objects.requireNonNull(target, "target");
+			DecodedNeighbors decoded = decodedNeighbors;
+			if (decoded == null) {
+				target.clear();
+				return DECODED_INACTIVE;
+			}
+			long ordinal = decoded.mapper.findOrdinal(key);
+			if (ordinal < 0) {
+				target.clear();
+				return 0;
+			}
+			target.bind(decoded, (int) ordinal);
+			return ordinal + 1;
+		}
+
+		/** Rebinds a decoded cursor from an opaque ordinal token, used when nested code revisits an older handle. */
+		public void bindDecodedToken(long ordinalToken, DecodedRunCursor target) {
+			Objects.requireNonNull(target, "target");
+			DecodedNeighbors decoded = requireDecoded();
+			int ordinal = checkedDecodedOrdinal(ordinalToken, decoded.rowOffsets.length - 1);
+			target.bind(decoded, ordinal);
+		}
+
+		public long decodedEdgeCount(long ordinalToken) {
+			DecodedNeighbors decoded = requireDecoded();
+			int ordinal = checkedDecodedOrdinal(ordinalToken, decoded.rowOffsets.length - 1);
+			return decoded.rowOffsets[ordinal + 1] - decoded.rowOffsets[ordinal];
+		}
+
+		public long decodedNeighborAt(long ordinalToken, long runOffset) {
+			DecodedNeighbors decoded = requireDecoded();
+			int ordinal = checkedDecodedOrdinal(ordinalToken, decoded.rowOffsets.length - 1);
+			int start = decoded.rowOffsets[ordinal];
+			int end = decoded.rowOffsets[ordinal + 1];
+			if (runOffset < 0 || runOffset >= end - start) {
+				throw new IllegalArgumentException(
+						"decoded run offset out of range: " + runOffset + " of " + (end - start));
+			}
+			return decoded.neighbors[start + (int) runOffset];
+		}
+
+		public int copyDecodedNeighbors(long ordinalToken, long runOffset, int length, long[] target,
+				int targetOffset) {
+			Objects.requireNonNull(target, "target");
+			DecodedNeighbors decoded = requireDecoded();
+			int ordinal = checkedDecodedOrdinal(ordinalToken, decoded.rowOffsets.length - 1);
+			int start = decoded.rowOffsets[ordinal];
+			int end = decoded.rowOffsets[ordinal + 1];
+			int size = end - start;
+			if (runOffset < 0 || runOffset > size || length < 0) {
+				throw new IllegalArgumentException("invalid decoded neighbor copy range");
+			}
+			int copied = Math.min(length, size - (int) runOffset);
+			if (targetOffset < 0 || targetOffset > target.length - copied) {
+				throw new IllegalArgumentException("decoded neighbor target range is out of bounds");
+			}
+			if (copied > 0) {
+				System.arraycopy(decoded.neighbors, start + (int) runOffset, target, targetOffset, copied);
+			}
+			return copied;
+		}
+
+		/** Original local page/row coordinate for context access or other columns not retained by the neighbor CSR. */
+		public long decodedLocalReference(long ordinalToken) {
+			int ordinal = checkedDecodedOrdinal(ordinalToken, Math.toIntExact(rowCount));
+			return referenceAtOrdinal(ordinal);
+		}
+
+		public boolean neighborsDecoded() {
+			return decodedNeighbors != null;
+		}
+
+		/** Reusable, allocation-free-after-construction view of one row in a decoded neighbor CSR. */
+		public static final class DecodedRunCursor {
+			private DecodedNeighbors table;
+			private int ordinal = -1;
+			private int start;
+			private int end;
+			/*
+			 * Affine partitions dominate LMDB's freshly allocated ID domains. Cache their power-of-two mapping in the
+			 * caller-owned cursor so every bound probe is three primitive operations instead of an interface dispatch
+			 * through SharedAccelerator followed by unsigned divide/multiply verification.
+			 */
+			private boolean affine;
+			private long affineFirst;
+			private long affineMask;
+			private int affineShift = -1;
+			private int rowCount;
+
+			private void bind(DecodedNeighbors table, int ordinal) {
+				this.table = table;
+				this.ordinal = ordinal;
+				this.start = table.rowOffsets[ordinal];
+				this.end = table.rowOffsets[ordinal + 1];
+			}
+
+			/** Attaches this query-owned cursor to one stable immutable decoded table. */
+			public boolean attach(SharedPartitionLookup lookup) {
+				Objects.requireNonNull(lookup, "lookup");
+				DecodedNeighbors decoded = lookup.decodedNeighbors;
+				if (decoded == null) {
+					clear();
+					return false;
+				}
+				table = decoded;
+				rowCount = decoded.rowOffsets.length - 1;
+				SharedAccelerator mapper = decoded.mapper;
+				affine = mapper.affine();
+				if (affine) {
+					affineFirst = mapper.affineFirst();
+					affineShift = mapper.affineShift();
+					affineMask = mapper.affineMask();
+				} else {
+					affineFirst = 0;
+					affineShift = -1;
+					affineMask = 0;
+				}
+				clearRow();
+				return true;
+			}
+
+			/** Binds through the already attached mapper and returns {@code ordinal + 1}, or zero for a miss. */
+			public long bind(long key) {
+				int size = bindSize(key);
+				return size < 0 ? 0 : ordinal + 1L;
+			}
+
+			/**
+			 * Binds and returns the run size in one operation, or {@code -1} for a miss. Generated decoded kernels use
+			 * this form so they do not immediately revalidate the cursor through {@link #size()} after every lookup.
+			 */
+			public int bindSize(long key) {
+				ensureAttached();
+				long found;
+				if (affine) {
+					if (rowCount == 1) {
+						found = key == affineFirst ? 0 : -1;
+					} else if (affineShift >= 0) {
+						long delta = key - affineFirst;
+						if ((delta & affineMask) != 0) {
+							clearRow();
+							return -1;
+						}
+						long candidate = delta >>> affineShift;
+						found = candidate >= 0 && candidate < rowCount ? candidate : -1;
+					} else {
+						found = table.mapper.findOrdinal(key);
+					}
+				} else {
+					found = table.mapper.findOrdinal(key);
+				}
+				if (found < 0) {
+					clearRow();
+					return -1;
+				}
+				ordinal = (int) found;
+				start = table.rowOffsets[ordinal];
+				end = table.rowOffsets[ordinal + 1];
+				return end - start;
+			}
+
+			private void clearRow() {
+				ordinal = -1;
+				start = 0;
+				end = 0;
+			}
+
+			private void clear() {
+				table = null;
+				affine = false;
+				affineFirst = 0;
+				affineMask = 0;
+				affineShift = -1;
+				rowCount = 0;
+				clearRow();
+			}
+
+			public int ordinal() {
+				return ordinal;
+			}
+
+			public long size() {
+				ensureBound();
+				return end - start;
+			}
+
+			public long neighborAt(long offset) {
+				ensureBound();
+				if (offset < 0 || offset >= end - start) {
+					throw new IllegalArgumentException(
+							"decoded run offset out of range: " + offset + " of " + (end - start));
+				}
+				return table.neighbors[start + (int) offset];
+			}
+
+			/** Int-indexed hot-path form used by generated decoded loops. */
+			public long neighborAtInt(int offset) {
+				return table.neighbors[start + offset];
+			}
+
+			/**
+			 * Immutable backing array for the currently bound run. The returned array belongs to the pinned immutable
+			 * base generation and must never be modified by the caller.
+			 */
+			public long[] neighborArray() {
+				ensureBound();
+				return table.neighbors;
+			}
+
+			/** First element of the currently bound run in {@link #neighborArray()}. */
+			public int neighborOffset() {
+				ensureBound();
+				return start;
+			}
+
+			/** Int-sized length of the currently bound run. */
+			public int boundSize() {
+				ensureBound();
+				return end - start;
+			}
+
+			public int copyNeighbors(long offset, int length, long[] target, int targetOffset) {
+				ensureBound();
+				Objects.requireNonNull(target, "target");
+				int size = end - start;
+				if (offset < 0 || offset > size || length < 0) {
+					throw new IllegalArgumentException("invalid decoded run copy range");
+				}
+				int copied = Math.min(length, size - (int) offset);
+				if (targetOffset < 0 || targetOffset > target.length - copied) {
+					throw new IllegalArgumentException("decoded run target range is out of bounds");
+				}
+				if (copied > 0) {
+					System.arraycopy(table.neighbors, start + (int) offset, target, targetOffset, copied);
+				}
+				return copied;
+			}
+
+			private void ensureAttached() {
+				if (table == null) {
+					throw new IllegalStateException("decoded run cursor is not attached");
+				}
+			}
+
+			private void ensureBound() {
+				ensureAttached();
+				if (ordinal < 0) {
+					throw new IllegalStateException("decoded run cursor is not bound");
+				}
+			}
+		}
+
+		private DecodedNeighbors requireDecoded() {
+			DecodedNeighbors decoded = decodedNeighbors;
+			if (decoded == null) {
+				throw new IllegalStateException("decoded partition neighbors are no longer retained");
+			}
+			return decoded;
+		}
+
+		private static int checkedDecodedOrdinal(long token, int rows) {
+			long ordinal = token - 1;
+			if (token <= 0 || ordinal >= rows) {
+				throw new IllegalArgumentException("decoded row token out of range: " + token + " of " + rows);
+			}
+			return (int) ordinal;
+		}
+
+		/** Resolves a batch through an already promoted shared layout, or returns {@code -1} while still cold. */
+		public int findAcceleratedBatch(long[] keys, int keyOffset, int count, long[] references,
+				int referenceOffset) {
+			Objects.requireNonNull(keys, "keys");
+			Objects.requireNonNull(references, "references");
+			if (keyOffset < 0 || count < 0 || keyOffset > keys.length - count || referenceOffset < 0
+					|| referenceOffset > references.length - count) {
+				throw new IllegalArgumentException("invalid shared partition batch range");
+			}
+			SharedAccelerator current = accelerator;
+			if (current == null) {
+				return -1;
+			}
+			int found = 0;
+			for (int i = 0; i < count; i++) {
+				long reference = current.find(keys[keyOffset + i]);
+				references[referenceOffset + i] = reference;
+				if (reference != 0) {
+					found++;
+				}
+			}
+			return found;
+		}
+
+		/**
+		 * Records sampled work. Callers should batch observations (typically 64 probes) so a cold point lookup pays no
+		 * atomic operation. This method also provides the safe pressure boundary for optional shared arrays.
+		 */
+		public void observe(long work) {
+			if (work <= 0 || closed) {
+				return;
+			}
+			long total = recordWork(work);
+			promoteEligible(total);
+		}
+
+		/**
+		 * Records one complete query/view lifetime and schedules expensive work away from the query thread. Promotion
+		 * is deliberately forbidden after only one lifetime: a single short query may issue many probes but cannot
+		 * amortize a retained whole-partition decode. Callers batch all local probes and invoke this once from their
+		 * idempotent close.
+		 */
+		public void observeQuery(long work, long lifetimeId, Executor executor) {
+			Objects.requireNonNull(executor, "executor");
+			if (work <= 0 || lifetimeId <= 0 || closed) {
+				return;
+			}
+			recordLifetime(lifetimeId);
+			long total = recordWork(work);
+			if (!multipleObservedLifetimes.get() || !promotionNeeded(total)
+					|| !promotionScheduled.compareAndSet(false, true)) {
+				return;
+			}
+			try {
+				executor.execute(() -> {
+					try {
+						if (!closed && multipleObservedLifetimes.get()) {
+							promoteEligible(observedProbes.get());
+						}
+					} finally {
+						promotionScheduled.set(false);
+					}
+				});
+			} catch (RejectedExecutionException rejected) {
+				promotionScheduled.set(false);
+			}
+		}
+
+		private void recordLifetime(long lifetimeId) {
+			long first = firstObservedLifetime.get();
+			if (first == 0) {
+				if (firstObservedLifetime.compareAndSet(0, lifetimeId)) {
+					return;
+				}
+				first = firstObservedLifetime.get();
+			}
+			if (first != lifetimeId) {
+				multipleObservedLifetimes.set(true);
+			}
+		}
+
+		private long recordWork(long work) {
+			long total = observedProbes.addAndGet(work);
+			SharedAccelerator current = accelerator;
+			DecodedNeighbors decoded = decodedNeighbors;
+			if ((decoded != null || current != null && current.claimedBytes() != 0)
+					&& (total & PRESSURE_SAMPLE_MASK) < work && CsfAdaptiveMemory.underPressure()) {
+				dropOptional(current);
+			}
+			return total;
+		}
+
+		private boolean promotionNeeded(long total) {
+			SharedAccelerator current = accelerator;
+			return (current == null && !promotionRefused && total >= analysisAt)
+					|| (current != null && decodedNeighbors == null && !decodedPermanentlyRefused
+							&& total >= decodedRetryAt);
+		}
+
+		private void promoteEligible(long total) {
+			SharedAccelerator current = accelerator;
+			if (current == null && !promotionRefused && total >= analysisAt) {
+				promote(total);
+				current = accelerator;
+			}
+			if (current != null && decodedNeighbors == null && !decodedPermanentlyRefused
+					&& total >= decodedRetryAt) {
+				promoteDecoded(total);
+			}
+		}
+
+		public boolean accelerated() {
+			return accelerator != null;
+		}
+
+		public String acceleratorKind() {
+			SharedAccelerator current = accelerator;
+			if (current == null) {
+				return "cold";
+			}
+			return decodedNeighbors == null ? current.kind() : current.kind() + "+decoded-neighbors";
+		}
+
+		public long observedProbes() {
+			return observedProbes.get();
+		}
+
+		public long observedLifetimes() {
+			return multipleObservedLifetimes.get() ? 2L : firstObservedLifetime.get() == 0 ? 0L : 1L;
+		}
+
+		private synchronized void promote(long observed) {
+			if (closed || accelerator != null || promotionRefused) {
+				return;
+			}
+			if (!analyzedSparse) {
+				Analysis analysis = analyze();
+				if (analysis.affine) {
+					accelerator = new AffineAccelerator(analysis.first, analysis.affineStride);
+					CsfAdaptiveMemory.recordPromotion();
+					return;
+				}
+				if (analysis.denseRange > 0 && tryDense(analysis)) {
+					return;
+				}
+				analyzedSparse = true;
+			}
+			if (observed >= exactAt && !tryExact()) {
+				promotionRefused = true;
+			}
+		}
+
+		private Analysis analyze() {
+			if (rowCount == 0) {
+				promotionRefused = true;
+				return Analysis.EMPTY;
+			}
+			KeyCursor cursor = new KeyCursor(owner, partition, false);
+			long first = 0;
+			long previous = 0;
+			long last = 0;
+			long affineStride = 0;
+			long differenceOr = 0;
+			long ordinal = 0;
+			boolean affine = true;
+			while (cursor.advance()) {
+				long key = cursor.key();
+				if (ordinal == 0) {
+					first = key;
+				} else {
+					long difference = key - previous;
+					if (difference == 0) {
+						throw new IllegalStateException("partition key cursor produced duplicate keys");
+					}
+					differenceOr |= difference;
+					if (ordinal == 1) {
+						affineStride = difference;
+					} else if (key != first + ordinal * affineStride) {
+						affine = false;
+					}
+				}
+				previous = key;
+				last = key;
+				ordinal++;
+			}
+			if (ordinal != rowCount) {
+				throw new IllegalStateException(
+						"partition analysis produced " + ordinal + " of " + rowCount + " rows");
+			}
+			if (rowCount == 1) {
+				return new Analysis(true, first, 0, 0, 0);
+			}
+			if (affine) {
+				return new Analysis(true, first, affineStride, 0, 0);
+			}
+			long unit = Long.lowestOneBit(differenceOr);
+			if (unit == 0) {
+				return new Analysis(false, first, 0, 0, 0);
+			}
+			long span = last - first;
+			if ((span & (unit - 1)) != 0) {
+				return new Analysis(false, first, 0, 0, 0);
+			}
+			long rangeMinusOne = Long.divideUnsigned(span, unit);
+			if (Long.compareUnsigned(rangeMinusOne, Integer.MAX_VALUE - 1L) > 0) {
+				return new Analysis(false, first, 0, 0, 0);
+			}
+			long range = rangeMinusOne + 1;
+			long maximumDenseRange = rowCount > Long.MAX_VALUE / DENSE_RANGE_FACTOR ? Long.MAX_VALUE
+					: rowCount * DENSE_RANGE_FACTOR;
+			if (range > maximumDenseRange) {
+				return new Analysis(false, first, 0, 0, 0);
+			}
+			return new Analysis(false, first, 0, unit, (int) range);
+		}
+
+		private boolean tryDense(Analysis analysis) {
+			int range = analysis.denseRange;
+			int words = (range + Long.SIZE - 1) >>> 6;
+			boolean shortRanks = rowCount <= 0xffffL;
+			long rankBytes = shortRanks ? CsfAdaptiveMemory.shortArrayBytes(words + 1)
+					: CsfAdaptiveMemory.intArrayBytes(words + 1);
+			long bytes = Math.addExact(CsfAdaptiveMemory.longArrayBytes(words), rankBytes);
+			long claim = CsfAdaptiveMemory.tryClaim(bytes);
+			if (claim == 0) {
+				return false;
+			}
+			long[] bits = CsfAdaptiveMemory.tryLongArray(null, words);
+			short[] shortPrefix = shortRanks ? CsfAdaptiveMemory.tryShortArray(null, words + 1) : null;
+			int[] intPrefix = shortRanks ? null : CsfAdaptiveMemory.tryIntArray(null, words + 1);
+			if (bits == null || shortRanks && shortPrefix == null || !shortRanks && intPrefix == null) {
+				CsfAdaptiveMemory.releaseClaim(claim);
+				return false;
+			}
+			try {
+				KeyCursor cursor = new KeyCursor(owner, partition, false);
+				int seen = 0;
+				while (cursor.advance()) {
+					long delta = cursor.key() - analysis.first;
+					if ((delta & (analysis.unit - 1)) != 0) {
+						throw new IllegalStateException("dense partition unit changed during materialization");
+					}
+					long normalized = Long.divideUnsigned(delta, analysis.unit);
+					if (Long.compareUnsigned(normalized, range) >= 0) {
+						throw new IllegalStateException("dense partition key exceeded its normalized range");
+					}
+					int position = (int) normalized;
+					long mask = 1L << position;
+					int word = position >>> 6;
+					if ((bits[word] & mask) != 0) {
+						throw new IllegalStateException("dense partition key duplicated its normalized position");
+					}
+					bits[word] |= mask;
+					seen++;
+				}
+				if (seen != rowCount) {
+					throw new IllegalStateException("dense partition materialized " + seen + " of " + rowCount);
+				}
+				int rank = 0;
+				for (int word = 0; word < words; word++) {
+					if (shortRanks) {
+						shortPrefix[word] = (short) rank;
+					} else {
+						intPrefix[word] = rank;
+					}
+					rank += Long.bitCount(bits[word]);
+				}
+				if (shortRanks) {
+					shortPrefix[words] = (short) rank;
+				} else {
+					intPrefix[words] = rank;
+				}
+				accelerator = new DenseAccelerator(analysis.first, analysis.unit, range, bits, shortPrefix,
+						intPrefix, claim);
+				CsfAdaptiveMemory.recordPromotion();
+				return true;
+			} catch (RuntimeException | Error failure) {
+				CsfAdaptiveMemory.releaseClaim(claim);
+				throw failure;
+			}
+		}
+
+		private boolean tryExact() {
+			/*
+			 * Even a one-page partition may own a very large neighbor row (rdf:type is the important example). The
+			 * shared exact table is not used by the ordinary scalar path; it is the immutable key-to-ordinal mapper
+			 * required before that hot row can be retained as a zero-copy decoded CSR. Keeping the old one-page skip
+			 * therefore prevented the root-domain allocation hotspot from ever reaching the decoded path.
+			 */
+			if (rowCount > Integer.MAX_VALUE) {
+				return false;
+			}
+			int count = (int) rowCount;
+			long requiredSlots = Math.max(2L, (long) count << 1);
+			if (requiredSlots > 1L << 30) {
+				return false;
+			}
+			int tableLength = 1;
+			while (tableLength < requiredSlots) {
+				tableLength <<= 1;
+			}
+			/*
+			 * Store the sorted ordinal rather than a physical page reference. This is both smaller and independent of
+			 * the partition's extent layout: a decoded CSR can now cover a hot one-page type directory whose rows spill
+			 * into continuation pages. Context consumers reconstruct the physical reference lazily through
+			 * referenceAtOrdinal(), while the neighbor-only generated path never needs it.
+			 */
+			boolean shortOrdinals = count <= 0x1_0000;
+			long ordinalBytes = shortOrdinals ? CsfAdaptiveMemory.shortArrayBytes(tableLength)
+					: CsfAdaptiveMemory.intArrayBytes(tableLength);
+			long bytes = Math.addExact(CsfAdaptiveMemory.longArrayBytes(tableLength), ordinalBytes);
+			long claim = CsfAdaptiveMemory.tryClaim(bytes);
+			if (claim == 0) {
+				return false;
+			}
+			long[] slotKeys = CsfAdaptiveMemory.tryLongArray(null, tableLength);
+			short[] shortSlotOrdinals = shortOrdinals ? CsfAdaptiveMemory.tryShortArray(null, tableLength) : null;
+			int[] intSlotOrdinals = shortOrdinals ? null : CsfAdaptiveMemory.tryIntArray(null, tableLength);
+			if (slotKeys == null || shortOrdinals && shortSlotOrdinals == null
+					|| !shortOrdinals && intSlotOrdinals == null) {
+				CsfAdaptiveMemory.releaseClaim(claim);
+				return false;
+			}
+			try {
+				KeyCursor cursor = new KeyCursor(owner, partition, false);
+				int ordinal = 0;
+				int mask = tableLength - 1;
+				while (cursor.advance()) {
+					if (ordinal >= count) {
+						throw new IllegalStateException("shared exact cursor exceeded its row count");
+					}
+					long key = cursor.key();
+					if (key == 0) {
+						throw new IllegalStateException("zero cannot be stored in the shared exact key table");
+					}
+					int slot = mixShared(key) & mask;
+					while (slotKeys[slot] != 0) {
+						slot = slot + 1 & mask;
+					}
+					slotKeys[slot] = key;
+					if (shortOrdinals) {
+						shortSlotOrdinals[slot] = (short) ordinal;
+					} else {
+						intSlotOrdinals[slot] = ordinal;
+					}
+					ordinal++;
+				}
+				if (ordinal != count) {
+					throw new IllegalStateException("shared exact cursor produced " + ordinal + " of " + count);
+				}
+				accelerator = new ExactAccelerator(slotKeys, shortSlotOrdinals, intSlotOrdinals, mask, claim);
+				CsfAdaptiveMemory.recordPromotion();
+				return true;
+			} catch (RuntimeException | Error failure) {
+				CsfAdaptiveMemory.releaseClaim(claim);
+				throw failure;
+			}
+		}
+
+		private synchronized void promoteDecoded(long observed) {
+			if (closed || decodedNeighbors != null || decodedPermanentlyRefused || observed < decodedRetryAt
+					|| accelerator == null) {
+				return;
+			}
+			// Every mapper now resolves directly to the sorted row ordinal, including irregular exact partitions.
+			// Physical page coordinates are reconstructed only for the uncommon context-reading fallback.
+			if (rowCount <= 0 || rowCount > Integer.MAX_VALUE) {
+				decodedPermanentlyRefused = true;
+				return;
+			}
+			long edgeCount = owner.partitionQuadCounts[partition];
+			if (edgeCount < 0 || edgeCount > Integer.MAX_VALUE) {
+				decodedPermanentlyRefused = true;
+				return;
+			}
+			int rows = (int) rowCount;
+			int edges = (int) edgeCount;
+			long bytes = Math.addExact(CsfAdaptiveMemory.intArrayBytes(rows + 1),
+					CsfAdaptiveMemory.longArrayBytes(edges));
+			long claim = CsfAdaptiveMemory.tryClaim(bytes);
+			if (claim == 0) {
+				decodedRetryAt = retryThreshold(observed, rowCount);
+				return;
+			}
+			int[] rowOffsets = CsfAdaptiveMemory.tryIntArray(null, rows + 1);
+			long[] neighbors = edges == 0 ? new long[0] : CsfAdaptiveMemory.tryLongArray(null, edges);
+			if (rowOffsets == null || edges != 0 && neighbors == null) {
+				CsfAdaptiveMemory.releaseClaim(claim);
+				decodedRetryAt = retryThreshold(observed, rowCount);
+				return;
+			}
+			try {
+				KeyCursor cursor = new KeyCursor(owner, partition, true);
+				int row = 0;
+				int edge = 0;
+				while (cursor.advance()) {
+					if (row >= rows) {
+						throw new IllegalStateException("decoded partition cursor exceeded its row count");
+					}
+					rowOffsets[row] = edge;
+					long runSize = cursor.edgeCount();
+					if (runSize < 0 || runSize > Integer.MAX_VALUE - edge) {
+						throw new IllegalStateException("decoded partition edge count exceeds int addressing");
+					}
+					int count = (int) runSize;
+					int copied = cursor.copyPairs(0, count, neighbors, edge, null, 0);
+					if (copied != count) {
+						throw new IllegalStateException(
+								"decoded partition copied " + copied + " of " + count + " neighbors");
+					}
+					edge += count;
+					row++;
+				}
+				if (row != rows || edge != edges) {
+					throw new IllegalStateException(
+							"decoded partition produced " + row + "/" + rows + " rows and " + edge + "/" + edges
+									+ " edges");
+				}
+				rowOffsets[rows] = edge;
+				decodedNeighbors = new DecodedNeighbors(accelerator, rowOffsets, neighbors, claim);
+				CsfAdaptiveMemory.recordPromotion();
+			} catch (RuntimeException | Error failure) {
+				CsfAdaptiveMemory.releaseClaim(claim);
+				throw failure;
+			}
+		}
+
+		private static long retryThreshold(long observed, long rows) {
+			long delay = Math.max(MIN_DECODE_PROBES, rows);
+			return observed > Long.MAX_VALUE - delay ? Long.MAX_VALUE : observed + delay;
+		}
+
+		private record DecodedNeighbors(SharedAccelerator mapper, int[] rowOffsets, long[] neighbors, long claim) {
+		}
+
+		private long referenceAtOrdinal(long ordinal) {
+			if (directOrdinalLayout) {
+				int page = Math.addExact(firstDirectoryPage,
+						Math.toIntExact(ordinal / CompactCsfPageFormat.MAX_ROWS_PER_PAGE));
+				int localRow = (int) (ordinal % CompactCsfPageFormat.MAX_ROWS_PER_PAGE);
+				return packLocalReference(page, localRow);
+			}
+			return owner.localReferenceAtOrdinal(partition, ordinal, null);
+		}
+
+		private void dropOptional(SharedAccelerator expected) {
+			synchronized (this) {
+				// Decoded run tokens can outlive the lookup call that produced them. Keep the immutable table until the
+				// base generation closes; global admission already bounds total retained decoded memory.
+				if (decodedNeighbors != null) {
+					return;
+				}
+				if (accelerator == expected && expected != null && expected.claimedBytes() != 0) {
+					accelerator = null;
+					promotionRefused = true;
+					CsfAdaptiveMemory.releaseClaim(expected.claimedBytes());
+				}
+			}
+		}
+
+		@Override
+		public synchronized void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			DecodedNeighbors decoded = decodedNeighbors;
+			decodedNeighbors = null;
+			if (decoded != null) {
+				CsfAdaptiveMemory.releaseClaim(decoded.claim);
+			}
+			SharedAccelerator current = accelerator;
+			accelerator = null;
+			if (current != null && current.claimedBytes() != 0) {
+				CsfAdaptiveMemory.releaseClaim(current.claimedBytes());
+			}
+		}
+
+		private interface SharedAccelerator {
+			long find(long key);
+
+			/** Sorted row ordinal for the key, or {@code -1} for a miss. */
+			long findOrdinal(long key);
+
+			long claimedBytes();
+
+			String kind();
+
+			default boolean affine() {
+				return false;
+			}
+
+			default long affineFirst() {
+				return 0;
+			}
+
+			default int affineShift() {
+				return -1;
+			}
+
+			default long affineMask() {
+				return 0;
+			}
+		}
+
+		private final class AffineAccelerator implements SharedAccelerator {
+			private final long first;
+			private final long stride;
+			private final int strideShift;
+			private final long strideMask;
+
+			private AffineAccelerator(long first, long stride) {
+				this.first = first;
+				this.stride = stride;
+				this.strideShift = stride != 0 && Long.bitCount(stride) == 1 ? Long.numberOfTrailingZeros(stride) : -1;
+				this.strideMask = strideShift >= 0 ? stride - 1 : 0;
+			}
+
+			@Override
+			public long find(long key) {
+				long ordinal = findOrdinal(key);
+				return ordinal < 0 ? 0 : referenceAtOrdinal(ordinal);
+			}
+
+			@Override
+			public long findOrdinal(long key) {
+				if (rowCount == 1) {
+					return key == first ? 0 : -1;
+				}
+				long delta = key - first;
+				long ordinal;
+				if (strideShift >= 0) {
+					if ((delta & strideMask) != 0) {
+						return -1;
+					}
+					ordinal = delta >>> strideShift;
+				} else {
+					if (Long.remainderUnsigned(delta, stride) != 0) {
+						return -1;
+					}
+					ordinal = Long.divideUnsigned(delta, stride);
+				}
+				return Long.compareUnsigned(ordinal, rowCount) < 0 && first + ordinal * stride == key ? ordinal : -1;
+			}
+
+			@Override
+			public boolean affine() {
+				return true;
+			}
+
+			@Override
+			public long affineFirst() {
+				return first;
+			}
+
+			@Override
+			public int affineShift() {
+				return strideShift;
+			}
+
+			@Override
+			public long affineMask() {
+				return strideMask;
+			}
+
+			@Override
+			public long claimedBytes() {
+				return 0;
+			}
+
+			@Override
+			public String kind() {
+				return "affine";
+			}
+		}
+
+		private final class DenseAccelerator implements SharedAccelerator {
+			private final long first;
+			private final long unit;
+			private final int unitShift;
+			private final int range;
+			private final long[] bits;
+			private final short[] shortPrefix;
+			private final int[] intPrefix;
+			private final long claim;
+
+			private DenseAccelerator(long first, long unit, int range, long[] bits, short[] shortPrefix,
+					int[] intPrefix, long claim) {
+				this.first = first;
+				this.unit = unit;
+				this.unitShift = Long.numberOfTrailingZeros(unit);
+				this.range = range;
+				this.bits = bits;
+				this.shortPrefix = shortPrefix;
+				this.intPrefix = intPrefix;
+				this.claim = claim;
+			}
+
+			@Override
+			public long find(long key) {
+				long ordinal = findOrdinal(key);
+				return ordinal < 0 ? 0 : referenceAtOrdinal(ordinal);
+			}
+
+			@Override
+			public long findOrdinal(long key) {
+				long delta = key - first;
+				if ((delta & (unit - 1)) != 0) {
+					return -1;
+				}
+				long normalized = delta >>> unitShift;
+				if (Long.compareUnsigned(normalized, range) >= 0) {
+					return -1;
+				}
+				int position = (int) normalized;
+				int word = position >>> 6;
+				long bit = 1L << position;
+				long occupied = bits[word];
+				if ((occupied & bit) == 0) {
+					return -1;
+				}
+				int rank = shortPrefix != null ? shortPrefix[word] & 0xffff : intPrefix[word];
+				rank += Long.bitCount(occupied & (bit - 1));
+				return rank;
+			}
+
+			@Override
+			public long claimedBytes() {
+				return claim;
+			}
+
+			@Override
+			public String kind() {
+				return "dense-rank";
+			}
+		}
+
+		private final class ExactAccelerator implements SharedAccelerator {
+			private final long[] slotKeys;
+			private final short[] shortSlotOrdinals;
+			private final int[] intSlotOrdinals;
+			private final int mask;
+			private final long claim;
+
+			private ExactAccelerator(long[] slotKeys, short[] shortSlotOrdinals, int[] intSlotOrdinals,
+					int mask, long claim) {
+				this.slotKeys = slotKeys;
+				this.shortSlotOrdinals = shortSlotOrdinals;
+				this.intSlotOrdinals = intSlotOrdinals;
+				this.mask = mask;
+				this.claim = claim;
+			}
+
+			@Override
+			public long find(long key) {
+				long ordinal = findOrdinal(key);
+				return ordinal < 0 ? 0 : referenceAtOrdinal(ordinal);
+			}
+
+			@Override
+			public long findOrdinal(long key) {
+				int slot = findSlot(key);
+				if (slot < 0) {
+					return -1;
+				}
+				return shortSlotOrdinals != null ? shortSlotOrdinals[slot] & 0xffffL : intSlotOrdinals[slot];
+			}
+
+			private int findSlot(long key) {
+				int slot = mixShared(key) & mask;
+				for (;;) {
+					long candidate = slotKeys[slot];
+					if (candidate == 0) {
+						return -1;
+					}
+					if (candidate == key) {
+						return slot;
+					}
+					slot = slot + 1 & mask;
+				}
+			}
+
+			@Override
+			public long claimedBytes() {
+				return claim;
+			}
+
+			@Override
+			public String kind() {
+				return "exact-slot-hash";
+			}
+		}
+
+		private static DirectOrdinalLayout directOrdinalLayout(ImmutablePagedQuadCsfIndex owner, int partition,
+				long rows) {
+			if (rows <= 0) {
+				return DirectOrdinalLayout.NONE;
+			}
+			long ordinal = 0;
+			int start = owner.partitionShardStarts[partition];
+			int end = start + owner.partitionShardCounts[partition];
+			int firstPage = start < end ? owner.shardFirstPageIds[start] : -1;
+			for (int shardIndex = start; shardIndex < end; shardIndex++) {
+				CsfShard shard = owner.shards[shardIndex];
+				for (int page = 0; page < shard.pageCount(); page++) {
+					int uniqueRows = shard.pageUniqueRows(page);
+					if (uniqueRows <= 0) {
+						return DirectOrdinalLayout.NONE;
+					}
+					int expected = (int) Math.min(CompactCsfPageFormat.MAX_ROWS_PER_PAGE, rows - ordinal);
+					if (uniqueRows != expected) {
+						return DirectOrdinalLayout.NONE;
+					}
+					ordinal += uniqueRows;
+				}
+			}
+			return ordinal == rows ? new DirectOrdinalLayout(true, firstPage) : DirectOrdinalLayout.NONE;
+		}
+
+		private static long analysisThreshold(long rows) {
+			if (rows <= 0) {
+				return Long.MAX_VALUE;
+			}
+			long scaled = Math.max(MIN_ANALYSIS_PROBES, rows >>> 3);
+			return Math.min(MAX_ANALYSIS_PROBES, scaled);
+		}
+
+		private static long decodeThreshold(long rows) {
+			if (rows <= 0) {
+				return Long.MAX_VALUE;
+			}
+			return Math.max(MIN_DECODE_PROBES, rows);
+		}
+
+		private static long exactThreshold(long rows) {
+			if (rows <= 0) {
+				return Long.MAX_VALUE;
+			}
+			long scaled = rows > Long.MAX_VALUE / 2 ? Long.MAX_VALUE : rows * 2;
+			return Math.max(MIN_EXACT_PROBES, scaled);
+		}
+
+		private static int mixShared(long value) {
+			long mixed = value * 0x9E3779B97F4A7C15L;
+			return (int) (mixed ^ mixed >>> 32);
+		}
+
+		private record Analysis(boolean affine, long first, long affineStride, long unit, int denseRange) {
+			private static final Analysis EMPTY = new Analysis(false, 0, 0, 0, 0);
+		}
+
+		private record DirectOrdinalLayout(boolean direct, int firstPage) {
+			private static final DirectOrdinalLayout NONE = new DirectOrdinalLayout(false, -1);
 		}
 	}
 
@@ -2881,6 +4064,19 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		public long key() {
 			ensureReady();
 			return key;
+		}
+
+		/** Bulk key-only traversal; keeps page and row state in one concrete loop for generated root scans. */
+		public int fillKeys(long[] target, int targetOffset, int maximum) {
+			Objects.requireNonNull(target, "target");
+			if (targetOffset < 0 || maximum < 0 || targetOffset > target.length - maximum) {
+				throw new IllegalArgumentException("invalid key batch target range");
+			}
+			int copied = 0;
+			while (copied < maximum && advance()) {
+				target[targetOffset + copied++] = key;
+			}
+			return copied;
 		}
 
 		/** Local u40 page/row coordinate suitable for {@link ImmutablePagedQuadCsfIndex#packHandle(long)}. */

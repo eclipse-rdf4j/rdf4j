@@ -24,6 +24,9 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 final class LmdbAdjacencyReadView implements AutoCloseable {
 
+	private static final AtomicLong NEXT_LIFETIME_ID = new AtomicLong();
+
+	private final long lifetimeId;
 	private final long snapshotRevision;
 	private final LmdbAdjacencyPublishedState state; // null for a fallback view
 	private final LmdbAdjacencyMetrics.FallbackReason fallbackReason; // null for an exact view
@@ -31,7 +34,8 @@ final class LmdbAdjacencyReadView implements AutoCloseable {
 	private final AtomicLong leases = new AtomicLong(1);
 
 	private LmdbAdjacencyReadView(long snapshotRevision, LmdbAdjacencyPublishedState state,
-			LmdbAdjacencyMetrics.FallbackReason fallbackReason, Runnable onFullyReleased) {
+			LmdbAdjacencyMetrics.FallbackReason fallbackReason, Runnable onFullyReleased, long lifetimeId) {
+		this.lifetimeId = lifetimeId > 0 ? lifetimeId : nextLifetimeId();
 		this.snapshotRevision = snapshotRevision;
 		this.state = state;
 		this.fallbackReason = fallbackReason;
@@ -41,11 +45,25 @@ final class LmdbAdjacencyReadView implements AutoCloseable {
 	/** An exact view; the caller must already hold one retained reference on {@code state} and transfers it here. */
 	static LmdbAdjacencyReadView exact(long snapshotRevision, LmdbAdjacencyPublishedState state,
 			Runnable onFullyReleased) {
-		return new LmdbAdjacencyReadView(snapshotRevision, state, null, onFullyReleased);
+		return exact(snapshotRevision, state, onFullyReleased, 0L);
+	}
+
+	static LmdbAdjacencyReadView exact(long snapshotRevision, LmdbAdjacencyPublishedState state,
+			Runnable onFullyReleased, long lifetimeId) {
+		return new LmdbAdjacencyReadView(snapshotRevision, state, null, onFullyReleased, lifetimeId);
 	}
 
 	static LmdbAdjacencyReadView fallback(long snapshotRevision, LmdbAdjacencyMetrics.FallbackReason reason) {
-		return new LmdbAdjacencyReadView(snapshotRevision, null, reason, null);
+		return fallback(snapshotRevision, reason, 0L);
+	}
+
+	static LmdbAdjacencyReadView fallback(long snapshotRevision, LmdbAdjacencyMetrics.FallbackReason reason,
+			long lifetimeId) {
+		return new LmdbAdjacencyReadView(snapshotRevision, null, reason, null, lifetimeId);
+	}
+
+	long lifetimeId() {
+		return lifetimeId;
 	}
 
 	long snapshotRevision() {
@@ -121,6 +139,14 @@ final class LmdbAdjacencyReadView implements AutoCloseable {
 			}
 			current = leases.get();
 		}
+	}
+
+	private static long nextLifetimeId() {
+		long id = NEXT_LIFETIME_ID.incrementAndGet();
+		if (id == 0) {
+			id = NEXT_LIFETIME_ID.incrementAndGet();
+		}
+		return id;
 	}
 
 	@Override

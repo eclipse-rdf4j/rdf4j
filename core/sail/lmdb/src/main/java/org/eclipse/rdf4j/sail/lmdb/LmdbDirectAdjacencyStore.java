@@ -75,6 +75,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private static final ThreadLocal<Boolean> BASE_FORMAT_OVERRIDE = new ThreadLocal<>();
 	/** Kernel adjacency views served; one increment per successful operator bind, never per row lookup. */
 	static final AtomicLong KERNEL_VIEWS_SERVED = new AtomicLong();
+	/** Subset of {@link #KERNEL_VIEWS_SERVED} bound directly to a base-owned decoded neighbor CSR. */
+	static final AtomicLong DECODED_KERNEL_VIEWS_SERVED = new AtomicLong();
 
 	/**
 	 * Maintenance lifecycle (closed enum from the plan); drives work and metrics, never read by the row resolver.
@@ -439,6 +441,51 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				throw failure;
 			}
 		});
+	}
+
+	/**
+	 * Schedules optional immutable-base acceleration without making an expected admission refusal or a stale-generation
+	 * race transition the store's maintenance state. The task itself is synchronized with base retirement by the
+	 * base-owned {@code SharedPartitionLookup}; close rejects new work and queued tasks observe the closed lookup.
+	 */
+	private void scheduleAdaptiveAcceleration(Runnable acceleration) {
+		if (closed) {
+			return;
+		}
+		try {
+			maintenanceExecutor.execute(() -> {
+				if (closed) {
+					return;
+				}
+				try {
+					acceleration.run();
+				} catch (RuntimeException | Error failure) {
+					logger.warn("Optional direct-adjacency acceleration failed; retaining the exact packed path",
+							failure);
+				}
+			});
+		} catch (RejectedExecutionException ignored) {
+			// Store shutdown won the race. The packed representation remains authoritative and exact.
+		}
+	}
+
+	/** Waits until every adaptive task submitted before this call has completed. Test-only synchronization point. */
+	void awaitAdaptiveAccelerationForTest() {
+		Future<?> barrier;
+		try {
+			barrier = maintenanceExecutor.submit(() -> {
+			});
+		} catch (RejectedExecutionException closedExecutor) {
+			return;
+		}
+		try {
+			barrier.get(30, TimeUnit.SECONDS);
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException("interrupted while awaiting adaptive acceleration", interrupted);
+		} catch (ExecutionException | TimeoutException failure) {
+			throw new IllegalStateException("adaptive acceleration did not complete", failure);
+		}
 	}
 
 	private void awaitSynchronousMaintenance(Future<?> future, String operation) {
@@ -1714,25 +1761,31 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	@Override
 	public LmdbAdjacencyReadView acquire(long snapshotRevision) {
+		return acquire(snapshotRevision, 0L);
+	}
+
+	/** Same-snapshot parallel siblings inherit the parent query lifetime for cross-query promotion accounting. */
+	LmdbAdjacencyReadView acquire(long snapshotRevision, long lifetimeId) {
 		activeAcquisitionsAndViews.incrementAndGet();
 		boolean transferredToView = false;
 		try {
 			throwIfStrictMaintenanceFailed();
 			if (closed) {
-				return fallback(snapshotRevision, FallbackReason.DISABLED);
+				return fallback(snapshotRevision, FallbackReason.DISABLED, lifetimeId);
 			}
 			if (options.memoryRefused()) {
-				return fallback(snapshotRevision, FallbackReason.MEMORY_REFUSED);
+				return fallback(snapshotRevision, FallbackReason.MEMORY_REFUSED, lifetimeId);
 			}
 			if (writeTransactionBlocksAdjacency()) {
-				return fallback(snapshotRevision, FallbackReason.READ_YOUR_WRITES);
+				return fallback(snapshotRevision, FallbackReason.READ_YOUR_WRITES, lifetimeId);
 			}
 			for (int attempt = 0; attempt < 3; attempt++) {
 				LmdbAdjacencyPublishedState state = published.get();
 				if (state.servingState() != AdjacencyServingState.ROW_EXACT || state.base() == null) {
 					return fallback(snapshotRevision,
 							state.servingState() == AdjacencyServingState.CLOSED ? FallbackReason.DISABLED
-									: FallbackReason.BUILDING);
+									: FallbackReason.BUILDING,
+							lifetimeId);
 				}
 				if (!state.tryRetain()) {
 					continue;
@@ -1741,21 +1794,21 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				if (closed || published.get() != state) {
 					state.release();
 					if (closed) {
-						return fallback(snapshotRevision, FallbackReason.DISABLED);
+						return fallback(snapshotRevision, FallbackReason.DISABLED, lifetimeId);
 					}
 					continue;
 				}
 				if (emergencyGapFromRevision <= snapshotRevision) {
 					state.release();
-					return fallback(snapshotRevision, FallbackReason.REVISION_GAP);
+					return fallback(snapshotRevision, FallbackReason.REVISION_GAP, lifetimeId);
 				}
 				if (snapshotRevision < state.minSnapshotRevision()) {
 					state.release();
-					return fallback(snapshotRevision, FallbackReason.SNAPSHOT_BEFORE_BASE);
+					return fallback(snapshotRevision, FallbackReason.SNAPSHOT_BEFORE_BASE, lifetimeId);
 				}
 				if (snapshotRevision > state.horizonRevision() || state.gapFromRevision() <= snapshotRevision) {
 					state.release();
-					return fallback(snapshotRevision, FallbackReason.REVISION_GAP);
+					return fallback(snapshotRevision, FallbackReason.REVISION_GAP, lifetimeId);
 				}
 				Runnable viewHook = beforeExactViewReturnForTest;
 				try {
@@ -1763,7 +1816,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 						viewHook.run();
 					}
 					LmdbAdjacencyReadView view = LmdbAdjacencyReadView.exact(snapshotRevision, state,
-							this::onViewClosed);
+							this::onViewClosed, lifetimeId);
 					transferredToView = true;
 					return view;
 				} catch (RuntimeException | Error failure) {
@@ -1771,7 +1824,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					throw failure;
 				}
 			}
-			return fallback(snapshotRevision, FallbackReason.STATE_CHURN);
+			return fallback(snapshotRevision, FallbackReason.STATE_CHURN, lifetimeId);
 		} finally {
 			if (!transferredToView) {
 				releaseAcquisitionOrView();
@@ -1780,8 +1833,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	private LmdbAdjacencyReadView fallback(long snapshotRevision, FallbackReason reason) {
+		return fallback(snapshotRevision, reason, 0L);
+	}
+
+	private LmdbAdjacencyReadView fallback(long snapshotRevision, FallbackReason reason, long lifetimeId) {
 		metrics.recordFallback(reason);
-		return LmdbAdjacencyReadView.fallback(snapshotRevision, reason);
+		return LmdbAdjacencyReadView.fallback(snapshotRevision, reason, lifetimeId);
 	}
 
 	/** Called by an exact view when its last lease releases. */
@@ -2356,7 +2413,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	NativeLmdbQuerySource.NativeAdjacency adjacency(LmdbAdjacencyReadView view, long predicate,
 			boolean bySubject, boolean explicit, AdjacencyAccessObserver observer) {
-		LmdbDirectNativeAdjacency adjacency = bindCompleteAdjacency(view, predicate, bySubject, explicit);
+		NativeLmdbQuerySource.NativeAdjacency adjacency = bindCompleteNativeAdjacency(view, predicate, bySubject,
+				explicit);
 		if (adjacency == null) {
 			observe(observer, false, completeAdjacencyDeclineReason(view, predicate),
 					bySubject ? StatementOrder.S : StatementOrder.O,
@@ -2367,12 +2425,54 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		metrics.recordHit();
 		if (LmdbAdjacencyMetrics.HOT_COUNTERS) {
 			KERNEL_VIEWS_SERVED.incrementAndGet();
+			if (adjacency instanceof LmdbDecodedNativeAdjacency) {
+				DECODED_KERNEL_VIEWS_SERVED.incrementAndGet();
+			}
 		}
-		observe(observer, true, "COMPLETE_ADJACENCY_VIEW",
+		observe(observer, true,
+				adjacency instanceof LmdbDecodedNativeAdjacency ? "COMPLETE_DECODED_ADJACENCY_VIEW"
+						: "COMPLETE_ADJACENCY_VIEW",
 				bySubject ? StatementOrder.S : StatementOrder.O,
 				NativeLmdbQuerySource.UNKNOWN_ID, predicate, NativeLmdbQuerySource.UNKNOWN_ID,
 				NativeLmdbQuerySource.UNKNOWN_ID);
 		return adjacency;
+	}
+
+	/**
+	 * Binds the concrete decoded CSR only when it is already installed and semantically complete for this snapshot. The
+	 * type choice happens before any anonymous run-cursor adapter is created, allowing generated kernels to select
+	 * their concrete {@code bindSize/neighborAtInt} method at bind time.
+	 */
+	private NativeLmdbQuerySource.NativeAdjacency bindCompleteNativeAdjacency(LmdbAdjacencyReadView view,
+			long predicate, boolean bySubject, boolean explicit) {
+		long basePredicateOrdinal = completeBasePredicateOrdinal(view, predicate);
+		if (basePredicateOrdinal == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
+			return null;
+		}
+		int plane = plane(bySubject, explicit);
+		LmdbAdjacencyPublishedState state = view.state();
+		LmdbInMemoryAdjacencyIndex base = state.base();
+		if (basePredicateOrdinal >= 0 && base.usesPagedCsf()
+				&& !hasApplicableOverlay(state.overlays(), view.snapshotRevision())) {
+			ImmutablePagedQuadCsfIndex csf = base.csfBase();
+			ImmutablePagedQuadCsfIndex.SharedPartitionLookup shared = csf
+					.sharedPartitionLookupIfPresent(basePredicateOrdinal, plane);
+			if (shared != null && shared.neighborsDecoded()) {
+				LmdbAdjacencyKeyIndex keys = base.keyIndex(basePredicateOrdinal, plane);
+				if (keys != null) {
+					return new LmdbDecodedNativeAdjacency(csf, shared, keys);
+				}
+			}
+		}
+		return bindRetainedAdjacency(view, predicate, basePredicateOrdinal, bySubject, explicit);
+	}
+
+	private static boolean hasApplicableOverlay(LmdbAdjacencyOverlaySet overlays, long snapshotRevision) {
+		if (overlays == null || overlays.generationCount() == 0) {
+			return false;
+		}
+		// Generations are revision ordered, so the first one decides whether any version is visible to this snapshot.
+		return overlays.generation(0).revision() <= snapshotRevision;
 	}
 
 	/**
@@ -2570,7 +2670,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			sources[i + 1] = overlays.generation(i).catalog();
 		}
 		return new LmdbDirectNativeAdjacency(view, predicate, basePredicateOrdinal, plane(bySubject, explicit),
-				sources, state.contextCatalog());
+				sources, state.contextCatalog(), this::scheduleAdaptiveAcceleration);
 	}
 
 	private long completeBasePredicateOrdinal(LmdbAdjacencyReadView view, long predicate) {

@@ -849,6 +849,52 @@ final class LmdbNativeKernelIr {
 		}
 	}
 
+	/**
+	 * Fast comparison of one inlined xsd:date id against an inlined date constant. Equal-timezone dates compare from
+	 * their packed year/month/day fields; every partial-order or non-date case falls through to the registered exact
+	 * value hook, preserving SPARQL error and timezone semantics.
+	 */
+	static final class FilterDateCompare extends Node {
+		final int filterId;
+		final Operand value;
+		final int constantIndex;
+		final int op;
+		final boolean constantOnLeft;
+		final boolean checkBound;
+
+		FilterDateCompare(int filterId, Operand value, int constantIndex, int op, boolean constantOnLeft,
+				boolean checkBound) {
+			this.filterId = filterId;
+			this.value = value;
+			this.constantIndex = constantIndex;
+			this.op = op;
+			this.constantOnLeft = constantOnLeft;
+			this.checkBound = checkBound;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("fd(")
+					.append(filterId)
+					.append(',')
+					.append(value.token())
+					.append(",c")
+					.append(constantIndex)
+					.append(',')
+					.append(op)
+					.append(constantOnLeft ? ",l" : ",r")
+					.append(checkBound ? ",b" : "")
+					.append(");");
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.hooks = true;
+			requirements.operand(value);
+			requirements.constantIndex(constantIndex);
+		}
+	}
+
 	/** Value-tier guard: delegates to {@code hooks.testFilter} with up to three argument ids. */
 	static final class FilterValue extends Node {
 		final int filterId;
@@ -1720,6 +1766,22 @@ final class LmdbNativeKernelIr {
 	}
 
 	/**
+	 * Enables the set-semantics aggregate rewrite. A global {@code COUNT(DISTINCT root)} whose root comes from a unique
+	 * adjacency key domain does not need to materialize the multiplicative suffix of the pipeline: the root contributes
+	 * exactly once iff that suffix has at least one surviving row. The rewrite converts the suffix to an {@link Exists}
+	 * witness and the aggregate to {@code COUNT(*)}. This is the important whole-stage counterpart to page lookup
+	 * tuning: it removes whole probe loops instead of making every repeated probe a little cheaper.
+	 *
+	 * Read at kernel construction and represented by the transformed shape itself, so enabled and disabled kernels can
+	 * never collide in the Janino cache. The kill switch exists for differential testing.
+	 */
+	static final String DISTINCT_ROOT_EXISTS_PROPERTY = "rdf4j.lmdb.janinoCodegen.distinctRootExists";
+
+	static boolean distinctRootExistsEnabled() {
+		return !"false".equals(System.getProperty(DISTINCT_ROOT_EXISTS_PROPERTY));
+	}
+
+	/**
 	 * Enables compiled predicate enumeration and dynamic predicate probing — the lowering of patterns whose predicate
 	 * is a variable. Off by default, as its own decision separate from whether the underlying projection is built at
 	 * all: this switch costs compiler surface and risk, the construction switch costs build time and memory, and
@@ -1771,7 +1833,8 @@ final class LmdbNativeKernelIr {
 	/** True for the row-level guard nodes, which neither produce a column nor branch the pipeline. */
 	static boolean isFilter(Node node) {
 		return node instanceof FilterCompareId || node instanceof FilterInConstants
-				|| node instanceof FilterRangeUnsigned || node instanceof FilterValue
+				|| node instanceof FilterRangeUnsigned || node instanceof FilterDateCompare
+				|| node instanceof FilterValue
 				|| node instanceof FilterResidual;
 	}
 
@@ -1798,17 +1861,20 @@ final class LmdbNativeKernelIr {
 			if (columnCount < 0 || columnCount > 64) {
 				throw new IllegalArgumentException("column count out of range: " + columnCount);
 			}
-			this.pipeline = List.copyOf(pipeline);
+			OptimizedKernel optimized = distinctRootExistsEnabled()
+					? optimizeDistinctRootExists(pipeline, terminal)
+					: new OptimizedKernel(List.copyOf(pipeline), terminal);
+			this.pipeline = optimized.pipeline;
 			this.columnCount = columnCount;
-			this.terminal = terminal;
+			this.terminal = optimized.terminal;
 			this.requirements = new Requirements();
 			for (Node node : this.pipeline) {
 				node.requirements(requirements);
 			}
-			terminal.requirements(requirements);
+			this.terminal.requirements(requirements);
 			validateColumns();
 			this.vectorTailIndex = vectorTailEnabled() ? findVectorTail(this.pipeline) : -1;
-			this.resumable = resumableEnabled() && isResumable(this.pipeline, terminal);
+			this.resumable = resumableEnabled() && isResumable(this.pipeline, this.terminal);
 			StringBuilder key = new StringBuilder("ir1:");
 			if (vectorTailIndex >= 0) {
 				key.append("vt").append(vectorTailIndex).append(';');
@@ -1820,8 +1886,165 @@ final class LmdbNativeKernelIr {
 			for (Node node : this.pipeline) {
 				node.key(key);
 			}
-			terminal.key(key);
+			this.terminal.key(key);
 			this.shapeKey = key.toString();
+		}
+
+		/**
+		 * Converts the dominant aggregate shape
+		 *
+		 * <pre>
+		 * unique root keys -> multiplicative probe/OPTIONAL chain -> COUNT(DISTINCT root)
+		 * </pre>
+		 *
+		 * to
+		 *
+		 * <pre>
+		 * unique root keys -> EXISTS(chain) -> COUNT(*)
+		 * </pre>
+		 *
+		 * The root key cursor is set-valued. The witness short-circuits on the first complete row, so a root is handed
+		 * to the accumulator at most once. This is exactly the information {@code COUNT(DISTINCT root)} needs. A final
+		 * OPTIONAL whose fresh value is otherwise dead is removed first: OPTIONAL always emits at least one row and can
+		 * therefore change only multiplicity, which the distinct-root consumer cannot observe.
+		 *
+		 * The other important canonicalization is OPTIONAL-plus-rejecting-filter. A multi-pattern OPTIONAL lowers to a
+		 * {@link LeftGroup}; when an immediately following filter reads one of the arm's columns, the null-extended arm
+		 * is necessarily rejected. In a set consumer that pair is an ordinary existential witness, and folding it
+		 * removes both null-arm bookkeeping and every row after the first passing match.
+		 */
+		private static OptimizedKernel optimizeDistinctRootExists(List<Node> original, Terminal originalTerminal) {
+			if (!(originalTerminal instanceof Aggregate aggregate) || aggregate.groupCols.length != 0
+					|| aggregate.outputs.length == 0 || original.isEmpty()) {
+				return new OptimizedKernel(List.copyOf(original), originalTerminal);
+			}
+
+			int rootCol = -1;
+			for (AggregateOutput output : aggregate.outputs) {
+				if (output.kind != AGG_COUNT_DISTINCT || output.hookDistinct) {
+					return new OptimizedKernel(List.copyOf(original), originalTerminal);
+				}
+				if (rootCol < 0) {
+					rootCol = output.col;
+				} else if (rootCol != output.col) {
+					return new OptimizedKernel(List.copyOf(original), originalTerminal);
+				}
+			}
+
+			Node root = original.get(0);
+			if (!(root instanceof EnumerateAdjKeys keys) || keys.valueCol >= 0 || keys.keyCol != rootCol) {
+				return new OptimizedKernel(List.copyOf(original), originalTerminal);
+			}
+
+			ArrayList<Node> suffix = new ArrayList<>(original.subList(1, original.size()));
+			// A dead trailing OPTIONAL preserves at least one row and only changes multiplicity.
+			while (!suffix.isEmpty()) {
+				Node tail = suffix.get(suffix.size() - 1);
+				if (tail instanceof LeftProbe left && left.valueCol != rootCol) {
+					suffix.remove(suffix.size() - 1);
+					continue;
+				}
+				if (tail instanceof BindAlias alias && alias.dstCol != rootCol) {
+					suffix.remove(suffix.size() - 1);
+					continue;
+				}
+				break;
+			}
+
+			// OPTIONAL arm + outside FILTER that reads an arm column: its null arm cannot survive, so it is an EXISTS.
+			if (!suffix.isEmpty() && suffix.get(0)instanceof LeftGroup group) {
+				BitSet armColumns = new BitSet();
+				group.produced(armColumns);
+				int filters = 0;
+				boolean rejectsNullArm = false;
+				while (1 + filters < suffix.size() && isFilter(suffix.get(1 + filters))) {
+					Node filter = suffix.get(1 + filters);
+					rejectsNullArm |= readsAny(filter, armColumns);
+					filters++;
+				}
+				if (filters > 0 && rejectsNullArm) {
+					ArrayList<Node> witness = new ArrayList<>(group.arm.size() + filters);
+					witness.addAll(group.arm);
+					witness.addAll(suffix.subList(1, 1 + filters));
+					ArrayList<Node> folded = new ArrayList<>(1 + suffix.size() - 1 - filters);
+					folded.add(new Exists(false, witness));
+					folded.addAll(suffix.subList(1 + filters, suffix.size()));
+					suffix = folded;
+				}
+			}
+
+			// The boolean witness emitter intentionally excludes LeftGroup. Everything else accepted here either guards
+			// or existentially expands the current root and never rebinds it.
+			for (Node node : suffix) {
+				BitSet produced = new BitSet();
+				node.produced(produced);
+				if (produced.get(rootCol) || !existentialSuffixNode(node)) {
+					return new OptimizedKernel(List.copyOf(original), originalTerminal);
+				}
+			}
+
+			ArrayList<Node> rewritten = new ArrayList<>(2);
+			rewritten.add(root);
+			if (!suffix.isEmpty()) {
+				if (suffix.size() == 1 && suffix.get(0)instanceof Exists exists && !exists.negated) {
+					rewritten.add(exists);
+				} else {
+					rewritten.add(new Exists(false, suffix));
+				}
+			}
+			AggregateOutput[] outputs = new AggregateOutput[aggregate.outputs.length];
+			for (int i = 0; i < outputs.length; i++) {
+				outputs[i] = AggregateOutput.countStar();
+			}
+			Aggregate terminal = new Aggregate(aggregate.groupCols, outputs, aggregate.having, aggregate.mods);
+			return new OptimizedKernel(List.copyOf(rewritten), terminal);
+		}
+
+		private static boolean existentialSuffixNode(Node node) {
+			return node instanceof Probe || node instanceof ProbeClose || node instanceof LeftProbe
+					|| node instanceof Intersect || node instanceof FilterCompareId || node instanceof FilterInConstants
+					|| node instanceof FilterRangeUnsigned || node instanceof FilterDateCompare
+					|| node instanceof FilterValue
+					|| node instanceof FilterResidual || node instanceof BindAlias || node instanceof Exists
+					|| node instanceof Union;
+		}
+
+		private static boolean readsAny(Node node, BitSet columns) {
+			if (node instanceof FilterCompareId filter) {
+				return reads(filter.left, columns) || reads(filter.right, columns);
+			}
+			if (node instanceof FilterInConstants filter) {
+				return reads(filter.value, columns);
+			}
+			if (node instanceof FilterRangeUnsigned filter) {
+				return reads(filter.value, columns);
+			}
+			if (node instanceof FilterDateCompare filter) {
+				return reads(filter.value, columns);
+			}
+			if (node instanceof FilterValue filter) {
+				for (Operand operand : filter.args) {
+					if (reads(operand, columns)) {
+						return true;
+					}
+				}
+				return false;
+			}
+			if (node instanceof FilterResidual filter) {
+				for (Operand operand : filter.args) {
+					if (reads(operand, columns)) {
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		private static boolean reads(Operand operand, BitSet columns) {
+			return operand.kind == Operand.COL && columns.get(operand.index);
+		}
+
+		private record OptimizedKernel(List<Node> pipeline, Terminal terminal) {
 		}
 
 		/**
