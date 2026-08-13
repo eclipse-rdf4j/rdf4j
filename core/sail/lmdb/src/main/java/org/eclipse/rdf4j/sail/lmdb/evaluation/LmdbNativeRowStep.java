@@ -489,7 +489,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		// rows that the consumer still needs for duplicate elimination.
 		if (orderSlots.length != 0 && !distinct) {
 			try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter
-					.forExpr(originalExpr)) {
+					.forExpr(originalExpr, source)) {
 				LmdbNativeWork work = arg.estimateWork(row, row.boundMask());
 				String factorizedTag = emitCap == Long.MAX_VALUE
 						? LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_SORT
@@ -965,7 +965,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		boolean correlatedEntry = (arg.producedMask() & row.boundMask()) != 0L;
 		int[] retainedSlots = orderSlots.length == 0 ? sourceSlots : sortLayout.liveToPlan;
 		try (LmdbNativeStrategyArbiter<NativeUnorderedInput> arbiter = LmdbNativeStrategyArbiter
-				.forSlice(originalExpr, consumableRows())) {
+				.forSlice(originalExpr, consumableRows(), source)) {
 			if (LmdbNativeLeapfrogJoin.canOpen(arg, row.boundMask())) {
 				arbiter.offer(() -> inputProposal(
 						() -> acceptWcoj(row, LmdbNativeLeapfrogJoin.tryOpen(arg, row), multiJoin),
@@ -987,10 +987,12 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 					estimatedRows(row)));
 
 			long startedNanos = System.nanoTime();
-			NativeUnorderedInput selected = arbiter.select();
-			if (selected == null) {
+			LmdbNativeStrategySelection<NativeUnorderedInput> selection = arbiter.selectWithObservation();
+			if (selection == null) {
 				throw new IllegalStateException("native nested-loop fallback declined");
 			}
+			NativeUnorderedInput selected = selection.value();
+			selected.observeOnClose(selection);
 			selected.calibrateOnClose(arbiter.winningTag(), arbiter.winningPredictedWork(), startedNanos);
 			return selected;
 		}
@@ -1718,9 +1720,11 @@ final class NativeUnorderedInput implements AutoCloseable {
 	LmdbNativeAttemptMetrics factorizedAttemptMetrics;
 	boolean materializedRowsClaimed;
 	boolean closed;
+	boolean exhausted;
 	String calibrationTag;
 	double calibrationWork = Double.NaN;
 	long calibrationStartedNanos;
+	LmdbNativeStrategySelection<NativeUnorderedInput> adaptiveSelection;
 
 	private NativeUnorderedInput(RowState row) {
 		this.row = row;
@@ -1766,6 +1770,25 @@ final class NativeUnorderedInput implements AutoCloseable {
 		this.calibrationStartedNanos = startedNanos;
 	}
 
+	/** Transfers ownership of the selected strategy's observation to this streaming input. */
+	void observeOnClose(LmdbNativeStrategySelection<NativeUnorderedInput> selection) {
+		if (adaptiveSelection != null) {
+			throw new IllegalStateException("adaptive observation already attached");
+		}
+		adaptiveSelection = selection;
+	}
+
+	void firstOutput() {
+		LmdbNativeStrategySelection<NativeUnorderedInput> selection = adaptiveSelection;
+		if (selection != null && selection.observation() != null) {
+			selection.observation().firstOutput();
+		}
+	}
+
+	void markExhausted() {
+		exhausted = true;
+	}
+
 	void commitFactorizedAttemptIfEngaged() {
 		LmdbNativeFactorizedRows factorized = factorizedAttempt;
 		if (factorized == null || !factorized.engagementRecorded) {
@@ -1779,26 +1802,53 @@ final class NativeUnorderedInput implements AutoCloseable {
 
 	@Override
 	public void close() {
+		close(exhausted);
+	}
+
+	void close(boolean completed) {
 		if (closed) {
 			return;
 		}
 		closed = true;
+		LmdbNativeStrategySelection<NativeUnorderedInput> selection = adaptiveSelection;
+		adaptiveSelection = null;
+		boolean cleanupSucceeded = false;
 		try {
 			if (batchCursor != null) {
 				batchCursor.close();
 			}
-		} finally {
-			if (cursor != null) {
-				cursor.close();
+			cleanupSucceeded = true;
+		} catch (RuntimeException | Error failure) {
+			if (selection != null) {
+				selection.failed(failure);
 			}
-			commitFactorizedAttemptIfEngaged();
-			batchCursor = null;
-			cursor = null;
-			batch = null;
-			if (calibrationTag != null) {
-				LmdbNativeCostCalibration.record(calibrationTag, calibrationWork,
-						System.nanoTime() - calibrationStartedNanos);
-				calibrationTag = null;
+			throw failure;
+		} finally {
+			try {
+				if (cursor != null) {
+					cursor.close();
+				}
+				commitFactorizedAttemptIfEngaged();
+				if (selection != null && cleanupSucceeded && completed) {
+					selection.exhausted();
+				}
+			} catch (RuntimeException | Error failure) {
+				if (selection != null) {
+					selection.failed(failure);
+				}
+				throw failure;
+			} finally {
+				if (selection != null) {
+					selection.close();
+				}
+				batchCursor = null;
+				cursor = null;
+				batch = null;
+				if (calibrationTag != null) {
+					LmdbNativeCostCalibration.record(calibrationTag, calibrationWork,
+							System.nanoTime() - calibrationStartedNanos);
+					calibrationTag = null;
+				}
 			}
 		}
 	}
@@ -1825,6 +1875,7 @@ final class MaterializedUnorderedRowCursor implements RowCursor {
 			while (batchIndex >= active.batch.selectedCount) {
 				int filled = active.batchCursor.fill(active.batch);
 				if (filled == 0) {
+					active.markExhausted();
 					return false;
 				}
 				batchIndex = 0;
@@ -1835,6 +1886,7 @@ final class MaterializedUnorderedRowCursor implements RowCursor {
 			int physicalRow = active.batch.selection[batchIndex++];
 			active.batch.copyToRow(physicalRow, active.row.slots);
 			active.row.recomputeBoundMask();
+			active.firstOutput();
 			return true;
 		}
 		if (repeatedFactorizedRows > 0L) {
@@ -1844,8 +1896,10 @@ final class MaterializedUnorderedRowCursor implements RowCursor {
 		boolean advanced = active.cursor.next();
 		active.commitFactorizedAttemptIfEngaged();
 		if (!advanced) {
+			active.markExhausted();
 			return false;
 		}
+		active.firstOutput();
 		if (active.cursor instanceof FactorizedRowCursor) {
 			repeatedFactorizedRows = ((FactorizedRowCursor) active.cursor).multiplicity() - 1L;
 		}
@@ -1857,7 +1911,7 @@ final class MaterializedUnorderedRowCursor implements RowCursor {
 		NativeUnorderedInput active = input;
 		input = null;
 		if (active != null) {
-			active.close();
+			active.close(active.exhausted);
 		}
 	}
 }
@@ -1944,6 +1998,9 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 			if (!advanced) {
 				break;
 			}
+			if (unorderedInput != null) {
+				unorderedInput.firstOutput();
+			}
 			if (closed) {
 				return null;
 			}
@@ -1979,6 +2036,9 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 				int filled = batchCursor.fill(batch);
 				if (filled == 0) {
 					return null;
+				}
+				if (unorderedInput != null) {
+					unorderedInput.firstOutput();
 				}
 				row.recordExactValuesMatched(batch.selectedCount);
 				if (step.distinct) {
@@ -2090,7 +2150,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 		boolean cleanupSucceeded = false;
 		try {
 			if (activeInput != null) {
-				activeInput.close();
+				activeInput.close(completed);
 			} else if (activeBatchCursor != null) {
 				activeBatchCursor.close();
 			}

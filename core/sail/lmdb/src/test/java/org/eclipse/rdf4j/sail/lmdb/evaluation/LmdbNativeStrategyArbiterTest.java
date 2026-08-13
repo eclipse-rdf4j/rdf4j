@@ -71,6 +71,13 @@ public class LmdbNativeStrategyArbiterTest {
 		return index < 0 ? null : candidates.get(index).tag;
 	}
 
+	private static String adaptiveWinner(List<LmdbNativeStrategyProposal<String>> candidates) {
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(),
+				new LmdbNativeStoreCostModel(), LmdbNativeAdaptiveCostModel.Configuration.system());
+		int index = LmdbNativeStrategyArbiter.rankAdaptive(candidates, -1D, model);
+		return index < 0 ? null : candidates.get(index).tag;
+	}
+
 	// ---------------------------------------------------------------- cost decides
 
 	@Test
@@ -83,6 +90,20 @@ public class LmdbNativeStrategyArbiterTest {
 				.as("a candidate whose whole interval is below every rival's wins on cost, even though the "
 						+ "specialization order would have preferred the other one")
 				.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
+	}
+
+	@Test
+	public void coldAdaptiveModelKeepsStructuralPreferenceAheadOfLegacyScalarWork() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "true");
+
+		List<LmdbNativeStrategyProposal<String>> candidates = List.of(
+				proposal(LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL, 249_712D),
+				proposal(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 474_457D));
+
+		assertThat(adaptiveWinner(candidates))
+				.as("the typed model is deliberately uncertain at cold start, so raw work rows must not displace "
+						+ "the aggregate kernel before adaptive timing evidence exists")
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
 	}
 
 	@Test

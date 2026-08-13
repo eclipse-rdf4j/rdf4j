@@ -34,6 +34,7 @@ final class LmdbNativeExplain {
 	static final String EXECUTION_PATH = TelemetryMetricNames.NATIVE_EXECUTION_PATH;
 	static final String STRATEGY_DECLINES = "nativeStrategyDeclines";
 	static final String STRATEGY_PROPOSAL_COSTS = "nativeStrategyProposalCosts";
+	static final String ADAPTIVE_COST_DECISION = "nativeAdaptiveCostDecision";
 	static final String RUNTIME_ENTRY_PLAN = "nativeRuntimeEntryPlan";
 	static final String INITIAL_BOUND_MASK = "nativeInitialBoundMask";
 
@@ -113,6 +114,11 @@ final class LmdbNativeExplain {
 	 */
 	static void recordStrategyProposalCosts(TupleExpr expr, String rendered) {
 		setRuntimeMetric(expr, STRATEGY_PROPOSAL_COSTS, rendered);
+	}
+
+	/** Records the typed prediction interval and evidence that selected the physical strategy. */
+	static void recordAdaptiveCostDecision(TupleExpr expr, String rendered) {
+		setRuntimeMetric(expr, ADAPTIVE_COST_DECISION, rendered);
 	}
 
 	/**

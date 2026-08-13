@@ -112,6 +112,141 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		return LmdbNativeWork.between(Math.min(low, high), Math.max(low, high));
 	}
 
+	/**
+	 * Converts the legacy scalar proposal into the typed compatibility estimate consumed by the adaptive arbiter.
+	 * Strategy implementations can migrate to richer vectors later without maintaining a second selection path; this
+	 * bridge already separates interpreted, batched, generated, factorized, and parallel execution units.
+	 */
+	LmdbNativeCostEstimate adaptiveEstimate(double sliceRows) {
+		LmdbNativeWork effective = effectiveWork(sliceRows);
+		if (!effective.known()) {
+			return null;
+		}
+		String family = baseTag(tag);
+		LmdbNativeCostVector.Feature rowFeature = rowFeature(family);
+		double totalExpected = midpoint(effective);
+		double startupLow = Math.min(startupWork.low(), effective.low());
+		double startupHigh = Math.min(startupWork.known() ? startupWork.high() : effective.high(), effective.high());
+		double startupExpected = startupLow + (startupHigh - startupLow) * 0.5D;
+
+		LmdbNativeCostVector.Builder startup = LmdbNativeCostVector.builder()
+				.add(LmdbNativeCostVector.Feature.OPEN, 1D);
+		LmdbNativeCostVector.Builder total = LmdbNativeCostVector.builder()
+				.add(LmdbNativeCostVector.Feature.OPEN, 1D);
+		if (isParallel(family)) {
+			startup.add(LmdbNativeCostVector.Feature.WORKER_START, 1D);
+			total.add(LmdbNativeCostVector.Feature.WORKER_START, 1D);
+		}
+		if (startupHigh > 0D) {
+			startup.add(rowFeature, startupLow, startupExpected, startupHigh);
+		}
+		if (effective.high() > 0D) {
+			total.add(rowFeature, effective.low(), totalExpected, effective.high());
+		}
+
+		double outputRows = Double.isFinite(estRows) && estRows >= 0D ? estRows : 0D;
+		int consumptionBucket = 100;
+		if (sliceRows >= 0D && outputRows > 0D && sliceRows < outputRows) {
+			double fraction = sliceRows / outputRows;
+			outputRows = sliceRows;
+			consumptionBucket = (int) Math.round(fraction * 100D);
+		}
+		double uncertainty = totalExpected > 0D
+				? Math.min(4D, (effective.high() - effective.low()) / (2D * totalExpected))
+				: 0D;
+		LmdbNativePhysicalVariantKey key = LmdbNativePhysicalVariantKey.builder(family)
+				.physicalOrderAndProperties(family)
+				.cardinalityBucket(cardinalityBucket(totalExpected))
+				.groupingMode(groupingMode(family))
+				.distinctMode(distinctMode(family))
+				.sortMode(sortMode(family))
+				.executionMode(executionMode(family))
+				.consumptionFractionBucket(consumptionBucket)
+				.propertyPreserving(propertyPreserving(family))
+				.requiresHashing(requiresHashing(family))
+				.build();
+		return new LmdbNativeCostEstimate(key, startup.build(), total.build(), outputRows, uncertainty);
+	}
+
+	private static String baseTag(String value) {
+		if (value == null || value.isBlank()) {
+			return "unknown";
+		}
+		int parameters = value.indexOf('(');
+		return parameters > 0 ? value.substring(0, parameters) : value;
+	}
+
+	private static LmdbNativeCostVector.Feature rowFeature(String family) {
+		return switch (family) {
+		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL, LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE -> LmdbNativeCostVector.Feature.GENERATED_ROW;
+		case LmdbNativeAttemptMetrics.PATH_BATCH, LmdbNativeAttemptMetrics.PATH_CHUNK_PIPELINE, LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS, LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL, LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_SORT, LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION -> LmdbNativeCostVector.Feature.BATCH_ROW;
+		default -> LmdbNativeCostVector.Feature.INTERPRETED_ROW;
+		};
+	}
+
+	private static LmdbNativePhysicalVariantKey.ExecutionMode executionMode(String family) {
+		if (isParallel(family)) {
+			return LmdbNativePhysicalVariantKey.ExecutionMode.PARALLEL;
+		}
+		if (family.contains("factorized") || family.contains("Factorized")) {
+			return LmdbNativePhysicalVariantKey.ExecutionMode.FACTORIZED;
+		}
+		return switch (rowFeature(family)) {
+		case GENERATED_ROW -> LmdbNativePhysicalVariantKey.ExecutionMode.GENERATED;
+		case BATCH_ROW -> LmdbNativePhysicalVariantKey.ExecutionMode.BATCH;
+		default -> LmdbNativeAttemptMetrics.PATH_NESTED_LOOP.equals(family)
+				? LmdbNativePhysicalVariantKey.ExecutionMode.NESTED_FALLBACK
+				: LmdbNativePhysicalVariantKey.ExecutionMode.INTERPRETED;
+		};
+	}
+
+	private static LmdbNativePhysicalVariantKey.GroupingMode groupingMode(String family) {
+		if (family.contains("ordered") || family.contains("Ordered") || family.contains("prefix")) {
+			return LmdbNativePhysicalVariantKey.GroupingMode.STREAMING_GROUPS;
+		}
+		return family.contains("Aggregate") || family.contains("aggregate") || family.contains("Groups")
+				|| LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL.equals(family)
+						? LmdbNativePhysicalVariantKey.GroupingMode.HASHED
+						: LmdbNativePhysicalVariantKey.GroupingMode.NONE;
+	}
+
+	private static LmdbNativePhysicalVariantKey.DistinctMode distinctMode(String family) {
+		return family.contains("Distinct") || family.contains("distinct")
+				? LmdbNativePhysicalVariantKey.DistinctMode.HASH
+				: LmdbNativePhysicalVariantKey.DistinctMode.NONE;
+	}
+
+	private static LmdbNativePhysicalVariantKey.SortMode sortMode(String family) {
+		return family.contains("Sort") || family.contains("TopK")
+				? LmdbNativePhysicalVariantKey.SortMode.ENFORCED
+				: family.contains("ordered") || family.contains("Ordered") || family.contains("prefix")
+						? LmdbNativePhysicalVariantKey.SortMode.PRESERVED
+						: LmdbNativePhysicalVariantKey.SortMode.NONE;
+	}
+
+	private static boolean isParallel(String family) {
+		return family.contains("Parallel") || family.contains("parallel");
+	}
+
+	private static boolean propertyPreserving(String family) {
+		return family.contains("ordered") || family.contains("Ordered") || family.contains("prefix")
+				|| LmdbNativeAttemptMetrics.PATH_WCOJ.equals(family);
+	}
+
+	private static boolean requiresHashing(String family) {
+		return family.contains("Hash") || family.contains("hash") || family.contains("factorized")
+				|| family.contains("Factorized") || family.contains("Aggregate") || family.contains("aggregate")
+				|| LmdbNativeAttemptMetrics.PATH_BATCH.equals(family);
+	}
+
+	private static int cardinalityBucket(double count) {
+		return count <= 1D ? 0 : Math.min(63, Math.getExponent(count) + 1);
+	}
+
+	private static double midpoint(LmdbNativeWork interval) {
+		return interval.low() + (interval.high() - interval.low()) * 0.5D;
+	}
+
 	synchronized T open() throws IOException {
 		if (closed) {
 			throw new IllegalStateException("strategy proposal already closed");

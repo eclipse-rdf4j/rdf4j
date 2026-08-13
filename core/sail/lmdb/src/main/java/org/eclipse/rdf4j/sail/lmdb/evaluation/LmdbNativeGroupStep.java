@@ -468,7 +468,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		FactorizedTail factorized = factorizedSelection == null ? null : factorizedSelection.tail;
 		MultiJoinPlan factorizedPlan = directMultiJoin;
 
-		try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter.forExpr(explainTarget)) {
+		try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter.forExpr(explainTarget,
+				source)) {
 			if (existsIntersection != null) {
 				arbiter.offer(() -> estimatedProposal(() -> {
 					List<BindingSet> result = existsIntersection.evaluate(source, row);
