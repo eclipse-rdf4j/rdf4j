@@ -35,6 +35,12 @@ public class MessageHandlerInterceptor implements HandlerInterceptor {
 
 	@Override
 	public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView mav) {
+		if (mav == null) {
+			// The handler wrote the response itself, so there is no view to render the message into. Leave any
+			// queued message in the session so the next rendered view still shows it.
+			return;
+		}
+
 		HttpSession session = request.getSession();
 
 		if (session != null) {

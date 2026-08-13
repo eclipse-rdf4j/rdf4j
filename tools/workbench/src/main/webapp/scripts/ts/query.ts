@@ -3240,19 +3240,25 @@ module workbench {
                 });
         }
 
+        function loadLmdbRuntimePropertiesIfPanelOpen(details: any) {
+            if (details.open && !lmdbRuntimePropertiesLoaded) {
+                loadLmdbRuntimeProperties();
+            }
+        }
+
         export function initializeLmdbRuntimeFeatures() {
             var details: any = document.getElementById('lmdb-runtime-features');
             if (!details) {
                 return;
             }
             details.addEventListener('toggle', function() {
-                if (details.open && !lmdbRuntimePropertiesLoaded) {
-                    loadLmdbRuntimeProperties();
-                }
+                loadLmdbRuntimePropertiesIfPanelOpen(details);
             });
             $('#lmdb-runtime-refresh').click(function() {
                 loadLmdbRuntimeProperties();
             });
+            // The panel is expanded by default, so load without waiting for a toggle event.
+            loadLmdbRuntimePropertiesIfPanelOpen(details);
         }
 
         export var testing = {

@@ -37,7 +37,7 @@ public final class LmdbRuntimeProperties {
 	private static final List<Property> PROPERTIES = List.of(
 			on("Code generation", "rdf4j.lmdb.irAggregate.having.enabled", "Compiled HAVING",
 					"Sink HAVING evaluation into compiled aggregate kernels.", BOOLEAN),
-			off("Code generation", "rdf4j.lmdb.irAggregateParallel.enabled", "Parallel aggregate kernels",
+			on("Code generation", "rdf4j.lmdb.irAggregateParallel.enabled", "Parallel aggregate kernels",
 					"Run eligible compiled aggregate kernels in parallel.", BOOLEAN),
 			on("Code generation", "rdf4j.lmdb.irKernelParallel.enabled", "Parallel row kernels",
 					"Run eligible compiled row kernels in parallel.", BOOLEAN),

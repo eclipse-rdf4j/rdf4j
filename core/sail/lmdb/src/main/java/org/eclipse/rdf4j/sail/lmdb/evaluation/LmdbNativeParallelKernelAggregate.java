@@ -64,7 +64,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 @Experimental
 final class LmdbNativeParallelKernelAggregate {
 
-	/** Opt-in (default off): the paired benchmark gate has not run yet. */
+	/** Opt-out(default on): the paired benchmark gate has not run yet. */
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.irAggregateParallel.enabled";
 
 	/** Test observability: incremented whenever an aggregate kernel actually runs through the parallel path. */
