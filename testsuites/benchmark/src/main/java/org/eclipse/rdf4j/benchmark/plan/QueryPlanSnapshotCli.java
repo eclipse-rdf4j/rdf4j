@@ -43,12 +43,14 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.benchmark.common.BenchmarkQuery;
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
+import org.eclipse.rdf4j.benchmark.common.plan.FactorizedSolutionBagFingerprint;
 import org.eclipse.rdf4j.benchmark.common.plan.FeatureFlagCollector;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCapture;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCaptureContext;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanExplanation;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanSnapshot;
 import org.eclipse.rdf4j.benchmark.common.plan.SolutionBagFingerprint;
+import org.eclipse.rdf4j.benchmark.common.plan.TupleExprJsonCodec;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Literal;
@@ -58,6 +60,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -95,6 +98,8 @@ public final class QueryPlanSnapshotCli {
 	private static final long DEFAULT_BATCH_ETA_UPDATE_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(10);
 	private static final Duration DEFAULT_BATCH_TERMINATION_GRACE = Duration.ofSeconds(2);
 	private static final String DEFAULT_BATCH_AUDIT_FILENAME = "query-plan-snapshot-batch-audit.csv";
+	private static final String VERIFICATION_MODE_STREAMED_REPEATED = "streamed-repeated";
+	private static final String VERIFICATION_MODE_FACTORIZED_ALGEBRAIC = "factorized-algebraic";
 	private static final List<String> PLAN_INPUT_FEATURE_FLAG_PREFIXES = List.of(
 			"cli.",
 			"systemProperty.",
@@ -331,9 +336,12 @@ public final class QueryPlanSnapshotCli {
 					() -> prepareTupleQueryForCapturePhase(connection, queryText, options, captureLevelIndex));
 			applySnapshotPlanDebugMetadata(currentSnapshot);
 			writeWorkerPhase(options, "verification");
-			executionVerification = verifyRepeatedExecution(connection, queryText, options.queryTimeoutSeconds,
-					expectedResultCount(benchmarkQuery),
-					expectedCountBindingValue(options, benchmarkQuery));
+			executionVerification = options.factorizedVerification
+					? verifyFactorizedExecution(connection, currentSnapshot, expectedResultCount(benchmarkQuery),
+							expectedCountBindingValue(options, benchmarkQuery))
+					: verifyRepeatedExecution(connection, queryText, options.queryTimeoutSeconds,
+							expectedResultCount(benchmarkQuery),
+							expectedCountBindingValue(options, benchmarkQuery));
 		}
 		applyExecutionVerificationMetadata(currentSnapshot, executionVerification);
 		if (options.persist) {
@@ -497,6 +505,9 @@ public final class QueryPlanSnapshotCli {
 			arguments.add("--execution-repeat-soft-limit-millis");
 			arguments.add(options.executionRepeatSoftLimitMillis.toString());
 		}
+		if (options.factorizedVerification) {
+			arguments.add("--factorized-verification");
+		}
 		if (options.runName != null && !options.runName.isBlank()) {
 			arguments.add("--run-name");
 			arguments.add(options.runName);
@@ -616,10 +627,13 @@ public final class QueryPlanSnapshotCli {
 			currentSnapshot = capture.capture(context,
 					() -> prepareTupleQuery(connection, queryText, perQueryOptions.queryTimeoutSeconds));
 			applySnapshotPlanDebugMetadata(currentSnapshot);
-			executionVerification = verifyRepeatedExecution(connection, queryText,
-					perQueryOptions.queryTimeoutSeconds,
-					expectedResultCount(benchmarkQuery),
-					expectedCountBindingValue(perQueryOptions, benchmarkQuery));
+			executionVerification = perQueryOptions.factorizedVerification
+					? verifyFactorizedExecution(connection, currentSnapshot, expectedResultCount(benchmarkQuery),
+							expectedCountBindingValue(perQueryOptions, benchmarkQuery))
+					: verifyRepeatedExecution(connection, queryText,
+							perQueryOptions.queryTimeoutSeconds,
+							expectedResultCount(benchmarkQuery),
+							expectedCountBindingValue(perQueryOptions, benchmarkQuery));
 		}
 		applyExecutionVerificationMetadata(currentSnapshot, executionVerification);
 		if (options.persist) {
@@ -2200,14 +2214,19 @@ public final class QueryPlanSnapshotCli {
 			BenchmarkQuery benchmarkQuery,
 			String queryText, String querySource, String queryId, Path outputDirectory,
 			FeatureFlagCollector featureFlags) {
+		List<Explanation.Level> levels = options.factorizedVerification
+				? List.of(Explanation.Level.Unoptimized, Explanation.Level.Optimized)
+				: List.of(Explanation.Level.Unoptimized, Explanation.Level.Optimized, Explanation.Level.Telemetry);
+		Set<Explanation.Level> irRenderedLevels = options.factorizedVerification
+				? Set.of(Explanation.Level.Optimized)
+				: Set.of(Explanation.Level.Optimized, Explanation.Level.Telemetry);
 		QueryPlanCaptureContext.Builder contextBuilder = QueryPlanCaptureContext.builder()
 				.outputDirectory(outputDirectory)
 				.queryId(queryId)
 				.queryString(queryText)
 				.benchmark("QueryPlanSnapshotCli")
-				.levels(List.of(Explanation.Level.Unoptimized, Explanation.Level.Optimized,
-						Explanation.Level.Telemetry))
-				.irRenderedLevels(Set.of(Explanation.Level.Optimized, Explanation.Level.Telemetry))
+				.levels(levels)
+				.irRenderedLevels(irRenderedLevels)
 				.addMetadata("store", options.store.id)
 				.addMetadata("theme", options.theme.name())
 				.addMetadata("querySource", querySource)
@@ -2245,7 +2264,8 @@ public final class QueryPlanSnapshotCli {
 				.addValue("cli.executionRepeatMinRuns", Integer.toString(resolveExecutionRepeatMinRuns(options)))
 				.addValue("cli.executionRepeatMaxRuns", Integer.toString(resolveExecutionRepeatMaxRuns(options)))
 				.addValue("cli.executionRepeatSoftLimitMillis",
-						Long.toString(TimeUnit.NANOSECONDS.toMillis(resolveExecutionRepeatSoftLimitNanos(options))));
+						Long.toString(TimeUnit.NANOSECONDS.toMillis(resolveExecutionRepeatSoftLimitNanos(options))))
+				.addValue("cli.factorizedVerification", Boolean.toString(options.factorizedVerification));
 		if (options.queryIndex != null) {
 			featureFlags.addValue("cli.queryIndex", options.queryIndex.toString());
 		}
@@ -2903,6 +2923,91 @@ public final class QueryPlanSnapshotCli {
 				resultFingerprintStable, failure);
 	}
 
+	private QueryExecutionVerification verifyFactorizedExecution(SailRepositoryConnection connection,
+			QueryPlanSnapshot snapshot, OptionalLong expectedResultCount, OptionalLong expectedCountBindingValue) {
+		TupleExprJsonCodec codec = new TupleExprJsonCodec();
+		String optimizedPlanSignature = "missing-optimized-plan";
+		try {
+			TupleExpr unoptimized = tupleExprForLevel(snapshot, "unoptimized", codec);
+			TupleExpr optimized = tupleExprForLevel(snapshot, "optimized", codec);
+			optimizedPlanSignature = codec.fingerprint(optimized);
+
+			List<String> unoptimizedBindingNames = resultBindingNames(unoptimized);
+			List<String> optimizedBindingNames = resultBindingNames(optimized);
+			if (!unoptimizedBindingNames.equals(optimizedBindingNames)) {
+				throw new IllegalStateException("Unoptimized and optimized result schemas differ: unoptimized="
+						+ unoptimizedBindingNames + ", optimized=" + optimizedBindingNames);
+			}
+
+			long unoptimizedStartedAt = System.nanoTime();
+			FactorizedTupleExprEvaluator.Evaluation unoptimizedEvaluation = new FactorizedTupleExprEvaluator(connection,
+					unoptimizedBindingNames).evaluate(unoptimized);
+			long unoptimizedNanos = Math.max(1L, System.nanoTime() - unoptimizedStartedAt);
+
+			long optimizedStartedAt = System.nanoTime();
+			FactorizedTupleExprEvaluator.Evaluation optimizedEvaluation = new FactorizedTupleExprEvaluator(connection,
+					optimizedBindingNames).evaluate(optimized);
+			long optimizedNanos = Math.max(1L, System.nanoTime() - optimizedStartedAt);
+
+			FactorizedSolutionBagFingerprint.Fingerprint unoptimizedFingerprint = unoptimizedEvaluation.fingerprint();
+			FactorizedSolutionBagFingerprint.Fingerprint optimizedFingerprint = optimizedEvaluation.fingerprint();
+			VerificationFailure failure = null;
+			boolean stable = unoptimizedFingerprint.rowCount() == optimizedFingerprint.rowCount()
+					&& unoptimizedFingerprint.digestHex().equals(optimizedFingerprint.digestHex());
+			if (unoptimizedFingerprint.rowCount() != optimizedFingerprint.rowCount()) {
+				failure = VerificationFailure.logicalResultCountChanged(unoptimizedFingerprint.rowCount(),
+						optimizedFingerprint.rowCount(), unoptimizedFingerprint.digestHex(),
+						optimizedFingerprint.digestHex(), optimizedPlanSignature);
+			} else if (!unoptimizedFingerprint.digestHex().equals(optimizedFingerprint.digestHex())) {
+				failure = VerificationFailure.logicalResultBagChanged(optimizedFingerprint.rowCount(),
+						unoptimizedFingerprint.digestHex(), optimizedFingerprint.digestHex(), optimizedPlanSignature);
+			} else {
+				String catalogViolation = catalogResultContractViolation(expectedResultCount, expectedCountBindingValue,
+						optimizedFingerprint.rowCount(), optimizedEvaluation.countBindingValue());
+				if (catalogViolation != null) {
+					failure = VerificationFailure.catalogResultContractViolation(2, optimizedPlanSignature,
+							catalogViolation);
+				}
+			}
+
+			long statementRowsScanned = Math.addExact(unoptimizedEvaluation.statementRowsScanned(),
+					optimizedEvaluation.statementRowsScanned());
+			long cacheHits = Math.addExact(unoptimizedEvaluation.cacheHits(), optimizedEvaluation.cacheHits());
+			long cacheEntries = Math.addExact(unoptimizedEvaluation.cacheEntries(), optimizedEvaluation.cacheEntries());
+			return new QueryExecutionVerification(VERIFICATION_MODE_FACTORIZED_ALGEBRAIC, 2,
+					Math.addExact(unoptimizedNanos, optimizedNanos), optimizedFingerprint.rowCount(), false, false,
+					Math.min(unoptimizedNanos, optimizedNanos), Math.max(unoptimizedNanos, optimizedNanos),
+					List.of(unoptimizedNanos, optimizedNanos), List.of(optimizedPlanSignature),
+					List.of(optimizedPlanSignature, optimizedPlanSignature), optimizedFingerprint.algorithmVersion(),
+					optimizedFingerprint.digestHex(), stable, statementRowsScanned, cacheHits, cacheEntries, failure);
+		} catch (Exception evaluationError) {
+			VerificationFailure failure = VerificationFailure.error(1, optimizedPlanSignature, evaluationError);
+			return new QueryExecutionVerification(VERIFICATION_MODE_FACTORIZED_ALGEBRAIC, 0, 0, 0, false, false,
+					0, 0, List.of(), List.of(), List.of(), FactorizedSolutionBagFingerprint.ALGORITHM_VERSION, "",
+					false, 0, 0, 0, failure);
+		}
+	}
+
+	private static TupleExpr tupleExprForLevel(QueryPlanSnapshot snapshot, String level, TupleExprJsonCodec codec) {
+		if (snapshot == null || snapshot.getExplanations() == null) {
+			throw new IllegalStateException("Snapshot has no explanations for factorized verification.");
+		}
+		QueryPlanExplanation explanation = snapshot.getExplanations().get(level);
+		if (explanation == null || explanation.getTupleExprJson() == null
+				|| explanation.getTupleExprJson().isBlank()) {
+			throw new IllegalStateException("Snapshot has no tuple-expression payload for " + level + ".");
+		}
+		return codec.fromJson(explanation.getTupleExprJson());
+	}
+
+	private static List<String> resultBindingNames(TupleExpr tupleExpr) {
+		return tupleExpr.getBindingNames()
+				.stream()
+				.filter(name -> !name.startsWith("_const_"))
+				.sorted()
+				.toList();
+	}
+
 	private static CompletedQueryResult consumeCompletedResult(TupleQueryResult result) {
 		SolutionBagFingerprint accumulator = new SolutionBagFingerprint(result.getBindingNames());
 		Value countBindingValue = null;
@@ -2994,6 +3099,7 @@ public final class QueryPlanSnapshotCli {
 		output.println("=== Execution Verification ===");
 		if (executionVerification.runs == 0) {
 			output.println("No repeated runs executed."
+					+ ", verificationMode=" + executionVerification.verificationMode
 					+ ", verificationStatus=" + executionVerification.verificationStatus()
 					+ ", resultFingerprintAlgorithm=" + executionVerification.resultFingerprintAlgorithm
 					+ ", resultFingerprintStatus=" + executionVerification.resultFingerprintStatus()
@@ -3006,6 +3112,7 @@ public final class QueryPlanSnapshotCli {
 			long minMillis = TimeUnit.NANOSECONDS.toMillis(executionVerification.minRunNanos);
 			long maxMillis = TimeUnit.NANOSECONDS.toMillis(executionVerification.maxRunNanos);
 			output.println("runs=" + executionVerification.runs
+					+ ", verificationMode=" + executionVerification.verificationMode
 					+ ", totalMillis=" + totalMillis
 					+ ", averageMillis=" + averageMillis
 					+ ", minMillis=" + minMillis
@@ -3026,6 +3133,11 @@ public final class QueryPlanSnapshotCli {
 					+ ", softLimitMillis=" + TimeUnit.NANOSECONDS.toMillis(executionRepeatSoftLimitNanos)
 					+ ", softLimitReached=" + executionVerification.softLimitReached
 					+ ", maxRunsReached=" + executionVerification.maxRunsReached);
+		}
+		if (VERIFICATION_MODE_FACTORIZED_ALGEBRAIC.equals(executionVerification.verificationMode)) {
+			output.println("factorizedStatementRowsScanned=" + executionVerification.factorizedStatementRowsScanned
+					+ ", factorizedCacheHits=" + executionVerification.factorizedCacheHits
+					+ ", factorizedCacheEntries=" + executionVerification.factorizedCacheEntries);
 		}
 		if (executionVerification.hasFailure()) {
 			output.println("failure: run=" + executionVerification.failureRun()
@@ -3050,6 +3162,7 @@ public final class QueryPlanSnapshotCli {
 		}
 
 		metadata.put("execution.runs", Integer.toString(executionVerification.runs));
+		metadata.put("execution.verificationMode", executionVerification.verificationMode);
 		metadata.put("execution.resultCount", Long.toString(executionVerification.resultCount));
 		metadata.put("execution.resultFingerprintAlgorithm", executionVerification.resultFingerprintAlgorithm);
 		metadata.put("execution.resultFingerprintStatus", executionVerification.resultFingerprintStatus());
@@ -3083,6 +3196,10 @@ public final class QueryPlanSnapshotCli {
 		metadata.put("execution.failureActualDigest", executionVerification.failureActualDigest());
 		metadata.put("execution.softLimitReached", Boolean.toString(executionVerification.softLimitReached));
 		metadata.put("execution.maxRunsReached", Boolean.toString(executionVerification.maxRunsReached));
+		metadata.put("execution.factorizedStatementRowsScanned",
+				Long.toString(executionVerification.factorizedStatementRowsScanned));
+		metadata.put("execution.factorizedCacheHits", Long.toString(executionVerification.factorizedCacheHits));
+		metadata.put("execution.factorizedCacheEntries", Long.toString(executionVerification.factorizedCacheEntries));
 		snapshot.setMetadata(metadata);
 	}
 
@@ -3396,6 +3513,22 @@ public final class QueryPlanSnapshotCli {
 					"", "", expectedDigest, actualDigest);
 		}
 
+		private static VerificationFailure logicalResultCountChanged(long unoptimizedCount, long optimizedCount,
+				String unoptimizedDigest, String optimizedDigest, String planHash) {
+			String message = "Optimized result count differs from unoptimized algebra: expected " + unoptimizedCount
+					+ " but got " + optimizedCount;
+			return new VerificationFailure("result-count-changed", 2, planHash, "ResultCountChanged", message, "", "",
+					unoptimizedDigest, optimizedDigest);
+		}
+
+		private static VerificationFailure logicalResultBagChanged(long resultCount, String unoptimizedDigest,
+				String optimizedDigest, String planHash) {
+			String message = "Optimized result bag differs from unoptimized algebra with stable row count "
+					+ resultCount + ": expected digest " + unoptimizedDigest + " but got " + optimizedDigest;
+			return new VerificationFailure("result-bag-changed", 2, planHash, "ResultBagChanged", message, "", "",
+					unoptimizedDigest, optimizedDigest);
+		}
+
 		private static VerificationFailure catalogResultContractViolation(int runNumber, String planHash,
 				String message) {
 			return new VerificationFailure("catalog-result-contract-violation", runNumber, planHash,
@@ -3432,6 +3565,7 @@ public final class QueryPlanSnapshotCli {
 	}
 
 	private static final class QueryExecutionVerification {
+		private final String verificationMode;
 		private final int runs;
 		private final long elapsedNanos;
 		private final long resultCount;
@@ -3445,6 +3579,9 @@ public final class QueryPlanSnapshotCli {
 		private final String resultFingerprintAlgorithm;
 		private final String resultFingerprintDigest;
 		private final boolean resultFingerprintStable;
+		private final long factorizedStatementRowsScanned;
+		private final long factorizedCacheHits;
+		private final long factorizedCacheEntries;
 		private final VerificationFailure failure;
 
 		private QueryExecutionVerification(int runs, long elapsedNanos, long resultCount, boolean softLimitReached,
@@ -3452,6 +3589,19 @@ public final class QueryPlanSnapshotCli {
 				List<String> optimizedPlanSignatures, List<String> optimizedPlanSignatureSequence,
 				String resultFingerprintAlgorithm, String resultFingerprintDigest, boolean resultFingerprintStable,
 				VerificationFailure failure) {
+			this(VERIFICATION_MODE_STREAMED_REPEATED, runs, elapsedNanos, resultCount, softLimitReached, maxRunsReached,
+					minRunNanos, maxRunNanos, runDurationsNanos, optimizedPlanSignatures,
+					optimizedPlanSignatureSequence, resultFingerprintAlgorithm, resultFingerprintDigest,
+					resultFingerprintStable, 0, 0, 0, failure);
+		}
+
+		private QueryExecutionVerification(String verificationMode, int runs, long elapsedNanos, long resultCount,
+				boolean softLimitReached, boolean maxRunsReached, long minRunNanos, long maxRunNanos,
+				List<Long> runDurationsNanos, List<String> optimizedPlanSignatures,
+				List<String> optimizedPlanSignatureSequence, String resultFingerprintAlgorithm,
+				String resultFingerprintDigest, boolean resultFingerprintStable, long factorizedStatementRowsScanned,
+				long factorizedCacheHits, long factorizedCacheEntries, VerificationFailure failure) {
+			this.verificationMode = verificationMode;
 			this.runs = runs;
 			this.elapsedNanos = elapsedNanos;
 			this.resultCount = resultCount;
@@ -3465,6 +3615,9 @@ public final class QueryPlanSnapshotCli {
 			this.resultFingerprintAlgorithm = resultFingerprintAlgorithm;
 			this.resultFingerprintDigest = resultFingerprintDigest;
 			this.resultFingerprintStable = resultFingerprintStable;
+			this.factorizedStatementRowsScanned = factorizedStatementRowsScanned;
+			this.factorizedCacheHits = factorizedCacheHits;
+			this.factorizedCacheEntries = factorizedCacheEntries;
 			this.failure = failure;
 		}
 

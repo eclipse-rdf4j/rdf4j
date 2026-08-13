@@ -13,8 +13,9 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 /** Immutable telemetry for a provider-owned cache-validation call. */
 record PackedCacheValidationEvent(int eventOrdinal, String digest, long dataRevision, long leoRevision,
-		double confidence, double expectedRegret, long workUnits, String result, String reason) {
+		long frontierRevision, double confidence, double expectedRegret, long workUnits, String result, String reason,
+		String changedDimensions) {
 
-	static final PackedCacheValidationEvent NONE = new PackedCacheValidationEvent(0, "", 0L, 0L, 0.0d, 0.0d,
-			0L, "", "");
+	static final PackedCacheValidationEvent NONE = new PackedCacheValidationEvent(0, "", 0L, 0L, 0L, 0.0d, 0.0d,
+			0L, "", "", "");
 }

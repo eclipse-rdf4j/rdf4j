@@ -15,6 +15,8 @@ import java.io.Serializable;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
@@ -468,6 +470,40 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	@Experimental
 	default void setStringMetricPlanned(String metricName, String metricValue) {
 		// no-op
+	}
+
+	/**
+	 * Attaches a planned string metric whose value may be expensive to construct. Implementations may defer invoking
+	 * the supplier until the metric is observed, copied to a non-deferred node, or serialized. The default
+	 * implementation resolves the supplier immediately for backwards compatibility.
+	 *
+	 * @param metricName  metric name
+	 * @param metricValue non-null value supplier
+	 */
+	@Experimental
+	default void setStringMetricPlannedDeferred(String metricName, Supplier<String> metricValue) {
+		if (metricName != null && metricValue != null) {
+			setStringMetricPlanned(metricName, metricValue.get());
+		}
+	}
+
+	/**
+	 * Removes planned string metrics whose names match the predicate. Implementations with deferred metrics should
+	 * remove matching producers without evaluating them.
+	 */
+	@Experimental
+	default void removeStringMetricsPlannedIf(Predicate<String> predicate) {
+		Objects.requireNonNull(predicate, "predicate");
+		getStringMetricsPlanned().keySet().removeIf(predicate);
+	}
+
+	/** Copies all planned metrics to {@code target}, preserving deferred values when both nodes support them. */
+	@Experimental
+	default void copyPlannedMetricsTo(QueryModelNode target) {
+		Objects.requireNonNull(target, "target");
+		getStringMetricsPlanned().forEach(target::setStringMetricPlanned);
+		getDoubleMetricsPlanned().forEach(target::setDoubleMetricPlanned);
+		getLongMetricsPlanned().forEach(target::setLongMetricPlanned);
 	}
 
 	@Experimental

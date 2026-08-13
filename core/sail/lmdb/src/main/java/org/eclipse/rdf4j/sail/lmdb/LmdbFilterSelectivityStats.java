@@ -93,12 +93,16 @@ class LmdbFilterSelectivityStats
 	private static final int PERSIST_VERSION = 7;
 	private static final int SAMPLE_RESERVOIR_SIZE = 256;
 	private static final int ZERO_HIT_SAMPLE_MIN_EVIDENCE = SAMPLE_RESERVOIR_SIZE;
+	private static final int MIN_SAMPLED_EVIDENCE_TO_OUTRANK_HEURISTIC = 33;
+	private static final int MAX_MINIMUM_EVIDENCE_SCAN_MULTIPLIER = 4;
 	private static final int COLD_SYNOPSIS_MIN_MATCHING_ROWS = 32;
 	private static final double LOW_BENEFIT_ROWS_THRESHOLD = 32.0d;
 	private static final double LOW_BENEFIT_RATIO_THRESHOLD = 0.25d;
 	private static final double FULL_SCAN_ROW_BUDGET = 1_000_000.0d;
 	private static final int MAX_BACKGROUND_SAMPLING_REQUESTS = 4096;
 	private static final int MAX_LEARNED_SURFACE_ENTRIES = 4096;
+	private static final int MAX_EXACT_PROBE_CACHE_ENTRIES = 256;
+	private static final long MAX_EXACT_FILTER_SUPPORT_CACHE_WEIGHT = 2L * 1024L * 1024L;
 	private static final long MISSING_VALUE_ID = Long.MIN_VALUE;
 
 	private final TripleStore tripleStore;
@@ -120,6 +124,11 @@ class LmdbFilterSelectivityStats
 	private final Map<PatternFilterKey, SampledPassRatio> sampledByFilter = new HashMap<>();
 	private final Map<PatternFilterKey, BackgroundSamplingRequest> backgroundSamplingRequests = new HashMap<>();
 	private final Map<RuntimeRowsKey, Double> expectedRuntimeRowsByPattern = new HashMap<>();
+	private final LmdbSnapshotProbeCache<ExactZeroProbe> exactZeroProbeCache = new LmdbSnapshotProbeCache<>(
+			MAX_EXACT_PROBE_CACHE_ENTRIES, MAX_EXACT_PROBE_CACHE_ENTRIES, ignored -> 1L);
+	private final LmdbSnapshotProbeCache<DistinctFilterValues> exactDistinctProbeCache = new LmdbSnapshotProbeCache<>(
+			MAX_EXACT_PROBE_CACHE_ENTRIES, MAX_EXACT_FILTER_SUPPORT_CACHE_WEIGHT,
+			LmdbFilterSelectivityStats::distinctFilterCacheWeight);
 
 	private boolean dirty;
 	private ColdFilterSynopsis coldSynopsis;
@@ -236,8 +245,8 @@ class LmdbFilterSelectivityStats
 		if (!adaptiveEvidenceAllowed() || filter == null || filter.getCondition() == null) {
 			return null;
 		}
-		FilterSurfaceKey exactKey = FilterSurfaceKey.exact(filter);
-		FilterSurfaceKey generalizedKey = FilterSurfaceKey.generalized(filter);
+		FilterSurfaceKey exactKey = exactSurfaceKey(filter);
+		FilterSurfaceKey generalizedKey = generalizedSurfaceKey(filter);
 		if (exactKey == null && generalizedKey == null) {
 			return null;
 		}
@@ -343,8 +352,8 @@ class LmdbFilterSelectivityStats
 			return;
 		}
 		boolean changed = false;
-		FilterSurfaceKey exact = FilterSurfaceKey.exact(filter);
-		FilterSurfaceKey generalized = FilterSurfaceKey.generalized(filter);
+		FilterSurfaceKey exact = exactSurfaceKey(filter);
+		FilterSurfaceKey generalized = generalizedSurfaceKey(filter);
 		if (reserveLearnedSurfaceCells(exact, generalized)) {
 			if (exact != null) {
 				learnedSurfaceCell(exact).add(passedCount, filteredCount);
@@ -406,18 +415,41 @@ class LmdbFilterSelectivityStats
 		if (!adaptiveEvidenceAllowed()) {
 			return null;
 		}
-		FilterSurfaceKey exact = FilterSurfaceKey.exact(filter);
+		FilterSurfaceKey exact = exactSurfaceKey(filter);
 		LearnedCounts exactCounts = exact == null ? null : learnedBySurface.get(exact);
 		if (exactCounts != null && exactCounts.total() > 0L) {
 			return new LearnedSurfaceEstimate(exactCounts.passRatio(), exactCounts.total(), false, exact.toString());
 		}
-		FilterSurfaceKey generalized = FilterSurfaceKey.generalized(filter);
+		FilterSurfaceKey generalized = generalizedSurfaceKey(filter);
 		LearnedCounts generalizedCounts = generalized == null ? null : learnedBySurface.get(generalized);
 		if (generalizedCounts == null || generalizedCounts.total() <= 0L) {
 			return null;
 		}
 		return new LearnedSurfaceEstimate(generalizedCounts.passRatio(), generalizedCounts.total(), true,
 				generalized.toString());
+	}
+
+	private static FilterSurfaceKey exactSurfaceKey(Filter filter) {
+		LmdbRuntimeFeedbackDescriptor descriptor = runtimeFeedbackDescriptor(filter);
+		return descriptor != null && descriptor.exactFilterSurfaceKey() != null
+				? descriptor.exactFilterSurfaceKey()
+				: FilterSurfaceKey.exact(filter);
+	}
+
+	private static FilterSurfaceKey generalizedSurfaceKey(Filter filter) {
+		LmdbRuntimeFeedbackDescriptor descriptor = runtimeFeedbackDescriptor(filter);
+		return descriptor != null && descriptor.generalizedFilterSurfaceKey() != null
+				? descriptor.generalizedFilterSurfaceKey()
+				: FilterSurfaceKey.generalized(filter);
+	}
+
+	private static LmdbRuntimeFeedbackDescriptor runtimeFeedbackDescriptor(Filter filter) {
+		if (filter == null || filter.getRuntimeFeedbackContract() == null
+				|| !(filter.getRuntimeFeedbackContract()
+						.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor)) {
+			return null;
+		}
+		return descriptor;
 	}
 
 	synchronized long planningRevision() {
@@ -546,7 +578,10 @@ class LmdbFilterSelectivityStats
 			return new PatternFilterSampleEstimate(-1.0d, -1L);
 		}
 		PatternFilterKey key = samplingKey(filter, pattern);
-		if (key == null || !supportsSampling(filter, pattern)) {
+		if (key == null) {
+			return new PatternFilterSampleEstimate(-1.0d, -1L);
+		}
+		if (!supportsSampling(filter, pattern)) {
 			return new PatternFilterSampleEstimate(-1.0d, -1L);
 		}
 		SamplingCandidate candidate = samplingCandidate(filter, pattern, key);
@@ -604,14 +639,30 @@ class LmdbFilterSelectivityStats
 		if (maxScannedRows <= 0 || !supportsColdSynopsis(filter, pattern)) {
 			return false;
 		}
+		Filter probeFilter = new Filter(pattern.clone(), filter.getCondition().clone());
+		FilterSurfaceKey surface = exactSurfaceKey(probeFilter);
+		SketchSnapshotIdentity snapshot = currentSnapshotIdentity();
+		Optional<ExactZeroProbe> cached = exactZeroProbeCache.get(snapshot, surface, maxScannedRows);
+		if (cached.isPresent()) {
+			return cached.orElseThrow() == ExactZeroProbe.ALL_REJECTED;
+		}
+
+		ExactZeroProbe result = exactBoundedFilterZero(filter, pattern, maxScannedRows);
+		if (result != ExactZeroProbe.INCONCLUSIVE && snapshotStillCurrent(snapshot)) {
+			exactZeroProbeCache.put(snapshot, surface, maxScannedRows, result);
+		}
+		return result == ExactZeroProbe.ALL_REJECTED;
+	}
+
+	private ExactZeroProbe exactBoundedFilterZero(Filter filter, StatementPattern pattern, int maxScannedRows) {
 		ColdSamplingCandidate candidate = coldSamplingCandidate(filter, pattern);
 		if (candidate == null) {
-			return false;
+			return ExactZeroProbe.INCONCLUSIVE;
 		}
 		DefaultEvaluationStrategy strategy = samplingStrategy();
 		QueryValueEvaluationStep condition = prepareCondition(strategy, candidate.condition);
 		if (condition == null) {
-			return false;
+			return ExactZeroProbe.INCONCLUSIVE;
 		}
 
 		int scannedRows = 0;
@@ -622,7 +673,7 @@ class LmdbFilterSelectivityStats
 					long[] row;
 					while ((row = triples.next()) != null) {
 						if (++scannedRows > maxScannedRows) {
-							return false;
+							return ExactZeroProbe.INCONCLUSIVE;
 						}
 						if (!matchesColdPattern(candidate, row[TripleIndex.SUBJ_IDX], row[TripleIndex.PRED_IDX],
 								row[TripleIndex.OBJ_IDX], row[TripleIndex.CONTEXT_IDX])) {
@@ -630,7 +681,7 @@ class LmdbFilterSelectivityStats
 						}
 						try {
 							if (strategy.isTrue(condition, toBindingSet(candidate.pattern, row))) {
-								return false;
+								return ExactZeroProbe.PASSING_ROW;
 							}
 						} catch (ValueExprEvaluationException e) {
 							// RDF4J query execution treats expression errors as filtered rows.
@@ -638,9 +689,9 @@ class LmdbFilterSelectivityStats
 					}
 				}
 			}
-			return true;
+			return ExactZeroProbe.ALL_REJECTED;
 		} catch (IOException | RuntimeException e) {
-			return false;
+			return ExactZeroProbe.INCONCLUSIVE;
 		}
 	}
 
@@ -671,6 +722,24 @@ class LmdbFilterSelectivityStats
 		if (!supportsColdSynopsis(synthetic, pattern)) {
 			return DistinctFilterValues.unavailable();
 		}
+		FilterSurfaceKey surface = exactSurfaceKey(synthetic);
+		SketchSnapshotIdentity snapshot = currentSnapshotIdentity();
+		Optional<DistinctFilterValues> cached = exactDistinctProbeCache.get(snapshot, surface,
+				maximumDistinctValues);
+		if (cached.isPresent()) {
+			return cached.orElseThrow();
+		}
+
+		DistinctFilterValues result = exactMatchingDistinctValues(pattern, condition, bindingName,
+				maximumDistinctValues, valueComponent, synthetic);
+		if (result.status() != DistinctFilterStatus.UNAVAILABLE && snapshotStillCurrent(snapshot)) {
+			exactDistinctProbeCache.put(snapshot, surface, maximumDistinctValues, result);
+		}
+		return result;
+	}
+
+	private DistinctFilterValues exactMatchingDistinctValues(StatementPattern pattern, ValueExpr condition,
+			String bindingName, int maximumDistinctValues, int valueComponent, Filter synthetic) {
 		ColdSamplingCandidate candidate = coldSamplingCandidate(synthetic, pattern);
 		if (candidate == null) {
 			return DistinctFilterValues.unavailable();
@@ -726,6 +795,22 @@ class LmdbFilterSelectivityStats
 		} catch (IOException | RuntimeException e) {
 			return DistinctFilterValues.unavailable();
 		}
+	}
+
+	private boolean snapshotStillCurrent(SketchSnapshotIdentity snapshot) {
+		return snapshot != null && snapshot.equals(currentSnapshotIdentity());
+	}
+
+	private static long distinctFilterCacheWeight(DistinctFilterValues values) {
+		long weight = 64L;
+		for (Value value : values.matchingValues()) {
+			long valueWeight = 96L + 2L * value.stringValue().length();
+			if (Long.MAX_VALUE - weight < valueWeight) {
+				return Long.MAX_VALUE;
+			}
+			weight += valueWeight;
+		}
+		return weight;
 	}
 
 	private static int uniqueVariableComponent(StatementPattern pattern, String bindingName) {
@@ -1181,6 +1266,7 @@ class LmdbFilterSelectivityStats
 		}
 
 		int reservoirSize = Math.min(SAMPLE_RESERVOIR_SIZE, scanBudget);
+		int minimumEvidence = minimumSamplingEvidence(candidate.expectedRuntimeRows, scanBudget);
 		List<BindingSet> samples = new ArrayList<>(reservoirSize);
 		int[] eligibleRows = { 0 };
 		int[] scannedRows = { 0 };
@@ -1197,16 +1283,15 @@ class LmdbFilterSelectivityStats
 			int rowsPerStratum = Math.max(1, scanBudget / strata / 2);
 			long stratifiedDeadline = deadlineNanos;
 			boolean[] conversionFailed = { false };
+			boolean[] deadlineStopped = { false };
 			try {
 				for (boolean explicit : new boolean[] { true, false }) {
 					tripleStore.sampleTriplesStratified(candidate.subjId, candidate.predId,
 							candidate.objId, candidate.contextId, explicit, strata, rowsPerStratum, row -> {
 								scannedRows[0]++;
-								if (samplingDeadlineExceeded(stratifiedDeadline)) {
-									return false;
-								}
 								if (!matchesRepeatedVarEquality(candidate.pattern, row)) {
-									return true;
+									return continueStratifiedSampling(stratifiedDeadline, scanBudget,
+											minimumEvidence, eligibleRows[0], scannedRows[0], deadlineStopped);
 								}
 								BindingSet bindingSet;
 								try {
@@ -1218,19 +1303,21 @@ class LmdbFilterSelectivityStats
 								eligibleRows[0]++;
 								if (samples.size() < reservoirSize) {
 									samples.add(bindingSet);
-									return true;
+								} else {
+									int replacementIndex = ThreadLocalRandom.current().nextInt(eligibleRows[0]);
+									if (replacementIndex < reservoirSize) {
+										samples.set(replacementIndex, bindingSet);
+									}
 								}
-								int replacementIndex = ThreadLocalRandom.current().nextInt(eligibleRows[0]);
-								if (replacementIndex < reservoirSize) {
-									samples.set(replacementIndex, bindingSet);
-								}
-								return true;
+								return continueStratifiedSampling(stratifiedDeadline, scanBudget,
+										minimumEvidence, eligibleRows[0], scannedRows[0], deadlineStopped);
 							});
-					if (conversionFailed[0]) {
+					if (conversionFailed[0] || deadlineStopped[0]) {
 						break;
 					}
 				}
-				stratifiedDelivered = !conversionFailed[0] && eligibleRows[0] > 0;
+				stratifiedDelivered = !conversionFailed[0]
+						&& samples.size() >= minimumEvidence;
 			} catch (IOException e) {
 				stratifiedDelivered = false;
 			}
@@ -1296,6 +1383,20 @@ class LmdbFilterSelectivityStats
 		}
 
 		return new SampledPassRatio((double) passed / samples.size(), samples.size(), truncated);
+	}
+
+	private static boolean continueStratifiedSampling(long deadlineNanos, int scanBudget, int minimumEvidence,
+			int eligibleRows, int scannedRows, boolean[] deadlineStopped) {
+		if (!samplingDeadlineExceeded(deadlineNanos)) {
+			return true;
+		}
+		int minimumEvidenceScanLimit = Math.min(scanBudget,
+				Math.multiplyExact(minimumEvidence, MAX_MINIMUM_EVIDENCE_SCAN_MULTIPLIER));
+		if (eligibleRows < minimumEvidence && scannedRows < minimumEvidenceScanLimit) {
+			return true;
+		}
+		deadlineStopped[0] = true;
+		return false;
 	}
 
 	static final String FILTER_SAMPLING_MODE_PROPERTY = "rdf4j.optimizer.lmdb.filterSamplingMode";
@@ -1514,7 +1615,7 @@ class LmdbFilterSelectivityStats
 		if (!Double.isFinite(expectedRuntimeRows) || expectedRuntimeRows <= 64.0d) {
 			return 1;
 		}
-		return Math.min(scanBudget, 16);
+		return Math.min(scanBudget, MIN_SAMPLED_EVIDENCE_TO_OUTRANK_HEURISTIC);
 	}
 
 	private static boolean samplingDeadlineExceeded(long deadlineNanos) {
@@ -1967,6 +2068,12 @@ class LmdbFilterSelectivityStats
 		private static DistinctFilterValues unavailable() {
 			return new DistinctFilterValues(List.of(), DistinctFilterStatus.UNAVAILABLE);
 		}
+	}
+
+	private enum ExactZeroProbe {
+		ALL_REJECTED,
+		PASSING_ROW,
+		INCONCLUSIVE
 	}
 
 	enum DistinctFilterStatus {

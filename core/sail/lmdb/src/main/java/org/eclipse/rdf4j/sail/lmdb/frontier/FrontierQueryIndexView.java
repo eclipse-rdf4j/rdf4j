@@ -12,8 +12,11 @@
 package org.eclipse.rdf4j.sail.lmdb.frontier;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 
 final class FrontierQueryIndexView {
 
@@ -23,6 +26,7 @@ final class FrontierQueryIndexView {
 	private final long byteLength;
 	private final double inclusionProbability;
 	private final boolean databaseExact;
+	private final PredicateLaneSummaries predicateLaneSummaries;
 	private final AtomicInteger references = new AtomicInteger(1);
 
 	FrontierQueryIndexView(FrontierManifestIdentity identity, List<FrontierQueryIndex> indexes) {
@@ -42,6 +46,7 @@ final class FrontierQueryIndexView {
 		}
 		recordCount = records;
 		byteLength = bytes;
+		predicateLaneSummaries = databaseExact ? null : PredicateLaneSummaries.build(identity, indexes);
 	}
 
 	boolean tryRetain() {
@@ -117,6 +122,13 @@ final class FrontierQueryIndexView {
 		return rows;
 	}
 
+	long primaryLeafCandidateRows(FrontierLeafSelector selector) {
+		if (precomputedPredicateDiagnostics(selector) != null) {
+			return candidateRows(selector);
+		}
+		return candidateRangeRows(selector);
+	}
+
 	long candidateRows(FrontierLeafSelector selector, int direction, int laneRole, int laneIndex) {
 		return candidateRows(prepare(selector, direction, laneRole, laneIndex));
 	}
@@ -172,15 +184,44 @@ final class FrontierQueryIndexView {
 		return rows;
 	}
 
+	FrontierQueryIndexMatchScan visitMatchesBounded(PreparedProbe probe, long maximumScannedRows,
+			FrontierQueryIndexRowSink sink) {
+		if (maximumScannedRows < 0L) {
+			throw new IllegalArgumentException("maximumScannedRows must be nonnegative");
+		}
+		long scannedRows = 0L;
+		long matchedRows = 0L;
+		boolean complete = true;
+		for (int ordinal = 0; ordinal < indexes.size(); ordinal++) {
+			FrontierQueryIndex.MatchScanProgress progress = indexes.get(ordinal)
+					.visitMatchesBounded(
+							probe.selector,
+							probe.ranges[ordinal],
+							maximumScannedRows - scannedRows,
+							sink);
+			scannedRows = Math.addExact(scannedRows, progress.scannedRows());
+			matchedRows = Math.addExact(matchedRows, progress.matchedRows());
+			if (!progress.complete()) {
+				complete = false;
+				break;
+			}
+		}
+		return new FrontierQueryIndexMatchScan(complete, scannedRows, matchedRows);
+	}
+
 	PreparedProbe prepare(FrontierLeafSelector selector, int direction, int laneRole, int laneIndex) {
 		FrontierQueryIndex.PreparedRange[] ranges = new FrontierQueryIndex.PreparedRange[indexes.size()];
 		for (int ordinal = 0; ordinal < indexes.size(); ordinal++) {
 			ranges[ordinal] = indexes.get(ordinal).prepare(selector, direction, laneRole, laneIndex);
 		}
-		return new PreparedProbe(selector, ranges);
+		return new PreparedProbe(selector, ranges, direction, laneRole, laneIndex);
 	}
 
 	FrontierQueryIndexLaneDiagnostics laneDiagnostics(FrontierLeafSelector selector, int direction) {
+		FrontierQueryIndexLaneDiagnostics precomputed = precomputedPredicateDiagnostics(selector, direction);
+		if (precomputed != null) {
+			return precomputed;
+		}
 		long[] designMatchedRows = new long[identity.designLaneCount()];
 		double[] designWeightedRows = new double[identity.designLaneCount()];
 		long[] auditMatchedRows = new long[identity.auditLaneCount()];
@@ -201,6 +242,51 @@ final class FrontierQueryIndexView {
 				designWeightedRows,
 				auditMatchedRows,
 				auditWeightedRows);
+	}
+
+	FrontierQueryIndexLeafScan visitPrimaryLeafWithDiagnostics(
+			PreparedProbe primaryProbe,
+			int direction,
+			long maximumScannedRows,
+			FrontierQueryIndexRowSink primaryDesignSink) {
+		FrontierQueryIndexLaneDiagnostics precomputed = precomputedPredicateDiagnostics(
+				primaryProbe.selector,
+				direction);
+		if (precomputed == null) {
+			return visitLeafOnce(
+					primaryProbe.selector,
+					direction,
+					maximumScannedRows,
+					false,
+					primaryDesignSink,
+					primaryDesignSink);
+		}
+		FrontierQueryIndexMatchScan primary = visitMatchesBounded(
+				primaryProbe,
+				maximumScannedRows,
+				primaryDesignSink);
+		return new FrontierQueryIndexLeafScan(
+				primary.complete(),
+				precomputed.withScannedRows(primary.scannedRows()));
+	}
+
+	private FrontierQueryIndexLaneDiagnostics precomputedPredicateDiagnostics(FrontierLeafSelector selector) {
+		return precomputedPredicateDiagnostics(
+				selector,
+				FrontierManifestIdentity.SUBJECT_TO_OBJECT_DIRECTION);
+	}
+
+	private FrontierQueryIndexLaneDiagnostics precomputedPredicateDiagnostics(
+			FrontierLeafSelector selector,
+			int direction) {
+		PredicateLaneSummaries summaries = predicateLaneSummaries;
+		if (summaries == null
+				|| selector.impossible()
+				|| selector.constant(1) <= 0L
+				|| !selector.verificationFree(1)) {
+			return null;
+		}
+		return summaries.get(direction, selector.constant(1));
 	}
 
 	FrontierQueryIndexLeafScan visitLeafOnce(
@@ -303,6 +389,140 @@ final class FrontierQueryIndexView {
 		return byteLength;
 	}
 
-	record PreparedProbe(FrontierLeafSelector selector, FrontierQueryIndex.PreparedRange[] ranges) {
+	private static final class PredicateLaneSummaries {
+
+		private final Long2ObjectOpenHashMap<FrontierQueryIndexLaneDiagnostics> subjectToObject;
+		private final Long2ObjectOpenHashMap<FrontierQueryIndexLaneDiagnostics> objectToSubject;
+		private final FrontierQueryIndexLaneDiagnostics empty;
+
+		private PredicateLaneSummaries(
+				Long2ObjectOpenHashMap<FrontierQueryIndexLaneDiagnostics> subjectToObject,
+				Long2ObjectOpenHashMap<FrontierQueryIndexLaneDiagnostics> objectToSubject,
+				FrontierQueryIndexLaneDiagnostics empty) {
+			this.subjectToObject = subjectToObject;
+			this.objectToSubject = objectToSubject;
+			this.empty = empty;
+		}
+
+		private static PredicateLaneSummaries build(
+				FrontierManifestIdentity identity,
+				List<FrontierQueryIndex> indexes) {
+			PredicateLaneSummaryBuilder builder = new PredicateLaneSummaryBuilder(identity);
+			for (FrontierQueryIndex index : indexes) {
+				index.visitPredicateLaneSummaries(builder::add);
+			}
+			return builder.freeze();
+		}
+
+		private FrontierQueryIndexLaneDiagnostics get(int direction, long predicate) {
+			Long2ObjectOpenHashMap<FrontierQueryIndexLaneDiagnostics> summaries = switch (direction) {
+			case FrontierManifestIdentity.SUBJECT_TO_OBJECT_DIRECTION -> subjectToObject;
+			case FrontierManifestIdentity.OBJECT_TO_SUBJECT_DIRECTION -> objectToSubject;
+			default -> throw new IllegalArgumentException("invalid Frontier query-index direction");
+			};
+			FrontierQueryIndexLaneDiagnostics summary = summaries.get(predicate);
+			return summary == null ? empty : summary;
+		}
+	}
+
+	private static final class PredicateLaneSummaryBuilder {
+
+		private final FrontierManifestIdentity identity;
+		private final Long2ObjectOpenHashMap<MutablePredicateLaneSummary> subjectToObject = new Long2ObjectOpenHashMap<>();
+		private final Long2ObjectOpenHashMap<MutablePredicateLaneSummary> objectToSubject = new Long2ObjectOpenHashMap<>();
+
+		private PredicateLaneSummaryBuilder(FrontierManifestIdentity identity) {
+			this.identity = identity;
+		}
+
+		private void add(int direction, int laneRole, int laneIndex, long predicate, double weight) {
+			int laneCount = switch (laneRole) {
+			case FrontierManifestIdentity.DESIGN_LANE_ROLE -> identity.designLaneCount();
+			case FrontierManifestIdentity.AUDIT_LANE_ROLE -> identity.auditLaneCount();
+			default -> throw new IllegalStateException("mapped Frontier row has an invalid lane role");
+			};
+			if (laneIndex < 0 || laneIndex >= laneCount) {
+				throw new IllegalStateException("mapped Frontier row is outside its configured lane count");
+			}
+			Long2ObjectOpenHashMap<MutablePredicateLaneSummary> summaries = switch (direction) {
+			case FrontierManifestIdentity.SUBJECT_TO_OBJECT_DIRECTION -> subjectToObject;
+			case FrontierManifestIdentity.OBJECT_TO_SUBJECT_DIRECTION -> objectToSubject;
+			default -> throw new IllegalStateException("mapped Frontier row has an invalid direction");
+			};
+			MutablePredicateLaneSummary summary = summaries.get(predicate);
+			if (summary == null) {
+				summary = new MutablePredicateLaneSummary();
+				summaries.put(predicate, summary);
+			}
+			summary.add(laneRole, laneIndex, weight);
+		}
+
+		private PredicateLaneSummaries freeze() {
+			return new PredicateLaneSummaries(
+					freeze(subjectToObject),
+					freeze(objectToSubject),
+					FrontierQueryIndexLaneDiagnostics.sparse(
+							identity.designLaneCount(),
+							identity.auditLaneCount(),
+							new long[0],
+							new long[0],
+							new double[0]));
+		}
+
+		private Long2ObjectOpenHashMap<FrontierQueryIndexLaneDiagnostics> freeze(
+				Long2ObjectOpenHashMap<MutablePredicateLaneSummary> mutable) {
+			Long2ObjectOpenHashMap<FrontierQueryIndexLaneDiagnostics> frozen = new Long2ObjectOpenHashMap<>(
+					mutable.size());
+			for (var entry : mutable.long2ObjectEntrySet()) {
+				frozen.put(
+						entry.getLongKey(),
+						entry.getValue().freeze(identity.designLaneCount(), identity.auditLaneCount()));
+			}
+			return frozen;
+		}
+	}
+
+	private static final class MutablePredicateLaneSummary {
+
+		private final Long2ObjectOpenHashMap<MutableLaneSummary> lanes = new Long2ObjectOpenHashMap<>();
+
+		private void add(int laneRole, int laneIndex, double weight) {
+			long scope = FrontierQueryIndexLaneDiagnostics.scopeKey(laneRole, laneIndex);
+			MutableLaneSummary lane = lanes.get(scope);
+			if (lane == null) {
+				lane = new MutableLaneSummary();
+				lanes.put(scope, lane);
+			}
+			lane.matchedRows = Math.incrementExact(lane.matchedRows);
+			lane.weightedRows += weight;
+		}
+
+		private FrontierQueryIndexLaneDiagnostics freeze(int designLaneCount, int auditLaneCount) {
+			long[] scopes = lanes.keySet().toLongArray();
+			Arrays.sort(scopes);
+			long[] matchedRows = new long[scopes.length];
+			double[] weightedRows = new double[scopes.length];
+			for (int ordinal = 0; ordinal < scopes.length; ordinal++) {
+				MutableLaneSummary lane = lanes.get(scopes[ordinal]);
+				matchedRows[ordinal] = lane.matchedRows;
+				weightedRows[ordinal] = lane.weightedRows;
+			}
+			return FrontierQueryIndexLaneDiagnostics.sparse(
+					designLaneCount,
+					auditLaneCount,
+					scopes,
+					matchedRows,
+					weightedRows);
+		}
+	}
+
+	private static final class MutableLaneSummary {
+
+		private long matchedRows;
+		private double weightedRows;
+	}
+
+	record PreparedProbe(FrontierLeafSelector selector, FrontierQueryIndex.PreparedRange[] ranges, int direction,
+			int laneRole, int laneIndex) {
 	}
 }

@@ -12,18 +12,51 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierMemoryLimitException;
 
-/** Signals that a stateful cost session is unusable as a whole and may be retried once with scalar costing. */
+/** Signals why a stateful cost session could not complete its current costing transition. */
 @Experimental
 public final class PackedCostSessionFailure extends RuntimeException {
 
 	private static final long serialVersionUID = 1L;
 
+	private final FailureKind kind;
+
 	public PackedCostSessionFailure(String message) {
-		super(message);
+		this(message, null, FailureKind.PROVIDER_FAILURE);
 	}
 
 	public PackedCostSessionFailure(String message, Throwable cause) {
+		this(message, cause, failureKind(cause));
+	}
+
+	private PackedCostSessionFailure(String message, Throwable cause, FailureKind kind) {
 		super(message, cause);
+		this.kind = kind;
+	}
+
+	/**
+	 * Reports a deterministic provider-owned resource ceiling. The planner may retain an already completed incumbent,
+	 * but must never reinterpret this condition as permission to recost the search with a scalar provider.
+	 */
+	public static PackedCostSessionFailure resourceLimit(String message, Throwable cause) {
+		return new PackedCostSessionFailure(message, cause, FailureKind.RESOURCE_LIMIT);
+	}
+
+	public boolean isResourceLimit() {
+		return kind == FailureKind.RESOURCE_LIMIT;
+	}
+
+	private static FailureKind failureKind(Throwable cause) {
+		if (cause instanceof FrontierMemoryLimitException
+				|| cause instanceof PackedCostSessionFailure sessionFailure && sessionFailure.isResourceLimit()) {
+			return FailureKind.RESOURCE_LIMIT;
+		}
+		return FailureKind.PROVIDER_FAILURE;
+	}
+
+	private enum FailureKind {
+		PROVIDER_FAILURE,
+		RESOURCE_LIMIT
 	}
 }

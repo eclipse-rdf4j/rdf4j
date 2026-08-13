@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplicabilityResult;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /**
@@ -44,27 +45,29 @@ final class PackedLogicalRuleProgram {
 	private final PackedNodeMetadataArena metadata;
 	private final PackedObjectPool objects;
 	private final PackedSymbolTable symbols;
+	private PackedProofSetArena proofSets;
+	private RuleApplicabilityResult applicability;
 	private final int[] unary = new int[1];
 	private final int[] binary = new int[2];
-	private final int[] wrapperIds = new int[8];
+	private int[] wrapperIds;
 	private final int[] bindingPair = new int[2];
-	private final int[] finiteValueObjectIds = new int[MAX_FINITE_VALUES];
-	private final int[] finiteRowIds = new int[MAX_FINITE_VALUES];
-	private int[] factorIds = new int[16];
-	private final int[] branchCodeNameIds = new int[2];
-	private final int[] branchTargetNameIds = new int[2];
-	private final int[] branchLiteralValueIds = new int[2];
-	private final int[] branchTypeValueIds = new int[2];
-	private final int[] branchTypePredicateValueIds = new int[2];
-	private final int[] branchCodePredicateValueIds = new int[2];
-	private final int[] branchTypePatternIds = new int[2];
-	private final int[] branchCodePatternIds = new int[2];
-	private final int[] branchCodeValueCounts = new int[2];
-	private final int[] branchCodeValueIds = new int[MAX_FINITE_VALUES * 2];
-	private int[] rewriteScratch = new int[32];
+	private int[] finiteValueObjectIds;
+	private int[] finiteRowIds;
+	private int[] factorIds;
+	private int[] branchCodeNameIds;
+	private int[] branchTargetNameIds;
+	private int[] branchLiteralValueIds;
+	private int[] branchTypeValueIds;
+	private int[] branchTypePredicateValueIds;
+	private int[] branchCodePredicateValueIds;
+	private int[] branchTypePatternIds;
+	private int[] branchCodePatternIds;
+	private int[] branchCodeValueCounts;
+	private int[] branchCodeValueIds;
+	private int[] rewriteScratch;
 	private int rewriteScratchSize;
-	private int[] renamedObjectIds = new int[16];
-	private long[] appliedExpressionWords = new long[1];
+	private int[] renamedObjectIds;
+	private int[] appliedFactRevisions = new int[16];
 	private int[] firstMovableFilterByGroup = new int[16];
 	private int[] nextMovableFilterByExpression = new int[16];
 	private byte[] movableFilterRegistered = new byte[16];
@@ -100,8 +103,8 @@ final class PackedLogicalRuleProgram {
 		this.symbols = symbols;
 	}
 
-	void apply(int expressionId) {
-		if (!markApplied(expressionId)) {
+	void apply(int expressionId, int factRevision) {
+		if (!markApplied(expressionId, factRevision)) {
 			return;
 		}
 		switch (relations.operatorTag(expressionId)) {
@@ -129,6 +132,7 @@ final class PackedLogicalRuleProgram {
 		default -> {
 		}
 		}
+		addStoredPredicateRangeAnchorAlternative(expressionId);
 	}
 
 	/**
@@ -231,8 +235,14 @@ final class PackedLogicalRuleProgram {
 		unary[0] = relations.groupId(rewrittenFilterId);
 		int alternativeId = addAlternative(filterExpressionId, PackedRelOp.EXTENSION, extensionPayloadId, unary, 1);
 		if (alternativeId != 0) {
-			metadata.addRelationRuleMask(alternativeId,
+			addAlternativeRuleMask(alternativeId,
 					metadata.relationRuleMask(extensionExpressionId) | PackedRuleProofs.TRIVIAL_BIND_ALIAS);
+			/*
+			 * The substitution proves logical equivalence, but it does not prove physical cost dominance. The rewritten
+			 * alternative evaluates the extension after the surrounding join, where bag multiplication can make it see
+			 * more rows than the original factor-local extension. Keep both physical spaces searchable; the cost model,
+			 * including any inherited Frontier evidence, decides between them.
+			 */
 		}
 	}
 
@@ -307,7 +317,7 @@ final class PackedLogicalRuleProgram {
 		unary[0] = relations.groupId(joinedInputId);
 		int alternativeId = addAlternative(joinExpressionId, PackedRelOp.FILTER, conditionId, unary, 1);
 		if (alternativeId != 0) {
-			metadata.addRelationRuleMask(alternativeId,
+			addAlternativeRuleMask(alternativeId,
 					metadata.relationRuleMask(filterExpressionId) | PackedRuleProofs.FILTER_COMMUTATION);
 			registerMovableFilter(alternativeId);
 		}
@@ -363,7 +373,7 @@ final class PackedLogicalRuleProgram {
 		int leftExpressionId = relations.childGroupId(differenceExpressionId, 0);
 		if (relations.operatorTag(leftExpressionId) == PackedRelOp.FILTER
 				&& scalarContainsExists(relations.payloadId(leftExpressionId))) {
-			metadata.addRelationRuleMask(differenceExpressionId, PackedRuleProofs.FILTER_MINUS_LEFT_PUSHDOWN);
+			addAlternativeRuleMask(differenceExpressionId, PackedRuleProofs.FILTER_MINUS_LEFT_PUSHDOWN);
 		}
 	}
 
@@ -392,7 +402,7 @@ final class PackedLogicalRuleProgram {
 		if (alternativeId == 0) {
 			return;
 		}
-		metadata.addRelationRuleMask(alternativeId, PackedRuleProofs.MINUS_CORRELATED_NOT_EXISTS);
+		addAlternativeRuleMask(alternativeId, PackedRuleProofs.MINUS_CORRELATED_NOT_EXISTS);
 		metadata.addRelationSemanticFlags(
 				alternativeId, PackedNodeMetadataArena.SEMANTIC_ASSURED_SHARED_MINUS_FILTER);
 		addTypedSemiAntiAlternatives(
@@ -405,7 +415,7 @@ final class PackedLogicalRuleProgram {
 				PackedRuleProofs.MINUS_CORRELATED_NOT_EXISTS);
 		int commutedAlternativeId = addAdjacentFilterCommutationAlternative(alternativeId);
 		if (commutedAlternativeId != 0) {
-			metadata.addRelationRuleMask(commutedAlternativeId, PackedRuleProofs.MINUS_CORRELATED_NOT_EXISTS);
+			addAlternativeRuleMask(commutedAlternativeId, PackedRuleProofs.MINUS_CORRELATED_NOT_EXISTS);
 		}
 	}
 
@@ -510,19 +520,13 @@ final class PackedLogicalRuleProgram {
 
 		unary[0] = relations.groupId(commutedInnerId);
 		int targetGroupId = relations.groupId(outerFilterExpressionId);
-		int existing = relations.findLogical(PackedRelOp.FILTER, innerConditionId, 0,
-				relations.executionDomainId(innerFilterExpressionId), unary, 0, 1);
-		if (existing != 0) {
-			if (relations.groupId(existing) != targetGroupId) {
-				return 0;
-			}
-			addCommutationRuleMask(outerFilterExpressionId, innerFilterExpressionId, existing);
-			return existing;
-		}
 		before = relations.size();
-		int commutedOuterId = relations.internLogical(targetGroupId,
+		int commutedOuterId = relations.internLogicalIfSameGroup(targetGroupId,
 				PackedRelOp.FILTER, innerConditionId, 0,
 				relations.executionDomainId(innerFilterExpressionId), unary, 0, 1);
+		if (commutedOuterId == 0) {
+			return 0;
+		}
 		if (commutedOuterId > before) {
 			metadata.attachRelation(commutedOuterId, 0, relations.semanticScopeId(outerFilterExpressionId),
 					metadata.relationResultSizeEstimate(outerFilterExpressionId), Double.NaN, 0);
@@ -541,7 +545,7 @@ final class PackedLogicalRuleProgram {
 		long ruleMask = metadata.relationRuleMask(outerFilterExpressionId)
 				| metadata.relationRuleMask(innerFilterExpressionId)
 				| PackedRuleProofs.FILTER_COMMUTATION;
-		metadata.addRelationRuleMask(commutedOuterId, ruleMask);
+		addAlternativeRuleMask(commutedOuterId, ruleMask);
 	}
 
 	private boolean commutableFilterCondition(int scalarId, int commonBaseExpressionId) {
@@ -703,6 +707,7 @@ final class PackedLogicalRuleProgram {
 		if (entityNameId == 0) {
 			return;
 		}
+		ensureCodeTypeScratch();
 		long[] live = new long[maskWordCount()];
 		addObject(live, entityNameId);
 		optionalRemoved = false;
@@ -912,6 +917,9 @@ final class PackedLogicalRuleProgram {
 			collectJoinFactors(relations.childGroupId(expressionId, 1));
 			return;
 		}
+		if (factorIds == null) {
+			factorIds = new int[16];
+		}
 		if (factorCount == factorIds.length) {
 			factorIds = Arrays.copyOf(factorIds, factorIds.length << 1);
 		}
@@ -980,6 +988,7 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private int bindingAssignment(int nameId, int[] valueIds, int count) {
+		ensureFiniteDomainScratch();
 		unary[0] = nameId;
 		int namesPayloadId = payloads.internCanonical(PackedPayloadOp.NAME_SET, 0, 0, 0, unary, 0, 1);
 		for (int ordinal = 0; ordinal < count; ordinal++) {
@@ -1048,6 +1057,9 @@ final class PackedLogicalRuleProgram {
 	private void addPositiveHavingOptionalAlternative(int projectionExpressionId) {
 		int projectionPayloadId = relations.payloadId(projectionExpressionId);
 		int childId = relations.childGroupId(projectionExpressionId, 0);
+		if (wrapperIds == null) {
+			wrapperIds = new int[8];
+		}
 		int wrapperCount = 0;
 		int filterId = 0;
 		while (wrapperCount < wrapperIds.length) {
@@ -1637,6 +1649,9 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private void ensureRenameCapacity(int symbolId) {
+		if (renamedObjectIds == null) {
+			renamedObjectIds = new int[16];
+		}
 		if (symbolId >= renamedObjectIds.length) {
 			int capacity = renamedObjectIds.length;
 			while (capacity <= symbolId) {
@@ -1647,6 +1662,9 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private int reserveRewriteScratch(int count) {
+		if (rewriteScratch == null) {
+			rewriteScratch = new int[Math.max(32, count)];
+		}
 		int start = rewriteScratchSize;
 		int required = start + count;
 		if (required > rewriteScratch.length) {
@@ -1883,6 +1901,73 @@ final class PackedLogicalRuleProgram {
 	}
 
 	/**
+	 * Makes a complete finite store domain available as a normal, costed binding-side alternative even when no query
+	 * FILTER mentions the object. The anchor is introduced above the pattern's group, rather than as a self-referencing
+	 * alternative inside that group, preserving the permanent-group and acyclic-memo invariants.
+	 */
+	private void addStoredPredicateRangeAnchorAlternative(int observerExpressionId) {
+		int operator = relations.operatorTag(observerExpressionId);
+		int childCount = relations.childCount(observerExpressionId);
+		if (domainFacts == null || childCount == 0 || operator == PackedRelOp.FILTER
+				|| operator == PackedRelOp.SERVICE) {
+			return;
+		}
+		for (int childOrdinal = 0; childOrdinal < childCount; childOrdinal++) {
+			int patternGroupId = relations.childGroupId(observerExpressionId, childOrdinal);
+			if (!collectStoredFiniteDomain(patternGroupId)
+					|| containsBindingAssignmentFor(observerExpressionId, finiteSymbolId)) {
+				continue;
+			}
+			int anchorExpressionId = finiteBindingAssignment();
+			binary[0] = relations.groupId(anchorExpressionId);
+			binary[1] = patternGroupId;
+			int anchoredPatternId = canonicalRelation(PackedRelOp.JOIN, 0, binary, 2, patternGroupId);
+			addAlternativeRuleMask(anchoredPatternId, PackedRuleProofs.PREDICATE_RANGE_ANCHOR);
+
+			int start = reserveRewriteScratch(childCount);
+			for (int ordinal = 0; ordinal < childCount; ordinal++) {
+				rewriteScratch[start + ordinal] = ordinal == childOrdinal
+						? relations.groupId(anchoredPatternId)
+						: relations.childGroupId(observerExpressionId, ordinal);
+			}
+			int alternativeId = addAlternative(observerExpressionId, operator,
+					relations.payloadId(observerExpressionId), rewriteScratch, start, childCount);
+			releaseRewriteScratch(start);
+			addAlternativeRuleMask(alternativeId, PackedRuleProofs.PREDICATE_RANGE_ANCHOR);
+		}
+	}
+
+	private boolean collectStoredFiniteDomain(int patternGroupId) {
+		resetFiniteDomain();
+		if (relations.operatorTag(patternGroupId) != PackedRelOp.STATEMENT_PATTERN) {
+			return false;
+		}
+		int objectNameId = statementTermName(patternGroupId, 2);
+		int symbolId = objectNameId == 0 ? 0 : symbols.symbolId(objectNameId);
+		if (symbolId == 0 || !relationAssuresSymbol(patternGroupId, symbolId)) {
+			return false;
+		}
+		int rangeId = domainFacts.rangeId(patternGroupId, symbolId);
+		PackedPredicateRangeArena arena = domainFacts.arena();
+		int valueCount = rangeId == 0 ? 0 : arena.finiteValueCount(rangeId);
+		if (rangeId == 0 || arena.state(rangeId) != PackedPredicateRange.STATE_KNOWN || !arena.isFinite(rangeId)
+				|| valueCount == 0 || valueCount > MAX_FINITE_VALUES) {
+			return false;
+		}
+		finiteNameObjectId = objectNameId;
+		finiteSymbolId = symbolId;
+		for (int ordinal = 0; ordinal < valueCount; ordinal++) {
+			int objectId = arena.finiteValueObjectId(rangeId, ordinal);
+			if (!(objects.value(objectId) instanceof Value)) {
+				resetFiniteDomain();
+				return false;
+			}
+			appendFiniteValueObject(objectId);
+		}
+		return finiteValueCount != 0;
+	}
+
+	/**
 	 * A join whose fact base proves an assured shared symbol has an empty value domain (the branch domains intersected
 	 * to nothing) can never produce a row.
 	 */
@@ -1903,21 +1988,23 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private void addEmptySetAlternative(int sourceExpressionId, long proofBit) {
-		int existing = relations.findLogical(PackedRelOp.EMPTY_SET, 0,
-				relations.semanticScopeId(sourceExpressionId), relations.executionDomainId(sourceExpressionId),
-				NO_CHILDREN, 0, 0);
-		if (existing != 0 && relations.groupId(existing) != relations.groupId(sourceExpressionId)) {
-			return;
-		}
+		int targetGroupId = relations.groupId(sourceExpressionId);
 		int before = relations.size();
-		int alternativeId = relations.internLogical(relations.groupId(sourceExpressionId), PackedRelOp.EMPTY_SET, 0,
+		/*
+		 * Every childless EMPTY_SET has the same structural tuple, but each independently proved-empty semantic group
+		 * needs its own memo expression. Groups are deliberately append-only and are not merged when two rules reach
+		 * the same terminal expression, so global logical interning would retain only the first proof and silently
+		 * discard all later groups. Group-scoped identity records each equivalence without changing
+		 * canonical-expression identity.
+		 */
+		int alternativeId = relations.internGroupScoped(targetGroupId, PackedRelOp.EMPTY_SET, 0,
 				relations.semanticScopeId(sourceExpressionId), relations.executionDomainId(sourceExpressionId),
 				NO_CHILDREN, 0, 0);
 		if (alternativeId > before) {
 			// A proven-empty expression must carry zero-row estimates of its own, not the source's estimates.
 			metadata.attachRelation(alternativeId, 0, 0, 0.0d, 0.0d, 0);
 		}
-		metadata.addRelationRuleMask(alternativeId, proofBit);
+		addAlternativeRuleMask(alternativeId, proofBit);
 	}
 
 	/**
@@ -1933,13 +2020,6 @@ final class PackedLogicalRuleProgram {
 			metadata.attachScalar(trueConstantId, 0, 0, -1.0d, -1.0d);
 		}
 		if (trueConstantId == relations.payloadId(filterExpressionId)) {
-			return;
-		}
-		unary[0] = inputGroupId;
-		int existing = relations.findLogical(PackedRelOp.FILTER, trueConstantId,
-				relations.semanticScopeId(filterExpressionId), relations.executionDomainId(filterExpressionId),
-				unary, 0, 1);
-		if (existing != 0 && relations.groupId(existing) != relations.groupId(filterExpressionId)) {
 			return;
 		}
 		unary[0] = inputGroupId;
@@ -2015,15 +2095,148 @@ final class PackedLogicalRuleProgram {
 			return VERDICT_UNKNOWN;
 		}
 		case PackedScalarOp.COMPARE -> {
-			return compareVerdict(scalarId, inputGroupId, scalars.payloadId(scalarId));
+			int comparison = scalars.payloadId(scalarId);
+			int derived = derivedValueComparisonVerdict(scalarId, inputGroupId, comparison);
+			return derived == VERDICT_UNKNOWN ? compareVerdict(scalarId, inputGroupId, comparison) : derived;
 		}
 		case PackedScalarOp.SAME_TERM -> {
-			return compareVerdict(scalarId, inputGroupId, EQUALITY_COMPARISON);
+			int derived = derivedValueComparisonVerdict(scalarId, inputGroupId, EQUALITY_COMPARISON);
+			return derived == VERDICT_UNKNOWN
+					? compareVerdict(scalarId, inputGroupId, EQUALITY_COMPARISON)
+					: derived;
+		}
+		case PackedScalarOp.LANG_MATCHES -> {
+			return langMatchesVerdict(scalarId, inputGroupId);
 		}
 		default -> {
 			return VERDICT_UNKNOWN;
 		}
 		}
+	}
+
+	private int derivedValueComparisonVerdict(int scalarId, int inputGroupId, int comparison) {
+		if (comparison != EQUALITY_COMPARISON || scalars.childCount(scalarId) != 2) {
+			return VERDICT_UNKNOWN;
+		}
+		int leftId = scalars.childGroupId(scalarId, 0);
+		int rightId = scalars.childGroupId(scalarId, 1);
+		int leftOperator = scalars.operatorTag(leftId);
+		int rightOperator = scalars.operatorTag(rightId);
+		boolean leftDerived = leftOperator == PackedScalarOp.DATATYPE || leftOperator == PackedScalarOp.LANG;
+		boolean rightDerived = rightOperator == PackedScalarOp.DATATYPE || rightOperator == PackedScalarOp.LANG;
+		if (leftDerived == rightDerived) {
+			return VERDICT_UNKNOWN;
+		}
+		int derivedId = leftDerived ? leftId : rightId;
+		int constantValueId = scalarConstantValueId(leftDerived ? rightId : leftId);
+		if (constantValueId == 0 || !(objects.value(constantValueId)instanceof Value constant)) {
+			return VERDICT_UNKNOWN;
+		}
+		return scalars.operatorTag(derivedId) == PackedScalarOp.DATATYPE
+				? datatypeVerdict(derivedId, inputGroupId, constant)
+				: languageVerdict(derivedId, inputGroupId, constant);
+	}
+
+	private int datatypeVerdict(int datatypeScalarId, int inputGroupId, Value constant) {
+		int rangeId = assuredArgumentRange(datatypeScalarId, inputGroupId);
+		if (rangeId == 0) {
+			return VERDICT_UNKNOWN;
+		}
+		PackedPredicateRangeArena arena = domainFacts.arena();
+		int kinds = arena.kindBits(rangeId);
+		if (kinds != 0 && (kinds & PackedPredicateRange.KIND_LITERAL) == 0) {
+			return VERDICT_ALWAYS_DROPPED;
+		}
+		if (kinds != PackedPredicateRange.KIND_LITERAL || !constant.isIRI()) {
+			return VERDICT_UNKNOWN;
+		}
+
+		long datatypes = arena.datatypeBits(rangeId);
+		int languageBits = arena.languageBits(rangeId);
+		long targetDatatype = xsdDatatypeBit(constant);
+		boolean targetLangString = org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(constant);
+		if (targetLangString) {
+			if (languageBits == PackedPredicateRange.LANGUAGE_WITH) {
+				return VERDICT_ALWAYS_TRUE;
+			}
+			return (languageBits & PackedPredicateRange.LANGUAGE_WITH) == 0 && languageBits != 0
+					? VERDICT_ALWAYS_FALSE
+					: VERDICT_UNKNOWN;
+		}
+		if (targetDatatype == 0L || datatypes == 0L) {
+			return VERDICT_UNKNOWN;
+		}
+		if (datatypes == targetDatatype && (languageBits & PackedPredicateRange.LANGUAGE_WITH) == 0) {
+			return VERDICT_ALWAYS_TRUE;
+		}
+		return (datatypes & targetDatatype) == 0L ? VERDICT_ALWAYS_FALSE : VERDICT_UNKNOWN;
+	}
+
+	private int languageVerdict(int langScalarId, int inputGroupId, Value constant) {
+		int rangeId = assuredArgumentRange(langScalarId, inputGroupId);
+		if (rangeId == 0) {
+			return VERDICT_UNKNOWN;
+		}
+		PackedPredicateRangeArena arena = domainFacts.arena();
+		int kinds = arena.kindBits(rangeId);
+		if (kinds != 0 && (kinds & PackedPredicateRange.KIND_LITERAL) == 0) {
+			return VERDICT_ALWAYS_DROPPED;
+		}
+		if (kinds != PackedPredicateRange.KIND_LITERAL || !(constant instanceof Literal literal)
+				|| literal.getLanguage().isPresent()) {
+			return VERDICT_UNKNOWN;
+		}
+		int languages = arena.languageBits(rangeId);
+		if (literal.getLabel().isEmpty()) {
+			if (languages == PackedPredicateRange.LANGUAGE_WITHOUT) {
+				return VERDICT_ALWAYS_TRUE;
+			}
+			return languages == PackedPredicateRange.LANGUAGE_WITH
+					? VERDICT_ALWAYS_FALSE
+					: VERDICT_UNKNOWN;
+		}
+		return languages == PackedPredicateRange.LANGUAGE_WITHOUT
+				? VERDICT_ALWAYS_FALSE
+				: VERDICT_UNKNOWN;
+	}
+
+	private int langMatchesVerdict(int scalarId, int inputGroupId) {
+		if (scalars.childCount(scalarId) != 2) {
+			return VERDICT_UNKNOWN;
+		}
+		int langId = scalars.childGroupId(scalarId, 0);
+		int patternValueId = scalarConstantValueId(scalars.childGroupId(scalarId, 1));
+		if (scalars.operatorTag(langId) != PackedScalarOp.LANG || patternValueId == 0
+				|| !(objects.value(patternValueId)instanceof Literal pattern)
+				|| !"*".equals(pattern.getLabel())) {
+			return VERDICT_UNKNOWN;
+		}
+		int rangeId = assuredArgumentRange(langId, inputGroupId);
+		if (rangeId == 0) {
+			return VERDICT_UNKNOWN;
+		}
+		PackedPredicateRangeArena arena = domainFacts.arena();
+		int kinds = arena.kindBits(rangeId);
+		if (kinds != 0 && (kinds & PackedPredicateRange.KIND_LITERAL) == 0) {
+			return VERDICT_ALWAYS_DROPPED;
+		}
+		if (kinds != PackedPredicateRange.KIND_LITERAL) {
+			return VERDICT_UNKNOWN;
+		}
+		return switch (arena.languageBits(rangeId)) {
+		case PackedPredicateRange.LANGUAGE_WITH -> VERDICT_ALWAYS_TRUE;
+		case PackedPredicateRange.LANGUAGE_WITHOUT -> VERDICT_ALWAYS_FALSE;
+		default -> VERDICT_UNKNOWN;
+		};
+	}
+
+	private static long xsdDatatypeBit(Value value) {
+		for (CoreDatatype.XSD datatype : CoreDatatype.XSD.values()) {
+			if (datatype.getIri().equals(value)) {
+				return 1L << datatype.ordinal();
+			}
+		}
+		return 0L;
 	}
 
 	private int kindVerdict(int scalarId, int inputGroupId, int requiredKinds) {
@@ -2724,14 +2937,14 @@ final class PackedLogicalRuleProgram {
 				binary[0] = relations.groupId(anchorId);
 				binary[1] = relations.childGroupId(childId, 0);
 				int joinedInputId = canonicalRelation(PackedRelOp.JOIN, 0, binary, 2, expressionId);
-				metadata.addRelationRuleMask(joinedInputId, PackedRuleProofs.FINITE_FILTER_VALUES);
+				addAlternativeRuleMask(joinedInputId, PackedRuleProofs.FINITE_FILTER_VALUES);
 				rewrittenId = rebuildUnaryIfChanged(childId, joinedInputId);
 			} else {
 				binary[0] = relations.groupId(anchorId);
 				binary[1] = relations.groupId(childId);
 				rewrittenId = canonicalRelation(PackedRelOp.JOIN, 0, binary, 2, expressionId);
 			}
-			metadata.addRelationRuleMask(rewrittenId, PackedRuleProofs.FINITE_FILTER_VALUES);
+			addAlternativeRuleMask(rewrittenId, PackedRuleProofs.FINITE_FILTER_VALUES);
 			finiteFilterRewritten = true;
 			return rewrittenId;
 		}
@@ -2916,29 +3129,47 @@ final class PackedLogicalRuleProgram {
 
 	private int addAlternative(int sourceExpressionId, int operator, int payloadId, int[] childGroupIds,
 			int childCount) {
+		return addAlternative(sourceExpressionId, operator, payloadId, childGroupIds, 0, childCount);
+	}
+
+	private int addAlternative(int sourceExpressionId, int operator, int payloadId, int[] childGroupIds,
+			int childOffset, int childCount) {
 		int targetGroupId = relations.groupId(sourceExpressionId);
-		int existing = relations.findLogical(operator, payloadId, relations.semanticScopeId(sourceExpressionId),
-				relations.executionDomainId(sourceExpressionId), childGroupIds, 0, childCount);
-		if (existing != 0) {
-			return relations.groupId(existing) == targetGroupId ? existing : 0;
-		}
 		int before = relations.size();
-		int result = relations.internLogical(targetGroupId, operator, payloadId,
+		int result = relations.internLogicalIfSameGroup(targetGroupId, operator, payloadId,
 				relations.semanticScopeId(sourceExpressionId), relations.executionDomainId(sourceExpressionId),
-				childGroupIds, 0, childCount);
-		if (result > before) {
+				childGroupIds, childOffset, childCount);
+		if (result != 0 && result > before) {
 			metadata.copyRelation(sourceExpressionId, result);
 		}
 		return result;
 	}
 
 	private void addAlternativeRuleMask(int alternativeId, long ruleMask) {
-		if (alternativeId != 0) {
-			metadata.addRelationRuleMask(alternativeId, ruleMask);
+		if (alternativeId == 0 || ruleMask == 0L) {
+			return;
 		}
+		if (proofSets == null) {
+			proofSets = new PackedProofSetArena();
+			applicability = new RuleApplicabilityResult();
+		}
+		int proofSetId = proofSets.intern(ruleMask);
+		long remaining = ruleMask;
+		while (remaining != 0L) {
+			long proofBit = Long.lowestOneBit(remaining);
+			int descriptorId = PackedRuleProofs.descriptorIdForProof(proofBit);
+			if (descriptorId == 0) {
+				throw new PackedMemoInvariantException("rule lineage contains an uncataloged proof bit");
+			}
+			applicability.setApplicable(descriptorId, proofSetId, 1, 0L);
+			PackedRuleGuardValidator.requireApplicable(applicability, proofSets);
+			remaining &= ~proofBit;
+		}
+		metadata.addRelationRuleMask(alternativeId, ruleMask);
 	}
 
 	private int finiteBindingAssignment() {
+		ensureFiniteDomainScratch();
 		unary[0] = finiteNameObjectId;
 		int namesPayloadId = payloads.internCanonical(PackedPayloadOp.NAME_SET, 0, 0, 0, unary, 0, 1);
 		for (int ordinal = 0; ordinal < finiteValueCount; ordinal++) {
@@ -2958,6 +3189,7 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private void resetFiniteDomain() {
+		ensureFiniteDomainScratch();
 		finiteNameObjectId = 0;
 		finiteSymbolId = 0;
 		finiteValueCount = 0;
@@ -3043,6 +3275,29 @@ final class PackedLogicalRuleProgram {
 		}
 		finiteValueObjectIds[finiteValueCount++] = objectId;
 		return true;
+	}
+
+	private void ensureFiniteDomainScratch() {
+		if (finiteValueObjectIds == null) {
+			finiteValueObjectIds = new int[MAX_FINITE_VALUES];
+			finiteRowIds = new int[MAX_FINITE_VALUES];
+		}
+	}
+
+	private void ensureCodeTypeScratch() {
+		if (branchCodeNameIds != null) {
+			return;
+		}
+		branchCodeNameIds = new int[2];
+		branchTargetNameIds = new int[2];
+		branchLiteralValueIds = new int[2];
+		branchTypeValueIds = new int[2];
+		branchTypePredicateValueIds = new int[2];
+		branchCodePredicateValueIds = new int[2];
+		branchTypePatternIds = new int[2];
+		branchCodePatternIds = new int[2];
+		branchCodeValueCounts = new int[2];
+		branchCodeValueIds = new int[MAX_FINITE_VALUES * 2];
 	}
 
 	private boolean duplicateInsensitiveGroupLiveMask(int groupPayloadId, long[] live) {
@@ -3378,16 +3633,21 @@ final class PackedLogicalRuleProgram {
 		return true;
 	}
 
-	private boolean markApplied(int expressionId) {
-		int wordIndex = expressionId >>> 6;
-		if (wordIndex >= appliedExpressionWords.length) {
-			appliedExpressionWords = Arrays.copyOf(appliedExpressionWords, wordIndex + 1);
+	private boolean markApplied(int expressionId, int factRevision) {
+		if (factRevision <= 0) {
+			throw new IllegalArgumentException("packed fact revision must be positive");
 		}
-		long bit = 1L << expressionId;
-		if ((appliedExpressionWords[wordIndex] & bit) != 0L) {
+		if (expressionId >= appliedFactRevisions.length) {
+			int capacity = appliedFactRevisions.length;
+			while (capacity <= expressionId) {
+				capacity <<= 1;
+			}
+			appliedFactRevisions = Arrays.copyOf(appliedFactRevisions, capacity);
+		}
+		if (appliedFactRevisions[expressionId] >= factRevision) {
 			return false;
 		}
-		appliedExpressionWords[wordIndex] |= bit;
+		appliedFactRevisions[expressionId] = factRevision;
 		return true;
 	}
 }

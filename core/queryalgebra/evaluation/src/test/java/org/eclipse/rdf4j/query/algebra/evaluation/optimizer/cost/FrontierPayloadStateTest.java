@@ -248,6 +248,61 @@ class FrontierPayloadStateTest {
 	}
 
 	@Test
+	void canonicalPayloadSortHandlesLargeDuplicateRunsAndSeparateStrata() {
+		int firstCount = 257;
+		int secondCount = 129;
+		FrontierMaskStrata masks = FrontierMaskStrata.of(
+				FrontierLayout.of("x", "y", "z"),
+				2,
+				new long[] { 0b001L, 0b111L });
+		FrontierPayloadBlock payload = new FrontierPayloadBlock(
+				masks,
+				new int[] { 0, 0 },
+				new int[] { firstCount, secondCount });
+		long weightBase = Double.doubleToRawLongBits(1.0d);
+
+		for (int localIndex = 0; localIndex < firstCount; localIndex++) {
+			int rank = localIndex * 131 % firstCount;
+			int entry = payload.residualIndex(0, localIndex);
+			int termOffset = entry * payload.width;
+			payload.residualTermIds[termOffset] = rank / 16;
+			payload.residualTermIds[termOffset + 1] = 7L;
+			payload.residualTermIds[termOffset + 2] = 0L;
+			payload.residualWeights[entry] = Double.longBitsToDouble(weightBase + rank % 16);
+		}
+		for (int localIndex = 0; localIndex < secondCount; localIndex++) {
+			int rank = secondCount - localIndex - 1;
+			int entry = payload.residualIndex(1, localIndex);
+			int termOffset = entry * payload.width;
+			payload.residualTermIds[termOffset] = Long.MIN_VALUE + rank / 8;
+			payload.residualTermIds[termOffset + 1] = 9L;
+			payload.residualTermIds[termOffset + 2] = 1L;
+			payload.residualWeights[entry] = Double.longBitsToDouble(weightBase + rank % 8);
+		}
+
+		payload.canonicalize();
+
+		for (int rank = 0; rank < firstCount; rank++) {
+			int entry = payload.residualIndex(0, rank);
+			int termOffset = entry * payload.width;
+			assertEquals(rank / 16, payload.residualTermIds[termOffset]);
+			assertEquals(7L, payload.residualTermIds[termOffset + 1]);
+			assertEquals(0L, payload.residualTermIds[termOffset + 2]);
+			assertEquals(weightBase + rank % 16,
+					Double.doubleToRawLongBits(payload.residualWeights[entry]));
+		}
+		for (int rank = 0; rank < secondCount; rank++) {
+			int entry = payload.residualIndex(1, rank);
+			int termOffset = entry * payload.width;
+			assertEquals(Long.MIN_VALUE + rank / 8, payload.residualTermIds[termOffset]);
+			assertEquals(9L, payload.residualTermIds[termOffset + 1]);
+			assertEquals(1L, payload.residualTermIds[termOffset + 2]);
+			assertEquals(weightBase + rank % 8,
+					Double.doubleToRawLongBits(payload.residualWeights[entry]));
+		}
+	}
+
+	@Test
 	void payloadDiagnosticsUseCanonicalTupleOrder() {
 		FrontierMaskStrata masks = FrontierMaskStrata.of(FrontierLayout.of("x"), 1, new long[] { 1L });
 		FrontierStateKey key = key(masks, FrontierLaneFamily.DESIGN, 0);

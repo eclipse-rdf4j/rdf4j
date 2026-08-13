@@ -71,13 +71,41 @@ final class LmdbFiniteJoinSurfaceEstimator {
 
 	private final ValueStore valueStore;
 	private final TripleStore tripleStore;
+	private final LmdbStatementPatternCardinalitySource cardinalities;
 	private final DefaultEvaluationStrategy filterEvaluationStrategy;
+	private final QueryValueDecoder queryValueDecoder;
 
 	LmdbFiniteJoinSurfaceEstimator(ValueStore valueStore, TripleStore tripleStore) {
+		this(valueStore, tripleStore,
+				tripleStore == null || tripleStore.instanceId() == 0L
+						? null
+						: new LmdbStatementPatternCardinalitySource(valueStore, tripleStore));
+	}
+
+	LmdbFiniteJoinSurfaceEstimator(ValueStore valueStore, TripleStore tripleStore,
+			LmdbStatementPatternCardinalitySource cardinalities) {
+		this(valueStore, tripleStore, cardinalities,
+				valueStore == null ? null
+						: new DefaultEvaluationStrategy(new FiniteSurfaceTripleSource(valueStore), null),
+				null);
+	}
+
+	private LmdbFiniteJoinSurfaceEstimator(ValueStore valueStore, TripleStore tripleStore,
+			LmdbStatementPatternCardinalitySource cardinalities,
+			DefaultEvaluationStrategy filterEvaluationStrategy,
+			QueryValueDecoder queryValueDecoder) {
 		this.valueStore = valueStore;
 		this.tripleStore = tripleStore;
-		this.filterEvaluationStrategy = valueStore == null ? null
-				: new DefaultEvaluationStrategy(new FiniteSurfaceTripleSource(valueStore), null);
+		this.cardinalities = cardinalities;
+		this.filterEvaluationStrategy = filterEvaluationStrategy;
+		this.queryValueDecoder = queryValueDecoder;
+	}
+
+	LmdbFiniteJoinSurfaceEstimator queryScoped() {
+		return valueStore == null
+				? this
+				: new LmdbFiniteJoinSurfaceEstimator(valueStore, tripleStore, cardinalities,
+						filterEvaluationStrategy, new QueryValueDecoder(valueStore));
 	}
 
 	/**
@@ -166,6 +194,40 @@ final class LmdbFiniteJoinSurfaceEstimator {
 
 	Optional<SurfaceEstimate> estimate(FiniteRelationEstimate correlatedRelation, TupleExpr accessKernel,
 			ScanBudget scanBudget) {
+		return estimate(correlatedRelation, accessKernel, scanBudget, null);
+	}
+
+	boolean supportsCompletedRelationReuse(FiniteRelationEstimate prefixRelation, TupleExpr accessKernel) {
+		ExactAccess access = exactAccess(accessKernel);
+		if (prefixRelation == null || access == null
+				|| !Double.isFinite(prefixRelation.rows())
+				|| prefixRelation.rows() < 0.0d
+				|| prefixRelation.rows() > MAX_ROWS) {
+			return false;
+		}
+		if (prefixRelation.rows() == 0.0d) {
+			return true;
+		}
+		List<String> variables = prefixRelation.variables();
+		for (Var variable : access.pattern().getVarList()) {
+			if (variable == null || variable.hasValue()) {
+				continue;
+			}
+			int slot = variables.indexOf(variable.getName());
+			if (slot < 0) {
+				continue;
+			}
+			for (List<Value> tuple : prefixRelation.frequencies().keySet()) {
+				if (tuple.get(slot) != null) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	Optional<SurfaceEstimate> estimate(FiniteRelationEstimate correlatedRelation, TupleExpr accessKernel,
+			ScanBudget scanBudget, FiniteRelationEstimate completedRelation) {
 		ExactAccess access = exactAccess(accessKernel);
 		if (correlatedRelation == null || access == null
 				|| !Double.isFinite(correlatedRelation.rows())
@@ -205,7 +267,7 @@ final class LmdbFiniteJoinSurfaceEstimator {
 					false,
 					weighted.probes()));
 		}
-		return estimate(List.of(assignment), accessKernel, Map.of(), scanBudget)
+		return estimate(List.of(assignment), accessKernel, Map.of(), scanBudget, completedRelation)
 				.map(surface -> new SurfaceEstimate(
 						surface.surfaceRows(),
 						surface.prefixRows(),
@@ -272,6 +334,12 @@ final class LmdbFiniteJoinSurfaceEstimator {
 
 	Optional<SurfaceEstimate> estimate(List<TupleExpr> prefixFactors, TupleExpr factor,
 			Map<String, Set<Value>> finiteBindingValues, ScanBudget scanBudget) {
+		return estimate(prefixFactors, factor, finiteBindingValues, scanBudget, null);
+	}
+
+	Optional<SurfaceEstimate> estimate(List<TupleExpr> prefixFactors, TupleExpr factor,
+			Map<String, Set<Value>> finiteBindingValues, ScanBudget scanBudget,
+			FiniteRelationEstimate completedRelation) {
 		List<TupleExpr> effectivePrefix = prefixFactors == null ? List.of() : prefixFactors;
 		if (valueStore == null || tripleStore == null || factor == null
 				|| effectivePrefix.size() + 1 > MAX_FACTORS) {
@@ -325,8 +393,7 @@ final class LmdbFiniteJoinSurfaceEstimator {
 			}
 			if (rows.isEmpty()) {
 				return Optional.of(new SurfaceEstimate(0.0d, 0.0d, 0.0d, scannedRows, 0,
-						FiniteRelationEstimate.fromRows(slots.names(), List.of(),
-								"lmdb-finite-derived-surface"),
+						completedRelation(slots, rows, completedRelation),
 						true, 0));
 			}
 
@@ -344,7 +411,7 @@ final class LmdbFiniteJoinSurfaceEstimator {
 				scannedRows = expansion.scannedRows();
 				if (rows.isEmpty()) {
 					return Optional.of(new SurfaceEstimate(0.0d, 0.0d, 0.0d, scannedRows, 0,
-							finiteRelation(slots, rows), true, 0));
+							completedRelation(slots, rows, completedRelation), true, 0));
 				}
 			}
 			double prefixRows = rows.size();
@@ -370,7 +437,7 @@ final class LmdbFiniteJoinSurfaceEstimator {
 			}
 			return Optional.of(new SurfaceEstimate(surface.rows().size(), prefixRows,
 					surface.matchedInputRows(), surface.scannedRows(), rows.size(),
-					finiteRelation(slots, surface.rows()), true,
+					completedRelation(slots, surface.rows(), completedRelation), true,
 					cardinality.probes()));
 		} catch (IOException | RuntimeException e) {
 			return Optional.empty();
@@ -541,8 +608,11 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		if (cached != null) {
 			return cached;
 		}
-		double estimate = tripleStore.planningCardinality(
-				ids.subjectId(), ids.predicateId(), ids.objectId(), ids.contextId());
+		double estimate = cardinalities == null
+				? tripleStore.planningCardinality(
+						ids.subjectId(), ids.predicateId(), ids.objectId(), ids.contextId())
+				: cardinalities.estimateIdsForPlanning(
+						ids.subjectId(), ids.predicateId(), ids.objectId(), ids.contextId());
 		scanBudget.cardinalityEstimates.put(ids, estimate);
 		return estimate;
 	}
@@ -777,11 +847,28 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		for (long[] idRow : idRows) {
 			List<Value> row = new ArrayList<>(idRow.length);
 			for (long id : idRow) {
-				row.add(id == UNBOUND_ID ? null : valueStore.getValue(id));
+				row.add(id == UNBOUND_ID ? null : decodedValue(id));
 			}
 			rows.add(row);
 		}
 		return FiniteRelationEstimate.fromRows(slots.names(), rows, "lmdb-finite-derived-surface");
+	}
+
+	private FiniteRelationEstimate completedRelation(VarSlots slots, List<long[]> idRows,
+			FiniteRelationEstimate retained) throws IOException {
+		if (retained == null) {
+			return finiteRelation(slots, idRows);
+		}
+		if (Double.compare(retained.rows(), idRows.size()) != 0
+				|| retained.variables().size() != slots.size()) {
+			throw new IllegalStateException("cached exact finite relation disagrees with its completed factor set");
+		}
+		for (String variable : retained.variables()) {
+			if (slots.index(variable) < 0) {
+				throw new IllegalStateException("cached exact finite relation has a different binding universe");
+			}
+		}
+		return retained;
 	}
 
 	private static boolean connectsToBoundRow(StatementPattern pattern, List<long[]> rows, VarSlots slots) {
@@ -892,7 +979,7 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		ArrayBindingSet bindings = conditions.bindings();
 		for (int slot = 0; slot < slots.size(); slot++) {
 			long id = row[slot];
-			bindings.setBinding(conditions.names()[slot], id == UNBOUND_ID ? null : valueStore.getValue(id));
+			bindings.setBinding(conditions.names()[slot], id == UNBOUND_ID ? null : decodedValue(id));
 		}
 		try {
 			for (QueryValueEvaluationStep condition : conditions.steps()) {
@@ -907,6 +994,10 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		} catch (QueryEvaluationException failure) {
 			throw new ExactFilterEvaluationFailure(failure);
 		}
+	}
+
+	private Value decodedValue(long id) throws IOException {
+		return queryValueDecoder == null ? valueStore.getValue(id) : queryValueDecoder.get(id);
 	}
 
 	private static boolean hasSingleFiniteDomain(Map<String, Set<Value>> finiteBindingValues) {
@@ -1033,6 +1124,77 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		@Override
 		public ValueFactory getValueFactory() {
 			return valueFactory;
+		}
+	}
+
+	private static final class QueryValueDecoder {
+
+		private static final int INITIAL_CAPACITY = 16;
+		private static final int MAX_ENTRIES = MAX_ROWS;
+
+		private final ValueStore valueStore;
+		private long[] ids = new long[INITIAL_CAPACITY];
+		private Value[] values = new Value[INITIAL_CAPACITY];
+		private int size;
+
+		private QueryValueDecoder(ValueStore valueStore) {
+			this.valueStore = valueStore;
+		}
+
+		private Value get(long id) throws IOException {
+			int slot = findSlot(id);
+			Value cached = values[slot];
+			if (cached != null) {
+				return cached;
+			}
+			Value value = valueStore.getValue(id);
+			if (value == null) {
+				return null;
+			}
+			if (size == ids.length >>> 1) {
+				if (size >= MAX_ENTRIES) {
+					return value;
+				}
+				grow();
+				slot = findSlot(id);
+			}
+			ids[slot] = id;
+			values[slot] = value;
+			size++;
+			return value;
+		}
+
+		private int findSlot(long id) {
+			int mask = ids.length - 1;
+			int slot = (int) mix(id) & mask;
+			while (values[slot] != null && ids[slot] != id) {
+				slot = slot + 1 & mask;
+			}
+			return slot;
+		}
+
+		private void grow() {
+			long[] oldIds = ids;
+			Value[] oldValues = values;
+			ids = new long[Math.multiplyExact(oldIds.length, 2)];
+			values = new Value[ids.length];
+			for (int oldSlot = 0; oldSlot < oldIds.length; oldSlot++) {
+				Value value = oldValues[oldSlot];
+				if (value == null) {
+					continue;
+				}
+				int slot = findSlot(oldIds[oldSlot]);
+				ids[slot] = oldIds[oldSlot];
+				values[slot] = value;
+			}
+		}
+
+		private static long mix(long value) {
+			value ^= value >>> 30;
+			value *= 0xbf58476d1ce4e5b9L;
+			value ^= value >>> 27;
+			value *= 0x94d049bb133111ebL;
+			return value ^ value >>> 31;
 		}
 	}
 

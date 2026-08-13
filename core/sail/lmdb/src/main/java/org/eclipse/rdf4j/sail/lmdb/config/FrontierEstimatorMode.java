@@ -15,7 +15,7 @@ import java.util.Locale;
 
 /**
  * Controls whether Frontier OmniSketch is disabled, observed without affecting plans, or allowed to provide
- * theorem-safe authoritative evidence with scalar fallback.
+ * theorem-safe authoritative evidence with explicit typed scalar boundaries.
  */
 public enum FrontierEstimatorMode {
 	OFF("off"),

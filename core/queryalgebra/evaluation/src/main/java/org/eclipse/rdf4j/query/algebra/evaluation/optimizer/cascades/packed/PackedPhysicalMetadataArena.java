@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
@@ -27,11 +28,25 @@ final class PackedPhysicalMetadataArena {
 	private static final int DEPENDENT_SUBQUERIES_COSTED = 1 << 1;
 	private static final int CONTEXTUAL_OUTPUT_ROWS = 1 << 2;
 	private static final int COMPONENT_OUTPUT_ROWS = 1 << 3;
+	private static final int VIRTUAL_COST_SCOPE_METRIC = 1 << 4;
 	private static final int LIFECYCLE_ENFORCED = 1;
 	private static final int LIFECYCLE_ELIGIBLE = 1 << 1;
 	private static final int LIFECYCLE_LAST_GOOD = 1 << 2;
+	private static final int ROW_DOUBLE_COLUMNS = 18;
+	private static final int ROW_INT_COLUMNS = 14;
+	private static final int ROW_LONG_COLUMNS = 1;
+	private static final int ROW_BYTE_COLUMNS = 5;
+	private static final int INITIAL_METRIC_CAPACITY = 4;
+	private static final String PLANNED_COST_SCOPE = "plannedCostScope";
+	private static final String LOCAL_COST_SCOPE = "local";
+	private static final String INCLUSIVE_COST_SCOPE = "inclusive";
+	private static final ThreadLocal<PackedPhysicalMetadataArena> RECYCLER = new ThreadLocal<>();
 
 	private final PackedObjectPool objects;
+	private final boolean recyclable;
+	private PackedSearchBudget budget;
+	private boolean initialCapacityReserved;
+	private boolean released;
 	private double[] outputRows;
 	private double[] workRows;
 	private double[] sequentialRows;
@@ -70,85 +85,156 @@ final class PackedPhysicalMetadataArena {
 	private int[] plannedStringMetricCounts;
 	private int[] plannedDoubleMetricStarts;
 	private int[] plannedDoubleMetricCounts;
-	private int[] plannedStringMetricNameIds = new int[4];
-	private int[] plannedStringMetricValueIds = new int[4];
-	private int[] plannedDoubleMetricNameIds = new int[4];
-	private double[] plannedDoubleMetricValues = new double[4];
+	private int[] plannedStringMetricNameIds = new int[INITIAL_METRIC_CAPACITY];
+	private int[] plannedStringMetricValueIds = new int[INITIAL_METRIC_CAPACITY];
+	private int[] plannedDoubleMetricNameIds = new int[INITIAL_METRIC_CAPACITY];
+	private double[] plannedDoubleMetricValues = new double[INITIAL_METRIC_CAPACITY];
+	private int rowCapacity;
+	private int plannedStringMetricCapacity = INITIAL_METRIC_CAPACITY;
+	private int storedPlannedStringMetricCapacity = INITIAL_METRIC_CAPACITY;
+	private int plannedDoubleMetricCapacity = INITIAL_METRIC_CAPACITY;
 	private int plannedStringMetricSize;
+	private int storedPlannedStringMetricSize;
 	private int plannedDoubleMetricSize;
 	private int size;
 
 	PackedPhysicalMetadataArena(int expectedRows) {
-		int capacity = Math.max(2, expectedRows + 1);
-		objects = new PackedObjectPool(Math.max(4, expectedRows));
+		this(expectedRows, new PackedSearchBudget(PackedPlannerLimits.unbounded()));
+	}
+
+	PackedPhysicalMetadataArena(int expectedRows, PackedSearchBudget budget) {
+		this(expectedRows, budget, false);
+	}
+
+	private PackedPhysicalMetadataArena(int expectedRows, PackedSearchBudget budget, boolean recyclable) {
+		int capacity = recyclable ? 2 : Math.max(2, expectedRows + 1);
+		this.recyclable = recyclable;
+		objects = new PackedObjectPool(recyclable ? 4 : Math.max(4, expectedRows));
 		outputRows = new double[capacity];
 		workRows = new double[capacity];
-		sequentialRows = new double[capacity];
-		randomSeeks = new double[capacity];
-		iteratorOpens = new double[capacity];
-		expressionEvaluations = new double[capacity];
-		hashBuildRows = new double[capacity];
-		hashProbeRows = new double[capacity];
-		pathExpansions = new double[capacity];
-		resultRows = new double[capacity];
-		remoteCalls = new double[capacity];
-		peakMemoryRows = new double[capacity];
-		objectiveLowerBounds = new double[capacity];
-		objectivePointCosts = new double[capacity];
-		objectiveUpperBounds = new double[capacity];
-		lifecycleComparisonCosts = new double[capacity];
 		lifecycleFlags = new byte[capacity];
 		costScopes = new byte[capacity];
 		physicalCostFlags = new byte[capacity];
-		accessRows = new double[capacity];
-		invocations = new double[capacity];
-		evidenceStateIds = new int[capacity];
-		evidenceGuarantees = new byte[capacity];
-		evidenceDispositions = new byte[capacity];
-		costEventIds = new int[capacity];
-		ruleProofMasks = new long[capacity];
-		lookupMasks = new int[capacity];
-		missingLookupMasks = new int[capacity];
-		indexPrefixLengths = new int[capacity];
-		indexNameIds = new int[capacity];
-		estimateSourceIds = new int[capacity];
-		estimateFusionIds = new int[capacity];
-		accessModeIds = new int[capacity];
-		runtimeFeedbackContractIds = new int[capacity];
 		plannedStringMetricStarts = new int[capacity];
 		plannedStringMetricCounts = new int[capacity];
 		plannedDoubleMetricStarts = new int[capacity];
 		plannedDoubleMetricCounts = new int[capacity];
+		reset(expectedRows, budget);
+	}
+
+	static PackedPhysicalMetadataArena borrow(int expectedRows, PackedSearchBudget budget) {
+		PackedPhysicalMetadataArena arena = RECYCLER.get();
+		if (arena == null) {
+			return new PackedPhysicalMetadataArena(expectedRows, budget, true);
+		}
+		RECYCLER.remove();
+		arena.reset(expectedRows, budget);
+		return arena;
+	}
+
+	private void reset(int expectedRows, PackedSearchBudget budget) {
+		if (expectedRows < 0) {
+			throw new IllegalArgumentException("expected physical metadata rows must be non-negative");
+		}
+		this.budget = Objects.requireNonNull(budget, "budget");
+		objects.reset();
+		plannedStringMetricSize = 0;
+		storedPlannedStringMetricSize = 0;
+		plannedDoubleMetricSize = 0;
+		size = 0;
+		rowCapacity = Math.max(2, expectedRows + 1);
+		plannedStringMetricCapacity = INITIAL_METRIC_CAPACITY;
+		storedPlannedStringMetricCapacity = INITIAL_METRIC_CAPACITY;
+		plannedDoubleMetricCapacity = INITIAL_METRIC_CAPACITY;
+		initialCapacityReserved = budget.tryReserveBytes(requiredBytesForCapacity(rowCapacity,
+				plannedStringMetricCapacity, plannedDoubleMetricCapacity));
+		if (initialCapacityReserved && rowCapacity > outputRows.length) {
+			resizeRows(rowCapacity);
+		}
+		released = false;
+	}
+
+	void recycle() {
+		if (!recyclable || released) {
+			return;
+		}
+		released = true;
+		objects.reset();
+		plannedStringMetricSize = 0;
+		storedPlannedStringMetricSize = 0;
+		plannedDoubleMetricSize = 0;
+		size = 0;
+		budget = null;
+		initialCapacityReserved = false;
+		PackedPhysicalMetadataArena retained = RECYCLER.get();
+		if (retained == null || storageBytes() > retained.storageBytes()) {
+			RECYCLER.set(this);
+		}
+	}
+
+	private long storageBytes() {
+		return requiredBytesForCapacity(outputRows.length, plannedStringMetricNameIds.length,
+				plannedDoubleMetricNameIds.length);
 	}
 
 	int append(PackedCostEstimate estimate, double fallbackRows, double fallbackWork) {
-		int metadataId = ++size;
-		ensureCapacity(metadataId);
+		int metadataId = size + 1;
+		int stringMetricCount = estimate.plannedStringMetricCount();
+		boolean virtualCostScopeMetric = hasVirtualCostScopeMetric(estimate, stringMetricCount);
+		int storedStringMetricCount = stringMetricCount - (virtualCostScopeMetric ? 1 : 0);
+		int doubleMetricCount = estimate.plannedDoubleMetricCount();
+		if (!initialCapacityReserved || !ensureAppendCapacity(metadataId,
+				plannedStringMetricSize + stringMetricCount,
+				storedPlannedStringMetricSize + storedStringMetricCount,
+				plannedDoubleMetricSize + doubleMetricCount)) {
+			return 0;
+		}
+		size = metadataId;
+		if (ruleProofMasks != null) {
+			ruleProofMasks[metadataId] = 0L;
+		}
 		outputRows[metadataId] = finiteNonNegative(estimate.outputRows(), fallbackRows);
 		workRows[metadataId] = finiteNonNegative(estimate.workRows(), fallbackWork);
-		sequentialRows[metadataId] = finiteNonNegative(estimate.sequentialRows(), workRows[metadataId]);
-		randomSeeks[metadataId] = finiteNonNegative(estimate.randomSeeks(), 0.0d);
-		iteratorOpens[metadataId] = finiteNonNegative(estimate.iteratorOpens(), 0.0d);
-		expressionEvaluations[metadataId] = finiteNonNegative(estimate.expressionEvaluations(), 0.0d);
-		hashBuildRows[metadataId] = finiteNonNegative(estimate.hashBuildRows(), 0.0d);
-		hashProbeRows[metadataId] = finiteNonNegative(estimate.hashProbeRows(), 0.0d);
-		pathExpansions[metadataId] = finiteNonNegative(estimate.pathExpansions(), 0.0d);
-		resultRows[metadataId] = finiteNonNegative(estimate.resultRows(), 0.0d);
-		remoteCalls[metadataId] = finiteNonNegative(estimate.remoteCalls(), 0.0d);
-		peakMemoryRows[metadataId] = finiteNonNegative(estimate.peakMemoryRows(), 0.0d);
+		double sequential = finiteNonNegative(estimate.sequentialRows(), workRows[metadataId]);
+		double seeks = finiteNonNegative(estimate.randomSeeks(), 0.0d);
+		double opens = finiteNonNegative(estimate.iteratorOpens(), 0.0d);
+		double evaluations = finiteNonNegative(estimate.expressionEvaluations(), 0.0d);
+		double buildRows = finiteNonNegative(estimate.hashBuildRows(), 0.0d);
+		double probeRows = finiteNonNegative(estimate.hashProbeRows(), 0.0d);
+		double expansions = finiteNonNegative(estimate.pathExpansions(), 0.0d);
+		double producedRows = finiteNonNegative(estimate.resultRows(), 0.0d);
+		double calls = finiteNonNegative(estimate.remoteCalls(), 0.0d);
+		double peakRows = finiteNonNegative(estimate.peakMemoryRows(), 0.0d);
 		double objectivePoint = finiteNonNegative(estimate.objectivePoint(), workRows[metadataId]);
-		objectivePointCosts[metadataId] = objectivePoint;
-		objectiveLowerBounds[metadataId] = Math.min(objectivePoint,
+		double objectiveLower = Math.min(objectivePoint,
 				finiteNonNegative(estimate.objectiveLower(), objectivePoint));
-		objectiveUpperBounds[metadataId] = Math.max(objectivePoint,
+		double objectiveUpper = Math.max(objectivePoint,
 				finiteNonNegative(estimate.objectiveUpper(), objectivePoint));
-		lifecycleComparisonCosts[metadataId] = finiteNonNegative(
-				estimate.plannedDoubleMetric("optimizer.lifecycleComparisonCost", objectiveUpperBounds[metadataId]),
-				objectiveUpperBounds[metadataId]);
+		double lifecycleComparison = finiteNonNegative(
+				estimate.plannedDoubleMetric("optimizer.lifecycleComparisonCost", objectiveUpper), objectiveUpper);
+		if (sequentialRows != null || !canonicalPhysicalMetadata(metadataId, sequential, seeks, opens, evaluations,
+				buildRows, probeRows, expansions, producedRows, calls, peakRows, objectiveLower, objectivePoint,
+				objectiveUpper, lifecycleComparison)) {
+			ensurePhysicalColumns();
+			sequentialRows[metadataId] = sequential;
+			randomSeeks[metadataId] = seeks;
+			iteratorOpens[metadataId] = opens;
+			expressionEvaluations[metadataId] = evaluations;
+			hashBuildRows[metadataId] = buildRows;
+			hashProbeRows[metadataId] = probeRows;
+			pathExpansions[metadataId] = expansions;
+			resultRows[metadataId] = producedRows;
+			remoteCalls[metadataId] = calls;
+			peakMemoryRows[metadataId] = peakRows;
+			objectiveLowerBounds[metadataId] = objectiveLower;
+			objectivePointCosts[metadataId] = objectivePoint;
+			objectiveUpperBounds[metadataId] = objectiveUpper;
+			lifecycleComparisonCosts[metadataId] = lifecycleComparison;
+		}
 		int lifecycleFlag = estimate.plannedDoubleMetric("optimizer.lifecycleEnforced", 0.0d) >= 1.0d
 				? LIFECYCLE_ENFORCED
 				: 0;
-		double defaultEligibility = lifecycleComparisonCosts[metadataId] == Double.MAX_VALUE ? 0.0d : 1.0d;
+		double defaultEligibility = lifecycleComparison == Double.MAX_VALUE ? 0.0d : 1.0d;
 		if (estimate.plannedDoubleMetric("optimizer.lifecycleEligible", defaultEligibility) >= 1.0d) {
 			lifecycleFlag |= LIFECYCLE_ELIGIBLE;
 		}
@@ -157,32 +243,112 @@ final class PackedPhysicalMetadataArena {
 		}
 		lifecycleFlags[metadataId] = (byte) lifecycleFlag;
 		costScopes[metadataId] = (byte) estimate.costScope().ordinal();
-		physicalCostFlags[metadataId] = (byte) ((estimate.hasExplicitPhysicalCost() ? EXPLICIT_PHYSICAL_COST : 0)
+		physicalCostFlags[metadataId] = physicalCostFlags(estimate, virtualCostScopeMetric);
+		double retainedAccessRows = finiteNonNegative(estimate.accessRows(), Double.NaN);
+		double retainedInvocations = finiteNonNegative(estimate.invocations(), 1.0d);
+		int retainedEvidenceStateId = estimate.evidenceStateId();
+		EvidenceGuarantee evidenceGuarantee = estimate.evidenceGuarantee();
+		FrontierStateDisposition evidenceDisposition = estimate.evidenceDisposition();
+		int retainedCostEventId = estimate.costEventId();
+		int retainedLookupMask = estimate.lookupComponentMask();
+		int retainedMissingLookupMask = estimate.missingLookupComponentMask();
+		int retainedIndexPrefixLength = estimate.indexPrefixLength();
+		Object retainedIndexName = estimate.indexName();
+		Object retainedEstimateSource = estimate.estimateSource();
+		Object retainedEstimateFusion = estimate.estimateFusion();
+		Object retainedAccessMode = estimate.accessMode();
+		Object retainedRuntimeFeedbackContract = estimate.runtimeFeedbackContract();
+		if (evidenceStateIds != null || hasExtendedAnnotations(retainedAccessRows, retainedInvocations,
+				retainedEvidenceStateId, evidenceGuarantee, evidenceDisposition, retainedCostEventId,
+				retainedLookupMask, retainedMissingLookupMask, retainedIndexPrefixLength, retainedIndexName,
+				retainedEstimateSource, retainedEstimateFusion, retainedAccessMode,
+				retainedRuntimeFeedbackContract)) {
+			ensureAnnotationColumns();
+			accessRows[metadataId] = retainedAccessRows;
+			invocations[metadataId] = retainedInvocations;
+			evidenceStateIds[metadataId] = retainedEvidenceStateId;
+			evidenceGuarantees[metadataId] = evidenceGuarantee == null
+					? 0
+					: (byte) (evidenceGuarantee.ordinal() + 1);
+			evidenceDispositions[metadataId] = evidenceDisposition == null
+					? 0
+					: (byte) (evidenceDisposition.ordinal() + 1);
+			costEventIds[metadataId] = retainedCostEventId;
+			lookupMasks[metadataId] = retainedLookupMask;
+			missingLookupMasks[metadataId] = retainedMissingLookupMask;
+			indexPrefixLengths[metadataId] = retainedIndexPrefixLength;
+			indexNameIds[metadataId] = objects.intern(retainedIndexName);
+			estimateSourceIds[metadataId] = objects.intern(retainedEstimateSource);
+			estimateFusionIds[metadataId] = objects.intern(retainedEstimateFusion);
+			accessModeIds[metadataId] = objects.intern(retainedAccessMode);
+			runtimeFeedbackContractIds[metadataId] = objects.intern(retainedRuntimeFeedbackContract);
+		}
+		appendPlannedMetrics(metadataId, estimate, stringMetricCount, storedStringMetricCount, doubleMetricCount);
+		return metadataId;
+	}
+
+	int appendScalar(double rows, double work) {
+		int metadataId = size + 1;
+		if (!initialCapacityReserved || !ensureAppendCapacity(metadataId, plannedStringMetricSize,
+				storedPlannedStringMetricSize, plannedDoubleMetricSize)) {
+			return 0;
+		}
+		size = metadataId;
+		resetScalarRow(metadataId, work);
+		outputRows[metadataId] = rows;
+		workRows[metadataId] = work;
+		lifecycleFlags[metadataId] = (byte) (work == Double.MAX_VALUE ? 0 : LIFECYCLE_ELIGIBLE);
+		costScopes[metadataId] = (byte) PackedCostEstimate.CostScope.LOCAL.ordinal();
+		physicalCostFlags[metadataId] = 0;
+		return metadataId;
+	}
+
+	private void resetScalarRow(int metadataId, double work) {
+		if (sequentialRows != null) {
+			sequentialRows[metadataId] = work;
+			randomSeeks[metadataId] = 0.0d;
+			iteratorOpens[metadataId] = 0.0d;
+			expressionEvaluations[metadataId] = 0.0d;
+			hashBuildRows[metadataId] = 0.0d;
+			hashProbeRows[metadataId] = 0.0d;
+			pathExpansions[metadataId] = 0.0d;
+			resultRows[metadataId] = 0.0d;
+			remoteCalls[metadataId] = 0.0d;
+			peakMemoryRows[metadataId] = 0.0d;
+			objectiveLowerBounds[metadataId] = work;
+			objectivePointCosts[metadataId] = work;
+			objectiveUpperBounds[metadataId] = work;
+			lifecycleComparisonCosts[metadataId] = work;
+		}
+		if (evidenceStateIds != null) {
+			accessRows[metadataId] = Double.NaN;
+			invocations[metadataId] = 1.0d;
+			evidenceStateIds[metadataId] = 0;
+			evidenceGuarantees[metadataId] = 0;
+			evidenceDispositions[metadataId] = 0;
+			costEventIds[metadataId] = 0;
+			ruleProofMasks[metadataId] = 0L;
+			lookupMasks[metadataId] = 0;
+			missingLookupMasks[metadataId] = 0;
+			indexPrefixLengths[metadataId] = 0;
+			indexNameIds[metadataId] = 0;
+			estimateSourceIds[metadataId] = 0;
+			estimateFusionIds[metadataId] = 0;
+			accessModeIds[metadataId] = 0;
+			runtimeFeedbackContractIds[metadataId] = 0;
+		}
+		plannedStringMetricStarts[metadataId] = storedPlannedStringMetricSize;
+		plannedStringMetricCounts[metadataId] = 0;
+		plannedDoubleMetricStarts[metadataId] = plannedDoubleMetricSize;
+		plannedDoubleMetricCounts[metadataId] = 0;
+	}
+
+	private static byte physicalCostFlags(PackedCostEstimate estimate, boolean virtualCostScopeMetric) {
+		return (byte) ((estimate.hasExplicitPhysicalCost() ? EXPLICIT_PHYSICAL_COST : 0)
 				| (estimate.dependentSubqueriesCosted() ? DEPENDENT_SUBQUERIES_COSTED : 0)
 				| (estimate.hasContextualOutputRows() ? CONTEXTUAL_OUTPUT_ROWS : 0)
-				| (estimate.hasComponentOutputRows() ? COMPONENT_OUTPUT_ROWS : 0));
-		accessRows[metadataId] = finiteNonNegative(estimate.accessRows(), Double.NaN);
-		invocations[metadataId] = finiteNonNegative(estimate.invocations(), 1.0d);
-		evidenceStateIds[metadataId] = estimate.evidenceStateId();
-		EvidenceGuarantee evidenceGuarantee = estimate.evidenceGuarantee();
-		evidenceGuarantees[metadataId] = evidenceGuarantee == null
-				? 0
-				: (byte) (evidenceGuarantee.ordinal() + 1);
-		FrontierStateDisposition evidenceDisposition = estimate.evidenceDisposition();
-		evidenceDispositions[metadataId] = evidenceDisposition == null
-				? 0
-				: (byte) (evidenceDisposition.ordinal() + 1);
-		costEventIds[metadataId] = estimate.costEventId();
-		lookupMasks[metadataId] = estimate.lookupComponentMask();
-		missingLookupMasks[metadataId] = estimate.missingLookupComponentMask();
-		indexPrefixLengths[metadataId] = estimate.indexPrefixLength();
-		indexNameIds[metadataId] = objects.intern(estimate.indexName());
-		estimateSourceIds[metadataId] = objects.intern(estimate.estimateSource());
-		estimateFusionIds[metadataId] = objects.intern(estimate.estimateFusion());
-		accessModeIds[metadataId] = objects.intern(estimate.accessMode());
-		runtimeFeedbackContractIds[metadataId] = objects.intern(estimate.runtimeFeedbackContract());
-		appendPlannedMetrics(metadataId, estimate);
-		return metadataId;
+				| (estimate.hasComponentOutputRows() ? COMPONENT_OUTPUT_ROWS : 0)
+				| (virtualCostScopeMetric ? VIRTUAL_COST_SCOPE_METRIC : 0));
 	}
 
 	double outputRows(int metadataId) {
@@ -197,72 +363,72 @@ final class PackedPhysicalMetadataArena {
 
 	double sequentialRows(int metadataId) {
 		checkId(metadataId);
-		return sequentialRows[metadataId];
+		return sequentialRows == null ? workRows[metadataId] : sequentialRows[metadataId];
 	}
 
 	double randomSeeks(int metadataId) {
 		checkId(metadataId);
-		return randomSeeks[metadataId];
+		return randomSeeks == null ? 0.0d : randomSeeks[metadataId];
 	}
 
 	double iteratorOpens(int metadataId) {
 		checkId(metadataId);
-		return iteratorOpens[metadataId];
+		return iteratorOpens == null ? 0.0d : iteratorOpens[metadataId];
 	}
 
 	double expressionEvaluations(int metadataId) {
 		checkId(metadataId);
-		return expressionEvaluations[metadataId];
+		return expressionEvaluations == null ? 0.0d : expressionEvaluations[metadataId];
 	}
 
 	double hashBuildRows(int metadataId) {
 		checkId(metadataId);
-		return hashBuildRows[metadataId];
+		return hashBuildRows == null ? 0.0d : hashBuildRows[metadataId];
 	}
 
 	double hashProbeRows(int metadataId) {
 		checkId(metadataId);
-		return hashProbeRows[metadataId];
+		return hashProbeRows == null ? 0.0d : hashProbeRows[metadataId];
 	}
 
 	double pathExpansions(int metadataId) {
 		checkId(metadataId);
-		return pathExpansions[metadataId];
+		return pathExpansions == null ? 0.0d : pathExpansions[metadataId];
 	}
 
 	double resultRows(int metadataId) {
 		checkId(metadataId);
-		return resultRows[metadataId];
+		return resultRows == null ? 0.0d : resultRows[metadataId];
 	}
 
 	double remoteCalls(int metadataId) {
 		checkId(metadataId);
-		return remoteCalls[metadataId];
+		return remoteCalls == null ? 0.0d : remoteCalls[metadataId];
 	}
 
 	double peakMemoryRows(int metadataId) {
 		checkId(metadataId);
-		return peakMemoryRows[metadataId];
+		return peakMemoryRows == null ? 0.0d : peakMemoryRows[metadataId];
 	}
 
 	double objectiveLowerBound(int metadataId) {
 		checkId(metadataId);
-		return objectiveLowerBounds[metadataId];
+		return objectiveLowerBounds == null ? workRows[metadataId] : objectiveLowerBounds[metadataId];
 	}
 
 	double objectivePointCost(int metadataId) {
 		checkId(metadataId);
-		return objectivePointCosts[metadataId];
+		return objectivePointCosts == null ? workRows[metadataId] : objectivePointCosts[metadataId];
 	}
 
 	double objectiveUpperBound(int metadataId) {
 		checkId(metadataId);
-		return objectiveUpperBounds[metadataId];
+		return objectiveUpperBounds == null ? workRows[metadataId] : objectiveUpperBounds[metadataId];
 	}
 
 	double lifecycleComparisonCost(int metadataId) {
 		checkId(metadataId);
-		return lifecycleComparisonCosts[metadataId];
+		return lifecycleComparisonCosts == null ? workRows[metadataId] : lifecycleComparisonCosts[metadataId];
 	}
 
 	boolean lifecycleEnforced(int metadataId) {
@@ -309,17 +475,15 @@ final class PackedPhysicalMetadataArena {
 		checkId(metadataId);
 		if (hasExplicitPhysicalCost(metadataId)) {
 			if (costScope(metadataId) == PackedCostEstimate.CostScope.INCLUSIVE) {
-				estimate.setInclusivePhysicalCost(sequentialRows[metadataId], randomSeeks[metadataId],
-						iteratorOpens[metadataId], expressionEvaluations[metadataId], hashBuildRows[metadataId],
-						hashProbeRows[metadataId], pathExpansions[metadataId], resultRows[metadataId],
-						remoteCalls[metadataId],
-						peakMemoryRows[metadataId]);
+				estimate.setInclusivePhysicalCost(sequentialRows(metadataId), randomSeeks(metadataId),
+						iteratorOpens(metadataId), expressionEvaluations(metadataId), hashBuildRows(metadataId),
+						hashProbeRows(metadataId), pathExpansions(metadataId), resultRows(metadataId),
+						remoteCalls(metadataId), peakMemoryRows(metadataId));
 			} else {
-				estimate.setLocalPhysicalCost(sequentialRows[metadataId], randomSeeks[metadataId],
-						iteratorOpens[metadataId], expressionEvaluations[metadataId], hashBuildRows[metadataId],
-						hashProbeRows[metadataId], pathExpansions[metadataId], resultRows[metadataId],
-						remoteCalls[metadataId],
-						peakMemoryRows[metadataId]);
+				estimate.setLocalPhysicalCost(sequentialRows(metadataId), randomSeeks(metadataId),
+						iteratorOpens(metadataId), expressionEvaluations(metadataId), hashBuildRows(metadataId),
+						hashProbeRows(metadataId), pathExpansions(metadataId), resultRows(metadataId),
+						remoteCalls(metadataId), peakMemoryRows(metadataId));
 			}
 		} else {
 			estimate.setReplacesChildWork(costScope(metadataId) == PackedCostEstimate.CostScope.INCLUSIVE);
@@ -332,102 +496,114 @@ final class PackedPhysicalMetadataArena {
 			estimate.setOutputRowsPreservingPhysicalCost(outputRows[metadataId]);
 		}
 		estimate.setDependentSubqueriesCosted(dependentSubqueriesCosted(metadataId));
-		estimate.setObjectiveInterval(objectiveLowerBounds[metadataId], objectivePointCosts[metadataId],
-				objectiveUpperBounds[metadataId]);
+		estimate.setObjectiveInterval(objectiveLowerBound(metadataId), objectivePointCost(metadataId),
+				objectiveUpperBound(metadataId));
 	}
 
 	double accessRows(int metadataId) {
 		checkId(metadataId);
-		return accessRows[metadataId];
+		return accessRows == null ? Double.NaN : accessRows[metadataId];
 	}
 
 	double invocations(int metadataId) {
 		checkId(metadataId);
-		return invocations[metadataId];
+		return invocations == null ? 1.0d : invocations[metadataId];
 	}
 
 	int evidenceStateId(int metadataId) {
 		checkId(metadataId);
-		return evidenceStateIds[metadataId];
+		return evidenceStateIds == null ? 0 : evidenceStateIds[metadataId];
 	}
 
 	EvidenceGuarantee evidenceGuarantee(int metadataId) {
 		checkId(metadataId);
-		int encoded = Byte.toUnsignedInt(evidenceGuarantees[metadataId]);
+		int encoded = evidenceGuarantees == null ? 0 : Byte.toUnsignedInt(evidenceGuarantees[metadataId]);
 		return encoded == 0 ? null : EVIDENCE_GUARANTEES[encoded - 1];
 	}
 
 	FrontierStateDisposition evidenceDisposition(int metadataId) {
 		checkId(metadataId);
-		int encoded = Byte.toUnsignedInt(evidenceDispositions[metadataId]);
+		int encoded = evidenceDispositions == null ? 0 : Byte.toUnsignedInt(evidenceDispositions[metadataId]);
 		return encoded == 0 ? null : EVIDENCE_DISPOSITIONS[encoded - 1];
 	}
 
 	int costEventId(int metadataId) {
 		checkId(metadataId);
-		return costEventIds[metadataId];
+		return costEventIds == null ? 0 : costEventIds[metadataId];
 	}
 
 	void addRuleProofMask(int metadataId, long ruleProofMask) {
 		checkId(metadataId);
+		if (ruleProofMask == 0L) {
+			return;
+		}
+		ensureAnnotationColumns();
 		ruleProofMasks[metadataId] |= ruleProofMask;
 	}
 
 	long ruleProofMask(int metadataId) {
 		checkId(metadataId);
-		return ruleProofMasks[metadataId];
+		return ruleProofMasks == null ? 0L : ruleProofMasks[metadataId];
 	}
 
 	int lookupMask(int metadataId) {
 		checkId(metadataId);
-		return lookupMasks[metadataId];
+		return lookupMasks == null ? 0 : lookupMasks[metadataId];
 	}
 
 	int missingLookupMask(int metadataId) {
 		checkId(metadataId);
-		return missingLookupMasks[metadataId];
+		return missingLookupMasks == null ? 0 : missingLookupMasks[metadataId];
 	}
 
 	int indexPrefixLength(int metadataId) {
 		checkId(metadataId);
-		return indexPrefixLengths[metadataId];
+		return indexPrefixLengths == null ? 0 : indexPrefixLengths[metadataId];
 	}
 
 	Object indexName(int metadataId) {
 		checkId(metadataId);
-		return objects.value(indexNameIds[metadataId]);
+		return indexNameIds == null ? null : objects.value(indexNameIds[metadataId]);
 	}
 
 	Object estimateSource(int metadataId) {
 		checkId(metadataId);
-		return objects.value(estimateSourceIds[metadataId]);
+		return estimateSourceIds == null ? null : objects.value(estimateSourceIds[metadataId]);
 	}
 
 	Object estimateFusion(int metadataId) {
 		checkId(metadataId);
-		return objects.value(estimateFusionIds[metadataId]);
+		return estimateFusionIds == null ? null : objects.value(estimateFusionIds[metadataId]);
 	}
 
 	Object accessMode(int metadataId) {
 		checkId(metadataId);
-		return objects.value(accessModeIds[metadataId]);
+		return accessModeIds == null ? null : objects.value(accessModeIds[metadataId]);
 	}
 
 	Object runtimeFeedbackContract(int metadataId) {
 		checkId(metadataId);
-		return objects.value(runtimeFeedbackContractIds[metadataId]);
+		return runtimeFeedbackContractIds == null ? null : objects.value(runtimeFeedbackContractIds[metadataId]);
 	}
 
 	int plannedStringMetricCount(int metadataId) {
 		checkId(metadataId);
-		return plannedStringMetricCounts[metadataId];
+		return plannedStringMetricCounts[metadataId] + (virtualCostScopeMetric(metadataId) ? 1 : 0);
 	}
 
 	Object plannedStringMetricName(int metadataId, int ordinal) {
+		if (virtualCostScopeMetric(metadataId) && ordinal == 0) {
+			return PLANNED_COST_SCOPE;
+		}
 		return objects.value(plannedStringMetricNameIds[plannedStringMetricIndex(metadataId, ordinal)]);
 	}
 
 	Object plannedStringMetricValue(int metadataId, int ordinal) {
+		if (virtualCostScopeMetric(metadataId) && ordinal == 0) {
+			return costScope(metadataId) == PackedCostEstimate.CostScope.INCLUSIVE
+					? INCLUSIVE_COST_SCOPE
+					: LOCAL_COST_SCOPE;
+		}
 		return objects.value(plannedStringMetricValueIds[plannedStringMetricIndex(metadataId, ordinal)]);
 	}
 
@@ -444,23 +620,22 @@ final class PackedPhysicalMetadataArena {
 		return plannedDoubleMetricValues[plannedDoubleMetricIndex(metadataId, ordinal)];
 	}
 
-	private void appendPlannedMetrics(int metadataId, PackedCostEstimate estimate) {
-		int stringCount = estimate.plannedStringMetricCount();
-		plannedStringMetricStarts[metadataId] = plannedStringMetricSize;
-		plannedStringMetricCounts[metadataId] = stringCount;
-		ensurePlannedStringMetricCapacity(plannedStringMetricSize + stringCount);
-		for (int ordinal = 0; ordinal < stringCount; ordinal++) {
-			plannedStringMetricNameIds[plannedStringMetricSize] = objects
+	private void appendPlannedMetrics(int metadataId, PackedCostEstimate estimate, int stringCount,
+			int storedStringCount, int doubleCount) {
+		boolean virtualCostScopeMetric = virtualCostScopeMetric(metadataId);
+		plannedStringMetricStarts[metadataId] = storedPlannedStringMetricSize;
+		plannedStringMetricCounts[metadataId] = storedStringCount;
+		for (int ordinal = virtualCostScopeMetric ? 1 : 0; ordinal < stringCount; ordinal++) {
+			plannedStringMetricNameIds[storedPlannedStringMetricSize] = objects
 					.intern(estimate.plannedStringMetricName(ordinal));
-			plannedStringMetricValueIds[plannedStringMetricSize] = objects
+			plannedStringMetricValueIds[storedPlannedStringMetricSize] = objects
 					.intern(estimate.plannedStringMetricValue(ordinal));
-			plannedStringMetricSize++;
+			storedPlannedStringMetricSize++;
 		}
+		plannedStringMetricSize += stringCount;
 
-		int doubleCount = estimate.plannedDoubleMetricCount();
 		plannedDoubleMetricStarts[metadataId] = plannedDoubleMetricSize;
 		plannedDoubleMetricCounts[metadataId] = doubleCount;
-		ensurePlannedDoubleMetricCapacity(plannedDoubleMetricSize + doubleCount);
 		for (int ordinal = 0; ordinal < doubleCount; ordinal++) {
 			plannedDoubleMetricNameIds[plannedDoubleMetricSize] = objects
 					.intern(estimate.plannedDoubleMetricName(ordinal));
@@ -471,10 +646,12 @@ final class PackedPhysicalMetadataArena {
 
 	private int plannedStringMetricIndex(int metadataId, int ordinal) {
 		checkId(metadataId);
-		if (ordinal < 0 || ordinal >= plannedStringMetricCounts[metadataId]) {
+		boolean virtualCostScopeMetric = virtualCostScopeMetric(metadataId);
+		int exposedCount = plannedStringMetricCounts[metadataId] + (virtualCostScopeMetric ? 1 : 0);
+		if (ordinal < 0 || ordinal >= exposedCount) {
 			throw new IndexOutOfBoundsException("planned string metric ordinal outside physical metadata");
 		}
-		return plannedStringMetricStarts[metadataId] + ordinal;
+		return plannedStringMetricStarts[metadataId] + ordinal - (virtualCostScopeMetric ? 1 : 0);
 	}
 
 	private int plannedDoubleMetricIndex(int metadataId, int ordinal) {
@@ -491,73 +668,225 @@ final class PackedPhysicalMetadataArena {
 		}
 	}
 
-	private void ensureCapacity(int requiredId) {
-		if (requiredId < outputRows.length) {
-			return;
+	int size() {
+		return size;
+	}
+
+	private boolean ensureAppendCapacity(int metadataId, int requiredStringMetricSize,
+			int requiredStoredStringMetricSize,
+			int requiredDoubleMetricSize) {
+		if (metadataId < rowCapacity
+				&& requiredStringMetricSize <= plannedStringMetricCapacity
+				&& requiredStoredStringMetricSize <= storedPlannedStringMetricCapacity
+				&& requiredDoubleMetricSize <= plannedDoubleMetricCapacity) {
+			return true;
 		}
-		int capacity = outputRows.length << 1;
+		int requiredRowCapacity = grownCapacity(rowCapacity, metadataId + 1);
+		int stringMetricCapacity = grownCapacity(plannedStringMetricCapacity, requiredStringMetricSize);
+		int storedStringMetricCapacity = grownCapacity(storedPlannedStringMetricCapacity,
+				requiredStoredStringMetricSize);
+		int doubleMetricCapacity = grownCapacity(plannedDoubleMetricCapacity, requiredDoubleMetricSize);
+		long retained = requiredBytesForCapacity(rowCapacity, plannedStringMetricCapacity,
+				plannedDoubleMetricCapacity);
+		long required = requiredBytesForCapacity(requiredRowCapacity, stringMetricCapacity, doubleMetricCapacity);
+		if (required != retained && !budget.tryReserveBytes(required - retained)) {
+			return false;
+		}
+		if (requiredRowCapacity > outputRows.length) {
+			resizeRows(requiredRowCapacity);
+		}
+		rowCapacity = requiredRowCapacity;
+		plannedStringMetricCapacity = stringMetricCapacity;
+		storedPlannedStringMetricCapacity = storedStringMetricCapacity;
+		if (storedStringMetricCapacity > plannedStringMetricNameIds.length) {
+			plannedStringMetricNameIds = Arrays.copyOf(plannedStringMetricNameIds, storedStringMetricCapacity);
+			plannedStringMetricValueIds = Arrays.copyOf(plannedStringMetricValueIds, storedStringMetricCapacity);
+		}
+		plannedDoubleMetricCapacity = doubleMetricCapacity;
+		if (doubleMetricCapacity > plannedDoubleMetricNameIds.length) {
+			plannedDoubleMetricNameIds = Arrays.copyOf(plannedDoubleMetricNameIds, doubleMetricCapacity);
+			plannedDoubleMetricValues = Arrays.copyOf(plannedDoubleMetricValues, doubleMetricCapacity);
+		}
+		return true;
+	}
+
+	static long requiredBytesForCapacity(int rowCapacity, int stringMetricCapacity, int doubleMetricCapacity) {
+		if (rowCapacity < 0 || stringMetricCapacity < 0 || doubleMetricCapacity < 0) {
+			throw new IllegalArgumentException("physical metadata capacities must be nonnegative");
+		}
+		long rowBytes = ROW_DOUBLE_COLUMNS * (long) Double.BYTES
+				+ ROW_INT_COLUMNS * (long) Integer.BYTES
+				+ ROW_LONG_COLUMNS * (long) Long.BYTES
+				+ ROW_BYTE_COLUMNS;
+		long bytes = Math.multiplyExact(rowCapacity, rowBytes);
+		bytes = Math.addExact(bytes, Math.multiplyExact(stringMetricCapacity, 2L * Integer.BYTES));
+		return Math.addExact(bytes,
+				Math.multiplyExact(doubleMetricCapacity, (long) Integer.BYTES + Double.BYTES));
+	}
+
+	private static int grownCapacity(int current, int required) {
+		int capacity = current;
+		while (capacity < required) {
+			capacity = Math.multiplyExact(capacity, 2);
+		}
+		return capacity;
+	}
+
+	private void resizeRows(int capacity) {
 		outputRows = Arrays.copyOf(outputRows, capacity);
 		workRows = Arrays.copyOf(workRows, capacity);
-		sequentialRows = Arrays.copyOf(sequentialRows, capacity);
-		randomSeeks = Arrays.copyOf(randomSeeks, capacity);
-		iteratorOpens = Arrays.copyOf(iteratorOpens, capacity);
-		expressionEvaluations = Arrays.copyOf(expressionEvaluations, capacity);
-		hashBuildRows = Arrays.copyOf(hashBuildRows, capacity);
-		hashProbeRows = Arrays.copyOf(hashProbeRows, capacity);
-		pathExpansions = Arrays.copyOf(pathExpansions, capacity);
-		resultRows = Arrays.copyOf(resultRows, capacity);
-		remoteCalls = Arrays.copyOf(remoteCalls, capacity);
-		peakMemoryRows = Arrays.copyOf(peakMemoryRows, capacity);
-		objectiveLowerBounds = Arrays.copyOf(objectiveLowerBounds, capacity);
-		objectivePointCosts = Arrays.copyOf(objectivePointCosts, capacity);
-		objectiveUpperBounds = Arrays.copyOf(objectiveUpperBounds, capacity);
-		lifecycleComparisonCosts = Arrays.copyOf(lifecycleComparisonCosts, capacity);
+		if (sequentialRows != null) {
+			sequentialRows = Arrays.copyOf(sequentialRows, capacity);
+			randomSeeks = Arrays.copyOf(randomSeeks, capacity);
+			iteratorOpens = Arrays.copyOf(iteratorOpens, capacity);
+			expressionEvaluations = Arrays.copyOf(expressionEvaluations, capacity);
+			hashBuildRows = Arrays.copyOf(hashBuildRows, capacity);
+			hashProbeRows = Arrays.copyOf(hashProbeRows, capacity);
+			pathExpansions = Arrays.copyOf(pathExpansions, capacity);
+			resultRows = Arrays.copyOf(resultRows, capacity);
+			remoteCalls = Arrays.copyOf(remoteCalls, capacity);
+			peakMemoryRows = Arrays.copyOf(peakMemoryRows, capacity);
+			objectiveLowerBounds = Arrays.copyOf(objectiveLowerBounds, capacity);
+			objectivePointCosts = Arrays.copyOf(objectivePointCosts, capacity);
+			objectiveUpperBounds = Arrays.copyOf(objectiveUpperBounds, capacity);
+			lifecycleComparisonCosts = Arrays.copyOf(lifecycleComparisonCosts, capacity);
+		}
 		lifecycleFlags = Arrays.copyOf(lifecycleFlags, capacity);
 		costScopes = Arrays.copyOf(costScopes, capacity);
 		physicalCostFlags = Arrays.copyOf(physicalCostFlags, capacity);
-		accessRows = Arrays.copyOf(accessRows, capacity);
-		invocations = Arrays.copyOf(invocations, capacity);
-		evidenceStateIds = Arrays.copyOf(evidenceStateIds, capacity);
-		evidenceGuarantees = Arrays.copyOf(evidenceGuarantees, capacity);
-		evidenceDispositions = Arrays.copyOf(evidenceDispositions, capacity);
-		costEventIds = Arrays.copyOf(costEventIds, capacity);
-		ruleProofMasks = Arrays.copyOf(ruleProofMasks, capacity);
-		lookupMasks = Arrays.copyOf(lookupMasks, capacity);
-		missingLookupMasks = Arrays.copyOf(missingLookupMasks, capacity);
-		indexPrefixLengths = Arrays.copyOf(indexPrefixLengths, capacity);
-		indexNameIds = Arrays.copyOf(indexNameIds, capacity);
-		estimateSourceIds = Arrays.copyOf(estimateSourceIds, capacity);
-		estimateFusionIds = Arrays.copyOf(estimateFusionIds, capacity);
-		accessModeIds = Arrays.copyOf(accessModeIds, capacity);
-		runtimeFeedbackContractIds = Arrays.copyOf(runtimeFeedbackContractIds, capacity);
+		if (evidenceStateIds != null) {
+			int previousCapacity = accessRows.length;
+			accessRows = Arrays.copyOf(accessRows, capacity);
+			Arrays.fill(accessRows, previousCapacity, capacity, Double.NaN);
+			invocations = Arrays.copyOf(invocations, capacity);
+			Arrays.fill(invocations, previousCapacity, capacity, 1.0d);
+			evidenceStateIds = Arrays.copyOf(evidenceStateIds, capacity);
+			evidenceGuarantees = Arrays.copyOf(evidenceGuarantees, capacity);
+			evidenceDispositions = Arrays.copyOf(evidenceDispositions, capacity);
+			costEventIds = Arrays.copyOf(costEventIds, capacity);
+			ruleProofMasks = Arrays.copyOf(ruleProofMasks, capacity);
+			lookupMasks = Arrays.copyOf(lookupMasks, capacity);
+			missingLookupMasks = Arrays.copyOf(missingLookupMasks, capacity);
+			indexPrefixLengths = Arrays.copyOf(indexPrefixLengths, capacity);
+			indexNameIds = Arrays.copyOf(indexNameIds, capacity);
+			estimateSourceIds = Arrays.copyOf(estimateSourceIds, capacity);
+			estimateFusionIds = Arrays.copyOf(estimateFusionIds, capacity);
+			accessModeIds = Arrays.copyOf(accessModeIds, capacity);
+			runtimeFeedbackContractIds = Arrays.copyOf(runtimeFeedbackContractIds, capacity);
+		}
 		plannedStringMetricStarts = Arrays.copyOf(plannedStringMetricStarts, capacity);
 		plannedStringMetricCounts = Arrays.copyOf(plannedStringMetricCounts, capacity);
 		plannedDoubleMetricStarts = Arrays.copyOf(plannedDoubleMetricStarts, capacity);
 		plannedDoubleMetricCounts = Arrays.copyOf(plannedDoubleMetricCounts, capacity);
 	}
 
-	private void ensurePlannedStringMetricCapacity(int requiredSize) {
-		if (requiredSize <= plannedStringMetricNameIds.length) {
-			return;
+	private static boolean hasVirtualCostScopeMetric(PackedCostEstimate estimate, int stringMetricCount) {
+		if (stringMetricCount == 0 || !PLANNED_COST_SCOPE.equals(estimate.plannedStringMetricName(0))) {
+			return false;
 		}
-		int capacity = plannedStringMetricNameIds.length;
-		while (capacity < requiredSize) {
-			capacity <<= 1;
-		}
-		plannedStringMetricNameIds = Arrays.copyOf(plannedStringMetricNameIds, capacity);
-		plannedStringMetricValueIds = Arrays.copyOf(plannedStringMetricValueIds, capacity);
+		String expected = estimate.costScope() == PackedCostEstimate.CostScope.INCLUSIVE
+				? INCLUSIVE_COST_SCOPE
+				: LOCAL_COST_SCOPE;
+		return expected.equals(estimate.plannedStringMetricValue(0));
 	}
 
-	private void ensurePlannedDoubleMetricCapacity(int requiredSize) {
-		if (requiredSize <= plannedDoubleMetricNameIds.length) {
+	private boolean virtualCostScopeMetric(int metadataId) {
+		checkId(metadataId);
+		return (physicalCostFlags[metadataId] & VIRTUAL_COST_SCOPE_METRIC) != 0;
+	}
+
+	private boolean canonicalPhysicalMetadata(int metadataId, double sequential, double seeks, double opens,
+			double evaluations, double buildRows, double probeRows, double expansions, double producedRows,
+			double calls, double peakRows, double objectiveLower, double objectivePoint, double objectiveUpper,
+			double lifecycleComparison) {
+		double work = workRows[metadataId];
+		return Double.compare(sequential, work) == 0
+				&& Double.compare(seeks, 0.0d) == 0
+				&& Double.compare(opens, 0.0d) == 0
+				&& Double.compare(evaluations, 0.0d) == 0
+				&& Double.compare(buildRows, 0.0d) == 0
+				&& Double.compare(probeRows, 0.0d) == 0
+				&& Double.compare(expansions, 0.0d) == 0
+				&& Double.compare(producedRows, 0.0d) == 0
+				&& Double.compare(calls, 0.0d) == 0
+				&& Double.compare(peakRows, 0.0d) == 0
+				&& Double.compare(objectiveLower, work) == 0
+				&& Double.compare(objectivePoint, work) == 0
+				&& Double.compare(objectiveUpper, work) == 0
+				&& Double.compare(lifecycleComparison, work) == 0;
+	}
+
+	private void ensurePhysicalColumns() {
+		if (sequentialRows != null) {
 			return;
 		}
-		int capacity = plannedDoubleMetricNameIds.length;
-		while (capacity < requiredSize) {
-			capacity <<= 1;
+		int capacity = outputRows.length;
+		sequentialRows = new double[capacity];
+		randomSeeks = new double[capacity];
+		iteratorOpens = new double[capacity];
+		expressionEvaluations = new double[capacity];
+		hashBuildRows = new double[capacity];
+		hashProbeRows = new double[capacity];
+		pathExpansions = new double[capacity];
+		resultRows = new double[capacity];
+		remoteCalls = new double[capacity];
+		peakMemoryRows = new double[capacity];
+		objectiveLowerBounds = new double[capacity];
+		objectivePointCosts = new double[capacity];
+		objectiveUpperBounds = new double[capacity];
+		lifecycleComparisonCosts = new double[capacity];
+		for (int metadataId = 1; metadataId <= size; metadataId++) {
+			double work = workRows[metadataId];
+			sequentialRows[metadataId] = work;
+			objectiveLowerBounds[metadataId] = work;
+			objectivePointCosts[metadataId] = work;
+			objectiveUpperBounds[metadataId] = work;
+			lifecycleComparisonCosts[metadataId] = work;
 		}
-		plannedDoubleMetricNameIds = Arrays.copyOf(plannedDoubleMetricNameIds, capacity);
-		plannedDoubleMetricValues = Arrays.copyOf(plannedDoubleMetricValues, capacity);
+	}
+
+	private static boolean hasExtendedAnnotations(double accessRows, double invocations, int evidenceStateId,
+			EvidenceGuarantee evidenceGuarantee, FrontierStateDisposition evidenceDisposition, int costEventId,
+			int lookupMask, int missingLookupMask, int indexPrefixLength, Object indexName, Object estimateSource,
+			Object estimateFusion, Object accessMode, Object runtimeFeedbackContract) {
+		return !Double.isNaN(accessRows)
+				|| Double.compare(invocations, 1.0d) != 0
+				|| evidenceStateId != 0
+				|| evidenceGuarantee != null
+				|| evidenceDisposition != null
+				|| costEventId != 0
+				|| lookupMask != 0
+				|| missingLookupMask != 0
+				|| indexPrefixLength != 0
+				|| indexName != null
+				|| estimateSource != null
+				|| estimateFusion != null
+				|| accessMode != null
+				|| runtimeFeedbackContract != null;
+	}
+
+	private void ensureAnnotationColumns() {
+		if (evidenceStateIds != null) {
+			return;
+		}
+		int capacity = outputRows.length;
+		accessRows = new double[capacity];
+		Arrays.fill(accessRows, Double.NaN);
+		invocations = new double[capacity];
+		Arrays.fill(invocations, 1.0d);
+		evidenceStateIds = new int[capacity];
+		evidenceGuarantees = new byte[capacity];
+		evidenceDispositions = new byte[capacity];
+		costEventIds = new int[capacity];
+		ruleProofMasks = new long[capacity];
+		lookupMasks = new int[capacity];
+		missingLookupMasks = new int[capacity];
+		indexPrefixLengths = new int[capacity];
+		indexNameIds = new int[capacity];
+		estimateSourceIds = new int[capacity];
+		estimateFusionIds = new int[capacity];
+		accessModeIds = new int[capacity];
+		runtimeFeedbackContractIds = new int[capacity];
 	}
 
 	private static double finiteNonNegative(double value, double fallback) {

@@ -14,8 +14,10 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -34,7 +36,9 @@ import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -49,6 +53,29 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 	@AfterEach
 	void clearRegistry() {
 		QueryRuntimeTelemetryRegistry.clear();
+	}
+
+	@Test
+	void oneArgumentValuePrecompileCompilesOnceForRepeatedBindings() throws Exception {
+		AtomicInteger preparations = new AtomicInteger();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null) {
+			@Override
+			protected QueryValueEvaluationStep prepare(Var variable, QueryEvaluationContext context) {
+				preparations.incrementAndGet();
+				return super.prepare(variable, context);
+			}
+		};
+		Method precompile = EvaluationStrategy.class.getMethod("precompile", ValueExpr.class);
+		QueryValueEvaluationStep prepared = (QueryValueEvaluationStep) precompile.invoke(strategy, new Var("value"));
+
+		QueryBindingSet first = new QueryBindingSet();
+		first.addBinding("value", SimpleValueFactory.getInstance().createLiteral("first"));
+		QueryBindingSet second = new QueryBindingSet();
+		second.addBinding("value", SimpleValueFactory.getInstance().createLiteral("second"));
+
+		assertThat(prepared.evaluate(first).stringValue()).isEqualTo("first");
+		assertThat(prepared.evaluate(second).stringValue()).isEqualTo("second");
+		assertThat(preparations).hasValue(1);
 	}
 
 	@Test

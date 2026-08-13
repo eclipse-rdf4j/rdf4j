@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -222,6 +223,48 @@ class LmdbRuntimeFeedbackTargetTest {
 	}
 
 	@Test
+	void partialCountsOnlyCensorWhileCancellationAndFailureRemainDiagnostic(@TempDir Path tempDir) {
+		LmdbOperatorFeedbackStats statistics = new LmdbOperatorFeedbackStats(tempDir.resolve("feedback"));
+		RuntimeFeedbackContract contract = contract();
+		RuntimeFeedbackTarget[] singleton = new RuntimeFeedbackTarget[1];
+		for (int observation = 0; observation < 32; observation++) {
+			RuntimeFeedbackTarget target = statistics.resolveRuntimeFeedbackTarget(contract);
+			target.open();
+			target.close(100L, 100.0d, 100L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+					EvaluationStatistics.TerminationClassification.EXHAUSTED);
+			target.recordActualPhysicalImplementation(contract.physicalImplementationId());
+			singleton[0] = target;
+			statistics.publishRuntimeFeedbackTargets(singleton, 1, true);
+		}
+		LearningFeatureEnvelope features = ((LmdbRuntimeFeedbackDescriptor) contract.descriptor()).featureEnvelope();
+		FrontierLearningModel.DimensionEstimate before = statistics.logicalDimensionDecision(
+				LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, features, 1.0d).estimate();
+		assertNotNull(before);
+		long partialLowerBound = Math.max(1L,
+				(long) Math.floor((before.lowerValue() + before.correctedValue()) * 0.5d));
+
+		publishTermination(statistics, contract, singleton, partialLowerBound,
+				EvaluationStatistics.TerminationClassification.PARTIAL);
+		FrontierLearningModel.DimensionEstimate censored = statistics.logicalDimensionDecision(
+				LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, features, 1.0d).estimate();
+		assertNotNull(censored);
+		assertEquals(before.posteriorLogMean(), censored.posteriorLogMean(), 0.0d);
+		assertEquals(before.exactEvidenceCount(), censored.exactEvidenceCount());
+		assertTrue(censored.lowerValue() > before.lowerValue());
+
+		publishTermination(statistics, contract, singleton, Math.max(partialLowerBound + 1L, 90L),
+				EvaluationStatistics.TerminationClassification.CANCELLED);
+		publishTermination(statistics, contract, singleton, Math.max(partialLowerBound + 2L, 95L),
+				EvaluationStatistics.TerminationClassification.FAILED);
+		FrontierLearningModel.DimensionEstimate afterPoison = statistics.logicalDimensionDecision(
+				LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, features, 1.0d).estimate();
+		assertNotNull(afterPoison);
+		assertEquals(censored.lowerValue(), afterPoison.lowerValue(), 0.0d);
+		assertEquals(censored.posteriorLogMean(), afterPoison.posteriorLogMean(), 0.0d);
+		assertEquals(32L, afterPoison.exactEvidenceCount());
+	}
+
+	@Test
 	void preboundOpenCloseAndRootPublicationAllocateNoLearningObjects(@TempDir Path tempDir) {
 		LmdbOperatorFeedbackStats statistics = new LmdbOperatorFeedbackStats(tempDir.resolve("feedback"));
 		RuntimeFeedbackContract contract = contract();
@@ -277,6 +320,17 @@ class LmdbRuntimeFeedbackTargetTest {
 		target.open();
 		target.close(1L, 1.0d, 1L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
 				EvaluationStatistics.TerminationClassification.EXHAUSTED);
+		target.recordActualPhysicalImplementation(contract.physicalImplementationId());
+		singleton[0] = target;
+		statistics.publishRuntimeFeedbackTargets(singleton, 1, true);
+	}
+
+	private static void publishTermination(LmdbOperatorFeedbackStats statistics, RuntimeFeedbackContract contract,
+			RuntimeFeedbackTarget[] singleton, long rows,
+			EvaluationStatistics.TerminationClassification termination) {
+		RuntimeFeedbackTarget target = statistics.resolveRuntimeFeedbackTarget(contract);
+		target.open();
+		target.close(rows, rows, rows, 0L, 0L, 0L, 0L, 0L, 0L, 0L, termination);
 		target.recordActualPhysicalImplementation(contract.physicalImplementationId());
 		singleton[0] = target;
 		statistics.publishRuntimeFeedbackTargets(singleton, 1, true);

@@ -54,7 +54,8 @@ class FrontierPayloadBlockFormatTest {
 	private static final String PAYLOAD_EXCEPTION_TYPE = "org.eclipse.rdf4j.sail.lmdb.frontier.FrontierPayloadException";
 
 	private static final int MAGIC = 0x524a4642; // RJFB
-	private static final int VERSION = 1;
+	private static final int LEGACY_VERSION = 1;
+	private static final int VERSION = 2;
 	private static final int HEADER_BYTES = 40;
 	private static final int CHECKSUM_BYTES = Long.BYTES;
 	private static final int VERSION_OFFSET = Integer.BYTES;
@@ -134,6 +135,26 @@ class FrontierPayloadBlockFormatTest {
 		assertNotNull(secondBlock);
 		assertBlock(api, secondBlock, FrontierPayloadKind.INSERT, generation, 1, secondRecords);
 		assertNull(api.readBlock(reader));
+	}
+
+	@Test
+	void readerAcceptsLegacyV1BlockEnvelopeDuringMigration() throws Exception {
+		Api api = Api.load();
+		Object limits = api.newLimits(1024 * 1024L, 64 * 1024, 1024L, 256, 8);
+		long generation = 142L;
+		long[] packedRecords = { 1L, 2L, 3L, 4L };
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		Object writer = api.newWriter(output, FrontierPayloadKind.BASE, generation, limits);
+		api.writeBlock(writer, 2, packedRecords);
+		api.finish(writer);
+
+		byte[] legacy = output.toByteArray();
+		ByteBuffer.wrap(legacy).putInt(VERSION_OFFSET, LEGACY_VERSION);
+		rewriteBlockChecksum(legacy, 0);
+		FrontierPayloadDescriptor descriptor = descriptorFor(FrontierPayloadKind.BASE, generation, legacy);
+		Object reader = api.newReader(new ByteArrayInputStream(legacy), descriptor, limits);
+		assertBlock(api, api.readBlock(reader), FrontierPayloadKind.BASE, generation, 2, packedRecords);
+		assertNull(api.readBlock(reader), "a valid v1 payload remains readable while rebuilds publish v2");
 	}
 
 	@Test

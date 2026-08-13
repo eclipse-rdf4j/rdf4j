@@ -24,11 +24,15 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -145,6 +149,8 @@ class PackedAccessEnablingSeedBudgetTest {
 
 		assertEquals(0, contextualProviderCalls[0],
 				"An ordinary binary order must not call the provider before reserving its deterministic work");
+		assertEquals(0L, exhausted.retainedBytes(),
+				"An already-stopped search must not reserve a new candidate arena");
 		assertTrue(exhausted.workLimitReached());
 	}
 
@@ -192,6 +198,73 @@ class PackedAccessEnablingSeedBudgetTest {
 		assertEquals(1, contextualProviderCalls[0],
 				"Every contextual provider invocation must consume its own deterministic work unit");
 		assertTrue(oneTransition.workLimitReached());
+	}
+
+	@Test
+	void denseMandatorySeedCompletesWhenDeadlineExpiresInsidePreflightedBlock() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		TupleExpr source = leftDeepJoin(List.of(
+				pattern(values, "n0", "urn:dense-deadline-a", "n1"),
+				pattern(values, "n1", "urn:dense-deadline-b", "n2"),
+				pattern(values, "n2", "urn:dense-deadline-c", "n3"),
+				pattern(values, "n3", "urn:dense-deadline-d", "n4"),
+				pattern(values, "n4", "urn:dense-deadline-target", "value")));
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+		PackedIncumbentSearch baseline = new PackedIncumbentSearch(query, memo,
+				new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE), false, null);
+		int baselineWinner = baseline.build();
+		boolean[] boundTargetCosted = { false };
+		boolean[] crossDeadline = { false };
+		boolean[] deadlineCrossedInsideSeed = { false };
+		long[] deadlineNanos = { Long.MAX_VALUE };
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView queryView, int relationId) {
+				if (!queryView.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return predicate(queryView, relationId).equals("urn:dense-deadline-target") ? 1_000.0d : 10.0d;
+			}
+
+			@Override
+			public void estimate(PackedQueryView queryView, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (crossDeadline[0] && !deadlineCrossedInsideSeed[0] && context.prefixRelationCount() != 0) {
+					while (System.nanoTime() < deadlineNanos[0]) {
+						Thread.onSpinWait();
+					}
+					deadlineCrossedInsideSeed[0] = true;
+				}
+				double rows = estimateRows(queryView, relationId);
+				if (queryView.isStatementPattern(relationId)
+						&& predicate(queryView, relationId).equals("urn:dense-deadline-target")
+						&& queryView.prefixBindsStatementComponent(context, relationId, 0)) {
+					boundTargetCosted[0] = true;
+					rows = 1.0d;
+				}
+				output.setContextualRows(rows, rows);
+			}
+		};
+		long denseSeedWorkCeiling = 26L;
+		deadlineNanos[0] = System.nanoTime() + 250_000_000L;
+		PackedSearchBudget expired = new PackedSearchBudget(denseSeedWorkCeiling, deadlineNanos[0]);
+		PackedJoinEnumerator enumerator = new PackedJoinEnumerator(query, memo, baseline.selectedRowsByGroup(),
+				expired, costs);
+		boundTargetCosted[0] = false;
+		crossDeadline[0] = true;
+
+		enumerator.optimize(query.rootRelId());
+
+		int selectedWinner = memo.findWinner(memo.logicalGroupId(query.rootRelId()), memo.anyPropertyId(), 0, 0, 0);
+		assertTrue(deadlineCrossedInsideSeed[0], "the fixture must cross the deadline inside mandatory costing");
+		assertTrue(boundTargetCosted[0], "the deadline interrupted the mandatory bound-access seed");
+		assertTrue(selectedWinner != baselineWinner,
+				"the mandatory dense seed must publish a complete root candidate after its atomic preflight");
+		assertTrue(expired.workUnits() <= denseSeedWorkCeiling,
+				() -> "mandatory dense seeding exceeded its deterministic ceiling: " + expired.workUnits());
 	}
 
 	@Test
@@ -283,6 +356,214 @@ class PackedAccessEnablingSeedBudgetTest {
 		assertTrue(finiteAnchorIndex >= 0 && unrelatedIndex >= 0 && finiteAnchorIndex < unrelatedIndex,
 				() -> "Exact subset search must cross disconnected components and compare the finite-first order: "
 						+ exactPlan);
+	}
+
+	@Test
+	void accessEnablingBridgePreservesLegalCartesianPredicatePrefix() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		BindingSetAssignment threshold = finiteValues(values, "threshold");
+		StatementPattern type = pattern(values, "entity", "urn:bridge-type", "type");
+		Filter finiteWeight = finiteFilter(values, pattern(values, "entity", "urn:bridge-weight", "weight"),
+				"weight", "weight-first", "weight-second");
+		StatementPattern probe = pattern(values, "entity", "urn:bridge-probe", "probeValue");
+		Filter correlatedProbe = new Filter(probe,
+				new Compare(Var.of("probeValue"), Var.of("threshold"), Compare.CompareOp.EQ));
+		TupleExpr source = new Filter(leftDeepJoin(List.of(threshold, type, finiteWeight)),
+				new Not(new Exists(correlatedProbe)));
+		boolean[] observedTypeBeforeFiniteWeight = { false };
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (query.isBindingSetAssignment(relationId)) {
+					return query.bindingAssignmentRowCount(relationId);
+				}
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return switch (predicate(query, relationId)) {
+				case "urn:bridge-type" -> 10.0d;
+				case "urn:bridge-weight" -> 1_000_000.0d;
+				case "urn:bridge-probe" -> 100.0d;
+				default -> Double.NaN;
+				};
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				double rows = estimateRows(query, relationId);
+				if (!Double.isFinite(rows)) {
+					return;
+				}
+				if (context.prefixRelationCount() == 0) {
+					output.setRows(rows, rows);
+				} else if (query.isStatementPattern(relationId)
+						&& query.prefixBindsStatementComponent(context, relationId, 0)) {
+					output.setContextualRows(Math.max(1.0d, context.prefixRows()),
+							Math.max(1.0d, context.prefixRows()));
+				} else {
+					double contextualRows = context.prefixRows() * rows;
+					output.setContextualRows(contextualRows, contextualRows);
+				}
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isAntiJoin(relationId)) {
+					boolean hasThreshold = false;
+					boolean hasType = false;
+					boolean hasWeight = false;
+					for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
+						TupleExpr prefix = query.materializeRelation(context.prefixRelationId(ordinal));
+						hasThreshold |= prefix.getBindingNames().contains("threshold");
+						hasType |= containsPredicate(prefix, "urn:bridge-type");
+						hasWeight |= containsPredicate(prefix, "urn:bridge-weight");
+					}
+					observedTypeBeforeFiniteWeight[0] |= hasThreshold && hasType && !hasWeight;
+					output.setContextualRows(Math.min(1.0d, context.leftInputRows()),
+							Math.max(1.0d, context.leftInputRows()));
+				} else if (query.isFilter(relationId)) {
+					output.setContextualRows(context.leftInputRows(), context.leftInputRows());
+				}
+			}
+		};
+
+		PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), costs);
+
+		assertTrue(observedTypeBeforeFiniteWeight[0],
+				"An access-enabling edge must not merge semantic components and hide the legal "
+						+ "threshold-plus-type predicate prefix");
+	}
+
+	@Test
+	void connectedCycleSeedsCartesianFinitePrefixBeforeProbes() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		BindingSetAssignment selectedA = finiteValues(values, "a");
+		BindingSetAssignment selectedB = finiteValues(values, "b");
+		BindingSetAssignment selectedC = finiteValues(values, "c");
+		StatementPattern ab = pattern(values, "a", "urn:cycle-ab", "b");
+		StatementPattern bc = pattern(values, "b", "urn:cycle-bc", "c");
+		StatementPattern ca = pattern(values, "c", "urn:cycle-ca", "a");
+		TupleExpr cycle = leftDeepJoin(List.of(ab, selectedA, bc, selectedB, ca, selectedC));
+		Filter source = new Filter(cycle, new Compare(Var.of("a"), Var.of("b"), Compare.CompareOp.NE));
+		Set<String> boundedCycleProbes = new LinkedHashSet<>();
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (query.isBindingSetAssignment(relationId)) {
+					return query.bindingAssignmentRowCount(relationId);
+				}
+				return query.isStatementPattern(relationId) ? 100_000.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				double isolatedRows = estimateRows(query, relationId);
+				if (!query.isStatementPattern(relationId) || context.prefixRelationCount() == 0) {
+					if (Double.isFinite(isolatedRows)) {
+						output.setRows(isolatedRows, isolatedRows);
+					}
+					return;
+				}
+				boolean subjectBound = query.prefixBindsStatementComponent(context, relationId, 0);
+				boolean objectBound = query.prefixBindsStatementComponent(context, relationId, 2);
+				if (subjectBound && objectBound) {
+					boundedCycleProbes.add(predicate(query, relationId));
+				}
+				double rows = subjectBound && objectBound ? context.prefixRows() : 1_000_000.0d;
+				output.setContextualRows(rows, rows);
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isFilter(relationId)) {
+					output.setContextualRows(context.leftInputRows(), context.leftInputRows());
+				}
+			}
+		};
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+		PackedIncumbentSearch baseline = new PackedIncumbentSearch(query, memo,
+				new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE), false, costs);
+		baseline.build();
+		boundedCycleProbes.clear();
+		PackedSearchBudget oneCompletion = new PackedSearchBudget(6, Long.MAX_VALUE);
+		PackedJoinEnumerator enumerator = new PackedJoinEnumerator(query, memo, baseline.selectedRowsByGroup(),
+				oneCompletion, costs);
+
+		enumerator.optimizeCorrelatedFilter(query.rootRelId());
+
+		assertEquals(Set.of("urn:cycle-ab", "urn:cycle-bc", "urn:cycle-ca"), boundedCycleProbes,
+				"The mandatory completion must combine independent finite anchors before probing a connected cycle");
+		assertTrue(oneCompletion.workLimitReached(),
+				"The fixture must prove the access seed before optional DPhyp enumeration can run");
+	}
+
+	@Test
+	void boundedJoinSeedUsesFiniteCartesianPrefixBeforeCycleProbes() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		TupleExpr source = leftDeepJoin(List.of(
+				pattern(values, "a", "urn:cycle-ab", "b"),
+				finiteValues(values, "a"),
+				pattern(values, "b", "urn:cycle-bc", "c"),
+				finiteValues(values, "b"),
+				pattern(values, "c", "urn:cycle-cd", "d"),
+				finiteValues(values, "c"),
+				pattern(values, "d", "urn:cycle-de", "e"),
+				finiteValues(values, "d"),
+				pattern(values, "e", "urn:cycle-ea", "a"),
+				finiteValues(values, "e")));
+		Set<String> boundedCycleProbes = new LinkedHashSet<>();
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (query.isBindingSetAssignment(relationId)) {
+					return query.bindingAssignmentRowCount(relationId);
+				}
+				return query.isStatementPattern(relationId) ? 100_000.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				boolean subjectBound = query.prefixBindsStatementComponent(context, relationId, 0);
+				boolean objectBound = query.prefixBindsStatementComponent(context, relationId, 2);
+				if (subjectBound && objectBound) {
+					boundedCycleProbes.add(predicate(query, relationId));
+				}
+				double rows = context.prefixRelationCount() == 0
+						? 100_000.0d
+						: subjectBound && objectBound ? context.prefixRows() : 1_000_000.0d;
+				output.setContextualRows(rows, rows);
+			}
+		};
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+		PackedIncumbentSearch baseline = new PackedIncumbentSearch(query, memo,
+				new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE), false, costs);
+		baseline.build();
+		boundedCycleProbes.clear();
+		PackedSearchBudget oneCompletion = new PackedSearchBudget(9, Long.MAX_VALUE);
+		PackedJoinEnumerator enumerator = new PackedJoinEnumerator(query, memo, baseline.selectedRowsByGroup(),
+				oneCompletion, costs);
+
+		enumerator.optimize(query.rootRelId());
+
+		assertEquals(Set.of("urn:cycle-ab", "urn:cycle-bc", "urn:cycle-cd", "urn:cycle-de", "urn:cycle-ea"),
+				boundedCycleProbes,
+				"The bounded fallback must use the same proof-derived finite bridges as exact DPhyp");
+		assertTrue(oneCompletion.workLimitReached(),
+				"The fixture must stop immediately after its single complete seed");
 	}
 
 	@Test
@@ -720,6 +1001,34 @@ class PackedAccessEnablingSeedBudgetTest {
 				"The full A×B estimate must be decomposed to B=3 before the unrelated C=5 component is appended");
 	}
 
+	@Test
+	void earlyCorrelatedSeedPreparesEmbeddedSubqueryBeforePropagatingItsOuterFilter() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		Extension aliasedSideEffect = new Extension(
+				pattern(values, "drugA", "urn:side-effect", "sideEffect"),
+				new ExtensionElem(Var.of("sideEffect"), "optSideEffect"));
+		TupleExpr joined = leftDeepJoin(List.of(
+				aliasedSideEffect,
+				pattern(values, "drugB", "urn:target", "target"),
+				pattern(values, "drugA", "urn:target", "target"),
+				pattern(values, "combo", "urn:type", "kind"),
+				pattern(values, "combo", "urn:member", "drugA"),
+				pattern(values, "combo", "urn:member", "drugB")));
+		Filter relocatable = new Filter(joined,
+				new Compare(Var.of("drugA"), Var.of("drugB"), Compare.CompareOp.NE));
+		Filter source = new Filter(relocatable,
+				new And(
+						new Compare(Var.of("optSideEffect"),
+								new ValueConstant(values.createIRI("urn:excluded-effect")), Compare.CompareOp.NE),
+						new Exists(pattern(values, "drugB", "urn:side-effect", "effect"))));
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(),
+				new SeedObservations().costModel());
+
+		assertNotNull(result.selectedPlan());
+		assertEquals(source.getBindingNames(), result.selectedPlan().getBindingNames());
+	}
+
 	private static SeedRun optimizeStarvingFixture(boolean reverseComponents, int workBudget) {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		List<TupleExpr> components = new ArrayList<>();
@@ -783,6 +1092,17 @@ class PackedAccessEnablingSeedBudgetTest {
 								Compare.CompareOp.EQ),
 						new Compare(Var.of(bindingName), new ValueConstant(values.createLiteral(second)),
 								Compare.CompareOp.EQ)));
+	}
+
+	private static BindingSetAssignment finiteValues(SimpleValueFactory values, String bindingName) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(new LinkedHashSet<>(List.of(bindingName)));
+		QueryBindingSet first = new QueryBindingSet();
+		first.addBinding(bindingName, values.createIRI("urn:" + bindingName + ":first"));
+		QueryBindingSet second = new QueryBindingSet();
+		second.addBinding(bindingName, values.createIRI("urn:" + bindingName + ":second"));
+		assignment.setBindingSets(List.of(first, second));
+		return assignment;
 	}
 
 	private static StatementPattern pattern(SimpleValueFactory values, String subject, String predicate,

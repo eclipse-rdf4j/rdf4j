@@ -25,6 +25,205 @@ import org.junit.jupiter.api.Test;
 class FrontierStateArenaTest {
 
 	@Test
+	void sampledPayloadSnapshotSurvivesArenaCloseAndRebindsAlphaEquivalentSlots() {
+		FrontierMaskStrata sourceMasks = FrontierMaskStrata.of(
+				FrontierLayout.of("x", "y"), 2, new long[] { 1L, 3L });
+		FrontierStateKey sourceKey = FrontierStateKey.of(
+				new long[] { 3L }, sourceMasks, 2L, 3L, 4L, 5L, 6L, 7L,
+				FrontierLaneFamily.DESIGN, 0, 1);
+		EvidenceStateSummary summary = new EvidenceStateSummary(
+				5.0d, 0.0d, 9.0d, 0.95d, EvidenceIntervalKind.POINTWISE,
+				1.0d, 2.0d, 3.0d, 25.0d / 13.0d, 0.6d, 9.0d,
+				EvidenceGuarantee.MEASURE_UNBIASED, EvidenceZeroStatus.POSITIVE, "");
+		FrontierPayloadSnapshot snapshot;
+		try (FrontierStateArena source = new FrontierStateArena(64 * 1024L)) {
+			source.declareCanonicalStates(sourceKey);
+			try (FrontierPayloadWriter writer = source.newPayloadWriter(
+					sourceKey, new int[] { 0, 0 }, new int[] { 1, 1 })) {
+				writer.putResidual(0, 0, 2.0d, new long[] { 11L, 0L }, 0);
+				writer.putResidual(1, 0, 3.0d, new long[] { 12L, 22L }, 0);
+				EvidenceStateRef state = source.internPayload(sourceKey, summary,
+						FrontierStateOperation.COORDINATED_STAR, null, null, 0, writer);
+				snapshot = source.snapshotPayload(state);
+			}
+		}
+
+		FrontierMaskStrata renamedMasks = FrontierMaskStrata.of(
+				FrontierLayout.of("renamedX", "renamedY"), 2, new long[] { 1L, 3L });
+		FrontierStateKey renamedKey = FrontierStateKey.of(
+				new long[] { 3L }, renamedMasks, 2L, 3L, 4L, 5L, 6L, 7L,
+				FrontierLaneFamily.DESIGN, 0, 1);
+		try (FrontierStateArena target = new FrontierStateArena(64 * 1024L)) {
+			target.declareCanonicalStates(renamedKey);
+			EvidenceStateRef rebound = target.internPayloadSnapshot(
+					renamedKey, FrontierStateOperation.COORDINATED_STAR, null, null, 0, snapshot);
+
+			assertEquals(summary, rebound.summary());
+			try (FrontierPayloadLease payload = target.openPayload(rebound)) {
+				assertEquals(1, payload.residualCount(0));
+				assertEquals(1, payload.residualCount(1));
+				assertEquals(2.0d, payload.residualWeight(0, 0));
+				assertEquals(3.0d, payload.residualWeight(1, 0));
+				assertEquals(11L, payload.residualTermId(0, 0, 0));
+				assertEquals(22L, payload.residualTermId(1, 0, 1));
+			}
+			assertTrue(snapshot.sameSlotContent(target.snapshotPayload(rebound)));
+		}
+	}
+
+	@Test
+	void exactPayloadSnapshotSurvivesArenaCloseAndRebindsAlphaEquivalentSlots() {
+		FrontierMaskStrata sourceMasks = FrontierMaskStrata.of(
+				FrontierLayout.of("x", "y"), 2, new long[] { 1L, 3L });
+		FrontierStateKey sourceKey = FrontierStateKey.of(
+				new long[] { 1L }, sourceMasks, 2L, 3L, 4L, 5L, 6L, 7L,
+				FrontierLaneFamily.DESIGN, 0, 1);
+		FrontierExactPayloadSnapshot snapshot;
+		try (FrontierStateArena source = new FrontierStateArena(64 * 1024L)) {
+			source.declareCanonicalStates(sourceKey);
+			try (FrontierPayloadWriter writer = source.newPayloadWriter(
+					sourceKey, new int[] { 1, 1 }, new int[] { 0, 0 })) {
+				writer.putExact(0, 0, 2.0d, new long[] { 11L, 0L }, 0);
+				writer.putExact(1, 0, 3.0d, new long[] { 12L, 22L }, 0);
+				EvidenceStateRef state = source.internPayload(sourceKey, EvidenceStateSummary.exact(5.0d),
+						FrontierStateOperation.EXACT_LEAF, null, null, 0, writer);
+				snapshot = source.snapshotExactPayload(state);
+			}
+		}
+
+		FrontierMaskStrata renamedMasks = FrontierMaskStrata.of(
+				FrontierLayout.of("renamedX", "renamedY"), 2, new long[] { 1L, 3L });
+		FrontierStateKey renamedKey = FrontierStateKey.of(
+				new long[] { 9L }, renamedMasks, 2L, 3L, 4L, 5L, 6L, 7L,
+				FrontierLaneFamily.DESIGN, 0, 1);
+		try (FrontierStateArena target = new FrontierStateArena(64 * 1024L)) {
+			target.declareCanonicalStates(renamedKey);
+			EvidenceStateRef rebound = target.internExactPayloadSnapshot(
+					renamedKey, FrontierStateOperation.EXACT_LEAF, null, null, 0, snapshot);
+
+			assertEquals(EvidenceStateSummary.exact(5.0d), rebound.summary());
+			assertEquals(snapshot.logicalPayloadBytes(), target.residentPayloadBytes());
+			try (FrontierPayloadLease payload = target.openPayload(rebound)) {
+				assertEquals(2, payload.stratumCount());
+				assertEquals(11L, payload.exactTermId(0, 0, 0));
+				assertEquals(0L, payload.exactTermId(0, 0, 1));
+				assertEquals(12L, payload.exactTermId(1, 0, 0));
+				assertEquals(22L, payload.exactTermId(1, 0, 1));
+			}
+			assertTrue(snapshot.sameSlotContent(target.snapshotExactPayload(rebound)));
+		}
+	}
+
+	@Test
+	void exactPayloadSnapshotRejectsChangedSnapshotAndSampledEvidence() {
+		FrontierLayout layout = FrontierLayout.of("x");
+		FrontierStateKey exactKey = key(new long[] { 1L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		FrontierExactPayloadSnapshot snapshot;
+		try (FrontierStateArena source = new FrontierStateArena(64 * 1024L)) {
+			source.declareCanonicalStates(exactKey);
+			try (FrontierPayloadWriter writer = source.newPayloadWriter(exactKey, new int[] { 1 }, new int[] { 0 })) {
+				writer.putExact(0, 0, 1.0d, new long[] { 11L }, 0);
+				EvidenceStateRef exact = source.internPayload(exactKey, EvidenceStateSummary.exact(1.0d),
+						FrontierStateOperation.EXACT_LEAF, null, null, 0, writer);
+				snapshot = source.snapshotExactPayload(exact);
+			}
+		}
+
+		FrontierStateKey changedEpoch = key(new long[] { 1L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 7L, 0, 1);
+		try (FrontierStateArena target = new FrontierStateArena(64 * 1024L)) {
+			target.declareCanonicalStates(changedEpoch);
+			assertThrows(IllegalArgumentException.class,
+					() -> target.internExactPayloadSnapshot(
+							changedEpoch, FrontierStateOperation.EXACT_LEAF, null, null, 0, snapshot));
+		}
+
+		try (FrontierStateArena sampledArena = new FrontierStateArena(64 * 1024L)) {
+			sampledArena.declareCanonicalStates(exactKey);
+			try (FrontierPayloadWriter writer = sampledArena.newPayloadWriter(
+					exactKey, new int[] { 0 }, new int[] { 1 })) {
+				writer.putResidual(0, 0, 1.0d, new long[] { 11L }, 0);
+				EvidenceStateSummary sampledSummary = new EvidenceStateSummary(
+						1.0d, 0.0d, 2.0d, 0.95d, EvidenceIntervalKind.POINTWISE,
+						0.0d, 0.0d, 1.0d, 1.0d, 1.0d, 2.0d,
+						EvidenceGuarantee.MEASURE_UNBIASED, EvidenceZeroStatus.POSITIVE, "");
+				EvidenceStateRef sampled = sampledArena.internPayload(exactKey, sampledSummary,
+						FrontierStateOperation.COORDINATED_STAR, null, null, 0, writer);
+				assertThrows(IllegalArgumentException.class, () -> sampledArena.snapshotExactPayload(sampled));
+			}
+		}
+
+		try (FrontierStateArena derivedArena = new FrontierStateArena(64 * 1024L)) {
+			derivedArena.declareCanonicalStates(exactKey);
+			EvidenceStateRef exact;
+			try (FrontierPayloadWriter writer = derivedArena.newPayloadWriter(
+					exactKey, new int[] { 1 }, new int[] { 0 })) {
+				writer.putExact(0, 0, 1.0d, new long[] { 11L }, 0);
+				exact = derivedArena.internPayload(exactKey, EvidenceStateSummary.exact(1.0d),
+						FrontierStateOperation.EXACT_LEAF, null, null, 0, writer);
+			}
+			try (FrontierPayloadWriter writer = derivedArena.newPayloadWriter(
+					exactKey, new int[] { 1 }, new int[] { 0 })) {
+				writer.putExact(0, 0, 1.0d, new long[] { 11L }, 0);
+				EvidenceStateRef derived = derivedArena.derivePayload(exactKey, EvidenceStateSummary.exact(1.0d),
+						FrontierStateOperation.PROJECT, exact, null, 1, writer);
+				assertThrows(IllegalArgumentException.class, () -> derivedArena.snapshotExactPayload(derived));
+				assertTrue(derivedArena.isDetachablePayload(derived));
+				assertEquals(EvidenceStateSummary.exact(1.0d), derivedArena.snapshotPayload(derived).summary());
+			}
+		}
+	}
+
+	@Test
+	void exactRemeasureMaySupersedeSampledParentWithoutWeakeningGenericTransformChecks() {
+		FrontierLayout layout = FrontierLayout.of("x");
+		FrontierStateKey sampledKey = key(new long[] { 1L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		FrontierStateKey recoveredKey = key(new long[] { 3L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+
+		try (FrontierStateArena arena = new FrontierStateArena(64 * 1024L)) {
+			arena.declareCanonicalStates(sampledKey, recoveredKey);
+			EvidenceStateRef sampled;
+			try (FrontierPayloadWriter writer = arena.newPayloadWriter(
+					sampledKey, new int[] { 0 }, new int[] { 1 })) {
+				writer.putResidual(0, 0, 2.0d, new long[] { 11L }, 0);
+				EvidenceStateSummary sampledSummary = new EvidenceStateSummary(
+						2.0d, 0.0d, 4.0d, 0.95d, EvidenceIntervalKind.POINTWISE,
+						0.0d, 0.0d, 1.0d, 1.0d, 1.0d, 4.0d,
+						EvidenceGuarantee.MEASURE_UNBIASED, EvidenceZeroStatus.POSITIVE, "");
+				sampled = arena.internPayload(sampledKey, sampledSummary,
+						FrontierStateOperation.COORDINATED_STAR, null, null, 1, writer);
+			}
+
+			FrontierPayloadWriter genericWriter = arena.newPayloadWriter(
+					recoveredKey, new int[] { 1 }, new int[] { 0 });
+			genericWriter.putExact(0, 0, 2.0d, new long[] { 11L }, 0);
+			assertThrows(IllegalArgumentException.class,
+					() -> arena.internPayload(recoveredKey, EvidenceStateSummary.exact(2.0d),
+							FrontierStateOperation.BRIDGE_TRANSFER, sampled, null, 2, genericWriter));
+
+			try (FrontierPayloadWriter remeasuredWriter = arena.newPayloadWriter(
+					recoveredKey, new int[] { 1 }, new int[] { 0 })) {
+				remeasuredWriter.putExact(0, 0, 2.0d, new long[] { 11L }, 0);
+				EvidenceStateRef recovered = arena.internPayload(
+						recoveredKey,
+						EvidenceStateSummary.exact(2.0d),
+						FrontierStateOperation.EXACT_REMEASURE,
+						sampled,
+						null,
+						2,
+						remeasuredWriter);
+
+				assertEquals(FrontierStateOperation.EXACT_REMEASURE, arena.operation(recovered));
+				assertEquals(sampled, arena.parent(recovered, 0));
+				assertEquals(EvidenceGuarantee.DATABASE_EXACT, recovered.summary().guarantee());
+			}
+		}
+	}
+
+	@Test
 	void detachedEvidenceBundlePreservesExactTuplePayloadAfterArenaClose() throws Exception {
 		FrontierLayout layout = FrontierLayout.of("x", "y");
 		FrontierStateKey stateKey = key(new long[] { 1L }, layout, new long[] { 3L },
@@ -141,6 +340,275 @@ class FrontierStateArenaTest {
 			assertEquals(1, arena.parentCount(opaque));
 			assertEquals(exact, arena.parent(opaque, 0));
 			assertTrue(dispositionType.isEnum());
+		}
+	}
+
+	@Test
+	void identicalDerivedSummariesShareOneImmutableState() {
+		FrontierLayout layout = FrontierLayout.of("x");
+		FrontierStateKey stateKey = key(new long[] { 1L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		EvidenceStateSummary unresolved = EvidenceStateSummary.unresolved(
+				0.0d, Double.POSITIVE_INFINITY, "learned transform has zero support");
+		try (FrontierStateArena arena = new FrontierStateArena(64 * 1024L)) {
+			arena.declareCanonicalStates(stateKey);
+			EvidenceStateRef input;
+			try (FrontierPayloadWriter writer = arena.newPayloadWriter(
+					stateKey, new int[] { 1 }, new int[] { 0 })) {
+				writer.putExact(0, 0, 1.0d, new long[] { 11L }, 0);
+				input = arena.internPayload(stateKey, EvidenceStateSummary.exact(1.0d),
+						FrontierStateOperation.EXACT_LEAF, null, null, 0, writer);
+			}
+
+			EvidenceStateRef first = arena.deriveSummary(
+					stateKey, unresolved, FrontierStateOperation.UNRESOLVED, input, null, 17);
+			EvidenceStateRef repeated = arena.deriveSummary(
+					stateKey, unresolved, FrontierStateOperation.UNRESOLVED, input, null, 17);
+			EvidenceStateRef differentRecipe = arena.deriveSummary(
+					stateKey, unresolved, FrontierStateOperation.UNRESOLVED, input, null, 19);
+
+			assertEquals(first, repeated,
+					"an immutable derived state is identified by its complete summary and provenance");
+			assertNotEquals(first, differentRecipe, "the operation recipe remains part of state identity");
+		}
+	}
+
+	@Test
+	void payloadInterningSeparatesPhysicalEvidenceLineagesForOneLogicalState() {
+		FrontierLayout layout = FrontierLayout.of("x");
+		FrontierStateKey firstInputKey = key(new long[] { 1L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		FrontierStateKey secondInputKey = key(new long[] { 2L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		FrontierStateKey outputKey = key(new long[] { 3L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		try (FrontierStateArena arena = new FrontierStateArena(64 * 1024L)) {
+			arena.declareCanonicalStates(firstInputKey, secondInputKey, outputKey);
+			EvidenceStateRef firstInput = exactLeaf(arena, firstInputKey, 11L, 1);
+			EvidenceStateRef secondInput = exactLeaf(arena, secondInputKey, 22L, 2);
+
+			EvidenceStateRef firstOutput = exactUnaryPayload(arena, outputKey, firstInput, 11L, 7);
+			EvidenceStateRef secondOutput = exactUnaryPayload(arena, outputKey, secondInput, 22L, 7);
+			EvidenceStateRef repeatedSecondOutput = exactUnaryPayload(arena, outputKey, secondInput, 22L, 7);
+
+			assertNotEquals(firstOutput, secondOutput,
+					"different physical evidence lineages must not alias through one logical state key");
+			assertEquals(firstOutput,
+					arena.findDerivation(outputKey, FrontierStateOperation.PROJECT, firstInput, null, 7));
+			assertEquals(secondOutput,
+					arena.findDerivation(outputKey, FrontierStateOperation.PROJECT, secondInput, null, 7));
+			assertEquals(secondOutput, repeatedSecondOutput,
+					"the complete derivation identity should still intern deterministic repeats");
+			try (FrontierPayloadLease firstPayload = arena.openPayload(firstOutput);
+					FrontierPayloadLease secondPayload = arena.openPayload(secondOutput)) {
+				assertEquals(11L, firstPayload.exactTermId(0, 0, 0));
+				assertEquals(22L, secondPayload.exactTermId(0, 0, 0));
+			}
+
+			assertThrows(IllegalStateException.class,
+					() -> exactUnaryPayload(arena, outputKey, secondInput, 33L, 7),
+					"one derivation may not rematerialize with different payload content");
+		}
+	}
+
+	@Test
+	void exactEmptyContinuationNeverCanonicalizesToSampledPayloadOwner() {
+		FrontierLayout layout = FrontierLayout.of("x");
+		FrontierStateKey stateKey = key(new long[] { 1L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		try (FrontierStateArena arena = new FrontierStateArena(64 * 1024L)) {
+			arena.declareCanonicalStates(stateKey);
+			EvidenceStateRef sampled;
+			try (FrontierPayloadWriter writer = arena.newPayloadWriter(
+					stateKey, new int[] { 0 }, new int[] { 0 })) {
+				sampled = arena.internPayload(
+						stateKey,
+						new EvidenceStateSummary(
+								0.0d, 0.0d, Double.POSITIVE_INFINITY, 0.0d, EvidenceIntervalKind.NONE,
+								Double.POSITIVE_INFINITY, 0.0d, 0.0d, 0.0d, 0.0d,
+								Double.POSITIVE_INFINITY, EvidenceGuarantee.MEASURE_UNBIASED,
+								EvidenceZeroStatus.ESTIMATED_ZERO, ""),
+						FrontierStateOperation.COORDINATED_STAR,
+						null,
+						null,
+						1,
+						writer);
+			}
+			EvidenceStateRef exact;
+			try (FrontierPayloadWriter writer = arena.newPayloadWriter(
+					stateKey, new int[] { 0 }, new int[] { 0 })) {
+				exact = arena.internPayload(
+						stateKey,
+						EvidenceStateSummary.exact(0.0d),
+						FrontierStateOperation.EXACT_REMEASURE,
+						sampled,
+						null,
+						2,
+						writer);
+			}
+
+			assertNotEquals(sampled, exact, "proof strength remains part of immutable state identity");
+			assertEquals(exact, arena.canonicalContinuationState(exact),
+					"payload storage sharing must not replace exact absence with sampled non-observation");
+		}
+	}
+
+	@Test
+	void equalPayloadContentSharesStorageAcrossDistinctPhysicalDerivations() {
+		FrontierLayout layout = FrontierLayout.of("x");
+		FrontierStateKey firstInputKey = key(new long[] { 1L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		FrontierStateKey secondInputKey = key(new long[] { 2L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		FrontierStateKey outputKey = key(new long[] { 3L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		try (FrontierStateArena arena = new FrontierStateArena(64 * 1024L)) {
+			arena.declareCanonicalStates(firstInputKey, secondInputKey, outputKey);
+			EvidenceStateRef firstInput = exactLeaf(arena, firstInputKey, 11L, 1);
+			EvidenceStateRef secondInput = exactLeaf(arena, secondInputKey, 22L, 2);
+
+			EvidenceStateRef firstOutput = exactUnaryPayload(arena, outputKey, firstInput, 33L, 7);
+			long residentBytes = arena.residentPayloadBytes();
+			EvidenceStateRef secondOutput = exactUnaryPayload(arena, outputKey, secondInput, 33L, 7);
+
+			assertNotEquals(firstOutput, secondOutput,
+					"physical derivation identity must remain distinct when tuple evidence happens to match");
+			assertEquals(firstOutput, arena.canonicalContinuationState(firstOutput));
+			assertEquals(firstOutput, arena.canonicalContinuationState(secondOutput),
+					"byte-identical database-exact payloads define one suffix-equivalence class");
+			assertEquals(residentBytes, arena.residentPayloadBytes(),
+					"byte-identical immutable payload content should have one resident allocation");
+			assertEquals(firstOutput,
+					arena.findDerivation(outputKey, FrontierStateOperation.PROJECT, firstInput, null, 7));
+			assertEquals(secondOutput,
+					arena.findDerivation(outputKey, FrontierStateOperation.PROJECT, secondInput, null, 7));
+			try (FrontierPayloadLease firstPayload = arena.openPayload(firstOutput);
+					FrontierPayloadLease secondPayload = arena.openPayload(secondOutput)) {
+				assertEquals(33L, firstPayload.exactTermId(0, 0, 0));
+				assertEquals(33L, secondPayload.exactTermId(0, 0, 0));
+			}
+
+			arena.evictPayload(secondOutput);
+			assertEquals(FrontierPayloadStatus.EVICTED, arena.payloadStatus(firstOutput));
+			assertEquals(FrontierPayloadStatus.EVICTED, arena.payloadStatus(secondOutput));
+			try (FrontierPayloadWriter restored = arena.newRematerializationWriter(
+					secondOutput, new int[] { 1 }, new int[] { 0 })) {
+				restored.putExact(0, 0, 1.0d, new long[] { 33L }, 0);
+				arena.restorePayload(secondOutput, restored);
+			}
+			assertEquals(FrontierPayloadStatus.RESIDENT, arena.payloadStatus(firstOutput));
+			assertEquals(FrontierPayloadStatus.RESIDENT, arena.payloadStatus(secondOutput));
+			long restoredBytes = arena.residentPayloadBytes();
+
+			EvidenceStateRef differentRecipe = exactUnaryPayload(arena, outputKey, secondInput, 33L, 8);
+			assertNotEquals(secondOutput, differentRecipe);
+			assertEquals(restoredBytes, arena.residentPayloadBytes(),
+					"restored content must participate in later exact content sharing");
+		}
+	}
+
+	@Test
+	void rematerializationReusesEquivalentResidentContentWithoutOwnerChains() {
+		FrontierLayout layout = FrontierLayout.of("x");
+		FrontierStateKey firstInputKey = key(new long[] { 1L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		FrontierStateKey secondInputKey = key(new long[] { 2L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		FrontierStateKey outputKey = key(new long[] { 3L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		try (FrontierStateArena arena = new FrontierStateArena(64 * 1024L)) {
+			arena.declareCanonicalStates(firstInputKey, secondInputKey, outputKey);
+			EvidenceStateRef firstInput = exactLeaf(arena, firstInputKey, 11L, 1);
+			EvidenceStateRef secondInput = exactLeaf(arena, secondInputKey, 22L, 2);
+			EvidenceStateRef firstOutput = exactUnaryPayload(arena, outputKey, firstInput, 33L, 7);
+			EvidenceStateRef sharedOutput = exactUnaryPayload(arena, outputKey, secondInput, 33L, 7);
+
+			arena.evictPayload(sharedOutput);
+			EvidenceStateRef replacementOwner = exactUnaryPayload(arena, outputKey, secondInput, 33L, 8);
+			long residentBytes = arena.residentPayloadBytes();
+			try (FrontierPayloadWriter restored = arena.newRematerializationWriter(
+					firstOutput, new int[] { 1 }, new int[] { 0 })) {
+				restored.putExact(0, 0, 1.0d, new long[] { 33L }, 0);
+				arena.restorePayload(firstOutput, restored);
+			}
+
+			assertEquals(residentBytes, arena.residentPayloadBytes(),
+					"rematerialization must reuse an equivalent resident block instead of duplicating it");
+			assertEquals(FrontierPayloadStatus.RESIDENT, arena.payloadStatus(firstOutput));
+			assertEquals(FrontierPayloadStatus.RESIDENT, arena.payloadStatus(sharedOutput));
+			assertEquals(FrontierPayloadStatus.RESIDENT, arena.payloadStatus(replacementOwner));
+			try (FrontierPayloadLease firstPayload = arena.openPayload(firstOutput);
+					FrontierPayloadLease sharedPayload = arena.openPayload(sharedOutput);
+					FrontierPayloadLease replacementPayload = arena.openPayload(replacementOwner)) {
+				assertEquals(33L, firstPayload.exactTermId(0, 0, 0));
+				assertEquals(33L, sharedPayload.exactTermId(0, 0, 0));
+				assertEquals(33L, replacementPayload.exactTermId(0, 0, 0));
+			}
+		}
+	}
+
+	@Test
+	void contentSharedReplayableTransformRoundTripsWhenItMatchesItsParent() {
+		FrontierLayout layout = FrontierLayout.of("x");
+		FrontierStateKey stateKey = key(new long[] { 1L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		FrontierEvidenceBundle bundle;
+		try (FrontierStateArena source = new FrontierStateArena(64 * 1024L)) {
+			source.declareCanonicalStates(stateKey);
+			EvidenceStateRef input = exactLeaf(source, stateKey, 11L, 1);
+			EvidenceStateRef projected = exactUnaryPayload(source, stateKey, input, 11L, 7);
+			assertNotEquals(input, projected);
+			bundle = source.exportEvidence(new int[] { projected.stateId() });
+		}
+
+		try (FrontierStateArena target = new FrontierStateArena(64 * 1024L)) {
+			EvidenceStateRef projected = target.importEvidence(bundle)[0];
+			assertEquals(FrontierStateOperation.PROJECT, target.operation(projected));
+			assertEquals(1, target.parentCount(projected));
+			assertEquals(FrontierPayloadStatus.RESIDENT, target.payloadStatus(projected));
+			try (FrontierPayloadLease payload = target.openPayload(projected)) {
+				assertEquals(11L, payload.exactTermId(0, 0, 0));
+			}
+			assertEquals(projected,
+					target.findDerivation(
+							stateKey, FrontierStateOperation.PROJECT, target.parent(projected, 0), null, 7));
+		}
+	}
+
+	@Test
+	void canonicalMaterializationSharesEquivalentEarlierDerivedContent() {
+		FrontierLayout layout = FrontierLayout.of("x");
+		FrontierStateKey inputKey = key(new long[] { 1L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		FrontierStateKey outputKey = key(new long[] { 3L }, layout, new long[] { 1L },
+				2L, 3L, 4L, 5L, 6L, 0, 1);
+		try (FrontierStateArena arena = new FrontierStateArena(64 * 1024L)) {
+			arena.declareCanonicalStates(inputKey, outputKey);
+			EvidenceStateRef input = exactLeaf(arena, inputKey, 11L, 1);
+			EvidenceStateRef derived;
+			try (FrontierPayloadWriter writer = arena.newPayloadWriter(
+					outputKey, new int[] { 1 }, new int[] { 0 })) {
+				writer.putExact(0, 0, 1.0d, new long[] { 33L }, 0);
+				derived = arena.derivePayload(
+						outputKey, EvidenceStateSummary.exact(1.0d), FrontierStateOperation.PROJECT,
+						input, null, 7, writer);
+			}
+			long residentBytes = arena.residentPayloadBytes();
+
+			EvidenceStateRef canonical = exactUnaryPayload(arena, outputKey, input, 33L, 8);
+
+			assertNotEquals(derived, canonical);
+			assertEquals(residentBytes, arena.residentPayloadBytes(),
+					"canonical state placement must not force a duplicate immutable payload block");
+			assertEquals(derived,
+					arena.findDerivation(outputKey, FrontierStateOperation.PROJECT, input, null, 7));
+			assertEquals(canonical,
+					arena.findDerivation(outputKey, FrontierStateOperation.PROJECT, input, null, 8));
+			try (FrontierPayloadLease payload = arena.openPayload(canonical)) {
+				assertEquals(33L, payload.exactTermId(0, 0, 0));
+			}
+			assertDoesNotThrow(() -> arena.snapshotExactPayload(canonical),
+					"canonical exact snapshots remain valid when immutable storage is shared");
 		}
 	}
 
@@ -808,6 +1276,27 @@ class FrontierStateArenaTest {
 	}
 
 	@Test
+	void rejectedReservationReportsTypedAtomicResourceLimit() {
+		try (FrontierStateArena arena = new FrontierStateArena(64 * 1024L)) {
+			long reservedBefore = arena.allocatedBytes();
+
+			FrontierMemoryLimitException failure = assertThrows(FrontierMemoryLimitException.class,
+					() -> arena.reserveTemporary(Long.MAX_VALUE, FrontierMemoryPurpose.ARRAY_GROWTH));
+
+			assertEquals(Long.MAX_VALUE, failure.requestedBytes());
+			assertEquals(reservedBefore, failure.reservedBytes());
+			assertEquals(arena.memoryBudgetBytes(), failure.limitBytes());
+			assertEquals(FrontierMemoryPurpose.ARRAY_GROWTH, failure.purpose());
+			assertEquals(reservedBefore, arena.allocatedBytes(), "a rejected reservation must publish no arena state");
+			try (FrontierMemoryReservation ignored = arena.reserveTemporary(1L,
+					FrontierMemoryPurpose.ARRAY_GROWTH)) {
+				assertTrue(arena.allocatedBytes() > reservedBefore);
+			}
+			assertEquals(reservedBefore, arena.allocatedBytes());
+		}
+	}
+
+	@Test
 	void closedArenaRejectsStateAccess() {
 		FrontierStateArena arena = new FrontierStateArena(64 * 1024L);
 		EvidenceStateRef reference = arena.append(FrontierLayout.empty(), EvidenceStateSummary.exact(1.0d));
@@ -835,6 +1324,24 @@ class FrontierStateArenaTest {
 				guarantee,
 				zeroStatus,
 				"");
+	}
+
+	private static EvidenceStateRef exactLeaf(FrontierStateArena arena, FrontierStateKey key, long termId,
+			int recipeId) {
+		try (FrontierPayloadWriter writer = arena.newPayloadWriter(key, new int[] { 1 }, new int[] { 0 })) {
+			writer.putExact(0, 0, 1.0d, new long[] { termId }, 0);
+			return arena.internPayload(key, EvidenceStateSummary.exact(1.0d),
+					FrontierStateOperation.EXACT_LEAF, null, null, recipeId, writer);
+		}
+	}
+
+	private static EvidenceStateRef exactUnaryPayload(FrontierStateArena arena, FrontierStateKey key,
+			EvidenceStateRef input, long termId, int recipeId) {
+		try (FrontierPayloadWriter writer = arena.newPayloadWriter(key, new int[] { 1 }, new int[] { 0 })) {
+			writer.putExact(0, 0, 1.0d, new long[] { termId }, 0);
+			return arena.internPayload(key, EvidenceStateSummary.exact(1.0d),
+					FrontierStateOperation.PROJECT, input, null, recipeId, writer);
+		}
 	}
 
 	private static long arrayBytes(int length, int elementBytes) {

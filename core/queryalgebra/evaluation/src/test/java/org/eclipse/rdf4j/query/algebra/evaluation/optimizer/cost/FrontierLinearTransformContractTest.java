@@ -655,6 +655,49 @@ class FrontierLinearTransformContractTest {
 	}
 
 	@Test
+	void exactBijectiveProjectionDoesNotRequireFullTupleScratchCopy() {
+		long memoryBudget = 64L * 1024L;
+		FrontierLayout inputLayout = FrontierLayout.of("x", "y", "z");
+		FrontierLayout outputLayout = FrontierLayout.of("z", "x", "y");
+		FrontierStateKey inputKey = key(
+				0b000001L, FrontierMaskStrata.of(inputLayout, 1, new long[] { 0b111L }));
+		FrontierStateKey outputKey = key(
+				0b000011L, FrontierMaskStrata.of(outputLayout, 1, new long[] { 0b111L }));
+
+		try (FrontierStateArena arena = new FrontierStateArena(memoryBudget)) {
+			arena.declareCanonicalStates(inputKey, outputKey);
+			FrontierPayloadWriter inputWriter = arena.newPayloadWriter(
+					inputKey, new int[] { 640 }, new int[] { 0 });
+			for (int index = 0; index < 640; index++) {
+				inputWriter.putExact(0, index, 1.0d,
+						new long[] { index + 1L, index + 1_001L, index + 2_001L }, 0);
+			}
+			EvidenceStateRef input = arena.internPayload(
+					inputKey,
+					EvidenceStateSummary.exact(640.0d),
+					FrontierStateOperation.EXACT_LEAF,
+					null,
+					null,
+					1,
+					inputWriter);
+
+			EvidenceStateRef projected = FrontierLinearTransforms.project(
+					arena, input, outputKey, 2, new int[] { 2, 0, 1 });
+
+			assertEquals(EvidenceGuarantee.DATABASE_EXACT, projected.summary().guarantee());
+			assertEquals(640.0d, projected.summary().pointRows());
+			assertTrue(arena.peakReservedBytes() <= memoryBudget);
+			try (FrontierPayloadLease payload = arena.openPayload(projected)) {
+				assertEquals(640, payload.exactCount(0));
+				assertEquals(2_001L, payload.exactTermId(0, 0, 0));
+				assertEquals(1L, payload.exactTermId(0, 0, 1));
+				assertEquals(1_001L, payload.exactTermId(0, 0, 2));
+				assertEquals(2_640L, payload.exactTermId(0, 639, 0));
+			}
+		}
+	}
+
+	@Test
 	void projectionRestrictionAndUnionPreserveFiniteBagSemantics() {
 		FrontierLayout inputLayout = FrontierLayout.of("x", "y");
 		FrontierMaskStrata inputMasks = FrontierMaskStrata.of(inputLayout, 2, new long[] { 1L, 3L });
@@ -914,6 +957,86 @@ class FrontierLinearTransformContractTest {
 				assertEquals(11L, payload.residualTermId(0, 0, 0));
 				assertEquals(41L, payload.residualTermId(0, 0, 1));
 			}
+			assertEquals(0L, arena.temporaryReservedBytes());
+		}
+	}
+
+	@Test
+	void exactBinaryJoinUsesRetainedPayloadOutsideRefinementBudget() {
+		FrontierMaskStrata leftMasks = FrontierMaskStrata.of(
+				FrontierLayout.of("x"),
+				1,
+				new long[] { 1L });
+		FrontierMaskStrata rightMasks = FrontierMaskStrata.of(
+				FrontierLayout.of("x", "value"),
+				1,
+				new long[] { 0b11L });
+		FrontierStateKey leftKey = key(0b0001L, leftMasks);
+		FrontierStateKey rightKey = key(0b0010L, rightMasks);
+		FrontierStateKey outputKey = key(0b0011L, rightMasks);
+
+		try (FrontierStateArena arena = new FrontierStateArena(256 * 1024L)) {
+			arena.declareCanonicalStates(leftKey, rightKey, outputKey);
+			FrontierPayloadWriter leftWriter = arena.newPayloadWriter(
+					leftKey, new int[] { 1 }, new int[] { 0 });
+			leftWriter.putExact(0, 0, 1.0d, new long[] { 11L }, 0);
+			EvidenceStateRef left = arena.internPayload(
+					leftKey, EvidenceStateSummary.exact(1.0d), FrontierStateOperation.EXACT_LEAF,
+					null, null, 46, leftWriter);
+
+			FrontierPayloadWriter rightWriter = arena.newPayloadWriter(
+					rightKey, new int[] { 3 }, new int[] { 0 });
+			rightWriter.putExact(0, 0, 1.0d, new long[] { 11L, 21L }, 0);
+			rightWriter.putExact(0, 1, 1.0d, new long[] { 11L, 22L }, 0);
+			rightWriter.putExact(0, 2, 1.0d, new long[] { 11L, 23L }, 0);
+			EvidenceStateRef right = arena.internPayload(
+					rightKey, EvidenceStateSummary.exact(3.0d), FrontierStateOperation.EXACT_LEAF,
+					null, null, 47, rightWriter);
+
+			EvidenceStateRef joined = binaryJoin(arena, left, right, outputKey, 48, 1);
+
+			assertEquals(EvidenceGuarantee.DATABASE_EXACT, joined.summary().guarantee());
+			assertEquals(3.0d, joined.summary().pointRows());
+			try (FrontierPayloadLease payload = arena.openPayload(joined)) {
+				assertEquals(3, payload.exactCount(0));
+				assertEquals(21L, payload.exactTermId(0, 0, 1));
+				assertEquals(22L, payload.exactTermId(0, 1, 1));
+				assertEquals(23L, payload.exactTermId(0, 2, 1));
+			}
+			assertEquals(0L, arena.temporaryReservedBytes());
+		}
+	}
+
+	@Test
+	void sampledBinaryJoinStillHonorsRefinementBudget() {
+		FrontierMaskStrata leftMasks = FrontierMaskStrata.of(
+				FrontierLayout.of("x"),
+				1,
+				new long[] { 1L });
+		FrontierMaskStrata rightMasks = FrontierMaskStrata.of(
+				FrontierLayout.of("x", "value"),
+				1,
+				new long[] { 0b11L });
+		FrontierStateKey leftKey = key(0b0001L, leftMasks);
+		FrontierStateKey rightKey = key(0b0010L, rightMasks);
+		FrontierStateKey outputKey = key(0b0011L, rightMasks);
+
+		try (FrontierStateArena arena = new FrontierStateArena(256 * 1024L)) {
+			arena.declareCanonicalStates(leftKey, rightKey, outputKey);
+			EvidenceStateRef left = sampledSingleton(arena, leftKey, 11L, 1.0d, 49);
+			FrontierPayloadWriter rightWriter = arena.newPayloadWriter(
+					rightKey, new int[] { 3 }, new int[] { 0 });
+			rightWriter.putExact(0, 0, 1.0d, new long[] { 11L, 21L }, 0);
+			rightWriter.putExact(0, 1, 1.0d, new long[] { 11L, 22L }, 0);
+			rightWriter.putExact(0, 2, 1.0d, new long[] { 11L, 23L }, 0);
+			EvidenceStateRef right = arena.internPayload(
+					rightKey, EvidenceStateSummary.exact(3.0d), FrontierStateOperation.EXACT_LEAF,
+					null, null, 50, rightWriter);
+
+			EvidenceStateRef boundary = binaryJoin(arena, left, right, outputKey, 51, 1);
+
+			assertEquals(EvidenceGuarantee.UNRESOLVED, boundary.summary().guarantee());
+			assertEquals("frontier-binary-join-budget-exhausted", boundary.summary().degradationReason());
 			assertEquals(0L, arena.temporaryReservedBytes());
 		}
 	}

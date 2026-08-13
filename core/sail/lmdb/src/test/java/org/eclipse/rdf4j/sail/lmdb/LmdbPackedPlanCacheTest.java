@@ -17,10 +17,19 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.util.OptionalLong;
 
+import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
+import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -32,12 +41,241 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlan;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanQualityAuditResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbPackedPlanCacheTest {
+
+	@Test
+	void cachedPlanReusesSemanticRootCertificate() {
+		LmdbStatementPatternCardinalitySource cardinalities = mock(LmdbStatementPatternCardinalitySource.class);
+		when(cardinalities.estimateForPlanning(any(StatementPattern.class))).thenReturn(10.0d);
+		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(
+				null, null, null, null, null, cardinalities, new PackedPlanCache(16, 1));
+
+		TupleExpr cold = connectedJoin();
+		new LmdbCascadesOptimizer(statistics, false).optimize(cold, null, null);
+		assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
+		clearInvocations(cardinalities);
+
+		TupleExpr hot = connectedJoin();
+		new LmdbCascadesOptimizer(statistics, false).optimize(hot, null, null);
+
+		assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
+		verify(cardinalities, never()).estimateForPlanning(any(StatementPattern.class));
+	}
+
+	@Test
+	void semanticExactZeroCertificateSurvivesPlanCacheHit(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			var values = connection.getValueFactory();
+			connection.add(values.createIRI("urn:left-subject"), values.createIRI("urn:left"),
+					values.createIRI("urn:left-shared"));
+			connection.add(values.createIRI("urn:right-shared"), values.createIRI("urn:right"),
+					values.createIRI("urn:right-object"));
+
+			TupleExpr cold = connectedJoin();
+			new LmdbCascadesOptimizer(store.getBackingStore().getEvaluationStatistics(), false)
+					.optimize(cold, null, null);
+			TupleExpr hot = connectedJoin();
+			new LmdbCascadesOptimizer(store.getBackingStore().getEvaluationStatistics(), false)
+					.optimize(hot, null, null);
+
+			assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
+			assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
+			assertEquals(0.0d, cold.getDoubleMetricPlanned("optimizer.cascadesRootRows"), 0.0d);
+			assertEquals(0.0d, hot.getDoubleMetricPlanned("optimizer.cascadesRootRows"), 0.0d);
+			assertEquals(0.0d,
+					hot.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_CARDINALITY_ROWS), 0.0d);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void freshlyParsedCorrelatedAnonymousVariablesReuseCompletePlan(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			String query = ThemeQueryCatalog.queryFor(Theme.SOCIAL_MEDIA, 4);
+
+			TupleExpr cold = (TupleExpr) connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.tupleExpr();
+			TupleExpr hot = (TupleExpr) connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.tupleExpr();
+
+			assertEquals("COMPLETE", cold.getStringMetricPlanned("optimizer.cascadesCompleteness"));
+			assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
+			assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
+			assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+			assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")),
+					"an equivalent freshly parsed query should reuse the complete revision-safe LMDB plan template");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void freshlyParsedAnonymousPathVariablesReuseCompletePlan(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			var values = connection.getValueFactory();
+			connection.add(values.createIRI("urn:start"), values.createIRI("urn:left"),
+					values.createIRI("urn:middle"));
+			connection.add(values.createIRI("urn:middle"), values.createIRI("urn:right"),
+					values.createIRI("urn:end"));
+			String query = "SELECT ?start ?end WHERE { ?start <urn:left>/<urn:right> ?end }";
+
+			TupleExpr cold = (TupleExpr) connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.tupleExpr();
+			TupleExpr hot = (TupleExpr) connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.tupleExpr();
+
+			assertEquals("COMPLETE", cold.getStringMetricPlanned("optimizer.cascadesCompleteness"));
+			assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
+			assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void completePlanCacheInvalidatesAcrossCommittedDataRevisions(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			String query = "SELECT ?subject ?object WHERE { "
+					+ "?subject <urn:left> ?shared . ?shared <urn:right> ?object }";
+			TupleExpr cold = optimized(connection, query);
+			TupleExpr hot = optimized(connection, query);
+
+			assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+			assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+
+			var values = connection.getValueFactory();
+			connection.add(values.createIRI("urn:subject"), values.createIRI("urn:left"),
+					values.createIRI("urn:shared"));
+			connection.add(values.createIRI("urn:shared"), values.createIRI("urn:right"),
+					values.createIRI("urn:object"));
+
+			TupleExpr revised = optimized(connection, query);
+			TupleExpr revisedHot = optimized(connection, query);
+			assertFalse(Boolean.parseBoolean(revised.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+			assertTrue(Boolean.parseBoolean(revisedHot.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+			try (var result = connection.prepareTupleQuery(query).evaluate()) {
+				assertTrue(result.hasNext());
+				assertEquals(values.createIRI("urn:subject"), result.next().getValue("subject"));
+				assertFalse(result.hasNext());
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void completePlanCacheSeparatesExternalBindingValues(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			var values = connection.getValueFactory();
+			var predicate = values.createIRI("urn:predicate");
+			var firstSubject = values.createIRI("urn:first");
+			var secondSubject = values.createIRI("urn:second");
+			connection.add(firstSubject, predicate, values.createLiteral("first"));
+			connection.add(secondSubject, predicate, values.createLiteral("second"));
+			String query = "SELECT ?object WHERE { ?subject <urn:predicate> ?object }";
+
+			TupleExpr first = optimized(connection, query, "subject", firstSubject);
+			TupleExpr firstHot = optimized(connection, query, "subject", firstSubject);
+			TupleExpr second = optimized(connection, query, "subject", secondSubject);
+
+			assertFalse(Boolean.parseBoolean(first.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+			assertTrue(Boolean.parseBoolean(firstHot.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+			assertFalse(Boolean.parseBoolean(second.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void multipleFreshAnonymousPathVariablesReuseExecutablePlan(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			var values = connection.getValueFactory();
+			connection.add(values.createIRI("urn:start"), values.createIRI("urn:left"),
+					values.createIRI("urn:left-middle"));
+			connection.add(values.createIRI("urn:left-middle"), values.createIRI("urn:right"),
+					values.createIRI("urn:middle"));
+			connection.add(values.createIRI("urn:middle"), values.createIRI("urn:tail"),
+					values.createIRI("urn:right-middle"));
+			connection.add(values.createIRI("urn:right-middle"), values.createIRI("urn:leaf"),
+					values.createIRI("urn:end"));
+			String query = "SELECT ?start ?end WHERE { "
+					+ "?start <urn:left>/<urn:right> ?middle . "
+					+ "?middle <urn:tail>/<urn:leaf> ?end }";
+
+			TupleExpr cold = (TupleExpr) connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.tupleExpr();
+			TupleExpr hot = (TupleExpr) connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.tupleExpr();
+
+			assertEquals("COMPLETE", cold.getStringMetricPlanned("optimizer.cascadesCompleteness"));
+			assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
+			assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
+			try (var result = connection.prepareTupleQuery(query).evaluate()) {
+				assertTrue(result.hasNext());
+				var bindings = result.next();
+				assertEquals(values.createIRI("urn:start"), bindings.getValue("start"));
+				assertEquals(values.createIRI("urn:end"), bindings.getValue("end"));
+				assertFalse(result.hasNext());
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void planQualityAuditUsesOneStoreBackedPackedSession(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		store.init();
+		try {
+			TupleExpr source = threeWayConnectedJoin();
+			PackedPlanQualityAuditResult audit = new LmdbCascadesOptimizer(
+					store.getBackingStore().getEvaluationStatistics(), false)
+							.auditPreparedInput(source, OptimizationGoal.root(source, null), 2);
+
+			assertTrue(audit.selectedPlanningResult().exactComplete());
+			assertTrue(audit.alternatives().size() > 1);
+			assertEquals(1L,
+					audit.alternatives().stream().filter(alternative -> alternative.selectedByPolicy()).count());
+			assertTrue(audit.alternatives().stream().allMatch(alternative -> alternative.plan() != null));
+		} finally {
+			store.shutDown();
+		}
+	}
 
 	@Test
 	void cacheIsOwnedByStoreAndInvalidatedByDataRevision(@TempDir File dataDir) {
@@ -169,6 +407,19 @@ class LmdbPackedPlanCacheTest {
 				.planPreparedInput(source, OptimizationGoal.root(source, null));
 	}
 
+	private static TupleExpr optimized(RepositoryConnection connection, String query) {
+		return (TupleExpr) connection.prepareTupleQuery(query)
+				.explain(Explanation.Level.Optimized)
+				.tupleExpr();
+	}
+
+	private static TupleExpr optimized(RepositoryConnection connection, String query,
+			String bindingName, Value bindingValue) {
+		var prepared = connection.prepareTupleQuery(query);
+		prepared.setBinding(bindingName, bindingValue);
+		return (TupleExpr) prepared.explain(Explanation.Level.Optimized).tupleExpr();
+	}
+
 	private static TupleExpr connectedJoin() {
 		var values = SimpleValueFactory.getInstance();
 		return new Join(
@@ -176,6 +427,13 @@ class LmdbPackedPlanCacheTest {
 						Var.of("shared")),
 				new StatementPattern(Var.of("shared"), Var.of("rightPredicate", values.createIRI("urn:right")),
 						Var.of("object")));
+	}
+
+	private static TupleExpr threeWayConnectedJoin() {
+		var values = SimpleValueFactory.getInstance();
+		return new Join(connectedJoin(),
+				new StatementPattern(Var.of("object"), Var.of("thirdPredicate", values.createIRI("urn:third")),
+						Var.of("tail")));
 	}
 
 	private static Filter filteredPattern() {

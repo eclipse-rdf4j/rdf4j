@@ -264,6 +264,41 @@ class QueryPlanSnapshotCliTest {
 	}
 
 	@Test
+	void factorizedVerificationComparesLogicalBagsWithoutTelemetryExecution() throws Exception {
+		Path outputDirectory = Files.createTempDirectory("rdf4j-cli-factorized-verification-");
+		try {
+			QueryPlanSnapshotCli cli = newCli("", new ByteArrayOutputStream());
+			QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+					"--no-interactive",
+					"--store", "memory",
+					"--theme", "MEDICAL_RECORDS",
+					"--query", "SELECT DISTINCT * WHERE { ?s <http://example.com/theme/medical/name> ?name }",
+					"--factorized-verification",
+					"--output-dir", outputDirectory.toString()
+			});
+
+			cli.run(options);
+
+			Path snapshotPath;
+			try (java.util.stream.Stream<Path> snapshots = Files.list(outputDirectory)) {
+				snapshotPath = snapshots
+						.filter(path -> path.getFileName().toString().endsWith(".json"))
+						.findFirst()
+						.orElseThrow();
+			}
+			QueryPlanSnapshot snapshot = new QueryPlanCapture().readSnapshot(snapshotPath);
+			assertFalse(snapshot.getExplanations().containsKey("telemetry"));
+			assertEquals("factorized-algebraic", snapshot.getMetadata().get("execution.verificationMode"));
+			assertEquals("rdf4j-factorized-solution-bag-v1",
+					snapshot.getMetadata().get("execution.resultFingerprintAlgorithm"));
+			assertEquals("completed", snapshot.getMetadata().get("execution.verificationStatus"));
+			assertFalse(snapshot.getMetadata().get("execution.resultFingerprintDigest").isBlank());
+		} finally {
+			deleteDir(outputDirectory);
+		}
+	}
+
+	@Test
 	void parsesLmdbEvidenceModeAndDefaultsToAdaptive() throws Exception {
 		QueryPlanSnapshotCliOptions snapshotOnly = QueryPlanSnapshotCli.parseArgs(new String[] {
 				"--store", "lmdb",

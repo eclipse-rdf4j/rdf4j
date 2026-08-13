@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
@@ -215,6 +216,74 @@ class FilterIteratorTelemetryTest {
 			assertThat(result.getValue("right")).isEqualTo(matched);
 			assertThat(iteration.hasNext()).isFalse();
 		}
+	}
+
+	@Test
+	void resourceVariableEqualityBindsAssuredArgumentVariableBeforeEvaluation() {
+		Value root = SimpleValueFactory.getInstance().createIRI("urn:root");
+		StatementPattern argument = new StatementPattern(Var.of("verificationOwner"),
+				Var.of("predicate", SimpleValueFactory.getInstance().createIRI("urn:verifiedBy")),
+				Var.of("verification"));
+		Compare condition = new Compare(Var.of("verificationOwner"), Var.of("root"), CompareOp.EQ);
+		Filter filter = new Filter(argument, condition);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		AtomicReference<BindingSet> argumentInput = new AtomicReference<>();
+		QueryEvaluationStep argumentStep = bindings -> {
+			argumentInput.set(new QueryBindingSet(bindings));
+			QueryBindingSet row = new QueryBindingSet(bindings);
+			if (!row.hasBinding("verificationOwner")) {
+				row.addBinding("verificationOwner", root);
+			}
+			row.addBinding("verification", SimpleValueFactory.getInstance().createIRI("urn:verification"));
+			return new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator());
+		};
+		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.TRUE;
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		doReturn(argumentStep).when(strategy).precompile(eq((TupleExpr) argument), eq(context));
+		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) condition), eq(context));
+		when(strategy.isTrue(eq(conditionStep), any(BindingSet.class))).thenReturn(true);
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("root", root);
+
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context);
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(input)) {
+			assertThat(drain(iteration)).hasSize(1);
+		}
+
+		assertThat(argumentInput.get().getValue("verificationOwner")).isEqualTo(root);
+	}
+
+	@Test
+	void valueEqualityDoesNotBindLiteralAliasBeforeEvaluation() {
+		Value root = SimpleValueFactory.getInstance().createLiteral("01", XSD.INTEGER);
+		StatementPattern argument = new StatementPattern(Var.of("verificationOwner"),
+				Var.of("predicate", SimpleValueFactory.getInstance().createIRI("urn:verifiedBy")),
+				Var.of("verification"));
+		Compare condition = new Compare(Var.of("verificationOwner"), Var.of("root"), CompareOp.EQ);
+		Filter filter = new Filter(argument, condition);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		AtomicReference<BindingSet> argumentInput = new AtomicReference<>();
+		QueryEvaluationStep argumentStep = bindings -> {
+			argumentInput.set(new QueryBindingSet(bindings));
+			QueryBindingSet row = new QueryBindingSet(bindings);
+			row.addBinding("verificationOwner", SimpleValueFactory.getInstance().createLiteral("1", XSD.INTEGER));
+			row.addBinding("verification", SimpleValueFactory.getInstance().createIRI("urn:verification"));
+			return new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator());
+		};
+		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.TRUE;
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		doReturn(argumentStep).when(strategy).precompile(eq((TupleExpr) argument), eq(context));
+		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) condition), eq(context));
+		when(strategy.isTrue(eq(conditionStep), any(BindingSet.class))).thenReturn(true);
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("root", root);
+
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context);
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(input)) {
+			assertThat(drain(iteration)).hasSize(1);
+		}
+
+		assertThat(argumentInput.get().hasBinding("verificationOwner")).isFalse();
 	}
 
 	@Test

@@ -48,6 +48,7 @@ class LmdbMedicalQ9PlanStabilityIT {
 	private static final Theme THEME = Theme.MEDICAL_RECORDS;
 	private static final int QUERY_INDEX = 9;
 	private static final int RUNS = 6;
+	private static final int LEARNING_SUPPORT_RUNS = 32;
 	private static final int MAX_EXECUTION_TIME_SECONDS = 60;
 	// The oscillation produced ~7.5x execution excursions (220ms vs 1644ms); ordinary noise stays well below this.
 	private static final double MAX_EXECUTION_SLOWDOWN_VS_PRIOR_FASTEST = 5.0d;
@@ -149,7 +150,7 @@ class LmdbMedicalQ9PlanStabilityIT {
 				long q9Count = expectedCount(9);
 				long q10Count = expectedCount(10);
 
-				assertEquals(q9Count, benchmark.executeCountQuery(q9, q9Count, MAX_EXECUTION_TIME_SECONDS));
+				trainToMinimumSupport(benchmark, q9, q9Count);
 				String learnedQ9Plan = benchmark.explainOptimizedPlan(q9);
 				Set<LearningIdentity> q9Identities = learningIdentities(learnedQ9Plan);
 				assertTrue(!q9Identities.isEmpty(), learnedQ9Plan);
@@ -187,8 +188,7 @@ class LmdbMedicalQ9PlanStabilityIT {
 			ThemeQueryBenchmark trainer = newBenchmark();
 			trainer.setup();
 			try {
-				assertEquals(expectedCount,
-						trainer.executeCountQuery(query, expectedCount, MAX_EXECUTION_TIME_SECONDS));
+				trainToMinimumSupport(trainer, query, expectedCount);
 				trainedIdentities = learnedLogicalIdentities(trainer.explainOptimizedPlan(query));
 				assertTrue(!trainedIdentities.isEmpty(),
 						"The completed q9 execution must produce learned logical state");
@@ -198,8 +198,8 @@ class LmdbMedicalQ9PlanStabilityIT {
 
 			Path sidecar = learnedSidecar("join-estimator.rjes.operators");
 			assertTrue(Files.isRegularFile(sidecar), "Store shutdown must persist the learned-feedback sidecar");
-			assertEquals(20, ByteBuffer.wrap(Files.readAllBytes(sidecar)).getInt(),
-					"Restart acceptance requires the absolute-logical v20 sidecar");
+			assertEquals(21, ByteBuffer.wrap(Files.readAllBytes(sidecar)).getInt(),
+					"Restart acceptance requires the applicability-and-feature-aware v21 sidecar");
 
 			ThemeQueryBenchmark restarted = newBenchmark();
 			restarted.setup();
@@ -227,6 +227,14 @@ class LmdbMedicalQ9PlanStabilityIT {
 		benchmark.sketchEstimatorEnabled = true;
 		benchmark.loadOnlySelectedTheme = true;
 		return benchmark;
+	}
+
+	private static void trainToMinimumSupport(ThemeQueryBenchmark benchmark, String query, long expectedCount)
+			throws Exception {
+		for (int run = 0; run < LEARNING_SUPPORT_RUNS; run++) {
+			assertEquals(expectedCount,
+					benchmark.executeCountQuery(query, expectedCount, MAX_EXECUTION_TIME_SECONDS));
+		}
 	}
 
 	private static long expectedCount(int queryIndex) {
@@ -313,8 +321,10 @@ class LmdbMedicalQ9PlanStabilityIT {
 		List<Double> outerRows = correlationOuterRows(plan);
 		List<String> algorithms = semiAntiAlgorithms(plan);
 		boolean materializedWinner = algorithms.stream().anyMatch(algorithm -> algorithm.startsWith("materialized"));
-		assertTrue(plan.contains("Difference") && (materializedWinner || !outerRows.isEmpty()),
-				() -> "q9 must retain a Difference with either a materialized winner or an explicit correlated outer "
+		boolean semanticMinus = plan.contains("Difference")
+				|| plan.contains("optimizer.semiAntiKind=minus-assured-shared");
+		assertTrue(semanticMinus && (materializedWinner || !outerRows.isEmpty()),
+				() -> "q9 must retain a semantic MINUS with either a materialized winner or an explicit correlated outer "
 						+ "estimate after learning:\n" + plan);
 		assertTrue(outerRows.stream().allMatch(rows -> rows >= MIN_CORRELATION_OUTER_ROWS),
 				() -> "q9 must never use a crushed correlated outer estimate after learning:\n" + plan);

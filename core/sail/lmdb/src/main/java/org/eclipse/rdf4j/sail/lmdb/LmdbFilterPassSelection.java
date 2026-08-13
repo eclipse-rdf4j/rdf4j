@@ -22,8 +22,32 @@ import org.eclipse.rdf4j.sail.lmdb.sketch.PatternFilterSampleEstimate;
  * Deterministic evidence-quality ordering for filter pass estimates.
  */
 final class LmdbFilterPassSelection {
+	private static final double LIVE_SAMPLE_CONFIDENCE_THRESHOLD = 0.60d;
 
 	private LmdbFilterPassSelection() {
+	}
+
+	static FilterPassEstimate bestAvailable(LmdbFilterSelectivityStats statistics, Filter filter,
+			StatementPattern pattern, FilterPassEstimate fallback, boolean adaptiveEvidenceAllowed) {
+		FilterPassEstimate best = validOrNull(fallback);
+		if (statistics == null) {
+			return best == null ? unknownFilterPass() : best;
+		}
+		if (pattern != null) {
+			best = prefer(validOrNull(statistics.estimateSnapshotFilterPass(filter, pattern)), best);
+		}
+		if (!adaptiveEvidenceAllowed) {
+			return best == null ? unknownFilterPass() : best;
+		}
+		best = prefer(best, learnedSurfaceFilterPass(statistics, filter));
+		if (pattern != null) {
+			best = prefer(best, learnedFilterPass(statistics, filter, pattern));
+			best = prefer(best, sampledFilterPass(statistics.estimateCachedFilterPass(filter, pattern)));
+			if (best == null || best.getConfidenceScore() < LIVE_SAMPLE_CONFIDENCE_THRESHOLD) {
+				best = prefer(best, sampledFilterPass(statistics.estimateLiveFilterPass(filter, pattern)));
+			}
+		}
+		return best == null ? unknownFilterPass() : best;
 	}
 
 	static FilterPassEstimate sampledFilterPass(PatternFilterSampleEstimate sampled) {

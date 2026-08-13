@@ -222,6 +222,32 @@ class AASQueriesBenchmarkTest {
 		}
 	}
 
+	@Test
+	void aasPropertyPathProjectionMatchesClassicEvaluation() throws Exception {
+		Map<String, String> previousProperties = snapshotBenchmarkOutputProperties();
+		AASQueriesBenchmark cascades = configuredBenchmark(1, true, "query1PropertyProjection");
+		AASQueriesBenchmark classic = configuredBenchmark(1, false, "query1PropertyProjection");
+		AASQueriesBenchmark.PreparedQueryState cascadesState = new AASQueriesBenchmark.PreparedQueryState();
+		AASQueriesBenchmark.PreparedQueryState classicState = new AASQueriesBenchmark.PreparedQueryState();
+		try {
+			disableBenchmarkOutput();
+			cascades.setup();
+			classic.setup();
+			cascadesState.setup(cascades);
+			classicState.setup(classic);
+
+			List<String> cascadesRows = evaluateRows(cascadesState);
+			List<String> classicRows = evaluateRows(classicState);
+			assertEquals(classicRows, cascadesRows);
+		} finally {
+			classicState.tearDown();
+			cascadesState.tearDown();
+			classic.tearDown();
+			cascades.tearDown();
+			restore(previousProperties);
+		}
+	}
+
 	private static Map<String, String> snapshotBenchmarkOutputProperties() {
 		Map<String, String> previous = new LinkedHashMap<>();
 		for (String property : BENCHMARK_OUTPUT_PROPERTIES) {

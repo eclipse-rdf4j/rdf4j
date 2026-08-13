@@ -110,6 +110,150 @@ class LmdbFrontierSnapshotSourceTest {
 	}
 
 	@Test
+	void countsExactPinnedRowsInEachPlane(@TempDir File dataDir) throws Exception {
+		try (TripleStore tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null)) {
+			tripleStore.startTransaction();
+			assertTrue(tripleStore.storeTriple(11L, 22L, 33L, 44L, true));
+			assertTrue(tripleStore.storeTriple(55L, 66L, 77L, 88L, true));
+			assertTrue(tripleStore.storeTriple(99L, 100L, 101L, 102L, false));
+			tripleStore.commit();
+
+			Class<?> sourceType = Class.forName("org.eclipse.rdf4j.sail.lmdb.LmdbFrontierSnapshotSource");
+			Constructor<?> constructor = sourceType.getDeclaredConstructor(TripleStore.class);
+			Method rowCount = sourceType.getDeclaredMethod("rowCount", boolean.class);
+
+			try (AutoCloseable pinnedSource = (AutoCloseable) constructor.newInstance(tripleStore)) {
+				assertEquals(2L, rowCount.invoke(pinnedSource, true));
+				assertEquals(1L, rowCount.invoke(pinnedSource, false));
+
+				tripleStore.startTransaction();
+				assertTrue(tripleStore.storeTriple(111L, 112L, 113L, 114L, true));
+				tripleStore.commit();
+
+				assertEquals(2L, rowCount.invoke(pinnedSource, true),
+						"a later commit must not change the pinned plane cardinality");
+				try (AutoCloseable currentSource = (AutoCloseable) constructor.newInstance(tripleStore)) {
+					assertEquals(3L, rowCount.invoke(currentSource, true));
+					assertEquals(1L, rowCount.invoke(currentSource, false));
+				}
+			}
+		}
+	}
+
+	@Test
+	void scansPrimitiveSelectorWithoutMaterializingStatements(@TempDir File dataDir) throws Exception {
+		try (TripleStore tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null)) {
+			tripleStore.startTransaction();
+			assertTrue(tripleStore.storeTriple(11L, 22L, 33L, 0L, true));
+			assertTrue(tripleStore.storeTriple(11L, 22L, 44L, 55L, true));
+			assertTrue(tripleStore.storeTriple(66L, 22L, 33L, 55L, true));
+			assertTrue(tripleStore.storeTriple(11L, 77L, 33L, 55L, true));
+			assertTrue(tripleStore.storeTriple(11L, 22L, 88L, 55L, false));
+			tripleStore.commit();
+
+			Class<?> sourceType = Class.forName("org.eclipse.rdf4j.sail.lmdb.LmdbFrontierSnapshotSource");
+			Class<?> sinkType = Class.forName("org.eclipse.rdf4j.sail.lmdb.LmdbFrontierSnapshotSource$RawQuadSink");
+			Constructor<?> constructor = sourceType.getDeclaredConstructor(TripleStore.class);
+			Method scanMatches = sourceType.getDeclaredMethod("scanMatches", long.class, long.class, long.class,
+					long.class, boolean.class, sinkType);
+
+			try (AutoCloseable source = (AutoCloseable) constructor.newInstance(tripleStore)) {
+				List<long[]> rows = new ArrayList<>();
+				assertEquals(2L, scanMatches.invoke(source, 11L, 22L, -1L, -1L, true,
+						rawQuadSink(sinkType, rows)));
+				assertArrayEquals(new long[] { 11L, 22L, 33L, 0L }, rows.get(0));
+				assertArrayEquals(new long[] { 11L, 22L, 44L, 55L }, rows.get(1));
+
+				rows.clear();
+				assertEquals(1L, scanMatches.invoke(source, -1L, 22L, 33L, 55L, true,
+						rawQuadSink(sinkType, rows)));
+				assertArrayEquals(new long[] { 66L, 22L, 33L, 55L }, rows.getFirst());
+
+				rows.clear();
+				assertEquals(1L, scanMatches.invoke(source, 11L, 22L, -1L, -1L, false,
+						rawQuadSink(sinkType, rows)));
+				assertArrayEquals(new long[] { 11L, 22L, 88L, 55L }, rows.getFirst());
+
+				InvocationTargetException invalidId = assertThrows(InvocationTargetException.class,
+						() -> scanMatches.invoke(source, 0L, 22L, -1L, -1L, true,
+								rawQuadSink(sinkType, new ArrayList<>())));
+				assertInstanceOf(IllegalArgumentException.class, invalidId.getCause());
+			}
+		}
+	}
+
+	@Test
+	void reusesOnePinnedCursorPerPrimitiveSelectorShape(@TempDir File dataDir) throws Exception {
+		try (TripleStore tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null)) {
+			tripleStore.startTransaction();
+			assertTrue(tripleStore.storeTriple(11L, 22L, 33L, 0L, true));
+			assertTrue(tripleStore.storeTriple(11L, 22L, 44L, 55L, true));
+			assertTrue(tripleStore.storeTriple(66L, 22L, 33L, 55L, true));
+			assertTrue(tripleStore.storeTriple(66L, 77L, 88L, 99L, true));
+			tripleStore.commit();
+
+			try (LmdbFrontierSnapshotSource source = new LmdbFrontierSnapshotSource(tripleStore)) {
+				List<long[]> rows = new ArrayList<>();
+				LmdbFrontierSnapshotSource.RawQuadSink sink = (subjectId, predicateId, objectId, contextId) -> rows
+						.add(new long[] { subjectId, predicateId, objectId, contextId });
+				LmdbFrontierSnapshotSource.MatchBatch batch = source.openMatchBatch(true);
+				try (batch) {
+					assertEquals(2L, batch.scanMatches(11L, 22L, -1L, -1L, sink));
+					assertArrayEquals(new long[] { 11L, 22L, 33L, 0L }, rows.get(0));
+					assertArrayEquals(new long[] { 11L, 22L, 44L, 55L }, rows.get(1));
+
+					rows.clear();
+					assertEquals(1L, batch.scanMatches(66L, 22L, -1L, -1L, sink));
+					assertArrayEquals(new long[] { 66L, 22L, 33L, 55L }, rows.getFirst());
+					assertEquals(1L, batch.cursorOpenCount(),
+							"same-shape selectors must seek one reusable native cursor");
+
+					rows.clear();
+					assertEquals(2L, batch.scanMatches(-1L, 22L, 33L, -1L, sink));
+					assertEquals(2L, batch.cursorOpenCount(),
+							"a distinct selector shape must choose and retain its own best-index cursor");
+				}
+
+				assertThrows(IllegalStateException.class,
+						() -> batch.scanMatches(11L, 22L, -1L, -1L,
+								(subjectId, predicateId, objectId, contextId) -> {
+								}));
+				rows.clear();
+				assertEquals(2L, source.scanMatches(11L, 22L, -1L, -1L, true, sink),
+						"closing a batch must release the source for ordinary scans");
+			}
+		}
+	}
+
+	@Test
+	void independentCursorLanesPreserveParentScanAcrossNestedSameShapeSeek(@TempDir File dataDir) throws Exception {
+		try (TripleStore tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null)) {
+			tripleStore.startTransaction();
+			assertTrue(tripleStore.storeTriple(11L, 22L, 33L, 0L, true));
+			assertTrue(tripleStore.storeTriple(11L, 22L, 44L, 55L, true));
+			assertTrue(tripleStore.storeTriple(66L, 22L, 77L, 0L, true));
+			tripleStore.commit();
+
+			try (LmdbFrontierSnapshotSource source = new LmdbFrontierSnapshotSource(tripleStore);
+					LmdbFrontierSnapshotSource.MatchBatch batch = source.openMatchBatch(true, 2)) {
+				List<Long> parentObjects = new ArrayList<>();
+				assertEquals(2L, batch.scanMatches(0, 11L, 22L, -1L, -1L,
+						(subjectId, predicateId, objectId, contextId) -> {
+							parentObjects.add(objectId);
+							assertTrue(batch.containsMatch(1, 66L, 22L, -1L, -1L,
+									(nestedSubjectId, nestedPredicateId, nestedObjectId, nestedContextId) -> true));
+						}));
+				assertEquals(List.of(33L, 44L), parentObjects,
+						"a child seek on the same index shape must not move the parent cursor");
+				assertEquals(2L, batch.cursorOpenCount(), "each lane must own its same-shape native cursor");
+				assertThrows(IllegalArgumentException.class,
+						() -> batch.containsMatch(2, 66L, 22L, -1L, -1L,
+								(subjectId, predicateId, objectId, contextId) -> true));
+			}
+		}
+	}
+
+	@Test
 	void renewedTransactionInvalidatesSourceInsteadOfMixingSnapshots(@TempDir File dataDir) throws Exception {
 		try (TripleStore tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null)) {
 			Class<?> sourceType = Class.forName("org.eclipse.rdf4j.sail.lmdb.LmdbFrontierSnapshotSource");

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.OptionalDouble;
@@ -25,6 +26,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.InvocationAggregateView;
 final class FrontierLearningModel {
 
 	private static final int MAX_KEYS = 4096;
+	private static final int MIN_EXACT_GATE_OBSERVATIONS = 3;
+	private static final int MIN_CALIBRATION_OBSERVATIONS = 32;
+	private static final int MAX_CALIBRATION_OBSERVATIONS = 256;
+	private static final double OOD_QUANTILE = 0.99d;
+	private static final double PREDICTIVE_INTERVAL_Z = 1.959963984540054d;
 	private static final FrontierCostDimension[] DIMENSIONS = FrontierCostDimension.values();
 	private static final double BASE_MEAN = 0.0d;
 	private static final double BASE_PRECISION = 0.05d;
@@ -81,6 +87,9 @@ final class FrontierLearningModel {
 	private final Map<String, DimensionCounts> legacyFamilyPriors = new LinkedHashMap<>();
 	private final LinkedHashMap<LogicalPosteriorKey, DimensionCounts> logicalExact = new LinkedHashMap<>();
 	private final LinkedHashMap<PhysicalPosteriorKey, DimensionCounts> physicalExact = new LinkedHashMap<>();
+	private final LinkedHashMap<LearningApplicability, FeatureCalibration> featureCalibrations = new LinkedHashMap<>();
+	private final LinkedHashMap<LogicalCensorKey, CensoredObservationBounds> logicalCensored = new LinkedHashMap<>();
+	private final LinkedHashMap<PhysicalCensorKey, CensoredObservationBounds> physicalCensored = new LinkedHashMap<>();
 	private final int maximumKeys;
 	private long revision;
 	private long generation;
@@ -146,49 +155,74 @@ final class FrontierLearningModel {
 				|| cells.generation != generation || observation.statisticalSampleWeight() != 1L) {
 			return false;
 		}
+		LmdbRuntimeFeedbackDescriptor descriptor = contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor typed
+				? typed
+				: null;
+		double rawLogicalCardinality = contract.rawLogicalCardinality();
+		LearningFeatureEnvelope features = descriptor == null
+				? LearningFeatureEnvelope.conventionalRows(
+						finiteNonNegative(rawLogicalCardinality) ? rawLogicalCardinality : 0.0d)
+				: descriptor.featureEnvelope();
+		LearningApplicability applicability = descriptor == null ? null : descriptor.applicability();
+		if (applicability != null && !featureCalibration(applicability).admitsObservation(features)) {
+			return false;
+		}
 		boolean changed = false;
+		if (descriptor != null && cells.logical != null && contract.admits(RuntimeFeedbackContract.ADMIT_LOGICAL)
+				&& !contract.admits(RuntimeFeedbackContract.DATABASE_EXACT)
+				&& observation.rootCompleted() && observation.cancellations() == 0L && observation.failures() == 0L
+				&& (observation.earlySuccesses() > 0L || observation.partialCloses() > 0L)) {
+			double lowerBound = logicalCardinalityObservation(contract, observation);
+			if (finiteNonNegative(lowerBound)) {
+				changed |= mergeCensored(logicalCensored,
+						new LogicalCensorKey(descriptor.logicalKey(), descriptor.applicability(),
+								FrontierCostDimension.OUTPUT_ROWS),
+						CensoredObservationBounds.lower(lowerBound));
+			}
+		}
+		boolean posteriorChanged = false;
 		if (cells.logical != null && contract.admits(RuntimeFeedbackContract.ADMIT_LOGICAL)
 				&& !contract.admits(RuntimeFeedbackContract.DATABASE_EXACT)
 				&& observation.exactLogicalCardinality()) {
-			changed |= observeAbsolute(cells.logical, FrontierCostDimension.OUTPUT_ROWS,
+			posteriorChanged |= observeAbsolute(cells.logical, FrontierCostDimension.OUTPUT_ROWS,
 					logicalCardinalityObservation(contract, observation), epoch);
 		}
 		long probes = saturatingAdd(observation.hits(), observation.misses());
 		if (cells.logical != null && contract.admits(RuntimeFeedbackContract.ADMIT_SEMI_ANTI)
 				&& observation.rootCompleted() && observation.cancellations() == 0L
 				&& observation.failures() == 0L && observation.partialCloses() == 0L && probes > 0L) {
-			changed |= observeAbsolute(cells.logical, FrontierCostDimension.SEMI_ANTI_HIT_RATE,
+			posteriorChanged |= observeAbsolute(cells.logical, FrontierCostDimension.SEMI_ANTI_HIT_RATE,
 					observation.hits() / (double) probes, epoch);
 		}
 		boolean matchingPhysicalImplementation = contract.physicalImplementationId() != 0
 				&& observation.actualPhysicalImplementationId() == contract.physicalImplementationId();
 		if (cells.physical != null && contract.admits(RuntimeFeedbackContract.ADMIT_PHYSICAL)
 				&& observation.admissiblePhysicalWork() && matchingPhysicalImplementation) {
-			changed |= observeResidual(cells.physical, FrontierCostDimension.RESULT_ROWS,
+			posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.RESULT_ROWS,
 					observation.rawPredictedWork(InvocationAggregateView.RESULT_ROWS),
 					observation.actualWork(InvocationAggregateView.RESULT_ROWS), epoch);
-			changed |= observeResidual(cells.physical, FrontierCostDimension.SOURCE_ROWS_SCANNED,
+			posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.SOURCE_ROWS_SCANNED,
 					observation.rawPredictedWork(InvocationAggregateView.SOURCE_ROWS),
 					observation.actualWork(InvocationAggregateView.SOURCE_ROWS), epoch);
-			changed |= observeResidual(cells.physical, FrontierCostDimension.INDEX_SEEKS,
+			posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.INDEX_SEEKS,
 					observation.rawPredictedWork(InvocationAggregateView.RANDOM_SEEKS),
 					observation.actualWork(InvocationAggregateView.RANDOM_SEEKS), epoch);
-			changed |= observeResidual(cells.physical, FrontierCostDimension.ITERATOR_OPENS,
+			posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.ITERATOR_OPENS,
 					observation.rawPredictedWork(InvocationAggregateView.ITERATOR_OPENS),
 					observation.actualWork(InvocationAggregateView.ITERATOR_OPENS), epoch);
-			changed |= observeResidual(cells.physical, FrontierCostDimension.EXPRESSION_EVALUATIONS,
+			posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.EXPRESSION_EVALUATIONS,
 					observation.rawPredictedWork(InvocationAggregateView.EXPRESSION_EVALUATIONS),
 					observation.actualWork(InvocationAggregateView.EXPRESSION_EVALUATIONS), epoch);
-			changed |= observeResidual(cells.physical, FrontierCostDimension.HASH_BUILD_ROWS,
+			posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.HASH_BUILD_ROWS,
 					observation.rawPredictedWork(InvocationAggregateView.HASH_BUILD_ROWS),
 					observation.actualWork(InvocationAggregateView.HASH_BUILD_ROWS), epoch);
-			changed |= observeResidual(cells.physical, FrontierCostDimension.HASH_PROBE_ROWS,
+			posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.HASH_PROBE_ROWS,
 					observation.rawPredictedWork(InvocationAggregateView.HASH_PROBE_ROWS),
 					observation.actualWork(InvocationAggregateView.HASH_PROBE_ROWS), epoch);
-			changed |= observeResidual(cells.physical, FrontierCostDimension.PATH_EXPANSIONS,
+			posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.PATH_EXPANSIONS,
 					observation.rawPredictedWork(InvocationAggregateView.PATH_EXPANSIONS),
 					observation.actualWork(InvocationAggregateView.PATH_EXPANSIONS), epoch);
-			changed |= observeResidual(cells.physical, FrontierCostDimension.REMOTE_CALLS,
+			posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.REMOTE_CALLS,
 					observation.rawPredictedWork(InvocationAggregateView.REMOTE_CALLS),
 					observation.actualWork(InvocationAggregateView.REMOTE_CALLS), epoch);
 		}
@@ -200,37 +234,42 @@ final class FrontierLearningModel {
 		if (admissibleTypedPhysicalEvidence) {
 			RuntimeFeedbackContract.DependentPredictionVector dependent = contract.rawDependentPrediction();
 			if (observation.hits() > 0L) {
-				changed |= observeResidual(cells.physical, FrontierCostDimension.FIRST_MATCH_WORK,
+				posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.FIRST_MATCH_WORK,
 						predictionSum(dependent.firstMatchWork(), observation.hits()),
 						observation.firstMatchWork(), epoch);
 			}
 			if (observation.misses() > 0L) {
-				changed |= observeResidual(cells.physical, FrontierCostDimension.EXHAUSTION_WORK,
+				posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.EXHAUSTION_WORK,
 						predictionSum(dependent.exhaustionWork(), observation.misses()),
 						observation.exhaustionWork(), epoch);
 			}
-			changed |= observeResidual(cells.physical, FrontierCostDimension.CACHE_HIT_WORK,
+			posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.CACHE_HIT_WORK,
 					predictionSum(dependent.cacheHitWork(), observation.opens()), observation.cacheHits(), epoch);
-			changed |= observeResidual(cells.physical, FrontierCostDimension.CACHE_MISS_WORK,
+			posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.CACHE_MISS_WORK,
 					predictionSum(dependent.cacheMissWork(), observation.opens()), observation.cacheMisses(), epoch);
-			changed |= observeResidual(cells.physical, FrontierCostDimension.CACHE_EVICTION_WORK,
+			posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.CACHE_EVICTION_WORK,
 					predictionSum(dependent.cacheEvictionWork(), observation.opens()), observation.cacheEvictions(),
 					epoch);
 			if (observation.materializationBuilds() > 0L) {
-				changed |= observeResidual(cells.physical, FrontierCostDimension.MATERIALIZATION_BUILD_WORK,
+				posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.MATERIALIZATION_BUILD_WORK,
 						predictionSum(dependent.materializationBuildWork(), observation.opens()),
 						observation.materializationBuildWork(), epoch);
 			}
 			if (observation.materializationLookups() > 0L) {
-				changed |= observeResidual(cells.physical, FrontierCostDimension.MATERIALIZATION_LOOKUP_WORK,
+				posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.MATERIALIZATION_LOOKUP_WORK,
 						predictionSum(dependent.materializationLookupWork(), observation.opens()),
 						observation.materializationLookupWork(), epoch);
 			}
-			changed |= observeResidual(cells.physical, FrontierCostDimension.MEMORY_SPILL_WORK,
+			posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.MEMORY_SPILL_WORK,
 					dependent.memorySpillWork(), observation.actualWork(InvocationAggregateView.PEAK_MEMORY_ROWS),
 					epoch);
 		}
-		if (changed) {
+		changed |= posteriorChanged;
+		if (posteriorChanged) {
+			if (applicability != null && (observation.exactLogicalCardinality()
+					|| observation.admissiblePhysicalWork())) {
+				featureCalibration(applicability).observe(features);
+			}
 			revision = Math.max(revision + 1L, Math.max(0L, epoch));
 		}
 		return changed;
@@ -313,13 +352,24 @@ final class FrontierLearningModel {
 
 	synchronized void observeLogical(LogicalLearningKey key, LearningApplicability applicability,
 			FrontierCostDimension dimension, double predicted, double actual, long epoch) {
+		if (!finiteNonNegative(predicted)) {
+			return;
+		}
+		observeLogical(key, applicability, dimension, LearningFeatureEnvelope.conventionalRows(predicted), actual,
+				epoch);
+	}
+
+	synchronized void observeLogical(LogicalLearningKey key, LearningApplicability applicability,
+			FrontierCostDimension dimension, LearningFeatureEnvelope features, double actual, long epoch) {
 		if (key == null || applicability == null
 				|| (dimension != FrontierCostDimension.OUTPUT_ROWS
-						&& dimension != FrontierCostDimension.SEMI_ANTI_HIT_RATE)) {
+						&& dimension != FrontierCostDimension.SEMI_ANTI_HIT_RATE)
+				|| features == null || !featureCalibration(applicability).admitsObservation(features)) {
 			return;
 		}
 		DimensionCounts counts = cell(logicalExact, new LogicalPosteriorKey(key, applicability));
 		if (counts != null && observeAbsolute(counts, dimension, actual, epoch)) {
+			featureCalibration(applicability).observe(features);
 			revision = Math.max(revision + 1L, Math.max(0L, epoch));
 		}
 	}
@@ -327,16 +377,47 @@ final class FrontierLearningModel {
 	synchronized void observePhysical(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
 			LearningApplicability applicability, FrontierCostDimension dimension, double predicted, double actual,
 			long epoch) {
+		if (!finiteNonNegative(predicted)) {
+			return;
+		}
+		observePhysical(logicalKey, physicalKey, applicability, dimension,
+				LearningFeatureEnvelope.conventionalRows(predicted), predicted, actual, epoch);
+	}
+
+	synchronized void observePhysical(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
+			LearningApplicability applicability, FrontierCostDimension dimension, LearningFeatureEnvelope features,
+			double predicted, double actual, long epoch) {
 		if (logicalKey == null || physicalKey == null || applicability == null
 				|| dimension == null || dimension == FrontierCostDimension.OUTPUT_ROWS
-				|| dimension == FrontierCostDimension.SEMI_ANTI_HIT_RATE) {
+				|| dimension == FrontierCostDimension.SEMI_ANTI_HIT_RATE || features == null
+				|| !featureCalibration(applicability).admitsObservation(features)) {
 			return;
 		}
 		DimensionCounts counts = cell(physicalExact,
 				new PhysicalPosteriorKey(logicalKey, physicalKey, applicability));
 		if (counts != null && observeResidual(counts, dimension, predicted, actual, epoch)) {
+			featureCalibration(applicability).observe(features);
 			revision = Math.max(revision + 1L, Math.max(0L, epoch));
 		}
+	}
+
+	synchronized void observeLogicalCensored(LogicalLearningKey key, LearningApplicability applicability,
+			FrontierCostDimension dimension, CensoredObservationBounds bounds) {
+		if (key == null || applicability == null || dimension == null || bounds == null) {
+			return;
+		}
+		LogicalCensorKey censorKey = new LogicalCensorKey(key, applicability, dimension);
+		mergeCensored(logicalCensored, censorKey, bounds);
+	}
+
+	synchronized void observePhysicalCensored(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
+			LearningApplicability applicability, FrontierCostDimension dimension,
+			CensoredObservationBounds bounds) {
+		if (logicalKey == null || physicalKey == null || applicability == null || dimension == null || bounds == null) {
+			return;
+		}
+		PhysicalCensorKey censorKey = new PhysicalCensorKey(logicalKey, physicalKey, applicability, dimension);
+		mergeCensored(physicalCensored, censorKey, bounds);
 	}
 
 	private <K> void observeExact(LinkedHashMap<K, DimensionCounts> store, K key,
@@ -453,13 +534,39 @@ final class FrontierLearningModel {
 		Posterior parent = base.update(otherFamily);
 		Posterior posterior = parent.update(child);
 		double correctionCap = MAX_LOG_CORRECTION_PER_EVIDENCE_WEIGHT * evidenceWeight;
-		return new PosteriorSnapshot(posterior.mean, posterior.meanVariance(), posterior.precision, correctionCap,
+		return new PosteriorSnapshot(posterior.mean, posterior.meanVariance(), posterior.predictiveVariance(),
+				posterior.precision, correctionCap,
 				child.count, otherFamily.count, legacy.count);
 	}
 
 	synchronized DimensionEstimate logicalEstimate(LogicalLearningKey key, LearningApplicability applicability,
 			FrontierCostDimension dimension, double predicted) {
-		return estimateLogical(logicalPosterior(key, applicability, dimension), dimension, predicted);
+		if (!finiteNonNegative(predicted)) {
+			return null;
+		}
+		return logicalDecision(key, applicability, dimension,
+				LearningFeatureEnvelope.conventionalRows(predicted), predicted).estimate();
+	}
+
+	synchronized DimensionDecision logicalDecision(LogicalLearningKey key, LearningApplicability applicability,
+			FrontierCostDimension dimension, LearningFeatureEnvelope features, double predicted) {
+		LogicalPosteriorKey posteriorKey = key == null || applicability == null
+				? null
+				: new LogicalPosteriorKey(key, applicability);
+		PosteriorSnapshot snapshot = posteriorKey == null ? null
+				: exactPosterior(logicalExact.get(posteriorKey), dimension);
+		LearningGateDecision gate = gateDecision(applicability, features,
+				snapshot == null ? 0L : snapshot.exactEvidenceCount(), posteriorKey != null
+						&& logicalExact.containsKey(posteriorKey),
+				hasDifferentLogicalApplicability(key, applicability));
+		if (!gate.appliesLearning()) {
+			return new DimensionDecision(gate, null);
+		}
+		DimensionEstimate estimate = estimateLogical(snapshot, dimension, predicted);
+		if (estimate != null) {
+			estimate = estimate.withBounds(logicalCensored.get(new LogicalCensorKey(key, applicability, dimension)));
+		}
+		return new DimensionDecision(gate, estimate);
 	}
 
 	synchronized PosteriorSnapshot logicalPosterior(LogicalLearningKey key, LearningApplicability applicability,
@@ -472,7 +579,34 @@ final class FrontierLearningModel {
 
 	synchronized DimensionEstimate physicalEstimate(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
 			LearningApplicability applicability, FrontierCostDimension dimension, double predicted) {
-		return estimate(physicalPosterior(logicalKey, physicalKey, applicability, dimension), predicted);
+		if (!finiteNonNegative(predicted)) {
+			return null;
+		}
+		return physicalDecision(logicalKey, physicalKey, applicability, dimension,
+				LearningFeatureEnvelope.conventionalRows(predicted), predicted).estimate();
+	}
+
+	synchronized DimensionDecision physicalDecision(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
+			LearningApplicability applicability, FrontierCostDimension dimension, LearningFeatureEnvelope features,
+			double predicted) {
+		PhysicalPosteriorKey posteriorKey = logicalKey == null || physicalKey == null || applicability == null
+				? null
+				: new PhysicalPosteriorKey(logicalKey, physicalKey, applicability);
+		PosteriorSnapshot snapshot = posteriorKey == null ? null
+				: exactPosterior(physicalExact.get(posteriorKey), dimension);
+		LearningGateDecision gate = gateDecision(applicability, features,
+				snapshot == null ? 0L : snapshot.exactEvidenceCount(), posteriorKey != null
+						&& physicalExact.containsKey(posteriorKey),
+				hasDifferentPhysicalApplicability(logicalKey, physicalKey, applicability));
+		if (!gate.appliesLearning()) {
+			return new DimensionDecision(gate, null);
+		}
+		DimensionEstimate estimate = estimate(snapshot, predicted);
+		if (estimate != null) {
+			estimate = estimate.withBounds(
+					physicalCensored.get(new PhysicalCensorKey(logicalKey, physicalKey, applicability, dimension)));
+		}
+		return new DimensionDecision(gate, estimate);
 	}
 
 	synchronized PosteriorSnapshot physicalPosterior(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
@@ -485,14 +619,106 @@ final class FrontierLearningModel {
 	}
 
 	private PosteriorSnapshot exactPosterior(DimensionCounts counts, FrontierCostDimension dimension) {
+		if (dimension == null) {
+			return null;
+		}
 		SufficientStatistics exactStatistics = statistics(counts, dimension, revision);
 		if (exactStatistics.count == 0L) {
 			return null;
 		}
 		Posterior posterior = Posterior.base().update(exactStatistics);
 		double correctionCap = MAX_LOG_CORRECTION_PER_EVIDENCE_WEIGHT * exactStatistics.weight();
-		return new PosteriorSnapshot(posterior.mean, posterior.meanVariance(), posterior.precision, correctionCap,
+		return new PosteriorSnapshot(posterior.mean, posterior.meanVariance(), posterior.predictiveVariance(),
+				posterior.precision, correctionCap,
 				exactStatistics.count, 0L, 0L);
+	}
+
+	private LearningGateDecision gateDecision(LearningApplicability applicability, LearningFeatureEnvelope features,
+			long exactCellObservations, boolean exactApplicabilityKnown, boolean differentApplicabilityKnown) {
+		if (applicability == null || features == null || !exactApplicabilityKnown && differentApplicabilityKnown) {
+			return new LearningGateDecision(LearningGateDecision.Outcome.INAPPLICABLE, 0L,
+					exactCellObservations, Double.NaN, Double.NaN);
+		}
+		FeatureCalibration calibration = featureCalibrations.get(applicability);
+		long calibrationObservations = calibration == null ? 0L : calibration.observationCount();
+		if (exactCellObservations < MIN_EXACT_GATE_OBSERVATIONS
+				|| calibrationObservations < MIN_CALIBRATION_OBSERVATIONS) {
+			return new LearningGateDecision(LearningGateDecision.Outcome.INSUFFICIENT_SUPPORT,
+					calibrationObservations, exactCellObservations, Double.NaN, Double.NaN);
+		}
+		if (!calibration.compatible(features)) {
+			return new LearningGateDecision(LearningGateDecision.Outcome.INAPPLICABLE,
+					calibrationObservations, exactCellObservations, Double.NaN, Double.NaN);
+		}
+		double distance = calibration.distance(features);
+		double threshold = calibration.rejectionThreshold();
+		LearningGateDecision.Outcome outcome = distance > threshold
+				? LearningGateDecision.Outcome.OUT_OF_DISTRIBUTION
+				: LearningGateDecision.Outcome.APPLICABLE;
+		return new LearningGateDecision(outcome, calibrationObservations, exactCellObservations,
+				distance, threshold);
+	}
+
+	private boolean hasDifferentLogicalApplicability(LogicalLearningKey key,
+			LearningApplicability applicability) {
+		if (key == null) {
+			return false;
+		}
+		for (LogicalPosteriorKey candidate : logicalExact.keySet()) {
+			if (candidate.logicalKey.equals(key) && !candidate.applicability.equals(applicability)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean hasDifferentPhysicalApplicability(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
+			LearningApplicability applicability) {
+		if (logicalKey == null || physicalKey == null) {
+			return false;
+		}
+		for (PhysicalPosteriorKey candidate : physicalExact.keySet()) {
+			if (candidate.logicalKey.equals(logicalKey) && candidate.physicalKey.equals(physicalKey)
+					&& !candidate.applicability.equals(applicability)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private FeatureCalibration featureCalibration(LearningApplicability applicability) {
+		FeatureCalibration calibration = featureCalibrations.get(applicability);
+		if (calibration != null) {
+			return calibration;
+		}
+		if (featureCalibrations.size() >= maximumKeys) {
+			var iterator = featureCalibrations.entrySet().iterator();
+			if (iterator.hasNext()) {
+				iterator.next();
+				iterator.remove();
+			}
+		}
+		calibration = new FeatureCalibration();
+		featureCalibrations.put(applicability, calibration);
+		return calibration;
+	}
+
+	private <K> boolean mergeCensored(LinkedHashMap<K, CensoredObservationBounds> store, K key,
+			CensoredObservationBounds bounds) {
+		CensoredObservationBounds previous = store.get(key);
+		CensoredObservationBounds merged = previous == null ? bounds : previous.intersect(bounds);
+		if (merged.equals(previous)) {
+			return false;
+		}
+		if (previous == null && store.size() >= maximumKeys) {
+			var iterator = store.entrySet().iterator();
+			if (iterator.hasNext()) {
+				iterator.next();
+				iterator.remove();
+			}
+		}
+		store.put(key, merged);
+		return true;
 	}
 
 	static DimensionEstimate estimate(PosteriorSnapshot snapshot, double predicted) {
@@ -518,7 +744,12 @@ final class FrontierLearningModel {
 		if (!finiteNonNegative(corrected)) {
 			return null;
 		}
-		return new DimensionEstimate(corrected, snapshot.mean(), snapshot.meanVariance(), snapshot.precision(),
+		double centerLog = Math.log1p(corrected);
+		double spread = predictiveSpread(snapshot.predictiveVariance());
+		double lower = Math.expm1(Math.max(0.0d, centerLog - spread));
+		double upper = inverseLogBound(centerLog + spread);
+		return new DimensionEstimate(corrected, lower, upper, snapshot.mean(), snapshot.meanVariance(),
+				snapshot.predictiveVariance(), snapshot.precision(),
 				snapshot.exactEvidenceCount(), snapshot.familyEvidenceCount(), snapshot.legacyEvidenceCount());
 	}
 
@@ -546,18 +777,45 @@ final class FrontierLearningModel {
 		}
 		double appliedLogValue = Math.clamp(snapshot.mean(), lowerLog, upperLog);
 		double corrected = Math.expm1(appliedLogValue);
+		double spread = predictiveSpread(snapshot.predictiveVariance());
+		double predictiveLowerLog = Math.max(lowerLog, snapshot.mean() - spread);
+		double predictiveUpperLog = Math.min(upperLog, snapshot.mean() + spread);
+		double predictiveLower = Math.expm1(Math.max(0.0d, predictiveLowerLog));
+		double predictiveUpper = inverseLogBound(predictiveUpperLog);
 		if (dimension == FrontierCostDimension.SEMI_ANTI_HIT_RATE) {
 			corrected = Math.clamp(corrected, 0.0d, 1.0d);
+			predictiveLower = Math.clamp(predictiveLower, 0.0d, 1.0d);
+			predictiveUpper = Math.clamp(predictiveUpper, 0.0d, 1.0d);
 		}
 		if (!finiteNonNegative(corrected)) {
 			return null;
 		}
-		return new DimensionEstimate(corrected, snapshot.mean(), snapshot.meanVariance(), snapshot.precision(),
+		predictiveLower = Math.min(predictiveLower, corrected);
+		predictiveUpper = Math.max(predictiveUpper, corrected);
+		return new DimensionEstimate(corrected, predictiveLower, predictiveUpper, snapshot.mean(),
+				snapshot.meanVariance(), snapshot.predictiveVariance(), snapshot.precision(),
 				snapshot.exactEvidenceCount(), snapshot.familyEvidenceCount(), snapshot.legacyEvidenceCount());
 	}
 
-	record PosteriorSnapshot(double mean, double meanVariance, double precision, double correctionCap,
+	private static double predictiveSpread(double predictiveVariance) {
+		return Double.isFinite(predictiveVariance) && predictiveVariance >= 0.0d
+				? PREDICTIVE_INTERVAL_Z * Math.sqrt(predictiveVariance)
+				: MAX_ABS_LOG_ERROR;
+	}
+
+	private static double inverseLogBound(double logValue) {
+		return logValue >= MAX_ABS_LOG_ERROR ? Math.expm1(MAX_ABS_LOG_ERROR) : Math.expm1(Math.max(0.0d, logValue));
+	}
+
+	record PosteriorSnapshot(double mean, double meanVariance, double predictiveVariance, double precision,
+			double correctionCap,
 			long exactEvidenceCount, long familyEvidenceCount, long legacyEvidenceCount) {
+		PosteriorSnapshot(double mean, double meanVariance, double precision, double correctionCap,
+				long exactEvidenceCount, long familyEvidenceCount, long legacyEvidenceCount) {
+			this(mean, meanVariance,
+					Double.isFinite(meanVariance) ? meanVariance * (precision + 1.0d) : Double.POSITIVE_INFINITY,
+					precision, correctionCap, exactEvidenceCount, familyEvidenceCount, legacyEvidenceCount);
+		}
 	}
 
 	synchronized void importLegacyFamilyPrior(String operatorFamily, FrontierCostDimension dimension,
@@ -590,6 +848,9 @@ final class FrontierLearningModel {
 		legacyFamilyPriors.clear();
 		logicalExact.clear();
 		physicalExact.clear();
+		featureCalibrations.clear();
+		logicalCensored.clear();
+		physicalCensored.clear();
 		generation++;
 		revision++;
 	}
@@ -656,9 +917,33 @@ final class FrontierLearningModel {
 			entry.getKey().writeTo(out);
 			entry.getValue().writeTo(out);
 		}
+		out.writeInt(featureCalibrations.size());
+		for (Map.Entry<LearningApplicability, FeatureCalibration> entry : featureCalibrations.entrySet()) {
+			entry.getKey().writeTo(out);
+			entry.getValue().writeTo(out);
+		}
+		out.writeInt(logicalCensored.size());
+		for (Map.Entry<LogicalCensorKey, CensoredObservationBounds> entry : logicalCensored.entrySet()) {
+			entry.getKey().logicalKey.writeTo(out);
+			entry.getKey().applicability.writeTo(out);
+			out.writeInt(entry.getKey().dimension.ordinal());
+			entry.getValue().writeTo(out);
+		}
+		out.writeInt(physicalCensored.size());
+		for (Map.Entry<PhysicalCensorKey, CensoredObservationBounds> entry : physicalCensored.entrySet()) {
+			entry.getKey().logicalKey.writeTo(out);
+			entry.getKey().physicalKey.writeTo(out);
+			entry.getKey().applicability.writeTo(out);
+			out.writeInt(entry.getKey().dimension.ordinal());
+			entry.getValue().writeTo(out);
+		}
 	}
 
 	static FrontierLearningModel readFrom(DataInputStream in) throws IOException {
+		return readFrom(in, true);
+	}
+
+	static FrontierLearningModel readFrom(DataInputStream in, boolean includesLeoPlus) throws IOException {
 		FrontierLearningModel model = new FrontierLearningModel();
 		readLegacySections(in, model);
 		int logicalCount = boundedCount(in.readInt(), MAX_KEYS * 4, "logical learning key");
@@ -669,10 +954,41 @@ final class FrontierLearningModel {
 		for (int index = 0; index < physicalCount; index++) {
 			model.physicalExact.put(PhysicalPosteriorKey.readFrom(in), DimensionCounts.readFrom(in));
 		}
+		if (includesLeoPlus) {
+			int calibrationCount = boundedCount(in.readInt(), MAX_KEYS * 4, "learning feature calibration");
+			for (int index = 0; index < calibrationCount; index++) {
+				model.featureCalibrations.put(LearningApplicability.readFrom(in), FeatureCalibration.readFrom(in));
+			}
+			int logicalCensorCount = boundedCount(in.readInt(), MAX_KEYS * 4, "logical censored observation");
+			for (int index = 0; index < logicalCensorCount; index++) {
+				LogicalLearningKey logicalKey = LogicalLearningKey.readFrom(in);
+				LearningApplicability applicability = LearningApplicability.readFrom(in);
+				FrontierCostDimension dimension = readDimension(in);
+				model.logicalCensored.put(new LogicalCensorKey(logicalKey, applicability, dimension),
+						CensoredObservationBounds.readFrom(in));
+			}
+			int physicalCensorCount = boundedCount(in.readInt(), MAX_KEYS * 4, "physical censored observation");
+			for (int index = 0; index < physicalCensorCount; index++) {
+				LogicalLearningKey logicalKey = LogicalLearningKey.readFrom(in);
+				PhysicalResidualKey physicalKey = PhysicalResidualKey.readFrom(in);
+				LearningApplicability applicability = LearningApplicability.readFrom(in);
+				FrontierCostDimension dimension = readDimension(in);
+				model.physicalCensored.put(new PhysicalCensorKey(logicalKey, physicalKey, applicability, dimension),
+						CensoredObservationBounds.readFrom(in));
+			}
+		}
 		model.evictOldestExactKey();
 		model.evictOldest(model.logicalExact);
 		model.evictOldest(model.physicalExact);
 		return model;
+	}
+
+	private static FrontierCostDimension readDimension(DataInputStream in) throws IOException {
+		int ordinal = in.readInt();
+		if (ordinal < 0 || ordinal >= DIMENSIONS.length) {
+			throw new IOException("Invalid Frontier cost dimension ordinal: " + ordinal);
+		}
+		return DIMENSIONS[ordinal];
 	}
 
 	/** Consumes the version-17 topology-keyed model so callers can deterministically quarantine it. */
@@ -780,8 +1096,38 @@ final class FrontierLearningModel {
 		return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
 	}
 
-	record DimensionEstimate(double correctedValue, double posteriorLogMean, double posteriorLogMeanVariance,
-			double posteriorPrecision, long exactEvidenceCount, long familyEvidenceCount, long legacyEvidenceCount) {
+	record DimensionDecision(LearningGateDecision gate, DimensionEstimate estimate) {
+		DimensionDecision {
+			if (gate == null || gate.appliesLearning() != (estimate != null)) {
+				throw new IllegalArgumentException("learning gate and estimate must agree");
+			}
+		}
+	}
+
+	record DimensionEstimate(double correctedValue, double lowerValue, double upperValue, double posteriorLogMean,
+			double posteriorLogMeanVariance, double posteriorPredictiveVariance, double posteriorPrecision,
+			long exactEvidenceCount, long familyEvidenceCount, long legacyEvidenceCount) {
+		DimensionEstimate {
+			if (!finiteNonNegative(lowerValue) || !finiteNonNegative(correctedValue)
+					|| !(finiteNonNegative(upperValue) || upperValue == Double.POSITIVE_INFINITY)
+					|| lowerValue > correctedValue || correctedValue > upperValue) {
+				throw new IllegalArgumentException("learned predictive interval must contain its point");
+			}
+		}
+
+		DimensionEstimate withBounds(CensoredObservationBounds bounds) {
+			if (bounds == null) {
+				return this;
+			}
+			double lower = Math.max(lowerValue, bounds.lowerValue());
+			double upper = Math.min(upperValue, bounds.upperValue());
+			if (lower > correctedValue || correctedValue > upper) {
+				return this;
+			}
+			return new DimensionEstimate(correctedValue, lower, upper, posteriorLogMean,
+					posteriorLogMeanVariance, posteriorPredictiveVariance, posteriorPrecision,
+					exactEvidenceCount, familyEvidenceCount, legacyEvidenceCount);
+		}
 	}
 
 	private record LogicalPosteriorKey(LogicalLearningKey logicalKey, LearningApplicability applicability) {
@@ -806,6 +1152,185 @@ final class FrontierLearningModel {
 		private static PhysicalPosteriorKey readFrom(DataInputStream in) throws IOException {
 			return new PhysicalPosteriorKey(LogicalLearningKey.readFrom(in), PhysicalResidualKey.readFrom(in),
 					LearningApplicability.readFrom(in));
+		}
+	}
+
+	private record LogicalCensorKey(LogicalLearningKey logicalKey, LearningApplicability applicability,
+			FrontierCostDimension dimension) {
+	}
+
+	private record PhysicalCensorKey(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
+			LearningApplicability applicability, FrontierCostDimension dimension) {
+	}
+
+	/** Bounded primitive robust calibration state for one exact applicability family. */
+	private static final class FeatureCalibration {
+		private static final double MAD_TO_SIGMA = 1.4826d;
+		private static final double RELATIVE_SCALE_FLOOR = 0.01d;
+
+		private final double[] samples = new double[MAX_CALIBRATION_OBSERVATIONS
+				* LearningFeatureEnvelope.DIMENSION_COUNT];
+		private final double[] centers = new double[LearningFeatureEnvelope.DIMENSION_COUNT];
+		private final double[] scales = new double[LearningFeatureEnvelope.DIMENSION_COUNT];
+		private final double[] scratch = new double[MAX_CALIBRATION_OBSERVATIONS];
+		private final double[] scores = new double[MAX_CALIBRATION_OBSERVATIONS];
+		private int size;
+		private int next;
+		private boolean rangeKnown;
+		private boolean initialized;
+		private boolean dirty = true;
+		private double rejectionThreshold;
+
+		long observationCount() {
+			return size;
+		}
+
+		boolean compatible(LearningFeatureEnvelope features) {
+			return features != null && (!initialized || rangeKnown == features.hasKnownRangeWidth());
+		}
+
+		boolean admitsObservation(LearningFeatureEnvelope features) {
+			if (!compatible(features)) {
+				return false;
+			}
+			if (size > 0 && matchesMostRecent(features)) {
+				return true;
+			}
+			return size < MIN_CALIBRATION_OBSERVATIONS || distance(features) <= rejectionThreshold();
+		}
+
+		private boolean matchesMostRecent(LearningFeatureEnvelope features) {
+			int previous = (next + MAX_CALIBRATION_OBSERVATIONS - 1) % MAX_CALIBRATION_OBSERVATIONS;
+			int offset = previous * LearningFeatureEnvelope.DIMENSION_COUNT;
+			for (int dimension = 0; dimension < LearningFeatureEnvelope.DIMENSION_COUNT; dimension++) {
+				if (Double.doubleToLongBits(samples[offset + dimension]) != Double
+						.doubleToLongBits(features.dimension(dimension))) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		void observe(LearningFeatureEnvelope features) {
+			if (!compatible(features)) {
+				return;
+			}
+			if (!initialized) {
+				rangeKnown = features.hasKnownRangeWidth();
+				initialized = true;
+			}
+			int offset = next * LearningFeatureEnvelope.DIMENSION_COUNT;
+			for (int dimension = 0; dimension < LearningFeatureEnvelope.DIMENSION_COUNT; dimension++) {
+				samples[offset + dimension] = features.dimension(dimension);
+			}
+			next = (next + 1) % MAX_CALIBRATION_OBSERVATIONS;
+			if (size < MAX_CALIBRATION_OBSERVATIONS) {
+				size++;
+			}
+			dirty = true;
+		}
+
+		double distance(LearningFeatureEnvelope features) {
+			if (!compatible(features) || size == 0) {
+				return Double.POSITIVE_INFINITY;
+			}
+			recompute();
+			double distance = 0.0d;
+			for (int dimension = 0; dimension < LearningFeatureEnvelope.DIMENSION_COUNT; dimension++) {
+				if (dimension == 3 && !rangeKnown) {
+					continue;
+				}
+				distance = Math.max(distance,
+						Math.abs(features.dimension(dimension) - centers[dimension]) / scales[dimension]);
+			}
+			return distance;
+		}
+
+		double rejectionThreshold() {
+			recompute();
+			return rejectionThreshold;
+		}
+
+		private void recompute() {
+			if (!dirty || size == 0) {
+				return;
+			}
+			for (int dimension = 0; dimension < LearningFeatureEnvelope.DIMENSION_COUNT; dimension++) {
+				if (dimension == 3 && !rangeKnown) {
+					centers[dimension] = 0.0d;
+					scales[dimension] = 1.0d;
+					continue;
+				}
+				for (int observation = 0; observation < size; observation++) {
+					scratch[observation] = samples[observation * LearningFeatureEnvelope.DIMENSION_COUNT + dimension];
+				}
+				Arrays.sort(scratch, 0, size);
+				double center = median(scratch, size);
+				centers[dimension] = center;
+				for (int observation = 0; observation < size; observation++) {
+					scratch[observation] = Math.abs(
+							samples[observation * LearningFeatureEnvelope.DIMENSION_COUNT + dimension] - center);
+				}
+				Arrays.sort(scratch, 0, size);
+				double robustScale = MAD_TO_SIGMA * median(scratch, size);
+				double scaleFloor = RELATIVE_SCALE_FLOOR * Math.max(1.0d, Math.abs(center));
+				scales[dimension] = Math.max(scaleFloor, robustScale);
+			}
+			for (int observation = 0; observation < size; observation++) {
+				double score = 0.0d;
+				for (int dimension = 0; dimension < LearningFeatureEnvelope.DIMENSION_COUNT; dimension++) {
+					if (dimension == 3 && !rangeKnown) {
+						continue;
+					}
+					double value = samples[observation * LearningFeatureEnvelope.DIMENSION_COUNT + dimension];
+					score = Math.max(score, Math.abs(value - centers[dimension]) / scales[dimension]);
+				}
+				scores[observation] = score;
+			}
+			Arrays.sort(scores, 0, size);
+			int quantileIndex = Math.min(size - 1, Math.max(0, (int) Math.ceil(OOD_QUANTILE * size) - 1));
+			rejectionThreshold = Math.max(1.0d, scores[quantileIndex]);
+			dirty = false;
+		}
+
+		private static double median(double[] sorted, int length) {
+			int middle = length >>> 1;
+			return (length & 1) == 0
+					? (sorted[middle - 1] + sorted[middle]) * 0.5d
+					: sorted[middle];
+		}
+
+		void writeTo(DataOutputStream out) throws IOException {
+			out.writeInt(size);
+			out.writeBoolean(rangeKnown);
+			int oldest = size == MAX_CALIBRATION_OBSERVATIONS ? next : 0;
+			for (int observation = 0; observation < size; observation++) {
+				int source = (oldest + observation) % MAX_CALIBRATION_OBSERVATIONS;
+				int offset = source * LearningFeatureEnvelope.DIMENSION_COUNT;
+				for (int dimension = 0; dimension < LearningFeatureEnvelope.DIMENSION_COUNT; dimension++) {
+					out.writeDouble(samples[offset + dimension]);
+				}
+			}
+		}
+
+		static FeatureCalibration readFrom(DataInputStream in) throws IOException {
+			int size = boundedCount(in.readInt(), MAX_CALIBRATION_OBSERVATIONS, "feature calibration observation");
+			boolean rangeKnown = in.readBoolean();
+			FeatureCalibration calibration = new FeatureCalibration();
+			for (int observation = 0; observation < size; observation++) {
+				double[] values = new double[LearningFeatureEnvelope.DIMENSION_COUNT];
+				for (int dimension = 0; dimension < values.length; dimension++) {
+					values[dimension] = in.readDouble();
+				}
+				try {
+					LearningFeatureEnvelope features = new LearningFeatureEnvelope(values[0], values[1], values[2],
+							rangeKnown ? values[3] : Double.NaN, values[4]);
+					calibration.observe(features);
+				} catch (IllegalArgumentException malformed) {
+					throw new IOException("Invalid persisted learning feature calibration", malformed);
+				}
+			}
+			return calibration;
 		}
 	}
 
@@ -1080,6 +1605,13 @@ final class FrontierLearningModel {
 
 		double meanVariance() {
 			return alpha > 1.0d ? beta / ((alpha - 1.0d) * precision) : Double.POSITIVE_INFINITY;
+		}
+
+		double predictiveVariance() {
+			double meanVariance = meanVariance();
+			return Double.isFinite(meanVariance)
+					? meanVariance * (precision + 1.0d)
+					: Double.POSITIVE_INFINITY;
 		}
 	}
 }

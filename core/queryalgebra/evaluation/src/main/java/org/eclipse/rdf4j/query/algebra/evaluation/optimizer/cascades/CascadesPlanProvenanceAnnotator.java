@@ -151,7 +151,7 @@ public final class CascadesPlanProvenanceAnnotator {
 
 	private static void removeExactJoinSurfaceMetrics(QueryModelNode node) {
 		try {
-			node.getStringMetricsPlanned().keySet().removeIf(CascadesPlanProvenanceAnnotator::isExactJoinSurfaceMetric);
+			node.removeStringMetricsPlannedIf(CascadesPlanProvenanceAnnotator::isExactJoinSurfaceMetric);
 			node.getDoubleMetricsPlanned().keySet().removeIf(CascadesPlanProvenanceAnnotator::isExactJoinSurfaceMetric);
 			node.getLongMetricsPlanned().keySet().removeIf(CascadesPlanProvenanceAnnotator::isExactJoinSurfaceMetric);
 		} catch (UnsupportedOperationException ignored) {

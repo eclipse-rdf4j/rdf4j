@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -67,6 +68,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPla
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationCompleteness;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCascadesPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostContext;
@@ -679,7 +681,6 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 					.stream()
 					.map(proof -> proof.ruleId())
 					.toList();
-
 			assertTrue(!finiteAlternativeCosts.isEmpty(),
 					() -> "The finite-filter JOIN must be generated and provider-costed before selection. plan="
 							+ result.selectedPlan());
@@ -717,6 +718,195 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			assertTrue(inputRows > 0.0d, "Expected a positive filter input surface. filter=" + plannedFilter);
 			assertEquals(inputRows, expressionEvaluations, 0.0d,
 					"A scalar filter evaluates its condition once for every input row");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void repeatableScalarFilterMemoizesDuplicatePrimitiveInputs(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(1024L * 1024L);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticLibraryBranches(repository);
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+
+			StatementPattern names = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
+					Var.of("branchName"));
+			Filter filter = new Filter(names,
+					new Compare(new Str(Var.of("branchName")), new ValueConstant(VF.createLiteral("Common Branch"))));
+			StatementPattern type = new StatementPattern(Var.of("branch"), Var.of("typePredicate", RDF_TYPE),
+					Var.of("branchType", LIB_COPY));
+			PackedCostTestSupport.FilteredPairCostCall call = PackedCostTestSupport
+					.filteredConnectedStatementFactors(filter, type);
+			assertEquals(ScalarEvaluationEffects.Effect.REPEATABLE,
+					ScalarEvaluationEffects.effectOf(filter.getCondition()));
+
+			SailStore sailStore = store.getSailStore();
+			try (SailSource branch = sailStore.getExplicitSailSource().fork();
+					SailDataset dataset = branch.dataset(store.getDefaultIsolationLevel())) {
+				SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(
+						sailStore.getValueFactory(), dataset);
+				LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) sailStore.getEvaluationStatistics())
+						.estimatorRuntime();
+				var strategy = store.getEvaluationStrategyFactory()
+						.createEvaluationStrategy(null, tripleSource, sailStore.getEvaluationStatistics());
+				LmdbPackedCostModel model = new LmdbPackedCostModel(runtime,
+						OptionalLong.of(tripleSource.getSnapshotEpoch().orElseThrow()), true, tripleSource, strategy);
+
+				try (PackedCostSession session = model.openSession(call.query())) {
+					PackedCostEstimate prefix = new PackedCostEstimate();
+					session.estimateLeaf(call.prefixStatementRelationId(), call.emptyContext(), prefix);
+					assertNotEquals(0, prefix.evidenceStateId(),
+							"The scalar-filter memo contract requires a retained primitive prefix");
+
+					PackedCostEstimate filtered = new PackedCostEstimate();
+					filtered.setRows(prefix.outputRows() * 0.5d, prefix.workRows() + prefix.outputRows());
+					session.refineOperator(call.filterRelationId(),
+							call.filterContext(prefix.outputRows(), prefix.evidenceStateId()), filtered);
+
+					double hits = filtered.plannedDoubleMetric("plannedFrontierFilterOutcomeMemoHits", Double.NaN);
+					double misses = filtered.plannedDoubleMetric("plannedFrontierFilterOutcomeMemoMisses", Double.NaN);
+					double entries = filtered.plannedDoubleMetric("plannedFrontierFilterOutcomeMemoEntries",
+							Double.NaN);
+					double retainedBytes = filtered.plannedDoubleMetric(
+							"plannedFrontierFilterOutcomeMemoBytes", Double.NaN);
+					assertTrue(hits > 0.0d,
+							() -> "Duplicate primitive filter inputs must reuse their exact boolean outcome. filter="
+									+ filter + ", estimate=" + filtered);
+					assertTrue(misses > 0.0d,
+							"The first distinct primitive input must evaluate the scalar expression");
+					assertEquals(misses, entries, 0.0d,
+							"Every distinct primitive input must retain one exact query-local outcome");
+					assertTrue(retainedBytes > 0.0d,
+							"The outcome memo must charge its retained arrays to the query arena");
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void scalarFilterOutcomeMemoKeysMultipleVariablesAndUnboundErrors(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(1024L * 1024L);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.add(VF.createIRI("urn:test:filter-memo:subject"), LIB_NAME, VF.createLiteral("seed"));
+			}
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+
+			BindingSetAssignment input = new BindingSetAssignment();
+			input.setBindingSets(List.of(
+					filterMemoBinding("keep", 1, "first"),
+					filterMemoBinding("keep", 1, "second"),
+					filterMemoBinding("keep", 2, "third"),
+					filterMemoBinding("drop", 1, "fourth"),
+					filterMemoBinding("keep", null, "fifth"),
+					filterMemoBinding("keep", null, "sixth")));
+			And condition = new And(
+					new Compare(Var.of("x"), new ValueConstant(VF.createLiteral("keep"))),
+					new Compare(Var.of("y"), new ValueConstant(VF.createLiteral(1))));
+			PackedCostTestSupport.FiniteFilterCostCall call = PackedCostTestSupport.finiteFilter(input, condition);
+
+			SailStore sailStore = store.getSailStore();
+			try (SailSource branch = sailStore.getExplicitSailSource().fork();
+					SailDataset dataset = branch.dataset(store.getDefaultIsolationLevel())) {
+				SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(
+						sailStore.getValueFactory(), dataset);
+				LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) sailStore.getEvaluationStatistics())
+						.estimatorRuntime();
+				var strategy = store.getEvaluationStrategyFactory()
+						.createEvaluationStrategy(null, tripleSource, sailStore.getEvaluationStatistics());
+				LmdbPackedCostModel model = new LmdbPackedCostModel(runtime,
+						OptionalLong.of(tripleSource.getSnapshotEpoch().orElseThrow()), true, tripleSource, strategy);
+
+				try (PackedCostSession session = model.openSession(call.query())) {
+					PackedCostEstimate finite = new PackedCostEstimate();
+					session.estimateLeaf(call.inputRelationId(), call.emptyContext(), finite);
+					assertEquals(6.0d, finite.outputRows(), 0.0d);
+
+					PackedCostEstimate filtered = new PackedCostEstimate();
+					filtered.setRows(3.0d, 9.0d);
+					session.refineOperator(call.filterRelationId(),
+							call.filterContext(finite.outputRows(), finite.evidenceStateId()), filtered);
+
+					assertEquals(2.0d, filtered.outputRows(), 0.0d,
+							"Only the two distinct rows with x=keep and y=1 satisfy the exact filter");
+					assertEquals(2.0d,
+							filtered.plannedDoubleMetric("plannedFrontierFilterOutcomeMemoKeyVariables", Double.NaN),
+							0.0d, "The irrelevant z binding must not enter the primitive memo key");
+					assertEquals(4.0d,
+							filtered.plannedDoubleMetric("plannedFrontierFilterOutcomeMemoMisses", Double.NaN),
+							0.0d, "Bound pairs plus the unbound-y error form four distinct exact input keys");
+					assertEquals(4.0d,
+							filtered.plannedDoubleMetric("plannedFrontierFilterOutcomeMemoEntries", Double.NaN),
+							0.0d, "Both true, false, and unbound-error outcomes must be cached exactly");
+					assertTrue(filtered.plannedDoubleMetric("plannedFrontierFilterOutcomeMemoHits", Double.NaN) >= 2.0d,
+							"Rows differing only in irrelevant z must reuse bound and unbound outcomes");
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void patternLocalFilterPassDoesNotCrossConnectedFanout(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticLibraryBranches(repository);
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+
+			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
+					Var.of("branchName"));
+			StatementPattern locatedAt = new StatementPattern(Var.of("copy"),
+					Var.of("locatedAtPredicate", LIB_LOCATED_AT), Var.of("branch"));
+			Or selectedNames = new Or(
+					new Compare(Var.of("branchName"), new ValueConstant(VF.createLiteral("Branch 0")),
+							Compare.CompareOp.EQ),
+					new Compare(Var.of("branchName"), new ValueConstant(VF.createLiteral("Branch 1")),
+							Compare.CompareOp.EQ));
+			PackedCostTestSupport.FilterPrefixCostCall call = PackedCostTestSupport
+					.connectedFilterPrefix(name, locatedAt, selectedNames);
+			LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) store.getBackingStore()
+					.getEvaluationStatistics()).estimatorRuntime();
+			LmdbPackedCostModel costModel = new LmdbPackedCostModel(runtime);
+
+			PackedCostEstimate providerOnly = new PackedCostEstimate();
+			providerOnly.setRows(502.0d, 502.0d);
+			providerOnly.setEstimateProvenance("exact-provider-prefix", "test_fixture");
+			costModel.refineOperator(call.query(), call.filterRelationId(), call.providerContext(502.0d),
+					providerOnly);
+
+			assertEquals("lmdb-pattern-local-filter", providerOnly.estimateSource(),
+					"A provider-scoped input may reuse its own filter pass ratio");
+			assertEquals(2.0d, providerOnly.outputRows(), 0.0d);
+
+			PackedCostEstimate connectedPrefix = new PackedCostEstimate();
+			connectedPrefix.setRows(200.0d, 200.0d);
+			connectedPrefix.setEstimateProvenance("exact-connected-prefix", "test_fixture");
+			costModel.refineOperator(call.query(), call.filterRelationId(), call.connectedContext(200.0d),
+					connectedPrefix);
+
+			assertEquals("exact-connected-prefix", connectedPrefix.estimateSource(),
+					"A provider-local ratio cannot be lifted through a connected join fanout");
+			assertEquals(200.0d, connectedPrefix.outputRows(), 0.0d,
+					"Both selected branches retain all one hundred connected copies");
 		} finally {
 			repository.shutDown();
 		}
@@ -1010,6 +1200,371 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 	}
 
 	@Test
+	void sampledFrontierPrefixPricesConnectedFiniteFactorWithoutScalarRecomposition(@TempDir File dataDir)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(16L * 1024L);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		IRI predicate = VF.createIRI("urn:test:frontier-sampled-finite:p");
+		Value[] objects = new Value[512];
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (int index = 0; index < objects.length; index++) {
+					objects[index] = VF.createIRI("urn:test:frontier-sampled-finite:o:" + index);
+					connection.add(VF.createIRI("urn:test:frontier-sampled-finite:s:" + index), predicate,
+							objects[index]);
+				}
+			}
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+
+			StatementPattern prefixFactor = new StatementPattern(Var.of("subject"), Var.of("predicate", predicate),
+					Var.of("object"));
+			BindingSetAssignment selectedObjects = bindingAssignment("object", objects);
+			PackedCostTestSupport.PairCostCall call = PackedCostTestSupport.connectedFiniteFactor(
+					prefixFactor, selectedObjects);
+			SailStore sailStore = store.getSailStore();
+			try (SailSource branch = sailStore.getExplicitSailSource().fork();
+					SailDataset dataset = branch.dataset(store.getDefaultIsolationLevel())) {
+				SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(
+						sailStore.getValueFactory(), dataset);
+				LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) sailStore.getEvaluationStatistics())
+						.estimatorRuntime();
+				var strategy = store.getEvaluationStrategyFactory()
+						.createEvaluationStrategy(null, tripleSource, sailStore.getEvaluationStatistics());
+				LmdbPackedCostModel model = new LmdbPackedCostModel(runtime,
+						OptionalLong.of(tripleSource.getSnapshotEpoch().orElseThrow()), true, tripleSource, strategy);
+
+				try (PackedCostSession session = model.openSession(call.query())) {
+					PackedCostEstimate prefix = new PackedCostEstimate();
+					session.estimateLeaf(call.prefixRelationId(), call.emptyContext(), prefix);
+					assertEquals("measure_unbiased",
+							prefix.plannedStringMetric("plannedFrontierGuarantee"),
+							"the bounded synopsis must exercise a sampled, composable prefix");
+
+					PackedCostEstimate finite = new PackedCostEstimate();
+					session.estimateLeaf(call.factorRelationId(), call.emptyContext(), finite);
+					session.appendFactor(call.factorRelationId(),
+							call.prefixContext(prefix.outputRows(), prefix.evidenceStateId()), finite);
+
+					assertEquals(1.0d,
+							finite.plannedDoubleMetric("plannedFrontierScalarAppendCardinalityBypassed", Double.NaN),
+							0.0d,
+							"the retained joined state already owns cardinality and uncertainty; only the exact finite "
+									+ "compatibility-scan cost remains to price");
+					assertEquals("measure_unbiased", finite.plannedStringMetric("plannedFrontierGuarantee"));
+					assertEquals(prefix.outputRows(), finite.outputRows(), 0.0d);
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void exactFinitePrefixJoinsSampledStatementPayloadWithoutSnapshotRescan(@TempDir File dataDir)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(16L * 1024L)
+				.setFrontierRefinementWorkUnits(2);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		IRI predicate = VF.createIRI("urn:test:frontier-linear-payload:p");
+		Value firstObject = VF.createIRI("urn:test:frontier-linear-payload:o:0");
+		Value secondObject = VF.createIRI("urn:test:frontier-linear-payload:o:1");
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (int index = 0; index < 512; index++) {
+					connection.add(VF.createIRI("urn:test:frontier-linear-payload:s:" + index), predicate,
+							index % 2 == 0 ? firstObject : secondObject);
+				}
+			}
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+
+			BindingSetAssignment selectedObjects = bindingAssignment("object", firstObject, secondObject);
+			StatementPattern factor = new StatementPattern(
+					Var.of("subject"), Var.of("predicate", predicate), Var.of("object"));
+			PackedCostTestSupport.StatementFactorChainCostCall call = PackedCostTestSupport
+					.statementFactorChain(selectedObjects, factor);
+			SailStore sailStore = store.getSailStore();
+			try (SailSource branch = sailStore.getExplicitSailSource().fork();
+					SailDataset dataset = branch.dataset(store.getDefaultIsolationLevel())) {
+				SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(
+						sailStore.getValueFactory(), dataset);
+				LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) sailStore.getEvaluationStatistics())
+						.estimatorRuntime();
+				var strategy = store.getEvaluationStrategyFactory()
+						.createEvaluationStrategy(null, tripleSource, sailStore.getEvaluationStatistics());
+				LmdbPackedCostModel model = new LmdbPackedCostModel(runtime,
+						OptionalLong.of(tripleSource.getSnapshotEpoch().orElseThrow()), true, tripleSource, strategy);
+
+				try (PackedCostSession session = model.openSession(call.query())) {
+					PackedCostEstimate prefix = new PackedCostEstimate();
+					session.estimateLeaf(call.bindingRelationId(), call.emptyContext(), prefix);
+					assertEquals("database_exact", prefix.plannedStringMetric("plannedFrontierGuarantee"));
+
+					PackedCostEstimate output = new PackedCostEstimate();
+					session.estimateLeaf(call.factorRelationId(0), call.emptyContext(), output);
+					assertEquals("measure_unbiased", output.plannedStringMetric("plannedFrontierGuarantee"),
+							"the bounded synopsis must expose a sampled statement payload");
+					session.appendFactor(call.factorRelationId(0),
+							call.prefixContext(0, prefix.outputRows(), prefix.evidenceStateId()), output);
+
+					assertEquals("ready", output.plannedStringMetric("plannedFrontierStatus"));
+					assertEquals("measure_unbiased", output.plannedStringMetric("plannedFrontierGuarantee"));
+					assertEquals("composable_payload", output.plannedStringMetric("plannedFrontierDisposition"));
+					assertTrue(Double.isNaN(output.plannedDoubleMetric(
+							"plannedFrontierExactExpansionScannedRows", Double.NaN)),
+							"an exact measure joined to a sampled leaf is already a valid linear payload transform; "
+									+ "it must not rescan LMDB and discard that Frontier continuation");
+					assertEquals(512.0d, output.outputRows(), 0.0d,
+							"the sampled leaf measure covers only the two exact finite keys");
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void exactEmptyMeasureAnnihilatesSampledPayloadInBothJoinOrientations(@TempDir File dataDir)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(16L * 1024L)
+				.setFrontierRefinementWorkUnits(0);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		IRI predicate = VF.createIRI("urn:test:frontier-exact-empty:p");
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (int index = 0; index < 512; index++) {
+					connection.add(
+							VF.createIRI("urn:test:frontier-exact-empty:s:" + index),
+							predicate,
+							VF.createIRI("urn:test:frontier-exact-empty:o:" + index));
+				}
+			}
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+
+			BindingSetAssignment emptyObjects = bindingAssignment("object");
+			StatementPattern sampledFactor = new StatementPattern(
+					Var.of("subject"), Var.of("predicate", predicate), Var.of("object"));
+			PackedCostTestSupport.StatementFactorChainCostCall emptyFirst = PackedCostTestSupport
+					.statementFactorChain(emptyObjects, sampledFactor);
+			PackedCostTestSupport.PairCostCall emptySecond = PackedCostTestSupport.connectedFiniteFactor(
+					new StatementPattern(
+							Var.of("subject"), Var.of("predicate", predicate), Var.of("object")),
+					bindingAssignment("object"));
+
+			SailStore sailStore = store.getSailStore();
+			try (SailSource branch = sailStore.getExplicitSailSource().fork();
+					SailDataset dataset = branch.dataset(store.getDefaultIsolationLevel())) {
+				SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(
+						sailStore.getValueFactory(), dataset);
+				LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) sailStore.getEvaluationStatistics())
+						.estimatorRuntime();
+				var strategy = store.getEvaluationStrategyFactory()
+						.createEvaluationStrategy(null, tripleSource, sailStore.getEvaluationStatistics());
+				LmdbPackedCostModel model = new LmdbPackedCostModel(runtime,
+						OptionalLong.of(tripleSource.getSnapshotEpoch().orElseThrow()), true, tripleSource, strategy);
+
+				try (PackedCostSession session = model.openSession(emptyFirst.query())) {
+					PackedCostEstimate exactEmpty = new PackedCostEstimate();
+					session.estimateLeaf(emptyFirst.bindingRelationId(), emptyFirst.emptyContext(), exactEmpty);
+					assertEquals("database_exact", exactEmpty.plannedStringMetric("plannedFrontierGuarantee"));
+					assertEquals(0.0d, exactEmpty.outputRows(), 0.0d);
+
+					PackedCostEstimate output = new PackedCostEstimate();
+					session.estimateLeaf(emptyFirst.factorRelationId(0), emptyFirst.emptyContext(), output);
+					assertEquals("measure_unbiased", output.plannedStringMetric("plannedFrontierGuarantee"));
+					session.appendFactor(emptyFirst.factorRelationId(0),
+							emptyFirst.prefixContext(0, exactEmpty.outputRows(), exactEmpty.evidenceStateId()), output);
+					assertExactEmptyFrontier(output);
+				}
+
+				try (PackedCostSession session = model.openSession(emptySecond.query())) {
+					PackedCostEstimate sampled = new PackedCostEstimate();
+					session.estimateLeaf(emptySecond.prefixRelationId(), emptySecond.emptyContext(), sampled);
+					assertEquals("measure_unbiased", sampled.plannedStringMetric("plannedFrontierGuarantee"));
+
+					PackedCostEstimate output = new PackedCostEstimate();
+					session.estimateLeaf(emptySecond.factorRelationId(), emptySecond.emptyContext(), output);
+					assertEquals("database_exact", output.plannedStringMetric("plannedFrontierGuarantee"));
+					assertEquals(0.0d, output.outputRows(), 0.0d);
+					session.appendFactor(emptySecond.factorRelationId(),
+							emptySecond.prefixContext(sampled.outputRows(), sampled.evidenceStateId()), output);
+					assertExactEmptyFrontier(output);
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void sampledPayloadPairStillUsesRowBoundedConditionalProbe(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(16L * 1024L)
+				.setFrontierRefinementWorkUnits(2);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		IRI firstPredicate = VF.createIRI("urn:test:frontier-random-pair:first");
+		IRI secondPredicate = VF.createIRI("urn:test:frontier-random-pair:second");
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (int subjectIndex = 0; subjectIndex < 256; subjectIndex++) {
+					Resource subject = VF.createIRI("urn:test:frontier-random-pair:s:" + subjectIndex);
+					connection.add(subject, firstPredicate,
+							VF.createIRI("urn:test:frontier-random-pair:first-value:" + subjectIndex));
+					for (int valueIndex = 0; valueIndex < 9; valueIndex++) {
+						connection.add(subject, secondPredicate,
+								VF.createIRI("urn:test:frontier-random-pair:second-value:"
+										+ subjectIndex + ':' + valueIndex));
+					}
+				}
+			}
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+
+			BindingSetAssignment seed = bindingAssignment("seed", VF.createLiteral("seed"));
+			StatementPattern first = new StatementPattern(
+					Var.of("subject"), Var.of("firstPredicate", firstPredicate), Var.of("firstValue"));
+			StatementPattern second = new StatementPattern(
+					Var.of("subject"), Var.of("secondPredicate", secondPredicate), Var.of("secondValue"));
+			PackedCostTestSupport.StatementFactorChainCostCall call = PackedCostTestSupport
+					.statementFactorChain(seed, first, second);
+			SailStore sailStore = store.getSailStore();
+			try (SailSource branch = sailStore.getExplicitSailSource().fork();
+					SailDataset dataset = branch.dataset(store.getDefaultIsolationLevel())) {
+				SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(
+						sailStore.getValueFactory(), dataset);
+				LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) sailStore.getEvaluationStatistics())
+						.estimatorRuntime();
+				var strategy = store.getEvaluationStrategyFactory()
+						.createEvaluationStrategy(null, tripleSource, sailStore.getEvaluationStatistics());
+				LmdbPackedCostModel model = new LmdbPackedCostModel(runtime,
+						OptionalLong.of(tripleSource.getSnapshotEpoch().orElseThrow()), true, tripleSource, strategy);
+
+				try (PackedCostSession session = model.openSession(call.query())) {
+					PackedCostEstimate prefix = new PackedCostEstimate();
+					session.estimateLeaf(call.bindingRelationId(), call.emptyContext(), prefix);
+
+					PackedCostEstimate firstOutput = new PackedCostEstimate();
+					session.estimateLeaf(call.factorRelationId(0), call.emptyContext(), firstOutput);
+					session.appendFactor(call.factorRelationId(0),
+							call.prefixContext(0, prefix.outputRows(), prefix.evidenceStateId()), firstOutput);
+					assertEquals("measure_unbiased", firstOutput.plannedStringMetric("plannedFrontierGuarantee"));
+					assertEquals("composable_payload", firstOutput.plannedStringMetric("plannedFrontierDisposition"));
+
+					PackedCostEstimate secondOutput = new PackedCostEstimate();
+					session.estimateLeaf(call.factorRelationId(1), call.emptyContext(), secondOutput);
+					session.appendFactor(call.factorRelationId(1),
+							call.prefixContext(1, firstOutput.outputRows(), firstOutput.evidenceStateId()),
+							secondOutput);
+
+					assertEquals("budget-exhausted",
+							secondOutput.plannedStringMetric("plannedFrontierExactExpansionScanStatus"),
+							"two coordinated random measures must use a conditional probe instead of being multiplied");
+					assertEquals(2.0d, secondOutput.plannedDoubleMetric(
+							"plannedFrontierExactExpansionScannedRows", Double.NaN), 0.0d,
+							"every visited mapped row must consume one refinement work unit");
+					assertTrue(secondOutput.evidenceStateId() > 0,
+							"probe exhaustion must preserve a typed Frontier boundary");
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void boundedExactPayloadJoinPreservesBagMultiplicityWithoutMappedProbe(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(1024L * 1024L)
+				.setFrontierRefinementWorkUnits(2);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		IRI predicate = VF.createIRI("urn:test:frontier-probe-memo:predicate");
+		Resource subject = VF.createIRI("urn:test:frontier-probe-memo:subject");
+		BindingSetAssignment inputs = new BindingSetAssignment();
+		List<BindingSet> inputRows = new ArrayList<>();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (int ordinal = 0; ordinal < 2; ordinal++) {
+					connection.add(subject, predicate,
+							VF.createIRI("urn:test:frontier-probe-memo:object:" + ordinal));
+					QueryBindingSet row = new QueryBindingSet();
+					row.addBinding("subject", subject);
+					row.addBinding("independent", VF.createLiteral(ordinal));
+					inputRows.add(row);
+				}
+			}
+			inputs.setBindingSets(inputRows);
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+
+			StatementPattern factor = new StatementPattern(
+					Var.of("subject"), Var.of("predicate", predicate), Var.of("object"));
+			PackedCostTestSupport.StatementFactorChainCostCall call = PackedCostTestSupport
+					.statementFactorChain(inputs, factor);
+			SailStore sailStore = store.getSailStore();
+			try (SailSource branch = sailStore.getExplicitSailSource().fork();
+					SailDataset dataset = branch.dataset(store.getDefaultIsolationLevel())) {
+				SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(
+						sailStore.getValueFactory(), dataset);
+				LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) sailStore.getEvaluationStatistics())
+						.estimatorRuntime();
+				var strategy = store.getEvaluationStrategyFactory()
+						.createEvaluationStrategy(null, tripleSource, sailStore.getEvaluationStatistics());
+				LmdbPackedCostModel model = new LmdbPackedCostModel(runtime,
+						OptionalLong.of(tripleSource.getSnapshotEpoch().orElseThrow()), true, tripleSource, strategy);
+
+				try (PackedCostSession session = model.openSession(call.query())) {
+					PackedCostEstimate prefix = new PackedCostEstimate();
+					session.estimateLeaf(call.bindingRelationId(), call.emptyContext(), prefix);
+					PackedCostEstimate output = new PackedCostEstimate();
+					session.estimateLeaf(call.factorRelationId(0), call.emptyContext(), output);
+					session.appendFactor(call.factorRelationId(0),
+							call.prefixContext(0, prefix.outputRows(), prefix.evidenceStateId()), output);
+
+					assertEquals("ready", output.plannedStringMetric("plannedFrontierStatus"));
+					assertEquals("measure_unbiased", output.plannedStringMetric("plannedFrontierGuarantee"));
+					assertEquals("importance_with_replacement",
+							output.plannedStringMetric("plannedFrontierBridgeMutation"));
+					assertEquals(4.0d, output.outputRows(), 0.0d,
+							"two independent input rows must each retain both exact statement matches");
+					assertTrue(Double.isNaN(output.plannedDoubleMetric(
+							"plannedFrontierExactExpansionScannedRows", Double.NaN)),
+							"the two retained exact payloads must not reopen the mapped statement source");
+					assertEquals(0.0d,
+							output.plannedDoubleMetric("plannedFrontierPrimitiveSnapshotProbes", Double.NaN),
+							0.0d, "the exact payload product requires no snapshot fallback");
+					assertEquals(0.0d,
+							output.plannedDoubleMetric("plannedFrontierQueryIndexForwardMappedProbes", Double.NaN),
+							0.0d, "the exact payload product requires no mapped-index probe");
+					assertTrue(output.plannedDoubleMetric("plannedFrontierResidualParticles", Double.NaN) <= 2.0d,
+							"the complete four-row bag measure must fit in the configured two-particle budget");
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void exactFrontierPrefixUsesFactorSpecificDistinctBindingInvocations(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
@@ -1108,6 +1663,12 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 					assertEquals(12.0d,
 							byD.plannedDoubleMetrics().getOrDefault("plannedFrontierAccessSurfaceProbes", Double.NaN),
 							0.0d, "Each distinct d binding requires its own storage probe");
+					assertEquals("retained-frontier-exact",
+							byB.plannedStringMetrics().get("plannedFrontierFactorSurfaceRefinementDetail"),
+							"the exact bc output bag must be reused instead of rescanning the same LMDB surface");
+					assertEquals("retained-frontier-exact",
+							byD.plannedStringMetrics().get("plannedFrontierFactorSurfaceRefinementDetail"),
+							"the exact cd output bag must be reused instead of rescanning the same LMDB surface");
 				}
 			}
 		} finally {
@@ -1651,6 +2212,26 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		}
 		assignment.setBindingSets(bindingSets);
 		return assignment;
+	}
+
+	private static void assertExactEmptyFrontier(PackedCostEstimate estimate) {
+		assertEquals("ready", estimate.plannedStringMetric("plannedFrontierStatus"));
+		assertEquals("database_exact", estimate.plannedStringMetric("plannedFrontierGuarantee"));
+		assertEquals("exact_zero", estimate.plannedStringMetric("plannedFrontierZeroStatus"));
+		assertEquals("composable_payload", estimate.plannedStringMetric("plannedFrontierDisposition"));
+		assertEquals(0.0d, estimate.outputRows(), 0.0d);
+		assertTrue(estimate.evidenceStateId() > 0,
+				"an exact empty join must retain its reusable Frontier state even with no refinement work budget");
+	}
+
+	private static QueryBindingSet filterMemoBinding(String x, Integer y, String z) {
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding("x", VF.createLiteral(x));
+		if (y != null) {
+			bindings.addBinding("y", VF.createLiteral(y));
+		}
+		bindings.addBinding("z", VF.createLiteral(z));
+		return bindings;
 	}
 
 	private static BindingSetAssignment mixedBindingAssignment(String bindingName, Value value, boolean boundRowFirst) {

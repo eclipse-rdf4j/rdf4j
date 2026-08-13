@@ -25,12 +25,15 @@ final class PackedPrimitiveHash {
 	}
 
 	static long step(long hash, int value) {
-		return step(hash, Integer.toUnsignedLong(value));
+		long mixed = hash ^ (value & 0xffffffffL) + SEED + (hash << 6) + (hash >>> 2);
+		long product = mixed * 0xbf58476d1ce4e5b9L;
+		return (product << 27) | (product >>> 37);
 	}
 
 	static long step(long hash, long value) {
 		long mixed = hash ^ value + SEED + (hash << 6) + (hash >>> 2);
-		return Long.rotateLeft(mixed * 0xbf58476d1ce4e5b9L, 27);
+		long product = mixed * 0xbf58476d1ce4e5b9L;
+		return (product << 27) | (product >>> 37);
 	}
 
 	static long finish(long value) {

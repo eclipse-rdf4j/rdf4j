@@ -22,6 +22,13 @@ final class LmdbHashJoinCosting {
 	static CandidateEstimate estimateCandidates(double leftRows, double rightRows, double executionPartitions,
 			double matchedRows, int lookupMaskId, FrontierCorrelationDomain leftDomain,
 			FrontierCorrelationDomain rightDomain) {
+		return estimateCandidates(leftRows, rightRows, executionPartitions, matchedRows, lookupMaskId, -1,
+				leftDomain, rightDomain);
+	}
+
+	static CandidateEstimate estimateCandidates(double leftRows, double rightRows, double executionPartitions,
+			double matchedRows, int lookupMaskId, int compatibilityMaskId, FrontierCorrelationDomain leftDomain,
+			FrontierCorrelationDomain rightDomain) {
 		double repeatedRightRows = saturatedMultiply(rightRows, executionPartitions);
 		double productRows = saturatedMultiply(leftRows, repeatedRightRows);
 		double candidateRows = productRows;
@@ -30,6 +37,14 @@ final class LmdbHashJoinCosting {
 		String source;
 		if (lookupMaskId == 0) {
 			source = "product-no-assured-key";
+		} else if (lookupMaskId == compatibilityMaskId && finiteNonNegative(matchedRows)) {
+			/*
+			 * Every shared compatibility binding is present in the assured lookup key. A bucket lookup therefore
+			 * performs no compatibility rejections: its candidate multiplicity is exactly the logical join
+			 * multiplicity, independently of whether either Frontier state retained a joint-NDV payload.
+			 */
+			candidateRows = matchedRows;
+			source = "assured-compatibility-output";
 		} else if (leftDomain == null || rightDomain == null) {
 			source = "product-missing-evidence";
 		} else {
@@ -93,6 +108,16 @@ final class LmdbHashJoinCosting {
 						leftObjective)
 				: new Orientation(false, rightAdmissible, rightBuildRows, rightProbeInputRows, rightPeakMemoryRows,
 						rightObjective);
+	}
+
+	static Orientation rightBuildOrientation(double leftRows, double rightRows, double executionPartitions,
+			double candidateRows, double resultRows) {
+		double partitions = Double.isFinite(executionPartitions) && executionPartitions > 0.0d
+				? executionPartitions
+				: 1.0d;
+		double buildRows = saturatedMultiply(rightRows, partitions);
+		return new Orientation(false, true, buildRows, leftRows, rightRows,
+				orientationObjective(buildRows, leftRows, candidateRows, resultRows, rightRows));
 	}
 
 	private static boolean usableJointNdv(double distinctKeys, double rows) {

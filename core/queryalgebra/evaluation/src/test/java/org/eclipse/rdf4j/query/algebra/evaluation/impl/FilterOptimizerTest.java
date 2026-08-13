@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -145,6 +146,24 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		String query = "SELECT * WHERE {?branch <urn:name> ?branchName . ?copy <urn:locatedAt> ?branch . FILTER(?branchName = \"Branch 0\") }";
 
 		testOptimizer(expectedQuery, query, new SelectiveJoinStatistics(200.0d, 100.0d, 20.0d));
+	}
+
+	@Test
+	public void distributesFilterOnlyIntoMinusLeftOperand() {
+		String expectedQuery = """
+				SELECT * WHERE {
+				  { VALUES (?x ?guard) { (1 true) } FILTER(?guard) }
+				  MINUS { VALUES ?x { 1 } }
+				}
+				""";
+		String query = """
+				SELECT * WHERE {
+				  { VALUES (?x ?guard) { (1 true) } MINUS { VALUES ?x { 1 } } }
+				  FILTER(?guard)
+				}
+				""";
+
+		testOptimizer(expectedQuery, query);
 	}
 
 	@Test
@@ -334,6 +353,30 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 				.singleElement()
 				.satisfies(assignment -> assertThat(hasAncestor(assignment, Exists.class)).isTrue());
 		assertThat(findAll(optimized, ListMemberOperator.class)).isEmpty();
+	}
+
+	@Test
+	public void standardPipelineKeepsOuterUnionOptionalInputSeparateFromNotExistsProbe() {
+		TupleExpr optimized = optimizeWithStandardPipeline(String.join("\n",
+				"PREFIX med: <http://example.com/theme/medical/>",
+				"SELECT (COUNT(DISTINCT ?patient) AS ?count) WHERE {",
+				"  { ?patient a med:Patient ; med:hasMedication ?med . }",
+				"  UNION",
+				"  { ?patient a med:Patient ; med:hasEncounter ?enc . ?enc med:hasObservation ?obs . }",
+				"  OPTIONAL { ?patient med:name ?optName . }",
+				"  FILTER(?optName != \"\")",
+				"  FILTER NOT EXISTS {",
+				"    ?patient med:hasMedication ?m2 . ?m2 med:code ?c .",
+				"    FILTER(?c = \"MED-1005\")",
+				"  }",
+				"}"));
+
+		Group group = findAll(optimized, Group.class).getFirst();
+
+		assertThat(group.getArg().getBindingNames())
+				.as("The aggregate input must remain the outer UNION/OPTIONAL stream, not the EXISTS probe")
+				.contains("patient", "optName")
+				.doesNotContain("m2", "c");
 	}
 
 	@Test

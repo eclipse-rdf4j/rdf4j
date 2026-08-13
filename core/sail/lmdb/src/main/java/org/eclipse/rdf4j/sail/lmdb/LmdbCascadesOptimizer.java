@@ -18,6 +18,8 @@ import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
@@ -52,8 +54,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.InputBindin
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanningMetrics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCascadesPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanQualityAuditResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlannerLimits;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -73,7 +78,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	static final String SKIP_SKETCH_JOIN_ORDER_METRIC = "optimizer.cascadesSkipSketchJoinOrder";
 	static final String PLANNER_ID = "lmdb-packed-cascades";
 
-	private static final int DEFAULT_AUTO_BUDGET = 4_096;
+	private static final int DEFAULT_AUTO_BUDGET = 256;
 	private static final int DEFAULT_BUDGETED_BUDGET = 4_096;
 	private static final long DEFAULT_TIMEOUT_MILLIS = 500L;
 
@@ -125,6 +130,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (tupleExpr == null) {
 			return;
 		}
+		TupleExpr installedRoot = tupleExpr;
 		boolean runtimeTelemetry = trackResultSize || tupleExpr.isRuntimeTelemetryEnabled();
 		if (!datasetUsesStoreDefaults(dataset)) {
 			// FROM/FROM NAMED restrict the data a query sees, but legacy operator keys carry no dataset identity —
@@ -151,17 +157,52 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				plan = null;
 			}
 			if (plan != null) {
-				replaceRoot(tupleExpr, plan.tupleExpr());
-				CascadesPlanProvenanceAnnotator.annotate(tupleExpr, plan.provenance(), PLANNER_ID);
-				annotatePlanningMetrics(tupleExpr, mode, plan);
-				annotateObjectGuarantees(tupleExpr);
-				annotateCartesianFallback(tupleExpr);
-				annotateSemanticExactZero(tupleExpr);
-				verifyInstalledCostingContexts(tupleExpr);
+				installedRoot = replaceRoot(tupleExpr, plan.tupleExpr());
+				CascadesPlanProvenanceAnnotator.annotate(installedRoot, plan.provenance(), PLANNER_ID);
+				annotatePlanningMetrics(installedRoot, mode, plan);
+				TupleExpr observableRoot = observablePlanRoot(installedRoot);
+				if (observableRoot != installedRoot) {
+					annotatePlanningMetrics(observableRoot, mode, plan);
+					copyCacheValidationMetrics(installedRoot, observableRoot);
+				}
+				annotateObjectGuarantees(installedRoot);
+				annotateCartesianFallback(installedRoot);
+				annotateCertifiedExactZero(installedRoot, plan);
+				verifyInstalledCostingContexts(installedRoot);
 			}
 		}
 		if (runtimeTelemetry) {
-			enableRuntimeTelemetry(tupleExpr);
+			enableRuntimeTelemetry(installedRoot);
+		}
+	}
+
+	private static TupleExpr observablePlanRoot(TupleExpr installedRoot) {
+		return installedRoot instanceof QueryRoot queryRoot ? queryRoot.getArg() : installedRoot;
+	}
+
+	private static void copyCacheValidationMetrics(TupleExpr source, TupleExpr target) {
+		copyStringMetric(source, target, "optimizer.planCacheValidationResult");
+		copyStringMetric(source, target, "optimizer.planCacheValidationReason");
+		copyStringMetric(source, target, "optimizer.planCacheValidationChangedDimensions");
+		copyDoubleMetric(source, target, "optimizer.planCacheValidationConfidence");
+		copyDoubleMetric(source, target, "optimizer.planCacheValidationExpectedRegret");
+		copyDoubleMetric(source, target, "optimizer.planCacheValidationWorkUnits");
+		copyDoubleMetric(source, target, "optimizer.planCacheDataRevision");
+		copyDoubleMetric(source, target, "optimizer.planCacheLeoRevision");
+		copyDoubleMetric(source, target, "optimizer.planCacheFrontierRevision");
+	}
+
+	private static void copyStringMetric(TupleExpr source, TupleExpr target, String metric) {
+		String value = source.getStringMetricPlanned(metric);
+		if (value != null) {
+			target.setStringMetricPlanned(metric, value);
+		}
+	}
+
+	private static void copyDoubleMetric(TupleExpr source, TupleExpr target, String metric) {
+		double value = source.getDoubleMetricPlanned(metric);
+		if (Double.isFinite(value)) {
+			target.setDoubleMetricPlanned(metric, value);
 		}
 	}
 
@@ -192,10 +233,40 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (tupleExpr == null) {
 			throw new CascadesPlanningException("Packed Cascades requires a non-null TupleExpr");
 		}
-		OptimizationGoal request = goal == null ? OptimizationGoal.root(tupleExpr, PhysicalProperties.ANY) : goal;
+		OptimizationGoal request = withExplicitConfiguredDeadline(
+				goal == null ? OptimizationGoal.root(tupleExpr, PhysicalProperties.ANY) : goal);
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = beginQueryOptimizationScope()) {
 			annotateDistinctPhysicalRequirements(tupleExpr);
 			return plan(tupleExpr, null, null, request);
+		}
+	}
+
+	PackedPlanQualityAuditResult auditPreparedInput(TupleExpr tupleExpr, OptimizationGoal goal,
+			int dominatedSamplesPerStratum) {
+		return auditPreparedInput(tupleExpr, goal, dominatedSamplesPerStratum,
+				PackedPlannerLimits.DEFAULT_MAX_RETAINED_BYTES);
+	}
+
+	PackedPlanQualityAuditResult auditPreparedInput(TupleExpr tupleExpr, OptimizationGoal goal,
+			int dominatedSamplesPerStratum, long maxRetainedBytes) {
+		if (tupleExpr == null) {
+			throw new CascadesPlanningException("Packed Cascades requires a non-null TupleExpr");
+		}
+		if (runtime == null) {
+			throw new CascadesPlanningException("LMDB plan-quality audit requires store-backed estimator runtime");
+		}
+		OptimizationGoal request = withExplicitConfiguredDeadline(
+				goal == null ? OptimizationGoal.root(tupleExpr, PhysicalProperties.ANY) : goal);
+		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = beginQueryOptimizationScope()) {
+			annotateDistinctPhysicalRequirements(tupleExpr);
+			LmdbPackedCostModel costModel = new LmdbPackedCostModel(runtime, executionSnapshotEpoch, true,
+					frontierStatementSource, evaluationStrategy, !preserveSerializableObservationOrder);
+			long workLimit = request.searchMode() == OptimizationGoal.SearchMode.EXACT
+					? Long.MAX_VALUE
+					: request.taskBudget();
+			return PackedCascadesPlanner.auditPlanQuality(tupleExpr, request, costModel, rangeProvider,
+					dominatedSamplesPerStratum,
+					new PackedPlannerLimits(workLimit, request.deadlineNanos(), maxRetainedBytes));
 		}
 	}
 
@@ -321,51 +392,66 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				: QueryOptimizationScopeProvider.NO_OP_SCOPE;
 	}
 
-	private static void replaceRoot(TupleExpr original, TupleExpr replacement) {
+	static TupleExpr replaceRoot(TupleExpr original, TupleExpr replacement) {
 		if (replacement == null || replacement == original) {
-			return;
+			return original;
 		}
 		QueryModelNode parent = original.getParentNode();
 		if (parent != null) {
 			original.replaceWith(replacement);
-			return;
+			return replacement;
 		}
 		copyPlannedMetrics(replacement, original);
 		if (original instanceof QueryRoot originalRoot) {
 			originalRoot.setArg(replacement instanceof QueryRoot replacementRoot
-					? replacementRoot.getArg().clone()
-					: replacement.clone());
-			return;
+					? replacementRoot.getArg()
+					: replacement);
+			return original;
 		}
 		if (original.getClass() == replacement.getClass() && original instanceof UnaryTupleOperator originalUnary
 				&& replacement instanceof UnaryTupleOperator replacementUnary) {
-			originalUnary.setArg(replacementUnary.getArg().clone());
-			return;
+			originalUnary.setArg(replacementUnary.getArg());
+			return original;
 		}
 		if (original.getClass() == replacement.getClass() && original instanceof BinaryTupleOperator originalBinary
 				&& replacement instanceof BinaryTupleOperator replacementBinary) {
-			originalBinary.setLeftArg(replacementBinary.getLeftArg().clone());
-			originalBinary.setRightArg(replacementBinary.getRightArg().clone());
-			return;
+			originalBinary.setLeftArg(replacementBinary.getLeftArg());
+			originalBinary.setRightArg(replacementBinary.getRightArg());
+			return original;
 		}
 		throw new CascadesPlanningException("Cannot install packed winner " + replacement.getClass().getName()
 				+ " into detached root " + original.getClass().getName());
 	}
 
 	private static void copyPlannedMetrics(TupleExpr source, TupleExpr target) {
-		source.getStringMetricsPlanned().forEach(target::setStringMetricPlanned);
-		source.getDoubleMetricsPlanned().forEach(target::setDoubleMetricPlanned);
-		source.getLongMetricsPlanned().forEach(target::setLongMetricPlanned);
+		source.copyPlannedMetricsTo(target);
 	}
 
 	private void annotatePlanningMetrics(TupleExpr root, Mode mode, CascadesPlan plan) {
 		PlanningMetrics metrics = plan.metrics();
+		var searchStatus = plan.searchStatus();
+		var counters = searchStatus.counters();
+		var retention = searchStatus.retention();
 		root.setStringMetricPlanned("optimizer.cascadesMode", mode.name().toLowerCase(Locale.ROOT));
 		root.setStringMetricPlanned(APPLIED_METRIC, "true");
 		root.setStringMetricPlanned(SKIP_SKETCH_JOIN_ORDER_METRIC, "false");
-		root.setStringMetricPlanned("optimizer.cascadesCompleteness", plan.searchStatus().completeness().name());
+		root.setStringMetricPlanned("optimizer.cascadesCompleteness", searchStatus.completeness().name());
 		root.setStringMetricPlanned("optimizer.cascadesApproximate",
-				Boolean.toString(plan.searchStatus().approximate()));
+				Boolean.toString(searchStatus.approximate()));
+		root.setStringMetricPlanned("optimizer.cascadesLimitCauses", searchStatus.limitCauses()
+				.stream()
+				.map(Enum::name)
+				.sorted()
+				.collect(Collectors.joining(",")));
+		root.setDoubleMetricPlanned("optimizer.cascadesRuleWork", counters.ruleWork());
+		root.setDoubleMetricPlanned("optimizer.cascadesDphypPairProbes", counters.dphypPairProbes());
+		root.setDoubleMetricPlanned("optimizer.cascadesPartitionProbes", counters.partitionProbes());
+		root.setDoubleMetricPlanned("optimizer.cascadesCandidateEvaluations", counters.candidateEvaluations());
+		root.setDoubleMetricPlanned("optimizer.cascadesPredicateProbes", counters.predicateProbes());
+		root.setDoubleMetricPlanned("optimizer.cascadesRetainedCandidates", retention.currentRetainedCandidates());
+		root.setDoubleMetricPlanned("optimizer.cascadesRetainedCandidateHighWaterMark",
+				retention.retainedCandidateHighWaterMark());
+		root.setDoubleMetricPlanned("optimizer.cascadesFrontierHighWaterMark", retention.frontierHighWaterMark());
 		root.setDoubleMetricPlanned("optimizer.cascadesRootCostWorkRows", plan.cost().workRows());
 		root.setDoubleMetricPlanned("optimizer.cascadesRootRows", plan.cost().rows());
 		root.setDoubleMetricPlanned("optimizer.cascadesEncodeNanos", metrics.encodeNanos());
@@ -428,15 +514,11 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	/**
 	 * The packed planner's per-relation cost boundary cannot see cross-relation evidence such as empty join
-	 * intersections or impossible known-domain filters; the unified estimation engine can. When the engine proves the
-	 * planned tree exactly empty, that exact zero dominates the stamped root cardinality instead of the packed row
-	 * heuristics.
+	 * intersections or impossible known-domain filters; the unified estimation engine can. The cold plan's versioned
+	 * root certificate survives plan-cache replay, and a certified zero dominates stamped packed row heuristics.
 	 */
-	private void annotateSemanticExactZero(TupleExpr root) {
-		if (!(statistics instanceof LmdbEstimatorRuntimeProvider provider)) {
-			return;
-		}
-		if (provider.estimatorRuntime().estimate(root).rows() != 0.0d) {
+	private static void annotateCertifiedExactZero(TupleExpr root, CascadesPlan plan) {
+		if (plan.cost().rows() != 0.0d) {
 			return;
 		}
 		stampExactZero(root);
@@ -465,7 +547,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode node) {
-				String anchorPredicate = node.getStringMetricsPlanned().get(OPTIMIZER_GUARANTEE_ANCHOR_PREDICATE);
+				String anchorPredicate = node.getStringMetricPlanned(OPTIMIZER_GUARANTEE_ANCHOR_PREDICATE);
 				if (anchorPredicate != null) {
 					consumedPredicates.add(anchorPredicate);
 				}
@@ -501,7 +583,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		}
 		if (guarantee.isUnknown() || guarantee.mask() == 0L
 				|| consumedPredicates.contains(predicate.stringValue())
-				|| node.getStringMetricsPlanned().containsKey(OPTIMIZER_GUARANTEE_OPTIONS)) {
+				|| node.getStringMetricPlanned(OPTIMIZER_GUARANTEE_OPTIONS) != null) {
 			return;
 		}
 		if (objectVar != null && !objectVar.hasValue() && anchoredBindingNames.contains(objectVar.getName())) {
@@ -762,6 +844,25 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			throw new CascadesPlanningException("Invalid positive timeout in " + TIMEOUT_MILLIS_PROPERTY + ": "
 					+ configured, error);
 		}
+	}
+
+	private static OptimizationGoal withExplicitConfiguredDeadline(OptimizationGoal request) {
+		String configured = System.getProperty(TIMEOUT_MILLIS_PROPERTY);
+		if (configured == null || configured.isBlank()) {
+			return request;
+		}
+		long timeoutNanos = TimeUnit.MILLISECONDS.toNanos(configuredTimeoutMillis());
+		long now = System.nanoTime();
+		long configuredDeadline = timeoutNanos == Long.MAX_VALUE || now > Long.MAX_VALUE - timeoutNanos
+				? Long.MAX_VALUE
+				: now + timeoutNanos;
+		long effectiveDeadline = Math.min(request.deadlineNanos(), configuredDeadline);
+		if (effectiveDeadline == request.deadlineNanos()) {
+			return request;
+		}
+		return new OptimizationGoal(request.requiredProperties(), request.semanticScope(), request.costPolicy(),
+				request.costBound(), request.excludedProperties(), request.searchMode(), effectiveDeadline,
+				request.taskBudget(), request.rowGoal(), request.estimationTier(), request.inputBindingContext());
 	}
 
 	private static int positiveIntProperty(String name, int defaultValue) {

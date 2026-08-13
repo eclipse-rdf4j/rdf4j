@@ -12,8 +12,10 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -36,16 +38,16 @@ final class LmdbPrefixEvidenceResolver {
 		this.rootContext = rootContext;
 	}
 
-	BagEstimate estimate(CostContext cost, EstimateContext context,
-			Map<PrefixEstimateCacheKey, BagEstimate> cache) {
+	BagEstimate estimate(CostContext cost, EstimateContext context, LmdbEstimatorOptimizationScope scope) {
 		double rows = prefixRows(cost);
 		List<TupleExpr> factors = cost.getPrefixFactors();
 		if (factors.isEmpty()) {
 			return BagEstimate.heuristic(rows, "outer-prefix");
 		}
+		Map<PrefixEstimateCacheKey, BagEstimate> cache = scope == null ? null : scope.prefixEstimates;
 		PrefixEstimateCacheKey cacheKey = cache == null
 				? null
-				: PrefixEstimateCacheKey.of(factors, rows, cost.getEstimationTier(), context);
+				: PrefixEstimateCacheKey.of(factors, rows, cost.getEstimationTier(), context, scope);
 		if (cacheKey != null) {
 			BagEstimate cached = cache.get(cacheKey);
 			if (cached != null) {
@@ -58,7 +60,7 @@ final class LmdbPrefixEvidenceResolver {
 				.withMetricsPreference(EstimateContext.MetricsPreference.NONE)
 				.withExactProbePermission(cost.getEstimationTier() != null
 						&& cost.getEstimationTier().allowsExactEstimates());
-		BagEstimate rawEstimate = engine.estimate(prefixExpression, prefixContext);
+		BagEstimate rawEstimate = engine.estimate(prefixExpression, prefixContext, scope);
 		BagEstimate estimated = rawEstimate.withRowsPreservingEvidence(rows, 0.0d, rawEstimate.confidence(),
 				"outer-prefix-evidence", Map.of(), false);
 		if (cacheKey != null) {
@@ -94,6 +96,45 @@ final class LmdbPrefixEvidenceResolver {
 			rows = expanded;
 		}
 		return FiniteRelationEstimate.fromRows(names, rows, "finite-context");
+	}
+
+	FiniteRelationEstimate finiteBindings(Map<String, Set<Value>> values,
+			Map<Map<String, Set<Value>>, Optional<FiniteRelationEstimate>> cache) {
+		if (cache == null || values == null || values.isEmpty()) {
+			return finiteBindings(values);
+		}
+		Optional<FiniteRelationEstimate> cached = cache.get(values);
+		if (cached != null) {
+			return cached.orElse(null);
+		}
+		Map<String, Set<Value>> cacheKey = immutableFiniteBindingValues(values);
+		if (cacheKey == null) {
+			return finiteBindings(values);
+		}
+		Optional<FiniteRelationEstimate> materialized = Optional.ofNullable(finiteBindings(cacheKey));
+		cache.put(cacheKey, materialized);
+		return materialized.orElse(null);
+	}
+
+	private static Map<String, Set<Value>> immutableFiniteBindingValues(Map<String, Set<Value>> values) {
+		Map<String, Set<Value>> immutable = new LinkedHashMap<>(values.size());
+		for (Map.Entry<String, Set<Value>> entry : values.entrySet()) {
+			Set<Value> domain = entry.getValue();
+			if (entry.getKey() == null || domain == null || containsNull(domain)) {
+				return null;
+			}
+			immutable.put(entry.getKey(), Set.copyOf(domain));
+		}
+		return Map.copyOf(immutable);
+	}
+
+	private static boolean containsNull(Set<Value> domain) {
+		for (Value value : domain) {
+			if (value == null) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static double prefixRows(CostContext context) {

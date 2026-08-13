@@ -30,15 +30,34 @@ final class FrontierMultinomialResampler {
 	}
 
 	static int[] drawCounts(double[] weights, int draws, long baseSeed) {
-		double[] units = new double[draws];
-		for (int draw = 0; draw < draws; draw++) {
-			units[draw] = unitInterval(FrontierSeedSchedule.derive(
-					baseSeed, FrontierRandomDomain.RESAMPLE, 0L, draw));
+		if (draws < 0) {
+			throw new NegativeArraySizeException(Integer.toString(draws));
 		}
-		return drawCounts(weights, units);
+		double[] cumulative = cumulativeWeights(weights);
+		double total = cumulative[cumulative.length - 1];
+		int[] counts = new int[weights.length];
+		for (int draw = 0; draw < draws; draw++) {
+			double unit = unitInterval(FrontierSeedSchedule.derive(
+					baseSeed, FrontierRandomDomain.RESAMPLE, 0L, draw));
+			counts[categoryFor(cumulative, unit * total)]++;
+		}
+		return counts;
 	}
 
 	static int[] drawCounts(double[] weights, double[] units) {
+		double[] cumulative = cumulativeWeights(weights);
+		double total = cumulative[cumulative.length - 1];
+		int[] counts = new int[weights.length];
+		for (double unit : units) {
+			if (!(unit >= 0.0d && unit < 1.0d)) {
+				throw new IllegalArgumentException("resampling draws must lie in the unit interval");
+			}
+			counts[categoryFor(cumulative, unit * total)]++;
+		}
+		return counts;
+	}
+
+	private static double[] cumulativeWeights(double[] weights) {
 		double[] cumulative = new double[weights.length];
 		double total = 0.0d;
 		for (int index = 0; index < weights.length; index++) {
@@ -52,14 +71,7 @@ final class FrontierMultinomialResampler {
 		if (!Double.isFinite(total) || total <= 0.0d) {
 			throw new IllegalArgumentException("resampled total mass must be finite and positive");
 		}
-		int[] counts = new int[weights.length];
-		for (double unit : units) {
-			if (!(unit >= 0.0d && unit < 1.0d)) {
-				throw new IllegalArgumentException("resampling draws must lie in the unit interval");
-			}
-			counts[categoryFor(cumulative, unit * total)]++;
-		}
-		return counts;
+		return cumulative;
 	}
 
 	private static int categoryFor(double[] cumulative, double target) {

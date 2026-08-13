@@ -45,6 +45,7 @@ final class PackedPayloadOp {
 	static final int DOUBLE_METRIC = 29;
 	static final int STRING_METRIC = 30;
 	static final int SEMI_ANTI_JOIN = 31;
+	static final int UNSUPPORTED = 32;
 
 	private PackedPayloadOp() {
 	}

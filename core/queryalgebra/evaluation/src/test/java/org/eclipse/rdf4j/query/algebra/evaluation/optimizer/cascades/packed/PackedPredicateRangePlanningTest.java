@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -26,12 +27,15 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
@@ -39,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -108,6 +113,72 @@ class PackedPredicateRangePlanningTest {
 			return 7L;
 		}
 	};
+
+	@Test
+	void finiteStoredDomainWithoutFilterAddsAnchorAlternative() {
+		TupleExpr root = projection(statementPattern(), "s");
+
+		PackedQuery packed = PackedQueryCodec.encodeForPlanning(root.clone(), INT_SEVEN_PROVIDER);
+		TupleExpr selected = optimize(root, INT_SEVEN_PROVIDER);
+
+		assertTrue((generatedRuleMask(packed) & PackedRuleProofs.PREDICATE_RANGE_ANCHOR) != 0L,
+				"a complete finite store domain must produce a proof-carrying access alternative without a FILTER");
+		assertEquals(List.of(Set.of(VF.createLiteral("7", CoreDatatype.XSD.INT))), finiteDomains(selected, "o"),
+				"the finite store domain should bind the object before the statement lookup: " + selected);
+	}
+
+	@Test
+	void lateAliasCommutationReactivatesRangeFactsBeforeHypergraphConstruction() {
+		StatementPattern ranged = statementPattern();
+		StatementPattern sibling = new StatementPattern(new Var("s"),
+				new Var("siblingPredicate", VF.createIRI("urn:range-fixpoint:sibling"), true, true),
+				new Var("siblingValue"));
+		Extension alias = new Extension(ranged, new ExtensionElem(Var.of("o"), "alias"));
+		Filter filtered = new Filter(new Join(sibling, alias),
+				new Compare(Var.of("alias"), new ValueConstant(VF.createLiteral(60)), Compare.CompareOp.LT));
+		TupleExpr root = filtered;
+
+		PackedQuery packed = PackedQueryCodec.encodeForPlanning(root.clone(), INT_FIFTY_TO_NINETY_NINE_PROVIDER);
+		TupleExpr selected = optimize(root, INT_FIFTY_TO_NINETY_NINE_PROVIDER);
+
+		long generatedRules = generatedRuleMask(packed);
+		assertTrue((generatedRules & PackedRuleProofs.TRIVIAL_BIND_ALIAS) != 0L,
+				"the alias must first commute to expose the ranged source value");
+		assertTrue((generatedRules & PackedRuleProofs.PREDICATE_RANGE_ANCHOR) != 0L,
+				"the late rewritten filter must be revisited after its input facts are derived");
+		assertEquals(List.of(integerValues(50L, 59L, CoreDatatype.XSD.INT)), finiteDomains(selected, "o"),
+				"fixpoint saturation must anchor the source object before its statement lookup: " + selected);
+		assertTrue(selected.getBindingNames().contains("alias"),
+				"the exposed source lookup must retain the original alias result");
+	}
+
+	@Test
+	void localPredicateRangeDoesNotCrossServiceBoundary() {
+		PackedPredicateRangeProvider localEmptyProvider = new PackedPredicateRangeProvider() {
+
+			@Override
+			public boolean describeObjectRange(IRI predicate, PackedPredicateRange output) {
+				output.setState(PackedPredicateRange.STATE_EMPTY);
+				return true;
+			}
+
+			@Override
+			public long predicateRangeVersion() {
+				return 17L;
+			}
+		};
+		Service remote = new Service(Var.of("endpoint", VF.createIRI("urn:test:remote")), statementPattern(),
+				"?s <http://example.com/intValued> ?o .", Map.of(), null, false);
+		TupleExpr root = projection(remote, "s");
+
+		PackedQuery packed = PackedQueryCodec.encodeForPlanning(root.clone(), localEmptyProvider);
+		TupleExpr selected = optimize(root, localEmptyProvider);
+
+		assertEquals(0L, generatedRuleMask(packed) & PackedRuleProofs.PREDICATE_RANGE_EMPTY,
+				"local store facts must not prove anything about a remote SERVICE graph");
+		assertFalse(containsNode(selected, EmptySet.class),
+				"a local empty range must not replace the remote SERVICE pattern: " + selected);
+	}
 
 	@Test
 	void isLiteralContradictionSelectsEmptySet() {
@@ -422,6 +493,28 @@ class PackedPredicateRangePlanningTest {
 	}
 
 	@Test
+	void disconnectedJoinCommutationRetainsEmptyProofInEveryEquivalentGroup() {
+		for (boolean filteredLeft : List.of(true, false)) {
+			Filter impossible = new Filter(statementPattern(),
+					new Compare(new Var("o"), new ValueConstant(VF.createLiteral(50)), Compare.CompareOp.LT));
+			StatementPattern disconnected = new StatementPattern(new Var("unrelatedSubject"),
+					new Var("unrelatedPredicate", VF.createIRI("urn:range-empty:unrelated"), true, true),
+					new Var("unrelatedObject"));
+			TupleExpr joined = filteredLeft
+					? new Join(impossible, disconnected)
+					: new Join(disconnected, impossible);
+			TupleExpr root = projection(joined, "s");
+
+			PackedQuery packed = PackedQueryCodec.encodeForPlanning(root.clone(),
+					INT_FIFTY_TO_NINETY_NINE_PROVIDER);
+
+			assertEquals(2, predicateRangeEmptyGroups(packed).size(),
+					"the original filter group and its commuted join group both prove emptiness; filteredLeft="
+							+ filteredLeft);
+		}
+	}
+
+	@Test
 	void wideCanonicalIntegerInequalityKeepsOriginalFilter() {
 		TupleExpr root = projection(new Filter(statementPattern(),
 				new Compare(new Var("o"), new ValueConstant(VF.createLiteral(100)), Compare.CompareOp.LT)),
@@ -535,6 +628,99 @@ class PackedPredicateRangePlanningTest {
 				"an OPTIONAL RHS does not assure ?o, so its filter must not become an inner anchor join: " + selected);
 		assertTrue(finiteDomains(selected, "o").isEmpty(),
 				"possible-only bindings must not be treated as assured: " + selected);
+	}
+
+	@Test
+	void matchingSingletonDatatypeMakesFilterTautological() {
+		TupleExpr root = projection(new Filter(statementPattern(),
+				new Compare(new Datatype(new Var("o")),
+						new ValueConstant(CoreDatatype.XSD.INT.getIri()), Compare.CompareOp.EQ)),
+				"s");
+
+		PackedQuery packed = PackedQueryCodec.encodeForPlanning(root,
+				datatypeOnlyProvider(CoreDatatype.XSD.INT, PackedPredicateRange.UNIVERSAL_CANONICAL_INTEGER));
+
+		assertTrue((generatedRuleMask(packed) & PackedRuleProofs.PREDICATE_RANGE_TAUTOLOGY) != 0L,
+				"DATATYPE over a proven singleton datatype must be dropped with a range proof");
+	}
+
+	@Test
+	void disjointSingletonDatatypeSelectsEmptySet() {
+		TupleExpr root = projection(new Filter(statementPattern(),
+				new Compare(new Datatype(new Var("o")),
+						new ValueConstant(CoreDatatype.XSD.STRING.getIri()), Compare.CompareOp.EQ)),
+				"s");
+
+		TupleExpr selected = optimize(root,
+				datatypeOnlyProvider(CoreDatatype.XSD.INT, PackedPredicateRange.UNIVERSAL_CANONICAL_INTEGER));
+
+		assertTrue(containsNode(selected, EmptySet.class),
+				"a disjoint DATATYPE equality must be proved empty");
+	}
+
+	@Test
+	void languageAbsentRangeMakesEmptyLangTautological() {
+		TupleExpr root = projection(new Filter(statementPattern(),
+				new Compare(new Lang(new Var("o")), new ValueConstant(VF.createLiteral("")), Compare.CompareOp.EQ)),
+				"s");
+
+		PackedQuery packed = PackedQueryCodec.encodeForPlanning(root,
+				datatypeOnlyProvider(CoreDatatype.XSD.STRING, 0));
+
+		assertTrue((generatedRuleMask(packed) & PackedRuleProofs.PREDICATE_RANGE_TAUTOLOGY) != 0L,
+				"LANG is always empty for a proven language-free literal domain");
+	}
+
+	@Test
+	void languageAbsentRangeRejectsNonEmptyLang() {
+		TupleExpr root = projection(new Filter(statementPattern(),
+				new Compare(new Lang(new Var("o")), new ValueConstant(VF.createLiteral("en")), Compare.CompareOp.EQ)),
+				"s");
+
+		TupleExpr selected = optimize(root, datatypeOnlyProvider(CoreDatatype.XSD.STRING, 0));
+
+		assertTrue(containsNode(selected, EmptySet.class),
+				"LANG cannot equal a non-empty tag in a proven language-free domain");
+	}
+
+	@Test
+	void languageAbsentRangeRejectsWildcardLangMatches() {
+		TupleExpr root = projection(new Filter(statementPattern(),
+				new LangMatches(new Lang(new Var("o")), new ValueConstant(VF.createLiteral("*")))), "s");
+
+		TupleExpr selected = optimize(root, datatypeOnlyProvider(CoreDatatype.XSD.STRING, 0));
+
+		assertTrue(containsNode(selected, EmptySet.class),
+				"LANGMATCHES(lang, '*') is false for every language-free literal");
+	}
+
+	@Test
+	void languagePresentRangeMakesWildcardLangMatchesTautological() {
+		PackedPredicateRangeProvider languageProvider = new PackedPredicateRangeProvider() {
+
+			@Override
+			public boolean describeObjectRange(IRI predicate, PackedPredicateRange output) {
+				if (!PREDICATE.equals(predicate)) {
+					return false;
+				}
+				output.setState(PackedPredicateRange.STATE_KNOWN);
+				output.setKindBits(PackedPredicateRange.KIND_LITERAL);
+				output.setLanguageBits(PackedPredicateRange.LANGUAGE_WITH);
+				return true;
+			}
+
+			@Override
+			public long predicateRangeVersion() {
+				return 9L;
+			}
+		};
+		TupleExpr root = projection(new Filter(statementPattern(),
+				new LangMatches(new Lang(new Var("o")), new ValueConstant(VF.createLiteral("*")))), "s");
+
+		PackedQuery packed = PackedQueryCodec.encodeForPlanning(root, languageProvider);
+
+		assertTrue((generatedRuleMask(packed) & PackedRuleProofs.PREDICATE_RANGE_TAUTOLOGY) != 0L,
+				"LANGMATCHES(lang, '*') is true for every proven language-tagged literal");
 	}
 
 	@Test
@@ -759,6 +945,17 @@ class PackedPredicateRangePlanningTest {
 			ruleMask |= query.relRuleMask(relationId);
 		}
 		return ruleMask;
+	}
+
+	private static Set<Integer> predicateRangeEmptyGroups(PackedQuery query) {
+		Set<Integer> groups = new LinkedHashSet<>();
+		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
+			if (query.relOperator(relationId) == PackedRelOp.EMPTY_SET
+					&& (query.relRuleMask(relationId) & PackedRuleProofs.PREDICATE_RANGE_EMPTY) != 0L) {
+				groups.add(query.relGroup(relationId));
+			}
+		}
+		return Set.copyOf(groups);
 	}
 
 	private static boolean containsNode(TupleExpr root, Class<? extends QueryModelNode> type) {

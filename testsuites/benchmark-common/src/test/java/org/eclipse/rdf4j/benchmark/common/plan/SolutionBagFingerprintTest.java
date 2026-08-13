@@ -33,6 +33,72 @@ import org.junit.jupiter.api.Test;
 class SolutionBagFingerprintTest {
 
 	@Test
+	void factorizedFingerprintSupportsAlgebraicCartesianProducts() {
+		FactorizedSolutionBagFingerprint fingerprint = new FactorizedSolutionBagFingerprint(List.of("x", "y"));
+		BindingSet x1 = row("x", Values.literal("x1"));
+		BindingSet x2 = row("x", Values.literal("x2"));
+		BindingSet y1 = row("y", Values.literal("y1"));
+		BindingSet y2 = row("y", Values.literal("y2"));
+		BindingSet y3 = row("y", Values.literal("y3"));
+
+		FactorizedSolutionBagFingerprint.Summary left = fingerprint.union(
+				fingerprint.factor(x1, List.of("x")), fingerprint.factor(x2, List.of("x")));
+		FactorizedSolutionBagFingerprint.Summary right = fingerprint.union(
+				fingerprint.union(fingerprint.factor(y1, List.of("y")), fingerprint.factor(y2, List.of("y"))),
+				fingerprint.factor(y3, List.of("y")));
+		FactorizedSolutionBagFingerprint.Fingerprint factorized = fingerprint
+				.fingerprint(fingerprint.cartesianProduct(left, right));
+
+		FactorizedSolutionBagFingerprint enumerated = new FactorizedSolutionBagFingerprint(List.of("x", "y"));
+		for (BindingSet x : List.of(x1, x2)) {
+			for (BindingSet y : List.of(y1, y2, y3)) {
+				MapBindingSet product = new MapBindingSet(x.size() + y.size());
+				x.forEach(product::addBinding);
+				y.forEach(product::addBinding);
+				enumerated.add(product);
+			}
+		}
+
+		assertEquals(6L, factorized.rowCount());
+		assertEquals(enumerated.fingerprint(), factorized);
+	}
+
+	@Test
+	void factorizedFingerprintPreservesUnboundRowsAndDuplicateMultiplicity() {
+		FactorizedSolutionBagFingerprint fingerprint = new FactorizedSolutionBagFingerprint(List.of("x", "y"));
+		BindingSet x = row("x", Values.literal("x"));
+		BindingSet unboundX = row();
+		BindingSet y = row("y", Values.literal("y"));
+		FactorizedSolutionBagFingerprint.Summary left = fingerprint.union(
+				fingerprint.union(fingerprint.factor(x, List.of("x")), fingerprint.factor(x, List.of("x"))),
+				fingerprint.factor(unboundX, List.of("x")));
+		FactorizedSolutionBagFingerprint.Fingerprint factorized = fingerprint.fingerprint(
+				fingerprint.cartesianProduct(left, fingerprint.factor(y, List.of("y"))));
+
+		FactorizedSolutionBagFingerprint enumerated = new FactorizedSolutionBagFingerprint(List.of("x", "y"));
+		enumerated.add(row("x", Values.literal("x"), "y", Values.literal("y")));
+		enumerated.add(row("x", Values.literal("x"), "y", Values.literal("y")));
+		enumerated.add(row("y", Values.literal("y")));
+
+		assertEquals(3L, factorized.rowCount());
+		assertEquals(enumerated.fingerprint(), factorized);
+	}
+
+	@Test
+	void factorizedFingerprintRejectsExactCardinalityOverflow() {
+		FactorizedSolutionBagFingerprint fingerprint = new FactorizedSolutionBagFingerprint(List.of("x"));
+		FactorizedSolutionBagFingerprint.Summary maximum = new FactorizedSolutionBagFingerprint.Summary(
+				Long.MAX_VALUE, new long[fingerprint.laneCount()]);
+		FactorizedSolutionBagFingerprint.Summary twoRows = new FactorizedSolutionBagFingerprint.Summary(
+				2L, new long[fingerprint.laneCount()]);
+
+		assertThrows(ArithmeticException.class, () -> fingerprint.union(maximum, fingerprint.unitRow()));
+		assertThrows(ArithmeticException.class, () -> fingerprint.cartesianProduct(maximum, twoRows));
+		fingerprint.addSummary(maximum);
+		assertThrows(ArithmeticException.class, () -> fingerprint.addSummary(fingerprint.unitRow()));
+	}
+
+	@Test
 	void ignoresSolutionAndBindingIterationOrder() {
 		BindingSet first = row("z", Values.iri("urn:z"), "a", Values.literal("alpha"));
 		BindingSet firstReordered = row("a", Values.literal("alpha"), "z", Values.iri("urn:z"));

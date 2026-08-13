@@ -18,9 +18,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.junit.jupiter.api.Test;
@@ -32,6 +35,7 @@ class PackedJoinOrderedPrefixTest {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		List<String> optimalOrder = List.of("urn:i", "urn:h", "urn:g", "urn:f", "urn:e", "urn:d", "urn:c",
 				"urn:b", "urn:a");
+		int[] maximumCostedOptimalPrefix = { 0 };
 		List<TupleExpr> factors = new ArrayList<>(optimalOrder.size());
 		for (char suffix = 'a'; suffix <= 'i'; suffix++) {
 			factors.add(pattern(values, "shared", "urn:" + suffix, suffix + "Value"));
@@ -59,6 +63,9 @@ class PackedJoinOrderedPrefixTest {
 				boolean followsCostedOptimum = prefix.size() < optimalOrder.size()
 						&& prefix.equals(optimalOrder.subList(0, prefix.size()))
 						&& candidate.equals(optimalOrder.get(prefix.size()));
+				if (followsCostedOptimum) {
+					maximumCostedOptimalPrefix[0] = Math.max(maximumCostedOptimalPrefix[0], prefix.size() + 1);
+				}
 				output.setContextualRows(1.0d, followsCostedOptimum ? 1.0d : 1_000_000.0d);
 			}
 		};
@@ -75,7 +82,10 @@ class PackedJoinOrderedPrefixTest {
 				.map(PackedJoinOrderedPrefixTest::predicate)
 				.toList();
 
-		assertEquals(optimalOrder, unboundedOrder);
+		assertEquals(optimalOrder, unboundedOrder,
+				() -> "unbounded cost=" + unbounded.totalCost() + ", status=" + unbounded.completionStatus()
+						+ ", retainedBytes=" + unbounded.retainedBytes() + ", maximumCostedOptimalPrefix="
+						+ maximumCostedOptimalPrefix[0] + ", plan=" + unbounded.selectedPlan());
 		assertEquals(unboundedOrder, boundedOrder,
 				"A work bound may stop exhaustive proof, but traversal order must retain the cheapest costed full plan");
 	}
@@ -134,6 +144,54 @@ class PackedJoinOrderedPrefixTest {
 						.stream()
 						.map(PackedJoinOrderedPrefixTest::predicate)
 						.toList());
+	}
+
+	@Test
+	void incompleteCorrelatedContinuationRetainsItsExecutableSeedIncumbent() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		TupleExpr input = leftDeepJoin(List.of(
+				pattern(values, "shared", "urn:a", "aValue"),
+				pattern(values, "shared", "urn:b", "bValue"),
+				pattern(values, "shared", "urn:c", "cValue"),
+				pattern(values, "shared", "urn:d", "dValue"),
+				pattern(values, "shared", "urn:e", "eValue"),
+				pattern(values, "shared", "urn:f", "fValue")));
+		TupleExpr source = new Filter(input,
+				new Compare(new Var("aValue"), new ValueConstant(values.createIRI("urn:required"))));
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 1.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isStatementPattern(relationId)) {
+					output.setContextualRows(1.0d, 1.0d);
+				}
+			}
+		};
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4, relationCount,
+				relationCount * 2);
+		PackedIncumbentSearch baseline = new PackedIncumbentSearch(query, memo,
+				new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE), false, costs);
+		baseline.build();
+		PackedJoinEnumerator enumerator = new PackedJoinEnumerator(query, memo, baseline.selectedRowsByGroup(),
+				new PackedSearchBudget(20L, Long.MAX_VALUE), costs);
+
+		int seedWork = enumerator.seedRelocatableFilterLattice(query.rootRelId());
+		assertTrue(seedWork > 0, "the bounded correlated lattice must retain one complete executable seed");
+		assertTrue(enumerator.hasCurrentCorrelatedIncumbent(query.rootRelId()));
+
+		enumerator.optimizeRelocatableFilterAlternatives(query.rootRelId());
+
+		assertTrue(!enumerator.hasCurrentCompletedCorrelatedSearch(query.rootRelId()),
+				"the fixture must stop before the exact correlated lattice completes");
+		assertTrue(enumerator.hasCurrentCorrelatedIncumbent(query.rootRelId()),
+				"an incomplete continuation must preserve its mandatory executable seed for containing-region coverage");
 	}
 
 	@Test
@@ -395,6 +453,13 @@ class PackedJoinOrderedPrefixTest {
 						&& prefix.equals(List.of("urn:a", "urn:c"))) {
 					// B is disconnected, so the retained A,C component mass must multiply these seven rows.
 					output.setComponentRows(7.0d, 1.0d);
+				} else if ("urn:b".equals(candidate)) {
+					/*
+					 * Keep the unrelated B access expensive outside the target continuation. Exact physical join
+					 * composition may otherwise establish a cheaper complete B,C,A incumbent and legitimately prune the
+					 * partial A,C prefix before this test can observe its contribution-vector realignment.
+					 */
+					output.setRows(3.0d, 100.0d);
 				} else {
 					double rows = estimateRows(query, relationId);
 					output.setRows(rows, rows);
@@ -446,16 +511,16 @@ class PackedJoinOrderedPrefixTest {
 	}
 
 	@Test
-	void denseSubsetContextUsesWinningParentChainOrder() {
-		assertSubsetContextUsesWinningParentChainOrder(4, PackedJoinEnumerator.DENSE_SUBSETS);
+	void denseSubsetContextPreservesRetainedParentChainOrder() {
+		assertSubsetContextPreservesRetainedParentChainOrder(4, PackedJoinEnumerator.DENSE_SUBSETS);
 	}
 
 	@Test
-	void sparseSubsetContextUsesWinningParentChainOrder() {
-		assertSubsetContextUsesWinningParentChainOrder(17, PackedJoinEnumerator.SPARSE_LONG_SUBSETS);
+	void sparseSubsetContextPreservesRetainedParentChainOrder() {
+		assertSubsetContextPreservesRetainedParentChainOrder(17, PackedJoinEnumerator.SPARSE_LONG_SUBSETS);
 	}
 
-	private static void assertSubsetContextUsesWinningParentChainOrder(int factorCount, int expectedKernel) {
+	private static void assertSubsetContextPreservesRetainedParentChainOrder(int factorCount, int expectedKernel) {
 		assertEquals(expectedKernel, PackedJoinEnumerator.subsetKernelForFactorCount(factorCount));
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		List<TupleExpr> factors = new ArrayList<>(factorCount);
@@ -497,9 +562,13 @@ class PackedJoinOrderedPrefixTest {
 
 		runIncumbentSearch(leftDeepJoin(factors), Long.MAX_VALUE, costs);
 
-		assertEquals(
-				List.of(List.of("urn:f1", "urn:f0")),
-				prefixesSeenByThirdFactor.stream().distinct().toList());
+		List<List<String>> distinctPrefixes = prefixesSeenByThirdFactor.stream().distinct().toList();
+		assertTrue(distinctPrefixes.contains(List.of("urn:f1", "urn:f0")),
+				"the locally winning physical parent chain must remain available to its continuation");
+		assertTrue(distinctPrefixes.stream()
+				.allMatch(prefix -> prefix.equals(List.of("urn:f0", "urn:f1"))
+						|| prefix.equals(List.of("urn:f1", "urn:f0"))),
+				() -> "a retained continuation must preserve one complete parent chain: " + distinctPrefixes);
 	}
 
 	private static void runIncumbentSearch(TupleExpr source, long workLimit, PackedCostModel costs) {
@@ -583,4 +652,5 @@ class PackedJoinOrderedPrefixTest {
 
 	private record CompositionObservation(List<String> prefix, double prefixRows, double outputRows) {
 	}
+
 }

@@ -30,6 +30,7 @@ final class LogicalLearningKey {
 	private final String semantics;
 	private final String datasetScope;
 	private final String externalForm;
+	private final String digest;
 	private final int hashCode;
 
 	private LogicalLearningKey(String logicalOperator, String canonicalExpressionDigest, String childGroupDigest,
@@ -44,6 +45,7 @@ final class LogicalLearningKey {
 		this.semantics = LearningKeyCodec.canonicalLower(semantics, "bag|duplicate-sensitive|sparql-unbound");
 		this.datasetScope = LearningKeyCodec.canonical(datasetScope, "default");
 		this.externalForm = encode();
+		this.digest = LearningKeyCodec.digest(externalForm);
 		this.hashCode = Objects.hash(this.logicalOperator, this.canonicalExpressionDigest, this.childGroupDigest,
 				this.predicateValuesDigest, this.visibleVariables, this.requiredOuterVariables, this.semantics,
 				this.datasetScope);
@@ -96,7 +98,7 @@ final class LogicalLearningKey {
 	}
 
 	String digest() {
-		return LearningKeyCodec.digest(externalForm);
+		return digest;
 	}
 
 	void writeTo(DataOutputStream out) throws IOException {

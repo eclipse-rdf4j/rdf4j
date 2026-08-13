@@ -110,6 +110,11 @@ final class LmdbStatementPatternCardinalitySource {
 	}
 
 	OptionalDouble estimateDistinctCursorSkip(StatementPattern pattern, int maximumPrefixes) {
+		return estimateDistinctCursorSkip(pattern, null, maximumPrefixes);
+	}
+
+	private OptionalDouble estimateDistinctCursorSkip(StatementPattern pattern, Set<String> distinctVariables,
+			int maximumPrefixes) {
 		if (pattern == null || maximumPrefixes < 1) {
 			return OptionalDouble.empty();
 		}
@@ -122,7 +127,9 @@ final class LmdbStatementPatternCardinalitySource {
 					|| ctxId == Long.MIN_VALUE) {
 				return OptionalDouble.of(0.0d);
 			}
-			int distinctComponentMask = distinctComponentMask(pattern);
+			int distinctComponentMask = distinctVariables == null
+					? distinctComponentMask(pattern)
+					: distinctComponentMask(pattern, distinctVariables);
 			if (distinctComponentMask == 0) {
 				return OptionalDouble.empty();
 			}
@@ -133,8 +140,11 @@ final class LmdbStatementPatternCardinalitySource {
 			if (cached != null && (cached.complete() || cached.probedLimit() >= maximumPrefixes)) {
 				return cached.cardinality();
 			}
-			OptionalLong prefixes = tripleStore.boundedDistinctCursorSkipCardinality(pattern, subjId, predId, objId,
-					ctxId, maximumPrefixes);
+			OptionalLong prefixes = distinctVariables == null
+					? tripleStore.boundedDistinctCursorSkipCardinality(pattern, subjId, predId, objId, ctxId,
+							maximumPrefixes)
+					: tripleStore.boundedDistinctCursorSkipCardinality(pattern, distinctVariables, subjId, predId,
+							objId, ctxId, maximumPrefixes);
 			DistinctCardinalityProbe probe = prefixes.isPresent()
 					? DistinctCardinalityProbe.complete(prefixes.getAsLong())
 					: DistinctCardinalityProbe.incomplete(maximumPrefixes);
@@ -148,14 +158,10 @@ final class LmdbStatementPatternCardinalitySource {
 	}
 
 	OptionalDouble estimateDistinct(StatementPattern pattern, String variableName, int maximumPrefixes) {
-		if (pattern == null || variableName == null || variableName.isBlank() || maximumPrefixes < 1
-				|| !pattern.getBindingNames().contains(variableName)) {
+		if (pattern == null || variableName == null || variableName.isBlank() || maximumPrefixes < 1) {
 			return OptionalDouble.empty();
 		}
-		StatementPattern projected = pattern.clone();
-		new LmdbDistinctRequirement(Set.of(variableName), Set.of(), Set.of(), "join-key-evidence")
-				.annotate(projected);
-		return estimateDistinctCursorSkip(projected, maximumPrefixes);
+		return estimateDistinctCursorSkip(pattern, Set.of(variableName), maximumPrefixes);
 	}
 
 	private double estimate(StatementPattern pattern, boolean planning) {
@@ -331,6 +337,10 @@ final class LmdbStatementPatternCardinalitySource {
 		if (requirement == null) {
 			return 0;
 		}
+		return distinctComponentMask(pattern, requirement.distinctVars());
+	}
+
+	private static int distinctComponentMask(StatementPattern pattern, Set<String> distinctVariables) {
 		Var[] vars = {
 				pattern.getSubjectVar(),
 				pattern.getPredicateVar(),
@@ -340,7 +350,7 @@ final class LmdbStatementPatternCardinalitySource {
 		int mask = 0;
 		for (int component = 0; component < vars.length; component++) {
 			Var var = vars[component];
-			if (var != null && !var.hasValue() && requirement.distinctVars().contains(var.getName())) {
+			if (var != null && !var.hasValue() && distinctVariables.contains(var.getName())) {
 				mask |= 1 << component;
 			}
 		}

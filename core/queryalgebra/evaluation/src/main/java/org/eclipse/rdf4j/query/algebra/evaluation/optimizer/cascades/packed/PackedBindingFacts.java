@@ -28,6 +28,7 @@ final class PackedBindingFacts {
 	private final long[] scalarSafeToRelocateWords;
 	private final long[] scalarSafeWhenAssuredWords;
 	private final long[] scratch;
+	private int bindingValueCount;
 
 	PackedBindingFacts(PackedQuery query) {
 		this.query = query;
@@ -52,6 +53,10 @@ final class PackedBindingFacts {
 			throw new IndexOutOfBoundsException("unknown relation " + relationId);
 		}
 		return relationOutputMaskIds[query.relGroup(relationId)];
+	}
+
+	int bindingValueCount() {
+		return bindingValueCount;
 	}
 
 	int scalarDependencyMaskId(int scalarId) {
@@ -221,6 +226,8 @@ final class PackedBindingFacts {
 		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
 			int groupId = query.relGroup(relationId);
 			if ((derivedRelationGroupWords[groupId >>> 6] & (1L << groupId)) != 0L) {
+				bindingValueCount = Math.addExact(bindingValueCount,
+						masks.cardinality(relationOutputMaskIds[groupId]));
 				continue;
 			}
 			clearScratch();
@@ -254,6 +261,8 @@ final class PackedBindingFacts {
 			}
 			relationOutputMaskIds[groupId] = masks.intern(scratch, 0);
 			derivedRelationGroupWords[groupId >>> 6] |= 1L << groupId;
+			bindingValueCount = Math.addExact(bindingValueCount,
+					masks.cardinality(relationOutputMaskIds[groupId]));
 		}
 	}
 
@@ -463,6 +472,9 @@ final class PackedBindingFacts {
 	}
 
 	private void addNameSet(int payloadId) {
+		if (payloadId == 0) {
+			return;
+		}
 		for (int ordinal = 0; ordinal < query.payloadChildCount(payloadId); ordinal++) {
 			addNameObject(query.payloadChild(payloadId, ordinal));
 		}

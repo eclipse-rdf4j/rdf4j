@@ -48,6 +48,10 @@ final class PackedBindingSetArena {
 		return rows.childGroupId(rowId, ordinal * 2 + 1);
 	}
 
+	boolean hasSameRows(PackedBindingSetArena other) {
+		return other != null && rows.hasSameRows(other.rows);
+	}
+
 	void freeze() {
 		rows.freeze();
 	}

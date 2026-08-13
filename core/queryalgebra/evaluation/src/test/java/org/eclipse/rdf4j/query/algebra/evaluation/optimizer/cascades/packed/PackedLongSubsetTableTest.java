@@ -72,4 +72,42 @@ class PackedLongSubsetTableTest {
 			assertEquals(ordinal + 0.5d, table.appendedContributionRows(state), 0.0d);
 		}
 	}
+
+	@Test
+	void exactContinuationOffersKeepDistinctOrderedStatesForOneLogicalMask() {
+		PackedLongSubsetTable table = new PackedLongSubsetTable(2);
+
+		int localWinner = table.offerRetainedContinuation(0b0011L, 1.0d, 1.0d, 1.0d, 11, 0, 1, 1,
+				0b1110L, 21, 31, 41, 1);
+		int suffixWinner = table.offerRetainedContinuation(0b0011L, 1.0d, 2.0d, 1.0d, 12, 0, 2, 0,
+				0b1110L, 22, 32, 42, 1);
+
+		assertNotEquals(localWinner, suffixWinner,
+				"different ordered/evidence continuations must not overwrite one logical subset slot");
+		assertEquals(localWinner, table.find(0b0011L), "scalar scheduling may still index the cheapest state");
+		assertEquals(2, table.size());
+		assertEquals(11, table.evidenceStateId(localWinner));
+		assertEquals(12, table.evidenceStateId(suffixWinner));
+		assertEquals(2, table.parentStateId(suffixWinner));
+	}
+
+	@Test
+	void exactContinuationEquivalenceSurvivesPrimitiveIndexGrowth() {
+		PackedLongSubsetTable table = new PackedLongSubsetTable(1);
+		int first = table.offerRetainedContinuation(0b0011L, 3.0d, 5.0d, 2.0d, 17, 0, 1, 1,
+				0b1110L, 21, 31, 41, 1);
+
+		for (int ordinal = 0; ordinal < 100; ordinal++) {
+			long mask = 1L << ordinal % 17 | 1L << (ordinal + 5) % 17;
+			table.offerRetainedContinuation(mask, ordinal + 1.0d, ordinal + 2.0d, ordinal + 3.0d,
+					100 + ordinal, 0, 1, ordinal % 17, mask, 0, 0, ordinal + 1, 1);
+		}
+
+		int repeated = table.offerRetainedContinuation(0b0011L, 3.0d, 5.0d, 2.0d, 17, 0, 99, 0,
+				0b1110L, 22, 32, 42, 1);
+
+		assertEquals(first, repeated,
+				"an exact continuation signature must coalesce after primitive equivalence-table rehashing");
+		assertEquals(101, table.size(), "the repeated signature must not publish a second retained state");
+	}
 }

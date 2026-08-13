@@ -20,6 +20,42 @@ import org.junit.jupiter.api.Test;
 class PackedExpressionInternerTest {
 
 	@Test
+	void primitiveHashStepPreservesExactBitsForIntAndLongInputs() {
+		long[] hashes = { 0L, PackedPrimitiveHash.SEED, -1L, Long.MIN_VALUE, Long.MAX_VALUE };
+		int[] intValues = { 0, 1, -1, Integer.MIN_VALUE, Integer.MAX_VALUE };
+		long[] longValues = { 0L, 1L, -1L, Long.MIN_VALUE, Long.MAX_VALUE };
+
+		for (long hash : hashes) {
+			for (int value : intValues) {
+				assertEquals(referenceHashStep(hash, Integer.toUnsignedLong(value)),
+						PackedPrimitiveHash.step(hash, value));
+			}
+			for (long value : longValues) {
+				assertEquals(referenceHashStep(hash, value), PackedPrimitiveHash.step(hash, value));
+			}
+		}
+	}
+
+	@Test
+	void expressionInternerUsesTheExactPrimitiveHashFormula() {
+		PackedExpressionInterner interner = new PackedExpressionInterner(2, 4);
+		int[] children = { 11, 12, 13 };
+
+		int expressionId = interner.internLogical(1, 7, 3, 5, 9, children, 0, children.length);
+		long hash = referenceHashStep(PackedPrimitiveHash.SEED, 7);
+		hash = referenceHashStep(hash, 3);
+		hash = referenceHashStep(hash, 5);
+		hash = referenceHashStep(hash, 9);
+		hash = referenceHashStep(hash, children.length);
+		for (int child : children) {
+			hash = referenceHashStep(hash, child);
+		}
+
+		assertEquals(expressionId,
+				interner.internLogicalHashed(referenceHashFinish(hash), 1, 7, 3, 5, 9, children, 0, children.length));
+	}
+
+	@Test
 	void repeatedInsertionReturnsExistingExpression() {
 		PackedExpressionInterner interner = new PackedExpressionInterner(2, 4);
 		int[] children = { 11, 12, 13 };
@@ -68,5 +104,18 @@ class PackedExpressionInternerTest {
 			assertEquals(i, interner.internLogical(i, i, i + 1, i + 2, i + 3, new int[] { i + 4 }, 0, 1));
 		}
 		assertEquals(100, interner.size());
+	}
+
+	private static long referenceHashStep(long hash, long value) {
+		long mixed = hash ^ value + PackedPrimitiveHash.SEED + (hash << 6) + (hash >>> 2);
+		return Long.rotateLeft(mixed * 0xbf58476d1ce4e5b9L, 27);
+	}
+
+	private static long referenceHashFinish(long value) {
+		value ^= value >>> 30;
+		value *= 0xbf58476d1ce4e5b9L;
+		value ^= value >>> 27;
+		value *= 0x94d049bb133111ebL;
+		return value ^ value >>> 31;
 	}
 }

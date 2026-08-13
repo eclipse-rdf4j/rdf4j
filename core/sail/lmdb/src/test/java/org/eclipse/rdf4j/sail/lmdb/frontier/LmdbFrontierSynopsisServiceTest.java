@@ -269,11 +269,13 @@ class LmdbFrontierSynopsisServiceTest {
 				long[] values = block.values();
 				for (int offset = 0; offset < values.length; offset += 12) {
 					records++;
+					assertEquals(2L, values[offset]);
 					long direction = values[offset + 1];
 					long flags = values[offset + 4];
 					assertEquals(1.0d, Double.longBitsToDouble(values[offset + 9]));
 					assertEquals(1.0d, Double.longBitsToDouble(values[offset + 10]));
 					assertTrue((flags & 0b10L) != 0L, "complete retention must be marked database exact");
+					assertTrue((flags & (1L << 3)) != 0L, "complete retention is shared across logical lanes");
 					if (direction == FrontierManifestIdentity.SUBJECT_TO_OBJECT_DIRECTION) {
 						forwardRecords++;
 						sawForwardFirstRow |= values[offset + 5] == 11L
@@ -296,16 +298,77 @@ class LmdbFrontierSynopsisServiceTest {
 			}
 		}
 
-		assertEquals(24, records, "three rows must be retained across two directions and four lanes");
-		assertEquals(12, forwardRecords);
-		assertEquals(12, reverseRecords);
-		assertEquals(16, explicitRecords);
-		assertEquals(8, inferredRecords);
+		assertEquals(6, records, "three exact rows need one physical record per direction");
+		assertEquals(3, forwardRecords);
+		assertEquals(3, reverseRecords);
+		assertEquals(4, explicitRecords);
+		assertEquals(2, inferredRecords);
 		assertTrue(sawForwardFirstRow);
 		assertTrue(sawReverseFirstRow);
 		assertEquals(1, snapshots.opens.get());
 		assertEquals(snapshots.opens.get(), snapshots.closes.get());
 		assertTrue(snapshots.scans.get() >= 4, "a bounded multipass build must scan both explicitness planes");
+	}
+
+	@Test
+	void payloadV2DeduplicatesExactRowsAndExpandsEveryLogicalLane(@TempDir Path frontierDirectory) throws Exception {
+		long[][] explicitRows = {
+				{ 11L, 21L, 31L, 0L }
+		};
+		RowsSnapshotFactory snapshots = new RowsSnapshotFactory(PINNED_EPOCH, explicitRows, new long[0][]);
+		LmdbFrontierSynopsisService service = openBootstrap(frontierDirectory,
+				FrontierEstimatorMode.AUTHORITATIVE, identity(STORE_ID, PINNED_EPOCH), snapshots,
+				NioFrontierFileOps.INSTANCE);
+		try {
+			assertEquals(FrontierSynopsisStatus.READY, rebuild(service));
+
+			FrontierManifest manifest = new FrontierManifestStore(frontierDirectory, NioFrontierFileOps.INSTANCE)
+					.load();
+			Path payload = frontierDirectory.resolve(manifest.payload().fileName());
+			byte[] encoded = Files.readAllBytes(payload);
+			assertEquals(2, ByteBuffer.wrap(encoded).getInt(Integer.BYTES),
+					"newly published payload blocks must use the v2 envelope");
+
+			FrontierPayloadBlockLimits limits = new FrontierPayloadBlockLimits(
+					POSITIVE_BUDGET_BYTES,
+					64 * 1024,
+					POSITIVE_BUDGET_BYTES / Long.BYTES,
+					1024,
+					16);
+			int physicalRecords = 0;
+			try (InputStream input = Files.newInputStream(payload)) {
+				FrontierPayloadBlockReader reader = new FrontierPayloadBlockReader(input, manifest.payload(), limits);
+				for (FrontierPayloadBlock block = reader.readBlock(); block != null; block = reader.readBlock()) {
+					long[] values = block.values();
+					for (int offset = 0; offset < values.length; offset += block.longsPerRecord()) {
+						physicalRecords++;
+						assertEquals(2L, values[offset], "new records must use the v2 record format");
+						assertEquals(FrontierManifestIdentity.ALL_LANE_ROLES, values[offset + 2]);
+						assertEquals(-1L, values[offset + 3], "shared exact records have no single lane index");
+						assertTrue((values[offset + 4] & (1L << 3)) != 0L,
+								"v2 exact rows must declare lane-sharing explicitly");
+					}
+				}
+			}
+			assertEquals(2, physicalRecords,
+					"one exact quad needs one physical record per direction, independent of lane count");
+
+			AtomicInteger logicalRecords = new AtomicInteger();
+			FrontierSynopsisReadResult read = service.scanSnapshot(PINNED_EPOCH,
+					(direction, laneRole, laneIndex, explicit, databaseExact, centerId, predicateId, neighborId,
+							contextId, weight, inclusionProbability, laneHash) -> {
+						logicalRecords.incrementAndGet();
+						assertTrue(databaseExact);
+						assertTrue(laneRole == FrontierManifestIdentity.DESIGN_LANE_ROLE
+								|| laneRole == FrontierManifestIdentity.AUDIT_LANE_ROLE);
+						assertTrue(laneIndex == 0 || laneIndex == 1);
+					});
+			assertEquals(FrontierSynopsisStatus.READY, read.status());
+			assertEquals(8L, read.recordCount(), "two directions must expand over two design and two audit lanes");
+			assertEquals(8, logicalRecords.get());
+		} finally {
+			service.close();
+		}
 	}
 
 	@Test
@@ -334,7 +397,7 @@ class LmdbFrontierSynopsisServiceTest {
 			long subject = index < 20 ? heavyCenter : 1_000L + index;
 			explicitRows[index] = new long[] { subject, 21L, 2_000L + index, 0L };
 		}
-		long budgetBytes = 64L * 1024L;
+		long budgetBytes = 32L * 1024L;
 		RowsSnapshotFactory snapshots = new RowsSnapshotFactory(PINNED_EPOCH, explicitRows, new long[0][]);
 		LmdbFrontierSynopsisService service = openBootstrap(frontierDirectory,
 				FrontierEstimatorMode.AUTHORITATIVE, identity(STORE_ID, PINNED_EPOCH, budgetBytes), snapshots,

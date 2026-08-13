@@ -1256,7 +1256,7 @@
 					<version>3.5.4</version>
 					<configuration>
                         <!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
-						<argLine>@{argLine} ${mockito.javaagent} -Xmx4G -Djava.awt.headless=true</argLine>
+						<argLine>@{argLine} ${mockito.javaagent} -Xmx16G -Djava.awt.headless=true</argLine>
 						<forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
 						<forkedProcessExitTimeoutInSeconds>120</forkedProcessExitTimeoutInSeconds>
 						<systemPropertyVariables>
@@ -1275,7 +1275,7 @@
 						<forkCount>1</forkCount>
 						<reuseForks>true</reuseForks>
                         <!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
-						<argLine>@{argLine} ${mockito.javaagent} -Xmx4G -Djava.awt.headless=true</argLine>
+						<argLine>@{argLine} ${mockito.javaagent} -Xmx16G -Djava.awt.headless=true</argLine>
 						<forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
 						<forkedProcessExitTimeoutInSeconds>120</forkedProcessExitTimeoutInSeconds>
 						<systemPropertyVariables>

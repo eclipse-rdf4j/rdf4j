@@ -163,6 +163,35 @@ public record EvidenceStateSummary(
 				"");
 	}
 
+	/** Creates a non-statistical state whose cardinality interval is certified independently of its point estimate. */
+	public static EvidenceStateSummary certifiedBounds(
+			double pointRows,
+			double lowerRows,
+			double upperRows,
+			String reason) {
+		requireFiniteNonNegative(pointRows, "pointRows");
+		requireFiniteNonNegative(lowerRows, "lowerRows");
+		requireNonNegativeBound(upperRows, "upperRows");
+		if (lowerRows > pointRows || pointRows > upperRows) {
+			throw new IllegalArgumentException("certified row bounds must contain pointRows");
+		}
+		return new EvidenceStateSummary(
+				pointRows,
+				lowerRows,
+				upperRows,
+				0.0d,
+				EvidenceIntervalKind.NONE,
+				Double.POSITIVE_INFINITY,
+				Double.POSITIVE_INFINITY,
+				Double.POSITIVE_INFINITY,
+				0.0d,
+				pointRows == 0.0d ? 0.0d : 1.0d,
+				upperRows,
+				EvidenceGuarantee.CERTIFIED_BOUND_ONLY,
+				pointRows == 0.0d ? EvidenceZeroStatus.UNRESOLVED : EvidenceZeroStatus.POSITIVE,
+				reason);
+	}
+
 	public static EvidenceStateSummary unresolved(double pointRows, double upperRows, String reason) {
 		return unresolved(pointRows, upperRows, upperRows, reason);
 	}

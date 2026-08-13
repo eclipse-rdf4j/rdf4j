@@ -102,6 +102,7 @@ import org.eclipse.rdf4j.query.algebra.TripleComponent;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -132,10 +133,23 @@ final class PackedQueryCodec {
 		return encode(root, true, rangeProvider);
 	}
 
+	static PackedQuery encodeForCacheIdentity(TupleExpr root, Map<String, Integer> anonymousNames) {
+		Objects.requireNonNull(anonymousNames, "anonymousNames");
+		return encode(root, false, null, anonymousNames, false).withoutOriginalBindingSets();
+	}
+
 	private static PackedQuery encode(TupleExpr root, boolean normalizeFiniteFilters,
 			PackedPredicateRangeProvider rangeProvider) {
+		return encode(root, normalizeFiniteFilters, rangeProvider, Map.of(), true);
+	}
+
+	private static PackedQuery encode(TupleExpr root, boolean normalizeFiniteFilters,
+			PackedPredicateRangeProvider rangeProvider, Map<String, Integer> anonymousNames,
+			boolean retainAnnotations) {
 		Objects.requireNonNull(root, "root");
-		Builder builder = new Builder(normalizeFiniteFilters, rangeProvider);
+		EncodingShape shape = EncodingShape.measure(root);
+		Builder builder = new Builder(normalizeFiniteFilters, rangeProvider, shape, anonymousNames,
+				retainAnnotations);
 		int rootRelId = builder.relation(root, "root");
 		builder.deriveFactsAndSaturateRules();
 		return new PackedQuery(rootRelId, builder.relations, builder.scalars, builder.payloads, builder.bindingSets,
@@ -220,16 +234,43 @@ final class PackedQueryCodec {
 		return true;
 	}
 
+	private static final class EncodingShape extends AbstractQueryModelVisitor<RuntimeException> {
+
+		private int relationNodes;
+		private int valueNodes;
+		private int termNodes;
+
+		private static EncodingShape measure(TupleExpr root) {
+			EncodingShape shape = new EncodingShape();
+			root.visit(shape);
+			return shape;
+		}
+
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			if (node instanceof TupleExpr) {
+				relationNodes++;
+			}
+			if (node instanceof ValueExpr) {
+				valueNodes++;
+			}
+			if (node instanceof Var) {
+				termNodes++;
+			}
+			super.meetNode(node);
+		}
+	}
+
 	private static final class Builder {
 		private static final int MAX_FINITE_FILTER_VALUES = 64;
 
 		private static final int[] NO_CHILDREN = new int[0];
 
-		private final PackedExpressionInterner relations = new PackedExpressionInterner(32, 48);
-		private final PackedExpressionInterner scalars = new PackedExpressionInterner(32, 48);
+		private final PackedExpressionInterner relations;
+		private final PackedExpressionInterner scalars;
 		private final PackedExpressionInterner payloads = new PackedExpressionInterner(32, 64);
 		private final PackedBindingSetArena bindingSets = new PackedBindingSetArena(8, 24);
-		private final PackedNodeMetadataArena metadata = new PackedNodeMetadataArena();
+		private final PackedNodeMetadataArena metadata;
 		private final PackedObjectPool objects = new PackedObjectPool(32);
 		private final PackedSymbolTable symbols = new PackedSymbolTable();
 		private final boolean normalizeFiniteFilters;
@@ -238,18 +279,26 @@ final class PackedQueryCodec {
 		private final PackedPredicateRange rangeSlot;
 		private final PackedPredicateRangeArena rangeArena;
 		private final PackedDomainFacts domainFacts;
+		private final Map<String, Integer> anonymousNames;
+		private final boolean retainAnnotations;
 		private final int[] unary = new int[1];
 		private final int[] binary = new int[2];
 		private final int[] ternary = new int[3];
 		private final int[] statementTerms = new int[4];
 		private int[] scratch = new int[32];
 		private int scratchSize;
-		private long[] factDerivedGroupWords = new long[1];
+		private int serviceDepth;
 		private byte[] originalBindingSetRelations = new byte[16];
 		private Object[] originalBindingSets = new Object[16];
 
-		private Builder(boolean normalizeFiniteFilters, PackedPredicateRangeProvider rangeProvider) {
+		private Builder(boolean normalizeFiniteFilters, PackedPredicateRangeProvider rangeProvider,
+				EncodingShape shape, Map<String, Integer> anonymousNames, boolean retainAnnotations) {
+			relations = new PackedExpressionInterner(shape.relationNodes, shape.relationNodes);
+			scalars = new PackedExpressionInterner(shape.valueNodes, shape.valueNodes);
+			metadata = new PackedNodeMetadataArena(shape.relationNodes, shape.valueNodes, shape.termNodes);
 			this.normalizeFiniteFilters = normalizeFiniteFilters;
+			this.anonymousNames = anonymousNames;
+			this.retainAnnotations = retainAnnotations;
 			this.rangeProvider = normalizeFiniteFilters ? rangeProvider : null;
 			rangeSlot = this.rangeProvider == null ? null : new PackedPredicateRange();
 			rangeArena = this.rangeProvider == null ? null : new PackedPredicateRangeArena();
@@ -263,11 +312,13 @@ final class PackedQueryCodec {
 		private int relation(TupleExpr expression, String path) {
 			int flags = nodeFlags(expression);
 			int relationId = relationStructure(expression, path, flags);
-			int algorithmNameId = expression instanceof BinaryTupleOperator binary
+			int algorithmNameId = retainAnnotations && expression instanceof BinaryTupleOperator binary
 					? objects.intern(binary.getAlgorithmName())
 					: 0;
-			metadata.attachRelation(relationId, plannedMetricsPayload(expression), flags,
-					expression.getResultSizeEstimate(), expression.getCostEstimate(), algorithmNameId);
+			metadata.attachRelation(relationId, retainAnnotations ? plannedMetricsPayload(expression) : 0, flags,
+					retainAnnotations ? expression.getResultSizeEstimate() : 0.0d,
+					retainAnnotations ? expression.getCostEstimate() : 0.0d,
+					retainAnnotations ? algorithmNameId : 0);
 			return relationId;
 		}
 
@@ -289,39 +340,39 @@ final class PackedQueryCodec {
 		}
 
 		/**
-		 * Explicit fact-derive and rule-saturate phases over the frozen encoded structure: predicate-range facts
-		 * propagate bottom-up first, then the logical rule program drains the append-only relation interner. Rules are
-		 * idempotent and each relation is marked after its first visit, so re-discovered alternatives are no-ops while
-		 * alternatives created by an earlier rule still receive every applicable downstream rule before the query is
-		 * frozen.
+		 * Drains the append-only relation interner and predicate-range lattice to one joint fixpoint. A rewrite may
+		 * append an intermediate group whose value facts expose another rewrite, so facts and rules cannot be separated
+		 * into two one-shot phases. Rules are idempotent and are revisited only when the monotone fact revision
+		 * advances; structural interning makes rediscovered alternatives no-ops. The query is frozen only after neither
+		 * facts nor relations change during a complete pass.
 		 */
 		private void deriveFactsAndSaturateRules() {
 			if (logicalRules == null) {
 				return;
 			}
-			int encodedRelationCount = relations.size();
 			if (domainFacts != null) {
-				for (int relationId = 1; relationId <= encodedRelationCount; relationId++) {
-					deriveGroupFacts(relationId);
-				}
 				logicalRules.attachDomainFacts(domainFacts);
 			}
-			for (int relationId = 1; relationId <= relations.size(); relationId++) {
-				logicalRules.apply(relationId);
-			}
+			int previousRelationCount;
+			int previousFactRevision;
+			do {
+				previousRelationCount = relations.size();
+				previousFactRevision = factRevision();
+				for (int relationId = 1; relationId <= relations.size(); relationId++) {
+					if (domainFacts != null) {
+						deriveGroupFacts(relationId);
+					}
+					logicalRules.apply(relationId, factRevision());
+				}
+			} while (relations.size() != previousRelationCount || factRevision() != previousFactRevision);
+		}
+
+		private int factRevision() {
+			return domainFacts == null ? 1 : domainFacts.revision();
 		}
 
 		private void deriveGroupFacts(int relationId) {
 			int groupId = relations.groupId(relationId);
-			int wordIndex = groupId >>> 6;
-			if (wordIndex >= factDerivedGroupWords.length) {
-				factDerivedGroupWords = Arrays.copyOf(factDerivedGroupWords, wordIndex + 1);
-			}
-			long bit = 1L << groupId;
-			if ((factDerivedGroupWords[wordIndex] & bit) != 0L) {
-				return;
-			}
-			factDerivedGroupWords[wordIndex] |= bit;
 			switch (relations.operatorTag(relationId)) {
 			case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT -> {
 				// Statement patterns are seeded at encode time; binding-set assignments seed below.
@@ -561,7 +612,13 @@ final class PackedQueryCodec {
 				return unaryRelation(PackedRelOp.GROUP, payload, input, nodeFlags);
 			}
 			if (expression instanceof Service service) {
-				int input = relation(service.getServiceExpr(), path + ".arg");
+				int input;
+				serviceDepth++;
+				try {
+					input = relation(service.getServiceExpr(), path + ".arg");
+				} finally {
+					serviceDepth--;
+				}
 				return unaryRelation(PackedRelOp.SERVICE, servicePayload(service), input, nodeFlags);
 			}
 			if (expression instanceof Lateral lateral) {
@@ -599,7 +656,21 @@ final class PackedQueryCodec {
 			if (expression instanceof SingletonSet) {
 				return relations.internCanonical(PackedRelOp.SINGLETON_SET, 0, nodeFlags, 0, NO_CHILDREN, 0, 0);
 			}
-			throw new UnsupportedCascadesOperatorException(expression.getClass(), path);
+			return unsupportedTuple(expression, path, nodeFlags);
+		}
+
+		private int unsupportedTuple(TupleExpr expression, String path, int nodeFlags) {
+			int payload = payloads.internCanonical(PackedPayloadOp.UNSUPPORTED,
+					objects.intern(expression.getClass().getName()), objects.intern(path), 0, NO_CHILDREN, 0, 0);
+			if (expression instanceof UnaryTupleOperator unaryOperator) {
+				return unaryRelation(PackedRelOp.UNSUPPORTED, payload,
+						relation(unaryOperator.getArg(), path + ".arg"), nodeFlags);
+			}
+			if (expression instanceof BinaryTupleOperator binaryOperator) {
+				return binaryRelation(PackedRelOp.UNSUPPORTED, payload, binaryOperator.getLeftArg(),
+						binaryOperator.getRightArg(), path, nodeFlags);
+			}
+			return relations.internCanonical(PackedRelOp.UNSUPPORTED, payload, nodeFlags, 0, NO_CHILDREN, 0, 0);
 		}
 
 		private int unaryRelation(int operator, TupleExpr input, String path, int nodeFlags) {
@@ -637,7 +708,7 @@ final class PackedQueryCodec {
 		}
 
 		private void seedStatementPatternFact(StatementPattern pattern, int relationId) {
-			if (rangeProvider == null) {
+			if (rangeProvider == null || serviceDepth != 0) {
 				return;
 			}
 			Var predicateVar = pattern.getPredicateVar();
@@ -1073,8 +1144,9 @@ final class PackedQueryCodec {
 			if (ScalarEvaluationEffects.reorderingIsSafe(expression)) {
 				flags |= PackedNodeMetadataArena.SCALAR_REORDERING_SAFE;
 			}
-			metadata.attachScalar(scalarId, plannedMetricsPayload(expression), flags,
-					expression.getResultSizeEstimate(), expression.getCostEstimate());
+			metadata.attachScalar(scalarId, retainAnnotations ? plannedMetricsPayload(expression) : 0, flags,
+					retainAnnotations ? expression.getResultSizeEstimate() : 0.0d,
+					retainAnnotations ? expression.getCostEstimate() : 0.0d);
 			return scalarId;
 		}
 
@@ -1265,7 +1337,7 @@ final class PackedQueryCodec {
 				statementTerms[1] = term(tripleRef.getPredicateVar());
 				statementTerms[2] = term(tripleRef.getObjectVar());
 				int payload = payloads.internCanonical(PackedPayloadOp.VALUE_TRIPLE_REF,
-						objects.intern(tripleRef.getExtVarName()), 0, 0, statementTerms, 0, 3);
+						objects.intern(cacheIdentityName(tripleRef.getExtVarName())), 0, 0, statementTerms, 0, 3);
 				return scalars.internCanonical(PackedScalarOp.VALUE_TRIPLE_REF, payload, 0, 0, NO_CHILDREN, 0, 0);
 			}
 			if (expression instanceof TripleComponent component) {
@@ -1337,7 +1409,7 @@ final class PackedQueryCodec {
 			if (variable.isBNode()) {
 				flags |= PackedQuery.TERM_BNODE;
 			}
-			int nameId = objects.intern(variable.getName());
+			int nameId = objects.intern(cacheIdentityName(variable.getName()));
 			if (!variable.hasValue()) {
 				symbols.intern(nameId);
 			}
@@ -1346,15 +1418,24 @@ final class PackedQueryCodec {
 			int metadataFlags = variable.isVariableScopeChange()
 					? PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE
 					: 0;
-			metadata.attachTerm(termId, plannedMetricsPayload(variable), metadataFlags,
-					variable.getResultSizeEstimate(), variable.getCostEstimate());
+			metadata.attachTerm(termId, retainAnnotations ? plannedMetricsPayload(variable) : 0, metadataFlags,
+					retainAnnotations ? variable.getResultSizeEstimate() : 0.0d,
+					retainAnnotations ? variable.getCostEstimate() : 0.0d);
 			return termId;
 		}
 
 		private int bindingName(String name) {
-			int objectId = objects.intern(name);
+			int objectId = objects.intern(cacheIdentityName(name));
 			symbols.intern(objectId);
 			return objectId;
+		}
+
+		private Object cacheIdentityName(String name) {
+			if (name == null) {
+				return null;
+			}
+			Integer ordinal = anonymousNames.get(name);
+			return ordinal == null ? name : new CanonicalAnonymousName(ordinal);
 		}
 
 		private int plannedMetricsPayload(QueryModelNode node) {
@@ -1422,5 +1503,8 @@ final class PackedQueryCodec {
 		private void releaseScratch(int start) {
 			scratchSize = start;
 		}
+	}
+
+	private record CanonicalAnonymousName(int ordinal) {
 	}
 }

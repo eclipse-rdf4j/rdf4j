@@ -91,6 +91,8 @@ class FrontierMultinomialResamplerTest {
 		double[] weights = { 1.0d, 3.0d };
 		int[] first = FrontierMultinomialResampler.drawCounts(weights, 512, 42L);
 		int[] second = FrontierMultinomialResampler.drawCounts(weights, 512, 42L);
+		assertArrayEquals(new int[] { 136, 376 }, first,
+				"the stateless seed schedule must keep the exact planner sampling sequence stable");
 		assertArrayEquals(first, second, "identical seeds must produce identical draw counts");
 		assertEquals(512, first[0] + first[1]);
 		assertTrue(first[1] > first[0], "the category carrying three quarters of the mass must dominate 512 draws");

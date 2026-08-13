@@ -17,6 +17,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
@@ -130,6 +131,10 @@ final class PackedPlanMaterializer {
 		}
 		TupleExpr result = relation(query, recipe, recipe.rootRecipeId());
 		applyCacheValidation(recipe, result);
+		result.setStringMetricPlannedDeferred("optimizer.packedExplanation", recipe::describeCostingDecisions);
+		Supplier<String> explanationJson = recipe::describeCostingDecisionsJson;
+		result.setStringMetricPlannedDeferred("optimizer.packedExplanationJson", explanationJson);
+		result.setStringMetricPlannedDeferred("optimizer.cascadesTraceJson", explanationJson);
 		return result;
 	}
 
@@ -140,6 +145,8 @@ final class PackedPlanMaterializer {
 		}
 		root.setStringMetricPlanned("optimizer.planCacheValidationResult", event.result());
 		root.setStringMetricPlanned("optimizer.planCacheValidationReason", event.reason());
+		root.setStringMetricPlanned("optimizer.planCacheValidationChangedDimensions",
+				event.changedDimensions().isEmpty() ? "none" : event.changedDimensions());
 		root.setStringMetricPlanned("optimizer.costEventPhase", "cache-validation");
 		root.setStringMetricPlanned("optimizer.costEventDigest", event.digest());
 		root.setDoubleMetricPlanned("optimizer.costEventOrdinal", event.eventOrdinal());
@@ -148,6 +155,7 @@ final class PackedPlanMaterializer {
 		root.setDoubleMetricPlanned("optimizer.planCacheValidationWorkUnits", event.workUnits());
 		root.setDoubleMetricPlanned("optimizer.planCacheDataRevision", event.dataRevision());
 		root.setDoubleMetricPlanned("optimizer.planCacheLeoRevision", event.leoRevision());
+		root.setDoubleMetricPlanned("optimizer.planCacheFrontierRevision", event.frontierRevision());
 	}
 
 	private static TupleExpr relation(PackedQuery query, PackedPlanRecipe recipe, int nodeId) {
@@ -196,6 +204,7 @@ final class PackedPlanMaterializer {
 		case PackedRelOp.SERVICE -> service(query, recipe, nodeId);
 		case PackedRelOp.TUPLE_FUNCTION -> tupleFunction(query, payloadId);
 		case PackedRelOp.SEMI_JOIN, PackedRelOp.ANTI_JOIN -> semiAntiJoin(query, recipe, nodeId);
+		case PackedRelOp.UNSUPPORTED -> unsupportedBoundary(query, payloadId);
 		default -> throw new PackedMemoInvariantException(
 				"unknown packed relational opcode " + relOperator(query, recipe, nodeId));
 		};
@@ -209,6 +218,13 @@ final class PackedPlanMaterializer {
 			verifyDependentJoinCostingContext(recipe, nodeId);
 		}
 		return result;
+	}
+
+	private static TupleExpr unsupportedBoundary(PackedQuery query, int payloadId) {
+		requirePayload(query, payloadId, PackedPayloadOp.UNSUPPORTED);
+		throw UnsupportedCascadesOperatorException.packedBoundary(
+				(String) query.objectValue(query.payloadPrimary(payloadId)),
+				(String) query.objectValue(query.payloadSecondary(payloadId)));
 	}
 
 	private static void verifyDependentJoinCostingContext(PackedPlanRecipe recipe, int recipeId) {
@@ -768,9 +784,13 @@ final class PackedPlanMaterializer {
 			node.setDoubleMetricPlanned(recipe.plannedDoubleMetricName(recipeId, ordinal),
 					recipe.plannedDoubleMetricValue(recipeId, ordinal));
 		}
-		if (node instanceof Join
+		if ((node instanceof Join || node instanceof LeftJoin)
 				&& recipe.implementationForm(recipeId) == PackedJoinEnumerator.HASH_JOIN_IMPLEMENTATION) {
 			node.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash");
+		}
+		if (node instanceof LeftJoin
+				&& recipe.implementationForm(recipeId) == PackedJoinEnumerator.MEMOIZED_LEFT_JOIN_IMPLEMENTATION) {
+			node.setStringMetricPlanned("optimizer.leftJoinAlgorithmHint", "memoized");
 		}
 	}
 
@@ -832,6 +852,8 @@ final class PackedPlanMaterializer {
 		setStringMetric(node, TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, trace.estimateSource(eventId));
 		setStringMetric(node, "plannedEstimateFusion", trace.estimateFusion(eventId));
 		node.setDoubleMetricPlanned("optimizer.costEventOrdinal", eventId);
+		node.setStringMetricPlanned("optimizer.costEventCostScope",
+				trace.costScope(eventId) == PackedCostEstimate.CostScope.INCLUSIVE ? "inclusive" : "local");
 		node.setStringMetricPlanned("optimizer.costEventPhase", trace.phase(eventId).metricValue());
 		node.setStringMetricPlanned("optimizer.costEventContextFingerprint",
 				Long.toUnsignedString(trace.contextFingerprint(eventId), 16));

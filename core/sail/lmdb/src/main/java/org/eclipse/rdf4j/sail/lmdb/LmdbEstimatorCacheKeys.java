@@ -20,12 +20,51 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceProfile;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateSummary;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
+
+record SemanticEstimateCacheKey(Object expression, Set<String> boundNames,
+		FiniteRelationEstimate finiteBindings, EvidenceProfile prefixEvidence,
+		EvidenceStateSummary prefixState, long invocationCountBits,
+		EstimateContext.EvidencePolicy evidencePolicy,
+		JoinFactorCostModel.EstimationTier estimationTier,
+		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision,
+		EstimateContext.MetricsPreference metricsPreference, boolean exactProbePermitted) {
+
+	static SemanticEstimateCacheKey of(TupleExpr expression, EstimateContext context) {
+		return of(expression, context, null);
+	}
+
+	static SemanticEstimateCacheKey of(TupleExpr expression, EstimateContext context,
+			LmdbEstimatorOptimizationScope scope) {
+		return new SemanticEstimateCacheKey(
+				FactorCostCacheKey.factorFingerprint(expression, scope),
+				Set.copyOf(context.boundNames()),
+				context.finiteBindings().orElse(null),
+				context.prefixEstimate().evidenceProfile(),
+				context.prefixEstimate().evidenceState().map(reference -> reference.summary()).orElse(null),
+				Double.doubleToLongBits(context.invocationCount()),
+				context.evidencePolicy(),
+				context.estimationTier(),
+				context.snapshotIdentity(),
+				context.snapshotVersion(),
+				context.learnedRevision(),
+				context.metricsPreference(),
+				context.exactProbePermitted());
+	}
+}
 
 record ExactAlternativeSurfaceCacheKey(Object factor, QuadSnapshotIdentity snapshotIdentity, long snapshotVersion) {
 
 	static ExactAlternativeSurfaceCacheKey of(TupleExpr factor, EstimateContext estimateContext) {
-		return new ExactAlternativeSurfaceCacheKey(FactorCostCacheKey.factorFingerprint(factor),
+		return of(factor, estimateContext, null);
+	}
+
+	static ExactAlternativeSurfaceCacheKey of(TupleExpr factor, EstimateContext estimateContext,
+			LmdbEstimatorOptimizationScope scope) {
+		return new ExactAlternativeSurfaceCacheKey(FactorCostCacheKey.factorFingerprint(factor, scope),
 				estimateContext.snapshotIdentity(), estimateContext.snapshotVersion());
 	}
 }
@@ -36,10 +75,17 @@ record PrefixEstimateCacheKey(FiniteBranchRowsCacheKey factors, long rowsBits,
 
 	static PrefixEstimateCacheKey of(List<TupleExpr> factors, double rows,
 			JoinFactorCostModel.EstimationTier estimationTier, EstimateContext estimateContext) {
+		return of(factors, rows, estimationTier, estimateContext, null);
+	}
+
+	static PrefixEstimateCacheKey of(List<TupleExpr> factors, double rows,
+			JoinFactorCostModel.EstimationTier estimationTier, EstimateContext estimateContext,
+			LmdbEstimatorOptimizationScope scope) {
 		JoinFactorCostModel.EstimationTier tier = estimationTier == null
 				? JoinFactorCostModel.EstimationTier.STANDARD
 				: estimationTier;
-		return new PrefixEstimateCacheKey(FiniteBranchRowsCacheKey.of(factors), Double.doubleToLongBits(rows), tier,
+		return new PrefixEstimateCacheKey(FiniteBranchRowsCacheKey.of(factors, false, scope),
+				Double.doubleToLongBits(rows), tier,
 				estimateContext.snapshotIdentity(), estimateContext.snapshotVersion(),
 				estimateContext.learnedRevision());
 	}
@@ -53,13 +99,18 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 
 	static ScopedFactorCostCacheKey of(TupleExpr factor, JoinFactorCostModel.CostContext context,
 			EstimateContext estimateContext) {
+		return of(factor, context, estimateContext, null);
+	}
+
+	static ScopedFactorCostCacheKey of(TupleExpr factor, JoinFactorCostModel.CostContext context,
+			EstimateContext estimateContext, LmdbEstimatorOptimizationScope scope) {
 		JoinFactorCostModel.EstimationTier tier = context.getEstimationTier() == null
 				? JoinFactorCostModel.EstimationTier.STANDARD
 				: context.getEstimationTier();
-		FiniteBranchRowsCacheKey prefixFactors = FiniteBranchRowsCacheKey.of(context.getPrefixFactors());
+		FiniteBranchRowsCacheKey prefixFactors = FiniteBranchRowsCacheKey.of(context.getPrefixFactors(), false, scope);
 		// A cached factor cost bakes in learned calibration; a mid-planning calibration update (e.g. a live
 		// filter sample) must not let pre-update entries mix with post-update computations.
-		return new ScopedFactorCostCacheKey(FactorCostCacheKey.factorFingerprint(factor),
+		return new ScopedFactorCostCacheKey(FactorCostCacheKey.factorFingerprint(factor, scope),
 				FactorCostCacheKey.immutableBoundVars(context.getCurrentlyBoundVars()),
 				Double.doubleToLongBits(context.getOuterPrefixRows()),
 				Double.doubleToLongBits(context.getDistinctLookupBindings()),
@@ -98,10 +149,15 @@ record FiniteDerivedPrefixCacheKey(Map<Object, Integer> factors,
 
 	static FiniteDerivedPrefixCacheKey of(List<TupleExpr> factors,
 			Map<String, Set<Value>> finiteBindingValues) {
+		return of(factors, finiteBindingValues, null);
+	}
+
+	static FiniteDerivedPrefixCacheKey of(List<TupleExpr> factors,
+			Map<String, Set<Value>> finiteBindingValues, LmdbEstimatorOptimizationScope scope) {
 		Map<Object, Integer> occurrences = new HashMap<>();
 		if (factors != null) {
 			for (TupleExpr factor : factors) {
-				occurrences.merge(FactorCostCacheKey.factorFingerprint(factor), 1, Integer::sum);
+				occurrences.merge(FactorCostCacheKey.factorFingerprint(factor, scope), 1, Integer::sum);
 			}
 		}
 		return new FiniteDerivedPrefixCacheKey(occurrences.isEmpty() ? Map.of() : Map.copyOf(occurrences),
@@ -119,9 +175,14 @@ record FiniteDerivedSurfaceCacheKey(FiniteDerivedPrefixCacheKey prefix, Object f
 
 	static FiniteDerivedSurfaceCacheKey of(List<TupleExpr> prefixFactors, TupleExpr factor,
 			Map<String, Set<Value>> finiteBindingValues) {
+		return of(prefixFactors, factor, finiteBindingValues, null);
+	}
+
+	static FiniteDerivedSurfaceCacheKey of(List<TupleExpr> prefixFactors, TupleExpr factor,
+			Map<String, Set<Value>> finiteBindingValues, LmdbEstimatorOptimizationScope scope) {
 		return new FiniteDerivedSurfaceCacheKey(
-				FiniteDerivedPrefixCacheKey.of(prefixFactors, finiteBindingValues),
-				FactorCostCacheKey.factorFingerprint(factor));
+				FiniteDerivedPrefixCacheKey.of(prefixFactors, finiteBindingValues, scope),
+				FactorCostCacheKey.factorFingerprint(factor, scope));
 	}
 
 	FiniteDerivedPrefixCacheKey completedPrefix() {
@@ -161,12 +222,17 @@ record FiniteBranchRowsCacheKey(List<Object> factors, boolean decisionDriven) {
 	}
 
 	static FiniteBranchRowsCacheKey of(List<TupleExpr> factors, boolean decisionDriven) {
+		return of(factors, decisionDriven, null);
+	}
+
+	static FiniteBranchRowsCacheKey of(List<TupleExpr> factors, boolean decisionDriven,
+			LmdbEstimatorOptimizationScope scope) {
 		if (factors == null || factors.isEmpty()) {
 			return new FiniteBranchRowsCacheKey(List.of(), decisionDriven);
 		}
 		List<Object> fingerprints = new ArrayList<>(factors.size());
 		for (TupleExpr factor : factors) {
-			fingerprints.add(FactorCostCacheKey.factorFingerprint(factor));
+			fingerprints.add(FactorCostCacheKey.factorFingerprint(factor, scope));
 		}
 		// The fingerprint list is freshly built and never escapes this key; no defensive copy needed.
 		return new FiniteBranchRowsCacheKey(fingerprints, decisionDriven);

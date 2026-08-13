@@ -16,6 +16,7 @@ import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -156,7 +157,7 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 	}
 
 	static List<Value> tupleKey(List<Value> values) {
-		return new StableValueTuple(values);
+		return values instanceof StableValueTuple ? values : new StableValueTuple(values);
 	}
 
 	public static boolean sameValue(Value left, Value right) {
@@ -255,17 +256,50 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 				outputVariables.add(variable);
 			}
 		}
+		int[] rightToLeftIndexes = rightToLeftIndexes(left, right);
 		Map<List<Value>, Double> output = new LinkedHashMap<>();
+		if (sharedVariables != null && !sharedVariables.isEmpty()) {
+			List<String> keyVariables = List.copyOf(sharedVariables);
+			List<Integer> leftIndexes = left.indexes(keyVariables);
+			List<Integer> rightIndexes = right.indexes(keyVariables);
+			if (!hasUnbound(left, leftIndexes) && !hasUnbound(right, rightIndexes)) {
+				Map<ProjectedTupleKey, List<Map.Entry<List<Value>, Double>>> rightBySharedKey = new HashMap<>();
+				for (Map.Entry<List<Value>, Double> rightEntry : right.frequencies.entrySet()) {
+					rightBySharedKey
+							.computeIfAbsent(new ProjectedTupleKey(rightEntry.getKey(), rightIndexes),
+									ignored -> new ArrayList<>(1))
+							.add(rightEntry);
+				}
+				ProjectedTupleKey probeKey = new ProjectedTupleKey();
+				for (Map.Entry<List<Value>, Double> leftEntry : left.frequencies.entrySet()) {
+					probeKey.reset(leftEntry.getKey(), leftIndexes);
+					List<Map.Entry<List<Value>, Double>> matches = rightBySharedKey.get(probeKey);
+					if (matches == null) {
+						continue;
+					}
+					for (Map.Entry<List<Value>, Double> rightEntry : matches) {
+						mergeJoinedTuple(output, leftEntry, rightEntry, rightToLeftIndexes);
+					}
+				}
+				return fromFrequencies(outputVariables, output, source);
+			}
+		}
 		for (Map.Entry<List<Value>, Double> leftEntry : left.frequencies.entrySet()) {
 			for (Map.Entry<List<Value>, Double> rightEntry : right.frequencies.entrySet()) {
 				if (!compatible(left, leftEntry.getKey(), right, rightEntry.getKey(), sharedVariables)) {
 					continue;
 				}
-				List<Value> tuple = mergedTuple(left, leftEntry.getKey(), right, rightEntry.getKey());
-				output.merge(tupleKey(tuple), leftEntry.getValue() * rightEntry.getValue(), Double::sum);
+				mergeJoinedTuple(output, leftEntry, rightEntry, rightToLeftIndexes);
 			}
 		}
 		return fromFrequencies(outputVariables, output, source);
+	}
+
+	private static void mergeJoinedTuple(Map<List<Value>, Double> output,
+			Map.Entry<List<Value>, Double> leftEntry, Map.Entry<List<Value>, Double> rightEntry,
+			int[] rightToLeftIndexes) {
+		List<Value> tuple = mergedTuple(leftEntry.getKey(), rightEntry.getKey(), rightToLeftIndexes);
+		output.merge(tupleKey(tuple), leftEntry.getValue() * rightEntry.getValue(), Double::sum);
 	}
 
 	private static boolean compatible(FiniteRelationEstimate left, List<Value> leftTuple,
@@ -284,8 +318,11 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 	}
 
 	private static boolean hasUnbound(FiniteRelationEstimate relation, Collection<String> variables) {
-		for (String variable : variables) {
-			int index = relation.variables.indexOf(variable);
+		return hasUnbound(relation, relation.indexes(List.copyOf(variables)));
+	}
+
+	private static boolean hasUnbound(FiniteRelationEstimate relation, List<Integer> indexes) {
+		for (int index : indexes) {
 			for (List<Value> tuple : relation.frequencies.keySet()) {
 				if (tuple.get(index) == null) {
 					return true;
@@ -309,12 +346,19 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 		return false;
 	}
 
-	private static List<Value> mergedTuple(FiniteRelationEstimate left, List<Value> leftTuple,
-			FiniteRelationEstimate right, List<Value> rightTuple) {
-		List<Value> output = new ArrayList<>(leftTuple);
+	private static int[] rightToLeftIndexes(FiniteRelationEstimate left, FiniteRelationEstimate right) {
+		int[] indexes = new int[right.variables.size()];
 		for (int index = 0; index < right.variables.size(); index++) {
-			String variable = right.variables.get(index);
-			int outputIndex = left.variables.indexOf(variable);
+			indexes[index] = left.variables.indexOf(right.variables.get(index));
+		}
+		return indexes;
+	}
+
+	private static List<Value> mergedTuple(List<Value> leftTuple, List<Value> rightTuple,
+			int[] rightToLeftIndexes) {
+		List<Value> output = new ArrayList<>(leftTuple);
+		for (int index = 0; index < rightToLeftIndexes.length; index++) {
+			int outputIndex = rightToLeftIndexes[index];
 			Value rightValue = rightTuple.get(index);
 			if (outputIndex < 0) {
 				output.add(rightValue);
@@ -323,6 +367,52 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 			}
 		}
 		return output;
+	}
+
+	private static final class ProjectedTupleKey {
+
+		private StableValueTuple tuple;
+		private List<Integer> indexes;
+		private int hash;
+
+		private ProjectedTupleKey() {
+		}
+
+		private ProjectedTupleKey(List<Value> tuple, List<Integer> indexes) {
+			reset(tuple, indexes);
+		}
+
+		private void reset(List<Value> tuple, List<Integer> indexes) {
+			this.tuple = tuple instanceof StableValueTuple stable ? stable : new StableValueTuple(tuple);
+			this.indexes = indexes;
+			int computedHash = 1;
+			for (int index : indexes) {
+				computedHash = 31 * computedHash + this.tuple.identities[index].hashCode();
+			}
+			this.hash = computedHash;
+		}
+
+		@Override
+		public int hashCode() {
+			return hash;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (other == this) {
+				return true;
+			}
+			if (!(other instanceof ProjectedTupleKey key) || indexes.size() != key.indexes.size()) {
+				return false;
+			}
+			for (int ordinal = 0; ordinal < indexes.size(); ordinal++) {
+				if (!tuple.identities[indexes.get(ordinal)]
+						.equals(key.tuple.identities[key.indexes.get(ordinal)])) {
+					return false;
+				}
+			}
+			return true;
+		}
 	}
 
 	private static final class StableValueTupleMap extends AbstractMap<List<Value>, Double> {
@@ -360,6 +450,9 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 		}
 
 		private Object canonicalLookupKey(Object key) {
+			if (key instanceof StableValueTuple) {
+				return key;
+			}
 			if (!(key instanceof List<?> values)) {
 				return key;
 			}

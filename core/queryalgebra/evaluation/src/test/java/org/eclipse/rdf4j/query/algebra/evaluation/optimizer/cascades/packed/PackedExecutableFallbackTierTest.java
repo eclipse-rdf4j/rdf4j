@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.junit.jupiter.api.Test;
@@ -43,6 +44,80 @@ class PackedExecutableFallbackTierTest {
 		assertEquals(Double.MAX_VALUE, memo.winnerTotalCost(rootWinnerId));
 		assertNotEquals(1, memo.physicalImplementationForm(physicalExpressionId),
 				"A real costed join must outrank the executable-only logical fallback even when both costs saturate");
+	}
+
+	@Test
+	void executableFallbackTierPropagatesThroughUnaryParents() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern left = new StatementPattern(Var.of("person"),
+				Var.of("leftPredicate", values.createIRI("urn:left")), Var.of("leftValue"));
+		StatementPattern right = new StatementPattern(Var.of("person"),
+				Var.of("rightPredicate", values.createIRI("urn:right")), Var.of("rightValue"));
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(new QueryRoot(new Join(left, right)));
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4, relationCount,
+				relationCount * 2);
+		PackedCostModel saturatedCosts = (queryView, relationId) -> 4.0e307d;
+		PackedIncumbentSearch search = new PackedIncumbentSearch(query, memo,
+				new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE), true, saturatedCosts);
+
+		int rootWinnerId = search.build();
+		int joinWinnerId = memo.winnerChildWinnerId(rootWinnerId, 0);
+
+		assertNotEquals(1, memo.physicalImplementationForm(memo.winnerPhysicalExpressionId(joinWinnerId)),
+				"A costed child must replace a fallback child all the way through an existing unary parent");
+	}
+
+	@Test
+	void physicallyRefinedWrittenJoinIsACostedCandidate() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern left = new StatementPattern(Var.of("person"),
+				Var.of("leftPredicate", values.createIRI("urn:left")), Var.of("leftValue"));
+		StatementPattern right = new StatementPattern(Var.of("person"),
+				Var.of("rightPredicate", values.createIRI("urn:right")), Var.of("rightValue"));
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Join(left, right));
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4, relationCount,
+				relationCount * 2);
+		PackedQueryView queryView = new PackedQueryView(query);
+		PackedCostSession nativeCosts = new PackedCostSession() {
+
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				if (queryView.isStatementPattern(relationId)) {
+					output.setRows(2.0d, 2.0d);
+					output.setInclusivePhysicalCost(2.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+							0.0d, 0.0d);
+				}
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				output.setContextualRows(1.0d, 1.0d);
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			}
+		};
+		int selectedTier = -1;
+		try (EventSourcingPackedCostSession recordedCosts = new EventSourcingPackedCostSession(nativeCosts, query)) {
+			PackedIncumbentSearch search = PackedIncumbentSearch.forSession(query, memo,
+					new PackedSearchBudget(0L, Long.MAX_VALUE), false, recordedCosts);
+
+			int rootWinnerId = search.build();
+			PackedMemo.PackedDecisionDraft decisions = memo.decisionDraft(rootWinnerId);
+			for (int candidate = decisions.decisionStarts()[0]; candidate < decisions
+					.decisionStarts()[1]; candidate++) {
+				if (decisions.selectedByPolicy()[candidate] != 0) {
+					selectedTier = Byte.toUnsignedInt(decisions.comparisonTiers()[candidate]);
+					break;
+				}
+			}
+		}
+
+		assertEquals(PackedWinnerTable.COSTED, selectedTier,
+				"a concrete join implementation with a physical costing event is not an executable-only fallback");
 	}
 
 	@Test

@@ -27,8 +27,40 @@ final class PackedCostingTraceArena {
 	private static final long HASH_SEED_LOW = 0xbb67ae8584caa73bL;
 	private static final int INITIAL_CAPACITY = 16;
 	private static final String COST_EVENT_METRIC_PREFIX = "optimizer.costEvent";
+	private static final int TYPED_VALUE_COUNT = 18;
+	private static final int STARTUP_ONCE_WORK = 0;
+	private static final int DEPENDENT_INVOCATION_COUNT = 1;
+	private static final int HIT_PROBABILITY = 2;
+	private static final int FIRST_MATCH_WORK = 3;
+	private static final int EXHAUSTION_WORK = 4;
+	private static final int REBIND_WORK = 5;
+	private static final int CLOSE_WORK = 6;
+	private static final int OUTPUT_WORK = 7;
+	private static final int DISTINCT_KEY_MISSES = 8;
+	private static final int CACHE_HITS = 9;
+	private static final int CACHE_MISSES = 10;
+	private static final int CACHE_EVICTIONS = 11;
+	private static final int MATERIALIZATION_BUILDS = 12;
+	private static final int MATERIALIZATION_LOOKUPS = 13;
+	private static final int MEMORY_SPILL_WORK = 14;
+	private static final int OBJECTIVE_LOWER = 15;
+	private static final int OBJECTIVE_POINT = 16;
+	private static final int OBJECTIVE_UPPER = 17;
+	private static final int EVENT_INT_COLUMNS = 41;
+	private static final int EVENT_LONG_COLUMNS = 4;
+	private static final int EVENT_DOUBLE_COLUMNS = 32;
+	private static final int EVENT_BYTE_COLUMNS = 10;
+	private static final int INITIAL_INVOCATION_CAPACITY = PackedPrimitiveHash.tableCapacity(INITIAL_CAPACITY);
+	private static final int INITIAL_METRIC_BUNDLE_CAPACITY = INITIAL_CAPACITY;
+	private static final int INITIAL_METRIC_BUNDLE_TABLE_CAPACITY = PackedPrimitiveHash
+			.tableCapacity(INITIAL_METRIC_BUNDLE_CAPACITY);
+	private static final ThreadLocal<PackedCostingTraceArena> RECYCLER = new ThreadLocal<>();
 
 	private final PackedObjectPool objects = new PackedObjectPool(INITIAL_CAPACITY);
+	private final boolean recyclable;
+	private PackedSearchBudget budget;
+	private boolean initialCapacityReserved;
+	private boolean released;
 	private byte[] phases = new byte[INITIAL_CAPACITY];
 	private int[] relationIds = new int[INITIAL_CAPACITY];
 	private long[] contextFingerprints = new long[INITIAL_CAPACITY];
@@ -66,6 +98,7 @@ final class PackedCostingTraceArena {
 	private double[] providerInputPeakMemoryRows = new double[INITIAL_CAPACITY];
 	private double[] providerInputAccessRows = new double[INITIAL_CAPACITY];
 	private double[] providerInputInvocations = new double[INITIAL_CAPACITY];
+	private int[] providerInputTypedValueStarts = new int[INITIAL_CAPACITY];
 	private int[] providerInputCostEventIds = new int[INITIAL_CAPACITY];
 	private int[] providerInputStateIds = new int[INITIAL_CAPACITY];
 	private int[] providerInputSourceStateIds = new int[INITIAL_CAPACITY];
@@ -100,6 +133,9 @@ final class PackedCostingTraceArena {
 	private double[] peakMemoryRows = new double[INITIAL_CAPACITY];
 	private double[] accessRows = new double[INITIAL_CAPACITY];
 	private double[] invocations = new double[INITIAL_CAPACITY];
+	private int[] typedValueStarts = new int[INITIAL_CAPACITY];
+	private double[] typedValues = new double[INITIAL_CAPACITY];
+	private int typedValueSize;
 	private int[] lookupMasks = new int[INITIAL_CAPACITY];
 	private int[] missingLookupMasks = new int[INITIAL_CAPACITY];
 	private int[] indexPrefixLengths = new int[INITIAL_CAPACITY];
@@ -110,9 +146,10 @@ final class PackedCostingTraceArena {
 	private int[] runtimeFeedbackContractIds = new int[INITIAL_CAPACITY];
 	private long[] digestHigh = new long[INITIAL_CAPACITY];
 	private long[] digestLow = new long[INITIAL_CAPACITY];
+	private byte[] digestReady = new byte[INITIAL_CAPACITY];
+	private int computedDigestCount;
 	private long[] invocationHashes = new long[INITIAL_CAPACITY];
-	private int[] invocationSlots = new int[PackedPrimitiveHash.tableCapacity(INITIAL_CAPACITY)];
-	private int invocationResizeThreshold = PackedPrimitiveHash.maximumFill(invocationSlots.length);
+	private int[] invocationSlots = new int[INITIAL_INVOCATION_CAPACITY];
 	private int[] stringMetricStarts = new int[INITIAL_CAPACITY];
 	private int[] stringMetricCounts = new int[INITIAL_CAPACITY];
 	private int[] doubleMetricStarts = new int[INITIAL_CAPACITY];
@@ -121,23 +158,135 @@ final class PackedCostingTraceArena {
 	private int[] stringMetricValueIds = new int[INITIAL_CAPACITY];
 	private int[] doubleMetricNameIds = new int[INITIAL_CAPACITY];
 	private double[] doubleMetricValues = new double[INITIAL_CAPACITY];
+	private int[] metricBundleEventIds = new int[INITIAL_METRIC_BUNDLE_CAPACITY];
+	private long[] metricBundleHashes = new long[INITIAL_METRIC_BUNDLE_CAPACITY];
+	private int[] metricBundleSlots = new int[INITIAL_METRIC_BUNDLE_TABLE_CAPACITY];
 	private int stringMetricSize;
 	private int doubleMetricSize;
+	private int metricBundleSize;
 	private int size;
+	private int eventCapacity = INITIAL_CAPACITY;
+	private int prefixCapacity = INITIAL_CAPACITY;
+	private int stringMetricCapacity = INITIAL_CAPACITY;
+	private int doubleMetricCapacity = INITIAL_CAPACITY;
+	private int typedValueCapacity = INITIAL_CAPACITY;
+	private int invocationCapacity = INITIAL_INVOCATION_CAPACITY;
+	private int metricBundleCapacity = INITIAL_METRIC_BUNDLE_CAPACITY;
+	private int metricBundleTableCapacity = INITIAL_METRIC_BUNDLE_TABLE_CAPACITY;
+
+	PackedCostingTraceArena() {
+		this(new PackedSearchBudget(PackedPlannerLimits.unbounded()), false);
+	}
+
+	PackedCostingTraceArena(PackedSearchBudget budget) {
+		this(budget, false);
+	}
+
+	private PackedCostingTraceArena(PackedSearchBudget budget, boolean recyclable) {
+		this.recyclable = recyclable;
+		reset(budget);
+	}
+
+	static PackedCostingTraceArena borrow(PackedSearchBudget budget) {
+		PackedCostingTraceArena trace = RECYCLER.get();
+		if (trace == null) {
+			return new PackedCostingTraceArena(budget, true);
+		}
+		RECYCLER.remove();
+		trace.reset(budget);
+		return trace;
+	}
+
+	private void reset(PackedSearchBudget budget) {
+		this.budget = Objects.requireNonNull(budget, "budget");
+		Arrays.fill(invocationSlots, 0, Math.min(invocationCapacity, invocationSlots.length), 0);
+		Arrays.fill(metricBundleSlots, 0,
+				Math.min(metricBundleTableCapacity, metricBundleSlots.length), 0);
+		Arrays.fill(digestReady, 0, Math.min(size + 1, digestReady.length), (byte) 0);
+		objects.reset();
+		prefixRelationSize = 0;
+		typedValueSize = 0;
+		stringMetricSize = 0;
+		doubleMetricSize = 0;
+		metricBundleSize = 0;
+		computedDigestCount = 0;
+		size = 0;
+		eventCapacity = INITIAL_CAPACITY;
+		prefixCapacity = INITIAL_CAPACITY;
+		stringMetricCapacity = INITIAL_CAPACITY;
+		doubleMetricCapacity = INITIAL_CAPACITY;
+		typedValueCapacity = INITIAL_CAPACITY;
+		invocationCapacity = INITIAL_INVOCATION_CAPACITY;
+		metricBundleCapacity = INITIAL_METRIC_BUNDLE_CAPACITY;
+		metricBundleTableCapacity = INITIAL_METRIC_BUNDLE_TABLE_CAPACITY;
+		initialCapacityReserved = budget.tryReserveBytes(requiredBytesForCapacity(INITIAL_CAPACITY,
+				INITIAL_CAPACITY, INITIAL_CAPACITY, INITIAL_CAPACITY, INITIAL_CAPACITY,
+				INITIAL_INVOCATION_CAPACITY, INITIAL_METRIC_BUNDLE_CAPACITY,
+				INITIAL_METRIC_BUNDLE_TABLE_CAPACITY));
+		released = false;
+	}
+
+	void recycle() {
+		if (!recyclable || released) {
+			return;
+		}
+		released = true;
+		Arrays.fill(invocationSlots, 0, Math.min(invocationCapacity, invocationSlots.length), 0);
+		Arrays.fill(metricBundleSlots, 0,
+				Math.min(metricBundleTableCapacity, metricBundleSlots.length), 0);
+		Arrays.fill(digestReady, 0, Math.min(size + 1, digestReady.length), (byte) 0);
+		objects.reset();
+		prefixRelationSize = 0;
+		typedValueSize = 0;
+		stringMetricSize = 0;
+		doubleMetricSize = 0;
+		metricBundleSize = 0;
+		computedDigestCount = 0;
+		size = 0;
+		budget = null;
+		initialCapacityReserved = false;
+		PackedCostingTraceArena retained = RECYCLER.get();
+		if (retained == null || storageBytes() > retained.storageBytes()) {
+			RECYCLER.set(this);
+		}
+	}
+
+	private long storageBytes() {
+		return requiredBytesForCapacity(phases.length, prefixRelationIds.length, stringMetricNameIds.length,
+				doubleMetricNameIds.length, typedValues.length, invocationSlots.length,
+				metricBundleEventIds.length, metricBundleSlots.length);
+	}
 
 	int append(PackedCostingPhase phase, int relationId, PackedCostContext sourceContext,
 			int providerInputSourceStateId, PackedCostContext context,
 			PackedCostEstimate providerInput, PackedCostEstimate estimate, double objectiveCost) {
-		int eventId = ++size;
-		ensureEventCapacity(eventId);
+		int eventId = size + 1;
+		int prefixCount = context.prefixRelationCount();
+		int stringMetricCount = retainedStringMetricCount(estimate);
+		int doubleMetricCount = retainedDoubleMetricCount(estimate);
+		long metricBundleHash = 0L;
+		int metricBundleEventId = 0;
+		if (stringMetricCount != 0 || doubleMetricCount != 0) {
+			metricBundleHash = metricBundleHash(estimate, stringMetricCount, doubleMetricCount);
+			metricBundleEventId = findMetricBundle(
+					metricBundleHash, estimate, stringMetricCount, doubleMetricCount);
+		}
+		boolean appendMetricBundle = metricBundleEventId == 0
+				&& (stringMetricCount != 0 || doubleMetricCount != 0);
+		int typedValueCount = retainedTypedValueCount(providerInput) + retainedTypedValueCount(estimate);
+		if (!initialCapacityReserved || !ensureAppendCapacity(eventId, prefixRelationSize + prefixCount,
+				stringMetricSize + (appendMetricBundle ? stringMetricCount : 0),
+				doubleMetricSize + (appendMetricBundle ? doubleMetricCount : 0),
+				typedValueSize + typedValueCount, appendMetricBundle)) {
+			return 0;
+		}
+		size = eventId;
 		phases[eventId] = (byte) phase.ordinal();
 		relationIds[eventId] = relationId;
 		long contextFingerprint = contextFingerprint(context);
 		contextFingerprints[eventId] = contextFingerprint;
-		int prefixCount = context.prefixRelationCount();
 		prefixStarts[eventId] = prefixRelationSize;
 		prefixCounts[eventId] = prefixCount;
-		ensurePrefixCapacity(prefixRelationSize + prefixCount);
 		for (int ordinal = 0; ordinal < prefixCount; ordinal++) {
 			prefixRelationIds[prefixRelationSize++] = context.prefixRelationId(ordinal);
 		}
@@ -174,6 +323,7 @@ final class PackedCostingTraceArena {
 		providerInputPeakMemoryRows[eventId] = providerInput.peakMemoryRows();
 		providerInputAccessRows[eventId] = providerInput.accessRows();
 		providerInputInvocations[eventId] = providerInput.invocations();
+		providerInputTypedValueStarts[eventId] = retainTypedValues(providerInput);
 		providerInputCostEventIds[eventId] = providerInput.costEventId();
 		providerInputStateIds[eventId] = providerInput.evidenceStateId();
 		providerInputSourceStateIds[eventId] = realizationSource(
@@ -192,6 +342,8 @@ final class PackedCostingTraceArena {
 		inputFlags |= providerInput.hasComponentOutputRows() ? 1 << 2 : 0;
 		inputFlags |= providerInput.replacesChildWork() ? 1 << 3 : 0;
 		inputFlags |= providerInput.dependentSubqueriesCosted() ? 1 << 4 : 0;
+		inputFlags |= providerInput.hasDependentCostComponents() ? 1 << 5 : 0;
+		inputFlags |= providerInput.hasObjectiveInterval() ? 1 << 6 : 0;
 		providerInputFlags[eventId] = (byte) inputFlags;
 		providerInputGuarantees[eventId] = providerInput.evidenceGuarantee() == null
 				? 0
@@ -211,6 +363,8 @@ final class PackedCostingTraceArena {
 		outputFlagBits |= estimate.hasComponentOutputRows() ? 1 << 2 : 0;
 		outputFlagBits |= estimate.replacesChildWork() ? 1 << 3 : 0;
 		outputFlagBits |= estimate.dependentSubqueriesCosted() ? 1 << 4 : 0;
+		outputFlagBits |= estimate.hasDependentCostComponents() ? 1 << 5 : 0;
+		outputFlagBits |= estimate.hasObjectiveInterval() ? 1 << 6 : 0;
 		outputFlags[eventId] = (byte) outputFlagBits;
 		outputRows[eventId] = estimate.outputRows();
 		workRows[eventId] = estimate.workRows();
@@ -227,6 +381,7 @@ final class PackedCostingTraceArena {
 		peakMemoryRows[eventId] = estimate.peakMemoryRows();
 		accessRows[eventId] = estimate.accessRows();
 		invocations[eventId] = estimate.invocations();
+		typedValueStarts[eventId] = retainTypedValues(estimate);
 		lookupMasks[eventId] = estimate.lookupComponentMask();
 		missingLookupMasks[eventId] = estimate.missingLookupComponentMask();
 		indexPrefixLengths[eventId] = estimate.indexPrefixLength();
@@ -235,22 +390,25 @@ final class PackedCostingTraceArena {
 		estimateSourceIds[eventId] = objects.intern(estimate.estimateSource());
 		estimateFusionIds[eventId] = objects.intern(estimate.estimateFusion());
 		runtimeFeedbackContractIds[eventId] = objects.intern(estimate.runtimeFeedbackContract());
-		annotateEventVector(estimate);
-		appendMetrics(eventId, estimate);
+		if (metricBundleEventId == 0) {
+			appendMetrics(eventId, estimate, stringMetricCount, doubleMetricCount);
+			if (appendMetricBundle) {
+				registerMetricBundle(eventId, metricBundleHash);
+			}
+		} else {
+			stringMetricStarts[eventId] = stringMetricStarts[metricBundleEventId];
+			stringMetricCounts[eventId] = stringMetricCounts[metricBundleEventId];
+			doubleMetricStarts[eventId] = doubleMetricStarts[metricBundleEventId];
+			doubleMetricCounts[eventId] = doubleMetricCounts[metricBundleEventId];
+		}
+		budget.evidenceStates()
+				.register(estimate.evidenceStateId(), estimate.evidenceGuarantee(),
+						estimate.evidenceDisposition());
 
-		long high = eventHash(HASH_SEED_HIGH, eventId);
-		long low = eventHash(HASH_SEED_LOW, eventId);
-		digestHigh[eventId] = high;
-		digestLow[eventId] = low;
-		estimate.setCostEventId(eventId);
-		estimate.putPlannedDoubleMetric("optimizer.costEventOrdinal", eventId);
-		estimate.putPlannedStringMetric("optimizer.costEventPhase", phase.metricValue());
-		estimate.putPlannedStringMetric("optimizer.costEventContextFingerprint",
-				HexFormat.of().toHexDigits(contextFingerprint));
-		estimate.putPlannedDoubleMetric("optimizer.costEventRows", estimate.outputRows());
-		estimate.putPlannedDoubleMetric("optimizer.costEventWorkRows", estimate.workRows());
-		estimate.putPlannedDoubleMetric("optimizer.costEventObjective", objectiveCost);
-		estimate.putPlannedStringMetric("optimizer.costEventDigest", digestString(high, low));
+		digestHigh[eventId] = 0L;
+		digestLow[eventId] = 0L;
+		digestReady[eventId] = 0;
+		estimate.setPendingCostEventTelemetry(eventId, phase.metricValue(), contextFingerprint, objectiveCost);
 		long invocationHash = invocationHash(phase, relationId, context, providerInput);
 		invocationHashes[eventId] = invocationHash;
 		registerInvocation(eventId, invocationHash);
@@ -260,8 +418,8 @@ final class PackedCostingTraceArena {
 	int findInvocation(PackedCostingPhase phase, int relationId, PackedCostContext context,
 			PackedCostEstimate providerInput) {
 		long hash = invocationHash(phase, relationId, context, providerInput);
-		int mask = invocationSlots.length - 1;
-		int slot = PackedPrimitiveHash.slot(hash, invocationSlots.length);
+		int mask = invocationCapacity - 1;
+		int slot = PackedPrimitiveHash.slot(hash, invocationCapacity);
 		while (true) {
 			int eventId = invocationSlots[slot];
 			if (eventId == 0) {
@@ -279,31 +437,15 @@ final class PackedCostingTraceArena {
 		if (eventId <= 0 || eventId > size) {
 			throw new IndexOutOfBoundsException("unknown packed costing event " + eventId);
 		}
-		estimate.clear();
 		int flags = Byte.toUnsignedInt(outputFlags[eventId]);
 		PackedCostEstimate.CostScope scope = PackedCostEstimate.CostScope
 				.values()[Byte.toUnsignedInt(outputCostScopes[eventId]) - 1];
-		if ((flags & 1) != 0) {
-			if (scope == PackedCostEstimate.CostScope.INCLUSIVE) {
-				estimate.setInclusivePhysicalCost(sequentialRows[eventId], randomSeeks[eventId], iteratorOpens[eventId],
-						expressionEvaluations[eventId], hashBuildRows[eventId], hashProbeRows[eventId],
-						pathExpansions[eventId], resultRows[eventId], remoteCalls[eventId], peakMemoryRows[eventId]);
-			} else {
-				estimate.setLocalPhysicalCost(sequentialRows[eventId], randomSeeks[eventId], iteratorOpens[eventId],
-						expressionEvaluations[eventId], hashBuildRows[eventId], hashProbeRows[eventId],
-						pathExpansions[eventId], resultRows[eventId], remoteCalls[eventId], peakMemoryRows[eventId]);
-			}
-		} else {
-			estimate.setRows(outputRows[eventId], workRows[eventId]);
-			estimate.setReplacesChildWork(scope == PackedCostEstimate.CostScope.INCLUSIVE);
-		}
-		if ((flags & 1 << 2) != 0) {
-			estimate.setComponentOutputRowsPreservingPhysicalCost(outputRows[eventId]);
-		} else if ((flags & 1 << 1) != 0) {
-			estimate.setContextualOutputRowsPreservingPhysicalCost(outputRows[eventId]);
-		} else {
-			estimate.setOutputRowsPreservingPhysicalCost(outputRows[eventId]);
-		}
+		boolean componentOutputRows = (flags & 1 << 2) != 0;
+		estimate.restoreCostingTraceOutput(outputRows[eventId], workRows[eventId], sequentialRows[eventId],
+				randomSeeks[eventId], iteratorOpens[eventId], expressionEvaluations[eventId], hashBuildRows[eventId],
+				hashProbeRows[eventId], pathExpansions[eventId], resultRows[eventId], remoteCalls[eventId],
+				peakMemoryRows[eventId], scope, (flags & 1) != 0, (flags & 1 << 3) != 0,
+				componentOutputRows || (flags & 1 << 1) != 0, componentOutputRows);
 		estimate.setAccess(lookupMasks[eventId], missingLookupMasks[eventId], indexPrefixLengths[eventId],
 				accessRows[eventId], invocations[eventId],
 				providerObject(indexNameIds[eventId], String.class),
@@ -316,28 +458,45 @@ final class PackedCostingTraceArena {
 		estimate.setEvidenceGuarantee(enumValue(EvidenceGuarantee.values(), guarantees[eventId]));
 		estimate.setEvidenceDisposition(enumValue(FrontierStateDisposition.values(), dispositions[eventId]));
 		estimate.setDependentSubqueriesCosted((flags & 1 << 4) != 0);
+		int typedValueStart = decodedTypedValueStart(typedValueStarts[eventId]);
+		if ((flags & 1 << 5) != 0) {
+			estimate.restoreCostingTraceDependentComponents(
+					typedValues[typedValueStart + STARTUP_ONCE_WORK],
+					typedValues[typedValueStart + DEPENDENT_INVOCATION_COUNT],
+					typedValues[typedValueStart + HIT_PROBABILITY],
+					typedValues[typedValueStart + FIRST_MATCH_WORK],
+					typedValues[typedValueStart + EXHAUSTION_WORK],
+					typedValues[typedValueStart + REBIND_WORK],
+					typedValues[typedValueStart + CLOSE_WORK],
+					typedValues[typedValueStart + OUTPUT_WORK],
+					typedValues[typedValueStart + DISTINCT_KEY_MISSES],
+					typedValues[typedValueStart + CACHE_HITS],
+					typedValues[typedValueStart + CACHE_MISSES],
+					typedValues[typedValueStart + CACHE_EVICTIONS],
+					typedValues[typedValueStart + MATERIALIZATION_BUILDS],
+					typedValues[typedValueStart + MATERIALIZATION_LOOKUPS],
+					typedValues[typedValueStart + MEMORY_SPILL_WORK]);
+		}
+		if ((flags & 1 << 6) != 0) {
+			estimate.restoreCostingTraceObjective(
+					typedValues[typedValueStart + OBJECTIVE_LOWER],
+					typedValues[typedValueStart + OBJECTIVE_POINT],
+					typedValues[typedValueStart + OBJECTIVE_UPPER]);
+		}
+		estimate.prepareCostingTraceMetrics(stringMetricCounts[eventId], doubleMetricCounts[eventId]);
 		for (int ordinal = 0; ordinal < stringMetricCounts[eventId]; ordinal++) {
 			int metric = stringMetricStarts[eventId] + ordinal;
-			estimate.putPlannedStringMetric(providerObject(stringMetricNameIds[metric], String.class),
+			estimate.restoreCostingTraceStringMetric(providerObject(stringMetricNameIds[metric], String.class),
 					providerObject(stringMetricValueIds[metric], String.class));
 		}
 		for (int ordinal = 0; ordinal < doubleMetricCounts[eventId]; ordinal++) {
 			int metric = doubleMetricStarts[eventId] + ordinal;
-			estimate.putPlannedDoubleMetric(providerObject(doubleMetricNameIds[metric], String.class),
+			estimate.restoreCostingTraceDoubleMetric(providerObject(doubleMetricNameIds[metric], String.class),
 					doubleMetricValues[metric]);
 		}
-		annotateEventVector(estimate);
-		estimate.setCostEventId(eventId);
-		estimate.putPlannedDoubleMetric("optimizer.costEventOrdinal", eventId);
-		estimate.putPlannedStringMetric("optimizer.costEventPhase",
-				PackedCostingPhase.values()[Byte.toUnsignedInt(phases[eventId])].metricValue());
-		estimate.putPlannedStringMetric("optimizer.costEventContextFingerprint",
-				HexFormat.of().toHexDigits(contextFingerprints[eventId]));
-		estimate.putPlannedDoubleMetric("optimizer.costEventRows", outputRows[eventId]);
-		estimate.putPlannedDoubleMetric("optimizer.costEventWorkRows", workRows[eventId]);
-		estimate.putPlannedDoubleMetric("optimizer.costEventObjective", objectiveCosts[eventId]);
-		estimate.putPlannedStringMetric("optimizer.costEventDigest",
-				digestString(digestHigh[eventId], digestLow[eventId]));
+		estimate.setPendingCostEventTelemetry(eventId,
+				PackedCostingPhase.values()[Byte.toUnsignedInt(phases[eventId])].metricValue(),
+				contextFingerprints[eventId], objectiveCosts[eventId]);
 	}
 
 	boolean hasContextualOutputRows(int eventId) {
@@ -352,6 +511,7 @@ final class PackedCostingTraceArena {
 		if (eventId <= 0 || eventId > size) {
 			return "unavailable-event:" + eventId;
 		}
+		ensureDigest(eventId);
 		StringBuilder description = new StringBuilder(768);
 		description.append("phase=")
 				.append(PackedCostingPhase.values()[Byte.toUnsignedInt(phases[eventId])])
@@ -500,10 +660,12 @@ final class PackedCostingTraceArena {
 
 	private boolean invocationMatches(int eventId, PackedCostingPhase phase, int relationId,
 			PackedCostContext context, PackedCostEstimate input) {
+		boolean exactExtensional = exactExtensionalContext(context);
 		if (phases[eventId] != (byte) phase.ordinal()
 				|| relationIds[eventId] != relationId
+				|| budget.evidenceStates().isExactExtensional(inputStateIds[eventId]) != exactExtensional
 				|| contextFingerprints[eventId] != contextFingerprint(context)
-				|| prefixCounts[eventId] != context.prefixRelationCount()
+				|| !exactExtensional && prefixCounts[eventId] != context.prefixRelationCount()
 				|| !sameDouble(prefixRows[eventId], context.prefixRows())
 				|| assuredBindingRelationIds[eventId] != context.assuredBindingRelationId()
 				|| inputStateIds[eventId] != context.evidenceStateId()
@@ -518,10 +680,12 @@ final class PackedCostingTraceArena {
 				|| rightStateIds[eventId] != context.rightInputEvidenceStateId()) {
 			return false;
 		}
-		int prefixStart = prefixStarts[eventId];
-		for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
-			if (prefixRelationIds[prefixStart + ordinal] != context.prefixRelationId(ordinal)) {
-				return false;
+		if (!exactExtensional) {
+			int prefixStart = prefixStarts[eventId];
+			for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
+				if (prefixRelationIds[prefixStart + ordinal] != context.prefixRelationId(ordinal)) {
+					return false;
+				}
 			}
 		}
 		return sameDouble(providerInputRows[eventId], input.outputRows())
@@ -538,6 +702,7 @@ final class PackedCostingTraceArena {
 				&& sameDouble(providerInputPeakMemoryRows[eventId], input.peakMemoryRows())
 				&& sameDouble(providerInputAccessRows[eventId], input.accessRows())
 				&& sameDouble(providerInputInvocations[eventId], input.invocations())
+				&& typedValuesMatch(providerInputTypedValueStarts[eventId], input)
 				&& providerInputStateIds[eventId] == input.evidenceStateId()
 				&& providerInputLookupMasks[eventId] == input.lookupComponentMask()
 				&& providerInputMissingLookupMasks[eventId] == input.missingLookupComponentMask()
@@ -557,16 +722,25 @@ final class PackedCostingTraceArena {
 			PackedCostEstimate input) {
 		long hash = PackedPrimitiveHash.step(PackedPrimitiveHash.SEED, phase.ordinal());
 		hash = PackedPrimitiveHash.step(hash, relationId);
-		hash = PackedPrimitiveHash.step(hash, context.prefixRelationCount());
-		for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
-			hash = PackedPrimitiveHash.step(hash, context.prefixRelationId(ordinal));
+		boolean exactExtensional = exactExtensionalContext(context);
+		hash = PackedPrimitiveHash.step(hash, exactExtensional ? -1 : context.prefixRelationCount());
+		if (!exactExtensional) {
+			for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
+				hash = PackedPrimitiveHash.step(hash, context.prefixRelationId(ordinal));
+			}
 		}
+		return invocationHashSuffix(hash, context, input);
+	}
+
+	private static long invocationHashSuffix(long hash, PackedCostContext context, PackedCostEstimate input) {
 		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(context.prefixRows()));
 		hash = PackedPrimitiveHash.step(hash, context.assuredBindingRelationId());
 		hash = PackedPrimitiveHash.step(hash, context.evidenceStateId());
 		hash = PackedPrimitiveHash.step(hash, context.bindingLayoutId());
 		hash = PackedPrimitiveHash.step(hash, context.correlationMaskId());
 		hash = PackedPrimitiveHash.step(hash, context.semanticScopeMaskId());
+		hash = PackedPrimitiveHash.step(hash, context.hashLookupMaskId());
+		hash = PackedPrimitiveHash.step(hash, context.hashCompatibilityMaskId());
 		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(context.leftInputRows()));
 		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(context.rightInputRows()));
 		hash = PackedPrimitiveHash.step(hash, context.leftInputEvidenceStateId());
@@ -585,6 +759,7 @@ final class PackedCostingTraceArena {
 		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(input.peakMemoryRows()));
 		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(input.accessRows()));
 		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(input.invocations()));
+		hash = hashTypedValues(hash, input);
 		/*
 		 * The originating event ordinal is recorded above as immutable provenance, but it is not an estimator input.
 		 * Treating it as one would split two otherwise bit-identical transforms, invoke the provider twice, and produce
@@ -607,11 +782,8 @@ final class PackedCostingTraceArena {
 	}
 
 	private void registerInvocation(int eventId, long hash) {
-		if (size > invocationResizeThreshold) {
-			resizeInvocationTable(invocationSlots.length << 1);
-		}
-		int mask = invocationSlots.length - 1;
-		int slot = PackedPrimitiveHash.slot(hash, invocationSlots.length);
+		int mask = invocationCapacity - 1;
+		int slot = PackedPrimitiveHash.slot(hash, invocationCapacity);
 		while (invocationSlots[slot] != 0) {
 			slot = slot + 1 & mask;
 		}
@@ -619,9 +791,15 @@ final class PackedCostingTraceArena {
 	}
 
 	private void resizeInvocationTable(int capacity) {
-		int[] replacement = new int[capacity];
+		int[] replacement;
+		if (invocationSlots.length < capacity) {
+			replacement = new int[capacity];
+		} else {
+			replacement = invocationSlots;
+			Arrays.fill(replacement, 0, capacity, 0);
+		}
 		int mask = capacity - 1;
-		for (int eventId = 1; eventId < size; eventId++) {
+		for (int eventId = 1; eventId <= size; eventId++) {
 			long hash = invocationHashes[eventId];
 			int slot = PackedPrimitiveHash.slot(hash, capacity);
 			while (replacement[slot] != 0) {
@@ -630,7 +808,26 @@ final class PackedCostingTraceArena {
 			replacement[slot] = eventId;
 		}
 		invocationSlots = replacement;
-		invocationResizeThreshold = PackedPrimitiveHash.maximumFill(capacity);
+	}
+
+	private void resizeMetricBundleTable(int capacity) {
+		int[] replacement;
+		if (metricBundleSlots.length < capacity) {
+			replacement = new int[capacity];
+		} else {
+			replacement = metricBundleSlots;
+			Arrays.fill(replacement, 0, capacity, 0);
+		}
+		int mask = capacity - 1;
+		for (int bundleId = 1; bundleId <= metricBundleSize; bundleId++) {
+			long hash = metricBundleHashes[bundleId];
+			int slot = PackedPrimitiveHash.slot(hash, capacity);
+			while (replacement[slot] != 0) {
+				slot = slot + 1 & mask;
+			}
+			replacement[slot] = bundleId;
+		}
+		metricBundleSlots = replacement;
 	}
 
 	private static byte inputFlags(PackedCostEstimate input) {
@@ -639,7 +836,94 @@ final class PackedCostingTraceArena {
 		flags |= input.hasComponentOutputRows() ? 1 << 2 : 0;
 		flags |= input.replacesChildWork() ? 1 << 3 : 0;
 		flags |= input.dependentSubqueriesCosted() ? 1 << 4 : 0;
+		flags |= input.hasDependentCostComponents() ? 1 << 5 : 0;
+		flags |= input.hasObjectiveInterval() ? 1 << 6 : 0;
 		return (byte) flags;
+	}
+
+	private int retainTypedValues(PackedCostEstimate estimate) {
+		if (retainedTypedValueCount(estimate) == 0) {
+			return 0;
+		}
+		int encodedStart = typedValueSize + 1;
+		int start = typedValueSize;
+		typedValues[start + STARTUP_ONCE_WORK] = estimate.startupOnceWork();
+		typedValues[start + DEPENDENT_INVOCATION_COUNT] = estimate.dependentInvocationCount();
+		typedValues[start + HIT_PROBABILITY] = estimate.hitProbability();
+		typedValues[start + FIRST_MATCH_WORK] = estimate.firstMatchWork();
+		typedValues[start + EXHAUSTION_WORK] = estimate.exhaustionWork();
+		typedValues[start + REBIND_WORK] = estimate.rebindWork();
+		typedValues[start + CLOSE_WORK] = estimate.closeWork();
+		typedValues[start + OUTPUT_WORK] = estimate.outputWork();
+		typedValues[start + DISTINCT_KEY_MISSES] = estimate.distinctKeyMisses();
+		typedValues[start + CACHE_HITS] = estimate.cacheHits();
+		typedValues[start + CACHE_MISSES] = estimate.cacheMisses();
+		typedValues[start + CACHE_EVICTIONS] = estimate.cacheEvictions();
+		typedValues[start + MATERIALIZATION_BUILDS] = estimate.materializationBuilds();
+		typedValues[start + MATERIALIZATION_LOOKUPS] = estimate.materializationLookups();
+		typedValues[start + MEMORY_SPILL_WORK] = estimate.memorySpillWork();
+		typedValues[start + OBJECTIVE_LOWER] = estimate.objectiveLower();
+		typedValues[start + OBJECTIVE_POINT] = estimate.objectivePoint();
+		typedValues[start + OBJECTIVE_UPPER] = estimate.objectiveUpper();
+		typedValueSize += TYPED_VALUE_COUNT;
+		return encodedStart;
+	}
+
+	private boolean typedValuesMatch(int encodedStart, PackedCostEstimate estimate) {
+		if (encodedStart == 0) {
+			return true;
+		}
+		int start = decodedTypedValueStart(encodedStart);
+		return sameDouble(typedValues[start + STARTUP_ONCE_WORK], estimate.startupOnceWork())
+				&& sameDouble(typedValues[start + DEPENDENT_INVOCATION_COUNT], estimate.dependentInvocationCount())
+				&& sameDouble(typedValues[start + HIT_PROBABILITY], estimate.hitProbability())
+				&& sameDouble(typedValues[start + FIRST_MATCH_WORK], estimate.firstMatchWork())
+				&& sameDouble(typedValues[start + EXHAUSTION_WORK], estimate.exhaustionWork())
+				&& sameDouble(typedValues[start + REBIND_WORK], estimate.rebindWork())
+				&& sameDouble(typedValues[start + CLOSE_WORK], estimate.closeWork())
+				&& sameDouble(typedValues[start + OUTPUT_WORK], estimate.outputWork())
+				&& sameDouble(typedValues[start + DISTINCT_KEY_MISSES], estimate.distinctKeyMisses())
+				&& sameDouble(typedValues[start + CACHE_HITS], estimate.cacheHits())
+				&& sameDouble(typedValues[start + CACHE_MISSES], estimate.cacheMisses())
+				&& sameDouble(typedValues[start + CACHE_EVICTIONS], estimate.cacheEvictions())
+				&& sameDouble(typedValues[start + MATERIALIZATION_BUILDS], estimate.materializationBuilds())
+				&& sameDouble(typedValues[start + MATERIALIZATION_LOOKUPS], estimate.materializationLookups())
+				&& sameDouble(typedValues[start + MEMORY_SPILL_WORK], estimate.memorySpillWork())
+				&& sameDouble(typedValues[start + OBJECTIVE_LOWER], estimate.objectiveLower())
+				&& sameDouble(typedValues[start + OBJECTIVE_POINT], estimate.objectivePoint())
+				&& sameDouble(typedValues[start + OBJECTIVE_UPPER], estimate.objectiveUpper());
+	}
+
+	private static long hashTypedValues(long hash, PackedCostEstimate estimate) {
+		if (retainedTypedValueCount(estimate) == 0) {
+			return hash;
+		}
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.startupOnceWork()));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.dependentInvocationCount()));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.hitProbability()));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.firstMatchWork()));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.exhaustionWork()));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.rebindWork()));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.closeWork()));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.outputWork()));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.distinctKeyMisses()));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.cacheHits()));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.cacheMisses()));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.cacheEvictions()));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.materializationBuilds()));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.materializationLookups()));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.memorySpillWork()));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.objectiveLower()));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.objectivePoint()));
+		return PackedPrimitiveHash.step(hash, Double.doubleToLongBits(estimate.objectiveUpper()));
+	}
+
+	private static int retainedTypedValueCount(PackedCostEstimate estimate) {
+		return estimate.hasDependentCostComponents() || estimate.hasObjectiveInterval() ? TYPED_VALUE_COUNT : 0;
+	}
+
+	private static int decodedTypedValueStart(int encodedStart) {
+		return encodedStart - 1;
 	}
 
 	private static int realizationSource(int sourceStateId, int realizedStateId) {
@@ -663,134 +947,304 @@ final class PackedCostingTraceArena {
 		return Double.doubleToLongBits(left) == Double.doubleToLongBits(right);
 	}
 
-	private static void annotateEventVector(PackedCostEstimate estimate) {
-		estimate.putPlannedStringMetric("optimizer.costEventCostScope",
-				estimate.costScope() == PackedCostEstimate.CostScope.INCLUSIVE ? "inclusive" : "local");
-		estimate.putPlannedDoubleMetric("optimizer.costEventSequentialRows", estimate.sequentialRows());
-		estimate.putPlannedDoubleMetric("optimizer.costEventRandomSeeks", estimate.randomSeeks());
-		estimate.putPlannedDoubleMetric("optimizer.costEventIteratorOpens", estimate.iteratorOpens());
-		estimate.putPlannedDoubleMetric("optimizer.costEventExpressionEvaluations",
-				estimate.expressionEvaluations());
-		estimate.putPlannedDoubleMetric("optimizer.costEventHashBuildRows", estimate.hashBuildRows());
-		estimate.putPlannedDoubleMetric("optimizer.costEventHashProbeRows", estimate.hashProbeRows());
-		estimate.putPlannedDoubleMetric("optimizer.costEventPathExpansions", estimate.pathExpansions());
-		estimate.putPlannedDoubleMetric("optimizer.costEventResultRows", estimate.resultRows());
-		estimate.putPlannedDoubleMetric("optimizer.costEventRemoteCalls", estimate.remoteCalls());
-		estimate.putPlannedDoubleMetric("optimizer.costEventPeakMemoryRows", estimate.peakMemoryRows());
-		estimate.putPlannedDoubleMetric("optimizer.costEventAccessRows", estimate.accessRows());
-		estimate.putPlannedDoubleMetric("optimizer.costEventInvocations", estimate.invocations());
-	}
-
 	PackedCostingTrace snapshot() {
 		if (size == 0) {
 			return PackedCostingTrace.empty();
 		}
+		for (int eventId = 1; eventId <= size; eventId++) {
+			ensureDigest(eventId);
+		}
+		return trace(true);
+	}
+
+	PackedCostingTrace.Projection project(int[] rootEventIds) {
+		if (size == 0) {
+			return PackedCostingTrace.empty().project(rootEventIds);
+		}
+		ensureDigestClosure(rootEventIds);
+		/*
+		 * Projection only reads the arena. Borrow its primitive columns so the selected-plan path does not first copy
+		 * every explored event into a full detached trace and then copy the winning closure a second time. The phase
+		 * column remains a compact detached length sentinel because PackedCostingTrace derives its event count from it.
+		 */
+		PackedCostingTrace borrowed = trace(false);
+		PackedCostingTrace.Projection projection = borrowed.project(rootEventIds);
+		if (projection.trace() != borrowed) {
+			return projection;
+		}
+		// Every event is reachable. Detach once because the arena remains mutable until its session closes.
+		return new PackedCostingTrace.Projection(trace(true), projection.originalToProjected());
+	}
+
+	int computedDigestCount() {
+		return computedDigestCount;
+	}
+
+	private void ensureDigestClosure(int[] rootEventIds) {
+		for (int rootEventId : rootEventIds) {
+			if (rootEventId < 0 || rootEventId > size) {
+				throw new IndexOutOfBoundsException("costing-trace projection root " + rootEventId);
+			}
+			int eventId = rootEventId;
+			while (eventId != 0) {
+				ensureDigest(eventId);
+				int dependency = providerInputCostEventIds[eventId];
+				if (dependency < 0 || dependency > size) {
+					throw new PackedMemoInvariantException("costing event " + eventId
+							+ " references provider input event " + dependency + " outside its trace");
+				}
+				eventId = dependency;
+			}
+		}
+	}
+
+	private void ensureDigest(int eventId) {
+		if (digestReady[eventId] != 0) {
+			return;
+		}
+		digestHigh[eventId] = eventHash(HASH_SEED_HIGH, eventId);
+		digestLow[eventId] = eventHash(HASH_SEED_LOW, eventId);
+		digestReady[eventId] = 1;
+		computedDigestCount++;
+	}
+
+	private PackedCostingTrace trace(boolean detached) {
 		int length = size + 1;
-		return new PackedCostingTrace(Arrays.copyOf(phases, length), Arrays.copyOf(relationIds, length),
-				Arrays.copyOf(contextFingerprints, length), Arrays.copyOf(prefixStarts, length),
-				Arrays.copyOf(prefixCounts, length), Arrays.copyOf(prefixRelationIds, prefixRelationSize),
-				Arrays.copyOf(prefixRows, length), Arrays.copyOf(assuredBindingRelationIds, length),
-				Arrays.copyOf(inputStateIds, length),
-				Arrays.copyOf(leftStateIds, length), Arrays.copyOf(rightStateIds, length),
-				Arrays.copyOf(inputSourceStateIds, length), Arrays.copyOf(leftSourceStateIds, length),
-				Arrays.copyOf(rightSourceStateIds, length),
-				Arrays.copyOf(outputStateIds, length), Arrays.copyOf(bindingLayoutIds, length),
-				Arrays.copyOf(correlationMaskIds, length), Arrays.copyOf(semanticScopeMaskIds, length),
-				Arrays.copyOf(hashLookupMaskIds, length), Arrays.copyOf(hashCompatibilityMaskIds, length),
-				Arrays.copyOf(leftInputRows, length), Arrays.copyOf(rightInputRows, length),
-				Arrays.copyOf(providerInputRows, length), Arrays.copyOf(providerInputWorkRows, length),
-				Arrays.copyOf(providerInputSequentialRows, length), Arrays.copyOf(providerInputRandomSeeks, length),
-				Arrays.copyOf(providerInputIteratorOpens, length),
-				Arrays.copyOf(providerInputExpressionEvaluations, length),
-				Arrays.copyOf(providerInputHashBuildRows, length), Arrays.copyOf(providerInputHashProbeRows, length),
-				Arrays.copyOf(providerInputPathExpansions, length), Arrays.copyOf(providerInputResultRows, length),
-				Arrays.copyOf(providerInputRemoteCalls, length),
-				Arrays.copyOf(providerInputPeakMemoryRows, length), Arrays.copyOf(providerInputAccessRows, length),
-				Arrays.copyOf(providerInputInvocations, length), Arrays.copyOf(providerInputCostEventIds, length),
-				Arrays.copyOf(providerInputStateIds, length), Arrays.copyOf(providerInputSourceStateIds, length),
-				Arrays.copyOf(providerInputLookupMasks, length),
-				Arrays.copyOf(providerInputMissingLookupMasks, length),
-				Arrays.copyOf(providerInputIndexPrefixLengths, length),
-				Arrays.copyOf(providerInputIndexNameIds, length), Arrays.copyOf(providerInputAccessModeIds, length),
-				Arrays.copyOf(providerInputEstimateSourceIds, length),
-				Arrays.copyOf(providerInputEstimateFusionIds, length), Arrays.copyOf(providerInputCostScopes, length),
-				Arrays.copyOf(providerInputFlags, length), Arrays.copyOf(providerInputGuarantees, length),
-				Arrays.copyOf(providerInputDispositions, length),
-				Arrays.copyOf(guarantees, length),
-				Arrays.copyOf(dispositions, length), Arrays.copyOf(outputRows, length),
-				Arrays.copyOf(workRows, length), Arrays.copyOf(objectiveCosts, length),
-				Arrays.copyOf(sequentialRows, length),
-				Arrays.copyOf(randomSeeks, length), Arrays.copyOf(iteratorOpens, length),
-				Arrays.copyOf(expressionEvaluations, length), Arrays.copyOf(hashBuildRows, length),
-				Arrays.copyOf(hashProbeRows, length), Arrays.copyOf(pathExpansions, length),
-				Arrays.copyOf(resultRows, length), Arrays.copyOf(remoteCalls, length),
-				Arrays.copyOf(peakMemoryRows, length),
-				Arrays.copyOf(accessRows, length), Arrays.copyOf(invocations, length),
-				Arrays.copyOf(indexNameIds, length), Arrays.copyOf(accessModeIds, length),
-				Arrays.copyOf(estimateSourceIds, length), Arrays.copyOf(estimateFusionIds, length),
-				Arrays.copyOf(digestHigh, length), Arrays.copyOf(digestLow, length),
-				Arrays.copyOf(stringMetricStarts, length), Arrays.copyOf(stringMetricCounts, length),
-				Arrays.copyOf(doubleMetricStarts, length), Arrays.copyOf(doubleMetricCounts, length),
-				Arrays.copyOf(stringMetricNameIds, stringMetricSize),
-				Arrays.copyOf(stringMetricValueIds, stringMetricSize),
-				Arrays.copyOf(doubleMetricNameIds, doubleMetricSize),
-				Arrays.copyOf(doubleMetricValues, doubleMetricSize), objects.snapshotValues());
+		return new PackedCostingTrace(Arrays.copyOf(phases, length), copy(detached, relationIds, length),
+				copy(detached, contextFingerprints, length), copy(detached, prefixStarts, length),
+				copy(detached, prefixCounts, length), copy(detached, prefixRelationIds, prefixRelationSize),
+				copy(detached, prefixRows, length), copy(detached, assuredBindingRelationIds, length),
+				copy(detached, inputStateIds, length), copy(detached, leftStateIds, length),
+				copy(detached, rightStateIds, length), copy(detached, inputSourceStateIds, length),
+				copy(detached, leftSourceStateIds, length), copy(detached, rightSourceStateIds, length),
+				copy(detached, outputStateIds, length), copy(detached, bindingLayoutIds, length),
+				copy(detached, correlationMaskIds, length), copy(detached, semanticScopeMaskIds, length),
+				copy(detached, hashLookupMaskIds, length), copy(detached, hashCompatibilityMaskIds, length),
+				copy(detached, leftInputRows, length), copy(detached, rightInputRows, length),
+				copy(detached, providerInputRows, length), copy(detached, providerInputWorkRows, length),
+				copy(detached, providerInputSequentialRows, length),
+				copy(detached, providerInputRandomSeeks, length),
+				copy(detached, providerInputIteratorOpens, length),
+				copy(detached, providerInputExpressionEvaluations, length),
+				copy(detached, providerInputHashBuildRows, length),
+				copy(detached, providerInputHashProbeRows, length),
+				copy(detached, providerInputPathExpansions, length),
+				copy(detached, providerInputResultRows, length), copy(detached, providerInputRemoteCalls, length),
+				copy(detached, providerInputPeakMemoryRows, length), copy(detached, providerInputAccessRows, length),
+				copy(detached, providerInputInvocations, length), copy(detached, providerInputCostEventIds, length),
+				copy(detached, providerInputStateIds, length),
+				copy(detached, providerInputSourceStateIds, length),
+				copy(detached, providerInputLookupMasks, length),
+				copy(detached, providerInputMissingLookupMasks, length),
+				copy(detached, providerInputIndexPrefixLengths, length),
+				copy(detached, providerInputIndexNameIds, length),
+				copy(detached, providerInputAccessModeIds, length),
+				copy(detached, providerInputEstimateSourceIds, length),
+				copy(detached, providerInputEstimateFusionIds, length),
+				copy(detached, providerInputCostScopes, length), copy(detached, providerInputFlags, length),
+				copy(detached, providerInputGuarantees, length),
+				copy(detached, providerInputDispositions, length), copy(detached, outputCostScopes, length),
+				copy(detached, outputFlags, length), copy(detached, guarantees, length),
+				copy(detached, dispositions, length), copy(detached, outputRows, length),
+				copy(detached, workRows, length), copy(detached, objectiveCosts, length),
+				copy(detached, sequentialRows, length), copy(detached, randomSeeks, length),
+				copy(detached, iteratorOpens, length), copy(detached, expressionEvaluations, length),
+				copy(detached, hashBuildRows, length), copy(detached, hashProbeRows, length),
+				copy(detached, pathExpansions, length), copy(detached, resultRows, length),
+				copy(detached, remoteCalls, length), copy(detached, peakMemoryRows, length),
+				copy(detached, accessRows, length), copy(detached, invocations, length),
+				copy(detached, indexNameIds, length), copy(detached, accessModeIds, length),
+				copy(detached, estimateSourceIds, length), copy(detached, estimateFusionIds, length),
+				copy(detached, digestHigh, length), copy(detached, digestLow, length),
+				copy(detached, stringMetricStarts, length), copy(detached, stringMetricCounts, length),
+				copy(detached, doubleMetricStarts, length), copy(detached, doubleMetricCounts, length),
+				copy(detached, stringMetricNameIds, stringMetricSize),
+				copy(detached, stringMetricValueIds, stringMetricSize),
+				copy(detached, doubleMetricNameIds, doubleMetricSize),
+				copy(detached, doubleMetricValues, doubleMetricSize), objects.snapshotValues());
+	}
+
+	private static byte[] copy(boolean detached, byte[] values, int length) {
+		return detached ? Arrays.copyOf(values, length) : values;
+	}
+
+	private static int[] copy(boolean detached, int[] values, int length) {
+		return detached ? Arrays.copyOf(values, length) : values;
+	}
+
+	private static long[] copy(boolean detached, long[] values, int length) {
+		return detached ? Arrays.copyOf(values, length) : values;
+	}
+
+	private static double[] copy(boolean detached, double[] values, int length) {
+		return detached ? Arrays.copyOf(values, length) : values;
 	}
 
 	static String digestString(long high, long low) {
 		return HexFormat.of().toHexDigits(high) + HexFormat.of().toHexDigits(low);
 	}
 
-	private void appendMetrics(int eventId, PackedCostEstimate estimate) {
-		int stringCount = 0;
-		for (int ordinal = 0; ordinal < estimate.plannedStringMetricCount(); ordinal++) {
-			if (!costEventMetric(estimate.plannedStringMetricName(ordinal))) {
-				stringCount++;
-			}
-		}
+	private void appendMetrics(int eventId, PackedCostEstimate estimate, int stringCount, int doubleCount) {
 		stringMetricStarts[eventId] = stringMetricSize;
 		stringMetricCounts[eventId] = stringCount;
-		ensureStringMetricCapacity(stringMetricSize + stringCount);
-		for (int ordinal = 0; ordinal < estimate.plannedStringMetricCount(); ordinal++) {
-			if (costEventMetric(estimate.plannedStringMetricName(ordinal))) {
-				continue;
+		if (estimate.plannedMetricsContainCostEventTelemetry()) {
+			for (int ordinal = 0; ordinal < estimate.plannedStringMetricCount(); ordinal++) {
+				String name = estimate.plannedStringMetricName(ordinal);
+				if (costEventMetric(name)) {
+					continue;
+				}
+				stringMetricNameIds[stringMetricSize] = objects.intern(estimate.plannedStringMetricName(ordinal));
+				stringMetricValueIds[stringMetricSize] = objects
+						.intern(estimate.plannedStringMetricValue(ordinal));
+				stringMetricSize++;
 			}
-			stringMetricNameIds[stringMetricSize] = objects.intern(estimate.plannedStringMetricName(ordinal));
-			stringMetricValueIds[stringMetricSize] = objects.intern(estimate.plannedStringMetricValue(ordinal));
-			stringMetricSize++;
-		}
-		int doubleCount = 0;
-		for (int ordinal = 0; ordinal < estimate.plannedDoubleMetricCount(); ordinal++) {
-			if (!costEventMetric(estimate.plannedDoubleMetricName(ordinal))) {
-				doubleCount++;
+		} else {
+			for (int ordinal = 0; ordinal < estimate.plannedStringMetricCount(); ordinal++) {
+				stringMetricNameIds[stringMetricSize] = objects.intern(estimate.plannedStringMetricName(ordinal));
+				stringMetricValueIds[stringMetricSize] = objects
+						.intern(estimate.plannedStringMetricValue(ordinal));
+				stringMetricSize++;
 			}
 		}
 		doubleMetricStarts[eventId] = doubleMetricSize;
 		doubleMetricCounts[eventId] = doubleCount;
-		ensureDoubleMetricCapacity(doubleMetricSize + doubleCount);
-		for (int ordinal = 0; ordinal < estimate.plannedDoubleMetricCount(); ordinal++) {
-			if (costEventMetric(estimate.plannedDoubleMetricName(ordinal))) {
-				continue;
+		if (estimate.plannedMetricsContainCostEventTelemetry()) {
+			for (int ordinal = 0; ordinal < estimate.plannedDoubleMetricCount(); ordinal++) {
+				String name = estimate.plannedDoubleMetricName(ordinal);
+				if (costEventMetric(name)) {
+					continue;
+				}
+				doubleMetricNameIds[doubleMetricSize] = objects.intern(estimate.plannedDoubleMetricName(ordinal));
+				doubleMetricValues[doubleMetricSize] = estimate.plannedDoubleMetricValue(ordinal);
+				doubleMetricSize++;
 			}
-			doubleMetricNameIds[doubleMetricSize] = objects.intern(estimate.plannedDoubleMetricName(ordinal));
-			doubleMetricValues[doubleMetricSize] = estimate.plannedDoubleMetricValue(ordinal);
-			doubleMetricSize++;
+		} else {
+			for (int ordinal = 0; ordinal < estimate.plannedDoubleMetricCount(); ordinal++) {
+				doubleMetricNameIds[doubleMetricSize] = objects.intern(estimate.plannedDoubleMetricName(ordinal));
+				doubleMetricValues[doubleMetricSize] = estimate.plannedDoubleMetricValue(ordinal);
+				doubleMetricSize++;
+			}
 		}
 	}
 
-	private static boolean costEventMetric(String name) {
+	private long metricBundleHash(PackedCostEstimate estimate, int stringCount, int doubleCount) {
+		boolean excludeCostEventTelemetry = estimate.plannedMetricsContainCostEventTelemetry();
+		long hash = PackedPrimitiveHash.step(PackedPrimitiveHash.SEED, stringCount);
+		for (int ordinal = 0; ordinal < estimate.plannedStringMetricCount(); ordinal++) {
+			String name = estimate.plannedStringMetricName(ordinal);
+			if (excludeCostEventTelemetry && costEventMetric(name)) {
+				continue;
+			}
+			hash = PackedPrimitiveHash.step(hash, Objects.hashCode(name));
+			hash = PackedPrimitiveHash.step(hash,
+					Objects.hashCode(estimate.plannedStringMetricValue(ordinal)));
+		}
+		hash = PackedPrimitiveHash.step(hash, doubleCount);
+		for (int ordinal = 0; ordinal < estimate.plannedDoubleMetricCount(); ordinal++) {
+			String name = estimate.plannedDoubleMetricName(ordinal);
+			if (excludeCostEventTelemetry && costEventMetric(name)) {
+				continue;
+			}
+			hash = PackedPrimitiveHash.step(hash, Objects.hashCode(name));
+			hash = PackedPrimitiveHash.step(hash,
+					Double.doubleToLongBits(estimate.plannedDoubleMetricValue(ordinal)));
+		}
+		return PackedPrimitiveHash.finish(hash);
+	}
+
+	private int findMetricBundle(long hash, PackedCostEstimate estimate, int stringCount, int doubleCount) {
+		int mask = metricBundleTableCapacity - 1;
+		int slot = PackedPrimitiveHash.slot(hash, metricBundleTableCapacity);
+		while (true) {
+			int bundleId = metricBundleSlots[slot];
+			if (bundleId == 0) {
+				return 0;
+			}
+			if (metricBundleHashes[bundleId] == hash
+					&& metricBundleMatches(metricBundleEventIds[bundleId], estimate,
+							stringCount, doubleCount)) {
+				return metricBundleEventIds[bundleId];
+			}
+			slot = slot + 1 & mask;
+		}
+	}
+
+	private boolean metricBundleMatches(int eventId, PackedCostEstimate estimate,
+			int stringCount, int doubleCount) {
+		if (stringMetricCounts[eventId] != stringCount || doubleMetricCounts[eventId] != doubleCount) {
+			return false;
+		}
+		int retainedOrdinal = 0;
+		int start = stringMetricStarts[eventId];
+		boolean excludeCostEventTelemetry = estimate.plannedMetricsContainCostEventTelemetry();
+		for (int ordinal = 0; ordinal < estimate.plannedStringMetricCount(); ordinal++) {
+			String name = estimate.plannedStringMetricName(ordinal);
+			if (excludeCostEventTelemetry && costEventMetric(name)) {
+				continue;
+			}
+			int metric = start + retainedOrdinal++;
+			if (!Objects.equals(objects.value(stringMetricNameIds[metric]), name)
+					|| !Objects.equals(objects.value(stringMetricValueIds[metric]),
+							estimate.plannedStringMetricValue(ordinal))) {
+				return false;
+			}
+		}
+		retainedOrdinal = 0;
+		start = doubleMetricStarts[eventId];
+		for (int ordinal = 0; ordinal < estimate.plannedDoubleMetricCount(); ordinal++) {
+			String name = estimate.plannedDoubleMetricName(ordinal);
+			if (excludeCostEventTelemetry && costEventMetric(name)) {
+				continue;
+			}
+			int metric = start + retainedOrdinal++;
+			if (!Objects.equals(objects.value(doubleMetricNameIds[metric]), name)
+					|| !sameDouble(doubleMetricValues[metric], estimate.plannedDoubleMetricValue(ordinal))) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private void registerMetricBundle(int eventId, long hash) {
+		int bundleId = ++metricBundleSize;
+		metricBundleEventIds[bundleId] = eventId;
+		metricBundleHashes[bundleId] = hash;
+		int mask = metricBundleTableCapacity - 1;
+		int slot = PackedPrimitiveHash.slot(hash, metricBundleTableCapacity);
+		while (metricBundleSlots[slot] != 0) {
+			slot = slot + 1 & mask;
+		}
+		metricBundleSlots[slot] = bundleId;
+	}
+
+	static boolean costEventMetric(String name) {
 		return name.startsWith(COST_EVENT_METRIC_PREFIX);
 	}
 
-	private void ensurePrefixCapacity(int required) {
-		if (required <= prefixRelationIds.length) {
-			return;
+	private static int retainedStringMetricCount(PackedCostEstimate estimate) {
+		if (!estimate.plannedMetricsContainCostEventTelemetry()) {
+			return estimate.plannedStringMetricCount();
 		}
-		int replacement = prefixRelationIds.length;
-		while (replacement < required) {
-			replacement = Math.multiplyExact(replacement, 2);
+		int count = 0;
+		for (int ordinal = 0; ordinal < estimate.plannedStringMetricCount(); ordinal++) {
+			if (!costEventMetric(estimate.plannedStringMetricName(ordinal))) {
+				count++;
+			}
 		}
-		prefixRelationIds = Arrays.copyOf(prefixRelationIds, replacement);
+		return count;
+	}
+
+	private static int retainedDoubleMetricCount(PackedCostEstimate estimate) {
+		if (!estimate.plannedMetricsContainCostEventTelemetry()) {
+			return estimate.plannedDoubleMetricCount();
+		}
+		int count = 0;
+		for (int ordinal = 0; ordinal < estimate.plannedDoubleMetricCount(); ordinal++) {
+			if (!costEventMetric(estimate.plannedDoubleMetricName(ordinal))) {
+				count++;
+			}
+		}
+		return count;
 	}
 
 	private long eventHash(long seed, int eventId) {
@@ -824,6 +1278,13 @@ final class PackedCostingTraceArena {
 		hash = mix(hash, Double.doubleToLongBits(providerInputPeakMemoryRows[eventId]));
 		hash = mix(hash, Double.doubleToLongBits(providerInputAccessRows[eventId]));
 		hash = mix(hash, Double.doubleToLongBits(providerInputInvocations[eventId]));
+		int providerInputTypedValueStart = providerInputTypedValueStarts[eventId];
+		if (providerInputTypedValueStart != 0) {
+			int start = decodedTypedValueStart(providerInputTypedValueStart);
+			for (int ordinal = 0; ordinal < TYPED_VALUE_COUNT; ordinal++) {
+				hash = mix(hash, Double.doubleToLongBits(typedValues[start + ordinal]));
+			}
+		}
 		hash = mix(hash, providerInputCostEventIds[eventId]);
 		hash = mix(hash, providerInputStateIds[eventId]);
 		hash = mix(hash, providerInputSourceStateIds[eventId]);
@@ -857,6 +1318,13 @@ final class PackedCostingTraceArena {
 		hash = mix(hash, Double.doubleToLongBits(peakMemoryRows[eventId]));
 		hash = mix(hash, Double.doubleToLongBits(accessRows[eventId]));
 		hash = mix(hash, Double.doubleToLongBits(invocations[eventId]));
+		int outputTypedValueStart = typedValueStarts[eventId];
+		if (outputTypedValueStart != 0) {
+			int start = decodedTypedValueStart(outputTypedValueStart);
+			for (int ordinal = 0; ordinal < TYPED_VALUE_COUNT; ordinal++) {
+				hash = mix(hash, Double.doubleToLongBits(typedValues[start + ordinal]));
+			}
+		}
 		hash = mix(hash, lookupMasks[eventId]);
 		hash = mix(hash, missingLookupMasks[eventId]);
 		hash = mix(hash, indexPrefixLengths[eventId]);
@@ -878,15 +1346,17 @@ final class PackedCostingTraceArena {
 	}
 
 	private int objectHash(int objectId) {
-		Object value = objects.value(objectId);
-		return value == null ? 0 : value.hashCode();
+		return objects.cachedHashCode(objectId);
 	}
 
-	private static long contextFingerprint(PackedCostContext context) {
+	private long contextFingerprint(PackedCostContext context) {
 		long hash = HASH_SEED_HIGH;
-		hash = mix(hash, context.prefixRelationCount());
-		for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
-			hash = mix(hash, context.prefixRelationId(ordinal));
+		boolean exactExtensional = exactExtensionalContext(context);
+		hash = mix(hash, exactExtensional ? -1 : context.prefixRelationCount());
+		if (!exactExtensional) {
+			for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
+				hash = mix(hash, context.prefixRelationId(ordinal));
+			}
 		}
 		hash = mix(hash, Double.doubleToLongBits(context.prefixRows()));
 		hash = mix(hash, context.assuredBindingRelationId());
@@ -903,6 +1373,10 @@ final class PackedCostingTraceArena {
 		return avalanche(hash);
 	}
 
+	private boolean exactExtensionalContext(PackedCostContext context) {
+		return budget.evidenceStates().isExactExtensional(context.evidenceStateId());
+	}
+
 	private static long mix(long hash, long value) {
 		long mixed = value * 0x9e3779b97f4a7c15L;
 		mixed = Long.rotateLeft(mixed, 31) * 0xc2b2ae3d27d4eb4fL;
@@ -917,11 +1391,114 @@ final class PackedCostingTraceArena {
 		return value ^ value >>> 33;
 	}
 
-	private void ensureEventCapacity(int requiredId) {
-		if (requiredId < phases.length) {
-			return;
+	private boolean ensureAppendCapacity(int eventId, int requiredPrefixSize, int requiredStringMetricSize,
+			int requiredDoubleMetricSize, int requiredTypedValueSize, boolean appendMetricBundle) {
+		int requiredEventCapacity = grownCapacity(eventCapacity, eventId + 1);
+		int requiredPrefixCapacity = grownCapacity(prefixCapacity, requiredPrefixSize);
+		int requiredStringMetricCapacity = grownCapacity(stringMetricCapacity, requiredStringMetricSize);
+		int requiredDoubleMetricCapacity = grownCapacity(doubleMetricCapacity, requiredDoubleMetricSize);
+		int requiredTypedValueCapacity = grownCapacity(typedValueCapacity, requiredTypedValueSize);
+		int requiredInvocationCapacity = invocationCapacity;
+		while (eventId > PackedPrimitiveHash.maximumFill(requiredInvocationCapacity)) {
+			requiredInvocationCapacity = Math.multiplyExact(requiredInvocationCapacity, 2);
 		}
-		int capacity = phases.length << 1;
+		int requiredMetricBundleCapacity = metricBundleCapacity;
+		int requiredMetricBundleTableCapacity = metricBundleTableCapacity;
+		if (appendMetricBundle) {
+			requiredMetricBundleCapacity = grownCapacity(metricBundleCapacity, metricBundleSize + 2);
+			while (metricBundleSize + 1 > PackedPrimitiveHash.maximumFill(requiredMetricBundleTableCapacity)) {
+				requiredMetricBundleTableCapacity = Math.multiplyExact(requiredMetricBundleTableCapacity, 2);
+			}
+		}
+		long retained = requiredBytesForCapacity(eventCapacity, prefixCapacity, stringMetricCapacity,
+				doubleMetricCapacity, typedValueCapacity, invocationCapacity,
+				metricBundleCapacity, metricBundleTableCapacity);
+		long required = requiredBytesForCapacity(requiredEventCapacity, requiredPrefixCapacity,
+				requiredStringMetricCapacity, requiredDoubleMetricCapacity, requiredTypedValueCapacity,
+				requiredInvocationCapacity, requiredMetricBundleCapacity,
+				requiredMetricBundleTableCapacity);
+		if (required != retained && !budget.tryReserveBytes(required - retained)) {
+			return false;
+		}
+		if (requiredEventCapacity > phases.length) {
+			resizeEventCapacity(requiredEventCapacity);
+		}
+		if (requiredPrefixCapacity > prefixRelationIds.length) {
+			prefixRelationIds = Arrays.copyOf(prefixRelationIds, requiredPrefixCapacity);
+		}
+		if (requiredStringMetricCapacity > stringMetricNameIds.length) {
+			stringMetricNameIds = Arrays.copyOf(stringMetricNameIds, requiredStringMetricCapacity);
+			stringMetricValueIds = Arrays.copyOf(stringMetricValueIds, requiredStringMetricCapacity);
+		}
+		if (requiredDoubleMetricCapacity > doubleMetricNameIds.length) {
+			doubleMetricNameIds = Arrays.copyOf(doubleMetricNameIds, requiredDoubleMetricCapacity);
+			doubleMetricValues = Arrays.copyOf(doubleMetricValues, requiredDoubleMetricCapacity);
+		}
+		if (requiredTypedValueCapacity > typedValues.length) {
+			typedValues = Arrays.copyOf(typedValues, requiredTypedValueCapacity);
+		}
+		if (requiredInvocationCapacity != invocationCapacity) {
+			resizeInvocationTable(requiredInvocationCapacity);
+		}
+		if (requiredMetricBundleCapacity > metricBundleEventIds.length) {
+			metricBundleEventIds = Arrays.copyOf(metricBundleEventIds, requiredMetricBundleCapacity);
+			metricBundleHashes = Arrays.copyOf(metricBundleHashes, requiredMetricBundleCapacity);
+		}
+		if (requiredMetricBundleTableCapacity != metricBundleTableCapacity) {
+			resizeMetricBundleTable(requiredMetricBundleTableCapacity);
+		}
+		eventCapacity = requiredEventCapacity;
+		prefixCapacity = requiredPrefixCapacity;
+		stringMetricCapacity = requiredStringMetricCapacity;
+		doubleMetricCapacity = requiredDoubleMetricCapacity;
+		typedValueCapacity = requiredTypedValueCapacity;
+		invocationCapacity = requiredInvocationCapacity;
+		metricBundleCapacity = requiredMetricBundleCapacity;
+		metricBundleTableCapacity = requiredMetricBundleTableCapacity;
+		return true;
+	}
+
+	static long requiredBytesForCapacity(int eventCapacity, int prefixCapacity, int stringMetricCapacity,
+			int doubleMetricCapacity, int typedValueCapacity, int invocationTableCapacity) {
+		return requiredBytesForCapacity(eventCapacity, prefixCapacity, stringMetricCapacity,
+				doubleMetricCapacity, typedValueCapacity, invocationTableCapacity,
+				eventCapacity, invocationTableCapacity);
+	}
+
+	private static long requiredBytesForCapacity(int eventCapacity, int prefixCapacity, int stringMetricCapacity,
+			int doubleMetricCapacity, int typedValueCapacity, int invocationTableCapacity,
+			int metricBundleCapacity, int metricBundleTableCapacity) {
+		if (eventCapacity < 0 || prefixCapacity < 0 || stringMetricCapacity < 0 || doubleMetricCapacity < 0
+				|| typedValueCapacity < 0 || invocationTableCapacity < 0 || metricBundleCapacity < 0
+				|| metricBundleTableCapacity < 0) {
+			throw new IllegalArgumentException("costing trace capacities must be nonnegative");
+		}
+		long eventRowBytes = EVENT_INT_COLUMNS * (long) Integer.BYTES
+				+ EVENT_LONG_COLUMNS * (long) Long.BYTES
+				+ EVENT_DOUBLE_COLUMNS * (long) Double.BYTES
+				+ EVENT_BYTE_COLUMNS;
+		long bytes = Math.multiplyExact(eventCapacity, eventRowBytes);
+		bytes = Math.addExact(bytes, Math.multiplyExact(prefixCapacity, (long) Integer.BYTES));
+		bytes = Math.addExact(bytes, Math.multiplyExact(stringMetricCapacity, 2L * Integer.BYTES));
+		bytes = Math.addExact(bytes,
+				Math.multiplyExact(doubleMetricCapacity, (long) Integer.BYTES + Double.BYTES));
+		bytes = Math.addExact(bytes, Math.multiplyExact(typedValueCapacity, (long) Double.BYTES));
+		bytes = Math.addExact(bytes, Math.multiplyExact(invocationTableCapacity, (long) Integer.BYTES));
+		bytes = Math.addExact(bytes,
+				Math.multiplyExact(metricBundleCapacity, (long) Integer.BYTES + Long.BYTES));
+		return Math.addExact(bytes,
+				Math.multiplyExact(metricBundleTableCapacity, (long) Integer.BYTES));
+	}
+
+	private static int grownCapacity(int current, int required) {
+		int capacity = current;
+		while (capacity < required) {
+			capacity = Math.multiplyExact(capacity, 2);
+		}
+		return capacity;
+	}
+
+	private void resizeEventCapacity(int capacity) {
 		phases = Arrays.copyOf(phases, capacity);
 		relationIds = Arrays.copyOf(relationIds, capacity);
 		contextFingerprints = Arrays.copyOf(contextFingerprints, capacity);
@@ -957,6 +1534,7 @@ final class PackedCostingTraceArena {
 		providerInputPeakMemoryRows = Arrays.copyOf(providerInputPeakMemoryRows, capacity);
 		providerInputAccessRows = Arrays.copyOf(providerInputAccessRows, capacity);
 		providerInputInvocations = Arrays.copyOf(providerInputInvocations, capacity);
+		providerInputTypedValueStarts = Arrays.copyOf(providerInputTypedValueStarts, capacity);
 		providerInputCostEventIds = Arrays.copyOf(providerInputCostEventIds, capacity);
 		providerInputStateIds = Arrays.copyOf(providerInputStateIds, capacity);
 		providerInputSourceStateIds = Arrays.copyOf(providerInputSourceStateIds, capacity);
@@ -991,6 +1569,7 @@ final class PackedCostingTraceArena {
 		peakMemoryRows = Arrays.copyOf(peakMemoryRows, capacity);
 		accessRows = Arrays.copyOf(accessRows, capacity);
 		invocations = Arrays.copyOf(invocations, capacity);
+		typedValueStarts = Arrays.copyOf(typedValueStarts, capacity);
 		lookupMasks = Arrays.copyOf(lookupMasks, capacity);
 		missingLookupMasks = Arrays.copyOf(missingLookupMasks, capacity);
 		indexPrefixLengths = Arrays.copyOf(indexPrefixLengths, capacity);
@@ -1001,6 +1580,7 @@ final class PackedCostingTraceArena {
 		runtimeFeedbackContractIds = Arrays.copyOf(runtimeFeedbackContractIds, capacity);
 		digestHigh = Arrays.copyOf(digestHigh, capacity);
 		digestLow = Arrays.copyOf(digestLow, capacity);
+		digestReady = Arrays.copyOf(digestReady, capacity);
 		invocationHashes = Arrays.copyOf(invocationHashes, capacity);
 		stringMetricStarts = Arrays.copyOf(stringMetricStarts, capacity);
 		stringMetricCounts = Arrays.copyOf(stringMetricCounts, capacity);
@@ -1008,27 +1588,4 @@ final class PackedCostingTraceArena {
 		doubleMetricCounts = Arrays.copyOf(doubleMetricCounts, capacity);
 	}
 
-	private void ensureStringMetricCapacity(int requiredSize) {
-		if (requiredSize <= stringMetricNameIds.length) {
-			return;
-		}
-		int capacity = stringMetricNameIds.length;
-		while (capacity < requiredSize) {
-			capacity <<= 1;
-		}
-		stringMetricNameIds = Arrays.copyOf(stringMetricNameIds, capacity);
-		stringMetricValueIds = Arrays.copyOf(stringMetricValueIds, capacity);
-	}
-
-	private void ensureDoubleMetricCapacity(int requiredSize) {
-		if (requiredSize <= doubleMetricNameIds.length) {
-			return;
-		}
-		int capacity = doubleMetricNameIds.length;
-		while (capacity < requiredSize) {
-			capacity <<= 1;
-		}
-		doubleMetricNameIds = Arrays.copyOf(doubleMetricNameIds, capacity);
-		doubleMetricValues = Arrays.copyOf(doubleMetricValues, capacity);
-	}
 }

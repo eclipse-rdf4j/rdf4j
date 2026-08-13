@@ -47,6 +47,15 @@ class LmdbHashJoinCostingTest {
 	}
 
 	@Test
+	void completeAssuredCompatibilityNeedsNoNdvEvidenceToPriceCandidates() {
+		LmdbHashJoinCosting.CandidateEstimate estimate = LmdbHashJoinCosting.estimateCandidates(
+				46_600.0d, 25_000.0d, 1.0d, 25_000.0d, 7, 7, null, null);
+
+		assertThat(estimate.candidateRows()).isEqualTo(25_000.0d);
+		assertThat(estimate.source()).isEqualTo("assured-compatibility-output");
+	}
+
+	@Test
 	void jointNdvEvidencePricesBucketFanoutAndClampsToMatches() {
 		FrontierCorrelationDomain left = domain(100.0d, 20.0d, EvidenceGuarantee.MEASURE_UNBIASED, null);
 		FrontierCorrelationDomain right = domain(80.0d, 10.0d, EvidenceGuarantee.MEASURE_UNBIASED, null);

@@ -31,12 +31,14 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -44,10 +46,13 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -140,9 +145,77 @@ public class FilterIterator extends FilterIteration<BindingSet>
 			retain = Function.identity();
 		}
 		FilterFeedbackMode feedbackMode = feedbackMode(filter, evaluationStatistics);
+		Function<BindingSet, BindingSet> argumentBindings = resourceEqualityArgumentBindings(filter);
 
-		return (bs) -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain, evaluationStatistics,
+		return (bs) -> new FilterIterator(filter, arg.evaluate(argumentBindings.apply(bs)), ves, strategy, retain,
+				evaluationStatistics,
 				feedbackMode);
+	}
+
+	/**
+	 * A variable-to-variable SPARQL value equality can become an exact lookup constraint when one side is an incoming
+	 * RDF resource and the other side is assuredly produced by a positive graph-pattern argument. Resource value
+	 * equality is RDF-term equality, so prebinding the produced variable cannot remove a solution that the filter would
+	 * accept. Literals deliberately remain on the normal post-filter path because SPARQL value equality can equate
+	 * distinct lexical RDF terms.
+	 */
+	private static Function<BindingSet, BindingSet> resourceEqualityArgumentBindings(Filter filter) {
+		if (!(filter.getCondition()instanceof Compare compare)
+				|| compare.getOperator() != Compare.CompareOp.EQ
+				|| !(compare.getLeftArg()instanceof Var left)
+				|| !(compare.getRightArg()instanceof Var right)
+				|| left.hasValue()
+				|| right.hasValue()
+				|| left.getName() == null
+				|| right.getName() == null
+				|| left.getName().equals(right.getName())
+				|| !isPositiveBindingSubtree(filter.getArg())) {
+			return Function.identity();
+		}
+		String leftName = left.getName();
+		String rightName = right.getName();
+		Set<String> assuredBindingNames = filter.getArg().getAssuredBindingNames();
+		boolean leftAssured = assuredBindingNames.contains(leftName);
+		boolean rightAssured = assuredBindingNames.contains(rightName);
+		if (!leftAssured && !rightAssured) {
+			return Function.identity();
+		}
+		return bindings -> {
+			if (leftAssured && !bindings.hasBinding(leftName)
+					&& bindings.getValue(rightName)instanceof Resource resource) {
+				return withBinding(bindings, leftName, resource);
+			}
+			if (rightAssured && !bindings.hasBinding(rightName)
+					&& bindings.getValue(leftName)instanceof Resource resource) {
+				return withBinding(bindings, rightName, resource);
+			}
+			return bindings;
+		};
+	}
+
+	private static BindingSet withBinding(BindingSet bindings, String bindingName, Value value) {
+		QueryBindingSet augmented = new QueryBindingSet(bindings);
+		augmented.addBinding(bindingName, value);
+		return augmented;
+	}
+
+	private static boolean isPositiveBindingSubtree(TupleExpr expression) {
+		if (expression instanceof StatementPattern || expression instanceof SingletonSet
+				|| expression instanceof EmptySet || expression instanceof BindingSetAssignment) {
+			return true;
+		}
+		if (expression instanceof Join join) {
+			return isPositiveBindingSubtree(join.getLeftArg()) && isPositiveBindingSubtree(join.getRightArg());
+		}
+		if (expression instanceof LeftJoin optional) {
+			return !optional.hasCondition()
+					&& isPositiveBindingSubtree(optional.getLeftArg())
+					&& isPositiveBindingSubtree(optional.getRightArg());
+		}
+		if (expression instanceof Union union) {
+			return isPositiveBindingSubtree(union.getLeftArg()) && isPositiveBindingSubtree(union.getRightArg());
+		}
+		return false;
 	}
 
 	private static QueryEvaluationStep supplyMaterializedExistsSemiJoin(Filter filter, EvaluationStrategy strategy,

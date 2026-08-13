@@ -140,7 +140,7 @@ final class PackedPrefixRowComposition {
 		}
 	}
 
-	private double unrelatedRows(int[] prefixRelations, double[] prefixContributionRows, int prefixCount,
+	double unrelatedRows(int[] prefixRelations, double[] prefixContributionRows, int prefixCount,
 			int factorRelationId) {
 		return unrelatedRows(prefixRelations, prefixContributionRows, 0, prefixCount, factorRelationId);
 	}

@@ -27,10 +27,11 @@ final class FrontierInsertGenerationBuilder {
 	}
 
 	static int maximumSingleBlockInsertions(int designLaneCount, int auditLaneCount) {
-		long laneCopies = Math.multiplyExact(2L, Math.addExact(designLaneCount, auditLaneCount));
+		requireLaneCounts(designLaneCount, auditLaneCount);
+		long directionalCopies = 2L;
 		long recordBytes = Math.multiplyExact(FrontierSynopsisBuilder.RECORD_LONGS, Long.BYTES);
 		long maximumBlockRecords = Math.max(1L, (MAXIMUM_BLOCK_BYTES - BLOCK_OVERHEAD_BYTES) / recordBytes);
-		return (int) Math.max(1L, Math.min(Integer.MAX_VALUE, maximumBlockRecords / laneCopies));
+		return (int) Math.max(1L, Math.min(Integer.MAX_VALUE, maximumBlockRecords / directionalCopies));
 	}
 
 	static FrontierPayloadDescriptor build(Path directory, long generation, long budgetBytes, int designLaneCount,
@@ -43,8 +44,7 @@ final class FrontierInsertGenerationBuilder {
 		if (generation <= 0L || designLaneCount <= 0 || auditLaneCount <= 0 || insertions.isEmpty()) {
 			throw new IllegalArgumentException("Frontier insert generation requires positive identity and rows");
 		}
-		long laneCopies = Math.multiplyExact(2L, Math.addExact(designLaneCount, auditLaneCount));
-		long expectedRecords = Math.multiplyExact(insertions.size(), laneCopies);
+		long expectedRecords = Math.multiplyExact(insertions.size(), 2L);
 		long maximumRecords = maximumRecords(budgetBytes);
 		if (expectedRecords > maximumRecords) {
 			throw budgetExceeded("Frontier exact insert generation exceeds its remaining payload budget");
@@ -78,7 +78,7 @@ final class FrontierInsertGenerationBuilder {
 						output, FrontierPayloadKind.INSERT, generation, limits);
 				BlockEmitter emitter = new BlockEmitter(writer, maximumBlockRecords);
 				for (FrontierInsertion insertion : insertions) {
-					emitInsertion(emitter, insertion, designLaneCount, auditLaneCount);
+					emitInsertion(emitter, insertion);
 				}
 				emitter.finish();
 				if (emitter.recordCount != expectedRecords) {
@@ -101,37 +101,25 @@ final class FrontierInsertGenerationBuilder {
 		}
 	}
 
-	private static void emitInsertion(BlockEmitter emitter, FrontierInsertion insertion, int designLaneCount,
-			int auditLaneCount) throws IOException {
-		for (int lane = 0; lane < designLaneCount; lane++) {
-			emitOrientations(emitter, insertion, 1, lane);
-		}
-		for (int lane = 0; lane < auditLaneCount; lane++) {
-			emitOrientations(emitter, insertion, 2, lane);
-		}
-	}
-
-	private static void emitOrientations(BlockEmitter emitter, FrontierInsertion insertion, int laneRole,
-			int laneIndex) throws IOException {
+	private static void emitInsertion(BlockEmitter emitter, FrontierInsertion insertion) throws IOException {
 		emit(emitter, insertion.explicit(), FrontierManifestIdentity.SUBJECT_TO_OBJECT_DIRECTION,
-				laneRole, laneIndex, insertion.subjectId(), insertion.predicateId(), insertion.objectId(),
-				insertion.contextId());
+				insertion.subjectId(), insertion.predicateId(), insertion.objectId(), insertion.contextId());
 		emit(emitter, insertion.explicit(), FrontierManifestIdentity.OBJECT_TO_SUBJECT_DIRECTION,
-				laneRole, laneIndex, insertion.objectId(), insertion.predicateId(), insertion.subjectId(),
-				insertion.contextId());
+				insertion.objectId(), insertion.predicateId(), insertion.subjectId(), insertion.contextId());
 	}
 
-	private static void emit(BlockEmitter emitter, boolean explicit, int direction, int laneRole, int laneIndex,
+	private static void emit(BlockEmitter emitter, boolean explicit, int direction,
 			long center, long predicate, long neighbor, long context) throws IOException {
-		long flags = FrontierSynopsisBuilder.FLAG_DATABASE_EXACT;
+		long flags = FrontierSynopsisBuilder.FLAG_DATABASE_EXACT
+				| FrontierSynopsisBuilder.FLAG_SHARED_ACROSS_LANES;
 		if (explicit) {
 			flags |= FrontierSynopsisBuilder.FLAG_EXPLICIT;
 		}
 		emitter.append(
 				FrontierSynopsisBuilder.RECORD_FORMAT_VERSION,
 				direction,
-				laneRole,
-				laneIndex,
+				FrontierManifestIdentity.ALL_LANE_ROLES,
+				-1L,
 				flags,
 				center,
 				predicate,
@@ -139,7 +127,13 @@ final class FrontierInsertGenerationBuilder {
 				context,
 				Double.doubleToRawLongBits(1.0d),
 				Double.doubleToRawLongBits(1.0d),
-				FrontierSynopsisBuilder.laneHash(center, laneRole, laneIndex));
+				0L);
+	}
+
+	private static void requireLaneCounts(int designLaneCount, int auditLaneCount) {
+		if (designLaneCount <= 0 || auditLaneCount <= 0) {
+			throw new IllegalArgumentException("Frontier design and audit lane counts must be positive");
+		}
 	}
 
 	private static long maximumRecords(long budgetBytes) throws FrontierPayloadException {

@@ -57,10 +57,11 @@ class LmdbDependentReopenCostTest {
 				Var.of("observationPredicate", values.createIRI("urn:event-observation")), Var.of("observation"));
 		TupleExpr rhs = new Join(value, correlated);
 		Method domains = LmdbFrontierPackedCostSession.class.getDeclaredMethod("semiAntiBindingDomains",
-				Collection.class, Collection.class, TupleExpr.class);
+				Collection.class, Collection.class, Collection.class, TupleExpr.class);
 		domains.setAccessible(true);
 
-		Object result = domains.invoke(null, List.of("condition", "conditionCode"), List.of("encounter"), rhs);
+		Object result = domains.invoke(null, List.of("condition", "conditionCode"), List.of("encounter"),
+				rhs.getBindingNames(), rhs);
 
 		assertEquals(List.of("encounter"), accessor(result.getClass(), "probeNames").invoke(result));
 		assertEquals(List.of("encounter"), accessor(result.getClass(), "sharedHashNames").invoke(result));
@@ -101,6 +102,40 @@ class LmdbDependentReopenCostTest {
 
 		assertEquals(0, maximumMappings.invoke(null, 4_096L, 5.97d, 23_100.0d));
 		assertEquals(4_096, maximumMappings.invoke(null, 4_096L, 1.0d, 0.0d));
+	}
+
+	@Test
+	void publishedDependentPlanVectorWinsOverScalarReestimate() throws Exception {
+		PackedCostEstimate estimate = new PackedCostEstimate();
+		estimate.setRows(2.0d, 2.0d);
+		estimate.putPlannedDoubleMetric("optimizer.dependentCostEventCount", 1.0d);
+		estimate.putPlannedDoubleMetric("plannedDependentSubquerySequentialRows", 11.0d);
+		estimate.putPlannedDoubleMetric("plannedDependentSubqueryRandomSeeks", 2.0d);
+		estimate.putPlannedDoubleMetric("plannedDependentSubqueryIteratorOpens", 3.0d);
+		estimate.putPlannedDoubleMetric("plannedDependentSubqueryExpressionEvaluations", 4.0d);
+		estimate.putPlannedDoubleMetric("plannedDependentSubqueryHashBuildRows", 5.0d);
+		estimate.putPlannedDoubleMetric("plannedDependentSubqueryHashProbeRows", 6.0d);
+		estimate.putPlannedDoubleMetric("plannedDependentSubqueryPathExpansions", 7.0d);
+		estimate.putPlannedDoubleMetric("plannedDependentSubqueryResultRows", 8.0d);
+		estimate.putPlannedDoubleMetric("plannedDependentSubqueryRemoteCalls", 9.0d);
+		estimate.putPlannedDoubleMetric("plannedDependentSubqueryPeakMemoryRows", 10.0d);
+
+		Method publish = LmdbFrontierPackedCostSession.class.getDeclaredMethod(
+				"applyPublishedDependentPlanPhysicalCost", PackedCostEstimate.class, double.class);
+		publish.setAccessible(true);
+
+		assertTrue((boolean) publish.invoke(null, estimate, 13.0d));
+		assertEquals(11.0d, estimate.sequentialRows());
+		assertEquals(2.0d, estimate.randomSeeks());
+		assertEquals(3.0d, estimate.iteratorOpens());
+		assertEquals(17.0d, estimate.expressionEvaluations());
+		assertEquals(5.0d, estimate.hashBuildRows());
+		assertEquals(6.0d, estimate.hashProbeRows());
+		assertEquals(7.0d, estimate.pathExpansions());
+		assertEquals(2.0d, estimate.resultRows());
+		assertEquals(9.0d, estimate.remoteCalls());
+		assertEquals(10.0d, estimate.peakMemoryRows());
+		assertTrue(estimate.dependentSubqueriesCosted());
 	}
 
 	private static Method accessor(Class<?> type, String name) throws NoSuchMethodException {

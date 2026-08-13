@@ -163,6 +163,8 @@ public class ThemeQueryPlanRunBenchmark {
 
 		public boolean rebuildStoreBeforeSetup;
 
+		public long frontierQueryMemoryBudgetBytes = LmdbStoreConfig.FRONTIER_QUERY_MEMORY_BUDGET_BYTES;
+
 //		@Param({ QUERY_VARIANT_FILTER })
 		public String queryVariant;
 
@@ -338,7 +340,9 @@ public class ThemeQueryPlanRunBenchmark {
 			LmdbStoreConfig config = ConfigUtil.createConfig();
 			config.setSketchEstimatorEnabled(sketchEstimatorEnabled);
 			config.setSketchEstimatorStrategy(sketchEstimatorStrategyOrDefault());
+			config.setSketchEstimatorEvidenceMode("snapshot-only");
 			config.setOptimizerSamplingMaxMillis(OPTIMIZATION_TIMEOUT_MILLIS);
+			config.setFrontierQueryMemoryBudgetBytes(frontierQueryMemoryBudgetBytes);
 			return config;
 		}
 

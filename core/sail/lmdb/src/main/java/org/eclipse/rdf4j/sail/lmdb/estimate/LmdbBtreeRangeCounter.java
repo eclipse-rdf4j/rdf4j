@@ -22,11 +22,13 @@ final class LmdbBtreeRangeCounter {
 
 	private final LmdbDataFile dataFile;
 	private final LmdbMeta meta;
+	private final PageBuffers pageBuffers;
 	private final LmdbNode node = new LmdbNode();
 
-	LmdbBtreeRangeCounter(LmdbDataFile dataFile, LmdbMeta meta) {
+	LmdbBtreeRangeCounter(LmdbDataFile dataFile, LmdbMeta meta, PageBuffers pageBuffers) {
 		this.dataFile = dataFile;
 		this.meta = meta;
+		this.pageBuffers = pageBuffers;
 	}
 
 	RangeCountResult countRange(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
@@ -86,7 +88,7 @@ final class LmdbBtreeRangeCounter {
 	private SeekCursor seek(LmdbDb db, byte[] searchKey, int searchKeyLength, RangeCountResult stats)
 			throws IOException {
 		List<BranchFrame> branchPath = new ArrayList<>();
-		LmdbPage page = dataFile.readPage(db.rootPgno(), meta);
+		LmdbPage page = readPage(db.rootPgno(), 0);
 		if (page.isBranch()) {
 			stats.branchPagesRead++;
 		}
@@ -113,7 +115,7 @@ final class LmdbBtreeRangeCounter {
 			}
 			page.readNode(childIndex, node);
 			branchPath.add(new BranchFrame(page, childIndex));
-			page = dataFile.readPage(node.branchPgno(), meta);
+			page = readPage(node.branchPgno(), branchPath.size());
 			if (page.isBranch()) {
 				stats.branchPagesRead++;
 			}
@@ -135,14 +137,13 @@ final class LmdbBtreeRangeCounter {
 	}
 
 	private boolean advanceToNextLeaf(SeekCursor cursor, RangeCountResult stats) throws IOException {
-		ByteBuffer reusableLeafBuffer = cursor.leafPage.buffer;
 		while (!cursor.branchPath.isEmpty()) {
 			BranchFrame last = cursor.branchPath.getLast();
 			int nextChild = last.childIndex + 1;
 			if (nextChild < last.page.numKeys) {
 				last.childIndex = nextChild;
 				last.page.readNode(nextChild, node);
-				LmdbPage page = dataFile.readPage(node.branchPgno(), meta, reusableLeafBuffer);
+				LmdbPage page = readPage(node.branchPgno(), cursor.branchPath.size());
 				if (page.isBranch()) {
 					stats.branchPagesRead++;
 				}
@@ -156,7 +157,7 @@ final class LmdbBtreeRangeCounter {
 					}
 					cursor.branchPath.add(new BranchFrame(page, 0));
 					page.readNode(0, node);
-					page = dataFile.readPage(node.branchPgno(), meta);
+					page = readPage(node.branchPgno(), cursor.branchPath.size());
 					if (page.isBranch()) {
 						stats.branchPagesRead++;
 					}
@@ -175,6 +176,10 @@ final class LmdbBtreeRangeCounter {
 			cursor.branchPath.removeLast();
 		}
 		return false;
+	}
+
+	private LmdbPage readPage(long pgno, int depth) throws IOException {
+		return dataFile.readPage(pgno, meta, pageBuffers.level(depth, meta.pageSize()));
 	}
 
 	private SearchResult findFirstGreaterOrEqual(LmdbPage page, byte[] key, int keyLength, boolean leafSearch)
@@ -242,7 +247,7 @@ final class LmdbBtreeRangeCounter {
 		}
 		if ((node.nodeFlags() & LmdbFormat.F_BIGDATA) != 0 && node.valueSize() >= Long.BYTES) {
 			long overflowPgno = page.buffer.getLong(node.valueOffset());
-			LmdbPage overflowPage = dataFile.readPage(overflowPgno, meta);
+			LmdbPage overflowPage = dataFile.readPage(overflowPgno, meta, pageBuffers.scratch(meta.pageSize()));
 			stats.overflowPagesRead += Math.max(overflowPage.overflowPages, 1);
 		}
 		return 1;
@@ -266,6 +271,30 @@ final class LmdbBtreeRangeCounter {
 	}
 
 	private record SearchResult(int index, boolean exact) {
+	}
+
+	static final class PageBuffers {
+		private final List<ByteBuffer> levels = new ArrayList<>();
+		private ByteBuffer scratch;
+
+		ByteBuffer level(int depth, int pageSize) {
+			while (levels.size() <= depth) {
+				levels.add(null);
+			}
+			ByteBuffer buffer = levels.get(depth);
+			if (buffer == null || buffer.capacity() < pageSize) {
+				buffer = ByteBuffer.allocate(pageSize);
+				levels.set(depth, buffer);
+			}
+			return buffer;
+		}
+
+		ByteBuffer scratch(int pageSize) {
+			if (scratch == null || scratch.capacity() < pageSize) {
+				scratch = ByteBuffer.allocate(pageSize);
+			}
+			return scratch;
+		}
 	}
 
 	private static final class BranchFrame {

@@ -66,6 +66,11 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 			long learnedRevision) {
 		BindingUniverse universe = BindingUniverse.from(Objects.requireNonNull(expression, "expression"),
 				PhysicalProperties.ANY);
+		return root(universe, snapshotIdentity, snapshotVersion, learnedRevision);
+	}
+
+	static EstimateContext root(BindingUniverse universe, QuadSnapshotIdentity snapshotIdentity, long snapshotVersion,
+			long learnedRevision) {
 		return new EstimateContext(universe, BindingMask.EMPTY, Optional.empty(),
 				BagEstimate.exact(1.0d, "root-prefix"), 1.0d, EvidencePolicy.ADAPTIVE,
 				JoinFactorCostModel.EstimationTier.STANDARD, snapshotIdentity, snapshotVersion, learnedRevision,

@@ -34,6 +34,7 @@ public final class PackedPlanValidationRequest {
 	private final double[] candidateEventCosts;
 	private final double[] lowerBounds;
 	private final boolean[] acceptedWhenCosted;
+	private final boolean[] selectedByPolicy;
 	private final boolean[] composesChildCosts;
 	private final int[] candidateChildStarts;
 	private final int[] candidateChildEventIds;
@@ -72,6 +73,7 @@ public final class PackedPlanValidationRequest {
 		candidateEventCosts = new double[count];
 		lowerBounds = new double[count];
 		acceptedWhenCosted = new boolean[count];
+		selectedByPolicy = new boolean[count];
 		composesChildCosts = new boolean[count];
 		candidateChildStarts = new int[count + 1];
 		int childCount = 0;
@@ -90,6 +92,7 @@ public final class PackedPlanValidationRequest {
 			candidateEventCosts[index] = certificate.candidateEventCost(index);
 			lowerBounds[index] = certificate.lowerBound(index);
 			acceptedWhenCosted[index] = certificate.acceptedWhenCosted(index);
+			selectedByPolicy[index] = certificate.selectedByPolicy(index);
 			composesChildCosts[index] = certificate.composesChildCosts(index);
 			for (int child = 0; child < certificate.candidateChildCount(index); child++) {
 				int target = candidateChildStarts[index] + child;
@@ -178,6 +181,11 @@ public final class PackedPlanValidationRequest {
 		return acceptedWhenCosted[index];
 	}
 
+	public boolean selectedByPolicy(int index) {
+		checkIndex(index);
+		return selectedByPolicy[index];
+	}
+
 	public boolean composesChildCosts(int index) {
 		checkIndex(index);
 		return composesChildCosts[index];
@@ -262,6 +270,7 @@ public final class PackedPlanValidationRequest {
 			hash = mix(hash, costingTrace.relationId(eventId));
 			hash = mix(hash, candidateTiers[index]);
 			hash = mix(hash, acceptedWhenCosted[index] ? 1L : 0L);
+			hash = mix(hash, selectedByPolicy[index] ? 1L : 0L);
 		}
 		return avalanche(hash);
 	}

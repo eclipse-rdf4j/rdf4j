@@ -14,15 +14,25 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -35,6 +45,73 @@ import org.junit.jupiter.api.Test;
 class PackedFrontierSessionContractTest {
 
 	private static final String PACKED_COST_SESSION = PackedCostModel.class.getPackageName() + ".PackedCostSession";
+
+	@Test
+	void queryViewMaterializesEachRelationOnlyOnceForItsCostingSession() {
+		PackedQuery query = PackedQueryCodec.encode(new SingletonSet());
+		PackedQueryView view = new PackedQueryView(query);
+
+		assertSame(view.materializeRelation(1), view.materializeRelation(1),
+				"provider reads of one packed relation must reuse its query-local canonical materialization");
+	}
+
+	@Test
+	void queryViewReusesImmutableBindingNamesForPackedAndMaterializedRelations() throws Exception {
+		TupleExpr source = new LeftJoin(
+				new StatementPattern(Var.of("subject"), Var.of("leftPredicate"), Var.of("shared")),
+				new StatementPattern(Var.of("shared"), Var.of("rightPredicate"), Var.of("value")));
+		PackedQuery query = PackedQueryCodec.encode(source);
+		PackedQueryView view = new PackedQueryView(query);
+		Method relationBindingNames = requiredMethod(PackedQueryView.class, "outputBindingNames", int.class);
+		Method materializedBindingNames = requiredMethod(PackedQueryView.class, "bindingNames", TupleExpr.class);
+
+		Object firstRelationNames = relationBindingNames.invoke(view, query.rootRelId());
+		assertSame(firstRelationNames, relationBindingNames.invoke(view, query.rootRelId()),
+				"packed relation facts must be materialized once per query view");
+		assertEquals(source.getBindingNames(), Set.copyOf((Collection<?>) firstRelationNames));
+		assertSame(firstRelationNames, view.bindingNames(query.relOutputMaskId(query.rootRelId())),
+				"relation and direct mask reads must share one immutable packed fact list");
+
+		TupleExpr materialized = view.materializeRelation(query.rootRelId());
+		Object firstMaterializedNames = materializedBindingNames.invoke(view, materialized);
+		assertSame(firstMaterializedNames, materializedBindingNames.invoke(view, materialized),
+				"canonical provider subtrees must reuse one immutable binding-name set");
+		assertEquals(materialized.getBindingNames(), firstMaterializedNames);
+	}
+
+	@Test
+	void queryViewBindingNameIdentityTableSurvivesGrowth() {
+		PackedQueryView view = new PackedQueryView(PackedQueryCodec.encode(new SingletonSet()));
+		List<TupleExpr> expressions = new ArrayList<>();
+		for (int ordinal = 0; ordinal < 100; ordinal++) {
+			expressions.add(new StatementPattern(Var.of("subject" + ordinal), Var.of("predicate"), Var.of("object")));
+		}
+
+		List<Set<String>> firstReads = expressions.stream().map(view::bindingNames).toList();
+		for (int ordinal = 0; ordinal < expressions.size(); ordinal++) {
+			assertSame(firstReads.get(ordinal), view.bindingNames(expressions.get(ordinal)),
+					"growth must retain the exact expression-identity entry");
+			assertEquals(expressions.get(ordinal).getBindingNames(), firstReads.get(ordinal));
+		}
+	}
+
+	@Test
+	void queryViewReusesOneImmutableMaterializationPerExactPrefix() throws Exception {
+		PackedQuery query = PackedQueryCodec.encode(new SingletonSet());
+		PackedQueryView view = new PackedQueryView(query);
+		PackedCostContext context = new PackedCostContext();
+		Method materializePrefix = requiredMethod(PackedQueryView.class, "materializePrefix",
+				PackedCostContext.class);
+
+		context.reset(new int[] { 1, 1 }, 0, 2, 1.0d);
+		Object first = materializePrefix.invoke(view, context);
+		assertSame(first, materializePrefix.invoke(view, context),
+				"repeated provider reads of the same ordered prefix must reuse all derived prefix facts");
+
+		context.reset(new int[] { 1 }, 0, 1, 1.0d);
+		assertNotSame(first, materializePrefix.invoke(view, context),
+				"different exact prefixes must never alias one cached materialization");
+	}
 
 	@Test
 	void costModelRemainsFunctionalAndOpensAnAutoCloseableQuerySession() throws Exception {

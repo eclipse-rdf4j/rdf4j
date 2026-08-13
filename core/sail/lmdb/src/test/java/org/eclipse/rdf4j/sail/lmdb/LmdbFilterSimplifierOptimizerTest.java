@@ -60,6 +60,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -71,6 +72,19 @@ import org.junit.jupiter.api.Timeout;
 class LmdbFilterSimplifierOptimizerTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void optimizerHoldsOneStatisticsScopeAcrossFilterAnnotations() {
+		ScopedFilterPassStatistics statistics = new ScopedFilterPassStatistics(0.5d);
+		Filter left = new Filter(statementPattern("s1", "p1", "o1"), new Bound(new Var("o1")));
+		Filter right = new Filter(statementPattern("s2", "p2", "o2"), new Bound(new Var("o2")));
+		QueryRoot root = new QueryRoot(new Join(left, right));
+
+		new LmdbFilterSimplifierOptimizer(statistics).optimize(root, null, null);
+
+		assertEquals(1, statistics.openedScopes);
+		assertEquals(1, statistics.closedScopes);
+	}
 
 	@Test
 	void mergesAdjacentFiltersWithoutRelocatingThem() {
@@ -103,6 +117,139 @@ class LmdbFilterSimplifierOptimizerTest {
 		assertInstanceOf(Not.class, replacement.getCondition());
 		assertFalse(containsDifference(replacement),
 				"Redundant RHS pattern+filter should become a left-side negated filter before Cascades");
+	}
+
+	@Test
+	void keepsMinusPatternFilterAcrossDifferentGraphScopes() {
+		Var subject = new Var("copy");
+		Var predicate = new Var("locatedAt", VF.createIRI("urn:locatedAt"));
+		Var object = new Var("branch");
+		Var context = new Var("graph");
+		StatementPattern left = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS, subject, predicate,
+				object,
+				context);
+		StatementPattern right = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, subject.clone(),
+				predicate.clone(), object.clone(), context.clone());
+		FunctionCall condition = new FunctionCall(FN.CONTAINS.stringValue(), new Str(new Var("copy")),
+				new ValueConstant(VF.createLiteral("copy/")));
+		QueryRoot root = new QueryRoot(new Difference(left, new Filter(right, condition)));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		assertInstanceOf(Difference.class, root.getArg(),
+				"A named-graph RHS pattern is not redundant with a default-graph LHS pattern");
+	}
+
+	@Test
+	void removesPositiveExistsAlreadyRequiredByOuterPattern() {
+		StatementPattern copyType = statementPattern("copy", "type", "copyType");
+		QueryRoot root = new QueryRoot(new Filter(copyType, new Exists(copyType.clone())));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		assertInstanceOf(StatementPattern.class, root.getArg(),
+				"A mandatory outer pattern already proves the identical positive EXISTS body");
+	}
+
+	@Test
+	void removesPositiveExistsRequiredByNestedMandatoryJoin() {
+		StatementPattern copyType = statementPattern("copy", "type", "copyType");
+		Join outer = new Join(statementPattern("copy", "locatedAt", "branch"), copyType);
+		QueryRoot root = new QueryRoot(new Filter(outer, new Exists(copyType.clone())));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		assertInstanceOf(Join.class, root.getArg());
+		assertFalse(containsExists(root.getArg()));
+	}
+
+	@Test
+	void removesRequiredPositiveExistsConjunctAndKeepsOtherCondition() {
+		StatementPattern copyType = statementPattern("copy", "type", "copyType");
+		Filter filter = new Filter(copyType,
+				new And(new Bound(new Var("copy")), new Exists(copyType.clone())));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter retained = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(Bound.class, retained.getCondition());
+		assertFalse(containsExists(retained));
+	}
+
+	@Test
+	void keepsPositiveExistsRequiredOnlyByOptionalBranch() {
+		StatementPattern copyType = statementPattern("copy", "type", "copyType");
+		LeftJoin outer = new LeftJoin(statementPattern("branch", "type", "branchType"), copyType);
+		QueryRoot root = new QueryRoot(new Filter(outer, new Exists(copyType.clone())));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		assertInstanceOf(Filter.class, root.getArg(),
+				"An OPTIONAL match does not prove that EXISTS succeeds for unmatched rows");
+	}
+
+	@Test
+	void keepsPositiveExistsRequiredOnlyByOneUnionBranch() {
+		StatementPattern copyType = statementPattern("copy", "type", "copyType");
+		Union outer = new Union(copyType, statementPattern("branch", "type", "branchType"));
+		QueryRoot root = new QueryRoot(new Filter(outer, new Exists(copyType.clone())));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		assertInstanceOf(Filter.class, root.getArg(),
+				"Every UNION branch must prove the EXISTS body before the filter is redundant");
+	}
+
+	@Test
+	void removesPositiveExistsRequiredByEveryUnionBranch() {
+		StatementPattern copyType = statementPattern("copy", "type", "copyType");
+		Union outer = new Union(copyType, copyType.clone());
+		QueryRoot root = new QueryRoot(new Filter(outer, new Exists(copyType.clone())));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		assertInstanceOf(Union.class, root.getArg());
+	}
+
+	@Test
+	void keepsPositiveExistsWithAdditionalSubqueryRequirement() {
+		StatementPattern copyType = statementPattern("copy", "type", "copyType");
+		Join existsBody = new Join(copyType.clone(), statementPattern("copy", "locatedAt", "branch"));
+		QueryRoot root = new QueryRoot(new Filter(copyType, new Exists(existsBody)));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		assertInstanceOf(Filter.class, root.getArg(),
+				"Proving one statement does not prove an EXISTS body with another mandatory statement");
+	}
+
+	@Test
+	void keepsPositiveExistsAcrossDifferentGraphScopes() {
+		Var subject = new Var("copy");
+		Var predicate = new Var("type", VF.createIRI("urn:type"));
+		Var object = new Var("copyType");
+		Var context = new Var("graph");
+		StatementPattern outer = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS, subject, predicate,
+				object, context);
+		StatementPattern existsBody = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, subject.clone(),
+				predicate.clone(), object.clone(), context.clone());
+		QueryRoot root = new QueryRoot(new Filter(outer, new Exists(existsBody)));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		assertInstanceOf(Filter.class, root.getArg(),
+				"Equivalent variables in different graph scopes do not prove the same statement match");
+	}
+
+	@Test
+	void keepsNegatedExistsWhenOuterPatternIsRequired() {
+		StatementPattern copyType = statementPattern("copy", "type", "copyType");
+		QueryRoot root = new QueryRoot(new Filter(copyType, new Not(new Exists(copyType.clone()))));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		assertInstanceOf(Filter.class, root.getArg(), "NOT EXISTS has the opposite truth value and must remain");
 	}
 
 	@Test
@@ -959,6 +1106,22 @@ class LmdbFilterSimplifierOptimizerTest {
 		@Override
 		public FilterPassEstimate estimateFilterPass(Filter filter) {
 			return new FilterPassEstimate(passRatio, FilterPassEstimate.Source.LEARNED_FILTER, 1_000L);
+		}
+	}
+
+	private static final class ScopedFilterPassStatistics extends FixedFilterPassStatistics
+			implements QueryOptimizationScopeProvider {
+		private int openedScopes;
+		private int closedScopes;
+
+		private ScopedFilterPassStatistics(double passRatio) {
+			super(passRatio);
+		}
+
+		@Override
+		public QueryOptimizationScope beginQueryOptimizationScope() {
+			openedScopes++;
+			return () -> closedScopes++;
 		}
 	}
 

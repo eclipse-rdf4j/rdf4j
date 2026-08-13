@@ -128,7 +128,7 @@ final class LmdbPlannerServices {
 	}
 
 	Object optimizationScopedFactorFingerprint(TupleExpr factor) {
-		return FactorCostCacheKey.estimatorFingerprint(factor);
+		return runtime.optimizationScopedFactorFingerprint(factor);
 	}
 
 	boolean hasOptimizationScopedPlannerCache() {

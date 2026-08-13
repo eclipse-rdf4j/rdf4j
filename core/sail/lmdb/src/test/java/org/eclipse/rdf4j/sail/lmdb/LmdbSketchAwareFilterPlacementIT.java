@@ -629,7 +629,8 @@ class LmdbSketchAwareFilterPlacementIT {
 							+ latestOptimizedText);
 			assertEquals("sampled",
 					recordedOnFilter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE),
-					"Expected optimized plan telemetry to show sampled background selectivity");
+					"Expected optimized plan telemetry to show sampled background selectivity\n"
+							+ latestOptimizedText);
 			assertTrue(sampledRequests[0] > 0,
 					"Expected background sampling to process the recordedOn range-filter vote");
 			return latestOptimized;

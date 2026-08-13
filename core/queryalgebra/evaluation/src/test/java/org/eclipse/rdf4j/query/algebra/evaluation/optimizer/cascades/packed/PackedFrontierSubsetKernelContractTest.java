@@ -14,9 +14,11 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -28,6 +30,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -35,6 +38,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -91,6 +96,115 @@ class PackedFrontierSubsetKernelContractTest {
 	}
 
 	@Test
+	void denseKernelRetainsLocallyLosingPhysicalContinuationNeededBySuffix() {
+		assertEquals(PackedJoinEnumerator.DENSE_SUBSETS, PackedJoinEnumerator.subsetKernelForFactorCount(3));
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(chain(3), OptimizationGoal.root(),
+				new PhysicalContinuationCounterexampleCostModel(3));
+
+		Join selected = (Join) result.selectedPlan();
+		assertFalse("hash".equals(selected.getStringMetricPlanned("optimizer.joinAlgorithmHint")),
+				"the deliberately expensive root hash implementation must not mask the continuation defect");
+		assertTrue(containsHashJoin(selected.getLeftArg()) || containsHashJoin(selected.getRightArg()),
+				() -> "the locally dearer two-factor hash state is the only globally cheap continuation: " + selected);
+		assertTrue(result.totalCost() < 100.0d,
+				() -> "preselecting the locally cheaper dependent implementation lost the cheap suffix; cost="
+						+ result.totalCost() + ", plan=" + selected);
+	}
+
+	@Test
+	void sparseLongKernelRetainsLocallyLosingPhysicalContinuationNeededBySuffix() {
+		int factorCount = 17;
+		assertEquals(PackedJoinEnumerator.SPARSE_LONG_SUBSETS,
+				PackedJoinEnumerator.subsetKernelForFactorCount(factorCount));
+
+		PackedPlanningResult result = assertTimeoutPreemptively(Duration.ofSeconds(30),
+				() -> PackedCascadesPlanner.optimize(chain(factorCount), OptimizationGoal.root(),
+						new PhysicalContinuationCounterexampleCostModel(factorCount)));
+
+		Join selected = (Join) result.selectedPlan();
+		assertFalse("hash".equals(selected.getStringMetricPlanned("optimizer.joinAlgorithmHint")),
+				"the deliberately expensive root hash implementation must not mask the continuation defect");
+		assertTrue(containsHashJoin(selected.getLeftArg()) || containsHashJoin(selected.getRightArg()),
+				() -> "the sparse-long kernel discarded the locally dearer hash continuation: " + selected);
+		assertTrue(result.totalCost() < 100.0d,
+				() -> "the sparse-long kernel lost the only globally cheap physical lineage; cost="
+						+ result.totalCost() + ", plan=" + selected);
+	}
+
+	@Test
+	void denseKernelConsumesBushyDphypPartitions() {
+		TrackingCostModel model = new TrackingCostModel();
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(chain(4), OptimizationGoal.root(), model);
+
+		assertNotNull(result.selectedPlan());
+		assertTrue(model.onlySession().bushyIntermediateJoinCalls > 0,
+				"the DPhyp {A,B}/{C,D} CSG/CMP pair must reach Cascades costing instead of being discarded");
+		assertTrue(model.onlySession().bushyIndependentHashCalls > 0,
+				"every legal bushy CSG/CMP pair must contribute its one-shot independent hash implementation; "
+						+ "a dependent-only candidate reopens the complete right subtree for every left row");
+	}
+
+	@Test
+	void boundedDenseSearchPreservesBushyPhysicalAlternativesWithinItsWorkLimit() {
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(chain(4));
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+		TrackingSession session = new TrackingSession(new PackedQueryView(query), false, true, () -> {
+		});
+		PackedIncumbentSearch baseline = PackedIncumbentSearch.forSession(query, memo,
+				new PackedSearchBudget(PackedPlannerLimits.unbounded()), false, session);
+		baseline.build();
+		session.resetBushyCalls();
+
+		PackedSearchBudget budget = new PackedSearchBudget(
+				new PackedPlannerLimits(40, Long.MAX_VALUE, PackedPlannerLimits.DEFAULT_MAX_RETAINED_BYTES));
+		PackedJoinEnumerator enumerator = PackedJoinEnumerator.forSession(query, memo,
+				baseline.selectedRowsByGroup(), budget, session);
+		enumerator.optimize(query.rootRelId());
+
+		assertTrue(session.maximumPrefixLength >= 3,
+				"the bounded search must find a complete left-deep incumbent before its work limit");
+		assertTrue(session.bushyIndependentHashCalls > 0,
+				"once a complete incumbent exists, bounded search must cost a bushy hash alternative before spending "
+						+ "the remaining work on exact continuation expansion");
+	}
+
+	@Test
+	void boundedDensePlannerDoesNotReplayItsCompleteSeedDuringExactSearch() {
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(chain(4));
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+		TrackingSession session = new TrackingSession(new PackedQueryView(query), false, false, () -> {
+		});
+		PackedSearchBudget budget = new PackedSearchBudget(
+				new PackedPlannerLimits(64, Long.MAX_VALUE, PackedPlannerLimits.DEFAULT_MAX_RETAINED_BYTES));
+
+		int rootWinnerId = PackedIncumbentSearch.forSession(query, memo, budget, true, session).build();
+
+		assertTrue(rootWinnerId > 0, "bounded planning must retain a complete executable incumbent");
+		assertEquals(1, session.maximumCandidateInvocationCount(),
+				() -> "the dense exact arena replayed ordered-prefix work already performed by its complete seed: "
+						+ session.duplicateCandidateInvocations());
+	}
+
+	@Test
+	void sparseLongKernelConsumesBushyDphypPartitions() {
+		TrackingCostModel model = new TrackingCostModel(false, true);
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(chain(17), OptimizationGoal.root(), model);
+
+		assertNotNull(result.selectedPlan());
+		assertEquals(17, model.onlySession().maximumUnseededBushyCombinedWidth,
+				"the sparse-long DPhyp kernel must install non-singleton CSG/CMP pairs in Cascades");
+		assertTrue(model.onlySession().bushyIndependentHashCalls > 0,
+				"the sparse-long kernel must cost an independent hash implementation for bushy partitions");
+	}
+
+	@Test
 	void denseAndSparseKernelsAssembleTheWinnerFromItsOriginalCostingEvents() {
 		for (int factorCount : new int[] { 2, 4, 17 }) {
 			int expectedKernel = factorCount <= 4
@@ -101,7 +215,7 @@ class PackedFrontierSubsetKernelContractTest {
 			int relationCount = query.relationCount();
 			PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
 					relationCount, relationCount * 2);
-			TrackingSession session = new TrackingSession(new PackedQueryView(query), false, () -> {
+			TrackingSession session = new TrackingSession(new PackedQueryView(query), false, false, () -> {
 			});
 			PackedIncumbentSearch baseline = PackedIncumbentSearch.forSession(query, memo,
 					new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE), false, session);
@@ -155,6 +269,24 @@ class PackedFrontierSubsetKernelContractTest {
 	}
 
 	@Test
+	void internedMultiwordKernelConsumesBushyDphypPartitions() {
+		TrackingCostModel model = new TrackingCostModel(false, true);
+
+		PackedPlanningResult result = assertTimeoutPreemptively(Duration.ofSeconds(30),
+				() -> PackedCascadesPlanner.optimize(chain(65), OptimizationGoal.root(), model));
+
+		assertNotNull(result.selectedPlan());
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_RESOURCE_LIMIT, result.completionStatus(),
+				"an exact continuation set that exceeds the default byte budget must return its incumbent explicitly");
+		assertTrue(result.retainedBytes() <= PackedPlannerLimits.DEFAULT_MAX_RETAINED_BYTES,
+				"every retained wide-search arena must share the request's byte budget");
+		assertTrue(model.onlySession().maximumUnseededBushyPrefixLength > 16,
+				"the wide DPhyp kernel must install a root-level non-singleton CSG/CMP pair in Cascades");
+		assertTrue(model.onlySession().bushyIndependentHashCalls > 0,
+				"the multiword kernel must cost an independent hash implementation for bushy partitions");
+	}
+
+	@Test
 	void rootJoinRefinementReceivesTheWinningCombinedState() {
 		for (int factorCount : new int[] { 2, 3, 9, 65 }) {
 			TrackingCostModel model = new TrackingCostModel(true);
@@ -189,6 +321,67 @@ class PackedFrontierSubsetKernelContractTest {
 	}
 
 	@Test
+	void exhaustiveCorrelatedSearchResumesItsMandatorySeedLattice() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		Filter source = new Filter(chain(4), new Compare(Var.of("v4"),
+				new ValueConstant(values.createLiteral(0)), Compare.CompareOp.GT));
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(),
+				new TopologyOrderCostModel());
+
+		assertNotNull(result.selectedPlan());
+		assertTrue(result.selectedPlan().getDoubleMetricPlanned("optimizer.cascadesCorrelatedSeedResumes") > 0.0d,
+				"the exhaustive pass must continue the valid mandatory seed arena instead of replaying its "
+						+ "provider transitions");
+	}
+
+	@Test
+	void exhaustiveGuardedCorrelatedSearchResumesItsMandatorySeedLattice() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern dependentProbe = new StatementPattern(Var.of("v4"),
+				Var.of("probePredicate", values.createIRI("urn:frontier-dependent-probe")), Var.of("probeValue"));
+		Filter source = new Filter(chain(4), new Exists(dependentProbe));
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(),
+				new TopologyOrderCostModel());
+
+		assertNotNull(result.selectedPlan());
+		assertTrue(result.selectedPlan().getDoubleMetricPlanned("optimizer.cascadesCorrelatedSeedResumes") > 0.0d,
+				"the exhaustive guarded-predicate pass must continue its mandatory access seed instead of "
+						+ "replaying the same provider transitions");
+	}
+
+	@Test
+	void exactCorrelatedLatticeExpandsOneRepresentativeOfAnEqualContinuation() {
+		ExactEquivalentCorrelatedSession session = costExactEquivalentCorrelatedLattice(false);
+
+		assertEquals(1, session.maximumExtensionInvocationCount(2),
+				() -> "extensionally equal prefixes with equal complete vectors were both expanded: "
+						+ session.duplicateExtensions(2));
+	}
+
+	@Test
+	void exactCorrelatedLatticeRetainsNondominatedResourceTradeoffs() {
+		ExactEquivalentCorrelatedSession session = costExactEquivalentCorrelatedLattice(true);
+
+		assertEquals(2, session.maximumExtensionInvocationCount(2),
+				() -> "the exact lattice must expand both CPU- and memory-efficient continuations: "
+						+ session.extensionInvocations(2));
+		assertTrue(session.extensionInvocations(2).values().stream().allMatch(invocations -> invocations <= 2),
+				() -> "equivalent derivations were retained beyond the two-dimensional Pareto frontier: "
+						+ session.extensionInvocations(2));
+	}
+
+	@Test
+	void exactCorrelatedLatticeSharesSemanticTransitionsAcrossNondominatedResourceTradeoffs() {
+		ExactEquivalentCorrelatedSession session = costExactEquivalentCorrelatedLattice(true, true);
+
+		assertEquals(1, session.maximumExtensionInvocationCount(2),
+				() -> "the event-sourced planner repeated an exact semantic extension across physical tradeoffs: "
+						+ session.extensionInvocations(2));
+	}
+
+	@Test
 	void detachedRecipesAndStoreWideCacheRemainFreeOfQueryLocalState() {
 		assertNoQueryLocalState(PackedPlanRecipe.class);
 		assertNoQueryLocalState(PackedPlanCache.class);
@@ -204,6 +397,39 @@ class PackedFrontierSubsetKernelContractTest {
 			result = new Join(result, factor(values, ordinal));
 		}
 		return result;
+	}
+
+	private static ExactEquivalentCorrelatedSession costExactEquivalentCorrelatedLattice(
+			boolean retainResourceTradeoff) {
+		return costExactEquivalentCorrelatedLattice(retainResourceTradeoff, false);
+	}
+
+	private static ExactEquivalentCorrelatedSession costExactEquivalentCorrelatedLattice(
+			boolean retainResourceTradeoff, boolean recordEvents) {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		Filter source = new Filter(chain(3), new Compare(Var.of("v3"),
+				new ValueConstant(values.createLiteral(0)), Compare.CompareOp.GT));
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+		PackedSearchBudget budget = new PackedSearchBudget(PackedPlannerLimits.unbounded());
+		ExactEquivalentCorrelatedSession session = new ExactEquivalentCorrelatedSession(
+				new PackedQueryView(query), retainResourceTradeoff);
+		PackedCostSession costSession = recordEvents
+				? new EventSourcingPackedCostSession(session, query, budget)
+				: session;
+		PackedIncumbentSearch baseline = PackedIncumbentSearch.forSession(query, memo, budget, false, costSession);
+		baseline.build();
+		session.resetExtensionInvocations();
+
+		PackedJoinEnumerator enumerator = PackedJoinEnumerator.forSession(query, memo,
+				baseline.selectedRowsByGroup(), budget, costSession);
+		int workUnits = enumerator.optimizeRelocatableFilterAlternatives(query.rootRelId());
+
+		assertTrue(workUnits > 0, "the fixture must enter the correlated exact lattice");
+		assertEquals(PackedSearchCompletionStatus.EXACT_COMPLETE, budget.completionStatus());
+		return session;
 	}
 
 	private static StatementPattern factor(SimpleValueFactory values, int ordinal) {
@@ -227,6 +453,15 @@ class PackedFrontierSubsetKernelContractTest {
 		}
 	}
 
+	private static boolean containsHashJoin(TupleExpr expression) {
+		if (!(expression instanceof Join join)) {
+			return false;
+		}
+		return "hash".equals(join.getStringMetricPlanned("optimizer.joinAlgorithmHint"))
+				|| containsHashJoin(join.getLeftArg())
+				|| containsHashJoin(join.getRightArg());
+	}
+
 	private static void assertNoQueryLocalState(Class<?> owner) {
 		for (Field field : owner.getDeclaredFields()) {
 			String normalizedName = field.getName().replace("_", "").toLowerCase();
@@ -244,14 +479,20 @@ class PackedFrontierSubsetKernelContractTest {
 
 		private final List<TrackingSession> sessions = new ArrayList<>();
 		private final boolean requireRootState;
+		private final boolean collapseEquivalentStates;
 		private int closeCount;
 
 		private TrackingCostModel() {
-			this(false);
+			this(false, false);
 		}
 
 		private TrackingCostModel(boolean requireRootState) {
+			this(requireRootState, false);
+		}
+
+		private TrackingCostModel(boolean requireRootState, boolean collapseEquivalentStates) {
 			this.requireRootState = requireRootState;
+			this.collapseEquivalentStates = collapseEquivalentStates;
 		}
 
 		@Override
@@ -261,7 +502,8 @@ class PackedFrontierSubsetKernelContractTest {
 
 		@Override
 		public PackedCostSession openSession(PackedQueryView query) {
-			TrackingSession session = new TrackingSession(query, requireRootState, () -> closeCount++);
+			TrackingSession session = new TrackingSession(query, requireRootState, collapseEquivalentStates,
+					() -> closeCount++);
 			sessions.add(session);
 			return session;
 		}
@@ -270,6 +512,159 @@ class PackedFrontierSubsetKernelContractTest {
 			assertEquals(1, sessions.size(), "one cold planning call must own exactly one estimator session");
 			assertEquals(1, closeCount, "the packed planner must close the query-local state arena");
 			return sessions.get(0);
+		}
+	}
+
+	private record ExactContinuationState(long factorMask, long filterMask) {
+	}
+
+	private record ExactExtension(int inputStateId, int relationId) {
+	}
+
+	private static final class ExactEquivalentCorrelatedSession implements PackedCostSession {
+
+		private final PackedQueryView query;
+		private final boolean retainResourceTradeoff;
+		private final Map<ExactContinuationState, Integer> stateIds = new HashMap<>();
+		private final Map<Integer, ExactContinuationState> states = new HashMap<>();
+		private final Map<ExactExtension, Integer> extensionInvocations = new HashMap<>();
+		private int nextStateId = 1;
+
+		private ExactEquivalentCorrelatedSession(PackedQueryView query, boolean retainResourceTradeoff) {
+			this.query = query;
+			this.retainResourceTradeoff = retainResourceTradeoff;
+		}
+
+		@Override
+		public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			if (!query.isStatementPattern(relationId)) {
+				return;
+			}
+			/* Two 128-row inputs make both dependent and hash implementations physically admissible. */
+			output.setRows(128.0d, 1.0d);
+			output.setLocalPhysicalCost(1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+					0.0d);
+			stamp(output, state(new ExactContinuationState(bit(relationId), 0L)));
+		}
+
+		@Override
+		public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			ExactContinuationState input = context.evidenceStateId() == 0
+					? new ExactContinuationState(prefixFactorMask(context), 0L)
+					: state(context.evidenceStateId());
+			if (context.evidenceStateId() != 0) {
+				extensionInvocations.merge(new ExactExtension(context.evidenceStateId(), relationId), 1, Integer::sum);
+			}
+			output.setContextualRows(1.0d, 1.0d);
+			output.setLocalPhysicalCost(1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+					0.0d);
+			stamp(output, state(new ExactContinuationState(input.factorMask() | bit(relationId), input.filterMask())));
+		}
+
+		@Override
+		public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			int inputStateId = context.leftInputEvidenceStateId() != 0
+					? context.leftInputEvidenceStateId()
+					: context.evidenceStateId();
+			if (query.isFilter(relationId) && inputStateId != 0) {
+				ExactContinuationState input = state(inputStateId);
+				output.setContextualRows(1.0d, 0.0d);
+				output.setLocalPhysicalCost(0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+						0.0d);
+				stamp(output,
+						state(new ExactContinuationState(input.factorMask(), input.filterMask() | bit(relationId))));
+			} else if (output.evidenceStateId() != 0) {
+				stamp(output, output.evidenceStateId());
+			}
+		}
+
+		@Override
+		public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+			if (output.plannedStringMetric("optimizer.physicalJoinImplementation") != null) {
+				boolean hash = "independent-hash"
+						.equals(output.plannedStringMetric("optimizer.physicalJoinImplementation"));
+				double cpuWork = retainResourceTradeoff && hash ? 5.0d : retainResourceTradeoff ? 1.0d : 0.0d;
+				double peakMemory = retainResourceTradeoff && hash ? 1.0d : retainResourceTradeoff ? 5.0d : 0.0d;
+				output.setLocalPhysicalCost(cpuWork, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+						peakMemory);
+			}
+			if (output.evidenceStateId() != 0) {
+				stamp(output, output.evidenceStateId());
+			}
+		}
+
+		private void resetExtensionInvocations() {
+			extensionInvocations.clear();
+		}
+
+		private int maximumExtensionInvocationCount(int inputFactorCount) {
+			return extensionInvocations(inputFactorCount).values().stream().mapToInt(Integer::intValue).max().orElse(0);
+		}
+
+		private Map<ExactExtension, Integer> duplicateExtensions(int inputFactorCount) {
+			Map<ExactExtension, Integer> duplicates = new HashMap<>();
+			extensionInvocations(inputFactorCount).forEach((extension, invocations) -> {
+				if (invocations > 1) {
+					duplicates.put(extension, invocations);
+				}
+			});
+			return duplicates;
+		}
+
+		private Map<ExactExtension, Integer> extensionInvocations(int inputFactorCount) {
+			Map<ExactExtension, Integer> selected = new HashMap<>();
+			extensionInvocations.forEach((extension, invocations) -> {
+				if (Long.bitCount(state(extension.inputStateId()).factorMask()) == inputFactorCount) {
+					selected.put(extension, invocations);
+				}
+			});
+			return selected;
+		}
+
+		private int state(ExactContinuationState key) {
+			Integer retained = stateIds.get(key);
+			if (retained != null) {
+				return retained;
+			}
+			int stateId = nextStateId++;
+			stateIds.put(key, stateId);
+			states.put(stateId, key);
+			return stateId;
+		}
+
+		private ExactContinuationState state(int stateId) {
+			ExactContinuationState state = states.get(stateId);
+			assertNotNull(state, "unknown exact continuation state " + stateId);
+			return state;
+		}
+
+		private long prefixFactorMask(PackedCostContext context) {
+			long factorMask = 0L;
+			for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
+				factorMask |= relationFactorMask(context.prefixRelationId(ordinal));
+			}
+			return factorMask;
+		}
+
+		private long relationFactorMask(int relationId) {
+			if (query.isStatementPattern(relationId)) {
+				return bit(relationId);
+			}
+			long factorMask = 0L;
+			for (int ordinal = 0; ordinal < query.childCount(relationId); ordinal++) {
+				factorMask |= relationFactorMask(query.childRelationId(relationId, ordinal));
+			}
+			return factorMask;
+		}
+
+		private static void stamp(PackedCostEstimate output, int stateId) {
+			output.setEvidenceStateId(stateId);
+			output.setEvidenceGuarantee(EvidenceGuarantee.DATABASE_EXACT);
+			output.setEvidenceDisposition(FrontierStateDisposition.COMPOSABLE_PAYLOAD);
+		}
+
+		private static long bit(int relationId) {
+			return 1L << relationId;
 		}
 	}
 
@@ -403,6 +798,73 @@ class PackedFrontierSubsetKernelContractTest {
 		}
 	}
 
+	private static final class PhysicalContinuationCounterexampleCostModel implements PackedCostModel {
+
+		private static final int DEPENDENT_PREFIX_STATE = 10_001;
+		private static final int HASH_PREFIX_STATE = 10_002;
+		private static final double EXPENSIVE_SUFFIX_WORK = 10_000.0d;
+		private static final double EXPENSIVE_ROOT_HASH_WORK = 50_000.0d;
+		private final int rootPrefixCount;
+
+		private PhysicalContinuationCounterexampleCostModel(int factorCount) {
+			rootPrefixCount = factorCount - 1;
+		}
+
+		@Override
+		public double estimateRows(PackedQueryView query, int relationId) {
+			return query.isStatementPattern(relationId) ? 1_000.0d : Double.NaN;
+		}
+
+		@Override
+		public PackedCostSession openSession(PackedQueryView query) {
+			return new PackedCostSession() {
+				@Override
+				public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+					if (query.isStatementPattern(relationId)) {
+						output.setRows(1_000.0d, 0.0d);
+						output.setEvidenceStateId(relationId);
+					}
+				}
+
+				@Override
+				public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+					output.setContextualRows(1.0d, 0.0d);
+					output.setEvidenceStateId(20_000 + context.prefixRelationCount());
+				}
+
+				@Override
+				public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				}
+
+				@Override
+				public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+					String implementation = output
+							.plannedStringMetric("optimizer.physicalJoinImplementation");
+					if (implementation == null) {
+						return;
+					}
+					boolean hash = "independent-hash".equals(implementation);
+					boolean retainedHashLineage = context.leftInputEvidenceStateId() == HASH_PREFIX_STATE;
+					double dependentWork = context.prefixRelationCount() >= 2 && !retainedHashLineage
+							? EXPENSIVE_SUFFIX_WORK
+							: 1.0d;
+					double localWork = hash
+							? context.prefixRelationCount() == rootPrefixCount
+									? EXPENSIVE_ROOT_HASH_WORK
+									: dependentWork + 1.0d
+							: dependentWork;
+					output.setLocalPhysicalCost(localWork, 0.0d, 0.0d, 0.0d, 0.0d,
+							0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+					if (context.prefixRelationCount() < rootPrefixCount) {
+						output.setEvidenceStateId(hash || retainedHashLineage
+								? HASH_PREFIX_STATE
+								: DEPENDENT_PREFIX_STATE);
+					}
+				}
+			};
+		}
+	}
+
 	private static final class BellmanCounterexampleSession implements PackedCostSession {
 
 		private final PackedQueryView query;
@@ -465,8 +927,11 @@ class PackedFrontierSubsetKernelContractTest {
 
 		private final PackedQueryView query;
 		private final boolean requireRootState;
+		private final boolean collapseEquivalentStates;
 		private final Runnable closeAction;
 		private final Map<List<Integer>, Integer> stateByOrderedPrefix = new HashMap<>();
+		private final Map<Integer, List<Integer>> orderedPrefixByState = new HashMap<>();
+		private final Map<Integer, Integer> stateWidthById = new HashMap<>();
 		private final Map<List<Integer>, Set<List<Integer>>> ordersByLogicalSubset = new HashMap<>();
 		private final Map<List<Integer>, Integer> candidateInvocations = new HashMap<>();
 		private int nextStateId = 1;
@@ -474,10 +939,16 @@ class PackedFrontierSubsetKernelContractTest {
 		private int maximumPrefixLength;
 		private int emptyContextResets;
 		private int rootJoinRefinementCalls;
+		private int bushyIntermediateJoinCalls;
+		private int bushyIndependentHashCalls;
+		private int maximumUnseededBushyPrefixLength;
+		private int maximumUnseededBushyCombinedWidth;
 
-		private TrackingSession(PackedQueryView query, boolean requireRootState, Runnable closeAction) {
+		private TrackingSession(PackedQueryView query, boolean requireRootState, boolean collapseEquivalentStates,
+				Runnable closeAction) {
 			this.query = query;
 			this.requireRootState = requireRootState;
+			this.collapseEquivalentStates = collapseEquivalentStates;
 			this.closeAction = closeAction;
 		}
 
@@ -520,6 +991,34 @@ class PackedFrontierSubsetKernelContractTest {
 		}
 
 		@Override
+		public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+			int leftWidth = stateWidthById.getOrDefault(context.leftInputEvidenceStateId(), 0);
+			int rightWidth = stateWidthById.getOrDefault(context.rightInputEvidenceStateId(), 0);
+			if (leftWidth > 1 && rightWidth > 1) {
+				bushyIntermediateJoinCalls++;
+				if ("independent-hash".equals(
+						output.plannedStringMetric("optimizer.physicalJoinImplementation"))) {
+					bushyIndependentHashCalls++;
+				}
+				if (output.evidenceStateId() == 0) {
+					maximumUnseededBushyPrefixLength = Math.max(maximumUnseededBushyPrefixLength,
+							context.prefixRelationCount());
+					maximumUnseededBushyCombinedWidth = Math.max(maximumUnseededBushyCombinedWidth,
+							leftWidth + rightWidth);
+				}
+			}
+			if (output.evidenceStateId() == 0) {
+				List<Integer> right = orderedPrefixByState.get(context.rightInputEvidenceStateId());
+				if (right != null) {
+					List<Integer> combined = new ArrayList<>(context.prefixRelationCount() + right.size());
+					combined.addAll(orderedPrefix(context));
+					combined.addAll(right);
+					output.setEvidenceStateId(stateFor(combined));
+				}
+			}
+		}
+
+		@Override
 		public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
 			if (query.operatorTag(relationId) != PackedRelOp.JOIN && output.evidenceStateId() == 0) {
 				output.setEvidenceStateId(stateFor(List.of(relationId)));
@@ -553,7 +1052,23 @@ class PackedFrontierSubsetKernelContractTest {
 		}
 
 		private int stateFor(List<Integer> orderedPrefix) {
-			return stateByOrderedPrefix.computeIfAbsent(List.copyOf(orderedPrefix), ignored -> nextStateId++);
+			List<Integer> key;
+			if (collapseEquivalentStates) {
+				Integer[] sorted = orderedPrefix.toArray(Integer[]::new);
+				Arrays.sort(sorted);
+				key = List.of(sorted);
+			} else {
+				key = List.copyOf(orderedPrefix);
+			}
+			Integer retained = stateByOrderedPrefix.get(key);
+			if (retained != null) {
+				return retained;
+			}
+			int stateId = nextStateId++;
+			stateByOrderedPrefix.put(key, stateId);
+			orderedPrefixByState.put(stateId, key);
+			stateWidthById.put(stateId, key.size());
+			return stateId;
 		}
 
 		private void recordPhysicalOrder(List<Integer> orderedPrefix) {
@@ -570,6 +1085,13 @@ class PackedFrontierSubsetKernelContractTest {
 
 		private void resetCandidateInvocations() {
 			candidateInvocations.clear();
+		}
+
+		private void resetBushyCalls() {
+			bushyIntermediateJoinCalls = 0;
+			bushyIndependentHashCalls = 0;
+			maximumUnseededBushyPrefixLength = 0;
+			maximumUnseededBushyCombinedWidth = 0;
 		}
 
 		private int maximumCandidateInvocationCount() {

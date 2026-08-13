@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 import org.eclipse.rdf4j.sail.lmdb.estimation.RowEvidence;
 import org.junit.jupiter.api.Test;
@@ -105,6 +106,30 @@ class LmdbPropertyPathEstimatorTest {
 	}
 
 	@Test
+	void contextBoundPathEndpointRetainsPrefixDistinctDomain() {
+		IRI predicate = VF.createIRI("urn:p");
+		StatementPattern step = new StatementPattern(Var.of("s"), Var.of("p", predicate), Var.of("o"));
+		ArbitraryLengthPath path = new ArbitraryLengthPath(Var.of("s"), step, Var.of("o"), 1L);
+		BagEstimate prefix = BagEstimate.heuristic(10.0d, "prefix")
+				.withVariable("s", VariableEstimate.bound(10.0d, 10.0d));
+		EstimateContext context = EstimateContext.root(path, IDENTITY, 7L)
+				.withBoundNames(Set.of("s"))
+				.withPrefixEstimate(prefix)
+				.withInvocationCount(10.0d);
+		RowEvidence rows = new RowEvidence(100.0d, 100.0d, 100.0d, 1.0d, true, IDENTITY, 7L,
+				"complete-rows");
+		EstimateCandidate direct = new EstimateCandidate(BagEstimate.heuristic(100.0d, "complete-rows"), rows,
+				EstimateCandidate.Kind.SYNOPSIS, 7L);
+
+		EstimateCandidate candidate = new LmdbPropertyPathEstimator(null)
+				.candidates(path, step, List.of(direct), context)
+				.getFirst();
+
+		assertEquals(10.0d, candidate.estimate().variable("s").distinctRows(),
+				"A path endpoint bound by the outer input varies across invocations and is not one global constant");
+	}
+
+	@Test
 	void zeroOrMoreUsesPrefixOverlapOnlyForPositiveLengthReachability() {
 		IRI predicate = VF.createIRI("urn:p");
 		StatementPattern step = new StatementPattern(Var.of("s"), Var.of("p", predicate), Var.of("o"));
@@ -128,6 +153,61 @@ class LmdbPropertyPathEstimatorTest {
 		assertEquals(10.0d, candidate.estimate().rows(),
 				"Every outer mapping contributes its identity pair, while disjoint edge support contributes no "
 						+ "positive-length path");
+	}
+
+	@Test
+	void zeroOrMoreSeparatesIdentityRowsFromTraversalWork() {
+		IRI predicate = VF.createIRI("urn:p");
+		StatementPattern step = new StatementPattern(Var.of("s"), Var.of("p", predicate), Var.of("o"));
+		ArbitraryLengthPath path = new ArbitraryLengthPath(Var.of("s"), step, Var.of("o"), 0L);
+		EstimateContext context = EstimateContext.root(path, IDENTITY, 7L)
+				.withBoundNames(Set.of("s"))
+				.withInvocationCount(10.0d);
+		RowEvidence noEdges = new RowEvidence(0.0d, 0.0d, 0.0d, 1.0d, true, IDENTITY, 7L,
+				"exact-empty");
+		EstimateCandidate direct = new EstimateCandidate(BagEstimate.exact(0.0d, "exact-empty"), noEdges,
+				EstimateCandidate.Kind.FINITE_RELATION, 7L);
+
+		EstimateCandidate candidate = new LmdbPropertyPathEstimator(null)
+				.candidates(path, step, List.of(direct), context)
+				.getFirst();
+
+		assertEquals(10.0d, candidate.estimate().rows(),
+				"The identity path returns one row for every bound endpoint");
+		assertEquals(0.0d, metric(candidate, "plannedPathCandidateRows"), 0.0d);
+		assertEquals(10.0d, metric(candidate, "plannedPathStepLookups"), 0.0d,
+				"The positive-length step is still checked once for every endpoint");
+		assertEquals(20.0d, metric(candidate, "plannedPathExpansionIterations"), 0.0d,
+				"Zero-length identity and positive-length lookup are independent iterations");
+	}
+
+	@Test
+	void independentlyBoundEndpointsRetainFailedTraversalWork() {
+		IRI predicate = VF.createIRI("urn:p");
+		StatementPattern step = new StatementPattern(Var.of("s"), Var.of("p", predicate), Var.of("o"));
+		ArbitraryLengthPath path = new ArbitraryLengthPath(Var.of("s"), step, Var.of("o"), 1L);
+		EstimateContext context = EstimateContext.root(path, IDENTITY, 7L)
+				.withBoundNames(Set.of("s", "o"))
+				.withInvocationCount(10.0d);
+		RowEvidence rows = new RowEvidence(100.0d, 100.0d, 100.0d, 1.0d, true, IDENTITY, 7L,
+				"complete-rows");
+		EstimateCandidate direct = new EstimateCandidate(BagEstimate.heuristic(100.0d, "complete-rows"), rows,
+				EstimateCandidate.Kind.SYNOPSIS, 7L);
+
+		EstimateCandidate candidate = new LmdbPropertyPathEstimator(null)
+				.candidates(path, step, List.of(direct), context)
+				.getFirst();
+
+		assertEquals(0.4d, candidate.estimate().rows(), 1.0e-12,
+				"Only the endpoint pairs predicted to be reachable become results");
+		assertEquals(40.0d, metric(candidate, "plannedPathCandidateRows"), 0.0d);
+		assertEquals(50.0d, metric(candidate, "plannedPathStepLookups"), 0.0d);
+		assertEquals(50.0d, metric(candidate, "plannedPathExpansionIterations"), 0.0d,
+				"Failed endpoint checks still pay for the traversed candidate frontier");
+	}
+
+	private static double metric(EstimateCandidate candidate, String name) {
+		return candidate.estimate().metrics().getOrDefault(name, Double.NaN);
 	}
 
 	private record TokenSketch(String token, double rows) implements DistributionSketch {

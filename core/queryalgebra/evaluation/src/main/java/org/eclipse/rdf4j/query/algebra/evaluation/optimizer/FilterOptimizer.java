@@ -398,15 +398,9 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Difference node) {
-			Filter clone = new Filter();
-			clone.setCondition(filter.getCondition().clone());
-			transferScopeChange(filter, clone);
-
 			relocate(filter, node.getLeftArg());
-			relocate(clone, node.getRightArg());
-
 			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost);
-			FilterRelocator.optimize(clone, statistics, considerJoinPlacementCost);
+			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost);
 		}
 
 		@Override

@@ -45,6 +45,7 @@ final class PackedRelOp {
 	static final int TUPLE_FUNCTION = 29;
 	static final int SEMI_JOIN = 30;
 	static final int ANTI_JOIN = 31;
+	static final int UNSUPPORTED = 32;
 
 	private PackedRelOp() {
 	}

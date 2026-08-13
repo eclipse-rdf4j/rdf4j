@@ -45,52 +45,59 @@ final class LmdbFactorCostAssembler {
 	}
 
 	FactorCostEstimate assemble(TupleExpr expression, EstimateContext context, BagEstimate semantic, boolean exact) {
+		return assemble(expression, context, semantic, exact, null);
+	}
+
+	FactorCostEstimate assemble(TupleExpr expression, EstimateContext context, BagEstimate semantic, boolean exact,
+			LmdbEstimatorOptimizationScope scope) {
 		if (expression instanceof UnaryTupleOperator unary) {
-			BagEstimate childSemantic = engine.estimate(unary.getArg(), context);
-			FactorCostEstimate child = assemble(unary.getArg(), context, childSemantic, exact(childSemantic));
+			BagEstimate childSemantic = engine.estimate(unary.getArg(), context, scope);
+			FactorCostEstimate child = assemble(unary.getArg(), context, childSemantic, exact(childSemantic), scope);
 			return assembleComposite(expression, context, semantic, exact,
 					List.of(new ChildCost(childSemantic, child)));
 		}
 		if (expression instanceof Lateral lateral) {
-			BagEstimate leftSemantic = engine.estimate(lateral.getLeftArg(), context);
+			BagEstimate leftSemantic = engine.estimate(lateral.getLeftArg(), context, scope);
 			EstimateContext rightContext = context.withBoundNames(lateral.getRightInputBindingNames())
 					.withPrefixEstimate(leftSemantic)
 					.withInvocationCount(Math.max(1.0d, leftSemantic.rows()));
-			BagEstimate rightSemantic = engine.estimate(lateral.getRightArg(), rightContext);
+			BagEstimate rightSemantic = engine.estimate(lateral.getRightArg(), rightContext, scope);
 			return assembleComposite(expression, context, semantic, exact, List.of(
 					new ChildCost(leftSemantic,
-							assemble(lateral.getLeftArg(), context, leftSemantic, exact(leftSemantic))),
+							assemble(lateral.getLeftArg(), context, leftSemantic, exact(leftSemantic), scope)),
 					new ChildCost(rightSemantic,
-							assemble(lateral.getRightArg(), rightContext, rightSemantic, exact(rightSemantic)))));
+							assemble(lateral.getRightArg(), rightContext, rightSemantic, exact(rightSemantic),
+									scope))));
 		}
 		if (expression instanceof Join join) {
-			return assembleJoin(expression, join.getLeftArg(), join.getRightArg(), context, semantic, exact);
+			return assembleJoin(expression, join.getLeftArg(), join.getRightArg(), context, semantic, exact, scope);
 		}
 		if (expression instanceof Intersection intersection) {
 			return assembleJoin(expression, intersection.getLeftArg(), intersection.getRightArg(), context, semantic,
-					exact);
+					exact, scope);
 		}
 		if (expression instanceof BinaryTupleOperator binary) {
-			BagEstimate leftSemantic = engine.estimate(binary.getLeftArg(), context);
-			BagEstimate rightSemantic = engine.estimate(binary.getRightArg(), context);
+			BagEstimate leftSemantic = engine.estimate(binary.getLeftArg(), context, scope);
+			BagEstimate rightSemantic = engine.estimate(binary.getRightArg(), context, scope);
 			return assembleComposite(expression, context, semantic, exact, List.of(
 					new ChildCost(leftSemantic,
-							assemble(binary.getLeftArg(), context, leftSemantic, exact(leftSemantic))),
+							assemble(binary.getLeftArg(), context, leftSemantic, exact(leftSemantic), scope)),
 					new ChildCost(rightSemantic,
-							assemble(binary.getRightArg(), context, rightSemantic, exact(rightSemantic)))));
+							assemble(binary.getRightArg(), context, rightSemantic, exact(rightSemantic), scope))));
 		}
-		return assembleAccess(expression, context, semantic, exact);
+		return assembleAccess(expression, context, semantic, exact, scope);
 	}
 
 	private FactorCostEstimate assembleJoin(TupleExpr expression, TupleExpr leftExpression, TupleExpr rightExpression,
-			EstimateContext context, BagEstimate semantic, boolean exact) {
-		BagEstimate leftSemantic = engine.estimate(leftExpression, context);
+			EstimateContext context, BagEstimate semantic, boolean exact, LmdbEstimatorOptimizationScope scope) {
+		BagEstimate leftSemantic = engine.estimate(leftExpression, context, scope);
 		EstimateContext rightContext = engine.joinRightContext(leftExpression, rightExpression, context, leftSemantic);
-		BagEstimate rightSemantic = engine.estimate(rightExpression, rightContext);
+		BagEstimate rightSemantic = engine.estimate(rightExpression, rightContext, scope);
 		return assembleComposite(expression, context, semantic, exact, List.of(
-				new ChildCost(leftSemantic, assemble(leftExpression, context, leftSemantic, exact(leftSemantic))),
+				new ChildCost(leftSemantic,
+						assemble(leftExpression, context, leftSemantic, exact(leftSemantic), scope)),
 				new ChildCost(rightSemantic,
-						assemble(rightExpression, rightContext, rightSemantic, exact(rightSemantic)))));
+						assemble(rightExpression, rightContext, rightSemantic, exact(rightSemantic), scope))));
 	}
 
 	private FactorCostEstimate assembleComposite(TupleExpr expression, EstimateContext context, BagEstimate semantic,
@@ -151,11 +158,11 @@ final class LmdbFactorCostAssembler {
 	}
 
 	private FactorCostEstimate assembleAccess(TupleExpr expression, EstimateContext context, BagEstimate semantic,
-			boolean exact) {
+			boolean exact, LmdbEstimatorOptimizationScope scope) {
 		StatementPattern accessPattern = accessPattern(expression);
 		BagEstimate accessSemantic = accessPattern == null || accessPattern == expression
 				? semantic
-				: engine.estimate(accessPattern, context);
+				: engine.estimate(accessPattern, context, scope);
 		TupleExpr accessExpression = accessPattern == null ? expression : accessPattern;
 		double physicalWorkRows = expression instanceof BindingSetAssignment
 				? semantic.workRows()
@@ -201,7 +208,7 @@ final class LmdbFactorCostAssembler {
 	}
 
 	private static boolean exact(BagEstimate estimate) {
-		return LmdbEstimationEngine.databaseExact(estimate);
+		return LmdbEstimateClassification.databaseExact(estimate);
 	}
 
 	private static double totalAccessWork(FactorCostEstimate estimate) {

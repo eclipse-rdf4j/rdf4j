@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -102,11 +103,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimi
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -193,6 +196,35 @@ class LmdbOptimizerPipelineTest {
 							store.getEvaluationStrategyFactory().getOptimizerPipeline().orElse(null)));
 		} finally {
 			store.shutDown();
+		}
+	}
+
+	@Test
+	void configuredOptimizerPipelineRunsForEveryQueryWithoutDefaultPlanReuse(@TempDir File dataDir) {
+		AtomicInteger invocations = new AtomicInteger();
+		QueryOptimizerPipeline customPipeline = () -> List.of((tupleExpr, dataset, bindings) -> {
+			invocations.incrementAndGet();
+			tupleExpr.setStringMetricPlanned("optimizer.customPipelineInvoked", "true");
+		});
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		store.getEvaluationStrategyFactory().setOptimizerPipeline(customPipeline);
+		var repository = new SailRepository(store);
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			String query = "SELECT ?subject WHERE { ?subject <urn:predicate> ?object }";
+			TupleExpr first = (TupleExpr) connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.tupleExpr();
+			TupleExpr second = (TupleExpr) connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.tupleExpr();
+
+			assertEquals(2, invocations.get());
+			assertEquals("true", first.getStringMetricPlanned("optimizer.customPipelineInvoked"));
+			assertEquals("true", second.getStringMetricPlanned("optimizer.customPipelineInvoked"));
+			assertFalse(Boolean.parseBoolean(second.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+		} finally {
+			repository.shutDown();
 		}
 	}
 
@@ -501,6 +533,30 @@ class LmdbOptimizerPipelineTest {
 		}
 
 		assertNoUnsafeSplitBindingAssignmentFilter(tupleExpr);
+	}
+
+	@Test
+	void lmdbCascadesKeepsOuterUnionOptionalInputSeparateFromNotExistsProbe() {
+		TupleExpr tupleExpr = parseTupleExpr("""
+				PREFIX med: <http://example.com/theme/medical/>
+				SELECT (COUNT(DISTINCT ?patient) AS ?count) WHERE {
+				  { ?patient a med:Patient ; med:hasMedication ?med . }
+				  UNION
+				  { ?patient a med:Patient ; med:hasEncounter ?enc . ?enc med:hasObservation ?obs . }
+				  OPTIONAL { ?patient med:name ?optName . }
+				  FILTER(?optName != "")
+				  FILTER NOT EXISTS {
+				    ?patient med:hasMedication ?m2 . ?m2 med:code ?c .
+				    FILTER(?c = "MED-1005")
+				  }
+				}
+				""");
+
+		optimizeWithLmdbPipelineThrough(tupleExpr, "LmdbCascadesOptimizer");
+
+		String diagnosticPlan = diagnosticPlan(tupleExpr);
+		assertTrue(groupInputContainsUnion(tupleExpr), diagnosticPlan);
+		assertTrue(groupInputContainsBindings(tupleExpr, Set.of("patient", "optName")), diagnosticPlan);
 	}
 
 	@Test
@@ -1420,6 +1476,21 @@ class LmdbOptimizerPipelineTest {
 			@Override
 			public void meet(Group node) {
 				if (containsUnion(node.getArg())) {
+					found[0] = true;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean groupInputContainsBindings(QueryModelNode queryModelNode, Set<String> bindingNames) {
+		boolean[] found = { false };
+		queryModelNode.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(Group node) {
+				if (node.getArg().getBindingNames().containsAll(bindingNames)) {
 					found[0] = true;
 				}
 				super.meet(node);

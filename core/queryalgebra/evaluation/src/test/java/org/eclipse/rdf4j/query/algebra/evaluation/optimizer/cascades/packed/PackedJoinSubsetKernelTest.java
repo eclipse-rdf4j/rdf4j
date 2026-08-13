@@ -53,7 +53,8 @@ class PackedJoinSubsetKernelTest {
 		TupleExpr selected = PackedCascadesPlanner.optimize(chain(65), OptimizationGoal.root()).selectedPlan();
 
 		assertEquals(65, factorCount(selected));
-		assertEquals("urn:factor:64", leftmostFactor(selected).getPredicateVar().getValue().stringValue());
+		assertEquals(1, predicateOccurrenceCount(selected, "urn:factor:64"),
+				"the first factor in the second machine word must survive multiword subset planning exactly once");
 	}
 
 	private static TupleExpr chain(int factorCount) {
@@ -81,12 +82,13 @@ class PackedJoinSubsetKernelTest {
 		return factorCount(join.getLeftArg()) + factorCount(join.getRightArg());
 	}
 
-	private static StatementPattern leftmostFactor(TupleExpr expression) {
-		TupleExpr current = expression;
-		while (current instanceof Join join) {
-			current = join.getLeftArg();
+	private static int predicateOccurrenceCount(TupleExpr expression, String predicate) {
+		if (expression instanceof StatementPattern pattern) {
+			return predicate.equals(pattern.getPredicateVar().getValue().stringValue()) ? 1 : 0;
 		}
-		return (StatementPattern) current;
+		Join join = (Join) expression;
+		return predicateOccurrenceCount(join.getLeftArg(), predicate)
+				+ predicateOccurrenceCount(join.getRightArg(), predicate);
 	}
 
 	private static Join firstJoin(TupleExpr expression) {

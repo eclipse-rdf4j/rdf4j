@@ -23,10 +23,20 @@ final class PackedNodeMetadataArena {
 	static final int SCALAR_REORDERING_SAFE = 1 << 3;
 	static final int SEMANTIC_ASSURED_SHARED_MINUS_FILTER = 1;
 
-	private final Columns relations = new Columns(32);
-	private final Columns scalars = new Columns(48);
-	private final Columns terms = new Columns(48);
+	private final Columns relations;
+	private final Columns scalars;
+	private final Columns terms;
 	private boolean frozen;
+
+	PackedNodeMetadataArena() {
+		this(32, 48, 48);
+	}
+
+	PackedNodeMetadataArena(int expectedRelations, int expectedScalars, int expectedTerms) {
+		relations = new Columns(expectedRelations);
+		scalars = new Columns(expectedScalars);
+		terms = new Columns(expectedTerms);
+	}
 
 	void attachRelation(int relationId, int metricSetId, int flags, double resultSizeEstimate, double costEstimate,
 			int algorithmNameId) {
@@ -52,6 +62,18 @@ final class PackedNodeMetadataArena {
 			throw new IllegalStateException("packed node metadata is frozen");
 		}
 		relations.addSemanticFlags(relationId, semanticFlags);
+	}
+
+	/**
+	 * Records one proof-backed relation whose exact physical search covers every candidate rooted at the supplied
+	 * relation. This is deliberately stronger than logical equivalence: callers may use the edge to omit the covered
+	 * search only when the covering candidate is never more expensive under the packed operator-cost contract.
+	 */
+	void offerRelationExactCover(int relationId, int coveringRelationId) {
+		if (frozen) {
+			throw new IllegalStateException("packed node metadata is frozen");
+		}
+		relations.offerExactCover(relationId, coveringRelationId);
 	}
 
 	void attachScalar(int scalarId, int metricSetId, int flags, double resultSizeEstimate, double costEstimate) {
@@ -110,6 +132,10 @@ final class PackedNodeMetadataArena {
 		return relations.semanticFlags(relationId);
 	}
 
+	int relationExactCoverId(int relationId) {
+		return relations.exactCoverId(relationId);
+	}
+
 	int scalarMetricSetId(int scalarId) {
 		return scalars.metricSetId(scalarId);
 	}
@@ -132,6 +158,13 @@ final class PackedNodeMetadataArena {
 
 	int termFlags(int termId) {
 		return terms.flags(termId);
+	}
+
+	boolean hasSameStructuralFlags(PackedNodeMetadataArena other) {
+		return other != null
+				&& relations.hasSameFlags(other.relations)
+				&& scalars.hasSameFlags(other.scalars)
+				&& terms.hasSameFlags(other.terms);
 	}
 
 	double termResultSizeEstimate(int termId) {
@@ -164,6 +197,20 @@ final class PackedNodeMetadataArena {
 		private int[] algorithmNameIds;
 		private long[] ruleMasks;
 		private int[] semanticFlags;
+		private int[] exactCoverIds;
+
+		private boolean hasSameFlags(Columns other) {
+			int rowLimit = Math.max(present.length, other.present.length);
+			for (int id = 1; id < rowLimit; id++) {
+				boolean leftPresent = id < present.length && present[id] != 0;
+				boolean rightPresent = id < other.present.length && other.present[id] != 0;
+				if (leftPresent != rightPresent
+						|| leftPresent && flags[id] != other.flags[id]) {
+					return false;
+				}
+			}
+			return true;
+		}
 
 		private Columns(int expectedRows) {
 			int capacity = Math.max(2, expectedRows + 1);
@@ -175,6 +222,7 @@ final class PackedNodeMetadataArena {
 			algorithmNameIds = new int[capacity];
 			ruleMasks = new long[capacity];
 			semanticFlags = new int[capacity];
+			exactCoverIds = new int[capacity];
 		}
 
 		private void attach(int id, int metricSetId, int nodeFlags, double resultSizeEstimate, double costEstimate,
@@ -232,6 +280,17 @@ final class PackedNodeMetadataArena {
 			semanticFlags[id] |= flags;
 		}
 
+		private void offerExactCover(int id, int coveringId) {
+			checkId(id);
+			checkId(coveringId);
+			if (id == coveringId) {
+				throw new PackedMemoInvariantException("a relation cannot exactly cover itself");
+			}
+			if (exactCoverIds[id] == 0) {
+				exactCoverIds[id] = coveringId;
+			}
+		}
+
 		private int metricSetId(int id) {
 			checkId(id);
 			return metricSetIds[id];
@@ -267,6 +326,11 @@ final class PackedNodeMetadataArena {
 			return semanticFlags[id];
 		}
 
+		private int exactCoverId(int id) {
+			checkId(id);
+			return exactCoverIds[id];
+		}
+
 		private void checkId(int id) {
 			if (id <= 0 || id >= present.length || present[id] == 0) {
 				throw new IndexOutOfBoundsException("unknown node metadata row " + id);
@@ -289,6 +353,7 @@ final class PackedNodeMetadataArena {
 			algorithmNameIds = Arrays.copyOf(algorithmNameIds, capacity);
 			ruleMasks = Arrays.copyOf(ruleMasks, capacity);
 			semanticFlags = Arrays.copyOf(semanticFlags, capacity);
+			exactCoverIds = Arrays.copyOf(exactCoverIds, capacity);
 		}
 	}
 }

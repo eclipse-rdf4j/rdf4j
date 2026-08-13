@@ -56,4 +56,27 @@ class LmdbFrontierStatementProbeMemoTest {
 			assertNull(memo.get(8L, 9L, 10L, 11L, 12));
 		}
 	}
+
+	@Test
+	void retainsCompleteProbeKeysAcrossTableGrowth() {
+		try (FrontierStateArena arena = new FrontierStateArena(1L << 20);
+				LmdbFrontierStatementProbeMemo memo = LmdbFrontierStatementProbeMemo.createIfCapacity(arena)) {
+			assertNotNull(memo);
+			for (long subject = 1L; subject <= 40L; subject++) {
+				LmdbFrontierStatementProbeMemo.Capture capture = memo.beginCapture();
+				assertNotNull(capture);
+				assertTrue(capture.add(subject + 100L, 12L, 13L, 14L));
+				assertTrue(memo.complete(subject, 2L, 3L, 4L, Math.toIntExact(subject), 1L, capture));
+			}
+
+			for (long subject = 1L; subject <= 40L; subject++) {
+				LmdbFrontierStatementProbeMemo.Result result = memo.get(
+						subject, 2L, 3L, 4L, Math.toIntExact(subject));
+				assertNotNull(result);
+				assertEquals(subject + 100L, result.quad(0, 0));
+				assertNull(memo.get(subject, 2L, 3L, 4L, Math.toIntExact(subject + 1L)),
+						"probe flags remain part of the complete memo key");
+			}
+		}
+	}
 }

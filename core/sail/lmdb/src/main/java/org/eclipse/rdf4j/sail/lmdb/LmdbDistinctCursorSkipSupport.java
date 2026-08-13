@@ -33,10 +33,17 @@ final class LmdbDistinctCursorSkipSupport {
 
 	static Optional<Plan> choosePlan(StatementPattern pattern, List<TripleStore.IndexAccessPath> accessPaths) {
 		Optional<LmdbDistinctRequirement> requirement = LmdbDistinctRequirement.from(pattern);
-		if (requirement.isEmpty() || accessPaths == null || accessPaths.isEmpty()) {
+		return requirement.isEmpty()
+				? Optional.empty()
+				: choosePlan(pattern, requirement.orElseThrow().distinctVars(), accessPaths);
+	}
+
+	static Optional<Plan> choosePlan(StatementPattern pattern, Set<String> distinctVars,
+			List<TripleStore.IndexAccessPath> accessPaths) {
+		if (pattern == null || distinctVars == null || distinctVars.isEmpty() || accessPaths == null
+				|| accessPaths.isEmpty()) {
 			return Optional.empty();
 		}
-		Set<String> distinctVars = requirement.get().distinctVars();
 		Set<String> patternVars = nonConstantPatternVars(pattern);
 		if (distinctVars.isEmpty() || !patternVars.containsAll(distinctVars)) {
 			return Optional.empty();

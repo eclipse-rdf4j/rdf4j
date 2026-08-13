@@ -73,7 +73,8 @@ final class FrontierPayloadBlockReader {
 		if (magic != FrontierPayloadBlockWriter.MAGIC) {
 			throw fail(FrontierSynopsisStatus.CORRUPT, "Unrecognized Frontier payload block");
 		}
-		if (version != FrontierPayloadBlockWriter.VERSION) {
+		if (version != FrontierPayloadBlockWriter.LEGACY_VERSION
+				&& version != FrontierPayloadBlockWriter.VERSION) {
 			throw fail(FrontierSynopsisStatus.VERSION_MISMATCH,
 					"Unsupported Frontier payload block version: " + version);
 		}

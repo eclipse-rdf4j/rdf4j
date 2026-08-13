@@ -12,9 +12,16 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
+import java.util.Properties;
 
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
@@ -31,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizer
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.RegexAsStringFunctionOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOptimizer;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 
 final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
@@ -53,6 +61,9 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private final TripleSource tripleSource;
 	private final EvaluationStatistics evaluationStatistics;
 	private final boolean preserveSerializableObservationOrder;
+	private final LmdbEstimatorRuntime runtime;
+	private final LmdbPipelinePlanCache planCache;
+	private final OptionalLong executionSnapshotEpoch;
 
 	LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
@@ -65,6 +76,104 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		this.tripleSource = tripleSource;
 		this.evaluationStatistics = evaluationStatistics;
 		this.preserveSerializableObservationOrder = preserveSerializableObservationOrder;
+		this.runtime = evaluationStatistics instanceof LmdbEstimatorRuntimeProvider provider
+				? provider.estimatorRuntime()
+				: null;
+		this.planCache = runtime == null ? null : runtime.frontierSettings().pipelinePlanCache();
+		this.executionSnapshotEpoch = tripleSource instanceof SailDatasetTripleTermSource source
+				? source.getSnapshotEpoch()
+				: OptionalLong.empty();
+	}
+
+	TupleExpr optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		if (tupleExpr == null || planCache == null) {
+			return optimizeUncached(tupleExpr, dataset, bindings);
+		}
+		LmdbPipelinePlanCache.Context context = context(tupleExpr, dataset, bindings);
+		LmdbPipelinePlanCache.Result result = planCache.getOrCompute(tupleExpr, context, this::revision, () -> {
+			TupleExpr optimized = optimizeUncached(tupleExpr, dataset, bindings);
+			annotatePipelineCacheHit(optimized, false);
+			return optimized;
+		});
+		if (!result.cacheHit()) {
+			return result.plan();
+		}
+		TupleExpr installed = install(tupleExpr, result.plan());
+		annotatePipelineCacheHit(installed, true);
+		return installed;
+	}
+
+	private TupleExpr optimizeUncached(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		if (tupleExpr == null) {
+			return null;
+		}
+		for (QueryOptimizer optimizer : getOptimizers()) {
+			optimizer.optimize(tupleExpr, dataset, bindings);
+		}
+		return tupleExpr;
+	}
+
+	private LmdbPipelinePlanCache.Context context(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		return new LmdbPipelinePlanCache.Context(
+				revision(), executionSnapshotEpoch.isPresent(), executionSnapshotEpoch.orElse(0L),
+				LmdbPipelinePlanCache.DatasetIdentity.of(dataset),
+				LmdbPipelinePlanCache.BindingIdentity.of(bindings), planningConfiguration(),
+				preserveSerializableObservationOrder, strategy.isTrackResultSize(), strategy.isTrackTime(),
+				strategy.getQueryEvaluationMode().name(), tupleExpr.isRuntimeTelemetryEnabled());
+	}
+
+	private LmdbPipelinePlanCache.Revision revision() {
+		return new LmdbPipelinePlanCache.Revision(runtime.capturePlanningRevisions(),
+				runtime.adaptiveEvidenceAllowed());
+	}
+
+	private static String planningConfiguration() {
+		Properties properties = System.getProperties();
+		List<String> names = new ArrayList<>();
+		for (String name : properties.stringPropertyNames()) {
+			if (name.startsWith("rdf4j.optimizer.") || name.startsWith("org.eclipse.rdf4j.query.algebra.")) {
+				names.add(name);
+			}
+		}
+		Collections.sort(names);
+		StringBuilder signature = new StringBuilder(names.size() * 48);
+		for (String name : names) {
+			String value = properties.getProperty(name, "");
+			signature.append(name.length())
+					.append(':')
+					.append(name)
+					.append('=')
+					.append(value.length())
+					.append(':')
+					.append(value)
+					.append(';');
+		}
+		return signature.toString();
+	}
+
+	private static TupleExpr install(TupleExpr original, TupleExpr replacement) {
+		if (original.getParentNode() != null || original instanceof QueryRoot
+				|| original.getClass() == replacement.getClass()) {
+			return LmdbCascadesOptimizer.replaceRoot(original, replacement);
+		}
+		return replacement;
+	}
+
+	private static void annotatePipelineCacheHit(TupleExpr root, boolean cacheHit) {
+		if (root == null) {
+			return;
+		}
+		String value = Boolean.toString(cacheHit);
+		root.setStringMetricPlanned("optimizer.pipelinePlanCacheHit", value);
+		if (cacheHit) {
+			root.setStringMetricPlanned("optimizer.cascadesPlanCacheHit", "true");
+		}
+		if (root instanceof QueryRoot queryRoot) {
+			queryRoot.getArg().setStringMetricPlanned("optimizer.pipelinePlanCacheHit", value);
+			if (cacheHit) {
+				queryRoot.getArg().setStringMetricPlanned("optimizer.cascadesPlanCacheHit", "true");
+			}
+		}
 	}
 
 	@Override

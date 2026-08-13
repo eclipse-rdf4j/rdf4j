@@ -14,9 +14,14 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
+import java.lang.management.ManagementFactory;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -29,10 +34,142 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierMemoryLimitException;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierMemoryPurpose;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateArena;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 import org.junit.jupiter.api.Test;
 
 class PackedCostSessionLifecycleTest {
+
+	@Test
+	void sequentialCostSessionsReuseClearedTraceStorage() {
+		var threadMemory = ManagementFactory.getThreadMXBean();
+		assumeTrue(threadMemory instanceof com.sun.management.ThreadMXBean,
+				"thread allocation accounting is unavailable on this JVM");
+		com.sun.management.ThreadMXBean allocations = (com.sun.management.ThreadMXBean) threadMemory;
+		assumeTrue(allocations.isThreadAllocatedMemorySupported(),
+				"thread allocation accounting is unavailable on this JVM");
+		if (!allocations.isThreadAllocatedMemoryEnabled()) {
+			allocations.setThreadAllocatedMemoryEnabled(true);
+		}
+		traceSessionAllocation(allocations, 8, 1.0d);
+
+		TraceSessionAllocation first = traceSessionAllocation(allocations, 4_096, 10.0d);
+		TraceSessionAllocation second = traceSessionAllocation(allocations, 4_096, 20.0d);
+
+		assertEquals(4_096, first.providerCalls());
+		assertEquals(4_096, second.providerCalls(), "recycled invocation slots must not replay a prior query");
+		assertEquals(4_096, first.lastEventId());
+		assertEquals(4_096, second.lastEventId(), "event ordinals must restart in every query-local session");
+		assertEquals(4_116.0d, second.lastRows(), 0.0d);
+		assertTrue(second.allocatedBytes() * 2L < first.allocatedBytes(),
+				() -> "the recycled trace should avoid reallocating its wide primitive columns: first="
+						+ first.allocatedBytes() + ", second=" + second.allocatedBytes());
+	}
+
+	@Test
+	void concurrentlyOpenCostSessionsNeverAliasRecycledTraceStorage() {
+		int[] outerCalls = new int[1];
+		int[] nestedCalls = new int[1];
+		PackedCostContext context = new PackedCostContext();
+		PackedCostEstimate outerFirst = new PackedCostEstimate();
+		PackedCostEstimate outerSecond = new PackedCostEstimate();
+		PackedCostEstimate nested = new PackedCostEstimate();
+
+		try (EventSourcingPackedCostSession outer = new EventSourcingPackedCostSession(
+				leafOnlyProvider(outerCalls, 10.0d))) {
+			outer.estimateLeaf(1, context, outerFirst);
+			try (EventSourcingPackedCostSession inner = new EventSourcingPackedCostSession(
+					leafOnlyProvider(nestedCalls, 20.0d))) {
+				inner.estimateLeaf(1, context, nested);
+			}
+			outer.estimateLeaf(2, context, outerSecond);
+		}
+
+		assertEquals(2, outerCalls[0]);
+		assertEquals(1, nestedCalls[0]);
+		assertEquals(1, outerFirst.costEventId());
+		assertEquals(2, outerSecond.costEventId(), "closing a nested session must not reset its still-open parent");
+		assertEquals(1, nested.costEventId());
+		assertEquals(11.0d, outerFirst.outputRows(), 0.0d);
+		assertEquals(12.0d, outerSecond.outputRows(), 0.0d);
+		assertEquals(21.0d, nested.outputRows(), 0.0d);
+	}
+
+	@Test
+	void plannerBorrowsMetadataBeforeCostingAndReleasesItAfterward() {
+		PackedPhysicalMetadataArena seeded = PackedPhysicalMetadataArena.borrow(0,
+				new PackedSearchBudget(PackedPlannerLimits.unbounded()));
+		seeded.recycle();
+		PackedPhysicalMetadataArena[] callbackArena = new PackedPhysicalMetadataArena[1];
+		PackedCostModel model = (query, relationId) -> {
+			if (callbackArena[0] == null) {
+				callbackArena[0] = PackedPhysicalMetadataArena.borrow(0,
+						new PackedSearchBudget(PackedPlannerLimits.unbounded()));
+			}
+			return relationId + 1.0d;
+		};
+		PackedPhysicalMetadataArena returned = null;
+		try {
+			assertNotNull(PackedCascadesPlanner.optimize(query(), OptimizationGoal.root(), model).selectedPlan());
+			returned = PackedPhysicalMetadataArena.borrow(0,
+					new PackedSearchBudget(PackedPlannerLimits.unbounded()));
+
+			assertNotNull(callbackArena[0]);
+			assertNotSame(seeded, callbackArena[0],
+					"the planner must own its query arena before invoking the cost provider");
+			assertSame(seeded, returned, "successful planning must release its query-local metadata arena");
+		} finally {
+			if (returned != null) {
+				returned.recycle();
+			}
+			if (callbackArena[0] != null) {
+				callbackArena[0].recycle();
+			}
+		}
+	}
+
+	@Test
+	void replayingCostSessionClosesOnlyItsOwnedTrace() {
+		int[] calls = new int[1];
+		int[] closes = new int[1];
+		PackedCostSession callerOwned = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				calls[0]++;
+				output.setRows(relationId, relationId);
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("replay ownership fixture estimates only leaves");
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("replay ownership fixture estimates only leaves");
+			}
+
+			@Override
+			public void close() {
+				closes[0]++;
+			}
+		};
+		PackedCostEstimate output = new PackedCostEstimate();
+		EventSourcingPackedCostSession replaying = EventSourcingPackedCostSession.replaying(callerOwned);
+		replaying.estimateLeaf(1, new PackedCostContext(), output);
+
+		replaying.close();
+		replaying.close();
+		callerOwned.estimateLeaf(2, new PackedCostContext(), output);
+
+		assertEquals(2, calls[0], "replay closure must leave the caller-owned provider usable");
+		assertEquals(0, closes[0]);
+		callerOwned.close();
+		assertEquals(1, closes[0]);
+	}
 
 	@Test
 	void coldPlanningOpensOneSessionUsesItForEveryCostingPhaseAndClosesIt() {
@@ -51,26 +188,40 @@ class PackedCostSessionLifecycleTest {
 
 	@Test
 	void coldPlanningClosesTheSessionWhenAProviderFailsMidSearch() {
+		PackedPhysicalMetadataArena seeded = PackedPhysicalMetadataArena.borrow(0,
+				new PackedSearchBudget(PackedPlannerLimits.unbounded()));
+		seeded.recycle();
 		SessionOnlyCostModel model = new SessionOnlyCostModel(true);
+		PackedPhysicalMetadataArena returned = null;
+		try {
+			ProviderFailure failure = assertThrows(ProviderFailure.class,
+					() -> PackedCascadesPlanner.optimize(query(), OptimizationGoal.root(), model));
+			returned = PackedPhysicalMetadataArena.borrow(0,
+					new PackedSearchBudget(PackedPlannerLimits.unbounded()));
 
-		ProviderFailure failure = assertThrows(ProviderFailure.class,
-				() -> PackedCascadesPlanner.optimize(query(), OptimizationGoal.root(), model));
-
-		assertEquals("deliberate append failure", failure.getMessage());
-		assertEquals(1, model.openCount);
-		assertEquals(1, model.closeCount, "query-local state must close when costing aborts");
-		assertTrue(model.leafCount > 0, "the failure must occur after the session has begun costing");
-		assertEquals(1, model.appendCount);
-		assertEquals(0, model.directCallCount, "even the exceptional path must not bypass the session");
+			assertEquals("deliberate append failure", failure.getMessage());
+			assertEquals(1, model.openCount);
+			assertEquals(1, model.closeCount, "query-local state must close when costing aborts");
+			assertTrue(model.leafCount > 0, "the failure must occur after the session has begun costing");
+			assertEquals(1, model.appendCount);
+			assertEquals(0, model.directCallCount, "even the exceptional path must not bypass the session");
+			assertSame(seeded, returned, "aborted planning must release its query-local metadata arena");
+		} finally {
+			if (returned != null) {
+				returned.recycle();
+			}
+		}
 	}
 
 	@Test
-	void recordedFrontierSessionFailureRestartsExactlyOnceInScalarMode() {
+	void frontierSessionFailureClosesAndPropagatesWithoutScalarRestart() {
 		int[] opens = new int[1];
 		int[] closes = new int[1];
+		int[] scalarCalls = new int[1];
 		PackedCostModel model = new PackedCostModel() {
 			@Override
 			public double estimateRows(PackedQueryView query, int relationId) {
+				scalarCalls[0]++;
 				return rows(query, relationId);
 			}
 
@@ -104,18 +255,158 @@ class PackedCostSessionLifecycleTest {
 			}
 		};
 
+		PackedCostSessionFailure failure = assertThrows(PackedCostSessionFailure.class,
+				() -> PackedCascadesPlanner.optimize(query(), OptimizationGoal.root(), model));
+
+		assertEquals("frontier-payload-corrupt", failure.getMessage());
+		assertEquals(1, opens[0]);
+		assertEquals(1, closes[0]);
+		assertEquals(0, scalarCalls[0],
+				"a failed stateful session must not replace Frontier continuation costs with scalar estimates");
+	}
+
+	@Test
+	void resourceLimitAfterCompleteFrontierIncumbentStopsWithoutScalarRestart() {
+		int[] scalarCalls = new int[1];
+		int[] completedRootPrefixes = new int[1];
+		int[] closes = new int[1];
+		PackedCostModel model = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				scalarCalls[0]++;
+				return rows(query, relationId);
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				return new PackedCostSession() {
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context,
+							PackedCostEstimate output) {
+						writeFrontierRows(query, relationId, output);
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context,
+							PackedCostEstimate output) {
+						if (context.prefixRelationCount() >= 2 && ++completedRootPrefixes[0] == 2) {
+							throw resourceLimitFailure("frontier-query-memory",
+									new IllegalStateException("frontier query memory budget exhausted"));
+						}
+						writeFrontierRows(query, relationId, output);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context,
+							PackedCostEstimate output) {
+					}
+
+					@Override
+					public void close() {
+						closes[0]++;
+					}
+				};
+			}
+		};
+
 		PackedPlanningResult result = PackedCascadesPlanner.optimize(query(), OptimizationGoal.root(), model);
 
 		assertNotNull(result.selectedPlan());
-		assertEquals(1, opens[0]);
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_RESOURCE_LIMIT, result.completionStatus());
+		assertEquals(0, scalarCalls[0],
+				"a provider resource ceiling must not replace retained events with scalar costs");
+		assertEquals(2, completedRootPrefixes[0]);
 		assertEquals(1, closes[0]);
-		assertEquals("whole-session-failure",
-				result.selectedPlan().getStringMetricPlanned("optimizer.frontierSessionFallbackDisposition"));
-		assertEquals("frontier-payload-corrupt",
-				result.selectedPlan().getStringMetricPlanned("optimizer.frontierSessionFallbackReason"));
-		assertEquals("unavailable", result.selectedPlan().getStringMetricPlanned("plannedFrontierStatus"));
-		assertEquals("frontier-payload-corrupt",
-				result.selectedPlan().getStringMetricPlanned("plannedFrontierFallbackReason"));
+		assertNull(result.selectedPlan().getStringMetricPlanned("optimizer.frontierSessionFallbackDisposition"));
+	}
+
+	@Test
+	void frontierArenaLimitAfterCompleteIncumbentBecomesIncompleteResourceResult() {
+		int[] scalarCalls = new int[1];
+		int[] completedRootPrefixes = new int[1];
+		int[] closes = new int[1];
+		PackedCostModel model = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				scalarCalls[0]++;
+				return rows(query, relationId);
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				FrontierStateArena arena = new FrontierStateArena(64L << 10);
+				return new PackedCostSession() {
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context,
+							PackedCostEstimate output) {
+						writeFrontierRows(query, relationId, output);
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context,
+							PackedCostEstimate output) {
+						if (context.prefixRelationCount() >= 2 && ++completedRootPrefixes[0] == 2) {
+							arena.reserveTemporary(arena.remainingBytes(), FrontierMemoryPurpose.ARRAY_GROWTH);
+						}
+						writeFrontierRows(query, relationId, output);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context,
+							PackedCostEstimate output) {
+					}
+
+					@Override
+					public void close() {
+						arena.close();
+						closes[0]++;
+					}
+				};
+			}
+		};
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(query(), OptimizationGoal.root(), model);
+
+		assertNotNull(result.selectedPlan());
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_RESOURCE_LIMIT, result.completionStatus());
+		assertEquals(0, scalarCalls[0],
+				"a typed Frontier arena ceiling must not replace retained events with scalar costs");
+		assertEquals(2, completedRootPrefixes[0]);
+		assertEquals(1, closes[0]);
+	}
+
+	@Test
+	void frontierArenaLimitFromIntermediateJoinIsTypedResourceFailure() {
+		FrontierStateArena arena = new FrontierStateArena(64L << 10);
+		PackedCostSession provider = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			}
+
+			@Override
+			public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+				arena.reserveTemporary(arena.remainingBytes(), FrontierMemoryPurpose.ARRAY_GROWTH);
+			}
+
+			@Override
+			public void close() {
+				arena.close();
+			}
+		};
+		try (EventSourcingPackedCostSession session = new EventSourcingPackedCostSession(provider)) {
+			PackedCostSessionFailure failure = assertThrows(PackedCostSessionFailure.class,
+					() -> session.refineIntermediateJoin(new PackedCostContext(), new PackedCostEstimate()));
+			assertTrue(failure.isResourceLimit());
+			assertTrue(failure.getCause() instanceof FrontierMemoryLimitException);
+		}
 	}
 
 	@Test
@@ -194,6 +485,87 @@ class PackedCostSessionLifecycleTest {
 	}
 
 	@Test
+	void detachedCostingTraceRetainsInclusiveOutputScopeThroughProjection() {
+		PackedCostSession provider = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				output.setOutputRowsPreservingPhysicalCost(7.0d);
+				output.setInclusivePhysicalCost(11.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+				output.setDependentSubqueriesCosted(true);
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises leaf costing only");
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises leaf costing only");
+			}
+		};
+		EventSourcingPackedCostSession session = new EventSourcingPackedCostSession(provider);
+		PackedCostContext context = new PackedCostContext();
+		context.reset(new int[0], 0, 0, 1.0d);
+		PackedCostEstimate unreachable = new PackedCostEstimate();
+		PackedCostEstimate estimate = new PackedCostEstimate();
+
+		session.estimateLeaf(2, context, unreachable);
+		session.estimateLeaf(3, context, estimate);
+		int eventId = estimate.costEventId();
+		PackedCostingTrace snapshot = session.snapshotTrace();
+		PackedCostingTrace.Projection projection = session.snapshotTrace(new int[] { eventId });
+
+		assertEquals(PackedCostEstimate.CostScope.INCLUSIVE, snapshot.costScope(eventId));
+		assertTrue(snapshot.explicitPhysicalCost(eventId));
+		assertFalse(snapshot.contextualRows(eventId));
+		assertFalse(snapshot.componentRows(eventId));
+		assertTrue(snapshot.replacesChildWork(eventId));
+		assertTrue(snapshot.dependentSubqueriesCosted(eventId));
+		assertEquals(0, projection.eventId(unreachable.costEventId()));
+		assertEquals(1, projection.trace().eventCount());
+		int projectedEventId = projection.eventId(eventId);
+		assertEquals(PackedCostEstimate.CostScope.INCLUSIVE,
+				projection.trace().costScope(projectedEventId));
+		assertTrue(projection.trace().explicitPhysicalCost(projectedEventId));
+		assertTrue(projection.trace().replacesChildWork(projectedEventId));
+		assertTrue(projection.trace().dependentSubqueriesCosted(projectedEventId));
+	}
+
+	@Test
+	void costingEventDigestsAreRealizedOnlyForSelectedDependencyClosure() {
+		PackedCostingTraceArena arena = new PackedCostingTraceArena();
+		PackedCostContext context = new PackedCostContext();
+		context.reset(new int[0], 0, 0, 1.0d);
+		PackedCostEstimate providerInput = new PackedCostEstimate();
+		providerInput.setRows(1.0d, 1.0d);
+		PackedCostEstimate dependency = new PackedCostEstimate();
+		dependency.setRows(2.0d, 3.0d);
+		int dependencyEvent = arena.append(PackedCostingPhase.LEAF, 1, context, 0, context,
+				providerInput, dependency, 3.0d);
+		PackedCostEstimate unreachable = new PackedCostEstimate();
+		unreachable.setRows(5.0d, 7.0d);
+		int unreachableEvent = arena.append(PackedCostingPhase.LEAF, 2, context, 0, context,
+				providerInput, unreachable, 7.0d);
+		PackedCostEstimate selected = new PackedCostEstimate();
+		selected.setRows(11.0d, 13.0d);
+		int selectedEvent = arena.append(PackedCostingPhase.PREFIX_EXTENSION, 3, context, 0, context,
+				dependency, selected, 13.0d);
+
+		assertEquals(0, computedDigestCount(arena), "rejected candidates must pay no eager digest work");
+		PackedCostingTrace.Projection projection = arena.project(new int[] { selectedEvent });
+		assertEquals(2, computedDigestCount(arena), "projection must realize only its transitive event closure");
+		assertEquals(0, projection.eventId(unreachableEvent));
+		assertFalse(PackedCostingTraceArena.digestString(0L, 0L)
+				.equals(projection.trace().digest(projection.eventId(dependencyEvent))));
+		assertFalse(PackedCostingTraceArena.digestString(0L, 0L)
+				.equals(projection.trace().digest(projection.eventId(selectedEvent))));
+
+		arena.snapshot();
+		assertEquals(3, computedDigestCount(arena), "a complete diagnostic snapshot must retain every event digest");
+	}
+
+	@Test
 	void identicalQueryLocalCostingCallReusesItsOriginatingEventAndFrontierState() {
 		int[] providerCalls = new int[1];
 		RuntimeFeedbackContract feedbackContract = runtimeFeedbackContract(7.0d, 11.0d, 1);
@@ -210,6 +582,9 @@ class PackedCostSessionLifecycleTest {
 				output.setEvidenceStateId(100 + invocation);
 				output.putPlannedStringMetric("provider.call", Integer.toString(invocation));
 				output.setRuntimeFeedbackContract(feedbackContract);
+				output.setDependentCostComponents(1.0d, 2.0d, 0.25d, 3.0d, 4.0d, 5.0d, 6.0d, 7.0d,
+						8.0d, 9.0d, 10.0d, 11.0d, 12.0d, 13.0d, 14.0d);
+				output.setObjectiveInterval(15.0d, 16.0d, 17.0d);
 			}
 
 			@Override
@@ -236,6 +611,74 @@ class PackedCostSessionLifecycleTest {
 		assertEquals("1", second.plannedStringMetrics().get("provider.call"));
 		assertEquals(first.plannedStringMetrics(), second.plannedStringMetrics());
 		assertEquals(first.plannedDoubleMetrics(), second.plannedDoubleMetrics());
+		assertTrue(second.hasDependentCostComponents());
+		assertEquals(1.0d, second.startupOnceWork(), 0.0d);
+		assertEquals(2.0d, second.dependentInvocationCount(), 0.0d);
+		assertEquals(0.25d, second.hitProbability(), 0.0d);
+		assertEquals(3.0d, second.firstMatchWork(), 0.0d);
+		assertEquals(4.0d, second.exhaustionWork(), 0.0d);
+		assertEquals(5.0d, second.rebindWork(), 0.0d);
+		assertEquals(6.0d, second.closeWork(), 0.0d);
+		assertEquals(7.0d, second.outputWork(), 0.0d);
+		assertEquals(8.0d, second.distinctKeyMisses(), 0.0d);
+		assertEquals(9.0d, second.cacheHits(), 0.0d);
+		assertEquals(10.0d, second.cacheMisses(), 0.0d);
+		assertEquals(11.0d, second.cacheEvictions(), 0.0d);
+		assertEquals(12.0d, second.materializationBuilds(), 0.0d);
+		assertEquals(13.0d, second.materializationLookups(), 0.0d);
+		assertEquals(14.0d, second.memorySpillWork(), 0.0d);
+		assertEquals(15.0d, second.objectiveLower(), 0.0d);
+		assertEquals(16.0d, second.objectivePoint(), 0.0d);
+		assertEquals(17.0d, second.objectiveUpper(), 0.0d);
+	}
+
+	@Test
+	void exactExtensionalPrefixReusesSemanticEventAcrossPhysicalDerivations() {
+		int[] extensionCalls = new int[1];
+		PackedCostSession provider = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				output.setRows(13.0d, 17.0d);
+				output.setEvidenceStateId(41);
+				output.setEvidenceGuarantee(EvidenceGuarantee.DATABASE_EXACT);
+				output.setEvidenceDisposition(FrontierStateDisposition.COMPOSABLE_PAYLOAD);
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				extensionCalls[0]++;
+				output.setContextualRows(7.0d, 11.0d);
+				output.setEvidenceStateId(43);
+				output.setEvidenceGuarantee(EvidenceGuarantee.DATABASE_EXACT);
+				output.setEvidenceDisposition(FrontierStateDisposition.COMPOSABLE_PAYLOAD);
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises exact prefix extension only");
+			}
+		};
+		EventSourcingPackedCostSession session = new EventSourcingPackedCostSession(provider);
+		PackedCostContext leafContext = new PackedCostContext();
+		PackedCostEstimate leaf = new PackedCostEstimate();
+		session.estimateLeaf(3, leafContext, leaf);
+
+		PackedCostContext firstContext = new PackedCostContext();
+		firstContext.reset(new int[] { 3, 5 }, 0, 2, 13.0d, leaf.evidenceStateId());
+		PackedCostEstimate first = new PackedCostEstimate();
+		first.setRows(19.0d, 23.0d);
+		PackedCostContext secondContext = new PackedCostContext();
+		secondContext.reset(new int[] { 5, 3 }, 0, 2, 13.0d, leaf.evidenceStateId());
+		PackedCostEstimate second = new PackedCostEstimate();
+		second.setRows(19.0d, 23.0d);
+
+		session.appendFactor(29, firstContext, first);
+		session.appendFactor(29, secondContext, second);
+
+		assertEquals(1, extensionCalls[0],
+				"an exact extensional prefix must not repeat one semantic transform for another derivation");
+		assertEquals(first.costEventId(), second.costEventId());
+		assertEquals(first.evidenceStateId(), second.evidenceStateId());
 	}
 
 	@Test
@@ -272,6 +715,41 @@ class PackedCostSessionLifecycleTest {
 		session.appendFactor(29, context, second);
 
 		assertEquals(2, providerCalls[0], "distinct typed identities must not reuse one provider result");
+	}
+
+	@Test
+	void distinctDependentProviderInputsDoNotShareOneCostingEvent() {
+		int[] providerCalls = new int[1];
+		PackedCostSession provider = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises prefix costing only");
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				providerCalls[0]++;
+				output.setComponentRows(7.0d, 11.0d);
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises prefix costing only");
+			}
+		};
+		EventSourcingPackedCostSession session = new EventSourcingPackedCostSession(provider);
+		PackedCostContext context = new PackedCostContext();
+		context.reset(new int[] { 3, 5 }, 0, 2, 13.0d, 41);
+		PackedCostEstimate first = dependentProviderInput(14.0d, 16.0d);
+		PackedCostEstimate differentComponent = dependentProviderInput(99.0d, 16.0d);
+		PackedCostEstimate differentObjective = dependentProviderInput(14.0d, 21.0d);
+
+		session.appendFactor(29, context, first);
+		session.appendFactor(29, context, differentComponent);
+		session.appendFactor(29, context, differentObjective);
+
+		assertEquals(3, providerCalls[0],
+				"dependent primitives and objective bounds are typed provider-input dimensions");
 	}
 
 	@Test
@@ -528,6 +1006,65 @@ class PackedCostSessionLifecycleTest {
 		return context;
 	}
 
+	private static TraceSessionAllocation traceSessionAllocation(com.sun.management.ThreadMXBean allocations,
+			int eventCount, double rowOffset) {
+		long threadId = Thread.currentThread().threadId();
+		long allocatedBefore = allocations.getThreadAllocatedBytes(threadId);
+		int[] providerCalls = new int[1];
+		PackedCostSession provider = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				providerCalls[0]++;
+				output.setRows(rowOffset + relationId, rowOffset + relationId);
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("trace-allocation fixture estimates only leaves");
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("trace-allocation fixture estimates only leaves");
+			}
+		};
+		PackedCostContext context = new PackedCostContext();
+		PackedCostEstimate output = new PackedCostEstimate();
+		int lastEventId = 0;
+		try (EventSourcingPackedCostSession session = new EventSourcingPackedCostSession(provider)) {
+			for (int relationId = 1; relationId <= eventCount; relationId++) {
+				output.clear();
+				session.estimateLeaf(relationId, context, output);
+				lastEventId = output.costEventId();
+			}
+		}
+		long allocatedBytes = allocations.getThreadAllocatedBytes(threadId) - allocatedBefore;
+		return new TraceSessionAllocation(allocatedBytes, providerCalls[0], lastEventId, output.outputRows());
+	}
+
+	private static PackedCostSession leafOnlyProvider(int[] calls, double rowOffset) {
+		return new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				calls[0]++;
+				output.setRows(rowOffset + relationId, rowOffset + relationId);
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("leaf-only provider cannot extend a prefix");
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("leaf-only provider cannot refine an operator");
+			}
+		};
+	}
+
+	private record TraceSessionAllocation(long allocatedBytes, int providerCalls, int lastEventId, double lastRows) {
+	}
+
 	private static PackedCostEstimate demandedEvidenceProviderInput() {
 		PackedCostEstimate estimate = new PackedCostEstimate();
 		estimate.setRows(19.0d, 23.0d);
@@ -540,6 +1077,15 @@ class PackedCostSessionLifecycleTest {
 		estimate.setRows(19.0d, 23.0d);
 		estimate.setEvidenceStateId(41);
 		estimate.setCostEventId(costEventId);
+		return estimate;
+	}
+
+	private static PackedCostEstimate dependentProviderInput(double memorySpillWork, double objectivePoint) {
+		PackedCostEstimate estimate = new PackedCostEstimate();
+		estimate.setRows(19.0d, 23.0d);
+		estimate.setDependentCostComponents(1.0d, 2.0d, 0.25d, 3.0d, 4.0d, 5.0d, 6.0d, 7.0d,
+				8.0d, 9.0d, 10.0d, 11.0d, 12.0d, 13.0d, memorySpillWork);
+		estimate.setObjectiveInterval(15.0d, objectivePoint, 22.0d);
 		return estimate;
 	}
 
@@ -567,6 +1113,8 @@ class PackedCostSessionLifecycleTest {
 		context.setOperatorInputs(3.0d, 5.0d, 0, 0);
 		PackedCostEstimate estimate = new PackedCostEstimate();
 		estimate.setRows(2.0d, 2.0d);
+		estimate.putPlannedStringMetric("optimizer.costEventProviderString", "excluded-from-child-event");
+		estimate.putPlannedDoubleMetric("optimizer.costEventProviderDouble", 31.0d);
 
 		session.refineIntermediateJoin(context, estimate);
 		PackedPhysicalJoinCosting.refine(session, PackedPhysicalJoinCosting.INDEPENDENT_HASH, context, estimate);
@@ -584,6 +1132,9 @@ class PackedCostSessionLifecycleTest {
 		for (int ordinal = 0; ordinal < trace.doubleMetricCount(2); ordinal++) {
 			assertFalse(trace.doubleMetricName(2, ordinal).startsWith("optimizer.costEvent"));
 		}
+		assertEquals("excluded-from-child-event",
+				estimate.plannedStringMetric("optimizer.costEventProviderString"));
+		assertEquals(31.0d, estimate.plannedDoubleMetric("optimizer.costEventProviderDouble", -1.0d));
 		assertEquals(25.0d, estimate.plannedDoubleMetrics().get("optimizer.costEventWorkRows"));
 	}
 
@@ -686,6 +1237,19 @@ class PackedCostSessionLifecycleTest {
 		};
 	}
 
+	private static void writeFrontierRows(PackedQueryView query, int relationId, PackedCostEstimate output) {
+		double estimate = rows(query, relationId);
+		if (Double.isFinite(estimate)) {
+			output.setRows(estimate, estimate);
+			output.setEvidenceDisposition(FrontierStateDisposition.COMPOSABLE_PAYLOAD);
+			output.putPlannedStringMetric("plannedFrontierStatus", "ready");
+		}
+	}
+
+	private static PackedCostSessionFailure resourceLimitFailure(String reason, RuntimeException cause) {
+		return PackedCostSessionFailure.resourceLimit(reason, cause);
+	}
+
 	private static RuntimeFeedbackContract runtimeFeedbackContract(double rows, double workRows,
 			int implementationId) {
 		RuntimeFeedbackContract.PredictionVector prediction = new RuntimeFeedbackContract.PredictionVector(
@@ -696,6 +1260,16 @@ class PackedCostSessionLifecycleTest {
 				RuntimeFeedbackContract.Algorithm.SCAN,
 				RuntimeFeedbackContract.Access.NONE, implementationId, 0L, 0L, 0L,
 				RuntimeFeedbackContract.ADMIT_LOGICAL | RuntimeFeedbackContract.ADMIT_PHYSICAL);
+	}
+
+	private static int computedDigestCount(PackedCostingTraceArena arena) {
+		try {
+			var method = PackedCostingTraceArena.class.getDeclaredMethod("computedDigestCount");
+			method.setAccessible(true);
+			return (int) method.invoke(arena);
+		} catch (ReflectiveOperationException failure) {
+			throw new AssertionError("Missing lazy costing-event digest diagnostic", failure);
+		}
 	}
 
 	private record CostSessionFeedbackDescriptor(int implementationId) implements RuntimeFeedbackDescriptor {

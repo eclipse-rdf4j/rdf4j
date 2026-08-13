@@ -490,6 +490,12 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return precompile(expr, context);
 	}
 
+	@Override
+	public QueryValueEvaluationStep precompile(ValueExpr expr) {
+		return precompile(expr,
+				new QueryEvaluationContext.Minimal(sharedValueOfNow, dataset, tripleSource.getComparator()));
+	}
+
 	private QueryEvaluationStep precompileRuntimeSubtree(TupleExpr expr, QueryEvaluationContext context) {
 		RuntimeFeedbackCompilation previousCompilation = runtimeFeedbackCompilation.get();
 		runtimeFeedbackCompilation.set(new RuntimeFeedbackCompilation(evaluationStatistics, false));

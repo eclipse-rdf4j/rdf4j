@@ -21,16 +21,45 @@ import org.junit.jupiter.api.Test;
 class ThemeQueryCatalogExpectedCountTest {
 
 	@Test
+	void highlyConnectedQ11UsesAuthoritativeFactorizedCount() {
+		assertEquals(22_853_301_733_957L, ThemeQueryCatalog.expectedCountFor(Theme.HIGHLY_CONNECTED, 11));
+	}
+
+	@Test
+	void highlyConnectedQ12UsesAuthoritativeFactorizedCount() {
+		assertEquals(5_397_929_193L, ThemeQueryCatalog.expectedCountFor(Theme.HIGHLY_CONNECTED, 12));
+	}
+
+	@Test
+	void socialMediaQ12UsesAuthoritativeFactorizedCount() {
+		assertEquals(2_455_460_386L, ThemeQueryCatalog.expectedCountFor(Theme.SOCIAL_MEDIA, 12));
+	}
+
+	@Test
+	void socialMediaQ11UsesAuthoritativeFactorizedCount() {
+		assertEquals(1_141_596_126L, ThemeQueryCatalog.expectedCountFor(Theme.SOCIAL_MEDIA, 11));
+	}
+
+	@Test
+	void libraryQ12UsesAuthoritativeFactorizedCount() {
+		assertEquals(305_676_168_120L, ThemeQueryCatalog.expectedCountFor(Theme.LIBRARY, 12));
+	}
+
+	@Test
 	void expectedCountsMatchCatalogValues() {
 		Map<Theme, long[]> expectedCounts = Map.of(
 				Theme.MEDICAL_RECORDS, new long[] { 1, 1, 135, 1, 1, 1, 8335, 1, 8335, 1, 1, 199461, 347473 },
-				Theme.SOCIAL_MEDIA, new long[] { 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1 },
-				Theme.LIBRARY, new long[] { 1, 1, 3, 1, 1, 1, 5081, 1, 10, 1, 1, 1, 1 },
-				Theme.ENGINEERING, new long[] { 1, 1, 3, 1, 1, 1, 520, 1, 520, 1, 1, 1, 134229 },
-				Theme.HIGHLY_CONNECTED, new long[] { 1, 1, 36767, 1, 1, 1, 40251, 1, 1, 40251, 1, 1, 1 },
-				Theme.TRAIN, new long[] { 1, 1, 3, 1, 1, 1, 7836, 1, 1, 67388, 1, 1, 943354 },
-				Theme.ELECTRICAL_GRID, new long[] { 1, 1, 10, 1, 1, 1, 9364, 1, 0, 1, 1, 1, 621654 },
-				Theme.PHARMA, new long[] { 1, 80, 0, 2216, 1, 1, 1, 1, 1635, 1, 51, 1, 25710 },
+				Theme.SOCIAL_MEDIA,
+				new long[] { 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1_141_596_126L, 2_455_460_386L },
+				Theme.LIBRARY, new long[] { 1, 1, 3, 1, 1, 1, 5081, 1, 10, 1, 1, 20235, 305_676_168_120L },
+				Theme.ENGINEERING, new long[] { 1, 1, 3, 1, 1, 1, 520, 1, 520, 1, 1, 1557, 134229 },
+				Theme.HIGHLY_CONNECTED,
+				new long[] {
+						1, 1, 36767, 1, 1, 1, 40251, 1, 1, 40251, 1, 22_853_301_733_957L, 5_397_929_193L
+				},
+				Theme.TRAIN, new long[] { 1, 1, 3, 1, 1, 1, 7836, 1, 1, 67388, 1, 569390, 943354 },
+				Theme.ELECTRICAL_GRID, new long[] { 1, 1, 10, 1, 1, 1, 9364, 1, 0, 1, 1, 1884596, 621654 },
+				Theme.PHARMA, new long[] { 1, 80, 0, 2216, 1, 1, 1, 1, 1635, 1, 51, 46761, 25710 },
 				Theme.SPARSE, new long[] { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }
 		);
 

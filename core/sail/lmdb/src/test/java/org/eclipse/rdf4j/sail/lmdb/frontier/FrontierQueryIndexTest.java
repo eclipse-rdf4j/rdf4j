@@ -67,6 +67,43 @@ class FrontierQueryIndexTest {
 	}
 
 	@Test
+	void preparedProbeMemoPreservesCompleteKeysAcrossGrowth(@TempDir Path frontierDirectory) {
+		FrontierManifestIdentity identity = identity();
+		FrontierSnapshotSourceFactory snapshots = () -> new FixtureSnapshot();
+
+		try (LmdbFrontierSynopsisService service = new LmdbFrontierSynopsisService(
+				frontierDirectory,
+				FrontierEstimatorMode.AUTHORITATIVE,
+				identity,
+				snapshots,
+				NioFrontierFileOps.INSTANCE)) {
+			assertEquals(FrontierSynopsisStatus.READY, service.rebuild());
+			try (FrontierQueryIndexLease lease = service.acquireQueryIndex(SNAPSHOT_EPOCH)) {
+				List<Long> expected = new ArrayList<>();
+				for (long subject = 1L; subject <= 40L; subject++) {
+					expected.add(lease.countMatches(new FrontierLeafSelector(
+							subject, 101L, 0L, 0L, false, 0)));
+				}
+				assertEquals(40, lease.preparedProbeCount(), "forty keys cross three memo growth boundaries");
+
+				for (long subject = 1L; subject <= 40L; subject++) {
+					assertEquals(expected.get(Math.toIntExact(subject - 1L)),
+							lease.countMatches(new FrontierLeafSelector(subject, 101L, 0L, 0L, false, 0)));
+				}
+				assertEquals(40, lease.preparedProbeCount(),
+						"equivalent selector instances must reuse prepared ranges");
+
+				FrontierLeafSelector shared = new FrontierLeafSelector(11L, 101L, 0L, 0L, false, 0);
+				lease.visitReverseMatches(shared, (subject, predicate, object, context, weight) -> {
+				});
+				lease.designLaneCandidateRows(shared, 1);
+				assertEquals(42, lease.preparedProbeCount(),
+						"direction and lane identity must remain part of the prepared-probe key");
+			}
+		}
+	}
+
+	@Test
 	void primitiveIndexesSelectSmallestRangeAndPreserveSemantics(@TempDir Path frontierDirectory)
 			throws Exception {
 		FrontierPayloadDescriptor descriptor = descriptor();
@@ -249,6 +286,47 @@ class FrontierQueryIndexTest {
 			assertEquals(0.0d, diagnosticWeight(diagnostics, "auditWeightedRows", 1));
 		} finally {
 			view.release();
+		}
+	}
+
+	@Test
+	void predicateOnlyPrimaryVisitUsesPrecomputedLaneDiagnostics(@TempDir Path frontierDirectory) throws Exception {
+		FrontierQueryIndex.Builder builder = FrontierQueryIndex.builder(
+				frontierDirectory, identity(), descriptor(), BUDGET_BYTES, NioFrontierFileOps.INSTANCE);
+		builder.accept(1, 1, 0, true, false, 11L, 101L, 21L, 0L, 2.0d, 0.5d, 1L);
+		builder.accept(1, 1, 1, true, false, 12L, 101L, 22L, 0L, 3.0d, 0.5d, 2L);
+		builder.accept(1, 2, 0, true, false, 13L, 101L, 23L, 0L, 4.0d, 0.5d, 3L);
+		builder.accept(1, 2, 1, true, false, 14L, 101L, 24L, 0L, 5.0d, 0.5d, 4L);
+
+		FrontierQueryIndex index = builder.finish(0.5d, false);
+		FrontierQueryIndexView view;
+		try {
+			view = new FrontierQueryIndexView(identity(), List.of(index));
+		} catch (RuntimeException failure) {
+			index.close();
+			throw failure;
+		}
+		try (FrontierQueryIndexLease lease = FrontierQueryIndexLease.ready(view)) {
+			FrontierLeafSelector predicate = new FrontierLeafSelector(0L, 101L, 0L, 0L, false, 0);
+			List<Long> primarySubjects = new ArrayList<>();
+			FrontierQueryIndexLeafScan scan = lease.visitPrimaryLeafWithDiagnostics(
+					predicate,
+					1L,
+					(subject, ignoredPredicate, object, context, weight) -> primarySubjects.add(subject));
+
+			assertTrue(scan.complete(),
+					"generation-scoped lane summaries must not consume the query-local primary scan budget");
+			assertEquals(1L, scan.diagnostics().scannedRows(),
+					"the query-local scan must visit design lane zero only");
+			assertEquals(List.of(11L), primarySubjects);
+			assertEquals(1L, scan.diagnostics().designMatchedRows(0));
+			assertEquals(2.0d, scan.diagnostics().designWeightedRows(0));
+			assertEquals(1L, scan.diagnostics().designMatchedRows(1));
+			assertEquals(3.0d, scan.diagnostics().designWeightedRows(1));
+			assertEquals(1L, scan.diagnostics().auditMatchedRows(0));
+			assertEquals(4.0d, scan.diagnostics().auditWeightedRows(0));
+			assertEquals(1L, scan.diagnostics().auditMatchedRows(1));
+			assertEquals(5.0d, scan.diagnostics().auditWeightedRows(1));
 		}
 	}
 

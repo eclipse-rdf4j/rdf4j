@@ -880,10 +880,12 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 	private static void deliverRecord(long[] values, int offset, FrontierManifestIdentity identity,
 			FrontierPayloadKind payloadKind, FrontierSynopsisRecordSink sink, ReadAccumulator accumulator)
 			throws FrontierPayloadException {
-		if (values[offset] != FrontierSynopsisBuilder.RECORD_FORMAT_VERSION) {
+		long recordVersion = values[offset];
+		if (recordVersion != FrontierSynopsisBuilder.LEGACY_RECORD_FORMAT_VERSION
+				&& recordVersion != FrontierSynopsisBuilder.RECORD_FORMAT_VERSION) {
 			throw new FrontierPayloadException(
 					FrontierSynopsisStatus.VERSION_MISMATCH,
-					"Unsupported Frontier synopsis record version: " + values[offset]);
+					"Unsupported Frontier synopsis record version: " + recordVersion);
 		}
 		int direction = exactInt(values[offset + 1], "direction");
 		int laneRole = exactInt(values[offset + 2], "lane role");
@@ -891,7 +893,8 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 		long flags = values[offset + 4];
 		long knownFlags = FrontierSynopsisBuilder.FLAG_EXPLICIT
 				| FrontierSynopsisBuilder.FLAG_DATABASE_EXACT
-				| FrontierSynopsisBuilder.FLAG_EMPTY_SNAPSHOT;
+				| FrontierSynopsisBuilder.FLAG_EMPTY_SNAPSHOT
+				| FrontierSynopsisBuilder.FLAG_SHARED_ACROSS_LANES;
 		if ((flags & ~knownFlags) != 0L) {
 			throw corruptRecord("unknown record flags");
 		}
@@ -907,12 +910,24 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 				&& direction != FrontierManifestIdentity.OBJECT_TO_SUBJECT_DIRECTION) {
 			throw corruptRecord("unknown record direction");
 		}
-		if (laneRole != 1 && laneRole != 2) {
-			throw corruptRecord("unknown lane role");
-		}
-		int laneCount = laneRole == 1 ? identity.designLaneCount() : identity.auditLaneCount();
-		if (laneIndex < 0 || laneIndex >= laneCount) {
-			throw corruptRecord("lane index is outside its manifest lane family");
+		boolean sharedAcrossLanes = (flags & FrontierSynopsisBuilder.FLAG_SHARED_ACROSS_LANES) != 0L;
+		if (sharedAcrossLanes) {
+			if (recordVersion != FrontierSynopsisBuilder.RECORD_FORMAT_VERSION
+					|| laneRole != FrontierManifestIdentity.ALL_LANE_ROLES
+					|| laneIndex != -1) {
+				throw corruptRecord("invalid shared exact-lane record scope");
+			}
+		} else {
+			if (laneRole != FrontierManifestIdentity.DESIGN_LANE_ROLE
+					&& laneRole != FrontierManifestIdentity.AUDIT_LANE_ROLE) {
+				throw corruptRecord("unknown lane role");
+			}
+			int laneCount = laneRole == FrontierManifestIdentity.DESIGN_LANE_ROLE
+					? identity.designLaneCount()
+					: identity.auditLaneCount();
+			if (laneIndex < 0 || laneIndex >= laneCount) {
+				throw corruptRecord("lane index is outside its manifest lane family");
+			}
 		}
 		long center = values[offset + 5];
 		long predicate = values[offset + 6];
@@ -934,27 +949,39 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 		if (databaseExact && (weight != 1.0d || inclusionProbability != 1.0d)) {
 			throw corruptRecord("database-exact record has a sampled weight");
 		}
+		if (sharedAcrossLanes && !databaseExact) {
+			throw corruptRecord("only database-exact records may be shared across lanes");
+		}
 		if (payloadKind == FrontierPayloadKind.INSERT && !databaseExact) {
 			throw corruptRecord("insert payload contains sampled mass");
 		}
 		long laneHash = values[offset + 11];
-		if (laneHash != FrontierSynopsisBuilder.laneHash(center, laneRole, laneIndex)) {
+		if (sharedAcrossLanes ? laneHash != 0L
+				: laneHash != FrontierSynopsisBuilder.laneHash(center, laneRole, laneIndex)) {
 			throw corruptRecord("record lane hash is inconsistent with its center and lane");
 		}
 		accumulator.observeDesign(inclusionProbability, databaseExact, payloadKind);
-		sink.accept(
-				direction,
-				laneRole,
-				laneIndex,
-				(flags & FrontierSynopsisBuilder.FLAG_EXPLICIT) != 0L,
-				databaseExact,
-				center,
-				predicate,
-				neighbor,
-				context,
-				weight,
-				inclusionProbability,
-				laneHash);
+		boolean explicit = (flags & FrontierSynopsisBuilder.FLAG_EXPLICIT) != 0L;
+		if (sharedAcrossLanes) {
+			for (int index = 0; index < identity.designLaneCount(); index++) {
+				deliverLane(sink, accumulator, direction, FrontierManifestIdentity.DESIGN_LANE_ROLE, index,
+						explicit, center, predicate, neighbor, context);
+			}
+			for (int index = 0; index < identity.auditLaneCount(); index++) {
+				deliverLane(sink, accumulator, direction, FrontierManifestIdentity.AUDIT_LANE_ROLE, index,
+						explicit, center, predicate, neighbor, context);
+			}
+		} else {
+			sink.accept(direction, laneRole, laneIndex, explicit, databaseExact, center, predicate, neighbor, context,
+					weight, inclusionProbability, laneHash);
+			accumulator.deliveredRecords = Math.incrementExact(accumulator.deliveredRecords);
+		}
+	}
+
+	private static void deliverLane(FrontierSynopsisRecordSink sink, ReadAccumulator accumulator, int direction,
+			int laneRole, int laneIndex, boolean explicit, long center, long predicate, long neighbor, long context) {
+		sink.accept(direction, laneRole, laneIndex, explicit, true, center, predicate, neighbor, context,
+				1.0d, 1.0d, FrontierSynopsisBuilder.laneHash(center, laneRole, laneIndex));
 		accumulator.deliveredRecords = Math.incrementExact(accumulator.deliveredRecords);
 	}
 

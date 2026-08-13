@@ -22,7 +22,8 @@ import java.util.zip.CRC32C;
 final class FrontierPayloadBlockWriter {
 
 	static final int MAGIC = 0x524a4642; // RJFB
-	static final int VERSION = 1;
+	static final int LEGACY_VERSION = 1;
+	static final int VERSION = 2;
 	static final int HEADER_BYTES = 40;
 	static final int CHECKSUM_BYTES = Long.BYTES;
 	static final int MINIMUM_BLOCK_BYTES = HEADER_BYTES + CHECKSUM_BYTES;

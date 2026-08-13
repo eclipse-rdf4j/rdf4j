@@ -42,6 +42,36 @@ public final class PackedRuleProofs {
 	private PackedRuleProofs() {
 	}
 
+	static long requiredMaskForDescriptor(int descriptorId) {
+		return switch (descriptorId) {
+		case 1001 -> FINITE_FILTER_VALUES;
+		case 1002 -> REMOVE_UNUSED_OPTIONAL;
+		case 1003 -> MATERIALIZED_EXISTS_SEMI;
+		case 1004 -> FILTER_MINUS_LEFT_PUSHDOWN;
+		case 1005 -> FINITE_CODE_TYPE_VALUES;
+		case 1006 -> PROJECTION_BELOW_ORDER;
+		case 1007 -> TRIVIAL_BIND_ALIAS;
+		case 1008 -> TAUTOLOGICAL_POSITIVE_HAVING;
+		case 1009 -> ELIGIBILITY_UNION_EXISTS;
+		case 1010 -> GROUP_KEY_EXISTS_LIFT;
+		case 1011 -> PREDICATE_RANGE_EMPTY;
+		case 1012 -> PREDICATE_RANGE_TAUTOLOGY;
+		case 1013 -> PREDICATE_RANGE_ANCHOR;
+		case 1014 -> MINUS_CORRELATED_NOT_EXISTS;
+		case 1015 -> FILTER_COMMUTATION;
+		case 1016 -> TYPED_SEMI_ANTI;
+		default -> 0L;
+		};
+	}
+
+	static int descriptorIdForProof(long proofBit) {
+		if (proofBit == 0L || Long.bitCount(proofBit) != 1) {
+			return 0;
+		}
+		int ordinal = Long.numberOfTrailingZeros(proofBit);
+		return ordinal < 16 ? 1001 + ordinal : 0;
+	}
+
 	public static List<RuleProof> materialize(long ruleMask) {
 		if (ruleMask == 0L) {
 			return List.of();

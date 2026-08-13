@@ -12,11 +12,34 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.File;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
+import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
+import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedSearchCompletionStatus;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.util.RDFInserter;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
 
 class LmdbBenchmarkQueryPlanTest {
 
@@ -66,8 +89,206 @@ class LmdbBenchmarkQueryPlanTest {
 		}
 	}
 
+	@Test
+	void planQualityAuditHonorsConfiguredOptimizationDeadlineDuringExactSearch(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			var values = repository.getValueFactory();
+			StringBuilder query = new StringBuilder("SELECT * WHERE { ");
+			for (int ordinal = 0; ordinal < 14; ordinal++) {
+				String predicate = "urn:deadline-p" + ordinal;
+				connection.add(values.createIRI("urn:deadline-subject"), values.createIRI(predicate),
+						values.createIRI("urn:deadline-value:" + ordinal));
+				query.append("?subject <")
+						.append(predicate)
+						.append("> ?value")
+						.append(ordinal)
+						.append(" . ");
+			}
+			query.append('}');
+
+			String previous = System.setProperty(CASCADES_TIMEOUT_MILLIS_PROPERTY, "1");
+			try (LmdbBenchmarkPlanQualityAudit audit = preparePlanQualityAudit(store, connection, query.toString(),
+					5, 0, 256L * 1024L * 1024L)) {
+				assertEquals(PackedSearchCompletionStatus.INCOMPLETE_DEADLINE,
+						audit.auditResult().selectedPlanningResult().completionStatus(),
+						"the process-isolated exact audit must preserve its configured hard deadline");
+				assertTrue(audit.alternativeCount() > 0,
+						"deadline-limited exact search must retain its mandatory executable incumbent");
+			} finally {
+				restoreProperty(previous);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void planQualityBenchmarkHarnessExecutesEveryAlternativeAgainstOneSnapshot(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			var values = repository.getValueFactory();
+			connection.add(values.createIRI("urn:s"), values.createIRI("urn:p1"), values.createIRI("urn:x"));
+			connection.add(values.createIRI("urn:x"), values.createIRI("urn:p2"), values.createIRI("urn:y"));
+			connection.add(values.createIRI("urn:y"), values.createIRI("urn:p3"), values.createIRI("urn:z"));
+			String query = "SELECT * WHERE { ?s <urn:p1> ?x . ?x <urn:p2> ?y . ?y <urn:p3> ?z . }";
+
+			try (LmdbBenchmarkPlanQualityAudit audit = LmdbBenchmarkPlanQualityAudit.prepare(store, connection, query,
+					5, 2)) {
+				assertTrue(audit.alternativeCount() > 1, audit.auditResult()::toString);
+				for (int alternative = 0; alternative < audit.alternativeCount(); alternative++) {
+					String decisionTrace = audit.auditResult().alternatives().get(alternative).decisionTraceJson();
+					assertTrue(decisionTrace.contains("\"schema\":2"), decisionTrace);
+					assertTrue(decisionTrace.contains("\"eventState\":{"), decisionTrace);
+					assertTrue(decisionTrace.contains("\"scalarFallback\":false"), decisionTrace);
+					assertFalse(decisionTrace.contains("\"scalarFallback\":true"), decisionTrace);
+					long rows = 0L;
+					try (CloseableIteration<BindingSet> result = audit.evaluate(alternative)) {
+						while (result.hasNext()) {
+							result.next();
+							rows++;
+						}
+					}
+					assertEquals(1L, rows, audit.auditResult().alternatives().get(alternative).stableId());
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void planQualityAuditEmitsEachExecutablePlanOnlyOnce(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			ThemeDataSetGenerator.generateMedicalRecords(
+					ThemeDataSetGenerator.medicalConfig()
+							.withPatientCount(20)
+							.withEncountersPerPatient(2)
+							.withConditionsPerEncounter(2)
+							.withMedicationsPerPatient(2)
+							.withObservationsPerEncounter(2)
+							.withPractitionerCount(12),
+					new RDFInserter(connection));
+			connection.commit();
+
+			String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 5);
+			try (LmdbBenchmarkPlanQualityAudit audit = preparePlanQualityAudit(store, connection, query, 120, 2,
+					512L * 1024L * 1024L)) {
+				Set<Long> fingerprints = new HashSet<>();
+				audit.auditResult()
+						.alternatives()
+						.forEach(alternative -> assertTrue(
+								fingerprints.add(alternative.physicalFingerprint()),
+								() -> "equivalent executable plan was emitted twice: " + alternative.stableId()));
+				var selected = audit.auditResult()
+						.alternatives()
+						.stream()
+						.filter(alternative -> alternative.selectedByPolicy())
+						.findFirst()
+						.orElseThrow();
+				assertSame(audit.auditResult().selectedPlanningResult().selectedPlan(), selected.plan(),
+						"deduplication must retain the policy-selected plan and its complete decision trace");
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void planQualityAuditPreservesExactFrontierStateAcrossEquivalentJoinOrders(@TempDir File dataDir) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(16L * 1024L)
+				.setFrontierRefinementWorkUnits(4096);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			ThemeDataSetGenerator.generateTrain(
+					ThemeDataSetGenerator.trainConfig()
+							.withStationCount(40)
+							.withRouteCount(16)
+							.withStopsPerRoute(4)
+							.withTrainCount(20)
+							.withTripsPerTrain(2),
+					new RDFInserter(connection));
+			connection.commit();
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+
+			String query = ThemeQueryCatalog.queryFor(Theme.TRAIN, 8);
+			try (LmdbBenchmarkPlanQualityAudit audit = preparePlanQualityAudit(store, connection, query, 120, 2,
+					512L * 1024L * 1024L)) {
+				assertEquals(PackedSearchCompletionStatus.EXACT_COMPLETE,
+						audit.auditResult().selectedPlanningResult().completionStatus());
+				assertTrue(audit.alternativeCount() > 1, audit.auditResult()::toString);
+				audit.auditResult().alternatives().forEach(alternative -> {
+					String decisionTrace = alternative.decisionTraceJson();
+					assertFalse(decisionTrace.contains("\"scalarFallback\":true"), decisionTrace);
+					assertTrue(decisionTrace.contains("\"scalarFallback\":false"), decisionTrace);
+				});
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void planQualityBenchmarkHarnessHonorsExplicitRetainedByteLimit(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			var values = repository.getValueFactory();
+			connection.add(values.createIRI("urn:s"), values.createIRI("urn:p1"), values.createIRI("urn:x"));
+			connection.add(values.createIRI("urn:x"), values.createIRI("urn:p2"), values.createIRI("urn:y"));
+			connection.add(values.createIRI("urn:y"), values.createIRI("urn:p3"), values.createIRI("urn:z"));
+			connection.add(values.createIRI("urn:z"), values.createIRI("urn:p4"), values.createIRI("urn:w"));
+			String query = "SELECT * WHERE { ?s <urn:p1> ?x . ?x <urn:p2> ?y . "
+					+ "?y <urn:p3> ?z . ?z <urn:p4> ?w . }";
+
+			try (LmdbBenchmarkPlanQualityAudit limited = preparePlanQualityAudit(store, connection, query, 5, 2,
+					64L * 1024L);
+					LmdbBenchmarkPlanQualityAudit complete = preparePlanQualityAudit(store, connection, query, 5, 2,
+							256L * 1024L * 1024L)) {
+				assertEquals(PackedSearchCompletionStatus.INCOMPLETE_RESOURCE_LIMIT,
+						limited.auditResult().selectedPlanningResult().completionStatus());
+				assertTrue(limited.auditResult().selectedPlanningResult().retainedBytes() <= 64L * 1024L);
+				assertEquals(PackedSearchCompletionStatus.EXACT_COMPLETE,
+						complete.auditResult().selectedPlanningResult().completionStatus());
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	private static <T> T withCascadesOptimizationTimeout(int maxExecutionTimeSeconds, Supplier<T> supplier) {
 		return LmdbBenchmarkQueryPlan.withCascadesOptimizationTimeout(maxExecutionTimeSeconds, supplier);
+	}
+
+	private static LmdbBenchmarkPlanQualityAudit preparePlanQualityAudit(LmdbStore store,
+			SailRepositoryConnection connection, String query, int maxExecutionTimeSeconds,
+			int dominatedSamplesPerStratum, long maxRetainedBytes) {
+		try {
+			Method prepare = LmdbBenchmarkPlanQualityAudit.class.getMethod("prepare", LmdbStore.class,
+					SailRepositoryConnection.class, String.class, int.class, int.class, long.class);
+			return (LmdbBenchmarkPlanQualityAudit) prepare.invoke(null, store, connection, query,
+					maxExecutionTimeSeconds, dominatedSamplesPerStratum, maxRetainedBytes);
+		} catch (InvocationTargetException e) {
+			throw new AssertionError("LMDB plan-quality audit rejected a valid retained-byte limit", e.getCause());
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("LMDB plan-quality audit must expose an explicit retained-byte limit", e);
+		}
 	}
 
 	private static void restoreProperty(String previous) {

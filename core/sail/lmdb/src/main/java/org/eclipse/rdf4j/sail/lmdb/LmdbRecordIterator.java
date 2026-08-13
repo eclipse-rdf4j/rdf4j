@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.lwjgl.system.MemoryUtil.memGetAddress;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
@@ -235,7 +236,8 @@ class LmdbRecordIterator implements RecordIterator {
 				lastResult = fetchNextFilteredCursorPosition();
 			} else {
 				// Matching value found
-				index.keyToQuad(keyData.mv_data(), originalQuad, quad);
+				long keyAddress = memGetAddress(keyData.address() + MDBVal.MV_DATA);
+				index.keyToQuad(keyAddress, Math.toIntExact(keyData.mv_size()), quad);
 				if (!idFilter.accept(quad[0], quad[1], quad[2], quad[3])) {
 					sourceRowsFilteredActual++;
 					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);

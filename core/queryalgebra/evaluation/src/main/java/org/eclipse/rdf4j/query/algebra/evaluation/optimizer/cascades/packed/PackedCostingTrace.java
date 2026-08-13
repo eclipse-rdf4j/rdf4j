@@ -73,6 +73,8 @@ final class PackedCostingTrace {
 	private final byte[] providerInputFlags;
 	private final byte[] providerInputGuarantees;
 	private final byte[] providerInputDispositions;
+	private final byte[] outputCostScopes;
+	private final byte[] outputFlags;
 	private final byte[] guarantees;
 	private final byte[] dispositions;
 	private final double[] outputRows;
@@ -126,7 +128,8 @@ final class PackedCostingTrace {
 			int[] providerInputIndexNameIds, int[] providerInputAccessModeIds,
 			int[] providerInputEstimateSourceIds, int[] providerInputEstimateFusionIds,
 			byte[] providerInputCostScopes, byte[] providerInputFlags, byte[] providerInputGuarantees,
-			byte[] providerInputDispositions, byte[] guarantees, byte[] dispositions,
+			byte[] providerInputDispositions, byte[] outputCostScopes, byte[] outputFlags,
+			byte[] guarantees, byte[] dispositions,
 			double[] outputRows, double[] workRows, double[] objectiveCosts, double[] sequentialRows,
 			double[] randomSeeks,
 			double[] iteratorOpens, double[] expressionEvaluations, double[] hashBuildRows, double[] hashProbeRows,
@@ -187,6 +190,8 @@ final class PackedCostingTrace {
 		this.providerInputFlags = providerInputFlags;
 		this.providerInputGuarantees = providerInputGuarantees;
 		this.providerInputDispositions = providerInputDispositions;
+		this.outputCostScopes = outputCostScopes;
+		this.outputFlags = outputFlags;
 		this.guarantees = guarantees;
 		this.dispositions = dispositions;
 		this.outputRows = outputRows;
@@ -240,7 +245,7 @@ final class PackedCostingTrace {
 				eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles,
 				eventInts, eventInts, eventInts, eventInts, eventInts, eventInts, eventInts, eventInts, eventInts,
 				eventInts,
-				eventBytes, eventBytes, eventBytes, eventBytes, eventBytes, eventBytes,
+				eventBytes, eventBytes, eventBytes, eventBytes, eventBytes, eventBytes, eventBytes, eventBytes,
 				eventDoubles, eventDoubles, eventDoubles,
 				eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles,
 				eventDoubles, eventDoubles, eventDoubles, eventDoubles, eventDoubles,
@@ -385,7 +390,9 @@ final class PackedCostingTrace {
 				projectedProviderInputEstimateFusionIds, select(providerInputCostScopes, eventMapping, length),
 				select(providerInputFlags, eventMapping, length),
 				select(providerInputGuarantees, eventMapping, length),
-				select(providerInputDispositions, eventMapping, length), select(guarantees, eventMapping, length),
+				select(providerInputDispositions, eventMapping, length),
+				select(outputCostScopes, eventMapping, length), select(outputFlags, eventMapping, length),
+				select(guarantees, eventMapping, length),
 				select(dispositions, eventMapping, length), select(outputRows, eventMapping, length),
 				select(workRows, eventMapping, length), select(objectiveCosts, eventMapping, length),
 				select(sequentialRows, eventMapping, length), select(randomSeeks, eventMapping, length),
@@ -839,14 +846,34 @@ final class PackedCostingTrace {
 
 	PackedCostEstimate.CostScope costScope(int eventId) {
 		checkEventId(eventId);
-		for (int ordinal = 0; ordinal < stringMetricCounts[eventId]; ordinal++) {
-			if ("optimizer.costEventCostScope".equals(stringMetricName(eventId, ordinal))) {
-				return "inclusive".equals(stringMetricValue(eventId, ordinal))
-						? PackedCostEstimate.CostScope.INCLUSIVE
-						: PackedCostEstimate.CostScope.LOCAL;
-			}
-		}
-		return PackedCostEstimate.CostScope.LOCAL;
+		int encoded = Byte.toUnsignedInt(outputCostScopes[eventId]);
+		return encoded == 0 ? PackedCostEstimate.CostScope.LOCAL
+				: PackedCostEstimate.CostScope.values()[encoded - 1];
+	}
+
+	boolean explicitPhysicalCost(int eventId) {
+		checkEventId(eventId);
+		return (outputFlags[eventId] & 1) != 0;
+	}
+
+	boolean contextualRows(int eventId) {
+		checkEventId(eventId);
+		return (outputFlags[eventId] & 1 << 1) != 0;
+	}
+
+	boolean componentRows(int eventId) {
+		checkEventId(eventId);
+		return (outputFlags[eventId] & 1 << 2) != 0;
+	}
+
+	boolean replacesChildWork(int eventId) {
+		checkEventId(eventId);
+		return (outputFlags[eventId] & 1 << 3) != 0;
+	}
+
+	boolean dependentSubqueriesCosted(int eventId) {
+		checkEventId(eventId);
+		return (outputFlags[eventId] & 1 << 4) != 0;
 	}
 
 	double sequentialRows(int eventId) {
@@ -1036,7 +1063,8 @@ final class PackedCostingTrace {
 				providerInputMissingLookupMasks, providerInputIndexPrefixLengths, providerInputIndexNameIds,
 				providerInputAccessModeIds, providerInputEstimateSourceIds, providerInputEstimateFusionIds,
 				providerInputCostScopes, providerInputFlags, providerInputGuarantees, providerInputDispositions,
-				guarantees, dispositions, outputRows, workRows, objectiveCosts, sequentialRows, randomSeeks,
+				outputCostScopes, outputFlags, guarantees, dispositions, outputRows, workRows, objectiveCosts,
+				sequentialRows, randomSeeks,
 				iteratorOpens,
 				expressionEvaluations, hashBuildRows, hashProbeRows, pathExpansions, resultRows, remoteCalls,
 				peakMemoryRows,
@@ -1068,6 +1096,8 @@ final class PackedCostingTrace {
 				+ (long) providerInputFlags.length * Byte.BYTES
 				+ (long) providerInputGuarantees.length * Byte.BYTES
 				+ (long) providerInputDispositions.length * Byte.BYTES
+				+ (long) outputCostScopes.length * Byte.BYTES
+				+ (long) outputFlags.length * Byte.BYTES
 				+ (long) guarantees.length * Byte.BYTES
 				+ (long) dispositions.length * Byte.BYTES
 				+ (long) (relationIds.length + prefixStarts.length + prefixCounts.length + prefixRelationIds.length

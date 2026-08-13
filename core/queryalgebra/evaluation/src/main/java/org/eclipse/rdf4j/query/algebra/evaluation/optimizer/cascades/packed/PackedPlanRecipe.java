@@ -13,10 +13,19 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizerRuleCatalog;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizerRuleDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateSummary;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenceBundle;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /** Immutable selected physical expression DAG, detached from mutable memo search state. */
 @PackedHotPath
@@ -151,29 +160,125 @@ final class PackedPlanRecipe {
 		return rootRecipeId;
 	}
 
+	EvidenceStateSummary rootEvidenceSummary() {
+		int stateOrdinal = frontierBundleOrdinals[rootRecipeId];
+		return stateOrdinal > 0 && stateOrdinal <= frontierEvidenceBundle.stateCount()
+				? frontierEvidenceBundle.summary(stateOrdinal)
+				: null;
+	}
+
 	long ruleProofMask() {
 		return ruleProofMask;
 	}
 
-	long physicalFingerprint() {
-		long hash = 0x6a09e667f3bcc909L;
-		hash = mixFingerprint(hash, rootRecipeId);
-		for (int recipeId = 1; recipeId <= size(); recipeId++) {
-			hash = mixFingerprint(hash, operatorTags[recipeId]);
-			hash = mixFingerprint(hash, payloadIds[recipeId]);
-			hash = mixFingerprint(hash, deliveredPropertyIds[recipeId]);
-			hash = mixFingerprint(hash, implementationForms[recipeId]);
-			hash = mixFingerprint(hash, lookupMasks[recipeId]);
-			hash = mixFingerprint(hash, missingLookupMasks[recipeId]);
-			hash = mixFingerprint(hash, indexPrefixLengths[recipeId]);
-			hash = mixFingerprint(hash, providerObjectHash(indexNameIds[recipeId]));
-			hash = mixFingerprint(hash, providerObjectHash(accessModeIds[recipeId]));
-			hash = mixFingerprint(hash, childCounts[recipeId]);
-			for (int child = 0; child < childCounts[recipeId]; child++) {
-				hash = mixFingerprint(hash, childRecipeIds[childStarts[recipeId] + child]);
+	long physicalFingerprint(TupleExpr materializedPlan) {
+		return physicalIdentity(materializedPlan).fingerprint();
+	}
+
+	PhysicalIdentity physicalIdentity(TupleExpr materializedPlan) {
+		if (materializedPlan == null) {
+			throw new NullPointerException("materialized plan must not be null");
+		}
+		PhysicalIdentityBuilder identity = new PhysicalIdentityBuilder(0x6a09e667f3bcc909L);
+		identity.appendNested(semanticIdentity(materializedPlan));
+		identity.appendNested(physicalControlIdentity(rootRecipeId, new PhysicalIdentity[size() + 1],
+				new byte[size() + 1]));
+		return identity.build();
+	}
+
+	private PhysicalIdentity physicalControlIdentity(int recipeId, PhysicalIdentity[] identities, byte[] states) {
+		if (states[recipeId] == 2) {
+			return identities[recipeId];
+		}
+		if (states[recipeId] == 1) {
+			throw new PackedMemoInvariantException("plan recipe dependency cycle at row " + recipeId);
+		}
+		states[recipeId] = 1;
+		PhysicalIdentityBuilder identity = new PhysicalIdentityBuilder(0x6a09e667f3bcc909L);
+		identity.append(operatorTags[recipeId]);
+		identity.append(implementationForms[recipeId]);
+		identity.append(lookupMasks[recipeId]);
+		identity.append(missingLookupMasks[recipeId]);
+		identity.append(indexPrefixLengths[recipeId]);
+		identity.append(providerString(indexNameIds[recipeId]));
+		identity.append(providerString(accessModeIds[recipeId]));
+
+		int childCount = childCounts[recipeId];
+		identity.append(0x4348494c4452454eL);
+		identity.append(childCount);
+		for (int child = 0; child < childCount; child++) {
+			int childRecipeId = childRecipeIds[childStarts[recipeId] + child];
+			identity.appendNested(physicalControlIdentity(childRecipeId, identities, states));
+		}
+
+		int dependentCount = 0;
+		for (int ordinal = 0; ordinal < dependentOwnerRecipeIds.length; ordinal++) {
+			if (dependentOwnerRecipeIds[ordinal] == recipeId) {
+				dependentCount++;
 			}
 		}
-		return avalancheFingerprint(hash);
+		identity.append(0x444550454e44454eL);
+		identity.append(dependentCount);
+		if (dependentCount != 0) {
+			PhysicalIdentity[] dependentIdentities = new PhysicalIdentity[dependentCount];
+			int next = 0;
+			for (int ordinal = 0; ordinal < dependentOwnerRecipeIds.length; ordinal++) {
+				if (dependentOwnerRecipeIds[ordinal] == recipeId) {
+					dependentIdentities[next++] = physicalControlIdentity(dependentRootRecipeIds[ordinal], identities,
+							states);
+				}
+			}
+			Arrays.sort(dependentIdentities, (left, right) -> {
+				int fingerprintOrder = Long.compare(left.fingerprint(), right.fingerprint());
+				return fingerprintOrder != 0 ? fingerprintOrder : left.canonicalForm().compareTo(right.canonicalForm());
+			});
+			for (PhysicalIdentity dependentIdentity : dependentIdentities) {
+				identity.appendNested(dependentIdentity);
+			}
+		}
+
+		PhysicalIdentity result = identity.build();
+		identities[recipeId] = result;
+		states[recipeId] = 2;
+		return result;
+	}
+
+	private static PhysicalIdentity semanticIdentity(TupleExpr materializedPlan) {
+		PhysicalIdentityBuilder identity = new PhysicalIdentityBuilder(0xbb67ae8584caa73bL);
+		materializedPlan.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				identity.append(0x4e4f44455f424547L);
+				identity.append(node.getClass().getName());
+				identity.append(node.getSignature());
+				if (node instanceof VariableScopeChange scopeChange) {
+					identity.append(scopeChange.isVariableScopeChange() ? 1 : 0);
+				}
+				if (node instanceof BinaryTupleOperator binary) {
+					identity.append(binary.getAlgorithmName());
+				}
+				if (node instanceof Join join) {
+					identity.append(join.isMergeJoin() ? 1 : 0);
+					identity.append(join.isCacheable() ? 1 : 0);
+				}
+				appendExecutionControlMetrics(identity, node);
+				super.meetNode(node);
+				identity.append(0x4e4f44455f454e44L);
+			}
+		});
+		return identity.build();
+	}
+
+	private static void appendExecutionControlMetrics(PhysicalIdentityBuilder identity, QueryModelNode node) {
+		identity.append(node.getStringMetricPlanned("optimizer.filterAlgorithmHint"));
+		identity.append(node.getStringMetricPlanned("optimizer.semiAntiAlgorithm"));
+		identity.append(node.getStringMetricPlanned("optimizer.semiAntiKind"));
+		identity.append(node.getStringMetricPlanned("optimizer.joinAlgorithmHint"));
+		identity.append(node.getStringMetricPlanned("optimizer.leftJoinAlgorithmHint"));
+		identity.append(node.getStringMetricPlanned("optimizer.hashJoinBuildSide"));
+		identity.append(Double.doubleToLongBits(node.getDoubleMetricPlanned("optimizer.semiAntiCacheCapacity")));
+		identity.append(
+				Double.doubleToLongBits(node.getDoubleMetricPlanned("plannedSemiAntiBreakEvenDistinctKeys")));
 	}
 
 	int operatorTag(int recipeId) {
@@ -331,6 +436,17 @@ final class PackedPlanRecipe {
 			return "<no costed decision certificate>";
 		}
 		StringBuilder description = new StringBuilder();
+		if (cacheValidationEvent.eventOrdinal() != 0) {
+			description.append("validationEvent=")
+					.append(cacheValidationEvent.eventOrdinal())
+					.append(" result=")
+					.append(cacheValidationEvent.result())
+					.append(" changedDimensions=")
+					.append(cacheValidationEvent.changedDimensions().isEmpty()
+							? "none"
+							: cacheValidationEvent.changedDimensions());
+		}
+		appendRulesConsidered(description);
 		for (int decision = 0; decision < decisionCertificate.decisionCount(); decision++) {
 			if (!description.isEmpty()) {
 				description.append(System.lineSeparator());
@@ -348,9 +464,11 @@ final class PackedPlanRecipe {
 						.append(" event=")
 						.append(eventId)
 						.append(" selected=")
-						.append(eventId == decisionCertificate.selectedEventId(decision))
+						.append(decisionCertificate.selectedByPolicy(candidate))
 						.append(" acceptedWhenCosted=")
 						.append(decisionCertificate.acceptedWhenCosted(candidate))
+						.append(" pareto=")
+						.append(decisionCertificate.survivedPareto(candidate) ? "survived" : "dominated")
 						.append(" tier=")
 						.append(decisionCertificate.candidateTier(candidate))
 						.append(" comparisonCost=")
@@ -359,6 +477,23 @@ final class PackedPlanRecipe {
 						.append(decisionCertificate.candidateEventCost(candidate))
 						.append(" lowerBound=")
 						.append(decisionCertificate.lowerBound(candidate));
+				if (decisionCertificate.hasCompleteCandidateState(candidate)) {
+					description.append(" costVector=")
+							.append(Long.toUnsignedString(decisionCertificate.candidateCostVectorDigest(candidate), 16))
+							.append(" continuation=")
+							.append(Long.toUnsignedString(decisionCertificate.candidateContinuationDigest(candidate),
+									16))
+							.append(" proofMask=")
+							.append(Long.toUnsignedString(decisionCertificate.candidateRuleProofMask(candidate), 16))
+							.append(" estimatorApplicability=")
+							.append(decisionCertificate.candidateContinuationEstimatorApplicability(candidate))
+							.append(" learningApplicability=")
+							.append(decisionCertificate.candidateContinuationLearningApplicability(candidate))
+							.append(" composition=")
+							.append(decisionCertificate.candidateContinuationCompositionMode(candidate));
+				} else {
+					description.append(" detachedParetoState=missing");
+				}
 				if (eventId <= 0 || eventId > costingTrace.eventCount()) {
 					description.append(" eventUnavailable");
 					continue;
@@ -367,14 +502,16 @@ final class PackedPlanRecipe {
 						.append(costingTrace.phase(eventId).metricValue())
 						.append(" relation=")
 						.append(costingTrace.relationId(eventId))
-						.append(" prefix=");
+						.append(" csg=");
 				for (int ordinal = 0; ordinal < costingTrace.prefixRelationCount(eventId); ordinal++) {
 					if (ordinal != 0) {
 						description.append(',');
 					}
 					description.append(costingTrace.prefixRelationId(eventId, ordinal));
 				}
-				description.append(" prefixRows=")
+				description.append(" cmp=")
+						.append(costingTrace.relationId(eventId))
+						.append(" prefixRows=")
 						.append(costingTrace.prefixRows(eventId))
 						.append(" assuredBinding=")
 						.append(costingTrace.assuredBindingRelationId(eventId))
@@ -437,9 +574,107 @@ final class PackedPlanRecipe {
 				appendCostingMetric(description, costingTrace, eventId, "plannedLookupComponents");
 				appendCostingMetric(description, costingTrace, eventId, "plannedMissingLookupComponents");
 				appendCostingMetric(description, costingTrace, eventId, "plannedPropertyPathEndpointMode");
+				appendFrontierState(description, candidate);
 			}
 		}
+		appendFinalPolicy(description);
 		return description.toString();
+	}
+
+	String describeCostingDecisionsJson() {
+		StringBuilder json = new StringBuilder(1024);
+		json.append('{').append("\"schema\":2,\"rules\":[");
+		boolean first = true;
+		for (OptimizerRuleDescriptor descriptor : OptimizerRuleCatalog.descriptors()) {
+			long proofBit = PackedRuleProofs.requiredMaskForDescriptor(descriptor.descriptorId());
+			if (proofBit == 0L) {
+				continue;
+			}
+			if (!first) {
+				json.append(',');
+			}
+			first = false;
+			boolean applied = (ruleProofMask & proofBit) != 0L;
+			json.append('{').append("\"id\":");
+			appendJsonString(json, descriptor.stableId());
+			json.append(",\"status\":");
+			appendJsonString(json, applied ? "APPLIED" : "REJECTED");
+			json.append(",\"reason\":");
+			appendJsonString(json, applied ? descriptor.runtimeProofId() : descriptor.rejectionTelemetry());
+			json.append('}');
+		}
+		json.append("],\"csgCmpPairs\":[");
+		first = true;
+		for (int candidate = 0; candidate < decisionCertificate.candidateCount(); candidate++) {
+			int eventId = decisionCertificate.candidateEventId(candidate);
+			if (eventId <= 0 || eventId > costingTrace.eventCount()) {
+				continue;
+			}
+			if (!first) {
+				json.append(',');
+			}
+			first = false;
+			json.append("{\"event\":").append(eventId).append(",\"csg\":[");
+			for (int ordinal = 0; ordinal < costingTrace.prefixRelationCount(eventId); ordinal++) {
+				if (ordinal != 0) {
+					json.append(',');
+				}
+				json.append(costingTrace.prefixRelationId(eventId, ordinal));
+			}
+			json.append("],\"cmp\":").append(costingTrace.relationId(eventId)).append('}');
+		}
+		json.append("],\"alternatives\":[");
+		for (int candidate = 0; candidate < decisionCertificate.candidateCount(); candidate++) {
+			if (candidate != 0) {
+				json.append(',');
+			}
+			int stateOrdinal = decisionCertificate.candidateStateOrdinal(candidate);
+			json.append("{\"candidate\":")
+					.append(candidate)
+					.append(",\"event\":")
+					.append(decisionCertificate.candidateEventId(candidate))
+					.append(",\"pareto\":");
+			appendJsonString(json, decisionCertificate.survivedPareto(candidate) ? "SURVIVED" : "DOMINATED");
+			json.append(",\"selectedByPolicy\":")
+					.append(decisionCertificate.selectedByPolicy(candidate));
+			json.append(",\"costVectorDigest\":");
+			appendJsonString(json, decisionCertificate.hasCompleteCandidateState(candidate)
+					? Long.toUnsignedString(decisionCertificate.candidateCostVectorDigest(candidate), 16)
+					: "missing");
+			json.append(",\"continuationDigest\":");
+			appendJsonString(json, decisionCertificate.hasCompleteCandidateState(candidate)
+					? Long.toUnsignedString(decisionCertificate.candidateContinuationDigest(candidate), 16)
+					: "missing");
+			json.append(",\"frontierState\":").append(stateOrdinal).append(",\"frontierDigest\":");
+			appendJsonString(json, frontierDigest(stateOrdinal));
+			json.append(",\"learningApplicability\":")
+					.append(decisionCertificate.hasCompleteCandidateState(candidate)
+							? decisionCertificate.candidateContinuationLearningApplicability(candidate)
+							: 0)
+					.append(",\"proofMask\":");
+			appendJsonString(json,
+					Long.toUnsignedString(decisionCertificate.candidateRuleProofMask(candidate), 16));
+			appendCostingEventStateJson(json, decisionCertificate.candidateEventId(candidate));
+			json.append('}');
+		}
+		json.append("],\"cacheValidation\":{")
+				.append("\"result\":");
+		appendJsonString(json, cacheValidationEvent.eventOrdinal() == 0 ? "not-run" : cacheValidationEvent.result());
+		json.append(",\"changedDimensions\":");
+		appendJsonString(json, cacheValidationEvent.changedDimensions().isEmpty()
+				? "none"
+				: cacheValidationEvent.changedDimensions());
+		json.append("},\"finalPolicy\":{");
+		int selectedCandidate = selectedRootCandidate();
+		json.append("\"selectedEvent\":").append(decisionCertificate.selectedEventId());
+		if (selectedCandidate >= 0 && decisionCertificate.hasCompleteCandidateState(selectedCandidate)) {
+			json.append(",\"costPolicyId\":")
+					.append(decisionCertificate.candidateContinuationLearningApplicability(selectedCandidate))
+					.append(",\"tier\":")
+					.append(decisionCertificate.candidateTier(selectedCandidate));
+		}
+		return json.append("}}")
+				.toString();
 	}
 
 	String describeCostingTrace() {
@@ -551,17 +786,27 @@ final class PackedPlanRecipe {
 		for (int index = 0; index < validatedCosts.length; index++) {
 			validatedCosts[index] = validation.candidateCost(index);
 		}
-		int eventOrdinal = costingTrace.eventCount() + 1;
-		String digest = validationDigest(eventOrdinal, context, validation);
-		PackedCacheValidationEvent event = new PackedCacheValidationEvent(eventOrdinal, digest,
-				context.dataRevision(), context.leoRevision(), validation.confidence(), validation.expectedRegret(),
-				validation.workUnits(), "certified-reuse", validation.reason());
 		PackedCostingTrace validatedTrace = validation.costingTrace();
 		if (validatedTrace.eventCount() == 0) {
+			for (int index = 0; index < validatedCosts.length; index++) {
+				if (Double.doubleToLongBits(validatedCosts[index]) != Double
+						.doubleToLongBits(decisionCertificate.candidateCost(index))) {
+					throw new IllegalArgumentException("certified-validation-missing-current-costing-trace");
+				}
+			}
 			validatedTrace = costingTrace;
 		} else if (validatedTrace.eventCount() != costingTrace.eventCount()) {
 			throw new IllegalArgumentException("validated costing trace changed event alignment");
 		}
+		PackedDecisionCertificate.ValidationUpdate certificateUpdate = decisionCertificate.withValidatedCosts(
+				validatedCosts, costingTrace, validatedTrace);
+		String changedDimensions = describeDimensions(certificateUpdate.changedDimensionMask());
+		int eventOrdinal = costingTrace.eventCount() + 1;
+		String digest = validationDigest(eventOrdinal, context, validation, changedDimensions);
+		PackedCacheValidationEvent event = new PackedCacheValidationEvent(eventOrdinal, digest,
+				context.dataRevision(), context.leoRevision(), context.frontierRevision(), validation.confidence(),
+				validation.expectedRegret(), validation.workUnits(), "certified-reuse", validation.reason(),
+				changedDimensions);
 		int[] validatedStateOrdinals = new int[frontierBundleOrdinals.length];
 		byte[] validatedGuarantees = new byte[evidenceGuarantees.length];
 		byte[] validatedDispositions = new byte[evidenceDispositions.length];
@@ -586,7 +831,7 @@ final class PackedPlanRecipe {
 				plannedStringMetricValueIds, plannedDoubleMetricStarts, plannedDoubleMetricCounts,
 				plannedDoubleMetricNameIds, plannedDoubleMetricValues, dependentOwnerRecipeIds,
 				dependentSubqueryPayloadIds, dependentRootRecipeIds, validation.evidenceBundle(), validatedTrace,
-				decisionCertificate.withValidatedCosts(validatedCosts, validatedTrace), event, validatedStateOrdinals,
+				certificateUpdate.certificate(), event, validatedStateOrdinals,
 				validatedGuarantees,
 				validatedDispositions, costEventIds, providerObjects, ruleProofMask);
 	}
@@ -594,11 +839,18 @@ final class PackedPlanRecipe {
 	long detachedEvidenceBytes() {
 		long frontierBytes = frontierEvidenceBundle.retainedBytes();
 		long traceBytes = costingTrace.retainedBytes();
-		return frontierBytes > Long.MAX_VALUE - traceBytes ? Long.MAX_VALUE : frontierBytes + traceBytes;
+		long evidenceAndTrace = frontierBytes > Long.MAX_VALUE - traceBytes
+				? Long.MAX_VALUE
+				: frontierBytes + traceBytes;
+		long certificateBytes = decisionCertificate.retainedBytes();
+		return evidenceAndTrace > Long.MAX_VALUE - certificateBytes
+				? Long.MAX_VALUE
+				: evidenceAndTrace + certificateBytes;
 	}
 
 	boolean hasDetachedEvidence() {
-		return frontierEvidenceBundle.stateCount() > 0;
+		return frontierEvidenceBundle.stateCount() > 0 && costingTrace.eventCount() > 0
+				&& decisionCertificate.hasCompleteState();
 	}
 
 	PackedPlanRecipe withoutDetachedEvidence() {
@@ -649,18 +901,68 @@ final class PackedPlanRecipe {
 		return objectId == 0 ? null : (String) providerObjects[objectId];
 	}
 
-	private int providerObjectHash(int objectId) {
-		if (objectId <= 0 || objectId >= providerObjects.length) {
-			return 0;
+	record PhysicalIdentity(long fingerprint, String canonicalForm) {
+
+		PhysicalIdentity {
+			if (canonicalForm == null) {
+				throw new NullPointerException("canonical executable-plan identity");
+			}
 		}
-		Object value = providerObjects[objectId];
-		return value == null ? 0 : value.hashCode();
+
+		boolean sameExecutablePlan(PhysicalIdentity other) {
+			return other != null && fingerprint == other.fingerprint && canonicalForm.equals(other.canonicalForm);
+		}
+	}
+
+	private static final class PhysicalIdentityBuilder {
+
+		private long hash;
+		private final StringBuilder canonicalForm = new StringBuilder(256);
+
+		private PhysicalIdentityBuilder(long seed) {
+			hash = seed;
+		}
+
+		private void append(long value) {
+			hash = mixFingerprint(hash, value);
+			canonicalForm.append('L').append(value).append(';');
+		}
+
+		private void append(String value) {
+			hash = mixFingerprint(hash, value);
+			if (value == null) {
+				canonicalForm.append("N;");
+			} else {
+				canonicalForm.append('S').append(value.length()).append(':').append(value).append(';');
+			}
+		}
+
+		private void appendNested(PhysicalIdentity nested) {
+			hash = mixFingerprint(hash, nested.fingerprint());
+			String nestedForm = nested.canonicalForm();
+			canonicalForm.append('I').append(nestedForm.length()).append(':').append(nestedForm).append(';');
+		}
+
+		private PhysicalIdentity build() {
+			return new PhysicalIdentity(avalancheFingerprint(hash), canonicalForm.toString());
+		}
 	}
 
 	private static long mixFingerprint(long hash, long value) {
 		long mixed = value * 0x9e3779b97f4a7c15L;
 		mixed = Long.rotateLeft(mixed, 31) * 0xc2b2ae3d27d4eb4fL;
 		return Long.rotateLeft(hash ^ mixed, 27) * 5L + 0x52dce729L;
+	}
+
+	private static long mixFingerprint(long hash, String value) {
+		if (value == null) {
+			return mixFingerprint(hash, -1L);
+		}
+		hash = mixFingerprint(hash, value.length());
+		for (int index = 0; index < value.length(); index++) {
+			hash = mixFingerprint(hash, value.charAt(index));
+		}
+		return hash;
 	}
 
 	private static long avalancheFingerprint(long value) {
@@ -693,19 +995,223 @@ final class PackedPlanRecipe {
 		}
 	}
 
+	private void appendRulesConsidered(StringBuilder description) {
+		if (!description.isEmpty()) {
+			description.append(System.lineSeparator());
+		}
+		description.append("rulesConsidered=[");
+		boolean first = true;
+		for (OptimizerRuleDescriptor descriptor : OptimizerRuleCatalog.descriptors()) {
+			long proofBit = PackedRuleProofs.requiredMaskForDescriptor(descriptor.descriptorId());
+			if (proofBit == 0L) {
+				continue;
+			}
+			if (!first) {
+				description.append(';');
+			}
+			first = false;
+			boolean applied = (ruleProofMask & proofBit) != 0L;
+			description.append(descriptor.stableId())
+					.append(':')
+					.append(applied ? "APPLIED(" : "REJECTED(")
+					.append(applied ? descriptor.runtimeProofId() : descriptor.rejectionTelemetry())
+					.append(')');
+		}
+		description.append(']');
+	}
+
+	private void appendFrontierState(StringBuilder description, int candidate) {
+		int stateOrdinal = decisionCertificate.candidateStateOrdinal(candidate);
+		description.append(" frontierState=").append(stateOrdinal);
+		if (stateOrdinal <= 0 || stateOrdinal > frontierEvidenceBundle.stateCount()) {
+			description.append(":none");
+			return;
+		}
+		description.append(':')
+				.append(frontierDigest(stateOrdinal))
+				.append(':')
+				.append(frontierEvidenceBundle.guarantee(stateOrdinal))
+				.append(':')
+				.append(frontierEvidenceBundle.disposition(stateOrdinal));
+	}
+
+	private String frontierDigest(int stateOrdinal) {
+		if (stateOrdinal <= 0 || stateOrdinal > frontierEvidenceBundle.stateCount()) {
+			return "none";
+		}
+		return Long.toUnsignedString(frontierEvidenceBundle.digestHigh(stateOrdinal), 16) + ':'
+				+ Long.toUnsignedString(frontierEvidenceBundle.digestLow(stateOrdinal), 16);
+	}
+
+	private void appendFinalPolicy(StringBuilder description) {
+		int selectedCandidate = selectedRootCandidate();
+		description.append(System.lineSeparator())
+				.append("finalPolicy=selectedEvent:")
+				.append(decisionCertificate.selectedEventId());
+		if (selectedCandidate >= 0 && decisionCertificate.hasCompleteCandidateState(selectedCandidate)) {
+			description.append(" costPolicyId:")
+					.append(decisionCertificate.candidateContinuationLearningApplicability(selectedCandidate))
+					.append(" tier:")
+					.append(decisionCertificate.candidateTier(selectedCandidate))
+					.append(" costVector:")
+					.append(Long.toUnsignedString(
+							decisionCertificate.candidateCostVectorDigest(selectedCandidate), 16));
+		}
+	}
+
+	private int selectedRootCandidate() {
+		if (decisionCertificate.decisionCount() == 0) {
+			return -1;
+		}
+		for (int candidate = decisionCertificate.decisionStart(0); candidate < decisionCertificate
+				.decisionEnd(0); candidate++) {
+			if (decisionCertificate.selectedByPolicy(candidate)) {
+				return candidate;
+			}
+		}
+		return -1;
+	}
+
+	private void appendCostingEventStateJson(StringBuilder json, int eventId) {
+		json.append(",\"eventState\":");
+		if (eventId <= 0 || eventId > costingTrace.eventCount()) {
+			json.append("null");
+			return;
+		}
+		String fallbackDisposition = costingStringMetric(eventId,
+				"optimizer.frontierSessionFallbackDisposition");
+		json.append("{\"phase\":");
+		appendJsonString(json, costingTrace.phase(eventId).metricValue());
+		json.append(",\"relation\":")
+				.append(costingTrace.relationId(eventId))
+				.append(",\"context\":");
+		appendJsonString(json, Long.toUnsignedString(costingTrace.contextFingerprint(eventId), 16));
+		json.append(",\"input\":")
+				.append(costingTrace.inputStateOrdinal(eventId))
+				.append(",\"inputSource\":")
+				.append(costingTrace.inputSourceStateOrdinal(eventId))
+				.append(",\"left\":")
+				.append(costingTrace.leftStateOrdinal(eventId))
+				.append(",\"leftSource\":")
+				.append(costingTrace.leftSourceStateOrdinal(eventId))
+				.append(",\"right\":")
+				.append(costingTrace.rightStateOrdinal(eventId))
+				.append(",\"rightSource\":")
+				.append(costingTrace.rightSourceStateOrdinal(eventId))
+				.append(",\"providerInput\":")
+				.append(costingTrace.providerInputStateOrdinal(eventId))
+				.append(",\"providerInputSource\":")
+				.append(costingTrace.providerInputSourceStateOrdinal(eventId))
+				.append(",\"output\":")
+				.append(costingTrace.outputStateOrdinal(eventId))
+				.append(",\"guarantee\":");
+		appendNullableJsonString(json, costingTrace.guarantee(eventId));
+		json.append(",\"disposition\":");
+		appendNullableJsonString(json, costingTrace.disposition(eventId));
+		json.append(",\"providerInputGuarantee\":");
+		appendNullableJsonString(json, costingTrace.providerInputGuarantee(eventId));
+		json.append(",\"providerInputDisposition\":");
+		appendNullableJsonString(json, costingTrace.providerInputDisposition(eventId));
+		json.append(",\"estimateSource\":");
+		appendNullableJsonString(json, costingTrace.estimateSource(eventId));
+		json.append(",\"estimateFusion\":");
+		appendNullableJsonString(json, costingTrace.estimateFusion(eventId));
+		json.append(",\"providerInputEstimateSource\":");
+		appendNullableJsonString(json, costingTrace.providerInputEstimateSource(eventId));
+		json.append(",\"providerInputEstimateFusion\":");
+		appendNullableJsonString(json, costingTrace.providerInputEstimateFusion(eventId));
+		json.append(",\"eventDigest\":");
+		appendNullableJsonString(json, costingTrace.digest(eventId));
+		json.append(",\"scalarFallback\":")
+				.append("whole-session-failure".equals(fallbackDisposition))
+				.append(",\"frontierSessionFallbackDisposition\":");
+		appendNullableJsonString(json, fallbackDisposition);
+		json.append(",\"frontierSessionFallbackReason\":");
+		appendNullableJsonString(json, costingStringMetric(eventId, "optimizer.frontierSessionFallbackReason"));
+		json.append('}');
+	}
+
+	private String costingStringMetric(int eventId, String name) {
+		for (int ordinal = 0; ordinal < costingTrace.stringMetricCount(eventId); ordinal++) {
+			if (name.equals(costingTrace.stringMetricName(eventId, ordinal))) {
+				return costingTrace.stringMetricValue(eventId, ordinal);
+			}
+		}
+		return null;
+	}
+
+	private static void appendNullableJsonString(StringBuilder json, Object value) {
+		if (value == null) {
+			json.append("null");
+		} else {
+			appendJsonString(json, String.valueOf(value));
+		}
+	}
+
+	private static void appendJsonString(StringBuilder json, String value) {
+		json.append('"');
+		for (int index = 0; index < value.length(); index++) {
+			char character = value.charAt(index);
+			switch (character) {
+			case '"', '\\' -> json.append('\\').append(character);
+			case '\b' -> json.append("\\b");
+			case '\f' -> json.append("\\f");
+			case '\n' -> json.append("\\n");
+			case '\r' -> json.append("\\r");
+			case '\t' -> json.append("\\t");
+			default -> {
+				if (character < 0x20) {
+					json.append("\\u")
+							.append(String.format("%04x", (int) character));
+				} else {
+					json.append(character);
+				}
+			}
+			}
+		}
+		json.append('"');
+	}
+
 	private static String validationDigest(int eventOrdinal, PackedPlanCache.Context context,
-			PackedStalePlanValidation validation) {
+			PackedStalePlanValidation validation, String changedDimensions) {
 		long high = 0x243f6a8885a308d3L ^ eventOrdinal;
 		long low = 0x13198a2e03707344L ^ context.dataRevision();
 		high = Long.rotateLeft(high ^ context.leoRevision(), 17) * 0x9e3779b97f4a7c15L;
+		high = Long.rotateLeft(high ^ context.frontierRevision(), 17) * 0x9e3779b97f4a7c15L;
 		low = Long.rotateLeft(low ^ Double.doubleToRawLongBits(validation.confidence()), 29)
 				* 0xbf58476d1ce4e5b9L;
+		low = Long.rotateLeft(low ^ Double.doubleToRawLongBits(validation.expectedRegret()), 29)
+				* 0xbf58476d1ce4e5b9L;
+		high ^= validation.workUnits();
+		low ^= changedDimensions.hashCode();
+		for (int candidate = 0; candidate < validation.candidateCount(); candidate++) {
+			high = mixFingerprint(high, Double.doubleToLongBits(validation.candidateCost(candidate)));
+		}
 		return PackedCostingTraceArena.digestString(high, low);
+	}
+
+	private static String describeDimensions(long dimensionMask) {
+		StringBuilder result = new StringBuilder();
+		for (int dimensionId = 1; dimensionId <= PackedCostDimensionRegistry.dimensionCount(); dimensionId++) {
+			if ((dimensionMask & 1L << dimensionId - 1) == 0L) {
+				continue;
+			}
+			if (!result.isEmpty()) {
+				result.append(',');
+			}
+			result.append(PackedCostDimensionRegistry.dimension(dimensionId).stableId());
+		}
+		return result.toString();
 	}
 
 	private static final class Extractor {
 
 		private static final int INITIAL_ROW_CAPACITY = 8;
+		private static final int[] EMPTY_INTS = new int[0];
+		private static final short[] EMPTY_SHORTS = new short[0];
+		private static final byte[] EMPTY_BYTES = new byte[0];
+		private static final double[] EMPTY_DOUBLES = new double[0];
+		private static final Object[] EMPTY_OBJECTS = new Object[0];
 
 		private final PackedMemo memo;
 		private final PackedDependentPlans dependentPlans;
@@ -758,7 +1264,7 @@ final class PackedPlanRecipe {
 		private byte[] evidenceDispositions = new byte[INITIAL_ROW_CAPACITY];
 		private int[] costEventIds = new int[INITIAL_ROW_CAPACITY];
 		private boolean[] dependentProcessed;
-		private final PackedObjectPool providerObjects = new PackedObjectPool(INITIAL_ROW_CAPACITY);
+		private PackedObjectPool providerObjects;
 		private int childSize;
 		private int plannedStringMetricSize;
 		private int plannedDoubleMetricSize;
@@ -778,6 +1284,15 @@ final class PackedPlanRecipe {
 			extractGraph(rootWinnerId);
 			appendReachableDependentPlans();
 			int rootRecipeId = mappedRecipeIds[mappedSlot(rootWinnerId)];
+			if (costSession == null) {
+				/*
+				 * Scalar planning cannot publish immutable provider events or Frontier state. Its memo decision rows
+				 * therefore all carry event id zero and project to the same empty certificate and trace. Avoid walking
+				 * and detaching those deliberately empty sidecars; the selected physical DAG above remains complete.
+				 */
+				return finish(rootRecipeId, FrontierEvidenceBundle.empty(size + 1), PackedCostingTrace.empty(),
+						PackedDecisionCertificate.empty());
+			}
 			PackedMemo.PackedDecisionDraft decisionDraft = memo.decisionDraft(rootWinnerId);
 			PackedCostingTrace.Projection traceProjection = costSession instanceof EventSourcingPackedCostSession eventSession
 					? eventSession.snapshotTrace(traceRootEventIds(decisionDraft))
@@ -798,9 +1313,7 @@ final class PackedPlanRecipe {
 					decisionDraft.candidateStateIds().length);
 			int traceStateOffset = recipeStateCount + decisionDraft.candidateStateIds().length;
 			costingTrace.appendEvidenceStateIds(requestedStateIds, traceStateOffset);
-			FrontierEvidenceBundle evidenceBundle = costSession == null
-					? FrontierEvidenceBundle.empty(requestedStateIds.length)
-					: costSession.detachEvidence(requestedStateIds);
+			FrontierEvidenceBundle evidenceBundle = costSession.detachEvidence(requestedStateIds);
 			if (evidenceBundle.requestedStateCount() != requestedStateIds.length) {
 				throw new PackedMemoInvariantException("detached Frontier request alignment changed during extraction");
 			}
@@ -821,43 +1334,88 @@ final class PackedPlanRecipe {
 						? (byte) 1
 						: 0;
 			}
+			PackedDetachedDecisionState detachedDecisionState = PackedDetachedDecisionState.capture(memo,
+					decisionDraft.candidateIds(), candidateStateOrdinals, decisionDraft.candidateRuleProofMasks());
 			PackedDecisionCertificate decisionCertificate = new PackedDecisionCertificate(
 					rootSelectedEventId, decisionDraft.decisionStarts(), selectedEventIds, candidateEventIds,
 					candidateStateOrdinals,
 					decisionDraft.candidateCosts(), candidateEventCosts, decisionDraft.lowerBounds(),
-					decisionDraft.outcomes(), decisionDraft.comparisonTiers(), childComposition,
+					decisionDraft.outcomes(), decisionDraft.comparisonTiers(), decisionDraft.paretoOutcomes(),
+					decisionDraft.selectedByPolicy(), childComposition,
 					decisionDraft.candidateChildStarts(), candidateChildEventIds,
-					decisionDraft.candidateChildCosts());
-			return new PackedPlanRecipe(rootRecipeId, Arrays.copyOf(operatorTags, size + 1),
-					Arrays.copyOf(payloadIds, size + 1), Arrays.copyOf(deliveredPropertyIds, size + 1),
-					Arrays.copyOf(implementationForms, size + 1),
-					Arrays.copyOf(sourcePhysicalExpressionIds, size + 1),
-					Arrays.copyOf(sourceLogicalExpressionIds, size + 1), Arrays.copyOf(childStarts, size + 1),
-					Arrays.copyOf(childCounts, size + 1), Arrays.copyOf(childRecipeIds, childSize),
-					Arrays.copyOf(physicalMetadataPresent, size + 1), Arrays.copyOf(outputRows, size + 1),
-					Arrays.copyOf(workRows, size + 1), Arrays.copyOf(accessRows, size + 1),
-					Arrays.copyOf(invocations, size + 1), Arrays.copyOf(lookupMasks, size + 1),
-					Arrays.copyOf(missingLookupMasks, size + 1), Arrays.copyOf(indexPrefixLengths, size + 1),
-					Arrays.copyOf(indexNameIds, size + 1), Arrays.copyOf(estimateSourceIds, size + 1),
-					Arrays.copyOf(estimateFusionIds, size + 1), Arrays.copyOf(accessModeIds, size + 1),
-					Arrays.copyOf(runtimeFeedbackContractIds, size + 1),
-					Arrays.copyOf(plannedStringMetricStarts, size + 1),
-					Arrays.copyOf(plannedStringMetricCounts, size + 1),
-					Arrays.copyOf(plannedStringMetricNameIds, plannedStringMetricSize),
-					Arrays.copyOf(plannedStringMetricValueIds, plannedStringMetricSize),
-					Arrays.copyOf(plannedDoubleMetricStarts, size + 1),
-					Arrays.copyOf(plannedDoubleMetricCounts, size + 1),
-					Arrays.copyOf(plannedDoubleMetricNameIds, plannedDoubleMetricSize),
-					Arrays.copyOf(plannedDoubleMetricValues, plannedDoubleMetricSize),
-					Arrays.copyOf(dependentOwnerRecipeIds, dependentSize),
-					Arrays.copyOf(dependentSubqueryPayloadIds, dependentSize),
-					Arrays.copyOf(dependentRootRecipeIds, dependentSize), evidenceBundle, costingTrace,
+					decisionDraft.candidateChildCosts(), detachedDecisionState);
+			return finish(rootRecipeId, evidenceBundle, costingTrace, decisionCertificate);
+		}
+
+		private PackedPlanRecipe finish(int rootRecipeId, FrontierEvidenceBundle evidenceBundle,
+				PackedCostingTrace costingTrace, PackedDecisionCertificate decisionCertificate) {
+			int rowCount = size + 1;
+			return new PackedPlanRecipe(rootRecipeId, take(operatorTags, rowCount), take(payloadIds, rowCount),
+					take(deliveredPropertyIds, rowCount), take(implementationForms, rowCount),
+					take(sourcePhysicalExpressionIds, rowCount), take(sourceLogicalExpressionIds, rowCount),
+					take(childStarts, rowCount), take(childCounts, rowCount), take(childRecipeIds, childSize),
+					take(physicalMetadataPresent, rowCount), take(outputRows, rowCount), take(workRows, rowCount),
+					take(accessRows, rowCount), take(invocations, rowCount), take(lookupMasks, rowCount),
+					take(missingLookupMasks, rowCount), take(indexPrefixLengths, rowCount),
+					take(indexNameIds, rowCount),
+					take(estimateSourceIds, rowCount), take(estimateFusionIds, rowCount), take(accessModeIds, rowCount),
+					take(runtimeFeedbackContractIds, rowCount), take(plannedStringMetricStarts, rowCount),
+					take(plannedStringMetricCounts, rowCount),
+					take(plannedStringMetricNameIds, plannedStringMetricSize),
+					take(plannedStringMetricValueIds, plannedStringMetricSize),
+					take(plannedDoubleMetricStarts, rowCount),
+					take(plannedDoubleMetricCounts, rowCount),
+					take(plannedDoubleMetricNameIds, plannedDoubleMetricSize),
+					take(plannedDoubleMetricValues, plannedDoubleMetricSize),
+					take(dependentOwnerRecipeIds, dependentSize), take(dependentSubqueryPayloadIds, dependentSize),
+					take(dependentRootRecipeIds, dependentSize), evidenceBundle, costingTrace,
 					decisionCertificate,
 					PackedCacheValidationEvent.NONE,
-					Arrays.copyOf(frontierBundleOrdinals, size + 1), Arrays.copyOf(evidenceGuarantees, size + 1),
-					Arrays.copyOf(evidenceDispositions, size + 1),
-					Arrays.copyOf(costEventIds, size + 1), providerObjects.snapshotValues(),
+					take(frontierBundleOrdinals, rowCount), take(evidenceGuarantees, rowCount),
+					take(evidenceDispositions, rowCount), take(costEventIds, rowCount), snapshotProviderObjects(),
 					ruleProofMask);
+		}
+
+		private Object[] snapshotProviderObjects() {
+			return providerObjects == null ? EMPTY_OBJECTS : providerObjects.snapshotValues();
+		}
+
+		private int internProviderObject(Object value) {
+			if (value == null) {
+				return 0;
+			}
+			if (providerObjects == null) {
+				providerObjects = new PackedObjectPool(INITIAL_ROW_CAPACITY);
+			}
+			return providerObjects.intern(value);
+		}
+
+		private static int[] take(int[] values, int size) {
+			if (size == 0) {
+				return EMPTY_INTS;
+			}
+			return values.length == size ? values : Arrays.copyOf(values, size);
+		}
+
+		private static short[] take(short[] values, int size) {
+			if (size == 0) {
+				return EMPTY_SHORTS;
+			}
+			return values.length == size ? values : Arrays.copyOf(values, size);
+		}
+
+		private static byte[] take(byte[] values, int size) {
+			if (size == 0) {
+				return EMPTY_BYTES;
+			}
+			return values.length == size ? values : Arrays.copyOf(values, size);
+		}
+
+		private static double[] take(double[] values, int size) {
+			if (size == 0) {
+				return EMPTY_DOUBLES;
+			}
+			return values.length == size ? values : Arrays.copyOf(values, size);
 		}
 
 		private int[] traceRootEventIds(PackedMemo.PackedDecisionDraft decisionDraft) {
@@ -993,14 +1551,14 @@ final class PackedPlanRecipe {
 				lookupMasks[recipeId] = memo.physicalMetadataLookupMask(metadataId);
 				missingLookupMasks[recipeId] = memo.physicalMetadataMissingLookupMask(metadataId);
 				indexPrefixLengths[recipeId] = memo.physicalMetadataIndexPrefixLength(metadataId);
-				indexNameIds[recipeId] = providerObjects.intern(memo.physicalMetadataIndexName(metadataId));
-				estimateSourceIds[recipeId] = providerObjects.intern(
+				indexNameIds[recipeId] = internProviderObject(memo.physicalMetadataIndexName(metadataId));
+				estimateSourceIds[recipeId] = internProviderObject(
 						memo.physicalMetadataEstimateSource(metadataId));
-				estimateFusionIds[recipeId] = providerObjects.intern(
+				estimateFusionIds[recipeId] = internProviderObject(
 						memo.physicalMetadataEstimateFusion(metadataId));
-				accessModeIds[recipeId] = providerObjects.intern(memo.physicalMetadataAccessMode(metadataId));
-				runtimeFeedbackContractIds[recipeId] = providerObjects
-						.intern(memo.physicalMetadataRuntimeFeedbackContract(metadataId));
+				accessModeIds[recipeId] = internProviderObject(memo.physicalMetadataAccessMode(metadataId));
+				runtimeFeedbackContractIds[recipeId] = internProviderObject(
+						memo.physicalMetadataRuntimeFeedbackContract(metadataId));
 				appendPlannedMetrics(recipeId, metadataId);
 			}
 			int count = memo.winnerChildCount(winnerId);
@@ -1075,10 +1633,10 @@ final class PackedPlanRecipe {
 			plannedStringMetricCounts[recipeId] = stringCount;
 			ensurePlannedStringMetricCapacity(plannedStringMetricSize + stringCount);
 			for (int ordinal = 0; ordinal < stringCount; ordinal++) {
-				plannedStringMetricNameIds[plannedStringMetricSize] = providerObjects
-						.intern(memo.physicalMetadataPlannedStringMetricName(metadataId, ordinal));
-				plannedStringMetricValueIds[plannedStringMetricSize] = providerObjects
-						.intern(memo.physicalMetadataPlannedStringMetricValue(metadataId, ordinal));
+				plannedStringMetricNameIds[plannedStringMetricSize] = internProviderObject(
+						memo.physicalMetadataPlannedStringMetricName(metadataId, ordinal));
+				plannedStringMetricValueIds[plannedStringMetricSize] = internProviderObject(
+						memo.physicalMetadataPlannedStringMetricValue(metadataId, ordinal));
 				plannedStringMetricSize++;
 			}
 
@@ -1087,8 +1645,8 @@ final class PackedPlanRecipe {
 			plannedDoubleMetricCounts[recipeId] = doubleCount;
 			ensurePlannedDoubleMetricCapacity(plannedDoubleMetricSize + doubleCount);
 			for (int ordinal = 0; ordinal < doubleCount; ordinal++) {
-				plannedDoubleMetricNameIds[plannedDoubleMetricSize] = providerObjects
-						.intern(memo.physicalMetadataPlannedDoubleMetricName(metadataId, ordinal));
+				plannedDoubleMetricNameIds[plannedDoubleMetricSize] = internProviderObject(
+						memo.physicalMetadataPlannedDoubleMetricName(metadataId, ordinal));
 				plannedDoubleMetricValues[plannedDoubleMetricSize] = memo
 						.physicalMetadataPlannedDoubleMetricValue(metadataId, ordinal);
 				plannedDoubleMetricSize++;

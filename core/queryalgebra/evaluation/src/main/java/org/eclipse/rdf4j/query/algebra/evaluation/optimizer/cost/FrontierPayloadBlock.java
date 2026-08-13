@@ -17,8 +17,11 @@ import java.util.Arrays;
 final class FrontierPayloadBlock {
 
 	private static final long OBJECT_BYTES = 104L;
+	private static final long[] NO_TERM_IDS = new long[0];
+	private static final double[] NO_WEIGHTS = new double[0];
 	private static final long EXACT_DOMAIN = 0x3c6ef372fe94f82bL;
 	private static final long RESIDUAL_DOMAIN = 0xa54ff53a5f1d36f1L;
+	private static final int INSERTION_SORT_THRESHOLD = 16;
 
 	final FrontierMaskStrata masks;
 	final int width;
@@ -47,6 +50,52 @@ final class FrontierPayloadBlock {
 		this.residualTermIds = new long[Math.multiplyExact(residualCount, width)];
 		this.residualWeights = new double[residualCount];
 		this.retainedBytes = retainedBytes();
+	}
+
+	private FrontierPayloadBlock(FrontierMaskStrata masks, FrontierExactPayloadSnapshot snapshot) {
+		if (!snapshot.matches(masks)) {
+			throw new IllegalArgumentException("exact payload snapshot does not match the target mask strata");
+		}
+		this.masks = masks;
+		this.width = masks.layout().size();
+		this.exactOffsets = snapshot.exactOffsets();
+		this.residualOffsets = new int[masks.stratumCount() + 1];
+		this.exactTermIds = snapshot.exactTermIds();
+		this.exactWeights = snapshot.exactWeights();
+		this.residualTermIds = NO_TERM_IDS;
+		this.residualWeights = NO_WEIGHTS;
+		this.retainedBytes = snapshot.logicalPayloadBytes();
+		this.digestHigh = snapshot.digestHigh();
+		this.digestLow = snapshot.digestLow();
+		this.canonicalized = true;
+		this.sealed = true;
+	}
+
+	private FrontierPayloadBlock(FrontierMaskStrata masks, FrontierPayloadSnapshot snapshot) {
+		if (!snapshot.matches(masks)) {
+			throw new IllegalArgumentException("payload snapshot does not match the target mask strata");
+		}
+		this.masks = masks;
+		this.width = masks.layout().size();
+		this.exactOffsets = snapshot.exactOffsets();
+		this.residualOffsets = snapshot.residualOffsets();
+		this.exactTermIds = snapshot.exactTermIds();
+		this.exactWeights = snapshot.exactWeights();
+		this.residualTermIds = snapshot.residualTermIds();
+		this.residualWeights = snapshot.residualWeights();
+		this.retainedBytes = snapshot.logicalPayloadBytes();
+		this.digestHigh = snapshot.digestHigh();
+		this.digestLow = snapshot.digestLow();
+		this.canonicalized = true;
+		this.sealed = true;
+	}
+
+	static FrontierPayloadBlock rebound(FrontierMaskStrata masks, FrontierExactPayloadSnapshot snapshot) {
+		return new FrontierPayloadBlock(masks, snapshot);
+	}
+
+	static FrontierPayloadBlock rebound(FrontierMaskStrata masks, FrontierPayloadSnapshot snapshot) {
+		return new FrontierPayloadBlock(masks, snapshot);
 	}
 
 	static long retainedBytes(FrontierMaskStrata masks, int[] exactCounts, int[] residualCounts) {
@@ -229,13 +278,7 @@ final class FrontierPayloadBlock {
 			if (count < 2 || isCanonicalOrder(first, count, termIds, weights)) {
 				continue;
 			}
-			for (int root = (count >>> 1) - 1; root >= 0; root--) {
-				siftDown(first, root, count, termIds, weights);
-			}
-			for (int end = count - 1; end > 0; end--) {
-				swapEntries(first, first + end, termIds, weights);
-				siftDown(first, 0, end, termIds, weights);
-			}
+			radixSort(first, first + count, 0, termIds, weights);
 		}
 	}
 
@@ -249,26 +292,83 @@ final class FrontierPayloadBlock {
 		return true;
 	}
 
-	private void siftDown(
+	private void radixSort(
 			int first,
-			int root,
-			int size,
+			int end,
+			int keyIndex,
 			long[] termIds,
 			double[] weights) {
-		int current = root;
-		while (current < (size >>> 1)) {
-			int child = (current << 1) + 1;
-			int right = child + 1;
-			if (right < size
-					&& compareEntries(first + child, first + right, termIds, weights) < 0) {
-				child = right;
-			}
-			if (compareEntries(first + current, first + child, termIds, weights) >= 0) {
+		while (end - first > INSERTION_SORT_THRESHOLD) {
+			if (keyIndex > width) {
 				return;
 			}
-			swapEntries(first + current, first + child, termIds, weights);
-			current = child;
+			long minimum = keyValue(first, keyIndex, termIds, weights);
+			long maximum = minimum;
+			for (int entry = first + 1; entry < end; entry++) {
+				long value = keyValue(entry, keyIndex, termIds, weights);
+				if (Long.compareUnsigned(value, minimum) < 0) {
+					minimum = value;
+				}
+				if (Long.compareUnsigned(value, maximum) > 0) {
+					maximum = value;
+				}
+			}
+			long differingBit = Long.highestOneBit(minimum ^ maximum);
+			if (differingBit == 0L) {
+				keyIndex++;
+				continue;
+			}
+			int upperFirst = partitionEntries(first, end, keyIndex, differingBit, termIds, weights);
+			if (upperFirst - first < end - upperFirst) {
+				radixSort(first, upperFirst, keyIndex, termIds, weights);
+				first = upperFirst;
+			} else {
+				radixSort(upperFirst, end, keyIndex, termIds, weights);
+				end = upperFirst;
+			}
 		}
+		insertionSort(first, end, termIds, weights);
+	}
+
+	private int partitionEntries(
+			int first,
+			int end,
+			int keyIndex,
+			long differingBit,
+			long[] termIds,
+			double[] weights) {
+		int lower = first;
+		int upper = end - 1;
+		while (lower <= upper) {
+			while (lower <= upper
+					&& (keyValue(lower, keyIndex, termIds, weights) & differingBit) == 0L) {
+				lower++;
+			}
+			while (lower <= upper
+					&& (keyValue(upper, keyIndex, termIds, weights) & differingBit) != 0L) {
+				upper--;
+			}
+			if (lower <= upper) {
+				swapEntries(lower++, upper--, termIds, weights);
+			}
+		}
+		return lower;
+	}
+
+	private void insertionSort(int first, int end, long[] termIds, double[] weights) {
+		for (int entry = first + 1; entry < end; entry++) {
+			int current = entry;
+			while (current > first && compareEntries(current - 1, current, termIds, weights) > 0) {
+				swapEntries(current - 1, current, termIds, weights);
+				current--;
+			}
+		}
+	}
+
+	private long keyValue(int entry, int keyIndex, long[] termIds, double[] weights) {
+		return keyIndex < width
+				? termIds[entry * width + keyIndex]
+				: Double.doubleToRawLongBits(weights[entry]);
 	}
 
 	private int compareEntries(int left, int right, long[] termIds, double[] weights) {

@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 class LmdbMedicalOptimizedQueryRegressionIT {
+	private static final String CASCADES_MODE_PROPERTY = "rdf4j.optimizer.lmdb.cascades.mode";
 	private static final Pattern FINITE_VALUE_RELATION = Pattern.compile(
 			"(?m)^\\s*VALUES\\s+(?:\\?value\\b|\\([^\\r\\n]*\\?value\\b[^\\r\\n]*\\))");
 	private static final Pattern FINITE_CODE_RELATION = Pattern.compile(
@@ -182,6 +183,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 	@Test
 	@Timeout(180)
 	void medicalQ4UsesFiniteCodeRelationBeforeBoundCodeLookup() throws Exception {
+		String previousMode = System.setProperty(CASCADES_MODE_PROPERTY, "exact");
 		RunQueryPlanState state = new RunQueryPlanState();
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 4;
@@ -206,14 +208,19 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 							"The exact code relation must restrict the broad condition-code access"),
 					() -> assertFiniteCodeLookupJoin(snapshot.optimized(), plan));
 		} finally {
-			state.disableTelemetryTeardown();
-			state.tearDown();
+			try {
+				state.disableTelemetryTeardown();
+				state.tearDown();
+			} finally {
+				restoreProperty(CASCADES_MODE_PROPERTY, previousMode);
+			}
 		}
 	}
 
 	@Test
 	@Timeout(180)
 	void medicalQ4CompleteStoreWithoutDphypUsesFiniteCodeRelationBeforeBoundCodeLookup() throws Exception {
+		String previousMode = System.setProperty(CASCADES_MODE_PROPERTY, "exact");
 		RunQueryPlanState state = new RunQueryPlanState();
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 4;
@@ -239,8 +246,12 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 							"The exact code relation must restrict the broad condition-code access"),
 					() -> assertFiniteCodeLookupJoin(snapshot.optimized(), plan));
 		} finally {
-			state.disableTelemetryTeardown();
-			state.tearDown();
+			try {
+				state.disableTelemetryTeardown();
+				state.tearDown();
+			} finally {
+				restoreProperty(CASCADES_MODE_PROPERTY, previousMode);
+			}
 		}
 	}
 
@@ -397,6 +408,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		StatementPattern codePattern = isMedicalCodePattern(join.getLeftArg())
 				? (StatementPattern) join.getLeftArg()
 				: (StatementPattern) join.getRightArg();
+		String estimateSource = codePattern.getStringMetricPlanned("plannedEstimateSource");
 		assertAll(
 				() -> assertTrue(isFiniteCodeRelation(join.getLeftArg()),
 						"The finite code relation must be the selected-prefix input\n" + plan),
@@ -404,9 +416,10 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 						"The condition-code access must be the bound lookup input\n" + plan),
 				() -> assertFalse("hash".equals(join.getStringMetricPlanned("optimizer.joinAlgorithmHint")),
 						"The finite relation and code access must not use a full-scan hash join\n" + plan),
-				() -> assertEquals("lmdb-finite-binding-lookup",
-						codePattern.getStringMetricPlanned("plannedEstimateSource"),
-						"The code access must be costed as finite bound lookups\n" + plan),
+				() -> assertTrue(Set.of("lmdb-finite-binding-lookup", "lmdb-frontier-correlated-surface")
+						.contains(estimateSource),
+						"The code access must retain finite bound-lookup provenance, but was " + estimateSource
+								+ "\n" + plan),
 				() -> assertEquals(2.0d, codePattern.getDoubleMetricPlanned("plannedDistinctLookupBindings"), 0.0d,
 						"The two exact code values must produce two distinct lookups\n" + plan),
 				() -> assertEquals(2.0d, codePattern.getDoubleMetricPlanned("plannedRepeatedInvocations"), 0.0d,
@@ -470,6 +483,14 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 			count++;
 		}
 		return count;
+	}
+
+	private static void restoreProperty(String property, String previousValue) {
+		if (previousValue == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, previousValue);
+		}
 	}
 
 	private static void assertCompleteOrDeclaredBoundedAuto(ExplainedPlanSnapshot snapshot, String queryName) {

@@ -21,4 +21,13 @@ final class UnsupportedCascadesOperatorException extends CascadesPlanningExcepti
 	UnsupportedCascadesOperatorException(Class<?> operatorType, String path) {
 		super("Unsupported Cascades operator " + operatorType.getName() + " at " + path);
 	}
+
+	static UnsupportedCascadesOperatorException packedBoundary(String operatorType, String encodedPath) {
+		return new UnsupportedCascadesOperatorException(
+				"Cannot materialize unsupported packed boundary " + operatorType + " encoded at " + encodedPath);
+	}
+
+	private UnsupportedCascadesOperatorException(String message) {
+		super(message);
+	}
 }

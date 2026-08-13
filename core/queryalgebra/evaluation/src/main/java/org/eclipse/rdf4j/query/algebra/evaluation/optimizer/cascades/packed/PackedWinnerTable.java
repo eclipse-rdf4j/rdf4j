@@ -22,6 +22,8 @@ final class PackedWinnerTable {
 
 	private final int defaultPropertyId;
 	private int[] defaultWinnerByGroup;
+	private int[] firstContinuationByGroup;
+	private int[] lastContinuationByGroup;
 	private int[] groupIds;
 	private int[] requiredPropertyIds;
 	private int[] semanticRowGoalIds;
@@ -40,8 +42,13 @@ final class PackedWinnerTable {
 	private int[] tieBreakRanks;
 	private int[] childStarts;
 	private int[] childCounts;
+	private int[] nextContinuationIds;
+	private byte[] continuationMembership;
 	private int[] childWinnerIds;
+	private int[] changedGroupIds;
+	private byte[] changedGroupMembership;
 	private int childSize;
+	private int changeSize;
 
 	private int[] additionalTableSlots;
 	private int additionalResizeThreshold;
@@ -54,6 +61,8 @@ final class PackedWinnerTable {
 		}
 		this.defaultPropertyId = defaultPropertyId;
 		defaultWinnerByGroup = new int[Math.max(2, expectedGroups + 1)];
+		firstContinuationByGroup = new int[defaultWinnerByGroup.length];
+		lastContinuationByGroup = new int[defaultWinnerByGroup.length];
 		int rowCapacity = Math.max(2, expectedGroups + expectedAdditionalGoals + 1);
 		groupIds = new int[rowCapacity];
 		requiredPropertyIds = new int[rowCapacity];
@@ -72,7 +81,11 @@ final class PackedWinnerTable {
 		tieBreakRanks = new int[rowCapacity];
 		childStarts = new int[rowCapacity];
 		childCounts = new int[rowCapacity];
+		nextContinuationIds = new int[rowCapacity];
+		continuationMembership = new byte[rowCapacity];
 		childWinnerIds = new int[Math.max(1, expectedChildLinks)];
+		changedGroupIds = new int[defaultWinnerByGroup.length];
+		changedGroupMembership = new byte[defaultWinnerByGroup.length];
 		int tableCapacity = PackedPrimitiveHash.tableCapacity(expectedAdditionalGoals);
 		additionalTableSlots = new int[tableCapacity];
 		additionalResizeThreshold = PackedPrimitiveHash.maximumFill(tableCapacity);
@@ -159,6 +172,26 @@ final class PackedWinnerTable {
 				childCount);
 	}
 
+	/**
+	 * Retains one immutable continuation without replacing the scalar lookup incumbent for the same optimization goal.
+	 * The returned row is a normal winner row and can therefore be referenced by an exact parent recipe, but
+	 * {@link #find(int, int, int, int, int)} continues to return the final scalar-policy choice.
+	 */
+	int appendContinuationWithMetadata(int groupId, int requiredPropertyId, int semanticRowGoalId,
+			int inputContextId, int costPolicyId, int comparisonTier, int physicalExpressionId,
+			int physicalMetadataId, int tieBreakRank, double startupCost, double totalCost,
+			double comparisonCost, double peakMemoryRows, boolean robustComparisonPrimary,
+			int[] childWinnerIds, int childOffset, int childCount) {
+		checkCandidate(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId,
+				comparisonTier, physicalExpressionId, tieBreakRank, startupCost, totalCost, comparisonCost,
+				peakMemoryRows, childWinnerIds, childOffset, childCount);
+		long hash = hash(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId);
+		int winnerId = appendWinner(hash, groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId,
+				comparisonTier, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost,
+				comparisonCost, peakMemoryRows, robustComparisonPrimary, childWinnerIds, childOffset, childCount);
+		return winnerId;
+	}
+
 	int offerHashed(long hash, int groupId, int requiredPropertyId, int semanticRowGoalId, int inputContextId,
 			int costPolicyId, int physicalExpressionId, double startupCost, double totalCost, double comparisonCost,
 			int[] childWinnerIds, int childOffset, int childCount) {
@@ -184,8 +217,9 @@ final class PackedWinnerTable {
 				comparisonTier, physicalExpressionId, tieBreakRank, startupCost, totalCost, comparisonCost,
 				peakMemoryRows, childWinnerIds, childOffset, childCount);
 		if (isDefaultGoal(requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId)) {
-			ensureDefaultGroupCapacity(groupId);
-			int winnerId = defaultWinnerByGroup[groupId];
+			ensureGroupCapacity(groupId);
+			int previousWinnerId = defaultWinnerByGroup[groupId];
+			int winnerId = previousWinnerId;
 			if (winnerId == 0) {
 				winnerId = appendWinner(hash, groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
 						costPolicyId, comparisonTier, physicalExpressionId, physicalMetadataId, tieBreakRank,
@@ -201,17 +235,24 @@ final class PackedWinnerTable {
 						childCount);
 				defaultWinnerByGroup[groupId] = winnerId;
 			}
+			if (winnerId != previousWinnerId) {
+				recordGroupChange(groupId);
+			}
 			return winnerId;
 		}
 
 		int slot = findAdditionalSlot(hash, groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
 				costPolicyId);
-		int winnerId = additionalTableSlots[slot];
+		int previousWinnerId = additionalTableSlots[slot];
+		int winnerId = previousWinnerId;
 		if (winnerId != 0) {
 			winnerId = appendIfBetter(winnerId, comparisonTier, physicalExpressionId, physicalMetadataId, tieBreakRank,
 					startupCost, totalCost, comparisonCost, peakMemoryRows, robustComparisonPrimary, childWinnerIds,
 					childOffset, childCount);
 			additionalTableSlots[slot] = winnerId;
+			if (winnerId != previousWinnerId) {
+				recordGroupChange(groupId);
+			}
 			return winnerId;
 		}
 		if (additionalSize + 1 > additionalResizeThreshold) {
@@ -226,6 +267,7 @@ final class PackedWinnerTable {
 				childOffset, childCount);
 		additionalTableSlots[slot] = winnerId;
 		additionalSize++;
+		recordGroupChange(groupId);
 		return winnerId;
 	}
 
@@ -238,6 +280,27 @@ final class PackedWinnerTable {
 		int slot = findAdditionalSlot(hash, groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
 				costPolicyId);
 		return additionalTableSlots[slot];
+	}
+
+	int firstContinuation(int groupId, int requiredPropertyId, int semanticRowGoalId, int inputContextId,
+			int costPolicyId) {
+		checkGoal(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId);
+		int winnerId = groupId < firstContinuationByGroup.length ? firstContinuationByGroup[groupId] : 0;
+		while (winnerId != 0 && !keyEquals(winnerId, groupId, requiredPropertyId, semanticRowGoalId,
+				inputContextId, costPolicyId)) {
+			winnerId = nextContinuationIds[winnerId];
+		}
+		return winnerId;
+	}
+
+	int nextContinuation(int winnerId) {
+		checkWinnerId(winnerId);
+		int nextWinnerId = nextContinuationIds[winnerId];
+		while (nextWinnerId != 0 && !keyEquals(nextWinnerId, groupIds[winnerId], requiredPropertyIds[winnerId],
+				semanticRowGoalIds[winnerId], inputContextIds[winnerId], costPolicyIds[winnerId])) {
+			nextWinnerId = nextContinuationIds[nextWinnerId];
+		}
+		return nextWinnerId;
 	}
 
 	int physicalExpressionId(int winnerId) {
@@ -265,6 +328,26 @@ final class PackedWinnerTable {
 		return comparisonCosts[winnerId];
 	}
 
+	int tieBreakRank(int winnerId) {
+		checkWinnerId(winnerId);
+		return tieBreakRanks[winnerId];
+	}
+
+	double peakMemoryRows(int winnerId) {
+		checkWinnerId(winnerId);
+		return peakMemoryRows[winnerId];
+	}
+
+	boolean robustComparisonPrimary(int winnerId) {
+		checkWinnerId(winnerId);
+		return comparisonCostPrimary[winnerId] != 0;
+	}
+
+	int comparisonTier(int winnerId) {
+		checkWinnerId(winnerId);
+		return comparisonTiers[winnerId];
+	}
+
 	int childCount(int winnerId) {
 		checkWinnerId(winnerId);
 		return childCounts[winnerId];
@@ -276,6 +359,31 @@ final class PackedWinnerTable {
 			throw new IndexOutOfBoundsException("child winner ordinal outside winner");
 		}
 		return childWinnerIds[childStarts[winnerId] + childOrdinal];
+	}
+
+	boolean matchesCandidate(int winnerId, int comparisonTier, int physicalExpressionId, int physicalMetadataId,
+			int tieBreakRank, double startupCost, double totalCost, double comparisonCost, double peakMemoryRows,
+			boolean robustComparisonPrimary, int[] candidateChildren, int childOffset, int childCount) {
+		checkWinnerId(winnerId);
+		if (comparisonTiers[winnerId] != comparisonTier
+				|| physicalExpressionIds[winnerId] != physicalExpressionId
+				|| physicalMetadataIds[winnerId] != physicalMetadataId
+				|| tieBreakRanks[winnerId] != tieBreakRank
+				|| Double.compare(startupCosts[winnerId], startupCost) != 0
+				|| Double.compare(totalCosts[winnerId], totalCost) != 0
+				|| Double.compare(comparisonCosts[winnerId], comparisonCost) != 0
+				|| Double.compare(this.peakMemoryRows[winnerId], peakMemoryRows) != 0
+				|| (comparisonCostPrimary[winnerId] != 0) != robustComparisonPrimary
+				|| childCounts[winnerId] != childCount) {
+			return false;
+		}
+		int childStart = childStarts[winnerId];
+		for (int ordinal = 0; ordinal < childCount; ordinal++) {
+			if (childWinnerIds[childStart + ordinal] != candidateChildren[childOffset + ordinal]) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	int size() {
@@ -332,6 +440,43 @@ final class PackedWinnerTable {
 				totalCost, comparisonCost, peakMemoryRows, robustComparisonPrimary, candidateChildren, childOffset,
 				childCount);
 		return winnerId;
+	}
+
+	boolean markContinuation(int winnerId) {
+		checkWinnerId(winnerId);
+		if (continuationMembership[winnerId] != 0) {
+			return false;
+		}
+		continuationMembership[winnerId] = 1;
+		int groupId = groupIds[winnerId];
+		ensureGroupCapacity(groupId);
+		int previousWinnerId = lastContinuationByGroup[groupId];
+		if (previousWinnerId == 0) {
+			firstContinuationByGroup[groupId] = winnerId;
+		} else {
+			nextContinuationIds[previousWinnerId] = winnerId;
+		}
+		lastContinuationByGroup[groupId] = winnerId;
+		recordGroupChange(groupId);
+		return true;
+	}
+
+	int changeCount() {
+		return changeSize;
+	}
+
+	void beginChangeBatch() {
+		for (int ordinal = 0; ordinal < changeSize; ordinal++) {
+			changedGroupMembership[changedGroupIds[ordinal]] = 0;
+		}
+		changeSize = 0;
+	}
+
+	int changedGroupId(int changeOrdinal) {
+		if (changeOrdinal < 0 || changeOrdinal >= changeSize) {
+			throw new IndexOutOfBoundsException("winner change ordinal outside batch");
+		}
+		return changedGroupIds[changeOrdinal];
 	}
 
 	private int appendIfBetter(int winnerId, int comparisonTier, int physicalExpressionId, int physicalMetadataId,
@@ -487,7 +632,7 @@ final class PackedWinnerTable {
 		additionalResizeThreshold = PackedPrimitiveHash.maximumFill(newCapacity);
 	}
 
-	private void ensureDefaultGroupCapacity(int groupId) {
+	private void ensureGroupCapacity(int groupId) {
 		if (groupId < defaultWinnerByGroup.length) {
 			return;
 		}
@@ -496,6 +641,19 @@ final class PackedWinnerTable {
 			newCapacity <<= 1;
 		}
 		defaultWinnerByGroup = Arrays.copyOf(defaultWinnerByGroup, newCapacity);
+		firstContinuationByGroup = Arrays.copyOf(firstContinuationByGroup, newCapacity);
+		lastContinuationByGroup = Arrays.copyOf(lastContinuationByGroup, newCapacity);
+		changedGroupIds = Arrays.copyOf(changedGroupIds, newCapacity);
+		changedGroupMembership = Arrays.copyOf(changedGroupMembership, newCapacity);
+	}
+
+	private void recordGroupChange(int groupId) {
+		ensureGroupCapacity(groupId);
+		if (changedGroupMembership[groupId] != 0) {
+			return;
+		}
+		changedGroupMembership[groupId] = 1;
+		changedGroupIds[changeSize++] = groupId;
 	}
 
 	private void ensureRowCapacity(int requiredWinnerId) {
@@ -520,6 +678,8 @@ final class PackedWinnerTable {
 		tieBreakRanks = Arrays.copyOf(tieBreakRanks, newCapacity);
 		childStarts = Arrays.copyOf(childStarts, newCapacity);
 		childCounts = Arrays.copyOf(childCounts, newCapacity);
+		nextContinuationIds = Arrays.copyOf(nextContinuationIds, newCapacity);
+		continuationMembership = Arrays.copyOf(continuationMembership, newCapacity);
 	}
 
 	private void ensureChildCapacity(int requiredSize) {
@@ -566,14 +726,16 @@ final class PackedWinnerTable {
 		}
 		if (!Double.isFinite(startupCost) || !Double.isFinite(totalCost) || !Double.isFinite(comparisonCost)
 				|| !Double.isFinite(peakMemoryRows) || peakMemoryRows < 0.0d) {
-			throw new IllegalArgumentException("winner costs must be finite");
+			throw new IllegalArgumentException("winner costs must be finite: group=" + groupId + ", expression="
+					+ physicalExpressionId + ", startup=" + startupCost + ", total=" + totalCost + ", comparison="
+					+ comparisonCost + ", peakMemory=" + peakMemoryRows);
 		}
 		if (children == null || childOffset < 0 || childCount < 0 || childOffset > children.length - childCount) {
 			throw new IndexOutOfBoundsException("invalid child-winner slice");
 		}
 	}
 
-	private static void checkGoal(int groupId, int requiredPropertyId, int semanticRowGoalId, int inputContextId,
+	static void checkGoal(int groupId, int requiredPropertyId, int semanticRowGoalId, int inputContextId,
 			int costPolicyId) {
 		if (groupId <= 0 || requiredPropertyId <= 0 || semanticRowGoalId < 0 || inputContextId < 0
 				|| costPolicyId < 0) {

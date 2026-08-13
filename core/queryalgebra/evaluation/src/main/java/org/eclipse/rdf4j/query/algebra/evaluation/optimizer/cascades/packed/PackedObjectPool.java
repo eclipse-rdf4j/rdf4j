@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -28,7 +29,7 @@ final class PackedObjectPool {
 	private static final int LOAD_DENOMINATOR = 20;
 
 	private Object[] values;
-	private long[] hashes;
+	private int[] hashCodes;
 	private int[] slots;
 	private int resizeThreshold;
 	private int size;
@@ -39,7 +40,7 @@ final class PackedObjectPool {
 			throw new IllegalArgumentException("expected size must be non-negative");
 		}
 		values = new Object[Math.max(2, expectedSize + 1)];
-		hashes = new long[values.length];
+		hashCodes = new int[values.length];
 		int tableCapacity = 4;
 		while (maximumFill(tableCapacity) < expectedSize) {
 			tableCapacity <<= 1;
@@ -58,14 +59,16 @@ final class PackedObjectPool {
 		if (value instanceof QueryModelNode) {
 			throw new IllegalArgumentException("query model nodes cannot enter the packed object pool");
 		}
-		long hash = objectHash(value);
+		int hashCode = objectHashCode(value);
+		long hash = mix64(hashCode);
 		int slot = tableSlot(hash, slots.length);
 		while (true) {
 			int objectId = slots[slot];
 			if (objectId == 0) {
 				break;
 			}
-			if (hashes[objectId] == hash && values[objectId].equals(value)) {
+			Object retained = values[objectId];
+			if (hashCodes[objectId] == hashCode && (retained == value || retained.equals(value))) {
 				return objectId;
 			}
 			slot = slot + 1 & slots.length - 1;
@@ -77,7 +80,7 @@ final class PackedObjectPool {
 		int objectId = ++size;
 		ensureValueCapacity(objectId);
 		values[objectId] = value;
-		hashes[objectId] = hash;
+		hashCodes[objectId] = hashCode;
 		slots[slot] = objectId;
 		return objectId;
 	}
@@ -92,8 +95,31 @@ final class PackedObjectPool {
 		return values[objectId];
 	}
 
+	int cachedHashCode(int objectId) {
+		Object value = value(objectId);
+		if (value == null) {
+			return 0;
+		}
+		if (value instanceof Value) {
+			return value.hashCode();
+		}
+		return hashCodes[objectId];
+	}
+
 	int size() {
 		return size;
+	}
+
+	boolean hasSameValues(PackedObjectPool other) {
+		if (other == null || size != other.size) {
+			return false;
+		}
+		for (int objectId = 1; objectId <= size; objectId++) {
+			if (!Objects.equals(value(objectId), other.value(objectId))) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	Object[] snapshotValues() {
@@ -102,6 +128,13 @@ final class PackedObjectPool {
 
 	void freeze() {
 		frozen = true;
+	}
+
+	void reset() {
+		Arrays.fill(values, 1, size + 1, null);
+		Arrays.fill(slots, 0);
+		size = 0;
+		frozen = false;
 	}
 
 	private int findEmptySlot(long hash) {
@@ -115,7 +148,7 @@ final class PackedObjectPool {
 	private void resizeTable(int newCapacity) {
 		int[] replacement = new int[newCapacity];
 		for (int objectId = 1; objectId <= size; objectId++) {
-			int slot = tableSlot(hashes[objectId], newCapacity);
+			int slot = tableSlot(mix64(hashCodes[objectId]), newCapacity);
 			while (replacement[slot] != 0) {
 				slot = slot + 1 & newCapacity - 1;
 			}
@@ -131,7 +164,7 @@ final class PackedObjectPool {
 		}
 		int newCapacity = values.length << 1;
 		values = Arrays.copyOf(values, newCapacity);
-		hashes = Arrays.copyOf(hashes, newCapacity);
+		hashCodes = Arrays.copyOf(hashCodes, newCapacity);
 	}
 
 	private static long mix64(int value) {
@@ -146,23 +179,23 @@ final class PackedObjectPool {
 	 * whose {@link Value#hashCode()} requires unavailable storage state. Equality still disambiguates the collision
 	 * chain, preserving canonical object IDs without forcing value materialization.
 	 */
-	private static long objectHash(Object value) {
+	private static int objectHashCode(Object value) {
 		if (value instanceof IRI) {
-			return mix64(1);
+			return 1;
 		}
 		if (value instanceof Literal) {
-			return mix64(2);
+			return 2;
 		}
 		if (value instanceof BNode) {
-			return mix64(3);
+			return 3;
 		}
 		if (value instanceof TripleTerm) {
-			return mix64(4);
+			return 4;
 		}
 		if (value instanceof Value) {
-			return mix64(5);
+			return 5;
 		}
-		return mix64(value.hashCode());
+		return value.hashCode();
 	}
 
 	private static int tableSlot(long hash, int capacity) {

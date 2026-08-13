@@ -66,6 +66,31 @@ class ThemeQueryPlanRunBenchmarkTest {
 	}
 
 	@Test
+	void createStoreConfigCarriesExplicitFrontierQueryMemoryBudget() throws Exception {
+		ThemeQueryPlanRunBenchmark.BaseState state = new ThemeQueryPlanRunBenchmark.BaseState();
+		long explicitBudget = 768L * 1024L * 1024L;
+		Field field = ThemeQueryPlanRunBenchmark.BaseState.class.getField("frontierQueryMemoryBudgetBytes");
+		field.setLong(state, explicitBudget);
+		Method method = ThemeQueryPlanRunBenchmark.BaseState.class.getDeclaredMethod("createStoreConfig");
+		method.setAccessible(true);
+
+		LmdbStoreConfig config = (LmdbStoreConfig) method.invoke(state);
+
+		assertEquals(explicitBudget, config.getFrontierQueryMemoryBudgetBytes());
+	}
+
+	@Test
+	void planningCampaignUsesImmutableSnapshotOnlyEvidence() throws Exception {
+		ThemeQueryPlanRunBenchmark.BaseState state = new ThemeQueryPlanRunBenchmark.BaseState();
+		Method method = ThemeQueryPlanRunBenchmark.BaseState.class.getDeclaredMethod("createStoreConfig");
+		method.setAccessible(true);
+
+		LmdbStoreConfig config = (LmdbStoreConfig) method.invoke(state);
+
+		assertEquals("snapshot-only", config.getSketchEstimatorEvidenceMode());
+	}
+
+	@Test
 	void legacyEstimatorAliasKeepsCanonicalStoreDirectoryAcrossConfigInitialization() throws Exception {
 		ThemeQueryPlanRunBenchmark.BaseState state = new ThemeQueryPlanRunBenchmark.BaseState();
 		state.themeName = Theme.MEDICAL_RECORDS.name();

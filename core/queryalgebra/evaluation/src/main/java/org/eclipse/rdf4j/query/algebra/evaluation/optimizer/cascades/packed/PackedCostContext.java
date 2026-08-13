@@ -30,6 +30,7 @@ public final class PackedCostContext {
 	private int hashLookupMaskId;
 	private int hashCompatibilityMaskId;
 	private double prefixRows;
+	private double unrelatedPrefixRows;
 	private double leftInputRows;
 	private double rightInputRows;
 	private int leftInputEvidenceStateId;
@@ -60,6 +61,7 @@ public final class PackedCostContext {
 		hashLookupMaskId = 0;
 		hashCompatibilityMaskId = 0;
 		prefixRows = Double.isFinite(rows) && rows >= 0.0d ? rows : 1.0d;
+		unrelatedPrefixRows = Double.NaN;
 		leftInputRows = Double.NaN;
 		rightInputRows = Double.NaN;
 		leftInputEvidenceStateId = 0;
@@ -84,6 +86,7 @@ public final class PackedCostContext {
 		hashLookupMaskId = context.hashLookupMaskId;
 		hashCompatibilityMaskId = context.hashCompatibilityMaskId;
 		prefixRows = context.prefixRows;
+		unrelatedPrefixRows = context.unrelatedPrefixRows;
 		leftInputRows = context.leftInputRows;
 		rightInputRows = context.rightInputRows;
 		leftInputEvidenceStateId = context.leftInputEvidenceStateId;
@@ -102,6 +105,10 @@ public final class PackedCostContext {
 	void setEvidenceStateId(int evidenceStateId) {
 		requireEvidenceStateId(evidenceStateId);
 		this.evidenceStateId = evidenceStateId;
+	}
+
+	void setUnrelatedPrefixRows(double rows) {
+		unrelatedPrefixRows = finiteNonNegativeOrNaN(rows);
 	}
 
 	void setAssuredBindingRelationId(int relationId) {
@@ -145,6 +152,14 @@ public final class PackedCostContext {
 
 	public double prefixRows() {
 		return prefixRows;
+	}
+
+	/**
+	 * Returns the exact product of prefix-component masses not connected to the factor currently being costed. The
+	 * value is unavailable when the caller did not retain component contributions.
+	 */
+	public double unrelatedPrefixRows() {
+		return unrelatedPrefixRows;
 	}
 
 	/**

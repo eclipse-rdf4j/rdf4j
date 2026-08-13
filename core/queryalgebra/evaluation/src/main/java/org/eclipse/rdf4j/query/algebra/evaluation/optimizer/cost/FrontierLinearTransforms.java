@@ -104,14 +104,17 @@ public final class FrontierLinearTransforms {
 			int targetStrata = outputKey.maskStrata().stratumCount();
 			int entryCount = entryCount(payload);
 			boolean exactInput = input.summary().guarantee() == EvidenceGuarantee.DATABASE_EXACT;
+			boolean bijectiveExactProjection = exactInput
+					&& bijectiveSlotMapping(inputWidth, sourceSlotsByOutputSlot);
 			long temporaryBytes = saturatedAdd(
 					arrayBytes(sourceStrata, Integer.BYTES),
 					saturatedAdd(
 							arrayBytes(targetStrata, Integer.BYTES),
 							arrayBytes(targetStrata, Integer.BYTES)));
 			if (exactInput) {
-				temporaryBytes = saturatedAdd(temporaryBytes,
-						ExactTupleBuffer.retainedBytes(entryCount, outputKey.frontier().size()));
+				temporaryBytes = saturatedAdd(temporaryBytes, bijectiveExactProjection
+						? arrayBytes(outputKey.frontier().size(), Long.BYTES)
+						: ExactTupleBuffer.retainedBytes(entryCount, outputKey.frontier().size()));
 			} else {
 				temporaryBytes = saturatedAdd(temporaryBytes,
 						arrayBytes(outputKey.frontier().size(), Long.BYTES));
@@ -126,6 +129,21 @@ public final class FrontierLinearTransforms {
 				int[] exactCounts = new int[targetStrata];
 				int[] residualCounts = new int[targetStrata];
 				if (exactInput) {
+					if (bijectiveExactProjection) {
+						countProjectedExact(payload, targetBySourceStratum, exactCounts);
+						FrontierPayloadWriter writer = arena.newPayloadWriter(
+								outputKey, exactCounts, residualCounts);
+						try {
+							writeProjectedExactBijection(
+									payload, sourceSlotsByOutputSlot, targetBySourceStratum, writer,
+									residualCounts);
+							return internExact(
+									arena, input, null, outputKey, operationRecipeId, operation, writer);
+						} catch (RuntimeException | Error failure) {
+							writer.close();
+							throw failure;
+						}
+					}
 					ExactTupleBuffer buffer = new ExactTupleBuffer(entryCount, outputKey.frontier().size());
 					appendProjectedExact(payload, sourceSlotsByOutputSlot, targetBySourceStratum, buffer);
 					buffer.coalesce(exactCounts);
@@ -441,7 +459,9 @@ public final class FrontierLinearTransforms {
 	 * typed non-composable boundary.
 	 * </p>
 	 *
-	 * @param maximumCandidatePairs hard upper bound on input mapping pairs examined
+	 * @param maximumCandidatePairs hard upper bound on input mapping pairs examined when a random measure is present;
+	 *                              deterministic algebra over two retained database-exact payloads is governed by the
+	 *                              arena memory budget
 	 */
 	public static EvidenceStateRef join(
 			FrontierStateArena arena,
@@ -453,6 +473,7 @@ public final class FrontierLinearTransforms {
 		requireBinaryJoin(arena, left, right, outputKey, operationRecipeId, maximumCandidatePairs);
 		boolean leftExact = left.summary().guarantee() == EvidenceGuarantee.DATABASE_EXACT;
 		boolean rightExact = right.summary().guarantee() == EvidenceGuarantee.DATABASE_EXACT;
+		boolean exactOutput = leftExact && rightExact;
 		double certifiedUpperBound = saturatedMultiply(
 				left.summary().certifiedUpperBound(),
 				right.summary().certifiedUpperBound());
@@ -475,7 +496,7 @@ public final class FrontierLinearTransforms {
 			long candidatePairs = Math.multiplyExact(
 					(long) entryCount(leftPayload),
 					entryCount(rightPayload));
-			if (candidatePairs > maximumCandidatePairs) {
+			if (!exactOutput && candidatePairs > maximumCandidatePairs) {
 				return arena.deriveSummary(
 						outputKey,
 						EvidenceStateSummary.unresolved(
@@ -499,7 +520,6 @@ public final class FrontierLinearTransforms {
 							saturatedAdd(
 									arrayBytes(outputStrata, Integer.BYTES),
 									arrayBytes(outputStrata, Integer.BYTES))));
-			boolean exactOutput = leftExact && rightExact;
 			temporaryBytes = saturatedAdd(
 					temporaryBytes,
 					exactOutput
@@ -890,8 +910,9 @@ public final class FrontierLinearTransforms {
 							arrayBytes(targetStrata, Integer.BYTES)));
 			try (FrontierMemoryReservation ignored = arena.reserveTemporary(
 					temporaryBytes, FrontierMemoryPurpose.BRIDGE_EMISSION)) {
+				int initialBufferCapacity = Math.min(maximumProbeUnits, Math.max(4, entryCount));
 				ExactTupleBuffer buffer = new ExactTupleBuffer(
-						maximumProbeUnits, outputKey.frontier().size());
+						initialBufferCapacity, maximumProbeUnits, outputKey.frontier().size());
 				long expansionSeed = FrontierSeedSchedule.derive(
 						arena.deterministicSeed(input),
 						FrontierRandomDomain.RESAMPLE,
@@ -1052,21 +1073,21 @@ public final class FrontierLinearTransforms {
 					FrontierRandomDomain.RESAMPLE,
 					Integer.toUnsignedLong(operationRecipeId),
 					FrontierStateOperation.RESOLVE_OUTER_EXPANSION.ordinal());
+			StratifiedExpansionEmitter emitter = new StratifiedExpansionEmitter(
+					outputKey.maskStrata(), buffer, expansionSeed);
 			for (int draw = 0; draw < draws; draw++) {
 				int entry = selectedEntries[draw];
 				int remainingSources = draws - draw - 1;
 				int capacity = Math.max(1, draws - buffer.size - remainingSources);
 				appendStratifiedExpandedMapping(
 						payload,
-						outputKey.maskStrata(),
 						expansion,
-						buffer,
+						emitter,
 						capacity,
 						entries.exact(entry),
 						entries.stratum(entry),
 						entries.index(entry),
 						drawWeight,
-						expansionSeed,
 						draw,
 						outputMultiplicities,
 						draw);
@@ -1140,62 +1161,44 @@ public final class FrontierLinearTransforms {
 			int maximumEmissions, int entryCount, long seed) {
 		boolean resampled = false;
 		int sourceOrdinal = 0;
+		StratifiedExpansionEmitter emitter = new StratifiedExpansionEmitter(outputMasks, buffer, seed);
 		for (int stratum = 0; stratum < payload.stratumCount(); stratum++) {
 			for (int index = 0; index < payload.exactCount(stratum); index++) {
 				int remainingSources = entryCount - sourceOrdinal - 1;
 				int capacity = Math.max(1, maximumEmissions - buffer.size - remainingSources);
 				resampled |= appendStratifiedExpandedMapping(
-						payload, outputMasks, expansion, buffer, capacity, true, stratum, index,
-						payload.exactWeight(stratum, index), seed, sourceOrdinal++);
+						payload, expansion, emitter, capacity, true, stratum, index,
+						payload.exactWeight(stratum, index), sourceOrdinal++);
 			}
 			for (int index = 0; index < payload.residualCount(stratum); index++) {
 				int remainingSources = entryCount - sourceOrdinal - 1;
 				int capacity = Math.max(1, maximumEmissions - buffer.size - remainingSources);
 				resampled |= appendStratifiedExpandedMapping(
-						payload, outputMasks, expansion, buffer, capacity, false, stratum, index,
-						payload.residualWeight(stratum, index), seed, sourceOrdinal++);
+						payload, expansion, emitter, capacity, false, stratum, index,
+						payload.residualWeight(stratum, index), sourceOrdinal++);
 			}
 		}
 		return resampled;
 	}
 
 	private static boolean appendStratifiedExpandedMapping(FrontierPayloadLease payload,
-			FrontierMaskStrata outputMasks, FrontierExactTupleExpansion expansion, ExactTupleBuffer buffer,
-			int capacity, boolean exact, int stratum, int index, double weight, long seed, int sourceOrdinal) {
+			FrontierExactTupleExpansion expansion, StratifiedExpansionEmitter emitter, int capacity, boolean exact,
+			int stratum, int index, double weight, int sourceOrdinal) {
 		return appendStratifiedExpandedMapping(
-				payload, outputMasks, expansion, buffer, capacity, exact, stratum, index, weight, seed,
+				payload, expansion, emitter, capacity, exact, stratum, index, weight,
 				sourceOrdinal, null, -1);
 	}
 
 	private static boolean appendStratifiedExpandedMapping(FrontierPayloadLease payload,
-			FrontierMaskStrata outputMasks, FrontierExactTupleExpansion expansion, ExactTupleBuffer buffer,
-			int capacity, boolean exact, int stratum, int index, double weight, long seed, int sourceOrdinal,
+			FrontierExactTupleExpansion expansion, StratifiedExpansionEmitter emitter, int capacity, boolean exact,
+			int stratum, int index, double weight, int sourceOrdinal,
 			long[] outputMultiplicities, int outputMultiplicityIndex) {
-		int start = buffer.size;
-		long[] emitted = { 0L };
-		expansion.expand(payload, exact, stratum, index, (targetStratum, termIds) -> {
-			validateExpandedTuple(outputMasks, targetStratum, termIds);
-			long emissionCount = emitted[0] = Math.incrementExact(emitted[0]);
-			int retained = buffer.size - start;
-			if (retained < capacity) {
-				buffer.appendTuple(targetStratum, weight, termIds);
-				return;
-			}
-			long selected = (long) (unitInterval(FrontierSeedSchedule.derive(
-					seed, FrontierRandomDomain.RESAMPLE, sourceOrdinal, emissionCount)) * emissionCount);
-			if (selected < capacity) {
-				buffer.replaceTuple(Math.addExact(start, Math.toIntExact(selected)), targetStratum, weight, termIds);
-			}
-		});
+		emitter.begin(capacity, weight, sourceOrdinal);
+		expansion.expand(payload, exact, stratum, index, emitter);
 		if (outputMultiplicities != null) {
-			outputMultiplicities[outputMultiplicityIndex] = emitted[0];
+			outputMultiplicities[outputMultiplicityIndex] = emitter.emitted();
 		}
-		int retained = buffer.size - start;
-		if (retained == 0 || emitted[0] == retained) {
-			return false;
-		}
-		buffer.multiplyWeights(start, retained, (double) emitted[0] / retained);
-		return true;
+		return emitter.finish();
 	}
 
 	private static EvidenceStateRef unresolvedOuterExpansion(
@@ -1556,6 +1559,44 @@ public final class FrontierLinearTransforms {
 				buffer.appendProjected(
 						targetStratum, payload.exactWeight(stratum, index),
 						payload, true, stratum, index, sourceSlotsByOutputSlot);
+			}
+		}
+	}
+
+	private static boolean bijectiveSlotMapping(int inputWidth, int[] sourceSlotsByOutputSlot) {
+		if (sourceSlotsByOutputSlot.length != inputWidth) {
+			return false;
+		}
+		for (int outputSlot = 0; outputSlot < sourceSlotsByOutputSlot.length; outputSlot++) {
+			int sourceSlot = sourceSlotsByOutputSlot[outputSlot];
+			if (sourceSlot < 0 || sourceSlot >= inputWidth) {
+				return false;
+			}
+			for (int previous = 0; previous < outputSlot; previous++) {
+				if (sourceSlotsByOutputSlot[previous] == sourceSlot) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	private static void countProjectedExact(FrontierPayloadLease payload, int[] targetBySourceStratum,
+			int[] exactCounts) {
+		for (int stratum = 0; stratum < payload.stratumCount(); stratum++) {
+			int target = targetBySourceStratum[stratum];
+			exactCounts[target] = Math.addExact(exactCounts[target], payload.exactCount(stratum));
+		}
+	}
+
+	private static void writeProjectedExactBijection(FrontierPayloadLease payload, int[] sourceSlotsByOutputSlot,
+			int[] targetBySourceStratum, FrontierPayloadWriter writer, int[] next) {
+		long[] tuple = new long[sourceSlotsByOutputSlot.length];
+		for (int stratum = 0; stratum < payload.stratumCount(); stratum++) {
+			int target = targetBySourceStratum[stratum];
+			for (int index = 0; index < payload.exactCount(stratum); index++) {
+				copyProjectedTuple(payload, true, stratum, index, sourceSlotsByOutputSlot, tuple);
+				writer.putExact(target, next[target]++, payload.exactWeight(stratum, index), tuple, 0);
 			}
 		}
 	}
@@ -2191,21 +2232,85 @@ public final class FrontierLinearTransforms {
 		}
 	}
 
+	private static final class StratifiedExpansionEmitter implements FrontierTupleEmitter {
+
+		private final FrontierMaskStrata outputMasks;
+		private final ExactTupleBuffer buffer;
+		private final long seed;
+		private int start;
+		private int capacity;
+		private double weight;
+		private int sourceOrdinal;
+		private long emitted;
+
+		private StratifiedExpansionEmitter(FrontierMaskStrata outputMasks, ExactTupleBuffer buffer, long seed) {
+			this.outputMasks = outputMasks;
+			this.buffer = buffer;
+			this.seed = seed;
+		}
+
+		private void begin(int capacity, double weight, int sourceOrdinal) {
+			this.start = buffer.size;
+			this.capacity = capacity;
+			this.weight = weight;
+			this.sourceOrdinal = sourceOrdinal;
+			this.emitted = 0L;
+		}
+
+		@Override
+		public void emit(int targetStratum, long[] termIds) {
+			validateExpandedTuple(outputMasks, targetStratum, termIds);
+			long emissionCount = emitted = Math.incrementExact(emitted);
+			int retained = buffer.size - start;
+			if (retained < capacity) {
+				buffer.appendTuple(targetStratum, weight, termIds);
+				return;
+			}
+			long selected = (long) (unitInterval(FrontierSeedSchedule.derive(
+					seed, FrontierRandomDomain.RESAMPLE, sourceOrdinal, emissionCount)) * emissionCount);
+			if (selected < capacity) {
+				buffer.replaceTuple(Math.addExact(start, Math.toIntExact(selected)), targetStratum, weight, termIds);
+			}
+		}
+
+		private long emitted() {
+			return emitted;
+		}
+
+		private boolean finish() {
+			int retained = buffer.size - start;
+			if (retained == 0 || emitted == retained) {
+				return false;
+			}
+			buffer.multiplyWeights(start, retained, (double) emitted / retained);
+			return true;
+		}
+	}
+
 	private static final class ExactTupleBuffer {
 
 		private static final long OBJECT_BYTES = 48L;
 
 		private final int width;
-		private final int[] strata;
-		private final long[] terms;
-		private final double[] weights;
+		private final int maximumCapacity;
+		private int[] strata;
+		private long[] terms;
+		private double[] weights;
 		private int size;
 
 		private ExactTupleBuffer(int capacity, int width) {
+			this(capacity, capacity, width);
+		}
+
+		private ExactTupleBuffer(int initialCapacity, int maximumCapacity, int width) {
+			if (initialCapacity < 0 || maximumCapacity < initialCapacity || width < 0) {
+				throw new IllegalArgumentException("exact tuple buffer capacities and width must be valid");
+			}
 			this.width = width;
-			strata = new int[capacity];
-			terms = new long[Math.multiplyExact(capacity, width)];
-			weights = new double[capacity];
+			this.maximumCapacity = maximumCapacity;
+			strata = new int[initialCapacity];
+			terms = new long[Math.multiplyExact(initialCapacity, width)];
+			weights = new double[initialCapacity];
 		}
 
 		private static long retainedBytes(int capacity, int width) {
@@ -2218,6 +2323,7 @@ public final class FrontierLinearTransforms {
 
 		private void append(int targetStratum, double weight, FrontierPayloadLease payload, boolean exact,
 				int sourceStratum, int sourceIndex) {
+			ensureCapacity(size + 1);
 			int entry = size++;
 			strata[entry] = targetStratum;
 			weights[entry] = weight;
@@ -2231,6 +2337,7 @@ public final class FrontierLinearTransforms {
 
 		private void appendProjected(int targetStratum, double weight, FrontierPayloadLease payload, boolean exact,
 				int sourceStratum, int sourceIndex, int[] sourceSlotsByOutputSlot) {
+			ensureCapacity(size + 1);
 			int entry = size++;
 			strata[entry] = targetStratum;
 			weights[entry] = weight;
@@ -2246,6 +2353,7 @@ public final class FrontierLinearTransforms {
 		}
 
 		private void appendTuple(int targetStratum, double weight, long[] tuple) {
+			ensureCapacity(size + 1);
 			int entry = size++;
 			strata[entry] = targetStratum;
 			weights[entry] = weight;
@@ -2256,6 +2364,24 @@ public final class FrontierLinearTransforms {
 			strata[entry] = targetStratum;
 			weights[entry] = weight;
 			System.arraycopy(tuple, 0, terms, Math.multiplyExact(entry, width), width);
+		}
+
+		private void ensureCapacity(int requiredCapacity) {
+			if (requiredCapacity <= strata.length) {
+				return;
+			}
+			if (requiredCapacity > maximumCapacity) {
+				throw new IllegalStateException("exact tuple buffer exceeded its reserved capacity");
+			}
+			int capacity = Math.max(1, strata.length);
+			while (capacity < requiredCapacity) {
+				capacity = capacity > maximumCapacity / 2
+						? maximumCapacity
+						: capacity << 1;
+			}
+			strata = Arrays.copyOf(strata, capacity);
+			terms = Arrays.copyOf(terms, Math.multiplyExact(capacity, width));
+			weights = Arrays.copyOf(weights, capacity);
 		}
 
 		private void multiplyWeights(int start, int count, double multiplier) {

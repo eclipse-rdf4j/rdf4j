@@ -14,18 +14,37 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.Objects;
 
 /** Exact applicability contract under which one logical or physical observation may be reused. */
-record LearningApplicability(long bindingShapeFingerprint, long correlationContractFingerprint,
-		String conditionalFeatureBucket, long dataEpoch, long catalogEpoch, long modelEpoch) {
+final class LearningApplicability {
 
 	private static final String EXTERNAL_VERSION = "lap1";
+	private final long bindingShapeFingerprint;
+	private final long correlationContractFingerprint;
+	private final String conditionalFeatureBucket;
+	private final long dataEpoch;
+	private final long catalogEpoch;
+	private final long modelEpoch;
+	private final String externalForm;
+	private final String digest;
+	private final int hashCode;
 
-	LearningApplicability {
-		conditionalFeatureBucket = LearningKeyCodec.canonicalLower(conditionalFeatureBucket, "unconditional");
+	LearningApplicability(long bindingShapeFingerprint, long correlationContractFingerprint,
+			String conditionalFeatureBucket, long dataEpoch, long catalogEpoch, long modelEpoch) {
 		if (dataEpoch < 0L || catalogEpoch < 0L || modelEpoch < 0L) {
 			throw new IllegalArgumentException("learning applicability epochs must be non-negative");
 		}
+		this.bindingShapeFingerprint = bindingShapeFingerprint;
+		this.correlationContractFingerprint = correlationContractFingerprint;
+		this.conditionalFeatureBucket = LearningKeyCodec.canonicalLower(conditionalFeatureBucket, "unconditional");
+		this.dataEpoch = dataEpoch;
+		this.catalogEpoch = catalogEpoch;
+		this.modelEpoch = modelEpoch;
+		this.externalForm = encode();
+		this.digest = LearningKeyCodec.digest(externalForm);
+		this.hashCode = Objects.hash(bindingShapeFingerprint, correlationContractFingerprint,
+				this.conditionalFeatureBucket, dataEpoch, catalogEpoch, modelEpoch);
 	}
 
 	static LearningApplicability parse(String externalForm) {
@@ -47,6 +66,38 @@ record LearningApplicability(long bindingShapeFingerprint, long correlationContr
 	}
 
 	String externalForm() {
+		return externalForm;
+	}
+
+	String digest() {
+		return digest;
+	}
+
+	long bindingShapeFingerprint() {
+		return bindingShapeFingerprint;
+	}
+
+	long correlationContractFingerprint() {
+		return correlationContractFingerprint;
+	}
+
+	String conditionalFeatureBucket() {
+		return conditionalFeatureBucket;
+	}
+
+	long dataEpoch() {
+		return dataEpoch;
+	}
+
+	long catalogEpoch() {
+		return catalogEpoch;
+	}
+
+	long modelEpoch() {
+		return modelEpoch;
+	}
+
+	private String encode() {
 		return EXTERNAL_VERSION + '|' + Long.toUnsignedString(bindingShapeFingerprint, 16) + '|'
 				+ Long.toUnsignedString(correlationContractFingerprint, 16) + '|'
 				+ LearningKeyCodec.encode(conditionalFeatureBucket) + '|'
@@ -54,8 +105,35 @@ record LearningApplicability(long bindingShapeFingerprint, long correlationContr
 				+ Long.toUnsignedString(modelEpoch, 16);
 	}
 
-	String digest() {
-		return LearningKeyCodec.digest(externalForm());
+	@Override
+	public boolean equals(Object other) {
+		if (this == other) {
+			return true;
+		}
+		if (!(other instanceof LearningApplicability that)) {
+			return false;
+		}
+		return bindingShapeFingerprint == that.bindingShapeFingerprint
+				&& correlationContractFingerprint == that.correlationContractFingerprint
+				&& dataEpoch == that.dataEpoch
+				&& catalogEpoch == that.catalogEpoch
+				&& modelEpoch == that.modelEpoch
+				&& conditionalFeatureBucket.equals(that.conditionalFeatureBucket);
+	}
+
+	@Override
+	public int hashCode() {
+		return hashCode;
+	}
+
+	@Override
+	public String toString() {
+		return "LearningApplicability[bindingShapeFingerprint=" + bindingShapeFingerprint
+				+ ", correlationContractFingerprint=" + correlationContractFingerprint
+				+ ", conditionalFeatureBucket=" + conditionalFeatureBucket
+				+ ", dataEpoch=" + dataEpoch
+				+ ", catalogEpoch=" + catalogEpoch
+				+ ", modelEpoch=" + modelEpoch + ']';
 	}
 
 	void writeTo(DataOutputStream out) throws IOException {

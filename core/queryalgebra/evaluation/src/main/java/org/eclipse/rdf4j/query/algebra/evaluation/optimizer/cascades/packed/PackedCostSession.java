@@ -15,6 +15,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenceBundle;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierMemoryLimitException;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 
 /**
@@ -53,6 +54,17 @@ public interface PackedCostSession extends AutoCloseable {
 	 * query relation. The default leaves scalar-only providers unchanged.
 	 */
 	default void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+	}
+
+	/**
+	 * Whether this native session can refine implementation-specific join candidates after logical operator costing.
+	 *
+	 * <p>
+	 * Query-local sessions use the physical event contract by default. The legacy scalar adapter opts out so a scalar
+	 * non-leaf refinement cannot be silently displaced by the planner's generic physical cost formula.
+	 */
+	default boolean supportsPhysicalJoinRefinement() {
+		return true;
 	}
 
 	/**
@@ -143,6 +155,11 @@ final class ScalarPackedCostSession implements PackedCostSession {
 		model.refineOperator(query, relationId, context, output);
 	}
 
+	@Override
+	public boolean supportsPhysicalJoinRefinement() {
+		return false;
+	}
+
 	private static boolean finiteNonNegative(double value) {
 		return Double.isFinite(value) && value >= 0.0d;
 	}
@@ -153,21 +170,39 @@ final class ScalarPackedCostSession implements PackedCostSession {
 final class EventSourcingPackedCostSession implements PackedCostSession {
 
 	private final PackedCostSession delegate;
-	private final PackedCostingTraceArena trace = new PackedCostingTraceArena();
+	private final PackedCostingTraceArena trace;
+	private final boolean closeDelegate;
 	private final PackedCostEstimate providerInput = new PackedCostEstimate();
 	private final PackedCostContext realizedContext = new PackedCostContext();
 	private final int[] canonicalContextualOperatorRelationIds;
 	private int providerInputSourceStateId;
+	private boolean closed;
 
 	EventSourcingPackedCostSession(PackedCostSession delegate) {
-		this(delegate, null);
+		this(delegate, null, new PackedSearchBudget(PackedPlannerLimits.unbounded()));
 	}
 
 	EventSourcingPackedCostSession(PackedCostSession delegate, PackedQuery query) {
+		this(delegate, query, new PackedSearchBudget(PackedPlannerLimits.unbounded()));
+	}
+
+	EventSourcingPackedCostSession(PackedCostSession delegate, PackedQuery query, PackedSearchBudget budget) {
+		this(delegate, query, budget, true);
+	}
+
+	private EventSourcingPackedCostSession(PackedCostSession delegate, PackedQuery query, PackedSearchBudget budget,
+			boolean closeDelegate) {
 		this.delegate = Objects.requireNonNull(delegate, "delegate");
+		trace = PackedCostingTraceArena.borrow(Objects.requireNonNull(budget, "budget"));
+		this.closeDelegate = closeDelegate;
 		canonicalContextualOperatorRelationIds = query == null
 				? null
 				: query.canonicalContextualOperatorRelationIds();
+	}
+
+	static EventSourcingPackedCostSession replaying(PackedCostSession delegate) {
+		return new EventSourcingPackedCostSession(delegate, null,
+				new PackedSearchBudget(PackedPlannerLimits.unbounded()), false);
 	}
 
 	@Override
@@ -179,10 +214,14 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 			trace.restore(retainedEventId, output);
 			return;
 		}
-		delegate.estimateLeaf(relationId, invocationContext, output);
-		trace.append(PackedCostingPhase.LEAF, relationId, context, providerInputSourceStateId, invocationContext,
-				providerInput, output,
-				delegate.objectiveScore(output));
+		try {
+			delegate.estimateLeaf(relationId, invocationContext, output);
+			trace.append(PackedCostingPhase.LEAF, relationId, context, providerInputSourceStateId, invocationContext,
+					providerInput, output,
+					delegate.objectiveScore(output));
+		} catch (FrontierMemoryLimitException insufficientMemory) {
+			throw resourceLimit(insufficientMemory);
+		}
 	}
 
 	@Override
@@ -195,10 +234,14 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 			trace.restore(retainedEventId, output);
 			return;
 		}
-		delegate.appendFactor(relationId, invocationContext, output);
-		trace.append(PackedCostingPhase.PREFIX_EXTENSION, relationId, context, providerInputSourceStateId,
-				invocationContext, providerInput, output,
-				delegate.objectiveScore(output));
+		try {
+			delegate.appendFactor(relationId, invocationContext, output);
+			trace.append(PackedCostingPhase.PREFIX_EXTENSION, relationId, context, providerInputSourceStateId,
+					invocationContext, providerInput, output,
+					delegate.objectiveScore(output));
+		} catch (FrontierMemoryLimitException insufficientMemory) {
+			throw resourceLimit(insufficientMemory);
+		}
 	}
 
 	@Override
@@ -211,26 +254,34 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 			trace.restore(retainedEventId, output);
 			return;
 		}
-		delegate.refineOperator(canonicalRelationId, invocationContext, output);
-		trace.append(PackedCostingPhase.OPERATOR, canonicalRelationId, context, providerInputSourceStateId,
-				invocationContext, providerInput, output,
-				delegate.objectiveScore(output));
+		try {
+			delegate.refineOperator(canonicalRelationId, invocationContext, output);
+			trace.append(PackedCostingPhase.OPERATOR, canonicalRelationId, context, providerInputSourceStateId,
+					invocationContext, providerInput, output,
+					delegate.objectiveScore(output));
+		} catch (FrontierMemoryLimitException insufficientMemory) {
+			throw resourceLimit(insufficientMemory);
+		}
 	}
 
 	private PackedCostContext prepareInvocation(PackedCostContext context, PackedCostEstimate output,
 			boolean realizeProviderInput) {
-		realizedContext.copyFrom(context);
-		realizedContext.setEvidenceStateId(delegate.realizeEvidenceState(context.evidenceStateId()));
-		realizedContext.setOperatorInputs(context.leftInputRows(), context.rightInputRows(),
-				delegate.realizeEvidenceState(context.leftInputEvidenceStateId()),
-				delegate.realizeEvidenceState(context.rightInputEvidenceStateId()));
-		providerInput.copyProviderInputFrom(output);
-		providerInputSourceStateId = providerInput.evidenceStateId();
-		if (realizeProviderInput) {
-			providerInput.setEvidenceStateId(delegate.realizeEvidenceState(providerInput.evidenceStateId()));
+		try {
+			realizedContext.copyFrom(context);
+			realizedContext.setEvidenceStateId(delegate.realizeEvidenceState(context.evidenceStateId()));
+			realizedContext.setOperatorInputs(context.leftInputRows(), context.rightInputRows(),
+					delegate.realizeEvidenceState(context.leftInputEvidenceStateId()),
+					delegate.realizeEvidenceState(context.rightInputEvidenceStateId()));
+			providerInput.copyProviderInputFrom(output);
+			providerInputSourceStateId = providerInput.evidenceStateId();
+			if (realizeProviderInput) {
+				providerInput.setEvidenceStateId(delegate.realizeEvidenceState(providerInput.evidenceStateId()));
+			}
+			output.setEvidenceStateId(providerInput.evidenceStateId());
+			return realizedContext;
+		} catch (FrontierMemoryLimitException insufficientMemory) {
+			throw resourceLimit(insufficientMemory);
 		}
-		output.setEvidenceStateId(providerInput.evidenceStateId());
-		return realizedContext;
 	}
 
 	private int canonicalContextualOperatorRelationId(int relationId) {
@@ -250,13 +301,27 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 			trace.restore(retainedEventId, output);
 			return;
 		}
-		delegate.refineIntermediateJoin(invocationContext, output);
-		trace.append(PackedCostingPhase.INTERMEDIATE_JOIN, 0, context, providerInputSourceStateId, invocationContext,
-				providerInput, output,
-				delegate.objectiveScore(output));
+		try {
+			delegate.refineIntermediateJoin(invocationContext, output);
+			trace.append(PackedCostingPhase.INTERMEDIATE_JOIN, 0, context, providerInputSourceStateId,
+					invocationContext, providerInput, output,
+					delegate.objectiveScore(output));
+		} catch (FrontierMemoryLimitException insufficientMemory) {
+			throw resourceLimit(insufficientMemory);
+		}
+	}
+
+	@Override
+	public boolean supportsPhysicalJoinRefinement() {
+		return delegate.supportsPhysicalJoinRefinement();
 	}
 
 	void refinePhysicalJoin(int implementation, PackedCostContext context, PackedCostEstimate output) {
+		/*
+		 * Replay reconstructs the provider input vector rather than the derived physical annotations. Re-stamp the
+		 * implementation here so both first-pass and replay providers see the same algorithm and build-side contract.
+		 */
+		PackedPhysicalJoinCosting.stampImplementation(implementation, output);
 		PackedCostContext invocationContext = prepareInvocation(context, output, true);
 		int retainedEventId = trace.findInvocation(PackedCostingPhase.PHYSICAL_JOIN, implementation, invocationContext,
 				providerInput);
@@ -264,25 +329,45 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 			trace.restore(retainedEventId, output);
 			return;
 		}
-		delegate.refineIntermediateJoin(invocationContext, output);
-		trace.append(PackedCostingPhase.PHYSICAL_JOIN, implementation, context, providerInputSourceStateId,
-				invocationContext, providerInput, output,
-				delegate.objectiveScore(output));
+		try {
+			delegate.refineIntermediateJoin(invocationContext, output);
+			trace.append(PackedCostingPhase.PHYSICAL_JOIN, implementation, context, providerInputSourceStateId,
+					invocationContext, providerInput, output,
+					delegate.objectiveScore(output));
+		} catch (FrontierMemoryLimitException insufficientMemory) {
+			throw resourceLimit(insufficientMemory);
+		}
 	}
 
 	@Override
 	public int realizeEvidenceState(int evidenceStateId) {
-		return delegate.realizeEvidenceState(evidenceStateId);
+		try {
+			return delegate.realizeEvidenceState(evidenceStateId);
+		} catch (FrontierMemoryLimitException insufficientMemory) {
+			throw resourceLimit(insufficientMemory);
+		}
 	}
 
 	@Override
 	public double objectiveScore(PackedCostEstimate estimate) {
-		return delegate.objectiveScore(estimate);
+		try {
+			return delegate.objectiveScore(estimate);
+		} catch (FrontierMemoryLimitException insufficientMemory) {
+			throw resourceLimit(insufficientMemory);
+		}
 	}
 
 	@Override
 	public FrontierEvidenceBundle detachEvidence(int[] evidenceStateIds) {
-		return delegate.detachEvidence(evidenceStateIds);
+		try {
+			return delegate.detachEvidence(evidenceStateIds);
+		} catch (FrontierMemoryLimitException insufficientMemory) {
+			throw resourceLimit(insufficientMemory);
+		}
+	}
+
+	private static PackedCostSessionFailure resourceLimit(FrontierMemoryLimitException insufficientMemory) {
+		return PackedCostSessionFailure.resourceLimit(insufficientMemory.getMessage(), insufficientMemory);
 	}
 
 	PackedCostingTrace snapshotTrace() {
@@ -290,7 +375,7 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 	}
 
 	PackedCostingTrace.Projection snapshotTrace(int[] rootEventIds) {
-		return trace.snapshot().project(rootEventIds);
+		return trace.project(rootEventIds);
 	}
 
 	String describeEvent(int eventId) {
@@ -311,67 +396,17 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 
 	@Override
 	public void close() {
-		delegate.close();
-	}
-}
-
-/** Marks every scalar estimate produced after one recorded whole-session Frontier failure. */
-@PackedHotPath
-final class FailoverPackedCostSession implements PackedCostSession {
-
-	private final PackedCostSession delegate;
-	private final String reason;
-
-	FailoverPackedCostSession(PackedCostSession delegate, String reason) {
-		this.delegate = Objects.requireNonNull(delegate, "delegate");
-		this.reason = reason == null || reason.isBlank() ? "frontier-session-failed" : reason;
-	}
-
-	@Override
-	public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
-		delegate.estimateLeaf(relationId, context, output);
-		mark(output);
-	}
-
-	@Override
-	public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
-		delegate.appendFactor(relationId, context, output);
-		mark(output);
-	}
-
-	@Override
-	public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
-		delegate.refineOperator(relationId, context, output);
-		mark(output);
-	}
-
-	@Override
-	public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
-		delegate.refineIntermediateJoin(context, output);
-		mark(output);
-	}
-
-	@Override
-	public double objectiveScore(PackedCostEstimate estimate) {
-		return delegate.objectiveScore(estimate);
-	}
-
-	@Override
-	public int realizeEvidenceState(int evidenceStateId) {
-		return delegate.realizeEvidenceState(evidenceStateId);
-	}
-
-	@Override
-	public void close() {
-		delegate.close();
-	}
-
-	private void mark(PackedCostEstimate output) {
-		output.setEvidenceDisposition(FrontierStateDisposition.WHOLE_SESSION_FAILURE);
-		output.putPlannedStringMetric("plannedFrontierStatus", "unavailable");
-		output.putPlannedStringMetric("plannedFrontierFallbackReason", reason);
-		output.putPlannedStringMetric("optimizer.frontierSessionFallbackDisposition", "whole-session-failure");
-		output.putPlannedStringMetric("optimizer.frontierSessionFallbackReason", reason);
+		if (closed) {
+			return;
+		}
+		closed = true;
+		try {
+			if (closeDelegate) {
+				delegate.close();
+			}
+		} finally {
+			trace.recycle();
+		}
 	}
 }
 
@@ -412,6 +447,11 @@ final class ProofAwarePackedCostSession implements PackedCostSession {
 	@Override
 	public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
 		delegate.refineIntermediateJoin(context, output);
+	}
+
+	@Override
+	public boolean supportsPhysicalJoinRefinement() {
+		return delegate.supportsPhysicalJoinRefinement();
 	}
 
 	@Override

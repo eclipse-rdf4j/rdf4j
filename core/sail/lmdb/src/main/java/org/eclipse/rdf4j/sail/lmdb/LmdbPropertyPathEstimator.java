@@ -35,6 +35,9 @@ final class LmdbPropertyPathEstimator {
 
 	private static final String SOURCE = "lmdb-property-path";
 	private static final int MAX_MODELLED_DEPTH = 8;
+	static final String PLANNED_PATH_CANDIDATE_ROWS = "plannedPathCandidateRows";
+	static final String PLANNED_PATH_STEP_LOOKUPS = "plannedPathStepLookups";
+	static final String PLANNED_PATH_EXPANSION_ITERATIONS = "plannedPathExpansionIterations";
 
 	private final LmdbQuadSynopsisService synopsis;
 
@@ -58,9 +61,13 @@ final class LmdbPropertyPathEstimator {
 			RowEvidence directRows = direct.evidence();
 			OptionalDouble conditionedFirstStep = conditionedFirstStep(direct.estimate(), path, context, subjectBound,
 					objectBound);
+			double pointFirstStep = scaledFirstStep(conditionedFirstStep, directRows.estimate(),
+					directRows.estimate());
 			double rows = rows(directRows.estimate(), path.getMinLength(), distinctSubjects, distinctObjects,
 					subjectBound, objectBound, context.invocationCount(), identityGuaranteed,
-					scaledFirstStep(conditionedFirstStep, directRows.estimate(), directRows.estimate()));
+					pointFirstStep);
+			ArbitraryPathWork work = pathWork(directRows.estimate(), path.getMinLength(), distinctSubjects,
+					distinctObjects, subjectBound, objectBound, context.invocationCount(), pointFirstStep);
 			double lower = Math.min(rows, rows(directRows.lowerBound(), path.getMinLength(), distinctSubjects,
 					distinctObjects, subjectBound, objectBound, context.invocationCount(), identityGuaranteed,
 					scaledFirstStep(conditionedFirstStep, directRows.estimate(), directRows.lowerBound())));
@@ -71,8 +78,10 @@ final class LmdbPropertyPathEstimator {
 			RowEvidence evidence = new RowEvidence(rows, lower, upper,
 					complete ? 1.0d : directRows.confidence() * 0.75d, complete, context.snapshotIdentity(),
 					context.snapshotVersion(), SOURCE);
-			result.add(new EstimateCandidate(bag(path.getSubjectVar(), path.getObjectVar(), rows,
-					distinctSubjects, distinctObjects, subjectBound, objectBound, SOURCE), evidence, direct.kind(),
+			BagEstimate estimate = withPathWork(bag(path.getSubjectVar(), path.getObjectVar(), rows,
+					distinctSubjects, distinctObjects, subjectBound, objectBound, context, SOURCE), work);
+			result.add(new EstimateCandidate(estimate, evidence,
+					direct.kind(),
 					direct.freshness()));
 		}
 		return List.copyOf(result);
@@ -107,13 +116,13 @@ final class LmdbPropertyPathEstimator {
 		RowEvidence evidence = new RowEvidence(rows, 0.0d, upper, 0.35d, false, context.snapshotIdentity(),
 				context.snapshotVersion(), "lmdb-zero-length-path");
 		return List.of(new EstimateCandidate(bag(subject, object, rows, distinctSubjects, distinctObjects, false,
-				false, "lmdb-zero-length-path"), evidence, EstimateCandidate.Kind.SYNOPSIS,
+				false, context, "lmdb-zero-length-path"), evidence, EstimateCandidate.Kind.SYNOPSIS,
 				context.snapshotVersion()));
 	}
 
 	private EstimateCandidate exact(ZeroLengthPath path, double rows, EstimateContext context) {
 		BagEstimate estimate = bag(path.getSubjectVar(), path.getObjectVar(), rows, rows, rows,
-				bound(path.getSubjectVar(), context), bound(path.getObjectVar(), context), "zero-length-path");
+				bound(path.getSubjectVar(), context), bound(path.getObjectVar(), context), context, "zero-length-path");
 		RowEvidence evidence = new RowEvidence(rows, rows, rows, 1.0d, true, context.snapshotIdentity(),
 				context.snapshotVersion(), "zero-length-path");
 		return new EstimateCandidate(estimate.withRowsPreservingEvidence(rows, rows, 1.0d, "zero-length-path",
@@ -122,7 +131,7 @@ final class LmdbPropertyPathEstimator {
 
 	private EstimateCandidate heuristic(ArbitraryLengthPath path, EstimateContext context) {
 		BagEstimate estimate = bag(path.getSubjectVar(), path.getObjectVar(), 1.0d, 1.0d, 1.0d,
-				bound(path.getSubjectVar(), context), bound(path.getObjectVar(), context), SOURCE);
+				bound(path.getSubjectVar(), context), bound(path.getObjectVar(), context), context, SOURCE);
 		RowEvidence evidence = new RowEvidence(1.0d, 0.0d, Double.MAX_VALUE, 0.0d, false,
 				context.snapshotIdentity(), context.snapshotVersion(), SOURCE);
 		return new EstimateCandidate(estimate, evidence, EstimateCandidate.Kind.HEURISTIC, context.snapshotVersion());
@@ -134,7 +143,7 @@ final class LmdbPropertyPathEstimator {
 		double rows = Math.min(invocations, positive(invocations / positive(domain)));
 		RowEvidence evidence = new RowEvidence(rows, 0.0d, invocations, 0.2d, false, context.snapshotIdentity(),
 				context.snapshotVersion(), "lmdb-zero-length-path");
-		BagEstimate estimate = bag(path.getSubjectVar(), path.getObjectVar(), rows, rows, rows, true, true,
+		BagEstimate estimate = bag(path.getSubjectVar(), path.getObjectVar(), rows, rows, rows, true, true, context,
 				"lmdb-zero-length-path");
 		return new EstimateCandidate(estimate, evidence,
 				synopsis == null ? EstimateCandidate.Kind.HEURISTIC : EstimateCandidate.Kind.SYNOPSIS,
@@ -219,6 +228,69 @@ final class LmdbPropertyPathEstimator {
 			return saturatingMultiply(perInvocation, Math.min(invocations, pairCap));
 		}
 		return finiteNonNegative(result);
+	}
+
+	private static ArbitraryPathWork pathWork(double directRows, long minLength, double distinctSubjects,
+			double distinctObjects, boolean subjectBound, boolean objectBound, double invocationCount,
+			double conditionedFirstStep) {
+		double direct = finiteNonNegative(directRows);
+		double subjectDomain = positive(distinctSubjects);
+		double objectDomain = positive(distinctObjects);
+		double invocations = finiteNonNegative(invocationCount);
+		if (invocations == 0.0d) {
+			return new ArbitraryPathWork(0.0d, 0.0d, 0.0d);
+		}
+
+		double candidateRows;
+		double initialLookups;
+		double identityIterations;
+		if (subjectBound || objectBound) {
+			/*
+			 * PathIteration always expands from the start endpoint when both endpoints are fixed. With exactly one
+			 * endpoint fixed it reverses the step when necessary, so the same frontier model applies in either
+			 * direction.
+			 */
+			boolean expandsFromSubject = subjectBound;
+			double sourceDomain = expandsFromSubject ? subjectDomain : objectDomain;
+			double targetDomain = expandsFromSubject ? objectDomain : subjectDomain;
+			double firstStep = Double.isFinite(conditionedFirstStep) && conditionedFirstStep >= 0.0d
+					? conditionedFirstStep
+					: saturatingMultiply(direct / sourceDomain, invocations);
+			double fanout = Math.min(8.0d, direct / sourceDomain);
+			candidateRows = reachableCandidateRows(firstStep, fanout, minLength,
+					saturatingMultiply(invocations, targetDomain));
+			initialLookups = invocations;
+			identityIterations = minLength == 0L ? invocations : 0.0d;
+		} else {
+			double domain = Math.max(subjectDomain, objectDomain);
+			double fanout = Math.min(8.0d, direct / subjectDomain);
+			double pairCap = saturatingMultiply(subjectDomain, objectDomain);
+			double modelCap = Math.min(pairCap, saturatingMultiply(Math.max(direct, domain), 4.0d));
+			candidateRows = reachableCandidateRows(direct, fanout, minLength, modelCap);
+			initialLookups = 1.0d;
+			identityIterations = minLength == 0L ? 1.0d : 0.0d;
+		}
+		double stepLookups = saturatingAdd(initialLookups, candidateRows);
+		return new ArbitraryPathWork(candidateRows, stepLookups,
+				saturatingAdd(identityIterations, stepLookups));
+	}
+
+	private static double reachableCandidateRows(double firstStep, double fanout, long minLength, double cap) {
+		double candidates = 0.0d;
+		double depthRows = finiteNonNegative(firstStep);
+		long finalDepth = Math.min(MAX_MODELLED_DEPTH, Math.max(4L, minLength + 3L));
+		for (long depth = 1L; depth <= finalDepth; depth++) {
+			candidates = saturatingAdd(candidates, depthRows);
+			depthRows = saturatingMultiply(depthRows, fanout);
+		}
+		return Math.min(candidates, finiteNonNegative(cap));
+	}
+
+	private static BagEstimate withPathWork(BagEstimate estimate, ArbitraryPathWork work) {
+		return estimate.withMetrics(Map.of(
+				PLANNED_PATH_CANDIDATE_ROWS, work.candidateRows(),
+				PLANNED_PATH_STEP_LOOKUPS, work.stepLookups(),
+				PLANNED_PATH_EXPANSION_ITERATIONS, work.expansionIterations()));
 	}
 
 	private static OptionalDouble conditionedFirstStep(BagEstimate direct, ArbitraryLengthPath path,
@@ -320,10 +392,28 @@ final class LmdbPropertyPathEstimator {
 	}
 
 	private static BagEstimate bag(Var subject, Var object, double rows, double distinctSubjects,
-			double distinctObjects, boolean subjectBound, boolean objectBound, String source) {
+			double distinctObjects, boolean subjectBound, boolean objectBound, EstimateContext context, String source) {
 		BagEstimate result = BagEstimate.heuristic(finiteNonNegative(rows), source);
-		result = withVariable(result, subject, subjectBound ? Math.min(1.0d, rows) : distinctSubjects);
-		return withVariable(result, object, objectBound ? Math.min(1.0d, rows) : distinctObjects);
+		result = withVariable(result, subject,
+				endpointResultDistinct(subject, subjectBound, distinctSubjects, rows, context));
+		return withVariable(result, object,
+				endpointResultDistinct(object, objectBound, distinctObjects, rows, context));
+	}
+
+	private static double endpointResultDistinct(Var endpoint, boolean contextBound, double unboundDistinct,
+			double rows, EstimateContext context) {
+		if (!contextBound) {
+			return unboundDistinct;
+		}
+		if (endpoint == null || endpoint.hasValue() || endpoint.getName() == null) {
+			return Math.min(1.0d, finiteNonNegative(rows));
+		}
+		VariableEstimate prefixVariable = context.prefixEstimate().variable(endpoint.getName());
+		double prefixDistinct = prefixVariable.distinctRows();
+		if (prefixVariable.boundRows() <= 0.0d || prefixDistinct <= 0.0d) {
+			prefixDistinct = context.invocationCount();
+		}
+		return Math.min(finiteNonNegative(rows), finiteNonNegative(prefixDistinct));
 	}
 
 	private static BagEstimate withVariable(BagEstimate estimate, Var variable, double distinct) {
@@ -355,5 +445,8 @@ final class LmdbPropertyPathEstimator {
 
 	private static double saturatingMultiply(double left, double right) {
 		return finiteNonNegative(left * right);
+	}
+
+	private record ArbitraryPathWork(double candidateRows, double stepLookups, double expansionIterations) {
 	}
 }

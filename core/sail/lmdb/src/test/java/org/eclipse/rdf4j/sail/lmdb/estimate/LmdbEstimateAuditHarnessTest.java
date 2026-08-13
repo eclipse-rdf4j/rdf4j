@@ -117,7 +117,10 @@ class LmdbEstimateAuditHarnessTest {
 								.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.STATEMENT_PATTERN)
 								.count());
 				assertTrue(rows.stream().allMatch(row -> row.actualRows() >= 0));
-				assertTrue(rows.stream().allMatch(row -> Double.isFinite(row.plannedRows())));
+				assertTrue(rows.stream().allMatch(row -> Double.isFinite(row.plannedRows())),
+						() -> "Non-finite planned rows: " + rows.stream()
+								.filter(row -> !Double.isFinite(row.plannedRows()))
+								.toList());
 				assertTrue(rows.stream().allMatch(row -> row.qError() >= 1.0d && Double.isFinite(row.qError())));
 			}
 		} finally {
@@ -1015,7 +1018,10 @@ class LmdbEstimateAuditHarnessTest {
 						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.FULL_QUERY)
 						.count());
 				assertTrue(rows.stream().allMatch(row -> row.actualRows() >= 0));
-				assertTrue(rows.stream().allMatch(row -> Double.isFinite(row.plannedRows())));
+				assertTrue(rows.stream().allMatch(row -> Double.isFinite(row.plannedRows())),
+						() -> "Non-finite planned rows: " + rows.stream()
+								.filter(row -> !Double.isFinite(row.plannedRows()))
+								.toList());
 				assertTrue(rows.stream().allMatch(row -> row.qError() >= 1.0d && Double.isFinite(row.qError())));
 
 				List<LmdbEstimateAuditHarness.AuditRow> worstRows = rows.stream()
@@ -1620,7 +1626,7 @@ class LmdbEstimateAuditHarnessTest {
 	}
 
 	@Test
-	void frontierMinusUsesIndependentLaneToReduceBooleanKernelVariance(@TempDir File dataDir) {
+	void frontierMinusUsesIndependentLaneToProduceExactBooleanKernel(@TempDir File dataDir) {
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setTripleIndexes("spoc,posc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
@@ -1652,9 +1658,12 @@ class LmdbEstimateAuditHarnessTest {
 						.findFirst()
 						.orElseThrow();
 
-				assertEquals("lmdb-frontier+leo", difference.plannedSource(),
-						() -> "The MINUS transform must retain Frontier as its raw evidence and apply LEO at the "
-								+ "originating costing event: " + difference);
+				assertEquals("lmdb-frontier", difference.plannedSource(),
+						() -> "A current-stamp database-exact MINUS transform must supersede learned calibration: "
+								+ difference);
+				assertEquals("database_exact", difference.frontierGuarantee(), difference::toString);
+				assertTrue(Double.isNaN(difference.leoRows()),
+						() -> "database-exact MINUS evidence must not carry a learned row correction: " + difference);
 				assertEquals(11L, difference.actualRows(), difference::toString);
 				assertTrue(difference.plannedRows() < leftInput.plannedRows(),
 						() -> "exact MINUS probes from independent lanes must remove sampled mass: " + rows);

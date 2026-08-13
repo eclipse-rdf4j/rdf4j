@@ -45,9 +45,10 @@ class ProductionLearningKeyTest {
 		FrontierLearningModel model = new FrontierLearningModel();
 		model.observeLogical(LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 100.0d, 400.0d, 1L);
 
-		double streamingRows = model.logicalEstimate(LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS,
+		double streamingRows = rawLogicalEstimate(model, LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS,
 				100.0d).correctedValue();
-		double materializedRows = model.logicalEstimate(LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS,
+		double materializedRows = rawLogicalEstimate(model, LOGICAL, APPLICABILITY,
+				FrontierCostDimension.OUTPUT_ROWS,
 				100.0d).correctedValue();
 
 		assertEquals(streamingRows, materializedRows, 0.0d,
@@ -60,9 +61,9 @@ class ProductionLearningKeyTest {
 		model.observePhysical(LOGICAL, STREAMING, APPLICABILITY, FrontierCostDimension.EXHAUSTION_WORK,
 				10.0d, 1_000.0d, 1L);
 
-		assertTrue(model.physicalEstimate(LOGICAL, STREAMING, APPLICABILITY,
+		assertTrue(rawPhysicalEstimate(model, LOGICAL, STREAMING, APPLICABILITY,
 				FrontierCostDimension.EXHAUSTION_WORK, 10.0d).correctedValue() > 10.0d);
-		assertNull(model.physicalEstimate(LOGICAL, MATERIALIZED, APPLICABILITY,
+		assertNull(rawPhysicalEstimate(model, LOGICAL, MATERIALIZED, APPLICABILITY,
 				FrontierCostDimension.EXHAUSTION_WORK, 10.0d),
 				"An unexecuted algorithm must not inherit another algorithm's work residual");
 	}
@@ -91,9 +92,9 @@ class ProductionLearningKeyTest {
 		FrontierLearningModel model = new FrontierLearningModel();
 		model.observeLogical(LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 100.0d, 400.0d, 1L);
 
-		double first = model.logicalEstimate(LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 100.0d)
+		double first = rawLogicalEstimate(model, LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 100.0d)
 				.correctedValue();
-		double second = model.logicalEstimate(LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 100.0d)
+		double second = rawLogicalEstimate(model, LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 100.0d)
 				.correctedValue();
 
 		assertEquals(first, second, 0.0d, "Planning reads a posterior against the saved raw estimate exactly once");
@@ -104,12 +105,12 @@ class ProductionLearningKeyTest {
 		FrontierLearningModel model = new FrontierLearningModel();
 		model.observeLogical(LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 100.0d, 400.0d, 1L);
 
-		double firstRawEstimate = model
-				.logicalEstimate(LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 100.0d)
-				.correctedValue();
-		double changedRawEstimate = model
-				.logicalEstimate(LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 200.0d)
-				.correctedValue();
+		double firstRawEstimate = rawLogicalEstimate(model,
+				LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 100.0d)
+						.correctedValue();
+		double changedRawEstimate = rawLogicalEstimate(model,
+				LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 200.0d)
+						.correctedValue();
 
 		assertEquals(firstRawEstimate, changedRawEstimate, 0.0d,
 				"A logical posterior represents expression cardinality, not a residual that compounds with child learning");
@@ -135,12 +136,12 @@ class ProductionLearningKeyTest {
 
 		assertEquals(99_600.0d, target.rawPredictedRowsSum(), 0.0d);
 		assertEquals(99_600.0d, target.actualRowsSum(), 0.0d);
-		assertEquals(canonicalObservation
-				.logicalEstimate(LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 49_800.0d)
-				.correctedValue(),
-				model
-						.logicalEstimate(LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 49_800.0d)
+		assertEquals(rawLogicalEstimate(canonicalObservation,
+				LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 49_800.0d)
 						.correctedValue(),
+				rawLogicalEstimate(model,
+						LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 49_800.0d)
+								.correctedValue(),
 				0.0d,
 				"The summed execution observation calibrates the saved raw cardinality; it is not itself one-open truth");
 	}
@@ -168,12 +169,12 @@ class ProductionLearningKeyTest {
 
 		assertEquals(111.0d, target.rawPredictedRowsSum(), 0.0d);
 		assertEquals(222.0d, target.actualRowsSum(), 0.0d);
-		assertEquals(canonicalObservation
-				.logicalEstimate(LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 100.0d)
-				.correctedValue(),
-				model
-						.logicalEstimate(LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 100.0d)
+		assertEquals(rawLogicalEstimate(canonicalObservation,
+				LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 100.0d)
 						.correctedValue(),
+				rawLogicalEstimate(model,
+						LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 100.0d)
+								.correctedValue(),
 				0.0d,
 				"The aggregate ratio must use the explicit open-time prediction vector, not an opens divisor");
 	}
@@ -194,11 +195,12 @@ class ProductionLearningKeyTest {
 			restored = FrontierLearningModel.readFrom(in);
 		}
 
-		assertTrue(restored.logicalEstimate(LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 100.0d)
-				.correctedValue() > 100.0d);
-		assertTrue(restored.physicalEstimate(LOGICAL, STREAMING, APPLICABILITY,
+		assertTrue(rawLogicalEstimate(restored, LOGICAL, APPLICABILITY,
+				FrontierCostDimension.OUTPUT_ROWS, 100.0d)
+						.correctedValue() > 100.0d);
+		assertTrue(rawPhysicalEstimate(restored, LOGICAL, STREAMING, APPLICABILITY,
 				FrontierCostDimension.FIRST_MATCH_WORK, 2.0d).correctedValue() > 2.0d);
-		assertNull(restored.physicalEstimate(LOGICAL, MATERIALIZED, APPLICABILITY,
+		assertNull(rawPhysicalEstimate(restored, LOGICAL, MATERIALIZED, APPLICABILITY,
 				FrontierCostDimension.FIRST_MATCH_WORK, 2.0d));
 	}
 
@@ -244,11 +246,12 @@ class ProductionLearningKeyTest {
 		target.publish(true);
 		model.release(materialized);
 
-		assertTrue(model.logicalEstimate(LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 100.0d)
-				.correctedValue() > 100.0d);
-		assertTrue(model.physicalEstimate(LOGICAL, STREAMING, APPLICABILITY,
+		assertTrue(rawLogicalEstimate(model, LOGICAL, APPLICABILITY,
+				FrontierCostDimension.OUTPUT_ROWS, 100.0d)
+						.correctedValue() > 100.0d);
+		assertTrue(rawPhysicalEstimate(model, LOGICAL, STREAMING, APPLICABILITY,
 				FrontierCostDimension.SOURCE_ROWS_SCANNED, 100.0d).correctedValue() > 100.0d);
-		assertNull(model.physicalEstimate(LOGICAL, MATERIALIZED, APPLICABILITY,
+		assertNull(rawPhysicalEstimate(model, LOGICAL, MATERIALIZED, APPLICABILITY,
 				FrontierCostDimension.SOURCE_ROWS_SCANNED, 100.0d));
 	}
 
@@ -294,6 +297,20 @@ class ProductionLearningKeyTest {
 		target.publish(true);
 
 		assertNull(model.logicalEstimate(LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS, 100.0d));
+	}
+
+	private static FrontierLearningModel.DimensionEstimate rawLogicalEstimate(FrontierLearningModel model,
+			LogicalLearningKey logicalKey, LearningApplicability applicability, FrontierCostDimension dimension,
+			double predicted) {
+		return FrontierLearningModel.estimateLogical(model.logicalPosterior(logicalKey, applicability, dimension),
+				dimension, predicted);
+	}
+
+	private static FrontierLearningModel.DimensionEstimate rawPhysicalEstimate(FrontierLearningModel model,
+			LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey, LearningApplicability applicability,
+			FrontierCostDimension dimension, double predicted) {
+		return FrontierLearningModel.estimate(
+				model.physicalPosterior(logicalKey, physicalKey, applicability, dimension), predicted);
 	}
 
 	private static RuntimeFeedbackAccumulator target(FrontierLearningModel model,

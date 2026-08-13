@@ -19,18 +19,36 @@ import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackDescriptor;
 record LmdbRuntimeFeedbackDescriptor(FrontierLearningKey legacyLogicalKey,
 		FrontierLearningKey legacyPhysicalKey, LogicalLearningKey logicalKey,
 		LearningApplicability applicability, PhysicalResidualKey physicalKey,
-		LogicalGroupOrigin logicalGroupOrigin) implements RuntimeFeedbackDescriptor {
+		LogicalGroupOrigin logicalGroupOrigin, LearningFeatureEnvelope featureEnvelope,
+		FilterSurfaceKey exactFilterSurfaceKey, FilterSurfaceKey generalizedFilterSurfaceKey)
+		implements RuntimeFeedbackDescriptor {
 
 	LmdbRuntimeFeedbackDescriptor {
 		Objects.requireNonNull(logicalKey, "logical key");
 		Objects.requireNonNull(applicability, "applicability");
 		Objects.requireNonNull(physicalKey, "physical key");
 		Objects.requireNonNull(logicalGroupOrigin, "logical group origin");
+		Objects.requireNonNull(featureEnvelope, "learning feature envelope");
 	}
 
 	LmdbRuntimeFeedbackDescriptor(FrontierLearningKey legacyLogicalKey, FrontierLearningKey legacyPhysicalKey,
 			LogicalLearningKey logicalKey, LearningApplicability applicability, PhysicalResidualKey physicalKey) {
-		this(legacyLogicalKey, legacyPhysicalKey, logicalKey, applicability, physicalKey, LogicalGroupOrigin.UNKNOWN);
+		this(legacyLogicalKey, legacyPhysicalKey, logicalKey, applicability, physicalKey, LogicalGroupOrigin.UNKNOWN,
+				LearningFeatureEnvelope.conventionalRows(0.0d), null, null);
+	}
+
+	LmdbRuntimeFeedbackDescriptor(FrontierLearningKey legacyLogicalKey, FrontierLearningKey legacyPhysicalKey,
+			LogicalLearningKey logicalKey, LearningApplicability applicability, PhysicalResidualKey physicalKey,
+			LogicalGroupOrigin logicalGroupOrigin) {
+		this(legacyLogicalKey, legacyPhysicalKey, logicalKey, applicability, physicalKey, logicalGroupOrigin,
+				LearningFeatureEnvelope.conventionalRows(0.0d), null, null);
+	}
+
+	LmdbRuntimeFeedbackDescriptor(FrontierLearningKey legacyLogicalKey, FrontierLearningKey legacyPhysicalKey,
+			LogicalLearningKey logicalKey, LearningApplicability applicability, PhysicalResidualKey physicalKey,
+			LogicalGroupOrigin logicalGroupOrigin, LearningFeatureEnvelope featureEnvelope) {
+		this(legacyLogicalKey, legacyPhysicalKey, logicalKey, applicability, physicalKey, logicalGroupOrigin,
+				featureEnvelope, null, null);
 	}
 
 	/** Query-local typed certificate for the canonical factor set that produced a logical contract. */

@@ -22,6 +22,6 @@ public enum FrontierStateDisposition {
 	BOUND_ONLY,
 	/** The state crosses an operator whose tuple transform is intentionally opaque while retaining parent lineage. */
 	OPAQUE_BOUNDARY,
-	/** The complete Frontier session failed and planning restarted without Frontier evidence. */
+	/** Legacy decoding sentinel for pre-schema-2 traces; current planning never emits or restarts from this state. */
 	WHOLE_SESSION_FAILURE
 }

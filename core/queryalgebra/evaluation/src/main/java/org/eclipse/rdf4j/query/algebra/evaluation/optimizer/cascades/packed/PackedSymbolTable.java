@@ -56,6 +56,18 @@ final class PackedSymbolTable {
 		return objectBySymbolId[symbolId];
 	}
 
+	boolean hasSameRows(PackedSymbolTable other) {
+		if (other == null || size != other.size) {
+			return false;
+		}
+		for (int symbolId = 1; symbolId <= size; symbolId++) {
+			if (objectId(symbolId) != other.objectId(symbolId)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	void freeze() {
 		frozen = true;
 	}

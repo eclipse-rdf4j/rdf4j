@@ -37,5 +37,7 @@ public enum FrontierStateOperation {
 	SUMMARY_ONLY,
 	BOUNDARY,
 	OPAQUE_BOUNDARY,
-	UNRESOLVED
+	UNRESOLVED,
+	/** Independently measured exact payload that supersedes sampled parent mass while retaining audit lineage. */
+	EXACT_REMEASURE
 }

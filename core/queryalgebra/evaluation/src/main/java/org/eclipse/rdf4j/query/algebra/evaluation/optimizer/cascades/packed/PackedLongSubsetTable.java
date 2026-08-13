@@ -17,32 +17,79 @@ import java.util.Arrays;
 @PackedHotPath
 final class PackedLongSubsetTable {
 
+	private static final int LONG_COLUMNS = 4;
+	private static final int DOUBLE_COLUMNS = 3;
+	private static final int INT_COLUMNS = 9;
+	private static final int BYTE_COLUMNS = 1;
+
+	private final PackedSearchBudget budget;
 	private long[] masks;
 	private long[] neighborMasks;
 	private long[] hashes;
+	private long[] equivalenceHashes;
 	private double[] rows;
 	private double[] costs;
 	private double[] appendedContributionRows;
 	private int[] evidenceStateIds;
 	private int[] preferenceRanks;
 	private int[] parentStateIds;
+	private int[] rightChildStateIds;
+	private int[] nextMaskStateIds;
 	private int[] appendedFactorOrdinals;
 	private int[] appendedFactorWinnerIds;
 	private int[] transitionMetadataIds;
 	private int[] operatorMetadataIds;
 	private byte[] physicalImplementations;
 	private int[] tableSlots;
+	private int[] headSlots;
+	private int[] equivalenceSlots;
 	private int resizeThreshold;
+	private int equivalenceResizeThreshold;
+	private int distinctMaskCount;
+	private int equivalenceEntryCount;
 	private int size;
 
 	PackedLongSubsetTable(int expectedStates) {
+		this(expectedStates, new PackedSearchBudget(PackedPlannerLimits.unbounded()));
+	}
+
+	PackedLongSubsetTable(int expectedStates, PackedSearchBudget budget) {
 		if (expectedStates < 0) {
 			throw new IllegalArgumentException("expected state count must be non-negative");
 		}
+		if (budget == null) {
+			throw new NullPointerException("budget");
+		}
+		this.budget = budget;
 		int rowCapacity = Math.max(2, expectedStates + 1);
+		int tableCapacity = PackedPrimitiveHash.tableCapacity(expectedStates);
+		if (!budget.tryReserveBytes(requiredBytes(rowCapacity, tableCapacity))) {
+			masks = new long[0];
+			neighborMasks = new long[0];
+			hashes = new long[0];
+			equivalenceHashes = new long[0];
+			rows = new double[0];
+			costs = new double[0];
+			appendedContributionRows = new double[0];
+			evidenceStateIds = new int[0];
+			preferenceRanks = new int[0];
+			parentStateIds = new int[0];
+			rightChildStateIds = new int[0];
+			nextMaskStateIds = new int[0];
+			appendedFactorOrdinals = new int[0];
+			appendedFactorWinnerIds = new int[0];
+			transitionMetadataIds = new int[0];
+			operatorMetadataIds = new int[0];
+			physicalImplementations = new byte[0];
+			tableSlots = new int[0];
+			headSlots = new int[0];
+			equivalenceSlots = new int[0];
+			return;
+		}
 		masks = new long[rowCapacity];
 		neighborMasks = new long[rowCapacity];
 		hashes = new long[rowCapacity];
+		equivalenceHashes = new long[rowCapacity];
 		rows = new double[rowCapacity];
 		costs = new double[rowCapacity];
 		appendedContributionRows = new double[rowCapacity];
@@ -50,14 +97,18 @@ final class PackedLongSubsetTable {
 		evidenceStateIds = new int[rowCapacity];
 		preferenceRanks = new int[rowCapacity];
 		parentStateIds = new int[rowCapacity];
+		rightChildStateIds = new int[rowCapacity];
+		nextMaskStateIds = new int[rowCapacity];
 		appendedFactorOrdinals = new int[rowCapacity];
 		appendedFactorWinnerIds = new int[rowCapacity];
 		transitionMetadataIds = new int[rowCapacity];
 		operatorMetadataIds = new int[rowCapacity];
 		physicalImplementations = new byte[rowCapacity];
-		int tableCapacity = PackedPrimitiveHash.tableCapacity(expectedStates);
 		tableSlots = new int[tableCapacity];
+		headSlots = new int[tableCapacity];
+		equivalenceSlots = new int[tableCapacity];
 		resizeThreshold = PackedPrimitiveHash.maximumFill(tableCapacity);
+		equivalenceResizeThreshold = resizeThreshold;
 	}
 
 	int offer(long mask, double outputRows, double totalCost, int parentStateId, int appendedFactorOrdinal,
@@ -95,6 +146,79 @@ final class PackedLongSubsetTable {
 				operatorMetadataId, physicalImplementation);
 	}
 
+	int offerRetainedContinuation(long mask, double outputRows, double totalCost, double contributionRows,
+			int evidenceStateId, int preferenceRank, int parentStateId, int appendedFactorOrdinal,
+			long neighborMask, int appendedFactorWinnerId, int transitionMetadataId, int operatorMetadataId,
+			int physicalImplementation) {
+		if (mask == 0L) {
+			throw new IllegalArgumentException("a sparse join subset must not be empty");
+		}
+		if (evidenceStateId < 0 || !Double.isFinite(totalCost) || totalCost < 0.0d) {
+			throw new IllegalArgumentException("invalid sparse continuation state");
+		}
+		if (tableSlots.length == 0) {
+			return 0;
+		}
+		int equivalentStateId = findEquivalentRetained(mask, outputRows, totalCost, contributionRows,
+				evidenceStateId, physicalImplementation);
+		if (equivalentStateId != 0) {
+			return equivalentStateId;
+		}
+		long hash = PackedPrimitiveHash.finish(PackedPrimitiveHash.step(PackedPrimitiveHash.SEED, mask));
+		int slot = findSlot(hash, mask);
+		int retainedStateId = tableSlots[slot];
+		if (retainedStateId == 0 && distinctMaskCount + 1 > resizeThreshold) {
+			if (!resizeTable(tableSlots.length << 1)) {
+				return 0;
+			}
+			slot = findSlot(hash, mask);
+		}
+		int stateId = size + 1;
+		if (!ensureEquivalenceCapacity(equivalenceEntryCount + 1)) {
+			return 0;
+		}
+		if (!ensureRowCapacity(stateId)) {
+			return 0;
+		}
+		masks[stateId] = mask;
+		hashes[stateId] = hash;
+		writeDerivedState(stateId, outputRows, totalCost, contributionRows, evidenceStateId, preferenceRank,
+				parentStateId, appendedFactorOrdinal, neighborMask, appendedFactorWinnerId, transitionMetadataId,
+				operatorMetadataId, physicalImplementation);
+		nextMaskStateIds[stateId] = headSlots[slot];
+		headSlots[slot] = stateId;
+		if (retainedStateId == 0) {
+			tableSlots[slot] = stateId;
+			distinctMaskCount++;
+		} else {
+			int costComparison = Double.compare(totalCost, costs[retainedStateId]);
+			if (costComparison < 0
+					|| costComparison == 0 && preferenceRank > preferenceRanks[retainedStateId]) {
+				tableSlots[slot] = stateId;
+			}
+		}
+		size = stateId;
+		registerEquivalentState(stateId);
+		return stateId;
+	}
+
+	int offerRetainedBushy(long mask, double outputRows, double totalCost, double contributionRows,
+			int evidenceStateId, int preferenceRank, int leftChildStateId, int rightChildStateId,
+			long neighborMask, int operatorMetadataId, int physicalImplementation) {
+		int equivalentStateId = findEquivalentRetained(mask, outputRows, totalCost, contributionRows,
+				evidenceStateId, physicalImplementation);
+		if (equivalentStateId != 0) {
+			return equivalentStateId;
+		}
+		int stateId = offerRetainedContinuation(mask, outputRows, totalCost, contributionRows, evidenceStateId,
+				preferenceRank, leftChildStateId, -1, neighborMask, 0, 0, operatorMetadataId,
+				physicalImplementation);
+		if (stateId != 0) {
+			rightChildStateIds[stateId] = rightChildStateId;
+		}
+		return stateId;
+	}
+
 	int offerHashed(long hash, long mask, double outputRows, double totalCost, int parentStateId,
 			int appendedFactorOrdinal, long neighborMask) {
 		return offerHashed(hash, mask, outputRows, totalCost, Double.NaN, 0, 0, parentStateId,
@@ -130,6 +254,9 @@ final class PackedLongSubsetTable {
 		if (evidenceStateId < 0) {
 			throw new IllegalArgumentException("packed evidence state ID must be non-negative");
 		}
+		if (tableSlots.length == 0) {
+			return 0;
+		}
 		int slot = findSlot(hash, mask);
 		int stateId = tableSlots[slot];
 		if (stateId != 0) {
@@ -141,27 +268,58 @@ final class PackedLongSubsetTable {
 			}
 			return stateId;
 		}
-		if (size + 1 > resizeThreshold) {
-			resizeTable(tableSlots.length << 1);
+		if (distinctMaskCount + 1 > resizeThreshold) {
+			if (!resizeTable(tableSlots.length << 1)) {
+				return 0;
+			}
 			slot = findSlot(hash, mask);
 		}
-		stateId = ++size;
-		ensureRowCapacity(stateId);
+		stateId = size + 1;
+		if (!ensureRowCapacity(stateId)) {
+			return 0;
+		}
 		masks[stateId] = mask;
 		hashes[stateId] = hash;
 		writeDerivedState(stateId, outputRows, totalCost, contributionRows, evidenceStateId, preferenceRank,
 				parentStateId, appendedFactorOrdinal, neighborMask, appendedFactorWinnerId, transitionMetadataId,
 				operatorMetadataId, physicalImplementation);
 		tableSlots[slot] = stateId;
+		headSlots[slot] = stateId;
+		distinctMaskCount++;
+		size = stateId;
 		return stateId;
 	}
 
 	int find(long mask) {
-		if (mask == 0L) {
+		if (mask == 0L || tableSlots.length == 0) {
 			return 0;
 		}
 		long hash = PackedPrimitiveHash.finish(PackedPrimitiveHash.step(PackedPrimitiveHash.SEED, mask));
 		return tableSlots[findSlot(hash, mask)];
+	}
+
+	int firstRetained(long mask) {
+		if (mask == 0L || tableSlots.length == 0) {
+			return 0;
+		}
+		long hash = PackedPrimitiveHash.finish(PackedPrimitiveHash.step(PackedPrimitiveHash.SEED, mask));
+		return headSlots[findSlot(hash, mask)];
+	}
+
+	int nextRetained(int stateId) {
+		checkStateId(stateId);
+		return nextMaskStateIds[stateId];
+	}
+
+	int findEquivalentRetained(long mask, double outputRows, double totalCost, double contributionRows,
+			int evidenceStateId, int physicalImplementation) {
+		if (equivalenceSlots.length == 0) {
+			return 0;
+		}
+		long hash = equivalenceHash(mask, outputRows, totalCost, contributionRows, evidenceStateId,
+				physicalImplementation);
+		return equivalenceSlots[findEquivalentSlot(hash, mask, outputRows, totalCost, contributionRows,
+				evidenceStateId, physicalImplementation)];
 	}
 
 	int size() {
@@ -208,6 +366,11 @@ final class PackedLongSubsetTable {
 		return parentStateIds[stateId];
 	}
 
+	int rightChildStateId(int stateId) {
+		checkStateId(stateId);
+		return rightChildStateIds[stateId];
+	}
+
 	int appendedFactorOrdinal(int stateId) {
 		checkStateId(stateId);
 		return appendedFactorOrdinals[stateId];
@@ -244,6 +407,50 @@ final class PackedLongSubsetTable {
 		}
 	}
 
+	private int findEquivalentSlot(long hash, long mask, double outputRows, double totalCost,
+			double contributionRows, int evidenceStateId, int physicalImplementation) {
+		int slot = PackedPrimitiveHash.slot(hash, equivalenceSlots.length);
+		while (true) {
+			int stateId = equivalenceSlots[slot];
+			if (stateId == 0 || equivalenceHashes[stateId] == hash
+					&& masks[stateId] == mask
+					&& evidenceStateIds[stateId] == evidenceStateId
+					&& Double.compare(rows[stateId], outputRows) == 0
+					&& Double.compare(costs[stateId], totalCost) == 0
+					&& Double.compare(appendedContributionRows[stateId], contributionRows) == 0
+					&& Byte.toUnsignedInt(physicalImplementations[stateId]) == physicalImplementation) {
+				return slot;
+			}
+			slot = slot + 1 & equivalenceSlots.length - 1;
+		}
+	}
+
+	private void registerEquivalentState(int stateId) {
+		long hash = equivalenceHash(masks[stateId], rows[stateId], costs[stateId],
+				appendedContributionRows[stateId], evidenceStateIds[stateId],
+				Byte.toUnsignedInt(physicalImplementations[stateId]));
+		equivalenceHashes[stateId] = hash;
+		int slot = findEquivalentSlot(hash, masks[stateId], rows[stateId], costs[stateId],
+				appendedContributionRows[stateId], evidenceStateIds[stateId],
+				Byte.toUnsignedInt(physicalImplementations[stateId]));
+		if (equivalenceSlots[slot] != 0) {
+			throw new PackedMemoInvariantException("duplicate sparse continuation escaped equivalence lookup");
+		}
+		equivalenceSlots[slot] = stateId;
+		equivalenceEntryCount++;
+	}
+
+	private static long equivalenceHash(long mask, double outputRows, double totalCost,
+			double contributionRows, int evidenceStateId, int physicalImplementation) {
+		long hash = PackedPrimitiveHash.step(PackedPrimitiveHash.SEED, mask);
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(outputRows));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(totalCost));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(contributionRows));
+		hash = PackedPrimitiveHash.step(hash, evidenceStateId);
+		hash = PackedPrimitiveHash.step(hash, physicalImplementation);
+		return PackedPrimitiveHash.finish(hash);
+	}
+
 	private void writeDerivedState(int stateId, double outputRows, double totalCost, double contributionRows,
 			int evidenceStateId, int preferenceRank, int parentStateId, int appendedFactorOrdinal, long neighborMask,
 			int appendedFactorWinnerId, int transitionMetadataId, int operatorMetadataId,
@@ -262,40 +469,119 @@ final class PackedLongSubsetTable {
 		physicalImplementations[stateId] = (byte) physicalImplementation;
 	}
 
-	private void resizeTable(int newCapacity) {
+	private boolean resizeTable(int newCapacity) {
+		long additionalBytes = (long) (newCapacity - tableSlots.length) * Integer.BYTES * 2L;
+		if (!budget.tryReserveBytes(additionalBytes)) {
+			return false;
+		}
 		int[] replacement = new int[newCapacity];
-		for (int stateId = 1; stateId <= size; stateId++) {
+		int[] replacementHeads = new int[newCapacity];
+		for (int oldSlot = 0; oldSlot < tableSlots.length; oldSlot++) {
+			int stateId = tableSlots[oldSlot];
+			if (stateId == 0) {
+				continue;
+			}
 			int slot = PackedPrimitiveHash.slot(hashes[stateId], newCapacity);
 			while (replacement[slot] != 0) {
 				slot = slot + 1 & newCapacity - 1;
 			}
 			replacement[slot] = stateId;
+			replacementHeads[slot] = headSlots[oldSlot];
 		}
 		tableSlots = replacement;
+		headSlots = replacementHeads;
 		resizeThreshold = PackedPrimitiveHash.maximumFill(newCapacity);
+		return true;
 	}
 
-	private void ensureRowCapacity(int requiredStateId) {
-		if (requiredStateId < masks.length) {
-			return;
+	private boolean ensureEquivalenceCapacity(int requiredEntries) {
+		if (requiredEntries <= equivalenceResizeThreshold) {
+			return true;
 		}
-		int newCapacity = masks.length << 1;
-		masks = Arrays.copyOf(masks, newCapacity);
-		neighborMasks = Arrays.copyOf(neighborMasks, newCapacity);
-		hashes = Arrays.copyOf(hashes, newCapacity);
-		rows = Arrays.copyOf(rows, newCapacity);
-		costs = Arrays.copyOf(costs, newCapacity);
+		int newCapacity = equivalenceSlots.length;
+		do {
+			newCapacity <<= 1;
+		} while (requiredEntries > PackedPrimitiveHash.maximumFill(newCapacity));
+		long additionalBytes = (long) (newCapacity - equivalenceSlots.length) * Integer.BYTES;
+		if (!budget.tryReserveBytes(additionalBytes)) {
+			return false;
+		}
+		int[] replacement = new int[newCapacity];
+		for (int stateId : equivalenceSlots) {
+			if (stateId == 0) {
+				continue;
+			}
+			int slot = PackedPrimitiveHash.slot(equivalenceHashes[stateId], newCapacity);
+			while (replacement[slot] != 0) {
+				slot = slot + 1 & newCapacity - 1;
+			}
+			replacement[slot] = stateId;
+		}
+		equivalenceSlots = replacement;
+		equivalenceResizeThreshold = PackedPrimitiveHash.maximumFill(newCapacity);
+		return true;
+	}
+
+	private boolean ensureRowCapacity(int requiredStateId) {
+		if (requiredStateId < masks.length) {
+			return true;
+		}
+		if (masks.length == 0) {
+			return false;
+		}
+		int newCapacity = masks.length;
+		while (newCapacity <= requiredStateId) {
+			newCapacity <<= 1;
+		}
+		long additionalBytes = requiredBytes(newCapacity, tableSlots.length)
+				- requiredBytes(masks.length, tableSlots.length);
+		if (!budget.tryReserveBytes(additionalBytes)) {
+			return false;
+		}
+		long[] nextMasks = Arrays.copyOf(masks, newCapacity);
+		long[] nextNeighborMasks = Arrays.copyOf(neighborMasks, newCapacity);
+		long[] nextHashes = Arrays.copyOf(hashes, newCapacity);
+		long[] nextEquivalenceHashes = Arrays.copyOf(equivalenceHashes, newCapacity);
+		double[] nextRows = Arrays.copyOf(rows, newCapacity);
+		double[] nextCosts = Arrays.copyOf(costs, newCapacity);
 		int oldCapacity = appendedContributionRows.length;
-		appendedContributionRows = Arrays.copyOf(appendedContributionRows, newCapacity);
-		Arrays.fill(appendedContributionRows, oldCapacity, newCapacity, Double.NaN);
-		evidenceStateIds = Arrays.copyOf(evidenceStateIds, newCapacity);
-		preferenceRanks = Arrays.copyOf(preferenceRanks, newCapacity);
-		parentStateIds = Arrays.copyOf(parentStateIds, newCapacity);
-		appendedFactorOrdinals = Arrays.copyOf(appendedFactorOrdinals, newCapacity);
-		appendedFactorWinnerIds = Arrays.copyOf(appendedFactorWinnerIds, newCapacity);
-		transitionMetadataIds = Arrays.copyOf(transitionMetadataIds, newCapacity);
-		operatorMetadataIds = Arrays.copyOf(operatorMetadataIds, newCapacity);
-		physicalImplementations = Arrays.copyOf(physicalImplementations, newCapacity);
+		double[] nextAppendedContributionRows = Arrays.copyOf(appendedContributionRows, newCapacity);
+		Arrays.fill(nextAppendedContributionRows, oldCapacity, newCapacity, Double.NaN);
+		int[] nextEvidenceStateIds = Arrays.copyOf(evidenceStateIds, newCapacity);
+		int[] nextPreferenceRanks = Arrays.copyOf(preferenceRanks, newCapacity);
+		int[] nextParentStateIds = Arrays.copyOf(parentStateIds, newCapacity);
+		int[] nextRightChildStateIds = Arrays.copyOf(rightChildStateIds, newCapacity);
+		int[] nextNextMaskStateIds = Arrays.copyOf(nextMaskStateIds, newCapacity);
+		int[] nextAppendedFactorOrdinals = Arrays.copyOf(appendedFactorOrdinals, newCapacity);
+		int[] nextAppendedFactorWinnerIds = Arrays.copyOf(appendedFactorWinnerIds, newCapacity);
+		int[] nextTransitionMetadataIds = Arrays.copyOf(transitionMetadataIds, newCapacity);
+		int[] nextOperatorMetadataIds = Arrays.copyOf(operatorMetadataIds, newCapacity);
+		byte[] nextPhysicalImplementations = Arrays.copyOf(physicalImplementations, newCapacity);
+		masks = nextMasks;
+		neighborMasks = nextNeighborMasks;
+		hashes = nextHashes;
+		equivalenceHashes = nextEquivalenceHashes;
+		rows = nextRows;
+		costs = nextCosts;
+		appendedContributionRows = nextAppendedContributionRows;
+		evidenceStateIds = nextEvidenceStateIds;
+		preferenceRanks = nextPreferenceRanks;
+		parentStateIds = nextParentStateIds;
+		rightChildStateIds = nextRightChildStateIds;
+		nextMaskStateIds = nextNextMaskStateIds;
+		appendedFactorOrdinals = nextAppendedFactorOrdinals;
+		appendedFactorWinnerIds = nextAppendedFactorWinnerIds;
+		transitionMetadataIds = nextTransitionMetadataIds;
+		operatorMetadataIds = nextOperatorMetadataIds;
+		physicalImplementations = nextPhysicalImplementations;
+		return true;
+	}
+
+	private static long requiredBytes(int rowCapacity, int tableCapacity) {
+		long rowWidth = (long) LONG_COLUMNS * Long.BYTES + (long) DOUBLE_COLUMNS * Double.BYTES
+				+ (long) INT_COLUMNS * Integer.BYTES + (long) BYTE_COLUMNS * Byte.BYTES;
+		return Math.addExact(Math.multiplyExact((long) rowCapacity, rowWidth),
+				Math.multiplyExact((long) tableCapacity, Integer.BYTES * 3L));
 	}
 
 	private void checkStateId(int stateId) {

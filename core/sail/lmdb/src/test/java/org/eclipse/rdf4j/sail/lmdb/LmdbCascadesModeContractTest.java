@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Optional;
 import java.util.Set;
@@ -62,6 +63,26 @@ class LmdbCascadesModeContractTest {
 		}
 	}
 
+	@Test
+	void defaultAutoBoundsLargeSearchAndReturnsItsBestExecutableIncumbent() {
+		PropertySnapshot properties = PropertySnapshot.capture();
+		try {
+			System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
+			System.clearProperty(LmdbCascadesOptimizer.BUDGET_PROPERTY);
+			System.clearProperty(LmdbCascadesOptimizer.TIMEOUT_MILLIS_PROPERTY);
+
+			QueryRoot root = optimizeConnectedRegionRoot(12);
+
+			assertEquals("BUDGET_EXHAUSTED",
+					root.getStringMetricPlanned("optimizer.cascadesCompleteness"));
+			assertTrue(root.getDoubleMetricPlanned("optimizer.cascadesWorkUnits") <= 512.0d,
+					() -> "default AUTO search consumed "
+							+ root.getDoubleMetricPlanned("optimizer.cascadesWorkUnits") + " work units");
+		} finally {
+			properties.restore();
+		}
+	}
+
 	private static void configureDeterministicSingleTaskBudget() {
 		System.setProperty(LmdbCascadesOptimizer.BUDGET_PROPERTY, "1");
 		System.setProperty(LmdbCascadesOptimizer.TIMEOUT_MILLIS_PROPERTY, "60000");
@@ -72,16 +93,20 @@ class LmdbCascadesModeContractTest {
 	}
 
 	private static QueryRoot optimizeConnectedRegionRoot() {
-		QueryRoot root = new QueryRoot(connectedRegion());
+		return optimizeConnectedRegionRoot(4);
+	}
+
+	private static QueryRoot optimizeConnectedRegionRoot(int factorCount) {
+		QueryRoot root = new QueryRoot(connectedRegion(factorCount));
 		new LmdbCascadesOptimizer(new JoinCostStatistics(), false).optimize(root, null,
 				EmptyBindingSet.getInstance());
 		return root;
 	}
 
-	private static TupleExpr connectedRegion() {
+	private static TupleExpr connectedRegion(int factorCount) {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		TupleExpr region = statement("s0", "urn:p0", "s1", values);
-		for (int index = 1; index < 4; index++) {
+		for (int index = 1; index < factorCount; index++) {
 			region = new Join(region, statement("s" + index, "urn:p" + index, "s" + (index + 1), values));
 		}
 		return region;

@@ -66,6 +66,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteAssumption;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteCertificate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteSafety;
@@ -113,7 +114,15 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		Set<String> incomingBindingNames = bindings == null || bindings.isEmpty()
 				? Set.of()
 				: Set.copyOf(bindings.getBindingNames());
-		optimizeScope(tupleExpr, incomingBindingNames);
+		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = beginQueryOptimizationScope()) {
+			optimizeScope(tupleExpr, incomingBindingNames);
+		}
+	}
+
+	private QueryOptimizationScopeProvider.QueryOptimizationScope beginQueryOptimizationScope() {
+		return statistics instanceof QueryOptimizationScopeProvider provider
+				? provider.beginQueryOptimizationScope()
+				: QueryOptimizationScopeProvider.NO_OP_SCOPE;
 	}
 
 	private void optimizeScope(TupleExpr expr, Set<String> incomingBindingNames) {
@@ -166,10 +175,68 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 				nullRejectingOptionalRewrite.visit(this);
 				return;
 			}
+			if (rewriteRedundantPositiveExists(filter)) {
+				return;
+			}
 			if (!rewriteSmallLiteralFilterAnchors(filter)) {
 				annotateFilter(filter);
 			}
 		}
+	}
+
+	private static boolean rewriteRedundantPositiveExists(Filter filter) {
+		ConditionRewrite rewrite = removeRedundantPositiveExists(filter.getCondition(), filter.getArg());
+		if (rewrite.removedCount() == 0) {
+			return false;
+		}
+
+		if (rewrite.condition() == null) {
+			TupleExpr replacement = filter.getArg();
+			annotateRequiredPatternExistsProof(replacement, rewrite.removedCount());
+			filter.replaceWith(replacement);
+			return true;
+		}
+
+		filter.setCondition(rewrite.condition());
+		annotateRequiredPatternExistsProof(filter, rewrite.removedCount());
+		return false;
+	}
+
+	private static ConditionRewrite removeRedundantPositiveExists(ValueExpr condition, TupleExpr outerArg) {
+		if (condition instanceof Exists exists && exists.getSubQuery()instanceof StatementPattern existsPattern
+				&& outerArg.getAssuredBindingNames().containsAll(existsPattern.getBindingNames())
+				&& LmdbJoinPlanSupport.containsEquivalentRequiredPattern(outerArg, existsPattern)) {
+			return new ConditionRewrite(null, 1);
+		}
+		if (!(condition instanceof And and)) {
+			return new ConditionRewrite(condition, 0);
+		}
+
+		ConditionRewrite left = removeRedundantPositiveExists(and.getLeftArg(), outerArg);
+		ConditionRewrite right = removeRedundantPositiveExists(and.getRightArg(), outerArg);
+		int removedCount = left.removedCount() + right.removedCount();
+		if (removedCount == 0) {
+			return new ConditionRewrite(condition, 0);
+		}
+		if (left.condition() == null) {
+			return new ConditionRewrite(right.condition(), removedCount);
+		}
+		if (right.condition() == null) {
+			return new ConditionRewrite(left.condition(), removedCount);
+		}
+		return new ConditionRewrite(new And(left.condition(), right.condition()), removedCount);
+	}
+
+	private static void annotateRequiredPatternExistsProof(TupleExpr target, int removedCount) {
+		target.setStringMetricPlanned("optimizer.rewriteProof",
+				new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.FILTER_REQUIRED_PATTERN_EXISTS,
+						LmdbRewriteProof.EquivalenceScope.LOGICAL_BAG_EQUIVALENT,
+						Set.of("singleStatementExistsBody", "patternRequiredForEveryOuterRow",
+								"correlationBindingsAssured", "graphScopeEqual", "removedCount=" + removedCount),
+						"required-outer-pattern-proves-positive-exists").metricFragment());
+	}
+
+	private record ConditionRewrite(ValueExpr condition, int removedCount) {
 	}
 
 	private static TupleExpr rewriteRedundantPatternMinusFilter(Difference difference) {

@@ -44,7 +44,7 @@ final class LmdbFrontierLearningCostSession implements PackedCostSession {
 	@Override
 	public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
 		delegate.refineOperator(relationId, context, output);
-		delegate.applyFrontierLearning(relationId, context, output);
+		delegate.applyFrontierOperatorLearning(relationId, context, output);
 		delegate.refreshRuntimeFeedbackContract(output);
 	}
 

@@ -17,54 +17,84 @@ import java.util.Arrays;
 @PackedHotPath
 final class PackedDecisionTraceArena {
 
-	private int[] groupIds = new int[16];
-	private int[] requiredPropertyIds = new int[16];
-	private int[] semanticRowGoalIds = new int[16];
-	private int[] inputContextIds = new int[16];
-	private int[] costPolicyIds = new int[16];
-	private int[] physicalExpressionIds = new int[16];
-	private int[] metadataIds = new int[16];
-	private double[] candidateCosts = new double[16];
-	private double[] lowerBounds = new double[16];
-	private double[] startupCosts = new double[16];
-	private byte[] outcomes = new byte[16];
-	private byte[] comparisonTiers = new byte[16];
-	private int[] tieBreakRanks = new int[16];
-	private int[] childStarts = new int[16];
-	private int[] childCounts = new int[16];
-	private int[] childEventIds = new int[32];
-	private double[] childCosts = new double[32];
-	private long[] candidateHashes = new long[16];
-	private int[] candidateSlots = new int[PackedPrimitiveHash.tableCapacity(16)];
-	private int candidateResizeThreshold = PackedPrimitiveHash.maximumFill(candidateSlots.length);
+	private static final int INITIAL_CANDIDATE_CAPACITY = 16;
+	private static final int INITIAL_CHILD_CAPACITY = 32;
+	private static final int[] EMPTY_INTS = new int[0];
+	private static final long[] EMPTY_LONGS = new long[0];
+	private static final double[] EMPTY_DOUBLES = new double[0];
+	private static final byte[] EMPTY_BYTES = new byte[0];
+
+	private int[] groupIds = EMPTY_INTS;
+	private int[] requiredPropertyIds = EMPTY_INTS;
+	private int[] semanticRowGoalIds = EMPTY_INTS;
+	private int[] inputContextIds = EMPTY_INTS;
+	private int[] costPolicyIds = EMPTY_INTS;
+	private int[] physicalExpressionIds = EMPTY_INTS;
+	private int[] metadataIds = EMPTY_INTS;
+	private int[] eventIds = EMPTY_INTS;
+	private int[] candidateIds = EMPTY_INTS;
+	private int[] retainedWinnerIds = EMPTY_INTS;
+	private double[] candidateCosts = EMPTY_DOUBLES;
+	private double[] lowerBounds = EMPTY_DOUBLES;
+	private double[] startupCosts = EMPTY_DOUBLES;
+	private byte[] outcomes = EMPTY_BYTES;
+	private byte[] comparisonTiers = EMPTY_BYTES;
+	private int[] tieBreakRanks = EMPTY_INTS;
+	private int[] childStarts = EMPTY_INTS;
+	private int[] childCounts = EMPTY_INTS;
+	private int[] childWinnerIds = EMPTY_INTS;
+	private int[] childEventIds = EMPTY_INTS;
+	private double[] childCosts = EMPTY_DOUBLES;
+	private long[] candidateHashes = EMPTY_LONGS;
+	private int[] candidateSlots = EMPTY_INTS;
+	private int[] previousEventLinks = EMPTY_INTS;
+	private int[] eventHeads = EMPTY_INTS;
+	private int candidateResizeThreshold;
 	private int childSize;
 	private int size;
 
 	void append(int groupId, int requiredPropertyId, int semanticRowGoalId, int inputContextId, int costPolicyId,
-			int physicalExpressionId, int metadataId, int comparisonTier, int tieBreakRank, double startupCost,
+			int physicalExpressionId, int metadataId, int candidateId, int retainedWinnerId, int comparisonTier,
+			int tieBreakRank,
+			double startupCost,
 			double candidateCost, double lowerBound, boolean accepted, PackedWinnerTable winners,
 			PackedPhysicalMetadataArena physicalMetadata,
 			int[] candidateChildWinnerIds, int childOffset, int childCount) {
-		if (metadataId == 0) {
+		int eventId = metadataId == 0 ? 0 : physicalMetadata.costEventId(metadataId);
+		if (eventId == 0) {
+			/*
+			 * Decision certificates describe immutable provider events. Scalar fallback metadata has no such event, and
+			 * PackedMemo.decisionDraft therefore cannot project any of these rows into a certificate.
+			 */
 			return;
 		}
+		if (candidateSlots.length == 0) {
+			initializeStorage();
+		}
 		long candidateHash = candidateHash(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
-				costPolicyId, physicalExpressionId, metadataId, comparisonTier, tieBreakRank, startupCost,
+				costPolicyId, physicalExpressionId, metadataId, comparisonTier, tieBreakRank,
+				startupCost,
 				candidateCost, lowerBound, winners, physicalMetadata, candidateChildWinnerIds, childOffset, childCount);
 		int slot = findCandidateSlot(candidateHash, groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
-				costPolicyId, physicalExpressionId, metadataId, comparisonTier, tieBreakRank, startupCost,
+				costPolicyId, physicalExpressionId, metadataId, comparisonTier, tieBreakRank,
+				startupCost,
 				candidateCost, lowerBound, winners, physicalMetadata, candidateChildWinnerIds, childOffset, childCount);
 		int retainedIndex = candidateSlots[slot] - 1;
 		if (retainedIndex >= 0) {
+			if (candidateIds[retainedIndex] == 0 && candidateId != 0) {
+				candidateIds[retainedIndex] = candidateId;
+			}
 			if (accepted) {
 				outcomes[retainedIndex] = 1;
+				retainedWinnerIds[retainedIndex] = retainedWinnerId;
 			}
 			return;
 		}
 		if (size + 1 > candidateResizeThreshold) {
 			resizeCandidateTable(candidateSlots.length << 1);
 			slot = findCandidateSlot(candidateHash, groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
-					costPolicyId, physicalExpressionId, metadataId, comparisonTier, tieBreakRank, startupCost,
+					costPolicyId, physicalExpressionId, metadataId, comparisonTier, tieBreakRank,
+					startupCost,
 					candidateCost, lowerBound, winners, physicalMetadata, candidateChildWinnerIds, childOffset,
 					childCount);
 		}
@@ -77,6 +107,9 @@ final class PackedDecisionTraceArena {
 		costPolicyIds[index] = costPolicyId;
 		physicalExpressionIds[index] = physicalExpressionId;
 		metadataIds[index] = metadataId;
+		eventIds[index] = eventId;
+		candidateIds[index] = candidateId;
+		retainedWinnerIds[index] = accepted ? retainedWinnerId : 0;
 		candidateCosts[index] = candidateCost;
 		lowerBounds[index] = lowerBound;
 		startupCosts[index] = startupCost;
@@ -86,15 +119,48 @@ final class PackedDecisionTraceArena {
 		candidateHashes[index] = candidateHash;
 		childStarts[index] = childSize;
 		childCounts[index] = childCount;
+		ensureEventCapacity(eventId);
+		previousEventLinks[index] = eventHeads[eventId];
+		eventHeads[eventId] = index + 1;
 		ensureChildCapacity(childSize + childCount);
 		for (int ordinal = 0; ordinal < childCount; ordinal++) {
 			int winnerId = candidateChildWinnerIds[childOffset + ordinal];
 			int childMetadataId = winners.physicalMetadataId(winnerId);
+			childWinnerIds[childSize] = winnerId;
 			childEventIds[childSize] = childMetadataId == 0 ? 0 : physicalMetadata.costEventId(childMetadataId);
 			childCosts[childSize] = winners.totalCost(winnerId);
 			childSize++;
 		}
 		candidateSlots[slot] = index + 1;
+	}
+
+	private void initializeStorage() {
+		groupIds = new int[INITIAL_CANDIDATE_CAPACITY];
+		requiredPropertyIds = new int[INITIAL_CANDIDATE_CAPACITY];
+		semanticRowGoalIds = new int[INITIAL_CANDIDATE_CAPACITY];
+		inputContextIds = new int[INITIAL_CANDIDATE_CAPACITY];
+		costPolicyIds = new int[INITIAL_CANDIDATE_CAPACITY];
+		physicalExpressionIds = new int[INITIAL_CANDIDATE_CAPACITY];
+		metadataIds = new int[INITIAL_CANDIDATE_CAPACITY];
+		eventIds = new int[INITIAL_CANDIDATE_CAPACITY];
+		candidateIds = new int[INITIAL_CANDIDATE_CAPACITY];
+		retainedWinnerIds = new int[INITIAL_CANDIDATE_CAPACITY];
+		candidateCosts = new double[INITIAL_CANDIDATE_CAPACITY];
+		lowerBounds = new double[INITIAL_CANDIDATE_CAPACITY];
+		startupCosts = new double[INITIAL_CANDIDATE_CAPACITY];
+		outcomes = new byte[INITIAL_CANDIDATE_CAPACITY];
+		comparisonTiers = new byte[INITIAL_CANDIDATE_CAPACITY];
+		tieBreakRanks = new int[INITIAL_CANDIDATE_CAPACITY];
+		childStarts = new int[INITIAL_CANDIDATE_CAPACITY];
+		childCounts = new int[INITIAL_CANDIDATE_CAPACITY];
+		childWinnerIds = new int[INITIAL_CHILD_CAPACITY];
+		childEventIds = new int[INITIAL_CHILD_CAPACITY];
+		childCosts = new double[INITIAL_CHILD_CAPACITY];
+		candidateHashes = new long[INITIAL_CANDIDATE_CAPACITY];
+		candidateSlots = new int[PackedPrimitiveHash.tableCapacity(INITIAL_CANDIDATE_CAPACITY)];
+		previousEventLinks = new int[INITIAL_CANDIDATE_CAPACITY];
+		eventHeads = new int[INITIAL_CANDIDATE_CAPACITY];
+		candidateResizeThreshold = PackedPrimitiveHash.maximumFill(candidateSlots.length);
 	}
 
 	int size() {
@@ -146,6 +212,43 @@ final class PackedDecisionTraceArena {
 		return metadataIds[index];
 	}
 
+	int eventId(int index) {
+		checkIndex(index);
+		return eventIds[index];
+	}
+
+	int closestCandidate(int eventId, double candidateCost) {
+		if (eventId <= 0 || eventId >= eventHeads.length) {
+			return -1;
+		}
+		int closest = -1;
+		double closestDistance = Double.POSITIVE_INFINITY;
+		for (int link = eventHeads[eventId]; link != 0;) {
+			int index = link - 1;
+			double distance = Math.abs(candidateCosts[index] - candidateCost);
+			/*
+			 * Event chains run newest-to-oldest. Updating on equal distance reproduces the former forward scan's
+			 * earliest-trace tie break exactly.
+			 */
+			if (distance <= closestDistance) {
+				closest = index;
+				closestDistance = distance;
+			}
+			link = previousEventLinks[index];
+		}
+		return closest;
+	}
+
+	int candidateId(int index) {
+		checkIndex(index);
+		return candidateIds[index];
+	}
+
+	int retainedWinnerId(int index) {
+		checkIndex(index);
+		return retainedWinnerIds[index];
+	}
+
 	double candidateCost(int index) {
 		checkIndex(index);
 		return candidateCosts[index];
@@ -154,6 +257,16 @@ final class PackedDecisionTraceArena {
 	double lowerBound(int index) {
 		checkIndex(index);
 		return lowerBounds[index];
+	}
+
+	double startupCost(int index) {
+		checkIndex(index);
+		return startupCosts[index];
+	}
+
+	int tieBreakRank(int index) {
+		checkIndex(index);
+		return tieBreakRanks[index];
 	}
 
 	boolean accepted(int index) {
@@ -175,8 +288,27 @@ final class PackedDecisionTraceArena {
 		return childEventIds[childIndex(index, ordinal)];
 	}
 
+	int childWinnerId(int index, int ordinal) {
+		return childWinnerIds[childIndex(index, ordinal)];
+	}
+
 	double childCost(int index, int ordinal) {
 		return childCosts[childIndex(index, ordinal)];
+	}
+
+	long candidateFingerprint(int index) {
+		checkIndex(index);
+		return candidateHashes[index];
+	}
+
+	boolean matchesWinner(int index, int winnerId, PackedWinnerTable winners,
+			PackedPhysicalMetadataArena physicalMetadata) {
+		checkIndex(index);
+		return winners.matchesCandidate(winnerId, Byte.toUnsignedInt(comparisonTiers[index]),
+				physicalExpressionIds[index], metadataIds[index], tieBreakRanks[index], startupCosts[index],
+				candidateCosts[index], lowerBounds[index], physicalMetadata.peakMemoryRows(metadataIds[index]),
+				physicalMetadata.lifecycleEnforced(metadataIds[index]), childWinnerIds, childStarts[index],
+				childCounts[index]);
 	}
 
 	private void ensureCapacity(int required) {
@@ -191,6 +323,9 @@ final class PackedDecisionTraceArena {
 		costPolicyIds = Arrays.copyOf(costPolicyIds, capacity);
 		physicalExpressionIds = Arrays.copyOf(physicalExpressionIds, capacity);
 		metadataIds = Arrays.copyOf(metadataIds, capacity);
+		eventIds = Arrays.copyOf(eventIds, capacity);
+		candidateIds = Arrays.copyOf(candidateIds, capacity);
+		retainedWinnerIds = Arrays.copyOf(retainedWinnerIds, capacity);
 		candidateCosts = Arrays.copyOf(candidateCosts, capacity);
 		lowerBounds = Arrays.copyOf(lowerBounds, capacity);
 		startupCosts = Arrays.copyOf(startupCosts, capacity);
@@ -200,6 +335,7 @@ final class PackedDecisionTraceArena {
 		childStarts = Arrays.copyOf(childStarts, capacity);
 		childCounts = Arrays.copyOf(childCounts, capacity);
 		candidateHashes = Arrays.copyOf(candidateHashes, capacity);
+		previousEventLinks = Arrays.copyOf(previousEventLinks, capacity);
 	}
 
 	private int findCandidateSlot(long hash, int groupId, int requiredPropertyId, int semanticRowGoalId,
@@ -217,7 +353,8 @@ final class PackedDecisionTraceArena {
 			int index = retained - 1;
 			if (candidateHashes[index] == hash
 					&& candidateMatches(index, groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
-							costPolicyId, physicalExpressionId, metadataId, comparisonTier, tieBreakRank, startupCost,
+							costPolicyId, physicalExpressionId, metadataId, comparisonTier, tieBreakRank,
+							startupCost,
 							candidateCost, lowerBound, winners, physicalMetadata, candidateChildWinnerIds,
 							childOffset, childCount)) {
 				return slot;
@@ -251,7 +388,8 @@ final class PackedDecisionTraceArena {
 			int winnerId = candidateChildWinnerIds[childOffset + ordinal];
 			int childMetadataId = winners.physicalMetadataId(winnerId);
 			int childEventId = childMetadataId == 0 ? 0 : physicalMetadata.costEventId(childMetadataId);
-			if (childEventIds[retainedChildStart + ordinal] != childEventId
+			if (childWinnerIds[retainedChildStart + ordinal] != winnerId
+					|| childEventIds[retainedChildStart + ordinal] != childEventId
 					|| Double.compare(childCosts[retainedChildStart + ordinal], winners.totalCost(winnerId)) != 0) {
 				return false;
 			}
@@ -296,6 +434,7 @@ final class PackedDecisionTraceArena {
 		for (int ordinal = 0; ordinal < childCount; ordinal++) {
 			int winnerId = candidateChildWinnerIds[childOffset + ordinal];
 			int childMetadataId = winners.physicalMetadataId(winnerId);
+			hash = PackedPrimitiveHash.step(hash, winnerId);
 			hash = PackedPrimitiveHash.step(hash,
 					childMetadataId == 0 ? 0 : physicalMetadata.costEventId(childMetadataId));
 			hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(winners.totalCost(winnerId)));
@@ -328,8 +467,20 @@ final class PackedDecisionTraceArena {
 		while (capacity < required) {
 			capacity <<= 1;
 		}
+		childWinnerIds = Arrays.copyOf(childWinnerIds, capacity);
 		childEventIds = Arrays.copyOf(childEventIds, capacity);
 		childCosts = Arrays.copyOf(childCosts, capacity);
+	}
+
+	private void ensureEventCapacity(int eventId) {
+		if (eventId < eventHeads.length) {
+			return;
+		}
+		int capacity = eventHeads.length;
+		while (capacity <= eventId) {
+			capacity <<= 1;
+		}
+		eventHeads = Arrays.copyOf(eventHeads, capacity);
 	}
 
 	private int childIndex(int index, int ordinal) {

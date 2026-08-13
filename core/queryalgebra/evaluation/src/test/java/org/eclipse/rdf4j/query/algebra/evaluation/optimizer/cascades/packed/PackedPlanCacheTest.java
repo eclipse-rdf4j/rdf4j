@@ -23,6 +23,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.SplittableRandom;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -35,7 +36,14 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -52,6 +60,119 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDi
 import org.junit.jupiter.api.Test;
 
 class PackedPlanCacheTest {
+
+	@Test
+	void cachedPlanRetainsColdRootCardinalityCertificate() {
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context context = context(11L);
+		TupleExpr source = connectedJoin("left", "right");
+		AtomicInteger certifications = new AtomicInteger();
+		class CertifyingCostModel implements PackedCostModel, PackedRootCardinalityCertifier {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return 10.0d;
+			}
+
+			@Override
+			public double certifyRootRows(TupleExpr selectedPlan, double packedRows) {
+				certifications.incrementAndGet();
+				return 0.0d;
+			}
+		}
+		PackedCostModel costModel = new CertifyingCostModel();
+
+		PackedPlanningResult cold = PackedCascadesPlanner.optimize(
+				source.clone(), OptimizationGoal.root(), cache, context, costModel);
+		PackedPlanningResult hot = PackedCascadesPlanner.optimize(
+				source.clone(), OptimizationGoal.root(), cache, context, costModel);
+
+		assertEquals(0.0d, cold.outputRows(), 0.0d);
+		assertEquals(0.0d, hot.outputRows(), 0.0d);
+		assertFalse(cold.metrics().planCacheHit());
+		assertTrue(hot.metrics().planCacheHit());
+		assertEquals(1, certifications.get(), "the cache hit must replay the cold root certificate");
+	}
+
+	@Test
+	void positiveFrontierRootCertificateSuppressesScalarRootCertification() {
+		AtomicInteger certifications = new AtomicInteger();
+		class CertifyingFrontierCostModel implements PackedCostModel, PackedRootCardinalityCertifier {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return 1.0d;
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				return frontierCostModel().openSession(query);
+			}
+
+			@Override
+			public double certifyRootRows(TupleExpr selectedPlan, double packedRows) {
+				certifications.incrementAndGet();
+				return 0.0d;
+			}
+		}
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(
+				connectedJoin("left", "right"), OptimizationGoal.root(), new CertifyingFrontierCostModel());
+
+		assertEquals(1.0d, result.outputRows(), 0.0d,
+				"a positive database-exact Frontier root cannot be semantically empty");
+		assertEquals(0, certifications.get(),
+				"the selected Frontier certificate must remain authoritative at the planner boundary");
+	}
+
+	@Test
+	void matchingWorkLimitedRequestReusesApproximatePlanWithoutSatisfyingExactLookup() {
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context context = context(11L);
+		PackedPlannerLimits workLimited = new PackedPlannerLimits(0L, Long.MAX_VALUE);
+		TupleExpr source = threeFactorConnectedJoin();
+
+		PackedPlanningResult cold = PackedCascadesPlanner.optimize(source.clone(), workLimited, cache, context);
+		PackedPlanningResult hot = PackedCascadesPlanner.optimize(source.clone(), workLimited, cache, context);
+		PackedPlanningResult exactCold = PackedCascadesPlanner.optimize(
+				source.clone(), PackedPlannerLimits.unbounded(), cache, context);
+		PackedPlanningResult exactHot = PackedCascadesPlanner.optimize(
+				source.clone(), PackedPlannerLimits.unbounded(), cache, context);
+
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT, cold.completionStatus());
+		assertFalse(cold.metrics().planCacheHit());
+		assertEquals(cold.completionStatus(), hot.completionStatus());
+		assertEquals(cold.selectedPlan(), hot.selectedPlan());
+		assertTrue(hot.metrics().planCacheHit(),
+				"an identical deterministic work-limited request should reuse its approximate recipe");
+		assertTrue(exactCold.exactComplete());
+		assertFalse(exactCold.metrics().planCacheHit(),
+				"an approximate recipe must never satisfy an exact-cache lookup");
+		assertTrue(exactHot.metrics().planCacheHit());
+
+		PackedPlanningResult exactPreferred = PackedCascadesPlanner.optimize(
+				source.clone(), workLimited, cache, context);
+		assertTrue(exactPreferred.exactComplete(),
+				"a cached exact recipe must take precedence over a matching approximate recipe");
+		assertTrue(exactPreferred.metrics().planCacheHit());
+	}
+
+	@Test
+	void deadlineBearingWorkLimitedResultRemainsTransient() {
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context context = context(11L);
+		PackedPlannerLimits limits = new PackedPlannerLimits(
+				0L, System.nanoTime() + TimeUnit.SECONDS.toNanos(30L));
+		TupleExpr source = threeFactorConnectedJoin();
+
+		PackedPlanningResult first = PackedCascadesPlanner.optimize(source.clone(), limits, cache, context);
+		PackedPlanningResult second = PackedCascadesPlanner.optimize(source.clone(), limits, cache, context);
+
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT, first.completionStatus());
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT, second.completionStatus());
+		assertFalse(first.metrics().planCacheHit());
+		assertFalse(second.metrics().planCacheHit(),
+				"a deadline-bearing result is not a deterministic approximate-cache candidate");
+		assertTrue(second.metrics().queryTemplateCacheHit());
+	}
 
 	@Test
 	void cachedRecipeRetainsTypedFeedbackContractThroughMaterialization() {
@@ -261,6 +382,97 @@ class PackedPlanCacheTest {
 						|| winnerTier == tier && winnerCost <= (double) candidateCost.invoke(certificate, index));
 			}
 		}
+	}
+
+	@Test
+	void selectedRecipeDetachesCompleteParetoDecisionState() throws Exception {
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		TupleExpr source = connectedJoin("left", "right");
+		PackedPlanCache.Context context = context(11L);
+		PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache, context, frontierCostModel());
+		PackedPlanRecipe recipe = cache.findPlan(cache.fingerprint(source), context, source).recipe();
+		PackedDecisionCertificate certificate = recipe.decisionCertificate();
+		Method hasCompleteState = PackedDecisionCertificate.class
+				.getDeclaredMethod("hasCompleteCandidateState", int.class);
+		Method costVectorDigest = PackedDecisionCertificate.class
+				.getDeclaredMethod("candidateCostVectorDigest", int.class);
+		Method continuationDigest = PackedDecisionCertificate.class
+				.getDeclaredMethod("candidateContinuationDigest", int.class);
+		Method costKnown = PackedDecisionCertificate.class
+				.getDeclaredMethod("candidateCostKnown", int.class, int.class);
+		Method costLower = PackedDecisionCertificate.class
+				.getDeclaredMethod("candidateCostLower", int.class, int.class);
+		Method costPoint = PackedDecisionCertificate.class
+				.getDeclaredMethod("candidateCostPoint", int.class, int.class);
+		Method costUpper = PackedDecisionCertificate.class
+				.getDeclaredMethod("candidateCostUpper", int.class, int.class);
+		Method costLineage = PackedDecisionCertificate.class
+				.getDeclaredMethod("candidateCostLineageId", int.class, int.class);
+		Method compositionMode = PackedDecisionCertificate.class
+				.getDeclaredMethod("candidateContinuationCompositionMode", int.class);
+		Method proofMask = PackedDecisionCertificate.class
+				.getDeclaredMethod("candidateRuleProofMask", int.class);
+		Method retainedBytes = PackedDecisionCertificate.class.getDeclaredMethod("retainedBytes");
+
+		assertTrue(certificate.candidateCount() >= 2);
+		for (int candidate = 0; candidate < certificate.candidateCount(); candidate++) {
+			assertTrue((boolean) hasCompleteState.invoke(certificate, candidate));
+			assertTrue((long) costVectorDigest.invoke(certificate, candidate) != 0L);
+			assertTrue((long) continuationDigest.invoke(certificate, candidate) != 0L);
+			assertTrue((boolean) costKnown.invoke(certificate, candidate,
+					PackedCostDimensionRegistry.STEADY_STATE_CPU_WORK));
+			double lower = (double) costLower.invoke(certificate, candidate,
+					PackedCostDimensionRegistry.STEADY_STATE_CPU_WORK);
+			double point = (double) costPoint.invoke(certificate, candidate,
+					PackedCostDimensionRegistry.STEADY_STATE_CPU_WORK);
+			double upper = (double) costUpper.invoke(certificate, candidate,
+					PackedCostDimensionRegistry.STEADY_STATE_CPU_WORK);
+			assertTrue(lower <= point && point <= upper);
+			assertTrue((int) costLineage.invoke(certificate, candidate,
+					PackedCostDimensionRegistry.STEADY_STATE_CPU_WORK) >= 0);
+			assertTrue((int) compositionMode.invoke(certificate, candidate) > 0);
+			assertTrue((long) proofMask.invoke(certificate, candidate) >= 0L);
+		}
+		assertTrue((long) retainedBytes.invoke(certificate) > 0L);
+		assertTrue(recipe.detachedEvidenceBytes() >= (long) retainedBytes.invoke(certificate));
+		assertTrue(recipe.describeCostingDecisions().contains("costVector="));
+		assertTrue(recipe.describeCostingDecisions().contains("continuation="));
+		assertTrue(recipe.describeCostingDecisions().contains("proofMask="));
+	}
+
+	@Test
+	void materializedPlanExplainsRulesPairsParetoStateLearningAndFinalPolicy() {
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		TupleExpr source = connectedJoin("left", "right");
+		PackedPlanCache.Context context = context(11L);
+
+		PackedPlanningResult cold = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache, context,
+				frontierCostModel());
+		PackedPlanningResult hot = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache, context,
+				frontierCostModel());
+
+		for (PackedPlanningResult result : List.of(cold, hot)) {
+			String human = result.selectedPlan().getStringMetricPlanned("optimizer.packedExplanation");
+			String structured = result.selectedPlan()
+					.getStringMetricPlanned("optimizer.packedExplanationJson");
+			assertEquals(structured, result.selectedPlan()
+					.getStringMetricPlanned("optimizer.cascadesTraceJson"),
+					"query-plan capture must see the packed decision certificate under its canonical trace metric");
+			assertTrue(human.contains("rulesConsidered="));
+			assertTrue(human.contains("csg="));
+			assertTrue(human.contains("cmp="));
+			assertTrue(human.contains("pareto="));
+			assertTrue(human.contains("frontierState="));
+			assertTrue(human.contains("learningApplicability="));
+			assertTrue(human.contains("finalPolicy="));
+			assertTrue(structured.startsWith("{"));
+			assertTrue(structured.contains("\"rules\""));
+			assertTrue(structured.contains("\"csgCmpPairs\""));
+			assertTrue(structured.contains("\"alternatives\""));
+			assertTrue(structured.contains("\"cacheValidation\""));
+			assertTrue(structured.contains("\"finalPolicy\""));
+		}
+		assertTrue(hot.metrics().planCacheHit());
 	}
 
 	@Test
@@ -604,6 +816,54 @@ class PackedPlanCacheTest {
 	}
 
 	@Test
+	void certifiedValidationRefreshesDetachedCostVectorsAndReportsChangedDimensions() {
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		TupleExpr source = connectedJoin("left", "right");
+		PackedPlanCache.Context original = context(11L);
+		PackedPlanCache.Context revised = context(12L);
+		PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache, original, frontierCostModel());
+		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), original, source);
+		PackedDecisionCertificate originalCertificate = entry.recipe().decisionCertificate();
+		PackedPlanValidationRequest request = new PackedPlanValidationRequest(
+				new PackedQueryView(entry.query()), entry.recipe(), original, revised);
+		PackedCostingReplay.Result replay;
+		try (PackedCostSession session = replaySession(7.0d, new AtomicInteger(), new AtomicInteger())) {
+			replay = PackedCostingReplay.replay(request, session);
+		}
+		double[] costs = new double[replay.candidateCount()];
+		for (int candidate = 0; candidate < costs.length; candidate++) {
+			costs[candidate] = replay.candidateCost(candidate);
+		}
+		PackedPlanRecipe validatedRecipe = entry.recipe()
+				.withCacheValidation(PackedStalePlanValidation.certified(
+						replay, costs, 1.0d, 0.0d, replay.workUnits(), "refresh-vector-contract"), revised);
+		PackedDecisionCertificate validatedCertificate = validatedRecipe.decisionCertificate();
+
+		boolean changedVector = false;
+		for (int candidate = 0; candidate < validatedCertificate.candidateCount(); candidate++) {
+			int eventId = request.candidateEventId(candidate);
+			double originalPoint = originalCertificate.candidateCostPoint(candidate,
+					PackedCostDimensionRegistry.STEADY_STATE_CPU_WORK);
+			double expectedPoint = Math.max(0.0d, originalPoint + replay.eventWorkRows(eventId)
+					- entry.recipe().costingTrace().workRows(eventId));
+			assertEquals(expectedPoint, validatedCertificate.candidateCostPoint(candidate,
+					PackedCostDimensionRegistry.STEADY_STATE_CPU_WORK));
+			if (Double.doubleToLongBits(expectedPoint) != Double.doubleToLongBits(originalPoint)) {
+				changedVector = true;
+				assertTrue(originalCertificate.candidateCostVectorDigest(candidate) != validatedCertificate
+						.candidateCostVectorDigest(candidate));
+			}
+			assertEquals(originalCertificate.candidateContinuationDigest(candidate),
+					validatedCertificate.candidateContinuationDigest(candidate));
+			assertEquals(originalCertificate.candidateRuleProofMask(candidate),
+					validatedCertificate.candidateRuleProofMask(candidate));
+		}
+		assertTrue(changedVector, "a changed provider generation must replace the detached candidate vectors");
+		assertTrue(validatedRecipe.describeCostingDecisions()
+				.contains("changedDimensions=steady-state-cpu-work"));
+	}
+
+	@Test
 	void replayPropagatesChildEventChangesIntoTheRootDecisionCost() {
 		PackedPlanCache cache = new PackedPlanCache(8, 1);
 		TupleExpr source = connectedJoin("left", "right");
@@ -671,6 +931,48 @@ class PackedPlanCacheTest {
 		assertEquals("certified-reuse",
 				validated.selectedPlan().getStringMetricPlanned("optimizer.planCacheValidationResult"));
 		assertTrue(cache.findPlan(cache.fingerprint(source), revised, source) instanceof PackedPlanCache.PlanEntry);
+	}
+
+	@Test
+	void certifiedValidationWithoutCurrentReplayFailsClosedToFreshPlanning() {
+		AtomicInteger sessions = new AtomicInteger();
+		AtomicInteger validations = new AtomicInteger();
+		PackedCostModel frontier = frontierCostModel();
+		Object proxy = Proxy.newProxyInstance(getClass().getClassLoader(),
+				new Class<?>[] { PackedCostModel.class, PackedStalePlanValidator.class },
+				(ignored, method, arguments) -> switch (method.getName()) {
+				case "estimateRows" -> 1.0d;
+				case "openSession" -> {
+				sessions.incrementAndGet();
+				yield frontier.openSession((PackedQueryView) arguments[0]);
+				}
+				case "validateStalePlan" -> {
+				validations.incrementAndGet();
+				PackedPlanValidationRequest request = (PackedPlanValidationRequest) arguments[0];
+				double[] changedCosts = request.candidateCostsCopy();
+				changedCosts[0] += 1.0d;
+				yield PackedStalePlanValidation.certified(request.evidenceBundle(), changedCosts,
+						1.0d, 0.0d, 1L, "missing-current-replay");
+				}
+				case "recordStalePlanAudit" -> null;
+				case "toString" -> "incomplete-validation-test-model";
+				default -> throw new AssertionError("unexpected incomplete-validation call " + method);
+				});
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		TupleExpr source = connectedJoin("left", "right");
+
+		PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache, context(11L),
+				(PackedCostModel) proxy);
+		PackedPlanningResult revised = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache,
+				context(12L), (PackedCostModel) proxy);
+
+		assertEquals(2, sessions.get(), "a rejected certificate must run one fresh planning session");
+		assertEquals(1, validations.get());
+		assertFalse(revised.metrics().planCacheHit());
+		assertEquals("replan",
+				revised.selectedPlan().getStringMetricPlanned("optimizer.planCacheValidationResult"));
+		assertEquals("certified-validation-missing-current-costing-trace",
+				revised.selectedPlan().getStringMetricPlanned("optimizer.planCacheValidationReason"));
 	}
 
 	@Test
@@ -810,6 +1112,78 @@ class PackedPlanCacheTest {
 	}
 
 	@Test
+	void projectedAnonymousVariableNamesAreCanonicalCacheIdentity() {
+		PackedPlanCache cache = new PackedPlanCache(32, 4);
+		PackedPlanCache.Context context = unboundContext(11L);
+
+		PackedPlanningResult cold = PackedCascadesPlanner.optimize(projectedAnonymousJoin("anonymous-left"),
+				OptimizationGoal.root(), cache, context);
+		PackedPlanningResult hot = PackedCascadesPlanner.optimize(projectedAnonymousJoin("anonymous-right"),
+				OptimizationGoal.root(), cache, context);
+
+		assertFalse(cold.metrics().planCacheHit());
+		assertTrue(hot.metrics().planCacheHit());
+		assertEquals(new LinkedHashSet<>(List.of("start", "end")), hot.selectedPlan().getBindingNames());
+	}
+
+	@Test
+	void rootVisibleAnonymousVariableNamesRemainExactCacheIdentity() {
+		PackedPlanCache cache = new PackedPlanCache(32, 4);
+		PackedPlanCache.Context context = unboundContext(11L);
+
+		PackedCascadesPlanner.optimize(visibleAnonymousPattern("visible-left"), OptimizationGoal.root(), cache,
+				context);
+		PackedPlanningResult renamed = PackedCascadesPlanner.optimize(visibleAnonymousPattern("visible-right"),
+				OptimizationGoal.root(), cache, context);
+
+		assertFalse(renamed.metrics().planCacheHit());
+		assertFalse(renamed.metrics().queryTemplateCacheHit());
+	}
+
+	@Test
+	void anonymousCanonicalizationPreservesVariableScopeSemantics() {
+		PackedPlanCache cache = new PackedPlanCache(32, 4);
+		PackedPlanCache.Context context = unboundContext(11L);
+
+		PackedCascadesPlanner.optimize(projectedAnonymousJoin("anonymous-left", false), OptimizationGoal.root(), cache,
+				context);
+		PackedPlanningResult scoped = PackedCascadesPlanner.optimize(projectedAnonymousJoin("anonymous-right", true),
+				OptimizationGoal.root(), cache, context);
+
+		assertFalse(scoped.metrics().planCacheHit());
+		assertFalse(scoped.metrics().queryTemplateCacheHit());
+	}
+
+	@Test
+	void usedInternalExtensionBindingNamesAreCanonicalCacheIdentity() {
+		PackedPlanCache cache = new PackedPlanCache(32, 4);
+		PackedPlanCache.Context context = unboundContext(11L);
+
+		PackedPlanningResult cold = PackedCascadesPlanner.optimize(
+				projectedInternalExtension("internal-left", "result"), OptimizationGoal.root(), cache, context);
+		PackedPlanningResult hot = PackedCascadesPlanner.optimize(
+				projectedInternalExtension("internal-right", "result"), OptimizationGoal.root(), cache, context);
+
+		assertFalse(cold.metrics().planCacheHit());
+		assertTrue(hot.metrics().planCacheHit());
+		assertEquals(Set.of("result"), hot.selectedPlan().getBindingNames());
+	}
+
+	@Test
+	void rootVisibleExtensionBindingNamesRemainExactCacheIdentity() {
+		PackedPlanCache cache = new PackedPlanCache(32, 4);
+		PackedPlanCache.Context context = unboundContext(11L);
+
+		PackedCascadesPlanner.optimize(projectedInternalExtension("visible-left", "visible-left"),
+				OptimizationGoal.root(), cache, context);
+		PackedPlanningResult renamed = PackedCascadesPlanner.optimize(
+				projectedInternalExtension("visible-right", "visible-right"), OptimizationGoal.root(), cache, context);
+
+		assertFalse(renamed.metrics().planCacheHit());
+		assertFalse(renamed.metrics().queryTemplateCacheHit());
+	}
+
+	@Test
 	void saturatedFlightTableNeverCreatesAnUntrackedSecondOwner() throws Exception {
 		PackedPlanCache cache = new PackedPlanCache(1, 1,
 				ignored -> new PackedPlanCache.Fingerprint(7L, 9L));
@@ -877,6 +1251,10 @@ class PackedPlanCacheTest {
 
 	private static PackedPlanCache.Context context(long dataRevision) {
 		return new PackedPlanCache.Context(1L, 2L, 3L, 4L, 5L, 6L, dataRevision);
+	}
+
+	private static PackedPlanCache.Context unboundContext(long dataRevision) {
+		return new PackedPlanCache.Context(1L, 0L, 0L, 4L, 5L, 6L, dataRevision);
 	}
 
 	private static PackedCostModel frontierCostModel() {
@@ -1224,6 +1602,42 @@ class PackedPlanCacheTest {
 						Var.of(leftObject)),
 				new StatementPattern(Var.of("subject"), Var.of("rightPredicate", values.createIRI("urn:right")),
 						Var.of(rightObject)));
+	}
+
+	private static TupleExpr projectedAnonymousJoin(String anonymousName) {
+		return projectedAnonymousJoin(anonymousName, false);
+	}
+
+	private static TupleExpr projectedAnonymousJoin(String anonymousName, boolean variableScopeChange) {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		Var leftAnonymous = Var.of(anonymousName, true);
+		Var rightAnonymous = Var.of(anonymousName, true);
+		leftAnonymous.setVariableScopeChange(variableScopeChange);
+		rightAnonymous.setVariableScopeChange(variableScopeChange);
+		TupleExpr join = new Join(
+				new StatementPattern(Var.of("start"), Var.of("leftPredicate", values.createIRI("urn:left")),
+						leftAnonymous),
+				new StatementPattern(rightAnonymous,
+						Var.of("rightPredicate", values.createIRI("urn:right")), Var.of("end")));
+		return new Projection(join,
+				new ProjectionElemList(new ProjectionElem("start"), new ProjectionElem("end")));
+	}
+
+	private static TupleExpr visibleAnonymousPattern(String anonymousName) {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		return new StatementPattern(Var.of(anonymousName, true),
+				Var.of("predicate", values.createIRI("urn:predicate")), Var.of("object"));
+	}
+
+	private static TupleExpr projectedInternalExtension(String internalName, String projectedName) {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		Extension extension = new Extension(
+				new StatementPattern(Var.of("subject"), Var.of("predicate", values.createIRI("urn:predicate")),
+						Var.of("object")),
+				new ExtensionElem(Var.of("object"), internalName));
+		Filter used = new Filter(extension, new Bound(Var.of(internalName)));
+		return new Projection(used,
+				new ProjectionElemList(new ProjectionElem(internalName, projectedName)));
 	}
 
 	private static TupleExpr threeFactorConnectedJoin() {

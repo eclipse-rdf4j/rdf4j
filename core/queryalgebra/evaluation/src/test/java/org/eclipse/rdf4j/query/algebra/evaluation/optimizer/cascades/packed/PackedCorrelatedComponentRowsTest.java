@@ -23,16 +23,198 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.junit.jupiter.api.Test;
 
 class PackedCorrelatedComponentRowsTest {
+
+	@Test
+	void exactCorrelatedContinuationDoesNotRecostRetainedSeedTransitions() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		Filter source = new Filter(leftDeepJoin(List.of(
+				pattern(values, "v0", "urn:seed-a", "v1"),
+				pattern(values, "v1", "urn:seed-b", "v2"),
+				pattern(values, "v2", "urn:seed-c", "v3"),
+				pattern(values, "v3", "urn:seed-d", "v4"))),
+				new Compare(Var.of("v4"), new ValueConstant(values.createLiteral(0)), Compare.CompareOp.GT));
+		Map<String, Integer> contextualInvocations = new HashMap<>();
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (context.prefixRelationCount() == 0) {
+					output.setRows(10.0d, 10.0d);
+					return;
+				}
+				contextualInvocations.merge(contextKey("estimate", relationId, context), 1, Integer::sum);
+				double rows = Math.max(1.0d, context.prefixRows() * 0.5d);
+				output.setContextualRows(rows, rows);
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isFilter(relationId) && context.prefixRelationCount() > 0) {
+					contextualInvocations.merge(contextKey("operator", relationId, context), 1, Integer::sum);
+					output.setContextualRows(Math.max(1.0d, context.leftInputRows() * 0.5d),
+							Math.max(1.0d, context.leftInputRows() * 0.5d));
+				}
+			}
+		};
+		Fixture fixture = fixture(source, costs);
+
+		int seedWork = fixture.enumerator().seedRelocatableFilterLattice(fixture.filterRelationId());
+		Map<String, Integer> retainedSeedInvocations = Map.copyOf(contextualInvocations);
+		int exactWork = fixture.enumerator().optimizeRelocatableFilterAlternatives(fixture.filterRelationId());
+		List<String> recostedSeedTransitions = retainedSeedInvocations.entrySet()
+				.stream()
+				.filter(entry -> contextualInvocations.getOrDefault(entry.getKey(), 0) > entry.getValue())
+				.map(Map.Entry::getKey)
+				.toList();
+		Fixture exactOnly = fixture(source.clone(), costs);
+		int exactOnlyWork = exactOnly.enumerator()
+				.optimizeRelocatableFilterAlternatives(exactOnly.filterRelationId());
+
+		assertTrue(seedWork > 0);
+		assertFalse(retainedSeedInvocations.isEmpty());
+		assertTrue(retainedSeedInvocations.values().stream().allMatch(invocations -> invocations == 1),
+				() -> "the mandatory seed re-cost an identical provider transition: "
+						+ retainedSeedInvocations.entrySet()
+								.stream()
+								.filter(entry -> entry.getValue() > 1)
+								.toList());
+		assertTrue(exactWork > 0);
+		assertTrue(seedWork + exactWork <= exactOnlyWork,
+				() -> "resuming one retained lattice did more transition work than an exact-only traversal: seed="
+						+ seedWork + ", resumed=" + exactWork + ", exactOnly=" + exactOnlyWork);
+		assertTrue(recostedSeedTransitions.isEmpty(),
+				() -> "the exact continuation re-cost a provider transition retained by its seed: "
+						+ recostedSeedTransitions);
+	}
+
+	@Test
+	void overlappingFilterBoundarySeedsDoNotRecostSharedPrefixTransitions() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		TupleExpr joined = leftDeepJoin(List.of(
+				pattern(values, "v0", "urn:overlap-a", "v1"),
+				pattern(values, "v1", "urn:overlap-b", "v2"),
+				pattern(values, "v2", "urn:overlap-c", "v3"),
+				pattern(values, "v3", "urn:overlap-d", "metric")));
+		Filter inner = new Filter(joined,
+				new Compare(Var.of("metric"), new ValueConstant(values.createLiteral(0)), Compare.CompareOp.GT));
+		Filter source = new Filter(inner,
+				new Compare(Var.of("metric"), new ValueConstant(values.createLiteral(100)), Compare.CompareOp.LT));
+		Map<String, Integer> contextualInvocations = new HashMap<>();
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (context.prefixRelationCount() > 0) {
+					contextualInvocations.merge(contextKey("estimate", relationId, context), 1, Integer::sum);
+				}
+				double rows = context.prefixRelationCount() == 0
+						? 10.0d
+						: Math.max(1.0d, context.prefixRows() * 0.5d);
+				output.setContextualRows(rows, rows);
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isFilter(relationId) && context.prefixRelationCount() > 0) {
+					contextualInvocations.merge(contextKey("operator", relationId, context), 1, Integer::sum);
+					output.setContextualRows(Math.max(1.0d, context.leftInputRows() * 0.5d),
+							Math.max(1.0d, context.leftInputRows() * 0.5d));
+				}
+			}
+		};
+		Fixture fixture = fixture(source, costs);
+		contextualInvocations.clear();
+
+		int seedWork = fixture.enumerator().seedRelocatableFilterLattice(fixture.filterRelationId());
+		List<Map.Entry<String, Integer>> duplicates = contextualInvocations.entrySet()
+				.stream()
+				.filter(entry -> entry.getValue() > 1)
+				.toList();
+
+		assertTrue(seedWork > 0);
+		assertFalse(contextualInvocations.isEmpty());
+		assertTrue(duplicates.isEmpty(), () -> "overlapping filter boundary seeds re-cost shared transitions: "
+				+ duplicates);
+	}
+
+	@Test
+	void mandatoryCorrelatedSeedDoesNotRecostExistingJoinTransitions() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		Filter source = new Filter(leftDeepJoin(List.of(
+				pattern(values, "v0", "urn:seed-join-a", "v1"),
+				pattern(values, "v1", "urn:seed-join-b", "v2"),
+				pattern(values, "v2", "urn:seed-join-c", "v3"),
+				pattern(values, "v3", "urn:seed-join-d", "v4"))),
+				new Compare(Var.of("v4"), new ValueConstant(values.createLiteral(0)), Compare.CompareOp.GT));
+		PackedCostModel costs = (query, relationId) -> query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+		PackedIncumbentSearch baseline = new PackedIncumbentSearch(query, memo,
+				new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE), false, costs);
+		baseline.build();
+
+		Map<String, Integer> joinRefinements = new HashMap<>();
+		PackedCostSession scalar = PackedCostSession.scalar(costs, new PackedQueryView(query));
+		PackedCostSession recording = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				scalar.estimateLeaf(relationId, context, output);
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				scalar.appendFactor(relationId, context, output);
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				scalar.refineOperator(relationId, context, output);
+			}
+
+			@Override
+			public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+				joinRefinements.merge(joinRefinementKey(context, output), 1, Integer::sum);
+			}
+		};
+		PackedJoinEnumerator enumerator = PackedJoinEnumerator.forSession(query, memo,
+				baseline.selectedRowsByGroup(), new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE), recording);
+
+		int seedWork = enumerator.seedRelocatableFilterLattice(query.rootRelId());
+		List<Map.Entry<String, Integer>> duplicates = joinRefinements.entrySet()
+				.stream()
+				.filter(entry -> entry.getValue() > 1)
+				.toList();
+
+		assertTrue(seedWork > 0);
+		assertFalse(joinRefinements.isEmpty());
+		assertTrue(duplicates.isEmpty(), () -> "the mandatory seed re-cost existing join transitions: " + duplicates);
+	}
 
 	@Test
 	void correlatedWinnerAssemblyDoesNotReplayProviderCostingEvents() {
@@ -104,19 +286,26 @@ class PackedCorrelatedComponentRowsTest {
 		StatementPattern probe = pattern(values, "gate", "urn:pending-probe", "witness");
 		Filter source = new Filter(leftDeepJoin(List.of(unrelated, keys, component, provider)), new Exists(probe));
 		List<Double> providerPrefixRows = new ArrayList<>();
+		List<String> providerContexts = new ArrayList<>();
 		PackedCostModel costs = componentCosts("urn:pending-component", "urn:pending-provider",
-				"urn:pending-unrelated", 4.0d, providerPrefixRows);
+				"urn:pending-unrelated", 4.0d, providerPrefixRows, providerContexts);
 
 		Fixture fixture = fixture(source, costs);
 		List<Double> initialProviderPrefixRows = List.copyOf(providerPrefixRows);
+		List<String> initialProviderContexts = List.copyOf(providerContexts);
 		providerPrefixRows.clear();
+		providerContexts.clear();
 		int workUnits = fixture.enumerator().optimizeCorrelatedFilter(fixture.filterRelationId());
 
 		assertTrue(workUnits > 0);
 		assertEquals(List.of(12.0d), initialProviderPrefixRows.stream().distinct().toList(),
 				"A three-row connected component must retain the unrelated four-row component");
-		assertTrue(providerPrefixRows.isEmpty(),
-				"Repeating the same correlated search must reuse its contextual factor event");
+		assertTrue(providerContexts.stream().noneMatch(initialProviderContexts::contains),
+				() -> "The complete correlated frontier must replay every already-costed context: "
+						+ providerContexts);
+		assertTrue(providerPrefixRows.contains(8.0d) && providerPrefixRows.contains(12.0d),
+				() -> "The complete frontier must cost the novel legal component continuations: "
+						+ providerPrefixRows);
 	}
 
 	@Test
@@ -193,6 +382,133 @@ class PackedCorrelatedComponentRowsTest {
 		assertTrue(workUnits > 0);
 		assertEquals(List.of(100.0d), continuationPrefixRows,
 				"Operator refinement has no component identity, so the semantics-derived input bound must survive");
+	}
+
+	@Test
+	void mandatoryCorrelatedSeedCoversEveryAccessBoundaryWithoutEnumeratingPermutations() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		int factorCount = 8;
+		List<TupleExpr> factors = new ArrayList<>(factorCount);
+		for (int ordinal = 0; ordinal < factorCount; ordinal++) {
+			factors.add(pattern(values, "provider" + ordinal, "urn:fanout-provider-" + ordinal, "gate"));
+		}
+		Filter source = new Filter(leftDeepJoin(factors),
+				new Exists(pattern(values, "gate", "urn:fanout-probe", "witness")));
+		List<List<String>> dependentProbePrefixes = new ArrayList<>();
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return predicate(query, relationId).equals("urn:fanout-provider-7") ? 1.0d : 10.0d;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isStatementPattern(relationId)
+						&& predicate(query, relationId).equals("urn:fanout-probe")
+						&& context.prefixRelationCount() > 0) {
+					List<String> prefix = new ArrayList<>(context.prefixRelationCount());
+					for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
+						int prefixRelationId = context.prefixRelationId(ordinal);
+						if (query.isStatementPattern(prefixRelationId)) {
+							prefix.add(predicate(query, prefixRelationId));
+						}
+					}
+					dependentProbePrefixes.add(List.copyOf(prefix));
+				}
+				double rows = estimateRows(query, relationId);
+				output.setRows(rows, rows);
+			}
+		};
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+		PackedIncumbentSearch baseline = new PackedIncumbentSearch(query, memo,
+				new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE), false, costs);
+		baseline.build();
+		dependentProbePrefixes.clear();
+		PackedSearchBudget budget = new PackedSearchBudget(factorCount * (factorCount + 1L), Long.MAX_VALUE);
+		PackedJoinEnumerator enumerator = new PackedJoinEnumerator(query, memo,
+				baseline.selectedRowsByGroup(), budget, costs);
+
+		int seedWork = enumerator.seedCorrelatedFilter(query.rootRelId());
+		int boundaryWork = enumerator.improveCorrelatedFilterSeed(query.rootRelId());
+		long workUnits = budget.workUnits();
+
+		assertTrue(seedWork > 0);
+		assertTrue(boundaryWork > 0);
+		assertTrue(dependentProbePrefixes.stream().anyMatch(prefix -> prefix.contains("urn:fanout-provider-7")),
+				() -> "the mandatory seed never applied the predicate after its lowest-cost readiness certificate: "
+						+ dependentProbePrefixes + ", work=" + workUnits);
+		assertTrue(dependentProbePrefixes.size() <= factorCount,
+				() -> "mandatory boundary coverage must not enumerate dominated readiness certificates: "
+						+ dependentProbePrefixes + ", work=" + workUnits);
+		assertTrue(workUnits <= factorCount * 5L,
+				() -> "the canonical seed is already complete; boundary improvement needs only linear prefixes and one "
+						+ "continuation each: seed=" + seedWork + ", boundary=" + boundaryWork + ", work=" + workUnits);
+	}
+
+	@Test
+	void boundedRelocatableFilterSeedCoversAccessBoundaryAfterDeadline() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern rootType = pattern(values, "root", "urn:boundary-type", "type");
+		StatementPattern path = pattern(values, "root", "urn:boundary-path", "p1");
+		StatementPattern readiness = pattern(values, "p1", "urn:boundary-value", "metric");
+		StatementPattern anchor = pattern(values, "p1", "urn:boundary-anchor", "rated");
+		Filter source = new Filter(leftDeepJoin(List.of(rootType, path, readiness, anchor)),
+				new Compare(Var.of("metric"), new ValueConstant(values.createLiteral(15)), Compare.CompareOp.GT));
+		List<List<String>> filteredPathPrefixes = new ArrayList<>();
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isStatementPattern(relationId)
+						&& predicate(query, relationId).equals("urn:boundary-path")
+						&& context.prefixRows() == 1.0d) {
+					List<String> prefix = new ArrayList<>(context.prefixRelationCount());
+					for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
+						int prefixRelationId = context.prefixRelationId(ordinal);
+						if (query.isStatementPattern(prefixRelationId)) {
+							prefix.add(predicate(query, prefixRelationId));
+						}
+					}
+					filteredPathPrefixes.add(List.copyOf(prefix));
+				}
+				output.setContextualRows(Math.max(1.0d, context.prefixRows()),
+						Math.max(1.0d, context.prefixRows()));
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.isFilter(relationId)) {
+					output.setContextualRows(1.0d, 1.0d);
+				}
+			}
+		};
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		int relationCount = query.relationCount();
+		PackedSearchBudget budget = new PackedSearchBudget(20L, System.nanoTime());
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+
+		new PackedIncumbentSearch(query, memo, budget, true, costs).build();
+
+		assertTrue(filteredPathPrefixes.stream()
+				.anyMatch(prefix -> !prefix.isEmpty() && prefix.get(0).equals("urn:boundary-anchor")),
+				() -> "bounded mandatory seeding never costed the path after the filter from its adjacent anchor: "
+						+ filteredPathPrefixes);
+		assertTrue(budget.workUnits() <= 20L,
+				() -> "access-boundary coverage exceeded the deterministic work limit: " + budget.workUnits());
 	}
 
 	@Test
@@ -339,17 +655,21 @@ class PackedCorrelatedComponentRowsTest {
 	}
 
 	private static Fixture fixture(TupleExpr source, PackedCostModel costs) {
+		return fixture(source, costs, Long.MAX_VALUE);
+	}
+
+	private static Fixture fixture(TupleExpr source, PackedCostModel costs, long workLimit) {
 		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
 		int relationCount = query.relationCount();
 		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
 				relationCount, relationCount * 2);
-		PackedSearchBudget budget = new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE);
+		PackedSearchBudget budget = new PackedSearchBudget(workLimit, Long.MAX_VALUE);
 		PackedIncumbentSearch search = new PackedIncumbentSearch(query, memo, budget, false, costs);
 		search.build();
 		int filterRelationId = query.rootRelId();
 		assertTrue(new PackedQueryView(query).isFilter(filterRelationId));
 		return new Fixture(filterRelationId,
-				new PackedJoinEnumerator(query, memo, search.selectedRowsByGroup(), budget, costs));
+				new PackedJoinEnumerator(query, memo, search.selectedRowsByGroup(), budget, costs), budget);
 	}
 
 	private static String contextKey(String phase, int relationId, PackedCostContext context) {
@@ -380,6 +700,14 @@ class PackedCorrelatedComponentRowsTest {
 				.toString();
 	}
 
+	private static String joinRefinementKey(PackedCostContext context, PackedCostEstimate output) {
+		String implementation = output.plannedStringMetric("optimizer.physicalJoinImplementation");
+		return contextKey(implementation == null ? "logical-join" : implementation, 0, context)
+				+ ':' + Double.doubleToLongBits(output.outputRows())
+				+ ':' + Double.doubleToLongBits(output.workRows())
+				+ ':' + output.evidenceStateId();
+	}
+
 	private static boolean inCorrelatedWinnerAssembly() {
 		return StackWalker.getInstance()
 				.walk(frames -> frames
@@ -390,6 +718,13 @@ class PackedCorrelatedComponentRowsTest {
 
 	private static PackedCostModel componentCosts(String componentPredicate, String observedPredicate,
 			String unrelatedPredicate, double unrelatedRows, List<Double> observedPrefixRows) {
+		return componentCosts(componentPredicate, observedPredicate, unrelatedPredicate, unrelatedRows,
+				observedPrefixRows, null);
+	}
+
+	private static PackedCostModel componentCosts(String componentPredicate, String observedPredicate,
+			String unrelatedPredicate, double unrelatedRows, List<Double> observedPrefixRows,
+			List<String> observedContexts) {
 		return new PackedCostModel() {
 			@Override
 			public double estimateRows(PackedQueryView query, int relationId) {
@@ -423,6 +758,9 @@ class PackedCorrelatedComponentRowsTest {
 						&& prefixContainsPredicate(query, context, unrelatedPredicate)
 						&& prefixContainsBindingAssignment(query, context)) {
 					observedPrefixRows.add(context.prefixRows());
+					if (observedContexts != null) {
+						observedContexts.add(contextKey("estimate", relationId, context));
+					}
 				}
 				double rows = estimateRows(query, relationId);
 				output.setRows(rows, rows);
@@ -479,6 +817,6 @@ class PackedCorrelatedComponentRowsTest {
 		return result;
 	}
 
-	private record Fixture(int filterRelationId, PackedJoinEnumerator enumerator) {
+	private record Fixture(int filterRelationId, PackedJoinEnumerator enumerator, PackedSearchBudget budget) {
 	}
 }

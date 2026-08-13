@@ -19,25 +19,23 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierMemoryR
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateArena;
 
 /**
- * Query-local exact memo for snapshot statement probes. Keys and rows remain primitive so repeated DPhyp candidates can
- * reuse the same source observation without reconstructing RDF values or flattening correlated tuples.
+ * Query-local exact memo for statement probes served by either the snapshot cursor or a provably complete query-index
+ * selector. Keys and rows remain primitive so repeated DPhyp candidates can reuse the same source observation without
+ * reconstructing RDF values or flattening correlated tuples.
  */
 final class LmdbFrontierStatementProbeMemo implements AutoCloseable {
 
 	private static final int INITIAL_TABLE_CAPACITY = 16;
 	private static final int INITIAL_RESULT_ROWS = 2;
 	private static final int QUAD_WIDTH = 4;
+	private static final int UNBOUND_CONTEXT_SHAPE = 1;
+	private static final int BOUND_CONTEXT_SHAPE = 1 << 1;
 	private static final long RESERVATION_OVERHEAD_BYTES = 48L;
 	private static final long TABLE_OBJECT_BYTES = 128L;
-	private static final long RESULT_OBJECT_BYTES = 48L;
+	private static final long RESULT_OBJECT_BYTES = 88L;
 
 	private final FrontierStateArena arena;
 	private FrontierMemoryReservation tableReservation;
-	private long[] subjects;
-	private long[] predicates;
-	private long[] objects;
-	private long[] contexts;
-	private int[] flags;
 	private int[] hashes;
 	private Result[] results;
 	private int size;
@@ -48,11 +46,6 @@ final class LmdbFrontierStatementProbeMemo implements AutoCloseable {
 		long bytes = retainedTableBytes(INITIAL_TABLE_CAPACITY);
 		tableReservation = arena.reserveTemporary(bytes, FrontierMemoryPurpose.ARRAY_GROWTH);
 		try {
-			subjects = new long[INITIAL_TABLE_CAPACITY];
-			predicates = new long[INITIAL_TABLE_CAPACITY];
-			objects = new long[INITIAL_TABLE_CAPACITY];
-			contexts = new long[INITIAL_TABLE_CAPACITY];
-			flags = new int[INITIAL_TABLE_CAPACITY];
 			hashes = new int[INITIAL_TABLE_CAPACITY];
 			results = new Result[INITIAL_TABLE_CAPACITY];
 			resizeThreshold = INITIAL_TABLE_CAPACITY >>> 1;
@@ -75,8 +68,7 @@ final class LmdbFrontierStatementProbeMemo implements AutoCloseable {
 			return null;
 		}
 		int hash = hash(subject, predicate, object, context, keyFlags);
-		int slot = findSlot(subject, predicate, object, context, keyFlags, hash, hashes, subjects, predicates,
-				objects, contexts, flags);
+		int slot = findSlot(subject, predicate, object, context, keyFlags, hash, hashes, results);
 		return hashes[slot] == hash ? results[slot] : null;
 	}
 
@@ -102,8 +94,7 @@ final class LmdbFrontierStatementProbeMemo implements AutoCloseable {
 			return false;
 		}
 		int hash = hash(subject, predicate, object, context, keyFlags);
-		int slot = findSlot(subject, predicate, object, context, keyFlags, hash, hashes, subjects, predicates,
-				objects, contexts, flags);
+		int slot = findSlot(subject, predicate, object, context, keyFlags, hash, hashes, results);
 		if (hashes[slot] == hash) {
 			capture.close();
 			return true;
@@ -112,15 +103,9 @@ final class LmdbFrontierStatementProbeMemo implements AutoCloseable {
 			capture.close();
 			return false;
 		}
-		slot = findSlot(subject, predicate, object, context, keyFlags, hash, hashes, subjects, predicates, objects,
-				contexts, flags);
-		subjects[slot] = subject;
-		predicates[slot] = predicate;
-		objects[slot] = object;
-		contexts[slot] = context;
-		flags[slot] = keyFlags;
+		slot = findSlot(subject, predicate, object, context, keyFlags, hash, hashes, results);
 		hashes[slot] = hash;
-		results[slot] = capture.publish(sourceRowsScanned);
+		results[slot] = capture.publish(subject, predicate, object, context, keyFlags, sourceRowsScanned);
 		size++;
 		return true;
 	}
@@ -132,19 +117,9 @@ final class LmdbFrontierStatementProbeMemo implements AutoCloseable {
 			return false;
 		}
 		FrontierMemoryReservation grown = arena.reserveTemporary(bytes, FrontierMemoryPurpose.ARRAY_GROWTH);
-		long[] replacementSubjects;
-		long[] replacementPredicates;
-		long[] replacementObjects;
-		long[] replacementContexts;
-		int[] replacementFlags;
 		int[] replacementHashes;
 		Result[] replacementResults;
 		try {
-			replacementSubjects = new long[capacity];
-			replacementPredicates = new long[capacity];
-			replacementObjects = new long[capacity];
-			replacementContexts = new long[capacity];
-			replacementFlags = new int[capacity];
 			replacementHashes = new int[capacity];
 			replacementResults = new Result[capacity];
 			for (int oldSlot = 0; oldSlot < hashes.length; oldSlot++) {
@@ -152,16 +127,11 @@ final class LmdbFrontierStatementProbeMemo implements AutoCloseable {
 				if (hash == 0) {
 					continue;
 				}
-				int replacementSlot = findSlot(subjects[oldSlot], predicates[oldSlot], objects[oldSlot],
-						contexts[oldSlot], flags[oldSlot], hash, replacementHashes, replacementSubjects,
-						replacementPredicates, replacementObjects, replacementContexts, replacementFlags);
-				replacementSubjects[replacementSlot] = subjects[oldSlot];
-				replacementPredicates[replacementSlot] = predicates[oldSlot];
-				replacementObjects[replacementSlot] = objects[oldSlot];
-				replacementContexts[replacementSlot] = contexts[oldSlot];
-				replacementFlags[replacementSlot] = flags[oldSlot];
+				Result result = results[oldSlot];
+				int replacementSlot = findSlot(result.keySubject, result.keyPredicate, result.keyObject,
+						result.keyContext, result.keyFlags, hash, replacementHashes, replacementResults);
 				replacementHashes[replacementSlot] = hash;
-				replacementResults[replacementSlot] = results[oldSlot];
+				replacementResults[replacementSlot] = result;
 			}
 		} catch (RuntimeException | Error failure) {
 			grown.close();
@@ -169,11 +139,6 @@ final class LmdbFrontierStatementProbeMemo implements AutoCloseable {
 		}
 		tableReservation.close();
 		tableReservation = grown;
-		subjects = replacementSubjects;
-		predicates = replacementPredicates;
-		objects = replacementObjects;
-		contexts = replacementContexts;
-		flags = replacementFlags;
 		hashes = replacementHashes;
 		results = replacementResults;
 		resizeThreshold = capacity >>> 1;
@@ -181,16 +146,11 @@ final class LmdbFrontierStatementProbeMemo implements AutoCloseable {
 	}
 
 	private static int findSlot(long subject, long predicate, long object, long context, int keyFlags, int hash,
-			int[] candidateHashes, long[] candidateSubjects, long[] candidatePredicates, long[] candidateObjects,
-			long[] candidateContexts, int[] candidateFlags) {
+			int[] candidateHashes, Result[] candidateResults) {
 		int mask = candidateHashes.length - 1;
 		int slot = hash & mask;
 		while (candidateHashes[slot] != 0 && (candidateHashes[slot] != hash
-				|| candidateSubjects[slot] != subject
-				|| candidatePredicates[slot] != predicate
-				|| candidateObjects[slot] != object
-				|| candidateContexts[slot] != context
-				|| candidateFlags[slot] != keyFlags)) {
+				|| !candidateResults[slot].keyMatches(subject, predicate, object, context, keyFlags))) {
 			slot = slot + 1 & mask;
 		}
 		return slot;
@@ -214,10 +174,8 @@ final class LmdbFrontierStatementProbeMemo implements AutoCloseable {
 	}
 
 	private static long retainedTableBytes(int capacity) {
-		long longColumns = Math.multiplyExact(4L, arrayBytes(capacity, Long.BYTES));
-		long intColumns = Math.multiplyExact(2L, arrayBytes(capacity, Integer.BYTES));
 		return Math.addExact(TABLE_OBJECT_BYTES,
-				Math.addExact(longColumns, Math.addExact(intColumns, arrayBytes(capacity, Long.BYTES))));
+				Math.addExact(arrayBytes(capacity, Integer.BYTES), arrayBytes(capacity, Long.BYTES)));
 	}
 
 	private static long retainedResultBytes(int rowCapacity) {
@@ -242,11 +200,6 @@ final class LmdbFrontierStatementProbeMemo implements AutoCloseable {
 		}
 		tableReservation.close();
 		tableReservation = null;
-		subjects = null;
-		predicates = null;
-		objects = null;
-		contexts = null;
-		flags = null;
 		hashes = null;
 		results = null;
 		size = 0;
@@ -258,6 +211,7 @@ final class LmdbFrontierStatementProbeMemo implements AutoCloseable {
 		private FrontierMemoryReservation reservation;
 		private long[] quads;
 		private int rowCount;
+		private int contextShapeMask;
 		private boolean published;
 
 		private Capture(FrontierStateArena arena, int rowCapacity) {
@@ -286,6 +240,7 @@ final class LmdbFrontierStatementProbeMemo implements AutoCloseable {
 			quads[offset + 1] = predicate;
 			quads[offset + 2] = object;
 			quads[offset + 3] = context;
+			contextShapeMask |= context == 0L ? UNBOUND_CONTEXT_SHAPE : BOUND_CONTEXT_SHAPE;
 			rowCount++;
 			return true;
 		}
@@ -314,9 +269,11 @@ final class LmdbFrontierStatementProbeMemo implements AutoCloseable {
 			return reservation != null && !published;
 		}
 
-		private Result publish(long sourceRowsScanned) {
+		private Result publish(long keySubject, long keyPredicate, long keyObject, long keyContext, int keyFlags,
+				long sourceRowsScanned) {
 			published = true;
-			Result result = new Result(quads, rowCount, sourceRowsScanned, reservation);
+			Result result = new Result(keySubject, keyPredicate, keyObject, keyContext, keyFlags,
+					quads, rowCount, sourceRowsScanned, contextShapeMask, reservation);
 			quads = null;
 			reservation = null;
 			return result;
@@ -330,22 +287,44 @@ final class LmdbFrontierStatementProbeMemo implements AutoCloseable {
 			}
 			quads = null;
 			rowCount = 0;
+			contextShapeMask = 0;
 		}
 	}
 
 	static final class Result implements AutoCloseable {
 
+		private final long keySubject;
+		private final long keyPredicate;
+		private final long keyObject;
+		private final long keyContext;
+		private final int keyFlags;
 		private long[] quads;
 		private final int rowCount;
 		private final long sourceRowsScanned;
+		private final int contextShapeMask;
 		private FrontierMemoryReservation reservation;
 
-		private Result(long[] quads, int rowCount, long sourceRowsScanned,
+		private Result(long keySubject, long keyPredicate, long keyObject, long keyContext, int keyFlags,
+				long[] quads, int rowCount, long sourceRowsScanned, int contextShapeMask,
 				FrontierMemoryReservation reservation) {
+			this.keySubject = keySubject;
+			this.keyPredicate = keyPredicate;
+			this.keyObject = keyObject;
+			this.keyContext = keyContext;
+			this.keyFlags = keyFlags;
 			this.quads = quads;
 			this.rowCount = rowCount;
 			this.sourceRowsScanned = sourceRowsScanned;
+			this.contextShapeMask = contextShapeMask;
 			this.reservation = reservation;
+		}
+
+		private boolean keyMatches(long subject, long predicate, long object, long context, int flags) {
+			return keySubject == subject
+					&& keyPredicate == predicate
+					&& keyObject == object
+					&& keyContext == context
+					&& keyFlags == flags;
 		}
 
 		int rowCount() {
@@ -356,11 +335,23 @@ final class LmdbFrontierStatementProbeMemo implements AutoCloseable {
 			return sourceRowsScanned;
 		}
 
+		boolean hasUnboundContextRows() {
+			return (contextShapeMask & UNBOUND_CONTEXT_SHAPE) != 0;
+		}
+
+		boolean hasBoundContextRows() {
+			return (contextShapeMask & BOUND_CONTEXT_SHAPE) != 0;
+		}
+
 		long quad(int row, int component) {
 			if (row < 0 || row >= rowCount || component < 0 || component >= QUAD_WIDTH) {
 				throw new IndexOutOfBoundsException();
 			}
 			return quads[row * QUAD_WIDTH + component];
+		}
+
+		long[] borrowedQuads() {
+			return quads;
 		}
 
 		long[] copyQuads() {

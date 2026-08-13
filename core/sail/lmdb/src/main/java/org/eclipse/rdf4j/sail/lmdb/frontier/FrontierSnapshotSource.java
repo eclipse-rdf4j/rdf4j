@@ -32,6 +32,29 @@ public interface FrontierSnapshotSource extends AutoCloseable {
 	long snapshotEpoch() throws IOException;
 
 	/**
+	 * Returns the exact number of rows in one explicitness plane.
+	 *
+	 * <p>
+	 * The default implementation preserves the scan contract, including primitive-ID validation and agreement between
+	 * delivered and reported row counts. Storage-backed sources may override this when their pinned snapshot exposes an
+	 * exact constant-time cardinality operation.
+	 * </p>
+	 */
+	default long rowCount(boolean explicit) throws IOException {
+		long[] callbacks = { 0L };
+		long reported = scan(explicit, (subjectId, predicateId, objectId, contextId) -> {
+			if (subjectId <= 0L || predicateId <= 0L || objectId <= 0L || contextId < 0L) {
+				throw new IOException("Frontier snapshot emitted an invalid primitive RDF quad");
+			}
+			callbacks[0] = Math.incrementExact(callbacks[0]);
+		});
+		if (reported != callbacks[0]) {
+			throw new IOException("Frontier snapshot scan count disagrees with delivered rows");
+		}
+		return reported;
+	}
+
+	/**
 	 * Scans one explicitness plane.
 	 *
 	 * <p>

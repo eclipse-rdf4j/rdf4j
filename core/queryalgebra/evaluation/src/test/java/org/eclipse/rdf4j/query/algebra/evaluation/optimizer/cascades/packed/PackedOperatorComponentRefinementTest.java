@@ -87,6 +87,67 @@ class PackedOperatorComponentRefinementTest {
 	}
 
 	@Test
+	void canonicalDependentJoinRetainsExactContextualRightWinner() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		TupleExpr source = new Join(
+				pattern(values, "shared", "urn:left", "leftValue"),
+				pattern(values, "shared", "urn:right", "rightValue"));
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		PackedMemo memo = memo(query);
+		PackedCostSession provider = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				if (query.relOperator(relationId) == PackedRelOp.STATEMENT_PATTERN) {
+					output.setRows(100.0d, 100.0d);
+				}
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				if (query.relOperator(relationId) == PackedRelOp.STATEMENT_PATTERN) {
+					output.setContextualRows(2.0d, 2.0d);
+				}
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			}
+		};
+
+		try (EventSourcingPackedCostSession session = new EventSourcingPackedCostSession(provider, query)) {
+			PackedIncumbentSearch search = PackedIncumbentSearch.forSession(query, memo, unboundedBudget(), false,
+					session);
+
+			int rootWinnerId = search.build();
+			int rightWinnerId = memo.winnerChildWinnerId(rootWinnerId, 1);
+			int rightMetadataId = memo.winnerPhysicalMetadataId(rightWinnerId);
+			PackedMemo.PackedDecisionDraft decisions = memo.decisionDraft(rootWinnerId);
+			PackedCostingTrace trace = session.snapshotTrace();
+			int malformedCandidates = 0;
+			for (int candidate = 0; candidate < decisions.candidateEventIds().length; candidate++) {
+				int eventId = decisions.candidateEventIds()[candidate];
+				int childStart = decisions.candidateChildStarts()[candidate];
+				int childEnd = decisions.candidateChildStarts()[candidate + 1];
+				if (trace.phase(eventId) == PackedCostingPhase.PHYSICAL_JOIN
+						&& trace.relationId(eventId) == PackedPhysicalJoinCosting.DEPENDENT_ITERATION
+						&& trace.prefixRelationCount(eventId) != 0
+						&& childEnd - childStart == 2
+						&& trace.phase(decisions.candidateChildEventIds()[childStart
+								+ 1]) != PackedCostingPhase.PREFIX_EXTENSION) {
+					malformedCandidates++;
+				}
+			}
+
+			assertTrue(memo.winnerInputContextId(rightWinnerId) != 0,
+					"a dependent physical JOIN must retain the RHS winner costed for its exact left prefix");
+			assertEquals(PackedCostingPhase.PREFIX_EXTENSION,
+					session.eventPhase(memo.physicalMetadataCostEventId(rightMetadataId)));
+			assertEquals(0, malformedCandidates,
+					"candidate costing must not attach an inherited-prefix JOIN event to a standalone RHS event");
+		}
+	}
+
+	@Test
 	void contextualFilterComposesComponentRefinementWithUnrelatedPrefix() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern outer = pattern(values, "outer", "urn:outer", "outerValue");
@@ -268,6 +329,90 @@ class PackedOperatorComponentRefinementTest {
 		assertEquals(1, contextualCalls[1], "the Extension must be costed exactly once in inherited context");
 		assertEquals(2.0d, memo.winnerOutputRows(contextualWinnerId), 0.0d);
 		assertEquals(102, memo.physicalMetadataEvidenceStateId(memo.winnerPhysicalMetadataId(contextualWinnerId)));
+	}
+
+	@Test
+	void contextualExtensionWinnerEvidenceReachesItsEnclosingJoin() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = pattern(values, "shared", "urn:retained-extension-outer", "outerValue");
+		StatementPattern inner = pattern(values, "shared", "urn:retained-extension-inner", "innerValue");
+		Extension extension = new Extension(inner, new ExtensionElem(Var.of("innerValue"), "alias"));
+		StatementPattern continuation = pattern(values, "shared", "urn:retained-extension-continuation", "tail");
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Join(new Join(outer, extension), continuation));
+		PackedQueryView view = new PackedQueryView(query);
+		int outerRelationId = relationWithPredicate(view, "urn:retained-extension-outer");
+		int innerRelationId = relationWithPredicate(view, "urn:retained-extension-inner");
+		int continuationRelationId = relationWithPredicate(view, "urn:retained-extension-continuation");
+		int extensionRelationId = relationWithOperator(view, PackedRelOp.EXTENSION);
+		int[] retainedCandidateState = { -1 };
+		int[] retainedRightState = { -1 };
+		String[] retainedRowScope = new String[1];
+		PackedCostSession costs = new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				if (relationId == outerRelationId) {
+					output.setRows(1.0d, 1.0d);
+					output.setEvidenceStateId(11);
+				} else if (relationId == innerRelationId) {
+					output.setRows(100.0d, 100.0d);
+					output.setEvidenceStateId(21);
+				} else if (relationId == continuationRelationId) {
+					output.setRows(1_000.0d, 1_000.0d);
+					output.setEvidenceStateId(31);
+				}
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				if (relationId == innerRelationId && context.prefixRelationCount() == 1
+						&& context.prefixRelationId(0) == outerRelationId) {
+					output.setContextualRows(2.0d, 2.0d);
+					output.setEvidenceStateId(101);
+				} else if (relationId == outerRelationId || relationId == innerRelationId
+						|| relationId == continuationRelationId) {
+					double rows = context.prefixRows() * 10.0d;
+					output.setContextualRows(rows, rows);
+					output.setEvidenceStateId(200 + relationId);
+				}
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				if (relationId == extensionRelationId) {
+					output.setContextualOutputRowsPreservingPhysicalCost(context.leftInputRows());
+					output.setEvidenceStateId(context.leftInputEvidenceStateId() == 101 ? 102 : 22);
+				}
+			}
+
+			@Override
+			public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+				if (output.plannedStringMetric("optimizer.physicalJoinImplementation") == null
+						&& context.leftInputEvidenceStateId() == 11
+						&& (context.rightInputEvidenceStateId() == 22
+								|| context.rightInputEvidenceStateId() == 102)) {
+					retainedCandidateState[0] = context.evidenceStateId();
+					retainedRightState[0] = context.rightInputEvidenceStateId();
+					retainedRowScope[0] = output
+							.plannedStringMetric("optimizer.contextualEvidenceCandidateRowScope");
+				}
+			}
+		};
+		PackedMemo memo = memo(query);
+		PackedSearchBudget budget = unboundedBudget();
+		PackedIncumbentSearch search = PackedIncumbentSearch.forSession(query, memo, budget, false, costs);
+		search.build();
+		PackedJoinEnumerator enumerator = PackedJoinEnumerator.forSession(query, memo, search.selectedRowsByGroup(),
+				budget, costs);
+
+		int workUnits = enumerator.optimizeSequence(query.rootRelId());
+
+		assertTrue(workUnits > 0);
+		assertEquals(102, retainedCandidateState[0],
+				"the enclosing join must receive the complete contextual Extension winner state");
+		assertEquals(22, retainedRightState[0],
+				"the complete contextual candidate remains distinct from the isolated physical right child");
+		assertEquals("contextual", retainedRowScope[0],
+				"memo restoration must preserve the provider's row-scope contract");
 	}
 
 	private static TupleExpr optional() {

@@ -27,16 +27,24 @@ final class PackedEvidenceContext {
 	private int bindingLayoutId;
 	private int correlationMaskId;
 	private int semanticScopeMaskId;
+	private int inputCostEventId;
 
 	void reset(int[] relationIds, double[] contributionRows, int offset, int count, double rows,
 			int stateId, int bindingLayoutId, int correlationMaskId, int semanticScopeMaskId) {
+		reset(relationIds, contributionRows, offset, count, rows, stateId, bindingLayoutId, correlationMaskId,
+				semanticScopeMaskId, 0);
+	}
+
+	void reset(int[] relationIds, double[] contributionRows, int offset, int count, double rows,
+			int stateId, int bindingLayoutId, int correlationMaskId, int semanticScopeMaskId, int inputCostEventId) {
 		if (relationIds == null || offset < 0 || count < 0 || offset > relationIds.length - count) {
 			throw new IndexOutOfBoundsException("invalid inherited evidence prefix");
 		}
 		if (contributionRows != null && contributionRows.length < offset + count) {
 			throw new IndexOutOfBoundsException("inherited contributions do not cover the evidence prefix");
 		}
-		if (stateId < 0 || bindingLayoutId < 0 || correlationMaskId < 0 || semanticScopeMaskId < 0) {
+		if (stateId < 0 || bindingLayoutId < 0 || correlationMaskId < 0 || semanticScopeMaskId < 0
+				|| inputCostEventId < 0) {
 			throw new IllegalArgumentException("packed evidence identities must be nonnegative");
 		}
 		prefixRelationIds = relationIds;
@@ -48,6 +56,7 @@ final class PackedEvidenceContext {
 		this.bindingLayoutId = bindingLayoutId;
 		this.correlationMaskId = correlationMaskId;
 		this.semanticScopeMaskId = semanticScopeMaskId;
+		this.inputCostEventId = inputCostEventId;
 	}
 
 	int[] prefixRelationIds() {
@@ -84,5 +93,9 @@ final class PackedEvidenceContext {
 
 	int semanticScopeMaskId() {
 		return semanticScopeMaskId;
+	}
+
+	int inputCostEventId() {
+		return inputCostEventId;
 	}
 }

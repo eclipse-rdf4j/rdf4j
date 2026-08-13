@@ -29,149 +29,153 @@ public final class PackedCostingReplay {
 		Objects.requireNonNull(currentSession, "currentSession");
 		PackedCostingTrace trace = request.costingTrace();
 		FrontierEvidenceBundle cachedEvidence = request.evidenceBundle();
-		EventSourcingPackedCostSession replaySession = new EventSourcingPackedCostSession(currentSession);
-		int eventCount = trace.eventCount();
-		if (eventCount == 0) {
-			throw new IllegalStateException("cached plan has no costing events to replay");
-		}
+		EventSourcingPackedCostSession replaySession = EventSourcingPackedCostSession.replaying(currentSession);
+		try {
+			int eventCount = trace.eventCount();
+			if (eventCount == 0) {
+				throw new IllegalStateException("cached plan has no costing events to replay");
+			}
 
-		int[] currentStateByCachedOrdinal = new int[cachedEvidence.stateCount() + 1];
-		double[] currentRowsByCachedOrdinal = new double[currentStateByCachedOrdinal.length];
-		Arrays.fill(currentRowsByCachedOrdinal, Double.NaN);
-		double[] eventCosts = new double[eventCount + 1];
-		double[] eventRows = new double[eventCount + 1];
-		double[] eventWorkRows = new double[eventCount + 1];
-		double[] eventSequentialRows = new double[eventCount + 1];
-		double[] eventRandomSeeks = new double[eventCount + 1];
-		double[] eventIteratorOpens = new double[eventCount + 1];
-		double[] eventExpressionEvaluations = new double[eventCount + 1];
-		double[] eventHashBuildRows = new double[eventCount + 1];
-		double[] eventHashProbeRows = new double[eventCount + 1];
-		double[] eventPathExpansions = new double[eventCount + 1];
-		double[] eventResultRows = new double[eventCount + 1];
-		double[] eventRemoteCalls = new double[eventCount + 1];
-		double[] eventPeakMemoryRows = new double[eventCount + 1];
-		double[] eventAccessRows = new double[eventCount + 1];
-		double[] eventInvocations = new double[eventCount + 1];
-		PackedCostContext context = new PackedCostContext();
-		PackedCostEstimate estimate = new PackedCostEstimate();
-		int maximumPrefix = 0;
-		for (int eventId = 1; eventId <= eventCount; eventId++) {
-			maximumPrefix = Math.max(maximumPrefix, trace.prefixRelationCount(eventId));
-		}
-		int[] prefixRelations = new int[maximumPrefix];
+			int[] currentStateByCachedOrdinal = new int[cachedEvidence.stateCount() + 1];
+			double[] currentRowsByCachedOrdinal = new double[currentStateByCachedOrdinal.length];
+			Arrays.fill(currentRowsByCachedOrdinal, Double.NaN);
+			double[] eventCosts = new double[eventCount + 1];
+			double[] eventRows = new double[eventCount + 1];
+			double[] eventWorkRows = new double[eventCount + 1];
+			double[] eventSequentialRows = new double[eventCount + 1];
+			double[] eventRandomSeeks = new double[eventCount + 1];
+			double[] eventIteratorOpens = new double[eventCount + 1];
+			double[] eventExpressionEvaluations = new double[eventCount + 1];
+			double[] eventHashBuildRows = new double[eventCount + 1];
+			double[] eventHashProbeRows = new double[eventCount + 1];
+			double[] eventPathExpansions = new double[eventCount + 1];
+			double[] eventResultRows = new double[eventCount + 1];
+			double[] eventRemoteCalls = new double[eventCount + 1];
+			double[] eventPeakMemoryRows = new double[eventCount + 1];
+			double[] eventAccessRows = new double[eventCount + 1];
+			double[] eventInvocations = new double[eventCount + 1];
+			PackedCostContext context = new PackedCostContext();
+			PackedCostEstimate estimate = new PackedCostEstimate();
+			int maximumPrefix = 0;
+			for (int eventId = 1; eventId <= eventCount; eventId++) {
+				maximumPrefix = Math.max(maximumPrefix, trace.prefixRelationCount(eventId));
+			}
+			int[] prefixRelations = new int[maximumPrefix];
 
-		for (int eventId = 1; eventId <= eventCount; eventId++) {
-			int prefixCount = trace.prefixRelationCount(eventId);
-			for (int ordinal = 0; ordinal < prefixCount; ordinal++) {
-				prefixRelations[ordinal] = trace.prefixRelationId(eventId, ordinal);
+			for (int eventId = 1; eventId <= eventCount; eventId++) {
+				int prefixCount = trace.prefixRelationCount(eventId);
+				for (int ordinal = 0; ordinal < prefixCount; ordinal++) {
+					prefixRelations[ordinal] = trace.prefixRelationId(eventId, ordinal);
+				}
+				int inputOrdinal = trace.inputStateOrdinal(eventId);
+				int leftOrdinal = trace.leftStateOrdinal(eventId);
+				int rightOrdinal = trace.rightStateOrdinal(eventId);
+				int inputStateId = currentState(inputOrdinal, trace.inputSourceStateOrdinal(eventId), currentSession,
+						currentStateByCachedOrdinal, currentRowsByCachedOrdinal, trace.prefixRows(eventId), eventId,
+						"input");
+				int leftStateId = currentState(leftOrdinal, trace.leftSourceStateOrdinal(eventId), currentSession,
+						currentStateByCachedOrdinal, currentRowsByCachedOrdinal, trace.leftInputRows(eventId), eventId,
+						"left input");
+				int rightStateId = currentState(rightOrdinal, trace.rightSourceStateOrdinal(eventId), currentSession,
+						currentStateByCachedOrdinal, currentRowsByCachedOrdinal, trace.rightInputRows(eventId), eventId,
+						"right input");
+				double prefixRows = replayPrefixRows(trace, eventId, inputOrdinal, leftOrdinal, rightOrdinal,
+						currentRowsByCachedOrdinal);
+				double leftRows = currentRows(leftOrdinal, currentRowsByCachedOrdinal, trace.leftInputRows(eventId));
+				double rightRows = currentRows(rightOrdinal, currentRowsByCachedOrdinal, trace.rightInputRows(eventId));
+				context.reset(prefixRelations, 0, prefixCount, prefixRows, inputStateId);
+				context.setAssuredBindingRelationId(trace.assuredBindingRelationId(eventId));
+				context.setEvidenceIdentity(trace.bindingLayoutId(eventId), trace.correlationMaskId(eventId),
+						trace.semanticScopeMaskId(eventId));
+				context.setHashJoinMasks(trace.hashLookupMaskId(eventId), trace.hashCompatibilityMaskId(eventId));
+				context.setOperatorInputs(leftRows, rightRows, leftStateId, rightStateId);
+				estimate.clear();
+				restoreProviderInput(trace, eventId, estimate, currentSession, currentStateByCachedOrdinal,
+						currentRowsByCachedOrdinal);
+				switch (trace.phase(eventId)) {
+				case LEAF -> replaySession.estimateLeaf(trace.relationId(eventId), context, estimate);
+				case PREFIX_EXTENSION -> replaySession.appendFactor(trace.relationId(eventId), context, estimate);
+				case OPERATOR -> replaySession.refineOperator(trace.relationId(eventId), context, estimate);
+				case INTERMEDIATE_JOIN -> replaySession.refineIntermediateJoin(context, estimate);
+				case PHYSICAL_JOIN -> replaySession.refinePhysicalJoin(trace.relationId(eventId), context, estimate);
+				}
+				double objective = replaySession.objectiveScore(estimate);
+				boolean measured = finiteNonNegative(objective) && finiteNonNegative(estimate.outputRows());
+				boolean originallyUnmeasured = !finiteNonNegative(trace.outputRows(eventId))
+						&& !finiteNonNegative(trace.workRows(eventId));
+				if (!measured && !originallyUnmeasured) {
+					throw new IllegalStateException(
+							"current provider returned an invalid replay estimate for event " + eventId
+									+ " [phase=" + trace.phase(eventId) + ", relation=" + trace.relationId(eventId)
+									+ ", rows=" + estimate.outputRows() + ", work=" + estimate.workRows()
+									+ ", objective=" + objective + "]");
+				}
+				eventCosts[eventId] = objective;
+				eventRows[eventId] = estimate.outputRows();
+				eventWorkRows[eventId] = estimate.workRows();
+				eventSequentialRows[eventId] = estimate.sequentialRows();
+				eventRandomSeeks[eventId] = estimate.randomSeeks();
+				eventIteratorOpens[eventId] = estimate.iteratorOpens();
+				eventExpressionEvaluations[eventId] = estimate.expressionEvaluations();
+				eventHashBuildRows[eventId] = estimate.hashBuildRows();
+				eventHashProbeRows[eventId] = estimate.hashProbeRows();
+				eventPathExpansions[eventId] = estimate.pathExpansions();
+				eventResultRows[eventId] = estimate.resultRows();
+				eventRemoteCalls[eventId] = estimate.remoteCalls();
+				eventPeakMemoryRows[eventId] = estimate.peakMemoryRows();
+				eventAccessRows[eventId] = estimate.accessRows();
+				eventInvocations[eventId] = estimate.invocations();
+				bindCurrentState(trace.outputStateOrdinal(eventId), estimate.evidenceStateId(), estimate.outputRows(),
+						currentStateByCachedOrdinal, currentRowsByCachedOrdinal, eventId);
 			}
-			int inputOrdinal = trace.inputStateOrdinal(eventId);
-			int leftOrdinal = trace.leftStateOrdinal(eventId);
-			int rightOrdinal = trace.rightStateOrdinal(eventId);
-			int inputStateId = currentState(inputOrdinal, trace.inputSourceStateOrdinal(eventId), currentSession,
-					currentStateByCachedOrdinal, currentRowsByCachedOrdinal, trace.prefixRows(eventId), eventId,
-					"input");
-			int leftStateId = currentState(leftOrdinal, trace.leftSourceStateOrdinal(eventId), currentSession,
-					currentStateByCachedOrdinal, currentRowsByCachedOrdinal, trace.leftInputRows(eventId), eventId,
-					"left input");
-			int rightStateId = currentState(rightOrdinal, trace.rightSourceStateOrdinal(eventId), currentSession,
-					currentStateByCachedOrdinal, currentRowsByCachedOrdinal, trace.rightInputRows(eventId), eventId,
-					"right input");
-			double prefixRows = replayPrefixRows(trace, eventId, inputOrdinal, leftOrdinal, rightOrdinal,
-					currentRowsByCachedOrdinal);
-			double leftRows = currentRows(leftOrdinal, currentRowsByCachedOrdinal, trace.leftInputRows(eventId));
-			double rightRows = currentRows(rightOrdinal, currentRowsByCachedOrdinal, trace.rightInputRows(eventId));
-			context.reset(prefixRelations, 0, prefixCount, prefixRows, inputStateId);
-			context.setAssuredBindingRelationId(trace.assuredBindingRelationId(eventId));
-			context.setEvidenceIdentity(trace.bindingLayoutId(eventId), trace.correlationMaskId(eventId),
-					trace.semanticScopeMaskId(eventId));
-			context.setHashJoinMasks(trace.hashLookupMaskId(eventId), trace.hashCompatibilityMaskId(eventId));
-			context.setOperatorInputs(leftRows, rightRows, leftStateId, rightStateId);
-			estimate.clear();
-			restoreProviderInput(trace, eventId, estimate, currentSession, currentStateByCachedOrdinal,
-					currentRowsByCachedOrdinal);
-			switch (trace.phase(eventId)) {
-			case LEAF -> replaySession.estimateLeaf(trace.relationId(eventId), context, estimate);
-			case PREFIX_EXTENSION -> replaySession.appendFactor(trace.relationId(eventId), context, estimate);
-			case OPERATOR -> replaySession.refineOperator(trace.relationId(eventId), context, estimate);
-			case INTERMEDIATE_JOIN -> replaySession.refineIntermediateJoin(context, estimate);
-			case PHYSICAL_JOIN -> replaySession.refinePhysicalJoin(trace.relationId(eventId), context, estimate);
-			}
-			double objective = replaySession.objectiveScore(estimate);
-			boolean measured = finiteNonNegative(objective) && finiteNonNegative(estimate.outputRows());
-			boolean originallyUnmeasured = !finiteNonNegative(trace.outputRows(eventId))
-					&& !finiteNonNegative(trace.workRows(eventId));
-			if (!measured && !originallyUnmeasured) {
-				throw new IllegalStateException(
-						"current provider returned an invalid replay estimate for event " + eventId
-								+ " [phase=" + trace.phase(eventId) + ", relation=" + trace.relationId(eventId)
-								+ ", rows=" + estimate.outputRows() + ", work=" + estimate.workRows()
-								+ ", objective=" + objective + "]");
-			}
-			eventCosts[eventId] = objective;
-			eventRows[eventId] = estimate.outputRows();
-			eventWorkRows[eventId] = estimate.workRows();
-			eventSequentialRows[eventId] = estimate.sequentialRows();
-			eventRandomSeeks[eventId] = estimate.randomSeeks();
-			eventIteratorOpens[eventId] = estimate.iteratorOpens();
-			eventExpressionEvaluations[eventId] = estimate.expressionEvaluations();
-			eventHashBuildRows[eventId] = estimate.hashBuildRows();
-			eventHashProbeRows[eventId] = estimate.hashProbeRows();
-			eventPathExpansions[eventId] = estimate.pathExpansions();
-			eventResultRows[eventId] = estimate.resultRows();
-			eventRemoteCalls[eventId] = estimate.remoteCalls();
-			eventPeakMemoryRows[eventId] = estimate.peakMemoryRows();
-			eventAccessRows[eventId] = estimate.accessRows();
-			eventInvocations[eventId] = estimate.invocations();
-			bindCurrentState(trace.outputStateOrdinal(eventId), estimate.evidenceStateId(), estimate.outputRows(),
-					currentStateByCachedOrdinal, currentRowsByCachedOrdinal, eventId);
-		}
 
-		double[] candidateCosts = new double[request.candidateCount()];
-		Arrays.fill(candidateCosts, Double.NaN);
-		byte[] candidateStates = new byte[candidateCosts.length];
-		for (int candidate = 0; candidate < candidateCosts.length; candidate++) {
-			candidateCosts[candidate] = replayCandidateCost(
-					request, eventCosts, candidateCosts, candidateStates, candidate);
-			if (!finiteNonNegative(candidateCosts[candidate])) {
-				throw new IllegalStateException(
-						"decision certificate references an unmeasured candidate event "
-								+ request.candidateEventId(candidate));
+			double[] candidateCosts = new double[request.candidateCount()];
+			Arrays.fill(candidateCosts, Double.NaN);
+			byte[] candidateStates = new byte[candidateCosts.length];
+			for (int candidate = 0; candidate < candidateCosts.length; candidate++) {
+				candidateCosts[candidate] = replayCandidateCost(
+						request, eventCosts, candidateCosts, candidateStates, candidate);
+				if (!finiteNonNegative(candidateCosts[candidate])) {
+					throw new IllegalStateException(
+							"decision certificate references an unmeasured candidate event "
+									+ request.candidateEventId(candidate));
+				}
 			}
-		}
 
-		int[] currentRequestedStateIds = new int[cachedEvidence.requestedStateCount()];
-		for (int requestIndex = 0; requestIndex < currentRequestedStateIds.length; requestIndex++) {
-			int cachedOrdinal = cachedEvidence.requestedStateOrdinal(requestIndex);
-			if (cachedOrdinal != 0) {
-				currentRequestedStateIds[requestIndex] = currentState(cachedOrdinal, currentStateByCachedOrdinal,
-						eventCount, "detached request");
+			int[] currentRequestedStateIds = new int[cachedEvidence.requestedStateCount()];
+			for (int requestIndex = 0; requestIndex < currentRequestedStateIds.length; requestIndex++) {
+				int cachedOrdinal = cachedEvidence.requestedStateOrdinal(requestIndex);
+				if (cachedOrdinal != 0) {
+					currentRequestedStateIds[requestIndex] = currentState(cachedOrdinal, currentStateByCachedOrdinal,
+							eventCount, "detached request");
+				}
 			}
-		}
-		FrontierEvidenceBundle currentEvidence = replaySession.detachEvidence(currentRequestedStateIds);
-		if (currentEvidence.requestedStateCount() != currentRequestedStateIds.length) {
-			throw new IllegalStateException("current Frontier evidence changed replay request alignment");
-		}
-		int[] currentOrdinalByCachedOrdinal = new int[currentStateByCachedOrdinal.length];
-		for (int requestIndex = 0; requestIndex < currentRequestedStateIds.length; requestIndex++) {
-			int cachedOrdinal = cachedEvidence.requestedStateOrdinal(requestIndex);
-			int currentOrdinal = currentEvidence.requestedStateOrdinal(requestIndex);
-			if (cachedOrdinal != 0 && currentOrdinalByCachedOrdinal[cachedOrdinal] == 0) {
-				currentOrdinalByCachedOrdinal[cachedOrdinal] = currentOrdinal;
+			FrontierEvidenceBundle currentEvidence = replaySession.detachEvidence(currentRequestedStateIds);
+			if (currentEvidence.requestedStateCount() != currentRequestedStateIds.length) {
+				throw new IllegalStateException("current Frontier evidence changed replay request alignment");
 			}
+			int[] currentOrdinalByCachedOrdinal = new int[currentStateByCachedOrdinal.length];
+			for (int requestIndex = 0; requestIndex < currentRequestedStateIds.length; requestIndex++) {
+				int cachedOrdinal = cachedEvidence.requestedStateOrdinal(requestIndex);
+				int currentOrdinal = currentEvidence.requestedStateOrdinal(requestIndex);
+				if (cachedOrdinal != 0 && currentOrdinalByCachedOrdinal[cachedOrdinal] == 0) {
+					currentOrdinalByCachedOrdinal[cachedOrdinal] = currentOrdinal;
+				}
+			}
+			PackedCostingTrace replayedTrace = replaySession.snapshotTrace();
+			if (replayedTrace.eventCount() != trace.eventCount()) {
+				throw new IllegalStateException("current costing replay changed event alignment");
+			}
+			int traceRequestOffset = cachedEvidence.requestedStateCount() - trace.stateReferenceCount();
+			replayedTrace = replayedTrace.withDetachedStateOrdinals(currentEvidence, traceRequestOffset);
+			return new Result(currentEvidence, replayedTrace, candidateCosts, currentOrdinalByCachedOrdinal, eventCosts,
+					eventRows,
+					eventWorkRows, eventSequentialRows, eventRandomSeeks, eventIteratorOpens,
+					eventExpressionEvaluations, eventHashBuildRows, eventHashProbeRows, eventPathExpansions,
+					eventResultRows, eventRemoteCalls, eventPeakMemoryRows, eventAccessRows, eventInvocations);
+		} finally {
+			replaySession.close();
 		}
-		PackedCostingTrace replayedTrace = replaySession.snapshotTrace();
-		if (replayedTrace.eventCount() != trace.eventCount()) {
-			throw new IllegalStateException("current costing replay changed event alignment");
-		}
-		int traceRequestOffset = cachedEvidence.requestedStateCount() - trace.stateReferenceCount();
-		replayedTrace = replayedTrace.withDetachedStateOrdinals(currentEvidence, traceRequestOffset);
-		return new Result(currentEvidence, replayedTrace, candidateCosts, currentOrdinalByCachedOrdinal, eventCosts,
-				eventRows,
-				eventWorkRows, eventSequentialRows, eventRandomSeeks, eventIteratorOpens,
-				eventExpressionEvaluations, eventHashBuildRows, eventHashProbeRows, eventPathExpansions,
-				eventResultRows, eventRemoteCalls, eventPeakMemoryRows, eventAccessRows, eventInvocations);
 	}
 
 	private static boolean finiteNonNegative(double value) {

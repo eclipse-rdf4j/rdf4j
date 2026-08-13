@@ -12,10 +12,13 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Iterator;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -29,6 +32,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -76,6 +80,38 @@ public class PathIterationTest {
 	}
 
 	@Test
+	public void valuePairOmitsUnboundEndpointsFromBindingContract() {
+		PathIteration.ValuePair complete = new PathIteration.ValuePair(one, two);
+		String startName = complete.getBindingNames()
+				.stream()
+				.filter(name -> one.equals(complete.getValue(name)))
+				.findFirst()
+				.orElseThrow();
+		String endName = complete.getBindingNames()
+				.stream()
+				.filter(name -> two.equals(complete.getValue(name)))
+				.findFirst()
+				.orElseThrow();
+
+		PathIteration.ValuePair endOnly = new PathIteration.ValuePair(null, two);
+		assertEquals(1, endOnly.size());
+		assertEquals(Set.of(endName), endOnly.getBindingNames());
+		assertFalse(endOnly.hasBinding(startName));
+		assertNull(endOnly.getBinding(startName));
+		assertEquals(two, endOnly.getBinding(endName).getValue());
+		Iterator<Binding> endOnlyIterator = endOnly.iterator();
+		assertEquals(two, endOnlyIterator.next().getValue());
+		assertFalse(endOnlyIterator.hasNext());
+
+		PathIteration.ValuePair empty = new PathIteration.ValuePair(null, null);
+		assertEquals(0, empty.size());
+		assertTrue(empty.getBindingNames().isEmpty());
+		assertFalse(empty.iterator().hasNext());
+		assertNull(empty.getBinding(startName));
+		assertNull(empty.getBinding(endName));
+	}
+
+	@Test
 	public void zeroHop() {
 		// SELECT * WHERE { ?subClass rdfs:subClassOf+ ?superClass }
 
@@ -108,6 +144,59 @@ public class PathIterationTest {
 			assertExpected(zlp.getNextElement(), one, three);
 
 			assertNull(zlp.getNextElement());
+		}
+	}
+
+	@Test
+	public void zeroHopRetainsStartEndpointBoundByInput() {
+		Var startVar = Var.of("subClass");
+		Var endVar = Var.of("superClass");
+		TupleExpr pathExpression = new StatementPattern(startVar,
+				Var.of("predicate", RDFS.SUBCLASSOF, true, true), endVar);
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding(startVar.getName(), one);
+
+		try (PathIteration path = new PathIteration(evaluator, Scope.DEFAULT_CONTEXTS, startVar,
+				pathExpression, endVar, null, 0, bindings)) {
+			assertExpected(path.getNextElement(), one, one);
+			assertExpected(path.getNextElement(), one, two);
+			assertExpected(path.getNextElement(), one, three);
+			assertNull(path.getNextElement());
+		}
+	}
+
+	@Test
+	public void zeroHopRetainsEndEndpointBoundByInput() {
+		Var startVar = Var.of("subClass");
+		Var endVar = Var.of("superClass");
+		TupleExpr pathExpression = new StatementPattern(startVar,
+				Var.of("predicate", RDFS.SUBCLASSOF, true, true), endVar);
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding(endVar.getName(), three);
+
+		try (PathIteration path = new PathIteration(evaluator, Scope.DEFAULT_CONTEXTS, startVar,
+				pathExpression, endVar, null, 0, bindings)) {
+			assertExpected(path.getNextElement(), three, three);
+			assertExpected(path.getNextElement(), two, three);
+			assertExpected(path.getNextElement(), one, three);
+			assertNull(path.getNextElement());
+		}
+	}
+
+	@Test
+	public void zeroHopMatchesEqualEndpointsBoundByInput() {
+		Var startVar = Var.of("subClass");
+		Var endVar = Var.of("superClass");
+		TupleExpr pathExpression = new StatementPattern(startVar,
+				Var.of("predicate", RDFS.SUBCLASSOF, true, true), endVar);
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding(startVar.getName(), one);
+		bindings.addBinding(endVar.getName(), one);
+
+		try (PathIteration path = new PathIteration(evaluator, Scope.DEFAULT_CONTEXTS, startVar,
+				pathExpression, endVar, null, 0, bindings)) {
+			assertExpected(path.getNextElement(), one, one);
+			assertNull(path.getNextElement());
 		}
 	}
 

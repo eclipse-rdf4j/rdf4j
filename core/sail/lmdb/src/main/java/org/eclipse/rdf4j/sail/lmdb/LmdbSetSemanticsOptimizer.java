@@ -147,7 +147,8 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Join join) {
 			super.meet(join);
-			if (setContext && samePureSubtree(join.getLeftArg(), join.getRightArg())) {
+			if (setContext && samePureSubtree(join.getLeftArg(), join.getRightArg())
+					&& hasUniformOutputDomain(join.getLeftArg())) {
 				TupleExpr replacement = join.getLeftArg();
 				annotateProof(replacement, LmdbRewriteProof.RewriteKind.SET_JOIN_IDEMPOTENCE,
 						LmdbRewriteProof.EquivalenceScope.SET_EQUIVALENT,
@@ -174,7 +175,7 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 		public void meet(LeftJoin leftJoin) {
 			super.meet(leftJoin);
 			if (setContext && !leftJoin.hasCondition() && samePureSubtree(leftJoin.getLeftArg(),
-					leftJoin.getRightArg())) {
+					leftJoin.getRightArg()) && hasUniformOutputDomain(leftJoin.getLeftArg())) {
 				TupleExpr replacement = leftJoin.getLeftArg();
 				annotateProof(replacement, LmdbRewriteProof.RewriteKind.SET_LEFTJOIN_IDEMPOTENCE,
 						LmdbRewriteProof.EquivalenceScope.SET_EQUIVALENT,
@@ -475,6 +476,43 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 
 	private static boolean samePureSubtree(TupleExpr left, TupleExpr right) {
 		return left.equals(right) && hasSafeStructuralFingerprint(left) && hasSafeStructuralFingerprint(right);
+	}
+
+	/**
+	 * A self join is set-idempotent only when every solution binds the complete visible domain. Otherwise two
+	 * compatible partial mappings can merge into a new mapping that did not occur in the input relation.
+	 */
+	private static boolean hasUniformOutputDomain(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof BindingSetAssignment assignment) {
+			Set<String> domain = assignment.getBindingNames();
+			for (BindingSet row : assignment.getBindingSets()) {
+				if (!row.getBindingNames().containsAll(domain)) {
+					return false;
+				}
+			}
+			return true;
+		}
+		if (tupleExpr instanceof StatementPattern) {
+			return tupleExpr.getAssuredBindingNames().containsAll(tupleExpr.getBindingNames());
+		}
+		if (tupleExpr instanceof SingletonSet || tupleExpr instanceof EmptySet) {
+			return true;
+		}
+		if (tupleExpr instanceof Join join) {
+			return hasUniformOutputDomain(join.getLeftArg()) && hasUniformOutputDomain(join.getRightArg());
+		}
+		if (tupleExpr instanceof Union union) {
+			return union.getLeftArg().getBindingNames().equals(union.getRightArg().getBindingNames())
+					&& hasUniformOutputDomain(union.getLeftArg()) && hasUniformOutputDomain(union.getRightArg());
+		}
+		if (tupleExpr instanceof Difference difference) {
+			return hasUniformOutputDomain(difference.getLeftArg());
+		}
+		if (tupleExpr instanceof LeftJoin leftJoin) {
+			return leftJoin.getLeftArg().getBindingNames().containsAll(leftJoin.getRightArg().getBindingNames())
+					&& hasUniformOutputDomain(leftJoin.getLeftArg());
+		}
+		return false;
 	}
 
 	private static boolean hasAssuredResultBinding(TupleExpr tupleExpr) {

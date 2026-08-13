@@ -49,7 +49,8 @@ class LmdbFrontierThemeCoverageIT {
 
 	private static final String THEMES_PROPERTY = "rdf4j.lmdb.frontierCoverage.themes";
 	private static final String QUERY_INDEXES_PROPERTY = "rdf4j.lmdb.frontierCoverage.queryIndexes";
-	private static final int QUERY_REGRESSION_TIMEOUT_SECONDS = 30;
+	private static final int QUERY_REGRESSION_TIMEOUT_SECONDS = Integer
+			.getInteger("rdf4j.lmdb.frontierCoverage.timeoutSeconds", 30);
 
 	@Test
 	@Timeout(value = 2, unit = TimeUnit.HOURS)
@@ -83,7 +84,13 @@ class LmdbFrontierThemeCoverageIT {
 								.explain(Explanation.Level.Optimized);
 						ResultBag frontierRows = evaluate(frontierConnection, query, queryKey + " Frontier");
 						assertEquals(scalarRows, frontierRows,
-								() -> queryKey + " changed SPARQL bag results when Frontier became authoritative");
+								() -> queryKey + " changed SPARQL bag results when Frontier became authoritative"
+										+ diagnosticRows(scalarConnection, frontierConnection, query, queryKey)
+										+ "\nScalar plan:\n"
+										+ scalarConnection.prepareTupleQuery(query)
+												.explain(Explanation.Level.Optimized)
+												.tupleExpr()
+										+ "\nFrontier plan:\n" + explanation.tupleExpr());
 						auditFrontierCoverage(theme, queryIndex, (TupleExpr) explanation.tupleExpr(),
 								coverageFailures);
 						executedQueries++;
@@ -213,6 +220,32 @@ class LmdbFrontierThemeCoverageIT {
 						.withEventFanout(3),
 				inserter);
 		}
+	}
+
+	private static String diagnosticRows(SailRepositoryConnection scalarConnection,
+			SailRepositoryConnection frontierConnection, String query, String queryKey) {
+		String distinctDrugCount = "SELECT (COUNT(DISTINCT ?drug) AS ?count)";
+		if (!query.contains(distinctDrugCount)) {
+			return "";
+		}
+		String detailQuery = query.replace(distinctDrugCount,
+				"SELECT ?trial ?arm ?drug ?result ?marker ?optMarker ?p ?effect");
+		String groupedDrugQuery = query.replace(distinctDrugCount, "SELECT ?drug") + " GROUP BY ?drug";
+		return "\nScalar detail rows: " + evaluate(scalarConnection, detailQuery, queryKey + " scalar detail")
+				+ "\nFrontier detail rows: "
+				+ evaluate(frontierConnection, detailQuery, queryKey + " Frontier detail")
+				+ "\nScalar grouped drugs: "
+				+ evaluate(scalarConnection, groupedDrugQuery, queryKey + " scalar grouped drugs")
+				+ "\nFrontier grouped drugs: "
+				+ evaluate(frontierConnection, groupedDrugQuery, queryKey + " Frontier grouped drugs")
+				+ "\nFrontier detail plan:\n"
+				+ frontierConnection.prepareTupleQuery(detailQuery).explain(Explanation.Level.Optimized).tupleExpr()
+				+ "\nFrontier grouped-drug plan:\n"
+				+ frontierConnection.prepareTupleQuery(groupedDrugQuery)
+						.explain(Explanation.Level.Optimized)
+						.tupleExpr()
+				+ "\nFrontier aggregate executed plan:\n"
+				+ frontierConnection.prepareTupleQuery(query).explain(Explanation.Level.Executed).tupleExpr();
 	}
 
 	private static ResultBag evaluate(SailRepositoryConnection connection, String queryString, String queryKey) {

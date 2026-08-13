@@ -33,11 +33,13 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
  */
 final class FrontierSynopsisBuilder {
 
-	static final int RECORD_FORMAT_VERSION = 1;
+	static final int LEGACY_RECORD_FORMAT_VERSION = 1;
+	static final int RECORD_FORMAT_VERSION = 2;
 	static final int RECORD_LONGS = 12;
 	static final long FLAG_EXPLICIT = 1L;
 	static final long FLAG_DATABASE_EXACT = 1L << 1;
 	static final long FLAG_EMPTY_SNAPSHOT = 1L << 2;
+	static final long FLAG_SHARED_ACROSS_LANES = 1L << 3;
 
 	private static final int MAXIMUM_BLOCK_BYTES = 64 * 1024;
 	private static final int BLOCK_OVERHEAD_BYTES = FrontierPayloadBlockWriter.MINIMUM_BLOCK_BYTES;
@@ -64,14 +66,16 @@ final class FrontierSynopsisBuilder {
 			inclusionProbability = 1.0d;
 		} else {
 			long directionalRows = Math.multiplyExact(2L, rows);
-			double completeRecords = (double) directionalRows * laneCount;
+			double completeRecords = directionalRows;
 			if (completeRecords > maximumRecords) {
-				heavyPartition = discoverHeavyPartition(snapshot, laneCount, maximumRecords);
+				heavyPartition = discoverHeavyPartition(snapshot, maximumRecords);
 			}
 			long residualDirectionalRows = Math.subtractExact(directionalRows,
 					heavyPartition.directionalRows());
 			long residualRecordBudget = Math.subtractExact(maximumRecords, heavyPartition.recordCount());
-			inclusionProbability = chooseProbability(residualDirectionalRows, laneCount, residualRecordBudget);
+			inclusionProbability = residualDirectionalRows <= residualRecordBudget
+					? 1.0d
+					: chooseProbability(residualDirectionalRows, laneCount, residualRecordBudget);
 			ProbabilitySelection selection = fitSelection(snapshot, designLaneCount, auditLaneCount,
 					heavyPartition, maximumRecords, inclusionProbability);
 			inclusionProbability = selection.probability();
@@ -120,27 +124,15 @@ final class FrontierSynopsisBuilder {
 	}
 
 	private static long countRows(FrontierSnapshotSource snapshot) throws IOException {
-		long explicit = countPlane(snapshot, true);
-		long inferred = countPlane(snapshot, false);
+		long explicit = snapshot.rowCount(true);
+		long inferred = snapshot.rowCount(false);
 		return Math.addExact(explicit, inferred);
 	}
 
-	private static long countPlane(FrontierSnapshotSource snapshot, boolean explicit) throws IOException {
-		long[] callbacks = { 0L };
-		long reported = snapshot.scan(explicit, (subject, predicate, object, context) -> {
-			requireQuad(subject, predicate, object, context);
-			callbacks[0] = Math.incrementExact(callbacks[0]);
-		});
-		if (reported != callbacks[0]) {
-			throw new IOException("Frontier snapshot scan count disagrees with delivered rows");
-		}
-		return reported;
-	}
-
-	private static HeavyPartition discoverHeavyPartition(FrontierSnapshotSource snapshot, int laneCount,
-			long maximumRecords) throws IOException {
+	private static HeavyPartition discoverHeavyPartition(FrontierSnapshotSource snapshot, long maximumRecords)
+			throws IOException {
 		int candidateCapacity = (int) Math.max(1L,
-				Math.min(MAXIMUM_HEAVY_CANDIDATES_PER_DIRECTION, maximumRecords / Math.max(1, laneCount)));
+				Math.min(MAXIMUM_HEAVY_CANDIDATES_PER_DIRECTION, maximumRecords));
 		HeavyCandidateTracker forward = new HeavyCandidateTracker(candidateCapacity);
 		HeavyCandidateTracker reverse = new HeavyCandidateTracker(candidateCapacity);
 		discoverHeavyCandidates(snapshot, true, forward, reverse);
@@ -165,7 +157,7 @@ final class FrontierSynopsisBuilder {
 			if (candidate.degree() < 2L) {
 				break;
 			}
-			long candidateRecords = Math.multiplyExact(candidate.degree(), laneCount);
+			long candidateRecords = candidate.degree();
 			if (candidateRecords > remainingHeavyRecords) {
 				continue;
 			}
@@ -262,8 +254,8 @@ final class FrontierSynopsisBuilder {
 
 	private static long selectedLaneCopies(long center, int direction, int designLaneCount, int auditLaneCount,
 			HeavyPartition heavyPartition, double inclusionProbability) {
-		if (heavyPartition.contains(direction, center)) {
-			return Math.addExact(designLaneCount, auditLaneCount);
+		if (heavyPartition.contains(direction, center) || inclusionProbability == 1.0d) {
+			return 1L;
 		}
 		long count = 0L;
 		for (int lane = 0; lane < designLaneCount; lane++) {
@@ -292,39 +284,40 @@ final class FrontierSynopsisBuilder {
 			throws IOException {
 		snapshot.scan(explicit, (subject, predicate, object, context) -> {
 			requireQuad(subject, predicate, object, context);
-			for (int lane = 0; lane < designLaneCount; lane++) {
-				emitOrientations(emitter, explicit, 1, lane, subject, predicate, object, context,
-						heavyPartition, inclusionProbability);
-			}
-			for (int lane = 0; lane < auditLaneCount; lane++) {
-				emitOrientations(emitter, explicit, 2, lane, subject, predicate, object, context,
-						heavyPartition, inclusionProbability);
-			}
+			emitDirection(emitter, explicit, FrontierManifestIdentity.SUBJECT_TO_OBJECT_DIRECTION,
+					subject, predicate, object, context, designLaneCount, auditLaneCount,
+					heavyPartition, inclusionProbability);
+			emitDirection(emitter, explicit, FrontierManifestIdentity.OBJECT_TO_SUBJECT_DIRECTION,
+					object, predicate, subject, context, designLaneCount, auditLaneCount,
+					heavyPartition, inclusionProbability);
 		});
 	}
 
-	private static void emitOrientations(BlockEmitter emitter, boolean explicit, int laneRole, int laneIndex,
-			long subject, long predicate, long object, long context, HeavyPartition heavyPartition,
-			double inclusionProbability) throws IOException {
-		emitIfSelected(emitter, explicit, FrontierManifestIdentity.SUBJECT_TO_OBJECT_DIRECTION, laneRole, laneIndex,
-				subject, predicate, object, context, heavyPartition, inclusionProbability);
-		emitIfSelected(emitter, explicit, FrontierManifestIdentity.OBJECT_TO_SUBJECT_DIRECTION, laneRole, laneIndex,
-				object, predicate, subject, context, heavyPartition, inclusionProbability);
+	private static void emitDirection(BlockEmitter emitter, boolean explicit, int direction,
+			long center, long predicate, long neighbor, long context, int designLaneCount, int auditLaneCount,
+			HeavyPartition heavyPartition, double inclusionProbability) throws IOException {
+		if (heavyPartition.contains(direction, center) || inclusionProbability == 1.0d) {
+			emitSharedExact(emitter, explicit, direction, center, predicate, neighbor, context);
+			return;
+		}
+		for (int lane = 0; lane < designLaneCount; lane++) {
+			emitIfSelected(emitter, explicit, direction, FrontierManifestIdentity.DESIGN_LANE_ROLE, lane,
+					center, predicate, neighbor, context, inclusionProbability);
+		}
+		for (int lane = 0; lane < auditLaneCount; lane++) {
+			emitIfSelected(emitter, explicit, direction, FrontierManifestIdentity.AUDIT_LANE_ROLE, lane,
+					center, predicate, neighbor, context, inclusionProbability);
+		}
 	}
 
 	private static void emitIfSelected(BlockEmitter emitter, boolean explicit, int direction, int laneRole,
-			int laneIndex, long center, long predicate, long neighbor, long context, HeavyPartition heavyPartition,
-			double inclusionProbability) throws IOException {
+			int laneIndex, long center, long predicate, long neighbor, long context, double inclusionProbability)
+			throws IOException {
 		long laneHash = laneHash(center, laneRole, laneIndex);
-		boolean exactHeavy = heavyPartition.contains(direction, center);
-		if (!exactHeavy && !selected(laneHash, inclusionProbability)) {
+		if (!selected(laneHash, inclusionProbability)) {
 			return;
 		}
 		long flags = explicit ? FLAG_EXPLICIT : 0L;
-		double recordProbability = exactHeavy ? 1.0d : inclusionProbability;
-		if (recordProbability == 1.0d) {
-			flags |= FLAG_DATABASE_EXACT;
-		}
 		emitter.append(
 				RECORD_FORMAT_VERSION,
 				direction,
@@ -335,9 +328,30 @@ final class FrontierSynopsisBuilder {
 				predicate,
 				neighbor,
 				context,
-				Double.doubleToRawLongBits(1.0d / recordProbability),
-				Double.doubleToRawLongBits(recordProbability),
+				Double.doubleToRawLongBits(1.0d / inclusionProbability),
+				Double.doubleToRawLongBits(inclusionProbability),
 				laneHash);
+	}
+
+	private static void emitSharedExact(BlockEmitter emitter, boolean explicit, int direction,
+			long center, long predicate, long neighbor, long context) throws IOException {
+		long flags = FLAG_DATABASE_EXACT | FLAG_SHARED_ACROSS_LANES;
+		if (explicit) {
+			flags |= FLAG_EXPLICIT;
+		}
+		emitter.append(
+				RECORD_FORMAT_VERSION,
+				direction,
+				FrontierManifestIdentity.ALL_LANE_ROLES,
+				-1L,
+				flags,
+				center,
+				predicate,
+				neighbor,
+				context,
+				Double.doubleToRawLongBits(1.0d),
+				Double.doubleToRawLongBits(1.0d),
+				0L);
 	}
 
 	private static boolean selected(long center, int laneRole, int laneIndex, double probability) {
@@ -456,7 +470,10 @@ final class FrontierSynopsisBuilder {
 			int slot = slotsByCenter.get(center);
 			if (slot >= 0) {
 				estimatedCounts[slot] = Math.incrementExact(estimatedCounts[slot]);
-				siftDown(heapPositions[slot]);
+				int position = heapPositions[slot];
+				if (position < size >>> 1) {
+					siftDown(position);
+				}
 				return;
 			}
 			if (size < centers.length) {

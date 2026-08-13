@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -23,15 +24,40 @@ import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Answers;
 
 class LmdbStatementPatternCardinalitySourceTest {
+
+	@Test
+	void directDistinctProbePreservesCallerPattern() {
+		long identity = -780L;
+		TripleStore tripleStore = mock(TripleStore.class, invocation -> {
+			if (invocation.getMethod().getReturnType() == OptionalLong.class) {
+				return OptionalLong.of(7L);
+			}
+			return Answers.RETURNS_DEFAULTS.answer(invocation);
+		});
+		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		LmdbStatementPatternCardinalitySource source = new LmdbStatementPatternCardinalitySource(
+				mock(ValueStore.class), tripleStore, identity);
+
+		try {
+			assertEquals(7.0d, source.estimateDistinct(pattern, "s", 32).orElseThrow());
+			assertNull(pattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_VARS));
+			assertNull(pattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_SOURCE));
+		} finally {
+			LmdbStatementPatternCardinalitySource.evictStore(identity);
+		}
+	}
 
 	@Test
 	void ordinaryTierRepeatedVariablesNeverTriggerAnExactLmdbScan() throws Exception {

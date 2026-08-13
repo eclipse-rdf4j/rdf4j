@@ -25,10 +25,13 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 final class FactorCostCacheKey {
 	private FactorCostCacheKey() {
@@ -42,6 +45,34 @@ final class FactorCostCacheKey {
 	}
 
 	static Object factorFingerprint(TupleExpr factor) {
+		return uncachedFactorFingerprint(factor, null);
+	}
+
+	static Object factorFingerprint(TupleExpr factor, LmdbEstimatorOptimizationScope scope) {
+		return scope == null ? factorFingerprint(factor) : scope.factorFingerprint(factor);
+	}
+
+	static DetachedFactorFingerprint detachedFactorFingerprint(TupleExpr factor) {
+		if (factor == null) {
+			return new DetachedFactorFingerprint("null", 64L);
+		}
+		TupleExpr detached = factor.clone();
+		RetainedBytesVisitor retainedBytes = new RetainedBytesVisitor();
+		detached.visit(retainedBytes);
+		return new DetachedFactorFingerprint(
+				StructuralQueryModelFingerprint.of(detached), retainedBytes.retainedBytes());
+	}
+
+	static long estimatedRetainedBytes(TupleExpr factor) {
+		if (factor == null) {
+			return 64L;
+		}
+		RetainedBytesVisitor retainedBytes = new RetainedBytesVisitor();
+		factor.visit(retainedBytes);
+		return retainedBytes.retainedBytes();
+	}
+
+	static Object uncachedFactorFingerprint(TupleExpr factor, LmdbEstimatorOptimizationScope scope) {
 		if (factor instanceof StatementPattern statementPattern) {
 			return StatementPatternFactorFingerprint.of(statementPattern);
 		}
@@ -49,20 +80,24 @@ final class FactorCostCacheKey {
 			return BindingSetAssignmentFactorFingerprint.of(bindingSetAssignment);
 		}
 		if (factor instanceof Filter filter) {
-			return UnaryFactorFingerprint.of("Filter", factorFingerprint(filter.getArg()),
-					valueExprFingerprint(filter.getCondition()));
+			return UnaryFactorFingerprint.of("Filter", factorFingerprint(filter.getArg(), scope),
+					queryModelFingerprint(filter.getCondition(), scope));
 		}
 		if (factor instanceof LeftJoin leftJoin) {
-			return BinaryFactorFingerprint.of("LeftJoin", factorFingerprint(leftJoin.getLeftArg()),
-					factorFingerprint(leftJoin.getRightArg()), valueExprFingerprint(leftJoin.getCondition()));
+			return BinaryFactorFingerprint.of("LeftJoin", factorFingerprint(leftJoin.getLeftArg(), scope),
+					factorFingerprint(leftJoin.getRightArg(), scope),
+					queryModelFingerprint(leftJoin.getCondition(), scope));
 		}
 		if (factor instanceof Join join) {
-			return BinaryFactorFingerprint.of("Join", factorFingerprint(join.getLeftArg()),
-					factorFingerprint(join.getRightArg()), null);
+			return BinaryFactorFingerprint.of("Join", factorFingerprint(join.getLeftArg(), scope),
+					factorFingerprint(join.getRightArg(), scope), null);
 		}
 		if (factor instanceof Union union) {
-			return BinaryFactorFingerprint.of("Union", factorFingerprint(union.getLeftArg()),
-					factorFingerprint(union.getRightArg()), null);
+			return BinaryFactorFingerprint.of("Union", factorFingerprint(union.getLeftArg(), scope),
+					factorFingerprint(union.getRightArg(), scope), null);
+		}
+		if (factor != null && scope != null) {
+			return StructuralQueryModelFingerprint.of(factor);
 		}
 		return FallbackFactorFingerprint.of(factor == null ? "null" : factor.getClass().getName(),
 				factor == null ? "" : factor.toString());
@@ -76,14 +111,17 @@ final class FactorCostCacheKey {
 				Set.copyOf(expression.getBindingNames()));
 	}
 
-	private static Object valueExprFingerprint(Object valueExpr) {
-		return valueExpr == null ? null
-				: FallbackFactorFingerprint.of(valueExpr.getClass().getName(),
-						valueExpr.toString());
+	private static Object queryModelFingerprint(QueryModelNode node, LmdbEstimatorOptimizationScope scope) {
+		if (node == null) {
+			return null;
+		}
+		return scope == null
+				? FallbackFactorFingerprint.of(node.getClass().getName(), node.toString())
+				: StructuralQueryModelFingerprint.of(node);
 	}
 
-	private static String valueFingerprint(Value value) {
-		return value == null ? "" : valueTypeName(value) + ':' + value;
+	private static ValueFingerprint valueFingerprint(Value value) {
+		return ValueFingerprint.of(value);
 	}
 
 	private static String valueTypeName(Value value) {
@@ -118,6 +156,17 @@ final class FactorCostCacheKey {
 		return 31 * seed + (value ? 1 : 0);
 	}
 
+	private static long saturatedAdd(long left, long right) {
+		return Long.MAX_VALUE - left < right ? Long.MAX_VALUE : left + right;
+	}
+
+	private static long stringBytes(String value) {
+		return value == null ? 0L : saturatedAdd(48L, 2L * value.length());
+	}
+
+	record DetachedFactorFingerprint(Object identity, long retainedBytes) {
+	}
+
 	private record EstimatorFingerprint(String nodeType, String rendering, Set<String> bindingNames) {
 	}
 
@@ -144,14 +193,30 @@ final class FactorCostCacheKey {
 		}
 	}
 
-	private record VarFingerprint(int hash, String name, Value value, boolean anonymous, boolean constant) {
+	private record ValueFingerprint(int hash, String type, Value value) {
+
+		private static ValueFingerprint of(Value value) {
+			if (value == null) {
+				return null;
+			}
+			String type = valueTypeName(value);
+			return new ValueFingerprint(nullableHash(type), type, value);
+		}
+
+		@Override
+		public int hashCode() {
+			return hash;
+		}
+	}
+
+	private record VarFingerprint(int hash, String name, ValueFingerprint value, boolean anonymous, boolean constant) {
 
 		private static VarFingerprint of(Var var) {
 			if (var == null) {
 				return null;
 			}
 			String name = var.getName();
-			Value value = var.getValue();
+			ValueFingerprint value = valueFingerprint(var.getValue());
 			boolean anonymous = var.isAnonymous();
 			boolean constant = var.isConstant();
 			int hash = nullableHash(name);
@@ -167,27 +232,42 @@ final class FactorCostCacheKey {
 		}
 	}
 
+	private record BindingFingerprint(int hash, String name, ValueFingerprint value) {
+
+		private static BindingFingerprint of(String name, Value value) {
+			ValueFingerprint fingerprint = valueFingerprint(value);
+			int hash = nullableHash(name);
+			hash = hashStep(hash, fingerprint);
+			return new BindingFingerprint(hash, name, fingerprint);
+		}
+
+		@Override
+		public int hashCode() {
+			return hash;
+		}
+	}
+
 	private record BindingSetAssignmentFactorFingerprint(int hash, Set<String> bindingNames,
-			List<String> bindingRows) {
+			List<List<BindingFingerprint>> bindingRows) {
 
 		private static BindingSetAssignmentFactorFingerprint of(BindingSetAssignment bindingSetAssignment) {
-			List<String> bindingRows = new ArrayList<>();
+			List<List<BindingFingerprint>> bindingRows = new ArrayList<>();
 			Iterable<BindingSet> bindingSets = bindingSetAssignment.getBindingSets();
 			if (bindingSets != null) {
 				for (BindingSet bindingSet : bindingSets) {
-					List<String> row = new ArrayList<>();
-					for (String bindingName : bindingSet.getBindingNames()) {
-						row.add(bindingName + '=' + valueFingerprint(bindingSet.getValue(bindingName)));
+					List<String> names = new ArrayList<>(bindingSet.getBindingNames());
+					names.sort(String::compareTo);
+					List<BindingFingerprint> row = new ArrayList<>(names.size());
+					for (String bindingName : names) {
+						row.add(BindingFingerprint.of(bindingName, bindingSet.getValue(bindingName)));
 					}
-					row.sort(String::compareTo);
-					bindingRows.add(String.join(",", row));
+					bindingRows.add(List.copyOf(row));
 				}
 			}
-			bindingRows.sort(String::compareTo);
 			Set<String> bindingNames = Set.copyOf(bindingSetAssignment.getBindingNames());
 			int hash = nullableHash(bindingNames);
 			hash = hashStep(hash, bindingRows);
-			return new BindingSetAssignmentFactorFingerprint(hash, bindingNames, bindingRows);
+			return new BindingSetAssignmentFactorFingerprint(hash, bindingNames, List.copyOf(bindingRows));
 		}
 
 		@Override
@@ -224,6 +304,93 @@ final class FactorCostCacheKey {
 		@Override
 		public int hashCode() {
 			return hash;
+		}
+	}
+
+	/**
+	 * Query-local packed planning treats the normalized algebra as immutable. The routing hash deliberately uses only
+	 * operator shape and hash-safe value kinds because RDF values may defer lexical materialization and make
+	 * {@link Value#hashCode()} storage-dependent. Structural equality disambiguates every hash collision.
+	 */
+	private record StructuralQueryModelFingerprint(int hash, QueryModelNode node) {
+
+		private static StructuralQueryModelFingerprint of(QueryModelNode node) {
+			StructuralHashVisitor visitor = new StructuralHashVisitor();
+			node.visit(visitor);
+			return new StructuralQueryModelFingerprint(visitor.hash(), node);
+		}
+
+		@Override
+		public int hashCode() {
+			return hash;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			return this == other || other instanceof StructuralQueryModelFingerprint that
+					&& hash == that.hash
+					&& node.equals(that.node);
+		}
+	}
+
+	private static final class StructuralHashVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+
+		private int hash = 1;
+
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			hash = hashStep(hash, node.getClass().getName());
+			if (node instanceof Var var) {
+				hash = hashStep(hash, var.getName());
+				hash = hashStep(hash, var.isAnonymous());
+				hash = hashStep(hash, var.isConstant());
+				hash = hashStep(hash, valueFingerprint(var.getValue()));
+			} else if (node instanceof ValueConstant constant) {
+				hash = hashStep(hash, valueFingerprint(constant.getValue()));
+			} else if (node instanceof BindingSetAssignment assignment) {
+				hash = hashStep(hash, BindingSetAssignmentFactorFingerprint.of(assignment));
+			}
+			node.visitChildren(this);
+			hash = hashStep(hash, "end");
+		}
+
+		private int hash() {
+			return hash;
+		}
+	}
+
+	private static final class RetainedBytesVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+
+		private long retainedBytes = 256L;
+
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			retainedBytes = saturatedAdd(retainedBytes,
+					saturatedAdd(192L, stringBytes(node.getClass().getName())));
+			if (node instanceof Var var) {
+				retainedBytes = saturatedAdd(retainedBytes, stringBytes(var.getName()));
+				if (var.getValue() != null) {
+					retainedBytes = saturatedAdd(retainedBytes, 256L);
+				}
+			} else if (node instanceof ValueConstant constant && constant.getValue() != null) {
+				retainedBytes = saturatedAdd(retainedBytes, 256L);
+			} else if (node instanceof BindingSetAssignment assignment) {
+				for (String bindingName : assignment.getBindingNames()) {
+					retainedBytes = saturatedAdd(retainedBytes, stringBytes(bindingName));
+				}
+				Iterable<BindingSet> bindingSets = assignment.getBindingSets();
+				if (bindingSets != null) {
+					for (BindingSet bindingSet : bindingSets) {
+						retainedBytes = saturatedAdd(retainedBytes, 128L);
+						retainedBytes = saturatedAdd(retainedBytes, 256L * bindingSet.size());
+					}
+				}
+			}
+			super.meetNode(node);
+		}
+
+		private long retainedBytes() {
+			return retainedBytes;
 		}
 	}
 

@@ -128,37 +128,73 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 	@Test
 	@Timeout(120)
 	void pharmaQ2UsesExactFiniteAnchorCascadesPlan() throws Exception {
+		String previousMode = System.setProperty("rdf4j.optimizer.lmdb.cascades.mode", "exact");
 		RunQueryPlanState state = new RunQueryPlanState();
 		state.themeName = THEME.name();
 		state.z_queryIndex = 2;
 		state.sketchEstimatorEnabled = true;
 
+		try {
+			state.setup();
+			try {
+				OptimizedPlanSnapshot snapshot = state.optimizedPlanSnapshot();
+				String plan = snapshot.plan();
+				String diagnostics = snapshot.diagnostics();
+
+				assertTrue(diagnostics.contains("optimizer.cascadesApplied=true"),
+						"PHARMA q2 should be planned by the packed Cascades route\n" + diagnostics);
+				assertTrue(diagnostics.contains("optimizer.cascadesApproximate=false"),
+						"PHARMA q2 should retain an exact Cascades plan\n" + diagnostics);
+				assertTrue(diagnostics.contains("optimizer.cascadesCompleteness=COMPLETE"),
+						"PHARMA q2 should retain a complete Cascades search\n" + diagnostics);
+				assertTrue(plan.contains("BindingSetAssignment")
+						&& plan.contains("disease=http://example.com/theme/pharma/disease/2")
+						&& plan.contains("disease=http://example.com/theme/pharma/disease/3"),
+						"PHARMA q2 should materialize the finite disease anchor as a BindingSetAssignment on the "
+								+ "alias source\n" + plan);
+				assertBefore(plan,
+						"BindingSetAssignment",
+						"value=http://example.com/theme/pharma/targets",
+						"PHARMA q2 should drive the disease anchor before the broader targets fanout\n" + plan);
+				assertTrue(plan.contains("ListMemberOperator"),
+						"PHARMA q2 should retain the optDisease IN filter alongside the heuristic-evidence anchor\n"
+								+ plan);
+				assertStatementPatternSeesBoundObject(plan, "http://example.com/theme/pharma/indicatedFor");
+			} finally {
+				state.tearDown();
+			}
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.cascades.mode", previousMode);
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void pharmaQ6BindsCombinationMembersBeforeTargetIntersection() throws Exception {
+		RunQueryPlanState state = new RunQueryPlanState();
+		state.themeName = THEME.name();
+		state.z_queryIndex = 6;
+		state.sketchEstimatorEnabled = true;
+		state.sketchEstimatorStrategy = "unified";
+		state.rebuildStoreBeforeSetup = true;
+
 		state.setup();
 		try {
-			OptimizedPlanSnapshot snapshot = state.optimizedPlanSnapshot();
-			String plan = snapshot.plan();
-			String diagnostics = snapshot.diagnostics();
-
-			assertTrue(diagnostics.contains("optimizer.cascadesApplied=true"),
-					"PHARMA q2 should be planned by the packed Cascades route\n" + diagnostics);
-			assertTrue(diagnostics.contains("optimizer.cascadesApproximate=false"),
-					"PHARMA q2 should retain an exact Cascades plan\n" + diagnostics);
-			assertTrue(diagnostics.contains("optimizer.cascadesCompleteness=COMPLETE"),
-					"PHARMA q2 should retain a complete Cascades search\n" + diagnostics);
-			assertTrue(plan.contains("BindingSetAssignment")
-					&& plan.contains("disease=http://example.com/theme/pharma/disease/2")
-					&& plan.contains("disease=http://example.com/theme/pharma/disease/3"),
-					"PHARMA q2 should materialize the finite disease anchor as a BindingSetAssignment on the "
-							+ "alias source\n" + plan);
-			assertBefore(plan,
-					"BindingSetAssignment",
-					"value=http://example.com/theme/pharma/targets",
-					"PHARMA q2 should drive the disease anchor before the broader targets fanout\n" + plan);
-			assertTrue(plan.contains("ListMemberOperator"),
-					"PHARMA q2 should retain the optDisease IN filter alongside the heuristic-evidence anchor\n"
-							+ plan);
-			assertStatementPatternSeesBoundObject(plan, "http://example.com/theme/pharma/indicatedFor");
+			String rendered = state.preparedPlanSnapshot().renderedSparql();
+			assertBefore(rendered,
+					"?combo a <http://example.com/theme/pharma/Combination>",
+					"?drugA <http://example.com/theme/pharma/targets> ?target",
+					"PHARMA q6 must anchor the combination before expanding the shared target domain");
+			assertBefore(rendered,
+					"?combo <http://example.com/theme/pharma/combinationOf> ?drugA",
+					"?drugA <http://example.com/theme/pharma/targets> ?target",
+					"PHARMA q6 must bind the first combination member before its target lookup");
+			assertBefore(rendered,
+					"?combo <http://example.com/theme/pharma/combinationOf> ?drugB",
+					"?drugB <http://example.com/theme/pharma/targets> ?target",
+					"PHARMA q6 must bind the second combination member before intersecting targets");
 		} finally {
+			state.disableTelemetryTeardown();
 			state.tearDown();
 		}
 	}
@@ -472,8 +508,18 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 			}
 		}
 
+		private LmdbBenchmarkQueryPlan.PreparedPlanSnapshot preparedPlanSnapshot() {
+			try (LmdbBenchmarkQueryPlan plan = preparePlan()) {
+				return plan.preparedPlanSnapshot();
+			}
+		}
+
 		private LmdbBenchmarkQueryPlan preparePlanWithoutRendering() {
 			return preparePlan(false);
+		}
+
+		private void disableTelemetryTeardown() {
+			query = null;
 		}
 	}
 

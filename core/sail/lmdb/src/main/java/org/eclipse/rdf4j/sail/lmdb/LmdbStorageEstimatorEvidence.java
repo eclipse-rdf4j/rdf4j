@@ -22,6 +22,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -62,16 +63,25 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 	private final LmdbOperatorFeedbackStats feedback;
 	private final LmdbPropertyPathEstimator propertyPaths;
 	private final LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator;
+	private final ExactFiniteSurfaceProvider exactFiniteSurfaceProvider;
 
 	LmdbStorageEstimatorEvidence(ValueStore valueStore, LmdbStatementPatternCardinalitySource cardinalities,
 			LmdbQuadSynopsisService synopsis, LmdbFilterSelectivityStats filters,
 			LmdbOperatorFeedbackStats feedback, LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator) {
+		this(valueStore, cardinalities, synopsis, filters, feedback, finiteJoinSurfaceEstimator, null);
+	}
+
+	LmdbStorageEstimatorEvidence(ValueStore valueStore, LmdbStatementPatternCardinalitySource cardinalities,
+			LmdbQuadSynopsisService synopsis, LmdbFilterSelectivityStats filters,
+			LmdbOperatorFeedbackStats feedback, LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator,
+			ExactFiniteSurfaceProvider exactFiniteSurfaceProvider) {
 		this.valueStore = valueStore;
 		this.cardinalities = cardinalities;
 		this.synopsis = synopsis;
 		this.filters = filters;
 		this.feedback = feedback;
 		this.finiteJoinSurfaceEstimator = finiteJoinSurfaceEstimator;
+		this.exactFiniteSurfaceProvider = exactFiniteSurfaceProvider;
 		propertyPaths = new LmdbPropertyPathEstimator(synopsis);
 	}
 
@@ -203,19 +213,34 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 			return Optional.empty();
 		}
 		if (!(input instanceof StatementPattern pattern)) {
-			return filters == null ? Optional.empty() : exactMandatoryPatternFilterZero(input, condition, context);
+			return filters == null || !exactFilterZeroProbePermitted(context)
+					? Optional.empty()
+					: exactMandatoryPatternFilterZero(input, condition, context);
 		}
 		if (filters != null) {
 			Optional<FilterEvidence> evidence = filterEvidence(pattern, condition, context);
 			if (evidence.isPresent()) {
 				return evidence;
 			}
-			Optional<FilterEvidence> boundedZero = exactBoundedFilterZero(pattern, condition);
-			if (boundedZero.isPresent()) {
-				return boundedZero;
+			if (exactFilterZeroProbePermitted(context) && !exactSurfaceExceedsZeroProbeBound(inputEstimate)) {
+				Optional<FilterEvidence> boundedZero = exactBoundedFilterZero(pattern, condition);
+				if (boundedZero.isPresent()) {
+					return boundedZero;
+				}
 			}
 		}
 		return finiteConstantFilterEvidence(pattern, condition, inputEstimate);
+	}
+
+	private static boolean exactFilterZeroProbePermitted(EstimateContext context) {
+		return context != null
+				&& context.exactProbePermitted()
+				&& context.estimationTier().allowsExactEstimates();
+	}
+
+	private static boolean exactSurfaceExceedsZeroProbeBound(BagEstimate inputEstimate) {
+		return LmdbEstimateClassification.databaseExact(inputEstimate)
+				&& inputEstimate.rows() > MAX_EXACT_FILTER_ZERO_SCANNED_ROWS;
 	}
 
 	private Optional<FilterEvidence> exactMissingIriComparison(TupleExpr input, ValueExpr condition,
@@ -341,7 +366,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 
 	private Optional<FilterEvidence> finiteConstantFilterEvidence(StatementPattern pattern, ValueExpr condition,
 			BagEstimate inputEstimate) {
-		if (finiteJoinSurfaceEstimator == null || inputEstimate == null || !valid(inputEstimate.rows())
+		if (!hasFiniteSurfaceEstimator() || inputEstimate == null || !valid(inputEstimate.rows())
 				|| inputEstimate.rows() == 0.0d) {
 			return Optional.empty();
 		}
@@ -378,8 +403,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 				break;
 			}
 		}
-		LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate surface = finiteJoinSurfaceEstimator
-				.estimate(List.of(anchor), pattern, Map.of())
+		LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate surface = estimateFiniteSurface(anchor, pattern)
 				.orElse(null);
 		if (surface == null
 				|| !surface.exact() && surface.cardinalityProbes() == 0
@@ -412,16 +436,50 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 	@Override
 	public Optional<FiniteRelationEstimate> finiteFilterRelation(TupleExpr input, ValueExpr condition,
 			EstimateContext context) {
-		if (finiteJoinSurfaceEstimator == null || !(input instanceof StatementPattern)) {
+		if (!hasFiniteSurfaceEstimator() || !(input instanceof StatementPattern)) {
 			return Optional.empty();
 		}
 		BindingSetAssignment anchor = FilterValuesAnchorSupport.safeValuesAnchor(condition);
 		if (anchor == null || !input.getAssuredBindingNames().containsAll(anchor.getBindingNames())) {
 			return Optional.empty();
 		}
-		return finiteJoinSurfaceEstimator.estimate(List.of(anchor), input, Map.of())
+		return estimateFiniteSurface(anchor, input)
 				.filter(LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate::exact)
 				.map(LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate::relation);
+	}
+
+	private boolean hasFiniteSurfaceEstimator() {
+		return exactFiniteSurfaceProvider != null || finiteJoinSurfaceEstimator != null;
+	}
+
+	private Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> estimateFiniteSurface(
+			BindingSetAssignment anchor, TupleExpr accessKernel) {
+		if (exactFiniteSurfaceProvider != null) {
+			return exactFiniteSurfaceProvider.estimate(finiteRelation(anchor), accessKernel);
+		}
+		return finiteJoinSurfaceEstimator.estimate(List.of(anchor), accessKernel, Map.of());
+	}
+
+	private static FiniteRelationEstimate finiteRelation(BindingSetAssignment assignment) {
+		List<String> variables = assignment.getBindingNames().stream().sorted().toList();
+		List<List<Value>> rows = new ArrayList<>();
+		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
+		if (bindingSets != null) {
+			for (BindingSet bindingSet : bindingSets) {
+				List<Value> row = new ArrayList<>(variables.size());
+				for (String variable : variables) {
+					row.add(bindingSet.getValue(variable));
+				}
+				rows.add(row);
+			}
+		}
+		return FiniteRelationEstimate.fromRows(variables, rows, "finite-values");
+	}
+
+	@FunctionalInterface
+	interface ExactFiniteSurfaceProvider {
+		Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> estimate(
+				FiniteRelationEstimate relation, TupleExpr accessKernel);
 	}
 
 	private static EstimateCandidate candidate(TupleExpr expression, double rows, RowEvidence evidence,

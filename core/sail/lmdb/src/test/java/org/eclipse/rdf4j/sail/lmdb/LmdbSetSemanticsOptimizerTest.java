@@ -76,6 +76,16 @@ class LmdbSetSemanticsOptimizerTest {
 	}
 
 	@Test
+	void keepsSelfJoinWithHeterogeneousCompatibleMappingsUnderDistinct() {
+		BindingSetAssignment mappings = heterogeneousCompatibleMappings();
+		QueryRoot root = optimizeSetSemantics(new Distinct(new Join(mappings, mappings.clone())));
+
+		Distinct distinct = assertInstanceOf(Distinct.class, root.getArg(), () -> root.toString());
+		assertInstanceOf(Join.class, distinct.getArg(),
+				() -> "self-JOIN adds the compatible merged mapping {?x,?y}: " + root);
+	}
+
+	@Test
 	void collapsesDuplicateUnionUnderDistinct() {
 		StatementPattern pattern = statementPattern("person", "type", "type");
 		QueryRoot root = optimizeSetSemantics(new Distinct(new Union(pattern, pattern.clone())));
@@ -95,6 +105,16 @@ class LmdbSetSemanticsOptimizerTest {
 		StatementPattern replacement = assertInstanceOf(StatementPattern.class, distinct.getArg(),
 				() -> root.toString());
 		assertRewriteCertificate(replacement, "SET_LEFTJOIN_IDEMPOTENCE", "26", "false");
+	}
+
+	@Test
+	void keepsSelfLeftJoinWithHeterogeneousCompatibleMappingsUnderDistinct() {
+		BindingSetAssignment mappings = heterogeneousCompatibleMappings();
+		QueryRoot root = optimizeSetSemantics(new Distinct(new LeftJoin(mappings, mappings.clone())));
+
+		Distinct distinct = assertInstanceOf(Distinct.class, root.getArg(), () -> root.toString());
+		assertInstanceOf(LeftJoin.class, distinct.getArg(),
+				() -> "self-LEFT_JOIN adds compatible merged mappings that the input does not contain: " + root);
 	}
 
 	@Test
@@ -286,6 +306,17 @@ class LmdbSetSemanticsOptimizerTest {
 			bindingSets.add(bindingSet);
 		}
 		assignment.setBindingSets(bindingSets);
+		return assignment;
+	}
+
+	private static BindingSetAssignment heterogeneousCompatibleMappings() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("x", "y"));
+		MapBindingSet x = new MapBindingSet(1);
+		x.addBinding("x", VF.createLiteral("x"));
+		MapBindingSet y = new MapBindingSet(1);
+		y.addBinding("y", VF.createLiteral("y"));
+		assignment.setBindingSets(List.of(x, y));
 		return assignment;
 	}
 

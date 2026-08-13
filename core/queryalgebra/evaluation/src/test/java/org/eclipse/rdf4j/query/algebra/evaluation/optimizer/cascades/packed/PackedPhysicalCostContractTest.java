@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -48,6 +49,11 @@ class PackedPhysicalCostContractTest {
 		estimate.putPlannedStringMetric("Aa", "first");
 		estimate.putPlannedStringMetric("BB", "collision");
 		estimate.putPlannedStringMetric(new String("Aa"), "replaced");
+		assertTrue(estimate.removePlannedStringMetric(new String("Aa")));
+		assertNull(estimate.plannedStringMetric("Aa"));
+		assertEquals("collision", estimate.plannedStringMetric("BB"));
+		assertFalse(estimate.removePlannedStringMetric("missing"));
+		estimate.putPlannedStringMetric("Aa", "replaced");
 
 		assertEquals(80, estimate.plannedDoubleMetrics().size());
 		assertEquals(137.0d, estimate.plannedDoubleMetrics().get("metric-37"));
@@ -415,6 +421,72 @@ class PackedPhysicalCostContractTest {
 		assertEquals(true, copy.dependentSubqueriesCosted());
 		assertEquals(FrontierStateDisposition.OPAQUE_BOUNDARY,
 				PackedCostEstimate.class.getMethod("evidenceDisposition").invoke(copy));
+	}
+
+	@Test
+	void compactMetadataColumnsPreserveRowsAcrossLateRichEstimate() {
+		PackedSearchBudget budget = new PackedSearchBudget(PackedPlannerLimits.unbounded());
+		PackedPhysicalMetadataArena arena = new PackedPhysicalMetadataArena(0, budget);
+		PackedCostEstimate scalarBefore = new PackedCostEstimate();
+		scalarBefore.setRows(3.0d, 5.0d);
+		int scalarBeforeId = arena.append(scalarBefore, 1.0d, 1.0d);
+
+		PackedCostEstimate rich = new PackedCostEstimate();
+		rich.setRows(7.0d, 11.0d);
+		rich.setInclusivePhysicalCost(2.0d, 3.0d, 5.0d, 7.0d, 11.0d, 13.0d, 17.0d, 19.0d,
+				23.0d);
+		rich.setObjectiveInterval(50.0d, 55.0d, 60.0d);
+		rich.setAccess(3, 1, 2, 17.0d, 4.0d, "spoc", "frontier", "bound-prefix");
+		rich.setEvidenceStateId(41);
+		rich.setEvidenceGuarantee(EvidenceGuarantee.DATABASE_EXACT);
+		int richId = arena.append(rich, 1.0d, 1.0d);
+
+		PackedCostEstimate scalarAfter = new PackedCostEstimate();
+		scalarAfter.setRows(13.0d, 29.0d);
+		scalarAfter.putPlannedStringMetric("providerTag", "late");
+		int scalarAfterId = arena.append(scalarAfter, 1.0d, 1.0d);
+		arena.addRuleProofMask(scalarAfterId, 8L);
+		PackedCostEstimate overriddenScope = new PackedCostEstimate();
+		overriddenScope.setRows(31.0d, 37.0d);
+		overriddenScope.putPlannedStringMetric("plannedCostScope", "provider-defined");
+		int overriddenScopeId = arena.append(overriddenScope, 1.0d, 1.0d);
+
+		assertEquals(5.0d, arena.sequentialRows(scalarBeforeId));
+		assertEquals(0.0d, arena.randomSeeks(scalarBeforeId));
+		assertEquals(5.0d, arena.objectivePointCost(scalarBeforeId));
+		assertTrue(Double.isNaN(arena.accessRows(scalarBeforeId)));
+		assertEquals(1.0d, arena.invocations(scalarBeforeId));
+		assertEquals(1, arena.plannedStringMetricCount(scalarBeforeId));
+		assertEquals("plannedCostScope", arena.plannedStringMetricName(scalarBeforeId, 0));
+		assertEquals("local", arena.plannedStringMetricValue(scalarBeforeId, 0));
+
+		assertEquals(2.0d, arena.sequentialRows(richId));
+		assertEquals(3.0d, arena.randomSeeks(richId));
+		assertEquals(55.0d, arena.objectivePointCost(richId));
+		assertEquals(17.0d, arena.accessRows(richId));
+		assertEquals(4.0d, arena.invocations(richId));
+		assertEquals(41, arena.evidenceStateId(richId));
+		assertEquals(EvidenceGuarantee.DATABASE_EXACT, arena.evidenceGuarantee(richId));
+		assertEquals("spoc", arena.indexName(richId));
+		assertEquals("inclusive", arena.plannedStringMetricValue(richId, 0));
+
+		assertEquals(29.0d, arena.sequentialRows(scalarAfterId));
+		assertEquals(0.0d, arena.randomSeeks(scalarAfterId));
+		assertEquals(29.0d, arena.objectiveUpperBound(scalarAfterId));
+		assertTrue(Double.isNaN(arena.accessRows(scalarAfterId)));
+		assertEquals(1.0d, arena.invocations(scalarAfterId));
+		assertEquals(8L, arena.ruleProofMask(scalarAfterId));
+		assertEquals(2, arena.plannedStringMetricCount(scalarAfterId));
+		assertEquals("plannedCostScope", arena.plannedStringMetricName(scalarAfterId, 0));
+		assertEquals("local", arena.plannedStringMetricValue(scalarAfterId, 0));
+		assertEquals("providerTag", arena.plannedStringMetricName(scalarAfterId, 1));
+		assertEquals("late", arena.plannedStringMetricValue(scalarAfterId, 1));
+
+		assertEquals(1, arena.plannedStringMetricCount(overriddenScopeId));
+		assertEquals("plannedCostScope", arena.plannedStringMetricName(overriddenScopeId, 0));
+		assertEquals("provider-defined", arena.plannedStringMetricValue(overriddenScopeId, 0));
+		assertEquals(PackedPhysicalMetadataArena.requiredBytesForCapacity(8, 8, 4), budget.retainedBytes(),
+				"virtual metrics must retain the same logical byte accounting as materialized metrics");
 	}
 
 	@Test

@@ -273,20 +273,9 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 
 	public EvidenceProfile group(Set<String> groupVars) {
 		Set<String> vars = safeSet(groupVars);
-		double groupedRows;
-		if (vars.isEmpty()) {
-			groupedRows = rows > 0.0d ? 1.0d : 0.0d;
-		} else {
-			groupedRows = relationContaining(vars)
-					.map(relation -> relation.distinctRows(vars))
-					.orElseGet(() -> vars.stream()
-							.map(this::variable)
-							.mapToDouble(VariableEstimate::distinctRows)
-							.filter(value -> value > 0.0d)
-							.min()
-							.orElse(Math.min(rows, 1.0d)));
-		}
-		groupedRows = clampRows(groupedRows, 0.0d, finiteNonNegative(rows));
+		double groupedRows = vars.isEmpty() ? 1.0d : tupleDistinct(vars);
+		double maximumGroups = vars.isEmpty() ? 1.0d : finiteNonNegative(rows);
+		groupedRows = clampRows(groupedRows, 0.0d, maximumGroups);
 		Map<String, VariableEstimate> groupedVariables = projectedBoundVariables(vars, groupedRows);
 		Map<VariableSetKey, FiniteRelationEstimate> groupedFinite = distinctFiniteRelation(vars, "group")
 				.map(relation -> Map.of(relation.variableSetKey(), relation))

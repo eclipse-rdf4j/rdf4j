@@ -18,13 +18,20 @@ import java.util.Arrays;
 final class PackedJoinHypergraph {
 
 	static final int MAX_NODES = Long.SIZE;
+	private static final int MAX_MEMOIZED_SIMPLE_SUBSET_NODES = 16;
+	private static final long CONNECTIVITY_STATE_MASK = 0b11L;
+	private static final long DISCONNECTED = 1L;
+	private static final long CONNECTED = 2L;
 
 	private final int nodeCount;
+	private final PackedNodeSetArena nodeSets;
 	private final long[] simpleNeighborhoods;
 	private final int[] firstComplexIncidences;
 	private final int[] firstEdgeIncidences;
 	private long[] edgeLeft;
 	private long[] edgeRight;
+	private int[] edgeLeftNodeSets;
+	private int[] edgeRightNodeSets;
 	private int edgeCount;
 	private int[] complexIncidenceArcs;
 	private int[] nextComplexIncidences;
@@ -32,13 +39,32 @@ final class PackedJoinHypergraph {
 	private int[] edgeIncidenceEdges;
 	private int[] nextEdgeIncidences;
 	private int edgeIncidenceCount;
+	private long[] simpleSubsetConnectivity;
 
 	PackedJoinHypergraph(int nodeCount) {
+		this(nodeCount, null, true);
+	}
+
+	PackedJoinHypergraph(int nodeCount, PackedNodeSetArena nodeSets) {
+		this(nodeCount, nodeSets, false);
+	}
+
+	private PackedJoinHypergraph(int nodeCount, PackedNodeSetArena nodeSets, boolean requireOneWord) {
 		if (nodeCount < 0 || nodeCount > MAX_NODES) {
-			throw new IllegalArgumentException("packed join hypergraph node count must be between 0 and 64");
+			if (requireOneWord || nodeCount < 0) {
+				throw new IllegalArgumentException(
+						"one-word packed join hypergraph node count must be between 0 and 64");
+			}
+		}
+		if (!requireOneWord && nodeSets == null) {
+			throw new NullPointerException("nodeSets");
+		}
+		if (nodeSets != null && nodeSets.nodeCount() != nodeCount) {
+			throw new IllegalArgumentException("join hypergraph and node-set arena widths must match");
 		}
 		this.nodeCount = nodeCount;
-		simpleNeighborhoods = new long[nodeCount];
+		this.nodeSets = nodeSets;
+		simpleNeighborhoods = nodeCount <= MAX_NODES ? new long[nodeCount] : new long[0];
 		firstComplexIncidences = new int[nodeCount];
 		firstEdgeIncidences = new int[nodeCount];
 		Arrays.fill(firstComplexIncidences, -1);
@@ -46,6 +72,8 @@ final class PackedJoinHypergraph {
 		int initialEdges = Math.max(4, nodeCount);
 		edgeLeft = new long[initialEdges];
 		edgeRight = new long[initialEdges];
+		edgeLeftNodeSets = nodeSets == null ? new int[0] : new int[initialEdges];
+		edgeRightNodeSets = nodeSets == null ? new int[0] : new int[initialEdges];
 		complexIncidenceArcs = new int[Math.max(4, nodeCount << 1)];
 		nextComplexIncidences = new int[complexIncidenceArcs.length];
 		edgeIncidenceEdges = new int[Math.max(4, nodeCount << 1)];
@@ -53,6 +81,9 @@ final class PackedJoinHypergraph {
 	}
 
 	int addEdge(long left, long right) {
+		if (nodeSets != null) {
+			return addNodeSetEdge(nodeSets.intern(left), nodeSets.intern(right));
+		}
 		if (left == 0L || right == 0L) {
 			throw new IllegalArgumentException("packed hyperedge sides must be nonempty");
 		}
@@ -63,19 +94,57 @@ final class PackedJoinHypergraph {
 		if (((left | right) & ~knownNodes) != 0L) {
 			throw new IllegalArgumentException("packed hyperedge references an unknown node");
 		}
+		return addEdge(left, right, 0, 0);
+	}
+
+	int addNodeSetEdge(int leftNodeSetId, int rightNodeSetId) {
+		if (nodeSets == null) {
+			throw new IllegalStateException("one-word hypergraph has no node-set endpoint arena");
+		}
+		if (leftNodeSetId == 0 || rightNodeSetId == 0) {
+			throw new IllegalArgumentException("packed hyperedge sides must be nonempty");
+		}
+		if (nodeSets.intersects(leftNodeSetId, rightNodeSetId)) {
+			throw new IllegalArgumentException("packed hyperedge sides must be disjoint");
+		}
+		int leftMaximum = maximumMember(leftNodeSetId);
+		int rightMaximum = maximumMember(rightNodeSetId);
+		if (leftMaximum >= nodeCount || rightMaximum >= nodeCount) {
+			throw new IllegalArgumentException("packed hyperedge references an unknown node");
+		}
+		long left = nodeCount <= MAX_NODES ? nodeSets.oneWordMask(leftNodeSetId) : 0L;
+		long right = nodeCount <= MAX_NODES ? nodeSets.oneWordMask(rightNodeSetId) : 0L;
+		return addEdge(left, right, leftNodeSetId, rightNodeSetId);
+	}
+
+	private int addEdge(long left, long right, int leftNodeSetId, int rightNodeSetId) {
 		ensureEdgeCapacity(edgeCount + 1);
 		int edge = edgeCount++;
 		edgeLeft[edge] = left;
 		edgeRight[edge] = right;
-		for (long rest = left | right; rest != 0L; rest &= rest - 1L) {
-			addEdgeIncidence(Long.numberOfTrailingZeros(rest), edge);
+		if (nodeSets != null) {
+			edgeLeftNodeSets[edge] = leftNodeSetId;
+			edgeRightNodeSets[edge] = rightNodeSetId;
+			for (int node = nodeSets.nextMember(leftNodeSetId, 0); node >= 0; node = nodeSets.nextMember(leftNodeSetId,
+					node + 1)) {
+				addEdgeIncidence(node, edge);
+			}
+			for (int node = nodeSets.nextMember(rightNodeSetId, 0); node >= 0; node = nodeSets
+					.nextMember(rightNodeSetId, node + 1)) {
+				addEdgeIncidence(node, edge);
+			}
+		} else {
+			for (long rest = left | right; rest != 0L; rest &= rest - 1L) {
+				addEdgeIncidence(Long.numberOfTrailingZeros(rest), edge);
+			}
 		}
-		if (isSingleton(left) && isSingleton(right)) {
+		if (nodeCount <= MAX_NODES && isSingleton(left) && isSingleton(right)) {
 			int leftNode = Long.numberOfTrailingZeros(left);
 			int rightNode = Long.numberOfTrailingZeros(right);
 			simpleNeighborhoods[leftNode] |= right;
 			simpleNeighborhoods[rightNode] |= left;
-		} else {
+			simpleSubsetConnectivity = null;
+		} else if (nodeCount <= MAX_NODES) {
 			for (long rest = left; rest != 0L; rest &= rest - 1L) {
 				addComplexIncidence(Long.numberOfTrailingZeros(rest), edge << 1);
 			}
@@ -102,6 +171,28 @@ final class PackedJoinHypergraph {
 		return edgeRight[edge];
 	}
 
+	int edgeLeftNodeSet(int edge) {
+		if (nodeSets == null) {
+			throw new IllegalStateException("one-word hypergraph has no node-set endpoint IDs");
+		}
+		return edgeLeftNodeSets[edge];
+	}
+
+	int edgeRightNodeSet(int edge) {
+		if (nodeSets == null) {
+			throw new IllegalStateException("one-word hypergraph has no node-set endpoint IDs");
+		}
+		return edgeRightNodeSets[edge];
+	}
+
+	int edgeLeftNodeSet(int edge, PackedNodeSetArena targetArena) {
+		return nodeSets == null ? targetArena.intern(edgeLeft[edge]) : edgeLeftNodeSet(edge);
+	}
+
+	int edgeRightNodeSet(int edge, PackedNodeSetArena targetArena) {
+		return nodeSets == null ? targetArena.intern(edgeRight[edge]) : edgeRightNodeSet(edge);
+	}
+
 	long arcNear(int arc) {
 		int edge = arc >>> 1;
 		return (arc & 1) == 0 ? edgeLeft[edge] : edgeRight[edge];
@@ -114,6 +205,26 @@ final class PackedJoinHypergraph {
 
 	long simpleNeighborhood(int node) {
 		return simpleNeighborhoods[node];
+	}
+
+	boolean isSimpleSubsetConnected(int subset) {
+		if (nodeCount > MAX_MEMOIZED_SIMPLE_SUBSET_NODES) {
+			return computeSimpleSubsetConnectivity(subset);
+		}
+		long[] connectivity = simpleSubsetConnectivity;
+		if (connectivity == null) {
+			connectivity = new long[((1 << nodeCount) + 31) >>> 5];
+			simpleSubsetConnectivity = connectivity;
+		}
+		int word = subset >>> 5;
+		int shift = (subset & 31) << 1;
+		long retained = connectivity[word] >>> shift & CONNECTIVITY_STATE_MASK;
+		if (retained != 0L) {
+			return retained == CONNECTED;
+		}
+		boolean connected = computeSimpleSubsetConnectivity(subset);
+		connectivity[word] |= (connected ? CONNECTED : DISCONNECTED) << shift;
+		return connected;
 	}
 
 	int firstComplexIncidence(int node) {
@@ -141,7 +252,14 @@ final class PackedJoinHypergraph {
 	}
 
 	long allNodes() {
+		if (nodeCount > MAX_NODES) {
+			throw new IllegalStateException("multiword hypergraph has no one-word universe mask");
+		}
 		return nodeCount == MAX_NODES ? -1L : (1L << nodeCount) - 1L;
+	}
+
+	boolean hasNodeSetEndpoints(PackedNodeSetArena targetArena) {
+		return nodeSets == targetArena;
 	}
 
 	private void addComplexIncidence(int node, int arc) {
@@ -165,6 +283,10 @@ final class PackedJoinHypergraph {
 		int capacity = grow(edgeLeft.length, required);
 		edgeLeft = Arrays.copyOf(edgeLeft, capacity);
 		edgeRight = Arrays.copyOf(edgeRight, capacity);
+		if (nodeSets != null) {
+			edgeLeftNodeSets = Arrays.copyOf(edgeLeftNodeSets, capacity);
+			edgeRightNodeSets = Arrays.copyOf(edgeRightNodeSets, capacity);
+		}
 	}
 
 	private void ensureComplexIncidenceCapacity(int required) {
@@ -195,5 +317,27 @@ final class PackedJoinHypergraph {
 
 	private static boolean isSingleton(long nodes) {
 		return (nodes & nodes - 1L) == 0L;
+	}
+
+	private boolean computeSimpleSubsetConnectivity(int subset) {
+		int reached = subset & -subset;
+		int frontier = reached;
+		while (frontier != 0) {
+			int nodeBit = frontier & -frontier;
+			frontier ^= nodeBit;
+			int neighborhood = (int) simpleNeighborhoods[Integer.numberOfTrailingZeros(nodeBit)] & subset;
+			int discovered = neighborhood & ~reached;
+			reached |= discovered;
+			frontier |= discovered;
+		}
+		return reached == subset;
+	}
+
+	private int maximumMember(int nodeSetId) {
+		int maximum = -1;
+		for (int node = nodeSets.nextMember(nodeSetId, 0); node >= 0; node = nodeSets.nextMember(nodeSetId, node + 1)) {
+			maximum = node;
+		}
+		return maximum;
 	}
 }

@@ -329,17 +329,24 @@ public final class FrontierEvidenceBundle {
 		private Payload(PayloadKind kind, FrontierMaskStrata masks, int[] exactCounts, int[] residualCounts,
 				long[] exactTermIds, double[] exactWeights, long[] residualTermIds, double[] residualWeights,
 				long digestHigh, long digestLow) {
+			this(kind, masks, exactCounts, residualCounts, exactTermIds, exactWeights, residualTermIds, residualWeights,
+					digestHigh, digestLow, true);
+		}
+
+		private Payload(PayloadKind kind, FrontierMaskStrata masks, int[] exactCounts, int[] residualCounts,
+				long[] exactTermIds, double[] exactWeights, long[] residualTermIds, double[] residualWeights,
+				long digestHigh, long digestLow, boolean copyColumns) {
 			this.kind = Objects.requireNonNull(kind, "kind");
 			this.masks = masks;
 			width = masks == null ? 0 : masks.layout().size();
-			this.exactCounts = exactCounts.clone();
-			this.residualCounts = residualCounts.clone();
+			this.exactCounts = copyColumns ? exactCounts.clone() : exactCounts;
+			this.residualCounts = copyColumns ? residualCounts.clone() : residualCounts;
 			exactStarts = starts(this.exactCounts);
 			residualStarts = starts(this.residualCounts);
-			this.exactTermIds = exactTermIds.clone();
-			this.exactWeights = exactWeights.clone();
-			this.residualTermIds = residualTermIds.clone();
-			this.residualWeights = residualWeights.clone();
+			this.exactTermIds = copyColumns ? exactTermIds.clone() : exactTermIds;
+			this.exactWeights = copyColumns ? exactWeights.clone() : exactWeights;
+			this.residualTermIds = copyColumns ? residualTermIds.clone() : residualTermIds;
+			this.residualWeights = copyColumns ? residualWeights.clone() : residualWeights;
 			this.digestHigh = digestHigh;
 			this.digestLow = digestLow;
 			if (kind == PayloadKind.INLINE) {
@@ -371,11 +378,23 @@ public final class FrontierEvidenceBundle {
 			return NONE;
 		}
 
-		static Payload inline(FrontierMaskStrata masks, int[] exactCounts, int[] residualCounts,
-				long[] exactTermIds, double[] exactWeights, long[] residualTermIds, double[] residualWeights,
-				long digestHigh, long digestLow) {
-			return new Payload(PayloadKind.INLINE, masks, exactCounts, residualCounts, exactTermIds, exactWeights,
-					residualTermIds, residualWeights, digestHigh, digestLow);
+		/** Shares the immutable columns of a sealed resident payload with its detached evidence owner. */
+		static Payload inlineShared(FrontierPayloadBlock block, long digestHigh, long digestLow) {
+			if (block.digestHigh() != digestHigh || block.digestLow() != digestLow) {
+				throw new IllegalStateException("resident Frontier payload digest changed before detachment");
+			}
+			return new Payload(
+					PayloadKind.INLINE,
+					block.masks,
+					counts(block.exactOffsets),
+					counts(block.residualOffsets),
+					block.exactTermIds,
+					block.exactWeights,
+					block.residualTermIds,
+					block.residualWeights,
+					digestHigh,
+					digestLow,
+					false);
 		}
 
 		static Payload replayableExact(FrontierMaskStrata masks, long digestHigh, long digestLow) {
@@ -434,11 +453,19 @@ public final class FrontierEvidenceBundle {
 		}
 
 		private static int total(int[] counts) {
-			if (counts.length == 0) {
-				return 0;
+			int total = 0;
+			for (int count : counts) {
+				total = Math.addExact(total, count);
 			}
-			int last = counts.length - 1;
-			return Math.addExact(starts(counts)[last], counts[last]);
+			return total;
+		}
+
+		private static int[] counts(int[] offsets) {
+			int[] counts = new int[offsets.length - 1];
+			for (int index = 0; index < counts.length; index++) {
+				counts[index] = offsets[index + 1] - offsets[index];
+			}
+			return counts;
 		}
 	}
 

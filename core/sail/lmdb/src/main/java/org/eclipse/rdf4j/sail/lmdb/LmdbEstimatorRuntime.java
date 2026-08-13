@@ -18,7 +18,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 
@@ -41,8 +40,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.FactorCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider.QueryOptimizationScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.FeedbackCorrection;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView.PrefixMaterialization;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -50,7 +52,6 @@ import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbFrontierSynopsisService;
-import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.CharacteristicSetEstimate;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PropertyPathEstimate;
 
@@ -59,11 +60,8 @@ final class LmdbEstimatorRuntime {
 
 	static final String OPERATOR_FEEDBACK_APPLY_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackApply";
 
-	private static final int MAX_DISTINCT_CURSOR_SKIP_PROBE_PREFIXES = 256;
 	private static final int MAX_EXACT_FILTER_DISTINCT_TERMS = 4_096;
-	private final ValueStore valueStore;
-	private final TripleStore tripleStore;
-	private final LmdbStatementPatternCardinalitySource cardinalities;
+	private final LmdbEstimatorStorageAccess storageAccess;
 	private final LmdbQuadSynopsisService synopsis;
 	private final LmdbFilterSelectivityStats filters;
 	private final LmdbOperatorFeedbackStats feedback;
@@ -74,7 +72,6 @@ final class LmdbEstimatorRuntime {
 	private final PackedPlanCache cascadesPlanCache;
 	private final LmdbFrontierSynopsisService frontierSynopsis;
 	private final LmdbFrontierPlannerSettings frontierSettings;
-	private final BooleanSupplier mayHaveInferred;
 	private final BooleanSupplier adaptiveEvidenceAllowedSupplier;
 	private final ThreadLocal<LmdbEstimatorOptimizationScope> optimizationScope = new ThreadLocal<>();
 
@@ -128,32 +125,33 @@ final class LmdbEstimatorRuntime {
 			LmdbStatementPatternCardinalitySource cardinalities, PackedPlanCache cascadesPlanCache,
 			LmdbFrontierSynopsisService frontierSynopsis, LmdbFrontierPlannerSettings frontierSettings,
 			BooleanSupplier mayHaveInferred, BooleanSupplier adaptiveEvidenceAllowedSupplier) {
-		this.valueStore = valueStore;
-		this.tripleStore = tripleStore;
-		this.cardinalities = cardinalities;
+		this.storageAccess = new LmdbEstimatorStorageAccess(valueStore, tripleStore, cardinalities, mayHaveInferred);
 		this.synopsis = synopsis;
 		this.filters = filters;
 		this.feedback = feedback;
 		this.cascadesPlanCache = cascadesPlanCache;
 		this.frontierSynopsis = frontierSynopsis;
 		this.frontierSettings = frontierSettings;
-		this.mayHaveInferred = mayHaveInferred == null ? () -> false : mayHaveInferred;
 		this.adaptiveEvidenceAllowedSupplier = adaptiveEvidenceAllowedSupplier == null ? () -> true
 				: adaptiveEvidenceAllowedSupplier;
-		this.finiteJoinSurfaceEstimator = new LmdbFiniteJoinSurfaceEstimator(valueStore, tripleStore);
+		this.finiteJoinSurfaceEstimator = new LmdbFiniteJoinSurfaceEstimator(valueStore, tripleStore, cardinalities);
 		LmdbStorageEstimatorEvidence evidence = new LmdbStorageEstimatorEvidence(valueStore, cardinalities, synopsis,
-				filters, feedback, finiteJoinSurfaceEstimator);
+				filters, feedback, finiteJoinSurfaceEstimator, this::exactCorrelatedSurface);
 		this.engine = new LmdbEstimationEngine(evidence, new EstimateEvidenceResolver());
 		this.factorCostAssembler = new LmdbFactorCostAssembler(engine, tripleStore);
 		this.prefixEvidence = new LmdbPrefixEvidenceResolver(engine, this::rootContext);
 	}
 
 	ValueStore valueStore() {
-		return valueStore;
+		return storageAccess.valueStore();
+	}
+
+	LmdbFrontierSnapshotSource openFrontierSnapshotSource() throws IOException {
+		return storageAccess.openFrontierSnapshotSource();
 	}
 
 	boolean hasStorageEvidence() {
-		return cardinalities != null;
+		return storageAccess.hasStorageEvidence();
 	}
 
 	BagEstimate estimate(TupleExpr expression) {
@@ -166,7 +164,7 @@ final class LmdbEstimatorRuntime {
 				.withBoundNames(boundNames == null ? Set.of() : boundNames)
 				.withEstimationTier(tier)
 				.withExactProbePermission(exactProbePermitted);
-		return engine.estimate(expression, context);
+		return semanticEstimate(expression, context);
 	}
 
 	BagEstimate estimateFilter(TupleExpr input, ValueExpr condition, BagEstimate inputEstimate,
@@ -211,7 +209,7 @@ final class LmdbEstimatorRuntime {
 
 	BagEstimate estimate(TupleExpr expression, CostContext costContext) {
 		CostContext cost = costContext == null ? CostContext.of(Set.of(), 1.0d, 1.0d, false) : costContext;
-		return engine.estimate(expression, context(expression, cost));
+		return semanticEstimate(expression, context(expression, cost));
 	}
 
 	Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> exactAlternativeSurface(TupleExpr expression) {
@@ -236,7 +234,11 @@ final class LmdbEstimatorRuntime {
 
 	Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> exactCorrelatedSurface(
 			FiniteRelationEstimate relation, TupleExpr accessKernel) {
-		return finiteJoinSurfaceEstimator.estimate(relation, accessKernel);
+		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
+		return scope == null
+				? finiteJoinSurfaceEstimator.estimate(relation, accessKernel)
+				: scope.finiteSurfaces.estimateCorrelated(
+						null, relation, accessKernel, EstimationTier.DECISION_EXACT);
 	}
 
 	Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> exactCorrelatedSurface(
@@ -270,22 +272,27 @@ final class LmdbEstimatorRuntime {
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
 		ScopedFactorCostCacheKey cacheKey = scope == null
 				? null
-				: ScopedFactorCostCacheKey.of(expression, cost, context);
+				: ScopedFactorCostCacheKey.of(expression, cost, context, scope);
 		if (cacheKey != null) {
 			Optional<FactorCostEstimate> cached = scope.factorCosts.get(cacheKey);
 			if (cached != null) {
 				return cached;
 			}
 		}
-		BagEstimate semantic = engine.estimate(expression, context);
+		BagEstimate semantic = semanticEstimate(expression, context);
 		FactorCostEstimate result = factorCostAssembler.assemble(expression, context, semantic,
-				LmdbEstimationEngine.databaseExact(semantic));
+				LmdbEstimateClassification.databaseExact(semantic), scope);
 		result = finiteDerivedFactorCost(expression, cost, semantic, result, scope).orElse(result);
 		Optional<FactorCostEstimate> estimate = Optional.of(result);
 		if (cacheKey != null) {
 			scope.factorCosts.put(cacheKey.toStorable(), estimate);
 		}
 		return estimate;
+	}
+
+	private BagEstimate semanticEstimate(TupleExpr expression, EstimateContext context) {
+		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
+		return engine.estimate(expression, context, scope);
 	}
 
 	private Optional<FactorCostEstimate> finiteDerivedFactorCost(TupleExpr expression, CostContext cost,
@@ -386,16 +393,43 @@ final class LmdbEstimatorRuntime {
 	}
 
 	long learnedEvidenceRevision() {
-		long revision = mixRevision(0x46524f4e54494552L, snapshotVersion());
-		revision = mixRevision(revision, leoRevision());
-		return mixRevision(revision, frontierSynopsis == null ? 0L : frontierSynopsis.status().ordinal() + 1L)
-				& Long.MAX_VALUE;
+		return learnedEvidenceRevision(snapshotVersion(), leoRevision(), frontierStatusRevision());
+	}
+
+	PlanningRevisions capturePlanningRevisions() {
+		long dataRevision = snapshotVersion();
+		long frontierRevision = frontierPlanningRevision();
+		long leoRevision = leoRevision();
+		long learnedEvidenceRevision = learnedEvidenceRevision(
+				dataRevision, leoRevision, frontierStatusRevision());
+		return new PlanningRevisions(dataRevision, frontierRevision, leoRevision, learnedEvidenceRevision);
+	}
+
+	private long frontierStatusRevision() {
+		return frontierSynopsis == null ? 0L : frontierSynopsis.status().ordinal() + 1L;
+	}
+
+	private static long learnedEvidenceRevision(long dataRevision, long leoRevision, long frontierStatusRevision) {
+		long revision = mixRevision(0x46524f4e54494552L, dataRevision);
+		revision = mixRevision(revision, leoRevision);
+		return mixRevision(revision, frontierStatusRevision) & Long.MAX_VALUE;
+	}
+
+	record PlanningRevisions(
+			long dataRevision,
+			long frontierRevision,
+			long leoRevision,
+			long learnedEvidenceRevision) {
 	}
 
 	QueryOptimizationScope beginScope() {
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
 		if (scope == null) {
-			scope = new LmdbEstimatorOptimizationScope(finiteJoinSurfaceEstimator);
+			scope = new LmdbEstimatorOptimizationScope(
+					finiteJoinSurfaceEstimator,
+					frontierSettings.exactFiniteSurfaceCache(),
+					snapshotVersion(),
+					this::snapshotVersion);
 			optimizationScope.set(scope);
 		}
 		scope.depth++;
@@ -412,8 +446,29 @@ final class LmdbEstimatorRuntime {
 		return scope == null ? new PlanTemplateCache<>(1) : scope.planTemplates;
 	}
 
+	Object optimizationScopedFactorFingerprint(TupleExpr factor) {
+		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
+		return scope == null
+				? FactorCostCacheKey.estimatorFingerprint(factor)
+				: scope.estimatorFingerprint(factor);
+	}
+
+	void registerPackedFactor(PackedQueryView query, int relationId, TupleExpr factor) {
+		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
+		if (scope != null) {
+			scope.registerPackedFactor(query, relationId, factor);
+		}
+	}
+
+	void registerPackedPrefix(PackedQueryView query, PackedCostContext context, PrefixMaterialization prefix) {
+		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
+		if (scope != null) {
+			scope.registerPackedPrefix(query, context, prefix);
+		}
+	}
+
 	long snapshotVersion() {
-		long dataRevision = Math.max(0L, tripleStore == null ? 0L : tripleStore.getDataRevision());
+		long dataRevision = storageAccess.dataRevision();
 		long synopsisRevision = Math.max(0L, synopsis == null ? 0L : synopsis.snapshotVersion());
 		return Math.max(dataRevision, synopsisRevision);
 	}
@@ -440,36 +495,21 @@ final class LmdbEstimatorRuntime {
 	}
 
 	boolean mayHaveInferred() {
-		return mayHaveInferred.getAsBoolean();
+		return storageAccess.mayHaveInferred();
 	}
 
 	TripleStore.IndexCostProfile indexCostProfile(String indexFieldSequence) throws IOException {
-		if (tripleStore == null) {
-			throw new IOException("LMDB triple store is unavailable");
-		}
-		return tripleStore.indexCostProfile(indexFieldSequence, mayHaveInferred());
+		return storageAccess.indexCostProfile(indexFieldSequence);
 	}
 
 	double packedStatementPatternRows(Resource subject, IRI predicate, Value object, Resource context,
 			int repeatedComponentPairMask) {
-		return cardinalities == null
-				? Double.NaN
-				: cardinalities.estimateForPlanning(subject, predicate, object, context, repeatedComponentPairMask);
+		return storageAccess.packedStatementPatternRows(subject, predicate, object, context, repeatedComponentPairMask);
 	}
 
 	double packedTransitionRows(StatementPattern pattern, String joinVariable, double patternRows,
 			double prefixRows) {
-		if (cardinalities == null || pattern == null || joinVariable == null
-				|| !Double.isFinite(patternRows) || patternRows < 0.0d
-				|| !Double.isFinite(prefixRows) || prefixRows < 0.0d) {
-			return Double.NaN;
-		}
-		OptionalDouble distinct = cardinalities.estimateDistinct(pattern, joinVariable, 65_536);
-		if (distinct.isEmpty() || !Double.isFinite(distinct.getAsDouble()) || distinct.getAsDouble() <= 0.0d) {
-			return Double.NaN;
-		}
-		double rows = prefixRows * patternRows / distinct.getAsDouble();
-		return Double.isFinite(rows) ? Math.max(0.0d, rows) : Double.NaN;
+		return storageAccess.packedTransitionRows(pattern, joinVariable, patternRows, prefixRows);
 	}
 
 	/**
@@ -478,34 +518,7 @@ final class LmdbEstimatorRuntime {
 	 * probed, and the skip is costed cheaper than the normal scan of {@code normalRows} rows.
 	 */
 	boolean describePackedDistinctCursorSkip(StatementPattern pattern, double normalRows, PackedCostEstimate output) {
-		if (pattern == null || tripleStore == null || cardinalities == null
-				|| !Double.isFinite(normalRows) || normalRows <= 0.0d) {
-			return false;
-		}
-		Optional<LmdbDistinctCursorSkipSupport.Plan> plan = LmdbDistinctCursorSkipSupport.choosePlan(pattern,
-				tripleStore.indexAccessPaths(0));
-		if (plan.isEmpty()) {
-			return false;
-		}
-		OptionalDouble probed = cardinalities.estimateDistinctCursorSkip(pattern,
-				MAX_DISTINCT_CURSOR_SKIP_PROBE_PREFIXES);
-		if (probed.isEmpty()) {
-			return false;
-		}
-		double distinctRows = probed.getAsDouble();
-		if (!Double.isFinite(distinctRows) || distinctRows < 0.0d) {
-			return false;
-		}
-		double seeks = Math.max(1.0d, distinctRows);
-		double workRows = saturatingAdd(distinctRows, seeks);
-		if (workRows >= normalRows) {
-			return false;
-		}
-		output.setRows(distinctRows, workRows);
-		output.setAccess(plan.get().prefixComponentMask(), 0, plan.get().prefixLength(),
-				Math.max(1.0d, distinctRows), 1.0d, plan.get().indexFieldSequence(), "lmdb-distinct-cursor-skip",
-				LmdbDistinctCursorSkipSupport.ACCESS_MODE);
-		return true;
+		return storageAccess.describePackedDistinctCursorSkip(pattern, normalRows, output);
 	}
 
 	void describePackedAccessPath(int lookupMask, double accessRows, double invocations,
@@ -515,36 +528,16 @@ final class LmdbEstimatorRuntime {
 
 	void describePackedAccessPath(int lookupMask, double accessRows, double invocations, String estimateSource,
 			PackedCostEstimate output) {
-		if (tripleStore == null) {
-			output.setAccess(0, lookupMask, 0, accessRows, invocations, null, estimateSource, "fullScan");
-			return;
-		}
-		tripleStore.describePackedAccessPath(lookupMask, accessRows, invocations, estimateSource, output);
+		storageAccess.describePackedAccessPath(lookupMask, accessRows, invocations, estimateSource, output);
 	}
 
 	/** Cache-key version of the predicate-range guarantees; changes whenever guarantee semantics or config change. */
 	long predicateRangeVersion() {
-		if (tripleStore == null) {
-			return 0L;
-		}
-		String version = tripleStore.effectiveRdfTermDomainsVersion();
-		long hash = 1125899906842597L;
-		for (int ordinal = 0; ordinal < version.length(); ordinal++) {
-			hash = 31L * hash + version.charAt(ordinal);
-		}
-		return hash;
+		return storageAccess.predicateRangeVersion();
 	}
 
 	RdfTermDomain rdfTermDomain(IRI predicate) {
-		if (predicate == null || valueStore == null || tripleStore == null) {
-			return RdfTermDomain.UNRESTRICTED;
-		}
-		try {
-			long id = valueStore.getId(predicate);
-			return id == LmdbValue.UNKNOWN_ID ? RdfTermDomain.UNRESTRICTED : tripleStore.getRdfTermDomain(id);
-		} catch (IOException e) {
-			return RdfTermDomain.UNRESTRICTED;
-		}
+		return storageAccess.rdfTermDomain(predicate);
 	}
 
 	LmdbOperatorFeedbackStats feedback() {
@@ -561,14 +554,32 @@ final class LmdbEstimatorRuntime {
 		if (condition == null || pattern == null) {
 			return Optional.empty();
 		}
+		Filter synthetic = new Filter(pattern.clone(), condition.clone());
 		BagEstimate input = estimate(pattern);
-		BagEstimate output = estimate(new Filter(pattern.clone(), condition.clone()));
+		BagEstimate output = estimateFilter(pattern, condition, input, Set.of(), EstimationTier.STANDARD, false);
 		double ratio = input.rows() <= 0.0d ? (output.rows() == 0.0d ? 1.0d : Double.NaN)
 				: output.rows() / input.rows();
-		return Double.isFinite(ratio) && ratio >= 0.0d && ratio <= 1.0d
-				? Optional.of(new EvaluationStatistics.FilterPassEstimate(ratio,
-						EvaluationStatistics.FilterPassEstimate.Source.SAMPLED))
-				: Optional.empty();
+		boolean exactRatio = LmdbEstimateClassification.databaseExact(input)
+				&& LmdbEstimateClassification.databaseExact(output);
+		EvaluationStatistics.FilterPassEstimate fallback = Double.isFinite(ratio) && ratio >= 0.0d && ratio <= 1.0d
+				? new EvaluationStatistics.FilterPassEstimate(ratio,
+						exactRatio
+								? EvaluationStatistics.FilterPassEstimate.Source.EXACT
+								: EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC)
+				: null;
+		if (fallback != null && LmdbEstimateClassification.databaseExact(output)) {
+			/*
+			 * The filtered row surface is already exact. Its ratio remains heuristic when the input denominator is a
+			 * planning summary, but replacing that semantic transition with a small adaptive sample would discard the
+			 * stronger exact numerator and can move the local cardinality away from the database truth.
+			 */
+			return Optional.of(fallback);
+		}
+		EvaluationStatistics.FilterPassEstimate best = LmdbFilterPassSelection.bestAvailable(filters, synthetic,
+				pattern, fallback, adaptiveEvidenceAllowed());
+		return best.getSource() == EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN
+				? Optional.empty()
+				: Optional.of(best);
 	}
 
 	Optional<PropertyPathEstimate> propertyPath(TupleExpr path, Set<String> boundNames) {
@@ -616,7 +627,7 @@ final class LmdbEstimatorRuntime {
 		BagEstimate estimate = estimate(new Join(left.clone(), right.clone()), shared, EstimationTier.STANDARD, false);
 		double prefixRows = positive(knownLeftRows, estimate(left).rows());
 		return new BoundJoinProductEstimate(estimate.rows(), prefixRows, prefixRows, estimate.rows(),
-				shared.stream().sorted().findFirst().orElse(null), LmdbEstimationEngine.databaseExact(estimate),
+				shared.stream().sorted().findFirst().orElse(null), LmdbEstimateClassification.databaseExact(estimate),
 				estimate.source());
 	}
 
@@ -650,39 +661,17 @@ final class LmdbEstimatorRuntime {
 	}
 
 	private EstimateContext context(TupleExpr expression, CostContext cost) {
-		EstimationTier tier = cost.getEstimationTier();
-		EstimateContext context = rootContext(expression)
-				.withBoundNames(cost.getCurrentlyBoundVars())
-				.withInvocationCount(invocations(cost))
-				.withEstimationTier(tier)
-				.withMetricsPreference(cost.shouldCollectMetrics()
-						? EstimateContext.MetricsPreference.DETAILED
-						: EstimateContext.MetricsPreference.NONE)
-				.withExactProbePermission(tier != null && tier.allowsExactEstimates());
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
-		context = context.withPrefixEstimate(prefixEvidence.estimate(cost, context,
-				scope == null ? null : scope.prefixEstimates));
-		FiniteRelationEstimate finite = prefixEvidence.finiteBindings(cost.getFiniteBindingValues());
-		return finite == null ? context : context.withFiniteBindings(finite);
+		return LmdbEstimateContextBuilder.forCost(expression, cost, rootContext(expression), prefixEvidence, scope);
 	}
 
 	private EstimateContext rootContext(TupleExpr expression) {
-		if (synopsis == null) {
-			EstimateContext context = EstimateContext.root(expression,
-					new org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity(0L,
-							0L, Math.max(0L, tripleStore == null ? 0L : tripleStore.getDataRevision())),
-					snapshotVersion(),
-					leoRevision());
-			return adaptiveEvidenceAllowed() ? context
-					: context.withEvidencePolicy(EstimateContext.EvidencePolicy.SNAPSHOT_ONLY);
-		}
-		EstimateContext context = EstimateContext.root(expression, synopsis.snapshotIdentity(),
-				synopsis.snapshotVersion(), leoRevision());
-		return adaptiveEvidenceAllowed() && synopsis.adaptiveEvidenceAllowed() ? context
-				: context.withEvidencePolicy(EstimateContext.EvidencePolicy.SNAPSHOT_ONLY);
+		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
+		return LmdbEstimateContextBuilder.root(expression, synopsis, storageAccess.dataRevision(), snapshotVersion(),
+				leoRevision(), scope, adaptiveEvidenceAllowed());
 	}
 
-	private boolean adaptiveEvidenceAllowed() {
+	boolean adaptiveEvidenceAllowed() {
 		try {
 			return adaptiveEvidenceAllowedSupplier.getAsBoolean();
 		} catch (RuntimeException e) {
@@ -690,24 +679,8 @@ final class LmdbEstimatorRuntime {
 		}
 	}
 
-	private static double invocations(CostContext context) {
-		if (!context.isNestedIteratorInvocation()) {
-			return 1.0d;
-		}
-		double outerRows = context.getOuterPrefixRows();
-		if (Double.isFinite(outerRows) && outerRows >= 0.0d) {
-			return outerRows;
-		}
-		return positive(context.getDistinctLookupBindings(), 1.0d);
-	}
-
 	private static double positive(double value, double fallback) {
 		return Double.isFinite(value) && value > 0.0d ? value : fallback;
-	}
-
-	private static double saturatingAdd(double left, double right) {
-		double sum = left + right;
-		return Double.isFinite(sum) && sum >= 0.0d ? sum : Double.MAX_VALUE;
 	}
 
 	private void closeScope(LmdbEstimatorOptimizationScope scope) {

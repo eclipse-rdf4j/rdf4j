@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleApplicabilityResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 
@@ -24,13 +25,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDi
  * change. Indexed expression key columns are append-only; winner choices are the only replaceable derived state.
  */
 @PackedHotPath
-final class PackedMemo {
+final class PackedMemo implements AutoCloseable {
 	private static final int EVIDENCE_CONTEXT_MARKER = 0x8000_00c7;
 	private static final int EVIDENCE_CONTEXT_VERSION = 2;
+	private static final int EXACT_EVIDENCE_CONTEXT_VERSION = 3;
+	private static final int[] EMPTY_IDS = new int[0];
 
 	private final PackedQuery query;
 	private final int baseLogicalExpressionCount;
-	private final PackedExpressionInterner logicalOverlay;
+	private final int expectedLogicalAlternatives;
+	private final int expectedLogicalChildLinks;
 	private final PackedExpressionInterner physicalExpressions;
 	private final PackedMaskInterner masks;
 	private final PackedIntSequenceInterner sequences;
@@ -38,51 +42,132 @@ final class PackedMemo {
 	private final PackedWinnerTable winners;
 	private final PackedPhysicalMetadataArena physicalMetadata;
 	private final PackedDecisionTraceArena decisionTrace;
+	private final PackedSearchBudget budget;
+	private final PackedCostVectorArena costVectors;
+	private final PackedCostAlgebra costAlgebra;
+	private final PackedContinuationKeyArena continuationKeys;
+	private final PackedCandidateArena candidates;
+	private final PackedParetoFrontierArena paretoFrontiers;
+	private final boolean retainPlanQualityState;
+	private final PackedProofSetArena ruleProofSets = new PackedProofSetArena();
 	private final PackedDependentPlans dependentPlans = new PackedDependentPlans();
-	private final PackedCostEstimate dependentCostScratch = new PackedCostEstimate();
-	private final PackedCostEstimate dependentReopenScratch = new PackedCostEstimate();
+	private PackedCostEstimate dependentCostScratch;
+	private PackedCostEstimate dependentReopenScratch;
+	private PackedExpressionInterner logicalOverlay;
 
 	private int[] firstLogicalByGroup;
 	private int[] firstPhysicalByGroup;
+	private int[] exactContinuationGenerations;
 	private int[] nextLogicalExpression;
 	private int[] nextPhysicalExpression;
 	private int[] physicalSourceLogicalExpressionIds;
 	private long[] overlayLogicalRuleMasks;
+	private int[] physicalMetadataCostVectorIds;
+	private int[] candidateIdsByWinner;
+	private int[] childCostVectorScratch;
 	private int[] evidenceContextScratch = new int[32];
+	private int unknownCostVectorId;
 	private int groupCount;
 
 	PackedMemo(PackedQuery query, int symbolCount, int expectedLogicalAlternatives, int expectedPhysicalAlternatives,
 			int expectedProperties, int expectedWinners, int expectedChildLinks) {
+		this(query, symbolCount, expectedLogicalAlternatives, expectedPhysicalAlternatives, expectedProperties,
+				expectedWinners, expectedChildLinks, new PackedSearchBudget(PackedPlannerLimits.unbounded()));
+	}
+
+	PackedMemo(PackedQuery query, int symbolCount, int expectedLogicalAlternatives, int expectedPhysicalAlternatives,
+			int expectedProperties, int expectedWinners, int expectedChildLinks, PackedSearchBudget budget) {
+		this(query, symbolCount, expectedLogicalAlternatives, expectedPhysicalAlternatives, expectedProperties,
+				expectedWinners, expectedChildLinks, budget, true, false);
+	}
+
+	static PackedMemo scalarWinnerOnly(PackedQuery query, int symbolCount, int expectedLogicalAlternatives,
+			int expectedPhysicalAlternatives, int expectedProperties, int expectedWinners, int expectedChildLinks,
+			PackedSearchBudget budget) {
+		return new PackedMemo(query, symbolCount, expectedLogicalAlternatives, expectedPhysicalAlternatives,
+				expectedProperties, expectedWinners, expectedChildLinks, budget, false, false);
+	}
+
+	static PackedMemo queryLocal(PackedQuery query, int symbolCount, int expectedLogicalAlternatives,
+			int expectedPhysicalAlternatives, int expectedProperties, int expectedWinners, int expectedChildLinks,
+			PackedSearchBudget budget) {
+		return new PackedMemo(query, symbolCount, expectedLogicalAlternatives, expectedPhysicalAlternatives,
+				expectedProperties, expectedWinners, expectedChildLinks, budget, true, true);
+	}
+
+	static PackedMemo scalarWinnerOnlyQueryLocal(PackedQuery query, int symbolCount, int expectedLogicalAlternatives,
+			int expectedPhysicalAlternatives, int expectedProperties, int expectedWinners, int expectedChildLinks,
+			PackedSearchBudget budget) {
+		return new PackedMemo(query, symbolCount, expectedLogicalAlternatives, expectedPhysicalAlternatives,
+				expectedProperties, expectedWinners, expectedChildLinks, budget, false, true);
+	}
+
+	private PackedMemo(PackedQuery query, int symbolCount, int expectedLogicalAlternatives,
+			int expectedPhysicalAlternatives, int expectedProperties, int expectedWinners, int expectedChildLinks,
+			PackedSearchBudget budget, boolean retainPlanQualityState, boolean recyclePhysicalMetadata) {
 		if (query == null) {
 			throw new NullPointerException("packed query must not be null");
+		}
+		if (budget == null) {
+			throw new NullPointerException("packed search budget must not be null");
 		}
 		if (symbolCount < 0 || expectedLogicalAlternatives < 0 || expectedPhysicalAlternatives < 0
 				|| expectedProperties < 0 || expectedWinners < 0 || expectedChildLinks < 0) {
 			throw new IllegalArgumentException("packed memo size estimates must be non-negative");
 		}
 		this.query = query;
+		this.budget = budget;
+		this.retainPlanQualityState = retainPlanQualityState;
 		baseLogicalExpressionCount = query.relationCount();
-		logicalOverlay = new PackedExpressionInterner(expectedLogicalAlternatives,
-				Math.max(expectedLogicalAlternatives, expectedChildLinks));
+		this.expectedLogicalAlternatives = expectedLogicalAlternatives;
+		expectedLogicalChildLinks = Math.max(expectedLogicalAlternatives, expectedChildLinks);
 		physicalExpressions = new PackedExpressionInterner(expectedPhysicalAlternatives,
 				Math.max(expectedPhysicalAlternatives, expectedChildLinks));
 		masks = new PackedMaskInterner(symbolCount, Math.max(4, expectedProperties * 3));
 		sequences = new PackedIntSequenceInterner(Math.max(4, expectedProperties * 2),
 				Math.max(8, expectedProperties * 4));
 		properties = new PackedPhysicalPropertyInterner(masks, sequences, expectedProperties);
-		winners = new PackedWinnerTable(baseLogicalExpressionCount + expectedLogicalAlternatives, expectedWinners,
-				expectedChildLinks, properties.anyId());
-		physicalMetadata = new PackedPhysicalMetadataArena(expectedWinners);
-		decisionTrace = new PackedDecisionTraceArena();
+		winners = new PackedWinnerTable(baseLogicalExpressionCount, expectedWinners, expectedChildLinks,
+				properties.anyId());
+		physicalMetadata = recyclePhysicalMetadata
+				? PackedPhysicalMetadataArena.borrow(expectedWinners, budget)
+				: new PackedPhysicalMetadataArena(expectedWinners, budget);
+		if (retainPlanQualityState) {
+			decisionTrace = new PackedDecisionTraceArena();
+			costVectors = new PackedCostVectorArena(budget);
+			costAlgebra = new PackedCostAlgebra(costVectors);
+			continuationKeys = new PackedContinuationKeyArena(budget);
+			candidates = new PackedCandidateArena(budget);
+			paretoFrontiers = new PackedParetoFrontierArena(budget, candidates, costVectors);
+			physicalMetadataCostVectorIds = new int[Math.max(2, expectedWinners + 1)];
+			candidateIdsByWinner = new int[Math.max(2, expectedWinners + 1)];
+			childCostVectorScratch = new int[4];
+		} else {
+			decisionTrace = null;
+			costVectors = null;
+			costAlgebra = null;
+			continuationKeys = null;
+			candidates = null;
+			paretoFrontiers = null;
+			physicalMetadataCostVectorIds = EMPTY_IDS;
+			candidateIdsByWinner = EMPTY_IDS;
+			childCostVectorScratch = EMPTY_IDS;
+		}
 
-		int expectedGroups = baseLogicalExpressionCount + expectedLogicalAlternatives + 1;
+		int expectedGroups = baseLogicalExpressionCount + 1;
 		firstLogicalByGroup = new int[Math.max(2, expectedGroups)];
 		firstPhysicalByGroup = new int[Math.max(2, expectedGroups)];
-		nextLogicalExpression = new int[Math.max(2, baseLogicalExpressionCount + expectedLogicalAlternatives + 1)];
+		exactContinuationGenerations = new int[firstLogicalByGroup.length];
+		nextLogicalExpression = new int[Math.max(2, baseLogicalExpressionCount + 1)];
 		nextPhysicalExpression = new int[Math.max(2, expectedPhysicalAlternatives + 1)];
 		physicalSourceLogicalExpressionIds = new int[Math.max(2, expectedPhysicalAlternatives + 1)];
 		overlayLogicalRuleMasks = new long[Math.max(2, expectedLogicalAlternatives + 1)];
 		seedBaseGroups();
+	}
+
+	@Override
+	public void close() {
+		physicalMetadata.recycle();
 	}
 
 	int logicalGroupId(int logicalExpressionId) {
@@ -94,7 +179,7 @@ final class PackedMemo {
 	}
 
 	int logicalExpressionCount() {
-		return baseLogicalExpressionCount + logicalOverlay.size();
+		return baseLogicalExpressionCount + (logicalOverlay == null ? 0 : logicalOverlay.size());
 	}
 
 	int logicalOperatorTag(int logicalExpressionId) {
@@ -112,10 +197,10 @@ final class PackedMemo {
 			int executionDomainId, int[] childGroupIds, int childOffset, int childCount) {
 		checkGroupId(targetGroupId);
 		checkChildGroups(childGroupIds, childOffset, childCount);
-		int existing = findLogical(operatorTag, payloadId, semanticScopeId, executionDomainId, childGroupIds,
+		int existing = query.findRelation(operatorTag, payloadId, semanticScopeId, executionDomainId, childGroupIds,
 				childOffset, childCount);
 		if (existing != 0) {
-			if (logicalGroupId(existing) != targetGroupId) {
+			if (query.relGroup(existing) != targetGroupId) {
 				// The caller proved this group equivalent to an expression already canonicalized in another group.
 				// This append-only memo cannot merge groups, so the equivalence is dropped rather than recorded:
 				// callers treat 0 as "alternative not recorded" and continue with their physical alternative only.
@@ -123,11 +208,52 @@ final class PackedMemo {
 			}
 			return existing;
 		}
-		int overlayId = logicalOverlay.internLogical(targetGroupId, operatorTag, payloadId, semanticScopeId,
+		PackedExpressionInterner overlay = ensureLogicalOverlay();
+		int overlaySize = overlay.size();
+		int overlayId = overlay.internLogicalIfSameGroup(targetGroupId, operatorTag, payloadId, semanticScopeId,
 				executionDomainId, childGroupIds, childOffset, childCount);
+		if (overlayId == 0) {
+			return 0;
+		}
 		int logicalExpressionId = baseLogicalExpressionCount + overlayId;
-		linkLogical(targetGroupId, logicalExpressionId);
+		if (overlayId > overlaySize) {
+			linkLogical(targetGroupId, logicalExpressionId);
+		}
 		return logicalExpressionId;
+	}
+
+	int internRuleProofSet(long proofMask) {
+		return ruleProofSets.intern(proofMask);
+	}
+
+	int installRuleAlternative(int sourceExpressionId, int operatorTag, int payloadId, int semanticScopeId,
+			int executionDomainId, int[] childGroupIds, int childOffset, int childCount,
+			RuleApplicabilityResult result) {
+		long proofMask = validateRuleApplicability(sourceExpressionId, result);
+		int alternativeId = addLogicalAlternative(logicalGroupId(sourceExpressionId), operatorTag, payloadId,
+				semanticScopeId, executionDomainId, childGroupIds, childOffset, childCount);
+		if (alternativeId > baseLogicalExpressionCount) {
+			addLogicalRuleMask(alternativeId, logicalRuleMask(sourceExpressionId) | proofMask);
+		}
+		return alternativeId;
+	}
+
+	int installRuleAlternative(int sourceExpressionId, int alternativeExpressionId,
+			RuleApplicabilityResult result) {
+		long proofMask = validateRuleApplicability(sourceExpressionId, result);
+		checkLogicalExpressionId(alternativeExpressionId);
+		if (logicalGroupId(sourceExpressionId) != logicalGroupId(alternativeExpressionId)) {
+			throw new PackedMemoInvariantException("rule alternative belongs to a different semantic group");
+		}
+		if (alternativeExpressionId > baseLogicalExpressionCount) {
+			addLogicalRuleMask(alternativeExpressionId, logicalRuleMask(sourceExpressionId) | proofMask);
+		}
+		return alternativeExpressionId;
+	}
+
+	private long validateRuleApplicability(int sourceExpressionId, RuleApplicabilityResult result) {
+		checkLogicalExpressionId(sourceExpressionId);
+		return PackedRuleGuardValidator.requireApplicable(result, ruleProofSets);
 	}
 
 	int addCanonicalLogical(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
@@ -140,7 +266,7 @@ final class PackedMemo {
 		}
 		int newGroupId = groupCount + 1;
 		ensureGroupCapacity(newGroupId);
-		int overlayId = logicalOverlay.internLogical(newGroupId, operatorTag, payloadId, semanticScopeId,
+		int overlayId = ensureLogicalOverlay().internLogical(newGroupId, operatorTag, payloadId, semanticScopeId,
 				executionDomainId, childGroupIds, childOffset, childCount);
 		groupCount = newGroupId;
 		int logicalExpressionId = baseLogicalExpressionCount + overlayId;
@@ -223,6 +349,28 @@ final class PackedMemo {
 				|| correlationMaskId < 0 || semanticScopeMaskId < 0 || inputCostEventId < 0) {
 			throw new IllegalArgumentException("invalid packed evidence context identity");
 		}
+		if (budget.evidenceStates().isExactExtensional(evidenceStateId)) {
+			/*
+			 * A canonical exact state is the complete extensional input relation. Prefix order, component
+			 * decomposition, and the event that produced those same bytes remain recipe/audit provenance; none can
+			 * change a suffix with the same binding, correlation, and semantic scopes.
+			 */
+			int required = 8;
+			if (evidenceContextScratch.length < required) {
+				evidenceContextScratch = Arrays.copyOf(evidenceContextScratch, required);
+			}
+			int cursor = 0;
+			evidenceContextScratch[cursor++] = EVIDENCE_CONTEXT_MARKER;
+			evidenceContextScratch[cursor++] = EXACT_EVIDENCE_CONTEXT_VERSION;
+			evidenceContextScratch[cursor++] = evidenceStateId;
+			evidenceContextScratch[cursor++] = bindingLayoutId;
+			evidenceContextScratch[cursor++] = correlationMaskId;
+			evidenceContextScratch[cursor++] = semanticScopeMaskId;
+			long rowBits = Double.doubleToLongBits(rows);
+			evidenceContextScratch[cursor++] = (int) (rowBits >>> 32);
+			evidenceContextScratch[cursor++] = (int) rowBits;
+			return sequences.intern(evidenceContextScratch, 0, cursor);
+		}
 		int required = 11 + count + (contributionRows == null ? 0 : count << 1);
 		if (evidenceContextScratch.length < required) {
 			evidenceContextScratch = Arrays.copyOf(evidenceContextScratch,
@@ -276,16 +424,15 @@ final class PackedMemo {
 		properties.satisfies(deliveredPropertyId, deliveredPropertyId);
 		// Physical identity is group-scoped: scope-distinguished logical twins live in different groups but can
 		// produce structurally identical physical tuples, which must stay distinct rows per group.
-		int existing = physicalExpressions.findGroupScoped(targetGroupId, operatorTag, payloadId, deliveredPropertyId,
-				implementationForm, childGroupIds, childOffset, childCount);
-		if (existing != 0) {
-			if (physicalSourceLogicalExpressionIds[existing] == 0) {
-				physicalSourceLogicalExpressionIds[existing] = sourceLogicalExpressionId;
-			}
-			return existing;
-		}
+		int expressionCount = physicalExpressions.size();
 		int physicalExpressionId = physicalExpressions.internGroupScoped(targetGroupId, operatorTag, payloadId,
 				deliveredPropertyId, implementationForm, childGroupIds, childOffset, childCount);
+		if (physicalExpressionId <= expressionCount) {
+			if (physicalSourceLogicalExpressionIds[physicalExpressionId] == 0) {
+				physicalSourceLogicalExpressionIds[physicalExpressionId] = sourceLogicalExpressionId;
+			}
+			return physicalExpressionId;
+		}
 		linkPhysical(targetGroupId, physicalExpressionId);
 		physicalSourceLogicalExpressionIds[physicalExpressionId] = sourceLogicalExpressionId;
 		return physicalExpressionId;
@@ -308,12 +455,78 @@ final class PackedMemo {
 		}
 		checkPhysicalChildCount(physicalExpressionId, childCount);
 		properties.satisfies(requiredPropertyId, requiredPropertyId);
-		return winners.offer(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId,
-				physicalExpressionId, startupCost, totalCost, comparisonCost, childWinnerIds, childOffset, childCount);
+		PackedWinnerTable.checkGoal(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId);
+		int candidateId = retainParetoCandidate(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
+				costPolicyId, physicalExpressionId, 0, startupCost, totalCost, childWinnerIds, childOffset, childCount);
+		if (candidateId == 0 && retainPlanQualityState) {
+			int incumbentWinnerId = winners.find(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
+					costPolicyId);
+			if (incumbentWinnerId != 0) {
+				return incumbentWinnerId;
+			}
+		}
+		boolean executableFallback = hasExecutableFallbackChild(childWinnerIds, childOffset, childCount);
+		int winnerId = executableFallback
+				? winners.offerExecutableFallbackWithMetadata(groupId, requiredPropertyId, semanticRowGoalId,
+						inputContextId, costPolicyId, physicalExpressionId, 0, startupCost, totalCost,
+						comparisonCost, childWinnerIds, childOffset, childCount)
+				: winners.offer(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId,
+						physicalExpressionId, startupCost, totalCost, comparisonCost, childWinnerIds, childOffset,
+						childCount);
+		if (candidateId != 0 && winners.physicalExpressionId(winnerId) == physicalExpressionId) {
+			associateWinnerCandidate(winnerId, candidateId);
+		}
+		return winnerId;
 	}
 
 	int addPhysicalMetadata(PackedCostEstimate estimate, double fallbackRows, double fallbackWork) {
-		return physicalMetadata.append(estimate, fallbackRows, fallbackWork);
+		if (!retainPlanQualityState) {
+			int metadataId = physicalMetadata.append(estimate, fallbackRows, fallbackWork);
+			registerEvidenceState(metadataId, estimate);
+			return metadataId;
+		}
+		int costVectorId = costVectors.importEstimate(estimate);
+		if (costVectorId == 0) {
+			return 0;
+		}
+		int metadataId = physicalMetadata.append(estimate, fallbackRows, fallbackWork);
+		if (metadataId == 0) {
+			return 0;
+		}
+		ensurePhysicalMetadataCostVectorCapacity(metadataId);
+		physicalMetadataCostVectorIds[metadataId] = costVectorId;
+		registerEvidenceState(metadataId, estimate);
+		return metadataId;
+	}
+
+	private void registerEvidenceState(int metadataId, PackedCostEstimate estimate) {
+		if (metadataId != 0) {
+			budget.evidenceStates()
+					.register(estimate.evidenceStateId(), estimate.evidenceGuarantee(),
+							estimate.evidenceDisposition());
+		}
+	}
+
+	int addScalarPhysicalMetadata(double rows, double work) {
+		if (!retainPlanQualityState) {
+			return physicalMetadata.appendScalar(rows, work);
+		}
+		int costVectorId = unknownCostVectorId;
+		if (costVectorId == 0) {
+			costVectors.resetBuilderToUnknown();
+			costVectorId = costVectors.internBuilder();
+			if (costVectorId == 0) {
+				return 0;
+			}
+			unknownCostVectorId = costVectorId;
+		}
+		int metadataId = physicalMetadata.appendScalar(rows, work);
+		if (metadataId == 0) {
+			return 0;
+		}
+		ensurePhysicalMetadataCostVectorCapacity(metadataId);
+		physicalMetadataCostVectorIds[metadataId] = costVectorId;
+		return metadataId;
 	}
 
 	int offerWinnerWithMetadata(int groupId, int requiredPropertyId, int semanticRowGoalId, int inputContextId,
@@ -327,6 +540,24 @@ final class PackedMemo {
 	int offerWinnerWithMetadata(int groupId, int requiredPropertyId, int semanticRowGoalId, int inputContextId,
 			int costPolicyId, int physicalExpressionId, int physicalMetadataId, int tieBreakRank, double startupCost,
 			double totalCost, double comparisonCost, int[] childWinnerIds, int childOffset, int childCount) {
+		return offerWinnerWithMetadata(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId,
+				physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost, comparisonCost,
+				childWinnerIds, childOffset, childCount, false);
+	}
+
+	int materializeWinnerWithMetadata(int groupId, int requiredPropertyId, int semanticRowGoalId,
+			int inputContextId, int costPolicyId, int physicalExpressionId, int physicalMetadataId,
+			int tieBreakRank, double startupCost, double totalCost, double comparisonCost,
+			int[] childWinnerIds, int childOffset, int childCount) {
+		return offerWinnerWithMetadata(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId,
+				physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost, comparisonCost,
+				childWinnerIds, childOffset, childCount, true);
+	}
+
+	private int offerWinnerWithMetadata(int groupId, int requiredPropertyId, int semanticRowGoalId,
+			int inputContextId, int costPolicyId, int physicalExpressionId, int physicalMetadataId,
+			int tieBreakRank, double startupCost, double totalCost, double comparisonCost,
+			int[] childWinnerIds, int childOffset, int childCount, boolean retainExactContinuation) {
 		checkGroupId(groupId);
 		if (physicalExpressionId <= 0 || physicalExpressionId > physicalExpressions.size()) {
 			throw new IndexOutOfBoundsException("unknown physical expression " + physicalExpressionId);
@@ -337,37 +568,96 @@ final class PackedMemo {
 		}
 		checkPhysicalChildCount(physicalExpressionId, childCount);
 		properties.satisfies(requiredPropertyId, requiredPropertyId);
+		PackedWinnerTable.checkGoal(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId);
+		int candidateId = retainParetoCandidate(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
+				costPolicyId, physicalExpressionId, physicalMetadataId, startupCost, totalCost, childWinnerIds,
+				childOffset, childCount);
+		if (candidateId == 0 && retainPlanQualityState && !retainExactContinuation) {
+			int incumbentWinnerId = winners.find(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
+					costPolicyId);
+			if (incumbentWinnerId != 0) {
+				return incumbentWinnerId;
+			}
+		}
 		double lifecycleComparisonCost = lifecycleComparisonCost(physicalMetadataId, totalCost, comparisonCost,
 				childWinnerIds, childOffset, childCount);
 		boolean robustComparisonPrimary = physicalMetadataId != 0
 				&& physicalMetadata.lifecycleEnforced(physicalMetadataId);
-		boolean lifecycleExcluded = lifecycleExcluded(physicalMetadataId);
+		boolean lifecycleExcluded = lifecycleExcluded(physicalMetadataId)
+				|| hasExecutableFallbackChild(childWinnerIds, childOffset, childCount);
+		double peakMemoryRows = physicalMetadataId == 0 ? 0.0d
+				: physicalMetadata.peakMemoryRows(physicalMetadataId);
 		int winnerId = lifecycleExcluded
 				? winners.offerExecutableFallbackWithMetadata(groupId, requiredPropertyId, semanticRowGoalId,
 						inputContextId, costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank,
 						startupCost, totalCost, lifecycleComparisonCost,
-						physicalMetadata.peakMemoryRows(physicalMetadataId), robustComparisonPrimary, childWinnerIds,
+						peakMemoryRows, robustComparisonPrimary, childWinnerIds,
 						childOffset, childCount)
 				: winners.offerWithMetadata(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
 						costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost,
-						lifecycleComparisonCost,
-						physicalMetadataId == 0 ? 0.0d : physicalMetadata.peakMemoryRows(physicalMetadataId),
+						lifecycleComparisonCost, peakMemoryRows,
 						robustComparisonPrimary, childWinnerIds, childOffset, childCount);
-		boolean accepted = winners.physicalExpressionId(winnerId) == physicalExpressionId
-				&& winners.physicalMetadataId(winnerId) == physicalMetadataId;
-		decisionTrace.append(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId,
-				physicalExpressionId, physicalMetadataId,
-				lifecycleExcluded ? PackedWinnerTable.EXECUTABLE_FALLBACK : PackedWinnerTable.COSTED,
-				tieBreakRank, startupCost,
-				totalCost, lifecycleComparisonCost, accepted, winners, physicalMetadata, childWinnerIds, childOffset,
-				childCount);
-		return winnerId;
+		int comparisonTier = lifecycleExcluded
+				? PackedWinnerTable.EXECUTABLE_FALLBACK
+				: PackedWinnerTable.COSTED;
+		boolean scalarAccepted = winners.matchesCandidate(winnerId, comparisonTier, physicalExpressionId,
+				physicalMetadataId, tieBreakRank, startupCost, totalCost, lifecycleComparisonCost, peakMemoryRows,
+				robustComparisonPrimary, childWinnerIds, childOffset, childCount);
+		boolean searchableExactContinuation = retainExactContinuation && paretoAllowsExactContinuation(candidateId);
+		int materializedWinnerId = winnerId;
+		if (retainExactContinuation && !scalarAccepted) {
+			/*
+			 * The caller is materializing one already-costed physical path. Preserve that immutable recipe row even
+			 * when Pareto proof excludes it from future search; substituting the scalar incumbent would attach the
+			 * wrong event and children to its parent. Only mark Pareto survivors as continuation members below.
+			 */
+			materializedWinnerId = winners.appendContinuationWithMetadata(groupId, requiredPropertyId,
+					semanticRowGoalId, inputContextId, costPolicyId, comparisonTier, physicalExpressionId,
+					physicalMetadataId, tieBreakRank, startupCost, totalCost, lifecycleComparisonCost,
+					peakMemoryRows,
+					robustComparisonPrimary, childWinnerIds, childOffset, childCount);
+		}
+		boolean retained = scalarAccepted || searchableExactContinuation;
+		if (searchableExactContinuation) {
+			markExactContinuation(materializedWinnerId);
+		}
+		if ((retained || retainExactContinuation) && candidateId != 0) {
+			associateWinnerCandidate(materializedWinnerId, candidateId);
+		}
+		if (retainPlanQualityState) {
+			decisionTrace.append(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId,
+					physicalExpressionId, physicalMetadataId, candidateId, retained ? materializedWinnerId : 0,
+					lifecycleExcluded ? PackedWinnerTable.EXECUTABLE_FALLBACK : PackedWinnerTable.COSTED,
+					tieBreakRank, startupCost,
+					totalCost, lifecycleComparisonCost, retained, winners, physicalMetadata, childWinnerIds,
+					childOffset,
+					childCount);
+		}
+		return materializedWinnerId;
 	}
 
 	int offerExecutableFallbackWinnerWithMetadata(int groupId, int requiredPropertyId, int semanticRowGoalId,
 			int inputContextId, int costPolicyId, int physicalExpressionId, int physicalMetadataId, int tieBreakRank,
 			double startupCost, double totalCost, double comparisonCost, int[] childWinnerIds, int childOffset,
 			int childCount) {
+		return offerExecutableFallbackWinnerWithMetadata(groupId, requiredPropertyId, semanticRowGoalId,
+				inputContextId, costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost,
+				totalCost, comparisonCost, childWinnerIds, childOffset, childCount, false);
+	}
+
+	int materializeExecutableFallbackWinnerWithMetadata(int groupId, int requiredPropertyId, int semanticRowGoalId,
+			int inputContextId, int costPolicyId, int physicalExpressionId, int physicalMetadataId, int tieBreakRank,
+			double startupCost, double totalCost, double comparisonCost, int[] childWinnerIds, int childOffset,
+			int childCount) {
+		return offerExecutableFallbackWinnerWithMetadata(groupId, requiredPropertyId, semanticRowGoalId,
+				inputContextId, costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost,
+				totalCost, comparisonCost, childWinnerIds, childOffset, childCount, true);
+	}
+
+	private int offerExecutableFallbackWinnerWithMetadata(int groupId, int requiredPropertyId, int semanticRowGoalId,
+			int inputContextId, int costPolicyId, int physicalExpressionId, int physicalMetadataId, int tieBreakRank,
+			double startupCost, double totalCost, double comparisonCost, int[] childWinnerIds, int childOffset,
+			int childCount, boolean retainExactContinuation) {
 		checkGroupId(groupId);
 		if (physicalExpressionId <= 0 || physicalExpressionId > physicalExpressions.size()) {
 			throw new IndexOutOfBoundsException("unknown physical expression " + physicalExpressionId);
@@ -378,6 +668,17 @@ final class PackedMemo {
 		}
 		checkPhysicalChildCount(physicalExpressionId, childCount);
 		properties.satisfies(requiredPropertyId, requiredPropertyId);
+		PackedWinnerTable.checkGoal(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId);
+		int candidateId = retainParetoCandidate(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
+				costPolicyId, physicalExpressionId, physicalMetadataId, startupCost, totalCost, childWinnerIds,
+				childOffset, childCount);
+		if (candidateId == 0 && retainPlanQualityState && !retainExactContinuation) {
+			int incumbentWinnerId = winners.find(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
+					costPolicyId);
+			if (incumbentWinnerId != 0) {
+				return incumbentWinnerId;
+			}
+		}
 		double lifecycleComparisonCost = lifecycleComparisonCost(physicalMetadataId, totalCost, comparisonCost,
 				childWinnerIds, childOffset, childCount);
 		boolean robustComparisonPrimary = physicalMetadataId != 0
@@ -399,20 +700,322 @@ final class PackedMemo {
 						inputContextId, costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank,
 						startupCost, totalCost, lifecycleComparisonCost, peakMemoryRows, robustComparisonPrimary,
 						childWinnerIds, childOffset, childCount);
-		boolean accepted = winners.physicalExpressionId(winnerId) == physicalExpressionId
-				&& winners.physicalMetadataId(winnerId) == physicalMetadataId;
-		decisionTrace.append(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId,
-				physicalExpressionId, physicalMetadataId,
-				verifiedLastGood ? PackedWinnerTable.COSTED : PackedWinnerTable.EXECUTABLE_FALLBACK, tieBreakRank,
-				startupCost, totalCost, lifecycleComparisonCost, accepted, winners, physicalMetadata, childWinnerIds,
-				childOffset,
-				childCount);
-		return winnerId;
+		int comparisonTier = verifiedLastGood ? PackedWinnerTable.COSTED : PackedWinnerTable.EXECUTABLE_FALLBACK;
+		boolean scalarAccepted = winners.matchesCandidate(winnerId, comparisonTier, physicalExpressionId,
+				physicalMetadataId, tieBreakRank, startupCost, totalCost, lifecycleComparisonCost, peakMemoryRows,
+				robustComparisonPrimary, childWinnerIds, childOffset, childCount);
+		boolean searchableExactContinuation = retainExactContinuation && paretoAllowsExactContinuation(candidateId);
+		int materializedWinnerId = winnerId;
+		if (retainExactContinuation && !scalarAccepted) {
+			/* Preserve the exact fallback recipe without enrolling a Pareto-rejected row in continuation search. */
+			materializedWinnerId = winners.appendContinuationWithMetadata(groupId, requiredPropertyId,
+					semanticRowGoalId, inputContextId, costPolicyId, comparisonTier, physicalExpressionId,
+					physicalMetadataId, tieBreakRank, startupCost, totalCost, lifecycleComparisonCost, peakMemoryRows,
+					robustComparisonPrimary, childWinnerIds, childOffset, childCount);
+		}
+		boolean retained = scalarAccepted || searchableExactContinuation;
+		if (searchableExactContinuation) {
+			markExactContinuation(materializedWinnerId);
+		}
+		if ((retained || retainExactContinuation) && candidateId != 0) {
+			associateWinnerCandidate(materializedWinnerId, candidateId);
+		}
+		if (retainPlanQualityState) {
+			decisionTrace.append(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId,
+					physicalExpressionId, physicalMetadataId, candidateId, retained ? materializedWinnerId : 0,
+					comparisonTier, tieBreakRank, startupCost, totalCost, lifecycleComparisonCost, retained, winners,
+					physicalMetadata,
+					childWinnerIds,
+					childOffset,
+					childCount);
+		}
+		return materializedWinnerId;
+	}
+
+	private int retainParetoCandidate(int groupId, int requiredPropertyId, int semanticRowGoalId,
+			int inputContextId, int costPolicyId, int physicalExpressionId, int physicalMetadataId,
+			double startupCost, double totalCost, int[] childWinnerIds, int childOffset, int childCount) {
+		if (!retainPlanQualityState) {
+			return 0;
+		}
+		if (budget.resourceLimitReached()) {
+			/*
+			 * Pareto detail is optional once its arena has rejected deterministic growth. The scalar winner table still
+			 * owns the complete executable incumbent, so do not touch an unavailable vector builder or publish a
+			 * partial candidate row after that admission failure.
+			 */
+			return 0;
+		}
+		int costVectorId;
+		int evidenceStateId = 0;
+		int evidenceLineageId = 0;
+		int evidenceDispositionCode = 0;
+		int evidenceGuaranteeCode = 0;
+		if (physicalMetadataId == 0) {
+			costVectors.resetBuilderToZero();
+			costVectors.setBuilderExact(PackedCostDimensionRegistry.STARTUP_WORK, startupCost);
+			costVectors.setBuilderExact(PackedCostDimensionRegistry.STEADY_STATE_CPU_WORK, totalCost);
+			costVectorId = costVectors.internBuilder();
+		} else {
+			costVectorId = physicalMetadataId < physicalMetadataCostVectorIds.length
+					? physicalMetadataCostVectorIds[physicalMetadataId]
+					: 0;
+			if (costVectorId == 0) {
+				return 0;
+			}
+			evidenceStateId = physicalMetadata.evidenceStateId(physicalMetadataId);
+			evidenceLineageId = physicalMetadata.costEventId(physicalMetadataId);
+			EvidenceGuarantee evidenceGuarantee = physicalMetadata.evidenceGuarantee(physicalMetadataId);
+			evidenceGuaranteeCode = evidenceGuarantee == null ? 0 : evidenceGuarantee.ordinal() + 1;
+			FrontierStateDisposition evidenceDisposition = physicalMetadata.evidenceDisposition(physicalMetadataId);
+			evidenceDispositionCode = evidenceDisposition == null ? 0 : evidenceDisposition.ordinal() + 1;
+			if (evidenceStateId != 0
+					&& evidenceGuarantee == EvidenceGuarantee.DATABASE_EXACT
+					&& evidenceDisposition == FrontierStateDisposition.COMPOSABLE_PAYLOAD) {
+				/*
+				 * The provider's canonical exact state is a complete extensional relation. With logical cell, delivered
+				 * properties, input/semantic scopes, and cost vector retained separately, the physical derivation and
+				 * event that produced those same bytes are audit provenance rather than suffix-observable state.
+				 */
+				evidenceLineageId = 0;
+			}
+		}
+		if (costVectorId == 0) {
+			return 0;
+		}
+		if (physicalMetadataId != 0 && childCount != 0
+				&& physicalMetadata.hasExplicitPhysicalCost(physicalMetadataId)
+				&& physicalMetadata.costScope(physicalMetadataId) == PackedCostEstimate.CostScope.LOCAL) {
+			costVectorId = composeCandidateCostVector(costVectorId, childWinnerIds, childOffset, childCount);
+			if (costVectorId == 0) {
+				return 0;
+			}
+		}
+		boolean exactExtensionalContinuation = evidenceStateId != 0
+				&& evidenceGuaranteeCode == EvidenceGuarantee.DATABASE_EXACT.ordinal() + 1
+				&& evidenceDispositionCode == FrontierStateDisposition.COMPOSABLE_PAYLOAD.ordinal() + 1;
+		/*
+		 * Winner-row IDs identify one immutable recipe, not a property visible to a later operator. The physical
+		 * expression already retains ordered child groups and implementation form; the output evidence state and event
+		 * retain estimator identity; and the cost vector retains composed child resources. Putting recipe row IDs in
+		 * the continuation key makes an equivalent materialization recursively manufacture new suffix classes.
+		 */
+		int orderIdentityId = 0;
+		int sourceLogicalExpressionId = physicalSourceLogicalExpressionIds[physicalExpressionId];
+		int semanticScopeId = sourceLogicalExpressionId == 0 ? 0 : logicalNodeFlags(sourceLogicalExpressionId);
+		int continuationKeyId = continuationKeys.intern(groupId, physicalDeliveredPropertyId(physicalExpressionId),
+				inputContextId, semanticScopeId, inputContextId, semanticRowGoalId, orderIdentityId,
+				evidenceStateId, evidenceLineageId, evidenceDispositionCode, evidenceGuaranteeCode,
+				exactExtensionalContinuation ? 0 : physicalExpressionId, costPolicyId,
+				PackedCostAlgebra.CompositionMode.SEQUENTIAL_SUM);
+		if (continuationKeyId == 0) {
+			return 0;
+		}
+		int parentCandidateId = 0;
+		if (childCount != 0) {
+			int childWinnerId = childWinnerIds[childOffset];
+			if (childWinnerId < candidateIdsByWinner.length) {
+				parentCandidateId = candidateIdsByWinner[childWinnerId];
+			}
+		}
+		int candidateId = candidates.append(groupId, continuationKeyId,
+				physicalDeliveredPropertyId(physicalExpressionId), costVectorId, evidenceStateId, parentCandidateId,
+				physicalExpressionId, totalCost);
+		if (candidateId == 0) {
+			return 0;
+		}
+		PackedParetoFrontierArena.OfferResult offerResult = paretoFrontiers.offer(groupId, continuationKeyId,
+				candidateId);
+		return offerResult == PackedParetoFrontierArena.OfferResult.RESOURCE_LIMIT ? 0 : candidateId;
+	}
+
+	private int composeCandidateCostVector(int localCostVectorId, int[] childWinnerIds, int childOffset,
+			int childCount) {
+		if (childCostVectorScratch.length < childCount) {
+			childCostVectorScratch = Arrays.copyOf(childCostVectorScratch,
+					grownCapacity(childCostVectorScratch.length, childCount - 1));
+		}
+		for (int ordinal = 0; ordinal < childCount; ordinal++) {
+			int childWinnerId = childWinnerIds[childOffset + ordinal];
+			int childCandidateId = winnerCandidateId(childWinnerId);
+			if (childCandidateId == 0) {
+				throw new PackedMemoInvariantException(
+						"local physical candidate has no retained child cost vector");
+			}
+			childCostVectorScratch[ordinal] = candidates.costVectorId(childCandidateId);
+		}
+		return costAlgebra.compose(PackedCostAlgebra.CompositionMode.SEQUENTIAL_SUM, localCostVectorId,
+				childCostVectorScratch, 0, childCount, 1L);
+	}
+
+	private void associateWinnerCandidate(int winnerId, int candidateId) {
+		if (winnerId >= candidateIdsByWinner.length) {
+			candidateIdsByWinner = Arrays.copyOf(candidateIdsByWinner,
+					grownCapacity(candidateIdsByWinner.length, winnerId));
+		}
+		candidateIdsByWinner[winnerId] = candidateId;
+	}
+
+	private void ensurePhysicalMetadataCostVectorCapacity(int metadataId) {
+		if (metadataId >= physicalMetadataCostVectorIds.length) {
+			physicalMetadataCostVectorIds = Arrays.copyOf(physicalMetadataCostVectorIds,
+					grownCapacity(physicalMetadataCostVectorIds.length, metadataId));
+		}
+	}
+
+	private static int grownCapacity(int currentCapacity, int requiredId) {
+		int capacity = currentCapacity;
+		while (capacity <= requiredId) {
+			capacity <<= 1;
+		}
+		return capacity;
+	}
+
+	int retainedCandidateCount() {
+		return retainPlanQualityState ? candidates.size() : 0;
+	}
+
+	PackedCostVectorArena costVectors() {
+		requirePlanQualityState();
+		return costVectors;
+	}
+
+	PackedContinuationKeyArena continuationKeys() {
+		requirePlanQualityState();
+		return continuationKeys;
+	}
+
+	int candidateCostVectorId(int candidateId) {
+		requirePlanQualityState();
+		return candidates.costVectorId(candidateId);
+	}
+
+	int candidateContinuationKeyId(int candidateId) {
+		requirePlanQualityState();
+		return candidates.continuationKeyId(candidateId);
+	}
+
+	int winnerCostVectorId(int winnerId) {
+		int candidateId = winnerCandidateId(winnerId);
+		return candidateId == 0 ? 0 : candidates.costVectorId(candidateId);
+	}
+
+	int physicalMetadataCostVectorId(int metadataId) {
+		if (!retainPlanQualityState || metadataId <= 0 || metadataId >= physicalMetadataCostVectorIds.length) {
+			return 0;
+		}
+		return physicalMetadataCostVectorIds[metadataId];
+	}
+
+	int completeUnaryPhysicalCostVectorId(int metadataId, int childVectorId) {
+		int localVectorId = physicalMetadataCostVectorId(metadataId);
+		if (localVectorId == 0
+				|| !physicalMetadata.hasExplicitPhysicalCost(metadataId)
+				|| physicalMetadata.costScope(metadataId) == PackedCostEstimate.CostScope.INCLUSIVE) {
+			return localVectorId;
+		}
+		if (childVectorId == 0) {
+			return 0;
+		}
+		childCostVectorScratch[0] = childVectorId;
+		return costAlgebra.compose(PackedCostAlgebra.CompositionMode.SEQUENTIAL_SUM, localVectorId,
+				childCostVectorScratch, 0, 1, 1L);
+	}
+
+	int completeBinaryPhysicalCostVectorId(int metadataId, int firstChildVectorId, int secondChildVectorId) {
+		int localVectorId = physicalMetadataCostVectorId(metadataId);
+		if (localVectorId == 0
+				|| !physicalMetadata.hasExplicitPhysicalCost(metadataId)
+				|| physicalMetadata.costScope(metadataId) == PackedCostEstimate.CostScope.INCLUSIVE) {
+			return localVectorId;
+		}
+		if (firstChildVectorId == 0 || secondChildVectorId == 0) {
+			return 0;
+		}
+		childCostVectorScratch[0] = firstChildVectorId;
+		childCostVectorScratch[1] = secondChildVectorId;
+		return costAlgebra.compose(PackedCostAlgebra.CompositionMode.SEQUENTIAL_SUM, localVectorId,
+				childCostVectorScratch, 0, 2, 1L);
+	}
+
+	boolean equalCostVector(int leftVectorId, int rightVectorId) {
+		return retainPlanQualityState && leftVectorId != 0 && rightVectorId != 0
+				&& costVectors.equalVector(leftVectorId, rightVectorId);
+	}
+
+	boolean dominatesCostVector(int leftVectorId, int rightVectorId) {
+		return retainPlanQualityState && leftVectorId != 0 && rightVectorId != 0
+				&& costVectors.dominates(leftVectorId, rightVectorId);
+	}
+
+	int winnerCandidateId(int winnerId) {
+		return winnerId > 0 && winnerId < candidateIdsByWinner.length ? candidateIdsByWinner[winnerId] : 0;
+	}
+
+	int winnerContinuationFrontierSize(int winnerId) {
+		if (!retainPlanQualityState) {
+			return 0;
+		}
+		int candidateId = winnerCandidateId(winnerId);
+		if (candidateId == 0) {
+			return 0;
+		}
+		return paretoFrontiers.size(winners.groupId(winnerId), candidates.continuationKeyId(candidateId));
+	}
+
+	private void requirePlanQualityState() {
+		if (!retainPlanQualityState) {
+			throw new PackedMemoInvariantException("scalar winner-only memo does not retain plan-quality state");
+		}
+	}
+
+	int firstExactContinuationWinner(int groupId, int requiredPropertyId, int semanticRowGoalId,
+			int inputContextId, int costPolicyId) {
+		return nextParetoContinuation(winners.firstContinuation(groupId, requiredPropertyId, semanticRowGoalId,
+				inputContextId, costPolicyId));
+	}
+
+	int nextExactContinuationWinner(int winnerId) {
+		return nextParetoContinuation(winners.nextContinuation(winnerId));
+	}
+
+	int exactContinuationGeneration(int groupId) {
+		checkGroupId(groupId);
+		return exactContinuationGenerations[groupId];
+	}
+
+	private void markExactContinuation(int winnerId) {
+		if (winners.markContinuation(winnerId)) {
+			int groupId = winners.groupId(winnerId);
+			ensureGroupCapacity(groupId);
+			exactContinuationGenerations[groupId]++;
+		}
+	}
+
+	private int nextParetoContinuation(int winnerId) {
+		while (winnerId != 0) {
+			int candidateId = winnerCandidateId(winnerId);
+			if (candidateId == 0 || isFinalParetoCandidate(candidateId)) {
+				return winnerId;
+			}
+			winnerId = winners.nextContinuation(winnerId);
+		}
+		return 0;
 	}
 
 	private boolean lifecycleExcluded(int physicalMetadataId) {
 		return physicalMetadataId != 0 && physicalMetadata.lifecycleEnforced(physicalMetadataId)
 				&& !physicalMetadata.lifecycleEligible(physicalMetadataId);
+	}
+
+	private boolean hasExecutableFallbackChild(int[] childWinnerIds, int childOffset, int childCount) {
+		for (int ordinal = 0; ordinal < childCount; ordinal++) {
+			if (winners
+					.comparisonTier(childWinnerIds[childOffset + ordinal]) == PackedWinnerTable.EXECUTABLE_FALLBACK) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private double lifecycleComparisonCost(int physicalMetadataId, double totalCost, double fallbackComparisonCost,
@@ -450,12 +1053,28 @@ final class PackedMemo {
 		return winners.totalCost(winnerId);
 	}
 
+	double winnerComparisonCost(int winnerId) {
+		return winners.comparisonCost(winnerId);
+	}
+
 	double winnerStartupCost(int winnerId) {
 		return winners.startupCost(winnerId);
 	}
 
 	int winnerCount() {
 		return winners.size();
+	}
+
+	int winnerChangeCount() {
+		return winners.changeCount();
+	}
+
+	void beginWinnerChangeBatch() {
+		winners.beginChangeBatch();
+	}
+
+	int winnerChangedGroupId(int changeOrdinal) {
+		return winners.changedGroupId(changeOrdinal);
 	}
 
 	int winnerPhysicalExpressionId(int winnerId) {
@@ -491,13 +1110,21 @@ final class PackedMemo {
 	}
 
 	void putDependentPlan(int ownerWinnerId, int subqueryPayloadId, int dependentWinnerId) {
+		if (ownerWinnerId <= 0 || subqueryPayloadId <= 0 || dependentWinnerId <= 0) {
+			throw new IllegalArgumentException("dependent plan ids must be positive");
+		}
 		/*
 		 * A winner id identifies a mutable memo slot: offering a better candidate replaces the physical expression and
 		 * metadata in that slot. The dependent subquery is part of the immutable candidate-costing decision, so key its
 		 * link by the selected physical metadata snapshot instead of allowing a later candidate to inherit the previous
-		 * winner's dependent plan.
+		 * winner's dependent plan. Retained-byte admission may reject that optional metadata after preserving a
+		 * mandatory executable incumbent. Such an incomplete incumbent has no stable candidate snapshot to key here;
+		 * final plan contextualization resolves its dependent winner from the selected input context instead.
 		 */
-		dependentPlans.put(winnerPhysicalMetadataId(ownerWinnerId), subqueryPayloadId, dependentWinnerId);
+		int ownerPhysicalMetadataId = winnerPhysicalMetadataId(ownerWinnerId);
+		if (ownerPhysicalMetadataId != 0) {
+			dependentPlans.put(ownerPhysicalMetadataId, subqueryPayloadId, dependentWinnerId);
+		}
 	}
 
 	int dependentPlanWinnerId(int ownerWinnerId, int subqueryPayloadId) {
@@ -506,7 +1133,13 @@ final class PackedMemo {
 
 	double winnerOutputRows(int winnerId) {
 		int metadataId = winners.physicalMetadataId(winnerId);
-		return metadataId == 0 ? Double.NaN : physicalMetadata.outputRows(metadataId);
+		/*
+		 * The first scalar stored by the legacy winner index is the candidate's output-row estimate. Ordinarily the
+		 * immutable metadata row is authoritative, but resource admission can reject metadata before the mandatory
+		 * executable incumbent is published. Preserve its already-costed scalar boundary in that explicit incomplete
+		 * mode instead of leaking NaN into parent costing and plan extraction.
+		 */
+		return metadataId == 0 ? winners.startupCost(winnerId) : physicalMetadata.outputRows(metadataId);
 	}
 
 	double winnerWorkRows(int winnerId) {
@@ -552,10 +1185,11 @@ final class PackedMemo {
 		if (winnerId == 0 || destination == null) {
 			return;
 		}
-		dependentCostScratch.clear();
-		dependentCostScratch.setLocalPhysicalCost(
+		PackedCostEstimate dependentCost = dependentCostScratch();
+		dependentCost.clear();
+		dependentCost.setLocalPhysicalCost(
 				0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
-		addWinnerPhysicalCostRecursive(winnerId, dependentCostScratch);
+		addWinnerPhysicalCostRecursive(winnerId, dependentCost);
 		double priorCount = destination.plannedDoubleMetric("optimizer.dependentCostEventCount", 0.0d);
 		if (priorCount == 0.0d) {
 			int metadataId = winnerPhysicalMetadataId(winnerId);
@@ -565,58 +1199,59 @@ final class PackedMemo {
 		}
 		destination.putPlannedDoubleMetric("optimizer.dependentCostEventCount", priorCount + 1.0d);
 		addDependentMetric(destination, "plannedDependentSubquerySequentialRows",
-				dependentCostScratch.sequentialRows());
-		addDependentMetric(destination, "plannedDependentSubqueryRandomSeeks", dependentCostScratch.randomSeeks());
+				dependentCost.sequentialRows());
+		addDependentMetric(destination, "plannedDependentSubqueryRandomSeeks", dependentCost.randomSeeks());
 		addDependentMetric(destination, "plannedDependentSubqueryIteratorOpens",
-				dependentCostScratch.iteratorOpens());
+				dependentCost.iteratorOpens());
 		addDependentMetric(destination, "plannedDependentSubqueryExpressionEvaluations",
-				dependentCostScratch.expressionEvaluations());
+				dependentCost.expressionEvaluations());
 		addDependentMetric(destination, "plannedDependentSubqueryHashBuildRows",
-				dependentCostScratch.hashBuildRows());
+				dependentCost.hashBuildRows());
 		addDependentMetric(destination, "plannedDependentSubqueryHashProbeRows",
-				dependentCostScratch.hashProbeRows());
+				dependentCost.hashProbeRows());
 		addDependentMetric(destination, "plannedDependentSubqueryPathExpansions",
-				dependentCostScratch.pathExpansions());
-		addDependentMetric(destination, "plannedDependentSubqueryResultRows", dependentCostScratch.resultRows());
-		addDependentMetric(destination, "plannedDependentSubqueryRemoteCalls", dependentCostScratch.remoteCalls());
+				dependentCost.pathExpansions());
+		addDependentMetric(destination, "plannedDependentSubqueryResultRows", dependentCost.resultRows());
+		addDependentMetric(destination, "plannedDependentSubqueryRemoteCalls", dependentCost.remoteCalls());
 		destination.putPlannedDoubleMetric("plannedDependentSubqueryPeakMemoryRows",
 				Math.max(destination.plannedDoubleMetric("plannedDependentSubqueryPeakMemoryRows", 0.0d),
-						dependentCostScratch.peakMemoryRows()));
-		addDependentMetric(destination, "plannedDependentSubqueryWorkRows", dependentCostScratch.workRows());
+						dependentCost.peakMemoryRows()));
+		addDependentMetric(destination, "plannedDependentSubqueryWorkRows", dependentCost.workRows());
 		addDependentMetric(destination, "plannedDependentSubqueryObjectiveCost", winnerTotalCost(winnerId));
 		addDependentMetric(destination, "plannedDependentSubqueryStartupOnceObjectiveCost",
 				winnerStartupCost(winnerId));
-		dependentReopenScratch.clear();
-		dependentReopenScratch.setLocalPhysicalCost(
+		PackedCostEstimate dependentReopen = dependentReopenScratch();
+		dependentReopen.clear();
+		dependentReopen.setLocalPhysicalCost(
 				0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
 		double reopenObjective = collectOuterIndependentReopenCost(
-				winnerId, outerBindingMaskId, dependentReopenScratch);
+				winnerId, outerBindingMaskId, dependentReopen);
 		if (reopenObjective > 0.0d) {
 			destination.putPlannedDoubleMetric("plannedDependentSubqueryContainsOuterIndependentWork", 1.0d);
 			addDependentMetric(destination, "plannedDependentSubqueryReopenSequentialRows",
-					dependentReopenScratch.sequentialRows());
+					dependentReopen.sequentialRows());
 			addDependentMetric(destination, "plannedDependentSubqueryReopenRandomSeeks",
-					dependentReopenScratch.randomSeeks());
+					dependentReopen.randomSeeks());
 			addDependentMetric(destination, "plannedDependentSubqueryReopenIteratorOpens",
-					dependentReopenScratch.iteratorOpens());
+					dependentReopen.iteratorOpens());
 			addDependentMetric(destination, "plannedDependentSubqueryReopenExpressionEvaluations",
-					dependentReopenScratch.expressionEvaluations());
+					dependentReopen.expressionEvaluations());
 			addDependentMetric(destination, "plannedDependentSubqueryReopenHashBuildRows",
-					dependentReopenScratch.hashBuildRows());
+					dependentReopen.hashBuildRows());
 			addDependentMetric(destination, "plannedDependentSubqueryReopenHashProbeRows",
-					dependentReopenScratch.hashProbeRows());
+					dependentReopen.hashProbeRows());
 			addDependentMetric(destination, "plannedDependentSubqueryReopenPathExpansions",
-					dependentReopenScratch.pathExpansions());
+					dependentReopen.pathExpansions());
 			addDependentMetric(destination, "plannedDependentSubqueryReopenResultRows",
-					dependentReopenScratch.resultRows());
+					dependentReopen.resultRows());
 			addDependentMetric(destination, "plannedDependentSubqueryReopenRemoteCalls",
-					dependentReopenScratch.remoteCalls());
+					dependentReopen.remoteCalls());
 			destination.putPlannedDoubleMetric("plannedDependentSubqueryReopenPeakMemoryRows",
 					Math.max(destination.plannedDoubleMetric(
 							"plannedDependentSubqueryReopenPeakMemoryRows", 0.0d),
-							dependentReopenScratch.peakMemoryRows()));
+							dependentReopen.peakMemoryRows()));
 			addDependentMetric(destination, "plannedDependentSubqueryReopenWorkRows",
-					dependentReopenScratch.workRows());
+					dependentReopen.workRows());
 			addDependentMetric(destination, "plannedDependentSubqueryReopenObjectiveCost", reopenObjective);
 			addDependentMetric(destination, "plannedDependentSubqueryReopenStartupOnceObjectiveCost",
 					collectOuterIndependentReopenStartupCost(winnerId, outerBindingMaskId));
@@ -624,6 +1259,20 @@ final class PackedMemo {
 		if (winnerContainsPlannedMetric(winnerId, "optimizer.physicalJoinImplementation", "independent-hash")) {
 			destination.putPlannedDoubleMetric("plannedDependentSubqueryContainsIndependentHash", 1.0d);
 		}
+	}
+
+	private PackedCostEstimate dependentCostScratch() {
+		if (dependentCostScratch == null) {
+			dependentCostScratch = new PackedCostEstimate();
+		}
+		return dependentCostScratch;
+	}
+
+	private PackedCostEstimate dependentReopenScratch() {
+		if (dependentReopenScratch == null) {
+			dependentReopenScratch = new PackedCostEstimate();
+		}
+		return dependentReopenScratch;
 	}
 
 	private double collectOuterIndependentReopenCost(int winnerId, int outerBindingMaskId,
@@ -762,8 +1411,7 @@ final class PackedMemo {
 		int[] decisionRepresentatives = new int[decisionTrace.size()];
 		int decisionCount = 0;
 		for (int index = 0; index < decisionTrace.size(); index++) {
-			int metadataId = decisionTrace.metadataId(index);
-			if (physicalMetadata.costEventId(metadataId) != 0 && decisionMatchesWinner(index, rootWinnerId)) {
+			if (decisionTrace.eventId(index) != 0 && decisionMatchesWinner(index, rootWinnerId)) {
 				decisionRepresentatives[decisionCount++] = index;
 				break;
 			}
@@ -775,9 +1423,9 @@ final class PackedMemo {
 					continue;
 				}
 				for (int child = 0; child < decisionTrace.childCount(index); child++) {
-					int childTrace = traceCandidate(decisionTrace.childEventId(index, child),
+					int childTrace = decisionTrace.closestCandidate(decisionTrace.childEventId(index, child),
 							decisionTrace.childCost(index, child));
-					if (childTrace < 0 || selectedEventForDecision(childTrace) == 0
+					if (childTrace < 0 || selectedWinnerForDecision(childTrace) == 0
 							|| containsDecision(decisionRepresentatives, decisionCount, childTrace)) {
 						continue;
 					}
@@ -788,6 +1436,9 @@ final class PackedMemo {
 		if (decisionCount == 0) {
 			return PackedDecisionDraft.empty(rootSelectedEventId);
 		}
+		int[] selectedWinnerIds = new int[decisionTrace.size()];
+		decisionCount = markSelectedPlanDecisions(rootWinnerId, decisionRepresentatives, decisionCount,
+				selectedWinnerIds);
 		int candidateCount = 0;
 		int childLinkCount = 0;
 		int[] decisionStarts = new int[decisionCount + 1];
@@ -795,10 +1446,12 @@ final class PackedMemo {
 		for (int decision = 0; decision < decisionCount; decision++) {
 			int representative = decisionRepresentatives[decision];
 			decisionStarts[decision] = candidateCount;
-			selectedEventIds[decision] = selectedEventForDecision(representative);
+			if (selectedWinnerIds[decision] == 0) {
+				selectedWinnerIds[decision] = selectedWinnerForDecision(representative);
+			}
+			selectedEventIds[decision] = selectedEventForWinner(selectedWinnerIds[decision]);
 			for (int index = 0; index < decisionTrace.size(); index++) {
-				if (decisionTrace.sameDecision(index, representative)
-						&& physicalMetadata.costEventId(decisionTrace.metadataId(index)) != 0) {
+				if (decisionTrace.sameDecision(index, representative) && decisionTrace.eventId(index) != 0) {
 					candidateCount++;
 					childLinkCount = Math.addExact(childLinkCount, decisionTrace.childCount(index));
 				}
@@ -807,9 +1460,13 @@ final class PackedMemo {
 		decisionStarts[decisionCount] = candidateCount;
 		int[] eventIds = new int[candidateCount];
 		int[] stateIds = new int[candidateCount];
+		int[] candidateIds = new int[candidateCount];
+		long[] candidateRuleProofMasks = new long[candidateCount];
 		double[] costs = new double[candidateCount];
 		double[] lowerBounds = new double[candidateCount];
 		byte[] outcomes = new byte[candidateCount];
+		byte[] paretoOutcomes = new byte[candidateCount];
+		byte[] selectedByPolicy = new byte[candidateCount];
 		byte[] comparisonTiers = new byte[candidateCount];
 		int[] candidateChildStarts = new int[candidateCount + 1];
 		int[] candidateChildEventIds = new int[childLinkCount];
@@ -820,15 +1477,29 @@ final class PackedMemo {
 			int candidate = decisionStarts[decision];
 			for (int index = 0; index < decisionTrace.size(); index++) {
 				int metadataId = decisionTrace.metadataId(index);
-				int eventId = physicalMetadata.costEventId(metadataId);
+				int eventId = decisionTrace.eventId(index);
 				if (!decisionTrace.sameDecision(index, representative) || eventId == 0) {
 					continue;
 				}
 				eventIds[candidate] = eventId;
 				stateIds[candidate] = physicalMetadata.evidenceStateId(metadataId);
+				int candidateId = decisionTrace.candidateId(index);
+				candidateIds[candidate] = candidateId;
+				int physicalExpressionId = decisionTrace.physicalExpressionId(index);
+				int sourceLogicalExpressionId = physicalSourceLogicalExpressionIds[physicalExpressionId];
+				candidateRuleProofMasks[candidate] = sourceLogicalExpressionId == 0
+						? 0L
+						: logicalRuleMask(sourceLogicalExpressionId);
 				costs[candidate] = decisionTrace.candidateCost(index);
 				lowerBounds[candidate] = decisionTrace.lowerBound(index);
 				outcomes[candidate] = decisionTrace.accepted(index) ? (byte) 1 : 0;
+				paretoOutcomes[candidate] = isFinalParetoCandidate(candidateId) ? (byte) 1 : 0;
+				selectedByPolicy[candidate] = decisionTrace.retainedWinnerId(index) == selectedWinnerIds[decision]
+						|| decisionTrace.retainedWinnerId(index) == 0
+								&& decisionTrace.matchesWinner(index, selectedWinnerIds[decision], winners,
+										physicalMetadata)
+												? (byte) 1
+												: 0;
 				comparisonTiers[candidate] = (byte) decisionTrace.comparisonTier(index);
 				candidateChildStarts[candidate] = childLink;
 				for (int child = 0; child < decisionTrace.childCount(index); child++) {
@@ -841,47 +1512,450 @@ final class PackedMemo {
 		}
 		candidateChildStarts[candidateCount] = childLink;
 		return new PackedDecisionDraft(rootSelectedEventId, decisionStarts, selectedEventIds, eventIds, stateIds,
-				costs, lowerBounds, outcomes, comparisonTiers, candidateChildStarts, candidateChildEventIds,
-				candidateChildCosts);
+				candidateIds, candidateRuleProofMasks, costs, lowerBounds, outcomes, paretoOutcomes, selectedByPolicy,
+				comparisonTiers,
+				candidateChildStarts, candidateChildEventIds, candidateChildCosts);
+	}
+
+	private int markSelectedPlanDecisions(int rootWinnerId, int[] decisionRepresentatives, int decisionCount,
+			int[] selectedWinnerIds) {
+		int[] winnerStack = new int[winners.size() + 1];
+		boolean[] visited = new boolean[winners.size() + 1];
+		int stackSize = 0;
+		winnerStack[stackSize++] = rootWinnerId;
+		while (stackSize != 0) {
+			int winnerId = winnerStack[--stackSize];
+			if (winnerId <= 0 || winnerId >= visited.length || visited[winnerId]) {
+				continue;
+			}
+			visited[winnerId] = true;
+			int traceIndex = selectedTraceForWinner(winnerId);
+			if (traceIndex >= 0) {
+				int decision = selectedDecisionIndex(decisionRepresentatives, decisionCount, selectedWinnerIds,
+						traceIndex, winnerId);
+				if (decision < 0) {
+					decision = decisionCount++;
+					decisionRepresentatives[decision] = traceIndex;
+				}
+				selectedWinnerIds[decision] = winnerId;
+			}
+			for (int child = winners.childCount(winnerId) - 1; child >= 0; child--) {
+				if (stackSize == winnerStack.length) {
+					winnerStack = Arrays.copyOf(winnerStack, winnerStack.length << 1);
+				}
+				winnerStack[stackSize++] = winners.childWinnerId(winnerId, child);
+			}
+		}
+		return decisionCount;
+	}
+
+	private int selectedDecisionIndex(int[] representatives, int count, int[] selectedWinnerIds, int candidate,
+			int winnerId) {
+		int unassigned = -1;
+		for (int decision = 0; decision < count; decision++) {
+			if (!decisionTrace.sameDecision(representatives[decision], candidate)) {
+				continue;
+			}
+			if (selectedWinnerIds[decision] == winnerId) {
+				return decision;
+			}
+			if (selectedWinnerIds[decision] == 0 && unassigned < 0) {
+				unassigned = decision;
+			}
+		}
+		return unassigned;
+	}
+
+	private int selectedTraceForWinner(int winnerId) {
+		for (int index = 0; index < decisionTrace.size(); index++) {
+			if (decisionTrace.eventId(index) != 0 && decisionMatchesWinner(index, winnerId)) {
+				return index;
+			}
+		}
+		return -1;
+	}
+
+	private int decisionIndex(int[] representatives, int count, int candidate) {
+		for (int decision = 0; decision < count; decision++) {
+			if (decisionTrace.sameDecision(representatives[decision], candidate)) {
+				return decision;
+			}
+		}
+		return -1;
+	}
+
+	private boolean isFinalParetoCandidate(int candidateId) {
+		if (candidateId <= 0 || candidateId > candidates.size()) {
+			return false;
+		}
+		return paretoFrontiers.containsCandidate(candidates.groupId(candidateId),
+				candidates.continuationKeyId(candidateId), candidateId);
+	}
+
+	private boolean paretoAllowsExactContinuation(int candidateId) {
+		/*
+		 * Ordinary winner-only planning has no Pareto candidate and must preserve exact-search completeness. A failed
+		 * arena admission is different: the budget has already made the search explicitly incomplete, so enrolling an
+		 * unproved continuation would evade that same retained-byte boundary and recursively amplify work. Once the
+		 * Pareto arena admitted a candidate, only a final survivor can be suffix-optimal for its complete continuation
+		 * identity.
+		 */
+		return candidateId == 0
+				? !retainPlanQualityState || !budget.resourceLimitReached()
+				: isFinalParetoCandidate(candidateId);
+	}
+
+	PackedPlanQualityDraft planQualityDraft(int rootWinnerId, int dominatedSamplesPerStratum) {
+		if (dominatedSamplesPerStratum < 0) {
+			throw new IllegalArgumentException("dominated samples per stratum must be non-negative");
+		}
+		int selectedDecisionWinnerId = planQualityDecisionWinner(rootWinnerId);
+		int representative = selectedTraceForWinner(selectedDecisionWinnerId);
+		if (representative < 0) {
+			throw new PackedMemoInvariantException("selected plan-quality decision has no exact trace candidate");
+		}
+
+		int[] rootTraceIndexes = new int[decisionTrace.size()];
+		int rootCandidateCount = 0;
+		int paretoSurvivorCount = 0;
+		int dominatedCandidateCount = 0;
+		int selectedTraceIndex = -1;
+		byte[] included = new byte[decisionTrace.size()];
+		byte[] pareto = new byte[decisionTrace.size()];
+		byte[] selected = new byte[decisionTrace.size()];
+		byte[] sampled = new byte[decisionTrace.size()];
+		long[] stratumFingerprints = new long[decisionTrace.size()];
+		int[] stratumOrdinals = new int[decisionTrace.size()];
+		int[] stratumPopulations = new int[decisionTrace.size()];
+		Arrays.fill(stratumOrdinals, -1);
+		for (int index = 0; index < decisionTrace.size(); index++) {
+			if (!decisionTrace.sameDecision(index, representative)) {
+				continue;
+			}
+			rootTraceIndexes[rootCandidateCount++] = index;
+			boolean selectedByPolicy = decisionMatchesWinner(index, selectedDecisionWinnerId);
+			boolean paretoSurvivor = isFinalParetoCandidate(decisionTrace.candidateId(index));
+			if (selectedByPolicy) {
+				if (selectedTraceIndex >= 0) {
+					throw new PackedMemoInvariantException("root decision trace has multiple final policy choices");
+				}
+				selectedTraceIndex = index;
+				selected[index] = 1;
+				included[index] = 1;
+			}
+			if (paretoSurvivor) {
+				pareto[index] = 1;
+				included[index] = 1;
+				paretoSurvivorCount++;
+			}
+			if (!selectedByPolicy && !paretoSurvivor) {
+				dominatedCandidateCount++;
+			}
+			stratumFingerprints[index] = planQualityStratum(index);
+		}
+		if (selectedTraceIndex < 0) {
+			throw new PackedMemoInvariantException("root decision trace does not identify the final policy choice");
+		}
+
+		long[] distinctStrata = new long[rootCandidateCount];
+		for (int ordinal = 0; ordinal < rootCandidateCount; ordinal++) {
+			distinctStrata[ordinal] = stratumFingerprints[rootTraceIndexes[ordinal]];
+		}
+		Arrays.sort(distinctStrata, 0, rootCandidateCount);
+		int distinctStratumCount = compactDistinct(distinctStrata, rootCandidateCount);
+		int sampledDominatedCount = 0;
+		int[] stratumMembers = new int[rootCandidateCount];
+		int[] dominatedMembers = new int[rootCandidateCount];
+		for (int stratum = 0; stratum < distinctStratumCount; stratum++) {
+			long fingerprint = distinctStrata[stratum];
+			int memberCount = 0;
+			int dominatedCount = 0;
+			for (int ordinal = 0; ordinal < rootCandidateCount; ordinal++) {
+				int traceIndex = rootTraceIndexes[ordinal];
+				if (stratumFingerprints[traceIndex] != fingerprint) {
+					continue;
+				}
+				stratumMembers[memberCount++] = traceIndex;
+				if (selected[traceIndex] == 0 && pareto[traceIndex] == 0) {
+					dominatedMembers[dominatedCount++] = traceIndex;
+				}
+			}
+			sortPlanQualityCandidates(stratumMembers, memberCount);
+			for (int ordinal = 0; ordinal < memberCount; ordinal++) {
+				int traceIndex = stratumMembers[ordinal];
+				stratumOrdinals[traceIndex] = ordinal;
+				stratumPopulations[traceIndex] = memberCount;
+			}
+			sortPlanQualityCandidates(dominatedMembers, dominatedCount);
+			int sampleCount = Math.min(dominatedSamplesPerStratum, dominatedCount);
+			for (int sample = 0; sample < sampleCount; sample++) {
+				int position = sampleCount == 1
+						? dominatedCount / 2
+						: (int) ((long) sample * (dominatedCount - 1) / (sampleCount - 1));
+				int traceIndex = dominatedMembers[position];
+				sampled[traceIndex] = 1;
+				included[traceIndex] = 1;
+				sampledDominatedCount++;
+			}
+		}
+
+		int includedCount = 0;
+		for (int ordinal = 0; ordinal < rootCandidateCount; ordinal++) {
+			includedCount += included[rootTraceIndexes[ordinal]];
+		}
+		int[] traceIndexes = new int[includedCount];
+		int next = 0;
+		traceIndexes[next++] = selectedTraceIndex;
+		for (int ordinal = 0; ordinal < rootCandidateCount; ordinal++) {
+			int traceIndex = rootTraceIndexes[ordinal];
+			if (traceIndex != selectedTraceIndex && included[traceIndex] != 0) {
+				traceIndexes[next++] = traceIndex;
+			}
+		}
+		return new PackedPlanQualityDraft(selectedDecisionWinnerId, traceIndexes, pareto, selected, sampled,
+				stratumFingerprints, stratumOrdinals, stratumPopulations, rootCandidateCount, paretoSurvivorCount,
+				dominatedCandidateCount, sampledDominatedCount);
+	}
+
+	private int planQualityDecisionWinner(int rootWinnerId) {
+		int winnerId = rootWinnerId;
+		while (true) {
+			int representative = selectedTraceForWinner(winnerId);
+			if (representative >= 0 && decisionCandidateCount(representative) > 1) {
+				return winnerId;
+			}
+			if (winners.childCount(winnerId) != 1) {
+				return winnerId;
+			}
+			winnerId = winners.childWinnerId(winnerId, 0);
+		}
+	}
+
+	private int decisionCandidateCount(int representative) {
+		int count = 0;
+		for (int index = 0; index < decisionTrace.size(); index++) {
+			if (decisionTrace.sameDecision(index, representative)) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	int materializeDecisionTraceRootCandidate(int rootWinnerId, int selectedDecisionWinnerId, int traceIndex) {
+		int alternativeWinnerId = materializeDecisionTraceCandidate(traceIndex);
+		if (selectedDecisionWinnerId == rootWinnerId) {
+			return alternativeWinnerId;
+		}
+		int[] envelopeWinnerIds = new int[Math.max(4, query.relationCount())];
+		int envelopeSize = 0;
+		int winnerId = rootWinnerId;
+		while (winnerId != selectedDecisionWinnerId) {
+			if (winners.childCount(winnerId) != 1) {
+				throw new PackedMemoInvariantException(
+						"plan-quality decision is not below a unary root envelope");
+			}
+			if (envelopeSize == envelopeWinnerIds.length) {
+				envelopeWinnerIds = Arrays.copyOf(envelopeWinnerIds, envelopeWinnerIds.length << 1);
+			}
+			envelopeWinnerIds[envelopeSize++] = winnerId;
+			winnerId = winners.childWinnerId(winnerId, 0);
+		}
+		for (int index = envelopeSize - 1; index >= 0; index--) {
+			alternativeWinnerId = rebuildUnaryPlanQualityWinner(envelopeWinnerIds[index], alternativeWinnerId);
+		}
+		return alternativeWinnerId;
+	}
+
+	private int rebuildUnaryPlanQualityWinner(int winnerId, int replacementChildWinnerId) {
+		int originalChildWinnerId = winners.childWinnerId(winnerId, 0);
+		int metadataId = winners.physicalMetadataId(winnerId);
+		boolean additiveCost = metadataId == 0
+				|| !physicalMetadata.hasExplicitPhysicalCost(metadataId)
+				|| physicalMetadata.costScope(metadataId) == PackedCostEstimate.CostScope.LOCAL;
+		double totalCost = additiveCost
+				? replaceUnaryChildCost(winners.totalCost(winnerId), winners.totalCost(originalChildWinnerId),
+						winners.totalCost(replacementChildWinnerId))
+				: winners.totalCost(winnerId);
+		double comparisonCost = additiveCost
+				? replaceUnaryChildCost(winners.comparisonCost(winnerId),
+						winners.comparisonCost(originalChildWinnerId),
+						winners.comparisonCost(replacementChildWinnerId))
+				: winners.comparisonCost(winnerId);
+		int[] childWinnerIds = { replacementChildWinnerId };
+		int replacementWinnerId = winners.appendContinuationWithMetadata(
+				winners.groupId(winnerId), winners.requiredPropertyId(winnerId),
+				winners.semanticRowGoalId(winnerId), winners.inputContextId(winnerId),
+				winners.costPolicyId(winnerId), winners.comparisonTier(winnerId),
+				winners.physicalExpressionId(winnerId), metadataId, winners.tieBreakRank(winnerId),
+				winners.startupCost(winnerId), totalCost, comparisonCost, winners.peakMemoryRows(winnerId),
+				winners.robustComparisonPrimary(winnerId), childWinnerIds, 0, 1);
+		markExactContinuation(replacementWinnerId);
+		decisionTrace.append(winners.groupId(winnerId), winners.requiredPropertyId(winnerId),
+				winners.semanticRowGoalId(winnerId), winners.inputContextId(winnerId),
+				winners.costPolicyId(winnerId), winners.physicalExpressionId(winnerId), metadataId, 0,
+				replacementWinnerId, winners.comparisonTier(winnerId), winners.tieBreakRank(winnerId),
+				winners.startupCost(winnerId), totalCost, comparisonCost, true, winners, physicalMetadata,
+				childWinnerIds, 0, 1);
+		return replacementWinnerId;
+	}
+
+	private static double replaceUnaryChildCost(double originalCost, double originalChildCost,
+			double replacementChildCost) {
+		if (!Double.isFinite(originalCost)
+				|| !Double.isFinite(originalChildCost)
+				|| !Double.isFinite(replacementChildCost)) {
+			return originalCost;
+		}
+		return saturatedAdd(Math.max(0.0d, originalCost - originalChildCost), replacementChildCost);
+	}
+
+	int materializeDecisionTraceCandidate(int traceIndex) {
+		int retainedWinnerId = decisionTrace.retainedWinnerId(traceIndex);
+		if (retainedWinnerId != 0 && decisionTrace.matchesWinner(traceIndex, retainedWinnerId, winners,
+				physicalMetadata)) {
+			return retainedWinnerId;
+		}
+		for (int winnerId = 1; winnerId <= winners.size(); winnerId++) {
+			if (decisionTrace.groupId(traceIndex) == winners.groupId(winnerId)
+					&& decisionTrace.requiredPropertyId(traceIndex) == winners.requiredPropertyId(winnerId)
+					&& decisionTrace.semanticRowGoalId(traceIndex) == winners.semanticRowGoalId(winnerId)
+					&& decisionTrace.inputContextId(traceIndex) == winners.inputContextId(winnerId)
+					&& decisionTrace.costPolicyId(traceIndex) == winners.costPolicyId(winnerId)
+					&& decisionTrace.matchesWinner(traceIndex, winnerId, winners, physicalMetadata)) {
+				return winnerId;
+			}
+		}
+		int childCount = decisionTrace.childCount(traceIndex);
+		int[] childWinnerIds = new int[childCount];
+		for (int ordinal = 0; ordinal < childCount; ordinal++) {
+			childWinnerIds[ordinal] = decisionTrace.childWinnerId(traceIndex, ordinal);
+		}
+		int metadataId = decisionTrace.metadataId(traceIndex);
+		int winnerId = winners.appendContinuationWithMetadata(decisionTrace.groupId(traceIndex),
+				decisionTrace.requiredPropertyId(traceIndex), decisionTrace.semanticRowGoalId(traceIndex),
+				decisionTrace.inputContextId(traceIndex), decisionTrace.costPolicyId(traceIndex),
+				decisionTrace.comparisonTier(traceIndex), decisionTrace.physicalExpressionId(traceIndex), metadataId,
+				decisionTrace.tieBreakRank(traceIndex), decisionTrace.startupCost(traceIndex),
+				decisionTrace.candidateCost(traceIndex), decisionTrace.lowerBound(traceIndex),
+				physicalMetadata.peakMemoryRows(metadataId), physicalMetadata.lifecycleEnforced(metadataId),
+				childWinnerIds, 0, childCount);
+		markExactContinuation(winnerId);
+		int candidateId = decisionTrace.candidateId(traceIndex);
+		if (candidateId != 0) {
+			associateWinnerCandidate(winnerId, candidateId);
+		}
+		return winnerId;
+	}
+
+	long planQualityCandidateFingerprint(int traceIndex) {
+		return decisionTrace.candidateFingerprint(traceIndex);
+	}
+
+	double planQualityCandidateCost(int traceIndex) {
+		return decisionTrace.candidateCost(traceIndex);
+	}
+
+	double planQualityComparisonCost(int traceIndex) {
+		return decisionTrace.lowerBound(traceIndex);
+	}
+
+	private long planQualityStratum(int traceIndex) {
+		int physicalExpressionId = decisionTrace.physicalExpressionId(traceIndex);
+		long fingerprint = PackedPrimitiveHash.step(PackedPrimitiveHash.SEED,
+				decisionTrace.comparisonTier(traceIndex));
+		fingerprint = PackedPrimitiveHash.step(fingerprint, physicalOperatorTag(physicalExpressionId));
+		return PackedPrimitiveHash.step(fingerprint, physicalImplementationForm(physicalExpressionId));
+	}
+
+	private static int compactDistinct(long[] values, int size) {
+		if (size == 0) {
+			return 0;
+		}
+		int distinct = 1;
+		for (int index = 1; index < size; index++) {
+			if (values[index] != values[distinct - 1]) {
+				values[distinct++] = values[index];
+			}
+		}
+		return distinct;
+	}
+
+	private void sortPlanQualityCandidates(int[] traceIndexes, int size) {
+		for (int index = 1; index < size; index++) {
+			int candidate = traceIndexes[index];
+			int insertion = index;
+			while (insertion > 0 && comparePlanQualityCandidates(candidate, traceIndexes[insertion - 1]) < 0) {
+				traceIndexes[insertion] = traceIndexes[insertion - 1];
+				insertion--;
+			}
+			traceIndexes[insertion] = candidate;
+		}
+	}
+
+	private int comparePlanQualityCandidates(int left, int right) {
+		int comparison = Double.compare(decisionTrace.candidateCost(left), decisionTrace.candidateCost(right));
+		if (comparison != 0) {
+			return comparison;
+		}
+		comparison = Double.compare(decisionTrace.lowerBound(left), decisionTrace.lowerBound(right));
+		if (comparison != 0) {
+			return comparison;
+		}
+		comparison = Integer.compare(decisionTrace.physicalExpressionId(left),
+				decisionTrace.physicalExpressionId(right));
+		if (comparison != 0) {
+			return comparison;
+		}
+		comparison = Long.compareUnsigned(decisionTrace.candidateFingerprint(left),
+				decisionTrace.candidateFingerprint(right));
+		return comparison != 0 ? comparison : Integer.compare(left, right);
+	}
+
+	record PackedPlanQualityDraft(int selectedDecisionWinnerId, int[] traceIndexes, byte[] paretoOutcomes,
+			byte[] selectedByPolicy, byte[] sampledDominated, long[] stratumFingerprints, int[] stratumOrdinals,
+			int[] stratumPopulations, int rootCandidateCount, int paretoSurvivorCount, int dominatedCandidateCount,
+			int sampledDominatedCount) {
+
+		boolean paretoSurvivor(int traceIndex) {
+			return paretoOutcomes[traceIndex] != 0;
+		}
+
+		boolean selected(int traceIndex) {
+			return selectedByPolicy[traceIndex] != 0;
+		}
+
+		boolean sampled(int traceIndex) {
+			return sampledDominated[traceIndex] != 0;
+		}
 	}
 
 	private boolean decisionMatchesWinner(int traceIndex, int winnerId) {
-		return decisionTrace.groupId(traceIndex) == winners.groupId(winnerId)
-				&& decisionTrace.requiredPropertyId(traceIndex) == winners.requiredPropertyId(winnerId)
-				&& decisionTrace.semanticRowGoalId(traceIndex) == winners.semanticRowGoalId(winnerId)
-				&& decisionTrace.inputContextId(traceIndex) == winners.inputContextId(winnerId)
-				&& decisionTrace.costPolicyId(traceIndex) == winners.costPolicyId(winnerId);
+		int retainedWinnerId = decisionTrace.retainedWinnerId(traceIndex);
+		return retainedWinnerId != 0 ? retainedWinnerId == winnerId
+				: decisionTrace.groupId(traceIndex) == winners.groupId(winnerId)
+						&& decisionTrace.requiredPropertyId(traceIndex) == winners.requiredPropertyId(winnerId)
+						&& decisionTrace.semanticRowGoalId(traceIndex) == winners.semanticRowGoalId(winnerId)
+						&& decisionTrace.inputContextId(traceIndex) == winners.inputContextId(winnerId)
+						&& decisionTrace.costPolicyId(traceIndex) == winners.costPolicyId(winnerId)
+						&& decisionTrace.matchesWinner(traceIndex, winnerId, winners, physicalMetadata);
 	}
 
-	private int selectedEventForDecision(int traceIndex) {
-		int winnerId = winners.find(decisionTrace.groupId(traceIndex), decisionTrace.requiredPropertyId(traceIndex),
-				decisionTrace.semanticRowGoalId(traceIndex), decisionTrace.inputContextId(traceIndex),
-				decisionTrace.costPolicyId(traceIndex));
+	private int selectedWinnerForDecision(int traceIndex) {
+		int winnerId = decisionTrace.retainedWinnerId(traceIndex);
+		if (winnerId == 0) {
+			winnerId = winners.find(decisionTrace.groupId(traceIndex), decisionTrace.requiredPropertyId(traceIndex),
+					decisionTrace.semanticRowGoalId(traceIndex), decisionTrace.inputContextId(traceIndex),
+					decisionTrace.costPolicyId(traceIndex));
+		}
+		return winnerId;
+	}
+
+	private int selectedEventForWinner(int winnerId) {
 		if (winnerId == 0) {
 			return 0;
 		}
 		int metadataId = winners.physicalMetadataId(winnerId);
 		return metadataId == 0 ? 0 : physicalMetadata.costEventId(metadataId);
-	}
-
-	private int traceCandidate(int eventId, double candidateCost) {
-		if (eventId == 0) {
-			return -1;
-		}
-		int closest = -1;
-		double closestDistance = Double.POSITIVE_INFINITY;
-		for (int index = 0; index < decisionTrace.size(); index++) {
-			int metadataId = decisionTrace.metadataId(index);
-			if (physicalMetadata.costEventId(metadataId) != eventId) {
-				continue;
-			}
-			double distance = Math.abs(decisionTrace.candidateCost(index) - candidateCost);
-			if (distance < closestDistance) {
-				closest = index;
-				closestDistance = distance;
-			}
-		}
-		return closest;
 	}
 
 	private boolean containsDecision(int[] representatives, int count, int candidate) {
@@ -894,14 +1968,16 @@ final class PackedMemo {
 	}
 
 	record PackedDecisionDraft(int rootSelectedEventId, int[] decisionStarts, int[] selectedEventIds,
-			int[] candidateEventIds, int[] candidateStateIds,
-			double[] candidateCosts, double[] lowerBounds, byte[] outcomes, byte[] comparisonTiers,
+			int[] candidateEventIds, int[] candidateStateIds, int[] candidateIds, long[] candidateRuleProofMasks,
+			double[] candidateCosts, double[] lowerBounds, byte[] outcomes, byte[] paretoOutcomes,
+			byte[] selectedByPolicy, byte[] comparisonTiers,
 			int[] candidateChildStarts, int[] candidateChildEventIds, double[] candidateChildCosts) {
 
 		static PackedDecisionDraft empty(int rootSelectedEventId) {
 			return new PackedDecisionDraft(rootSelectedEventId, new int[] { 0 }, new int[0], new int[0], new int[0],
-					new double[0], new double[0], new byte[0], new byte[0], new int[] { 0 }, new int[0],
-					new double[0]);
+					new int[0], new long[0], new double[0], new double[0], new byte[0], new byte[0], new byte[0],
+					new byte[0],
+					new int[] { 0 }, new int[0], new double[0]);
 		}
 	}
 
@@ -1056,9 +2132,19 @@ final class PackedMemo {
 		if (baseExpressionId != 0) {
 			return baseExpressionId;
 		}
+		if (logicalOverlay == null) {
+			return 0;
+		}
 		int overlayId = logicalOverlay.findLogical(operatorTag, payloadId, semanticScopeId, executionDomainId,
 				childGroupIds, childOffset, childCount);
 		return overlayId == 0 ? 0 : baseLogicalExpressionCount + overlayId;
+	}
+
+	private PackedExpressionInterner ensureLogicalOverlay() {
+		if (logicalOverlay == null) {
+			logicalOverlay = new PackedExpressionInterner(expectedLogicalAlternatives, expectedLogicalChildLinks);
+		}
+		return logicalOverlay;
 	}
 
 	private void ensureTargetGroup(int logicalExpressionId, int targetGroupId) {
@@ -1118,6 +2204,7 @@ final class PackedMemo {
 		}
 		firstLogicalByGroup = Arrays.copyOf(firstLogicalByGroup, newCapacity);
 		firstPhysicalByGroup = Arrays.copyOf(firstPhysicalByGroup, newCapacity);
+		exactContinuationGenerations = Arrays.copyOf(exactContinuationGenerations, newCapacity);
 	}
 
 	private void ensureLogicalExpressionCapacity(int requiredExpressionId) {

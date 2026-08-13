@@ -68,15 +68,49 @@ record FrontierCorrelationDomain(
  * Compact primitive representation retained on the normal costing path. RDF values are resolved only when an exact
  * finite-surface refinement is both bounded and decision-sensitive.
  */
-record FrontierPrimitiveCorrelationRelation(int width, long[] tuples, double[] multiplicities) {
+final class FrontierPrimitiveCorrelationRelation {
 
-	FrontierPrimitiveCorrelationRelation {
+	private final int width;
+	private final long[] tuples;
+	private final double[] multiplicities;
+
+	FrontierPrimitiveCorrelationRelation(int width, long[] tuples, double[] multiplicities) {
+		this(width, tuples, multiplicities, false);
+	}
+
+	private FrontierPrimitiveCorrelationRelation(
+			int width,
+			long[] tuples,
+			double[] multiplicities,
+			boolean takeOwnership) {
 		if (width < 0 || tuples == null || multiplicities == null
 				|| tuples.length != Math.multiplyExact(width, multiplicities.length)) {
 			throw new IllegalArgumentException("invalid primitive correlation relation");
 		}
-		tuples = Arrays.copyOf(tuples, tuples.length);
-		multiplicities = Arrays.copyOf(multiplicities, multiplicities.length);
+		this.width = width;
+		this.tuples = takeOwnership ? tuples : Arrays.copyOf(tuples, tuples.length);
+		this.multiplicities = takeOwnership
+				? multiplicities
+				: Arrays.copyOf(multiplicities, multiplicities.length);
+	}
+
+	static FrontierPrimitiveCorrelationRelation fromOwnedArrays(
+			int width,
+			long[] tuples,
+			double[] multiplicities) {
+		return new FrontierPrimitiveCorrelationRelation(width, tuples, multiplicities, true);
+	}
+
+	int width() {
+		return width;
+	}
+
+	long[] tuples() {
+		return tuples;
+	}
+
+	double[] multiplicities() {
+		return multiplicities;
 	}
 
 	int size() {

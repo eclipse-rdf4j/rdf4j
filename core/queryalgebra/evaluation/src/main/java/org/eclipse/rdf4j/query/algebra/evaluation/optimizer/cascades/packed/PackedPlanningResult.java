@@ -16,15 +16,49 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanningMet
 
 /** Detached boundary result from one query-local packed planning call. */
 public record PackedPlanningResult(TupleExpr selectedPlan, double outputRows, double totalCost,
-		PlanningMetrics metrics, boolean workLimitReached, boolean deadlineReached, long ruleProofMask) {
+		PlanningMetrics metrics, boolean workLimitReached, boolean deadlineReached, long ruleProofMask,
+		PackedSearchCompletionStatus completionStatus, long retainedBytes) {
 
 	public PackedPlanningResult {
 		if (selectedPlan == null) {
 			throw new NullPointerException("selected packed plan must not be null");
 		}
 		if (!Double.isFinite(outputRows) || outputRows < 0.0d || !Double.isFinite(totalCost) || totalCost < 0.0d) {
-			throw new IllegalArgumentException("packed plan costs must be finite and non-negative");
+			throw new IllegalArgumentException("packed plan costs must be finite and non-negative: outputRows="
+					+ outputRows + ", totalCost=" + totalCost);
+		}
+		if (completionStatus == null) {
+			throw new NullPointerException("packed search completion status");
+		}
+		if (retainedBytes < 0L) {
+			throw new IllegalArgumentException("packed retained bytes must be nonnegative");
+		}
+		if (workLimitReached != (completionStatus == PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT)
+				|| deadlineReached != (completionStatus == PackedSearchCompletionStatus.INCOMPLETE_DEADLINE)) {
+			throw new IllegalArgumentException("legacy limit flags must agree with packed completion status");
 		}
 		metrics = metrics == null ? PlanningMetrics.ZERO : metrics;
+	}
+
+	public PackedPlanningResult(TupleExpr selectedPlan, double outputRows, double totalCost,
+			PlanningMetrics metrics, boolean workLimitReached, boolean deadlineReached, long ruleProofMask) {
+		this(selectedPlan, outputRows, totalCost, metrics, workLimitReached, deadlineReached, ruleProofMask,
+				legacyStatus(workLimitReached, deadlineReached), 0L);
+	}
+
+	public boolean exactComplete() {
+		return completionStatus == PackedSearchCompletionStatus.EXACT_COMPLETE;
+	}
+
+	private static PackedSearchCompletionStatus legacyStatus(boolean workLimitReached, boolean deadlineReached) {
+		if (workLimitReached && deadlineReached) {
+			throw new IllegalArgumentException("packed search cannot report two primary completion reasons");
+		}
+		if (workLimitReached) {
+			return PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT;
+		}
+		return deadlineReached
+				? PackedSearchCompletionStatus.INCOMPLETE_DEADLINE
+				: PackedSearchCompletionStatus.EXACT_COMPLETE;
 	}
 }

@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -27,8 +29,11 @@ import java.util.Optional;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.EstimationTier;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -61,6 +66,267 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 
 		verify(tripleStore, times(1)).planningCardinality(
 				101L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID);
+	}
+
+	@Test
+	void finiteSurfaceReusesRevisionSafeStatementCardinalityAcrossPlanningScopes() throws Exception {
+		long storeIdentity = 8_081L;
+		IRI subject = VF.createIRI("urn:test:correlated:shared-cardinality-subject");
+		ValueStore valueStore = mock(ValueStore.class);
+		TripleStore tripleStore = mock(TripleStore.class);
+		when(valueStore.getId(subject)).thenReturn(101L);
+		when(tripleStore.instanceId()).thenReturn(storeIdentity);
+		when(tripleStore.getDataRevision()).thenReturn(17L);
+		when(tripleStore.planningCardinality(
+				101L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID))
+						.thenReturn(5_000.0d, 50_000.0d);
+		FiniteRelationEstimate relation = FiniteRelationEstimate.fromRows(
+				List.of("subject"), List.of(List.of(subject)), "frontier-correlation");
+		StatementPattern accessKernel = new StatementPattern(
+				Var.of("subject"), Var.of("predicate"), Var.of("object"));
+
+		try {
+			LmdbStatementPatternCardinalitySource statementCardinalities = new LmdbStatementPatternCardinalitySource(
+					valueStore, tripleStore);
+			assertEquals(5_000.0d, statementCardinalities.estimateIdsForPlanning(
+					101L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID));
+
+			LmdbFiniteJoinSurfaceEstimator estimator = new LmdbFiniteJoinSurfaceEstimator(valueStore, tripleStore);
+			var surface = estimator.estimate(relation, accessKernel,
+					LmdbFiniteJoinSurfaceEstimator.newScanBudget()).orElseThrow();
+
+			assertEquals(5_000.0d, surface.surfaceRows(), 0.0d,
+					"Finite-surface probes must reuse the same store-revision cardinality as ordinary planning");
+			verify(tripleStore, times(1)).planningCardinality(
+					101L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID);
+		} finally {
+			LmdbStatementPatternCardinalitySource.evictStore(storeIdentity);
+		}
+	}
+
+	@Test
+	void queryScopedSurfaceCacheReusesEquivalentCorrelatedStates() throws Exception {
+		IRI subject = VF.createIRI("urn:test:correlated:equivalent-subject");
+		ValueStore valueStore = mock(ValueStore.class);
+		TripleStore tripleStore = mock(TripleStore.class);
+		when(valueStore.getId(subject)).thenReturn(101L);
+		when(tripleStore.planningCardinality(
+				101L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID))
+						.thenReturn(5_000.0d);
+		LmdbFiniteSurfaceCache cache = new LmdbFiniteSurfaceCache(
+				new LmdbFiniteJoinSurfaceEstimator(valueStore, tripleStore));
+		FiniteRelationEstimate relation = FiniteRelationEstimate.fromRows(
+				List.of("subject"), List.of(List.of(subject)), "frontier-correlation");
+		FiniteRelationEstimate equivalentRelation = FiniteRelationEstimate.fromRows(
+				List.of("subject"), List.of(List.of(subject)), "learned-correlation");
+		StatementPattern accessKernel = new StatementPattern(
+				Var.of("subject"), Var.of("predicate"), Var.of("object"));
+
+		var first = cache.estimateCorrelated("first-state", relation, accessKernel, EstimationTier.DECISION_EXACT);
+		var equivalent = cache.estimateCorrelated(
+				"equivalent-state", equivalentRelation, accessKernel, EstimationTier.DECISION_EXACT);
+
+		assertTrue(first.isPresent());
+		assertSame(first.orElseThrow(), equivalent.orElseThrow());
+	}
+
+	@Test
+	void completedExactSurfaceIsReusedAcrossPlanningScopes(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			IRI subject = VF.createIRI("urn:test:correlated:shared-surface-subject");
+			IRI predicate = VF.createIRI("urn:test:correlated:shared-surface-predicate");
+			try (var connection = repository.getConnection()) {
+				connection.add(subject, predicate, VF.createIRI("urn:test:correlated:shared-surface-object"));
+			}
+
+			FiniteRelationEstimate relation = FiniteRelationEstimate.fromRows(
+					List.of("subject"), List.of(List.of(subject)), "frontier-correlation");
+			StatementPattern accessKernel = new StatementPattern(
+					Var.of("subject"), Var.of("predicate", predicate), Var.of("object"));
+			LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics()).estimatorRuntime();
+
+			LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate first;
+			try (var ignored = runtime.beginScope()) {
+				first = runtime.exactCorrelatedSurface(
+						"first-state", relation, accessKernel, EstimationTier.DECISION_EXACT).orElseThrow();
+			}
+			LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate repeated;
+			try (var ignored = runtime.beginScope()) {
+				repeated = runtime.exactCorrelatedSurface(
+						"repeated-state", relation, accessKernel, EstimationTier.DECISION_EXACT).orElseThrow();
+			}
+
+			assertTrue(first.exact());
+			assertSame(first, repeated,
+					"completed exact finite surfaces should survive the query-local optimization scope");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void completedExactStorageSurfaceIsReusedAcrossPlanningScopes(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			IRI subject = VF.createIRI("urn:test:correlated:shared-storage-surface-subject");
+			IRI predicate = VF.createIRI("urn:test:correlated:shared-storage-surface-predicate");
+			try (var connection = repository.getConnection()) {
+				connection.add(subject, predicate,
+						VF.createIRI("urn:test:correlated:shared-storage-surface-object"));
+			}
+
+			FiniteRelationEstimate relation = FiniteRelationEstimate.fromRows(
+					List.of("subject"), List.of(List.of(subject)), "storage-correlation");
+			StatementPattern accessKernel = new StatementPattern(
+					Var.of("subject"), Var.of("predicate", predicate), Var.of("object"));
+			LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics()).estimatorRuntime();
+
+			LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate first;
+			try (var ignored = runtime.beginScope()) {
+				first = runtime.exactCorrelatedSurface(relation, accessKernel).orElseThrow();
+			}
+			LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate repeated;
+			try (var ignored = runtime.beginScope()) {
+				repeated = runtime.exactCorrelatedSurface(relation, accessKernel).orElseThrow();
+			}
+
+			assertTrue(first.exact());
+			assertSame(first, repeated,
+					"storage-estimator exact finite surfaces should share the store-owned cache");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void patternLocalFiniteFilterSurfaceReusesStoreCacheAcrossPlanningScopes(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			IRI predicate = VF.createIRI("urn:test:correlated:shared-filter-surface-predicate");
+			Value retained = VF.createLiteral("retained");
+			try (var connection = repository.getConnection()) {
+				connection.add(VF.createIRI("urn:test:correlated:shared-filter-subject-1"), predicate, retained);
+				connection.add(VF.createIRI("urn:test:correlated:shared-filter-subject-2"), predicate,
+						VF.createLiteral("discarded"));
+			}
+
+			StatementPattern pattern = new StatementPattern(
+					Var.of("subject"), Var.of("predicate", predicate), Var.of("value"));
+			Compare condition = new Compare(Var.of("value"), new ValueConstant(retained), Compare.CompareOp.EQ);
+			LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics()).estimatorRuntime();
+			LmdbExactFiniteSurfaceCache cache = runtime.frontierSettings().exactFiniteSurfaceCache();
+
+			try (var ignored = runtime.beginScope()) {
+				assertEquals(0.5d, runtime.patternFilterPass(condition, pattern).orElseThrow().getPassRatio(), 0.0d);
+			}
+			long hitsAfterFirstPlanningScope = cache.hits();
+			try (var ignored = runtime.beginScope()) {
+				assertEquals(0.5d, runtime.patternFilterPass(condition, pattern).orElseThrow().getPassRatio(), 0.0d);
+			}
+
+			assertEquals(hitsAfterFirstPlanningScope + 1L, cache.hits(),
+					"pattern-local finite-filter surfaces should share the store-owned cache");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void completedExactSurfaceRebindsAlphaEquivalentVariablesAcrossPlanningScopes(@TempDir File dataDir)
+			throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			IRI subject = VF.createIRI("urn:test:correlated:alpha-surface-subject");
+			IRI predicate = VF.createIRI("urn:test:correlated:alpha-surface-predicate");
+			IRI object = VF.createIRI("urn:test:correlated:alpha-surface-object");
+			try (var connection = repository.getConnection()) {
+				connection.add(subject, predicate, object);
+			}
+
+			LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics()).estimatorRuntime();
+			LmdbExactFiniteSurfaceCache cache = runtime.frontierSettings().exactFiniteSurfaceCache();
+			FiniteRelationEstimate firstRelation = FiniteRelationEstimate.fromRows(
+					List.of("subject"), List.of(List.of(subject)), "frontier-correlation");
+			StatementPattern firstKernel = new StatementPattern(
+					Var.of("subject"), Var.of("predicate", predicate), Var.of("object"));
+			FiniteRelationEstimate renamedRelation = FiniteRelationEstimate.fromRows(
+					List.of("renamedSubject"), List.of(List.of(subject)), "renamed-correlation");
+			StatementPattern renamedKernel = new StatementPattern(
+					Var.of("renamedSubject"), Var.of("renamedPredicate", predicate), Var.of("renamedObject"));
+
+			LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate first;
+			try (var ignored = runtime.beginScope()) {
+				first = runtime.exactCorrelatedSurface(
+						"first-state", firstRelation, firstKernel, EstimationTier.DECISION_EXACT).orElseThrow();
+			}
+			long hitsBefore = cache.hits();
+			LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate renamed;
+			try (var ignored = runtime.beginScope()) {
+				renamed = runtime.exactCorrelatedSurface(
+						"renamed-state", renamedRelation, renamedKernel, EstimationTier.DECISION_EXACT)
+						.orElseThrow();
+			}
+
+			assertEquals(hitsBefore + 1L, cache.hits());
+			assertEquals(first.surfaceRows(), renamed.surfaceRows());
+			assertEquals(List.of("renamedSubject", "renamedObject"), renamed.relation().variables());
+			assertEquals(object, renamed.relation().frequencies().keySet().iterator().next().get(1));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void completedExactSurfaceDoesNotCrossAStoreDataRevision(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			IRI subject = VF.createIRI("urn:test:correlated:revision-surface-subject");
+			IRI predicate = VF.createIRI("urn:test:correlated:revision-surface-predicate");
+			try (var connection = repository.getConnection()) {
+				connection.add(subject, predicate, VF.createIRI("urn:test:correlated:revision-object-1"));
+			}
+
+			FiniteRelationEstimate relation = FiniteRelationEstimate.fromRows(
+					List.of("subject"), List.of(List.of(subject)), "frontier-correlation");
+			StatementPattern accessKernel = new StatementPattern(
+					Var.of("subject"), Var.of("predicate", predicate), Var.of("object"));
+			LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics()).estimatorRuntime();
+			LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate first;
+			try (var ignored = runtime.beginScope()) {
+				first = runtime.exactCorrelatedSurface(
+						"first-state", relation, accessKernel, EstimationTier.DECISION_EXACT).orElseThrow();
+			}
+			try (var connection = repository.getConnection()) {
+				connection.add(subject, predicate, VF.createIRI("urn:test:correlated:revision-object-2"));
+			}
+			LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate changed;
+			try (var ignored = runtime.beginScope()) {
+				changed = runtime.exactCorrelatedSurface(
+						"changed-state", relation, accessKernel, EstimationTier.DECISION_EXACT).orElseThrow();
+			}
+
+			assertNotSame(first, changed);
+			assertEquals(1.0d, first.surfaceRows());
+			assertEquals(2.0d, changed.surfaceRows());
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	@Test

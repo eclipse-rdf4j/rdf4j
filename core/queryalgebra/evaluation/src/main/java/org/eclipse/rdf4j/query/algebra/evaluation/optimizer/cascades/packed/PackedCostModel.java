@@ -54,4 +54,5 @@ public interface PackedCostModel {
 	default void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
 			PackedCostEstimate output) {
 	}
+
 }

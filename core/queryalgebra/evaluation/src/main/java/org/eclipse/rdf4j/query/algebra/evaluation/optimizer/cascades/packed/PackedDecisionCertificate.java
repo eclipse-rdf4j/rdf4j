@@ -18,7 +18,8 @@ final class PackedDecisionCertificate {
 
 	private static final PackedDecisionCertificate EMPTY = new PackedDecisionCertificate(0, new int[] { 0 },
 			new int[0], new int[0], new int[0], new double[0], new double[0], new double[0], new byte[0], new byte[0],
-			new byte[0], new int[] { 0 }, new int[0], new double[0]);
+			new byte[0], new byte[0], new byte[0], new int[] { 0 }, new int[0], new double[0],
+			PackedDetachedDecisionState.empty());
 
 	private final int rootSelectedEventId;
 	private final int[] decisionStarts;
@@ -29,17 +30,21 @@ final class PackedDecisionCertificate {
 	private final double[] candidateEventCosts;
 	private final double[] lowerBounds;
 	private final byte[] outcomes;
+	private final byte[] paretoOutcomes;
+	private final byte[] selectedByPolicy;
 	private final byte[] comparisonTiers;
 	private final byte[] childComposition;
 	private final int[] candidateChildStarts;
 	private final int[] candidateChildEventIds;
 	private final double[] candidateChildCosts;
+	private final PackedDetachedDecisionState detachedCandidateState;
 
 	PackedDecisionCertificate(int rootSelectedEventId, int[] decisionStarts, int[] selectedEventIds,
 			int[] candidateEventIds, int[] candidateStateOrdinals, double[] candidateCosts,
 			double[] candidateEventCosts, double[] lowerBounds, byte[] outcomes, byte[] comparisonTiers,
-			byte[] childComposition, int[] candidateChildStarts, int[] candidateChildEventIds,
-			double[] candidateChildCosts) {
+			byte[] paretoOutcomes, byte[] selectedByPolicy, byte[] childComposition,
+			int[] candidateChildStarts, int[] candidateChildEventIds,
+			double[] candidateChildCosts, PackedDetachedDecisionState detachedCandidateState) {
 		this.rootSelectedEventId = rootSelectedEventId;
 		this.decisionStarts = decisionStarts;
 		this.selectedEventIds = selectedEventIds;
@@ -49,20 +54,25 @@ final class PackedDecisionCertificate {
 		this.candidateEventCosts = candidateEventCosts;
 		this.lowerBounds = lowerBounds;
 		this.outcomes = outcomes;
+		this.paretoOutcomes = paretoOutcomes;
+		this.selectedByPolicy = selectedByPolicy;
 		this.comparisonTiers = comparisonTiers;
 		this.childComposition = childComposition;
 		this.candidateChildStarts = candidateChildStarts;
 		this.candidateChildEventIds = candidateChildEventIds;
 		this.candidateChildCosts = candidateChildCosts;
+		this.detachedCandidateState = detachedCandidateState;
 		int size = candidateEventIds.length;
 		if (decisionStarts.length != selectedEventIds.length + 1 || decisionStarts[0] != 0
 				|| decisionStarts[decisionStarts.length - 1] != size
 				|| candidateStateOrdinals.length != size || candidateCosts.length != size
 				|| candidateEventCosts.length != size || lowerBounds.length != size
-				|| outcomes.length != size || comparisonTiers.length != size || childComposition.length != size
+				|| outcomes.length != size || paretoOutcomes.length != size || selectedByPolicy.length != size
+				|| comparisonTiers.length != size || childComposition.length != size
 				|| candidateChildStarts.length != size + 1 || candidateChildStarts[0] != 0
 				|| candidateChildStarts[size] != candidateChildEventIds.length
-				|| candidateChildCosts.length != candidateChildEventIds.length) {
+				|| candidateChildCosts.length != candidateChildEventIds.length || detachedCandidateState == null
+				|| detachedCandidateState.candidateCount() != size) {
 			throw new IllegalArgumentException("packed decision-certificate columns must be aligned");
 		}
 		for (int decision = 0; decision < selectedEventIds.length; decision++) {
@@ -128,17 +138,27 @@ final class PackedDecisionCertificate {
 			return Double.NaN;
 		}
 		for (int index = decisionStarts[0]; index < decisionStarts[1]; index++) {
-			if (candidateEventIds[index] == rootSelectedEventId) {
+			if (selectedByPolicy[index] != 0) {
 				return candidateCosts[index];
 			}
 		}
 		return Double.NaN;
 	}
 
-	PackedDecisionCertificate withValidatedCosts(double[] validatedCosts, PackedCostingTrace validatedTrace) {
+	ValidationUpdate withValidatedCosts(double[] validatedCosts, PackedCostingTrace cachedTrace,
+			PackedCostingTrace validatedTrace) {
 		if (validatedCosts.length != candidateCosts.length) {
 			throw new IllegalArgumentException("validated candidate costs are not aligned with the certificate");
 		}
+		int[] validatedStateOrdinals = candidateStateOrdinals.clone();
+		for (int candidate = 0; candidate < candidateEventIds.length; candidate++) {
+			int stateOrdinal = validatedTrace.outputStateOrdinal(candidateEventIds[candidate]);
+			if (stateOrdinal != 0) {
+				validatedStateOrdinals[candidate] = stateOrdinal;
+			}
+		}
+		PackedDetachedDecisionState.ReplayUpdate replayedState = detachedCandidateState.withReplayedCostEvents(
+				cachedTrace, validatedTrace, candidateEventIds, validatedStateOrdinals);
 		double[] validatedEventCosts = new double[candidateEventIds.length];
 		for (int candidate = 0; candidate < candidateEventIds.length; candidate++) {
 			validatedEventCosts[candidate] = validatedTrace.objectiveCost(candidateEventIds[candidate]);
@@ -154,9 +174,12 @@ final class PackedDecisionCertificate {
 				}
 			}
 		}
-		return new PackedDecisionCertificate(rootSelectedEventId, decisionStarts, selectedEventIds, candidateEventIds,
-				candidateStateOrdinals, validatedCosts.clone(), validatedEventCosts, lowerBounds, outcomes,
-				comparisonTiers, childComposition, candidateChildStarts, candidateChildEventIds, validatedChildCosts);
+		PackedDecisionCertificate certificate = new PackedDecisionCertificate(rootSelectedEventId, decisionStarts,
+				selectedEventIds, candidateEventIds,
+				validatedStateOrdinals, validatedCosts.clone(), validatedEventCosts, lowerBounds, outcomes,
+				comparisonTiers, paretoOutcomes, selectedByPolicy, childComposition, candidateChildStarts,
+				candidateChildEventIds, validatedChildCosts, replayedState.state());
+		return new ValidationUpdate(certificate, replayedState.changedDimensionMask());
 	}
 
 	double lowerBound(int index) {
@@ -167,6 +190,16 @@ final class PackedDecisionCertificate {
 	boolean acceptedWhenCosted(int index) {
 		checkIndex(index);
 		return outcomes[index] != 0;
+	}
+
+	boolean survivedPareto(int index) {
+		checkIndex(index);
+		return paretoOutcomes[index] != 0;
+	}
+
+	boolean selectedByPolicy(int index) {
+		checkIndex(index);
+		return selectedByPolicy[index] != 0;
 	}
 
 	int candidateTier(int index) {
@@ -192,13 +225,144 @@ final class PackedDecisionCertificate {
 		return candidateChildCosts[candidateChildIndex(index, child)];
 	}
 
+	boolean hasCompleteCandidateState(int index) {
+		checkIndex(index);
+		return detachedCandidateState.hasCompleteCandidateState(index);
+	}
+
+	boolean hasCompleteState() {
+		if (candidateEventIds.length == 0 || decisionStarts.length <= 1) {
+			return false;
+		}
+		for (int index = 0; index < candidateEventIds.length; index++) {
+			if (!detachedCandidateState.hasCompleteCandidateState(index)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	long candidateCostVectorDigest(int index) {
+		checkIndex(index);
+		return detachedCandidateState.candidateCostVectorDigest(index);
+	}
+
+	long candidateContinuationDigest(int index) {
+		checkIndex(index);
+		return detachedCandidateState.candidateContinuationDigest(index);
+	}
+
+	boolean candidateCostKnown(int index, int dimensionId) {
+		checkIndex(index);
+		return detachedCandidateState.candidateCostKnown(index, dimensionId);
+	}
+
+	double candidateCostLower(int index, int dimensionId) {
+		checkIndex(index);
+		return detachedCandidateState.candidateCostLower(index, dimensionId);
+	}
+
+	double candidateCostPoint(int index, int dimensionId) {
+		checkIndex(index);
+		return detachedCandidateState.candidateCostPoint(index, dimensionId);
+	}
+
+	double candidateCostUpper(int index, int dimensionId) {
+		checkIndex(index);
+		return detachedCandidateState.candidateCostUpper(index, dimensionId);
+	}
+
+	int candidateCostLineageId(int index, int dimensionId) {
+		checkIndex(index);
+		return detachedCandidateState.candidateCostLineageId(index, dimensionId);
+	}
+
+	int candidateContinuationCompositionMode(int index) {
+		checkIndex(index);
+		return detachedCandidateState.candidateContinuationCompositionMode(index);
+	}
+
+	int candidateContinuationLogicalCell(int index) {
+		checkIndex(index);
+		return detachedCandidateState.candidateContinuationLogicalCell(index);
+	}
+
+	int candidateContinuationDeliveredProperty(int index) {
+		checkIndex(index);
+		return detachedCandidateState.candidateContinuationDeliveredProperty(index);
+	}
+
+	int candidateContinuationRequiredInput(int index) {
+		checkIndex(index);
+		return detachedCandidateState.candidateContinuationRequiredInput(index);
+	}
+
+	int candidateContinuationSemanticScope(int index) {
+		checkIndex(index);
+		return detachedCandidateState.candidateContinuationSemanticScope(index);
+	}
+
+	int candidateContinuationCorrelationScope(int index) {
+		checkIndex(index);
+		return detachedCandidateState.candidateContinuationCorrelationScope(index);
+	}
+
+	int candidateContinuationBindingShape(int index) {
+		checkIndex(index);
+		return detachedCandidateState.candidateContinuationBindingShape(index);
+	}
+
+	int candidateContinuationOrderIdentity(int index) {
+		checkIndex(index);
+		return detachedCandidateState.candidateContinuationOrderIdentity(index);
+	}
+
+	int candidateContinuationEvidenceLineage(int index) {
+		checkIndex(index);
+		return detachedCandidateState.candidateContinuationEvidenceLineage(index);
+	}
+
+	int candidateContinuationEvidenceDisposition(int index) {
+		checkIndex(index);
+		return detachedCandidateState.candidateContinuationEvidenceDisposition(index);
+	}
+
+	int candidateContinuationEvidenceGuarantee(int index) {
+		checkIndex(index);
+		return detachedCandidateState.candidateContinuationEvidenceGuarantee(index);
+	}
+
+	int candidateContinuationEstimatorApplicability(int index) {
+		checkIndex(index);
+		return detachedCandidateState.candidateContinuationEstimatorApplicability(index);
+	}
+
+	int candidateContinuationLearningApplicability(int index) {
+		checkIndex(index);
+		return detachedCandidateState.candidateContinuationLearningApplicability(index);
+	}
+
+	long candidateRuleProofMask(int index) {
+		checkIndex(index);
+		return detachedCandidateState.candidateRuleProofMask(index);
+	}
+
+	long retainedBytes() {
+		long bytes = (long) (decisionStarts.length + selectedEventIds.length + candidateEventIds.length
+				+ candidateStateOrdinals.length + candidateChildStarts.length + candidateChildEventIds.length)
+				* Integer.BYTES;
+		bytes = saturatedAdd(bytes, (long) (candidateCosts.length + candidateEventCosts.length + lowerBounds.length
+				+ candidateChildCosts.length) * Double.BYTES);
+		bytes = saturatedAdd(bytes, outcomes.length + paretoOutcomes.length + selectedByPolicy.length
+				+ comparisonTiers.length + childComposition.length);
+		return saturatedAdd(bytes, detachedCandidateState.retainedBytes());
+	}
+
 	PackedDecisionCertificate withoutDetachedEvidence() {
 		if (candidateStateOrdinals.length == 0) {
 			return this;
 		}
-		return new PackedDecisionCertificate(rootSelectedEventId, decisionStarts, selectedEventIds, candidateEventIds,
-				new int[candidateStateOrdinals.length], candidateCosts, candidateEventCosts, lowerBounds, outcomes,
-				comparisonTiers, childComposition, candidateChildStarts, candidateChildEventIds, candidateChildCosts);
+		return EMPTY;
 	}
 
 	private int candidateChildIndex(int candidate, int child) {
@@ -241,10 +405,17 @@ final class PackedDecisionCertificate {
 		}
 	}
 
+	private static long saturatedAdd(long left, long right) {
+		return right > Long.MAX_VALUE - left ? Long.MAX_VALUE : left + right;
+	}
+
 	@Override
 	public String toString() {
 		return "PackedDecisionCertificate[selectedEvent=" + rootSelectedEventId + ", decisions="
 				+ selectedEventIds.length + ", candidates="
 				+ Arrays.toString(candidateEventIds) + ']';
+	}
+
+	record ValidationUpdate(PackedDecisionCertificate certificate, long changedDimensionMask) {
 	}
 }

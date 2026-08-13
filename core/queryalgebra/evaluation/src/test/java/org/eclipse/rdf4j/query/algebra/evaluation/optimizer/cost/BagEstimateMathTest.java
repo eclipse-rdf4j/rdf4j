@@ -20,11 +20,13 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -113,6 +115,31 @@ class BagEstimateMathTest {
 
 		assertEquals(1.0d, joined.rows(), 0.0d,
 				"Finite VALUES relation math must not call Value.hashCode() on store-backed values");
+	}
+
+	@Test
+	void fullyBoundFiniteJoinIndexesSharedKeysInsteadOfComparingEveryTuplePair() {
+		AtomicInteger identityReads = new AtomicInteger();
+		List<List<Value>> leftRows = new ArrayList<>();
+		List<List<Value>> rightRows = new ArrayList<>();
+		for (int index = 0; index < 128; index++) {
+			leftRows.add(List.of(new CountingValue("key-" + index, identityReads),
+					new CountingValue("left-" + index, identityReads)));
+			rightRows.add(List.of(new CountingValue("key-" + index, identityReads),
+					new CountingValue("right-" + index, identityReads)));
+		}
+		FiniteRelationEstimate left = FiniteRelationEstimate.fromRows(List.of("key", "left"), leftRows, "left");
+		FiniteRelationEstimate right = FiniteRelationEstimate.fromRows(List.of("key", "right"), rightRows, "right");
+
+		identityReads.set(0);
+		FiniteRelationEstimate joined = FiniteRelationEstimate.innerJoin(left, right, Set.of("key"), "joined");
+
+		assertEquals(128.0d, joined.rows(), 0.0d);
+		assertEquals(128, joined.frequencies().size());
+		assertTrue(identityReads.get() <= leftRows.size() * 4,
+				() -> "A fully-bound finite join should reuse canonical input identities while indexing, not "
+						+ "reconstruct stable keys for both build and probe tuples; identityReads="
+						+ identityReads.get());
 	}
 
 	@Test
@@ -618,6 +645,28 @@ class BagEstimateMathTest {
 	}
 
 	@Test
+	void globalGroupOverEmptyInputStillProducesOneRow() {
+		BagEstimate input = BagEstimate.exact(0.0d, "empty-input");
+
+		BagEstimate grouped = EstimateMath.group(input, Set.of());
+
+		assertEquals(1.0d, grouped.rows(), 0.0d,
+				"SPARQL aggregation without GROUP BY evaluates one implicit group even for empty input");
+	}
+
+	@Test
+	void keyedGroupUsesJointDistinctSupportInsteadOfMinimumMarginalNdv() {
+		BagEstimate input = BagEstimate.exact(100.0d, "independent-grid")
+				.withVariable("a", VariableEstimate.bound(100.0d, 10.0d))
+				.withVariable("b", VariableEstimate.bound(100.0d, 10.0d));
+
+		BagEstimate grouped = EstimateMath.group(input, Set.of("a", "b"));
+
+		assertEquals(100.0d, grouped.rows(), 0.0d,
+				"ten independent values in each key form one hundred joint groups, not ten marginal groups");
+	}
+
+	@Test
 	void distinctUsesProjectedFiniteTupleDistinctCount() {
 		BagEstimate input = finite("input", List.of("enc", "code"),
 				List.of(row("e1", "A"), row("e1", "A"), row("e2", "A"), row("e2", "B")));
@@ -800,6 +849,20 @@ class BagEstimateMathTest {
 		@Override
 		public int hashCode() {
 			throw new AssertionError("Store-backed values must not be hashed by finite relation estimates");
+		}
+	}
+
+	private record CountingValue(String value, AtomicInteger identityReads) implements Value {
+
+		@Override
+		public String stringValue() {
+			identityReads.incrementAndGet();
+			return value;
+		}
+
+		@Override
+		public int hashCode() {
+			throw new AssertionError("Finite relation indexes must use stable value identities");
 		}
 	}
 

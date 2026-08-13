@@ -42,6 +42,7 @@ final class QueryPlanSnapshotCliOptions {
 	boolean batchDataPreflight;
 	boolean batchManifestPrevalidated;
 	boolean writeLmdbStoreManifest;
+	boolean factorizedVerification;
 	boolean persist = true;
 	DiffMode diffMode = DiffMode.STRUCTURE;
 	ComparisonPair compareIndices;
@@ -89,6 +90,7 @@ final class QueryPlanSnapshotCliOptions {
 		copy.batchDataPreflight = batchDataPreflight;
 		copy.batchManifestPrevalidated = batchManifestPrevalidated;
 		copy.writeLmdbStoreManifest = writeLmdbStoreManifest;
+		copy.factorizedVerification = factorizedVerification;
 		copy.persist = persist;
 		copy.diffMode = diffMode;
 		copy.compareIndices = compareIndices;
@@ -184,6 +186,9 @@ final class QueryPlanSnapshotCliOptions {
 				break;
 			case "--write-lmdb-store-manifest":
 				options.writeLmdbStoreManifest = true;
+				break;
+			case "--factorized-verification":
+				options.factorizedVerification = true;
 				break;
 			case "--batch-hard-timeout-seconds":
 				options.batchHardTimeoutSeconds = parsePositiveLong(requireValue(args, ++i, arg), arg);
@@ -694,6 +699,8 @@ final class QueryPlanSnapshotCliOptions {
 		output.println("  --query <SPARQL>                     direct query text");
 		output.println("  --query-file <path>                  load query text from file");
 		output.println("  --query-timeout-seconds <int>=0      per-query max execution time (0 disables timeout)");
+		output.println(
+				"  --factorized-verification           compare exact algebraic bags without telemetry execution");
 		output.println("  --execution-repeat-min-runs <int>=1  minimum repeated verification runs");
 		output.println("  --execution-repeat-max-runs <int>=1  maximum repeated verification runs");
 		output.println("  --execution-repeat-soft-limit-millis <long>=1");

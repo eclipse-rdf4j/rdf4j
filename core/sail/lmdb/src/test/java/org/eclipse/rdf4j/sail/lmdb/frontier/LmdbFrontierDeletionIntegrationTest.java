@@ -197,7 +197,9 @@ class LmdbFrontierDeletionIntegrationTest {
 	@Test
 	void deletionDominatesBudgetExhaustedInsertChain(@TempDir Path dataDirectory) throws Exception {
 		Path frontierDirectory = dataDirectory.resolve(FRONTIER_DIRECTORY_NAME);
-		LmdbStore store = open(dataDirectory, 1_500L);
+		long baseButNotSecondGenerationBudget = FrontierPayloadBlockWriter.MINIMUM_BLOCK_BYTES
+				+ 3L * FrontierSynopsisBuilder.RECORD_LONGS * Long.BYTES;
+		LmdbStore store = open(dataDirectory, baseButNotSecondGenerationBudget);
 		try {
 			try (NotifyingSailConnection connection = store.getConnection()) {
 				connection.begin();

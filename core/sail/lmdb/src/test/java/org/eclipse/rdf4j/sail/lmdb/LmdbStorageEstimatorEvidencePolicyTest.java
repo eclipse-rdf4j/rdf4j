@@ -14,8 +14,13 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -27,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PatternFilterSampleEstimate;
@@ -44,6 +50,8 @@ class LmdbStorageEstimatorEvidencePolicyTest {
 
 	@Mock
 	private LmdbFilterSelectivityStats filters;
+	@Mock
+	private LmdbFiniteJoinSurfaceEstimator finiteSurfaces;
 
 	@Test
 	void snapshotOnlyLeafFilterNeverRequestsCachedOrLiveEvidence() {
@@ -66,8 +74,6 @@ class LmdbStorageEstimatorEvidencePolicyTest {
 		StatementPattern left = pattern("s", "value");
 		StatementPattern right = pattern("s", "other");
 		Join input = new Join(left, right);
-		when(filters.estimateSnapshotFilterPass(any(), any())).thenReturn(unknown());
-		lenient().when(filters.estimateCachedFilterPass(any(), any())).thenReturn(unknownSample());
 
 		var result = evidence().filterEvidence(input, equalsLiteral("value"), BagEstimate.heuristic(64.0d, "input"),
 				snapshotOnlyContext(input));
@@ -92,6 +98,73 @@ class LmdbStorageEstimatorEvidencePolicyTest {
 		verify(filters, never()).estimateLiveFilterPass(any(), any());
 	}
 
+	@Test
+	void exactOverBoundSurfaceDeclinesImpossibleBoundedZeroProbe() {
+		StatementPattern pattern = pattern("s", "value");
+		when(filters.estimateSnapshotFilterPass(any(), any())).thenReturn(unknown());
+		EstimateContext context = decisionExactContext(pattern);
+
+		var result = evidence().filterEvidence(pattern, equalsLiteral("value"),
+				BagEstimate.exact(4_097.0d, "lmdb-exact"), context);
+
+		assertTrue(result.isEmpty());
+		verify(filters, never()).isExactBoundedFilterZero(any(), any(), anyInt());
+	}
+
+	@Test
+	void exactSurfaceAtProbeBoundStillPermitsZeroProof() {
+		StatementPattern pattern = pattern("s", "value");
+		when(filters.estimateSnapshotFilterPass(any(), any())).thenReturn(unknown());
+		when(filters.isExactBoundedFilterZero(any(), any(), anyInt())).thenReturn(true);
+		EstimateContext context = decisionExactContext(pattern);
+
+		var result = evidence().filterEvidence(pattern, equalsLiteral("value"),
+				BagEstimate.exact(4_096.0d, "lmdb-exact"), context).orElseThrow();
+
+		assertEquals(0.0d, result.passRatio(), 0.0d);
+		assertTrue(result.complete());
+		verify(filters, times(1)).isExactBoundedFilterZero(any(), any(), anyInt());
+	}
+
+	@Test
+	void standardFilterWithoutExactPermissionNeverOpensBoundedProbe() {
+		StatementPattern pattern = pattern("s", "value");
+		when(filters.estimateSnapshotFilterPass(any(), any())).thenReturn(unknown());
+
+		var result = evidence().filterEvidence(pattern, equalsLiteral("value"),
+				BagEstimate.heuristic(64.0d, "input"), snapshotOnlyContext(pattern));
+
+		assertTrue(result.isEmpty());
+		verify(filters, never()).isExactBoundedFilterZero(any(), any(), anyInt());
+	}
+
+	@Test
+	void decisionExactFilterWithPermissionUsesBoundedProbe() {
+		StatementPattern pattern = pattern("s", "value");
+		when(filters.estimateSnapshotFilterPass(any(), any())).thenReturn(unknown());
+		when(filters.isExactBoundedFilterZero(any(), any(), anyInt())).thenReturn(true);
+		EstimateContext context = decisionExactContext(pattern);
+
+		var result = evidence().filterEvidence(pattern, equalsLiteral("value"),
+				BagEstimate.heuristic(64.0d, "input"), context).orElseThrow();
+
+		assertEquals(0.0d, result.passRatio(), 0.0d);
+		assertTrue(result.complete());
+		verify(filters, times(1)).isExactBoundedFilterZero(any(), any(), anyInt());
+	}
+
+	@Test
+	void standardFilterRetainsSafeFiniteRelationEvidence() {
+		StatementPattern pattern = pattern("s", "value");
+		LmdbStorageEstimatorEvidence evidence = new LmdbStorageEstimatorEvidence(
+				null, null, null, filters, null, finiteSurfaces);
+
+		assertTrue(evidence.finiteFilterRelation(pattern, equalsLiteral("value"), snapshotOnlyContext(pattern))
+				.isEmpty());
+
+		verify(finiteSurfaces, times(1)).estimate(anyList(), same(pattern), anyMap());
+	}
+
 	private LmdbStorageEstimatorEvidence evidence() {
 		return new LmdbStorageEstimatorEvidence(null, null, null, filters, null, null);
 	}
@@ -99,6 +172,12 @@ class LmdbStorageEstimatorEvidencePolicyTest {
 	private static EstimateContext snapshotOnlyContext(org.eclipse.rdf4j.query.algebra.TupleExpr expression) {
 		return EstimateContext.root(expression, IDENTITY, 1L)
 				.withEvidencePolicy(EstimateContext.EvidencePolicy.SNAPSHOT_ONLY);
+	}
+
+	private static EstimateContext decisionExactContext(org.eclipse.rdf4j.query.algebra.TupleExpr expression) {
+		return snapshotOnlyContext(expression)
+				.withEstimationTier(JoinFactorCostModel.EstimationTier.DECISION_EXACT)
+				.withExactProbePermission(true);
 	}
 
 	private static StatementPattern pattern(String subject, String object) {

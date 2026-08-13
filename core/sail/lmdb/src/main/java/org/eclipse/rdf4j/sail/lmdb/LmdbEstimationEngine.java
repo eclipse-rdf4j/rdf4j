@@ -74,17 +74,12 @@ final class LmdbEstimationEngine {
 	}
 
 	BagEstimate estimate(TupleExpr expression, EstimateContext context) {
-		return new Session().estimate(Objects.requireNonNull(expression, "expression"),
-				Objects.requireNonNull(context, "context"));
+		return estimate(expression, context, null);
 	}
 
-	static boolean databaseExact(BagEstimate estimate) {
-		if (estimate == null) {
-			return false;
-		}
-		return "lmdb-exact".equals(estimate.source()) || "finite-values".equals(estimate.source())
-				|| "quad-total".equals(estimate.source())
-				|| "lmdb-finite-binding-lookup".equals(estimate.source()) && estimate.confidence() == 1.0d;
+	BagEstimate estimate(TupleExpr expression, EstimateContext context, LmdbEstimatorOptimizationScope scope) {
+		return new Session(scope).estimate(Objects.requireNonNull(expression, "expression"),
+				Objects.requireNonNull(context, "context"));
 	}
 
 	BagEstimate estimateFilter(TupleExpr input, ValueExpr condition, BagEstimate inputEstimate,
@@ -137,6 +132,11 @@ final class LmdbEstimationEngine {
 	private final class Session {
 
 		private final IdentityHashMap<TupleExpr, Map<ContextKey, BagEstimate>> estimates = new IdentityHashMap<>();
+		private final LmdbEstimatorOptimizationScope scope;
+
+		private Session(LmdbEstimatorOptimizationScope scope) {
+			this.scope = scope;
+		}
 
 		private BagEstimate estimate(TupleExpr expression, EstimateContext context) {
 			ContextKey key = ContextKey.from(context);
@@ -146,10 +146,23 @@ final class LmdbEstimationEngine {
 			if (cached != null) {
 				return cached;
 			}
+			SemanticEstimateCacheKey sharedKey = scope == null
+					? null
+					: SemanticEstimateCacheKey.of(expression, context, scope);
+			if (sharedKey != null) {
+				cached = scope.semanticEstimates.get(sharedKey);
+				if (cached != null) {
+					byContext.put(key, cached);
+					return cached;
+				}
+			}
 			BagEstimate computed = context.hasNoExecutions()
 					? withMissingVariables(BagEstimate.exact(0.0d, "empty-prefix"), expression)
 					: compose(expression, context);
 			byContext.put(key, computed);
+			if (sharedKey != null) {
+				scope.semanticEstimates.put(sharedKey, computed);
+			}
 			return computed;
 		}
 

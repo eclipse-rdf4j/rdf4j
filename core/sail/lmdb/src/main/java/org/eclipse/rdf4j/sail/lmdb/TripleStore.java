@@ -1186,6 +1186,10 @@ class TripleStore implements Closeable {
 		return TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
 	}
 
+	RecordIterator getAllTriplesUsingIndex(Txn txn, TripleIndex index, boolean explicit) throws IOException {
+		return getTriplesUsingIndex(txn, -1L, -1L, -1L, -1L, explicit, index, false);
+	}
+
 	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
 			LmdbValueIdFilter idFilter) throws IOException {
 		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
@@ -1238,20 +1242,34 @@ class TripleStore implements Closeable {
 			return Optional.empty();
 		}
 		Optional<LmdbDistinctCursorSkipSupport.Plan> plan = distinctCursorSkipPlan(statementPattern);
-		if (plan.isEmpty()) {
+		return plan.isEmpty()
+				? Optional.empty()
+				: getTriplesWithDistinctCursorSkip(txn, statementPattern, plan.orElseThrow(), subj, pred, obj, context,
+						explicit, idFilter);
+	}
+
+	private Optional<RecordIterator> getTriplesWithDistinctCursorSkip(Txn txn, StatementPattern statementPattern,
+			LmdbDistinctCursorSkipSupport.Plan plan, long subj, long pred, long obj, long context, boolean explicit,
+			LmdbValueIdFilter idFilter) throws IOException {
+		if (statementPattern == null || plan == null || idFilter == null || !idFilter.isEmpty()) {
 			return Optional.empty();
 		}
-		TripleIndex index = getIndex(plan.get().indexFieldSequence());
+		TripleIndex index = getIndex(plan.indexFieldSequence());
 		if (index == null) {
 			return Optional.empty();
 		}
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
 		return Optional.of(new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, context, explicit, txn,
-				idFilter, plan.get().prefixLength()));
+				idFilter, plan.prefixLength()));
 	}
 
 	Optional<LmdbDistinctCursorSkipSupport.Plan> distinctCursorSkipPlan(StatementPattern statementPattern) {
 		return LmdbDistinctCursorSkipSupport.choosePlan(statementPattern, indexAccessPaths(0));
+	}
+
+	Optional<LmdbDistinctCursorSkipSupport.Plan> distinctCursorSkipPlan(StatementPattern statementPattern,
+			Set<String> distinctVariables) {
+		return LmdbDistinctCursorSkipSupport.choosePlan(statementPattern, distinctVariables, indexAccessPaths(0));
 	}
 
 	OptionalLong boundedDistinctCursorSkipCardinality(StatementPattern statementPattern, long subj, long pred,
@@ -1259,11 +1277,39 @@ class TripleStore implements Closeable {
 		if (statementPattern == null || maximumPrefixes < 1) {
 			return OptionalLong.empty();
 		}
+		Optional<LmdbDistinctCursorSkipSupport.Plan> plan = distinctCursorSkipPlan(statementPattern);
+		return plan.isEmpty()
+				? OptionalLong.empty()
+				: boundedDistinctCursorSkipCardinality(statementPattern, plan.orElseThrow(), subj, pred, obj, context,
+						maximumPrefixes);
+	}
+
+	OptionalLong boundedDistinctCursorSkipCardinality(StatementPattern statementPattern,
+			Set<String> distinctVariables, long subj, long pred, long obj, long context, int maximumPrefixes)
+			throws IOException {
+		if (statementPattern == null || distinctVariables == null || distinctVariables.isEmpty()
+				|| maximumPrefixes < 1) {
+			return OptionalLong.empty();
+		}
+		Optional<LmdbDistinctCursorSkipSupport.Plan> plan = distinctCursorSkipPlan(statementPattern, distinctVariables);
+		return plan.isEmpty()
+				? OptionalLong.empty()
+				: boundedDistinctCursorSkipCardinality(statementPattern, plan.orElseThrow(), subj, pred, obj, context,
+						maximumPrefixes);
+	}
+
+	private OptionalLong boundedDistinctCursorSkipCardinality(StatementPattern statementPattern,
+			LmdbDistinctCursorSkipSupport.Plan plan, long subj, long pred, long obj, long context, int maximumPrefixes)
+			throws IOException {
+		if (statementPattern == null || maximumPrefixes < 1) {
+			return OptionalLong.empty();
+		}
 		long prefixes = 0L;
 		try (TxnManager.Txn txn = txnManager.createReadTxn()) {
-			for (boolean explicit : new boolean[] { true, false }) {
-				Optional<RecordIterator> records = getTriplesWithDistinctCursorSkip(txn, statementPattern, subj, pred,
-						obj, context, explicit, LmdbValueIdFilter.none());
+			for (int pass = 0; pass < 2; pass++) {
+				boolean explicit = pass == 0;
+				Optional<RecordIterator> records = getTriplesWithDistinctCursorSkip(txn, statementPattern, plan, subj,
+						pred, obj, context, explicit, LmdbValueIdFilter.none());
 				if (records.isEmpty()) {
 					return OptionalLong.empty();
 				}
@@ -1333,9 +1379,10 @@ class TripleStore implements Closeable {
 	/**
 	 * Stratified sample of rows matching the pattern: interpolates {@code strata} start keys across the pattern's key
 	 * range on the best index and scans up to {@code rowsPerStratum} rows from each stratum, bounded by the next
-	 * stratum's start so regions are never scanned twice. Unlike a budget-capped prefix scan, every region of the range
-	 * is visited, which removes the systematic bias when the sampled variable correlates with index order. Key-space
-	 * interpolation is still not perfectly row-uniform under skewed key density.
+	 * stratum's start so regions are never scanned twice. Rows are delivered round-robin across the strata so even a
+	 * deadline-truncated prefix has broad key-range coverage. Unlike a budget-capped index prefix, this removes the
+	 * systematic bias when the sampled variable correlates with index order. Key-space interpolation is still not
+	 * perfectly row-uniform under skewed key density.
 	 *
 	 * @return the number of rows delivered to {@code sink}; the sink returns {@code false} to stop early.
 	 */
@@ -1367,59 +1414,74 @@ class TripleStore implements Closeable {
 			GroupMatcher matcher = matchValues ? index.createMatcher(subj, pred, obj, context) : null;
 			int delivered = 0;
 			int dbi = index.getDB(explicit);
-			long cursor = 0;
+			long[] cursors = new long[strata];
+			boolean[] exhausted = new boolean[strata];
 			try {
 				E(mdb_cursor_open(txn, dbi, pp));
-				cursor = pp.get(0);
+				cursors[0] = pp.get(0);
 
 				keyBuf.clear();
 				index.getMinKey(keyBuf, subj, pred, obj, context);
 				keyBuf.flip();
 				keyData.mv_data(keyBuf);
-				int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+				int rc = mdb_cursor_get(cursors[0], keyData, valueData, MDB_SET_RANGE);
 				if (rc != MDB_SUCCESS || mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
 					return 0;
 				}
 				Varint.readListUnsigned(keyData.mv_data(), minValues);
 
 				keyData.mv_data(maxKeyBuf);
-				rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+				rc = mdb_cursor_get(cursors[0], keyData, valueData, MDB_SET_RANGE);
 				rc = rc == MDB_SUCCESS
-						? mdb_cursor_get(cursor, keyData, valueData, MDB_PREV)
-						: mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
+						? mdb_cursor_get(cursors[0], keyData, valueData, MDB_PREV)
+						: mdb_cursor_get(cursors[0], keyData, valueData, MDB_LAST);
 				if (rc != MDB_SUCCESS) {
 					return 0;
 				}
 				Varint.readListUnsigned(keyData.mv_data(), maxValues);
 
-				for (int stratum = 0; stratum < strata; stratum++) {
-					if (stratum == 0) {
-						keyBuf.clear();
-						index.getMinKey(keyBuf, subj, pred, obj, context);
-						keyBuf.flip();
-					} else {
-						bucketStart((double) stratum / strata, minValues, maxValues, startValues);
-						keyBuf.clear();
-						Varint.writeListUnsigned(keyBuf, startValues);
-						keyBuf.flip();
-					}
-					boolean lastStratum = stratum == strata - 1;
-					if (!lastStratum) {
-						bucketStart((double) (stratum + 1) / strata, minValues, maxValues, startValues);
-						boundaryBuf.clear();
-						Varint.writeListUnsigned(boundaryBuf, startValues);
-						boundaryBuf.flip();
-						boundaryKey.mv_data(boundaryBuf);
-					}
-					keyData.mv_data(keyBuf);
-					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-					int taken = 0;
-					while (rc == MDB_SUCCESS && taken < rowsPerStratum) {
-						if (mdb_cmp(txn, dbi, keyData, maxKey) > 0
-								|| !lastStratum && mdb_cmp(txn, dbi, keyData, boundaryKey) >= 0) {
-							break;
+				for (int rowOrdinal = 0; rowOrdinal < rowsPerStratum; rowOrdinal++) {
+					boolean anyStratumAdvanced = false;
+					for (int stratum = 0; stratum < strata; stratum++) {
+						if (exhausted[stratum]) {
+							continue;
 						}
-						taken++;
+						if (cursors[stratum] == 0L) {
+							pp.clear();
+							E(mdb_cursor_open(txn, dbi, pp));
+							cursors[stratum] = pp.get(0);
+						}
+
+						if (rowOrdinal == 0) {
+							keyBuf.clear();
+							if (stratum == 0) {
+								index.getMinKey(keyBuf, subj, pred, obj, context);
+							} else {
+								bucketStart((double) stratum / strata, minValues, maxValues, startValues);
+								Varint.writeListUnsigned(keyBuf, startValues);
+							}
+							keyBuf.flip();
+							keyData.mv_data(keyBuf);
+							rc = mdb_cursor_get(cursors[stratum], keyData, valueData, MDB_SET_RANGE);
+						} else {
+							rc = mdb_cursor_get(cursors[stratum], keyData, valueData, MDB_NEXT);
+						}
+
+						boolean lastStratum = stratum == strata - 1;
+						if (rc == MDB_SUCCESS && !lastStratum) {
+							bucketStart((double) (stratum + 1) / strata, minValues, maxValues, startValues);
+							boundaryBuf.clear();
+							Varint.writeListUnsigned(boundaryBuf, startValues);
+							boundaryBuf.flip();
+							boundaryKey.mv_data(boundaryBuf);
+						}
+						if (rc != MDB_SUCCESS || mdb_cmp(txn, dbi, keyData, maxKey) > 0
+								|| !lastStratum && mdb_cmp(txn, dbi, keyData, boundaryKey) >= 0) {
+							exhausted[stratum] = true;
+							continue;
+						}
+
+						anyStratumAdvanced = true;
 						if (matcher == null || matcher.matches(keyData.mv_data())) {
 							index.keyToQuad(keyData.mv_data(), quad);
 							delivered++;
@@ -1427,12 +1489,16 @@ class TripleStore implements Closeable {
 								return delivered;
 							}
 						}
-						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					}
+					if (!anyStratumAdvanced) {
+						break;
 					}
 				}
 			} finally {
-				if (cursor != 0) {
-					mdb_cursor_close(cursor);
+				for (long cursor : cursors) {
+					if (cursor != 0L) {
+						mdb_cursor_close(cursor);
+					}
 				}
 			}
 			return delivered;
