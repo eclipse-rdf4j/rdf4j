@@ -96,7 +96,7 @@ class LmdbRecordIterator implements RecordIterator {
 		this.context = context;
 		this.originalQuad = new long[] { subj, pred, obj, context };
 		this.quad = new long[] { subj, pred, obj, context };
-		this.pool = Pool.get();
+		this.pool = txnRef.getValuePool();
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();
 		this.index = index;
@@ -159,7 +159,7 @@ class LmdbRecordIterator implements RecordIterator {
 			if (txnRefVersion != txnRef.version()) {
 				// TODO: None of the tests in the LMDB Store cover this case!
 				// cursor must be renewed
-				mdb_cursor_renew(txn, cursor);
+				E(mdb_cursor_renew(txn, cursor));
 				if (fetchNext) {
 					// cursor must be positioned on last item, reuse minKeyBuf if available
 					if (minKeyBuf == null) {
@@ -218,6 +218,9 @@ class LmdbRecordIterator implements RecordIterator {
 			}
 			closeInternal(false);
 			return null;
+		} catch (IOException e) {
+			closeInternal(false);
+			throw new SailException(e);
 		} finally {
 			txnLockManager.unlockRead(readStamp);
 		}
