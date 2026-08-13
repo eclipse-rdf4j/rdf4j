@@ -203,7 +203,5 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	@Override
 	protected void closeInternal() throws SailException {
 		super.closeInternal();
-		// release thread-local pool
-		Pool.release();
 	}
 }
