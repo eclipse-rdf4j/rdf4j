@@ -491,6 +491,12 @@ final class CopyBinding {
 	final int sourceSlot;
 	final long constant;
 	final LmdbNativeCompiledInlineId computed;
+	/**
+	 * A computed BIND whose result is NOT representable as an inline id (e.g. a long string from {@code STR}/
+	 * {@code COALESCE}). Its value is interned to a stable runtime id through the row's {@link SyntheticValueSource} so
+	 * it can serve as a native group key and be materialized back at output. Only used on the serial aggregate path.
+	 */
+	final LmdbNativeCompiledValue computedValue;
 	final boolean encounterOrderReplaySafe;
 
 	CopyBinding(int targetSlot, int sourceSlot, long constant) {
@@ -503,7 +509,17 @@ final class CopyBinding {
 		this.sourceSlot = sourceSlot;
 		this.constant = constant;
 		this.computed = computed;
+		this.computedValue = null;
 		this.encounterOrderReplaySafe = computed == null || computed.encounterOrderReplaySafe();
+	}
+
+	private CopyBinding(int targetSlot, LmdbNativeCompiledValue computedValue, boolean encounterOrderReplaySafe) {
+		this.targetSlot = targetSlot;
+		this.sourceSlot = -1;
+		this.constant = UNKNOWN;
+		this.computed = null;
+		this.computedValue = computedValue;
+		this.encounterOrderReplaySafe = encounterOrderReplaySafe;
 	}
 
 	static CopyBinding slot(int targetSlot, int sourceSlot) {
@@ -518,7 +534,21 @@ final class CopyBinding {
 		return new CopyBinding(targetSlot, -1, UNKNOWN, computed);
 	}
 
+	static CopyBinding computedValue(int targetSlot, LmdbNativeCompiledValue computedValue,
+			boolean encounterOrderReplaySafe) {
+		return new CopyBinding(targetSlot, computedValue, encounterOrderReplaySafe);
+	}
+
 	long value(RowState row) {
+		if (computedValue != null) {
+			LmdbNativeValueCodec.DecodedValue decoded = computedValue.evaluator.eval(slot -> row.slots[slot]);
+			if (decoded == null || decoded.error()) {
+				return UNKNOWN;
+			}
+			return row.source instanceof SyntheticValueSource
+					? ((SyntheticValueSource) row.source).internComputedValue(decoded)
+					: UNKNOWN;
+		}
 		return computed != null ? computed.id(row) : sourceSlot >= 0 ? row.slots[sourceSlot] : constant;
 	}
 }

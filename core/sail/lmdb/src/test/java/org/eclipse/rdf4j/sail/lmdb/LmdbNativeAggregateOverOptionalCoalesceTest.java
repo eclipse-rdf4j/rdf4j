@@ -32,13 +32,20 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Feature 1 (native LeftJoin bare fragment): an {@code OPTIONAL} that sits under a generic GROUP BY / computed BIND
- * must still run through the native left-join operator instead of the generic {@code LeftJoinIterator}, which re-opens
- * a native pattern cursor for every left-hand row. We assert both correctness (native rows equal generic rows) and that
- * the native bare-fragment left-join route was actually taken (its dedicated counter increments only on the native
- * run).
+ * Feature 2 (native aggregate over a computed OPTIONAL group key): the full motivating query
+ *
+ * <pre>
+ * SELECT ?p ?type_fixed (count(*) as ?count) WHERE {
+ *   ?s a bb:Company. ?s ?p ?o . OPTIONAL {?o a ?type}
+ *   BIND(COALESCE(STR(?type), "DataProperties") AS ?type_fixed)
+ * } GROUP BY ?p ?type_fixed ORDER BY ?p ?type_fixed
+ * </pre>
+ *
+ * must compile end-to-end on the native engine (the OPTIONAL, the computed group key, and the COUNT), and return the
+ * same rows as the generic evaluator. The computed group key is a string that cannot be an inline id, so the native
+ * aggregate must intern computed group values into stable ids at runtime and materialize them back at output.
  */
-public class LmdbNativeLeftJoinBareFragmentTest {
+public class LmdbNativeAggregateOverOptionalCoalesceTest {
 
 	private static final String EX = "http://example.com/";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
@@ -64,13 +71,10 @@ public class LmdbNativeLeftJoinBareFragmentTest {
 			for (int i = 0; i < 20; i++) {
 				IRI s = vf.createIRI(EX, "s" + i);
 				conn.add(s, type, company);
-				// a data property: object is a literal (no type)
 				conn.add(s, name, vf.createLiteral("name-" + i));
-				// an object property to a typed entity
 				IRI colleague = vf.createIRI(EX, "person" + (i % 5));
 				conn.add(s, worksAt, colleague);
 				conn.add(colleague, type, person);
-				// an object property to an entity that is typed only for some subjects
 				IRI loc = vf.createIRI(EX, "loc" + (i % 3));
 				conn.add(s, locatedIn, loc);
 				if (i % 2 == 0) {
@@ -88,30 +92,26 @@ public class LmdbNativeLeftJoinBareFragmentTest {
 	}
 
 	@Test
-	public void optionalUnderGenericExtensionRunsNativeLeftJoin() {
-		// A non-aggregate SELECT with a computed COALESCE BIND: the native row-root compiler declines the computed
-		// extension (row roots do not intern computed values), so the enclosing Projection/Extension stay generic while
-		// the OPTIONAL underneath must still run as a single native left-join bare fragment (Feature 1) rather than the
-		// generic per-row LeftJoinIterator.
+	public void fullAggregatePipelineCompilesNativelyAndMatchesGeneric() {
 		String query = "PREFIX ex: <" + EX + ">\n"
-				+ "SELECT ?s ?type_fixed WHERE {\n"
+				+ "SELECT ?p ?type_fixed (count(*) as ?count) WHERE {\n"
 				+ "  ?s a ex:Company.\n"
 				+ "  ?s ?p ?o .\n"
 				+ "  OPTIONAL { ?o a ?type }\n"
 				+ "  BIND(COALESCE(STR(?type), \"DataProperties\") AS ?type_fixed)\n"
-				+ "} ORDER BY ?s ?type_fixed";
+				+ "} GROUP BY ?p ?type_fixed ORDER BY ?p ?type_fixed";
 
 		List<String> generic = genericRows(query);
 
-		long before = LmdbNativeAggregateCompiler.LEFTJOIN_BARE_FRAGMENTS.get();
+		long before = LmdbNativeAggregateCompiler.COMPILED.get();
 		List<String> nativeRows = rows(query);
-		long after = LmdbNativeAggregateCompiler.LEFTJOIN_BARE_FRAGMENTS.get();
+		long after = LmdbNativeAggregateCompiler.COMPILED.get();
 
 		assertThat(nativeRows)
-				.as("native OPTIONAL results must match the generic evaluator")
+				.as("native aggregate over the computed OPTIONAL group key must match the generic evaluator")
 				.isEqualTo(generic);
 		assertThat(after)
-				.as("the OPTIONAL must run as a native bare-fragment left join, not the generic LeftJoinIterator")
+				.as("the whole Group -> Extension(COALESCE) -> LeftJoin pipeline must compile natively")
 				.isGreaterThan(before);
 	}
 
@@ -120,7 +120,7 @@ public class LmdbNativeLeftJoinBareFragmentTest {
 			TupleQuery tupleQuery = conn.prepareTupleQuery(query);
 			List<BindingSet> result = QueryResults.asList(tupleQuery.evaluate());
 			return result.stream()
-					.map(LmdbNativeLeftJoinBareFragmentTest::canonical)
+					.map(LmdbNativeAggregateOverOptionalCoalesceTest::canonical)
 					.collect(Collectors.toList());
 		}
 	}

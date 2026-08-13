@@ -102,7 +102,17 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		int[] groupSlots = compileGroupSlots(group.getGroupBindingNames());
 		boolean duplicateInsensitive = !duplicatesMatter(aggregates, havingCondition);
-		SlotPlan arg = compileTuple(group.getArg(), duplicateInsensitive);
+		// The aggregate group path may represent a computed, non-inline group key (e.g. COALESCE(STR(?type), ".."))
+		// by interning it to a runtime id; row roots and bare fragments must not (they lack the serial interning
+		// source), so the flag is scoped to this compile.
+		boolean previousAllowComputedValueInterning = allowComputedValueInterning;
+		allowComputedValueInterning = true;
+		SlotPlan arg;
+		try {
+			arg = compileTuple(group.getArg(), duplicateInsensitive);
+		} finally {
+			allowComputedValueInterning = previousAllowComputedValueInterning;
+		}
 		if (arg == null) {
 			// the slot machinery cannot express the argument (e.g. a nested GROUP BY or a DATATYPE bind); the
 			// histogram shapes can still collapse into one counting scan before falling back to the generic
@@ -117,17 +127,21 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return tryDatatypeHistogram(group, originalExpr);
 		}
 		boolean strictCompare = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
-		NativeLmdbQuerySource stepSource = syntheticValuesById.isEmpty() ? source
+		// A computed, runtime-interned group key requires the interning SyntheticValueSource even when there are no
+		// plan-time synthetic constants, so the serial group step can materialize the key back at output.
+		NativeLmdbQuerySource stepSource = (syntheticValuesById.isEmpty() && !sawComputedValueCopy) ? source
 				: new SyntheticValueSource(source, syntheticValuesById, syntheticIdsByValue);
 		if (slotNames.size() > MAX_NATIVE_SLOTS) {
 			return null;
 		}
-		PrefixRunGroupCandidate prefixRun = tryPrefixRunGroupPlan(stepSource, arg, groupSlots, aggregates,
-				havingCondition);
-		LmdbNativeExistsIntersection existsIntersection = prefixRun == null
-				? tryExistsIntersectionPlan(stepSource, arg, groupSlots, aggregates)
-				: null;
-		if (prefixRun == null && existsIntersection == null && havingCondition == null) {
+		// The specialized strategies (prefix-run, exists-intersection, type-matrix) group by raw longs and materialize
+		// through their own value sources, so they are disqualified for computed-interned keys; the serial group step
+		// (forced at runtime by NativeGroupIteration.containsComputedValueCopy) owns those.
+		PrefixRunGroupCandidate prefixRun = sawComputedValueCopy ? null
+				: tryPrefixRunGroupPlan(stepSource, arg, groupSlots, aggregates, havingCondition);
+		LmdbNativeExistsIntersection existsIntersection = (sawComputedValueCopy || prefixRun != null) ? null
+				: tryExistsIntersectionPlan(stepSource, arg, groupSlots, aggregates);
+		if (!sawComputedValueCopy && prefixRun == null && existsIntersection == null && havingCondition == null) {
 			QueryEvaluationStep typeMatrix = tryTypeMatrixStep(stepSource, arg, groupSlots, aggregates, originalExpr);
 			if (typeMatrix != null) {
 				return typeMatrix;

@@ -298,6 +298,21 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	}
 
 	private List<BindingSet> evaluateInitialized(RowState row) {
+		if (containsComputedValueCopy(arg)) {
+			// A computed, non-inline group key (e.g. COALESCE(STR(?type), "..")) is interned to a runtime id through
+			// the (single) serial value source. The parallel/Janino/IR/prefix strategies each resolve group keys
+			// through their own (sometimes per-worker) source and group by raw longs, so they are disqualified here to
+			// keep computed-key interning and materialization on one source. Grouping is cheap relative to the scan.
+			LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root(explainTarget);
+			try {
+				List<BindingSet> results = evaluateSequential(row, aggContext, metrics);
+				metrics.commitToParent();
+				return results;
+			} catch (EncounterOrderFallback fallback) {
+				throwRealFailureSuppressedBy(fallback);
+				throw fallback;
+			}
+		}
 		if (existsIntersection != null) {
 			List<BindingSet> intersection = existsIntersection.evaluate(source, row);
 			if (intersection != null) {
@@ -361,6 +376,49 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			filterLease.abort(failure);
 			throw failure;
 		}
+	}
+
+	/**
+	 * Whether the plan binds a computed, runtime-interned group key anywhere on its spine (see evaluateInitialized).
+	 */
+	static boolean containsComputedValueCopy(SlotPlan plan) {
+		if (plan instanceof ExtensionPlan) {
+			ExtensionPlan extension = (ExtensionPlan) plan;
+			for (CopyBinding copy : extension.copies) {
+				if (copy.computedValue != null) {
+					return true;
+				}
+			}
+			return containsComputedValueCopy(extension.arg);
+		}
+		if (plan instanceof FilterPlan) {
+			return containsComputedValueCopy(((FilterPlan) plan).arg);
+		}
+		if (plan instanceof LeftJoinPlan) {
+			return containsComputedValueCopy(((LeftJoinPlan) plan).left)
+					|| containsComputedValueCopy(((LeftJoinPlan) plan).right);
+		}
+		if (plan instanceof JoinPlan) {
+			return containsComputedValueCopy(((JoinPlan) plan).left)
+					|| containsComputedValueCopy(((JoinPlan) plan).right);
+		}
+		if (plan instanceof MultiJoinPlan) {
+			for (SlotPlan child : ((MultiJoinPlan) plan).children) {
+				if (containsComputedValueCopy(child)) {
+					return true;
+				}
+			}
+			return false;
+		}
+		if (plan instanceof UnionPlan) {
+			return containsComputedValueCopy(((UnionPlan) plan).left)
+					|| containsComputedValueCopy(((UnionPlan) plan).right);
+		}
+		if (plan instanceof MinusPlan) {
+			return containsComputedValueCopy(((MinusPlan) plan).left)
+					|| containsComputedValueCopy(((MinusPlan) plan).right);
+		}
+		return false;
 	}
 
 	private List<BindingSet> evaluateWcoj(RowState row) {

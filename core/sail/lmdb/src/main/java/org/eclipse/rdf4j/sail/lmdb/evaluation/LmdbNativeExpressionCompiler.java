@@ -129,6 +129,26 @@ public final class LmdbNativeExpressionCompiler {
 				row -> LmdbNativeValueCodec.packInline(value.evaluator.eval(row)));
 	}
 
+	/**
+	 * Compiles a value expression to a per-row {@link LmdbNativeCompiledValue} (a decoded-value evaluator) without
+	 * requiring the result to be an inline id. The serial native aggregate uses this for computed group keys such as
+	 * {@code COALESCE(STR(?type), "..")}, interning each produced value to a stable runtime id. Returns null when the
+	 * expression is not natively expressible, so the caller falls back to the generic evaluator.
+	 */
+	static LmdbNativeCompiledValue compileComputedValue(ValueExpr expr, NativeLmdbQuerySource source,
+			LmdbNativeSlotResolver slots, boolean strictCompare) {
+		if (!enabled()) {
+			return null;
+		}
+		LmdbNativeValueCodec codec = source.nativeValueCodec();
+		if (codec == null) {
+			return null;
+		}
+		LmdbNativeExpressionCompiler compiler = new LmdbNativeExpressionCompiler(source, codec, slots, strictCompare,
+				0L);
+		return compiler.compileValue(expr);
+	}
+
 	private static boolean enabled() {
 		return !"false".equalsIgnoreCase(System.getProperty(ENABLED_PROPERTY));
 	}

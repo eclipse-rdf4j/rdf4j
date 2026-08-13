@@ -63,6 +63,16 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 @Experimental
 abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValuesCompiler {
 
+	/**
+	 * When set, {@link #compileExtensionCopies(Extension)} may compile a computed, non-inline BIND (e.g.
+	 * {@code COALESCE(STR(?type), "..")}) as a runtime-interned computed group key rather than declining it. Enabled
+	 * only for the serial aggregate group path (see LmdbNativeAggregatePlanner.compileGroup), where a single interning
+	 * value source materializes the key back at output.
+	 */
+	boolean allowComputedValueInterning;
+	/** Set by {@link #compileExtensionCopies(Extension)} when it emitted at least one runtime-interned computed key. */
+	boolean sawComputedValueCopy;
+
 	LmdbNativeAggregateFilterCompiler(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
 			NativeLmdbQuerySource source) {
 		super(context, strategy, source);
@@ -240,13 +250,25 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 					copies[i] = CopyBinding.slot(slot(elem.getName()), slot(sourceVar.getName()));
 				}
 			} else {
+				boolean strict = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
 				LmdbNativeCompiledInlineId computed = LmdbNativeExpressionCompiler
-						.compileInlineId(expression, source, this::slot,
-								strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
-				if (computed == null) {
+						.compileInlineId(expression, source, this::slot, strict);
+				if (computed != null) {
+					copies[i] = CopyBinding.computed(slot(elem.getName()), computed);
+				} else if (allowComputedValueInterning) {
+					// The result is not inline-packable (e.g. a long string). On the serial aggregate path we still
+					// compile it as a per-row decoded value and intern it to a stable group-key id at runtime.
+					LmdbNativeCompiledValue computedValue = LmdbNativeExpressionCompiler
+							.compileComputedValue(expression, source, this::slot, strict);
+					if (computedValue == null) {
+						return null;
+					}
+					copies[i] = CopyBinding.computedValue(slot(elem.getName()), computedValue,
+							QueryEvaluationUtility.isRepeatableWithinPreparation(expression));
+					sawComputedValueCopy = true;
+				} else {
 					return null;
 				}
-				copies[i] = CopyBinding.computed(slot(elem.getName()), computed);
 			}
 		}
 		return copies;

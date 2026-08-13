@@ -46,6 +46,14 @@ final class LmdbNativeAggregateCompiler {
 	 * the plan's synthetic table.
 	 */
 	static final long SYNTHETIC_VALUE_BASE = Long.MIN_VALUE + 1024L;
+	/**
+	 * Base for runtime-interned computed group-key ids. A computed BIND result (e.g.
+	 * {@code COALESCE(STR(?type), "..")}) has no stable store id and rarely fits an inline id, so the serial native
+	 * aggregate assigns it a synthetic id from this range at evaluation time and materializes it back at output. Kept
+	 * far above the plan-time synthetic window and membership is checked by map lookup, so it never collides with store
+	 * ids or plan-time synthetics.
+	 */
+	static final long RUNTIME_INTERN_BASE = SYNTHETIC_VALUE_BASE + (1L << 40);
 	static final int MAX_NATIVE_SLOTS = 60;
 	static final String LEFTJOIN_WELL_DESIGNED_CHECK = "rdf4j.lmdb.leftjoin.wellDesignedCheck";
 	static final String LEFTJOIN_REPLAY_ENABLED = "rdf4j.lmdb.leftjoin.replay.enabled";
