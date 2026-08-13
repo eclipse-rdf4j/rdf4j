@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -400,6 +402,36 @@ public class LmdbNativeFactorizedTailAggregationTest {
 	}
 
 	@Test
+	public void factorizedTailCompetesWithAndOutranksCompiledAggregateKernel() throws InterruptedException {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s (SUM(?n0) AS ?sum) WHERE {\n"
+				+ "  ?s ex:pn0 ?n0 .\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  ?s ex:p2 ?b .\n"
+				+ "} GROUP BY ?s";
+		String previousEnabled = System.getProperty("rdf4j.lmdb.janinoCodegen.enabled");
+		String previousThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
+		String previousSynchronous = System.getProperty("rdf4j.lmdb.janinoCodegen.synchronous");
+		try {
+			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
+			System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+			System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
+			JaninoPipelineTestAccess.resetAll();
+
+			assertThat(strategy(query))
+					.as("all eligible aggregate strategies must reach one arbiter; a compiled kernel cannot win "
+							+ "merely because its dispatch branch executes first")
+					.startsWith("factorizedTail(");
+			assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS)).isTrue();
+		} finally {
+			restoreProperty("rdf4j.lmdb.janinoCodegen.enabled", previousEnabled);
+			restoreProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", previousThreshold);
+			restoreProperty("rdf4j.lmdb.janinoCodegen.synchronous", previousSynchronous);
+			JaninoPipelineTestAccess.resetAll();
+		}
+	}
+
+	@Test
 	public void avgOverPrefixSlotWithCountingBranchesUsesChunkPrefix() {
 		// ?n0 is an exact prefix value repeated by two counting branches. AVG must retain the serial chunk prefix
 		// instead of enumerating the branch cross product or silently falling back to the row chain.
@@ -657,6 +689,14 @@ public class LmdbNativeFactorizedTailAggregationTest {
 			}
 		}
 		return null;
+	}
+
+	private static void restoreProperty(String name, String value) {
+		if (value == null) {
+			System.clearProperty(name);
+		} else {
+			System.setProperty(name, value);
+		}
 	}
 
 	private static final class CallIndexFunction implements Function {

@@ -42,6 +42,7 @@ class LmdbNativeLeftJoinSweepTest {
 	private static final String EX = "http://example.com/correlated/";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String SWEEP_FLAG = LmdbNativeAggregateCompiler.LEFTJOIN_SWEEP_ENABLED;
+	private static final String JANINO_FLAG = LmdbNativeJaninoCodegen.ENABLED_PROPERTY;
 
 	private static final String QUERY = "SELECT ?outer ?value WHERE { ?outer <" + EX
 			+ "seed> ?seed . OPTIONAL { ?seed <" + EX + "inner> ?leaf . ?leaf <" + EX + "payload> ?value } }";
@@ -84,12 +85,14 @@ class LmdbNativeLeftJoinSweepTest {
 			}
 		}
 		System.setProperty(NATIVE_FLAG, "true");
+		System.setProperty(JANINO_FLAG, "false");
 	}
 
 	@AfterEach
 	void tearDown() {
 		System.clearProperty(NATIVE_FLAG);
 		System.clearProperty(SWEEP_FLAG);
+		System.clearProperty(JANINO_FLAG);
 		System.clearProperty(LmdbNativeAggregateCompiler.LEFTJOIN_SWEEP_MAX_ROWS);
 		System.clearProperty("rdf4j.lmdb.nativeHashJoin.minRows");
 		System.clearProperty("rdf4j.lmdb.mergeJoin.minRows");

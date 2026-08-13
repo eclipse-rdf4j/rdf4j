@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
+import java.io.IOException;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -81,6 +82,11 @@ final class RowState {
 		if (exactValuesMetrics != null) {
 			exactValuesMetrics.recordMatchedRows(rows);
 		}
+	}
+
+	/** Selects the FULL-telemetry aggregate consumer outside its row loop. */
+	RowCursor aggregateInput(RowCursor cursor) {
+		return exactValuesMetrics == null ? cursor : new ExactValuesAggregateCursor(cursor, exactValuesMetrics);
 	}
 
 	boolean bind(int slot, long id) {
@@ -190,6 +196,32 @@ final class RowState {
 		}
 		boundMask = mask;
 		view.slotsReplaced();
+	}
+}
+
+/** Counts rows consumed by an aggregate without adding a telemetry branch to the normal cursor loop. */
+@Experimental
+final class ExactValuesAggregateCursor implements RowCursor {
+	private final RowCursor delegate;
+	private final ExactValuesRuntimeMetrics metrics;
+
+	ExactValuesAggregateCursor(RowCursor delegate, ExactValuesRuntimeMetrics metrics) {
+		this.delegate = delegate;
+		this.metrics = metrics;
+	}
+
+	@Override
+	public boolean next() throws IOException {
+		if (!delegate.next()) {
+			return false;
+		}
+		metrics.recordMatchedRows(1L);
+		return true;
+	}
+
+	@Override
+	public void close() {
+		delegate.close();
 	}
 }
 

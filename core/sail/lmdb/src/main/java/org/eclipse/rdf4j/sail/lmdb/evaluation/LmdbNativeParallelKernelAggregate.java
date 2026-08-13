@@ -157,6 +157,11 @@ final class LmdbNativeParallelKernelAggregate {
 			// order-dependent consumer sees
 			return debugDecline(explainTarget, "root-scan-ordered");
 		}
+		if (rootScan >= 0 && bindings.scanSites[rootScan].range() != null) {
+			// The scan already owns semantic filter bounds. Root partitioning would replace rather than intersect
+			// those bounds, so retain the exact sequential kernel until bounded-range intersection is represented.
+			return debugDecline(explainTarget, "root-scan-already-ranged");
+		}
 		if (rootScan >= 0 && !LmdbNativeParallelPipelines.rangePartitionEnabled()) {
 			return debugDecline(explainTarget, "range-partition-disabled");
 		}
@@ -219,7 +224,8 @@ final class LmdbNativeParallelKernelAggregate {
 			// both key differently); while it is below threshold or pending, decline to the sequential drain rather
 			// than stall the workers.
 			workerKernel = new LmdbNativeKernelIr.Kernel(lowered.kernel.columnCount, lowered.kernel.pipeline,
-					new Aggregate(aggregate.groupCols, workerOutputs, null, OutputMods.none()));
+					new Aggregate(aggregate.groupCols, workerOutputs, null, OutputMods.none()),
+					lowered.kernel.telemetryMode);
 			JaninoKernel probeKernel = kernelFactory.apply(workerKernel);
 			if (probeKernel == null) {
 				return debugDecline(explainTarget, "worker-kernel-pending");
@@ -275,12 +281,14 @@ final class LmdbNativeParallelKernelAggregate {
 				? new ConcurrentLinkedQueue<>(Arrays.asList(scanPartitions))
 				: null;
 		AtomicReference<Throwable> failure = new AtomicReference<>();
+		LmdbFusedSipFactorizedRuntime.Session fusedParent = LmdbFusedSipFactorizedRuntime.currentOrNull();
 		ArrayList<Future<HashMap<LongsKey, Partial>>> futures = new ArrayList<>(threads);
 		for (int w = 0; w < threads; w++) {
 			NativeLmdbQuerySource source = sources[w];
 			try {
 				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-					try {
+					try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
+							.inherit(fusedParent)) {
 						return runWorker(lowered, workerAggregate, rootAdjacency, rootDomain, rootScan, domains,
 								source, emitter, ranges, scanQueue, kernelFactory, failure);
 					} catch (Throwable t) {
@@ -530,7 +538,7 @@ final class LmdbNativeParallelKernelAggregate {
 				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-node-predicates-unavailable");
 			}
 			if (lowered.kernel.requirements.scans > 0) {
-				scanner = new LmdbNativeKernelScanner(workerRow, bindings.scanOrders);
+				scanner = new LmdbNativeKernelScanner(workerRow, bindings.scanSites);
 			}
 			int stride = lowered.kernel.stride();
 			long[] buffer = new long[stride * FILL_ROWS];

@@ -25,22 +25,32 @@ final class MultiValuePatternPlan implements SlotPlan {
 	final PatternPlan[] alternatives;
 	final PatternPlan fallback;
 	final ValueSetFilter fallbackFilter;
+	final boolean exactFilterRewrite;
+	final int exactProbeCount;
 	final long producedMask;
 	final double staticEstimate;
 
 	MultiValuePatternPlan(NativeLmdbQuerySource source, int constrainedSlot, long[] constants,
 			PatternPlan[] alternatives, PatternPlan fallback) {
+		this(source, constrainedSlot, constants, alternatives, fallback, false, 0);
+	}
+
+	MultiValuePatternPlan(NativeLmdbQuerySource source, int constrainedSlot, long[] constants,
+			PatternPlan[] alternatives, PatternPlan fallback, boolean exactFilterRewrite, int exactProbeCount) {
 		this(constrainedSlot, constants, alternatives, fallback,
-				fallback == null ? null : new ValueSetFilter(source, constrainedSlot, constants));
+				fallback == null ? null : new ValueSetFilter(source, constrainedSlot, constants), exactFilterRewrite,
+				exactProbeCount);
 	}
 
 	private MultiValuePatternPlan(int constrainedSlot, long[] constants, PatternPlan[] alternatives,
-			PatternPlan fallback, ValueSetFilter fallbackFilter) {
+			PatternPlan fallback, ValueSetFilter fallbackFilter, boolean exactFilterRewrite, int exactProbeCount) {
 		this.constrainedSlot = constrainedSlot;
 		this.constants = constants;
 		this.alternatives = alternatives;
 		this.fallback = fallback;
 		this.fallbackFilter = fallbackFilter;
+		this.exactFilterRewrite = exactFilterRewrite;
+		this.exactProbeCount = exactProbeCount;
 		long mask = 0L;
 		double estimate = 0D;
 		for (PatternPlan alternative : alternatives) {
@@ -58,11 +68,25 @@ final class MultiValuePatternPlan implements SlotPlan {
 	/** Creates worker-confined fallback memo/value caches while sharing only immutable pattern metadata. */
 	MultiValuePatternPlan forkForParallelWorker() {
 		return new MultiValuePatternPlan(constrainedSlot, constants, alternatives, fallback,
-				fallbackFilter == null ? null : fallbackFilter.forkForParallelWorker());
+				fallbackFilter == null ? null : fallbackFilter.forkForParallelWorker(), exactFilterRewrite,
+				exactProbeCount);
 	}
 
 	@Override
 	public RowCursor open(RowState row) throws IOException {
+		RowCursor cursor = openUninstrumented(row);
+		if (!exactFilterRewrite || row.exactValuesMetrics == null) {
+			return cursor;
+		}
+		long probes = exactProbeCount;
+		if (constrainedSlot >= 0 && row.slots[constrainedSlot] != UNKNOWN) {
+			probes = contains(constants, row.slots[constrainedSlot]) ? 1L : 0L;
+		}
+		row.exactValuesMetrics.recordProbes(probes);
+		return new ExactValuesMultiValueCursor(cursor, row.exactValuesMetrics);
+	}
+
+	private RowCursor openUninstrumented(RowState row) throws IOException {
 		if (fallback != null && shouldUseFallback(row)) {
 			return new FilterCursor(fallback.open(row), fallbackFilter, row);
 		}
@@ -78,6 +102,15 @@ final class MultiValuePatternPlan implements SlotPlan {
 			}
 		}
 		return new MultiValuePatternCursor(alternatives, row);
+	}
+
+	private static boolean contains(long[] values, long candidate) {
+		for (long value : values) {
+			if (value == candidate) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	boolean shouldUseFallback(RowState row) {
@@ -127,6 +160,36 @@ final class MultiValuePatternPlan implements SlotPlan {
 		return Double.isFinite(staticEstimate) ? Math.max(1D, staticEstimate) : alternatives.length * 64D;
 	}
 
+}
+
+/** Publishes exact-domain counters when the physical producer closes, mirroring the legacy exact VALUES cursor. */
+@Experimental
+final class ExactValuesMultiValueCursor implements RowCursor {
+	private final RowCursor delegate;
+	private final ExactValuesRuntimeMetrics metrics;
+	private boolean closed;
+
+	ExactValuesMultiValueCursor(RowCursor delegate, ExactValuesRuntimeMetrics metrics) {
+		this.delegate = delegate;
+		this.metrics = metrics;
+	}
+
+	@Override
+	public boolean next() throws IOException {
+		return !closed && delegate.next();
+	}
+
+	@Override
+	public void close() {
+		if (!closed) {
+			closed = true;
+			try {
+				delegate.close();
+			} finally {
+				metrics.publish();
+			}
+		}
+	}
 }
 
 @Experimental

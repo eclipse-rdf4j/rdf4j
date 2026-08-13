@@ -490,18 +490,102 @@ class LmdbNativeRowStepIterationTest {
 	}
 
 	@Test
-	void optionalOnlyBindingReportsGenericFallbackStrategy() {
+	void optionalOnlyBindingUsesNativeCompatibilityVariantForRows() {
 		SingletonSet explanationTarget = new SingletonSet();
 		explanationTarget.setExecutionSummaryEnabled(true);
-		NativeRowsStep step = new NativeRowsStep(null, new RecordingPlan(0), NativeSlotLayout.empty(), new int[0],
-				new String[0], false, new int[0], new boolean[0], 0, -1, true, null, explanationTarget, null,
-				Set.of("optional"), null, null);
-		step.genericStep = ignored -> QueryEvaluationStep.EMPTY_ITERATION;
+		Value optional = VF.createIRI("urn:test:id:41");
+		RecordingNativeSource source = new RecordingNativeSource(optional);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("optional", 0), null);
+		layout.freeze(List.of("optional"));
+		NativeRowsStep step = new NativeRowsStep(source, new OptionalEntryRecordingPlan(), layout, new int[] { 0 },
+				new String[] { "optional" }, false, new int[0], new boolean[0], 0, -1, true, null,
+				explanationTarget, null, Set.of("optional"), null, null);
+		step.genericStep = ignored -> {
+			throw new AssertionError("runtime-compatible OPTIONAL must stay native");
+		};
 		QueryBindingSet bindings = new QueryBindingSet();
-		bindings.addBinding("optional", VF.createLiteral("bound"));
+		bindings.addBinding("optional", optional);
+
+		List<BindingSet> rows = collect(step.evaluate(bindings));
+
+		assertThat(rows).hasSize(2).allSatisfy(row -> assertThat(row.getValue("optional")).isEqualTo(optional));
+		assertThat(explanationTarget.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
+				.contains("nativeEntryBindingVariant")
+				.doesNotContain("genericFallback");
+	}
+
+	@Test
+	void optionalOnlyBindingUsesNativeCompatibilityVariantBeforeGrouping() {
+		SingletonSet explanationTarget = new SingletonSet();
+		explanationTarget.setExecutionSummaryEnabled(true);
+		Value optional = VF.createIRI("urn:test:id:41");
+		RecordingNativeSource source = new RecordingNativeSource(optional);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("optional", 0), null);
+		layout.freeze(List.of("optional"));
+		NativeGroupStep step = new NativeGroupStep(source, new OptionalEntryRecordingPlan(), layout, new int[] { 0 },
+				new AggregateSpec[] { AggregateSpec.star("count") }, true, null, explanationTarget, null,
+				Set.of("optional"), null, null, false, false, null, 0L, null, null);
+		step.genericStep = ignored -> {
+			throw new AssertionError("runtime-compatible OPTIONAL aggregate must stay native");
+		};
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding("optional", optional);
+
+		List<BindingSet> rows = collect(step.evaluate(bindings));
+
+		assertThat(rows).singleElement().satisfies(row -> {
+			assertThat(row.getValue("optional")).isEqualTo(optional);
+			assertThat(row.getValue("count").stringValue()).isEqualTo("2");
+		});
+		assertThat(explanationTarget.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
+				.contains("nativeEntryBindingVariant")
+				.doesNotContain("genericFallback");
+	}
+
+	@Test
+	void optionalOnlyBindingUsesNativeCompatibilityVariantForBareFragments() {
+		SingletonSet explanationTarget = new SingletonSet();
+		explanationTarget.setExecutionSummaryEnabled(true);
+		Value optional = VF.createIRI("urn:test:id:41");
+		RecordingNativeSource source = new RecordingNativeSource(optional);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("optional", 0), null);
+		layout.freeze(List.of("optional"));
+		NativeBareRowsStep step = NativeRowsStep.bareFragment(source, new OptionalEntryRecordingPlan(), layout,
+				new int[] { 0 }, new String[] { "optional" }, true, null, explanationTarget, null, Set.of("optional"));
+		step.bulk.genericStep = ignored -> {
+			throw new AssertionError("runtime-compatible bare OPTIONAL must stay native");
+		};
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding("optional", optional);
+
+		List<BindingSet> rows = collect(step.evaluate(bindings));
+
+		assertThat(rows).hasSize(2).allSatisfy(row -> assertThat(row.getValue("optional")).isEqualTo(optional));
+		assertThat(explanationTarget.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
+				.contains("nativeEntryBindingVariant")
+				.doesNotContain("genericFallback");
+	}
+
+	@Test
+	void unencodableOptionalOnlyBindingRetainsExactGenericFallback() {
+		SingletonSet explanationTarget = new SingletonSet();
+		explanationTarget.setExecutionSummaryEnabled(true);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("optional", 0), null);
+		layout.freeze(List.of("optional"));
+		NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(), new RecordingPlan(0), layout,
+				new int[] { 0 }, new String[] { "optional" }, false, new int[0], new boolean[0], 0, -1, true, null,
+				explanationTarget, null, Set.of("optional"), null, null);
+		AtomicInteger genericCalls = new AtomicInteger();
+		step.genericStep = ignored -> {
+			genericCalls.incrementAndGet();
+			return QueryEvaluationStep.EMPTY_ITERATION;
+		};
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding("optional", VF.createIRI("urn:test:not-in-native-id-space"));
 
 		step.evaluate(bindings).close();
 
+		assertThat(genericCalls).hasValue(1);
 		assertThat(explanationTarget.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
 				.isEqualTo("genericFallback(optionalOnlyBinding)");
 	}
@@ -589,6 +673,16 @@ class LmdbNativeRowStepIterationTest {
 			count++;
 		}
 		return count;
+	}
+
+	private static List<BindingSet> collect(CloseableIteration<BindingSet> iteration) {
+		try (iteration) {
+			ArrayList<BindingSet> rows = new ArrayList<>();
+			while (iteration.hasNext()) {
+				rows.add(iteration.next());
+			}
+			return rows;
+		}
 	}
 
 	private static void restoreProperty(String name, String previous) {
@@ -737,29 +831,72 @@ class LmdbNativeRowStepIterationTest {
 		}
 	}
 
+	private static final class OptionalEntryRecordingPlan implements SlotPlan {
+		@Override
+		public RowCursor open(RowState row) {
+			return new RowCursor() {
+				private int index;
+
+				@Override
+				public boolean next() {
+					if (index == 3) {
+						row.replaceSlot(0, NativeLmdbQuerySource.UNKNOWN_ID);
+						return false;
+					}
+					row.replaceSlot(0, index == 0 ? NativeLmdbQuerySource.UNKNOWN_ID : 40L + index);
+					index++;
+					return true;
+				}
+
+				@Override
+				public void close() {
+					row.replaceSlot(0, NativeLmdbQuerySource.UNKNOWN_ID);
+				}
+			};
+		}
+
+		@Override
+		public long producedMask() {
+			return 1L;
+		}
+	}
+
 	private static final class RecordingNativeSource implements NativeLmdbQuerySource {
 		private final IOException statementsFailure;
+		private final Value mappedValue;
 		private final AtomicInteger statementCalls = new AtomicInteger();
 		private final AtomicInteger hasCalls = new AtomicInteger();
 		private final AtomicInteger lazyValueCalls = new AtomicInteger();
 		private final AtomicInteger closedIterators = new AtomicInteger();
 
 		private RecordingNativeSource() {
-			this(null);
+			this(null, null);
 		}
 
 		private RecordingNativeSource(IOException statementsFailure) {
+			this(statementsFailure, null);
+		}
+
+		private RecordingNativeSource(Value mappedValue) {
+			this(null, mappedValue);
+		}
+
+		private RecordingNativeSource(IOException statementsFailure, Value mappedValue) {
 			this.statementsFailure = statementsFailure;
+			this.mappedValue = mappedValue;
 		}
 
 		@Override
 		public long idOf(Value value) {
-			return UNKNOWN_ID;
+			return value.equals(mappedValue) ? 41L : UNKNOWN_ID;
 		}
 
 		@Override
 		public Value lazyValue(long id) {
 			lazyValueCalls.incrementAndGet();
+			if (id == 41L && mappedValue != null) {
+				return mappedValue;
+			}
 			return VF.createIRI("urn:test:id:" + id);
 		}
 

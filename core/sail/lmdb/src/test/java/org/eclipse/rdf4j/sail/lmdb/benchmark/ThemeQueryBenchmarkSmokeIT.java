@@ -50,7 +50,39 @@ class ThemeQueryBenchmarkSmokeIT {
 	private static final String PHARMA_HAS_RESULT_LABEL = "pharma-hasResult";
 	private static final String PHARMA_HAS_ARM_LABEL = "pharma-hasArm";
 	private static final String PHARMA_P_VALUE_FILTER = "pharma-pValue-filter";
+	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
+	private static final String JANINO_SYNCHRONOUS_PROPERTY = "rdf4j.lmdb.janinoCodegen.synchronous";
 	private static final int QUERY_EXECUTION_REPETITIONS = 5;
+
+	@Test
+	void janinoTrialCompilesDeterministicallyAndRestoresCallerSetting() throws Exception {
+		String previousProfiling = System.getProperty(PROFILING_PROPERTY);
+		String previousSynchronous = System.getProperty(JANINO_SYNCHRONOUS_PROPERTY);
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.themeName = Theme.MEDICAL_RECORDS.name();
+		benchmark.z_queryIndex = 0;
+		benchmark.z_z_janinoEnabled = "true";
+		boolean initialized = false;
+		try {
+			System.setProperty(PROFILING_PROPERTY, "true");
+			System.setProperty(JANINO_SYNCHRONOUS_PROPERTY, "false");
+			benchmark.setup();
+			initialized = true;
+			assertEquals("true", System.getProperty(JANINO_SYNCHRONOUS_PROPERTY),
+					"the matched Janino arm must compile before the benchmark query falls back");
+			assertBenchmarkQueryCount(benchmark, Theme.MEDICAL_RECORDS, 0);
+			benchmark.tearDown();
+			initialized = false;
+			assertEquals("false", System.getProperty(JANINO_SYNCHRONOUS_PROPERTY),
+					"trial teardown must restore the caller's compilation policy");
+		} finally {
+			if (initialized) {
+				benchmark.tearDown();
+			}
+			restoreProperty(PROFILING_PROPERTY, previousProfiling);
+			restoreProperty(JANINO_SYNCHRONOUS_PROPERTY, previousSynchronous);
+		}
+	}
 
 	@Test
 	void executeQueryReturnsExpectedCountForMedicalRecordsQueryTwo() throws Exception {
@@ -187,6 +219,14 @@ class ThemeQueryBenchmarkSmokeIT {
 			} else {
 				System.setProperty(ThemeQueryBenchmark.WAIT_FOR_SKETCHES_PROPERTY, previous);
 			}
+		}
+	}
+
+	private static void restoreProperty(String property, String previous) {
+		if (previous == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, previous);
 		}
 	}
 

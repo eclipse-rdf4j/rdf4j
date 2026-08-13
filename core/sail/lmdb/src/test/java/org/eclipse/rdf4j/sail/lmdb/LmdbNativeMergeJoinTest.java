@@ -143,15 +143,16 @@ class LmdbNativeMergeJoinTest {
 	}
 
 	@Test
-	void sparseOverlapLeapfrogsWithSeeks() {
+	void sparseOverlapPrefersBoundProbesToAFullMergeSweep() {
 		addSparseData();
 		List<String> generic = genericRows(SPARSE_QUERY);
 		resetCounters();
 
 		assertThat(rows(SPARSE_QUERY)).isEqualTo(generic).hasSize(100);
-		assertThat(LmdbNativeMergeJoin.JOINS.get()).isOne();
-		// the dense side lags ~30 rows between matches, far past the 8-miss threshold
-		assertThat(LmdbNativeMergeJoin.SEEKS.get()).isPositive();
+		// Sweeping 3,100 rows to find 100 matches costs more than probing the dense adjacency for each sparse key.
+		// Native merge seek behavior remains covered by the sparse chunk-pipeline fixture.
+		assertThat(LmdbNativeMergeJoin.JOINS.get()).isZero();
+		assertThat(LmdbNativeHashJoin.BUILDS.get()).isZero();
 	}
 
 	@Test

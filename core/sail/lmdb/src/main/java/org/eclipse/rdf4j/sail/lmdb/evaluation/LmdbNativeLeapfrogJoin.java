@@ -330,8 +330,17 @@ final class LmdbNativeLeapfrogJoin {
 			}
 
 			private static StatementPatternExistsFilter directExists(NativeBooleanFilter filter) {
-				while (filter instanceof RecordingNativeBooleanFilter recording) {
-					filter = recording.delegate;
+				for (;;) {
+					NativeBooleanFilter inspected = NativeFilterLease.inspect(filter);
+					if (inspected != filter) {
+						filter = inspected;
+						continue;
+					}
+					if (filter instanceof RecordingNativeBooleanFilter recording) {
+						filter = recording.delegate;
+						continue;
+					}
+					break;
 				}
 				return filter instanceof StatementPatternExistsFilter exists ? exists : null;
 			}

@@ -24,8 +24,11 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 @Experimental
 final class MultiJoinPlan implements SlotPlan {
 	static final int ORDER_CACHE_CAPACITY = 8;
+
 	/** Kill switch for the factorization-aware sinking reorder used by the factorized strategies. */
-	static final boolean SINK_ENABLED = !"false".equals(System.getProperty("rdf4j.lmdb.factorizedSink.enabled"));
+	static boolean sinkEnabled() {
+		return !"false".equals(System.getProperty("rdf4j.lmdb.factorizedSink.enabled"));
+	}
 
 	final SlotPlan[] children;
 	final MaskedFilter[] filters;
@@ -122,7 +125,7 @@ final class MultiJoinPlan implements SlotPlan {
 	}
 
 	OrderedPlan derivedFactorizedPlan(long mask) {
-		if (!SINK_ENABLED) {
+		if (!sinkEnabled()) {
 			return derivedPlan(mask);
 		}
 		OrderedPlan plan = factorizedOrderCache.get(mask);

@@ -20,7 +20,13 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelBindings.FilterHook;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateAdjKeys;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateDomain;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Exists;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterInConstants;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.HashBuild;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.LeftGroup;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
 
 /**
  * Root-partitioning support shared by the parallel kernel rungs (three-tier parity ExecPlan, Milestone 10B). A kernel
@@ -81,31 +87,72 @@ final class LmdbNativeKernelPartitions {
 	}
 
 	/**
-	 * The root producer's key-domain index when the pipeline is rooted at an {@code EnumerateDomain} whose domain no
-	 * other pipeline node enumerates, or -1. The partition surface is an index slice of the materialized domain array
-	 * installed in the worker context under the root's domain index, so a second enumeration of the same domain would
-	 * see the slice instead of the whole and silently drop rows. (DISTINCT-ordered aggregate channels also reference
-	 * domains, but every DISTINCT aggregate already declines the parallel rungs.)
+	 * The root producer's key-domain index when the pipeline is rooted at an {@code EnumerateDomain} or its fused
+	 * {@link SipDomainProbe} form and no other node reads that domain, or -1. The partition surface is an index slice
+	 * of the materialized domain array installed in the worker context under the root's domain index, so any second
+	 * read of the same domain would see the slice instead of the whole and could silently drop rows.
 	 */
 	static int partitionableRootDomain(List<Node> pipeline) {
 		int start = 0;
 		while (start < pipeline.size() && pipeline.get(start) instanceof LmdbNativeKernelIr.HashBuild) {
 			start++;
 		}
-		if (start >= pipeline.size() || !(pipeline.get(start) instanceof EnumerateDomain)) {
+		if (start >= pipeline.size()) {
 			return -1;
 		}
-		int rootDomain = ((EnumerateDomain) pipeline.get(start)).domain;
+		Node root = pipeline.get(start);
+		int rootDomain;
+		if (root instanceof EnumerateDomain) {
+			rootDomain = ((EnumerateDomain) root).domain;
+		} else if (root instanceof SipDomainProbe) {
+			rootDomain = ((SipDomainProbe) root).domain;
+		} else {
+			return -1;
+		}
 		for (int i = 0; i < pipeline.size(); i++) {
-			if (i == start) {
-				continue;
-			}
-			Node node = pipeline.get(i);
-			if (node instanceof EnumerateDomain && ((EnumerateDomain) node).domain == rootDomain) {
+			if (i != start && readsDomain(pipeline.get(i), rootDomain)) {
 				return -1;
 			}
 		}
 		return rootDomain;
+	}
+
+	private static boolean readsDomain(Node node, int domain) {
+		if (node instanceof EnumerateDomain) {
+			return ((EnumerateDomain) node).domain == domain;
+		}
+		if (node instanceof SipDomainProbe) {
+			return ((SipDomainProbe) node).domain == domain;
+		}
+		if (node instanceof FilterInConstants) {
+			return ((FilterInConstants) node).domain == domain;
+		}
+		if (node instanceof HashBuild) {
+			return readsDomain(((HashBuild) node).pipeline, domain);
+		}
+		if (node instanceof Exists) {
+			return readsDomain(((Exists) node).pipeline, domain);
+		}
+		if (node instanceof LeftGroup) {
+			return readsDomain(((LeftGroup) node).arm, domain);
+		}
+		if (node instanceof Union) {
+			for (List<Node> branch : ((Union) node).branches) {
+				if (readsDomain(branch, domain)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private static boolean readsDomain(List<Node> pipeline, int domain) {
+		for (Node node : pipeline) {
+			if (readsDomain(node, domain)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

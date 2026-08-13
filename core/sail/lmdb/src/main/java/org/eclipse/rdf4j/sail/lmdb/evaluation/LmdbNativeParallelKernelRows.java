@@ -134,6 +134,11 @@ final class LmdbNativeParallelKernelRows {
 			// order-dependent consumer sees
 			return debugDecline(explainTarget, "root-scan-ordered");
 		}
+		if (rootScan >= 0 && bindings.scanSites[rootScan].range() != null) {
+			// The scan already owns semantic filter bounds. Root partitioning would replace rather than intersect
+			// those bounds, so retain the exact sequential kernel until bounded-range intersection is represented.
+			return debugDecline(explainTarget, "root-scan-already-ranged");
+		}
 		if (rootScan >= 0 && !LmdbNativeParallelPipelines.rangePartitionEnabled()) {
 			return debugDecline(explainTarget, "range-partition-disabled");
 		}
@@ -178,7 +183,8 @@ final class LmdbNativeParallelKernelRows {
 			// below threshold or pending, decline to the sequential kernel rather than stall the workers.
 			long widened = mods.limit >= 0 ? saturatedSum(mods.limit, mods.offset) : -1L;
 			workerKernel = new LmdbNativeKernelIr.Kernel(lowered.kernel.columnCount, lowered.kernel.pipeline,
-					emit.withMods(new OutputMods(mods.orderKeys, mods.descending, mods.valueOrder, widened, 0L)));
+					emit.withMods(new OutputMods(mods.orderKeys, mods.descending, mods.valueOrder, widened, 0L)),
+					lowered.kernel.telemetryMode);
 			JaninoKernel probeKernel = kernelFactory.apply(workerKernel);
 			if (probeKernel == null) {
 				return debugDecline(explainTarget, "worker-kernel-pending");
@@ -255,12 +261,14 @@ final class LmdbNativeParallelKernelRows {
 		AtomicBoolean cancelled = new AtomicBoolean();
 		CountDownLatch startup = new CountDownLatch(threads);
 		CountDownLatch tasks = new CountDownLatch(threads);
+		LmdbFusedSipFactorizedRuntime.Session fusedParent = LmdbFusedSipFactorizedRuntime.currentOrNull();
 		ArrayList<Future<?>> futures = new ArrayList<>(threads);
 		for (int w = 0; w < threads; w++) {
 			NativeLmdbQuerySource source = sources[w];
 			try {
 				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-					try {
+					try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
+							.inherit(fusedParent)) {
 						runWorker(lowered, rootAdjacency, rootDomain, rootScan, domains, source, row, ranges,
 								scanQueue, output, kernelFactory, failure, cancelled, startup);
 					} catch (Throwable t) {
@@ -477,7 +485,7 @@ final class LmdbNativeParallelKernelRows {
 				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-node-predicates-unavailable");
 			}
 			if (lowered.kernel.requirements.scans > 0) {
-				scanner = new LmdbNativeKernelScanner(workerRow, bindings.scanOrders);
+				scanner = new LmdbNativeKernelScanner(workerRow, bindings.scanSites);
 			}
 			LmdbNativeKernelHooks hooks = bindings.needsHooks()
 					? new LmdbNativeKernelHooks(workerRow, bindings,

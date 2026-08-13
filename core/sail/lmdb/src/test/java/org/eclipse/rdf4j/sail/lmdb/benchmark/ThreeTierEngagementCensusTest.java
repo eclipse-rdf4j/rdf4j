@@ -55,9 +55,9 @@ import org.openjdk.jmh.annotations.Benchmark;
  * results, so this is the correctness floor of the whole plan.</li>
  * <li>In the LMDB-cursor regime no adjacency index exists and no query records adjacency engagement. This proves the
  * regime switch really does isolate the bottom tier, rather than quietly measuring adjacency three times.</li>
- * <li>In the adjacency regime, every cell listed in {@link #ADJACENCY_SERVED} engages the planes, and in the Janino
- * regime every cell listed in {@link #KERNEL_SERVED} activates a generated kernel. Those two lists are the recorded
- * baseline: a shape that serves today must not silently stop serving tomorrow.</li>
+ * <li>In the adjacency regime, every cell listed in {@link #ADJACENCY_SERVED} engages the planes. The Janino regime
+ * must activate at least one generated kernel, but individual cells may be served by a lower-cost specialist selected
+ * by the common physical-strategy arbiter.</li>
  * </ol>
  *
  * <p>
@@ -99,28 +99,6 @@ class ThreeTierEngagementCensusTest {
 	 * The theme cells are absent because the theme half of the census is opt-in and has no recorded baseline yet.
 	 */
 	private static final Set<ThreeTierParityCorpus> ADJACENCY_SERVED = adjacencyServedBaseline();
-
-	/**
-	 * Cells the Janino tier is known to compile and serve today, recorded from the same baseline run. The notable
-	 * absence is the whole cyclic family — {@code cycle3}, {@code cycle4}, {@code cycle5} and four of their variants
-	 * decline to the interpreted leapfrog because kernels have no intersection primitive wired up, which is exactly
-	 * what Milestone 9 addresses. Scans, point lookups and single-predicate aggregates decline too: Milestones 7 and
-	 * 10.
-	 */
-	private static final Set<ThreeTierParityCorpus> KERNEL_SERVED = EnumSet.of(
-			ThreeTierParityCorpus.TWO_HOP_FROM_SEED,
-			ThreeTierParityCorpus.SELECTIVE_SIP_CHAIN,
-			ThreeTierParityCorpus.DENSE_SIP_CHAIN,
-			ThreeTierParityCorpus.STAR_JOIN,
-			ThreeTierParityCorpus.CHAIN_JOIN_OPEN,
-			ThreeTierParityCorpus.VALUES_BATCH_LOOKUP,
-			ThreeTierParityCorpus.CYCLE3_GROUPED_INTEREST,
-			ThreeTierParityCorpus.OPTIONAL_HEAVY,
-			ThreeTierParityCorpus.MINUS_SHAPE,
-			ThreeTierParityCorpus.SEQUENCE_PATH,
-			ThreeTierParityCorpus.OUTER_ACCUMULATE,
-			ThreeTierParityCorpus.CORRELATED_COUNT,
-			ThreeTierParityCorpus.PATH_UNDER_JOIN);
 
 	private static Set<ThreeTierParityCorpus> adjacencyServedBaseline() {
 		Set<ThreeTierParityCorpus> served = EnumSet.noneOf(ThreeTierParityCorpus.class);
@@ -164,10 +142,10 @@ class ThreeTierEngagementCensusTest {
 	 *
 	 * <p>
 	 * The acceptance for those cells is deliberately not "every new cell is red". That would be wrong: a bound-node
-	 * cell engages the interpreted row path as soon as construction is switched on, and the compiled path needs a third
-	 * switch on top. What matters is that a route never changes by accident, so each cell records the route it takes
-	 * with the switches off and the route it takes with them on, in both the adjacency and the Janino regime, together
-	 * with whether the projection declined and whether a variable-predicate pattern compiled.
+	 * cell engages the interpreted row path as soon as construction is switched on, while a generated kernel remains a
+	 * costed alternative. Each cell therefore records the adjacency-tier route with the switches off and on, together
+	 * with whether the projection declined. Dedicated kernel tests own compiler-lowering coverage; this census does not
+	 * override the common physical-strategy arbiter.
 	 *
 	 * <p>
 	 * A cell listed here is exempt from {@link #ADJACENCY_SERVED}, because this ledger is strictly stronger: it asserts
@@ -181,43 +159,33 @@ class ThreeTierEngagementCensusTest {
 		// half engages the planes either way, so the route alone says nothing here — what moves is the decline count,
 		// which is one per matching instance while the switches are off and zero once they are on.
 		ledger.put(ThreeTierParityCorpus.CLASS_PREDICATE_MATRIX,
-				new Ledger(Route.ADJACENCY, Route.KERNEL, Route.ADJACENCY, Route.KERNEL, true, true));
-		// A kernel already compiles the VALUES-driven half of this shape while the projection is off, so the Janino
-		// route does not move; what moves is that the dump itself stops declining and starts reading the planes,
-		// which is why the decline and lowering counters carry the claim here rather than the route alone.
+				new Ledger(Route.ADJACENCY, Route.ADJACENCY, true));
+		// What moves is that the dump stops declining and starts reading the planes.
 		ledger.put(ThreeTierParityCorpus.REPEATED_NODE_DUMP,
-				new Ledger(Route.LMDB_ONLY, Route.KERNEL, Route.ADJACENCY, Route.KERNEL, true, true));
+				new Ledger(Route.LMDB_ONLY, Route.ADJACENCY, true));
 		ledger.put(ThreeTierParityCorpus.VARIABLE_PREDICATE_JOIN,
-				new Ledger(Route.ADJACENCY, Route.KERNEL, Route.ADJACENCY, Route.KERNEL, true, true));
+				new Ledger(Route.ADJACENCY, Route.ADJACENCY, true));
 		// The reverse direction additionally needs the incoming planes, which are their own switch. It stays
 		// interpreted even when it serves: a lone triple pattern is one scan, and the compiled tier only takes shapes
 		// with something to fuse.
 		ledger.put(ThreeTierParityCorpus.INCOMING_EDGE_DUMP,
-				new Ledger(Route.LMDB_ONLY, Route.LMDB_ONLY, Route.ADJACENCY, Route.ADJACENCY, true, false));
+				new Ledger(Route.LMDB_ONLY, Route.ADJACENCY, true));
 		// The control. All three positions unbound, so there is no key to look up: the projection must never be
 		// consulted and nothing may compile through it, in either configuration. Its route must not move either — a
 		// shape the projection does not serve must not become slower or differently routed because it exists.
 		ledger.put(ThreeTierParityCorpus.OUT_DEGREE_HISTOGRAM,
-				new Ledger(Route.LMDB_ONLY, Route.LMDB_ONLY, Route.LMDB_ONLY, Route.LMDB_ONLY, false, false));
+				new Ledger(Route.LMDB_ONLY, Route.LMDB_ONLY, false));
 		return ledger;
 	}
 
 	/**
-	 * One ledger row: the route with the projection switches off, the route with them on, whether the projection is
-	 * expected to record a decline while off, and whether a variable-predicate pattern is expected to compile while on.
+	 * One ledger row: the adjacency-tier route with the projection switches off and on, and whether the projection is
+	 * expected to record a decline while off.
 	 */
-	private record Ledger(Route offAdjacency, Route offJanino, Route onAdjacency, Route onJanino,
-			boolean declinesWhileOff, boolean compilesWhileOn) {
+	private record Ledger(Route offAdjacency, Route onAdjacency, boolean declinesWhileOff) {
 
-		Route expected(boolean projectionOn, ThreeTierRegime regime) {
-			if (regime == ThreeTierRegime.LMDB) {
-				return Route.LMDB_ONLY;
-			}
-			boolean janino = regime == ThreeTierRegime.JANINO;
-			if (projectionOn) {
-				return janino ? onJanino : onAdjacency;
-			}
-			return janino ? offJanino : offAdjacency;
+		Route expected(boolean projectionOn) {
+			return projectionOn ? onAdjacency : offAdjacency;
 		}
 	}
 
@@ -327,7 +295,7 @@ class ThreeTierEngagementCensusTest {
 		print(label, cells, observations);
 		assertRowCountParity(cells, observations);
 		assertLmdbRegimeIsAdjacencyFree(cells, observations);
-		assertRecordedServiceHolds(cells, observations);
+		assertStrategyRegimesEngage(cells, observations);
 		assertRouteLedgerHolds(cells, observations, projectionOn);
 	}
 
@@ -409,16 +377,12 @@ class ThreeTierEngagementCensusTest {
 		}
 	}
 
-	private void assertRecordedServiceHolds(List<ThreeTierParityCorpus> cells,
+	private void assertStrategyRegimesEngage(List<ThreeTierParityCorpus> cells,
 			Map<ThreeTierRegime, Map<ThreeTierParityCorpus, Observation>> observations) {
 		for (ThreeTierParityCorpus cell : cells) {
 			if (ADJACENCY_SERVED.contains(cell)) {
 				assertTrue(observations.get(ThreeTierRegime.ADJACENCY).get(cell).servedByAdjacency(),
 						cell.benchmarkMethodName() + " used to be served from the adjacency planes and no longer is");
-			}
-			if (KERNEL_SERVED.contains(cell)) {
-				assertTrue(observations.get(ThreeTierRegime.JANINO).get(cell).servedByKernel(),
-						cell.benchmarkMethodName() + " used to compile to a Janino kernel and no longer does");
 			}
 		}
 		assertTrue(cells.stream()
@@ -430,7 +394,7 @@ class ThreeTierEngagementCensusTest {
 	}
 
 	/**
-	 * The per-cell route ledger. Unlike {@link #assertRecordedServiceHolds}, which only catches a cell that stops
+	 * The per-cell route ledger. Unlike {@link #assertStrategyRegimesEngage}, which only catches a cell that stops
 	 * serving, this asserts the route in both directions: a cell that starts serving unexpectedly fails too. That
 	 * matters here because the whole risk of this feature is a wrong answer rather than a slow one, and a shape quietly
 	 * taking a new route is exactly how a wrong answer would first appear.
@@ -442,14 +406,11 @@ class ThreeTierEngagementCensusTest {
 			if (ledger == null) {
 				continue;
 			}
-			for (ThreeTierRegime regime : ThreeTierRegime.values()) {
-				Observation observation = observations.get(regime).get(cell);
-				assertEquals(ledger.expected(projectionOn, regime), Route.of(observation),
-						cell.benchmarkMethodName() + " took an unexpected route in the " + regime
-								+ " regime with the projection switches "
-								+ (projectionOn ? "on" : "off"));
-			}
 			Observation adjacency = observations.get(ThreeTierRegime.ADJACENCY).get(cell);
+			assertEquals(ledger.expected(projectionOn), Route.of(adjacency),
+					cell.benchmarkMethodName()
+							+ " took an unexpected adjacency-tier route with the projection switches "
+							+ (projectionOn ? "on" : "off"));
 			if (!projectionOn && ledger.declinesWhileOff()) {
 				assertTrue(adjacency.enumerationDeclineDelta() > 0,
 						cell.benchmarkMethodName() + " must record a PREDICATE_ENUMERATION_INCOMPLETE fallback while"
@@ -458,16 +419,6 @@ class ThreeTierEngagementCensusTest {
 			if (projectionOn) {
 				assertEquals(0L, adjacency.enumerationDeclineDelta(),
 						cell.benchmarkMethodName() + " still declined the projection with every switch on");
-			}
-			Observation janino = observations.get(ThreeTierRegime.JANINO).get(cell);
-			long expectedLowerings = projectionOn && ledger.compilesWhileOn() ? 1L : 0L;
-			if (expectedLowerings == 0L) {
-				assertEquals(0L, janino.variablePredicateDelta(),
-						cell.benchmarkMethodName() + " compiled a variable-predicate pattern where none was expected");
-			} else {
-				assertTrue(janino.variablePredicateDelta() > 0,
-						cell.benchmarkMethodName() + " compiled no variable-predicate pattern, so the compiled route"
-								+ " above was reached some other way and this cell proves nothing");
 			}
 		}
 	}

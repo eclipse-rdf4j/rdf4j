@@ -99,6 +99,22 @@ final class LmdbNativeKernelIr {
 
 	abstract static class Node {
 
+		/**
+		 * Filter placement metadata is deliberately outside the canonical shape. The generated program is already
+		 * distinguished by the node's position in the pipeline; these fields only explain how far a filter moved from
+		 * its algebraic scope to the earliest depth where every operand is available.
+		 */
+		int originalFilterStage = -1;
+		int selectedFilterStage = -1;
+
+		final <T extends Node> T filterPlacement(int originalStage, int selectedStage) {
+			this.originalFilterStage = originalStage;
+			this.selectedFilterStage = selectedStage;
+			@SuppressWarnings("unchecked")
+			T self = (T) this;
+			return self;
+		}
+
 		/** Appends this node's canonical rendering to the shape key. */
 		abstract void key(StringBuilder key);
 
@@ -170,13 +186,21 @@ final class LmdbNativeKernelIr {
 		final Operand ctxMatch;
 		/** Named-graph scope: entries in the default graph (context id 0) are skipped. */
 		final boolean ctxExcludeDefault;
+		/** The enumerated key domain deliberately drives a later adjacency consumer. */
+		final boolean sipDriven;
+		final String sipConsumer;
 
 		EnumerateAdjKeys(int adjacency, int keyCol, int valueCol) {
-			this(adjacency, keyCol, valueCol, -1, null, false);
+			this(adjacency, keyCol, valueCol, -1, null, false, false, null);
 		}
 
 		EnumerateAdjKeys(int adjacency, int keyCol, int valueCol, int ctxCol, Operand ctxMatch,
 				boolean ctxExcludeDefault) {
+			this(adjacency, keyCol, valueCol, ctxCol, ctxMatch, ctxExcludeDefault, false, null);
+		}
+
+		EnumerateAdjKeys(int adjacency, int keyCol, int valueCol, int ctxCol, Operand ctxMatch,
+				boolean ctxExcludeDefault, boolean sipDriven, String sipConsumer) {
 			if (valueCol < 0 && (ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault)) {
 				throw new IllegalArgumentException("context access needs the neighbor run expanded");
 			}
@@ -186,6 +210,8 @@ final class LmdbNativeKernelIr {
 			this.ctxCol = ctxCol;
 			this.ctxMatch = ctxMatch;
 			this.ctxExcludeDefault = ctxExcludeDefault;
+			this.sipDriven = sipDriven;
+			this.sipConsumer = sipConsumer;
 		}
 
 		boolean ctxActive() {
@@ -201,6 +227,9 @@ final class LmdbNativeKernelIr {
 						.append(',')
 						.append(ctxMatch == null ? "_" : ctxMatch.token())
 						.append(ctxExcludeDefault ? ",n" : "");
+			}
+			if (sipDriven) {
+				key.append(",sip");
 			}
 			key.append(");");
 		}
@@ -374,15 +403,32 @@ final class LmdbNativeKernelIr {
 	static final class EnumerateDomain extends Node {
 		final int domain;
 		final int col;
+		/**
+		 * True when this domain is not merely a root/value producer but is deliberately driving an index probe that
+		 * would otherwise scan or enumerate a wider relation. This is the domain-driven form of SIP: no membership test
+		 * is necessary because only members are ever presented to the consumer.
+		 */
+		final boolean sipDriven;
+		final String consumer;
 
 		EnumerateDomain(int domain, int col) {
+			this(domain, col, false, null);
+		}
+
+		EnumerateDomain(int domain, int col, boolean sipDriven, String consumer) {
 			this.domain = domain;
 			this.col = col;
+			this.sipDriven = sipDriven;
+			this.consumer = consumer;
 		}
 
 		@Override
 		void key(StringBuilder key) {
-			key.append("ED(d").append(domain).append(",k").append(col).append(");");
+			key.append("ED(d").append(domain).append(",k").append(col);
+			if (sipDriven) {
+				key.append(",sip");
+			}
+			key.append(");");
 		}
 
 		@Override
@@ -410,6 +456,145 @@ final class LmdbNativeKernelIr {
 	}
 
 	/** Expand: look a key up in a CSR view and loop its neighbor run into a fresh column. NULL keys match nothing. */
+	/**
+	 * Fused sideways-information-passing operator whose producer is one binding-owned sorted domain. The domain is
+	 * consumed in bounded batches by
+	 * {@link NativeLmdbQuerySource.NativeAdjacency#findBatch(long[], int, int, long[], int)}; missing keys are rejected
+	 * before any run is opened and positive handles are expanded directly. This replaces
+	 * {@code EnumerateDomain -> Probe}, avoiding a scalar packed lookup and a generated-method call per domain value.
+	 */
+	static final class SipDomainProbe extends Node {
+		final int domain;
+		final int probeAdjacency;
+		final int keyCol;
+		final int valueCol;
+		final int ctxCol;
+		final Operand ctxMatch;
+		final boolean ctxExcludeDefault;
+
+		SipDomainProbe(int domain, int probeAdjacency, int keyCol, int valueCol, int ctxCol,
+				Operand ctxMatch, boolean ctxExcludeDefault) {
+			this.domain = domain;
+			this.probeAdjacency = probeAdjacency;
+			this.keyCol = keyCol;
+			this.valueCol = valueCol;
+			this.ctxCol = ctxCol;
+			this.ctxMatch = ctxMatch;
+			this.ctxExcludeDefault = ctxExcludeDefault;
+		}
+
+		boolean ctxActive() {
+			return ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("SDP(d")
+					.append(domain)
+					.append("->a")
+					.append(probeAdjacency)
+					.append(",k")
+					.append(keyCol)
+					.append("->")
+					.append(valueCol);
+			if (ctxActive()) {
+				key.append(",g")
+						.append(ctxCol)
+						.append(',')
+						.append(ctxMatch == null ? "_" : ctxMatch.token())
+						.append(ctxExcludeDefault ? ",n" : "");
+			}
+			key.append(");");
+		}
+
+		@Override
+		void produced(BitSet columns) {
+			columns.set(keyCol);
+			columns.set(valueCol);
+			if (ctxCol >= 0) {
+				columns.set(ctxCol);
+			}
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.domain(domain);
+			requirements.adjacency(probeAdjacency);
+			if (ctxMatch != null) {
+				requirements.operand(ctxMatch);
+			}
+		}
+	}
+
+	/**
+	 * Fused sideways-information-passing operator: enumerate the distinct keys of one adjacency, resolve the complete
+	 * key batch against a second adjacency with {@code findBatch}, discard misses, and expand only positive runs. This
+	 * replaces {@code EnumerateAdjKeys -> Probe} and therefore avoids both materializing a key domain and one scalar
+	 * packed lookup per root key.
+	 */
+	static final class SipKeyProbe extends Node {
+		final int domainAdjacency;
+		final int probeAdjacency;
+		final int keyCol;
+		final int valueCol;
+		final int ctxCol;
+		final Operand ctxMatch;
+		final boolean ctxExcludeDefault;
+
+		SipKeyProbe(int domainAdjacency, int probeAdjacency, int keyCol, int valueCol, int ctxCol,
+				Operand ctxMatch, boolean ctxExcludeDefault) {
+			this.domainAdjacency = domainAdjacency;
+			this.probeAdjacency = probeAdjacency;
+			this.keyCol = keyCol;
+			this.valueCol = valueCol;
+			this.ctxCol = ctxCol;
+			this.ctxMatch = ctxMatch;
+			this.ctxExcludeDefault = ctxExcludeDefault;
+		}
+
+		boolean ctxActive() {
+			return ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("SKP(a")
+					.append(domainAdjacency)
+					.append("->a")
+					.append(probeAdjacency)
+					.append(",k")
+					.append(keyCol)
+					.append("->")
+					.append(valueCol);
+			if (ctxActive()) {
+				key.append(",g")
+						.append(ctxCol)
+						.append(',')
+						.append(ctxMatch == null ? "_" : ctxMatch.token())
+						.append(ctxExcludeDefault ? ",n" : "");
+			}
+			key.append(");");
+		}
+
+		@Override
+		void produced(BitSet columns) {
+			columns.set(keyCol);
+			columns.set(valueCol);
+			if (ctxCol >= 0) {
+				columns.set(ctxCol);
+			}
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.adjacency(domainAdjacency);
+			requirements.adjacency(probeAdjacency);
+			if (ctxMatch != null) {
+				requirements.operand(ctxMatch);
+			}
+		}
+	}
+
 	static final class Probe extends Node {
 		final int adjacency;
 		final Operand key;
@@ -787,17 +972,54 @@ final class LmdbNativeKernelIr {
 		}
 	}
 
+	/**
+	 * Compatibility guard for a caller binding that was intentionally absent while evaluating a badly designed
+	 * OPTIONAL. The row is compatible when the OPTIONAL left the slot unbound or produced the supplied id. A following
+	 * {@link BindAlias} restores that id before projection or aggregation observes the row.
+	 */
+	static final class FilterEntryCompatible extends Node {
+		final Operand value;
+		final int constant;
+
+		FilterEntryCompatible(Operand value, int constant) {
+			this.value = value;
+			this.constant = constant;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("ec(").append(value.token()).append(",c").append(constant).append(");");
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.operand(value);
+			requirements.constantIndex(constant);
+		}
+	}
+
 	/** Id membership in a set of query constants. */
 	static final class FilterInConstants extends Node {
 		final Operand value;
 		final int[] constantIndices;
+		/**
+		 * Binding-owned exact domain used for SIP telemetry and non-tiny membership implementations; -1 = plain guard.
+		 */
+		final int domain;
+		final String consumer;
 
 		FilterInConstants(Operand value, int[] constantIndices) {
+			this(value, constantIndices, -1, null);
+		}
+
+		FilterInConstants(Operand value, int[] constantIndices, int domain, String consumer) {
 			if (constantIndices.length == 0) {
 				throw new IllegalArgumentException("IN filter needs at least one constant");
 			}
 			this.value = value;
 			this.constantIndices = constantIndices;
+			this.domain = domain;
+			this.consumer = consumer;
 		}
 
 		@Override
@@ -805,6 +1027,9 @@ final class LmdbNativeKernelIr {
 			key.append("in(").append(value.token());
 			for (int index : constantIndices) {
 				key.append(",c").append(index);
+			}
+			if (domain >= 0) {
+				key.append(",d").append(domain);
 			}
 			key.append(");");
 		}
@@ -814,6 +1039,9 @@ final class LmdbNativeKernelIr {
 			requirements.operand(value);
 			for (int index : constantIndices) {
 				requirements.constantIndex(index);
+			}
+			if (domain >= 0) {
+				requirements.domain(domain);
 			}
 		}
 	}
@@ -1797,9 +2025,9 @@ final class LmdbNativeKernelIr {
 	/**
 	 * A pipeline can stream when its terminal writes plain rows with no post-pass over the whole result — ordering and
 	 * limits need every row in hand before the first can be served — and when every node either carries no state across
-	 * a pause (the filters) or carries state the emitter knows how to save and restore (the looping producers).
-	 * {@code EnumerateEntry} is excluded deliberately: it emits its continuation exactly once with nothing to resume
-	 * from, so re-entering it after a pause would emit a second time.
+	 * a pause (straight-line guards and aliases) or carries state the emitter knows how to save and restore (the
+	 * looping producers). {@code EnumerateEntry} is excluded deliberately: it emits its continuation exactly once with
+	 * nothing to resume from, so re-entering it after a pause would emit a second time.
 	 * <p>
 	 * {@code ProbeClose} is admitted even though it produces no column, because its state is a single repetition
 	 * counter and its repetition count is recomputable from the adjacency view: it re-emits the continuation once per
@@ -1820,7 +2048,8 @@ final class LmdbNativeKernelIr {
 			return false;
 		}
 		for (Node node : pipeline) {
-			boolean streamable = isFilter(node) || node instanceof EnumerateDomain || node instanceof Probe
+			boolean streamable = isStatelessRowNode(node)
+					|| node instanceof EnumerateDomain || node instanceof Probe
 					|| node instanceof ScanQuad || node instanceof PlanRows || node instanceof ProbeClose
 					|| node instanceof EnumerateAdjKeys && ((EnumerateAdjKeys) node).valueCol >= 0;
 			if (!streamable) {
@@ -1828,6 +2057,11 @@ final class LmdbNativeKernelIr {
 			}
 		}
 		return true;
+	}
+
+	/** True for straight-line row nodes which are safe to re-evaluate after a streaming pause. */
+	static boolean isStatelessRowNode(Node node) {
+		return isFilter(node) || node instanceof FilterEntryCompatible || node instanceof BindAlias;
 	}
 
 	/** True for the row-level guard nodes, which neither produce a column nor branch the pipeline. */
@@ -1839,10 +2073,33 @@ final class LmdbNativeKernelIr {
 	}
 
 	static final class Kernel {
+		enum TelemetryMode {
+			NONE,
+			FULL
+		}
+
+		enum AggregateStateMode {
+			HASHED,
+			STREAMING_GROUPS,
+			PARTITIONED_GROUPS
+		}
+
+		enum AggregateDistinctMode {
+			HASH,
+			MONOTONIC,
+			CONSTANT_ONCE,
+			UNIQUE
+		}
+
 		final List<Node> pipeline;
 		final int columnCount;
 		final Terminal terminal;
 		final Requirements requirements;
+		final TelemetryMode telemetryMode;
+		final AggregateStateMode aggregateStateMode;
+		final AggregateDistinctMode[] aggregateDistinctModes;
+		final boolean orderedInputsRequired;
+		final BitSet uniqueDomainsRequired;
 		/**
 		 * Index into {@link #pipeline} of the innermost run-expanding node when this kernel qualifies for the vector
 		 * tail, otherwise {@code -1}. The emitter turns that one node's inner loop into a bulk run read plus vectorized
@@ -1858,9 +2115,14 @@ final class LmdbNativeKernelIr {
 		private final String shapeKey;
 
 		Kernel(int columnCount, List<Node> pipeline, Terminal terminal) {
+			this(columnCount, pipeline, terminal, TelemetryMode.NONE);
+		}
+
+		Kernel(int columnCount, List<Node> pipeline, Terminal terminal, TelemetryMode telemetryMode) {
 			if (columnCount < 0 || columnCount > 64) {
 				throw new IllegalArgumentException("column count out of range: " + columnCount);
 			}
+			this.telemetryMode = java.util.Objects.requireNonNull(telemetryMode, "telemetryMode");
 			OptimizedKernel optimized = distinctRootExistsEnabled()
 					? optimizeDistinctRootExists(pipeline, terminal)
 					: new OptimizedKernel(List.copyOf(pipeline), terminal);
@@ -1873,6 +2135,11 @@ final class LmdbNativeKernelIr {
 			}
 			this.terminal.requirements(requirements);
 			validateColumns();
+			AggregateProperties aggregateProperties = aggregateProperties(this.pipeline, this.terminal);
+			this.aggregateStateMode = aggregateProperties.stateMode;
+			this.aggregateDistinctModes = aggregateProperties.distinctModes;
+			this.orderedInputsRequired = aggregateProperties.orderedInputsRequired;
+			this.uniqueDomainsRequired = (BitSet) aggregateProperties.uniqueDomainsRequired.clone();
 			this.vectorTailIndex = vectorTailEnabled() ? findVectorTail(this.pipeline) : -1;
 			this.resumable = resumableEnabled() && isResumable(this.pipeline, this.terminal);
 			StringBuilder key = new StringBuilder("ir1:");
@@ -1882,12 +2149,132 @@ final class LmdbNativeKernelIr {
 			if (resumable) {
 				key.append("rs;");
 			}
+			if (aggregateStateMode != AggregateStateMode.HASHED) {
+				key.append("am").append(aggregateStateMode.ordinal()).append(';');
+				for (AggregateDistinctMode mode : aggregateDistinctModes) {
+					key.append('d').append(mode.ordinal());
+				}
+				for (int domain = uniqueDomainsRequired.nextSetBit(0); domain >= 0; domain = uniqueDomainsRequired
+						.nextSetBit(domain + 1)) {
+					key.append('u').append(domain);
+				}
+				key.append(';');
+			}
+			key.append(telemetryMode == TelemetryMode.FULL ? "tmF;" : "tmN;");
 			key.append("cols=").append(columnCount).append(';');
 			for (Node node : this.pipeline) {
 				node.key(key);
 			}
 			this.terminal.key(key);
 			this.shapeKey = key.toString();
+		}
+
+		Kernel withTelemetry(TelemetryMode mode) {
+			return telemetryMode == mode ? this : new Kernel(columnCount, pipeline, terminal, mode);
+		}
+
+		/**
+		 * Proves the smallest allocation-free grouped shape directly from the lowered physical pipeline. A key cursor
+		 * visits every distinct key once, so its key column is a complete grouping prefix. Its neighbor run is ordered
+		 * at bind time; values from a later inner expansion only repeat the current neighbor contiguously. That makes a
+		 * last-seen scalar exact for DISTINCT while ordinary counts may still consume a bulk multiplicity.
+		 */
+		private static AggregateProperties aggregateProperties(List<Node> pipeline, Terminal terminal) {
+			if (!(terminal instanceof Aggregate aggregate) || aggregate.groupCols.length != 1 || pipeline.isEmpty()) {
+				return AggregateProperties.hashed(terminal);
+			}
+			Node root = pipeline.get(0);
+			int rootKeyCol;
+			int rootValueCol;
+			BitSet uniqueDomains = new BitSet();
+			if (root instanceof EnumerateAdjKeys enumerate) {
+				rootKeyCol = enumerate.keyCol;
+				rootValueCol = enumerate.valueCol;
+			} else if (root instanceof SipDomainProbe probe) {
+				rootKeyCol = probe.keyCol;
+				rootValueCol = probe.valueCol;
+				uniqueDomains.set(probe.domain);
+			} else if (root instanceof SipKeyProbe probe) {
+				rootKeyCol = probe.keyCol;
+				rootValueCol = probe.valueCol;
+			} else {
+				return AggregateProperties.hashed(terminal);
+			}
+			if (rootKeyCol != aggregate.groupCols[0]) {
+				return AggregateProperties.hashed(terminal);
+			}
+			for (int i = 1; i < pipeline.size(); i++) {
+				BitSet produced = new BitSet();
+				pipeline.get(i).produced(produced);
+				if (produced.get(rootKeyCol)) {
+					return AggregateProperties.hashed(terminal);
+				}
+			}
+
+			AggregateDistinctMode[] modes = new AggregateDistinctMode[aggregate.outputs.length];
+			boolean ordered = false;
+			for (int i = 0; i < aggregate.outputs.length; i++) {
+				AggregateOutput output = aggregate.outputs[i];
+				modes[i] = AggregateDistinctMode.HASH;
+				if (output.kind == AGG_COUNT_STAR || output.kind == AGG_COUNT) {
+					continue;
+				}
+				if (output.kind != AGG_COUNT_DISTINCT || output.hookDistinct) {
+					return AggregateProperties.hashed(terminal);
+				}
+				int sourceCol = aliasSource(pipeline, output.col);
+				if (sourceCol == rootKeyCol) {
+					modes[i] = AggregateDistinctMode.CONSTANT_ONCE;
+				} else if (sourceCol == rootValueCol && rootValueCol >= 0
+						&& !rewrittenAfterRoot(pipeline, sourceCol)) {
+					modes[i] = AggregateDistinctMode.MONOTONIC;
+					ordered = true;
+				} else {
+					return AggregateProperties.hashed(terminal);
+				}
+			}
+			return new AggregateProperties(AggregateStateMode.STREAMING_GROUPS, modes, ordered, uniqueDomains);
+		}
+
+		private static int aliasSource(List<Node> pipeline, int column) {
+			int source = column;
+			for (int i = pipeline.size() - 1; i >= 0; i--) {
+				Node node = pipeline.get(i);
+				if (node instanceof BindAlias alias && alias.dstCol == source
+						&& alias.source.kind == Operand.COL) {
+					source = alias.source.index;
+				}
+			}
+			return source;
+		}
+
+		private static boolean rewrittenAfterRoot(List<Node> pipeline, int column) {
+			for (int i = 1; i < pipeline.size(); i++) {
+				Node node = pipeline.get(i);
+				if (node instanceof BindAlias alias && alias.dstCol == column && alias.source.kind == Operand.COL
+						&& alias.source.index == column) {
+					continue;
+				}
+				BitSet produced = new BitSet();
+				node.produced(produced);
+				if (produced.get(column)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private record AggregateProperties(AggregateStateMode stateMode,
+				AggregateDistinctMode[] distinctModes, boolean orderedInputsRequired, BitSet uniqueDomainsRequired) {
+
+			private static AggregateProperties hashed(Terminal terminal) {
+				int outputCount = terminal instanceof Aggregate ? ((Aggregate) terminal).outputs.length : 0;
+				AggregateDistinctMode[] modes = new AggregateDistinctMode[outputCount];
+				for (int i = 0; i < modes.length; i++) {
+					modes[i] = AggregateDistinctMode.HASH;
+				}
+				return new AggregateProperties(AggregateStateMode.HASHED, modes, false, new BitSet());
+			}
 		}
 
 		/**

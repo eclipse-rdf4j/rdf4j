@@ -991,6 +991,28 @@ class QueryTemplateTest {
 				+ Files.readString(Path.of("src/main/webapp/styles/query-compare.css"), StandardCharsets.UTF_8);
 	}
 
+	@Test
+	void liveLmdbRuntimePanelIsLazyAccessibleAndRollsBackFailedUpdates() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+		String styles = readQueryStyles();
+
+		assertThat(queryTemplate)
+				.contains("<details id=\"lmdb-runtime-features\"")
+				.contains("aria-live=\"polite\"")
+				.contains("id=\"lmdb-runtime-refresh\"");
+		assertThat(queryScript)
+				.contains("details.addEventListener('toggle'")
+				.contains("action: 'lmdb-properties'")
+				.contains("action: 'set-lmdb-property'")
+				.contains("checkbox.prop('disabled', true)")
+				.contains("checkbox.prop('checked', previous)");
+		assertThat(styles)
+				.contains(".lmdb-runtime-property")
+				.contains("@media (max-width: 42rem)");
+	}
+
 	private static String templateDefault(ConfigTemplate template, String name) {
 		return templateOptions(template, name).get(0);
 	}

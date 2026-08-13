@@ -76,6 +76,17 @@ interface SlotPlan {
 		if (left == EmptyPlan.INSTANCE || right == EmptyPlan.INSTANCE) {
 			return EmptyPlan.INSTANCE;
 		}
+		// SingletonPlan is the relational identity: it emits the entry row unchanged exactly once.
+		// In particular, compileValuesOrIdentity replaces an unused non-empty VALUES table with this
+		// identity under duplicate-insensitive aggregates. Keeping it as a JoinPlan prevents the otherwise
+		// flat MultiJoin from reaching the Janino lowering path (and was responsible for the q1/q5/q9
+		// regressions after SIP/value-domain folding).
+		if (left == SingletonPlan.INSTANCE) {
+			return right;
+		}
+		if (right == SingletonPlan.INSTANCE) {
+			return left;
+		}
 		if (canFlatten(left) && canFlatten(right)) {
 			ArrayList<SlotPlan> children = new ArrayList<>();
 			ArrayList<MaskedFilter> filters = new ArrayList<>();
@@ -100,6 +111,9 @@ interface SlotPlan {
 		}
 		if (plan instanceof FilterPlan) {
 			return assuredMask(((FilterPlan) plan).arg);
+		}
+		if (plan instanceof EntryBindingCompatibilityPlan entry) {
+			return assuredMask(entry.arg) | entry.restoredMask;
 		}
 		if (plan instanceof JoinPlan) {
 			JoinPlan join = (JoinPlan) plan;
@@ -137,6 +151,9 @@ interface SlotPlan {
 		}
 		if (plan instanceof FilterPlan filter) {
 			return filter.filterMask >= 0L && encounterOrderReplaySafe(filter.arg);
+		}
+		if (plan instanceof EntryBindingCompatibilityPlan entry) {
+			return encounterOrderReplaySafe(entry.arg);
 		}
 		if (plan instanceof ExtensionPlan extension) {
 			if (!encounterOrderReplaySafe(extension.arg)) {

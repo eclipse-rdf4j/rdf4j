@@ -33,6 +33,7 @@ import org.slf4j.LoggerFactory;
 public final class LmdbNativeAttemptMetrics {
 	private static final Logger logger = LoggerFactory.getLogger(LmdbNativeAttemptMetrics.class);
 	static final String PATH_GENERIC_FALLBACK = "genericFallback";
+	static final String PATH_NATIVE_ENTRY_BINDING_VARIANT = "nativeEntryBindingVariant";
 	static final String PATH_EMPTY_SEED = "emptySeed";
 	static final String PATH_LIMIT_ZERO = "limitZero";
 	static final String PATH_ORDERED_TOP_K = "orderedTopK";
@@ -90,7 +91,8 @@ public final class LmdbNativeAttemptMetrics {
 	 * Frozen base vocabulary; parameterized labels start with one of these values and append details in parentheses.
 	 */
 	static final Set<String> EXECUTION_PATH_VOCABULARY = Set.of(
-			PATH_GENERIC_FALLBACK, PATH_EMPTY_SEED, PATH_LIMIT_ZERO, PATH_ORDERED_TOP_K,
+			PATH_GENERIC_FALLBACK, PATH_NATIVE_ENTRY_BINDING_VARIANT, PATH_EMPTY_SEED, PATH_LIMIT_ZERO,
+			PATH_ORDERED_TOP_K,
 			PATH_ORDERED_FULL_SORT, PATH_BARE_EXISTS, PATH_BARE_DIRECT, PATH_BARE_BULK, PATH_PREFIX_RUN,
 			PATH_ORDERED_DISTINCT, PATH_BATCH, PATH_PARALLEL_PIPELINES, PATH_CHUNK_PIPELINE,
 			PATH_FACTORIZED_ROWS, PATH_ADAPTIVE_FILTER_PLACEMENT, PATH_NESTED_LOOP,

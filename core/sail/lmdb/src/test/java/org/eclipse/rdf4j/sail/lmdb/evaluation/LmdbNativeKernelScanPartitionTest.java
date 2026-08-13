@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.base.SailDataset;
@@ -81,6 +82,13 @@ public class LmdbNativeKernelScanPartitionTest {
 			"rdf4j.lmdb.janinoCodegen.thresholdRows",
 			"rdf4j.lmdb.parallel.threads",
 			"rdf4j.lmdb.parallel.minWorkEstimate",
+			"rdf4j.lmdb.parallel.startupWork",
+			"rdf4j.lmdb.factorizedRows.enabled",
+			"rdf4j.lmdb.orderedFactorizedRows.enabled",
+			"rdf4j.lmdb.nativeBatch.enabled",
+			"rdf4j.lmdb.wcoj.enabled",
+			"rdf4j.lmdb.nativeHashJoin.enabled",
+			"rdf4j.lmdb.mergeJoin.enabled",
 			LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY,
 			LmdbNativeParallelKernelRows.ENABLED_PROPERTY };
 
@@ -96,6 +104,13 @@ public class LmdbNativeKernelScanPartitionTest {
 			previousProperties.put(property, System.getProperty(property));
 		}
 		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.parallel.startupWork", "1.0E15");
+		System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
+		System.setProperty("rdf4j.lmdb.orderedFactorizedRows.enabled", "false");
+		System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");
+		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+		System.setProperty("rdf4j.lmdb.nativeHashJoin.enabled", "false");
+		System.setProperty("rdf4j.lmdb.mergeJoin.enabled", "false");
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
@@ -200,7 +215,12 @@ public class LmdbNativeKernelScanPartitionTest {
 			assertEquals(sorted(rows(ROWS_SCAN_JOIN)), sorted(expected), "parity on round " + round);
 		}
 		assertTrue(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get() > parallelBefore,
-				"a scan-rooted row kernel must range-partition its root rather than decline to a single thread");
+				() -> "a scan-rooted row kernel must range-partition its root rather than decline to a single thread"
+						+ " (planned=" + LmdbNativeKernelExecution.PLANNED.get() + ", opened="
+						+ LmdbNativeKernelExecution.OPENED.get() + ", declined="
+						+ LmdbNativeKernelExecution.DECLINED.get() + ", compilations="
+						+ LmdbNativeJaninoCodegen.COMPILATIONS.get() + ", compileFailures="
+						+ LmdbNativeJaninoCodegen.COMPILE_FAILURES.get() + ")\n" + explanation(ROWS_SCAN_JOIN));
 		assertEquals(sorted(rows(ROWS_SCAN_JOIN)), sorted(expected));
 	}
 
@@ -226,6 +246,12 @@ public class LmdbNativeKernelScanPartitionTest {
 			}
 		}
 		return rendered;
+	}
+
+	private String explanation(String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+		}
 	}
 
 	@Test

@@ -326,8 +326,11 @@ final class LmdbNativeOrderPlanner {
 		if (keySlots.length == 0) {
 			return new NativeTupleDistinctPlan(arg, NativeDistinctStrategy.ADJACENT, keySlots, new int[0], new int[0]);
 		}
-		NativeOrderedPlan best = new NativeOrderedPlan(arg, NativeSlotOrder.NONE);
-		int[] bestPrefix = new int[0];
+		// Seed the search with a real legal rewrite, not the raw input. Besides finding an ordering, best() removes
+		// relational-identity joins; retaining the raw tree when no ordering prefix improves would otherwise resurrect
+		// a stale SingletonPlan barrier at this planning boundary.
+		NativeOrderedPlan best = best(arg, keySlots, row);
+		int[] bestPrefix = best.order.leadingKeySlots(keySlots, best.plan.producedMask());
 		List<int[]> signatures = permutations(unique(keySlots));
 		for (int[] signature : signatures) {
 			NativeOrderedPlan candidate = best(arg, signature, row);
@@ -345,7 +348,7 @@ final class LmdbNativeOrderPlanner {
 					new int[0]);
 		}
 		if (bestPrefix.length == 0) {
-			return NativeTupleDistinctPlan.global(arg, keySlots);
+			return NativeTupleDistinctPlan.global(best.plan, keySlots);
 		}
 		return new NativeTupleDistinctPlan(best.plan, NativeDistinctStrategy.PARTITIONED_HASH, keySlots, bestPrefix,
 				without(keySlots, bestPrefix, best.order.fixedMask));
@@ -482,9 +485,14 @@ final class LmdbNativeOrderPlanner {
 		}
 		if (plan instanceof JoinPlan) {
 			JoinPlan join = (JoinPlan) plan;
+			// Singleton is the relational identity. Do not preserve it as an ordering barrier: doing so
+			// recreates exactly the nested JoinPlan shape that prevents otherwise-flat aggregate pipelines
+			// from reaching Janino after unused VALUES elimination.
 			if (join.left == SingletonPlan.INSTANCE) {
-				NativeOrderedPlan right = best(join.right, requested, row);
-				return new NativeOrderedPlan(new JoinPlan(join.left, right.plan), right.order);
+				return best(join.right, requested, row);
+			}
+			if (join.right == SingletonPlan.INSTANCE) {
+				return best(join.left, requested, row);
 			}
 			NativeOrderedPlan left = best(join.left, requested, row);
 			return new NativeOrderedPlan(new JoinPlan(left.plan, join.right), left.order.withBarrier());

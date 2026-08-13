@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.http.client.spi.HttpUtils;
 import org.eclipse.rdf4j.http.client.spi.NameValuePair;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.http.client.spi.UriBuilder;
+import org.eclipse.rdf4j.http.protocol.LmdbRuntimeProperty;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.Protocol.Action;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
@@ -84,6 +85,7 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -96,6 +98,9 @@ import tools.jackson.databind.ObjectMapper;
  */
 public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	private static final ObjectMapper EXPLANATION_MAPPER = new ObjectMapper();
+	private static final ObjectMapper RUNTIME_PROPERTY_MAPPER = new ObjectMapper();
+	private static final TypeReference<List<LmdbRuntimeProperty>> RUNTIME_PROPERTY_LIST = new TypeReference<>() {
+	};
 
 	/**
 	 * How long the client should wait before sending another PING to the server
@@ -255,6 +260,40 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			return HttpUtils.toString(response);
 		} catch (RepositoryException e) {
 			throw e;
+		} catch (RDF4JException e) {
+			throw new RepositoryException(e);
+		}
+	}
+
+	/** Lists the live LMDB feature catalog exposed by this server. */
+	public List<LmdbRuntimeProperty> getLmdbRuntimeProperties()
+			throws IOException, RepositoryException, UnauthorizedException {
+		checkServerURL();
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.get(Protocol.getLmdbRuntimePropertiesLocation(serverURL)))
+						.header(Protocol.ACCEPT_PARAM_NAME, "application/json")
+						.build();
+		try (HttpResponse response = executeOK(method)) {
+			return RUNTIME_PROPERTY_MAPPER.readValue(response.getBodyAsStream(), RUNTIME_PROPERTY_LIST);
+		} catch (RDF4JException e) {
+			throw new RepositoryException(e);
+		}
+	}
+
+	/** Updates one allowlisted live LMDB feature on this server. */
+	public LmdbRuntimeProperty setLmdbRuntimeProperty(String name, boolean enabled)
+			throws IOException, RepositoryException, UnauthorizedException {
+		checkServerURL();
+		List<NameValuePair> params = List.of(NameValuePair.of("name", name),
+				NameValuePair.of("enabled", Boolean.toString(enabled)));
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.post(Protocol.getLmdbRuntimePropertiesLocation(serverURL))
+						.header("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8")
+						.header(Protocol.ACCEPT_PARAM_NAME, "application/json")
+						.body(HttpRequestBody.ofFormData(params)))
+								.build();
+		try (HttpResponse response = executeOK(method)) {
+			return RUNTIME_PROPERTY_MAPPER.readValue(response.getBodyAsStream(), LmdbRuntimeProperty.class);
 		} catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}

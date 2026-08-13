@@ -58,6 +58,8 @@ public class LmdbNativeKernelWcojGuardTest {
 	public void setUp() {
 		// Both strategies must be live, so that the kernel would be attempted absent the specialization order.
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
+		System.setProperty("rdf4j.lmdb.factorizedTail.enabled", "false");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		LmdbNativeKernelExecution.resetMetrics();
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -81,6 +83,8 @@ public class LmdbNativeKernelWcojGuardTest {
 	@AfterEach
 	public void tearDown() {
 		System.clearProperty("rdf4j.lmdb.janinoCodegen.enabled");
+		System.clearProperty("rdf4j.lmdb.factorizedTail.enabled");
+		System.clearProperty("rdf4j.lmdb.parallel.enabled");
 		if (repository != null) {
 			repository.shutDown();
 		}

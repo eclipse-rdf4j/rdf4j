@@ -328,6 +328,11 @@ public abstract class Protocol {
 		return getServerDir(serverLocation) + PROTOCOL;
 	}
 
+	/** Returns the optional live LMDB property endpoint on an RDF4J Server. */
+	public static final String getLmdbRuntimePropertiesLocation(String serverLocation) {
+		return getServerDir(serverLocation) + "system/lmdb/properties";
+	}
+
 	/**
 	 * Get the location of the server configuration resource on the specified server.
 	 *

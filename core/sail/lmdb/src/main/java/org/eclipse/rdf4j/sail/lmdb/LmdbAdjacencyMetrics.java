@@ -87,10 +87,8 @@ final class LmdbAdjacencyMetrics {
 	 * never a runtime decision, so {@code -Drdf4j.lmdb.hotCounters=false} can switch them off to size their hot-path
 	 * cost. Default on, so the census and existing tests are unaffected.
 	 */
-	static final boolean HOT_COUNTERS = !"false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.hotCounters"));
-
 	void recordHit() {
-		if (HOT_COUNTERS) {
+		if (LmdbRuntimeProperties.hotCountersEnabled()) {
 			lookupHits.increment();
 		}
 	}
@@ -100,7 +98,7 @@ final class LmdbAdjacencyMetrics {
 	}
 
 	void recordExactMiss() {
-		if (HOT_COUNTERS) {
+		if (LmdbRuntimeProperties.hotCountersEnabled()) {
 			exactMisses.increment();
 		}
 	}

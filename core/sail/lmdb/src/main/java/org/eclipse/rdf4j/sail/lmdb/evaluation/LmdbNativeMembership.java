@@ -20,6 +20,7 @@ import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.LmdbDecodedNativeAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 
 /**
@@ -258,6 +259,13 @@ final class PatternMembershipProbe {
 @Experimental
 final class AdjacencyIntersectionProbe implements java.io.Closeable {
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.adjacencySemijoin.enabled";
+	static final String STREAM_KEYS_PROPERTY = "rdf4j.lmdb.adjacencySemijoin.streamKeys";
+	static final String STREAM_MIN_PROBES_PROPERTY = "rdf4j.lmdb.adjacencySemijoin.streamMinProbes";
+	static final String STREAM_MIN_REJECTS_PROPERTY = "rdf4j.lmdb.adjacencySemijoin.streamMinRejects";
+	static final String STREAM_MIN_REJECTION_PERCENT_PROPERTY = "rdf4j.lmdb.adjacencySemijoin.streamMinRejectionPercent";
+	static final String STREAM_DENSE_MIN_PROBES_PROPERTY = "rdf4j.lmdb.adjacencySemijoin.streamDenseMinProbes";
+	static final String STREAM_MIN_KEY_COUNT_PROPERTY = "rdf4j.lmdb.adjacencySemijoin.streamMinKeyCount";
+	private static final StreamConfig STREAM_CONFIG = StreamConfig.fromSystemProperties();
 	/** Verdicts answered from the planes (either polarity). */
 	static final AtomicLong ANSWERED = new AtomicLong();
 	/** Per-row membership probes served by galloping inside a cached constant-key run. */
@@ -286,6 +294,17 @@ final class AdjacencyIntersectionProbe implements java.io.Closeable {
 	private NativeLmdbQuerySource.NativeAdjacency incoming;
 	private boolean incomingResolved;
 	private boolean disabled;
+	private final boolean streamKeysEnabled;
+	/** Forward merge-semijoin state for monotonically ordered outer keys. */
+	private final KeyStream outgoingStream = new KeyStream();
+	private final KeyStream incomingStream = new KeyStream();
+	/**
+	 * Streaming is admitted only after the parent scalar path has demonstrated either useful rejection or enough
+	 * monotone volume to amortize one forward cursor. Decoded/affine views keep their cheaper direct lookup.
+	 */
+	private final StreamAdmission outgoingStreamAdmission = new StreamAdmission();
+	private final StreamAdmission incomingStreamAdmission = new StreamAdmission();
+	private long streamedAnswers;
 
 	/** Constant-key run, resolved once and galloped per row: the run-intersection side of the semijoin. */
 	private long cachedRun = UNRESOLVED_RUN;
@@ -294,12 +313,17 @@ final class AdjacencyIntersectionProbe implements java.io.Closeable {
 	private long lastOffset;
 	private long lastMember;
 	private boolean lastValid;
+	/** Query-local SIP accounting, published once when the probe closes. */
+	private long sipTests;
+	private long sipRejects;
+	private boolean sipPublished;
 
 	private AdjacencyIntersectionProbe(Term s, Term p, Term o, Term c) {
 		this.s = s;
 		this.p = p;
 		this.o = o;
 		this.c = c;
+		this.streamKeysEnabled = !"false".equalsIgnoreCase(System.getProperty(STREAM_KEYS_PROPERTY));
 	}
 
 	static boolean enabled() {
@@ -423,19 +447,40 @@ final class AdjacencyIntersectionProbe implements java.io.Closeable {
 		if (view == null) {
 			return PatternMembershipProbe.NOT_APPLICABLE;
 		}
+		KeyStream stream = bySubject ? outgoingStream : incomingStream;
+		StreamAdmission admission = bySubject ? outgoingStreamAdmission : incomingStreamAdmission;
+		if (streamKeysEnabled && admission.shouldStream(view, key)) {
+			int streamed = stream.test(view, key);
+			if (streamed >= 0) {
+				streamedAnswers++;
+				return answer(streamed);
+			}
+			admission.disable();
+		}
+
+		// Keep the proven scalar/page-local path during the admission sample. It is especially important for
+		// decoded/affine views and dense domains: in the supplied regressions every eager stream probe hit, so the
+		// key cursor added work without removing one adjacency lookup or intermediate row.
 		long run = view.find(key);
+		int verdict;
 		if (run == NOT_FOUND) {
-			return answer(0);
-		}
-		if (run <= 0L) {
+			verdict = 0;
+		} else if (run <= 0L) {
 			return PatternMembershipProbe.NOT_APPLICABLE;
+		} else {
+			verdict = view.size(run) > 0L ? 1 : 0;
 		}
-		return answer(view.size(run) > 0L ? 1 : 0);
+		admission.observe(view, key, verdict);
+		return answer(verdict);
 	}
 
 	private int answer(int verdict) {
 		if (verdict >= 0) {
 			ANSWERED.incrementAndGet();
+			sipTests++;
+			if (verdict == 0) {
+				sipRejects++;
+			}
 		}
 		return verdict;
 	}
@@ -474,7 +519,10 @@ final class AdjacencyIntersectionProbe implements java.io.Closeable {
 
 	@Override
 	public void close() {
+		publishSipTelemetry();
 		Throwable failure = null;
+		outgoingStream.close();
+		incomingStream.close();
 		NativeLmdbQuerySource.NativeAdjacency ownedOutgoing = outgoing;
 		NativeLmdbQuerySource.NativeAdjacency ownedIncoming = incoming;
 		outgoing = null;
@@ -517,6 +565,229 @@ final class AdjacencyIntersectionProbe implements java.io.Closeable {
 		}
 		if (failure != null) {
 			throw (RuntimeException) failure;
+		}
+	}
+
+	private void publishSipTelemetry() {
+		if (sipPublished || sipTests <= 0) {
+			return;
+		}
+		sipPublished = true;
+		LmdbFusedKernelRuntime.recordImplicitSip(
+				"adjacency-semijoin[p=" + p.constant + "]",
+				"adjacency-key/run-domain(predicate=" + p.constant + ")",
+				"EXISTS/NOT_EXISTS/MINUS membership probe",
+				streamedAnswers > 0 ? "ADJACENCY_MERGE_SEMIJOIN" : "ADJACENCY_SEMIJOIN",
+				true,
+				Long.MAX_VALUE,
+				sipTests,
+				sipRejects);
+	}
+
+	/**
+	 * Conservative admission for the forward merge-semijoin. The scalar path samples real query keys first. A stream
+	 * starts early when it rejects enough probes, or later when a long monotone packed-key stream can amortize one
+	 * cursor even if every key exists. Unordered, decoded/affine, and very small domains stay on direct lookup.
+	 */
+	private record StreamConfig(int minimumProbes, int minimumRejects, int minimumPercent, int denseMinimumProbes,
+			int minimumKeyCount) {
+
+		private StreamConfig {
+			minimumProbes = Math.max(1, minimumProbes);
+			minimumRejects = Math.max(1, minimumRejects);
+			minimumPercent = Math.max(0, Math.min(100, minimumPercent));
+			denseMinimumProbes = Math.max(minimumProbes, denseMinimumProbes);
+			minimumKeyCount = Math.max(0, minimumKeyCount);
+		}
+
+		static StreamConfig fromSystemProperties() {
+			int minimumProbes = Integer.getInteger(STREAM_MIN_PROBES_PROPERTY, 64);
+			return new StreamConfig(
+					minimumProbes,
+					Integer.getInteger(STREAM_MIN_REJECTS_PROPERTY, 8),
+					Integer.getInteger(STREAM_MIN_REJECTION_PERCENT_PROPERTY, 12),
+					Integer.getInteger(STREAM_DENSE_MIN_PROBES_PROPERTY, 512),
+					Integer.getInteger(STREAM_MIN_KEY_COUNT_PROPERTY, 2_048));
+		}
+	}
+
+	static final class StreamAdmission {
+		private final StreamConfig config;
+		private NativeLmdbQuerySource.NativeAdjacency view;
+		private long lastKey;
+		private boolean lastKeyValid;
+		private int probes;
+		private int rejects;
+		private boolean armed;
+		private boolean disabled;
+
+		StreamAdmission() {
+			this(STREAM_CONFIG);
+		}
+
+		StreamAdmission(int minimumProbes, int minimumRejects, int minimumPercent, int denseMinimumProbes,
+				int minimumKeyCount) {
+			this(new StreamConfig(minimumProbes, minimumRejects, minimumPercent, denseMinimumProbes,
+					minimumKeyCount));
+		}
+
+		private StreamAdmission(StreamConfig config) {
+			this.config = config;
+		}
+
+		boolean shouldStream(NativeLmdbQuerySource.NativeAdjacency candidate, long key) {
+			if (disabled || !armed || candidate != view) {
+				return false;
+			}
+			if (lastKeyValid && Long.compareUnsigned(key, lastKey) < 0) {
+				disabled = true;
+				return false;
+			}
+			lastKey = key;
+			lastKeyValid = true;
+			return true;
+		}
+
+		void observe(NativeLmdbQuerySource.NativeAdjacency candidate, long key, int verdict) {
+			if (disabled || armed || verdict < 0) {
+				return;
+			}
+			if (view == null) {
+				view = candidate;
+				long keyCount = candidate.keyCount();
+				// Decoded affine/hash lookup is cheaper than reconstructing a forward key cursor. Very small
+				// partitions are likewise served by one page-local exact search. Unknown/non-enumerable
+				// domains cannot support the merge at all, so do not keep sampling them.
+				if (!candidate.supportsKeyEnumeration() || keyCount < 0L
+						|| candidate instanceof LmdbDecodedNativeAdjacency
+						|| keyCount < config.minimumKeyCount()) {
+					disabled = true;
+					return;
+				}
+			} else if (view != candidate) {
+				disabled = true;
+				return;
+			}
+			if (lastKeyValid && Long.compareUnsigned(key, lastKey) < 0) {
+				disabled = true;
+				return;
+			}
+			lastKey = key;
+			lastKeyValid = true;
+			probes++;
+			if (verdict == 0) {
+				rejects++;
+			}
+			boolean selective = probes >= config.minimumProbes() && rejects >= config.minimumRejects()
+					&& (long) rejects * 100L >= (long) probes * config.minimumPercent();
+			// A forward merge can also win on a dense all-hit stream by replacing thousands of packed point
+			// lookups with one sequential cursor. Delay that mode long enough to amortize setup, and never use it
+			// for the decoded/affine view rejected above.
+			boolean denseSequential = probes >= config.denseMinimumProbes();
+			if (selective || denseSequential) {
+				armed = true;
+				return;
+			}
+		}
+
+		void disable() {
+			disabled = true;
+			armed = false;
+		}
+	}
+
+	/**
+	 * Merge-probes a sorted adjacency key cursor against a nondecreasing stream of correlated outer keys. One initial
+	 * lower-bound positions the cursor; subsequent EXISTS/NOT EXISTS tests advance sequentially instead of repeating a
+	 * packed page search. After more than one backwards jump the state disables itself and the exact scalar path wins.
+	 */
+	private static final class KeyStream implements AutoCloseable {
+		private NativeLmdbQuerySource.NativeAdjacency view;
+		private NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor;
+		private long currentKey;
+		private long currentSize;
+		private long lastTarget;
+		private boolean current;
+		private boolean targetSeen;
+		private boolean exhausted;
+		private boolean disabled;
+		private int backwards;
+
+		int test(NativeLmdbQuerySource.NativeAdjacency candidateView, long target) {
+			if (disabled || !candidateView.supportsKeyEnumeration()) {
+				return PatternMembershipProbe.NOT_APPLICABLE;
+			}
+			if (view != null && view != candidateView) {
+				reset();
+			}
+			view = candidateView;
+			if (targetSeen && Long.compareUnsigned(target, lastTarget) < 0) {
+				if (++backwards > 1) {
+					disabled = true;
+					reset();
+					return PatternMembershipProbe.NOT_APPLICABLE;
+				}
+				resetCursor();
+			}
+			targetSeen = true;
+			lastTarget = target;
+			try {
+				if (cursor == null && !exhausted) {
+					long count = candidateView.keyCount();
+					if (count < 0) {
+						disabled = true;
+						return PatternMembershipProbe.NOT_APPLICABLE;
+					}
+					long ordinal = candidateView.lowerBoundKeyOrdinal(target);
+					cursor = candidateView.openKeyRunCursor(ordinal, count);
+					if (cursor == null) {
+						disabled = true;
+						return PatternMembershipProbe.NOT_APPLICABLE;
+					}
+					advance();
+				}
+				while (current && Long.compareUnsigned(currentKey, target) < 0) {
+					advance();
+				}
+				if (!current) {
+					return 0;
+				}
+				return currentKey == target && currentSize > 0L ? 1 : 0;
+			} catch (RuntimeException problem) {
+				disabled = true;
+				reset();
+				return PatternMembershipProbe.NOT_APPLICABLE;
+			}
+		}
+
+		private void advance() {
+			current = cursor != null && cursor.advance();
+			if (current) {
+				currentKey = cursor.key();
+				currentSize = cursor.runSize();
+			} else {
+				exhausted = true;
+			}
+		}
+
+		private void resetCursor() {
+			if (cursor != null) {
+				cursor.close();
+			}
+			cursor = null;
+			current = false;
+			exhausted = false;
+		}
+
+		private void reset() {
+			resetCursor();
+			view = null;
+			targetSeen = false;
+		}
+
+		@Override
+		public void close() {
+			reset();
 		}
 	}
 }

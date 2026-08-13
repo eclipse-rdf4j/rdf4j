@@ -172,6 +172,7 @@ class LmdbNativeFeatureFlagForkTest {
 					disabled == Scenario.PARALLEL ? "0" : Long.toString(Long.MAX_VALUE));
 			System.setProperty("rdf4j.lmdb.parallel.threads", "2");
 			System.setProperty("rdf4j.lmdb.parallel.maxTasks", "3");
+			System.setProperty("rdf4j.lmdb.parallel.startupWork", "0");
 			System.setProperty(NATIVE_FLAG, "true");
 		}
 

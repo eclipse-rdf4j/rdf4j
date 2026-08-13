@@ -52,6 +52,12 @@ public class LmdbNativeKernelExecutionTest {
 
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String WCOJ_FLAG = "rdf4j.lmdb.wcoj.enabled";
+	private static final String FACTORIZED_ROWS_FLAG = "rdf4j.lmdb.factorizedRows.enabled";
+	private static final String ORDERED_FACTORIZED_ROWS_FLAG = "rdf4j.lmdb.orderedFactorizedRows.enabled";
+	private static final String NATIVE_BATCH_FLAG = "rdf4j.lmdb.nativeBatch.enabled";
+	private static final String PARALLEL_FLAG = "rdf4j.lmdb.parallel.enabled";
+	private static final String HASH_JOIN_FLAG = "rdf4j.lmdb.nativeHashJoin.enabled";
+	private static final String MERGE_JOIN_FLAG = "rdf4j.lmdb.mergeJoin.enabled";
 
 	private static final String VALUES_CHAIN_QUERY = "PREFIX ex: <http://example.org/>\n"
 			+ "SELECT * WHERE { VALUES ?a { ex:p0 ex:p3 ex:p7 }\n"
@@ -80,6 +86,12 @@ public class LmdbNativeKernelExecutionTest {
 	public void setUp() throws Exception {
 		save(NATIVE_FLAG, "true");
 		save(WCOJ_FLAG, "false");
+		save(FACTORIZED_ROWS_FLAG, "false");
+		save(ORDERED_FACTORIZED_ROWS_FLAG, "false");
+		save(NATIVE_BATCH_FLAG, "false");
+		save(PARALLEL_FLAG, "false");
+		save(HASH_JOIN_FLAG, "false");
+		save(MERGE_JOIN_FLAG, "false");
 		save(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
 		save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
 

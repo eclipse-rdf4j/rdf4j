@@ -42,10 +42,12 @@ public class LmdbNativeStrategyPriorityTest {
 	// This class asserts interpreted-strategy internals; the IR kernel rung must stay off so it cannot absorb the
 	// shapes first (plan: plans/lmdb-native-engine/20-kernel-lowering-row.md).
 	private static String previousJaninoCodegenEnabled;
+	private static String previousCostCalibrationEnabled;
 
 	@org.junit.jupiter.api.BeforeAll
 	static void disableKernelCodegen() {
 		previousJaninoCodegenEnabled = System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+		previousCostCalibrationEnabled = System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 	}
 
 	@org.junit.jupiter.api.AfterAll
@@ -55,6 +57,7 @@ public class LmdbNativeStrategyPriorityTest {
 		} else {
 			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", previousJaninoCodegenEnabled);
 		}
+		restoreProperty("rdf4j.lmdb.costCalibration.enabled", previousCostCalibrationEnabled);
 	}
 
 	private static final String EX = "http://example.com/";
@@ -107,14 +110,17 @@ public class LmdbNativeStrategyPriorityTest {
 	}
 
 	@Test
-	public void countingFactorizationOutranksBatchHashJoin() {
-		// ?a and ?b are unprojected: one leg seeds the flat prefix and the other becomes a COUNT branch,
-		// replacing cross-product enumeration with per-key counting
+	public void cheaperBatchOutranksFactorizationForOneToOneJoin() {
+		// Both extents are one-to-one on ?s. The merge proposal reads each extent once, while factorization would
+		// perform one bound probe per prefix row without removing any multiplicity. Cost therefore decides ahead of
+		// the specialization preference.
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b }";
-		assertThat(strategy(query))
-				.startsWith("factorizedRows(")
-				.contains("countBranches=1");
+		GenericPlanNode plan = explain(query);
+		assertThat(findMetric(plan, "nativeExecutionPath")).isEqualTo("batch");
+		assertThat(findMetric(plan, STRATEGY_PROPOSAL_COSTS_METRIC))
+				.contains("factorizedRows=")
+				.contains("batch=");
 	}
 
 	@Test
@@ -180,14 +186,15 @@ public class LmdbNativeStrategyPriorityTest {
 
 	@Test
 	public void factorizedRowsRetainChunkSubstrateTelemetry() {
-		// factorized rows is the winning producer, while its all-pattern flat prefix still uses the chunk
-		// substrate; strategy and substrate telemetry must remain distinct and visible
+		// Three independent legs cannot use the two-pattern merge/hash batch seam. Factorization is the winning
+		// producer, while its all-pattern flat prefix still uses the chunk substrate; strategy and substrate telemetry
+		// must remain distinct and visible.
 		String query = "PREFIX ex: <" + EX + ">\n"
-				+ "SELECT ?s WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b }";
+				+ "SELECT ?s WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b . ?s ex:p2 ?c }";
 		GenericPlanNode plan = explain(query);
 		assertThat(findMetric(plan, "nativeExecutionPath"))
 				.startsWith("factorizedRows(")
-				.contains("countBranches=1");
+				.contains("countBranches=2");
 		assertThat(findLongMetric(plan, CHUNK_ENGAGED_METRIC)).isEqualTo(1L);
 	}
 

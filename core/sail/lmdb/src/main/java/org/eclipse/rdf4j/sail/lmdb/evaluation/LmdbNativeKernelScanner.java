@@ -17,8 +17,10 @@ import java.io.IOException;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQuadCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;
 
@@ -43,30 +45,51 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 	private final RecordIterator[] orderedIterators;
 	private final ReusableCursor[] cursors;
 	private final StatementOrder[] scanOrders;
+	private final LmdbNativeKernelBindings.ScanSite[] scanSites;
 	/** Scan site restricted to one planned key range, or -1 when every site scans in full. */
 	private int rootScanId = -1;
 	private LmdbRootScanPartition rootPartition;
 
 	LmdbNativeKernelScanner(NativeLmdbQuerySource source, int scanCount) {
-		this(source, null, new StatementOrder[scanCount]);
+		this(source, null, scanSites(new StatementOrder[scanCount]));
 	}
 
 	LmdbNativeKernelScanner(NativeLmdbQuerySource source, StatementOrder[] scanOrders) {
-		this(source, null, scanOrders);
+		this(source, null, scanSites(scanOrders));
+	}
+
+	LmdbNativeKernelScanner(NativeLmdbQuerySource source, LmdbNativeKernelBindings.ScanSite[] scanSites) {
+		this(source, null, scanSites);
 	}
 
 	LmdbNativeKernelScanner(RowState row, StatementOrder[] scanOrders) {
-		this(row.source, row.runtimePlan, scanOrders);
+		this(row.source, row.runtimePlan, scanSites(scanOrders));
+	}
+
+	LmdbNativeKernelScanner(RowState row, LmdbNativeKernelBindings.ScanSite[] scanSites) {
+		this(row.source, row.runtimePlan, scanSites);
 	}
 
 	private LmdbNativeKernelScanner(NativeLmdbQuerySource source, LmdbNativeRuntimePlan.Invocation runtimePlan,
-			StatementOrder[] scanOrders) {
+			LmdbNativeKernelBindings.ScanSite[] scanSites) {
 		this.source = source;
 		this.runtimePlan = runtimePlan;
-		this.scanOrders = scanOrders.clone();
-		this.probes = new NativeLmdbQuerySource.NativeProbe[scanOrders.length];
-		this.orderedIterators = new RecordIterator[scanOrders.length];
-		this.cursors = new ReusableCursor[scanOrders.length];
+		this.scanSites = scanSites.clone();
+		this.scanOrders = new StatementOrder[scanSites.length];
+		for (int i = 0; i < scanSites.length; i++) {
+			this.scanOrders[i] = scanSites[i].order();
+		}
+		this.probes = new NativeLmdbQuerySource.NativeProbe[scanSites.length];
+		this.orderedIterators = new RecordIterator[scanSites.length];
+		this.cursors = new ReusableCursor[scanSites.length];
+	}
+
+	private static LmdbNativeKernelBindings.ScanSite[] scanSites(StatementOrder[] scanOrders) {
+		LmdbNativeKernelBindings.ScanSite[] sites = new LmdbNativeKernelBindings.ScanSite[scanOrders.length];
+		for (int i = 0; i < sites.length; i++) {
+			sites[i] = new LmdbNativeKernelBindings.ScanSite(scanOrders[i], null);
+		}
+		return sites;
 	}
 
 	/**
@@ -87,6 +110,9 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 		}
 		if (scanOrders[scanId] != null) {
 			throw new IllegalArgumentException("an ordered scan site cannot be range-partitioned: " + scanId);
+		}
+		if (scanSites[scanId].range() != null) {
+			throw new IllegalArgumentException("an already ranged scan site cannot be range-partitioned: " + scanId);
 		}
 		this.rootScanId = scanId;
 		this.rootPartition = partition;
@@ -114,8 +140,18 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 				cursor.reset(current);
 				return cursor;
 			}
-			StatementOrder order = scanOrders[scanId];
-			if (order == null) {
+			LmdbNativeKernelBindings.ScanSite site = scanSites[scanId];
+			LmdbKeyRange range = site.range();
+			if (range != null) {
+				verifyRange(range, subj, pred, obj, context);
+				RecordIterator previous = orderedIterators[scanId];
+				if (previous != null) {
+					previous.close();
+				}
+				RecordIterator current = source.statements(subj, pred, obj, context, range, observer);
+				orderedIterators[scanId] = current;
+				cursor.reset(current);
+			} else if (site.order() == null) {
 				NativeLmdbQuerySource.NativeProbe probe = probes[scanId];
 				if (probe == null) {
 					probe = source.newProbe();
@@ -127,7 +163,7 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 				if (previous != null) {
 					previous.close();
 				}
-				RecordIterator current = source.statements(order, subj, pred, obj, context, observer);
+				RecordIterator current = source.statements(site.order(), subj, pred, obj, context, observer);
 				orderedIterators[scanId] = current;
 				cursor.reset(current);
 			}
@@ -135,6 +171,40 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
+	}
+
+	private void verifyRange(LmdbKeyRange range, long subj, long pred, long obj, long context) {
+		String selectedIndex = source.indexName(subj, pred, obj, context);
+		int selectedFirst = firstVaryingField(range.indexFieldSeq(), subj, pred, obj, context);
+		if (!range.indexFieldSeq().equals(selectedIndex)
+				|| range.firstVaryingField() >= 0 && range.firstVaryingField() != selectedFirst) {
+			throw new QueryEvaluationException(
+					"Generated range scan no longer matches its planned access path: planned="
+							+ range + ", selectedIndex=" + selectedIndex + ", firstVaryingField=" + selectedFirst);
+		}
+	}
+
+	private static int firstVaryingField(String indexName, long subj, long pred, long obj, long context) {
+		for (int i = 0; i < indexName.length(); i++) {
+			int field = switch (indexName.charAt(i)) {
+			case 's' -> TripleIndex.SUBJ_IDX;
+			case 'p' -> TripleIndex.PRED_IDX;
+			case 'o' -> TripleIndex.OBJ_IDX;
+			case 'c' -> TripleIndex.CONTEXT_IDX;
+			default -> -1;
+			};
+			boolean bound = switch (field) {
+			case TripleIndex.SUBJ_IDX -> subj > 0;
+			case TripleIndex.PRED_IDX -> pred > 0;
+			case TripleIndex.OBJ_IDX -> obj > 0;
+			case TripleIndex.CONTEXT_IDX -> context >= 0;
+			default -> false;
+			};
+			if (!bound) {
+				return field;
+			}
+		}
+		return -1;
 	}
 
 	@Override

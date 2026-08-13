@@ -26,6 +26,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -33,10 +34,14 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -62,6 +67,36 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 	LmdbNativeAggregatePatternCompiler(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
 			NativeLmdbQuerySource source) {
 		super(context, strategy, source);
+	}
+
+	/** The plain variable, constant, or native-computable copies of an extension. */
+	CopyBinding[] compileExtensionCopies(Extension extension) {
+		CopyBinding[] copies = new CopyBinding[extension.getElements().size()];
+		for (int i = 0; i < copies.length; i++) {
+			ExtensionElem elem = extension.getElements().get(i);
+			ValueExpr expression = elem.getExpr();
+			if (expression instanceof Var) {
+				Var sourceVar = (Var) expression;
+				if (sourceVar.hasValue()) {
+					long id = idOf(sourceVar.getValue());
+					if (id == UNKNOWN) {
+						return null;
+					}
+					copies[i] = CopyBinding.constant(slot(elem.getName()), id);
+				} else {
+					copies[i] = CopyBinding.slot(slot(elem.getName()), slot(sourceVar.getName()));
+				}
+			} else {
+				LmdbNativeCompiledInlineId computed = LmdbNativeExpressionCompiler
+						.compileInlineId(expression, source, this::slot,
+								strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
+				if (computed == null) {
+					return null;
+				}
+				copies[i] = CopyBinding.computed(slot(elem.getName()), computed);
+			}
+		}
+		return copies;
 	}
 
 	SlotPlan compileFilterIntoStatementPattern(StatementPattern pattern, ValueExpr condition) {
@@ -122,6 +157,65 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 				filter.operator, filter.constant);
 		return new PatternPlan(base.s, base.p, base.o, base.c, base.contexts, base.namedContextScope,
 				base.statementOrder, base.indexName, range, estimate);
+	}
+
+	/**
+	 * Pushes one exact ordered-integer range through a pure inner-join/extension/union tree to the statement pattern
+	 * that produces the filtered variable. This is runtime-filter relocation at the physical access boundary: values
+	 * outside the range are never decoded into an intermediate row. The transformation preserves bag multiplicity and
+	 * is therefore safe for grouped and non-distinct aggregates too.
+	 */
+	SlotPlan compileTupleWithRangeFilter(TupleExpr expr, ValueExpr condition, boolean duplicateInsensitive) {
+		OrderedRangeFilter range = extractOrderedRangeFilter(condition);
+		if (range == null || !expr.getBindingNames().contains(range.variable)) {
+			return null;
+		}
+		return compileTupleWithRangeFilter(expr, condition, range.variable, duplicateInsensitive);
+	}
+
+	private SlotPlan compileTupleWithRangeFilter(TupleExpr expr, ValueExpr condition, String variable,
+			boolean duplicateInsensitive) {
+		if (!expr.getBindingNames().contains(variable)) {
+			return null;
+		}
+		if (expr instanceof StatementPattern) {
+			return compileRangeFilterIntoStatementPattern((StatementPattern) expr, condition);
+		}
+		if (expr instanceof Join) {
+			Join join = (Join) expr;
+			SlotPlan leftRange = compileTupleWithRangeFilter(join.getLeftArg(), condition, variable,
+					duplicateInsensitive);
+			if (leftRange != null) {
+				SlotPlan right = compileTuple(join.getRightArg(), duplicateInsensitive);
+				return right == null ? null : SlotPlan.join(leftRange, right);
+			}
+			SlotPlan rightRange = compileTupleWithRangeFilter(join.getRightArg(), condition, variable,
+					duplicateInsensitive);
+			if (rightRange != null) {
+				SlotPlan left = compileTuple(join.getLeftArg(), duplicateInsensitive);
+				return left == null ? null : SlotPlan.join(rightRange, left);
+			}
+			return null;
+		}
+		if (expr instanceof Extension) {
+			Extension extension = (Extension) expr;
+			SlotPlan arg = compileTupleWithRangeFilter(extension.getArg(), condition, variable,
+					duplicateInsensitive);
+			if (arg == null) {
+				return null;
+			}
+			CopyBinding[] copies = compileExtensionCopies(extension);
+			return copies == null ? null : SlotPlan.extension(arg, copies);
+		}
+		if (expr instanceof org.eclipse.rdf4j.query.algebra.Union) {
+			org.eclipse.rdf4j.query.algebra.Union union = (org.eclipse.rdf4j.query.algebra.Union) expr;
+			SlotPlan left = compileTupleWithRangeFilter(union.getLeftArg(), condition, variable,
+					duplicateInsensitive);
+			SlotPlan right = compileTupleWithRangeFilter(union.getRightArg(), condition, variable,
+					duplicateInsensitive);
+			return left == null || right == null ? null : SlotPlan.union(left, right);
+		}
+		return null;
 	}
 
 	private OrderedRangeFilter extractOrderedRangeFilter(ValueExpr condition) {
@@ -369,6 +463,11 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 	 */
 	SlotPlan compileMultiValueStatementPattern(StatementPattern pattern, String variable, long[] ids, Value[] values,
 			boolean keepBinding, boolean allowPartial) {
+		return compileMultiValueStatementPattern(pattern, variable, ids, values, keepBinding, allowPartial, false, 0);
+	}
+
+	SlotPlan compileMultiValueStatementPattern(StatementPattern pattern, String variable, long[] ids, Value[] values,
+			boolean keepBinding, boolean allowPartial, boolean exactFilterRewrite, int exactProbeCount) {
 		if (values != null ? !allValueProbeSafeIds(ids, values) : !allSafeExactIds(ids)) {
 			return null;
 		}
@@ -389,12 +488,12 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		if (alternatives.isEmpty()) {
 			return SlotPlan.empty();
 		}
-		if (alternatives.size() == 1) {
+		if (alternatives.size() == 1 && !exactFilterRewrite) {
 			return alternatives.get(0);
 		}
 		PatternPlan fallback = compileStatementPattern(pattern);
 		return new MultiValuePatternPlan(source, slot(variable), Arrays.copyOf(validIds, validSize),
-				alternatives.toArray(PatternPlan[]::new), fallback);
+				alternatives.toArray(PatternPlan[]::new), fallback, exactFilterRewrite, exactProbeCount);
 	}
 
 	Term compileTermWithConstant(Var var, NativePatternField field, String variable, long constantId,

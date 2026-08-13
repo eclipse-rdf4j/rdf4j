@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb.csf;
 
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties;
+
 /** Allocation-light decoder for one immutable compact CSF page. */
 class CompactCsfPageReader {
 
@@ -66,9 +68,6 @@ class CompactCsfPageReader {
 	 * Measurement gate for {@link #DECODES}, which is read only by tests. {@code -Drdf4j.lmdb.hotCounters=false}
 	 * switches it off so its per-rebind cost can be sized. Default on.
 	 */
-	private static final boolean COUNT_DECODES = !"false"
-			.equalsIgnoreCase(System.getProperty("rdf4j.lmdb.hotCounters"));
-
 	CompactCsfPageReader() {
 	}
 
@@ -96,7 +95,7 @@ class CompactCsfPageReader {
 	}
 
 	private void bind(long address) {
-		if (COUNT_DECODES) {
+		if (LmdbRuntimeProperties.hotCountersEnabled()) {
 			DECODES.increment();
 		}
 		AdaptiveNeighborState adaptive = adaptiveNeighbor;

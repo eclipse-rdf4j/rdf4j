@@ -238,14 +238,15 @@ final class LmdbNativeParallelPipelines {
 		}
 		int workers = reservation.grantedWorkers();
 		int sourceCount = workers + (morselMode ? 1 : 0);
-		double estCost = LmdbNativeStrategyProposal.parallelCost(totalWork, workers);
+		double startupCost = LmdbNativeStrategyProposal.parallelStartupCost();
+		double estCost = LmdbNativeStrategyProposal.parallelCost(totalWork, workers, startupCost);
 		ParallelCandidate candidate = new ParallelCandidate(step, consumerRow, plan, root, partitions, reservation,
 				workers, sourceCount);
 		// Worker threads, snapshot sources and read transactions are all created before the first row can be
 		// emitted, so PARALLEL_STARTUP_COST is genuinely front-loaded rather than spread across the scan. Declaring
 		// it separately is what stops a small LIMIT from paying for a parallel group it will abandon immediately.
 		return new LmdbNativeStrategyProposal<>(candidate::open, LmdbNativeWork.exact(estCost),
-				LmdbNativeWork.exact(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST), totalWork,
+				LmdbNativeWork.exact(startupCost), totalWork,
 				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, reservation::close);
 	}
 

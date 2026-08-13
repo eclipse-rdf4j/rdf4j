@@ -45,11 +45,13 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateDomain
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateEntry;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Exists;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterCompareId;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterEntryCompatible;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterInConstants;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterRangeUnsigned;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterValue;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Intersect;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel.TelemetryMode;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.LeftProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
@@ -58,6 +60,8 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PathExpand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PlanRows;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Probe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeClose;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
@@ -331,6 +335,54 @@ class LmdbNativeKernelIrEmitterTest {
 				List.of(new EnumerateDomain(0, 0), new FilterCompareId(false, Operand.col(0), Operand.constant(0))),
 				emit(0));
 		assertRows(run(equal, context().domains(domain).constants(3L)), new long[][] { { 3 } });
+	}
+
+	@Test
+	void entryCompatibilityAcceptsEqualOrAbsentThenRestoresTheCallerValue() throws Exception {
+		Kernel ir = new Kernel(1,
+				List.of(new EnumerateDomain(0, 0),
+						new FilterEntryCompatible(Operand.col(0), 0),
+						new BindAlias(Operand.constant(0), 0)),
+				emit(0));
+
+		assertRows(run(ir, context().domains(new long[] { -1L, 77L, 78L }).constants(77L)),
+				new long[][] { { 77L }, { 77L } });
+	}
+
+	@Test
+	void normalKernelSourceContainsNoTelemetryCountersOrPublicationCalls() {
+		FilterInConstants filter = new FilterInConstants(Operand.col(0), new int[] { 0 }, 0,
+				"test-exact-domain");
+		filter.filterPlacement(1, 0);
+		Kernel normal = new Kernel(1,
+				List.of(new EnumerateDomain(0, 0, true, "test-exact-domain"), filter), emit(0));
+
+		String source = LmdbNativeKernelEmitter.emit(normal);
+
+		assertFalse(source.contains("LmdbFusedKernelRuntime"), source);
+		assertFalse(source.contains("sipTest"), source);
+		assertFalse(source.contains("sipDriven"), source);
+		assertFalse(source.contains("rfTest"), source);
+		assertFalse(source.contains("factorCandidates"), source);
+	}
+
+	@Test
+	void fullTelemetryKernelPublishesPrimitiveCountersUnderADistinctShapeKey() {
+		FilterInConstants filter = new FilterInConstants(Operand.col(0), new int[] { 0 }, 0,
+				"test-exact-domain");
+		filter.filterPlacement(1, 0);
+		List<Node> pipeline = List.of(new EnumerateDomain(0, 0, true, "test-exact-domain"), filter);
+		Kernel normal = new Kernel(1, pipeline, emit(0));
+		Kernel full = new Kernel(1, pipeline, emit(0), TelemetryMode.FULL);
+
+		String source = LmdbNativeKernelEmitter.emit(full);
+
+		assertNotEquals(normal.shapeKey(), full.shapeKey());
+		assertTrue(source.contains("LmdbFusedKernelRuntime"), source);
+		assertTrue(source.contains("sipTest"), source);
+		assertTrue(source.contains("sipDriven"), source);
+		assertTrue(source.contains("rfTest"), source);
+		assertTrue(source.contains("factorCandidates"), source);
 	}
 
 	@Test
@@ -609,6 +661,49 @@ class LmdbNativeKernelIrEmitterTest {
 	}
 
 	@Test
+	void contiguousRootGroupsStreamOrdinaryAndDistinctCountsWithoutHashState() throws Exception {
+		NativeLmdbQuerySource.NativeAdjacency encounters = new FixtureAdjacency(
+				new long[][] { { 1, 10 }, { 2, 20, 21 } });
+		NativeLmdbQuerySource.NativeAdjacency practitioners = new FixtureAdjacency(
+				new long[][] { { 10, 100, 101 }, { 20, 100 }, { 21, 100 } });
+		Kernel ir = new Kernel(3,
+				List.of(new EnumerateAdjKeys(0, 0, 1), new Probe(1, Operand.col(1), 2)),
+				new Aggregate(new int[] { 0 },
+						new AggregateOutput[] { AggregateOutput.count(1), AggregateOutput.countDistinct(1) }, null,
+						OutputMods.none()).having(0, LmdbNativeKernelIr.OP_GE, 2));
+
+		String source = LmdbNativeKernelEmitter.emit(ir);
+		assertFalse(source.contains("KernelRuntime.LongIntMap"),
+				"a contiguous root grouping must retain one scalar group state:\n" + source);
+		assertFalse(source.contains("KernelRuntime.LongHashSet"),
+				"an adjacency-ordered DISTINCT value must use last-seen state:\n" + source);
+		assertRows(run(ir, context().adjacencies(encounters, practitioners)),
+				new long[][] { { 1, 2, 1 }, { 2, 2, 2 } });
+	}
+
+	@Test
+	void uniqueDomainDrivenRootStreamsGroupedCountsWithoutHashState() throws Exception {
+		NativeLmdbQuerySource.NativeAdjacency encounters = new FixtureAdjacency(
+				new long[][] { { 1, 10 }, { 2, 20, 21 } });
+		NativeLmdbQuerySource.NativeAdjacency practitioners = new FixtureAdjacency(
+				new long[][] { { 10, 100, 101 }, { 20, 100 }, { 21, 100 } });
+		Kernel ir = new Kernel(3,
+				List.of(new SipDomainProbe(0, 0, 0, 1, -1, null, false),
+						new Probe(1, Operand.col(1), 2)),
+				new Aggregate(new int[] { 0 },
+						new AggregateOutput[] { AggregateOutput.count(1), AggregateOutput.countDistinct(1) }, null,
+						OutputMods.none()).having(0, LmdbNativeKernelIr.OP_GE, 2));
+
+		String source = LmdbNativeKernelEmitter.emit(ir);
+		assertFalse(source.contains("KernelRuntime.LongIntMap"), source);
+		assertFalse(source.contains("KernelRuntime.LongHashSet"), source);
+		assertTrue(ir.orderedInputsRequired, "last-seen DISTINCT requires ordered adjacency runs");
+		assertTrue(ir.uniqueDomainsRequired.get(0), "the root domain must contain one lane per logical group");
+		assertRows(run(ir, context().adjacencies(encounters, practitioners).domains(new long[] { 1, 2 })),
+				new long[][] { { 1, 2, 1 }, { 2, 2, 2 } });
+	}
+
+	@Test
 	void idPreservingMinAndMaxKeepWinningIdsViaValueOrder() throws Exception {
 		// TestHooks compares signed, so -1 would win MIN if it were not the null sentinel — use positives plus
 		// a large-unsigned id to prove the hook (not unsigned id order) decides.
@@ -710,6 +805,42 @@ class LmdbNativeKernelIrEmitterTest {
 	// ------------------------------------------------------------------
 	// Compositions
 	// ------------------------------------------------------------------
+
+	@Test
+	void sipDomainProbeKeepsDecodedCursorFastPathAndGenericBatchFallback() {
+		Kernel ir = new Kernel(2,
+				List.of(new SipDomainProbe(0, 0, 0, 1, -1, null, false)),
+				emit(0, 1));
+
+		String source = LmdbNativeKernelEmitter.emit(ir);
+		assertTrue(source.contains("instanceof LmdbDecodedNativeAdjacency"),
+				"SIP binding must select the decoded target once; source:\n" + source);
+		assertTrue(source.contains(".openDecodedBoundRunCursor()"),
+				"decoded SIP must open the concrete cursor; source:\n" + source);
+		assertTrue(source.contains(".bindSize(sipKey)"),
+				"decoded SIP must fuse key lookup and run-size retrieval; source:\n" + source);
+		assertTrue(source.contains(".neighborAtInt(i)"),
+				"decoded SIP must retain the int-indexed CSR hot loop; source:\n" + source);
+		assertTrue(source.contains(".findBatch(sipDomain"),
+				"non-decoded views must retain the exact batch fallback; source:\n" + source);
+	}
+
+	@Test
+	void sipKeyProbeKeepsDecodedCursorFastPathAndGenericBatchFallback() {
+		Kernel ir = new Kernel(2,
+				List.of(new SipKeyProbe(0, 1, 0, 1, -1, null, false)),
+				emit(0, 1));
+
+		String source = LmdbNativeKernelEmitter.emit(ir);
+		assertTrue(source.contains(".fillKeys(sipK"),
+				"the physical key-domain producer must remain streaming; source:\n" + source);
+		assertTrue(source.contains(".bindSize(sipKey)"),
+				"decoded probe targets must avoid generic batch handles; source:\n" + source);
+		assertTrue(source.contains(".neighborAtInt(i)"),
+				"decoded probe targets must retain direct CSR iteration; source:\n" + source);
+		assertTrue(source.contains(".findBatch(sipK"),
+				"non-decoded probe targets must retain the batch fallback; source:\n" + source);
+	}
 
 	@Test
 	void flatRootExistsEmitsConcreteDecodedAndExactFallbackPaths() {
@@ -988,7 +1119,8 @@ class LmdbNativeKernelIrEmitterTest {
 		String source = LmdbNativeKernelEmitter.emit(vectorized);
 		assertTrue(source.contains("updateBy(rend - rpos);"),
 				"with nothing reading or filtering the neighbors, the count is the run length; source:\n" + source);
-		assertTrue(source.contains("agC0[g] += n;"), "COUNT(*) must accumulate by the run length");
+		assertTrue(source.contains("agC0 += n;") || source.contains("agC0[g] += n;"),
+				"COUNT(*) must accumulate by the run length");
 		assertFalse(source.contains("v1 = tvec["), "the tail column must not be materialized per row");
 		assertFalse(source.contains(".copyNeighbors("), "an unfiltered count must not read a single neighbor");
 		assertFalse(source.contains("while (rpos < rend)"), "an unfiltered count needs no slice loop at all");
@@ -1120,6 +1252,34 @@ class LmdbNativeKernelIrEmitterTest {
 			List<long[]> rows = drain(streaming, context().adjacencies(follows()).domains(new long[] { 1, 2, 3 }),
 					maxRows);
 			assertRows(rows, expected, "drained " + maxRows + " row(s) at a time");
+		}
+	}
+
+	@Test
+	void streamingDoesNotRepeatRowsWhenAStatelessAliasFollowsTheLastProducer() throws Exception {
+		long[] domain = new long[256];
+		for (int i = 0; i < domain.length; i++) {
+			domain[i] = i + 1L;
+		}
+		Kernel streaming = new Kernel(2,
+				List.of(new EnumerateDomain(0, 0), new BindAlias(Operand.col(0), 1)), emit(0, 1));
+
+		assertTrue(streaming.resumable, "a plain alias carries no cross-row state");
+		Object owner = new Object();
+		JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(owner, streaming.shapeKey(), streaming.className(),
+				() -> LmdbNativeKernelEmitter.emit(streaming), Long.MAX_VALUE);
+		if (kernel == null) {
+			kernel = LmdbNativeJaninoCodegen.awaitKernel(owner, streaming.shapeKey(), 30, TimeUnit.SECONDS);
+		}
+		assertNotNull(kernel, "kernel did not compile; source:\n" + LmdbNativeKernelEmitter.emit(streaming));
+		try {
+			kernel.bind(context().domains(domain).build());
+			long[] buffer = new long[domain.length * streaming.stride()];
+			assertEquals(domain.length, kernel.fill(buffer, domain.length));
+			assertEquals(0, kernel.fill(buffer, domain.length),
+					"resuming after a full output page must advance past the last aliased row");
+		} finally {
+			kernel.close();
 		}
 	}
 

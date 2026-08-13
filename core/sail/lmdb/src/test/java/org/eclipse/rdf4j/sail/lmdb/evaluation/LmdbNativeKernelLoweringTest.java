@@ -29,6 +29,8 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
+import org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.junit.jupiter.api.Test;
 
@@ -78,6 +80,57 @@ class LmdbNativeKernelLoweringTest {
 				System.setProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, previous);
 			}
 		}
+	}
+
+	@Test
+	void mixedBindingCatalogueMatchesTheEffectiveDefault() {
+		String property = LmdbNativeKernelLowering.MIXED_BINDING_PROPERTY;
+		String previous = System.getProperty(property);
+		try {
+			System.clearProperty(property);
+			LmdbRuntimeProperties.State state = LmdbRuntimeProperties.list()
+					.stream()
+					.filter(candidate -> property.equals(candidate.name()))
+					.findFirst()
+					.orElseThrow();
+			assertTrue(LmdbNativeKernelLowering.mixedBindingEnabled());
+			assertTrue(state.defaultEnabled());
+			assertTrue(state.enabled());
+			assertFalse(state.explicitlySet());
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
+	}
+
+	@Test
+	void rangeBearingPatternDeclinesUntilGeneratedScansCanCarryItsRange() {
+		LmdbKeyRange range = new LmdbKeyRange(new byte[] { 1, 2 }, new byte[] { 1, 3 }, "spoc", 2);
+		PatternPlan ranged = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, null, "posc", range, 2D);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { ranged }, new MaskedFilter[0]);
+
+		assertNull(LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null),
+				"adjacency lowering must not silently erase a planned key range");
+		assertNull(LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null, true),
+				"the scan-preferred retry must not silently erase a planned key range");
+	}
+
+	@Test
+	void compatibleRangeBearingPatternLowersToBoundedScan() {
+		LmdbKeyRange range = new LmdbKeyRange(new byte[] { 1, 2 }, new byte[] { 1, 3 }, "posc", 2);
+		PatternPlan ranged = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, null, "posc", range, 2D);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { ranged }, new MaskedFilter[0]);
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerWithScans(plan);
+		assertNotNull(lowered, "a range with its original index and bound mask should remain a bounded scan");
+		assertTrue(lowered.kernel.shapeKey().contains("SQ(s0,"), lowered.kernel.shapeKey());
+		assertEquals(1, lowered.kernel.requirements.scans);
+		assertEquals(range, lowered.bindings.scanSites[0].range());
 	}
 
 	/** A variable predicate has no adjacency view; with scan sources on it lowers to a direct quad scan instead. */
@@ -186,7 +239,7 @@ class LmdbNativeKernelLoweringTest {
 				new SlotPlan[] { values, pattern(Term.slot(0), Term.slot(1)) }, new MaskedFilter[0]);
 		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
 		assertNotNull(lowered);
-		assertTrue(lowered.kernel.shapeKey().contains("ED(d0,k0);"), lowered.kernel.shapeKey());
+		assertTrue(lowered.kernel.shapeKey().contains("ED(d0,k0"), lowered.kernel.shapeKey());
 		assertArrayEquals(new long[] { 100L, 200L }, lowered.bindings.keyDomains[0].literal);
 	}
 
@@ -200,6 +253,22 @@ class LmdbNativeKernelLoweringTest {
 		assertNotNull(lowered);
 		assertTrue(lowered.kernel.shapeKey().contains("P(a0,e0->0);"), lowered.kernel.shapeKey());
 		assertArrayEquals(new int[] { 0 }, lowered.bindings.entrySlotIds);
+	}
+
+	@Test
+	void optionalEntryBindingCompatibilityLowersAfterTheOptionalPipeline() {
+		SlotPlan plan = new LeftJoinPlan(
+				pattern(Term.slot(0), Term.slot(1)),
+				pattern(Term.slot(1), Term.slot(2)));
+		SlotPlan entryVariant = new EntryBindingCompatibilityPlan(plan, new int[] { 2 }, new long[] { 777L },
+				1L << 2);
+
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(entryVariant, freshRow(), null);
+
+		assertNotNull(lowered, "a runtime OPTIONAL entry binding must remain inside the generated root");
+		String key = lowered.kernel.shapeKey();
+		assertTrue(key.contains("ec(v2,c0);ba(c0->2);"), key);
+		assertArrayEquals(new long[] { 777L }, lowered.bindings.constants);
 	}
 
 	@Test
@@ -514,6 +583,28 @@ class LmdbNativeKernelLoweringTest {
 		} finally {
 			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
 		}
+	}
+
+	@Test
+	void correlatedExistsRunsAtItsEarliestProducerDepth() {
+		StubSource source = new StubSource();
+		MultiJoinPlan join = new MultiJoinPlan(
+				new SlotPlan[] { pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(1), Term.slot(2)) },
+				new MaskedFilter[0]);
+		StatementPatternExistsFilter exists = new StatementPatternExistsFilter(source, Term.slot(1),
+				Term.constant(PRED + 4), Term.unbound(), Term.unbound(), ContextConstraint.UNRESTRICTED, false);
+		FilterPlan plan = new FilterPlan(join, exists, -1L);
+
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(plan, freshRow(),
+				new int[] { 0 }, new AggregateSpec[] { AggregateSpec.slot("count", 2, false, AggKind.COUNT) }, null);
+
+		assertNotNull(lowered);
+		String key = lowered.kernel.shapeKey();
+		int firstProbe = key.indexOf("EA(a0");
+		int witness = key.indexOf("ex{");
+		int fanOutProbe = key.indexOf("P(a1");
+		assertTrue(firstProbe >= 0 && witness > firstProbe && fanOutProbe > witness,
+				"the witness must run after its ?enc producer and before the unrelated fan-out; key=" + key);
 	}
 
 	/**
@@ -904,6 +995,31 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	/**
+	 * A variable that is produced only by an earlier UNION branch is still a readable, nullable column in a later
+	 * branch. A filter in that later branch must observe it as unbound (and therefore reject on SPARQL error), rather
+	 * than making the whole generated plan decline because the lowering forgot the shared UNION column.
+	 */
+	@Test
+	void laterUnionBranchCanFilterOnAnEarlierBranchNullableColumn() {
+		SlotPlan first = pattern(Term.slot(0), Term.slot(1));
+		MaskedFilter branchFilter = new MaskedFilter(
+				new OrderedSlotCompareFilter(2, 0, Compare.CompareOp.EQ, bindings -> false, false, true),
+				1L | 1L << 2);
+		SlotPlan second = new FilterPlan(pattern(Term.slot(2), Term.slot(1)), branchFilter.filter,
+				branchFilter.mask);
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithUnions(new UnionPlan(first, second), 1);
+
+		assertNotNull(lowered, "a later branch must be able to read an earlier branch's nullable UNION column");
+		String key = lowered.kernel.shapeKey();
+		int unionStart = key.indexOf("u{");
+		int unionEnd = key.indexOf("};", unionStart);
+		int filter = key.indexOf("fv", unionStart);
+		assertTrue(unionStart >= 0 && filter > unionStart && filter < unionEnd,
+				"the nullable comparison must remain inside its UNION branch; key=" + key);
+	}
+
+	/**
 	 * A VALUES table joined on an outer variable is a membership filter, but its algebraic scope is still the branch
 	 * that contains it. In particular, VALUES inside a UNION inside OPTIONAL must not become a filter over the
 	 * OPTIONAL's left input.
@@ -930,18 +1046,23 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	/**
-	 * A sticky (EXISTS-bearing) branch filter must still decline. Witness nodes are appended to the pipeline globally
-	 * by {@code pipeline.addAll(witnessNodes)}, i.e. after the union, so lowering one from inside a branch would apply
-	 * it to every branch's rows.
+	 * A sticky (EXISTS-bearing) branch filter belongs inside the branch that defines it. Applying it after the UNION
+	 * would incorrectly filter the other branch's rows.
 	 */
 	@Test
-	void aStickyBranchFilterStillDeclines() {
+	void aStickyBranchFilterIsLoweredInsideItsBranch() {
 		StubSource source = new StubSource();
 		SlotPlan anchor = pattern(Term.slot(0), Term.slot(1));
 		SlotPlan left = new FilterPlan(pattern(Term.slot(1), Term.slot(2)), existsWitness(source, 1), -1L);
 		SlotPlan union = new UnionPlan(left, pattern(Term.slot(1), Term.slot(2)));
-		assertNull(lowerCountingWithUnions(SlotPlan.join(anchor, union), 2),
-				"a witness cannot be scoped to one branch, so the union must decline");
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithUnions(SlotPlan.join(anchor, union), 2);
+		assertNotNull(lowered, "the scope-aware witness belongs inside its UNION branch");
+		String key = lowered.kernel.shapeKey();
+		int unionStart = key.indexOf("u{");
+		int unionEnd = key.indexOf("};", unionStart);
+		int witness = key.indexOf("ex{", unionStart);
+		assertTrue(unionStart >= 0 && witness > unionStart && witness < unionEnd,
+				"the EXISTS witness must be contained by the UNION branch; key=" + key);
 	}
 
 	/**

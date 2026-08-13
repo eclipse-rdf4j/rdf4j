@@ -61,6 +61,7 @@ public class LmdbNativeParallelAggregationTest {
 	private static final String EXTERNAL_ROOT_CANDIDATE_FLAG = "rdf4j.lmdb.chunkPipeline.externalRoot.experimental";
 	private static final String COST_CALIBRATION_FLAG = "rdf4j.lmdb.costCalibration.enabled";
 	private static final String COST_EXPLORATION_FLAG = "rdf4j.lmdb.costCalibration.explore";
+	private static final String PARALLEL_STARTUP_WORK_FLAG = LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY;
 	private static final String COUNTING_TRUE_FUNCTION = "urn:rdf4j:test:lmdb:counting-true";
 
 	@TempDir
@@ -73,10 +74,14 @@ public class LmdbNativeParallelAggregationTest {
 	public void setUp() {
 		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, THRESHOLD_FLAG, THREADS_FLAG,
 				MAX_TASKS_FLAG, MERGE_FLAG, EXTERNAL_ROOT_CANDIDATE_FLAG, COST_CALIBRATION_FLAG,
-				COST_EXPLORATION_FLAG);
+				COST_EXPLORATION_FLAG, PARALLEL_STARTUP_WORK_FLAG);
+		System.setProperty(PARALLEL_FLAG, "true");
 		System.setProperty(THRESHOLD_FLAG, "0");
 		System.setProperty(THREADS_FLAG, "4");
 		System.setProperty(MAX_TASKS_FLAG, "4");
+		// These operator-level tests validate the parallel implementation. Remove startup work from the fixture so the
+		// common arbiter selects that proposal without restoring the former call-order priority.
+		System.setProperty(PARALLEL_STARTUP_WORK_FLAG, "0");
 		System.setProperty(COST_CALIBRATION_FLAG, "false");
 		System.setProperty(COST_EXPLORATION_FLAG, "false");
 		LmdbNativeCostCalibration.reset();
@@ -246,43 +251,55 @@ public class LmdbNativeParallelAggregationTest {
 
 	@Test
 	public void singlePatternDistinctPrefersMonotonicAggregation() {
-		String query = "PREFIX ex: <" + EX + ">\n"
-				+ "SELECT (COUNT(?s) AS ?c) (COUNT(DISTINCT ?a) AS ?d) WHERE { ?s ex:p1 ?a . }";
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			assertThat(connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized).toString())
-					.contains("distinctChannels=[MONOTONIC]");
+		String previousStartup = System.setProperty(PARALLEL_STARTUP_WORK_FLAG,
+				Double.toString(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST));
+		try {
+			String query = "PREFIX ex: <" + EX + ">\n"
+					+ "SELECT (COUNT(?s) AS ?c) (COUNT(DISTINCT ?a) AS ?d) WHERE { ?s ex:p1 ?a . }";
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				assertThat(connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized).toString())
+						.contains("distinctChannels=[MONOTONIC]");
+			}
+			long before = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
+			assertAllThreeAgree(query);
+			assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
+					.as("an exact order that removes the DISTINCT hash must run before parallel aggregation")
+					.isEqualTo(before);
+		} finally {
+			restoreProperty(PARALLEL_STARTUP_WORK_FLAG, previousStartup);
 		}
-		long before = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
-		assertAllThreeAgree(query);
-		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
-				.as("an exact order that removes the DISTINCT hash must run before parallel aggregation")
-				.isEqualTo(before);
 	}
 
 	@Test
 	public void smallFactorizedDistinctStarBeatsParallelStartupCost() {
-		String query = star("(COUNT(DISTINCT ?b) AS ?d)", "");
-		long parallelBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
-		long factorizedBefore = FactorizedTail.ENGAGED.get();
+		String previousStartup = System.setProperty(PARALLEL_STARTUP_WORK_FLAG,
+				Double.toString(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST));
+		try {
+			String query = star("(COUNT(DISTINCT ?b) AS ?d)", "");
+			long parallelBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
+			long factorizedBefore = FactorizedTail.ENGAGED.get();
 
-		GenericPlanNode plan = explain(query);
+			GenericPlanNode plan = explain(query);
 
-		assertThat(findMetric(plan, "nativeExecutionPath")).startsWith("factorizedTail(");
-		assertThat(findMetric(plan, "nativeStrategyProposalCosts"))
-				.contains("factorizedTail=")
-				.contains("parallelAggregation=");
-		assertThat(findMetric(plan, "nativeStrategyDeclines"))
-				.contains("parallelAggregation:higher-cost");
-		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
-				.as("parallel startup must not run when the factorized proposal is cheaper")
-				.isEqualTo(parallelBefore);
-		assertThat(FactorizedTail.ENGAGED.get()).isGreaterThan(factorizedBefore);
-		try (LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines
-				.tryReserveTasks(false, 4)) {
-			assertThat(reservation)
-					.as("the losing parallel aggregate proposal must release its complete elastic grant")
-					.isNotNull();
-			assertThat(reservation.grantedWorkers()).isEqualTo(4);
+			assertThat(findMetric(plan, "nativeExecutionPath")).startsWith("factorizedTail(");
+			assertThat(findMetric(plan, "nativeStrategyProposalCosts"))
+					.contains("factorizedTail=")
+					.contains("parallelAggregation=");
+			assertThat(findMetric(plan, "nativeStrategyDeclines"))
+					.contains("parallelAggregation:higher-cost");
+			assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
+					.as("parallel startup must not run when the factorized proposal is cheaper")
+					.isEqualTo(parallelBefore);
+			assertThat(FactorizedTail.ENGAGED.get()).isGreaterThan(factorizedBefore);
+			try (LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines
+					.tryReserveTasks(false, 4)) {
+				assertThat(reservation)
+						.as("the losing parallel aggregate proposal must release its complete elastic grant")
+						.isNotNull();
+				assertThat(reservation.grantedWorkers()).isEqualTo(4);
+			}
+		} finally {
+			restoreProperty(PARALLEL_STARTUP_WORK_FLAG, previousStartup);
 		}
 	}
 
@@ -613,11 +630,9 @@ public class LmdbNativeParallelAggregationTest {
 				+ "  }\n"
 				+ "  ?s ex:cancellationMatch ?match .\n"
 				+ "}";
-		long exactFactorizedBefore = FactorizedTail.ENGAGED.get();
-		assertThat(strategy(exactControl)).startsWith("factorizedTail(");
-		assertThat(FactorizedTail.ENGAGED.get())
-				.as("the same repeatable exact shape must still commit factorized engagement")
-				.isGreaterThan(exactFactorizedBefore);
+		// Exact arithmetic remains eligible for reassociation, but the common arbiter may select any cheaper correct
+		// proposal. Dedicated factorized-tail tests cover engagement; this regression owns encounter-order correctness.
+		assertAllThreeAgree(exactControl);
 	}
 
 	@Test
@@ -1032,11 +1047,15 @@ public class LmdbNativeParallelAggregationTest {
 			return;
 		}
 		for (Map.Entry<String, String> entry : snapshot.entrySet()) {
-			if (entry.getValue() == null) {
-				System.clearProperty(entry.getKey());
-			} else {
-				System.setProperty(entry.getKey(), entry.getValue());
-			}
+			restoreProperty(entry.getKey(), entry.getValue());
+		}
+	}
+
+	private static void restoreProperty(String property, String value) {
+		if (value == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, value);
 		}
 	}
 

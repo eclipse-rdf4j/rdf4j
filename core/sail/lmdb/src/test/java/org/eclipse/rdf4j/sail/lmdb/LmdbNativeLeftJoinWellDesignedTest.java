@@ -82,7 +82,7 @@ public class LmdbNativeLeftJoinWellDesignedTest {
 	}
 
 	@Test
-	public void optionalOnlyBaseBindingUsesGenericLeftJoinSemantics() {
+	public void optionalOnlyBaseBindingPreservesLeftJoinSemantics() {
 		String query = q("SELECT ?x ?e WHERE {\n"
 				+ "  ?x ex:p ?n .\n"
 				+ "  OPTIONAL { ?x ex:q ?e }\n"
@@ -94,6 +94,18 @@ public class LmdbNativeLeftJoinWellDesignedTest {
 		assertThat(LmdbNativeAggregateCompiler.COMPILED.get())
 				.as("dynamic well-designedness check should keep the native plan compiled")
 				.isGreaterThan(before);
+		assertThat(nativeRows).isEqualTo(genericRows(query, "e", boundE));
+	}
+
+	@Test
+	public void optionalOnlyBaseBindingPreservesGroupingSemantics() {
+		String query = q("SELECT ?e (COUNT(?x) AS ?count) WHERE {\n"
+				+ "  ?x ex:p ?n .\n"
+				+ "  OPTIONAL { ?x ex:q ?e }\n"
+				+ "} GROUP BY ?e");
+		IRI boundE = iri("e1");
+
+		List<String> nativeRows = rows(query, "e", boundE);
 		assertThat(nativeRows).isEqualTo(genericRows(query, "e", boundE));
 	}
 

@@ -73,11 +73,12 @@ public class LmdbNativeKernelDeclineCensusTest {
 	 * Declines that mean something other than "cannot do this", and so are not capability gaps.
 	 * <p>
 	 * {@code below-threshold-or-pending} means "not warmed up yet". {@code no-fusion-opportunity} means the shape has a
-	 * single scan, so whole-stage code generation has nothing to fuse and the bulk batch cursor serves it better — the
-	 * kernel is subordinated deliberately, not found wanting.
+	 * single scan, so whole-stage code generation has nothing to fuse and the bulk batch cursor serves it better.
+	 * {@code higher-cost} and {@code outranked} are common-arbiter decisions over eligible proposals, not lowering
+	 * failures.
 	 */
 	private static final Set<String> NON_CAPABILITY_REASONS = Set.of("below-threshold-or-pending",
-			"no-fusion-opportunity");
+			"no-fusion-opportunity", "higher-cost", "outranked");
 
 	/** Repeats per query, so an asynchronous compile has landed before the reading run. */
 	private static final int WARMUP_RUNS = 6;

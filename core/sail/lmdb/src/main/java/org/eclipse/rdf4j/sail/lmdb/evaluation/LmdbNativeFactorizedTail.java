@@ -31,8 +31,11 @@ final class FactorizedTail {
 	static final AtomicLong ENGAGED = new AtomicLong();
 	static final AtomicLong SCAN_ONCE_BUILDS = new AtomicLong();
 	static final AtomicLong MEMO_BYPASSES = new AtomicLong();
-	static final boolean ENABLED = !"false"
-			.equals(System.getProperty("rdf4j.lmdb.factorizedTail.enabled"));
+
+	static boolean enabled() {
+		return !"false".equals(System.getProperty("rdf4j.lmdb.factorizedTail.enabled"));
+	}
+
 	static final int FILL_ROWS = 64;
 	static final int MAX_CACHED_VALUES = 1 << 14;
 	static final int MEMO_MAX_ENTRIES = 1 << 16;
@@ -280,7 +283,7 @@ final class FactorizedTail {
 
 	private static FactorizedTail create(MultiJoinPlan.OrderedPlan derived, MaskedFilter[] filters, long seedMask,
 			int[] groupSlots, AggregateSpec[] aggregates, LmdbNativeAttemptMetrics metrics) {
-		if (!ENABLED) {
+		if (!enabled()) {
 			return null;
 		}
 		boolean allCounts = AggregateSpec.allCounts(aggregates);
@@ -505,6 +508,7 @@ final class FactorizedTail {
 	void recordEngagement() {
 		if (!engagementRecorded) {
 			engagementRecorded = true;
+			LmdbFusedSipFactorizedRuntime.current().markFactorizationMode("FACTORIZED_TAIL");
 			metrics.recordFactorizedTailEngaged();
 		}
 	}

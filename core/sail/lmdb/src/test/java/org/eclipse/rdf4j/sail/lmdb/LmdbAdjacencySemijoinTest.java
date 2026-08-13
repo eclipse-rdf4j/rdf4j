@@ -46,6 +46,7 @@ public class LmdbAdjacencySemijoinTest {
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String SEMIJOIN_FLAG = "rdf4j.lmdb.adjacencySemijoin.enabled";
 	private static final String LEFTJOIN_MIN_PROBES = "rdf4j.lmdb.leftjoin.hash.minProbes";
+	private static final String JANINO_FLAG = "rdf4j.lmdb.janinoCodegen.enabled";
 	private static final int PERSONS = 80;
 
 	@TempDir
@@ -53,9 +54,13 @@ public class LmdbAdjacencySemijoinTest {
 
 	private SailRepository repository;
 	private LmdbStore sail;
+	private String previousJanino;
 
 	@BeforeEach
 	public void setUp() throws Exception {
+		// This class exercises the interpreted adjacency-semijoin and payload-hash specialists. The generated kernel is
+		// a competing proposal with its own coverage and may legitimately fuse these shapes first.
+		previousJanino = System.setProperty(JANINO_FLAG, "false");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
@@ -97,6 +102,11 @@ public class LmdbAdjacencySemijoinTest {
 		System.clearProperty(NATIVE_FLAG);
 		System.clearProperty(SEMIJOIN_FLAG);
 		System.clearProperty(LEFTJOIN_MIN_PROBES);
+		if (previousJanino == null) {
+			System.clearProperty(JANINO_FLAG);
+		} else {
+			System.setProperty(JANINO_FLAG, previousJanino);
+		}
 	}
 
 	private List<String> rows(String query) {

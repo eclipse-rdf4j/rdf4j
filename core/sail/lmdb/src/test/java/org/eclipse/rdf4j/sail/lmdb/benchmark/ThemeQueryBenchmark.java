@@ -102,6 +102,7 @@ public class ThemeQueryBenchmark {
 	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
 	private static final String JANINO_CODEGEN_ENABLED_PROPERTY = "rdf4j.lmdb.janinoCodegen.enabled";
 	private static final String JANINO_CODEGEN_THRESHOLD_ROWS_PROPERTY = "rdf4j.lmdb.janinoCodegen.thresholdRows";
+	private static final String JANINO_CODEGEN_SYNCHRONOUS_PROPERTY = "rdf4j.lmdb.janinoCodegen.synchronous";
 	private static final String COUNT_BINDING_NAME = "count";
 	static final String WAIT_FOR_SKETCHES_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketches";
 	static final String WAIT_FOR_SKETCHES_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketchesTimeoutSeconds";
@@ -111,8 +112,8 @@ public class ThemeQueryBenchmark {
 	private static final long DEFAULT_WAIT_FOR_DIRECT_ADJACENCY_TIMEOUT_SECONDS = 300L;
 
 	/**
-	 * Matched control for the query execution engine. The enabled trial also pins the Janino activation threshold to
-	 * zero in {@link #setup()} so compilation is eligible from the first observed row.
+	 * Matched control for the query execution engine. The trial pins the Janino activation threshold to zero and uses
+	 * deterministic compilation in {@link #setup()} so both measured and telemetry shapes are ready on first use.
 	 */
 	@Param({ "false", "true" })
 	public String z_z_janinoEnabled;
@@ -156,6 +157,7 @@ public class ThemeQueryBenchmark {
 	private long expected;
 	private String previousJaninoCodegenEnabled;
 	private String previousJaninoCodegenThresholdRows;
+	private String previousJaninoCodegenSynchronous;
 	private boolean janinoPropertiesConfigured;
 
 	public static void main(String[] args) throws RunnerException {
@@ -274,8 +276,10 @@ public class ThemeQueryBenchmark {
 		}
 		previousJaninoCodegenEnabled = System.getProperty(JANINO_CODEGEN_ENABLED_PROPERTY);
 		previousJaninoCodegenThresholdRows = System.getProperty(JANINO_CODEGEN_THRESHOLD_ROWS_PROPERTY);
+		previousJaninoCodegenSynchronous = System.getProperty(JANINO_CODEGEN_SYNCHRONOUS_PROPERTY);
 		System.setProperty(JANINO_CODEGEN_ENABLED_PROPERTY, z_z_janinoEnabled);
 		System.setProperty(JANINO_CODEGEN_THRESHOLD_ROWS_PROPERTY, "0");
+		System.setProperty(JANINO_CODEGEN_SYNCHRONOUS_PROPERTY, "true");
 		janinoPropertiesConfigured = true;
 	}
 
@@ -285,8 +289,10 @@ public class ThemeQueryBenchmark {
 		}
 		restoreProperty(JANINO_CODEGEN_ENABLED_PROPERTY, previousJaninoCodegenEnabled);
 		restoreProperty(JANINO_CODEGEN_THRESHOLD_ROWS_PROPERTY, previousJaninoCodegenThresholdRows);
+		restoreProperty(JANINO_CODEGEN_SYNCHRONOUS_PROPERTY, previousJaninoCodegenSynchronous);
 		previousJaninoCodegenEnabled = null;
 		previousJaninoCodegenThresholdRows = null;
+		previousJaninoCodegenSynchronous = null;
 		janinoPropertiesConfigured = false;
 	}
 

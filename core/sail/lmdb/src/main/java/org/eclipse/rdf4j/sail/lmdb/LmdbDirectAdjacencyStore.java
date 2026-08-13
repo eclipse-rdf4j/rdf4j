@@ -2423,7 +2423,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			return null;
 		}
 		metrics.recordHit();
-		if (LmdbAdjacencyMetrics.HOT_COUNTERS) {
+		if (LmdbRuntimeProperties.hotCountersEnabled()) {
 			KERNEL_VIEWS_SERVED.incrementAndGet();
 			if (adjacency instanceof LmdbDecodedNativeAdjacency) {
 				DECODED_KERNEL_VIEWS_SERVED.incrementAndGet();
@@ -2493,7 +2493,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			return null;
 		}
 		metrics.recordHit();
-		if (LmdbAdjacencyMetrics.HOT_COUNTERS) {
+		if (LmdbRuntimeProperties.hotCountersEnabled()) {
 			KERNEL_VIEWS_SERVED.incrementAndGet();
 		}
 		observeVariablePredicate(observer, true, "NODE_PREDICATE_VIEW", bySubject);
@@ -2516,7 +2516,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			return null;
 		}
 		metrics.recordHit();
-		if (LmdbAdjacencyMetrics.HOT_COUNTERS) {
+		if (LmdbRuntimeProperties.hotCountersEnabled()) {
 			KERNEL_VIEWS_SERVED.incrementAndGet();
 		}
 		observeVariablePredicate(observer, true, "DYNAMIC_ADJACENCY_VIEW", bySubject);

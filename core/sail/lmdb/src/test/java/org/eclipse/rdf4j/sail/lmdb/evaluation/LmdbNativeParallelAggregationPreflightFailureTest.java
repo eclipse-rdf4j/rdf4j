@@ -32,6 +32,7 @@ class LmdbNativeParallelAggregationPreflightFailureTest {
 	private String previousThreads;
 	private String previousMaxTasks;
 	private String previousThreshold;
+	private String previousStartupWork;
 
 	@BeforeEach
 	void enableAdmittedParallelPreflight() {
@@ -39,10 +40,12 @@ class LmdbNativeParallelAggregationPreflightFailureTest {
 		previousThreads = System.getProperty("rdf4j.lmdb.parallel.threads");
 		previousMaxTasks = System.getProperty("rdf4j.lmdb.parallel.maxTasks");
 		previousThreshold = System.getProperty("rdf4j.lmdb.parallel.minRootEstimate");
+		previousStartupWork = System.getProperty(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY);
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
 		System.setProperty("rdf4j.lmdb.parallel.maxTasks", "2");
 		System.setProperty("rdf4j.lmdb.parallel.minRootEstimate", "0");
+		System.setProperty(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY, "0");
 	}
 
 	@AfterEach
@@ -51,6 +54,7 @@ class LmdbNativeParallelAggregationPreflightFailureTest {
 		restoreProperty("rdf4j.lmdb.parallel.threads", previousThreads);
 		restoreProperty("rdf4j.lmdb.parallel.maxTasks", previousMaxTasks);
 		restoreProperty("rdf4j.lmdb.parallel.minRootEstimate", previousThreshold);
+		restoreProperty(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY, previousStartupWork);
 	}
 
 	@Test
