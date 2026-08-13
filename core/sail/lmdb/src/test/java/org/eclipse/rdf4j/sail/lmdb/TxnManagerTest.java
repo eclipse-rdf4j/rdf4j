@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
@@ -29,6 +31,9 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -36,6 +41,60 @@ import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 
 public class TxnManagerTest {
+
+	@Test
+	public void createReadTxnBlocksWhenPoolIsExhausted(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, TxnManager.POOL_SIZE);
+		TxnManager txnManager = new TxnManager(env, TxnManager.Mode.RESET);
+		TxnManager.Txn[] txns = new TxnManager.Txn[TxnManager.POOL_SIZE];
+		CountDownLatch started = new CountDownLatch(1);
+		CountDownLatch acquired = new CountDownLatch(1);
+		AtomicReference<TxnManager.Txn> blockedTxn = new AtomicReference<>();
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Thread waiter = new Thread(() -> {
+			started.countDown();
+			try {
+				TxnManager.Txn txn = txnManager.createReadTxn();
+				blockedTxn.set(txn);
+				acquired.countDown();
+			} catch (Throwable t) {
+				failure.set(t);
+				acquired.countDown();
+			}
+		}, "txn-manager-pool-waiter");
+
+		try {
+			for (int i = 0; i < txns.length; i++) {
+				System.out.println("Acquiring txn " + i);
+				txns[i] = txnManager.createReadTxn();
+				System.out.println("Acquired txn " + i + ": " + txns[i].get());
+			}
+
+			waiter.start();
+
+			assertTrue(started.await(5, TimeUnit.SECONDS), "Waiter thread should start");
+			assertFalse(acquired.await(200, TimeUnit.MILLISECONDS),
+					"Requesting more than the pool size should block until a transaction is returned");
+
+			txns[0].close();
+
+			assertTrue(acquired.await(5, TimeUnit.SECONDS),
+					"Blocked reader should resume once a transaction is returned to the pool");
+			assertTrue(failure.get() == null, () -> "Unexpected failure: " + failure.get());
+			assertTrue(blockedTxn.get() != null, "Blocked reader should receive a transaction");
+		} finally {
+			if (blockedTxn.get() != null) {
+				blockedTxn.get().close();
+			}
+			for (int i = 1; i < txns.length; i++) {
+				if (txns[i] != null) {
+					txns[i].close();
+				}
+			}
+			waiter.join(TimeUnit.SECONDS.toMillis(5));
+			mdb_env_close(env);
+		}
+	}
 
 	@Test
 	public void readersFullRetryDoesNotAbortTrackedInactiveTxn(@TempDir Path dataDir) throws Exception {

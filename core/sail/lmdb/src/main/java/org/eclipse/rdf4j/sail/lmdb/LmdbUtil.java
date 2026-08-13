@@ -94,7 +94,7 @@ final class LmdbUtil {
 		return ret;
 	}
 
-	static <T> T transaction(long env, Transaction<T> transaction) throws IOException {
+	static <T> T writeTransaction(long env, Transaction<T> transaction) throws IOException {
 		T ret;
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
@@ -117,7 +117,7 @@ final class LmdbUtil {
 	}
 
 	static int openDatabase(long env, String name, int flags) throws IOException {
-		return transaction(env, (stack, txn) -> openDatabaseWithTxn(txn, name, flags));
+		return writeTransaction(env, (stack, txn) -> openDatabaseWithTxn(txn, name, flags));
 	}
 
 	static int openDatabaseWithTxn(long txn, String name, int flags) throws IOException {

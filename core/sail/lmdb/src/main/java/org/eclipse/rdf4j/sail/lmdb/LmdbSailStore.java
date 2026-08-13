@@ -765,8 +765,13 @@ class LmdbSailStore implements SailStore {
 		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contextIDList.size());
 
 		for (long contextID : contextIDList) {
-			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
-			perContextIterList.add(new LmdbStatementIterator(records, valueStore));
+			try {
+				RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
+				perContextIterList.add(new LmdbStatementIterator(records, valueStore));
+			} catch (IOException e) {
+				System.out.println("Txn:\n" + Objects.toString(txn));
+				throw e;
+			}
 		}
 
 		if (perContextIterList.size() == 1) {
@@ -1605,13 +1610,13 @@ class LmdbSailStore implements SailStore {
 
 		private final boolean explicit;
 		private final Txn txn;
+		private volatile boolean closed = false;
 
 		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn) throws SailException {
 			this.explicit = explicit;
 			try {
-				TxnManager txnManager = tripleStore.getTxnManager();
-				this.txn = trackActiveTxn ? txnManager.createReadTxn()
-						: txnManager.createReadTxnUntracked();
+				this.txn = trackActiveTxn ? tripleStore.getTxnManager().createReadTxn()
+						: tripleStore.getTxnManager().createReadTxnUntracked();
 			} catch (IOException e) {
 				throw new SailException(e);
 			}
@@ -1619,8 +1624,10 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void close() {
-			// close the associated txn
-			txn.close();
+			if (!closed) {
+				closed = true;
+				txn.close();
+			}
 		}
 
 		@Override
