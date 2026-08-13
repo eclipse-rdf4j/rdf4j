@@ -627,6 +627,8 @@ public class QueryServlet extends TransformationServlet {
 		final String action = req.getParameter(ACTION);
 		if ("save".equals(action)) {
 			saveQuery(req, resp);
+		} else if (ACTION_SET_LMDB_PROPERTY.equals(action)) {
+			writeSetLmdbRuntimeProperty(req, resp);
 		} else if ("edit".equals(action)) {
 			if (canReadSavedQuery(req)) {
 				/*

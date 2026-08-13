@@ -2726,19 +2726,24 @@ var workbench;
             });
         }
         query_1.loadLmdbRuntimeProperties = loadLmdbRuntimeProperties;
+        function loadLmdbRuntimePropertiesIfPanelOpen(details) {
+            if (details.open && !lmdbRuntimePropertiesLoaded) {
+                loadLmdbRuntimeProperties();
+            }
+        }
         function initializeLmdbRuntimeFeatures() {
             var details = document.getElementById('lmdb-runtime-features');
             if (!details) {
                 return;
             }
             details.addEventListener('toggle', function () {
-                if (details.open && !lmdbRuntimePropertiesLoaded) {
-                    loadLmdbRuntimeProperties();
-                }
+                loadLmdbRuntimePropertiesIfPanelOpen(details);
             });
             $('#lmdb-runtime-refresh').click(function () {
                 loadLmdbRuntimeProperties();
             });
+            // The panel is expanded by default, so load without waiting for a toggle event.
+            loadLmdbRuntimePropertiesIfPanelOpen(details);
         }
         query_1.initializeLmdbRuntimeFeatures = initializeLmdbRuntimeFeatures;
         query_1.testing = {
