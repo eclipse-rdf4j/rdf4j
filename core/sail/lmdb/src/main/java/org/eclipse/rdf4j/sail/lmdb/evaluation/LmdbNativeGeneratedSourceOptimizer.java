@@ -44,6 +44,10 @@ final class LmdbNativeGeneratedSourceOptimizer {
 	}
 
 	static String optimize(String source) {
+		return optimize(source, true);
+	}
+
+	static String optimize(String source, boolean telemetry) {
 		if (source == null || source.indexOf(MARKER) >= 0 || source.indexOf("class ") < 0) {
 			return source;
 		}
@@ -78,6 +82,9 @@ final class LmdbNativeGeneratedSourceOptimizer {
 			Matcher domain = ARRAY_DOMAIN.matcher(line);
 			if (domain.matches()) {
 				lines.add(line);
+				if (!telemetry) {
+					continue;
+				}
 				String key = normalize(domain.group(2));
 				DomainInfo info = domains.get(key);
 				String indent = domain.group(1);
@@ -96,7 +103,7 @@ final class LmdbNativeGeneratedSourceOptimizer {
 				String key = normalize(child.group(2));
 				DomainInfo info = domains.get(key);
 				lines.add(line);
-				if (info != null) {
+				if (telemetry && info != null) {
 					lines.add(child.group(1)
 							+ "if (!org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.sipMayContain("
 							+ info.id + ", " + child.group(2) + ")) { continue; }");
@@ -106,12 +113,15 @@ final class LmdbNativeGeneratedSourceOptimizer {
 			lines.add(line);
 		}
 
-		List<FilterMove> filterMoves = relocateStraightLineFilters(lines);
-		injectClassStateAndLifecycle(lines, filterMoves);
+		List<FilterMove> filterMoves = relocateStraightLineFilters(lines, telemetry);
+		injectClassStateAndLifecycle(lines, filterMoves, telemetry);
 		return String.join(lineSeparator, lines);
 	}
 
-	private static void injectClassStateAndLifecycle(List<String> lines, List<FilterMove> moves) {
+	private static void injectClassStateAndLifecycle(List<String> lines, List<FilterMove> moves, boolean telemetry) {
+		if (!telemetry) {
+			return;
+		}
 		int classLine = -1;
 		for (int i = 0; i < lines.size(); i++) {
 			if (CLASS_DECL.matcher(lines.get(i)).matches()) {
@@ -172,7 +182,7 @@ final class LmdbNativeGeneratedSourceOptimizer {
 	/**
 	 * Relocates only within one straight-line brace depth and instruments the resulting guard with primitive counters.
 	 */
-	private static List<FilterMove> relocateStraightLineFilters(List<String> lines) {
+	private static List<FilterMove> relocateStraightLineFilters(List<String> lines, boolean telemetry) {
 		ArrayList<FilterMove> moves = new ArrayList<>();
 		for (int at = 0; at < lines.size(); at++) {
 			Matcher filter = FILTER_CONTINUE.matcher(lines.get(at));
@@ -203,8 +213,10 @@ final class LmdbNativeGeneratedSourceOptimizer {
 			int key = stableHash(label + '@' + at);
 			FilterMove move = new FilterMove(id, key, label, at, earliest);
 			String indent = filter.group(1);
-			String instrumented = indent + "rdf4jRfTest" + id + "++;\n" + indent + "if (" + expression
-					+ ") { rdf4jRfReject" + id + "++; " + filter.group(3) + " }";
+			String instrumented = telemetry
+					? indent + "rdf4jRfTest" + id + "++;\n" + indent + "if (" + expression
+							+ ") { rdf4jRfReject" + id + "++; " + filter.group(3) + " }"
+					: indent + "if (" + expression + ") { " + filter.group(3) + " }";
 			lines.remove(at);
 			lines.add(earliest, instrumented);
 			moves.add(move);

@@ -26,10 +26,12 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JoinDispatchTestAccess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
@@ -128,6 +130,59 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 		assertThat(JoinDispatchTestAccess.factorizedCacheBackedMemoSkips())
 				.as("a cache-backed tail branch must skip its per-key value memo")
 				.isGreaterThan(skipsBefore);
+	}
+
+	@Test
+	void factorizedRowsOutrankAnEligibleCompiledKernel() {
+		String query = "PREFIX ex: <" + EX + ">\nSELECT ?s ?y WHERE {\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  ?a ex:p2 ?y .\n"
+				+ "}";
+		String previousFactorized = System.getProperty("rdf4j.lmdb.factorizedRows.enabled");
+		String previousThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
+		String previousSynchronous = System.getProperty("rdf4j.lmdb.janinoCodegen.synchronous");
+		String previousCalibration = System.getProperty("rdf4j.lmdb.costCalibration.enabled");
+		try {
+			System.setProperty(JANINO_CODEGEN_FLAG, "true");
+			System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+			System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
+			System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
+
+			System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
+			JaninoPipelineTestAccess.resetAll();
+			List<String> expected = queryRows(query);
+			assertThat(JaninoPipelineTestAccess.opened())
+					.as("fixture must be executable by the generated row kernel")
+					.isPositive();
+
+			System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "true");
+			JaninoPipelineTestAccess.resetAll();
+			long factorizedBefore = JoinDispatchTestAccess.factorizedEngaged();
+			assertThat(queryRows(query)).containsExactlyElementsOf(expected);
+			assertThat(JoinDispatchTestAccess.factorizedEngaged())
+					.as("all eligible row strategies must compete in one arbiter")
+					.isGreaterThan(factorizedBefore);
+			assertThat(JaninoPipelineTestAccess.opened())
+					.as("the lower-ranked generated kernel must remain unopened")
+					.isZero();
+		} finally {
+			restoreProperty("rdf4j.lmdb.factorizedRows.enabled", previousFactorized);
+			restoreProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", previousThreshold);
+			restoreProperty("rdf4j.lmdb.janinoCodegen.synchronous", previousSynchronous);
+			restoreProperty("rdf4j.lmdb.costCalibration.enabled", previousCalibration);
+			System.setProperty(JANINO_CODEGEN_FLAG, "false");
+			JaninoPipelineTestAccess.resetAll();
+		}
+	}
+
+	private List<String> queryRows(String query) {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			return QueryResults.asList(conn.prepareTupleQuery(query).evaluate())
+					.stream()
+					.map(LmdbNativeFactorizedAdjacencyMemoTest::canonical)
+					.sorted()
+					.collect(Collectors.toList());
+		}
 	}
 
 	private static void restoreProperty(String property, String previous) {

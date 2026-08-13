@@ -65,6 +65,15 @@ public class LmdbNativeKernelAggregateTest {
 	private static final String EXISTS_GROUPED_QUERY = "PREFIX ex: <" + EX + ">\n"
 			+ "SELECT ?a (COUNT(?b) AS ?n) WHERE { ?a ex:knows ?b .\n"
 			+ "  FILTER EXISTS { ?b ex:knows ?c . ?c ex:knows ?a } } GROUP BY ?a";
+	private static final String EXISTS_UNION_COUNT_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT (COUNT(DISTINCT ?a) AS ?n) WHERE { ?a ex:knows ?b .\n"
+			+ "  FILTER EXISTS { { ?a ex:dislikes ?d } UNION { ?b ex:label ?label } } }";
+	private static final String EXISTS_MINUS_COUNT_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT (COUNT(DISTINCT ?a) AS ?n) WHERE { ?a ex:knows ?b .\n"
+			+ "  FILTER EXISTS { ?a ex:knows ?c MINUS { ?c ex:dislikes ?d } } }";
+	private static final String EXISTS_OPTIONAL_COUNT_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT (COUNT(DISTINCT ?a) AS ?n) WHERE { ?a ex:knows ?b .\n"
+			+ "  FILTER EXISTS { ?a ex:knows ?c OPTIONAL { ?c ex:label ?label } } }";
 	private static final String MIN_MAX_QUERY = "PREFIX ex: <" + EX + ">\n"
 			+ "SELECT (MIN(?v) AS ?lo) (MAX(?v) AS ?hi) (SUM(?v) AS ?total) WHERE { ?s ex:score ?v . }";
 	private static final String BIG_SUM_QUERY = "PREFIX ex: <" + EX + ">\n"
@@ -103,6 +112,33 @@ public class LmdbNativeKernelAggregateTest {
 	private static final String HAVING_SUM_QUERY = "PREFIX ex: <" + EX + ">\n"
 			+ "SELECT ?g (SUM(?v) AS ?total) WHERE {\n"
 			+ "  ?s ex:bucket ?g ; ex:groupScore ?v . } GROUP BY ?g HAVING(SUM(?v) > 5.0)";
+	// Correlated grouped-semijoin shape: an outer null-rejecting filter makes the OPTIONAL mandatory, the alias must
+	// resolve to its practitioner producer, and the EXISTS witness becomes decidable as soon as ?enc is produced.
+	// COUNT(?enc) in HAVING intentionally differs from projected COUNT(DISTINCT ?enc): p0 has two accepted
+	// practitioner rows for one encounter, while p1 has one accepted row for each of two encounters.
+	private static final String GROUPED_OPTIONAL_EXISTS_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT ?patient (COUNT(DISTINCT ?enc) AS ?encCount) WHERE {\n"
+			+ "  ?patient a ex:Patient .\n"
+			+ "  OPTIONAL {\n"
+			+ "    ?patient ex:hasEncounter ?enc .\n"
+			+ "    ?enc ex:handledBy ?practitioner .\n"
+			+ "    BIND(?practitioner AS ?optPractitioner)\n"
+			+ "  }\n"
+			+ "  FILTER(?optPractitioner != ?patient)\n"
+			+ "  FILTER EXISTS { ?enc ex:hasCondition ?condition }\n"
+			+ "}\n"
+			+ "GROUP BY ?patient HAVING(COUNT(?enc) >= 2)";
+	private static final String NULL_REJECTED_OPTIONALS_COUNT_QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT (COUNT(DISTINCT ?patient) AS ?n) WHERE {\n"
+			+ "  ?patient a ex:Patient .\n"
+			+ "  OPTIONAL {\n"
+			+ "    ?patient ex:hasEncounter ?enc .\n"
+			+ "    ?enc ex:handledBy ?practitioner .\n"
+			+ "    BIND(?practitioner AS ?optPractitioner)\n"
+			+ "  }\n"
+			+ "  FILTER(?optPractitioner != ?patient)\n"
+			+ "  OPTIONAL { ?patient ex:hasMedication ?medication . }\n"
+			+ "}";
 
 	// M7 bind hook: STRLEN is the one guaranteed-inline computed BIND the expression compiler serves, so this is the
 	// shape whose kernel decline (`bind-computed`) the bind-hook seam must remove (BIND_HOOK_LOWERINGS witness).
@@ -205,6 +241,9 @@ public class LmdbNativeKernelAggregateTest {
 		save(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
 		save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
 		save(LmdbNativeKernelLowering.UNION_SOURCES_PROPERTY, "true");
+		save(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
+		save(LmdbNativeCostCalibration.ENABLED_PROPERTY + ".record", "true");
+		save(LmdbNativeCostCalibration.EXPLORATION_PROPERTY, "false");
 		save("rdf4j.lmdb.janinoCodegen.debug", "true");
 		save(LmdbNativeJaninoCodegen.DUMP_DIR_PROPERTY, "target/kernel-dump");
 
@@ -227,6 +266,11 @@ public class LmdbNativeKernelAggregateTest {
 		IRI person = vf.createIRI(EX + "Person");
 		IRI combination = vf.createIRI(EX + "Combination");
 		IRI member = vf.createIRI(EX + "member");
+		IRI patientType = vf.createIRI(EX + "Patient");
+		IRI hasEncounter = vf.createIRI(EX + "hasEncounter");
+		IRI handledBy = vf.createIRI(EX + "handledBy");
+		IRI hasCondition = vf.createIRI(EX + "hasCondition");
+		IRI hasMedication = vf.createIRI(EX + "hasMedication");
 		int[][] edges = {
 				{ 0, 1 }, { 1, 2 }, { 2, 0 },
 				{ 3, 4 }, { 4, 5 }, { 5, 3 },
@@ -301,6 +345,54 @@ public class LmdbNativeKernelAggregateTest {
 			connection.add(vf.createIRI(EX + "p0"), edge, vf.createIRI(EX + "x4"));
 			connection.add(vf.createIRI(EX + "p4"), edge, vf.createIRI(EX + "x5"));
 			connection.add(vf.createIRI(EX + "x4"), edge2, vf.createIRI(EX + "y4"));
+
+			for (int i = 0; i < 5; i++) {
+				connection.add(vf.createIRI(EX + "patient" + i), RDF.TYPE, patientType);
+			}
+			IRI patient0 = vf.createIRI(EX + "patient0");
+			IRI patient1 = vf.createIRI(EX + "patient1");
+			IRI patient2 = vf.createIRI(EX + "patient2");
+			IRI patient3 = vf.createIRI(EX + "patient3");
+			IRI patient4 = vf.createIRI(EX + "patient4");
+			IRI clinician0 = vf.createIRI(EX + "clinician0");
+			IRI clinician1 = vf.createIRI(EX + "clinician1");
+			IRI encounter0 = vf.createIRI(EX + "encounter0");
+			IRI encounter1 = vf.createIRI(EX + "encounter1");
+			IRI encounter2 = vf.createIRI(EX + "encounter2");
+			IRI encounter3 = vf.createIRI(EX + "encounter3");
+			IRI encounter4 = vf.createIRI(EX + "encounter4");
+			IRI encounter5 = vf.createIRI(EX + "encounter5");
+			IRI encounter6 = vf.createIRI(EX + "encounter6");
+			connection.add(patient0, hasEncounter, encounter0);
+			connection.add(patient0, hasEncounter, encounter1);
+			connection.add(encounter0, hasCondition, vf.createIRI(EX + "condition0"));
+			connection.add(encounter0, hasCondition, vf.createIRI(EX + "condition1"));
+			connection.add(encounter1, hasCondition, vf.createIRI(EX + "condition2"));
+			connection.add(encounter0, handledBy, patient0);
+			connection.add(encounter0, handledBy, clinician0);
+			connection.add(encounter0, handledBy, clinician1);
+			connection.add(encounter1, handledBy, patient0);
+
+			connection.add(patient1, hasEncounter, encounter2);
+			connection.add(patient1, hasEncounter, encounter3);
+			connection.add(encounter2, hasCondition, vf.createIRI(EX + "condition3"));
+			connection.add(encounter3, hasCondition, vf.createIRI(EX + "condition4"));
+			connection.add(encounter2, handledBy, clinician0);
+			connection.add(encounter3, handledBy, clinician0);
+
+			connection.add(patient2, hasEncounter, encounter4);
+			connection.add(encounter4, hasCondition, vf.createIRI(EX + "condition5"));
+			// No practitioner: the null-extended OPTIONAL row must be rejected by the inequality.
+			connection.add(patient3, hasEncounter, encounter5);
+			connection.add(encounter5, handledBy, clinician0);
+			// No condition: the correlated EXISTS must reject this otherwise complete row.
+			connection.add(patient4, hasEncounter, encounter6);
+			connection.add(encounter6, hasCondition, vf.createIRI(EX + "condition6"));
+			connection.add(encounter6, handledBy, clinician0);
+			// One matching row is below the ordinary COUNT threshold.
+			connection.add(patient0, hasMedication, vf.createIRI(EX + "medication0"));
+			connection.add(patient0, hasMedication, vf.createIRI(EX + "medication1"));
+			connection.add(patient1, hasMedication, vf.createIRI(EX + "medication2"));
 			connection.commit();
 		}
 	}
@@ -326,6 +418,14 @@ public class LmdbNativeKernelAggregateTest {
 	public void resetCounters() {
 		KernelExecutionTestAccess.resetMetrics();
 		LmdbNativeJaninoCodegen.resetForTests();
+		LmdbNativeCostCalibration.reset();
+		for (int i = 0; i < 100; i++) {
+			// This class proves IR lowering and exactness, not the production crossover against every
+			// competing specialist. Give the unified arbiter deterministic execution evidence for the strategy under
+			// test; production dispatch remains cost-based and the dedicated priority tests cover specialist wins.
+			LmdbNativeCostCalibration.record(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 1_000_000D, 1_000L);
+			LmdbNativeCostCalibration.record(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, 1_000_000D, 1_000L);
+		}
 	}
 
 	private void warmUntilEngaged(String query) {
@@ -361,6 +461,12 @@ public class LmdbNativeKernelAggregateTest {
 					+ "> SELECT * WHERE { VALUES ?a { ex:x1 ex:x3 ex:x4 } ?a ex:edge2 ?t }");
 			rows("PREFIX ex: <" + EX
 					+ "> SELECT * WHERE { VALUES ?t { ex:y1 ex:y2 ex:y3 ex:y4 } ?a ex:edge2 ?t }");
+			rows("PREFIX ex: <" + EX
+					+ "> SELECT * WHERE { VALUES ?patient { ex:patient0 ex:patient1 ex:patient2 ex:patient3 ex:patient4 } ?patient ex:hasEncounter ?enc }");
+			rows("PREFIX ex: <" + EX
+					+ "> SELECT * WHERE { VALUES ?enc { ex:encounter0 ex:encounter1 ex:encounter2 ex:encounter3 ex:encounter4 ex:encounter5 ex:encounter6 } ?enc ex:handledBy ?practitioner }");
+			rows("PREFIX ex: <" + EX
+					+ "> SELECT * WHERE { VALUES ?enc { ex:encounter0 ex:encounter1 ex:encounter2 ex:encounter3 ex:encounter4 ex:encounter5 ex:encounter6 } ?enc ex:hasCondition ?condition }");
 		}
 		for (int round = 0; round < 300 && KernelExecutionTestAccess.aggOpened() == 0L; round++) {
 			rows(query);
@@ -385,6 +491,86 @@ public class LmdbNativeKernelAggregateTest {
 		warmUntilEngaged(EXISTS_GROUPED_QUERY);
 		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L, "aggregate rung never engaged");
 		assertEquals(expected, rows(EXISTS_GROUPED_QUERY));
+	}
+
+	@Test
+	public void unionInsideExistsLowersAsOneCorrelatedWitness() {
+		List<String> expected = genericRows(EXISTS_UNION_COUNT_QUERY);
+		assertFalse(expected.isEmpty(), "fixture must exercise at least one successful UNION witness");
+		warmUntilEngaged(EXISTS_UNION_COUNT_QUERY);
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
+				"correlated UNION witness was left outside the aggregate kernel (planned="
+						+ KernelExecutionTestAccess.aggPlanned() + ", declined="
+						+ KernelExecutionTestAccess.aggDeclined() + ")");
+		assertEquals(expected, rows(EXISTS_UNION_COUNT_QUERY));
+	}
+
+	@Test
+	public void minusInsideExistsLowersAsOneCorrelatedAntiWitness() {
+		List<String> expected = genericRows(EXISTS_MINUS_COUNT_QUERY);
+		assertFalse(expected.isEmpty(), "fixture must exercise a surviving nested MINUS row");
+		warmUntilEngaged(EXISTS_MINUS_COUNT_QUERY);
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
+				"nested MINUS was left outside the aggregate kernel (planned="
+						+ KernelExecutionTestAccess.aggPlanned() + ", declined="
+						+ KernelExecutionTestAccess.aggDeclined() + ")");
+		assertEquals(expected, rows(EXISTS_MINUS_COUNT_QUERY));
+	}
+
+	@Test
+	public void optionalInsideExistsLowersAsOneCorrelatedWitness() {
+		List<String> expected = genericRows(EXISTS_OPTIONAL_COUNT_QUERY);
+		assertFalse(expected.isEmpty(), "fixture must exercise OPTIONAL matches and null extension inside EXISTS");
+		warmUntilEngaged(EXISTS_OPTIONAL_COUNT_QUERY);
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
+				"nested OPTIONAL was left outside the aggregate kernel (planned="
+						+ KernelExecutionTestAccess.aggPlanned() + ", declined="
+						+ KernelExecutionTestAccess.aggDeclined() + ")");
+		assertEquals(expected, rows(EXISTS_OPTIONAL_COUNT_QUERY));
+	}
+
+	@Test
+	public void nullRejectedOptionalAndExistsFuseIntoGroupedKernel() {
+		List<String> expected = genericRows(GROUPED_OPTIONAL_EXISTS_QUERY);
+		assertEquals(2, expected.size(), "fixture must retain exactly the two semantically distinct count cases");
+		assertTrue(expected.stream().anyMatch(row -> row.contains("patient0") && row.contains("encCount=\"1\"")),
+				"ordinary HAVING count must allow patient0 while DISTINCT projection remains one: " + expected);
+		assertTrue(expected.stream().anyMatch(row -> row.contains("patient1") && row.contains("encCount=\"2\"")),
+				"patient1 must contribute two distinct encounters: " + expected);
+
+		warmUntilEngaged(GROUPED_OPTIONAL_EXISTS_QUERY);
+		String executedPlan = KernelExecutionTestAccess.aggOpened() == 0L
+				? explanation(GROUPED_OPTIONAL_EXISTS_QUERY, Explanation.Level.Executed)
+				: "";
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
+				"the correlated OPTIONAL/EXISTS aggregate never became one IR kernel (planned="
+						+ KernelExecutionTestAccess.aggPlanned() + ", declined="
+						+ KernelExecutionTestAccess.aggDeclined() + ", compileFailures="
+						+ LmdbNativeJaninoCodegen.COMPILE_FAILURES.get() + ")\n" + executedPlan);
+		assertTrue(KernelExecutionTestAccess.havingSinks() > 0L,
+				"the ordinary COUNT HAVING guard was not attached to the grouped kernel");
+		assertEquals(expected, rows(GROUPED_OPTIONAL_EXISTS_QUERY));
+	}
+
+	@Test
+	public void nullRejectedOptionalsRetainColdJaninoAggregateEngagement() {
+		List<String> expected = genericRows(NULL_REJECTED_OPTIONALS_COUNT_QUERY);
+		String previousCalibration = System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "false");
+		try {
+			LmdbNativeCostCalibration.reset();
+			warmUntilEngaged(NULL_REJECTED_OPTIONALS_COUNT_QUERY);
+			String executedPlan = KernelExecutionTestAccess.aggOpened() == 0L
+					? explanation(NULL_REJECTED_OPTIONALS_COUNT_QUERY, Explanation.Level.Executed)
+					: "";
+			assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
+					"the enabled Janino aggregate was never attempted from a cold preference tie (planned="
+							+ KernelExecutionTestAccess.aggPlanned() + ", declined="
+							+ KernelExecutionTestAccess.aggDeclined() + ", compileFailures="
+							+ LmdbNativeJaninoCodegen.COMPILE_FAILURES.get() + ")\n" + executedPlan);
+			assertEquals(expected, rows(NULL_REJECTED_OPTIONALS_COUNT_QUERY));
+		} finally {
+			restoreProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousCalibration);
+		}
 	}
 
 	@Test
@@ -697,7 +883,10 @@ public class LmdbNativeKernelAggregateTest {
 
 	@Test
 	public void twoKeyZeroPayloadHashJoinMatchesGeneric() {
-		System.setProperty("rdf4j.lmdb.nativeHashJoin.minRows", "0");
+		String hashRows = System.setProperty("rdf4j.lmdb.nativeHashJoin.minRows", "0");
+		String factorized = System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
+		String batch = System.setProperty(NativeBatch.ENABLED_PROPERTY, "false");
+		String parallel = System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		try {
 			List<String> expected = genericRows(HASH_JOIN_TWO_KEY_QUERY);
 			warmRowSeeds();
@@ -708,7 +897,10 @@ public class LmdbNativeKernelAggregateTest {
 					"the two-key join was not lowered through HashBuild/HashProbe");
 			assertEquals(expected, rows(HASH_JOIN_TWO_KEY_QUERY));
 		} finally {
-			System.clearProperty("rdf4j.lmdb.nativeHashJoin.minRows");
+			restoreProperty("rdf4j.lmdb.nativeHashJoin.minRows", hashRows);
+			restoreProperty("rdf4j.lmdb.factorizedRows.enabled", factorized);
+			restoreProperty(NativeBatch.ENABLED_PROPERTY, batch);
+			restoreProperty("rdf4j.lmdb.parallel.enabled", parallel);
 		}
 	}
 
@@ -849,6 +1041,14 @@ public class LmdbNativeKernelAggregateTest {
 		System.setProperty(key, value);
 	}
 
+	private static void restoreProperty(String key, String value) {
+		if (value == null) {
+			System.clearProperty(key);
+		} else {
+			System.setProperty(key, value);
+		}
+	}
+
 	private static String groupSubjects() {
 		StringBuilder subjects = new StringBuilder();
 		for (int i = 0; i < 20; i++) {
@@ -884,6 +1084,12 @@ public class LmdbNativeKernelAggregateTest {
 			return rows(query);
 		} finally {
 			System.setProperty(NATIVE_FLAG, "true");
+		}
+	}
+
+	private String explanation(String query, Explanation.Level level) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection.prepareTupleQuery(QueryLanguage.SPARQL, query).explain(level).toString();
 		}
 	}
 

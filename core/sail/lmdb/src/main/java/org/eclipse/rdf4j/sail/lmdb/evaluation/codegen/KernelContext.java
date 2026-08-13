@@ -55,6 +55,7 @@ public final class KernelContext {
 
 	private static final NativeLmdbQuerySource.NodePredicates[] NO_NODE_PREDICATES = {};
 	private static final NativeLmdbQuerySource.DynamicAdjacency[] NO_DYNAMIC_ADJACENCIES = {};
+	private static final long[][] NO_KEY_DOMAINS = {};
 
 	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
 			long[][] keyDomains) {
@@ -100,14 +101,14 @@ public final class KernelContext {
 		this.adjacencies = adjacencies;
 		this.constants = constants;
 		this.entrySlots = entrySlots;
-		this.keyDomains = Objects.requireNonNull(keyDomains, "keyDomains");
+		this.keyDomains = keyDomains == null ? NO_KEY_DOMAINS : keyDomains;
 		this.keyDomainOffsets = Objects.requireNonNull(keyDomainOffsets, "keyDomainOffsets");
 		this.keyDomainLengths = Objects.requireNonNull(keyDomainLengths, "keyDomainLengths");
-		if (keyDomains.length != keyDomainOffsets.length || keyDomains.length != keyDomainLengths.length) {
+		if (this.keyDomains.length != keyDomainOffsets.length || this.keyDomains.length != keyDomainLengths.length) {
 			throw new IllegalArgumentException("kernel domain slice arrays have different lengths");
 		}
-		for (int i = 0; i < keyDomains.length; i++) {
-			long[] domain = Objects.requireNonNull(keyDomains[i], "keyDomain " + i);
+		for (int i = 0; i < this.keyDomains.length; i++) {
+			long[] domain = Objects.requireNonNull(this.keyDomains[i], "keyDomain " + i);
 			int offset = keyDomainOffsets[i];
 			int length = keyDomainLengths[i];
 			if (offset < 0 || length < 0 || offset > domain.length - length) {
@@ -121,12 +122,13 @@ public final class KernelContext {
 	}
 
 	private static int[] wholeOffsets(long[][] keyDomains) {
-		Objects.requireNonNull(keyDomains, "keyDomains");
-		return new int[keyDomains.length];
+		return new int[keyDomains == null ? 0 : keyDomains.length];
 	}
 
 	private static int[] wholeLengths(long[][] keyDomains) {
-		Objects.requireNonNull(keyDomains, "keyDomains");
+		if (keyDomains == null) {
+			return new int[0];
+		}
 		int[] lengths = new int[keyDomains.length];
 		for (int i = 0; i < keyDomains.length; i++) {
 			lengths[i] = Objects.requireNonNull(keyDomains[i], "keyDomain " + i).length;

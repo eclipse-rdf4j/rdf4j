@@ -126,10 +126,10 @@ final class LmdbNativeKernelExecution {
 		LmdbNativeKernelHooks hooks = null;
 		NativeLmdbQuerySource.NativeAdjacency[] views = null;
 		try {
-			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(arg, row, groupSlots,
+			LmdbNativeKernelLowering.Lowered semantic = LmdbNativeKernelLowering.lowerAggregate(arg, row, groupSlots,
 					aggregates, LmdbNativeKernelLowering.recognizeHaving(havingCondition, aggregates), explainTarget,
 					preferScans);
-			if (lowered == null) {
+			if (semantic == null) {
 				AGG_DECLINED.incrementAndGet();
 				if (row.runtimePlan != null) {
 					row.runtimePlan.janinoDeclined("IR_AGGREGATE_LOWERING_DECLINED[preferScans=" + preferScans
@@ -137,6 +137,9 @@ final class LmdbNativeKernelExecution {
 				}
 				return null;
 			}
+			final LmdbNativeKernelLowering.Lowered lowered = semantic.withTelemetry(row.runtimePlan == null
+					? LmdbNativeKernelIr.Kernel.TelemetryMode.NONE
+					: LmdbNativeKernelIr.Kernel.TelemetryMode.FULL);
 			AGG_PLANNED.incrementAndGet();
 			String shapeKey = lowered.kernel.shapeKey();
 			if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
@@ -191,6 +194,14 @@ final class LmdbNativeKernelExecution {
 			}
 			LmdbNativeKernelBindings.BoundDomains domains = lowered.bindings.bindDomains(probe, row,
 					"irAggregate");
+			if (!orderedInputsAvailable(lowered, views, domains)) {
+				if (row.runtimePlan != null) {
+					row.runtimePlan
+							.janinoDeclined("BIND_INPUT_UNAVAILABLE[route=irAggregate,resource=orderedInput]");
+				}
+				AGG_DECLINED.incrementAndGet();
+				return null;
+			}
 			// The parallel rung may request a worker kernel VARIANT (HAVING and output mods stripped); every requested
 			// shape compiles through the same cache under its own shape key, so the sequential shape stays untouched.
 			List<BindingSet> parallel = LmdbNativeParallelKernelAggregate
@@ -214,7 +225,7 @@ final class LmdbNativeKernelExecution {
 					? new LmdbNativeKernelHooks(row, lowered.bindings)
 					: null;
 			scanner = lowered.kernel.requirements.scans > 0
-					? new LmdbNativeKernelScanner(row, lowered.bindings.scanOrders)
+					? new LmdbNativeKernelScanner(row, lowered.bindings.scanSites)
 					: null;
 			LmdbNativeJaninoCodegen.bind(kernel,
 					lowered.bindings.context(views, domains, row, hooks, scanner, variableViews), "irAggregate");
@@ -291,6 +302,33 @@ final class LmdbNativeKernelExecution {
 			return null;
 		}
 		return openWithFusedRuntime(arg, row, () -> tryOpenRows(arg, row, originalExpr, false, null, null));
+	}
+
+	/**
+	 * Cost-only row proposal. Lowering, source generation, compilation and store binding remain behind the opener, so a
+	 * generated kernel that loses to WCOJ, factorization, batch or another specialist adds no cold compilation work to
+	 * the current query.
+	 */
+	static LmdbNativeStrategyProposal<RowCursor> proposeRows(SlotPlan arg, RowState row, TupleExpr originalExpr) {
+		if (!hasFusionOpportunity(arg)) {
+			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
+					"no-fusion-opportunity");
+			return null;
+		}
+		if (!LmdbNativeJaninoCodegen.enabled()) {
+			if (row.runtimePlan != null) {
+				row.runtimePlan.janinoDeclined("FEATURE_DISABLED[" + LmdbNativeJaninoCodegen.ENABLED_PROPERTY
+						+ "=false]");
+			}
+			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL, "disabled");
+			return null;
+		}
+		long boundMask = row.boundMask();
+		LmdbNativeWork work = arg.estimateWork(row, boundMask);
+		double rows = LmdbNativeWork.rowsOut(arg, row, boundMask);
+		return new LmdbNativeStrategyProposal<>(() -> tryOpenRows(arg, row, originalExpr), work,
+				LmdbNativeWork.ZERO, rows, LmdbNativeAttemptMetrics.PATH_IR_KERNEL, () -> {
+				});
 	}
 
 	/** The consumer's ORDER BY / LIMIT / OFFSET, offered to the kernel terminal (M7 OutputMods). */
@@ -475,7 +513,7 @@ final class LmdbNativeKernelExecution {
 		NativeLmdbQuerySource.NativeAdjacency[] views = null;
 		org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation = null;
 		try {
-			LmdbNativeKernelLowering.Lowered lowered = ordered != null
+			LmdbNativeKernelLowering.Lowered semantic = ordered != null
 					? LmdbNativeKernelLowering.lowerOrderedRows(arg, row, preferScans, ordered.orderSlots,
 							ordered.ascending, ordered.limit, ordered.offset, ordered.strictCompare, scanPredicates)
 					: distinctSlots != null
@@ -483,7 +521,7 @@ final class LmdbNativeKernelExecution {
 									distinctSlots, scanPredicates)
 							: LmdbNativeKernelLowering.lowerRows(arg, row, originalExpr, preferScans,
 									scanPredicates);
-			if (lowered == null) {
+			if (semantic == null) {
 				if (ordered != null) {
 					// Quiet: the ordinary ladder still sorts outside the kernel; see tryOpenOrderedRows.
 					return null;
@@ -495,6 +533,9 @@ final class LmdbNativeKernelExecution {
 				}
 				return null;
 			}
+			final LmdbNativeKernelLowering.Lowered lowered = semantic.withTelemetry(row.runtimePlan == null
+					? LmdbNativeKernelIr.Kernel.TelemetryMode.NONE
+					: LmdbNativeKernelIr.Kernel.TelemetryMode.FULL);
 			PLANNED.incrementAndGet();
 
 			// Ask for the compiled kernel BEFORE touching the store: while the shape is below threshold or its compile
@@ -566,7 +607,7 @@ final class LmdbNativeKernelExecution {
 			}
 
 			LmdbNativeKernelBindings.BoundDomains domains = lowered.bindings.bindDomains(probe, row, "irKernel");
-			if (!alignedInputsOrdered(lowered, views, domains)) {
+			if (!orderedInputsAvailable(lowered, views, domains)) {
 				// The aligned dedup tier is compiled against grouped emission; a bind-time input that cannot promise
 				// its order must not run that shape. The ordinary ladder remains exact.
 				if (row.runtimePlan != null) {
@@ -603,7 +644,7 @@ final class LmdbNativeKernelExecution {
 				}
 			}
 			scanner = lowered.kernel.requirements.scans > 0
-					? new LmdbNativeKernelScanner(row, lowered.bindings.scanOrders)
+					? new LmdbNativeKernelScanner(row, lowered.bindings.scanSites)
 					: null;
 
 			long hashBuildBytes = hashBuildBytesEstimate(lowered.kernel);
@@ -726,15 +767,19 @@ final class LmdbNativeKernelExecution {
 	 * neighbor order and every materialized domain must be non-decreasing in unsigned id order, or the compiled
 	 * grouped-emission assumption does not hold on this store. Kernels without an aligned prefix skip the check.
 	 */
-	private static boolean alignedInputsOrdered(LmdbNativeKernelLowering.Lowered lowered,
+	private static boolean orderedInputsAvailable(LmdbNativeKernelLowering.Lowered lowered,
 			NativeLmdbQuerySource.NativeAdjacency[] views, LmdbNativeKernelBindings.BoundDomains domains) {
-		if (!(lowered.kernel.terminal instanceof LmdbNativeKernelIr.Emit)
-				|| ((LmdbNativeKernelIr.Emit) lowered.kernel.terminal).alignedCount == 0) {
+		boolean alignedEmit = lowered.kernel.terminal instanceof LmdbNativeKernelIr.Emit
+				&& ((LmdbNativeKernelIr.Emit) lowered.kernel.terminal).alignedCount > 0;
+		boolean ordered = alignedEmit || lowered.kernel.orderedInputsRequired;
+		if (!ordered && lowered.kernel.uniqueDomainsRequired.isEmpty()) {
 			return true;
 		}
-		for (NativeLmdbQuerySource.NativeAdjacency view : views) {
-			if (view != null && !view.runsNeighborOrdered()) {
-				return false;
+		if (ordered) {
+			for (NativeLmdbQuerySource.NativeAdjacency view : views) {
+				if (view != null && !view.runsNeighborOrdered()) {
+					return false;
+				}
 			}
 		}
 		for (int domainIndex = 0; domainIndex < domains.count(); domainIndex++) {
@@ -742,7 +787,9 @@ final class LmdbNativeKernelExecution {
 			int offset = domains.offsets[domainIndex];
 			int length = domains.lengths[domainIndex];
 			for (int i = 1; i < length; i++) {
-				if (Long.compareUnsigned(domain[offset + i - 1], domain[offset + i]) > 0) {
+				int comparison = Long.compareUnsigned(domain[offset + i - 1], domain[offset + i]);
+				if (ordered && comparison > 0
+						|| lowered.kernel.uniqueDomainsRequired.get(domainIndex) && comparison >= 0) {
 					return false;
 				}
 			}

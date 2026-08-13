@@ -463,6 +463,11 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 	 */
 	SlotPlan compileMultiValueStatementPattern(StatementPattern pattern, String variable, long[] ids, Value[] values,
 			boolean keepBinding, boolean allowPartial) {
+		return compileMultiValueStatementPattern(pattern, variable, ids, values, keepBinding, allowPartial, false, 0);
+	}
+
+	SlotPlan compileMultiValueStatementPattern(StatementPattern pattern, String variable, long[] ids, Value[] values,
+			boolean keepBinding, boolean allowPartial, boolean exactFilterRewrite, int exactProbeCount) {
 		if (values != null ? !allValueProbeSafeIds(ids, values) : !allSafeExactIds(ids)) {
 			return null;
 		}
@@ -483,12 +488,12 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		if (alternatives.isEmpty()) {
 			return SlotPlan.empty();
 		}
-		if (alternatives.size() == 1) {
+		if (alternatives.size() == 1 && !exactFilterRewrite) {
 			return alternatives.get(0);
 		}
 		PatternPlan fallback = compileStatementPattern(pattern);
 		return new MultiValuePatternPlan(source, slot(variable), Arrays.copyOf(validIds, validSize),
-				alternatives.toArray(PatternPlan[]::new), fallback);
+				alternatives.toArray(PatternPlan[]::new), fallback, exactFilterRewrite, exactProbeCount);
 	}
 
 	Term compileTermWithConstant(Var var, NativePatternField field, String variable, long constantId,

@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel;
@@ -294,6 +295,11 @@ final class LmdbNativeKernelLowering {
 			this.planBridgeReason = planBridgeReason;
 			this.strictOrderCompare = strictOrderCompare;
 		}
+
+		Lowered withTelemetry(Kernel.TelemetryMode mode) {
+			Kernel variant = kernel.withTelemetry(mode);
+			return variant == kernel ? this : new Lowered(variant, bindings, planBridgeReason, strictOrderCompare);
+		}
 	}
 
 	/** Lowers a row-producing plan; null means declined (reason recorded against the decline target). */
@@ -481,7 +487,7 @@ final class LmdbNativeKernelLowering {
 		LmdbNativeKernelBindings sunk = keyCount == 0 ? bindings
 				: new LmdbNativeKernelBindings(bindings.adjacencies, bindings.constants, bindings.entrySlotIds,
 						bindings.keyDomains, bindings.filterHooks, bindings.bindHooks, bindings.columnEngineSlots,
-						bindings.residualFilters, bindings.scanOrders, bindings.planRequests, bindings.groupLayout,
+						bindings.residualFilters, bindings.scanSites, bindings.planRequests, bindings.groupLayout,
 						true, bindings.distinctExpected);
 		OUTPUT_MODS_LOWERINGS.incrementAndGet();
 		return new Lowered(kernel, sunk, null, strictCompare);
@@ -635,8 +641,8 @@ final class LmdbNativeKernelLowering {
 			sunkSlots[i] = emittedSlots[emitCols[i]];
 		}
 		LmdbNativeKernelBindings sunk = new LmdbNativeKernelBindings(bindings.adjacencies, bindings.constants,
-				bindings.entrySlotIds, bindings.keyDomains, bindings.filterHooks, sunkSlots,
-				bindings.residualFilters, bindings.scanOrders, bindings.planRequests, bindings.groupLayout,
+				bindings.entrySlotIds, bindings.keyDomains, bindings.filterHooks, bindings.bindHooks, sunkSlots,
+				bindings.residualFilters, bindings.scanSites, bindings.planRequests, bindings.groupLayout,
 				bindings.hooksRequired, bindings.distinctExpected);
 		return new Lowered(kernel, sunk, lowered.planBridgeReason);
 	}
@@ -978,6 +984,8 @@ final class LmdbNativeKernelLowering {
 		final List<List<Node>> nodesPerDepth = new ArrayList<>(); // nodes contributed by producer depth d
 		final List<Node> entryDepthFilters = new ArrayList<>(); // filters decidable before any producer
 		final List<List<Node>> filtersPerDepth = new ArrayList<>();
+		/** Root compatibility/restoration nodes that must run after every filter owned by the wrapped plan. */
+		final List<Node> terminalCompatibility = new ArrayList<>();
 		/**
 		 * Innermost lexical branch depth that filters may not escape. A condition depending only on an outer column
 		 * would otherwise be placed beside that column's producer, outside the UNION or OPTIONAL that owns it.
@@ -1109,7 +1117,7 @@ final class LmdbNativeKernelLowering {
 		final List<MaskedFilter> residualFilters = new ArrayList<>();
 		/** Aggregate-rung residual predicates dispatched by index through {@code hooks.testResidual} (M10). */
 		final List<MaskedFilter> kernelResiduals = new ArrayList<>();
-		final List<StatementOrder> scanOrders = new ArrayList<>();
+		final List<LmdbNativeKernelBindings.ScanSite> scanSites = new ArrayList<>();
 
 		final int[] slotColumn;
 		final int[] slotColumnDepth;
@@ -1198,9 +1206,9 @@ final class LmdbNativeKernelLowering {
 					dynamicRequests.toArray(new LmdbNativeKernelBindings.DynamicRequest[0]));
 		}
 
-		private int scan(StatementOrder order) {
-			scanOrders.add(order);
-			return scanOrders.size() - 1;
+		private int scan(StatementOrder order, LmdbKeyRange range) {
+			scanSites.add(new LmdbNativeKernelBindings.ScanSite(order, range));
+			return scanSites.size() - 1;
 		}
 
 		/** Classifies a term as an available operand, or null when it is fresh (or unusable). */
@@ -1230,6 +1238,25 @@ final class LmdbNativeKernelLowering {
 				return Operand.col(slotColumn[slot]);
 			}
 			return null;
+		}
+
+		/**
+		 * Returns a slot as an expression input, including a column established by an earlier UNION branch. Such a
+		 * column is reset to {@code UNKNOWN} before this branch executes, so it is readable but nullable. Producers
+		 * must continue to use {@link #slotOperand(int)}: a pattern mentioning the same variable in another branch
+		 * binds the shared column rather than consuming the preceding branch's value.
+		 */
+		private Operand expressionOperand(int slot) {
+			Operand operand = slotOperand(slot);
+			if (operand != null) {
+				return operand;
+			}
+			Integer pinned = pinnedColumns.get(slot);
+			if (pinned == null) {
+				return null;
+			}
+			optionalColMask |= 1L << pinned;
+			return Operand.col(pinned);
 		}
 
 		private int operandDepth(Operand operand) {
@@ -1310,6 +1337,17 @@ final class LmdbNativeKernelLowering {
 		}
 
 		private boolean lowerJoinOperand(SlotPlan plan, List<MaskedFilter> filters, RowState row, boolean top) {
+			if (plan instanceof EntryBindingCompatibilityPlan) {
+				EntryBindingCompatibilityPlan entry = (EntryBindingCompatibilityPlan) plan;
+				if (!top) {
+					reason = reasonPrefix + "entry-binding-boundary-nested";
+					return false;
+				}
+				if (!lowerJoinOperand(entry.arg, filters, row, false)) {
+					return false;
+				}
+				return lowerEntryBindingCompatibility(entry);
+			}
 			if (plan instanceof JoinPlan) {
 				JoinPlan join = (JoinPlan) plan;
 				return lowerJoinOperand(join.left, filters, row, false)
@@ -1372,15 +1410,10 @@ final class LmdbNativeKernelLowering {
 				return lowerPath((PathPlan) plan);
 			}
 			if (plan instanceof MinusPlan) {
-				// MINUS below the root of the join tree. Unlike the root case in `lowerAggregate`, the anti-join
-				// witness is placed at the depth its correlating producers occupy rather than deferred to
-				// `witnessNodes`, for two reasons: the deferred list is flushed only by `buildAggregate`, so on the row
-				// rung a deferred witness would be dropped silently and MINUS would stop removing anything; and placing
-				// it immediately is the stronger plan anyway, since the anti-join prunes before the remaining
-				// producers run instead of after.
+				// MINUS below the root of the join tree. The anti-join witness is placed at the depth its correlating
+				// producers occupy, so it remains inside any enclosing branch and prunes before unrelated fan-out.
 				MinusPlan minus = (MinusPlan) plan;
-				return lowerJoinOperand(minus.left, filters, row, false)
-						&& lowerMinusArm(minus.right, currentDepthNodes());
+				return lowerJoinOperand(minus.left, filters, row, false) && lowerMinusArm(minus.right);
 			}
 			if (plan instanceof LeftJoinPlan) {
 				// OPTIONAL inside a join tree: the left side is an ordinary producer, the right becomes a left group.
@@ -1404,6 +1437,34 @@ final class LmdbNativeKernelLowering {
 			}
 			reason = reasonPrefix + (top ? "unsupported:" : "child:") + plan.getClass().getSimpleName();
 			return false;
+		}
+
+		/**
+		 * Registers the root badly-designed-OPTIONAL boundary. These nodes live after the producer-depth filters
+		 * because expressions inside {@code entry.arg} must observe the optional value (or absence) before the removed
+		 * caller binding is restored.
+		 */
+		private boolean lowerEntryBindingCompatibility(EntryBindingCompatibilityPlan entry) {
+			for (int i = 0; i < entry.slots.length; i++) {
+				int slot = entry.slots[i];
+				if (slot < 0 || slot >= slotColumn.length) {
+					reason = reasonPrefix + "entry-binding-slot";
+					return false;
+				}
+				int column = slotColumn[slot];
+				if (column < 0) {
+					if (nodesPerDepth.isEmpty()) {
+						reason = reasonPrefix + "entry-binding-no-producer";
+						return false;
+					}
+					column = newColumn(slot);
+				}
+				int constant = constantIndex(entry.ids[i]);
+				terminalCompatibility.add(
+						new LmdbNativeKernelIr.FilterEntryCompatible(Operand.col(column), constant));
+				terminalCompatibility.add(new LmdbNativeKernelIr.BindAlias(Operand.constant(constant), column));
+			}
+			return true;
 		}
 
 		/**
@@ -1541,13 +1602,9 @@ final class LmdbNativeKernelLowering {
 		 * Lowers one union branch's own filters into that branch, verifying afterwards that none escaped below
 		 * {@code depthMark}.
 		 *
-		 * Two things can go wrong and both are refused rather than approximated. A **sticky** filter (mask {@code < 0},
-		 * i.e. EXISTS-bearing) cannot be scoped to a branch at all: `lowerWitness` appends to `witnessNodes`, which
-		 * `buildAggregate` flushes into the pipeline *after* everything else, so the witness would guard every branch's
-		 * rows. And `placeFilter` derives a filter's depth from its operands, so a condition mixing pre-union columns
-		 * with branch columns can land below the mark — outside the harvest — where it would again apply to the whole
-		 * union. That is detected by comparing the filter lists below the mark before and after, including
-		 * {@code entryDepthFilters}, rather than by trying to predict it.
+		 * A filter can escape if its operand-derived depth lands below the branch mark. The branch's lexical floor
+		 * keeps ordinary filters and scope-aware witness probes inside the branch; the snapshots below verify that
+		 * invariant rather than trying to predict it from expression syntax.
 		 */
 		private boolean lowerBranchFilters(List<MaskedFilter> branchFilters, int depthMark) {
 			if (branchFilters.isEmpty()) {
@@ -1559,10 +1616,6 @@ final class LmdbNativeKernelLowering {
 				belowBefore[d] = filtersPerDepth.get(d).size();
 			}
 			for (MaskedFilter branchFilter : branchFilters) {
-				if (branchFilter.mask < 0L) {
-					reason = reasonPrefix + "union-branch-sticky";
-					return false;
-				}
 				if (!lowerFilterStrict(branchFilter)) {
 					return false;
 				}
@@ -1614,7 +1667,7 @@ final class LmdbNativeKernelLowering {
 				}
 				Operand source;
 				if (copy.sourceSlot >= 0) {
-					source = slotOperand(copy.sourceSlot);
+					source = expressionOperand(copy.sourceSlot);
 					if (source == null) {
 						reason = reasonPrefix + "bind-source-unavailable";
 						return false;
@@ -1681,7 +1734,7 @@ final class LmdbNativeKernelLowering {
 				if ((mask >>> slot & 1L) == 0L) {
 					continue;
 				}
-				Operand operand = slotOperand(slot);
+				Operand operand = expressionOperand(slot);
 				if (operand == null) {
 					reason = reasonPrefix + "bind-source-unavailable";
 					return false;
@@ -1768,7 +1821,7 @@ final class LmdbNativeKernelLowering {
 				int adj = adjacency(step.predicate, true, minHops == 1);
 				int startColumn = newColumn(path.subjSlot);
 				if (minHops == 0) {
-					currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateTerms(scan(null), startColumn));
+					currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateTerms(scan(null, null), startColumn));
 				} else {
 					currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateAdjKeys(adj, startColumn, -1));
 				}
@@ -1792,6 +1845,16 @@ final class LmdbNativeKernelLowering {
 
 		/** Lowers a pattern into the current depth (used directly and by the multi-value seed). */
 		private boolean lowerPatternInline(PatternPlan pattern) {
+			if (pattern.range != null) {
+				// Range pushdown replaces the original FILTER, so the exact raw key bounds are semantic. Only a scan
+				// whose planned index and bound mask are stable may carry them; adjacency or a correlated scan would
+				// widen the producer and can return wrong rows.
+				if (rangeScanCompatible(pattern) && lowerPatternAsScan(pattern)) {
+					return true;
+				}
+				reason = rangeDeclineReason(pattern);
+				return false;
+			}
 			if (preferScans && lowerPatternAsScan(pattern)) {
 				return true;
 			}
@@ -2069,7 +2132,8 @@ final class LmdbNativeKernelLowering {
 			if (pattern.s.hasSlot()) {
 				assuredMask |= 1L << pattern.s.slot;
 			}
-			currentDepthNodes().add(new LmdbNativeKernelIr.ScanQuad(scan(pattern.statementOrder), terms, outCols));
+			currentDepthNodes()
+					.add(new LmdbNativeKernelIr.ScanQuad(scan(pattern.statementOrder, pattern.range), terms, outCols));
 			// The equality guards belong with the scan, at the same depth, so they run per scanned quad.
 			currentDepthNodes().addAll(repeats);
 			if (pattern.namedContextScope) {
@@ -2082,6 +2146,58 @@ final class LmdbNativeKernelLowering {
 						Operand.constant(constantIndex(LmdbNativeAggregateCompiler.NULL_CONTEXT_ID))));
 			}
 			return true;
+		}
+
+		private boolean rangeScanCompatible(PatternPlan pattern) {
+			if (!scanSourcesEnabled() || pattern.statementOrder != null || pattern.indexName == null
+					|| !pattern.indexName.equals(pattern.range.indexFieldSeq())) {
+				return false;
+			}
+			// All variable positions must still be fresh at this producer. That retains the exact bound mask used
+			// when the range's index was selected; a correlated or entry-bound position gets the interpreted route.
+			if (!rangeTermStable(pattern.s) || !rangeTermStable(pattern.p) || !rangeTermStable(pattern.o)
+					|| pattern.c.hasSlot() && !slotFresh(pattern.c.slot)) {
+				return false;
+			}
+			int expectedFirst = pattern.range.firstVaryingField();
+			if (expectedFirst < 0) {
+				return true;
+			}
+			for (int i = 0; i < pattern.indexName.length(); i++) {
+				int field = switch (pattern.indexName.charAt(i)) {
+				case 's' -> TripleIndex.SUBJ_IDX;
+				case 'p' -> TripleIndex.PRED_IDX;
+				case 'o' -> TripleIndex.OBJ_IDX;
+				case 'c' -> TripleIndex.CONTEXT_IDX;
+				default -> -1;
+				};
+				if (field < 0) {
+					return false;
+				}
+				Term term = switch (field) {
+				case TripleIndex.SUBJ_IDX -> pattern.s;
+				case TripleIndex.PRED_IDX -> pattern.p;
+				case TripleIndex.OBJ_IDX -> pattern.o;
+				case TripleIndex.CONTEXT_IDX -> pattern.c;
+				default -> throw new IllegalStateException("invalid quad field " + field);
+				};
+				if (!(term.isConstant() && !term.hasSlot())) {
+					return field == expectedFirst;
+				}
+			}
+			return false;
+		}
+
+		private boolean rangeTermStable(Term term) {
+			return !term.hasSlot() || slotFresh(term.slot);
+		}
+
+		private String rangeDeclineReason(PatternPlan pattern) {
+			return reasonPrefix + "pattern-range[index=" + pattern.range.indexFieldSeq()
+					+ ",plannedIndex=" + pattern.indexName
+					+ ",low=" + (pattern.range.lowKey() == null ? "open" : "bounded")
+					+ ",high=" + (pattern.range.highKeyExclusive() == null ? "open" : "bounded")
+					+ ",firstVarying=" + pattern.range.firstVaryingField() + "]";
 		}
 
 		/**
@@ -2133,7 +2249,7 @@ final class LmdbNativeKernelLowering {
 			int column = newColumn(slot);
 			markOrderedDomain(column, domain);
 			currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateDomain(domain, column, true,
-					"MultiValuePattern(slot=" + slot + ")"));
+					"ExactDomainDrive(slot=" + slot + ",arity=" + plan.constants.length + ")"));
 			return lowerPatternInline(plan.fallback);
 		}
 
@@ -2273,10 +2389,7 @@ final class LmdbNativeKernelLowering {
 		// ------------------------------------------------------------------
 
 		void lowerFilter(MaskedFilter masked) {
-			NativeBooleanFilter filter = masked.filter;
-			if (filter instanceof RecordingNativeBooleanFilter) {
-				filter = ((RecordingNativeBooleanFilter) filter).delegate;
-			}
+			NativeBooleanFilter filter = inspectFilter(masked.filter);
 			if (lowerIdFilter(filter)) {
 				return;
 			}
@@ -2303,8 +2416,14 @@ final class LmdbNativeKernelLowering {
 			int adjacencyMark = adjacencies.size();
 			int constantMark = constants.size();
 			int entryMark = entrySlotIds.size();
+			int keyDomainMark = keyDomains.size();
+			int filterHookMark = filterHooks.size();
 			int scratchMark = scratchColumns;
-			int witnessMark = witnessNodes.size();
+			int entryFilterMark = entryDepthFilters.size();
+			int[] depthFilterMarks = new int[filtersPerDepth.size()];
+			for (int depth = 0; depth < filtersPerDepth.size(); depth++) {
+				depthFilterMarks[depth] = filtersPerDepth.get(depth).size();
+			}
 			String reasonBefore = reason;
 			if (lowerWitness(masked.filter, false)) {
 				ROW_EXISTS_LOWERINGS.incrementAndGet();
@@ -2319,8 +2438,20 @@ final class LmdbNativeKernelLowering {
 			while (entrySlotIds.size() > entryMark) {
 				entrySlotIds.remove(entrySlotIds.size() - 1);
 			}
-			while (witnessNodes.size() > witnessMark) {
-				witnessNodes.remove(witnessNodes.size() - 1);
+			while (keyDomains.size() > keyDomainMark) {
+				keyDomains.remove(keyDomains.size() - 1);
+			}
+			while (filterHooks.size() > filterHookMark) {
+				filterHooks.remove(filterHooks.size() - 1);
+			}
+			while (entryDepthFilters.size() > entryFilterMark) {
+				entryDepthFilters.remove(entryDepthFilters.size() - 1);
+			}
+			for (int depth = 0; depth < depthFilterMarks.length; depth++) {
+				List<Node> depthFilters = filtersPerDepth.get(depth);
+				while (depthFilters.size() > depthFilterMarks[depth]) {
+					depthFilters.remove(depthFilters.size() - 1);
+				}
 			}
 			scratchColumns = scratchMark;
 			reason = reasonBefore;
@@ -2335,8 +2466,8 @@ final class LmdbNativeKernelLowering {
 				}
 				boolean sound = (assuredMask >>> compare.leftSlot & 1L) == 1L
 						|| (assuredMask >>> compare.rightSlot & 1L) == 1L;
-				Operand left = slotOperand(compare.leftSlot);
-				Operand right = slotOperand(compare.rightSlot);
+				Operand left = expressionOperand(compare.leftSlot);
+				Operand right = expressionOperand(compare.rightSlot);
 				if (!sound || left == null || right == null || operandMaybeNull(left)
 						|| operandMaybeNull(right)) {
 					return false;
@@ -2353,7 +2484,7 @@ final class LmdbNativeKernelLowering {
 				// safeResourceId is a pure id-type test — never materialize the constant here (tests assert
 				// zero lazyValue calls on native expression paths).
 				boolean sound = (assuredMask >>> compare.slot & 1L) == 1L || safeResourceId(compare.constant);
-				Operand slotSide = slotOperand(compare.slot);
+				Operand slotSide = expressionOperand(compare.slot);
 				if (!sound || slotSide == null || operandMaybeNull(slotSide)) {
 					return false;
 				}
@@ -2364,7 +2495,7 @@ final class LmdbNativeKernelLowering {
 			}
 			if (filter instanceof ValueSetFilter) {
 				ValueSetFilter membership = (ValueSetFilter) filter;
-				Operand slotSide = slotOperand(membership.slot);
+				Operand slotSide = expressionOperand(membership.slot);
 				if (slotSide == null || operandMaybeNull(slotSide)) {
 					return false;
 				}
@@ -2398,7 +2529,7 @@ final class LmdbNativeKernelLowering {
 				if ((mask >>> slot & 1L) == 0L) {
 					continue;
 				}
-				Operand operand = slotOperand(slot);
+				Operand operand = expressionOperand(slot);
 				if (operand == null) {
 					return false;
 				}
@@ -2407,10 +2538,7 @@ final class LmdbNativeKernelLowering {
 				filterDepth = Math.max(filterDepth, operandDepth(operand));
 				out++;
 			}
-			NativeBooleanFilter delegate = masked.filter;
-			if (delegate instanceof RecordingNativeBooleanFilter) {
-				delegate = ((RecordingNativeBooleanFilter) delegate).delegate;
-			}
+			NativeBooleanFilter delegate = inspectFilter(masked.filter);
 			filterHooks.add(new LmdbNativeKernelBindings.FilterHook(masked, argSlots));
 			int filterId = filterHooks.size() - 1;
 			if (bits == 1 && delegate instanceof CachedCompareFilter compare && compare.slot == argSlots[0]
@@ -2624,7 +2752,20 @@ final class LmdbNativeKernelLowering {
 		// Aggregate-side strict filters and witness sub-pipelines (plan 21)
 		// ------------------------------------------------------------------
 
-		final List<Node> witnessNodes = new ArrayList<>();
+		/** Witness-local columns plus the deepest outer producer on which the witness is correlated. */
+		private static final class WitnessColumns extends java.util.HashMap<Integer, Integer> {
+			private static final long serialVersionUID = 1L;
+			int outerDepth = -1;
+
+			WitnessColumns() {
+			}
+
+			WitnessColumns(WitnessColumns source) {
+				super(source);
+				outerDepth = source.outerDepth;
+			}
+		}
+
 		int scratchColumns;
 
 		/**
@@ -3040,7 +3181,7 @@ final class LmdbNativeKernelLowering {
 		 */
 		private boolean lowerExistentialComponent(List<PatternPlan> component) {
 			List<Node> sub = new ArrayList<>();
-			java.util.Map<Integer, Integer> witnessCols = new java.util.HashMap<>();
+			WitnessColumns witnessCols = new WitnessColumns();
 			List<PatternPlan> remaining = new ArrayList<>(component);
 			boolean witnessed = true;
 			while (!remaining.isEmpty() && witnessed) {
@@ -3063,7 +3204,7 @@ final class LmdbNativeKernelLowering {
 				witnessed = lowerWitnessPatternPlan(remaining.remove(Math.max(pick, 0)), witnessCols, sub);
 			}
 			if (witnessed) {
-				currentDepthNodes().add(new LmdbNativeKernelIr.Exists(false, sub));
+				placeWitness(false, sub, witnessCols);
 				return true;
 			}
 			reason = null;
@@ -3081,10 +3222,7 @@ final class LmdbNativeKernelLowering {
 
 		/** Aggregate-side filter lowering: id tier, hook tier, or witness — never residual. */
 		boolean lowerFilterStrict(MaskedFilter masked) {
-			NativeBooleanFilter filter = masked.filter;
-			if (filter instanceof RecordingNativeBooleanFilter) {
-				filter = ((RecordingNativeBooleanFilter) filter).delegate;
-			}
+			NativeBooleanFilter filter = inspectFilter(masked.filter);
 			if (masked.mask >= 0) {
 				if (lowerIdFilter(filter) || lowerHookFilter(masked)) {
 					return true;
@@ -3119,7 +3257,7 @@ final class LmdbNativeKernelLowering {
 			int i = 0;
 			for (long m = mask; m != 0L; m &= m - 1) {
 				int slot = Long.numberOfTrailingZeros(m);
-				Operand operand = slotOperand(slot);
+				Operand operand = expressionOperand(slot);
 				if (operand == null) {
 					return false;
 				}
@@ -3135,6 +3273,7 @@ final class LmdbNativeKernelLowering {
 		}
 
 		private boolean lowerWitness(NativeBooleanFilter filter, boolean negated) {
+			filter = NativeFilterLease.inspect(filter);
 			if (filter instanceof RecordingNativeBooleanFilter) {
 				return lowerWitness(((RecordingNativeBooleanFilter) filter).delegate, negated);
 			}
@@ -3149,61 +3288,21 @@ final class LmdbNativeKernelLowering {
 					return false;
 				}
 				List<Node> pipeline = new ArrayList<>(1);
-				if (!lowerWitnessPattern(exists.s, exists.p.constant, exists.o, new java.util.HashMap<>(),
-						pipeline)) {
+				WitnessColumns witnessCols = new WitnessColumns();
+				if (!lowerWitnessPattern(exists.s, exists.p.constant, exists.o, witnessCols, pipeline)) {
 					return false;
 				}
-				witnessNodes.add(new LmdbNativeKernelIr.Exists(negated, pipeline));
+				placeWitness(negated, pipeline, witnessCols);
 				return true;
 			}
 			if (filter instanceof ExistsFilter) {
 				SlotPlan sub = ((ExistsFilter) filter).subPlan;
 				List<Node> pipeline = new ArrayList<>();
-				java.util.Map<Integer, Integer> witnessCols = new java.util.HashMap<>();
-				// The sub-plan may carry its own FilterPlan wrappers (e.g. a sticky generic condition over a
-				// synthetic VALUES var): peel them and lower each as a witness filter after the producers.
-				List<MaskedFilter> peeled = new ArrayList<>(0);
-				while (true) {
-					if (sub instanceof FilterPlan) {
-						FilterPlan filterPlan = (FilterPlan) sub;
-						peeled.add(new MaskedFilter(filterPlan.filter, filterPlan.filterMask));
-						sub = filterPlan.arg;
-					} else if (sub instanceof ExtensionPlan) {
-						if (!witnessExtensionIsInert((ExtensionPlan) sub)) {
-							return false;
-						}
-						sub = ((ExtensionPlan) sub).arg;
-					} else {
-						break;
-					}
-				}
-				if (sub instanceof PatternPlan) {
-					if (!lowerWitnessPatternPlan((PatternPlan) sub, witnessCols, pipeline)) {
-						return false;
-					}
-				} else if (sub instanceof MultiValuePatternPlan) {
-					if (!lowerWitnessMultiValue((MultiValuePatternPlan) sub, witnessCols, pipeline)) {
-						return false;
-					}
-				} else if (sub instanceof ValuesPlan) {
-					if (!lowerWitnessValues((ValuesPlan) sub, witnessCols, pipeline)) {
-						return false;
-					}
-				} else if (sub instanceof MultiJoinPlan) {
-					MultiJoinPlan subJoin = (MultiJoinPlan) sub;
-					if (!lowerWitnessJoin(subJoin, witnessCols, pipeline)) {
-						return false;
-					}
-				} else {
-					reason = "agg:witness-subplan:" + sub.getClass().getSimpleName();
+				WitnessColumns witnessCols = new WitnessColumns();
+				if (!lowerWitnessPlan(sub, witnessCols, pipeline)) {
 					return false;
 				}
-				for (MaskedFilter peeledFilter : peeled) {
-					if (!lowerWitnessFilter(peeledFilter, witnessCols, pipeline)) {
-						return false;
-					}
-				}
-				witnessNodes.add(new LmdbNativeKernelIr.Exists(negated, pipeline));
+				placeWitness(negated, pipeline, witnessCols);
 				return true;
 			}
 			if (filter instanceof BooleanCombinationFilter) {
@@ -3234,6 +3333,203 @@ final class LmdbNativeKernelLowering {
 		}
 
 		/**
+		 * Recursively lowers the same {@link SlotPlan} algebra the native cursor compiler accepted into a boolean
+		 * witness pipeline. This is the witness capability authority: containers no longer have to be repeated in a
+		 * smaller EXISTS-only whitelist.
+		 */
+		private boolean lowerWitnessPlan(SlotPlan plan, WitnessColumns witnessCols, List<Node> pipeline) {
+			if (plan == EmptyPlan.INSTANCE) {
+				keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(new long[0]));
+				pipeline.add(new LmdbNativeKernelIr.EnumerateDomain(keyDomains.size() - 1, scratchColumn()));
+				return true;
+			}
+			if (plan == SingletonPlan.INSTANCE) {
+				pipeline.add(new LmdbNativeKernelIr.EnumerateEntry());
+				return true;
+			}
+			if (plan instanceof PatternPlan pattern) {
+				return lowerWitnessPatternPlan(pattern, witnessCols, pipeline);
+			}
+			if (plan instanceof MultiValuePatternPlan multiValue) {
+				return lowerWitnessMultiValue(multiValue, witnessCols, pipeline);
+			}
+			if (plan instanceof ValuesPlan values) {
+				return lowerWitnessValues(values, witnessCols, pipeline);
+			}
+			if (plan instanceof MultiJoinPlan join) {
+				return lowerWitnessJoin(join, witnessCols, pipeline);
+			}
+			if (plan instanceof JoinPlan join) {
+				return lowerWitnessPlan(join.left, witnessCols, pipeline)
+						&& lowerWitnessPlan(join.right, witnessCols, pipeline);
+			}
+			if (plan instanceof FilterPlan filter) {
+				return lowerWitnessPlan(filter.arg, witnessCols, pipeline)
+						&& lowerWitnessFilter(new MaskedFilter(filter.filter, filter.filterMask), witnessCols,
+								pipeline);
+			}
+			if (plan instanceof ExtensionPlan extension) {
+				return lowerWitnessPlan(extension.arg, witnessCols, pipeline)
+						&& lowerWitnessExtension(extension, witnessCols, pipeline);
+			}
+			if (plan instanceof UnionPlan union) {
+				return lowerWitnessUnion(union, witnessCols, pipeline);
+			}
+			if (plan instanceof LeftJoinPlan leftJoin) {
+				return lowerWitnessLeftJoin(leftJoin, witnessCols, pipeline);
+			}
+			if (plan instanceof MinusPlan minus) {
+				return lowerWitnessMinus(minus, witnessCols, pipeline);
+			}
+			reason = "agg:witness-subplan:" + plan.getClass().getSimpleName();
+			return false;
+		}
+
+		/**
+		 * MINUS inside a witness is a correlated anti-witness, not an unconditional NOT EXISTS. SlotPlan.minus() has
+		 * already removed the statically disjoint-domain case. This tier additionally requires every possibly shared
+		 * slot to be assured on both sides, so each right row necessarily shares a bound variable with the current left
+		 * row and ordinary anti-existence is exactly SPARQL MINUS compatibility. Nullable/shared-branch cases retain
+		 * the interpreted fallback until the IR carries a per-row shared-domain mask.
+		 */
+		private boolean lowerWitnessMinus(MinusPlan minus, WitnessColumns witnessCols, List<Node> pipeline) {
+			long leftAssured = SlotPlan.assuredMask(minus.left);
+			long rightAssured = SlotPlan.assuredMask(minus.right);
+			if ((leftAssured & minus.sharedMask) != minus.sharedMask
+					|| (rightAssured & minus.sharedMask) != minus.sharedMask) {
+				reason = "agg:witness-minus-nullable-shared-domain";
+				return false;
+			}
+			if (!lowerWitnessPlan(minus.left, witnessCols, pipeline)) {
+				return false;
+			}
+			for (long remaining = minus.sharedMask; remaining != 0L; remaining &= remaining - 1L) {
+				int slot = Long.numberOfTrailingZeros(remaining);
+				Operand shared = witnessOperand(Term.slot(slot), witnessCols);
+				if (shared == null || operandMaybeNull(shared)) {
+					reason = "agg:witness-minus-shared-slot-unavailable";
+					return false;
+				}
+			}
+			WitnessColumns rightColumns = new WitnessColumns(witnessCols);
+			List<Node> rightPipeline = new ArrayList<>();
+			if (!lowerWitnessPlan(minus.right, rightColumns, rightPipeline) || rightPipeline.isEmpty()) {
+				if (reason == null) {
+					reason = "agg:witness-minus-empty-arm";
+				}
+				return false;
+			}
+			witnessCols.outerDepth = Math.max(witnessCols.outerDepth, rightColumns.outerDepth);
+			pipeline.add(new LmdbNativeKernelIr.Exists(true, rightPipeline));
+			return true;
+		}
+
+		/** OPTIONAL inside a witness, retaining arm-match state for correct null extension in boolean mode. */
+		private boolean lowerWitnessLeftJoin(LeftJoinPlan leftJoin, WitnessColumns witnessCols,
+				List<Node> pipeline) {
+			if (!lowerWitnessPlan(leftJoin.left, witnessCols, pipeline)) {
+				return false;
+			}
+			WitnessColumns rightColumns = new WitnessColumns(witnessCols);
+			List<Node> rightPipeline = new ArrayList<>();
+			if (!lowerWitnessPlan(leftJoin.right, rightColumns, rightPipeline) || rightPipeline.isEmpty()) {
+				if (reason == null) {
+					reason = "agg:witness-optional-empty-arm";
+				}
+				return false;
+			}
+			for (java.util.Map.Entry<Integer, Integer> produced : rightColumns.entrySet()) {
+				if (witnessCols.containsKey(produced.getKey())) {
+					continue;
+				}
+				witnessCols.put(produced.getKey(), produced.getValue());
+				optionalColMask |= 1L << produced.getValue();
+			}
+			witnessCols.outerDepth = Math.max(witnessCols.outerDepth, rightColumns.outerDepth);
+			pipeline.add(new LmdbNativeKernelIr.LeftGroup(rightPipeline));
+			return true;
+		}
+
+		/**
+		 * Lowers SPARQL UNION with independent branch-local bindings. Fresh variables are copied into one shared column
+		 * per logical slot at each branch exit; {@link LmdbNativeKernelIr.Union} resets all such columns before every
+		 * branch, preserving absence for variables that the selected branch does not bind.
+		 */
+		private boolean lowerWitnessUnion(UnionPlan union, WitnessColumns witnessCols, List<Node> pipeline) {
+			if (!unionSourcesEnabled()) {
+				reason = "agg:witness-union-disabled";
+				return false;
+			}
+			List<List<Node>> branches = new ArrayList<>(2);
+			java.util.Map<Integer, Integer> sharedColumns = new java.util.HashMap<>();
+			int outerDepth = witnessCols.outerDepth;
+			for (SlotPlan arm : new SlotPlan[] { union.left, union.right }) {
+				WitnessColumns branchColumns = new WitnessColumns(witnessCols);
+				List<Node> branch = new ArrayList<>();
+				if (!lowerWitnessPlan(arm, branchColumns, branch) || branch.isEmpty()) {
+					if (reason == null) {
+						reason = "agg:witness-union-empty-branch";
+					}
+					return false;
+				}
+				outerDepth = Math.max(outerDepth, branchColumns.outerDepth);
+				long produced = arm.producedMask();
+				for (int slot = 0; slot < 64; slot++) {
+					if ((produced >>> slot & 1L) == 0L || witnessCols.containsKey(slot)) {
+						continue;
+					}
+					Integer local = branchColumns.get(slot);
+					if (local == null) {
+						// The slot was already supplied by an outer engine column, so this branch merely correlated on
+						// it.
+						continue;
+					}
+					int shared = sharedColumns.computeIfAbsent(slot, ignored -> scratchColumn());
+					if (local != shared) {
+						branch.add(new LmdbNativeKernelIr.BindAlias(Operand.col(local), shared));
+					}
+				}
+				branches.add(branch);
+			}
+			for (java.util.Map.Entry<Integer, Integer> shared : sharedColumns.entrySet()) {
+				witnessCols.put(shared.getKey(), shared.getValue());
+			}
+			witnessCols.outerDepth = outerDepth;
+			pipeline.add(new LmdbNativeKernelIr.Union(branches));
+			return true;
+		}
+
+		/** Pure alias/constant BIND inside a witness; computed expressions retain the exact fallback for now. */
+		private boolean lowerWitnessExtension(ExtensionPlan extension, WitnessColumns witnessCols,
+				List<Node> pipeline) {
+			for (CopyBinding copy : extension.copies) {
+				if (copy.computed != null) {
+					reason = "agg:witness-bind-computed";
+					return false;
+				}
+				if (witnessOperand(Term.slot(copy.targetSlot), witnessCols) != null) {
+					reason = "agg:witness-bind-target-bound";
+					return false;
+				}
+				Operand source = copy.sourceSlot >= 0
+						? witnessOperand(Term.slot(copy.sourceSlot), witnessCols)
+						: Operand.constant(constantIndex(copy.constant));
+				if (source == null) {
+					reason = "agg:witness-bind-source-unavailable";
+					return false;
+				}
+				int target = scratchColumn();
+				witnessCols.put(copy.targetSlot, target);
+				pipeline.add(new LmdbNativeKernelIr.BindAlias(source, target));
+			}
+			return true;
+		}
+
+		private void placeWitness(boolean negated, List<Node> pipeline, WitnessColumns witnessCols) {
+			placeFilter(new LmdbNativeKernelIr.Exists(negated, pipeline), witnessCols.outerDepth);
+		}
+
+		/**
 		 * Lowers one operand of a decomposed conjunction. An EXISTS-family operand is a witness and recurses; anything
 		 * else is an ordinary row condition and goes through the id then hook tiers.
 		 *
@@ -3248,6 +3544,7 @@ final class LmdbNativeKernelLowering {
 			NativeBooleanFilter inner = operand;
 			boolean innerNegated = negated;
 			while (true) {
+				inner = NativeFilterLease.inspect(inner);
 				if (inner instanceof RecordingNativeBooleanFilter) {
 					inner = ((RecordingNativeBooleanFilter) inner).delegate;
 				} else if (inner instanceof NegatedNativeBooleanFilter) {
@@ -3278,7 +3575,7 @@ final class LmdbNativeKernelLowering {
 		 * round, pick the first child whose inputs are available: a VALUES/folded-IN producer is always ready, while a
 		 * graph pattern needs one available endpoint.
 		 */
-		private boolean lowerWitnessJoin(MultiJoinPlan subJoin, java.util.Map<Integer, Integer> witnessCols,
+		private boolean lowerWitnessJoin(MultiJoinPlan subJoin, WitnessColumns witnessCols,
 				List<Node> pipeline) {
 			List<SlotPlan> remaining = new ArrayList<>();
 			for (SlotPlan child : subJoin.derivedPlan(0L).order) {
@@ -3339,7 +3636,7 @@ final class LmdbNativeKernelLowering {
 		 * graph pattern must treat an UNDEF variable as fresh for that row, whereas the adjacency IR chooses bound vs
 		 * fresh statically. Treating the NULL sentinel as a lookup key would silently turn a wildcard into no match.
 		 */
-		private boolean lowerWitnessValues(ValuesPlan plan, java.util.Map<Integer, Integer> witnessCols,
+		private boolean lowerWitnessValues(ValuesPlan plan, WitnessColumns witnessCols,
 				List<Node> pipeline) {
 			if (plan.rows.length == 0) {
 				keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(new long[0]));
@@ -3372,8 +3669,7 @@ final class LmdbNativeKernelLowering {
 					continue;
 				}
 				slots[variable] = slot;
-				Integer witnessLocal = witnessCols.get(slot);
-				Operand bound = witnessLocal != null ? Operand.col(witnessLocal) : slotOperand(slot);
+				Operand bound = witnessOperand(Term.slot(slot), witnessCols);
 				if (bound != null) {
 					if (operandMaybeNull(bound)) {
 						reason = "agg:witness-values-slot-optional";
@@ -3446,22 +3742,22 @@ final class LmdbNativeKernelLowering {
 		}
 
 		/** True when at least one endpoint of the pattern is already available (probe-able) in this witness. */
-		private boolean witnessPatternCorrelated(PatternPlan pattern, java.util.Map<Integer, Integer> witnessCols) {
+		private boolean witnessPatternCorrelated(PatternPlan pattern, WitnessColumns witnessCols) {
 			return witnessTermAvailable(pattern.s, witnessCols) || witnessTermAvailable(pattern.o, witnessCols);
 		}
 
 		/** Correlation through an available VARIABLE binding; constants deliberately do not qualify. */
-		private boolean witnessVariableCorrelated(PatternPlan pattern, java.util.Map<Integer, Integer> witnessCols) {
+		private boolean witnessVariableCorrelated(PatternPlan pattern, WitnessColumns witnessCols) {
 			return witnessVariableAvailable(pattern.s, witnessCols) || witnessVariableAvailable(pattern.o, witnessCols);
 		}
 
-		private boolean witnessVariableAvailable(Term term, java.util.Map<Integer, Integer> witnessCols) {
+		private boolean witnessVariableAvailable(Term term, WitnessColumns witnessCols) {
 			return !term.isConstant() && term.hasSlot()
 					&& (witnessCols.containsKey(term.slot) || (entryMask >>> term.slot & 1L) == 1L
 							|| slotColumn[term.slot] >= 0);
 		}
 
-		private boolean witnessTermAvailable(Term term, java.util.Map<Integer, Integer> witnessCols) {
+		private boolean witnessTermAvailable(Term term, WitnessColumns witnessCols) {
 			if (term.isConstant() && !term.hasSlot()) {
 				return true;
 			}
@@ -3474,7 +3770,7 @@ final class LmdbNativeKernelLowering {
 			return (entryMask >>> term.slot & 1L) == 1L || slotColumn[term.slot] >= 0;
 		}
 
-		private boolean lowerWitnessPatternPlan(PatternPlan pattern, java.util.Map<Integer, Integer> witnessCols,
+		private boolean lowerWitnessPatternPlan(PatternPlan pattern, WitnessColumns witnessCols,
 				List<Node> pipeline) {
 			if (pattern.namedContextScope || !pattern.p.isConstant() || pattern.p.hasSlot() || pattern.c.hasSlot()
 					|| pattern.c.isConstant() || pattern.contexts.isFixed() || pattern.s.bindConstant
@@ -3503,12 +3799,8 @@ final class LmdbNativeKernelLowering {
 		 * A filter inside a witness body: hook-tier only in this tier — the callback evaluates the exact interpreted
 		 * filter against the witness-local values, so semantics are engine-exact at any position after the producers.
 		 */
-		private boolean lowerWitnessFilter(MaskedFilter masked, java.util.Map<Integer, Integer> witnessCols,
+		private boolean lowerWitnessFilter(MaskedFilter masked, WitnessColumns witnessCols,
 				List<Node> pipeline) {
-			NativeBooleanFilter filter = masked.filter;
-			if (filter instanceof RecordingNativeBooleanFilter) {
-				filter = ((RecordingNativeBooleanFilter) filter).delegate;
-			}
 			long mask = masked.mask;
 			if (mask < 0 || Long.bitCount(mask) > MAX_HOOK_ARGS) {
 				reason = "agg:witness-filter-mask";
@@ -3522,8 +3814,7 @@ final class LmdbNativeKernelLowering {
 				if ((mask >>> slot & 1L) == 0L) {
 					continue;
 				}
-				Integer witnessLocal = witnessCols.get(slot);
-				Operand operand = witnessLocal != null ? Operand.col(witnessLocal) : slotOperand(slot);
+				Operand operand = witnessOperand(Term.slot(slot), witnessCols);
 				if (operand == null) {
 					reason = "agg:witness-filter-slot";
 					return false;
@@ -3537,12 +3828,24 @@ final class LmdbNativeKernelLowering {
 			return true;
 		}
 
+		/** Unwraps ownership/feedback decorators without bypassing them for execution. */
+		private static NativeBooleanFilter inspectFilter(NativeBooleanFilter filter) {
+			while (true) {
+				filter = NativeFilterLease.inspect(filter);
+				if (filter instanceof RecordingNativeBooleanFilter recording) {
+					filter = recording.delegate;
+					continue;
+				}
+				return filter;
+			}
+		}
+
 		/**
 		 * One witness pattern: available endpoints (outer columns/entries/constants or earlier witness-local columns)
 		 * correlate; fresh endpoints become witness-local scratch columns produced by the probe.
 		 */
-		private boolean lowerWitnessPattern(Term s, long predicate, Term o,
-				java.util.Map<Integer, Integer> witnessCols, List<Node> pipeline) {
+		private boolean lowerWitnessPattern(Term s, long predicate, Term o, WitnessColumns witnessCols,
+				List<Node> pipeline) {
 			Operand subject = witnessOperand(s, witnessCols);
 			Operand object = witnessOperand(o, witnessCols);
 			if (subject != null && object != null) {
@@ -3580,12 +3883,8 @@ final class LmdbNativeKernelLowering {
 		 * slots become witness-local scratch columns.
 		 */
 		boolean lowerMinusArm(SlotPlan arm) {
-			return lowerMinusArm(arm, witnessNodes);
-		}
-
-		private boolean lowerMinusArm(SlotPlan arm, List<Node> sink) {
 			List<Node> pipeline = new ArrayList<>();
-			java.util.Map<Integer, Integer> witnessCols = new java.util.HashMap<>();
+			WitnessColumns witnessCols = new WitnessColumns();
 			// BIND extensions only add bindings — existence under the anti-join is unaffected, so peel them. A
 			// FilterPlan wrapper is different in kind but lowers the same way an EXISTS sub-plan's does: the condition
 			// decides which right rows exist at all, so it belongs INSIDE the witness, after its producers. Applying it
@@ -3626,7 +3925,7 @@ final class LmdbNativeKernelLowering {
 					return false;
 				}
 			}
-			sink.add(new LmdbNativeKernelIr.Exists(true, pipeline));
+			placeWitness(true, pipeline, witnessCols);
 			return true;
 		}
 
@@ -3664,7 +3963,7 @@ final class LmdbNativeKernelLowering {
 		 * instead applied as a membership guard on the operand that already holds it.
 		 */
 		private boolean lowerWitnessMultiValue(MultiValuePatternPlan plan,
-				java.util.Map<Integer, Integer> witnessCols, List<Node> pipeline) {
+				WitnessColumns witnessCols, List<Node> pipeline) {
 			if (plan.fallback == null) {
 				reason = "agg:witness-multi-value-no-fallback";
 				return false;
@@ -3674,8 +3973,7 @@ final class LmdbNativeKernelLowering {
 				reason = "agg:witness-multi-value-slot";
 				return false;
 			}
-			Integer witnessLocal = witnessCols.get(slot);
-			Operand bound = witnessLocal != null ? Operand.col(witnessLocal) : slotOperand(slot);
+			Operand bound = witnessOperand(Term.slot(slot), witnessCols);
 			if (bound != null) {
 				int[] indices = new int[plan.constants.length];
 				for (int i = 0; i < indices.length; i++) {
@@ -3689,13 +3987,13 @@ final class LmdbNativeKernelLowering {
 				int column = scratchColumn();
 				keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(plan.constants.clone()));
 				pipeline.add(new LmdbNativeKernelIr.EnumerateDomain(keyDomains.size() - 1, column, true,
-						"WitnessMultiValue(slot=" + slot + ")"));
+						"WitnessExactDomainDrive(slot=" + slot + ",arity=" + plan.constants.length + ")"));
 				witnessCols.put(slot, column);
 			}
 			return lowerWitnessPatternPlan(plan.fallback, witnessCols, pipeline);
 		}
 
-		private Operand witnessOperand(Term term, java.util.Map<Integer, Integer> witnessCols) {
+		private Operand witnessOperand(Term term, WitnessColumns witnessCols) {
 			if (term.isConstant() && !term.hasSlot()) {
 				return Operand.constant(constantIndex(term.constant));
 			}
@@ -3709,7 +4007,11 @@ final class LmdbNativeKernelLowering {
 			Operand outer = slotOperand(term.slot);
 			// Correlating a witness on a maybe-null column would need scan semantics when null — treat as
 			// unavailable; the pattern-level fallthrough then declines the witness.
-			return outer != null && operandMaybeNull(outer) ? null : outer;
+			if (outer == null || operandMaybeNull(outer)) {
+				return null;
+			}
+			witnessCols.outerDepth = Math.max(witnessCols.outerDepth, operandDepth(outer));
+			return outer;
 		}
 
 		Lowered buildAggregate(int[] groupSlots, AggregateSpec[] aggregates, int distinctExpected) {
@@ -3806,7 +4108,7 @@ final class LmdbNativeKernelLowering {
 				pipeline.addAll(nodesPerDepth.get(d));
 				pipeline.addAll(filtersPerDepth.get(d));
 			}
-			pipeline.addAll(witnessNodes);
+			pipeline.addAll(terminalCompatibility);
 			markDomainDrivenEnumerations(pipeline);
 			int columnCount = columnEngineSlots.size() + scratchColumns;
 			if (columnCount == 0 || columnCount > 64) {
@@ -3846,7 +4148,7 @@ final class LmdbNativeKernelLowering {
 					keyDomains.toArray(new LmdbNativeKernelBindings.DomainRequest[0]),
 					filterHooks.toArray(new LmdbNativeKernelBindings.FilterHook[0]),
 					bindHooks.toArray(new LmdbNativeKernelBindings.BindHook[0]), columnArray, residualFilters,
-					scanOrders.toArray(new StatementOrder[0]),
+					scanSites.toArray(new LmdbNativeKernelBindings.ScanSite[0]),
 					planRequests.toArray(new LmdbNativeKernelBindings.PlanRequest[0]),
 					new LmdbNativeKernelBindings.KernelGroupLayout(groupSlots.clone(), outs), hooksRequired,
 					distinctExpected, kernelResiduals.toArray(new MaskedFilter[0]));
@@ -3872,8 +4174,7 @@ final class LmdbNativeKernelLowering {
 				pipeline.addAll(nodesPerDepth.get(d));
 				pipeline.addAll(filtersPerDepth.get(d));
 			}
-			// Row-rung sticky EXISTS witnesses (M10): appended after every producer, like buildAggregate does.
-			pipeline.addAll(witnessNodes);
+			pipeline.addAll(terminalCompatibility);
 			markDomainDrivenEnumerations(pipeline);
 			int[] emitColumns = new int[columnEngineSlots.size()];
 			for (int i = 0; i < emitColumns.length; i++) {
@@ -3901,7 +4202,7 @@ final class LmdbNativeKernelLowering {
 					keyDomains.toArray(new LmdbNativeKernelBindings.DomainRequest[0]),
 					filterHooks.toArray(new LmdbNativeKernelBindings.FilterHook[0]),
 					bindHooks.toArray(new LmdbNativeKernelBindings.BindHook[0]), columnArray, residualFilters,
-					scanOrders.toArray(new StatementOrder[0]),
+					scanSites.toArray(new LmdbNativeKernelBindings.ScanSite[0]),
 					planRequests.toArray(new LmdbNativeKernelBindings.PlanRequest[0]), null, false, 16);
 			return new Lowered(kernel, withVariablePredicateRequests(bindings));
 		}

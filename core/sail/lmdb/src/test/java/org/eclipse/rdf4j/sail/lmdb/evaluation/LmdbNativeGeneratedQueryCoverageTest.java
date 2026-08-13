@@ -71,7 +71,7 @@ class LmdbNativeGeneratedQueryCoverageTest {
 	private static final int KERNEL_WARMUP_RUNS = 6;
 	private static final Pattern KERNEL_DECLINE = Pattern.compile("(irKernel|irAggregate):([^ ,)|]+)");
 	private static final Set<String> NON_CAPABILITY_REASONS = Set.of("below-threshold-or-pending",
-			"no-fusion-opportunity");
+			"no-fusion-opportunity", "higher-cost");
 	static final List<JaninoCorpusCase> PREVIOUSLY_UNSUPPORTED_CORPUS = List.of(
 			new JaninoCorpusCase(1403, "DeepNest50", "agg:minus-arm:MinusPlan"),
 			new JaninoCorpusCase(1405, "DeepNest50", "pattern-guards"),
@@ -229,6 +229,43 @@ class LmdbNativeGeneratedQueryCoverageTest {
 			SELECT ?s ?o WHERE {
 			  ?s ex:pA ?o .
 			  ?s !^ex:pD ?o .
+			}
+				""";
+	private static final String NESTED_EXISTS_MINUS_UNION_SCOPE_QUERY = """
+			PREFIX ex: <http://ex/>
+			SELECT ?s ?o WHERE {
+			  ?s ex:pB ?outerValue .
+			  MINUS {
+			    ?s ex:pC ?condition .
+			    FILTER EXISTS {
+			      ?s ex:pB ?innerValue .
+			      MINUS {
+			        { ?s ^ex:pC ?o }
+			        UNION
+			        { ?unshared ex:pD ?value }
+			      }
+			    }
+			  }
+			}
+			""";
+	private static final String SUBQUERY_NESTED_EXISTS_SCOPE_QUERY = """
+			PREFIX ex: <http://ex/>
+			SELECT ?s ?o WHERE {
+			  VALUES ?s { ex:s1 ex:s2 }
+			  {
+			    SELECT ?s WHERE {
+			      VALUES ?s { ex:s1 ex:s2 }
+			      ?s ex:pC ?condition .
+			      FILTER EXISTS {
+			        ?s ex:pB ?innerValue .
+			        MINUS {
+			          { ?s ^ex:pB ?o }
+			          UNION
+			          { ?unshared ex:pD ?value }
+			        }
+			      }
+			    }
+			  }
 			}
 			""";
 
@@ -450,7 +487,7 @@ class LmdbNativeGeneratedQueryCoverageTest {
 	}
 
 	@Test
-	void fiftyPreviouslyUnsupportedQueriesHaveParityAndEngageJanino() {
+	void fiftyPreviouslyUnsupportedQueriesHaveParityAndAreKernelEligible() {
 		Map<Integer, GeneratedQuery> selected = new LinkedHashMap<>();
 		Set<Integer> wanted = new LinkedHashSet<>();
 		PREVIOUSLY_UNSUPPORTED_CORPUS.forEach(candidate -> wanted.add(candidate.index));
@@ -482,17 +519,22 @@ class LmdbNativeGeneratedQueryCoverageTest {
 				failures.add(candidate.label() + " native/generic mismatch\nQUERY:\n" + query.sparql()
 						+ "\nGENERIC:\n" + expected + "\nNATIVE:\n" + actual);
 			}
-			if (openedKernels() == 0L) {
-				failures.add(candidate.label() + " did not engage Janino; current reasons="
-						+ declineReasons(query.sparql()) + "\nQUERY:\n" + query.sparql());
+			long opened = openedKernels();
+			if (opened == 0L) {
+				Set<String> reasons = declineReasons(query.sparql());
+				if (!reasons.equals(Set.of("higher-cost"))) {
+					failures.add(
+							candidate.label() + " was neither opened nor an eligible higher-cost proposal; reasons="
+									+ reasons + "\nQUERY:\n" + query.sparql());
+				}
 			}
 		}
 
-		assertThat(failures).as("50-query Janino capability corpus").isEmpty();
+		assertThat(failures).as("50-query generated-kernel capability corpus").isEmpty();
 	}
 
 	@Test
-	void generatedValuesAndBindQueryEngagesJaninoAndMatchesGeneric() {
+	void generatedValuesAndGeneralBindFallsBackAndMatchesGeneric() {
 		String query;
 		try (java.util.stream.Stream<GeneratedQuery> generated = SparqlComprehensiveStreamingValidTest
 				.generatedQueries()) {
@@ -505,13 +547,24 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		}
 
 		List<String> expected = genericRows(query, true);
-		for (int round = 0; round < 100 && openedKernels() == 0L; round++) {
-			rows(query, true);
-		}
+		resetMetricsOnly();
+		List<String> actual = nativeRowsUntilClassified(query, true);
 
-		assertThat(plannedKernels()).as("generated query must be recognized by a Janino kernel").isPositive();
-		assertThat(openedKernels()).as("generated query must open a compiled Janino kernel").isPositive();
-		assertThat(rows(query, true)).containsExactlyElementsOf(expected);
+		assertThat(actual).containsExactlyElementsOf(expected);
+		assertThat(plannedKernels()).as("a general expression BIND is not a native slot-copy operation").isZero();
+		assertThat(openedKernels()).as("the unsupported Extension root must retain its correct fallback").isZero();
+	}
+
+	@Test
+	void nestedExistsMinusUnionScopeMatchesGeneric() {
+		assertThat(rows(NESTED_EXISTS_MINUS_UNION_SCOPE_QUERY, true))
+				.containsExactlyElementsOf(genericRows(NESTED_EXISTS_MINUS_UNION_SCOPE_QUERY, true));
+	}
+
+	@Test
+	void subqueryNestedExistsScopeMatchesGeneric() {
+		assertThat(rows(SUBQUERY_NESTED_EXISTS_SCOPE_QUERY, true))
+				.containsExactlyElementsOf(genericRows(SUBQUERY_NESTED_EXISTS_SCOPE_QUERY, true));
 	}
 
 	@Test

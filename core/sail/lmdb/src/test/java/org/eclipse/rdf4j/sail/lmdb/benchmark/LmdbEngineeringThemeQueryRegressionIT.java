@@ -236,6 +236,10 @@ class LmdbEngineeringThemeQueryRegressionIT {
 
 	private static void assertEngineeringQ10DevelopPlanShape(String plan) {
 		assertContainsAny(plan, "plannerId=lmdb-sketch", "plannerId=lmdb-finite-anchor");
+		assertContains(plan, "nativePhysicalPlan=NativeGroup(arg=Minus(left=Filter");
+		assertContains(plan, "arg=Join(left=MultiJoin");
+		assertDoesNotContain(plan, "nativePhysicalPlan=NativeRows",
+				"Engineering q10 should remain one aggregate-owned native pipeline");
 		assertDevelopOperatorSkeleton(plan);
 		assertBefore(plan, "BindingSetAssignment ([[name=\"Assembly 1\"], [name=\"Assembly 2\"]])",
 				"value=http://example.com/theme/engineering/name",
@@ -408,8 +412,6 @@ class LmdbEngineeringThemeQueryRegressionIT {
 				"Var (name=optComponent) (bindingState=bound)",
 				"Var (name=assembly) (bindingState=bound)",
 				"LeftJoin",
-				"plannedExecutionEngine=lmdb-native",
-				"nativePhysicalPlan=NativeRows(arg=MultiJoin",
 				"BindingSetAssignment ([[name=\"Assembly 1\"], [name=\"Assembly 2\"]])",
 				"value=http://example.com/theme/engineering/name",
 				"value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type",

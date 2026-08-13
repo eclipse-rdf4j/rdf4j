@@ -54,8 +54,12 @@ class LmdbNativeIrAggregateParallelTest {
 			"rdf4j.lmdb.nativeQueryEngine.enabled",
 			"rdf4j.lmdb.janinoCodegen.enabled",
 			"rdf4j.lmdb.janinoCodegen.thresholdRows",
+			"rdf4j.lmdb.factorizedTail.enabled",
+			"rdf4j.lmdb.wcoj.enabled",
+			"rdf4j.lmdb.parallel.enabled",
 			"rdf4j.lmdb.parallel.threads",
 			"rdf4j.lmdb.parallel.minWorkEstimate",
+			"rdf4j.lmdb.parallel.startupWork",
 			LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY };
 
 	private static final String GROUPED_QUERY = "SELECT ?s (COUNT(?v) AS ?c) (SUM(?v) AS ?sum) (MIN(?v) AS ?mn) "
@@ -63,7 +67,7 @@ class LmdbNativeIrAggregateParallelTest {
 			+ "q> ?v . } GROUP BY ?s";
 
 	private static final String DISTINCT_QUERY = "SELECT ?s (COUNT(DISTINCT ?v) AS ?c) WHERE { ?s <" + EX
-			+ "p> ?m . ?m <" + EX + "q> ?v . } GROUP BY ?s";
+			+ "p> ?m . OPTIONAL { ?m <" + EX + "q> ?v } } GROUP BY ?s";
 
 	/**
 	 * The slot-against-slot inequality compiles to a forkable native compare filter (parity plan
@@ -150,8 +154,14 @@ class LmdbNativeIrAggregateParallelTest {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+		// These tests name the IR aggregate rung. Keep the common arbiter enabled, but remove competing
+		// factorized/interpreted-parallel winners so the named proposal is the one under test.
+		System.setProperty("rdf4j.lmdb.factorizedTail.enabled", "false");
+		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
+		System.setProperty("rdf4j.lmdb.parallel.startupWork", "1.0E12");
 	}
 
 	@AfterEach
@@ -331,4 +341,5 @@ class LmdbNativeIrAggregateParallelTest {
 		}
 		return rows;
 	}
+
 }

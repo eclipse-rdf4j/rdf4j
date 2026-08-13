@@ -49,8 +49,14 @@ class LmdbNativeIrKernelParallelTest {
 			"rdf4j.lmdb.janinoCodegen.enabled",
 			"rdf4j.lmdb.janinoCodegen.thresholdRows",
 			"rdf4j.lmdb.janinoCodegen.dumpDir",
+			"rdf4j.lmdb.factorizedRows.enabled",
+			"rdf4j.lmdb.orderedFactorizedRows.enabled",
+			"rdf4j.lmdb.nativeBatch.enabled",
+			"rdf4j.lmdb.wcoj.enabled",
+			"rdf4j.lmdb.parallel.enabled",
 			"rdf4j.lmdb.parallel.threads",
 			"rdf4j.lmdb.parallel.minWorkEstimate",
+			"rdf4j.lmdb.parallel.startupWork",
 			LmdbNativeParallelKernelRows.ENABLED_PROPERTY };
 
 	/**
@@ -185,8 +191,16 @@ class LmdbNativeIrKernelParallelTest {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+		// This class validates the IR row rung itself. Prevent stronger interpreted specialists from winning the
+		// common arbiter while leaving the IR lowering capabilities exercised below.
+		System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
+		System.setProperty("rdf4j.lmdb.orderedFactorizedRows.enabled", "false");
+		System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");
+		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
+		System.setProperty("rdf4j.lmdb.parallel.startupWork", "1.0E12");
 	}
 
 	@AfterEach

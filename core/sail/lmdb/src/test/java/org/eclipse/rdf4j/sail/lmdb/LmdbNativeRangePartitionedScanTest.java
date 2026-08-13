@@ -49,6 +49,12 @@ public class LmdbNativeRangePartitionedScanTest {
 	private static final String MAX_TASKS_FLAG = "rdf4j.lmdb.parallel.maxTasks";
 	private static final String RANGE_FLAG = "rdf4j.lmdb.parallel.rangePartition.enabled";
 	private static final String RANGE_FACTOR_FLAG = "rdf4j.lmdb.parallel.rangePartition.factor";
+	private static final String PARALLEL_STARTUP_FLAG = "rdf4j.lmdb.parallel.startupWork";
+	private static final String JANINO_FLAG = "rdf4j.lmdb.janinoCodegen.enabled";
+	private static final String FACTORIZED_ROWS_FLAG = "rdf4j.lmdb.factorizedRows.enabled";
+	private static final String FACTORIZED_TAIL_FLAG = "rdf4j.lmdb.factorizedTail.enabled";
+	private static final String NATIVE_BATCH_FLAG = "rdf4j.lmdb.nativeBatch.enabled";
+	private static final String WCOJ_FLAG = "rdf4j.lmdb.wcoj.enabled";
 
 	@TempDir
 	File dataDir;
@@ -59,11 +65,18 @@ public class LmdbNativeRangePartitionedScanTest {
 	@BeforeEach
 	public void setUp() {
 		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, THRESHOLD_FLAG, THREADS_FLAG,
-				MAX_TASKS_FLAG, RANGE_FLAG, RANGE_FACTOR_FLAG);
+				MAX_TASKS_FLAG, RANGE_FLAG, RANGE_FACTOR_FLAG, JANINO_FLAG, FACTORIZED_ROWS_FLAG,
+				FACTORIZED_TAIL_FLAG, NATIVE_BATCH_FLAG, WCOJ_FLAG, PARALLEL_STARTUP_FLAG);
 		System.setProperty(THRESHOLD_FLAG, "0");
 		System.setProperty(THREADS_FLAG, "4");
 		System.setProperty(MAX_TASKS_FLAG, "5");
 		System.setProperty(RANGE_FLAG, "true");
+		System.setProperty(JANINO_FLAG, "false");
+		System.setProperty(FACTORIZED_ROWS_FLAG, "false");
+		System.setProperty(FACTORIZED_TAIL_FLAG, "false");
+		System.setProperty(NATIVE_BATCH_FLAG, "false");
+		System.setProperty(WCOJ_FLAG, "false");
+		System.setProperty(PARALLEL_STARTUP_FLAG, "0");
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();

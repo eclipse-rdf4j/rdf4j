@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -123,11 +124,32 @@ abstract class LmdbNativeAggregatePlannerBase {
 		if (!Boolean.parseBoolean(System.getProperty(LEFTJOIN_WELL_DESIGNED_CHECK, "true"))) {
 			return Set.of();
 		}
+		Set<LeftJoin> nullRejected = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (node.getArg() instanceof LeftJoin) {
+					LeftJoin leftJoin = (LeftJoin) node.getArg();
+					Set<String> rightOnly = leftJoinOptionalOnlyNames(leftJoin);
+					NativeExpressionFacts facts = NativeExpressionFacts.of(node.getCondition(),
+							plainAliases(leftJoin.getRightArg()));
+					boolean joinConditionRepeatable = !leftJoin.hasCondition()
+							|| NativeExpressionFacts.of(leftJoin.getCondition()).repeatable();
+					if (!rightOnly.isEmpty() && facts.repeatable() && joinConditionRepeatable
+							&& facts.trueImpossibleWhen(rightOnly)) {
+						nullRejected.add(leftJoin);
+					}
+				}
+				super.meet(node);
+			}
+		});
 		ArrayList<LeftJoin> leftJoins = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(LeftJoin node) {
-				leftJoins.add(node);
+				if (!nullRejected.contains(node)) {
+					leftJoins.add(node);
+				}
 				super.meet(node);
 			}
 		});
@@ -152,14 +174,39 @@ abstract class LmdbNativeAggregatePlannerBase {
 	}
 
 	Set<String> leftJoinOptionalOnlyNames(LeftJoin leftJoin) {
-		VarNameCollector collector = new VarNameCollector();
-		leftJoin.getRightArg().visit(collector);
+		Set<String> rightNames = bindingAndExtensionNames(leftJoin.getRightArg());
 		if (leftJoin.hasCondition()) {
-			leftJoin.getCondition().visit(collector);
+			rightNames.addAll(VarNameCollector.process(leftJoin.getCondition()));
 		}
-		java.util.HashSet<String> optionalOnly = new java.util.HashSet<>(collector.getVarNames());
+		java.util.HashSet<String> optionalOnly = new java.util.HashSet<>(rightNames);
 		optionalOnly.removeAll(leftJoin.getLeftArg().getBindingNames());
 		return optionalOnly;
+	}
+
+	Set<String> bindingAndExtensionNames(TupleExpr expression) {
+		java.util.HashSet<String> names = new java.util.HashSet<>(VarNameCollector.process(expression));
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(ExtensionElem node) {
+				names.add(node.getName());
+				super.meet(node);
+			}
+		});
+		return names;
+	}
+
+	Map<String, String> plainAliases(TupleExpr expression) {
+		Map<String, String> aliases = new HashMap<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(ExtensionElem node) {
+				if (node.getExpr() instanceof Var && !((Var) node.getExpr()).hasValue()) {
+					aliases.put(node.getName(), ((Var) node.getExpr()).getName());
+				}
+				super.meet(node);
+			}
+		});
+		return aliases;
 	}
 
 	Set<String> bindingNamesOutside(TupleExpr root, QueryModelNode excluded) {
@@ -273,6 +320,31 @@ abstract class LmdbNativeAggregatePlannerBase {
 	 */
 	boolean containsUnsafeNestedVariableScopeChange(TupleExpr root) {
 		return containsUnsafeScopeChange(root, Set.of(), Set.of(), false);
+	}
+
+	/**
+	 * Whether an EXISTS witness needs per-solution domain-compatibility state that the current mutable-row filter does
+	 * not carry. In particular, MINUS is not ordinary anti-existence: a right solution whose domain is disjoint from
+	 * the current left solution removes nothing. Correlating such a nullable/shared right branch as a probe changes the
+	 * result, so retain the scoped RDF4J evaluator unless every statically shared name is assured on both sides.
+	 */
+	boolean containsUnsafeExistsScope(TupleExpr root) {
+		if (containsUnsafeNestedVariableScopeChange(root)) {
+			return true;
+		}
+		if (root instanceof Difference difference) {
+			Set<String> shared = sharedBindingNames(difference.getLeftArg(), difference.getRightArg());
+			if (!difference.getLeftArg().getAssuredBindingNames().containsAll(shared)
+					|| !difference.getRightArg().getAssuredBindingNames().containsAll(shared)) {
+				return true;
+			}
+		}
+		for (TupleExpr child : TupleExprs.getChildren(root)) {
+			if (containsUnsafeExistsScope(child)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	boolean containsVariableScopeChange(TupleExpr root) {

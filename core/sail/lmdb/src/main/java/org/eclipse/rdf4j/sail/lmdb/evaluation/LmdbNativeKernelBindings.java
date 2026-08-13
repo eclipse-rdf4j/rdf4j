@@ -18,6 +18,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
@@ -233,6 +234,18 @@ final class LmdbNativeKernelBindings {
 	record DynamicRequest(boolean bySubject) {
 	}
 
+	/**
+	 * One generated scan site's physical contract. The order and range are mutually exclusive because an ordered source
+	 * chooses an index from {@link StatementOrder}, while a range is already encoded in one exact index's key space.
+	 */
+	record ScanSite(StatementOrder order, LmdbKeyRange range) {
+		ScanSite {
+			if (order != null && range != null) {
+				throw new IllegalArgumentException("a kernel scan cannot carry both an order and a key range");
+			}
+		}
+	}
+
 	private static final NodePredicateRequest[] NO_NODE_PREDICATE_REQUESTS = {};
 	private static final DynamicRequest[] NO_DYNAMIC_REQUESTS = {};
 
@@ -248,6 +261,8 @@ final class LmdbNativeKernelBindings {
 	final List<MaskedFilter> residualFilters;
 	/** Bind-time order descriptor for each kernel scan site; null means the source's natural index choice. */
 	final StatementOrder[] scanOrders;
+	/** Complete physical descriptor for each scan site, including a range that must never be widened. */
+	final ScanSite[] scanSites;
 	final PlanRequest[] planRequests;
 	final KernelGroupLayout groupLayout; // null for row-side lowerings
 	final boolean hooksRequired; // exact numeric and min/max outputs need hooks even without filter hooks
@@ -325,6 +340,36 @@ final class LmdbNativeKernelBindings {
 			KernelGroupLayout groupLayout, boolean hooksRequired, int distinctExpected,
 			MaskedFilter[] kernelResiduals, NodePredicateRequest[] nodePredicateRequests,
 			DynamicRequest[] dynamicRequests) {
+		this(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, bindHooks, columnEngineSlots,
+				residualFilters, scanSites(scanOrders), planRequests, groupLayout, hooksRequired, distinctExpected,
+				kernelResiduals, nodePredicateRequests, dynamicRequests);
+	}
+
+	LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
+			DomainRequest[] keyDomains, FilterHook[] filterHooks, BindHook[] bindHooks, int[] columnEngineSlots,
+			List<MaskedFilter> residualFilters, ScanSite[] scanSites, PlanRequest[] planRequests,
+			KernelGroupLayout groupLayout, boolean hooksRequired, int distinctExpected) {
+		this(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, bindHooks, columnEngineSlots,
+				residualFilters, scanSites, planRequests, groupLayout, hooksRequired, distinctExpected,
+				new MaskedFilter[0], NO_NODE_PREDICATE_REQUESTS, NO_DYNAMIC_REQUESTS);
+	}
+
+	LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
+			DomainRequest[] keyDomains, FilterHook[] filterHooks, BindHook[] bindHooks, int[] columnEngineSlots,
+			List<MaskedFilter> residualFilters, ScanSite[] scanSites, PlanRequest[] planRequests,
+			KernelGroupLayout groupLayout, boolean hooksRequired, int distinctExpected,
+			MaskedFilter[] kernelResiduals) {
+		this(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, bindHooks, columnEngineSlots,
+				residualFilters, scanSites, planRequests, groupLayout, hooksRequired, distinctExpected,
+				kernelResiduals, NO_NODE_PREDICATE_REQUESTS, NO_DYNAMIC_REQUESTS);
+	}
+
+	private LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
+			DomainRequest[] keyDomains, FilterHook[] filterHooks, BindHook[] bindHooks, int[] columnEngineSlots,
+			List<MaskedFilter> residualFilters, ScanSite[] scanSites, PlanRequest[] planRequests,
+			KernelGroupLayout groupLayout, boolean hooksRequired, int distinctExpected,
+			MaskedFilter[] kernelResiduals, NodePredicateRequest[] nodePredicateRequests,
+			DynamicRequest[] dynamicRequests) {
 		this.nodePredicateRequests = nodePredicateRequests;
 		this.dynamicRequests = dynamicRequests;
 		this.adjacencies = adjacencies;
@@ -335,12 +380,29 @@ final class LmdbNativeKernelBindings {
 		this.bindHooks = bindHooks;
 		this.columnEngineSlots = columnEngineSlots;
 		this.residualFilters = residualFilters;
-		this.scanOrders = scanOrders;
+		this.scanSites = scanSites.clone();
+		this.scanOrders = scanOrders(scanSites);
 		this.planRequests = planRequests;
 		this.groupLayout = groupLayout;
 		this.hooksRequired = hooksRequired;
 		this.distinctExpected = distinctExpected;
 		this.kernelResiduals = kernelResiduals;
+	}
+
+	private static ScanSite[] scanSites(StatementOrder[] scanOrders) {
+		ScanSite[] sites = new ScanSite[scanOrders.length];
+		for (int i = 0; i < sites.length; i++) {
+			sites[i] = new ScanSite(scanOrders[i], null);
+		}
+		return sites;
+	}
+
+	private static StatementOrder[] scanOrders(ScanSite[] scanSites) {
+		StatementOrder[] orders = new StatementOrder[scanSites.length];
+		for (int i = 0; i < orders.length; i++) {
+			orders[i] = Objects.requireNonNull(scanSites[i], "scan site " + i).order();
+		}
+		return orders;
 	}
 
 	/**
@@ -353,7 +415,7 @@ final class LmdbNativeKernelBindings {
 			return this;
 		}
 		return new LmdbNativeKernelBindings(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, bindHooks,
-				columnEngineSlots, residualFilters, scanOrders, planRequests, groupLayout, hooksRequired,
+				columnEngineSlots, residualFilters, scanSites, planRequests, groupLayout, hooksRequired,
 				distinctExpected, kernelResiduals, nodePredicates, dynamics);
 	}
 

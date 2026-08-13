@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 
@@ -65,11 +66,11 @@ final class LmdbNativeJaninoAggregate {
 		return null;
 	}
 
-	/** Returns the fully aggregated result rows, or null to let the ordinary ladder continue. */
-	static List<BindingSet> tryEvaluate(MultiJoinPlan multiJoin, RowState row, int[] groupSlots,
-			AggregateSpec[] aggregates, NativeGroupIteration emitter) {
+	/** Builds a recognized, costed proposal without touching the store or scheduling compilation. */
+	static LmdbNativeStrategyProposal<List<BindingSet>> propose(MultiJoinPlan multiJoin, RowState row,
+			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget) {
 		if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
-			System.err.println("[janino-aggregate] tryEvaluate: children=" + multiJoin.children.length
+			System.err.println("[janino-aggregate] propose: children=" + multiJoin.children.length
 					+ " groupSlots=" + groupSlots.length + " aggregates=" + aggregates.length);
 		}
 		if (!LmdbNativeJaninoCodegen.enabled()) {
@@ -91,13 +92,43 @@ final class LmdbNativeJaninoAggregate {
 				return decline("mixed aggregate specs");
 			}
 		}
+		Recognized shape = recognize(multiJoin, groupSlots[0], spec.slot, row);
+		if (shape == null) {
+			DECLINED.incrementAndGet();
+			return null;
+		}
+		PLANNED.incrementAndGet();
+		return new LmdbNativeStrategyProposal<>(() -> {
+			List<BindingSet> result = evaluate(shape, row, emitter);
+			if (result != null) {
+				LmdbNativeExplain.recordExecutionPath(explainTarget,
+						LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE);
+			}
+			return result;
+		}, estimatedWork(shape.estimatedWork), LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE, () -> {
+		});
+	}
+
+	/** Compatibility front door for focused tests and callers that do not arbitrate. */
+	static List<BindingSet> tryEvaluate(MultiJoinPlan multiJoin, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates, NativeGroupIteration emitter) {
+		LmdbNativeStrategyProposal<List<BindingSet>> proposal = propose(multiJoin, row, groupSlots, aggregates,
+				emitter, null);
+		if (proposal == null) {
+			return null;
+		}
+		try {
+			return proposal.open();
+		} catch (IOException e) {
+			throw new org.eclipse.rdf4j.query.QueryEvaluationException(e);
+		} finally {
+			proposal.close();
+		}
+	}
+
+	private static List<BindingSet> evaluate(Recognized shape, RowState row, NativeGroupIteration emitter) {
 		NativeLmdbQuerySource.NativeProbe probe = null;
 		try {
-			Recognized shape = recognize(multiJoin, groupSlots[0], spec.slot, row);
-			if (shape == null) {
-				DECLINED.incrementAndGet();
-				return null;
-			}
 			probe = row.source.newProbe();
 			NativeLmdbQuerySource.NativeAdjacency producer = probe.adjacency(shape.producerPredicate,
 					shape.producerBySubject);
@@ -121,8 +152,6 @@ final class LmdbNativeJaninoAggregate {
 				}
 				adjacencies[1 + i] = adjacency;
 			}
-			PLANNED.incrementAndGet();
-
 			long opens = SHAPE_OPENS.computeIfAbsent(shape.shapeKey, key -> new AtomicLong()).incrementAndGet();
 			JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(row.source.idSpace(), shape.shapeKey,
 					shape.className, () -> emitSource(shape), opens * ROWS_PER_OPEN_ESTIMATE);
@@ -156,6 +185,14 @@ final class LmdbNativeJaninoAggregate {
 			DECLINED.incrementAndGet();
 			return null;
 		}
+	}
+
+	private static LmdbNativeWork estimatedWork(double estimate) {
+		if (!(estimate >= 0D) || !Double.isFinite(estimate)) {
+			return LmdbNativeWork.UNKNOWN;
+		}
+		double center = Math.max(64D, estimate);
+		return LmdbNativeWork.between(center * 0.5D, center * 2D);
 	}
 
 	// ------------------------------------------------------------------
@@ -249,6 +286,7 @@ final class LmdbNativeJaninoAggregate {
 		int witnessColumns;
 		String shapeKey;
 		String className;
+		double estimatedWork;
 
 		long[] constants() {
 			long[] result = new long[constantValues.size()];
@@ -329,6 +367,11 @@ final class LmdbNativeJaninoAggregate {
 		}
 		shape.producerPredicate = producer.p.constant;
 		shape.producerBySubject = groupAtSubject;
+		long estimateBoundMask = row.boundMask() | 1L << groupSlot;
+		double producerRowsPerGroup = producer.estimateForBoundMask(estimateBoundMask, row.source);
+		double estimatedCandidates = multiplyEstimate(shape.domain.length, producerRowsPerGroup);
+		shape.estimatedWork = addEstimate(shape.domain.length, estimatedCandidates);
+		estimateBoundMask |= producer.producedMask();
 
 		// Witness ordering: greedy chain over patterns whose key end is already known (group, x, witness columns).
 		StringBuilder key = new StringBuilder("agg1:").append(shape.producerBySubject ? "gs;" : "go;");
@@ -377,6 +420,16 @@ final class LmdbNativeJaninoAggregate {
 				} else {
 					continue;
 				}
+				WitnessStep added = shape.witness.get(shape.witness.size() - 1);
+				double rowsPerProbe = added.kind == WitnessStep.FORWARD
+						? pattern.estimateForBoundMask(estimateBoundMask, row.source)
+						: 0D;
+				shape.estimatedWork = addEstimate(shape.estimatedWork,
+						multiplyEstimate(estimatedCandidates, 1D + rowsPerProbe));
+				if (added.kind == WitnessStep.FORWARD) {
+					estimatedCandidates = multiplyEstimate(estimatedCandidates, rowsPerProbe);
+				}
+				estimateBoundMask |= pattern.producedMask();
 				used[i] = true;
 				remaining--;
 				progressed = true;
@@ -409,6 +462,22 @@ final class LmdbNativeJaninoAggregate {
 		shape.shapeKey = key.toString();
 		shape.className = "org.eclipse.rdf4j.sail.lmdb.gen.AggregateKernel_" + Long.toHexString(fnv(shape.shapeKey));
 		return shape;
+	}
+
+	private static double multiplyEstimate(double left, double right) {
+		if (!(left >= 0D) || !(right >= 0D)) {
+			return Double.POSITIVE_INFINITY;
+		}
+		double result = left * right;
+		return Double.isFinite(result) ? result : Double.POSITIVE_INFINITY;
+	}
+
+	private static double addEstimate(double left, double right) {
+		if (!(left >= 0D) || !(right >= 0D)) {
+			return Double.POSITIVE_INFINITY;
+		}
+		double result = left + right;
+		return Double.isFinite(result) ? result : Double.POSITIVE_INFINITY;
 	}
 
 	private static boolean touches(PatternPlan pattern, int slot) {

@@ -85,10 +85,12 @@ public class ParallelismBenchmark {
 	private static final String HASH_JOIN_ENABLED = "rdf4j.lmdb.nativeHashJoin.enabled";
 	private static final String HASH_JOIN_MIN_ROWS = "rdf4j.lmdb.nativeHashJoin.minRows";
 	private static final String HASH_JOIN_MAX_BUILD_ROWS = "rdf4j.lmdb.nativeHashJoin.maxBuildRows";
+	private static final String FACTORIZED_ROWS_ENABLED = "rdf4j.lmdb.factorizedRows.enabled";
 	private static final String PARALLEL_ENABLED = "rdf4j.lmdb.parallel.enabled";
 	private static final String PARALLEL_MIN_ROOT_ESTIMATE = "rdf4j.lmdb.parallel.minRootEstimate";
 	private static final String PARALLEL_THREADS = "rdf4j.lmdb.parallel.threads";
 	private static final String PARALLEL_MAX_TASKS = "rdf4j.lmdb.parallel.maxTasks";
+	private static final String PARALLEL_STARTUP_WORK = "rdf4j.lmdb.parallel.startupWork";
 	private static final String RANGE_PARTITION_ENABLED = "rdf4j.lmdb.parallel.rangePartition.enabled";
 	private static final long DIGEST_OFFSET = 0xcbf29ce484222325L;
 	private static final long DIGEST_PRIME = 0x100000001b3L;
@@ -163,8 +165,10 @@ public class ParallelismBenchmark {
 		private void captureProperties() {
 			previousProperties = new LinkedHashMap<>();
 			for (String property : List.of(NATIVE_ENABLED, NATIVE_BATCH_ENABLED, MERGE_JOIN_ENABLED,
-					HASH_JOIN_ENABLED, HASH_JOIN_MIN_ROWS, HASH_JOIN_MAX_BUILD_ROWS, PARALLEL_ENABLED,
-					PARALLEL_MIN_ROOT_ESTIMATE, PARALLEL_THREADS, PARALLEL_MAX_TASKS, RANGE_PARTITION_ENABLED)) {
+					HASH_JOIN_ENABLED, HASH_JOIN_MIN_ROWS, HASH_JOIN_MAX_BUILD_ROWS, FACTORIZED_ROWS_ENABLED,
+					PARALLEL_ENABLED,
+					PARALLEL_MIN_ROOT_ESTIMATE, PARALLEL_THREADS, PARALLEL_MAX_TASKS, PARALLEL_STARTUP_WORK,
+					RANGE_PARTITION_ENABLED)) {
 				previousProperties.put(property, System.getProperty(property));
 			}
 		}
@@ -179,11 +183,17 @@ public class ParallelismBenchmark {
 			System.setProperty(HASH_JOIN_ENABLED, "true");
 			System.setProperty(HASH_JOIN_MIN_ROWS, "0");
 			System.setProperty(HASH_JOIN_MAX_BUILD_ROWS, Integer.toString(inputRows));
+			// This benchmark isolates the parallel and batch proposals. Factorized rows is a competing specialist
+			// measured by its own benchmark and would otherwise legitimately win the common arbiter here.
+			System.setProperty(FACTORIZED_ROWS_ENABLED, "false");
 			System.setProperty(PARALLEL_ENABLED, Boolean.toString(selected.parallelEnabled));
 			System.setProperty(PARALLEL_MIN_ROOT_ESTIMATE, "0");
 			System.setProperty(PARALLEL_THREADS, Integer.toString(Math.max(2, workersPerQuery)));
 			int taskBudget = selected.queryCount * (Math.max(2, workersPerQuery) + 1);
 			System.setProperty(PARALLEL_MAX_TASKS, Integer.toString(taskBudget));
+			// This harness isolates parallel execution itself, so startup work is excluded from the proposal exactly as
+			// factorization and merge are excluded above. End-to-end cold benchmarks retain the production default.
+			System.setProperty(PARALLEL_STARTUP_WORK, "0");
 			System.setProperty(RANGE_PARTITION_ENABLED, "true");
 		}
 

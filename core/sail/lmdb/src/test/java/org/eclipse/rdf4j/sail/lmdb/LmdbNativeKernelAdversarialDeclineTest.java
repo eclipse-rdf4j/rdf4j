@@ -61,11 +61,12 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 	 * <p>
 	 * {@code below-threshold-or-pending} means the shape is compilable but its kernel has not been built yet.
 	 * {@code no-fusion-opportunity} means the shape is compilable but has a single scan, so there is nothing for
-	 * whole-stage code generation to fuse and the bulk batch cursor serves it better; the kernel is being subordinated
-	 * on purpose, not found wanting. Neither is a hole in what the kernel can express, which is what this test guards.
+	 * whole-stage code generation to fuse and the bulk batch cursor serves it better. {@code higher-cost} and
+	 * {@code outranked} mean lowering produced an eligible proposal but the common arbiter selected another physical
+	 * strategy. None is a hole in what the kernel can express, which is what this test guards.
 	 */
 	private static final Set<String> NON_CAPABILITY_REASONS = Set.of("below-threshold-or-pending",
-			"no-fusion-opportunity");
+			"no-fusion-opportunity", "higher-cost", "outranked");
 
 	private static final int WARMUP_RUNS = 6;
 

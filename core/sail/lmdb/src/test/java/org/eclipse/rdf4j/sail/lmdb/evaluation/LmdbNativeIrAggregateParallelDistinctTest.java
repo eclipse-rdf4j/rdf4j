@@ -63,8 +63,12 @@ class LmdbNativeIrAggregateParallelDistinctTest {
 			"rdf4j.lmdb.janinoCodegen.enabled",
 			"rdf4j.lmdb.janinoCodegen.thresholdRows",
 			"rdf4j.lmdb.janinoCodegen.distinctNumericAggregates",
+			"rdf4j.lmdb.factorizedTail.enabled",
+			"rdf4j.lmdb.wcoj.enabled",
+			"rdf4j.lmdb.parallel.enabled",
 			"rdf4j.lmdb.parallel.threads",
 			"rdf4j.lmdb.parallel.minWorkEstimate",
+			"rdf4j.lmdb.parallel.startupWork",
 			LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY };
 
 	/**
@@ -72,22 +76,22 @@ class LmdbNativeIrAggregateParallelDistinctTest {
 	 * a per-partition count sum would report a multiple of it.
 	 */
 	private static final String GLOBAL_COUNT_DISTINCT = "SELECT (COUNT(DISTINCT ?v) AS ?c) WHERE { ?s <" + EX
-			+ "p> ?m . ?m <" + EX + "d> ?v . }";
+			+ "p> ?m . OPTIONAL { ?m <" + EX + "d> ?v } }";
 
 	/**
 	 * Grouped COUNT(DISTINCT) whose GROUP BY key is the low-cardinality value, so every group spans every partition —
 	 * the cross-partition group merge and the cross-partition distinct union are exercised together.
 	 */
-	private static final String GROUPED_COUNT_DISTINCT = "SELECT ?v (COUNT(DISTINCT ?s) AS ?c) WHERE { ?s <" + EX
-			+ "p> ?m . ?m <" + EX + "d> ?v . } GROUP BY ?v";
+	private static final String GROUPED_COUNT_DISTINCT = "SELECT ?v (COUNT(DISTINCT ?x) AS ?c) WHERE { ?s <" + EX
+			+ "p> ?m . OPTIONAL { ?m <" + EX + "d> ?v . ?m <" + EX + "n> ?x } } GROUP BY ?v";
 
 	/** Global SUM(DISTINCT) over the shared numeric values: 0+1+2+3+4 regardless of how often each occurs. */
 	private static final String GLOBAL_SUM_DISTINCT = "SELECT (SUM(DISTINCT ?v) AS ?sum) WHERE { ?s <" + EX
-			+ "p> ?m . ?m <" + EX + "n> ?v . }";
+			+ "p> ?m . OPTIONAL { ?m <" + EX + "n> ?v } }";
 
 	/** Global AVG(DISTINCT) over the same shared numeric values. */
 	private static final String GLOBAL_AVG_DISTINCT = "SELECT (AVG(DISTINCT ?v) AS ?av) WHERE { ?s <" + EX
-			+ "p> ?m . ?m <" + EX + "n> ?v . }";
+			+ "p> ?m . OPTIONAL { ?m <" + EX + "n> ?v } }";
 
 	@TempDir
 	File dataDir;
@@ -130,8 +134,14 @@ class LmdbNativeIrAggregateParallelDistinctTest {
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.distinctNumericAggregates", "true");
+		// OPTIONAL is total for this fixture but introduces an ordering barrier, so this route test cannot be
+		// intercepted by ordered-DISTINCT. The common arbiter still chooses among the remaining legal proposals.
+		System.setProperty("rdf4j.lmdb.factorizedTail.enabled", "false");
+		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
+		System.setProperty("rdf4j.lmdb.parallel.startupWork", "1.0E12");
 	}
 
 	@AfterEach

@@ -147,7 +147,7 @@ public class LmdbNativeQueryExplanationTest {
 		assertThat(rendered)
 				.as("an OR-of-equals filter over a statement pattern should compile to per-value index probes "
 						+ "instead of a full predicate scan with a sticky filter")
-				.contains("MultiValuePattern(slot=");
+				.contains("ExactDomainDrive(slot=");
 	}
 
 	@Test
@@ -159,7 +159,67 @@ public class LmdbNativeQueryExplanationTest {
 		assertThat(rendered)
 				.as("an OR-of-equals filter under an aggregate should compile to per-value index probes "
 						+ "instead of a full predicate scan with a sticky filter")
-				.contains("MultiValuePattern(slot=");
+				.contains("ExactDomainDrive(slot=");
+	}
+
+	@Test
+	public void exactDomainDriveSurvivesMinus() {
+		addItemNames();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			conn.add(vf.createIRI(EX, "item1"), vf.createIRI(EX, "blocked"), vf.createIRI(EX, "reason1"));
+		}
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s WHERE { ?s a ex:Item ; ex:name ?name . "
+				+ "MINUS { ?s ex:blocked ?reason ; ex:name ?name } "
+				+ "FILTER(?name = \"Item 1\" || ?name = \"Item 2\") }";
+
+		String rendered = explain(Explanation.Level.Optimized, query).toString();
+
+		assertThat(rendered)
+				.as("an exact domain above MINUS must still drive the left inverse access")
+				.contains("Minus(")
+				.contains("ExactDomainDrive(slot=");
+	}
+
+	@Test
+	public void exactDomainDriveSurvivesNullRejectedOptionalJoin() {
+		addItemNames();
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s WHERE { ?s a ex:Item . "
+				+ "OPTIONAL { ?s ex:name ?name ; ex:price ?price } "
+				+ "FILTER(?name = \"Item 1\" || ?name = \"Item 2\") }";
+
+		String rendered = explain(Explanation.Level.Optimized, query).toString();
+
+		assertThat(rendered)
+				.as("a null-rejected OPTIONAL join must become an inner path driven by the exact domain")
+				.contains("ExactDomainDrive(slot=")
+				.doesNotContain("LeftJoin(");
+	}
+
+	@Test
+	public void optimizerProducedExactValuesDriveThroughIndependentValuesAndMinus() {
+		addItemNames();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			conn.add(vf.createIRI(EX, "item1"), vf.createIRI(EX, "blocked"), vf.createIRI(EX, "reason1"));
+		}
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(DISTINCT ?s) AS ?count) WHERE { "
+				+ "VALUES ?independent { \"Item 0\" \"Item 1\" } "
+				+ "?s a ex:Item ; ex:name ?name . "
+				+ "FILTER(?name IN (\"Item 1\", \"Item 2\", \"Item 3\")) "
+				+ "OPTIONAL { ?s ex:price ?price } "
+				+ "MINUS { ?s ex:blocked ?reason } }";
+
+		String rendered = explain(Explanation.Level.Optimized, query).toString();
+
+		assertThat(rendered)
+				.as("an optimizer-produced exact VALUES leaf must remain the inverse driver even when another "
+						+ "independent VALUES leaf and MINUS share the aggregate scope")
+				.contains("ExactDomainDrive(slot=")
+				.contains("Minus(");
 	}
 
 	private void addItemNames() {
@@ -277,6 +337,7 @@ public class LmdbNativeQueryExplanationTest {
 				.contains("    janino:\n      used: false\n"
 						+ "      reason: FEATURE_DISABLED[rdf4j.lmdb.janinoCodegen.enabled=false]")
 				.contains("    adjacencySIP:\n      used: false\n"
+						+ "      scope: planner/interpreted\n"
 						+ "      state: NOT_CONSIDERED\n"
 						+ "      reason: FEATURE_DISABLED[rdf4j.lmdb.sip.adjacencyMasks.enabled=false]")
 				.contains("\n\nQuery explanation\n")
@@ -412,6 +473,7 @@ public class LmdbNativeQueryExplanationTest {
 				.contains("    adjacencySIP:\n")
 				.contains("    adaptiveFilterPlacement:\n"
 						+ "      used: false\n"
+						+ "      scope: planner/interpreted\n"
 						+ "      reason: NO_ELIGIBLE_FILTER[filterCount=0]\n"
 						+ "      epochs: []\n"
 						+ "      finalDepth: <not applicable>\n")
@@ -423,10 +485,16 @@ public class LmdbNativeQueryExplanationTest {
 		String previousEnabled = System.getProperty("rdf4j.lmdb.janinoCodegen.enabled");
 		String previousThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
 		String previousWcoj = System.getProperty("rdf4j.lmdb.wcoj.enabled");
+		String previousFactorized = System.getProperty("rdf4j.lmdb.factorizedRows.enabled");
+		String previousBatch = System.getProperty("rdf4j.lmdb.nativeBatch.enabled");
+		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
 		try {
 			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
 			System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", Long.toString(Long.MAX_VALUE));
 			System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+			System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
+			System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");
+			System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 
 			String rendered = explain(Explanation.Level.Telemetry, rowQuery()).toString();
 
@@ -437,6 +505,9 @@ public class LmdbNativeQueryExplanationTest {
 			restoreProperty(previousEnabled, "rdf4j.lmdb.janinoCodegen.enabled");
 			restoreProperty(previousThreshold, "rdf4j.lmdb.janinoCodegen.thresholdRows");
 			restoreProperty(previousWcoj, "rdf4j.lmdb.wcoj.enabled");
+			restoreProperty(previousFactorized, "rdf4j.lmdb.factorizedRows.enabled");
+			restoreProperty(previousBatch, "rdf4j.lmdb.nativeBatch.enabled");
+			restoreProperty(previousParallel, "rdf4j.lmdb.parallel.enabled");
 		}
 	}
 
@@ -444,9 +515,13 @@ public class LmdbNativeQueryExplanationTest {
 	public void telemetryAggregateExplanationGivesThePreciseJaninoThresholdReason() {
 		String previousEnabled = System.getProperty("rdf4j.lmdb.janinoCodegen.enabled");
 		String previousThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
+		String previousFactorized = System.getProperty("rdf4j.lmdb.factorizedTail.enabled");
+		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
 		try {
 			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
 			System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", Long.toString(Long.MAX_VALUE));
+			System.setProperty("rdf4j.lmdb.factorizedTail.enabled", "false");
+			System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 
 			String rendered = explain(Explanation.Level.Telemetry, aggregateQuery()).toString();
 
@@ -457,6 +532,8 @@ public class LmdbNativeQueryExplanationTest {
 		} finally {
 			restoreProperty(previousEnabled, "rdf4j.lmdb.janinoCodegen.enabled");
 			restoreProperty(previousThreshold, "rdf4j.lmdb.janinoCodegen.thresholdRows");
+			restoreProperty(previousFactorized, "rdf4j.lmdb.factorizedTail.enabled");
+			restoreProperty(previousParallel, "rdf4j.lmdb.parallel.enabled");
 		}
 	}
 
@@ -465,10 +542,16 @@ public class LmdbNativeQueryExplanationTest {
 		String previousEnabled = System.getProperty("rdf4j.lmdb.janinoCodegen.enabled");
 		String previousThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
 		String previousWcoj = System.getProperty("rdf4j.lmdb.wcoj.enabled");
+		String previousFactorized = System.getProperty("rdf4j.lmdb.factorizedRows.enabled");
+		String previousBatch = System.getProperty("rdf4j.lmdb.nativeBatch.enabled");
+		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
 		try {
 			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
 			System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 			System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+			System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
+			System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");
+			System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 			assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
 			JaninoPipelineTestAccess.resetMetrics();
 			String query = "PREFIX ex: <" + EX + ">\n"
@@ -483,6 +566,7 @@ public class LmdbNativeQueryExplanationTest {
 					.contains("nativeExecutionPath=irKernel")
 					.contains("    janino:\n      used: true\n      reason: ACTIVATED")
 					.contains("    adjacencySIP:\n      used: false\n"
+							+ "      scope: planner/interpreted\n"
 							+ "      state: NOT_CONSIDERED\n"
 							+ "      reason: SUPERSEDED_BY_STRATEGY[strategy=irKernel]")
 					.contains("      generatedOrder:\n        0: Pattern(")
@@ -494,6 +578,9 @@ public class LmdbNativeQueryExplanationTest {
 			restoreProperty(previousEnabled, "rdf4j.lmdb.janinoCodegen.enabled");
 			restoreProperty(previousThreshold, "rdf4j.lmdb.janinoCodegen.thresholdRows");
 			restoreProperty(previousWcoj, "rdf4j.lmdb.wcoj.enabled");
+			restoreProperty(previousFactorized, "rdf4j.lmdb.factorizedRows.enabled");
+			restoreProperty(previousBatch, "rdf4j.lmdb.nativeBatch.enabled");
+			restoreProperty(previousParallel, "rdf4j.lmdb.parallel.enabled");
 		}
 	}
 
@@ -591,7 +678,8 @@ public class LmdbNativeQueryExplanationTest {
 				.contains("    status: COMPLETED\n")
 				.contains("    actualOrder:\n      0: Pattern(")
 				.contains("    janino:\n      used: false\n      reason: UNSUPPORTED_ROUTE[bareExists]")
-				.contains("    adjacencySIP:\n      used: false\n      state: NOT_CONSIDERED\n"
+				.contains("    adjacencySIP:\n      used: false\n      scope: planner/interpreted\n"
+						+ "      state: NOT_CONSIDERED\n"
 						+ "      reason: UNSUPPORTED_ROUTE[bareExists]");
 	}
 
@@ -647,20 +735,21 @@ public class LmdbNativeQueryExplanationTest {
 		Explanation explanation = explain(Explanation.Level.Telemetry, query);
 
 		assertThat(explanation.toString())
-				.contains("Values(rows=2)")
+				.contains("ExactDomainDrive(slot=")
 				.contains("nativeExactValuesProbesActual=2")
 				.contains("nativeExactValuesMatchedRowsActual=2");
 	}
 
 	@Test
-	public void telemetryExplanationCountsExactValuesMatchesConsumedByFactorizedAggregation() {
+	public void telemetryExplanationCountsExactValuesMatchesConsumedByDirectAggregation() {
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT (COUNT(*) AS ?count) WHERE { ?s a ex:Item . FILTER(?s IN (ex:item0, ex:item2)) }";
 
 		Explanation explanation = explain(Explanation.Level.Telemetry, query);
 
 		assertThat(explanation.toString())
-				.contains("nativeExecutionPath=factorizedTail")
+				.contains("ExactDomainDrive(slot=")
+				.contains("nativeExecutionPath=aggState")
 				.contains("nativeExactValuesProbesActual=2")
 				.contains("nativeExactValuesMatchedRowsActual=2");
 	}
@@ -673,7 +762,8 @@ public class LmdbNativeQueryExplanationTest {
 		Explanation explanation = explain(Explanation.Level.Telemetry, query);
 
 		assertThat(explanation.toString())
-				.contains("Values(rows=2)")
+				.contains("ExactDomainDrive(slot=")
+				.contains("arity=1")
 				.contains("nativeExactValuesProbesActual=2")
 				.contains("nativeExactValuesMatchedRowsActual=1");
 	}

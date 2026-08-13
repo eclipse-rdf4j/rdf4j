@@ -22,11 +22,11 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  * Chooses among candidate execution strategies by cost, falling back to the engine's declared specialization order
  * ({@link LmdbNativeStrategyPreference}) when cost does not decide.
  * <p>
- * <b>The selection rule, in order.</b> A candidate wins on cost only when its work interval
- * {@linkplain LmdbNativeWork#beats strictly dominates} every rival's — that is, when it is cheaper under every
- * assignment consistent with the estimates. Otherwise the most specialized candidate wins. Both steps are functions of
- * the candidate <em>set</em>, never of the order candidates were offered in, which is what makes selection reproducible
- * and testable by permutation.
+ * <b>The selection rule, in order.</b> Cost removes every candidate whose work interval is
+ * {@linkplain LmdbNativeWork#beats strictly dominated} by a rival — that is, the rival is cheaper under every
+ * assignment consistent with the estimates. The most specialized member of the remaining non-dominated frontier wins.
+ * Both steps are functions of the candidate <em>set</em>, never of the order candidates were offered in, which is what
+ * makes selection reproducible and testable by permutation.
  * <p>
  * <b>Why domination and not the cheapest midpoint.</b> The estimates behind these intervals carry order-of-magnitude
  * error. Picking the smaller of two overlapping intervals would let a modelling error re-rank dispatch across an entire
@@ -117,13 +117,13 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		if (candidates.isEmpty()) {
 			return -1;
 		}
-		int dominator = strictDominator(candidates, sliceRows);
-		if (dominator >= 0) {
-			return dominator;
-		}
-		int best = 0;
-		for (int i = 1; i < candidates.size(); i++) {
-			if (LmdbNativeStrategyPreference.prefers(candidates.get(i).tag, candidates.get(best).tag)) {
+		int best = -1;
+		for (int i = 0; i < candidates.size(); i++) {
+			if (isDominated(candidates, i, sliceRows)) {
+				continue;
+			}
+			if (best < 0
+					|| LmdbNativeStrategyPreference.prefers(candidates.get(i).tag, candidates.get(best).tag)) {
 				best = i;
 			}
 		}
@@ -143,24 +143,21 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		return LmdbNativeCostCalibration.toTime(candidate.tag, candidate.effectiveWork(sliceRows));
 	}
 
-	/** The one candidate whose interval lies entirely below every other candidate's, or -1 when there is none. */
-	private static <T> int strictDominator(List<LmdbNativeStrategyProposal<T>> candidates, double sliceRows) {
+	/**
+	 * Whether another candidate's complete cost interval lies below this candidate's. Ranking first removes every such
+	 * candidate, then applies specialization preference only within the non-dominated frontier. This matters when two
+	 * equally cheap proposals both beat an expensive specialist: neither cheap proposal uniquely dominates the other,
+	 * but their tie must not resurrect the expensive proposal merely because it has a higher preference rank.
+	 */
+	private static <T> boolean isDominated(List<LmdbNativeStrategyProposal<T>> candidates, int candidateIndex,
+			double sliceRows) {
+		LmdbNativeWork candidateCost = comparableCost(candidates.get(candidateIndex), sliceRows);
 		for (int i = 0; i < candidates.size(); i++) {
-			LmdbNativeWork work = comparableCost(candidates.get(i), sliceRows);
-			if (!work.known()) {
-				continue;
-			}
-			boolean dominates = true;
-			for (int j = 0; j < candidates.size() && dominates; j++) {
-				if (i != j && !work.beats(comparableCost(candidates.get(j), sliceRows))) {
-					dominates = false;
-				}
-			}
-			if (dominates) {
-				return i;
+			if (i != candidateIndex && comparableCost(candidates.get(i), sliceRows).beats(candidateCost)) {
+				return true;
 			}
 		}
-		return -1;
+		return false;
 	}
 
 	/**

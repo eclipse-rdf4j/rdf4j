@@ -42,6 +42,11 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 @Experimental
 abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatternCompiler {
+	private record DomainDrivenPlan(SlotPlan plan, boolean driven) {
+	}
+
+	private record OptimizerExactDomain(ConstantFilter filter, int logicalProbeCount) {
+	}
 
 	LmdbNativeAggregateValuesCompiler(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
 			NativeLmdbQuerySource source) {
@@ -90,6 +95,106 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 		} finally {
 			requiredAggregateNames = previousRequired;
 		}
+	}
+
+	/**
+	 * Turns the exact single-column VALUES anchor produced by {@code FilterInValuesOptimizer} into the physical
+	 * producer of its matching statement-pattern branch. Once the shared optimizer has replaced {@code IN} with a
+	 * {@link BindingSetAssignment}, there is no enclosing {@link Filter} left for the older value-filter folds to
+	 * recognize. Compiling the assignment as ordinary VALUES would therefore enumerate the unconstrained prefix and use
+	 * the constants only as late bound probes.
+	 *
+	 * <p>
+	 * Only optimizer-marked anchors are absorbed. User-authored VALUES retain their ordinary bag multiplicity. The
+	 * marker also guarantees that the values came from an equality form for which RDF-term equality is a safe VALUES
+	 * rewrite. The generated anchor is a set, so replacing it with one inverse run per distinct value preserves the
+	 * original filter's multiplicity.
+	 */
+	SlotPlan compileJoinWithOptimizerExactValues(Join join, boolean duplicateInsensitive) {
+		BindingSetAssignment exactValues = firstOptimizerExactValuesLeaf(join);
+		if (exactValues == null) {
+			return null;
+		}
+		OptimizerExactDomain optimizerDomain = optimizerExactDomain(exactValues);
+		ConstantFilter domain = optimizerDomain == null ? null : optimizerDomain.filter;
+		if (domain == null) {
+			return null;
+		}
+		if (domain.ids.length == 0) {
+			return SlotPlan.empty();
+		}
+
+		DomainDrivenPlan compiled = compileJoinTreeWithoutExactValues(join, exactValues, domain,
+				optimizerDomain.logicalProbeCount, duplicateInsensitive);
+		return compiled == null || !compiled.driven ? null : compiled.plan;
+	}
+
+	private BindingSetAssignment firstOptimizerExactValuesLeaf(TupleExpr expr) {
+		if (expr instanceof BindingSetAssignment values) {
+			return values.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES) == 1L
+					&& values.getBindingNames().size() == 1 ? values : null;
+		}
+		if (!(expr instanceof Join join)) {
+			return null;
+		}
+		BindingSetAssignment left = firstOptimizerExactValuesLeaf(join.getLeftArg());
+		return left != null ? left : firstOptimizerExactValuesLeaf(join.getRightArg());
+	}
+
+	private OptimizerExactDomain optimizerExactDomain(BindingSetAssignment values) {
+		String variable = values.getBindingNames().iterator().next();
+		ArrayList<Long> ids = new ArrayList<>();
+		ArrayList<Value> queryValues = new ArrayList<>();
+		int logicalProbeCount = 0;
+		for (BindingSet row : values.getBindingSets()) {
+			Value value = row.getValue(variable);
+			if (value == null) {
+				return null;
+			}
+			logicalProbeCount++;
+			long id = idOf(value);
+			if (id == UNKNOWN) {
+				// A dictionary value absent from the current snapshot cannot match a statement. Dropping it is
+				// equivalent to the optimizer-produced VALUES join and keeps mixed present/missing domains useful.
+				continue;
+			}
+			if (!valueProbeSafeId(id, value)) {
+				return null;
+			}
+			ids.add(id);
+			queryValues.add(value);
+		}
+		return new OptimizerExactDomain(uniqueConstantFilter(variable, ids, queryValues), logicalProbeCount);
+	}
+
+	private DomainDrivenPlan compileJoinTreeWithoutExactValues(TupleExpr expr,
+			BindingSetAssignment exactValues, ConstantFilter domain, int logicalProbeCount,
+			boolean duplicateInsensitive) {
+		if (expr == exactValues) {
+			return new DomainDrivenPlan(SlotPlan.singleton(), false);
+		}
+		if (expr instanceof Join join) {
+			DomainDrivenPlan left = compileJoinTreeWithoutExactValues(join.getLeftArg(), exactValues, domain,
+					logicalProbeCount, duplicateInsensitive);
+			DomainDrivenPlan right = compileJoinTreeWithoutExactValues(join.getRightArg(), exactValues, domain,
+					logicalProbeCount, duplicateInsensitive);
+			if (left == null || right == null) {
+				return null;
+			}
+			if (right.driven && !left.driven) {
+				return new DomainDrivenPlan(SlotPlan.join(right.plan, left.plan), true);
+			}
+			return new DomainDrivenPlan(SlotPlan.join(left.plan, right.plan), left.driven || right.driven);
+		}
+		if (expr.getBindingNames().contains(domain.variable)) {
+			SlotPlan driven = compileTupleWithConstantFilter(expr, domain.variable, domain.ids, domain.values,
+					duplicateInsensitive, true, logicalProbeCount);
+			if (driven != null) {
+				return new DomainDrivenPlan(driven, true);
+			}
+		}
+		SlotPlan ordinary = compileTuple(expr, duplicateInsensitive);
+		return ordinary == null ? null : new DomainDrivenPlan(ordinary, false);
 	}
 
 	/** Returns the sole VALUES leaf of an inner-join tree, or null for zero/multiple/non-join occurrences. */
@@ -198,6 +303,11 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 	 */
 	SlotPlan compileTupleWithConstantFilter(TupleExpr expr, String variable, long[] ids, Value[] values,
 			boolean duplicateInsensitive) {
+		return compileTupleWithConstantFilter(expr, variable, ids, values, duplicateInsensitive, false, 0);
+	}
+
+	private SlotPlan compileTupleWithConstantFilter(TupleExpr expr, String variable, long[] ids, Value[] values,
+			boolean duplicateInsensitive, boolean exactFilterRewrite, int exactProbeCount) {
 		if (!expr.getBindingNames().contains(variable)) {
 			return null;
 		}
@@ -209,18 +319,19 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			if (!patternContainsVariable(pattern, variable)) {
 				return null;
 			}
-			return compileMultiValueStatementPattern(pattern, variable, ids, values, true, true);
+			return compileMultiValueStatementPattern(pattern, variable, ids, values, true, true,
+					exactFilterRewrite, exactProbeCount);
 		}
 		if (expr instanceof Join) {
 			Join join = (Join) expr;
 			SlotPlan leftConstrained = compileTupleWithConstantFilter(join.getLeftArg(), variable, ids, values,
-					duplicateInsensitive);
+					duplicateInsensitive, exactFilterRewrite, exactProbeCount);
 			if (leftConstrained != null) {
 				SlotPlan right = compileTuple(join.getRightArg(), duplicateInsensitive);
 				return right == null ? null : SlotPlan.join(leftConstrained, right);
 			}
 			SlotPlan rightConstrained = compileTupleWithConstantFilter(join.getRightArg(), variable, ids, values,
-					duplicateInsensitive);
+					duplicateInsensitive, exactFilterRewrite, exactProbeCount);
 			if (rightConstrained != null) {
 				SlotPlan left = compileTuple(join.getLeftArg(), duplicateInsensitive);
 				// The exact domain is the selective producer. Put it first so its reverse adjacency becomes a
@@ -233,7 +344,8 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 		}
 		if (expr instanceof Filter) {
 			Filter filter = (Filter) expr;
-			SlotPlan arg = compileTupleWithConstantFilter(filter.getArg(), variable, ids, values, duplicateInsensitive);
+			SlotPlan arg = compileTupleWithConstantFilter(filter.getArg(), variable, ids, values, duplicateInsensitive,
+					exactFilterRewrite, exactProbeCount);
 			if (arg == null) {
 				return null;
 			}
@@ -245,7 +357,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 		if (expr instanceof Extension) {
 			Extension extension = (Extension) expr;
 			SlotPlan arg = compileTupleWithConstantFilter(extension.getArg(), variable, ids, values,
-					duplicateInsensitive);
+					duplicateInsensitive, exactFilterRewrite, exactProbeCount);
 			if (arg == null) {
 				return null;
 			}
@@ -279,9 +391,9 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 		if (expr instanceof org.eclipse.rdf4j.query.algebra.Union) {
 			org.eclipse.rdf4j.query.algebra.Union union = (org.eclipse.rdf4j.query.algebra.Union) expr;
 			SlotPlan left = compileTupleWithConstantFilter(union.getLeftArg(), variable, ids, values,
-					duplicateInsensitive);
+					duplicateInsensitive, exactFilterRewrite, exactProbeCount);
 			SlotPlan right = compileTupleWithConstantFilter(union.getRightArg(), variable, ids, values,
-					duplicateInsensitive);
+					duplicateInsensitive, exactFilterRewrite, exactProbeCount);
 			return left == null || right == null ? null : SlotPlan.union(left, right);
 		}
 		return null;

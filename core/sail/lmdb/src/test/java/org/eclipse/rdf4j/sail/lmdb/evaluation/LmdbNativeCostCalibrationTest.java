@@ -167,12 +167,17 @@ public class LmdbNativeCostCalibrationTest {
 	}
 
 	@Test
-	public void calibrationIsOnByDefault() {
+	public void calibrationIsOptInByDefault() {
 		System.clearProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
+		observe(FAST, 1d, 200);
 
 		assertThat(LmdbNativeCostCalibration.enabled())
-				.as("the engine calibrates itself to the machine it runs on unless told not to")
-				.isTrue();
+				.as("query history must not change dispatch until calibration has paired evidence and is opted in")
+				.isFalse();
+		LmdbNativeWork work = LmdbNativeWork.exact(1_000d);
+		assertThat(LmdbNativeCostCalibration.toTime(FAST, work))
+				.as("recorded samples remain inert while calibration consumption is off")
+				.isEqualTo(work);
 	}
 
 	@Test
@@ -215,21 +220,22 @@ public class LmdbNativeCostCalibrationTest {
 	}
 
 	@Test
-	public void explorationIsOnByDefaultAndBounded() {
+	public void explorationIsOptInAndBounded() {
 		assertThat(LmdbNativeCostCalibration.explorationEnabled())
-				.as("a strategy that never wins never gets measured and so can never win -- a wrong early ranking "
-						+ "locks in for the JVM's lifetime unless exploration can break the deadlock, so it is on "
-						+ "unless deliberately disabled")
-				.isTrue();
+				.as("a user query must not pay for a randomly selected rival unless exploration is explicitly enabled")
+				.isFalse();
+
+		System.setProperty(LmdbNativeCostCalibration.EXPLORATION_PROPERTY, "true");
+		assertThat(LmdbNativeCostCalibration.explorationEnabled()).isTrue();
 
 		observe(FAST, 5d, 500);
 		assertThat(LmdbNativeCostCalibration.shouldExplore(FAST))
 				.as("a well-measured strategy is never explored -- there is nothing left to learn")
 				.isFalse();
 
-		System.setProperty(LmdbNativeCostCalibration.EXPLORATION_PROPERTY, "false");
+		System.clearProperty(LmdbNativeCostCalibration.EXPLORATION_PROPERTY);
 		assertThat(LmdbNativeCostCalibration.explorationEnabled())
-				.as("disabling exploration restores fully reproducible dispatch")
+				.as("removing the opt-in restores fully reproducible dispatch")
 				.isFalse();
 	}
 }

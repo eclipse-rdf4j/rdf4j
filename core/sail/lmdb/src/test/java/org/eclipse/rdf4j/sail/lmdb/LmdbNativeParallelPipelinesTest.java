@@ -43,16 +43,24 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 
 /** Differential and lifecycle coverage for same-snapshot parallel row pipelines. */
+@Execution(ExecutionMode.SAME_THREAD)
 public class LmdbNativeParallelPipelinesTest {
 	// This class asserts interpreted-strategy internals; the IR kernel rung must stay off so it cannot absorb the
 	// shapes first (plan: plans/lmdb-native-engine/20-kernel-lowering-row.md).
 	private static String previousJaninoCodegenEnabled;
+	private static String previousParallelStartupWork;
 
 	@org.junit.jupiter.api.BeforeAll
 	static void disableKernelCodegen() {
 		previousJaninoCodegenEnabled = System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+		// These are lifecycle/semantics tests for the parallel operator over intentionally tiny fixtures. Model a
+		// zero-startup executor so the unified arbiter can select that operator without weakening the production cost.
+		previousParallelStartupWork = System.setProperty(
+				LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY, "0");
 	}
 
 	@org.junit.jupiter.api.AfterAll
@@ -61,6 +69,12 @@ public class LmdbNativeParallelPipelinesTest {
 			System.clearProperty("rdf4j.lmdb.janinoCodegen.enabled");
 		} else {
 			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", previousJaninoCodegenEnabled);
+		}
+		if (previousParallelStartupWork == null) {
+			System.clearProperty(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY);
+		} else {
+			System.setProperty(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY,
+					previousParallelStartupWork);
 		}
 	}
 
@@ -84,10 +98,18 @@ public class LmdbNativeParallelPipelinesTest {
 		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, THRESHOLD_FLAG, WORK_THRESHOLD_FLAG,
 				THREADS_FLAG,
 				MAX_TASKS_FLAG, EXTERNAL_ROOT_CANDIDATE_FLAG);
+		System.setProperty(PARALLEL_FLAG, "true");
 		System.setProperty(THRESHOLD_FLAG, "0");
 		System.setProperty(WORK_THRESHOLD_FLAG, "0");
 		System.setProperty(THREADS_FLAG, "4");
 		System.setProperty(MAX_TASKS_FLAG, "5");
+		LmdbNativeCostCalibration.reset();
+		for (int i = 0; i < 100; i++) {
+			// This class validates the selected operator, not its real scheduling crossover. Supply stable executor
+			// evidence so the unified arbiter can choose parallel execution over cheaper serial specialists on the
+			// deliberately small fixture.
+			LmdbNativeCostCalibration.record(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, 1_000_000D, 1_000L);
+		}
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
@@ -117,6 +139,7 @@ public class LmdbNativeParallelPipelinesTest {
 				repository.shutDown();
 			}
 		} finally {
+			LmdbNativeCostCalibration.reset();
 			restoreProperties(previousProperties);
 		}
 	}

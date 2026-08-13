@@ -114,7 +114,13 @@ final class LmdbNativeAggregateCompiler {
 	 */
 	static QueryValueEvaluationStep tryCompileExists(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
-		QueryEvaluationStep rows = new LmdbNativeAggregatePlanner(context, strategy, source).compileBareRoot(expr);
+		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source);
+		// This standalone seam receives only the subquery and the runtime mapping. Retain RDF4J's evaluator when scope
+		// analysis cannot prove that correlation and MINUS domain compatibility fit the mutable-row contract.
+		if (planner.containsUnsafeExistsScope(expr)) {
+			return null;
+		}
+		QueryEvaluationStep rows = planner.compileBareRoot(expr);
 		if (!(rows instanceof NativeBareRowsStep)) {
 			return null;
 		}

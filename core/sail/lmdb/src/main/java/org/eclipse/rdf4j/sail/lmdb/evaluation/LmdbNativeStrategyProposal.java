@@ -25,6 +25,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	 * parallel intercept at the serial/parallel crossover; update this constant only with the paired JMH result.
 	 */
 	static final double PARALLEL_STARTUP_COST = 250_000D;
+	static final String PARALLEL_STARTUP_COST_PROPERTY = "rdf4j.lmdb.parallel.startupWork";
 
 	@FunctionalInterface
 	interface Opener<T> {
@@ -143,11 +144,31 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	}
 
 	static double parallelCost(double totalWork, int workers) {
+		return parallelCost(totalWork, workers, parallelStartupCost());
+	}
+
+	static double parallelCost(double totalWork, int workers, double startupCost) {
 		if (!(totalWork >= 0D) || workers <= 0) {
 			return Double.POSITIVE_INFINITY;
 		}
-		double cost = totalWork / workers + PARALLEL_STARTUP_COST;
+		double cost = totalWork / workers + startupCost;
 		return Double.isFinite(cost) ? cost : Double.POSITIVE_INFINITY;
+	}
+
+	/**
+	 * Scheduling intercept used by parallel proposals, configurable for machine calibration and deterministic tests.
+	 */
+	static double parallelStartupCost() {
+		String configured = System.getProperty(PARALLEL_STARTUP_COST_PROPERTY);
+		if (configured == null) {
+			return PARALLEL_STARTUP_COST;
+		}
+		try {
+			double parsed = Double.parseDouble(configured);
+			return Double.isFinite(parsed) && parsed >= 0D ? parsed : PARALLEL_STARTUP_COST;
+		} catch (NumberFormatException ignored) {
+			return PARALLEL_STARTUP_COST;
+		}
 	}
 
 	/** Serial factorization scans each physical leg once across its prefix keys instead of enumerating the product. */

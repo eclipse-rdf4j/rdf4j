@@ -112,6 +112,9 @@ interface SlotPlan {
 		if (plan instanceof FilterPlan) {
 			return assuredMask(((FilterPlan) plan).arg);
 		}
+		if (plan instanceof EntryBindingCompatibilityPlan entry) {
+			return assuredMask(entry.arg) | entry.restoredMask;
+		}
 		if (plan instanceof JoinPlan) {
 			JoinPlan join = (JoinPlan) plan;
 			return assuredMask(join.left) | assuredMask(join.right);
@@ -148,6 +151,9 @@ interface SlotPlan {
 		}
 		if (plan instanceof FilterPlan filter) {
 			return filter.filterMask >= 0L && encounterOrderReplaySafe(filter.arg);
+		}
+		if (plan instanceof EntryBindingCompatibilityPlan entry) {
+			return encounterOrderReplaySafe(entry.arg);
 		}
 		if (plan instanceof ExtensionPlan extension) {
 			if (!encounterOrderReplaySafe(extension.arg)) {

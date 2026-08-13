@@ -28,6 +28,8 @@ import org.junit.jupiter.api.parallel.Resources;
 class LmdbRuntimePropertiesTest {
 
 	private static final String NATIVE_ENGINE = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final String COST_CALIBRATION = "rdf4j.lmdb.costCalibration.enabled";
+	private static final String COST_EXPLORATION = "rdf4j.lmdb.costCalibration.explore";
 
 	@Test
 	void catalogListsStableAllowlistedStateAndAppliesCanonicalBooleans() throws Exception {
@@ -77,6 +79,26 @@ class LmdbRuntimePropertiesTest {
 			assertThat(System.getProperty(unknown)).isEqualTo(previous);
 		} finally {
 			restore(unknown, previous);
+		}
+	}
+
+	@Test
+	void adaptiveCostDecisionsAreOptInButSampleRecordingRemainsOn() throws Exception {
+		Class<?> catalog = Class.forName("org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties");
+		Method list = catalog.getMethod("list");
+		String calibration = System.getProperty(COST_CALIBRATION);
+		String exploration = System.getProperty(COST_EXPLORATION);
+		try {
+			System.clearProperty(COST_CALIBRATION);
+			System.clearProperty(COST_EXPLORATION);
+			assertThat(booleanValue(stateByName(invokeList(list), COST_CALIBRATION), "defaultEnabled")).isFalse();
+			assertThat(booleanValue(stateByName(invokeList(list), COST_EXPLORATION), "defaultEnabled")).isFalse();
+			assertThat(booleanValue(
+					stateByName(invokeList(list), "rdf4j.lmdb.costCalibration.enabled.record"), "defaultEnabled"))
+							.isTrue();
+		} finally {
+			restore(COST_CALIBRATION, calibration);
+			restore(COST_EXPLORATION, exploration);
 		}
 	}
 

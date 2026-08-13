@@ -203,7 +203,7 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 	}
 
 	@Test
-	public void scopedGroupInsideExistsMatchesGeneric() {
+	public void scopedGroupInsideExistsCompilesAsCorrelatedWitness() {
 		String query = "PREFIX : <" + EX + ">\n"
 				+ "SELECT ?s WHERE {\n"
 				+ "  BIND(4 AS ?z)\n"
@@ -217,8 +217,8 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 		assertThat(nativeRows).isEqualTo(rows(query, false, null, null));
 		assertThat(nativeRows).containsExactly("[]");
 		assertThat(LmdbNativeAggregateCompiler.COMPILED.get())
-				.as("native EXISTS must decline an unmodeled nested variable-scope boundary")
-				.isEqualTo(compiledBefore);
+				.as("EXISTS correlation sees the outer BIND while witness-local variables remain scoped")
+				.isGreaterThan(compiledBefore);
 	}
 
 	@Test

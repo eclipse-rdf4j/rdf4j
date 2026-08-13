@@ -34,6 +34,21 @@ final class NativeFilterLease {
 		this.suppressFeedback = suppressFeedback;
 	}
 
+	/**
+	 * Returns the attempt-local semantic filter behind an ownership facade for read-only planning inspection.
+	 *
+	 * The facade intentionally controls lifetime and usage accounting, but it must not erase the filter's semantic
+	 * shape from a later physical proposal. In particular, an {@link ExistsFilter} borrowed for the unified arbiter
+	 * still has to be recognizable as an EXISTS witness by kernel lowering. The returned object must never be invoked
+	 * directly; execution keeps using the facade so the lease observes use and closes the right owner.
+	 */
+	static NativeBooleanFilter inspect(NativeBooleanFilter filter) {
+		while (filter instanceof BorrowedFilter borrowed) {
+			filter = borrowed.entry.attempt;
+		}
+		return filter;
+	}
+
 	NativeBooleanFilter borrow(NativeBooleanFilter original) {
 		if (finished) {
 			throw new IllegalStateException("native filter lease is already finalized");
@@ -68,6 +83,9 @@ final class NativeFilterLease {
 		}
 		if (plan instanceof FilterPlan filter) {
 			return new FilterPlan(borrow(filter.arg), borrow(filter.filter), filter.filterMask);
+		}
+		if (plan instanceof EntryBindingCompatibilityPlan entry) {
+			return new EntryBindingCompatibilityPlan(borrow(entry.arg), entry.slots, entry.ids, entry.restoredMask);
 		}
 		if (plan instanceof JoinPlan join) {
 			// Reapply relational identity/flattening while cloning the attempt. Otherwise an unused VALUES

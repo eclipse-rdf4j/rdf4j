@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumeratePredic
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Exists;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterCompareId;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterDateCompare;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterEntryCompatible;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterInConstants;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterRangeUnsigned;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterValue;
@@ -117,6 +118,14 @@ final class LmdbNativeKernelEmitter {
 			this.stride = kernel.stride();
 		}
 
+		private boolean telemetryEnabled() {
+			return kernel.telemetryMode == Kernel.TelemetryMode.FULL;
+		}
+
+		private boolean streamingGroups() {
+			return kernel.aggregateStateMode == Kernel.AggregateStateMode.STREAMING_GROUPS;
+		}
+
 		String render() {
 			String simpleName = kernel.className().substring(kernel.className().lastIndexOf('.') + 1);
 			boolean aggregate = kernel.terminal instanceof Aggregate;
@@ -167,7 +176,7 @@ final class LmdbNativeKernelEmitter {
 				source.append(method);
 			}
 			source.append("}\n");
-			return LmdbNativeGeneratedSourceOptimizer.optimize(source.toString());
+			return LmdbNativeGeneratedSourceOptimizer.optimize(source.toString(), telemetryEnabled());
 		}
 
 		private int keyRunCursorId(EnumerateAdjKeys enumerate) {
@@ -192,7 +201,7 @@ final class LmdbNativeKernelEmitter {
 		}
 
 		private int sipFilterSite(FilterInConstants filter) {
-			if (filter.domain < 0) {
+			if (!telemetryEnabled() || filter.domain < 0) {
 				return -1;
 			}
 			Integer existing = sipFilterSiteIds.get(filter);
@@ -206,7 +215,7 @@ final class LmdbNativeKernelEmitter {
 		}
 
 		private int sipDrivenSite(EnumerateDomain enumerate) {
-			if (!enumerate.sipDriven) {
+			if (!telemetryEnabled() || !enumerate.sipDriven) {
 				return -1;
 			}
 			Integer existing = sipDrivenSiteIds.get(enumerate);
@@ -220,7 +229,7 @@ final class LmdbNativeKernelEmitter {
 		}
 
 		private int implicitSipDrivenSite(EnumerateAdjKeys enumerate) {
-			if (!enumerate.sipDriven) {
+			if (!telemetryEnabled() || !enumerate.sipDriven) {
 				return -1;
 			}
 			Integer existing = implicitSipDrivenSiteIds.get(enumerate);
@@ -234,6 +243,9 @@ final class LmdbNativeKernelEmitter {
 		}
 
 		private int runtimeFilterSite(Node filter) {
+			if (!telemetryEnabled()) {
+				return -1;
+			}
 			Integer existing = runtimeFilterSiteIds.get(filter);
 			if (existing != null) {
 				return existing;
@@ -511,28 +523,29 @@ final class LmdbNativeKernelEmitter {
 			}
 			int filterSite = runtimeFilterSite(node);
 			int sipSite = node instanceof FilterInConstants ? sipFilterSite((FilterInConstants) node) : -1;
-			body.append(indent)
-					.append("rfTest")
-					.append(filterSite)
-					.append("++;\n")
-					.append(indent)
-					.append("factorCandidates++;\n");
+			if (filterSite >= 0) {
+				body.append(indent)
+						.append("rfTest")
+						.append(filterSite)
+						.append("++;\n")
+						.append(indent)
+						.append("factorCandidates++;\n");
+			}
 			if (sipSite >= 0) {
 				body.append(indent).append("sipTest").append(sipSite).append("++;\n");
 			}
 			body.append(indent)
 					.append("if (")
 					.append(scalarFilterCondition(node))
-					.append(") {\n")
-					.append(indent)
-					.append("    rfAccept")
-					.append(filterSite)
-					.append("++;\n");
+					.append(") {\n");
+			if (filterSite >= 0) {
+				body.append(indent).append("    rfAccept").append(filterSite).append("++;\n");
+			}
 			emitFlatExistsNodesDirect(body, nodes, index + 1, indent + "    ", decoded, boundColumns);
-			body.append(indent)
-					.append("} else {\n")
-					.append(indent)
-					.append("    factorRejected++;\n");
+			body.append(indent).append("} else {\n");
+			if (filterSite >= 0) {
+				body.append(indent).append("    factorRejected++;\n");
+			}
 			if (sipSite >= 0) {
 				body.append(indent).append("    sipReject").append(sipSite).append("++;\n");
 			}
@@ -595,13 +608,15 @@ final class LmdbNativeKernelEmitter {
 						.append(";\n")
 						.append("    private LmdbDecodedNativeAdjacency.DecodedBoundRunCursor sipDR")
 						.append(i)
-						.append(";\n")
-						.append("    private long sipBatchTests")
-						.append(i)
-						.append(";\n")
-						.append("    private long sipBatchRejects")
-						.append(i)
 						.append(";\n");
+				if (telemetryEnabled()) {
+					source.append("    private long sipBatchTests")
+							.append(i)
+							.append(";\n")
+							.append("    private long sipBatchRejects")
+							.append(i)
+							.append(";\n");
+				}
 			}
 			for (int i = 0; i < kernel.requirements.nodePredicateViews; i++) {
 				source.append("    private NativeLmdbQuerySource.NodePredicates np").append(i).append(";\n");
@@ -761,6 +776,11 @@ final class LmdbNativeKernelEmitter {
 			}
 			if (kernel.terminal instanceof Aggregate && flatRootExistsShape == null) {
 				Aggregate aggregate = (Aggregate) kernel.terminal;
+				if (streamingGroups()) {
+					emitStreamingAggregateFields(source, aggregate);
+					source.append('\n');
+					return;
+				}
 				if (aggregate.groupCols.length == 1) {
 					source.append("    private KernelRuntime.LongIntMap groups;\n");
 				} else if (aggregate.groupCols.length > 1) {
@@ -830,9 +850,29 @@ final class LmdbNativeKernelEmitter {
 			source.append('\n');
 		}
 
+		private void emitStreamingAggregateFields(StringBuilder source, Aggregate aggregate) {
+			source.append("    private boolean sgSeen;\n")
+					.append("    private long sgKey;\n");
+			for (int i = 0; i < aggregate.outputs.length; i++) {
+				AggregateOutput output = aggregate.outputs[i];
+				source.append("    private long agC").append(i).append(";\n");
+				if (output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT) {
+					source.append("    private long agL")
+							.append(i)
+							.append(";\n")
+							.append("    private boolean agB")
+							.append(i)
+							.append(";\n");
+				}
+			}
+		}
+
 		private void emitBind(StringBuilder source) {
-			source.append("    public void bind(KernelContext context) {\n")
-					.append("        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.markNestedKernelFactorization();\n");
+			source.append("    public void bind(KernelContext context) {\n");
+			if (telemetryEnabled()) {
+				source.append(
+						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.markNestedKernelFactorization();\n");
+			}
 			for (int i = 0; i < kernel.requirements.adjacencies; i++) {
 				source.append("        a").append(i).append(" = context.adjacencies[").append(i).append("];\n");
 			}
@@ -923,20 +963,23 @@ final class LmdbNativeKernelEmitter {
 						.append(i)
 						.append(" = context.keyDomainLengths[")
 						.append(i)
-						.append("];\n")
-						.append("        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.installExactDomain(")
-						.append(i)
-						.append(", \"keyDomain[")
-						.append(i)
-						.append("]\", \"KernelContext.keyDomains[")
-						.append(i)
-						.append("]\", dom")
-						.append(i)
-						.append(", domO")
-						.append(i)
-						.append(", domL")
-						.append(i)
-						.append(");\n");
+						.append("];\n");
+				if (telemetryEnabled()) {
+					source.append(
+							"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.installExactDomain(")
+							.append(i)
+							.append(", \"keyDomain[")
+							.append(i)
+							.append("]\", \"KernelContext.keyDomains[")
+							.append(i)
+							.append("]\", dom")
+							.append(i)
+							.append(", domO")
+							.append(i)
+							.append(", domL")
+							.append(i)
+							.append(");\n");
+				}
 			}
 			for (FilterInConstants filter : sipFilterSites) {
 				source.append(
@@ -954,14 +997,16 @@ final class LmdbNativeKernelEmitter {
 						.append(javaString(enumerate.consumer == null ? "domain-driven" : enumerate.consumer))
 						.append("\");\n");
 			}
-			for (Node batch : sipBatchProbeSites) {
-				if (batch instanceof SipDomainProbe probe) {
-					source.append(
-							"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.registerDomainConsumer(")
-							.append(probe.domain)
-							.append(", \"BatchProbe(adjacency=")
-							.append(probe.probeAdjacency)
-							.append(")\");\n");
+			if (telemetryEnabled()) {
+				for (Node batch : sipBatchProbeSites) {
+					if (batch instanceof SipDomainProbe probe) {
+						source.append(
+								"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.registerDomainConsumer(")
+								.append(probe.domain)
+								.append(", \"BatchProbe(adjacency=")
+								.append(probe.probeAdjacency)
+								.append(")\");\n");
+					}
 				}
 			}
 			for (int i = 0; i < runtimeFilterSites.size(); i++) {
@@ -998,73 +1043,89 @@ final class LmdbNativeKernelEmitter {
 			}
 			if (kernel.terminal instanceof Aggregate && flatRootExistsShape == null) {
 				Aggregate aggregate = (Aggregate) kernel.terminal;
-				if (hasDistinctAggregate(aggregate)) {
-					source.append("        distinctExpected = context.distinctExpected;\n");
-				}
-				if (aggregate.groupCols.length == 1) {
-					source.append("        groups = new KernelRuntime.LongIntMap();\n");
-				} else if (aggregate.groupCols.length > 1) {
-					source.append("        groupKeys = new KernelRuntime.RowSet(")
-							.append(aggregate.groupCols.length)
-							.append(");\n");
-				}
-				source.append("        accCap = 16;\n");
-				for (int i = 0; i < aggregate.outputs.length; i++) {
-					AggregateOutput output = aggregate.outputs[i];
-					switch (output.kind) {
-					case LmdbNativeKernelIr.AGG_COUNT_STAR:
-					case LmdbNativeKernelIr.AGG_COUNT:
-						source.append("        agC").append(i).append(" = new long[16];\n");
-						break;
-					case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
-					case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
-					case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
-						if (output.hookDistinct) {
-							break;
-						}
-						source.append("        agD").append(i).append(" = new KernelRuntime.LongHashSet[16];\n");
-						if (output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT && output.orderedDomain >= 0) {
-							source.append("        agC")
+				if (streamingGroups()) {
+					source.append("        sgSeen = false;\n")
+							.append("        sgKey = -1L;\n");
+					for (int i = 0; i < aggregate.outputs.length; i++) {
+						source.append("        agC").append(i).append(" = 0L;\n");
+						if (aggregate.outputs[i].kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT) {
+							source.append("        agL")
 									.append(i)
-									.append(" = new long[16];\n")
-									.append("        agL")
+									.append(" = -1L;\n")
+									.append("        agB")
+									.append(i)
+									.append(" = false;\n");
+						}
+					}
+				} else {
+					if (hasDistinctAggregate(aggregate)) {
+						source.append("        distinctExpected = context.distinctExpected;\n");
+					}
+					if (aggregate.groupCols.length == 1) {
+						source.append("        groups = new KernelRuntime.LongIntMap();\n");
+					} else if (aggregate.groupCols.length > 1) {
+						source.append("        groupKeys = new KernelRuntime.RowSet(")
+								.append(aggregate.groupCols.length)
+								.append(");\n");
+					}
+					source.append("        accCap = 16;\n");
+					for (int i = 0; i < aggregate.outputs.length; i++) {
+						AggregateOutput output = aggregate.outputs[i];
+						switch (output.kind) {
+						case LmdbNativeKernelIr.AGG_COUNT_STAR:
+						case LmdbNativeKernelIr.AGG_COUNT:
+							source.append("        agC").append(i).append(" = new long[16];\n");
+							break;
+						case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
+						case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
+						case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
+							if (output.hookDistinct) {
+								break;
+							}
+							source.append("        agD").append(i).append(" = new KernelRuntime.LongHashSet[16];\n");
+							if (output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT && output.orderedDomain >= 0) {
+								source.append("        agC")
+										.append(i)
+										.append(" = new long[16];\n")
+										.append("        agL")
+										.append(i)
+										.append(" = new long[16];\n")
+										.append("        agB")
+										.append(i)
+										.append(" = new boolean[16];\n")
+										.append("        agO")
+										.append(i)
+										.append(" = KernelRuntime.unsignedNondecreasing(dom")
+										.append(output.orderedDomain)
+										.append(", domO")
+										.append(output.orderedDomain)
+										.append(", domL")
+										.append(output.orderedDomain)
+										.append(");\n");
+							}
+							break;
+						case LmdbNativeKernelIr.AGG_SUM:
+						case LmdbNativeKernelIr.AGG_AVG:
+							// Exact numeric state is initialized with the bound engine hooks.
+							break;
+						case LmdbNativeKernelIr.AGG_MIN_ID:
+						case LmdbNativeKernelIr.AGG_MAX_ID:
+							source.append("        agW")
 									.append(i)
 									.append(" = new long[16];\n")
 									.append("        agB")
 									.append(i)
-									.append(" = new boolean[16];\n")
-									.append("        agO")
+									.append(" = new boolean[16];\n");
+							break;
+						default:
+							source.append("        agM")
 									.append(i)
-									.append(" = KernelRuntime.unsignedNondecreasing(dom")
-									.append(output.orderedDomain)
-									.append(", domO")
-									.append(output.orderedDomain)
-									.append(", domL")
-									.append(output.orderedDomain)
-									.append(");\n");
+									.append(" = new double[16];\n")
+									.append("        agB")
+									.append(i)
+									.append(" = new boolean[16];\n");
+							break;
 						}
-						break;
-					case LmdbNativeKernelIr.AGG_SUM:
-					case LmdbNativeKernelIr.AGG_AVG:
-						// Exact numeric state is initialized with the bound engine hooks.
-						break;
-					case LmdbNativeKernelIr.AGG_MIN_ID:
-					case LmdbNativeKernelIr.AGG_MAX_ID:
-						source.append("        agW")
-								.append(i)
-								.append(" = new long[16];\n")
-								.append("        agB")
-								.append(i)
-								.append(" = new boolean[16];\n");
-						break;
-					default:
-						source.append("        agM")
-								.append(i)
-								.append(" = new double[16];\n")
-								.append("        agB")
-								.append(i)
-								.append(" = new boolean[16];\n");
-						break;
 					}
 				}
 			}
@@ -1109,32 +1170,34 @@ final class LmdbNativeKernelEmitter {
 						.append(i)
 						.append(");\n");
 			}
-			for (int i = 0; i < sipBatchProbeSites.size(); i++) {
-				Node batch = sipBatchProbeSites.get(i);
-				if (batch instanceof SipDomainProbe probe) {
-					source.append(
-							"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordSipBatch(")
-							.append(probe.domain)
-							.append(", \"BatchProbe(adjacency=")
-							.append(probe.probeAdjacency)
-							.append(")\", sipBatchTests")
-							.append(i)
-							.append(", sipBatchRejects")
-							.append(i)
-							.append(");\n");
-				} else {
-					SipKeyProbe probe = (SipKeyProbe) batch;
-					source.append(
-							"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordImplicitSip(\"")
-							.append("adjacency-key-batch[a=")
-							.append(probe.domainAdjacency)
-							.append("]\", \"physical adjacency key cursor\", \"BatchProbe(adjacency=")
-							.append(probe.probeAdjacency)
-							.append(")\", \"ADJACENCY_BATCH_SEMIJOIN\", true, Long.MAX_VALUE, sipBatchTests")
-							.append(i)
-							.append(", sipBatchRejects")
-							.append(i)
-							.append(");\n");
+			if (telemetryEnabled()) {
+				for (int i = 0; i < sipBatchProbeSites.size(); i++) {
+					Node batch = sipBatchProbeSites.get(i);
+					if (batch instanceof SipDomainProbe probe) {
+						source.append(
+								"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordSipBatch(")
+								.append(probe.domain)
+								.append(", \"BatchProbe(adjacency=")
+								.append(probe.probeAdjacency)
+								.append(")\", sipBatchTests")
+								.append(i)
+								.append(", sipBatchRejects")
+								.append(i)
+								.append(");\n");
+					} else {
+						SipKeyProbe probe = (SipKeyProbe) batch;
+						source.append(
+								"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordImplicitSip(\"")
+								.append("adjacency-key-batch[a=")
+								.append(probe.domainAdjacency)
+								.append("]\", \"physical adjacency key cursor\", \"BatchProbe(adjacency=")
+								.append(probe.probeAdjacency)
+								.append(")\", \"ADJACENCY_BATCH_SEMIJOIN\", true, Long.MAX_VALUE, sipBatchTests")
+								.append(i)
+								.append(", sipBatchRejects")
+								.append(i)
+								.append(");\n");
+					}
 				}
 			}
 
@@ -1305,7 +1368,11 @@ final class LmdbNativeKernelEmitter {
 			source.append("    private void flush() {\n");
 			if (kernel.terminal instanceof Aggregate) {
 				Aggregate aggregate = (Aggregate) kernel.terminal;
-				if (aggregate.groupCols.length == 0) {
+				if (streamingGroups()) {
+					source.append("        if (sgSeen) {\n")
+							.append("            emitGroup(0);\n")
+							.append("        }\n");
+				} else if (aggregate.groupCols.length == 0) {
 					source.append("        ensure(0);\n")
 							.append("        emitGroup(0);\n");
 				} else if (aggregate.groupCols.length == 1) {
@@ -1548,6 +1615,10 @@ final class LmdbNativeKernelEmitter {
 
 		private void emitAggregateSupport(StringBuilder source) {
 			Aggregate aggregate = (Aggregate) kernel.terminal;
+			if (streamingGroups()) {
+				emitStreamingAggregateSupport(source, aggregate);
+				return;
+			}
 
 			source.append("    private void update() {\n");
 			if (aggregate.groupCols.length == 0) {
@@ -1868,6 +1939,115 @@ final class LmdbNativeKernelEmitter {
 					.append("    }\n\n");
 		}
 
+		private void emitStreamingAggregateSupport(StringBuilder source, Aggregate aggregate) {
+			source.append("    private void update() {\n")
+					.append("        beginGroup();\n");
+			emitStreamingAggregateUpdates(source, aggregate, false);
+			source.append("    }\n\n");
+
+			if (bulkCountTail()) {
+				source.append("    private void updateBy(long n) {\n")
+						.append("        beginGroup();\n");
+				emitStreamingAggregateUpdates(source, aggregate, true);
+				source.append("    }\n\n");
+			}
+
+			source.append("    private void beginGroup() {\n")
+					.append("        long key = v")
+					.append(aggregate.groupCols[0])
+					.append(";\n")
+					.append("        if (!sgSeen) {\n")
+					.append("            sgSeen = true;\n")
+					.append("            sgKey = key;\n")
+					.append("        } else if (sgKey != key) {\n")
+					.append("            emitGroup(0);\n")
+					.append("            resetGroup();\n")
+					.append("            sgKey = key;\n")
+					.append("        }\n")
+					.append("    }\n\n")
+					.append("    private void resetGroup() {\n");
+			for (int i = 0; i < aggregate.outputs.length; i++) {
+				source.append("        agC").append(i).append(" = 0L;\n");
+				if (aggregate.outputs[i].kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT) {
+					source.append("        agB")
+							.append(i)
+							.append(" = false;\n")
+							.append("        agL")
+							.append(i)
+							.append(" = -1L;\n");
+				}
+			}
+			source.append("    }\n\n")
+					.append("    private void emitGroup(int g) {\n");
+			if (aggregate.having != null) {
+				source.append("        if (!(agC")
+						.append(aggregate.having.outputIndex)
+						.append(' ')
+						.append(opSymbol(aggregate.having.op))
+						.append(' ')
+						.append(aggregate.having.threshold)
+						.append("L)) {\n")
+						.append("            return;\n")
+						.append("        }\n");
+			}
+			source.append("        rowScratch[0] = sgKey;\n");
+			for (int i = 0; i < aggregate.outputs.length; i++) {
+				source.append("        rowScratch[")
+						.append(aggregate.outputOffset(i))
+						.append("] = agC")
+						.append(i)
+						.append(";\n");
+			}
+			source.append("        appendRow();\n")
+					.append("    }\n\n");
+		}
+
+		private void emitStreamingAggregateUpdates(StringBuilder source, Aggregate aggregate, boolean weighted) {
+			for (int i = 0; i < aggregate.outputs.length; i++) {
+				AggregateOutput output = aggregate.outputs[i];
+				String value = "v" + output.col;
+				switch (output.kind) {
+				case LmdbNativeKernelIr.AGG_COUNT_STAR:
+					source.append("        agC").append(i).append(weighted ? " += n;\n" : "++;\n");
+					break;
+				case LmdbNativeKernelIr.AGG_COUNT:
+					source.append("        if (")
+							.append(value)
+							.append(" != -1L) {\n")
+							.append("            agC")
+							.append(i)
+							.append(weighted ? " += n;\n" : "++;\n")
+							.append("        }\n");
+					break;
+				case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
+					source.append("        if (")
+							.append(value)
+							.append(" != -1L && (!agB")
+							.append(i)
+							.append(" || agL")
+							.append(i)
+							.append(" != ")
+							.append(value)
+							.append(")) {\n")
+							.append("            agB")
+							.append(i)
+							.append(" = true;\n")
+							.append("            agL")
+							.append(i)
+							.append(" = ")
+							.append(value)
+							.append(";\n")
+							.append("            agC")
+							.append(i)
+							.append("++;\n")
+							.append("        }\n");
+					break;
+				default:
+					throw new IllegalStateException("unsupported streaming aggregate kind " + output.kind);
+				}
+			}
+		}
+
 		private static void emitArrayGrow(StringBuilder source, String field, String elementType) {
 			String scratch = "n" + field;
 			source.append("            ")
@@ -2148,20 +2328,22 @@ final class LmdbNativeKernelEmitter {
 			for (Node filter : vectorized) {
 				int filterSite = runtimeFilterSite(filter);
 				int sipSite = filter instanceof FilterInConstants ? sipFilterSite((FilterInConstants) filter) : -1;
-				body.append(loop)
-						.append("int vb")
-						.append(filterSite)
-						.append(" = cnt;\n")
-						.append(loop)
-						.append("rfTest")
-						.append(filterSite)
-						.append(" += vb")
-						.append(filterSite)
-						.append(";\n")
-						.append(loop)
-						.append("factorCandidates += vb")
-						.append(filterSite)
-						.append(";\n");
+				if (filterSite >= 0) {
+					body.append(loop)
+							.append("int vb")
+							.append(filterSite)
+							.append(" = cnt;\n")
+							.append(loop)
+							.append("rfTest")
+							.append(filterSite)
+							.append(" += vb")
+							.append(filterSite)
+							.append(";\n")
+							.append(loop)
+							.append("factorCandidates += vb")
+							.append(filterSite)
+							.append(";\n");
+				}
 				if (sipSite >= 0) {
 					body.append(loop)
 							.append("sipTest")
@@ -2173,15 +2355,17 @@ final class LmdbNativeKernelEmitter {
 				body.append(loop)
 						.append("cnt = ")
 						.append(vectorFilterCall(filter, valueCol, selected))
-						.append(";\n")
-						.append(loop)
-						.append("rfAccept")
-						.append(filterSite)
-						.append(" += cnt;\n")
-						.append(loop)
-						.append("factorRejected += vb")
-						.append(filterSite)
-						.append(" - cnt;\n");
+						.append(";\n");
+				if (filterSite >= 0) {
+					body.append(loop)
+							.append("rfAccept")
+							.append(filterSite)
+							.append(" += cnt;\n")
+							.append(loop)
+							.append("factorRejected += vb")
+							.append(filterSite)
+							.append(" - cnt;\n");
+				}
 				if (sipSite >= 0) {
 					body.append(loop)
 							.append("sipReject")
@@ -2360,20 +2544,22 @@ final class LmdbNativeKernelEmitter {
 			for (Node filter : vectorized) {
 				int filterSite = runtimeFilterSite(filter);
 				int sipSite = filter instanceof FilterInConstants ? sipFilterSite((FilterInConstants) filter) : -1;
-				body.append(loop)
-						.append("int vb")
-						.append(filterSite)
-						.append(" = cnt;\n")
-						.append(loop)
-						.append("rfTest")
-						.append(filterSite)
-						.append(" += vb")
-						.append(filterSite)
-						.append(";\n")
-						.append(loop)
-						.append("factorCandidates += vb")
-						.append(filterSite)
-						.append(";\n");
+				if (filterSite >= 0) {
+					body.append(loop)
+							.append("int vb")
+							.append(filterSite)
+							.append(" = cnt;\n")
+							.append(loop)
+							.append("rfTest")
+							.append(filterSite)
+							.append(" += vb")
+							.append(filterSite)
+							.append(";\n")
+							.append(loop)
+							.append("factorCandidates += vb")
+							.append(filterSite)
+							.append(";\n");
+				}
 				if (sipSite >= 0) {
 					body.append(loop)
 							.append("sipTest")
@@ -2385,15 +2571,17 @@ final class LmdbNativeKernelEmitter {
 				body.append(loop)
 						.append("cnt = ")
 						.append(vectorFilterCall(filter, valueCol, selected))
-						.append(";\n")
-						.append(loop)
-						.append("rfAccept")
-						.append(filterSite)
-						.append(" += cnt;\n")
-						.append(loop)
-						.append("factorRejected += vb")
-						.append(filterSite)
-						.append(" - cnt;\n");
+						.append(";\n");
+				if (filterSite >= 0) {
+					body.append(loop)
+							.append("rfAccept")
+							.append(filterSite)
+							.append(" += cnt;\n")
+							.append(loop)
+							.append("factorRejected += vb")
+							.append(filterSite)
+							.append(" - cnt;\n");
+				}
 				if (sipSite >= 0) {
 					body.append(loop)
 							.append("sipReject")
@@ -2553,6 +2741,11 @@ final class LmdbNativeKernelEmitter {
 				FilterCompareId filter = (FilterCompareId) node;
 				return filter.left.token() + (filter.negated ? " != " : " == ") + filter.right.token();
 			}
+			if (node instanceof FilterEntryCompatible) {
+				FilterEntryCompatible filter = (FilterEntryCompatible) node;
+				return "(" + filter.value.token() + " == -1L || " + filter.value.token() + " == c"
+						+ filter.constant + ")";
+			}
 			if (node instanceof FilterInConstants) {
 				FilterInConstants filter = (FilterInConstants) node;
 				StringBuilder condition = new StringBuilder("(");
@@ -2593,28 +2786,30 @@ final class LmdbNativeKernelEmitter {
 		private void emitScalarFilterGuard(StringBuilder body, Node node, String nextTemplate, String indent) {
 			int filterSite = runtimeFilterSite(node);
 			int sipSite = node instanceof FilterInConstants ? sipFilterSite((FilterInConstants) node) : -1;
-			body.append(indent)
-					.append("rfTest")
-					.append(filterSite)
-					.append("++;\n")
-					.append(indent)
-					.append("factorCandidates++;\n");
+			if (filterSite >= 0) {
+				body.append(indent)
+						.append("rfTest")
+						.append(filterSite)
+						.append("++;\n")
+						.append(indent)
+						.append("factorCandidates++;\n");
+			}
 			if (sipSite >= 0) {
 				body.append(indent).append("sipTest").append(sipSite).append("++;\n");
 			}
 			body.append(indent)
 					.append("if (")
 					.append(scalarFilterCondition(node))
-					.append(") {\n")
+					.append(") {\n");
+			if (filterSite >= 0) {
+				body.append(indent).append("    rfAccept").append(filterSite).append("++;\n");
+			}
+			body.append(next(nextTemplate, indent + "    "))
 					.append(indent)
-					.append("    rfAccept")
-					.append(filterSite)
-					.append("++;\n")
-					.append(next(nextTemplate, indent + "    "))
-					.append(indent)
-					.append("} else {\n")
-					.append(indent)
-					.append("    factorRejected++;\n");
+					.append("} else {\n");
+			if (filterSite >= 0) {
+				body.append(indent).append("    factorRejected++;\n");
+			}
 			if (sipSite >= 0) {
 				body.append(indent).append("    sipReject").append(sipSite).append("++;\n");
 			}
@@ -2679,14 +2874,14 @@ final class LmdbNativeKernelEmitter {
 		 * which they do because the columns are fields assigned at the top of each iteration.
 		 */
 		/**
-		 * True when nothing between this pipeline position and the terminal carries resumable state — only filters,
-		 * which re-evaluate freely. Such a loop hands rows straight to the sink, so when it pauses it must first step
-		 * past the row it just emitted; a loop with a stateful callee must do the opposite and leave its counter alone,
-		 * because the callee will resume inside that same outer value.
+		 * True when nothing between this pipeline position and the terminal carries resumable state. Straight-line
+		 * guards and aliases re-evaluate freely. Such a loop hands rows straight to the sink, so when it pauses it must
+		 * first step past the row it just emitted; a loop with a stateful callee must do the opposite and leave its
+		 * counter alone, because the callee will resume inside that same outer value.
 		 */
 		private boolean tailmostAt(int stateIndex) {
 			for (int i = stateIndex + 1; i < kernel.pipeline.size(); i++) {
-				if (!LmdbNativeKernelIr.isFilter(kernel.pipeline.get(i))) {
+				if (!LmdbNativeKernelIr.isStatelessRowNode(kernel.pipeline.get(i))) {
 					return false;
 				}
 			}
@@ -3378,22 +3573,20 @@ final class LmdbNativeKernelEmitter {
 					.append(indent)
 					.append("    for (int sipIndex = 0; sipIndex < sipDomainLength; sipIndex++) {\n")
 					.append(indent)
-					.append("        long sipKey = sipDomain[sipDomainOffset + sipIndex];\n")
-					.append(indent)
-					.append("        sipBatchTests")
-					.append(site)
-					.append("++;\n")
-					.append(indent)
+					.append("        long sipKey = sipDomain[sipDomainOffset + sipIndex];\n");
+			if (telemetryEnabled()) {
+				body.append(indent).append("        sipBatchTests").append(site).append("++;\n");
+			}
+			body.append(indent)
 					.append("        int end = ")
 					.append(decodedCursor)
 					.append(".bindSize(sipKey);\n")
 					.append(indent)
-					.append("        if (end < 0) {\n")
-					.append(indent)
-					.append("            sipBatchRejects")
-					.append(site)
-					.append("++;\n")
-					.append(indent)
+					.append("        if (end < 0) {\n");
+			if (telemetryEnabled()) {
+				body.append(indent).append("            sipBatchRejects").append(site).append("++;\n");
+			}
+			body.append(indent)
 					.append("        } else {\n")
 					.append(indent)
 					.append("            v")
@@ -3435,16 +3628,18 @@ final class LmdbNativeKernelEmitter {
 					.append(adjacency)
 					.append(".findBatch(sipDomain, sipDomainOffset + sipBase, sipCount, sipH")
 					.append(site)
-					.append(", 0);\n")
-					.append(indent)
-					.append("        sipBatchTests")
-					.append(site)
-					.append(" += sipCount;\n")
-					.append(indent)
-					.append("        sipBatchRejects")
-					.append(site)
-					.append(" += sipCount - sipFound;\n")
-					.append(indent)
+					.append(", 0);\n");
+			if (telemetryEnabled()) {
+				body.append(indent)
+						.append("        sipBatchTests")
+						.append(site)
+						.append(" += sipCount;\n")
+						.append(indent)
+						.append("        sipBatchRejects")
+						.append(site)
+						.append(" += sipCount - sipFound;\n");
+			}
+			body.append(indent)
 					.append("        for (int sipIndex = 0; sipIndex < sipCount; sipIndex++) {\n")
 					.append(indent)
 					.append("            long rh = sipH")
@@ -3518,22 +3713,20 @@ final class LmdbNativeKernelEmitter {
 					.append(indent)
 					.append("                long sipKey = sipK")
 					.append(site)
-					.append("[sipIndex];\n")
-					.append(indent)
-					.append("                sipBatchTests")
-					.append(site)
-					.append("++;\n")
-					.append(indent)
+					.append("[sipIndex];\n");
+			if (telemetryEnabled()) {
+				body.append(indent).append("                sipBatchTests").append(site).append("++;\n");
+			}
+			body.append(indent)
 					.append("                int end = ")
 					.append(decodedCursor)
 					.append(".bindSize(sipKey);\n")
 					.append(indent)
-					.append("                if (end < 0) {\n")
-					.append(indent)
-					.append("                    sipBatchRejects")
-					.append(site)
-					.append("++;\n")
-					.append(indent)
+					.append("                if (end < 0) {\n");
+			if (telemetryEnabled()) {
+				body.append(indent).append("                    sipBatchRejects").append(site).append("++;\n");
+			}
+			body.append(indent)
 					.append("                } else {\n")
 					.append(indent)
 					.append("                    v")
@@ -3566,16 +3759,18 @@ final class LmdbNativeKernelEmitter {
 					.append(site)
 					.append(", 0, sipCount, sipH")
 					.append(site)
-					.append(", 0);\n")
-					.append(indent)
-					.append("            sipBatchTests")
-					.append(site)
-					.append(" += sipCount;\n")
-					.append(indent)
-					.append("            sipBatchRejects")
-					.append(site)
-					.append(" += sipCount - sipFound;\n")
-					.append(indent)
+					.append(", 0);\n");
+			if (telemetryEnabled()) {
+				body.append(indent)
+						.append("            sipBatchTests")
+						.append(site)
+						.append(" += sipCount;\n")
+						.append(indent)
+						.append("            sipBatchRejects")
+						.append(site)
+						.append(" += sipCount - sipFound;\n");
+			}
+			body.append(indent)
 					.append("            for (int sipIndex = 0; sipIndex < sipCount; sipIndex++) {\n")
 					.append(indent)
 					.append("                long rh = sipH")
@@ -4049,7 +4244,8 @@ final class LmdbNativeKernelEmitter {
 						.append("}\n");
 			} else if (node instanceof Intersect) {
 				emitIntersect(body, (Intersect) node, nextTemplate, indent);
-			} else if (node instanceof FilterCompareId || node instanceof FilterInConstants
+			} else if (node instanceof FilterCompareId || node instanceof FilterEntryCompatible
+					|| node instanceof FilterInConstants
 					|| node instanceof FilterRangeUnsigned || node instanceof FilterDateCompare
 					|| node instanceof FilterValue) {
 				emitScalarFilterGuard(body, node, nextTemplate, indent);
@@ -4064,27 +4260,28 @@ final class LmdbNativeKernelEmitter {
 							.append(");\n");
 				}
 				int filterSite = runtimeFilterSite(residual);
+				if (filterSite >= 0) {
+					body.append(indent)
+							.append("rfTest")
+							.append(filterSite)
+							.append("++;\n")
+							.append(indent)
+							.append("factorCandidates++;\n");
+				}
 				body.append(indent)
-						.append("rfTest")
-						.append(filterSite)
-						.append("++;\n")
-						.append(indent)
-						.append("factorCandidates++;\n")
-						.append(indent)
 						.append("if (hooks.testResidual(")
 						.append(residual.residualId)
-						.append(")) {\n")
+						.append(")) {\n");
+				if (filterSite >= 0) {
+					body.append(indent).append("    rfAccept").append(filterSite).append("++;\n");
+				}
+				body.append(next(nextTemplate, indent + "    "))
 						.append(indent)
-						.append("    rfAccept")
-						.append(filterSite)
-						.append("++;\n")
-						.append(next(nextTemplate, indent + "    "))
-						.append(indent)
-						.append("} else {\n")
-						.append(indent)
-						.append("    factorRejected++;\n")
-						.append(indent)
-						.append("}\n");
+						.append("} else {\n");
+				if (filterSite >= 0) {
+					body.append(indent).append("    factorRejected++;\n");
+				}
+				body.append(indent).append("}\n");
 			} else if (node instanceof LeftProbe) {
 				LeftProbe probe = (LeftProbe) node;
 				String a = "a" + probe.adjacency;
@@ -4182,25 +4379,31 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("cur.close();\n");
 			} else if (node instanceof LmdbNativeKernelIr.LeftGroup) {
 				LmdbNativeKernelIr.LeftGroup group = (LmdbNativeKernelIr.LeftGroup) node;
-				if (booleanMode) {
-					// Only the row and aggregate pipelines lower OPTIONAL, never a witness body, so a left group in a
-					// short-circuiting sub-pipeline would be a lowering bug rather than a missing emitter case.
-					throw new IllegalStateException("left group is not emittable in boolean mode");
-				}
 				// "Did the arm produce anything for this row" cannot be a local: the arm is emitted as its own methods,
 				// which set the flag from inside their own frames. One field per left group, reset on entry, so nesting
 				// and repetition inside a loop each get their own answer.
 				int groupId = nextLeftGroupId++;
 				String flag = "lg" + groupId;
-				String armFirst = emitPipeline(group.arm, flag + " = true;\n%I%" + nextTemplate, false);
+				String armFirst = emitPipeline(group.arm, flag + " = true;\n%I%" + nextTemplate, booleanMode);
 				body.append(indent)
 						.append(flag)
 						.append(" = false;\n")
-						.append(indent)
-						.append(armFirst)
-						.append("();\n")
-						.append(indent)
-						.append("if (!")
+						.append(indent);
+				if (booleanMode) {
+					// A right match suppresses null extension even when the downstream continuation rejects every
+					// matching row. The field records that fact independently from the helper's boolean success result.
+					body.append("if (")
+							.append(armFirst)
+							.append("()) {\n")
+							.append(indent)
+							.append("    return true;\n")
+							.append(indent)
+							.append("}\n")
+							.append(indent);
+				} else {
+					body.append(armFirst).append("();\n").append(indent);
+				}
+				body.append("if (!")
 						.append(flag)
 						.append(") {\n");
 				for (int col : group.resetColumns()) {
@@ -4211,7 +4414,10 @@ final class LmdbNativeKernelEmitter {
 						.append("}\n");
 			} else if (node instanceof Exists) {
 				Exists exists = (Exists) node;
-				String witness = emitPipeline(exists.pipeline, "return true;", true);
+				// Boolean helper methods append their common `return false` epilogue. Keep the success return inside a
+				// conditional so a straight-line final node (BindAlias/EnumerateEntry) does not make that epilogue
+				// statically unreachable to Janino. For looping probes the generated behavior is identical.
+				String witness = emitPipeline(exists.pipeline, "if (true) { return true; }", true);
 				body.append(indent)
 						.append("if (")
 						.append(exists.negated ? "!" : "")

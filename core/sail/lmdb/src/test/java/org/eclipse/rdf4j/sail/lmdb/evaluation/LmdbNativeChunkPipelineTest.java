@@ -647,6 +647,7 @@ public class LmdbNativeChunkPipelineTest {
 			assertThat(LmdbNativeChunkPipeline.ENGAGED.get()).isGreaterThan(engagedBefore);
 			assertThat(disabledTelemetry)
 					.contains("    adjacencySIP:\n      used: false\n"
+							+ "      scope: planner/interpreted\n"
 							+ "      state: NOT_CONSIDERED\n"
 							+ "      reason: FEATURE_DISABLED[rdf4j.lmdb.sip.adjacencyMasks.enabled=false]");
 			long engagedAfterDisabled = LmdbNativeChunkPipeline.ENGAGED.get();
@@ -666,7 +667,8 @@ public class LmdbNativeChunkPipelineTest {
 					.as("root rows whose middle key is absent from the selective predicate should be dropped")
 					.isGreaterThan(maskedBefore);
 			assertThat(enabledTelemetry)
-					.contains("    adjacencySIP:\n      used: true\n      state: ACTIVATED")
+					.contains("    adjacencySIP:\n      used: true\n      scope: planner/interpreted\n"
+							+ "      state: ACTIVATED")
 					.contains("      membershipChecks:")
 					.contains("      rowsRejected:");
 
@@ -680,7 +682,8 @@ public class LmdbNativeChunkPipelineTest {
 					.as("a domain covering every root key cannot repay installation and membership checks")
 					.isEqualTo(masksAfterSelective);
 			assertThat(denseTelemetry)
-					.contains("    adjacencySIP:\n      used: false\n      state: REJECTED")
+					.contains("    adjacencySIP:\n      used: false\n      scope: planner/interpreted\n"
+							+ "      state: REJECTED")
 					.contains("      reason: STATIC_COST_REJECTED[")
 					.contains("domainCardinality=2048");
 		} finally {

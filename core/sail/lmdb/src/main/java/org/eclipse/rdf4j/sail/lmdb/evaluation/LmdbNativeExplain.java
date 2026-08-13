@@ -251,8 +251,12 @@ final class LmdbNativeExplain {
 		}
 		if (plan instanceof MultiValuePatternPlan) {
 			MultiValuePatternPlan multi = (MultiValuePatternPlan) plan;
-			return "MultiValuePattern(slot=" + slot(multi.constrainedSlot, slotNames) + ", alternatives="
-					+ multi.alternatives.length + ", fallback=" + (multi.fallback != null) + ")";
+			String index = multi.alternatives.length == 0 ? ""
+					: multi.alternatives[0].indexName;
+			return "ExactDomainDrive(slot=" + slot(multi.constrainedSlot, slotNames) + ", arity="
+					+ multi.alternatives.length + ", access=per-value-index"
+					+ (index == null || index.isEmpty() ? "" : ", index=" + index)
+					+ ", fallback=" + (multi.fallback != null) + ")";
 		}
 		if (plan instanceof MultiJoinPlan) {
 			MultiJoinPlan multiJoin = (MultiJoinPlan) plan;
@@ -301,6 +305,10 @@ final class LmdbNativeExplain {
 			String filterMask = filter.filterMask < 0L ? "sticky" : describeBoundMask(filter.filterMask, slotNames);
 			return "Filter(mask=" + filterMask + ", arg="
 					+ describe(filter.arg, slotNames, boundMask) + ")";
+		}
+		if (plan instanceof EntryBindingCompatibilityPlan entry) {
+			return "EntryBindingCompatibility(mask=" + describeBoundMask(entry.restoredMask, slotNames) + ", arg="
+					+ describe(entry.arg, slotNames, boundMask & ~entry.restoredMask) + ")";
 		}
 		if (plan instanceof ExtensionPlan) {
 			ExtensionPlan extension = (ExtensionPlan) plan;

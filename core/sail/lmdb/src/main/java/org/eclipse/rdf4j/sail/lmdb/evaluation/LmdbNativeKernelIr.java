@@ -972,6 +972,32 @@ final class LmdbNativeKernelIr {
 		}
 	}
 
+	/**
+	 * Compatibility guard for a caller binding that was intentionally absent while evaluating a badly designed
+	 * OPTIONAL. The row is compatible when the OPTIONAL left the slot unbound or produced the supplied id. A following
+	 * {@link BindAlias} restores that id before projection or aggregation observes the row.
+	 */
+	static final class FilterEntryCompatible extends Node {
+		final Operand value;
+		final int constant;
+
+		FilterEntryCompatible(Operand value, int constant) {
+			this.value = value;
+			this.constant = constant;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("ec(").append(value.token()).append(",c").append(constant).append(");");
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.operand(value);
+			requirements.constantIndex(constant);
+		}
+	}
+
 	/** Id membership in a set of query constants. */
 	static final class FilterInConstants extends Node {
 		final Operand value;
@@ -1999,9 +2025,9 @@ final class LmdbNativeKernelIr {
 	/**
 	 * A pipeline can stream when its terminal writes plain rows with no post-pass over the whole result — ordering and
 	 * limits need every row in hand before the first can be served — and when every node either carries no state across
-	 * a pause (the filters) or carries state the emitter knows how to save and restore (the looping producers).
-	 * {@code EnumerateEntry} is excluded deliberately: it emits its continuation exactly once with nothing to resume
-	 * from, so re-entering it after a pause would emit a second time.
+	 * a pause (straight-line guards and aliases) or carries state the emitter knows how to save and restore (the
+	 * looping producers). {@code EnumerateEntry} is excluded deliberately: it emits its continuation exactly once with
+	 * nothing to resume from, so re-entering it after a pause would emit a second time.
 	 * <p>
 	 * {@code ProbeClose} is admitted even though it produces no column, because its state is a single repetition
 	 * counter and its repetition count is recomputable from the adjacency view: it re-emits the continuation once per
@@ -2022,7 +2048,8 @@ final class LmdbNativeKernelIr {
 			return false;
 		}
 		for (Node node : pipeline) {
-			boolean streamable = isFilter(node) || node instanceof EnumerateDomain || node instanceof Probe
+			boolean streamable = isStatelessRowNode(node)
+					|| node instanceof EnumerateDomain || node instanceof Probe
 					|| node instanceof ScanQuad || node instanceof PlanRows || node instanceof ProbeClose
 					|| node instanceof EnumerateAdjKeys && ((EnumerateAdjKeys) node).valueCol >= 0;
 			if (!streamable) {
@@ -2030,6 +2057,11 @@ final class LmdbNativeKernelIr {
 			}
 		}
 		return true;
+	}
+
+	/** True for straight-line row nodes which are safe to re-evaluate after a streaming pause. */
+	static boolean isStatelessRowNode(Node node) {
+		return isFilter(node) || node instanceof FilterEntryCompatible || node instanceof BindAlias;
 	}
 
 	/** True for the row-level guard nodes, which neither produce a column nor branch the pipeline. */
@@ -2041,10 +2073,33 @@ final class LmdbNativeKernelIr {
 	}
 
 	static final class Kernel {
+		enum TelemetryMode {
+			NONE,
+			FULL
+		}
+
+		enum AggregateStateMode {
+			HASHED,
+			STREAMING_GROUPS,
+			PARTITIONED_GROUPS
+		}
+
+		enum AggregateDistinctMode {
+			HASH,
+			MONOTONIC,
+			CONSTANT_ONCE,
+			UNIQUE
+		}
+
 		final List<Node> pipeline;
 		final int columnCount;
 		final Terminal terminal;
 		final Requirements requirements;
+		final TelemetryMode telemetryMode;
+		final AggregateStateMode aggregateStateMode;
+		final AggregateDistinctMode[] aggregateDistinctModes;
+		final boolean orderedInputsRequired;
+		final BitSet uniqueDomainsRequired;
 		/**
 		 * Index into {@link #pipeline} of the innermost run-expanding node when this kernel qualifies for the vector
 		 * tail, otherwise {@code -1}. The emitter turns that one node's inner loop into a bulk run read plus vectorized
@@ -2060,9 +2115,14 @@ final class LmdbNativeKernelIr {
 		private final String shapeKey;
 
 		Kernel(int columnCount, List<Node> pipeline, Terminal terminal) {
+			this(columnCount, pipeline, terminal, TelemetryMode.NONE);
+		}
+
+		Kernel(int columnCount, List<Node> pipeline, Terminal terminal, TelemetryMode telemetryMode) {
 			if (columnCount < 0 || columnCount > 64) {
 				throw new IllegalArgumentException("column count out of range: " + columnCount);
 			}
+			this.telemetryMode = java.util.Objects.requireNonNull(telemetryMode, "telemetryMode");
 			OptimizedKernel optimized = distinctRootExistsEnabled()
 					? optimizeDistinctRootExists(pipeline, terminal)
 					: new OptimizedKernel(List.copyOf(pipeline), terminal);
@@ -2075,6 +2135,11 @@ final class LmdbNativeKernelIr {
 			}
 			this.terminal.requirements(requirements);
 			validateColumns();
+			AggregateProperties aggregateProperties = aggregateProperties(this.pipeline, this.terminal);
+			this.aggregateStateMode = aggregateProperties.stateMode;
+			this.aggregateDistinctModes = aggregateProperties.distinctModes;
+			this.orderedInputsRequired = aggregateProperties.orderedInputsRequired;
+			this.uniqueDomainsRequired = (BitSet) aggregateProperties.uniqueDomainsRequired.clone();
 			this.vectorTailIndex = vectorTailEnabled() ? findVectorTail(this.pipeline) : -1;
 			this.resumable = resumableEnabled() && isResumable(this.pipeline, this.terminal);
 			StringBuilder key = new StringBuilder("ir1:");
@@ -2084,12 +2149,132 @@ final class LmdbNativeKernelIr {
 			if (resumable) {
 				key.append("rs;");
 			}
+			if (aggregateStateMode != AggregateStateMode.HASHED) {
+				key.append("am").append(aggregateStateMode.ordinal()).append(';');
+				for (AggregateDistinctMode mode : aggregateDistinctModes) {
+					key.append('d').append(mode.ordinal());
+				}
+				for (int domain = uniqueDomainsRequired.nextSetBit(0); domain >= 0; domain = uniqueDomainsRequired
+						.nextSetBit(domain + 1)) {
+					key.append('u').append(domain);
+				}
+				key.append(';');
+			}
+			key.append(telemetryMode == TelemetryMode.FULL ? "tmF;" : "tmN;");
 			key.append("cols=").append(columnCount).append(';');
 			for (Node node : this.pipeline) {
 				node.key(key);
 			}
 			this.terminal.key(key);
 			this.shapeKey = key.toString();
+		}
+
+		Kernel withTelemetry(TelemetryMode mode) {
+			return telemetryMode == mode ? this : new Kernel(columnCount, pipeline, terminal, mode);
+		}
+
+		/**
+		 * Proves the smallest allocation-free grouped shape directly from the lowered physical pipeline. A key cursor
+		 * visits every distinct key once, so its key column is a complete grouping prefix. Its neighbor run is ordered
+		 * at bind time; values from a later inner expansion only repeat the current neighbor contiguously. That makes a
+		 * last-seen scalar exact for DISTINCT while ordinary counts may still consume a bulk multiplicity.
+		 */
+		private static AggregateProperties aggregateProperties(List<Node> pipeline, Terminal terminal) {
+			if (!(terminal instanceof Aggregate aggregate) || aggregate.groupCols.length != 1 || pipeline.isEmpty()) {
+				return AggregateProperties.hashed(terminal);
+			}
+			Node root = pipeline.get(0);
+			int rootKeyCol;
+			int rootValueCol;
+			BitSet uniqueDomains = new BitSet();
+			if (root instanceof EnumerateAdjKeys enumerate) {
+				rootKeyCol = enumerate.keyCol;
+				rootValueCol = enumerate.valueCol;
+			} else if (root instanceof SipDomainProbe probe) {
+				rootKeyCol = probe.keyCol;
+				rootValueCol = probe.valueCol;
+				uniqueDomains.set(probe.domain);
+			} else if (root instanceof SipKeyProbe probe) {
+				rootKeyCol = probe.keyCol;
+				rootValueCol = probe.valueCol;
+			} else {
+				return AggregateProperties.hashed(terminal);
+			}
+			if (rootKeyCol != aggregate.groupCols[0]) {
+				return AggregateProperties.hashed(terminal);
+			}
+			for (int i = 1; i < pipeline.size(); i++) {
+				BitSet produced = new BitSet();
+				pipeline.get(i).produced(produced);
+				if (produced.get(rootKeyCol)) {
+					return AggregateProperties.hashed(terminal);
+				}
+			}
+
+			AggregateDistinctMode[] modes = new AggregateDistinctMode[aggregate.outputs.length];
+			boolean ordered = false;
+			for (int i = 0; i < aggregate.outputs.length; i++) {
+				AggregateOutput output = aggregate.outputs[i];
+				modes[i] = AggregateDistinctMode.HASH;
+				if (output.kind == AGG_COUNT_STAR || output.kind == AGG_COUNT) {
+					continue;
+				}
+				if (output.kind != AGG_COUNT_DISTINCT || output.hookDistinct) {
+					return AggregateProperties.hashed(terminal);
+				}
+				int sourceCol = aliasSource(pipeline, output.col);
+				if (sourceCol == rootKeyCol) {
+					modes[i] = AggregateDistinctMode.CONSTANT_ONCE;
+				} else if (sourceCol == rootValueCol && rootValueCol >= 0
+						&& !rewrittenAfterRoot(pipeline, sourceCol)) {
+					modes[i] = AggregateDistinctMode.MONOTONIC;
+					ordered = true;
+				} else {
+					return AggregateProperties.hashed(terminal);
+				}
+			}
+			return new AggregateProperties(AggregateStateMode.STREAMING_GROUPS, modes, ordered, uniqueDomains);
+		}
+
+		private static int aliasSource(List<Node> pipeline, int column) {
+			int source = column;
+			for (int i = pipeline.size() - 1; i >= 0; i--) {
+				Node node = pipeline.get(i);
+				if (node instanceof BindAlias alias && alias.dstCol == source
+						&& alias.source.kind == Operand.COL) {
+					source = alias.source.index;
+				}
+			}
+			return source;
+		}
+
+		private static boolean rewrittenAfterRoot(List<Node> pipeline, int column) {
+			for (int i = 1; i < pipeline.size(); i++) {
+				Node node = pipeline.get(i);
+				if (node instanceof BindAlias alias && alias.dstCol == column && alias.source.kind == Operand.COL
+						&& alias.source.index == column) {
+					continue;
+				}
+				BitSet produced = new BitSet();
+				node.produced(produced);
+				if (produced.get(column)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private record AggregateProperties(AggregateStateMode stateMode,
+				AggregateDistinctMode[] distinctModes, boolean orderedInputsRequired, BitSet uniqueDomainsRequired) {
+
+			private static AggregateProperties hashed(Terminal terminal) {
+				int outputCount = terminal instanceof Aggregate ? ((Aggregate) terminal).outputs.length : 0;
+				AggregateDistinctMode[] modes = new AggregateDistinctMode[outputCount];
+				for (int i = 0; i < modes.length; i++) {
+					modes[i] = AggregateDistinctMode.HASH;
+				}
+				return new AggregateProperties(AggregateStateMode.HASHED, modes, false, new BitSet());
+			}
 		}
 
 		/**

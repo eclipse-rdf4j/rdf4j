@@ -74,6 +74,16 @@ class LmdbNodePredicateKernelFaultTest {
 		System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
 		System.clearProperty("rdf4j.lmdb.janinoCodegen.enabled");
 		System.clearProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
+		System.clearProperty("rdf4j.lmdb.janinoCodegen.synchronous");
+		System.clearProperty("rdf4j.lmdb.factorizedRows.enabled");
+		System.clearProperty("rdf4j.lmdb.factorizedTail.enabled");
+		System.clearProperty("rdf4j.lmdb.orderedFactorizedRows.enabled");
+		System.clearProperty("rdf4j.lmdb.nativeBatch.enabled");
+		System.clearProperty("rdf4j.lmdb.wcoj.enabled");
+		System.clearProperty("rdf4j.lmdb.parallel.enabled");
+		System.clearProperty("rdf4j.lmdb.parallel.threads");
+		System.clearProperty("rdf4j.lmdb.parallel.minWorkEstimate");
+		System.clearProperty("rdf4j.lmdb.parallel.startupWork");
 		System.clearProperty(LmdbNativeKernelIrTestAccess.NODE_PREDICATES_PROPERTY);
 		System.clearProperty(LmdbNativeKernelIrTestAccess.ROW_PARALLEL_PROPERTY);
 		System.clearProperty(LmdbNativeKernelIrTestAccess.AGGREGATE_PARALLEL_PROPERTY);
@@ -180,6 +190,19 @@ class LmdbNodePredicateKernelFaultTest {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
+		// This is a rung fault test, not a dispatch preference test. Keep the compiled proposal eligible while
+		// preventing factorized/batch/interpreted-parallel specialists from answering before the named rung opens.
+		System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
+		System.setProperty("rdf4j.lmdb.factorizedTail.enabled", "false");
+		System.setProperty("rdf4j.lmdb.orderedFactorizedRows.enabled", "false");
+		System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");
+		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+		System.setProperty("rdf4j.lmdb.parallel.enabled",
+				Boolean.toString(rung.rowParallel || rung.aggregateParallel));
+		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
+		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
+		System.setProperty("rdf4j.lmdb.parallel.startupWork", "1.0E12");
 		System.setProperty(LmdbNativeKernelIrTestAccess.NODE_PREDICATES_PROPERTY, "true");
 		System.setProperty(LmdbNativeKernelIrTestAccess.ROW_PARALLEL_PROPERTY, Boolean.toString(rung.rowParallel));
 		System.setProperty(LmdbNativeKernelIrTestAccess.AGGREGATE_PARALLEL_PROPERTY,
