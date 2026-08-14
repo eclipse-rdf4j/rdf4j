@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
@@ -267,6 +268,12 @@ class SailDatasetImpl implements SailDataset {
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException {
+		return getStatements((StatementPattern) null, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern, Resource subj,
+			IRI pred, Value obj, Resource... contexts) throws SailException {
 		Set<Resource> deprecatedContexts = changes.getDeprecatedContexts();
 		CloseableIteration<? extends Statement> iter;
 		if (changes.isStatementCleared()
@@ -277,9 +284,9 @@ class SailDatasetImpl implements SailDataset {
 		} else if (contexts != null && contexts.length > 0 && deprecatedContexts != null) {
 			List<Resource> remaining = new ArrayList<>(Arrays.asList(contexts));
 			remaining.removeAll(deprecatedContexts);
-			iter = derivedFrom.getStatements(subj, pred, obj, remaining.toArray(new Resource[0]));
+			iter = derivedFrom.getStatements(statementPattern, subj, pred, obj, remaining.toArray(new Resource[0]));
 		} else {
-			iter = derivedFrom.getStatements(subj, pred, obj, contexts);
+			iter = derivedFrom.getStatements(statementPattern, subj, pred, obj, contexts);
 		}
 		if (changes.hasDeprecated() && iter != null) {
 			iter = difference(iter, changes::hasDeprecated);
@@ -326,6 +333,20 @@ class SailDatasetImpl implements SailDataset {
 			return null;
 		}
 		return derivedFrom.getComparator();
+	}
+
+	@Override
+	public long getStatementCount(StatementPattern statementPattern, Resource subj, IRI pred, Value obj,
+			Resource... contexts) throws SailException {
+		long count = 0;
+		try (CloseableIteration<? extends Statement> statements = getStatements(statementPattern, subj, pred, obj,
+				contexts)) {
+			while (statements.hasNext()) {
+				statements.next();
+				count++;
+			}
+		}
+		return count;
 	}
 
 	@Override

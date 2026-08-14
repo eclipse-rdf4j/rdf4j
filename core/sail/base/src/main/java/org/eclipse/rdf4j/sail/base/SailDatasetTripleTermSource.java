@@ -17,6 +17,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.OptionalLong;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.evaluation.NativeTripleTermSource;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.TripleSourceIterationWrapper;
@@ -132,12 +134,25 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 		return false;
 	}
 
+	/**
+	 * Returns the durable snapshot epoch of the exact dataset used by this triple source, when available.
+	 */
+	public OptionalLong getSnapshotEpoch() {
+		return dataset.getSnapshotEpoch();
+	}
+
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException {
+		return getStatements((StatementPattern) null, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern, Resource subj,
+			IRI pred, Value obj, Resource... contexts) throws QueryEvaluationException {
 		CloseableIteration<? extends Statement> statements = null;
 		try {
-			statements = dataset.getStatements(subj, pred, obj, contexts);
+			statements = dataset.getStatements(statementPattern, subj, pred, obj, contexts);
 			if (statements instanceof EmptyIteration) {
 				return statements;
 			}
@@ -156,8 +171,14 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 	@Override
 	public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws QueryEvaluationException {
+		return getStatementCount((StatementPattern) null, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public long getStatementCount(StatementPattern statementPattern, Resource subj, IRI pred, Value obj,
+			Resource... contexts) throws QueryEvaluationException {
 		try {
-			return dataset.getStatementCount(subj, pred, obj, contexts);
+			return dataset.getStatementCount(statementPattern, subj, pred, obj, contexts);
 		} catch (SailException e) {
 			throw new QueryEvaluationException(e);
 		}

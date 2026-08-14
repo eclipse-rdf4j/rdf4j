@@ -1,0 +1,24 @@
+id: join-commute
+kind: TRANSFORMATION
+phase: CHEAP_LOGICAL
+promise: 80
+match:
+  op: JOIN
+  as: j
+  inputs:
+    - capture: left
+    - capture: right
+guards:
+  - name: barrierFree
+    args: [j]
+  - name: noCrossBindOutputs
+    args: [left, right]
+emit:
+  name: join
+  args:
+    - ref: right
+    - ref: left
+proof:
+  - innerJoin
+  - bagCompatible
+reason: JOIN inputs commute under SPARQL bag semantics

@@ -170,6 +170,26 @@ public class LmdbIRI implements LmdbResource, IRI {
 	}
 
 	@Override
+	public void init(Resolver resolver) {
+		if (iriString == null && !initialized) {
+			synchronized (this) {
+				if (!initialized) {
+					boolean resolved = resolver.resolve(internalID, this);
+					if (!resolved) {
+						log.warn("Could not resolve value");
+					}
+					initialized = resolved;
+				}
+			}
+		}
+	}
+
+	@Override
+	public boolean isInitialized() {
+		return initialized || iriString != null;
+	}
+
+	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
 			return true;

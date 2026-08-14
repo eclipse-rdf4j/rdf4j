@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -93,6 +94,20 @@ public class ZeroLengthPathIterationTest {
 			assertTrue(result.hasBinding("x"), "zlp evaluation should binding for subject var");
 			assertTrue(result.hasBinding("y"), "zlp evaluation should binding for object var");
 		}
+	}
+
+	@Test
+	public void recordsZeroLengthPathExplorationTelemetry() {
+		Var subjectVar = Var.of("x");
+		Var objVar = Var.of("y");
+		ZeroLengthPath node = new ZeroLengthPath(subjectVar.clone(), objVar.clone());
+		node.setRuntimeTelemetryEnabled(true);
+		try (ZeroLengthPathIteration zlp = new ZeroLengthPathIteration(evaluator, node, subjectVar, objVar, null, null,
+				null, new MapBindingSet(), new QueryEvaluationContext.Minimal(null))) {
+			assertNotNull(zlp.getNextElement());
+		}
+		assertTrue(node.getLongMetricActual(ZeroLengthPathIteration.ZERO_LENGTH_CANDIDATE_ROWS_ACTUAL) > 0L);
+		assertTrue(node.getLongMetricActual(ZeroLengthPathIteration.ZERO_LENGTH_RETURNED_ROWS_ACTUAL) > 0L);
 	}
 
 	@Test

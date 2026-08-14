@@ -40,7 +40,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -52,6 +51,9 @@ import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategyFactory;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchFootprint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -370,6 +372,13 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				properties.setInlineLiterals(config.getInlineLiterals());
 				properties.setCanonicalLanguageTags(StoreProperties.CANONICAL_LANGUAGE_TAGS_LOWERCASE_V1);
 			}
+			try {
+				properties.getOrCreateStoreId();
+			} catch (IllegalStateException e) {
+				logger.warn("Frontier OmniSketch is unavailable because the LMDB store identity is invalid", e);
+			}
+			// The durable UUID must exist before a Frontier service can publish a generation that refers to it.
+			properties.save();
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
 			backingStore = new LmdbSailStore(dataDir, properties, config, useSketchBasedJoinEstimator);
@@ -521,6 +530,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return disabledIsolationLockManager.isActiveLock();
 	}
 
+	synchronized boolean usesDefaultAutomaticOptimizerPipeline() {
+		return explicitEvalStratFactory == null && automaticOptimizerPipeline == null;
+	}
+
 	SailStore getSailStore() {
 		return store;
 	}
@@ -615,6 +628,36 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				+ ", lastBuildFailure=" + adjacency.lastBuildFailureDescription();
 	}
 
+	/**
+	 * Forces committed LMDB state through to the sketch-based join estimator.
+	 *
+	 * @return {@code true} when the estimator is enabled and ready after the forced flush
+	 */
+	public boolean forceFlushSketchEstimator() {
+		LmdbSailStore backingStore = this.backingStore;
+		return backingStore != null && backingStore.forceFlushSketchEstimator();
+	}
+
+	/**
+	 * Builds and atomically publishes a snapshot-bound Frontier base generation.
+	 *
+	 * @return the resulting persistent Frontier availability status
+	 * @throws SailException when the store is not initialized or a write transaction is active
+	 */
+	public FrontierSynopsisStatus rebuildFrontierSynopsis() {
+		LmdbSailStore backingStore = this.backingStore;
+		if (backingStore == null) {
+			throw new SailException("LMDB store is not initialized");
+		}
+		return backingStore.rebuildFrontierSynopsis();
+	}
+
+	/** Returns exact primitive and serialized footprint diagnostics for the current cold filter synopsis. */
+	public Optional<SketchFootprint> getColdFilterSynopsisFootprint() {
+		LmdbSailStore backingStore = this.backingStore;
+		return backingStore == null ? Optional.empty() : backingStore.getColdFilterSynopsisFootprint();
+	}
+
 	private boolean shouldUseSketchBasedJoinEstimator() {
 		if (validationOnlyOpen) {
 			return false;
@@ -627,12 +670,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			return false;
 		}
 
-		Boolean sketchEstimatorEnabled = config.getSketchEstimatorEnabled();
-		if (sketchEstimatorEnabled != null) {
-			return sketchEstimatorEnabled;
-		}
-
-		return false;
+		return Boolean.TRUE.equals(config.getSketchEstimatorEnabled());
 	}
 
 	private SketchBasedJoinEstimator getSketchBasedJoinEstimator() {

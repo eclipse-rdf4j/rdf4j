@@ -22,6 +22,31 @@ import org.junit.jupiter.api.Test;
 class ThemeQueryCatalogExpectedCountTest {
 
 	@Test
+	void highlyConnectedQ11UsesAuthoritativeFactorizedCount() {
+		assertEquals(22_853_301_733_957L, ThemeQueryCatalog.expectedCountFor(Theme.HIGHLY_CONNECTED, 11));
+	}
+
+	@Test
+	void highlyConnectedQ12UsesAuthoritativeFactorizedCount() {
+		assertEquals(5_397_929_193L, ThemeQueryCatalog.expectedCountFor(Theme.HIGHLY_CONNECTED, 12));
+	}
+
+	@Test
+	void socialMediaQ12UsesAuthoritativeFactorizedCount() {
+		assertEquals(2_455_460_386L, ThemeQueryCatalog.expectedCountFor(Theme.SOCIAL_MEDIA, 12));
+	}
+
+	@Test
+	void socialMediaQ11UsesAuthoritativeFactorizedCount() {
+		assertEquals(1_141_596_126L, ThemeQueryCatalog.expectedCountFor(Theme.SOCIAL_MEDIA, 11));
+	}
+
+	@Test
+	void libraryQ12UsesAuthoritativeFactorizedCount() {
+		assertEquals(305_676_168_120L, ThemeQueryCatalog.expectedCountFor(Theme.LIBRARY, 12));
+	}
+
+	@Test
 	void expectedCountsMatchCatalogValues() {
 		Map<Theme, long[]> expectedCounts = Map.ofEntries(
 				Map.entry(Theme.MEDICAL_RECORDS,

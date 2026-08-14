@@ -1,0 +1,11 @@
+# LMDB learned-optimizer benchmark template
+#
+# Recommended runs:
+#   1. cold:          -Drdf4j.optimizer.lmdb.leo.rolloutProfile=observe_only
+#   2. shadow:        -Drdf4j.optimizer.lmdb.leo.rolloutProfile=shadow_explain
+#   3. correction:    -Drdf4j.optimizer.lmdb.leo.rolloutProfile=safe_cardinality_correction
+#   4. steering:      -Drdf4j.optimizer.lmdb.leo.rolloutProfile=safe_rule_steering
+#   5. reranking:     -Drdf4j.optimizer.lmdb.leo.rolloutProfile=safe_plan_reranking
+#
+# Include at least: star joins, chains, snowflakes, cycles, skewed predicates,
+# optionals, property paths, VALUES-heavy queries, and post-mutation runs.

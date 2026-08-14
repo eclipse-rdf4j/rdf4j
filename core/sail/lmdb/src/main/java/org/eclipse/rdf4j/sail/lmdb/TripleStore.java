@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabaseWithTxn;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
 import static org.lwjgl.system.MemoryStack.stackPush;
@@ -46,6 +47,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
+import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
@@ -75,11 +77,15 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.OptionalLong;
 import java.util.Set;
+import java.util.StringTokenizer;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
@@ -97,8 +103,10 @@ import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.common.order.StatementOrder;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex.StatementFieldValueAccessor;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
@@ -107,6 +115,7 @@ import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -115,6 +124,10 @@ import org.lwjgl.util.lmdb.MDBStat;
 import org.lwjgl.util.lmdb.MDBVal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
 /**
  * LMDB-based indexed storage and retrieval of RDF statements. TripleStore stores statements in the form of four long
@@ -129,6 +142,7 @@ class TripleStore implements Closeable {
 	 * The default triple indexes.
 	 */
 	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,posc";
+	private static final String DEFAULT_INDEXES = DEFAULT_TRIPLE_INDEXES;
 	static final int MAX_READERS = 256;
 	private static final boolean REUSE_ALIGNED_WRITE_CURSOR = true;
 	private static final long PREPARED_WRITE_BYTES_PER_INDEX_ENTRY = 256L;
@@ -144,7 +158,31 @@ class TripleStore implements Closeable {
 	interface BulkContextSource {
 		boolean next(long[] contextAndCount) throws IOException;
 	}
+	// Aliases into TripleIndex so predicate-guarantee code keeps its established names.
+	static final int SUBJ_IDX = TripleIndex.SUBJ_IDX;
+	static final int PRED_IDX = TripleIndex.PRED_IDX;
+	static final int OBJ_IDX = TripleIndex.OBJ_IDX;
+	static final int CONTEXT_IDX = TripleIndex.CONTEXT_IDX;
 
+	private static final int REPEATED_SUBJ_PRED_PAIR = 1;
+	private static final int REPEATED_SUBJ_OBJ_PAIR = 1 << 1;
+	private static final int REPEATED_SUBJ_CONTEXT_PAIR = 1 << 2;
+	private static final int REPEATED_PRED_OBJ_PAIR = 1 << 3;
+	private static final int REPEATED_PRED_CONTEXT_PAIR = 1 << 4;
+	private static final int REPEATED_OBJ_CONTEXT_PAIR = 1 << 5;
+
+	static final int MAX_KEY_LENGTH = 4 * 9;
+
+	private static final String PREDICATE_OBJECT_DOMAINS_DB = "predicate-object-domains";
+	private static final String PREDICATE_OBJECT_DOMAIN_DEGRADATIONS_DB = "predicate-object-domain-degradations";
+	private static final String PREDICATE_OBJECT_DOMAINS_VERSION = "rdf-term-domain-v4";
+	private static final long PREDICATE_OBJECT_DOMAIN_ENCODING_MAGIC = 0x52444654444f4d31L;
+	private static final int PREDICATE_OBJECT_DOMAIN_BYTES = Long.BYTES * 4;
+	private static final int PREDICATE_OBJECT_DOMAIN_DEGRADATION_BYTES = Long.BYTES * 2;
+	private static final long PREDICATE_OBJECT_DOMAIN_REBUILD_REQUESTED = 1L;
+	private static final long NO_INTEGER_RANGE_MIN = Long.MAX_VALUE;
+	private static final long NO_INTEGER_RANGE_MAX = Long.MIN_VALUE;
+	private static final boolean REUSE_SECONDARY_WRITE_CURSOR = true;
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -183,6 +221,8 @@ class TripleStore implements Closeable {
 	long env;
 	long writeTxn;
 	private final int contextsDbi;
+	private final int predicateObjectDomainsDbi;
+	private final int predicateObjectDomainDegradationsDbi;
 	private int pageSize;
 	private final boolean autoGrow;
 	private final boolean pageCardinalityEstimator;
@@ -206,6 +246,9 @@ class TripleStore implements Closeable {
 	private final ThreadLocal<PreparedSortWorkspace> preparedSortWorkspace = ThreadLocal
 			.withInitial(PreparedSortWorkspace::new);
 	private final LmdbPageCardinalityEstimator pageEstimator;
+	// JVM-unique store identity for shared caches; identityHashCode collides across instances.
+	private static final AtomicLong INSTANCE_IDS = new AtomicLong();
+	private final long instanceId = INSTANCE_IDS.incrementAndGet();
 	private final AtomicLong dataRevision = new AtomicLong();
 	private final LmdbFanOutStats explicitFanOutStats = new LmdbFanOutStats();
 	private final LmdbFanOutStats inferredFanOutStats = new LmdbFanOutStats();
@@ -219,6 +262,15 @@ class TripleStore implements Closeable {
 	private int trackedResizeChecks;
 	private final Set<String> bulkAppendedExplicitIndexes = new HashSet<>();
 	private boolean bulkContextsAppended;
+	private final boolean predicateGuaranteeIndexEnabled;
+	private final boolean predicateGuaranteeIndexAutoRebuild;
+	private final Set<String> predicateGuaranteeExcludedPredicates;
+	private volatile boolean predicateGuaranteeIndexReadable;
+	private volatile Map<Long, RdfTermDomain> predicateObjectDomainCache = Map.of();
+	private final Long2ObjectOpenHashMap<RdfTermDomain> pendingRdfTermDomainCacheWrites = new Long2ObjectOpenHashMap<>();
+	private final LongOpenHashSet pendingRdfTermDomainCacheDeletes = new LongOpenHashSet();
+	private boolean pendingRdfTermDomainCacheClear;
+	private final Long2ObjectOpenHashMap<PendingRdfTermDomain> pendingRdfTermDomains = new Long2ObjectOpenHashMap<>();
 
 	private static final class PreparedSortWorkspace {
 		private int[] mainOrder = new int[0];
@@ -254,6 +306,9 @@ class TripleStore implements Closeable {
 		this.autoGrow = config.getAutoGrow();
 		this.pageCardinalityEstimator = config.getPageCardinalityEstimator();
 		this.valueStore = valueStore;
+		this.predicateGuaranteeIndexEnabled = config.getPredicateGuaranteeIndexEnabled();
+		this.predicateGuaranteeIndexAutoRebuild = config.getPredicateGuaranteeIndexAutoRebuild();
+		this.predicateGuaranteeExcludedPredicates = config.getPredicateGuaranteeExcludedPredicateSet();
 		// create directory if it not exists
 		this.dir.mkdirs();
 
@@ -263,8 +318,8 @@ class TripleStore implements Closeable {
 			env = pp.get(0);
 		}
 
-		// 1 for contexts and 48 for all possible triple indexes (24 explicit + 24 inferred)
-		E(mdb_env_set_maxdbs(env, 1 + 96));
+		// 1 for contexts, up to 96 triple-index databases, and 2 predicate-domain databases.
+		E(mdb_env_set_maxdbs(env, 1 + 96 + 2));
 		E(mdb_env_set_maxreaders(env, MAX_READERS));
 
 		// Open environment
@@ -285,6 +340,11 @@ class TripleStore implements Closeable {
 			}
 			return ip.get(0);
 		});
+		predicateObjectDomainsDbi = transaction(env,
+				(stack, txn) -> openDatabaseWithTxn(txn, PREDICATE_OBJECT_DOMAINS_DB, MDB_CREATE));
+		predicateObjectDomainDegradationsDbi = transaction(env,
+				(stack, txn) -> openDatabaseWithTxn(txn, PREDICATE_OBJECT_DOMAIN_DEGRADATIONS_DB, MDB_CREATE));
+
 		txnManager = new TxnManager(env, Mode.RESET);
 		pageEstimator = pageCardinalityEstimator ? new LmdbPageCardinalityEstimator(dataMdbFile) : null;
 
@@ -324,7 +384,12 @@ class TripleStore implements Closeable {
 					endTransaction(true);
 				}
 			}
-			properties.setTripleIndexes(indexSpecStr);
+
+			if (!indexSpecStr.equals(properties.getTripleIndexes())) {
+				// Store up-to-date properties
+				properties.setTripleIndexes(indexSpecStr);
+			}
+			initializeRdfTermDomains();
 		} catch (IOException | SailException e) {
 			endTransaction(false);
 			throw e;
@@ -1541,6 +1606,637 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	long instanceId() {
+		return instanceId;
+	}
+
+	private void initializeRdfTermDomains() throws IOException {
+		if (valueStore == null || !predicateGuaranteeIndexEnabled) {
+			if (!predicateGuaranteeIndexEnabled) {
+				properties.setRdfTermDomainsVersion(PREDICATE_OBJECT_DOMAINS_VERSION + "-disabled");
+			}
+			clearRdfTermDomainCache();
+			return;
+		}
+		String currentVersion = currentRdfTermDomainsVersion();
+		if (currentVersion.equals(properties.getRdfTermDomainsVersion())) {
+			if (predicateGuaranteeIndexAutoRebuild) {
+				rebuildMarkedRdfTermDomains();
+			}
+			loadRdfTermDomainCache();
+			predicateGuaranteeIndexReadable = true;
+			return;
+		}
+		if (!predicateGuaranteeIndexAutoRebuild && properties.isLoaded()) {
+			clearRdfTermDomainCache();
+			return;
+		}
+		rebuildRdfTermDomains();
+		properties.setRdfTermDomainsVersion(currentVersion);
+		loadRdfTermDomainCache();
+		predicateGuaranteeIndexReadable = true;
+	}
+
+	/**
+	 * Semantic version of the predicate-object domain guarantees this store currently serves, covering the encoding
+	 * version, exclusion configuration, disabled state, and readability. Plan caches key on this value so that any
+	 * change in which guarantees exist invalidates cached plans.
+	 */
+	String effectiveRdfTermDomainsVersion() {
+		if (!predicateGuaranteeIndexEnabled) {
+			return PREDICATE_OBJECT_DOMAINS_VERSION + "-disabled";
+		}
+		String version = currentRdfTermDomainsVersion();
+		return predicateGuaranteeIndexReadable ? version : version + "-unreadable";
+	}
+
+	private String currentRdfTermDomainsVersion() {
+		if (predicateGuaranteeExcludedPredicates.isEmpty()) {
+			return PREDICATE_OBJECT_DOMAINS_VERSION;
+		}
+		return PREDICATE_OBJECT_DOMAINS_VERSION + "-exclude-"
+				+ Integer.toHexString(predicateGuaranteeExcludedPredicates.hashCode());
+	}
+
+	private void loadRdfTermDomainCache() throws IOException {
+		predicateObjectDomainCache = readAllRdfTermDomains();
+	}
+
+	private Map<Long, RdfTermDomain> readAllRdfTermDomains() throws IOException {
+		return txnManager.doWith((stack, txn) -> {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, predicateObjectDomainsDbi, pp));
+			long cursor = pp.get(0);
+			try {
+				Map<Long, RdfTermDomain> loaded = new HashMap<>();
+				MDBVal keyVal = MDBVal.malloc(stack);
+				MDBVal dataVal = MDBVal.malloc(stack);
+				int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_FIRST);
+				while (rc == MDB_SUCCESS) {
+					ByteBuffer keyData = keyVal.mv_data();
+					if (keyData != null) {
+						loaded.put(Varint.readUnsigned(keyData, keyData.position()), readRdfTermDomain(dataVal));
+					}
+					rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
+				}
+				if (rc != MDB_NOTFOUND) {
+					throw new IOException(mdb_strerror(rc));
+				}
+				return Map.copyOf(loaded);
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		});
+	}
+
+	private void clearRdfTermDomainCache() {
+		predicateObjectDomainCache = Map.of();
+	}
+
+	private void rebuildRdfTermDomains() throws IOException {
+		boolean committed = false;
+		startTransaction();
+		try {
+			E(mdb_drop(writeTxn, predicateObjectDomainsDbi, false));
+			E(mdb_drop(writeTxn, predicateObjectDomainDegradationsDbi, false));
+			stageRdfTermDomainCacheClear();
+			if (valueStore != null) {
+				Map<Long, PendingRdfTermDomain> guarantees = new HashMap<>();
+				for (boolean explicit : new boolean[] { true, false }) {
+					try (RecordIterator triples = getTriplesSortedByPredicateObject(txnManager.createTxn(writeTxn),
+							explicit)) {
+						long previousPredicate = -1;
+						long previousObject = -1;
+						long[] quad;
+						while ((quad = triples.next()) != null) {
+							if (quad[PRED_IDX] == previousPredicate && quad[OBJ_IDX] == previousObject) {
+								continue;
+							}
+							previousPredicate = quad[PRED_IDX];
+							previousObject = quad[OBJ_IDX];
+							if (isPredicateGuaranteeExcluded(quad[PRED_IDX])) {
+								continue;
+							}
+							long predicateId = quad[PRED_IDX];
+							Value object = valueStore.getValue(quad[OBJ_IDX]);
+							RdfTermDomain observed = RdfTermDomain.classify(object);
+							PendingRdfTermDomain guarantee = guarantees.get(predicateId);
+							if (guarantee == null) {
+								guarantees.put(predicateId, PendingRdfTermDomain.of(observed));
+							} else {
+								guarantee.recordObserved(observed);
+							}
+						}
+					}
+				}
+				for (Map.Entry<Long, PendingRdfTermDomain> entry : guarantees.entrySet()) {
+					PendingRdfTermDomain guarantee = entry.getValue();
+					writeRdfTermDomain(entry.getKey(), guarantee.guarantee());
+					long candidateMask = degradationCandidateMask(guarantee.guarantee(), guarantee.observedMask());
+					if (candidateMask != 0L) {
+						try (MemoryStack stack = MemoryStack.stackPush()) {
+							writeRdfTermDomainDegradation(stack, predicateObjectDomainKey(stack,
+									entry.getKey()), candidateMask, 0L);
+						}
+					}
+				}
+			}
+			endTransaction(true);
+			committed = true;
+		} finally {
+			if (!committed) {
+				endTransaction(false);
+			}
+		}
+	}
+
+	private void rebuildMarkedRdfTermDomains() throws IOException {
+		boolean completed = false;
+		startTransaction();
+		try {
+			List<Long> predicateIds = getRdfTermDomainRebuilds();
+			if (predicateIds.isEmpty()) {
+				endTransaction(false);
+				completed = true;
+				return;
+			}
+			for (long predicateId : predicateIds) {
+				rebuildRdfTermDomain(predicateId);
+			}
+			endTransaction(true);
+			completed = true;
+		} finally {
+			if (!completed) {
+				endTransaction(false);
+			}
+		}
+	}
+
+	private List<Long> getRdfTermDomainRebuilds() throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(writeTxn, predicateObjectDomainDegradationsDbi, pp));
+			long cursor = pp.get(0);
+			try {
+				List<Long> predicateIds = new ArrayList<>();
+				MDBVal keyVal = MDBVal.malloc(stack);
+				MDBVal dataVal = MDBVal.malloc(stack);
+				int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_FIRST);
+				while (rc == MDB_SUCCESS) {
+					RdfTermDomainDegradation degradation = readRdfTermDomainDegradation(dataVal);
+					if (degradation.rebuildRequested()) {
+						ByteBuffer keyData = keyVal.mv_data();
+						if (keyData != null) {
+							predicateIds.add(Varint.readUnsigned(keyData, keyData.position()));
+						}
+					}
+					rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
+				}
+				if (rc != MDB_NOTFOUND) {
+					throw new IOException(mdb_strerror(rc));
+				}
+				return predicateIds;
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		}
+	}
+
+	private void rebuildRdfTermDomain(long predicateId) throws IOException {
+		if (isPredicateGuaranteeExcluded(predicateId)) {
+			try (MemoryStack stack = MemoryStack.stackPush()) {
+				MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
+				deleteRdfTermDomain(predicateId, keyVal);
+				deleteRdfTermDomainDegradation(keyVal);
+			}
+			return;
+		}
+		PendingRdfTermDomain rebuilt = null;
+		for (boolean explicit : new boolean[] { true, false }) {
+			try (RecordIterator triples = getTriples(txnManager.createTxn(writeTxn), -1, predicateId, -1, -1,
+					explicit)) {
+				long[] quad;
+				while ((quad = triples.next()) != null) {
+					Value object = valueStore.getValue(quad[OBJ_IDX]);
+					RdfTermDomain observed = RdfTermDomain.classify(object);
+					if (rebuilt == null) {
+						rebuilt = PendingRdfTermDomain.of(observed);
+					} else {
+						rebuilt.recordObserved(observed);
+					}
+				}
+			}
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
+			if (rebuilt == null) {
+				deleteRdfTermDomain(predicateId, keyVal);
+				deleteRdfTermDomainDegradation(keyVal);
+			} else {
+				writeRdfTermDomain(stack, predicateId, keyVal, rebuilt.guarantee());
+				long candidateMask = degradationCandidateMask(rebuilt.guarantee(), rebuilt.observedMask());
+				if (candidateMask == 0L) {
+					deleteRdfTermDomainDegradation(keyVal);
+				} else {
+					writeRdfTermDomainDegradation(stack, keyVal, candidateMask, 0L);
+				}
+			}
+		}
+	}
+
+	private RecordIterator getTriplesSortedByPredicateObject(Txn txn, boolean explicit) throws IOException {
+		for (TripleIndex index : indexes) {
+			char[] fieldSeq = index.getFieldSeq();
+			if (fieldSeq[0] == 'p' && fieldSeq[1] == 'o') {
+				return getTriplesUsingIndex(txn, -1, -1, -1, -1, explicit, index, false);
+			}
+		}
+		return getTriples(txn, -1, -1, -1, -1, explicit);
+	}
+
+	void recordRdfTermDomain(long predicateId, Value object) throws IOException {
+		if (!predicateGuaranteeIndexEnabled || isPredicateGuaranteeExcluded(predicateId)) {
+			return;
+		}
+		RdfTermDomain observed = RdfTermDomain.classify(object);
+		PendingRdfTermDomain pending = pendingRdfTermDomains.get(predicateId);
+		if (pending == null) {
+			pendingRdfTermDomains.put(predicateId, PendingRdfTermDomain.of(observed));
+		} else {
+			pending.recordObserved(observed);
+		}
+	}
+
+	void recordPredicateObjectRemoval(long predicateId, Value object) throws IOException {
+		if (!predicateGuaranteeIndexEnabled || isPredicateGuaranteeExcluded(predicateId)) {
+			return;
+		}
+		RdfTermDomain removed = RdfTermDomain.classify(object);
+		long removedMask = removed.mask();
+		PendingRdfTermDomain pending = pendingRdfTermDomains.get(predicateId);
+		if (pending != null) {
+			pending.recordRemoval(removedMask);
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
+			MDBVal existingVal = MDBVal.malloc(stack);
+			int rc = mdb_get(writeTxn, predicateObjectDomainDegradationsDbi, keyVal, existingVal);
+			if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+				throw new IOException(mdb_strerror(rc));
+			}
+
+			RdfTermDomainDegradation degradation = rc == MDB_SUCCESS
+					? readRdfTermDomainDegradation(existingVal)
+					: new RdfTermDomainDegradation(0L, 0L);
+			boolean rebuildRequired = rangeRemovalRequiresRebuild(predicateId, removed);
+			if (!rebuildRequired && (degradation.candidateMask() == 0L
+					|| (degradation.candidateMask() & ~removedMask) == 0L
+					|| degradation.rebuildRequested())) {
+				return;
+			}
+			writeRdfTermDomainDegradation(stack, keyVal, degradation.candidateMask(),
+					degradation.flags() | PREDICATE_OBJECT_DOMAIN_REBUILD_REQUESTED);
+		}
+	}
+
+	private boolean rangeRemovalRequiresRebuild(long predicateId, RdfTermDomain removed) {
+		Optional<RdfTermDomain.IntegerRange> removedRange = removed.integerRange();
+		if (removedRange.isEmpty()) {
+			return false;
+		}
+		RdfTermDomain current = predicateObjectDomainCache.get(predicateId);
+		if (current == null) {
+			return false;
+		}
+		Optional<RdfTermDomain.IntegerRange> currentRange = current.integerRange();
+		return currentRange.isPresent()
+				&& currentRange.get().touchesEndpoint(removedRange.get().minInclusive());
+	}
+
+	RdfTermDomain getRdfTermDomain(long predicateId) throws IOException {
+		return getKnownRdfTermDomain(predicateId).orElse(RdfTermDomain.UNRESTRICTED);
+	}
+
+	Optional<RdfTermDomain> getKnownRdfTermDomain(long predicateId) throws IOException {
+		if (!predicateGuaranteeIndexEnabled || !predicateGuaranteeIndexReadable
+				|| isPredicateGuaranteeExcluded(predicateId)) {
+			return Optional.empty();
+		}
+		return getCachedRdfTermDomain(predicateId);
+	}
+
+	Optional<RdfTermDomain> getCachedRdfTermDomain(long predicateId) {
+		return Optional.ofNullable(predicateObjectDomainCache.get(predicateId));
+	}
+
+	Optional<RdfTermDomain> getPersistedRdfTermDomain(long predicateId) throws IOException {
+		if (!predicateGuaranteeIndexEnabled || !predicateGuaranteeIndexReadable
+				|| isPredicateGuaranteeExcluded(predicateId)) {
+			return Optional.empty();
+		}
+		return txnManager.doWith((stack, txn) -> {
+			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
+
+			MDBVal dataVal = MDBVal.malloc(stack);
+			int rc = mdb_get(txn, predicateObjectDomainsDbi, keyVal, dataVal);
+			if (rc == MDB_NOTFOUND) {
+				return Optional.empty();
+			}
+			if (rc != MDB_SUCCESS) {
+				throw new IOException(mdb_strerror(rc));
+			}
+			return Optional.of(readRdfTermDomain(dataVal));
+		});
+	}
+
+	private void flushPendingRdfTermDomains() throws IOException {
+		if (pendingRdfTermDomains.isEmpty()) {
+			return;
+		}
+		for (Long2ObjectMap.Entry<PendingRdfTermDomain> entry : pendingRdfTermDomains.long2ObjectEntrySet()) {
+			long predicateId = entry.getLongKey();
+			if (isPredicateGuaranteeExcluded(predicateId)) {
+				continue;
+			}
+			updateRdfTermDomain(predicateId, entry.getValue());
+		}
+		pendingRdfTermDomains.clear();
+	}
+
+	private void updateRdfTermDomain(long predicateId, PendingRdfTermDomain pending)
+			throws IOException {
+		if (!predicateGuaranteeIndexEnabled || isPredicateGuaranteeExcluded(predicateId)) {
+			return;
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
+
+			MDBVal existingVal = MDBVal.malloc(stack);
+			int rc = mdb_get(writeTxn, predicateObjectDomainsDbi, keyVal, existingVal);
+			RdfTermDomain updated = pending.guarantee();
+			long candidateMask = degradationCandidateMask(updated, pending.observedMask());
+			boolean writeGuarantee = true;
+			if (rc == MDB_SUCCESS) {
+				RdfTermDomain existing = readRdfTermDomain(existingVal);
+				updated = existing.combine(pending.guarantee());
+				candidateMask = degradationCandidateMask(updated, existing.mask() | pending.observedMask());
+				writeGuarantee = !updated.equals(existing);
+				if (!writeGuarantee && candidateMask == 0L) {
+					return;
+				}
+			} else if (rc != MDB_NOTFOUND) {
+				throw new IOException(mdb_strerror(rc));
+			}
+
+			if (writeGuarantee) {
+				writeRdfTermDomain(stack, predicateId, keyVal, updated);
+			}
+			recordRdfTermDomainDegradation(stack, keyVal, candidateMask, pending.removedMask());
+		}
+	}
+
+	private void writeRdfTermDomain(long predicateId, RdfTermDomain guarantee)
+			throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
+			writeRdfTermDomain(stack, predicateId, keyVal, guarantee);
+		}
+	}
+
+	private void writeRdfTermDomain(MemoryStack stack, long predicateId, MDBVal keyVal, RdfTermDomain guarantee)
+			throws IOException {
+		MDBVal dataVal = MDBVal.malloc(stack);
+		ByteBuffer dataBuf = stack.malloc(PREDICATE_OBJECT_DOMAIN_BYTES);
+		dataBuf.putLong(PREDICATE_OBJECT_DOMAIN_ENCODING_MAGIC);
+		dataBuf.putLong(guarantee.mask());
+		Optional<RdfTermDomain.IntegerRange> integerRange = guarantee.integerRange();
+		dataBuf.putLong(integerRange.map(RdfTermDomain.IntegerRange::minInclusive).orElse(NO_INTEGER_RANGE_MIN));
+		dataBuf.putLong(integerRange.map(RdfTermDomain.IntegerRange::maxInclusive).orElse(NO_INTEGER_RANGE_MAX));
+		dataBuf.flip();
+		dataVal.mv_data(dataBuf);
+		E(mdb_put(writeTxn, predicateObjectDomainsDbi, keyVal, dataVal, 0));
+		stageRdfTermDomainCacheWrite(predicateId, guarantee);
+	}
+
+	private RdfTermDomain readRdfTermDomain(MDBVal dataVal) {
+		ByteBuffer data = dataVal.mv_data();
+		if (data == null || data.remaining() < PREDICATE_OBJECT_DOMAIN_BYTES) {
+			return RdfTermDomain.UNKNOWN;
+		}
+		if (data.getLong(data.position()) != PREDICATE_OBJECT_DOMAIN_ENCODING_MAGIC) {
+			return RdfTermDomain.UNKNOWN;
+		}
+		long mask = data.getLong(data.position() + Long.BYTES);
+		long min = data.getLong(data.position() + 2 * Long.BYTES);
+		long max = data.getLong(data.position() + 3 * Long.BYTES);
+		RdfTermDomain.IntegerRange integerRange = min == NO_INTEGER_RANGE_MIN && max == NO_INTEGER_RANGE_MAX
+				? null
+				: new RdfTermDomain.IntegerRange(min, max);
+		return RdfTermDomain.fromMask(mask, integerRange);
+	}
+
+	private void deleteRdfTermDomain(long predicateId, MDBVal keyVal) throws IOException {
+		int rc = mdb_del(writeTxn, predicateObjectDomainsDbi, keyVal, null);
+		if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+			throw new IOException(mdb_strerror(rc));
+		}
+		stageRdfTermDomainCacheDelete(predicateId);
+	}
+
+	private void stageRdfTermDomainCacheWrite(long predicateId, RdfTermDomain guarantee) {
+		pendingRdfTermDomainCacheDeletes.remove(predicateId);
+		pendingRdfTermDomainCacheWrites.put(predicateId, guarantee);
+	}
+
+	private void stageRdfTermDomainCacheDelete(long predicateId) {
+		pendingRdfTermDomainCacheWrites.remove(predicateId);
+		pendingRdfTermDomainCacheDeletes.add(predicateId);
+	}
+
+	private void stageRdfTermDomainCacheClear() {
+		pendingRdfTermDomainCacheClear = true;
+		pendingRdfTermDomainCacheWrites.clear();
+		pendingRdfTermDomainCacheDeletes.clear();
+	}
+
+	private void applyPendingRdfTermDomainCacheUpdates() {
+		if (!pendingRdfTermDomainCacheClear && pendingRdfTermDomainCacheWrites.isEmpty()
+				&& pendingRdfTermDomainCacheDeletes.isEmpty()) {
+			return;
+		}
+		Map<Long, RdfTermDomain> updated = pendingRdfTermDomainCacheClear
+				? new HashMap<>()
+				: new HashMap<>(predicateObjectDomainCache);
+		for (long predicateId : pendingRdfTermDomainCacheDeletes) {
+			updated.remove(predicateId);
+		}
+		for (Long2ObjectMap.Entry<RdfTermDomain> entry : pendingRdfTermDomainCacheWrites.long2ObjectEntrySet()) {
+			updated.put(entry.getLongKey(), entry.getValue());
+		}
+		predicateObjectDomainCache = Map.copyOf(updated);
+	}
+
+	private void clearPendingRdfTermDomainCacheUpdates() {
+		pendingRdfTermDomainCacheClear = false;
+		pendingRdfTermDomainCacheWrites.clear();
+		pendingRdfTermDomainCacheDeletes.clear();
+	}
+
+	private void recordRdfTermDomainDegradation(MemoryStack stack, MDBVal keyVal, long candidateMask)
+			throws IOException {
+		recordRdfTermDomainDegradation(stack, keyVal, candidateMask, 0L);
+	}
+
+	private void recordRdfTermDomainDegradation(MemoryStack stack, MDBVal keyVal, long candidateMask, long removedMask)
+			throws IOException {
+		if (candidateMask == 0L) {
+			return;
+		}
+		MDBVal existingVal = MDBVal.malloc(stack);
+		int rc = mdb_get(writeTxn, predicateObjectDomainDegradationsDbi, keyVal, existingVal);
+		long mergedCandidateMask = candidateMask;
+		long flags = 0L;
+		if (rc == MDB_SUCCESS) {
+			RdfTermDomainDegradation existing = readRdfTermDomainDegradation(existingVal);
+			mergedCandidateMask |= existing.candidateMask();
+			flags = existing.flags();
+		} else if (rc != MDB_NOTFOUND) {
+			throw new IOException(mdb_strerror(rc));
+		}
+		if ((mergedCandidateMask & ~removedMask) != 0L && (mergedCandidateMask & removedMask) != 0L) {
+			flags |= PREDICATE_OBJECT_DOMAIN_REBUILD_REQUESTED;
+		}
+		writeRdfTermDomainDegradation(stack, keyVal, mergedCandidateMask, flags);
+	}
+
+	private void writeRdfTermDomainDegradation(MemoryStack stack, MDBVal keyVal, long candidateMask,
+			long flags)
+			throws IOException {
+		MDBVal dataVal = MDBVal.malloc(stack);
+		ByteBuffer dataBuf = stack.malloc(PREDICATE_OBJECT_DOMAIN_DEGRADATION_BYTES);
+		dataBuf.putLong(candidateMask);
+		dataBuf.putLong(flags);
+		dataBuf.flip();
+		dataVal.mv_data(dataBuf);
+		E(mdb_put(writeTxn, predicateObjectDomainDegradationsDbi, keyVal, dataVal, 0));
+	}
+
+	private void deleteRdfTermDomainDegradation(MDBVal keyVal) throws IOException {
+		int rc = mdb_del(writeTxn, predicateObjectDomainDegradationsDbi, keyVal, null);
+		if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+			throw new IOException(mdb_strerror(rc));
+		}
+	}
+
+	private RdfTermDomainDegradation readRdfTermDomainDegradation(MDBVal dataVal) {
+		ByteBuffer data = dataVal.mv_data();
+		if (data == null || data.remaining() < Long.BYTES) {
+			return new RdfTermDomainDegradation(0L, 0L);
+		}
+		long candidateMask = data.getLong(data.position());
+		long flags = data.remaining() >= PREDICATE_OBJECT_DOMAIN_DEGRADATION_BYTES
+				? data.getLong(data.position() + Long.BYTES)
+				: 0L;
+		return new RdfTermDomainDegradation(candidateMask, flags);
+	}
+
+	private MDBVal predicateObjectDomainKey(MemoryStack stack, long predicateId) {
+		MDBVal keyVal = MDBVal.malloc(stack);
+		ByteBuffer keyBuf = stack.malloc(9);
+		Varint.writeUnsigned(keyBuf, predicateId);
+		keyBuf.flip();
+		keyVal.mv_data(keyBuf);
+		return keyVal;
+	}
+
+	private boolean isPredicateGuaranteeExcluded(long predicateId) throws IOException {
+		if (predicateGuaranteeExcludedPredicates.isEmpty()) {
+			return false;
+		}
+		if (valueStore == null) {
+			return false;
+		}
+		Value predicate = valueStore.getValue(predicateId);
+		return predicate != null && predicateGuaranteeExcludedPredicates.contains(predicate.stringValue());
+	}
+
+	private static long degradationCandidateMask(RdfTermDomain combined, long observedMask) {
+		long lostFacts = observedMask & ~combined.mask();
+		return lostFacts | combined.restoringDeleteCandidateMask();
+	}
+
+	private static final class PendingRdfTermDomain {
+		private RdfTermDomain guarantee;
+		private long observedMask;
+		private long removedMask;
+
+		private PendingRdfTermDomain(RdfTermDomain guarantee, long observedMask, long removedMask) {
+			this.guarantee = guarantee;
+			this.observedMask = observedMask;
+			this.removedMask = removedMask;
+		}
+
+		static PendingRdfTermDomain of(RdfTermDomain guarantee) {
+			return new PendingRdfTermDomain(guarantee, guarantee.mask(), 0L);
+		}
+
+		RdfTermDomain guarantee() {
+			return guarantee;
+		}
+
+		long observedMask() {
+			return observedMask;
+		}
+
+		long removedMask() {
+			return removedMask;
+		}
+
+		void recordObserved(RdfTermDomain observed) {
+			guarantee = guarantee.joinObserved(observed);
+			observedMask |= observed.mask();
+		}
+
+		void recordRemoval(long removedMask) {
+			this.removedMask |= removedMask;
+		}
+	}
+
+	private record RdfTermDomainDegradation(long candidateMask, long flags) {
+
+		boolean rebuildRequested() {
+			return (flags & PREDICATE_OBJECT_DOMAIN_REBUILD_REQUESTED) != 0L;
+		}
+	}
+
+	/**
+	 * Parses a comma/whitespace-separated list of index specifications. Index specifications are required to consists
+	 * of 4 characters: 's', 'p', 'o' and 'c'.
+	 *
+	 * @param indexSpecStr A string like "spoc, pocs, cosp".
+	 * @return A Set containing the parsed index specifications.
+	 */
+	private Set<String> parseIndexSpecList(String indexSpecStr) throws SailException {
+		Set<String> indexes = new LinkedHashSet<>();
+
+		if (indexSpecStr != null) {
+			StringTokenizer tok = new StringTokenizer(indexSpecStr, ", \t");
+			while (tok.hasMoreTokens()) {
+				String index = tok.nextToken().toLowerCase();
+
+				// sanity checks
+				if (index.length() != 4 || index.indexOf('s') == -1 || index.indexOf('p') == -1
+						|| index.indexOf('o') == -1 || index.indexOf('c') == -1) {
+					throw new SailException("invalid value '" + index + "' in index specification: " + indexSpecStr);
+				}
+
+				indexes.add(index);
+			}
+		}
+
+		return indexes;
+	}
+
 	private void initIndexes(Set<String> indexSpecs) throws IOException {
 		for (String fieldSeq : TripleIndex.orderIndexSpecs(indexSpecs)) {
 			logger.trace("Initializing index '{}'...", fieldSeq);
@@ -1719,6 +2415,7 @@ class TripleStore implements Closeable {
 	@Override
 	public void close() throws IOException {
 		if (env != 0) {
+			LmdbStatementPatternCardinalitySource.evictStore(instanceId);
 			endTransaction(false);
 			closeSpoExistenceCursors();
 			cursorPool.close();
@@ -2432,6 +3129,153 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	TripleIndex createIndexForTesting(String fieldSeq) throws IOException {
+		return new TripleIndex(getIndexName(fieldSeq), fieldSeq, true, env, writeTxn);
+	}
+
+	TripleIndex getBestIndex(long subj, long pred, long obj, long context) {
+		return TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
+	}
+
+	RecordIterator getAllTriplesUsingIndex(Txn txn, TripleIndex index, boolean explicit) throws IOException {
+		return getTriplesUsingIndex(txn, -1L, -1L, -1L, -1L, explicit, index, false);
+	}
+
+	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+			LmdbValueIdFilter idFilter) throws IOException {
+		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
+		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
+		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch, idFilter);
+	}
+
+	long exactStatementCount(Txn txnRef, long subj, long pred, long obj, long context, boolean explicit)
+			throws IOException {
+		if (subj < 0 || pred < 0 || obj < 0 || context < 0) {
+			return -1L;
+		}
+		TripleIndex index = getBestIndex(subj, pred, obj, context);
+		if (index.getPatternScore(subj, pred, obj, context) < 4) {
+			return -1L;
+		}
+
+		StampedLongAdderLockManager lockManager = txnRef.lockManager();
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while counting a fully bound LMDB statement", e);
+		}
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.malloc(stack);
+			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
+			index.toKey(keyBuf, subj, pred, obj, context);
+			keyBuf.flip();
+			keyVal.mv_data(keyBuf);
+
+			int rc = mdb_get(txnRef.get(), index.getDB(explicit), keyVal, dataVal);
+			if (rc == MDB_SUCCESS) {
+				return 1L;
+			}
+			if (rc == MDB_NOTFOUND) {
+				return 0L;
+			}
+			throw new IOException(mdb_strerror(rc));
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
+	}
+
+	Optional<RecordIterator> getTriplesWithDistinctCursorSkip(Txn txn, StatementPattern statementPattern, long subj,
+			long pred, long obj, long context, boolean explicit, LmdbValueIdFilter idFilter) throws IOException {
+		if (statementPattern == null || idFilter == null || !idFilter.isEmpty()) {
+			return Optional.empty();
+		}
+		Optional<LmdbDistinctCursorSkipSupport.Plan> plan = distinctCursorSkipPlan(statementPattern);
+		return plan.isEmpty()
+				? Optional.empty()
+				: getTriplesWithDistinctCursorSkip(txn, statementPattern, plan.orElseThrow(), subj, pred, obj, context,
+						explicit, idFilter);
+	}
+
+	private Optional<RecordIterator> getTriplesWithDistinctCursorSkip(Txn txn, StatementPattern statementPattern,
+			LmdbDistinctCursorSkipSupport.Plan plan, long subj, long pred, long obj, long context, boolean explicit,
+			LmdbValueIdFilter idFilter) throws IOException {
+		if (statementPattern == null || plan == null || idFilter == null || !idFilter.isEmpty()) {
+			return Optional.empty();
+		}
+		TripleIndex index = getIndex(plan.indexFieldSequence());
+		if (index == null) {
+			return Optional.empty();
+		}
+		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
+		return Optional.of(new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, context, explicit, txn,
+				idFilter, plan.prefixLength()));
+	}
+
+	Optional<LmdbDistinctCursorSkipSupport.Plan> distinctCursorSkipPlan(StatementPattern statementPattern) {
+		return LmdbDistinctCursorSkipSupport.choosePlan(statementPattern, indexAccessPaths(0));
+	}
+
+	Optional<LmdbDistinctCursorSkipSupport.Plan> distinctCursorSkipPlan(StatementPattern statementPattern,
+			Set<String> distinctVariables) {
+		return LmdbDistinctCursorSkipSupport.choosePlan(statementPattern, distinctVariables, indexAccessPaths(0));
+	}
+
+	OptionalLong boundedDistinctCursorSkipCardinality(StatementPattern statementPattern, long subj, long pred,
+			long obj, long context, int maximumPrefixes) throws IOException {
+		if (statementPattern == null || maximumPrefixes < 1) {
+			return OptionalLong.empty();
+		}
+		Optional<LmdbDistinctCursorSkipSupport.Plan> plan = distinctCursorSkipPlan(statementPattern);
+		return plan.isEmpty()
+				? OptionalLong.empty()
+				: boundedDistinctCursorSkipCardinality(statementPattern, plan.orElseThrow(), subj, pred, obj, context,
+						maximumPrefixes);
+	}
+
+	OptionalLong boundedDistinctCursorSkipCardinality(StatementPattern statementPattern,
+			Set<String> distinctVariables, long subj, long pred, long obj, long context, int maximumPrefixes)
+			throws IOException {
+		if (statementPattern == null || distinctVariables == null || distinctVariables.isEmpty()
+				|| maximumPrefixes < 1) {
+			return OptionalLong.empty();
+		}
+		Optional<LmdbDistinctCursorSkipSupport.Plan> plan = distinctCursorSkipPlan(statementPattern, distinctVariables);
+		return plan.isEmpty()
+				? OptionalLong.empty()
+				: boundedDistinctCursorSkipCardinality(statementPattern, plan.orElseThrow(), subj, pred, obj, context,
+						maximumPrefixes);
+	}
+
+	private OptionalLong boundedDistinctCursorSkipCardinality(StatementPattern statementPattern,
+			LmdbDistinctCursorSkipSupport.Plan plan, long subj, long pred, long obj, long context, int maximumPrefixes)
+			throws IOException {
+		if (statementPattern == null || maximumPrefixes < 1) {
+			return OptionalLong.empty();
+		}
+		long prefixes = 0L;
+		try (TxnManager.Txn txn = txnManager.createReadTxn()) {
+			for (int pass = 0; pass < 2; pass++) {
+				boolean explicit = pass == 0;
+				Optional<RecordIterator> records = getTriplesWithDistinctCursorSkip(txn, statementPattern, plan, subj,
+						pred, obj, context, explicit, LmdbValueIdFilter.none());
+				if (records.isEmpty()) {
+					return OptionalLong.empty();
+				}
+				try (RecordIterator iterator = records.orElseThrow()) {
+					while (iterator.next() != null) {
+						if (++prefixes > maximumPrefixes) {
+							return OptionalLong.empty();
+						}
+					}
+				}
+			}
+		}
+		return OptionalLong.of(prefixes);
+	}
+
 	boolean hasTriples(boolean explicit) throws IOException {
 		TripleIndex mainIndex = indexes.getFirst();
 		return txnManager.doWith((stack, txn) -> {
@@ -2844,6 +3688,20 @@ class TripleStore implements Closeable {
 		return key;
 	}
 
+	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
+			boolean explicit, TripleIndex index, boolean rangeSearch, LmdbValueIdFilter idFilter) throws IOException {
+		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn, idFilter);
+	}
+
+	private TripleIndex getIndex(String indexFieldSequence) {
+		for (TripleIndex index : indexes) {
+			if (indexFieldSequence.equals(new String(index.getFieldSeq()))) {
+				return index;
+			}
+		}
+		return null;
+	}
+
 	/**
 	 * Computes start key for a bucket by linear interpolation between a lower and an upper bound.
 	 *
@@ -2864,6 +3722,135 @@ class TripleStore implements Closeable {
 				startValues[i] = 0;
 			}
 		}
+	}
+
+	/**
+	 * Stratified sample of rows matching the pattern: interpolates {@code strata} start keys across the pattern's key
+	 * range on the best index and scans up to {@code rowsPerStratum} rows from each stratum, bounded by the next
+	 * stratum's start so regions are never scanned twice. Rows are delivered round-robin across the strata so even a
+	 * deadline-truncated prefix has broad key-range coverage. Unlike a budget-capped index prefix, this removes the
+	 * systematic bias when the sampled variable correlates with index order. Key-space interpolation is still not
+	 * perfectly row-uniform under skewed key density.
+	 *
+	 * @return the number of rows delivered to {@code sink}; the sink returns {@code false} to stop early.
+	 */
+	int sampleTriplesStratified(long subj, long pred, long obj, long context, boolean explicit,
+			int strata, int rowsPerStratum, java.util.function.Predicate<long[]> sink) throws IOException {
+		TripleIndex index = getBestIndex(subj, pred, obj, context);
+		if (index == null || strata < 1 || rowsPerStratum < 1) {
+			return 0;
+		}
+		return txnManager.doWith((stack, txn) -> {
+			MDBVal maxKey = MDBVal.malloc(stack);
+			ByteBuffer maxKeyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+			maxKeyBuf.flip();
+			maxKey.mv_data(maxKeyBuf);
+
+			PointerBuffer pp = stack.mallocPointer(1);
+			MDBVal keyData = MDBVal.malloc(stack);
+			MDBVal valueData = MDBVal.malloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			MDBVal boundaryKey = MDBVal.malloc(stack);
+			ByteBuffer boundaryBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+
+			long[] minValues = new long[4];
+			long[] maxValues = new long[4];
+			long[] startValues = new long[4];
+			long[] quad = new long[4];
+			boolean matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
+			GroupMatcher matcher = matchValues ? index.createMatcher(subj, pred, obj, context) : null;
+			int delivered = 0;
+			int dbi = index.getDB(explicit);
+			long[] cursors = new long[strata];
+			boolean[] exhausted = new boolean[strata];
+			try {
+				E(mdb_cursor_open(txn, dbi, pp));
+				cursors[0] = pp.get(0);
+
+				keyBuf.clear();
+				index.getMinKey(keyBuf, subj, pred, obj, context);
+				keyBuf.flip();
+				keyData.mv_data(keyBuf);
+				int rc = mdb_cursor_get(cursors[0], keyData, valueData, MDB_SET_RANGE);
+				if (rc != MDB_SUCCESS || mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
+					return 0;
+				}
+				Varint.readListUnsigned(keyData.mv_data(), minValues);
+
+				keyData.mv_data(maxKeyBuf);
+				rc = mdb_cursor_get(cursors[0], keyData, valueData, MDB_SET_RANGE);
+				rc = rc == MDB_SUCCESS
+						? mdb_cursor_get(cursors[0], keyData, valueData, MDB_PREV)
+						: mdb_cursor_get(cursors[0], keyData, valueData, MDB_LAST);
+				if (rc != MDB_SUCCESS) {
+					return 0;
+				}
+				Varint.readListUnsigned(keyData.mv_data(), maxValues);
+
+				for (int rowOrdinal = 0; rowOrdinal < rowsPerStratum; rowOrdinal++) {
+					boolean anyStratumAdvanced = false;
+					for (int stratum = 0; stratum < strata; stratum++) {
+						if (exhausted[stratum]) {
+							continue;
+						}
+						if (cursors[stratum] == 0L) {
+							pp.clear();
+							E(mdb_cursor_open(txn, dbi, pp));
+							cursors[stratum] = pp.get(0);
+						}
+
+						if (rowOrdinal == 0) {
+							keyBuf.clear();
+							if (stratum == 0) {
+								index.getMinKey(keyBuf, subj, pred, obj, context);
+							} else {
+								bucketStart((double) stratum / strata, minValues, maxValues, startValues);
+								Varint.writeListUnsigned(keyBuf, startValues);
+							}
+							keyBuf.flip();
+							keyData.mv_data(keyBuf);
+							rc = mdb_cursor_get(cursors[stratum], keyData, valueData, MDB_SET_RANGE);
+						} else {
+							rc = mdb_cursor_get(cursors[stratum], keyData, valueData, MDB_NEXT);
+						}
+
+						boolean lastStratum = stratum == strata - 1;
+						if (rc == MDB_SUCCESS && !lastStratum) {
+							bucketStart((double) (stratum + 1) / strata, minValues, maxValues, startValues);
+							boundaryBuf.clear();
+							Varint.writeListUnsigned(boundaryBuf, startValues);
+							boundaryBuf.flip();
+							boundaryKey.mv_data(boundaryBuf);
+						}
+						if (rc != MDB_SUCCESS || mdb_cmp(txn, dbi, keyData, maxKey) > 0
+								|| !lastStratum && mdb_cmp(txn, dbi, keyData, boundaryKey) >= 0) {
+							exhausted[stratum] = true;
+							continue;
+						}
+
+						anyStratumAdvanced = true;
+						if (matcher == null || matcher.matches(keyData.mv_data())) {
+							index.keyToQuad(keyData.mv_data(), quad);
+							delivered++;
+							if (!sink.test(quad.clone())) {
+								return delivered;
+							}
+						}
+					}
+					if (!anyStratumAdvanced) {
+						break;
+					}
+				}
+			} finally {
+				for (long cursor : cursors) {
+					if (cursor != 0L) {
+						mdb_cursor_close(cursor);
+					}
+				}
+			}
+			return delivered;
+		});
 	}
 
 	/**
@@ -3005,6 +3992,75 @@ class TripleStore implements Closeable {
 					new String(index.getFieldSeq()), e);
 			return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
 		}
+	}
+
+	protected double planningCardinality(long subj, long pred, long obj, long context) throws IOException {
+		TripleIndex index = getBestIndex(subj, pred, obj, context);
+		if (pageCardinalityEstimator) {
+			try {
+				return cardinalityUsingPageEstimator(index, subj, pred, obj, context);
+			} catch (IOException | RuntimeException e) {
+				logger.warn("Page-walk planning cardinality estimator failed for index {}, falling back to sampling",
+						new String(index.getFieldSeq()), e);
+			}
+		}
+		return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
+	}
+
+	protected double repeatedVariableCardinality(long subj, long pred, long obj, long context,
+			int repeatedComponentPairMask) throws IOException {
+		if (repeatedComponentPairMask == 0) {
+			return cardinality(subj, pred, obj, context);
+		}
+		try (TxnManager.Txn txn = txnManager.createReadTxn()) {
+			double cardinality = 0.0d;
+			for (boolean explicit : new boolean[] { true, false }) {
+				try (RecordIterator records = getTriples(txn, subj, pred, obj, context, explicit)) {
+					long[] quad;
+					while ((quad = records.next()) != null) {
+						if (matchesRepeatedComponentPairs(quad, repeatedComponentPairMask)) {
+							cardinality++;
+						}
+					}
+				}
+			}
+			return cardinality;
+		}
+	}
+
+	static int repeatedComponentPairMask(int leftComponentIndex, int rightComponentIndex) {
+		if (leftComponentIndex == rightComponentIndex) {
+			return 0;
+		}
+		int left = Math.min(leftComponentIndex, rightComponentIndex);
+		int right = Math.max(leftComponentIndex, rightComponentIndex);
+		return switch (left) {
+		case SUBJ_IDX -> switch (right) {
+			case PRED_IDX -> REPEATED_SUBJ_PRED_PAIR;
+			case OBJ_IDX -> REPEATED_SUBJ_OBJ_PAIR;
+			case CONTEXT_IDX -> REPEATED_SUBJ_CONTEXT_PAIR;
+			default -> 0;
+			};
+		case PRED_IDX -> switch (right) {
+			case OBJ_IDX -> REPEATED_PRED_OBJ_PAIR;
+			case CONTEXT_IDX -> REPEATED_PRED_CONTEXT_PAIR;
+			default -> 0;
+			};
+		case OBJ_IDX -> right == CONTEXT_IDX ? REPEATED_OBJ_CONTEXT_PAIR : 0;
+		default -> 0;
+		};
+	}
+
+	private static boolean matchesRepeatedComponentPairs(long[] quad, int repeatedComponentPairMask) {
+		return ((repeatedComponentPairMask & REPEATED_SUBJ_PRED_PAIR) == 0 || quad[SUBJ_IDX] == quad[PRED_IDX])
+				&& ((repeatedComponentPairMask & REPEATED_SUBJ_OBJ_PAIR) == 0 || quad[SUBJ_IDX] == quad[OBJ_IDX])
+				&& ((repeatedComponentPairMask & REPEATED_SUBJ_CONTEXT_PAIR) == 0
+						|| quad[SUBJ_IDX] == quad[CONTEXT_IDX])
+				&& ((repeatedComponentPairMask & REPEATED_PRED_OBJ_PAIR) == 0 || quad[PRED_IDX] == quad[OBJ_IDX])
+				&& ((repeatedComponentPairMask & REPEATED_PRED_CONTEXT_PAIR) == 0
+						|| quad[PRED_IDX] == quad[CONTEXT_IDX])
+				&& ((repeatedComponentPairMask & REPEATED_OBJ_CONTEXT_PAIR) == 0
+						|| quad[OBJ_IDX] == quad[CONTEXT_IDX]);
 	}
 
 	private double cardinalityUsingPageEstimator(TripleIndex index, long subj, long pred, long obj, long context)
@@ -3217,7 +4273,7 @@ class TripleStore implements Closeable {
 		});
 	}
 
-	private double exactCardinality(long subj, long pred, long obj, long context) throws IOException {
+	double exactCardinality(long subj, long pred, long obj, long context) throws IOException {
 		return txnManager.doWith((stack, txn) -> {
 			double cardinality = 0.0;
 			TxnManager.Txn txnRef = txnManager.createTxn(txn);
@@ -3230,6 +4286,91 @@ class TripleStore implements Closeable {
 			}
 			return cardinality;
 		});
+	}
+
+	void describePackedAccessPath(int lookupMask, double accessRows, double invocations, String estimateSource,
+			PackedCostEstimate output) {
+		long subj = boundMask(lookupMask, Component.S);
+		long pred = boundMask(lookupMask, Component.P);
+		long obj = boundMask(lookupMask, Component.O);
+		long context = boundMask(lookupMask, Component.C);
+		TripleIndex best = null;
+		int bestPrefixLength = -1;
+		for (TripleIndex index : indexes) {
+			int prefixLength = index.getPatternScore(subj, pred, obj, context);
+			if (prefixLength > bestPrefixLength) {
+				best = index;
+				bestPrefixLength = prefixLength;
+			}
+		}
+		if (best == null) {
+			output.setAccess(0, lookupMask, 0, accessRows, invocations, null, estimateSource, "fullScan");
+			return;
+		}
+		int prefixMask = 0;
+		char[] fieldSequence = best.getFieldSeq();
+		for (int ordinal = 0; ordinal < bestPrefixLength; ordinal++) {
+			prefixMask |= 1 << toEstimatorComponent(fieldSequence[ordinal]).ordinal();
+		}
+		int covered = lookupMask & prefixMask;
+		int missing = lookupMask & ~prefixMask;
+		boolean direct = missing == 0 && accessRows <= 1.0d;
+		String accessMode = bestPrefixLength == 0 ? "fullScan" : direct ? "directLookup" : "prefixScan";
+		output.setAccess(covered, missing, bestPrefixLength, accessRows, invocations, new String(fieldSequence),
+				estimateSource, accessMode);
+	}
+
+	IndexCostProfile indexCostProfile(String indexFieldSequence, boolean includeInferred) throws IOException {
+		TripleIndex index = getIndex(indexFieldSequence);
+		if (index == null) {
+			throw new IOException("Unknown LMDB triple index: " + indexFieldSequence);
+		}
+		return txnManager.doWith((stack, txn) -> {
+			MDBStat explicit = MDBStat.malloc(stack);
+			mdb_stat(txn, index.getDB(true), explicit);
+			long entries = explicit.ms_entries();
+			long leafPages = explicit.ms_leaf_pages();
+			double randomSeekWork = indexSearchWork(explicit);
+			int databaseCount = 1;
+			if (includeInferred) {
+				MDBStat inferred = MDBStat.malloc(stack);
+				mdb_stat(txn, index.getDB(false), inferred);
+				entries = saturatingAdd(entries, inferred.ms_entries());
+				leafPages = saturatingAdd(leafPages, inferred.ms_leaf_pages());
+				randomSeekWork += indexSearchWork(inferred);
+				databaseCount++;
+			}
+			double sequentialWorkPerRow = entries == 0L
+					? 1.0d
+					: 1.0d + (double) leafPages / entries;
+			return new IndexCostProfile(sequentialWorkPerRow, randomSeekWork, databaseCount);
+		});
+	}
+
+	private static double indexSearchWork(MDBStat stat) {
+		/*
+		 * Keep random and sequential access in the same page/row work unit. Sequential work already accounts for
+		 * amortized leaf-page visits and emitted rows; charging every in-page binary-search comparison as another row
+		 * made a cached LMDB seek appear roughly an order of magnitude more expensive than scanning and materializing a
+		 * row. A point lookup visits one page per B-tree level. Result decoding remains represented independently by
+		 * the result-row dimension in the physical objective.
+		 */
+		return Math.max(1, stat.ms_depth());
+	}
+
+	private static long saturatingAdd(long left, long right) {
+		long result = left + right;
+		return result < 0L || result < left ? Long.MAX_VALUE : result;
+	}
+
+	record IndexCostProfile(double sequentialWorkPerRow, double randomSeekWork, int databaseCount) {
+		IndexCostProfile {
+			if (!Double.isFinite(sequentialWorkPerRow) || sequentialWorkPerRow < 1.0d
+					|| !Double.isFinite(randomSeekWork) || randomSeekWork < 1.0d
+					|| databaseCount < 1) {
+				throw new IllegalArgumentException("Invalid LMDB index cost profile");
+			}
+		}
 	}
 
 	List<IndexAccessPath> indexAccessPaths(int boundComponentMask) {
@@ -3815,8 +4956,10 @@ class TripleStore implements Closeable {
 			int count, boolean explicit, IntConsumer addedIndexConsumer)
 			throws IOException {
 		for (int i = startIndex; i < count; i++) {
-			if (storeTriple(subj[i], pred[i], obj[i], context[i], explicit) && addedIndexConsumer != null) {
-				addedIndexConsumer.accept(i);
+			if (storeTriple(subj[i], pred[i], obj[i], context[i], explicit)) {
+				if (addedIndexConsumer != null) {
+					addedIndexConsumer.accept(i);
+				}
 			}
 		}
 	}
@@ -4319,6 +5462,9 @@ class TripleStore implements Closeable {
 										.overflowed(commitProgress.nextRevision);
 							}
 						}
+						if (recordCache == null) {
+							flushPendingRdfTermDomains();
+						}
 						commitWriteTransaction(commitProgress);
 						if (recordCache != null) {
 							TxnRecordCache transactionRecordCache = recordCache;
@@ -4333,8 +5479,10 @@ class TripleStore implements Closeable {
 									beginWriteTransaction(pp);
 								}
 								updateFromCache(commitProgress);
+								flushPendingRdfTermDomains();
 								// finally, commit write transaction
 								commitWriteTransaction(commitProgress);
+								applyPendingRdfTermDomainCacheUpdates();
 							} finally {
 								recordCache = null;
 								try {
@@ -4344,6 +5492,7 @@ class TripleStore implements Closeable {
 								}
 							}
 						} else {
+							applyPendingRdfTermDomainCacheUpdates();
 							// invalidate open read transaction so that they are not re-used
 							// otherwise iterators won't see the updated data
 							txnManager.reset();
@@ -4407,6 +5556,8 @@ class TripleStore implements Closeable {
 						recordCache = null;
 					}
 				}
+				pendingRdfTermDomains.clear();
+				clearPendingRdfTermDomainCacheUpdates();
 			}
 		}
 	}

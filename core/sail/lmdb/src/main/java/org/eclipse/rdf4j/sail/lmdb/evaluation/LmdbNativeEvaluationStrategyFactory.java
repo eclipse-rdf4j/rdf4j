@@ -44,7 +44,7 @@ public final class LmdbNativeEvaluationStrategyFactory extends StrictEvaluationS
 		QueryOptimizerPipeline pipeline = getOptimizerPipeline()
 				.orElseGet(() -> automaticPipeline(strategy, tripleSource, effectiveStatistics));
 		strategy.setOptimizerPipeline(pipeline);
-		strategy.setCollectionFactory(collectionFactorySupplier);
+		strategy.setCollectionFactory(getCollectionFactorySupplier());
 		return strategy;
 	}
 
