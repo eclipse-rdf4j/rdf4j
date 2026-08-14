@@ -48,9 +48,12 @@ import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanSnapshot;
 import org.eclipse.rdf4j.benchmark.common.plan.SolutionBagFingerprint;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.io.FileUtil;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 
@@ -261,25 +264,77 @@ class QueryPlanSnapshotCliTest {
 	}
 
 	@Test
-	void parsesDirectAdjacencyReadyTimeoutSeconds() {
-		QueryPlanSnapshotCliOptions options = assertDoesNotThrow(() -> QueryPlanSnapshotCli.parseArgs(new String[] {
-				"--store", "lmdb",
-				"--theme", "MEDICAL_RECORDS",
-				"--query-index", "0",
-				"--await-direct-adjacency-seconds", "300"
-		}));
+	void factorizedVerificationComparesLogicalBagsWithoutTelemetryExecution() throws Exception {
+		Path outputDirectory = Files.createTempDirectory("rdf4j-cli-factorized-verification-");
+		try {
+			QueryPlanSnapshotCli cli = newCli("", new ByteArrayOutputStream());
+			QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+					"--no-interactive",
+					"--store", "memory",
+					"--theme", "MEDICAL_RECORDS",
+					"--query", "SELECT DISTINCT * WHERE { ?s <http://example.com/theme/medical/name> ?name }",
+					"--factorized-verification",
+					"--output-dir", outputDirectory.toString()
+			});
 
-		assertEquals(300, options.directAdjacencyReadyTimeoutSeconds);
+			cli.run(options);
+
+			Path snapshotPath;
+			try (java.util.stream.Stream<Path> snapshots = Files.list(outputDirectory)) {
+				snapshotPath = snapshots
+						.filter(path -> path.getFileName().toString().endsWith(".json"))
+						.findFirst()
+						.orElseThrow();
+			}
+			QueryPlanSnapshot snapshot = new QueryPlanCapture().readSnapshot(snapshotPath);
+			assertFalse(snapshot.getExplanations().containsKey("telemetry"));
+			assertEquals("factorized-algebraic", snapshot.getMetadata().get("execution.verificationMode"));
+			assertEquals("rdf4j-factorized-solution-bag-v1",
+					snapshot.getMetadata().get("execution.resultFingerprintAlgorithm"));
+			assertEquals("completed", snapshot.getMetadata().get("execution.verificationStatus"));
+			assertFalse(snapshot.getMetadata().get("execution.resultFingerprintDigest").isBlank());
+		} finally {
+			deleteDir(outputDirectory);
+		}
 	}
 
 	@Test
-	void rejectsDirectAdjacencyReadyTimeoutForMemoryStore() {
-		assertThrows(IllegalArgumentException.class, () -> QueryPlanSnapshotCli.parseArgs(new String[] {
-				"--store", "memory",
+	void parsesLmdbEvidenceModeAndDefaultsToAdaptive() throws Exception {
+		QueryPlanSnapshotCliOptions snapshotOnly = QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--store", "lmdb",
 				"--theme", "MEDICAL_RECORDS",
 				"--query-index", "0",
-				"--await-direct-adjacency-seconds", "300"
-		}));
+				"--lmdb-evidence-mode", "snapshot-only"
+		});
+		QueryPlanSnapshotCliOptions defaultMode = QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--store", "lmdb",
+				"--theme", "MEDICAL_RECORDS",
+				"--query-index", "0"
+		});
+
+		assertEquals("snapshot-only", readStringField(snapshotOnly, "lmdbEvidenceMode"));
+		assertEquals("adaptive", readStringField(defaultMode, "lmdbEvidenceMode"));
+	}
+
+	@Test
+	void rejectsInvalidOrNonLmdbEvidenceMode() {
+		IllegalArgumentException invalid = assertThrows(IllegalArgumentException.class,
+				() -> QueryPlanSnapshotCli.parseArgs(new String[] {
+						"--store", "lmdb",
+						"--theme", "MEDICAL_RECORDS",
+						"--query-index", "0",
+						"--lmdb-evidence-mode", "cold"
+				}));
+		assertTrue(invalid.getMessage().contains("Expected snapshot-only or adaptive"), invalid.getMessage());
+
+		IllegalArgumentException memory = assertThrows(IllegalArgumentException.class,
+				() -> QueryPlanSnapshotCli.parseArgs(new String[] {
+						"--store", "memory",
+						"--theme", "MEDICAL_RECORDS",
+						"--query-index", "0",
+						"--lmdb-evidence-mode", "snapshot-only"
+				}));
+		assertEquals("--lmdb-evidence-mode is only supported with --store lmdb.", memory.getMessage());
 	}
 
 	@Test
@@ -397,30 +452,6 @@ class QueryPlanSnapshotCliTest {
 		String printed = outputBuffer.toString(StandardCharsets.UTF_8);
 		assertTrue(printed.contains("=== Execution Verification ==="), printed);
 		assertTrue(printed.contains("runs=1,"), printed);
-	}
-
-	@Test
-	void planOnlyOmitsTelemetryAndExecutionVerification() throws Exception {
-		ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
-		QueryPlanSnapshotCli cli = newCli("", outputBuffer);
-
-		QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
-				"--no-interactive",
-				"--store", "memory",
-				"--theme", "MEDICAL_RECORDS",
-				"--query-index", "0",
-				"--plan-only",
-				"--persist", "false"
-		});
-
-		cli.run(options);
-
-		String printed = outputBuffer.toString(StandardCharsets.UTF_8);
-		assertTrue(printed.contains("=== Unoptimized Explanation ==="), printed);
-		assertTrue(printed.contains("=== Optimized Explanation ==="), printed);
-		assertFalse(printed.contains("=== Telemetry Explanation ==="), printed);
-		assertTrue(printed.contains("Execution verification skipped (--plan-only)."), printed);
-		assertFalse(printed.contains("runs=1,"), printed);
 	}
 
 	@Test
@@ -719,43 +750,6 @@ class QueryPlanSnapshotCliTest {
 			String secondRunPrinted = secondRunOutput.toString(StandardCharsets.UTF_8);
 			assertTrue(secondRunPrinted.contains("LMDB store manifest validated"), secondRunPrinted);
 			assertFalse(secondRunPrinted.contains("LMDB data loaded"), secondRunPrinted);
-		} finally {
-			deleteDir(lmdbDataDirectory);
-		}
-	}
-
-	@Test
-	void directAdjacencyWaitInitializesReusedLmdbStore() throws Exception {
-		Path lmdbDataDirectory = Files.createTempDirectory("rdf4j-cli-lmdb-adjacency-ready-");
-		try {
-			LmdbStore seedStore = new LmdbStore(lmdbDataDirectory.toFile(),
-					new LmdbStoreConfig("spoc,ospc,psoc,posc").setDirectAdjacencyMaxBytes(1L << 30));
-			SailRepository seedRepository = new SailRepository(seedStore);
-			try (var connection = seedRepository.getConnection()) {
-				var values = SimpleValueFactory.getInstance();
-				connection.add(values.createIRI("urn:seed:s"), values.createIRI("urn:seed:p"),
-						values.createIRI("urn:seed:o"));
-			} finally {
-				seedRepository.shutDown();
-			}
-			Files.writeString(lmdbDataDirectory.resolve(".rdf4j-query-plan-cli-fully-loaded-size-bytes"), "1",
-					StandardCharsets.UTF_8);
-			QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
-					"--no-interactive",
-					"--store", "lmdb",
-					"--lmdb-data-dir", lmdbDataDirectory.toString(),
-					"--theme", "MEDICAL_RECORDS",
-					"--query-index", "0",
-					"--plan-only",
-					"--await-direct-adjacency-seconds", "10",
-					"--persist", "false"
-			});
-
-			ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
-			newCli("", outputBuffer).run(options);
-
-			assertTrue(outputBuffer.toString(StandardCharsets.UTF_8)
-					.contains("LMDB direct adjacency is exact for the current revision."));
 		} finally {
 			deleteDir(lmdbDataDirectory);
 		}

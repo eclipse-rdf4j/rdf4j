@@ -469,7 +469,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 							continue;
 						}
 						double cost = getCard.apply(prev, cand);
-					if (bestCandidate == null
+						if (bestCandidate == null
 								|| (candidateUsesExistingBinding && !bestCandidateUsesExistingBinding)
 								|| (candidateUsesExistingBinding == bestCandidateUsesExistingBinding
 										&& cost < bestCost)) {

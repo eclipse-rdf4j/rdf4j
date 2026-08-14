@@ -306,6 +306,7 @@ class LmdbPredicateObjectDomainIndexTest {
 				connection.add(firstNonCanonicalSubject, predicate, firstLeadingZero);
 				connection.add(secondNonCanonicalSubject, predicate, secondLeadingZero);
 				connection.remove(firstNonCanonicalSubject, predicate, firstLeadingZero);
+				assertTrue(connection.hasStatement(canonicalSubject, predicate, canonical, false));
 			}
 		} finally {
 			repository.shutDown();
@@ -318,7 +319,9 @@ class LmdbPredicateObjectDomainIndexTest {
 			assertFalse(numericGuarantee.has(RdfTermDomain.Fact.CANONICAL_INTEGER));
 
 			try (RepositoryConnection connection = reopened.getConnection()) {
+				assertTrue(connection.hasStatement(canonicalSubject, predicate, canonical, false));
 				connection.remove(secondNonCanonicalSubject, predicate, secondLeadingZero);
+				assertTrue(connection.hasStatement(canonicalSubject, predicate, canonical, false));
 			}
 		} finally {
 			reopened.shutDown();
@@ -326,7 +329,12 @@ class LmdbPredicateObjectDomainIndexTest {
 
 		SailRepository restored = repository(dataDir);
 		try {
-			assertHas(guarantee(restored, predicate), RdfTermDomain.Fact.CANONICAL_INTEGER);
+			try (RepositoryConnection connection = restored.getConnection()) {
+				assertTrue(connection.hasStatement(canonicalSubject, predicate, canonical, false),
+						"The canonical statement must remain after removing only degraded objects");
+			}
+			assertHas(knownGuarantee(restored, predicate).orElseThrow(),
+					RdfTermDomain.Fact.CANONICAL_INTEGER);
 		} finally {
 			restored.shutDown();
 		}

@@ -121,7 +121,7 @@ public class ThemeQueryBenchmark {
 //			"TRAIN",
 //			"ELECTRICAL_GRID",
 //			"PHARMA",
-			"SPARSE",
+//			"SPARSE",
 	})
 	public String themeName;
 
@@ -590,6 +590,17 @@ public class ThemeQueryBenchmark {
 		started.stop();
 
 		System.out.println("Loaded theme datasets in " + started);
+	}
+
+	static void loadAllThemeDatasets(SailRepository repository) throws IOException {
+		try (var connection = repository.getConnection()) {
+			var inserter = new RDFInserter(connection);
+			for (var themeDataset : Theme.values()) {
+				connection.begin(IsolationLevels.NONE);
+				ThemeDataSetGenerator.generate(themeDataset, inserter);
+				connection.commit();
+			}
+		}
 	}
 
 	private File storeDirectory() {

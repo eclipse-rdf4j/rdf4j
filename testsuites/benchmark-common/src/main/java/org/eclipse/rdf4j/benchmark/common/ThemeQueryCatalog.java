@@ -1679,6 +1679,8 @@ public final class ThemeQueryCatalog {
 								"}"),
 						25710L)));
 
+		QUERIES.put(Theme.SPARSE, SparseThemeQueries.queries());
+
 		String adaptiveFilterPrefix = String.join("\n",
 				"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
 				"");
@@ -2080,6 +2082,9 @@ public final class ThemeQueryCatalog {
 				7396, 6, -1, 59629, 5, 47, -1, 6, -1, 0, 0, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.PHARMA, expectedCountBindingValues(
 				18, -1, -1, -1, 4972, 32, -1, 2885, -1, 13, -1, -1, -1));
+		EXPECTED_COUNT_BINDING_VALUES.put(Theme.SPARSE, expectedCountBindingValues(
+				240000, 20400, 583422360, 159781560, 5736000, 72000, 152000, 480000, 3000, 67350840,
+				321720, 6971897202L, 3720000));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.ADAPTIVE_FILTER_PLACEMENT, expectedCountBindingValues(
 				-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.REAL_ESTATE, expectedCountBindingValues(

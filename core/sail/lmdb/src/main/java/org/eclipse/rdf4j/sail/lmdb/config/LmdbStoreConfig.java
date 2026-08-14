@@ -938,6 +938,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 				&& getDirectAdjacencyMode() == DirectAdjacencyMode.DISABLED) {
 			throw new SailConfigException("directAdjacencyBuildOnStart requires a non-DISABLED directAdjacencyMode");
 		}
+	}
+
 	public boolean getPredicateGuaranteeIndexEnabled() {
 		return predicateGuaranteeIndexEnabled;
 	}
@@ -1195,6 +1197,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (directAdjacencyBuildOnStart != null) {
 			m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_BUILD_ON_START,
 					vf.createLiteral(directAdjacencyBuildOnStart.booleanValue()));
+		}
 		if (!predicateGuaranteeIndexEnabled) {
 			m.add(implNode, LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_ENABLED, vf.createLiteral(false));
 		}

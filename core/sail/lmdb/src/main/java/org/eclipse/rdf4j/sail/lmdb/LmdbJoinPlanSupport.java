@@ -14,8 +14,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Predicate;
@@ -29,12 +31,15 @@ import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.CompareAll;
+import org.eclipse.rdf4j.query.algebra.CompareAny;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
@@ -69,6 +74,61 @@ final class LmdbJoinPlanSupport {
 	private static final double SMALL_LITERAL_FILTER_ANCHOR_MAX_PASS_RATIO = 0.75d;
 
 	private LmdbJoinPlanSupport() {
+	}
+
+	static List<DeferredFilter> buildDeferredFilters(List<Filter> filters, Set<String> scopeBindingNames,
+			EvaluationStatistics statistics) {
+		if (filters.isEmpty()) {
+			return List.of();
+		}
+
+		List<DeferredFilter> deferredFilters = new ArrayList<>(filters.size());
+		int originalIndex = 0;
+		for (Filter filter : filters) {
+			for (ValueExpr condition : splitConjuncts(filter.getCondition())) {
+				Set<String> conditionVars = DeferredFilter.conditionBindingNames(condition);
+				Set<String> requiredVars = new HashSet<>(conditionVars);
+				requiredVars.retainAll(scopeBindingNames);
+				deferredFilters
+						.add(new DeferredFilter(condition, requiredVars, conditionVars, filterConditionCost(condition),
+								originalIndex++, patternLocalBaseForFilterCondition(filter, condition),
+								FilterSelectivityKeys.originPatternsForFilter(filter),
+								estimateFilterPass(statistics, filter, condition)));
+			}
+		}
+		return deferredFilters;
+	}
+
+	static void markRedundantRequiredExistsFilters(List<TupleExpr> requiredArgs, List<DeferredFilter> filters) {
+		if (requiredArgs.isEmpty() || filters.isEmpty()) {
+			return;
+		}
+		for (DeferredFilter filter : filters) {
+			if (!filter.applied && isRedundantRequiredExistsFilter(requiredArgs, filter)) {
+				filter.applied = true;
+			}
+		}
+	}
+
+	private static boolean isRedundantRequiredExistsFilter(List<TupleExpr> requiredArgs, DeferredFilter filter) {
+		StatementPattern pattern = positiveExistsStatementPattern(filter.condition);
+		if (pattern == null) {
+			return false;
+		}
+		for (TupleExpr arg : requiredArgs) {
+			if (containsEquivalentRequiredPattern(arg, pattern)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static StatementPattern positiveExistsStatementPattern(ValueExpr condition) {
+		if (!(condition instanceof Exists)) {
+			return null;
+		}
+		TupleExpr subQuery = ((Exists) condition).getSubQuery();
+		return subQuery instanceof StatementPattern ? (StatementPattern) subQuery : null;
 	}
 
 	static boolean rightLocallyProducesSharedBinding(Join join) {
@@ -476,6 +536,23 @@ final class LmdbJoinPlanSupport {
 		return contains[0];
 	}
 
+	static boolean isBindingOnlyFactor(SegmentFactor factor) {
+		return factor.containedPatterns.isEmpty() && !factor.bindingNames.isEmpty();
+	}
+
+	private static int filterConditionCost(ValueExpr condition) {
+		if (condition instanceof Exists || condition instanceof CompareAny || condition instanceof CompareAll) {
+			return JoinOrderPlanner.FILTER_COST_EXPENSIVE;
+		}
+		if (condition instanceof Not && ((Not) condition).getArg() instanceof Exists) {
+			return JoinOrderPlanner.FILTER_COST_EXPENSIVE;
+		}
+		if (condition instanceof And and) {
+			return Math.max(filterConditionCost(and.getLeftArg()), filterConditionCost(and.getRightArg()));
+		}
+		return JoinOrderPlanner.FILTER_COST_CHEAP;
+	}
+
 	static StatementPattern patternLocalBaseForFilterCondition(Filter filter, ValueExpr condition) {
 		Set<StatementPattern> patterns = FilterSelectivityKeys.originPatternsForFilter(filter);
 		StatementPattern match = null;
@@ -663,6 +740,30 @@ final class LmdbJoinPlanSupport {
 					|| xsdDatatype.isDurationDatatype() || xsdDatatype == CoreDatatype.XSD.BOOLEAN;
 		}
 		return false;
+	}
+
+	static Set<StatementPattern> identityPatternSet() {
+		return Collections.newSetFromMap(new IdentityHashMap<>());
+	}
+
+	private static BindingSetAssignment bindingSetAssignmentLeaf(TupleExpr tupleExpr) {
+		TupleExpr current = tupleExpr;
+		while (isPositionableBindingSetAssignmentWrapper(current)) {
+			current = ((UnaryTupleOperator) current).getArg();
+		}
+		if (current instanceof BindingSetAssignment) {
+			return (BindingSetAssignment) current;
+		}
+		return null;
+	}
+
+	private static boolean isPositionableBindingSetAssignmentWrapper(TupleExpr tupleExpr) {
+		return tupleExpr instanceof Filter || tupleExpr instanceof Distinct || tupleExpr instanceof Reduced
+				|| tupleExpr instanceof Slice;
+	}
+
+	private record NestedTupleExpression(TupleExpr tupleExpr, boolean notExists) {
+
 	}
 
 	private static final class OrEqualityAnchorCollector {

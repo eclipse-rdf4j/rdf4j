@@ -551,9 +551,9 @@ class TxnManager {
 				try {
 					free(txnActive);
 				} finally {
-						synchronized (TxnManager.this.active) {
-							TxnManager.this.active.notifyAll();
-						}
+					synchronized (TxnManager.this.active) {
+						TxnManager.this.active.notifyAll();
+					}
 				}
 			}
 		}

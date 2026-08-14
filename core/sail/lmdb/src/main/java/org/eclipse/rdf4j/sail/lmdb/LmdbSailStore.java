@@ -31,8 +31,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.OptionalDouble;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
@@ -93,13 +93,13 @@ import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAttemptMetrics;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeExpressionCompiler;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeIdDomain;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.AdjacencyAccessObserver;
-import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierInsertion;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbFrontierSynopsisService;
@@ -165,6 +165,7 @@ class LmdbSailStore implements SailStore {
 	static int valueGcDrainBatchSize() {
 		return Integer.getInteger("rdf4j.lmdb.valueGc.drainBatchSize", 100_000);
 	}
+
 	private static final int EXACT_ESTIMATOR_ADD_CHUNK_SIZE = 4096;
 	private static final int EXACT_ESTIMATOR_ADD_DEFER_THRESHOLD = 4096;
 	private static final int INITIAL_PENDING_APPROVE_CAPACITY = 32;
@@ -301,6 +302,7 @@ class LmdbSailStore implements SailStore {
 			return result;
 		}
 	}
+
 	private final boolean adaptiveEvidenceAllowed;
 
 	private static void idleSpin(int attempts) {
@@ -2570,6 +2572,12 @@ class LmdbSailStore implements SailStore {
 			touchedLeoPredicateIds = null;
 		}
 
+		private Object2IntOpenHashMap<Value> newValueIndexMap(int statementCount) {
+			Object2IntOpenHashMap<Value> valueIndexes = new Object2IntOpenHashMap<>(Math.max(1, statementCount));
+			valueIndexes.defaultReturnValue(-1);
+			return valueIndexes;
+		}
+
 		private final class BatchValueCollector {
 			private Object2IntOpenHashMap<Value> indexes;
 			private Value[] values;
@@ -2815,9 +2823,9 @@ class LmdbSailStore implements SailStore {
 						if (tripleStoreException != null) {
 							throw wrapTripleStoreException();
 						} else {
-								idleSpin(spins++);
-							}
+							idleSpin(spins++);
 						}
+					}
 				}
 
 				try {
@@ -2993,7 +3001,6 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-
 		private void approvePreparedBuffered(Resource subj, IRI pred, Value obj, Resource context) {
 			sinkStoreAccessLock.lock();
 			try {
@@ -3167,6 +3174,10 @@ class LmdbSailStore implements SailStore {
 			BulkAddQuadsOperation bulk = null;
 			long approvedCount = 0;
 			int expectedCount = approved instanceof Collection<?> collection ? collection.size() : 0;
+			int valueCount = 0;
+			int operationCount = 0;
+			LmdbStorePathEvent storePathEvent = beginLmdbStorePathEvent("approveAllBulk", true, expectedCount,
+					pendingApproveCount);
 			PreparedStatementBatch prepared = preparedBatch(approved, overrideContexts, expectedCount);
 			if (prepared == null) {
 				invalidateFreshValueSession();
@@ -3207,12 +3218,14 @@ class LmdbSailStore implements SailStore {
 								bulk.add(previousSubjectId, 0, 0, 0);
 							} else {
 								long subjectId = valueStore.storeValue(subj);
+								valueCount++;
 								previousSubject = subj;
 								previousSubjectId = subjectId;
 								bulk.add(subjectId, 0, 0, 0);
 							}
 						} else {
 							long subjectId = valueStore.storeValue(subj);
+							valueCount++;
 							previousSubject = subj;
 							previousSubjectId = subjectId;
 							bulk.add(subjectId, 0, 0, 0);
@@ -3226,11 +3239,13 @@ class LmdbSailStore implements SailStore {
 						Long predicateId = predicateCache.get(pred);
 						if (predicateId == null) {
 							predicateId = valueStore.storeValue(pred);
+							valueCount++;
 							predicateCache.put(pred, predicateId);
 						}
 						bulk.predicates[batchIndex] = predicateId;
 
 						bulk.objects[batchIndex] = valueStore.storeValue(obj);
+						valueCount++;
 						bulk.objectValues[batchIndex] = obj;
 						if (context == null) {
 							bulk.contexts[batchIndex] = 0;
@@ -3238,6 +3253,7 @@ class LmdbSailStore implements SailStore {
 							Long contextId = contextCache.get(context);
 							if (contextId == null) {
 								contextId = valueStore.storeValue(context);
+								valueCount++;
 								contextCache.put(context, contextId);
 							}
 							bulk.contexts[batchIndex] = contextId;
@@ -3246,6 +3262,7 @@ class LmdbSailStore implements SailStore {
 						approvedCount++;
 						if (bulk.isFull()) {
 							submitOperation(bulk);
+							operationCount++;
 							bulk = null;
 						}
 					}
@@ -3253,6 +3270,7 @@ class LmdbSailStore implements SailStore {
 
 				if (bulk != null) {
 					submitOperation(bulk);
+					operationCount++;
 					bulk = null;
 				}
 				return approvedCount;
@@ -4789,7 +4807,12 @@ class LmdbSailStore implements SailStore {
 				}
 				throw new SailException(e);
 			}
-			this.snapshotEpoch = LmdbFrontierSnapshotSource.snapshotEpoch(txn);
+			try {
+				this.snapshotEpoch = LmdbFrontierSnapshotSource.snapshotEpoch(txn);
+			} catch (IOException e) {
+				txn.close();
+				throw new SailException(e);
+			}
 			this.snapshotRevision = txn.snapshotRevision();
 			this.pinnedTxnVersion = registeredVersion >= 0 ? registeredVersion : txn.version();
 			// acquisition after transaction registration: base replacement checks minPinnedSnapshotRevision(), so it

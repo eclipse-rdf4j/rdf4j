@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
@@ -225,6 +226,10 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	}
 
 	private void materialize(BindingSet bindingSet) {
+		if (bindingSet instanceof NativeProjectedBindingSet nativeBindingSet) {
+			nativeBindingSet.materializeAndDetach();
+			return;
+		}
 		for (Binding binding : bindingSet) {
 			Value value = binding.getValue();
 			if (value instanceof LmdbValue lmdbValue && !lmdbValue.isInitialized()) {
@@ -234,6 +239,10 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	}
 
 	private void addValues(BindingSet bindingSet) {
+		if (bindingSet instanceof NativeProjectedBindingSet nativeBindingSet) {
+			nativeBindingSet.materializeAndDetach();
+			return;
+		}
 		MutableBindingSet mutableBindingSet = bindingSet instanceof MutableBindingSet
 				? (MutableBindingSet) bindingSet
 				: null;

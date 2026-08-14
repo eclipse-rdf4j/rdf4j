@@ -103,9 +103,9 @@ import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex.StatementFieldValueAccessor;
@@ -158,6 +158,7 @@ class TripleStore implements Closeable {
 	interface BulkContextSource {
 		boolean next(long[] contextAndCount) throws IOException;
 	}
+
 	// Aliases into TripleIndex so predicate-guarantee code keeps its established names.
 	static final int SUBJ_IDX = TripleIndex.SUBJ_IDX;
 	static final int PRED_IDX = TripleIndex.PRED_IDX;
@@ -4642,6 +4643,14 @@ class TripleStore implements Closeable {
 				preparedMainIndex.close();
 			}
 		}
+	}
+
+	void storePreparedTriples(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit,
+			boolean mayHaveInferred, IntConsumer addedIndexConsumer,
+			PreparedSecondaryIndexesSupplier preparedSecondaryIndexesSupplier)
+			throws IOException {
+		storeTriplesAligned(subj, pred, obj, context, count, explicit, mayHaveInferred, addedIndexConsumer, null,
+				preparedSecondaryIndexesSupplier);
 	}
 
 	void storeGloballyOrderedFreshTriples(int[] quads, long[] valueIds, int count,

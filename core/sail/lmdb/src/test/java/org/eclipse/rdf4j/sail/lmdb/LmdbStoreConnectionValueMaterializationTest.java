@@ -536,6 +536,11 @@ class LmdbStoreConnectionValueMaterializationTest {
 		}
 
 		@Override
+		public long retainedLexicalLength() {
+			return name.length();
+		}
+
+		@Override
 		public void init() {
 			initCount++;
 			initialized = true;

@@ -675,25 +675,6 @@ public final class Varint {
 		}
 	}
 
-	private static long readUnsigned(long address, int first) {
-		if (first <= 240) {
-			return first;
-		}
-		if (first <= 248) {
-			return 240L + ((long) (first - 241) << 8) + (memGetByte(address + 1) & 0xFFL);
-		}
-		if (first == 249) {
-			return 2288L + ((memGetByte(address + 1) & 0xFFL) << 8)
-					+ (memGetByte(address + 2) & 0xFFL);
-		}
-		int bytes = first - 247;
-		long value = 0L;
-		for (int index = 1; index <= bytes; index++) {
-			value = (value << 8) | (memGetByte(address + index) & 0xFFL);
-		}
-		return value;
-	}
-
 	private static long readSignificantBitsDirect(ByteBuffer bb, int n) {
 		return SignificantBytesBE.readDirect(bb, n);
 	}
