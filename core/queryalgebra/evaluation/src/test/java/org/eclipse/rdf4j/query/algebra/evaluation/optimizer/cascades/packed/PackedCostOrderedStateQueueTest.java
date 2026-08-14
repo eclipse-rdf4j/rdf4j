@@ -40,4 +40,23 @@ class PackedCostOrderedStateQueueTest {
 		assertEquals(7, queue.pollStateId());
 		assertEquals(1, queue.polledRevision());
 	}
+
+	@Test
+	void primitiveQueueGrowthIsChargedAtomicallyToPlannerResources() throws ReflectiveOperationException {
+		PackedSearchBudget budget = new PackedSearchBudget(new PackedPlannerLimits(
+				Long.MAX_VALUE, Long.MAX_VALUE, 32L));
+		PackedCostOrderedStateQueue queue = PackedCostOrderedStateQueue.class
+				.getDeclaredConstructor(int.class, PackedSearchBudget.class)
+				.newInstance(2, budget);
+
+		queue.offer(1, 1, 1.0d);
+		queue.offer(2, 1, 2.0d);
+		queue.offer(3, 1, 3.0d);
+
+		assertEquals(32L, budget.retainedBytes(), "the rejected growth must not partially charge bytes");
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_RESOURCE_LIMIT, budget.completionStatus());
+		assertEquals(1, queue.pollStateId());
+		assertEquals(2, queue.pollStateId());
+		assertEquals(true, queue.isEmpty(), "the rejected third entry must not be published");
+	}
 }

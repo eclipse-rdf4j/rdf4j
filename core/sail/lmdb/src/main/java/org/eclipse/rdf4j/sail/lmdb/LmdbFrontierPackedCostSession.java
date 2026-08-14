@@ -158,7 +158,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 
 	private static final int DESIGN_LANE_INDEX = 0;
 	private static final int INDEPENDENT_DESIGN_LANE_INDEX = 1;
-	private static final int SEED_SCHEDULE_VERSION = 1;
+	private static final int SEED_SCHEDULE_VERSION = 2;
 	private static final long SESSION_BASE_BYTES = 192L;
 	private static final long SESSION_RELATION_BYTES = 24L;
 	private static final long SESSION_LEAF_BYTES = 384L;
@@ -1612,6 +1612,28 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	public double objectiveScore(PackedCostEstimate estimate) {
 		double normalized = normalizedObjectiveScore(estimate, MinusQueryEvaluationStep.maxMaterializedRightRows());
 		return normalized == Double.MAX_VALUE ? normalized : physicalCostObjective.score(estimate);
+	}
+
+	@Override
+	public int exactContinuationIdentity(PackedCostEstimate estimate) {
+		Objects.requireNonNull(estimate, "estimate");
+		if (closed
+				|| arena == null
+				|| estimate.evidenceStateId() == 0
+				|| estimate.evidenceGuarantee() != EvidenceGuarantee.DATABASE_EXACT
+				|| estimate.evidenceDisposition() != FrontierStateDisposition.COMPOSABLE_PAYLOAD) {
+			return 0;
+		}
+		EvidenceStateRef state = stateReference(estimate.evidenceStateId());
+		if (state == null
+				|| state.summary().guarantee() != EvidenceGuarantee.DATABASE_EXACT
+				|| arena.disposition(state) != FrontierStateDisposition.COMPOSABLE_PAYLOAD
+				|| !arena.hasCanonicalKey(state)
+				|| arena.nearestCalibration(state) != null
+				|| Double.compare(arena.cumulativeCalibrationFactor(state), 1.0d) != 0) {
+			return 0;
+		}
+		return arena.canonicalContinuationState(state).stateId();
 	}
 
 	static double normalizedObjectiveScore(PackedCostEstimate estimate, long maxMaterializedRows) {
@@ -13586,18 +13608,40 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	}
 
 	private static void sortMaskStrata(long[] words, int stratumCount, int wordCount) {
-		for (int stratum = 1; stratum < stratumCount; stratum++) {
-			int cursor = stratum;
-			while (cursor > 0 && compareMaskStrata(words, cursor - 1, cursor, wordCount) > 0) {
-				for (int word = 0; word < wordCount; word++) {
-					int left = (cursor - 1) * wordCount + word;
-					int right = cursor * wordCount + word;
-					long swap = words[left];
-					words[left] = words[right];
-					words[right] = swap;
-				}
-				cursor--;
+		if (stratumCount < 2 || wordCount == 0) {
+			return;
+		}
+		for (int root = (stratumCount >>> 1) - 1; root >= 0; root--) {
+			siftDownMaskStrata(words, root, stratumCount, wordCount);
+		}
+		for (int end = stratumCount - 1; end > 0; end--) {
+			swapMaskStrata(words, 0, end, wordCount);
+			siftDownMaskStrata(words, 0, end, wordCount);
+		}
+	}
+
+	private static void siftDownMaskStrata(long[] words, int root, int end, int wordCount) {
+		while (root < end >>> 1) {
+			int largerChild = (root << 1) + 1;
+			int rightChild = largerChild + 1;
+			if (rightChild < end && compareMaskStrata(words, largerChild, rightChild, wordCount) < 0) {
+				largerChild = rightChild;
 			}
+			if (compareMaskStrata(words, root, largerChild, wordCount) >= 0) {
+				return;
+			}
+			swapMaskStrata(words, root, largerChild, wordCount);
+			root = largerChild;
+		}
+	}
+
+	private static void swapMaskStrata(long[] words, int leftStratum, int rightStratum, int wordCount) {
+		int leftOffset = leftStratum * wordCount;
+		int rightOffset = rightStratum * wordCount;
+		for (int word = 0; word < wordCount; word++) {
+			long swap = words[leftOffset + word];
+			words[leftOffset + word] = words[rightOffset + word];
+			words[rightOffset + word] = swap;
 		}
 	}
 

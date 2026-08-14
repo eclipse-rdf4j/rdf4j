@@ -74,8 +74,8 @@ public final class FrontierStateKey implements Comparable<FrontierStateKey> {
 		this.laneFamily = laneFamily;
 		this.laneIndex = laneIndex;
 		this.seedVersion = seedVersion;
-		this.stableHash = computeHash(HASH_SEED);
-		this.deterministicSeed = computeHash(SAMPLING_SEED);
+		this.stableHash = computeHash(HASH_SEED, false);
+		this.deterministicSeed = computeHash(SAMPLING_SEED, seedVersion >= 2);
 		this.retainedBytes = computeRetainedBytes();
 	}
 
@@ -257,7 +257,7 @@ public final class FrontierStateKey implements Comparable<FrontierStateKey> {
 		return retainedBytes;
 	}
 
-	private long computeHash(long seed) {
+	private long computeHash(long seed, boolean alphaNormalizeLayout) {
 		long hash = mix(seed, FACTORS_DOMAIN);
 		hash = mix(hash, logicalFactorWords.length);
 		for (long word : logicalFactorWords) {
@@ -266,10 +266,19 @@ public final class FrontierStateKey implements Comparable<FrontierStateKey> {
 		hash = mix(hash, FRONTIER_DOMAIN);
 		hash = mix(hash, frontier.size());
 		for (int variableIndex = 0; variableIndex < frontier.size(); variableIndex++) {
-			String variable = frontier.variable(variableIndex);
-			hash = mix(hash, variable.length());
-			for (int index = 0; index < variable.length(); index++) {
-				hash = mix(hash, variable.charAt(index));
+			if (alphaNormalizeLayout) {
+				/*
+				 * Parser-generated variables contain a fresh UUID in every JVM. Sampling depends on the ordered binding
+				 * slots and their masks, not on those alpha-equivalent spellings. Exact names remain part of stableHash
+				 * and FrontierStateKey equality because runtime tuple lookup still requires them.
+				 */
+				hash = mix(hash, variableIndex);
+			} else {
+				String variable = frontier.variable(variableIndex);
+				hash = mix(hash, variable.length());
+				for (int index = 0; index < variable.length(); index++) {
+					hash = mix(hash, variable.charAt(index));
+				}
 			}
 		}
 		hash = mix(hash, MASKS_DOMAIN);

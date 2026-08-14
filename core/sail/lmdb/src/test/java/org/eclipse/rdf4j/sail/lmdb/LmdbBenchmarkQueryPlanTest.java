@@ -21,6 +21,7 @@ import java.io.File;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -201,6 +202,72 @@ class LmdbBenchmarkQueryPlanTest {
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	@Test
+	@Timeout(120)
+	void planQualityPhysicalIdentitiesSurviveIndependentFrontierRebuilds(@TempDir File dataDir) {
+		String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 3);
+		List<Long> firstFingerprints;
+		LmdbStore firstStore = new LmdbStore(dataDir, sampledFrontierConfig());
+		SailRepository firstRepository = new SailRepository(firstStore);
+		firstRepository.init();
+		try (var connection = firstRepository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			ThemeDataSetGenerator.generateMedicalRecords(
+					ThemeDataSetGenerator.medicalConfig()
+							.withPatientCount(2_000)
+							.withEncountersPerPatient(3)
+							.withConditionsPerEncounter(2)
+							.withMedicationsPerPatient(2)
+							.withObservationsPerEncounter(3)
+							.withPractitionerCount(200),
+					new RDFInserter(connection));
+			connection.commit();
+			assertEquals(FrontierSynopsisStatus.READY, firstStore.rebuildFrontierSynopsis());
+
+			try (LmdbBenchmarkPlanQualityAudit first = preparePlanQualityAudit(firstStore, connection, query, 120, 2,
+					512L * 1024L * 1024L)) {
+				assertTrue(first.auditResult()
+						.alternatives()
+						.stream()
+						.anyMatch(alternative -> alternative.decisionTraceJson()
+								.contains("\"guarantee\":\"MEASURE_UNBIASED\"")),
+						"the regression must exercise sampled Frontier evidence");
+				firstFingerprints = first.auditResult()
+						.alternatives()
+						.stream()
+						.map(alternative -> alternative.physicalFingerprint())
+						.toList();
+			}
+		} finally {
+			firstRepository.shutDown();
+		}
+
+		LmdbStore secondStore = new LmdbStore(dataDir, sampledFrontierConfig());
+		SailRepository secondRepository = new SailRepository(secondStore);
+		secondRepository.init();
+		try (var connection = secondRepository.getConnection()) {
+			assertEquals(FrontierSynopsisStatus.READY, secondStore.rebuildFrontierSynopsis());
+			try (LmdbBenchmarkPlanQualityAudit second = preparePlanQualityAudit(secondStore, connection, query, 120, 2,
+					512L * 1024L * 1024L)) {
+				assertEquals(firstFingerprints, second.auditResult()
+						.alternatives()
+						.stream()
+						.map(alternative -> alternative.physicalFingerprint())
+						.toList(),
+						"rebuilding one logical Frontier snapshot must preserve executable plan identities");
+			}
+		} finally {
+			secondRepository.shutDown();
+		}
+	}
+
+	private static LmdbStoreConfig sampledFrontierConfig() {
+		return new LmdbStoreConfig("spoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(16L * 1024L)
+				.setFrontierRefinementWorkUnits(4096);
 	}
 
 	@Test

@@ -126,6 +126,93 @@ class PackedSearchTest {
 	}
 
 	@Test
+	void planQualityStableIdsSurviveIndependentAggregateReparse() {
+		String sparql = """
+				SELECT ?practitioner (COUNT(DISTINCT ?enc) AS ?encCount) WHERE {
+				  ?enc a <urn:Encounter> ; <urn:handledBy> ?practitioner ; <urn:recordedOn> ?date .
+				  FILTER(?date IN ("2024-01-01", "2024-02-01"))
+				  OPTIONAL { ?enc <urn:hasCondition> ?cond . }
+				}
+				GROUP BY ?practitioner
+				HAVING(COUNT(?enc) > 0)
+				""";
+		PackedCostModel costs = (query, relationId) -> query.isStatementPattern(relationId) ? 100.0d : Double.NaN;
+		TupleExpr firstSource = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, sparql, null).getTupleExpr();
+		TupleExpr secondSource = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, sparql, null).getTupleExpr();
+
+		PackedPlanQualityAuditResult first = PackedCascadesPlanner.auditPlanQuality(firstSource,
+				OptimizationGoal.root(), costs, null, 2);
+		PackedPlanQualityAuditResult second = PackedCascadesPlanner.auditPlanQuality(secondSource,
+				OptimizationGoal.root(), costs, null, 2);
+		List<String> firstIds = first.alternatives().stream().map(PackedPlanQualityAlternative::stableId).toList();
+		List<String> secondIds = second.alternatives().stream().map(PackedPlanQualityAlternative::stableId).toList();
+
+		assertEquals(firstIds, secondIds,
+				"independent JVM campaign steps must authenticate the same executable alternatives");
+	}
+
+	@Test
+	void planQualityStableIdsSurviveIndependentPropertyPathReparse() {
+		String sparql = """
+				SELECT (COUNT(DISTINCT ?patient) AS ?count) WHERE {
+				  ?patient a <urn:Patient> .
+				  OPTIONAL {
+				    ?patient <urn:hasEncounter>/<urn:hasObservation> ?obs .
+				    ?obs <urn:value> ?value .
+				    BIND(?value AS ?optValue)
+				  }
+				  FILTER(?optValue > 60)
+				  MINUS {
+				    ?patient <urn:name> ?name .
+				    FILTER(CONTAINS(LCASE(STR(?name)), "test"))
+				  }
+				}
+				""";
+		PackedCostModel costs = (query, relationId) -> query.isStatementPattern(relationId) ? 100.0d : Double.NaN;
+		TupleExpr firstSource = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, sparql, null).getTupleExpr();
+		TupleExpr secondSource = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, sparql, null).getTupleExpr();
+
+		PackedPlanQualityAuditResult first = PackedCascadesPlanner.auditPlanQuality(firstSource,
+				OptimizationGoal.root(), costs, null, 2);
+		PackedPlanQualityAuditResult second = PackedCascadesPlanner.auditPlanQuality(secondSource,
+				OptimizationGoal.root(), costs, null, 2);
+		List<String> firstIds = first.alternatives().stream().map(PackedPlanQualityAlternative::stableId).toList();
+		List<String> secondIds = second.alternatives().stream().map(PackedPlanQualityAlternative::stableId).toList();
+
+		assertEquals(firstIds, secondIds,
+				"property-path temporaries must not leak into cross-process alternative authentication");
+	}
+
+	@Test
+	void planQualityStableIdsIdentifyExecutablePlansInsteadOfCostObservations() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		TupleExpr source = leftDeepJoin(List.of(
+				pattern(values, "shared", "urn:first", "firstValue", Double.NaN),
+				pattern(values, "shared", "urn:second", "secondValue", Double.NaN),
+				pattern(values, "shared", "urn:third", "thirdValue", Double.NaN)));
+		PackedCostModel firstCosts = (query, relationId) -> query.isStatementPattern(relationId) ? 100.0d : Double.NaN;
+		PackedCostModel secondCosts = (query, relationId) -> query.isStatementPattern(relationId) ? 200.0d : Double.NaN;
+
+		PackedPlanQualityAuditResult first = PackedCascadesPlanner.auditPlanQuality(source.clone(),
+				OptimizationGoal.root(), firstCosts, null, 3);
+		PackedPlanQualityAuditResult second = PackedCascadesPlanner.auditPlanQuality(source.clone(),
+				OptimizationGoal.root(), secondCosts, null, 3);
+		List<Long> firstPlans = first.alternatives()
+				.stream()
+				.map(PackedPlanQualityAlternative::physicalFingerprint)
+				.toList();
+		List<Long> secondPlans = second.alternatives()
+				.stream()
+				.map(PackedPlanQualityAlternative::physicalFingerprint)
+				.toList();
+
+		assertEquals(firstPlans, secondPlans, "changing estimates must not change this executable plan set");
+		assertEquals(first.alternatives().stream().map(PackedPlanQualityAlternative::stableId).toList(),
+				second.alternatives().stream().map(PackedPlanQualityAlternative::stableId).toList(),
+				"fixed-plan authentication must not encode transient cost observations");
+	}
+
+	@Test
 	void planQualityAuditDoesNotRepeatEquivalentMinusAlternatives() {
 		TupleExpr source = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, """
 				SELECT (COUNT(DISTINCT ?entity) AS ?count) WHERE {
@@ -550,6 +637,67 @@ class PackedSearchTest {
 		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, goal);
 
 		assertEquals(source, result.selectedPlan());
+	}
+
+	@Test
+	void exactWrittenDependentPlanCostsAreInvariantWhenReorderingsAreAlsoExplored() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = pattern(values, "shared", "urn:outer", "outerValue", Double.NaN);
+		StatementPattern first = pattern(values, "shared", "urn:first", "joinKey", Double.NaN);
+		StatementPattern second = pattern(values, "joinKey", "urn:second", "result", Double.NaN);
+		Extension right = new Extension(new Join(first, second),
+				new ExtensionElem(Var.of("result"), "alias"));
+		TupleExpr source = new Join(outer, right);
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return switch (query.statementPatternValue(relationId, 1).stringValue()) {
+				case "urn:outer" -> 10.0d;
+				case "urn:first", "urn:second" -> 1_000.0d;
+				default -> Double.NaN;
+				};
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				double baseRows = estimateRows(query, relationId);
+				if (context.prefixRelationCount() == 0) {
+					output.setRows(baseRows, baseRows);
+				} else {
+					output.setContextualRows(context.prefixRows(), context.prefixRows());
+				}
+			}
+		};
+		OptimizationGoal writtenGoal = OptimizationGoal.exact(PhysicalProperties.builder()
+				.observationOrder(PhysicalProperties.ObservationOrder.EXACT_SEQUENCE)
+				.build());
+
+		PackedPlanQualityAuditResult written = PackedCascadesPlanner.auditPlanQuality(
+				source.clone(), writtenGoal, costs, null, 100);
+		PackedPlanQualityAuditResult reordered = PackedCascadesPlanner.auditPlanQuality(
+				source.clone(), OptimizationGoal.root(), costs, null, 100);
+		PackedPlanQualityAlternative writtenAlternative = written.alternatives()
+				.stream()
+				.filter(candidate -> reordered.alternatives()
+						.stream()
+						.anyMatch(other -> other.stableId().equals(candidate.stableId())))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("exact search lost the imported executable plan"));
+		PackedPlanQualityAlternative reorderedAlternative = reordered.alternatives()
+				.stream()
+				.filter(candidate -> candidate.stableId().equals(writtenAlternative.stableId()))
+				.findFirst()
+				.orElseThrow();
+
+		assertEquals(writtenAlternative.estimatedCost(), reorderedAlternative.estimatedCost(), 0.0d,
+				"exploring sibling reorderings must not replace a dependent plan's exact prefix-context cost");
 	}
 
 	@Test
@@ -2392,8 +2540,9 @@ class PackedSearchTest {
 				socialCycleFactorOrder(result.selectedPlan()), result.selectedPlan()::toString);
 		assertEquals(1, filterCount(result.selectedPlan()), result.selectedPlan()::toString);
 		assertTrue(result.selectedPlan().getBindingNames().contains("optAlias"), result.selectedPlan()::toString);
-		assertTrue((result.ruleProofMask() & PackedRuleProofs.TRIVIAL_BIND_ALIAS) != 0L,
-				result.selectedPlan()::toString);
+		assertTrue(hasGeneratedRule(source, PackedRuleProofs.TRIVIAL_BIND_ALIAS), source::toString);
+		assertInstanceOf(Join.class, result.selectedPlan(),
+				"the exact search must keep the cheaper factor-local alias instead of selecting the costlier rewrite");
 		assertEquals(2.0d,
 				result.selectedPlan().getDoubleMetricPlanned("optimizer.cascadesCorrelatedLatticeBuilds"),
 				"logical alias commutation must not claim a physical exact cover when hoisting the extension can "
@@ -2443,8 +2592,9 @@ class PackedSearchTest {
 				socialCycleFactorOrder(result.selectedPlan()), result.selectedPlan()::toString);
 		assertEquals(5, filterCount(result.selectedPlan()), result.selectedPlan()::toString);
 		assertTrue(result.selectedPlan().getBindingNames().contains("optAlias"), result.selectedPlan()::toString);
-		assertTrue((result.ruleProofMask() & PackedRuleProofs.TRIVIAL_BIND_ALIAS) != 0L,
-				result.selectedPlan()::toString);
+		assertTrue(hasGeneratedRule(source, PackedRuleProofs.TRIVIAL_BIND_ALIAS), source::toString);
+		assertInstanceOf(Join.class, result.selectedPlan(),
+				"the exact search must keep the cheaper factor-local alias instead of selecting the costlier rewrite");
 
 		Group aggregate = new Group(source.clone(), List.of(),
 				List.of(new GroupElem("count", new Count(Var.of("a"), true))));

@@ -29,6 +29,7 @@ final class PackedMemo implements AutoCloseable {
 	private static final int EVIDENCE_CONTEXT_MARKER = 0x8000_00c7;
 	private static final int EVIDENCE_CONTEXT_VERSION = 2;
 	private static final int EXACT_EVIDENCE_CONTEXT_VERSION = 3;
+	private static final int PHYSICAL_PREFIX_SNAPSHOT_MARKER = 0x8000_00c8;
 	private static final int[] EMPTY_IDS = new int[0];
 
 	private final PackedQuery query;
@@ -325,6 +326,54 @@ final class PackedMemo implements AutoCloseable {
 
 	int internSequence(int[] values, int offset, int length) {
 		return sequences.intern(values, offset, length);
+	}
+
+	int internPhysicalPrefixSnapshot(int[] relationIds, double[] contributionRows, int offset, int count) {
+		if (relationIds == null || contributionRows == null || offset < 0 || count < 0
+				|| offset > relationIds.length - count || offset > contributionRows.length - count) {
+			throw new IndexOutOfBoundsException("invalid packed physical-prefix snapshot");
+		}
+		if (count == 0) {
+			return 0;
+		}
+		int required = 2 + count * 3;
+		if (evidenceContextScratch.length < required) {
+			evidenceContextScratch = Arrays.copyOf(evidenceContextScratch,
+					Math.max(required, evidenceContextScratch.length << 1));
+		}
+		int cursor = 0;
+		evidenceContextScratch[cursor++] = PHYSICAL_PREFIX_SNAPSHOT_MARKER;
+		evidenceContextScratch[cursor++] = count;
+		for (int ordinal = 0; ordinal < count; ordinal++) {
+			evidenceContextScratch[cursor++] = relationIds[offset + ordinal];
+		}
+		for (int ordinal = 0; ordinal < count; ordinal++) {
+			long bits = Double.doubleToLongBits(contributionRows[offset + ordinal]);
+			evidenceContextScratch[cursor++] = (int) (bits >>> 32);
+			evidenceContextScratch[cursor++] = (int) bits;
+		}
+		return sequences.intern(evidenceContextScratch, 0, cursor);
+	}
+
+	int restorePhysicalPrefixSnapshot(int snapshotId, int[] relationIds, double[] contributionRows, int offset) {
+		if (snapshotId <= 0 || sequences.length(snapshotId) < 5
+				|| sequences.value(snapshotId, 0) != PHYSICAL_PREFIX_SNAPSHOT_MARKER) {
+			throw new PackedMemoInvariantException("invalid packed physical-prefix snapshot " + snapshotId);
+		}
+		int count = sequences.value(snapshotId, 1);
+		if (count <= 0 || sequences.length(snapshotId) != 2 + count * 3
+				|| relationIds == null || contributionRows == null || offset < 0
+				|| offset > relationIds.length - count || offset > contributionRows.length - count) {
+			throw new PackedMemoInvariantException("corrupt packed physical-prefix snapshot " + snapshotId);
+		}
+		for (int ordinal = 0; ordinal < count; ordinal++) {
+			relationIds[offset + ordinal] = sequences.value(snapshotId, 2 + ordinal);
+			int bitsOffset = 2 + count + ordinal * 2;
+			long bits = (long) sequences.value(snapshotId, bitsOffset) << 32
+					| Integer.toUnsignedLong(sequences.value(snapshotId, bitsOffset + 1));
+			contributionRows[offset + ordinal] = Double.longBitsToDouble(bits);
+		}
+		return count;
 	}
 
 	int internEvidenceContext(int[] relationIds, double[] contributionRows, int offset, int count, double rows,
@@ -907,6 +956,10 @@ final class PackedMemo implements AutoCloseable {
 		return physicalMetadataCostVectorIds[metadataId];
 	}
 
+	int physicalCostVectorId(PackedCostEstimate estimate) {
+		return retainPlanQualityState ? costVectors.importEstimate(estimate) : 0;
+	}
+
 	int completeUnaryPhysicalCostVectorId(int metadataId, int childVectorId) {
 		int localVectorId = physicalMetadataCostVectorId(metadataId);
 		if (localVectorId == 0
@@ -927,6 +980,23 @@ final class PackedMemo implements AutoCloseable {
 		if (localVectorId == 0
 				|| !physicalMetadata.hasExplicitPhysicalCost(metadataId)
 				|| physicalMetadata.costScope(metadataId) == PackedCostEstimate.CostScope.INCLUSIVE) {
+			return localVectorId;
+		}
+		if (firstChildVectorId == 0 || secondChildVectorId == 0) {
+			return 0;
+		}
+		childCostVectorScratch[0] = firstChildVectorId;
+		childCostVectorScratch[1] = secondChildVectorId;
+		return costAlgebra.compose(PackedCostAlgebra.CompositionMode.SEQUENTIAL_SUM, localVectorId,
+				childCostVectorScratch, 0, 2, 1L);
+	}
+
+	int completeBinaryPhysicalCostVectorId(PackedCostEstimate estimate, int firstChildVectorId,
+			int secondChildVectorId) {
+		int localVectorId = physicalCostVectorId(estimate);
+		if (localVectorId == 0
+				|| !estimate.hasExplicitPhysicalCost()
+				|| estimate.costScope() == PackedCostEstimate.CostScope.INCLUSIVE) {
 			return localVectorId;
 		}
 		if (firstChildVectorId == 0 || secondChildVectorId == 0) {
@@ -1376,6 +1446,10 @@ final class PackedMemo implements AutoCloseable {
 
 	double physicalMetadataInvocations(int metadataId) {
 		return physicalMetadata.invocations(metadataId);
+	}
+
+	void certifyPhysicalMetadataContextualInvocationDomain(int metadataId, double pricedInvocations) {
+		physicalMetadata.certifyContextualInvocationDomain(metadataId, pricedInvocations);
 	}
 
 	int physicalMetadataEvidenceStateId(int metadataId) {
@@ -2092,6 +2166,37 @@ final class PackedMemo implements AutoCloseable {
 	int findWinner(int groupId, int requiredPropertyId, int semanticRowGoalId, int inputContextId,
 			int costPolicyId) {
 		return winners.find(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId);
+	}
+
+	int findMaterializedPhysicalWinner(int groupId, int requiredPropertyId, int semanticRowGoalId,
+			int inputContextId, int costPolicyId, int physicalExpressionId, int recipeWinnerId) {
+		int winnerId = findWinner(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId);
+		if (samePhysicalRecipe(winnerId, physicalExpressionId, recipeWinnerId)) {
+			return winnerId;
+		}
+		for (winnerId = firstExactContinuationWinner(groupId, requiredPropertyId, semanticRowGoalId,
+				inputContextId, costPolicyId); winnerId != 0; winnerId = nextExactContinuationWinner(winnerId)) {
+			if (samePhysicalRecipe(winnerId, physicalExpressionId, recipeWinnerId)) {
+				return winnerId;
+			}
+		}
+		return 0;
+	}
+
+	private boolean samePhysicalRecipe(int winnerId, int physicalExpressionId, int recipeWinnerId) {
+		if (winnerId == 0 || winnerPhysicalExpressionId(winnerId) != physicalExpressionId) {
+			return false;
+		}
+		int childCount = winnerChildCount(recipeWinnerId);
+		if (winnerChildCount(winnerId) != childCount) {
+			return false;
+		}
+		for (int ordinal = 0; ordinal < childCount; ordinal++) {
+			if (winnerChildWinnerId(winnerId, ordinal) != winnerChildWinnerId(recipeWinnerId, ordinal)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	int firstLogicalExpression(int groupId) {

@@ -1435,7 +1435,7 @@ final class PackedQueryCodec {
 				return null;
 			}
 			Integer ordinal = anonymousNames.get(name);
-			return ordinal == null ? name : new CanonicalAnonymousName(ordinal);
+			return ordinal == null ? name : new PackedQueryCacheIdentity.CanonicalAnonymousName(ordinal);
 		}
 
 		private int plannedMetricsPayload(QueryModelNode node) {
@@ -1505,6 +1505,4 @@ final class PackedQueryCodec {
 		}
 	}
 
-	private record CanonicalAnonymousName(int ordinal) {
-	}
 }

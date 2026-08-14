@@ -16,6 +16,11 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -41,7 +46,7 @@ final class PackedQueryCacheIdentity {
 		if (!surface.safeToCanonicalize(source) || surface.anonymousNames.isEmpty()) {
 			return null;
 		}
-		return encode(source, surface);
+		return encode(source, surface.anonymousNames);
 	}
 
 	static PackedQueryCacheIdentity createComplete(TupleExpr source) {
@@ -49,14 +54,27 @@ final class PackedQueryCacheIdentity {
 		if (!surface.safeToCanonicalize(source)) {
 			return null;
 		}
-		return encode(source, surface);
+		return encode(source, surface.anonymousNames);
 	}
 
-	private static PackedQueryCacheIdentity encode(TupleExpr source, IdentitySurface surface) {
+	/**
+	 * Builds the exact semantic identity used to authenticate an executable plan. Query-internal names are
+	 * alpha-normalized only when the complete identity surface proves that doing so is safe. Otherwise the original
+	 * names remain part of the identity.
+	 */
+	static PackedQueryCacheIdentity createPlanIdentity(TupleExpr source) {
+		IdentitySurface surface = IdentitySurface.collect(source);
+		Map<String, Integer> canonicalNames = surface.safeToCanonicalize(source)
+				? surface.anonymousNames
+				: Map.of();
+		return encode(source, canonicalNames);
+	}
+
+	private static PackedQueryCacheIdentity encode(TupleExpr source, Map<String, Integer> canonicalNames) {
 		try {
-			PackedQuery query = PackedQueryCodec.encodeForCacheIdentity(source, surface.anonymousNames);
+			PackedQuery query = PackedQueryCodec.encodeForCacheIdentity(source, canonicalNames);
 			return query.supportsCacheIdentity()
-					? new PackedQueryCacheIdentity(query, Map.copyOf(surface.anonymousNames))
+					? new PackedQueryCacheIdentity(query, Map.copyOf(canonicalNames))
 					: null;
 		} catch (UnsupportedCascadesOperatorException unsupported) {
 			return null;
@@ -70,6 +88,143 @@ final class PackedQueryCacheIdentity {
 	int canonicalOrdinal(String name) {
 		Integer ordinal = canonicalNames.get(name);
 		return ordinal == null ? -1 : ordinal;
+	}
+
+	void appendTo(IdentitySink sink) {
+		sink.append("packed-query-cache-identity-v1");
+		sink.append(query.rootRelId());
+
+		sink.append(0x52454c4154494f4eL);
+		sink.append(query.relationCount());
+		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
+			sink.append(query.relOperator(relationId));
+			sink.append(query.relGroup(relationId));
+			sink.append(query.relPayload(relationId));
+			sink.append(query.relSemanticScope(relationId));
+			sink.append(query.relExecutionDomain(relationId));
+			appendChildren(sink, query, relationId, IdentityRowKind.RELATION);
+			sink.append(query.relMetadataFlags(relationId));
+			sink.append(query.isOriginalBindingSetRelation(relationId) ? 1L : 0L);
+		}
+
+		sink.append(0x5343414c415253L);
+		sink.append(query.scalarCount());
+		for (int scalarId = 1; scalarId <= query.scalarCount(); scalarId++) {
+			sink.append(query.scalarOperator(scalarId));
+			sink.append(query.scalarPayload(scalarId));
+			sink.append(query.scalarSemanticScope(scalarId));
+			sink.append(0L);
+			appendChildren(sink, query, scalarId, IdentityRowKind.SCALAR);
+			sink.append(query.scalarMetadataFlags(scalarId));
+		}
+
+		sink.append(0x5041594c4f414453L);
+		sink.append(query.payloadCount());
+		for (int payloadId = 1; payloadId <= query.payloadCount(); payloadId++) {
+			sink.append(query.payloadOperator(payloadId));
+			sink.append(query.payloadPrimary(payloadId));
+			sink.append(query.payloadSecondary(payloadId));
+			sink.append(query.payloadFlags(payloadId));
+			appendChildren(sink, query, payloadId, IdentityRowKind.PAYLOAD);
+			if (query.payloadOperator(payloadId) == PackedPayloadOp.TERM) {
+				sink.append(1L);
+				sink.append(query.termMetadataFlags(payloadId));
+			} else {
+				sink.append(0L);
+			}
+		}
+
+		sink.append(0x42494e44494e4753L);
+		sink.append(query.bindingRowCount());
+		for (int rowId = 1; rowId <= query.bindingRowCount(); rowId++) {
+			int bindingCount = query.bindingCount(rowId);
+			sink.append(bindingCount);
+			for (int ordinal = 0; ordinal < bindingCount; ordinal++) {
+				sink.append(query.bindingNameId(rowId, ordinal));
+				sink.append(query.bindingValueId(rowId, ordinal));
+			}
+		}
+
+		sink.append(0x4f424a45435453L);
+		sink.append(query.objectCount());
+		for (int objectId = 1; objectId <= query.objectCount(); objectId++) {
+			appendObject(sink, query.objectValue(objectId));
+		}
+
+		sink.append(0x53594d424f4c53L);
+		sink.append(query.symbolCount());
+		for (int symbolId = 1; symbolId <= query.symbolCount(); symbolId++) {
+			sink.append(query.symbolObjectId(symbolId));
+		}
+	}
+
+	private static void appendChildren(IdentitySink sink, PackedQuery query, int rowId, IdentityRowKind kind) {
+		int count = switch (kind) {
+		case RELATION -> query.relChildCount(rowId);
+		case SCALAR -> query.scalarChildCount(rowId);
+		case PAYLOAD -> query.payloadChildCount(rowId);
+		};
+		sink.append(count);
+		for (int ordinal = 0; ordinal < count; ordinal++) {
+			int child = switch (kind) {
+			case RELATION -> query.relChild(rowId, ordinal);
+			case SCALAR -> query.scalarChild(rowId, ordinal);
+			case PAYLOAD -> query.payloadChild(rowId, ordinal);
+			};
+			sink.append(child);
+		}
+	}
+
+	private static void appendObject(IdentitySink sink, Object object) {
+		if (object instanceof CanonicalAnonymousName canonical) {
+			sink.append("anonymous-name");
+			sink.append(canonical.ordinal());
+		} else if (object instanceof String string) {
+			sink.append("string");
+			sink.append(string);
+		} else if (object instanceof IRI iri) {
+			sink.append("iri");
+			sink.append(iri.stringValue());
+		} else if (object instanceof BNode bNode) {
+			sink.append("bnode");
+			sink.append(bNode.getID());
+		} else if (object instanceof Literal literal) {
+			sink.append("literal");
+			sink.append(literal.getLabel());
+			sink.append(literal.getLanguage().orElse(null));
+			sink.append(literal.getBaseDirection().name());
+			sink.append(literal.getDatatype().stringValue());
+		} else if (object instanceof TripleTerm triple) {
+			sink.append("triple");
+			appendObject(sink, triple.getSubject());
+			appendObject(sink, triple.getPredicate());
+			appendObject(sink, triple.getObject());
+		} else if (object instanceof Enum<?> enumeration) {
+			sink.append("enum");
+			sink.append(enumeration.getDeclaringClass().getName());
+			sink.append(enumeration.name());
+		} else if (object instanceof Value value) {
+			throw new PackedMemoInvariantException("unsupported RDF value in packed query identity: "
+					+ value.getClass().getName());
+		} else {
+			throw new PackedMemoInvariantException("unsupported object in packed query identity: "
+					+ object.getClass().getName());
+		}
+	}
+
+	interface IdentitySink {
+		void append(long value);
+
+		void append(String value);
+	}
+
+	static record CanonicalAnonymousName(int ordinal) {
+	}
+
+	private enum IdentityRowKind {
+		RELATION,
+		SCALAR,
+		PAYLOAD
 	}
 
 	private static final class IdentitySurface extends AbstractQueryModelVisitor<RuntimeException> {

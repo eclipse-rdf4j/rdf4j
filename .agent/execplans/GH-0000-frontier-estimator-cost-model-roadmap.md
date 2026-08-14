@@ -728,6 +728,57 @@ rewrite.
   are preserved in `initial-evidence.txt`. A full corpus rerun, final broad verification, formatting, and handoff
   remain the active acceptance action.
 
+  The v81 through v93 correctness campaign then closed the remaining state-loss paths rather than tuning a Theme
+  cell. Contextual OPTIONAL and correlated RHS planning now receive the chosen physical prefix instead of an opaque
+  source JOIN; exact-by-exact payload algebra spends its typed arena memory rather than a stochastic scan budget;
+  local parent cost vectors compose every retained child vector exactly once; equal exact continuations share one
+  active semantic transition while incomparable CPU/memory vectors remain distinct; identical immutable metric
+  bundles share retained storage; and a provider `FrontierMemoryLimitException` becomes
+  `INCOMPLETE_RESOURCE_LIMIT` only after preserving an already-complete executable incumbent, with no scalar
+  restart. Aggregate-only Extension elements follow RDF4J evaluator semantics and keep their Group payload, while an
+  independently proved exact zero replaces a weaker sampled zero and remains `DATABASE_EXACT` through aliases. The
+  broad packed matrix passes 250 contracts and the LMDB Frontier integration class passes all 136 tests in 118.523
+  seconds with the 16 GiB Maven heap.
+
+  Frozen v93 exposed one remaining algorithmic, not semantic, obstruction: PHARMA q11 spent 87.73 percent of its
+  sampled CPU in quadratic insertion ordering of exact OPTIONAL binding-mask rows and exceeded the unchanged
+  120-second process limit. The exact unsigned lexicographic order now uses one in-place worst-case O(n log n)
+  heapsort for every input; there is no size threshold, query identity, shape detector, cost rule, or cardinality
+  heuristic. Frozen v94 `/private/tmp/rdf4j-lmdb-frontier-v94-20260813-2352.jar` (SHA-256
+  `5ed1ceeb432defd80da05462c175523fee049774ab6902f4df4af156dbbbe922`) completes PHARMA q11
+  `EXACT_COMPLETE` in 14.424 seconds with the same three tied minimum-cost roots and 402 intact Frontier event
+  states. Its full inventory closes all 117 supervised processes: 114 are `EXACT_COMPLETE`, while SOCIAL_MEDIA q1,
+  SOCIAL_MEDIA q10, and SPARSE q5 honestly report the typed 512 MiB Frontier
+  `INCOMPLETE_RESOURCE_LIMIT`. Across 190,107 serialized event states there are zero missing output state IDs, zero
+  scalar fallbacks, and zero whole-session fallbacks; every selected comparison cost is the minimum emitted root
+  cost. The first authenticated v94 execution attempt then exposed a campaign-identity defect rather than a search
+  defect: independently parsed aggregate/HAVING algebra kept the same candidate fingerprint but embedded a parser
+  nonce in the executable physical fingerprint. Physical identity now serializes the same lossless packed algebra
+  used by collision-proof cache equality, alpha-normalizing only names proved query-internal and retaining exact
+  names at observable or unsafe boundaries. A neighboring replay failure also proved that an ID-only demand
+  realization could relabel typed evidence without atomically updating its guarantee and disposition; the typed
+  realization contract now rejects that state mutation and preserves exact continuation explicitly. Frozen v95
+  `/private/tmp/rdf4j-lmdb-frontier-v95-20260814-0108.jar` (SHA-256
+  `450776ccb4fb44e703376ce7c4875dd48c663b7f71056835eaaad7dee9717c40`) authenticates all 13 independent
+  MEDICAL_RECORDS q2 executions against its fresh inventory, with one common 135-row result bag and zero measured
+  regret. Its fresh full inventory independently reproduces the complete v94 search accounting: all 117 supervisor
+  processes succeed without timeout, 114 searches are `EXACT_COMPLETE`, and the same three cells report only their
+  typed 512 MiB Frontier resource limit. All 657 executable alternatives have unique stable IDs and contiguous
+  indexes; every selected comparison cost is the emitted minimum; and all 190,107 serialized event states preserve
+  positive Frontier outputs without scalar or whole-session fallback. The authenticated full v95 alternative
+  execution campaign authenticated q0-q2, then exposed a second identity defect at MEDICAL_RECORDS q3: two fresh
+  JVMs read byte-identical manifest, 284 MB payload, and mapped query-index files, but parser-generated property-path
+  variable UUIDs entered `FrontierStateKey` resampling seeds and changed sampled costs and executable controls. Seed
+  schedule v2 now hashes ordered binding slots and mask shape while exact names remain in state equality, interning,
+  and runtime tuple lookup. This is alpha-equivalent structural identity, not a query, size, cost, or benchmark
+  heuristic. Frozen v96 `/private/tmp/rdf4j-lmdb-frontier-v96-20260814-0233.jar` (SHA-256
+  `cfdd01d1adce8592df9b3641ffd0c676bdd4e7eb1baf4003867b2a06745b3051`) emits an identical ordered set of 16
+  MEDICAL_RECORDS q3 physical fingerprints, pqa2 IDs, and costs from two independent inventory JVMs; all 16 separately
+  supervised execution JVMs authenticate and return the same one-row bag. The zero-warmup/one-measurement diagnostic
+  is not timing evidence. The frozen 5-warmup/20-measurement regret campaign, matched fixed-plan execution, absolute
+  planning targets, and both tenfold planning aggregates remain open until their prescribed campaigns finish; no
+  result is inferred from inventory completeness or unsaturated timing.
+
 ## Non-negotiable architecture invariants
 
 ### Evidence is state, not a scalar
@@ -1902,6 +1953,30 @@ JDK-25-or-newer JFR/compilation evidence for the measured method.
   proves the second exact derivation is dominated while still audit-visible. After searchable admission follows the
   exact Pareto result, v80 completes the same cell with 49 winners, 140 work units, and 1.031 MB retained, without
   changing enumeration, costs, resource limits, or final policy.
+- Observation: exact OPTIONAL mask canonicalization was asymptotically dominating PHARMA q11 even though its
+  comparator and output contract were correct.
+  Evidence: the v93 CPU profile records 6,290 samples in `sortMaskStrata` and 5,226 in `compareMaskStrata`, or 87.73
+  percent of all 13,126 samples. The same 120-second inventory timed out under insertion sort; frozen v94 completes
+  it in 14.424 seconds after replacing only the sorting algorithm with exact in-place heapsort.
+- Observation: a full campaign can be structurally successful while some searches are correctly incomplete at a
+  typed provider resource boundary.
+  Evidence: all 117 v94 supervisor statuses say `succeeded`; 114 inventories say `EXACT_COMPLETE`, and the three
+  512 MiB Frontier-limit cells say `INCOMPLETE_RESOURCE_LIMIT`. Their retained incumbents participate in the same
+  root-minimum audit, and none of 190,107 event states reports scalar or whole-session fallback.
+- Observation: plan-quality audit inclusion and multidimensional Pareto membership are independent labels.
+  Evidence: SOCIAL_MEDIA q6's policy-selected exact root is not a final Pareto survivor, but it is the audit model's
+  required selected-inclusion row and has the minimum comparison cost, 450.015 versus 482.064 and 18.8 billion. Its
+  selected event remains `DATABASE_EXACT`, `COMPOSABLE_PAYLOAD`, and `frontier_authoritative`; changing policy from
+  the diagnostic label would therefore be an unsupported heuristic rather than a repair.
+- Observation: candidate identity can remain stable while parser-local anonymous binding names make a physical plan
+  fingerprint unstable across processes.
+  Evidence: v94 MEDICAL_RECORDS q2 kept all 13 candidate-fingerprint prefixes but changed every physical suffix. The
+  focused reparse red reproduced all five suffix changes in one JVM. The lossless packed v95 identity and its
+  alpha-topology/visible-name tests are green; all 13 independent q2 executions authenticate their inventory IDs.
+- Observation: realizing an evidence descriptor is a typed state transition, not an integer substitution.
+  Evidence: the replay red registered canonical state 2 first as `BOUND_ONLY` and later as
+  `DATABASE_EXACT/COMPOSABLE_PAYLOAD`. Atomic typed realization and the explicit negative ID-only contract pass with
+  the combined 157-test search/cache/recipe/session matrix.
 
 ## Decision Log
 
@@ -2177,6 +2252,16 @@ JDK-25-or-newer JFR/compilation evidence for the measured method.
   ordinals for the former let freshly parsed equivalent algebra reuse a plan; retaining exact packed-query equality
   as the final check prevents a routing-fingerprint collision from becoming a false hit.
   Date/Author: 2026-08-11 / Håvard and Codex.
+- Decision: Derive cross-process physical-plan identity from lossless packed algebra plus explicit execution-control
+  annotations.
+  Rationale: raw query-model signatures contain parser nonces and omit fields on some typed operators. Reusing the
+  complete packed identity gives exact structural equality, safe alpha-equivalence, and collision-proof canonical
+  comparison without recognizing name patterns or changing plan selection.
+  Date/Author: 2026-08-14 / Håvard and Codex.
+- Decision: Require evidence-state realization to publish ID, guarantee, and disposition atomically.
+  Rationale: an immutable state ID cannot be bound-only in one event and exact/composable in another. Failing an
+  incomplete typed alias is safer than silently replacing Frontier continuation with unresolved scalar evidence.
+  Date/Author: 2026-08-14 / Håvard and Codex.
 - Decision: Measure Theme process-cold and JIT-saturated planning in independent JVM lanes.
   Rationale: zero-warmup single-shot samples continued compiling for hundreds of fast planner invocations and made
   both cache and uncached latency appear one to two orders of magnitude slower. A one-shot cold process plus a
@@ -2254,6 +2339,18 @@ JDK-25-or-newer JFR/compilation evidence for the measured method.
   Rationale: an evidence-state ID is query-local, not proof that it belongs to the current join. Typed factor lineage
   supplies the collision-safe ownership certificate and prevents an unrelated scalar boundary from replacing a
   composable Frontier, without changing join eligibility, cost, dominance, or final policy.
+  Date/Author: 2026-08-13 / Håvard and Codex.
+- Decision: Order exact binding-mask strata with one unconditional in-place heapsort and the existing unsigned
+  lexicographic comparator.
+  Rationale: heapsort preserves the exact total order and deduplication input while changing worst-case complexity
+  from O(n squared) to O(n log n). Applying it uniformly avoids a size crossover, workload classifier, query branch,
+  or benchmark-tuned threshold; identical rows need no stable order because every compared word is equal.
+  Date/Author: 2026-08-13 / Håvard and Codex.
+- Decision: Treat a provider-owned Frontier memory ceiling as a typed incomplete-search result, never as authority to
+  restart the query with scalar costing.
+  Rationale: the complete incumbent and all admitted state/cost events remain valid, but the rejected arena growth
+  means exact fixpoint certification is impossible. `INCOMPLETE_RESOURCE_LIMIT` exposes that fact and permits an
+  explicit larger-budget retry without suppressing a continuation or falsely claiming exactness.
   Date/Author: 2026-08-13 / Håvard and Codex.
 
 ## Outcomes & Retrospective
@@ -2446,6 +2543,19 @@ learning interaction pair passes, and the complete 134-test Frontier planning cl
 These are correctness and evidence-continuity results. Performance claims remain deferred until the already-observed
 external JMH/storage contention clears and a clean immutable-jar bracket can be captured.
 
+The v94 inventory is the first complete post-continuation audit of all 117 Theme cells under the final 16 GiB JVM,
+8 GiB audit-retention ceiling, 512 MiB Frontier request budget, and 120-second process/query limits. It closes the
+former PHARMA q11 timeout and proves every emitted plan uses intact event-state identities with no scalar or session
+fallback. Three exponential cells remain explicitly resource-incomplete, which is the designed bounded-search
+outcome rather than a correctness waiver. Milestone 8 is still in progress: the resumable stable-alternative
+execution campaign initially rejected aggregate alternatives because their raw physical identity included a parser
+nonce. The v95 focused MEDICAL_RECORDS q2 campaign closes that cross-process defect for all 13 alternatives with
+identical result bags and zero regret. The fresh full v95 inventory has now reproduced all 117 v94 cell outcomes,
+root counts, minimum selections, and intact event-state continuity without a timeout. Its authenticated execution
+phase must compute complete regret for all exact inventories, followed by the six fixed-plan cells and
+the still-open matched planning-time/allocation gates. No acceptance threshold has been weakened and no policy or
+rewrite was changed to improve a benchmark.
+
 ## Context and Orientation
 
 Work from the repository root. RDF4J's public query algebra is `TupleExpr`, defined in the query-algebra model module.
@@ -2619,6 +2729,19 @@ Use the supported benchmark wrapper for focused measurements. Examples are:
       --class org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCascadesSearchBenchmark \
       --method plan --enable-jfr
 
+Run and then resume the authenticated v95 plan-quality campaign with the exact frozen jar and budgets below. The
+runner rejects stale jar digests, command settings, stable IDs, or result fingerprints before it retains prior work,
+and each child process remains externally capped at 120 seconds:
+
+    python3 scripts/run-theme-plan-quality-campaign.py \
+      --jar /private/tmp/rdf4j-lmdb-frontier-v95-20260814-0108.jar \
+      --store-root profiles/lmdb-opt/final-campaign/performance/store-baseline \
+      --results profiles/lmdb-opt/final-campaign/performance/plan-quality-v95-all-p512m-c8g-20260814 \
+      --summary profiles/lmdb-opt/final-campaign/performance/plan-quality-v95-all-p512m-c8g-20260814-summary.json \
+      --timeout-seconds 120 --query-timeout-seconds 120 --dominated-samples 2 \
+      --warmups 5 --measurements 20 --max-retained-bytes 8589934592 \
+      --frontier-query-memory-bytes 536870912 --resume
+
 Record JDK, hardware, store/dataset digest, evidence mode, JVM flags, forks, warmups, measurements, benchmark JSON,
 allocation profile, and JFR path. Compare fixed-plan execution separately from preparation. Profile before changing a
 hot path and retain only changes supported by both the semantic contract and matched evidence.
@@ -2762,6 +2885,15 @@ generates `docs/query-optimizer/rewrite-and-optimization-catalog.md`; Milestone 
 evidence under `profiles/lmdb-opt/leo-plus-prototype/`; Milestone 8 freezes its comparison inputs in
 `profiles/lmdb-opt/final-campaign/baseline-manifest.json` before claiming speedup or regret.
 
+The current Milestone 8 candidate is frozen as
+`/private/tmp/rdf4j-lmdb-frontier-v95-20260814-0108.jar` with SHA-256
+`450776ccb4fb44e703376ce7c4875dd48c663b7f71056835eaaad7dee9717c40`. Its focused MEDICAL_RECORDS q2 inventory
+and all 13 authenticated fixed-alternative executions live under
+`profiles/lmdb-opt/final-campaign/performance/plan-quality-v95-medical-q2-p512m-c8g-20260814`; the exact command,
+stable IDs, common result-bag fingerprint, zero regret, focused tests, and no-fallback evidence are appended to
+`initial-evidence.txt`. The v94 full inventory remains immutable historical evidence for all 117 post-continuation
+searches; v95 supersedes it for cross-process execution identity and final regret.
+
 `optimizer-rca-and-roadmap-2026-07-07.md`, `hypergraph-plan.md`, and
 `papers2/papers/docs/sparql_query_rewrite_catalog.md` are historical/reference inputs with explicit non-governing
 banners. They may supply diagnosis or literature, but this file decides architecture and execution order.
@@ -2899,3 +3031,23 @@ lineage, memo-only worklist, and learning-feature continuity repairs, together w
 134-test evidence. The revision explicitly keeps the timing and corpus gates open while unrelated JMH and storage
 work contaminate the host; it does not reinterpret that external constraint as permission to suppress a candidate or
 replace Frontier state with scalar costing.
+
+Plan revision note (2026-08-13 / Håvard and Codex): recorded the v81-v94 exact-continuation, complete-vector,
+metric-sharing, typed-resource, aggregate-wrapper, exact-zero, and mask-ordering repairs; froze the v94 jar and its
+117-cell inventory audit; and advanced Milestone 8 to authenticated alternative execution. The revision keeps the
+regret, fixed-execution, absolute planning, and tenfold aggregate gates open and explicitly rejects size-, shape-,
+query-, budget-, or benchmark-specific heuristics.
+
+Plan revision note (2026-08-14 / Håvard and Codex): repaired cross-process executable identity with the existing
+lossless alpha-equivalent packed representation, made typed evidence realization atomic, froze v95, and proved all
+13 MEDICAL_RECORDS q2 alternatives authenticate and return one result bag with zero measured regret. The full v95
+inventory then reproduced 114 exact completions, three typed resource limits, global-minimum policy selections, and
+190,107 intact Frontier event states across all 117 cells. The revision adds no query-shape, size, cost, or benchmark
+heuristic and keeps the full execution-regret and performance gates open.
+
+Plan revision note (2026-08-14 / Håvard and Codex): the authenticated v95 execution campaign isolated q3 drift to
+literal UUID-backed anonymous binding names in otherwise deterministic Frontier resampling seeds, despite identical
+durable synopsis bytes. Seed schedule v2 alpha-normalizes only the sampling identity to ordered binding slots and
+mask shape; exact names remain in runtime state equality and lookup. Frozen v96 reproduces every q3 inventory field
+across fresh JVMs and authenticates all 16 execution alternatives with one common result bag. The revision introduces
+no plan-selection heuristic and keeps saturated regret and the remaining performance gates open.

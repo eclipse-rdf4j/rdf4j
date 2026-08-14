@@ -2233,6 +2233,8 @@ class LmdbFrontierPlanningIntegrationTest {
 							first.plannedStringMetric("plannedFrontierFactorSurfaceRefinementDetail"));
 					assertEquals("measure_unbiased",
 							reverseOrder.plannedStringMetric("plannedFrontierGuarantee"));
+					assertEquals(0, session.exactContinuationIdentity(reverseOrder),
+							"sampled evidence must not claim an exact continuation congruence");
 					assertNotEquals(reverseOrder.evidenceStateId(), first.evidenceStateId(),
 							"sampled evidence must not be collapsed into a database-exact continuation state");
 					assertEquals(
@@ -2295,6 +2297,10 @@ class LmdbFrontierPlanningIntegrationTest {
 							rightThenLeft.plannedStringMetric("plannedFrontierGuarantee"));
 					assertEquals(leftThenRight.evidenceStateId(), rightThenLeft.evidenceStateId(),
 							"commuted derivations of one exact finite relation must publish one continuation state");
+					assertEquals(leftThenRight.evidenceStateId(), session.exactContinuationIdentity(leftThenRight),
+							"a canonical database-exact payload is a complete continuation congruence certificate");
+					assertEquals(rightThenLeft.evidenceStateId(), session.exactContinuationIdentity(rightThenLeft),
+							"commuted exact derivations must publish the same continuation certificate");
 				}
 			}
 		} finally {

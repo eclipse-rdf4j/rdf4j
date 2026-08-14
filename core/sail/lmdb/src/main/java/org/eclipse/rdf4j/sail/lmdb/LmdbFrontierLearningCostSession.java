@@ -66,6 +66,11 @@ final class LmdbFrontierLearningCostSession implements PackedCostSession {
 	}
 
 	@Override
+	public int exactContinuationIdentity(PackedCostEstimate estimate) {
+		return delegate.exactContinuationIdentity(estimate);
+	}
+
+	@Override
 	public FrontierEvidenceBundle detachEvidence(int[] evidenceStateIds) {
 		return delegate.detachEvidence(evidenceStateIds);
 	}

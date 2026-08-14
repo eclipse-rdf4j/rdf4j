@@ -810,6 +810,42 @@ class PackedCostSessionLifecycleTest {
 	}
 
 	@Test
+	void idOnlyRealizationCannotRelabelTypedEvidence() {
+		PackedCostSession provider = new PackedCostSession() {
+			@Override
+			public int realizeEvidenceState(int evidenceStateId) {
+				return evidenceStateId + 1;
+			}
+
+			@Override
+			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises evidence realization only");
+			}
+
+			@Override
+			public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises evidence realization only");
+			}
+
+			@Override
+			public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+				throw new AssertionError("this fixture exercises evidence realization only");
+			}
+		};
+		PackedCostEstimate evidence = new PackedCostEstimate();
+		evidence.setRows(2.0d, 2.0d);
+		evidence.setEvidenceStateId(7);
+		evidence.setEvidenceGuarantee(EvidenceGuarantee.DATABASE_EXACT);
+		evidence.setEvidenceDisposition(FrontierStateDisposition.BOUND_ONLY);
+
+		PackedMemoInvariantException failure = assertThrows(PackedMemoInvariantException.class,
+				() -> provider.realizeEvidenceState(evidence));
+
+		assertTrue(failure.getMessage().contains("without realizing its guarantee and disposition"));
+		assertEquals(7, evidence.evidenceStateId(), "a rejected alias must leave the typed source state intact");
+	}
+
+	@Test
 	void boundOnlyFactorDescriptorRemainsDeferredDuringParameterizedAppend() {
 		int[] observedStateIds = new int[2];
 		PackedCostSession provider = new PackedCostSession() {
