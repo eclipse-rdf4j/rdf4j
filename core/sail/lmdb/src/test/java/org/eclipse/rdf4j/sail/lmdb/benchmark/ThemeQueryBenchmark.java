@@ -128,7 +128,7 @@ public class ThemeQueryBenchmark {
 	@Param({ "false" })
 	public boolean sketchEstimatorEnabled;
 
-	@Param({  "Telemetry" })
+	@Param({ "Telemetry" })
 	public String queryExplanationLevel;
 
 	boolean loadOnlySelectedTheme;
@@ -198,9 +198,10 @@ public class ThemeQueryBenchmark {
 
 		if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				System.out.println("### "+queryExplanationLevel+" Query ###");
-				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.valueOf(queryExplanationLevel));
-				 explain = connection.prepareTupleQuery(query).explain(Explanation.Level.valueOf(queryExplanationLevel));
+				System.out.println("### " + queryExplanationLevel + " Query ###");
+				Explanation explain = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.valueOf(queryExplanationLevel));
+				explain = connection.prepareTupleQuery(query).explain(Explanation.Level.valueOf(queryExplanationLevel));
 				System.out.println(explain);
 				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
 				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
@@ -389,7 +390,8 @@ public class ThemeQueryBenchmark {
 		}
 	}
 
-	private Explanation getExplain(int maxExecutionTimeSeconds, SailRepositoryConnection connection, Explanation.Level level) {
+	private Explanation getExplain(int maxExecutionTimeSeconds, SailRepositoryConnection connection,
+			Explanation.Level level) {
 		TupleQuery tupleQuery = connection.prepareTupleQuery(query);
 		tupleQuery.setMaxExecutionTime(maxExecutionTimeSeconds);
 		Explanation explain = tupleQuery.explain(level);

@@ -79,21 +79,10 @@ public final class KernelRuntime {
 		return year << 9 | month << 5 | day;
 	}
 
+	private static final int COMPARISON_TRUTH_TABLE = 0x0032_18A9;
+
 	private static boolean compareResult(int comparison, int op) {
-		switch (op) {
-		case 0:
-			return comparison == 0;
-		case 1:
-			return comparison != 0;
-		case 2:
-			return comparison < 0;
-		case 3:
-			return comparison <= 0;
-		case 4:
-			return comparison > 0;
-		default:
-			return comparison >= 0;
-		}
+		return ((COMPARISON_TRUTH_TABLE >>> ((op << 2) + ((comparison >> 31) | (-comparison >>> 31)))) & 1) != 0;
 	}
 
 	/** True when the array is in unsigned nondecreasing order, including adjacent duplicate ids. */
