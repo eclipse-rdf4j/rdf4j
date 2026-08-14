@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.IRI;
 class CoreDatatypeHelper {
 
 	private static Map<IRI, CoreDatatype> reverseLookup;
+	private static Map<String, CoreDatatype> reverseStringLookup;
 
 	static Map<IRI, CoreDatatype> getReverseLookup() {
 
@@ -43,6 +44,29 @@ class CoreDatatypeHelper {
 		}
 
 		return reverseLookup;
+	}
+
+	static Map<String, CoreDatatype> getReverseStringLookup() {
+
+		if (reverseStringLookup == null) {
+			HashMap<String, CoreDatatype> map = new HashMap<>();
+
+			for (CoreDatatype value : CoreDatatype.RDF.values()) {
+				map.put(value.getIri().toString(), value);
+			}
+
+			for (CoreDatatype value : CoreDatatype.GEO.values()) {
+				map.put(value.getIri().toString(), value);
+			}
+
+			for (CoreDatatype value : CoreDatatype.XSD.values()) {
+				map.put(value.getIri().toString(), value);
+			}
+
+			reverseStringLookup = Collections.unmodifiableMap(map);
+		}
+
+		return reverseStringLookup;
 	}
 
 }

@@ -54,8 +54,8 @@ final class LmdbNativeJaninoCodegen {
 	static final String SYNCHRONOUS_PROPERTY = "rdf4j.lmdb.janinoCodegen.synchronous";
 	static final String FAIL_ON_ERROR_PROPERTY = "rdf4j.lmdb.janinoCodegen.failOnError";
 
-	static final long DEFAULT_THRESHOLD_ROWS = 128;
-	static final int DEFAULT_MAX_ENTRIES = 512;
+	static final long DEFAULT_THRESHOLD_ROWS = 0;
+	static final int DEFAULT_MAX_ENTRIES = 4096;
 
 	static final AtomicLong COMPILATIONS = new AtomicLong();
 	static final AtomicLong COMPILE_FAILURES = new AtomicLong();

@@ -482,21 +482,8 @@ final class LmdbNativeValueCodec {
 		if (iri == null) {
 			return CoreDatatype.NONE;
 		}
-		for (CoreDatatype.XSD datatype : CoreDatatype.XSD.values()) {
-			if (datatype.getIri().stringValue().equals(iri)) {
-				return datatype;
-			}
-		}
-		for (CoreDatatype.RDF datatype : CoreDatatype.RDF.values()) {
-			if (datatype.getIri().stringValue().equals(iri)) {
-				return datatype;
-			}
-		}
-		for (CoreDatatype.GEO datatype : CoreDatatype.GEO.values()) {
-			if (datatype.getIri().stringValue().equals(iri)) {
-				return datatype;
-			}
-		}
+		CoreDatatype.from(iri);
+
 		return CoreDatatype.NONE;
 	}
 

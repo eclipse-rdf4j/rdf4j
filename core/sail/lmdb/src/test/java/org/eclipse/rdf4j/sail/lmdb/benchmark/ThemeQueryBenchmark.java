@@ -72,7 +72,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 4)
+@Warmup(iterations = 4, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 4)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
 @Measurement(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 3)
@@ -128,7 +128,7 @@ public class ThemeQueryBenchmark {
 	@Param({ "false" })
 	public boolean sketchEstimatorEnabled;
 
-	@Param({ "Timed" })
+	@Param({  "Telemetry" })
 	public String queryExplanationLevel;
 
 	boolean loadOnlySelectedTheme;
@@ -198,8 +198,9 @@ public class ThemeQueryBenchmark {
 
 		if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				System.out.println("### Timed Query ###");
-				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Timed);
+				System.out.println("### "+queryExplanationLevel+" Query ###");
+				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.valueOf(queryExplanationLevel));
+				 explain = connection.prepareTupleQuery(query).explain(Explanation.Level.valueOf(queryExplanationLevel));
 				System.out.println(explain);
 				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
 				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
@@ -368,9 +369,8 @@ public class ThemeQueryBenchmark {
 		try {
 			Explanation.Level level = benchmarkExplanationLevel(timedOut);
 			try (var connection = repository.getConnection()) {
-				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
-				tupleQuery.setMaxExecutionTime(maxExecutionTimeSeconds);
-				Explanation explain = tupleQuery.explain(level);
+				Explanation explain = getExplain(maxExecutionTimeSeconds, connection, level);
+				explain = getExplain(maxExecutionTimeSeconds, connection, level);
 				System.out.println();
 				System.out.println("### Query Explanation After Benchmark"
 						+ " theme=" + themeName
@@ -387,6 +387,13 @@ public class ThemeQueryBenchmark {
 				throw e;
 			}
 		}
+	}
+
+	private Explanation getExplain(int maxExecutionTimeSeconds, SailRepositoryConnection connection, Explanation.Level level) {
+		TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+		tupleQuery.setMaxExecutionTime(maxExecutionTimeSeconds);
+		Explanation explain = tupleQuery.explain(level);
+		return explain;
 	}
 
 	Explanation.Level benchmarkExplanationLevel(boolean timedOut) {
