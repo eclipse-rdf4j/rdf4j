@@ -144,9 +144,12 @@ final class LmdbNativeAdaptiveCostModel {
 		}
 
 		static Configuration system() {
-			return new Configuration(Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true")),
+			// Learned dispatch and exploration are opt-in, matching the LmdbRuntimeProperties registry and the
+			// legacy calibration policy ("normal execution never enables it implicitly"); recording stays on so
+			// that opting in starts from a warm model instead of a cold one.
+			return new Configuration(Boolean.getBoolean(ENABLED_PROPERTY),
 					Boolean.parseBoolean(System.getProperty(RECORD_PROPERTY, "true")),
-					Boolean.parseBoolean(System.getProperty(EXPLORE_PROPERTY, "true")),
+					Boolean.getBoolean(EXPLORE_PROPERTY),
 					parsePermille(System.getProperty(EXPLORATION_PERMILLE_PROPERTY, "10")));
 		}
 

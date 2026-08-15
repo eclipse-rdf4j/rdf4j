@@ -170,6 +170,33 @@ public class LmdbNativeFactorizedReorderTest {
 	}
 
 	/**
+	 * Chained root swaps must respect the 2x band against the <em>original</em> root, not just the previous one:
+	 * estimates 40 → 21 → 11 admit each hop individually (pairwise within 2x) yet land 40/11 ≈ 3.6x away from the
+	 * incumbent root. The drift order [vProducer, xCheck, x, vCheck] frees three branches and is reachable only through
+	 * the chained swaps, so without a final-state band check it wins; with the band enforced against the incumbent root
+	 * the only adoptable improvement is the root-preserving one-move order [x, vProducer, xCheck, vCheck].
+	 */
+	@Test
+	public void chainedRootSwapsStayWithinBandOfOriginalRoot() {
+		PatternPlan x = pattern(Term.slot(S), 7, Term.constant(101), 40);
+		PatternPlan xCheck = pattern(Term.slot(S), 11, Term.constant(102), 21);
+		PatternPlan vProducer = pattern(Term.slot(S), 13, Term.slot(X), 11);
+		PatternPlan vCheck = pattern(Term.slot(X), 17, Term.constant(103), 5);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { x, xCheck, vProducer, vCheck }, new MaskedFilter[0]);
+
+		// precondition: the sink leaves the compiler order untouched
+		assertThat(plan.derivedFactorizedPlan(0L).order).containsExactly(x, xCheck, vProducer, vCheck);
+
+		MultiJoinPlan.OrderedPlan selected = LmdbNativeFactorizedRows.selectFactorizedOrder(plan, 0L, 0L, 0);
+
+		assertThat(selected.order)
+				.as("two chained root swaps (40→21→11) drift outside the 2x band of the original root; the band "
+						+ "must hold against the incumbent root, so only the root-preserving one-move improvement "
+						+ "may be adopted")
+				.containsExactly(x, vProducer, xCheck, vCheck);
+	}
+
+	/**
 	 * Pruning-floor veto: identical shape to the adopted root swap, but the displaced root (20) is more selective than
 	 * the only pattern that would remain in the flat prefix (25), so moving it out of the prefix is refused even though
 	 * the estimate band (20 vs 25) would allow the swap.

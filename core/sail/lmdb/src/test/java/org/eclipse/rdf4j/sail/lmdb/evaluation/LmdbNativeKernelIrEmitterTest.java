@@ -729,6 +729,41 @@ class LmdbNativeKernelIrEmitterTest {
 		assertEquals(-1L, rows.get(0)[1]);
 	}
 
+	/**
+	 * Two distinct terms that compare equal (e.g. {@code "1"^^xsd:integer} vs {@code "1"^^xsd:decimal}) make the
+	 * surviving MIN/MAX representative depend on the kernel's enumeration order, which need not match the interpreted
+	 * chain's encounter order. The generated extrema update must route the decision through the {@code replacesWinner}
+	 * hook so the engine hooks can refuse the tie — exactly as the interpreted parallel engine
+	 * ({@code AggContext.preserveExtremaRepresentative}) and the parallel kernel merge
+	 * ({@code ParallelKernelAggregate.mergeWinner}) already do one rung up.
+	 */
+	@Test
+	void idPreservingMinRefusesDistinctTermExtremaTiesThroughTheHook() {
+		Kernel ir = new Kernel(1, List.of(new EnumerateDomain(0, 0)),
+				new Aggregate(new int[0], new AggregateOutput[] { AggregateOutput.minId(0) }, null,
+						OutputMods.none()));
+		assertThrows(EncounterOrderFallback.class,
+				() -> run(ir, context().domains(new long[] { 5, 9 }).hooks(new TieHooks())),
+				"distinct ids 5 and 9 compare equal: the tie must be refused, not silently resolved by "
+						+ "enumeration order");
+	}
+
+	/** Every pair of distinct terms compares equal; the winner decision mirrors the production hooks' refusal. */
+	private static final class TieHooks extends TestHooks {
+		@Override
+		public int compareValues(long left, long right) {
+			return 0;
+		}
+
+		public boolean replacesWinner(long candidate, long incumbent, boolean min) {
+			int comparison = compareValues(candidate, incumbent);
+			if (comparison == 0 && candidate != incumbent) {
+				throw EncounterOrderFallback.distinctTermExtremaTie();
+			}
+			return min ? comparison < 0 : comparison > 0;
+		}
+	}
+
 	@Test
 	void multiColumnGroupKeysCountDuplicateEdges() throws Exception {
 		NativeLmdbQuerySource.NativeAdjacency duplicates = new FixtureAdjacency(new long[][] { { 7, 8, 8, 9 } });

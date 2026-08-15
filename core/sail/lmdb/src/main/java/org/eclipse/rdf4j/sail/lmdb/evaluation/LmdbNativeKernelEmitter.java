@@ -1711,18 +1711,19 @@ final class LmdbNativeKernelEmitter {
 					break;
 				case LmdbNativeKernelIr.AGG_MIN_ID:
 				case LmdbNativeKernelIr.AGG_MAX_ID:
+					// replacesWinner (not an inline compare) so the hooks can refuse distinct-term extrema ties
 					source.append("        if (")
 							.append(value)
 							.append(" != -1L) {\n")
 							.append("            if (!agB")
 							.append(i)
-							.append("[g] || hooks.compareValues(")
+							.append("[g] || hooks.replacesWinner(")
 							.append(value)
 							.append(", agW")
 							.append(i)
-							.append("[g]) ")
-							.append(output.kind == LmdbNativeKernelIr.AGG_MIN_ID ? "<" : ">")
-							.append(" 0) {\n")
+							.append("[g], ")
+							.append(output.kind == LmdbNativeKernelIr.AGG_MIN_ID ? "true" : "false")
+							.append(")) {\n")
 							.append("                agW")
 							.append(i)
 							.append("[g] = ")

@@ -513,7 +513,10 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 
 		// Bounded top-k under ORDER BY + LIMIT: keep only the best offset+limit rows while scanning. The
 		// array-safe guard protects every narrowing conversion; memory admission below replaces the old fixed cliff.
-		long topK = safeTopKCapacity(emitCap, sortLayout.liveToPlan.length) ? emitCap : -1L;
+		// DISTINCT with an unprojected sort key must take the full sort instead: its dedup runs before the sort in
+		// producer encounter order, which keeps an arbitrary representative per projected key where SPARQL requires
+		// the best-sorted one.
+		long topK = safeTopKCapacity(emitCap, sortLayout.liveToPlan.length) && topKDistinctSafe() ? emitCap : -1L;
 		if (topK >= 0) {
 			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_ORDERED_TOP_K);
 			LmdbNativeAttemptMetrics sortMetrics = explainSortMetrics();
@@ -645,6 +648,31 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	private static boolean safeTopKCapacity(long emitCap, int slotCount) {
 		return emitCap >= 0L && emitCap != Long.MAX_VALUE && slotCount > 0
 				&& emitCap < Integer.MAX_VALUE / slotCount;
+	}
+
+	/**
+	 * The top-K tiers dedup DISTINCT rows before the sort, in producer encounter order, keyed on the projected slots.
+	 * That is only sound when every sort key is itself projected: duplicates then carry identical sort keys, so the
+	 * surviving representative cannot change the membership or order of the top slice. With an unprojected sort key
+	 * SPARQL keeps each projected key's best-sorted row, which only the full sort's post-sort dedup guarantees.
+	 */
+	private boolean topKDistinctSafe() {
+		if (!distinct) {
+			return true;
+		}
+		for (int orderSlot : orderSlots) {
+			boolean projected = false;
+			for (int sourceSlot : sourceSlots) {
+				if (sourceSlot == orderSlot) {
+					projected = true;
+					break;
+				}
+			}
+			if (!projected) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private LmdbNativeAttemptMetrics explainSortMetrics() {

@@ -201,6 +201,23 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		return residuals[residualId].filter.accept(scratch);
 	}
 
+	/**
+	 * Refuses distinct-term extrema ties exactly as the interpreted parallel engine
+	 * ({@code AggContext.preserveExtremaRepresentative}) and the parallel kernel merge
+	 * ({@code LmdbNativeParallelKernelAggregate.mergeWinner}) do: two different ids that compare equal would leave the
+	 * surviving MIN/MAX representative dependent on the kernel's enumeration order, which need not match the
+	 * interpreted chain's encounter order. Declining to the sequential drain keeps the representative deterministic
+	 * across strategy choices.
+	 */
+	@Override
+	public boolean replacesWinner(long candidate, long incumbent, boolean min) {
+		int comparison = compareValues(candidate, incumbent);
+		if (comparison == 0 && candidate != incumbent) {
+			throw EncounterOrderFallback.distinctTermExtremaTie();
+		}
+		return min ? comparison < 0 : comparison > 0;
+	}
+
 	@Override
 	public int compareValues(long left, long right) {
 		if (codec != null && left != UNKNOWN && left != NULL_CONTEXT_ID && right != UNKNOWN

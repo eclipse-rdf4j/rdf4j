@@ -28,11 +28,12 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * <p>
  * Guards: only adjacent {@link PatternPlan} pairs may swap — every other child is an immovable wall; a depth-0 swap is
  * allowed only when no external morsel root is required and the incoming pattern's static estimate is within a factor-2
- * band of the displaced root's; an adopted order may not introduce a cartesian step, where connectivity counts the seed
- * mask (slots bound outside the join group at open time); and a pattern may not leave the flat prefix when it is more
- * selective than every child remaining there — the same pruning-floor rule the sink applies. The search is purely
- * structural and deterministic, so structurally equal plan instances (parallel worker forks of the same join) always
- * select the same order.
+ * band of the displaced root's — and the adopted order's final root must itself be within that band of the
+ * <em>incumbent</em> root, so chained swaps cannot drift outside it; an adopted order may not introduce a cartesian
+ * step, where connectivity counts the seed mask (slots bound outside the join group at open time); and a pattern may
+ * not leave the flat prefix when it is more selective than every child remaining there — the same pruning-floor rule
+ * the sink applies. The search is purely structural and deterministic, so structurally equal plan instances (parallel
+ * worker forks of the same join) always select the same order.
  */
 @Experimental
 final class LmdbNativeFactorizedReorder {
@@ -183,6 +184,11 @@ final class LmdbNativeFactorizedReorder {
 				continue;
 			}
 			if (best != null && (claimed < bestPayoff || (claimed == bestPayoff && moves.get(i) >= bestMoves))) {
+				continue;
+			}
+			// a changed root implies both roots are PatternPlans: only k==0 swaps between patterns move position 0
+			if (candidate[0] != incumbent[0]
+					&& !withinRootBand((PatternPlan) candidate[0], (PatternPlan) incumbent[0])) {
 				continue;
 			}
 			if (!connectivityPreserved(incumbent, incumbentDisconnected, candidate, seedMask)

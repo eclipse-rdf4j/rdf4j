@@ -42,6 +42,17 @@ public interface KernelHooks {
 	/** SPARQL ORDER BY comparison of two ids (negative/zero/positive contract like a {@code Comparator}). */
 	int compareValues(long left, long right);
 
+	/**
+	 * Whether {@code candidate} replaces {@code incumbent} as the current MIN/MAX winner. Generated extrema updates
+	 * route through this hook rather than comparing inline so an engine can refuse ties between distinct terms — two
+	 * different ids that compare equal would otherwise leave the surviving representative dependent on the kernel's
+	 * enumeration order. The default keeps the incumbent on ties.
+	 */
+	default boolean replacesWinner(long candidate, long incumbent, boolean min) {
+		int comparison = compareValues(candidate, incumbent);
+		return min ? comparison < 0 : comparison > 0;
+	}
+
 	/** True when the id decodes to a numeric literal usable in arithmetic aggregates. */
 	boolean isNumeric(long id);
 

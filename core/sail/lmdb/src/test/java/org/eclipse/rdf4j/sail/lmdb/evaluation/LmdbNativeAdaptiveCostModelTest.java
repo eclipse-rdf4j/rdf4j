@@ -168,6 +168,37 @@ class LmdbNativeAdaptiveCostModelTest {
 		assertEquals(before + 1, store.evidenceCount(key("bounded", 0)));
 	}
 
+	/**
+	 * The runtime-properties registry ({@code LmdbRuntimeProperties}) and the legacy calibration policy both declare
+	 * learned dispatch and exploration opt-in — "normal execution never enables it implicitly" — while recording stays
+	 * on so that opting in starts from a warm model. The adaptive configuration must agree with that contract.
+	 */
+	@Test
+	void systemConfigurationKeepsLearnedDispatchAndExplorationOptIn() {
+		String enabled = System.clearProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY);
+		String explore = System.clearProperty(LmdbNativeAdaptiveCostModel.EXPLORE_PROPERTY);
+		String record = System.clearProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY);
+		try {
+			LmdbNativeAdaptiveCostModel.Configuration configuration = LmdbNativeAdaptiveCostModel.Configuration
+					.system();
+			assertFalse(configuration.enabled(), "learned dispatch is opt-in");
+			assertFalse(configuration.explore(), "exploration is never implicit");
+			assertTrue(configuration.record(), "recording stays on so opting in starts warm");
+		} finally {
+			restoreProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, enabled);
+			restoreProperty(LmdbNativeAdaptiveCostModel.EXPLORE_PROPERTY, explore);
+			restoreProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, record);
+		}
+	}
+
+	private static void restoreProperty(String key, String value) {
+		if (value == null) {
+			System.clearProperty(key);
+		} else {
+			System.setProperty(key, value);
+		}
+	}
+
 	@Test
 	void deterministicExplorationRespectsOnePercentBudget() {
 		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();

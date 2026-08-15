@@ -69,13 +69,7 @@ final class LmdbNativeAdaptiveArbitration {
 					"candidate set contains unknown features; retained structural preference for the whole set");
 		}
 
-		Priced<T> selected = priced.get(0);
-		for (int index = 1; index < priced.size(); index++) {
-			Priced<T> rival = priced.get(index);
-			if (strictlyDominates(rival, selected)) {
-				selected = rival;
-			}
-		}
+		Priced<T> selected = selectWithinFrontier(priced);
 		if (selected.candidate != incumbent) {
 			return new Choice<>(selected.candidate, selected.prediction, false, "strict 95% interval domination");
 		}
@@ -118,6 +112,29 @@ final class LmdbNativeAdaptiveArbitration {
 		}
 	}
 
+	/**
+	 * The winner among the priced candidates, which arrive sorted by static preference. Documented contract
+	 * ({@link LmdbNativeStrategyPreference}, mirrored from the legacy arbiter's frontier rule): dominated candidates
+	 * are removed first, and static preference decides among the non-dominated survivors — a candidate may only lose by
+	 * being strictly dominated itself, never because some rival happened to dominate the current selection.
+	 */
+	static <T> Priced<T> selectWithinFrontier(List<Priced<T>> priced) {
+		for (Priced<T> candidate : priced) {
+			boolean dominated = false;
+			for (Priced<T> rival : priced) {
+				if (rival != candidate && strictlyDominates(rival, candidate)) {
+					dominated = true;
+					break;
+				}
+			}
+			if (!dominated) {
+				return candidate;
+			}
+		}
+		// unreachable: interval domination is acyclic, so the candidate with the smallest low bound never loses
+		return priced.get(0);
+	}
+
 	private static boolean strictlyDominates(Priced<?> candidate, Priced<?> incumbent) {
 		if (!candidate.prediction.learnedDominanceAllowed() || candidate.prediction.quarantined()) {
 			return false;
@@ -132,6 +149,6 @@ final class LmdbNativeAdaptiveArbitration {
 		return candidate.prediction.high95Nanos() < incumbent.prediction.low95Nanos();
 	}
 
-	private record Priced<T> (Candidate<T> candidate, LmdbNativeCostPrediction prediction) {
+	record Priced<T> (Candidate<T> candidate, LmdbNativeCostPrediction prediction) {
 	}
 }

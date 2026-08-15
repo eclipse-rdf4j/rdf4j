@@ -393,8 +393,13 @@ final class LmdbNativePackedFtree {
 		return finished;
 	}
 
-	/** A decline outranks nothing: any real failure must win so it is rethrown rather than silently retried. */
-	private static Throwable addParallelFailure(Throwable primary, Throwable next) {
+	/**
+	 * A decline outranks nothing: any real failure must win so it is rethrown rather than silently retried. Declines
+	 * are pure control flow and are dropped rather than attached as suppressed — the {@link EncounterOrderFallback}
+	 * unwinder reports every suppressed non-fallback throwable as a real failure to rethrow, so a suppressed decline
+	 * would turn into a user-facing error and skip the sequential fallback.
+	 */
+	static Throwable addParallelFailure(Throwable primary, Throwable next) {
 		if (primary == null) {
 			return next;
 		}
@@ -402,8 +407,10 @@ final class LmdbNativePackedFtree {
 			return primary;
 		}
 		if (primary instanceof PackedParallelDecline && !(next instanceof PackedParallelDecline)) {
-			next.addSuppressed(primary);
 			return next;
+		}
+		if (next instanceof PackedParallelDecline && !(primary instanceof PackedParallelDecline)) {
+			return primary;
 		}
 		primary.addSuppressed(next);
 		return primary;
