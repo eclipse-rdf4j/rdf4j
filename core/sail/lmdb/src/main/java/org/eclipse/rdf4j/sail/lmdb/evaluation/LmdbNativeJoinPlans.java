@@ -252,6 +252,24 @@ final class MultiJoinPlan implements SlotPlan {
 		if (sinkUnconsumed) {
 			sunkCount = sinkUnconsumedPatterns(ordered, initialBoundMask, filters, allowedSinks);
 		}
+		return placeFilters(ordered, initialBoundMask, sunkCount);
+	}
+
+	/**
+	 * Derives the physical plan for an explicit child order chosen by the factorized local reorder
+	 * ({@link LmdbNativeFactorizedReorder}): identical filter placement rules to {@link #derive}, no sinking. The given
+	 * order must be a permutation of {@link #children}; it is cloned, never retained. The reported sunk count is the
+	 * length of the trailing run of displaced children, which nothing consumes after tail selection.
+	 */
+	OrderedPlan deriveExplicit(long initialBoundMask, SlotPlan[] explicitOrder) {
+		int sunkCount = 0;
+		for (int i = explicitOrder.length - 1; i >= 0 && explicitOrder[i] != children[i]; i--) {
+			sunkCount++;
+		}
+		return placeFilters(explicitOrder.clone(), initialBoundMask, sunkCount);
+	}
+
+	private OrderedPlan placeFilters(SlotPlan[] ordered, long initialBoundMask, int sunkCount) {
 		int[] filterDepth = new int[filters.length];
 		int[] earliestLegalDepth = new int[filters.length];
 		if (filters.length > 0) {
@@ -511,7 +529,7 @@ final class MultiJoinPlan implements SlotPlan {
 	}
 
 	/** Best-effort static row estimate for the pruning guard; NaN when the plan type has none. */
-	private static double staticEstimateOf(SlotPlan plan) {
+	static double staticEstimateOf(SlotPlan plan) {
 		if (plan instanceof PatternPlan) {
 			return ((PatternPlan) plan).staticEstimate;
 		}

@@ -469,7 +469,12 @@ class LmdbNativeParallelAggregationCleanupTest {
 		String previousThreads = System.getProperty("rdf4j.lmdb.parallel.threads");
 		String previousMaxTasks = System.getProperty("rdf4j.lmdb.parallel.maxTasks");
 		String previousThreshold = System.getProperty("rdf4j.lmdb.parallel.minRootEstimate");
+		// The repeated-slot pattern below shields the chain preflight from the factorized tail, but the local
+		// reorder would route around it (the constant-slot check becomes a per-key branch probe, correct but
+		// counted by a different seam) — pin it off so this test keeps exercising the chain preflight path.
+		String previousReorder = System.getProperty("rdf4j.lmdb.factorizedReorder.enabled");
 		try {
+			System.setProperty("rdf4j.lmdb.factorizedReorder.enabled", "false");
 			System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
 			System.setProperty("rdf4j.lmdb.parallel.threads", "2");
 			System.setProperty("rdf4j.lmdb.parallel.maxTasks", "2");
@@ -505,6 +510,7 @@ class LmdbNativeParallelAggregationCleanupTest {
 			restoreProperty("rdf4j.lmdb.parallel.threads", previousThreads);
 			restoreProperty("rdf4j.lmdb.parallel.maxTasks", previousMaxTasks);
 			restoreProperty("rdf4j.lmdb.parallel.minRootEstimate", previousThreshold);
+			restoreProperty("rdf4j.lmdb.factorizedReorder.enabled", previousReorder);
 		}
 	}
 

@@ -150,10 +150,21 @@ final class LmdbNativeFactorizedRows {
 	/**
 	 * Selects the physical order the factorized-rows split should plan against: the sunk order when the split claims
 	 * the whole sunk suffix as branches, otherwise a restricted re-derivation that returns unclaimed patterns to their
-	 * compiler positions. Shares {@link #plannedFlatCount} with {@link #tryCreate} so the two can never disagree.
+	 * compiler positions. Shares {@link #plannedFlatCount} with {@link #tryCreate} so the two can never disagree. The
+	 * settled selection is then offered to the bounded local reorder ({@link LmdbNativeFactorizedReorder}), which may
+	 * replace it with an order whose planned flat prefix is strictly shorter.
 	 */
 	static MultiJoinPlan.OrderedPlan selectFactorizedOrder(MultiJoinPlan plan, long seedMask, long requiredPrefixMask,
 			int minimumFlatCount) {
+		MultiJoinPlan.OrderedPlan selected = selectFactorizedOrderBase(plan, seedMask, requiredPrefixMask,
+				minimumFlatCount);
+		MultiJoinPlan.OrderedPlan improved = LmdbNativeFactorizedReorder.improveRows(plan, selected, seedMask,
+				requiredPrefixMask, minimumFlatCount);
+		return improved != null ? improved : selected;
+	}
+
+	private static MultiJoinPlan.OrderedPlan selectFactorizedOrderBase(MultiJoinPlan plan, long seedMask,
+			long requiredPrefixMask, int minimumFlatCount) {
 		MultiJoinPlan.OrderedPlan derived = plan.derivedFactorizedPlan(seedMask);
 		while (true) {
 			int n = derived.order.length;
@@ -171,6 +182,17 @@ final class LmdbNativeFactorizedRows {
 			// strictly shrinks each pass
 			derived = plan.deriveFactorizedRestricted(seedMask, derived.order, flatCount);
 		}
+	}
+
+	/**
+	 * Planned flat-prefix length for one derived order; {@code derived.order.length} when the split declines. Shares
+	 * {@link #analyzeSplit} and {@link #plannedFlatCount} with {@link #tryCreate} so the local reorder's probe can
+	 * never disagree with the build.
+	 */
+	static int plannedFlatCountFor(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived, long seedMask,
+			long requiredPrefixMask, int minimumFlatCount) {
+		Split split = analyzeSplit(plan, derived, seedMask);
+		return split == null ? derived.order.length : plannedFlatCount(split, requiredPrefixMask, minimumFlatCount);
 	}
 
 	private static int plannedFlatCount(Split split, long requiredPrefixMask, int minimumFlatCount) {

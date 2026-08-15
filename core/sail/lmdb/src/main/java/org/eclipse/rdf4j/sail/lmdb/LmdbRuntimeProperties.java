@@ -111,6 +111,8 @@ public final class LmdbRuntimeProperties {
 					"Use ordered merge walks for aligned chunk-pipeline probes.", UNLESS_FALSE),
 			on("Factorization", "rdf4j.lmdb.chunkPipeline.sip.enabled", "Sideways information passing",
 					"Prune chunk-pipeline scans with keys learned by downstream probes.", UNLESS_FALSE),
+			on("Factorization", "rdf4j.lmdb.factorizedReorder.enabled", "Factorized local reorder",
+					"Move up to three join patterns one position to extend the factorized tail.", UNLESS_FALSE),
 			on("Factorization", "rdf4j.lmdb.factorizedRows.chunkedPrefix.enabled", "Chunked factorized prefix",
 					"Use batched fills and memoization for factorized-row prefixes.", UNLESS_FALSE),
 			on("Factorization", "rdf4j.lmdb.factorizedRows.enabled", "Factorized rows",

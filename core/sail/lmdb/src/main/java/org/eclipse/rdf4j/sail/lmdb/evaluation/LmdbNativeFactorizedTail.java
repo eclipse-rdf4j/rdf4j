@@ -261,10 +261,26 @@ final class FactorizedTail {
 	 * branches the tail claims: a declined probe falls back to the compiler order (running the sunk order without a
 	 * tail only delays the compiler order's pruning), and a partially claimed sunk suffix is re-derived with the sink
 	 * restricted to the claimed branches so unclaimed patterns return to their compiler positions. The restriction loop
-	 * terminates because each pass strictly shrinks the sunk suffix.
+	 * terminates because each pass strictly shrinks the sunk suffix. The settled selection is then offered to the
+	 * bounded local reorder ({@link LmdbNativeFactorizedReorder}), which may replace it with an order whose probe
+	 * claims strictly more branches; the superseded probe is discarded here.
 	 */
 	static Selection select(MultiJoinPlan plan, long seedMask, int[] groupSlots, AggregateSpec[] aggregates,
 			LmdbNativeAttemptMetrics metrics) {
+		Selection selected = selectBase(plan, seedMask, groupSlots, aggregates, metrics);
+		Selection improved = LmdbNativeFactorizedReorder.improveTail(plan, selected, seedMask, groupSlots, aggregates,
+				metrics);
+		if (improved == null) {
+			return selected;
+		}
+		if (selected.tail != null) {
+			selected.tail.discardUnopenedProbe();
+		}
+		return improved;
+	}
+
+	private static Selection selectBase(MultiJoinPlan plan, long seedMask, int[] groupSlots,
+			AggregateSpec[] aggregates, LmdbNativeAttemptMetrics metrics) {
 		MultiJoinPlan.OrderedPlan derived = plan.derivedFactorizedPlan(seedMask);
 		while (true) {
 			FactorizedTail tail = probe(derived, plan.filters, seedMask, groupSlots, aggregates, metrics);
