@@ -2088,6 +2088,24 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				return end - start;
 			}
 
+			public long lowerBound(long fromOffset, long neighbor) {
+				ensureBound();
+				if (fromOffset < 0 || fromOffset > end - start) {
+					throw new IllegalArgumentException("invalid decoded lower-bound offset");
+				}
+				int low = start + (int) fromOffset;
+				int high = end;
+				while (low < high) {
+					int mid = (low + high) >>> 1;
+					if (Long.compareUnsigned(table.neighbors[mid], neighbor) < 0) {
+						low = mid + 1;
+					} else {
+						high = mid;
+					}
+				}
+				return low - start;
+			}
+
 			public int copyNeighbors(long offset, int length, long[] target, int targetOffset) {
 				ensureBound();
 				Objects.requireNonNull(target, "target");

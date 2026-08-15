@@ -509,6 +509,13 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				arbiter.offer(() -> estimatedProposal(() -> evaluateWcoj(row),
 						LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.UNKNOWN));
 			}
+			if (originalArg instanceof MultiJoinPlan packedPlan) {
+				arbiter.offer(() -> estimatedProposal(
+						() -> LmdbNativePackedFtree.tryEvaluateAggregate(packedPlan, row, groupSlots, aggregates, this,
+								explainTarget),
+						LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
+						LmdbNativePackedFtree.estimateAggregateWork(packedPlan, row, groupSlots, aggregates)));
+			}
 			if (factorized != null) {
 				MultiJoinPlan.OrderedPlan factorizedDerived = factorizedSelection.derived;
 				double factorizedCost = LmdbNativeStrategyProposal.factorizedCost(factorizedDerived,

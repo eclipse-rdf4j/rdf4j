@@ -52,6 +52,8 @@ public final class KernelContext {
 	public final NativeLmdbQuerySource.NodePredicates[] nodePredicates;
 	/** Dynamic {@code (node, runtime predicate)} probes in generator order; empty when the kernel needs none. */
 	public final NativeLmdbQuerySource.DynamicAdjacency[] dynamicAdjacencies;
+	/** Optional packed f-tree chunk for topology-specialized factorized kernels. */
+	public PackedFtreeContext packedFtree;
 
 	private static final NativeLmdbQuerySource.NodePredicates[] NO_NODE_PREDICATES = {};
 	private static final NativeLmdbQuerySource.DynamicAdjacency[] NO_DYNAMIC_ADJACENCIES = {};
@@ -135,4 +137,11 @@ public final class KernelContext {
 		}
 		return lengths;
 	}
+
+	/** Binds a packed f-tree chunk without widening the constructor surface used by existing generated kernels. */
+	public KernelContext withPackedFtree(PackedFtreeContext packedFtree) {
+		this.packedFtree = Objects.requireNonNull(packedFtree, "packedFtree");
+		return this;
+	}
+
 }

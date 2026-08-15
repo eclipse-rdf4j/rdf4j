@@ -972,6 +972,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 						LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.UNKNOWN,
 						estimatedRows(row)));
 			}
+			arbiter.offer(
+					() -> LmdbNativePackedFtree.proposeRows(multiJoin, row, retainedSlots, distinct, originalExpr));
 			arbiter.offer(() -> proposeFactorized(row, multiJoin, correlatedEntry, retainedSlots));
 			arbiter.offer(() -> proposeBatch(row, multiJoin, correlatedEntry));
 			arbiter.offer(() -> wrapCursorProposal(row, LmdbNativeParallelPipelines.propose(this, row),

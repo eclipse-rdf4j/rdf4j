@@ -221,10 +221,17 @@ final class CsfAdaptiveMemory {
 		return true;
 	}
 
+	static long usedCache = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+	static long maxCache = Runtime.getRuntime().maxMemory();
+	static long count = 0;
+
 	private static long heapHeadroom() {
-		Runtime runtime = Runtime.getRuntime();
-		long used = runtime.totalMemory() - runtime.freeMemory();
-		return runtime.maxMemory() - used;
+		if (count++ % 10 == 0) {
+			usedCache = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+			maxCache = Runtime.getRuntime().maxMemory();
+		}
+
+		return maxCache - usedCache;
 	}
 
 	private static long positiveLong(String property, long defaultValue) {

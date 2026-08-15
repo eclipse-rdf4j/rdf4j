@@ -461,6 +461,14 @@ public interface NativeLmdbQuerySource {
 
 			int copyContexts(long runOffset, int length, long[] target, int targetOffset);
 
+			/**
+			 * First offset at or after {@code fromOffset} whose unsigned {@code (neighbor, context)} pair is at least
+			 * {@code (neighbor, context)}, or {@code -1} when this cursor cannot seek.
+			 */
+			default long lowerBound(long fromOffset, long neighbor, long context) {
+				return -1L;
+			}
+
 			@Override
 			default void close() {
 			}
@@ -560,6 +568,11 @@ public interface NativeLmdbQuerySource {
 				@Override
 				public int copyContexts(long runOffset, int length, long[] target, int targetOffset) {
 					return adjacency.copyContexts(handle, runOffset, length, target, targetOffset);
+				}
+
+				@Override
+				public long lowerBound(long fromOffset, long neighbor, long context) {
+					return adjacency.lowerBound(handle, fromOffset, neighbor, context);
 				}
 			};
 		}

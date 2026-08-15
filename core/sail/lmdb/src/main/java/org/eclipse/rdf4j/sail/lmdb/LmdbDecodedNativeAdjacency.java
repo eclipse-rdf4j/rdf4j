@@ -264,6 +264,13 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 		public int copyContexts(long runOffset, int length, long[] target, int targetOffset) {
 			return row(token).copy(runOffset, length, null, 0, target, targetOffset);
 		}
+
+		@Override
+		public long lowerBound(long fromOffset, long neighbor, long context) {
+			// The decoded CSR retains only the neighbour column. Context is used solely to select an equal-neighbour
+			// incidence after this coarse seek, so seeking to the first matching neighbour is both safe and optimal.
+			return decoded.lowerBound(fromOffset, neighbor);
+		}
 	}
 
 	/** Physical key/run enumeration without logical-key re-lookup. */

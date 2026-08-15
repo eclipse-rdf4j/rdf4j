@@ -70,6 +70,9 @@ final class LmdbNativeStrategyPreference {
 			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
 			// Worst-case-optimal join: bounded below any pairwise plan on cyclic shapes.
 			LmdbNativeAttemptMetrics.PATH_WCOJ,
+			// Packed arbitrary f-trees remove sibling Cartesian products while retaining vectorized execution.
+			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
+			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
 			// Whole-stage aggregate fusion followed the prefix-run and WCOJ guards in the previous ladder.
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
 			LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS,
