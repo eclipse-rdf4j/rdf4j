@@ -153,7 +153,7 @@ final class LmdbNativeJaninoAggregate {
 				adjacencies[1 + i] = adjacency;
 			}
 			long opens = SHAPE_OPENS.computeIfAbsent(shape.shapeKey, key -> new AtomicLong()).incrementAndGet();
-			JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(row.source.idSpace(), shape.shapeKey,
+			JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(shape.shapeKey,
 					shape.className, () -> emitSource(shape), opens * ROWS_PER_OPEN_ESTIMATE);
 			if (kernel == null) {
 				probe.close();

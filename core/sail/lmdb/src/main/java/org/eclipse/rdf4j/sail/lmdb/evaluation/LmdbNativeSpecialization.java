@@ -28,7 +28,6 @@ import java.lang.invoke.MethodHandles;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.WeakHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -84,13 +83,15 @@ final class LmdbNativeSpecialization {
 	private static final MethodTypeDesc MTD_APPLY = MethodTypeDesc.of(CD_int, CD_BATCH, CD_ROW, CD_FILTER);
 	private static final MethodTypeDesc MTD_ACCEPT = MethodTypeDesc.of(ClassDesc.ofDescriptor("Z"), CD_ROW);
 
-	private static final Object CACHE_REGISTRY_LOCK = new Object();
 	private static final ReentrantReadWriteLock COMPILER_LIFECYCLE_LOCK = new ReentrantReadWriteLock();
 	private static final Lock COMPILER_LIFECYCLE_READ = COMPILER_LIFECYCLE_LOCK.readLock();
 	private static final Lock COMPILER_LIFECYCLE_WRITE = COMPILER_LIFECYCLE_LOCK.writeLock();
-	private static final Object DEFAULT_CACHE_OWNER = new Object();
-	/** Weak keys and owner-free values ensure generated kernels never retain a closed store or its id space. */
-	private static final WeakHashMap<Object, StoreCache> STORE_CACHES = new WeakHashMap<>();
+	/**
+	 * The one process-wide filter-kernel cache. Kernels are pure shape — keyed by (slotCount, readMask), with the
+	 * filter passed at call time — so a compiled class never references a store or an id space and is safely shared
+	 * across stores and synthetic-value sources; the LRU entry and byte caps are the only bounds needed.
+	 */
+	private static final StoreCache CACHE = new StoreCache();
 	private static final AtomicInteger CLASS_IDS = new AtomicInteger();
 	private static volatile ExecutorService compiler;
 	/** Test-only interleaving hook: runs on the compiler thread immediately before hidden-class construction. */
@@ -112,7 +113,7 @@ final class LmdbNativeSpecialization {
 		int candidates = batch.selectedCount;
 		long normalizedMask = normalizeReadMask(batch.slotCount, readMask);
 		NativeBatchFilterKernel kernel = normalizedMask < 0L ? null
-				: filterKernel(cacheOwner(row), batch.slotCount, normalizedMask, observedRows);
+				: filterKernel(batch.slotCount, normalizedMask, observedRows);
 		if (kernel != null) {
 			int accepted = kernel.apply(batch, row, filter);
 			SPECIALIZED_ROWS.addAndGet(candidates);
@@ -130,10 +131,10 @@ final class LmdbNativeSpecialization {
 	}
 
 	static NativeBatchFilterKernel filterKernel(int slotCount, long observedRows) {
-		return filterKernel(DEFAULT_CACHE_OWNER, slotCount, allSlotsMask(slotCount), observedRows);
+		return filterKernel(slotCount, allSlotsMask(slotCount), observedRows);
 	}
 
-	static NativeBatchFilterKernel filterKernel(Object cacheOwner, int slotCount, long readMask, long observedRows) {
+	static NativeBatchFilterKernel filterKernel(int slotCount, long readMask, long observedRows) {
 		if (!enabled() || slotCount < 0 || slotCount > 60
 				|| observedRows < Long.getLong(THRESHOLD_ROWS_PROPERTY, DEFAULT_THRESHOLD_ROWS)) {
 			return null;
@@ -144,7 +145,7 @@ final class LmdbNativeSpecialization {
 		}
 		COMPILER_LIFECYCLE_READ.lock();
 		try {
-			StoreCache cache = storeCache(cacheOwner);
+			StoreCache cache = CACHE;
 			KernelKey key = new KernelKey(slotCount, normalizedMask);
 			Entry entry;
 			synchronized (cache) {
@@ -168,18 +169,14 @@ final class LmdbNativeSpecialization {
 
 	static NativeBatchFilterKernel awaitFilterKernel(int slotCount, long timeout, TimeUnit unit)
 			throws InterruptedException {
-		return awaitFilterKernel(DEFAULT_CACHE_OWNER, slotCount, allSlotsMask(slotCount), timeout, unit);
+		return awaitFilterKernel(slotCount, allSlotsMask(slotCount), timeout, unit);
 	}
 
-	static NativeBatchFilterKernel awaitFilterKernel(Object cacheOwner, int slotCount, long readMask, long timeout,
+	static NativeBatchFilterKernel awaitFilterKernel(int slotCount, long readMask, long timeout,
 			TimeUnit unit) throws InterruptedException {
-		StoreCache cache = existingStoreCache(cacheOwner);
-		if (cache == null) {
-			return null;
-		}
 		Entry entry;
-		synchronized (cache) {
-			entry = cache.entries.get(new KernelKey(slotCount, normalizeReadMask(slotCount, readMask)));
+		synchronized (CACHE) {
+			entry = CACHE.entries.get(new KernelKey(slotCount, normalizeReadMask(slotCount, readMask)));
 		}
 		if (entry == null) {
 			return null;
@@ -339,8 +336,9 @@ final class LmdbNativeSpecialization {
 		COMPILER_LIFECYCLE_WRITE.lock();
 		try {
 			drainCompilerForReset();
-			synchronized (CACHE_REGISTRY_LOCK) {
-				STORE_CACHES.clear();
+			synchronized (CACHE) {
+				CACHE.entries.clear();
+				CACHE.cachedBytes = 0L;
 			}
 			resetMetrics();
 			INTERPRETER_ROWS.set(0L);
@@ -382,9 +380,9 @@ final class LmdbNativeSpecialization {
 		KERNEL_EXECUTIONS.set(0L);
 	}
 
-	static int storeCacheCountForTests() {
-		synchronized (CACHE_REGISTRY_LOCK) {
-			return STORE_CACHES.size();
+	static int cachedKernelCountForTests() {
+		synchronized (CACHE) {
+			return CACHE.entries.size();
 		}
 	}
 
@@ -397,28 +395,6 @@ final class LmdbNativeSpecialization {
 			return -1L;
 		}
 		return readMask;
-	}
-
-	private static Object cacheOwner(RowState row) {
-		if (row.source == null) {
-			return DEFAULT_CACHE_OWNER;
-		}
-		Object idSpace = row.source.idSpace();
-		return idSpace == null ? row.source : idSpace;
-	}
-
-	private static StoreCache storeCache(Object owner) {
-		Object key = owner == null ? DEFAULT_CACHE_OWNER : owner;
-		synchronized (CACHE_REGISTRY_LOCK) {
-			return STORE_CACHES.computeIfAbsent(key, ignored -> new StoreCache());
-		}
-	}
-
-	private static StoreCache existingStoreCache(Object owner) {
-		Object key = owner == null ? DEFAULT_CACHE_OWNER : owner;
-		synchronized (CACHE_REGISTRY_LOCK) {
-			return STORE_CACHES.get(key);
-		}
 	}
 
 	record SpecializationMetrics(long cacheHits, long cacheMisses, long kernelExecutions) {

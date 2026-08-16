@@ -63,8 +63,7 @@ public class LmdbNativeSpecializationTest {
 			}
 		};
 
-		Object owner = new Object();
-		assertThat(LmdbNativeSpecialization.filterKernel(owner, 3, 1L, 1L)).isNull();
+		assertThat(LmdbNativeSpecialization.filterKernel(3, 1L, 1L)).isNull();
 		assertThat(compileEntered.await(30, TimeUnit.SECONDS)).isTrue();
 		CompletableFuture<Void> reset = CompletableFuture.runAsync(LmdbNativeSpecialization::resetForTests);
 		boolean resetWaited;
@@ -80,9 +79,8 @@ public class LmdbNativeSpecializationTest {
 
 		// Drain and reset once more even on the pre-fix path so no old compiler work contaminates later tests.
 		LmdbNativeSpecialization.beforeCompileForTest = null;
-		Object barrierOwner = new Object();
-		assertThat(LmdbNativeSpecialization.filterKernel(barrierOwner, 4, 1L, 1L)).isNull();
-		assertThat(LmdbNativeSpecialization.awaitFilterKernel(barrierOwner, 4, 1L, 30, TimeUnit.SECONDS)).isNotNull();
+		assertThat(LmdbNativeSpecialization.filterKernel(4, 1L, 1L)).isNull();
+		assertThat(LmdbNativeSpecialization.awaitFilterKernel(4, 1L, 30, TimeUnit.SECONDS)).isNotNull();
 		LmdbNativeSpecialization.resetForTests();
 
 		assertThat(resetWaited).as("reset must await compiler work submitted before it began").isTrue();
@@ -166,11 +164,12 @@ public class LmdbNativeSpecializationTest {
 		Random random = new Random(0x5eedL);
 
 		for (NativeBooleanFilter filter : filters) {
-			Object cacheOwner = new Object();
 			long readMask = filter.batchReadMask();
-			assertThat(LmdbNativeSpecialization.filterKernel(cacheOwner, 4, readMask, 1L)).isNull();
-			NativeBatchFilterKernel kernel = LmdbNativeSpecialization.awaitFilterKernel(cacheOwner, 4, readMask, 5,
-					TimeUnit.SECONDS);
+			// the shared cache may already hold this shape from an earlier filter with the same read mask
+			NativeBatchFilterKernel kernel = LmdbNativeSpecialization.filterKernel(4, readMask, 1L);
+			if (kernel == null) {
+				kernel = LmdbNativeSpecialization.awaitFilterKernel(4, readMask, 5, TimeUnit.SECONDS);
+			}
 			assertThat(kernel).isNotNull();
 			for (int iteration = 0; iteration < 100; iteration++) {
 				NativeBatch input = randomBatch(random, 31);
@@ -222,7 +221,6 @@ public class LmdbNativeSpecializationTest {
 
 	@Test
 	public void generatedKernelCopiesOnlyProvenReadSlots() throws Exception {
-		Object cacheOwner = new Object();
 		long readMask = 1L << 1;
 		NativeBooleanFilter filter = new NativeBooleanFilter() {
 			@Override
@@ -238,8 +236,8 @@ public class LmdbNativeSpecializationTest {
 		NativeBatch expected = batch(3, 12, 0L);
 		NativeBatch actual = batch(3, 12, 0L);
 		int expectedCount = scalarSelect(expected, row(3), filter);
-		assertThat(LmdbNativeSpecialization.filterKernel(cacheOwner, 3, readMask, 1L)).isNull();
-		NativeBatchFilterKernel kernel = LmdbNativeSpecialization.awaitFilterKernel(cacheOwner, 3, readMask, 5,
+		assertThat(LmdbNativeSpecialization.filterKernel(3, readMask, 1L)).isNull();
+		NativeBatchFilterKernel kernel = LmdbNativeSpecialization.awaitFilterKernel(3, readMask, 5,
 				TimeUnit.SECONDS);
 		RowState scratch = row(3);
 		Arrays.fill(scratch.slots, -7L);
@@ -254,20 +252,19 @@ public class LmdbNativeSpecializationTest {
 	}
 
 	@Test
-	public void kernelsAreIsolatedByStoreAndReadMask() throws Exception {
-		Object firstStore = new Object();
-		Object secondStore = new Object();
-		NativeBatchFilterKernel first = compile(firstStore, 3, 1L);
-		NativeBatchFilterKernel otherMask = compile(firstStore, 3, 2L);
-		NativeBatchFilterKernel otherStore = compile(secondStore, 3, 1L);
+	public void kernelsAreSharedAcrossStoresAndKeyedByShape() throws Exception {
+		// Kernels are pure shape — (slotCount, readMask) — so one process-wide cache serves every store:
+		// a second consumer of the same shape reuses the compiled class instead of recompiling per id space.
+		NativeBatchFilterKernel first = compile(3, 1L);
+		NativeBatchFilterKernel otherMask = compile(3, 2L);
 
-		assertThat(first).isNotSameAs(otherMask).isNotSameAs(otherStore);
-		assertThat(otherMask).isNotSameAs(otherStore);
-		assertThat(LmdbNativeSpecialization.storeCacheCountForTests()).isEqualTo(2);
+		assertThat(first).isNotSameAs(otherMask);
+		assertThat(LmdbNativeSpecialization.cachedKernelCountForTests()).isEqualTo(2);
 		assertThat(LmdbNativeSpecialization.DEFAULT_MAX_ENTRIES).isEqualTo(128);
-		assertThat(LmdbNativeSpecialization.metricsSnapshot().cacheMisses()).isEqualTo(3L);
-		assertThat(LmdbNativeSpecialization.filterKernel(firstStore, 3, 1L, 1L)).isSameAs(first);
-		assertThat(LmdbNativeSpecialization.metricsSnapshot().cacheHits()).isOne();
+		assertThat(LmdbNativeSpecialization.metricsSnapshot().cacheMisses()).isEqualTo(2L);
+		assertThat(LmdbNativeSpecialization.filterKernel(3, 1L, 1L)).isSameAs(first);
+		assertThat(LmdbNativeSpecialization.filterKernel(3, 1L, 1L)).isSameAs(first);
+		assertThat(LmdbNativeSpecialization.metricsSnapshot().cacheHits()).isEqualTo(2L);
 	}
 
 	@Test
@@ -366,9 +363,9 @@ public class LmdbNativeSpecializationTest {
 		return accepted;
 	}
 
-	private static NativeBatchFilterKernel compile(Object owner, int slotCount, long readMask) throws Exception {
-		assertThat(LmdbNativeSpecialization.filterKernel(owner, slotCount, readMask, 1L)).isNull();
-		NativeBatchFilterKernel kernel = LmdbNativeSpecialization.awaitFilterKernel(owner, slotCount, readMask, 5,
+	private static NativeBatchFilterKernel compile(int slotCount, long readMask) throws Exception {
+		assertThat(LmdbNativeSpecialization.filterKernel(slotCount, readMask, 1L)).isNull();
+		NativeBatchFilterKernel kernel = LmdbNativeSpecialization.awaitFilterKernel(slotCount, readMask, 5,
 				TimeUnit.SECONDS);
 		assertThat(kernel).isNotNull();
 		return kernel;

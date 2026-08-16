@@ -214,11 +214,10 @@ class LmdbNativeNodePredicateKernelTest {
 
 	private static List<long[]> run(Kernel ir, FixtureNodePredicates nodePredicates,
 			FixtureNodePredicates dynamic, long... constants) throws Exception {
-		Object owner = new Object();
-		JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(owner, ir.shapeKey(), ir.className(),
+		JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(ir.shapeKey(), ir.className(),
 				() -> LmdbNativeKernelEmitter.emit(ir), Long.MAX_VALUE);
 		if (kernel == null) {
-			kernel = LmdbNativeJaninoCodegen.awaitKernel(owner, ir.shapeKey(), 30, TimeUnit.SECONDS);
+			kernel = LmdbNativeJaninoCodegen.awaitKernel(ir.shapeKey(), 30, TimeUnit.SECONDS);
 		}
 		assertNotNull(kernel, "kernel did not compile; source:\n" + LmdbNativeKernelEmitter.emit(ir));
 		try {

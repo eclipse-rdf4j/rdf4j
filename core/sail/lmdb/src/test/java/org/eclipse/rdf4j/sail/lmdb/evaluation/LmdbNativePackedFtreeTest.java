@@ -492,6 +492,10 @@ class LmdbNativePackedFtreeTest {
 	}
 
 	private static LmdbNativePackedFtree.Plan manualPathPlan() {
+		return manualPathPlan(new int[0], new long[0]);
+	}
+
+	private static LmdbNativePackedFtree.Plan manualPathPlan(int[] fixedSlots, long[] fixedValues) {
 		LmdbNativePackedFtree.NodePlan c = new LmdbNativePackedFtree.NodePlan(0, 2);
 		LmdbNativePackedFtree.NodePlan b = new LmdbNativePackedFtree.NodePlan(1, 1);
 		LmdbNativePackedFtree.NodePlan a = new LmdbNativePackedFtree.NodePlan(2, 0);
@@ -506,7 +510,22 @@ class LmdbNativePackedFtreeTest {
 		d.children = new LmdbNativePackedFtree.NodePlan[] { e };
 		return new LmdbNativePackedFtree.Plan(null, c,
 				new LmdbNativePackedFtree.NodePlan[] { c, b, a, d, e },
-				new LmdbNativePackedFtree.ConstantPattern[0], 31L, new int[0], new long[0], 0D);
+				new LmdbNativePackedFtree.ConstantPattern[0], 31L, fixedSlots, fixedValues, 0D);
+	}
+
+	/**
+	 * The janino kernel cache is process-wide ({@code LmdbNativeJaninoCodegen}), so a shape key or generated source
+	 * that embedded a store id or an entry-binding value would silently evaluate one plan against another plan's data.
+	 * Two plans that differ only in their id-bearing inputs must therefore produce the same key and source.
+	 */
+	@Test
+	void topologyKeyAndGeneratedSourceAreIdFree() {
+		LmdbNativePackedFtree.Plan first = manualPathPlan(new int[0], new long[0]);
+		LmdbNativePackedFtree.Plan second = manualPathPlan(new int[] { 7 }, new long[] { 987654321L });
+		assertEquals(LmdbNativePackedFtreeJanino.topologyKeyForTest(first),
+				LmdbNativePackedFtreeJanino.topologyKeyForTest(second));
+		assertEquals(LmdbNativePackedFtreeJanino.sourceForTest(first, "IdFreeProbe"),
+				LmdbNativePackedFtreeJanino.sourceForTest(second, "IdFreeProbe"));
 	}
 
 	private static LmdbNativePackedFtree.Chunk manualPathChunk(LmdbNativePackedFtree.Plan plan) {

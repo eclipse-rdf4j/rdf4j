@@ -544,12 +544,35 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	/**
 	 * The placement mask of a filter condition: the slots the condition can read, or -1 when the condition is not
 	 * safely placeable. A filter with a complete mask may run at any join depth at which all masked slots are bound —
-	 * evaluating it later never changes the outcome because slots are write-once. Conditions containing EXISTS or a
-	 * per-evaluation expression are never placeable: EXISTS depends on which variables happen to be bound, while moving
-	 * a volatile expression changes how often it is called. Both must stay exactly where the algebra put them.
+	 * evaluating it later never changes the outcome because slots are write-once. A per-evaluation expression is never
+	 * placeable: moving a volatile expression changes how often it is called. An EXISTS is placeable only in its
+	 * snapshot-local form vouched for by {@link #isNativeRepeatable}: there its outcome is a pure function of the
+	 * correlated outer slots, all of which join the mask, while a body variable without an outer slot is the witness's
+	 * own existential and not a read of the outer row. The compiled filter resolves correlation against the same slot
+	 * table this mask is computed from, so the mask is always a superset of the compiled read set.
 	 */
 	long placeableFilterMask(ValueExpr condition) {
-		if (containsExists(condition) || !isRepeatable(condition)) {
+		if (containsExists(condition)) {
+			if (!isNativeRepeatable(condition)) {
+				return -1L;
+			}
+			long mask = 0L;
+			for (String name : conditionVarNames(condition, false)) {
+				Integer slot = slots.get(name);
+				if (slot == null) {
+					return -1L;
+				}
+				mask |= 1L << slot;
+			}
+			for (String name : conditionVarNames(condition, true)) {
+				Integer slot = slots.get(name);
+				if (slot != null) {
+					mask |= 1L << slot;
+				}
+			}
+			return mask;
+		}
+		if (!isRepeatable(condition)) {
 			return -1L;
 		}
 		long mask = 0L;
@@ -561,6 +584,34 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			mask |= 1L << slot;
 		}
 		return mask;
+	}
+
+	/**
+	 * Variable names the condition mentions, split by position: outside every EXISTS body ({@code insideExists} false,
+	 * where a read without a slot makes the condition unplaceable) or inside one ({@code insideExists} true, where a
+	 * name without a slot is the witness's own existential rather than a read).
+	 */
+	private static Set<String> conditionVarNames(ValueExpr condition, boolean insideExists) {
+		class PositionedNames extends AbstractQueryModelVisitor<RuntimeException> {
+			final java.util.HashSet<String> names = new java.util.HashSet<>();
+
+			@Override
+			public void meet(Var node) {
+				if (!insideExists && !node.hasValue()) {
+					names.add(node.getName());
+				}
+			}
+
+			@Override
+			public void meet(Exists node) {
+				if (insideExists) {
+					names.addAll(VarNameCollector.process(node.getSubQuery()));
+				}
+			}
+		}
+		PositionedNames visitor = new PositionedNames();
+		condition.visit(visitor);
+		return visitor.names;
 	}
 
 	static boolean containsExists(ValueExpr expr) {

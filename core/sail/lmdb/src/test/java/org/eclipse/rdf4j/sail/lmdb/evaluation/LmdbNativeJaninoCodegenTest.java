@@ -60,7 +60,6 @@ public class LmdbNativeJaninoCodegenTest {
 			+ "    }\n"
 			+ "}\n";
 
-	private final Object owner = new Object();
 	private String previousEnabled;
 	private String previousThreshold;
 	private String previousMaxEntries;
@@ -103,11 +102,11 @@ public class LmdbNativeJaninoCodegenTest {
 	}
 
 	private JaninoKernel awaitKernel(String shapeKey) throws InterruptedException {
-		JaninoKernel first = LmdbNativeJaninoCodegen.kernel(owner, shapeKey, KERNEL_CLASS, () -> KERNEL_SOURCE, 1L);
+		JaninoKernel first = LmdbNativeJaninoCodegen.kernel(shapeKey, KERNEL_CLASS, () -> KERNEL_SOURCE, 1L);
 		if (first != null) {
 			return first;
 		}
-		return LmdbNativeJaninoCodegen.awaitKernel(owner, shapeKey, 30, TimeUnit.SECONDS);
+		return LmdbNativeJaninoCodegen.awaitKernel(shapeKey, 30, TimeUnit.SECONDS);
 	}
 
 	@Test
@@ -133,7 +132,7 @@ public class LmdbNativeJaninoCodegenTest {
 
 		CompletableFuture<JaninoKernel> requested = CompletableFuture.supplyAsync(() -> {
 			requestThread.set(Thread.currentThread());
-			return LmdbNativeJaninoCodegen.kernel(owner, "shape-synchronous", KERNEL_CLASS, () -> {
+			return LmdbNativeJaninoCodegen.kernel("shape-synchronous", KERNEL_CLASS, () -> {
 				sourceThread.set(Thread.currentThread());
 				sourceEntered.countDown();
 				try {
@@ -177,10 +176,10 @@ public class LmdbNativeJaninoCodegenTest {
 		};
 
 		CompletableFuture<JaninoKernel> first = CompletableFuture.supplyAsync(
-				() -> LmdbNativeJaninoCodegen.kernel(owner, "shape-concurrent", KERNEL_CLASS, source, 1L));
+				() -> LmdbNativeJaninoCodegen.kernel("shape-concurrent", KERNEL_CLASS, source, 1L));
 		assertTrue(sourceEntered.await(30, TimeUnit.SECONDS));
 		CompletableFuture<JaninoKernel> second = CompletableFuture.supplyAsync(
-				() -> LmdbNativeJaninoCodegen.kernel(owner, "shape-concurrent", KERNEL_CLASS, source, 1L));
+				() -> LmdbNativeJaninoCodegen.kernel("shape-concurrent", KERNEL_CLASS, source, 1L));
 		try {
 			assertThrows(TimeoutException.class, () -> second.get(1, TimeUnit.SECONDS),
 					"the concurrent request must await the in-progress compilation");
@@ -212,7 +211,7 @@ public class LmdbNativeJaninoCodegenTest {
 		String badSource = "package org.eclipse.rdf4j.sail.lmdb.gen; public final class Broken { this is not java }";
 		try {
 			assertThrows(RuntimeException.class,
-					() -> LmdbNativeJaninoCodegen.kernel(owner, "shape-strict-broken",
+					() -> LmdbNativeJaninoCodegen.kernel("shape-strict-broken",
 							"org.eclipse.rdf4j.sail.lmdb.gen.Broken", () -> badSource, 1L));
 		} finally {
 			LmdbNativeJaninoCodegen.awaitCompilationsForTests(30, TimeUnit.SECONDS);
@@ -236,7 +235,7 @@ public class LmdbNativeJaninoCodegenTest {
 				+ "}\n";
 
 		assertThrows(RuntimeException.class,
-				() -> LmdbNativeJaninoCodegen.kernel(owner, "shape-strict-constructor", className, () -> source, 1L));
+				() -> LmdbNativeJaninoCodegen.kernel("shape-strict-constructor", className, () -> source, 1L));
 	}
 
 	@Test
@@ -288,7 +287,7 @@ public class LmdbNativeJaninoCodegenTest {
 	public void resetWaitsForPreviouslySubmittedCompilation() throws Exception {
 		CountDownLatch sourceEntered = new CountDownLatch(1);
 		CountDownLatch releaseSource = new CountDownLatch(1);
-		assertNull(LmdbNativeJaninoCodegen.kernel(owner, "shape-reset-race", KERNEL_CLASS, () -> {
+		assertNull(LmdbNativeJaninoCodegen.kernel("shape-reset-race", KERNEL_CLASS, () -> {
 			sourceEntered.countDown();
 			try {
 				releaseSource.await();
@@ -316,10 +315,10 @@ public class LmdbNativeJaninoCodegenTest {
 	@Test
 	public void disabledAndBelowThresholdReturnNull() {
 		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
-		assertNull(LmdbNativeJaninoCodegen.kernel(owner, "shape-off", KERNEL_CLASS, () -> KERNEL_SOURCE, 1L));
+		assertNull(LmdbNativeJaninoCodegen.kernel("shape-off", KERNEL_CLASS, () -> KERNEL_SOURCE, 1L));
 		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
 		System.setProperty(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "1000");
-		assertNull(LmdbNativeJaninoCodegen.kernel(owner, "shape-cold", KERNEL_CLASS, () -> KERNEL_SOURCE, 999L));
+		assertNull(LmdbNativeJaninoCodegen.kernel("shape-cold", KERNEL_CLASS, () -> KERNEL_SOURCE, 999L));
 		assertEquals(0L, LmdbNativeJaninoCodegen.COMPILATIONS.get());
 		assertEquals(0L, LmdbNativeJaninoCodegen.CACHE_MISSES.get());
 	}
@@ -327,7 +326,7 @@ public class LmdbNativeJaninoCodegenTest {
 	@Test
 	public void cacheHitsOnSubsequentCalls() throws Exception {
 		assertNotNull(awaitKernel("shape-cache"));
-		JaninoKernel second = LmdbNativeJaninoCodegen.kernel(owner, "shape-cache", KERNEL_CLASS, () -> {
+		JaninoKernel second = LmdbNativeJaninoCodegen.kernel("shape-cache", KERNEL_CLASS, () -> {
 			throw new AssertionError("source supplier must not run on a cache hit");
 		}, 1L);
 		assertNotNull(second);
@@ -339,12 +338,12 @@ public class LmdbNativeJaninoCodegenTest {
 	@Test
 	public void compileFailureFallsBackAndDoesNotRetry() throws Exception {
 		String badSource = "package org.eclipse.rdf4j.sail.lmdb.gen; public final class Broken { this is not java }";
-		assertNull(LmdbNativeJaninoCodegen.kernel(owner, "shape-broken", "org.eclipse.rdf4j.sail.lmdb.gen.Broken",
+		assertNull(LmdbNativeJaninoCodegen.kernel("shape-broken", "org.eclipse.rdf4j.sail.lmdb.gen.Broken",
 				() -> badSource, 1L));
-		assertNull(LmdbNativeJaninoCodegen.awaitKernel(owner, "shape-broken", 30, TimeUnit.SECONDS));
+		assertNull(LmdbNativeJaninoCodegen.awaitKernel("shape-broken", 30, TimeUnit.SECONDS));
 		assertEquals(1L, LmdbNativeJaninoCodegen.COMPILE_FAILURES.get());
 		// A later call for the same shape must not schedule a second compile.
-		assertNull(LmdbNativeJaninoCodegen.kernel(owner, "shape-broken", "org.eclipse.rdf4j.sail.lmdb.gen.Broken",
+		assertNull(LmdbNativeJaninoCodegen.kernel("shape-broken", "org.eclipse.rdf4j.sail.lmdb.gen.Broken",
 				() -> badSource, 1L));
 		assertEquals(1L, LmdbNativeJaninoCodegen.COMPILE_FAILURES.get());
 		assertEquals(0L, LmdbNativeJaninoCodegen.COMPILATIONS.get());

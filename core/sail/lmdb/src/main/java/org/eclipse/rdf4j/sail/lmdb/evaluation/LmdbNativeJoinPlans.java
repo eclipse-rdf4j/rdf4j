@@ -658,7 +658,29 @@ final class SuffixFilterCursor implements RowCursor {
 
 	@Override
 	public void close() {
-		arg.close();
+		// mirror FilterCursor: the filter may hold lazily acquired native resources (an EXISTS witness's
+		// semijoin probe pins a dataset read stamp), and the cursor that ran it owns their release
+		Throwable failure = null;
+		try {
+			arg.close();
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+		}
+		try {
+			filter.close();
+		} catch (RuntimeException | Error problem) {
+			if (failure == null) {
+				failure = problem;
+			} else if (failure != problem) {
+				failure.addSuppressed(problem);
+			}
+		}
+		if (failure instanceof Error) {
+			throw (Error) failure;
+		}
+		if (failure != null) {
+			throw (RuntimeException) failure;
+		}
 	}
 }
 

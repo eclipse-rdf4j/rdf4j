@@ -284,11 +284,10 @@ public class LmdbNativeKernelScanPartitionTest {
 	/** Runs the kernel, optionally confining its single scan site to one planned partition. */
 	private static List<long[]> runOn(NativeLmdbQuerySource source, Kernel ir, long[] constants,
 			LmdbRootScanPartition partition) throws Exception {
-		Object owner = new Object();
-		JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(owner, ir.shapeKey(), ir.className(),
+		JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(ir.shapeKey(), ir.className(),
 				() -> LmdbNativeKernelEmitter.emit(ir), Long.MAX_VALUE);
 		if (kernel == null) {
-			kernel = LmdbNativeJaninoCodegen.awaitKernel(owner, ir.shapeKey(), 30, TimeUnit.SECONDS);
+			kernel = LmdbNativeJaninoCodegen.awaitKernel(ir.shapeKey(), 30, TimeUnit.SECONDS);
 		}
 		assertNotNull(kernel, "kernel did not compile");
 		LmdbNativeKernelScanner scanner = new LmdbNativeKernelScanner(source,

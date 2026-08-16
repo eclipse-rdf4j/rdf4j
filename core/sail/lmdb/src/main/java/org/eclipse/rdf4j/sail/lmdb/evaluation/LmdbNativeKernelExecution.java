@@ -48,12 +48,6 @@ final class LmdbNativeKernelExecution {
 	private static final int ROWS_PER_OPEN_ESTIMATE = 4096;
 	private static final int FILL_ROWS = 256;
 	private static final ConcurrentHashMap<String, AtomicLong> SHAPE_OPENS = new ConcurrentHashMap<>();
-	/**
-	 * IR kernels are pure shape — every store-specific input (adjacency views, constants, entry values, domains, hooks)
-	 * arrives through the bind-time context, so compiled classes are safely shared across stores AND across per-plan
-	 * synthetic-value source wrappers (whose idSpace() is plan-local and would defeat caching entirely).
-	 */
-	private static final Object CACHE_OWNER = new Object();
 
 	private LmdbNativeKernelExecution() {
 	}
@@ -147,11 +141,11 @@ final class LmdbNativeKernelExecution {
 			}
 			long opens = SHAPE_OPENS.computeIfAbsent(shapeKey, key -> new AtomicLong()).incrementAndGet();
 			long observedRows = opens * ROWS_PER_OPEN_ESTIMATE;
-			kernel = LmdbNativeJaninoCodegen.kernel(CACHE_OWNER, shapeKey, lowered.kernel.className(),
+			kernel = LmdbNativeJaninoCodegen.kernel(shapeKey, lowered.kernel.className(),
 					() -> LmdbNativeKernelEmitter.emit(lowered.kernel), observedRows);
 			if (kernel == null) {
 				if (row.runtimePlan != null) {
-					row.runtimePlan.janinoDeclined(LmdbNativeJaninoCodegen.declineReason(CACHE_OWNER, shapeKey,
+					row.runtimePlan.janinoDeclined(LmdbNativeJaninoCodegen.declineReason(shapeKey,
 							observedRows, "irAggregate"));
 				}
 				LmdbNativeAttemptMetrics.recordDecline(explainTarget, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
@@ -206,7 +200,7 @@ final class LmdbNativeKernelExecution {
 			// shape compiles through the same cache under its own shape key, so the sequential shape stays untouched.
 			List<BindingSet> parallel = LmdbNativeParallelKernelAggregate
 					.tryEvaluate(lowered, views, domains, arg, row, emitter, explainTarget,
-							variant -> LmdbNativeJaninoCodegen.kernel(CACHE_OWNER, variant.shapeKey(),
+							variant -> LmdbNativeJaninoCodegen.kernel(variant.shapeKey(),
 									variant.className(),
 									() -> LmdbNativeKernelEmitter.emit(variant), observedRows));
 			if (parallel != null) {
@@ -543,7 +537,7 @@ final class LmdbNativeKernelExecution {
 			String shapeKey = lowered.kernel.shapeKey();
 			long opens = SHAPE_OPENS.computeIfAbsent(shapeKey, key -> new AtomicLong()).incrementAndGet();
 			long observedRows = opens * ROWS_PER_OPEN_ESTIMATE;
-			kernel = LmdbNativeJaninoCodegen.kernel(CACHE_OWNER, shapeKey, lowered.kernel.className(),
+			kernel = LmdbNativeJaninoCodegen.kernel(shapeKey, lowered.kernel.className(),
 					() -> LmdbNativeKernelEmitter.emit(lowered.kernel), observedRows);
 			if (kernel == null) {
 				if (ordered != null) {
@@ -551,7 +545,7 @@ final class LmdbNativeKernelExecution {
 				}
 				if (row.runtimePlan != null) {
 					row.runtimePlan.janinoDeclined(
-							LmdbNativeJaninoCodegen.declineReason(CACHE_OWNER, shapeKey, observedRows, "irKernel"));
+							LmdbNativeJaninoCodegen.declineReason(shapeKey, observedRows, "irKernel"));
 				}
 				LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
 						"below-threshold-or-pending");
@@ -620,7 +614,7 @@ final class LmdbNativeKernelExecution {
 			// Workers create their own probes and adjacency views. The query-thread views are used only to choose the
 			// partitioning root and are closed by this method if the parallel cursor is accepted.
 			RowCursor parallel = LmdbNativeParallelKernelRows.tryOpen(lowered, views, domains, arg, row, originalExpr,
-					variant -> LmdbNativeJaninoCodegen.kernel(CACHE_OWNER, variant.shapeKey(), variant.className(),
+					variant -> LmdbNativeJaninoCodegen.kernel(variant.shapeKey(), variant.className(),
 							() -> LmdbNativeKernelEmitter.emit(variant), observedRows));
 			if (parallel != null) {
 				OPENED.incrementAndGet();

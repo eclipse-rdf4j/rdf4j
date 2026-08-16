@@ -1147,6 +1147,8 @@ final class LmdbNativePackedFtree {
 		EdgePlan[] constraintEdges = new EdgePlan[0];
 		UnaryPlan[] unary = new UnaryPlan[0];
 		MaskedFilter[] filters = new MaskedFilter[0];
+		/** Single-pattern EXISTS/NOT-EXISTS conditions keyed by this node's slot, evaluated as long-keyed probes. */
+		WitnessPlan[] witnesses = new WitnessPlan[0];
 		RootSeed seed;
 		RootSeed[] seeds = new RootSeed[0];
 		int depth;
@@ -1601,6 +1603,7 @@ final class LmdbNativePackedFtree {
 
 		private static boolean placeFilters(MaskedFilter[] filters, Map<Integer, NodePlan> nodes, NodePlan root) {
 			Map<NodePlan, List<MaskedFilter>> placed = new HashMap<>();
+			Map<NodePlan, List<WitnessPlan>> placedWitnesses = new HashMap<>();
 			long localVariableMask = 0L;
 			for (int slot : nodes.keySet()) {
 				localVariableMask |= 1L << slot;
@@ -1631,12 +1634,69 @@ final class LmdbNativePackedFtree {
 				if ((filter.mask & localVariableMask & ~pathMask) != 0L) {
 					return false;
 				}
+				WitnessPlan witness = tryConvertWitness(filter, deepest);
+				if (witness != null) {
+					placedWitnesses.computeIfAbsent(deepest, ignored -> new ArrayList<>()).add(witness);
+					continue;
+				}
 				placed.computeIfAbsent(deepest, ignored -> new ArrayList<>()).add(filter);
 			}
 			for (Map.Entry<NodePlan, List<MaskedFilter>> entry : placed.entrySet()) {
 				entry.getKey().filters = entry.getValue().toArray(MaskedFilter[]::new);
 			}
+			for (Map.Entry<NodePlan, List<WitnessPlan>> entry : placedWitnesses.entrySet()) {
+				entry.getKey().witnesses = entry.getValue().toArray(WitnessPlan[]::new);
+			}
 			return true;
+		}
+
+		/**
+		 * Recognizes a filter that is (a possibly negated) single-pattern EXISTS reading exactly this node's slot and
+		 * turns it into a long-keyed witness probe. The generic path evaluates such a filter per candidate lane through
+		 * the full row machinery (ancestor path bound into a RowState, memo hashing, probe bookkeeping); the witness
+		 * form answers the same question with one adjacency existence check on the id already in hand.
+		 * Context-restricted patterns, named-graph scope, edge witnesses reading two slots, and combination conditions
+		 * all decline back to the ordinary filter placement.
+		 */
+		private static WitnessPlan tryConvertWitness(MaskedFilter filter, NodePlan target) {
+			NativeBooleanFilter inner = NativeFilterLease.inspect(filter.filter);
+			boolean negated = false;
+			while (true) {
+				if (inner instanceof RecordingNativeBooleanFilter recording) {
+					inner = NativeFilterLease.inspect(recording.delegate);
+				} else if (inner instanceof NegatedNativeBooleanFilter negation) {
+					inner = NativeFilterLease.inspect(negation.delegate);
+					negated = !negated;
+				} else {
+					break;
+				}
+			}
+			if (!(inner instanceof StatementPatternExistsFilter exists)) {
+				return null;
+			}
+			if (exists.namedContextScope || exists.contexts.isFixed() || !exists.p.isConstant() || exists.p.hasSlot()
+					|| exists.c.hasSlot() || exists.c.isConstant()) {
+				return null;
+			}
+			Term key;
+			Term other;
+			boolean keyIsSubject;
+			if (exists.s.hasSlot() && !exists.o.hasSlot()) {
+				key = exists.s;
+				other = exists.o;
+				keyIsSubject = true;
+			} else if (exists.o.hasSlot() && !exists.s.hasSlot()) {
+				key = exists.o;
+				other = exists.s;
+				keyIsSubject = false;
+			} else {
+				return null;
+			}
+			if (key.isConstant() || key.slot != target.slot) {
+				return null;
+			}
+			long otherConstant = other.isConstant() ? other.constant : UNKNOWN;
+			return new WitnessPlan(exists.p.constant, keyIsSubject, otherConstant, negated, exists);
 		}
 
 		private static final class TreeChoice {
@@ -1904,12 +1964,20 @@ final class LmdbNativePackedFtree {
 		final Plan plan;
 		final RowState row;
 		final NativeLmdbQuerySource.NativeProbe probe;
+		/**
+		 * A probe's returned iterator is only valid until the next {@code open} on that probe, but constraint/unary
+		 * count lookups run while a primary store cursor from {@link #probe} is still being consumed. Nested lookups
+		 * therefore go through this second probe; sharing {@link #probe} would silently truncate the primary run.
+		 * Lazily created: executions whose lookups are all adjacency-served never open it.
+		 */
+		private NativeLmdbQuerySource.NativeProbe lookupProbe;
 		final Map<AdjKey, NativeLmdbQuerySource.NativeAdjacency> adjacency = new HashMap<>();
 		RootProducer roots;
 		final PatternRuntime[] constantPatterns;
 		final EdgeRuntime[] primaryEdges;
 		final EdgeRuntime[][] constraintEdges;
 		final UnaryRuntime[][] unaryRuntimes;
+		final WitnessRuntime[][] witnessRuntimes;
 		/** Windowed run staging: scalar per-element cursor reads re-decode CSF fibers, bulk copies decode once. */
 		long[] runNeighborScratch = EMPTY_LONG_ARRAY;
 		long[] runContextScratch = EMPTY_LONG_ARRAY;
@@ -1934,6 +2002,7 @@ final class LmdbNativePackedFtree {
 			this.primaryEdges = new EdgeRuntime[plan.nodes.length];
 			this.constraintEdges = new EdgeRuntime[plan.nodes.length][];
 			this.unaryRuntimes = new UnaryRuntime[plan.nodes.length][];
+			this.witnessRuntimes = new WitnessRuntime[plan.nodes.length][];
 		}
 
 		static Runtime open(Plan plan, RowState row) throws IOException {
@@ -1960,6 +2029,11 @@ final class LmdbNativePackedFtree {
 						urs[i] = UnaryRuntime.open(runtime, node.unary[i]);
 					}
 					runtime.unaryRuntimes[node.ordinal] = urs;
+					WitnessRuntime[] wrs = new WitnessRuntime[node.witnesses.length];
+					for (int i = 0; i < wrs.length; i++) {
+						wrs[i] = WitnessRuntime.open(runtime, node.witnesses[i]);
+					}
+					runtime.witnessRuntimes[node.ordinal] = wrs;
 					if (node.parent != null) {
 						runtime.primaryEdges[node.ordinal] = EdgeRuntime.open(runtime, node.primary);
 						EdgeRuntime[] ers = new EdgeRuntime[node.constraintEdges.length];
@@ -2139,6 +2213,15 @@ final class LmdbNativePackedFtree {
 			return new PatternRuntime(a, constant.pattern, true);
 		}
 
+		NativeLmdbQuerySource.NativeProbe lookupProbe() {
+			NativeLmdbQuerySource.NativeProbe result = lookupProbe;
+			if (result == null) {
+				result = row.source.newProbe();
+				lookupProbe = result;
+			}
+			return result;
+		}
+
 		NativeLmdbQuerySource.NativeAdjacency adjacency(long predicate, boolean bySubject) throws IOException {
 			AdjKey key = new AdjKey(predicate, bySubject);
 			NativeLmdbQuerySource.NativeAdjacency cached = adjacency.get(key);
@@ -2227,7 +2310,8 @@ final class LmdbNativePackedFtree {
 				} else if (runSize <= 0L) {
 					acceptedForParent = 0;
 				} else if (runSize <= Integer.MAX_VALUE && constraints.length == 0 && unary.length == 0
-						&& node.filters.length == 0 && contextFree(node.primary.pattern)) {
+						&& node.filters.length == 0 && node.witnesses.length == 0
+						&& contextFree(node.primary.pattern)) {
 					acceptedForParent = copyDirectRun(out, parentLane, primary, (int) runSize);
 				} else if (constraints.length > 0 && primary.ordered && allOrdered(constraints)) {
 					acceptedForParent = intersectRuns(chunk, node, parentLane, primary, runSize, constraints, unary);
@@ -2441,11 +2525,21 @@ final class LmdbNativePackedFtree {
 				weight = FactorizedTail.multiplyCounts(weight, count);
 			}
 			weight = applyUnary(unary, childId, weight);
-			if (weight == 0L || !filtersAccept(chunk, node, childId, parentLane)) {
+			if (weight == 0L || !witnessesAccept(node, childId) || !filtersAccept(chunk, node, childId, parentLane)) {
 				return 0;
 			}
 			appendLane(chunk.data[node.ordinal], parentLane, childId, weight);
 			return 1;
+		}
+
+		/** Long-keyed EXISTS/NOT-EXISTS witnesses for this node; no RowState, memoization, or filter dispatch. */
+		private boolean witnessesAccept(NodePlan node, long childId) {
+			for (WitnessRuntime witness : witnessRuntimes[node.ordinal]) {
+				if (!witness.accept(childId)) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		private int buildNodeFromStore(Chunk chunk, NodePlan node, int parentLane, EdgeRuntime primary,
@@ -2453,7 +2547,9 @@ final class LmdbNativePackedFtree {
 			chunk.data[node.ordinal].sliceValuesDistinct = false;
 			int accepted = 0;
 			long primaryKey = ancestorValue(chunk, node.parent, parentLane, primary.plan.keySlot);
-			try (PatternCursor cursor = primary.openStore(this, primaryKey, UNKNOWN)) {
+			// primary run on this.probe; the constraint/unary counts below open on lookupProbe() so they cannot
+			// reposition the retained iterator this cursor is still consuming
+			try (PatternCursor cursor = primary.openStore(this, primaryKey, UNKNOWN, probe)) {
 				long[] quad;
 				while ((quad = cursor.next()) != null) {
 					long childId = primary.plan.keyIsSubject ? quad[2] : quad[0];
@@ -2472,7 +2568,8 @@ final class LmdbNativePackedFtree {
 						continue;
 					}
 					weight = applyUnary(unary, childId, weight);
-					if (weight == 0L || !filtersAccept(chunk, node, childId, parentLane)) {
+					if (weight == 0L || !witnessesAccept(node, childId)
+							|| !filtersAccept(chunk, node, childId, parentLane)) {
 						continue;
 					}
 					appendLane(chunk.data[node.ordinal], parentLane, childId, weight);
@@ -2485,7 +2582,7 @@ final class LmdbNativePackedFtree {
 		private boolean appendCandidate(Chunk chunk, NodePlan node, int parentLane, long childId, long edgeWeight,
 				UnaryRuntime[] unary) throws IOException {
 			long weight = applyUnary(unary, childId, edgeWeight);
-			if (weight == 0L || !filtersAccept(chunk, node, childId, parentLane)) {
+			if (weight == 0L || !witnessesAccept(node, childId) || !filtersAccept(chunk, node, childId, parentLane)) {
 				return false;
 			}
 			appendLane(chunk.data[node.ordinal], parentLane, childId, weight);
@@ -2552,7 +2649,8 @@ final class LmdbNativePackedFtree {
 					}
 					weight = FactorizedTail.multiplyCounts(weight, matches);
 				}
-				if (accepted && filtersAccept(chunk, node, data.value(lane), -1)) {
+				if (accepted && witnessesAccept(node, data.value(lane))
+						&& filtersAccept(chunk, node, data.value(lane), -1)) {
 					if (weight != 1L) {
 						data.ensureWeights();
 						data.weights[lane] = weight;
@@ -2621,7 +2719,48 @@ final class LmdbNativePackedFtree {
 					roots.close();
 				}
 			} finally {
-				probe.close();
+				try {
+					probe.close();
+				} finally {
+					try {
+						if (lookupProbe != null) {
+							lookupProbe.close();
+							lookupProbe = null;
+						}
+					} finally {
+						closeNodeFilters();
+					}
+				}
+			}
+		}
+
+		/**
+		 * A {@link MaskedFilter} consumed by this runtime may hold lazily acquired native resources — an EXISTS
+		 * witness's semijoin probe pins a dataset read stamp. The engine that ran the filter owns its release,
+		 * mirroring {@code FilterCursor} and the kernel hooks' {@code closeFilters}; a missed close wedges
+		 * {@code LmdbSailDataset.close()} on its write lock. Closing an unused filter is a no-op and filters are
+		 * close-re-entrant, so every node filter is released unconditionally.
+		 */
+		private void closeNodeFilters() {
+			Throwable failure = null;
+			for (NodePlan node : plan.nodes) {
+				for (MaskedFilter filter : node.filters) {
+					try {
+						filter.filter.close();
+					} catch (RuntimeException | Error problem) {
+						if (failure == null) {
+							failure = problem;
+						} else if (failure != problem) {
+							failure.addSuppressed(problem);
+						}
+					}
+				}
+			}
+			if (failure instanceof Error) {
+				throw (Error) failure;
+			}
+			if (failure != null) {
+				throw (RuntimeException) failure;
 			}
 		}
 	}
@@ -3122,12 +3261,96 @@ final class LmdbNativePackedFtree {
 				}
 			}
 			long count = 0L;
-			try (PatternCursor cursor = pattern.openRaw(runtime.row, runtime.probe)) {
+			try (PatternCursor cursor = pattern.openRaw(runtime.row, runtime.lookupProbe())) {
 				while (cursor.next() != null) {
 					count = FactorizedTail.addCounts(count, 1L);
 				}
 			}
 			return count;
+		}
+	}
+
+	/**
+	 * A single-pattern EXISTS/NOT-EXISTS condition keyed by one f-tree node's slot. {@code predicate} and
+	 * {@code otherConstant} come from the witness pattern's constant Terms ({@code otherConstant} is {@code UNKNOWN}
+	 * for a wildcard position); {@code fallback} is the compiled filter, used only as a direct id-level store lookup
+	 * for keys the adjacency does not cover — never through its per-row accept path.
+	 */
+	static final class WitnessPlan {
+		final long predicate;
+		final boolean keyIsSubject;
+		final long otherConstant;
+		final boolean negated;
+		final StatementPatternExistsFilter fallback;
+
+		WitnessPlan(long predicate, boolean keyIsSubject, long otherConstant, boolean negated,
+				StatementPatternExistsFilter fallback) {
+			this.predicate = predicate;
+			this.keyIsSubject = keyIsSubject;
+			this.otherConstant = otherConstant;
+			this.negated = negated;
+			this.fallback = fallback;
+		}
+	}
+
+	/** Per-runtime witness evaluator: adjacency existence probe on the raw lane id, store lookup as fallback. */
+	static final class WitnessRuntime {
+		final WitnessPlan plan;
+		final NativeLmdbQuerySource.NativeAdjacency adjacency;
+
+		private WitnessRuntime(WitnessPlan plan, NativeLmdbQuerySource.NativeAdjacency adjacency) {
+			this.plan = plan;
+			this.adjacency = adjacency;
+		}
+
+		static WitnessRuntime open(Runtime runtime, WitnessPlan plan) throws IOException {
+			return new WitnessRuntime(plan, runtime.adjacency(plan.predicate, plan.keyIsSubject));
+		}
+
+		boolean accept(long key) {
+			if (adjacency != null) {
+				long handle = adjacency.find(key);
+				if (handle != NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
+					boolean exists = plan.otherConstant == UNKNOWN
+							? handle > 0 && adjacency.size(handle) > 0
+							: neighborPresent(adjacency, handle, plan.otherConstant);
+					return exists != plan.negated;
+				}
+			}
+			long subj = plan.keyIsSubject ? key : plan.otherConstant;
+			long obj = plan.keyIsSubject ? plan.otherConstant : key;
+			boolean exists = plan.fallback.evaluate(subj, plan.predicate, obj, UNKNOWN);
+			return exists != plan.negated;
+		}
+
+		/** Context-free twin of {@link LmdbNativePackedFtree#countNeighbor} that stops at the first hit. */
+		private static boolean neighborPresent(NativeLmdbQuerySource.NativeAdjacency adjacency, long handle,
+				long neighbor) {
+			if (handle <= 0) {
+				return false;
+			}
+			long size = adjacency.size(handle);
+			if (adjacency.runsNeighborOrdered()) {
+				long start = adjacency.lowerBound(handle, 0L, neighbor, 0L);
+				if (start >= 0L) {
+					for (long i = start; i < size; i++) {
+						int cmp = Long.compareUnsigned(adjacency.neighborAt(handle, i), neighbor);
+						if (cmp > 0) {
+							return false;
+						}
+						if (cmp == 0) {
+							return true;
+						}
+					}
+					return false;
+				}
+			}
+			for (long i = 0; i < size; i++) {
+				if (adjacency.neighborAt(handle, i) == neighbor) {
+					return true;
+				}
+			}
+			return false;
 		}
 	}
 
@@ -3153,7 +3376,7 @@ final class LmdbNativePackedFtree {
 				}
 			}
 			long previous = runtime.row.replaceSlot(plan.slot, variable);
-			try (PatternCursor cursor = pattern.openRaw(runtime.row, runtime.probe)) {
+			try (PatternCursor cursor = pattern.openRaw(runtime.row, runtime.lookupProbe())) {
 				long count = 0L;
 				while (cursor.next() != null) {
 					count = FactorizedTail.addCounts(count, 1L);
@@ -3214,7 +3437,7 @@ final class LmdbNativePackedFtree {
 				}
 			}
 			long count = 0L;
-			try (PatternCursor scan = openStore(runtime, parent, child)) {
+			try (PatternCursor scan = openStore(runtime, parent, child, runtime.lookupProbe())) {
 				while (scan.next() != null) {
 					count = FactorizedTail.addCounts(count, 1L);
 				}
@@ -3222,7 +3445,8 @@ final class LmdbNativePackedFtree {
 			return count;
 		}
 
-		PatternCursor openStore(Runtime runtime, long key, long value) throws IOException {
+		PatternCursor openStore(Runtime runtime, long key, long value, NativeLmdbQuerySource.NativeProbe probe)
+				throws IOException {
 			long previousKey = runtime.row.replaceSlot(plan.keySlot, key);
 			long previousValue = UNKNOWN;
 			boolean valueReplaced = value != UNKNOWN;
@@ -3230,7 +3454,7 @@ final class LmdbNativePackedFtree {
 				if (valueReplaced) {
 					previousValue = runtime.row.replaceSlot(plan.valueSlot, value);
 				}
-				return pattern.openRaw(runtime.row, runtime.probe);
+				return pattern.openRaw(runtime.row, probe);
 			} finally {
 				if (valueReplaced) {
 					runtime.row.replaceSlot(plan.valueSlot, previousValue);

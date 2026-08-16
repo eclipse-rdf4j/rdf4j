@@ -19,7 +19,6 @@ import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.WeakHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -37,12 +36,19 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Janino-backed whole-stage kernel service (plan: plans/lmdb-native-engine/17-janino-whole-stage-codegen.md, M2).
- * Mirrors the proven {@code LmdbNativeSpecialization} lifecycle: per-store-id-space caches with weak owners, a single
- * daemon compiler thread, an interpreted-rows admission threshold, and LRU eviction. Kernels are compiled once per
- * canonical plan-shape key and instantiated per cursor open; compile failure marks the shape failed (no retry storm)
- * and the caller falls back to the interpreter by default. Validation can opt into synchronous compilation and strict
- * failure propagation. Generated source can be dumped for debugging via {@code rdf4j.lmdb.janinoCodegen.dumpDir}.
+ * Janino-backed whole-stage kernel service (plan: plans/lmdb-native-engine/17-janino-whole-stage-codegen.md, M2). One
+ * process-wide compiled-kernel cache, a single daemon compiler thread, an interpreted-rows admission threshold, and LRU
+ * eviction. Kernels are compiled once per canonical plan-shape key and instantiated per cursor open; compile failure
+ * marks the shape failed (no retry storm) and the caller falls back to the interpreter by default. Validation can opt
+ * into synchronous compilation and strict failure propagation. Generated source can be dumped for debugging via
+ * {@code rdf4j.lmdb.janinoCodegen.dumpDir}.
+ *
+ * <p>
+ * The single shared cache rests on one invariant every route must uphold: <b>no store id and no plan-local id may
+ * appear in a shape key or in generated source</b> — every store-specific input (adjacency views, constants, entry
+ * values, domains, hooks) arrives through the bind-time {@link KernelContext}. That is what makes compiled classes
+ * safely shareable across stores and across per-plan synthetic-value source wrappers; a per-source cache owner keyed by
+ * {@code idSpace()} would defeat caching entirely for synthetic sources, whose id space is plan-local.
  */
 @Experimental
 final class LmdbNativeJaninoCodegen {
@@ -67,12 +73,11 @@ final class LmdbNativeJaninoCodegen {
 	static final AtomicLong FALLBACKS = new AtomicLong();
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbNativeJaninoCodegen.class);
-	private static final Object CACHE_REGISTRY_LOCK = new Object();
 	private static final ReentrantReadWriteLock COMPILER_LIFECYCLE_LOCK = new ReentrantReadWriteLock();
 	private static final Lock COMPILER_LIFECYCLE_READ = COMPILER_LIFECYCLE_LOCK.readLock();
 	private static final Lock COMPILER_LIFECYCLE_WRITE = COMPILER_LIFECYCLE_LOCK.writeLock();
-	private static final Object DEFAULT_CACHE_OWNER = new Object();
-	private static final WeakHashMap<Object, StoreCache> STORE_CACHES = new WeakHashMap<>();
+	/** The one process-wide kernel cache; see the class comment for the id-free invariant that makes it safe. */
+	private static final KernelCache CACHE = new KernelCache();
 	private static volatile ExecutorService compiler;
 
 	private LmdbNativeJaninoCodegen() {
@@ -95,26 +100,34 @@ final class LmdbNativeJaninoCodegen {
 	 * Returns a fresh kernel instance for the shape, or null when the caller must stay on the interpreted path (flag
 	 * off, below threshold, compile pending, or compile failed). The source supplier runs once for the first request of
 	 * a shape: on the compiler thread by default, or on the requesting thread in synchronous validation mode.
+	 *
+	 * <p>
+	 * Hard precondition: the shape key and the generated source must be pure shape — no store ids, no plan-local
+	 * synthetic ids. Every id-bearing input reaches the kernel through the bind-time {@link KernelContext}. The single
+	 * process-wide cache reuses one compiled class for every store and every source wrapper that produces the same key,
+	 * so a key or source that embedded an id would silently evaluate against the wrong data.
 	 */
-	static JaninoKernel kernel(Object cacheOwner, String shapeKey, String className, Supplier<String> sourceSupplier,
+	static JaninoKernel kernel(String shapeKey, String className, Supplier<String> sourceSupplier,
 			long observedRows) {
 		if (!enabled() || observedRows < Long.getLong(THRESHOLD_ROWS_PROPERTY, DEFAULT_THRESHOLD_ROWS)) {
 			return null;
 		}
 		COMPILER_LIFECYCLE_READ.lock();
 		try {
-			StoreCache cache = storeCache(cacheOwner);
+			KernelCache cache = CACHE;
 			Entry entry;
 			boolean created = false;
 			synchronized (cache) {
 				entry = cache.entries.get(shapeKey);
 				if (entry == null) {
+//					System.out.println("Janino kernel cache miss for shape " + shapeKey);
 					CACHE_MISSES.incrementAndGet();
 					evictForEntryLimit(cache);
 					entry = new Entry(shapeKey);
 					cache.entries.put(shapeKey, entry);
 					created = true;
 				} else if (entry.constructor != null) {
+//					System.out.println("Janino kernel cache hit for shape  " + shapeKey);
 					CACHE_HITS.incrementAndGet();
 				}
 			}
@@ -139,7 +152,7 @@ final class LmdbNativeJaninoCodegen {
 	}
 
 	/** Returns the exact gate/cache state that explains a null result from {@link #kernel}. */
-	static String declineReason(Object cacheOwner, String shapeKey, long observedRows, String route) {
+	static String declineReason(String shapeKey, long observedRows, String route) {
 		long threshold = Long.getLong(THRESHOLD_ROWS_PROPERTY, DEFAULT_THRESHOLD_ROWS);
 		if (!enabled()) {
 			return "FEATURE_DISABLED[" + ENABLED_PROPERTY + "=false,route=" + route + "]";
@@ -148,17 +161,9 @@ final class LmdbNativeJaninoCodegen {
 			return "BELOW_THRESHOLD[route=" + route + ",observedRows=" + observedRows + ",thresholdRows="
 					+ threshold + "]";
 		}
-		Object owner = cacheOwner == null ? DEFAULT_CACHE_OWNER : cacheOwner;
-		StoreCache cache;
-		synchronized (CACHE_REGISTRY_LOCK) {
-			cache = STORE_CACHES.get(owner);
-		}
-		if (cache == null) {
-			return "CACHE_STATE_UNAVAILABLE[route=" + route + ",shape=" + shapeKey + "]";
-		}
 		Entry entry;
-		synchronized (cache) {
-			entry = cache.entries.get(shapeKey);
+		synchronized (CACHE) {
+			entry = CACHE.entries.get(shapeKey);
 		}
 		if (entry == null) {
 			return "CACHE_ENTRY_UNAVAILABLE[route=" + route + ",shape=" + shapeKey + "]";
@@ -186,20 +191,13 @@ final class LmdbNativeJaninoCodegen {
 	}
 
 	/** Test hook: waits for the shape's compile to finish, then returns a fresh instance or null. */
-	static JaninoKernel awaitKernel(Object cacheOwner, String shapeKey, long timeout, TimeUnit unit)
+	static JaninoKernel awaitKernel(String shapeKey, long timeout, TimeUnit unit)
 			throws InterruptedException {
 		COMPILER_LIFECYCLE_READ.lock();
 		try {
-			StoreCache cache;
-			synchronized (CACHE_REGISTRY_LOCK) {
-				cache = STORE_CACHES.get(cacheOwner == null ? DEFAULT_CACHE_OWNER : cacheOwner);
-			}
-			if (cache == null) {
-				return null;
-			}
 			Entry entry;
-			synchronized (cache) {
-				entry = cache.entries.get(shapeKey);
+			synchronized (CACHE) {
+				entry = CACHE.entries.get(shapeKey);
 			}
 			if (entry == null) {
 				return null;
@@ -386,7 +384,7 @@ final class LmdbNativeJaninoCodegen {
 		return current;
 	}
 
-	private static void evictForEntryLimit(StoreCache cache) {
+	private static void evictForEntryLimit(KernelCache cache) {
 		int maxEntries = Math.max(1, Integer.getInteger(MAX_ENTRIES_PROPERTY, DEFAULT_MAX_ENTRIES));
 		while (cache.entries.size() >= maxEntries) {
 			Iterator<Map.Entry<String, Entry>> iterator = cache.entries.entrySet().iterator();
@@ -399,19 +397,12 @@ final class LmdbNativeJaninoCodegen {
 		}
 	}
 
-	private static StoreCache storeCache(Object owner) {
-		Object key = owner == null ? DEFAULT_CACHE_OWNER : owner;
-		synchronized (CACHE_REGISTRY_LOCK) {
-			return STORE_CACHES.computeIfAbsent(key, ignored -> new StoreCache());
-		}
-	}
-
 	static void resetForTests() {
 		COMPILER_LIFECYCLE_WRITE.lock();
 		try {
 			drainCompilerForReset();
-			synchronized (CACHE_REGISTRY_LOCK) {
-				STORE_CACHES.clear();
+			synchronized (CACHE) {
+				CACHE.entries.clear();
 			}
 			COMPILATIONS.set(0L);
 			COMPILE_FAILURES.set(0L);
@@ -432,7 +423,8 @@ final class LmdbNativeJaninoCodegen {
 		awaitReady(barrier);
 	}
 
-	private static final class StoreCache {
+	/** Access-ordered map so {@link #evictForEntryLimit} drops the least recently used shape first. */
+	private static final class KernelCache {
 		private final LinkedHashMap<String, Entry> entries = new LinkedHashMap<>(16, 0.75f, true);
 	}
 

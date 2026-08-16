@@ -1300,11 +1300,10 @@ class LmdbNativeKernelIrEmitterTest {
 				List.of(new EnumerateDomain(0, 0), new BindAlias(Operand.col(0), 1)), emit(0, 1));
 
 		assertTrue(streaming.resumable, "a plain alias carries no cross-row state");
-		Object owner = new Object();
-		JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(owner, streaming.shapeKey(), streaming.className(),
+		JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(streaming.shapeKey(), streaming.className(),
 				() -> LmdbNativeKernelEmitter.emit(streaming), Long.MAX_VALUE);
 		if (kernel == null) {
-			kernel = LmdbNativeJaninoCodegen.awaitKernel(owner, streaming.shapeKey(), 30, TimeUnit.SECONDS);
+			kernel = LmdbNativeJaninoCodegen.awaitKernel(streaming.shapeKey(), 30, TimeUnit.SECONDS);
 		}
 		assertNotNull(kernel, "kernel did not compile; source:\n" + LmdbNativeKernelEmitter.emit(streaming));
 		try {
@@ -1474,11 +1473,10 @@ class LmdbNativeKernelIrEmitterTest {
 
 	/** Drains a kernel handing back at most {@code maxRows} rows per call, exercising pause and resume. */
 	private static List<long[]> drain(Kernel ir, ContextBuilder context, int maxRows) throws Exception {
-		Object owner = new Object();
-		JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(owner, ir.shapeKey(), ir.className(),
+		JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(ir.shapeKey(), ir.className(),
 				() -> LmdbNativeKernelEmitter.emit(ir), Long.MAX_VALUE);
 		if (kernel == null) {
-			kernel = LmdbNativeJaninoCodegen.awaitKernel(owner, ir.shapeKey(), 30, TimeUnit.SECONDS);
+			kernel = LmdbNativeJaninoCodegen.awaitKernel(ir.shapeKey(), 30, TimeUnit.SECONDS);
 		}
 		assertNotNull(kernel, "kernel did not compile; source:\n" + LmdbNativeKernelEmitter.emit(ir));
 		try {
@@ -1522,11 +1520,10 @@ class LmdbNativeKernelIrEmitterTest {
 	}
 
 	private static List<long[]> run(Kernel ir, ContextBuilder context) throws Exception {
-		Object owner = new Object();
-		JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(owner, ir.shapeKey(), ir.className(),
+		JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(ir.shapeKey(), ir.className(),
 				() -> LmdbNativeKernelEmitter.emit(ir), Long.MAX_VALUE);
 		if (kernel == null) {
-			kernel = LmdbNativeJaninoCodegen.awaitKernel(owner, ir.shapeKey(), 30, TimeUnit.SECONDS);
+			kernel = LmdbNativeJaninoCodegen.awaitKernel(ir.shapeKey(), 30, TimeUnit.SECONDS);
 		}
 		assertNotNull(kernel, "kernel did not compile; source:\n" + LmdbNativeKernelEmitter.emit(ir));
 		try {
