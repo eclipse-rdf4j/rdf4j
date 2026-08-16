@@ -75,6 +75,31 @@ class LmdbFrontierSnapshotSourceTest {
 	}
 
 	@Test
+	void coveredMutationSequenceUsesTheSamePinnedSnapshot(@TempDir File dataDir) throws Exception {
+		try (TripleStore tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null)) {
+			tripleStore.startTransaction();
+			assertTrue(tripleStore.storeTriple(11L, 22L, 33L, 44L, true));
+			tripleStore.commit();
+
+			Class<?> sourceType = Class.forName("org.eclipse.rdf4j.sail.lmdb.LmdbFrontierSnapshotSource");
+			Constructor<?> constructor = sourceType.getDeclaredConstructor(TripleStore.class);
+			Method coveredSequence = sourceType.getDeclaredMethod("coveredSequence");
+			try (AutoCloseable pinned = (AutoCloseable) constructor.newInstance(tripleStore)) {
+				assertEquals(1L, coveredSequence.invoke(pinned));
+
+				tripleStore.startTransaction();
+				assertTrue(tripleStore.storeTriple(55L, 66L, 77L, 88L, false));
+				tripleStore.commit();
+
+				assertEquals(1L, coveredSequence.invoke(pinned));
+				try (AutoCloseable current = (AutoCloseable) constructor.newInstance(tripleStore)) {
+					assertEquals(2L, coveredSequence.invoke(current));
+				}
+			}
+		}
+	}
+
+	@Test
 	void scansExactRawIdsFromOnePinnedPlane(@TempDir File dataDir) throws Exception {
 		try (TripleStore tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null)) {
 			tripleStore.startTransaction();

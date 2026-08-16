@@ -67,6 +67,42 @@ class LmdbStoreConfigFrontierTest {
 	}
 
 	@Test
+	void frontierV2ResourceConfigurationDefaultsMigratesAndRoundTrips() throws Exception {
+		LmdbStoreConfig defaults = new LmdbStoreConfig();
+		assertEquals(Runtime.getRuntime().maxMemory() / 4L, invoke(defaults, "getFrontierHeapBudgetBytes"));
+		assertEquals(60_000L, invoke(defaults, "getFrontierStatisticsMaxLagMillis"));
+		assertEquals(0.25d, (double) invoke(defaults, "getFrontierDeleteReserveFraction"), 0.0d);
+
+		LmdbStoreConfig legacy = new LmdbStoreConfig();
+		legacy.setFrontierQueryMemoryBudgetBytes(96L * 1024L * 1024L);
+		assertEquals(96L * 1024L * 1024L, invoke(legacy, "getFrontierHeapBudgetBytes"),
+				"an explicitly configured V1 query-memory budget must seed the V2 global budget");
+
+		assertSame(legacy, invokeSetter(legacy, "setFrontierHeapBudgetBytes", long.class, 2_147_483_648L));
+		assertSame(legacy, invokeSetter(legacy, "setFrontierStatisticsMaxLagMillis", long.class, 45_000L));
+		assertSame(legacy, invokeSetter(legacy, "setFrontierDeleteReserveFraction", double.class, 0.2d));
+		assertEquals(2_147_483_648L, invoke(legacy, "getFrontierHeapBudgetBytes"),
+				"the explicit V2 budget must override the migrated V1 value");
+
+		Model model = new LinkedHashModel();
+		Resource node = legacy.export(model);
+		assertContains(model, node, "frontierHeapBudgetBytes");
+		assertContains(model, node, "frontierStatisticsMaxLagMillis");
+		assertContains(model, node, "frontierDeleteReserveFraction");
+		LmdbStoreConfig restored = new LmdbStoreConfig();
+		restored.parse(model, node);
+		assertEquals(2_147_483_648L, invoke(restored, "getFrontierHeapBudgetBytes"));
+		assertEquals(45_000L, invoke(restored, "getFrontierStatisticsMaxLagMillis"));
+		assertEquals(0.2d, (double) invoke(restored, "getFrontierDeleteReserveFraction"), 0.0d);
+
+		assertIllegalArgument(restored, "setFrontierHeapBudgetBytes", long.class, -1L);
+		assertIllegalArgument(restored, "setFrontierStatisticsMaxLagMillis", long.class, -1L);
+		assertIllegalArgument(restored, "setFrontierDeleteReserveFraction", double.class, 0.0d);
+		assertIllegalArgument(restored, "setFrontierDeleteReserveFraction", double.class, 1.0d);
+		assertIllegalArgument(restored, "setFrontierDeleteReserveFraction", double.class, Double.NaN);
+	}
+
+	@Test
 	void frontierConfigurationRoundTripsThroughRdfModel() throws Exception {
 		LmdbStoreConfig source = new LmdbStoreConfig();
 		Class<?> modeType = Class

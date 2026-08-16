@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
@@ -71,9 +73,18 @@ final class LmdbPropertyPathEstimator {
 			double lower = Math.min(rows, rows(directRows.lowerBound(), path.getMinLength(), distinctSubjects,
 					distinctObjects, subjectBound, objectBound, context.invocationCount(), identityGuaranteed,
 					scaledFirstStep(conditionedFirstStep, directRows.estimate(), directRows.lowerBound())));
-			double upper = Math.max(rows, rows(directRows.upperBound(), path.getMinLength(), distinctSubjects,
+			double conditionedUpper = rows(directRows.upperBound(), path.getMinLength(), distinctSubjects,
 					distinctObjects, subjectBound, objectBound, context.invocationCount(), identityGuaranteed,
-					scaledFirstStep(conditionedFirstStep, directRows.estimate(), directRows.upperBound())));
+					scaledFirstStep(conditionedFirstStep, directRows.estimate(), directRows.upperBound()));
+			/*
+			 * The pair-conditioned point estimate may be far tighter than the global reachability model. Keep the
+			 * latter as the uncertainty ceiling: a direct-edge sketch cannot prove that longer paths add no endpoint
+			 * pairs.
+			 */
+			double globalUpper = rows(directRows.upperBound(), path.getMinLength(), distinctSubjects,
+					distinctObjects, subjectBound, objectBound, context.invocationCount(), identityGuaranteed,
+					Double.NaN);
+			double upper = Math.max(rows, Math.max(conditionedUpper, globalUpper));
 			boolean complete = path.getMinLength() > 0L && exactZero(directRows);
 			RowEvidence evidence = new RowEvidence(rows, lower, upper,
 					complete ? 1.0d : directRows.confidence() * 0.75d, complete, context.snapshotIdentity(),
@@ -206,6 +217,19 @@ final class LmdbPropertyPathEstimator {
 			double identityRows = minLength == 0L ? invocations : 0.0d;
 			return saturatingAdd(identityRows, positiveRows);
 		}
+		if (subjectBound && objectBound && minLength <= 1L
+				&& Double.isFinite(conditionedFirstStep) && conditionedFirstStep >= 0.0d) {
+			/*
+			 * Both endpoint bindings describe concrete pairs in the prefix bag. Joining that two-column surface with
+			 * the path step uses a tuple Omni/sketch inner product when available (and a bounded product-distinct
+			 * estimate otherwise). A global graph-density model loses this correlation and can return the entire
+			 * endpoint domain. The point estimate therefore starts from observed direct support; the caller retains the
+			 * global recursive model as its upper bound for paths that may match only at greater depth.
+			 */
+			double identityRows = minLength == 0L && identityGuaranteed ? invocations : 0.0d;
+			return Math.min(invocations,
+					saturatingAdd(identityRows, Math.min(invocations, conditionedFirstStep)));
+		}
 
 		double domain = Math.max(subjectDomain, objectDomain);
 		double fanout = Math.min(8.0d, direct / subjectDomain);
@@ -295,6 +319,9 @@ final class LmdbPropertyPathEstimator {
 
 	private static OptionalDouble conditionedFirstStep(BagEstimate direct, ArbitraryLengthPath path,
 			EstimateContext context, boolean subjectBound, boolean objectBound) {
+		if (subjectBound && objectBound) {
+			return conditionedEndpointPairStep(direct, path, context);
+		}
 		if (!(subjectBound ^ objectBound)) {
 			return OptionalDouble.empty();
 		}
@@ -317,6 +344,31 @@ final class LmdbPropertyPathEstimator {
 		double directScale = sketchScale(directVariable, directSketch);
 		return OptionalDouble.of(saturatingMultiply(innerProduct.getAsDouble(),
 				saturatingMultiply(prefixScale, directScale)));
+	}
+
+	private static OptionalDouble conditionedEndpointPairStep(BagEstimate direct, ArbitraryLengthPath path,
+			EstimateContext context) {
+		Var subject = path.getSubjectVar();
+		Var object = path.getObjectVar();
+		if (subject == null || object == null || subject.hasValue() || object.hasValue()
+				|| subject.getName() == null || object.getName() == null
+				|| subject.getName().equals(object.getName())) {
+			return OptionalDouble.empty();
+		}
+		BagEstimate prefix = context.prefixEstimate();
+		String subjectName = subject.getName();
+		String objectName = object.getName();
+		if (prefix.variable(subjectName).boundRows() <= 0.0d
+				|| prefix.variable(objectName).boundRows() <= 0.0d
+				|| direct.variable(subjectName).boundRows() <= 0.0d
+				|| direct.variable(objectName).boundRows() <= 0.0d) {
+			return OptionalDouble.empty();
+		}
+		double rows = EstimateMath.innerJoin(prefix, direct, Set.of(subjectName, objectName)).rows();
+		if (!Double.isFinite(rows) || rows < 0.0d) {
+			return OptionalDouble.empty();
+		}
+		return OptionalDouble.of(Math.min(prefix.rows(), rows));
 	}
 
 	private static double sketchScale(VariableEstimate variable, DistributionSketch sketch) {

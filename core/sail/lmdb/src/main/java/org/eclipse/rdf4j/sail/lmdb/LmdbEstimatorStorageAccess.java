@@ -20,25 +20,48 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafEstimate;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
+import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Storage-bound estimator operations kept behind one narrow runtime collaborator. */
 final class LmdbEstimatorStorageAccess {
-
 	private static final int MAX_DISTINCT_CURSOR_SKIP_PROBE_PREFIXES = 256;
 
 	private final ValueStore valueStore;
 	private final TripleStore tripleStore;
 	private final LmdbStatementPatternCardinalitySource cardinalities;
 	private final BooleanSupplier mayHaveInferred;
+	private final LmdbStatisticsService statistics;
+	private final FrontierEstimatorMode statisticsMode;
 
 	LmdbEstimatorStorageAccess(ValueStore valueStore, TripleStore tripleStore,
 			LmdbStatementPatternCardinalitySource cardinalities, BooleanSupplier mayHaveInferred) {
+		this(valueStore, tripleStore, cardinalities, mayHaveInferred, null, FrontierEstimatorMode.OFF);
+	}
+
+	LmdbEstimatorStorageAccess(ValueStore valueStore, TripleStore tripleStore,
+			LmdbStatementPatternCardinalitySource cardinalities, BooleanSupplier mayHaveInferred,
+			LmdbStatisticsService statistics) {
+		this(valueStore, tripleStore, cardinalities, mayHaveInferred, statistics,
+				statistics == null ? FrontierEstimatorMode.OFF : FrontierEstimatorMode.AUTHORITATIVE);
+	}
+
+	LmdbEstimatorStorageAccess(ValueStore valueStore, TripleStore tripleStore,
+			LmdbStatementPatternCardinalitySource cardinalities, BooleanSupplier mayHaveInferred,
+			LmdbStatisticsService statistics, FrontierEstimatorMode statisticsMode) {
 		this.valueStore = valueStore;
 		this.tripleStore = tripleStore;
 		this.cardinalities = cardinalities;
 		this.mayHaveInferred = mayHaveInferred == null ? () -> false : mayHaveInferred;
+		this.statistics = statistics;
+		this.statisticsMode = statisticsMode == null ? FrontierEstimatorMode.OFF : statisticsMode;
 	}
 
 	ValueStore valueStore() {
@@ -73,6 +96,24 @@ final class LmdbEstimatorStorageAccess {
 
 	double packedStatementPatternRows(Resource subject, IRI predicate, Value object, Resource context,
 			int repeatedComponentPairMask) {
+		if (statistics != null && statisticsMode != FrontierEstimatorMode.OFF) {
+			int planeMask = mayHaveInferred() ? FrontierLeafProbe.BOTH_PLANES : FrontierLeafProbe.EXPLICIT;
+			FrontierLeafProbe probe = LmdbFrontierProbeFactory.probe(valueStore, subject, predicate, object, context,
+					planeMask, repeatedComponentPairMask);
+			if (probe != null) {
+				FrontierLeafEstimate estimate = statistics.estimateLeafCurrent(probe);
+				if (statisticsMode == FrontierEstimatorMode.AUTHORITATIVE) {
+					return estimate.fallbackReason() == FrontierFallbackReason.NONE ? estimate.pointRows() : Double.NaN;
+				}
+			} else if (statisticsMode == FrontierEstimatorMode.AUTHORITATIVE) {
+				return Double.NaN;
+			}
+		}
+		return legacyPackedRows(subject, predicate, object, context, repeatedComponentPairMask);
+	}
+
+	private double legacyPackedRows(Resource subject, IRI predicate, Value object, Resource context,
+			int repeatedComponentPairMask) {
 		return cardinalities == null
 				? Double.NaN
 				: cardinalities.estimateForPlanning(subject, predicate, object, context, repeatedComponentPairMask);
@@ -80,21 +121,36 @@ final class LmdbEstimatorStorageAccess {
 
 	double packedTransitionRows(StatementPattern pattern, String joinVariable, double patternRows,
 			double prefixRows) {
-		if (cardinalities == null || pattern == null || joinVariable == null
+		if (statistics == null || statisticsMode != FrontierEstimatorMode.AUTHORITATIVE || pattern == null
+				|| joinVariable == null
 				|| !Double.isFinite(patternRows) || patternRows < 0.0d
 				|| !Double.isFinite(prefixRows) || prefixRows < 0.0d) {
 			return Double.NaN;
 		}
-		OptionalDouble distinct = cardinalities.estimateDistinct(pattern, joinVariable, 65_536);
-		if (distinct.isEmpty() || !Double.isFinite(distinct.getAsDouble()) || distinct.getAsDouble() <= 0.0d) {
+		if (patternRows == 0.0d || prefixRows == 0.0d) {
+			return 0.0d;
+		}
+		int component = LmdbFrontierProbeFactory.componentIndex(pattern, joinVariable);
+		int planeMask = mayHaveInferred() ? FrontierLeafProbe.BOTH_PLANES : FrontierLeafProbe.EXPLICIT;
+		FrontierLeafProbe probe = LmdbFrontierProbeFactory.probe(valueStore, pattern, planeMask);
+		if (component < 0 || probe == null) {
 			return Double.NaN;
 		}
-		double rows = prefixRows * patternRows / distinct.getAsDouble();
-		return Double.isFinite(rows) ? Math.max(0.0d, rows) : Double.NaN;
+		double distinct = statistics.estimateProjectedDistinctCurrent(probe, component);
+		if (!Double.isFinite(distinct) || distinct <= 0.0d) {
+			return Double.NaN;
+		}
+		double rowsPerPrefix = patternRows / distinct;
+		return rowsPerPrefix > Double.MAX_VALUE / prefixRows ? Double.MAX_VALUE : prefixRows * rowsPerPrefix;
 	}
 
 	boolean describePackedDistinctCursorSkip(StatementPattern pattern, double normalRows, PackedCostEstimate output) {
-		if (pattern == null || tripleStore == null || cardinalities == null
+		return describePackedDistinctCursorSkip(pattern, normalRows, null, output);
+	}
+
+	boolean describePackedDistinctCursorSkip(StatementPattern pattern, double normalRows,
+			BagEstimate conventional, PackedCostEstimate output) {
+		if (pattern == null || tripleStore == null
 				|| !Double.isFinite(normalRows) || normalRows <= 0.0d) {
 			return false;
 		}
@@ -103,13 +159,17 @@ final class LmdbEstimatorStorageAccess {
 		if (plan.isEmpty()) {
 			return false;
 		}
-		OptionalDouble probed = cardinalities.estimateDistinctCursorSkip(pattern,
-				MAX_DISTINCT_CURSOR_SKIP_PROBE_PREFIXES);
-		if (probed.isEmpty()) {
-			return false;
+		int distinctComponentMask = plan.get().distinctComponentMask();
+		double distinctRows = mappedProjectedDistinct(pattern, distinctComponentMask, normalRows);
+		if (!validDistinct(distinctRows) && statistics == null && cardinalities != null) {
+			OptionalDouble probed = cardinalities.estimateDistinctCursorSkip(pattern,
+					MAX_DISTINCT_CURSOR_SKIP_PROBE_PREFIXES);
+			distinctRows = probed.orElse(Double.NaN);
 		}
-		double distinctRows = probed.getAsDouble();
-		if (!Double.isFinite(distinctRows) || distinctRows < 0.0d) {
+		if (!validDistinct(distinctRows)) {
+			distinctRows = conventionalProjectedDistinct(pattern, distinctComponentMask, conventional, normalRows);
+		}
+		if (!validDistinct(distinctRows)) {
 			return false;
 		}
 		double seeks = Math.max(1.0d, distinctRows);
@@ -122,6 +182,61 @@ final class LmdbEstimatorStorageAccess {
 				Math.max(1.0d, distinctRows), 1.0d, plan.get().indexFieldSequence(), "lmdb-distinct-cursor-skip",
 				LmdbDistinctCursorSkipSupport.ACCESS_MODE);
 		return true;
+	}
+
+	private double mappedProjectedDistinct(StatementPattern pattern, int componentMask, double rowCap) {
+		if (statistics == null || statisticsMode != FrontierEstimatorMode.AUTHORITATIVE || componentMask == 0) {
+			return Double.NaN;
+		}
+		int planeMask = mayHaveInferred() ? FrontierLeafProbe.BOTH_PLANES : FrontierLeafProbe.EXPLICIT;
+		FrontierLeafProbe probe = LmdbFrontierProbeFactory.probe(valueStore, pattern, planeMask);
+		if (probe == null) {
+			return Double.NaN;
+		}
+		double distinct = 1.0d;
+		for (int component = 0; component < 4; component++) {
+			if ((componentMask & 1 << component) == 0) {
+				continue;
+			}
+			double projected = statistics.estimateProjectedDistinctCurrent(probe, component);
+			if (!validDistinct(projected)) {
+				return Double.NaN;
+			}
+			distinct = saturatingMultiply(distinct, projected, rowCap);
+		}
+		return Math.min(rowCap, distinct);
+	}
+
+	private static double conventionalProjectedDistinct(StatementPattern pattern, int componentMask,
+			BagEstimate estimate, double rowCap) {
+		if (estimate == null || componentMask == 0) {
+			return Double.NaN;
+		}
+		double distinct = 1.0d;
+		for (int component = 0; component < 4; component++) {
+			if ((componentMask & 1 << component) == 0) {
+				continue;
+			}
+			Var variable = LmdbFrontierProbeFactory.componentVariable(pattern, component);
+			if (variable == null || variable.getName() == null) {
+				return Double.NaN;
+			}
+			double projected = estimate.variable(variable.getName()).distinctRows();
+			if (!validDistinct(projected)) {
+				return Double.NaN;
+			}
+			distinct = saturatingMultiply(distinct, projected, rowCap);
+		}
+		return Math.min(rowCap, distinct);
+	}
+
+	private static boolean validDistinct(double value) {
+		return Double.isFinite(value) && value > 0.0d;
+	}
+
+	private static double saturatingMultiply(double left, double right, double cap) {
+		double product = left * right;
+		return !Double.isFinite(product) || product > cap ? cap : product;
 	}
 
 	void describePackedAccessPath(int lookupMask, double accessRows, double invocations, String estimateSource,

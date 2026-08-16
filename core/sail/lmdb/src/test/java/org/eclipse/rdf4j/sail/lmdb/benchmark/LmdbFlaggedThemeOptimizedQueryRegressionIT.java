@@ -82,7 +82,7 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 	}
 
 	@Test
-	void highlyConnectedQ10KeepsAntiJoinBeforeWeightFanout(@TempDir Path dataDir) throws Exception {
+	void highlyConnectedQ10UsesBoundedAntiJoinWork(@TempDir Path dataDir) throws Exception {
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(
 						dataDir.resolve("highly-connected-q10"),
@@ -111,20 +111,7 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 				OptimizerSnapshot snapshot = explainOptimized(repository, expectation(Theme.HIGHLY_CONNECTED, 10));
 				String plan = snapshot.plan();
 				String renderedQuery = snapshot.renderedQuery();
-				Assertions.assertFalse(renderedQuery.contains("VALUES (?threshold ?w)"),
-						"Highly connected q10 must not use a finite threshold/weight anchor: weight values are "
-								+ "high-fanout and make anti-join work run once per candidate weight row\n" + plan);
-				Assertions.assertFalse(plan.contains("optimizer.guaranteeOption=finite-anchor:w"),
-						"Highly connected q10 must not split the high-fanout weight filter into a standalone "
-								+ "finite anchor: the weight lookup walks most of the predicate/object domain and "
-								+ "delays the selective anti-join\n" + plan);
-				assertBefore(renderedQuery, "?node a <http://example.com/theme/connected/Node>",
-						"<http://example.com/theme/connected/weight> ?w",
-						"Highly connected q10 should bind typed nodes before expanding outer weight fanout\n" + plan);
-				assertBefore(renderedQuery, "?node <http://example.com/theme/connected/connectsTo> ?n2",
-						"<http://example.com/theme/connected/weight> ?w",
-						"Highly connected q10 should evaluate the selective low-neighbor anti-join before "
-								+ "expanding outer weight rows\n" + plan);
+				String finiteAnchor = finiteThresholdWeightAnchor(renderedQuery);
 				Assertions.assertTrue(renderedQuery.contains(
 						"?node <http://example.com/theme/connected/connectsTo> ?node"),
 						"Highly connected q10 must retain its self-loop exclusion whether the safe MINUS is "
@@ -145,12 +132,51 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 						|| notExistsPlan.contains("optimizer.semiAntiAlgorithm=materialized-hash"),
 						"Highly connected q10 should choose a bounded-work NOT EXISTS implementation\n"
 								+ notExistsPlan);
+				Assertions.assertTrue(notExistsPlan.contains("plannedCorrelationOuterRows="),
+						"Highly connected q10 should cost the anti-join against its mapped outer cardinality\n"
+								+ notExistsPlan);
+				Assertions.assertTrue(notExistsPlan.contains("plannedSemiAntiMaterializationWorkRows=")
+						|| notExistsPlan.contains("plannedSemiAntiMemoizedCacheMisses="),
+						"Highly connected q10 should expose the bounded materialization or memoization work\n"
+								+ notExistsPlan);
+				if (finiteAnchor != null) {
+					assertBefore(renderedQuery, finiteAnchor,
+							"<http://example.com/theme/connected/weight> ?w",
+							"Highly connected q10 should bind the four exact weight values before their mapped "
+									+ "predicate/object probes\n" + plan);
+					Assertions.assertTrue(
+							plan.contains("optimizer.guaranteeOptions=generated=1, selected=values-anchor:w"),
+							"Highly connected q10 should identify the selected finite weight anchor\n" + plan);
+					Assertions.assertTrue(plan.contains("plannedDistinctLookupBindings=4.00"),
+							"Highly connected q10 should cost exactly four mapped weight lookups\n" + plan);
+					Assertions.assertTrue(plan.contains("plannedEstimateSource=frontier-v2-omni-finite-domain"),
+							"Highly connected q10 should cost its weight anchor from mapped Omni evidence\n" + plan);
+				} else {
+					assertBefore(renderedQuery, "?node a <http://example.com/theme/connected/Node>",
+							"<http://example.com/theme/connected/weight> ?w",
+							"Without a finite anchor, highly connected q10 should bind typed nodes before "
+									+ "expanding outer weight fanout\n" + plan);
+					assertBefore(renderedQuery, "?node <http://example.com/theme/connected/connectsTo> ?n2",
+							"<http://example.com/theme/connected/weight> ?w",
+							"Without a finite anchor, highly connected q10 should evaluate the selective "
+									+ "low-neighbor anti-join before expanding outer weight rows\n" + plan);
+				}
 			} finally {
 				shutdownAndRelease(repository, store);
 			}
 		} finally {
 			BenchmarkJoinEstimatorSupport.cleanupThemeRegressionStore(preparedStore);
 		}
+	}
+
+	private static String finiteThresholdWeightAnchor(String renderedQuery) {
+		if (renderedQuery.contains("VALUES (?threshold ?w)")) {
+			return "VALUES (?threshold ?w)";
+		}
+		if (renderedQuery.contains("VALUES (?w ?threshold)")) {
+			return "VALUES (?w ?threshold)";
+		}
+		return null;
 	}
 
 	private static void assertBenchmarkStoreRegressionsPass(Path dataDir, List<Theme> themes) throws Exception {

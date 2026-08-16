@@ -459,9 +459,7 @@ public final class FrontierLinearTransforms {
 	 * typed non-composable boundary.
 	 * </p>
 	 *
-	 * @param maximumCandidatePairs hard upper bound on input mapping pairs examined when a random measure is present;
-	 *                              deterministic algebra over two retained database-exact payloads is governed by the
-	 *                              arena memory budget
+	 * @param maximumCandidatePairs hard upper bound on input mapping pairs examined for any input guarantee
 	 */
 	public static EvidenceStateRef join(
 			FrontierStateArena arena,
@@ -493,10 +491,9 @@ public final class FrontierLinearTransforms {
 
 		try (FrontierPayloadLease leftPayload = arena.openPayload(left);
 				FrontierPayloadLease rightPayload = arena.openPayload(right)) {
-			long candidatePairs = Math.multiplyExact(
-					(long) entryCount(leftPayload),
-					entryCount(rightPayload));
-			if (!exactOutput && candidatePairs > maximumCandidatePairs) {
+			long leftEntries = entryCount(leftPayload);
+			long rightEntries = entryCount(rightPayload);
+			if (!candidatePairsWithinLimit(leftEntries, rightEntries, maximumCandidatePairs)) {
 				return arena.deriveSummary(
 						outputKey,
 						EvidenceStateSummary.unresolved(
@@ -512,7 +509,6 @@ public final class FrontierLinearTransforms {
 
 			FrontierMaskStrata outputMasks = outputKey.maskStrata();
 			int outputStrata = outputMasks.stratumCount();
-			int candidateCount = Math.toIntExact(candidatePairs);
 			long temporaryBytes = saturatedAdd(
 					JoinMapping.retainedBytes(leftPayload.masks(), rightPayload.masks(), outputMasks),
 					saturatedAdd(
@@ -520,30 +516,37 @@ public final class FrontierLinearTransforms {
 							saturatedAdd(
 									arrayBytes(outputStrata, Integer.BYTES),
 									arrayBytes(outputStrata, Integer.BYTES))));
-			temporaryBytes = saturatedAdd(
-					temporaryBytes,
-					exactOutput
-							? ExactTupleBuffer.retainedBytes(candidateCount, outputKey.frontier().size())
-							: arrayBytes(outputKey.frontier().size(), Long.BYTES));
+			if (!exactOutput) {
+				temporaryBytes = saturatedAdd(
+						temporaryBytes, arrayBytes(outputKey.frontier().size(), Long.BYTES));
+			}
 			try (FrontierMemoryReservation ignored = arena.reserveTemporary(
 					temporaryBytes, FrontierMemoryPurpose.TARGET_COALESCING)) {
 				JoinMapping mapping = new JoinMapping(leftPayload.masks(), rightPayload.masks(), outputMasks);
 				int[] exactCounts = new int[outputStrata];
 				int[] residualCounts = new int[outputStrata];
 				if (exactOutput) {
-					ExactTupleBuffer buffer = new ExactTupleBuffer(candidateCount, outputKey.frontier().size());
-					appendCompatiblePairs(leftPayload, rightPayload, mapping, buffer);
-					buffer.coalesce(exactCounts);
-					return writeExactBuffer(
-							arena,
-							left,
-							right,
-							outputKey,
-							operationRecipeId,
-							FrontierStateOperation.JOIN,
-							buffer,
-							exactCounts,
-							residualCounts);
+					countCompatiblePairs(leftPayload, rightPayload, mapping, exactCounts);
+					int compatibleEntries = countEntries(exactCounts);
+					Arrays.fill(exactCounts, 0);
+					try (FrontierMemoryReservation exactBufferReservation = arena.reserveTemporary(
+							ExactTupleBuffer.retainedBytes(compatibleEntries, outputKey.frontier().size()),
+							FrontierMemoryPurpose.TARGET_COALESCING)) {
+						ExactTupleBuffer buffer = new ExactTupleBuffer(
+								compatibleEntries, outputKey.frontier().size());
+						appendCompatiblePairs(leftPayload, rightPayload, mapping, buffer);
+						buffer.coalesce(exactCounts);
+						return writeExactBuffer(
+								arena,
+								left,
+								right,
+								outputKey,
+								operationRecipeId,
+								FrontierStateOperation.JOIN,
+								buffer,
+								exactCounts,
+								residualCounts);
+					}
 				}
 
 				countCompatiblePairs(leftPayload, rightPayload, mapping, residualCounts);
@@ -1972,6 +1975,21 @@ public final class FrontierLinearTransforms {
 			count = Math.addExact(count, payload.residualCount(stratum));
 		}
 		return count;
+	}
+
+	private static int countEntries(int[] counts) {
+		int entries = 0;
+		for (int count : counts) {
+			entries = Math.addExact(entries, count);
+		}
+		return entries;
+	}
+
+	private static boolean candidatePairsWithinLimit(long leftEntries, long rightEntries, long maximumPairs) {
+		if (leftEntries < 0L || rightEntries < 0L || maximumPairs < 0L) {
+			throw new IllegalArgumentException("join entry counts and maximum pairs must be nonnegative");
+		}
+		return leftEntries == 0L || rightEntries <= maximumPairs / leftEntries;
 	}
 
 	private static double multiplyWeight(double weight, long multiplier) {

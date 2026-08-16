@@ -50,6 +50,17 @@ final class LmdbFilterPassSelection {
 		return best == null ? unknownFilterPass() : best;
 	}
 
+	static FilterPassEstimate mappedOrBestAvailable(boolean mappedStatisticsOwnPlanning,
+			LmdbFilterSelectivityStats statistics, Filter filter, StatementPattern pattern,
+			FilterPassEstimate mappedFallback, boolean adaptiveEvidenceAllowed) {
+		if (mappedStatisticsOwnPlanning) {
+			/* A mapped estimate must not be displaced by a differently scoped statement-row sample. */
+			FilterPassEstimate mapped = validOrNull(mappedFallback);
+			return mapped == null ? unknownFilterPass() : mapped;
+		}
+		return bestAvailable(statistics, filter, pattern, mappedFallback, adaptiveEvidenceAllowed);
+	}
+
 	static FilterPassEstimate sampledFilterPass(PatternFilterSampleEstimate sampled) {
 		if (sampled == null || !isValidPassRatio(sampled.passRatio())) {
 			return null;

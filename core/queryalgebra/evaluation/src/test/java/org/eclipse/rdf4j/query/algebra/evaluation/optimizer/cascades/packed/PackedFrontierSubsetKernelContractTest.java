@@ -464,6 +464,26 @@ class PackedFrontierSubsetKernelContractTest {
 	}
 
 	@Test
+	void denseDependentContinuationPricesRetainedHashRecipeForEveryOuterRow() {
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(chain(4));
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+		PackedSearchBudget budget = new PackedSearchBudget(PackedPlannerLimits.unbounded());
+		HashPartitionTrackingSession session = new HashPartitionTrackingSession(new PackedQueryView(query));
+		PackedIncumbentSearch baseline = PackedIncumbentSearch.forSession(query, memo, budget, false, session);
+		baseline.build();
+		session.resetBushyCalls();
+		PackedJoinEnumerator enumerator = PackedJoinEnumerator.forSession(query, memo,
+				baseline.selectedRowsByGroup(), budget, session);
+
+		enumerator.optimize(query.rootRelId());
+
+		assertEquals(8.0d, session.maximumBushyHashExecutionPartitions, 0.0d,
+				"a retained independent hash recipe executes once per row of the dependent outer domain");
+	}
+
+	@Test
 	void denseOddWidthSearchIncludesSingletonLeftCompositeRightOrientation() {
 		assertEquals(PackedJoinEnumerator.DENSE_SUBSETS, PackedJoinEnumerator.subsetKernelForFactorCount(5));
 
@@ -1946,6 +1966,78 @@ class PackedFrontierSubsetKernelContractTest {
 			return query.isStatementPattern(relationId)
 					? query.statementPatternValue(relationId, 1).stringValue()
 					: "";
+		}
+	}
+
+	private static final class HashPartitionTrackingSession implements PackedCostSession {
+
+		private static final double ROWS = 8.0d;
+
+		private final PackedQueryView query;
+		private final Map<Integer, Integer> widths = new HashMap<>();
+		private int nextStateId = 1;
+		private double maximumBushyHashExecutionPartitions;
+
+		private HashPartitionTrackingSession(PackedQueryView query) {
+			this.query = query;
+		}
+
+		@Override
+		public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			if (!query.isStatementPattern(relationId)) {
+				return;
+			}
+			output.setRows(ROWS, 1.0d);
+			stamp(output, 1);
+		}
+
+		@Override
+		public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+			output.setContextualRows(ROWS, 1.0d);
+			stamp(output, context.prefixRelationCount() + 1);
+		}
+
+		@Override
+		public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+			int leftWidth = widths.getOrDefault(context.leftInputEvidenceStateId(), 0);
+			int rightWidth = widths.getOrDefault(context.rightInputEvidenceStateId(), 0);
+			String implementation = output.plannedStringMetric("optimizer.physicalJoinImplementation");
+			if ("independent-hash".equals(implementation) && leftWidth > 1 && rightWidth > 1) {
+				maximumBushyHashExecutionPartitions = Math.max(maximumBushyHashExecutionPartitions,
+						output.invocations());
+			}
+			if (implementation != null) {
+				boolean retainedBushyHash = "independent-hash".equals(implementation)
+						&& leftWidth > 1 && rightWidth > 1;
+				output.setLocalPhysicalCost(retainedBushyHash ? 0.0d : 100.0d,
+						0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, output.outputRows(), 0.0d, 0.0d);
+				return;
+			}
+			output.setContextualRows(ROWS, Math.max(ROWS, output.workRows()));
+			if (output.evidenceStateId() == 0) {
+				stamp(output, Math.max(1, leftWidth + rightWidth));
+			}
+		}
+
+		@Override
+		public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		}
+
+		@Override
+		public int exactContinuationIdentity(PackedCostEstimate estimate) {
+			return estimate.evidenceStateId();
+		}
+
+		private void resetBushyCalls() {
+			maximumBushyHashExecutionPartitions = 0.0d;
+		}
+
+		private void stamp(PackedCostEstimate output, int width) {
+			int stateId = nextStateId++;
+			widths.put(stateId, width);
+			output.setEvidenceStateId(stateId);
+			output.setEvidenceGuarantee(EvidenceGuarantee.DATABASE_EXACT);
+			output.setEvidenceDisposition(FrontierStateDisposition.COMPOSABLE_PAYLOAD);
 		}
 	}
 

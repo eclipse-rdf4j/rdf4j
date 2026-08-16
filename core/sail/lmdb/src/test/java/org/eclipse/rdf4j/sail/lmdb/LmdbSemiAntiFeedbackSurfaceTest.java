@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.nio.ByteBuffer;
@@ -261,6 +262,14 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 					}
 				}
 			}
+			String untrainedAlgorithm;
+			try (var connection = repository.getConnection()) {
+				Explanation explanation = connection.prepareTupleQuery(QUERY).explain(Explanation.Level.Optimized);
+				Filter untrained = findFilter((TupleExpr) explanation.tupleExpr());
+				assertNotNull(untrained, explanation::toString);
+				untrainedAlgorithm = untrained.getStringMetricPlanned("optimizer.semiAntiAlgorithm");
+				assertNotNull(untrainedAlgorithm, explanation::toString);
+			}
 			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
 					.getEvaluationStatistics();
 			Filter trained = filter();
@@ -282,11 +291,17 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 						.semiAntiFeedback(planned, "NOT_EXISTS", "streaming-correlated");
 				assertNotNull(feedback);
 				assertEquals(3L, feedback.observationCount());
-				assertEquals(planned.getStringMetricPlanned("plannedSemiAntiCheapestRawAlgorithm"),
-						planned.getStringMetricPlanned("optimizer.semiAntiAlgorithm"),
-						"A surface observation without an originating Frontier event must not override candidate costing");
+				String rawAlgorithm = planned.getStringMetricPlanned("plannedSemiAntiCheapestRawAlgorithm");
+				String selectedAlgorithm = planned.getStringMetricPlanned("optimizer.semiAntiAlgorithm");
+				assertEquals(untrainedAlgorithm, selectedAlgorithm,
+						"Unkeyed compatibility feedback must not displace the untrained packed choice");
+				assertTrue(rawAlgorithm == null || rawAlgorithm.equals(selectedAlgorithm),
+						"When the active estimator publishes a raw semi/anti comparison, the unkeyed counter must not "
+								+ "change it");
 				assertFalse(planned.getDoubleMetricsPlanned().containsKey("plannedSemiAntiFeedbackEvidence"),
 						"Unkeyed compatibility counters must remain separate from Frontier event telemetry");
+				assertFalse(planned.getDoubleMetricsPlanned().containsKey("plannedOperatorFeedbackEvidence"),
+						"Unkeyed semi/anti counters must not leak through generic operator feedback");
 			}
 		} finally {
 			repository.shutDown();

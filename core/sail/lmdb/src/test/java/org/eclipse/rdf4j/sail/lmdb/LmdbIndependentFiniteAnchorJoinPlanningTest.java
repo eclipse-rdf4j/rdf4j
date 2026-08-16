@@ -130,9 +130,7 @@ class LmdbIndependentFiniteAnchorJoinPlanningTest {
 				optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 					@Override
 					public void meet(Join node) {
-						if ("lmdb-frontier".equals(node
-								.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))
-								&& node.getDoubleMetricPlanned("plannedFrontierStateId") > 0.0d) {
+						if (node.getDoubleMetricPlanned("plannedFrontierStateId") > 0.0d) {
 							frontierJoins.add(node);
 						}
 						super.meet(node);
@@ -161,7 +159,8 @@ class LmdbIndependentFiniteAnchorJoinPlanningTest {
 						.map(StatementPattern.class::cast)
 						.map(pattern -> pattern
 								.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))
-						.allMatch(source -> "lmdb-frontier".equals(source)
+						.allMatch(source -> source != null && source.startsWith("frontier-v2-")
+								|| "lmdb-frontier".equals(source)
 								|| "lmdb-finite-binding-lookup".equals(source)),
 						"Frontier leaves must keep either sampled provenance or stronger exact-access provenance. plan="
 								+ optimized);

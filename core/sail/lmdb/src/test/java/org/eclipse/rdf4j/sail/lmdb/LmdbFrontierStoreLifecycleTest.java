@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.lang.reflect.Field;
@@ -27,10 +28,14 @@ import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoRolloutProfile;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsStatus;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsTier;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -41,13 +46,99 @@ class LmdbFrontierStoreLifecycleTest {
 	private static final String FRONTIER_DIRECTORY_NAME = "frontier-synopsis";
 
 	@Test
-	void positiveBudgetWithoutManifestBuildsAndRestartsReady(@TempDir Path dataDirectory) throws Exception {
-		assertStartsAndRestartsWithStatus(dataDirectory,
-				config(FrontierEstimatorMode.AUTHORITATIVE, POSITIVE_SYNOPSIS_BUDGET_BYTES),
-				FrontierSynopsisStatus.READY);
+	void positiveBudgetWithoutManifestStartsConventionallyThenPromotesBackgroundV2(@TempDir Path dataDirectory)
+			throws Exception {
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(),
+				config(FrontierEstimatorMode.AUTHORITATIVE, 32L * 1024L * 1024L));
+		try {
+			store.init();
+			assertEquals(FrontierSynopsisStatus.MISSING, frontierSynopsisStatus(store),
+					"store construction must not synchronously scan LMDB to build V1 statistics");
+			assertFalse(Files.exists(dataDirectory.resolve(FRONTIER_DIRECTORY_NAME).resolve("manifest.bin")));
 
-		assertFalse(Files.notExists(dataDirectory.resolve(FRONTIER_DIRECTORY_NAME).resolve("manifest.bin")),
-				"positive-budget bootstrap must publish an initial Frontier generation");
+			LmdbSailStore backingStore = store.getBackingStore();
+			Method await = LmdbSailStore.class.getDeclaredMethod("awaitFrontierStatisticsReady", long.class);
+			await.setAccessible(true);
+			assertEquals(true, await.invoke(backingStore, 10_000L));
+			Method status = LmdbSailStore.class.getDeclaredMethod("frontierStatisticsStatus");
+			status.setAccessible(true);
+			FrontierStatisticsStatus statisticsStatus = assertInstanceOf(
+					FrontierStatisticsStatus.class, status.invoke(backingStore));
+			assertEquals(FrontierStatisticsAvailability.READY, statisticsStatus.availability());
+			assertFalse(Files.notExists(dataDirectory.resolve("frontier-statistics-v2").resolve("CURRENT.fs2")),
+					"background build must atomically publish a directly queryable V2 generation");
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void committedMutationPublishesSignedDeltaWithoutRebuildingBase(@TempDir Path dataDirectory) throws Exception {
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(),
+				config(FrontierEstimatorMode.AUTHORITATIVE, 32L * 1024L * 1024L));
+		try {
+			store.init();
+			LmdbSailStore backingStore = store.getBackingStore();
+			assertTrue(awaitStatisticsReady(backingStore, 10_000L));
+			FrontierStatisticsStatus base = frontierStatisticsStatus(backingStore);
+
+			try (NotifyingSailConnection connection = store.getConnection()) {
+				connection.begin();
+				connection.addStatement(
+						store.getValueFactory().createIRI("urn:frontier:subject"),
+						store.getValueFactory().createIRI("urn:frontier:predicate"),
+						store.getValueFactory().createLiteral("object"));
+				connection.commit();
+			}
+
+			assertTrue(awaitStatisticsCoveredSequence(backingStore, base.coveredSequence() + 1L, 10_000L));
+			FrontierStatisticsStatus updated = frontierStatisticsStatus(backingStore);
+			assertTrue(updated.generationId() > base.generationId());
+			assertEquals(base.baseEpoch(), updated.baseEpoch(),
+					"ordinary commits must reuse the immutable base instead of scanning a new snapshot");
+			assertTrue(updated.diskBytesByTier().get(FrontierStatisticsTier.DELTAS_AND_MANIFESTS) > 0L,
+					"the new generation must contain a persisted signed-delta shard");
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void deletionDebtAtRebuildThresholdPublishesFreshBase(@TempDir Path dataDirectory) throws Exception {
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(),
+				config(FrontierEstimatorMode.AUTHORITATIVE, 32L * 1024L * 1024L));
+		try {
+			store.init();
+			LmdbSailStore backingStore = store.getBackingStore();
+			assertTrue(awaitStatisticsReady(backingStore, 10_000L));
+			FrontierStatisticsStatus emptyBase = frontierStatisticsStatus(backingStore);
+			var subject = store.getValueFactory().createIRI("urn:frontier:delete-debt-subject");
+			var predicate = store.getValueFactory().createIRI("urn:frontier:delete-debt-predicate");
+			var object = store.getValueFactory().createLiteral("delete-debt-object");
+
+			try (NotifyingSailConnection connection = store.getConnection()) {
+				connection.begin();
+				connection.addStatement(subject, predicate, object);
+				connection.commit();
+			}
+			assertTrue(awaitStatisticsCoveredSequence(backingStore, emptyBase.coveredSequence() + 1L, 10_000L));
+			FrontierStatisticsStatus inserted = frontierStatisticsStatus(backingStore);
+
+			try (NotifyingSailConnection connection = store.getConnection()) {
+				connection.begin();
+				connection.removeStatements(subject, predicate, object);
+				connection.commit();
+			}
+			assertTrue(awaitStatisticsCoveredSequence(backingStore, inserted.coveredSequence() + 1L, 10_000L));
+			assertTrue(awaitStatisticsDeleteDebtAtMost(backingStore, 0.0d, 10_000L),
+					"deletion debt at the threshold must trigger an online base rebuild");
+
+			FrontierStatisticsStatus rebuilt = frontierStatisticsStatus(backingStore);
+			assertTrue(rebuilt.baseEpoch() > emptyBase.baseEpoch());
+			assertEquals(0.0d, rebuilt.deleteDebt(), 0.0d);
+		} finally {
+			store.shutDown();
+		}
 	}
 
 	@Test
@@ -114,7 +205,8 @@ class LmdbFrontierStoreLifecycleTest {
 		LmdbStore store = new LmdbStore(dataDirectory.toFile(), config);
 		try {
 			store.init();
-			assertEquals(FrontierSynopsisStatus.READY, frontierSynopsisStatus(store));
+			assertEquals(FrontierSynopsisStatus.MISSING, frontierSynopsisStatus(store),
+					"store construction must not synchronously rebuild the compatibility V1 synopsis");
 			Method rebuild;
 			try {
 				rebuild = LmdbStore.class.getMethod("rebuildFrontierSynopsis");
@@ -135,6 +227,25 @@ class LmdbFrontierStoreLifecycleTest {
 			assertEquals(FrontierSynopsisStatus.READY, frontierSynopsisStatus(restarted));
 		} finally {
 			restarted.shutDown();
+		}
+	}
+
+	@Test
+	void explicitRebuildDelegatesToV2WhenQueryReadyServiceIsEnabled(@TempDir Path dataDirectory) throws Exception {
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(),
+				config(FrontierEstimatorMode.AUTHORITATIVE, 32L * 1024L * 1024L));
+		try {
+			store.init();
+
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+
+			assertEquals(FrontierSynopsisStatus.MISSING, frontierSynopsisStatus(store),
+					"the compatibility facade must not rebuild the superseded V1 payload/index pair");
+			assertEquals(FrontierStatisticsAvailability.READY,
+					frontierStatisticsStatus(store.getBackingStore()).availability());
+			assertTrue(Files.isRegularFile(dataDirectory.resolve("frontier-statistics-v2").resolve("CURRENT.fs2")));
+		} finally {
+			store.shutDown();
 		}
 	}
 
@@ -199,6 +310,45 @@ class LmdbFrontierStoreLifecycleTest {
 			return assertInstanceOf(FrontierSynopsisStatus.class, accessor.invoke(backingStore));
 		} catch (InvocationTargetException e) {
 			return fail("reading Frontier lifecycle status must not fail", e.getCause());
+		}
+	}
+
+	private static boolean awaitStatisticsReady(LmdbSailStore store, long timeoutMillis) throws Exception {
+		Method await = LmdbSailStore.class.getDeclaredMethod("awaitFrontierStatisticsReady", long.class);
+		await.setAccessible(true);
+		return (boolean) await.invoke(store, timeoutMillis);
+	}
+
+	private static boolean awaitStatisticsCoveredSequence(LmdbSailStore store, long sequence, long timeoutMillis)
+			throws Exception {
+		Method await = LmdbSailStore.class.getDeclaredMethod(
+				"awaitFrontierStatisticsCoveredSequence", long.class, long.class);
+		await.setAccessible(true);
+		return (boolean) await.invoke(store, sequence, timeoutMillis);
+	}
+
+	private static FrontierStatisticsStatus frontierStatisticsStatus(LmdbSailStore store) throws Exception {
+		Method status = LmdbSailStore.class.getDeclaredMethod("frontierStatisticsStatus");
+		status.setAccessible(true);
+		return assertInstanceOf(FrontierStatisticsStatus.class, status.invoke(store));
+	}
+
+	private static boolean awaitStatisticsDeleteDebtAtMost(LmdbSailStore store, double maximum, long timeoutMillis)
+			throws Exception {
+		Object monitor = field(store, "frontierStatisticsMonitor");
+		long remainingNanos = java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+		long deadline = System.nanoTime() + remainingNanos;
+		synchronized (monitor) {
+			while (remainingNanos > 0L) {
+				FrontierStatisticsStatus status = frontierStatisticsStatus(store);
+				if (status.availability() == FrontierStatisticsAvailability.READY
+						&& status.deleteDebt() <= maximum) {
+					return true;
+				}
+				java.util.concurrent.TimeUnit.NANOSECONDS.timedWait(monitor, remainingNanos);
+				remainingNanos = deadline - System.nanoTime();
+			}
+			return false;
 		}
 	}
 

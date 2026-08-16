@@ -49,7 +49,9 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -452,13 +454,19 @@ public class ThemeQueryBenchmark {
 	}
 
 	private void waitForSketchesIfEnabled() throws IOException {
+		repository.init();
+		if (storeConfig.getFrontierEstimatorMode() != FrontierEstimatorMode.OFF) {
+			FrontierSynopsisStatus frontierStatus = store.rebuildFrontierSynopsis();
+			if (frontierStatus != FrontierSynopsisStatus.READY) {
+				throw new IOException("Frontier is not ready for Theme benchmark: " + frontierStatus);
+			}
+		}
 		if (!sketchEstimatorEnabled) {
 			return;
 		}
 		if (!Boolean.parseBoolean(System.getProperty(WAIT_FOR_SKETCHES_PROPERTY, "true"))) {
 			return;
 		}
-		repository.init();
 		long timeoutSeconds = Long.getLong(WAIT_FOR_SKETCHES_TIMEOUT_SECONDS_PROPERTY,
 				DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS);
 		BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "theme benchmark setup", timeoutSeconds,

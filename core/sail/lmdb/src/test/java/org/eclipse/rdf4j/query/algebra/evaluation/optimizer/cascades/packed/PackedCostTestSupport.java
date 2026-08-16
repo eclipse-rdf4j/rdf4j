@@ -28,6 +28,13 @@ public final class PackedCostTestSupport {
 	private PackedCostTestSupport() {
 	}
 
+	public static PackedCostContext prefixContext(
+			int[] relationIds, int relationCount, double prefixRows, int evidenceStateId) {
+		PackedCostContext context = new PackedCostContext();
+		context.reset(relationIds, 0, relationCount, prefixRows, evidenceStateId);
+		return context;
+	}
+
 	public static CostCall disconnectedFilter(StatementPattern prefix, Filter filter, double prefixRows) {
 		return disconnectedFilter(null, prefix, filter, prefixRows);
 	}
@@ -111,6 +118,11 @@ public final class PackedCostTestSupport {
 				view.childRelationId(operatorRelationId, 0),
 				view.childRelationId(operatorRelationId, 1),
 				operatorRelationId);
+	}
+
+	public static void refineIndependentHash(PackedCostSession session, PackedCostContext context,
+			PackedCostEstimate output) {
+		PackedPhysicalJoinCosting.refine(session, PackedPhysicalJoinCosting.INDEPENDENT_HASH, context, output);
 	}
 
 	public static CostCall disconnectedFilter(BindingSetAssignment bindings, StatementPattern prefix, Filter filter,
@@ -447,6 +459,35 @@ public final class PackedCostTestSupport {
 		return new StatementFactorChainCostCall(view, bindingRelationId, factorRelationIds);
 	}
 
+	public static StatementOnlyChainCostCall statementOnlyFactorChain(StatementPattern... factors) {
+		if (factors.length < 2) {
+			throw new IllegalArgumentException("Packed statement-only chain requires at least two factors");
+		}
+		TupleExpr expression = factors[0];
+		for (int index = 1; index < factors.length; index++) {
+			expression = new Join(expression, factors[index]);
+		}
+		PackedQueryView view = new PackedQueryView(PackedQueryCodec.encodeForPlanning(expression));
+		int[] relationIds = new int[factors.length];
+		for (int relationId = 1; relationId <= view.relationCount(); relationId++) {
+			if (!view.isStatementPattern(relationId)) {
+				continue;
+			}
+			Value predicate = view.statementPatternValue(relationId, 1);
+			for (int ordinal = 0; ordinal < factors.length; ordinal++) {
+				if (predicate.equals(factors[ordinal].getPredicateVar().getValue())) {
+					relationIds[ordinal] = relationId;
+				}
+			}
+		}
+		for (int relationId : relationIds) {
+			if (relationId == 0) {
+				throw new AssertionError("Packed statement-only fixture lost a statement factor");
+			}
+		}
+		return new StatementOnlyChainCostCall(view, relationIds);
+	}
+
 	public static TwoFiniteComponentCostCall twoFiniteComponents(BindingSetAssignment outerBindings,
 			StatementPattern outerFactor, BindingSetAssignment componentBindings, StatementPattern componentFactor) {
 		PackedQuery query = PackedQueryCodec.encodeForPlanning(
@@ -539,6 +580,15 @@ public final class PackedCostTestSupport {
 			context.setOperatorInputs(leftRows, rightRows, leftEvidenceStateId, rightEvidenceStateId);
 			return context;
 		}
+
+		public PackedCostContext hashOperatorContext(
+				double leftRows, double rightRows, int leftEvidenceStateId, int rightEvidenceStateId,
+				int lookupMaskId, int compatibilityMaskId) {
+			PackedCostContext context = operatorContext(
+					leftRows, rightRows, leftEvidenceStateId, rightEvidenceStateId);
+			context.setHashJoinMasks(lookupMaskId, compatibilityMaskId);
+			return context;
+		}
 	}
 
 	public record DifferenceCostCall(PackedQueryView query, int differenceRelationId, int leftRelationId,
@@ -594,6 +644,20 @@ public final class PackedCostTestSupport {
 		public PackedCostContext reversePrefixContext(double prefixRows, int evidenceStateId) {
 			PackedCostContext context = new PackedCostContext();
 			context.reset(new int[] { factorRelationId }, 0, 1, prefixRows, evidenceStateId);
+			return context;
+		}
+
+		public PackedCostContext reverseRestrictedPrefixContext(double prefixRows, int evidenceStateId) {
+			PackedCostContext context = reversePrefixContext(prefixRows, evidenceStateId);
+			context.setPrefixRelationsDescribeRows(false);
+			return context;
+		}
+
+		public PackedCostContext intermediateJoinContext(double prefixRows, int candidateEvidenceStateId,
+				double leftRows, double rightRows, int leftEvidenceStateId, int rightEvidenceStateId) {
+			PackedCostContext context = new PackedCostContext();
+			context.reset(new int[] { factorRelationId }, 0, 1, prefixRows, candidateEvidenceStateId);
+			context.setOperatorInputs(leftRows, rightRows, leftEvidenceStateId, rightEvidenceStateId);
 			return context;
 		}
 	}
@@ -681,6 +745,31 @@ public final class PackedCostTestSupport {
 
 		public PackedCostContext emptyContext() {
 			return new PackedCostContext();
+		}
+	}
+
+	public record StatementOnlyChainCostCall(PackedQueryView query, int[] relationIds) {
+
+		public StatementOnlyChainCostCall {
+			relationIds = relationIds.clone();
+		}
+
+		@Override
+		public int[] relationIds() {
+			return relationIds.clone();
+		}
+
+		public int relationId(int ordinal) {
+			return relationIds[ordinal];
+		}
+
+		public PackedCostContext prefixContext(int prefixCount, double prefixRows) {
+			if (prefixCount < 1 || prefixCount >= relationIds.length) {
+				throw new IllegalArgumentException("Prefix must leave at least one factor to cost");
+			}
+			PackedCostContext context = new PackedCostContext();
+			context.reset(relationIds, 0, prefixCount, prefixRows, 0);
+			return context;
 		}
 	}
 

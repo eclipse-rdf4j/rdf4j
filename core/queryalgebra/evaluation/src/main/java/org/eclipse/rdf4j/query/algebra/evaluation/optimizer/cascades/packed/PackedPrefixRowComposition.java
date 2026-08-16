@@ -53,7 +53,6 @@ final class PackedPrefixRowComposition {
 				effectiveRows = saturatedMultiply(unrelatedRows, estimate.outputRows());
 			}
 		}
-
 		if (prefixCount == 0) {
 			factorContributionRows = providerRows ? estimate.outputRows() : effectiveRows;
 		} else if (estimate.hasComponentOutputRows() && providerRows) {

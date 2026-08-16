@@ -313,9 +313,9 @@ class LmdbFrontierDeletionIntegrationTest {
 		return new FrontierManifestIdentity(
 				storeId,
 				snapshotEpoch,
-				1,
-				1,
-				1,
+				LmdbFrontierSynopsisService.SYNOPSIS_SCHEMA_VERSION,
+				LmdbFrontierSynopsisService.HASH_VERSION,
+				LmdbFrontierSynopsisService.SEED_SCHEDULE_VERSION,
 				2,
 				2,
 				FrontierManifestIdentity.ALL_DIRECTIONS,

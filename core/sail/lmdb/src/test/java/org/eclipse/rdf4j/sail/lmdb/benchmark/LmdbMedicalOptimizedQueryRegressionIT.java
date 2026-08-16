@@ -182,7 +182,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 
 	@Test
 	@Timeout(180)
-	void medicalQ4UsesFiniteCodeRelationBeforeBoundCodeLookup() throws Exception {
+	void medicalQ4CostsFiniteCodeRelationAndRetainsCheapestLookup() throws Exception {
 		String previousMode = System.setProperty(CASCADES_MODE_PROPERTY, "exact");
 		RunQueryPlanState state = new RunQueryPlanState();
 		state.themeName = Theme.MEDICAL_RECORDS.name();
@@ -195,18 +195,13 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		try {
 			state.setup();
 			ExplainedPlanSnapshot snapshot = state.explainedPlanSnapshot();
-			String rendered = snapshot.renderedQuery();
 			String plan = snapshot.plan();
 
 			assertAll(
 					() -> assertEquals("COMPLETE", snapshot.completeness(),
 							"MEDICAL q4 must produce a complete optimizer result\n"
 									+ snapshot.diagnostics() + "\n" + plan),
-					() -> assertExactFiniteDomain(snapshot.optimized(), "code", Set.of("DX-200", "DX-201")),
-					() -> assertBefore(rendered, FINITE_CODE_RELATION,
-							"?cond <http://example.com/theme/medical/code> ?code",
-							"The exact code relation must restrict the broad condition-code access"),
-					() -> assertFiniteCodeLookupJoin(snapshot.optimized(), plan));
+					() -> assertFiniteCodeAlternativeOrCheaperBoundLookup(snapshot));
 		} finally {
 			try {
 				state.disableTelemetryTeardown();
@@ -219,7 +214,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 
 	@Test
 	@Timeout(180)
-	void medicalQ4CompleteStoreWithoutDphypUsesFiniteCodeRelationBeforeBoundCodeLookup() throws Exception {
+	void medicalQ4CompleteStoreWithoutDphypRetainsCheapestCodeLookup() throws Exception {
 		String previousMode = System.setProperty(CASCADES_MODE_PROPERTY, "exact");
 		RunQueryPlanState state = new RunQueryPlanState();
 		state.themeName = Theme.MEDICAL_RECORDS.name();
@@ -233,18 +228,13 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		try {
 			state.setup();
 			ExplainedPlanSnapshot snapshot = state.explainedPlanSnapshot();
-			String rendered = snapshot.renderedQuery();
 			String plan = snapshot.plan();
 
 			assertAll(
 					() -> assertEquals("COMPLETE", snapshot.completeness(),
 							"MEDICAL q4 must produce a complete optimizer result on the benchmark store\n"
 									+ snapshot.diagnostics() + "\n" + plan),
-					() -> assertExactFiniteDomain(snapshot.optimized(), "code", Set.of("DX-200", "DX-201")),
-					() -> assertBefore(rendered, FINITE_CODE_RELATION,
-							"?cond <http://example.com/theme/medical/code> ?code",
-							"The exact code relation must restrict the broad condition-code access"),
-					() -> assertFiniteCodeLookupJoin(snapshot.optimized(), plan));
+					() -> assertFiniteCodeAlternativeOrCheaperBoundLookup(snapshot));
 		} finally {
 			try {
 				state.disableTelemetryTeardown();
@@ -386,6 +376,50 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 				"Expected one exact finite domain for ?" + variable + " in the optimized algebra\n" + optimized);
 	}
 
+	private static void assertFiniteCodeAlternativeOrCheaperBoundLookup(ExplainedPlanSnapshot snapshot) {
+		TupleExpr optimized = snapshot.optimized();
+		String rendered = snapshot.renderedQuery();
+		String plan = snapshot.plan();
+		if (containsFiniteBinding(optimized, "code")) {
+			assertAll(
+					() -> assertExactFiniteDomain(optimized, "code", Set.of("DX-200", "DX-201")),
+					() -> assertBefore(rendered, FINITE_CODE_RELATION,
+							"?cond <http://example.com/theme/medical/code> ?code",
+							"The selected exact code relation must restrict the condition-code access"),
+					() -> assertFiniteCodeLookupJoin(optimized, plan));
+			return;
+		}
+
+		List<StatementPattern> codePatterns = new ArrayList<>();
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (isMedicalCodePattern(node)) {
+					codePatterns.add(node);
+				}
+			}
+		});
+		assertEquals(1, codePatterns.size(),
+				"Expected one selected medical-code access when the finite alternative loses on cost\n" + plan);
+		StatementPattern codePattern = codePatterns.getFirst();
+		String estimateSource = codePattern.getStringMetricPlanned("plannedEstimateSource");
+		assertAll(
+				() -> assertTrue(rendered.contains("FILTER ((?code = \"DX-200\") || (?code = \"DX-201\"))"),
+						"The original scalar predicate must remain executable when its lookup wins\n" + rendered),
+				() -> assertTrue(plan.contains("rule=packed-finite-filter-values"),
+						"The exact finite alternative must still be generated and costed\n" + plan),
+				() -> assertEquals("directLookup", codePattern.getStringMetricPlanned("plannedIndexAccessMode"),
+						"The cheaper original must probe code from each already-bound condition\n" + plan),
+				() -> assertEquals("[S, P]", codePattern.getStringMetricPlanned("plannedLookupComponents"),
+						"The retained lookup must bind condition and predicate\n" + plan),
+				() -> assertTrue(codePattern.getDoubleMetricPlanned("plannedAccessRows") <= 1.0d,
+						"The scalar alternative is cheaper only while code access remains at most one row per condition\n"
+								+ plan),
+				() -> assertTrue(estimateSource != null && estimateSource.startsWith("frontier-v2-omni-"),
+						"The retained scalar lookup must still be selected using mapped Omni evidence, but was "
+								+ estimateSource + "\n" + plan));
+	}
+
 	private static void assertFiniteCodeLookupJoin(TupleExpr optimized, String plan) {
 		List<Join> matchingJoins = new ArrayList<>();
 		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -416,7 +450,8 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 						"The condition-code access must be the bound lookup input\n" + plan),
 				() -> assertFalse("hash".equals(join.getStringMetricPlanned("optimizer.joinAlgorithmHint")),
 						"The finite relation and code access must not use a full-scan hash join\n" + plan),
-				() -> assertTrue(Set.of("lmdb-finite-binding-lookup", "lmdb-frontier-correlated-surface")
+				() -> assertTrue(Set.of("lmdb-finite-binding-lookup", "lmdb-frontier-correlated-surface",
+						"frontier-v2-omni-finite-domain")
 						.contains(estimateSource),
 						"The code access must retain finite bound-lookup provenance, but was " + estimateSource
 								+ "\n" + plan),

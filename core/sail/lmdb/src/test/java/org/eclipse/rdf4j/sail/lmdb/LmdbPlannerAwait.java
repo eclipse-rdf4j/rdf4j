@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.awaitility.core.ConditionTimeoutException;
 import org.awaitility.core.ThrowingRunnable;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 
 public final class LmdbPlannerAwait {
@@ -93,11 +94,13 @@ public final class LmdbPlannerAwait {
 
 	public static boolean rebuildSketchesIfEnabled(LmdbStore store) {
 		SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
-		if (estimator == null) {
-			return false;
+		boolean legacyRebuilt = false;
+		if (estimator != null) {
+			estimator.rebuild();
+			legacyRebuilt = true;
 		}
-		estimator.rebuild();
-		return true;
+		FrontierSynopsisStatus frontierStatus = store.rebuildFrontierSynopsis();
+		return legacyRebuilt || frontierStatus == FrontierSynopsisStatus.READY;
 	}
 
 	public static void awaitEstimatorReady(SketchBasedJoinEstimator estimator) {

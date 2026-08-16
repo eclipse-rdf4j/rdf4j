@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -24,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.CostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /** Builds and caches query-local prefix evidence without widening the estimator runtime facade. */
 final class LmdbPrefixEvidenceResolver {
@@ -38,11 +40,17 @@ final class LmdbPrefixEvidenceResolver {
 		this.rootContext = rootContext;
 	}
 
-	BagEstimate estimate(CostContext cost, EstimateContext context, LmdbEstimatorOptimizationScope scope) {
-		double rows = prefixRows(cost);
-		List<TupleExpr> factors = cost.getPrefixFactors();
+	BagEstimate estimate(TupleExpr expression, CostContext cost, EstimateContext context,
+			LmdbEstimatorOptimizationScope scope) {
+		double rows = connectedPrefixRows(cost);
+		List<TupleExpr> factors = connectedPrefixFactors(expression, cost.getPrefixFactors());
 		if (factors.isEmpty()) {
-			return BagEstimate.heuristic(rows, "outer-prefix");
+			return BagEstimate.heuristic(rows, cost.prefixFactorsDescribeCurrentRows()
+					? "outer-prefix"
+					: "transformed-prefix");
+		}
+		if (!cost.prefixFactorsDescribeCurrentRows()) {
+			return BagEstimate.heuristic(rows, "transformed-prefix");
 		}
 		Map<PrefixEstimateCacheKey, BagEstimate> cache = scope == null ? null : scope.prefixEstimates;
 		PrefixEstimateCacheKey cacheKey = cache == null
@@ -137,11 +145,56 @@ final class LmdbPrefixEvidenceResolver {
 		return false;
 	}
 
-	private static double prefixRows(CostContext context) {
+	private static double connectedPrefixRows(CostContext context) {
 		if (!context.isNestedIteratorInvocation()) {
 			return 1.0d;
 		}
 		double outerRows = context.getOuterPrefixRows();
-		return Double.isFinite(outerRows) && outerRows >= 0.0d ? outerRows : 1.0d;
+		if (!Double.isFinite(outerRows) || outerRows < 0.0d) {
+			return 1.0d;
+		}
+		double unrelatedRows = context.getUnrelatedPrefixRows();
+		if (!Double.isFinite(unrelatedRows) || unrelatedRows < 0.0d) {
+			return outerRows;
+		}
+		if (unrelatedRows == 0.0d) {
+			return outerRows == 0.0d ? 0.0d : outerRows;
+		}
+		double componentRows = outerRows / unrelatedRows;
+		return Double.isFinite(componentRows) && componentRows >= 0.0d ? componentRows : outerRows;
+	}
+
+	private static List<TupleExpr> connectedPrefixFactors(TupleExpr expression, List<TupleExpr> factors) {
+		if (expression == null || factors == null || factors.isEmpty()) {
+			return List.of();
+		}
+		Set<String> connectedNames = new LinkedHashSet<>(VarNameCollector.process(expression));
+		if (connectedNames.isEmpty()) {
+			return List.of();
+		}
+		boolean[] connected = new boolean[factors.size()];
+		boolean changed;
+		do {
+			changed = false;
+			for (int ordinal = 0; ordinal < factors.size(); ordinal++) {
+				if (connected[ordinal]) {
+					continue;
+				}
+				Set<String> factorNames = VarNameCollector.process(factors.get(ordinal));
+				if (factorNames.stream().noneMatch(connectedNames::contains)) {
+					continue;
+				}
+				connected[ordinal] = true;
+				connectedNames.addAll(factorNames);
+				changed = true;
+			}
+		} while (changed);
+		List<TupleExpr> result = new ArrayList<>(factors.size());
+		for (int ordinal = 0; ordinal < factors.size(); ordinal++) {
+			if (connected[ordinal]) {
+				result.add(factors.get(ordinal));
+			}
+		}
+		return result.isEmpty() ? List.of() : List.copyOf(result);
 	}
 }

@@ -92,7 +92,9 @@ record PrefixEstimateCacheKey(FiniteBranchRowsCacheKey factors, long rowsBits,
 }
 
 record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outerPrefixRowsBits,
-		long distinctLookupBindingsBits, boolean nestedIteratorInvocation, boolean collectMetrics,
+		long distinctLookupBindingsBits, long unrelatedPrefixRowsBits, boolean nestedIteratorInvocation,
+		boolean collectMetrics,
+		boolean prefixFactorsDescribeCurrentRows,
 		Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,
 		FiniteBranchRowsCacheKey prefixFactors,
 		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision) {
@@ -114,8 +116,10 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 				FactorCostCacheKey.immutableBoundVars(context.getCurrentlyBoundVars()),
 				Double.doubleToLongBits(context.getOuterPrefixRows()),
 				Double.doubleToLongBits(context.getDistinctLookupBindings()),
+				Double.doubleToLongBits(context.getUnrelatedPrefixRows()),
 				context.isNestedIteratorInvocation(),
 				context.shouldCollectMetrics(),
+				context.prefixFactorsDescribeCurrentRows(),
 				immutableFiniteBindingValues(context.getFiniteBindingValues()), tier, prefixFactors,
 				estimateContext.snapshotIdentity(), estimateContext.snapshotVersion(),
 				estimateContext.learnedRevision());
@@ -138,7 +142,9 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 
 	ScopedFactorCostCacheKey toStorable() {
 		return new ScopedFactorCostCacheKey(factor, FactorCostCacheKey.immutableBoundVars(boundVars),
-				outerPrefixRowsBits, distinctLookupBindingsBits, nestedIteratorInvocation, collectMetrics,
+				outerPrefixRowsBits, distinctLookupBindingsBits, unrelatedPrefixRowsBits,
+				nestedIteratorInvocation, collectMetrics,
+				prefixFactorsDescribeCurrentRows,
 				immutableFiniteBindingValues(finiteBindingValues), estimationTier, prefixFactors,
 				snapshotIdentity, snapshotVersion, learnedRevision);
 	}

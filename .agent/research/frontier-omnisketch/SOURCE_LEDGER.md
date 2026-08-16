@@ -10,7 +10,8 @@ None of the local artifacts listed here are build or runtime dependencies.
 | --- | --- | --- | --- |
 | `FOM-MATH-2026-07-24` | User-supplied `frontier-omnisketch-mathematical-resolution-2026-07-24.zip`, received at `/Users/havardottestad/Downloads/frontier-omnisketch-mathematical-resolution-2026-07-24.zip` | Formal positive composability result, impossibility boundary, variance decomposition, SPARQL kernel analysis, proof-status ledger, and executable finite-model checks | Metadata and checksums only. The archive has no explicit license file. Its prose, PDF, Python, shell, JSON, log, and candidate patch are not copied or redistributed. The Java implementation is independent. |
 | `OMNISKETCH-2023` | Wieger R. Punter, Odysseas Papapetrou, and Minos Garofalakis, “OmniSketch: Efficient Multi-Dimensional High-Velocity Stream Analytics with Arbitrary Predicates,” arXiv:2309.06051v1 (2023), [public record](https://arxiv.org/abs/2309.06051) | Original coordinated multi-attribute sketch and sampling context | Cite the public record. The supplied PDF at `/Users/havardottestad/Downloads/2309.06051v1.pdf` is not redistributed. |
-| `OMNISKETCH-JOIN-2025` | David Justen and Matthias Boehm, “Join Cardinality Estimation with OmniSketches,” arXiv:2508.17931v1 (2025), [public record](https://arxiv.org/abs/2508.17931) | OmniSketch interoperability and join-extension baseline; empirical witness-loss motivation | Cite the public record. The supplied PDF at `/Users/havardottestad/Downloads/2508.17931v1.pdf` is not redistributed. RDF4J does not port the paper's C++ implementation. |
+| `OMNISKETCH-JOIN-2025` | David Justen and Matthias Boehm, “Join Cardinality Estimation with OmniSketches,” arXiv:2508.17931v1 (2025), [public record](https://arxiv.org/abs/2508.17931) | OmniSketch interoperability and join-extension baseline; empirical witness-loss motivation | Cite the public record. The supplied PDFs at `/Users/havardottestad/Downloads/2508.17931v1.pdf` and `/Users/havardottestad/Downloads/2508.17931v1-2.pdf` are not redistributed. |
+| `OMNISKETCH-CPP-MIT-2025` | David Justen, `OmniSketchCpp`, user-supplied snapshot received at `/Users/havardottestad/Downloads/OmniSketchCpp-main-2`, [public repository](https://github.com/d-justen/OmniSketchCpp) | Executable interpretation of the join paper: cell insertion/probing, K-minwise set/vector representations, PK-sample combination, secondary sketches, and alpha-acyclic query-graph traversal | The supplied snapshot contains an MIT license, copyright 2025 David Justen. Short attributed excerpts are reproduced in the technical design. RDF4J uses an independently designed primitive, disk-resident Java adaptation rather than a mechanical port. |
 | `SPARQL-QUERY-1.1` | W3C, “SPARQL 1.1 Query Language,” especially [Negation](https://www.w3.org/TR/sparql11-query/#negation), [OPTIONAL](https://www.w3.org/TR/sparql11-query/#optionals), and [EXISTS](https://www.w3.org/TR/sparql11-query/#sparqlAlgebra) | Normative bag semantics, compatibility, bound domains, `MINUS` versus `NOT EXISTS`, and optional matching | Normative public specification. RDF4J behavior is tested against the specification and existing RDF4J semantics. |
 
 ## Supporting mathematical literature
@@ -23,7 +24,7 @@ None of the local artifacts listed here are build or runtime dependencies.
 
 ## Source-to-implementation mapping
 
-The sources establish or motivate requirements; they do not supply RDF4J code.
+The sources establish or motivate requirements; they do not supply production RDF4J code.
 The implementation mapping is:
 
 | Research requirement | RDF4J implementation obligation |
@@ -46,9 +47,10 @@ The following are deliberately not treated as implementation sources:
 
 - the Python reference model and tests inside `FOM-MATH-2026-07-24`;
 - the candidate C++ witness-exhaustion patch inside that archive;
-- the supplied OmniSketch C++ tree or any generated research bundle;
+- the older supplied OmniSketch C++ tree without a recorded license, or any generated research bundle;
 - local copies of papers whose public bibliographic records are sufficient; and
 - benchmark targets stated in a research plan before RDF4J measurements exist.
 
-If any of these are later proposed for direct reuse, stop and perform a
-source-specific license, authorship, and compatibility review first.
+The separately recorded `OMNISKETCH-CPP-MIT-2025` snapshot is not a non-source: its license and exact bytes have
+been reviewed for the short attributed excerpts in the design. Any substantial source reuse still requires a
+source-specific compatibility and notice review.

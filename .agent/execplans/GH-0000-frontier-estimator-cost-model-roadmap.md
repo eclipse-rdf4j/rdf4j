@@ -123,7 +123,7 @@ rewrite.
   validation, and final root policy without recosting. Preserve the three M7 reds in
   `initial-evidence.m7-cache-vector-replay.txt`, `initial-evidence.m7-cache-failclosed.txt`, and
   `initial-evidence.m7-explanation.txt`; the focused cache/recipe/memo suite passes 41 tests.
-- [ ] **[in_progress] Milestone 8:** close all 117 semantic and plan-quality cells, then meet the matched planning and execution
+- [ ] **[paused] Milestone 8:** close all 117 semantic and plan-quality cells, then meet the matched planning and execution
   performance gates without heuristic suppression. The authoritative 117-cell result-bag campaign is closed. The
   retained dense-seed, bijective exact-projection, and segmented emission-buffer slices reduce matched SPARSE q6
   pooled steady planning from 106.170 to 93.425 ms/op and allocation from 70,724,161 to 52,625,495 B/op; the two
@@ -778,6 +778,67 @@ rewrite.
   is not timing evidence. The frozen 5-warmup/20-measurement regret campaign, matched fixed-plan execution, absolute
   planning targets, and both tenfold planning aggregates remain open until their prescribed campaigns finish; no
   result is inferred from inventory completeness or unsaturated timing.
+- [ ] **[in_progress] Milestone 9:** replace the raw Frontier payload, derived query index, and query-time exact-replay
+  fallback with one disk-resident, directly queryable statistics generation that remains bounded at 20 billion
+  triples. M9.0 through the bounded online-maintenance core of M9.4 are implemented test-first. Missing V2 evidence cannot
+  enter statement count/iteration or exact connected-surface paths; `FrontierLinearTransforms.join` no longer
+  narrows or allocates Cartesian pair counts. One purpose-aware heap governor, capability-complete READY validation,
+  leases, atomic publication/rollback, and structured status now own revision-3 query shards. Manifest revision 5
+  pins capability, hash/bucket schema, Omni layout, term width, and tuple-ordinal width while reading legacy
+  unversioned manifests and revision-2 shards for migration. The two-pass builder writes exact/heavy/projected
+  summaries, coordinated Omni cells with deduplicated tuples/postings, Fast-AGMS support, and two-stage bounded center
+  samples. Mapped leaf, projected-distinct, all 16 binary role pairs, star, bridge, path/tree, and retained-endpoint
+  cycle programs are wired into storage and packed planning; all 139 planner integration tests pass with the V2
+  no-statement-I/O route. Transactional LMDB journal rows, exact committed tails, signed count/AGMS delta layers,
+  query-ready Omni insertion/tombstone layers, KL-sized random-delete reserves, reserve-driven cell de-authority,
+  restart replay, 60-second scheduling, 10-percent delete-debt rebuild, and mapped size-tiered layer compaction are
+  implemented. Compaction replaces CountSketch, AGMS, summary, tuple, posting, and sparse-directory shards as one
+  sequence-range family without statement replay or mutation-sized heap arrays. Preserve all reds in
+  `initial-evidence.frontier-omni-v2.txt`, including block-local mapping, high-degree hub overflow, and missing
+  manifest algorithm identity. Mandatory all-context and named-context HLL matrices plus predicate-heavy projected
+  distinct scalars now keep cold distinct costing query-ready. Bounded query-owned VALUES domains and safe finite
+  filters use mapped leaf/subgraph probes rather than the old exact connected-surface cache. Immutable shard handles
+  are reference-counted across adjacent generations, so atomic delta publication charges reused mappings once while
+  old readers retain a valid lease. Mapped logical/physical learning now derives stable identities directly from
+  packed algebra, preserves calibrated state when detached, and rejects append-event logical corrections whose
+  origin does not describe the complete contextual prefix. Mapped semi/anti costing prices streaming, memoized, and
+  materialized EXISTS/NOT EXISTS/MINUS alternatives from retained rows, mapped RHS cardinality, and Omni
+  projected-distinct evidence without reopening V1. Legacy-sized heap settings are translated into a feasible V2
+  build profile, and serializable planning retains its pinned statistics isolation. The 68-test
+  builder/service/session cluster and the focused property-path, cursor-skip, finite-domain, filter, and
+  opaque-operator suites are green. The 20-billion profile's compressed deterministic dimensions remove duplicate
+  predicate/context HLL and AGMS state and stream AGMS publication directly from accumulator storage. Its admitted
+  builder workspace is 1,269,897,643 bytes, about 72 MiB below the 1.25 GiB background envelope, while retaining
+  query-ready heavy-predicate projected-distinct scalars. The later Java 21 quad-composable reference has now been compared against the
+  mapped design. V2 adopts explicit replica-dispersion/effective-support quality and quality-guided progressive
+  bottom-K prefixes without adopting its heap-loaded catalog or quadratic object join. Common mapped leaves stop at
+  a 64-row priority tier per design lane; weak support doubles until strong, exact, or exhausted. Zero witnesses no
+  longer receive a pseudo-count confidence, and sampled star/path/cycle/bridge intervals consume actual shared
+  witness support instead of counting available lanes. Query-local primitive sampling accumulators eliminate the
+  per-cell sampling-lineage allocation found by JFR, and immutable shards build a bounded open-addressed column-ID
+  directory once at open instead of binary-searching on every decoded value. All 43
+  `FrontierStatisticsBuilderTest` cases and all 139 planner integrations are green for this slice. The warm mapped
+  three-pattern star measures 3.827 +/- 0.068 ms/op; the path improved from 11.833 +/- 0.085 to
+  10.614 +/- 0.149 ms/op. A final 101-second JFR measures 10.771 +/- 0.063 ms/op, reduces sampled allocations from
+  895 to 150, removes `SamplingReference.bottomK`, and reduces `FrontierStatisticsShard.column(int)` from 22.97 to
+  0.04 percent of execution samples. Mapped logical refinement now also precedes physical independent-hash costing:
+  when the assured lookup mask covers the complete compatibility mask, candidate work is the mapped logical match
+  multiplicity rather than the stale Cartesian input product. The exact READY-V2 sparse-prefix reproduction, the
+  61-test hash/finite compatibility group, the 166-test changed planner/storage sweep, and the 226-test V2 cluster
+  are green after this repair. Typed finite predicates now expand at most 16 evaluator-validated numeric/calendar
+  aliases per RDF value and 1,024 combined bindings, so common Java `LocalTime` and numeric lexical forms can recover
+  positive mapped support without dictionary or statement enumeration; absence remains a `[0,1]` non-exact result.
+  The five-test typed-filter class and TRAIN q5 integration are green. A complete 10-second exhaustive search of the
+  highly-connected q10 memo independently selected the same four-value mapped weight anchor as budgeted search; its
+  NOT EXISTS RHS is materialized once. The regression now asserts the underlying bounded-work contract—four mapped
+  Omni prefix probes plus materialized/memoized anti work—instead of the obsolete textual order required by the old
+  streaming-correlated implementation. Bound repeated-variable pairs fixed by a finite domain remain leaf equality
+  constraints and are excluded from the unbound join-variable class domain; the focused constructor regression and
+  Social Q7 self-loop integration pass. The final LMDB module gate passes 2,247 tests with zero failures or errors
+  (114 skipped). Still open: held-out audit/adaptive promotion, 24-hour asynchronous migration cleanup, cold-NVMe
+  qualification, and physical 100M/250M/500M/1B scale runs. Milestone 8's immutable v96 artifacts
+  remain valid and untouched; its timing campaign resumes only after V2 shadow-mode parity establishes a comparable
+  estimator source.
 
 ## Non-negotiable architecture invariants
 
@@ -1397,8 +1458,181 @@ cold compile/first execute, warm cache hit, generated shape/size, allocation, ca
 fallback. Do not attribute a gain to HotSpot inlining, scalar replacement, an intrinsic, or vectorization without
 JDK-25-or-newer JFR/compilation evidence for the measured method.
 
+### Milestone 9: make Frontier Statistics V2 query-ready at 20 billion triples
+
+This milestone supersedes the persistent and query-time implementation of the current Quad/Omni synopsis plus raw
+Frontier payload plus derived `FrontierQueryIndex` pair. It does not replace the generic `FrontierStateArena`,
+operator transforms, Pareto planner, or evidence contracts. One store-owned `LmdbStatisticsService` publishes
+immutable, checksummed, directly queryable generations. `LmdbQuadSynopsisService` and
+`LmdbFrontierSynopsisService` remain temporary delegating facades while configuration and stored generations migrate.
+
+The resource contract is arithmetic, not a suggestion. For a JVM with `-Xmx8g`, all statistics services share one
+2,147,483,648-byte governor:
+
+    mapped-generation metadata + mutation tail       268,435,456 bytes
+    guaranteed query scratch                         268,435,456 bytes
+    builder/compactor maximum                      1,342,177,280 bytes
+    permanently uncommitted safety margin            268,435,456 bytes
+                                                     -----------------
+    governed heap total                            2,147,483,648 bytes
+
+One session may hold at most 16 MiB. Ordinary sessions target at most 4 MiB. Query leases may borrow builder capacity
+up to 512 MiB aggregate; the governor revokes or denies background leases before denying query scratch. A denied
+query lease yields a typed wider interval or the conventional estimator, never an LMDB replay, allocation failure,
+or planning exception. Mapped file pages are outside this heap accounting and are never prefaulted.
+
+The steady statistics cap is 137,438,953,472 bytes and the initial envelopes sum exactly to that value:
+
+    exact totals, heavy keys, distincts, linear sketches     16 GiB
+    Omni leaf cells, witness tuples, postings                32 GiB
+    coordinated center/edge/path/cycle samples               32 GiB
+    workload-driven predicate/role/shape refinements         40 GiB
+    active deltas, manifests, checksums, compaction reserve   8 GiB
+                                                               ------
+                                                               128 GiB
+
+Compaction may use at most 34,359,738,368 additional bytes, and initial migration requires 160 GiB free. Unused tier
+capacity is reassigned only by measured held-out q-error reduction per retained byte. A one-row-per-statement version
+of today's 72-byte derived index would require 1,440,000,000,000 bytes at 20 billion statements before filesystem
+overhead, so V2 may not preserve that representation under a different allocator.
+
+Each immutable data shard is at most 1 GiB. Shard-local row and witness ordinals may be unsigned 32-bit values, but
+global row counts, epochs, sequence IDs, byte offsets, products, and cardinalities are `long`. Estimates multiply in
+saturated nonnegative `double` space. Term columns use the minimum generation-wide width
+`ceil(log2(maxTermId + 1))`; a domain of 20,000,000,000 IDs needs 35 bits, while the format supports one through eight
+bytes. Locally implemented frame-of-reference and delta-coded blocks, bit-packed columns, deduplicated witness
+tuples, and sorted postings avoid a new dependency. Headers and directories map lazily; no production code calls
+`MappedByteBuffer.load()`. Structural lengths and directory checksums validate on open, and data-block checksums
+validate on first access.
+
+The builder holds one pinned LMDB read snapshot and makes at most two sequential snapshot scans. Pass one computes
+exact scalar totals, cell populations, heavy-key candidates, degree moments, HLL/KMV summaries, retained-size
+models, and sampling thresholds. Pass two writes only selected witnesses and coordinated center/edge/path/cycle
+samples to partitioned sequential event files, externally sorts one bounded shard at a time, and emits query-ready
+shards. It never retains a dataset-sized Java array. Four design lanes and two independent audit lanes use `2^14`
+cells per attribute/lane and initially target 8,192 alpha-threshold witnesses per populated cell; pass-one counts
+reduce thresholds before emission when the measured encoding would exceed its tier. High-degree centers use
+two-stage priority sampling with bounded neighbor reservoirs rather than exact edge expansion.
+
+At 20 billion triples, two scans are 40 billion tuple visits. At 300,000 visits/second the nominal duration is
+133,333 seconds, or 37.04 hours. Qualification accepts the projected upper 95-percent confidence bound only when it
+remains below 48 hours including 25-percent contingency. The builder is `O(N)` plus external sorting of retained
+samples, uses at most governed heap, and emits at most configured disk. It pauses when foreground query p95 or write
+throughput regresses by more than five percent.
+
+Every published generation contains exact global and bound-mask totals, heavy-key directories, mandatory all-context
+and named-context projected-distinct summaries, Omni-style witness cells, coordinated center and edge samples,
+signed Fast-AGMS/CountSketch projections, confidence calibration, and its own directories/postings. Predicate-heavy
+projected-distinct scalar rows are an optional query-ready accelerator. Leaf estimation intersects witnesses and
+combines exact totals, heavy keys, membership/distinct summaries, and calibrated intervals.
+`addBoundVariableEvidence` consumes `estimateProjectedDistinct(probe, component)` and never enumerates LMDB terms.
+Shared-center stars use coordinated
+center samples and degree vectors; supported alpha-acyclic paths/trees use multi-join witness intersections; cycles,
+sparse foreign-key joins, and weak-witness cases combine independent Fast-AGMS lanes with coordinated edge samples.
+Estimator selection minimizes a calibrated confidence interval against held-out audit lanes, not a fixed preference
+order. Unsupported algebra receives a typed conservative interval.
+
+`READY` means every mandatory query shard is present, structurally valid, mapped, and leaseable. Publication writes
+and fsyncs shards, writes and fsyncs the manifest candidate, atomically renames the manifest last, then fsyncs the
+directory. Reference-counted generation leases keep replaced shards alive. Immutable shard handles are shared across
+adjacent manifests and charged once; generation-local directories retain their own smaller lease. Rollback atomically
+points at the prior valid manifest. A failed optional refinement widens an interval; a failed mandatory shard leaves
+the preceding generation authoritative.
+
+No optimizer route may call LMDB statement count, statement iteration, or distinct enumeration. Statement-pattern
+`EvidenceStateRef` values refer to mapped sketch slices plus scalar summaries; query-owned VALUES and bindings may
+remain exact without entering a statement payload writer. Remove `prepareReplayableSources` and
+`materializeSnapshotExactLeaf` for statement leaves. Rewrite exact joins as bounded merge/intersection or sketch
+contraction. Never compute an allocatable `leftEntries * rightEntries` pair count, narrow it to `int`, or construct a
+Cartesian tuple buffer. Query work is bounded by patterns, lanes, and retained K, approximately
+`O(patterns * lanes * K)`, independent of store cardinality.
+
+Effective statement changes append a compact journal row in the same LMDB write transaction: operation, explicit or
+inferred scope, epoch/sequence, and four term IDs. Commit merges the transaction into a fixed-size signed in-memory
+delta, and an immutable delta shard publishes within 60 seconds. Restart replays journal sequences strictly after
+the last covered sequence and is idempotent. CountSketch/Fast-AGMS deltas support insertions and deletions. Alpha-
+minwise reserves target 25-percent base-layer deletion churn with per-shard exhaustion probability below `10^-6`.
+Rebuild begins at 10-percent deletion debt; a witness cell ceases to be authoritative before valid support falls
+below K, while signed linear estimates remain safe. Compaction replaces one shard or one layer no larger than 32 GiB
+at a time, so a manifest can combine independently versioned base layers and deltas.
+
+Implement in six test-first slices:
+
+1. **M9.0 safety invariant.** Reproduce `READY` raw evidence with an unavailable query view and three statement
+   leaves. A counting source makes the test fail on any planning count/iteration. Remove exact replay and retain
+   query-owned finite relations. Add large-cardinality contracts above `2^31`, `2^32`, and 20 billion proving that
+   joins neither narrow nor allocate Cartesian pairs.
+2. **M9.1 governed query-ready substrate.** Add the global purpose-aware heap governor, structured fallback/status
+   values, shard/manifest codecs, lazy segmented mapping, checksums, atomic publication, and generation leases.
+   Round-trip, truncation, corruption, partial-publication, crash-recovery, and lease-safe replacement tests precede
+   their production implementations.
+3. **M9.2 bounded two-pass build.** Add pass-one summaries and sizing, sequential partitions, bounded external sort,
+   compressed columns/postings, and mandatory leaf plus linear-sketch shards. Tiny-governor tests force spill/pause;
+   no test or production builder may allocate proportional to snapshot cardinality.
+4. **M9.3 estimator ensemble.** Wire bound-mask leaves, all/named/heavy projected distincts, bounded finite domains,
+   safe finite-filter anchors, center/star, path/tree, cyclic, sparse, and conditional estimators into both
+   storage-estimator and packed-state paths. Exact-oracle/property tests cover all bound masks, all 16 join-role
+   pairs, named contexts, explicit/inferred planes, skew, hubs, sparse foreign keys, paths, stars, cycles, and nested
+   SPARQL algebra.
+5. **M9.4 online lifecycle.** Add transactional journal rows, signed deltas, delete reserves, restart replay, rolling
+   layer compaction, facades, asynchronous startup, V1 beside V2 migration, shadow validation, atomic promotion, and
+   delayed cleanup. Insert/delete/rollback/duplicate-replay/restart/lag/reserve tests precede each behavior.
+6. **M9.5 qualification.** Run JMH and CPU/allocation JFR for warm and cold planning, concurrent build plus 64
+   planners, and scale points 100M, 250M, 500M, and 1B. Fit build time, retained bytes, update cost, and planner
+   latency; require linear build scaling with `R^2 >= 0.99` and project the upper 95-percent bound to 20B with
+   25-percent contingency.
+
+The public mode remains `off|shadow|authoritative`. `frontierSynopsisBudgetBytes` becomes the complete steady disk
+cap. Add `frontierHeapBudgetBytes` (default one quarter of `Runtime.maxMemory()`),
+`frontierStatisticsMaxLagMillis` (default 60,000), and `frontierDeleteReserveFraction` (default 0.25). Parse but
+deprecate `frontierQueryIndexBudgetBytes`, `frontierQueryMemoryBudgetBytes`, and
+`frontierInitialMaterializationWorkUnits`; V2 ignores index/materialization settings and maps the legacy query-memory
+value only when the global heap setting is absent.
+
+Acceptance at scale requires zero statement-index planning I/O; warm p95 at most 20 ms and cold local-NVMe p95 at
+most 100 ms for ordinary three-to-ten-pattern queries; leaf p95 q-error at most 2, join p95 at most 4, and complete-
+plan p99 at most 10 on the frozen qualification corpus; mutation lag at most 60 seconds; ordinary query scratch at
+most 4 MiB and per-session scratch at most 16 MiB; total statistics heap at most 2 GiB; steady disk at most 128 GiB;
+temporary disk at most 32 GiB; and foreground p95/write-throughput regression at most five percent during build.
+Accuracy authority remains provisional until the shadow-mode 1B qualification passes.
+
 ## Surprises & Discoveries
 
+- Observation: `FrontierSynopsisStatus.READY` currently certifies the raw payload, while planning needs a separately
+  built `FrontierQueryIndex`. `LmdbFrontierSynopsisService.refreshQueryIndex` catches index build failures and records
+  `query_index_build_failed` without invalidating the raw generation. An unavailable lease then enters
+  `LmdbFrontierPackedCostSession.prepareReplayableSources`, calls statement counts, iterates exact LMDB leaves, and
+  writes query-local payloads. `replayable_source_materialization_failed` therefore describes query-time statement
+  replay, not Omni reconstruction.
+  Evidence: `LmdbFrontierSynopsisService.refreshQueryIndex`, `LmdbFrontierPackedCostSession.prepare`,
+  `prepareReplayableSources`, `snapshotCandidateRangeRows`, and `materializeSnapshotExactLeaf` form the complete call
+  chain. `FrontierQueryIndex` charges 72 persisted bytes per retained row and builds five `long` columns plus four
+  permutations before mapping the result.
+- Observation: increasing query memory exposes a second independent defect rather than curing the first.
+  `FrontierLinearTransforms.join` computes exact Cartesian candidate pairs as `long`, narrows them with
+  `Math.toIntExact`, and allocates an `ExactTupleBuffer` of that size. Any representation that enumerates Cartesian
+  pairs is asymptotically invalid at 20 billion statements even if the narrowing is changed.
+- Observation: accurate mapped logical join rows do not automatically repair a physical alternative that was costed
+  before the mapped state was restored. READY-V2 sparse planning produced accurate 120,000- and 32,000-row joins but
+  retained 960,000,000 and 256,000,000 hash candidates from the delegate's Cartesian product. In both cases the
+  assured lookup mask equaled the complete compatibility mask, so every bucket candidate was already a logical
+  match. Repricing the hash alternative after mapped refinement removes the false work without assuming correlation
+  when masks differ.
+  Evidence: `LmdbPackedCostModelV2SessionTest.mappedV2JoinIsAttachedBeforeAssuredHashCandidatesAreCosted` failed with
+  10,000 candidates for an exact 25-row mapped join and now reports 25; all three `LmdbSparsePrefixCostTest` cases and
+  the combined 61-, 166-, and 226-test suites pass.
+- Observation: sampling complete selected centers is not bounded under RDF hub skew. A single selected 60,000-edge
+  subject exceeded the domain writer, causing all four subject-center shards to publish zero rows; increasing the
+  buffer only moves the same failure to a larger hub. Independent second-stage row sampling is required in addition
+  to coordinated center sampling, and the query estimator must scale both probabilities.
+  Evidence: `initial-evidence.frontier-omni-v2.txt` records the four zero-row shards in
+  `highDegreeCenterUsesBoundedSecondStageNeighborSamples`; the green contract retains bounded nonzero rows in every
+  lane and reconstructs the exact 900-million-row join within its interval.
+- Observation: a shard version alone does not version a generation's estimator. Without format, capability,
+  hash/bucket, layout, term-width, and ordinal-width identity in the manifest, a future reader can map structurally
+  valid bytes produced by an incompatible selection function and return plausible but wrong estimates.
+  Evidence: the manifest-identity red failed because `FrontierStatisticsManifest.formatRevision()` did not exist;
+  manifest revision 5 now round-trips every field and rejects a hash-schema mismatch before publication.
 - Observation: the repository already contains the right component ideas, but historical plans often made local migration
   compromises that became contradictory when treated as permanent architecture: one canonical scalar row count per
   subset, one scalar winner, and Pareto/feedback deferred as optional work.
@@ -1977,9 +2211,67 @@ JDK-25-or-newer JFR/compilation evidence for the measured method.
   Evidence: the replay red registered canonical state 2 first as `BOUND_ONLY` and later as
   `DATABASE_EXACT/COMPOSABLE_PAYLOAD`. Atomic typed realization and the explicit negative ID-only contract pass with
   the combined 157-test search/cache/recipe/session matrix.
+- Observation: charging a complete mapped-metadata envelope to every manifest makes an atomic delta publication fail
+  even when almost every descriptor names the same immutable base shard.
+  Evidence: `FrontierStatisticsBuilderTest.chainedOmniMutationLayersResolveTransitionsAgainstTheBaseSet` published a
+  base plus two bounded mutation layers under a 64 MiB test governor; the second candidate was refused while the
+  preceding generation still owned duplicate accounting. Splitting generation-local directory bytes from
+  reference-counted shard-handle bytes makes the focused reproduction and the combined 68-test
+  builder/service/session cluster pass without increasing the governor.
+- Observation: RDF-term identity is insufficient for costing a SPARQL typed equality, but enumerating the value
+  dictionary would recreate store-size-dependent planning.
+  Evidence: the focused `LocalTime` regression stored the Java factory form and queried the value-equal lexical form
+  `08:00:00`; exact term probing estimated five rows instead of the actual two. A bounded set of candidates admitted
+  only by `QueryEvaluationUtility` recovers two positive mapped rows, while the full five-test temporal class and
+  TRAIN q5 integration pass without statement enumeration or an exact-zero claim.
+- Observation: a historical join-order assertion can become false after the physical anti-join implementation it
+  protected is replaced.
+  Evidence: highly-connected q10 originally forbade a finite weight anchor because streaming correlation reopened
+  the multi-pattern RHS per candidate row. Both a 512-work budget and a complete 1,400-candidate/10-second search now
+  choose the four-value anchor, while telemetry shows `materialized-hash`, four mapped `[P,O]` prefix probes, and one
+  bounded RHS build. The strengthened regression checks those physical costs and retains anti-before-weight only for
+  the no-anchor case.
+- Observation: leaf repeated-equality masks and join variable classes describe different domains after a finite
+  binding fixes a self-loop variable.
+  Evidence: Social Q7 bound both components of `?v social:follows ?v`; the leaf retained subject-object equality,
+  while the join program correctly omitted bound components from its variable classes. Comparing the full masks
+  rejected the program. The focused constructor regression and original Social Q7 integration now pass after the
+  invariant compares only repeated pairs whose two components remain unbound.
 
 ## Decision Log
 
+- Decision: Treat generated value-equal RDF terms as bounded lower-support probes, never as a complete semantic
+  rewrite domain.
+  Rationale: SPARQL numeric and calendar equality can cross lexical forms and datatypes, but no finite generator can
+  prove that it has enumerated every stored equivalent. At most 16 deterministic candidates per value are validated
+  by the runtime equality evaluator and the combined domain is rejected above 1,024 rows. Positive mapped support may
+  guide costing; a miss retains `[0,1]`, confidence at most 0.5, and a non-exact guarantee. This preserves bounded
+  planning and avoids both false zeroes and dictionary scans.
+  Date/Author: 2026-08-16 / Codex.
+- Decision: Specify anti-join regressions in terms of bounded physical work rather than one permanent textual order.
+  Rationale: anti-before-fanout was necessary for streaming correlation, but a materialized hash RHS is built once
+  and can make four mapped finite-domain probes cheaper than tens of thousands of subject-bound lookups. Exhaustive
+  memo search confirms the selection is cost-driven. Tests therefore require mapped finite-domain probe accounting
+  and materialized or memoized anti work when the anchor wins; without an anchor they retain the selective
+  anti-before-weight order.
+  Date/Author: 2026-08-16 / Codex.
+- Decision: Keep equality constraints on bound repeated components in the leaf and exclude them from join-variable
+  classes.
+  Rationale: leaf verification owns constant and repeated-component semantics, including contradictory bindings;
+  join variable classes model only unbound equivalence classes used across patterns. Requiring a bound self-loop to
+  appear in both domains is redundant and violates the constructor's prohibition on labeling bound components.
+  Date/Author: 2026-08-16 / Codex.
+- Decision: Complete mapped logical refinement before deriving physical independent-hash candidate work.
+  Rationale: physical candidate multiplicity depends on the final logical match estimate and the proved relation
+  between lookup and compatibility masks. Reusing a pre-refinement Cartesian product both misprices valid plans and
+  breaks scale independence; replacing it when masks differ would instead undercount residual compatibility checks.
+  Date/Author: 2026-08-16 / Håvard and Codex.
+- Decision: Share immutable shard handles across adjacent manifests and account the handle independently from each
+  generation directory.
+  Rationale: atomic publication and rollback must keep old readers valid, but reused shard mappings are one physical
+  resource. Reopening and double-charging them wastes file descriptors and can reject a bounded delta under the hard
+  heap contract; releasing the old generation before candidate validation would sacrifice rollback safety.
+  Date/Author: 2026-08-15 / Håvard and Codex.
 - Decision: Frontier evidence state is the canonical estimation currency; scalar rows are adapters.
   Rationale: later transitions, uncertainty, learning, cache validation, and Pareto dominance need information that
   a scalar cannot reconstruct.
@@ -2352,6 +2644,80 @@ JDK-25-or-newer JFR/compilation evidence for the measured method.
   means exact fixpoint certification is impossible. `INCOMPLETE_RESOURCE_LIMIT` exposes that fact and permits an
   explicit larger-budget retry without suppressing a continuation or falsely claiming exactness.
   Date/Author: 2026-08-13 / Håvard and Codex.
+- Decision: Make persisted statistics generations directly queryable and prohibit exact statement replay during
+  optimization.
+  Rationale: raw-payload readiness plus a query-local derivative creates two incompatible availability states and
+  makes planning memory and I/O proportional to dataset cardinality. A mandatory query-ready shard is validated
+  before `READY`, while missing, stale, corrupt, or memory-constrained evidence returns a conservative stored
+  interval or the conventional estimator. This makes the safety fallback independent of the V2 estimator's eventual
+  accuracy and removes both the payload-writer exhaustion and Cartesian `int` overflow failure classes.
+  Date/Author: 2026-08-14 / Håvard and Codex.
+- Decision: Keep V2 in this sole roadmap as Milestone 9 instead of creating
+  `.agent/execplans/frontier-statistics-v2.md`.
+  Rationale: `.agent/execplans/README.md` declares this file the only optimizer ExecPlan and explicitly forbids child
+  or follow-on plans. Consolidating the approved V2 contract here preserves one dependency order, progress marker,
+  decision log, and recovery source while still recording every requested resource equation and acceptance gate.
+  Date/Author: 2026-08-14 / Codex.
+- Decision: Sample high-degree center adjacency in a second independent stage and persist both admission thresholds.
+  Rationale: coordinated center inclusion preserves join-key correlation, while an independent per-domain edge
+  priority bounds retained adjacency under arbitrary hub degree. Horvitz-Thompson degree scaling and the same-domain
+  overlap correction preserve bag multiplicity without retaining the complete center or reporting sampled rows as
+  exact.
+  Date/Author: 2026-08-15 / Codex.
+- Decision: Pin persisted estimator identity in the generation manifest and keep the current pointer backward
+  readable.
+  Rationale: READY must certify an algorithm, not just files. Manifest revision 5 declares shard revision,
+  capability mask, hash/bucket schema, Omni dimensions, term width, and tuple-ordinal width; legacy revision-4
+  manifests load as explicitly unversioned migration state instead of being silently relabeled.
+  Date/Author: 2026-08-15 / Codex.
+- Decision: Persist every mutation range as one aligned scalar-and-Omni shard family and merge witnesses by exact
+  statement identity.
+  Rationale: population counters alone cannot update projected distincts or correlated joins. Sparse insertion
+  postings and deletion tombstones admitted under the immutable base cutoff preserve coordinated witnesses; the
+  query merge requires base presence plus all signed transitions to equal zero or one. A signed-only migration
+  prefix deliberately disables later witness overlays and retains the complete scalar history rather than applying
+  a biased suffix.
+  Date/Author: 2026-08-15 / Codex.
+- Decision: Size deletion reserves with a per-shard binomial KL union bound, not a fixed multiplicative factor.
+  Rationale: retaining `K / (1-r)` witnesses only makes the expected survivor count equal K and leaves exhaustion
+  probability near one half. The smallest retained n satisfying the `10^-6 / populatedCells` upper-tail target
+  gives the declared 25-percent random-churn guarantee; disk fitting scales authoritative K and recomputes n rather
+  than truncating reserve rows.
+  Date/Author: 2026-08-15 / Codex.
+- Decision: Compact adjacent equal-size delta ranges as a binary counter using mapped sequential column streams.
+  Rationale: a fixed layer count otherwise turns frequent small commits into a full 20-billion-row base rebuild and
+  grows mapped metadata linearly. Size-tiered compaction gives logarithmic query fan-in and amortized rewrite work;
+  all six shard kinds move together under a 4 MiB compactor lease, while old published files remain lease/rollback
+  safe.
+  Date/Author: 2026-08-15 / Codex.
+- Decision: Derive sampled-estimator confidence from independent-lane dispersion, shared witnesses, effective sample
+  size, represented mass, and composition depth.
+  Rationale: the former leaf pseudo-count assigned confidence to zero observed support, while star/path/bridge
+  estimators treated four available lanes as strong evidence even if their estimates disagreed. One primitive
+  quality vector now drives conservative intervals across the ensemble; exact complete-cell answers bypass the
+  statistical path. This adopts the useful quality contract from the Java 21 quad-composable reference without its
+  heap object model.
+  Date/Author: 2026-08-16 / Codex.
+- Decision: Query immutable base Omni cells through progressively doubled unsigned-priority prefixes.
+  Rationale: the prefix of a sorted bottom-K or threshold sample is itself a valid, more restrictive bottom-K sample.
+  Starting at 64 rows per design lane bounds common-probe mapped I/O, while quality-triggered doubling preserves
+  sparse accuracy and reaches complete-cell proofs. Signed mutation overlays remain on the full bounded merge until
+  their multi-source prefix lineage is proved, preventing a latency optimization from weakening update correctness.
+  Date/Author: 2026-08-16 / Codex.
+- Decision: Do not store sampled state for predicate and context dimensions that are deterministic inside a
+  predicate-local/default-context shard.
+  Rationale: predicate projected distinct is exactly one, and default-context distinct is exactly one. Persisting
+  HLL registers or a predicate-component AGMS plane for those dimensions duplicated information and pushed the 20B
+  build workspace 184 MiB over its 1.25 GiB envelope. Exact scalar columns plus streamed S/O/C AGMS publication save
+  256 MiB and admit the complete builder at 1,269,897,643 bytes without weakening a query answer.
+  Date/Author: 2026-08-16 / Codex.
+- Decision: Snapshot sampling lineage into primitive lane estimates and index immutable shard columns once on open.
+  Rationale: JDK 25 JFR attributed 60.72 percent of allocation pressure to per-cell `SamplingReference.bottomK`
+  objects and 22.97 percent of execution samples to repeated binary searches in `column(int)`. Two scratch-owned
+  primitive accumulators preserve the exact same minimum-inclusion lineage, while a bounded open-addressed table
+  supports arbitrary sparse nonnegative column IDs with memory proportional to column count. The final profile has
+  no bottom-K reference allocation and only 0.04 percent column-lookup samples.
+  Date/Author: 2026-08-16 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -2365,6 +2731,12 @@ promoted into permanent contracts. Scalar adapters, one-entry winners, singleton
 rewrite coverage, and Monitoring-only learning were useful intermediate states. They are explicitly unfinished here.
 Future contributors update this section after every milestone with what changed, what evidence passed, what remains,
 and whether any premise in the plan was disproved.
+
+Milestone 9 is an urgent architecture correction discovered while Milestone 8 performance qualification was in
+progress. The existing v96 corpus artifacts remain immutable evidence, but their persistent estimator source cannot
+meet the 20-billion-triple resource contract. The first deliverable is deliberately smaller than the new file format:
+planning must become safe and store-size-independent when a query view is unavailable. No V2 accuracy or scale claim
+is made until the later shadow-mode gates pass.
 
 The focused `papers2` review tightened rather than replaced that architecture. It showed that DPhyp topology can be
 retained while scalar subset winners are removed; CD-E completeness must be qualified by predicate decomposition and
@@ -2556,6 +2928,14 @@ phase must compute complete regret for all exact inventories, followed by the si
 the still-open matched planning-time/allocation gates. No acceptance threshold has been weakened and no policy or
 rewrite was changed to improve a benchmark.
 
+Milestone 9 now has a complete query-ready base/delta substrate and a store-size-independent packed integration
+boundary. The latest integration pass exposed two useful semantic/physical distinctions. First, positive mapped
+term support can cost SPARQL typed equality only when generated aliases are evaluator-validated and remain explicitly
+incomplete. Second, a finite anchor that precedes `NOT EXISTS` is safe when the selected materialized or memoized
+algorithm bounds RHS work; the old textual-order rule belonged to the retired streaming implementation. Focused
+tests cover both distinctions. Physical 100M-1B scale, held-out calibration, cold p95, background interference, and
+the final post-repair module gate remain open, so no 20B authority claim follows from these results.
+
 ## Context and Orientation
 
 Work from the repository root. RDF4J's public query algebra is `TupleExpr`, defined in the query-algebra model module.
@@ -2587,6 +2967,15 @@ module's `frontier` package. `LmdbPackedPredicateRangeProvider` translates store
 range interface. `LmdbOperatorFeedbackStats`, `FrontierLearningModel`, `LmdbLeoSurfaceStats`, and
 `LmdbLeoFeedbackStore` own learned observations and persistence. The store owns `PackedPlanCache`; query-local arenas
 never become shared mutable state.
+
+At Milestone 9 entry, LMDB owns two independent synopsis services. `LmdbQuadSynopsisService` maintains the older
+in-heap Quad/Omni-style bound-mask sketches used by `LmdbStorageEstimatorEvidence`.
+`LmdbFrontierSynopsisService` persists raw 12-`long` records and then builds a separate 72-byte-per-row
+`FrontierQueryIndex` with five columns and four sorted permutations. Store startup can synchronously refresh or build
+these structures. If the raw manifest is `READY` but the derivative is absent, stale, over budget, or failed,
+`LmdbFrontierPackedCostSession` scans exact statement leaves into a query-local `FrontierStateArena`. These are the
+specific moving parts Milestone 9 replaces. Generic Frontier state composition remains the consumer of the new
+mapped statistics references.
 
 The following terms have exact meanings in this plan:
 
@@ -2640,7 +3029,11 @@ dimension one cost algebra. Milestone 4 installs continuation/Pareto retention w
 and explicit incomplete statuses. Milestone 5 repeatedly feeds proof-checked rewrites and facts into hypergraph
 construction, exact one-word or multiword DPhyp, Cascades alternatives, and dependent-parent reactivation until the
 certificate reaches a fixpoint. Milestone 6 adds the selected NIG-plus-conformal learned policy to those vectors.
-Milestone 7 makes decisions durable and explainable. Milestone 8 closes correctness before tuning.
+Milestone 7 makes decisions durable and explainable. Milestone 8 closes correctness before tuning. Milestone 9
+preempts only the remaining Milestone 8 timing campaign because the current persistent estimator cannot safely run at
+the required scale. It first closes the no-replay and no-Cartesian-allocation safety invariants, then delivers the
+query-ready format, bounded builder, estimator ensemble, online lifecycle, and scale qualification. Resume the
+remaining Milestone 8 comparisons only against a frozen V2 shadow/authoritative manifest.
 
 Do not create another ExecPlan for a milestone. Before beginning a slice, update `Progress` so exactly one entry is
 marked as the active milestone, add the smallest failing in-repository test required by the repository's Routine A or D, and
@@ -2676,6 +3069,19 @@ Never pass `-am` or `-q` to a test command. For each behavior change, select the
 repository runner and retain logs. The continuation contract already has preserved failing evidence; rerunning it
 before Milestone 4 should still report one failure with expected cost 3 and actual cost 102. Exact existing and
 prescribed selectors are:
+
+    python3 .codex/skills/mvnf/scripts/mvnf.py \
+      LmdbFrontierPlanningIntegrationTest#missingQueryIndexNeverReadsStatementSourceDuringPlanning \
+      --retain-logs
+    python3 .codex/skills/mvnf/scripts/mvnf.py \
+      FrontierLinearTransformContractTest#exactJoinProductsAboveIntegerRangeDoNotNarrowOrAllocatePairs \
+      --retain-logs
+    python3 .codex/skills/mvnf/scripts/mvnf.py \
+      FrontierStatisticsHeapGovernorTest --retain-logs
+    python3 .codex/skills/mvnf/scripts/mvnf.py \
+      FrontierStatisticsShardTest --retain-logs
+    python3 .codex/skills/mvnf/scripts/mvnf.py \
+      LmdbStatisticsServiceTest --retain-logs
 
     python3 .codex/skills/mvnf/scripts/mvnf.py \
       PackedFrontierSubsetKernelContractTest#denseKernelRetainsTheGloballyOptimalOrderedContinuationState \
@@ -2781,6 +3187,15 @@ pairing, multiplicity, guarantee, disposition, lineage, uncertainty, and exact z
 is typed and explained. Exact and sampled oracle expectations, interval coverage, heavy-center exactness,
 insert/delete generations, budgets, v1/v2 migration, restart, and OFF/snapshot-only modes pass.
 
+Milestone 9 estimator acceptance additionally requires a counting source that fails if planning calls statement
+count, statement iteration, or bound-variable distinct enumeration; products above `2^31`, `2^32`, and 20 billion
+without proportional allocation; forced spill/pause with tiny governor leases; aggregate governed heap at most 2 GiB
+under a builder and at least 64 planners; shard round trips plus truncation, checksum, partial-publication, crash,
+stale-manifest, and lease replacement cases; mutation journal insert/delete/rollback/idempotent replay/restart/lag and
+reserve-depletion cases; and exact-oracle properties for all 16 leaf bound masks and all 16 join-role pairs. Nested
+FILTER, VALUES, UNION, OPTIONAL, MINUS, EXISTS/NOT EXISTS, subquery, grouping, context, and explicit/inferred cases
+must remain semantically correct when statistics are absent or uncertain.
+
 Cost acceptance requires every physical dimension to have one unit, scope, uncertainty, and composition registry
 entry. Independent oracles agree for sequential, concurrent, first-result, blocking, repeated-open, materialized,
 cached, spill, peak-memory, and retained-memory trees. Algebra tests prove identity, monotonicity, interval endpoint
@@ -2847,6 +3262,14 @@ resolution fails, rerun the exact command once without `-o`, then return offline
 without `-T 1C` and diagnose rather than weakening tests. An interrupted sidecar or cache migration leaves the old
 version intact or rebuildable from the manifest.
 
+A V2 publication is recoverable at every boundary. Temporary shard names are generation-scoped and ignored by
+readers. The old manifest remains authoritative until every mandatory shard is fsynced and the new manifest is
+atomically renamed and its directory fsynced. Startup validates the selected manifest structurally without
+prefaulting blocks; a failure switches to the preceding valid manifest or conventional estimation and schedules a
+background rebuild. Reference-counted leases delay physical cleanup. Journal replay starts after the manifest's
+covered sequence, so retrying publication or restart cannot double-apply a mutation. No recovery path synchronously
+scans statements from query construction.
+
 Git history is the archive for removed ExecPlans. If a historical plan contains evidence needed to implement a
 current milestone, summarize the relevant fact and path in this file; never restore the old plan as a second source
 of instructions.
@@ -2910,6 +3333,43 @@ Preserve these existing backend-neutral boundaries and evolve them rather than i
 - `PackedDphypEnumerator` emits topology to a receiver; it does not store costs or winners.
 - `PackedPlanCache`, `PackedPlanRecipe`, and `PackedPlanMaterializer` remain the store cache, detached plan, and public
   boundary respectively.
+
+Milestone 9 adds one LMDB-owned service and keeps mapped storage types out of optimizer core. The normative shape is:
+
+    interface LmdbStatisticsService extends AutoCloseable {
+        FrontierStatisticsLease acquire(long requiredEpoch);
+        FrontierStatisticsStatus status();
+        void recordEffectiveMutation(FrontierMutation mutation);
+        void requestBackgroundBuild();
+    }
+
+    interface FrontierStatisticsLease extends AutoCloseable {
+        boolean ready();
+        FrontierFallbackReason fallbackReason();
+        FrontierLeafEstimate estimateLeaf(FrontierLeafProbe probe, FrontierQueryScratch scratch);
+        FrontierDistinctEstimate estimateProjectedDistinct(
+                FrontierLeafProbe probe, int component, FrontierQueryScratch scratch);
+        FrontierJoinEstimate estimateJoin(FrontierJoinProbe probe, FrontierQueryScratch scratch);
+    }
+
+    enum FrontierFallbackReason {
+        NONE, NO_GENERATION, GENERATION_TOO_STALE, SHARD_CORRUPT,
+        UNSUPPORTED_QUERY_SHAPE, CONFIDENCE_TOO_WIDE, MEMORY_PRESSURE
+    }
+
+`FrontierStatisticsStatus` reports availability; build phase and pass; base and covered epochs; lag; disk bytes by
+tier; heap leases by purpose; scan rate and ETA; delete debt; audit q-error; and one structured last failure.
+`FrontierStatisticsHeapGovernor` reserves bytes before allocation and returns closeable leases for metadata, query,
+builder, compactor, delta, and safety purposes. `FrontierStatisticsManifest`, `FrontierStatisticsShardDescriptor`,
+`FrontierStatisticsShard`, and `FrontierStatisticsGenerationLease` own the versioned disk format and lifetime.
+Mapped readers expose bounded bulk operations into caller-owned primitive scratch; they never return a row object or
+an iterator whose lifetime outlives the generation lease.
+
+The initial mandatory shard tiers are exact/heavy/distinct summaries, Omni leaf witnesses/postings, coordinated join
+samples, and signed linear sketches. Conditional refinements are optional. Every estimate carries point, lower and
+upper rows, guarantee, support/effective sample size, base/covered epoch, estimator kind, and typed fallback reason.
+Compatibility facades translate that typed estimate into existing `EvidenceStateSummary` and `BagEstimate` surfaces
+without restoring query-local statement payloads.
 
 Milestone 1 adds or evolves `PackedBindingFlowArena` and `PackedPathFactIndex`. A value ID is a primitive `int` owned
 by the first arena. Its mutation surface is equivalent to:
@@ -3051,3 +3511,60 @@ durable synopsis bytes. Seed schedule v2 alpha-normalizes only the sampling iden
 mask shape; exact names remain in runtime state equality and lookup. Frozen v96 reproduces every q3 inventory field
 across fresh JVMs and authenticates all 16 execution alternatives with one common result bag. The revision introduces
 no plan-selection heuristic and keeps saturated regret and the remaining performance gates open.
+
+Plan revision note (2026-08-14 / Håvard and Codex): added Milestone 9, Frontier Statistics V2, to eliminate the
+split raw-payload/query-index readiness model, query-time exact LMDB replay, and Cartesian payload materialization.
+The revision records the 20-billion-triple heap, disk, build, latency, freshness, and accuracy equations; selects a
+query-ready sharded generation, two-pass bounded build, Omni/coordinated-sample/Fast-AGMS ensemble, transactional
+signed deltas, and online migration; and defines six test-first slices. Milestone 8's frozen evidence is preserved
+while its remaining timing campaign pauses for a safe, comparable V2 estimator source.
+
+Plan revision note (2026-08-15 / Codex): completed the bounded M9.4 witness-maintenance path. Every new journal range
+now persists aligned Omni insertions/tombstones beside signed CountSketch, AGMS, and mutation summaries; mapped
+queries merge exact tuple transitions without statement replay. The builder derives deletion reserve rows from a
+per-shard KL union bound, and adjacent equal-size range families compact through mapped sequential streams with
+logarithmic fan-in. Regressions cover 65 independent commits, restart, layers larger than one raw 16,384-mutation
+batch, cancelling delete/reinsert histories, reserve exhaustion, and signed-only migration prefixes. Held-out audit
+promotion, asynchronous retention cleanup, and physical M9.5 scale/JMH/JFR qualification remain open.
+
+Plan revision note (2026-08-15 / Codex): completed the V2 planner-continuity boundary. A query-local mapped learning
+session now owns exact-fact and calibrated logical/physical residual application without constructing the legacy
+payload or derivative index; contextual append events may train their access cost but cannot rewrite a complete
+prefix with a mismatched logical origin. A mapped semi/anti coster now prices raw MINUS and typed streaming,
+memoized, and materialized EXISTS/NOT EXISTS alternatives from Omni projected-distinct and mapped relation evidence.
+Detached learned state remains typed, serializable planning retains the pinned generation, legacy heap settings map
+to a feasible bounded build profile, and all products stay outside 32-bit candidate-count arithmetic. Physical scale,
+cold-NVMe, held-out accuracy, and adaptive-promotion gates remain open.
+
+Plan revision note (2026-08-16 / Codex): compared the attached Java 21 quad-composable Omni reference with the
+disk-resident V2 implementation. The revision adopts independent-lane quality metrics and progressive mapped
+bottom-K prefixes, records why heap-loaded catalogs and quadratic object joins are rejected, and propagates actual
+shared-witness support through leaf, star, path, cycle, and bridge intervals. The 20-billion-statement resource and
+qualification gates are unchanged; physical scale and held-out shadow accuracy remain open.
+
+Plan revision note (2026-08-16 / Codex): closed the in-repository warm M9.5 microqualification and its profile-driven
+hot-path repairs. Deterministic heavy dimensions and direct AGMS streaming put the 20B builder under its 1.25 GiB
+lease. Primitive sampling lineage removes the dominant allocation site, and immutable open-addressed column
+directories remove the dominant non-decoder CPU site. Warm three-pattern star/path average time is below 20 ms; the
+final path recording is 10.771 +/- 0.063 ms/op with 150 sampled allocations. This does not substitute for the p95
+gate. Cold NVMe, held-out accuracy, background interference, and physical 100M through 1B scale remain explicitly
+open.
+
+Plan revision note (2026-08-16 / Codex): repaired the logical-to-physical V2 cost dependency exposed by sparse-prefix
+qualification. Mapped Omni evidence was already returning the correct logical join multiplicity, but the
+independent-hash alternative retained Cartesian candidate work computed by the scalar delegate before mapped state
+restoration. The V2 session now reprices candidate, orientation, probe, peak-memory, and telemetry fields together;
+an assured lookup key covering the complete compatibility mask uses logical match multiplicity, while incomplete
+masks remain conservative. The focused red/green and the 61-, 166-, and 226-test suites pass. Physical scale,
+cold-NVMe, held-out accuracy, background interference, and migration-retention gates remain open.
+
+Plan revision note (2026-08-16 / Codex): completed bounded typed-value support probes and replaced a stale
+streaming-era highly-connected q10 order assertion with the physical invariant it intended to protect. Numeric and
+calendar aliases are evaluator-validated, capped at 16 candidates per value and 1,024 combined bindings, and remain
+non-exact with a `[0,1]` semantic interval. Exact exhaustive memo search confirms the selected four-value anchor uses
+one bounded materialized anti RHS and four mapped Omni prefix probes. Focused temporal, TRAIN, and flagged-q10 tests
+pass. The first complete module rerun exposed two independent contract edges: bounded AUTO may legitimately finish
+before exhausting its 512-unit ceiling, and finite-bound self-loop equality belongs to the leaf rather than the
+unbound join-variable classes. Focused reds and greens cover both. The final LMDB module gate passes 2,247 tests with
+zero failures or errors (114 skipped). Physical scale, p95/cold, held-out accuracy, background interference, and
+migration-retention gates remain open.

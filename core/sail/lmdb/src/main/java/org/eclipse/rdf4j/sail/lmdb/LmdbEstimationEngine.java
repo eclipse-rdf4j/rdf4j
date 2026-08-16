@@ -67,10 +67,12 @@ final class LmdbEstimationEngine {
 
 	private final LmdbEstimatorEvidenceSource evidenceSource;
 	private final EstimateEvidenceResolver evidenceResolver;
+	private final LmdbFilterEstimateTransform filterTransform;
 
 	LmdbEstimationEngine(LmdbEstimatorEvidenceSource evidenceSource, EstimateEvidenceResolver evidenceResolver) {
 		this.evidenceSource = Objects.requireNonNull(evidenceSource, "evidenceSource");
 		this.evidenceResolver = Objects.requireNonNull(evidenceResolver, "evidenceResolver");
+		filterTransform = new LmdbFilterEstimateTransform(evidenceSource);
 	}
 
 	BagEstimate estimate(TupleExpr expression, EstimateContext context) {
@@ -105,28 +107,7 @@ final class LmdbEstimationEngine {
 
 	private BagEstimate filter(TupleExpr input, ValueExpr condition, BagEstimate inputEstimate,
 			EstimateContext context) {
-		FilterEvidence evidence = evidenceSource
-				.filterEvidence(input, condition, inputEstimate, context)
-				.orElseGet(() -> new FilterEvidence(0.5d, 0.0d, 1.0d, 0.0d, false, "uniform-filter"));
-		double ratio = !evidence.complete() && evidence.passRatio() == 0.0d
-				? Math.max(Double.MIN_NORMAL, evidence.upperBound())
-				: evidence.passRatio();
-		BagEstimate result = EstimateMath.filter(inputEstimate, ratio, evidence.source());
-		Map<String, Double> metrics = new LinkedHashMap<>(result.metrics());
-		metrics.put("optimizer.filterLowerRatio", evidence.lowerBound());
-		metrics.put("optimizer.filterUpperRatio", evidence.upperBound());
-		metrics.put("optimizer.filterConfidence", evidence.confidence());
-		metrics.put("optimizer.filterComplete", evidence.complete() ? 1.0d : 0.0d);
-		result = result.withMetrics(Map.copyOf(metrics));
-		FiniteRelationEstimate exactRelation = evidenceSource.finiteFilterRelation(input, condition, context)
-				.orElse(null);
-		if (exactRelation == null) {
-			return result;
-		}
-		metrics.put("optimizer.finiteFilterRows", exactRelation.rows());
-		return result.withRowsPreservingEvidence(exactRelation.rows(), result.workRows(), 1.0d,
-				"lmdb-finite-filter-surface", Map.copyOf(metrics), false)
-				.withFiniteRelation(exactRelation);
+		return filterTransform.apply(input, condition, inputEstimate, context);
 	}
 
 	private final class Session {
@@ -267,14 +248,16 @@ final class LmdbEstimationEngine {
 				metrics.put("plannedSelectedPrefixRows", left.rows());
 				metrics.put("plannedSelectedPrefixRightRows", right.rows());
 				metrics.put("plannedSelectedPrefixRightWorkRows", right.workRows());
-				return composed.withRowsPreservingEvidence(right.rows(), workRows,
+				BagEstimate selectedPrefix = composed.withRowsPreservingEvidence(right.rows(), workRows,
 						Math.min(left.confidence(), right.confidence()), "inner-join-selected-prefix",
 						Map.copyOf(metrics), true);
+				return applyJoinEvidence(leftExpression, rightExpression, context, selectedPrefix);
 			}
 			BagEstimate right = estimate(rightExpression, context);
 			double invocations = Math.max(context.invocationCount(), context.prefixEstimate().rows());
 			if (invocations <= 1.0d) {
-				return EstimateMath.innerJoin(left, right, shared);
+				return applyJoinEvidence(leftExpression, rightExpression, context,
+						EstimateMath.innerJoin(left, right, shared));
 			}
 
 			BagEstimate leftPerInvocation = perInvocation(left, invocations, "inner-join-left-per-invocation");
@@ -289,6 +272,20 @@ final class LmdbEstimationEngine {
 			metrics.put("plannedInnerJoinRightRowsPerInvocation", rightPerInvocation.rows());
 			return perInvocation.withRowsPreservingEvidence(outputRows, workRows, perInvocation.confidence(),
 					"inner-join-context-total", Map.copyOf(metrics), true);
+		}
+
+		private BagEstimate applyJoinEvidence(TupleExpr leftExpression, TupleExpr rightExpression,
+				EstimateContext context, BagEstimate composed) {
+			JoinEvidence evidence = evidenceSource.joinEvidence(leftExpression, rightExpression, context).orElse(null);
+			if (evidence == null) {
+				return composed;
+			}
+			Map<String, Double> metrics = new LinkedHashMap<>(composed.metrics());
+			metrics.put("optimizer.joinLowerRows", evidence.lowerRows());
+			metrics.put("optimizer.joinUpperRows", evidence.upperRows());
+			metrics.put("optimizer.joinConfidence", evidence.confidence());
+			return composed.withRowsPreservingEvidence(evidence.pointRows(), composed.workRows(), evidence.confidence(),
+					evidence.source(), Map.copyOf(metrics), false);
 		}
 
 		private BagEstimate perInvocation(BagEstimate total, double invocations, String source) {

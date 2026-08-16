@@ -78,7 +78,12 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	static final String SKIP_SKETCH_JOIN_ORDER_METRIC = "optimizer.cascadesSkipSketchJoinOrder";
 	static final String PLANNER_ID = "lmdb-packed-cascades";
 
-	private static final int DEFAULT_AUTO_BUDGET = 256;
+	/*
+	 * A four-pattern region with a finite access provider plus typed semi/anti alternatives needs 472 deterministic
+	 * candidate evaluations in the qualification corpus. Keep the automatic ceiling at the next power of two so this
+	 * common access-enabling shape completes while remaining independent of store cardinality.
+	 */
+	private static final int DEFAULT_AUTO_BUDGET = 512;
 	private static final int DEFAULT_BUDGETED_BUDGET = 4_096;
 	private static final long DEFAULT_TIMEOUT_MILLIS = 500L;
 

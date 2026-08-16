@@ -251,8 +251,8 @@ class ThemeQueryBenchmarkSmokeIT {
 					"q7 should execute the selected bound-probe implementation\n"
 							+ renderedQuery + "\n" + plan);
 			assertTrue(plan.contains("plannedSemiAntiProbeIndexName=spoc")
-					&& plan.contains("plannedSemiAntiProbeAccessMode=directLookup"),
-					"q7 should expose the selected bound SPOC lookup\n"
+					&& plan.contains("plannedSemiAntiProbeAccessMode=prefixScan"),
+					"q7 should expose the selected bound SPOC prefix scan\n"
 							+ renderedQuery + "\n" + plan);
 			assertTrue(plan.contains("plannedSemiAntiMaterializationIndexName=posc")
 					&& plan.contains("plannedSemiAntiMaterializationAccessMode=prefixScan"),

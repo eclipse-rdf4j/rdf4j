@@ -31,6 +31,11 @@ public interface FrontierSnapshotSource extends AutoCloseable {
 
 	long snapshotEpoch() throws IOException;
 
+	/** Journal sequence visible to the same immutable snapshot. Non-LMDB fixtures default to their epoch. */
+	default long coveredSequence() throws IOException {
+		return snapshotEpoch();
+	}
+
 	/**
 	 * Returns the exact number of rows in one explicitness plane.
 	 *

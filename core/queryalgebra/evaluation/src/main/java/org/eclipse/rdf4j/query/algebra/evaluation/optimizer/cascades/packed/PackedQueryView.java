@@ -25,6 +25,9 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /** Read-only primitive-ID view supplied to packed cost and implementation providers. */
 @Experimental
@@ -98,8 +101,10 @@ public final class PackedQueryView {
 	}
 
 	/**
-	 * Returns one immutable query-local binding-name set for a canonical provider materialization or one of its
-	 * read-only subtrees. Identity keys are intentional: equal algebra nodes in different scopes may expose different
+	 * Returns one immutable query-local set of non-constant variable names for a canonical provider materialization or
+	 * one of its read-only subtrees. {@link TupleExpr#getBindingNames()} includes the synthetic names assigned to bound
+	 * constant {@code Var}s by the parser; those names are not join bindings and must not connect otherwise independent
+	 * query components. Identity keys are intentional: equal algebra nodes in different scopes may expose different
 	 * binding facts, while repeated provider reads of the same node must not walk the algebra again.
 	 *
 	 * @param expression canonical read-only provider expression
@@ -117,7 +122,18 @@ public final class PackedQueryView {
 			}
 			slot = slot + 1 & mask;
 		}
-		Set<String> names = Set.copyOf(expression.getBindingNames());
+		LinkedHashSet<String> logicalNames = new LinkedHashSet<>(expression.getBindingNames());
+		Set<String> unboundVariableNames = VarNameCollector.process(expression);
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var variable) {
+				String name = variable.getName();
+				if (variable.hasValue() && name != null && !unboundVariableNames.contains(name)) {
+					logicalNames.remove(name);
+				}
+			}
+		});
+		Set<String> names = Set.copyOf(logicalNames);
 		if (materializedBindingNameCount + 1 > materializedBindingNameResizeThreshold) {
 			resizeMaterializedBindingNames(Math.multiplyExact(materializedBindingNameKeys.length, 2));
 			slot = materializedBindingNameSlot(expression, materializedBindingNameKeys.length);

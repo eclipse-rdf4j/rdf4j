@@ -6,20 +6,22 @@ of the supplied research package or literature.
 
 ## Implementation provenance
 
-The RDF4J implementation is written independently in Java against:
+The RDF4J production implementation is designed independently in Java against:
 
 1. the mathematical contracts summarized below;
 2. RDF4J's existing estimator, packed-planner, and LMDB abstractions;
 3. normative SPARQL semantics; and
 4. tests authored in this repository.
 
-No Python or C++ implementation from the supplied artifacts is ported,
-translated, copied, or used as a source template. Numerical examples and
-finite-model identities may be independently re-expressed as test inputs
-because they state mathematical facts; implementation structure, comments,
-and source text are not copied.
+No Python implementation or unlicensed C++ artifact is ported, translated, or used as a source template. A later
+user-supplied `OmniSketchCpp-main-2` snapshot contains an MIT license, copyright 2025 David Justen. Its behavior was
+analyzed and short attributed excerpts are reproduced in
+[the implementation design](../../../docs/query-optimizer/frontier-omnisketch-v2-technical-design.md). The Java
+storage and estimator architecture remains an RDF-specific, primitive, disk-resident adaptation rather than a
+mechanical port. Numerical examples and finite-model identities may be independently re-expressed as test inputs
+because they state mathematical facts.
 
-The supplied archive contains a formal manuscript, a claim ledger, executable
+The earlier supplied archive contains a formal manuscript, a claim ledger, executable
 reference checks, and a candidate C++ patch. It contains no license file or
 other explicit redistribution grant. The two supplied paper PDFs are also
 external literature rather than repository source. Consequently:
@@ -30,7 +32,8 @@ external literature rather than repository source. Consequently:
   URLs, intake locations, and cryptographic checksums;
 - user access to licensed literature is not treated as permission to
   redistribute that literature in RDF4J; and
-- any later code reuse requires a separate license and authorship review.
+- any later code reuse requires a source-specific license, authorship, notice, and compatibility review. The
+  separately recorded MIT C++ snapshot has passed that review only for the short attributed design excerpts.
 
 See [SOURCE_LEDGER.md](SOURCE_LEDGER.md) for the source-by-source record and
 [CHECKSUMS.md](CHECKSUMS.md) for exact artifact identities.

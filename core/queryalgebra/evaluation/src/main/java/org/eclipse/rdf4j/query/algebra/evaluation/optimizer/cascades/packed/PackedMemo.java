@@ -621,13 +621,6 @@ final class PackedMemo implements AutoCloseable {
 		int candidateId = retainParetoCandidate(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
 				costPolicyId, physicalExpressionId, physicalMetadataId, startupCost, totalCost, childWinnerIds,
 				childOffset, childCount);
-		if (candidateId == 0 && retainPlanQualityState && !retainExactContinuation) {
-			int incumbentWinnerId = winners.find(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
-					costPolicyId);
-			if (incumbentWinnerId != 0) {
-				return incumbentWinnerId;
-			}
-		}
 		double lifecycleComparisonCost = lifecycleComparisonCost(physicalMetadataId, totalCost, comparisonCost,
 				childWinnerIds, childOffset, childCount);
 		boolean robustComparisonPrimary = physicalMetadataId != 0
@@ -721,13 +714,6 @@ final class PackedMemo implements AutoCloseable {
 		int candidateId = retainParetoCandidate(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
 				costPolicyId, physicalExpressionId, physicalMetadataId, startupCost, totalCost, childWinnerIds,
 				childOffset, childCount);
-		if (candidateId == 0 && retainPlanQualityState && !retainExactContinuation) {
-			int incumbentWinnerId = winners.find(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
-					costPolicyId);
-			if (incumbentWinnerId != 0) {
-				return incumbentWinnerId;
-			}
-		}
 		double lifecycleComparisonCost = lifecycleComparisonCost(physicalMetadataId, totalCost, comparisonCost,
 				childWinnerIds, childOffset, childCount);
 		boolean robustComparisonPrimary = physicalMetadataId != 0

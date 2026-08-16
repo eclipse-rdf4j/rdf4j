@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbFrontierSynopsisService;
+import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 
 /** Thin RDF4J interface adapter over the unified LMDB estimation runtime. */
@@ -142,12 +143,22 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 			PackedPlanCache cascadesPlanCache, LmdbFrontierSynopsisService frontierSynopsis,
 			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred,
 			BooleanSupplier adaptiveEvidenceAllowedSupplier) {
+		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache, frontierSynopsis,
+				frontierSettings, mayHaveInferred, adaptiveEvidenceAllowedSupplier, null);
+	}
+
+	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
+			SketchBasedJoinEstimator estimator, LmdbFilterSelectivityStats filters,
+			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
+			PackedPlanCache cascadesPlanCache, LmdbFrontierSynopsisService frontierSynopsis,
+			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred,
+			BooleanSupplier adaptiveEvidenceAllowedSupplier, LmdbStatisticsService statistics) {
 		BooleanSupplier adaptiveEvidenceAllowed = adaptiveEvidenceAllowedSupplier == null ? () -> true
 				: adaptiveEvidenceAllowedSupplier;
 		runtime = new LmdbEstimatorRuntime(valueStore, tripleStore,
 				estimator == null ? null : estimator.synopsisService(), filters, feedback, cardinalities,
 				cascadesPlanCache, frontierSynopsis, frontierSettings, mayHaveInferred,
-				adaptiveEvidenceAllowed);
+				adaptiveEvidenceAllowed, statistics);
 		filterServices = new LmdbEvaluationFilterServices(runtime, filters, estimator, adaptiveEvidenceAllowed);
 	}
 
@@ -486,5 +497,4 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 	private static double positive(double value, double fallback) {
 		return Double.isFinite(value) && value > 0.0d ? value : fallback;
 	}
-
 }

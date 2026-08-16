@@ -213,6 +213,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private final Map<OperatorKey, ShadowOperatorCounts> shadowByOperator = new LinkedHashMap<>();
 	private final Map<OperatorKey, PlanCandidateCounts> planCandidates = new LinkedHashMap<>();
 	private final Map<SemiAntiSurfaceKey, SemiAntiCounts> semiAntiBySurface = new LinkedHashMap<>();
+	private final Set<SemiAntiSurfaceKey> frontierOriginSemiAntiSurfaces = new HashSet<>();
 	private final Map<String, ExactCardinalityCell> exactCardinalityFacts = new LinkedHashMap<>();
 
 	/**
@@ -492,6 +493,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		shadowByOperator.clear();
 		planCandidates.clear();
 		semiAntiBySurface.clear();
+		frontierOriginSemiAntiSurfaces.clear();
 		frontierLearning.clear();
 		planLifecycle.clear();
 		nullModeKeyCache.clear();
@@ -813,9 +815,18 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		long epoch = nextFeedbackEpoch();
 		if (recordFrontierSemiAntiOutcome(filter, observation, epoch)) {
+			frontierOriginSemiAntiSurfaces.add(key);
+			if (semiAntiExactSurfaceTierEnabled()) {
+				SemiAntiSurfaceKey exactKey = SemiAntiSurfaceKey.from(filter, observation.semanticKind(),
+						observation.selectedAlgorithm(), LeoOperatorKey.ConstantMode.EXACT);
+				if (exactKey != null) {
+					frontierOriginSemiAntiSurfaces.add(exactKey);
+				}
+			}
 			markFeedbackRecorded(filter);
 		}
 		evictOldestIfNeeded(semiAntiBySurface);
+		frontierOriginSemiAntiSurfaces.retainAll(semiAntiBySurface.keySet());
 		dirty = true;
 	}
 
@@ -964,6 +975,16 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	synchronized SemiAntiEstimate semiAntiEstimate(
 			Filter filter, String semanticKind, String physicalAlgorithm) {
+		return semiAntiEstimate(filter, semanticKind, physicalAlgorithm, false);
+	}
+
+	synchronized SemiAntiEstimate frontierSemiAntiEstimate(
+			Filter filter, String semanticKind, String physicalAlgorithm) {
+		return semiAntiEstimate(filter, semanticKind, physicalAlgorithm, true);
+	}
+
+	private SemiAntiEstimate semiAntiEstimate(Filter filter, String semanticKind, String physicalAlgorithm,
+			boolean requireFrontierOrigin) {
 		if (!adaptiveEvidenceAllowed() || filter == null) {
 			return null;
 		}
@@ -975,13 +996,15 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			SemiAntiSurfaceKey exactKey = SemiAntiSurfaceKey.from(filter, semanticKind, physicalAlgorithm,
 					LeoOperatorKey.ConstantMode.EXACT);
 			SemiAntiCounts exactCounts = exactKey == null ? null : semiAntiBySurface.get(exactKey);
-			if (exactCounts != null) {
+			if (exactCounts != null && eligibleSemiAntiSurface(exactKey, requireFrontierOrigin)) {
 				return exactCounts.estimate();
 			}
 			if (exactKey != null && !exactKey.equals(key)) {
 				// The generalized surface pools observations across distinct rhs constants — it must prove
 				// itself across more evidence before standing in for a cold exact key.
-				SemiAntiCounts generalizedCounts = semiAntiBySurface.get(key);
+				SemiAntiCounts generalizedCounts = eligibleSemiAntiSurface(key, requireFrontierOrigin)
+						? semiAntiBySurface.get(key)
+						: null;
 				SemiAntiEstimate generalized = generalizedCounts == null ? null : generalizedCounts.estimate();
 				return generalized != null
 						&& generalized.observationCount() >= MIN_GENERALIZED_SEMI_ANTI_OBSERVATIONS
@@ -989,8 +1012,14 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 								: null;
 			}
 		}
-		SemiAntiCounts counts = semiAntiBySurface.get(key);
+		SemiAntiCounts counts = eligibleSemiAntiSurface(key, requireFrontierOrigin)
+				? semiAntiBySurface.get(key)
+				: null;
 		return counts == null ? null : counts.estimate();
+	}
+
+	private boolean eligibleSemiAntiSurface(SemiAntiSurfaceKey key, boolean requireFrontierOrigin) {
+		return !requireFrontierOrigin || frontierOriginSemiAntiSurfaces.contains(key);
 	}
 
 	private synchronized void recordObservation(TupleExpr node, boolean completedRoot,
@@ -2435,6 +2464,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			planCandidates.putAll(loadedPlanCandidates);
 			semiAntiBySurface.clear();
 			semiAntiBySurface.putAll(loadedSemiAnti);
+			/* Compatibility surfaces persist, but event-origin authority is deliberately re-earned after restart. */
+			frontierOriginSemiAntiSurfaces.clear();
 			exactCardinalityFacts.clear();
 			exactCardinalityFacts.putAll(loadedExactFacts);
 			frontierLearning = loadedFrontierLearning;
