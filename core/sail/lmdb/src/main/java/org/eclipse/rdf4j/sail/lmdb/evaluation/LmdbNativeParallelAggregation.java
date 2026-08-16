@@ -137,7 +137,11 @@ final class LmdbNativeParallelAggregation {
 		double estCost = LmdbNativeStrategyProposal.parallelCost(totalWork, threads);
 		AggregateCandidate candidate = new AggregateCandidate(it, plan, parentMetrics, derived, root,
 				preflightAggregateSlots, partitions, reservation, threads, sourceCount);
-		return new LmdbNativeStrategyProposal<>(candidate::open, estCost,
+		// declare the genuinely front-loaded worker-start cost separately (gap-analysis C4): workers, snapshot
+		// sources and read transactions all exist before the first group can be produced, exactly as in the
+		// parallel row pipelines' proposal
+		return new LmdbNativeStrategyProposal<>(candidate::open, LmdbNativeWork.exact(estCost),
+				LmdbNativeWork.exact(LmdbNativeStrategyProposal.parallelStartupCost()), Double.NaN,
 				LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, reservation::close);
 	}
 

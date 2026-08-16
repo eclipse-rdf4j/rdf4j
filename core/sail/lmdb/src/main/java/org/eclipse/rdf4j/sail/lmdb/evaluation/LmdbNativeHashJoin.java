@@ -50,6 +50,8 @@ final class LmdbNativeHashJoin {
 
 	static final AtomicLong BUILDS = new AtomicLong();
 	static final AtomicLong PROBE_BATCHES = new AtomicLong();
+	/** Probes answered from the build-time chain count instead of walking the duplicate chain (gap-analysis G1/G2). */
+	static final AtomicLong COUNTED_CHAIN_PROBES = new AtomicLong();
 	static final AtomicLong CAP_FALLBACKS = new AtomicLong();
 	/** Completed bushy builds (sub-plan build side drained by a row-tier sweep). Test hook. */
 	static final AtomicLong BUSHY_BUILDS = new AtomicLong();
@@ -424,7 +426,11 @@ final class HashJoinBatchCursor implements BatchCursor {
 			close();
 			return 0;
 		}
-		return table.uniqueKeys ? fillUnique(output) : fillChained(output);
+		// Post-build representation revision (gap-analysis G1/G2): with duplicate keys and no payload slots, every
+		// chain element would merge an identical output row, so the probe consumes the build-time chain count as a
+		// multiplicity instead of pointer-chasing the duplicate chain.
+		return table.uniqueKeys ? fillUnique(output)
+				: payloadSlots.length == 0 ? fillCountedChains(output) : fillChained(output);
 	}
 
 	private int fillUnique(NativeBatch output) throws IOException {
@@ -465,6 +471,57 @@ final class HashJoinBatchCursor implements BatchCursor {
 			currentPayload = table.next[currentPayload];
 		}
 		return finishOutput(output, outputRows);
+	}
+
+	/** Copies of the current probe row still owed by the counted-chain mode. */
+	private int remainingChainCopies;
+
+	/**
+	 * The chain-handle consumption mode: each probe hit emits {@code chainLength} copies of the probe row straight from
+	 * the build-time count — no {@code next[]} walk, no payload merges (there are no payload slots to merge).
+	 */
+	private int fillCountedChains(NativeBatch output) throws IOException {
+		int outputRows = 0;
+		while (outputRows < output.capacity) {
+			if (remainingChainCopies <= 0) {
+				int count = nextProbeChainCount();
+				if (count == END_OF_PROBE) {
+					break;
+				}
+				if (count <= 0) {
+					continue;
+				}
+				remainingChainCopies = count;
+				LmdbNativeHashJoin.COUNTED_CHAIN_PROBES.incrementAndGet();
+			}
+			copyBatchRow(probeBatch, currentProbeRow, output, outputRows);
+			outputRows++;
+			remainingChainCopies--;
+		}
+		return finishOutput(output, outputRows);
+	}
+
+	/** Mirrors {@link #nextProbePayload()} but resolves the matched bucket's chain count instead of its head. */
+	private int nextProbeChainCount() throws IOException {
+		while (probeIndex >= probeCount) {
+			if (probeCursor.fill(probeBatch) == 0) {
+				return END_OF_PROBE;
+			}
+			probeCount = probeBatch.selectedCount;
+			probeIndex = 0;
+			table.hashBatch(probeBatch, probeBatch.selection, probeCount, keySlots, probeHashState, probeHashes);
+			table.headBatch(probeHashes, probeCount, probeBuckets, probeHeads);
+			if (probeCount == 0) {
+				break;
+			}
+		}
+		if (probeIndex >= probeCount) {
+			return END_OF_PROBE;
+		}
+		int currentProbe = probeIndex++;
+		currentProbeRow = probeBatch.selection[currentProbe];
+		return table.lookupPreparedChainCount(probeBatch, currentProbeRow, keySlots, probeHashes[currentProbe],
+				probeBuckets[currentProbe]);
 	}
 
 	private int finishOutput(NativeBatch output, int outputRows) {
@@ -705,6 +762,9 @@ final class PrimitiveHashJoinTable {
 	int[] fullHashes;
 	int[] heads;
 	int[] tails;
+	/** Duplicate-chain length per bucket — the §6.2 build-time chain statistic, maintained as rows arrive. */
+	int[] chainCounts;
+	int maxChainLength;
 	int distinctKeys;
 	boolean uniqueKeys = true;
 	long[] payloads;
@@ -727,6 +787,7 @@ final class PrimitiveHashJoinTable {
 		this.tails = new int[32];
 		Arrays.fill(heads, -1);
 		Arrays.fill(tails, -1);
+		this.chainCounts = new int[32];
 		this.payloads = new long[Math.max(32, payloadWidth * 32)];
 		this.next = new int[32];
 		Arrays.fill(next, -1);
@@ -735,7 +796,22 @@ final class PrimitiveHashJoinTable {
 	/** Physical data bytes across every backing array (headers excluded; the admission estimate absorbs them). */
 	long byteSize() {
 		return 8L * keys.length + occupied.length + fingerprints.length + 4L * fullHashes.length + 4L * heads.length
-				+ 4L * tails.length + 8L * payloads.length + 4L * next.length;
+				+ 4L * tails.length + 4L * chainCounts.length + 8L * payloads.length + 4L * next.length;
+	}
+
+	/** Longest duplicate chain observed at build time — the §6.2 skew statistic. */
+	int maxChainLength() {
+		return maxChainLength;
+	}
+
+	/** Mean duplicate-chain length (payload rows per distinct key), the §6.3 conditional-fanout ingredient. */
+	double meanChainLength() {
+		return distinctKeys == 0 ? 0D : (double) payloadCount / distinctKeys;
+	}
+
+	/** The duplicate-chain length behind one bucket — the chain handle's count, consumable without walking it. */
+	int chainLength(int bucket) {
+		return chainCounts[bucket];
 	}
 
 	void add(long[] row, int[] keySlots, int[] payloadSlots) {
@@ -767,6 +843,27 @@ final class PrimitiveHashJoinTable {
 			next[tails[bucket]] = payload;
 		}
 		tails[bucket] = payload;
+		int length = ++chainCounts[bucket];
+		if (length > maxChainLength) {
+			maxChainLength = length;
+		}
+	}
+
+	/**
+	 * Chain-count lookup for probes that consume the duplicate chain as a multiplicity instead of walking it: the
+	 * resolved bucket's chain length, or 0 on a miss.
+	 */
+	int lookupPreparedChainCount(NativeBatch batch, int row, int[] keySlots, int hash, int bucket) {
+		int mask = occupied.length - 1;
+		byte fingerprint = fingerprint(hash);
+		while (occupied[bucket] != 0) {
+			if (fingerprints[bucket] == fingerprint && fullHashes[bucket] == hash
+					&& matches(batch, row, keySlots, bucket)) {
+				return chainCounts[bucket];
+			}
+			bucket = (bucket + 1) & mask;
+		}
+		return 0;
 	}
 
 	int lookup(NativeBatch batch, int row, int[] keySlots) {
@@ -897,6 +994,7 @@ final class PrimitiveHashJoinTable {
 		int[] oldFullHashes = fullHashes;
 		int[] oldHeads = heads;
 		int[] oldTails = tails;
+		int[] oldChainCounts = chainCounts;
 		int newLength = oldOccupied.length << 1;
 		keys = new long[keyWidth * newLength];
 		occupied = new byte[newLength];
@@ -904,6 +1002,7 @@ final class PrimitiveHashJoinTable {
 		fullHashes = new int[newLength];
 		heads = new int[newLength];
 		tails = new int[newLength];
+		chainCounts = new int[newLength];
 		Arrays.fill(heads, -1);
 		Arrays.fill(tails, -1);
 		for (int oldBucket = 0; oldBucket < oldOccupied.length; oldBucket++) {
@@ -922,6 +1021,7 @@ final class PrimitiveHashJoinTable {
 			System.arraycopy(oldKeys, oldBucket * keyWidth, keys, bucket * keyWidth, keyWidth);
 			heads[bucket] = oldHeads[oldBucket];
 			tails[bucket] = oldTails[oldBucket];
+			chainCounts[bucket] = oldChainCounts[oldBucket];
 		}
 	}
 }

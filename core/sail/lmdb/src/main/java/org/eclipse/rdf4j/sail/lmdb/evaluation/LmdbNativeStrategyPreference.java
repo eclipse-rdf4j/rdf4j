@@ -73,8 +73,11 @@ final class LmdbNativeStrategyPreference {
 			// Packed arbitrary f-trees remove sibling Cartesian products while retaining vectorized execution.
 			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
 			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
-			// Whole-stage aggregate fusion followed the prefix-run and WCOJ guards in the previous ladder.
+			// Whole-stage aggregate fusion followed the prefix-run and WCOJ guards in the previous ladder. The
+			// parallel rung sits directly below its serial sibling (gap-analysis C11): the day it becomes a
+			// proposal it must not rank below nestedLoop merely for being absent from this ladder.
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
 			LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS,
 			LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT,
 			LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS,
@@ -88,8 +91,9 @@ final class LmdbNativeStrategyPreference {
 			LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION,
 			LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES,
 			LmdbNativeAttemptMetrics.PATH_CHUNK_PIPELINE,
-			// Row-side constant-factor reducer: same rows, cheaper per row.
+			// Row-side constant-factor reducer: same rows, cheaper per row (parallel rung directly below, C11).
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
 			// Last resorts.
 			LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT,
 			LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,

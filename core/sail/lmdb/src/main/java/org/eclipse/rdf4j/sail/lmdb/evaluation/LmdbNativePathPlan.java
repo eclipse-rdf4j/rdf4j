@@ -23,6 +23,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -1035,6 +1036,15 @@ final class PathParallelExpansion implements AutoCloseable {
 		return workers.length;
 	}
 
+	private boolean anyWorkerFinished() {
+		for (Future<?> future : futures) {
+			if (future != null && future.isDone()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	ParallelLevel expand(long[] frontier, PathDiscoveredRuns discovered) throws IOException {
 		if (closed) {
 			throw new IllegalStateException("Native path frontier workers are closed");
@@ -1047,9 +1057,17 @@ final class PathParallelExpansion implements AutoCloseable {
 		boolean interrupted = false;
 		while (task.done.getCount() != 0L) {
 			try {
-				task.done.await();
+				if (task.done.await(50L, TimeUnit.MILLISECONDS)) {
+					break;
+				}
 			} catch (InterruptedException failure) {
+				// the caller's cancellation must escape: re-awaiting here is an uninterruptible wait (S4)
 				interrupted = true;
+				break;
+			}
+			if (anyWorkerFinished()) {
+				// a worker that exited will never count down; its failure is collected below
+				break;
 			}
 		}
 		Throwable failure = terminalFailure.get();
@@ -1057,6 +1075,9 @@ final class PathParallelExpansion implements AutoCloseable {
 			if (failure == null && workerFailure != null) {
 				failure = workerFailure;
 			}
+		}
+		if (failure == null && task.done.getCount() != 0L) {
+			failure = new IOException("native path frontier worker exited before completing its slice");
 		}
 		if (interrupted) {
 			Thread.currentThread().interrupt();
@@ -1268,6 +1289,17 @@ final class PathParallelExpansion implements AutoCloseable {
 					Thread.currentThread().interrupt();
 				}
 			} finally {
+				// A worker that dies (interrupt at input.take(), pool shutdown) may still hold an unrun task:
+				// expand() waits on task.done, so release every queued task before leaving (gap-analysis S4).
+				for (PathLevelTask pending = input.poll(); pending != null; pending = input.poll()) {
+					if (pending != STOP) {
+						if (pending.failures[index] == null) {
+							pending.failures[index] = new IOException(
+									"native path frontier worker exited before running its slice");
+						}
+						pending.done.countDown();
+					}
+				}
 				if (!readySignalled) {
 					ready.countDown();
 				}

@@ -63,6 +63,57 @@ class LmdbNativeAdaptiveArbitrationTest {
 				"the specialist is dominated by both cheap candidates and must not win their tie");
 	}
 
+	/**
+	 * Gap-analysis C9: the documented stricter bar for order-losing rewrites. A same-family candidate that loses the
+	 * incumbent's property preservation may displace it only when it dominates even at the 99% interval — the 95%
+	 * interval alone (the general rule) is not enough. Here the candidate 95-dominates (90 &lt; 100) but its 99% high
+	 * (97) overlaps the incumbent's 99% low (95), so the incumbent must be retained.
+	 */
+	@Test
+	void orderLosingRewriteNeedsNinetyNineDomination() {
+		LmdbNativeAdaptiveArbitration.Priced<String> preserving = pricedWithProperties("family-x", 0, 100, 150, 200,
+				95, 205, true);
+		LmdbNativeAdaptiveArbitration.Priced<String> hashing = pricedWithProperties("family-x", 1, 10, 50, 90,
+				8, 97, false);
+
+		LmdbNativeAdaptiveArbitration.Priced<String> selected = LmdbNativeAdaptiveArbitration
+				.selectWithinFrontier(List.of(preserving, hashing));
+
+		assertSame(preserving, selected,
+				"an order-losing same-family rewrite that only 95-dominates must not displace the "
+						+ "property-preserving incumbent");
+	}
+
+	/** The stricter bar still admits a rewrite that truly dominates at the 99% interval. */
+	@Test
+	void orderLosingRewriteWithNinetyNineDominationStillWins() {
+		LmdbNativeAdaptiveArbitration.Priced<String> preserving = pricedWithProperties("family-x", 0, 100, 150, 200,
+				95, 205, true);
+		LmdbNativeAdaptiveArbitration.Priced<String> hashing = pricedWithProperties("family-x", 1, 10, 40, 70,
+				8, 80, false);
+
+		LmdbNativeAdaptiveArbitration.Priced<String> selected = LmdbNativeAdaptiveArbitration
+				.selectWithinFrontier(List.of(preserving, hashing));
+
+		assertSame(hashing, selected, "99% domination (80 < 95) satisfies the stricter bar");
+	}
+
+	private static LmdbNativeAdaptiveArbitration.Priced<String> pricedWithProperties(String family, int preference,
+			double low95, double expected, double high95, double low99, double high99, boolean propertyPreserving) {
+		LmdbNativePhysicalVariantKey key = LmdbNativePhysicalVariantKey.builder(family)
+				.physicalOrderAndProperties(family + (propertyPreserving ? "-ordered" : "-hashed"))
+				.propertyPreserving(propertyPreserving)
+				.build();
+		LmdbNativeCostVector vector = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, expected);
+		LmdbNativeCostEstimate estimate = new LmdbNativeCostEstimate(key, LmdbNativeCostVector.zero(), vector,
+				expected, 0.1);
+		LmdbNativeCostPrediction prediction = new LmdbNativeCostPrediction(low95, expected, high95, low99, high99,
+				true, true, false, 64, LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT, "test interval");
+		return new LmdbNativeAdaptiveArbitration.Priced<>(
+				new LmdbNativeAdaptiveArbitration.Candidate<>(estimate, preference, observation -> family),
+				prediction);
+	}
+
 	private static LmdbNativeAdaptiveArbitration.Priced<String> priced(String family, int preference, double low95,
 			double expected, double high95) {
 		LmdbNativePhysicalVariantKey key = LmdbNativePhysicalVariantKey.builder(family)

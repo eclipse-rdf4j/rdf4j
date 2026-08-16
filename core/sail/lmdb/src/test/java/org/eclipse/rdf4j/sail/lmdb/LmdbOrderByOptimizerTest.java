@@ -165,14 +165,25 @@ public class LmdbOrderByOptimizerTest {
 				.count());
 	}
 
+	/**
+	 * Gap-analysis S10: a dirty transaction cannot serve the index-order rewrite, but a hard failure turns a slow plan
+	 * into an unusable one. STABLE_INDEX promises a stable deterministic order, and a value sort on the requested
+	 * variable is exactly that — so the optimizer degrades the order element to a plain variable sort and leaves the
+	 * Order node in place instead of throwing.
+	 */
 	@Test
-	public void testRejectStableIndexWhenTripleSourceHasPendingChanges() {
+	public void testStableIndexDegradesToValueSortWhenTripleSourceHasPendingChanges() {
 		LmdbOrderByOptimizer dirtyOptimizer = new LmdbOrderByOptimizer(new SupportedOrdersTripleSource(), true);
 		TupleExpr tupleExpr = parse("select ?a ?type where { ?a a ?type. } order by STABLE_INDEX(?a)");
 
-		QueryEvaluationException error = assertThrows(QueryEvaluationException.class,
-				() -> dirtyOptimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance()));
-		assertTrue(error.getMessage().contains("transaction"));
+		dirtyOptimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+
+		Order order = findOrder(tupleExpr);
+		assertNotNull(order, "the Order node stays: a real sort still happens");
+		assertEquals(1, order.getElements().size());
+		assertTrue(order.getElements().get(0).getExpr() instanceof Var,
+				"the STABLE_INDEX call degrades to a plain variable sort key");
+		assertEquals("a", ((Var) order.getElements().get(0).getExpr()).getName());
 	}
 
 	@Test

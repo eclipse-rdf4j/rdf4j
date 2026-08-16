@@ -49,6 +49,7 @@ public class LmdbNativeStrategyArbiterTest {
 		System.clearProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
 		System.clearProperty(LmdbNativeCostCalibration.EXPLORATION_PROPERTY);
 		System.clearProperty(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY);
+		System.clearProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY);
 	}
 
 	private static void measure(String tag, double nanosPerUnit, int times) {
@@ -104,6 +105,96 @@ public class LmdbNativeStrategyArbiterTest {
 				.as("the typed model is deliberately uncertain at cold start, so raw work rows must not displace "
 						+ "the aggregate kernel before adaptive timing evidence exists")
 				.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
+	}
+
+	/**
+	 * Gap-analysis G8, first half: a cold typed model keeps structural preference for plausible sets (previous test),
+	 * but it must not carry a candidate whose <em>static</em> cost interval lies beyond any plausible per-unit speed
+	 * ratio between strategy families. A million-fold work gap cannot be explained by "the kernel is faster per row";
+	 * the statically absurd candidate must be dominated out before structural preference decides.
+	 */
+	@Test
+	public void coldAdaptiveSetDropsCandidatesBeyondAnyFamilySpeedRatio() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "true");
+
+		List<LmdbNativeStrategyProposal<String>> candidates = List.of(
+				proposal(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 1_000_000_000D),
+				proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000D));
+
+		assertThat(adaptiveWinner(candidates))
+				.as("a million-fold static work gap exceeds any family speed ratio; the cold model may not retain "
+						+ "the absurd candidate on structural preference alone")
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+	}
+
+	/**
+	 * Gap-analysis G8, second half: one unpriceable candidate must not force the whole set back to pure structural
+	 * ranking — the priced candidates keep their static interval evidence, so the statically absurd highest-preference
+	 * candidate still loses.
+	 */
+	@Test
+	public void mixedProposalSetRetainsStaticIntervalEvidence() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "true");
+
+		List<LmdbNativeStrategyProposal<String>> candidates = List.of(
+				proposal(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 1_000_000_000D),
+				proposal(LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, LmdbNativeWork.UNKNOWN),
+				proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000D));
+
+		assertThat(adaptiveWinner(candidates))
+				.as("an unpriceable candidate falls back to interval ranking, not preference-only ranking: the "
+						+ "statically absurd irAggregate may not win; the unpriceable candidate (never dominated) "
+						+ "ranks by preference among the survivors")
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION);
+	}
+
+	/**
+	 * Gap-analysis C1: slice proration divides {@code sliceRows} by {@code estRows}, so the proposal must declare its
+	 * expected <em>output rows</em> there — declaring its work units instead makes the consumed fraction vanishingly
+	 * small and prices a LIMIT slice at little more than startup, systematically underpricing front-loaded parallel
+	 * strategies under LIMIT. With 1M work units, 250k startup, 1000 expected rows and a LIMIT of 10, the correctly
+	 * typed proposal pays startup plus 1% of the scan; the work-typed one pays essentially startup alone.
+	 */
+	@Test
+	public void limitSliceProrationRequiresRowUnitsNotWorkUnits() {
+		LmdbNativeStrategyProposal<String> rowsTyped = new LmdbNativeStrategyProposal<>(() -> "p",
+				LmdbNativeWork.exact(1_000_000D), LmdbNativeWork.exact(250_000D), 1_000D,
+				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+				});
+		LmdbNativeStrategyProposal<String> workTyped = new LmdbNativeStrategyProposal<>(() -> "p",
+				LmdbNativeWork.exact(1_000_000D), LmdbNativeWork.exact(250_000D), 1_000_000D,
+				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+				});
+
+		double rowsTypedSlice = rowsTyped.effectiveWork(10D).high();
+		double workTypedSlice = workTyped.effectiveWork(10D).high();
+		assertThat(rowsTypedSlice)
+				.as("a 10-row slice of 1000 expected rows pays startup plus 1%% of the remaining scan")
+				.isEqualTo(250_000D + 0.01D * 750_000D);
+		assertThat(workTypedSlice)
+				.as("work-typed estRows collapses the fraction to 1e-5 — the C1 underpricing shape")
+				.isLessThan(250_100D);
+	}
+
+	/**
+	 * Gap-analysis C11: the parallel IR rungs rank directly below their serial siblings and above the last resorts, and
+	 * every execution-path tag the arbiter can select is part of the frozen vocabulary — a tag missing from the ladder
+	 * would silently rank below {@code nestedLoop} the day it becomes a proposal.
+	 */
+	@Test
+	public void parallelIrRungsAreRankedAndInTheVocabulary() {
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
+				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL)).isTrue();
+		assertThat(LmdbNativeAttemptMetrics.EXECUTION_PATH_VOCABULARY)
+				.contains(LmdbNativeAttemptMetrics.PATH_WCOJ,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL);
 	}
 
 	@Test

@@ -145,6 +145,12 @@ final class LmdbNativePackedFtree {
 				: plan.estimateProjectedWork(row.source, localDemandedMask(plan, demandedSlots));
 	}
 
+	/**
+	 * Proposes packed factorized row production. The {@code distinct} consumer hint is honored through the
+	 * {@link FactorizedRowCursor} contract (gap-analysis G9/G40): the cursor surfaces each tuple's exact bag
+	 * multiplicity instead of replaying it, so a DISTINCT consumer discards duplicate bags in one step while plain
+	 * SELECT replays them on the consumer side.
+	 */
 	static LmdbNativeStrategyProposal<NativeUnorderedInput> proposeRows(MultiJoinPlan multiJoin, RowState row,
 			int[] retainedSlots, boolean distinct, TupleExpr explainTarget) {
 		if (!enabled() || multiJoin == null) {
@@ -810,6 +816,12 @@ final class LmdbNativePackedFtree {
 					return null;
 				}
 				groupPathIndex[i] = node.depth;
+				if (groupSlotAtLevel[node.depth] >= 0) {
+					// two group entries on one level: this sink writes one probe column per level, so the other
+					// would stay unwritten (gap-analysis B14). The enumeration sink resolves each entry
+					// independently (addProjectedGroup) — hand the plan to it rather than group on a constant.
+					return null;
+				}
 				groupSlotAtLevel[node.depth] = i;
 			}
 			NodePlan[][] specChains = new NodePlan[aggregates.length][];
@@ -4282,7 +4294,7 @@ final class LmdbNativePackedFtree {
 	}
 
 	/** Pull cursor that flattens only at the RDF4J row boundary. */
-	static final class PackedRowCursor implements RowCursor {
+	static final class PackedRowCursor implements FactorizedRowCursor {
 		final Plan plan;
 		final RowState row;
 		final Runtime runtime;
@@ -4292,6 +4304,20 @@ final class LmdbNativePackedFtree {
 		long repeatRemaining;
 		boolean initialized;
 		boolean closed;
+
+		/**
+		 * Consume-on-read transfer of the current tuple's exact bag multiplicity (gap-analysis G9/G40): a
+		 * multiplicity-aware consumer takes ownership of the replay — a downstream DISTINCT then discards the whole bag
+		 * in one step instead of deduplicating {@code repeatRemaining} identical copies one {@code next()} at a time,
+		 * and plain SELECT replays on the consumer side. A generic consumer that never calls this still sees every copy
+		 * through the cursor's own replay.
+		 */
+		@Override
+		public long multiplicity() {
+			long transferred = repeatRemaining + 1L;
+			repeatRemaining = 0L;
+			return transferred;
+		}
 
 		PackedRowCursor(Plan plan, RowState row, Runtime runtime) {
 			this.plan = plan;

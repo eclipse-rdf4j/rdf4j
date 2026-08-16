@@ -146,6 +146,67 @@ final class NativeGroupTable {
 		return longGroups;
 	}
 
+	/**
+	 * Accumulates one solution row representing {@code weight} identical copies (a multiplicity-surfacing producer such
+	 * as the leapfrog core) without enumerating them. Group membership is decided once; the weight folds into the
+	 * group's aggregates through the checked weighted arithmetic.
+	 */
+	void add(RowState row, long weight) {
+		if (weight <= 1L) {
+			add(row);
+			return;
+		}
+		switch (mode) {
+		case ZERO:
+			sawRow = true;
+			single.add(row, weight);
+			break;
+		case SINGLE_SLOT: {
+			long key = row.slots[groupSlots[0]];
+			AggState state = longGroups.get(key);
+			if (state == null) {
+				state = newGroupState();
+				longGroups.put(key, state);
+			}
+			state.add(row, weight);
+			break;
+		}
+		case TUPLE_COUNTS: {
+			int group = tuples.findOrInsert(row.slots, groupSlots, false);
+			int required = (group + 1) * aggregates.length;
+			if (required > tupleCounts.length) {
+				tupleCounts = Arrays.copyOf(tupleCounts, Math.max(required, tupleCounts.length << 1));
+			}
+			int offset = group * aggregates.length;
+			for (int i = 0; i < aggregates.length; i++) {
+				if (aggregates[i].value(row) != UNKNOWN) {
+					tupleCounts[offset + i] = FactorizedTail.addCounts(tupleCounts[offset + i], weight);
+				}
+			}
+			if (rowMetrics) {
+				primitiveCountRows++;
+			}
+			break;
+		}
+		case TUPLE_STATES: {
+			int group = tuples.findOrInsert(row.slots, groupSlots, false);
+			if (group >= tupleStates.length) {
+				tupleStates = Arrays.copyOf(tupleStates, tupleStates.length << 1);
+			}
+			AggState state = tupleStates[group];
+			if (state == null) {
+				state = newGroupState();
+				tupleStates[group] = state;
+			}
+			state.add(row, weight);
+			if (rowMetrics) {
+				primitiveTupleRows++;
+			}
+			break;
+		}
+		}
+	}
+
 	/** Accumulates one fully-bound solution row into its group's state. */
 	void add(RowState row) {
 		switch (mode) {

@@ -567,27 +567,32 @@ public class LmdbSailStoreTest {
 		}
 	}
 
+	/**
+	 * Gap-analysis S10: a dirty transaction cannot serve the index-order rewrite, but STABLE_INDEX promises a stable
+	 * deterministic order and a value sort on the requested variable is exactly that — the query degrades to a slower
+	 * plan instead of failing, and the uncommitted triple participates.
+	 */
 	@Test
-	public void testOrderByLmdbIndexRejectsDirtyTransaction() {
+	public void testOrderByLmdbIndexDegradesToValueSortInDirtyTransaction() {
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.begin(IsolationLevels.SNAPSHOT_READ);
 			conn.add(F.createIRI("urn:dirty"), RDFS.LABEL, F.createLiteral("dirty"));
 
-			QueryEvaluationException error = org.junit.jupiter.api.Assertions.assertThrows(
-					QueryEvaluationException.class,
-					() -> {
-						try (TupleQueryResult result = conn
-								.prepareTupleQuery("select ?s ?o where { ?s <" + RDFS.LABEL
-										+ "> ?o } order by STABLE_INDEX(?s)")
-								.evaluate()) {
-							while (result.hasNext()) {
-								result.next();
-							}
-						}
-					});
+			java.util.List<String> subjects = new java.util.ArrayList<>();
+			try (TupleQueryResult result = conn
+					.prepareTupleQuery("select ?s ?o where { ?s <" + RDFS.LABEL
+							+ "> ?o } order by STABLE_INDEX(?s)")
+					.evaluate()) {
+				while (result.hasNext()) {
+					subjects.add(result.next().getValue("s").stringValue());
+				}
+			}
 
-			assertTrue(error.getMessage().contains("STABLE_INDEX"));
-			assertTrue(error.getMessage().toLowerCase().contains("transaction"));
+			java.util.List<String> expected = new java.util.ArrayList<>(subjects);
+			expected.sort(String::compareTo);
+			org.junit.jupiter.api.Assertions.assertEquals(expected, subjects,
+					"the degraded plan is a value sort on the requested variable — a stable deterministic order");
+			assertTrue("the uncommitted triple participates in the degraded plan", subjects.contains("urn:dirty"));
 			conn.rollback();
 		}
 	}

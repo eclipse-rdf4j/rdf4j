@@ -374,6 +374,50 @@ final class AggState {
 	}
 
 	/**
+	 * Accumulates one solution row that represents {@code weight} identical copies — a factorized or WCOJ producer's
+	 * multiplicity — in a single pass (gap-analysis G6). Distinct-gated contributions are untouched: identical copies
+	 * can never be fresh after the first, and the plain {@link #add(RowState)} performs exactly that first add. The
+	 * remaining {@code weight - 1} copies fold into the weight-sensitive aggregates through the same checked arithmetic
+	 * as the factorized tail's {@link #addWeighted(int, long, long)}.
+	 */
+	void add(RowState row, long weight) {
+		add(row);
+		if (weight <= 1L) {
+			return;
+		}
+		long extra = weight - 1L;
+		for (int i = 0; i < specs.length; i++) {
+			long value = specs[i].value(row);
+			if (value == UNKNOWN) {
+				continue;
+			}
+			if (distinctChannels.specChannels[i] >= 0) {
+				// identical copies are never fresh for a DISTINCT-gated spec
+				continue;
+			}
+			switch (specs[i].kind) {
+			case COUNT:
+				counts[i] = FactorizedTail.addCounts(counts[i], extra);
+				break;
+			case SUM:
+				if (!deferredDistinctValueAggregate(i)) {
+					addSumWeighted(i, value, extra);
+				}
+				break;
+			case AVG:
+				if (!deferredDistinctValueAggregate(i)) {
+					addAvgWeighted(i, value, extra);
+				}
+				break;
+			case MIN:
+			case MAX:
+				// the first copy already updated the extremum; duplicates cannot change it
+				break;
+			}
+		}
+	}
+
+	/**
 	 * Adds one bound value with a multiplicity weight — the factorized tail's entry point where the same solution row
 	 * appears {@code weight} times without being enumerated. COUNT adds the weight; SUM/AVG add value×weight (a bag of
 	 * {@code weight} equal terms, with the per-row numeric-promotion and type-error semantics — the weight is an exact

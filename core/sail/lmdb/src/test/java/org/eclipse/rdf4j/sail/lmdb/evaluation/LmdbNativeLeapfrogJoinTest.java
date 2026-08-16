@@ -99,6 +99,63 @@ public class LmdbNativeLeapfrogJoinTest {
 		}
 	}
 
+	/**
+	 * Bag multiplicity through the WCOJ aggregate drain (gap-analysis G6): the same edge asserted in two named contexts
+	 * gives every triangle solution a duplicate count of two, which the leapfrog core computes during frontier dedup
+	 * and now surfaces to the aggregate drain as a weight instead of replaying one {@code next()} per copy. COUNT must
+	 * fold the whole bag; the interpreted engine is the oracle.
+	 */
+	@Test
+	public void duplicateContextEdgesFoldIntoWcojAggregates() {
+		openRepositoryWithDuplicateEdges();
+		String count = "SELECT (COUNT(*) AS ?count) WHERE {\n"
+				+ "  ?a <" + EX + "knows> ?b .\n"
+				+ "  ?b <" + EX + "knows> ?c .\n"
+				+ "  ?c <" + EX + "knows> ?a .\n"
+				+ "}";
+		String grouped = "SELECT ?a (COUNT(*) AS ?count) WHERE {\n"
+				+ "  ?a <" + EX + "knows> ?b .\n"
+				+ "  ?b <" + EX + "knows> ?c .\n"
+				+ "  ?c <" + EX + "knows> ?a .\n"
+				+ "} GROUP BY ?a";
+		String previousJanino = System.getProperty("rdf4j.lmdb.janinoCodegen.enabled");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+		try {
+			List<String> expectedCount = rowsWithNativeEngine(count, false);
+			assertThat(expectedCount)
+					.as("interpreted oracle: three rotations, each doubled by the duplicated edge")
+					.containsExactly("count=\"6\"^^<http://www.w3.org/2001/XMLSchema#integer>");
+			long openedBefore = LmdbNativeLeapfrogJoin.OPENED.get();
+			assertThat(rowsWithNativeEngine(count, true))
+					.as("native COUNT over the duplicated triangle must fold the full bag")
+					.isEqualTo(expectedCount);
+			assertThat(LmdbNativeLeapfrogJoin.OPENED.get()).as("leapfrog opened").isGreaterThan(openedBefore);
+
+			List<String> expectedGrouped = rowsWithNativeEngine(grouped, false);
+			assertThat(rowsWithNativeEngine(grouped, true))
+					.as("native grouped COUNT over the duplicated triangle must fold per-group bags")
+					.containsExactlyInAnyOrderElementsOf(expectedGrouped);
+		} finally {
+			if (previousJanino == null) {
+				System.clearProperty("rdf4j.lmdb.janinoCodegen.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", previousJanino);
+			}
+		}
+	}
+
+	/** Row consumers must still see every duplicate copy — the replay contract for multiplicity-blind drains. */
+	@Test
+	public void duplicateContextEdgesStillReplayForRowConsumers() {
+		openRepositoryWithDuplicateEdges();
+
+		List<String> expected = rowsWithNativeEngine(TRIANGLE, false);
+		assertThat(expected).as("interpreted oracle: three rotations, each emitted twice").hasSize(6);
+		assertThat(rowsWithNativeEngine(TRIANGLE, true))
+				.as("native rows over the duplicated triangle must preserve bag multiplicity")
+				.containsExactlyInAnyOrderElementsOf(expected);
+	}
+
 	@Test
 	public void triangleEngagesLeapfrogAndMatchesGenericResults() {
 		openRepository();
@@ -296,6 +353,24 @@ public class LmdbNativeLeapfrogJoinTest {
 					.isEqualTo(plannedBefore);
 		} finally {
 			System.clearProperty(LmdbNativeLeapfrogJoin.ENABLED_PROPERTY);
+		}
+	}
+
+	/** A lone triangle whose a→b edge is asserted in two named contexts: every solution has bag multiplicity two. */
+	private void openRepositoryWithDuplicateEdges() {
+		LmdbNativeLeapfrogJoin.resetMetrics();
+		repository = new SailRepository(
+				new LmdbStore(new File(dataDir, "duplicate-edges"), new LmdbStoreConfig("spoc,ospc,psoc,posc")));
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			IRI knows = vf.createIRI(EX, "knows");
+			IRI a = vf.createIRI(EX, "a");
+			IRI b = vf.createIRI(EX, "b");
+			IRI c = vf.createIRI(EX, "c");
+			conn.add(a, knows, b, vf.createIRI(EX, "g1"));
+			conn.add(a, knows, b, vf.createIRI(EX, "g2"));
+			conn.add(b, knows, c);
+			conn.add(c, knows, a);
 		}
 	}
 

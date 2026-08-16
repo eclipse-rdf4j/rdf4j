@@ -299,6 +299,135 @@ class LmdbNativeAdaptiveCostModelTest {
 		assertEquals(256, machine.snapshot().sampleCount());
 	}
 
+	/**
+	 * Gap-analysis C3: prediction feeds the machine estimate×ratio (≈ actual once shape ratios warm up), so training
+	 * must feed the machine the RAW actual features. Training on actual×ratio double-applies the correction — the
+	 * machine then learns a mapping at actual²/estimate scale, and warm predictions come out biased by ~1/ratio. With
+	 * actuals at twice the estimate and a constant measured latency, the warm prediction must approximate the measured
+	 * nanos; the double-application bug halves it.
+	 */
+	@Test
+	void trainingUsesRawActualFeaturesSoWarmPredictionsStayUnbiased() {
+		LmdbNativeAdaptiveCostModel model = model(new LmdbNativeMachineCostModel(), new LmdbNativeStoreCostModel());
+		LmdbNativeCostEstimate est = estimate(key("interpreted", 21), LmdbNativeCostVector.Feature.SCANNED_ROW, 100);
+		LmdbNativeCostVector actual = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 200);
+		for (int i = 0; i < 64; i++) {
+			assertTrue(model.record(est, actual, 1_000_000.0, true).trained());
+		}
+
+		double predicted = model.predict(est).expectedNanos();
+		assertTrue(predicted > 600_000.0 && predicted < 1_700_000.0,
+				"trained on raw actuals the warm prediction approximates the measured nanos; the double-applied "
+						+ "shape correction biases it toward half: " + predicted);
+	}
+
+	/**
+	 * Gap-analysis G4: a streaming winner counts its produced rows against the estimate's dominant row feature, and
+	 * completion bridges the remaining features from the estimate feature-wise — measured counts replace the estimate
+	 * where they exist, and unmeasured features keep their estimated counts instead of collapsing to zero (which would
+	 * teach the store a zero ratio for every feature the family has no counter for yet).
+	 */
+	@Test
+	void measuredRowCountersReplaceTheEstimateFeatureWise() {
+		LmdbNativeAdaptiveCostModel model = model(new LmdbNativeMachineCostModel(), new LmdbNativeStoreCostModel());
+		LmdbNativeCostVector startup = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1);
+		LmdbNativeCostVector total = startup
+				.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 100));
+		LmdbNativeCostEstimate est = new LmdbNativeCostEstimate(key("interpreted", 31), startup, total, 100, 0.1);
+		FakeClock clock = new FakeClock();
+		LmdbNativeCostObservation observation = new LmdbNativeCostObservation(est, model, clock);
+		for (int i = 0; i < 37; i++) {
+			observation.addProducedRow();
+		}
+		clock.advance(5_000_000L);
+		observation.exhausted();
+
+		LmdbNativeCostObservation.Snapshot snapshot = observation.snapshot();
+		assertEquals(37.0, snapshot.actualFeatures().expected(LmdbNativeCostVector.Feature.SCANNED_ROW),
+				"the measured row count replaces the estimated one");
+		assertEquals(1.0, snapshot.actualFeatures().expected(LmdbNativeCostVector.Feature.OPEN),
+				"a feature with no counter keeps its estimated count");
+		assertTrue(snapshot.trainingResult().trained(), "counted evidence must train the model");
+	}
+
+	/**
+	 * Gap-analysis G5: a LIMIT-satisfied close is expected consumption, not an unexplained early close — the
+	 * observation records the consumed fraction of the estimate as eligible evidence.
+	 */
+	@Test
+	void limitSatisfiedCloseRecordsEligibleConsumptionEvidence() {
+		LmdbNativeAdaptiveCostModel model = model(new LmdbNativeMachineCostModel(), new LmdbNativeStoreCostModel());
+		LmdbNativeCostEstimate est = estimate(key("interpreted", 41), LmdbNativeCostVector.Feature.SCANNED_ROW, 100);
+		FakeClock clock = new FakeClock();
+		LmdbNativeCostObservation observation = new LmdbNativeCostObservation(est, model, clock);
+		for (int i = 0; i < 10; i++) {
+			observation.addProducedRow();
+		}
+		clock.advance(1_000_000L);
+		observation.expectedEarlyCloseAfterRows(10);
+
+		LmdbNativeCostObservation.Snapshot snapshot = observation.snapshot();
+		assertEquals(LmdbNativeCostObservation.Completion.EXPECTED_EARLY_CLOSE, snapshot.completion());
+		assertEquals(0.1, snapshot.consumedFraction(), 1e-9);
+		assertTrue(snapshot.trainingResult().trained(),
+				"a LIMIT-truncated run is eligible evidence for its consumed fraction");
+	}
+
+	/**
+	 * Gap-analysis C4: a parallel proposal's front-loaded startup intercept must be represented exactly once — by the
+	 * WORKER_START feature. Folding the same nanos into the row feature as well makes the machine model attribute the
+	 * intercept twice (once through each feature's learned coefficient), inconsistently across parallel families. With
+	 * work = intercept + 750k and startup = intercept, the startup vector must carry only OPEN and WORKER_START, and
+	 * the total vector's row feature must carry the 750k scan alone.
+	 */
+	@Test
+	void parallelStartupInterceptIsRepresentedOnceByWorkerStart() {
+		double intercept = LmdbNativeStrategyProposal.parallelStartupCost();
+		LmdbNativeStrategyProposal<String> proposal = new LmdbNativeStrategyProposal<>(() -> "p",
+				LmdbNativeWork.exact(intercept + 750_000D), LmdbNativeWork.exact(intercept), Double.NaN,
+				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+				});
+
+		LmdbNativeCostEstimate estimate = proposal.adaptiveEstimate(-1D);
+
+		assertEquals(1.0, estimate.startup().expected(LmdbNativeCostVector.Feature.WORKER_START),
+				"the intercept is the worker-start feature's job");
+		for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
+			if (feature == LmdbNativeCostVector.Feature.OPEN
+					|| feature == LmdbNativeCostVector.Feature.WORKER_START) {
+				continue;
+			}
+			assertEquals(0.0, estimate.startup().expected(feature),
+					"startup must not fold the worker-start intercept into " + feature);
+		}
+		LmdbNativeCostVector.Feature rowFeature = estimate.dominantRowFeature();
+		assertEquals(750_000D, estimate.total().expected(rowFeature),
+				"the total row feature carries the scan alone, not the intercept again");
+	}
+
+	/**
+	 * Gap-analysis C7: feature support must be monotone in evidence. The old rule declared every feature "supported"
+	 * while the model held fewer than 32 total samples, then flipped features with under 4 observations to unsupported
+	 * the moment sample 32 arrived — more data discontinuously reducing the model's authority. Support is now purely
+	 * per-feature evidence: a feature the model has never seen is unsupported from the first sample.
+	 */
+	@Test
+	void featureSupportIsMonotoneInEvidence() {
+		LmdbNativeMachineCostModel model = new LmdbNativeMachineCostModel();
+		LmdbNativeCostVector scanned = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 100);
+		for (int i = 0; i < 8; i++) {
+			model.update(scanned, 1_000.0);
+		}
+
+		long mask = model.predict(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.GENERATED_ROW, 10))
+				.supportedFeatureMask();
+
+		assertEquals(0L, mask & (1L << LmdbNativeCostVector.Feature.GENERATED_ROW.ordinal()),
+				"a feature with zero evidence is unsupported regardless of the total sample count");
+		assertTrue((mask & (1L << LmdbNativeCostVector.Feature.SCANNED_ROW.ordinal())) != 0L,
+				"a feature with enough evidence stays supported");
+	}
+
 	private static LmdbNativeAdaptiveCostModel model(LmdbNativeMachineCostModel machine,
 			LmdbNativeStoreCostModel store) {
 		return new LmdbNativeAdaptiveCostModel(machine, store,

@@ -130,11 +130,26 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 			LmdbStableOrderPlanner.Resolution resolution, QueryEvaluationContext context) {
 		resolution.apply();
 		QueryEvaluationStep child = genericPrecompile(tupleExpr, context);
-		CollectionFactory collectionFactory = getCollectionFactory().get();
+		// Each evaluation owns its own factory (gap-analysis S8): the iteration closes what it was handed, so a
+		// factory shared across the prepared step would be closed by the first evaluation and a correlated re-run
+		// would operate on a closed factory — a real resource-release failure for disk-backed factories.
+		java.util.function.Supplier<CollectionFactory> collectionFactorySupplier = getCollectionFactory();
 		return bindings -> {
-			CloseableIteration<BindingSet> evaluate = child.evaluate(bindings);
-			return new LmdbPartitionedDistinctIteration(evaluate, collectionFactory.createSetOfBindingSets(),
-					resolution.getVisibleBindingName(), collectionFactory);
+			CollectionFactory collectionFactory = collectionFactorySupplier.get();
+			try {
+				CloseableIteration<BindingSet> evaluate = child.evaluate(bindings);
+				return new LmdbPartitionedDistinctIteration(evaluate, collectionFactory.createSetOfBindingSets(),
+						resolution.getVisibleBindingName(), collectionFactory);
+			} catch (RuntimeException | Error e) {
+				try {
+					collectionFactory.close();
+				} catch (RuntimeException | Error closeFailure) {
+					if (closeFailure != e) {
+						e.addSuppressed(closeFailure);
+					}
+				}
+				throw e;
+			}
 		};
 	}
 

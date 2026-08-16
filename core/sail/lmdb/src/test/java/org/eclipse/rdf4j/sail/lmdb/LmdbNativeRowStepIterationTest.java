@@ -46,6 +46,58 @@ class LmdbNativeRowStepIterationTest {
 	private static final long P2 = 200;
 	private static final long P3 = 300;
 
+	/**
+	 * Gap-analysis C6: close-time calibration must record only completed runs. A LIMIT or early close spans a fraction
+	 * of the predicted work, so charging the full prediction against the shorter elapsed time deflates the strategy's
+	 * learned nanos-per-unit — often-truncated strategies would look systematically faster than they are.
+	 */
+	@Test
+	void earlyCloseDoesNotRecordCalibration() {
+		String previousEnabled = System.getProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
+		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
+		LmdbNativeCostCalibration.reset();
+		try {
+			for (int i = 0; i < 8; i++) {
+				NativeUnorderedInput truncated = NativeUnorderedInput.rows(null, new LifecycleOnlyCursor());
+				truncated.calibrateOnClose("scratch-early-close-tag", 5_000D, System.nanoTime());
+				truncated.close(false);
+			}
+			assertThat(LmdbNativeCostCalibration.toTime("scratch-early-close-tag", LmdbNativeWork.exact(1_000D))
+					.high())
+							.as("an unexplained early close is not calibration evidence")
+							.isEqualTo(1_000D);
+
+			for (int i = 0; i < 8; i++) {
+				NativeUnorderedInput completed = NativeUnorderedInput.rows(null, new LifecycleOnlyCursor());
+				completed.calibrateOnClose("scratch-completed-tag", 5_000D, System.nanoTime() - 1_000_000L);
+				completed.close(true);
+			}
+			assertThat(LmdbNativeCostCalibration.toTime("scratch-completed-tag", LmdbNativeWork.exact(1_000D))
+					.high())
+							.as("a completed run still calibrates")
+							.isNotEqualTo(1_000D);
+		} finally {
+			LmdbNativeCostCalibration.reset();
+			if (previousEnabled == null) {
+				System.clearProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
+			} else {
+				System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousEnabled);
+			}
+		}
+	}
+
+	/** Minimal cursor for lifecycle-only tests. */
+	private static final class LifecycleOnlyCursor implements RowCursor {
+		@Override
+		public boolean next() {
+			return false;
+		}
+
+		@Override
+		public void close() {
+		}
+	}
+
 	@Test
 	void evaluateDoesNotConsumeRowsBeforeIterationDemand() {
 		RecordingPlan plan = new RecordingPlan(2);

@@ -1055,8 +1055,13 @@ final class OrderedUnionCursor implements RowCursor {
 		return 0;
 	}
 
+	/**
+	 * Unbound and default-graph mean the same thing here, and the branch cursors emit raw unsigned index order in which
+	 * the null context (0) sorts first — so the equality must fold onto 0, never onto the unsigned maximum
+	 * (gap-analysis B13; unreachable today via the named-context scope filter, corrected defensively).
+	 */
 	private long normalize(long value) {
-		return value == NULL_CONTEXT_ID ? UNKNOWN : value;
+		return value == UNKNOWN ? NULL_CONTEXT_ID : value;
 	}
 
 	@Override

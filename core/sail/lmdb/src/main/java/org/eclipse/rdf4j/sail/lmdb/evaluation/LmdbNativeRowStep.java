@@ -1811,7 +1811,19 @@ final class NativeUnorderedInput implements AutoCloseable {
 	void firstOutput() {
 		LmdbNativeStrategySelection<NativeUnorderedInput> selection = adaptiveSelection;
 		if (selection != null && selection.observation() != null) {
-			selection.observation().firstOutput();
+			LmdbNativeCostObservation observation = selection.observation();
+			observation.firstOutput();
+			// every drain path calls this once per physical producer emission, so it doubles as the universal
+			// produced-rows counter feeding the adaptive model's actual feature vector (gap-analysis G4)
+			observation.addProducedRow();
+		}
+	}
+
+	/** Reports a LIMIT-satisfied close so the observation stays eligible for its consumed fraction (G5). */
+	void expectedEarlyCloseAfterRows(double rows) {
+		LmdbNativeStrategySelection<NativeUnorderedInput> selection = adaptiveSelection;
+		if (selection != null && selection.observation() != null) {
+			selection.observation().expectedEarlyCloseAfterRows(rows);
 		}
 	}
 
@@ -1875,8 +1887,13 @@ final class NativeUnorderedInput implements AutoCloseable {
 				cursor = null;
 				batch = null;
 				if (calibrationTag != null) {
-					LmdbNativeCostCalibration.record(calibrationTag, calibrationWork,
-							System.nanoTime() - calibrationStartedNanos);
+					// only a completed run is calibration evidence (gap-analysis C6): a LIMIT or early close
+					// spans a fraction of the predicted work, and charging the full prediction against the
+					// shorter elapsed time deflates nanos-per-unit for often-truncated strategies
+					if (completed) {
+						LmdbNativeCostCalibration.record(calibrationTag, calibrationWork,
+								System.nanoTime() - calibrationStartedNanos);
+					}
 					calibrationTag = null;
 				}
 			}
@@ -2010,7 +2027,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 		}
 		if (remainingMultiplicity > 0) {
 			remainingMultiplicity--;
-			remainingLimit--;
+			consumeLimitSlot();
 			return repeated;
 		}
 		if (!initialized && !initialize()) {
@@ -2054,7 +2071,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 			}
 			repeated = step.emit(row.slots, values, base);
 			remainingMultiplicity = multiplicity - 1;
-			remainingLimit--;
+			consumeLimitSlot();
 			return repeated;
 		}
 		return null;
@@ -2083,10 +2100,21 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 				remainingOffset--;
 				continue;
 			}
-			remainingLimit--;
+			consumeLimitSlot();
 			return step.emit(row.slots, values, base);
 		}
 		return null;
+	}
+
+	/**
+	 * Decrements the LIMIT budget; when the last slot is consumed the producer's observation is marked as an expected
+	 * early close for the fraction actually consumed (gap-analysis G5), so a LIMIT-truncated run stays eligible
+	 * learning evidence instead of an unexplained early close.
+	 */
+	private void consumeLimitSlot() {
+		if (--remainingLimit == 0 && unorderedInput != null) {
+			unorderedInput.expectedEarlyCloseAfterRows(step.limit);
+		}
 	}
 
 	private boolean initialize() throws IOException {

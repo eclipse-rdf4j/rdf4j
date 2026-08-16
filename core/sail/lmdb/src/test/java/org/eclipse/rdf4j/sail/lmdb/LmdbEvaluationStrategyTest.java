@@ -87,6 +87,56 @@ class LmdbEvaluationStrategyTest extends EvaluationStrategyTest {
 		}
 	}
 
+	/**
+	 * Gap-analysis S8: the partitioned-distinct step must hand each evaluation its own collection factory. With one
+	 * factory shared across the prepared step, the first iteration's close shuts it down and a correlated re-run of the
+	 * same prepared query operates on a closed factory — a real resource-release failure for disk-backed factories (the
+	 * default in-memory one merely no-ops, which is why this guard tracks close explicitly).
+	 */
+	@Test
+	void testPartitionedDistinctReEvaluationOwnsItsCollectionFactory() {
+		EvaluationStrategy strategy = createStrategy();
+		java.util.concurrent.atomic.AtomicInteger created = new java.util.concurrent.atomic.AtomicInteger();
+		strategy.setCollectionFactory(() -> {
+			created.incrementAndGet();
+			return new CloseTrackingCollectionFactory();
+		});
+		TupleExpr tupleExpr = parse("select distinct ?type where { ?a a ?type. }");
+		strategy.optimize(tupleExpr, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+		Distinct distinct = findNode(tupleExpr, Distinct.class);
+		assertNotNull(distinct);
+
+		QueryEvaluationStep prepared = strategy.precompile(distinct);
+		try (CloseableIteration<BindingSet> first = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertEquals(PARTITIONED_ITERATOR, first.getClass().getSimpleName());
+			assertEquals(List.of("urn:type1", "urn:type2"), extractValues(first, "type"));
+		}
+		try (CloseableIteration<BindingSet> second = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertEquals(List.of("urn:type1", "urn:type2"), extractValues(second, "type"));
+		}
+		assertEquals(2, created.get(), "each evaluation owns (and closes) its own collection factory");
+	}
+
+	/** Unusable once closed, like a disk-backed factory — the shape that exposes shared-factory reuse. */
+	private static final class CloseTrackingCollectionFactory
+			extends org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory {
+		private boolean closed;
+
+		@Override
+		public java.util.Set<BindingSet> createSetOfBindingSets() {
+			if (closed) {
+				throw new IllegalStateException("collection factory used after close");
+			}
+			return super.createSetOfBindingSets();
+		}
+
+		@Override
+		public void close() {
+			closed = true;
+			super.close();
+		}
+	}
+
 	@Test
 	void testReducedUsesPartitionedIteratorForVisibleStableOrder() {
 		EvaluationStrategy strategy = createStrategy();

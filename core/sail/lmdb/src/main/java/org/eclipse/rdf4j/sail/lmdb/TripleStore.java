@@ -359,6 +359,10 @@ class TripleStore implements Closeable {
 		return fanOutStats(explicit).meanFanOut(predicate, bySubject);
 	}
 
+	OptionalDouble distinctFanOutKeys(long predicate, boolean bySubject, boolean explicit) {
+		return fanOutStats(explicit).distinctKeys(predicate, bySubject);
+	}
+
 	Map<String, Long> explicitIndexEntryCounts() throws IOException {
 		return readTransaction(env, (stack, txn) -> {
 			Map<String, Long> counts = new HashMap<>(indexes.size());

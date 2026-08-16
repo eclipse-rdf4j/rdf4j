@@ -3732,6 +3732,14 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public OptionalDouble distinctFanOutKeys(long predicate, boolean bySubject) {
+			checkOpen();
+			return hasStatementsInSource()
+					? tripleStore.distinctFanOutKeys(predicate, bySubject, explicit)
+					: OptionalDouble.empty();
+		}
+
+		@Override
 		public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
 			checkOpen();
 			if (!hasStatementsInSource()) {
@@ -4686,6 +4694,14 @@ class LmdbSailStore implements SailStore {
 				}
 			}
 			return tripleStore.meanFanOut(predicate, bySubject, explicit);
+		}
+
+		@Override
+		public OptionalDouble distinctFanOutKeys(long predicate, boolean bySubject) {
+			assertNativeSourceOpen();
+			return hasStatementsInSource()
+					? tripleStore.distinctFanOutKeys(predicate, bySubject, explicit)
+					: OptionalDouble.empty();
 		}
 
 		@Override

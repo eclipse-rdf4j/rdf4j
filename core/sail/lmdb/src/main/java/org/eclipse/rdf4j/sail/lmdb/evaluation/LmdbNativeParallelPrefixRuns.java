@@ -23,6 +23,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -123,21 +124,39 @@ final class LmdbNativeParallelPrefixRuns {
 					queue.add(i);
 				}
 				List<Future<?>> futures = new ArrayList<>(workers);
+				AtomicReference<Throwable> failure = new AtomicReference<>();
 				for (int w = 0; w < workers; w++) {
 					NativeLmdbQuerySource workerSource = sources[w];
 					futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-						Integer range;
-						while ((range = queue.poll()) != null) {
-							long[] lo = range == 0 ? null : splits[range - 1];
-							long[] hi = range == splits.length ? null : splits[range];
-							rangeResults[range] = collectRange(it, workerSource, subj, pred, obj, context, lo, hi,
-									row.runtimePlan);
+						try {
+							Integer range;
+							// abort check: once any worker failed (or the query thread was interrupted while
+							// draining), remaining ranges are abandoned instead of scanned to completion
+							while (failure.get() == null && (range = queue.poll()) != null) {
+								long[] lo = range == 0 ? null : splits[range - 1];
+								long[] hi = range == splits.length ? null : splits[range];
+								rangeResults[range] = collectRange(it, workerSource, subj, pred, obj, context, lo,
+										hi, row.runtimePlan);
+							}
+							return null;
+						} catch (Throwable t) {
+							failure.compareAndSet(null, t);
+							throw t;
 						}
-						return null;
 					}));
 				}
-				for (Future<?> future : futures) {
-					future.get();
+				// Every future must be terminal before the finally below closes the shared worker sources
+				// (gap-analysis S1): a worker still iterating a cursor while its LMDB read transaction is
+				// reset/pooled is native undefined behaviour. This mirrors the kernel-aggregate drain.
+				Throwable firstProblem = awaitWorkersBeforeClose(futures, failure);
+				if (firstProblem != null) {
+					if (firstProblem instanceof Error) {
+						throw (Error) firstProblem;
+					}
+					if (firstProblem instanceof RuntimeException) {
+						throw (RuntimeException) firstProblem;
+					}
+					throw new QueryEvaluationException(firstProblem);
 				}
 				RowState filterRow = null;
 				if (it.prefixRunFilter != null) {
@@ -149,17 +168,6 @@ final class LmdbNativeParallelPrefixRuns {
 				List<BindingSet> results = mergeAndMaterialize(it, filterRow, rangeResults);
 				PARALLEL_RUNS.incrementAndGet();
 				return results;
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new QueryEvaluationException(e);
-			} catch (ExecutionException e) {
-				if (e.getCause() instanceof Error) {
-					throw (Error) e.getCause();
-				}
-				if (e.getCause() instanceof RuntimeException) {
-					throw (RuntimeException) e.getCause();
-				}
-				throw new QueryEvaluationException(e.getCause());
 			} finally {
 				closeAll(sources);
 			}
@@ -171,6 +179,50 @@ final class LmdbNativeParallelPrefixRuns {
 	@SuppressWarnings("unchecked")
 	private static List<long[]>[] newRangeResultArray(int ranges) {
 		return new List[ranges];
+	}
+
+	/**
+	 * Waits until <em>every</em> worker future is terminal and returns the first problem to report (null when all
+	 * succeeded). An interrupt of the waiting query thread is recorded into {@code failure} — which stops workers from
+	 * pulling further ranges — but the drain keeps waiting: abandoning a still-running worker here would let the
+	 * caller's cleanup reset the worker's LMDB read transaction under it (gap-analysis S1). The thread's interrupt
+	 * status is restored before returning.
+	 */
+	static Throwable awaitWorkersBeforeClose(List<Future<?>> futures, AtomicReference<Throwable> failure) {
+		Throwable firstProblem = null;
+		boolean interrupted = false;
+		for (Future<?> future : futures) {
+			while (true) {
+				try {
+					future.get();
+					break;
+				} catch (InterruptedException e) {
+					interrupted = true;
+					failure.compareAndSet(null, e);
+					if (firstProblem == null) {
+						firstProblem = e;
+					}
+					// keep draining this future: the worker may still be touching its source
+				} catch (ExecutionException e) {
+					if (firstProblem == null) {
+						firstProblem = e.getCause() != null ? e.getCause() : e;
+					}
+					break;
+				} catch (RuntimeException | Error e) {
+					if (firstProblem == null) {
+						firstProblem = e;
+					}
+					break;
+				}
+			}
+		}
+		if (interrupted) {
+			Thread.currentThread().interrupt();
+		}
+		if (firstProblem == null) {
+			firstProblem = failure.get();
+		}
+		return firstProblem;
 	}
 
 	/**

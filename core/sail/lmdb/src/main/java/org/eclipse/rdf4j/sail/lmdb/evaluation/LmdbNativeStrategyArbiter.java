@@ -169,6 +169,48 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		return best;
 	}
 
+	/**
+	 * Cold-start cross-family uncertainty band (gap-analysis G8): strategy families differ in per-unit speed — a
+	 * compiled kernel row and an interpreted chain row are not the same wall-clock — so before adaptive timing evidence
+	 * exists, static work may veto a candidate only when the gap exceeds any plausible family speed ratio. Within the
+	 * band, structural preference decides exactly as before; beyond it, no per-unit speed difference can rescue the
+	 * candidate and carrying it on preference alone discards real evidence.
+	 */
+	static final double COLD_STATIC_DOMINATION_BAND = 256D;
+
+	/** Whether a rival's whole static cost interval lies more than the cold band below this candidate's. */
+	private static <T> boolean isColdStaticallyDominated(List<LmdbNativeStrategyProposal<T>> candidates,
+			int candidateIndex, double sliceRows) {
+		LmdbNativeWork candidateCost = comparableCost(candidates.get(candidateIndex), sliceRows);
+		if (!candidateCost.known()) {
+			return false;
+		}
+		for (int i = 0; i < candidates.size(); i++) {
+			if (i == candidateIndex) {
+				continue;
+			}
+			LmdbNativeWork rival = comparableCost(candidates.get(i), sliceRows);
+			if (rival.known() && rival.high() * COLD_STATIC_DOMINATION_BAND < candidateCost.low()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Structural preference among the candidates that survive the banded static-domination veto. */
+	private static <T> int rankColdStatic(List<LmdbNativeStrategyProposal<T>> candidates, double sliceRows) {
+		int best = -1;
+		for (int i = 0; i < candidates.size(); i++) {
+			if (isColdStaticallyDominated(candidates, i, sliceRows)) {
+				continue;
+			}
+			if (best < 0 || LmdbNativeStrategyPreference.prefers(candidates.get(i).tag, candidates.get(best).tag)) {
+				best = i;
+			}
+		}
+		return best < 0 ? rankByPreference(candidates) : best;
+	}
+
 	private static <T> AdaptiveDecision<T> adaptiveDecision(List<LmdbNativeStrategyProposal<T>> candidates,
 			double sliceRows, LmdbNativeAdaptiveCostModel model) {
 		if (candidates.isEmpty()) {
@@ -178,6 +220,10 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		boolean uniformlyEstimated = true;
 		for (int i = 0; i < candidates.size(); i++) {
 			LmdbNativeStrategyProposal<T> proposal = candidates.get(i);
+			if (isColdStaticallyDominated(candidates, i, sliceRows)) {
+				// statically beyond any family speed ratio: never offered to the adaptive frontier (G8)
+				continue;
+			}
 			LmdbNativeCostEstimate estimate = proposal.adaptiveEstimate(sliceRows);
 			if (estimate == null) {
 				uniformlyEstimated = false;
@@ -189,10 +235,10 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		}
 
 		if (!uniformlyEstimated) {
-			int index = rankByPreference(candidates);
+			int index = rankColdStatic(candidates, sliceRows);
 			LmdbNativeStrategyProposal<T> proposal = candidates.get(index);
 			LmdbNativeCostEstimate estimate = proposal.adaptiveEstimate(sliceRows);
-			String reason = "candidate set contains an unpriceable legacy proposal; retained structural preference";
+			String reason = "candidate set contains an unpriceable legacy proposal; retained banded interval ranking";
 			if (estimate == null) {
 				return new AdaptiveDecision<>(index, null, null, false, reason);
 			}
@@ -368,7 +414,9 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	}
 
 	private void recordAdaptiveDecision(LmdbNativeStrategyProposal<T> winner, AdaptiveDecision<T> decision) {
-		if (decision == null) {
+		if (decision == null || !LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
+			// same telemetry gate as recordProposalCosts (gap-analysis C13): no per-decision string building
+			// on the hot path when nothing records it
 			return;
 		}
 		LmdbNativeCostPrediction prediction = decision.prediction;

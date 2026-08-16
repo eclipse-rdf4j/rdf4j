@@ -1210,7 +1210,10 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				if (filter == null) {
 					return null;
 				}
-				right = SlotPlan.filter(right, filter);
+				// A placeable condition keeps the arm's memo mask intact so the left-join acceleration tiers
+				// (per-key memo, replay, payload hash, sweep) stay available; -1 pins the filter in place and
+				// degrades every probe to a per-row nested loop.
+				right = SlotPlan.filter(right, filter, placeableFilterMask(condition));
 			}
 			return SlotPlan.leftJoin(left, right);
 		}

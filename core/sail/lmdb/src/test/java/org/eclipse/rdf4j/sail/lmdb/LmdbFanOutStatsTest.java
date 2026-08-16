@@ -38,6 +38,30 @@ class LmdbFanOutStatsTest {
 		assertThat(stats.meanFanOut(hub, false).orElseThrow()).isBetween(0.8, 1.2);
 	}
 
+	/**
+	 * Gap-analysis G3: the distinct-key cardinality behind the mean is exposed on its own, so cost consumers can
+	 * decompose expected rows per probe into match probability (distinct keys over the candidate domain) times the
+	 * conditional fanout ({@code meanFanOut}). The invariant pinning the decomposition:
+	 * {@code distinctKeys × meanFanOut ≈ tripleCount}.
+	 */
+	@Test
+	void distinctKeysExposeTheCardinalityBehindTheMean() {
+		LmdbFanOutStats stats = new LmdbFanOutStats();
+		long predicate = 40L;
+		for (long subject = 1L; subject <= 500L; subject++) {
+			stats.recordAdded(subject, predicate, subject * 3L);
+			stats.recordAdded(subject, predicate, subject * 3L + 1L);
+		}
+
+		double distinctSubjects = stats.distinctKeys(predicate, true).orElseThrow();
+		// 64 HLL registers carry ~13% standard error; allow a generous band around the true 500
+		assertThat(distinctSubjects).as("HLL estimate of 500 distinct subjects").isBetween(320D, 680D);
+		assertThat(distinctSubjects * stats.meanFanOut(predicate, true).orElseThrow())
+				.as("distinctKeys × meanFanOut reconstructs the triple count")
+				.isBetween(900D, 1_100D);
+		assertThat(stats.distinctKeys(99L, true)).as("untracked predicate stays unanswered").isEmpty();
+	}
+
 	@Test
 	void removalsLowerTheAdvisoryTripleCountWithoutCorruptingTheEstimate() {
 		LmdbFanOutStats stats = new LmdbFanOutStats();

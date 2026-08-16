@@ -473,8 +473,11 @@ abstract class LmdbNativeAggregatePlannerBase {
 			return false;
 		}
 		if (havingCondition instanceof And) {
+			// Every conjunct must survive duplicate collapse, not just one (gap-analysis B17):
+			// `COUNT >= 1 && COUNT > 5` is multiplicity-dependent even though its left half is a pure
+			// existence test.
 			return duplicateInsensitiveLowerBound(aggregate, ((And) havingCondition).getLeftArg())
-					|| duplicateInsensitiveLowerBound(aggregate, ((And) havingCondition).getRightArg());
+					&& duplicateInsensitiveLowerBound(aggregate, ((And) havingCondition).getRightArg());
 		}
 		if (!(havingCondition instanceof Compare)) {
 			return false;

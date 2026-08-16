@@ -413,9 +413,12 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root(explainTarget);
 		NativeGroupTable table = NativeGroupTable.create(groupSlots, aggregates, aggContext,
 				sequentialDistinctChannels, true, true);
+		boolean surfacesMultiplicity = cursor instanceof FactorizedRowCursor;
 		try (cursor) {
 			while (cursor.next()) {
-				table.add(row);
+				// the leapfrog core surfaces each solution's duplicate count instead of replaying it (G6):
+				// consume the whole bag in one weighted accumulation rather than one next() per copy
+				table.add(row, surfacesMultiplicity ? ((FactorizedRowCursor) cursor).multiplicity() : 1L);
 			}
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
@@ -523,7 +526,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				arbiter.offer(() -> new LmdbNativeStrategyProposal<>(
 						() -> evaluateFactorized(row, factorizedPlan, factorizedDerived, factorized),
 						estimatedWork(factorizedCost), LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL,
-						factorized::close));
+						factorized::discardUnopenedProbe));
 			}
 			if (parallelPlan != null) {
 				arbiter.offer(() -> LmdbNativeParallelAggregation.propose(this, parallelPlan, row, metrics));
