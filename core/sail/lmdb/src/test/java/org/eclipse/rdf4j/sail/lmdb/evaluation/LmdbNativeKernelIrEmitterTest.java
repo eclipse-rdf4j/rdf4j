@@ -1471,6 +1471,82 @@ class LmdbNativeKernelIrEmitterTest {
 				"an aggregate terminal must not stream");
 	}
 
+	// ------------------------------------------------------------------
+	// Interpreter differentials (kernel-interpreter plan, M4): nodes no current LOWERING can reach — SipKeyProbe
+	// (needs a keys-only EnumerateAdjKeys adjacent to a Probe, which only p+ starts produce, always followed by
+	// PathExpand) and, for belt and braces, the in-kernel hash join — are pinned here at the IR level: the same
+	// kernel runs through the compiled tier and through LmdbNativeKernelInterpreter, and both must produce the
+	// exact expected rows.
+	// ------------------------------------------------------------------
+
+	@Test
+	void interpreterMatchesCompiledSipKeyProbe() throws Exception {
+		NativeLmdbQuerySource.NativeAdjacency domainKeys = new FixtureAdjacency(
+				new long[][] { { 1, 100 }, { 4, 100 }, { 9, 100 } });
+		Kernel ir = new Kernel(2,
+				List.of(new SipKeyProbe(0, 1, 0, 1, -1, null, false)),
+				emit(0, 1));
+		long[][] expected = { { 1, 2 }, { 1, 3 }, { 4, 5 } };
+		assertRows(run(ir, context().adjacencies(domainKeys, follows())), expected, "compiled SipKeyProbe");
+		assertRows(runInterpreted(ir, context().adjacencies(domainKeys, follows())), expected,
+				"interpreted SipKeyProbe");
+	}
+
+	@Test
+	void interpreterMatchesCompiledHashBuildProbe() throws Exception {
+		Kernel ir = new Kernel(4, List.of(
+				new LmdbNativeKernelIr.HashBuild(0, new int[] { 2 }, new int[] { 3 },
+						List.of(new EnumerateAdjKeys(0, 2, 3)), 1 << 20),
+				new EnumerateDomain(0, 0),
+				new LmdbNativeKernelIr.HashProbe(0, new Operand[] { Operand.col(0) }, new int[] { 1 })),
+				emit(0, 1));
+		long[][] expected = { { 1, 2 }, { 1, 3 }, { 4, 5 } };
+		assertRows(run(ir, context().adjacencies(follows()).domains(new long[] { 1, 4, 9 })), expected,
+				"compiled hash build/probe");
+		assertRows(runInterpreted(ir, context().adjacencies(follows()).domains(new long[] { 1, 4, 9 })), expected,
+				"interpreted hash build/probe");
+	}
+
+	@Test
+	void interpreterMatchesCompiledAlignedDistinctEmit() throws Exception {
+		// Aligned-prefix DISTINCT: the key column arrives grouped from the key cursor, so the dedup compares the
+		// prefix against the previous row and clears the residual set on every prefix advance.
+		NativeLmdbQuerySource.NativeAdjacency grouped = new FixtureAdjacency(
+				new long[][] { { 1, 2, 2, 3 }, { 4, 5, 5 } });
+		Kernel ir = new Kernel(2,
+				List.of(new EnumerateAdjKeys(0, 0, 1)),
+				new Emit(new int[] { 0, 1 }, true, 1, OutputMods.none()));
+		long[][] expected = { { 1, 2 }, { 1, 3 }, { 4, 5 } };
+		assertRows(run(ir, context().adjacencies(grouped)), expected, "compiled aligned distinct");
+		assertRows(runInterpreted(ir, context().adjacencies(grouped)), expected, "interpreted aligned distinct");
+	}
+
+	/** Drains {@code LmdbNativeKernelInterpreter} over the same context the compiled harness uses. */
+	private static List<long[]> runInterpreted(Kernel ir, ContextBuilder context) {
+		JaninoKernel kernel = ir.terminal instanceof LmdbNativeKernelIr.Aggregate
+				? LmdbNativeKernelInterpreter.forAggregate(ir)
+				: LmdbNativeKernelInterpreter.forRows(ir);
+		assertNotNull(kernel, "the interpreter must accept this kernel shape");
+		try {
+			kernel.bind(context.build());
+			int stride = ir.stride();
+			long[] buffer = new long[stride * 64];
+			List<long[]> rows = new ArrayList<>();
+			while (true) {
+				int filled = kernel.fill(buffer, 64);
+				if (filled == 0) {
+					break;
+				}
+				for (int r = 0; r < filled; r++) {
+					rows.add(Arrays.copyOfRange(buffer, r * stride, (r + 1) * stride));
+				}
+			}
+			return rows;
+		} finally {
+			kernel.close();
+		}
+	}
+
 	/** Drains a kernel handing back at most {@code maxRows} rows per call, exercising pause and resume. */
 	private static List<long[]> drain(Kernel ir, ContextBuilder context, int maxRows) throws Exception {
 		JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(ir.shapeKey(), ir.className(),

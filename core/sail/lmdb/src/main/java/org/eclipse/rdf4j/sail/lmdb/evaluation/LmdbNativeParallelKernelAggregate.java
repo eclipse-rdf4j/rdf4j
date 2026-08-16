@@ -65,7 +65,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 @Experimental
 final class LmdbNativeParallelKernelAggregate {
 
-	/** Opt-in (default off): the paired benchmark gate has not run yet. */
+	/** Opt-out (default on) */
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.irAggregateParallel.enabled";
 
 	/** Test observability: incremented whenever an aggregate kernel actually runs through the parallel path. */
@@ -78,7 +78,10 @@ final class LmdbNativeParallelKernelAggregate {
 	}
 
 	static boolean enabled() {
-		return Boolean.getBoolean(ENABLED_PROPERTY);
+		boolean b = !"false".equals(System.getProperty(ENABLED_PROPERTY));
+//		System.out.println("[ir-aggregate-parallel] enabled=" + b + " (property " + ENABLED_PROPERTY + ")");
+		return b;
+//		return Boolean.getBoolean(ENABLED_PROPERTY);
 	}
 
 	/**

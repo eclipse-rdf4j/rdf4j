@@ -191,10 +191,22 @@ public class LmdbNativeStrategyArbiterTest {
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)).isTrue();
 		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
 				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL)).isTrue();
+		// The interpreted tier of the aggregate kernel ranks directly below its compiled sibling and above the
+		// interpreted fallback ladder (kernel-interpreter plan, D1).
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP)).isTrue();
 		assertThat(LmdbNativeAttemptMetrics.EXECUTION_PATH_VOCABULARY)
 				.contains(LmdbNativeAttemptMetrics.PATH_WCOJ,
 						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
-						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL);
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED);
 	}
 
 	@Test

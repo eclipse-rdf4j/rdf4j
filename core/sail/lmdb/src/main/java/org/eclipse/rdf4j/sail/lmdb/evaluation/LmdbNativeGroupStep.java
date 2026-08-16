@@ -535,15 +535,25 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				arbiter.offer(() -> LmdbNativeJaninoAggregate.propose(multiJoin, row, groupSlots, aggregates, this,
 						explainTarget));
 			}
-			arbiter.offer(() -> estimatedProposal(() -> {
-				List<BindingSet> result = LmdbNativeKernelExecution.tryEvaluateAggregate(arg, row, groupSlots,
-						aggregates, this, explainTarget, havingCondition);
-				if (result != null) {
-					LmdbNativeExplain.recordExecutionPath(explainTarget,
-							LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
-				}
-				return result;
-			}, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, arg.estimateWork(row, row.boundMask())));
+			// Exactly ONE of the two IR-aggregate tags is offered (kernel-interpreter plan, D1): the compiled tag
+			// when janino codegen is enabled, the interpreted tag when only the interpreter tier is available. This
+			// kills the janino-off phantom round and keeps each tier's cost evidence under its own variant keys.
+			// tryEvaluateAggregate picks the execution tier internally either way.
+			String irAggregateTag = LmdbNativeJaninoCodegen.enabled()
+					? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE
+					: LmdbNativeKernelInterpreter.enabled()
+							? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED
+							: null;
+			if (irAggregateTag != null) {
+				arbiter.offer(() -> estimatedProposal(() -> {
+					List<BindingSet> result = LmdbNativeKernelExecution.tryEvaluateAggregate(arg, row, groupSlots,
+							aggregates, this, explainTarget, havingCondition);
+					if (result != null) {
+						LmdbNativeExplain.recordExecutionPath(explainTarget, irAggregateTag);
+					}
+					return result;
+				}, irAggregateTag, arg.estimateWork(row, row.boundMask())));
+			}
 			if (replaySafe && orderedSinglePatternHandlesRow()) {
 				arbiter.offer(() -> estimatedProposal(() -> {
 					List<BindingSet> result = evaluateOrderedSinglePatternGroups(row, metrics);

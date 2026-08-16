@@ -119,7 +119,9 @@ class LmdbNativeExplainTest {
 						LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS,
 						LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL,
 						LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION,
-						LmdbNativeAttemptMetrics.PATH_HASH_GROUPS);
+						LmdbNativeAttemptMetrics.PATH_HASH_GROUPS,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED);
 	}
 
 	@Test

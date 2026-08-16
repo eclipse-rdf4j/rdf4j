@@ -498,9 +498,18 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 						() -> tryEvaluateOrderedFactorized(base, values, comparator, emitCap), work,
 						factorizedTag, () -> {
 						}));
-				arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> tryEvaluateOrderedKernel(row, values), work,
-						LmdbNativeAttemptMetrics.PATH_IR_KERNEL, () -> {
-						}));
+				// Exactly ONE of the two IR-kernel tags (kernel-interpreter plan, D1/M4): compiled when janino is
+				// enabled, interpreted when only the interpreter tier is available, neither when both are off.
+				String orderedKernelTag = LmdbNativeJaninoCodegen.enabled()
+						? LmdbNativeAttemptMetrics.PATH_IR_KERNEL
+						: LmdbNativeKernelInterpreter.enabled()
+								? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED
+								: null;
+				if (orderedKernelTag != null) {
+					arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> tryEvaluateOrderedKernel(row, values),
+							work, orderedKernelTag, () -> {
+							}));
+				}
 				List<BindingSet> ordered = arbiter.select();
 				if (ordered != null) {
 					return ordered;

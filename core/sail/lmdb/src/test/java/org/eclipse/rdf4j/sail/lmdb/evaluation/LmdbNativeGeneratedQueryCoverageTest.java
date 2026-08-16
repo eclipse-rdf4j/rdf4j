@@ -69,7 +69,8 @@ class LmdbNativeGeneratedQueryCoverageTest {
 	private static final int ENABLED_CATEGORY_COUNT = 17;
 	private static final int QUERY_TIMEOUT_SECONDS = 3;
 	private static final int KERNEL_WARMUP_RUNS = 6;
-	private static final Pattern KERNEL_DECLINE = Pattern.compile("(irKernel|irAggregate):([^ ,)|]+)");
+	private static final Pattern KERNEL_DECLINE = Pattern
+			.compile("(irKernelInterpreted|irKernel|irAggregateInterpreted|irAggregate):([^ ,)|]+)");
 	private static final Set<String> NON_CAPABILITY_REASONS = Set.of("below-threshold-or-pending",
 			"no-fusion-opportunity", "higher-cost");
 	static final List<JaninoCorpusCase> PREVIOUSLY_UNSUPPORTED_CORPUS = List.of(

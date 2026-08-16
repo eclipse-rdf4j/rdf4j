@@ -77,6 +77,10 @@ final class LmdbNativeStrategyPreference {
 			// parallel rung sits directly below its serial sibling (gap-analysis C11): the day it becomes a
 			// proposal it must not rank below nestedLoop merely for being absent from this ladder.
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+			// The interpreted tier of the same IR kernel sits directly below its compiled sibling (compiled preferred
+			// when both are somehow present); like the C11 note above, the day it becomes a proposal it must not rank
+			// below nestedLoop merely for being absent from this ladder.
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
 			LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS,
 			LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT,
@@ -93,6 +97,9 @@ final class LmdbNativeStrategyPreference {
 			LmdbNativeAttemptMetrics.PATH_CHUNK_PIPELINE,
 			// Row-side constant-factor reducer: same rows, cheaper per row (parallel rung directly below, C11).
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
+			// The interpreted tier of the row kernel sits directly below its compiled sibling, same as the
+			// aggregate pair above (kernel-interpreter plan, D1/M4).
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
 			// Last resorts.
 			LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT,

@@ -57,6 +57,19 @@ public final class LmdbNativeAttemptMetrics {
 	static final String PATH_IR_KERNEL = "irKernel";
 	static final String PATH_IR_AGGREGATE = "irAggregate";
 	/**
+	 * The interpreted execution tier of the IR aggregate kernel (kernel-interpreter plan, D1): the same lowered IR
+	 * served by {@code LmdbNativeKernelInterpreter} when janino codegen is off. A distinct bare path name, because
+	 * variant keys and cost evidence derive from the tag — sharing {@code irAggregate} would merge interpreted
+	 * observations into the compiled tier's models and misprice both.
+	 */
+	static final String PATH_IR_AGGREGATE_INTERPRETED = "irAggregateInterpreted";
+	/**
+	 * The interpreted execution tier of the IR row kernel (kernel-interpreter plan, M4): the same lowered IR served by
+	 * {@code LmdbNativeKernelInterpreter.forRows} when janino codegen is off. Distinct bare name for the same
+	 * evidence-separation reasons as {@link #PATH_IR_AGGREGATE_INTERPRETED}.
+	 */
+	static final String PATH_IR_KERNEL_INTERPRETED = "irKernelInterpreted";
+	/**
 	 * The morsel-parallel rungs of the two IR kernel tiers. They are separate strategies from the sequential kernels
 	 * because they decline for their own reasons — and those declines have to be readable from explain output rather
 	 * than only from a debug-flagged stderr print, which is what the parity ledger checks (plan 32, M5).
@@ -105,7 +118,9 @@ public final class LmdbNativeAttemptMetrics {
 			PATH_ORDERED_SINGLE_PATTERN_GROUPS, PATH_AGG_STATE, PATH_SINGLE_SLOT_GROUPS,
 			PATH_PRIMITIVE_TUPLE_GROUPS, PATH_HASH_GROUPS, PATH_EXISTS_INTERSECTION, PATH_RUN_COUNT_HISTOGRAM,
 			PATH_DATATYPE_HISTOGRAM, PATH_TYPE_MATRIX, PATH_JANINO_AGGREGATE, PATH_IR_KERNEL,
-			PATH_IR_AGGREGATE, PATH_IR_KERNEL_PARALLEL, PATH_IR_AGGREGATE_PARALLEL, PATH_WCOJ,
+			PATH_IR_AGGREGATE, PATH_IR_AGGREGATE_INTERPRETED, PATH_IR_KERNEL_INTERPRETED, PATH_IR_KERNEL_PARALLEL,
+			PATH_IR_AGGREGATE_PARALLEL,
+			PATH_WCOJ,
 			PATH_CONSTANT_FALSE_FILTER);
 
 	private static final LmdbNativeAttemptMetrics DIRECT = new LmdbNativeAttemptMetrics(null, true, null);

@@ -105,7 +105,10 @@ final class LmdbNativeKernelExecution {
 	private static List<BindingSet> tryEvaluateAggregate(SlotPlan arg, RowState row,
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
 			ValueExpr havingCondition, boolean preferScans) {
-		if (!LmdbNativeJaninoCodegen.enabled()) {
+		// With janino codegen disabled, the interpreted tier (M1 of the kernel-interpreter plan) executes the same
+		// lowered IR through LmdbNativeKernelInterpreter. Only when BOTH tiers are off does the route decline.
+		final boolean interpretedTier = !LmdbNativeJaninoCodegen.enabled();
+		if (interpretedTier && !LmdbNativeKernelInterpreter.enabled()) {
 			if (row.runtimePlan != null) {
 				row.runtimePlan.janinoDeclined("FEATURE_DISABLED[" + LmdbNativeJaninoCodegen.ENABLED_PROPERTY
 						+ "=false,route=irAggregate]");
@@ -139,19 +142,49 @@ final class LmdbNativeKernelExecution {
 			if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 				System.err.println("[ir-aggregate] shape " + shapeKey);
 			}
-			long opens = SHAPE_OPENS.computeIfAbsent(shapeKey, key -> new AtomicLong()).incrementAndGet();
-			long observedRows = opens * ROWS_PER_OPEN_ESTIMATE;
-			kernel = LmdbNativeJaninoCodegen.kernel(shapeKey, lowered.kernel.className(),
-					() -> LmdbNativeKernelEmitter.emit(lowered.kernel), observedRows);
-			if (kernel == null) {
-				if (row.runtimePlan != null) {
-					row.runtimePlan.janinoDeclined(LmdbNativeJaninoCodegen.declineReason(shapeKey,
-							observedRows, "irAggregate"));
+			long observedRows = 0L;
+			boolean interpretedExecution = interpretedTier;
+			if (interpretedTier) {
+				// Interpretation has no compile cost: skip SHAPE_OPENS/threshold admission entirely and never touch
+				// the codegen cache on this path.
+				kernel = LmdbNativeKernelInterpreter.forAggregate(lowered.kernel);
+				if (kernel == null) {
+					AGG_DECLINED.incrementAndGet();
+					if (row.runtimePlan != null) {
+						row.runtimePlan.janinoDeclined(
+								"KERNEL_UNAVAILABLE[route=irAggregateInterpreted,reason=unsupported-node]");
+					}
+					LmdbNativeAttemptMetrics.recordDecline(explainTarget,
+							LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED, "interpreter-unsupported");
+					return null;
 				}
-				LmdbNativeAttemptMetrics.recordDecline(explainTarget, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
-						"below-threshold-or-pending");
-				return null;
+			} else {
+				long opens = SHAPE_OPENS.computeIfAbsent(shapeKey, key -> new AtomicLong()).incrementAndGet();
+				observedRows = opens * ROWS_PER_OPEN_ESTIMATE;
+				kernel = LmdbNativeJaninoCodegen.kernel(shapeKey, lowered.kernel.className(),
+						() -> LmdbNativeKernelEmitter.emit(lowered.kernel), observedRows);
+				if (kernel == null && LmdbNativeKernelInterpreter.warmupEnabled()) {
+					// M5 warm-up tier: serve the interpreter while the compile is below threshold, pending, or
+					// failed — interpretation of the validated IR is sound in all three cases (D16).
+					kernel = LmdbNativeKernelInterpreter.forAggregate(lowered.kernel);
+					interpretedExecution = kernel != null;
+				}
+				if (kernel == null) {
+					if (row.runtimePlan != null) {
+						row.runtimePlan.janinoDeclined(LmdbNativeJaninoCodegen.declineReason(shapeKey,
+								observedRows, "irAggregate"));
+					}
+					LmdbNativeAttemptMetrics.recordDecline(explainTarget, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+							"below-threshold-or-pending");
+					return null;
+				}
 			}
+			final String route = interpretedExecution ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED
+					: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE;
+			// The path tag equals the route for this rung; declines/activations below report under the tier that
+			// actually executed, keeping each tier's cost evidence separate (kernel-interpreter plan, D1/M3).
+			final String pathTag = route;
+			final long observedRowsForVariants = observedRows;
 			probe = row.source.newProbe();
 			views = lowered.bindings.requestAdjacencies(probe);
 			recordAdjacencyBindings(row, lowered.bindings, views, "irAggregate");
@@ -177,21 +210,19 @@ final class LmdbNativeKernelExecution {
 				if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 					System.err.println("[ir-aggregate] decline: adjacency-unavailable");
 				}
-				LmdbNativeAttemptMetrics.recordDecline(explainTarget, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
-						"adjacency-unavailable");
+				LmdbNativeAttemptMetrics.recordDecline(explainTarget, pathTag, "adjacency-unavailable");
 				if (row.runtimePlan != null) {
 					row.runtimePlan
-							.janinoDeclined("BIND_INPUT_UNAVAILABLE[route=irAggregate,resource=adjacency]");
+							.janinoDeclined("BIND_INPUT_UNAVAILABLE[route=" + route + ",resource=adjacency]");
 				}
 				AGG_DECLINED.incrementAndGet();
 				return null;
 			}
-			LmdbNativeKernelBindings.BoundDomains domains = lowered.bindings.bindDomains(probe, row,
-					"irAggregate");
+			LmdbNativeKernelBindings.BoundDomains domains = lowered.bindings.bindDomains(probe, row, route);
 			if (!orderedInputsAvailable(lowered, views, domains)) {
 				if (row.runtimePlan != null) {
 					row.runtimePlan
-							.janinoDeclined("BIND_INPUT_UNAVAILABLE[route=irAggregate,resource=orderedInput]");
+							.janinoDeclined("BIND_INPUT_UNAVAILABLE[route=" + route + ",resource=orderedInput]");
 				}
 				AGG_DECLINED.incrementAndGet();
 				return null;
@@ -200,9 +231,11 @@ final class LmdbNativeKernelExecution {
 			// shape compiles through the same cache under its own shape key, so the sequential shape stays untouched.
 			List<BindingSet> parallel = LmdbNativeParallelKernelAggregate
 					.tryEvaluate(lowered, views, domains, arg, row, emitter, explainTarget,
-							variant -> LmdbNativeJaninoCodegen.kernel(variant.shapeKey(),
-									variant.className(),
-									() -> LmdbNativeKernelEmitter.emit(variant), observedRows));
+							interpretedTier
+									? LmdbNativeKernelInterpreter::forAggregate
+									: variant -> LmdbNativeJaninoCodegen.kernel(variant.shapeKey(),
+											variant.className(),
+											() -> LmdbNativeKernelEmitter.emit(variant), observedRowsForVariants));
 			if (parallel != null) {
 				AGG_OPENED.incrementAndGet();
 				AGG_ROWS.addAndGet(parallel.size());
@@ -210,8 +243,8 @@ final class LmdbNativeKernelExecution {
 					SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
 							? ((MultiJoinPlan) arg).derivedPlan(row).order
 							: new SlotPlan[] { arg };
-					row.runtimePlan.janinoActivated(activationRoute("irAggregateParallel", lowered), actualOrder);
-					row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, actualOrder);
+					row.runtimePlan.janinoActivated(activationRoute(route + "Parallel", lowered), actualOrder);
+					row.runtimePlan.activate(pathTag, actualOrder);
 				}
 				return parallel;
 			}
@@ -222,12 +255,12 @@ final class LmdbNativeKernelExecution {
 					? new LmdbNativeKernelScanner(row, lowered.bindings.scanSites)
 					: null;
 			LmdbNativeJaninoCodegen.bind(kernel,
-					lowered.bindings.context(views, domains, row, hooks, scanner, variableViews), "irAggregate");
+					lowered.bindings.context(views, domains, row, hooks, scanner, variableViews), route);
 			int stride = lowered.kernel.stride();
 			long[] buffer = new long[stride * FILL_ROWS];
 			List<BindingSet> results = new ArrayList<>();
 			int filled;
-			while ((filled = LmdbNativeJaninoCodegen.fill(kernel, buffer, FILL_ROWS, "irAggregate")) > 0) {
+			while ((filled = LmdbNativeJaninoCodegen.fill(kernel, buffer, FILL_ROWS, route)) > 0) {
 				for (int r = 0; r < filled; r++) {
 					results.add(emitter.kernelGroupRow(buffer, r * stride, lowered.bindings.groupLayout, hooks));
 				}
@@ -238,8 +271,8 @@ final class LmdbNativeKernelExecution {
 				SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
 						? ((MultiJoinPlan) arg).derivedPlan(row).order
 						: new SlotPlan[] { arg };
-				row.runtimePlan.janinoActivated(activationRoute("irAggregate", lowered), actualOrder);
-				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, actualOrder);
+				row.runtimePlan.janinoActivated(activationRoute(route, lowered), actualOrder);
+				row.runtimePlan.activate(pathTag, actualOrder);
 			}
 			return results;
 		} catch (RuntimeException | IOException problem) {
@@ -309,7 +342,13 @@ final class LmdbNativeKernelExecution {
 					"no-fusion-opportunity");
 			return null;
 		}
-		if (!LmdbNativeJaninoCodegen.enabled()) {
+		// Exactly ONE of the two IR-kernel tags is proposed (kernel-interpreter plan, D1/M4): the compiled tag when
+		// janino codegen is enabled, the interpreted tag when only the interpreter tier is available. The opener is
+		// the same either way; tryOpenRows picks the execution tier internally.
+		String tag = LmdbNativeJaninoCodegen.enabled() ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL
+				: LmdbNativeKernelInterpreter.enabled() ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED
+						: null;
+		if (tag == null) {
 			if (row.runtimePlan != null) {
 				row.runtimePlan.janinoDeclined("FEATURE_DISABLED[" + LmdbNativeJaninoCodegen.ENABLED_PROPERTY
 						+ "=false]");
@@ -321,7 +360,7 @@ final class LmdbNativeKernelExecution {
 		LmdbNativeWork work = arg.estimateWork(row, boundMask);
 		double rows = LmdbNativeWork.rowsOut(arg, row, boundMask);
 		return new LmdbNativeStrategyProposal<>(() -> tryOpenRows(arg, row, originalExpr), work,
-				LmdbNativeWork.ZERO, rows, LmdbNativeAttemptMetrics.PATH_IR_KERNEL, () -> {
+				LmdbNativeWork.ZERO, rows, tag, () -> {
 				});
 	}
 
@@ -350,7 +389,8 @@ final class LmdbNativeKernelExecution {
 	 */
 	static RowCursor tryOpenOrderedRows(SlotPlan arg, RowState row, TupleExpr originalExpr, int[] orderSlots,
 			boolean[] orderAscending, long limit, long offset, boolean strictCompare) throws IOException {
-		if (!hasFusionOpportunity(arg) || !LmdbNativeJaninoCodegen.enabled()) {
+		if (!hasFusionOpportunity(arg)
+				|| !LmdbNativeJaninoCodegen.enabled() && !LmdbNativeKernelInterpreter.enabled()) {
 			return null;
 		}
 		return openWithFusedRuntime(arg, row, () -> tryOpenRows(arg, row, originalExpr, false, null,
@@ -488,7 +528,10 @@ final class LmdbNativeKernelExecution {
 
 	private static RowCursor tryOpenRows(SlotPlan arg, RowState row, TupleExpr originalExpr, boolean preferScans,
 			int[] distinctSlots, OrderedMods ordered, java.util.Set<Long> scanPredicates) throws IOException {
-		if (!LmdbNativeJaninoCodegen.enabled()) {
+		// With janino codegen disabled, the interpreted tier (M4) executes the same lowered IR through
+		// LmdbNativeKernelInterpreter.forRows. Only when BOTH tiers are off does the route decline.
+		final boolean interpretedTier = !LmdbNativeJaninoCodegen.enabled();
+		if (interpretedTier && !LmdbNativeKernelInterpreter.enabled()) {
 			if (ordered != null) {
 				return null;
 			}
@@ -535,22 +578,57 @@ final class LmdbNativeKernelExecution {
 			// Ask for the compiled kernel BEFORE touching the store: while the shape is below threshold or its compile
 			// is pending, this open must not disturb probe accounting or CSR admission at all.
 			String shapeKey = lowered.kernel.shapeKey();
-			long opens = SHAPE_OPENS.computeIfAbsent(shapeKey, key -> new AtomicLong()).incrementAndGet();
-			long observedRows = opens * ROWS_PER_OPEN_ESTIMATE;
-			kernel = LmdbNativeJaninoCodegen.kernel(shapeKey, lowered.kernel.className(),
-					() -> LmdbNativeKernelEmitter.emit(lowered.kernel), observedRows);
-			if (kernel == null) {
-				if (ordered != null) {
+			if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
+				// Mirrors the aggregate rung's shape census print; the interpreter parity tests rely on it.
+				System.err.println("[ir-kernel] shape " + shapeKey);
+			}
+			boolean interpretedExecution = interpretedTier;
+			long observedRows = 0L;
+			if (interpretedTier) {
+				// Interpretation has no compile cost: skip SHAPE_OPENS/threshold admission entirely.
+				kernel = LmdbNativeKernelInterpreter.forRows(lowered.kernel);
+				if (kernel == null) {
+					if (ordered != null) {
+						return null;
+					}
+					DECLINED.incrementAndGet();
+					if (row.runtimePlan != null) {
+						row.runtimePlan.janinoDeclined(
+								"KERNEL_UNAVAILABLE[route=irKernelInterpreted,reason=unsupported-node]");
+					}
+					LmdbNativeAttemptMetrics.recordDecline(originalExpr,
+							LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED, "interpreter-unsupported");
 					return null;
 				}
-				if (row.runtimePlan != null) {
-					row.runtimePlan.janinoDeclined(
-							LmdbNativeJaninoCodegen.declineReason(shapeKey, observedRows, "irKernel"));
+			} else {
+				long opens = SHAPE_OPENS.computeIfAbsent(shapeKey, key -> new AtomicLong()).incrementAndGet();
+				observedRows = opens * ROWS_PER_OPEN_ESTIMATE;
+				kernel = LmdbNativeJaninoCodegen.kernel(shapeKey, lowered.kernel.className(),
+						() -> LmdbNativeKernelEmitter.emit(lowered.kernel), observedRows);
+				if (kernel == null && LmdbNativeKernelInterpreter.warmupEnabled()) {
+					// M5 warm-up tier: serve the interpreter while the compile is below threshold, pending, or
+					// failed — interpretation of the validated IR is sound in all three cases (D16).
+					kernel = LmdbNativeKernelInterpreter.forRows(lowered.kernel);
+					interpretedExecution = kernel != null;
 				}
-				LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
-						"below-threshold-or-pending");
-				return null;
+				if (kernel == null) {
+					if (ordered != null) {
+						return null;
+					}
+					if (row.runtimePlan != null) {
+						row.runtimePlan.janinoDeclined(
+								LmdbNativeJaninoCodegen.declineReason(shapeKey, observedRows, "irKernel"));
+					}
+					LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
+							"below-threshold-or-pending");
+					return null;
+				}
 			}
+			final String route = interpretedExecution ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED
+					: LmdbNativeAttemptMetrics.PATH_IR_KERNEL;
+			final String pathTag = route;
+			final long observedRowsForVariants = observedRows;
+			final boolean interpretedVariants = interpretedExecution;
 
 			probe = row.source.newProbe();
 			LmdbNativeKernelBindings.VariablePredicateViews variableViews = LmdbNativeKernelBindings
@@ -591,21 +669,21 @@ final class LmdbNativeKernelExecution {
 				if (ordered != null) {
 					return null;
 				}
-				LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
-						"adjacency-unavailable");
+				LmdbNativeAttemptMetrics.recordDecline(originalExpr, pathTag, "adjacency-unavailable");
 				if (row.runtimePlan != null) {
-					row.runtimePlan.janinoDeclined("BIND_INPUT_UNAVAILABLE[route=irKernel,resource=adjacency]");
+					row.runtimePlan.janinoDeclined("BIND_INPUT_UNAVAILABLE[route=" + route + ",resource=adjacency]");
 				}
 				DECLINED.incrementAndGet();
 				return null;
 			}
 
-			LmdbNativeKernelBindings.BoundDomains domains = lowered.bindings.bindDomains(probe, row, "irKernel");
+			LmdbNativeKernelBindings.BoundDomains domains = lowered.bindings.bindDomains(probe, row, route);
 			if (!orderedInputsAvailable(lowered, views, domains)) {
 				// The aligned dedup tier is compiled against grouped emission; a bind-time input that cannot promise
 				// its order must not run that shape. The ordinary ladder remains exact.
 				if (row.runtimePlan != null) {
-					row.runtimePlan.janinoDeclined("BIND_INPUT_UNAVAILABLE[route=irKernel,resource=orderedInput]");
+					row.runtimePlan
+							.janinoDeclined("BIND_INPUT_UNAVAILABLE[route=" + route + ",resource=orderedInput]");
 				}
 				DECLINED.incrementAndGet();
 				return null;
@@ -614,8 +692,10 @@ final class LmdbNativeKernelExecution {
 			// Workers create their own probes and adjacency views. The query-thread views are used only to choose the
 			// partitioning root and are closed by this method if the parallel cursor is accepted.
 			RowCursor parallel = LmdbNativeParallelKernelRows.tryOpen(lowered, views, domains, arg, row, originalExpr,
-					variant -> LmdbNativeJaninoCodegen.kernel(variant.shapeKey(), variant.className(),
-							() -> LmdbNativeKernelEmitter.emit(variant), observedRows));
+					interpretedVariants
+							? LmdbNativeKernelInterpreter::forRows
+							: variant -> LmdbNativeJaninoCodegen.kernel(variant.shapeKey(), variant.className(),
+									() -> LmdbNativeKernelEmitter.emit(variant), observedRowsForVariants));
 			if (parallel != null) {
 				OPENED.incrementAndGet();
 				if (row.runtimePlan != null) {
@@ -623,9 +703,9 @@ final class LmdbNativeKernelExecution {
 							? ((MultiJoinPlan) arg).derivedPlan(row).order
 							: new SlotPlan[] { arg };
 					row.runtimePlan.janinoActivated(
-							activationRoute(ordered == null ? "irKernelParallel" : "irKernelParallelTopK", lowered),
+							activationRoute(route + (ordered == null ? "Parallel" : "ParallelTopK"), lowered),
 							actualOrder);
-					row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, actualOrder);
+					row.runtimePlan.activate(pathTag, actualOrder);
 				}
 				return parallel;
 			}
@@ -649,26 +729,26 @@ final class LmdbNativeKernelExecution {
 				if (hashReservation == null) {
 					if (row.runtimePlan != null) {
 						row.runtimePlan.janinoDeclined(
-								"HASH_BUILD_ADMISSION[route=irKernel,bytes=" + hashBuildBytes + "]");
+								"HASH_BUILD_ADMISSION[route=" + route + ",bytes=" + hashBuildBytes + "]");
 					}
 					DECLINED.incrementAndGet();
 					return null;
 				}
 			}
 			LmdbNativeJaninoCodegen.bind(kernel,
-					lowered.bindings.context(views, domains, row, hooks, scanner, variableViews), "irKernel");
+					lowered.bindings.context(views, domains, row, hooks, scanner, variableViews), route);
 			OPENED.incrementAndGet();
 			if (row.runtimePlan != null) {
 				SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
 						? ((MultiJoinPlan) arg).derivedPlan(row).order
 						: new SlotPlan[] { arg };
 				row.runtimePlan.janinoActivated(
-						activationRoute(ordered == null ? "irKernel" : "irKernelTopK", lowered), actualOrder);
-				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, actualOrder);
+						activationRoute(ordered == null ? route : route + "TopK", lowered), actualOrder);
+				row.runtimePlan.activate(pathTag, actualOrder);
 			}
 
 			KernelRowCursor cursor = new KernelRowCursor(kernel, probe, scanner, hooks, views, row,
-					lowered.bindings.columnEngineSlots, lowered.bindings.residualFilters, hashReservation);
+					lowered.bindings.columnEngineSlots, lowered.bindings.residualFilters, hashReservation, route);
 			// Ownership has moved to the cursor. Null every local so the finally block cannot double-close it.
 			kernel = null;
 			probe = null;
@@ -894,19 +974,22 @@ final class LmdbNativeKernelExecution {
 		private int activeMark = -1;
 
 		private final org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation;
+		private final String route;
 
 		KernelRowCursor(JaninoKernel kernel, NativeLmdbQuerySource.NativeProbe probe,
 				LmdbNativeKernelScanner scanner, LmdbNativeKernelHooks hooks,
 				NativeLmdbQuerySource.NativeAdjacency[] views, RowState row, int[] columnSlots,
 				List<MaskedFilter> residualFilters) {
-			this(kernel, probe, scanner, hooks, views, row, columnSlots, residualFilters, null);
+			this(kernel, probe, scanner, hooks, views, row, columnSlots, residualFilters, null,
+					LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
 		}
 
 		KernelRowCursor(JaninoKernel kernel, NativeLmdbQuerySource.NativeProbe probe,
 				LmdbNativeKernelScanner scanner, LmdbNativeKernelHooks hooks,
 				NativeLmdbQuerySource.NativeAdjacency[] views, RowState row, int[] columnSlots,
 				List<MaskedFilter> residualFilters,
-				org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation) {
+				org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation, String route) {
+			this.route = route;
 			this.kernel = kernel;
 			this.probe = probe;
 			this.scanner = scanner;
@@ -928,7 +1011,7 @@ final class LmdbNativeKernelExecution {
 			while (true) {
 				if (bufferPos == bufferRows) {
 					try {
-						bufferRows = LmdbNativeJaninoCodegen.fill(kernel, buffer, FILL_ROWS, "irKernel");
+						bufferRows = LmdbNativeJaninoCodegen.fill(kernel, buffer, FILL_ROWS, route);
 					} catch (LmdbNativeKernelBindings.PlanFailure problem) {
 						throw problem.ioCause();
 					}

@@ -43,12 +43,16 @@ import org.junit.jupiter.api.io.TempDir;
 
 public class LmdbNativeQueryExplanationTest {
 	// This class asserts interpreted-strategy internals; the IR kernel rung must stay off so it cannot absorb the
-	// shapes first (plan: plans/lmdb-native-engine/20-kernel-lowering-row.md).
+	// shapes first (plan: plans/lmdb-native-engine/20-kernel-lowering-row.md). Since the interpreted kernel tier
+	// (.agent/lmdb-kernel-interpreter-execplan.md M1) serves the same rung when janino is off, it must be pinned off
+	// here too.
 	private static String previousJaninoCodegenEnabled;
+	private static String previousKernelInterpreterEnabled;
 
 	@org.junit.jupiter.api.BeforeAll
 	static void disableKernelCodegen() {
 		previousJaninoCodegenEnabled = System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+		previousKernelInterpreterEnabled = System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
 	}
 
 	@org.junit.jupiter.api.AfterAll
@@ -57,6 +61,11 @@ public class LmdbNativeQueryExplanationTest {
 			System.clearProperty("rdf4j.lmdb.janinoCodegen.enabled");
 		} else {
 			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", previousJaninoCodegenEnabled);
+		}
+		if (previousKernelInterpreterEnabled == null) {
+			System.clearProperty("rdf4j.lmdb.kernelInterpreter.enabled");
+		} else {
+			System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", previousKernelInterpreterEnabled);
 		}
 	}
 

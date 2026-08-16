@@ -54,7 +54,8 @@ import org.junit.jupiter.api.io.TempDir;
  */
 public class LmdbNativeKernelAdversarialDeclineTest {
 
-	private static final Pattern KERNEL_DECLINE = Pattern.compile("(irKernel|irAggregate):([^ ,)|]+)");
+	private static final Pattern KERNEL_DECLINE = Pattern
+			.compile("(irKernelInterpreted|irKernel|irAggregateInterpreted|irAggregate):([^ ,)|]+)");
 
 	/**
 	 * Decline reasons that are not capability gaps, and so do not fail this test.

@@ -64,7 +64,8 @@ import org.junit.jupiter.api.io.TempDir;
 public class LmdbNativeKernelDeclineCensusTest {
 
 	/** Matches the decline reasons the two kernel rungs record on the explain tree. */
-	private static final Pattern KERNEL_DECLINE = Pattern.compile("(irKernel|irAggregate):([^ ,)|]+)");
+	private static final Pattern KERNEL_DECLINE = Pattern
+			.compile("(irKernelInterpreted|irKernel|irAggregateInterpreted|irAggregate):([^ ,)|]+)");
 
 	/** Matches the winning-strategy metric, whose value is a pipe-separated list of tags per plan node. */
 	private static final Pattern EXECUTION_PATH = Pattern.compile("nativeExecutionPath=([^,)]+)");
