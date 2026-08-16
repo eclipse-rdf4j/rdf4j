@@ -65,6 +65,14 @@ final class LmdbNativeAdaptiveArbitration {
 			priced.add(new Priced<>(candidate, prediction));
 			uniform &= prediction.uniformlyPriceable();
 		}
+		// The cold-start guard runs BEFORE the uniformity bail-out on purpose: an unmeasured incumbent is usually
+		// exactly what makes the set non-uniform (its structural-only prediction), and bailing out to "retained
+		// structural preference" is how such an incumbent silently captured queries from measured rivals.
+		Priced<T> rescued = coldStartRescue(priced);
+		if (rescued != null) {
+			return new Choice<>(rescued.candidate, rescued.prediction, false,
+					"cold-start guard: unmeasured incumbent yields to the cheapest measured rival");
+		}
 		if (!uniform) {
 			return new Choice<>(incumbent, incumbentPrediction, false,
 					"candidate set contains unknown features; retained structural preference for the whole set");
@@ -76,6 +84,17 @@ final class LmdbNativeAdaptiveArbitration {
 		}
 
 		if (model.configuration().explore() && priced.size() > 1) {
+			// Deterministic under-sampling probes (2026-08-16 regression fix): a rival the ladder never selects
+			// never accumulates the evidence that would let it win on cost — the fast strategy starves while the
+			// slow incumbent keeps its seat (LIBRARY q10: orderedDistinctGroups was never re-measured once the IR
+			// route captured the ladder). Until every non-quarantined rival has a minimal exact-variant sample
+			// count, exploration is guaranteed rather than left to the permille dice; the cost is bounded at
+			// MINIMUM_EXPLORATION_SAMPLES probes per rival per process.
+			Priced<T> underSampled = underSampledExplorationTarget(priced);
+			if (underSampled != null) {
+				return new Choice<>(underSampled.candidate, underSampled.prediction, true,
+						"deterministic bounded exploration of an under-sampled rival");
+			}
 			List<Priced<T>> eligible = new ArrayList<>();
 			for (int index = 1; index < priced.size(); index++) {
 				Priced<T> rival = priced.get(index);
@@ -117,6 +136,79 @@ final class LmdbNativeAdaptiveArbitration {
 			observation.failed(failure);
 			throw failure;
 		}
+	}
+
+	/** Exact-variant observations a rival needs before it can rescue the choice from an unmeasured incumbent. */
+	static final int COLD_START_EVIDENCE_FLOOR = 5;
+
+	/** Exact-variant observations below which a rival is deterministically explored instead of dice-rolled. */
+	static final int MINIMUM_EXPLORATION_SAMPLES = 3;
+
+	/**
+	 * The rival (never the incumbent — it runs by default) with the least exact-variant evidence, when that evidence is
+	 * below {@link #MINIMUM_EXPLORATION_SAMPLES}; {@code null} once every non-quarantined rival has its minimum.
+	 * Deterministic and offer-order-invariant: ties break on the variant key.
+	 */
+	static <T> Priced<T> underSampledExplorationTarget(List<Priced<T>> priced) {
+		Priced<T> target = null;
+		for (int index = 1; index < priced.size(); index++) {
+			Priced<T> rival = priced.get(index);
+			LmdbNativeCostPrediction prediction = rival.prediction;
+			if (prediction.quarantined()) {
+				continue;
+			}
+			long evidence = prediction.evidenceSource() == LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
+					? prediction.evidenceCount()
+					: 0L;
+			if (evidence >= MINIMUM_EXPLORATION_SAMPLES) {
+				continue;
+			}
+			long targetEvidence = target == null ? Long.MAX_VALUE
+					: (target.prediction.evidenceSource() == LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
+							? target.prediction.evidenceCount()
+							: 0L);
+			if (target == null || evidence < targetEvidence
+					|| (evidence == targetEvidence && rival.candidate.estimate.variantKey()
+							.compareTo(target.candidate.estimate.variantKey()) < 0)) {
+				target = rival;
+			}
+		}
+		return target;
+	}
+
+	/**
+	 * Cold-start guard (2026-08-16 regression fix — HIGHLY_CONNECTED q4 chose {@code irKernelInterpreted} with
+	 * {@code evidence=0; source=STRUCTURAL_ONLY} over a nestedLoop incumbent carrying 199 samples): when the ladder's
+	 * incumbent has never actually run (its prediction carries no EXACT_VARIANT evidence) while some rival carries at
+	 * least {@link #COLD_START_EVIDENCE_FLOOR} real measurements, the measured, non-quarantined rival with the lowest
+	 * expected cost is returned; otherwise {@code null}. Deterministic and offer-order-invariant: ties break on the
+	 * variant key. The unmeasured incumbent still gets its chance through bounded exploration.
+	 */
+	static <T> Priced<T> coldStartRescue(List<Priced<T>> priced) {
+		if (priced.isEmpty()) {
+			return null;
+		}
+		Priced<T> incumbent = priced.get(0);
+		if (incumbent.prediction.evidenceSource() == LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT) {
+			return null;
+		}
+		Priced<T> rescue = null;
+		for (int index = 1; index < priced.size(); index++) {
+			Priced<T> rival = priced.get(index);
+			LmdbNativeCostPrediction prediction = rival.prediction;
+			if (prediction.evidenceSource() != LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
+					|| prediction.evidenceCount() < COLD_START_EVIDENCE_FLOOR || prediction.quarantined()
+					|| !prediction.uniformlyPriceable()) {
+				continue;
+			}
+			if (rescue == null || prediction.expectedNanos() < rescue.prediction.expectedNanos()
+					|| (prediction.expectedNanos() == rescue.prediction.expectedNanos()
+							&& rival.candidate.estimate.variantKey()
+									.compareTo(rescue.candidate.estimate.variantKey()) < 0)) {
+				rescue = rival;
+			}
+		}
+		return rescue;
 	}
 
 	/**

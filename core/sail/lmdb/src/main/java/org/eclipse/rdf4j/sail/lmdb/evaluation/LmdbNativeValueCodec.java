@@ -55,18 +55,43 @@ final class LmdbNativeValueCodec {
 	static final AtomicLong CACHE_HITS = new AtomicLong();
 
 	private final ValueStore valueStore;
-	private final AtomicLongArray cacheIds = new AtomicLongArray(CACHE_SIZE);
-	private final AtomicReferenceArray<DecodedValue> cacheValues = new AtomicReferenceArray<>(CACHE_SIZE);
+	/**
+	 * Direct-mapped decode cache. Each slot holds ONE immutable (id, value) pair behind a single atomic reference: the
+	 * codec is shared by every parallel kernel worker of a query, so readers and writers race freely, and a
+	 * paired-arrays protocol (invalidate id, publish value, re-publish id) is only sound for a single writer — two
+	 * writers colliding on a slot could leave it claiming one id while holding another id's value, which surfaced as
+	 * nondeterministic COUNT(DISTINCT) answers (LIBRARY query 3, 2026-08-16 theme run). An immutable pair makes every
+	 * read and write atomic; a lost race merely re-decodes.
+	 */
+	private final AtomicReferenceArray<CachedDecode> cache = new AtomicReferenceArray<>(CACHE_SIZE);
+
+	private static final class CachedDecode {
+		final long id;
+		final DecodedValue value;
+
+		CachedDecode(long id, DecodedValue value) {
+			this.id = id;
+			this.value = value;
+		}
+	}
+
+	private static final class CachedText {
+		final long id;
+		final String text;
+
+		CachedText(long id, String text) {
+			this.id = id;
+			this.text = text;
+		}
+	}
 
 	/**
 	 * Datatype-IRI and namespace memos. A store uses only a handful of each — xsd:string dominates — so 64 slots is
-	 * ample; id 0 is never a valid entry and therefore doubles as "empty".
+	 * ample. Same single-atomic-pair shape as {@link #cache}, for the same multi-writer reason.
 	 */
 	private static final int META_CACHE_SIZE = 64;
-	private final AtomicLongArray datatypeIriIds = new AtomicLongArray(META_CACHE_SIZE);
-	private final AtomicReferenceArray<String> datatypeIris = new AtomicReferenceArray<>(META_CACHE_SIZE);
-	private final AtomicLongArray namespaceIds = new AtomicLongArray(META_CACHE_SIZE);
-	private final AtomicReferenceArray<String> namespaces = new AtomicReferenceArray<>(META_CACHE_SIZE);
+	private final AtomicReferenceArray<CachedText> datatypeIris = new AtomicReferenceArray<>(META_CACHE_SIZE);
+	private final AtomicReferenceArray<CachedText> namespaces = new AtomicReferenceArray<>(META_CACHE_SIZE);
 
 	LmdbNativeValueCodec(ValueStore valueStore) {
 		this.valueStore = valueStore;
@@ -89,16 +114,13 @@ final class LmdbNativeValueCodec {
 
 	private DecodedValue decodeKnown(long id) {
 		int cacheIndex = cacheIndex(id);
-		long cachedId = cacheIds.get(cacheIndex);
-		DecodedValue cached = cacheValues.get(cacheIndex);
-		if (cachedId == id && cached != null && cacheIds.get(cacheIndex) == cachedId) {
+		CachedDecode cached = cache.get(cacheIndex);
+		if (cached != null && cached.id == id) {
 			CACHE_HITS.incrementAndGet();
-			return cached;
+			return cached.value;
 		}
 		DecodedValue decoded = decodeUncached(id);
-		cacheIds.set(cacheIndex, 0L);
-		cacheValues.set(cacheIndex, decoded);
-		cacheIds.set(cacheIndex, id);
+		cache.set(cacheIndex, new CachedDecode(id, decoded));
 		return decoded;
 	}
 
@@ -327,39 +349,30 @@ final class LmdbNativeValueCodec {
 	 */
 	private String datatypeIri(long datatypeId) throws IOException {
 		int slot = metaIndex(datatypeId);
-		if (datatypeIriIds.get(slot) == datatypeId) {
-			String cached = datatypeIris.get(slot);
-			if (cached != null) {
-				return cached;
-			}
+		CachedText cached = datatypeIris.get(slot);
+		if (cached != null && cached.id == datatypeId) {
+			return cached.text;
 		}
 		StoredPayload data = readStoredPayload(datatypeId);
 		if (data == null || data.type != URI_VALUE) {
 			return null;
 		}
 		String iri = namespace(data.referenceId) + data.text;
-		// publish the value before the id, so a reader that sees the id never sees a stale or absent string
-		datatypeIriIds.set(slot, 0L);
-		datatypeIris.set(slot, iri);
-		datatypeIriIds.set(slot, datatypeId);
+		datatypeIris.set(slot, new CachedText(datatypeId, iri));
 		return iri;
 	}
 
 	private String namespace(long namespaceId) throws IOException {
 		int slot = metaIndex(namespaceId);
-		if (namespaceIds.get(slot) == namespaceId) {
-			String cached = namespaces.get(slot);
-			if (cached != null) {
-				return cached;
-			}
+		CachedText cached = namespaces.get(slot);
+		if (cached != null && cached.id == namespaceId) {
+			return cached.text;
 		}
 		StoredPayload data = readStoredPayload(namespaceId);
 		if (data == null || data.type != NAMESPACE_VALUE) {
 			return "";
 		}
-		namespaceIds.set(slot, 0L);
-		namespaces.set(slot, data.text);
-		namespaceIds.set(slot, namespaceId);
+		namespaces.set(slot, new CachedText(namespaceId, data.text));
 		return data.text;
 	}
 

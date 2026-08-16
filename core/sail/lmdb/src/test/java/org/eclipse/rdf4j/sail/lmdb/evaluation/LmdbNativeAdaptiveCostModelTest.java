@@ -169,21 +169,27 @@ class LmdbNativeAdaptiveCostModelTest {
 	}
 
 	/**
-	 * The runtime-properties registry ({@code LmdbRuntimeProperties}) and the legacy calibration policy both declare
-	 * learned dispatch and exploration opt-in — "normal execution never enables it implicitly" — while recording stays
-	 * on so that opting in starts from a warm model. The adaptive configuration must agree with that contract.
+	 * Learned dispatch, exploration, and recording all default ON, each with a one-property opt-out (2026-08-16
+	 * regression fix: with dispatch off, the static ladder decided every contested choice alone and newly added routes
+	 * captured queries they ran 30-190x slower than measured incumbents). The adaptive configuration must agree with
+	 * the {@code LmdbRuntimeProperties} registry on all three defaults.
 	 */
 	@Test
-	void systemConfigurationKeepsLearnedDispatchAndExplorationOptIn() {
+	void systemConfigurationDefaultsDispatchExplorationAndRecordingOn() {
 		String enabled = System.clearProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY);
 		String explore = System.clearProperty(LmdbNativeAdaptiveCostModel.EXPLORE_PROPERTY);
 		String record = System.clearProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY);
 		try {
 			LmdbNativeAdaptiveCostModel.Configuration configuration = LmdbNativeAdaptiveCostModel.Configuration
 					.system();
-			assertFalse(configuration.enabled(), "learned dispatch is opt-in");
-			assertFalse(configuration.explore(), "exploration is never implicit");
-			assertTrue(configuration.record(), "recording stays on so opting in starts warm");
+			assertTrue(configuration.enabled(), "learned dispatch defaults on");
+			assertTrue(configuration.explore(), "exploration defaults on");
+			assertTrue(configuration.record(), "recording stays on");
+			System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "false");
+			System.setProperty(LmdbNativeAdaptiveCostModel.EXPLORE_PROPERTY, "false");
+			LmdbNativeAdaptiveCostModel.Configuration optedOut = LmdbNativeAdaptiveCostModel.Configuration.system();
+			assertFalse(optedOut.enabled(), "dispatch remains a one-property opt-out");
+			assertFalse(optedOut.explore(), "exploration remains a one-property opt-out");
 		} finally {
 			restoreProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, enabled);
 			restoreProperty(LmdbNativeAdaptiveCostModel.EXPLORE_PROPERTY, explore);
@@ -426,6 +432,37 @@ class LmdbNativeAdaptiveCostModelTest {
 				"a feature with zero evidence is unsupported regardless of the total sample count");
 		assertTrue((mask & (1L << LmdbNativeCostVector.Feature.SCANNED_ROW.ordinal())) != 0L,
 				"a feature with enough evidence stays supported");
+	}
+
+	/**
+	 * The 2026-08-16 regression analysis found measured 100x gaps that never separated: every variant's 95% interval
+	 * stretched to 1e17–1e20 nanoseconds because prediction half-widths never tighten with evidence, so "strict 95%
+	 * interval domination" was unreachable and the static ladder decided everything (LIBRARY q10: orderedDistinctGroups
+	 * at 3.05e7 ns with 663 samples lost to irAggregate at 5.9e9 ns). Once a variant carries real exact-variant
+	 * evidence, a tenfold measured gap MUST strictly dominate.
+	 */
+	@Test
+	void measuredVariantsWithATenfoldGapStrictlyDominate() {
+		LmdbNativeMachineCostModel machine = new LmdbNativeMachineCostModel();
+		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+		LmdbNativeAdaptiveCostModel model = model(machine, store);
+		LmdbNativeCostEstimate fast = estimate(key("fastpath", 1), LmdbNativeCostVector.Feature.SCANNED_ROW, 100);
+		LmdbNativeCostEstimate slow = estimate(key("slowpath", 2), LmdbNativeCostVector.Feature.SCANNED_ROW, 100);
+		// 48 interleaved samples each: the two variants share one feature vector (the regression's identical
+		// proposal costs), so only the per-variant corrections separate them — the early samples produce severe
+		// prediction misses while the machine still averages the two, and the temporary quarantine those misses
+		// trigger needs 8 consistent trailing samples to clear.
+		for (int i = 0; i < 48; i++) {
+			model.record(fast, LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 100), 1_000_000.0,
+					true);
+			model.record(slow, LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 100), 10_000_000.0,
+					true);
+		}
+		LmdbNativeCostPrediction fastPrediction = model.predict(fast);
+		LmdbNativeCostPrediction slowPrediction = model.predict(slow);
+		assertTrue(fastPrediction.strictlyDominates(slowPrediction),
+				"48 samples each at a 10x measured gap must strictly dominate, but got fast=" + fastPrediction
+						+ " vs slow=" + slowPrediction);
 	}
 
 	private static LmdbNativeAdaptiveCostModel model(LmdbNativeMachineCostModel machine,

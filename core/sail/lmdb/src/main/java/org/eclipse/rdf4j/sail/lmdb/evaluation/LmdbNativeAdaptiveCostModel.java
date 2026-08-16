@@ -27,6 +27,12 @@ final class LmdbNativeAdaptiveCostModel {
 	private static final double Z95 = 1.959963984540054;
 	private static final double Z99 = 2.5758293035489004;
 	private static final double MINIMUM_RELATIVE_UNCERTAINTY = 0.10;
+	/**
+	 * Exact-variant observations required before the multiplicative interval tightening applies. Three suffices for the
+	 * regression-scale gaps (at 3 samples the factor is ~5.2, separating anything beyond ~27x; the 2026-08-16 captures
+	 * were 15x-190x), while small gaps keep needing the evidence a small gap deserves.
+	 */
+	static final int MINIMUM_EVIDENCE_FOR_TIGHT_INTERVALS = 3;
 	private static final Map<Object, LmdbNativeStoreCostModel> STORE_MODELS = Collections
 			.synchronizedMap(new WeakHashMap<>());
 
@@ -83,6 +89,23 @@ final class LmdbNativeAdaptiveCostModel {
 		double low99 = Math.max(0.0, Math.min(low95, expected - half99));
 		double high99 = Math.max(high95, finite(expected + half99));
 		boolean quarantined = correction.quarantined();
+		// Evidence-tightened envelope (2026-08-16 regression fix): the additive half-widths above never shrink with
+		// evidence and the count envelope pins low bounds at zero, so measured 100x gaps could never strictly
+		// dominate — every arbitration fell through to the static ladder. Once THIS variant has been observed enough
+		// times, its interval is bounded multiplicatively, with the factor tightening as evidence accumulates: at 8
+		// samples the bound is ~[expected/3.2, expected*3.2], at 100+ samples it floors at [expected/1.5,
+		// expected*1.5]. A tenfold measured gap then separates from ~10 samples on, while cross-variant fallback
+		// predictions (family/global/prior) keep their honest, wide intervals.
+		if (!quarantined && expected > 0.0
+				&& correction.source() == LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
+				&& correction.evidenceCount() >= MINIMUM_EVIDENCE_FOR_TIGHT_INTERVALS) {
+			double factor95 = Math.max(1.5, 9.0 / Math.sqrt(correction.evidenceCount()));
+			double factor99 = factor95 * 1.5;
+			low95 = Math.max(low95, expected / factor95);
+			high95 = Math.min(high95, expected * factor95);
+			low99 = Math.min(low95, Math.max(low99, expected / factor99));
+			high99 = Math.max(high95, Math.min(high99, expected * factor99));
+		}
 		boolean learnedAllowed = configuration.enabled && machinePrediction.adaptiveReady() && !quarantined;
 		String reason = quarantined ? "variant rebuilding confidence after a 99% prediction miss"
 				: machinePrediction.adaptiveReady() ? "learned physical-operation model" : "broad static prior";
@@ -148,12 +171,14 @@ final class LmdbNativeAdaptiveCostModel {
 		}
 
 		static Configuration system() {
-			// Learned dispatch and exploration are opt-in, matching the LmdbRuntimeProperties registry and the
-			// legacy calibration policy ("normal execution never enables it implicitly"); recording stays on so
-			// that opting in starts from a warm model instead of a cold one.
-			return new Configuration(Boolean.getBoolean(ENABLED_PROPERTY),
+			// Learned dispatch and exploration default ON (2026-08-16 regression fix): with dispatch off, the
+			// static ladder decided every contested choice alone and the newly added interpreted IR routes
+			// captured queries they ran 30-190x slower than the measured incumbents (LIBRARY q10 30 ms -> 5.7 s).
+			// The evidence-tightened prediction intervals make learned strict domination trustworthy, and the
+			// cold-start guard covers never-measured incumbents; opting OUT remains one property away.
+			return new Configuration(!"false".equalsIgnoreCase(System.getProperty(ENABLED_PROPERTY)),
 					Boolean.parseBoolean(System.getProperty(RECORD_PROPERTY, "true")),
-					Boolean.getBoolean(EXPLORE_PROPERTY),
+					!"false".equalsIgnoreCase(System.getProperty(EXPLORE_PROPERTY)),
 					parsePermille(System.getProperty(EXPLORATION_PERMILLE_PROPERTY, "10")));
 		}
 

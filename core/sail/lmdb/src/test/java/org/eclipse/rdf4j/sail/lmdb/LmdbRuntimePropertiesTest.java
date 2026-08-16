@@ -82,8 +82,13 @@ class LmdbRuntimePropertiesTest {
 		}
 	}
 
+	/**
+	 * Adaptive cost dispatch, exploration, and recording all default ON (2026-08-16 regression fix: with dispatch off,
+	 * the static specialization ladder decided every contested strategy choice alone and newly added routes captured
+	 * queries they ran 30-190x slower than measured incumbents). Each remains a one-property opt-out.
+	 */
 	@Test
-	void adaptiveCostDecisionsAreOptInButSampleRecordingRemainsOn() throws Exception {
+	void adaptiveCostDecisionsExplorationAndRecordingDefaultOn() throws Exception {
 		Class<?> catalog = Class.forName("org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties");
 		Method list = catalog.getMethod("list");
 		String calibration = System.getProperty(COST_CALIBRATION);
@@ -91,11 +96,13 @@ class LmdbRuntimePropertiesTest {
 		try {
 			System.clearProperty(COST_CALIBRATION);
 			System.clearProperty(COST_EXPLORATION);
-			assertThat(booleanValue(stateByName(invokeList(list), COST_CALIBRATION), "defaultEnabled")).isFalse();
-			assertThat(booleanValue(stateByName(invokeList(list), COST_EXPLORATION), "defaultEnabled")).isFalse();
+			assertThat(booleanValue(stateByName(invokeList(list), COST_CALIBRATION), "defaultEnabled")).isTrue();
+			assertThat(booleanValue(stateByName(invokeList(list), COST_EXPLORATION), "defaultEnabled")).isTrue();
 			assertThat(booleanValue(
 					stateByName(invokeList(list), "rdf4j.lmdb.costCalibration.enabled.record"), "defaultEnabled"))
 							.isTrue();
+			System.setProperty(COST_CALIBRATION, "false");
+			assertThat(booleanValue(stateByName(invokeList(list), COST_CALIBRATION), "enabled")).isFalse();
 		} finally {
 			restore(COST_CALIBRATION, calibration);
 			restore(COST_EXPLORATION, exploration);

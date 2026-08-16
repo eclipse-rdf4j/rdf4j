@@ -98,6 +98,117 @@ class LmdbNativeAdaptiveArbitrationTest {
 		assertSame(hashing, selected, "99% domination (80 < 95) satisfies the stricter bar");
 	}
 
+	/**
+	 * HIGHLY_CONNECTED q4, 2026-08-16: `irKernelInterpreted` won arbitration with
+	 * {@code expectedNanos=0.0; evidence=0; source=STRUCTURAL_ONLY} against a nestedLoop incumbent carrying 199 samples
+	 * of real timing history, purely by ladder rank. A candidate that has never run may not displace measured rivals
+	 * silently: the cold-start guard hands the choice to the measured rival with the lowest expected cost.
+	 */
+	@Test
+	void unmeasuredIncumbentLosesToTheCheapestMeasuredRival() {
+		LmdbNativeAdaptiveArbitration.Priced<String> unmeasured = structuralOnly("newKernel", 0);
+		LmdbNativeAdaptiveArbitration.Priced<String> slowMeasured = pricedWithEvidence("slowLoop", 1,
+				5_000_000, 10_000_000, 20_000_000, 199);
+		LmdbNativeAdaptiveArbitration.Priced<String> fastMeasured = pricedWithEvidence("fastLoop", 2,
+				50_000, 100_000, 200_000, 199);
+
+		LmdbNativeAdaptiveArbitration.Priced<String> rescued = LmdbNativeAdaptiveArbitration
+				.coldStartRescue(List.of(unmeasured, slowMeasured, fastMeasured));
+
+		assertSame(fastMeasured, rescued,
+				"an incumbent with zero exact evidence must yield to the cheapest measured rival");
+	}
+
+	/** The guard exists solely for unmeasured incumbents; once the incumbent has run, cost rules apply as usual. */
+	@Test
+	void measuredIncumbentIsNeverRescuedAway() {
+		LmdbNativeAdaptiveArbitration.Priced<String> measuredIncumbent = pricedWithEvidence("kernel", 0,
+				5_000_000, 10_000_000, 20_000_000, 9);
+		LmdbNativeAdaptiveArbitration.Priced<String> fastRival = pricedWithEvidence("loop", 1,
+				50_000, 100_000, 200_000, 199);
+
+		assertSame(null, LmdbNativeAdaptiveArbitration.coldStartRescue(List.of(measuredIncumbent, fastRival)),
+				"the guard must not fire when the incumbent carries exact-variant evidence");
+	}
+
+	/** Rival order in the offer must not change the rescue (offer-order invariance is the file's contract). */
+	@Test
+	void coldStartRescueIsOfferOrderInvariant() {
+		LmdbNativeAdaptiveArbitration.Priced<String> unmeasured = structuralOnly("newKernel", 0);
+		LmdbNativeAdaptiveArbitration.Priced<String> slowMeasured = pricedWithEvidence("slowLoop", 1,
+				5_000_000, 10_000_000, 20_000_000, 32);
+		LmdbNativeAdaptiveArbitration.Priced<String> fastMeasured = pricedWithEvidence("fastLoop", 2,
+				50_000, 100_000, 200_000, 32);
+
+		LmdbNativeAdaptiveArbitration.Priced<String> firstOrder = LmdbNativeAdaptiveArbitration
+				.coldStartRescue(List.of(unmeasured, slowMeasured, fastMeasured));
+		LmdbNativeAdaptiveArbitration.Priced<String> secondOrder = LmdbNativeAdaptiveArbitration
+				.coldStartRescue(List.of(unmeasured, fastMeasured, slowMeasured));
+
+		assertSame(firstOrder, secondOrder, "rescue must not depend on rival offer order");
+	}
+
+	/** A rival below the evidence floor is not a trustworthy rescue target. */
+	@Test
+	void rivalsBelowTheEvidenceFloorDoNotRescue() {
+		LmdbNativeAdaptiveArbitration.Priced<String> unmeasured = structuralOnly("newKernel", 0);
+		LmdbNativeAdaptiveArbitration.Priced<String> barelyMeasured = pricedWithEvidence("loop", 1,
+				50_000, 100_000, 200_000, 2);
+
+		assertSame(null, LmdbNativeAdaptiveArbitration.coldStartRescue(List.of(unmeasured, barelyMeasured)),
+				"two samples are not enough evidence to overrule the ladder");
+	}
+
+	/**
+	 * The ladder starves rivals it never selects: without guaranteed probes, a strategy that would win on measured cost
+	 * never obtains the measurements (LIBRARY q10's orderedDistinctGroups was never re-sampled once the IR route
+	 * captured the ladder seat). Until a rival has {@code MINIMUM_EXPLORATION_SAMPLES} exact observations, it must be
+	 * explored deterministically, least-observed first.
+	 */
+	@Test
+	void rivalsUnderTheSampleFloorAreExploredDeterministically() {
+		LmdbNativeAdaptiveArbitration.Priced<String> incumbent = pricedWithEvidence("kernel", 0,
+				5_000_000, 10_000_000, 20_000_000, 12);
+		LmdbNativeAdaptiveArbitration.Priced<String> measured = pricedWithEvidence("measuredLoop", 1,
+				50_000, 100_000, 200_000, 7);
+		LmdbNativeAdaptiveArbitration.Priced<String> starved = pricedWithEvidence("starvedGroups", 2,
+				40_000, 90_000, 180_000, 1);
+
+		assertSame(starved, LmdbNativeAdaptiveArbitration
+				.underSampledExplorationTarget(List.of(incumbent, measured, starved)),
+				"a rival below the sample floor must be probed deterministically");
+		assertSame(null, LmdbNativeAdaptiveArbitration
+				.underSampledExplorationTarget(List.of(incumbent, measured)),
+				"once every rival has its minimum evidence the permille dice take over");
+	}
+
+	private static LmdbNativeAdaptiveArbitration.Priced<String> structuralOnly(String family, int preference) {
+		LmdbNativePhysicalVariantKey key = LmdbNativePhysicalVariantKey.builder(family)
+				.physicalOrderAndProperties(family)
+				.build();
+		LmdbNativeCostVector vector = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 100);
+		LmdbNativeCostEstimate estimate = new LmdbNativeCostEstimate(key, LmdbNativeCostVector.zero(), vector,
+				100, 0.1);
+		return new LmdbNativeAdaptiveArbitration.Priced<>(
+				new LmdbNativeAdaptiveArbitration.Candidate<>(estimate, preference, observation -> family),
+				LmdbNativeCostPrediction.structuralOnly("never lowered"));
+	}
+
+	private static LmdbNativeAdaptiveArbitration.Priced<String> pricedWithEvidence(String family, int preference,
+			double low95, double expected, double high95, long evidence) {
+		LmdbNativePhysicalVariantKey key = LmdbNativePhysicalVariantKey.builder(family)
+				.physicalOrderAndProperties(family)
+				.build();
+		LmdbNativeCostVector vector = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, expected);
+		LmdbNativeCostEstimate estimate = new LmdbNativeCostEstimate(key, LmdbNativeCostVector.zero(), vector,
+				expected, 0.1);
+		LmdbNativeCostPrediction prediction = new LmdbNativeCostPrediction(low95, expected, high95, low95, high95,
+				true, true, false, evidence, LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT, "test");
+		return new LmdbNativeAdaptiveArbitration.Priced<>(
+				new LmdbNativeAdaptiveArbitration.Candidate<>(estimate, preference, observation -> family),
+				prediction);
+	}
+
 	private static LmdbNativeAdaptiveArbitration.Priced<String> pricedWithProperties(String family, int preference,
 			double low95, double expected, double high95, double low99, double high99, boolean propertyPreserving) {
 		LmdbNativePhysicalVariantKey key = LmdbNativePhysicalVariantKey.builder(family)

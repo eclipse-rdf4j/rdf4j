@@ -138,10 +138,16 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		// The specialized strategies (prefix-run, exists-intersection, type-matrix) group by raw longs and materialize
 		// through their own value sources, so they are disqualified for computed-interned keys; the serial group step
 		// (forced at runtime by NativeGroupIteration.containsComputedValueCopy) owns those.
-		PrefixRunGroupCandidate prefixRun = sawComputedValueCopy ? null
-				: tryPrefixRunGroupPlan(stepSource, arg, groupSlots, aggregates, havingCondition);
-		LmdbNativeExistsIntersection existsIntersection = (sawComputedValueCopy || prefixRun != null) ? null
+		// Exists-intersection is tried BEFORE prefix-run: the two recognizers overlap since the EXISTS
+		// placeable-mask fold made witness-bearing plans eligible for prefix-run, and where both match the
+		// intersection answers the query by advancing two index cursors in lockstep while prefix-run still walks
+		// every masked row (ANALYTICS q10, 2026-08-16: 80 ms vs 2016 ms over 13.8M rows). The intersection
+		// recognizer is strictly narrower — COUNT(DISTINCT ?x) over one pattern filtered by a single-pattern
+		// EXISTS correlated only on ?x — so preferring it can never capture a query it does not answer outright.
+		LmdbNativeExistsIntersection existsIntersection = sawComputedValueCopy ? null
 				: tryExistsIntersectionPlan(stepSource, arg, groupSlots, aggregates);
+		PrefixRunGroupCandidate prefixRun = (sawComputedValueCopy || existsIntersection != null) ? null
+				: tryPrefixRunGroupPlan(stepSource, arg, groupSlots, aggregates, havingCondition);
 		if (!sawComputedValueCopy && prefixRun == null && existsIntersection == null && havingCondition == null) {
 			QueryEvaluationStep typeMatrix = tryTypeMatrixStep(stepSource, arg, groupSlots, aggregates, originalExpr);
 			if (typeMatrix != null) {

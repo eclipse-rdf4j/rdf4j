@@ -78,10 +78,7 @@ final class LmdbNativeParallelKernelAggregate {
 	}
 
 	static boolean enabled() {
-		boolean b = !"false".equals(System.getProperty(ENABLED_PROPERTY));
-//		System.out.println("[ir-aggregate-parallel] enabled=" + b + " (property " + ENABLED_PROPERTY + ")");
-		return b;
-//		return Boolean.getBoolean(ENABLED_PROPERTY);
+		return !"false".equals(System.getProperty(ENABLED_PROPERTY));
 	}
 
 	/**

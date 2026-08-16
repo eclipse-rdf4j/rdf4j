@@ -226,6 +226,12 @@ final class LmdbNativeKernelLowering {
 	static final AtomicLong ROW_EXISTS_LOWERINGS = new AtomicLong();
 
 	/**
+	 * Test observability: EXISTS-family filters carrying a placeable mask (the EXISTS placeable-mask fold) that were
+	 * routed into the witness tier instead of the per-row hook/residual tiers, across both the row and aggregate rungs.
+	 */
+	static final AtomicLong PLACEABLE_WITNESS_LOWERINGS = new AtomicLong();
+
+	/**
 	 * Enables the aggregate rung's residual filter tier (three-tier parity plan, M10): a producer filter neither the id
 	 * tier nor the hook tier can lower runs in-kernel through {@code hooks.testResidual} — the engine-side predicate
 	 * over an installed scratch row — instead of declining the whole aggregate kernel. Pre-aggregation placement only;
@@ -2401,6 +2407,17 @@ final class LmdbNativeKernelLowering {
 			if (lowerIdFilter(filter)) {
 				return;
 			}
+			// The EXISTS placeable-mask fold hands witness-bearing filters a real placement mask (>= 0), which
+			// would let the hook tier accept them as per-row cursor probes — the sticky-mask semijoin the witness
+			// tier builds is orders of magnitude cheaper, so EXISTS-family filters try the witness tier first
+			// regardless of mask sign (2026-08-16 regression: TRAIN 9 janino arm 31 ms -> 867 ms via hook probes).
+			if (rowExistsEnabled() && reasonPrefix.isEmpty() && existsFamily(filter)
+					&& lowerWitnessWithRollback(masked.filter)) {
+				if (masked.mask >= 0L) {
+					PLACEABLE_WITNESS_LOWERINGS.incrementAndGet();
+				}
+				return;
+			}
 			if (lowerHookFilter(masked)) {
 				return;
 			}
@@ -2421,6 +2438,16 @@ final class LmdbNativeKernelLowering {
 			if (!rowExistsEnabled() || masked.mask >= 0L || !reasonPrefix.isEmpty()) {
 				return false;
 			}
+			return lowerWitnessWithRollback(masked.filter);
+		}
+
+		/**
+		 * Attempts {@link #lowerWitness} such that a refusal leaves ZERO trace — partially registered adjacency
+		 * requests would make the bind request views the kernel never reads (and decline the open when one is
+		 * unavailable) — so every registry the attempt can grow is rolled back to its mark on failure and the caller
+		 * falls through to its next tier as before.
+		 */
+		private boolean lowerWitnessWithRollback(NativeBooleanFilter filter) {
 			int adjacencyMark = adjacencies.size();
 			int constantMark = constants.size();
 			int entryMark = entrySlotIds.size();
@@ -2433,7 +2460,7 @@ final class LmdbNativeKernelLowering {
 				depthFilterMarks[depth] = filtersPerDepth.get(depth).size();
 			}
 			String reasonBefore = reason;
-			if (lowerWitness(masked.filter, false)) {
+			if (lowerWitness(filter, false)) {
 				ROW_EXISTS_LOWERINGS.incrementAndGet();
 				return true;
 			}
@@ -3232,6 +3259,14 @@ final class LmdbNativeKernelLowering {
 		boolean lowerFilterStrict(MaskedFilter masked) {
 			NativeBooleanFilter filter = inspectFilter(masked.filter);
 			if (masked.mask >= 0) {
+				// The EXISTS placeable-mask fold hands witness-bearing filters a real placement mask (>= 0), which
+				// would let the hook tier accept them as per-row cursor probes — the sticky-mask semijoin the
+				// witness tier builds is orders of magnitude cheaper, so EXISTS-family filters try the witness tier
+				// first regardless of mask sign (2026-08-16 regression: TRAIN 9 janino arm 31 ms -> 867 ms).
+				if (existsFamily(filter) && lowerWitnessWithRollback(filter)) {
+					PLACEABLE_WITNESS_LOWERINGS.incrementAndGet();
+					return true;
+				}
 				if (lowerIdFilter(filter) || lowerHookFilter(masked)) {
 					return true;
 				}
@@ -3242,6 +3277,29 @@ final class LmdbNativeKernelLowering {
 				return false;
 			}
 			return lowerWitness(filter, false);
+		}
+
+		/**
+		 * True when the (unwrapped) filter carries an EXISTS witness the witness tier could lower: a single-pattern or
+		 * sub-plan existential, possibly negated, possibly one operand of a boolean combination. Used only to decide
+		 * tier ORDER — {@link #lowerWitnessWithRollback} still validates the shape and falls back cleanly.
+		 */
+		private static boolean existsFamily(NativeBooleanFilter filter) {
+			filter = NativeFilterLease.inspect(filter);
+			if (filter instanceof RecordingNativeBooleanFilter) {
+				return existsFamily(((RecordingNativeBooleanFilter) filter).delegate);
+			}
+			if (filter instanceof NegatedNativeBooleanFilter) {
+				return existsFamily(((NegatedNativeBooleanFilter) filter).delegate);
+			}
+			if (filter instanceof StatementPatternExistsFilter || filter instanceof ExistsFilter) {
+				return true;
+			}
+			if (filter instanceof BooleanCombinationFilter) {
+				BooleanCombinationFilter combination = (BooleanCombinationFilter) filter;
+				return existsFamily(combination.left) || existsFamily(combination.right);
+			}
+			return false;
 		}
 
 		/**
