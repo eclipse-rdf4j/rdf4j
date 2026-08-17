@@ -2583,6 +2583,19 @@ final class LmdbNativeKernelLowering {
 						compare.checkBound), filterDepth);
 				return true;
 			}
+			// Fragment splice (fragment-fusion M3): a bound-checking comparison against a constant that is a
+			// value-ordered inline integer decides inline in generated/interpreted kernels and escapes every other
+			// encoding to the hook. The orderedness check happens here, at shape-key construction time, so kernels
+			// with and without the splice are distinct cached shapes.
+			if (bits == 1 && delegate instanceof CachedCompareFilter orderedCompare
+					&& orderedCompare.slot == argSlots[0] && orderedCompare.checkBound
+					&& ValueIds.isOrderedInteger(orderedCompare.constant)
+					&& LmdbNativeKernelHooks.fragmentsEnabled()) {
+				placeFilter(new LmdbNativeKernelIr.FilterFragmentCompare(filterId, args[0],
+						constantIndex(orderedCompare.constant), irCompareOp(orderedCompare.op),
+						orderedCompare.constantOnLeft), filterDepth);
+				return true;
+			}
 			placeFilter(new LmdbNativeKernelIr.FilterValue(filterId, args), filterDepth);
 			return true;
 		}

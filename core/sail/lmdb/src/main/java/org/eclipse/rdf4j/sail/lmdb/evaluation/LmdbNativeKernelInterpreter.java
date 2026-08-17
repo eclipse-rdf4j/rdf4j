@@ -157,6 +157,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					|| node instanceof BindAlias || node instanceof BindHook || node instanceof FilterCompareId
 					|| node instanceof FilterEntryCompatible || node instanceof FilterInConstants
 					|| node instanceof FilterRangeUnsigned || node instanceof FilterDateCompare
+					|| node instanceof LmdbNativeKernelIr.FilterFragmentCompare
 					|| node instanceof FilterValue || node instanceof FilterResidual)) {
 				return false;
 			}
@@ -1378,6 +1379,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			FilterDateCompare filter = (FilterDateCompare) node;
 			return KernelRuntime.testDateCompare(read(filter.value), context.constants[filter.constantIndex],
 					filter.op, filter.constantOnLeft, filter.checkBound, hooks, filter.filterId);
+		}
+		if (node instanceof LmdbNativeKernelIr.FilterFragmentCompare) {
+			LmdbNativeKernelIr.FilterFragmentCompare filter = (LmdbNativeKernelIr.FilterFragmentCompare) node;
+			return KernelRuntime.testOrderedCompare(read(filter.value), context.constants[filter.constantIndex],
+					filter.op, filter.constantOnLeft, hooks, filter.filterId);
 		}
 		FilterValue filter = (FilterValue) node;
 		long a0 = filter.args.length > 0 ? read(filter.args[0]) : -1L;

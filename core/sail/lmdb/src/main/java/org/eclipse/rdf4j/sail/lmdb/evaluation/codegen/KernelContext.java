@@ -17,6 +17,7 @@ import java.util.Objects;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentBinding;
 
 /**
  * Runtime inputs handed to a generated kernel at {@link JaninoKernel#bind(KernelContext)}. Everything is primitive or a
@@ -54,6 +55,14 @@ public final class KernelContext {
 	public final NativeLmdbQuerySource.DynamicAdjacency[] dynamicAdjacencies;
 	/** Optional packed f-tree chunk for topology-specialized factorized kernels. */
 	public PackedFtreeContext packedFtree;
+	/**
+	 * Per-query fragment bindings indexed by canonical fragment-site ordinal (fragment tier, design
+	 * {@code .agent/lmdb-fragment-fusion-design.md} §3.4): constants, exact fallbacks, and snapshot-scoped state for
+	 * every fragment site the kernel references through {@code hooks.testFragment}. Empty when the kernel uses none.
+	 */
+	public FragmentBinding[] fragmentBindings = NO_FRAGMENT_BINDINGS;
+
+	private static final FragmentBinding[] NO_FRAGMENT_BINDINGS = {};
 
 	private static final NativeLmdbQuerySource.NodePredicates[] NO_NODE_PREDICATES = {};
 	private static final NativeLmdbQuerySource.DynamicAdjacency[] NO_DYNAMIC_ADJACENCIES = {};
@@ -141,6 +150,12 @@ public final class KernelContext {
 	/** Binds a packed f-tree chunk without widening the constructor surface used by existing generated kernels. */
 	public KernelContext withPackedFtree(PackedFtreeContext packedFtree) {
 		this.packedFtree = Objects.requireNonNull(packedFtree, "packedFtree");
+		return this;
+	}
+
+	/** Binds the fragment-site table without widening the constructor surface used by existing generated kernels. */
+	public KernelContext withFragmentBindings(FragmentBinding[] fragmentBindings) {
+		this.fragmentBindings = Objects.requireNonNull(fragmentBindings, "fragmentBindings");
 		return this;
 	}
 

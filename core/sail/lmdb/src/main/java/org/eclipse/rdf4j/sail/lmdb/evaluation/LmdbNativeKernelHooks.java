@@ -27,6 +27,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentBinding;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentTelemetry;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.LongPredicateFragment;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.PredicateStatus;
 
 /**
  * Engine-side implementation of the generated-kernel callback SPI (plan:
@@ -61,6 +65,22 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	 */
 	private final KernelRuntime.LongHashSet[][] distinctSets;
 	private final int distinctExpected;
+	/**
+	 * Fragment fast paths per filter hook (fragment-fusion M1/M3): a recognized hook evaluates its compiled id-space
+	 * fragment first and only takes the scratch-row round trip when the fragment ESCAPEs. Null entries (and a null
+	 * array under the {@code rdf4j.lmdb.fragments.enabled=false} kill switch) keep the original path bit-for-bit.
+	 */
+	private final LongPredicateFragment[] fragmentFastPaths;
+	private final FragmentBinding[] fragmentFastBindings;
+	/** Canonical fragment-site bindings for {@link #testFragment}; installed by spliced-kernel binding. */
+	private FragmentBinding[] fragmentSites = NO_FRAGMENT_SITES;
+
+	private static final FragmentBinding[] NO_FRAGMENT_SITES = {};
+
+	/** Sampled at hook construction, matching the runtime-properties allowlist discipline. */
+	static boolean fragmentsEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.fragments.enabled"));
+	}
 
 	LmdbNativeKernelHooks(RowState liveRow, LmdbNativeKernelBindings bindings) {
 		this(liveRow, bindings, bindings.filterHooks);
@@ -109,10 +129,39 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		// A generated traversal may change encounter order. Integer and decimal addition remain exact; floating-point
 		// values use the established control-flow fallback because their sequential rounding is order-sensitive.
 		this.numericContext = hasNumericAggregate ? new AggContext(source, false, true) : null;
+		if (fragmentsEnabled() && filterHooks.length > 0) {
+			this.fragmentFastPaths = new LongPredicateFragment[filterHooks.length];
+			this.fragmentFastBindings = new FragmentBinding[filterHooks.length];
+			for (int i = 0; i < filterHooks.length; i++) {
+				LmdbNativeFragmentRecognizer.Recognized recognized = LmdbNativeFragmentRecognizer
+						.recognize(filterHooks[i]);
+				if (recognized != null) {
+					fragmentFastPaths[i] = recognized.fragment();
+					fragmentFastBindings[i] = recognized.binding();
+				}
+			}
+		} else {
+			this.fragmentFastPaths = null;
+			this.fragmentFastBindings = null;
+		}
 	}
 
 	@Override
 	public boolean testFilter(int filterId, long a0, long a1, long a2) {
+		if (fragmentFastPaths != null) {
+			LongPredicateFragment fragment = fragmentFastPaths[filterId];
+			if (fragment != null) {
+				PredicateStatus status = fragment.test(a0, a1, a2, fragmentFastBindings[filterId]);
+				if (status != PredicateStatus.ESCAPE) {
+					FragmentTelemetry.FAST_PATH_DECISIONS.increment();
+					if (status != PredicateStatus.TRUE) {
+						FragmentTelemetry.PHYSICAL_REJECTIONS.increment();
+					}
+					return status == PredicateStatus.TRUE;
+				}
+				FragmentTelemetry.ESCAPES.increment();
+			}
+		}
 		LmdbNativeKernelBindings.FilterHook hook = filters[filterId];
 		int[] argSlots = hook.argSlots;
 		long previous0 = UNKNOWN;
@@ -187,6 +236,21 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	 */
 	void orderComparatorStrict(boolean strict) {
 		comparator.setStrict(strict);
+	}
+
+	/**
+	 * Installs the canonical fragment-site binding table for this kernel (fragment-fusion §3.4). Spliced generated code
+	 * resolves its escape sites through {@link #testFragment}; sites are structural ordinals of the kernel's fragment
+	 * shapes, never plan-local hook ids.
+	 */
+	void bindFragmentSites(FragmentBinding[] fragmentSites) {
+		this.fragmentSites = fragmentSites == null ? NO_FRAGMENT_SITES : fragmentSites;
+	}
+
+	@Override
+	public boolean testFragment(int canonicalSite, long a0, long a1, long a2) {
+		FragmentTelemetry.ESCAPES.increment();
+		return fragmentSites[canonicalSite].escapeToExact(a0, a1, a2);
 	}
 
 	@Override
@@ -396,6 +460,36 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	boolean numericErrorAt(int aggregateId, int groupId) {
 		requireNumericAccumulator(aggregateId, groupId);
 		return groupId < numericErrors[aggregateId].length && numericErrors[aggregateId][groupId];
+	}
+
+	/**
+	 * The aggregate escape bridge (fragment-fusion M8): lets a fragment-side primitive accumulator
+	 * ({@code PrimitiveSumAccumulator}) re-home a group's scaled-long partial into this hook set's exact numeric
+	 * machinery and route all later values of that group through {@link #accumulateNumeric}. Promotion installs the
+	 * partial through the same path the parallel merge uses, so finalization semantics are identical by construction.
+	 */
+	org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.NumericAggregateEscape numericEscapeBridge() {
+		return new org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.NumericAggregateEscape() {
+			@Override
+			public void promoteScaledLong(int aggregateSite, int group, long unscaledSum, int scale, long count) {
+				Literal sum;
+				if (count == 0L) {
+					// no values yet: leave the accumulator in its initial state (null sum = integer zero on emit)
+					sum = null;
+				} else if (scale == 0) {
+					sum = SimpleValueFactory.getInstance().createLiteral(java.math.BigInteger.valueOf(unscaledSum));
+				} else {
+					sum = SimpleValueFactory.getInstance()
+							.createLiteral(java.math.BigDecimal.valueOf(unscaledSum, scale));
+				}
+				installNumericPartial(aggregateSite, group, sum, count, false);
+			}
+
+			@Override
+			public void accumulateExact(int aggregateSite, int group, long valueId) {
+				accumulateNumeric(aggregateSite, group, valueId);
+			}
+		};
 	}
 
 	/** Installs one merged partial so {@link #numericResult} finalizes it with the ordinary emission rules. */

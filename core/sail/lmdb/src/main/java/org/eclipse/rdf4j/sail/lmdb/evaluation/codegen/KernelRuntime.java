@@ -73,10 +73,68 @@ public final class KernelRuntime {
 	}
 
 	private static int dateKey(long payload) {
+		return datePackedKey(payload);
+	}
+
+	/**
+	 * Fragment-spliced ordered-integer comparison (fragment-fusion M3), the numeric sibling of
+	 * {@link #testDateCompare}: decides inline when the candidate and the constant are both value-ordered inline
+	 * integers, rejects unbound candidates (the bound-checking filter contract, which coincides with SPARQL
+	 * error-means-false at the site), and escapes every other encoding to the registered value hook. Allocates nothing
+	 * and never decodes an RDF value on the fast path.
+	 */
+	public static boolean testOrderedCompare(long candidate, long constant, int op, boolean constantOnLeft,
+			KernelHooks hooks, int filterId) {
+		if (candidate == -1L) {
+			return false;
+		}
+		if (ValueIds.isOrderedInteger(candidate) && ValueIds.isOrderedInteger(constant)) {
+			int comparison = ValueIds.compareOrderedIntegers(candidate, constant);
+			if (constantOnLeft) {
+				comparison = -comparison;
+			}
+			return compareResult(comparison, op);
+		}
+		return hooks.testFilter(filterId, candidate, -1L, -1L);
+	}
+
+	/**
+	 * Order-preserving packed key ({@code year<<9 | month<<5 | day}) of an inline {@code xsd:date} payload. Public so
+	 * the fragment tier compiles against one authoritative bit layout instead of duplicating it in generated source.
+	 */
+	public static int datePackedKey(long payload) {
 		int year = (int) (payload & 0x1fffL);
 		int month = (int) (payload >>> 13 & 0x0fL);
 		int day = (int) (payload >>> 17 & 0x1fL);
 		return year << 9 | month << 5 | day;
+	}
+
+	/**
+	 * The 7-bit timezone field of an inline {@code xsd:date} payload; two dates compare packed only when these match.
+	 */
+	public static int dateTimezoneField(long payload) {
+		return (int) (payload >>> 49 & 0x7fL);
+	}
+
+	/**
+	 * Sentinel returned by {@link #dateSortKey(long)} when no primitive key exists. Callers must record the escape in a
+	 * side bitmap (never reuse the sentinel as a key): a reserved key value would be unsound if the key space ever used
+	 * it, and one escaped row must not forfeit all extracted keys.
+	 */
+	public static final long SORT_KEY_ESCAPE = Long.MIN_VALUE;
+
+	/**
+	 * Order-preserving primitive sort key for an inline {@code xsd:date} id: the timezone class in the high bits (so
+	 * only same-timezone dates compare within a partition) over the packed year/month/day key. Returns
+	 * {@link #SORT_KEY_ESCAPE} for unbound, non-date, or otherwise primitive-unsortable ids; the caller flags that row
+	 * in its escape bitmap and compares it through the exact tier.
+	 */
+	public static long dateSortKey(long id) {
+		if (id == -1L || (id & 1L) != 0L || ValueIds.getIdType(id) != ValueIds.T_DATE) {
+			return SORT_KEY_ESCAPE;
+		}
+		long payload = ValueIds.getValue(id);
+		return (long) dateTimezoneField(payload) << 32 | (long) datePackedKey(payload);
 	}
 
 	private static boolean compareResult(int comparison, int op) {

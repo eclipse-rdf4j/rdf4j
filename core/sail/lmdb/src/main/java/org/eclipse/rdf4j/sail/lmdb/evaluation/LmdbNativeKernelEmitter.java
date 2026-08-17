@@ -2770,6 +2770,11 @@ final class LmdbNativeKernelEmitter {
 						+ ", " + filter.op + ", " + filter.constantOnLeft + ", " + filter.checkBound
 						+ ", hooks, " + filter.filterId + ")";
 			}
+			if (node instanceof LmdbNativeKernelIr.FilterFragmentCompare) {
+				LmdbNativeKernelIr.FilterFragmentCompare filter = (LmdbNativeKernelIr.FilterFragmentCompare) node;
+				return "KernelRuntime.testOrderedCompare(" + filter.value.token() + ", c" + filter.constantIndex
+						+ ", " + filter.op + ", " + filter.constantOnLeft + ", hooks, " + filter.filterId + ")";
+			}
 			FilterValue filter = (FilterValue) node;
 			String[] args = { "-1L", "-1L", "-1L" };
 			for (int i = 0; i < filter.args.length; i++) {
@@ -4248,6 +4253,7 @@ final class LmdbNativeKernelEmitter {
 			} else if (node instanceof FilterCompareId || node instanceof FilterEntryCompatible
 					|| node instanceof FilterInConstants
 					|| node instanceof FilterRangeUnsigned || node instanceof FilterDateCompare
+					|| node instanceof LmdbNativeKernelIr.FilterFragmentCompare
 					|| node instanceof FilterValue) {
 				emitScalarFilterGuard(body, node, nextTemplate, indent);
 			} else if (node instanceof LmdbNativeKernelIr.FilterResidual) {

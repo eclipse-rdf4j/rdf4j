@@ -386,6 +386,45 @@ class LmdbNativeKernelIrEmitterTest {
 	}
 
 	@Test
+	void filterFragmentCompareDecidesOrderedInlineAndEscapesToHooks() throws Exception {
+		// fragment-fusion M3: candidate/constant both value-ordered inline integers decide inline; every other
+		// encoding (here: plain reference-like ids) escapes to the registered value hook.
+		long ordered17 = orderedIntId(17);
+		long ordered18 = orderedIntId(18);
+		long ordered20 = orderedIntId(20);
+		long reference = org.eclipse.rdf4j.sail.lmdb.ValueIds.createId(org.eclipse.rdf4j.sail.lmdb.ValueIds.T_LITERAL,
+				9);
+		TestHooks hooks = new TestHooks();
+		hooks.filterAccept = id -> id == reference;
+		Kernel ir = new Kernel(1,
+				List.of(new EnumerateDomain(0, 0),
+						new LmdbNativeKernelIr.FilterFragmentCompare(5, Operand.col(0), 0, LmdbNativeKernelIr.OP_GE,
+								false)),
+				emit(0));
+		List<long[]> rows = run(ir, context()
+				.domains(new long[] { ordered20, ordered17, reference, ordered18 })
+				.constants(ordered18)
+				.hooks(hooks));
+		// ordered 20 and 18 pass inline; ordered 17 rejects inline; the reference id passes via the hook escape
+		assertRows(rows, new long[][] { { ordered20 }, { reference }, { ordered18 } });
+		assertEquals(5, hooks.lastFilterId);
+	}
+
+	@Test
+	void filterFragmentCompareShapeKeyIsDistinctFromFilterValue() {
+		List<Node> spliced = List.of(new EnumerateDomain(0, 0),
+				new LmdbNativeKernelIr.FilterFragmentCompare(0, Operand.col(0), 0, LmdbNativeKernelIr.OP_GE, false));
+		List<Node> hooked = List.of(new EnumerateDomain(0, 0),
+				new FilterValue(0, new Operand[] { Operand.col(0) }));
+		assertNotEquals(new Kernel(1, spliced, emit(0)).shapeKey(), new Kernel(1, hooked, emit(0)).shapeKey());
+	}
+
+	private static long orderedIntId(long value) {
+		return org.eclipse.rdf4j.sail.lmdb.ValueIds.createId(org.eclipse.rdf4j.sail.lmdb.ValueIds.T_ORD_INTEGER,
+				value + org.eclipse.rdf4j.sail.lmdb.ValueIds.ORDERED_BIAS);
+	}
+
+	@Test
 	void filterValueDelegatesToHooksWithArgumentPadding() throws Exception {
 		TestHooks hooks = new TestHooks();
 		hooks.filterAccept = id -> id % 2 == 1;

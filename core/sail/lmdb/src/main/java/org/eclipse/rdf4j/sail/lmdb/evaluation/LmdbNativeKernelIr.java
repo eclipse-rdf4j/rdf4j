@@ -1123,6 +1123,49 @@ final class LmdbNativeKernelIr {
 		}
 	}
 
+	/**
+	 * Fragment-spliced ordered-integer comparison against a constant (fragment-fusion M3): the guard decides inline
+	 * when the candidate and the constant are both value-ordered inline integers and escapes to
+	 * {@code hooks.testFilter} otherwise. Lowering only creates this node for a bound-checking compare whose constant
+	 * id is ordered at lowering time, so the orderedness of the constant is part of the kernel shape by construction.
+	 */
+	static final class FilterFragmentCompare extends Node {
+		final int filterId;
+		final Operand value;
+		final int constantIndex;
+		final int op;
+		final boolean constantOnLeft;
+
+		FilterFragmentCompare(int filterId, Operand value, int constantIndex, int op, boolean constantOnLeft) {
+			this.filterId = filterId;
+			this.value = value;
+			this.constantIndex = constantIndex;
+			this.op = op;
+			this.constantOnLeft = constantOnLeft;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("ffc(")
+					.append(filterId)
+					.append(',')
+					.append(value.token())
+					.append(",c")
+					.append(constantIndex)
+					.append(',')
+					.append(op)
+					.append(constantOnLeft ? ",l" : ",r")
+					.append(");");
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.hooks = true;
+			requirements.operand(value);
+			requirements.constantIndex(constantIndex);
+		}
+	}
+
 	/** Value-tier guard: delegates to {@code hooks.testFilter} with up to three argument ids. */
 	static final class FilterValue extends Node {
 		final int filterId;
@@ -2068,6 +2111,7 @@ final class LmdbNativeKernelIr {
 	static boolean isFilter(Node node) {
 		return node instanceof FilterCompareId || node instanceof FilterInConstants
 				|| node instanceof FilterRangeUnsigned || node instanceof FilterDateCompare
+				|| node instanceof FilterFragmentCompare
 				|| node instanceof FilterValue
 				|| node instanceof FilterResidual;
 	}
@@ -2391,6 +2435,7 @@ final class LmdbNativeKernelIr {
 			return node instanceof Probe || node instanceof ProbeClose || node instanceof LeftProbe
 					|| node instanceof Intersect || node instanceof FilterCompareId || node instanceof FilterInConstants
 					|| node instanceof FilterRangeUnsigned || node instanceof FilterDateCompare
+					|| node instanceof FilterFragmentCompare
 					|| node instanceof FilterValue
 					|| node instanceof FilterResidual || node instanceof BindAlias || node instanceof Exists
 					|| node instanceof Union;
@@ -2407,6 +2452,9 @@ final class LmdbNativeKernelIr {
 				return reads(filter.value, columns);
 			}
 			if (node instanceof FilterDateCompare filter) {
+				return reads(filter.value, columns);
+			}
+			if (node instanceof FilterFragmentCompare filter) {
 				return reads(filter.value, columns);
 			}
 			if (node instanceof FilterValue filter) {

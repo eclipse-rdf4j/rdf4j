@@ -183,6 +183,15 @@ class LmdbNativeKernelInterpreterParityTest {
 	}
 
 	@Test
+	void numericRangeFilterParity() {
+		// fragment-fusion M3: with an ordered numeric id encoding this lowers to the spliced
+		// FilterFragmentCompare guards; with any other encoding it keeps the FilterValue hook. Both arms and both
+		// encodings must agree with each other (and with the unfiltered expectation).
+		assertParity(prefixes()
+				+ "SELECT (COUNT(*) AS ?c) WHERE { ?p ex:age ?age . FILTER(?age >= 29 && ?age < 65) }");
+	}
+
+	@Test
 	void countDistinctTwoPatternJoin() {
 		// (b)
 		assertParity(prefixes()

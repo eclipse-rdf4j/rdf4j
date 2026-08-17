@@ -34,6 +34,17 @@ public interface KernelHooks {
 	boolean testFilter(int filterId, long a0, long a1, long a2);
 
 	/**
+	 * Resolves one canonical fragment escape site: the compiled fragment could not decide, so the engine's exact tier
+	 * evaluates the site's bound fallback over the raw argument ids and returns the final filter-site decision (error
+	 * folded to reject, exactly like {@link #testFilter}). {@code canonicalSite} indexes the fragment binding table
+	 * ({@code KernelContext#fragmentBindings}) — a structural ordinal of the fragment shape, never a plan-local hook
+	 * id, so generated code that calls it is reusable across queries.
+	 */
+	default boolean testFragment(int canonicalSite, long a0, long a1, long a2) {
+		throw new UnsupportedOperationException("fragment escape sites are not supported by this hook implementation");
+	}
+
+	/**
 	 * Evaluates the registered BIND expression {@code bindId} over up to two argument ids and returns the produced
 	 * value's id, or {@code -1} when the expression errored (the BIND target stays unbound but the row survives).
 	 */
