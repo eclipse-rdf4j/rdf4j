@@ -1931,22 +1931,20 @@ final class LmdbNativeKernelLowering {
 			// A domain enumeration has no context column, so context-bearing patterns fall through to the probes.
 			if (!ctxActive && pattern.s.isConstant() && !pattern.s.hasSlot() && !pattern.o.isConstant()
 					&& pattern.o.hasSlot() && slotFresh(pattern.o.slot)) {
-				keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(pattern.p.constant, pattern.s.constant,
-						true));
-				int domain = keyDomains.size() - 1;
+				int domain = patternDomainIndex(pattern.p.constant, pattern.s.constant, true);
 				int column = newColumn(pattern.o.slot);
 				markOrderedDomain(column, domain);
-				currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateDomain(domain, column));
+				// A pattern-backed domain is one adjacency neighbor run: sorted, equal keys adjacent.
+				currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateDomain(domain, column, false, null, true));
 				return true;
 			}
 			if (!ctxActive && pattern.o.isConstant() && !pattern.o.hasSlot() && !pattern.s.isConstant()
 					&& pattern.s.hasSlot() && slotFresh(pattern.s.slot)) {
-				keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(pattern.p.constant, pattern.o.constant,
-						false));
-				int domain = keyDomains.size() - 1;
+				int domain = patternDomainIndex(pattern.p.constant, pattern.o.constant, false);
 				int column = newColumn(pattern.s.slot);
 				markOrderedDomain(column, domain);
-				currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateDomain(domain, column));
+				// A pattern-backed domain is one adjacency neighbor run: sorted, equal keys adjacent.
+				currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateDomain(domain, column, false, null, true));
 				assuredMask |= 1L << pattern.s.slot;
 				return true;
 			}
@@ -2679,7 +2677,7 @@ final class LmdbNativeKernelLowering {
 				if (consumer != null) {
 					if (node instanceof LmdbNativeKernelIr.EnumerateDomain enumerate) {
 						pipeline.set(at, new LmdbNativeKernelIr.EnumerateDomain(enumerate.domain, enumerate.col, true,
-								consumer));
+								consumer, enumerate.sortedKeys));
 					} else {
 						LmdbNativeKernelIr.EnumerateAdjKeys enumerate = (LmdbNativeKernelIr.EnumerateAdjKeys) node;
 						pipeline.set(at, new LmdbNativeKernelIr.EnumerateAdjKeys(enumerate.adjacency,
@@ -3961,6 +3959,24 @@ final class LmdbNativeKernelLowering {
 		 * (correlated) variables. Correlation happens naturally: shared slots resolve to outer columns, right-only
 		 * slots become witness-local scratch columns.
 		 */
+		/**
+		 * Index of the pattern-backed key domain for {@code (predicate, key, bySubject)}, reusing an existing equal
+		 * request instead of materializing the same adjacency run twice. Identical requests sharing one index is also
+		 * what lets the distinct-root-exists rewrite prove two union branches enumerate the same key set: their
+		 * {@code EnumerateDomain} nodes become literally identical. Literal (VALUES) domains are never shared.
+		 */
+		private int patternDomainIndex(long predicate, long key, boolean bySubject) {
+			for (int i = 0; i < keyDomains.size(); i++) {
+				LmdbNativeKernelBindings.DomainRequest existing = keyDomains.get(i);
+				if (existing.literal == null && existing.predicate == predicate && existing.key == key
+						&& existing.bySubject == bySubject) {
+					return i;
+				}
+			}
+			keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(predicate, key, bySubject));
+			return keyDomains.size() - 1;
+		}
+
 		boolean lowerMinusArm(SlotPlan arm) {
 			List<Node> pipeline = new ArrayList<>();
 			WitnessColumns witnessCols = new WitnessColumns();
@@ -4188,7 +4204,6 @@ final class LmdbNativeKernelLowering {
 				pipeline.addAll(filtersPerDepth.get(d));
 			}
 			pipeline.addAll(terminalCompatibility);
-			markDomainDrivenEnumerations(pipeline);
 			int columnCount = columnEngineSlots.size() + scratchColumns;
 			if (columnCount == 0 || columnCount > 64) {
 				reason = "agg:no-columns";
@@ -4202,12 +4217,15 @@ final class LmdbNativeKernelLowering {
 				terminal = terminal.having(having.outputIndex, having.op, having.threshold);
 				HAVING_SINKS.incrementAndGet();
 			}
-			// Let the semantic Kernel constructor first fold COUNT(DISTINCT root) into its existential fast shape. SIP
-			// batching is then applied to the remaining ordinary producer/probe pairs, so it cannot pessimize that
-			// proven
+			// Let the semantic Kernel constructor first fold COUNT(DISTINCT root) into its existential fast shape —
+			// on unannotated nodes, so SIP marks cannot make structurally equal enumerations look different to the
+			// fold (the union-root collapse compares branch heads). SIP marking and batching are then applied to the
+			// folded pipeline's remaining ordinary producer/probe pairs, so they cannot pessimize that proven
 			// sub-millisecond path.
 			Kernel semanticKernel = new Kernel(columnCount, pipeline, terminal);
-			List<Node> sipPipeline = fuseSipBatchProbes(semanticKernel.pipeline);
+			List<Node> sipPipeline = new ArrayList<>(semanticKernel.pipeline);
+			markDomainDrivenEnumerations(sipPipeline);
+			sipPipeline = fuseSipBatchProbes(sipPipeline);
 			Kernel kernel = sipPipeline.equals(semanticKernel.pipeline) ? semanticKernel
 					: new Kernel(columnCount, sipPipeline, semanticKernel.terminal);
 			long[] constantArray = new long[constants.size()];
