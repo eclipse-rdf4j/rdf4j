@@ -133,6 +133,59 @@ class LmdbNativeKernelLoweringTest {
 		assertEquals(range, lowered.bindings.scanSites[0].range());
 	}
 
+	/**
+	 * Two union branches lowering the same (p,o)-constant pattern must share one key domain: one bind-time
+	 * materialization instead of two, and — because the shared index makes the branches' EnumerateDomain roots
+	 * literally identical — the distinct-root-exists rewrite can prove they enumerate the same key set.
+	 */
+	@Test
+	void identicalPatternDomainsAreSharedAcrossUnionBranches() {
+		long clazz = 9L << 7 | 1L << 1;
+		PatternPlan bare = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.constant(clazz), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 10D);
+		PatternPlan again = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.constant(clazz), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 10D);
+		PatternPlan name = pattern(Term.slot(0), Term.slot(1));
+		UnionPlan union = new UnionPlan(bare,
+				new MultiJoinPlan(new SlotPlan[] { again, name }, new MaskedFilter[0]));
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { union }, new MaskedFilter[0]);
+
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
+		assertNotNull(lowered, "a union of adjacency-lowerable branches must lower");
+		assertEquals(1, lowered.bindings.keyDomains.length, lowered.kernel.shapeKey());
+		assertTrue(lowered.kernel.shapeKey().contains("ED(d0,k0,sk);"), lowered.kernel.shapeKey());
+	}
+
+	/**
+	 * The whole chain for the LIBRARY-10 root shape through the real aggregate rung: domain dedup, SIP marking of the
+	 * absorbed branch's enumerator, then the distinct-root-exists union collapse. The lowered kernel must root at the
+	 * shared domain enumeration with the probe folded into an existential witness — no Union node left.
+	 */
+	@Test
+	void distinctCountOverAbsorbedUnionCollapsesToDomainRootExists() {
+		long clazz = 9L << 7 | 1L << 1;
+		long located = 11L << 7 | 1L << 1;
+		PatternPlan typeBare = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.constant(clazz), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 10D);
+		PatternPlan typeAgain = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.constant(clazz), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 10D);
+		PatternPlan name = pattern(Term.slot(0), Term.slot(1));
+		PatternPlan locatedAt = new PatternPlan(Term.slot(2), Term.constant(located), Term.slot(0), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 10D);
+		UnionPlan union = new UnionPlan(typeBare,
+				new MultiJoinPlan(new SlotPlan[] { typeAgain, name }, new MaskedFilter[0]));
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { union, locatedAt }, new MaskedFilter[0]);
+
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(plan, freshRow(),
+				new int[0],
+				new AggregateSpec[] { AggregateSpec.slot("count", 0, true, AggKind.COUNT) }, null);
+		assertNotNull(lowered, "the union-rooted distinct count must lower on the aggregate rung");
+		String key = lowered.kernel.shapeKey();
+		assertFalse(key.contains("u{"), "the union must collapse into the shared domain root: " + key);
+		assertTrue(key.contains("ED(d0,k0"), key);
+		assertTrue(key.contains("x{"), "the probe suffix must fold into an existential witness: " + key);
+	}
+
 	/** A variable predicate has no adjacency view; with scan sources on it lowers to a direct quad scan instead. */
 	@Test
 	void variablePredicatePatternLowersToAQuadScan() {

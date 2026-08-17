@@ -410,16 +410,29 @@ final class LmdbNativeKernelIr {
 		 */
 		final boolean sipDriven;
 		final String consumer;
+		/**
+		 * True when the backing domain enumerates keys in non-decreasing order with equal keys adjacent (a
+		 * pattern-backed domain is one adjacency neighbor run, which is (neighbor, context)-ordered — sorted, but a key
+		 * may repeat once per context). Literal VALUES domains carry no such guarantee. The distinct-root-exists
+		 * rewrite may only treat this node as a distinct-key root when this is set, and must count it through the
+		 * ordered last-seen DISTINCT accumulator rather than COUNT(*).
+		 */
+		final boolean sortedKeys;
 
 		EnumerateDomain(int domain, int col) {
-			this(domain, col, false, null);
+			this(domain, col, false, null, false);
 		}
 
 		EnumerateDomain(int domain, int col, boolean sipDriven, String consumer) {
+			this(domain, col, sipDriven, consumer, false);
+		}
+
+		EnumerateDomain(int domain, int col, boolean sipDriven, String consumer, boolean sortedKeys) {
 			this.domain = domain;
 			this.col = col;
 			this.sipDriven = sipDriven;
 			this.consumer = consumer;
+			this.sortedKeys = sortedKeys;
 		}
 
 		@Override
@@ -427,6 +440,9 @@ final class LmdbNativeKernelIr {
 			key.append("ED(d").append(domain).append(",k").append(col);
 			if (sipDriven) {
 				key.append(",sip");
+			}
+			if (sortedKeys) {
+				key.append(",sk");
 			}
 			key.append(");");
 		}
@@ -2363,11 +2379,22 @@ final class LmdbNativeKernelIr {
 			}
 
 			Node root = original.get(0);
-			if (!(root instanceof EnumerateAdjKeys keys) || keys.valueCol >= 0 || keys.keyCol != rootCol) {
+			List<Node> remainder = original.subList(1, original.size());
+			// A UNION of branches that all enumerate the same distinct key set contributes exactly the keys of its
+			// bare enumeration branch, so under distinct-key semantics it may collapse to that single enumeration
+			// (the common SPARQL shape "{ P } UNION { P . extra }").
+			if (root instanceof Union union) {
+				Node collapsed = collapseDistinctKeyUnion(union, rootCol, remainder);
+				if (collapsed == null) {
+					return new OptimizedKernel(List.copyOf(original), originalTerminal);
+				}
+				root = collapsed;
+			}
+			if (!distinctKeyRoot(root, rootCol)) {
 				return new OptimizedKernel(List.copyOf(original), originalTerminal);
 			}
 
-			ArrayList<Node> suffix = new ArrayList<>(original.subList(1, original.size()));
+			ArrayList<Node> suffix = new ArrayList<>(remainder);
 			// A dead trailing OPTIONAL preserves at least one row and only changes multiplicity.
 			while (!suffix.isEmpty()) {
 				Node tail = suffix.get(suffix.size() - 1);
@@ -2425,7 +2452,12 @@ final class LmdbNativeKernelIr {
 			}
 			AggregateOutput[] outputs = new AggregateOutput[aggregate.outputs.length];
 			for (int i = 0; i < outputs.length; i++) {
-				outputs[i] = AggregateOutput.countStar();
+				// Adjacency keys are unique, so counting rows counts keys. A sorted domain may repeat a key (once
+				// per context), so it counts through the ordered last-seen DISTINCT accumulator instead — still no
+				// hash set, and the runtime falls back to hashed counting if the order proof fails.
+				outputs[i] = root instanceof EnumerateDomain domainRoot
+						? AggregateOutput.countDistinctOrdered(rootCol, domainRoot.domain)
+						: AggregateOutput.countStar();
 			}
 			Aggregate terminal = new Aggregate(aggregate.groupCols, outputs, aggregate.having, aggregate.mods);
 			return new OptimizedKernel(List.copyOf(rewritten), terminal);
@@ -2439,6 +2471,175 @@ final class LmdbNativeKernelIr {
 					|| node instanceof FilterValue
 					|| node instanceof FilterResidual || node instanceof BindAlias || node instanceof Exists
 					|| node instanceof Union;
+		}
+
+		/** A node guaranteed to bind {@code rootCol} to each distinct key at most once across its enumeration. */
+		private static boolean distinctKeyRoot(Node root, int rootCol) {
+			if (root instanceof EnumerateAdjKeys keys) {
+				return keys.valueCol < 0 && keys.keyCol == rootCol;
+			}
+			if (root instanceof EnumerateDomain domain) {
+				return domain.sortedKeys && domain.col == rootCol;
+			}
+			return false;
+		}
+
+		/**
+		 * Whether {@code candidate} enumerates exactly the key set {@code head} enumerates, into the same column.
+		 * Compares identity fields only: SIP annotations ({@code sipDriven}/consumer) and the {@code sortedKeys} marker
+		 * are execution hints layered onto the same enumeration, so two nodes over the same domain or adjacency are the
+		 * same key set no matter how they are annotated.
+		 */
+		private static boolean sameKeyEnumeration(Node head, Node candidate) {
+			if (head instanceof EnumerateDomain h && candidate instanceof EnumerateDomain c) {
+				return h.domain == c.domain && h.col == c.col;
+			}
+			if (head instanceof EnumerateAdjKeys h && candidate instanceof EnumerateAdjKeys c) {
+				return h.adjacency == c.adjacency && h.keyCol == c.keyCol && c.valueCol < 0 && !c.ctxActive();
+			}
+			return nodeKey(head).equals(nodeKey(candidate));
+		}
+
+		/**
+		 * Collapses a UNION root to its shared distinct-key enumeration. One branch must be exactly a distinct-key
+		 * enumerator over {@code rootCol}; every other branch must start with the same enumeration (identity fields,
+		 * not annotation — see {@link #sameKeyEnumeration}) followed only by nodes that neither rebind the root nor
+		 * bind columns the suffix reads. Such branches restrict or expand rows of the bare branch, so their key sets
+		 * are subsets of its — the union's distinct key set is exactly the bare branch's. Returns the shared
+		 * enumeration, or null when the union does not have this shape (the caller then leaves the kernel unrewritten).
+		 */
+		private static Node collapseDistinctKeyUnion(Union union, int rootCol, List<Node> suffix) {
+			Node head = null;
+			for (List<Node> branch : union.branches) {
+				if (branch.size() == 1 && distinctKeyRoot(branch.get(0), rootCol)) {
+					head = branch.get(0);
+					break;
+				}
+			}
+			if (head == null) {
+				return null;
+			}
+			BitSet dropped = new BitSet();
+			for (List<Node> branch : union.branches) {
+				if (!sameKeyEnumeration(head, branch.get(0))) {
+					return null;
+				}
+				for (int i = 1; i < branch.size(); i++) {
+					Node node = branch.get(i);
+					BitSet produced = new BitSet();
+					node.produced(produced);
+					if (produced.get(rootCol)) {
+						return null;
+					}
+					dropped.or(produced);
+				}
+			}
+			// A dropped branch's extra columns read as unbound once the branch is gone. Anything downstream that
+			// reads one of them would then see different values for rows the bare branch also produces, changing
+			// which keys survive — refuse unless the whole suffix provably never reads them.
+			if (!dropped.isEmpty()) {
+				for (Node node : suffix) {
+					if (readsColumns(node, dropped)) {
+						return null;
+					}
+				}
+			}
+			return head;
+		}
+
+		private static String nodeKey(Node node) {
+			StringBuilder key = new StringBuilder();
+			node.key(key);
+			return key.toString();
+		}
+
+		/**
+		 * Whether {@code node} — or anything nested inside it — may read one of {@code columns}. Conservative by
+		 * design: a node type this helper does not know counts as reading everything, so callers refuse the collapse
+		 * instead of miscompiling.
+		 */
+		private static boolean readsColumns(Node node, BitSet columns) {
+			if (node instanceof Probe probe) {
+				return reads(probe.key, columns) || (probe.ctxMatch != null && reads(probe.ctxMatch, columns));
+			}
+			if (node instanceof LeftProbe probe) {
+				return reads(probe.key, columns);
+			}
+			if (node instanceof ProbeClose probe) {
+				return reads(probe.key, columns) || reads(probe.target, columns);
+			}
+			if (node instanceof Intersect intersect) {
+				for (Operand key : intersect.keys) {
+					if (reads(key, columns)) {
+						return true;
+					}
+				}
+				return false;
+			}
+			if (node instanceof BindAlias alias) {
+				return reads(alias.source, columns);
+			}
+			if (node instanceof FilterCompareId filter) {
+				return reads(filter.left, columns) || reads(filter.right, columns);
+			}
+			if (node instanceof FilterInConstants filter) {
+				return reads(filter.value, columns);
+			}
+			if (node instanceof FilterRangeUnsigned filter) {
+				return reads(filter.value, columns);
+			}
+			if (node instanceof FilterDateCompare filter) {
+				return reads(filter.value, columns);
+			}
+			if (node instanceof FilterFragmentCompare filter) {
+				return reads(filter.value, columns);
+			}
+			if (node instanceof FilterEntryCompatible filter) {
+				return reads(filter.value, columns);
+			}
+			if (node instanceof FilterValue filter) {
+				for (Operand operand : filter.args) {
+					if (reads(operand, columns)) {
+						return true;
+					}
+				}
+				return false;
+			}
+			if (node instanceof FilterResidual filter) {
+				for (Operand operand : filter.args) {
+					if (reads(operand, columns)) {
+						return true;
+					}
+				}
+				return false;
+			}
+			if (node instanceof Exists exists) {
+				for (Node inner : exists.pipeline) {
+					if (readsColumns(inner, columns)) {
+						return true;
+					}
+				}
+				return false;
+			}
+			if (node instanceof Union union) {
+				for (List<Node> branch : union.branches) {
+					for (Node inner : branch) {
+						if (readsColumns(inner, columns)) {
+							return true;
+						}
+					}
+				}
+				return false;
+			}
+			if (node instanceof LeftGroup group) {
+				for (Node inner : group.arm) {
+					if (readsColumns(inner, columns)) {
+						return true;
+					}
+				}
+				return false;
+			}
+			return true;
 		}
 
 		private static boolean readsAny(Node node, BitSet columns) {
