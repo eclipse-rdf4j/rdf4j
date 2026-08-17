@@ -1971,6 +1971,8 @@ final class LmdbNativePackedFtree {
 		 * Lazily created: executions whose lookups are all adjacency-served never open it.
 		 */
 		private NativeLmdbQuerySource.NativeProbe lookupProbe;
+		/** Row trail position at open: the entry bindings every chunk build must see, and nothing more. */
+		final int entryMark;
 		final Map<AdjKey, NativeLmdbQuerySource.NativeAdjacency> adjacency = new HashMap<>();
 		RootProducer roots;
 		final PatternRuntime[] constantPatterns;
@@ -1997,6 +1999,7 @@ final class LmdbNativePackedFtree {
 			this.plan = plan;
 			this.row = row;
 			this.probe = probe;
+			this.entryMark = row.mark();
 			this.roots = roots;
 			this.constantPatterns = constantPatterns;
 			this.primaryEdges = new EdgeRuntime[plan.nodes.length];
@@ -2240,6 +2243,12 @@ final class LmdbNativePackedFtree {
 			if (exhausted) {
 				return null;
 			}
+			// Building reads the row through the store fallbacks (openStore/ancestorValue/openRaw), which resolve a
+			// pattern against every slot the row currently holds. Both entry points assert that none of this plan's
+			// variables are bound when execution starts, but a consumer that installs each emitted tuple into the
+			// shared row leaves the previous chunk's bindings behind. The next chunk would then resolve its patterns
+			// against a fully bound tuple, match nothing, and silently end the result after the first chunk.
+			row.rollback(entryMark);
 			Chunk chunk = reusableChunk;
 			if (chunk == null) {
 				chunk = new Chunk(plan, constantMultiplicity);
