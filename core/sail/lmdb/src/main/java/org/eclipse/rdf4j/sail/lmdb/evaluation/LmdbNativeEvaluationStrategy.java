@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -51,18 +52,98 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 
 	private final NativeLmdbQuerySource nativeSource;
 	private final boolean nativeEnabled;
+	private final boolean forceRootGeneric;
 	private final EvaluationStatistics evaluationStatistics;
 	private final LmdbStableOrderPlanner stableOrderPlanner;
+	// Constructor inputs retained so the claim-suppressed sibling view can be built with identical configuration.
+	private final TripleSource tripleSourceArg;
+	private final Dataset datasetArg;
+	private final FederatedServiceResolver serviceResolverArg;
+	private final long iterationCacheSyncThresholdArg;
+	private final boolean trackResultSizeArg;
+	// Shadows of post-construction setter state, mirrored onto the view (created lazily, possibly after the setters).
+	private volatile boolean trackTimeShadow;
+	private volatile boolean trackResultSizeShadow;
+	private volatile LmdbNativeEvaluationStrategy genericOnlyView;
 
 	LmdbNativeEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
 			EvaluationStatistics evaluationStatistics, boolean trackResultSize) {
+		this(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, evaluationStatistics, trackResultSize,
+				Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true")));
+	}
+
+	private LmdbNativeEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
+			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
+			EvaluationStatistics evaluationStatistics, boolean trackResultSize, boolean nativeEnabled) {
 		super(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, evaluationStatistics,
 				trackResultSize);
 		this.nativeSource = extractNativeSource(tripleSource);
-		this.nativeEnabled = Boolean.parseBoolean(System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true"));
+		this.nativeEnabled = nativeEnabled;
+		this.forceRootGeneric = Boolean.getBoolean("rdf4j.lmdb.nativeQueryEngine.forceRootGeneric");
 		this.evaluationStatistics = evaluationStatistics;
 		this.stableOrderPlanner = new LmdbStableOrderPlanner(tripleSource);
+		this.tripleSourceArg = tripleSource;
+		this.datasetArg = dataset;
+		this.serviceResolverArg = serviceResolver;
+		this.iterationCacheSyncThresholdArg = iterationCacheSyncTreshold;
+		this.trackResultSizeArg = trackResultSize;
+		this.trackResultSizeShadow = trackResultSize;
+	}
+
+	/**
+	 * The claim-suppressed sibling of this strategy (M-A1a): the same class with the native compiler disabled, sharing
+	 * every configuration input, so generic operators' lazy runtime {@code precompile} callbacks land on a strategy
+	 * that can never re-enter native claiming — byte-identical semantics to the differential oracle arm
+	 * ({@code rdf4j.lmdb.nativeQueryEngine.enabled=false}), including the lmdb-specific partitioned-DISTINCT rewrites
+	 * that are active on that arm too. The strategy object holds no per-evaluation state, so one shared view per
+	 * strategy is thread-safe.
+	 */
+	LmdbNativeEvaluationStrategy genericOnlyView() {
+		LmdbNativeEvaluationStrategy view = genericOnlyView;
+		if (view == null) {
+			synchronized (this) {
+				view = genericOnlyView;
+				if (view == null) {
+					view = new LmdbNativeEvaluationStrategy(tripleSourceArg, datasetArg, serviceResolverArg,
+							iterationCacheSyncThresholdArg, evaluationStatistics, trackResultSizeArg, false);
+					view.setCollectionFactory(getCollectionFactory());
+					view.setTrackTime(trackTimeShadow);
+					view.setTrackResultSize(trackResultSizeShadow);
+					genericOnlyView = view;
+				}
+			}
+		}
+		return view;
+	}
+
+	@Override
+	public void setTrackTime(boolean trackTime) {
+		super.setTrackTime(trackTime);
+		this.trackTimeShadow = trackTime;
+		LmdbNativeEvaluationStrategy view = genericOnlyView;
+		if (view != null) {
+			view.setTrackTime(trackTime);
+		}
+	}
+
+	@Override
+	public void setTrackResultSize(boolean trackResultSize) {
+		super.setTrackResultSize(trackResultSize);
+		this.trackResultSizeShadow = trackResultSize;
+		LmdbNativeEvaluationStrategy view = genericOnlyView;
+		if (view != null) {
+			view.setTrackResultSize(trackResultSize);
+		}
+	}
+
+	@Override
+	public void setCollectionFactory(Supplier<CollectionFactory> collectionFactory) {
+		super.setCollectionFactory(collectionFactory);
+		LmdbNativeEvaluationStrategy view = genericOnlyView;
+		if (view != null) {
+			view.setCollectionFactory(collectionFactory);
+		}
 	}
 
 	@Override
@@ -82,15 +163,59 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
-		if (nativeEnabled && nativeSource != null && nativeSource.hasStatementsInSource()) {
-
-			QueryEvaluationStep aggregateStep = LmdbNativeAggregateCompiler.tryCompile(expr, context, this,
-					nativeSource);
-			if (aggregateStep != null) {
-				return aggregateStep;
+		if (expr instanceof NativeRootPipeline.PrecompiledStub) {
+			// a rebuilt pipeline chain's inner source (M-A2): compilation already happened
+			return ((NativeRootPipeline.PrecompiledStub) expr).step();
+		}
+		if (nativeEnabled && nativeSource != null) {
+			if (expr instanceof QueryRoot) {
+				return compileHostedPlan(expr, context);
+			}
+			if (nativeSource.hasStatementsInSource()) {
+				QueryEvaluationStep aggregateStep = LmdbNativeAggregateCompiler.tryCompile(expr, context, this,
+						nativeSource);
+				if (aggregateStep != null) {
+					return aggregateStep;
+				}
 			}
 		}
 		return super.precompile(expr, context);
+	}
+
+	/**
+	 * Root host (M-A1a): every {@code QueryRoot} this strategy sees returns a classified plan — a native compile when
+	 * the root shape is supported, otherwise a {@link GenericRootPlan} hosting generic execution. Note that
+	 * {@code hasStatementsInSource()} is a dataset-branch emptiness proof (false only for sources that provably cannot
+	 * hold statements, e.g. an inferred-only branch without an inferencer), not a statement count: an ordinary empty
+	 * store still answers true and native proposals still compile there (a VALUES-only query becomes a native
+	 * ValuesPlan on an empty store). The gate keeps only the native proposals away from provably empty sources; the
+	 * host itself always runs, so no root query is ever silently hard-declined. In default mode the hosted generic step
+	 * is today's generic compilation, whose per-child recursion re-enters this strategy's {@code precompile} and keeps
+	 * claiming interior native fragments exactly as before.
+	 */
+	private QueryEvaluationStep compileHostedPlan(TupleExpr expr, QueryEvaluationContext context) {
+		LmdbNativeAggregateCompiler.CompileOutcome outcome;
+		if (forceRootGeneric) {
+			outcome = LmdbNativeAggregateCompiler.CompileOutcome.unsupported("forceRootGeneric");
+		} else if (!nativeSource.hasStatementsInSource()) {
+			outcome = LmdbNativeAggregateCompiler.CompileOutcome.unsupported("known-empty-source");
+		} else {
+			outcome = LmdbNativeAggregateCompiler.compileRoot(expr, context, this, nativeSource);
+		}
+		if (outcome.isSupported()) {
+			return outcome.step();
+		}
+		// forceRootGeneric compiles through the claim-suppressed view so every lazy runtime precompile callback from
+		// generic operators lands on it; default mode keeps today's generic compilation, whose recursion re-enters
+		// this strategy and preserves the interior native fragment claims.
+		LmdbNativeEvaluationStrategy hostCompiler = forceRootGeneric ? genericOnlyView() : this;
+		GenericRootPlan hosted = new GenericRootPlan(hostCompiler.genericPrecompile(expr, context),
+				outcome.unsupportedReason());
+		LmdbNativeAggregateCompiler.HOSTED_GENERIC.incrementAndGet();
+		if (LmdbNativeExplain.recordsExecutionPaths(expr)) {
+			LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_GENERIC_HOSTED, hosted.nativePhysicalPlan());
+		}
+		return hosted;
 	}
 
 	@Override

@@ -551,13 +551,15 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		try {
 			System.setProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, "true");
-			NativeRowsIteration enabled = new NativeRowsIteration(step, EmptyBindingSet.getInstance());
+			NativeRowsIteration enabled = new NativeRowsIteration(step, step.evaluationSource(),
+					EmptyBindingSet.getInstance());
 			assertThat(initialize.invoke(enabled)).isEqualTo(true);
 			assertThat(enabled.cursor).isInstanceOf(AdaptiveOwningCursor.class);
 			enabled.close();
 
 			System.setProperty(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, "false");
-			NativeRowsIteration disabled = new NativeRowsIteration(step(admittedPlan(), layout),
+			NativeRowsStep disabledStep = step(admittedPlan(), layout);
+			NativeRowsIteration disabled = new NativeRowsIteration(disabledStep, disabledStep.evaluationSource(),
 					EmptyBindingSet.getInstance());
 			assertThat(initialize.invoke(disabled)).isEqualTo(true);
 			assertThat(disabled.cursor).isNotInstanceOf(AdaptiveOwningCursor.class);

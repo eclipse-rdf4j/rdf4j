@@ -38,7 +38,8 @@ final class EncounterOrderFallback extends RuntimeException {
 
 	enum Reason {
 		FLOATING_SUM_OR_AVG,
-		DISTINCT_TERM_EXTREMA_TIE
+		DISTINCT_TERM_EXTREMA_TIE,
+		GROUP_CONCAT_ORDER
 	}
 
 	final Reason reason;
@@ -54,6 +55,11 @@ final class EncounterOrderFallback extends RuntimeException {
 
 	static EncounterOrderFallback distinctTermExtremaTie() {
 		return new EncounterOrderFallback(Reason.DISTINCT_TERM_EXTREMA_TIE);
+	}
+
+	/** GROUP_CONCAT's declared order policy is input encounter order: order-changing strategies must replay. */
+	static EncounterOrderFallback groupConcatOrder() {
+		return new EncounterOrderFallback(Reason.GROUP_CONCAT_ORDER);
 	}
 
 	static EncounterOrderFallback find(Throwable problem) {
@@ -110,7 +116,19 @@ enum AggKind {
 	SUM,
 	MIN,
 	MAX,
-	AVG
+	AVG,
+	/**
+	 * SAMPLE (M-F1): any value from the group's eligible inputs. Semantically nondeterministic — the native engine
+	 * keeps the first materialized value per group, which trivially satisfies the semantic predicate (value ∈ group
+	 * values; unbound on empty/error-only input). Serial-path only: parallel merging and kernel lowering decline.
+	 */
+	SAMPLE,
+	/**
+	 * GROUP_CONCAT (M-F3): {@code v.stringValue()} joined by the separator in input encounter order (the declared order
+	 * policy — order-changing strategies raise {@link EncounterOrderFallback}); unbound inputs are ignored; empty input
+	 * concatenates to the empty string literal, matching the generic collector. Serial-path only.
+	 */
+	GROUP_CONCAT
 }
 
 @Experimental
@@ -120,17 +138,35 @@ final class AggregateSpec {
 	final long constant;
 	final boolean distinct;
 	final AggKind kind;
+	/** GROUP_CONCAT separator (M-F3); null for every other kind. */
+	final String separator;
+	/**
+	 * COUNT(DISTINCT *) (M-F3): slot indexes of every visible binding name of the group's argument, in a fixed order;
+	 * null for every other aggregate shape. Bound status is part of the hashed row (UNKNOWN = binding absent).
+	 */
+	final int[] rowSlots;
 
 	AggregateSpec(String name, int slot, long constant, boolean distinct, AggKind kind) {
+		this(name, slot, constant, distinct, kind, null, null);
+	}
+
+	private AggregateSpec(String name, int slot, long constant, boolean distinct, AggKind kind, String separator,
+			int[] rowSlots) {
 		this.name = name;
 		this.slot = slot;
 		this.constant = constant;
 		this.distinct = distinct;
 		this.kind = kind;
+		this.separator = separator;
+		this.rowSlots = rowSlots;
 	}
 
 	static AggregateSpec slot(String name, int slot, boolean distinct, AggKind kind) {
 		return new AggregateSpec(name, slot, UNKNOWN, distinct, kind);
+	}
+
+	static AggregateSpec groupConcat(String name, int slot, boolean distinct, String separator) {
+		return new AggregateSpec(name, slot, UNKNOWN, distinct, AggKind.GROUP_CONCAT, separator, null);
 	}
 
 	static AggregateSpec constant(String name, long constant, boolean distinct) {
@@ -139,10 +175,19 @@ final class AggregateSpec {
 
 	/**
 	 * COUNT(*): every solution row contributes exactly once, so the spec only needs a constant that is never UNKNOWN.
-	 * Must not be used with DISTINCT — COUNT(DISTINCT *) deduplicates full rows, which this state cannot represent.
+	 * Must not be used with DISTINCT — COUNT(DISTINCT *) deduplicates full rows through {@link #starDistinct}.
 	 */
 	static AggregateSpec star(String name) {
 		return new AggregateSpec(name, -1, NULL_CONTEXT_ID, false, AggKind.COUNT);
+	}
+
+	/**
+	 * COUNT(DISTINCT *) (M-F3): counts distinct full visible solution mappings — names, bound status and term identity
+	 * over {@code rowSlots}. A fully-unbound row is the empty solution, which the generic WildCardCountAggregate skips,
+	 * so it is not counted here either. Serial-path only: every specialized strategy declines this shape.
+	 */
+	static AggregateSpec starDistinct(String name, int[] rowSlots) {
+		return new AggregateSpec(name, -1, NULL_CONTEXT_ID, true, AggKind.COUNT, null, rowSlots);
 	}
 
 	long value(RowState row) {
@@ -156,6 +201,16 @@ final class AggregateSpec {
 			}
 		}
 		return true;
+	}
+
+	/** True when any spec is the COUNT(DISTINCT *) full-row shape, which only the serial group step can answer. */
+	static boolean anyFullRowDistinct(AggregateSpec[] specs) {
+		for (AggregateSpec spec : specs) {
+			if (spec.rowSlots != null) {
+				return true;
+			}
+		}
+		return false;
 	}
 }
 
@@ -242,6 +297,10 @@ final class AggState {
 	long[] extremeIds;
 	/** SUM/AVG poisoned by a type error: the aggregate binding is omitted. */
 	boolean[] typeErrors;
+	/** GROUP_CONCAT running concatenations; null per spec until its first value. */
+	StringBuilder[] concats;
+	/** COUNT(DISTINCT *) full-row membership per spec; null unless {@link AggregateSpec#rowSlots} is set. */
+	NativeDistinctTracker[] rowDistinct;
 
 	AggState(AggregateSpec[] specs, int expectedDistinctSize, AggContext ctx,
 			AggregateDistinctChannels distinctChannels) {
@@ -261,6 +320,7 @@ final class AggState {
 			}
 		}
 		boolean anyValueTyped = false;
+		boolean anyConcat = false;
 		for (int i = 0; i < specs.length; i++) {
 			AggKind kind = specs[i].kind;
 			int channel = distinctChannels.specChannels[i];
@@ -270,6 +330,18 @@ final class AggState {
 			if (kind != AggKind.COUNT) {
 				anyValueTyped = true;
 			}
+			if (kind == AggKind.GROUP_CONCAT) {
+				anyConcat = true;
+			}
+			if (specs[i].rowSlots != null) {
+				if (rowDistinct == null) {
+					rowDistinct = new NativeDistinctTracker[specs.length];
+				}
+				rowDistinct[i] = new NativeDistinctTracker(specs[i].rowSlots);
+			}
+		}
+		if (anyConcat) {
+			this.concats = new StringBuilder[specs.length];
 		}
 		if (anyValueTyped) {
 			this.sums = new Literal[specs.length];
@@ -306,6 +378,14 @@ final class AggState {
 			};
 		}
 		for (int i = 0; i < specs.length; i++) {
+			if (specs[i].rowSlots != null) {
+				// COUNT(DISTINCT *): dedup by the full visible row; the empty solution is not a countable row
+				// (matching the generic WildCardCountAggregate's !s.isEmpty() guard)
+				if (!fullyUnbound(row, specs[i].rowSlots) && rowDistinct[i].add(row.slots)) {
+					counts[i]++;
+				}
+				continue;
+			}
 			long value = specs[i].value(row);
 			if (value == UNKNOWN) {
 				continue;
@@ -334,8 +414,40 @@ final class AggState {
 			case MAX:
 				addExtreme(i, value, false);
 				break;
+			case SAMPLE:
+				if (extremes[i] == null) {
+					// first eligible value of the group wins; materialization cost is once per group
+					extremes[i] = ctx.value(value);
+				}
+				break;
+			case GROUP_CONCAT: {
+				if (ctx.encounterOrderChanging) {
+					throw EncounterOrderFallback.groupConcatOrder();
+				}
+				Value concatValue = ctx.value(value);
+				if (concatValue != null) {
+					if (concats[i] == null) {
+						concats[i] = new StringBuilder();
+					} else {
+						concats[i].append(specs[i].separator);
+					}
+					concats[i].append(concatValue.stringValue());
+				}
+				break;
+			}
 			}
 		}
+	}
+
+	/** True when every visible slot of the row is unbound — the empty solution (NULL_CONTEXT_ID counts as unbound). */
+	private static boolean fullyUnbound(RowState row, int[] rowSlots) {
+		for (int slot : rowSlots) {
+			long id = row.slots[slot];
+			if (id != UNKNOWN && id != NULL_CONTEXT_ID) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	void addSum(int i, long id) {
@@ -441,6 +553,15 @@ final class AggState {
 		case MAX:
 			addExtreme(i, id, false);
 			break;
+		case SAMPLE:
+			// any eligible value is a valid sample; weight is irrelevant
+			if (extremes[i] == null) {
+				extremes[i] = ctx.value(id);
+			}
+			break;
+		case GROUP_CONCAT:
+			// defense in depth: the weighted paths must have declined at admission — never drop inputs silently
+			throw EncounterOrderFallback.groupConcatOrder();
 		}
 	}
 
@@ -735,6 +856,27 @@ final class LongHashSet {
 			}
 			index = (index + 1) & mask;
 		}
+	}
+
+	/** Snapshot of the members, in table order (M-F4 general path BFS iteration). */
+	long[] values() {
+		long[] result = new long[size];
+		int i = 0;
+		if (containsEmptySentinel) {
+			result[i++] = EMPTY;
+		}
+		for (long value : table) {
+			if (value != EMPTY) {
+				result[i++] = value;
+			}
+		}
+		return result;
+	}
+
+	void clear() {
+		Arrays.fill(table, EMPTY);
+		size = 0;
+		containsEmptySentinel = false;
 	}
 
 	boolean contains(long value) {

@@ -47,7 +47,7 @@ final class LmdbNativeAdaptiveCostModel {
 	/** Returns a fresh configuration view backed by the JVM model and the source's store-local corrections. */
 	static LmdbNativeAdaptiveCostModel forSource(NativeLmdbQuerySource source) {
 		Objects.requireNonNull(source, "source");
-		Object identity = source.idSpace();
+		Object identity = source.costModelIdentity();
 		if (identity == null) {
 			identity = source;
 		}

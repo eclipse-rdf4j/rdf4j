@@ -299,7 +299,12 @@ final class ExtensionCursor implements RowCursor {
 			boolean ok = true;
 			for (CopyBinding copy : copies) {
 				long id = copy.value(row);
-				if (id != UNKNOWN && !row.bind(copy.targetSlot, id)) {
+				if (id == UNKNOWN) {
+					continue;
+				}
+				boolean bound = copy.termChecked ? row.bindOrCheckTerm(copy.targetSlot, id)
+						: row.bind(copy.targetSlot, id);
+				if (!bound) {
 					ok = false;
 					break;
 				}
@@ -324,6 +329,60 @@ final class ExtensionCursor implements RowCursor {
 			row.rollback(activeMark);
 			activeMark = -1;
 		}
+	}
+}
+
+/**
+ * Interior DISTINCT over a fixed slot projection (M-F1): serves the parser's zero-or-one path wrapper
+ * {@code Distinct(Projection(Union(ZeroLengthPath, step)))}. Deduplicates on the projected slots' ids through
+ * {@link NativeDistinctTracker}, matching the engine's root DISTINCT semantics.
+ */
+@Experimental
+final class RowDistinctPlan implements SlotPlan {
+	final SlotPlan arg;
+	final int[] slots;
+
+	RowDistinctPlan(SlotPlan arg, int[] slots) {
+		this.arg = arg;
+		this.slots = slots;
+	}
+
+	@Override
+	public RowCursor open(RowState row) throws IOException {
+		RowCursor inner = arg.open(row);
+		NativeDistinctTracker tracker = new NativeDistinctTracker(slots);
+		return new RowCursor() {
+			@Override
+			public boolean next() throws IOException {
+				while (inner.next()) {
+					if (tracker.add(row.slots)) {
+						return true;
+					}
+				}
+				return false;
+			}
+
+			@Override
+			public void close() {
+				inner.close();
+			}
+		};
+	}
+
+	@Override
+	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		return arg.estimateWork(row, boundMask);
+	}
+
+	@Override
+	public double estimateRows(RowState row, long boundMask) {
+		// dedup only removes rows; the argument's estimate is a valid upper bound
+		return arg.estimateRows(row, boundMask);
+	}
+
+	@Override
+	public long producedMask() {
+		return arg.producedMask();
 	}
 }
 
@@ -559,7 +618,8 @@ final class MinusCursor implements RowCursor {
 					boolean compatible = true;
 					for (int i = 0; i < sharedSlots.length; i++) {
 						int slot = sharedSlots[i];
-						if ((overlap >>> slot & 1L) != 0L && row.slots[slot] != leftSharedValues[i]) {
+						if ((overlap >>> slot & 1L) != 0L && row.slots[slot] != leftSharedValues[i]
+								&& !sameTermByAuthority(row.slots[slot], leftSharedValues[i])) {
 							compatible = false;
 							break;
 						}
@@ -573,6 +633,18 @@ final class MinusCursor implements RowCursor {
 		} finally {
 			restoreSlots(clearedCount);
 		}
+	}
+
+	/**
+	 * A raw id mismatch between an island-written id and a left value is not proof of a term mismatch: one side may
+	 * hold an evaluation-scoped id for the same RDF term (M-A1b). Store-only plans keep the exact raw comparison.
+	 */
+	private boolean sameTermByAuthority(long leftId, long rightId) {
+		if (row.source instanceof SyntheticValueSource) {
+			LmdbNativeTermAuthority authority = ((SyntheticValueSource) row.source).authority();
+			return authority != null && authority.sameRdfTerm(leftId, rightId);
+		}
+		return false;
 	}
 
 	int clearSlots(long clearMask) {

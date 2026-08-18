@@ -1666,6 +1666,13 @@ final class LmdbNativeKernelLowering {
 					reason = reasonPrefix + "bind-target-bound";
 					return false;
 				}
+				if (copy.computedValue != null || copy.termChecked) {
+					// interned computed values (group keys, sort keys) belong to the serial value source, and
+					// term-checked VALUES guards need the authority-backed bindOrCheckTerm; lowering either as its
+					// sourceSlot/constant shape would silently change semantics
+					reason = reasonPrefix + "bind-computed-value";
+					return false;
+				}
 				if (copy.computed != null) {
 					if (!lowerComputedCopy(copy)) {
 						return false;
@@ -3580,7 +3587,7 @@ final class LmdbNativeKernelLowering {
 		private boolean lowerWitnessExtension(ExtensionPlan extension, WitnessColumns witnessCols,
 				List<Node> pipeline) {
 			for (CopyBinding copy : extension.copies) {
-				if (copy.computed != null) {
+				if (copy.computed != null || copy.computedValue != null || copy.termChecked) {
 					reason = "agg:witness-bind-computed";
 					return false;
 				}
@@ -4042,6 +4049,11 @@ final class LmdbNativeKernelLowering {
 			for (CopyBinding copy : extension.copies) {
 				if (slotOperand(copy.targetSlot) != null) {
 					reason = "agg:witness-bind-correlated";
+					return false;
+				}
+				if (copy.computedValue != null || copy.termChecked) {
+					// an interned computed value is never inert: its binding participates in compatibility
+					reason = "agg:witness-bind-computed-value";
 					return false;
 				}
 			}

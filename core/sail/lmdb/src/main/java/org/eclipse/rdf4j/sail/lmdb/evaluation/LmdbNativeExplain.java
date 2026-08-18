@@ -30,6 +30,10 @@ final class LmdbNativeExplain {
 	static final String KIND_AGGREGATE = "aggregate";
 	static final String KIND_ROW = "row";
 	static final String KIND_BGP = "bgp";
+	/** Root queries the native compiler declined but the root host executes as a classified generic plan. */
+	static final String KIND_GENERIC_HOSTED = "genericHostedRoot";
+	/** Native root plans containing at least one interior generic island (M-A1b). */
+	static final String KIND_HYBRID = "hybridRoot";
 	static final String PHYSICAL_PLAN = "nativePhysicalPlan";
 	static final String EXECUTION_PATH = TelemetryMetricNames.NATIVE_EXECUTION_PATH;
 	static final String STRATEGY_DECLINES = "nativeStrategyDeclines";
@@ -333,6 +337,14 @@ final class LmdbNativeExplain {
 		}
 		if (plan instanceof PathPlan) {
 			return "Path";
+		}
+		if (plan instanceof GenericEvalPlan island) {
+			return "GenericEvalPlan(node=" + island.nodeName + ", outSlots="
+					+ describeSlots(island.outSlots, slotNames) + ")";
+		}
+		if (plan instanceof DrainGuardPlan guard) {
+			return "DrainGuard(delegate=" + describe(guard.delegate, slotNames, boundMask) + ", drained="
+					+ describe(guard.drained, slotNames, boundMask) + ")";
 		}
 		return plan.getClass().getSimpleName();
 	}

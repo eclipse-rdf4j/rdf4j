@@ -500,13 +500,28 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 				if (id == UNKNOWN || !valueProbeSafeId(id, value)) {
 					// allocated by collectSyntheticValues before compilation started; only variables it
 					// marked may carry synthetic ids (others must keep raw-id semantics and fall back)
-					Long synthetic = syntheticVarNames.contains(binding.getName())
-							? syntheticIdsByValue.get(value)
-							: null;
-					if (synthetic == null) {
+					long synthetic = syntheticVarNames.contains(binding.getName())
+							? planValueCatalog.idOf(value)
+							: UNKNOWN;
+					if (synthetic != UNKNOWN) {
+						id = synthetic;
+					} else if (valueGuardsSupported && bindingSets.size() == 1) {
+						// M-F1 value-guarded fallback: drop the unsafe cell from the id row and record a
+						// root-level term-checked constant bind instead. Patterns below enumerate the variable
+						// freely; the guard binds the constant when nothing bound the slot and term-checks
+						// (through the authority) when something did — exact for one-term-many-ids constants.
+						// Multi-row VALUES would need per-row guard disjunctions and keeps declining.
+						planValueCatalog.internConstant(value);
+						long guardId = planValueCatalog.idOf(value);
+						if (guardId == UNKNOWN) {
+							return null;
+						}
+						pendingValueGuards.add(new PendingValueGuard(binding.getName(),
+								slot(binding.getName()), guardId));
+						continue;
+					} else {
 						return null;
 					}
-					id = synthetic;
 				}
 				rowSlots[size] = slot(binding.getName());
 				rowValues[size] = id;

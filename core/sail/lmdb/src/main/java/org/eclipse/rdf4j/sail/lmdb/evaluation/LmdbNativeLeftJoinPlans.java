@@ -109,6 +109,9 @@ final class LeftJoinCursor implements RowCursor {
 	boolean nullExtendedPending;
 	boolean rightCursorFromPayload;
 	boolean rightProbeCacheBacked;
+	/** M-F1: path-under-OPTIONAL memo — same lifecycle and eligibility as JoinCursor's. */
+	PathResultMemo pathMemo;
+	boolean pathMemoInitialized;
 
 	LeftJoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask,
 			double expectedProbes, double perProbeRows, double sweepEstimate) {
@@ -240,6 +243,19 @@ final class LeftJoinCursor implements RowCursor {
 			patternBatchPosition = 0;
 			patternScalarRows = 0;
 			return null;
+		}
+		if (right instanceof PathPlan) {
+			// M-F1: OPTIONAL keeps the PathResultMemo — repeated driving rows replay the completed reachable set
+			// instead of re-running the traversal, exactly like the inner-join cursor (eligibility mirrors
+			// JoinCursor.openRight: only when the replay tier has not claimed the right side)
+			if (rightProbe == null) {
+				rightProbe = row.source.newProbe();
+			}
+			if (!pathMemoInitialized) {
+				pathMemo = replaySlots == null ? PathResultMemo.tryCreate((PathPlan) right, row) : null;
+				pathMemoInitialized = true;
+			}
+			return ((PathPlan) right).open(row, rightProbe, pathMemo);
 		}
 		return right.open(row);
 	}
@@ -418,6 +434,10 @@ final class LeftJoinCursor implements RowCursor {
 	public void close() {
 		releaseReplay();
 		closeRight();
+		if (pathMemo != null) {
+			pathMemo.close();
+			pathMemo = null;
+		}
 		if (rightProbe != null) {
 			rightProbe.close();
 			rightProbe = null;

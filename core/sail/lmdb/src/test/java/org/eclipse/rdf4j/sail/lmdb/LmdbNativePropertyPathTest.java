@@ -321,6 +321,35 @@ public class LmdbNativePropertyPathTest {
 				.contains("nativePathMemoReleasedValuesActual=7");
 	}
 
+	/**
+	 * M-F1: a path on an OPTIONAL right side keeps the PathResultMemo — repeated driving rows run one traversal. The
+	 * kernel-interpreter rung is pinned off (like codegen at class level): the memo under test lives on the interpreted
+	 * LeftJoinCursor route, which the kernel rung would otherwise claim wholesale.
+	 */
+	@Test
+	public void repeatedDrivingStartUnderOptionalRunsOneTraversal() {
+		addRepeatedStartDrivers(3);
+		String query = q("SELECT ?driver ?reachable WHERE { "
+				+ "?driver ex:start ?start . OPTIONAL { ?start ex:p+ ?reachable } }");
+
+		// pin the seam under test: the kernel-interpreter rung would claim the whole plan, and the LeftJoin
+		// right-memo probe would intercept the repeat opens before the path memo sees them
+		withProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false",
+				() -> withProperty("rdf4j.lmdb.leftjoin.memo.enabled", "false", () -> {
+					List<String> fresh = withProperty(PATH_MEMO_ENABLED, "false", () -> rowSequence(query));
+					List<String> memoized = withProperty(PATH_MEMO_ENABLED, "true", () -> rowSequence(query));
+					assertThat(memoized).containsExactlyElementsOf(fresh);
+
+					String telemetry = withProperty(PATH_MEMO_ENABLED, "true", () -> telemetry(query));
+					assertThat(telemetry)
+							.contains("nativePathTraversalsActual=1")
+							.contains("nativePathMemoHitsActual=2")
+							.contains("nativePathMemoMissesActual=1");
+					return null;
+				}));
+		assertSameAsGeneric(query);
+	}
+
 	@Test
 	public void repeatedDrivingTargetRunsOneBackwardTraversal() {
 		addRepeatedStartDrivers(3);

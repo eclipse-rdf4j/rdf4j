@@ -253,7 +253,12 @@ final class AggregateDistinctChannels {
 		for (int i = 0; i < specs.length; i++) {
 			AggregateSpec spec = specs[i];
 			if (!spec.distinct || (spec.kind != AggKind.COUNT && spec.kind != AggKind.SUM
-					&& spec.kind != AggKind.AVG)) {
+					&& spec.kind != AggKind.AVG && spec.kind != AggKind.GROUP_CONCAT)) {
+				continue;
+			}
+			if (spec.rowSlots != null) {
+				// COUNT(DISTINCT *) dedups full rows through AggState's per-spec tracker, never through an id channel
+				// (a (slot=-1, NULL_CONTEXT_ID) channel would collapse every row into one)
 				continue;
 			}
 			DistinctArgument argument = new DistinctArgument(spec.slot, spec.constant);

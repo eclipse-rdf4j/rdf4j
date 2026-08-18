@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -57,8 +58,10 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
@@ -76,6 +79,24 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (groupStep == null) {
 			return null;
 		}
+		if (rootEvaluationScoped) {
+			GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition());
+			if (!descriptor.shareableAcrossEvaluations()) {
+				// A HAVING condition carrying query-scope state (e.g. NOW) compiles fresh per evaluate() — for a
+				// root step one evaluate() is one query evaluation, so a retained compiled step observes a fresh
+				// query scope each time. (Known narrowing, see the M-A1a ExecPlan: this scope is not yet unified
+				// with the group step's interior bridges; the M-A1b host-owned context unifies them.)
+				QueryEvaluationContext compileContext = context;
+				LmdbNativeEvaluationStrategy compilingStrategy = strategy;
+				return bindings -> {
+					Predicate<BindingSet> predicate = compilingStrategy
+							.precompile((ValueExpr) descriptor.pinnedExpr(),
+									new EvaluationScopedQueryEvaluationContext(compileContext))
+							.asPredicate();
+					return new FilteringIteration(groupStep.evaluate(bindings), predicate);
+				};
+			}
+		}
 		Predicate<BindingSet> predicate = strategy.precompile(filter.getCondition(), context).asPredicate();
 		return bindings -> new FilteringIteration(groupStep.evaluate(bindings), predicate);
 	}
@@ -86,10 +107,14 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 
 	QueryEvaluationStep compileGroup(Group group, ValueExpr havingCondition, TupleExpr originalExpr) {
 		if (containsUnsafeNestedVariableScopeChange(group.getArg())) {
-			return null;
+			if (!islandsEnabled) {
+				return null;
+			}
+			// M-A3 decline conversion: island every scope-change subtree so the generic engine owns all scoping
+			islandScopeChanges = true;
 		}
 		this.requiredAggregateNames = aggregateRequiredNames(group);
-		AggregateSpec[] aggregates = compileAggregates(group.getGroupElements());
+		AggregateSpec[] aggregates = compileAggregates(group);
 		if (aggregates == null) {
 			return null;
 		}
@@ -99,7 +124,15 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 
 		Set<String> optionalOnlyNames = wellDesignedOptionalOnlyNames(group.getArg());
 		if (optionalOnlyNames == null) {
-			return null;
+			if (!islandsEnabled) {
+				return null;
+			}
+			// M-A3 decline conversion: non-well-designed LeftJoins island; the rest of the tree stays native
+			forcedIslandLeftJoins = nonWellDesignedLeftJoins(group.getArg());
+			optionalOnlyNames = wellDesignedOptionalOnlyNames(group.getArg(), forcedIslandLeftJoins);
+			if (optionalOnlyNames == null) {
+				return null;
+			}
 		}
 		int[] groupSlots = compileGroupSlots(group.getGroupBindingNames());
 		boolean duplicateInsensitive = !duplicatesMatter(aggregates, havingCondition);
@@ -108,9 +141,24 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		// source), so the flag is scoped to this compile.
 		boolean previousAllowComputedValueInterning = allowComputedValueInterning;
 		allowComputedValueInterning = true;
+		valueGuardsSupported = true;
 		SlotPlan arg;
 		try {
 			arg = compileTuple(group.getArg(), duplicateInsensitive);
+			if (arg != null && !pendingValueGuards.isEmpty()) {
+				// M-F1 value-guarded VALUES: sound only when nothing between the VALUES and the root observes the
+				// guarded variable, and the guarded ids never feed grouping/aggregation (id-keyed dedup would
+				// split term-equal spellings into separate groups)
+				if (!valueGuardsSafeFor(group.getArg())
+						|| !java.util.Collections.disjoint(valueGuardedNames(), requiredAggregateNames)) {
+					return null;
+				}
+				arg = applyValueGuards(arg);
+			}
+			if (arg != null && !pendingAggregateExpressions.isEmpty()) {
+				// M-F3: aggregate-argument expressions evaluate once per input row into their hidden slots
+				arg = applyAggregateExpressionCopies(arg);
+			}
 		} finally {
 			allowComputedValueInterning = previousAllowComputedValueInterning;
 		}
@@ -129,10 +177,13 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		boolean strictCompare = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
 		// A computed, runtime-interned group key requires the interning SyntheticValueSource even when there are no
-		// plan-time synthetic constants, so the serial group step can materialize the key back at output.
-		NativeLmdbQuerySource stepSource = (syntheticValuesById.isEmpty() && !sawComputedValueCopy) ? source
-				: new SyntheticValueSource(source, syntheticValuesById, syntheticIdsByValue);
+		// plan-time synthetic constants, so the serial group step can materialize the key back at output. A
+		// per-evaluation generic bridge (requiresExecutionContext) needs the carrier for its execution context too.
+		NativeLmdbQuerySource stepSource = (planValueCatalog.isEmpty() && !sawComputedValueCopy
+				&& !requiresExecutionContext) ? source
+						: new SyntheticValueSource(source, planValueCatalog.build());
 		if (slotNames.size() > MAX_NATIVE_SLOTS) {
+			slotBudgetExceeded = true;
 			return null;
 		}
 		// The specialized strategies (prefix-run, exists-intersection, type-matrix) group by raw longs and materialize
@@ -144,22 +195,27 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		// every masked row (ANALYTICS q10, 2026-08-16: 80 ms vs 2016 ms over 13.8M rows). The intersection
 		// recognizer is strictly narrower — COUNT(DISTINCT ?x) over one pattern filtered by a single-pattern
 		// EXISTS correlated only on ?x — so preferring it can never capture a query it does not answer outright.
-		LmdbNativeExistsIntersection existsIntersection = sawComputedValueCopy ? null
+		// COUNT(DISTINCT *) full-row hashing is serial-only exactly like computed-interned keys: the specialized
+		// strategies group by raw longs / weighted counts and cannot represent full-row distinctness.
+		boolean serialOnlyAggregates = sawComputedValueCopy || AggregateSpec.anyFullRowDistinct(aggregates);
+		LmdbNativeExistsIntersection existsIntersection = serialOnlyAggregates ? null
 				: tryExistsIntersectionPlan(stepSource, arg, groupSlots, aggregates);
-		PrefixRunGroupCandidate prefixRun = (sawComputedValueCopy || existsIntersection != null) ? null
+		PrefixRunGroupCandidate prefixRun = (serialOnlyAggregates || existsIntersection != null) ? null
 				: tryPrefixRunGroupPlan(stepSource, arg, groupSlots, aggregates, havingCondition);
-		if (!sawComputedValueCopy && prefixRun == null && existsIntersection == null && havingCondition == null) {
+		if (!serialOnlyAggregates && prefixRun == null && existsIntersection == null && havingCondition == null) {
 			QueryEvaluationStep typeMatrix = tryTypeMatrixStep(stepSource, arg, groupSlots, aggregates, originalExpr);
 			if (typeMatrix != null) {
 				return typeMatrix;
 			}
 		}
 		layout.freeze(slotNames);
-		return new NativeGroupStep(stepSource, arg, layout, groupSlots, aggregates, strictCompare, strategy,
-				originalExpr, context, optionalOnlyNames, prefixRun == null ? null : prefixRun.pattern,
+		NativeGroupStep groupStep = new NativeGroupStep(stepSource, arg, layout, groupSlots, aggregates, strictCompare,
+				strategy, originalExpr, context, optionalOnlyNames, prefixRun == null ? null : prefixRun.pattern,
 				prefixRun == null ? null : prefixRun.plan, prefixRun != null && prefixRun.countRunRows,
 				prefixRun != null && prefixRun.distinctRuns, prefixRun == null ? null : prefixRun.runFilter,
 				prefixRun == null ? 0L : prefixRun.minRunCount, existsIntersection, havingCondition);
+		groupStep.rootEvaluationScoped = rootEvaluationScoped;
+		return groupStep;
 	}
 
 	/**
@@ -227,15 +283,18 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		Projection projection = (Projection) node;
 		node = projection.getArg();
 		if (orderElems.isEmpty() && node instanceof Order) {
+			// M-F5: below the projection every order-key shape is admitted — plain variables map to their slots,
+			// expressions compile into hidden sort-key slots; uncompilable keys decline after compileTuple
 			orderElems = ((Order) node).getElements();
 			node = ((Order) node).getArg();
-			if (!supportedOrder(orderElems)) {
-				return null;
-			}
 		}
 		if (containsUnsafeNestedVariableScopeChange(node)) {
-			debugRowRootDecline("unsafe-nested-scope", node);
-			return null;
+			if (!islandsEnabled) {
+				debugRowRootDecline("unsafe-nested-scope", node);
+				return null;
+			}
+			// M-A3 decline conversion: island every scope-change subtree so the generic engine owns all scoping
+			islandScopeChanges = true;
 		}
 
 		List<ProjectionElem> elems = projection.getProjectionElemList().getElements();
@@ -250,34 +309,96 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		String[] orderSourceNames = new String[orderElems.size()];
 		for (int i = 0; i < orderElems.size(); i++) {
-			String name = ((Var) orderElems.get(i).getExpr()).getName();
-			if (orderAboveProjection) {
-				for (int projectionIndex = 0; projectionIndex < targetNames.length; projectionIndex++) {
-					if (targetNames[projectionIndex].equals(name)) {
-						name = sourceNames[projectionIndex];
-						break;
+			ValueExpr orderExpr = orderElems.get(i).getExpr();
+			if (orderExpr instanceof Var && !((Var) orderExpr).hasValue()) {
+				String name = ((Var) orderExpr).getName();
+				if (orderAboveProjection) {
+					for (int projectionIndex = 0; projectionIndex < targetNames.length; projectionIndex++) {
+						if (targetNames[projectionIndex].equals(name)) {
+							name = sourceNames[projectionIndex];
+							break;
+						}
 					}
 				}
+				orderSourceNames[i] = name;
+				required.add(name);
+			} else {
+				// M-F5 ORDER BY expressions: hidden computed sort-key slot, evaluated once per row after the inner
+				// tree (error ⇒ unbound key, which the ValueComparator orders first). Only reachable below the
+				// projection — supportedOrder still declines expression keys at the above-projection peel sites,
+				// where names would need alias remapping inside the expression.
+				String hidden = "#orderKey" + i;
+				pendingAggregateExpressions.add(new PendingAggregateExpression(slot(hidden), orderExpr));
+				orderSourceNames[i] = hidden;
+				required.addAll(VarNameCollector.process(orderExpr));
 			}
-			orderSourceNames[i] = name;
-			required.add(name);
+		}
+		if (required.size() > MAX_NATIVE_SLOTS) {
+			// M-A4 documented policy: genuinely wide outputs (more than 60 externally projected live variables)
+			// stay GENERIC_HOSTED — no demotion can relieve externally visible names. Census-tracked.
+			LmdbNativeAggregateCompiler.WIDE_OUTPUT_HOSTED.incrementAndGet();
+			debugRowRootDecline("wide-output", node);
+			return null;
 		}
 		this.requiredAggregateNames = required;
 
 		Set<String> optionalOnlyNames = wellDesignedOptionalOnlyNames(node);
 		if (optionalOnlyNames == null) {
-			return null;
+			if (!islandsEnabled) {
+				return null;
+			}
+			// M-A3 decline conversion: non-well-designed LeftJoins island; the rest of the tree stays native
+			forcedIslandLeftJoins = nonWellDesignedLeftJoins(node);
+			optionalOnlyNames = wellDesignedOptionalOnlyNames(node, forcedIslandLeftJoins);
+			if (optionalOnlyNames == null) {
+				return null;
+			}
 		}
 		collectSyntheticValues(node);
 		// under DISTINCT, dropping an OPTIONAL branch that binds nothing projected or ordered never changes
 		// the row set, so the slot compiler may prune such branches (same rule as duplicate-insensitive
 		// aggregation)
+		valueGuardsSupported = true;
 		SlotPlan arg = compileTuple(node, distinct);
 		if (arg == null) {
 			debugRowRootDecline("slot-plan", node);
 			return null;
 		}
+		if (arg instanceof GenericEvalPlan) {
+			// an all-island plan is strictly worse than the hosted generic root (same execution plus write-back
+			// overhead): decline so the root host returns GenericRootPlan (M-A1b plan-class rule)
+			debugRowRootDecline("pure-island", node);
+			return null;
+		}
+		if (!pendingValueGuards.isEmpty()) {
+			// M-F1 value-guarded VALUES: sound only when nothing below the root observes the guarded variable's
+			// bound-ness, and DISTINCT must not id-dedup a guarded projection (term-equal spellings carry
+			// different ids)
+			if (!valueGuardsSafeFor(node)
+					|| (distinct && !java.util.Collections.disjoint(valueGuardedNames(),
+							java.util.Arrays.asList(sourceNames)))) {
+				debugRowRootDecline("value-guard", node);
+				return null;
+			}
+			arg = applyValueGuards(arg);
+		}
+		if (!pendingAggregateExpressions.isEmpty()) {
+			// M-F5: computed sort keys evaluate once per row into their hidden slots; interned keys force the
+			// synthetic step source and the serial sort (the ordered kernel/factorized tiers skip such plans)
+			boolean previousAllowComputedValueInterning = allowComputedValueInterning;
+			allowComputedValueInterning = true;
+			try {
+				arg = applyAggregateExpressionCopies(arg);
+			} finally {
+				allowComputedValueInterning = previousAllowComputedValueInterning;
+			}
+			if (arg == null) {
+				debugRowRootDecline("order-key-expression", node);
+				return null;
+			}
+		}
 		if (slotNames.size() > MAX_NATIVE_SLOTS) {
+			slotBudgetExceeded = true;
 			return null;
 		}
 		int[] sourceSlots = new int[sourceNames.length];
@@ -291,8 +412,12 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			orderAscending[i] = orderElems.get(i).isAscending();
 		}
 		boolean strictCompare = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
-		NativeLmdbQuerySource stepSource = syntheticValuesById.isEmpty() ? source
-				: new SyntheticValueSource(source, syntheticValuesById, syntheticIdsByValue);
+		// requiresExecutionContext: a per-evaluation generic bridge needs the carrier for its execution context.
+		// sawComputedValueCopy: interned sort keys (M-F5) need the evaluation-scoped interner exactly like
+		// computed group keys on the aggregate path.
+		NativeLmdbQuerySource stepSource = (planValueCatalog.isEmpty() && !requiresExecutionContext
+				&& !sawComputedValueCopy) ? source
+						: new SyntheticValueSource(source, planValueCatalog.build());
 		PatternPlan prefixPattern = null;
 		LmdbPrefixRunPlan prefixRunPlan = null;
 		if ((distinct || reduced) && orderSlots.length == 0 && arg instanceof PatternPlan) {
@@ -303,9 +428,11 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 		}
 		layout.freeze(slotNames);
-		return new NativeRowsStep(stepSource, arg, layout, sourceSlots, targetNames, distinct, orderSlots,
-				orderAscending, offset, limit, strictCompare, strategy, expr, context, optionalOnlyNames, prefixPattern,
-				prefixRunPlan);
+		NativeRowsStep rowsStep = new NativeRowsStep(stepSource, arg, layout, sourceSlots, targetNames, distinct,
+				orderSlots, orderAscending, offset, limit, strictCompare, strategy, expr, context, optionalOnlyNames,
+				prefixPattern, prefixRunPlan);
+		rowsStep.rootEvaluationScoped = rootEvaluationScoped;
+		return rowsStep;
 	}
 
 	private static void debugRowRootDecline(String reason, TupleExpr node) {
@@ -328,6 +455,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 * the compiler that owns the actual semantics.
 	 */
 	QueryEvaluationStep compileBareRoot(TupleExpr expr) {
+		// bare fragments serve the generic evaluator's own recursion: a generic island inside a native fragment
+		// inside a generic host would add indirection without coverage, so islands are suppressed on this route
+		islandsSuppressed = true;
 		TupleExpr node = expr;
 		if (node instanceof QueryRoot) {
 			node = ((QueryRoot) node).getArg();
@@ -345,6 +475,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return null;
 		}
 		if (slotNames.size() > MAX_NATIVE_SLOTS) {
+			slotBudgetExceeded = true;
 			return null;
 		}
 		int[] sourceSlots = new int[slotNames.size()];
@@ -573,8 +704,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				return null;
 			}
 		}
-		NativeLmdbQuerySource stepSource = syntheticValuesById.isEmpty() ? source
-				: new SyntheticValueSource(source, syntheticValuesById, syntheticIdsByValue);
+		NativeLmdbQuerySource stepSource = planValueCatalog.isEmpty() ? source
+				: new SyntheticValueSource(source, planValueCatalog.build());
 		LmdbPrefixRunPlan plan = stepSource.prefixRunPlan(new int[] { innerField }, constants[0], constants[1],
 				constants[2], UNKNOWN);
 		if (plan == null) {
@@ -675,8 +806,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				return null;
 			}
 		}
-		NativeLmdbQuerySource stepSource = syntheticValuesById.isEmpty() ? source
-				: new SyntheticValueSource(source, syntheticValuesById, syntheticIdsByValue);
+		NativeLmdbQuerySource stepSource = planValueCatalog.isEmpty() ? source
+				: new SyntheticValueSource(source, planValueCatalog.build());
 		LmdbPrefixRunPlan plan = stepSource.prefixRunPlan(new int[] { literalField }, constants[0], constants[1],
 				constants[2], UNKNOWN);
 		if (plan == null) {
@@ -1160,7 +1291,72 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 	}
 
+	/**
+	 * The first facts-gated movement across an island barrier (M-A1c). An island in the middle of a left-deep join
+	 * chain — {@code Join(Join(a, island), b)} — pins the native operands {@code a} and {@code b} on opposite sides of
+	 * an opaque barrier, so they can never flatten into one reorderable MultiJoin bag (islands are deliberately not
+	 * flattenable). When the island's facts prove it observes none of the surrounding operands' names (independent —
+	 * its buffered once-per-evaluation result cannot change), is not mapping-parameterized, and is discardable (fewer
+	 * or later evaluations cannot suppress an observable query-fatal effect), the island is hoisted to the outer join
+	 * position: {@code Join(Join(a, b), island)}, letting {@code a ⨝ b} flatten and reorder natively. The algebra-level
+	 * FilterOptimizer cannot do this — it runs before islands exist. Everything else keeps the island exactly where the
+	 * algebra put it.
+	 */
+	private SlotPlan joinWithIslandHoist(SlotPlan left, SlotPlan right) {
+		if (islandsEnabled && left instanceof JoinPlan && !(right instanceof GenericEvalPlan)) {
+			JoinPlan inner = (JoinPlan) left;
+			GenericEvalPlan island = null;
+			SlotPlan core = null;
+			if (inner.right instanceof GenericEvalPlan) {
+				island = (GenericEvalPlan) inner.right;
+				core = inner.left;
+			} else if (inner.left instanceof GenericEvalPlan) {
+				island = (GenericEvalPlan) inner.left;
+				core = inner.right;
+			}
+			if (island != null && hoistableAcross(island, core.producedMask() | right.producedMask())) {
+				LmdbNativeAggregateCompiler.ISLAND_HOISTS.incrementAndGet();
+				return SlotPlan.join(SlotPlan.join(core, right), island);
+			}
+		}
+		return SlotPlan.join(left, right);
+	}
+
+	/** Whether the island's facts prove hoisting past operands binding the given slots is unobservable. */
+	private boolean hoistableAcross(GenericEvalPlan island, long surroundingMask) {
+		NativeTupleFacts facts = island.descriptor.facts();
+		if (facts == null || facts.mappingParameterized() || !facts.discardable()) {
+			return false;
+		}
+		long remaining = surroundingMask & ~island.producedMask;
+		while (remaining != 0L) {
+			int slot = Long.numberOfTrailingZeros(remaining);
+			remaining &= remaining - 1;
+			if (slot < slotNames.size() && island.varNames.contains(slotNames.get(slot))) {
+				return false;
+			}
+		}
+		return (surroundingMask & island.producedMask) == 0L;
+	}
+
 	SlotPlan compileTuple(TupleExpr expr, boolean duplicateInsensitive) {
+		Set<String> demotedVisible = demotedIslands.get(expr);
+		if (demotedVisible != null) {
+			// M-A4 wide-query demotion: this subtree's internal-only variables must not claim slots
+			SlotPlan demoted = island(expr, demotedVisible);
+			if (demoted != null) {
+				return demoted;
+			}
+		}
+		if (islandScopeChanges && TupleExprs.isVariableScopeChange(expr)) {
+			// M-A3 decline conversion: an unsafe nested scope change was detected somewhere in this root, so every
+			// scope-boundary subtree becomes an island — the generic engine owns all scoping semantics and the
+			// mutable slot row can never observe a hidden name
+			SlotPlan scoped = island(expr);
+			if (scoped != null) {
+				return scoped;
+			}
+		}
 		if (expr instanceof SingletonSet) {
 			return SlotPlan.singleton();
 		}
@@ -1172,7 +1368,13 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return plan;
 		}
 		if (expr instanceof ArbitraryLengthPath) {
-			return compilePath((ArbitraryLengthPath) expr);
+			SlotPlan path = compilePath((ArbitraryLengthPath) expr);
+			if (path == null) {
+				// M-F4: shapes the optimized BFS declines (negated property sets, compound steps, minLength > 1,
+				// runtime-bound predicates) run through the general step-plan BFS instead of the hosted floor
+				path = compileGeneralPath((ArbitraryLengthPath) expr, duplicateInsensitive);
+			}
+			return path != null ? path : island(expr);
 		}
 		if (expr instanceof Join) {
 			Join join = (Join) expr;
@@ -1190,22 +1392,45 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			SlotPlan right;
 			try {
 				requiredAggregateNames = withRequired(previousRequired, shared);
-				left = compileTuple(join.getLeftArg(), duplicateInsensitive);
+				left = compileTupleOrIsland(join.getLeftArg(), duplicateInsensitive);
 				requiredAggregateNames = withRequired(previousRequired, shared);
-				right = compileTuple(join.getRightArg(), duplicateInsensitive);
+				right = forceInteriorIslands ? islandPreferred(join.getRightArg(), duplicateInsensitive)
+						: compileTupleOrIsland(join.getRightArg(), duplicateInsensitive);
 			} finally {
 				requiredAggregateNames = previousRequired;
 			}
-			return left == null || right == null ? null : SlotPlan.join(left, right);
+			if (left == null || right == null) {
+				return null;
+			}
+			if (islandsEnabled && right == EmptyPlan.INSTANCE && left != EmptyPlan.INSTANCE
+					&& !canDiscardWithoutEvaluation(join.getLeftArg())) {
+				// Empty-join elimination would discard an operand the generic engine evaluates before probing the
+				// empty side; its query-fatal effects (e.g. a non-silent SERVICE) must still surface.
+				return new DrainGuardPlan(SlotPlan.empty(), left, true);
+			}
+			return joinWithIslandHoist(left, right);
 		}
 		if (expr instanceof LeftJoin) {
 			LeftJoin leftJoin = (LeftJoin) expr;
+			if (forcedIslandLeftJoins.contains(leftJoin)) {
+				// M-A3: a non-well-designed OPTIONAL evaluates generically (bottom-up scoping); its solutions join
+				// the host through write-back compatibility, which is exactly the compatible-mapping join
+				SlotPlan forced = island(leftJoin);
+				if (forced != null) {
+					return forced;
+				}
+			}
 			if (duplicateInsensitive
-					&& Collections.disjoint(rightOnlyBindingNames(leftJoin), requiredAggregateNames)) {
+					&& Collections.disjoint(rightOnlyBindingNames(leftJoin), requiredAggregateNames)
+					&& (!islandsEnabled || canDiscardWithoutEvaluation(leftJoin.getRightArg()))) {
+				// The duplicate-insensitive OPTIONAL prune discards the right arm without evaluation; with islands
+				// enabled the arm may carry query-fatal effects the generic engine would raise, so the prune is
+				// gated on discardability and the arm otherwise compiles normally (as an island if unsupported).
 				return compileTuple(leftJoin.getLeftArg(), true);
 			}
-			SlotPlan left = compileTuple(leftJoin.getLeftArg(), duplicateInsensitive);
-			SlotPlan right = compileTuple(leftJoin.getRightArg(), duplicateInsensitive);
+			SlotPlan left = compileTupleOrIsland(leftJoin.getLeftArg(), duplicateInsensitive);
+			SlotPlan right = forceInteriorIslands ? islandPreferred(leftJoin.getRightArg(), duplicateInsensitive)
+					: compileTupleOrIsland(leftJoin.getRightArg(), duplicateInsensitive);
 			if (left == null || right == null) {
 				return null;
 			}
@@ -1214,7 +1439,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				NativeBooleanFilter filter = compileBoolean(condition,
 						SlotPlan.assuredMask(left) | SlotPlan.assuredMask(right));
 				if (filter == null) {
-					return null;
+					return island(leftJoin);
 				}
 				// A placeable condition keeps the arm's memo mask intact so the left-join acceleration tiers
 				// (per-key memo, replay, payload hash, sweep) stay available; -1 pins the filter in place and
@@ -1225,8 +1450,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		if (expr instanceof org.eclipse.rdf4j.query.algebra.Union) {
 			org.eclipse.rdf4j.query.algebra.Union union = (org.eclipse.rdf4j.query.algebra.Union) expr;
-			SlotPlan left = compileTuple(union.getLeftArg(), duplicateInsensitive);
-			SlotPlan right = compileTuple(union.getRightArg(), duplicateInsensitive);
+			SlotPlan left = compileTupleOrIsland(union.getLeftArg(), duplicateInsensitive);
+			SlotPlan right = compileTupleOrIsland(union.getRightArg(), duplicateInsensitive);
 			return left == null || right == null ? null : SlotPlan.union(left, right);
 		}
 		if (expr instanceof Difference) {
@@ -1237,13 +1462,23 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			SlotPlan right;
 			try {
 				requiredAggregateNames = withRequired(previousRequired, shared);
-				left = compileTuple(difference.getLeftArg(), duplicateInsensitive);
+				left = compileTupleOrIsland(difference.getLeftArg(), duplicateInsensitive);
 				requiredAggregateNames = withRequired(previousRequired, shared);
-				right = compileTuple(difference.getRightArg(), false);
+				right = compileTupleOrIsland(difference.getRightArg(), false);
 			} finally {
 				requiredAggregateNames = previousRequired;
 			}
-			return left == null || right == null ? null : SlotPlan.minus(left, right);
+			if (left == null || right == null) {
+				return null;
+			}
+			SlotPlan plan = SlotPlan.minus(left, right);
+			if (islandsEnabled && plan == left && left != EmptyPlan.INSTANCE && right != EmptyPlan.INSTANCE
+					&& !canDiscardWithoutEvaluation(difference.getRightArg())) {
+				// No statically shared names: the compiler would discard the right operand, but the generic engine
+				// evaluates it once the left is non-empty and must surface its query-fatal effects.
+				return new DrainGuardPlan(left, right, false);
+			}
+			return plan;
 		}
 		if (expr instanceof Filter) {
 			Filter filter = (Filter) expr;
@@ -1322,33 +1557,199 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 								filter.getCondition())
 						: null;
 				if (arg == null) {
-					arg = compileTuple(filter.getArg(), duplicateInsensitive);
+					arg = compileTupleOrIsland(filter.getArg(), duplicateInsensitive);
 				}
 			} finally {
 				requiredAggregateNames = previousRequired;
 			}
-			NativeBooleanFilter condition = arg == null ? null
-					: compileBoolean(filter.getCondition(), SlotPlan.assuredMask(arg));
-			return arg == null || condition == null ? null
-					: SlotPlan.filter(arg, recordFilterOutcomes(filter, condition),
-							placeableFilterMask(filter.getCondition()));
+			if (arg == null) {
+				return null;
+			}
+			NativeBooleanFilter condition = compileBoolean(filter.getCondition(), SlotPlan.assuredMask(arg));
+			if (condition == null) {
+				// the condition itself is unsupported: island the whole Filter node so the generic engine owns
+				// both the condition and its scope
+				return island(filter);
+			}
+			return SlotPlan.filter(arg, recordFilterOutcomes(filter, condition),
+					placeableFilterMask(filter.getCondition()));
 		}
 		if (expr instanceof Extension) {
 			Extension extension = (Extension) expr;
-			SlotPlan arg = compileTuple(extension.getArg(), duplicateInsensitive);
+			SlotPlan arg = compileTupleOrIsland(extension.getArg(), duplicateInsensitive);
 			if (arg == null) {
 				return null;
 			}
 			CopyBinding[] copies = compileExtensionCopies(extension);
 			if (copies == null) {
-				return null;
+				// unsupported computed BIND: whole-Extension island (the generic engine owns evaluation position
+				// semantics such as error behavior of the bound expressions)
+				return island(extension);
 			}
 			return SlotPlan.extension(arg, copies);
 		}
 		if (expr instanceof BindingSetAssignment) {
-			return compileValuesOrIdentity((BindingSetAssignment) expr, duplicateInsensitive);
+			SlotPlan values = compileValuesOrIdentity((BindingSetAssignment) expr, duplicateInsensitive);
+			return values != null ? values : island(expr);
 		}
-		return null;
+		if (expr instanceof ZeroLengthPath) {
+			SlotPlan zeroLength = compileZeroLengthPath((ZeroLengthPath) expr);
+			return zeroLength != null ? zeroLength : island(expr);
+		}
+		if (expr instanceof Distinct) {
+			SlotPlan zeroOrOne = compileZeroOrOnePathShape((Distinct) expr, duplicateInsensitive);
+			return zeroOrOne != null ? zeroOrOne : island(expr);
+		}
+		if (expr instanceof EmptySet) {
+			return islandsEnabled ? SlotPlan.empty() : null;
+		}
+		return island(expr);
+	}
+
+	/**
+	 * M-F1: standalone ZeroLengthPath (subject == object). Bound endpoints identity-bind without consulting the store;
+	 * both-free enumerates the scoped statement nodes (see {@link ZeroLengthPathPlan}). Declines (null) for an unbound
+	 * graph variable — the generic arm dedups by node with a first-statement graph binding, which the umbrella's
+	 * per-(graph, node) reading contradicts, so the native engine abstains — and for a store-absent langString
+	 * constant, whose term-equal spellings a synthetic id cannot probe.
+	 */
+	private SlotPlan compileZeroLengthPath(ZeroLengthPath zeroLength) {
+		Var contextVar = zeroLength.getContextVar();
+		long ctxConst = UNKNOWN;
+		boolean enumerationEmpty = false;
+		if (contextVar != null) {
+			if (!contextVar.hasValue()) {
+				return null;
+			}
+			ctxConst = idOf(contextVar.getValue());
+			if (ctxConst == UNKNOWN) {
+				// absent graph: enumeration finds nothing, but identity binds are store-free and still emit
+				enumerationEmpty = true;
+			}
+		}
+		long[] subj = zeroLengthEndpoint(zeroLength.getSubjectVar());
+		if (subj == null) {
+			return null;
+		}
+		long[] obj = zeroLengthEndpoint(zeroLength.getObjectVar());
+		if (obj == null) {
+			return null;
+		}
+		return new ZeroLengthPathPlan((int) subj[0], subj[1], (int) obj[0], obj[1], ctxConst, enumerationEmpty);
+	}
+
+	/** One endpoint as {slot, constant-id}: slot ≥ 0 XOR constant ≠ UNKNOWN; null when unrepresentable. */
+	private long[] zeroLengthEndpoint(Var var) {
+		if (var.hasValue()) {
+			long id = idOf(var.getValue());
+			if (id == UNKNOWN) {
+				if (!termSafeAbsenceProof(var.getValue())) {
+					return null;
+				}
+				planValueCatalog.internConstant(var.getValue());
+				id = planValueCatalog.idOf(var.getValue());
+				if (id == UNKNOWN) {
+					return null;
+				}
+			}
+			return new long[] { -1L, id };
+		}
+		return new long[] { slot(var.getName()), UNKNOWN };
+	}
+
+	/**
+	 * M-F4: the general path compile — an arbitrary step subtree (compound sequences, negated property sets with
+	 * inverse members, runtime-bound predicates) under closure, evaluated by {@link GeneralPathPlan}'s per-node BFS.
+	 * Declines (null) for graph-variable scoping (the ALP-level context var; constant scopes ride inside the step's own
+	 * statement patterns) and for endpoint constants whose store absence a synthetic id cannot prove.
+	 */
+	private SlotPlan compileGeneralPath(ArbitraryLengthPath alp, boolean duplicateInsensitive) {
+		if (!GeneralPathPlan.enabled()) {
+			return null;
+		}
+		Var contextVar = alp.getContextVar();
+		long ctxConst = UNKNOWN;
+		if (contextVar != null) {
+			if (!contextVar.hasValue()) {
+				// recorded decline: unbound graph variables need per-graph evaluation + graph binding semantics
+				return null;
+			}
+			ctxConst = idOf(contextVar.getValue());
+			if (ctxConst == UNKNOWN) {
+				return SlotPlan.empty();
+			}
+		}
+		String subjName = alp.getSubjectVar().getName();
+		String objName = alp.getObjectVar().getName();
+		if (subjName.equals(objName)) {
+			// same-variable-both-ends with a compound/negated step needs positional endpoint rewriting; recorded
+			return null;
+		}
+		long[] subj = zeroLengthEndpoint(alp.getSubjectVar());
+		if (subj == null) {
+			return null;
+		}
+		long[] obj = zeroLengthEndpoint(alp.getObjectVar());
+		if (obj == null) {
+			return null;
+		}
+		// The step evaluates per frontier node through hidden endpoint slots: like the generic PathIteration's
+		// per-length variable renaming, this decouples the step from constant endpoints and from the row's own
+		// bindings of the endpoint names.
+		TupleExpr stepExpr = alp.getPathExpression().clone();
+		stepExpr.visit(new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				if (subjName.equals(var.getName())) {
+					var.replaceWith(Var.of("#pathStart", true));
+				} else if (objName.equals(var.getName())) {
+					var.replaceWith(Var.of("#pathEnd", true));
+				}
+			}
+		});
+		int stepSubjSlot = slot("#pathStart");
+		int stepObjSlot = slot("#pathEnd");
+		// duplicate-insensitive: the BFS collects endpoints into sets, so step multiplicities are unobservable
+		SlotPlan step = compileTuple(stepExpr, true);
+		if (step == null || step instanceof GenericEvalPlan) {
+			return null;
+		}
+		return new GeneralPathPlan(step, stepSubjSlot, stepObjSlot, (int) subj[0], subj[1], (int) obj[0], obj[1],
+				alp.getMinLength(), ctxConst);
+	}
+
+	/**
+	 * M-F1: the parser's zero-or-one path wrapper — {@code Distinct(Projection(Union(ZeroLengthPath, step)))} from
+	 * {@code TupleExprBuilder.handlePathModifiers} — compiles as the union of its arms deduplicated on the projected
+	 * slots. Any other Distinct shape returns null (island/hosted floor).
+	 */
+	private SlotPlan compileZeroOrOnePathShape(Distinct distinct, boolean duplicateInsensitive) {
+		if (!(distinct.getArg() instanceof Projection)) {
+			return null;
+		}
+		Projection projection = (Projection) distinct.getArg();
+		if (!(projection.getArg() instanceof org.eclipse.rdf4j.query.algebra.Union)) {
+			return null;
+		}
+		org.eclipse.rdf4j.query.algebra.Union union = (org.eclipse.rdf4j.query.algebra.Union) projection.getArg();
+		if (!(union.getLeftArg() instanceof ZeroLengthPath) && !(union.getRightArg() instanceof ZeroLengthPath)) {
+			return null;
+		}
+		List<ProjectionElem> elems = projection.getProjectionElemList().getElements();
+		for (ProjectionElem elem : elems) {
+			if (elem.getProjectionAlias().isPresent() && !elem.getProjectionAlias().get().equals(elem.getName())) {
+				return null;
+			}
+		}
+		SlotPlan arg = compileTuple(union, duplicateInsensitive);
+		if (arg == null || arg instanceof GenericEvalPlan) {
+			return null;
+		}
+		int[] projSlots = new int[elems.size()];
+		for (int i = 0; i < elems.size(); i++) {
+			projSlots[i] = slot(elems.get(i).getName());
+		}
+		return new RowDistinctPlan(arg, projSlots);
 	}
 
 }

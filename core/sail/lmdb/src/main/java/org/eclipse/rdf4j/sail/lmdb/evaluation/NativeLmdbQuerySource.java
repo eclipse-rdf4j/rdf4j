@@ -63,6 +63,16 @@ public interface NativeLmdbQuerySource {
 	 */
 	Object idSpace();
 
+	/**
+	 * Identity under which learned cost-model corrections are accumulated. Unlike {@link #idSpace()} — which must
+	 * distinguish evaluation-scoped id spaces so ephemeral ids never cross evaluations raw — cost corrections describe
+	 * the persistent store and should be shared by every plan and evaluation over it, so wrappers delegate this to
+	 * their backing store.
+	 */
+	default Object costModelIdentity() {
+		return idSpace();
+	}
+
 	RecordIterator statements(long subj, long pred, long obj, long context) throws IOException;
 
 	/**

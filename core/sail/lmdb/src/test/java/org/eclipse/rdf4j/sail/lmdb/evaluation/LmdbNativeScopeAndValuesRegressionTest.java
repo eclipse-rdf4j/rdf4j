@@ -114,7 +114,7 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 	}
 
 	@Test
-	public void postQueryValuesStillUsesRdfTermIdentityForNumericLiterals() {
+	public void postQueryValuesUsesTheValueGuardedNativePathForNumericLiterals() {
 		String query = "PREFIX : <" + EX + ">\n"
 				+ "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n"
 				+ "SELECT ?s WHERE { ?s :numericValue ?value }\n"
@@ -126,8 +126,9 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 			assertThat(result).isEmpty();
 		}
 		assertThat(LmdbNativeAggregateCompiler.COMPILED.get())
-				.as("numeric term identity is unsafe for the native raw-id VALUES path")
-				.isEqualTo(compiledBefore);
+				.as("numeric VALUES compile natively through the value-guarded fallback (M-F1) — the pattern"
+						+ " enumerates freely and the root guard term-checks, never a raw-id probe")
+				.isGreaterThan(compiledBefore);
 	}
 
 	@Test

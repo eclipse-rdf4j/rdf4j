@@ -85,13 +85,44 @@ final class LmdbNativeAggregateCompiler {
 	static final AtomicLong LEFTJOIN_FILTER_INNER_JOIN_REWRITES = new AtomicLong();
 	/** Test observability: =/IN constant filters folded into exact statement-pattern probes. */
 	static final AtomicLong FILTER_INTO_PATTERN_PUSHDOWNS = new AtomicLong();
+	/**
+	 * Test observability: root queries the native compiler declined but the root host executes as a classified generic
+	 * plan.
+	 */
+	static final AtomicLong HOSTED_GENERIC = new AtomicLong();
+	/**
+	 * Test observability: root queries that fell back to an unclassified generic plan while hosting was eligible. The
+	 * root host makes this path structurally unreachable; the counter exists so tests and the coverage census can
+	 * assert it stays zero.
+	 */
+	static final AtomicLong UNHOSTED_HARD_DECLINES = new AtomicLong();
+	/** Test observability: interior generic islands compiled into native plans (M-A1b). */
+	static final AtomicLong ISLANDS_COMPILED = new AtomicLong();
+	/** Test observability: island cursor opens (each open evaluates or replays the island once). */
+	static final AtomicLong ISLAND_OPENS = new AtomicLong();
+	/**
+	 * Test observability: independent islands hoisted out of the middle of a join chain so the native operands around
+	 * them can flatten into one reorderable MultiJoin bag (M-A1c facts-gated movement).
+	 */
+	static final AtomicLong ISLAND_HOISTS = new AtomicLong();
+	/** Test observability: roots compiled as ordered stage pipelines over a native inner source (M-A2). */
+	static final AtomicLong PIPELINE_ROOTS = new AtomicLong();
+	/** Test observability: slot-starved roots rescued by internal-variable island demotion (M-A4). */
+	static final AtomicLong WIDE_QUERY_DEMOTIONS = new AtomicLong();
+	/**
+	 * Test observability: genuinely wide roots (more than 60 externally projected live variables) on the documented
+	 * GENERIC_HOSTED policy (M-A4) — no demotion can relieve externally visible names.
+	 */
+	static final AtomicLong WIDE_OUTPUT_HOSTED = new AtomicLong();
+	/** Test observability: EXISTS witnesses declined by the unsafe-scope guard (M-F1 MINUS narrowing pins). */
+	static final AtomicLong EXISTS_SCOPE_DECLINES = new AtomicLong();
 
 	private LmdbNativeAggregateCompiler() {
 	}
 
 	static QueryEvaluationStep tryCompile(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
-		CompileResult result = compile(expr, context, strategy, source);
+		CompileResult result = compile(expr, context, strategy, source, false);
 		if (result.step != null) {
 			if (LmdbNativeExplain.recordsExecutionPaths(expr)) {
 				LmdbNativeExplain.mark(expr, result.kind, physicalPlan(result.step));
@@ -107,7 +138,7 @@ final class LmdbNativeAggregateCompiler {
 
 	static boolean tryAnnotateForExplain(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
-		CompileResult result = compile(expr, context, strategy, source);
+		CompileResult result = compile(expr, context, strategy, source, false);
 		if (result.step == null) {
 			return false;
 		}
@@ -139,9 +170,52 @@ final class LmdbNativeAggregateCompiler {
 		return existsStep;
 	}
 
-	private static CompileResult compile(TupleExpr expr, QueryEvaluationContext context,
+	/**
+	 * Root-host entry (M-A1a): like {@link #tryCompile} but never answers {@code null} — a decline is returned as
+	 * {@code UNSUPPORTED} with a reason, so the caller hosts the query as a classified generic plan instead of
+	 * hard-declining it. Unexpected exceptions keep propagating; masking them as declines would poison the coverage
+	 * census.
+	 */
+	static CompileOutcome compileRoot(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		CompileResult result = compile(expr, context, strategy, source, true);
+		if (result.step == null) {
+			return CompileOutcome.unsupported("root-shape");
+		}
+		if (LmdbNativeExplain.recordsExecutionPaths(expr)) {
+			LmdbNativeExplain.mark(expr, result.kind, physicalPlan(result.step));
+		}
+		if (!LmdbNativeExplain.KIND_BGP.equals(result.kind)) {
+			COMPILED.incrementAndGet();
+		}
+		return CompileOutcome.supported(result.step, result.kind);
+	}
+
+	/**
+	 * Outcome of a root compile attempt: a supported native plan with its explain kind, or an explicit decline with a
+	 * short stable reason string (e.g. {@code "root-shape"}, {@code "empty-store"}). Replaces {@code null} returns at
+	 * the root so a decline is always classifiable.
+	 */
+	record CompileOutcome(QueryEvaluationStep step, String kind, String unsupportedReason) {
+		static CompileOutcome supported(QueryEvaluationStep step, String kind) {
+			return new CompileOutcome(step, kind, null);
+		}
+
+		static CompileOutcome unsupported(String reason) {
+			return new CompileOutcome(null, null, reason);
+		}
+
+		boolean isSupported() {
+			return step != null;
+		}
+	}
+
+	private static CompileResult compile(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation) {
 		LmdbNativeAggregatePlanner compiler = new LmdbNativeAggregatePlanner(context, strategy, source);
+		// Root-host compiles (one evaluate() = one query evaluation) may prepare generic bridges per evaluation;
+		// interior compiles must not — their steps evaluate once per outer input mapping (M-A1a).
+		compiler.rootEvaluationScoped = rootEvaluation;
 		QueryEvaluationStep step = null;
 		String kind = LmdbNativeExplain.KIND_ROW;
 		if (expr instanceof Filter && ((Filter) expr).getArg() instanceof Group) {
@@ -152,12 +226,29 @@ final class LmdbNativeAggregateCompiler {
 			kind = LmdbNativeExplain.KIND_AGGREGATE;
 		} else {
 			step = compiler.compileRowRoot(expr);
+			if (step == null && rootEvaluation && NativeRootPipeline.enabled()) {
+				// M-A2: wrapper stacks the flat row-root parser cannot represent compile as an ordered stage
+				// pipeline — generic modifier stages in exact algebra order over a native inner root.
+				step = NativeRootPipeline.tryCompile(expr, context, strategy, source);
+			}
+			if (step == null && rootEvaluation && compiler.slotBudgetExceeded) {
+				// M-A4: slot-starved roots retry with internal-only variables demoted into restricted islands
+				step = LmdbNativeWideQueryDemotion.tryCompile(expr, context, strategy, source);
+				if (step != null) {
+					kind = LmdbNativeExplain.KIND_HYBRID;
+				}
+			}
 			if (step == null && bareFragmentsEnabled()) {
 				// bare BGP fragments (no Projection root): a fresh planner, because the row-root
-				// attempt may have allocated slot state that must not leak into this compile
+				// attempt may have allocated slot state that must not leak into this compile. Bare fragments stay
+				// non-root-scoped: under a generic host they evaluate per outer row.
 				step = new LmdbNativeAggregatePlanner(context, strategy, source).compileBareRoot(expr);
 				kind = LmdbNativeExplain.KIND_BGP;
 			}
+		}
+		if (step != null && compiler.sawIsland && !LmdbNativeExplain.KIND_BGP.equals(kind)) {
+			// A native host around at least one generic island (M-A1b): the hybrid plan class.
+			kind = LmdbNativeExplain.KIND_HYBRID;
 		}
 		return new CompileResult(step, kind);
 	}
@@ -345,6 +436,26 @@ final class LmdbNativeAggregateCompiler {
 			}
 			long argMask = memoReadMask(filterPlan.arg);
 			return argMask < 0L ? -1L : argMask | filterPlan.filterMask;
+		}
+		if (plan instanceof ExtensionPlan) {
+			// M-F1: plain slot/constant copies are pure functions of the argument's row stream; computed copies keep
+			// the conservative -1 (their inline evaluators and interning carry read sets this mask cannot express).
+			ExtensionPlan extension = (ExtensionPlan) plan;
+			long argMask = memoReadMask(extension.arg);
+			if (argMask < 0L) {
+				return -1L;
+			}
+			long mask = argMask;
+			for (CopyBinding copy : extension.copies) {
+				if (copy.computed != null || copy.computedValue != null) {
+					return -1L;
+				}
+				if (copy.sourceSlot >= 0) {
+					mask |= 1L << copy.sourceSlot;
+				}
+				mask |= 1L << copy.targetSlot;
+			}
+			return mask;
 		}
 		return -1L;
 	}

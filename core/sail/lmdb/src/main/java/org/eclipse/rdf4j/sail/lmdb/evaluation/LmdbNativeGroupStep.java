@@ -70,6 +70,9 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 	final ValueExpr havingCondition;
 	final NativeAggregateDistinctPlan distinctPlan;
 	QueryEvaluationStep genericStep;
+	/** Root-host compiles only: one evaluate() is one query evaluation, so generic fallbacks may prepare per call. */
+	boolean rootEvaluationScoped;
+	private GenericSubplanDescriptor genericFallbackDescriptor;
 
 	NativeGroupStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] groupSlots,
 			AggregateSpec[] aggregates, boolean strictCompare, LmdbNativeEvaluationStrategy strategy,
@@ -118,12 +121,36 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 				return genericStep().evaluate(bindings);
 			}
 			LmdbNativeExplain.recordExecutionPath(originalExpr, variant.executionPath());
-			return new NativeGroupIteration(source, variant.wrap(arg), layout, groupSlots, aggregates, strictCompare,
-					variant.filteredBase, null, null, false, false, null, 0L, null, havingCondition, originalExpr);
+			NativeLmdbQuerySource evalSource = evaluationSource();
+			return withContextLifetime(
+					new NativeGroupIteration(evalSource, variant.wrap(arg), layout, groupSlots, aggregates,
+							strictCompare, variant.filteredBase, null, null, false, false, null, 0L, null,
+							havingCondition, originalExpr),
+					evalSource);
 		}
-		return new NativeGroupIteration(source, arg, layout, groupSlots, aggregates, strictCompare, bindings,
-				prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns, prefixRunFilter,
-				prefixMinRunCount, existsIntersection, havingCondition, originalExpr);
+		NativeLmdbQuerySource evalSource = evaluationSource();
+		return withContextLifetime(
+				new NativeGroupIteration(evalSource, arg, layout, groupSlots, aggregates, strictCompare, bindings,
+						prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns, prefixRunFilter,
+						prefixMinRunCount, existsIntersection, havingCondition, originalExpr),
+				evalSource);
+	}
+
+	/**
+	 * The value source of one evaluation: plans without synthetic id spaces run directly on the compiled source, plans
+	 * with them get a fresh evaluation-scoped instance so runtime interning never lives in compiled-plan state.
+	 */
+	private NativeLmdbQuerySource evaluationSource() {
+		return source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).forEvaluation() : source;
+	}
+
+	/** Group rows materialize interned values at emission, so the context may close with the iteration (gate 5). */
+	private CloseableIteration<BindingSet> withContextLifetime(CloseableIteration<BindingSet> iteration,
+			NativeLmdbQuerySource evalSource) {
+		if (evalSource == source) {
+			return iteration;
+		}
+		return new NativeContextClosingIteration(iteration, ((SyntheticValueSource) evalSource).executionContext());
 	}
 
 	boolean hasOptionalOnlyBinding(BindingSet bindings) {
@@ -136,6 +163,15 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 	}
 
 	synchronized QueryEvaluationStep genericStep() {
+		if (genericFallbackDescriptor == null) {
+			genericFallbackDescriptor = GenericSubplanDescriptor.create(originalExpr);
+		}
+		if (rootEvaluationScoped && !genericFallbackDescriptor.shareableAcrossEvaluations()) {
+			// Query-scope state (NOW/BNODE/volatiles) present: this is called from evaluate(), and for a root step one
+			// evaluate() is one query evaluation, so compile the pinned snapshot fresh with a per-evaluation scope.
+			return strategy.genericPrecompile(genericFallbackDescriptor.pinnedExpr(),
+					new EvaluationScopedQueryEvaluationContext(context));
+		}
 		if (genericStep == null) {
 			genericStep = strategy.genericPrecompile(originalExpr, context);
 		}
@@ -324,11 +360,13 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 	}
 
 	private List<BindingSet> evaluateInitialized(RowState row) {
-		if (containsComputedValueCopy(arg)) {
+		if (containsComputedValueCopy(arg) || AggregateSpec.anyFullRowDistinct(aggregates)) {
 			// A computed, non-inline group key (e.g. COALESCE(STR(?type), "..")) is interned to a runtime id through
 			// the (single) serial value source. The parallel/Janino/IR/prefix strategies each resolve group keys
 			// through their own (sometimes per-worker) source and group by raw longs, so they are disqualified here to
 			// keep computed-key interning and materialization on one source. Grouping is cheap relative to the scan.
+			// COUNT(DISTINCT *) (M-F3) is forced serial for the same reason: only AggState's full-row tracker can
+			// represent full-solution distinctness.
 			LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root(explainTarget);
 			try {
 				List<BindingSet> results = evaluateSequential(row, aggContext, metrics);
@@ -1278,9 +1316,17 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				break;
 			case MIN:
 			case MAX:
+			case SAMPLE:
 				if (state.extremes != null && state.extremes[i] != null) {
 					result.addBinding(aggregates[i].name, state.extremes[i]);
 				}
+				break;
+			case GROUP_CONCAT:
+				// empty input concatenates to the empty string literal, matching the generic collector
+				result.addBinding(aggregates[i].name,
+						SimpleValueFactory.getInstance()
+								.createLiteral(state.concats == null || state.concats[i] == null ? ""
+										: state.concats[i].toString()));
 				break;
 			}
 		}

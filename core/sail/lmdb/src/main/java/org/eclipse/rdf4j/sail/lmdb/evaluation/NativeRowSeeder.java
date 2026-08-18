@@ -52,6 +52,12 @@ final class NativeRowSeeder {
 					slots[i] = NULL_CONTEXT_ID;
 				} else {
 					long id = source.idOf(value);
+					if (id == UNKNOWN && source instanceof SyntheticValueSource) {
+						// A term-safe value the store does not know still has a correct native execution: an
+						// evaluation-scoped interned id whose probes stay empty while filters and projections
+						// materialize the value. Term-ambiguous classes keep the historical abort.
+						id = ((SyntheticValueSource) source).internEntryBinding(value);
+					}
 					if (id == UNKNOWN) {
 						return false;
 					}

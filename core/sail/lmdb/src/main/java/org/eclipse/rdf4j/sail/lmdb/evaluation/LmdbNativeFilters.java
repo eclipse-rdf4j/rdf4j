@@ -21,7 +21,9 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
@@ -89,17 +91,65 @@ interface NativeBooleanFilter {
  */
 @Experimental
 final class GenericBooleanFilter implements NativeBooleanFilter {
+	/** The shared predicate (compile-once mode); null in per-evaluation mode. */
 	private final Predicate<BindingSet> predicate;
 	private final long readMask;
+	/** Per-evaluation mode (M-A1a): the pinned condition, compiled once per evaluation through the row's context. */
+	private final GenericSubplanDescriptor descriptor;
+	private final Function<NativeExecutionContext, Predicate<BindingSet>> perEvaluationCompile;
+	private final Supplier<Predicate<BindingSet>> sharedFallbackCompile;
+	private volatile Predicate<BindingSet> sharedFallback;
 
 	GenericBooleanFilter(Predicate<BindingSet> predicate, long readMask) {
 		this.predicate = predicate;
 		this.readMask = readMask;
+		this.descriptor = null;
+		this.perEvaluationCompile = null;
+		this.sharedFallbackCompile = null;
+	}
+
+	/**
+	 * Per-evaluation mode: the condition carries query-scope state (e.g. NOW), so its predicate is compiled once per
+	 * evaluation via {@link NativeExecutionContext#genericStep} — every evaluation of a retained compiled step observes
+	 * a fresh query scope, and all rows of one evaluation share one. The shared fallback covers rows whose source
+	 * carries no execution context (defensive; the compiling planner marks such plans context-requiring).
+	 */
+	GenericBooleanFilter(GenericSubplanDescriptor descriptor,
+			Function<NativeExecutionContext, Predicate<BindingSet>> perEvaluationCompile,
+			Supplier<Predicate<BindingSet>> sharedFallbackCompile, long readMask) {
+		this.predicate = null;
+		this.readMask = readMask;
+		this.descriptor = descriptor;
+		this.perEvaluationCompile = perEvaluationCompile;
+		this.sharedFallbackCompile = sharedFallbackCompile;
 	}
 
 	@Override
 	public boolean accept(RowState row) {
-		return predicate.test(row.view);
+		return resolvePredicate(row).test(row.view);
+	}
+
+	private Predicate<BindingSet> resolvePredicate(RowState row) {
+		if (predicate != null) {
+			return predicate;
+		}
+		if (row.source instanceof SyntheticValueSource) {
+			NativeExecutionContext context = ((SyntheticValueSource) row.source).executionContext();
+			if (context != null) {
+				return context.genericStep(descriptor, () -> perEvaluationCompile.apply(context));
+			}
+		}
+		Predicate<BindingSet> shared = sharedFallback;
+		if (shared == null) {
+			synchronized (this) {
+				shared = sharedFallback;
+				if (shared == null) {
+					shared = sharedFallbackCompile.get();
+					sharedFallback = shared;
+				}
+			}
+		}
+		return shared;
 	}
 
 	@Override

@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -217,6 +218,9 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	/** Optional route label recorded before this step's ordinary bulk dispatcher chooses its concrete strategy. */
 	String entryPath;
 	QueryEvaluationStep genericStep;
+	/** Root-host compiles only: one evaluate() is one query evaluation, so generic fallbacks may prepare per call. */
+	boolean rootEvaluationScoped;
+	private GenericSubplanDescriptor genericFallbackDescriptor;
 
 	/** A bare BGP fragment with no optional-only variables (no OPTIONAL, or none binding new names). */
 	static NativeBareRowsStep bareFragment(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
@@ -328,12 +332,13 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			LmdbNativeExplain.recordExecutionPath(originalExpr, variant.executionPath());
 			return withEntryBindingVariant(variant).evaluate(variant.filteredBase);
 		}
+		NativeLmdbQuerySource evalSource = evaluationSource();
 		if (orderSlots.length == 0) {
-			return new NativeRowsIteration(this, bindings);
+			return withContextLifetime(new NativeRowsIteration(this, evalSource, bindings), evalSource);
 		}
-		List<BindingSet> rows = evaluateAll(bindings);
+		List<BindingSet> rows = evaluateAll(bindings, evalSource);
 		Iterator<BindingSet> iterator = rows.iterator();
-		return new CloseableIteration<>() {
+		return withContextLifetime(new CloseableIteration<>() {
 			@Override
 			public boolean hasNext() {
 				return iterator.hasNext();
@@ -352,7 +357,20 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			@Override
 			public void close() {
 			}
-		};
+		}, evalSource);
+	}
+
+	/**
+	 * Ties the evaluation context's lifetime to the returned iteration (M-A0 gate 5). Emitted rows never depend on the
+	 * context: rows carrying evaluation-scoped ids are materialized at emission (gate 7), store and plan-catalog ids
+	 * resolve through state that outlives the evaluation.
+	 */
+	CloseableIteration<BindingSet> withContextLifetime(CloseableIteration<BindingSet> iteration,
+			NativeLmdbQuerySource evalSource) {
+		if (evalSource == source || !(evalSource instanceof SyntheticValueSource)) {
+			return iteration;
+		}
+		return new NativeContextClosingIteration(iteration, ((SyntheticValueSource) evalSource).executionContext());
 	}
 
 	private NativeRowsStep withEntryBindingVariant(NativeEntryBindingVariant variant) {
@@ -363,6 +381,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				null);
 		result.snapshotRows = snapshotRows;
 		result.entryPath = entryPath;
+		result.rootEvaluationScoped = rootEvaluationScoped;
 		return result;
 	}
 
@@ -376,10 +395,29 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	}
 
 	synchronized QueryEvaluationStep genericStep() {
+		if (genericFallbackDescriptor == null) {
+			genericFallbackDescriptor = GenericSubplanDescriptor.create(originalExpr);
+		}
+		if (rootEvaluationScoped && !genericFallbackDescriptor.shareableAcrossEvaluations()) {
+			// Query-scope state (NOW/BNODE/volatiles) present: this is called from evaluate(), and for a root step one
+			// evaluate() is one query evaluation, so compile the pinned snapshot fresh with a per-evaluation scope.
+			return strategy.genericPrecompile(genericFallbackDescriptor.pinnedExpr(),
+					new EvaluationScopedQueryEvaluationContext(context));
+		}
 		if (genericStep == null) {
 			genericStep = strategy.genericPrecompile(originalExpr, context);
 		}
 		return genericStep;
+	}
+
+	/**
+	 * The value source of one evaluation: plans without synthetic id spaces run directly on the compiled source, plans
+	 * with them get a fresh evaluation-scoped instance so runtime-interned ids never live in compiled-plan state. Every
+	 * runtime consumer of the evaluation (row states, value contexts, emissions) must resolve through this one
+	 * instance, reached as {@code row.source}/{@code values.source}.
+	 */
+	NativeLmdbQuerySource evaluationSource() {
+		return source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).forEvaluation() : source;
 	}
 
 	@Override
@@ -418,8 +456,12 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	}
 
 	List<BindingSet> evaluateAll(BindingSet base) {
-		RowState row = new RowState(source, layout, base, originalExpr);
-		if (!initializeRow(row, base, source, layout)) {
+		return evaluateAll(base, evaluationSource());
+	}
+
+	List<BindingSet> evaluateAll(BindingSet base, NativeLmdbQuerySource evalSource) {
+		RowState row = new RowState(evalSource, layout, base, originalExpr);
+		if (!initializeRow(row, base, evalSource, layout)) {
 			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return List.of();
 		}
@@ -458,7 +500,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_CONSTANT_FALSE_FILTER);
 			return List.of();
 		}
-		AggContext values = new AggContext(source, strictCompare);
+		AggContext values = new AggContext(row.source, strictCompare);
 		long emitCap = limit < 0 ? Long.MAX_VALUE : saturatingAdd(Math.max(0L, offset), limit);
 
 		// ORDER BY: pack slot rows into one reusable arena (keys may be unprojected), sort primitive row indexes,
@@ -487,9 +529,11 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		// intercept a factorized sort merely because its call happened to appear first: factorization removes Cartesian
 		// rows, while the kernel only makes those rows cheaper. DISTINCT stays out because the kernel LIMIT would trim
 		// rows that the consumer still needs for duplicate elimination.
-		if (orderSlots.length != 0 && !distinct) {
+		if (orderSlots.length != 0 && !distinct && !NativeGroupIteration.containsComputedValueCopy(arg)) {
+			// computed sort keys (M-F5) intern through the single serial value source, so the ordered kernel and
+			// factorized specialists — which produce rows on their own sources — must not intercept such plans
 			try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter
-					.forExpr(originalExpr, source)) {
+					.forExpr(originalExpr, row.source)) {
 				LmdbNativeWork work = arg.estimateWork(row, row.boundMask());
 				String factorizedTag = emitCap == Long.MAX_VALUE
 						? LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_SORT
@@ -711,8 +755,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				|| ((MultiJoinPlan) arg).children.length == 0 || !SlotPlan.encounterOrderReplaySafe(arg)) {
 			return null;
 		}
-		RowState row = new RowState(source, layout, base, originalExpr);
-		if (!initializeRow(row, base, source, layout)) {
+		RowState row = new RowState(values.source, layout, base, originalExpr);
+		if (!initializeRow(row, base, values.source, layout)) {
 			return null;
 		}
 		if ((arg.producedMask() & row.boundMask()) != 0L) {
@@ -983,7 +1027,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		long context = prefixPattern.c.lookup(row.slots);
 		NativeLmdbQuerySource.AdjacencyAccessObserver observer = row.runtimePlan == null ? null
 				: row.runtimePlan.adjacencyAccessAt(LmdbNativeExplain.describe(prefixPattern, row.layout));
-		LmdbPrefixRunCursor cursor = source.prefixRuns(prefixRunPlan, subj, pred, obj, context, false, observer);
+		LmdbPrefixRunCursor cursor = row.source.prefixRuns(prefixRunPlan, subj, pred, obj, context, false, observer);
 		if (cursor == null) {
 			return null;
 		}
@@ -1002,7 +1046,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		boolean correlatedEntry = (arg.producedMask() & row.boundMask()) != 0L;
 		int[] retainedSlots = orderSlots.length == 0 ? sourceSlots : sortLayout.liveToPlan;
 		try (LmdbNativeStrategyArbiter<NativeUnorderedInput> arbiter = LmdbNativeStrategyArbiter
-				.forSlice(originalExpr, consumableRows(), source)) {
+				.forSlice(originalExpr, consumableRows(), row.source)) {
 			if (LmdbNativeLeapfrogJoin.canOpen(arg, row.boundMask())) {
 				arbiter.offer(() -> inputProposal(
 						() -> acceptWcoj(row, LmdbNativeLeapfrogJoin.tryOpen(arg, row), multiJoin),
@@ -1252,8 +1296,9 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	}
 
 	BindingSet project(long[] slots, AggContext values, int[] projectionSlots) {
-		if (NativeProjectedBindingSet.enabled() && source != null) {
-			return new NativeProjectedBindingSet(source, targetNames, projectionSlots, slots);
+		if (NativeProjectedBindingSet.enabled() && values.source != null
+				&& !containsEvaluationScopedId(values.source, slots, projectionSlots)) {
+			return new NativeProjectedBindingSet(values.source, targetNames, projectionSlots, slots);
 		}
 		QueryBindingSet result = new QueryBindingSet(targetNames.length);
 		for (int i = 0; i < targetNames.length; i++) {
@@ -1268,9 +1313,50 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	/** Row emission honoring {@link #snapshotRows}: fragments snapshot the full row and carry base bindings. */
 	BindingSet emit(long[] slots, AggContext values, BindingSet base) {
 		if (snapshotRows) {
-			return new RowBindingSetView(source, layout, base, Arrays.copyOf(slots, slots.length), true);
+			RowBindingSetView view = new RowBindingSetView(values.source, layout, base,
+					Arrays.copyOf(slots, slots.length), true);
+			return containsEvaluationScopedId(values.source, slots, null) ? materialize(view) : view;
 		}
 		return project(slots, values);
+	}
+
+	/**
+	 * Whether any emitted id is owned by the evaluation's {@link NativeExecutionContext} (M-A0 gate 7). Such a row must
+	 * be materialized before it escapes: the interner dies with the evaluation while callers may retain rows. Store and
+	 * plan-catalog ids keep the lazy lifecycle — the store and the compiled plan outlive the evaluation. With
+	 * {@code projectionSlots == null} every slot is checked (snapshot rows carry the whole layout).
+	 */
+	static boolean containsEvaluationScopedId(NativeLmdbQuerySource source, long[] slots, int[] projectionSlots) {
+		if (!(source instanceof SyntheticValueSource)) {
+			return false;
+		}
+		NativeExecutionContext context = ((SyntheticValueSource) source).executionContext();
+		if (context == null || context.internedCount() == 0) {
+			return false;
+		}
+		if (projectionSlots == null) {
+			for (long id : slots) {
+				if (context.contains(id)) {
+					return true;
+				}
+			}
+			return false;
+		}
+		for (int slot : projectionSlots) {
+			if (context.contains(slots[slot])) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Copies a lazy row into a plain binding set, resolving every value through the still-open evaluation. */
+	static BindingSet materialize(BindingSet view) {
+		QueryBindingSet result = new QueryBindingSet(view.size());
+		for (Binding binding : view) {
+			result.addBinding(binding.getName(), binding.getValue());
+		}
+		return result;
 	}
 
 	List<BindingSet> slice(ArrayList<BindingSet> results) {
@@ -1316,7 +1402,8 @@ final class NativeBareRowsStep implements QueryEvaluationStep, LmdbNativePhysica
 		if (bulk.hasOptionalOnlyBinding(bindings)) {
 			return bulk.evaluate(bindings);
 		}
-		return new NativeBareRowsIteration(this, bindings);
+		NativeLmdbQuerySource evalSource = bulk.evaluationSource();
+		return bulk.withContextLifetime(new NativeBareRowsIteration(this, evalSource, bindings), evalSource);
 	}
 
 	@Override
@@ -1329,8 +1416,11 @@ final class NativeBareRowsStep implements QueryEvaluationStep, LmdbNativePhysica
 		return existsPlan == null ? null : new NativeExistsValueStep(this, existsPlan);
 	}
 
-	BindingSet snapshot(long[] slots, BindingSet base) {
-		return new RowBindingSetView(source, layout, base, Arrays.copyOf(slots, slots.length), true);
+	BindingSet snapshot(NativeLmdbQuerySource evalSource, long[] slots, BindingSet base) {
+		RowBindingSetView view = new RowBindingSetView(evalSource, layout, base, Arrays.copyOf(slots, slots.length),
+				true);
+		return NativeRowsStep.containsEvaluationScopedId(evalSource, slots, null) ? NativeRowsStep.materialize(view)
+				: view;
 	}
 }
 
@@ -1606,6 +1696,8 @@ final class NativeExistsPatternCursor implements AutoCloseable {
 @Experimental
 final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 	NativeBareRowsStep step;
+	/** This evaluation's value source (see {@link NativeRowsStep#evaluationSource()}). */
+	final NativeLmdbQuerySource source;
 	BindingSet base;
 	volatile boolean closed;
 	boolean initialized;
@@ -1616,8 +1708,9 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 	boolean ownsFusedSession;
 	long emittedRows;
 
-	NativeBareRowsIteration(NativeBareRowsStep step, BindingSet base) {
+	NativeBareRowsIteration(NativeBareRowsStep step, NativeLmdbQuerySource source, BindingSet base) {
 		this.step = step;
+		this.source = source;
 		this.base = base;
 	}
 
@@ -1640,7 +1733,7 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 			}
 			if (advanced) {
 				emittedRows++;
-				next = step.snapshot(row.slots, base);
+				next = step.snapshot(source, row.slots, base);
 				return true;
 			}
 			finish(true);
@@ -1656,8 +1749,8 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 
 	private boolean initialize() throws IOException {
 		initialized = true;
-		row = new RowState(step.source, step.layout, base, step.originalExpr);
-		if (!initializeRow(row, base, step.source, step.layout)) {
+		row = new RowState(source, step.layout, base, step.originalExpr);
+		if (!initializeRow(row, base, source, step.layout)) {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return false;
 		}
@@ -1994,8 +2087,12 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 	BindingSet next;
 	BindingSet repeated;
 
-	NativeRowsIteration(NativeRowsStep step, BindingSet base) {
+	/** This evaluation's value source (see {@link NativeRowsStep#evaluationSource()}). */
+	final NativeLmdbQuerySource source;
+
+	NativeRowsIteration(NativeRowsStep step, NativeLmdbQuerySource source, BindingSet base) {
 		this.step = step;
+		this.source = source;
 		this.base = base;
 		this.remainingOffset = Math.max(0L, step.offset);
 		this.remainingLimit = step.limit < 0 ? Long.MAX_VALUE : step.limit;
@@ -2128,12 +2225,12 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 
 	private boolean initialize() throws IOException {
 		initialized = true;
-		row = new RowState(step.source, step.layout, base, step.originalExpr);
-		if (!initializeRow(row, base, step.source, step.layout)) {
+		row = new RowState(source, step.layout, base, step.originalExpr);
+		if (!initializeRow(row, base, source, step.layout)) {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return false;
 		}
-		values = new AggContext(step.source, step.strictCompare);
+		values = new AggContext(source, step.strictCompare);
 		distinctPlan = step.distinct
 				? LmdbNativeOrderPlanner.tuple(step.arg, step.sourceSlots, row)
 				: NativeTupleDistinctPlan.global(step.arg, step.sourceSlots);

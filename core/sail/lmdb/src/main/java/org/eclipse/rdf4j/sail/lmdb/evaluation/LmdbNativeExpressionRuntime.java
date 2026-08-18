@@ -269,8 +269,10 @@ final class LmdbNativeNumericValue {
 			return LmdbNativeValueCodec.DecodedValue.ERROR;
 		}
 		if (floating) {
-			return LmdbNativeValueCodec.DecodedValue.floating(Double.toString(doubleValue), doubleValue,
-					coreDatatype);
+			// xsd:float renders through float precision like the generic value factory
+			String label = coreDatatype == CoreDatatype.XSD.FLOAT ? Float.toString((float) doubleValue)
+					: Double.toString(doubleValue);
+			return LmdbNativeValueCodec.DecodedValue.floating(label, doubleValue, coreDatatype);
 		}
 		return LmdbNativeValueCodec.DecodedValue.decimal(decimal.toPlainString(), decimal, coreDatatype);
 	}
@@ -363,9 +365,19 @@ final class LmdbNativeExpressionOps {
 		return TERM_FACTORY.createLiteral(value.label());
 	}
 
+	/**
+	 * Mirrors the generic {@code MathUtil} exactly, including the SPARQL/XPath datatype promotion lattice (double &gt;
+	 * float &gt; decimal, integer division promotes to decimal, everything else integer-family stays
+	 * {@code xsd:integer}) and the exact-quotient-then-scale-24 division rule — the promotion became result-observable
+	 * once aggregates over expressions (M-F3) started materializing computed values.
+	 */
 	static LmdbNativeNumericValue compute(LmdbNativeNumericValue left, LmdbNativeNumericValue right,
 			MathExpr.MathOp op) {
-		if (left.floating || right.floating) {
+		CoreDatatype.XSD leftType = left.coreDatatype == null ? null : left.coreDatatype.asXSDDatatypeOrNull();
+		CoreDatatype.XSD rightType = right.coreDatatype == null ? null : right.coreDatatype.asXSDDatatypeOrNull();
+		boolean anyDouble = leftType == CoreDatatype.XSD.DOUBLE || rightType == CoreDatatype.XSD.DOUBLE;
+		boolean anyFloat = leftType == CoreDatatype.XSD.FLOAT || rightType == CoreDatatype.XSD.FLOAT;
+		if (anyDouble || (left.floating || right.floating) && !anyFloat) {
 			double l = left.floating ? left.doubleValue : left.decimal.doubleValue();
 			double r = right.floating ? right.doubleValue : right.decimal.doubleValue();
 			return switch (op) {
@@ -375,13 +387,48 @@ final class LmdbNativeExpressionOps {
 			case DIVIDE -> LmdbNativeNumericValue.floating(l / r);
 			};
 		}
+		if (anyFloat) {
+			float l = left.floating ? (float) left.doubleValue : left.decimal.floatValue();
+			float r = right.floating ? (float) right.doubleValue : right.decimal.floatValue();
+			return switch (op) {
+			case PLUS -> LmdbNativeNumericValue.floating(l + r, CoreDatatype.XSD.FLOAT);
+			case MINUS -> LmdbNativeNumericValue.floating(l - r, CoreDatatype.XSD.FLOAT);
+			case MULTIPLY -> LmdbNativeNumericValue.floating(l * r, CoreDatatype.XSD.FLOAT);
+			case DIVIDE -> LmdbNativeNumericValue.floating(l / r, CoreDatatype.XSD.FLOAT);
+			};
+		}
+		boolean decimalArithmetic = leftType == CoreDatatype.XSD.DECIMAL || rightType == CoreDatatype.XSD.DECIMAL
+				|| op == MathExpr.MathOp.DIVIDE;
 		try {
+			if (!decimalArithmetic) {
+				java.math.BigInteger l = left.decimal.toBigInteger();
+				java.math.BigInteger r = right.decimal.toBigInteger();
+				java.math.BigInteger result = switch (op) {
+				case PLUS -> l.add(r);
+				case MINUS -> l.subtract(r);
+				case MULTIPLY -> l.multiply(r);
+				case DIVIDE -> throw new IllegalStateException("integer division promotes to decimal");
+				};
+				return LmdbNativeNumericValue.decimal(new BigDecimal(result), CoreDatatype.XSD.INTEGER);
+			}
 			return switch (op) {
 			case PLUS -> LmdbNativeNumericValue.decimal(left.decimal.add(right.decimal));
 			case MINUS -> LmdbNativeNumericValue.decimal(left.decimal.subtract(right.decimal));
 			case MULTIPLY -> LmdbNativeNumericValue.decimal(left.decimal.multiply(right.decimal));
-			case DIVIDE -> right.decimal.signum() == 0 ? LmdbNativeNumericValue.ERROR
-					: LmdbNativeNumericValue.decimal(left.decimal.divide(right.decimal, MathContext.DECIMAL128));
+			case DIVIDE -> {
+				if (right.decimal.signum() == 0) {
+					yield LmdbNativeNumericValue.ERROR;
+				}
+				BigDecimal result;
+				try {
+					// the generic MathUtil returns the exact quotient when it terminates
+					result = left.decimal.divide(right.decimal, MathContext.UNLIMITED);
+				} catch (ArithmeticException e) {
+					result = left.decimal.setScale(24, java.math.RoundingMode.HALF_UP)
+							.divide(right.decimal, java.math.RoundingMode.HALF_UP);
+				}
+				yield LmdbNativeNumericValue.decimal(result);
+			}
 			};
 		} catch (ArithmeticException e) {
 			return LmdbNativeNumericValue.ERROR;

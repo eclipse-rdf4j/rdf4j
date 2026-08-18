@@ -735,10 +735,10 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 				if (id == UNKNOWN || !valueProbeSafeId(id, value)) {
 					// allocated by collectSyntheticValues before compilation started; only variables it
 					// marked may carry synthetic ids (others must keep raw-id semantics and fall back)
-					Long synthetic = syntheticVarNames.contains(binding.getName())
-							? syntheticIdsByValue.get(value)
-							: null;
-					if (synthetic == null) {
+					long synthetic = syntheticVarNames.contains(binding.getName())
+							? planValueCatalog.idOf(value)
+							: UNKNOWN;
+					if (synthetic == UNKNOWN) {
 						return null;
 					}
 					id = synthetic;

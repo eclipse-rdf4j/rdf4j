@@ -87,6 +87,13 @@ final class LmdbNativeParallelAggregation {
 		if (!SlotPlan.encounterOrderReplaySafe(plan)) {
 			return reject(it, "encounter-order");
 		}
+		for (AggregateSpec spec : it.aggregates) {
+			if (spec.kind == AggKind.SAMPLE || spec.kind == AggKind.GROUP_CONCAT || spec.rowSlots != null) {
+				// serial-path only (M-F1/M-F3): no defined parallel merge for samples, encounter-order concats,
+				// or COUNT(DISTINCT *) full-row membership sets
+				return reject(it, "serial-only-aggregate");
+			}
+		}
 		for (SlotPlan child : plan.children) {
 			if (!(child instanceof PatternPlan)) {
 				return reject(it, "non-pattern-child");

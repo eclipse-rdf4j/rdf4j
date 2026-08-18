@@ -55,6 +55,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Max;
 import org.eclipse.rdf4j.query.algebra.Min;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
@@ -86,9 +87,189 @@ abstract class LmdbNativeAggregatePlannerBase {
 	QueryEvaluationContext slotAwareContext;
 	final ArrayList<String> slotNames = new ArrayList<>();
 	Set<String> requiredAggregateNames = Set.of();
-	final HashMap<Long, Value> syntheticValuesById = new HashMap<>();
-	final HashMap<Value, Long> syntheticIdsByValue = new HashMap<>();
+	/** One catalog builder per compiled root: every plan-synthetic constant of this compilation interns here. */
+	final PlanValueCatalog.Builder planValueCatalog = new PlanValueCatalog.Builder();
 	final java.util.HashSet<String> syntheticVarNames = new java.util.HashSet<>();
+	/**
+	 * Whether this compile serves the root host, where one {@code evaluate(...)} of the compiled step is one query
+	 * evaluation (M-A1a). Only then may generic bridges prepare per evaluation — an interior step is evaluated once per
+	 * outer input mapping, where a per-call fresh query scope would be wrong.
+	 */
+	boolean rootEvaluationScoped;
+	/**
+	 * Set when a compiled generic bridge needs the per-evaluation {@link NativeExecutionContext} even without synthetic
+	 * ids; forces the step source to be the evaluation-scoped carrier.
+	 */
+	boolean requiresExecutionContext;
+	/** Whether interior generic islands (M-A1b) may be compiled at decline points. */
+	final boolean forceInteriorIslands = Boolean.getBoolean("rdf4j.lmdb.nativeQueryEngine.forceInteriorIslands");
+	final boolean islandsEnabled = forceInteriorIslands || Boolean.getBoolean("rdf4j.lmdb.islands.enabled");
+	/**
+	 * Bare-fragment and EXISTS compiles suppress islands: those routes serve the generic evaluator's own recursion,
+	 * where a generic island inside a native fragment inside a generic host adds indirection without coverage.
+	 */
+	boolean islandsSuppressed;
+	/** Whether this compile produced at least one interior generic island (drives the hybrid plan class). */
+	boolean sawIsland;
+	/**
+	 * M-A3 scope barrier: island every variable-scope-change subtree. Set only on the decline-conversion retry after an
+	 * unsafe nested scope change was detected — the generic engine then owns all scope semantics while the positive
+	 * skeleton stays native.
+	 */
+	boolean islandScopeChanges;
+	/** M-A3 scope barrier: non-well-designed LeftJoins forced to islands (generic bottom-up OPTIONAL scoping). */
+	Set<LeftJoin> forcedIslandLeftJoins = java.util.Collections.emptySet();
+	/**
+	 * M-A4 wide-query demotion: subtrees forced to islands with a restricted visible-name set, so their internal-only
+	 * variables never claim slots. Keyed by node identity; the value is the names the rest of the query observes.
+	 */
+	Map<TupleExpr, Set<String>> demotedIslands = java.util.Collections.emptyMap();
+	/** Whether this compile failed because the 60-slot budget ran out (gates the M-A4 demotion retry). */
+	boolean slotBudgetExceeded;
+	/**
+	 * M-F3 aggregates over expressions: hidden computed slots recorded by {@link #compileAggregates(Group)} and
+	 * compiled into an extension over the group argument once the argument plan exists. The '#' prefix cannot occur in
+	 * a SPARQL variable name, so a hidden slot can never collide with (or leak as) a query variable.
+	 */
+	final List<PendingAggregateExpression> pendingAggregateExpressions = new ArrayList<>();
+
+	static final class PendingAggregateExpression {
+		final int slot;
+		final ValueExpr expression;
+
+		PendingAggregateExpression(int slot, ValueExpr expression) {
+			this.slot = slot;
+			this.expression = expression;
+		}
+	}
+
+	/**
+	 * M-F1 value-guarded VALUES cells: unsafe constants (langString spellings, value-collapsible numerics) recorded by
+	 * {@link LmdbNativeAggregateValuesCompiler#compileValues} and applied as term-checked constant binds over the
+	 * completed root plan — patterns below enumerate the variable freely, the guard binds when nothing else bound it
+	 * and term-checks (through the evaluation's term authority) when something did.
+	 */
+	final List<PendingValueGuard> pendingValueGuards = new ArrayList<>();
+	/**
+	 * Whether this compile's root applies pending value guards. Only the group and row roots wrap their completed plan
+	 * (and run through the SyntheticValueSource carrier the guard's bindOrCheckTerm needs); bare fragments and EXISTS
+	 * witnesses must not record guards — their compiles decline the unsafe cell instead.
+	 */
+	boolean valueGuardsSupported;
+
+	static final class PendingValueGuard {
+		final String name;
+		final int slot;
+		final long guardId;
+
+		PendingValueGuard(String name, int slot, long guardId) {
+			this.name = name;
+			this.slot = slot;
+			this.guardId = guardId;
+		}
+	}
+
+	/** Applies the recorded value guards over the completed root plan; identity when there are none. */
+	SlotPlan applyValueGuards(SlotPlan arg) {
+		if (pendingValueGuards.isEmpty()) {
+			return arg;
+		}
+		CopyBinding[] copies = new CopyBinding[pendingValueGuards.size()];
+		for (int i = 0; i < copies.length; i++) {
+			PendingValueGuard guard = pendingValueGuards.get(i);
+			copies[i] = CopyBinding.termCheckedConstant(guard.slot, guard.guardId);
+		}
+		return SlotPlan.extension(arg, copies);
+	}
+
+	/**
+	 * Whether the recorded value guards are sound over this algebra. A root-level guard reproduces the generic
+	 * evaluator's up-front VALUES binding only when nothing between the VALUES and the root can observe the variable's
+	 * bound-ness: a filter/extension/order condition reading it would see it unbound where the generic arm sees the
+	 * constant, an OPTIONAL or MINUS right side binding it turns an arm failure into a whole-row rejection. Guarded
+	 * names may only be bound by mandatory-position producers and projected without DISTINCT-style id dedup.
+	 */
+	boolean valueGuardsSafeFor(TupleExpr root) {
+		if (pendingValueGuards.isEmpty()) {
+			return true;
+		}
+		java.util.HashSet<String> guarded = new java.util.HashSet<>();
+		for (PendingValueGuard guard : pendingValueGuards) {
+			guarded.add(guard.name);
+		}
+		final boolean[] unsafe = { false };
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (!java.util.Collections.disjoint(VarNameCollector.process(node.getCondition()), guarded)) {
+					unsafe[0] = true;
+				}
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(ExtensionElem node) {
+				if (guarded.contains(node.getName())
+						|| !java.util.Collections.disjoint(VarNameCollector.process(node.getExpr()), guarded)) {
+					unsafe[0] = true;
+				}
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(LeftJoin node) {
+				if (node.getCondition() != null && !java.util.Collections
+						.disjoint(VarNameCollector.process(node.getCondition()), guarded)) {
+					unsafe[0] = true;
+				}
+				if (!java.util.Collections.disjoint(node.getRightArg().getBindingNames(), guarded)) {
+					unsafe[0] = true;
+				}
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(Difference node) {
+				if (!java.util.Collections.disjoint(node.getRightArg().getBindingNames(), guarded)) {
+					unsafe[0] = true;
+				}
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(Union node) {
+				// conservative: a guarded name inside a UNION could be bound in one arm only — the root guard
+				// would then bind the constant on the other arm's rows where the generic arm leaves it unbound
+				if (!java.util.Collections.disjoint(VarNameCollector.process(node), guarded)) {
+					unsafe[0] = true;
+				}
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(Projection node) {
+				// conservative: interior projections are subqueries with their own variable scope
+				if (!java.util.Collections.disjoint(VarNameCollector.process(node), guarded)) {
+					unsafe[0] = true;
+				}
+				super.meet(node);
+			}
+		});
+		return !unsafe[0];
+	}
+
+	/** The names carrying a pending value guard; empty when none. */
+	Set<String> valueGuardedNames() {
+		if (pendingValueGuards.isEmpty()) {
+			return Set.of();
+		}
+		java.util.HashSet<String> names = new java.util.HashSet<>();
+		for (PendingValueGuard guard : pendingValueGuards) {
+			names.add(guard.name);
+		}
+		return names;
+	}
+
 	private int nextAdaptiveFilterId;
 
 	LmdbNativeAggregatePlannerBase(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
@@ -121,9 +302,62 @@ abstract class LmdbNativeAggregatePlannerBase {
 	}
 
 	Set<String> wellDesignedOptionalOnlyNames(TupleExpr root) {
+		return wellDesignedOptionalOnlyNames(root, java.util.Collections.emptySet());
+	}
+
+	/**
+	 * The non-well-designed LeftJoins of the tree — those binding an optional-only name that is also used outside them,
+	 * where the mutable-row model cannot reproduce bottom-up OPTIONAL scoping. M-A3 converts these declines into scoped
+	 * islands: the offending LeftJoins evaluate generically (correct scoping by construction) while the rest of the
+	 * tree stays native.
+	 */
+	Set<LeftJoin> nonWellDesignedLeftJoins(TupleExpr root) {
+		java.util.Set<LeftJoin> violators = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+		for (LeftJoin leftJoin : candidateLeftJoins(root)) {
+			Set<String> optionalOnly = leftJoinOptionalOnlyNames(leftJoin);
+			if (optionalOnly.isEmpty()) {
+				continue;
+			}
+			Set<String> outside = bindingNamesOutside(root, leftJoin);
+			for (String name : optionalOnly) {
+				if (outside.contains(name)) {
+					violators.add(leftJoin);
+					break;
+				}
+			}
+		}
+		return violators;
+	}
+
+	Set<String> wellDesignedOptionalOnlyNames(TupleExpr root, Set<LeftJoin> excluded) {
 		if (!Boolean.parseBoolean(System.getProperty(LEFTJOIN_WELL_DESIGNED_CHECK, "true"))) {
 			return Set.of();
 		}
+		java.util.HashSet<String> allOptionalOnly = new java.util.HashSet<>();
+		for (LeftJoin leftJoin : candidateLeftJoins(root)) {
+			if (excluded.contains(leftJoin)) {
+				// islanded LeftJoins (M-A3): the generic engine owns their scoping and their names reach the
+				// host only through island write-back, so they neither violate well-designedness nor add
+				// optional-only names to the native tracking set
+				continue;
+			}
+			Set<String> optionalOnly = leftJoinOptionalOnlyNames(leftJoin);
+			if (optionalOnly.isEmpty()) {
+				continue;
+			}
+			Set<String> outside = bindingNamesOutside(root, leftJoin);
+			for (String name : optionalOnly) {
+				if (outside.contains(name)) {
+					return null;
+				}
+			}
+			allOptionalOnly.addAll(optionalOnly);
+		}
+		return allOptionalOnly;
+	}
+
+	/** All LeftJoins of the tree except those a null-rejecting filter turns into effective inner joins. */
+	private List<LeftJoin> candidateLeftJoins(TupleExpr root) {
 		Set<LeftJoin> nullRejected = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
@@ -153,24 +387,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 				super.meet(node);
 			}
 		});
-		if (leftJoins.isEmpty()) {
-			return Set.of();
-		}
-		java.util.HashSet<String> allOptionalOnly = new java.util.HashSet<>();
-		for (LeftJoin leftJoin : leftJoins) {
-			Set<String> optionalOnly = leftJoinOptionalOnlyNames(leftJoin);
-			if (optionalOnly.isEmpty()) {
-				continue;
-			}
-			Set<String> outside = bindingNamesOutside(root, leftJoin);
-			for (String name : optionalOnly) {
-				if (outside.contains(name)) {
-					return null;
-				}
-			}
-			allOptionalOnly.addAll(optionalOnly);
-		}
-		return allOptionalOnly;
+		return leftJoins;
 	}
 
 	Set<String> leftJoinOptionalOnlyNames(LeftJoin leftJoin) {
@@ -296,19 +513,35 @@ abstract class LmdbNativeAggregatePlannerBase {
 						}
 						boolean unsafeEligible = !unknown && !valueProbeSafeId(id, value)
 								&& !patternOrCopyVars.contains(binding.getName());
+						if (unknown && !termSafeAbsenceProof(value)
+								&& patternOrCopyVars.contains(binding.getName())) {
+							// M-F1: a store-absent langString may exist under a term-equal spelling with its own
+							// id, so a synthetic id must NOT constrain pattern probes — compileValues routes this
+							// cell to the value-guarded fallback instead
+							continue;
+						}
 						if (!unknown && !unsafeEligible) {
 							continue;
 						}
-						if (!syntheticIdsByValue.containsKey(value)) {
-							long synthetic = SYNTHETIC_VALUE_BASE + syntheticIdsByValue.size();
-							syntheticIdsByValue.put(value, synthetic);
-							syntheticValuesById.put(synthetic, value);
-						}
+						planValueCatalog.internConstant(value);
 						syntheticVarNames.add(binding.getName());
 					}
 				}
 			}
 		});
+	}
+
+	/**
+	 * Whether a store miss for this value proves store absence: term-safe classes (IRIs, blank nodes, literals without
+	 * a language tag) have exactly one possible store spelling. Language-tagged literals (and RDF-star triples, which
+	 * can embed them) may exist under a different but term-equal spelling — mirrors
+	 * {@link LmdbSyntheticValueSource#internEntryBinding}.
+	 */
+	static boolean termSafeAbsenceProof(Value value) {
+		if (value instanceof Literal) {
+			return ((Literal) value).getLanguage().isEmpty();
+		}
+		return value != null && (value.isIRI() || value.isBNode());
 	}
 
 	/**
@@ -448,6 +681,13 @@ abstract class LmdbNativeAggregatePlannerBase {
 				ValueExpr arg = ((AbstractAggregateOperator) op).getArg();
 				if (arg instanceof Var && !((Var) arg).hasValue()) {
 					names.add(((Var) arg).getName());
+				} else if (arg != null) {
+					// aggregate over an expression: every variable the expression reads is required
+					names.addAll(org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector.process(arg));
+				}
+				if (arg == null && op.isDistinct()) {
+					// COUNT(DISTINCT *) hashes the full visible solution mapping: every visible name is required
+					names.addAll(group.getArg().getBindingNames());
 				}
 			}
 		}
@@ -456,8 +696,15 @@ abstract class LmdbNativeAggregatePlannerBase {
 
 	boolean duplicatesMatter(AggregateSpec[] aggregates, ValueExpr havingCondition) {
 		for (AggregateSpec aggregate : aggregates) {
-			if (aggregate.kind == AggKind.MIN || aggregate.kind == AggKind.MAX) {
-				// extrema ignore multiplicity
+			if (aggregate.rowSlots != null) {
+				// COUNT(DISTINCT *) is multiplicity-insensitive in principle, but the duplicate-insensitive
+				// compile collapses can prune whole operands (e.g. the OPTIONAL prune) whose bindings are part
+				// of the hashed full row — treat duplicates as mattering so every visible binding survives
+				return true;
+			}
+			if (aggregate.kind == AggKind.MIN || aggregate.kind == AggKind.MAX
+					|| aggregate.kind == AggKind.SAMPLE) {
+				// extrema and SAMPLE ignore multiplicity
 				continue;
 			}
 			if (!aggregate.distinct && !(aggregate.kind == AggKind.COUNT
@@ -517,7 +764,8 @@ abstract class LmdbNativeAggregatePlannerBase {
 		return (op == Compare.CompareOp.LE && constant >= 1L) || (op == Compare.CompareOp.LT && constant > 1L);
 	}
 
-	AggregateSpec[] compileAggregates(List<GroupElem> groupElements) {
+	AggregateSpec[] compileAggregates(Group group) {
+		List<GroupElem> groupElements = group.getGroupElements();
 		AggregateSpec[] specs = new AggregateSpec[groupElements.size()];
 		for (int i = 0; i < groupElements.size(); i++) {
 			GroupElem elem = groupElements.get(i);
@@ -528,14 +776,40 @@ abstract class LmdbNativeAggregatePlannerBase {
 			}
 			ValueExpr arg = ((AbstractAggregateOperator) op).getArg();
 			if (arg == null) {
-				if (kind != AggKind.COUNT || op.isDistinct()) {
+				if (kind != AggKind.COUNT) {
 					return null;
 				}
-				specs[i] = AggregateSpec.star(elem.getName());
+				if (op.isDistinct()) {
+					// COUNT(DISTINCT *) (M-F3): hash the full visible solution mapping of the group's argument.
+					// Sorted name order keeps the hashed slot order deterministic across compiles.
+					java.util.TreeSet<String> visible = new java.util.TreeSet<>(group.getArg().getBindingNames());
+					int[] rowSlots = new int[visible.size()];
+					int slotIndex = 0;
+					for (String name : visible) {
+						rowSlots[slotIndex++] = slot(name);
+					}
+					specs[i] = AggregateSpec.starDistinct(elem.getName(), rowSlots);
+				} else {
+					specs[i] = AggregateSpec.star(elem.getName());
+				}
 				continue;
 			}
 			if (!(arg instanceof Var)) {
-				return null;
+				// M-F3 aggregates over expressions: evaluate the argument once per input solution into a hidden
+				// computed slot (error ⇒ slot unbound, matching the generic evaluator's null-on-error skip);
+				// DISTINCT then applies to the computed slot exactly like a plain variable argument.
+				int hidden = slot("#aggExpr" + i);
+				pendingAggregateExpressions.add(new PendingAggregateExpression(hidden, arg));
+				if (kind == AggKind.GROUP_CONCAT) {
+					String separator = groupConcatSeparator((org.eclipse.rdf4j.query.algebra.GroupConcat) op);
+					if (separator == null) {
+						return null;
+					}
+					specs[i] = AggregateSpec.groupConcat(elem.getName(), hidden, op.isDistinct(), separator);
+				} else {
+					specs[i] = AggregateSpec.slot(elem.getName(), hidden, op.isDistinct(), kind);
+				}
+				continue;
 			}
 			Var var = (Var) arg;
 			if (var.hasValue()) {
@@ -547,6 +821,12 @@ abstract class LmdbNativeAggregatePlannerBase {
 					return null;
 				}
 				specs[i] = AggregateSpec.constant(elem.getName(), id, op.isDistinct());
+			} else if (kind == AggKind.GROUP_CONCAT) {
+				String separator = groupConcatSeparator((org.eclipse.rdf4j.query.algebra.GroupConcat) op);
+				if (separator == null) {
+					return null;
+				}
+				specs[i] = AggregateSpec.groupConcat(elem.getName(), slot(var.getName()), op.isDistinct(), separator);
 			} else {
 				specs[i] = AggregateSpec.slot(elem.getName(), slot(var.getName()), op.isDistinct(), kind);
 			}
@@ -554,9 +834,27 @@ abstract class LmdbNativeAggregatePlannerBase {
 		return specs;
 	}
 
+	/** The GROUP_CONCAT separator: default single space, or a constant literal; anything else declines (null). */
+	private static String groupConcatSeparator(org.eclipse.rdf4j.query.algebra.GroupConcat op) {
+		ValueExpr separator = op.getSeparator();
+		if (separator == null) {
+			return " ";
+		}
+		if (separator instanceof ValueConstant && ((ValueConstant) separator).getValue() instanceof Literal) {
+			return ((Literal) ((ValueConstant) separator).getValue()).getLabel();
+		}
+		return null;
+	}
+
 	static AggKind aggKindOf(AggregateOperator op) {
 		if (op instanceof Count) {
 			return AggKind.COUNT;
+		}
+		if (op instanceof org.eclipse.rdf4j.query.algebra.Sample) {
+			return AggKind.SAMPLE;
+		}
+		if (op instanceof org.eclipse.rdf4j.query.algebra.GroupConcat) {
+			return AggKind.GROUP_CONCAT;
 		}
 		if (op instanceof Sum) {
 			return AggKind.SUM;
@@ -668,6 +966,70 @@ abstract class LmdbNativeAggregatePlannerBase {
 			return Term.unbound();
 		}
 		return Term.slot(slot(var.getName()));
+	}
+
+	/**
+	 * Compiles the subtree as an interior generic island (M-A1b), or returns null when islands are disabled, suppressed
+	 * for this route, or the slot budget is exceeded. Out slots are allocated for every externally visible binding
+	 * name; the plan is marked context-requiring so the step source becomes the per-evaluation carrier the island's
+	 * runtime state lives in.
+	 */
+	SlotPlan island(TupleExpr expr) {
+		return island(expr, null);
+	}
+
+	/**
+	 * Island with a restricted visible-name set (M-A4 demotion): out slots are allocated only for binding names the
+	 * rest of the query observes; internal-only names stay inside the generic island and never claim slots. Dropping
+	 * unobserved bindings from emitted solutions is a projection — it can never change row counts or any observed
+	 * binding.
+	 */
+	SlotPlan island(TupleExpr expr, Set<String> restrictTo) {
+		if (!islandsEnabled || islandsSuppressed) {
+			return null;
+		}
+		Set<String> names = expr.getBindingNames();
+		if (restrictTo != null) {
+			Set<String> visible = new HashSet<>(names);
+			visible.retainAll(restrictTo);
+			names = visible;
+		}
+		int[] outSlots = new int[names.size()];
+		String[] outNames = new String[names.size()];
+		int i = 0;
+		for (String name : names) {
+			outNames[i] = name;
+			outSlots[i] = slot(name);
+			i++;
+		}
+		if (slotNames.size() > LmdbNativeAggregateCompiler.MAX_NATIVE_SLOTS) {
+			slotBudgetExceeded = true;
+			return null;
+		}
+		requiresExecutionContext = true;
+		sawIsland = true;
+		LmdbNativeAggregateCompiler.ISLANDS_COMPILED.incrementAndGet();
+		Set<String> varNames = bindingAndExtensionNames(expr);
+		varNames.addAll(names);
+		return new GenericEvalPlan(GenericSubplanDescriptor.create(expr), expr.getClass().getSimpleName(), outSlots,
+				outNames, varNames, strategy, context);
+	}
+
+	/** {@code compileTuple} with the island fallback at a decline (M-A1b). */
+	SlotPlan compileTupleOrIsland(TupleExpr expr, boolean duplicateInsensitive) {
+		SlotPlan plan = compileTuple(expr, duplicateInsensitive);
+		return plan != null ? plan : island(expr);
+	}
+
+	/** Force-mode arm compile: prefer an island even where native compilation would succeed. */
+	SlotPlan islandPreferred(TupleExpr expr, boolean duplicateInsensitive) {
+		SlotPlan forced = island(expr);
+		return forced != null ? forced : compileTuple(expr, duplicateInsensitive);
+	}
+
+	/** Whether the generic engine may skip evaluating this subtree entirely (no query-fatal effects). */
+	static boolean canDiscardWithoutEvaluation(TupleExpr expr) {
+		return QueryEvaluationUtility.canDiscardWithoutEvaluation(expr);
 	}
 
 	int slot(String name) {

@@ -203,10 +203,14 @@ final class LmdbNativePackedFtree {
 				return null;
 			}
 		}
-		// COUNT(DISTINCT *) is not represented by AggregateSpec.star(); all slot/constant distinct aggregates are
-		// exact.
+		// All slot/constant distinct aggregates are exact here; the full-row COUNT(DISTINCT *) shape declines below.
 		for (AggregateSpec aggregate : aggregates) {
 			if (aggregate.slot >= 0 && !slotAvailable(plan, row, aggregate.slot)) {
+				return null;
+			}
+			if (aggregate.kind == AggKind.SAMPLE || aggregate.kind == AggKind.GROUP_CONCAT
+					|| aggregate.rowSlots != null) {
+				// M-F1/M-F3: serial-only aggregates — the packed weighted/popcount paths have no combination rule
 				return null;
 			}
 		}

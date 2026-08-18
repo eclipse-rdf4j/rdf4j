@@ -103,6 +103,24 @@ final class RowState {
 		return true;
 	}
 
+	/**
+	 * Value-checked bind (M-A0 gate 3): where independently obtained ids meet — an externally seeded slot rebound by a
+	 * plan node, or island write-back into an occupied slot (M-A1a) — a raw-id mismatch is not proof of a term
+	 * mismatch, because one side may hold an evaluation-scoped id for the same RDF term. On mismatch this consults the
+	 * evaluation's term authority; the slot keeps its current id when the terms agree. Plans on a raw store source
+	 * carry only store ids, where exact id equality IS term equality — no authority, no second chance.
+	 */
+	boolean bindOrCheckTerm(int slot, long id) {
+		if (bind(slot, id)) {
+			return true;
+		}
+		if (source instanceof SyntheticValueSource) {
+			LmdbNativeTermAuthority authority = ((SyntheticValueSource) source).authority();
+			return authority != null && authority.sameRdfTerm(slots[slot], id);
+		}
+		return false;
+	}
+
 	int mark() {
 		return trailSize;
 	}
@@ -530,6 +548,12 @@ final class CopyBinding {
 	 */
 	final LmdbNativeCompiledValue computedValue;
 	final boolean encounterOrderReplaySafe;
+	/**
+	 * Value-guarded VALUES constant (M-F1): when the target slot is free the constant binds; when it is already bound
+	 * the row survives only if the two ids denote the same RDF term per the evaluation's term authority
+	 * ({@link RowState#bindOrCheckTerm}). Deterministic per row, so replay-safe; kernel lowering declines it.
+	 */
+	final boolean termChecked;
 
 	CopyBinding(int targetSlot, int sourceSlot, long constant) {
 		this(targetSlot, sourceSlot, constant, null);
@@ -543,6 +567,7 @@ final class CopyBinding {
 		this.computed = computed;
 		this.computedValue = null;
 		this.encounterOrderReplaySafe = computed == null || computed.encounterOrderReplaySafe();
+		this.termChecked = false;
 	}
 
 	private CopyBinding(int targetSlot, LmdbNativeCompiledValue computedValue, boolean encounterOrderReplaySafe) {
@@ -552,6 +577,17 @@ final class CopyBinding {
 		this.computed = null;
 		this.computedValue = computedValue;
 		this.encounterOrderReplaySafe = encounterOrderReplaySafe;
+		this.termChecked = false;
+	}
+
+	private CopyBinding(int targetSlot, long constant, boolean termChecked) {
+		this.targetSlot = targetSlot;
+		this.sourceSlot = -1;
+		this.constant = constant;
+		this.computed = null;
+		this.computedValue = null;
+		this.encounterOrderReplaySafe = true;
+		this.termChecked = termChecked;
 	}
 
 	static CopyBinding slot(int targetSlot, int sourceSlot) {
@@ -569,6 +605,10 @@ final class CopyBinding {
 	static CopyBinding computedValue(int targetSlot, LmdbNativeCompiledValue computedValue,
 			boolean encounterOrderReplaySafe) {
 		return new CopyBinding(targetSlot, computedValue, encounterOrderReplaySafe);
+	}
+
+	static CopyBinding termCheckedConstant(int targetSlot, long constant) {
+		return new CopyBinding(targetSlot, constant, true);
 	}
 
 	long value(RowState row) {

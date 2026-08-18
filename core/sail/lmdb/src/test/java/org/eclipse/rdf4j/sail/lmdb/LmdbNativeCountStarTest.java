@@ -36,8 +36,8 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * COUNT(*) coverage for the native LMDB aggregate path: the wildcard count must compile natively (observable through
  * {@link LmdbNativeAggregateCompiler#COMPILED}) and count solution rows including join multiplicity, across the plain,
- * grouped, factorized-tail and HAVING evaluation shapes. COUNT(DISTINCT *) counts distinct full rows, which the
- * id-based state cannot represent, so it must stay on the generic path while still returning correct results.
+ * grouped, factorized-tail and HAVING evaluation shapes. COUNT(DISTINCT *) (M-F3) hashes the full visible solution
+ * mapping — names, bound status, term identity — on the serial group path; every specialized strategy declines it.
  */
 public class LmdbNativeCountStarTest {
 
@@ -199,8 +199,9 @@ public class LmdbNativeCountStarTest {
 		}
 	}
 
+	/** M-F3: COUNT(DISTINCT *) hashes the full visible solution mapping and compiles natively. */
 	@Test
-	public void countDistinctStarStaysOnGenericPath() {
+	public void countDistinctStarCompilesNativelyAndCountsDistinctRows() {
 		long compiledBefore = LmdbNativeAggregateCompiler.COMPILED.get();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(
@@ -209,7 +210,62 @@ public class LmdbNativeCountStarTest {
 			assertThat(((Literal) result.get(0).getValue("c")).longValue()).isEqualTo(4L);
 		}
 		assertThat(LmdbNativeAggregateCompiler.COMPILED.get())
-				.as("COUNT(DISTINCT *) must stay on the generic path")
-				.isEqualTo(compiledBefore);
+				.as("COUNT(DISTINCT *) must compile natively (previously a root decline)")
+				.isGreaterThan(compiledBefore);
+	}
+
+	/** M-F3: full-row deduplication — UNION-injected duplicate rows collapse, unlike COUNT(*). */
+	@Test
+	public void countDistinctStarDeduplicatesFullRowsAcrossUnionDuplicates() {
+		long compiledBefore = LmdbNativeAggregateCompiler.COMPILED.get();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(
+					"SELECT (COUNT(DISTINCT *) AS ?c) WHERE {"
+							+ " { ?h <" + EX + "e1> ?x } UNION { ?h <" + EX + "e1> ?x } }")
+					.evaluate());
+			assertThat(((Literal) result.get(0).getValue("c")).longValue()).isEqualTo(3L);
+			List<BindingSet> plain = QueryResults.asList(conn.prepareTupleQuery(
+					"SELECT (COUNT(*) AS ?c) WHERE {"
+							+ " { ?h <" + EX + "e1> ?x } UNION { ?h <" + EX + "e1> ?x } }")
+					.evaluate());
+			assertThat(((Literal) plain.get(0).getValue("c")).longValue()).isEqualTo(6L);
+		}
+		assertThat(LmdbNativeAggregateCompiler.COMPILED.get())
+				.as("COUNT(DISTINCT *) over a UNION must compile natively")
+				.isGreaterThan(compiledBefore);
+	}
+
+	/** M-F3: bound status is part of the hashed row — rows differing only in an OPTIONAL binding stay distinct. */
+	@Test
+	public void countDistinctStarDistinguishesBoundStatus() {
+		long compiledBefore = LmdbNativeAggregateCompiler.COMPILED.get();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(
+					"SELECT (COUNT(DISTINCT *) AS ?c) WHERE { ?s a <" + EX + "Person> ."
+							+ " OPTIONAL { ?s <" + EX + "nick> ?n } }")
+					.evaluate());
+			assertThat(((Literal) result.get(0).getValue("c")).longValue()).isEqualTo(3L);
+		}
+		assertThat(LmdbNativeAggregateCompiler.COMPILED.get())
+				.as("COUNT(DISTINCT *) over OPTIONAL must compile natively")
+				.isGreaterThan(compiledBefore);
+	}
+
+	/** M-F3: grouped COUNT(DISTINCT *) deduplicates within each group. */
+	@Test
+	public void groupedCountDistinctStarDeduplicatesPerGroup() {
+		long compiledBefore = LmdbNativeAggregateCompiler.COMPILED.get();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(
+					"SELECT ?h (COUNT(DISTINCT *) AS ?c) WHERE {"
+							+ " { ?h <" + EX + "e1> ?x } UNION { ?h <" + EX + "e1> ?x } } GROUP BY ?h")
+					.evaluate());
+			assertThat(result).hasSize(1);
+			assertThat(result.get(0).getValue("h").stringValue()).isEqualTo(EX + "h1");
+			assertThat(((Literal) result.get(0).getValue("c")).longValue()).isEqualTo(3L);
+		}
+		assertThat(LmdbNativeAggregateCompiler.COMPILED.get())
+				.as("grouped COUNT(DISTINCT *) must compile natively")
+				.isGreaterThan(compiledBefore);
 	}
 }
