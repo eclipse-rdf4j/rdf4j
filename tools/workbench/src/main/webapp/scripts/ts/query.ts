@@ -2258,7 +2258,8 @@ module workbench {
                 mode: explanationHighlightMode,
                 sharedMaximum: sharedMaximum,
                 lineSeparator: explanation.lineSeparator,
-                hiddenProperties: explanationHiddenProperties
+                hiddenProperties: explanationHiddenProperties,
+                namespaces: sparqlNamespaces
             });
             $('#' + paneState.explanationRowId).show();
             if (paneState.explanationControlsRowId) {

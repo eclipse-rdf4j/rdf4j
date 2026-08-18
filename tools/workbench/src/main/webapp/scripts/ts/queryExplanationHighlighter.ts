@@ -64,6 +64,7 @@ module workbench {
             sharedMaximum?: number;
             lineSeparator?: string;
             hiddenProperties?: string[];
+            namespaces?: { [prefix: string]: string };
         }
 
         export interface TextToken {
@@ -94,7 +95,19 @@ module workbench {
             value: string;
         }
 
+        interface NamespaceCandidate {
+            prefix: string;
+            namespace: string;
+            configured: boolean;
+        }
+
         var UNKNOWN = 'UNKNOWN';
+        var DEFAULT_NAMESPACES: { [prefix: string]: string } = {
+            rdf: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+            rdfs: 'http://www.w3.org/2000/01/rdf-schema#',
+            xsd: 'http://www.w3.org/2001/XMLSchema#',
+            owl: 'http://www.w3.org/2002/07/owl#'
+        };
         var TWO_DECIMAL_FORMATTER = new Intl.NumberFormat('en-US', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
@@ -743,31 +756,133 @@ module workbench {
             return !hiddenProperties || hiddenProperties.indexOf(name) < 0;
         }
 
+        interface VariableDetailMarker {
+            name: string;
+            index: number;
+            end: number;
+        }
+
+        function variableDetailMarkers(details: string): VariableDetailMarker[] {
+            var result: VariableDetailMarker[] = [];
+            var markerPattern = /(name|value|bindingState)=/g;
+            var match: RegExpExecArray;
+            while ((match = markerPattern.exec(details)) !== null) {
+                var prefix = details.substring(0, match.index);
+                if (match.index === 0 || /[,(]\s*$/.test(prefix)) {
+                    result.push({ name: match[1], index: match.index, end: markerPattern.lastIndex });
+                }
+            }
+            return result;
+        }
+
+        function variableDetailValueEnd(details: string, valueStart: number, segmentEnd: number,
+                                        hasNextMarker: boolean): number {
+            var segment = details.substring(valueStart, segmentEnd);
+            var structuralSuffix = hasNextMarker ? /(?:,\s*|\)\s*\()$/ : /(?:,\s*anonymous)?\)\s*$/;
+            var suffixMatch = structuralSuffix.exec(segment);
+            return suffixMatch ? valueStart + suffixMatch.index : segmentEnd;
+        }
+
+        function bindingStateKind(value: string): string {
+            if (value === 'bound') {
+                return 'binding-bound';
+            }
+            if (value === 'unbound') {
+                return 'binding-unbound';
+            }
+            return 'annotation';
+        }
+
+        function variableDetailKind(name: string, value: string): string {
+            if (name === 'name') {
+                return 'variable';
+            }
+            if (name === 'value') {
+                return 'value';
+            }
+            if (name === 'bindingState') {
+                return bindingStateKind(value);
+            }
+            return 'annotation';
+        }
+
+        function appendVariableStructure(lineTokens: TextToken[], text: string): void {
+            var structurePattern = /\banonymous\b|[(),]/g;
+            var match: RegExpExecArray;
+            var cursor = 0;
+            while ((match = structurePattern.exec(text)) !== null) {
+                if (match.index > cursor) {
+                    lineTokens.push(token(text.substring(cursor, match.index), 'annotation'));
+                }
+                var kind = match[0] === 'anonymous' ? 'variable-flag'
+                    : (match[0] === ',' ? 'operator' : 'punctuation');
+                lineTokens.push(token(match[0], kind));
+                cursor = structurePattern.lastIndex;
+            }
+            if (cursor < text.length) {
+                lineTokens.push(token(text.substring(cursor), 'annotation'));
+            }
+        }
+
+        function appendVariableDetails(lineTokens: TextToken[], details: string): void {
+            var markers = variableDetailMarkers(details);
+            if (!markers.length) {
+                lineTokens.push(token(details, 'variable'));
+                return;
+            }
+            var cursor = 0;
+            for (var markerIndex = 0; markerIndex < markers.length; markerIndex++) {
+                var marker = markers[markerIndex];
+                if (marker.index > cursor) {
+                    appendVariableStructure(lineTokens, details.substring(cursor, marker.index));
+                }
+                lineTokens.push(token(details.substring(marker.index, marker.end - 1), 'annotation'));
+                lineTokens.push(token('=', 'operator'));
+                var segmentEnd = markerIndex + 1 < markers.length
+                    ? markers[markerIndex + 1].index : details.length;
+                var valueEnd = variableDetailValueEnd(details, marker.end, segmentEnd,
+                    markerIndex + 1 < markers.length);
+                var value = details.substring(marker.end, valueEnd);
+                if (value.length) {
+                    lineTokens.push(token(value, variableDetailKind(marker.name, value)));
+                }
+                cursor = valueEnd;
+            }
+            if (cursor < details.length) {
+                appendVariableStructure(lineTokens, details.substring(cursor));
+            }
+        }
+
+        function appendNodeType(lineTokens: TextToken[], type: string): void {
+            var detailIndex = type.search(/\s/);
+            if (detailIndex < 0) {
+                lineTokens.push(token(type, 'node-type'));
+                return;
+            }
+            lineTokens.push(token(type.substring(0, detailIndex), 'node-type'));
+            lineTokens.push(token(type.substring(detailIndex), 'node-detail'));
+        }
+
+        function metricValueKind(metric: MetricEntry): string {
+            return metric.name === 'bindingState' ? bindingStateKind(metric.value) : 'metric-value';
+        }
+
         function nodeLine(node: QueryPlanNode, level: ExplainLevel,
                           hiddenProperties?: string[]): FormattedLine {
             var lineTokens: TextToken[] = [];
             var type = planType(node);
             if (type.indexOf('Var') === 0) {
                 lineTokens.push(token('Var', 'node-type'));
-                var variableDetails = type.substring(3);
-                var valueMarker = 'value=';
-                var valueIndex = variableDetails.indexOf(valueMarker);
-                if (valueIndex < 0) {
-                    lineTokens.push(token(variableDetails, 'variable'));
-                } else {
-                    lineTokens.push(token(variableDetails.substring(0, valueIndex), 'variable'));
-                    lineTokens.push(token(valueMarker, 'annotation'));
-                    lineTokens.push(token(variableDetails.substring(valueIndex + valueMarker.length), 'value'));
-                }
+                appendVariableDetails(lineTokens, type.substring(3));
             } else {
-                lineTokens.push(token(type, 'node-type'));
+                appendNodeType(lineTokens, type);
             }
             if (node.newScope && isPropertyVisible('newScope', hiddenProperties)) {
                 lineTokens.push(token(' (new scope)', 'annotation'));
             }
             if (typeof node.algorithm === 'string' && node.algorithm.length
                 && isPropertyVisible('algorithm', hiddenProperties)) {
-                lineTokens.push(token(' (' + node.algorithm + ')', 'annotation'));
+                lineTokens.push(token(' (' + node.algorithm + ')', 'algorithm'));
             }
             var nodeMetrics = metrics(node, level).filter(function(entry: MetricEntry): boolean {
                 return isPropertyVisible(entry.name, hiddenProperties);
@@ -776,11 +891,11 @@ module workbench {
                 lineTokens.push(token(' (', 'punctuation'));
                 for (var i = 0; i < nodeMetrics.length; i++) {
                     if (i) {
-                        lineTokens.push(token(', ', 'punctuation'));
+                        lineTokens.push(token(', ', 'operator'));
                     }
                     lineTokens.push(token(nodeMetrics[i].name, 'metric-name'));
-                    lineTokens.push(token('=', 'punctuation'));
-                    lineTokens.push(token(nodeMetrics[i].value, 'metric-value'));
+                    lineTokens.push(token('=', 'operator'));
+                    lineTokens.push(token(nodeMetrics[i].value, metricValueKind(nodeMetrics[i])));
                 }
                 lineTokens.push(token(')', 'punctuation'));
             }
@@ -868,6 +983,83 @@ module workbench {
                 value += line.tokens[i].text;
             }
             return value;
+        }
+
+        function normalizedPrefix(prefix: string): string {
+            return prefix.charAt(prefix.length - 1) === ':' ? prefix.substring(0, prefix.length - 1) : prefix;
+        }
+
+        function namespaceCandidates(namespaces?: { [prefix: string]: string }): NamespaceCandidate[] {
+            var candidatesByPrefix: { [prefix: string]: NamespaceCandidate } = {};
+            var prefix: string;
+            for (prefix in DEFAULT_NAMESPACES) {
+                if (DEFAULT_NAMESPACES.hasOwnProperty(prefix)) {
+                    candidatesByPrefix[prefix] = {
+                        prefix: prefix,
+                        namespace: DEFAULT_NAMESPACES[prefix],
+                        configured: false
+                    };
+                }
+            }
+            for (prefix in namespaces) {
+                if (namespaces.hasOwnProperty(prefix) && typeof namespaces[prefix] === 'string'
+                    && namespaces[prefix].length > 0) {
+                    var normalized = normalizedPrefix(prefix);
+                    candidatesByPrefix[normalized] = {
+                        prefix: normalized,
+                        namespace: namespaces[prefix],
+                        configured: true
+                    };
+                }
+            }
+            var result: NamespaceCandidate[] = [];
+            for (prefix in candidatesByPrefix) {
+                if (candidatesByPrefix.hasOwnProperty(prefix)) {
+                    result.push(candidatesByPrefix[prefix]);
+                }
+            }
+            return result;
+        }
+
+        function compactableLocalName(localName: string): boolean {
+            return /^[A-Za-z_0-9][A-Za-z0-9._-]*$/.test(localName)
+                && localName.charAt(localName.length - 1) !== '.';
+        }
+
+        function preferredNamespace(current: NamespaceCandidate, candidate: NamespaceCandidate): boolean {
+            if (!current || candidate.namespace.length !== current.namespace.length) {
+                return !current || candidate.namespace.length > current.namespace.length;
+            }
+            if (candidate.configured !== current.configured) {
+                return candidate.configured;
+            }
+            if (candidate.prefix.length !== current.prefix.length) {
+                return candidate.prefix.length < current.prefix.length;
+            }
+            return candidate.prefix < current.prefix;
+        }
+
+        function compactIri(value: string, namespaces?: { [prefix: string]: string }): string {
+            var iri = value.length > 1 && value.charAt(0) === '<' && value.charAt(value.length - 1) === '>'
+                ? value.substring(1, value.length - 1) : value;
+            var candidates = namespaceCandidates(namespaces);
+            var selected: NamespaceCandidate = null;
+            var localName = '';
+            for (var i = 0; i < candidates.length; i++) {
+                var candidate = candidates[i];
+                if (iri.indexOf(candidate.namespace) !== 0) {
+                    continue;
+                }
+                var candidateLocalName = iri.substring(candidate.namespace.length);
+                if (!compactableLocalName(candidateLocalName)) {
+                    continue;
+                }
+                if (preferredNamespace(selected, candidate)) {
+                    selected = candidate;
+                    localName = candidateLocalName;
+                }
+            }
+            return selected ? selected.prefix + ':' + localName : value;
         }
 
         function effectiveLineSeparator(lineSeparator?: string): string {
@@ -1000,7 +1192,12 @@ module workbench {
                     var tokenElement = document.createElement('span');
                     tokenElement.className = 'query-explanation-token query-explanation-token--'
                         + formattedToken.kind;
-                    tokenElement.textContent = formattedToken.text;
+                    var displayText = formattedToken.kind === 'value'
+                        ? compactIri(formattedToken.text, options.namespaces) : formattedToken.text;
+                    tokenElement.textContent = displayText;
+                    if (displayText !== formattedToken.text) {
+                        tokenElement.setAttribute('title', formattedToken.text);
+                    }
                     lineElement.appendChild(tokenElement);
                 }
                 fragment.appendChild(lineElement);

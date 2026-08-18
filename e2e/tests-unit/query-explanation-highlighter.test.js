@@ -128,6 +128,50 @@ test('renders HTML-like values as inert highlighted text', () => {
     );
 });
 
+test('compacts default and repository IRIs without changing the legacy plaintext', () => {
+    const { harness, highlighter } = createHighlighterHarness();
+    const rdfType = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+    const exampleType = 'http://example#Type';
+    const result = highlighter.render({
+        type: 'StatementPattern',
+        plans: [
+            { type: 'Var (name=a)' },
+            { type: `Var (name=p, value=${rdfType}, anonymous)` },
+            { type: `Var (name=o, value=${exampleType}, anonymous)` }
+        ]
+    }, {
+        level: 'Optimized',
+        mode: 'syntax',
+        namespaces: { ex: 'http://example#' }
+    });
+    const target = harness.document.createElement('pre');
+    target.appendChild(result.fragment);
+
+    assert.equal(
+        target.textContent,
+        'StatementPattern\n'
+            + '   s: Var (name=a)\n'
+            + '   p: Var (name=p, value=rdf:type, anonymous)\n'
+            + '   o: Var (name=o, value=ex:Type, anonymous)\n'
+    );
+    assert.equal(
+        result.text,
+        'StatementPattern\n'
+            + '   s: Var (name=a)\n'
+            + `   p: Var (name=p, value=${rdfType}, anonymous)\n`
+            + `   o: Var (name=o, value=${exampleType}, anonymous)\n`
+    );
+    assert.deepEqual(
+        target.getElementsByTagName('span')
+            .filter((element) => element.classList.contains('query-explanation-token--value'))
+            .map((element) => [element.textContent, element.getAttribute('title')]),
+        [
+            ['rdf:type', rdfType],
+            ['ex:Type', exampleType]
+        ]
+    );
+});
+
 test('selects adaptive hotspot metrics and accepts a shared maximum', () => {
     const { highlighter } = createHighlighterHarness();
     const plan = {
