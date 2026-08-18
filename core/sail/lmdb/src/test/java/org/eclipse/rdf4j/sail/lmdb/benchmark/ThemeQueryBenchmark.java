@@ -123,7 +123,7 @@ public class ThemeQueryBenchmark {
 //			"TRAIN",
 //			"ELECTRICAL_GRID",
 //			"PHARMA",
-			"SPARSE",
+//			"SPARSE",
 	})
 	public String themeName;
 

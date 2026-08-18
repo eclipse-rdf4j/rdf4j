@@ -362,11 +362,18 @@ final class FrontierMappedStatistics {
 			return Double.NaN;
 		}
 		FrontierLeafEstimate rows = estimateLeaf(probe, scratch);
-		if (rows.pointRows() <= 0.0d) {
+		if (rows.fallbackReason() != FrontierFallbackReason.NONE) {
+			return Double.NaN;
+		}
+		if (rows.upperRows() == 0.0d) {
 			return 0.0d;
 		}
 		if ((probe.boundMask() & 1 << component) != 0) {
 			return 1.0d;
+		}
+		double exact = exactSingleDegreeProjectedDistinct(probe, component, scratch);
+		if (Double.isFinite(exact)) {
+			return exact;
 		}
 		if (!signedDeltas.isEmpty() && !omniMutationReady()) {
 			return Double.NaN;
@@ -384,9 +391,67 @@ final class FrontierMappedStatistics {
 		}
 		double omniEstimate = omni.estimateProjectedDistinct(probe, component, scratch);
 		if (Double.isFinite(omniEstimate)) {
-			return Math.max(1.0d, Math.min(rows.upperRows(), omniEstimate));
+			if (omniEstimate == 0.0d) {
+				return Double.NaN;
+			}
+			return Math.min(rows.upperRows(), omniEstimate);
 		}
 		return Double.NaN;
+	}
+
+	private double exactSingleDegreeProjectedDistinct(FrontierLeafProbe probe, int component,
+			FrontierOmniIndex.Scratch scratch) throws IOException {
+		if (!singleFreeEqualityClass(probe, component)) {
+			return Double.NaN;
+		}
+		double activePoint = Double.NaN;
+		for (int plane = 0; plane < FrontierOmniLayout.PLANE_COUNT; plane++) {
+			int planeMask = 1 << plane;
+			if ((probe.planeMask() & planeMask) == 0) {
+				continue;
+			}
+			FrontierLeafProbe planeProbe = new FrontierLeafProbe(
+					planeMask, probe.boundMask(), probe.subjectId(), probe.predicateId(), probe.objectId(),
+					probe.contextId(), probe.repeatedComponentPairMask(), probe.namedContextsOnly());
+			FrontierLeafEstimate planeRows = estimateLeaf(planeProbe, scratch);
+			if (planeRows.fallbackReason() != FrontierFallbackReason.NONE) {
+				return Double.NaN;
+			}
+			if (planeRows.upperRows() == 0.0d) {
+				continue;
+			}
+			if (Double.isFinite(activePoint) || planeRows.pointRows() == 0.0d) {
+				return Double.NaN;
+			}
+			activePoint = planeRows.pointRows();
+		}
+		return Double.isFinite(activePoint) ? activePoint : 0.0d;
+	}
+
+	private static boolean singleFreeEqualityClass(FrontierLeafProbe probe, int projectedComponent) {
+		int unboundMask = FrontierLeafProbe.ALL_COMPONENTS & ~probe.boundMask();
+		int projectedMask = 1 << projectedComponent;
+		if ((unboundMask & projectedMask) == 0) {
+			return false;
+		}
+		int equalityClass = projectedMask;
+		boolean changed;
+		do {
+			changed = false;
+			for (int left = 0; left < FrontierOmniLayout.COMPONENT_COUNT; left++) {
+				for (int right = left + 1; right < FrontierOmniLayout.COMPONENT_COUNT; right++) {
+					int pair = 1 << left | 1 << right;
+					if ((probe.repeatedComponentPairMask() & FrontierLeafProbe.componentPairMask(left, right)) == 0
+							|| (equalityClass & pair) == 0) {
+						continue;
+					}
+					int widened = equalityClass | pair;
+					changed |= widened != equalityClass;
+					equalityClass = widened;
+				}
+			}
+		} while (changed);
+		return (unboundMask & ~equalityClass) == 0;
 	}
 
 	FrontierJoinEstimate estimateJoin(FrontierJoinProbe probe, FrontierOmniIndex.Scratch scratch)

@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -292,6 +293,76 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		}
 	}
 
+	@Test
+	@Timeout(180)
+	void medicalQ9CompleteStoreMaterializesAntiJoinAndCompletes() throws Exception {
+		RunQueryPlanState state = new RunQueryPlanState();
+		state.themeName = Theme.MEDICAL_RECORDS.name();
+		state.z_queryIndex = 9;
+		state.sketchEstimatorEnabled = true;
+		state.sketchEstimatorStrategy = "unified";
+		state.dphypEnabled = false;
+		state.leoRolloutProfile = "safe-cardinality-correction";
+		state.loadSelectedThemeOnly = false;
+		state.rebuildStoreBeforeSetup = true;
+
+		try {
+			state.setup();
+			ExplainedPlanSnapshot snapshot = state.explainedPlanSnapshot();
+			String plan = snapshot.plan();
+			List<TupleExpr> semiAntiNodes = semiAntiNodes(snapshot.optimized());
+
+			assertEquals("COMPLETE", snapshot.completeness(),
+					"MEDICAL q9 must produce a complete all-theme Cascades winner\n"
+							+ snapshot.diagnostics() + "\n" + plan);
+			assertExactFiniteDomain(snapshot.optimized(), "condCode", Set.of("DX-200", "DX-201", "DX-202"));
+			assertEquals(1, semiAntiNodes.size(),
+					"MEDICAL q9 must expose one selected semi/anti implementation\n" + plan);
+			TupleExpr semiAnti = semiAntiNodes.getFirst();
+			assertTrue(semiAnti.getDoubleMetricPlanned("plannedCorrelationDistinctKeys") > 4_096.0d,
+					"the correlation point must retain the encounter domain\n" + plan);
+			assertTrue(semiAnti.getDoubleMetricPlanned("plannedCorrelationDistinctKeyUpperBound") > 4_096.0d,
+					"the correlation upper bound must reject the bounded memo cache\n" + plan);
+			assertEquals(semiAnti.getDoubleMetricPlanned("plannedCorrelationDistinctKeyUpperBound"),
+					semiAnti.getDoubleMetricPlanned("plannedSemiAntiMemoizedCostingDistinctKeys"), 0.0d,
+					"memoized costing must consume the structural upper bound");
+			assertEquals("materialized-hash", semiAnti.getStringMetricPlanned("optimizer.semiAntiAlgorithm"),
+					"the complete-store anti join must materialize its RHS once\n" + plan);
+			assertEquals(16_352L, state.evaluateCurrentQueryAndAssertExpectedResult());
+
+			List<TupleExpr> actualSemiAntiNodes = semiAntiNodes(state.telemetryPlan());
+			assertEquals(1, actualSemiAntiNodes.size(),
+					"telemetry must retain the selected semi/anti implementation");
+			TupleExpr actualSemiAnti = actualSemiAntiNodes.getFirst();
+			assertEquals("materialized-hash", actualSemiAnti.getStringMetricActual("actualSemiAntiAlgorithm"));
+			assertEquals(1L, actualSemiAnti.getLongMetricActual("actualSemiAntiIteratorOpens"),
+					"the materialized RHS must be opened exactly once");
+			long rhsRowsScanned = actualSemiAnti.getLongMetricActual("actualSemiAntiSourceRowsScanned");
+			double plannedRhsRows = actualSemiAnti.getDoubleMetricPlanned("plannedSemiAntiMappedRhsRows");
+			assertTrue(rhsRowsScanned <= Math.max(1.0d, plannedRhsRows * 4.0d),
+					() -> "materialized RHS scanning must remain proportional to the RHS: actual="
+							+ rhsRowsScanned + ", planned=" + plannedRhsRows);
+		} finally {
+			state.disableTelemetryTeardown();
+			state.tearDown();
+		}
+	}
+
+	private static List<TupleExpr> semiAntiNodes(TupleExpr optimized) {
+		List<TupleExpr> nodes = new ArrayList<>();
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr tupleExpr
+						&& tupleExpr.getStringMetricPlanned("optimizer.semiAntiKind") != null) {
+					nodes.add(tupleExpr);
+				}
+				super.meetNode(node);
+			}
+		});
+		return nodes;
+	}
+
 	private static final class RunQueryPlanState extends ThemeQueryPlanRunBenchmark.BaseState {
 
 		private OptimizedPlanSnapshot optimizedPlanSnapshot() {
@@ -323,6 +394,18 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 					result.next();
 				}
 			}
+		}
+
+		private long evaluateCurrentQueryAndAssertExpectedResult() {
+			return evaluateQueryAndAssertExpectedResult();
+		}
+
+		private TupleExpr telemetryPlan() {
+			var tupleQuery = connection.prepareTupleQuery(query);
+			tupleQuery.setIncludeInferred(false);
+			tupleQuery.setMaxExecutionTime(60);
+			return (TupleExpr) LmdbBenchmarkQueryPlan.withCascadesOptimizationTimeout(60,
+					() -> tupleQuery.explain(Explanation.Level.Telemetry)).tupleExpr();
 		}
 
 		private void disableTelemetryTeardown() {

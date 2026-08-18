@@ -80,7 +80,7 @@ import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 final class LmdbPackedCostModel
 		implements PackedCostModel, PackedStalePlanValidator, PackedRootCardinalityCertifier {
 
-	static final long VERSION = 34L;
+	static final long VERSION = 35L;
 
 	private static final String[] DISTINCT_REQUIREMENT_METRICS = {
 			TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_VARS,
@@ -512,10 +512,18 @@ final class LmdbPackedCostModel
 
 	double mappedProjectedDistinct(PackedQueryView query, int[] relationIds, String[] bindingNames,
 			double upperRows) {
+		MappedDistinctProfile profile = mappedProjectedDistinctProfile(
+				query, relationIds, bindingNames, upperRows, upperRows == 0.0d ? 0.0d : 1.0d, upperRows);
+		return profile.hasPoint() ? profile.point() : finiteNonNegative(upperRows) ? upperRows : Double.NaN;
+	}
+
+	MappedDistinctProfile mappedProjectedDistinctProfile(PackedQueryView query, int[] relationIds,
+			String[] bindingNames, double pointRows, double lowerRows, double upperRows) {
 		if (query == null || relationIds == null || relationIds.length == 0) {
-			return finiteNonNegative(upperRows) ? upperRows : Double.NaN;
+			return MappedDistinctProfile.unavailable(lowerRows, upperRows, "mapped-distinct-no-prefix");
 		}
 		List<TupleExpr> factors = new ArrayList<>(relationIds.length);
+		List<BindingSetAssignment> assignments = new ArrayList<>();
 		for (int relationId : relationIds) {
 			if (relationId <= 0 || relationId > query.relationCount()) {
 				continue;
@@ -524,15 +532,28 @@ final class LmdbPackedCostModel
 			if (LmdbFrontierProbeFactory.hasStatementLineage(expression)) {
 				factors.add(expression);
 			}
+			collectBindingAssignments(expression, assignments);
 		}
-		return mappedProjectedDistinct(factors, bindingNames, upperRows);
+		return mappedProjectedDistinctProfile(
+				factors, assignments, bindingNames, pointRows, lowerRows, upperRows);
 	}
 
 	double mappedProjectedDistinct(TupleExpr expression, String[] bindingNames, double upperRows) {
+		MappedDistinctProfile profile = mappedProjectedDistinctProfile(
+				expression, bindingNames, upperRows, upperRows == 0.0d ? 0.0d : 1.0d, upperRows);
+		return profile.hasPoint() ? profile.point() : finiteNonNegative(upperRows) ? upperRows : Double.NaN;
+	}
+
+	MappedDistinctProfile mappedProjectedDistinctProfile(TupleExpr expression, String[] bindingNames,
+			double pointRows, double lowerRows, double upperRows) {
 		List<TupleExpr> factors = new ArrayList<>();
-		return collectMappedConjunctiveFactors(expression, factors)
-				? mappedProjectedDistinct(factors, bindingNames, upperRows)
-				: finiteNonNegative(upperRows) ? upperRows : Double.NaN;
+		if (!collectMappedConjunctiveFactors(expression, factors)) {
+			return MappedDistinctProfile.unavailable(lowerRows, upperRows, "mapped-distinct-unsupported-expression");
+		}
+		List<BindingSetAssignment> assignments = new ArrayList<>();
+		collectBindingAssignments(expression, assignments);
+		return mappedProjectedDistinctProfile(
+				factors, assignments, bindingNames, pointRows, lowerRows, upperRows);
 	}
 
 	MappedSemiAntiEstimate mappedSemiAntiEstimate(PackedQueryView query, int[] outerRelationIds,
@@ -614,17 +635,27 @@ final class LmdbPackedCostModel
 		return Math.max(0.0d, Math.min(1.0d, joinedRows / rhsMultiplicity / outerRows));
 	}
 
-	private double mappedProjectedDistinct(List<TupleExpr> factors, String[] bindingNames, double upperRows) {
-		if (statisticsView == null || bindingNames == null || bindingNames.length == 0
-				|| !finiteNonNegative(upperRows)) {
-			return finiteNonNegative(upperRows) ? upperRows : Double.NaN;
+	private MappedDistinctProfile mappedProjectedDistinctProfile(List<TupleExpr> factors,
+			List<BindingSetAssignment> assignments, String[] bindingNames,
+			double pointRows, double lowerRows, double upperRows) {
+		double structuralUpper = normalizedDistinctUpper(pointRows, upperRows);
+		double structuralLower = finiteNonNegative(lowerRows) && lowerRows > 0.0d && structuralUpper > 0.0d
+				? 1.0d
+				: 0.0d;
+		if (bindingNames == null || bindingNames.length == 0 || structuralUpper == 0.0d) {
+			return new MappedDistinctProfile(
+					structuralUpper == 0.0d ? 0.0d : Double.NaN,
+					0.0d, structuralUpper, "mapped-distinct-empty-domain");
 		}
-		if (upperRows == 0.0d) {
-			return 0.0d;
-		}
-		double compoundDistinct = 1.0d;
-		for (String bindingName : bindingNames) {
-			double bindingDistinct = Double.POSITIVE_INFINITY;
+		double compoundPoint = 1.0d;
+		double compoundUpper = 1.0d;
+		boolean pointAvailable = statisticsView != null;
+		boolean leafBoundApplied = false;
+		boolean finiteDomainApplied = false;
+		Set<String> distinctBindings = new LinkedHashSet<>(Arrays.asList(bindingNames));
+		for (String bindingName : distinctBindings) {
+			double bindingPoint = Double.POSITIVE_INFINITY;
+			double bindingUpper = structuralUpper;
 			for (TupleExpr factor : factors) {
 				int component = LmdbFrontierProbeFactory.componentIndexForLineage(factor, bindingName);
 				if (component < 0) {
@@ -635,20 +666,102 @@ final class LmdbPackedCostModel
 				if (probe == null) {
 					continue;
 				}
-				double estimate = statisticsView.estimateProjectedDistinct(probe, component);
+				FrontierLeafEstimate leaf = statisticsView == null ? null : statisticsView.estimateLeaf(probe);
+				if (leaf != null && leaf.fallbackReason() == FrontierFallbackReason.NONE
+						&& !Double.isNaN(leaf.upperRows()) && leaf.upperRows() >= 0.0d) {
+					bindingUpper = Math.min(bindingUpper, leaf.upperRows());
+					leafBoundApplied = true;
+				}
+				double estimate = statisticsView == null
+						? Double.NaN
+						: statisticsView.estimateProjectedDistinct(probe, component);
 				if (finiteNonNegative(estimate)) {
-					bindingDistinct = Math.min(bindingDistinct, estimate);
+					bindingPoint = Math.min(bindingPoint, estimate);
 				}
 			}
-			if (!Double.isFinite(bindingDistinct)) {
-				return upperRows;
+			double finiteDomainUpper = exactAssignmentDomainUpper(assignments, bindingName);
+			if (finiteDomainUpper >= 0.0d) {
+				bindingUpper = Math.min(bindingUpper, finiteDomainUpper);
+				finiteDomainApplied = true;
 			}
-			compoundDistinct = saturatedMultiply(compoundDistinct, Math.max(1.0d, bindingDistinct));
-			if (compoundDistinct >= upperRows) {
-				return upperRows;
+			compoundUpper = Math.min(structuralUpper, saturatedMultiply(compoundUpper, bindingUpper));
+			if (Double.isFinite(bindingPoint)) {
+				compoundPoint = saturatedMultiply(compoundPoint, bindingPoint);
+			} else {
+				pointAvailable = false;
 			}
 		}
-		return Math.min(upperRows, compoundDistinct);
+		structuralLower = Math.min(structuralLower, compoundUpper);
+		double point = pointAvailable
+				? Math.max(structuralLower, Math.min(compoundUpper, compoundPoint))
+				: Double.NaN;
+		String provenance = "mapped-distinct-structural-row-upper"
+				+ (leafBoundApplied ? "+mapped-leaf-upper" : "")
+				+ (finiteDomainApplied ? "+finite-binding-domain" : "")
+				+ (pointAvailable ? "+projected-sample" : "+sample-unavailable");
+		return new MappedDistinctProfile(point, structuralLower, compoundUpper, provenance);
+	}
+
+	private static double normalizedDistinctUpper(double pointRows, double upperRows) {
+		if (!Double.isNaN(upperRows) && upperRows >= 0.0d) {
+			return Double.isFinite(upperRows) ? upperRows : Double.MAX_VALUE;
+		}
+		return finiteNonNegative(pointRows) ? pointRows : Double.MAX_VALUE;
+	}
+
+	private static double exactAssignmentDomainUpper(List<BindingSetAssignment> assignments, String bindingName) {
+		double upper = Double.POSITIVE_INFINITY;
+		for (BindingSetAssignment assignment : assignments) {
+			Set<Value> values = new LinkedHashSet<>();
+			boolean complete = true;
+			for (BindingSet bindingSet : assignment.getBindingSets()) {
+				Value value = bindingSet.getValue(bindingName);
+				if (value == null) {
+					complete = false;
+					break;
+				}
+				values.add(value);
+			}
+			if (complete) {
+				upper = Math.min(upper, values.size());
+			}
+		}
+		return Double.isFinite(upper) ? upper : -1.0d;
+	}
+
+	private static void collectBindingAssignments(TupleExpr expression,
+			List<BindingSetAssignment> assignments) {
+		if (expression == null) {
+			return;
+		}
+		if (expression instanceof BindingSetAssignment assignment) {
+			assignments.add(assignment);
+			return;
+		}
+		if (expression instanceof Join join) {
+			collectBindingAssignments(join.getLeftArg(), assignments);
+			collectBindingAssignments(join.getRightArg(), assignments);
+			return;
+		}
+		if (expression instanceof Filter filter) {
+			collectBindingAssignments(filter.getArg(), assignments);
+		} else if (expression instanceof Extension extension) {
+			collectBindingAssignments(extension.getArg(), assignments);
+		} else if (expression instanceof Projection projection) {
+			collectBindingAssignments(projection.getArg(), assignments);
+		} else if (expression instanceof Distinct distinct) {
+			collectBindingAssignments(distinct.getArg(), assignments);
+		} else if (expression instanceof Reduced reduced) {
+			collectBindingAssignments(reduced.getArg(), assignments);
+		} else if (expression instanceof Slice slice) {
+			collectBindingAssignments(slice.getArg(), assignments);
+		} else if (expression instanceof Group group) {
+			collectBindingAssignments(group.getArg(), assignments);
+		} else if (expression instanceof Order order) {
+			collectBindingAssignments(order.getArg(), assignments);
+		} else if (expression instanceof QueryRoot root) {
+			collectBindingAssignments(root.getArg(), assignments);
+		}
 	}
 
 	private double mappedConjunctiveRows(TupleExpr expression) {
@@ -3874,6 +3987,29 @@ final class LmdbPackedCostModel
 					|| source == null || source.isBlank() || evidenceSource == null || evidenceSource.isBlank()) {
 				throw new IllegalArgumentException("mapped semi/anti estimate is invalid");
 			}
+		}
+	}
+
+	record MappedDistinctProfile(double point, double lower, double upper, String provenance) {
+		MappedDistinctProfile {
+			if (!(Double.isNaN(point) || finiteNonNegative(point))
+					|| !finiteNonNegative(lower) || !finiteNonNegative(upper)
+					|| lower > upper || Double.isFinite(point) && (point < lower || point > upper)
+					|| provenance == null || provenance.isBlank()) {
+				throw new IllegalArgumentException("mapped distinct profile is invalid");
+			}
+		}
+
+		static MappedDistinctProfile unavailable(double lower, double upper, String provenance) {
+			double normalizedUpper = normalizedDistinctUpper(Double.NaN, upper);
+			double normalizedLower = finiteNonNegative(lower)
+					? Math.min(lower > 0.0d && normalizedUpper > 0.0d ? 1.0d : 0.0d, normalizedUpper)
+					: 0.0d;
+			return new MappedDistinctProfile(Double.NaN, normalizedLower, normalizedUpper, provenance);
+		}
+
+		boolean hasPoint() {
+			return Double.isFinite(point);
 		}
 	}
 

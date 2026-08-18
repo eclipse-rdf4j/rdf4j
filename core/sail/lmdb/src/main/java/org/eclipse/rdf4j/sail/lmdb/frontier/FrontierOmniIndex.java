@@ -202,22 +202,42 @@ final class FrontierOmniIndex {
 		}
 
 		double[] laneEstimates = new double[layout.designLanes()];
-		int available = 0;
 		for (int lane = 0; lane < layout.designLanes(); lane++) {
-			double estimate = estimateProjectedDistinctLane(probe, component, lane, scratch);
-			if (Double.isFinite(estimate)) {
-				laneEstimates[available++] = estimate;
-			}
+			laneEstimates[lane] = estimateProjectedDistinctLane(probe, component, lane, scratch);
 		}
-		if (available == 0) {
+		double estimate = projectedDistinctLaneMean(laneEstimates, layout.designLanes());
+		if (!Double.isFinite(estimate)) {
 			return Double.NaN;
 		}
-		Arrays.sort(laneEstimates, 0, available);
-		double estimate = laneEstimates[available / 2];
-		if ((available & 1) == 0) {
-			estimate = laneEstimates[available / 2 - 1] * 0.5d + estimate * 0.5d;
+		return finalizeProjectedDistinct(estimate, estimateLeaf(probe, scratch));
+	}
+
+	private static double projectedDistinctLaneMean(double[] laneEstimates, int laneCount) {
+		if (laneEstimates == null || laneCount <= 0 || laneCount > laneEstimates.length) {
+			return Double.NaN;
 		}
-		FrontierLeafEstimate rows = estimateLeaf(probe, scratch);
+		double mean = 0.0d;
+		for (int lane = 0; lane < laneCount; lane++) {
+			double estimate = laneEstimates[lane];
+			if (!Double.isFinite(estimate) || estimate < 0.0d) {
+				return Double.NaN;
+			}
+			mean += (estimate - mean) / (lane + 1.0d);
+		}
+		return mean;
+	}
+
+	private static double finalizeProjectedDistinct(double estimate, FrontierLeafEstimate rows) {
+		if (rows == null || rows.fallbackReason() != FrontierFallbackReason.NONE || !Double.isFinite(estimate)
+				|| estimate < 0.0d) {
+			return Double.NaN;
+		}
+		if (rows.upperRows() == 0.0d) {
+			return 0.0d;
+		}
+		if (estimate == 0.0d) {
+			return Double.NaN;
+		}
 		return Math.min(rows.upperRows(), estimate);
 	}
 

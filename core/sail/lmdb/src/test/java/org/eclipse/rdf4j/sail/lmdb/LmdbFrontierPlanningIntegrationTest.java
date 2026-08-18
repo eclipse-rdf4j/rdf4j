@@ -425,7 +425,7 @@ class LmdbFrontierPlanningIntegrationTest {
 
 	@Test
 	void packedPlanCacheVersionTracksPhysicalCostCutover() {
-		assertEquals(34L, LmdbPackedCostModel.VERSION);
+		assertEquals(35L, LmdbPackedCostModel.VERSION);
 	}
 
 	@Test

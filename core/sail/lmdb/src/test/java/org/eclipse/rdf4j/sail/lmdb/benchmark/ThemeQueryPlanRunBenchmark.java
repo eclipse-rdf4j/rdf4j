@@ -58,7 +58,7 @@ import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 
-@Warmup(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 4)
+@Warmup(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
 @Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
@@ -546,7 +546,7 @@ public class ThemeQueryPlanRunBenchmark {
 			var tupleQuery = connection.prepareTupleQuery(query);
 			tupleQuery.setIncludeInferred(false);
 			tupleQuery.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
-			Explanation telemetry = LmdbBenchmarkQueryPlan.withCascadesOptimizationTimeout(QUERY_TIMEOUT_SECONDS,
+			Explanation telemetry = LmdbBenchmarkQueryPlan.withCascadesOptimizationTimeout(QUERY_TIMEOUT_SECONDS * 4,
 					() -> tupleQuery.explain(Explanation.Level.Telemetry));
 			String renderedPlan = "\n### Telemetry Query - Trial teardown ###\n"
 					+ queryDescription() + "\n"

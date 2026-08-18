@@ -44,6 +44,16 @@ rewrite.
 
 ## Progress
 
+- [x] (2026-08-18 09:39Z through 11:03Z) Repair projected-distinct replica aggregation and mapped semi/anti cache
+  costing. The retained reds in `initial-evidence.medical-q9-projected-distinct.txt` cover sparse lanes, unavailable
+  lanes, all-positive skew, exact projection, conservative cache rejection, and the complete-store MEDICAL q9. The
+  implementation now uses the overflow-safe all-lane mean, preserves unavailable samples, proves exact one-degree
+  projections, carries point/lower/upper profiles, and uses the structural upper for memo eligibility and misses.
+  The eight-test medical class and focused estimator/costing suites pass; the complete module run exposed and then
+  passed the related cache-version assertion, with only the pre-existing dirty `SPARSE` benchmark-parameter mismatch
+  remaining. JDK 26 completes q9 with one materialized RHS at 359.656 ms/op; the ten-iteration JFR qualification is
+  363.781 ms/op and identifies a separate saturated runtime distinct-telemetry tracker as the remaining gap from the
+  older 136.542 ms/op generic-Difference plan.
 - [x] (2026-07-19 through 2026-07-25) Cut production planning over to the packed integer-ID Cascades representation,
   complete the then-supported tuple/scalar codec cutover, install primitive arenas and caches, and remove the legacy
   object memo. Milestone 1 still has to prove lossless coverage for the complete supported algebra surface.
@@ -1598,6 +1608,31 @@ Accuracy authority remains provisional until the shadow-mode 1B qualification pa
 
 ## Surprises & Discoveries
 
+- Observation: complete-store MEDICAL q9 estimates the exact 24,971-row `rdf:type med:Encounter` leaf as one
+  projected subject because four independent projected-distinct lanes are approximately `[0, 0, 106808, 0]`. The
+  median is zero and `FrontierMappedStatistics` clamps it to one. Mapped semi/anti costing then copies that point into
+  the correlation-domain upper bound, predicts one miss and 281,300 cache hits for a 4,096-entry cache, and executes
+  thousands of correlated RHS scans instead of one materialization.
+  Evidence: the all-theme q9 reproduction reports `actualSemiAntiDistinctCorrelationKeys=4.0K`, 6.6K iterator opens,
+  52.6M source rows scanned, and a 60-second abort. Direct lane probes report three zero lanes and one
+  `106807.741...` lane; their arithmetic mean is `26701.935...`, capped by the exact leaf at 24,971.
+- Observation: switching to the mean only when a replica equals zero would remain downward biased for sparse
+  all-positive samples such as `[1, 1, 1, 100]`. The observed zero is a symptom of inverse-probability sampling, not a
+  statistically valid branch condition. Four replicas are also insufficient to fit a normal, log-normal, or robust
+  contamination model without suppressing legitimate rare-key mass.
+  Evidence: projected-distinct lanes use inverse inclusion weights in `FrontierOmniIndex.distinctWeight`; the equal
+  weight design average of `[1, 1, 1, 100]` is 25.75 while its median remains one.
+- Observation: restoring one-pass materialization removes the 52.6-million-row repeated-source regression but does
+  not recover the older generic `Difference` runtime. The corrected typed semi/anti plan is stable near 360 ms/op,
+  versus 136.542 ms/op for the older plan, because its runtime telemetry tracker is sized from the 4,096-entry memo
+  cache even when the selected algorithm is materialized. Once all slots are occupied, every previously unseen key
+  linearly probes the entire table before returning, making telemetry work proportional to outer rows times tracker
+  capacity instead of outer rows.
+  Evidence: the corrected plan reports a 25.0K point, 25.0K structural upper, 25.0K memoized-costing key count, and
+  `materialized-minus-compatibility`. The JDK 26 JFR attributes 4,783 of 6,753 execution samples (70.83 percent) to
+  `MaterializedExistsFilterIteration$PrimitiveDistinctBindingTracker.record`; GC pauses total only 311 ms over the
+  roughly 102-second recording and no LMDB data-file reads are recorded. The older plan consumed about 99.6K left
+  rows and 9.8K right rows without this typed-operator tracker.
 - Observation: `FrontierSynopsisStatus.READY` currently certifies the raw payload, while planning needs a separately
   built `FrontierQueryIndex`. `LmdbFrontierSynopsisService.refreshQueryIndex` catches index build failures and records
   `query_index_build_failed` without invalidating the raw generation. An unavailable lease then enters
@@ -2240,6 +2275,22 @@ Accuracy authority remains provisional until the shadow-mode 1B qualification pa
 
 ## Decision Log
 
+- Decision: Use the overflow-safe arithmetic mean for every complete projected-distinct design-lane ensemble, and
+  keep its point estimate separate from the structural upper bound used for bounded-cache decisions.
+  Rationale: each lane is an equal-weight independent inverse-probability replica. Zero is valid sampled evidence and
+  the high replica carries rare-key mass, so median, trimming, Winsorization, Huber/Catoni weighting, or a zero-only
+  branch changes the estimator target. Physical memoization is irreversible at runtime and must therefore use an
+  upper bound derived from row intervals, relevant leaf bounds, and exact finite assignments rather than the random
+  point. Existing robust join-lane medians are outside this decision.
+  Date/Author: 2026-08-18 / Håvard and Codex.
+- Decision: Keep the saturated `PrimitiveDistinctBindingTracker` performance defect separate from the
+  projected-distinct estimator and structural-bound repair.
+  Rationale: the corrected evidence now selects the safe materialized algorithm and bounds LMDB scanning as intended;
+  changing the point estimator, weakening the cache upper, or enlarging the memo would hide the independent runtime
+  telemetry complexity. A follow-up behavior-neutral or separately test-first runtime slice should make the tracker
+  saturate in O(1), resize under an explicit memory contract, or disable distinct telemetry once exact counting is no
+  longer representable, while preserving its reported semantics.
+  Date/Author: 2026-08-18 / Håvard and Codex.
 - Decision: Treat generated value-equal RDF terms as bounded lower-support probes, never as a complete semantic
   rewrite domain.
   Rationale: SPARQL numeric and calendar equality can cross lexical forms and datatypes, but no finite generator can
@@ -2720,6 +2771,23 @@ Accuracy authority remains provisional until the shadow-mode 1B qualification pa
   Date/Author: 2026-08-16 / Codex.
 
 ## Outcomes & Retrospective
+
+The 2026-08-18 MEDICAL q9 estimator and costing repair is complete. Projected-distinct sampling now averages every
+configured equal-weight lane without sorting or overflowing, treats zero as a valid replica, rejects incomplete and
+unobserved all-zero ensembles, and caps only the completed mean. Exact single-degree projections bypass sampling when
+one effective statement plane is proved nonempty. The mapped cost model preserves an optional point separately from
+structural lower/upper bounds, tightens uppers with mapped leaves and complete finite assignments, and makes
+memoized semi/anti costing consume the upper while retaining point telemetry. The complete-store q9 returns 16,352,
+plans and executes materialized hash, opens its RHS once, and scans RHS rows proportionally rather than repeating
+52.6 million source rows. The public scalar APIs and Frontier shard format remain unchanged, and join-cardinality
+lane medians remain untouched.
+
+JDK 26 qualification also disproved the premise that restoring the older algorithmic I/O shape would by itself
+restore the older latency. The ordinary 3x3 run is 359.656 ms/op and the ten-iteration JFR run is 363.781 ms/op,
+compared with 136.542 ms/op in the supplied older generic-Difference artifact. This residual is not LMDB I/O, GC,
+normality, or the projected-distinct center: 70.83 percent of JFR execution samples are in the newer typed semi/anti
+operator's saturated `PrimitiveDistinctBindingTracker.record`. That separately scoped runtime defect remains the
+next execution-performance slice; no estimator or cache-safety rule should be weakened to compensate for it.
 
 The 2026-08-06 consolidation leaves one optimizer ExecPlan containing the architecture, completed baseline,
 unresolved implementation work, dependency order, test workflow, acceptance gates, and durable decisions. The
@@ -3568,3 +3636,11 @@ before exhausting its 512-unit ceiling, and finite-bound self-loop equality belo
 unbound join-variable classes. Focused reds and greens cover both. The final LMDB module gate passes 2,247 tests with
 zero failures or errors (114 skipped). Physical scale, p95/cold, held-out accuracy, background interference, and
 migration-retention gates remain open.
+
+Plan revision note (2026-08-18 / Håvard and Codex): completed the complete-store MEDICAL q9 projected-distinct repair.
+The revision selects the equal-weight arithmetic mean for complete inverse-probability lane ensembles, rejects
+normal-distribution fitting and zero-triggered center switching, and requires an independent structural
+correlation-domain upper bound to govern memoized semi/anti cache eligibility. It records the sparse and all-positive
+lane contracts, exact-projection rules, uncertain-domain costing coverage, all-theme q9 execution gate, JDK 26
+benchmark/JFR evidence, and the newly isolated saturated distinct-telemetry follow-up without changing public APIs,
+statistics formats, cache capacity, or query semantics.

@@ -30,15 +30,17 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	private final InterruptTask<E> interruptTask;
 
 	private final AtomicBoolean isInterrupted = new AtomicBoolean(false);
+	protected final long timeLimitMillis;
 
-	protected TimeLimitIteration(CloseableIteration<? extends E> iter, long timeLimit) {
+	protected TimeLimitIteration(CloseableIteration<? extends E> iter, long timeLimitMillis) {
 		super(iter);
 
-		assert timeLimit > 0 : "time limit must be a positive number, is: " + timeLimit;
+		assert timeLimitMillis > 0 : "time limit must be a positive number, is: " + timeLimitMillis;
 
 		interruptTask = new InterruptTask<>(this, interruptScheduler::release);
 
-		interruptScheduler.schedule(interruptTask, timeLimit);
+		interruptScheduler.schedule(interruptTask, timeLimitMillis);
+		this.timeLimitMillis = timeLimitMillis;
 	}
 
 	@Override

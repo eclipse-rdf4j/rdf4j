@@ -37,6 +37,7 @@ final class FrontierLearningModel {
 	private static final double BASE_ALPHA = 2.0d;
 	private static final double BASE_BETA = 1.0d;
 	private static final double MAX_ABS_LOG_ERROR = Math.log1p(1.0e12d);
+	private static final double MAX_FINITE_LOG_VALUE = Math.log(Double.MAX_VALUE);
 	/*
 	 * The weak base precision lets a single observation dominate the posterior mean, so one incoherent runtime
 	 * observation (for example a plan-vs-execution invocation drift) could shift an estimate by many orders of
@@ -740,13 +741,13 @@ final class FrontierLearningModel {
 						-snapshot.correctionCap(), snapshot.correctionCap());
 			}
 		}
-		double corrected = Math.expm1(Math.log1p(predicted) + appliedLogShift);
+		double corrected = inverseFiniteLogValue(Math.log1p(predicted) + appliedLogShift);
 		if (!finiteNonNegative(corrected)) {
 			return null;
 		}
 		double centerLog = Math.log1p(corrected);
 		double spread = predictiveSpread(snapshot.predictiveVariance());
-		double lower = Math.expm1(Math.max(0.0d, centerLog - spread));
+		double lower = inverseFiniteLogValue(centerLog - spread);
 		double upper = inverseLogBound(centerLog + spread);
 		return new DimensionEstimate(corrected, lower, upper, snapshot.mean(), snapshot.meanVariance(),
 				snapshot.predictiveVariance(), snapshot.precision(),
@@ -804,7 +805,17 @@ final class FrontierLearningModel {
 	}
 
 	private static double inverseLogBound(double logValue) {
-		return logValue >= MAX_ABS_LOG_ERROR ? Math.expm1(MAX_ABS_LOG_ERROR) : Math.expm1(Math.max(0.0d, logValue));
+		return logValue >= MAX_FINITE_LOG_VALUE
+				? Double.POSITIVE_INFINITY
+				: Math.expm1(Math.max(0.0d, logValue));
+	}
+
+	private static double inverseFiniteLogValue(double logValue) {
+		if (logValue >= MAX_FINITE_LOG_VALUE) {
+			return Double.MAX_VALUE;
+		}
+		double value = Math.expm1(Math.max(0.0d, logValue));
+		return Double.isInfinite(value) ? Double.MAX_VALUE : value;
 	}
 
 	record PosteriorSnapshot(double mean, double meanVariance, double predictiveVariance, double precision,

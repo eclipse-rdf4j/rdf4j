@@ -128,6 +128,8 @@ class ThemeQueryBenchmarkSmokeIT {
 			String plan = benchmark.explainOptimizedPlan();
 			String renderedQuery = benchmark.renderOptimizedQuery(ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 2));
 
+			assertTrue(plan.contains("plannedFrontierStatus=ready"),
+					"Theme benchmark setup should make Frontier ready before preparing the first query\n" + plan);
 			assertTrue(plan.contains("packed-predicate-range-anchor"),
 					"MEDICAL q2 should retain the predicate-range anchor proof\n" + plan);
 			assertTrue(plan.contains("optimizer.objectGuaranteePredicate=" + MEDICAL_RECORDED_ON)

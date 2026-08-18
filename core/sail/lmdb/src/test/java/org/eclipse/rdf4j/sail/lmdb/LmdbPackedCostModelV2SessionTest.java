@@ -388,6 +388,75 @@ class LmdbPackedCostModelV2SessionTest {
 	}
 
 	@Test
+	void uncertainOuterDistinctUpperBoundRejectsMemoizedAntiJoin() throws Exception {
+		LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
+		LmdbStatisticsService statistics = mock(LmdbStatisticsService.class);
+		FrontierStatisticsStatus status = mock(FrontierStatisticsStatus.class);
+		FrontierStatisticsView view = mock(FrontierStatisticsView.class);
+		ValueStore valueStore = mock(ValueStore.class);
+		when(runtime.statisticsService()).thenReturn(statistics);
+		when(runtime.valueStore()).thenReturn(valueStore);
+		when(runtime.frontierSettings()).thenReturn(
+				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d));
+		when(statistics.status()).thenReturn(status);
+		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
+		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
+		when(statistics.openCurrentView()).thenReturn(view);
+		when(view.ready()).thenReturn(true);
+		var outerPredicate = VF.createIRI("urn:test:uncertain-domain:outer");
+		var blockerPredicate = VF.createIRI("urn:test:uncertain-domain:blocker");
+		when(valueStore.getId(outerPredicate)).thenReturn(601L);
+		when(valueStore.getId(blockerPredicate)).thenReturn(602L);
+		when(view.estimateLeaf(any())).thenAnswer(invocation -> {
+			FrontierLeafProbe probe = invocation.getArgument(0);
+			return probe.predicateId() == 602L
+					? new FrontierLeafEstimate(
+							200.0d, 200.0d, 200.0d, 1.0d, "frontier-v2-exact", FrontierFallbackReason.NONE)
+					: new FrontierLeafEstimate(10_000.0d, 1.0d, 25_000.0d, 0.5d,
+							"frontier-v2-omni-leaf", FrontierFallbackReason.NONE);
+		});
+		when(view.estimateProjectedDistinct(any(), anyInt())).thenAnswer(invocation -> {
+			FrontierLeafProbe probe = invocation.getArgument(0);
+			return probe.predicateId() == 602L ? 100.0d : 1.0d;
+		});
+		when(view.estimateJoin(any())).thenReturn(new FrontierJoinEstimate(
+				18_000.0d, 17_000.0d, 19_000.0d, 0.95d,
+				"frontier-v2-omni-center", FrontierFallbackReason.NONE));
+		StatementPattern outer = new StatementPattern(
+				Var.of("node"), Var.of("outerPredicate", outerPredicate), Var.of("value"));
+		StatementPattern blocker = new StatementPattern(
+				Var.of("node"), Var.of("blockerPredicate", blockerPredicate), Var.of("blocker"));
+		PackedCostTestSupport.UnaryCostCall call = PackedCostTestSupport.unaryOperator(
+				new Filter(outer, new Not(new Exists(blocker))));
+
+		try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
+				.openSession(call.query())) {
+			PackedCostEstimate outerEstimate = new PackedCostEstimate();
+			session.estimateLeaf(call.inputRelationId(), call.emptyContext(), outerEstimate);
+			for (int relationId = 1; relationId <= call.query().relationCount(); relationId++) {
+				if (!call.query().isAntiJoin(relationId)) {
+					continue;
+				}
+				PackedCostEstimate output = new PackedCostEstimate();
+				output.setContextualRows(outerEstimate.outputRows(), outerEstimate.outputRows());
+				session.refineOperator(relationId,
+						call.operatorContext(outerEstimate.outputRows(), outerEstimate.evidenceStateId()), output);
+
+				assertEquals(1.0d,
+						output.plannedDoubleMetric("plannedCorrelationDistinctKeys", Double.NaN), 0.0d);
+				assertEquals(25_000.0d,
+						output.plannedDoubleMetric("plannedCorrelationDistinctKeyUpperBound", Double.NaN), 0.0d);
+				assertEquals(25_000.0d,
+						output.plannedDoubleMetric("plannedSemiAntiMemoizedCostingDistinctKeys", Double.NaN), 0.0d);
+				assertEquals(10_000.0d,
+						output.plannedDoubleMetric("plannedSemiAntiMemoizedCacheMisses", Double.NaN), 0.0d);
+				assertEquals("materialized-hash",
+						output.plannedStringMetric("plannedSemiAntiCheapestRawAlgorithm"));
+			}
+		}
+	}
+
+	@Test
 	void mappedLearnedStateRemainsComposableWhenDetached() throws Exception {
 		LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
 		FrontierStatisticsView view = mock(FrontierStatisticsView.class);

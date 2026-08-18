@@ -339,7 +339,8 @@ class FrontierStatisticsBuilderTest {
 		FrontierLeafProbe namedContexts = new FrontierLeafProbe(planeMask, 0, 0L, 0L, 0L, 0L, 0, true);
 		double actual = service.estimateProjectedDistinct(epoch, namedContexts, 1);
 		assertTrue(actual >= expected * 0.9d && actual <= expected * 1.1d,
-				() -> "named-context projected distinct should remain within ten percent: " + actual);
+				() -> "named-context projected distinct should remain within ten percent: " + actual
+						+ ", leaf=" + service.estimateLeaf(epoch, namedContexts) + ", status=" + service.status());
 	}
 
 	@Test
@@ -1507,6 +1508,98 @@ class FrontierStatisticsBuilderTest {
 			double estimate = service.estimateProjectedDistinct(101L, predicate, 0);
 			assertTrue(estimate >= insertedSubjects / 2.0d && estimate <= insertedSubjects * 2.0d,
 					() -> "append-heavy projected distinct q-error exceeded two: " + estimate);
+		}
+	}
+
+	@Test
+	void exactSingleDegreeProjectedDistinctPrecedesUnavailableMutationSampling(@TempDir Path directory)
+			throws Exception {
+		SyntheticSnapshot snapshot = new SyntheticSnapshot(10L, List.of(
+				new long[] { 1L, 7L, 10L, 0L },
+				new long[] { 2L, 7L, 10L, 0L }), List.of());
+		FrontierStatisticsBuildConfig config = FrontierStatisticsBuildConfig.testing(
+				32L * 1024L * 1024L, 64, 32, 256, 2L * 1024L * 1024L);
+		FrontierStatisticsHeapGovernor governor = new FrontierStatisticsHeapGovernor(
+				64L * 1024L * 1024L, 8L * 1024L * 1024L, 16L * 1024L * 1024L, 8L * 1024L * 1024L);
+		FrontierStatisticsManifest base = FrontierStatisticsBuilder.build(
+				directory, 1L, -1L, snapshot, governor, config);
+		FrontierStatisticsManifest completeDelta = FrontierStatisticsDeltaBuilder.build(directory, base,
+				List.of(new FrontierMutation(11L, 11L, true, true, 3L, 7L, 10L, 0L)), governor, config);
+		List<FrontierStatisticsShardDescriptor> signedOnlyShards = completeDelta.shards()
+				.stream()
+				.filter(shard -> shard.kind() != FrontierStatisticsShardKind.OMNI_DELTA_DIRECTORY
+						&& shard.kind() != FrontierStatisticsShardKind.OMNI_DELTA_TUPLES
+						&& shard.kind() != FrontierStatisticsShardKind.OMNI_DELTA_POSTINGS)
+				.toList();
+		FrontierStatisticsManifest signedOnly = new FrontierStatisticsManifest(
+				completeDelta.generationId(), completeDelta.previousGenerationId(), completeDelta.baseEpoch(),
+				completeDelta.coveredEpoch(), completeDelta.coveredSequence(), completeDelta.createdAtMillis(),
+				completeDelta.maximumTermId(), signedOnlyShards);
+		FrontierLeafProbe oneFreeSubject = new FrontierLeafProbe(
+				FrontierLeafProbe.EXPLICIT,
+				FrontierLeafProbe.PREDICATE | FrontierLeafProbe.OBJECT | FrontierLeafProbe.CONTEXT,
+				0L, 7L, 10L, 0L);
+
+		try (LmdbStatisticsService service = LmdbStatisticsService.open(
+				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
+			service.publish(base);
+			service.publish(signedOnly);
+			assertEquals(3.0d, service.estimateProjectedDistinct(11L, oneFreeSubject, 0), 0.0d,
+					"one free term identifies one statement per key even when sampling overlays are unavailable");
+		}
+	}
+
+	@Test
+	void exactProjectedDistinctRespectsEqualityClassesAndStatementPlanes(@TempDir Path directory)
+			throws Exception {
+		SyntheticSnapshot snapshot = new SyntheticSnapshot(12L, List.of(
+				new long[] { 1L, 7L, 10L, 0L },
+				new long[] { 2L, 7L, 10L, 0L },
+				new long[] { 3L, 8L, 3L, 0L },
+				new long[] { 4L, 8L, 4L, 0L },
+				new long[] { 5L, 9L, 20L, 0L },
+				new long[] { 5L, 9L, 21L, 0L },
+				new long[] { 6L, 9L, 22L, 0L },
+				new long[] { 7L, 10L, 30L, 0L },
+				new long[] { 8L, 11L, 40L, 0L },
+				new long[] { 9L, 11L, 40L, 0L }),
+				List.of(
+						new long[] { 8L, 11L, 40L, 0L },
+						new long[] { 10L, 11L, 40L, 0L }));
+		FrontierStatisticsBuildConfig config = FrontierStatisticsBuildConfig.testing(
+				32L * 1024L * 1024L, 64, 32, 256, 2L * 1024L * 1024L);
+		FrontierStatisticsHeapGovernor governor = new FrontierStatisticsHeapGovernor(
+				64L * 1024L * 1024L, 8L * 1024L * 1024L, 16L * 1024L * 1024L, 8L * 1024L * 1024L);
+		FrontierStatisticsManifest manifest = FrontierStatisticsBuilder.build(
+				directory, 1L, -1L, snapshot, governor, config);
+
+		try (LmdbStatisticsService service = LmdbStatisticsService.open(
+				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
+			service.publish(manifest);
+			assertEquals(2.0d, service.estimateProjectedDistinct(12L, new FrontierLeafProbe(
+					FrontierLeafProbe.EXPLICIT,
+					FrontierLeafProbe.PREDICATE | FrontierLeafProbe.OBJECT | FrontierLeafProbe.CONTEXT,
+					0L, 7L, 10L, 0L), 0), 0.0d);
+			assertEquals(2.0d, service.estimateProjectedDistinct(12L, new FrontierLeafProbe(
+					FrontierLeafProbe.EXPLICIT,
+					FrontierLeafProbe.PREDICATE | FrontierLeafProbe.CONTEXT,
+					0L, 8L, 0L, 0L, FrontierLeafProbe.SUBJECT_OBJECT_EQUAL), 0), 0.0d,
+					"two free components in one repeated-variable class are one degree of freedom");
+			assertEquals(2.0d, service.estimateProjectedDistinct(12L, new FrontierLeafProbe(
+					FrontierLeafProbe.EXPLICIT,
+					FrontierLeafProbe.PREDICATE | FrontierLeafProbe.CONTEXT,
+					0L, 9L, 0L, 0L), 0), 0.0d,
+					"independent subject and object degrees must continue through projected sampling");
+			assertEquals(1.0d, service.estimateProjectedDistinct(12L, new FrontierLeafProbe(
+					FrontierLeafProbe.BOTH_PLANES,
+					FrontierLeafProbe.PREDICATE | FrontierLeafProbe.OBJECT | FrontierLeafProbe.CONTEXT,
+					0L, 10L, 30L, 0L), 0), 0.0d,
+					"the theorem applies when every other requested statement plane is proven empty");
+			assertEquals(3.0d, service.estimateProjectedDistinct(12L, new FrontierLeafProbe(
+					FrontierLeafProbe.BOTH_PLANES,
+					FrontierLeafProbe.PREDICATE | FrontierLeafProbe.OBJECT | FrontierLeafProbe.CONTEXT,
+					0L, 11L, 40L, 0L), 0), 0.0d,
+					"overlapping explicit and inferred keys require sampled union distinctness, not row addition");
 		}
 	}
 

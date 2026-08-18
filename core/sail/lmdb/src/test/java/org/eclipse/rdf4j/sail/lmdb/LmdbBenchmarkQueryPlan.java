@@ -437,7 +437,8 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 
 		@Override
 		protected void throwInterruptedException() {
-			throw new QueryInterruptedException("Query evaluation took too long");
+			throw new QueryInterruptedException(
+					"Query evaluation took too long. Took longer than " + timeLimitMillis + " millis.");
 		}
 	}
 }

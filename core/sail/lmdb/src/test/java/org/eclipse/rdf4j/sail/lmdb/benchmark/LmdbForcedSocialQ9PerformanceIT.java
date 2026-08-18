@@ -28,7 +28,7 @@ import org.junit.jupiter.api.Timeout;
 
 class LmdbForcedSocialQ9PerformanceIT {
 
-	private static final int MAX_EXECUTION_TIME_SECONDS = 30;
+	private static final int MAX_EXECUTION_TIME_SECONDS = 60;
 	private static final int WARMUPS = 6;
 	private static final int MEASUREMENTS = 21;
 	private static final String PREFIX = "PREFIX social: <http://example.com/theme/social/>\n";

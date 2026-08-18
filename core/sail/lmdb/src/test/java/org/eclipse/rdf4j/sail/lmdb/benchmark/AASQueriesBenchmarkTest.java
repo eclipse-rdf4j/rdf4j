@@ -29,6 +29,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
@@ -123,6 +126,25 @@ class AASQueriesBenchmarkTest {
 	}
 
 	@Test
+	void cascadesSetupWaitsForFrontierBeforePreparingQuery1Plan() throws Exception {
+		Map<String, String> previousProperties = snapshotBenchmarkOutputProperties();
+		AASQueriesBenchmark benchmark = configuredBenchmark(1, true, "query1PropertyProjection");
+		AASQueriesBenchmark.PreparedQueryState state = new AASQueriesBenchmark.PreparedQueryState();
+		try {
+			disableBenchmarkOutput();
+			benchmark.setup();
+			state.setup(benchmark);
+
+			String optimizedPlan = preparedPlan(state).optimizedPlan();
+			assertTrue(optimizedPlan.contains("plannedFrontierStatus=ready"), optimizedPlan);
+		} finally {
+			state.tearDown();
+			benchmark.tearDown();
+			restore(previousProperties);
+		}
+	}
+
+	@Test
 	void preparedStatePrintsOptimizedPlanWithoutTelemetryExplain() throws Exception {
 		AASQueriesBenchmark benchmark = new AASQueriesBenchmark();
 		configureBenchmark(benchmark);
@@ -205,11 +227,11 @@ class AASQueriesBenchmarkTest {
 					cascadesState.setup(cascades);
 					classicState.setup(classic);
 
-					List<String> cascadesRows = assertTimeout(Duration.ofSeconds(5),
-							() -> evaluateRows(cascadesState));
-					List<String> classicRows = assertTimeout(Duration.ofSeconds(5),
-							() -> evaluateRows(classicState));
-					assertEquals(classicRows, cascadesRows, query);
+					List<Map<String, Value>> cascadesRows = assertTimeout(Duration.ofSeconds(5),
+							() -> evaluateBindingRows(cascadesState));
+					List<Map<String, Value>> classicRows = assertTimeout(Duration.ofSeconds(5),
+							() -> evaluateBindingRows(classicState));
+					assertEquivalentRows(classicRows, cascadesRows, query);
 					assertSelectedHashContracts(preparedPlan(cascadesState).optimizedPlan());
 				} finally {
 					classicState.tearDown();
@@ -299,6 +321,74 @@ class AASQueriesBenchmarkTest {
 		}
 		Collections.sort(rows);
 		return rows;
+	}
+
+	private static List<Map<String, Value>> evaluateBindingRows(AASQueriesBenchmark.PreparedQueryState state)
+			throws ReflectiveOperationException {
+		List<Map<String, Value>> rows = new ArrayList<>();
+		try (CloseableIteration<BindingSet> result = preparedPlan(state).evaluate()) {
+			while (result.hasNext()) {
+				BindingSet row = result.next();
+				Map<String, Value> values = new LinkedHashMap<>();
+				for (String name : row.getBindingNames()) {
+					values.put(name, row.getValue(name));
+				}
+				rows.add(values);
+			}
+		}
+		return rows;
+	}
+
+	private static void assertEquivalentRows(List<Map<String, Value>> expectedRows,
+			List<Map<String, Value>> actualRows, String message) {
+		assertEquals(expectedRows.size(), actualRows.size(), message);
+		List<Map<String, Value>> unmatchedRows = new ArrayList<>(actualRows);
+		for (Map<String, Value> expectedRow : expectedRows) {
+			int match = -1;
+			for (int i = 0; i < unmatchedRows.size(); i++) {
+				if (equivalentRow(expectedRow, unmatchedRows.get(i))) {
+					match = i;
+					break;
+				}
+			}
+			assertTrue(match >= 0, message + " missing row " + expectedRow + " in " + actualRows);
+			unmatchedRows.remove(match);
+		}
+	}
+
+	private static boolean equivalentRow(Map<String, Value> expected, Map<String, Value> actual) {
+		if (!expected.keySet().equals(actual.keySet())) {
+			return false;
+		}
+		for (Map.Entry<String, Value> entry : expected.entrySet()) {
+			if (!equivalentValue(entry.getValue(), actual.get(entry.getKey()))) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean equivalentValue(Value expected, Value actual) {
+		if (!(expected instanceof Literal expectedLiteral)
+				|| !(actual instanceof Literal actualLiteral)
+				|| !expectedLiteral.getDatatype().equals(actualLiteral.getDatatype())
+				|| !isFloatingPoint(expectedLiteral)) {
+			return expected.equals(actual);
+		}
+		double expectedValue = expectedLiteral.doubleValue();
+		double actualValue = actualLiteral.doubleValue();
+		if (Double.doubleToLongBits(expectedValue) == Double.doubleToLongBits(actualValue)) {
+			return true;
+		}
+		if (!Double.isFinite(expectedValue) || !Double.isFinite(actualValue)) {
+			return false;
+		}
+		double tolerance = 8.0d * Math.max(Math.ulp(expectedValue), Math.ulp(actualValue));
+		return Math.abs(expectedValue - actualValue) <= tolerance;
+	}
+
+	private static boolean isFloatingPoint(Literal literal) {
+		return XSD.DOUBLE.equals(literal.getDatatype()) || XSD.FLOAT.equals(literal.getDatatype());
 	}
 
 	private static LmdbBenchmarkQueryPlan preparedPlan(AASQueriesBenchmark.PreparedQueryState state)

@@ -160,7 +160,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			return false;
 		}
 		boolean[] found = { false };
-		join.getRightArg().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+		join.getRightArg().visit(new AbstractSimpleQueryModelVisitor<>() {
 			@Override
 			public void meet(Extension extension) {
 				for (var element : extension.getElements()) {

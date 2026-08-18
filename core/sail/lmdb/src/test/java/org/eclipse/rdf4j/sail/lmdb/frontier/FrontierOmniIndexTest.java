@@ -57,6 +57,49 @@ class FrontierOmniIndexTest {
 	}
 
 	@Test
+	void projectedDistinctUsesDesignMeanAcrossSparseLanes() throws Exception {
+		Method aggregate = FrontierOmniIndex.class.getDeclaredMethod(
+				"projectedDistinctLaneMean", double[].class, int.class);
+		aggregate.setAccessible(true);
+
+		assertEquals(26_702.0d,
+				(double) aggregate.invoke(null, new double[] { 0.0d, 0.0d, 106_808.0d, 0.0d }, 4), 0.0d);
+		assertTrue(Double.isNaN(
+				(double) aggregate.invoke(null, new double[] { 0.0d, Double.NaN, 106_808.0d, 0.0d }, 4)),
+				"an unavailable lane must make the complete design ensemble unavailable");
+	}
+
+	@Test
+	void projectedDistinctMeanDoesNotDependOnObservedZeros() throws Exception {
+		Method aggregate = FrontierOmniIndex.class.getDeclaredMethod(
+				"projectedDistinctLaneMean", double[].class, int.class);
+		aggregate.setAccessible(true);
+
+		assertEquals(25.75d,
+				(double) aggregate.invoke(null, new double[] { 1.0d, 1.0d, 1.0d, 100.0d }, 4), 0.0d,
+				"rare support must not be discarded merely because every lane is positive");
+		assertEquals(100.0d,
+				(double) aggregate.invoke(null, new double[] { 90.0d, 100.0d, 100.0d, 110.0d }, 4), 0.0d);
+	}
+
+	@Test
+	void projectedDistinctFinalizationDistinguishesEmptyFromUnobserved() throws Exception {
+		Method finalizeEstimate = FrontierOmniIndex.class.getDeclaredMethod(
+				"finalizeProjectedDistinct", double.class, FrontierLeafEstimate.class);
+		finalizeEstimate.setAccessible(true);
+		FrontierLeafEstimate possibleRows = new FrontierLeafEstimate(
+				10.0d, 0.0d, 24_971.0d, 0.5d, "test", FrontierFallbackReason.NONE);
+		FrontierLeafEstimate emptyRows = new FrontierLeafEstimate(
+				0.0d, 0.0d, 0.0d, 1.0d, "test", FrontierFallbackReason.NONE);
+
+		assertTrue(Double.isNaN((double) finalizeEstimate.invoke(null, 0.0d, possibleRows)),
+				"zero witnesses cannot prove that a possibly nonempty projection is empty");
+		assertEquals(0.0d, (double) finalizeEstimate.invoke(null, 0.0d, emptyRows), 0.0d);
+		assertEquals(24_971.0d, (double) finalizeEstimate.invoke(null, 26_702.0d, possibleRows), 0.0d,
+				"only the completed design mean is capped by the leaf upper bound");
+	}
+
+	@Test
 	void joinQualityWidensDispersedLaneEnsemblesInsteadOfCountingAvailableReplicas() throws Exception {
 		Method aggregate = FrontierOmniIndex.class.getDeclaredMethod("sampledJoinEstimate",
 				double[].class, int.class, long.class, double.class, int.class, String.class);

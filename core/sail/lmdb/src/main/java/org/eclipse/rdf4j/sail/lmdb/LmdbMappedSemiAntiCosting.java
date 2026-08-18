@@ -50,7 +50,7 @@ final class LmdbMappedSemiAntiCosting {
 	private final LmdbPackedCostModel costModel;
 	private final PackedQueryView query;
 	private final Map<Integer, Double> relationRows = new HashMap<>();
-	private final Map<DistinctKey, Double> distinctRows = new HashMap<>();
+	private final Map<DistinctKey, LmdbPackedCostModel.MappedDistinctProfile> distinctRows = new HashMap<>();
 	private final Map<LogicalSelectivityKey, LmdbPackedCostModel.MappedSemiAntiEstimate> mappedSelectivities = new HashMap<>();
 	private final Map<LogicalSelectivityKey, Boolean> mappedSelectivityResolved = new HashMap<>();
 	private final PackedCostEstimate accessScratch = new PackedCostEstimate();
@@ -79,7 +79,8 @@ final class LmdbMappedSemiAntiCosting {
 
 	private void refineRawDifference(EvidenceStateSummary inputSummary, PackedCostContext context,
 			PackedCostEstimate output) {
-		double outerRows = structuralOuterRows(inputSummary, context, output);
+		StructuralRows outer = structuralOuterRows(inputSummary, context, output);
+		double outerRows = outer.point();
 		double rightRows = finiteNonNegative(context.rightInputRows()) ? context.rightInputRows() : 1.0d;
 		double materializationPartitions = rightRows == 0.0d ? 0.0d : 1.0d;
 		double objective = saturatedAdd(rightRows, outerRows);
@@ -94,7 +95,13 @@ final class LmdbMappedSemiAntiCosting {
 				output.outputRows(),
 				0.0d,
 				rightRows);
-		stampStructuralProfile(output, outerRows, outerRows, rightRows, 1.0d,
+		stampStructuralProfile(output, outerRows,
+				new LmdbPackedCostModel.MappedDistinctProfile(
+						outerRows, outer.lower() > 0.0d ? 1.0d : 0.0d, outer.upper(), "mapped-structural-minus"),
+				rightRows, new LmdbPackedCostModel.MappedDistinctProfile(
+						rightRows == 0.0d ? 0.0d : 1.0d, rightRows == 0.0d ? 0.0d : 1.0d,
+						rightRows == 0.0d ? 0.0d : Math.max(1.0d, rightRows),
+						"mapped-structural-minus-rhs"),
 				Math.max(0.0d, outerRows - output.outputRows()), "mapped-structural-minus");
 		output.putPlannedDoubleMetric("plannedSemiAntiMaterializationWorkRows", rightRows);
 		output.putPlannedDoubleMetric("plannedSemiAntiMaterializationOutputRows", rightRows);
@@ -112,7 +119,8 @@ final class LmdbMappedSemiAntiCosting {
 		int algorithm = query.semiAntiAlgorithm(relationId);
 		int rightRelationId = query.semiAntiRightRelationId(relationId);
 		String[] correlationNames = correlationNames(relationId);
-		double outerRows = structuralOuterRows(inputSummary, context, output);
+		StructuralRows outer = structuralOuterRows(inputSummary, context, output);
+		double outerRows = outer.point();
 		double rhsRows = finiteNonNegative(context.rightInputRows())
 				? context.rightInputRows()
 				: relationRows.computeIfAbsent(rightRelationId,
@@ -123,9 +131,13 @@ final class LmdbMappedSemiAntiCosting {
 		} else {
 			output.putPlannedStringMetric("plannedSemiAntiRhsRowsDisposition", "mapped-generation");
 		}
-		double distinctProbeKeys = cachedInputDistinct(inputRelations, correlationNames, outerRows);
+		LmdbPackedCostModel.MappedDistinctProfile distinctProfile = cachedInputDistinct(
+				inputRelations, correlationNames, outer);
 		TupleExpr rhs = query.materializeRelation(rightRelationId);
-		double rhsDistinctKeys = cachedExpressionDistinct(rightRelationId, rhs, correlationNames, rhsRows);
+		LmdbPackedCostModel.MappedDistinctProfile rhsDistinctProfile = cachedExpressionDistinct(
+				rightRelationId, rhs, correlationNames, rhsRows);
+		double rhsDistinctKeys = rhsDistinctProfile.hasPoint() ? rhsDistinctProfile.point() : rhsRows;
+		double memoizedCostingDistinctKeys = distinctProfile.upper();
 		double boundAccessWorkRows = rhsRows == 0.0d
 				? 0.0d
 				: Math.max(1.0d, rhsRows / Math.max(1.0d, rhsDistinctKeys));
@@ -156,11 +168,11 @@ final class LmdbMappedSemiAntiCosting {
 		double streamingRowsExamined = saturatedAdd(
 				saturatedMultiply(costingMatchedRows, firstMatchWorkRows),
 				saturatedMultiply(costingUnmatchedRows, probeWorkRows));
-		double memoizedMisses = memoizedMisses(outerRows, distinctProbeKeys);
+		double memoizedMisses = memoizedMisses(outerRows, memoizedCostingDistinctKeys);
 		double memoizedRowsExamined = saturatedMultiply(memoizedMisses,
 				saturatedAdd(saturatedMultiply(costingHitProbability, firstMatchWorkRows),
 						saturatedMultiply(1.0d - costingHitProbability, probeWorkRows)));
-		double memoizedCacheRows = Math.min(distinctProbeKeys, memoCapacity());
+		double memoizedCacheRows = Math.min(memoizedCostingDistinctKeys, memoCapacity());
 		double materializationPartitions = rhsRows == 0.0d ? 0.0d : 1.0d;
 		double materializationAccessRows = rhsRows;
 		double materializationBuildRows = rhsRows;
@@ -168,7 +180,7 @@ final class LmdbMappedSemiAntiCosting {
 		double memoizedObjective = saturatedAdd(memoizedRowsExamined, memoizedMisses, outerRows);
 		double materializedObjective = saturatedAdd(materializationAccessRows, materializationBuildRows, outerRows);
 		int cheapestAlgorithm = bestAlgorithm(streamingObjective, memoizedObjective, materializedObjective,
-				distinctProbeKeys, materializationBuildRows);
+				memoizedCostingDistinctKeys, materializationBuildRows);
 
 		switch (algorithm) {
 		case PackedQueryView.SEMI_ANTI_STREAMING -> output.setLocalPhysicalCost(
@@ -185,7 +197,7 @@ final class LmdbMappedSemiAntiCosting {
 		}
 		output.setContextualOutputRowsPreservingPhysicalCost(resultRows);
 
-		stampStructuralProfile(output, outerRows, distinctProbeKeys, rhsRows, rhsDistinctKeys, matchedRows,
+		stampStructuralProfile(output, outerRows, distinctProfile, rhsRows, rhsDistinctProfile, matchedRows,
 				surface != null
 						? "mapped-omni-projected-distinct+frontier-semi-anti-surface"
 						: mapped != null
@@ -226,6 +238,7 @@ final class LmdbMappedSemiAntiCosting {
 		output.putPlannedDoubleMetric("plannedSemiAntiMemoizedCacheMisses", memoizedMisses);
 		output.putPlannedDoubleMetric("plannedSemiAntiMemoizedCacheHits", Math.max(0.0d, outerRows - memoizedMisses));
 		output.putPlannedDoubleMetric("plannedSemiAntiMemoizedCacheRows", memoizedCacheRows);
+		output.putPlannedDoubleMetric("plannedSemiAntiMemoizedCostingDistinctKeys", memoizedCostingDistinctKeys);
 		output.putPlannedDoubleMetric("plannedSemiAntiMaterializationWorkRows", materializationAccessRows);
 		output.putPlannedDoubleMetric("plannedSemiAntiMaterializationOutputRows", materializationBuildRows);
 		output.putPlannedDoubleMetric("plannedSemiAntiMaterializationPartitions", materializationPartitions);
@@ -233,7 +246,7 @@ final class LmdbMappedSemiAntiCosting {
 		output.putPlannedDoubleMetric("plannedSemiAntiMemoizedObjectiveCost", memoizedObjective);
 		output.putPlannedDoubleMetric("plannedSemiAntiMaterializedObjectiveCost", materializedObjective);
 		output.putPlannedDoubleMetric("plannedSemiAntiBreakEvenDistinctKeys",
-				probeWorkRows == 0.0d ? distinctProbeKeys
+				probeWorkRows == 0.0d ? memoizedCostingDistinctKeys
 						: Math.min(outerRows,
 								materializedObjective / Math.max(1.0d, probeWorkRows)));
 		output.putPlannedStringMetric("plannedSemiAntiProbeBindingDomain", String.join(",", correlationNames));
@@ -318,32 +331,69 @@ final class LmdbMappedSemiAntiCosting {
 				observations, outerRows, matchedRows, unmatchedRows);
 	}
 
-	private double cachedInputDistinct(int[] inputRelations, String[] names, double upperRows) {
+	private LmdbPackedCostModel.MappedDistinctProfile cachedInputDistinct(int[] inputRelations, String[] names,
+			StructuralRows rows) {
 		int[] canonical = inputRelations == null ? new int[0] : inputRelations.clone();
 		Arrays.sort(canonical);
-		DistinctKey key = new DistinctKey(Arrays.toString(canonical), String.join("\u0000", names), upperRows);
-		return distinctRows.computeIfAbsent(key,
-				ignored -> costModel.mappedProjectedDistinct(query, canonical, names, upperRows));
+		DistinctKey key = new DistinctKey(
+				Arrays.toString(canonical), String.join("\u0000", names), rows.point(), rows.lower(), rows.upper());
+		LmdbPackedCostModel.MappedDistinctProfile cached = distinctRows.get(key);
+		if (cached != null) {
+			return cached;
+		}
+		LmdbPackedCostModel.MappedDistinctProfile profile = costModel.mappedProjectedDistinctProfile(
+				query, canonical, names, rows.point(), rows.lower(), rows.upper());
+		if (profile == null) {
+			double point = costModel.mappedProjectedDistinct(query, canonical, names, rows.point());
+			profile = fallbackProfile(point, rows.lower(), rows.upper(), "mapped-distinct-mock-fallback");
+		}
+		distinctRows.put(key, profile);
+		return profile;
 	}
 
-	private double cachedExpressionDistinct(int relationId, TupleExpr expression, String[] names, double upperRows) {
-		DistinctKey key = new DistinctKey(Integer.toString(relationId), String.join("\u0000", names), upperRows);
-		return distinctRows.computeIfAbsent(key,
-				ignored -> costModel.mappedProjectedDistinct(expression, names, upperRows));
+	private LmdbPackedCostModel.MappedDistinctProfile cachedExpressionDistinct(int relationId, TupleExpr expression,
+			String[] names, double pointRows) {
+		DistinctKey key = new DistinctKey(
+				Integer.toString(relationId), String.join("\u0000", names), pointRows, 0.0d, Double.MAX_VALUE);
+		LmdbPackedCostModel.MappedDistinctProfile cached = distinctRows.get(key);
+		if (cached != null) {
+			return cached;
+		}
+		LmdbPackedCostModel.MappedDistinctProfile profile = costModel.mappedProjectedDistinctProfile(
+				expression, names, pointRows, 0.0d, Double.MAX_VALUE);
+		if (profile == null) {
+			double point = costModel.mappedProjectedDistinct(expression, names, pointRows);
+			profile = fallbackProfile(point, 0.0d, Math.max(pointRows, point), "mapped-distinct-mock-fallback");
+		}
+		distinctRows.put(key, profile);
+		return profile;
 	}
 
-	private static void stampStructuralProfile(PackedCostEstimate output, double outerRows, double distinctProbeKeys,
-			double rhsRows, double rhsDistinctKeys, double matchedRows, String source) {
+	private static LmdbPackedCostModel.MappedDistinctProfile fallbackProfile(double point, double rowLower,
+			double rowUpper, String provenance) {
+		double upper = finiteNonNegative(rowUpper) ? rowUpper : Double.MAX_VALUE;
+		double lower = rowLower > 0.0d && upper > 0.0d ? 1.0d : 0.0d;
+		double clampedPoint = finiteNonNegative(point) ? Math.max(lower, Math.min(upper, point)) : Double.NaN;
+		return new LmdbPackedCostModel.MappedDistinctProfile(clampedPoint, lower, upper, provenance);
+	}
+
+	private static void stampStructuralProfile(PackedCostEstimate output, double outerRows,
+			LmdbPackedCostModel.MappedDistinctProfile distinctProfile,
+			double rhsRows, LmdbPackedCostModel.MappedDistinctProfile rhsDistinctProfile,
+			double matchedRows, String source) {
 		output.putPlannedDoubleMetric("plannedCorrelationOuterRows", outerRows);
-		output.putPlannedDoubleMetric("plannedCorrelationDistinctKeys", distinctProbeKeys);
-		output.putPlannedDoubleMetric("plannedCorrelationDistinctKeyLowerBound", outerRows == 0.0d ? 0.0d : 1.0d);
-		output.putPlannedDoubleMetric("plannedCorrelationDistinctKeyUpperBound", distinctProbeKeys);
+		output.putPlannedDoubleMetric("plannedCorrelationDistinctKeys", distinctProfile.point());
+		output.putPlannedDoubleMetric("plannedCorrelationDistinctKeyLowerBound", distinctProfile.lower());
+		output.putPlannedDoubleMetric("plannedCorrelationDistinctKeyUpperBound", distinctProfile.upper());
 		output.putPlannedDoubleMetric("plannedCorrelationMatchedRows", Math.min(outerRows, matchedRows));
 		output.putPlannedDoubleMetric("plannedCorrelationUnmatchedRows",
 				Math.max(0.0d, outerRows - Math.min(outerRows, matchedRows)));
 		output.putPlannedDoubleMetric("plannedSemiAntiMappedRhsRows", rhsRows);
-		output.putPlannedDoubleMetric("plannedSemiAntiMappedRhsDistinctKeys", rhsDistinctKeys);
+		output.putPlannedDoubleMetric("plannedSemiAntiMappedRhsDistinctKeys", rhsDistinctProfile.point());
+		output.putPlannedDoubleMetric("plannedSemiAntiMappedRhsDistinctKeyUpperBound", rhsDistinctProfile.upper());
 		output.putPlannedStringMetric("plannedCorrelationRowsSource", source);
+		output.putPlannedStringMetric("plannedCorrelationDistinctProvenance", distinctProfile.provenance());
+		output.putPlannedStringMetric("plannedSemiAntiMappedRhsDistinctProvenance", rhsDistinctProfile.provenance());
 		output.putPlannedStringMetric("plannedCorrelationGuarantee", "measure_unbiased");
 		output.putPlannedDoubleMetric("plannedCorrelationConfidence", 0.5d);
 	}
@@ -363,15 +413,23 @@ final class LmdbMappedSemiAntiCosting {
 								: algorithmName);
 	}
 
-	private static double structuralOuterRows(EvidenceStateSummary summary, PackedCostContext context,
+	private static StructuralRows structuralOuterRows(EvidenceStateSummary summary, PackedCostContext context,
 			PackedCostEstimate output) {
+		double point;
 		if (context != null && finiteNonNegative(context.leftInputRows())) {
-			return context.leftInputRows();
+			point = context.leftInputRows();
+		} else if (summary != null && finiteNonNegative(summary.pointRows())) {
+			point = summary.pointRows();
+		} else {
+			point = Math.max(0.0d, output.outputRows());
 		}
-		if (summary != null && finiteNonNegative(summary.pointRows())) {
-			return summary.pointRows();
-		}
-		return Math.max(0.0d, output.outputRows());
+		double lower = summary != null && finiteNonNegative(summary.lowerRows())
+				? Math.min(point, summary.lowerRows())
+				: 0.0d;
+		double upper = summary != null && !Double.isNaN(summary.upperRows()) && summary.upperRows() >= point
+				? summary.upperRows()
+				: summary == null ? Double.MAX_VALUE : point;
+		return new StructuralRows(point, lower, Double.isFinite(upper) ? upper : Double.MAX_VALUE);
 	}
 
 	private static double hitProbability(int semanticKind, double outerRows, double outputRows) {
@@ -487,7 +545,11 @@ final class LmdbMappedSemiAntiCosting {
 		return result;
 	}
 
-	private record DistinctKey(String relationIdentity, String bindingIdentity, double upperRows) {
+	private record DistinctKey(String relationIdentity, String bindingIdentity,
+			double pointRows, double lowerRows, double upperRows) {
+	}
+
+	private record StructuralRows(double point, double lower, double upper) {
 	}
 
 	private record LogicalSelectivityKey(int semanticKind, int rightRelationId, String bindingIdentity) {

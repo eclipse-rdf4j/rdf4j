@@ -27,8 +27,11 @@ class LeoPlusOutOfDistributionTest {
 
 	private static final LogicalLearningKey LOGICAL = LogicalLearningKey.of("join", "expr-a", "children-a",
 			"predicates-a", "v0,v1", "none", "bag", "store-defaults");
+	private static final PhysicalResidualKey PHYSICAL = PhysicalResidualKey.of("streaming", "direct", "spoc",
+			"dependent-reopen", "none", "none", "none", "layout-a");
 	private static final LearningApplicability APPLICABILITY = new LearningApplicability(11L, 0L,
 			"input:unbound", 19L, 23L, 1L);
+	private static final LearningFeatureEnvelope PHYSICAL_FEATURES = LearningFeatureEnvelope.conventionalRows(100.0d);
 
 	@Test
 	void outOfDistributionContextFallsBackToConventionalVector() {
@@ -61,6 +64,34 @@ class LeoPlusOutOfDistributionTest {
 		assertEquals(LearningGateDecision.Outcome.INSUFFICIENT_SUPPORT, decision.gate().outcome());
 		assertNull(decision.estimate());
 		assertEquals(2L, decision.gate().exactCellObservations());
+	}
+
+	@Test
+	void applicablePhysicalCorrectionSaturatesAtLargestFiniteCost() {
+		FrontierLearningModel model = calibratedPhysicalModel(1.0d, 4.0d);
+
+		FrontierLearningModel.DimensionDecision decision = model.physicalDecision(LOGICAL, PHYSICAL, APPLICABILITY,
+				FrontierCostDimension.SOURCE_ROWS_SCANNED, PHYSICAL_FEATURES, Double.MAX_VALUE);
+
+		assertEquals(LearningGateDecision.Outcome.APPLICABLE, decision.gate().outcome());
+		assertNotNull(decision.estimate());
+		assertEquals(Double.MAX_VALUE, decision.estimate().correctedValue());
+		assertEquals(Double.POSITIVE_INFINITY, decision.estimate().upperValue());
+	}
+
+	@Test
+	void applicablePhysicalReductionFromLargestFiniteCostKeepsAnOrderedInterval() {
+		FrontierLearningModel model = calibratedPhysicalModel(4.0d, 1.0d);
+
+		FrontierLearningModel.DimensionDecision decision = model.physicalDecision(LOGICAL, PHYSICAL, APPLICABILITY,
+				FrontierCostDimension.SOURCE_ROWS_SCANNED, PHYSICAL_FEATURES, Double.MAX_VALUE);
+
+		assertEquals(LearningGateDecision.Outcome.APPLICABLE, decision.gate().outcome());
+		assertNotNull(decision.estimate());
+		assertTrue(Double.isFinite(decision.estimate().correctedValue()));
+		assertTrue(decision.estimate().correctedValue() < Double.MAX_VALUE);
+		assertTrue(decision.estimate().lowerValue() <= decision.estimate().correctedValue());
+		assertTrue(decision.estimate().upperValue() >= decision.estimate().correctedValue());
 	}
 
 	@Test
@@ -148,6 +179,15 @@ class LeoPlusOutOfDistributionTest {
 		for (int observation = 0; observation < 32; observation++) {
 			model.observeLogical(LOGICAL, APPLICABILITY, FrontierCostDimension.OUTPUT_ROWS,
 					100.0d + observation % 3, 400.0d, observation + 1L);
+		}
+		return model;
+	}
+
+	private static FrontierLearningModel calibratedPhysicalModel(double predicted, double actual) {
+		FrontierLearningModel model = new FrontierLearningModel();
+		for (int observation = 0; observation < 32; observation++) {
+			model.observePhysical(LOGICAL, PHYSICAL, APPLICABILITY, FrontierCostDimension.SOURCE_ROWS_SCANNED,
+					PHYSICAL_FEATURES, predicted, actual, observation + 1L);
 		}
 		return model;
 	}
