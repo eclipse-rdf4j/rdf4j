@@ -54,7 +54,11 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	private static RowState freshRow() {
-		RowState row = new RowState(new StubSource(), LAYOUT, EmptyBindingSet.getInstance());
+		return freshRow(new StubSource());
+	}
+
+	private static RowState freshRow(NativeLmdbQuerySource source) {
+		RowState row = new RowState(source, LAYOUT, EmptyBindingSet.getInstance());
 		java.util.Arrays.fill(row.slots, LmdbNativeAggregateCompiler.UNKNOWN);
 		row.recomputeBoundMask();
 		return row;
@@ -558,6 +562,62 @@ class LmdbNativeKernelLoweringTest {
 			assertFalse(key.contains("hb0("), "flag off must keep the probe chain: " + key);
 		} finally {
 			System.clearProperty(LmdbNativeKernelLowering.HASH_JOIN_PROPERTY);
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	/**
+	 * True-cost hash admission (HC:4 regression): when the derived-order probe chain is priceable from measured
+	 * statistics AND dominates the hash plan, the hash sink must decline and keep the probe chain. The shape mirrors
+	 * HC:4: a selective constant-object pattern (the "type" scan, 40.3K) joined with a wide subject-keyed pattern (the
+	 * "weight" pattern, 222.8K) whose measured per-subject fan-out is small — so the chain probes cheaply per row while
+	 * the hash plan must enumerate the wide predicate's whole key domain and drain the build side once per parallel
+	 * work unit. The fan-out is chosen so the chain dominates even at a single build copy, keeping the assertion
+	 * machine-independent.
+	 */
+	@Test
+	void hashJoinDeclinesWhenDerivedChainDominates() {
+		PatternPlan type = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.constant(PRED + 8), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 40_300D);
+		PatternPlan weight = new PatternPlan(Term.slot(0), Term.constant(PRED + 2), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 222_800D);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { type, weight }, new MaskedFilter[0]);
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan,
+					freshRow(new FanOutStubSource(PRED + 2, true, 2.0D)), null);
+			assertNotNull(lowered, "the two-pattern join must still lower");
+			String key = lowered.kernel.shapeKey();
+			assertFalse(key.contains("hb0("), "a dominated hash plan must keep the probe chain: " + key);
+			assertFalse(key.contains("hp0("), "a dominated hash plan must keep the probe chain: " + key);
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	/**
+	 * Companion pin for {@link #hashJoinDeclinesWhenDerivedChainDominates}: a genuinely hash-favored shape (tiny build
+	 * side, wide probe, measured fan-out so large that the chain interval sits far above the hash interval even after
+	 * the parallel build-replication charge) must still lower to the hash build/probe pair under the true-cost gate.
+	 */
+	@Test
+	void hashJoinStillEngagesWhenChainIsDominated() {
+		PatternPlan probe = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100_000D);
+		PatternPlan build = new PatternPlan(Term.slot(1), Term.constant(PRED + 2), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100D);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { probe, build }, new MaskedFilter[0]);
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan,
+					freshRow(new FanOutStubSource(PRED + 2, true, 4_000D)), null);
+			assertNotNull(lowered, "the two-pattern join must still lower");
+			String key = lowered.kernel.shapeKey();
+			assertTrue(key.contains("hb0("), "a dominating hash plan must still engage: " + key);
+			assertTrue(key.contains("hp0("), "a dominating hash plan must still engage: " + key);
+		} finally {
 			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
 		}
 	}
@@ -1319,7 +1379,31 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	/** Minimal synthetic source: ids never resolve, no statements — the lowering must not need any of it. */
-	private static final class StubSource implements NativeLmdbQuerySource {
+	/**
+	 * A stub source that additionally reports a measured mean fan-out for exactly one (predicate, bySubject) pair, so
+	 * the hash sink's derived-order chain comparison can price the probe chain from "real" statistics instead of the
+	 * structural pseudo-cardinality fallback.
+	 */
+	private static final class FanOutStubSource extends StubSource {
+
+		private final long predicate;
+		private final boolean bySubject;
+		private final double fanOut;
+
+		FanOutStubSource(long predicate, boolean bySubject, double fanOut) {
+			this.predicate = predicate;
+			this.bySubject = bySubject;
+			this.fanOut = fanOut;
+		}
+
+		@Override
+		public java.util.OptionalDouble meanFanOut(long predicate, boolean bySubject) {
+			return predicate == this.predicate && bySubject == this.bySubject ? java.util.OptionalDouble.of(fanOut)
+					: java.util.OptionalDouble.empty();
+		}
+	}
+
+	private static class StubSource implements NativeLmdbQuerySource {
 
 		@Override
 		public long idOf(Value value) throws QueryEvaluationException {

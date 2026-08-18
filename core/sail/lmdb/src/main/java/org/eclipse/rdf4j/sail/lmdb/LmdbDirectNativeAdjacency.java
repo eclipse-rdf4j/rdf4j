@@ -52,6 +52,14 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	 */
 	private static final int MATERIALIZE_MAX_EDGES = 8192;
 
+	/**
+	 * Element access on runs above {@link #MATERIALIZE_MAX_EDGES} is served from a decode window of this many edges: a
+	 * miss bulk-decodes one window starting at the requested offset, so sequential loops (the kernel probe loops read
+	 * {@code 0..size-1} in order) pay one codec decode per window instead of one packed-page decode per element, while
+	 * memory stays bounded for supernode-class runs.
+	 */
+	private static final int MATERIALIZE_WINDOW_EDGES = 4096;
+
 	private final LmdbInMemoryAdjacencyIndex base;
 	private final LmdbAdjacencyOverlaySet overlays;
 	private final long snapshotRevision;
@@ -97,6 +105,11 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	private boolean contextsMaterialized;
 	private long[] neighborBuf;
 	private long[] contextBuf;
+	/** Decode-window bookkeeping for oversized runs; -1 start means no window. Shares the buffers above. */
+	private long neighborWindowStart = -1;
+	private int neighborWindowCount;
+	private long contextWindowStart = -1;
+	private int contextWindowCount;
 
 	/**
 	 * Every key touched by an applicable overlay generation, unsigned sorted. The parallel run array contains the
@@ -343,6 +356,10 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 			cachedCount = -1;
 			neighborsMaterialized = false;
 			contextsMaterialized = false;
+			neighborWindowStart = -1;
+			neighborWindowCount = 0;
+			contextWindowStart = -1;
+			contextWindowCount = 0;
 		}
 	}
 
@@ -373,6 +390,10 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		cachedCount = cachedSize <= MATERIALIZE_MAX_EDGES ? (int) cachedSize : -1;
 		neighborsMaterialized = false;
 		contextsMaterialized = false;
+		neighborWindowStart = -1;
+		neighborWindowCount = 0;
+		contextWindowStart = -1;
+		contextWindowCount = 0;
 	}
 
 	/**
@@ -447,9 +468,31 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		if (materializeNeighbors(runHandle)) {
 			return neighborBuf[(int) runOffset];
 		}
-		long neighbor = LmdbAdjacencyRunCodec.neighborAt(runCursor, runOffset);
-		recordBaseProbes(1L);
-		return neighbor;
+		if (neighborWindowStart >= 0 && runOffset >= neighborWindowStart
+				&& runOffset - neighborWindowStart < neighborWindowCount) {
+			return neighborBuf[(int) (runOffset - neighborWindowStart)];
+		}
+		return fillNeighborWindow(runOffset);
+	}
+
+	private long fillNeighborWindow(long runOffset) {
+		int count = (int) Math.min(MATERIALIZE_WINDOW_EDGES, cachedSize - runOffset);
+		if (neighborBuf == null || neighborBuf.length < count) {
+			neighborBuf = new long[materializedCapacity(count)];
+		}
+		int copied = LmdbAdjacencyRunCodec.copy(contexts, runCursor, runOffset, count, neighborBuf, 0, null, 0);
+		if (copied <= 0) {
+			// The codec could not serve a bulk window here; stay exact on the per-element path.
+			neighborWindowStart = -1;
+			neighborWindowCount = 0;
+			long neighbor = LmdbAdjacencyRunCodec.neighborAt(runCursor, runOffset);
+			recordBaseProbes(1L);
+			return neighbor;
+		}
+		neighborWindowStart = runOffset;
+		neighborWindowCount = copied;
+		recordBaseProbes(copied);
+		return neighborBuf[0];
 	}
 
 	@Override
@@ -459,7 +502,27 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		if (materializeContexts(runHandle)) {
 			return contextBuf[(int) runOffset];
 		}
-		return LmdbAdjacencyRunCodec.contextAt(contexts, runCursor, runOffset);
+		if (contextWindowStart >= 0 && runOffset >= contextWindowStart
+				&& runOffset - contextWindowStart < contextWindowCount) {
+			return contextBuf[(int) (runOffset - contextWindowStart)];
+		}
+		return fillContextWindow(runOffset);
+	}
+
+	private long fillContextWindow(long runOffset) {
+		int count = (int) Math.min(MATERIALIZE_WINDOW_EDGES, cachedSize - runOffset);
+		if (contextBuf == null || contextBuf.length < count) {
+			contextBuf = new long[materializedCapacity(count)];
+		}
+		int copied = LmdbAdjacencyRunCodec.copy(contexts, runCursor, runOffset, count, null, 0, contextBuf, 0);
+		if (copied <= 0) {
+			contextWindowStart = -1;
+			contextWindowCount = 0;
+			return LmdbAdjacencyRunCodec.contextAt(contexts, runCursor, runOffset);
+		}
+		contextWindowStart = runOffset;
+		contextWindowCount = copied;
+		return contextBuf[0];
 	}
 
 	@Override

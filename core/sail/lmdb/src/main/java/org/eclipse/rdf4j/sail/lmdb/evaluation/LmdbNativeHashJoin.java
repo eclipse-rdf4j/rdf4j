@@ -240,12 +240,21 @@ final class LmdbNativeHashJoin {
 	}
 
 	/**
-	 * Kernel-lowering variant of the two-pattern cost gate (three-tier parity plan, M8): the SAME estimates, the same
-	 * minimum-rows and cost thresholds as {@link #tryPlan}, but no cursor — the kernel lowering asks whether a hash
-	 * join would beat the probe chain and, when yes, builds the {@code HashBuild}/{@code HashProbe} pair itself.
-	 * Declines are quiet: the probe chain still lowers, so the interpreted decline census must not double-count.
+	 * Kernel-lowering variant of the two-pattern cost gate (three-tier parity plan, M8): no cursor — the kernel
+	 * lowering asks whether a hash join would beat the probe chain and, when yes, builds the
+	 * {@code HashBuild}/{@code HashProbe} pair itself. Declines are quiet: the probe chain still lowers, so the
+	 * interpreted decline census must not double-count.
+	 * <p>
+	 * Admission compares against the derived-order probe chain whenever that chain is priceable from measured
+	 * statistics ({@link PatternPlan#hasDirectEstimateForBoundMask}): the hash plan is charged its probe-side
+	 * enumeration, one lookup per probe row, and the build drain multiplied by the parallel rung's expected per-unit
+	 * build replays (the parallel row engine creates one kernel instance per work unit and each instance re-drains the
+	 * build preamble — see {@link LmdbNativeParallelKernelRows#expectedBuildReplays()}). Strict interval domination
+	 * decides; overlap keeps the probe chain, mirroring the join-order tie-break doctrine. When the chain cannot be
+	 * priced from measured statistics (structural pseudo-cardinalities would grossly overprice cheap bound probes), the
+	 * original {@code leftRows * SEEK_WORK_UNITS} gate is retained verbatim.
 	 */
-	static KernelHashPlan tryPlanKernel(PatternPlan left, PatternPlan right, RowState row) {
+	static KernelHashPlan tryPlanKernel(MultiJoinPlan multiJoin, PatternPlan left, PatternPlan right, RowState row) {
 		if (!Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"))) {
 			return null;
 		}
@@ -281,13 +290,43 @@ final class LmdbNativeHashJoin {
 		if (probeRows < Long.getLong(MIN_ROWS_PROPERTY, DEFAULT_MIN_ROWS)) {
 			return null;
 		}
-		double indexNestedLoopCost = leftRows * RuntimeBuildAdmission.SEEK_WORK_UNITS;
-		if (!Double.isFinite(hashCost) || !(hashCost < indexNestedLoopCost)) {
-			return null;
+		long boundMask = row.boundMask();
+		LmdbNativeWork chain = directChainWork(multiJoin, row, boundMask);
+		if (chain != null) {
+			LmdbNativeWork hash = build.estimateWork(row, boundMask)
+					.times(LmdbNativeParallelKernelRows.expectedBuildReplays())
+					.plus(probe.estimateWork(row, boundMask))
+					.plus(LmdbNativeWork.exact(probeRows));
+			if (!hash.beats(chain)) {
+				return null;
+			}
+		} else {
+			double indexNestedLoopCost = leftRows * RuntimeBuildAdmission.SEEK_WORK_UNITS;
+			if (!Double.isFinite(hashCost) || !(hashCost < indexNestedLoopCost)) {
+				return null;
+			}
 		}
 		return new KernelHashPlan(probe, build, slotsOf(keyMask),
 				Integer.getInteger(MAX_BUILD_ROWS_PROPERTY, DEFAULT_MAX_BUILD_ROWS),
 				Math.min(leftRows, rightRows));
+	}
+
+	/**
+	 * The derived-order probe-chain work, or null unless every link is priceable from measured statistics (a finite
+	 * uncorrelated static estimate, or a sampled mean fan-out once earlier links bound its slots). The structural
+	 * pseudo-cardinality fallback is deliberately excluded: it prices a cheap bound probe at thousands of rows and
+	 * would hand the hash plan wins it has not earned.
+	 */
+	private static LmdbNativeWork directChainWork(MultiJoinPlan multiJoin, RowState row, long boundMask) {
+		long mask = boundMask;
+		for (SlotPlan child : multiJoin.derivedPlan(boundMask).order) {
+			if (!(child instanceof PatternPlan pattern) || !pattern.hasDirectEstimateForBoundMask(mask, row.source)) {
+				return null;
+			}
+			mask |= child.producedMask();
+		}
+		LmdbNativeWork chain = multiJoin.estimateWork(row, boundMask);
+		return chain.known() ? chain : null;
 	}
 
 	/** The kernel lowering's slice of a hash-favored two-pattern plan (M8). */

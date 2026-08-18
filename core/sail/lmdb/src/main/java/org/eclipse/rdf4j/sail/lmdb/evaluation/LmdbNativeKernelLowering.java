@@ -2865,7 +2865,7 @@ final class LmdbNativeKernelLowering {
 			if (anyProducedSlotColumned(first) || anyProducedSlotColumned(second)) {
 				return false;
 			}
-			LmdbNativeHashJoin.KernelHashPlan plan = LmdbNativeHashJoin.tryPlanKernel(first, second, row);
+			LmdbNativeHashJoin.KernelHashPlan plan = LmdbNativeHashJoin.tryPlanKernel(multiJoin, first, second, row);
 			if (plan == null) {
 				return false;
 			}

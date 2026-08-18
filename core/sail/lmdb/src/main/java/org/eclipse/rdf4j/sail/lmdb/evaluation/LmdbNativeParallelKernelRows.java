@@ -74,6 +74,20 @@ final class LmdbNativeParallelKernelRows {
 	}
 
 	/**
+	 * How many times a {@code HashBuild} preamble is expected to run for one query invocation: this engine creates one
+	 * kernel instance per work unit ({@code threads * RANGES_PER_WORKER} units) and every instance re-drains the build
+	 * side. Admission gates that charge a hash build must multiply by this factor so the cost model prices the
+	 * execution that actually happens; keep it in step with the partitioning above.
+	 */
+	static double expectedBuildReplays() {
+		if (!enabled() || !LmdbNativeParallelPipelines.enabled()) {
+			return 1D;
+		}
+		int threads = LmdbNativeParallelPipelines.configuredThreads();
+		return threads >= 2 ? (double) threads * RANGES_PER_WORKER : 1D;
+	}
+
+	/**
 	 * Runs the compiled row pipeline partitioned across workers, or returns null when any gate fails and the sequential
 	 * kernel cursor must serve instead. A null return leaves the caller's probe and kernel untouched. The materialized
 	 * {@code domains} are the query thread's — workers share the immutable arrays, which also guarantees every worker

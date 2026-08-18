@@ -70,10 +70,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 10, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 1)
+@Warmup(iterations = 4, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G",  })
-@Measurement(iterations = 20, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 2)
+@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
+@Measurement(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
@@ -115,7 +115,7 @@ public class ThemeQueryBenchmark {
 	 * Matched control for the query execution engine. The trial pins the Janino activation threshold to zero and uses
 	 * deterministic compilation in {@link #setup()} so both measured and telemetry shapes are ready on first use.
 	 */
-	@Param({ "false" })
+	@Param({ "false", "true" })
 	public String z_z_janinoEnabled;
 
 	@Param({
@@ -212,19 +212,9 @@ public class ThemeQueryBenchmark {
 	@Benchmark
 	public long executeQuery() {
 		try (var connection = repository.getConnection()) {
-			long count = 0;
+			long count;
 			OptionalLong expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme,
 					z_queryIndex);
-
-
-			{
-				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
-				Explanation explain = tupleQuery.explain(Explanation.Level.Telemetry);
-				System.out.println("### Telemetry Query ###");
-				System.out.println(explain);
-				System.out.println();
-
-			}
 			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
 			tupleQuery.setMaxExecutionTime(50);
 			try (var evaluate = tupleQuery.evaluate()) {
@@ -577,24 +567,24 @@ public class ThemeQueryBenchmark {
 //			previousJoinOrderStrategy = null;
 //		}
 
-//		if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
-//			try (SailRepositoryConnection connection = repository.getConnection()) {
-//				System.out.println("### Optimized Query ###");
-//				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-//				System.out.println(explain);
-//				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
-//				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
-//				System.out.println();
-//			}
-//			try (SailRepositoryConnection connection = repository.getConnection()) {
-//				System.out.println("### Telemetry Query ###");
-//				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
-//				System.out.println(explain);
-//				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
-//				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
-//				System.out.println();
-//			}
-//		}
+		if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				System.out.println("### Optimized Query ###");
+				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				System.out.println(explain);
+				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+				System.out.println();
+			}
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				System.out.println("### Telemetry Query ###");
+				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				System.out.println(explain);
+				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+				System.out.println();
+			}
+		}
 		if (repository != null) {
 			repository.shutDown();
 			repository = null;
