@@ -375,6 +375,14 @@ public class TransactionController extends AbstractController implements Disposa
 			throw new ClientHTTPException(SC_BAD_REQUEST,
 					"Canceling query explanations is not supported for transaction requests.");
 		}
+		if (request.getParameter(Protocol.CANCEL_QUERY_PARAM_NAME) != null) {
+			throw new ClientHTTPException(SC_BAD_REQUEST,
+					"Canceling queries is not supported for transaction requests.");
+		}
+		if (request.getParameter(Protocol.QUERY_REQUEST_ID_PARAM_NAME) != null) {
+			throw new ClientHTTPException(SC_BAD_REQUEST,
+					"Tracked queries are not supported for transaction requests.");
+		}
 
 		View view = null;
 		Object queryResult = null;

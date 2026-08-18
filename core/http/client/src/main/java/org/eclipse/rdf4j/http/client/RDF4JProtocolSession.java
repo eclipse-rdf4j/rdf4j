@@ -859,7 +859,30 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		if (maxQueryTime > 0) {
 			builder.responseTimeout(Duration.ofSeconds(maxQueryTime));
 		}
-		return builder.build();
+		HttpRequest method = builder.build();
+		String queryRequestId = transactionURL == null ? QueryRequestContext.getQueryRequestId() : null;
+		if (queryRequestId != null) {
+			method = withQueryParam(method, Protocol.QUERY_REQUEST_ID_PARAM_NAME, queryRequestId);
+		}
+		return method;
+	}
+
+	/**
+	 * Requests cancellation of a non-transactional regular query previously submitted with the supplied request id.
+	 * Cancellation is idempotent: the server also returns success for an unknown or completed id.
+	 *
+	 * @param queryRequestId client-generated query request identifier
+	 */
+	public void cancelQuery(String queryRequestId) throws IOException, RepositoryException, UnauthorizedException {
+		String normalizedQueryRequestId = Objects.requireNonNull(queryRequestId, "Query request id was null").trim();
+		if (normalizedQueryRequestId.isEmpty()) {
+			throw new IllegalArgumentException("Query request id was blank");
+		}
+
+		HttpRequest cancelMethod = applyAdditionalHeaders(HttpRequests.post(getQueryURL())).build();
+		cancelMethod = withQueryParam(cancelMethod, Protocol.CANCEL_QUERY_PARAM_NAME, Boolean.TRUE.toString());
+		cancelMethod = withQueryParam(cancelMethod, Protocol.QUERY_REQUEST_ID_PARAM_NAME, normalizedQueryRequestId);
+		executeNoContent(cancelMethod);
 	}
 
 	public Explanation sendQueryExplanation(QueryLanguage ql, String query, String baseURI, Dataset dataset,
