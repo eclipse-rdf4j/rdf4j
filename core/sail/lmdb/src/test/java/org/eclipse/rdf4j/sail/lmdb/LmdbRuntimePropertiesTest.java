@@ -29,7 +29,7 @@ class LmdbRuntimePropertiesTest {
 
 	private static final String NATIVE_ENGINE = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String COST_CALIBRATION = "rdf4j.lmdb.costCalibration.enabled";
-	private static final String COST_EXPLORATION = "rdf4j.lmdb.costCalibration.explore";
+	private static final String ADAPTIVE_PROBE = "rdf4j.lmdb.adaptiveProbe.enabled";
 
 	@Test
 	void catalogListsStableAllowlistedStateAndAppliesCanonicalBooleans() throws Exception {
@@ -88,25 +88,43 @@ class LmdbRuntimePropertiesTest {
 	 * queries they ran 30-190x slower than measured incumbents). Each remains a one-property opt-out.
 	 */
 	@Test
-	void adaptiveCostDecisionsExplorationAndRecordingDefaultOn() throws Exception {
+	void adaptiveCostDecisionsProbingAndRecordingDefaultOn() throws Exception {
+		// The permille exploration flag (costCalibration.explore) is gone with the exploration arm itself; its
+		// successor is the bounded-probe gate (adaptiveProbe.enabled), and the learned-model persistence gate is
+		// registered beside it.
 		Class<?> catalog = Class.forName("org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties");
 		Method list = catalog.getMethod("list");
 		String calibration = System.getProperty(COST_CALIBRATION);
-		String exploration = System.getProperty(COST_EXPLORATION);
+		String probing = System.getProperty(ADAPTIVE_PROBE);
 		try {
 			System.clearProperty(COST_CALIBRATION);
-			System.clearProperty(COST_EXPLORATION);
+			System.clearProperty(ADAPTIVE_PROBE);
 			assertThat(booleanValue(stateByName(invokeList(list), COST_CALIBRATION), "defaultEnabled")).isTrue();
-			assertThat(booleanValue(stateByName(invokeList(list), COST_EXPLORATION), "defaultEnabled")).isTrue();
+			assertThat(booleanValue(stateByName(invokeList(list), ADAPTIVE_PROBE), "defaultEnabled")).isTrue();
+			assertThat(booleanValue(
+					stateByName(invokeList(list), "rdf4j.lmdb.costModel.persist.enabled"), "defaultEnabled"))
+							.isTrue();
 			assertThat(booleanValue(
 					stateByName(invokeList(list), "rdf4j.lmdb.costCalibration.record"), "defaultEnabled"))
 							.isTrue();
+			assertThat(stateByNameOrNull(invokeList(list), "rdf4j.lmdb.costCalibration.explore"))
+					.as("the deleted exploration arm must not resurface in the registry")
+					.isNull();
 			System.setProperty(COST_CALIBRATION, "false");
 			assertThat(booleanValue(stateByName(invokeList(list), COST_CALIBRATION), "enabled")).isFalse();
 		} finally {
 			restore(COST_CALIBRATION, calibration);
-			restore(COST_EXPLORATION, exploration);
+			restore(ADAPTIVE_PROBE, probing);
 		}
+	}
+
+	private static Object stateByNameOrNull(List<?> states, String name) throws Exception {
+		for (Object state : states) {
+			if (name.equals(state.getClass().getMethod("name").invoke(state))) {
+				return state;
+			}
+		}
+		return null;
 	}
 
 	/**

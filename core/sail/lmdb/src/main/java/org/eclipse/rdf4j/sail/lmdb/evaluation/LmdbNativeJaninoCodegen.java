@@ -64,6 +64,8 @@ final class LmdbNativeJaninoCodegen {
 	static final int DEFAULT_MAX_ENTRIES = 512;
 
 	static final AtomicLong COMPILATIONS = new AtomicLong();
+	/** Compiles submitted but not yet finished; {@link #kernelsReady()} gates the cost model's regime key on it. */
+	static final AtomicLong PENDING_COMPILES = new AtomicLong();
 	static final AtomicLong COMPILE_FAILURES = new AtomicLong();
 	static final AtomicLong COMPILE_NANOS = new AtomicLong();
 	static final AtomicLong KERNEL_INSTANTIATIONS = new AtomicLong();
@@ -81,6 +83,11 @@ final class LmdbNativeJaninoCodegen {
 	private static volatile ExecutorService compiler;
 
 	private LmdbNativeJaninoCodegen() {
+	}
+
+	/** True when no kernel compiles are in flight; a pending compile marks the engine as not yet warm. */
+	static boolean kernelsReady() {
+		return PENDING_COMPILES.get() == 0L;
 	}
 
 	static boolean enabled() {
@@ -132,6 +139,7 @@ final class LmdbNativeJaninoCodegen {
 				}
 			}
 			if (created) {
+				PENDING_COMPILES.incrementAndGet();
 				if (synchronous()) {
 					compile(entry, shapeKey, className, sourceSupplier);
 				} else {
@@ -290,6 +298,7 @@ final class LmdbNativeJaninoCodegen {
 			// The failed entry stays cached so the shape is not recompiled on every call; callers fall back.
 		} finally {
 			COMPILE_NANOS.addAndGet(System.nanoTime() - start);
+			PENDING_COMPILES.decrementAndGet();
 			entry.ready.countDown();
 		}
 	}
@@ -406,6 +415,7 @@ final class LmdbNativeJaninoCodegen {
 				CACHE.entries.clear();
 			}
 			COMPILATIONS.set(0L);
+			PENDING_COMPILES.set(0L);
 			COMPILE_FAILURES.set(0L);
 			COMPILE_NANOS.set(0L);
 			KERNEL_INSTANTIATIONS.set(0L);

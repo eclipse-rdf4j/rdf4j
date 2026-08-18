@@ -52,6 +52,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
@@ -184,6 +185,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 	private KernelContext context;
 	private KernelHooks hooks;
+	/** Probe-deadline cancellation, or null for a normal run; polled by every data-proportional loop. */
+	private KernelCancellation cancel;
+	private int pollTick;
 
 	/** Column registers, -1 = unbound. */
 	private long[] v;
@@ -273,6 +277,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		this.telemetry = kernel.telemetryMode == Kernel.TelemetryMode.FULL;
 	}
 
+	private void poll() {
+		if ((++pollTick & 1023) == 0) {
+			KernelRuntime.checkCancelled(cancel);
+		}
+	}
+
 	// ==========================================================================================
 	// JaninoKernel contract
 	// ==========================================================================================
@@ -281,6 +291,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	public void bind(KernelContext context) {
 		this.context = context;
 		this.hooks = context.hooks;
+		this.cancel = context.cancellation;
 		this.v = new long[kernel.columnCount];
 		Arrays.fill(v, LmdbNativeKernelIr.NULL_ID);
 		this.rowScratch = new long[stride];
@@ -581,6 +592,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				try {
 					int kn;
 					while ((kn = ak.fillKeys(keyBuffer, 0, KEY_CHUNK)) > 0) {
+						poll();
 						for (int kj = 0; kj < kn; kj++) {
 							v[enumerate.keyCol] = keyBuffer[kj];
 							if (implicitSipSite >= 0) {
@@ -607,12 +619,14 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			slot[0] = ak;
 			try {
 				while (ak.advance()) {
+					poll();
 					v[enumerate.keyCol] = ak.key();
 					if (implicitSipSite >= 0) {
 						implicitSipDriven[implicitSipSite]++;
 					}
 					long end = ak.runSize();
 					for (long i = 0; i < end; i++) {
+						poll();
 						if (ctxActive) {
 							long ctx = ak.contextAt(i);
 							if (!ctxAccepted(ctx, enumerate.ctxMatch, enumerate.ctxExcludeDefault)) {
@@ -664,6 +678,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			try {
 				int n;
 				while ((n = cur.fill(buffer, KernelRuntime.SCAN_BATCH_ROWS)) > 0) {
+					poll();
 					for (int i = 0; i < n; i++) {
 						// Subject before object within one quad, matching the generated order.
 						long subject = buffer[i * 4 + ScanQuad.SUBJ];
@@ -705,6 +720,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			}
 			long rowSize = np.rowSize(rowH);
 			for (long ro = 0; ro < rowSize;) {
+				poll();
 				int rn = np.copyRow(key, rowH, ro, PREDICATE_CHUNK, predicates, 0, runs, 0);
 				if (rn <= 0) {
 					break;
@@ -715,6 +731,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					long rh = runs[pi];
 					long end = np.size(rh);
 					for (long i = 0; i < end; i++) {
+						poll();
 						if (ctxActive) {
 							long ctx = np.contextAt(rh, i);
 							if (!ctxAccepted(ctx, enumerate.ctxMatch, enumerate.ctxExcludeDefault)) {
@@ -751,6 +768,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				return false;
 			}
 			for (long i = 0; i < end; i++) {
+				poll();
 				if (ctxActive) {
 					long ctx = cursor.contextAt(i);
 					if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
@@ -784,6 +802,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			}
 			long end = view.size(rh);
 			for (long i = 0; i < end; i++) {
+				poll();
 				if (ctxActive) {
 					long ctx = view.contextAt(rh, i);
 					if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
@@ -822,10 +841,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				if (off >= 0L) {
 					// Runs are (neighbor, context)-ordered: the target's occurrences are one contiguous block.
 					for (long i = off; i < end && adjacency.neighborAt(rh, i) == target; i++) {
+						poll();
 						m++;
 					}
 				} else {
 					for (long i = 0; i < end; i++) {
+						poll();
 						if (adjacency.neighborAt(rh, i) == target) {
 							m++;
 						}
@@ -833,6 +854,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 			} else {
 				for (long i = 0; i < end; i++) {
+					poll();
 					if (adjacency.neighborAt(rh, i) == target) {
 						m++;
 					}
@@ -840,6 +862,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			}
 			if (close.multiplicity && !booleanMode) {
 				for (long r = 0; r < m; r++) {
+					poll();
 					if (next.run()) {
 						return true;
 					}
@@ -877,6 +900,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					v[probe.keyCol] = dom[domO + base + index];
 					long end = adjacency.size(rh);
 					for (long i = 0; i < end; i++) {
+						poll();
 						if (ctxActive) {
 							long ctx = adjacency.contextAt(rh, i);
 							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
@@ -914,6 +938,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			try {
 				int count;
 				while ((count = cursor.fillKeys(keys, 0, KEY_CHUNK)) > 0) {
+					poll();
 					int found = adjacency.findBatch(keys, 0, count, handles, 0);
 					if (telemetry) {
 						sipBatchTests[site] += count;
@@ -927,6 +952,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						v[probe.keyCol] = keys[index];
 						long end = adjacency.size(rh);
 						for (long i = 0; i < end; i++) {
+							poll();
 							if (ctxActive) {
 								long ctx = adjacency.contextAt(rh, i);
 								if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
@@ -971,6 +997,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			try {
 				int n;
 				while ((n = cur.fill(buffer, KernelRuntime.SCAN_BATCH_ROWS)) > 0) {
+					poll();
 					for (int i = 0; i < n; i++) {
 						for (int position = 0; position < 4; position++) {
 							int col = scan.outCols[position];
@@ -1004,6 +1031,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			try {
 				int n;
 				while ((n = cursor.fill(buffer, KernelRuntime.SCAN_BATCH_ROWS)) > 0) {
+					poll();
 					for (int i = 0; i < n; i++) {
 						for (int j = 0; j < width; j++) {
 							v[plan.outCols[j]] = buffer[i * width + j];
@@ -1044,6 +1072,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				sizes[i] = views[i].size(handles[i]);
 			}
 			while (true) {
+				poll();
 				boolean exhausted = false;
 				long max = 0L;
 				boolean first = true;
@@ -1080,6 +1109,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					}
 					v[intersect.valueCol] = max;
 					for (long t = 0; t < times; t++) {
+						poll();
 						if (next.run()) {
 							return true;
 						}
@@ -1126,6 +1156,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				if (rh > 0L) {
 					long end = adjacency.size(rh);
 					for (long i = 0; i < end; i++) {
+						poll();
 						v[probe.valueCol] = adjacency.neighborAt(rh, i);
 						// Set before the continuation: a downstream rejection must not resurrect the null arm.
 						matched = true;
@@ -1162,6 +1193,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 			}
 			while (top > 0) {
+				poll();
 				long node = stack[--top];
 				if (!expanded.add(node)) {
 					continue;
@@ -1172,6 +1204,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 				long end = adjacency.size(rh);
 				for (long i = 0; i < end; i++) {
+					poll();
 					long nb = adjacency.neighborAt(rh, i);
 					if (emitted.add(nb)) {
 						v[path.dstCol] = nb;

@@ -533,7 +533,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			// computed sort keys (M-F5) intern through the single serial value source, so the ordered kernel and
 			// factorized specialists — which produce rows on their own sources — must not intercept such plans
 			try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter
-					.forExpr(originalExpr, row.source)) {
+					.<List<BindingSet>>forExpr(originalExpr, row.source)
+					.probeHarness(LmdbNativeProbeHarness.blocking())) {
 				LmdbNativeWork work = arg.estimateWork(row, row.boundMask());
 				String factorizedTag = emitCap == Long.MAX_VALUE
 						? LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_SORT
@@ -1046,7 +1047,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		boolean correlatedEntry = (arg.producedMask() & row.boundMask()) != 0L;
 		int[] retainedSlots = orderSlots.length == 0 ? sourceSlots : sortLayout.liveToPlan;
 		try (LmdbNativeStrategyArbiter<NativeUnorderedInput> arbiter = LmdbNativeStrategyArbiter
-				.forSlice(originalExpr, consumableRows(), row.source)) {
+				.<NativeUnorderedInput>forSlice(originalExpr, consumableRows(), row.source)
+				.probeHarness(new NativeProbeBufferHarness())) {
 			if (LmdbNativeLeapfrogJoin.canOpen(arg, row.boundMask())) {
 				arbiter.offer(() -> inputProposal(
 						() -> acceptWcoj(row, LmdbNativeLeapfrogJoin.tryOpen(arg, row), multiJoin),
@@ -2062,6 +2064,111 @@ final class MaterializedUnorderedRowCursor implements RowCursor {
 		if (active != null) {
 			active.close(active.exhausted);
 		}
+	}
+}
+
+/**
+ * Probe discipline for the streaming row site: the trial's logical rows are drained privately into a bounded arena
+ * under the ambient deadline — completion (including empty exhaustion, a valid milestone) publishes a replay input over
+ * the buffer, while deadline expiry or buffer exhaustion (which trips the same deadline, taking the identical path)
+ * abandons the trial with zero rows ever exposed. Row state is snapshotted before the drain and restored around both
+ * outcomes, because batch-backed trials overwrite slots outside the binding trail.
+ */
+final class NativeProbeBufferHarness implements LmdbNativeProbeHarness<NativeUnorderedInput> {
+
+	@Override
+	public NativeUnorderedInput drainBounded(NativeUnorderedInput input, LmdbNativeCostObservation observation,
+			int rowCap) throws IOException {
+		RowState row = input.row;
+		int slotCount = row.slots.length;
+		int mark = row.mark();
+		long[] entrySnapshot = row.slots.clone();
+		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.currentOrNull();
+		RowCursor rows = input.materializedRows();
+		long[] arena = new long[Math.max(slotCount, Math.min(rowCap, 256) * slotCount)];
+		int buffered = 0;
+		int tick = 0;
+		while (rows.next()) {
+			if (buffered == 0) {
+				observation.firstOutput();
+			}
+			observation.addProducedRow();
+			if (buffered >= rowCap) {
+				// buffer exhaustion IS the timeout: trip the scope and throw the identical exception
+				if (deadline != null) {
+					deadline.trip();
+				}
+				restore(row, mark, entrySnapshot);
+				throw LmdbNativeProbeDeadlineExceeded.INSTANCE;
+			}
+			int offset = buffered * slotCount;
+			if (offset + slotCount > arena.length) {
+				int target = (int) Math.min((long) rowCap * slotCount, Math.max((long) arena.length * 2L,
+						(long) offset + slotCount));
+				long[] bigger = new long[target];
+				System.arraycopy(arena, 0, bigger, 0, offset);
+				arena = bigger;
+			}
+			System.arraycopy(row.slots, 0, arena, offset, slotCount);
+			buffered++;
+			LmdbNativeProbeDeadline.poll(++tick);
+		}
+		// natural exhaustion: close the trial's native resources; the probe observation is not attached to the
+		// input, so this cannot double-record, and legacy calibration was never armed on a probe
+		rows.close();
+		restore(row, mark, entrySnapshot);
+		return NativeUnorderedInput.rows(row, new NativeProbeReplayCursor(row, arena, buffered, slotCount));
+	}
+
+	@Override
+	public void discard(NativeUnorderedInput input) {
+		RowState row = input.row;
+		int mark = row.mark();
+		long[] entrySnapshot = row.slots.clone();
+		try {
+			input.close(false);
+		} finally {
+			restore(row, mark, entrySnapshot);
+		}
+	}
+
+	private static void restore(RowState row, int mark, long[] entrySnapshot) {
+		row.rollback(mark);
+		System.arraycopy(entrySnapshot, 0, row.slots, 0, entrySnapshot.length);
+		row.recomputeBoundMask();
+	}
+}
+
+/** Replays privately buffered probe rows exactly like the batch path: raw slot copy plus mask recompute. */
+final class NativeProbeReplayCursor implements RowCursor {
+
+	private final RowState row;
+	private final long[] arena;
+	private final int rowCount;
+	private final int slotCount;
+	private int position;
+
+	NativeProbeReplayCursor(RowState row, long[] arena, int rowCount, int slotCount) {
+		this.row = row;
+		this.arena = arena;
+		this.rowCount = rowCount;
+		this.slotCount = slotCount;
+	}
+
+	@Override
+	public boolean next() {
+		if (position >= rowCount) {
+			return false;
+		}
+		System.arraycopy(arena, position * slotCount, row.slots, 0, slotCount);
+		row.recomputeBoundMask();
+		position++;
+		return true;
+	}
+
+	@Override
+	public void close() {
+		position = rowCount;
 	}
 }
 

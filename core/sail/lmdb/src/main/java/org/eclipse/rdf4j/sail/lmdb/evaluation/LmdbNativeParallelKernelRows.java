@@ -276,13 +276,15 @@ final class LmdbNativeParallelKernelRows {
 		CountDownLatch startup = new CountDownLatch(threads);
 		CountDownLatch tasks = new CountDownLatch(threads);
 		LmdbFusedSipFactorizedRuntime.Session fusedParent = LmdbFusedSipFactorizedRuntime.currentOrNull();
+		LmdbNativeProbeDeadline probeParent = LmdbNativeProbeDeadline.currentOrNull();
 		ArrayList<Future<?>> futures = new ArrayList<>(threads);
 		for (int w = 0; w < threads; w++) {
 			NativeLmdbQuerySource source = sources[w];
 			try {
 				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
 					try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
-							.inherit(fusedParent)) {
+							.inherit(fusedParent);
+							LmdbNativeProbeDeadline.Scope probeScope = LmdbNativeProbeDeadline.inherit(probeParent)) {
 						runWorker(lowered, rootAdjacency, rootDomain, rootScan, domains, source, row, ranges,
 								scanQueue, output, kernelFactory, failure, cancelled, startup);
 					} catch (Throwable t) {

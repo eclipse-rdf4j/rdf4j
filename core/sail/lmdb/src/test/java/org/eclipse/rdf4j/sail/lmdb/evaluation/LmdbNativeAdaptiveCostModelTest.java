@@ -115,8 +115,8 @@ class LmdbNativeAdaptiveCostModelTest {
 		}
 
 		assertTrue(machine.snapshot().sampleCount() >= 40);
-		assertTrue(firstStore.correction(estimate.variantKey()).evidenceCount() >= 40);
-		assertEquals(0, secondStore.correction(estimate.variantKey()).evidenceCount());
+		assertTrue(firstStore.featureEvidenceCount(estimate.variantKey()) >= 40);
+		assertEquals(0, secondStore.featureEvidenceCount(estimate.variantKey()));
 		assertNotEquals(first.predict(estimate).expectedNanos(), second.predict(estimate).expectedNanos());
 	}
 
@@ -138,21 +138,35 @@ class LmdbNativeAdaptiveCostModelTest {
 				.featureRatio(LmdbNativeCostVector.Feature.BRANCH_OPEN));
 	}
 
+	/**
+	 * Replaces the old first-populated exact-to-family-to-global fallback test: hierarchy is now additive shrinkage. A
+	 * never-run sibling in a measured family quotes with family evidence (its mean pulled toward the family's, without
+	 * pretending exact observations exist), while a variant in an unseen family falls back to store-global evidence
+	 * with a wider interval.
+	 */
 	@Test
-	void hierarchicalBackoffUsesFamilyThenGlobal() {
-		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
-		LmdbNativePhysicalVariantKey observed = key("family-a", 1);
-		LmdbNativeCostVector estimated = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 100);
-		LmdbNativeCostVector actual = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 200);
-		for (int i = 0; i < 32; i++) {
-			store.update(observed, estimated, actual, 1_000, 2_000, false);
+	void hierarchicalShrinkageSharesFamilyThenGlobalEvidence() {
+		LmdbNativeMachineCostModel machine = new LmdbNativeMachineCostModel();
+		LmdbNativeAdaptiveCostModel model = model(machine, new LmdbNativeStoreCostModel());
+		LmdbNativeCostEstimate observed = estimate(key("family-a", 1), LmdbNativeCostVector.Feature.SCANNED_ROW, 100);
+		// 20 samples keep the machine below adaptiveReady, so every quote stays in the DIRECT timing lane
+		for (int i = 0; i < 20; i++) {
+			model.record(observed, LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 100),
+					2_000_000.0, true);
 		}
 
-		LmdbNativeStoreCostModel.Correction sameFamily = store.correction(key("family-a", 99));
-		LmdbNativeStoreCostModel.Correction otherFamily = store.correction(key("family-b", 99));
-		assertEquals(LmdbNativeCostPrediction.EvidenceSource.STRATEGY_FAMILY, sameFamily.source());
-		assertEquals(LmdbNativeCostPrediction.EvidenceSource.STORE_GLOBAL, otherFamily.source());
-		assertTrue(sameFamily.featureRatio(LmdbNativeCostVector.Feature.SCANNED_ROW) > 1.0);
+		LmdbNativeCostPrediction sibling = model
+				.predict(estimate(key("family-a", 99), LmdbNativeCostVector.Feature.SCANNED_ROW, 100));
+		LmdbNativeCostPrediction stranger = model
+				.predict(estimate(key("family-b", 99), LmdbNativeCostVector.Feature.SCANNED_ROW, 100));
+		assertEquals(LmdbNativeCostPrediction.EvidenceSource.STRATEGY_FAMILY, sibling.evidenceSource());
+		assertEquals(LmdbNativeCostPrediction.EvidenceSource.STORE_GLOBAL, stranger.evidenceSource());
+		assertTrue(sibling.expectedNanos() > stranger.expectedNanos() * 0.999
+				|| sibling.expectedNanos() > 100_000.0,
+				"the sibling's mean is pulled by family evidence: " + sibling.expectedNanos());
+		assertTrue(stranger.high95Nanos() / Math.max(1.0, stranger.low95Nanos()) >= sibling.high95Nanos()
+				/ Math.max(1.0, sibling.low95Nanos()),
+				"an unseen family must be at least as uncertain as a measured one");
 	}
 
 	@Test
@@ -160,39 +174,39 @@ class LmdbNativeAdaptiveCostModelTest {
 		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
 		LmdbNativeCostVector one = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1);
 		for (int i = 0; i < LmdbNativeStoreCostModel.MAX_VARIANTS + 32; i++) {
-			store.update(key("bounded", i), one, one, 1_000, 1_000, false);
+			store.updateFeatureRatios(key("bounded", i), one, one);
 		}
 		assertEquals(LmdbNativeStoreCostModel.MAX_VARIANTS, store.variantCount());
-		long before = store.evidenceCount(key("bounded", 0));
-		store.update(key("bounded", 0), one, one, 1_000, 1_000, false);
-		assertEquals(before + 1, store.evidenceCount(key("bounded", 0)));
+		long before = store.featureEvidenceCount(key("bounded", 0));
+		store.updateFeatureRatios(key("bounded", 0), one, one);
+		assertEquals(before + 1, store.featureEvidenceCount(key("bounded", 0)));
 	}
 
 	/**
-	 * Learned dispatch, exploration, and recording all default ON, each with a one-property opt-out (2026-08-16
+	 * Learned dispatch, recording, and bounded probing all default ON, each with a one-property opt-out (2026-08-16
 	 * regression fix: with dispatch off, the static ladder decided every contested choice alone and newly added routes
 	 * captured queries they ran 30-190x slower than measured incumbents). The adaptive configuration must agree with
-	 * the {@code LmdbRuntimeProperties} registry on all three defaults.
+	 * the {@code LmdbRuntimeProperties} registry on all defaults.
 	 */
 	@Test
-	void systemConfigurationDefaultsDispatchExplorationAndRecordingOn() {
+	void systemConfigurationDefaultsDispatchProbingAndRecordingOn() {
 		String enabled = System.clearProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY);
-		String explore = System.clearProperty(LmdbNativeAdaptiveCostModel.EXPLORE_PROPERTY);
+		String probe = System.clearProperty(LmdbNativeProbeConfig.ENABLED_PROPERTY);
 		String record = System.clearProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY);
 		try {
 			LmdbNativeAdaptiveCostModel.Configuration configuration = LmdbNativeAdaptiveCostModel.Configuration
 					.system();
 			assertTrue(configuration.enabled(), "learned dispatch defaults on");
-			assertTrue(configuration.explore(), "exploration defaults on");
+			assertTrue(LmdbNativeProbeConfig.system().enabled(), "bounded probing defaults on");
 			assertTrue(configuration.record(), "recording stays on");
 			System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "false");
-			System.setProperty(LmdbNativeAdaptiveCostModel.EXPLORE_PROPERTY, "false");
+			System.setProperty(LmdbNativeProbeConfig.ENABLED_PROPERTY, "false");
 			LmdbNativeAdaptiveCostModel.Configuration optedOut = LmdbNativeAdaptiveCostModel.Configuration.system();
 			assertFalse(optedOut.enabled(), "dispatch remains a one-property opt-out");
-			assertFalse(optedOut.explore(), "exploration remains a one-property opt-out");
+			assertFalse(LmdbNativeProbeConfig.system().enabled(), "probing remains a one-property opt-out");
 		} finally {
 			restoreProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, enabled);
-			restoreProperty(LmdbNativeAdaptiveCostModel.EXPLORE_PROPERTY, explore);
+			restoreProperty(LmdbNativeProbeConfig.ENABLED_PROPERTY, probe);
 			restoreProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, record);
 		}
 	}
@@ -205,29 +219,49 @@ class LmdbNativeAdaptiveCostModelTest {
 		}
 	}
 
+	/**
+	 * Replaces the old eight-rebuild-sample quarantine counter: a severe miss (actual above the previous predictive 99%
+	 * bound) is now flagged on the training result, and the probe scheduler turns it into a wall-clock cooldown.
+	 */
 	@Test
-	void deterministicExplorationRespectsOnePercentBudget() {
-		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
-		int explored = 0;
-		for (int i = 0; i < 10_000; i++) {
-			explored += store.shouldExplore(10) ? 1 : 0;
+	void aRunFarAboveThePreviousNinetyNineBoundIsFlaggedSevere() {
+		LmdbNativeAdaptiveCostModel model = model(new LmdbNativeMachineCostModel(), new LmdbNativeStoreCostModel());
+		LmdbNativeCostEstimate est = estimate(key("hash", 7), LmdbNativeCostVector.Feature.HASH_PROBE, 100);
+		for (int i = 0; i < 30; i++) {
+			assertFalse(model.record(est, LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.HASH_PROBE, 100),
+					1_000_000.0, true).quarantined(), "consistent samples are never severe at " + i);
 		}
-		assertEquals(100, explored);
+		LmdbNativeAdaptiveCostModel.TrainingResult severe = model.record(est,
+				LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.HASH_PROBE, 100), 1_000_000_000.0, true);
+		assertTrue(severe.quarantined(), "a 1000x run above the settled 99% bound must be flagged severe");
 	}
 
+	/**
+	 * A policy-deadline censoring is first-class evidence: it updates only the latency posterior (censored count, no
+	 * machine sample, no feature ratios) and reports a severe miss when the deadline already exceeded the arm's
+	 * previous 99% bound.
+	 */
 	@Test
-	void severeMissQuarantinesUntilEightAcceptedRebuildSamples() {
+	void budgetCensoredTrainsOnlyTheLatencyPosterior() {
+		LmdbNativeMachineCostModel machine = new LmdbNativeMachineCostModel();
 		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
-		LmdbNativePhysicalVariantKey key = key("hash", 7);
-		LmdbNativeCostVector one = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.HASH_PROBE, 1);
-		store.update(key, one, one, 10, 10_000, true);
-		assertTrue(store.correction(key).quarantined());
-		for (int i = 0; i < LmdbNativeStoreCostModel.QUARANTINE_REBUILD_SAMPLES - 1; i++) {
-			store.update(key, one, one, 10, 10, false);
-			assertTrue(store.correction(key).quarantined());
-		}
-		store.update(key, one, one, 10, 10, false);
-		assertFalse(store.correction(key).quarantined());
+		LmdbNativeAdaptiveCostModel model = model(machine, store);
+		LmdbNativeCostEstimate est = estimate(key("probe", 3), LmdbNativeCostVector.Feature.SCANNED_ROW, 100);
+		LmdbNativeCostObservation observation = new LmdbNativeCostObservation(est, model, new FakeClock());
+		observation.budgetCensored(5_000_000L);
+
+		assertEquals(LmdbNativeCostObservation.Completion.BUDGET_CENSORED, observation.snapshot().completion());
+		assertEquals(0, machine.snapshot().sampleCount(), "a censoring never trains the machine model");
+		assertEquals(0, store.featureEvidenceCount(est.variantKey()), "a censoring never trains feature ratios");
+		LmdbNativeCostPosteriorStore.ExactKey exactKey = LmdbNativeCostPosteriorStore.ExactKey.of(
+				model.currentRegime(), LmdbNativeCostPosteriorStore.Lane.DIRECT, est.variantKey());
+		LmdbNativeCostPosteriorStore.Reading reading = store.posteriors().read(exactKey, 0L, store.nowMillis());
+		assertEquals(1, reading.exact().censoredCount, "the censoring lands in the latency posterior");
+		assertEquals(0, reading.exact().completedCount);
+		assertTrue(reading.meanLog() > 0.0, "a censoring raises the arm's latency posterior");
+		assertTrue(observation.censorResult().recorded());
+		// and the very next quote is numerically priceable: the arm has direct timing evidence now
+		assertEquals(LmdbNativeCostPrediction.PriceBasis.DIRECT_POSTERIOR, model.predict(est).priceBasis());
 	}
 
 	@Test
@@ -460,15 +494,17 @@ class LmdbNativeAdaptiveCostModelTest {
 		}
 		LmdbNativeCostPrediction fastPrediction = model.predict(fast);
 		LmdbNativeCostPrediction slowPrediction = model.predict(slow);
-		assertTrue(fastPrediction.strictlyDominates(slowPrediction),
-				"48 samples each at a 10x measured gap must strictly dominate, but got fast=" + fastPrediction
-						+ " vs slow=" + slowPrediction);
+		assertTrue(LmdbNativeCostPrediction.displaces(fastPrediction, slowPrediction, 0.10),
+				"48 samples each at a 10x measured gap must displace at a 1.1x margin, but got fast="
+						+ fastPrediction + " vs slow=" + slowPrediction);
+		assertFalse(LmdbNativeCostPrediction.displaces(slowPrediction, fastPrediction, 0.10),
+				"displacement must never run backwards");
 	}
 
 	private static LmdbNativeAdaptiveCostModel model(LmdbNativeMachineCostModel machine,
 			LmdbNativeStoreCostModel store) {
 		return new LmdbNativeAdaptiveCostModel(machine, store,
-				new LmdbNativeAdaptiveCostModel.Configuration(true, true, true, 10));
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
 	}
 
 	private static LmdbNativeCostEstimate estimate(LmdbNativePhysicalVariantKey key,

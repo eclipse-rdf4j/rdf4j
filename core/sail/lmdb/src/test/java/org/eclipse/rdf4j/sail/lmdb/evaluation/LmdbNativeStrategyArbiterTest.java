@@ -347,11 +347,14 @@ public class LmdbNativeStrategyArbiterTest {
 
 	// ---------------------------------------------------------------- exploration
 
+	/**
+	 * The legacy (model-less) arbiter no longer explores at all: the measurement-starvation deadlock is broken by
+	 * bounded probes at adaptive dispatch sites — deadline-bounded, ledger-financed, output-gated trials — never by
+	 * running an unmeasured rival to completion in production. Even with the old exploration properties set, the ladder
+	 * holds.
+	 */
 	@Test
-	public void aNeverMeasuredRivalIsExploredOnceTheIncumbentHasEvidence() throws IOException {
-		// The incumbent is measured at ~1ns/unit, so its time interval overlaps the rival's raw work interval and
-		// cost decides nothing; the ladder would keep batch forever, so the rival could never earn a measurement.
-		// At zero observations the exploration probability is exactly 1, which makes this test deterministic.
+	public void theLegacyArbiterNeverRunsAnUnmeasuredRivalToCompletion() throws IOException {
 		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
 		System.setProperty(LmdbNativeCostCalibration.EXPLORATION_PROPERTY, "true");
 		measure(LmdbNativeAttemptMetrics.PATH_BATCH, 1d, 200);
@@ -361,9 +364,9 @@ public class LmdbNativeStrategyArbiterTest {
 			arbiter.offer(() -> proposal(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, 1_000d));
 
 			assertThat(arbiter.select())
-					.as("a strategy that never wins never gets measured and so can never win; exploration must "
-							+ "break that deadlock by running the unmeasured rival")
-					.isEqualTo(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
+					.as("unbounded exploration is gone: an unmeasured rival is only ever examined through a "
+							+ "deadline-bounded probe, so the ladder keeps its seat here")
+					.isEqualTo(LmdbNativeAttemptMetrics.PATH_BATCH);
 		}
 	}
 

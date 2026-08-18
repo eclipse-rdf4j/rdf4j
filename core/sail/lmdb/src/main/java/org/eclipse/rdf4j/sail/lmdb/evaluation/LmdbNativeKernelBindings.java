@@ -672,7 +672,8 @@ final class LmdbNativeKernelBindings {
 		}
 		return new KernelContext(views, constants, entrySlots, domains.values, domains.offsets, domains.lengths,
 				hooks, scanner, plans, distinctExpected,
-				variablePredicateViews.nodePredicates(), variablePredicateViews.dynamics());
+				variablePredicateViews.nodePredicates(), variablePredicateViews.dynamics())
+						.withCancellation(LmdbNativeProbeDeadline.currentKernelCancellation());
 	}
 
 	private static BoundDomains wholeDomains(long[][] domains) {

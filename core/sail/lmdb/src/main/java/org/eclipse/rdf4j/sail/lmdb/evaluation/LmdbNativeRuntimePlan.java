@@ -496,10 +496,10 @@ final class LmdbNativeRuntimePlan {
 		}
 
 		/**
-		 * Which kernel implementations actually served this invocation (generated class or interpreter, per route,
-		 * with bind counts — one bind per parallel work unit). Rendered only when a kernel bound at all: a hosted or
-		 * island invocation reports the outer route's decline in the janino section, and without this block the
-		 * kernel that ran inside the island would be invisible.
+		 * Which kernel implementations actually served this invocation (generated class or interpreter, per route, with
+		 * bind counts — one bind per parallel work unit). Rendered only when a kernel bound at all: a hosted or island
+		 * invocation reports the outer route's decline in the janino section, and without this block the kernel that
+		 * ran inside the island would be invisible.
 		 */
 		private static void renderKernels(StringBuilder out, java.util.Map<String, Long> kernelBinds) {
 			if (kernelBinds.isEmpty()) {

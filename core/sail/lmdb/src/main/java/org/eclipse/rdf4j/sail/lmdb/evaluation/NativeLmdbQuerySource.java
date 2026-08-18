@@ -73,6 +73,15 @@ public interface NativeLmdbQuerySource {
 		return idSpace();
 	}
 
+	/**
+	 * The owning store's persistence and regime signals for the adaptive cost model, or {@code null} when the source
+	 * has no backing store directory (tests, synthetic sources) — the model then degrades to a single steady regime
+	 * with no persistence. Wrappers delegate to their backing store, exactly like {@link #costModelIdentity()}.
+	 */
+	default LmdbNativeCostModelContext costModelContext() {
+		return null;
+	}
+
 	RecordIterator statements(long subj, long pred, long obj, long context) throws IOException;
 
 	/**

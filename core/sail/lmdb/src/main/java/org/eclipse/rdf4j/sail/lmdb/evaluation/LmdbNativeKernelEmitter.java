@@ -144,6 +144,7 @@ final class LmdbNativeKernelEmitter {
 			source.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;\n")
+					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQuadCursor;\n")
@@ -686,6 +687,10 @@ final class LmdbNativeKernelEmitter {
 				source.append("    private boolean lg").append(i).append(";\n");
 			}
 			source.append("    private KernelHooks hooks;\n");
+			// Probe-deadline poll state: null cancellation (every normal run) makes each poll one masked increment
+			// plus a branch, and keeps the generated source identical for probe and normal runs (one cache entry).
+			source.append("    private KernelCancellation cancel;\n");
+			source.append("    private int pollTick;\n");
 			if (kernel.requirements.scans > 0) {
 				source.append("    private KernelScanner scanner;\n");
 				for (int i = 0; i < kernel.requirements.scans; i++) {
@@ -869,6 +874,7 @@ final class LmdbNativeKernelEmitter {
 
 		private void emitBind(StringBuilder source) {
 			source.append("    public void bind(KernelContext context) {\n");
+			source.append("        cancel = context.cancellation;\n");
 			if (telemetryEnabled()) {
 				source.append(
 						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.markNestedKernelFactorization();\n");
@@ -2258,6 +2264,7 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("}\n");
 				body.append(indent).append("if (").append(keyRunCursor).append(" != null) {\n");
 				body.append(indent).append("    while (true) {\n");
+				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				body.append(indent).append("        if (").append(runState).append(" < 0) {\n");
 				body.append(indent).append("            if (!").append(keyRunCursor).append(".advance()) {\n");
 				body.append(indent).append("                break;\n");
@@ -2386,6 +2393,7 @@ final class LmdbNativeKernelEmitter {
 					.append(" < cnt; ")
 					.append(sliceState)
 					.append("++) {\n");
+			body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 			String inner = loop + "    ";
 			String index = selected ? "tsel[(int) " + sliceState + "]" : "(int) " + sliceState;
 			String guarded = emitCtxSliceEntry(body, inner, ctx ? producer : null, index);
@@ -3089,6 +3097,7 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("    ").append(a).append(" = 0;\n");
 				body.append(indent).append("}\n");
 				body.append(indent).append("for (; ").append(a).append(" < domL; ").append(a).append("++) {\n");
+				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				if (sipSite >= 0) {
 					body.append(indent).append("    sipDriven").append(sipSite).append("++;\n");
 				}
@@ -3116,6 +3125,7 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("            ").append(a).append(" = 0;\n");
 				body.append(indent).append("        }\n");
 				body.append(indent).append("        for (; ").append(a).append(" < end; ").append(a).append("++) {\n");
+				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				String probeInner = emitCtxEntry(body, indent + "            ", probe, view, a);
 				body.append(probeInner)
 						.append("v")
@@ -3161,10 +3171,12 @@ final class LmdbNativeKernelEmitter {
 							.append("            for (long i = off; i < end && ")
 							.append(view)
 							.append(".neighborAt(rh, i) == target; i++) {\n");
+					body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 					body.append(indent).append("                m++;\n");
 					body.append(indent).append("            }\n");
 					body.append(indent).append("        } else {\n");
 					body.append(indent).append("            for (long i = 0L; i < end; i++) {\n");
+					body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 					body.append(indent)
 							.append("                if (")
 							.append(view)
@@ -3175,6 +3187,7 @@ final class LmdbNativeKernelEmitter {
 					body.append(indent).append("        }\n");
 				} else {
 					body.append(indent).append("        for (long i = 0L; i < end; i++) {\n");
+					body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 					body.append(indent)
 							.append("            if (")
 							.append(view)
@@ -3199,6 +3212,7 @@ final class LmdbNativeKernelEmitter {
 						.append(" < reps; ")
 						.append(a)
 						.append("++) {\n");
+				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				body.append(next(nextTemplate, indent + "    "));
 				emitPause(body, indent + "    ", a, tailmost);
 				body.append(indent).append("}\n");
@@ -3223,6 +3237,7 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("}\n");
 				emitScanBuffer(body, indent, buffer);
 				body.append(indent).append("while (true) {\n");
+				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				body.append(indent).append("    if (").append(a).append(" >= ").append(b).append(") {\n");
 				body.append(indent)
 						.append("        ")
@@ -3245,6 +3260,7 @@ final class LmdbNativeKernelEmitter {
 						.append("; ")
 						.append(a)
 						.append("++) {\n");
+				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				emitScanColumns(body, indent + "        ", scan, buffer, a);
 				body.append(next(nextTemplate, indent + "        "));
 				emitPause(body, indent + "        ", a, tailmost);
@@ -3267,6 +3283,7 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("}\n");
 				emitPlanBuffer(body, indent, buffer, plan.outCols.length);
 				body.append(indent).append("while (true) {\n");
+				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				body.append(indent).append("    if (").append(a).append(" >= ").append(b).append(") {\n");
 				body.append(indent)
 						.append("        ")
@@ -3289,6 +3306,7 @@ final class LmdbNativeKernelEmitter {
 						.append("; ")
 						.append(a)
 						.append("++) {\n");
+				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				emitPlanColumns(body, indent + "        ", plan, buffer, a);
 				body.append(next(nextTemplate, indent + "        "));
 				emitPause(body, indent + "        ", a, tailmost);
@@ -3316,6 +3334,7 @@ final class LmdbNativeKernelEmitter {
 					body.append(indent).append("}\n");
 					body.append(indent).append("if (").append(cursor).append(" != null) {\n");
 					body.append(indent).append("    while (true) {\n");
+					body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 					body.append(indent).append("        if (").append(a).append(" < 0) {\n");
 					body.append(indent).append("            if (!").append(cursor).append(".advance()) {\n");
 					body.append(indent).append("                break;\n");
@@ -3359,6 +3378,7 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("}\n");
 				body.append(indent).append("if (").append(cursor).append(" != null) {\n");
 				body.append(indent).append("    while (true) {\n");
+				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				body.append(indent).append("        if (").append(b).append(" < 0) {\n");
 				body.append(indent).append("            if (!").append(cursor).append(".advance()) {\n");
 				body.append(indent).append("                break;\n");
@@ -3379,6 +3399,7 @@ final class LmdbNativeKernelEmitter {
 				}
 				body.append(indent).append("        long end = ").append(cursor).append(".runSize();\n");
 				body.append(indent).append("        for (; ").append(b).append(" < end; ").append(b).append("++) {\n");
+				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				String enumInner = emitKeyRunCtxEntry(body, indent + "            ", enumerate, cursor, b);
 				body.append(enumInner)
 						.append("v")
@@ -3663,6 +3684,7 @@ final class LmdbNativeKernelEmitter {
 					.append(".size(rh);\n")
 					.append(indent)
 					.append("                for (long i = 0L; i < end; i++) {\n");
+			body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 			String genericInner = emitCtxEntry(body, indent + "                    ", probe, adjacency, "i");
 			body.append(genericInner)
 					.append("v")
@@ -3796,6 +3818,7 @@ final class LmdbNativeKernelEmitter {
 					.append(".size(rh);\n")
 					.append(indent)
 					.append("                    for (long i = 0L; i < end; i++) {\n");
+			body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 			String genericInner = emitCtxEntry(body, indent + "                        ", probe, adjacency, "i");
 			body.append(genericInner)
 					.append("v")
@@ -3955,6 +3978,7 @@ final class LmdbNativeKernelEmitter {
 				}
 				body.append(indent).append("        long end = ").append(cursor).append(".runSize();\n");
 				body.append(indent).append("        for (long i = 0L; i < end; i++) {\n");
+				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				String enumInner = emitKeyRunCtxEntry(body, indent + "            ", enumerate, cursor, "i");
 				body.append(enumInner)
 						.append("v")
@@ -4015,6 +4039,7 @@ final class LmdbNativeKernelEmitter {
 						.append("    if (end > 0L) {\n")
 						.append(indent)
 						.append("        for (long i = 0L; i < end; i++) {\n");
+				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				String probeInner = indent + "            ";
 				probeInner = emitBoundCtxEntry(body, probeInner, probe, cursor, "i");
 				body.append(probeInner)
@@ -4094,6 +4119,7 @@ final class LmdbNativeKernelEmitter {
 						.append(".size(rh);\n")
 						.append(indent)
 						.append("                for (long i = 0L; i < end; i++) {\n");
+				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				String enumInner = indent + "                    ";
 				enumInner = emitCtxEntry(body, enumInner, enumerate, v, "i");
 				body.append(enumInner)
@@ -4141,6 +4167,7 @@ final class LmdbNativeKernelEmitter {
 						.append(".size(rh);\n")
 						.append(indent)
 						.append("        for (long i = 0L; i < end; i++) {\n");
+				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				String probeInner = indent + "            ";
 				probeInner = emitCtxEntry(body, probeInner, probe, v, "i");
 				body.append(probeInner)
@@ -4198,6 +4225,8 @@ final class LmdbNativeKernelEmitter {
 							.append(a)
 							.append(".neighborAt(rh, i) == target; i++) {\n")
 							.append(indent)
+							.append("                if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
+							.append(indent)
 							.append("                m++;\n")
 							.append(indent)
 							.append("            }\n")
@@ -4205,6 +4234,8 @@ final class LmdbNativeKernelEmitter {
 							.append("        } else {\n")
 							.append(indent)
 							.append("            for (long i = 0L; i < end; i++) {\n")
+							.append(indent)
+							.append("                if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
 							.append(indent)
 							.append("                if (")
 							.append(a)
@@ -4220,6 +4251,8 @@ final class LmdbNativeKernelEmitter {
 				} else {
 					body.append(indent)
 							.append("        for (long i = 0L; i < end; i++) {\n")
+							.append(indent)
+							.append("            if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
 							.append(indent)
 							.append("            if (")
 							.append(a)
@@ -4312,6 +4345,8 @@ final class LmdbNativeKernelEmitter {
 						.append(".size(rh);\n")
 						.append(indent)
 						.append("        for (long i = 0L; i < end; i++) {\n")
+						.append(indent)
+						.append("            if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
 						.append(indent)
 						.append("            v")
 						.append(probe.valueCol)
@@ -4840,6 +4875,8 @@ final class LmdbNativeKernelEmitter {
 					.append(indent)
 					.append("        for (long i = 0L; i < end; i++) {\n")
 					.append(indent)
+					.append("            if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
+					.append(indent)
 					.append("            long nb = ")
 					.append(a)
 					.append(".neighborAt(rh, i);\n")
@@ -4872,6 +4909,7 @@ final class LmdbNativeKernelEmitter {
 					.append("    }\n")
 					.append(indent)
 					.append("}\n");
+			body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 		}
 	}
 }

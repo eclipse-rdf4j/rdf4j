@@ -242,6 +242,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return maintenanceState;
 	}
 
+	/** Monotone publish counter; a component of the adaptive cost model's regime key. */
+	long epochCount() {
+		return epochs.get();
+	}
+
 	String lastBuildFailureDescription() {
 		return lastBuildFailureDescription;
 	}

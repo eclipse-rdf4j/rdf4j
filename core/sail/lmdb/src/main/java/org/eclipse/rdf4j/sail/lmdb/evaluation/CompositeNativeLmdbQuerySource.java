@@ -80,6 +80,16 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public Object costModelIdentity() {
+		return sources.get(0).costModelIdentity();
+	}
+
+	@Override
+	public LmdbNativeCostModelContext costModelContext() {
+		return sources.get(0).costModelContext();
+	}
+
+	@Override
 	public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
 		return statements(subj, pred, obj, context, (AdjacencyAccessObserver) null);
 	}

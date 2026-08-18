@@ -61,6 +61,12 @@ public final class KernelContext {
 	 * every fragment site the kernel references through {@code hooks.testFragment}. Empty when the kernel uses none.
 	 */
 	public FragmentBinding[] fragmentBindings = NO_FRAGMENT_BINDINGS;
+	/**
+	 * Cooperative cancellation for deadline-bounded probe executions, or {@code null} for a normal run — the generated
+	 * poll sites are data-driven off this field, so probe and normal runs share identical generated source and one
+	 * kernel-cache entry.
+	 */
+	public KernelCancellation cancellation;
 
 	private static final FragmentBinding[] NO_FRAGMENT_BINDINGS = {};
 
@@ -156,6 +162,12 @@ public final class KernelContext {
 	/** Binds the fragment-site table without widening the constructor surface used by existing generated kernels. */
 	public KernelContext withFragmentBindings(FragmentBinding[] fragmentBindings) {
 		this.fragmentBindings = Objects.requireNonNull(fragmentBindings, "fragmentBindings");
+		return this;
+	}
+
+	/** Binds probe-deadline cancellation without widening the constructor surface; null clears it (normal run). */
+	public KernelContext withCancellation(KernelCancellation cancellation) {
+		this.cancellation = cancellation;
 		return this;
 	}
 

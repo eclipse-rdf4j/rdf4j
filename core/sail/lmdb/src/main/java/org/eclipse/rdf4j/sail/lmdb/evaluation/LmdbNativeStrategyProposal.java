@@ -118,6 +118,28 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	 * Strategy implementations can migrate to richer vectors later without maintaining a second selection path; this
 	 * bridge already separates interpreted, batched, generated, factorized, and parallel execution units.
 	 */
+	/**
+	 * Direct-timing estimate for a proposal whose work is UNKNOWN (for example WCOJ): zero feature counts — there is
+	 * nothing to compare — but a stable variant key, so the arm can accumulate wall-clock evidence in the model's
+	 * DIRECT posterior lane. Until its first completed or censored observation, such an arm quotes ORDINAL_ONLY and
+	 * participates only in the static ladder; one bounded probe (or one ladder-won execution) makes it numerically
+	 * comparable. This is what makes "unpriceable" arm-local instead of contagious to the whole candidate set.
+	 */
+	LmdbNativeCostEstimate directTimingEstimate() {
+		String family = baseTag(tag);
+		LmdbNativePhysicalVariantKey key = LmdbNativePhysicalVariantKey.builder(family)
+				.physicalOrderAndProperties(family)
+				.groupingMode(groupingMode(family))
+				.distinctMode(distinctMode(family))
+				.sortMode(sortMode(family))
+				.executionMode(executionMode(family))
+				.propertyPreserving(propertyPreserving(family))
+				.requiresHashing(requiresHashing(family))
+				.build();
+		LmdbNativeCostVector zero = LmdbNativeCostVector.zero();
+		return new LmdbNativeCostEstimate(key, zero, zero, 0D, 0.5);
+	}
+
 	LmdbNativeCostEstimate adaptiveEstimate(double sliceRows) {
 		LmdbNativeWork effective = effectiveWork(sliceRows);
 		if (!effective.known()) {

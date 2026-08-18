@@ -70,10 +70,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 4, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
+@Warmup(iterations = 20, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 1)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
-@Measurement(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
+@Measurement(iterations = 4, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
@@ -123,13 +123,13 @@ public class ThemeQueryBenchmark {
 //			"1",
 //			"2",
 //			"3",
-			"4",
+//			"4",
 //			"5",
 //			"6",
 //			"7",
 //			"8",
 //			"9",
-//			"10",
+			"10",
 //			"11",
 //			"12"
 	})
@@ -215,6 +215,14 @@ public class ThemeQueryBenchmark {
 			long count;
 			OptionalLong expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme,
 					z_queryIndex);
+//			{
+//				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+//				Explanation explain = tupleQuery.explain(Explanation.Level.Telemetry);
+//				System.out.println("=== Explanation Telemetry ===");
+//				System.out.println(explain);
+//				System.out.println();
+//
+//			}
 			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
 			tupleQuery.setMaxExecutionTime(50);
 			try (var evaluate = tupleQuery.evaluate()) {

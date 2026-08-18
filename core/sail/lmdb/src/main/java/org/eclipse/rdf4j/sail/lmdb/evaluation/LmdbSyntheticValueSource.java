@@ -206,6 +206,11 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public LmdbNativeCostModelContext costModelContext() {
+		return delegate.costModelContext();
+	}
+
+	@Override
 	public long literalDatatypeId(long id) {
 		return synthetic(id) ? -1L : delegate.literalDatatypeId(id);
 	}

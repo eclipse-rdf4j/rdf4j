@@ -56,7 +56,8 @@ final class LmdbNativePackedFtreeJanino {
 		chunk.prepareCountArrays();
 		PackedFtreeContext packed = chunk.packedContext();
 		KernelContext context = new KernelContext(NO_ADJACENCY, NO_LONGS, NO_LONGS, NO_DOMAINS)
-				.withPackedFtree(packed);
+				.withPackedFtree(packed)
+				.withCancellation(LmdbNativeProbeDeadline.currentKernelCancellation());
 		try {
 			LmdbNativeJaninoCodegen.bind(kernel, context, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE);
 			LmdbNativeJaninoCodegen.fill(kernel, NO_ROWS, 0,

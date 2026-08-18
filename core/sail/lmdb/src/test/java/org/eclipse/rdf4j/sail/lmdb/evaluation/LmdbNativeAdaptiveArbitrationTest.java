@@ -33,15 +33,19 @@ class LmdbNativeAdaptiveArbitrationTest {
 	 */
 	@Test
 	void undominatedHigherPreferenceCandidateMustNotLoseToARivalThatOnlyBeatsTheIncumbent() {
+		// Under the latent displacement test: cheap (mean 45) clears the 99% margin against expensive (mean 150)
+		// but not against mid (mean 80, whose uncertainty overlaps), so the frontier is {mid, cheap} and mid — the
+		// higher-preference undominated candidate — must win. A greedy scan that only compares rivals against the
+		// current selection would let cheap capture the choice by beating expensive alone.
 		LmdbNativeAdaptiveArbitration.Priced<String> expensive = priced("expensive", 0, 100, 150, 200);
-		LmdbNativeAdaptiveArbitration.Priced<String> mid = priced("mid", 1, 50, 100, 150);
-		LmdbNativeAdaptiveArbitration.Priced<String> cheap = priced("cheap", 2, 10, 30, 60);
+		LmdbNativeAdaptiveArbitration.Priced<String> mid = priced("mid", 1, 40, 80, 120);
+		LmdbNativeAdaptiveArbitration.Priced<String> cheap = priced("cheap", 2, 15, 45, 90);
 
 		LmdbNativeAdaptiveArbitration.Priced<String> selected = LmdbNativeAdaptiveArbitration
 				.selectWithinFrontier(List.of(expensive, mid, cheap));
 
 		assertSame(mid, selected,
-				"mid is never strictly dominated (150 >= 10) and outranks cheap in static preference; it may not "
+				"mid is never strictly dominated and outranks cheap in static preference; it may not "
 						+ "lose to a rival that only dominated the incumbent");
 	}
 
@@ -160,26 +164,43 @@ class LmdbNativeAdaptiveArbitrationTest {
 	}
 
 	/**
-	 * The ladder starves rivals it never selects: without guaranteed probes, a strategy that would win on measured cost
-	 * never obtains the measurements (LIBRARY q10's orderedDistinctGroups was never re-sampled once the IR route
-	 * captured the ladder seat). Until a rival has {@code MINIMUM_EXPLORATION_SAMPLES} exact observations, it must be
-	 * explored deterministically, least-observed first.
+	 * The completed-sample exploration quota is gone: uncertain rivals are examined through {@code maybeProbe}, which
+	 * refuses without an abort-safe harness, refuses without ledger credit, and — once financed — returns exactly one
+	 * bounded probe carrying a live reservation. The starvation problem the old quota addressed (LIBRARY q10) is now
+	 * answered by a deadline-bounded trial instead of up to three unbounded executions.
 	 */
 	@Test
-	void rivalsUnderTheSampleFloorAreExploredDeterministically() {
+	void probesRequireAHarnessCreditAndReturnAtMostOneBoundedTrial() {
+		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
 		LmdbNativeAdaptiveArbitration.Priced<String> incumbent = pricedWithEvidence("kernel", 0,
 				5_000_000, 10_000_000, 20_000_000, 12);
-		LmdbNativeAdaptiveArbitration.Priced<String> measured = pricedWithEvidence("measuredLoop", 1,
-				50_000, 100_000, 200_000, 7);
-		LmdbNativeAdaptiveArbitration.Priced<String> starved = pricedWithEvidence("starvedGroups", 2,
-				40_000, 90_000, 180_000, 1);
+		LmdbNativeAdaptiveArbitration.Priced<String> starved = structuralOnly("starvedGroups", 2);
+		List<LmdbNativeAdaptiveArbitration.Priced<String>> priced = List.of(incumbent, starved);
+		LmdbNativeProbeConfig config = LmdbNativeProbeConfig.defaults();
+		LmdbNativeQueryProbeBudget budget = new LmdbNativeQueryProbeBudget();
 
-		assertSame(starved, LmdbNativeAdaptiveArbitration
-				.underSampledExplorationTarget(List.of(incumbent, measured, starved)),
-				"a rival below the sample floor must be probed deterministically");
-		assertSame(null, LmdbNativeAdaptiveArbitration
-				.underSampledExplorationTarget(List.of(incumbent, measured)),
-				"once every rival has its minimum evidence the permille dice take over");
+		assertSame(null, LmdbNativeAdaptiveArbitration.maybeProbe(priced, incumbent, model,
+				new LmdbNativeAdaptiveArbitration.ProbeContext(config, budget, false)),
+				"a site without an abort-safe harness never probes");
+		assertSame(null, LmdbNativeAdaptiveArbitration.maybeProbe(priced, incumbent, model,
+				new LmdbNativeAdaptiveArbitration.ProbeContext(config, budget, true)),
+				"a zero-credit ledger cannot finance a probe");
+
+		store.safetyLedger().earn(1_000_000_000_000L);
+		LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<String> probe = LmdbNativeAdaptiveArbitration
+				.maybeProbe(priced, incumbent, model,
+						new LmdbNativeAdaptiveArbitration.ProbeContext(config, budget, true));
+		assertSame(starved.candidate(), probe.trial(), "the uncertain rival is the probe target");
+		assertSame(incumbent.candidate(), probe.fallback(), "the incumbent is retained as fallback");
+		assertSame(true, probe.deadlineNanos() <= (long) (incumbent.prediction().expectedNanos() / config.gamma()),
+				"the deadline never exceeds the decision-useful bound");
+		probe.reservation().refund();
+
+		assertSame(null, LmdbNativeAdaptiveArbitration.maybeProbe(priced, incumbent, model,
+				new LmdbNativeAdaptiveArbitration.ProbeContext(config, budget, true)),
+				"spacing forbids a consecutive probe even with credit remaining");
 	}
 
 	private static LmdbNativeAdaptiveArbitration.Priced<String> structuralOnly(String family, int preference) {
@@ -191,7 +212,20 @@ class LmdbNativeAdaptiveArbitrationTest {
 				100, 0.1);
 		return new LmdbNativeAdaptiveArbitration.Priced<>(
 				new LmdbNativeAdaptiveArbitration.Candidate<>(estimate, preference, observation -> family),
-				LmdbNativeCostPrediction.structuralOnly("never lowered"));
+				LmdbNativeCostPrediction.ordinalOnly("never lowered"));
+	}
+
+	/** Builds a numerically priced test quote in the new posterior shape from classic interval inputs. */
+	private static LmdbNativeCostPrediction testPrediction(LmdbNativePhysicalVariantKey key, double low95,
+			double expected, double high95, double low99, double high99, long evidence) {
+		double sigma = expected > 0.0 && high95 > expected ? Math.log(high95 / expected) / 1.959963984540054 : 0.1;
+		LmdbNativeCostPrediction.Components components = new LmdbNativeCostPrediction.Components(
+				LmdbNativeRegimeKey.STEADY, LmdbNativeCostPosteriorStore.Lane.DIRECT,
+				LmdbNativeFamilyShapeKey.of(key), 0.0, expected > 0.0 ? Math.log(expected) : 0.0, 0.0, 0.0,
+				sigma * sigma, 0.0);
+		return new LmdbNativeCostPrediction(low95, expected, high95, low99, high99, Math.min(low99, expected),
+				Math.max(high99, expected), LmdbNativeCostPrediction.PriceBasis.DIRECT_POSTERIOR, true, false,
+				evidence, LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT, components, "test");
 	}
 
 	private static LmdbNativeAdaptiveArbitration.Priced<String> pricedWithEvidence(String family, int preference,
@@ -202,8 +236,7 @@ class LmdbNativeAdaptiveArbitrationTest {
 		LmdbNativeCostVector vector = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, expected);
 		LmdbNativeCostEstimate estimate = new LmdbNativeCostEstimate(key, LmdbNativeCostVector.zero(), vector,
 				expected, 0.1);
-		LmdbNativeCostPrediction prediction = new LmdbNativeCostPrediction(low95, expected, high95, low95, high95,
-				true, true, false, evidence, LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT, "test");
+		LmdbNativeCostPrediction prediction = testPrediction(key, low95, expected, high95, low95, high95, evidence);
 		return new LmdbNativeAdaptiveArbitration.Priced<>(
 				new LmdbNativeAdaptiveArbitration.Candidate<>(estimate, preference, observation -> family),
 				prediction);
@@ -218,8 +251,7 @@ class LmdbNativeAdaptiveArbitrationTest {
 		LmdbNativeCostVector vector = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, expected);
 		LmdbNativeCostEstimate estimate = new LmdbNativeCostEstimate(key, LmdbNativeCostVector.zero(), vector,
 				expected, 0.1);
-		LmdbNativeCostPrediction prediction = new LmdbNativeCostPrediction(low95, expected, high95, low99, high99,
-				true, true, false, 64, LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT, "test interval");
+		LmdbNativeCostPrediction prediction = testPrediction(key, low95, expected, high95, low99, high99, 64);
 		return new LmdbNativeAdaptiveArbitration.Priced<>(
 				new LmdbNativeAdaptiveArbitration.Candidate<>(estimate, preference, observation -> family),
 				prediction);
@@ -233,9 +265,8 @@ class LmdbNativeAdaptiveArbitrationTest {
 		LmdbNativeCostVector vector = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, expected);
 		LmdbNativeCostEstimate estimate = new LmdbNativeCostEstimate(key, LmdbNativeCostVector.zero(), vector,
 				expected, 0.1);
-		LmdbNativeCostPrediction prediction = new LmdbNativeCostPrediction(low95, expected, high95,
-				Math.max(0D, low95 - 5D), high95 + 5D, true, true, false, 64,
-				LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT, "test interval");
+		LmdbNativeCostPrediction prediction = testPrediction(key, low95, expected, high95,
+				Math.max(0D, low95 - 5D), high95 + 5D, 64);
 		return new LmdbNativeAdaptiveArbitration.Priced<>(
 				new LmdbNativeAdaptiveArbitration.Candidate<>(estimate, preference, observation -> family),
 				prediction);

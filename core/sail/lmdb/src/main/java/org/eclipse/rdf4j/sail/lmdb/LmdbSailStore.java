@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -34,6 +35,7 @@ import java.util.Objects;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
@@ -48,6 +50,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -88,6 +91,7 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAttemptMetrics;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostModelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeExpressionCompiler;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeIdDomain;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
@@ -194,6 +198,10 @@ class LmdbSailStore implements SailStore {
 
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
 	private LmdbFilterSelectivityStats filterSelectivityStats;
+	/** Advances on every committed store mutation; a component of the adaptive cost model's regime key. */
+	private final AtomicLong costModelDataGeneration = new AtomicLong();
+	/** Persistence and regime signals handed to the adaptive cost model through every query source. */
+	private LmdbNativeCostModelContext costModelContext;
 	/**
 	 * Sketch-free learned filter selectivity. Deliberately constructed here and unconditionally, rather than inside the
 	 * {@code sketchBasedJoinEstimator != null} branch that gates {@link #filterSelectivityStats}: the engine already
@@ -852,6 +860,15 @@ class LmdbSailStore implements SailStore {
 			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
 			recoverRetiredValueIds();
+			LmdbDirectAdjacencyStore adjacencyForContext = directAdjacency;
+			costModelContext = new LmdbNativeCostModelContext(
+					dataDir.toPath(),
+					UUID.nameUUIDFromBytes(dataDir.getAbsolutePath().getBytes(StandardCharsets.UTF_8)),
+					adjacencyForContext == null ? () -> 0L : adjacencyForContext::epochCount,
+					adjacencyForContext == null ? () -> "DISABLED"
+							: () -> adjacencyForContext.maintenanceState().name(),
+					costModelDataGeneration::get,
+					() -> 0L);
 			initialized = true;
 			if (sketchBasedJoinEstimator != null) {
 				Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
@@ -1955,6 +1972,7 @@ class LmdbSailStore implements SailStore {
 						storeTxnStarted.set(false);
 						estimatorTouchedInTransaction = false;
 						estimatorTouchedSinceStoreTxnStart.set(false);
+						costModelDataGeneration.incrementAndGet();
 						if (filterSelectivityStats != null) {
 							filterSelectivityStats.recordStoreMutation();
 						}
@@ -3317,6 +3335,11 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public LmdbNativeCostModelContext costModelContext() {
+			return costModelContext;
+		}
+
+		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
 			return statements(subj, pred, obj, context, (AdjacencyAccessObserver) null);
 		}
@@ -4087,6 +4110,11 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public Object idSpace() {
 			return valueStore;
+		}
+
+		@Override
+		public LmdbNativeCostModelContext costModelContext() {
+			return costModelContext;
 		}
 
 		@Override

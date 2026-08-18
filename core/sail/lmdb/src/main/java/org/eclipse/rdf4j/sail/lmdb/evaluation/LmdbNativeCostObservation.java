@@ -33,7 +33,19 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 		DECLINED,
 		FAILED,
 		CANCELLED,
-		FALLBACK
+		FALLBACK,
+		/**
+		 * A probe cancelled by the dispatch policy's deadline: right-censored timing evidence (the runtime exceeded the
+		 * deadline), recorded through {@code recordCensored} — never as a completed latency, and distinct from
+		 * {@link #CANCELLED}, which is an external cancellation and carries no timing evidence.
+		 */
+		BUDGET_CENSORED
+	}
+
+	/** Whether this observation witnesses a normal dispatch or a bounded probe; probes never earn safety credit. */
+	enum Role {
+		NORMAL,
+		PROBE
 	}
 
 	private static final int FEATURE_COUNT = LmdbNativeCostVector.Feature.values().length;
@@ -43,7 +55,11 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	private final LmdbNativeCostEstimate estimate;
 	private final LmdbNativeAdaptiveCostModel model;
 	private final NanoClock clock;
+	private final Role role;
+	/** The regime of the dispatch decision, captured at construction — completion may run much later. */
+	private final LmdbNativeRegimeKey regimeAtDispatch;
 	private final long startedNanos;
+	private volatile long censorDeadlineNanos = -1L;
 	private final double[] counters = new double[FEATURE_COUNT];
 	/**
 	 * Publication fence for {@link #counters} (gap-analysis C12): writes are single-threaded (the drain thread), but
@@ -58,17 +74,25 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	private volatile Completion completion = Completion.OPEN;
 	private volatile double consumedFraction = Double.NaN;
 	private volatile LmdbNativeAdaptiveCostModel.TrainingResult trainingResult;
+	private volatile LmdbNativeAdaptiveCostModel.CensorResult censorResult;
 	private volatile LmdbNativeCostVector trainedFeatures;
 	private volatile Throwable failure;
 
 	LmdbNativeCostObservation(LmdbNativeCostEstimate estimate, LmdbNativeAdaptiveCostModel model) {
-		this(estimate, model, System::nanoTime);
+		this(estimate, model, System::nanoTime, Role.NORMAL);
 	}
 
 	LmdbNativeCostObservation(LmdbNativeCostEstimate estimate, LmdbNativeAdaptiveCostModel model, NanoClock clock) {
+		this(estimate, model, clock, Role.NORMAL);
+	}
+
+	LmdbNativeCostObservation(LmdbNativeCostEstimate estimate, LmdbNativeAdaptiveCostModel model, NanoClock clock,
+			Role role) {
 		this.estimate = Objects.requireNonNull(estimate, "estimate");
 		this.model = Objects.requireNonNull(model, "model");
 		this.clock = Objects.requireNonNull(clock, "clock");
+		this.role = Objects.requireNonNull(role, "role");
+		this.regimeAtDispatch = model.currentRegime();
 		startedNanos = clock.nanoTime();
 	}
 
@@ -161,6 +185,19 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 		complete(Completion.CANCELLED, Double.NaN, throwable);
 	}
 
+	/**
+	 * The dispatch policy's deadline fired: complete as right-censored evidence carrying the deadline (never the wall
+	 * elapsed — the censoring bound was established the moment the deadline passed; cancellation lag is a safety-ledger
+	 * charge, not evidence).
+	 */
+	void budgetCensored(long deadlineNanos) {
+		if (deadlineNanos <= 0L) {
+			throw new IllegalArgumentException("deadline must be positive: " + deadlineNanos);
+		}
+		censorDeadlineNanos = deadlineNanos;
+		complete(Completion.BUDGET_CENSORED, Double.NaN, null);
+	}
+
 	@Override
 	public void close() {
 		complete(Completion.UNEXPLAINED_EARLY_CLOSE, Double.NaN, null);
@@ -180,6 +217,7 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 				? estimate.forConsumption(fraction)
 				: estimate;
 		LmdbNativeCostVector actual = actualVector();
+		long elapsed = Math.max(0L, finished - startedNanos);
 		if (eligible) {
 			// Feature-wise compatibility bridge: measured counters replace the estimate per feature; features no
 			// counter reported yet keep the estimate so their shape ratios stay pinned at 1 instead of collapsing
@@ -199,9 +237,22 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 				}
 			}
 			actual = bridged.build();
+			trainedFeatures = actual;
+			double weight = result == Completion.EXPECTED_EARLY_CLOSE ? Math.max(0.25, fraction) : 1.0;
+			trainingResult = model.recordCompleted(consumedEstimate, actual, elapsed, weight, regimeAtDispatch);
+			if (role == Role.NORMAL) {
+				model.earnSafetyCredit(elapsed);
+			}
+		} else if (result == Completion.BUDGET_CENSORED) {
+			trainedFeatures = actual;
+			censorResult = model.recordCensored(estimate, censorDeadlineNanos, actual, regimeAtDispatch);
+			trainingResult = new LmdbNativeAdaptiveCostModel.TrainingResult(false,
+					"budget censored: " + censorResult.reason(), false, censorResult.severeMiss());
+		} else {
+			trainedFeatures = actual;
+			trainingResult = new LmdbNativeAdaptiveCostModel.TrainingResult(false,
+					"recording disabled or observation ineligible", false, false);
 		}
-		trainedFeatures = actual;
-		trainingResult = model.record(consumedEstimate, actual, Math.max(0L, finished - startedNanos), eligible);
 	}
 
 	private LmdbNativeCostVector actualVector() {
@@ -227,6 +278,14 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 
 	boolean isComplete() {
 		return completionGuard.get() == COMPLETED_STATE;
+	}
+
+	LmdbNativeAdaptiveCostModel.CensorResult censorResult() {
+		return censorResult;
+	}
+
+	Role role() {
+		return role;
 	}
 
 	static final class CounterBuffer {

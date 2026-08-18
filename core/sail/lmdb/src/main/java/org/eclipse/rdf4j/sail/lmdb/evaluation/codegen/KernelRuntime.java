@@ -29,6 +29,17 @@ public final class KernelRuntime {
 	private KernelRuntime() {
 	}
 
+	/**
+	 * Poll site emitted inside generated kernel loops (and mirrored by the interpreter): throws the stackless
+	 * {@link KernelCancelledException} when a probe deadline has fired. A {@code null} cancellation — every normal,
+	 * non-probe execution — costs one branch.
+	 */
+	public static void checkCancelled(KernelCancellation cancellation) {
+		if (cancellation != null && cancellation.cancelled()) {
+			throw KernelCancelledException.INSTANCE;
+		}
+	}
+
 	private static long mix(long key) {
 		key ^= key >>> 33;
 		key *= 0xFF51AFD7ED558CCDL;

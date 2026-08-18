@@ -107,17 +107,22 @@ final class LmdbNativeCostCalibration {
 	private LmdbNativeCostCalibration() {
 	}
 
-	/** Whether learned factors may influence dispatch. Opt-in; see {@link #ENABLED_PROPERTY}. */
+	/**
+	 * Whether learned factors may influence dispatch. Default ON, matching the adaptive model and the runtime-property
+	 * registry: this reader previously used opt-in {@code Boolean.getBoolean} polarity, so the very same property had
+	 * two readers with opposite defaults (bug B3) and the cold-static band compared raw work-rows by default.
+	 */
 	static boolean enabled() {
-		return Boolean.getBoolean(ENABLED_PROPERTY);
+		return !"false".equalsIgnoreCase(System.getProperty(ENABLED_PROPERTY));
 	}
 
 	/**
-	 * Whether observations are collected. Always on: recording is cheap, has no effect on dispatch, and means that when
-	 * {@link #ENABLED_PROPERTY} is switched on the model already has evidence instead of starting cold.
+	 * Whether observations are collected. Always on: recording is cheap, has no effect on dispatch, and means the model
+	 * has evidence instead of starting cold. Reads the same registered {@code costCalibration.record} key as the
+	 * adaptive model (this previously read a phantom {@code costCalibration.enabled.record} key — bug B3).
 	 */
 	static boolean recording() {
-		return !"false".equalsIgnoreCase(System.getProperty(ENABLED_PROPERTY + ".record"));
+		return !"false".equalsIgnoreCase(System.getProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY));
 	}
 
 	/**

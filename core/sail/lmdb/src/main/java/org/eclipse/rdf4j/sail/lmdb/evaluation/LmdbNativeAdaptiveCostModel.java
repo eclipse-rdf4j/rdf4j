@@ -17,22 +17,31 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.WeakHashMap;
 
-/** Combines JVM-wide operation coefficients with one store's bounded shape corrections. */
+/**
+ * Combines the JVM-wide operation-coefficient model with one store's learning state: per-variant feature-count ratio
+ * corrections plus hierarchical log-runtime posteriors. Pricing runs in one of two lanes. The RESIDUAL lane applies to
+ * arms whose feature vectors the machine model can price: the posterior models log T minus the machine's log
+ * prediction, so evidence transfers across query sizes. The DIRECT lane models log T itself and is how arms without
+ * comparable features (or a not-yet-ready machine model) still become numerically comparable the moment they have been
+ * timed or censored once. An arm with neither comparable features nor timing evidence quotes
+ * {@link LmdbNativeCostPrediction.PriceBasis#ORDINAL_ONLY} — an arm-local statement, never a whole-set one.
+ *
+ * Evidence arrives through two separate doors: {@link #recordCompleted} (a finished run — trains feature ratios, the
+ * machine model, the posterior, and the drift detector) and {@link #recordCensored} (a probe cancelled at its deadline
+ * — updates only the latency posterior with the right-censored bound, because final feature counts are unknown and
+ * "half the rows in half the time" is not a valid extrapolation).
+ */
 final class LmdbNativeAdaptiveCostModel {
 
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.costCalibration.enabled";
 	static final String RECORD_PROPERTY = "rdf4j.lmdb.costCalibration.record";
-	static final String EXPLORE_PROPERTY = "rdf4j.lmdb.costCalibration.explore";
-	static final String EXPLORATION_PERMILLE_PROPERTY = "rdf4j.lmdb.costCalibration.explorationPermille";
 	private static final double Z95 = 1.959963984540054;
 	private static final double Z99 = 2.5758293035489004;
-	private static final double MINIMUM_RELATIVE_UNCERTAINTY = 0.10;
 	/**
-	 * Exact-variant observations required before the multiplicative interval tightening applies. Three suffices for the
-	 * regression-scale gaps (at 3 samples the factor is ~5.2, separating anything beyond ~27x; the 2026-08-16 captures
-	 * were 15x-190x), while small gaps keep needing the evidence a small gap deserves.
+	 * Effective evidence below which a 99%-bound miss is cold-start learning, not a severe miss: while the Huber clip
+	 * walks a fresh posterior toward its first real measurements, every step "exceeds" a bound that meant nothing.
 	 */
-	static final int MINIMUM_EVIDENCE_FOR_TIGHT_INTERVALS = 3;
+	private static final double SEVERE_MISS_EVIDENCE_FLOOR = 5.0;
 	private static final Map<Object, LmdbNativeStoreCostModel> STORE_MODELS = Collections
 			.synchronizedMap(new WeakHashMap<>());
 
@@ -44,7 +53,7 @@ final class LmdbNativeAdaptiveCostModel {
 		this(LmdbNativeMachineCostModel.jvmWide(), store, Configuration.system());
 	}
 
-	/** Returns a fresh configuration view backed by the JVM model and the source's store-local corrections. */
+	/** Returns a fresh configuration view backed by the JVM model and the source's store-local learning state. */
 	static LmdbNativeAdaptiveCostModel forSource(NativeLmdbQuerySource source) {
 		Objects.requireNonNull(source, "source");
 		Object identity = source.costModelIdentity();
@@ -53,7 +62,8 @@ final class LmdbNativeAdaptiveCostModel {
 		}
 		LmdbNativeStoreCostModel store;
 		synchronized (STORE_MODELS) {
-			store = STORE_MODELS.computeIfAbsent(identity, ignored -> new LmdbNativeStoreCostModel());
+			store = STORE_MODELS.computeIfAbsent(identity,
+					ignored -> LmdbNativeStoreCostModel.create(source.costModelContext()));
 		}
 		return new LmdbNativeAdaptiveCostModel(LmdbNativeMachineCostModel.jvmWide(), store, Configuration.system());
 	}
@@ -65,84 +75,222 @@ final class LmdbNativeAdaptiveCostModel {
 		this.configuration = Objects.requireNonNull(configuration, "configuration");
 	}
 
-	LmdbNativeCostPrediction predict(LmdbNativeCostEstimate estimate) {
-		Objects.requireNonNull(estimate, "estimate");
-		LmdbNativeStoreCostModel.Correction correction = store.correction(estimate.variantKey());
-		LmdbNativeCostVector corrected = applyFeatureCorrection(estimate.total(), correction);
-		LmdbNativeMachineCostModel.Prediction machinePrediction = machine.predict(corrected);
-		if (corrected.hasUnsupportedFeatures(machinePrediction.supportedFeatureMask())) {
-			return LmdbNativeCostPrediction.structuralOnly("unsupported physical feature");
-		}
-
-		double shape = correction.latencyRatio();
-		double expected = finite(machinePrediction.expectedNanos() * shape);
-		double countLow = finite(machinePrediction.lowCountNanos() * shape);
-		double countHigh = finite(machinePrediction.highCountNanos() * shape);
-		double machineRelative = expected > 0.0 ? machinePrediction.standardDeviation() / expected : 1.0;
-		double relativeSigma = Math.sqrt(machineRelative * machineRelative + correction.logLatencyVariance()
-				+ estimate.structuralUncertainty() * estimate.structuralUncertainty());
-		double floor = expected * MINIMUM_RELATIVE_UNCERTAINTY;
-		double half95 = Math.max(floor, finite(Z95 * expected * relativeSigma));
-		double half99 = Math.max(floor, finite(Z99 * expected * relativeSigma));
-		double low95 = Math.max(0.0, Math.min(countLow, expected - half95));
-		double high95 = Math.max(countHigh, finite(expected + half95));
-		double low99 = Math.max(0.0, Math.min(low95, expected - half99));
-		double high99 = Math.max(high95, finite(expected + half99));
-		boolean quarantined = correction.quarantined();
-		// Evidence-tightened envelope (2026-08-16 regression fix): the additive half-widths above never shrink with
-		// evidence and the count envelope pins low bounds at zero, so measured 100x gaps could never strictly
-		// dominate — every arbitration fell through to the static ladder. Once THIS variant has been observed enough
-		// times, its interval is bounded multiplicatively, with the factor tightening as evidence accumulates: at 8
-		// samples the bound is ~[expected/3.2, expected*3.2], at 100+ samples it floors at [expected/1.5,
-		// expected*1.5]. A tenfold measured gap then separates from ~10 samples on, while cross-variant fallback
-		// predictions (family/global/prior) keep their honest, wide intervals.
-		if (!quarantined && expected > 0.0
-				&& correction.source() == LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
-				&& correction.evidenceCount() >= MINIMUM_EVIDENCE_FOR_TIGHT_INTERVALS) {
-			double factor95 = Math.max(1.5, 9.0 / Math.sqrt(correction.evidenceCount()));
-			double factor99 = factor95 * 1.5;
-			low95 = Math.max(low95, expected / factor95);
-			high95 = Math.min(high95, expected * factor95);
-			low99 = Math.min(low95, Math.max(low99, expected / factor99));
-			high99 = Math.max(high95, Math.min(high99, expected * factor99));
-		}
-		boolean learnedAllowed = configuration.enabled && machinePrediction.adaptiveReady() && !quarantined;
-		String reason = quarantined ? "variant rebuilding confidence after a 99% prediction miss"
-				: machinePrediction.adaptiveReady() ? "learned physical-operation model" : "broad static prior";
-		return new LmdbNativeCostPrediction(low95, expected, high95, low99, high99, true, learnedAllowed,
-				quarantined, correction.evidenceCount(), correction.source(), reason);
+	LmdbNativeRegimeKey currentRegime() {
+		return store.regimeTracker().current();
 	}
 
-	TrainingResult record(LmdbNativeCostEstimate estimate, LmdbNativeCostVector actualFeatures, double actualNanos,
-			boolean eligible) {
+	LmdbNativeStoreCostModel store() {
+		return store;
+	}
+
+	/** Normal (non-probe) eligible completions finance future probes; probe completions never earn. */
+	void earnSafetyCredit(long elapsedNanos) {
+		store.safetyLedger().earn(elapsedNanos);
+	}
+
+	record ProbeValue(double pWin, double expectedBenefitNanos, double infoGainNanos) {
+	}
+
+	/**
+	 * How valuable a bounded probe of {@code rival} would be against {@code incumbent}: the posterior probability the
+	 * rival wins by the displacement margin (shared components cancelled), the expected latency saved when it does, and
+	 * an information term that keeps never-priced arms probe-worthy. An ORDINAL_ONLY rival gets a modest fixed prior —
+	 * a probe is exactly how it earns a real one.
+	 */
+	ProbeValue probeValue(LmdbNativeCostPrediction incumbent, LmdbNativeCostPrediction rival) {
+		double incumbentExpected = Math.max(1.0, incumbent.expectedNanos());
+		if (rival.priceBasis() == LmdbNativeCostPrediction.PriceBasis.ORDINAL_ONLY || rival.components() == null
+				|| incumbent.components() == null) {
+			return new ProbeValue(0.25, incumbentExpected * 0.5, incumbentExpected);
+		}
+		double delta = LmdbNativeCostPrediction.pairwiseDeltaMean(rival, incumbent);
+		double sigma = Math.sqrt(Math.max(1e-9, LmdbNativeCostPrediction.pairwiseDeltaVariance(rival, incumbent)));
+		double margin = store.posteriorConfig().displacementLogGamma();
+		// P(rival beats the margin) = P(delta_true < -margin) = survival((delta + margin) / sigma)
+		double pWin = Math.exp(LmdbNativeGaussianMath.logSurvival((delta + margin) / sigma));
+		double benefit = Math.max(0.0, incumbentExpected - rival.expectedNanos());
+		double infoGain = incumbentExpected * Math.min(1.0, rival.components().varExact());
+		return new ProbeValue(pWin, benefit, infoGain);
+	}
+
+	LmdbNativeCostPrediction predict(LmdbNativeCostEstimate estimate) {
+		Objects.requireNonNull(estimate, "estimate");
+		return predictFor(estimate, currentRegime());
+	}
+
+	private LmdbNativeCostPrediction predictFor(LmdbNativeCostEstimate estimate, LmdbNativeRegimeKey regime) {
+		Quote quote = quote(estimate, regime);
+		if (!quote.priceable) {
+			return LmdbNativeCostPrediction.ordinalOnly("no comparable features and no timing evidence");
+		}
+		LmdbNativeCostPosteriorStore.Reading reading = quote.reading;
+		double meanLog = reading.meanLog();
+		double expected = finite(Math.exp(quote.logBase + meanLog));
+		double structuralVariance = estimate.structuralUncertainty() * estimate.structuralUncertainty();
+		// Structural uncertainty is per-arm and lands in the exact component; the machine model's uncertainty is a
+		// SHARED base for every same-lane arm (their logBase comes from the same coefficients), so it lands in the
+		// global component where pairwise comparison cancels it — putting it per-arm would double-count shared
+		// uncertainty and re-create the "measured 100x gaps never separate" failure.
+		double varExact = reading.exact().epistemicVariance + structuralVariance;
+		double varFamily = reading.family().epistemicVariance;
+		double varGlobal = reading.global().epistemicVariance + quote.machineLogVariance;
+		double latentVariance = varExact + varFamily + varGlobal;
+		double predictiveVariance = latentVariance + reading.noiseVariance();
+		double predictiveSigma = Math.sqrt(predictiveVariance);
+		double latentSigma = Math.sqrt(latentVariance);
+
+		double low95 = finite(expected * Math.exp(-Z95 * predictiveSigma));
+		double high95 = boundedHigh(expected, expected * Math.exp(Z95 * predictiveSigma));
+		double low99 = Math.min(low95, finite(expected * Math.exp(-Z99 * predictiveSigma)));
+		double high99 = Math.max(high95, boundedHigh(expected, expected * Math.exp(Z99 * predictiveSigma)));
+		double latentLow99 = Math.min(expected, finite(expected * Math.exp(-Z99 * latentSigma)));
+		double latentHigh99 = boundedHigh(expected, expected * Math.exp(Z99 * latentSigma));
+
+		LmdbNativeCostPrediction.EvidenceSource source = evidenceSource(quote);
+		boolean quarantined = store.probeScheduler()
+				.quarantined(estimate.variantKey(), regime, quote.epoch);
+		boolean learnedAllowed = configuration.enabled && !quarantined
+				&& (quote.lane == LmdbNativeCostPosteriorStore.Lane.RESIDUAL
+						? quote.machinePrediction.adaptiveReady()
+						: reading.nEff() >= 1.0);
+		String reason = quote.lane == LmdbNativeCostPosteriorStore.Lane.RESIDUAL
+				? "feature model with learned residual posterior"
+				: "direct timing posterior";
+		LmdbNativeCostPrediction.Components components = new LmdbNativeCostPrediction.Components(regime, quote.lane,
+				LmdbNativeFamilyShapeKey.of(estimate.variantKey()), quote.logBase, meanLog, varGlobal, varFamily,
+				varExact, reading.noiseVariance());
+		LmdbNativeCostPrediction.PriceBasis basis = quote.lane == LmdbNativeCostPosteriorStore.Lane.RESIDUAL
+				? LmdbNativeCostPrediction.PriceBasis.FEATURE_POSTERIOR
+				: LmdbNativeCostPrediction.PriceBasis.DIRECT_POSTERIOR;
+		return new LmdbNativeCostPrediction(Math.min(low95, expected), expected, high95, Math.min(low99, low95),
+				high99, latentLow99, latentHigh99, basis, learnedAllowed, quarantined, reading.nEff(), source,
+				components, reason);
+	}
+
+	/**
+	 * A fully observed execution. {@code weight} is 1.0 for a complete drain or the consumed fraction for an eligible
+	 * LIMIT-truncated run. Trains the feature-ratio EWMA, the machine model (on RAW actual features, de-scaled by the
+	 * learned residual so the correction is not applied twice — gap-analysis C3), the latency posterior, and the drift
+	 * detector; a severe miss (actual above the previous predictive 99% bound) is reported for quarantine.
+	 */
+	TrainingResult recordCompleted(LmdbNativeCostEstimate estimate, LmdbNativeCostVector actualFeatures,
+			double elapsedNanos, double weight, LmdbNativeRegimeKey regime) {
 		Objects.requireNonNull(estimate, "estimate");
 		Objects.requireNonNull(actualFeatures, "actualFeatures");
+		Objects.requireNonNull(regime, "regime");
+		if (!configuration.record) {
+			return new TrainingResult(false, "recording disabled or observation ineligible", false, false);
+		}
+		if (!Double.isFinite(elapsedNanos) || elapsedNanos < 0.0) {
+			return new TrainingResult(false, "invalid elapsed time", false, false);
+		}
+		LmdbNativeCostPrediction before = predictFor(estimate, regime);
+		Quote quote = quote(estimate, regime);
+		boolean severe = before.uniformlyPriceable() && before.nEff() >= SEVERE_MISS_EVIDENCE_FLOOR
+				&& elapsedNanos > before.high99Nanos();
+
+		store.updateFeatureRatios(estimate.variantKey(), estimate.total(), actualFeatures);
+		double residualShape = quote.lane == LmdbNativeCostPosteriorStore.Lane.RESIDUAL
+				? Math.exp(quote.reading.meanLog())
+				: 1.0;
+		LmdbNativeMachineCostModel.Update machineUpdate = machine.update(actualFeatures,
+				residualShape > 0.0 ? elapsedNanos / residualShape : elapsedNanos);
+
+		double y = Math.log(Math.max(1.0, elapsedNanos)) - quote.logBase;
+		double clippedResidual = store.posteriors()
+				.updateCompleted(quote.exactKey, y, weight, quote.epoch, quote.nowMillis);
+		if (store.changeDetector().offer(quote.exactKey.familyKey(), clippedResidual)) {
+			store.regimeTracker().forceEpochBump();
+		}
+		if (severe) {
+			store.probeScheduler().quarantine(estimate.variantKey(), regime, quote.epoch);
+		}
+		store.noteEvidenceRecorded();
+		return new TrainingResult(machineUpdate.accepted(),
+				severe ? "accepted and flagged severe 99% miss" : "accepted", machineUpdate.clipped(), severe);
+	}
+
+	/**
+	 * A probe cancelled at its deadline: right-censored evidence that the true runtime exceeds {@code deadlineNanos}.
+	 * Updates only the latency posterior (never feature ratios or machine coefficients — the final counts are unknown).
+	 * {@code severeMiss} reports a censoring above the previous predictive 99% bound: the arm was already confidently
+	 * priced and still failed to finish, which the scheduler escalates to quarantine.
+	 */
+	CensorResult recordCensored(LmdbNativeCostEstimate estimate, long deadlineNanos,
+			LmdbNativeCostVector partialFeatures, LmdbNativeRegimeKey regime) {
+		Objects.requireNonNull(estimate, "estimate");
+		Objects.requireNonNull(regime, "regime");
+		if (!configuration.record) {
+			return new CensorResult(false, false, "recording disabled");
+		}
+		if (deadlineNanos <= 0L) {
+			return new CensorResult(false, false, "invalid deadline");
+		}
+		LmdbNativeCostPrediction before = predictFor(estimate, regime);
+		Quote quote = quote(estimate, regime);
+		boolean severeMiss = before.uniformlyPriceable() && before.nEff() >= SEVERE_MISS_EVIDENCE_FLOOR
+				&& deadlineNanos > before.high99Nanos();
+		double bound = Math.log(Math.max(1.0, (double) deadlineNanos)) - quote.logBase;
+		store.posteriors().updateCensored(quote.exactKey, bound, quote.epoch, quote.nowMillis);
+		store.noteEvidenceRecorded();
+		return new CensorResult(true, severeMiss,
+				severeMiss ? "censored above the previous 99% bound" : "censored at deadline");
+	}
+
+	/**
+	 * Transitional bridge for the observation layer and existing tests: an eligible completion routes to
+	 * {@link #recordCompleted} at full weight in the current regime; anything else records nothing.
+	 */
+	TrainingResult record(LmdbNativeCostEstimate estimate, LmdbNativeCostVector actualFeatures, double actualNanos,
+			boolean eligible) {
 		if (!configuration.record || !eligible) {
 			return new TrainingResult(false, "recording disabled or observation ineligible", false, false);
 		}
-		LmdbNativeCostPrediction before = predict(estimate);
-		LmdbNativeStoreCostModel.Correction current = store.correction(estimate.variantKey());
-		// Gap-analysis C3: train the machine on the RAW actual features. Prediction feeds it estimate×ratio,
-		// and the learned ratios approximate actual/estimate — so estimate×ratio ≈ actual. Training on
-		// actual×ratio instead double-applies the correction (features ≈ actual²/estimate), biasing every
-		// prediction by ~1/ratio the moment real counters diverge from estimates.
-		LmdbNativeMachineCostModel.Prediction rawPrediction = machine.predict(actualFeatures);
-		LmdbNativeMachineCostModel.Update machineUpdate = machine.update(actualFeatures,
-				current.latencyRatio() > 0.0 ? actualNanos / current.latencyRatio() : actualNanos);
-		boolean severe = before.uniformlyPriceable() && actualNanos > before.high99Nanos();
-		LmdbNativeStoreCostModel.Update storeUpdate = store.update(estimate.variantKey(), estimate.total(),
-				actualFeatures, rawPrediction.expectedNanos(), actualNanos, severe);
-		return new TrainingResult(machineUpdate.accepted() && storeUpdate.accepted(),
-				severe ? "accepted and quarantined after 99% miss" : "accepted", machineUpdate.clipped(), severe);
-	}
-
-	boolean shouldExplore() {
-		return configuration.enabled && configuration.explore
-				&& store.shouldExplore(configuration.explorationPermille);
+		return recordCompleted(estimate, actualFeatures, actualNanos, 1.0, currentRegime());
 	}
 
 	Configuration configuration() {
 		return configuration;
+	}
+
+	private Quote quote(LmdbNativeCostEstimate estimate, LmdbNativeRegimeKey regime) {
+		LmdbNativeStoreCostModel.Correction correction = store.correction(estimate.variantKey());
+		LmdbNativeCostVector corrected = applyFeatureCorrection(estimate.total(), correction);
+		LmdbNativeMachineCostModel.Prediction machinePrediction = machine.predict(corrected);
+		boolean featuresComparable = machinePrediction.adaptiveReady()
+				&& !corrected.hasUnsupportedFeatures(machinePrediction.supportedFeatureMask())
+				&& machinePrediction.expectedNanos() > 0.0 && Double.isFinite(machinePrediction.expectedNanos());
+		LmdbNativeCostPosteriorStore.Lane lane = featuresComparable ? LmdbNativeCostPosteriorStore.Lane.RESIDUAL
+				: LmdbNativeCostPosteriorStore.Lane.DIRECT;
+		double logBase = featuresComparable ? Math.log(Math.max(1.0, machinePrediction.expectedNanos())) : 0.0;
+		double machineLogVariance = 0.0;
+		if (featuresComparable) {
+			double relative = machinePrediction.standardDeviation() / machinePrediction.expectedNanos();
+			machineLogVariance = Math.min(4.0, relative * relative);
+		}
+		long epoch = store.regimeTracker().epoch();
+		long nowMillis = store.nowMillis();
+		LmdbNativeCostPosteriorStore.ExactKey exactKey = LmdbNativeCostPosteriorStore.ExactKey.of(regime, lane,
+				estimate.variantKey());
+		LmdbNativeCostPosteriorStore.Reading reading = store.posteriors().read(exactKey, epoch, nowMillis);
+		boolean priceable = featuresComparable || reading.anyEvidence();
+		return new Quote(lane, logBase, machineLogVariance, exactKey, reading, epoch, nowMillis, priceable,
+				machinePrediction);
+	}
+
+	private static LmdbNativeCostPrediction.EvidenceSource evidenceSource(Quote quote) {
+		if (quote.reading.exactPresent()) {
+			return LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT;
+		}
+		if (quote.reading.familyPresent()) {
+			return LmdbNativeCostPrediction.EvidenceSource.STRATEGY_FAMILY;
+		}
+		if (quote.reading.globalPresent()) {
+			return LmdbNativeCostPrediction.EvidenceSource.STORE_GLOBAL;
+		}
+		return quote.lane == LmdbNativeCostPosteriorStore.Lane.RESIDUAL
+				? LmdbNativeCostPrediction.EvidenceSource.GLOBAL_MACHINE
+				: LmdbNativeCostPrediction.EvidenceSource.STATIC_PRIOR;
 	}
 
 	private static LmdbNativeCostVector applyFeatureCorrection(LmdbNativeCostVector vector,
@@ -160,34 +308,29 @@ final class LmdbNativeAdaptiveCostModel {
 		return Double.isFinite(value) ? Math.max(0.0, value) : Double.MAX_VALUE;
 	}
 
+	private static double boundedHigh(double expected, double candidate) {
+		double bounded = finite(candidate);
+		return Math.max(expected, bounded);
+	}
+
+	private record Quote(LmdbNativeCostPosteriorStore.Lane lane, double logBase, double machineLogVariance,
+			LmdbNativeCostPosteriorStore.ExactKey exactKey, LmdbNativeCostPosteriorStore.Reading reading, long epoch,
+			long nowMillis, boolean priceable, LmdbNativeMachineCostModel.Prediction machinePrediction) {
+	}
+
 	record TrainingResult(boolean trained, String reason, boolean residualClipped, boolean quarantined) {
 	}
 
-	record Configuration(boolean enabled, boolean record, boolean explore, int explorationPermille) {
-		Configuration {
-			if (explorationPermille < 0 || explorationPermille > 1_000) {
-				throw new IllegalArgumentException("explorationPermille must be in [0,1000]");
-			}
-		}
+	record CensorResult(boolean recorded, boolean severeMiss, String reason) {
+	}
+
+	record Configuration(boolean enabled, boolean record) {
 
 		static Configuration system() {
-			// Learned dispatch and exploration default ON (2026-08-16 regression fix): with dispatch off, the
-			// static ladder decided every contested choice alone and the newly added interpreted IR routes
-			// captured queries they ran 30-190x slower than the measured incumbents (LIBRARY q10 30 ms -> 5.7 s).
-			// The evidence-tightened prediction intervals make learned strict domination trustworthy, and the
-			// cold-start guard covers never-measured incumbents; opting OUT remains one property away.
+			// Learned dispatch and recording default ON; opting OUT remains one property away. Exploration has no
+			// knob of its own anymore: bounded probes replaced it, gated by rdf4j.lmdb.adaptiveProbe.enabled.
 			return new Configuration(!"false".equalsIgnoreCase(System.getProperty(ENABLED_PROPERTY)),
-					Boolean.parseBoolean(System.getProperty(RECORD_PROPERTY, "true")),
-					!"false".equalsIgnoreCase(System.getProperty(EXPLORE_PROPERTY)),
-					parsePermille(System.getProperty(EXPLORATION_PERMILLE_PROPERTY, "10")));
-		}
-
-		private static int parsePermille(String value) {
-			try {
-				return Math.max(0, Math.min(1_000, Integer.parseInt(value)));
-			} catch (NumberFormatException ignored) {
-				return 10;
-			}
+					Boolean.parseBoolean(System.getProperty(RECORD_PROPERTY, "true")));
 		}
 	}
 }

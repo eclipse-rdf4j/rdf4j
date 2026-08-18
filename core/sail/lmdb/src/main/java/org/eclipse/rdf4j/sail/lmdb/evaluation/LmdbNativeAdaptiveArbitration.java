@@ -32,8 +32,31 @@ final class LmdbNativeAdaptiveArbitration {
 		}
 	}
 
-	record Choice<T> (Candidate<T> candidate, LmdbNativeCostPrediction prediction, boolean explored,
-			String reason) {
+	/**
+	 * The outcome of one dispatch decision: run the selected arm normally, or run one bounded experimental probe of a
+	 * rival with the incumbent retained as fallback. A {@link Probe} always carries a live safety-ledger reservation —
+	 * {@code maybeProbe} only returns one after credit, spacing, scheduler state and deadline usefulness all cleared.
+	 */
+	sealed interface DispatchPlan<T> {
+
+		record Normal<T> (Candidate<T> candidate, LmdbNativeCostPrediction prediction, String reason)
+				implements DispatchPlan<T> {
+		}
+
+		record Probe<T> (Candidate<T> trial, LmdbNativeCostPrediction trialPrediction, Candidate<T> fallback,
+				LmdbNativeCostPrediction fallbackPrediction, long deadlineNanos,
+				LmdbNativeSafetyLedger.Reservation reservation, LmdbNativeRegimeKey regime, long epoch,
+				String reason) implements DispatchPlan<T> {
+		}
+	}
+
+	/** Probe eligibility inputs owned by the dispatch site; {@code harnessPresent} false disables probing entirely. */
+	record ProbeContext(LmdbNativeProbeConfig config, LmdbNativeQueryProbeBudget queryBudget,
+			boolean harnessPresent) {
+
+		static ProbeContext disabled() {
+			return new ProbeContext(LmdbNativeProbeConfig.defaults(), new LmdbNativeQueryProbeBudget(), false);
+		}
 	}
 
 	private static final Comparator<Candidate<?>> STATIC_ORDER = Comparator
@@ -43,7 +66,8 @@ final class LmdbNativeAdaptiveArbitration {
 	private LmdbNativeAdaptiveArbitration() {
 	}
 
-	static <T> Choice<T> choose(List<Candidate<T>> offered, LmdbNativeAdaptiveCostModel model) {
+	static <T> DispatchPlan<T> choose(List<Candidate<T>> offered, LmdbNativeAdaptiveCostModel model,
+			ProbeContext probeContext) {
 		Objects.requireNonNull(offered, "offered");
 		Objects.requireNonNull(model, "model");
 		if (offered.isEmpty()) {
@@ -55,78 +79,132 @@ final class LmdbNativeAdaptiveArbitration {
 		LmdbNativeCostPrediction incumbentPrediction = model.predict(incumbent.estimate);
 
 		if (!model.configuration().enabled()) {
-			return new Choice<>(incumbent, incumbentPrediction, false, "adaptive dispatch disabled");
+			return new DispatchPlan.Normal<>(incumbent, incumbentPrediction, "adaptive dispatch disabled");
 		}
 
+		// Every arm is priced arm-locally: an unpriceable arm quotes ORDINAL_ONLY and simply cannot win or lose on
+		// cost — the old whole-set "not uniformly priceable" bailout is gone.
 		List<Priced<T>> priced = new ArrayList<>(candidates.size());
-		boolean uniform = true;
 		for (Candidate<T> candidate : candidates) {
-			LmdbNativeCostPrediction prediction = model.predict(candidate.estimate);
-			priced.add(new Priced<>(candidate, prediction));
-			uniform &= prediction.uniformlyPriceable();
+			priced.add(new Priced<>(candidate, model.predict(candidate.estimate)));
 		}
-		// The cold-start guard runs BEFORE the uniformity bail-out on purpose: an unmeasured incumbent is usually
-		// exactly what makes the set non-uniform (its structural-only prediction), and bailing out to "retained
-		// structural preference" is how such an incumbent silently captured queries from measured rivals.
 		Priced<T> rescued = coldStartRescue(priced);
 		if (rescued != null) {
-			return new Choice<>(rescued.candidate, rescued.prediction, false,
+			return new DispatchPlan.Normal<>(rescued.candidate, rescued.prediction,
 					"cold-start guard: unmeasured incumbent yields to the cheapest measured rival");
 		}
-		if (!uniform) {
-			return new Choice<>(incumbent, incumbentPrediction, false,
-					"candidate set contains unknown features; retained structural preference for the whole set");
-		}
 
-		Priced<T> selected = selectWithinFrontier(priced);
+		LmdbNativePosteriorConfig posteriorConfig = model.store().posteriorConfig();
+		Priced<T> selected = selectWithinFrontier(priced, posteriorConfig.displacementLogGamma(),
+				posteriorConfig.displacementLogGammaOrderLosing());
 		if (selected.candidate != incumbent) {
-			return new Choice<>(selected.candidate, selected.prediction, false, "strict 95% interval domination");
+			return new DispatchPlan.Normal<>(selected.candidate, selected.prediction,
+					"99% latent displacement with shared-component cancellation");
 		}
 
-		if (model.configuration().explore() && priced.size() > 1) {
-			// Deterministic under-sampling probes (2026-08-16 regression fix): a rival the ladder never selects
-			// never accumulates the evidence that would let it win on cost — the fast strategy starves while the
-			// slow incumbent keeps its seat (LIBRARY q10: orderedDistinctGroups was never re-measured once the IR
-			// route captured the ladder). Until every non-quarantined rival has a minimal exact-variant sample
-			// count, exploration is guaranteed rather than left to the permille dice; the cost is bounded at
-			// MINIMUM_EXPLORATION_SAMPLES probes per rival per process.
-			Priced<T> underSampled = underSampledExplorationTarget(priced);
-			if (underSampled != null) {
-				return new Choice<>(underSampled.candidate, underSampled.prediction, true,
-						"deterministic bounded exploration of an under-sampled rival");
-			}
-			List<Priced<T>> eligible = new ArrayList<>();
-			for (int index = 1; index < priced.size(); index++) {
-				Priced<T> rival = priced.get(index);
-				if (!rival.prediction.quarantined()
-						&& rival.prediction.high95Nanos() <= selected.prediction.high95Nanos()) {
-					eligible.add(rival);
-				}
-			}
-			// least-observed by EXACT-variant evidence (gap-analysis C8): a never-run variant reports its
-			// family/global fallback evidence through the prediction, which would make cold variants in hot
-			// families lose exploration priority to variants that have actually run
-			eligible.sort(Comparator
-					.comparingLong((Priced<T> pricedCandidate) -> pricedCandidate.prediction
-							.evidenceSource() == LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
-									? pricedCandidate.prediction.evidenceCount()
-									: 0L)
-					.thenComparing(pricedCandidate -> pricedCandidate.candidate.estimate.variantKey()));
-			if (!eligible.isEmpty() && model.shouldExplore()) {
-				Priced<T> exploration = eligible.get(0);
-				return new Choice<>(exploration.candidate, exploration.prediction, true,
-						"deterministic bounded exploration of least-observed non-dominated rival");
-			}
+		DispatchPlan.Probe<T> probe = maybeProbe(priced, selected, model, probeContext);
+		if (probe != null) {
+			return probe;
 		}
-		return new Choice<>(incumbent, incumbentPrediction, false,
-				"95% intervals overlap; retained stable strategy preference");
+		return new DispatchPlan.Normal<>(incumbent, incumbentPrediction,
+				"latent intervals overlap; retained stable strategy preference");
 	}
 
-	static <T> LmdbNativeStrategySelection<T> open(Choice<T> choice, LmdbNativeAdaptiveCostModel model)
+	/**
+	 * At most one bounded, budgeted probe of the most valuable uncertain rival — the replacement for every
+	 * completed-sample exploration quota. Eligibility per rival: an abort-safe site (harness registered), scheduler
+	 * state not cooldown/dormant/quarantined, spacing satisfied, the query's probe cap unspent, credit covering the
+	 * worst case, and a deadline that can still answer the displacement question. A returned probe has already consumed
+	 * the query budget, taken its ledger reservation, and reset the spacing clock.
+	 */
+	static <T> DispatchPlan.Probe<T> maybeProbe(List<Priced<T>> priced, Priced<T> incumbent,
+			LmdbNativeAdaptiveCostModel model, ProbeContext context) {
+		if (context == null || !context.harnessPresent() || !context.config().enabled() || priced.size() < 2) {
+			return null;
+		}
+		LmdbNativeCostPrediction anchor = incumbent.prediction;
+		if (!anchor.uniformlyPriceable() || anchor.expectedNanos() <= 0.0) {
+			return null; // no incumbent anchor, no decision-useful deadline
+		}
+		LmdbNativeProbeConfig config = context.config();
+		LmdbNativeSafetyLedger ledger = model.store().safetyLedger();
+		LmdbNativeProbeScheduler scheduler = model.store().probeScheduler();
+		if (!ledger.spacingAllows()) {
+			return null;
+		}
+		LmdbNativeRegimeKey regime = model.currentRegime();
+		long epoch = model.store().regimeTracker().epoch();
+		// deadline = min(decision-useful bound, SLO-relative slowdown cap, absolute cap): the useful bound answers
+		// "could a completion still justify displacement?"; the rho cap bounds this query's worst-case slowdown
+		long usefulDeadline = (long) (anchor.expectedNanos() / config.gamma());
+		long slowdownCap = (long) (anchor.expectedNanos() * config.maxSlowdownFraction());
+		long deadline = Math.min(Math.min(usefulDeadline, slowdownCap), config.maxDeadlineNanos());
+		if (deadline < config.minDeadlineNanos()) {
+			return null; // the incumbent is too fast for any probe to be worth its overhead
+		}
+		long reservationNanos = saturatingAdd(deadline,
+				saturatingAdd(config.cancelBoundNanos(), deadline / 4));
+
+		Priced<T> best = null;
+		double bestScore = Double.NEGATIVE_INFINITY;
+		for (Priced<T> rival : priced) {
+			if (rival == incumbent) {
+				continue;
+			}
+			LmdbNativeCostPrediction prediction = rival.prediction;
+			LmdbNativePhysicalVariantKey key = rival.candidate.estimate.variantKey();
+			if (!scheduler.mayProbe(key, regime, epoch)) {
+				continue;
+			}
+			if (prediction.uniformlyPriceable() && prediction.low95Nanos() > deadline) {
+				continue; // even optimistically the rival cannot finish inside the useful deadline
+			}
+			LmdbNativeAdaptiveCostModel.ProbeValue value = model.probeValue(anchor, prediction);
+			if (value.pWin() < config.minimumProbeWinProbability()) {
+				continue;
+			}
+			double score = (value.pWin() * value.expectedBenefitNanos()
+					+ config.lambdaInfo() * value.infoGainNanos()) / reservationNanos;
+			if (best == null || score > bestScore
+					|| (score == bestScore
+							&& key.compareTo(best.candidate.estimate.variantKey()) < 0)) {
+				best = rival;
+				bestScore = score;
+			}
+		}
+		if (best == null) {
+			return null;
+		}
+		if (!context.queryBudget().tryConsume(config.maxPerQuery())) {
+			return null;
+		}
+		LmdbNativePhysicalVariantKey bestKey = best.candidate.estimate.variantKey();
+		if (!scheduler.beginProbe(bestKey, regime, epoch)) {
+			// single-flight: a concurrent query is already probing this arm — its evidence will arrive shortly
+			context.queryBudget().release();
+			return null;
+		}
+		LmdbNativeSafetyLedger.Reservation reservation = ledger.tryReserve(reservationNanos);
+		if (reservation == null) {
+			scheduler.probeAbandoned(bestKey, regime, epoch);
+			context.queryBudget().release();
+			return null;
+		}
+		ledger.noteProbeDecision();
+		return new DispatchPlan.Probe<>(best.candidate, best.prediction, incumbent.candidate, anchor, deadline,
+				reservation, regime, epoch, "bounded probe of " + best.candidate.estimate.variantKey());
+	}
+
+	private static long saturatingAdd(long a, long b) {
+		long sum = a + b;
+		return sum < 0L ? Long.MAX_VALUE : sum;
+	}
+
+	static <T> LmdbNativeStrategySelection<T> open(DispatchPlan.Normal<T> plan, LmdbNativeAdaptiveCostModel model)
 			throws Exception {
-		LmdbNativeCostObservation observation = new LmdbNativeCostObservation(choice.candidate.estimate, model);
+		LmdbNativeCostObservation observation = new LmdbNativeCostObservation(plan.candidate().estimate, model);
 		try {
-			T value = choice.candidate.opener.open(observation);
+			T value = plan.candidate().opener.open(observation);
 			if (value == null) {
 				observation.declined();
 				return null;
@@ -140,41 +218,6 @@ final class LmdbNativeAdaptiveArbitration {
 
 	/** Exact-variant observations a rival needs before it can rescue the choice from an unmeasured incumbent. */
 	static final int COLD_START_EVIDENCE_FLOOR = 5;
-
-	/** Exact-variant observations below which a rival is deterministically explored instead of dice-rolled. */
-	static final int MINIMUM_EXPLORATION_SAMPLES = 3;
-
-	/**
-	 * The rival (never the incumbent — it runs by default) with the least exact-variant evidence, when that evidence is
-	 * below {@link #MINIMUM_EXPLORATION_SAMPLES}; {@code null} once every non-quarantined rival has its minimum.
-	 * Deterministic and offer-order-invariant: ties break on the variant key.
-	 */
-	static <T> Priced<T> underSampledExplorationTarget(List<Priced<T>> priced) {
-		Priced<T> target = null;
-		for (int index = 1; index < priced.size(); index++) {
-			Priced<T> rival = priced.get(index);
-			LmdbNativeCostPrediction prediction = rival.prediction;
-			if (prediction.quarantined()) {
-				continue;
-			}
-			long evidence = prediction.evidenceSource() == LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
-					? prediction.evidenceCount()
-					: 0L;
-			if (evidence >= MINIMUM_EXPLORATION_SAMPLES) {
-				continue;
-			}
-			long targetEvidence = target == null ? Long.MAX_VALUE
-					: (target.prediction.evidenceSource() == LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
-							? target.prediction.evidenceCount()
-							: 0L);
-			if (target == null || evidence < targetEvidence
-					|| (evidence == targetEvidence && rival.candidate.estimate.variantKey()
-							.compareTo(target.candidate.estimate.variantKey()) < 0)) {
-				target = rival;
-			}
-		}
-		return target;
-	}
 
 	/**
 	 * Cold-start guard (2026-08-16 regression fix — HIGHLY_CONNECTED q4 chose {@code irKernelInterpreted} with
@@ -218,10 +261,14 @@ final class LmdbNativeAdaptiveArbitration {
 	 * being strictly dominated itself, never because some rival happened to dominate the current selection.
 	 */
 	static <T> Priced<T> selectWithinFrontier(List<Priced<T>> priced) {
+		return selectWithinFrontier(priced, DEFAULT_LOG_GAMMA, DEFAULT_LOG_GAMMA_ORDER_LOSING);
+	}
+
+	static <T> Priced<T> selectWithinFrontier(List<Priced<T>> priced, double logGamma, double logGammaOrderLosing) {
 		for (Priced<T> candidate : priced) {
 			boolean dominated = false;
 			for (Priced<T> rival : priced) {
-				if (rival != candidate && strictlyDominates(rival, candidate)) {
+				if (rival != candidate && strictlyDominates(rival, candidate, logGamma, logGammaOrderLosing)) {
 					dominated = true;
 					break;
 				}
@@ -230,24 +277,31 @@ final class LmdbNativeAdaptiveArbitration {
 				return candidate;
 			}
 		}
-		// unreachable: interval domination is acyclic, so the candidate with the smallest low bound never loses
+		// unreachable: displacement is acyclic (it needs a strictly better latent mean), so the candidate with the
+		// smallest latent mean never loses
 		return priced.get(0);
 	}
 
-	private static boolean strictlyDominates(Priced<?> candidate, Priced<?> incumbent) {
-		if (!candidate.prediction.learnedDominanceAllowed() || candidate.prediction.quarantined()) {
-			return false;
-		}
+	/** Default displacement margins; the model's posterior configuration overrides them at the dispatch site. */
+	static final double DEFAULT_LOG_GAMMA = 0.10;
+	static final double DEFAULT_LOG_GAMMA_ORDER_LOSING = 0.35;
+
+	/**
+	 * Displacement now runs through the pairwise 99% upper-confidence-bound test with shared-component cancellation
+	 * ({@link LmdbNativeCostPrediction#displaces}): a rival needs its latent-mean advantage to clear the gamma margin
+	 * at 99% confidence, counting only non-shared hierarchy variance. Cold arms carry their full prior variance, so a
+	 * machine-model difference alone cannot displace anything — evidence (or an extreme predicted gap) is required,
+	 * which is exactly what the old zero-pinned additive low bounds enforced by accident. The same-family order-losing
+	 * rewrite (gap-analysis C9) clears the wider {@code logGammaOrderLosing} margin.
+	 */
+	private static boolean strictlyDominates(Priced<?> candidate, Priced<?> incumbent, double logGamma,
+			double logGammaOrderLosing) {
 		LmdbNativePhysicalVariantKey candidateKey = candidate.candidate.estimate.variantKey();
 		LmdbNativePhysicalVariantKey incumbentKey = incumbent.candidate.estimate.variantKey();
-		if (candidateKey.strategyFamily().equals(incumbentKey.strategyFamily()) && incumbentKey.propertyPreserving()
-				&& !candidateKey.propertyPreserving()) {
-			// The rewrite must strictly dominate despite any loss of order or introduction of hashing: an
-			// order-losing same-family displacement clears the wider 99% interval, not just the 95% one
-			// (gap-analysis C9 — this stricter bar was documented but previously identical to the general rule).
-			return candidate.prediction.high99Nanos() < incumbent.prediction.low99Nanos();
-		}
-		return candidate.prediction.high95Nanos() < incumbent.prediction.low95Nanos();
+		boolean orderLosing = candidateKey.strategyFamily().equals(incumbentKey.strategyFamily())
+				&& incumbentKey.propertyPreserving() && !candidateKey.propertyPreserving();
+		return LmdbNativeCostPrediction.displaces(candidate.prediction, incumbent.prediction,
+				orderLosing ? logGammaOrderLosing : logGamma);
 	}
 
 	record Priced<T> (Candidate<T> candidate, LmdbNativeCostPrediction prediction) {

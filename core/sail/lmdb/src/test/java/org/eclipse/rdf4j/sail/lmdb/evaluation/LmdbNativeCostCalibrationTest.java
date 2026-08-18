@@ -166,13 +166,23 @@ public class LmdbNativeCostCalibrationTest {
 		assertThat(LmdbNativeCostCalibration.toTime(FAST, work)).isEqualTo(work);
 	}
 
+	/**
+	 * Both readers of {@code rdf4j.lmdb.costCalibration.enabled} — this legacy scalar path and the adaptive model — now
+	 * agree with the runtime-property registry on a default-ON polarity (bug B3: this reader previously used opt-in
+	 * {@code Boolean.getBoolean}, so the same property carried opposite defaults in two places). Opting out remains a
+	 * single explicit {@code false}.
+	 */
 	@Test
-	public void calibrationIsOptInByDefault() {
+	public void calibrationDefaultOnMatchesTheAdaptiveModelAndRegistry() {
 		System.clearProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
 		observe(FAST, 1d, 200);
 
 		assertThat(LmdbNativeCostCalibration.enabled())
-				.as("query history must not change dispatch until calibration has paired evidence and is opted in")
+				.as("the legacy reader now shares the registry's default-on polarity (B3)")
+				.isTrue();
+		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "false");
+		assertThat(LmdbNativeCostCalibration.enabled())
+				.as("opting out remains one explicit property away")
 				.isFalse();
 		LmdbNativeWork work = LmdbNativeWork.exact(1_000d);
 		assertThat(LmdbNativeCostCalibration.toTime(FAST, work))

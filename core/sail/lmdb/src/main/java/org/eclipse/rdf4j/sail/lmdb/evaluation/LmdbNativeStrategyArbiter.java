@@ -54,6 +54,9 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	private final List<LmdbNativeStrategyProposal<T>> candidates = new ArrayList<>(4);
 	private final double sliceRows;
 	private final LmdbNativeAdaptiveCostModel adaptiveModel;
+	private final LmdbNativeProbeConfig probeConfig = LmdbNativeProbeConfig.system();
+	private final LmdbNativeQueryProbeBudget probeBudget = new LmdbNativeQueryProbeBudget();
+	private LmdbNativeProbeHarness<T> probeHarness;
 	private String winningTag;
 	private double winningWork = Double.NaN;
 
@@ -90,6 +93,12 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				LmdbNativeAdaptiveCostModel.forSource(source));
 	}
 
+	/** Test seam: an arbiter over an explicit adaptive model (probe-execution specifications). */
+	static <T> LmdbNativeStrategyArbiter<T> forModel(TupleExpr explainTarget, double sliceRows,
+			LmdbNativeAdaptiveCostModel model) {
+		return new LmdbNativeStrategyArbiter<>(explainTarget, sliceRows, model);
+	}
+
 	/**
 	 * Adds a candidate. A proposer returning null contributes nothing — the strategy has already recorded its own
 	 * structural decline reason, and a strategy that cannot run is not a strategy that lost.
@@ -99,6 +108,15 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		if (proposal != null) {
 			candidates.add(proposal);
 		}
+		return this;
+	}
+
+	/**
+	 * Declares this dispatch site probe-safe by supplying the drain/discard discipline for trial output. Sites that
+	 * register no harness get no probes.
+	 */
+	LmdbNativeStrategyArbiter<T> probeHarness(LmdbNativeProbeHarness<T> harness) {
+		this.probeHarness = harness;
 		return this;
 	}
 
@@ -133,10 +151,11 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		return rankLegacy(candidates, sliceRows);
 	}
 
-	/** Typed adaptive ranking seam used by focused model specifications. */
+	/** Typed adaptive ranking seam used by focused model specifications; never probes. */
 	static <T> int rankAdaptive(List<LmdbNativeStrategyProposal<T>> candidates, double sliceRows,
 			LmdbNativeAdaptiveCostModel model) {
-		return adaptiveDecision(candidates, sliceRows, model).index;
+		return adaptiveDecision(candidates, sliceRows, model,
+				LmdbNativeAdaptiveArbitration.ProbeContext.disabled()).index();
 	}
 
 	private static <T> int rankLegacy(List<LmdbNativeStrategyProposal<T>> candidates, double sliceRows) {
@@ -212,12 +231,12 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	}
 
 	private static <T> AdaptiveDecision<T> adaptiveDecision(List<LmdbNativeStrategyProposal<T>> candidates,
-			double sliceRows, LmdbNativeAdaptiveCostModel model) {
+			double sliceRows, LmdbNativeAdaptiveCostModel model,
+			LmdbNativeAdaptiveArbitration.ProbeContext probeContext) {
 		if (candidates.isEmpty()) {
 			return AdaptiveDecision.empty();
 		}
 		List<AdaptiveCandidate<T>> converted = new ArrayList<>(candidates.size());
-		boolean uniformlyEstimated = true;
 		for (int i = 0; i < candidates.size(); i++) {
 			LmdbNativeStrategyProposal<T> proposal = candidates.get(i);
 			if (isColdStaticallyDominated(candidates, i, sliceRows)) {
@@ -226,38 +245,37 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 			}
 			LmdbNativeCostEstimate estimate = proposal.adaptiveEstimate(sliceRows);
 			if (estimate == null) {
-				uniformlyEstimated = false;
-				continue;
+				// unknown work is arm-local: the arm carries a direct-timing estimate, quotes ORDINAL_ONLY until it
+				// has been timed or censored once, and never disables numerical comparison among the others
+				estimate = proposal.directTimingEstimate();
 			}
 			LmdbNativeAdaptiveArbitration.Candidate<T> candidate = new LmdbNativeAdaptiveArbitration.Candidate<>(
 					estimate, LmdbNativeStrategyPreference.rank(proposal.tag), ignored -> proposal.open());
 			converted.add(new AdaptiveCandidate<>(i, candidate));
 		}
-
-		if (!uniformlyEstimated) {
+		if (converted.isEmpty()) {
 			int index = rankColdStatic(candidates, sliceRows);
-			LmdbNativeStrategyProposal<T> proposal = candidates.get(index);
-			LmdbNativeCostEstimate estimate = proposal.adaptiveEstimate(sliceRows);
-			String reason = "candidate set contains an unpriceable legacy proposal; retained banded interval ranking";
-			if (estimate == null) {
-				return new AdaptiveDecision<>(index, null, null, false, reason);
-			}
-			LmdbNativeAdaptiveArbitration.Candidate<T> candidate = new LmdbNativeAdaptiveArbitration.Candidate<>(
-					estimate, LmdbNativeStrategyPreference.rank(proposal.tag), ignored -> proposal.open());
-			LmdbNativeCostPrediction prediction = model.predict(estimate);
-			LmdbNativeAdaptiveArbitration.Choice<T> choice = new LmdbNativeAdaptiveArbitration.Choice<>(candidate,
-					prediction, false, reason);
-			return new AdaptiveDecision<>(index, choice, prediction, false, reason);
+			return new AdaptiveDecision<>(index, null, -1, "cold-static banded preference");
 		}
 
 		List<LmdbNativeAdaptiveArbitration.Candidate<T>> offered = converted.stream()
 				.map(AdaptiveCandidate::candidate)
 				.toList();
-		LmdbNativeAdaptiveArbitration.Choice<T> choice = LmdbNativeAdaptiveArbitration.choose(offered, model);
-		for (AdaptiveCandidate<T> candidate : converted) {
-			if (candidate.candidate == choice.candidate()) {
-				return new AdaptiveDecision<>(candidate.index, choice, choice.prediction(), choice.explored(),
-						choice.reason());
+		LmdbNativeAdaptiveArbitration.DispatchPlan<T> plan = LmdbNativeAdaptiveArbitration.choose(offered, model,
+				probeContext);
+		if (plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<T> probe) {
+			return new AdaptiveDecision<>(indexOf(converted, probe.trial()), plan,
+					indexOf(converted, probe.fallback()), probe.reason());
+		}
+		LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<T> normal = (LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<T>) plan;
+		return new AdaptiveDecision<>(indexOf(converted, normal.candidate()), plan, -1, normal.reason());
+	}
+
+	private static <T> int indexOf(List<AdaptiveCandidate<T>> converted,
+			LmdbNativeAdaptiveArbitration.Candidate<T> candidate) {
+		for (AdaptiveCandidate<T> entry : converted) {
+			if (entry.candidate == candidate) {
+				return entry.index;
 			}
 		}
 		throw new IllegalStateException("adaptive arbiter chose a candidate that was not offered");
@@ -315,30 +333,37 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	LmdbNativeStrategySelection<T> selectWithObservation() throws IOException {
 		recordProposalCosts();
 		while (!candidates.isEmpty()) {
-			AdaptiveDecision<T> adaptiveDecision = null;
-			int index;
+			AdaptiveDecision<T> decision;
 			if (adaptiveModel != null) {
-				adaptiveDecision = adaptiveDecision(candidates, sliceRows, adaptiveModel);
-				index = adaptiveDecision.index;
+				decision = adaptiveDecision(candidates, sliceRows, adaptiveModel,
+						new LmdbNativeAdaptiveArbitration.ProbeContext(probeConfig, probeBudget,
+								probeHarness != null));
 			} else {
-				index = rankLegacy(candidates, sliceRows);
-				int explored = explorationIndex(index);
-				if (explored >= 0) {
-					index = explored;
-				}
+				decision = new AdaptiveDecision<>(rankLegacy(candidates, sliceRows), null, -1, "legacy ranking");
 			}
+			if (decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<T> probe) {
+				LmdbNativeStrategySelection<T> selection = executeProbe(probe, decision.index);
+				if (selection != null) {
+					return selection;
+				}
+				continue; // trial removed (censored or declined); the retained fallback re-ranks on the same snapshot
+			}
+			int index = decision.index;
 			LmdbNativeStrategyProposal<T> chosen = candidates.get(index);
-			LmdbNativeStrategySelection<T> selection = adaptiveDecision != null && adaptiveDecision.choice != null
-					? openAdaptive(adaptiveDecision.choice)
+			LmdbNativeStrategySelection<T> selection = decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<T> normal
+					? openAdaptive(normal)
 					: openLegacy(chosen);
 			if (selection != null) {
+				if (adaptiveModel != null) {
+					adaptiveModel.store().safetyLedger().noteNormalDecision();
+				}
 				winningTag = chosen.tag;
 				winningWork = chosen.work.known() ? chosen.work.high() : Double.NaN;
 				candidates.remove(index);
-				releaseLosers(chosen, adaptiveDecision);
+				releaseLosers(chosen, decision.reason);
 				candidates.clear();
 				chosen.close();
-				recordAdaptiveDecision(chosen, adaptiveDecision);
+				recordAdaptiveDecision(chosen, decision, null);
 				return selection;
 			}
 			// A bind-time decline. The strategy has recorded its own reason; drop it and re-rank the rest.
@@ -348,10 +373,92 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		return null;
 	}
 
-	private LmdbNativeStrategySelection<T> openAdaptive(LmdbNativeAdaptiveArbitration.Choice<T> choice)
+	/**
+	 * Runs one bounded experimental probe. The trial executes under a thread-scoped deadline with its output withheld
+	 * by the site's harness; every other candidate — including the fallback — stays unopened and retained (losers are
+	 * only ever released when a winner opens, so retention is the arbiter's natural state and is bounded by the
+	 * deadline). Completion publishes the trial as the winner. A deadline expiry records right-censored evidence (never
+	 * a completed latency), charges the ledger the actual cost, strikes the scheduler, discards withheld output, and
+	 * returns null — the caller's loop then re-ranks the retained candidates on the same pinned snapshot, which is
+	 * exactly the incumbent fallback.
+	 */
+	private LmdbNativeStrategySelection<T> executeProbe(LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<T> plan,
+			int trialIndex) throws IOException {
+		LmdbNativeStrategyProposal<T> trial = candidates.get(trialIndex);
+		LmdbNativePhysicalVariantKey trialKey = plan.trial().estimate().variantKey();
+		LmdbNativeProbeScheduler scheduler = adaptiveModel.store().probeScheduler();
+		long start = System.nanoTime();
+		LmdbNativeCostObservation observation = new LmdbNativeCostObservation(plan.trial().estimate(), adaptiveModel,
+				System::nanoTime, LmdbNativeCostObservation.Role.PROBE);
+		boolean timedOut = false;
+		T value = null;
+		try (LmdbNativeProbeDeadline.Scope scope = LmdbNativeProbeDeadline.enter(start + plan.deadlineNanos())) {
+			try {
+				value = plan.trial().opener().open(observation);
+				if (value != null) {
+					value = probeHarness.drainBounded(value, observation, probeConfig.bufferRows());
+				}
+			} catch (LmdbNativeProbeDeadlineExceeded
+					| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException expired) {
+				timedOut = true;
+			} catch (IOException | RuntimeException | Error failure) {
+				// a real failure is not a timeout: no silent fallback — record, charge, quarantine, rethrow
+				observation.failed(failure);
+				plan.reservation().commit(System.nanoTime() - start);
+				scheduler.quarantine(trialKey, plan.regime(), plan.epoch());
+				throw failure;
+			} catch (Exception failure) {
+				observation.failed(failure);
+				plan.reservation().commit(System.nanoTime() - start);
+				scheduler.quarantine(trialKey, plan.regime(), plan.epoch());
+				throw new IOException("probe trial opener failed", failure);
+			}
+			if (!timedOut && value == null && scope.deadline().tripped()) {
+				timedOut = true; // a parallel trial declined because its workers saw the tripped deadline
+			}
+			if (!timedOut && value != null) {
+				observation.exhausted();
+				long elapsed = System.nanoTime() - start;
+				plan.reservation().commit(elapsed);
+				boolean decisivelyBad = elapsed > plan.fallbackPrediction().expectedNanos();
+				scheduler.completed(trialKey, plan.regime(), plan.epoch(), decisivelyBad);
+				winningTag = trial.tag;
+				winningWork = trial.work.known() ? trial.work.high() : Double.NaN;
+				candidates.remove(trialIndex);
+				releaseLosers(trial, "probe-trial-lost");
+				candidates.clear();
+				trial.close();
+				recordAdaptiveDecision(trial, new AdaptiveDecision<>(trialIndex, plan, -1, plan.reason()),
+						"PROBE_COMPLETED");
+				return new LmdbNativeStrategySelection<>(value, observation);
+			}
+		}
+		if (timedOut) {
+			observation.budgetCensored(plan.deadlineNanos());
+			LmdbNativeAdaptiveCostModel.CensorResult censor = observation.censorResult();
+			plan.reservation().commit(System.nanoTime() - start);
+			scheduler.censored(trialKey, plan.regime(), plan.epoch(), censor != null && censor.severeMiss());
+			if (value != null) {
+				probeHarness.discard(value);
+			}
+			recordAdaptiveDecision(trial, new AdaptiveDecision<>(trialIndex, plan, -1, plan.reason()),
+					"PROBE_TIMEOUT");
+		} else {
+			// genuine bind-time decline before the deadline: no evidence, full refund, the probe slot returns
+			observation.declined();
+			plan.reservation().refund();
+			probeBudget.release();
+			scheduler.probeAbandoned(trialKey, plan.regime(), plan.epoch());
+		}
+		candidates.remove(trialIndex);
+		trial.close();
+		return null;
+	}
+
+	private LmdbNativeStrategySelection<T> openAdaptive(LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<T> plan)
 			throws IOException {
 		try {
-			return LmdbNativeAdaptiveArbitration.open(choice, adaptiveModel);
+			return LmdbNativeAdaptiveArbitration.open(plan, adaptiveModel);
 		} catch (IOException e) {
 			throw e;
 		} catch (RuntimeException | Error e) {
@@ -367,42 +474,10 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		return value == null ? null : new LmdbNativeStrategySelection<>(value, null);
 	}
 
-	/**
-	 * Index of a rival worth running purely to measure it, or -1 to keep the ranked winner.
-	 * <p>
-	 * A strategy that never wins never gets measured, so a wrong early ranking can lock in for the JVM's lifetime —
-	 * estimate and decision reinforcing each other. Exploration breaks the deadlock, bounded three ways: the incumbent
-	 * must already have evidence (a cold start stays exactly the ladder, and the first execution is itself the
-	 * incumbent's measurement), the rival must be thinly measured (probability decays in its observation count, via
-	 * {@link LmdbNativeCostCalibration#shouldExplore}), and a rival whose interval is already strictly worse than the
-	 * incumbent's is never tried — which also means exploration stops entirely once the incumbent's measured cost
-	 * strictly dominates, so a settled decision stays settled.
-	 */
-	private int explorationIndex(int incumbentIndex) {
-		if (candidates.size() < 2 || !LmdbNativeCostCalibration.explorationEnabled()) {
-			return -1;
-		}
-		LmdbNativeStrategyProposal<T> incumbent = candidates.get(incumbentIndex);
-		if (LmdbNativeCostCalibration.observations(incumbent.tag) == 0L) {
-			return -1;
-		}
-		LmdbNativeWork incumbentCost = comparableCost(incumbent, sliceRows);
-		for (int i = 0; i < candidates.size(); i++) {
-			if (i == incumbentIndex || !LmdbNativeCostCalibration.shouldExplore(candidates.get(i).tag)) {
-				continue;
-			}
-			if (incumbentCost.known() && incumbentCost.beats(comparableCost(candidates.get(i), sliceRows))) {
-				continue;
-			}
-			return i;
-		}
-		return -1;
-	}
-
-	private void releaseLosers(LmdbNativeStrategyProposal<T> winner, AdaptiveDecision<T> decision) {
-		String adaptiveReason = decision == null ? null
-				: decision.explored ? "adaptive-exploration"
-						: decision.reason.contains("domination") ? "adaptive-higher-cost" : "outranked";
+	private void releaseLosers(LmdbNativeStrategyProposal<T> winner, String reason) {
+		String adaptiveReason = reason == null ? null
+				: reason.contains("probe") ? "probe-trial-lost"
+						: reason.contains("displacement") ? "adaptive-higher-cost" : "outranked";
 		for (LmdbNativeStrategyProposal<T> loser : candidates) {
 			if (LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
 				LmdbNativeAttemptMetrics.recordDecline(explainTarget, loser.tag,
@@ -413,18 +488,30 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		}
 	}
 
-	private void recordAdaptiveDecision(LmdbNativeStrategyProposal<T> winner, AdaptiveDecision<T> decision) {
+	private void recordAdaptiveDecision(LmdbNativeStrategyProposal<T> winner, AdaptiveDecision<T> decision,
+			String probeKind) {
 		if (decision == null || !LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
 			// same telemetry gate as recordProposalCosts (gap-analysis C13): no per-decision string building
 			// on the hot path when nothing records it
 			return;
 		}
-		LmdbNativeCostPrediction prediction = decision.prediction;
 		StringBuilder rendered = new StringBuilder("winner=").append(winner.tag)
 				.append(";reason=")
 				.append(decision.reason)
-				.append(";explored=")
-				.append(decision.explored);
+				.append(";kind=")
+				.append(probeKind != null ? probeKind : "NORMAL");
+		LmdbNativeCostPrediction prediction = null;
+		if (decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<T> normal) {
+			prediction = normal.prediction();
+		} else if (decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<T> probe) {
+			prediction = probe.trialPrediction();
+			rendered.append(";deadlineNanos=")
+					.append(probe.deadlineNanos())
+					.append(";reservedNanos=")
+					.append(probe.reservation().reservedNanos())
+					.append(";regime=")
+					.append(probe.regime());
+		}
 		if (prediction != null) {
 			rendered.append(";expectedNanos=")
 					.append(prediction.expectedNanos())
@@ -465,10 +552,10 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	private record AdaptiveCandidate<T> (int index, LmdbNativeAdaptiveArbitration.Candidate<T> candidate) {
 	}
 
-	private record AdaptiveDecision<T> (int index, LmdbNativeAdaptiveArbitration.Choice<T> choice,
-			LmdbNativeCostPrediction prediction, boolean explored, String reason) {
+	private record AdaptiveDecision<T> (int index, LmdbNativeAdaptiveArbitration.DispatchPlan<T> plan,
+			int fallbackIndex, String reason) {
 		private static <T> AdaptiveDecision<T> empty() {
-			return new AdaptiveDecision<>(-1, null, null, false, "no candidates");
+			return new AdaptiveDecision<>(-1, null, -1, "no candidates");
 		}
 	}
 }
