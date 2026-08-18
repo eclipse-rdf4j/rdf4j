@@ -84,4 +84,46 @@ class LmdbFusedRuntimeTelemetryTest {
 			root.close();
 		}
 	}
+
+	/**
+	 * The executed telemetry must name which kernel implementation served each bind (the generated class or the
+	 * interpreter) and through which route, aggregated across parallel workers — a hosted/island invocation otherwise
+	 * shows only the outer decline and never the kernel that actually ran.
+	 */
+	@Test
+	void recordsKernelIdentityPerBindAcrossWorkers() throws Exception {
+		LmdbFusedSipFactorizedRuntime.Session root = LmdbFusedSipFactorizedRuntime.create(19L, 1 << 20, true);
+		try {
+			try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(root)) {
+				LmdbFusedKernelRuntime.recordKernelBind("irKernel", new StubKernel());
+			}
+			Thread worker = new Thread(() -> {
+				try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.inherit(root)) {
+					LmdbFusedKernelRuntime.recordKernelBind("irKernelParallel", new StubKernel());
+					LmdbFusedKernelRuntime.recordKernelBind("irKernelParallel", new StubKernel());
+				}
+			});
+			worker.start();
+			worker.join();
+
+			LmdbFusedSipFactorizedRuntime.Telemetry telemetry = root.telemetry();
+			assertEquals(2, telemetry.kernelBinds().size());
+			assertEquals(1L, telemetry.kernelBinds().get("StubKernel route=irKernel"));
+			assertEquals(2L, telemetry.kernelBinds().get("StubKernel route=irKernelParallel"));
+		} finally {
+			root.close();
+		}
+	}
+
+	private static final class StubKernel implements org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel {
+
+		@Override
+		public void bind(org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext context) {
+		}
+
+		@Override
+		public int fill(long[] rowBuffer, int maxRows) {
+			return 0;
+		}
+	}
 }

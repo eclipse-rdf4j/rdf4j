@@ -150,6 +150,20 @@ public final class LmdbFusedKernelRuntime {
 		LmdbFusedSipFactorizedRuntime.current().markFactorizationMode("NESTED_KERNEL");
 	}
 
+	/**
+	 * Records which kernel implementation served one bind on the current session's telemetry: the generated class name
+	 * for a compiled kernel, {@code "interpreter"} for the IR interpreter. Hosted/island invocations otherwise show
+	 * only the outer route's decline, never the kernel that actually ran.
+	 */
+	public static void recordKernelBind(String route, Object kernel) {
+		if (kernel == null) {
+			return;
+		}
+		String identity = kernel instanceof LmdbNativeKernelInterpreter ? "interpreter"
+				: kernel.getClass().getSimpleName();
+		LmdbFusedSipFactorizedRuntime.current().recordKernelBind(route, identity);
+	}
+
 	public static void recordFactorizedLevel(long rootRows, long parentRows, long candidates, long storedLanes,
 			long rejectedBeforeMaterialization, long optionalNullLanes, long flatEquivalentRows,
 			long multiplicityExtra) {

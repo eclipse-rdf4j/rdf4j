@@ -338,6 +338,14 @@ final class LmdbFusedSipFactorizedRuntime {
 			}
 		}
 
+		/** Counts one kernel bind under {@code "<identity> route=<route>"} so telemetry names what actually ran. */
+		void recordKernelBind(String route, String identity) {
+			if (!noop && route != null && identity != null) {
+				shared.kernelBinds.computeIfAbsent(identity + " route=" + route, ignored -> new LongAdder())
+						.increment();
+			}
+		}
+
 		void recordFactorizedLevel(long rootRows, long parentRows, long candidates, long storedLanes,
 				long rejectedBeforeMaterialization, long optionalNullLanes, long flatEquivalentRows,
 				long multiplicityExtra) {
@@ -464,6 +472,8 @@ final class LmdbFusedSipFactorizedRuntime {
 		private final ConcurrentHashMap<Integer, FilterStats> filters = new ConcurrentHashMap<>();
 		private final LongAdder relocatedFilterTests = new LongAdder();
 		private final LongAdder filtersRelocated = new LongAdder();
+		/** Bind counts per {@code "<kernel identity> route=<route>"}; workers share the query's map. */
+		private final ConcurrentHashMap<String, LongAdder> kernelBinds = new ConcurrentHashMap<>();
 
 		private Shared(long maximumBytes, boolean telemetryEnabled) {
 			this.telemetryEnabled = telemetryEnabled;
@@ -535,9 +545,12 @@ final class LmdbFusedSipFactorizedRuntime {
 					factorParentRows.sum(), factorCandidateRows.sum(), factorStoredLanes.sum(), factorRejected.sum(),
 					factorOptionalNulls.sum(), factorFlatEquivalent.sum(), factorMultiplicityExtra.sum(),
 					materializationBoundaries.sum(), flattenedValues.sum(), factorizationRefusals.sum());
+			java.util.TreeMap<String, Long> binds = new java.util.TreeMap<>();
+			kernelBinds.forEach((key, count) -> binds.put(key, count.sum()));
 			return new Telemetry(queryKey, sipTests.sum(), sipRejects.sum(), sipBypasses.sum(),
 					sipDrivenRows.sum(), usedBytes.get(), memoryRefusals.sum(), List.copyOf(domainTelemetry), factor,
-					List.copyOf(filterTelemetry), relocatedFilterTests.sum(), filtersRelocated.sum());
+					List.copyOf(filterTelemetry), relocatedFilterTests.sum(), filtersRelocated.sum(),
+					java.util.Collections.unmodifiableMap(binds));
 		}
 
 		private synchronized void clear() {
@@ -546,6 +559,7 @@ final class LmdbFusedSipFactorizedRuntime {
 			usedBytes.set(0L);
 			filters.clear();
 			factorizationModes.clear();
+			kernelBinds.clear();
 		}
 	}
 
@@ -634,11 +648,11 @@ final class LmdbFusedSipFactorizedRuntime {
 	record Telemetry(long queryKey, long sipTests, long sipRejects, long sipBypasses, long sipDrivenRows,
 			long retainedBytes, long memoryRefusals, List<DomainTelemetry> domains,
 			FactorizationTelemetry factorization, List<FilterTelemetry> filters, long relocatedFilterTests,
-			long filtersRelocated) {
+			long filtersRelocated, java.util.Map<String, Long> kernelBinds) {
 
 		static final Telemetry EMPTY = new Telemetry(0L, 0L, 0L, 0L, 0L, 0L, 0L, List.of(),
 				new FactorizationTelemetry(List.of(), 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L),
-				List.of(), 0L, 0L);
+				List.of(), 0L, 0L, java.util.Map.of());
 
 		boolean runtimeSipUsed() {
 			return (sipTests > 0 || sipDrivenRows > 0)
