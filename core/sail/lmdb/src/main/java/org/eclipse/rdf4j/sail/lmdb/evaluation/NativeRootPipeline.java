@@ -53,7 +53,7 @@ final class NativeRootPipeline {
 	}
 
 	static boolean enabled() {
-		return Boolean.getBoolean(ENABLED_FLAG);
+		return !"false".equalsIgnoreCase(System.getProperty(ENABLED_FLAG));
 	}
 
 	/**

@@ -99,7 +99,7 @@ class LmdbRuntimePropertiesTest {
 			assertThat(booleanValue(stateByName(invokeList(list), COST_CALIBRATION), "defaultEnabled")).isTrue();
 			assertThat(booleanValue(stateByName(invokeList(list), COST_EXPLORATION), "defaultEnabled")).isTrue();
 			assertThat(booleanValue(
-					stateByName(invokeList(list), "rdf4j.lmdb.costCalibration.enabled.record"), "defaultEnabled"))
+					stateByName(invokeList(list), "rdf4j.lmdb.costCalibration.record"), "defaultEnabled"))
 							.isTrue();
 			System.setProperty(COST_CALIBRATION, "false");
 			assertThat(booleanValue(stateByName(invokeList(list), COST_CALIBRATION), "enabled")).isFalse();
@@ -107,6 +107,37 @@ class LmdbRuntimePropertiesTest {
 			restore(COST_CALIBRATION, calibration);
 			restore(COST_EXPLORATION, exploration);
 		}
+	}
+
+	/**
+	 * M-F6 rollout + 2026-08-18 registry audit: the island/pipeline/general-path tiers and the remaining query-time
+	 * boolean feature flags are workbench-configurable, and the recording flag is registered under the property name
+	 * the cost model actually reads ({@code rdf4j.lmdb.costCalibration.record} — the earlier
+	 * {@code costCalibration.enabled.record} entry toggled a property nothing consumed).
+	 */
+	@Test
+	void rolloutTiersAndAuditedQueryTimeFlagsAreRegistered() throws Exception {
+		Class<?> catalog = Class.forName("org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties");
+		List<?> states = invokeList(catalog.getMethod("list"));
+		assertThat(stateNames(states))
+				.contains("rdf4j.lmdb.islands.enabled", "rdf4j.lmdb.islands.memo.enabled",
+						"rdf4j.lmdb.rootPipeline.enabled", "rdf4j.lmdb.generalPath.enabled",
+						"rdf4j.lmdb.kernelInterpreter.enabled", "rdf4j.lmdb.kernelInterpreter.warmup",
+						"rdf4j.lmdb.leftjoin.hash.enabled", "rdf4j.lmdb.leftjoin.memo.enabled",
+						"rdf4j.lmdb.leftjoin.sweep.enabled", "rdf4j.lmdb.packedFtree.enabled",
+						"rdf4j.lmdb.packedFtree.structuredGroups.enabled", "rdf4j.lmdb.packedFtree.bulkRuns.enabled",
+						"rdf4j.lmdb.packedFtree.parallel.enabled", "rdf4j.lmdb.costCalibration.record")
+				.doesNotContain("rdf4j.lmdb.costCalibration.enabled.record");
+		for (String name : List.of("rdf4j.lmdb.islands.enabled", "rdf4j.lmdb.islands.memo.enabled",
+				"rdf4j.lmdb.rootPipeline.enabled", "rdf4j.lmdb.generalPath.enabled",
+				"rdf4j.lmdb.kernelInterpreter.enabled", "rdf4j.lmdb.leftjoin.hash.enabled",
+				"rdf4j.lmdb.leftjoin.memo.enabled", "rdf4j.lmdb.packedFtree.enabled",
+				"rdf4j.lmdb.costCalibration.record")) {
+			assertThat(booleanValue(stateByName(states, name), "defaultEnabled")).as(name).isTrue();
+		}
+		assertThat(booleanValue(stateByName(states, "rdf4j.lmdb.leftjoin.sweep.enabled"), "defaultEnabled")).isFalse();
+		assertThat(booleanValue(stateByName(states, "rdf4j.lmdb.kernelInterpreter.warmup"), "defaultEnabled"))
+				.isFalse();
 	}
 
 	@Test

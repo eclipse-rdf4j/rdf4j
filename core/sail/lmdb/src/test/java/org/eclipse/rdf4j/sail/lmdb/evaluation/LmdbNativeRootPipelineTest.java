@@ -131,13 +131,34 @@ public class LmdbNativeRootPipelineTest {
 		});
 	}
 
-	/** Pipeline off (default): the stack is hosted generically, results identical — the flag only moves the engine. */
+	/** M-F6 rollout: the root stage pipeline is on by default — it engages with no flag set at all. */
+	@Test
+	public void pipelineEngagesByDefault() {
+		String previous = System.getProperty(NativeRootPipeline.ENABLED_FLAG);
+		System.clearProperty(NativeRootPipeline.ENABLED_FLAG);
+		try {
+			long pipelinesBefore = LmdbNativeAggregateCompiler.PIPELINE_ROOTS.get();
+			List<String> nativeRows = evaluate(sliceOrderSlice(10L, 2L));
+			assertThat(LmdbNativeAggregateCompiler.PIPELINE_ROOTS.get() - pipelinesBefore)
+					.as("the root stage pipeline must engage by default (M-F6 rollout)")
+					.isEqualTo(1);
+			assertThat(nativeRows).isEqualTo(withNativeOff(() -> evaluate(sliceOrderSlice(10L, 2L))));
+		} finally {
+			if (previous != null) {
+				System.setProperty(NativeRootPipeline.ENABLED_FLAG, previous);
+			}
+		}
+	}
+
+	/** Pipeline off: the stack is hosted generically, results identical — the kill switch only moves the engine. */
 	@Test
 	public void pipelineDisabledStaysHostedAndCorrect() {
-		long pipelinesBefore = LmdbNativeAggregateCompiler.PIPELINE_ROOTS.get();
-		List<String> nativeRows = evaluate(sliceOrderSlice(10L, 2L));
-		assertThat(LmdbNativeAggregateCompiler.PIPELINE_ROOTS.get() - pipelinesBefore).isZero();
-		assertThat(nativeRows).isEqualTo(withNativeOff(() -> evaluate(sliceOrderSlice(10L, 2L))));
+		withProperty(NativeRootPipeline.ENABLED_FLAG, "false", () -> {
+			long pipelinesBefore = LmdbNativeAggregateCompiler.PIPELINE_ROOTS.get();
+			List<String> nativeRows = evaluate(sliceOrderSlice(10L, 2L));
+			assertThat(LmdbNativeAggregateCompiler.PIPELINE_ROOTS.get() - pipelinesBefore).isZero();
+			assertThat(nativeRows).isEqualTo(withNativeOff(() -> evaluate(sliceOrderSlice(10L, 2L))));
+		});
 	}
 
 	/** Distinct stacked over the unrepresentable stack: stage order preserved, generic-equal. */

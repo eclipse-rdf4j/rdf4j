@@ -135,10 +135,12 @@ public class LmdbNativeWideQueryTest {
 	@Test
 	public void internalHeavyQueryWithoutIslandsStaysHostedAndCorrect() {
 		String query = internalHeavyQuery();
-		long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
-		List<String> hosted = rows(query);
-		assertThat(hosted).isEqualTo(genericRows(query));
-		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore).isEqualTo(1);
+		withProperty(ISLANDS_FLAG, "false", () -> {
+			long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+			List<String> hosted = rows(query);
+			assertThat(hosted).isEqualTo(genericRows(query));
+			assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore).isEqualTo(1);
+		});
 	}
 
 	@Test

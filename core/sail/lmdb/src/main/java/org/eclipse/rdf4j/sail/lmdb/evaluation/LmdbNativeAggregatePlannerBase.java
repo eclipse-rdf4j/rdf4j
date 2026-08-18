@@ -101,9 +101,10 @@ abstract class LmdbNativeAggregatePlannerBase {
 	 * ids; forces the step source to be the evaluation-scoped carrier.
 	 */
 	boolean requiresExecutionContext;
-	/** Whether interior generic islands (M-A1b) may be compiled at decline points. */
+	/** Whether interior generic islands (M-A1b) may be compiled at decline points. Default on; kill switch. */
 	final boolean forceInteriorIslands = Boolean.getBoolean("rdf4j.lmdb.nativeQueryEngine.forceInteriorIslands");
-	final boolean islandsEnabled = forceInteriorIslands || Boolean.getBoolean("rdf4j.lmdb.islands.enabled");
+	final boolean islandsEnabled = forceInteriorIslands
+			|| !"false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.islands.enabled"));
 	/**
 	 * Bare-fragment and EXISTS compiles suppress islands: those routes serve the generic evaluator's own recursion,
 	 * where a generic island inside a native fragment inside a generic host adds indirection without coverage.

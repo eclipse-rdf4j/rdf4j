@@ -118,22 +118,30 @@ public class LmdbNativeGenericRootHostTest {
 
 	/**
 	 * ORDER BY over a computed expression is a root shape the native row compiler declines (its supported orders are
-	 * plain variables). The host must classify the decline and execute the query generically — with results identical
-	 * to the pure generic arm.
+	 * plain variables). With the root stage pipeline on by default (M-F6 rollout) the wrapper stack compiles as a
+	 * pipeline over a native inner root; with the pipeline kill switch off, the host must still classify the decline
+	 * and execute the query generically — results identical to the pure generic arm either way.
 	 */
 	@Test
 	public void rootDeclinedOrderByExpressionIsHostedAndCorrect() {
 		loadData();
 		String query = "SELECT ?o WHERE { ?s <" + EX + "p> ?o } ORDER BY LCASE(STR(?o))";
 
-		long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+		long pipelinesBefore = LmdbNativeAggregateCompiler.PIPELINE_ROOTS.get();
 		List<String> nativeRows = rows(query);
-		long hostedAfter = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
-
 		assertThat(nativeRows).isEqualTo(genericRows(query));
-		assertThat(hostedAfter - hostedBefore)
-				.as("a root-declined ORDER BY expression query must be hosted generically, not hard-declined")
+		assertThat(LmdbNativeAggregateCompiler.PIPELINE_ROOTS.get() - pipelinesBefore)
+				.as("by default the ORDER BY expression wrapper stack must compile as a pipeline root")
 				.isEqualTo(1);
+
+		withProperty(NativeRootPipeline.ENABLED_FLAG, "false", () -> {
+			long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+			List<String> hostedRows = rows(query);
+			assertThat(hostedRows).isEqualTo(genericRows(query));
+			assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore)
+					.as("with the pipeline off the root-declined query must be hosted generically, not hard-declined")
+					.isEqualTo(1);
+		});
 	}
 
 	/** A natively supported root must keep compiling natively — the host must not steal supported shapes. */
@@ -164,9 +172,17 @@ public class LmdbNativeGenericRootHostTest {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			String explain = conn.prepareTupleQuery(query).explain(Explanation.Level.Optimized).toString();
 			assertThat(explain)
-					.as("explain output must carry the genericHostedRoot classification")
-					.contains(LmdbNativeExplain.KIND_GENERIC_HOSTED);
+					.as("by default the ORDER BY expression stack compiles as a pipeline root")
+					.contains("RootPipeline");
 		}
+		withProperty(NativeRootPipeline.ENABLED_FLAG, "false", () -> {
+			try (SailRepositoryConnection conn = repository.getConnection()) {
+				String explain = conn.prepareTupleQuery(query).explain(Explanation.Level.Optimized).toString();
+				assertThat(explain)
+						.as("explain output must carry the genericHostedRoot classification")
+						.contains(LmdbNativeExplain.KIND_GENERIC_HOSTED);
+			}
+		});
 	}
 
 	/**

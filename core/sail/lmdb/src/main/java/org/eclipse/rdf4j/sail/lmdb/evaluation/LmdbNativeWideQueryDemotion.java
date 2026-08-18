@@ -50,7 +50,7 @@ final class LmdbNativeWideQueryDemotion {
 	}
 
 	static boolean islandsOn() {
-		return Boolean.getBoolean("rdf4j.lmdb.islands.enabled")
+		return !"false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.islands.enabled"))
 				|| Boolean.getBoolean("rdf4j.lmdb.nativeQueryEngine.forceInteriorIslands");
 	}
 

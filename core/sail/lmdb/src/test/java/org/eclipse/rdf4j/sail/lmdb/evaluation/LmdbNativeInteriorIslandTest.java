@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.File;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -37,7 +38,8 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * Interior generic islands (M-A1b): an algebra subtree the native compiler does not support executes through the
  * generic evaluator as a {@link GenericEvalPlan} leaf inside a native host, position-preserving and never wrong. All
- * tests enable {@code rdf4j.lmdb.islands.enabled}; with the flag unset the tree behaves as before this milestone.
+ * tier is on by default (M-F6 rollout); {@code rdf4j.lmdb.islands.enabled=false} is the kill switch restoring the
+ * pre-milestone tree.
  */
 public class LmdbNativeInteriorIslandTest {
 
@@ -388,12 +390,15 @@ public class LmdbNativeInteriorIslandTest {
 		String query = "SELECT ?s ?o WHERE { ?s <" + EX + "p> ?o "
 				+ "MINUS { ?s2 <" + EX + "q> ?x FILTER(?x < ?o) } }";
 
-		long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
-		List<String> declinedRows = rows(query);
-		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore)
-				.as("without islands this root must decline to the generic host (pin: the query exercises the "
-						+ "unsafe-scope path)")
-				.isEqualTo(1);
+		List<String> declinedRows = withoutIslands(() -> {
+			long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+			List<String> declined = rows(query);
+			assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore)
+					.as("without islands this root must decline to the generic host (pin: the query exercises the "
+							+ "unsafe-scope path)")
+					.isEqualTo(1);
+			return declined;
+		});
 
 		withIslands(() -> {
 			long compiledBefore = LmdbNativeAggregateCompiler.COMPILED.get();
@@ -419,12 +424,15 @@ public class LmdbNativeInteriorIslandTest {
 		String query = "SELECT ?s ?o ?x WHERE { ?s <" + EX + "p> ?o . "
 				+ "OPTIONAL { ?s <" + EX + "q> ?x } . ?y <" + EX + "type> ?x }";
 
-		long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
-		List<String> declinedRows = rows(query);
-		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore)
-				.as("without islands this root must decline to the generic host (pin: the query exercises the "
-						+ "well-designedness path)")
-				.isEqualTo(1);
+		List<String> declinedRows = withoutIslands(() -> {
+			long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+			List<String> declined = rows(query);
+			assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore)
+					.as("without islands this root must decline to the generic host (pin: the query exercises the "
+							+ "well-designedness path)")
+					.isEqualTo(1);
+			return declined;
+		});
 
 		withIslands(() -> {
 			long compiledBefore = LmdbNativeAggregateCompiler.COMPILED.get();
@@ -437,22 +445,60 @@ public class LmdbNativeInteriorIslandTest {
 		});
 	}
 
-	/** With islands disabled nothing changes: the shapes above decline to the generic host as before. */
+	/** With islands disabled via the kill switch nothing changes: the shapes above decline to the generic host. */
 	@Test
 	public void islandsDisabledKeepsDeclines() {
 		String query = "SELECT ?s ?o WHERE { ?s <" + EX + "p> ?o . "
 				+ "{ SELECT ?s WHERE { ?s <" + EX + "type> <" + EX + "Thing> } LIMIT 10 } }";
 
-		long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
-		List<String> result = rows(query);
-		assertThat(result).containsExactlyInAnyOrderElementsOf(genericRows(query));
-		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore)
-				.as("islands must not compile while the flag is off")
-				.isZero();
+		withProperty(ISLANDS_FLAG, "false", () -> {
+			long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
+			List<String> result = rows(query);
+			assertThat(result).containsExactlyInAnyOrderElementsOf(genericRows(query));
+			assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore)
+					.as("islands must not compile while the kill switch is off")
+					.isZero();
+		});
+	}
+
+	/** M-F6 rollout: islands are on by default — the hybrid tier engages with no flag set at all. */
+	@Test
+	public void islandsEngageByDefault() {
+		String query = "SELECT ?s ?o WHERE { ?s <" + EX + "p> ?o . "
+				+ "{ SELECT ?s WHERE { ?s <" + EX + "type> <" + EX + "Thing> } LIMIT 10 } }";
+
+		String previous = System.getProperty(ISLANDS_FLAG);
+		System.clearProperty(ISLANDS_FLAG);
+		try {
+			long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
+			List<String> result = rows(query);
+			assertThat(result).containsExactlyInAnyOrderElementsOf(genericRows(query));
+			assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore)
+					.as("islands must engage by default (M-F6 rollout)")
+					.isGreaterThanOrEqualTo(1);
+		} finally {
+			if (previous != null) {
+				System.setProperty(ISLANDS_FLAG, previous);
+			}
+		}
 	}
 
 	private void withIslands(Runnable action) {
 		withProperty(ISLANDS_FLAG, "true", action);
+	}
+
+	private <T> T withoutIslands(Supplier<T> action) {
+		String previous = System.getProperty(ISLANDS_FLAG);
+		try {
+			System.setProperty(ISLANDS_FLAG, "false");
+			return action.get();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(ISLANDS_FLAG);
+			} else {
+				System.setProperty(ISLANDS_FLAG, previous);
+			}
+		}
 	}
 
 	private void withProperty(String name, String value, Runnable action) {
