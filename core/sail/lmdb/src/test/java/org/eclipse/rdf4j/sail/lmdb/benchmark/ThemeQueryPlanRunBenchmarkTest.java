@@ -53,6 +53,16 @@ class ThemeQueryPlanRunBenchmarkTest {
 	}
 
 	@Test
+	void runtimeTelemetryModeIsAnExplicitJmhParameter() throws Exception {
+		Field field = ThemeQueryPlanRunBenchmark.BaseState.class.getField("runtimeTelemetryMode");
+
+		Param parameter = field.getAnnotation(Param.class);
+
+		assertNotNull(parameter, "The benchmark must compare disabled and sampled-full runtime telemetry explicitly");
+		assertEquals("disabled", parameter.value()[0]);
+	}
+
+	@Test
 	void createStoreConfigBudgetsOptimizerSamplingToHalfQueryTimeout() throws Exception {
 		ThemeQueryPlanRunBenchmark.BaseState state = new ThemeQueryPlanRunBenchmark.BaseState();
 		state.sketchEstimatorEnabled = true;

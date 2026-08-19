@@ -128,6 +128,8 @@ class ThemeQueryBenchmarkSmokeIT {
 			String plan = benchmark.explainOptimizedPlan();
 			String renderedQuery = benchmark.renderOptimizedQuery(ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 2));
 
+			assertTrue(plan.contains("plannedFrontierStatus=ready"),
+					"Theme benchmark setup should make Frontier ready before preparing the first query\n" + plan);
 			assertTrue(plan.contains("packed-predicate-range-anchor"),
 					"MEDICAL q2 should retain the predicate-range anchor proof\n" + plan);
 			assertTrue(plan.contains("optimizer.objectGuaranteePredicate=" + MEDICAL_RECORDED_ON)
@@ -251,8 +253,8 @@ class ThemeQueryBenchmarkSmokeIT {
 					"q7 should execute the selected bound-probe implementation\n"
 							+ renderedQuery + "\n" + plan);
 			assertTrue(plan.contains("plannedSemiAntiProbeIndexName=spoc")
-					&& plan.contains("plannedSemiAntiProbeAccessMode=directLookup"),
-					"q7 should expose the selected bound SPOC lookup\n"
+					&& plan.contains("plannedSemiAntiProbeAccessMode=prefixScan"),
+					"q7 should expose the selected bound SPOC prefix scan\n"
 							+ renderedQuery + "\n" + plan);
 			assertTrue(plan.contains("plannedSemiAntiMaterializationIndexName=posc")
 					&& plan.contains("plannedSemiAntiMaterializationAccessMode=prefixScan"),

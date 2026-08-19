@@ -92,6 +92,35 @@ class PackedLongSubsetTableTest {
 	}
 
 	@Test
+	void exactContinuationEquivalenceIncludesStructuralLineage() {
+		PackedLongSubsetTable table = new PackedLongSubsetTable(4);
+		int left = table.offerRetainedContinuation(0b0001L, 1.0d, 1.0d, 1.0d, 7, 0, 0, 0,
+				0b1110L, 11, 0, 0, 0);
+		int right = table.offerRetainedContinuation(0b0010L, 1.0d, 1.0d, 1.0d, 7, 0, 0, 1,
+				0b1101L, 12, 0, 0, 0);
+
+		int leftThenRight = table.offerRetainedContinuation(0b0011L, 1.0d, 2.0d, 1.0d, 17, 0,
+				left, 1, 0b1100L, 12, 0, 31, 1);
+		int rightThenLeft = table.offerRetainedContinuation(0b0011L, 1.0d, 2.0d, 1.0d, 17, 0,
+				right, 0, 0b1100L, 11, 0, 32, 1);
+		int repeatedLeftThenRight = table.offerRetainedContinuation(0b0011L, 1.0d, 2.0d, 1.0d, 17,
+				0, left, 1, 0b1100L, 12, 0, 31, 1);
+
+		assertNotEquals(leftThenRight, rightThenLeft,
+				"equal scalars do not make provider-observable ordered lineages continuation-equivalent");
+		assertEquals(leftThenRight, repeatedLeftThenRight,
+				"an actually repeated transition must still coalesce to its canonical sparse state");
+
+		int leftBushyRight = table.offerRetainedBushy(0b0011L, 1.0d, 2.0d, 1.0d, 17, 0,
+				left, right, 0b1100L, 41, 2);
+		int rightBushyLeft = table.offerRetainedBushy(0b0011L, 1.0d, 2.0d, 1.0d, 17, 0,
+				right, left, 0b1100L, 42, 2);
+
+		assertNotEquals(leftBushyRight, rightBushyLeft,
+				"bushy child orientation is part of the complete physical continuation lineage");
+	}
+
+	@Test
 	void exactContinuationEquivalenceSurvivesPrimitiveIndexGrowth() {
 		PackedLongSubsetTable table = new PackedLongSubsetTable(1);
 		int first = table.offerRetainedContinuation(0b0011L, 3.0d, 5.0d, 2.0d, 17, 0, 1, 1,
@@ -103,11 +132,50 @@ class PackedLongSubsetTableTest {
 					100 + ordinal, 0, 1, ordinal % 17, mask, 0, 0, ordinal + 1, 1);
 		}
 
-		int repeated = table.offerRetainedContinuation(0b0011L, 3.0d, 5.0d, 2.0d, 17, 0, 99, 0,
-				0b1110L, 22, 32, 42, 1);
+		int repeated = table.offerRetainedContinuation(0b0011L, 3.0d, 5.0d, 2.0d, 17, 0, 1, 1,
+				0b1110L, 21, 31, 41, 1);
 
 		assertEquals(first, repeated,
 				"an exact continuation signature must coalesce after primitive equivalence-table rehashing");
 		assertEquals(101, table.size(), "the repeated signature must not publish a second retained state");
+	}
+
+	@Test
+	void exactContinuationProofControlsSparseStructuralCoalescing() {
+		PackedLongSubsetTable table = new PackedLongSubsetTable(8);
+		int left = table.offerRetainedContinuation(0b0001L, 1.0d, 1.0d, 1.0d, 7, 0, 0, 0,
+				0b1110L, 11, 0, 0, 0);
+		int right = table.offerRetainedContinuation(0b0010L, 1.0d, 1.0d, 1.0d, 7, 0, 0, 1,
+				0b1101L, 12, 0, 0, 0);
+
+		int proven = table.offerRetainedContinuation(0b0011L, 1.0d, 2.0d, 1.0d, 17, 0,
+				left, 1, 0b1100L, 12, 0, 31, 1, 71, 91);
+		int sameProofDifferentTree = table.offerRetainedContinuation(0b0011L, 1.0d, 2.0d, 1.0d, 17, 0,
+				right, 0, 0b1100L, 11, 0, 32, 1, 71, 91);
+		int sameProofDifferentPhysicalMetadata = table.offerRetainedContinuation(0b0011L, 1.0d, 2.0d,
+				1.0d, 17, 0, right, 0, 0b1100L, 11, 0, 32, 1, 71);
+		int sameProofDifferentCostVector = table.offerRetainedContinuation(0b0011L, 1.0d, 2.0d,
+				1.0d, 17, 0, right, 0, 0b1100L, 11, 0, 32, 1, 71, 92);
+		int differentProof = table.offerRetainedContinuation(0b0011L, 1.0d, 2.0d, 1.0d, 17, 0,
+				right, 0, 0b1100L, 11, 0, 32, 1, 72, 91);
+		int unproven = table.offerRetainedContinuation(0b0011L, 1.0d, 2.0d, 1.0d, 17, 0,
+				left, 1, 0b1100L, 12, 0, 31, 1, 0);
+		int missingVectorProofLeft = table.offerRetainedContinuation(0b0011L, 1.0d, 2.0d, 1.0d, 17, 0,
+				left, 1, 0b1100L, 12, 0, 33, 1, 73);
+		int missingVectorProofRight = table.offerRetainedContinuation(0b0011L, 1.0d, 2.0d, 1.0d, 17, 0,
+				right, 0, 0b1100L, 11, 0, 34, 1, 73);
+
+		assertEquals(proven, sameProofDifferentTree,
+				"a provider congruence certificate may coalesce otherwise distinct construction trees");
+		assertNotEquals(proven, sameProofDifferentPhysicalMetadata,
+				"semantic continuation identity must not stand in for unproven physical cost-vector identity");
+		assertNotEquals(proven, sameProofDifferentCostVector,
+				"equal scalar objectives must retain distinct complete physical cost vectors");
+		assertNotEquals(proven, differentProof,
+				"different provider certificates must retain distinct continuation states");
+		assertNotEquals(proven, unproven,
+				"an unproven state must never inherit another state's congruence certificate");
+		assertNotEquals(missingVectorProofLeft, missingVectorProofRight,
+				"different physical metadata must remain separate when no cost-vector identity is available");
 	}
 }

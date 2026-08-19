@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -962,7 +963,7 @@ class FrontierLinearTransformContractTest {
 	}
 
 	@Test
-	void exactBinaryJoinUsesRetainedPayloadOutsideRefinementBudget() {
+	void exactBinaryJoinHonorsCandidateBudget() {
 		FrontierMaskStrata leftMasks = FrontierMaskStrata.of(
 				FrontierLayout.of("x"),
 				1,
@@ -995,14 +996,55 @@ class FrontierLinearTransformContractTest {
 
 			EvidenceStateRef joined = binaryJoin(arena, left, right, outputKey, 48, 1);
 
-			assertEquals(EvidenceGuarantee.DATABASE_EXACT, joined.summary().guarantee());
-			assertEquals(3.0d, joined.summary().pointRows());
-			try (FrontierPayloadLease payload = arena.openPayload(joined)) {
-				assertEquals(3, payload.exactCount(0));
-				assertEquals(21L, payload.exactTermId(0, 0, 1));
-				assertEquals(22L, payload.exactTermId(0, 1, 1));
-				assertEquals(23L, payload.exactTermId(0, 2, 1));
-			}
+			assertEquals(EvidenceGuarantee.UNRESOLVED, joined.summary().guarantee());
+			assertEquals("frontier-binary-join-budget-exhausted", joined.summary().degradationReason());
+			assertEquals(0L, arena.temporaryReservedBytes());
+		}
+	}
+
+	@Test
+	void exactJoinProductsAboveIntegerRangeDoNotNarrowOrAllocatePairs() throws Exception {
+		Method withinLimit = FrontierLinearTransforms.class.getDeclaredMethod(
+				"candidatePairsWithinLimit", long.class, long.class, long.class);
+		withinLimit.setAccessible(true);
+		assertTrue((boolean) withinLimit.invoke(null, 2L, 3L, 6L));
+		assertFalse((boolean) withinLimit.invoke(null, 2L, 3L, 5L));
+		assertFalse((boolean) withinLimit.invoke(null, 1L << 32, 1L << 32, Integer.MAX_VALUE));
+		assertFalse((boolean) withinLimit.invoke(null, 20_000_000_000L, 20_000_000_000L, Long.MAX_VALUE),
+				"overflowing a signed long product must be rejected without multiplying it");
+
+		FrontierMaskStrata leftMasks = FrontierMaskStrata.of(
+				FrontierLayout.of("left"), 1, new long[] { 1L });
+		FrontierMaskStrata rightMasks = FrontierMaskStrata.of(
+				FrontierLayout.of("right"), 1, new long[] { 1L });
+		FrontierMaskStrata outputMasks = FrontierMaskStrata.of(
+				FrontierLayout.of("left", "right"), 1, new long[] { 0b11L });
+		FrontierStateKey leftKey = key(0b0001L, leftMasks);
+		FrontierStateKey rightKey = key(0b0010L, rightMasks);
+		FrontierStateKey outputKey = key(0b0011L, outputMasks);
+
+		try (FrontierStateArena arena = new FrontierStateArena(256 * 1024L)) {
+			arena.declareCanonicalStates(leftKey, rightKey, outputKey);
+			FrontierPayloadWriter leftWriter = arena.newPayloadWriter(
+					leftKey, new int[] { 2 }, new int[] { 0 });
+			leftWriter.putExact(0, 0, 1.0d, new long[] { 11L }, 0);
+			leftWriter.putExact(0, 1, 1.0d, new long[] { 12L }, 0);
+			EvidenceStateRef left = arena.internPayload(
+					leftKey, EvidenceStateSummary.exact(2.0d), FrontierStateOperation.EXACT_LEAF,
+					null, null, 48, leftWriter);
+
+			FrontierPayloadWriter rightWriter = arena.newPayloadWriter(
+					rightKey, new int[] { 2 }, new int[] { 0 });
+			rightWriter.putExact(0, 0, 1.0d, new long[] { 21L }, 0);
+			rightWriter.putExact(0, 1, 1.0d, new long[] { 22L }, 0);
+			EvidenceStateRef right = arena.internPayload(
+					rightKey, EvidenceStateSummary.exact(2.0d), FrontierStateOperation.EXACT_LEAF,
+					null, null, 49, rightWriter);
+
+			EvidenceStateRef boundary = binaryJoin(arena, left, right, outputKey, 50, 3);
+
+			assertEquals(EvidenceGuarantee.UNRESOLVED, boundary.summary().guarantee());
+			assertEquals("frontier-binary-join-budget-exhausted", boundary.summary().degradationReason());
 			assertEquals(0L, arena.temporaryReservedBytes());
 		}
 	}

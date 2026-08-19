@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -1184,6 +1185,19 @@ class PackedPlanCacheTest {
 	}
 
 	@Test
+	void executablePlanIdentityCanonicalizesOnlySafeAlphaEquivalentBindings() {
+		assertEquals(serializedPlanIdentity(projectedAnonymousJoin("anonymous-left")),
+				serializedPlanIdentity(projectedAnonymousJoin("anonymous-right")),
+				"renaming one hidden anonymous binding must preserve executable identity");
+		assertNotEquals(serializedPlanIdentity(projectedAnonymousChain("shared", "shared")),
+				serializedPlanIdentity(projectedAnonymousChain("left", "right")),
+				"one shared binding and two independent bindings are not alpha-equivalent");
+		assertNotEquals(serializedPlanIdentity(visibleAnonymousPattern("visible-left")),
+				serializedPlanIdentity(visibleAnonymousPattern("visible-right")),
+				"a root-visible binding name must remain exact");
+	}
+
+	@Test
 	void saturatedFlightTableNeverCreatesAnUntrackedSecondOwner() throws Exception {
 		PackedPlanCache cache = new PackedPlanCache(1, 1,
 				ignored -> new PackedPlanCache.Fingerprint(7L, 9L));
@@ -1429,6 +1443,16 @@ class PackedPlanCacheTest {
 					}
 
 					@Override
+					public void realizeEvidenceState(PackedCostEstimate evidence) {
+						if (evidence.evidenceStateId() == descriptor.stateId()) {
+							realizations.incrementAndGet();
+							evidence.setEvidenceStateId(canonical.stateId());
+							evidence.setEvidenceGuarantee(canonical.summary().guarantee());
+							evidence.setEvidenceDisposition(FrontierStateDisposition.COMPOSABLE_PAYLOAD);
+						}
+					}
+
+					@Override
 					public FrontierEvidenceBundle detachEvidence(int[] evidenceStateIds) {
 						return arena.exportEvidence(evidenceStateIds);
 					}
@@ -1621,6 +1645,41 @@ class PackedPlanCacheTest {
 						Var.of("rightPredicate", values.createIRI("urn:right")), Var.of("end")));
 		return new Projection(join,
 				new ProjectionElemList(new ProjectionElem("start"), new ProjectionElem("end")));
+	}
+
+	private static TupleExpr projectedAnonymousChain(String leftAnonymousName, String rightAnonymousName) {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		TupleExpr join = new Join(
+				new StatementPattern(Var.of("start"), Var.of("leftPredicate", values.createIRI("urn:left")),
+						Var.of(leftAnonymousName, true)),
+				new StatementPattern(Var.of(rightAnonymousName, true),
+						Var.of("rightPredicate", values.createIRI("urn:right")), Var.of("end")));
+		return new Projection(join,
+				new ProjectionElemList(new ProjectionElem("start"), new ProjectionElem("end")));
+	}
+
+	private static String serializedPlanIdentity(TupleExpr source) {
+		PackedQueryCacheIdentity identity = PackedQueryCacheIdentity.createPlanIdentity(source);
+		if (identity == null) {
+			throw new AssertionError("test fixture must have a complete packed identity");
+		}
+		StringBuilder serialized = new StringBuilder();
+		identity.appendTo(new PackedQueryCacheIdentity.IdentitySink() {
+			@Override
+			public void append(long value) {
+				serialized.append('L').append(value).append(';');
+			}
+
+			@Override
+			public void append(String value) {
+				if (value == null) {
+					serialized.append("N;");
+				} else {
+					serialized.append('S').append(value.length()).append(':').append(value).append(';');
+				}
+			}
+		});
+		return serialized.toString();
 	}
 
 	private static TupleExpr visibleAnonymousPattern(String anonymousName) {

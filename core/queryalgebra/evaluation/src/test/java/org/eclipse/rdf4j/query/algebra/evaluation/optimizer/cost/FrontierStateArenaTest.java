@@ -908,7 +908,7 @@ class FrontierStateArenaTest {
 				5L,
 				6L,
 				1,
-				1);
+				2);
 		FrontierStateKey padded = key(
 				new long[] { 1L, 0L, 0L },
 				FrontierLayout.of("x"),
@@ -919,7 +919,7 @@ class FrontierStateArenaTest {
 				5L,
 				6L,
 				1,
-				1);
+				2);
 
 		assertEquals(compact, padded);
 		assertEquals(compact.stableHash(), padded.stableHash());
@@ -965,6 +965,52 @@ class FrontierStateArenaTest {
 			assertThrows(IllegalStateException.class,
 					() -> first.intern(equivalentKey, EvidenceStateSummary.exact(9.0d)));
 		}
+	}
+
+	@Test
+	void deterministicSeedsIgnoreAlphaEquivalentLayoutNames() {
+		FrontierStateKey firstKey = key(
+				new long[] { 5L },
+				FrontierLayout.of("_anon_path_first", "visible"),
+				new long[] { 1L },
+				2L,
+				3L,
+				4L,
+				5L,
+				6L,
+				1,
+				2);
+		FrontierStateKey alphaEquivalentKey = key(
+				new long[] { 5L },
+				FrontierLayout.of("_anon_path_second", "renamed"),
+				new long[] { 1L },
+				2L,
+				3L,
+				4L,
+				5L,
+				6L,
+				1,
+				2);
+		FrontierStateKey differentBindingShape = key(
+				new long[] { 5L },
+				FrontierLayout.of("_anon_path_third", "other"),
+				new long[] { 2L },
+				2L,
+				3L,
+				4L,
+				5L,
+				6L,
+				1,
+				2);
+
+		assertNotEquals(firstKey, alphaEquivalentKey,
+				"runtime Frontier layouts must retain their exact binding names");
+		assertNotEquals(firstKey.stableHash(), alphaEquivalentKey.stableHash(),
+				"state interning must retain exact binding-name identity");
+		assertEquals(firstKey.deterministicSeed(), alphaEquivalentKey.deterministicSeed(),
+				"alpha-equivalent binding names must not perturb deterministic sampling");
+		assertNotEquals(firstKey.deterministicSeed(), differentBindingShape.deterministicSeed(),
+				"the alpha-stable seed must still distinguish bound-slot shape");
 	}
 
 	@Test

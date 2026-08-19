@@ -17,12 +17,15 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -34,7 +37,14 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierJoinEstimate;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierJoinProbe;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafEstimate;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
+import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PatternFilterSampleEstimate;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,12 +56,110 @@ class LmdbStorageEstimatorEvidencePolicyTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI PREDICATE = VF.createIRI("urn:test:filter-policy");
+	private static final IRI LEFT_OBJECT = VF.createIRI("urn:test:left-object");
+	private static final IRI RIGHT_OBJECT = VF.createIRI("urn:test:right-object");
 	private static final QuadSnapshotIdentity IDENTITY = new QuadSnapshotIdentity(3L, 5L, 8L);
 
 	@Mock
 	private LmdbFilterSelectivityStats filters;
 	@Mock
 	private LmdbFiniteJoinSurfaceEstimator finiteSurfaces;
+	@Mock
+	private LmdbStatementPatternCardinalitySource cardinalities;
+	@Mock
+	private ValueStore valueStore;
+	@Mock
+	private LmdbStatisticsService statistics;
+
+	@Test
+	void boundJoinEvidenceNeverEnumeratesLmdbDistinctPrefixes() {
+		StatementPattern pattern = pattern("s", "value");
+		when(cardinalities.estimateForPlanning(pattern)).thenReturn(64.0d);
+		LmdbStorageEstimatorEvidence evidence = new LmdbStorageEstimatorEvidence(
+				null, cardinalities, null, null, null, null);
+
+		evidence.leafCandidates(pattern, snapshotOnlyContext(pattern).withBoundNames(Set.of("s")));
+
+		verify(cardinalities, never()).estimateDistinct(any(), anyString(), anyInt());
+	}
+
+	@Test
+	void shadowLeafObservesMappedStatisticsWithoutContributingPlannerEvidence() throws Exception {
+		StatementPattern pattern = pattern("s", "value");
+		when(valueStore.getId(PREDICATE)).thenReturn(7L);
+		when(statistics.estimateLeafCurrent(any(FrontierLeafProbe.class)))
+				.thenReturn(new FrontierLeafEstimate(6_000.0d, 5_000.0d, 7_000.0d, 0.9d,
+						"frontier-v2-omni", FrontierFallbackReason.NONE));
+		LmdbStorageEstimatorEvidence evidence = new LmdbStorageEstimatorEvidence(valueStore, null, null, null, null,
+				null, null, statistics, FrontierEstimatorMode.SHADOW);
+
+		var candidates = evidence.leafCandidates(pattern, snapshotOnlyContext(pattern));
+
+		assertTrue(candidates.isEmpty());
+		verify(statistics).estimateLeafCurrent(any(FrontierLeafProbe.class));
+	}
+
+	@Test
+	void authoritativeDefaultGraphJoinUsesMappedJoinEvidence() throws Exception {
+		StatementPattern left = new StatementPattern(new Var("left"), new Var("leftPredicate", PREDICATE),
+				new Var("join"));
+		StatementPattern right = new StatementPattern(new Var("join"), new Var("rightPredicate", PREDICATE),
+				new Var("right"));
+		Join join = new Join(left, right);
+		when(valueStore.getId(PREDICATE)).thenReturn(7L);
+		when(statistics.estimateJoinCurrent(any(FrontierJoinProbe.class)))
+				.thenReturn(new FrontierJoinEstimate(900.0d, 700.0d, 1_100.0d, 0.8d,
+						"frontier-v2-fast-agms", FrontierFallbackReason.NONE));
+		LmdbStorageEstimatorEvidence evidence = new LmdbStorageEstimatorEvidence(valueStore, null, null, null, null,
+				null, null, statistics, FrontierEstimatorMode.AUTHORITATIVE);
+
+		JoinEvidence result = evidence.joinEvidence(left, right, snapshotOnlyContext(join)).orElseThrow();
+
+		assertEquals(900.0d, result.pointRows(), 0.0d);
+		verify(statistics).estimateJoinCurrent(any(FrontierJoinProbe.class));
+	}
+
+	@Test
+	void authoritativeBoundObjectJoinUsesMappedOmniBridge() throws Exception {
+		StatementPattern left = new StatementPattern(new Var("join"), new Var("leftPredicate", PREDICATE),
+				new Var("leftObject", LEFT_OBJECT));
+		StatementPattern right = new StatementPattern(new Var("join"), new Var("rightPredicate", PREDICATE),
+				new Var("rightObject", RIGHT_OBJECT));
+		Join join = new Join(left, right);
+		when(valueStore.getId(PREDICATE)).thenReturn(7L);
+		when(valueStore.getId(LEFT_OBJECT)).thenReturn(11L);
+		when(valueStore.getId(RIGHT_OBJECT)).thenReturn(12L);
+		when(statistics.estimateJoinCurrent(any(FrontierJoinProbe.class)))
+				.thenReturn(new FrontierJoinEstimate(125.0d, 100.0d, 175.0d, 0.85d,
+						"frontier-v2-omni-bridge", FrontierFallbackReason.NONE));
+		LmdbStorageEstimatorEvidence evidence = new LmdbStorageEstimatorEvidence(valueStore, null, null, null, null,
+				null, null, statistics, FrontierEstimatorMode.AUTHORITATIVE);
+
+		JoinEvidence result = evidence.joinEvidence(left, right, snapshotOnlyContext(join)).orElseThrow();
+
+		assertEquals(125.0d, result.pointRows(), 0.0d);
+		verify(statistics).estimateJoinCurrent(any(FrontierJoinProbe.class));
+	}
+
+	@Test
+	void authoritativeTwoVariableJoinUsesMappedOmniBridge() throws Exception {
+		StatementPattern left = new StatementPattern(new Var("subject"), new Var("leftPredicate", PREDICATE),
+				new Var("object"));
+		StatementPattern right = new StatementPattern(new Var("subject"), new Var("rightPredicate", PREDICATE),
+				new Var("object"));
+		Join join = new Join(left, right);
+		when(valueStore.getId(PREDICATE)).thenReturn(7L);
+		when(statistics.estimateJoinCurrent(any(FrontierJoinProbe.class)))
+				.thenReturn(new FrontierJoinEstimate(80.0d, 70.0d, 95.0d, 0.9d,
+						"frontier-v2-omni-bridge", FrontierFallbackReason.NONE));
+		LmdbStorageEstimatorEvidence evidence = new LmdbStorageEstimatorEvidence(valueStore, null, null, null, null,
+				null, null, statistics, FrontierEstimatorMode.AUTHORITATIVE);
+
+		JoinEvidence result = evidence.joinEvidence(left, right, snapshotOnlyContext(join)).orElseThrow();
+
+		assertEquals(80.0d, result.pointRows(), 0.0d);
+		verify(statistics).estimateJoinCurrent(any(FrontierJoinProbe.class));
+	}
 
 	@Test
 	void snapshotOnlyLeafFilterNeverRequestsCachedOrLiveEvidence() {

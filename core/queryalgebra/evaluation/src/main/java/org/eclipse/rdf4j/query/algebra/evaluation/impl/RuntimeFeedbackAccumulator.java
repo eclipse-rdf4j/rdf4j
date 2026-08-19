@@ -15,6 +15,7 @@ import java.util.Arrays;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.DistinctBindingFeedback;
 import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 
 /** Fixed-size execution-local implementation of {@link RuntimeFeedbackTarget}. */
@@ -57,6 +58,11 @@ public final class RuntimeFeedbackAccumulator implements RuntimeFeedbackTarget {
 	private long cacheMisses;
 	private long cacheEvictions;
 	private long distinctBindingExposure;
+	private long distinctMatchedBindings;
+	private long distinctObservedRows;
+	private long exactDistinctObservations;
+	private long approximateDistinctObservations;
+	private double distinctEstimateVariance;
 	private long filterPassed;
 	private long filterRejected;
 	private long materializationBuilds;
@@ -145,6 +151,26 @@ public final class RuntimeFeedbackAccumulator implements RuntimeFeedbackTarget {
 	public void recordSemiAnti(long observedHits, long observedMisses, long observedFirstMatchWork,
 			long observedExhaustionWork, long observedCacheHits, long observedCacheMisses,
 			long observedCacheEvictions, long observedDistinctBindingExposure) {
+		recordSemiAntiCounters(observedHits, observedMisses, observedFirstMatchWork, observedExhaustionWork,
+				observedCacheHits, observedCacheMisses, observedCacheEvictions);
+		if (observedDistinctBindingExposure >= 0L) {
+			addDistinctFeedback(DistinctBindingFeedback.exact(observedDistinctBindingExposure,
+					observedDistinctBindingExposure, 0L, observedDistinctBindingExposure, "legacy-exact-scalar"));
+		}
+	}
+
+	@Override
+	public void recordSemiAnti(long observedHits, long observedMisses, long observedFirstMatchWork,
+			long observedExhaustionWork, long observedCacheHits, long observedCacheMisses,
+			long observedCacheEvictions, DistinctBindingFeedback observedDistinctBindingFeedback) {
+		recordSemiAntiCounters(observedHits, observedMisses, observedFirstMatchWork, observedExhaustionWork,
+				observedCacheHits, observedCacheMisses, observedCacheEvictions);
+		addDistinctFeedback(observedDistinctBindingFeedback);
+	}
+
+	private void recordSemiAntiCounters(long observedHits, long observedMisses, long observedFirstMatchWork,
+			long observedExhaustionWork, long observedCacheHits, long observedCacheMisses,
+			long observedCacheEvictions) {
 		hits = saturatingAdd(hits, nonNegative(observedHits));
 		misses = saturatingAdd(misses, nonNegative(observedMisses));
 		firstMatchWork = saturatingAdd(firstMatchWork, nonNegative(observedFirstMatchWork));
@@ -152,8 +178,21 @@ public final class RuntimeFeedbackAccumulator implements RuntimeFeedbackTarget {
 		cacheHits = saturatingAdd(cacheHits, nonNegative(observedCacheHits));
 		cacheMisses = saturatingAdd(cacheMisses, nonNegative(observedCacheMisses));
 		cacheEvictions = saturatingAdd(cacheEvictions, nonNegative(observedCacheEvictions));
-		distinctBindingExposure = saturatingAdd(distinctBindingExposure,
-				nonNegative(observedDistinctBindingExposure));
+	}
+
+	private void addDistinctFeedback(DistinctBindingFeedback feedback) {
+		if (feedback == null || !feedback.available()) {
+			return;
+		}
+		distinctBindingExposure = saturatingAdd(distinctBindingExposure, feedback.distinctBindings());
+		distinctMatchedBindings = saturatingAdd(distinctMatchedBindings, feedback.matchedBindings());
+		distinctObservedRows = saturatingAdd(distinctObservedRows, feedback.observedRows());
+		if (feedback.exact()) {
+			exactDistinctObservations = saturatingAdd(exactDistinctObservations, 1L);
+		} else {
+			approximateDistinctObservations = saturatingAdd(approximateDistinctObservations, 1L);
+			distinctEstimateVariance = finiteSum(distinctEstimateVariance, feedback.estimateVariance());
+		}
 	}
 
 	@Override
@@ -307,7 +346,26 @@ public final class RuntimeFeedbackAccumulator implements RuntimeFeedbackTarget {
 
 	@Override
 	public long distinctBindingExposure() {
-		return distinctBindingExposure;
+		return approximateDistinctObservations == 0L && exactDistinctObservations > 0L
+				? distinctBindingExposure
+				: -1L;
+	}
+
+	@Override
+	public DistinctBindingFeedback distinctBindingFeedback() {
+		if (exactDistinctObservations == 0L && approximateDistinctObservations == 0L) {
+			return DistinctBindingFeedback.unavailable();
+		}
+		long matched = Math.min(distinctBindingExposure, distinctMatchedBindings);
+		if (approximateDistinctObservations == 0L) {
+			return DistinctBindingFeedback.exact(distinctBindingExposure, matched,
+					distinctBindingExposure - matched, distinctObservedRows, "exact-open-addressed");
+		}
+		double relativeError = distinctBindingExposure == 0L ? 0.0d
+				: Math.sqrt(Math.max(0.0d, distinctEstimateVariance)) / distinctBindingExposure;
+		String provenance = exactDistinctObservations == 0L ? "hll-p12" : "mixed-exact-hll-p12";
+		return DistinctBindingFeedback.approximate(distinctBindingExposure, matched,
+				distinctBindingExposure - matched, relativeError, distinctObservedRows, provenance);
 	}
 
 	@Override

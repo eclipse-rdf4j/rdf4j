@@ -145,6 +145,8 @@ public interface JoinFactorCostModel {
 		private final LongFunction<List<TupleExpr>> prefixFactorProvider;
 		private final long prefixFactorMask;
 		private final EstimationTier estimationTier;
+		private final boolean prefixFactorsDescribeCurrentRows;
+		private final double unrelatedPrefixRows;
 
 		public CostContext(Set<String> currentlyBoundVars, double outerPrefixRows, double distinctLookupBindings,
 				boolean nestedIteratorInvocation) {
@@ -181,6 +183,8 @@ public interface JoinFactorCostModel {
 			this.prefixFactorProvider = null;
 			this.prefixFactorMask = 0L;
 			this.estimationTier = estimationTier == null ? DEFAULT_ESTIMATION_TIER : estimationTier;
+			this.prefixFactorsDescribeCurrentRows = true;
+			this.unrelatedPrefixRows = Double.NaN;
 		}
 
 		private CostContext(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
@@ -203,6 +207,8 @@ public interface JoinFactorCostModel {
 			this.prefixFactorProvider = null;
 			this.prefixFactorMask = 0L;
 			this.estimationTier = DEFAULT_ESTIMATION_TIER;
+			this.prefixFactorsDescribeCurrentRows = true;
+			this.unrelatedPrefixRows = Double.NaN;
 		}
 
 		private CostContext(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
@@ -236,6 +242,8 @@ public interface JoinFactorCostModel {
 			this.prefixFactorProvider = null;
 			this.prefixFactorMask = 0L;
 			this.estimationTier = estimationTier == null ? DEFAULT_ESTIMATION_TIER : estimationTier;
+			this.prefixFactorsDescribeCurrentRows = true;
+			this.unrelatedPrefixRows = Double.NaN;
 		}
 
 		private CostContext(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
@@ -254,6 +262,26 @@ public interface JoinFactorCostModel {
 			this.prefixFactorProvider = prefixFactorProvider;
 			this.prefixFactorMask = prefixFactorMask;
 			this.estimationTier = estimationTier == null ? DEFAULT_ESTIMATION_TIER : estimationTier;
+			this.prefixFactorsDescribeCurrentRows = true;
+			this.unrelatedPrefixRows = Double.NaN;
+		}
+
+		private CostContext(CostContext source, EstimationTier estimationTier,
+				boolean prefixFactorsDescribeCurrentRows, double unrelatedPrefixRows) {
+			this.currentlyBoundVars = source.currentlyBoundVars;
+			this.variableNames = source.variableNames;
+			this.currentlyBoundVarMask = source.currentlyBoundVarMask;
+			this.outerPrefixRows = source.outerPrefixRows;
+			this.distinctLookupBindings = source.distinctLookupBindings;
+			this.nestedIteratorInvocation = source.nestedIteratorInvocation;
+			this.collectMetrics = source.collectMetrics;
+			this.finiteBindingValues = source.finiteBindingValues;
+			this.prefixFactors = source.prefixFactors;
+			this.prefixFactorProvider = source.prefixFactorProvider;
+			this.prefixFactorMask = source.prefixFactorMask;
+			this.estimationTier = estimationTier == null ? DEFAULT_ESTIMATION_TIER : estimationTier;
+			this.prefixFactorsDescribeCurrentRows = prefixFactorsDescribeCurrentRows;
+			this.unrelatedPrefixRows = unrelatedPrefixRows;
 		}
 
 		public static CostContext of(Set<String> currentlyBoundVars, double outerPrefixRows,
@@ -380,27 +408,36 @@ public interface JoinFactorCostModel {
 			return estimationTier;
 		}
 
+		public boolean prefixFactorsDescribeCurrentRows() {
+			return prefixFactorsDescribeCurrentRows;
+		}
+
+		/**
+		 * Returns the product of physical-prefix component masses disconnected from the factor, or {@link Double#NaN}
+		 * when the caller did not retain a component decomposition.
+		 */
+		public double getUnrelatedPrefixRows() {
+			return unrelatedPrefixRows;
+		}
+
+		public CostContext withPrefixFactorsDescribeCurrentRows(boolean describeCurrentRows) {
+			return prefixFactorsDescribeCurrentRows == describeCurrentRows
+					? this
+					: new CostContext(this, estimationTier, describeCurrentRows, unrelatedPrefixRows);
+		}
+
+		public CostContext withUnrelatedPrefixRows(double rows) {
+			double normalized = Double.isFinite(rows) && rows >= 0.0d ? rows : Double.NaN;
+			return Double.doubleToLongBits(unrelatedPrefixRows) == Double.doubleToLongBits(normalized)
+					? this
+					: new CostContext(this, estimationTier, prefixFactorsDescribeCurrentRows, normalized);
+		}
+
 		public CostContext withEstimationTier(EstimationTier estimationTier) {
 			if (this.estimationTier == estimationTier || estimationTier == null) {
 				return this;
 			}
-			CostContext context;
-			if (variableNames != null) {
-				if (prefixFactorProvider != null && prefixFactors == null) {
-					context = new CostContext(variableNames, currentlyBoundVarMask, outerPrefixRows,
-							distinctLookupBindings, nestedIteratorInvocation, collectMetrics, finiteBindingValues,
-							prefixFactorProvider, prefixFactorMask, estimationTier);
-				} else {
-					context = new CostContext(variableNames, currentlyBoundVarMask, outerPrefixRows,
-							distinctLookupBindings, nestedIteratorInvocation, collectMetrics, finiteBindingValues,
-							getPrefixFactors(), estimationTier);
-				}
-			} else {
-				context = new CostContext(getCurrentlyBoundVars(), outerPrefixRows, distinctLookupBindings,
-						nestedIteratorInvocation, collectMetrics, finiteBindingValues, getPrefixFactors(),
-						estimationTier);
-			}
-			return context;
+			return new CostContext(this, estimationTier, prefixFactorsDescribeCurrentRows, unrelatedPrefixRows);
 		}
 
 		private static Map<String, Set<Value>> immutableFiniteBindingValues(

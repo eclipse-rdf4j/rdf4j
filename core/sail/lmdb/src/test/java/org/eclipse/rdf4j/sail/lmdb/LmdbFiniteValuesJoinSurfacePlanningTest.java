@@ -166,7 +166,10 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 						"The VALUES-derived ?assembly surface should keep the partOf lookup on a single-assembly "
 								+ "access path while repeated invocations account for the finite branches. "
 								+ "expectedAccessRows=" + COMPONENTS_PER_ASSEMBLY
-								+ ", metrics=" + plannedPartOf + ", plan=" + plan.tupleExpr());
+								+ ", doubleMetrics=" + plannedPartOf.getDoubleMetricsPlanned()
+								+ ", stringMetrics=" + plannedPartOf.getStringMetricsPlanned()
+								+ ", metrics=" + plannedPartOf + ", joins=" + joinMetrics(plan.tupleExpr())
+								+ ", plan=" + plan.tupleExpr());
 				assertTrue(plannedInvocations >= 1.0d && plannedInvocations <= ASSEMBLY_COUNT * 2.0d,
 						"The partOf lookup should be repeated once per finite assembly rather than once per broad "
 								+ "name row. expectedInvocations=" + ASSEMBLY_COUNT + ", metrics=" + plannedPartOf
@@ -174,7 +177,10 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			}
 			assertEquals(expectedSurfaceRows, plan.tupleExpr().getResultSizeEstimate(), expectedSurfaceRows * 0.25d,
 					"Both join implementations must retain the complete VALUES-derived partOf cardinality. plan="
-							+ plan.tupleExpr());
+							+ plan.tupleExpr() + ", partOfDoubleMetrics="
+							+ plannedPartOf.getDoubleMetricsPlanned() + ", partOfStringMetrics="
+							+ plannedPartOf.getStringMetricsPlanned() + ", joinMetrics="
+							+ joinMetrics(plan.tupleExpr()));
 			assertEquals(expectedSurfaceRows, plannedSequentialRows, expectedSurfaceRows * 0.25d,
 					"Both join implementations should retain the same bounded partOf scan work. "
 							+ "expectedSurfaceRows=" + expectedSurfaceRows + ", metrics=" + plannedPartOf
@@ -191,6 +197,19 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	private static List<String> joinMetrics(TupleExpr expression) {
+		List<String> metrics = new ArrayList<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join join) {
+				metrics.add("rows=" + join.getResultSizeEstimate() + ", doubles="
+						+ join.getDoubleMetricsPlanned() + ", strings=" + join.getStringMetricsPlanned());
+				super.meet(join);
+			}
+		});
+		return metrics;
 	}
 
 	@Test
@@ -239,7 +258,6 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		try {
 			loadSyntheticLibraryBranches(repository);
 			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
-
 			BindingSetAssignment branchNames = branchNameBindings();
 			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
 					Var.of("branchName"));
@@ -257,9 +275,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 					"The connected Cascades planner should pass finite prefix values into object lookups instead of "
 							+ "costing the selected names by global predicate fanout. plannedRows=" + plannedRows
 							+ ", metrics=" + plannedName);
-			assertEquals("lmdb-finite-binding-lookup",
-					plannedName.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE),
-					"A statement evaluated over concrete VALUES rows must retain finite-probe provenance");
+			assertFiniteLookupSource(plannedName,
+					"A statement evaluated over concrete VALUES rows must retain finite-domain provenance");
 			assertEquals(2.0d, plannedName.getDoubleMetricPlanned("plannedRepeatedInvocations"), 0.0d,
 					"Bag multiplicity requires one lookup invocation for each VALUES row");
 			assertEquals(2.0d, plannedName.getDoubleMetricPlanned("plannedDistinctLookupBindings"), 0.0d,
@@ -282,7 +299,6 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		try {
 			loadSyntheticLibraryBranches(repository);
 			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
-
 			BindingSetAssignment branchNames = bindingAssignment("branchName",
 					VF.createLiteral("Branch 0"), VF.createLiteral("Branch 0"), VF.createLiteral("Branch 1"));
 			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
@@ -290,8 +306,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			StatementPattern plannedName = planStatementPattern(store, new Join(branchNames, name), LIB_NAME,
 					"branchName");
 
-			assertEquals("lmdb-finite-binding-lookup",
-					plannedName.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE));
+			assertFiniteLookupSource(plannedName,
+					"Duplicate query-owned bindings must retain finite-domain provenance");
 			assertEquals(3.0d, plannedName.getDoubleMetricPlanned("plannedRepeatedInvocations"), 0.0d,
 					"Duplicate VALUES rows remain distinct bag invocations");
 			assertEquals(2.0d, plannedName.getDoubleMetricPlanned("plannedDistinctLookupBindings"), 0.0d,
@@ -366,7 +382,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 	}
 
 	@Test
-	void finiteLiteralFilterPublishesExactOutputRelationWithoutDiscountingScanWork(@TempDir File dataDir)
+	void finiteLiteralFilterPublishesQueryOwnedDomainWithoutDiscountingScanWork(@TempDir File dataDir)
 			throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -390,10 +406,13 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			StatisticsEstimate filtered = statistics.filter(name, selectedNames, input, Set.of()).orElseThrow();
 
 			FiniteRelationEstimate relation = filtered.bag()
-					.relationContaining(Set.of("branch", "branchName"))
+					.relationContaining(Set.of("branchName"))
 					.orElseThrow(() -> new AssertionError(
-							"The safe finite filter must publish the exact selected output relation: " + filtered));
+							"The safe finite filter must retain its query-owned value domain: " + filtered));
 			assertEquals(2.0d, relation.rows(), 0.0d);
+			assertEquals(List.of("branchName"), relation.variables());
+			assertTrue(filtered.bag().relationContaining(Set.of("branch", "branchName")).isEmpty(),
+					"Mapped statistics must not manufacture an exact statement output relation");
 			assertEquals(2.0d, filtered.rows(), 0.0d);
 			assertTrue(filtered.workRows() >= input.workRows() + input.rows(),
 					"Exact output evidence must retain the broad scan plus filter work. input=" + input
@@ -472,6 +491,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		try {
 			loadSyntheticLibraryBranches(repository);
 			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+			assertTrue(store.getBackingStore().awaitFrontierStatisticsReady(10_000L),
+					"Expected the mapped V2 generation before asserting its finite-prefix plan");
 
 			BindingSetAssignment branchNames = branchNameBindings();
 			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
@@ -492,7 +513,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			assertEquals("[P, O]",
 					plannedLocatedAt.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
 					"The finite branch prefix must drive locatedAt before the copy type guard. metrics="
-							+ plannedLocatedAt + ", plan=" + plan.tupleExpr());
+							+ plannedLocatedAt + ", joins=" + joinMetrics(plan.tupleExpr()) + ", plan="
+							+ plan.tupleExpr());
 			assertTrue(plannedLocatedAt.getResultSizeEstimate() >= 150.0d,
 					"The selected branch lookup must preserve its derived copy fanout. metrics=" + plannedLocatedAt
 							+ ", plan=" + plan.tupleExpr());
@@ -552,6 +574,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		try {
 			loadSyntheticLibraryBranches(repository);
 			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+			assertTrue(store.getBackingStore().awaitFrontierStatisticsReady(10_000L),
+					"Expected the mapped V2 generation before asserting semi/anti finite-prefix routing");
 
 			String query = String.join("\n",
 					"PREFIX lib: <http://example.com/theme/library/>",
@@ -590,6 +614,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		try {
 			loadSyntheticLibraryBranches(repository);
 			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+			assertTrue(store.getBackingStore().awaitFrontierStatisticsReady(10_000L),
+					"Expected the mapped V2 generation before asserting EXISTS finite-prefix routing");
 
 			String query = String.join("\n",
 					"PREFIX lib: <http://example.com/theme/library/>",
@@ -628,6 +654,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		try {
 			loadSyntheticLibraryBranches(repository);
 			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+			assertTrue(store.getBackingStore().awaitFrontierStatisticsReady(10_000L),
+					"Expected the mapped V2 generation before probing finite-filter alternatives");
 
 			String query = String.join("\n",
 					"PREFIX lib: <http://example.com/theme/library/>",
@@ -645,8 +673,9 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 					baseGoal.estimationTier(), baseGoal.inputBindingContext());
 			LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) store.getBackingStore()
 					.getEvaluationStatistics()).estimatorRuntime();
-			PackedCostModel delegate = new LmdbPackedCostModel(runtime);
+			PackedCostModel delegate = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true);
 			List<String> finiteAlternativeCosts = new ArrayList<>();
+			List<Double> mappedConnectedFilterRows = new ArrayList<>();
 			PackedCostModel probe = new PackedCostModel() {
 				@Override
 				public double estimateRows(PackedQueryView packedQuery, int relationId) {
@@ -663,6 +692,10 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 				public void refineOperator(PackedQueryView packedQuery, int relationId, PackedCostContext context,
 						PackedCostEstimate output) {
 					delegate.refineOperator(packedQuery, relationId, context, output);
+					if (packedQuery.isFilter(relationId) && context.prefixRelationCount() > 1
+							&& LmdbMappedFilterEvidence.SOURCE.equals(output.estimateSource())) {
+						mappedConnectedFilterRows.add(output.outputRows());
+					}
 					if (isFiniteAnchorJoin(packedQuery, relationId)) {
 						finiteAlternativeCosts.add("relation=" + relationId
 								+ ", prefixCount=" + context.prefixRelationCount()
@@ -684,6 +717,9 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			assertTrue(!finiteAlternativeCosts.isEmpty(),
 					() -> "The finite-filter JOIN must be generated and provider-costed before selection. plan="
 							+ result.selectedPlan());
+			assertTrue(mappedConnectedFilterRows.contains(200.0d),
+					() -> "The joined finite FILTER must use one mapped Omni component ratio, not leaf independence. rows="
+							+ mappedConnectedFilterRows + ", plan=" + result.selectedPlan());
 			assertTrue(selectedProofs.contains("packed-finite-filter-values"),
 					() -> "The generated finite-filter JOIN loses before selected-plan contextualization. "
 							+ "finiteAlternativeCosts=" + finiteAlternativeCosts
@@ -1718,12 +1754,12 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			new LmdbPackedCostModel(runtime).estimate(call.query(), call.factorRelationId(), call.context(),
 					estimate);
 
-			assertEquals("lmdb-finite-filter-surface", estimate.estimateSource());
+			assertEquals("frontier-v2-omni-finite-filter", estimate.estimateSource());
 			assertTrue(estimate.hasContextualOutputRows());
-			assertTrue(estimate.hasComponentOutputRows(),
-					"The exact finite relation contains only the local FILTER component");
-			assertEquals(3.0d, estimate.outputRows(), 0.0d,
-					"Three local matches remain three component rows before packed prefix composition");
+			assertFalse(estimate.hasComponentOutputRows(),
+					"The query-owned IN domain must not masquerade as an exact statement-output component");
+			assertEquals(9.0d, estimate.outputRows(), 0.0d,
+					"Three local matches are evaluated for each of three unrelated prefix rows");
 			assertEquals(PackedCostEstimate.CostScope.INCLUSIVE, estimate.costScope(),
 					"A decorated factor must price its complete statement-and-filter subtree");
 			assertEquals(69.0d, estimate.sequentialRows(), 0.0d,
@@ -1734,9 +1770,9 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 					"Each repeated LMDB statement access requires one iterator open");
 			assertEquals(69.0d, estimate.expressionEvaluations(), 0.0d,
 					"The filter condition is evaluated for every scanned statement row");
-			assertEquals(72.0d, estimate.resultRows(), 0.0d,
+			assertEquals(78.0d, estimate.resultRows(), 0.0d,
 					"The inclusive vector retains both statement and filtered result production");
-			assertEquals(216.0d, estimate.workRows(), 0.0d,
+			assertEquals(222.0d, estimate.workRows(), 0.0d,
 					"The inclusive objective must contain scan, seek, open, filter, and result work");
 
 			ProjectionElemList elements = new ProjectionElemList();
@@ -1779,6 +1815,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 		try {
 			loadHighFanoutLibraryBranches(repository);
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 
 			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
 					Var.of("branchName"));
@@ -1803,6 +1840,13 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	private static void assertFiniteLookupSource(StatementPattern pattern, String message) {
+		String source = pattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
+		assertTrue("lmdb-finite-binding-lookup".equals(source)
+				|| source != null && List.of(source.split("\\+")).contains("frontier-v2-omni-finite-domain"),
+				() -> message + ": " + source);
 	}
 
 	@Test

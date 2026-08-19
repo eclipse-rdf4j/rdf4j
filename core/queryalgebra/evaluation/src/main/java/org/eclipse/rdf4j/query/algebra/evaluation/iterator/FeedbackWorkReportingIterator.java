@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.DistinctBindingFeedback;
 
 /** Additive primitive work counters consumed directly by pre-bound learned-feedback recorders. */
 @Experimental
@@ -63,6 +64,13 @@ public interface FeedbackWorkReportingIterator {
 
 	default long feedbackDistinctBindingExposure() {
 		return -1L;
+	}
+
+	default DistinctBindingFeedback feedbackDistinctBindingFeedback() {
+		long exact = feedbackDistinctBindingExposure();
+		return exact >= 0L
+				? DistinctBindingFeedback.exact(exact, exact, 0L, exact, "legacy-exact-scalar")
+				: DistinctBindingFeedback.unavailable();
 	}
 
 	default long feedbackMaterializationBuilds() {

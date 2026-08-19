@@ -75,6 +75,18 @@ public interface PackedCostSession extends AutoCloseable {
 	}
 
 	/**
+	 * Returns a query-local exact continuation identity for {@code estimate}, or zero when the provider cannot prove
+	 * one. Equal non-zero identities certify that, for the same logical subset and retained physical properties, every
+	 * legal suffix observes equivalent estimator state. This is a congruence contract, not a hash or an approximation:
+	 * providers whose future behavior can distinguish prefix order, component contributions, or other hidden lineage
+	 * must return different IDs or zero.
+	 */
+	default int exactContinuationIdentity(PackedCostEstimate estimate) {
+		Objects.requireNonNull(estimate, "estimate");
+		return 0;
+	}
+
+	/**
 	 * Realizes a query-local evidence state when a costing transition requires its payload.
 	 *
 	 * <p>
@@ -87,6 +99,26 @@ public interface PackedCostSession extends AutoCloseable {
 			throw new IllegalArgumentException("packed evidence state ID must be non-negative");
 		}
 		return evidenceStateId;
+	}
+
+	/**
+	 * Realizes an evidence state together with the guarantee and disposition that classify that immutable identity.
+	 *
+	 * <p>
+	 * Providers which replace a non-zero typed state ID must override this method and update all three fields
+	 * atomically. Retaining the source classification under a different state ID would make exact-continuation
+	 * eligibility depend on call order.
+	 */
+	default void realizeEvidenceState(PackedCostEstimate evidence) {
+		Objects.requireNonNull(evidence, "evidence");
+		int sourceStateId = evidence.evidenceStateId();
+		int realizedStateId = realizeEvidenceState(sourceStateId);
+		if (realizedStateId != sourceStateId
+				&& (evidence.evidenceGuarantee() != null || evidence.evidenceDisposition() != null)) {
+			throw new PackedMemoInvariantException("provider changed typed evidence state " + sourceStateId + " to "
+					+ realizedStateId + " without realizing its guarantee and disposition");
+		}
+		evidence.setEvidenceStateId(realizedStateId);
 	}
 
 	/**
@@ -275,9 +307,11 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 			providerInput.copyProviderInputFrom(output);
 			providerInputSourceStateId = providerInput.evidenceStateId();
 			if (realizeProviderInput) {
-				providerInput.setEvidenceStateId(delegate.realizeEvidenceState(providerInput.evidenceStateId()));
+				delegate.realizeEvidenceState(providerInput);
 			}
 			output.setEvidenceStateId(providerInput.evidenceStateId());
+			output.setEvidenceGuarantee(providerInput.evidenceGuarantee());
+			output.setEvidenceDisposition(providerInput.evidenceDisposition());
 			return realizedContext;
 		} catch (FrontierMemoryLimitException insufficientMemory) {
 			throw resourceLimit(insufficientMemory);
@@ -349,9 +383,27 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 	}
 
 	@Override
+	public void realizeEvidenceState(PackedCostEstimate evidence) {
+		try {
+			delegate.realizeEvidenceState(evidence);
+		} catch (FrontierMemoryLimitException insufficientMemory) {
+			throw resourceLimit(insufficientMemory);
+		}
+	}
+
+	@Override
 	public double objectiveScore(PackedCostEstimate estimate) {
 		try {
 			return delegate.objectiveScore(estimate);
+		} catch (FrontierMemoryLimitException insufficientMemory) {
+			throw resourceLimit(insufficientMemory);
+		}
+	}
+
+	@Override
+	public int exactContinuationIdentity(PackedCostEstimate estimate) {
+		try {
+			return delegate.exactContinuationIdentity(estimate);
 		} catch (FrontierMemoryLimitException insufficientMemory) {
 			throw resourceLimit(insufficientMemory);
 		}
@@ -460,8 +512,18 @@ final class ProofAwarePackedCostSession implements PackedCostSession {
 	}
 
 	@Override
+	public int exactContinuationIdentity(PackedCostEstimate estimate) {
+		return delegate.exactContinuationIdentity(estimate);
+	}
+
+	@Override
 	public int realizeEvidenceState(int evidenceStateId) {
 		return delegate.realizeEvidenceState(evidenceStateId);
+	}
+
+	@Override
+	public void realizeEvidenceState(PackedCostEstimate evidence) {
+		delegate.realizeEvidenceState(evidence);
 	}
 
 	@Override

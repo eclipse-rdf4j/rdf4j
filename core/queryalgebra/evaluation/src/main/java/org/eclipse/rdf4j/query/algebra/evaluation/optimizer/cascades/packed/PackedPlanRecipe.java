@@ -245,12 +245,39 @@ final class PackedPlanRecipe {
 
 	private static PhysicalIdentity semanticIdentity(TupleExpr materializedPlan) {
 		PhysicalIdentityBuilder identity = new PhysicalIdentityBuilder(0xbb67ae8584caa73bL);
+		PackedQueryCacheIdentity packedIdentity = PackedQueryCacheIdentity.createPlanIdentity(materializedPlan);
+		if (packedIdentity != null) {
+			identity.append(0x5041434b45445f49L);
+			packedIdentity.appendTo(identity);
+		} else {
+			identity.append(0x5241575f54524545L);
+			appendRawSemanticIdentity(identity, materializedPlan);
+		}
+		appendExecutionControlIdentity(identity, materializedPlan);
+		return identity.build();
+	}
+
+	private static void appendRawSemanticIdentity(PhysicalIdentityBuilder identity, TupleExpr materializedPlan) {
 		materializedPlan.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode node) {
 				identity.append(0x4e4f44455f424547L);
 				identity.append(node.getClass().getName());
 				identity.append(node.getSignature());
+				super.meetNode(node);
+				identity.append(0x4e4f44455f454e44L);
+			}
+		});
+	}
+
+	private static void appendExecutionControlIdentity(PhysicalIdentityBuilder identity,
+			TupleExpr materializedPlan) {
+		identity.append(0x455845435f435452L);
+		materializedPlan.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				identity.append(0x4e4f44455f424547L);
+				identity.append(node.getClass().getName());
 				if (node instanceof VariableScopeChange scopeChange) {
 					identity.append(scopeChange.isVariableScopeChange() ? 1 : 0);
 				}
@@ -266,7 +293,6 @@ final class PackedPlanRecipe {
 				identity.append(0x4e4f44455f454e44L);
 			}
 		});
-		return identity.build();
 	}
 
 	private static void appendExecutionControlMetrics(PhysicalIdentityBuilder identity, QueryModelNode node) {
@@ -914,7 +940,7 @@ final class PackedPlanRecipe {
 		}
 	}
 
-	private static final class PhysicalIdentityBuilder {
+	private static final class PhysicalIdentityBuilder implements PackedQueryCacheIdentity.IdentitySink {
 
 		private long hash;
 		private final StringBuilder canonicalForm = new StringBuilder(256);
@@ -923,12 +949,14 @@ final class PackedPlanRecipe {
 			hash = seed;
 		}
 
-		private void append(long value) {
+		@Override
+		public void append(long value) {
 			hash = mixFingerprint(hash, value);
 			canonicalForm.append('L').append(value).append(';');
 		}
 
-		private void append(String value) {
+		@Override
+		public void append(String value) {
 			hash = mixFingerprint(hash, value);
 			if (value == null) {
 				canonicalForm.append("N;");

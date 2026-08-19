@@ -12,10 +12,13 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
@@ -23,18 +26,26 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterValuesAnchorSupport;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
@@ -50,15 +61,26 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateSummary;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierJoinEstimate;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierJoinProbe;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierJoinProgram;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafEstimate;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsView;
+import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 
 /** LMDB storage-cardinality adapter for the packed ID-based cost boundary. */
 final class LmdbPackedCostModel
 		implements PackedCostModel, PackedStalePlanValidator, PackedRootCardinalityCertifier {
 
-	static final long VERSION = 31L;
+	static final long VERSION = 35L;
 
 	private static final String[] DISTINCT_REQUIREMENT_METRICS = {
 			TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_VARS,
@@ -67,6 +89,9 @@ final class LmdbPackedCostModel
 			TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_SOURCE };
 
 	private static final int MAX_FINITE_LOOKUP_COMBINATIONS = 1_024;
+	private static final int MAX_MAPPED_PROPERTY_PATH_DEPTH = 8;
+	static final int MAX_MAPPED_LINEAGE_FACTOR_WORK_PER_PATTERN = 2;
+	static final int MAX_MAPPED_CORRELATED_FACTOR_WORK_PER_PATTERN = 2;
 	private static final String CARDINALITY_SOURCE = "lmdb-packed-cardinality";
 	private static final String FINITE_FILTER_SURFACE_SOURCE = "lmdb-finite-filter-surface";
 	private static final String FINITE_LOOKUP_SOURCE = "lmdb-finite-binding-lookup";
@@ -79,6 +104,9 @@ final class LmdbPackedCostModel
 	private final SailDatasetTripleTermSource frontierStatementSource;
 	private final EvaluationStrategy evaluationStrategy;
 	private final boolean frontierPlanningAllowed;
+	private final FrontierStatisticsView statisticsView;
+	private final boolean unpinnedMappedStatisticsAllowed;
+	private final MappedStatisticsSessionCache mappedStatisticsCache;
 
 	LmdbPackedCostModel(LmdbEstimatorRuntime runtime) {
 		this(runtime, OptionalLong.empty(), false, null, null, true);
@@ -104,17 +132,28 @@ final class LmdbPackedCostModel
 	LmdbPackedCostModel(LmdbEstimatorRuntime runtime, OptionalLong executionSnapshotEpoch,
 			boolean datasetUsesStoreDefaults, SailDatasetTripleTermSource frontierStatementSource,
 			EvaluationStrategy evaluationStrategy, boolean frontierPlanningAllowed) {
+		this(runtime, executionSnapshotEpoch, datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy,
+				frontierPlanningAllowed, null, true);
+	}
+
+	private LmdbPackedCostModel(LmdbEstimatorRuntime runtime, OptionalLong executionSnapshotEpoch,
+			boolean datasetUsesStoreDefaults, SailDatasetTripleTermSource frontierStatementSource,
+			EvaluationStrategy evaluationStrategy, boolean frontierPlanningAllowed,
+			FrontierStatisticsView statisticsView, boolean unpinnedMappedStatisticsAllowed) {
 		this.runtime = runtime;
 		this.executionSnapshotEpoch = executionSnapshotEpoch == null ? OptionalLong.empty() : executionSnapshotEpoch;
 		this.datasetUsesStoreDefaults = datasetUsesStoreDefaults;
 		this.frontierStatementSource = frontierStatementSource;
 		this.evaluationStrategy = evaluationStrategy;
 		this.frontierPlanningAllowed = frontierPlanningAllowed;
+		this.statisticsView = statisticsView;
+		this.unpinnedMappedStatisticsAllowed = unpinnedMappedStatisticsAllowed;
+		this.mappedStatisticsCache = statisticsView == null ? null : new MappedStatisticsSessionCache();
 	}
 
 	@Override
 	public PackedCostSession openSession(PackedQueryView query) {
-		if (!frontierPlanningAllowed) {
+		if (!frontierPlanningAllowed || runtime.frontierSettings().mode() == FrontierEstimatorMode.OFF) {
 			/*
 			 * Frontier's exact join and outer-operator refinement probes the query snapshot. Under serializable
 			 * isolation those speculative planning reads would widen the transaction's observed-state set and can
@@ -122,15 +161,45 @@ final class LmdbPackedCostModel
 			 */
 			return PackedCostSession.scalar(this, query);
 		}
-		LmdbFrontierPackedCostSession frontierSession = new LmdbFrontierPackedCostSession(this, query, runtime,
+		if (mappedStatisticsReady()) {
+			LmdbStatisticsService statistics = runtime.statisticsService();
+			FrontierStatisticsView view = executionSnapshotEpoch.isPresent()
+					? statistics.openView(executionSnapshotEpoch.getAsLong())
+					: statistics.openCurrentView();
+			if (!view.ready()) {
+				view.close();
+				return PackedCostSession.scalar(this, query);
+			}
+			LmdbPackedCostModel scoped = new LmdbPackedCostModel(runtime, executionSnapshotEpoch,
+					datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy, frontierPlanningAllowed,
+					view, true);
+			scoped.mappedStatisticsCache.initializeLineageWorkBudget(statementPatternCount(query));
+			return new LmdbFrontierStatisticsCostSession(PackedCostSession.scalar(scoped, query), scoped, view, query,
+					runtime, datasetUsesStoreDefaults);
+		}
+		LmdbPackedCostModel conventional = new LmdbPackedCostModel(runtime, executionSnapshotEpoch,
+				datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy, frontierPlanningAllowed,
+				null, false);
+		LmdbFrontierPackedCostSession frontierSession = new LmdbFrontierPackedCostSession(conventional, query, runtime,
 				executionSnapshotEpoch, datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy);
 		return runtime.adaptiveEvidenceAllowed()
 				? new LmdbFrontierLearningCostSession(frontierSession)
 				: frontierSession;
 	}
 
+	private static int statementPatternCount(PackedQueryView query) {
+		int patterns = 0;
+		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
+			patterns += query.isStatementPattern(relationId) ? 1 : 0;
+		}
+		return patterns;
+	}
+
 	@Override
 	public PackedStalePlanValidation validateStalePlan(PackedPlanValidationRequest request) {
+		if (mappedStatisticsReady()) {
+			return PackedStalePlanValidation.replan(0.0d, 1.0d, 0L, "frontier-v2-generation-validation");
+		}
 		if (!frontierPlanningAllowed) {
 			return PackedStalePlanValidation.replan(0.0d, 1.0d, 0L, "frontier-planning-disabled");
 		}
@@ -182,6 +251,14 @@ final class LmdbPackedCostModel
 		if (!query.isStatementPattern(relationId)) {
 			return Double.NaN;
 		}
+		FrontierLeafEstimate mapped = mappedLeafEstimate(query, relationId);
+		if (mapped != null) {
+			return mapped.pointRows();
+		}
+		return legacyEstimateRows(query, relationId);
+	}
+
+	private double legacyEstimateRows(PackedQueryView query, int relationId) {
 		Value subjectValue = query.statementPatternValue(relationId, 0);
 		Value predicateValue = query.statementPatternValue(relationId, 1);
 		Value objectValue = query.statementPatternValue(relationId, 2);
@@ -190,6 +267,13 @@ final class LmdbPackedCostModel
 				|| predicateValue != null && !(predicateValue instanceof IRI)
 				|| contextValue != null && !(contextValue instanceof Resource)) {
 			return 0.0d;
+		}
+		if (runtime.statisticsService() != null) {
+			TupleExpr expression = query.materializeRelation(relationId);
+			if (!(expression instanceof StatementPattern pattern)) {
+				return Double.NaN;
+			}
+			return runtime.conventionalStatementPatternRows(pattern);
 		}
 		return runtime.packedStatementPatternRows((Resource) subjectValue, (IRI) predicateValue, objectValue,
 				(Resource) contextValue, repeatedComponentPairMask(query, relationId));
@@ -236,21 +320,42 @@ final class LmdbPackedCostModel
 			output.setRows(Double.NaN, Double.NaN);
 			return;
 		}
-		FiniteLookupEstimate finiteLookup = finiteLookupEstimate(query, relationId, context);
+		/*
+		 * A pinned V2 view is the complete statement-evidence boundary for this session. The legacy finite lookup and
+		 * connected-surface routes probe the query's LMDB snapshot; consulting either route before the mapped join
+		 * would reintroduce store-size-dependent planning I/O even though the generation is READY. Query-owned finite
+		 * relations remain exact in their own factors, while statement cardinality is derived from the mapped view.
+		 */
+		boolean mappedStatisticsSession = statisticsView != null;
+		FiniteLookupEstimate finiteLookup = mappedStatisticsSession || !context.prefixRelationsDescribeRows() ? null
+				: finiteLookupEstimate(query, relationId,
+						context);
+		FrontierLeafEstimate mappedLeaf = finiteLookup == null ? mappedLeafEstimate(query, relationId) : null;
+		MappedRowsEstimate mappedFiniteDomain = finiteLookup == null && context.prefixRelationsDescribeRows()
+				? mappedFiniteDomainEstimate(query, relationId, context)
+				: null;
+		MappedTransitionSelection mappedTransition = finiteLookup == null
+				? selectMappedTransition(mappedFiniteDomain, mappedJoinEstimate(query, relationId, context))
+				: MappedTransitionSelection.NONE;
+		FrontierJoinEstimate mappedJoin = mappedTransition.estimate();
 		double rows = finiteLookup == null ? Double.NaN : finiteLookup.rows();
 		boolean contextualRows = finiteLookup != null;
 		boolean transitionRows = false;
 		if (!contextualRows) {
-			double patternRows = estimateRows(query, relationId);
-			if (context.prefixRelationCount() > 0
+			double patternRows = mappedLeaf == null
+					? legacyEstimateRows(query, relationId)
+					: mappedLeaf.pointRows();
+			if (!mappedStatisticsSession && context.prefixRelationCount() > 0
 					&& estimateConnectedSurface(query, relationId, context, output, true)) {
 				return;
 			}
-			rows = transitionRows(query, relationId, context, patternRows);
+			rows = mappedJoin == null
+					? transitionRows(query, relationId, context, patternRows)
+					: mappedJoin.pointRows();
 			contextualRows = Double.isFinite(rows);
 			transitionRows = contextualRows;
 			if (!contextualRows) {
-				if (context.prefixRelationCount() > 0
+				if (!mappedStatisticsSession && context.prefixRelationCount() > 0
 						&& estimateConnectedSurface(query, relationId, context, output, false)) {
 					return;
 				}
@@ -270,6 +375,13 @@ final class LmdbPackedCostModel
 		double workRows = Math.max(rows, invocations);
 		if (contextualRows) {
 			if (transitionRows) {
+				/*
+				 * Every mapped transition is expressed in the complete physical-prefix row domain: finite-domain
+				 * estimates evaluate every retained relation, while conditional join and projected-distinct estimates
+				 * scale their component selectivity by context.prefixRows(). Marking these rows component-scoped would
+				 * multiply unrelated prefix partitions twice and prevent the enumerator from retaining this
+				 * transition's evidence state for the joined candidate.
+				 */
 				output.setContextualRows(rows, workRows);
 			} else {
 				output.setComponentRows(rows, workRows);
@@ -285,6 +397,30 @@ final class LmdbPackedCostModel
 				: transitionRows ? TRANSITION_SOURCE : CARDINALITY_SOURCE;
 		runtime.describePackedAccessPath(accessLookupMask, accessRows, invocations, accessSource, output);
 		setStatementAccessPhysicalCost(output);
+		if (mappedLeaf != null && !transitionRows) {
+			output.setEstimateProvenance(mappedLeaf.source(), "frontier_v2_mapped_leaf");
+			output.setEvidenceGuarantee(EvidenceGuarantee.SCALAR_FALLBACK);
+			annotateMappedStatistics(output);
+			output.putPlannedDoubleMetric("plannedFrontierLowerRows", mappedLeaf.lowerRows());
+			output.putPlannedDoubleMetric("plannedFrontierUpperRows", mappedLeaf.upperRows());
+			output.putPlannedDoubleMetric("plannedFrontierConfidence", mappedLeaf.confidence());
+		}
+		if (mappedJoin != null && transitionRows) {
+			output.setEstimateProvenance(mappedJoin.source(), "frontier_v2_mapped_join");
+			output.setEvidenceGuarantee(EvidenceGuarantee.MEASURE_UNBIASED);
+			annotateMappedStatistics(output);
+			output.putPlannedDoubleMetric("plannedFrontierLowerRows", mappedJoin.lowerRows());
+			output.putPlannedDoubleMetric("plannedFrontierUpperRows", mappedJoin.upperRows());
+			output.putPlannedDoubleMetric("plannedFrontierConfidence", mappedJoin.confidence());
+		}
+		if (mappedTransition.finiteDomainSelected()
+				&& mappedFiniteDomain.distinctLookupBindings() >= 0.0d) {
+			double distinctBindings = mappedFiniteDomain.distinctLookupBindings();
+			output.putPlannedDoubleMetric("plannedDistinctLookupBindings", distinctBindings);
+			output.putPlannedDoubleMetric("plannedLookupDomainAverageOutputRows",
+					distinctBindings == 0.0d ? 0.0d : mappedFiniteDomain.pointRows() / distinctBindings);
+			output.setEstimateFusion("frontier_v2_omni_finite_domain");
+		}
 		if (finiteLookup != null) {
 			output.setEstimateFusion("finite_binding_probe");
 			output.setEvidenceGuarantee(EvidenceGuarantee.DATABASE_EXACT);
@@ -293,6 +429,1203 @@ final class LmdbPackedCostModel
 			output.putPlannedDoubleMetric("plannedLookupDomainAverageOutputRows",
 					finiteLookup.lookupDomainAverageOutputRows());
 		}
+	}
+
+	private void annotateMappedStatistics(PackedCostEstimate output) {
+		output.putPlannedStringMetric("plannedFrontierStatus", "ready");
+		output.putPlannedStringMetric("plannedFrontierFallbackReason", "none");
+		output.putPlannedStringMetric("plannedFrontierDisposition", "mapped_statistics");
+		if (statisticsView != null) {
+			output.putPlannedDoubleMetric("plannedFrontierGenerationId", statisticsView.generationId());
+			output.putPlannedDoubleMetric("plannedFrontierBaseEpoch", statisticsView.baseEpoch());
+			output.putPlannedDoubleMetric("plannedFrontierCoveredEpoch", statisticsView.coveredEpoch());
+		}
+	}
+
+	private boolean mappedStatisticsReady() {
+		LmdbStatisticsService statistics = runtime.statisticsService();
+		if (runtime.frontierSettings().mode() != FrontierEstimatorMode.AUTHORITATIVE || statistics == null) {
+			return false;
+		}
+		var status = statistics.status();
+		return status.availability() == FrontierStatisticsAvailability.READY
+				&& status.fallbackReason() == FrontierFallbackReason.NONE;
+	}
+
+	private FrontierLeafEstimate mappedLeafEstimate(PackedQueryView query, int relationId) {
+		LmdbStatisticsService statistics = runtime.statisticsService();
+		if (statistics == null || runtime.frontierSettings().mode() != FrontierEstimatorMode.AUTHORITATIVE
+				|| !datasetUsesStoreDefaults || statisticsView == null && !unpinnedMappedStatisticsAllowed) {
+			return null;
+		}
+		if (mappedStatisticsCache != null && mappedStatisticsCache.leafResolved(relationId)) {
+			return mappedStatisticsCache.leaf(relationId);
+		}
+		TupleExpr expression = query.materializeRelation(relationId);
+		if (!(expression instanceof StatementPattern pattern)) {
+			if (mappedStatisticsCache != null) {
+				mappedStatisticsCache.storeLeaf(relationId, null);
+			}
+			return null;
+		}
+		FrontierLeafProbe probe = LmdbFrontierProbeFactory.probe(
+				runtime.valueStore(), pattern, FrontierLeafProbe.BOTH_PLANES);
+		if (probe == null) {
+			return null;
+		}
+		FrontierLeafEstimate estimate = statisticsView != null
+				? statisticsView.estimateLeaf(probe)
+				: executionSnapshotEpoch.isPresent()
+						? statistics.estimateLeaf(executionSnapshotEpoch.getAsLong(), probe)
+						: statistics.estimateLeafCurrent(probe);
+		FrontierLeafEstimate available = estimate.fallbackReason() == FrontierFallbackReason.NONE ? estimate : null;
+		if (mappedStatisticsCache != null) {
+			mappedStatisticsCache.storeLeaf(relationId, available);
+		}
+		return available;
+	}
+
+	double mappedRelationRows(PackedQueryView query, int relationId) {
+		if (statisticsView == null || query == null || relationId <= 0 || relationId > query.relationCount()) {
+			return Double.NaN;
+		}
+		FrontierLeafEstimate leaf = mappedLeafEstimate(query, relationId);
+		if (leaf != null) {
+			return leaf.pointRows();
+		}
+		TupleExpr expression = query.materializeRelation(relationId);
+		double mappedRows = mappedConjunctiveRows(expression);
+		if (finiteNonNegative(mappedRows)) {
+			return mappedRows;
+		}
+		if (query.isBindingSetAssignment(relationId)) {
+			return query.bindingAssignmentRowCount(relationId);
+		}
+		double annotatedRows = query.annotatedRows(relationId);
+		return finiteNonNegative(annotatedRows) ? annotatedRows : Double.NaN;
+	}
+
+	LmdbOperatorFeedbackStats.SemiAntiEstimate frontierSemiAntiFeedback(
+			Filter filter, String semanticKind, String physicalAlgorithm) {
+		return runtime.frontierSemiAntiFeedback(filter, semanticKind, physicalAlgorithm);
+	}
+
+	double mappedProjectedDistinct(PackedQueryView query, int[] relationIds, String[] bindingNames,
+			double upperRows) {
+		MappedDistinctProfile profile = mappedProjectedDistinctProfile(
+				query, relationIds, bindingNames, upperRows, upperRows == 0.0d ? 0.0d : 1.0d, upperRows);
+		return profile.hasPoint() ? profile.point() : finiteNonNegative(upperRows) ? upperRows : Double.NaN;
+	}
+
+	MappedDistinctProfile mappedProjectedDistinctProfile(PackedQueryView query, int[] relationIds,
+			String[] bindingNames, double pointRows, double lowerRows, double upperRows) {
+		if (query == null || relationIds == null || relationIds.length == 0) {
+			return MappedDistinctProfile.unavailable(lowerRows, upperRows, "mapped-distinct-no-prefix");
+		}
+		List<TupleExpr> factors = new ArrayList<>(relationIds.length);
+		List<BindingSetAssignment> assignments = new ArrayList<>();
+		for (int relationId : relationIds) {
+			if (relationId <= 0 || relationId > query.relationCount()) {
+				continue;
+			}
+			TupleExpr expression = query.materializeRelation(relationId);
+			if (LmdbFrontierProbeFactory.hasStatementLineage(expression)) {
+				factors.add(expression);
+			}
+			collectBindingAssignments(expression, assignments);
+		}
+		return mappedProjectedDistinctProfile(
+				factors, assignments, bindingNames, pointRows, lowerRows, upperRows);
+	}
+
+	double mappedProjectedDistinct(TupleExpr expression, String[] bindingNames, double upperRows) {
+		MappedDistinctProfile profile = mappedProjectedDistinctProfile(
+				expression, bindingNames, upperRows, upperRows == 0.0d ? 0.0d : 1.0d, upperRows);
+		return profile.hasPoint() ? profile.point() : finiteNonNegative(upperRows) ? upperRows : Double.NaN;
+	}
+
+	MappedDistinctProfile mappedProjectedDistinctProfile(TupleExpr expression, String[] bindingNames,
+			double pointRows, double lowerRows, double upperRows) {
+		List<TupleExpr> factors = new ArrayList<>();
+		if (!collectMappedConjunctiveFactors(expression, factors)) {
+			return MappedDistinctProfile.unavailable(lowerRows, upperRows, "mapped-distinct-unsupported-expression");
+		}
+		List<BindingSetAssignment> assignments = new ArrayList<>();
+		collectBindingAssignments(expression, assignments);
+		return mappedProjectedDistinctProfile(
+				factors, assignments, bindingNames, pointRows, lowerRows, upperRows);
+	}
+
+	MappedSemiAntiEstimate mappedSemiAntiEstimate(PackedQueryView query, int[] outerRelationIds,
+			TupleExpr rhs, String[] correlationNames, double outerRows, double rhsRows, double rhsDistinctKeys) {
+		if (statisticsView == null || query == null || outerRelationIds == null || outerRelationIds.length == 0
+				|| rhs == null || correlationNames == null || correlationNames.length == 0
+				|| !(outerRows > 0.0d) || !finiteNonNegative(rhsRows) || rhsRows == 0.0d
+				|| !finiteNonNegative(rhsDistinctKeys) || rhsDistinctKeys == 0.0d) {
+			return null;
+		}
+		List<TupleExpr> outerFactors = new ArrayList<>(outerRelationIds.length);
+		for (int relationId : outerRelationIds) {
+			if (relationId <= 0 || relationId > query.relationCount()) {
+				continue;
+			}
+			TupleExpr expression = query.materializeRelation(relationId);
+			if (LmdbFrontierProbeFactory.hasStatementLineage(expression)) {
+				outerFactors.add(expression);
+			}
+		}
+		List<TupleExpr> rhsFactors = new ArrayList<>();
+		if (outerFactors.isEmpty() || !collectMappedConjunctiveFactors(rhs, rhsFactors) || rhsFactors.isEmpty()
+				|| !oneConnectedStatementComponent(outerFactors)
+				|| !oneConnectedStatementComponent(rhsFactors)
+				|| !allCorrelationBindingsExposed(outerFactors, rhsFactors, correlationNames)) {
+			return null;
+		}
+		List<TupleExpr> joinedFactors = new ArrayList<>(outerFactors.size() + rhsFactors.size());
+		joinedFactors.addAll(outerFactors);
+		joinedFactors.addAll(rhsFactors);
+		if (!oneConnectedStatementComponent(joinedFactors)) {
+			return null;
+		}
+		MappedRowsEstimate outerBase = mappedCorrelatedLineageEstimate(outerFactors);
+		MappedRowsEstimate joined = mappedCorrelatedLineageEstimate(joinedFactors);
+		if (outerBase == null || joined == null || !(outerBase.pointRows() > 0.0d)) {
+			return null;
+		}
+		double rhsMultiplicity = Math.max(1.0d, rhsRows / Math.max(1.0d, rhsDistinctKeys));
+		double hitProbability = probability(joined.pointRows(), rhsMultiplicity, outerBase.pointRows());
+		double lowerHitProbability = finiteNonNegative(outerBase.upperRows()) && outerBase.upperRows() > 0.0d
+				? probability(joined.lowerRows(), rhsMultiplicity, outerBase.upperRows())
+				: 0.0d;
+		double upperHitProbability = outerBase.lowerRows() > 0.0d
+				? probability(joined.upperRows(), rhsMultiplicity, outerBase.lowerRows())
+				: 1.0d;
+		lowerHitProbability = Math.min(hitProbability, lowerHitProbability);
+		upperHitProbability = Math.max(hitProbability, upperHitProbability);
+		return new MappedSemiAntiEstimate(hitProbability, lowerHitProbability, upperHitProbability,
+				Math.min(outerBase.confidence(), joined.confidence()),
+				"mapped-omni-correlated-semi-join", joined.source());
+	}
+
+	private static boolean allCorrelationBindingsExposed(List<TupleExpr> outerFactors,
+			List<TupleExpr> rhsFactors, String[] correlationNames) {
+		for (String name : correlationNames) {
+			if (name == null || name.isBlank()
+					|| !exposesBinding(outerFactors, name)
+					|| !exposesBinding(rhsFactors, name)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean exposesBinding(List<TupleExpr> factors, String bindingName) {
+		for (TupleExpr factor : factors) {
+			if (LmdbFrontierProbeFactory.componentIndexForLineage(factor, bindingName) >= 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static double probability(double joinedRows, double rhsMultiplicity, double outerRows) {
+		if (!finiteNonNegative(joinedRows) || !(rhsMultiplicity > 0.0d) || !(outerRows > 0.0d)) {
+			return 0.0d;
+		}
+		return Math.max(0.0d, Math.min(1.0d, joinedRows / rhsMultiplicity / outerRows));
+	}
+
+	private MappedDistinctProfile mappedProjectedDistinctProfile(List<TupleExpr> factors,
+			List<BindingSetAssignment> assignments, String[] bindingNames,
+			double pointRows, double lowerRows, double upperRows) {
+		double structuralUpper = normalizedDistinctUpper(pointRows, upperRows);
+		double structuralLower = finiteNonNegative(lowerRows) && lowerRows > 0.0d && structuralUpper > 0.0d
+				? 1.0d
+				: 0.0d;
+		if (bindingNames == null || bindingNames.length == 0 || structuralUpper == 0.0d) {
+			return new MappedDistinctProfile(
+					structuralUpper == 0.0d ? 0.0d : Double.NaN,
+					0.0d, structuralUpper, "mapped-distinct-empty-domain");
+		}
+		double compoundPoint = 1.0d;
+		double compoundUpper = 1.0d;
+		boolean pointAvailable = statisticsView != null;
+		boolean leafBoundApplied = false;
+		boolean finiteDomainApplied = false;
+		Set<String> distinctBindings = new LinkedHashSet<>(Arrays.asList(bindingNames));
+		for (String bindingName : distinctBindings) {
+			double bindingPoint = Double.POSITIVE_INFINITY;
+			double bindingUpper = structuralUpper;
+			for (TupleExpr factor : factors) {
+				int component = LmdbFrontierProbeFactory.componentIndexForLineage(factor, bindingName);
+				if (component < 0) {
+					continue;
+				}
+				FrontierLeafProbe probe = LmdbFrontierProbeFactory.probeForLineage(
+						runtime.valueStore(), factor, FrontierLeafProbe.BOTH_PLANES);
+				if (probe == null) {
+					continue;
+				}
+				FrontierLeafEstimate leaf = statisticsView == null ? null : statisticsView.estimateLeaf(probe);
+				if (leaf != null && leaf.fallbackReason() == FrontierFallbackReason.NONE
+						&& !Double.isNaN(leaf.upperRows()) && leaf.upperRows() >= 0.0d) {
+					bindingUpper = Math.min(bindingUpper, leaf.upperRows());
+					leafBoundApplied = true;
+				}
+				double estimate = statisticsView == null
+						? Double.NaN
+						: statisticsView.estimateProjectedDistinct(probe, component);
+				if (finiteNonNegative(estimate)) {
+					bindingPoint = Math.min(bindingPoint, estimate);
+				}
+			}
+			double finiteDomainUpper = exactAssignmentDomainUpper(assignments, bindingName);
+			if (finiteDomainUpper >= 0.0d) {
+				bindingUpper = Math.min(bindingUpper, finiteDomainUpper);
+				finiteDomainApplied = true;
+			}
+			compoundUpper = Math.min(structuralUpper, saturatedMultiply(compoundUpper, bindingUpper));
+			if (Double.isFinite(bindingPoint)) {
+				compoundPoint = saturatedMultiply(compoundPoint, bindingPoint);
+			} else {
+				pointAvailable = false;
+			}
+		}
+		structuralLower = Math.min(structuralLower, compoundUpper);
+		double point = pointAvailable
+				? Math.max(structuralLower, Math.min(compoundUpper, compoundPoint))
+				: Double.NaN;
+		String provenance = "mapped-distinct-structural-row-upper"
+				+ (leafBoundApplied ? "+mapped-leaf-upper" : "")
+				+ (finiteDomainApplied ? "+finite-binding-domain" : "")
+				+ (pointAvailable ? "+projected-sample" : "+sample-unavailable");
+		return new MappedDistinctProfile(point, structuralLower, compoundUpper, provenance);
+	}
+
+	private static double normalizedDistinctUpper(double pointRows, double upperRows) {
+		if (!Double.isNaN(upperRows) && upperRows >= 0.0d) {
+			return Double.isFinite(upperRows) ? upperRows : Double.MAX_VALUE;
+		}
+		return finiteNonNegative(pointRows) ? pointRows : Double.MAX_VALUE;
+	}
+
+	private static double exactAssignmentDomainUpper(List<BindingSetAssignment> assignments, String bindingName) {
+		double upper = Double.POSITIVE_INFINITY;
+		for (BindingSetAssignment assignment : assignments) {
+			Set<Value> values = new LinkedHashSet<>();
+			boolean complete = true;
+			for (BindingSet bindingSet : assignment.getBindingSets()) {
+				Value value = bindingSet.getValue(bindingName);
+				if (value == null) {
+					complete = false;
+					break;
+				}
+				values.add(value);
+			}
+			if (complete) {
+				upper = Math.min(upper, values.size());
+			}
+		}
+		return Double.isFinite(upper) ? upper : -1.0d;
+	}
+
+	private static void collectBindingAssignments(TupleExpr expression,
+			List<BindingSetAssignment> assignments) {
+		if (expression == null) {
+			return;
+		}
+		if (expression instanceof BindingSetAssignment assignment) {
+			assignments.add(assignment);
+			return;
+		}
+		if (expression instanceof Join join) {
+			collectBindingAssignments(join.getLeftArg(), assignments);
+			collectBindingAssignments(join.getRightArg(), assignments);
+			return;
+		}
+		if (expression instanceof Filter filter) {
+			collectBindingAssignments(filter.getArg(), assignments);
+		} else if (expression instanceof Extension extension) {
+			collectBindingAssignments(extension.getArg(), assignments);
+		} else if (expression instanceof Projection projection) {
+			collectBindingAssignments(projection.getArg(), assignments);
+		} else if (expression instanceof Distinct distinct) {
+			collectBindingAssignments(distinct.getArg(), assignments);
+		} else if (expression instanceof Reduced reduced) {
+			collectBindingAssignments(reduced.getArg(), assignments);
+		} else if (expression instanceof Slice slice) {
+			collectBindingAssignments(slice.getArg(), assignments);
+		} else if (expression instanceof Group group) {
+			collectBindingAssignments(group.getArg(), assignments);
+		} else if (expression instanceof Order order) {
+			collectBindingAssignments(order.getArg(), assignments);
+		} else if (expression instanceof QueryRoot root) {
+			collectBindingAssignments(root.getArg(), assignments);
+		}
+	}
+
+	private double mappedConjunctiveRows(TupleExpr expression) {
+		List<TupleExpr> factors = new ArrayList<>();
+		if (!collectMappedConjunctiveFactors(expression, factors) || factors.isEmpty()) {
+			return Double.NaN;
+		}
+		if (factors.size() == 1) {
+			FrontierLeafProbe probe = LmdbFrontierProbeFactory.probeForLineage(
+					runtime.valueStore(), factors.getFirst(), FrontierLeafProbe.BOTH_PLANES);
+			if (probe == null) {
+				return Double.NaN;
+			}
+			FrontierLeafEstimate estimate = statisticsView.estimateLeaf(probe);
+			return estimate.fallbackReason() == FrontierFallbackReason.NONE ? estimate.pointRows() : Double.NaN;
+		}
+		FrontierJoinProgram program = LmdbFrontierProbeFactory.joinProgramForLineage(
+				runtime.valueStore(), factors, FrontierLeafProbe.BOTH_PLANES);
+		if (program == null) {
+			return Double.NaN;
+		}
+		FrontierJoinEstimate estimate = statisticsView.estimateSubgraph(program);
+		return estimate.fallbackReason() == FrontierFallbackReason.NONE ? estimate.pointRows() : Double.NaN;
+	}
+
+	private static boolean collectMappedConjunctiveFactors(TupleExpr expression, List<TupleExpr> factors) {
+		if (expression == null) {
+			return false;
+		}
+		if (LmdbFrontierProbeFactory.hasStatementLineage(expression)) {
+			factors.add(expression);
+			return true;
+		}
+		if (expression instanceof Join join) {
+			return collectMappedConjunctiveFactors(join.getLeftArg(), factors)
+					&& collectMappedConjunctiveFactors(join.getRightArg(), factors);
+		}
+		if (expression instanceof BindingSetAssignment) {
+			/* Query-owned finite bindings can only reduce the unbound statement surface used for physical costing. */
+			return true;
+		}
+		if (expression instanceof Filter filter) {
+			return collectMappedConjunctiveFactors(filter.getArg(), factors);
+		}
+		if (expression instanceof Extension extension) {
+			return collectMappedConjunctiveFactors(extension.getArg(), factors);
+		}
+		if (expression instanceof Projection projection) {
+			return collectMappedConjunctiveFactors(projection.getArg(), factors);
+		}
+		if (expression instanceof Distinct distinct) {
+			return collectMappedConjunctiveFactors(distinct.getArg(), factors);
+		}
+		if (expression instanceof Reduced reduced) {
+			return collectMappedConjunctiveFactors(reduced.getArg(), factors);
+		}
+		if (expression instanceof Slice slice) {
+			return collectMappedConjunctiveFactors(slice.getArg(), factors);
+		}
+		if (expression instanceof Group group) {
+			return collectMappedConjunctiveFactors(group.getArg(), factors);
+		}
+		if (expression instanceof Order order) {
+			return collectMappedConjunctiveFactors(order.getArg(), factors);
+		}
+		if (expression instanceof QueryRoot root) {
+			return collectMappedConjunctiveFactors(root.getArg(), factors);
+		}
+		return false;
+	}
+
+	private FrontierJoinEstimate mappedJoinEstimate(PackedQueryView query, int relationId, PackedCostContext context) {
+		LmdbStatisticsService statistics = runtime.statisticsService();
+		if (statistics == null || runtime.frontierSettings().mode() != FrontierEstimatorMode.AUTHORITATIVE
+				|| !datasetUsesStoreDefaults || context.prefixRelationCount() == 0
+				|| statisticsView == null && !unpinnedMappedStatisticsAllowed) {
+			return null;
+		}
+		if (!query.isStatementPattern(relationId)) {
+			return null;
+		}
+		int[] relationIds = new int[context.prefixRelationCount() + 1];
+		for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
+			relationIds[ordinal] = context.prefixRelationId(ordinal);
+		}
+		relationIds[relationIds.length - 1] = relationId;
+		Arrays.sort(relationIds);
+		List<TupleExpr> statementFactors = new ArrayList<>(relationIds.length);
+		List<Integer> statementRelationIds = new ArrayList<>(relationIds.length);
+		int appendedStatementOrdinal = -1;
+		for (int programRelationId : relationIds) {
+			TupleExpr expression = query.materializeRelation(programRelationId);
+			if (!LmdbFrontierProbeFactory.hasStatementLineage(expression)) {
+				continue;
+			}
+			if (programRelationId == relationId) {
+				appendedStatementOrdinal = statementFactors.size();
+			}
+			statementFactors.add(expression);
+			statementRelationIds.add(programRelationId);
+		}
+		if (appendedStatementOrdinal < 0) {
+			return null;
+		}
+		List<TupleExpr> affectedComponent = LmdbFrontierProbeFactory.connectedLineageComponent(
+				statementFactors, appendedStatementOrdinal);
+		TupleExpr appendedStatement = statementFactors.get(appendedStatementOrdinal);
+		List<TupleExpr> prefixStatementFactors = new ArrayList<>(affectedComponent.size() - 1);
+		for (TupleExpr factor : affectedComponent) {
+			if (factor != appendedStatement) {
+				prefixStatementFactors.add(factor);
+			}
+		}
+		FrontierJoinEstimate componentConditional = mappedSingleBoundaryConditionalTransition(
+				query, relationId, context, appendedStatement, prefixStatementFactors,
+				statementFactors, statementRelationIds);
+		if (componentConditional == null) {
+			MappedRowsEstimate joined = mappedLineageEstimate(affectedComponent,
+					lineageSubsetKey(affectedComponent, statementFactors, statementRelationIds));
+			boolean completeStatementComponent = joined != null && affectedComponent.size() == relationIds.length;
+			if (completeStatementComponent) {
+				return joined.asJoinEstimate();
+			}
+			if (joined != null) {
+				MappedRowsEstimate prefix = mappedLineageEstimate(prefixStatementFactors,
+						lineageSubsetKey(prefixStatementFactors, statementFactors, statementRelationIds));
+				if (prefix != null) {
+					componentConditional = conditionalMixedPrefixEstimate(context.prefixRows(), prefix, joined);
+				}
+			}
+		}
+		FrontierJoinEstimate projectedDistinctConditional = mappedProjectedDistinctTransition(
+				query, relationId, context, appendedStatement);
+		return fuseMixedPrefixEstimates(componentConditional, projectedDistinctConditional);
+	}
+
+	private MappedRowsEstimate mappedFiniteDomainEstimate(PackedQueryView query, int relationId,
+			PackedCostContext context) {
+		if (statisticsView == null || context.prefixRelationCount() == 0 || !query.isStatementPattern(relationId)) {
+			return null;
+		}
+		int[] relationIds = new int[context.prefixRelationCount() + 1];
+		for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
+			relationIds[ordinal] = context.prefixRelationId(ordinal);
+		}
+		relationIds[relationIds.length - 1] = relationId;
+		Arrays.sort(relationIds);
+		return mappedFiniteDomainEstimate(query, relationIds);
+	}
+
+	private MappedRowsEstimate mappedFiniteDomainEstimate(PackedQueryView query, int[] relationIds) {
+		if (statisticsView == null || relationIds == null || relationIds.length == 0) {
+			return null;
+		}
+		long subsetKey = relationSubsetKey(relationIds);
+		if (mappedStatisticsCache != null && subsetKey != 0L
+				&& mappedStatisticsCache.finiteDomainEstimateResolved(subsetKey)) {
+			return mappedStatisticsCache.finiteDomainEstimate(subsetKey);
+		}
+		MappedRowsEstimate estimate = computeMappedFiniteDomainEstimate(query, relationIds);
+		if (mappedStatisticsCache != null && subsetKey != 0L) {
+			mappedStatisticsCache.storeFiniteDomainEstimate(subsetKey, estimate);
+		}
+		return estimate;
+	}
+
+	private MappedRowsEstimate computeMappedFiniteDomainEstimate(PackedQueryView query, int[] relationIds) {
+		int[] assignmentIds = new int[relationIds.length];
+		int assignmentCount = 0;
+		long combinations = 1L;
+		List<TupleExpr> statementFactors = new ArrayList<>(relationIds.length);
+		for (int relationId : relationIds) {
+			if (relationId <= 0 || relationId > query.relationCount()) {
+				return null;
+			}
+			if (query.isBindingSetAssignment(relationId)) {
+				int rowCount = query.bindingAssignmentRowCount(relationId);
+				if (rowCount == 0) {
+					return MappedRowsEstimate.finiteDomainZero();
+				}
+				if (rowCount > MAX_FINITE_LOOKUP_COMBINATIONS
+						|| combinations > MAX_FINITE_LOOKUP_COMBINATIONS / rowCount) {
+					return null;
+				}
+				combinations *= rowCount;
+				assignmentIds[assignmentCount++] = relationId;
+				continue;
+			}
+			TupleExpr expression = query.materializeRelation(relationId);
+			if (!LmdbFrontierProbeFactory.hasStatementLineage(expression)) {
+				return null;
+			}
+			statementFactors.add(expression);
+		}
+		if (assignmentCount == 0 || statementFactors.isEmpty()) {
+			return null;
+		}
+		MappedRowsAccumulator accumulator = new MappedRowsAccumulator();
+		Set<String> lookupBindingNames = new LinkedHashSet<>();
+		for (TupleExpr statementFactor : statementFactors) {
+			lookupBindingNames.addAll(statementFactor.getBindingNames());
+		}
+		Map<String, Value> bindings = new LinkedHashMap<>();
+		List<String> insertedBindings = new ArrayList<>();
+		if (!accumulateMappedFiniteDomain(query, assignmentIds, assignmentCount, 0, statementFactors,
+				lookupBindingNames, bindings, insertedBindings, accumulator)) {
+			return null;
+		}
+		return accumulator.toFiniteDomainEstimate();
+	}
+
+	private boolean accumulateMappedFiniteDomain(PackedQueryView query, int[] assignmentIds, int assignmentCount,
+			int assignmentOrdinal, List<TupleExpr> statementFactors, Set<String> lookupBindingNames,
+			Map<String, Value> bindings,
+			List<String> insertedBindings, MappedRowsAccumulator accumulator) {
+		if (assignmentOrdinal == assignmentCount) {
+			MappedRowsEstimate contribution = computeMappedBoundLineageEstimate(statementFactors, bindings);
+			if (contribution == null) {
+				return false;
+			}
+			accumulator.add(contribution, bindings, lookupBindingNames);
+			return true;
+		}
+		int assignmentId = assignmentIds[assignmentOrdinal];
+		for (int rowOrdinal = 0; rowOrdinal < query.bindingAssignmentRowCount(assignmentId); rowOrdinal++) {
+			int rowId = query.bindingAssignmentRowId(assignmentId, rowOrdinal);
+			int insertionMark = insertedBindings.size();
+			boolean compatible = true;
+			for (int bindingOrdinal = 0; bindingOrdinal < query.bindingRowSize(rowId); bindingOrdinal++) {
+				String name = query.bindingRowName(rowId, bindingOrdinal);
+				Value value = query.bindingRowValue(rowId, bindingOrdinal);
+				Value preceding = bindings.get(name);
+				if (preceding != null && !preceding.equals(value)) {
+					compatible = false;
+					break;
+				}
+				if (preceding == null) {
+					bindings.put(name, value);
+					insertedBindings.add(name);
+				}
+			}
+			boolean supported = !compatible || accumulateMappedFiniteDomain(query, assignmentIds, assignmentCount,
+					assignmentOrdinal + 1, statementFactors, lookupBindingNames, bindings, insertedBindings,
+					accumulator);
+			while (insertedBindings.size() > insertionMark) {
+				bindings.remove(insertedBindings.remove(insertedBindings.size() - 1));
+			}
+			if (!supported) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private MappedRowsEstimate computeMappedBoundLineageEstimate(List<TupleExpr> statementFactors,
+			Map<String, Value> bindings) {
+		return computeMappedBoundLineageEstimate(statementFactors, bindings, statisticsView);
+	}
+
+	private MappedRowsEstimate computeMappedBoundLineageEstimate(List<TupleExpr> statementFactors,
+			Map<String, Value> bindings, FrontierStatisticsView view) {
+		if (view == null) {
+			return null;
+		}
+		if (statementFactors.size() == 1) {
+			FrontierLeafProbe probe = LmdbFrontierProbeFactory.probeForLineage(
+					runtime.valueStore(), statementFactors.getFirst(), bindings, FrontierLeafProbe.BOTH_PLANES);
+			if (probe == null) {
+				return null;
+			}
+			if (mappedStatisticsCache != null && mappedStatisticsCache.boundLeafEstimateResolved(probe)) {
+				return mappedStatisticsCache.boundLeafEstimate(probe);
+			}
+			FrontierLeafEstimate estimate = view.estimateLeaf(probe);
+			MappedRowsEstimate result = estimate.fallbackReason() == FrontierFallbackReason.NONE
+					? new MappedRowsEstimate(estimate.pointRows(), estimate.lowerRows(), estimate.upperRows(),
+							estimate.confidence(), estimate.source())
+					: null;
+			if (mappedStatisticsCache != null) {
+				mappedStatisticsCache.storeBoundLeafEstimate(probe, result);
+			}
+			return result;
+		}
+		FrontierJoinProgram program = LmdbFrontierProbeFactory.joinProgramForLineage(
+				runtime.valueStore(), statementFactors, bindings, FrontierLeafProbe.BOTH_PLANES);
+		if (program == null) {
+			return null;
+		}
+		if (mappedStatisticsCache != null && mappedStatisticsCache.programEstimateResolved(program)) {
+			MappedRowsEstimate cached = mappedStatisticsCache.programEstimate(program);
+			if (cached != null) {
+				return cached;
+			}
+		}
+		MappedRowsEstimate result = MappedRowsEstimate.from(view.estimateSubgraph(program));
+		if (mappedStatisticsCache != null) {
+			mappedStatisticsCache.storeProgramEstimate(program, result);
+		}
+		return result;
+	}
+
+	private FrontierJoinEstimate mappedSingleBoundaryConditionalTransition(PackedQueryView query, int relationId,
+			PackedCostContext context, TupleExpr appendedStatement, List<TupleExpr> prefixStatementFactors,
+			List<TupleExpr> statementFactors, List<Integer> statementRelationIds) {
+		if (statisticsView == null || prefixStatementFactors.isEmpty()) {
+			return null;
+		}
+		FrontierLeafEstimate appendedRows = mappedLeafEstimate(query, relationId);
+		if (appendedRows == null) {
+			return null;
+		}
+		FrontierJoinEstimate perLeft = null;
+		int boundaryCount = 0;
+		for (TupleExpr prefixStatement : prefixStatementFactors) {
+			FrontierJoinProbe probe = LmdbFrontierProbeFactory.joinProbeForLineage(
+					runtime.valueStore(), prefixStatement, appendedStatement, FrontierLeafProbe.BOTH_PLANES);
+			if (probe == null) {
+				continue;
+			}
+			boundaryCount++;
+			if (boundaryCount > 1) {
+				/* Multiple boundary edges are a star/cycle correlation and require the multi-pattern estimator. */
+				return null;
+			}
+			int prefixOrdinal = identityIndexOf(statementFactors, prefixStatement);
+			if (prefixOrdinal < 0) {
+				return null;
+			}
+			int prefixRelationId = statementRelationIds.get(prefixOrdinal);
+			long cacheKey = Integer.toUnsignedLong(prefixRelationId) << 32 | Integer.toUnsignedLong(relationId);
+			if (mappedStatisticsCache != null && mappedStatisticsCache.conditionalEstimateResolved(cacheKey)) {
+				perLeft = mappedStatisticsCache.conditionalEstimate(cacheKey);
+			} else {
+				perLeft = statisticsView.estimateConditionalJoin(probe, appendedRows.upperRows());
+				if (perLeft == null || perLeft.fallbackReason() != FrontierFallbackReason.NONE) {
+					perLeft = null;
+				}
+				if (mappedStatisticsCache != null) {
+					mappedStatisticsCache.storeConditionalEstimate(cacheKey, perLeft);
+				}
+			}
+		}
+		return boundaryCount == 1 && perLeft != null
+				? scaleConditionalRows(context.prefixRows(), perLeft)
+				: null;
+	}
+
+	private static FrontierJoinEstimate scaleConditionalRows(double prefixRows, FrontierJoinEstimate perLeft) {
+		if (!finiteNonNegative(prefixRows)) {
+			return null;
+		}
+		double pointRows = saturatedMultiply(prefixRows, perLeft.pointRows());
+		double lowerRows = Math.min(pointRows, saturatedMultiply(prefixRows, perLeft.lowerRows()));
+		double upperRows = Math.max(pointRows, saturatedMultiply(prefixRows, perLeft.upperRows()));
+		return new FrontierJoinEstimate(pointRows, lowerRows, upperRows, perLeft.confidence(),
+				perLeft.source() + "-mixed-prefix", FrontierFallbackReason.NONE);
+	}
+
+	/**
+	 * Converts a prefix-bound statement component into average rows per invocation using the V2 projected-distinct
+	 * summaries. This is the mapped, bounded replacement for the former bound-variable LMDB enumeration: the prefix may
+	 * acquire the binding from a property path, VALUES, or another non-statement operator, so no statement-only join
+	 * program can represent this transition by itself.
+	 */
+	private FrontierJoinEstimate mappedProjectedDistinctTransition(PackedQueryView query, int relationId,
+			PackedCostContext context, TupleExpr expression) {
+		FrontierLeafProbe probe = LmdbFrontierProbeFactory.probeForLineage(
+				runtime.valueStore(), expression, FrontierLeafProbe.BOTH_PLANES);
+		if (probe == null) {
+			return null;
+		}
+		FrontierLeafEstimate leaf = mappedLeafEstimate(query, relationId);
+		if (leaf == null) {
+			return null;
+		}
+		if (leaf.pointRows() == 0.0d) {
+			return new FrontierJoinEstimate(0.0d, 0.0d, 0.0d, leaf.confidence(),
+					leaf.source() + "-projected-distinct-conditional", FrontierFallbackReason.NONE);
+		}
+		double rowsPerInvocation = leaf.pointRows();
+		double upperRowsPerInvocation = leaf.upperRows();
+		int effectiveBoundMask = probe.boundMask();
+		boolean conditioned = false;
+		for (int component = 0; component < 4; component++) {
+			if (!query.prefixBindsStatementComponent(context, relationId, component)) {
+				continue;
+			}
+			effectiveBoundMask |= 1 << component;
+			double distinct = mappedProjectedDistinct(probe, component);
+			if (!(distinct > 0.0d) || !Double.isFinite(distinct)) {
+				continue;
+			}
+			conditioned = true;
+			rowsPerInvocation = Math.min(rowsPerInvocation, leaf.pointRows() / distinct);
+			upperRowsPerInvocation = Math.min(upperRowsPerInvocation,
+					saturatedMultiply(leaf.upperRows() / distinct, 2.0d));
+		}
+		if ((effectiveBoundMask & 0x0f) == 0x0f) {
+			conditioned = true;
+			rowsPerInvocation = Math.min(1.0d, rowsPerInvocation);
+			upperRowsPerInvocation = Math.min(1.0d, upperRowsPerInvocation);
+		}
+		if (!conditioned || !finiteNonNegative(context.prefixRows())) {
+			return null;
+		}
+		double pointRows = saturatedMultiply(context.prefixRows(), rowsPerInvocation);
+		double upperRows = saturatedMultiply(context.prefixRows(),
+				Math.max(rowsPerInvocation, upperRowsPerInvocation));
+		return new FrontierJoinEstimate(pointRows, 0.0d, Math.max(pointRows, upperRows),
+				Math.min(0.65d, leaf.confidence()), leaf.source() + "-projected-distinct-conditional",
+				FrontierFallbackReason.NONE);
+	}
+
+	private double mappedProjectedDistinct(FrontierLeafProbe probe, int component) {
+		if (mappedStatisticsCache != null && mappedStatisticsCache.projectedDistinctResolved(probe, component)) {
+			return mappedStatisticsCache.projectedDistinct(probe, component);
+		}
+		double distinct;
+		if (statisticsView != null) {
+			distinct = statisticsView.estimateProjectedDistinct(probe, component);
+		} else {
+			LmdbStatisticsService statistics = runtime.statisticsService();
+			distinct = executionSnapshotEpoch.isPresent()
+					? statistics.estimateProjectedDistinct(executionSnapshotEpoch.getAsLong(), probe, component)
+					: statistics.estimateProjectedDistinctCurrent(probe, component);
+		}
+		if (mappedStatisticsCache != null) {
+			mappedStatisticsCache.storeProjectedDistinct(probe, component, distinct);
+		}
+		return distinct;
+	}
+
+	private static FrontierJoinEstimate fuseMixedPrefixEstimates(FrontierJoinEstimate component,
+			FrontierJoinEstimate projectedDistinct) {
+		if (component == null) {
+			return projectedDistinct;
+		}
+		if (projectedDistinct == null) {
+			return component;
+		}
+		/*
+		 * Both operands are derived from the same mapped generation and are therefore correlated. Treating their
+		 * minimum as an independent intersection lets a low-confidence leaf/distinct ratio veto coordinated center
+		 * evidence. In particular, a sparse projected-distinct lane can collapse an exact mutation-tail join below one
+		 * row. Select the estimate with the stronger declared confidence; when confidence is tied, prefer the tighter
+		 * relative interval. This is an ensemble selection, not a statistical fusion, until audit calibration proves
+		 * independence.
+		 */
+		FrontierJoinEstimate selected = moreReliableEstimate(component, projectedDistinct);
+		return new FrontierJoinEstimate(selected.pointRows(), selected.lowerRows(), selected.upperRows(),
+				selected.confidence(), component.source() + "+" + projectedDistinct.source()
+						+ "-mixed-bound-confidence-selection",
+				FrontierFallbackReason.NONE);
+	}
+
+	private static MappedTransitionSelection selectMappedTransition(MappedRowsEstimate finiteDomain,
+			FrontierJoinEstimate conditional) {
+		if (finiteDomain == null) {
+			return conditional == null
+					? MappedTransitionSelection.NONE
+					: new MappedTransitionSelection(conditional, false);
+		}
+		FrontierJoinEstimate concrete = finiteDomain.asJoinEstimate();
+		if (conditional == null) {
+			return new MappedTransitionSelection(concrete, true);
+		}
+		/*
+		 * Concrete finite probes and projected-distinct conditioning estimate the same mapped transition. Sparse Omni
+		 * witnesses can leave the concrete Count-Min-supported interval collision dominated; treating its point as an
+		 * exact preference recreates the old store-size-dependent lookup bias. Compare calibrated absolute uncertainty
+		 * because both intervals are in the same row domain, then retain the chosen estimator's point and bounds.
+		 */
+		FrontierJoinEstimate selected = minimumUncertaintyEstimate(concrete, conditional);
+		return new MappedTransitionSelection(
+				new FrontierJoinEstimate(selected.pointRows(), selected.lowerRows(), selected.upperRows(),
+						selected.confidence(), concrete.source() + "+" + conditional.source()
+								+ "-bounded-uncertainty-selection",
+						FrontierFallbackReason.NONE),
+				selected == concrete);
+	}
+
+	private static FrontierJoinEstimate minimumUncertaintyEstimate(FrontierJoinEstimate left,
+			FrontierJoinEstimate right) {
+		double leftUncertainty = calibratedIntervalUncertainty(left);
+		double rightUncertainty = calibratedIntervalUncertainty(right);
+		int uncertaintyComparison = Double.compare(leftUncertainty, rightUncertainty);
+		return uncertaintyComparison < 0
+				? left
+				: uncertaintyComparison > 0 ? right : moreReliableEstimate(left, right);
+	}
+
+	private static double calibratedIntervalUncertainty(FrontierJoinEstimate estimate) {
+		double width = estimate.upperRows() - estimate.lowerRows();
+		if (!finiteNonNegative(width)) {
+			return Double.MAX_VALUE;
+		}
+		double confidence = estimate.confidence();
+		if (!(confidence > 0.0d) || !Double.isFinite(confidence)) {
+			return width == 0.0d ? 0.0d : Double.MAX_VALUE;
+		}
+		return width / confidence;
+	}
+
+	private static FrontierJoinEstimate moreReliableEstimate(FrontierJoinEstimate left,
+			FrontierJoinEstimate right) {
+		int confidenceComparison = Double.compare(left.confidence(), right.confidence());
+		if (confidenceComparison != 0) {
+			return confidenceComparison > 0 ? left : right;
+		}
+		double leftWidth = relativeIntervalWidth(left);
+		double rightWidth = relativeIntervalWidth(right);
+		return leftWidth <= rightWidth ? left : right;
+	}
+
+	private static double relativeIntervalWidth(FrontierJoinEstimate estimate) {
+		double width = estimate.upperRows() - estimate.lowerRows();
+		if (!finiteNonNegative(width)) {
+			return Double.MAX_VALUE;
+		}
+		return width / Math.max(1.0d, estimate.pointRows());
+	}
+
+	private MappedRowsEstimate mappedCorrelatedLineageEstimate(List<TupleExpr> factors) {
+		if (factors == null || factors.isEmpty()) {
+			return null;
+		}
+		if (factors.size() == 1) {
+			return computeMappedLineageEstimate(factors);
+		}
+		if (factors.size() == 2) {
+			FrontierJoinProbe probe = LmdbFrontierProbeFactory.joinProbeForLineage(
+					runtime.valueStore(), factors.get(0), factors.get(1), FrontierLeafProbe.BOTH_PLANES);
+			if (probe == null) {
+				return null;
+			}
+			if (mappedStatisticsCache != null && mappedStatisticsCache.joinEstimateResolved(probe)) {
+				MappedRowsEstimate cached = mappedStatisticsCache.joinEstimate(probe);
+				if (cached != null) {
+					return cached;
+				}
+			}
+			if (mappedStatisticsCache != null
+					&& (!mappedStatisticsCache.beginCorrelatedJoinEstimate(probe)
+							|| !mappedStatisticsCache.tryAcquireCorrelatedFactorWork(2))) {
+				return null;
+			}
+			MappedRowsEstimate result = MappedRowsEstimate.from(statisticsView.estimateJoin(probe));
+			if (mappedStatisticsCache != null) {
+				mappedStatisticsCache.storeJoinEstimate(probe, result);
+			}
+			return result;
+		}
+		FrontierJoinProgram program = LmdbFrontierProbeFactory.joinProgramForLineage(
+				runtime.valueStore(), factors, FrontierLeafProbe.BOTH_PLANES);
+		if (program == null) {
+			return null;
+		}
+		if (mappedStatisticsCache != null && mappedStatisticsCache.programEstimateResolved(program)) {
+			MappedRowsEstimate cached = mappedStatisticsCache.programEstimate(program);
+			if (cached != null) {
+				return cached;
+			}
+		}
+		if (mappedStatisticsCache != null
+				&& (!mappedStatisticsCache.beginCorrelatedProgramEstimate(program)
+						|| !mappedStatisticsCache.tryAcquireCorrelatedFactorWork(program.patternCount()))) {
+			return null;
+		}
+		MappedRowsEstimate result = MappedRowsEstimate.from(statisticsView.estimateSubgraph(program));
+		if (mappedStatisticsCache != null) {
+			mappedStatisticsCache.storeProgramEstimate(program, result);
+		}
+		return result;
+	}
+
+	private MappedRowsEstimate mappedLineageEstimate(List<TupleExpr> factors, long subsetKey) {
+		if (mappedStatisticsCache != null && subsetKey != 0L
+				&& mappedStatisticsCache.lineageEstimateResolved(subsetKey)) {
+			return mappedStatisticsCache.lineageEstimate(subsetKey);
+		}
+		MappedRowsEstimate result = computeMappedLineageEstimate(factors);
+		if (mappedStatisticsCache != null && subsetKey != 0L) {
+			mappedStatisticsCache.storeLineageEstimate(subsetKey, result);
+		}
+		return result;
+	}
+
+	private MappedRowsEstimate computeMappedLineageEstimate(List<TupleExpr> factors) {
+		if (factors == null || factors.isEmpty()) {
+			return null;
+		}
+		if (factors.size() == 1) {
+			FrontierLeafProbe probe = LmdbFrontierProbeFactory.probeForLineage(
+					runtime.valueStore(), factors.get(0), FrontierLeafProbe.BOTH_PLANES);
+			if (probe == null) {
+				return null;
+			}
+			FrontierLeafEstimate estimate = statisticsView != null
+					? statisticsView.estimateLeaf(probe)
+					: executionSnapshotEpoch.isPresent()
+							? runtime.statisticsService().estimateLeaf(executionSnapshotEpoch.getAsLong(), probe)
+							: runtime.statisticsService().estimateLeafCurrent(probe);
+			return estimate.fallbackReason() == FrontierFallbackReason.NONE
+					? new MappedRowsEstimate(estimate.pointRows(), estimate.lowerRows(), estimate.upperRows(),
+							estimate.confidence(), estimate.source())
+					: null;
+		}
+		if (factors.size() == 2) {
+			FrontierJoinProbe probe = LmdbFrontierProbeFactory.joinProbeForLineage(
+					runtime.valueStore(), factors.get(0), factors.get(1), FrontierLeafProbe.BOTH_PLANES);
+			if (probe == null) {
+				return null;
+			}
+			if (mappedStatisticsCache != null && mappedStatisticsCache.joinEstimateResolved(probe)) {
+				return mappedStatisticsCache.joinEstimate(probe);
+			}
+			if (mappedStatisticsCache != null && !mappedStatisticsCache.tryAcquireLineageFactorWork(2)) {
+				mappedStatisticsCache.storeJoinEstimate(probe, null);
+				return null;
+			}
+			FrontierJoinEstimate estimate = statisticsView != null
+					? statisticsView.estimateJoin(probe)
+					: executionSnapshotEpoch.isPresent()
+							? runtime.statisticsService().estimateJoin(executionSnapshotEpoch.getAsLong(), probe)
+							: runtime.statisticsService().estimateJoinCurrent(probe);
+			MappedRowsEstimate result = MappedRowsEstimate.from(estimate);
+			if (mappedStatisticsCache != null) {
+				mappedStatisticsCache.storeJoinEstimate(probe, result);
+			}
+			return result;
+		}
+		FrontierJoinProgram program = LmdbFrontierProbeFactory.joinProgramForLineage(
+				runtime.valueStore(), factors, FrontierLeafProbe.BOTH_PLANES);
+		if (program == null) {
+			return null;
+		}
+		if (mappedStatisticsCache != null && mappedStatisticsCache.programEstimateResolved(program)) {
+			return mappedStatisticsCache.programEstimate(program);
+		}
+		if (mappedStatisticsCache != null
+				&& !mappedStatisticsCache.tryAcquireLineageFactorWork(program.patternCount())) {
+			mappedStatisticsCache.storeProgramEstimate(program, null);
+			return null;
+		}
+		FrontierJoinEstimate estimate = statisticsView != null
+				? statisticsView.estimateSubgraph(program)
+				: executionSnapshotEpoch.isPresent()
+						? runtime.statisticsService().estimateSubgraph(executionSnapshotEpoch.getAsLong(), program)
+						: runtime.statisticsService().estimateSubgraphCurrent(program);
+		MappedRowsEstimate result = MappedRowsEstimate.from(estimate);
+		if (mappedStatisticsCache != null) {
+			mappedStatisticsCache.storeProgramEstimate(program, result);
+		}
+		return result;
+	}
+
+	boolean refineMappedIntermediateJoin(PackedQueryView query, int[] joinedRelations, int[] leftRelations,
+			EvidenceStateSummary leftSummary, int[] rightRelations, EvidenceStateSummary rightSummary,
+			boolean prefixRelationsDescribeRows, PackedCostEstimate output) {
+		if (statisticsView == null || leftSummary == null || rightSummary == null) {
+			return false;
+		}
+		/*
+		 * Finite-domain reconstruction evaluates the listed query-owned assignments and statement factors without any
+		 * intervening row transformations. It is authoritative only while those relation IDs still describe the current
+		 * prefix bag. A relocated FILTER (or another row-changing operator) deliberately clears that proof; restoring
+		 * the unfiltered surface here would make cardinality and access work depend on join order.
+		 */
+		MappedRowsEstimate finiteDomain = prefixRelationsDescribeRows
+				? mappedFiniteDomainEstimate(query, joinedRelations)
+				: null;
+		if (finiteDomain != null) {
+			MappedRowsEstimate incumbent = mappedEstimate(output);
+			if (incumbent != null) {
+				FrontierJoinEstimate finiteCandidate = finiteDomain.asJoinEstimate();
+				FrontierJoinEstimate incumbentCandidate = incumbent.asJoinEstimate();
+				if (minimumUncertaintyEstimate(finiteCandidate, incumbentCandidate) == incumbentCandidate) {
+					return false;
+				}
+			}
+			double workRows = finiteNonNegative(output.workRows())
+					? Math.max(output.workRows(), finiteDomain.pointRows())
+					: finiteDomain.pointRows();
+			output.setContextualRows(finiteDomain.pointRows(), workRows);
+			output.setEstimateProvenance(finiteDomain.source(), "frontier_v2_mapped_finite_domain_join");
+			output.setEvidenceGuarantee(EvidenceGuarantee.MEASURE_UNBIASED);
+			annotateMappedStatistics(output);
+			output.putPlannedDoubleMetric("plannedFrontierLowerRows", finiteDomain.lowerRows());
+			output.putPlannedDoubleMetric("plannedFrontierUpperRows", finiteDomain.upperRows());
+			output.putPlannedDoubleMetric("plannedFrontierConfidence", finiteDomain.confidence());
+			return true;
+		}
+		if (output.evidenceGuarantee() == EvidenceGuarantee.DATABASE_EXACT) {
+			return false;
+		}
+		List<TupleExpr> leftStatements = mappedStatementFactors(query, leftRelations);
+		List<TupleExpr> rightStatements = mappedStatementFactors(query, rightRelations);
+		if (leftStatements.isEmpty() || rightStatements.isEmpty()) {
+			return false;
+		}
+		List<TupleExpr> joinedStatements = new ArrayList<>(leftStatements.size() + rightStatements.size());
+		joinedStatements.addAll(leftStatements);
+		joinedStatements.addAll(rightStatements);
+		if (!oneConnectedStatementComponent(leftStatements)
+				|| !oneConnectedStatementComponent(rightStatements)
+				|| !oneConnectedStatementComponent(joinedStatements)) {
+			return false;
+		}
+		MappedRowsEstimate leftBase = mappedLineageEstimate(leftStatements, relationSubsetKey(leftRelations));
+		MappedRowsEstimate rightBase = mappedLineageEstimate(rightStatements, relationSubsetKey(rightRelations));
+		MappedRowsEstimate joined = mappedLineageEstimate(joinedStatements, relationSubsetKey(joinedRelations));
+		MappedRestrictionScale leftScale = mappedRestrictionScale(leftSummary, leftBase);
+		MappedRestrictionScale rightScale = mappedRestrictionScale(rightSummary, rightBase);
+		if (joined == null || leftScale == null || rightScale == null) {
+			return false;
+		}
+		double pointRows = saturatedMultiply(joined.pointRows(),
+				saturatedMultiply(leftScale.point(), rightScale.point()));
+		double lowerRows = Math.min(pointRows, saturatedMultiply(joined.lowerRows(),
+				saturatedMultiply(leftScale.lower(), rightScale.lower())));
+		double upperRows = Math.max(pointRows, saturatedMultiply(joined.upperRows(),
+				saturatedMultiply(leftScale.upper(), rightScale.upper())));
+		double workRows = finiteNonNegative(output.workRows()) ? Math.max(output.workRows(), pointRows) : pointRows;
+		output.setContextualRows(pointRows, workRows);
+		output.setEstimateProvenance(joined.source() + "-restricted-intermediate",
+				"frontier_v2_mapped_intermediate_join");
+		output.setEvidenceGuarantee(EvidenceGuarantee.SCALAR_FALLBACK);
+		annotateMappedStatistics(output);
+		output.putPlannedDoubleMetric("plannedFrontierLowerRows", lowerRows);
+		output.putPlannedDoubleMetric("plannedFrontierUpperRows", upperRows);
+		output.putPlannedDoubleMetric("plannedFrontierConfidence",
+				Math.min(joined.confidence(), Math.min(leftSummary.confidence(), rightSummary.confidence())));
+		output.putPlannedDoubleMetric("plannedFrontierLeftRestrictionScale", leftScale.point());
+		output.putPlannedDoubleMetric("plannedFrontierRightRestrictionScale", rightScale.point());
+		return true;
+	}
+
+	private static MappedRowsEstimate mappedEstimate(PackedCostEstimate output) {
+		double lowerRows = output.plannedDoubleMetric("plannedFrontierLowerRows", Double.NaN);
+		double upperRows = output.plannedDoubleMetric("plannedFrontierUpperRows", Double.NaN);
+		double confidence = output.plannedDoubleMetric("plannedFrontierConfidence", Double.NaN);
+		return output.estimateSource() != null
+				&& finiteNonNegative(output.outputRows())
+				&& finiteNonNegative(lowerRows)
+				&& !Double.isNaN(upperRows)
+				&& upperRows >= output.outputRows()
+				&& confidence > 0.0d
+				&& Double.isFinite(confidence)
+						? new MappedRowsEstimate(output.outputRows(), Math.min(output.outputRows(), lowerRows),
+								upperRows, confidence, output.estimateSource())
+						: null;
+	}
+
+	private static List<TupleExpr> mappedStatementFactors(PackedQueryView query, int[] relationIds) {
+		List<TupleExpr> statements = new ArrayList<>(relationIds.length);
+		for (int relationId : relationIds) {
+			if (relationId <= 0 || relationId > query.relationCount()) {
+				return List.of();
+			}
+			TupleExpr expression = query.materializeRelation(relationId);
+			if (!LmdbFrontierProbeFactory.hasStatementLineage(expression)) {
+				/*
+				 * The child scalar then contains a query-owned relation (for example VALUES) that is absent from the
+				 * mapped statement program. Treating its scalar/base ratio as an independent predicate selectivity can
+				 * apply a correlated finite restriction twice. The append estimator already handles such mixed prefixes
+				 * from their actual invocation domain; this symmetric intermediate fallback must decline them.
+				 */
+				return List.of();
+			}
+			statements.add(expression);
+		}
+		return statements;
+	}
+
+	private static boolean oneConnectedStatementComponent(List<TupleExpr> statements) {
+		return statements.size() == 1
+				|| LmdbFrontierProbeFactory.connectedLineageComponent(statements, 0).size() == statements.size();
+	}
+
+	private static MappedRestrictionScale mappedRestrictionScale(EvidenceStateSummary actual,
+			MappedRowsEstimate mappedBase) {
+		if (mappedBase == null || !finiteNonNegative(actual.pointRows())) {
+			return null;
+		}
+		if (mappedBase.pointRows() == 0.0d) {
+			return actual.pointRows() == 0.0d ? new MappedRestrictionScale(0.0d, 0.0d, 0.0d) : null;
+		}
+		double point = actual.pointRows() / mappedBase.pointRows();
+		double lower = mappedBase.upperRows() > 0.0d && Double.isFinite(mappedBase.upperRows())
+				? actual.lowerRows() / mappedBase.upperRows()
+				: 0.0d;
+		double upper = mappedBase.lowerRows() > 0.0d
+				? actual.upperRows() / mappedBase.lowerRows()
+				: Double.MAX_VALUE;
+		if (!finiteNonNegative(point) || !finiteNonNegative(lower) || Double.isNaN(upper) || upper < 0.0d) {
+			return null;
+		}
+		return new MappedRestrictionScale(point, Math.min(point, lower), Math.max(point, upper));
+	}
+
+	private static long lineageSubsetKey(List<TupleExpr> subset, List<TupleExpr> factors,
+			List<Integer> relationIds) {
+		long key = 0L;
+		for (TupleExpr expression : subset) {
+			int ordinal = identityIndexOf(factors, expression);
+			if (ordinal < 0) {
+				return 0L;
+			}
+			int relationId = relationIds.get(ordinal);
+			if (relationId <= 0 || relationId > 63) {
+				return 0L;
+			}
+			key |= 1L << relationId - 1;
+		}
+		return key;
+	}
+
+	private static long relationSubsetKey(int[] relationIds) {
+		long key = 0L;
+		for (int relationId : relationIds) {
+			if (relationId <= 0 || relationId > 63) {
+				return 0L;
+			}
+			key |= 1L << relationId - 1;
+		}
+		return key;
+	}
+
+	private static int identityIndexOf(List<TupleExpr> expressions, TupleExpr target) {
+		for (int ordinal = 0; ordinal < expressions.size(); ordinal++) {
+			if (expressions.get(ordinal) == target) {
+				return ordinal;
+			}
+		}
+		return -1;
+	}
+
+	private static FrontierJoinEstimate conditionalMixedPrefixEstimate(double prefixRows,
+			MappedRowsEstimate prefix, MappedRowsEstimate joined) {
+		if (!finiteNonNegative(prefixRows) || prefix.pointRows() <= 0.0d) {
+			return prefixRows == 0.0d
+					? new FrontierJoinEstimate(0.0d, 0.0d, 0.0d, Math.min(prefix.confidence(), joined.confidence()),
+							joined.source() + "-conditional-mixed-prefix", FrontierFallbackReason.NONE)
+					: null;
+		}
+		double pointRows = saturatedMultiply(prefixRows, joined.pointRows() / prefix.pointRows());
+		double lowerRows = prefix.upperRows() > 0.0d
+				? saturatedMultiply(prefixRows, joined.lowerRows() / prefix.upperRows())
+				: 0.0d;
+		double upperRows = prefix.lowerRows() > 0.0d
+				? saturatedMultiply(prefixRows, joined.upperRows() / prefix.lowerRows())
+				: Double.MAX_VALUE;
+		lowerRows = Math.min(lowerRows, pointRows);
+		upperRows = Math.max(upperRows, pointRows);
+		/*
+		 * Exact global numerator and denominator counts do not make their ratio exact after an unrepresented VALUES,
+		 * filter, path, or other mixed-prefix operator has selected only part of the left population. Cap confidence by
+		 * the represented fraction when the physical prefix is narrower; otherwise a tiny, correlated subset inherits
+		 * confidence 1.0 from two exact but unconditional counts.
+		 */
+		double representedFraction = Math.min(1.0d, prefixRows / prefix.pointRows());
+		return new FrontierJoinEstimate(pointRows, lowerRows, upperRows,
+				Math.min(representedFraction, Math.min(prefix.confidence(), joined.confidence())),
+				joined.source() + "-conditional-mixed-prefix", FrontierFallbackReason.NONE);
 	}
 
 	boolean estimateFrontierLeafAccess(PackedQueryView query, int relationId, double frontierRows,
@@ -468,21 +1801,28 @@ final class LmdbPackedCostModel
 		}
 		boolean annotatedFilterEstimate = filter && hasCompleteAnnotatedFilterEstimate(query, relationId);
 		TupleExpr expression = materializeRelation(query, relationId);
-		if (filter && !annotatedFilterEstimate && refineExactFilterIdentity(expression, context, output)) {
+		if (statisticsView == null && filter && !annotatedFilterEstimate
+				&& refineExactFilterIdentity(expression, context, output)) {
 			setFilterPhysicalCost(context, output);
 			return;
 		}
-		if (refineExactAlternativeSurface(expression, output)) {
+		if (statisticsView == null && context.prefixRelationsDescribeRows()
+				&& refineExactAlternativeSurface(expression, output)) {
 			if (filter) {
 				setFilterPhysicalCost(context, output);
 			}
+			return;
+		}
+		if (filter && refineMappedFiniteFilter((Filter) expression, query, context, output)) {
+			setFilterPhysicalCost(context, output);
 			return;
 		}
 		if (filter && refinePatternLocalFilter((Filter) expression, query, context, output)) {
 			setFilterPhysicalCost(context, output);
 			return;
 		}
-		if (expression instanceof Join && output.evidenceStateId() == 0
+		if (statisticsView == null && context.prefixRelationsDescribeRows()
+				&& expression instanceof Join && output.evidenceStateId() == 0
 				&& refineExactConnectedSurface(expression, output)) {
 			return;
 		}
@@ -549,6 +1889,235 @@ final class LmdbPackedCostModel
 	}
 
 	/**
+	 * Estimates a finite RDF-term predicate over the complete connected statement component represented by the current
+	 * prefix. The finite values are query-owned and bounded by {@link FilterValuesAnchorSupport}; all statement
+	 * evidence comes from the pinned, directly queryable V2 generation.
+	 *
+	 * <p>
+	 * A predicate variable can be supplied by one statement while its multiplicity is established by several joined
+	 * statements. Applying a leaf-local pass ratio to that joined bag assumes independence and can under-estimate the
+	 * filter by orders of magnitude. Instead, evaluate the mapped Omni subgraph once without bindings and once per
+	 * distinct finite binding, then apply the component ratio to the actual prefix rows. Disconnected factors retain
+	 * their multiplicity because they are absent from both numerator and denominator. Failure to obtain bounded mapped
+	 * evidence simply declines this route; it never scans the LMDB statement indexes.
+	 */
+	private boolean refineMappedFiniteFilter(Filter filter, PackedQueryView query, PackedCostContext context,
+			PackedCostEstimate output) {
+		if (filter.getCondition() == null || !context.prefixRelationsDescribeRows()
+				|| !finiteNonNegative(context.leftInputRows())) {
+			return false;
+		}
+		if (statisticsView != null) {
+			return refineMappedFiniteFilter(filter, query, context, output, statisticsView);
+		}
+		if (!unpinnedMappedStatisticsAllowed || !datasetUsesStoreDefaults || !mappedStatisticsReady()) {
+			return false;
+		}
+		LmdbStatisticsService statistics = runtime.statisticsService();
+		try (FrontierStatisticsView view = executionSnapshotEpoch.isPresent()
+				? statistics.openView(executionSnapshotEpoch.getAsLong())
+				: statistics.openCurrentView()) {
+			return view.ready() && refineMappedFiniteFilter(filter, query, context, output, view);
+		}
+	}
+
+	private boolean refineMappedFiniteFilter(Filter filter, PackedQueryView query, PackedCostContext context,
+			PackedCostEstimate output, FrontierStatisticsView view) {
+		BindingSetAssignment anchor = FilterValuesAnchorSupport.safeValuesAnchor(filter.getCondition());
+		boolean completeTermSemantics = anchor != null;
+		if (anchor == null) {
+			anchor = LmdbJoinPlanSupport.smallLiteralFilterAnchor(filter.getCondition(), value -> value != null);
+		}
+		if (anchor == null || anchor.getBindingNames().isEmpty()) {
+			return false;
+		}
+		Set<Map<String, Value>> finiteBindings = distinctFiniteBindings(anchor);
+		if (finiteBindings == null) {
+			return false;
+		}
+		if (finiteBindings.isEmpty()) {
+			setMappedFilterRows(output, 0.0d);
+			annotateMappedFiniteFilter(output, view, 0.0d, 0.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+					completeTermSemantics);
+			return true;
+		}
+		Set<Map<String, Value>> probeBindings = completeTermSemantics
+				? finiteBindings
+				: LmdbTypedValueProbeSupport.expandEquivalentBindings(
+						finiteBindings, MAX_FINITE_LOOKUP_COMBINATIONS);
+		if (probeBindings == null) {
+			return false;
+		}
+
+		List<TupleExpr> component = mappedFilterComponent(materializePrefixFactors(query, context),
+				anchor.getBindingNames());
+		/*
+		 * A one-statement component already has a query-ready leaf/filter estimate. This transform exists only for the
+		 * correlated case where joined multiplicity makes that leaf-local pass ratio invalid.
+		 */
+		if (component.size() < 2) {
+			return false;
+		}
+		MappedRowsEstimate base = computeMappedBoundLineageEstimate(component, Map.of(), view);
+		if (base == null || base.pointRows() == 0.0d && base.upperRows() > 0.0d) {
+			return false;
+		}
+		MappedRowsAccumulator selectedAccumulator = new MappedRowsAccumulator();
+		boolean selectedEvidence = false;
+		for (Map<String, Value> bindings : probeBindings) {
+			MappedRowsEstimate selected = computeMappedBoundLineageEstimate(component, bindings, view);
+			if (selected == null) {
+				if (completeTermSemantics) {
+					return false;
+				}
+				continue;
+			}
+			selectedEvidence = true;
+			selectedAccumulator.add(selected, bindings, anchor.getBindingNames());
+		}
+		MappedRowsEstimate selected = selectedAccumulator.toFiniteDomainEstimate();
+		if (!completeTermSemantics && (!selectedEvidence || selected.pointRows() == 0.0d)) {
+			/* Exact term absence cannot exclude SPARQL value-equal aliases. */
+			return false;
+		}
+		if (base.pointRows() == 0.0d) {
+			setMappedFilterRows(output, 0.0d);
+			annotateMappedFiniteFilter(output, view, 0.0d, 0.0d, 0.0d,
+					Math.min(base.confidence(), selected.confidence()), finiteBindings.size(),
+					probeBindings.size(), base.pointRows(), selected.pointRows(), completeTermSemantics);
+			return true;
+		}
+
+		double pointRatio = probability(selected.pointRows(), 1.0d, base.pointRows());
+		double lowerRatio = Double.isFinite(base.upperRows()) && base.upperRows() > 0.0d
+				? Math.min(pointRatio, selected.lowerRows() / base.upperRows())
+				: 0.0d;
+		double upperRatio = base.lowerRows() > 0.0d
+				? Math.max(pointRatio, Math.min(1.0d, selected.upperRows() / base.lowerRows()))
+				: 1.0d;
+		pointRatio = Math.min(1.0d, pointRatio);
+		lowerRatio = Math.max(0.0d, Math.min(pointRatio, lowerRatio));
+		upperRatio = Math.min(1.0d, Math.max(pointRatio, upperRatio));
+		if (!completeTermSemantics) {
+			lowerRatio = 0.0d;
+			upperRatio = 1.0d;
+		}
+		double pointRows = Math.min(context.leftInputRows(),
+				saturatedMultiply(context.leftInputRows(), pointRatio));
+		double lowerRows = Math.min(pointRows, saturatedMultiply(context.leftInputRows(), lowerRatio));
+		double upperRows = Math.max(pointRows, Math.min(context.leftInputRows(),
+				saturatedMultiply(context.leftInputRows(), upperRatio)));
+		setMappedFilterRows(output, pointRows);
+		annotateMappedFiniteFilter(output, view, pointRows, lowerRows, upperRows,
+				Math.min(base.confidence(), selected.confidence()), finiteBindings.size(),
+				probeBindings.size(), base.pointRows(), selected.pointRows(), completeTermSemantics);
+		return true;
+	}
+
+	private static Set<Map<String, Value>> distinctFiniteBindings(BindingSetAssignment anchor) {
+		Iterable<BindingSet> bindingSets = anchor.getBindingSets();
+		if (bindingSets == null) {
+			return Set.of();
+		}
+		Set<Map<String, Value>> distinct = new LinkedHashSet<>();
+		for (BindingSet bindingSet : bindingSets) {
+			Map<String, Value> row = new LinkedHashMap<>();
+			for (String name : anchor.getBindingNames()) {
+				Value value = bindingSet.getValue(name);
+				if (value == null) {
+					return null;
+				}
+				row.put(name, value);
+			}
+			distinct.add(Map.copyOf(row));
+			if (distinct.size() > MAX_FINITE_LOOKUP_COMBINATIONS) {
+				return null;
+			}
+		}
+		return distinct;
+	}
+
+	private static List<TupleExpr> mappedFilterComponent(List<TupleExpr> prefixFactors,
+			Set<String> bindingNames) {
+		List<TupleExpr> statementFactors = new ArrayList<>(prefixFactors.size());
+		int anchorOrdinal = -1;
+		for (TupleExpr factor : prefixFactors) {
+			if (!LmdbFrontierProbeFactory.hasStatementLineage(factor)) {
+				continue;
+			}
+			if (anchorOrdinal < 0) {
+				for (String bindingName : bindingNames) {
+					if (LmdbFrontierProbeFactory.componentIndexForLineage(factor, bindingName) >= 0) {
+						anchorOrdinal = statementFactors.size();
+						break;
+					}
+				}
+			}
+			statementFactors.add(factor);
+		}
+		if (anchorOrdinal < 0) {
+			return List.of();
+		}
+		List<TupleExpr> component = LmdbFrontierProbeFactory.connectedLineageComponent(statementFactors,
+				anchorOrdinal);
+		for (String bindingName : bindingNames) {
+			boolean exposed = false;
+			for (TupleExpr factor : component) {
+				if (LmdbFrontierProbeFactory.componentIndexForLineage(factor, bindingName) >= 0) {
+					exposed = true;
+					break;
+				}
+			}
+			if (!exposed) {
+				return List.of();
+			}
+		}
+		return component;
+	}
+
+	private static void setMappedFilterRows(PackedCostEstimate output, double rows) {
+		if (output.hasComponentOutputRows()) {
+			output.setComponentOutputRowsPreservingPhysicalCost(rows);
+		} else {
+			output.setContextualOutputRowsPreservingPhysicalCost(rows);
+		}
+	}
+
+	private void annotateMappedFiniteFilter(PackedCostEstimate output, FrontierStatisticsView view,
+			double pointRows, double lowerRows, double upperRows, double confidence, double distinctBindings,
+			double distinctProbeBindings, double baseComponentRows,
+			double selectedComponentRows, boolean completeTermSemantics) {
+		output.setEstimateProvenance(
+				completeTermSemantics
+						? LmdbMappedFilterEvidence.SOURCE
+						: LmdbMappedFilterEvidence.SEMANTICALLY_UNCERTAIN_SOURCE,
+				completeTermSemantics
+						? "frontier_v2_mapped_finite_filter"
+						: "frontier_v2_mapped_finite_filter_term_support");
+		output.setEvidenceGuarantee(
+				completeTermSemantics ? EvidenceGuarantee.MEASURE_UNBIASED : EvidenceGuarantee.SCALAR_FALLBACK);
+		annotateMappedStatistics(output);
+		output.putPlannedStringMetric("plannedFilterPassApplicability",
+				completeTermSemantics ? "mapped-connected-prefix" : "mapped-connected-prefix-term-support");
+		output.putPlannedDoubleMetric(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO,
+				baseComponentRows == 0.0d ? 0.0d : Math.min(1.0d, selectedComponentRows / baseComponentRows));
+		output.putPlannedDoubleMetric("plannedDistinctLookupBindings", distinctBindings);
+		output.putPlannedDoubleMetric("plannedDistinctLookupProbeBindings", distinctProbeBindings);
+		output.putPlannedDoubleMetric("plannedFrontierFilterBaseComponentRows", baseComponentRows);
+		output.putPlannedDoubleMetric("plannedFrontierFilterSelectedComponentRows", selectedComponentRows);
+		output.putPlannedDoubleMetric("plannedFrontierLowerRows", lowerRows);
+		output.putPlannedDoubleMetric("plannedFrontierUpperRows", upperRows);
+		output.putPlannedDoubleMetric("plannedFrontierConfidence", confidence);
+		output.putPlannedDoubleMetric("plannedFrontierFilterTermSemanticsComplete",
+				completeTermSemantics ? 1.0d : 0.0d);
+		if (statisticsView == null) {
+			output.putPlannedDoubleMetric("plannedFrontierGenerationId", view.generationId());
+			output.putPlannedDoubleMetric("plannedFrontierBaseEpoch", view.baseEpoch());
+			output.putPlannedDoubleMetric("plannedFrontierCoveredEpoch", view.coveredEpoch());
+		}
+	}
+
+	/**
 	 * Retains the storage-backed selectivity event for a predicate whose dependencies are supplied by one local
 	 * statement pattern when the packed search relocates that predicate over a different join prefix.
 	 *
@@ -556,11 +2125,12 @@ final class LmdbPackedCostModel
 	 * The canonical FILTER estimate is tied to the original complete input topology and cannot be copied to a candidate
 	 * with a different input bag. The pattern-local pass estimate is the existing scalar contract used by
 	 * {@code FilterOptimizer}; applying its ratio to the candidate's event-time input rows is therefore the only
-	 * context-valid scalar transition only while the provider remains its own connected component. Once another factor
-	 * joins that provider, its multiplicity can be correlated with the filtered value and the local ratio no longer has
-	 * the row scope needed to scale the joined bag. Multi-provider predicates and connected provider components
-	 * deliberately decline this path so whole-prefix evidence, rather than an independence approximation, remains
-	 * authoritative when it is available.
+	 * context-valid scalar transition while the provider remains its own connected component. Once another factor joins
+	 * that provider, its multiplicity can be correlated with the filtered value and the local ratio no longer has the
+	 * row scope needed to scale an authoritative joined estimate. If no whole-prefix estimate exists, however,
+	 * retaining the local ratio as an explicitly heuristic independence fallback is more informative than treating the
+	 * predicate as a pass-through. It also lets the search compare the safe algebraic placement before an expensive
+	 * continuation such as a property path. Multi-provider predicates still decline this path.
 	 */
 	private boolean refinePatternLocalFilter(Filter filter, PackedQueryView query, PackedCostContext context,
 			PackedCostEstimate output) {
@@ -586,7 +2156,12 @@ final class LmdbPackedCostModel
 			provider = candidate;
 			providerOrdinal = ordinal;
 		}
-		if (provider == null || !standaloneConnectedComponent(prefixFactors, providerOrdinal)) {
+		if (provider == null) {
+			return false;
+		}
+		boolean providerOnlyComponent = standaloneConnectedComponent(query, prefixFactors, providerOrdinal);
+		if (!providerOnlyComponent && output.estimateSource() != null) {
+			/* A joined/cardinality surface with an explicit provenance has the right row scope and wins outright. */
 			return false;
 		}
 		EvaluationStatistics.FilterPassEstimate estimate = runtime
@@ -603,8 +2178,21 @@ final class LmdbPackedCostModel
 		if (!finiteNonNegative(outputRows)) {
 			return false;
 		}
-		output.setContextualOutputRowsPreservingPhysicalCost(outputRows);
-		output.setEstimateProvenance("lmdb-pattern-local-filter", "pattern_local_filter_pass");
+		if (output.hasComponentOutputRows()) {
+			/* FILTER changes cardinality, not the connected-component scope established by its input. */
+			output.setComponentOutputRowsPreservingPhysicalCost(outputRows);
+		} else {
+			output.setContextualOutputRowsPreservingPhysicalCost(outputRows);
+		}
+		String source = providerOnlyComponent
+				? "lmdb-pattern-local-filter"
+				: "lmdb-pattern-local-filter-independence";
+		String fusion = providerOnlyComponent
+				? "pattern_local_filter_pass"
+				: "pattern_local_filter_independence_fallback";
+		output.setEstimateProvenance(source, fusion);
+		output.putPlannedStringMetric("plannedFilterPassApplicability",
+				providerOnlyComponent ? "provider-component" : "connected-prefix-independence-fallback");
 		output.putPlannedDoubleMetric(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO_RAW,
 				estimate.getPassRatio());
 		output.putPlannedDoubleMetric(TelemetryMetricNames.PLANNED_FILTER_PASS_RATIO, passRatio);
@@ -614,28 +2202,30 @@ final class LmdbPackedCostModel
 				estimate.getUpper95PassRatio());
 		output.putPlannedDoubleMetric(TelemetryMetricNames.PLANNED_FILTER_CONFIDENCE,
 				estimate.getConfidenceScore());
-		String source = estimate.getSource().name().toLowerCase(java.util.Locale.ROOT);
-		output.putPlannedStringMetric(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE, source);
-		output.putPlannedStringMetric("plannedFilterPassSource", source);
+		String passSource = estimate.getSource().name().toLowerCase(java.util.Locale.ROOT);
+		output.putPlannedStringMetric(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE, passSource);
+		output.putPlannedStringMetric("plannedFilterPassSource", passSource);
 		if (estimate.getEvidenceCount() >= 0L) {
 			output.putPlannedDoubleMetric(TelemetryMetricNames.PLANNED_FILTER_EVIDENCE_COUNT,
 					estimate.getEvidenceCount());
 			output.putPlannedDoubleMetric("plannedFilterPassEvidence", estimate.getEvidenceCount());
 		}
-		if (estimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.EXACT) {
+		if (providerOnlyComponent
+				&& estimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.EXACT) {
 			output.setEvidenceGuarantee(EvidenceGuarantee.DATABASE_EXACT);
 		}
 		return true;
 	}
 
-	private static boolean standaloneConnectedComponent(List<TupleExpr> factors, int providerOrdinal) {
+	private static boolean standaloneConnectedComponent(PackedQueryView query, List<TupleExpr> factors,
+			int providerOrdinal) {
 		TupleExpr provider = factors.get(providerOrdinal);
-		Set<String> providerNames = provider.getBindingNames();
+		Set<String> providerNames = query.bindingNames(provider);
 		for (int ordinal = 0; ordinal < factors.size(); ordinal++) {
 			if (ordinal == providerOrdinal) {
 				continue;
 			}
-			for (String bindingName : factors.get(ordinal).getBindingNames()) {
+			for (String bindingName : query.bindingNames(factors.get(ordinal))) {
 				if (providerNames.contains(bindingName)) {
 					return false;
 				}
@@ -878,10 +2468,12 @@ final class LmdbPackedCostModel
 		List<TupleExpr> prefixFactors = prefix.factors();
 		Set<String> boundNames = prefix.bindingNames();
 		Map<String, Set<Value>> finiteBindings = prefix.finiteBindingValues();
-		boolean connected = connectedToPrefix(expression, boundNames);
+		boolean connected = connectedToPrefix(query, expression, boundNames);
 		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = runtime.factorCost(expression,
 				JoinFactorCostModel.CostContext.forOptimization(boundNames, context.prefixRows(), Double.NaN,
-						connected, true, finiteBindings, prefixFactors));
+						connected, true, finiteBindings, prefixFactors)
+						.withPrefixFactorsDescribeCurrentRows(context.prefixRelationsDescribeRows())
+						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()));
 		if (estimate.isEmpty()) {
 			return false;
 		}
@@ -935,10 +2527,12 @@ final class LmdbPackedCostModel
 		List<TupleExpr> prefixFactors = prefix.factors();
 		Set<String> boundNames = prefix.bindingNames();
 		Map<String, Set<Value>> finiteBindings = prefix.finiteBindingValues();
-		boolean connected = connectedToPrefix(expression, boundNames);
+		boolean connected = connectedToPrefix(query, expression, boundNames);
 		boolean hasPrefix = context.prefixRelationCount() > 0;
 		JoinFactorCostModel.CostContext factorContext = JoinFactorCostModel.CostContext.forOptimization(
-				boundNames, context.prefixRows(), Double.NaN, hasPrefix, true, finiteBindings, prefixFactors);
+				boundNames, context.prefixRows(), Double.NaN, hasPrefix, true, finiteBindings, prefixFactors)
+				.withPrefixFactorsDescribeCurrentRows(context.prefixRelationsDescribeRows())
+				.withUnrelatedPrefixRows(context.unrelatedPrefixRows());
 		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = runtime.factorCost(expression, factorContext);
 		if (estimate.isEmpty()) {
 			return false;
@@ -1092,20 +2686,24 @@ final class LmdbPackedCostModel
 		List<TupleExpr> prefixFactors = prefix.factors();
 		Set<String> boundNames = prefix.bindingNames();
 		Map<String, Set<Value>> finiteBindings = prefix.finiteBindingValues();
-		boolean connected = connectedToPrefix(expression, boundNames);
+		boolean connected = connectedToPrefix(query, expression, boundNames);
 		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = runtime.factorCost(expression,
 				JoinFactorCostModel.CostContext.forOptimization(boundNames, context.prefixRows(), Double.NaN,
-						connected, true, finiteBindings, prefixFactors));
+						connected, true, finiteBindings, prefixFactors)
+						.withPrefixFactorsDescribeCurrentRows(context.prefixRelationsDescribeRows())
+						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()));
 		if (estimate.isEmpty()) {
 			return false;
 		}
 		JoinFactorCostModel.FactorCostEstimate pathEstimate = estimate.orElseThrow();
-		double rows = pathEstimate.getOutputRows();
-		double workRows = pathEstimate.getWorkRows();
+		MappedPropertyPathEstimate mappedPath = mappedPropertyPathEstimate(expression, prefixFactors, context,
+				prefixFullyConnectedTo(query, expression, prefixFactors));
+		double rows = mappedPath == null ? pathEstimate.getOutputRows() : mappedPath.rows();
+		double workRows = mappedPath == null ? pathEstimate.getWorkRows() : mappedPath.workRows();
 		if (!finiteNonNegative(rows) || !finiteNonNegative(workRows)) {
 			return false;
 		}
-		if (connected && prefixFullyConnectedTo(expression, prefixFactors)) {
+		if (connected && prefixFullyConnectedTo(query, expression, prefixFactors)) {
 			output.setContextualRows(rows, workRows);
 		} else if (connected) {
 			/*
@@ -1118,18 +2716,240 @@ final class LmdbPackedCostModel
 		} else {
 			output.setRows(rows, workRows);
 		}
-		String engineSource = pathEstimate.getStringMetrics()
-				.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-property-path");
-		output.setEstimateProvenance("lmdb-property-path",
-				"lmdb-property-path".equals(engineSource) ? null : engineSource);
+		String engineSource = mappedPath == null
+				? pathEstimate.getStringMetrics()
+						.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE, "lmdb-property-path")
+				: mappedPath.source();
+		if (mappedPath == null) {
+			output.setEstimateProvenance("lmdb-property-path",
+					"lmdb-property-path".equals(engineSource) ? null : engineSource);
+		} else {
+			output.setEstimateProvenance(engineSource, "frontier_v2_mapped_path");
+		}
 		String endpointMode = propertyPathEndpointMode(expression, boundNames);
 		output.putPlannedStringMetric("plannedPropertyPathMethod", "lmdb-property-path");
 		output.putPlannedStringMetric("plannedPropertyPathEndpointMode", endpointMode);
 		output.putPlannedStringMetric("optimizer.pathEndpointMode", endpointMode);
 		copyFactorDoubleMetrics(pathEstimate, output);
-		setPropertyPathPhysicalCost(expression, pathEstimate, rows, output);
+		if (mappedPath == null) {
+			setPropertyPathPhysicalCost(expression, pathEstimate, rows, output);
+		} else {
+			annotateMappedPropertyPath(mappedPath, output);
+			setMappedPropertyPathPhysicalCost(expression, mappedPath, output);
+		}
+		/*
+		 * LmdbPropertyPathEstimator prices candidate rows, step lookups, and expansion iterations over its complete
+		 * EstimateContext invocation domain. Preserve that domain on the typed vector: otherwise dependent-join costing
+		 * sees the default one invocation and reopens this already-inclusive path once per prefix row.
+		 */
+		double pricedInvocations = mappedPath == null
+				? metric(pathEstimate, "plannedRepeatedInvocations",
+						connected ? Math.max(0.0d, context.prefixRows()) : 1.0d)
+				: mappedPath.invocations();
+		output.setInvocations(pricedInvocations);
 		output.setReplacesChildWork(true);
 		return true;
+	}
+
+	private MappedPropertyPathEstimate mappedPropertyPathEstimate(TupleExpr expression,
+			List<TupleExpr> prefixFactors, PackedCostContext context, boolean completePrefixComponent) {
+		if (statisticsView == null || !(expression instanceof ArbitraryLengthPath path)
+				|| !(path.getPathExpression()instanceof StatementPattern step)) {
+			return null;
+		}
+		boolean subjectBound = prefixBinds(path.getSubjectVar(), prefixFactors);
+		boolean objectBound = prefixBinds(path.getObjectVar(), prefixFactors);
+		if (subjectBound == objectBound) {
+			return null;
+		}
+		Var boundEndpoint = subjectBound ? path.getSubjectVar() : path.getObjectVar();
+		String endpointName = variableName(boundEndpoint);
+		if (endpointName == null) {
+			return null;
+		}
+		List<TupleExpr> statementFactors = new ArrayList<>();
+		int anchorOrdinal = -1;
+		for (TupleExpr factor : prefixFactors) {
+			if (!LmdbFrontierProbeFactory.hasStatementLineage(factor)) {
+				continue;
+			}
+			if (anchorOrdinal < 0 && factor.getBindingNames().contains(endpointName)) {
+				anchorOrdinal = statementFactors.size();
+			}
+			statementFactors.add(factor);
+		}
+		if (anchorOrdinal < 0) {
+			return null;
+		}
+		List<TupleExpr> prefixComponent = LmdbFrontierProbeFactory.connectedLineageComponent(statementFactors,
+				anchorOrdinal);
+		MappedRowsEstimate mappedPrefix = mappedLineageEstimate(prefixComponent, 0L);
+		if (mappedPrefix == null || !(mappedPrefix.pointRows() > 0.0d)) {
+			return null;
+		}
+		double componentPrefixRows = connectedComponentRows(context, completePrefixComponent);
+		if (!finiteNonNegative(componentPrefixRows)) {
+			return null;
+		}
+
+		boolean forward = subjectBound;
+		String inputName = variableName(forward ? step.getSubjectVar() : step.getObjectVar());
+		String outputName = variableName(forward ? step.getObjectVar() : step.getSubjectVar());
+		if (inputName == null || outputName == null || inputName.equals(outputName)) {
+			return null;
+		}
+		List<TupleExpr> pathProgram = new ArrayList<>(prefixComponent.size() + MAX_MAPPED_PROPERTY_PATH_DEPTH);
+		pathProgram.addAll(prefixComponent);
+		Set<String> occupiedNames = new LinkedHashSet<>();
+		for (TupleExpr factor : prefixComponent) {
+			occupiedNames.addAll(factor.getBindingNames());
+		}
+		occupiedNames.addAll(step.getBindingNames());
+		double rows = path.getMinLength() == 0L ? componentPrefixRows : 0.0d;
+		double lowerRows = rows;
+		double upperRows = rows;
+		double candidateRows = 0.0d;
+		double confidence = mappedPrefix.confidence();
+		String currentName = endpointName;
+		int observedDepths = 0;
+		for (int depth = 1; depth <= MAX_MAPPED_PROPERTY_PATH_DEPTH; depth++) {
+			String nextName = uniquePathVariable(occupiedNames, depth, -1);
+			pathProgram.add(pathStep(step, inputName, outputName, currentName, nextName, depth, occupiedNames));
+			occupiedNames.add(nextName);
+			MappedRowsEstimate mappedDepth = mappedLineageEstimate(pathProgram, 0L);
+			if (mappedDepth == null) {
+				break;
+			}
+			FrontierJoinEstimate conditional = conditionalMixedPrefixEstimate(componentPrefixRows, mappedPrefix,
+					mappedDepth);
+			if (conditional == null) {
+				break;
+			}
+			observedDepths++;
+			candidateRows = saturatedAdd(candidateRows, conditional.pointRows());
+			if (depth >= path.getMinLength()) {
+				rows = saturatedAdd(rows, conditional.pointRows());
+				lowerRows = saturatedAdd(lowerRows, conditional.lowerRows());
+				upperRows = saturatedAdd(upperRows, conditional.upperRows());
+			}
+			confidence = Math.min(confidence, conditional.confidence());
+			currentName = nextName;
+			if (conditional.pointRows() == 0.0d) {
+				break;
+			}
+		}
+		if (observedDepths == 0) {
+			return null;
+		}
+		double stepLookups = saturatedAdd(componentPrefixRows, candidateRows);
+		double identityIterations = path.getMinLength() == 0L ? componentPrefixRows : 0.0d;
+		double expansionIterations = saturatedAdd(identityIterations, stepLookups);
+		double workRows = saturatedAdd(candidateRows,
+				saturatedAdd(stepLookups, saturatedAdd(expansionIterations, rows)));
+		return new MappedPropertyPathEstimate(rows, Math.min(rows, lowerRows), Math.max(rows, upperRows),
+				confidence, candidateRows, stepLookups, expansionIterations, componentPrefixRows, workRows,
+				"frontier-v2-omni-path-subgraph");
+	}
+
+	private static double connectedComponentRows(PackedCostContext context, boolean completePrefixComponent) {
+		if (completePrefixComponent) {
+			return context.prefixRows();
+		}
+		double unrelatedRows = context.unrelatedPrefixRows();
+		return finitePositive(unrelatedRows) ? context.prefixRows() / unrelatedRows : Double.NaN;
+	}
+
+	private static boolean prefixBinds(Var endpoint, List<TupleExpr> prefixFactors) {
+		String name = variableName(endpoint);
+		if (name == null) {
+			return endpoint != null && endpoint.hasValue();
+		}
+		for (TupleExpr factor : prefixFactors) {
+			if (factor.getBindingNames().contains(name)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static String variableName(Var variable) {
+		return variable == null || variable.hasValue() || variable.getName() == null || variable.getName().isBlank()
+				? null
+				: variable.getName();
+	}
+
+	private static StatementPattern pathStep(StatementPattern template, String inputName, String outputName,
+			String currentName, String nextName, int depth, Set<String> occupiedNames) {
+		Map<String, String> names = new HashMap<>();
+		names.put(inputName, currentName);
+		names.put(outputName, nextName);
+		Var subject = pathVariable(template.getSubjectVar(), names, depth, 0, occupiedNames);
+		Var predicate = pathVariable(template.getPredicateVar(), names, depth, 1, occupiedNames);
+		Var object = pathVariable(template.getObjectVar(), names, depth, 2, occupiedNames);
+		Var context = pathVariable(template.getContextVar(), names, depth, 3, occupiedNames);
+		return new StatementPattern(template.getScope(), subject, predicate, object, context);
+	}
+
+	private static Var pathVariable(Var variable, Map<String, String> names, int depth, int component,
+			Set<String> occupiedNames) {
+		if (variable == null) {
+			return null;
+		}
+		String name = variable.getName();
+		if (!variable.hasValue() && name != null) {
+			name = names.computeIfAbsent(name, ignored -> uniquePathVariable(occupiedNames, depth, component));
+			occupiedNames.add(name);
+		}
+		return Var.of(name, variable.getValue(), variable.isAnonymous(), variable.isConstant(), variable.isBNode());
+	}
+
+	private static String uniquePathVariable(Set<String> occupiedNames, int depth, int component) {
+		String suffix = component < 0 ? Integer.toString(depth) : depth + "_" + component;
+		String base = "_frontier_v2_path_" + suffix;
+		String candidate = base;
+		int collision = 0;
+		while (occupiedNames.contains(candidate)) {
+			candidate = base + '_' + ++collision;
+		}
+		return candidate;
+	}
+
+	private void annotateMappedPropertyPath(MappedPropertyPathEstimate estimate, PackedCostEstimate output) {
+		annotateMappedStatistics(output);
+		output.setEvidenceGuarantee(EvidenceGuarantee.MEASURE_UNBIASED);
+		output.putPlannedDoubleMetric("plannedFrontierLowerRows", estimate.lowerRows());
+		output.putPlannedDoubleMetric("plannedFrontierUpperRows", estimate.upperRows());
+		output.putPlannedDoubleMetric("plannedFrontierConfidence", estimate.confidence());
+		output.putPlannedDoubleMetric("plannedRowsPerInvocation",
+				estimate.rows() / Math.max(1.0d, estimate.invocations()));
+		output.putPlannedDoubleMetric("plannedRepeatedInvocations", estimate.invocations());
+		output.putPlannedDoubleMetric("plannedSeeks", estimate.invocations());
+		output.putPlannedDoubleMetric("plannedAccessRows",
+				estimate.rows() / Math.max(1.0d, estimate.invocations()));
+		output.putPlannedDoubleMetric(LmdbPropertyPathEstimator.PLANNED_PATH_CANDIDATE_ROWS,
+				estimate.candidateRows());
+		output.putPlannedDoubleMetric(LmdbPropertyPathEstimator.PLANNED_PATH_STEP_LOOKUPS,
+				estimate.stepLookups());
+		output.putPlannedDoubleMetric(LmdbPropertyPathEstimator.PLANNED_PATH_EXPANSION_ITERATIONS,
+				estimate.expansionIterations());
+	}
+
+	private static void setMappedPropertyPathPhysicalCost(TupleExpr expression,
+			MappedPropertyPathEstimate estimate, PackedCostEstimate output) {
+		if (!(expression instanceof ArbitraryLengthPath)) {
+			return;
+		}
+		output.setInclusivePhysicalCost(
+				estimate.candidateRows(),
+				estimate.stepLookups(),
+				estimate.expansionIterations(),
+				0.0d,
+				0.0d,
+				0.0d,
+				estimate.expansionIterations(),
+				estimate.rows(),
+				0.0d,
+				estimate.rows() / Math.max(1.0d, estimate.invocations()));
 	}
 
 	private static void setPropertyPathPhysicalCost(TupleExpr expression,
@@ -1177,24 +2997,38 @@ final class LmdbPackedCostModel
 		List<TupleExpr> prefixFactors = prefix.factors();
 		TupleExpr expression = materializeRelation(query, relationId);
 		Set<String> boundNames = prefix.bindingNames();
-		if (!connectedToPrefix(expression, boundNames)) {
+		if (!connectedToPrefix(query, expression, boundNames)) {
 			return false;
 		}
 		Optional<JoinFactorCostModel.FactorCostEstimate> estimate = runtime.factorCost(expression,
 				JoinFactorCostModel.CostContext.forOptimization(boundNames, context.prefixRows(),
-						Double.NaN, true, true, prefix.finiteBindingValues(), prefixFactors));
+						Double.NaN, true, true, prefix.finiteBindingValues(), prefixFactors)
+						.withPrefixFactorsDescribeCurrentRows(context.prefixRelationsDescribeRows())
+						.withUnrelatedPrefixRows(context.unrelatedPrefixRows()));
 		if (estimate.isEmpty()) {
 			return false;
 		}
 		JoinFactorCostModel.FactorCostEstimate surface = estimate.orElseThrow();
 		String source = surface.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE);
-		if (exactOnly && !surface.hasExactOutputRows()
+		boolean exactSurface = surface.hasExactOutputRows()
+				&& (context.prefixRelationsDescribeRows() || surface.getOutputRows() == 0.0d);
+		if (exactOnly && !exactSurface
 				|| !surface.hasPhysicalAccessPath()
-				|| surface.getOutputRows() == 0.0d && !surface.hasExactOutputRows()
+				|| surface.getOutputRows() == 0.0d && !exactSurface
 				|| !finiteNonNegative(surface.getOutputRows()) || !finiteNonNegative(surface.getWorkRows())) {
 			return false;
 		}
-		output.setContextualRows(surface.getOutputRows(), surface.getWorkRows());
+		boolean fullyConnectedPrefix = prefixFullyConnectedTo(query, expression, prefixFactors);
+		if (fullyConnectedPrefix) {
+			output.setContextualRows(surface.getOutputRows(), surface.getWorkRows());
+		} else {
+			/*
+			 * Prefix evidence is built from the transitive connected component containing this factor and normalized by
+			 * the caller's unrelated-prefix mass. Preserve that boundary explicitly so the packed row composer
+			 * multiplies independent Cartesian components exactly once.
+			 */
+			output.setComponentRows(surface.getOutputRows(), surface.getWorkRows());
+		}
 		output.setAccess(surface.getLookupComponentMask(), surface.getMissingLookupComponentMask(),
 				metricInt(surface, TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH),
 				surface.getAccessRowsBeforeFilter(),
@@ -1202,9 +3036,9 @@ final class LmdbPackedCostModel
 				surface.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_NAME), source,
 				surface.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE));
 		output.setEstimateProvenance(source, surface.hasExactOutputRows()
-				? "exact_connected_surface"
+				? exactSurface ? "exact_connected_surface" : "transformed_prefix_factor_cost"
 				: "contextual_factor_cost");
-		if (surface.hasExactOutputRows()) {
+		if (exactSurface) {
 			output.setEvidenceGuarantee(EvidenceGuarantee.DATABASE_EXACT);
 		}
 		copyFactorDoubleMetrics(surface, output);
@@ -1266,7 +3100,8 @@ final class LmdbPackedCostModel
 
 	Optional<ExactSemiAntiOutcome> exactSemiAntiOutcome(PackedQueryView query, PackedCostContext context,
 			TupleExpr rhs, boolean anti) {
-		if (!(rhs instanceof StatementPattern) || context.prefixRelationCount() == 0) {
+		if (!(rhs instanceof StatementPattern) || context.prefixRelationCount() == 0
+				|| !context.prefixRelationsDescribeRows()) {
 			return Optional.empty();
 		}
 		PrefixMaterialization prefix = materializePrefix(query, context);
@@ -1509,17 +3344,20 @@ final class LmdbPackedCostModel
 		if (query == null || context == null || relationId <= 0 || relationId > query.relationCount()) {
 			return Optional.empty();
 		}
+		if (!context.prefixRelationsDescribeRows()) {
+			return Optional.empty();
+		}
 		PrefixMaterialization prefix = materializePrefix(query, context);
 		List<TupleExpr> prefixFactors = prefix.factors();
 		return runtime.exactDerivedSurface(
 				prefixFactors, materializeRelation(query, relationId), prefix.finiteBindingValues());
 	}
 
-	private static boolean connectedToPrefix(TupleExpr expression, Set<String> prefixNames) {
+	private static boolean connectedToPrefix(PackedQueryView query, TupleExpr expression, Set<String> prefixNames) {
 		if (expression == null || prefixNames.isEmpty()) {
 			return false;
 		}
-		for (String bindingName : expression.getBindingNames()) {
+		for (String bindingName : query.bindingNames(expression)) {
 			if (prefixNames.contains(bindingName)) {
 				return true;
 			}
@@ -1527,11 +3365,12 @@ final class LmdbPackedCostModel
 		return false;
 	}
 
-	private static boolean prefixFullyConnectedTo(TupleExpr expression, List<TupleExpr> prefixFactors) {
+	private static boolean prefixFullyConnectedTo(PackedQueryView query, TupleExpr expression,
+			List<TupleExpr> prefixFactors) {
 		if (prefixFactors.isEmpty()) {
 			return true;
 		}
-		Set<String> connectedNames = new LinkedHashSet<>(expression.getBindingNames());
+		Set<String> connectedNames = new LinkedHashSet<>(query.bindingNames(expression));
 		boolean[] connected = new boolean[prefixFactors.size()];
 		int connectedCount = 0;
 		boolean changed;
@@ -1541,7 +3380,7 @@ final class LmdbPackedCostModel
 				if (connected[ordinal]) {
 					continue;
 				}
-				Set<String> factorNames = prefixFactors.get(ordinal).getBindingNames();
+				Set<String> factorNames = query.bindingNames(prefixFactors.get(ordinal));
 				if (factorNames.stream().noneMatch(connectedNames::contains)) {
 					continue;
 				}
@@ -1643,8 +3482,11 @@ final class LmdbPackedCostModel
 	}
 
 	private static StatementPattern annotatedStatementPattern(PackedQueryView query, int relationId) {
-		StatementPattern pattern = new StatementPattern(component(query, relationId, 0),
-				component(query, relationId, 1), component(query, relationId, 2), component(query, relationId, 3));
+		TupleExpr relation = query.materializeRelation(relationId);
+		if (!(relation instanceof StatementPattern source)) {
+			return null;
+		}
+		StatementPattern pattern = source.clone();
 		for (String metricName : DISTINCT_REQUIREMENT_METRICS) {
 			String metricValue = query.relationPlannedStringMetric(relationId, metricName);
 			if (metricValue != null) {
@@ -1652,15 +3494,6 @@ final class LmdbPackedCostModel
 			}
 		}
 		return pattern;
-	}
-
-	private static Var component(PackedQueryView query, int relationId, int component) {
-		String name = query.statementPatternName(relationId, component);
-		if (name == null) {
-			return null;
-		}
-		Value value = query.statementPatternValue(relationId, component);
-		return value == null ? new Var(name) : new Var(name, value);
 	}
 
 	private FiniteLookupEstimate finiteLookupEstimate(PackedQueryView query, int relationId,
@@ -1749,18 +3582,18 @@ final class LmdbPackedCostModel
 		if (prefixFactors.size() != context.prefixRelationCount()) {
 			return false;
 		}
-		Set<String> connectedNames = new LinkedHashSet<>(materializeRelation(query, relationId).getBindingNames());
+		Set<String> connectedNames = new LinkedHashSet<>(query.bindingNames(materializeRelation(query, relationId)));
 		boolean[] connected = new boolean[prefixFactors.size()];
 		boolean changed;
 		do {
 			changed = false;
 			for (int ordinal = 0; ordinal < prefixFactors.size(); ordinal++) {
 				if (connected[ordinal]
-						|| !sharesBindingName(prefixFactors.get(ordinal).getBindingNames(), connectedNames)) {
+						|| !sharesBindingName(query.bindingNames(prefixFactors.get(ordinal)), connectedNames)) {
 					continue;
 				}
 				connected[ordinal] = true;
-				connectedNames.addAll(prefixFactors.get(ordinal).getBindingNames());
+				connectedNames.addAll(query.bindingNames(prefixFactors.get(ordinal)));
 				changed = true;
 			}
 		} while (changed);
@@ -1880,6 +3713,39 @@ final class LmdbPackedCostModel
 		return result;
 	}
 
+	void annotateMappedSemiAntiAccess(PackedQueryView query, int relationId, String[] boundBindingNames,
+			double accessRows, double invocations, String role, PackedCostEstimate output,
+			PackedCostEstimate accessScratch) {
+		if (!query.isStatementPattern(relationId) || role == null || output == null || accessScratch == null
+				|| !finiteNonNegative(accessRows) || !finiteNonNegative(invocations)) {
+			return;
+		}
+		int lookupMask = constantLookupMask(query, relationId);
+		for (int component = 0; component < 4; component++) {
+			String bindingName = query.statementPatternName(relationId, component);
+			if (bindingName == null) {
+				continue;
+			}
+			for (String boundBindingName : boundBindingNames) {
+				if (bindingName.equals(boundBindingName)) {
+					lookupMask |= 1 << component;
+					break;
+				}
+			}
+		}
+		accessScratch.clear();
+		runtime.describePackedAccessPath(lookupMask, accessRows, invocations,
+				"frontier-v2-mapped-semi-anti-" + role.toLowerCase(java.util.Locale.ROOT), accessScratch);
+		if (accessScratch.indexName() != null) {
+			output.putPlannedStringMetric("plannedSemiAnti" + role + "IndexName", accessScratch.indexName());
+		}
+		if (accessScratch.accessMode() != null) {
+			output.putPlannedStringMetric("plannedSemiAnti" + role + "AccessMode", accessScratch.accessMode());
+		}
+		output.putPlannedDoubleMetric("plannedSemiAnti" + role + "IndexPrefixLength",
+				accessScratch.indexPrefixLength());
+	}
+
 	private static double invocationCount(PackedCostContext context) {
 		/*
 		 * A nested-loop factor is opened once per outer bag row. A finite assignment supplies that count only while it
@@ -1928,6 +3794,298 @@ final class LmdbPackedCostModel
 
 	private record FiniteLookupEstimate(double rows, double invocations, double distinctLookupBindings,
 			double lookupDomainAverageOutputRows, int lookupMask) {
+	}
+
+	/** Query-local scalar cache over one pinned mapped generation; its size is bounded by query relation count. */
+	private static final class MappedStatisticsSessionCache {
+		private FrontierLeafEstimate[] leaves = new FrontierLeafEstimate[16];
+		private boolean[] leafResolved = new boolean[16];
+		private final Map<ProjectedDistinctKey, Double> projectedDistinct = new HashMap<>();
+		private final Map<FrontierLeafProbe, MappedRowsEstimate> boundLeafEstimates = new HashMap<>();
+		private final Map<Long, MappedRowsEstimate> lineageEstimates = new HashMap<>();
+		private final Map<FrontierJoinProbe, MappedRowsEstimate> joinEstimates = new HashMap<>();
+		private final Map<FrontierJoinProgram, MappedRowsEstimate> programEstimates = new HashMap<>();
+		private final Set<FrontierJoinProbe> correlatedJoinAttempts = new LinkedHashSet<>();
+		private final Set<FrontierJoinProgram> correlatedProgramAttempts = new LinkedHashSet<>();
+		private final Map<Long, MappedRowsEstimate> finiteDomainEstimates = new HashMap<>();
+		private final Map<Long, FrontierJoinEstimate> conditionalEstimates = new HashMap<>();
+		private long remainingLineageFactorWork = Long.MAX_VALUE;
+		private long remainingCorrelatedFactorWork = Long.MAX_VALUE;
+
+		private void initializeLineageWorkBudget(int statementPatterns) {
+			if (statementPatterns < 0 || remainingLineageFactorWork != Long.MAX_VALUE
+					|| remainingCorrelatedFactorWork != Long.MAX_VALUE) {
+				throw new IllegalStateException("mapped statistics work budget was initialized more than once");
+			}
+			remainingLineageFactorWork = Math.multiplyExact(
+					(long) statementPatterns, MAX_MAPPED_LINEAGE_FACTOR_WORK_PER_PATTERN);
+			remainingCorrelatedFactorWork = Math.multiplyExact(
+					(long) statementPatterns, MAX_MAPPED_CORRELATED_FACTOR_WORK_PER_PATTERN);
+		}
+
+		private boolean tryAcquireLineageFactorWork(int factors) {
+			if (factors < 2) {
+				throw new IllegalArgumentException("mapped lineage work requires at least two factors");
+			}
+			if (factors > remainingLineageFactorWork) {
+				return false;
+			}
+			remainingLineageFactorWork -= factors;
+			return true;
+		}
+
+		private boolean tryAcquireCorrelatedFactorWork(int factors) {
+			if (factors < 2) {
+				throw new IllegalArgumentException("mapped correlated work requires at least two factors");
+			}
+			if (factors > remainingCorrelatedFactorWork) {
+				return false;
+			}
+			remainingCorrelatedFactorWork -= factors;
+			return true;
+		}
+
+		private boolean leafResolved(int relationId) {
+			ensureRelationCapacity(relationId);
+			return leafResolved[relationId];
+		}
+
+		private FrontierLeafEstimate leaf(int relationId) {
+			return leaves[relationId];
+		}
+
+		private void storeLeaf(int relationId, FrontierLeafEstimate estimate) {
+			ensureRelationCapacity(relationId);
+			leaves[relationId] = estimate;
+			leafResolved[relationId] = true;
+		}
+
+		private boolean projectedDistinctResolved(FrontierLeafProbe probe, int component) {
+			return projectedDistinct.containsKey(new ProjectedDistinctKey(probe, component));
+		}
+
+		private double projectedDistinct(FrontierLeafProbe probe, int component) {
+			return projectedDistinct.get(new ProjectedDistinctKey(probe, component));
+		}
+
+		private void storeProjectedDistinct(FrontierLeafProbe probe, int component, double distinct) {
+			projectedDistinct.put(new ProjectedDistinctKey(probe, component), distinct);
+		}
+
+		private boolean boundLeafEstimateResolved(FrontierLeafProbe probe) {
+			return boundLeafEstimates.containsKey(probe);
+		}
+
+		private MappedRowsEstimate boundLeafEstimate(FrontierLeafProbe probe) {
+			return boundLeafEstimates.get(probe);
+		}
+
+		private void storeBoundLeafEstimate(FrontierLeafProbe probe, MappedRowsEstimate estimate) {
+			boundLeafEstimates.put(probe, estimate);
+		}
+
+		private boolean lineageEstimateResolved(long subsetKey) {
+			return lineageEstimates.containsKey(subsetKey);
+		}
+
+		private MappedRowsEstimate lineageEstimate(long subsetKey) {
+			return lineageEstimates.get(subsetKey);
+		}
+
+		private void storeLineageEstimate(long subsetKey, MappedRowsEstimate estimate) {
+			lineageEstimates.put(subsetKey, estimate);
+		}
+
+		private boolean joinEstimateResolved(FrontierJoinProbe probe) {
+			return joinEstimates.containsKey(probe);
+		}
+
+		private MappedRowsEstimate joinEstimate(FrontierJoinProbe probe) {
+			return joinEstimates.get(probe);
+		}
+
+		private void storeJoinEstimate(FrontierJoinProbe probe, MappedRowsEstimate estimate) {
+			joinEstimates.put(probe, estimate);
+		}
+
+		private boolean beginCorrelatedJoinEstimate(FrontierJoinProbe probe) {
+			return correlatedJoinAttempts.add(probe);
+		}
+
+		private boolean programEstimateResolved(FrontierJoinProgram program) {
+			return programEstimates.containsKey(program);
+		}
+
+		private MappedRowsEstimate programEstimate(FrontierJoinProgram program) {
+			return programEstimates.get(program);
+		}
+
+		private void storeProgramEstimate(FrontierJoinProgram program, MappedRowsEstimate estimate) {
+			programEstimates.put(program, estimate);
+		}
+
+		private boolean beginCorrelatedProgramEstimate(FrontierJoinProgram program) {
+			return correlatedProgramAttempts.add(program);
+		}
+
+		private boolean finiteDomainEstimateResolved(long subsetKey) {
+			return finiteDomainEstimates.containsKey(subsetKey);
+		}
+
+		private MappedRowsEstimate finiteDomainEstimate(long subsetKey) {
+			return finiteDomainEstimates.get(subsetKey);
+		}
+
+		private void storeFiniteDomainEstimate(long subsetKey, MappedRowsEstimate estimate) {
+			finiteDomainEstimates.put(subsetKey, estimate);
+		}
+
+		private boolean conditionalEstimateResolved(long key) {
+			return conditionalEstimates.containsKey(key);
+		}
+
+		private FrontierJoinEstimate conditionalEstimate(long key) {
+			return conditionalEstimates.get(key);
+		}
+
+		private void storeConditionalEstimate(long key, FrontierJoinEstimate estimate) {
+			conditionalEstimates.put(key, estimate);
+		}
+
+		private void ensureRelationCapacity(int relationId) {
+			if (relationId < 0) {
+				throw new IllegalArgumentException("packed relation ID must be non-negative");
+			}
+			if (relationId < leaves.length) {
+				return;
+			}
+			int capacity = leaves.length;
+			while (capacity <= relationId) {
+				capacity = Math.multiplyExact(capacity, 2);
+			}
+			leaves = Arrays.copyOf(leaves, capacity);
+			leafResolved = Arrays.copyOf(leafResolved, capacity);
+		}
+	}
+
+	private record ProjectedDistinctKey(FrontierLeafProbe probe, int component) {
+		private ProjectedDistinctKey {
+			Objects.requireNonNull(probe, "probe");
+			if (component < 0 || component >= 4) {
+				throw new IllegalArgumentException("Frontier projected component must be in [0, 3]");
+			}
+		}
+	}
+
+	record MappedSemiAntiEstimate(double hitProbability, double lowerHitProbability,
+			double upperHitProbability, double confidence, String source, String evidenceSource) {
+		MappedSemiAntiEstimate {
+			if (!finiteNonNegative(hitProbability) || hitProbability > 1.0d
+					|| !finiteNonNegative(lowerHitProbability) || lowerHitProbability > hitProbability
+					|| !finiteNonNegative(upperHitProbability) || upperHitProbability < hitProbability
+					|| upperHitProbability > 1.0d || !(confidence > 0.0d) || confidence > 1.0d
+					|| source == null || source.isBlank() || evidenceSource == null || evidenceSource.isBlank()) {
+				throw new IllegalArgumentException("mapped semi/anti estimate is invalid");
+			}
+		}
+	}
+
+	record MappedDistinctProfile(double point, double lower, double upper, String provenance) {
+		MappedDistinctProfile {
+			if (!(Double.isNaN(point) || finiteNonNegative(point))
+					|| !finiteNonNegative(lower) || !finiteNonNegative(upper)
+					|| lower > upper || Double.isFinite(point) && (point < lower || point > upper)
+					|| provenance == null || provenance.isBlank()) {
+				throw new IllegalArgumentException("mapped distinct profile is invalid");
+			}
+		}
+
+		static MappedDistinctProfile unavailable(double lower, double upper, String provenance) {
+			double normalizedUpper = normalizedDistinctUpper(Double.NaN, upper);
+			double normalizedLower = finiteNonNegative(lower)
+					? Math.min(lower > 0.0d && normalizedUpper > 0.0d ? 1.0d : 0.0d, normalizedUpper)
+					: 0.0d;
+			return new MappedDistinctProfile(Double.NaN, normalizedLower, normalizedUpper, provenance);
+		}
+
+		boolean hasPoint() {
+			return Double.isFinite(point);
+		}
+	}
+
+	private record MappedRowsEstimate(double pointRows, double lowerRows, double upperRows, double confidence,
+			String source, double distinctLookupBindings) {
+
+		private MappedRowsEstimate(double pointRows, double lowerRows, double upperRows, double confidence,
+				String source) {
+			this(pointRows, lowerRows, upperRows, confidence, source, -1.0d);
+		}
+
+		private static MappedRowsEstimate finiteDomainZero() {
+			return new MappedRowsEstimate(0.0d, 0.0d, 0.0d, 1.0d,
+					"frontier-v2-omni-finite-domain", 0.0d);
+		}
+
+		private static MappedRowsEstimate from(FrontierJoinEstimate estimate) {
+			return estimate != null && estimate.fallbackReason() == FrontierFallbackReason.NONE
+					&& finiteNonNegative(estimate.pointRows())
+					&& finiteNonNegative(estimate.lowerRows())
+					&& !Double.isNaN(estimate.upperRows())
+							? new MappedRowsEstimate(estimate.pointRows(), estimate.lowerRows(), estimate.upperRows(),
+									estimate.confidence(), estimate.source())
+							: null;
+		}
+
+		private FrontierJoinEstimate asJoinEstimate() {
+			return new FrontierJoinEstimate(pointRows, lowerRows, upperRows, confidence, source,
+					FrontierFallbackReason.NONE);
+		}
+	}
+
+	private record MappedTransitionSelection(FrontierJoinEstimate estimate, boolean finiteDomainSelected) {
+		private static final MappedTransitionSelection NONE = new MappedTransitionSelection(null, false);
+	}
+
+	private static final class MappedRowsAccumulator {
+		private double pointRows;
+		private double lowerRows;
+		private double upperRows;
+		private double confidence = 1.0d;
+		private boolean observed;
+		private final Set<Map<String, Value>> distinctLookupBindings = new LinkedHashSet<>();
+
+		private void add(MappedRowsEstimate estimate, Map<String, Value> bindings,
+				Set<String> lookupBindingNames) {
+			pointRows = saturatedAdd(pointRows, estimate.pointRows());
+			lowerRows = saturatedAdd(lowerRows, estimate.lowerRows());
+			upperRows = saturatedAdd(upperRows, estimate.upperRows());
+			confidence = Math.min(confidence, estimate.confidence());
+			observed = true;
+			Map<String, Value> lookupBindings = new LinkedHashMap<>();
+			for (String name : lookupBindingNames) {
+				Value value = bindings.get(name);
+				if (value != null) {
+					lookupBindings.put(name, value);
+				}
+			}
+			distinctLookupBindings.add(Map.copyOf(lookupBindings));
+		}
+
+		private MappedRowsEstimate toFiniteDomainEstimate() {
+			return observed
+					? new MappedRowsEstimate(pointRows, Math.min(pointRows, lowerRows),
+							Math.max(pointRows, upperRows), confidence, "frontier-v2-omni-finite-domain",
+							distinctLookupBindings.size())
+					: MappedRowsEstimate.finiteDomainZero();
+		}
+	}
+
+	private record MappedRestrictionScale(double point, double lower, double upper) {
+	}
+
+	private record MappedPropertyPathEstimate(double rows, double lowerRows, double upperRows, double confidence,
+			double candidateRows, double stepLookups, double expansionIterations, double invocations,
+			double workRows, String source) {
 	}
 
 	record ExactSemiAntiOutcome(double outputRows, double outerRows, double matchedRows, double rhsResultRows,

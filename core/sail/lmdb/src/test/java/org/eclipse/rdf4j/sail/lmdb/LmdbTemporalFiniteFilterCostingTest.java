@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.time.LocalTime;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -53,7 +54,7 @@ class LmdbTemporalFiniteFilterCostingTest {
 	private static final IRI SCHEDULED_TIME = VF.createIRI("urn:test:train:scheduledTime");
 
 	@Test
-	void temporalInUsesIncompleteExactTermWitnessesForCosting(@TempDir File dataDir) throws Exception {
+	void temporalInUsesTypedMappedUncertaintyWithoutStatementEnumeration(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false);
@@ -94,9 +95,10 @@ class LmdbTemporalFiniteFilterCostingTest {
 			StatisticsEstimate filtered = statistics.filter(scheduled, selectedTimes, input, Set.of()).orElseThrow();
 
 			assertTrue(input.rows() > 4.0d, "The fixture must distinguish finite evidence from the 0.5 fallback");
-			assertEquals(3.0d, filtered.rows(), 0.0d,
-					"Complete bounded support must include every stored term that is value-equal to a query constant");
-			assertEquals("lmdb-finite-filter-probe", filtered.bag().source());
+			assertEquals(2.0d, filtered.rows(), 0.0d,
+					"Observed exact typed terms should provide the incomplete point estimate without "
+							+ "claiming that all SPARQL value-equal aliases were counted");
+			assertEquals("frontier-v2-finite-filter-semantic-uncertain", filtered.bag().source());
 			assertEquals(0.0d, filtered.metrics().get("optimizer.filterComplete"), 0.0d,
 					"Value-equal lexical aliases prevent exact-support claims");
 			assertEquals(0.0d, filtered.metrics().get("optimizer.filterLowerRatio"), 0.0d);
@@ -109,7 +111,63 @@ class LmdbTemporalFiniteFilterCostingTest {
 	}
 
 	@Test
-	void temporalInEnumeratesStoredValueAliasesForCosting(@TempDir File dataDir) throws Exception {
+	void temporalInProbesCanonicalJavaTimeAliasesWithoutStatementEnumeration(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setSketchEstimatorEnabled(true)
+				.setOptimizerSamplingEnabled(false);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		Literal queryEight = VF.createLiteral("08:00:00", XSD.TIME);
+		Literal queryNine = VF.createLiteral("09:00:00", XSD.TIME);
+		Literal storedEight = VF.createLiteral(LocalTime.of(8, 0));
+		Literal storedNine = VF.createLiteral(LocalTime.of(9, 0));
+		assertNotEquals(queryEight, storedEight, "The fixture requires the generator's distinct lexical form");
+		assertTrue(QueryEvaluationUtility.compare(storedEight, queryEight, Compare.CompareOp.EQ).orElse(false),
+				"The canonical Java-time and query terms must be SPARQL value-equal");
+
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(VF.createIRI("urn:test:train:service:8"), SCHEDULED_TIME, storedEight);
+				connection.add(VF.createIRI("urn:test:train:service:9"), SCHEDULED_TIME, storedNine);
+				for (int hour = 10; hour <= 17; hour++) {
+					connection.add(VF.createIRI("urn:test:train:service:" + hour), SCHEDULED_TIME,
+							VF.createLiteral(LocalTime.of(hour, 0)));
+				}
+				connection.commit();
+			}
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
+
+			StatementPattern scheduled = new StatementPattern(Var.of("service"),
+					Var.of("scheduledTimePredicate", SCHEDULED_TIME), Var.of("time"));
+			ListMemberOperator selectedTimes = new ListMemberOperator();
+			selectedTimes.addArgument(Var.of("time"));
+			selectedTimes.addArgument(new ValueConstant(queryEight));
+			selectedTimes.addArgument(new ValueConstant(queryNine));
+
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			StatisticsEstimate input = statistics.statementPattern(scheduled, Set.of()).orElseThrow();
+			StatisticsEstimate filtered = statistics.filter(scheduled, selectedTimes, input, Set.of()).orElseThrow();
+
+			assertEquals(10.0d, input.rows(), 0.0d);
+			assertEquals(2.0d, filtered.rows(), 0.0d,
+					"Bounded canonical typed probes should recover generator-produced aliases from mapped Omni evidence");
+			assertEquals("frontier-v2-finite-filter-semantic-uncertain", filtered.bag().source());
+			assertEquals(0.0d, filtered.metrics().get("optimizer.filterComplete"), 0.0d);
+			assertEquals(0.0d, filtered.metrics().get("optimizer.filterLowerRatio"), 0.0d);
+			assertEquals(1.0d, filtered.metrics().get("optimizer.filterUpperRatio"), 0.0d);
+			assertTrue(filtered.bag().finiteRelations().isEmpty(),
+					"Canonical aliases improve the point estimate without becoming an exact term restriction");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void temporalInDoesNotEnumerateStoredValueAliasesForCosting(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false);
@@ -151,9 +209,9 @@ class LmdbTemporalFiniteFilterCostingTest {
 			StatisticsEstimate filtered = statistics.filter(scheduled, selectedTimes, input, Set.of()).orElseThrow();
 
 			assertEquals(10.0d, input.rows(), 0.0d);
-			assertEquals(2.0d, filtered.rows(), 0.0d,
-					"Costing must include stored terms that are value-equal to finite query constants");
-			assertEquals("lmdb-finite-filter-probe", filtered.bag().source());
+			assertEquals(5.0d, filtered.rows(), 0.0d,
+					"Without a persisted canonical-value refinement, mapped costing must remain conservative");
+			assertEquals("frontier-v2-finite-filter-semantic-uncertain", filtered.bag().source());
 			assertEquals(0.0d, filtered.metrics().get("optimizer.filterComplete"), 0.0d);
 			assertEquals(0.0d, filtered.metrics().get("optimizer.filterLowerRatio"), 0.0d);
 			assertEquals(1.0d, filtered.metrics().get("optimizer.filterUpperRatio"), 0.0d);
@@ -231,7 +289,8 @@ class LmdbTemporalFiniteFilterCostingTest {
 	}
 
 	@Test
-	void distinctSupportOverflowNeverRestrictsExecutionAndIsClassified(@TempDir File dataDir) throws Exception {
+	void temporalAliasMultiplicityNeverTriggersStatementEnumerationOrRestrictsExecution(@TempDir File dataDir)
+			throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false);
@@ -249,6 +308,7 @@ class LmdbTemporalFiniteFilterCostingTest {
 				}
 				connection.commit();
 			}
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 
 			StatementPattern scheduled = new StatementPattern(Var.of("service"),
 					Var.of("scheduledTimePredicate", SCHEDULED_TIME), Var.of("time"));
@@ -261,7 +321,7 @@ class LmdbTemporalFiniteFilterCostingTest {
 					.getEvaluationStatistics();
 			StatisticsEstimate input = statistics.statementPattern(scheduled, Set.of()).orElseThrow();
 			StatisticsEstimate filtered = statistics.filter(scheduled, selectedTimes, input, Set.of()).orElseThrow();
-			assertEquals("lmdb-finite-filter-probe-support-limit", filtered.bag().source());
+			assertEquals("frontier-v2-finite-filter-semantic-uncertain", filtered.bag().source());
 			assertEquals(0.0d, filtered.metrics().get("optimizer.filterComplete"), 0.0d);
 
 			new LmdbFilterSimplifierOptimizer(statistics).optimize(root, null, null);

@@ -63,6 +63,8 @@ class LmdbMedicalQ9PlanStabilityIT {
 	private static final Pattern LIFECYCLE_STATE = Pattern.compile("optimizer\\.lifecycleState=([^,)]+)");
 	private static final Pattern LOGICAL_EXACT_EVIDENCE = Pattern
 			.compile("optimizer\\.frontierLeo\\.output_rows\\.exactEvidence=([0-9.,]+[KM]?)");
+	private static final Pattern LOGICAL_EXACT_FACT = Pattern
+			.compile("optimizer\\.frontierLeo\\.output_rows\\.source=exact-fact");
 	private static final Path REPORT_PATH = BenchmarkPathSupport.resolveTarget("medical-q9-plan-stability.txt");
 
 	@Test
@@ -198,8 +200,8 @@ class LmdbMedicalQ9PlanStabilityIT {
 
 			Path sidecar = learnedSidecar("join-estimator.rjes.operators");
 			assertTrue(Files.isRegularFile(sidecar), "Store shutdown must persist the learned-feedback sidecar");
-			assertEquals(21, ByteBuffer.wrap(Files.readAllBytes(sidecar)).getInt(),
-					"Restart acceptance requires the applicability-and-feature-aware v21 sidecar");
+			assertEquals(22, ByteBuffer.wrap(Files.readAllBytes(sidecar)).getInt(),
+					"Restart acceptance requires the quality-aware v22 sidecar");
 
 			ThemeQueryBenchmark restarted = newBenchmark();
 			restarted.setup();
@@ -305,7 +307,8 @@ class LmdbMedicalQ9PlanStabilityIT {
 		Set<LearningIdentity> identities = new LinkedHashSet<>();
 		plan.lines().forEach(line -> {
 			String evidence = metric(LOGICAL_EXACT_EVIDENCE, line);
-			if ("missing".equals(evidence) || parseAbbreviated(evidence) <= 0.0d) {
+			boolean exactFact = LOGICAL_EXACT_FACT.matcher(line).find();
+			if (!exactFact && ("missing".equals(evidence) || parseAbbreviated(evidence) <= 0.0d)) {
 				return;
 			}
 			String logical = metric(LOGICAL_DIGEST, line);

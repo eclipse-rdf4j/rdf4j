@@ -88,7 +88,14 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				UNION_SCOPE_CHANGE_OPTIMIZER,
 				QUERY_MODEL_NORMALIZER,
 				PROJECTION_REMOVAL_OPTIMIZER, // Make sure this is after the UnionScopeChangeOptimizer
-				new FilterOptimizer(evaluationStatistics, false, true),
+				/*
+				 * Establish the algebraically minimal predicate scope before join ordering. A cost comparison at this
+				 * point sees every statement factor without the bindings that the next optimizer may supply, so it can
+				 * incorrectly price a local filtered lookup as an unbound scan and strand the predicate above the whole
+				 * join. The final cost-aware pass still annotates the selected order, but it never has to recover a
+				 * local factor that the join optimizer was not allowed to see.
+				 */
+				new FilterOptimizer(evaluationStatistics, false, false),
 				FILTER_IN_VALUES_OPTIMIZER,
 				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource),
 				ITERATIVE_EVALUATION_OPTIMIZER,

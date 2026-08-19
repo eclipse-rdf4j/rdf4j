@@ -45,7 +45,10 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.DistinctBindingFeedback;
 import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackTarget;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorLearningPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanCandidate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRanking;
@@ -65,6 +68,54 @@ class LmdbOperatorFeedbackStatsTest {
 	private static final IRI P1 = VF.createIRI("urn:test:operator-feedback:p1");
 	private static final IRI P2 = VF.createIRI("urn:test:operator-feedback:p2");
 	private static final IRI P3 = VF.createIRI("urn:test:operator-feedback:p3");
+
+	@Test
+	void approximateSemiAntiDistinctFeedbackRoundTripsVersion22(@TempDir Path tempDir) throws Exception {
+		Path estimatorPath = estimatorPath(tempDir);
+		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
+		LogicalLearningKey logical = LogicalLearningKey.of(
+				"difference", "typed-semi-anti", "children", "predicates", "v0", "none",
+				"bag|duplicate-sensitive|minus-compatible-domain", "default");
+		LearningApplicability applicability = new LearningApplicability(
+				1L, 0L, "unconditional", 2L, 2L, 1L);
+		PhysicalResidualKey physical = PhysicalResidualKey.of(
+				"materialized-hash", "statement-pattern", "spoc", "single-open", "materialized", "none",
+				"none", "bound");
+		RuntimeFeedbackContract.PredictionVector prediction = new RuntimeFeedbackContract.PredictionVector(
+				1.0d, 7.0d, 1.0d, 7.0d, 1.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		RuntimeFeedbackContract contract = new RuntimeFeedbackContract(
+				new LmdbRuntimeFeedbackDescriptor(null, null, logical, applicability, physical),
+				prediction, prediction, 1.0d, 7.0d, 7.0d, Double.POSITIVE_INFINITY,
+				RuntimeFeedbackContract.SemanticKind.NOT_EXISTS,
+				RuntimeFeedbackContract.Algorithm.MATERIALIZED_HASH,
+				RuntimeFeedbackContract.Access.EXACT_LOOKUP, physical.hashCode(), 2L, 2L, 1L,
+				RuntimeFeedbackContract.ADMIT_LOGICAL | RuntimeFeedbackContract.ADMIT_PHYSICAL
+						| RuntimeFeedbackContract.ADMIT_SEMI_ANTI);
+		RuntimeFeedbackTarget target = stats.resolveRuntimeFeedbackTarget(contract);
+		target.open();
+		target.close(16_352L, 46_800.0d, 46_800L, 0L, 99_600L, 46_800L, 99_600L, 0L, 0L, 46_800L,
+				EvaluationStatistics.TerminationClassification.EXHAUSTED);
+		target.recordSemiAnti(16_352L, 83_248L, 16_352L, 83_248L, 0L, 0L, 0L,
+				DistinctBindingFeedback.approximate(24_971L, 10_000L, 14_971L, 0.01625d, 99_600L,
+						"hll-p12"));
+		target.recordActualPhysicalImplementation(contract.physicalImplementationId());
+		stats.publishRuntimeFeedbackTargets(new RuntimeFeedbackTarget[] { target }, 1, true);
+		stats.persistIfDirty();
+
+		Path sidecar = estimatorPath.resolveSibling(estimatorPath.getFileName() + ".operators");
+		assertEquals(22, ByteBuffer.wrap(Files.readAllBytes(sidecar)).getInt());
+		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
+		Method estimateMethod = LmdbOperatorFeedbackStats.class.getDeclaredMethod("typedSemiAntiDistinctEstimate",
+				LogicalLearningKey.class, PhysicalResidualKey.class, LearningApplicability.class);
+		estimateMethod.setAccessible(true);
+		Object estimate = estimateMethod.invoke(reloaded, logical, physical, applicability);
+		assertNotNull(estimate);
+		assertEquals(0L, invokeLong(estimate, "exactObservationCount"));
+		assertEquals(1L, invokeLong(estimate, "approximateObservationCount"));
+		assertEquals(24_971L, invokeLong(estimate, "distinctPoint"));
+		assertEquals(24_971.0d * 24_971.0d * 0.01625d * 0.01625d,
+				invokeDouble(estimate, "estimateVariance"), 1.0e-6d);
+	}
 
 	@Test
 	void equivalentOperatorShapeReusesFeedback(@TempDir Path tempDir) throws Exception {
@@ -119,7 +170,7 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
-	void frontierLearningRoutesRuntimeDimensionsByOriginKeyAndPersistsVersionTwentyOne(@TempDir Path tempDir)
+	void frontierLearningRoutesRuntimeDimensionsByOriginKeyAndPersistsVersionTwentyTwo(@TempDir Path tempDir)
 			throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
 		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
@@ -144,10 +195,18 @@ class LmdbOperatorFeedbackStatsTest {
 
 		stats.persistIfDirty();
 		Path sidecar = estimatorPath.resolveSibling(estimatorPath.getFileName() + ".operators");
-		assertEquals(21, ByteBuffer.wrap(Files.readAllBytes(sidecar)).getInt());
+		byte[] versionTwentyTwo = Files.readAllBytes(sidecar);
+		assertEquals(22, ByteBuffer.wrap(versionTwentyTwo).getInt());
 		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
 		assertTrue(frontierCorrection(reloaded, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d,
-				false) < 1_000.0d, "Version-21 feedback must preserve the compatibility posterior");
+				false) < 1_000.0d, "Version-22 feedback must preserve the compatibility posterior");
+
+		byte[] versionTwentyOne = Arrays.copyOf(versionTwentyTwo, versionTwentyTwo.length - Integer.BYTES);
+		ByteBuffer.wrap(versionTwentyOne).putInt(21);
+		Files.write(sidecar, versionTwentyOne);
+		LmdbOperatorFeedbackStats legacyReloaded = persistentStats(estimatorPath);
+		assertTrue(frontierCorrection(legacyReloaded, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d,
+				false) < 1_000.0d, "Version-21 feedback must load as exact legacy evidence");
 	}
 
 	@Test
@@ -274,7 +333,7 @@ class LmdbOperatorFeedbackStatsTest {
 			assertEquals(PlanLifecycleStore.State.QUARANTINED,
 					stats.planLifecycleDecision(logical, physical, applicability, planned).state());
 			stats.persistIfDirty();
-			assertEquals(21, ByteBuffer.wrap(Files.readAllBytes(
+			assertEquals(22, ByteBuffer.wrap(Files.readAllBytes(
 					estimatorPath.resolveSibling(estimatorPath.getFileName() + ".operators"))).getInt());
 
 			LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
@@ -1741,16 +1800,16 @@ class LmdbOperatorFeedbackStatsTest {
 		return legacy;
 	}
 
-	private static byte[] withoutLogicalPhysicalAndLifecycleTail(byte[] versionTwentyOne) {
-		assertEquals(21, ByteBuffer.wrap(versionTwentyOne).getInt());
+	private static byte[] withoutLogicalPhysicalAndLifecycleTail(byte[] versionTwentyTwo) {
+		assertEquals(22, ByteBuffer.wrap(versionTwentyTwo).getInt());
 		/*
 		 * These compatibility fixtures contain no typed logical/physical entries, LEO-plus calibration/censoring state,
 		 * or lifecycle entries. V21 adds five empty model-map counts before the v17 exact-fact count, plus an empty
 		 * lifecycle tail consisting of a revision, entry count, and history count. Remove only those bytes to recover
 		 * the genuine v17 payload.
 		 */
-		return Arrays.copyOf(versionTwentyOne,
-				versionTwentyOne.length - Long.BYTES - 7 * Integer.BYTES);
+		return Arrays.copyOf(versionTwentyTwo,
+				versionTwentyTwo.length - Long.BYTES - 8 * Integer.BYTES);
 	}
 
 	@Test
@@ -2345,6 +2404,14 @@ class LmdbOperatorFeedbackStatsTest {
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Could not read " + accessorName, e);
 		}
+	}
+
+	private static long invokeLong(Object target, String accessorName) throws Exception {
+		return ((Number) target.getClass().getDeclaredMethod(accessorName).invoke(target)).longValue();
+	}
+
+	private static double invokeDouble(Object target, String accessorName) throws Exception {
+		return ((Number) target.getClass().getDeclaredMethod(accessorName).invoke(target)).doubleValue();
 	}
 
 	private static double correctedValue(Object correction) {

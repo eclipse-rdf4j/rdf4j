@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
@@ -908,7 +909,7 @@ public class LmdbSailStoreTest {
 				return invocation.callRealMethod();
 			}).when(tripleStoreSpy)
 					.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
-							any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+							any(long[].class), anyInt(), anyBoolean(), anyBoolean(), any(IntConsumer.class));
 
 			valueStoreField.set(backingStore, valueStoreSpy);
 			tripleStoreField.set(backingStore, tripleStoreSpy);
@@ -952,7 +953,7 @@ public class LmdbSailStoreTest {
 				return invocation.callRealMethod();
 			}).when(tripleStoreSpy)
 					.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
-							any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+							any(long[].class), anyInt(), anyBoolean(), anyBoolean(), any(IntConsumer.class));
 
 			tripleStoreField.set(backingStore, tripleStoreSpy);
 			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
@@ -1016,7 +1017,7 @@ public class LmdbSailStoreTest {
 				}
 			}).when(tripleStoreSpy)
 					.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
-							any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+							any(long[].class), anyInt(), anyBoolean(), anyBoolean(), any(IntConsumer.class));
 
 			tripleStoreField.set(backingStore, tripleStoreSpy);
 			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
@@ -1099,10 +1100,10 @@ public class LmdbSailStoreTest {
 					sink.approve(subject, predicate, object, null);
 				}
 
-				Field pendingCountField = sink.getClass().getDeclaredField("pendingApproveCount");
-				pendingCountField.setAccessible(true);
-				assertEquals("default bulk ingest should not flush after the 32-statement chunk", 31,
-						pendingCountField.getInt(sink));
+				Field preparedBufferField = sink.getClass().getDeclaredField("pendingPreparedApprovals");
+				preparedBufferField.setAccessible(true);
+				assertNotNull("default fresh ingest should remain in its prepared in-memory buffer",
+						preparedBufferField.get(sink));
 				assertEquals("small buffered approve batches should stay in-memory until flush", 0,
 						invocationCount(valueStoreSpy, "storeValues"));
 			} finally {
@@ -1136,7 +1137,8 @@ public class LmdbSailStoreTest {
 				sink.flush();
 
 				verify(tripleStoreSpy, never()).storeTriplesAligned(any(long[].class), any(long[].class),
-						any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+						any(long[].class), any(long[].class), anyInt(), anyBoolean(), anyBoolean(),
+						any(IntConsumer.class));
 				verify(tripleStoreSpy, times(5)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
 			} finally {
 				tripleStoreField.set(backingStore, originalTripleStore);
@@ -1169,7 +1171,8 @@ public class LmdbSailStoreTest {
 				sink.flush();
 
 				verify(tripleStoreSpy, times(2)).storeTriplesAligned(any(long[].class), any(long[].class),
-						any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+						any(long[].class), any(long[].class), anyInt(), anyBoolean(), anyBoolean(),
+						any(IntConsumer.class));
 				verify(tripleStoreSpy, times(1)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
 			} finally {
 				tripleStoreField.set(backingStore, originalTripleStore);
@@ -1203,12 +1206,12 @@ public class LmdbSailStoreTest {
 			TripleStore tripleStoreSpy = spy(originalTripleStore);
 
 			doAnswer(invocation -> {
-				IntConsumer addedIndexConsumer = invocation.getArgument(6);
+				IntConsumer addedIndexConsumer = invocation.getArgument(7);
 				addedIndexConsumer.accept(0);
 				throw new IOException("expected aligned bulk failure after estimator update");
 			}).when(tripleStoreSpy)
 					.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
-							any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+							any(long[].class), anyInt(), anyBoolean(), anyBoolean(), any(IntConsumer.class));
 
 			tripleStoreField.set(backingStore, tripleStoreSpy);
 			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {

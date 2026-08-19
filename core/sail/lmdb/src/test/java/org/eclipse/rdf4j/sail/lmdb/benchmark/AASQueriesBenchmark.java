@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -178,6 +179,7 @@ public class AASQueriesBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			System.out.println("Number of statements: " + connection.size());
 		}
+		awaitFrontierReady();
 		// prepareSketchesIfEnabled();
 
 		printExplanation("setup");
@@ -360,6 +362,16 @@ public class AASQueriesBenchmark {
 		}
 		lmdbStore = new LmdbStore(dataDir, config);
 		return new SailRepository(lmdbStore);
+	}
+
+	private void awaitFrontierReady() {
+		if (!Boolean.parseBoolean(useCascades)) {
+			return;
+		}
+		FrontierSynopsisStatus status = lmdbStore.rebuildFrontierSynopsis();
+		if (status != FrontierSynopsisStatus.READY) {
+			throw new IllegalStateException("Frontier statistics are not ready for benchmarking: " + status);
+		}
 	}
 
 	private void prepareSketchesIfEnabled() throws IOException {

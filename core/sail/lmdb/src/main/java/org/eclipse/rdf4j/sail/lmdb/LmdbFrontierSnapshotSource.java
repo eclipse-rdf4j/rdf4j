@@ -103,6 +103,24 @@ final class LmdbFrontierSnapshotSource implements FrontierSnapshotSource {
 	}
 
 	@Override
+	public synchronized long coveredSequence() throws IOException {
+		if (scanning) {
+			throw new IllegalStateException("Frontier snapshot source is already scanning");
+		}
+		verifyPinnedAtBoundary();
+		StampedLongAdderLockManager lockManager = txn.lockManager();
+		long readStamp = acquireReadLock(lockManager, "reading the pinned Frontier mutation sequence");
+		try {
+			verifyVersionUnderLock();
+			long sequence = tripleStore.latestFrontierMutationSequence(txn);
+			verifyVersionUnderLock();
+			return sequence;
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
+	}
+
+	@Override
 	public synchronized long rowCount(boolean explicit) throws IOException {
 		if (scanning) {
 			throw new IllegalStateException("Frontier snapshot source is already scanning");

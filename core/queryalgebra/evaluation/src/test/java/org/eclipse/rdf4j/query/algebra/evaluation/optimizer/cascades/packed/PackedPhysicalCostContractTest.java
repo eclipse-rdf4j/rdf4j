@@ -21,6 +21,8 @@ import java.lang.reflect.Method;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
@@ -823,6 +825,94 @@ class PackedPhysicalCostContractTest {
 
 		assertEquals(120.0d, memo.winnerTotalCost(winnerId),
 				"ten inherited bindings must repeat both child scans and opens, but not aggregate result rows");
+	}
+
+	@Test
+	void contextualCompositeWinnerRetainsWholePrefixInvocationDomain() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		StatementPattern outer = new StatementPattern(Var.of("subject"),
+				Var.of("outerPredicate", values.createIRI("urn:outer")), Var.of("outerValue"));
+		StatementPattern first = new StatementPattern(Var.of("subject"),
+				Var.of("firstPredicate", values.createIRI("urn:first")), Var.of("joinKey"));
+		StatementPattern second = new StatementPattern(Var.of("joinKey"),
+				Var.of("secondPredicate", values.createIRI("urn:second")), Var.of("result"));
+		Extension nested = new Extension(new Join(first, second),
+				new ExtensionElem(Var.of("result"), "alias"));
+		Union source = new Union(outer, nested);
+		PackedCostModel model = new PackedCostModel() {
+
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				if (!query.isStatementPattern(relationId)) {
+					return Double.NaN;
+				}
+				return query.materializeRelation(relationId).equals(outer) ? 10.0d : 100.0d;
+			}
+
+			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (!query.isStatementPattern(relationId)) {
+					return;
+				}
+				TupleExpr expression = query.materializeRelation(relationId);
+				if (expression.equals(outer)) {
+					output.setRows(10.0d, 22.0d);
+					output.setAccess(0, 0, 0, 10.0d, 1.0d, "spoc", "test", "prefixScan");
+					output.setInclusivePhysicalCost(10.0d, 1.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+							10.0d, 0.0d, 0.0d);
+					return;
+				}
+				if (context.prefixRelationCount() == 0) {
+					output.setRows(100.0d, 202.0d);
+					output.setAccess(0, 0, 0, 100.0d, 1.0d, "spoc", "test", "fullScan");
+					output.setInclusivePhysicalCost(100.0d, 1.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+							100.0d, 0.0d, 0.0d);
+					return;
+				}
+				double invocations = context.prefixRows();
+				output.setContextualRows(invocations, invocations * 4.0d);
+				output.setAccess(1, 0, 1, 1.0d, invocations, "spoc", "test", "directLookup");
+				output.setInclusivePhysicalCost(invocations, invocations, invocations, 0.0d, 0.0d, 0.0d,
+						0.0d, invocations, 0.0d, 0.0d);
+			}
+
+			@Override
+			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				if (query.materializeRelation(relationId) instanceof Extension) {
+					output.setLocalPhysicalCost(0.0d, 0.0d, 0.0d, context.leftInputRows(), 0.0d, 0.0d,
+							0.0d, context.leftInputRows(), 0.0d, 0.0d);
+				}
+			}
+		};
+
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+		int relationCount = query.relationCount();
+		PackedMemo memo = new PackedMemo(query, query.symbolCount(), relationCount, relationCount, 4,
+				relationCount, relationCount * 2);
+		PackedSearchBudget budget = new PackedSearchBudget(Long.MAX_VALUE, Long.MAX_VALUE);
+		PackedIncumbentSearch search = new PackedIncumbentSearch(query, memo, budget, false, model);
+		search.build();
+		int outerRelationId = relationId(query, outer);
+		int nestedRelationId = relationId(query, nested);
+		PackedJoinEnumerator enumerator = new PackedJoinEnumerator(query, memo, search.selectedRowsByGroup(),
+				budget, model);
+
+		int winnerId = enumerator.optimizeWithInheritedPrefix(
+				nestedRelationId, new int[] { outerRelationId }, 1, 10.0d);
+		int metadataId = memo.winnerPhysicalMetadataId(winnerId);
+		int childWinnerId = memo.winnerChildWinnerId(winnerId, 0);
+		int childMetadataId = memo.winnerPhysicalMetadataId(childWinnerId);
+
+		assertTrue(memo.winnerInputContextId(winnerId) != 0,
+				"the composite winner must remain keyed by its inherited prefix");
+		assertTrue(childMetadataId != 0, "the contextual join child must retain its physical vector");
+		assertEquals(10.0d, memo.physicalMetadataInvocations(childMetadataId),
+				"a contextual join vector must retain the inherited domain accumulated by its search state");
+		assertTrue(metadataId != 0, "the composite winner must retain its complete physical vector");
+		assertEquals(10.0d, memo.physicalMetadataInvocations(metadataId),
+				"a complete contextual vector must retain the invocation domain it already priced");
 	}
 
 	@Test

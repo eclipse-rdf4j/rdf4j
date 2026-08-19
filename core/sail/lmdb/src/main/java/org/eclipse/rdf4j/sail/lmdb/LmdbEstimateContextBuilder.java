@@ -41,7 +41,7 @@ final class LmdbEstimateContextBuilder {
 						? EstimateContext.MetricsPreference.DETAILED
 						: EstimateContext.MetricsPreference.NONE)
 				.withExactProbePermission(tier != null && tier.allowsExactEstimates());
-		context = context.withPrefixEstimate(prefixEvidence.estimate(cost, context, scope));
+		context = context.withPrefixEstimate(prefixEvidence.estimate(expression, cost, context, scope));
 		FiniteRelationEstimate finite = prefixEvidence.finiteBindings(
 				relevantFiniteBindingValues(expression, cost.getFiniteBindingValues()),
 				scope == null ? null : scope.finiteBindingContexts);

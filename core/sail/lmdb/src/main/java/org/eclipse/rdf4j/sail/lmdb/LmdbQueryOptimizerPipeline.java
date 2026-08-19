@@ -202,8 +202,10 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		}
 		optimizers.add(new LmdbFilterSimplifierOptimizer(evaluationStatistics));
 		optimizers.add(new LmdbFilterHoistOptimizer());
+		optimizers.add(StandardQueryOptimizerPipeline.getFilterInValuesOptimizer());
 		optimizers.add(new LmdbCascadesOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
 				preserveSerializableObservationOrder, strategy, tripleSource));
+		optimizers.add(new LmdbOrderByOptimizer(tripleSource));
 
 		if (assertsEnabled) {
 			List<QueryOptimizer> checked = new ArrayList<>();

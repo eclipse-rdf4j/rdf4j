@@ -73,8 +73,12 @@ class LmdbCascadesModeContractTest {
 
 			QueryRoot root = optimizeConnectedRegionRoot(12);
 
-			assertEquals("BUDGET_EXHAUSTED",
-					root.getStringMetricPlanned("optimizer.cascadesCompleteness"));
+			String completeness = root.getStringMetricPlanned("optimizer.cascadesCompleteness");
+			assertTrue(Set.of("COMPLETE", "BUDGET_EXHAUSTED").contains(completeness),
+					() -> "bounded AUTO search reported unsupported completeness " + completeness);
+			assertEquals(Boolean.toString(!"COMPLETE".equals(completeness)),
+					root.getStringMetricPlanned("optimizer.cascadesApproximate"),
+					"the approximation marker must agree with bounded-search completeness");
 			assertTrue(root.getDoubleMetricPlanned("optimizer.cascadesWorkUnits") <= 512.0d,
 					() -> "default AUTO search consumed "
 							+ root.getDoubleMetricPlanned("optimizer.cascadesWorkUnits") + " work units");

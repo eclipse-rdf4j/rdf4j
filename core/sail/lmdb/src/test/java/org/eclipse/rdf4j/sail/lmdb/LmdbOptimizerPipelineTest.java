@@ -40,6 +40,7 @@ import java.util.stream.StreamSupport;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -223,6 +224,50 @@ class LmdbOptimizerPipelineTest {
 			assertEquals("true", first.getStringMetricPlanned("optimizer.customPipelineInvoked"));
 			assertEquals("true", second.getStringMetricPlanned("optimizer.customPipelineInvoked"));
 			assertFalse(Boolean.parseBoolean(second.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void correlatedPositiveOptionalRetainsSerializableBoundLookup(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			String namespace = "urn:test:serializable-optional:";
+			IRI painter = SimpleValueFactory.getInstance().createIRI(namespace, "Painter");
+			IRI paints = SimpleValueFactory.getInstance().createIRI(namespace, "paints");
+			IRI rembrandt = SimpleValueFactory.getInstance().createIRI(namespace, "rembrandt");
+			connection.add(rembrandt, RDF.TYPE, painter);
+			for (String painting : List.of("nightwatch", "artemisia", "danae")) {
+				connection.add(rembrandt, paints, SimpleValueFactory.getInstance().createIRI(namespace, painting));
+			}
+			connection.begin(IsolationLevels.SERIALIZABLE);
+
+			TupleExpr optimized = (TupleExpr) connection.prepareTupleQuery("""
+					SELECT ?painting WHERE {
+					  ?painter a <urn:test:serializable-optional:Painter>
+					  OPTIONAL { ?painter <urn:test:serializable-optional:paints> ?painting }
+					}
+					""")
+					.explain(Explanation.Level.Optimized)
+					.tupleExpr();
+			List<LeftJoin> optionals = new ArrayList<>();
+			optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+				@Override
+				public void meet(LeftJoin node) {
+					optionals.add(node);
+					super.meet(node);
+				}
+			});
+
+			assertEquals(1, optionals.size(), () -> diagnosticPlan(optimized));
+			assertFalse("hash".equals(optionals.getFirst()
+					.getStringMetricPlanned("optimizer.joinAlgorithmHint")),
+					() -> "A correlated OPTIONAL hash scan broadens the SERIALIZABLE observation range:\n"
+							+ diagnosticPlan(optimized));
 		} finally {
 			repository.shutDown();
 		}

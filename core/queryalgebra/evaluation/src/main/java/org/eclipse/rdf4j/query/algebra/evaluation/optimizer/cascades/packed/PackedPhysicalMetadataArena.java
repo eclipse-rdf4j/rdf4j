@@ -510,6 +510,19 @@ final class PackedPhysicalMetadataArena {
 		return invocations == null ? 1.0d : invocations[metadataId];
 	}
 
+	void certifyContextualInvocationDomain(int metadataId, double pricedInvocations) {
+		checkId(metadataId);
+		if (!Double.isFinite(pricedInvocations) || pricedInvocations < 0.0d) {
+			throw new IllegalArgumentException("contextual invocation domain must be finite and non-negative");
+		}
+		if (!hasContextualOutputRows(metadataId) || hasComponentOutputRows(metadataId)) {
+			throw new PackedMemoInvariantException(
+					"only a complete contextual physical vector can certify its invocation domain");
+		}
+		ensureAnnotationColumns();
+		invocations[metadataId] = pricedInvocations;
+	}
+
 	int evidenceStateId(int metadataId) {
 		checkId(metadataId);
 		return evidenceStateIds == null ? 0 : evidenceStateIds[metadataId];

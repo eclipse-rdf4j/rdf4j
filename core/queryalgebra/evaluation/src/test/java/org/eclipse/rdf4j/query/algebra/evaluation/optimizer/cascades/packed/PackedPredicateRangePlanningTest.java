@@ -343,6 +343,31 @@ class PackedPredicateRangePlanningTest {
 	}
 
 	@Test
+	void connectedSeedRetainsNestedPredicateRangeWinnerAsExactLogicalPrefix() {
+		PackedPredicateRangeProvider dateProvider = datatypeOnlyProvider(CoreDatatype.XSD.DATE,
+				PackedPredicateRange.UNIVERSAL_CANONICAL_DATE);
+		Value january = VF.createLiteral("2024-01-01", CoreDatatype.XSD.DATE);
+		Value february = VF.createLiteral("2024-02-01", CoreDatatype.XSD.DATE);
+		ListMemberOperator inFilter = new ListMemberOperator();
+		inFilter.setArguments(List.of(new Var("o"), new ValueConstant(january), new ValueConstant(february)));
+		Filter ranged = new Filter(statementPattern(), inFilter);
+		StatementPattern typed = new StatementPattern(new Var("s"),
+				new Var("typePredicate", VF.createIRI("urn:type"), true, true),
+				new Var("type", VF.createIRI("urn:Encounter"), true, true));
+		StatementPattern handled = new StatementPattern(new Var("s"),
+				new Var("handledPredicate", VF.createIRI("urn:handledBy"), true, true),
+				new Var("practitioner"));
+		TupleExpr root = projection(new Join(new Join(typed, handled), ranged), "s");
+
+		TupleExpr selected = optimize(root, dateProvider);
+
+		assertEquals(List.of(Set.of(january, february)), finiteDomains(selected, "o"),
+				"a retained nested finite winner must remain an exact logical prefix: " + selected);
+		assertFalse(containsNode(selected, Filter.class),
+				"the predicate-range anchor must survive connected seeding: " + selected);
+	}
+
+	@Test
 	void timezonedDateConstantAgainstTimezonelessStoreSelectsEmptySet() {
 		PackedPredicateRangeProvider dateProvider = datatypeOnlyProvider(CoreDatatype.XSD.DATE,
 				PackedPredicateRange.UNIVERSAL_CANONICAL_DATE);

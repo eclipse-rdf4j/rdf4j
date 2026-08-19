@@ -102,9 +102,20 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeExpressionCompiler;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeIdDomain;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.AdjacencyAccessObserver;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierInsertion;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierMutation;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsBuildConfig;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsBuildPhase;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsBuilder;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsException;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsHeapGovernor;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsManifest;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsStatus;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbFrontierSynopsisService;
+import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchFootprint;
@@ -178,6 +189,8 @@ class LmdbSailStore implements SailStore {
 	private static final int EXACT_STATEMENT_COUNT_CACHE_MAX_ENTRIES = 65_536;
 	private static final int EXACT_STATEMENT_LOOKUP_CACHE_MAX_ENTRIES = 65_536;
 	private static final int CASCADES_PLAN_CACHE_CAPACITY = 1_024;
+	private static final int FRONTIER_DELTA_BATCH_MUTATIONS = 16_384;
+	private static final double FRONTIER_DELETE_REBUILD_THRESHOLD = 0.10d;
 
 	private final TripleStore tripleStore;
 	private final PackedPlanCache cascadesPlanCache;
@@ -194,6 +207,7 @@ class LmdbSailStore implements SailStore {
 	private final LmdbFrontierPlannerSettings frontierPlannerSettings;
 	private int nextBulkOperationCapacity = INITIAL_BULK_OPERATION_CAPACITY;
 	private int nextPreparedBatchCapacity = PREPARED_BATCH_MIN_STATEMENTS;
+	private final Path frontierStatisticsDirectory;
 
 	private final ExecutorService tripleStoreExecutor = createTripleStoreExecutor();
 	private final ExecutorService indexPreparationExecutor = Executors.newFixedThreadPool(
@@ -236,6 +250,12 @@ class LmdbSailStore implements SailStore {
 
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
 	private LmdbFrontierSynopsisService frontierSynopsisService;
+	private LmdbStatisticsService statisticsService;
+	private FrontierStatisticsBuildConfig statisticsBuildConfig;
+	private FrontierStatisticsHeapGovernor statisticsHeapGovernor;
+	private long frontierMutationTailSequence;
+	private final Object frontierMutationTailMonitor = new Object();
+	private final Object frontierStatisticsMonitor = new Object();
 	private FrontierSynopsisStatus lastFrontierInsertionWarningStatus;
 	private LmdbFilterSelectivityStats filterSelectivityStats;
 	/** Advances on every committed store mutation; a component of the adaptive cost model's regime key. */
@@ -936,6 +956,7 @@ class LmdbSailStore implements SailStore {
 		this.adaptiveEvidenceAllowed = !"snapshot-only"
 				.equalsIgnoreCase(config.getSketchEstimatorEvidenceMode());
 		this.frontierPlannerSettings = LmdbFrontierPlannerSettings.from(config);
+		this.frontierStatisticsDirectory = new File(dataDir, "frontier-statistics-v2").toPath();
 		this.cascadesPlanCache = new PackedPlanCache(CASCADES_PLAN_CACHE_CAPACITY, 16,
 				config.getFrontierCacheEvidenceBudgetBytes());
 		this.sketchBasedJoinEstimator = sketchBasedJoinEstimatorEnabled
@@ -1004,15 +1025,35 @@ class LmdbSailStore implements SailStore {
 					config.getFrontierAuditLanes(),
 					() -> new LmdbFrontierSnapshotSource(tripleStore),
 					config.getEffectiveFrontierQueryIndexBudgetBytes());
-			if (frontierSynopsisService.status() == FrontierSynopsisStatus.MISSING) {
-				FrontierSynopsisStatus rebuiltStatus = frontierSynopsisService.rebuild();
-				if (rebuiltStatus != FrontierSynopsisStatus.READY) {
-					logger.warn("Frontier OmniSketch initial generation is unavailable: {}", rebuiltStatus);
+			if (frontierEnabled && config.getFrontierSynopsisBudgetBytes() >= 16L * 1024L * 1024L
+					&& config.getFrontierHeapBudgetBytes() >= 1024L) {
+				try {
+					statisticsBuildConfig = FrontierStatisticsBuildConfig.forBudgets(
+							config.getFrontierSynopsisBudgetBytes(), config.getFrontierHeapBudgetBytes());
+					statisticsHeapGovernor = FrontierStatisticsHeapGovernor.forBudget(
+							config.getFrontierHeapBudgetBytes());
+					statisticsService = LmdbStatisticsService.open(
+							frontierStatisticsDirectory, statisticsHeapGovernor,
+							config.getFrontierSynopsisBudgetBytes(), config.getFrontierStatisticsMaxLagMillis());
+					long latestSequence = tripleStore.latestFrontierMutationSequence();
+					statisticsService.recordStoreCommit(
+							learnedSidecarDataStamp(), latestSequence, System.currentTimeMillis());
+					installCurrentFrontierMutationTail(latestSequence);
+				} catch (IllegalArgumentException | IOException failure) {
+					logger.warn("Frontier Statistics V2 cannot open; conventional estimates remain available", failure);
+					statisticsService = null;
+					statisticsBuildConfig = null;
+					statisticsHeapGovernor = null;
 				}
 			}
 			initialized = true;
-			if (frontierSynopsisNeedsRebuild(frontierSynopsisService.status())) {
-				requestFrontierRebuild();
+			if (statisticsService != null) {
+				FrontierStatisticsStatus status = statisticsService.status();
+				long latestSequence = tripleStore.latestFrontierMutationSequence();
+				if (status.availability() != FrontierStatisticsAvailability.READY
+						|| status.coveredSequence() < latestSequence) {
+					requestFrontierRebuild();
+				}
 			}
 			Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
 			boolean snapshotExists = Files.isRegularFile(estimatorPath.resolve("synopsis-v8.bin"))
@@ -1248,6 +1289,21 @@ class LmdbSailStore implements SailStore {
 		try {
 			if (storeTxnStarted.get()) {
 				throw new SailException("Cannot rebuild Frontier synopsis while an LMDB write transaction is active");
+			}
+			if (statisticsService != null) {
+				boolean rebuilt = rebuildFrontierStatisticsV2();
+				synchronized (frontierStatisticsMonitor) {
+					frontierStatisticsMonitor.notifyAll();
+				}
+				FrontierStatisticsStatus status = statisticsService.status();
+				if (rebuilt && status.availability() == FrontierStatisticsAvailability.READY) {
+					return FrontierSynopsisStatus.READY;
+				}
+				return switch (status.fallbackReason()) {
+				case MEMORY_PRESSURE -> FrontierSynopsisStatus.BUDGET_EXCEEDED;
+				case SHARD_CORRUPT -> FrontierSynopsisStatus.CORRUPT;
+				default -> FrontierSynopsisStatus.MISSING;
+				};
 			}
 			return frontierSynopsisService.rebuild();
 		} finally {
@@ -1486,6 +1542,9 @@ class LmdbSailStore implements SailStore {
 		if (directAdjacency != null) {
 			directAdjacency.close();
 		}
+		synchronized (frontierStatisticsMonitor) {
+			frontierStatisticsMonitor.notifyAll();
+		}
 		try {
 			try {
 				cancelAndDrainScheduledBackgroundSampling();
@@ -1535,7 +1594,13 @@ class LmdbSailStore implements SailStore {
 											frontierSynopsisService.close();
 										}
 									} finally {
-										tripleStore.close();
+										try {
+											if (statisticsService != null) {
+												statisticsService.close();
+											}
+										} finally {
+											tripleStore.close();
+										}
 									}
 								}
 							}
@@ -1568,6 +1633,64 @@ class LmdbSailStore implements SailStore {
 
 	FrontierSynopsisStatus frontierSynopsisStatus() {
 		return frontierSynopsisService.status();
+	}
+
+	FrontierStatisticsStatus frontierStatisticsStatus() {
+		if (statisticsService != null) {
+			return statisticsService.status();
+		}
+		return new FrontierStatisticsStatus(FrontierStatisticsAvailability.NO_GENERATION,
+				org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason.NO_GENERATION,
+				FrontierStatisticsBuildPhase.IDLE, -1L, -1L, -1L, -1L, 0L, Map.of(), Map.of(),
+				0.0d, -1L, 0.0d, Double.NaN, Double.NaN, "Frontier Statistics V2 is disabled");
+	}
+
+	boolean awaitFrontierStatisticsReady(long timeoutMillis) {
+		if (timeoutMillis < 0L) {
+			throw new IllegalArgumentException("timeoutMillis must be nonnegative");
+		}
+		long remainingNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+		long deadline = System.nanoTime() + remainingNanos;
+		synchronized (frontierStatisticsMonitor) {
+			while (!closing && remainingNanos > 0L
+					&& frontierStatisticsStatus().availability() != FrontierStatisticsAvailability.READY) {
+				try {
+					TimeUnit.NANOSECONDS.timedWait(frontierStatisticsMonitor, remainingNanos);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					return false;
+				}
+				remainingNanos = deadline - System.nanoTime();
+			}
+			return frontierStatisticsStatus().availability() == FrontierStatisticsAvailability.READY;
+		}
+	}
+
+	boolean awaitFrontierStatisticsCoveredSequence(long sequence, long timeoutMillis) {
+		if (sequence < 0L || timeoutMillis < 0L) {
+			throw new IllegalArgumentException("Frontier sequence and timeout must be nonnegative");
+		}
+		long remainingNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+		long deadline = System.nanoTime() + remainingNanos;
+		synchronized (frontierStatisticsMonitor) {
+			while (!closing && remainingNanos > 0L) {
+				FrontierStatisticsStatus status = frontierStatisticsStatus();
+				if (status.availability() == FrontierStatisticsAvailability.READY
+						&& status.coveredSequence() >= sequence) {
+					return true;
+				}
+				try {
+					TimeUnit.NANOSECONDS.timedWait(frontierStatisticsMonitor, remainingNanos);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					return false;
+				}
+				remainingNanos = deadline - System.nanoTime();
+			}
+			FrontierStatisticsStatus status = frontierStatisticsStatus();
+			return status.availability() == FrontierStatisticsAvailability.READY
+					&& status.coveredSequence() >= sequence;
+		}
 	}
 
 	private void shutdownAndAwaitEstimatorPersistExecutor() {
@@ -1736,7 +1859,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void ensureFrontierRebuildScheduled() {
-		if (frontierSynopsisService == null || closing
+		if ((statisticsService == null && frontierSynopsisService == null) || closing
 				|| !frontierRebuildScheduled.compareAndSet(false, true)) {
 			return;
 		}
@@ -1753,31 +1876,35 @@ class LmdbSailStore implements SailStore {
 
 	private void runScheduledFrontierRebuild() {
 		boolean retry = false;
-		boolean locked = false;
+		long requestAtStart = frontierRebuildRequestedNanos;
 		try {
-			if (!frontierRebuildQuietPeriodElapsed()) {
-				retry = true;
-				return;
-			}
-			sinkStoreAccessLock.lock();
-			locked = true;
-			if (storeTxnStarted.get() || !frontierRebuildQuietPeriodElapsed()) {
-				retry = true;
-				return;
-			}
-			FrontierSynopsisStatus rebuilt = frontierSynopsisService.rebuild();
-			retry = rebuilt == FrontierSynopsisStatus.DIRTY_INSERTION
-					|| rebuilt == FrontierSynopsisStatus.DIRTY_DELETION;
-			if (rebuilt != FrontierSynopsisStatus.READY && !retry) {
-				logger.warn("Background Frontier synopsis rebuild is unavailable: {}", rebuilt);
+			if (statisticsService == null) {
+				retry = rebuildLegacyFrontierSynopsis();
+			} else {
+				DeltaRefreshResult deltaResult = refreshFrontierStatisticsDelta();
+				if (deltaResult == DeltaRefreshResult.COMPLETE) {
+					return;
+				}
+				if (deltaResult == DeltaRefreshResult.RETRY) {
+					retry = true;
+					return;
+				}
+				if (!frontierRebuildQuietPeriodElapsed() || storeTxnStarted.get()) {
+					retry = true;
+					return;
+				}
+				retry = !rebuildFrontierStatisticsV2();
 			}
 		} catch (RuntimeException failure) {
 			retry = true;
-			logger.warn("Background Frontier synopsis rebuild failed", failure);
+			logger.warn("Background Frontier Statistics V2 rebuild failed", failure);
 		} finally {
 			frontierRebuildScheduled.set(false);
-			if (locked) {
-				sinkStoreAccessLock.unlock();
+			if (frontierRebuildRequestedNanos != requestAtStart) {
+				retry = true;
+			}
+			synchronized (frontierStatisticsMonitor) {
+				frontierStatisticsMonitor.notifyAll();
 			}
 			if (retry && !closing && !estimatorPersistExec.isShutdown()) {
 				try {
@@ -1789,6 +1916,211 @@ class LmdbSailStore implements SailStore {
 				}
 			}
 		}
+	}
+
+	private boolean rebuildLegacyFrontierSynopsis() {
+		if (!frontierRebuildQuietPeriodElapsed()) {
+			return true;
+		}
+		sinkStoreAccessLock.lock();
+		try {
+			if (storeTxnStarted.get() || !frontierRebuildQuietPeriodElapsed()) {
+				return true;
+			}
+			FrontierSynopsisStatus rebuilt = frontierSynopsisService.rebuild();
+			boolean retry = rebuilt == FrontierSynopsisStatus.DIRTY_INSERTION
+					|| rebuilt == FrontierSynopsisStatus.DIRTY_DELETION;
+			if (rebuilt != FrontierSynopsisStatus.READY && !retry) {
+				logger.warn("Legacy Frontier background rebuild is unavailable: {}", rebuilt);
+			}
+			return retry;
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
+	}
+
+	private DeltaRefreshResult refreshFrontierStatisticsDelta() {
+		LmdbStatisticsService service = statisticsService;
+		FrontierStatisticsBuildConfig buildConfig = statisticsBuildConfig;
+		if (service == null || buildConfig == null || closing) {
+			return DeltaRefreshResult.RETRY;
+		}
+		FrontierStatisticsStatus before = service.status();
+		if (before.availability() != FrontierStatisticsAvailability.READY) {
+			return DeltaRefreshResult.BASE_REBUILD_REQUIRED;
+		}
+		try {
+			long latestSequence = tripleStore.latestFrontierMutationSequence();
+			if (latestSequence <= before.coveredSequence()) {
+				service.recordBuildProgress(FrontierStatisticsBuildPhase.IDLE, 0.0d, -1L,
+						before.deleteDebt(), before.auditLeafQError(), before.auditJoinQError());
+				return DeltaRefreshResult.COMPLETE;
+			}
+			List<FrontierMutation> pending = tripleStore.readFrontierMutationsAfter(
+					before.coveredSequence(), FRONTIER_DELTA_BATCH_MUTATIONS + 1);
+			if (pending.isEmpty()) {
+				return DeltaRefreshResult.RETRY;
+			}
+			List<FrontierMutation> publishable = completeTransactionPrefix(pending);
+			if (publishable.isEmpty()) {
+				logger.info("Frontier mutation transaction exceeds the bounded delta batch; rebuilding the base");
+				return DeltaRefreshResult.BASE_REBUILD_REQUIRED;
+			}
+			service.recordBuildProgress(FrontierStatisticsBuildPhase.APPLYING_DELTAS, 0.0d, -1L,
+					before.deleteDebt(), before.auditLeafQError(), before.auditJoinQError());
+			FrontierStatisticsManifest manifest = service.publishDelta(publishable, buildConfig);
+			long currentSequence = tripleStore.latestFrontierMutationSequence();
+			double deleteDebt = service.status().deleteDebt();
+			service.recordBuildProgress(FrontierStatisticsBuildPhase.IDLE, 0.0d,
+					manifest.coveredSequence() >= currentSequence ? 0L : -1L,
+					deleteDebt, before.auditLeafQError(), before.auditJoinQError());
+			if (deleteDebt >= FRONTIER_DELETE_REBUILD_THRESHOLD) {
+				return DeltaRefreshResult.BASE_REBUILD_REQUIRED;
+			}
+			return manifest.coveredSequence() >= currentSequence
+					? DeltaRefreshResult.COMPLETE
+					: DeltaRefreshResult.RETRY;
+		} catch (FrontierStatisticsException failure) {
+			if (failure.fallbackReason() == FrontierFallbackReason.CONFIDENCE_TOO_WIDE) {
+				return DeltaRefreshResult.BASE_REBUILD_REQUIRED;
+			}
+			logger.warn("Background Frontier Statistics V2 delta publication paused", failure);
+			return DeltaRefreshResult.RETRY;
+		} catch (IOException failure) {
+			logger.warn("Background Frontier Statistics V2 mutation journal remains unavailable", failure);
+			return DeltaRefreshResult.RETRY;
+		}
+	}
+
+	private void installCurrentFrontierMutationTail(long latestSequence) throws IOException {
+		synchronized (frontierMutationTailMonitor) {
+			LmdbStatisticsService service = statisticsService;
+			if (service == null) {
+				return;
+			}
+			FrontierStatisticsStatus status = service.status();
+			if (status.availability() != FrontierStatisticsAvailability.READY) {
+				service.clearMutationTail();
+				frontierMutationTailSequence = latestSequence;
+				return;
+			}
+			long coveredSequence = status.coveredSequence();
+			if (latestSequence <= coveredSequence) {
+				service.installMutationTail(List.of());
+				frontierMutationTailSequence = latestSequence;
+				return;
+			}
+			List<FrontierMutation> mutations = tripleStore.readFrontierMutationsAfter(
+					coveredSequence, LmdbStatisticsService.MAXIMUM_IN_MEMORY_MUTATIONS + 1);
+			if (mutations.size() <= LmdbStatisticsService.MAXIMUM_IN_MEMORY_MUTATIONS
+					&& !mutations.isEmpty() && mutations.getLast().sequence() == latestSequence) {
+				service.installMutationTail(mutations);
+			} else {
+				service.clearMutationTail();
+			}
+			frontierMutationTailSequence = latestSequence;
+		}
+	}
+
+	private void appendCurrentFrontierMutationTail(long latestSequence) throws IOException {
+		synchronized (frontierMutationTailMonitor) {
+			LmdbStatisticsService service = statisticsService;
+			if (service == null || latestSequence <= frontierMutationTailSequence) {
+				return;
+			}
+			FrontierStatisticsStatus status = service.status();
+			if (status.availability() != FrontierStatisticsAvailability.READY) {
+				service.clearMutationTail();
+				frontierMutationTailSequence = latestSequence;
+				return;
+			}
+			List<FrontierMutation> mutations = tripleStore.readFrontierMutationsAfter(
+					frontierMutationTailSequence, LmdbStatisticsService.MAXIMUM_IN_MEMORY_MUTATIONS + 1);
+			boolean completeRange = mutations.size() <= LmdbStatisticsService.MAXIMUM_IN_MEMORY_MUTATIONS
+					&& !mutations.isEmpty() && mutations.getLast().sequence() == latestSequence;
+			if (!completeRange || !service.appendMutationTail(mutations)) {
+				service.clearMutationTail();
+			}
+			frontierMutationTailSequence = latestSequence;
+		}
+	}
+
+	private static List<FrontierMutation> completeTransactionPrefix(List<FrontierMutation> pending) {
+		if (pending.size() <= FRONTIER_DELTA_BATCH_MUTATIONS) {
+			return pending;
+		}
+		long lookaheadEpoch = pending.get(FRONTIER_DELTA_BATCH_MUTATIONS).epoch();
+		int end = FRONTIER_DELTA_BATCH_MUTATIONS;
+		while (end > 0 && pending.get(end - 1).epoch() == lookaheadEpoch) {
+			end--;
+		}
+		return end == 0 ? List.of() : List.copyOf(pending.subList(0, end));
+	}
+
+	private enum DeltaRefreshResult {
+		COMPLETE,
+		RETRY,
+		BASE_REBUILD_REQUIRED
+	}
+
+	private synchronized boolean rebuildFrontierStatisticsV2() {
+		LmdbStatisticsService service = statisticsService;
+		FrontierStatisticsBuildConfig buildConfig = statisticsBuildConfig;
+		FrontierStatisticsHeapGovernor governor = statisticsHeapGovernor;
+		if (service == null || buildConfig == null || governor == null || closing) {
+			return false;
+		}
+		long started = System.nanoTime();
+		service.recordBuildProgress(FrontierStatisticsBuildPhase.PASS_ONE, 0.0d, -1L,
+				0.0d, Double.NaN, Double.NaN);
+		try (LmdbFrontierSnapshotSource snapshot = new LmdbFrontierSnapshotSource(tripleStore)) {
+			long snapshotEpoch = snapshot.snapshotEpoch();
+			long snapshotSequence = snapshot.coveredSequence();
+			FrontierStatisticsStatus before = service.status();
+			if (before.availability() == FrontierStatisticsAvailability.READY
+					&& before.coveredEpoch() == snapshotEpoch
+					&& before.coveredSequence() == snapshotSequence
+					&& before.deleteDebt() < FRONTIER_DELETE_REBUILD_THRESHOLD) {
+				service.recordBuildProgress(FrontierStatisticsBuildPhase.IDLE, 0.0d, -1L,
+						0.0d, Double.NaN, Double.NaN);
+				return true;
+			}
+			long previousGeneration = before.availability() == FrontierStatisticsAvailability.READY
+					? before.generationId()
+					: -1L;
+			long generation = Math.max(snapshotEpoch == 0L ? 1L : snapshotEpoch,
+					previousGeneration == Long.MAX_VALUE ? Long.MAX_VALUE : previousGeneration + 1L);
+			if (generation == previousGeneration) {
+				throw new IOException("Frontier Statistics V2 generation ID space is exhausted");
+			}
+			FrontierStatisticsManifest manifest = FrontierStatisticsBuilder.build(
+					frontierStatisticsDirectory,
+					generation, previousGeneration, snapshot, governor, buildConfig);
+			service.recordBuildProgress(FrontierStatisticsBuildPhase.PUBLISHING, 0.0d, -1L,
+					0.0d, Double.NaN, Double.NaN);
+			service.publish(manifest);
+			installCurrentFrontierMutationTail(tripleStore.latestFrontierMutationSequence());
+			long elapsedNanos = Math.max(1L, System.nanoTime() - started);
+			double rowsPerSecond = 2.0d * totalRows(manifest) * 1_000_000_000.0d / elapsedNanos;
+			service.recordBuildProgress(FrontierStatisticsBuildPhase.IDLE, rowsPerSecond, 0L,
+					0.0d, Double.NaN, Double.NaN);
+			return true;
+		} catch (IOException failure) {
+			service.recordBuildProgress(FrontierStatisticsBuildPhase.FAILED, 0.0d, -1L,
+					0.0d, Double.NaN, Double.NaN);
+			logger.warn("Background Frontier Statistics V2 build remains unavailable", failure);
+			return false;
+		}
+	}
+
+	private static long totalRows(FrontierStatisticsManifest manifest) {
+		return manifest.shards()
+				.stream()
+				.filter(shard -> shard
+						.kind() == org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsShardKind.EXACT_TOTALS)
+				.mapToLong(shard -> shard.logicalKey())
+				.findFirst()
+				.orElse(0L);
 	}
 
 	private boolean frontierRebuildQuietPeriodElapsed() {
@@ -1811,7 +2143,7 @@ class LmdbSailStore implements SailStore {
 	public EvaluationStatistics getEvaluationStatistics() {
 		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats,
 				operatorFeedbackStats, statementPatternCardinalitySource, cascadesPlanCache, frontierSynopsisService,
-				frontierPlannerSettings, () -> mayHaveInferred, () -> adaptiveEvidenceAllowed);
+				frontierPlannerSettings, () -> mayHaveInferred, () -> adaptiveEvidenceAllowed, statisticsService);
 	}
 
 	/** Store-scoped learned filter selectivity. Test hook. */
@@ -2651,6 +2983,15 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		private BatchValueCollector batchValueCollector(int statementCount) {
+			if (batchValueCollector == null) {
+				batchValueCollector = new BatchValueCollector(statementCount);
+			} else {
+				batchValueCollector.reset(statementCount);
+			}
+			return batchValueCollector;
+		}
+
 		private void submitEstimatorAdd(Statement statement) {
 			sketchBasedJoinEstimator.addStatement(statement);
 			estimatorTouchedInTransaction = true;
@@ -2896,6 +3237,18 @@ class LmdbSailStore implements SailStore {
 						}
 						// The triple/value stores are authoritative once both commits succeed.
 						storeTxnStarted.set(false);
+						if (statisticsService != null) {
+							long committedEpoch = learnedSidecarDataStamp();
+							long committedSequence = tripleStore.latestFrontierMutationSequence();
+							statisticsService.recordStoreCommit(
+									committedEpoch, committedSequence, System.currentTimeMillis());
+							appendCurrentFrontierMutationTail(committedSequence);
+							try {
+								requestFrontierRebuild();
+							} catch (RuntimeException e) {
+								logger.warn("Failed to schedule Frontier Statistics V2 refresh after commit", e);
+							}
+						}
 						if (frontierSynopsisService != null
 								&& frontierSynopsisNeedsRebuild(frontierSynopsisService.status())) {
 							try {
@@ -3187,7 +3540,6 @@ class LmdbSailStore implements SailStore {
 
 		private long approveAllBulk(Iterable<? extends Statement> approved, Resource... overrideContexts) {
 			Statement last = null;
-			BulkAddQuadsOperation bulk = null;
 			long approvedCount = 0;
 			int expectedCount = approved instanceof Collection<?> collection ? collection.size() : 0;
 			int valueCount = 0;
@@ -3210,90 +3562,13 @@ class LmdbSailStore implements SailStore {
 					return storePreparedStatements(prepared);
 				}
 
-				HashMap<IRI, Long> predicateCache = new HashMap<>();
-				HashMap<Resource, Long> contextCache = new HashMap<>();
-				Resource previousSubject = null;
-				long previousSubjectId = LmdbValue.UNKNOWN_ID;
-				for (Statement statement : approved) {
-					int contextCount = overrideContexts.length == 0 ? 1 : overrideContexts.length;
-					for (int contextIndex = 0; contextIndex < contextCount; contextIndex++) {
-						if (bulk == null) {
-							bulk = newBulkAddQuadsOperation(explicit);
-							configureBulkEstimator(bulk);
-						}
-						last = statement;
-						Resource subj = statement.getSubject();
-						IRI pred = statement.getPredicate();
-						Value obj = statement.getObject();
-						Resource context = overrideContexts.length == 0
-								? statement.getContext()
-								: overrideContexts[contextIndex];
-
-						if (previousSubject != null) {
-							if (subj == previousSubject || previousSubject.equals(subj)) {
-								bulk.add(previousSubjectId, 0, 0, 0);
-							} else {
-								long subjectId = valueStore.storeValue(subj);
-								valueCount++;
-								previousSubject = subj;
-								previousSubjectId = subjectId;
-								bulk.add(subjectId, 0, 0, 0);
-							}
-						} else {
-							long subjectId = valueStore.storeValue(subj);
-							valueCount++;
-							previousSubject = subj;
-							previousSubjectId = subjectId;
-							bulk.add(subjectId, 0, 0, 0);
-						}
-
-						int batchIndex = bulk.size - 1;
-						if (bulk.statements != null) {
-							bulk.statements[batchIndex] = valueStore.createStatement(subj, pred, obj, context);
-						}
-
-						Long predicateId = predicateCache.get(pred);
-						if (predicateId == null) {
-							predicateId = valueStore.storeValue(pred);
-							valueCount++;
-							predicateCache.put(pred, predicateId);
-						}
-						bulk.predicates[batchIndex] = predicateId;
-
-						bulk.objects[batchIndex] = valueStore.storeValue(obj);
-						valueCount++;
-						bulk.objectValues[batchIndex] = obj;
-						if (context == null) {
-							bulk.contexts[batchIndex] = 0;
-						} else {
-							Long contextId = contextCache.get(context);
-							if (contextId == null) {
-								contextId = valueStore.storeValue(context);
-								valueCount++;
-								contextCache.put(context, contextId);
-							}
-							bulk.contexts[batchIndex] = contextId;
-						}
-
-						approvedCount++;
-						if (bulk.isFull()) {
-							submitOperation(bulk);
-							operationCount++;
-							bulk = null;
-						}
-					}
-				}
-
-				if (bulk != null) {
-					submitOperation(bulk);
-					operationCount++;
-					bulk = null;
-				}
+				BulkApproveStats stats = approveAllBulkPipelined(approved, overrideContexts);
+				last = stats.last;
+				approvedCount = stats.approvedCount;
+				valueCount = stats.valueCount;
+				operationCount = stats.operationCount;
 				return approvedCount;
 			} catch (IOException | RuntimeException e) {
-				if (bulk != null) {
-					bulk.cancel();
-				}
 				rollback();
 				discardEstimatorUpdatesIfTouched();
 				if (multiThreadingActive) {
@@ -3312,6 +3587,122 @@ class LmdbSailStore implements SailStore {
 				commitLmdbStorePathEvent(storePathEvent, false, storeTxnStarted.get(), valueCount, operationCount);
 				sinkStoreAccessLock.unlock();
 			}
+		}
+
+		private BulkApproveStats approveAllBulkPipelined(Iterable<? extends Statement> approved,
+				Resource[] overrideContexts) throws IOException {
+			int chunkCapacity = Math.max(1, bulkOperationSize);
+			ensureBatchStatementCapacity(chunkCapacity);
+			BatchValueCollector valueCollector = batchValueCollector(chunkCapacity);
+			BulkApproveStats stats = new BulkApproveStats();
+			int chunkSize = 0;
+			boolean collectStatements = explicit && sketchBasedJoinEstimator != null;
+
+			try {
+				for (Statement statement : approved) {
+					int contextCount = overrideContexts.length == 0 ? 1 : overrideContexts.length;
+					for (int contextIndex = 0; contextIndex < contextCount; contextIndex++) {
+						stats.last = statement;
+						Resource subject = statement.getSubject();
+						IRI predicate = statement.getPredicate();
+						Value object = statement.getObject();
+						Resource context = overrideContexts.length == 0
+								? statement.getContext()
+								: overrideContexts[contextIndex];
+
+						batchSubjects[chunkSize] = valueCollector.add(subject);
+						batchPredicates[chunkSize] = valueCollector.add(predicate);
+						batchObjects[chunkSize] = valueCollector.add(object);
+						batchContexts[chunkSize] = context == null ? -1 : valueCollector.add(context);
+						if (collectStatements) {
+							batchStatements[chunkSize] = valueStore.createStatement(subject, predicate, object,
+									context);
+						}
+						chunkSize++;
+						stats.approvedCount++;
+
+						if (chunkSize == chunkCapacity) {
+							submitPipelinedBulkChunk(valueCollector, chunkSize, collectStatements, stats);
+							valueCollector.clear();
+							if (collectStatements) {
+								Arrays.fill(batchStatements, 0, chunkSize, null);
+							}
+							chunkSize = 0;
+						}
+					}
+				}
+
+				if (chunkSize > 0) {
+					submitPipelinedBulkChunk(valueCollector, chunkSize, collectStatements, stats);
+				}
+			} finally {
+				if (collectStatements && chunkSize > 0) {
+					Arrays.fill(batchStatements, 0, chunkSize, null);
+				}
+				valueCollector.clear();
+			}
+
+			return stats;
+		}
+
+		private void submitPipelinedBulkChunk(BatchValueCollector valueCollector, int statementCount,
+				boolean collectStatements, BulkApproveStats stats) throws IOException {
+			int valueCount = valueCollector.count;
+			long[] valueIds = ensureBatchValueIdCapacity(valueCount);
+			valueStore.storeValues(valueCollector.values, valueIds, valueCount);
+			stats.valueCount += valueCount;
+
+			BulkAddQuadsOperation operation = newBulkAddQuadsOperation(explicit, statementCount);
+			boolean submitted = false;
+			try {
+				configureBulkEstimator(operation);
+				for (int i = 0; i < statementCount; i++) {
+					int contextIndex = batchContexts[i];
+					long predicateId = valueIds[batchPredicates[i]];
+					operation.add(valueIds[batchSubjects[i]], predicateId, valueIds[batchObjects[i]],
+							contextIndex < 0 ? 0 : valueIds[contextIndex]);
+					int operationIndex = operation.size - 1;
+					operation.objectValues[operationIndex] = valueCollector.values[batchObjects[i]];
+					if (collectStatements && operation.statements != null) {
+						operation.statements[operationIndex] = batchStatements[i];
+					}
+					recordLeoTouchedPredicate(predicateId);
+				}
+				submitOperation(operation);
+				submitted = true;
+				stats.operationCount++;
+			} finally {
+				if (!submitted) {
+					operation.cancel();
+				}
+			}
+		}
+
+		private void ensureBatchStatementCapacity(int capacity) {
+			if (batchSubjects == null || batchSubjects.length < capacity) {
+				batchSubjects = new int[capacity];
+				batchPredicates = new int[capacity];
+				batchObjects = new int[capacity];
+				batchContexts = new int[capacity];
+			}
+			if (explicit && sketchBasedJoinEstimator != null
+					&& (batchStatements == null || batchStatements.length < capacity)) {
+				batchStatements = new Statement[capacity];
+			}
+		}
+
+		private long[] ensureBatchValueIdCapacity(int capacity) {
+			if (batchValueIds == null || batchValueIds.length < capacity) {
+				batchValueIds = new long[capacity];
+			}
+			return batchValueIds;
+		}
+
+		private final class BulkApproveStats {
+			private Statement last;
+			private long approvedCount;
+			private int valueCount;
+			private int operationCount;
 		}
 
 		private PreparedStatementBatch preparedBatch(Iterable<? extends Statement> approved,
@@ -3545,8 +3936,16 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void configureBulkEstimator(BulkAddQuadsOperation bulk) {
-			if (explicit && sketchBasedJoinEstimator != null) {
-				bulk.setEstimatorCallback(this::queueEstimatorAdd);
+			if (!explicit || sketchBasedJoinEstimator == null) {
+				return;
+			}
+			if (shouldDeferExactEstimatorAddChunk(bulk.capacity)) {
+				bulk.deferredEstimatorAddCallback = this::submitDeferredEstimatorAddCount;
+			} else {
+				bulk.estimatorBatchCallback = this::queueEstimatorAdds;
+				if (bulk.statements == null) {
+					bulk.statements = new Statement[bulk.capacity];
+				}
 			}
 		}
 

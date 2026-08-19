@@ -21,7 +21,9 @@ import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -61,6 +63,12 @@ import org.junit.jupiter.api.Test;
 
 class FilterIteratorTelemetryTest {
 
+	private static final String DISTINCT_KEYS = "actualSemiAntiDistinctCorrelationKeys";
+	private static final String DISTINCT_KEYS_ESTIMATE = "actualSemiAntiDistinctCorrelationKeysEstimate";
+	private static final String DISTINCT_KEYS_MODE = "actualSemiAntiDistinctCorrelationKeysMode";
+	private static final String DISTINCT_MATCHED_KEYS_ESTIMATE = "actualSemiAntiDistinctMatchedCorrelationKeysEstimate";
+	private static final String DISTINCT_UNMATCHED_KEYS_ESTIMATE = "actualSemiAntiDistinctUnmatchedCorrelationKeysEstimate";
+
 	@Test
 	void evaluationStatisticsExposesSeparateSemiAntiObservationSurface() throws Exception {
 		Class<?> observationType = Class.forName(
@@ -68,6 +76,77 @@ class FilterIteratorTelemetryTest {
 		Method method = EvaluationStatistics.class.getMethod("recordSemiAntiOutcome", Filter.class, observationType);
 
 		assertThat(method.getReturnType()).isEqualTo(void.class);
+	}
+
+	@Test
+	void distinctTrackerTransitionsBeforeExactTableSaturation() throws Exception {
+		Filter exact = evaluateMaterializedExists(uniqueBindings(48), List.of(), 64);
+		Filter approximate = evaluateMaterializedExists(uniqueBindings(49), List.of(), 64);
+
+		assertThat(exact.getStringMetricActual(DISTINCT_KEYS_MODE)).isEqualTo("exact");
+		assertThat(exact.getLongMetricActual(DISTINCT_KEYS)).isEqualTo(48L);
+		assertThat(approximate.getStringMetricActual(DISTINCT_KEYS_MODE)).isEqualTo("approximate");
+		assertThat(approximate.getLongMetricActual(DISTINCT_KEYS)).isEqualTo(-1L);
+		assertThat(approximate.getLongMetricActual(DISTINCT_KEYS_ESTIMATE)).isBetween(47L, 51L);
+	}
+
+	@Test
+	void distinctTrackerPreservesExactSmallDomains() throws Exception {
+		Value first = SimpleValueFactory.getInstance().createLiteral("first");
+		Value second = SimpleValueFactory.getInstance().createLiteral("second");
+		Filter empty = evaluateMaterializedExists(List.<BindingSet>of().iterator(), List.of(), 64);
+		Filter one = evaluateMaterializedExists(bindings(first, first, first), List.of(), 64);
+		Filter two = evaluateMaterializedExists(bindings(first, second, first, second), List.of(), 64);
+		Filter five = evaluateMaterializedExists(uniqueBindings(5), List.of(), 64);
+
+		assertThat(empty.getStringMetricActual(DISTINCT_KEYS_MODE)).isNull();
+		assertThat(one.getStringMetricActual(DISTINCT_KEYS_MODE)).isEqualTo("exact");
+		assertThat(one.getLongMetricActual(DISTINCT_KEYS)).isOne();
+		assertThat(two.getStringMetricActual(DISTINCT_KEYS_MODE)).isEqualTo("exact");
+		assertThat(two.getLongMetricActual(DISTINCT_KEYS)).isEqualTo(2L);
+		assertThat(five.getStringMetricActual(DISTINCT_KEYS_MODE)).isEqualTo("exact");
+		assertThat(five.getLongMetricActual(DISTINCT_KEYS)).isEqualTo(5L);
+	}
+
+	@Test
+	void distinctTrackerVerifiesFingerprintCollisions() throws Exception {
+		Value first = SimpleValueFactory.getInstance().createLiteral("Aa");
+		Value second = SimpleValueFactory.getInstance().createLiteral("BB");
+		assertThat(first).isNotEqualTo(second);
+		assertThat(first.hashCode()).isEqualTo(second.hashCode());
+
+		Filter filter = evaluateMaterializedExists(bindings(first, second), List.of(), 64);
+
+		assertThat(filter.getStringMetricActual(DISTINCT_KEYS_MODE)).isEqualTo("exact");
+		assertThat(filter.getLongMetricActual(DISTINCT_KEYS)).isEqualTo(2L);
+	}
+
+	@Test
+	void approximateDistinctTrackerRemainsWithinDeclaredError() throws Exception {
+		for (int cardinality : new int[] { 25_000, 100_000, 1_000_000 }) {
+			Filter filter = evaluateMaterializedExists(uniqueBindings(cardinality), List.of(), 64);
+			long estimate = filter.getLongMetricActual(DISTINCT_KEYS_ESTIMATE);
+
+			assertThat(filter.getStringMetricActual(DISTINCT_KEYS_MODE)).isEqualTo("approximate");
+			assertThat(relativeError(estimate, cardinality)).isLessThanOrEqualTo(0.05d);
+		}
+	}
+
+	@Test
+	void approximateMatchedAndUnmatchedEstimatesRemainConsistent() throws Exception {
+		int cardinality = 25_000;
+		List<Value> matched = new ArrayList<>(cardinality / 2);
+		for (int index = 0; index < cardinality; index += 2) {
+			matched.add(SimpleValueFactory.getInstance().createIRI("urn:telemetry:key:" + index));
+		}
+		Filter filter = evaluateMaterializedExists(uniqueBindings(cardinality), matched, 64);
+		long total = filter.getLongMetricActual(DISTINCT_KEYS_ESTIMATE);
+		long matchedEstimate = filter.getLongMetricActual(DISTINCT_MATCHED_KEYS_ESTIMATE);
+		long unmatchedEstimate = filter.getLongMetricActual(DISTINCT_UNMATCHED_KEYS_ESTIMATE);
+
+		assertThat(filter.getStringMetricActual(DISTINCT_KEYS_MODE)).isEqualTo("approximate");
+		assertThat(matchedEstimate + unmatchedEstimate).isEqualTo(total);
+		assertThat(relativeError(total, cardinality)).isLessThanOrEqualTo(0.05d);
 	}
 
 	@Test
@@ -960,6 +1039,80 @@ class FilterIteratorTelemetryTest {
 		assertThat(statistics.semiAntiObservation.hashBuildRows()).isZero();
 		assertThat(work.feedbackSourceRows()).isEqualTo(37L);
 		assertThat(filter.getLongMetricActual("actualSemiAntiSourceRowsScanned")).isEqualTo(-1L);
+	}
+
+	private static Filter evaluateMaterializedExists(Iterator<BindingSet> leftRows, List<Value> matchedValues,
+			int exactCapacity) throws Exception {
+		BindingSetAssignment left = assignment("x", SimpleValueFactory.getInstance().createIRI("urn:telemetry:shape"));
+		BindingSetAssignment right = new BindingSetAssignment();
+		right.setBindingNames(Set.of("x"));
+		right.setBindingSets(matchedValues.stream().map(value -> singleBindingSet("x", value)).toList());
+		Exists exists = new Exists(right);
+		Filter filter = new Filter(left, exists);
+		filter.setRuntimeTelemetryEnabled(true);
+		filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", "materialized-hash");
+		filter.setDoubleMetricPlanned("optimizer.semiAntiCacheCapacity", exactCapacity);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(leftRows);
+		QueryEvaluationStep rightStep = bindings -> new CloseableIteratorIteration<>(
+				compatibleAssignments(right, bindings).iterator());
+		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		doReturn(leftStep).when(strategy).precompile(eq((TupleExpr) left), eq(context));
+		doReturn(rightStep).when(strategy).precompile(eq((TupleExpr) right), eq(context));
+		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) exists), eq(context));
+
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context,
+				new RecordingEvaluationStatistics());
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			while (iteration.hasNext()) {
+				iteration.next();
+			}
+		}
+		return filter;
+	}
+
+	private static Iterator<BindingSet> bindings(Value... values) {
+		return new Iterator<>() {
+			private int index;
+
+			@Override
+			public boolean hasNext() {
+				return index < values.length;
+			}
+
+			@Override
+			public BindingSet next() {
+				if (!hasNext()) {
+					throw new NoSuchElementException();
+				}
+				return singleBindingSet("x", values[index++]);
+			}
+		};
+	}
+
+	private static Iterator<BindingSet> uniqueBindings(int cardinality) {
+		return new Iterator<>() {
+			private int index;
+
+			@Override
+			public boolean hasNext() {
+				return index < cardinality;
+			}
+
+			@Override
+			public BindingSet next() {
+				if (!hasNext()) {
+					throw new NoSuchElementException();
+				}
+				return singleBindingSet("x",
+						SimpleValueFactory.getInstance().createIRI("urn:telemetry:key:" + index++));
+			}
+		};
+	}
+
+	private static double relativeError(long estimate, long exact) {
+		return Math.abs(estimate - (double) exact) / exact;
 	}
 
 	private static BindingSet singleBindingSet(String name, String value) {

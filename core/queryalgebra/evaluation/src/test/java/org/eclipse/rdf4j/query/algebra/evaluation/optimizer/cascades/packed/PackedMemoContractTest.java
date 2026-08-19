@@ -265,6 +265,37 @@ class PackedMemoContractTest {
 	}
 
 	@Test
+	void resourceLimitedParetoAuditStillAdmitsBetterScalarIncumbent() {
+		PackedQuery query = query();
+		PackedSearchBudget budget = new PackedSearchBudget(PackedPlannerLimits.unbounded());
+		PackedMemo memo = new PackedMemo(query, 130, 16, 16, 16, 16, 32, budget);
+		int rootGroupId = memo.logicalGroupId(query.rootRelId());
+		int anyPropertyId = memo.anyPropertyId();
+		int[] noChildren = new int[0];
+		int incumbentPhysical = memo.addPhysicalAlternative(rootGroupId, PackedRelOp.JOIN, 0, anyPropertyId, 7,
+				noChildren, 0, 0);
+		int betterPhysical = memo.addPhysicalAlternative(rootGroupId, PackedRelOp.JOIN, 0, anyPropertyId, 8,
+				noChildren, 0, 0);
+		int incumbentMetadata = memo.addPhysicalMetadata(exactEvent(61, 93, 8.0d), 1.0d, 8.0d);
+		int betterMetadata = memo.addPhysicalMetadata(exactEvent(62, 94, 5.0d), 1.0d, 5.0d);
+		int incumbentWinner = memo.materializeWinnerWithMetadata(rootGroupId, anyPropertyId, 0, 0, 0,
+				incumbentPhysical, incumbentMetadata, 0, 0.0d, 8.0d, 8.0d, noChildren, 0, 0);
+
+		budget.markResourceLimitReached();
+		int betterWinner = memo.offerWinnerWithMetadata(rootGroupId, anyPropertyId, 0, 0, 0, betterPhysical,
+				betterMetadata, 0, 0.0d, 5.0d, 5.0d, noChildren, 0, 0);
+
+		assertNotEquals(incumbentWinner, betterWinner,
+				"optional Pareto retention must not freeze the complete scalar incumbent");
+		assertEquals(betterWinner, memo.findWinner(rootGroupId, anyPropertyId, 0, 0, 0));
+		assertEquals(betterPhysical, memo.winnerPhysicalExpressionId(betterWinner));
+		assertEquals(5.0d, memo.winnerTotalCost(betterWinner));
+		assertEquals(incumbentWinner, memo.firstExactContinuationWinner(rootGroupId, anyPropertyId, 0, 0, 0));
+		assertEquals(0, memo.nextExactContinuationWinner(incumbentWinner),
+				"the post-limit scalar winner must not become an unproved exact continuation");
+	}
+
+	@Test
 	void ordinaryScalarMemoSkipsUnobservablePlanQualityState() throws ReflectiveOperationException {
 		PackedQuery query = query();
 		PackedSearchBudget detailedBudget = new PackedSearchBudget(PackedPlannerLimits.unbounded());

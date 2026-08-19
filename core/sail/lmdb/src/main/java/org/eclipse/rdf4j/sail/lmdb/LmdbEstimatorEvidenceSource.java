@@ -27,12 +27,21 @@ interface LmdbEstimatorEvidenceSource {
 		return Optional.empty();
 	}
 
+	default Optional<JoinEvidence> joinEvidence(TupleExpr left, TupleExpr right, EstimateContext context) {
+		return Optional.empty();
+	}
+
 	default Optional<FilterEvidence> filterEvidence(TupleExpr input, ValueExpr condition, BagEstimate inputEstimate,
 			EstimateContext context) {
 		return Optional.empty();
 	}
 
 	default Optional<FiniteRelationEstimate> finiteFilterRelation(TupleExpr input, ValueExpr condition,
+			EstimateContext context) {
+		return Optional.empty();
+	}
+
+	default Optional<FiniteRelationEstimate> finiteFilterDomain(TupleExpr input, ValueExpr condition,
 			EstimateContext context) {
 		return Optional.empty();
 	}

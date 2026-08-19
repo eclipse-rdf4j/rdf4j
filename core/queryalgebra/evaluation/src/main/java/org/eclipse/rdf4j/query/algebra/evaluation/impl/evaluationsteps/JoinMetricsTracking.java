@@ -20,6 +20,14 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 final class JoinMetricsTracking {
+	private static final String DEFERRED_COUNTERS_METADATA = "org.eclipse.rdf4j.query.algebra.evaluation.impl.deferredJoinCounters";
+	private static final int RIGHT_ITERATORS = 0;
+	private static final int LEFT_ROWS = 1;
+	private static final int RIGHT_ROWS = 2;
+	private static final int EMPTY_RIGHT_PROBES = 3;
+	private static final int LEFT_ROWS_WITH_MATCH = 4;
+	private static final int MAX_RIGHT_ROWS_PER_LEFT = 5;
+	private static final int COUNTER_COUNT = 6;
 
 	private JoinMetricsTracking() {
 	}
@@ -32,6 +40,47 @@ final class JoinMetricsTracking {
 	static QueryEvaluationStep wrapRightInput(QueryEvaluationStep delegate, QueryModelNode joinNode,
 			QueryModelNode rightNode, boolean metricsTrackingActive) {
 		return wrap(delegate, joinNode, rightNode, true, metricsTrackingActive);
+	}
+
+	static Accumulator deferredAccumulator(QueryModelNode joinNode, QueryModelNode leftNode, QueryModelNode rightNode,
+			boolean metricsTrackingActive) {
+		if (!metricsTrackingActive
+				|| (!metricsEnabled(joinNode) && !metricsEnabled(leftNode) && !metricsEnabled(rightNode))) {
+			return null;
+		}
+		Accumulator accumulator = new Accumulator(joinNode, leftNode, rightNode);
+		if (!RootCloseTelemetryRegistrar.register(joinNode, accumulator::publish)) {
+			return null;
+		}
+		joinNode.setQueryModelMetadata(DEFERRED_COUNTERS_METADATA, accumulator.counters);
+		return accumulator;
+	}
+
+	static QueryEvaluationStep wrapLeftInput(QueryEvaluationStep delegate, Accumulator accumulator) {
+		return wrapDeferred(delegate, accumulator, false);
+	}
+
+	static QueryEvaluationStep wrapRightInput(QueryEvaluationStep delegate, Accumulator accumulator) {
+		return wrapDeferred(delegate, accumulator, true);
+	}
+
+	private static QueryEvaluationStep wrapDeferred(QueryEvaluationStep delegate, Accumulator accumulator,
+			boolean rightSide) {
+		if (accumulator == null) {
+			return delegate;
+		}
+		DeferredSideIteration wrapper = new DeferredSideIteration(accumulator, rightSide);
+		return bindings -> {
+			if (rightSide) {
+				accumulator.rightIteratorOpened();
+			}
+			CloseableIteration<BindingSet> base = delegate.evaluate(bindings);
+			if (base == QueryEvaluationStep.EMPTY_ITERATION) {
+				accumulator.probeClosed(rightSide, 0L);
+				return base;
+			}
+			return wrapper.bind(base);
+		};
 	}
 
 	private static QueryEvaluationStep wrap(QueryEvaluationStep delegate, QueryModelNode joinNode,
@@ -174,5 +223,148 @@ final class JoinMetricsTracking {
 			return;
 		}
 		queryModelNode.setLongMetricActual(metricName, Math.max(longMetric(queryModelNode, metricName), value));
+	}
+
+	static final class Accumulator {
+		private final QueryModelNode joinNode;
+		private final QueryModelNode leftNode;
+		private final QueryModelNode rightNode;
+		private final long[] counters = new long[COUNTER_COUNT];
+		private boolean published;
+
+		private Accumulator(QueryModelNode joinNode, QueryModelNode leftNode, QueryModelNode rightNode) {
+			this.joinNode = joinNode;
+			this.leftNode = leftNode;
+			this.rightNode = rightNode;
+		}
+
+		private void rightIteratorOpened() {
+			increment(RIGHT_ITERATORS);
+		}
+
+		private void probeClosed(boolean rightSide, long consumedBindings) {
+			if (rightSide) {
+				if (consumedBindings <= 0L) {
+					increment(EMPTY_RIGHT_PROBES);
+				} else {
+					increment(LEFT_ROWS_WITH_MATCH);
+					counters[MAX_RIGHT_ROWS_PER_LEFT] = Math.max(counters[MAX_RIGHT_ROWS_PER_LEFT], consumedBindings);
+				}
+			}
+			if (consumedBindings > 0L) {
+				add(rightSide ? RIGHT_ROWS : LEFT_ROWS, consumedBindings);
+			}
+		}
+
+		private void publish() {
+			if (published) {
+				return;
+			}
+			published = true;
+			publishJoinCounts(joinNode, counters[RIGHT_ITERATORS], counters[LEFT_ROWS], counters[RIGHT_ROWS]);
+			publishJoinCounts(leftNode, 0L, counters[LEFT_ROWS], 0L);
+			publishJoinCounts(rightNode, counters[RIGHT_ITERATORS], counters[RIGHT_ITERATORS],
+					counters[RIGHT_ROWS]);
+			addLongMetric(joinNode, TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL,
+					counters[EMPTY_RIGHT_PROBES]);
+			addLongMetric(joinNode, TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL,
+					counters[LEFT_ROWS_WITH_MATCH]);
+			setLongMetricMax(joinNode, TelemetryMetricNames.MAX_RIGHT_ROWS_PER_LEFT_ACTUAL,
+					counters[MAX_RIGHT_ROWS_PER_LEFT]);
+			if (joinNode != null && joinNode.isCostFeedbackTrackingEnabled()) {
+				joinNode.setCostFeedbackEmptyRightProbeCountActual(saturatingAdd(
+						Math.max(0L, joinNode.getCostFeedbackEmptyRightProbeCountActual()),
+						counters[EMPTY_RIGHT_PROBES]));
+				joinNode.setCostFeedbackLeftRowsWithMatchActual(saturatingAdd(
+						Math.max(0L, joinNode.getCostFeedbackLeftRowsWithMatchActual()),
+						counters[LEFT_ROWS_WITH_MATCH]));
+				joinNode.setCostFeedbackMaxRightRowsPerLeftActual(Math.max(
+						Math.max(0L, joinNode.getCostFeedbackMaxRightRowsPerLeftActual()),
+						counters[MAX_RIGHT_ROWS_PER_LEFT]));
+			}
+			if (joinNode != null && joinNode.getQueryModelMetadata(DEFERRED_COUNTERS_METADATA) == counters) {
+				joinNode.removeQueryModelMetadata(DEFERRED_COUNTERS_METADATA);
+			}
+		}
+
+		private void increment(int index) {
+			add(index, 1L);
+		}
+
+		private void add(int index, long value) {
+			counters[index] = saturatingAdd(counters[index], Math.max(0L, value));
+		}
+
+		private static void publishJoinCounts(QueryModelNode node, long rightIterators, long leftRows,
+				long rightRows) {
+			if (node == null) {
+				return;
+			}
+			node.setJoinRightIteratorsCreatedActual(saturatingAdd(
+					Math.max(0L, node.getJoinRightIteratorsCreatedActual()), rightIterators));
+			node.setJoinLeftBindingsConsumedActual(
+					saturatingAdd(Math.max(0L, node.getJoinLeftBindingsConsumedActual()), leftRows));
+			node.setJoinRightBindingsConsumedActual(
+					saturatingAdd(Math.max(0L, node.getJoinRightBindingsConsumedActual()), rightRows));
+		}
+
+		private static long saturatingAdd(long left, long right) {
+			return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
+		}
+	}
+
+	private static final class DeferredSideIteration implements CloseableIteration<BindingSet> {
+		private final Accumulator accumulator;
+		private final boolean rightSide;
+		private CloseableIteration<BindingSet> delegate;
+		private long consumedBindings;
+		private boolean active;
+
+		private DeferredSideIteration(Accumulator accumulator, boolean rightSide) {
+			this.accumulator = accumulator;
+			this.rightSide = rightSide;
+		}
+
+		private CloseableIteration<BindingSet> bind(CloseableIteration<BindingSet> delegate) {
+			if (active) {
+				throw new IllegalStateException("A join telemetry side cannot have overlapping evaluations");
+			}
+			this.delegate = delegate;
+			consumedBindings = 0L;
+			active = true;
+			return this;
+		}
+
+		@Override
+		public boolean hasNext() throws QueryEvaluationException {
+			return delegate.hasNext();
+		}
+
+		@Override
+		public BindingSet next() throws QueryEvaluationException {
+			BindingSet next = delegate.next();
+			consumedBindings++;
+			return next;
+		}
+
+		@Override
+		public void remove() throws QueryEvaluationException {
+			delegate.remove();
+		}
+
+		@Override
+		public void close() throws QueryEvaluationException {
+			if (!active) {
+				return;
+			}
+			active = false;
+			CloseableIteration<BindingSet> current = delegate;
+			delegate = null;
+			try {
+				accumulator.probeClosed(rightSide, consumedBindings);
+			} finally {
+				current.close();
+			}
+		}
 	}
 }

@@ -68,6 +68,7 @@ import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -115,6 +116,7 @@ import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierMutation;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.lwjgl.PointerBuffer;
@@ -176,6 +178,9 @@ class TripleStore implements Closeable {
 
 	private static final String PREDICATE_OBJECT_DOMAINS_DB = "predicate-object-domains";
 	private static final String PREDICATE_OBJECT_DOMAIN_DEGRADATIONS_DB = "predicate-object-domain-degradations";
+	private static final String FRONTIER_MUTATION_JOURNAL_DB = "frontier-statistics-mutation-journal";
+	private static final int FRONTIER_MUTATION_JOURNAL_VERSION = 1;
+	private static final int FRONTIER_MUTATION_JOURNAL_BYTES = Integer.BYTES * 2 + Long.BYTES * 5;
 	private static final String PREDICATE_OBJECT_DOMAINS_VERSION = "rdf-term-domain-v4";
 	private static final long PREDICATE_OBJECT_DOMAIN_ENCODING_MAGIC = 0x52444654444f4d31L;
 	private static final int PREDICATE_OBJECT_DOMAIN_BYTES = Long.BYTES * 4;
@@ -224,6 +229,9 @@ class TripleStore implements Closeable {
 	private final int contextsDbi;
 	private final int predicateObjectDomainsDbi;
 	private final int predicateObjectDomainDegradationsDbi;
+	private final int frontierMutationJournalDbi;
+	private long frontierJournalSequence;
+	private boolean frontierJournalSequenceDirty;
 	private int pageSize;
 	private final boolean autoGrow;
 	private final boolean pageCardinalityEstimator;
@@ -319,8 +327,9 @@ class TripleStore implements Closeable {
 			env = pp.get(0);
 		}
 
-		// 1 for contexts, up to 96 triple-index databases, and 2 predicate-domain databases.
-		E(mdb_env_set_maxdbs(env, 1 + 96 + 2));
+		// 1 for contexts, up to 96 triple-index databases, 2 predicate-domain databases,
+		// and 1 transactional Frontier mutation journal.
+		E(mdb_env_set_maxdbs(env, 1 + 96 + 2 + 1));
 		E(mdb_env_set_maxreaders(env, MAX_READERS));
 
 		// Open environment
@@ -345,6 +354,8 @@ class TripleStore implements Closeable {
 				(stack, txn) -> openDatabaseWithTxn(txn, PREDICATE_OBJECT_DOMAINS_DB, MDB_CREATE));
 		predicateObjectDomainDegradationsDbi = transaction(env,
 				(stack, txn) -> openDatabaseWithTxn(txn, PREDICATE_OBJECT_DOMAIN_DEGRADATIONS_DB, MDB_CREATE));
+		frontierMutationJournalDbi = transaction(env,
+				(stack, txn) -> openDatabaseWithTxn(txn, FRONTIER_MUTATION_JOURNAL_DB, MDB_CREATE));
 
 		txnManager = new TxnManager(env, Mode.RESET);
 		pageEstimator = pageCardinalityEstimator ? new LmdbPageCardinalityEstimator(dataMdbFile) : null;
@@ -2253,6 +2264,11 @@ class TripleStore implements Closeable {
 
 	private void rebuildIndexSelectionTable() {
 		for (int mask = 0; mask < 16; mask++) {
+			if (mask == 0 && spoContextWildcardIndex != null) {
+				bestIndexByBoundMask[mask] = spoContextWildcardIndex;
+				rangeSearchByBoundMask[mask] = false;
+				continue;
+			}
 			long subj = (mask & 1) != 0 ? 1 : -1;
 			long pred = (mask & 2) != 0 ? 1 : -1;
 			long obj = (mask & 4) != 0 ? 1 : -1;
@@ -4459,6 +4475,169 @@ class TripleStore implements Closeable {
 		return (long) statementCount * indexes.size() * PREPARED_WRITE_BYTES_PER_INDEX_ENTRY;
 	}
 
+	private void recordFrontierMutation(boolean insertion, boolean explicit, long subject, long predicate, long object,
+			long context) throws IOException {
+		if (recordCache == null) {
+			appendFrontierMutation(insertion, explicit, subject, predicate, object, context);
+		}
+	}
+
+	private void appendFrontierMutation(boolean insertion, boolean explicit, long subject, long predicate, long object,
+			long context) throws IOException {
+		if (writeTxn == 0L || subject <= 0L || predicate <= 0L || object <= 0L || context < 0L) {
+			throw new IOException("Frontier mutation must be recorded in an active LMDB write transaction");
+		}
+		long sequence;
+		try {
+			sequence = Math.incrementExact(frontierJournalSequence);
+		} catch (ArithmeticException overflow) {
+			throw new IOException("Frontier mutation sequence exhausted", overflow);
+		}
+		long epoch = mdb_txn_id(writeTxn);
+		if (epoch <= 0L) {
+			throw new IOException("Frontier mutation write transaction has no durable epoch");
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			ByteBuffer keyBytes = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+			keyBytes.putLong(sequence).flip();
+			key.mv_data(keyBytes);
+			MDBVal value = MDBVal.malloc(stack);
+			ByteBuffer valueBytes = stack.malloc(FRONTIER_MUTATION_JOURNAL_BYTES).order(ByteOrder.BIG_ENDIAN);
+			int flags = (insertion ? 1 : 0) | (explicit ? 1 << 1 : 0);
+			valueBytes.putInt(FRONTIER_MUTATION_JOURNAL_VERSION);
+			valueBytes.putInt(flags);
+			valueBytes.putLong(epoch);
+			valueBytes.putLong(subject);
+			valueBytes.putLong(predicate);
+			valueBytes.putLong(object);
+			valueBytes.putLong(context);
+			valueBytes.flip();
+			value.mv_data(valueBytes);
+			int rc = mdb_put(writeTxn, frontierMutationJournalDbi, key, value, MDB_NOOVERWRITE);
+			if (rc != MDB_SUCCESS) {
+				throw new IOException(mdb_strerror(rc));
+			}
+		}
+		frontierJournalSequence = sequence;
+		frontierJournalSequenceDirty = true;
+	}
+
+	private long readFrontierJournalSequence(MemoryStack stack, long txn) throws IOException {
+		PointerBuffer cursorPointer = stack.mallocPointer(1);
+		E(mdb_cursor_open(txn, frontierMutationJournalDbi, cursorPointer));
+		long cursor = cursorPointer.get(0);
+		MDBVal key = MDBVal.malloc(stack);
+		MDBVal value = MDBVal.malloc(stack);
+		try {
+			int rc = mdb_cursor_get(cursor, key, value, MDB_LAST);
+			if (rc == MDB_NOTFOUND) {
+				return 0L;
+			}
+			if (rc != MDB_SUCCESS) {
+				throw new IOException(mdb_strerror(rc));
+			}
+			ByteBuffer bytes = key.mv_data();
+			if (bytes == null || bytes.remaining() != Long.BYTES) {
+				throw new IOException("Frontier mutation journal key is corrupt");
+			}
+			long sequence = bytes.order(ByteOrder.BIG_ENDIAN).getLong(bytes.position());
+			if (sequence < 0L) {
+				throw new IOException("Frontier mutation journal sequence is negative");
+			}
+			return sequence;
+		} finally {
+			mdb_cursor_close(cursor);
+		}
+	}
+
+	long latestFrontierMutationSequence(Txn txn) throws IOException {
+		Objects.requireNonNull(txn, "txn");
+		long handle = txn.get();
+		if (handle == 0L) {
+			throw new IOException("Cannot read Frontier mutation sequence from a closed LMDB transaction");
+		}
+		try (MemoryStack stack = stackPush()) {
+			return readFrontierJournalSequence(stack, handle);
+		}
+	}
+
+	long latestFrontierMutationSequence() throws IOException {
+		return txnManager.doWith((stack, txn) -> readFrontierJournalSequence(stack, txn));
+	}
+
+	private void flushFrontierJournalSequence() throws IOException {
+		if (!frontierJournalSequenceDirty) {
+			return;
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			ByteBuffer keyBytes = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+			keyBytes.putLong(0L).flip();
+			key.mv_data(keyBytes);
+			MDBVal value = MDBVal.malloc(stack);
+			ByteBuffer valueBytes = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+			valueBytes.putLong(frontierJournalSequence).flip();
+			value.mv_data(valueBytes);
+			E(mdb_put(writeTxn, frontierMutationJournalDbi, key, value, 0));
+		}
+		frontierJournalSequenceDirty = false;
+	}
+
+	List<FrontierMutation> readFrontierMutationsAfter(long afterSequence, int limit) throws IOException {
+		if (afterSequence < 0L || limit < 1 || limit > 1_000_000) {
+			throw new IllegalArgumentException("Frontier journal cursor and bounded read limit are invalid");
+		}
+		if (afterSequence == Long.MAX_VALUE) {
+			return List.of();
+		}
+		return txnManager.doWith((stack, txn) -> {
+			ArrayList<FrontierMutation> mutations = new ArrayList<>(Math.min(limit, 1024));
+			PointerBuffer cursorPointer = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, frontierMutationJournalDbi, cursorPointer));
+			long cursor = cursorPointer.get(0);
+			try {
+				MDBVal key = MDBVal.malloc(stack);
+				ByteBuffer keyBytes = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+				keyBytes.putLong(afterSequence + 1L).flip();
+				key.mv_data(keyBytes);
+				MDBVal value = MDBVal.malloc(stack);
+				int rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
+				while (rc == MDB_SUCCESS && mutations.size() < limit) {
+					ByteBuffer currentKey = key.mv_data();
+					ByteBuffer currentValue = value.mv_data();
+					if (currentKey == null || currentKey.remaining() != Long.BYTES || currentValue == null
+							|| currentValue.remaining() != FRONTIER_MUTATION_JOURNAL_BYTES) {
+						throw new IOException("Frontier mutation journal row is corrupt");
+					}
+					long sequence = currentKey.order(ByteOrder.BIG_ENDIAN).getLong(currentKey.position());
+					ByteBuffer row = currentValue.order(ByteOrder.BIG_ENDIAN);
+					int position = row.position();
+					int version = row.getInt(position);
+					int flags = row.getInt(position + Integer.BYTES);
+					if (sequence <= afterSequence || version != FRONTIER_MUTATION_JOURNAL_VERSION
+							|| (flags & ~3) != 0) {
+						throw new IOException("Frontier mutation journal row identity is corrupt");
+					}
+					mutations.add(new FrontierMutation(sequence,
+							row.getLong(position + Integer.BYTES * 2),
+							(flags & 1) != 0, (flags & 1 << 1) != 0,
+							row.getLong(position + Integer.BYTES * 2 + Long.BYTES),
+							row.getLong(position + Integer.BYTES * 2 + Long.BYTES * 2),
+							row.getLong(position + Integer.BYTES * 2 + Long.BYTES * 3),
+							row.getLong(position + Integer.BYTES * 2 + Long.BYTES * 4)));
+					rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+				}
+				if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+					throw new IOException(mdb_strerror(rc));
+				}
+				return List.copyOf(mutations);
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		});
+	}
+
 	static LongAdder statementsAdded = new LongAdder();
 	static long lastLogTime = System.currentTimeMillis();
 	int localCount = 0;
@@ -4540,8 +4719,10 @@ class TripleStore implements Closeable {
 				incrementContext(stack, context);
 				if (foundImplicit) {
 					recordFanOutRemoved(subj, pred, obj, context, false);
+					recordFrontierMutation(false, false, subj, pred, obj, context);
 				}
 				recordFanOutAdded(subj, pred, obj, context, explicit);
+				recordFrontierMutation(true, explicit, subj, pred, obj, context);
 			}
 		}
 
@@ -4953,6 +5134,16 @@ class TripleStore implements Closeable {
 					}
 				}
 			}
+			for (int ordinal = 0; ordinal < addedCount; ordinal++) {
+				int statementIndex = mainOrderIndices[ordinal];
+				if (promotedFromImplicit != null && promotedFromImplicit[statementIndex]) {
+					recordFrontierMutation(false, false, subj[statementIndex], pred[statementIndex],
+							obj[statementIndex],
+							context[statementIndex]);
+				}
+				recordFrontierMutation(true, explicit, subj[statementIndex], pred[statementIndex], obj[statementIndex],
+						context[statementIndex]);
+			}
 		}
 		if (remainingStart < count) {
 			storeTriplesIndividually(subj, pred, obj, context, remainingStart, count, explicit, addedIndexConsumer);
@@ -5270,6 +5461,8 @@ class TripleStore implements Closeable {
 				decrementContext(stack, quad[TripleIndex.CONTEXT_IDX]);
 				recordFanOutRemoved(quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
 						quad[TripleIndex.OBJ_IDX], quad[TripleIndex.CONTEXT_IDX], explicit);
+				recordFrontierMutation(false, explicit, quad[SUBJ_IDX], quad[PRED_IDX], quad[OBJ_IDX],
+						quad[CONTEXT_IDX]);
 				handler.accept(quad);
 			}
 		}
@@ -5299,6 +5492,7 @@ class TripleStore implements Closeable {
 				while ((r = it.next()) != null) {
 					if (requiresResize()) {
 						// resize map if required
+						flushFrontierJournalSequence();
 						commitWriteTransaction(commitProgress);
 						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
 						E(mdb_env_set_mapsize(env, mapSize));
@@ -5327,6 +5521,8 @@ class TripleStore implements Closeable {
 							decrementContext(stack, r.quad[TripleIndex.CONTEXT_IDX]);
 						}
 					}
+					appendFrontierMutation(r.add, explicit, r.quad[SUBJ_IDX], r.quad[PRED_IDX], r.quad[OBJ_IDX],
+							r.quad[CONTEXT_IDX]);
 				}
 			}
 		}
@@ -5335,6 +5531,10 @@ class TripleStore implements Closeable {
 	private void beginWriteTransaction(PointerBuffer pp) throws IOException {
 		E(mdb_txn_begin(env, NULL, 0, pp));
 		writeTxn = pp.get(0);
+		try (MemoryStack stack = stackPush()) {
+			frontierJournalSequence = readFrontierJournalSequence(stack, writeTxn);
+		}
+		frontierJournalSequenceDirty = false;
 	}
 
 	private void commitWriteTransaction(CommitProgress commitProgress) throws IOException {
@@ -5478,6 +5678,7 @@ class TripleStore implements Closeable {
 						if (recordCache == null) {
 							flushPendingRdfTermDomains();
 						}
+						flushFrontierJournalSequence();
 						commitWriteTransaction(commitProgress);
 						if (recordCache != null) {
 							TxnRecordCache transactionRecordCache = recordCache;
@@ -5493,6 +5694,7 @@ class TripleStore implements Closeable {
 								}
 								updateFromCache(commitProgress);
 								flushPendingRdfTermDomains();
+								flushFrontierJournalSequence();
 								// finally, commit write transaction
 								commitWriteTransaction(commitProgress);
 								applyPendingRdfTermDomainCacheUpdates();
@@ -5571,6 +5773,8 @@ class TripleStore implements Closeable {
 				}
 				pendingRdfTermDomains.clear();
 				clearPendingRdfTermDomainCacheUpdates();
+				frontierJournalSequence = 0L;
+				frontierJournalSequenceDirty = false;
 			}
 		}
 	}

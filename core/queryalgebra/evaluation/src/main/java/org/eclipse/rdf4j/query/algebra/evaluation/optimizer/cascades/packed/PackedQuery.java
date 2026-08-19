@@ -187,6 +187,10 @@ final class PackedQuery {
 		return scalars.size();
 	}
 
+	int payloadCount() {
+		return payloads.size();
+	}
+
 	int objectCount() {
 		return objects.size();
 	}

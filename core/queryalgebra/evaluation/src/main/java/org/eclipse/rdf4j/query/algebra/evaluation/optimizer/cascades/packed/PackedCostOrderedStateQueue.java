@@ -16,7 +16,9 @@ import java.util.Arrays;
 /** Primitive min-heap for cost-ordered expansion of retained planner states. */
 @PackedHotPath
 final class PackedCostOrderedStateQueue {
+	private static final long BYTES_PER_ENTRY = Integer.BYTES * 2L + Double.BYTES;
 
+	private final PackedSearchBudget budget;
 	private int[] stateIds;
 	private int[] revisions;
 	private double[] costs;
@@ -25,7 +27,21 @@ final class PackedCostOrderedStateQueue {
 	private double polledCost;
 
 	PackedCostOrderedStateQueue(int expectedSize) {
+		this(expectedSize, new PackedSearchBudget(PackedPlannerLimits.unbounded()));
+	}
+
+	PackedCostOrderedStateQueue(int expectedSize, PackedSearchBudget budget) {
+		if (budget == null) {
+			throw new NullPointerException("budget");
+		}
+		this.budget = budget;
 		int capacity = Math.max(2, expectedSize);
+		if (!budget.tryReserveBytes(requiredBytes(capacity))) {
+			stateIds = new int[0];
+			revisions = new int[0];
+			costs = new double[0];
+			return;
+		}
 		stateIds = new int[capacity];
 		revisions = new int[capacity];
 		costs = new double[capacity];
@@ -35,7 +51,9 @@ final class PackedCostOrderedStateQueue {
 		if (stateId <= 0 || revision <= 0 || !Double.isFinite(cost) || cost < 0.0d) {
 			throw new IllegalArgumentException("invalid cost-ordered planner state");
 		}
-		ensureCapacity(size + 1);
+		if (!ensureCapacity(size + 1)) {
+			return;
+		}
 		int destination = size++;
 		while (destination > 0) {
 			int parent = (destination - 1) >>> 1;
@@ -126,13 +144,24 @@ final class PackedCostOrderedStateQueue {
 		costs[destination] = cost;
 	}
 
-	private void ensureCapacity(int requiredCapacity) {
+	private boolean ensureCapacity(int requiredCapacity) {
 		if (requiredCapacity <= stateIds.length) {
-			return;
+			return true;
+		}
+		if (stateIds.length == 0) {
+			return false;
 		}
 		int newCapacity = Math.max(requiredCapacity, stateIds.length << 1);
+		if (!budget.tryReserveBytes(requiredBytes(newCapacity) - requiredBytes(stateIds.length))) {
+			return false;
+		}
 		stateIds = Arrays.copyOf(stateIds, newCapacity);
 		revisions = Arrays.copyOf(revisions, newCapacity);
 		costs = Arrays.copyOf(costs, newCapacity);
+		return true;
+	}
+
+	private static long requiredBytes(int capacity) {
+		return (long) capacity * BYTES_PER_ENTRY;
 	}
 }

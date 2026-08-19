@@ -136,6 +136,12 @@ public class LmdbStoreSchema {
 
 	public final static IRI FRONTIER_SYNOPSIS_BUDGET_BYTES;
 
+	public final static IRI FRONTIER_HEAP_BUDGET_BYTES;
+
+	public final static IRI FRONTIER_STATISTICS_MAX_LAG_MILLIS;
+
+	public final static IRI FRONTIER_DELETE_RESERVE_FRACTION;
+
 	public final static IRI FRONTIER_QUERY_MEMORY_BUDGET_BYTES;
 
 	public final static IRI FRONTIER_QUERY_INDEX_BUDGET_BYTES;
@@ -253,6 +259,9 @@ public class LmdbStoreSchema {
 		SKETCH_ESTIMATOR_ENABLED = factory.createIRI(NAMESPACE, "sketchEstimatorEnabled");
 		FRONTIER_ESTIMATOR_MODE = factory.createIRI(NAMESPACE, "frontierEstimatorMode");
 		FRONTIER_SYNOPSIS_BUDGET_BYTES = factory.createIRI(NAMESPACE, "frontierSynopsisBudgetBytes");
+		FRONTIER_HEAP_BUDGET_BYTES = factory.createIRI(NAMESPACE, "frontierHeapBudgetBytes");
+		FRONTIER_STATISTICS_MAX_LAG_MILLIS = factory.createIRI(NAMESPACE, "frontierStatisticsMaxLagMillis");
+		FRONTIER_DELETE_RESERVE_FRACTION = factory.createIRI(NAMESPACE, "frontierDeleteReserveFraction");
 		FRONTIER_QUERY_MEMORY_BUDGET_BYTES = factory.createIRI(NAMESPACE, "frontierQueryMemoryBudgetBytes");
 		FRONTIER_QUERY_INDEX_BUDGET_BYTES = factory.createIRI(NAMESPACE, "frontierQueryIndexBudgetBytes");
 		FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS = factory.createIRI(

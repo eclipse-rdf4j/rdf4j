@@ -206,7 +206,7 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 	}
 
 	@Test
-	void patternLocalFiniteFilterSurfaceReusesStoreCacheAcrossPlanningScopes(@TempDir File dataDir) throws Exception {
+	void patternLocalFiniteFilterUsesMappedStatisticsAcrossPlanningScopes(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -218,6 +218,7 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 				connection.add(VF.createIRI("urn:test:correlated:shared-filter-subject-2"), predicate,
 						VF.createLiteral("discarded"));
 			}
+			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
 
 			StatementPattern pattern = new StatementPattern(
 					Var.of("subject"), Var.of("predicate", predicate), Var.of("value"));
@@ -226,16 +227,16 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 					.getEvaluationStatistics()).estimatorRuntime();
 			LmdbExactFiniteSurfaceCache cache = runtime.frontierSettings().exactFiniteSurfaceCache();
 
+			long hitsBefore = cache.hits();
 			try (var ignored = runtime.beginScope()) {
 				assertEquals(0.5d, runtime.patternFilterPass(condition, pattern).orElseThrow().getPassRatio(), 0.0d);
 			}
-			long hitsAfterFirstPlanningScope = cache.hits();
 			try (var ignored = runtime.beginScope()) {
 				assertEquals(0.5d, runtime.patternFilterPass(condition, pattern).orElseThrow().getPassRatio(), 0.0d);
 			}
 
-			assertEquals(hitsAfterFirstPlanningScope + 1L, cache.hits(),
-					"pattern-local finite-filter surfaces should share the store-owned cache");
+			assertEquals(hitsBefore, cache.hits(),
+					"authoritative mapped filter probes must not enumerate or cache exact statement surfaces");
 		} finally {
 			repository.shutDown();
 		}

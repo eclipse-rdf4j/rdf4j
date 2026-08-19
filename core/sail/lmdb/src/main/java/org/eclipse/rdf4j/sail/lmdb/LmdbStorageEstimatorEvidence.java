@@ -42,17 +42,23 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSke
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadEvidence;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadProbe;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadValueHash;
 import org.eclipse.rdf4j.sail.lmdb.estimation.RowEvidence;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierJoinEstimate;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierJoinProbe;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafEstimate;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
+import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PatternFilterSampleEstimate;
 
 /** Collects storage and synopsis evidence without embedding selection policy. */
 final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource {
-	private static final int MAX_BOUND_JOIN_DISTINCT_PREFIXES = 65_536;
 	private static final int MAX_EXACT_FILTER_ZERO_SCANNED_ROWS = 4_096;
 	private static final int MAX_EXACT_FILTER_DISTINCT_TERMS = 4_096;
 
@@ -64,6 +70,9 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 	private final LmdbPropertyPathEstimator propertyPaths;
 	private final LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator;
 	private final ExactFiniteSurfaceProvider exactFiniteSurfaceProvider;
+	private final LmdbStatisticsService statistics;
+	private final FrontierEstimatorMode statisticsMode;
+	private final LmdbMappedFilterEvidence mappedFilters;
 
 	LmdbStorageEstimatorEvidence(ValueStore valueStore, LmdbStatementPatternCardinalitySource cardinalities,
 			LmdbQuadSynopsisService synopsis, LmdbFilterSelectivityStats filters,
@@ -75,6 +84,24 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 			LmdbQuadSynopsisService synopsis, LmdbFilterSelectivityStats filters,
 			LmdbOperatorFeedbackStats feedback, LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator,
 			ExactFiniteSurfaceProvider exactFiniteSurfaceProvider) {
+		this(valueStore, cardinalities, synopsis, filters, feedback, finiteJoinSurfaceEstimator,
+				exactFiniteSurfaceProvider, null);
+	}
+
+	LmdbStorageEstimatorEvidence(ValueStore valueStore, LmdbStatementPatternCardinalitySource cardinalities,
+			LmdbQuadSynopsisService synopsis, LmdbFilterSelectivityStats filters,
+			LmdbOperatorFeedbackStats feedback, LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator,
+			ExactFiniteSurfaceProvider exactFiniteSurfaceProvider, LmdbStatisticsService statistics) {
+		this(valueStore, cardinalities, synopsis, filters, feedback, finiteJoinSurfaceEstimator,
+				exactFiniteSurfaceProvider, statistics,
+				statistics == null ? FrontierEstimatorMode.OFF : FrontierEstimatorMode.AUTHORITATIVE);
+	}
+
+	LmdbStorageEstimatorEvidence(ValueStore valueStore, LmdbStatementPatternCardinalitySource cardinalities,
+			LmdbQuadSynopsisService synopsis, LmdbFilterSelectivityStats filters,
+			LmdbOperatorFeedbackStats feedback, LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator,
+			ExactFiniteSurfaceProvider exactFiniteSurfaceProvider, LmdbStatisticsService statistics,
+			FrontierEstimatorMode statisticsMode) {
 		this.valueStore = valueStore;
 		this.cardinalities = cardinalities;
 		this.synopsis = synopsis;
@@ -82,6 +109,9 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 		this.feedback = feedback;
 		this.finiteJoinSurfaceEstimator = finiteJoinSurfaceEstimator;
 		this.exactFiniteSurfaceProvider = exactFiniteSurfaceProvider;
+		this.statistics = statistics;
+		this.statisticsMode = statisticsMode == null ? FrontierEstimatorMode.OFF : statisticsMode;
+		mappedFilters = statistics == null ? null : new LmdbMappedFilterEvidence(valueStore, statistics);
 		propertyPaths = new LmdbPropertyPathEstimator(synopsis);
 	}
 
@@ -116,8 +146,20 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 	}
 
 	private List<EstimateCandidate> statementCandidates(StatementPattern pattern, EstimateContext context) {
-		List<EstimateCandidate> candidates = new ArrayList<>(2);
-		if (cardinalities != null) {
+		List<EstimateCandidate> candidates = new ArrayList<>(3);
+		FrontierLeafProbe frontierProbe = frontierProbe(pattern);
+		if (frontierProbe != null) {
+			FrontierLeafEstimate estimate = statistics.estimateLeafCurrent(frontierProbe);
+			if (statisticsMode == FrontierEstimatorMode.AUTHORITATIVE
+					&& estimate.fallbackReason() == FrontierFallbackReason.NONE && valid(estimate.pointRows())) {
+				RowEvidence evidence = new RowEvidence(estimate.pointRows(), estimate.lowerRows(), estimate.upperRows(),
+						estimate.confidence(), false, context.snapshotIdentity(), context.snapshotVersion(),
+						estimate.source());
+				candidates.add(candidate(pattern, estimate.pointRows(), evidence, EstimateCandidate.Kind.SYNOPSIS, null,
+						Set.of()));
+			}
+		}
+		if (cardinalities != null && statistics == null) {
 			double rows = cardinalities.estimateForPlanning(pattern);
 			if (valid(rows)) {
 				double upper = rows == 0.0d ? 1.0d : Math.max(rows, rows * 2.0d);
@@ -137,37 +179,71 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 			}
 		}
 		addFeedback(pattern, context, candidates);
-		addBoundVariableEvidence(pattern, context, candidates);
+		addMappedBoundVariableEvidence(pattern, context, frontierProbe, candidates);
 		return candidates;
 	}
 
-	private void addBoundVariableEvidence(StatementPattern pattern, EstimateContext context,
-			List<EstimateCandidate> candidates) {
-		if (cardinalities == null || candidates.isEmpty() || context.boundMask().isEmpty()) {
+	private void addMappedBoundVariableEvidence(StatementPattern pattern, EstimateContext context,
+			FrontierLeafProbe probe, List<EstimateCandidate> candidates) {
+		if (probe == null || candidates.isEmpty() || context.boundMask().isEmpty()) {
 			return;
 		}
-		Set<String> boundNames = context.boundNames();
 		Set<String> enrichedNames = new LinkedHashSet<>();
-		for (Var variable : pattern.getVarList()) {
+		for (int component = 0; component < 4; component++) {
+			Var variable = LmdbFrontierProbeFactory.componentVariable(pattern, component);
 			String name = variableName(variable);
-			if (name == null || !boundNames.contains(name) || !enrichedNames.add(name)) {
+			if (name == null || !context.boundNames().contains(name) || !enrichedNames.add(name)) {
 				continue;
 			}
-			OptionalDouble distinct = cardinalities.estimateDistinct(pattern, name,
-					MAX_BOUND_JOIN_DISTINCT_PREFIXES);
-			if (distinct.isEmpty()) {
+			double distinctRows = statistics.estimateProjectedDistinctCurrent(probe, component);
+			if (statisticsMode != FrontierEstimatorMode.AUTHORITATIVE || !valid(distinctRows)) {
 				continue;
 			}
-			double distinctRows = distinct.getAsDouble();
 			for (int index = 0; index < candidates.size(); index++) {
 				EstimateCandidate candidate = candidates.get(index);
+				double boundedDistinct = Math.min(distinctRows, candidate.estimate().rows());
 				BagEstimate enriched = candidate.estimate()
 						.withSketchRelation(Set.of(name),
-								new ExactDistinctCountSketch(distinctRows, candidate.estimate().rows()));
+								new ExactDistinctCountSketch(boundedDistinct, candidate.estimate().rows()));
 				candidates.set(index, new EstimateCandidate(enriched, candidate.evidence(), candidate.kind(),
 						candidate.freshness()));
 			}
 		}
+	}
+
+	private FrontierLeafProbe frontierProbe(StatementPattern pattern) {
+		if (statistics == null || statisticsMode == FrontierEstimatorMode.OFF) {
+			return null;
+		}
+		return LmdbFrontierProbeFactory.probe(valueStore, pattern, FrontierLeafProbe.BOTH_PLANES);
+	}
+
+	@Override
+	public Optional<JoinEvidence> joinEvidence(TupleExpr left, TupleExpr right, EstimateContext context) {
+		if (statistics == null || statisticsMode == FrontierEstimatorMode.OFF
+				|| !(left instanceof StatementPattern leftPattern)
+				|| !(right instanceof StatementPattern rightPattern)
+				|| Math.max(context.invocationCount(), context.prefixEstimate().rows()) > 1.0d) {
+			return Optional.empty();
+		}
+		Set<String> shared = new LinkedHashSet<>(leftPattern.getBindingNames());
+		shared.retainAll(rightPattern.getBindingNames());
+		if (shared.isEmpty() || !java.util.Collections.disjoint(shared, context.boundNames())) {
+			return Optional.empty();
+		}
+		FrontierJoinProbe probe = LmdbFrontierProbeFactory.joinProbe(
+				valueStore, leftPattern, rightPattern, FrontierLeafProbe.BOTH_PLANES);
+		if (probe == null) {
+			return Optional.empty();
+		}
+		FrontierJoinEstimate estimate = statistics.estimateJoinCurrent(probe);
+		if (statisticsMode != FrontierEstimatorMode.AUTHORITATIVE
+				|| estimate.fallbackReason() != FrontierFallbackReason.NONE || !valid(estimate.pointRows())
+				|| !valid(estimate.lowerRows()) || Double.isNaN(estimate.upperRows())) {
+			return Optional.empty();
+		}
+		return Optional.of(new JoinEvidence(estimate.pointRows(), estimate.lowerRows(), estimate.upperRows(),
+				estimate.confidence(), estimate.source()));
 	}
 
 	private void addFeedback(StatementPattern pattern, EstimateContext context,
@@ -190,7 +266,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 
 	@Override
 	public Optional<EstimateCandidate> exactCandidate(TupleExpr expression, EstimateContext context) {
-		if (!(expression instanceof StatementPattern pattern) || cardinalities == null) {
+		if (!(expression instanceof StatementPattern pattern) || cardinalities == null || statistics != null) {
 			return Optional.empty();
 		}
 		double rows = cardinalities.estimateExact(pattern);
@@ -213,9 +289,15 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 			return Optional.empty();
 		}
 		if (!(input instanceof StatementPattern pattern)) {
+			if (mappedStatisticsOwnPlanning()) {
+				return Optional.empty();
+			}
 			return filters == null || !exactFilterZeroProbePermitted(context)
 					? Optional.empty()
 					: exactMandatoryPatternFilterZero(input, condition, context);
+		}
+		if (mappedStatisticsOwnPlanning()) {
+			return mappedFilters.estimate(pattern, condition);
 		}
 		if (filters != null) {
 			Optional<FilterEvidence> evidence = filterEvidence(pattern, condition, context);
@@ -230,6 +312,10 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 			}
 		}
 		return finiteConstantFilterEvidence(pattern, condition, inputEstimate);
+	}
+
+	private boolean mappedStatisticsOwnPlanning() {
+		return statistics != null && statisticsMode != FrontierEstimatorMode.OFF;
 	}
 
 	private static boolean exactFilterZeroProbePermitted(EstimateContext context) {
@@ -436,7 +522,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 	@Override
 	public Optional<FiniteRelationEstimate> finiteFilterRelation(TupleExpr input, ValueExpr condition,
 			EstimateContext context) {
-		if (!hasFiniteSurfaceEstimator() || !(input instanceof StatementPattern)) {
+		if (mappedStatisticsOwnPlanning() || !hasFiniteSurfaceEstimator() || !(input instanceof StatementPattern)) {
 			return Optional.empty();
 		}
 		BindingSetAssignment anchor = FilterValuesAnchorSupport.safeValuesAnchor(condition);
@@ -446,6 +532,14 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 		return estimateFiniteSurface(anchor, input)
 				.filter(LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate::exact)
 				.map(LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate::relation);
+	}
+
+	@Override
+	public Optional<FiniteRelationEstimate> finiteFilterDomain(TupleExpr input, ValueExpr condition,
+			EstimateContext context) {
+		return mappedStatisticsOwnPlanning() && input instanceof StatementPattern pattern
+				? mappedFilters.finiteDomain(pattern, condition)
+				: Optional.empty();
 	}
 
 	private boolean hasFiniteSurfaceEstimator() {

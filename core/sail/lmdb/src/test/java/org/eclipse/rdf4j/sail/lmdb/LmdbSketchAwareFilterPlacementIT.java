@@ -64,6 +64,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.BenchmarkJoinEstimatorSupport;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
 import org.junit.jupiter.api.Disabled;
@@ -328,7 +329,9 @@ class LmdbSketchAwareFilterPlacementIT {
 	@Timeout(45)
 	void manyFiniteValuesAnchorsStayNearConsumingPattern(@TempDir File dataDir) throws Exception {
 		runPlannerTest(dataDir, "manyFiniteValuesAnchorsStayNearConsumingPattern", attemptDir -> {
-			LmdbStore store = new LmdbStore(attemptDir, sketchEnabledConfig());
+			LmdbStoreConfig config = sketchEnabledConfig()
+					.setFrontierSynopsisBudgetBytes(1L << 20);
+			LmdbStore store = new LmdbStore(attemptDir, config);
 			SailRepository repository = new SailRepository(store);
 			repository.init();
 
@@ -577,6 +580,7 @@ class LmdbSketchAwareFilterPlacementIT {
 				attemptDir -> {
 					LmdbStoreConfig config = new LmdbStoreConfig()
 							.setSketchEstimatorEnabled(true)
+							.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
 							.setOptimizerSamplingEnabled(false)
 							.setBackgroundRawSamplingMaxMillisPerCycle(0L);
 					LmdbStore store = new LmdbStore(attemptDir, config);

@@ -90,6 +90,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public static final long FRONTIER_SYNOPSIS_BUDGET_BYTES = 512L * 1024L * 1024L;
 
+	public static final long FRONTIER_HEAP_BUDGET_BYTES = Runtime.getRuntime().maxMemory() / 4L;
+
+	public static final long FRONTIER_STATISTICS_MAX_LAG_MILLIS = 60_000L;
+
+	public static final double FRONTIER_DELETE_RESERVE_FRACTION = 0.25d;
+
 	public static final long FRONTIER_QUERY_MEMORY_BUDGET_BYTES = 64L * 1024L * 1024L;
 
 	public static final long FRONTIER_QUERY_INDEX_BUDGET_BYTES = maximumFrontierQueryIndexBudgetBytes();
@@ -199,7 +205,17 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private long frontierSynopsisBudgetBytes = FRONTIER_SYNOPSIS_BUDGET_BYTES;
 
+	private long frontierHeapBudgetBytes = FRONTIER_HEAP_BUDGET_BYTES;
+
+	private boolean frontierHeapBudgetExplicitlyConfigured;
+
+	private long frontierStatisticsMaxLagMillis = FRONTIER_STATISTICS_MAX_LAG_MILLIS;
+
+	private double frontierDeleteReserveFraction = FRONTIER_DELETE_RESERVE_FRACTION;
+
 	private long frontierQueryMemoryBudgetBytes = FRONTIER_QUERY_MEMORY_BUDGET_BYTES;
+
+	private boolean frontierQueryMemoryBudgetExplicitlyConfigured;
 
 	private long frontierQueryIndexBudgetBytes = FRONTIER_QUERY_INDEX_BUDGET_BYTES;
 
@@ -627,6 +643,49 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public long getFrontierHeapBudgetBytes() {
+		return frontierHeapBudgetExplicitlyConfigured
+				? frontierHeapBudgetBytes
+				: frontierQueryMemoryBudgetExplicitlyConfigured
+						? frontierQueryMemoryBudgetBytes
+						: FRONTIER_HEAP_BUDGET_BYTES;
+	}
+
+	public LmdbStoreConfig setFrontierHeapBudgetBytes(long frontierHeapBudgetBytes) {
+		if (frontierHeapBudgetBytes < 0L) {
+			throw new IllegalArgumentException("Frontier heap budget must be nonnegative");
+		}
+		this.frontierHeapBudgetBytes = frontierHeapBudgetBytes;
+		frontierHeapBudgetExplicitlyConfigured = true;
+		return this;
+	}
+
+	public long getFrontierStatisticsMaxLagMillis() {
+		return frontierStatisticsMaxLagMillis;
+	}
+
+	public LmdbStoreConfig setFrontierStatisticsMaxLagMillis(long frontierStatisticsMaxLagMillis) {
+		if (frontierStatisticsMaxLagMillis < 0L) {
+			throw new IllegalArgumentException("Frontier statistics maximum lag must be nonnegative");
+		}
+		this.frontierStatisticsMaxLagMillis = frontierStatisticsMaxLagMillis;
+		return this;
+	}
+
+	public double getFrontierDeleteReserveFraction() {
+		return frontierDeleteReserveFraction;
+	}
+
+	public LmdbStoreConfig setFrontierDeleteReserveFraction(double frontierDeleteReserveFraction) {
+		if (!Double.isFinite(frontierDeleteReserveFraction)
+				|| frontierDeleteReserveFraction <= 0.0d
+				|| frontierDeleteReserveFraction >= 1.0d) {
+			throw new IllegalArgumentException("Frontier delete reserve fraction must be finite and in (0, 1)");
+		}
+		this.frontierDeleteReserveFraction = frontierDeleteReserveFraction;
+		return this;
+	}
+
 	public long getFrontierQueryMemoryBudgetBytes() {
 		return frontierQueryMemoryBudgetBytes;
 	}
@@ -636,6 +695,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			throw new IllegalArgumentException("Frontier query memory budget must be nonnegative");
 		}
 		this.frontierQueryMemoryBudgetBytes = frontierQueryMemoryBudgetBytes;
+		frontierQueryMemoryBudgetExplicitlyConfigured = true;
 		return this;
 	}
 
@@ -1111,6 +1171,18 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			m.add(implNode, LmdbStoreSchema.FRONTIER_SYNOPSIS_BUDGET_BYTES,
 					vf.createLiteral(frontierSynopsisBudgetBytes));
 		}
+		if (frontierHeapBudgetExplicitlyConfigured) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_HEAP_BUDGET_BYTES,
+					vf.createLiteral(frontierHeapBudgetBytes));
+		}
+		if (frontierStatisticsMaxLagMillis != FRONTIER_STATISTICS_MAX_LAG_MILLIS) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_STATISTICS_MAX_LAG_MILLIS,
+					vf.createLiteral(frontierStatisticsMaxLagMillis));
+		}
+		if (Double.compare(frontierDeleteReserveFraction, FRONTIER_DELETE_RESERVE_FRACTION) != 0) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_DELETE_RESERVE_FRACTION,
+					vf.createLiteral(frontierDeleteReserveFraction));
+		}
 		if (frontierQueryMemoryBudgetBytes != FRONTIER_QUERY_MEMORY_BUDGET_BYTES) {
 			m.add(implNode, LmdbStoreSchema.FRONTIER_QUERY_MEMORY_BUDGET_BYTES,
 					vf.createLiteral(frontierQueryMemoryBudgetBytes));
@@ -1486,6 +1558,37 @@ public class LmdbStoreConfig extends BaseSailConfig {
 									parseLong(lit, LmdbStoreSchema.FRONTIER_QUERY_MEMORY_BUDGET_BYTES));
 						} catch (IllegalArgumentException e) {
 							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_QUERY_MEMORY_BUDGET_BYTES, lit, e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FRONTIER_HEAP_BUDGET_BYTES, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierHeapBudgetBytes(
+									parseLong(lit, LmdbStoreSchema.FRONTIER_HEAP_BUDGET_BYTES));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_HEAP_BUDGET_BYTES, lit, e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FRONTIER_STATISTICS_MAX_LAG_MILLIS, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierStatisticsMaxLagMillis(
+									parseLong(lit, LmdbStoreSchema.FRONTIER_STATISTICS_MAX_LAG_MILLIS));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(
+									LmdbStoreSchema.FRONTIER_STATISTICS_MAX_LAG_MILLIS, lit, e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FRONTIER_DELETE_RESERVE_FRACTION, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierDeleteReserveFraction(
+									parseDouble(lit, LmdbStoreSchema.FRONTIER_DELETE_RESERVE_FRACTION));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_DELETE_RESERVE_FRACTION, lit, e);
 						}
 					});
 

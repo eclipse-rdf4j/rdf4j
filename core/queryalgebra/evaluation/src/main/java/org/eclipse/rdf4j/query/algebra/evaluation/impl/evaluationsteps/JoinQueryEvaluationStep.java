@@ -51,13 +51,18 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	public JoinQueryEvaluationStep(EvaluationStrategy strategy, Join join, QueryEvaluationContext context) {
 		// efficient computation of a SERVICE join using vectored evaluation
 		// TODO maybe we can create a ServiceJoin node already in the parser?
-		boolean runtimeTelemetryTrackingActive = strategy.isTrackResultSize() || strategy.isTrackTime();
+		boolean runtimeTelemetryTrackingActive = strategy.isTrackResultSize() || strategy.isTrackTime()
+				|| join.isRuntimeTelemetryEnabled() || join.isCostFeedbackTrackingEnabled();
 		QueryEvaluationStep leftRaw = strategy.precompile(join.getLeftArg(), context);
 		QueryEvaluationStep rightRaw = strategy.precompile(join.getRightArg(), context);
-		QueryEvaluationStep leftPrepared = JoinMetricsTracking
-				.wrapLeftInput(leftRaw, join, join.getLeftArg(), runtimeTelemetryTrackingActive);
-		QueryEvaluationStep rightPrepared = JoinMetricsTracking
-				.wrapRightInput(rightRaw, join, join.getRightArg(), runtimeTelemetryTrackingActive);
+		JoinMetricsTracking.Accumulator deferredTelemetry = JoinMetricsTracking.deferredAccumulator(join,
+				join.getLeftArg(), join.getRightArg(), runtimeTelemetryTrackingActive);
+		QueryEvaluationStep leftPrepared = deferredTelemetry == null
+				? JoinMetricsTracking.wrapLeftInput(leftRaw, join, join.getLeftArg(), runtimeTelemetryTrackingActive)
+				: JoinMetricsTracking.wrapLeftInput(leftRaw, deferredTelemetry);
+		QueryEvaluationStep rightPrepared = deferredTelemetry == null
+				? JoinMetricsTracking.wrapRightInput(rightRaw, join, join.getRightArg(), runtimeTelemetryTrackingActive)
+				: JoinMetricsTracking.wrapRightInput(rightRaw, deferredTelemetry);
 		BoundStatementPatternGuardJoinIteration.GuardCounter leftGuardCounter = getGuardCounter(join.getLeftArg(),
 				leftRaw);
 		BoundStatementPatternGuardJoinIteration.GuardCounter rightGuardCounter = getGuardCounter(join.getRightArg(),
@@ -278,7 +283,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			return false;
 		}
 		boolean[] found = { false };
-		join.getRightArg().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+		join.getRightArg().visit(new AbstractSimpleQueryModelVisitor<>() {
 			@Override
 			public void meet(Extension extension) {
 				for (var element : extension.getElements()) {

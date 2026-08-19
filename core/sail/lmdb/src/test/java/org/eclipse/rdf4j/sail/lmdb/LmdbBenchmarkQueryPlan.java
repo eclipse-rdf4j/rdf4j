@@ -89,6 +89,12 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 		return prepare(store, connection, query, maxExecutionTimeSeconds, captureOptimizedPlan, true);
 	}
 
+	public static LmdbBenchmarkQueryPlan prepare(LmdbStore store, SailRepositoryConnection connection, String query,
+			int maxExecutionTimeSeconds, boolean captureOptimizedPlan, RuntimeTelemetryMode runtimeTelemetryMode) {
+		return prepare(store, connection, query, maxExecutionTimeSeconds, captureOptimizedPlan,
+				OptimizationMode.NORMAL, runtimeTelemetryMode);
+	}
+
 	public static LmdbBenchmarkQueryPlan prepareWrittenOrder(LmdbStore store, SailRepositoryConnection connection,
 			String query, int maxExecutionTimeSeconds) {
 		return prepare(store, connection, query, maxExecutionTimeSeconds, true, false);
@@ -102,11 +108,18 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 	private static LmdbBenchmarkQueryPlan prepare(LmdbStore store, SailRepositoryConnection connection, String query,
 			int maxExecutionTimeSeconds, boolean captureOptimizedPlan, boolean optimize) {
 		return prepare(store, connection, query, maxExecutionTimeSeconds, captureOptimizedPlan,
-				optimize ? OptimizationMode.NORMAL : OptimizationMode.NONE);
+				optimize ? OptimizationMode.NORMAL : OptimizationMode.NONE, RuntimeTelemetryMode.DISABLED);
 	}
 
 	private static LmdbBenchmarkQueryPlan prepare(LmdbStore store, SailRepositoryConnection connection, String query,
 			int maxExecutionTimeSeconds, boolean captureOptimizedPlan, OptimizationMode optimizationMode) {
+		return prepare(store, connection, query, maxExecutionTimeSeconds, captureOptimizedPlan, optimizationMode,
+				RuntimeTelemetryMode.DISABLED);
+	}
+
+	private static LmdbBenchmarkQueryPlan prepare(LmdbStore store, SailRepositoryConnection connection, String query,
+			int maxExecutionTimeSeconds, boolean captureOptimizedPlan, OptimizationMode optimizationMode,
+			RuntimeTelemetryMode runtimeTelemetryMode) {
 		SailTupleQuery tupleQuery = connection.prepareTupleQuery(QueryLanguage.SPARQL, query, null);
 		tupleQuery.setIncludeInferred(false);
 		tupleQuery.setMaxExecutionTime(maxExecutionTimeSeconds);
@@ -136,6 +149,7 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 						sailStore.getEvaluationStatistics(), optimizationInput, tupleQuery);
 				case NONE -> optimizationInput;
 				};
+				applyRuntimeTelemetryMode(optimized, runtimeTelemetryMode);
 				QueryEvaluationStep evaluationStep = strategy.precompile(optimized);
 				return new OptimizedQuery(optimized, evaluationStep);
 			});
@@ -163,6 +177,17 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 			closeQuietly(branch);
 			throw e;
 		}
+	}
+
+	private static void applyRuntimeTelemetryMode(TupleExpr tupleExpr, RuntimeTelemetryMode runtimeTelemetryMode) {
+		boolean enabled = runtimeTelemetryMode == RuntimeTelemetryMode.SAMPLED_FULL;
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				node.setRuntimeTelemetryEnabled(enabled);
+				super.meetNode(node);
+			}
+		});
 	}
 
 	private static TupleExpr optimizeExactSequence(EvaluationStrategy strategy,
@@ -317,6 +342,11 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 		NONE
 	}
 
+	public enum RuntimeTelemetryMode {
+		DISABLED,
+		SAMPLED_FULL
+	}
+
 	private static String structuralPlanFingerprint(String renderedSparql) {
 		try {
 			MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -437,7 +467,8 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 
 		@Override
 		protected void throwInterruptedException() {
-			throw new QueryInterruptedException("Query evaluation took too long");
+			throw new QueryInterruptedException(
+					"Query evaluation took too long. Took longer than " + timeLimitMillis + " millis.");
 		}
 	}
 }

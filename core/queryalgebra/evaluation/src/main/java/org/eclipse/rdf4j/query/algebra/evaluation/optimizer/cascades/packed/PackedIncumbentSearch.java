@@ -994,6 +994,7 @@ final class PackedIncumbentSearch {
 		if (costSession == null
 				|| independentRightWinnerId == 0
 				|| scalarOperatorCostRefined
+				|| !exploreReorderings
 				|| query.relOperator(logicalExpressionId) != PackedRelOp.LEFT_JOIN
 				|| query.relPayload(logicalExpressionId) != 0
 				|| !isPositiveBindingSubtree(query.relChild(logicalExpressionId, 1))) {

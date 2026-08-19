@@ -734,6 +734,8 @@ final class PackedCostingTraceArena {
 
 	private static long invocationHashSuffix(long hash, PackedCostContext context, PackedCostEstimate input) {
 		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(context.prefixRows()));
+		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(context.unrelatedPrefixRows()));
+		hash = PackedPrimitiveHash.step(hash, context.prefixRelationsDescribeRows() ? 1 : 0);
 		hash = PackedPrimitiveHash.step(hash, context.assuredBindingRelationId());
 		hash = PackedPrimitiveHash.step(hash, context.evidenceStateId());
 		hash = PackedPrimitiveHash.step(hash, context.bindingLayoutId());
@@ -1359,6 +1361,8 @@ final class PackedCostingTraceArena {
 			}
 		}
 		hash = mix(hash, Double.doubleToLongBits(context.prefixRows()));
+		hash = mix(hash, Double.doubleToLongBits(context.unrelatedPrefixRows()));
+		hash = mix(hash, context.prefixRelationsDescribeRows() ? 1 : 0);
 		hash = mix(hash, context.assuredBindingRelationId());
 		hash = mix(hash, context.evidenceStateId());
 		hash = mix(hash, context.bindingLayoutId());

@@ -33,9 +33,9 @@ import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
  */
 public final class LmdbFrontierSynopsisService implements AutoCloseable {
 
-	private static final int SYNOPSIS_SCHEMA_VERSION = 1;
-	private static final int HASH_VERSION = 1;
-	private static final int SEED_SCHEDULE_VERSION = 1;
+	static final int SYNOPSIS_SCHEMA_VERSION = 1;
+	static final int HASH_VERSION = 1;
+	static final int SEED_SCHEDULE_VERSION = 2;
 	private static final int MAXIMUM_PAYLOAD_BLOCK_BYTES = 64 * 1024;
 	private static final int MAXIMUM_EXACT_INSERT_GENERATIONS = 8;
 	private static final int DIRTY_MARKER_MAGIC = 0x524a4644; // RJFD

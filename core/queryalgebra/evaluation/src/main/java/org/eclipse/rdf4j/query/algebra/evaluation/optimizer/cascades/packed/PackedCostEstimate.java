@@ -799,7 +799,12 @@ public final class PackedCostEstimate {
 		this.accessMode = accessMode;
 	}
 
-	void setInvocations(double invocations) {
+	/**
+	 * Records how many executions are already represented by this estimate's physical vector. A contextual provider
+	 * whose inclusive work covers the complete outer domain must publish that domain here so dependent composition does
+	 * not reopen and multiply the same work a second time.
+	 */
+	public void setInvocations(double invocations) {
 		if (!Double.isFinite(invocations) || invocations < 0.0d) {
 			throw new IllegalArgumentException("packed cost invocations must be finite and non-negative");
 		}

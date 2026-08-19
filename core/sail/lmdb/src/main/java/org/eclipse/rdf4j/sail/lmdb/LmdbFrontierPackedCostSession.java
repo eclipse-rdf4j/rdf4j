@@ -158,7 +158,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 
 	private static final int DESIGN_LANE_INDEX = 0;
 	private static final int INDEPENDENT_DESIGN_LANE_INDEX = 1;
-	private static final int SEED_SCHEDULE_VERSION = 1;
+	private static final int SEED_SCHEDULE_VERSION = 2;
 	private static final long SESSION_BASE_BYTES = 192L;
 	private static final long SESSION_RELATION_BYTES = 24L;
 	private static final long SESSION_LEAF_BYTES = 384L;
@@ -500,6 +500,14 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		if (factor != null && factor.state == null) {
 			factor.state = materializeReplayableLeafState(relationId, 1.0d);
 		}
+		if (factor != null && (factor.state == null || factor.key == null)) {
+			scalar.appendFactor(relationId, context, output);
+			if (appendBoundedLocalPath(relationId, context, input, output)) {
+				return;
+			}
+			degradeOperator(relationId, output, input, "statement_evidence_unavailable");
+			return;
+		}
 		if (factor != null && statementSource == null) {
 			scalar.appendFactor(relationId, context, output);
 			degradeOperator(relationId, output, input, "exact_snapshot_probe_unavailable");
@@ -511,7 +519,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			scalar.appendFactor(relationId, context, output);
 			publishNonComposableAppend(relationId, output, input, factorState,
 					unionLayout(arena.layout(input), factorKey.frontier()),
-					input.summary().degradationReason());
+					stateDegradationReason(input, "append_input_payload_unavailable"));
 			return;
 		}
 		FrontierStateKey outputKey = joinedStateKey(arena.key(input), factorKey);
@@ -703,7 +711,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			return false;
 		}
 		LeafState statement = leafState(statementRelationId);
-		if (statement == null) {
+		if (statement == null || statement.key == null) {
 			return false;
 		}
 		FrontierStateKey statementOutputKey = joinedStateKey(arena.key(input), statement.key);
@@ -1111,7 +1119,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				return;
 			}
 			if (!isComposableState(left)) {
-				degradeOperator(relationId, output, left, left.summary().degradationReason());
+				degradeOperator(relationId, output, left,
+						stateDegradationReason(left, "optional_left_state_non_composable"));
 				return;
 			}
 			refineOptional(relationId, context, (LeftJoin) expression, left, rawWorkRows, output);
@@ -1130,7 +1139,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				return;
 			}
 			if (!isComposableState(left)) {
-				degradeOperator(relationId, output, left, left.summary().degradationReason());
+				degradeOperator(relationId, output, left,
+						stateDegradationReason(left, "minus_left_state_non_composable"));
 				applyScalarDifferencePhysicalCost(context, rawWorkRows, output);
 				return;
 			}
@@ -1212,7 +1222,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			} else if (expression instanceof Slice slice) {
 				refineSlice(relationId, slice, input, output);
 			} else {
-				degradeOperator(relationId, output, input, input.summary().degradationReason());
+				degradeOperator(relationId, output, input,
+						stateDegradationReason(input, "operator_input_payload_unavailable"));
 			}
 			if (expression instanceof Filter filter && !output.dependentSubqueriesCosted()) {
 				applyScalarFilterPhysicalCost(relationId, filter, context, rawWorkRows, output);
@@ -1557,7 +1568,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 
 	private void attachJoinState(PackedCostEstimate output, EvidenceStateRef state, boolean physicalEvent) {
 		if (physicalEvent && !isComposableState(state)) {
-			retainPhysicalJoinBoundary(output, state, state.summary().degradationReason());
+			retainPhysicalJoinBoundary(output, state,
+					stateDegradationReason(state, "physical_join_state_non_composable"));
 			return;
 		}
 		if (isComposableState(state)) {
@@ -1612,6 +1624,28 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	public double objectiveScore(PackedCostEstimate estimate) {
 		double normalized = normalizedObjectiveScore(estimate, MinusQueryEvaluationStep.maxMaterializedRightRows());
 		return normalized == Double.MAX_VALUE ? normalized : physicalCostObjective.score(estimate);
+	}
+
+	@Override
+	public int exactContinuationIdentity(PackedCostEstimate estimate) {
+		Objects.requireNonNull(estimate, "estimate");
+		if (closed
+				|| arena == null
+				|| estimate.evidenceStateId() == 0
+				|| estimate.evidenceGuarantee() != EvidenceGuarantee.DATABASE_EXACT
+				|| estimate.evidenceDisposition() != FrontierStateDisposition.COMPOSABLE_PAYLOAD) {
+			return 0;
+		}
+		EvidenceStateRef state = stateReference(estimate.evidenceStateId());
+		if (state == null
+				|| state.summary().guarantee() != EvidenceGuarantee.DATABASE_EXACT
+				|| arena.disposition(state) != FrontierStateDisposition.COMPOSABLE_PAYLOAD
+				|| !arena.hasCanonicalKey(state)
+				|| arena.nearestCalibration(state) != null
+				|| Double.compare(arena.cumulativeCalibrationFactor(state), 1.0d) != 0) {
+			return 0;
+		}
+		return arena.canonicalContinuationState(state).stateId();
 	}
 
 	static double normalizedObjectiveScore(PackedCostEstimate estimate, long maxMaterializedRows) {
@@ -4461,9 +4495,8 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		if (!lease.ready()) {
 			availabilityStatus = statusName(lease.status());
 			fallbackReason = lease.fallbackReason();
-			FrontierSynopsisStatus unavailableStatus = lease.status();
 			lease.close();
-			prepareReplayableSources(candidates, finiteCandidates, unavailableStatus, requiredEpoch);
+			prepareQueryOwnedFiniteSources(candidates, finiteCandidates, requiredEpoch);
 			return;
 		}
 		queryIndexLease = lease;
@@ -4822,12 +4855,12 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		}
 	}
 
-	private void prepareReplayableSources(LeafState[] candidates, FiniteLeafState[] finiteCandidates,
-			FrontierSynopsisStatus sourceStatus, long snapshotEpoch) {
-		int statementLeafCount = supportedLeafCount(candidates);
+	private void prepareQueryOwnedFiniteSources(LeafState[] candidates, FiniteLeafState[] finiteCandidates,
+			long snapshotEpoch) {
+		leafStates = candidates;
+		finiteLeafStates = finiteCandidates;
 		int finiteCount = supportedFiniteLeafCount(finiteCandidates);
-		int declaredLeafCount = Math.addExact(statementLeafCount, finiteCount);
-		if (declaredLeafCount == 0) {
+		if (finiteCount == 0) {
 			return;
 		}
 		FrontierStateArena candidateArena = null;
@@ -4836,23 +4869,17 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			candidateArena = new FrontierStateArena(settings.queryMemoryBudgetBytes());
 			long sessionBytes = Math.addExact(SESSION_BASE_BYTES,
 					Math.addExact(Math.multiplyExact(SESSION_RELATION_BYTES, candidates.length),
-							Math.multiplyExact(SESSION_LEAF_BYTES, declaredLeafCount)));
+							Math.multiplyExact(SESSION_LEAF_BYTES, finiteCount)));
 			sessionBytes = Math.addExact(sessionBytes,
 					Math.addExact(retainedArrayBytes(candidates.length, Long.BYTES),
-							retainedArrayBytes(Math.addExact(declaredLeafCount, 1), Long.BYTES)));
+							retainedArrayBytes(Math.addExact(finiteCount, 1), Long.BYTES)));
 			candidateReservation = candidateArena.reserveTemporary(sessionBytes, FrontierMemoryPurpose.ARRAY_GROWTH);
 
-			FrontierSynopsisReadResult generation = new FrontierSynopsisReadResult(sourceStatus, 0L, 0L,
+			FrontierSynopsisReadResult generation = new FrontierSynopsisReadResult(FrontierSynopsisStatus.MISSING, 0L,
+					0L,
 					snapshotEpoch, 0L, Double.NaN, false);
-			FrontierStateKey[] declaredKeys = new FrontierStateKey[declaredLeafCount];
+			FrontierStateKey[] declaredKeys = new FrontierStateKey[finiteCount];
 			int declaredKeyCount = 0;
-			for (int relationId = 1; relationId < candidates.length; relationId++) {
-				LeafState candidate = candidates[relationId];
-				if (candidate != null) {
-					candidate.key = leafStateKey(candidate, generation, candidates.length);
-					declaredKeys[declaredKeyCount++] = candidate.key;
-				}
-			}
 			for (FiniteLeafState candidate : finiteCandidates) {
 				if (candidate != null) {
 					candidate.key = finiteStateKey(candidate, generation, candidates.length);
@@ -4860,27 +4887,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				}
 			}
 			candidateArena.declareCanonicalStates(declaredKeys);
-			EvidenceStateRef[] candidateReferences = new EvidenceStateRef[declaredLeafCount + 1];
-			long[] candidateRangeRows = snapshotCandidateRangeRows(candidates);
-			int[] scanOrder = leafScanOrder(candidates, candidateRangeRows);
-			long remainingWork = settings.initialMaterializationWorkUnits();
-			for (int relationId : scanOrder) {
-				LeafState candidate = candidates[relationId];
-				long candidateRows = candidateRangeRows[relationId];
-				if (statementSource == null || candidateRows > remainingWork
-						|| candidateRows > MAXIMUM_LEAF_BUFFER_ROWS) {
-					candidate.replayFallbackReason = statementSource == null
-							? "exact_snapshot_source_unavailable"
-							: candidateRows > MAXIMUM_LEAF_BUFFER_ROWS
-									? "snapshot_leaf_buffer_limit_exceeded"
-									: "snapshot_leaf_work_budget_exhausted";
-					continue;
-				}
-				candidate.state = materializeSnapshotExactLeaf(candidateArena, candidate, candidateRows);
-				candidate.materialization = "snapshot_exact";
-				candidateReferences[candidate.state.stateId()] = candidate.state;
-				remainingWork -= candidateRows;
-			}
+			EvidenceStateRef[] candidateReferences = new EvidenceStateRef[finiteCount + 1];
 			for (FiniteLeafState candidate : finiteCandidates) {
 				if (candidate == null) {
 					continue;
@@ -4891,115 +4898,19 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 
 			arena = candidateArena;
 			sessionReservation = candidateReservation;
-			leafStates = candidates;
-			finiteLeafStates = finiteCandidates;
 			stateReferences = candidateReferences;
-			generationDatabaseExact = true;
 			candidateArena = null;
 			candidateReservation = null;
+		} catch (FrontierMemoryLimitException insufficientMemory) {
+			fallbackReason = "query_owned_finite_memory_pressure";
 		} catch (RuntimeException failure) {
-			throw new PackedCostSessionFailure("replayable_source_materialization_failed", failure);
+			throw new PackedCostSessionFailure("query_owned_finite_materialization_failed", failure);
 		} finally {
 			if (candidateReservation != null) {
 				candidateReservation.close();
 			}
 			if (candidateArena != null) {
 				candidateArena.close();
-			}
-		}
-	}
-
-	private long[] snapshotCandidateRangeRows(LeafState[] candidates) {
-		long[] rows = new long[candidates.length];
-		if (statementSource == null) {
-			return rows;
-		}
-		try {
-			for (int relationId = 1; relationId < candidates.length; relationId++) {
-				LeafState candidate = candidates[relationId];
-				if (candidate == null) {
-					continue;
-				}
-				Resource context = (Resource) candidate.constantValues[3];
-				Resource[] contexts = context == null ? new Resource[0] : new Resource[] { context };
-				rows[relationId] = statementSource.getStatementCount(
-						(Resource) candidate.constantValues[0],
-						(IRI) candidate.constantValues[1],
-						candidate.constantValues[2],
-						contexts);
-			}
-			return rows;
-		} catch (QueryEvaluationException failure) {
-			throw new PackedCostSessionFailure("snapshot_leaf_count_failed", failure);
-		}
-	}
-
-	private EvidenceStateRef materializeSnapshotExactLeaf(FrontierStateArena targetArena, LeafState candidate,
-			long candidateRows) {
-		int maximumEntries = Math.toIntExact(candidateRows);
-		ExactLeafAccumulator accumulator = null;
-		FrontierPayloadWriter writer = null;
-		try {
-			accumulator = new ExactLeafAccumulator(targetArena, maximumEntries, candidate.masks.layout().size());
-			long[] tuple = new long[candidate.masks.layout().size()];
-			Resource context = (Resource) candidate.constantValues[3];
-			Resource[] contexts = context == null ? new Resource[0] : new Resource[] { context };
-			long visitedRows = 0L;
-			try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(
-					(Resource) candidate.constantValues[0],
-					(IRI) candidate.constantValues[1],
-					candidate.constantValues[2],
-					contexts)) {
-				while (statements.hasNext()) {
-					Statement statement = statements.next();
-					visitedRows = Math.incrementExact(visitedRows);
-					if (visitedRows > candidateRows) {
-						throw new IllegalStateException("snapshot leaf count underreported its candidate range");
-					}
-					if (!candidate.matches(statement, candidate.constantValues)) {
-						continue;
-					}
-					Arrays.fill(tuple, 0L);
-					for (int component = 0; component < candidate.componentToSlot.length; component++) {
-						int slot = candidate.componentToSlot[component];
-						if (slot < 0) {
-							continue;
-						}
-						Value value = statementValue(statement, component);
-						long termId = value == null ? 0L : runtime.valueStore().getId(value);
-						if (termId <= 0L) {
-							throw new IllegalStateException("snapshot-exact Frontier leaf returned an unstored term");
-						}
-						tuple[slot] = termId;
-					}
-					accumulator.add(tuple, 1.0d);
-				}
-			}
-			if (visitedRows != candidateRows) {
-				throw new IllegalStateException("snapshot leaf count changed within one LMDB read transaction");
-			}
-			writer = targetArena.newPayloadWriter(
-					candidate.key, new int[] { accumulator.size() }, new int[] { 0 });
-			accumulator.writeTo(writer);
-			double pointRows = writer.pointRows();
-			EvidenceStateRef state = targetArena.internPayload(
-					candidate.key,
-					EvidenceStateSummary.exact(pointRows),
-					FrontierStateOperation.EXACT_LEAF,
-					null,
-					null,
-					candidate.relationId,
-					writer);
-			writer = null;
-			return state;
-		} catch (IOException | QueryEvaluationException failure) {
-			throw new PackedCostSessionFailure("snapshot_leaf_materialization_failed", failure);
-		} finally {
-			if (writer != null) {
-				writer.close();
-			}
-			if (accumulator != null) {
-				accumulator.close();
 			}
 		}
 	}
@@ -6636,7 +6547,7 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		}
 		String semanticName = semiAntiFeedbackSemanticName(semanticKind);
 		String algorithmName = semiAntiAlgorithmName(algorithm);
-		LmdbOperatorFeedbackStats.SemiAntiEstimate feedback = runtime.semiAntiFeedback(
+		LmdbOperatorFeedbackStats.SemiAntiEstimate feedback = runtime.frontierSemiAntiFeedback(
 				filter, semanticName, algorithmName);
 		if (feedback == null || feedback.observationCount() <= 0L
 				|| feedback.physicalObservationCount() <= 0L || feedback.outerRows() <= 0L) {
@@ -13586,18 +13497,40 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	}
 
 	private static void sortMaskStrata(long[] words, int stratumCount, int wordCount) {
-		for (int stratum = 1; stratum < stratumCount; stratum++) {
-			int cursor = stratum;
-			while (cursor > 0 && compareMaskStrata(words, cursor - 1, cursor, wordCount) > 0) {
-				for (int word = 0; word < wordCount; word++) {
-					int left = (cursor - 1) * wordCount + word;
-					int right = cursor * wordCount + word;
-					long swap = words[left];
-					words[left] = words[right];
-					words[right] = swap;
-				}
-				cursor--;
+		if (stratumCount < 2 || wordCount == 0) {
+			return;
+		}
+		for (int root = (stratumCount >>> 1) - 1; root >= 0; root--) {
+			siftDownMaskStrata(words, root, stratumCount, wordCount);
+		}
+		for (int end = stratumCount - 1; end > 0; end--) {
+			swapMaskStrata(words, 0, end, wordCount);
+			siftDownMaskStrata(words, 0, end, wordCount);
+		}
+	}
+
+	private static void siftDownMaskStrata(long[] words, int root, int end, int wordCount) {
+		while (root < end >>> 1) {
+			int largerChild = (root << 1) + 1;
+			int rightChild = largerChild + 1;
+			if (rightChild < end && compareMaskStrata(words, largerChild, rightChild, wordCount) < 0) {
+				largerChild = rightChild;
 			}
+			if (compareMaskStrata(words, root, largerChild, wordCount) >= 0) {
+				return;
+			}
+			swapMaskStrata(words, root, largerChild, wordCount);
+			root = largerChild;
+		}
+	}
+
+	private static void swapMaskStrata(long[] words, int leftStratum, int rightStratum, int wordCount) {
+		int leftOffset = leftStratum * wordCount;
+		int rightOffset = rightStratum * wordCount;
+		for (int word = 0; word < wordCount; word++) {
+			long swap = words[leftOffset + word];
+			words[leftOffset + word] = words[rightOffset + word];
+			words[rightOffset + word] = swap;
 		}
 	}
 
@@ -13994,6 +13927,16 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		return state != null
 				&& arena.disposition(state) == FrontierStateDisposition.COMPOSABLE_PAYLOAD
 				&& state.summary().guarantee().isComposablePointEstimate();
+	}
+
+	private String stateDegradationReason(EvidenceStateRef state, String fallback) {
+		if (state != null) {
+			String reason = state.summary().degradationReason();
+			if (reason != null && !reason.isBlank()) {
+				return reason;
+			}
+		}
+		return fallback;
 	}
 
 	private void annotateState(PackedCostEstimate output, EvidenceStateRef state, String status) {

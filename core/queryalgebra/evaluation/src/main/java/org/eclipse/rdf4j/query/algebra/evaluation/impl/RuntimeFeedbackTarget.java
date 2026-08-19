@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.DistinctBindingFeedback;
 import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 
 /** Direct, pre-resolved destination and execution-local primitive recorder. */
@@ -38,6 +39,14 @@ public interface RuntimeFeedbackTarget extends InvocationAggregateView {
 
 	void recordSemiAnti(long hits, long misses, long firstMatchWork, long exhaustionWork, long cacheHits,
 			long cacheMisses, long cacheEvictions, long distinctBindingExposure);
+
+	default void recordSemiAnti(long hits, long misses, long firstMatchWork, long exhaustionWork, long cacheHits,
+			long cacheMisses, long cacheEvictions, DistinctBindingFeedback distinctBindingFeedback) {
+		recordSemiAnti(hits, misses, firstMatchWork, exhaustionWork, cacheHits, cacheMisses, cacheEvictions,
+				distinctBindingFeedback != null && distinctBindingFeedback.exact()
+						? distinctBindingFeedback.distinctBindings()
+						: -1L);
+	}
 
 	void recordFilter(long passed, long rejected);
 

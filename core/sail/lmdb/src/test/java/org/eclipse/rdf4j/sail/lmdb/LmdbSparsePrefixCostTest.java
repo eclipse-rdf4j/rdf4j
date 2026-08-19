@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -64,6 +65,8 @@ class LmdbSparsePrefixCostTest {
 
 		try {
 			assertTrue(store.forceFlushSketchEstimator(), "Expected sketch estimator to rebuild before planning");
+			assertTrue(store.rebuildFrontierSynopsis() == FrontierSynopsisStatus.READY,
+					"Expected query-ready Frontier V2 statistics before accuracy assertions");
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				for (int prefixLength = 1; prefixLength <= SPARSE_DEEP_PATH_PREFIXES.size(); prefixLength++) {
@@ -108,6 +111,8 @@ class LmdbSparsePrefixCostTest {
 
 		try {
 			assertTrue(store.forceFlushSketchEstimator(), "Expected sketch estimator to rebuild before planning");
+			assertTrue(store.rebuildFrontierSynopsis() == FrontierSynopsisStatus.READY,
+					"Expected query-ready Frontier V2 statistics before accuracy assertions");
 
 			try (SailRepositoryConnection connection = repository.getConnection();
 					LmdbBenchmarkQueryPlan plan = LmdbBenchmarkQueryPlan.prepare(store, connection,
@@ -152,6 +157,8 @@ class LmdbSparsePrefixCostTest {
 			boolean ready = store.forceFlushSketchEstimator();
 			assertTrue(ready, "Expected stale snapshot reopen to force a rebuild, ready="
 					+ estimator.isReadyNonBlocking() + ", staleness=" + estimator.staleness());
+			assertTrue(store.rebuildFrontierSynopsis() == FrontierSynopsisStatus.READY,
+					"Expected query-ready Frontier V2 statistics after stale snapshot rebuild");
 			try (SailRepositoryConnection connection = repository.getConnection();
 					LmdbBenchmarkQueryPlan plan = LmdbBenchmarkQueryPlan.prepare(store, connection,
 							ThemeQueryCatalog.queryFor(Theme.SPARSE, 6), 60, true)) {

@@ -29,6 +29,7 @@ public final class PackedCostContext {
 	private int semanticScopeMaskId;
 	private int hashLookupMaskId;
 	private int hashCompatibilityMaskId;
+	private boolean prefixRelationsDescribeRows;
 	private double prefixRows;
 	private double unrelatedPrefixRows;
 	private double leftInputRows;
@@ -38,6 +39,7 @@ public final class PackedCostContext {
 
 	PackedCostContext() {
 		prefixRelationIds = NO_RELATIONS;
+		prefixRelationsDescribeRows = true;
 		prefixRows = 1.0d;
 	}
 
@@ -60,6 +62,7 @@ public final class PackedCostContext {
 		semanticScopeMaskId = 0;
 		hashLookupMaskId = 0;
 		hashCompatibilityMaskId = 0;
+		prefixRelationsDescribeRows = true;
 		prefixRows = Double.isFinite(rows) && rows >= 0.0d ? rows : 1.0d;
 		unrelatedPrefixRows = Double.NaN;
 		leftInputRows = Double.NaN;
@@ -85,6 +88,7 @@ public final class PackedCostContext {
 		semanticScopeMaskId = context.semanticScopeMaskId;
 		hashLookupMaskId = context.hashLookupMaskId;
 		hashCompatibilityMaskId = context.hashCompatibilityMaskId;
+		prefixRelationsDescribeRows = context.prefixRelationsDescribeRows;
 		prefixRows = context.prefixRows;
 		unrelatedPrefixRows = context.unrelatedPrefixRows;
 		leftInputRows = context.leftInputRows;
@@ -109,6 +113,10 @@ public final class PackedCostContext {
 
 	void setUnrelatedPrefixRows(double rows) {
 		unrelatedPrefixRows = finiteNonNegativeOrNaN(rows);
+	}
+
+	void setPrefixRelationsDescribeRows(boolean prefixRelationsDescribeRows) {
+		this.prefixRelationsDescribeRows = prefixRelationsDescribeRows;
 	}
 
 	void setAssuredBindingRelationId(int relationId) {
@@ -152,6 +160,15 @@ public final class PackedCostContext {
 
 	public double prefixRows() {
 		return prefixRows;
+	}
+
+	/**
+	 * Returns whether the ordered relation IDs are a complete algebraic description of the current prefix bag. A
+	 * planner may retain only join-factor IDs after relocating a row-transforming operator; in that case reconstructing
+	 * the listed factors would describe a different bag even when it happens to have the same estimated cardinality.
+	 */
+	public boolean prefixRelationsDescribeRows() {
+		return prefixRelationsDescribeRows;
 	}
 
 	/**
