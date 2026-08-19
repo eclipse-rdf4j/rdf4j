@@ -38,6 +38,10 @@ public final class TelemetryMetricNames {
 	public static final String NEXT_PER_HAS_NEXT_RATIO_ACTUAL = "nextPerHasNextRatioActual";
 	public static final String AVG_HAS_NEXT_NANOS_ACTUAL = "avgHasNextNanosActual";
 	public static final String AVG_NEXT_NANOS_ACTUAL = "avgNextNanosActual";
+	public static final String TIMING_MODE_ACTUAL = "timingModeActual";
+	public static final String TIMING_SAMPLE_COUNT_ACTUAL = "timingSampleCountActual";
+	public static final String TIMING_INVOCATION_COUNT_ACTUAL = "timingInvocationCountActual";
+	public static final String TIMING_SAMPLE_INTERVAL_ACTUAL = "timingSampleIntervalActual";
 
 	public static final String LEFT_ROWS_PROBED_ACTUAL = "leftRowsProbedActual";
 	public static final String RIGHT_ROWS_SCANNED_ACTUAL = "rightRowsScannedActual";

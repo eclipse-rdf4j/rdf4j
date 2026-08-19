@@ -44,6 +44,25 @@ rewrite.
 
 ## Progress
 
+- [x] (2026-08-18 12:04Z through 15:50Z) Eliminate the typed semi/anti telemetry hot-path cliff and reduce general runtime
+  observation overhead. The scoped redesign replaces the saturated exact distinct table with a bounded exact/HLL
+  collector, carries explicit exact/approximate quality through typed feedback and LMDB persistence version 22,
+  batches primitive counters until root close, samples high-frequency timing calls, and removes avoidable
+  materialized-key probe allocation. The estimator mean, structural cache upper, selected materialized q9 algorithm,
+  and SPARQL semantics remain fixed. Test-first evidence is retained in
+  `initial-evidence.telemetry-runtime-redesign.txt`; qualification compares telemetry-disabled and sampled execution
+  of the identical plan before the supported JDK 26 q9/JFR run. The final rebuilt 3x3 q9 qualification is now
+  123.052 ms/op with full telemetry disabled and 126.095 ms/op with sampled-full telemetry, a 2.47-percent delta.
+  The final sampled-full ten-by-ten-second JFR run is 129.915 ms/op; an earlier disabled control recorded 126.788
+  ms/op. In the final sampled-full profile, core telemetry is 49 of 3,615 measurement-window Java execution samples
+  (1.36 percent), or 242 samples (6.69 percent) including the combined instrumented iterators; the largest individual
+  instrumentation method is 2.49 percent. Allocation samples attribute zero bytes to the tracker, accumulator,
+  registry, feedback accumulator, deferred join telemetry, or materialized index. The old capacity-length tracker,
+  character-hashing loop, and per-probe join telemetry allocation are absent. The final complete query-evaluation
+  suite passes 1,446 tests. The fresh all-theme result-bag audit passes all 117 cells, and the complete LMDB run passes
+  every telemetry-related test among 2,230 tests. Its sole failure is the pre-existing dirty-worktree assertion that
+  `SPARSE` must be a default benchmark parameter even though the current benchmark default omits it; that unrelated
+  benchmark change remains untouched.
 - [x] (2026-08-18 09:39Z through 11:03Z) Repair projected-distinct replica aggregation and mapped semi/anti cache
   costing. The retained reds in `initial-evidence.medical-q9-projected-distinct.txt` cover sparse lanes, unavailable
   lanes, all-positive skew, exact projection, conservative cache rejection, and the complete-store MEDICAL q9. The
@@ -1633,6 +1652,41 @@ Accuracy authority remains provisional until the shadow-mode 1B qualification pa
   `MaterializedExistsFilterIteration$PrimitiveDistinctBindingTracker.record`; GC pauses total only 311 ms over the
   roughly 102-second recording and no LMDB data-file reads are recorded. The older plan consumed about 99.6K left
   rows and 9.8K right rows without this typed-operator tracker.
+- Observation: the retained historical comparison has two relevant latency anchors. The July generic `Difference`
+  result is 149.444 ms/op; the earlier 136.542 ms/op number came from a different supplied comparison artifact and
+  is not the acceptance baseline for this slice. The corrected typed materialized plan is 359.656 ms/op without JFR
+  and 363.781 ms/op in the JFR qualification. Its algorithmic I/O shape is already correct, so the active work keeps
+  that plan fixed while removing observation and key-probe overhead.
+  Evidence: the corrected q9 JFR attributes 4,783 of 6,753 Java execution samples, or 70.83 percent, to
+  `MaterializedExistsFilterIteration$PrimitiveDistinctBindingTracker.record`. The tracker is provisioned from the
+  4,096-entry memo capacity even for materialized execution and performs a capacity-length probe for each new key
+  after saturation.
+- Observation: bounded exact/HLL distinct feedback and execution-local telemetry batching eliminate the residual q9
+  gap without restoring generic `Difference`. After replacing lexical character hashing with type-aware semantic
+  component hashes, the corrected typed materialized plan runs faster than the retained July anchor: 123.052 ms/op
+  with telemetry disabled and 126.095 ms/op with sampled-full telemetry, versus 149.444 ms/op for the older plan.
+  The final sampled-full JFR qualification is 129.915 ms/op. The hybrid tracker, HLL estimation, sampled timing,
+  close-time metric publication, and feedback accumulation total 49 of 3,615 measurement-window Java top-frame
+  samples (1.36 percent), or 242 samples (6.69 percent) including the combined iterator instrumentation. The largest
+  individual instrumentation method is 2.49 percent, and sampled allocation records attribute zero bytes to the
+  tracker, node accumulators, runtime registry, feedback wrappers, deferred join telemetry, or materialized key
+  index. The exact-small/post-transition microbenchmarks are 11.154/7.260 ns per one-column update and
+  20.609/11.615 ns per four-column update with 0.001 to 0.002 B/op profiler noise, confirming that update cost drops
+  rather than grows after the exact prefix retires.
+  Evidence: JDK 26 `ThemeQueryPlanRunBenchmark.runQuery`,
+  `core/sail/lmdb/target/ThemeQueryPlanRunBenchmark.runQuery.jfr`, and `RuntimeTelemetryBenchmark.record`.
+- Observation: benchmark-only sampled-full instrumentation preserves the prepared plan and result bag while staying
+  below the general overhead gate. The disabled and sampled-full fixed-plan runs share structural fingerprint
+  `b41b851fb423da34c309628f6c9034748963c960ca50f1330e4369cba2915945`; their final 3x3 results are 123.052 and
+  126.095 ms/op, a 2.47-percent delta. The final sampled-full JFR result is 129.915 ms/op. Core telemetry methods
+  account for 1.36 percent of measurement-window Java top frames, and the complete instrumentation surface including
+  combined iterator wrappers accounts for 6.69 percent. The largest individual instrumentation method is
+  `ResultSizeCountingIterator.hasNext` or `.next` at 2.49 percent; `SampledTiming.finish` is 0.75 percent and
+  `HybridDistinctBindingTracker.record` is 0.53 percent. Sampled allocations attribute zero bytes to the tracker,
+  node accumulator, runtime registry, feedback accumulator, deferred join telemetry, and materialized key index.
+  Evidence: `LmdbBenchmarkQueryPlanTest#sampledTelemetryPreservesPreparedPlanAndResults`,
+  `ThemeQueryPlanRunBenchmarkTest#runtimeTelemetryModeIsAnExplicitJmhParameter`, and
+  `core/sail/lmdb/target/ThemeQueryPlanRunBenchmark.runQuery-sampled-full.jfr`.
 - Observation: `FrontierSynopsisStatus.READY` currently certifies the raw payload, while planning needs a separately
   built `FrontierQueryIndex`. `LmdbFrontierSynopsisService.refreshQueryIndex` catches index build failures and records
   `query_index_build_failed` without invalidating the raw generation. An unavailable lease then enters
@@ -2291,6 +2345,15 @@ Accuracy authority remains provisional until the shadow-mode 1B qualification pa
   saturate in O(1), resize under an explicit memory contract, or disable distinct telemetry once exact counting is no
   longer representable, while preserving its reported semantics.
   Date/Author: 2026-08-18 / Håvard and Codex.
+- Decision: Repair runtime observation with a bounded hybrid exact/HLL collector and execution-local primitive
+  batching, while retaining approximate distinctness only as explicitly qualified learning evidence.
+  Rationale: exact open addressing is valuable for the existing two-key and five-key domains, but an exact bounded
+  table cannot both retain arbitrary new keys and guarantee constant update cost after its memory budget is reached.
+  Three p=12 byte-register HLLs keep total/matched/unmatched updates allocation-free and constant-time after a
+  75-percent exact-prefix transition. Approximate points may refine expected work, but structural uppers remain the
+  only authority for memo-cache admission. Counts and lifecycle state remain exact; only high-frequency call timing
+  is deterministically sampled after an exact 32-call prefix.
+  Date/Author: 2026-08-18 / Håvard and Codex.
 - Decision: Treat generated value-equal RDF terms as bounded lower-support probes, never as a complete semantic
   rewrite domain.
   Rationale: SPARQL numeric and calendar equality can cross lexical forms and datatypes, but no finite generator can
@@ -2782,12 +2845,32 @@ plans and executes materialized hash, opens its RHS once, and scans RHS rows pro
 52.6 million source rows. The public scalar APIs and Frontier shard format remain unchanged, and join-cardinality
 lane medians remain untouched.
 
-JDK 26 qualification also disproved the premise that restoring the older algorithmic I/O shape would by itself
-restore the older latency. The ordinary 3x3 run is 359.656 ms/op and the ten-iteration JFR run is 363.781 ms/op,
-compared with 136.542 ms/op in the supplied older generic-Difference artifact. This residual is not LMDB I/O, GC,
-normality, or the projected-distinct center: 70.83 percent of JFR execution samples are in the newer typed semi/anti
-operator's saturated `PrimitiveDistinctBindingTracker.record`. That separately scoped runtime defect remains the
-next execution-performance slice; no estimator or cache-safety rule should be weakened to compensate for it.
+The first JDK 26 qualification disproved the premise that restoring the older algorithmic I/O shape would by itself
+restore the older latency. The ordinary 3x3 run was 359.656 ms/op and the ten-iteration JFR run was 363.781 ms/op,
+compared with the retained July 149.444 ms/op generic-`Difference` anchor. That residual was not LMDB I/O, GC,
+normality, or the projected-distinct center: 70.83 percent of JFR execution samples were in the newer typed
+semi/anti operator's saturated `PrimitiveDistinctBindingTracker.record`.
+
+The 2026-08-18 runtime redesign closes that separate defect without weakening estimator or cache-safety rules. A
+collision-safe exact prefix retires at 75-percent occupancy into three p=12 HLL register sets, distinct quality is
+explicit through runtime feedback and LMDB sidecar version 22, node counters are execution-local until root close,
+and high-frequency timing keeps exact counts while sampling after 32 calls. Materialized probes use a flat retained
+value index and share their semantic fingerprint with distinct telemetry when the projections match. The final q9
+qualification is 123.052 ms/op with telemetry disabled, 126.095 ms/op with sampled-full telemetry, and 129.915 ms/op
+for the sampled-full JFR run, all faster than the July anchor. Telemetry accounts for 49 of 3,615 measurement-window
+Java top-frame samples (1.36 percent), or 242 samples (6.69 percent) including combined iterator instrumentation; no
+individual instrumentation method exceeds 2.49 percent. The sampled allocation profile assigns zero bytes to the
+hybrid tracker, node accumulator, registry, feedback wrappers, deferred join telemetry, or materialized index. The
+final complete query-evaluation suite passes 1,446 tests. The fresh 117-query result-bag audit passes, and all
+telemetry-related tests pass in the 2,230-test LMDB run; only the unrelated pre-existing `SPARSE` benchmark-default
+assertion remains red.
+
+The benchmark-only sampled-full control independently verifies the broader instrumentation path. It preserves the
+prepared structural fingerprint and ordered result bag, records 126.095 ms/op against the 123.052 ms/op disabled
+baseline (2.47 percent overhead), and records 129.915 ms/op under JFR. In that sampled-full measurement window, core
+telemetry accounts for 1.36 percent of Java top frames and the complete combined-wrapper instrumentation surface for
+6.69 percent; the largest individual instrumentation method is 2.49 percent and the telemetry/materialized-index
+allocation sites receive zero sampled bytes.
 
 The 2026-08-06 consolidation leaves one optimizer ExecPlan containing the architecture, completed baseline,
 unresolved implementation work, dependency order, test workflow, acceptance gates, and durable decisions. The
@@ -3644,3 +3727,15 @@ correlation-domain upper bound to govern memoized semi/anti cache eligibility. I
 lane contracts, exact-projection rules, uncertain-domain costing coverage, all-theme q9 execution gate, JDK 26
 benchmark/JFR evidence, and the newly isolated saturated distinct-telemetry follow-up without changing public APIs,
 statistics formats, cache capacity, or query semantics.
+
+Plan revision note (2026-08-18 / Håvard and Codex): completed the saturated distinct-telemetry follow-up. The revision
+replaces the capacity-length exact tracker with a collision-safe bounded exact/HLL collector, qualifies approximate
+feedback through the typed runtime path and version-22 sidecar, batches node telemetry until root close, samples only
+per-call timing, removes materialized probe-key allocation, and caches normalized registry keys. JDK 26 q9 improves
+from 359.656 to 123.052 ms/op with telemetry disabled, records 126.095 ms/op with sampled-full telemetry, and records
+129.915 ms/op in the final sampled-full JFR run. Core telemetry totals 1.36 percent of measurement-window Java
+top-frame samples, or 6.69 percent including combined iterator instrumentation, with no attributed per-row
+allocation. Focused tests, the final 1,446-test query-evaluation suite, the fresh 117-query result-bag audit, and every
+telemetry-related test in the 2,230-test LMDB run pass. The benchmark-only sampled-full comparison preserves plan
+fingerprint and result and adds 2.47 percent over the disabled fixed plan. The sole LMDB module failure remains the
+unrelated dirty-worktree `SPARSE` benchmark-default assertion.

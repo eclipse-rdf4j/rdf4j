@@ -200,8 +200,8 @@ class LmdbMedicalQ9PlanStabilityIT {
 
 			Path sidecar = learnedSidecar("join-estimator.rjes.operators");
 			assertTrue(Files.isRegularFile(sidecar), "Store shutdown must persist the learned-feedback sidecar");
-			assertEquals(21, ByteBuffer.wrap(Files.readAllBytes(sidecar)).getInt(),
-					"Restart acceptance requires the applicability-and-feature-aware v21 sidecar");
+			assertEquals(22, ByteBuffer.wrap(Files.readAllBytes(sidecar)).getInt(),
+					"Restart acceptance requires the quality-aware v22 sidecar");
 
 			ThemeQueryBenchmark restarted = newBenchmark();
 			restarted.setup();

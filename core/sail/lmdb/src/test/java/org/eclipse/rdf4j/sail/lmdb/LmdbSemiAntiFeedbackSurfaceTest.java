@@ -232,16 +232,16 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 		return legacy;
 	}
 
-	private static byte[] withoutLogicalPhysicalAndLifecycleTail(byte[] versionTwentyOne) {
-		assertEquals(21, ByteBuffer.wrap(versionTwentyOne).getInt());
+	private static byte[] withoutLogicalPhysicalAndLifecycleTail(byte[] versionTwentyTwo) {
+		assertEquals(22, ByteBuffer.wrap(versionTwentyTwo).getInt());
 		/*
 		 * These fixtures contain no typed logical/physical, LEO-plus calibration/censoring, or lifecycle records. V20
 		 * adds two empty typed-map counts before the v17 exact-fact count plus an empty lifecycle tail; V21 adds three
 		 * empty LEO-plus map counts at the same boundary. Remove only those bytes so the historical downgrade helper
 		 * receives the genuine v17 payload it describes.
 		 */
-		return Arrays.copyOf(versionTwentyOne,
-				versionTwentyOne.length - Long.BYTES - 7 * Integer.BYTES);
+		return Arrays.copyOf(versionTwentyTwo,
+				versionTwentyTwo.length - Long.BYTES - 8 * Integer.BYTES);
 	}
 
 	@Test

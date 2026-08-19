@@ -60,6 +60,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.DistinctBindingFeedback;
 import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics.InvocationAggregateObservation;
@@ -123,7 +124,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private static final int LOGICAL_PHYSICAL_PERSIST_VERSION = 18;
 	private static final int PLAN_LIFECYCLE_PERSIST_VERSION = 19;
 	private static final int ABSOLUTE_LOGICAL_PERSIST_VERSION = 20;
-	private static final int PERSIST_VERSION = 21;
+	private static final int LEO_PLUS_PERSIST_VERSION = 21;
+	private static final int PERSIST_VERSION = 22;
 	static final String SIDECAR_DATA_STAMP_CHECK_PROPERTY = "rdf4j.optimizer.lmdb.sidecarDataStampCheck";
 	private static final int MAX_ENTRIES = 2048;
 	private static final double MIN_CORRECTION_RATIO = 0.0001d;
@@ -213,6 +215,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private final Map<OperatorKey, ShadowOperatorCounts> shadowByOperator = new LinkedHashMap<>();
 	private final Map<OperatorKey, PlanCandidateCounts> planCandidates = new LinkedHashMap<>();
 	private final Map<SemiAntiSurfaceKey, SemiAntiCounts> semiAntiBySurface = new LinkedHashMap<>();
+	private final Map<TypedSemiAntiDistinctKey, TypedSemiAntiDistinctCounts> typedSemiAntiDistinct = new LinkedHashMap<>();
 	private final Set<SemiAntiSurfaceKey> frontierOriginSemiAntiSurfaces = new HashSet<>();
 	private final Map<String, ExactCardinalityCell> exactCardinalityFacts = new LinkedHashMap<>();
 
@@ -418,6 +421,19 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			changed |= destination.filterStatistics.recordRuntimeFeedback(destination.filterCells,
 					observation.filterPassed(), observation.filterRejected());
 		}
+		if (semanticallyValid && matchingPhysicalImplementation
+				&& destination.contract.admits(RuntimeFeedbackContract.ADMIT_SEMI_ANTI)
+				&& destination.contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor) {
+			DistinctBindingFeedback distinctFeedback = observation.distinctBindingFeedback();
+			if (distinctFeedback.available()) {
+				TypedSemiAntiDistinctKey key = new TypedSemiAntiDistinctKey(descriptor.logicalKey(),
+						descriptor.physicalKey(), descriptor.applicability());
+				typedSemiAntiDistinct.computeIfAbsent(key, ignored -> new TypedSemiAntiDistinctCounts())
+						.add(distinctFeedback);
+				evictOldestIfNeeded(typedSemiAntiDistinct);
+				changed = true;
+			}
+		}
 		if (changed) {
 			dirty = true;
 		}
@@ -483,6 +499,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		runtimeTargetGeneration++;
 		boolean hadOperatorEvidence = !learnedByOperator.isEmpty() || !learnedMultipliers.isEmpty()
 				|| !shadowByOperator.isEmpty() || !planCandidates.isEmpty() || !semiAntiBySurface.isEmpty()
+				|| !typedSemiAntiDistinct.isEmpty()
 				|| frontierLearning.keyCount() > 0 || planLifecycle.size() > 0;
 		boolean hadSurfaceEvidence = !leoSurfaceStats.isEmpty();
 		if (!hadOperatorEvidence && !hadSurfaceEvidence) {
@@ -493,6 +510,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		shadowByOperator.clear();
 		planCandidates.clear();
 		semiAntiBySurface.clear();
+		typedSemiAntiDistinct.clear();
 		frontierOriginSemiAntiSurfaces.clear();
 		frontierLearning.clear();
 		planLifecycle.clear();
@@ -530,11 +548,15 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		boolean lifecycleChanged = lifecycleRevision != planLifecycle.revision();
 		boolean hasLegacyEvidence = !learnedByOperator.isEmpty() || !learnedMultipliers.isEmpty()
 				|| !shadowByOperator.isEmpty() || !planCandidates.isEmpty() || !semiAntiBySurface.isEmpty()
+				|| !typedSemiAntiDistinct.isEmpty()
 				|| frontierLearning.keyCount() > 0;
 		boolean hasSurfaceEvidence = !leoSurfaceStats.isEmpty();
 		if (!hasLegacyEvidence && !hasSurfaceEvidence && !lifecycleChanged) {
 			return;
 		}
+		// Runtime distinct totals are dataset observations, not theorem-safe identities. The typed key does not retain
+		// predicate membership, so a mutation cannot selectively decay them without pretending stale points are safe.
+		typedSemiAntiDistinct.clear();
 		long decayEpochs = Math.max(1L, CONFIDENCE_DECAY_HALF_LIFE_EPOCHS / 2L);
 		long nextEpoch = Math.addExact(feedbackEpoch, decayEpochs);
 		boolean surfaceChanged;
@@ -1020,6 +1042,13 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	private boolean eligibleSemiAntiSurface(SemiAntiSurfaceKey key, boolean requireFrontierOrigin) {
 		return !requireFrontierOrigin || frontierOriginSemiAntiSurfaces.contains(key);
+	}
+
+	synchronized TypedSemiAntiDistinctEstimate typedSemiAntiDistinctEstimate(LogicalLearningKey logicalKey,
+			PhysicalResidualKey physicalKey, LearningApplicability applicability) {
+		TypedSemiAntiDistinctCounts counts = typedSemiAntiDistinct.get(
+				new TypedSemiAntiDistinctKey(logicalKey, physicalKey, applicability));
+		return counts == null ? null : counts.estimate();
 	}
 
 	private synchronized void recordObservation(TupleExpr node, boolean completedRoot,
@@ -2281,6 +2310,11 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				}
 			}
 			planLifecycle.writeTo(out);
+			out.writeInt(typedSemiAntiDistinct.size());
+			for (var entry : typedSemiAntiDistinct.entrySet()) {
+				entry.getKey().writeTo(out);
+				entry.getValue().writeTo(out);
+			}
 		} catch (IOException e) {
 			deleteIfExists(tempPath);
 			return false;
@@ -2335,6 +2369,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		Map<OperatorKey, ShadowOperatorCounts> loadedShadow = new LinkedHashMap<>();
 		Map<OperatorKey, PlanCandidateCounts> loadedPlanCandidates = new LinkedHashMap<>();
 		Map<SemiAntiSurfaceKey, SemiAntiCounts> loadedSemiAnti = new LinkedHashMap<>();
+		Map<TypedSemiAntiDistinctKey, TypedSemiAntiDistinctCounts> loadedTypedSemiAntiDistinct = new LinkedHashMap<>();
 		Map<String, ExactCardinalityCell> loadedExactFacts = new LinkedHashMap<>();
 		FrontierLearningModel loadedFrontierLearning = new FrontierLearningModel();
 		PlanLifecycleStore loadedPlanLifecycle = new PlanLifecycleStore(MAX_ENTRIES);
@@ -2352,6 +2387,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 					&& version != LOGICAL_PHYSICAL_PERSIST_VERSION
 					&& version != PLAN_LIFECYCLE_PERSIST_VERSION
 					&& version != ABSOLUTE_LOGICAL_PERSIST_VERSION
+					&& version != LEO_PLUS_PERSIST_VERSION
 					&& version != PERSIST_VERSION) {
 				return;
 			}
@@ -2408,7 +2444,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			 */
 			if (version >= LOGICAL_PHYSICAL_PERSIST_VERSION) {
 				FrontierLearningModel persistedFrontierLearning = FrontierLearningModel.readFrom(
-						in, version >= PERSIST_VERSION);
+						in, version >= LEO_PLUS_PERSIST_VERSION);
 				if (version >= ABSOLUTE_LOGICAL_PERSIST_VERSION) {
 					loadedFrontierLearning = persistedFrontierLearning;
 				}
@@ -2429,6 +2465,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 					if (version >= ABSOLUTE_LOGICAL_PERSIST_VERSION) {
 						loadedPlanLifecycle = persistedPlanLifecycle;
 					}
+				}
+				if (version >= PERSIST_VERSION) {
+					readTypedSemiAntiDistinctEntries(in, loadedTypedSemiAntiDistinct);
 				}
 			} else if (version == INVOCATION_AGGREGATE_PERSIST_VERSION) {
 				/*
@@ -2464,6 +2503,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			planCandidates.putAll(loadedPlanCandidates);
 			semiAntiBySurface.clear();
 			semiAntiBySurface.putAll(loadedSemiAnti);
+			typedSemiAntiDistinct.clear();
+			typedSemiAntiDistinct.putAll(loadedTypedSemiAntiDistinct);
 			/* Compatibility surfaces persist, but event-origin authority is deliberately re-earned after restart. */
 			frontierOriginSemiAntiSurfaces.clear();
 			exactCardinalityFacts.clear();
@@ -2481,6 +2522,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			evictOldestIfNeeded(shadowByOperator);
 			evictOldestIfNeeded(planCandidates);
 			evictOldestIfNeeded(semiAntiBySurface);
+			evictOldestIfNeeded(typedSemiAntiDistinct);
 			dirty = false;
 		}
 	}
@@ -3281,6 +3323,21 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 	}
 
+	private static void readTypedSemiAntiDistinctEntries(DataInputStream in,
+			Map<TypedSemiAntiDistinctKey, TypedSemiAntiDistinctCounts> target) throws IOException {
+		int entries = in.readInt();
+		if (entries < 0 || entries > MAX_ENTRIES * 4) {
+			throw new IOException("Invalid typed semi/anti distinct-feedback count: " + entries);
+		}
+		for (int index = 0; index < entries; index++) {
+			TypedSemiAntiDistinctKey key = TypedSemiAntiDistinctKey.readFrom(in);
+			TypedSemiAntiDistinctCounts counts = TypedSemiAntiDistinctCounts.readFrom(in);
+			if (counts.observationCount() > 0L) {
+				target.put(key, counts);
+			}
+		}
+	}
+
 	private long nextFeedbackEpoch() {
 		return ++feedbackEpoch;
 	}
@@ -3799,6 +3856,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			long strategyChanges, long physicalObservationCount, long rhsSourceRowsScanned) {
 	}
 
+	record TypedSemiAntiDistinctEstimate(long exactObservationCount, long approximateObservationCount,
+			long distinctPoint, double estimateVariance, double aggregateRelativeError) {
+	}
+
 	private record OperatorObservation(double plannedRows, double plannedWorkRows, double actualRows, double leftRows,
 			double rightRows, double actualWorkRows, double leftRowsWithMatch, double emptyProbeCount,
 			double maxRightRowsPerLeft, double leftBranchRows, double rightBranchRows) {
@@ -3915,6 +3976,85 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		private static long nonNegative(long value) throws IOException {
 			if (value < 0L) {
 				throw new IOException("Negative semi/anti feedback counter");
+			}
+			return value;
+		}
+	}
+
+	private record TypedSemiAntiDistinctKey(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
+			LearningApplicability applicability) {
+
+		private TypedSemiAntiDistinctKey {
+			Objects.requireNonNull(logicalKey, "logical key");
+			Objects.requireNonNull(physicalKey, "physical key");
+			Objects.requireNonNull(applicability, "applicability");
+		}
+
+		private void writeTo(DataOutputStream out) throws IOException {
+			logicalKey.writeTo(out);
+			physicalKey.writeTo(out);
+			applicability.writeTo(out);
+		}
+
+		private static TypedSemiAntiDistinctKey readFrom(DataInputStream in) throws IOException {
+			return new TypedSemiAntiDistinctKey(LogicalLearningKey.readFrom(in), PhysicalResidualKey.readFrom(in),
+					LearningApplicability.readFrom(in));
+		}
+	}
+
+	private static final class TypedSemiAntiDistinctCounts {
+		private long exactObservationCount;
+		private long approximateObservationCount;
+		private long distinctPoint;
+		private double estimateVariance;
+
+		private void add(DistinctBindingFeedback feedback) {
+			if (feedback.exact()) {
+				exactObservationCount = saturatingAdd(exactObservationCount, 1L);
+			} else {
+				approximateObservationCount = saturatingAdd(approximateObservationCount, 1L);
+				double variance = feedback.estimateVariance();
+				double sum = estimateVariance + variance;
+				if (isFiniteNonNegative(variance) && isFiniteNonNegative(sum)) {
+					estimateVariance = sum;
+				}
+			}
+			distinctPoint = saturatingAdd(distinctPoint, feedback.distinctBindings());
+		}
+
+		private long observationCount() {
+			return saturatingAdd(exactObservationCount, approximateObservationCount);
+		}
+
+		private TypedSemiAntiDistinctEstimate estimate() {
+			double relativeError = distinctPoint == 0L ? 0.0d
+					: Math.sqrt(Math.max(0.0d, estimateVariance)) / distinctPoint;
+			return new TypedSemiAntiDistinctEstimate(exactObservationCount, approximateObservationCount,
+					distinctPoint, estimateVariance, relativeError);
+		}
+
+		private void writeTo(DataOutputStream out) throws IOException {
+			out.writeLong(exactObservationCount);
+			out.writeLong(approximateObservationCount);
+			out.writeLong(distinctPoint);
+			out.writeDouble(estimateVariance);
+		}
+
+		private static TypedSemiAntiDistinctCounts readFrom(DataInputStream in) throws IOException {
+			TypedSemiAntiDistinctCounts counts = new TypedSemiAntiDistinctCounts();
+			counts.exactObservationCount = nonNegative(in.readLong(), "exact observation count");
+			counts.approximateObservationCount = nonNegative(in.readLong(), "approximate observation count");
+			counts.distinctPoint = nonNegative(in.readLong(), "distinct point");
+			counts.estimateVariance = in.readDouble();
+			if (!isFiniteNonNegative(counts.estimateVariance)) {
+				throw new IOException("Invalid typed semi/anti distinct estimate variance");
+			}
+			return counts;
+		}
+
+		private static long nonNegative(long value, String label) throws IOException {
+			if (value < 0L) {
+				throw new IOException("Negative typed semi/anti distinct " + label);
 			}
 			return value;
 		}

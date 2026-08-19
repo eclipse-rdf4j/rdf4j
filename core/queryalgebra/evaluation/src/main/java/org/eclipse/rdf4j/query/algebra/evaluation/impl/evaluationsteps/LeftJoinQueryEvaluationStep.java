@@ -63,13 +63,20 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context) {
-		boolean runtimeTelemetryTrackingActive = strategy.isTrackResultSize() || strategy.isTrackTime();
-		QueryEvaluationStep left = JoinMetricsTracking
-				.wrapLeftInput(strategy.precompile(leftJoin.getLeftArg(), context), leftJoin, leftJoin.getLeftArg(),
-						runtimeTelemetryTrackingActive);
-		QueryEvaluationStep right = JoinMetricsTracking
-				.wrapRightInput(strategy.precompile(leftJoin.getRightArg(), context), leftJoin, leftJoin.getRightArg(),
-						runtimeTelemetryTrackingActive);
+		boolean runtimeTelemetryTrackingActive = strategy.isTrackResultSize() || strategy.isTrackTime()
+				|| leftJoin.isRuntimeTelemetryEnabled() || leftJoin.isCostFeedbackTrackingEnabled();
+		QueryEvaluationStep leftRaw = strategy.precompile(leftJoin.getLeftArg(), context);
+		QueryEvaluationStep rightRaw = strategy.precompile(leftJoin.getRightArg(), context);
+		JoinMetricsTracking.Accumulator deferredTelemetry = JoinMetricsTracking.deferredAccumulator(leftJoin,
+				leftJoin.getLeftArg(), leftJoin.getRightArg(), runtimeTelemetryTrackingActive);
+		QueryEvaluationStep left = deferredTelemetry == null
+				? JoinMetricsTracking.wrapLeftInput(leftRaw, leftJoin, leftJoin.getLeftArg(),
+						runtimeTelemetryTrackingActive)
+				: JoinMetricsTracking.wrapLeftInput(leftRaw, deferredTelemetry);
+		QueryEvaluationStep right = deferredTelemetry == null
+				? JoinMetricsTracking.wrapRightInput(rightRaw, leftJoin, leftJoin.getRightArg(),
+						runtimeTelemetryTrackingActive)
+				: JoinMetricsTracking.wrapRightInput(rightRaw, deferredTelemetry);
 		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
 			HashJoinBindingContract contract = HashJoinBindingContract.from(leftJoin.getLeftArg(),
 					leftJoin.getRightArg());

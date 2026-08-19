@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -139,6 +140,30 @@ class JoinMetricsTrackingTest {
 		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL)).isLessThan(1);
 		assertThat(rightNode.getJoinLeftBindingsConsumedActual()).isEqualTo(1);
 		assertThat(rightNode.getJoinRightBindingsConsumedActual()).isEqualTo(0);
+	}
+
+	@Test
+	void deferredTelemetryReusesItsSideWrapperAcrossSequentialProbes() {
+		Join joinNode = new Join(new SingletonSet(), new SingletonSet());
+		joinNode.setRuntimeTelemetryEnabled(true);
+		joinNode.setQueryModelMetadata(RootCloseTelemetryRegistrar.METADATA_KEY,
+				(Consumer<Runnable>) publisher -> {
+				});
+		JoinMetricsTracking.Accumulator accumulator = JoinMetricsTracking.deferredAccumulator(joinNode,
+				joinNode.getLeftArg(), joinNode.getRightArg(), true);
+		QueryEvaluationStep wrapped = JoinMetricsTracking.wrapRightInput(delegateProducing(1), accumulator);
+
+		CloseableIteration<BindingSet> first = wrapped.evaluate(EmptyBindingSet.getInstance());
+		consume(first);
+		first.close();
+		CloseableIteration<BindingSet> second = wrapped.evaluate(EmptyBindingSet.getInstance());
+
+		assertThat(second)
+				.as("dependent probes must rebind a preallocated telemetry wrapper")
+				.isSameAs(first);
+
+		consume(second);
+		second.close();
 	}
 
 	private static QueryEvaluationStep delegateProducing(int rowCount) {

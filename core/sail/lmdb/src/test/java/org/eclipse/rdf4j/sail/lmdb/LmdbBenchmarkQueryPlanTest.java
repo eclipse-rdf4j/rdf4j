@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -88,6 +89,42 @@ class LmdbBenchmarkQueryPlanTest {
 		} finally {
 			restoreProperty(previous);
 		}
+	}
+
+	@Test
+	void sampledTelemetryPreservesPreparedPlanAndResults(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			var values = repository.getValueFactory();
+			connection.add(values.createIRI("urn:s:1"), values.createIRI("urn:p"), values.createIRI("urn:o:1"));
+			connection.add(values.createIRI("urn:s:2"), values.createIRI("urn:p"), values.createIRI("urn:o:2"));
+			String query = "SELECT ?s ?o WHERE { ?s <urn:p> ?o } ORDER BY ?s";
+
+			try (LmdbBenchmarkQueryPlan disabled = LmdbBenchmarkQueryPlan.prepare(store, connection, query, 30, true,
+					LmdbBenchmarkQueryPlan.RuntimeTelemetryMode.DISABLED);
+					LmdbBenchmarkQueryPlan sampled = LmdbBenchmarkQueryPlan.prepare(store, connection, query, 30, true,
+							LmdbBenchmarkQueryPlan.RuntimeTelemetryMode.SAMPLED_FULL)) {
+				assertEquals(disabled.preparedPlanSnapshot().planFingerprint(),
+						sampled.preparedPlanSnapshot().planFingerprint(),
+						"runtime instrumentation must not alter the selected structural plan");
+				assertEquals(evaluateRows(disabled), evaluateRows(sampled),
+						"sampled telemetry must not alter result order, values, or multiplicity");
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static List<String> evaluateRows(LmdbBenchmarkQueryPlan plan) {
+		List<String> rows = new ArrayList<>();
+		try (CloseableIteration<BindingSet> result = plan.evaluate()) {
+			while (result.hasNext()) {
+				rows.add(result.next().toString());
+			}
+		}
+		return rows;
 	}
 
 	@Test

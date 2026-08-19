@@ -295,14 +295,25 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		// One probe budget for the whole step: joins re-instantiate this filter once per outer row, and a
 		// per-instance budget would keep every instance probing forever instead of amortizing into
 		// materialization (see MaterializedExistsFilterIteration.PROBE_LIMIT).
-		java.util.concurrent.atomic.AtomicInteger sharedProbeBudget = new java.util.concurrent.atomic.AtomicInteger(
-				plannedSemiAntiProbeBudget(filter));
-		ConcurrentMap<BindingSetHashKey, Boolean> sharedProbeCache = new ConcurrentHashMap<>();
-		java.util.concurrent.atomic.AtomicInteger sharedProbeCacheEntries = new java.util.concurrent.atomic.AtomicInteger();
+		boolean usesMemoizedState = strategyMode == MaterializedExistsFilterIteration.MEMOIZED
+				|| strategyMode == MaterializedExistsFilterIteration.ADAPTIVE;
+		java.util.concurrent.atomic.AtomicInteger sharedProbeBudget = strategyMode == MaterializedExistsFilterIteration.ADAPTIVE
+				? new java.util.concurrent.atomic.AtomicInteger(plannedSemiAntiProbeBudget(filter))
+				: null;
+		ConcurrentMap<BindingSetHashKey, Boolean> sharedProbeCache = usesMemoizedState
+				? new ConcurrentHashMap<>()
+				: null;
+		java.util.concurrent.atomic.AtomicInteger sharedProbeCacheEntries = usesMemoizedState
+				? new java.util.concurrent.atomic.AtomicInteger()
+				: null;
 		int sharedProbeCacheCapacity = plannedSemiAntiCacheCapacity(filter);
-		MaterializedExistsFilterIteration.PrimitiveDistinctBindingTracker distinctBindings = new MaterializedExistsFilterIteration.PrimitiveDistinctBindingTracker(
-				sharedProbeCacheCapacity);
-		MaterializedExistsFilterIteration.MaterializationCache materializationCache = new MaterializedExistsFilterIteration.MaterializationCache();
+		HybridDistinctBindingTracker distinctBindings = recordFilterOutcomes
+				? new HybridDistinctBindingTracker(sharedProbeCacheCapacity, correlationKeyBindingArray)
+				: null;
+		MaterializedExistsFilterIteration.MaterializationCache materializationCache = strategyMode == MaterializedExistsFilterIteration.MATERIALIZED
+				|| strategyMode == MaterializedExistsFilterIteration.ADAPTIVE
+						? new MaterializedExistsFilterIteration.MaterializationCache()
+						: null;
 		recordMaterializedExistsDisposition(filter, algorithmHint, "compiled-specialized");
 		return bindings -> new MaterializedExistsFilterIteration(filter, arg.evaluate(bindings),
 				existsArg::evaluate,

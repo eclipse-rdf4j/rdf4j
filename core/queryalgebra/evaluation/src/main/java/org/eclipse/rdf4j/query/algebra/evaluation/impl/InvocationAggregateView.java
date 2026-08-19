@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.DistinctBindingFeedback;
 
 /** Allocation-free read view over one execution's typed invocation aggregate. */
 @Experimental
@@ -69,6 +70,13 @@ public interface InvocationAggregateView {
 	long cacheEvictions();
 
 	long distinctBindingExposure();
+
+	default DistinctBindingFeedback distinctBindingFeedback() {
+		long exact = distinctBindingExposure();
+		return exact >= 0L
+				? DistinctBindingFeedback.exact(exact, exact, 0L, exact, "legacy-exact-scalar")
+				: DistinctBindingFeedback.unavailable();
+	}
 
 	default long materializationBuilds() {
 		return 0L;

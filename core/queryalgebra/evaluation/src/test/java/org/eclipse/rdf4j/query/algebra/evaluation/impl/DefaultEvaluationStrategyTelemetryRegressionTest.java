@@ -18,6 +18,8 @@ import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -32,6 +34,8 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -124,6 +128,150 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 		}
 
 		assertThat(assignment.getTotalTimeNanosActual()).isGreaterThanOrEqualTo(constructionNanos);
+	}
+
+	@Test
+	void telemetryPublishesOnceAtRootClose() {
+		BindingSetAssignment assignment = trackedAssignment();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setTrackResultSize(true);
+
+		CloseableIteration<BindingSet> results = strategy.precompile(assignment)
+				.evaluate(EmptyBindingSet.getInstance());
+		assertThat(assignment.getResultSizeActual()).isZero();
+		assertThat(results.hasNext()).isTrue();
+		results.next();
+
+		assertThat(assignment.getResultSizeActual())
+				.as("execution-local counters must not publish into query-model state inside the tuple loop")
+				.isZero();
+
+		results.close();
+
+		assertThat(assignment.getResultSizeActual()).isEqualTo(1L);
+		assertThat(assignment.getLongMetricActual(TelemetryMetricNames.OUTPUT_ROWS_ACTUAL)).isEqualTo(1L);
+		assertThat(assignment.getLongMetricActual(TelemetryMetricNames.CLOSE_COUNT_ACTUAL)).isEqualTo(1L);
+	}
+
+	@Test
+	void joinTelemetryPublishesOnlyAtRootClose() {
+		BindingSetAssignment left = trackedAssignment("left", "l");
+		BindingSetAssignment right = trackedAssignment("right", "r");
+		Join join = new Join(left, right);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setTrackResultSize(true);
+
+		CloseableIteration<BindingSet> results = strategy.precompile(join)
+				.evaluate(EmptyBindingSet.getInstance());
+		assertThat(results.hasNext()).isTrue();
+		results.next();
+
+		assertThat(join.getJoinRightIteratorsCreatedActual())
+				.as("dependent-probe telemetry must remain execution-local until the query root closes")
+				.isLessThanOrEqualTo(0L);
+		assertThat(join.getJoinLeftBindingsConsumedActual()).isLessThanOrEqualTo(0L);
+		assertThat(join.getJoinRightBindingsConsumedActual()).isLessThanOrEqualTo(0L);
+
+		results.close();
+
+		assertThat(join.getJoinRightIteratorsCreatedActual()).isEqualTo(1L);
+		assertThat(join.getJoinLeftBindingsConsumedActual()).isEqualTo(1L);
+		assertThat(join.getJoinRightBindingsConsumedActual()).isEqualTo(1L);
+	}
+
+	@Test
+	void statementLookupTelemetryPublishesOnlyAtRootClose() {
+		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		pattern.setRuntimeTelemetryEnabled(true);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+
+		CloseableIteration<BindingSet> results = strategy.precompile(pattern)
+				.evaluate(EmptyBindingSet.getInstance());
+		assertThat(results.hasNext()).isFalse();
+
+		assertThat(pattern.getLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL))
+				.as("index lookup counts must not publish during statement evaluation")
+				.isLessThanOrEqualTo(0L);
+
+		results.close();
+
+		assertThat(pattern.getLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL)).isEqualTo(1L);
+	}
+
+	@Test
+	void optionalConditionTelemetryPublishesOnlyAtRootClose() {
+		BindingSetAssignment left = trackedAssignment("left", "l");
+		BindingSetAssignment right = trackedAssignment("right", "r");
+		Compare condition = new Compare(new Var("left"),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral("not-l")), Compare.CompareOp.EQ);
+		LeftJoin optional = new LeftJoin(left, right, condition);
+		optional.setRuntimeTelemetryEnabled(true);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+
+		CloseableIteration<BindingSet> results = strategy.precompile(optional)
+				.evaluate(EmptyBindingSet.getInstance());
+		assertThat(results.hasNext()).isTrue();
+		results.next();
+
+		assertThat(optional.getLongMetricActual(TelemetryMetricNames.LEFT_JOIN_CONDITION_REJECTED_ROWS_ACTUAL))
+				.as("OPTIONAL condition outcomes must not publish from the dependent probe loop")
+				.isLessThanOrEqualTo(0L);
+
+		results.close();
+
+		assertThat(optional.getLongMetricActual(TelemetryMetricNames.LEFT_JOIN_CONDITION_REJECTED_ROWS_ACTUAL))
+				.isEqualTo(1L);
+	}
+
+	@Test
+	void sampledTimingUsesBoundedClockReads() throws Exception {
+		int invocationCount = 1_000_000;
+		AtomicLong clockReads = new AtomicLong();
+		LongSupplier clock = () -> clockReads.incrementAndGet() * 10L;
+		BindingSetAssignment assignment = trackedAssignment();
+		BindingSet row = assignment.getBindingSets().iterator().next();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null) {
+			@Override
+			protected QueryEvaluationStep prepare(BindingSetAssignment node, QueryEvaluationContext context) {
+				return bindings -> new CloseableIteration<>() {
+					@Override
+					public boolean hasNext() {
+						return true;
+					}
+
+					@Override
+					public BindingSet next() {
+						return row;
+					}
+
+					@Override
+					public void remove() {
+						throw new UnsupportedOperationException();
+					}
+
+					@Override
+					public void close() {
+					}
+				};
+			}
+		};
+		setTelemetryNanoClock(strategy, clock);
+		strategy.setTrackTime(true);
+
+		try (CloseableIteration<BindingSet> results = strategy.precompile(assignment)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			for (int i = 0; i < invocationCount; i++) {
+				assertThat(results.hasNext()).isTrue();
+			}
+		}
+
+		assertThat(assignment.getHasNextCallCountActual()).isEqualTo(invocationCount);
+		assertThat(assignment.getLongMetricActual("timingInvocationCountActual"))
+				.isEqualTo(invocationCount);
+		assertThat(assignment.getLongMetricActual("timingSampleCountActual"))
+				.isBetween(15_000L, 16_000L);
+		assertThat(assignment.getStringMetricActual("timingModeActual")).isEqualTo("sampled");
+		assertThat(clockReads).hasValueLessThan(40_000L);
 	}
 
 	@Test
@@ -406,8 +554,12 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 	}
 
 	private static BindingSetAssignment trackedAssignment() {
+		return trackedAssignment("value", "row");
+	}
+
+	private static BindingSetAssignment trackedAssignment(String name, String value) {
 		QueryBindingSet row = new QueryBindingSet();
-		row.addBinding("value", SimpleValueFactory.getInstance().createLiteral("row"));
+		row.addBinding(name, SimpleValueFactory.getInstance().createLiteral(value));
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingSets(List.of(row));
 		assignment.setRuntimeTelemetryEnabled(true);
@@ -469,6 +621,14 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Unable to inspect runtime telemetry registry size", e);
 		}
+	}
+
+	private static void setTelemetryNanoClock(DefaultEvaluationStrategy strategy, LongSupplier clock)
+			throws Exception {
+		Method setter = DefaultEvaluationStrategy.class
+				.getDeclaredMethod("setTelemetryNanoClockForTesting", LongSupplier.class);
+		setter.setAccessible(true);
+		setter.invoke(strategy, clock);
 	}
 
 	private static int maxPatternKeys() {

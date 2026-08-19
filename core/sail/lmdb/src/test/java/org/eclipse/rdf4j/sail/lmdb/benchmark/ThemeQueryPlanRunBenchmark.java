@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan;
+import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan.RuntimeTelemetryMode;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -58,10 +59,10 @@ import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 
-@Warmup(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
+@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
-@Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
+@Measurement(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @Threads(1)
 public class ThemeQueryPlanRunBenchmark {
@@ -134,15 +135,15 @@ public class ThemeQueryPlanRunBenchmark {
 		public int z_queryIndex;
 
 		@Param({
-				"MEDICAL_RECORDS",
+//				"MEDICAL_RECORDS",
 //				"SOCIAL_MEDIA",
-//				"LIBRARY",
-//				"ENGINEERING",
-//				"HIGHLY_CONNECTED",
-//				"TRAIN",
-//				"ELECTRICAL_GRID",
-//				"PHARMA",
-//				"SPARSE"
+				"LIBRARY",
+				"ENGINEERING",
+				"HIGHLY_CONNECTED",
+				"TRAIN",
+				"ELECTRICAL_GRID",
+				"PHARMA",
+				"SPARSE"
 		})
 		public String themeName;
 
@@ -160,6 +161,9 @@ public class ThemeQueryPlanRunBenchmark {
 
 		@Param({ "safe-cardinality-correction" })
 		public String leoRolloutProfile;
+
+		@Param({ "disabled" })
+		public String runtimeTelemetryMode;
 
 		public boolean rebuildStoreBeforeSetup;
 
@@ -470,9 +474,21 @@ public class ThemeQueryPlanRunBenchmark {
 
 		protected LmdbBenchmarkQueryPlan preparePlan(String queryText, boolean captureOptimizedPlan) {
 			LmdbBenchmarkQueryPlan plan = LmdbBenchmarkQueryPlan.prepare(store, connection, queryText,
-					QUERY_TIMEOUT_SECONDS, captureOptimizedPlan);
+					QUERY_TIMEOUT_SECONDS, captureOptimizedPlan, runtimeTelemetryMode());
 			rememberPreparedPlan(plan.preparedPlanSnapshot());
 			return plan;
+		}
+
+		private RuntimeTelemetryMode runtimeTelemetryMode() {
+			if (runtimeTelemetryMode == null || runtimeTelemetryMode.isBlank()
+					|| "disabled".equalsIgnoreCase(runtimeTelemetryMode)) {
+				return RuntimeTelemetryMode.DISABLED;
+			}
+			if ("sampled-full".equalsIgnoreCase(runtimeTelemetryMode)) {
+				return RuntimeTelemetryMode.SAMPLED_FULL;
+			}
+			throw new IllegalArgumentException("Unsupported runtimeTelemetryMode=" + runtimeTelemetryMode
+					+ "; expected disabled or sampled-full");
 		}
 
 		private void rememberPreparedPlan(LmdbBenchmarkQueryPlan.PreparedPlanSnapshot snapshot) {

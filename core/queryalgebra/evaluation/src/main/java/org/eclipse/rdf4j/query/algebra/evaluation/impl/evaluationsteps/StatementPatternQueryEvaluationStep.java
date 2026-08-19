@@ -71,6 +71,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private BiConsumer<MutableBindingSet, Statement> convertStatementConverter;
 	private final QueryEvaluationContext context;
 	private final StatementOrder order;
+	private final long[] deferredIndexLookups;
 
 	private final Predicate<BindingSet> unboundTest;
 
@@ -174,6 +175,13 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		unboundTest = getUnboundTest(context, normalizedSubjectVar, normalizedPredicateVar, normalizedObjectVar,
 				normalizedContextVar);
+
+		long[] indexLookups = new long[1];
+		deferredIndexLookups = statementPatternForMetrics.isRuntimeTelemetryEnabled()
+				&& RootCloseTelemetryRegistrar.register(statementPatternForMetrics,
+						() -> publishIndexLookupCount(indexLookups))
+								? indexLookups
+								: null;
 
 	}
 
@@ -823,8 +831,23 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		if (!statementPatternForMetrics.isRuntimeTelemetryEnabled() && !statementPattern.isRuntimeTelemetryEnabled()) {
 			return;
 		}
+		if (deferredIndexLookups != null) {
+			deferredIndexLookups[0] = deferredIndexLookups[0] == Long.MAX_VALUE
+					? Long.MAX_VALUE
+					: deferredIndexLookups[0] + 1L;
+			return;
+		}
 		long next = Math.max(0L,
 				statementPatternForMetrics.getLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL)) + 1L;
+		statementPatternForMetrics.setLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL, next);
+		statementPattern.setLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL, next);
+	}
+
+	private void publishIndexLookupCount(long[] indexLookups) {
+		long current = Math.max(0L,
+				statementPatternForMetrics.getLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL));
+		long increment = indexLookups[0];
+		long next = current > Long.MAX_VALUE - increment ? Long.MAX_VALUE : current + increment;
 		statementPatternForMetrics.setLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL, next);
 		statementPattern.setLongMetricActual(TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL, next);
 	}
