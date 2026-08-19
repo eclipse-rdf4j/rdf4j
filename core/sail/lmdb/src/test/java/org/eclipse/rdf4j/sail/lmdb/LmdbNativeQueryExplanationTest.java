@@ -18,6 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -229,6 +230,35 @@ public class LmdbNativeQueryExplanationTest {
 						+ "independent VALUES leaf and MINUS share the aggregate scope")
 				.contains("ExactDomainDrive(slot=")
 				.contains("Minus(");
+	}
+
+	@Test
+	public void optimizerExactDomainConnectsBridgeBeforeUnrelatedTypeFactor() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			IRI hasTag = vf.createIRI(EX, "hasTag");
+			IRI code = vf.createIRI(EX, "code");
+			for (int i = 0; i < 4; i++) {
+				IRI tag = vf.createIRI(EX, "tag" + i);
+				conn.add(vf.createIRI(EX, "item" + i), hasTag, tag);
+				conn.add(tag, code, vf.createLiteral(i % 2 == 0 ? "A" : "B"));
+			}
+		}
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(DISTINCT ?s) AS ?count) WHERE { "
+				+ "?s a ex:Item ; ex:hasTag ?tag . ?tag ex:code ?code . "
+				+ "FILTER(?code = \"A\" || ?code = \"B\") }";
+
+		String rendered = explain(Explanation.Level.Optimized, query).toString();
+		Pattern disconnectedPrefix = Pattern.compile(
+				"MultiJoin\\(order=\\[ExactDomainDrive\\(slot=\\?code#[^)]*\\) -> "
+						+ "Pattern\\(s=\\?s#[^,]*, p=const\\([^)]*\\), o=const\\([^)]*\\)");
+
+		assertThat(rendered).contains("ExactDomainDrive(slot=?code#");
+		assertThat(disconnectedPrefix.matcher(rendered).find())
+				.as("the exact domain must bind ?tag through ex:code, then cross ex:hasTag before scanning rdf:type\n%s",
+						rendered)
+				.isFalse();
 	}
 
 	private void addItemNames() {

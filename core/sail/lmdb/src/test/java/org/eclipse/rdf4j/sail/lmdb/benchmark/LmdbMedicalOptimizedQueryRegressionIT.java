@@ -46,6 +46,9 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 			"(?m)^\\s*VALUES\\s+(?:\\?condCode\\b|\\([^\\r\\n]*\\?condCode\\b[^\\r\\n]*\\))");
 	private static final Pattern CONTEXTUAL_INNER_JOIN_ROWS = Pattern.compile(
 			"plannedInnerJoin(?:ContextualRight|Output)Rows=([0-9]+(?:\\.[0-9]+)?(?:E[+-]?[0-9]+)?)([KMB])?");
+	private static final Pattern DISCONNECTED_CODE_DOMAIN_PREFIX = Pattern.compile(
+			"MultiJoin\\(order=\\[ExactDomainDrive\\(slot=\\?code#[^)]*\\) -> "
+					+ "Pattern\\(s=\\?enc#[^,]*, p=const\\([^)]*\\), o=const\\([^)]*\\)");
 	private static final double MAX_SAFE_CONTEXTUAL_INNER_JOIN_ROWS = 100_000_000.0d;
 
 	@Test
@@ -236,6 +239,40 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 							"MEDICAL q4 must produce a complete optimizer result on the benchmark store\n"
 									+ snapshot.diagnostics() + "\n" + plan),
 					() -> assertFiniteCodeAlternativeOrCheaperBoundLookup(snapshot));
+		} finally {
+			try {
+				state.disableTelemetryTeardown();
+				state.tearDown();
+			} finally {
+				restoreProperty(CASCADES_MODE_PROPERTY, previousMode);
+			}
+		}
+	}
+
+	@Test
+	@Timeout(300)
+	void medicalQ4FrontierPlanConnectsCodeDomainBeforeEncounterTypeScan() throws Exception {
+		String previousMode = System.setProperty(CASCADES_MODE_PROPERTY, "auto");
+		RunQueryPlanState state = new RunQueryPlanState();
+		state.themeName = Theme.MEDICAL_RECORDS.name();
+		state.z_queryIndex = 4;
+		state.sketchEstimatorEnabled = false;
+		state.sketchEstimatorStrategy = "unified";
+		state.loadSelectedThemeOnly = false;
+		state.rebuildStoreBeforeSetup = true;
+
+		try {
+			state.setup();
+			ExplainedPlanSnapshot snapshot = state.explainedPlanSnapshot();
+			String plan = snapshot.plan();
+
+			assertAll(
+					() -> assertTrue(plan.contains("plannedFrontierStatus=ready")
+							&& plan.contains("plannedEstimateSource=frontier-v2-"),
+							"MEDICAL q4 must be planned from a ready Frontier synopsis\n" + plan),
+					() -> assertFalse(DISCONNECTED_CODE_DOMAIN_PREFIX.matcher(plan).find(),
+							"The finite code domain must reach the encounter component through hasCondition before "
+									+ "scanning the unrelated encounter type factor\n" + plan));
 		} finally {
 			try {
 				state.disableTelemetryTeardown();
