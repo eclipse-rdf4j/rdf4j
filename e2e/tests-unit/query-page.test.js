@@ -189,8 +189,8 @@ test('interactive Text explanation requests JSON and toggles cached highlighting
     const requestCount = harness.pendingExplainRequests.length;
     harness.click('explanation-highlight-hotspot');
     assert.equal(harness.pendingExplainRequests.length, requestCount);
-    assert.equal(harness.getAttribute('explanation-highlight-hotspot', 'aria-pressed'), 'true');
-    assert.equal(harness.getAttribute('explanation-highlight-syntax', 'aria-pressed'), 'false');
+    assert.equal(harness.getProperty('explanation-highlight-hotspot', 'checked'), true);
+    assert.equal(harness.getProperty('explanation-highlight-syntax', 'checked'), false);
     assert.equal(harness.getText('query-explanation'), expectedText);
     assert.equal(
         harness.document.getElementById('query-explanation').getElementsByTagName('span')
@@ -298,6 +298,63 @@ test('property config filters both plans and persists hidden properties', () => 
         )[0].checked,
         false
     );
+});
+
+test('Config uses radio controls and closes its panel on an outside click', () => {
+    const harness = createQueryBrowserHarness();
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    harness.pendingExplainRequests[0].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 10, resultSizeEstimate: 4 }),
+        format: 'json',
+        error: ''
+    });
+
+    const panel = harness.document.getElementById('explanation-settings-panel');
+    const configToggle = harness.document.getElementById('explanation-settings-toggle');
+    const syntaxRadio = harness.document.getElementById('explanation-highlight-syntax');
+    const heatmapRadio = harness.document.getElementById('explanation-highlight-hotspot');
+    assert.equal(configToggle.tagName, 'BUTTON');
+    assert.equal(configToggle.textContent, 'Config');
+    assert.equal(syntaxRadio.tagName, 'INPUT');
+    assert.equal(syntaxRadio.type, 'radio');
+    assert.equal(syntaxRadio.name, 'explanation-highlight-mode');
+    assert.equal(syntaxRadio.checked, true);
+    assert.equal(heatmapRadio.tagName, 'INPUT');
+    assert.equal(heatmapRadio.type, 'radio');
+    assert.equal(heatmapRadio.name, 'explanation-highlight-mode');
+    assert.equal(heatmapRadio.checked, false);
+    assert.equal(harness.getAttribute('explanation-settings-toggle', 'aria-expanded'), 'false');
+    assert.equal(panel.hidden, true);
+    assert.equal(harness.document.getElementById('explanation-highlight-mode').parentNode, panel);
+    assert.equal(harness.document.getElementById('explanation-property-config').parentNode, panel);
+
+    harness.click('explanation-settings-toggle');
+    assert.equal(harness.getAttribute('explanation-settings-toggle', 'aria-expanded'), 'true');
+    assert.equal(panel.hidden, false);
+
+    harness.click('explanation-highlight-hotspot');
+    assert.equal(syntaxRadio.checked, false);
+    assert.equal(heatmapRadio.checked, true);
+    assert.equal(harness.getText('explanation-property-count'), 'All 2');
+
+    harness.document.trigger('click', { target: heatmapRadio });
+    assert.equal(harness.getAttribute('explanation-settings-toggle', 'aria-expanded'), 'true');
+    assert.equal(panel.hidden, false);
+
+    harness.document.trigger('click', {
+        target: harness.document.getElementById('query-explanation')
+    });
+    assert.equal(harness.getAttribute('explanation-settings-toggle', 'aria-expanded'), 'false');
+    assert.equal(panel.hidden, true);
+
+    harness.click('explanation-settings-toggle');
+    harness.document.trigger('keydown', { key: 'Escape' });
+    assert.equal(harness.getAttribute('explanation-settings-toggle', 'aria-expanded'), 'false');
+    assert.equal(panel.hidden, true);
+    assert.equal(harness.document.activeElement.id, 'explanation-settings-toggle');
+    assert.equal(heatmapRadio.checked, true);
 });
 
 test('hotspot mode shares one scale across comparison panes', () => {
@@ -418,12 +475,13 @@ test('highlight rendering failure falls back to generated inert plaintext', () =
     assert.equal(harness.document.getElementById('query-explanation').getElementsByTagName('script').length, 0);
 });
 
-test('highlight mode supports arrow keys and hides outside Text format', () => {
+test('highlight radios use native selection and hide outside Text format', () => {
     const harness = createQueryBrowserHarness({ initialExplanation: 'Legacy plan' });
 
     harness.runPageLoad();
-    harness.document.getElementById('explanation-highlight-mode').trigger('keydown', { key: 'ArrowRight' });
-    assert.equal(harness.getAttribute('explanation-highlight-hotspot', 'aria-pressed'), 'true');
+    harness.click('explanation-highlight-hotspot');
+    assert.equal(harness.getProperty('explanation-highlight-hotspot', 'checked'), true);
+    assert.equal(harness.getProperty('explanation-highlight-syntax', 'checked'), false);
     assert.equal(harness.document.activeElement.id, 'explanation-highlight-hotspot');
 
     harness.setValue('explain-format', 'json');

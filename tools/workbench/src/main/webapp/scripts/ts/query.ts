@@ -2157,7 +2157,6 @@ module workbench {
             var visible = properties.length > 0;
             config.toggle(visible).attr('aria-hidden', visible ? 'false' : 'true');
             if (!visible) {
-                config.prop('open', false);
                 $('#explanation-property-count').text('');
                 $('#explanation-property-options').empty();
                 explanationPropertyOptionsKey = '';
@@ -2217,19 +2216,30 @@ module workbench {
             renderQueryPageState();
         }
 
+        export function setExplanationSettingsOpen(open: boolean): void {
+            $('#explanation-settings-toggle').attr('aria-expanded', open ? 'true' : 'false');
+            $('#explanation-settings-panel').prop('hidden', !open);
+        }
+
+        export function toggleExplanationSettings(): void {
+            setExplanationSettingsOpen($('#explanation-settings-toggle').attr('aria-expanded') !== 'true');
+        }
+
         function syncExplanationHighlightControls() {
             var controlsVisible = !!queryPageState
                 && queryPageState.inputs.explainFormat === 'text'
                 && (compareModeEnabled || queryPageState.primaryPane.kind !== 'empty');
+            $('#explanation-settings')
+                .toggle(controlsVisible)
+                .attr('aria-hidden', controlsVisible ? 'false' : 'true');
+            if (!controlsVisible) {
+                setExplanationSettingsOpen(false);
+            }
             $('#explanation-highlight-mode')
                 .toggle(controlsVisible)
                 .attr('aria-hidden', controlsVisible ? 'false' : 'true');
-            $('#explanation-highlight-syntax').attr(
-                'aria-pressed', explanationHighlightMode === 'syntax' ? 'true' : 'false'
-            );
-            $('#explanation-highlight-hotspot').attr(
-                'aria-pressed', explanationHighlightMode === 'hotspot' ? 'true' : 'false'
-            );
+            $('#explanation-highlight-syntax').prop('checked', explanationHighlightMode === 'syntax');
+            $('#explanation-highlight-hotspot').prop('checked', explanationHighlightMode === 'hotspot');
             var hotspot = controlsVisible ? getSharedHotspotSummary() : null;
             $('#explanation-hotspot-legend')
                 .toggle(!!hotspot)
@@ -3853,23 +3863,20 @@ workbench.addLoad(function queryPageLoaded() {
     $('#explanation-highlight-hotspot').click(function() {
         workbench.query.setExplanationHighlightMode('hotspot');
     });
+    $('#explanation-settings-toggle').click(function() {
+        workbench.query.toggleExplanationSettings();
+    });
+    $(document).click(function(event) {
+        if ($('#explanation-settings-toggle').attr('aria-expanded') === 'true'
+            && $(event.target).closest('#explanation-settings').length === 0) {
+            workbench.query.setExplanationSettingsOpen(false);
+        }
+    });
     $('#explanation-properties-all').click(function() {
         workbench.query.setAllExplanationPropertiesVisible(true);
     });
     $('#explanation-properties-none').click(function() {
         workbench.query.setAllExplanationPropertiesVisible(false);
-    });
-    $('#explanation-highlight-mode').bind('keydown', function(event: any) {
-        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
-            return;
-        }
-        event.preventDefault();
-        var nextMode = event.key === 'ArrowLeft' ? 'syntax' : 'hotspot';
-        workbench.query.setExplanationHighlightMode(nextMode);
-        var nextButton = <HTMLElement>document.getElementById('explanation-highlight-' + nextMode);
-        if (nextButton) {
-            nextButton.focus();
-        }
     });
     // Add event handlers to the save name field to react to changes in it.
     $('#query-name').bind('keydown cut paste', workbench.query.handleNameChange);
@@ -3900,6 +3907,15 @@ workbench.addLoad(function queryPageLoaded() {
         }
     });
     $(document).keydown(function(event) {
+        if (event.key === 'Escape'
+            && $('#explanation-settings-toggle').attr('aria-expanded') === 'true') {
+            workbench.query.setExplanationSettingsOpen(false);
+            var settingsToggle = <HTMLElement>document.getElementById('explanation-settings-toggle');
+            if (settingsToggle) {
+                settingsToggle.focus();
+            }
+            return;
+        }
         if (event.key === 'Escape' && $('#query-diff-modal').hasClass('query-diff-modal--open')) {
             workbench.query.closeDiffModal();
         }

@@ -284,19 +284,34 @@ function createQueryBrowserHarness(options = {}) {
     const queryErrorsCompare = registerElement('div', { id: 'queryString.errors-compare' });
     const downloadExplanation = registerElement('button', { id: 'download-explanation' });
     const primaryExplainSettings = registerElement('div', { id: 'primary-explain-settings' });
+    const explanationSettings = registerElement('span', { id: 'explanation-settings' });
+    const explanationSettingsToggle = registerElement('button', {
+        id: 'explanation-settings-toggle',
+        type: 'button',
+        textContent: 'Config',
+        attributes: {
+            'aria-controls': 'explanation-settings-panel',
+            'aria-expanded': 'false'
+        }
+    });
+    const explanationSettingsPanel = registerElement('div', { id: 'explanation-settings-panel' });
+    explanationSettingsPanel.hidden = true;
     const explanationHighlightMode = registerElement('span', {
         id: 'explanation-highlight-mode',
         attributes: { 'aria-label': 'Text explanation highlighting' }
     });
-    const explanationHighlightSyntax = registerElement('button', {
+    const explanationHighlightSyntax = registerElement('input', {
         id: 'explanation-highlight-syntax',
-        type: 'button',
-        attributes: { 'aria-pressed': 'true' }
+        name: 'explanation-highlight-mode',
+        type: 'radio',
+        value: 'syntax',
+        checked: true
     });
-    const explanationHighlightHotspot = registerElement('button', {
+    const explanationHighlightHotspot = registerElement('input', {
         id: 'explanation-highlight-hotspot',
-        type: 'button',
-        attributes: { 'aria-pressed': 'false' }
+        name: 'explanation-highlight-mode',
+        type: 'radio',
+        value: 'hotspot'
     });
     explanationHighlightMode.appendChild(explanationHighlightSyntax);
     explanationHighlightMode.appendChild(explanationHighlightHotspot);
@@ -323,6 +338,12 @@ function createQueryBrowserHarness(options = {}) {
     explanationPropertyPanel.appendChild(explanationPropertyOptions);
     explanationPropertyConfig.appendChild(explanationPropertySummary);
     explanationPropertyConfig.appendChild(explanationPropertyPanel);
+    explanationSettingsPanel.appendChild(explanationHighlightMode);
+    explanationSettingsPanel.appendChild(explanationHotspotLegend);
+    explanationSettingsPanel.appendChild(explanationPropertyConfig);
+    explanationSettings.appendChild(explanationSettingsToggle);
+    explanationSettings.appendChild(explanationSettingsPanel);
+    primaryExplainSettings.appendChild(explanationSettings);
     const primaryExplainRepeatControls = registerElement('div', { id: 'primary-explain-repeat-controls' });
     const compareToggle = registerElement('button', { id: 'compare-toggle' });
     const queryDiffTrigger = registerElement('button', { id: 'query-diff-trigger' });
@@ -394,9 +415,6 @@ function createQueryBrowserHarness(options = {}) {
         queryErrorsCompare,
         downloadExplanation,
         primaryExplainSettings,
-        explanationHighlightMode,
-        explanationHotspotLegend,
-        explanationPropertyConfig,
         primaryExplainRepeatControls,
         compareToggle,
         queryDiffTrigger,

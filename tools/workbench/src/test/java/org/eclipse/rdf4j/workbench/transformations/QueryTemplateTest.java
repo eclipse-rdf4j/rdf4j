@@ -37,15 +37,18 @@ import org.junit.jupiter.api.Test;
 class QueryTemplateTest {
 
 	@Test
-	void textExplanationShouldLoadJsonHighlighterAndModeControl() throws IOException {
+	void textExplanationShouldLoadJsonHighlighterAndRadioControls() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
 
 		assertThat(queryTemplate)
 				.contains("id=\"explanation-highlight-mode\"")
-				.contains("id=\"explanation-highlight-syntax\"")
-				.contains("id=\"explanation-highlight-hotspot\"")
-				.contains("aria-pressed=\"true\"")
+				.contains("<input id=\"explanation-highlight-syntax\"")
+				.contains("<input id=\"explanation-highlight-hotspot\"")
+				.contains("name=\"explanation-highlight-mode\"")
+				.contains("type=\"radio\"")
+				.contains("for=\"explanation-highlight-syntax\">Normal</label>")
+				.contains("for=\"explanation-highlight-hotspot\">Heatmap</label>")
 				.contains("scripts/queryExplanationHighlighter.js")
 				.containsSubsequence("scripts/queryExplanationHighlighter.js", "scripts/query.js");
 	}
@@ -57,12 +60,24 @@ class QueryTemplateTest {
 		String queryStyles = readQueryStyles();
 
 		assertThat(queryTemplate)
+				.containsSubsequence("<select id=\"explain-level\">", "id=\"explanation-settings-toggle\"")
+				.containsPattern("(?s)<button id=\"explanation-settings-toggle\"[^>]*>\\s*Config\\s*</button>")
+				.contains("aria-controls=\"explanation-settings-panel\"")
+				.contains("aria-expanded=\"false\"")
+				.contains("id=\"explanation-settings-panel\"")
+				.contains("hidden=\"hidden\"")
+				.containsSubsequence("id=\"explanation-settings-panel\"", "id=\"explanation-highlight-mode\"",
+						"id=\"explanation-property-config\"")
 				.contains("id=\"explanation-property-config\"")
 				.contains("id=\"explanation-property-options\"")
 				.contains("id=\"explanation-properties-all\"")
 				.contains("id=\"explanation-properties-none\"")
-				.contains("aria-label=\"Visible query plan properties\"");
+				.contains("aria-label=\"Visible query plan properties\"")
+				.doesNotContain("query-explanation-settings__icon")
+				.doesNotContain("<details id=\"explanation-property-config\"");
 		assertThat(queryStyles)
+				.containsPattern("\\.query-explanation-settings__panel\\s*\\{[^}]*"
+						+ "bottom:\\s*calc\\(100% \\+ 0\\.5rem\\);")
 				.contains(".query-explanation-property-config")
 				.contains(".query-explanation-property-option");
 	}
@@ -72,8 +87,7 @@ class QueryTemplateTest {
 		String queryStyles = readQueryStyles();
 
 		assertThat(queryStyles)
-				.containsPattern("(?s)@media \\(max-width: 70rem\\) \\{.{0,800}?"
-						+ "\\.query-explanation-property-config\\[open\\] \\{\\s*display: block;")
+				.containsPattern("\\.query-explanation-settings__panel\\s*\\{[^}]*max-width:\\s*100%;")
 				.containsPattern("(?s)@media \\(max-width: 48rem\\) \\{.{0,800}?"
 						+ "\\.query-explanation-property-config__options \\{\\s*grid-template-columns:");
 	}
