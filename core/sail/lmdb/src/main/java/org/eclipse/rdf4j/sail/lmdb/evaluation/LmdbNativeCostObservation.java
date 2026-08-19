@@ -42,10 +42,15 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 		BUDGET_CENSORED
 	}
 
-	/** Whether this observation witnesses a normal dispatch or a bounded probe; probes never earn safety credit. */
+	/**
+	 * Whether this observation witnesses a normal dispatch, a bounded probe, or a hedge race's backup arm. Probes never
+	 * earn safety credit (they are the speculative spend the ledger exists to bound); a winning hedge backup DOES earn
+	 * — it produced the user's actual rows, and useful work has always financed credit.
+	 */
 	enum Role {
 		NORMAL,
-		PROBE
+		PROBE,
+		HEDGE_BACKUP
 	}
 
 	private static final int FEATURE_COUNT = LmdbNativeCostVector.Feature.values().length;
@@ -69,6 +74,7 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	private volatile int counterPublish;
 	private final AtomicInteger completionGuard = new AtomicInteger(OPEN_STATE);
 
+	private volatile double contendedWeightFactor = 1.0;
 	private volatile long firstOutputNanos = -1L;
 	private volatile long closedNanos = -1L;
 	private volatile Completion completion = Completion.OPEN;
@@ -158,6 +164,18 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 		}
 	}
 
+	/**
+	 * Marks this run as having overlapped a live hedge sibling: contention inflates the measured elapsed, so an
+	 * eligible completion records at {@code factor} of its normal weight (a weight discount through the existing
+	 * recording path — never a separate regime, which would break shared-component variance cancellation).
+	 */
+	void markContended(double factor) {
+		if (!Double.isFinite(factor) || factor <= 0.0 || factor > 1.0) {
+			throw new IllegalArgumentException("contended weight factor must be in (0,1]: " + factor);
+		}
+		contendedWeightFactor = factor;
+	}
+
 	void exhausted() {
 		complete(Completion.EXHAUSTED, 1.0, null);
 	}
@@ -238,9 +256,10 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 			}
 			actual = bridged.build();
 			trainedFeatures = actual;
-			double weight = result == Completion.EXPECTED_EARLY_CLOSE ? Math.max(0.25, fraction) : 1.0;
+			double weight = (result == Completion.EXPECTED_EARLY_CLOSE ? Math.max(0.25, fraction) : 1.0)
+					* contendedWeightFactor;
 			trainingResult = model.recordCompleted(consumedEstimate, actual, elapsed, weight, regimeAtDispatch);
-			if (role == Role.NORMAL) {
+			if (role != Role.PROBE) {
 				model.earnSafetyCredit(elapsed);
 			}
 		} else if (result == Completion.BUDGET_CENSORED) {

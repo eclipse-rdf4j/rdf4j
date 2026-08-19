@@ -395,7 +395,8 @@ final class LmdbNativeKernelEmitter {
 					.append(shape.root.keyCol)
 					.append(" = ")
 					.append(cursor)
-					.append(".nextKey()) != -1L) {\n");
+					.append(".nextKey()) != -1L) {\n")
+					.append("                if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 			BitSet bound = new BitSet();
 			bound.set(shape.root.keyCol);
 			emitFlatExistsNodesDirect(body, shape.exists.pipeline, 0, "                ", decoded, bound);
@@ -456,6 +457,8 @@ final class LmdbNativeKernelEmitter {
 							.append(suffix)
 							.append("++) {\n")
 							.append(indent)
+							.append("        if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
+							.append(indent)
 							.append("        long v")
 							.append(probe.valueCol)
 							.append(" = ")
@@ -486,6 +489,8 @@ final class LmdbNativeKernelEmitter {
 							.append("; row")
 							.append(suffix)
 							.append("++) {\n")
+							.append(indent)
+							.append("        if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
 							.append(indent)
 							.append("        long v")
 							.append(probe.valueCol)
@@ -1384,11 +1389,13 @@ final class LmdbNativeKernelEmitter {
 				} else if (aggregate.groupCols.length == 1) {
 					source.append("        int n = groups.size();\n")
 							.append("        for (int g = 0; g < n; g++) {\n")
+							.append("            if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
 							.append("            emitGroup(g);\n")
 							.append("        }\n");
 				} else {
 					source.append("        int n = groupKeys.size();\n")
 							.append("        for (int g = 0; g < n; g++) {\n")
+							.append("            if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
 							.append("            emitGroup(g);\n")
 							.append("        }\n");
 				}
@@ -2491,6 +2498,8 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("if (").append(keyRunCursor).append(" != null) {\n");
 				body.append(indent).append("    while (").append(keyRunCursor).append(".advance()) {\n");
 				body.append(indent)
+						.append("        if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+				body.append(indent)
 						.append("        v")
 						.append(keyCol)
 						.append(" = ")
@@ -2523,6 +2532,7 @@ final class LmdbNativeKernelEmitter {
 			boolean ctx = ctxActive(producer);
 			body.append(open).append("while (rpos < rend) {\n");
 			String loop = open + "    ";
+			body.append(loop).append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 			body.append(loop).append("int rn = (int) Math.min(rend - rpos, (long) KernelRuntime.VECTOR_SIZE);\n");
 			// Size the scratch to the run actually seen, growing monotonically. A kernel instance is created per
 			// cursor open, and a correlated open happens per outer row, so allocating a full vector up front would
@@ -3600,6 +3610,8 @@ final class LmdbNativeKernelEmitter {
 					.append(indent)
 					.append("    for (int sipIndex = 0; sipIndex < sipDomainLength; sipIndex++) {\n")
 					.append(indent)
+					.append("        if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
+					.append(indent)
 					.append("        long sipKey = sipDomain[sipDomainOffset + sipIndex];\n");
 			if (telemetryEnabled()) {
 				body.append(indent).append("        sipBatchTests").append(site).append("++;\n");
@@ -3732,6 +3744,8 @@ final class LmdbNativeKernelEmitter {
 					.append(", 0, sipK")
 					.append(site)
 					.append(".length)) > 0) {\n")
+					.append(indent)
+					.append("        KernelRuntime.checkCancelled(cancel);\n")
 					.append(indent)
 					.append("        if (sipDecoded")
 					.append(site)
@@ -3870,6 +3884,7 @@ final class LmdbNativeKernelEmitter {
 						.append(buffer)
 						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
 				body.append(indent).append("while (n > 0) {\n");
+				body.append(indent).append("    KernelRuntime.checkCancelled(cancel);\n");
 				body.append(indent).append("    for (int i = 0; i < n; i++) {\n");
 				emitScanColumns(body, indent + "        ", scan, buffer, "i");
 				body.append(next(nextTemplate, indent + "        "));
@@ -3895,6 +3910,7 @@ final class LmdbNativeKernelEmitter {
 						.append(buffer)
 						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
 				body.append(indent).append("while (n > 0) {\n");
+				body.append(indent).append("    KernelRuntime.checkCancelled(cancel);\n");
 				body.append(indent).append("    for (int i = 0; i < n; i++) {\n");
 				emitPlanColumns(body, indent + "        ", plan, buffer, "i");
 				body.append(next(nextTemplate, indent + "        "));
@@ -3940,6 +3956,7 @@ final class LmdbNativeKernelEmitter {
 							.append(", 0, ")
 							.append(keyBuffer)
 							.append(".length)) > 0) {\n");
+					body.append(indent).append("        KernelRuntime.checkCancelled(cancel);\n");
 					body.append(indent).append("        for (int kj = 0; kj < kn; kj++) {\n");
 					body.append(indent)
 							.append("            v")
@@ -4009,7 +4026,9 @@ final class LmdbNativeKernelEmitter {
 						.append(enumerate.domain)
 						.append(";\n")
 						.append(indent)
-						.append("for (int i = 0; i < domL; i++) {\n");
+						.append("for (int i = 0; i < domL; i++) {\n")
+						.append(indent)
+						.append("    if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				if (sipSite >= 0) {
 					body.append(indent).append("    sipDriven").append(sipSite).append("++;\n");
 				}
@@ -4267,6 +4286,8 @@ final class LmdbNativeKernelEmitter {
 				if (close.multiplicity && !booleanMode) {
 					body.append(indent)
 							.append("        for (long r = 0L; r < m; r++) {\n")
+							.append(indent)
+							.append("            if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
 							.append(next(nextTemplate, indent + "            "))
 							.append(indent)
 							.append("        }\n");
@@ -4531,7 +4552,9 @@ final class LmdbNativeKernelEmitter {
 						.append(probe.tableId)
 						.append(");\n")
 						.append(indent)
-						.append("while (m >= 0) {\n");
+						.append("while (m >= 0) {\n")
+						.append(indent)
+						.append("    if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 				for (int i = 0; i < probe.dstCols.length; i++) {
 					body.append(indent)
 							.append("    v")
@@ -4674,6 +4697,8 @@ final class LmdbNativeKernelEmitter {
 					.append(indent)
 					.append("while (ok) {\n")
 					.append(indent)
+					.append("    if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
+					.append(indent)
 					.append("    boolean exhausted = false;\n")
 					.append(indent)
 					.append("    long max = 0L;\n")
@@ -4752,6 +4777,8 @@ final class LmdbNativeKernelEmitter {
 					.append(" = max;\n")
 					.append(indent)
 					.append("        for (long t = 0L; t < times; t++) {\n")
+					.append(indent)
+					.append("            if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
 					.append(next(nextTemplate, indent + "            "))
 					.append(indent)
 					.append("        }\n")

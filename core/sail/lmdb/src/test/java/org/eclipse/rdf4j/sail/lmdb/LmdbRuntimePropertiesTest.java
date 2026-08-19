@@ -154,8 +154,33 @@ class LmdbRuntimePropertiesTest {
 			assertThat(booleanValue(stateByName(states, name), "defaultEnabled")).as(name).isTrue();
 		}
 		assertThat(booleanValue(stateByName(states, "rdf4j.lmdb.leftjoin.sweep.enabled"), "defaultEnabled")).isFalse();
+		// Default ON since the HC:10 fall-through incident (2026-08-19): with janino enabled but the compiled kernel
+		// unavailable (compile pending/failed, shape churn after a regime flip), the IR rung must serve the
+		// interpreter instead of declining into a catastrophically slower ladder arm.
 		assertThat(booleanValue(stateByName(states, "rdf4j.lmdb.kernelInterpreter.warmup"), "defaultEnabled"))
-				.isFalse();
+				.isTrue();
+	}
+
+	/** The runtime gate must agree with the registry default: warm-up serves with the property absent. */
+	@Test
+	void interpreterWarmupTierIsOnByDefaultAtRuntime() throws Exception {
+		String warmupProperty = "rdf4j.lmdb.kernelInterpreter.warmup";
+		String interpreterProperty = "rdf4j.lmdb.kernelInterpreter.enabled";
+		String previousWarmup = System.getProperty(warmupProperty);
+		String previousInterpreter = System.getProperty(interpreterProperty);
+		try {
+			System.clearProperty(warmupProperty);
+			System.clearProperty(interpreterProperty);
+			Class<?> interpreter = Class.forName("org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelInterpreter");
+			Method warmupEnabled = interpreter.getDeclaredMethod("warmupEnabled");
+			warmupEnabled.setAccessible(true);
+			assertThat(warmupEnabled.invoke(null)).isEqualTo(true);
+			System.setProperty(warmupProperty, "false");
+			assertThat(warmupEnabled.invoke(null)).isEqualTo(false);
+		} finally {
+			restore(warmupProperty, previousWarmup);
+			restore(interpreterProperty, previousInterpreter);
+		}
 	}
 
 	@Test

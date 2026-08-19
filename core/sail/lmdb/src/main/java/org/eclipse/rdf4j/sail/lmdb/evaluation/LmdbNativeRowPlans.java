@@ -187,6 +187,9 @@ final class FilterCursor implements RowCursor {
 	final NativeBooleanFilter filter;
 	final RowState row;
 	boolean closed;
+	// The probe deadline is cooperative: a low-selectivity filter can reject rows for arbitrarily long without the
+	// consumer's drain loop (which polls per EMITTED row) ever regaining control, so this loop must poll itself.
+	int probePollTick;
 
 	FilterCursor(RowCursor arg, NativeBooleanFilter filter, RowState row) {
 		this.arg = arg;
@@ -197,6 +200,7 @@ final class FilterCursor implements RowCursor {
 	@Override
 	public boolean next() throws IOException {
 		while (arg.next()) {
+			LmdbNativeProbeDeadline.poll(++probePollTick);
 			if (filter.accept(row)) {
 				return true;
 			}
@@ -284,6 +288,7 @@ final class ExtensionCursor implements RowCursor {
 	final CopyBinding[] copies;
 	final RowState row;
 	int activeMark = -1;
+	int probePollTick;
 
 	ExtensionCursor(RowCursor arg, CopyBinding[] copies, RowState row) {
 		this.arg = arg;
@@ -295,6 +300,8 @@ final class ExtensionCursor implements RowCursor {
 	public boolean next() throws IOException {
 		release();
 		while (arg.next()) {
+			// a run of bind conflicts advances without emitting; poll or the probe deadline starves
+			LmdbNativeProbeDeadline.poll(++probePollTick);
 			int mark = row.mark();
 			boolean ok = true;
 			for (CopyBinding copy : copies) {
@@ -352,9 +359,13 @@ final class RowDistinctPlan implements SlotPlan {
 		RowCursor inner = arg.open(row);
 		NativeDistinctTracker tracker = new NativeDistinctTracker(slots);
 		return new RowCursor() {
+			int probePollTick;
+
 			@Override
 			public boolean next() throws IOException {
 				while (inner.next()) {
+					// a long duplicate run advances without emitting; poll or the probe deadline starves
+					LmdbNativeProbeDeadline.poll(++probePollTick);
 					if (tracker.add(row.slots)) {
 						return true;
 					}
@@ -445,6 +456,7 @@ final class MinusCursor implements RowCursor {
 	/** Build-once hash anti-join for multi-operator right sides (Milestone 5); single patterns use the probes above. */
 	final SubplanMarkProbe markProbe;
 	LongVerdictMemo memo;
+	int probePollTick;
 
 	MinusCursor(RowCursor leftCursor, SlotPlan right, long sharedMask, RowState row) {
 		this.leftCursor = leftCursor;
@@ -483,6 +495,8 @@ final class MinusCursor implements RowCursor {
 	@Override
 	public boolean next() throws IOException {
 		while (leftCursor.next()) {
+			// every removed left row performs right-side probe work without emitting; poll or the deadline starves
+			LmdbNativeProbeDeadline.poll(++probePollTick);
 			if (!hasCompatibleRight()) {
 				return true;
 			}
@@ -611,6 +625,7 @@ final class MinusCursor implements RowCursor {
 			// the left row. Iterate until a genuinely compatible right solution is found.
 			try (RowCursor cursor = right.open(row)) {
 				while (cursor.next()) {
+					LmdbNativeProbeDeadline.poll(++probePollTick);
 					long overlap = leftBoundMask & row.boundMask() & compatibilityMask;
 					if (overlap == 0L && !hasUnslottedBaseBindings) {
 						continue;
@@ -738,6 +753,7 @@ final class ValuesCursor implements RowCursor {
 	final boolean exactFilterRewrite;
 	int index;
 	int activeMark = -1;
+	int probePollTick;
 
 	ValuesCursor(ValuesRow[] rows, RowState row) {
 		this(rows, row, false);
@@ -753,6 +769,7 @@ final class ValuesCursor implements RowCursor {
 	public boolean next() {
 		release();
 		while (index < rows.length) {
+			LmdbNativeProbeDeadline.poll(++probePollTick);
 			ValuesRow candidate = rows[index++];
 			int mark = row.mark();
 			boolean ok = true;

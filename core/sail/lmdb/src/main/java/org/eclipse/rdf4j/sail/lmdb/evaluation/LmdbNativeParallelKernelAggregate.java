@@ -283,6 +283,11 @@ final class LmdbNativeParallelKernelAggregate {
 				: null;
 		AtomicReference<Throwable> failure = new AtomicReference<>();
 		LmdbFusedSipFactorizedRuntime.Session fusedParent = LmdbFusedSipFactorizedRuntime.currentOrNull();
+		// NOTE (hedge plan M8): workers deliberately do NOT inherit the dispatch thread's probe deadline yet. The row
+		// twin (LmdbNativeParallelKernelRows) inherits it behind a cancelled-flag unwind that keeps worker sources
+		// safe; this aggregate twin's worker cleanup is not abort-safe, and inheriting here made a mid-kernel trip
+		// leak a sibling reader (dataset close then spins on its write lock). Inherit only together with the row
+		// twin's cancellation/unwind pattern.
 		ArrayList<Future<HashMap<LongsKey, Partial>>> futures = new ArrayList<>(threads);
 		for (int w = 0; w < threads; w++) {
 			NativeLmdbQuerySource source = sources[w];

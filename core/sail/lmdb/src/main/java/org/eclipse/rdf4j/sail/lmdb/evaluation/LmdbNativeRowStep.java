@@ -1495,6 +1495,7 @@ final class NativeExistsPatternCursor implements AutoCloseable {
 	final RowState row;
 	final Frame[] frames;
 	boolean closed;
+	int probePollTick;
 
 	NativeExistsPatternCursor(Plan plan, RowState row) {
 		this.patterns = plan.patterns;
@@ -1553,6 +1554,9 @@ final class NativeExistsPatternCursor implements AutoCloseable {
 	boolean exists() throws IOException {
 		int depth = 0;
 		while (!closed && depth >= 0) {
+			// one accept() can drive this backtracking search over arbitrarily many candidate rows; poll or the
+			// probe deadline starves (the consumer's drain loop only polls per emitted row)
+			LmdbNativeProbeDeadline.poll(++probePollTick);
 			Frame frame = frames[depth];
 			if (!frame.opened) {
 				frame.open(patterns[depth], row);
@@ -1656,6 +1660,7 @@ final class NativeExistsPatternCursor implements AutoCloseable {
 		PatternCursor cursor;
 		boolean opened;
 		int activeMark = -1;
+		int probePollTick;
 
 		void open(PatternPlan pattern, RowState row) throws IOException {
 			cursor = pattern.openRawForExistence(row);
@@ -1666,6 +1671,7 @@ final class NativeExistsPatternCursor implements AutoCloseable {
 			release(row);
 			long[] quad;
 			while ((quad = cursor.next()) != null) {
+				LmdbNativeProbeDeadline.poll(++probePollTick);
 				int mark = row.mark();
 				if (pattern.bind(quad, row)) {
 					activeMark = mark;
@@ -2461,6 +2467,7 @@ final class PrefixRunRowCursor implements RowCursor {
 	final LmdbPrefixRunCursor delegate;
 	int mark = -1;
 	boolean closed;
+	int probePollTick;
 
 	PrefixRunRowCursor(RowState row, PatternPlan pattern, LmdbPrefixRunCursor delegate) {
 		this.row = row;
@@ -2475,6 +2482,8 @@ final class PrefixRunRowCursor implements RowCursor {
 		}
 		rollback();
 		while (delegate.next()) {
+			// a run of bind failures advances without emitting; poll or the probe deadline starves
+			LmdbNativeProbeDeadline.poll(++probePollTick);
 			int candidateMark = row.mark();
 			if (pattern.bind(delegate.quad(), row)) {
 				mark = candidateMark;

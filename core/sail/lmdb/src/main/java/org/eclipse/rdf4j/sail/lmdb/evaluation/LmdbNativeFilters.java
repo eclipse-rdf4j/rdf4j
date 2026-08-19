@@ -562,7 +562,11 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 			if (namedContextScope && context == UNKNOWN) {
 				try (RecordIterator records = source.statements(subj, pred, obj, context)) {
 					long[] quad;
+					int probePollTick = 0;
 					while ((quad = records.next()) != null) {
+						// one accept() can scan every default-graph statement of the pattern; poll or the probe
+						// deadline starves
+						LmdbNativeProbeDeadline.poll(++probePollTick);
 						if (quad[TripleIndex.CONTEXT_IDX] != NULL_CONTEXT_ID) {
 							return true;
 						}

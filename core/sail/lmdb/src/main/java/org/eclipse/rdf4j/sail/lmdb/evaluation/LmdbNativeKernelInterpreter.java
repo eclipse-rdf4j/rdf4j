@@ -76,8 +76,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.kernelInterpreter.enabled";
 	/**
 	 * Pending-compile warm-up tier (M5): with janino ENABLED, serve the interpreter whenever the codegen cache returns
-	 * null (below threshold, compile pending, or compile failed) instead of declining. Default OFF so benchmark arms
-	 * stay clean (D4); flipping the default is a separate user decision.
+	 * null (below threshold, compile pending, or compile failed) instead of declining. Default ON since 2026-08-19: the
+	 * HC:10 benchmark showed that declining here drops the dispatch onto the next runnable ladder arm — a sequential
+	 * plan ~2500x slower on adjacency-heavy shapes — for every iteration of a compile-unavailability window. The
+	 * interpreter executes the same validated IR, and its evidence stays under the interpreted variant keys (D1), so
+	 * compiled-tier cost posteriors remain clean. Benchmark arms that need a pure compiled tier pin this property to
+	 * false explicitly.
 	 */
 	static final String WARMUP_PROPERTY = "rdf4j.lmdb.kernelInterpreter.warmup";
 
@@ -91,7 +95,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	static boolean warmupEnabled() {
-		return enabled() && Boolean.parseBoolean(System.getProperty(WARMUP_PROPERTY, "false"));
+		return enabled() && Boolean.parseBoolean(System.getProperty(WARMUP_PROPERTY, "true"));
 	}
 
 	/**
@@ -657,6 +661,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		int sipSite = telemetry && enumerate.sipDriven ? registerSipDriven(enumerate) : -1;
 		return () -> {
 			for (int i = 0; i < domL; i++) {
+				poll();
 				if (sipSite >= 0) {
 					sipDriven[sipSite]++;
 				}
@@ -1313,6 +1318,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			}
 			int m = table.lookup(keyScratch);
 			while (m >= 0) {
+				poll();
 				for (int j = 0; j < probe.dstCols.length; j++) {
 					v[probe.dstCols[j]] = table.payload(m, j);
 				}
@@ -1843,11 +1849,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		} else if (aggregate.groupCols.length == 1) {
 			int n = groups.size();
 			for (int g = 0; g < n; g++) {
+				poll();
 				emitHashedGroup(g);
 			}
 		} else {
 			int n = groupKeys.size();
 			for (int g = 0; g < n; g++) {
+				poll();
 				emitHashedGroup(g);
 			}
 		}

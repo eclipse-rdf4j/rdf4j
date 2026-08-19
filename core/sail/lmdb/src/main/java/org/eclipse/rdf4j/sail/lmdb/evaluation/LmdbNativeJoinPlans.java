@@ -791,6 +791,7 @@ final class JoinCursor implements RowCursor {
 	final RowState row;
 	final PathTargetSet pathTargets;
 	final boolean ownsPathTargets;
+	private int probePollTick;
 	RowCursor rightCursor;
 	/**
 	 * When the right side reads no slot produced by the left side (and its reads are fully known, see
@@ -857,6 +858,9 @@ final class JoinCursor implements RowCursor {
 			return replayNext();
 		}
 		while (true) {
+			// A long run of left rows with empty right sides spins here without emitting; the consumer's per-row
+			// polls never fire then, so this loop needs its own poll point (M0 poll-coverage pattern).
+			LmdbNativeProbeDeadline.poll(++probePollTick);
 			if (patternRightActive) {
 				if (nextPatternRight()) {
 					if (capturingReplay) {

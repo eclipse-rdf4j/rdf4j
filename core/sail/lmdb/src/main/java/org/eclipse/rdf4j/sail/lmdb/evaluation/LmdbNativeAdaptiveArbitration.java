@@ -48,6 +48,25 @@ final class LmdbNativeAdaptiveArbitration {
 				LmdbNativeSafetyLedger.Reservation reservation, LmdbNativeRegimeKey regime, long epoch,
 				String reason) implements DispatchPlan<T> {
 		}
+
+		/**
+		 * A probe whose retained fallback additionally launches in parallel after {@code launchDelayNanos} (0 =
+		 * immediately): the trial and the incumbent race to their publication milestones instead of paying deadline +
+		 * serial fallback. Emitted only when the SLO-derived latest launch lands before the trial's deadline; execution
+		 * degrades it back to its inner {@link Probe} when no pool slot or sibling snapshot is available.
+		 */
+		record Hedge<T> (Probe<T> probe, long launchDelayNanos) implements DispatchPlan<T> {
+		}
+
+		/**
+		 * A normal dispatch armed with a watchdog: if the winner has not reached its publication milestone by
+		 * {@code triggerNanos} (anchored to the winner's own predictive high99), the trusted runner-up launches as a
+		 * late parallel backup and the two race. The ledger reservation for the rescue is taken at fire time, not here
+		 * — an armed-but-never-fired guard must cost nothing.
+		 */
+		record Guarded<T> (Normal<T> normal, long triggerNanos, Candidate<T> backup,
+				LmdbNativeCostPrediction backupPrediction) implements DispatchPlan<T> {
+		}
 	}
 
 	/** Probe eligibility inputs owned by the dispatch site; {@code harnessPresent} false disables probing entirely. */
@@ -56,6 +75,19 @@ final class LmdbNativeAdaptiveArbitration {
 
 		static ProbeContext disabled() {
 			return new ProbeContext(LmdbNativeProbeConfig.defaults(), new LmdbNativeQueryProbeBudget(), false);
+		}
+	}
+
+	/**
+	 * Hedge eligibility inputs owned by the dispatch site. {@code supportPresent} false means the site cannot run a
+	 * backup arm (no shadow-context support registered) and no Hedge/Guarded plan is ever emitted;
+	 * {@code spareCapacity} reports whether more than half the hedge permits are free (gates the h = 0 exploratory
+	 * launch).
+	 */
+	record HedgeContext(LmdbNativeHedgeConfig config, boolean supportPresent, boolean spareCapacity) {
+
+		static HedgeContext disabled() {
+			return new HedgeContext(LmdbNativeHedgeConfig.defaults(), false, false);
 		}
 	}
 
@@ -68,6 +100,11 @@ final class LmdbNativeAdaptiveArbitration {
 
 	static <T> DispatchPlan<T> choose(List<Candidate<T>> offered, LmdbNativeAdaptiveCostModel model,
 			ProbeContext probeContext) {
+		return choose(offered, model, probeContext, HedgeContext.disabled());
+	}
+
+	static <T> DispatchPlan<T> choose(List<Candidate<T>> offered, LmdbNativeAdaptiveCostModel model,
+			ProbeContext probeContext, HedgeContext hedgeContext) {
 		Objects.requireNonNull(offered, "offered");
 		Objects.requireNonNull(model, "model");
 		if (offered.isEmpty()) {
@@ -90,24 +127,86 @@ final class LmdbNativeAdaptiveArbitration {
 		}
 		Priced<T> rescued = coldStartRescue(priced);
 		if (rescued != null) {
-			return new DispatchPlan.Normal<>(rescued.candidate, rescued.prediction,
-					"cold-start guard: unmeasured incumbent yields to the cheapest measured rival");
+			return maybeGuard(new DispatchPlan.Normal<>(rescued.candidate, rescued.prediction,
+					"cold-start guard: unmeasured incumbent yields to the cheapest measured rival"), priced,
+					hedgeContext);
 		}
 
 		LmdbNativePosteriorConfig posteriorConfig = model.store().posteriorConfig();
 		Priced<T> selected = selectWithinFrontier(priced, posteriorConfig.displacementLogGamma(),
 				posteriorConfig.displacementLogGammaOrderLosing());
 		if (selected.candidate != incumbent) {
-			return new DispatchPlan.Normal<>(selected.candidate, selected.prediction,
-					"99% latent displacement with shared-component cancellation");
+			return maybeGuard(new DispatchPlan.Normal<>(selected.candidate, selected.prediction,
+					"99% latent displacement with shared-component cancellation"), priced, hedgeContext);
 		}
 
 		DispatchPlan.Probe<T> probe = maybeProbe(priced, selected, model, probeContext);
 		if (probe != null) {
+			return maybeHedgeProbe(probe, probeContext, hedgeContext);
+		}
+		return maybeGuard(new DispatchPlan.Normal<>(incumbent, incumbentPrediction,
+				"latent intervals overlap; retained stable strategy preference"), priced, hedgeContext);
+	}
+
+	/**
+	 * Wraps a probe into a parallel hedge when the SLO-derived latest backup launch lands before the trial's deadline
+	 * (i.e. the serial timeout-then-fallback path would break the slowdown budget). The site must be able to run a
+	 * backup arm; the pool-slot and sibling-snapshot preconditions are the arbiter's at execution time.
+	 */
+	static <T> DispatchPlan<T> maybeHedgeProbe(DispatchPlan.Probe<T> probe, ProbeContext probeContext,
+			HedgeContext hedgeContext) {
+		if (hedgeContext == null || !hedgeContext.supportPresent() || !hedgeContext.config().enabled()) {
 			return probe;
 		}
-		return new DispatchPlan.Normal<>(incumbent, incumbentPrediction,
-				"latent intervals overlap; retained stable strategy preference");
+		LmdbNativeCostPrediction anchor = probe.fallbackPrediction();
+		long delay = LmdbNativeHedgePolicy.probeHedgeDelayNanos(anchor.expectedNanos(), anchor.high95Nanos(),
+				probe.deadlineNanos(), !probe.trialPrediction().uniformlyPriceable(), hedgeContext.spareCapacity(),
+				probeContext.config(), hedgeContext.config());
+		if (delay < 0L) {
+			return probe;
+		}
+		return new DispatchPlan.Hedge<>(probe, delay);
+	}
+
+	/**
+	 * Arms a normal winner with a watchdog when a trusted runner-up exists and the winner's own bound clears the arming
+	 * floor. The runner-up must carry real exact-variant evidence — the rescue's whole premise is "we know the backup's
+	 * cost"; family shrinkage or structural priors do not qualify. No ledger reservation happens here: an
+	 * armed-but-never-fired guard costs one timer schedule/cancel.
+	 */
+	static <T> DispatchPlan<T> maybeGuard(DispatchPlan.Normal<T> normal, List<Priced<T>> priced,
+			HedgeContext hedgeContext) {
+		if (hedgeContext == null || !hedgeContext.supportPresent() || !hedgeContext.config().enabled()
+				|| !hedgeContext.config().normalGuardEnabled()) {
+			return normal;
+		}
+		LmdbNativeHedgeConfig config = hedgeContext.config();
+		Priced<T> runnerUp = null;
+		for (Priced<T> rival : priced) {
+			if (rival.candidate == normal.candidate()) {
+				continue;
+			}
+			LmdbNativeCostPrediction prediction = rival.prediction;
+			if (prediction.evidenceSource() != LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
+					|| prediction.nEff() < config.guardMinBackupEvidence() || prediction.quarantined()
+					|| !prediction.uniformlyPriceable()) {
+				continue;
+			}
+			if (runnerUp == null || prediction.expectedNanos() < runnerUp.prediction.expectedNanos()
+					|| (prediction.expectedNanos() == runnerUp.prediction.expectedNanos()
+							&& rival.candidate.estimate.variantKey()
+									.compareTo(runnerUp.candidate.estimate.variantKey()) < 0)) {
+				runnerUp = rival;
+			}
+		}
+		if (runnerUp == null) {
+			return normal;
+		}
+		long trigger = LmdbNativeHedgePolicy.guardTriggerNanos(normal.prediction(), runnerUp.prediction, config);
+		if (trigger < 0L) {
+			return normal;
+		}
+		return new DispatchPlan.Guarded<>(normal, trigger, runnerUp.candidate, runnerUp.prediction);
 	}
 
 	/**
@@ -232,7 +331,11 @@ final class LmdbNativeAdaptiveArbitration {
 			return null;
 		}
 		Priced<T> incumbent = priced.get(0);
-		if (incumbent.prediction.evidenceSource() == LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT) {
+		// A quarantined incumbent (e.g. it just lost a guarded race — its price is untrusted for the TTL) yields
+		// exactly like an unmeasured one: the dispatch after a guard loss picks the measured runner-up outright
+		// instead of re-racing (anti-ping-pong, first half).
+		if (incumbent.prediction.evidenceSource() == LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
+				&& !incumbent.prediction.quarantined()) {
 			return null;
 		}
 		Priced<T> rescue = null;

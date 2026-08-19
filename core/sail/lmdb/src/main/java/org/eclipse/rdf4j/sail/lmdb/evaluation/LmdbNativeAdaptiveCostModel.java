@@ -232,6 +232,21 @@ final class LmdbNativeAdaptiveCostModel {
 				&& deadlineNanos > before.high99Nanos();
 		double bound = Math.log(Math.max(1.0, (double) deadlineNanos)) - quote.logBase;
 		store.posteriors().updateCensored(quote.exactKey, bound, quote.epoch, quote.nowMillis);
+		if (severeMiss && before.components() != null) {
+			// Only severe censors feed the drift detector, with the Huber-clipped standardized deficit: one clipped
+			// feed (<= huberSigmas) cannot trip the detector, but systemic mispricing across arms and dispatches
+			// accumulates exactly as Page-Hinkley intends. Non-severe censors carry no drift signal — the bound was
+			// inside the arm's own predictive interval.
+			LmdbNativeCostPrediction.Components components = before.components();
+			double sigma = Math.sqrt(Math.max(1e-12, components.varGlobal() + components.varFamily()
+					+ components.varExact() + components.noiseVar()));
+			double deficit = (Math.log(Math.max(1.0, (double) deadlineNanos))
+					- (components.logBase() + components.meanLog())) / sigma;
+			double clipped = LmdbNativeGaussianMath.huberClip(deficit, store.posteriorConfig().huberSigmas());
+			if (store.changeDetector().offer(quote.exactKey.familyKey(), clipped)) {
+				store.regimeTracker().forceEpochBump();
+			}
+		}
 		store.noteEvidenceRecorded();
 		return new CensorResult(true, severeMiss,
 				severeMiss ? "censored above the previous 99% bound" : "censored at deadline");

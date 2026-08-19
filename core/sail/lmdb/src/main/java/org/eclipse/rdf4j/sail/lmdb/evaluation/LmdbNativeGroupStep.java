@@ -513,7 +513,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 
 		try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter
 				.<List<BindingSet>>forExpr(explainTarget, source)
-				.probeHarness(LmdbNativeProbeHarness.blocking())) {
+				.probeHarness(LmdbNativeProbeHarness.blocking())
+				.hedgeSupport(hedgeSupport())) {
 			if (existsIntersection != null) {
 				arbiter.offer(() -> estimatedProposal(() -> {
 					List<BindingSet> result = existsIntersection.evaluate(source, row);
@@ -653,6 +654,57 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		if (LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
 			metrics.deferStrategy(explainTarget, LmdbNativeParallelAggregation.consumeLastStrategyLabel());
 		}
+	}
+
+	/**
+	 * Hedge-backup support for this blocking site: the backup arm reruns ONE pinned strategy on a sibling snapshot
+	 * source with a fresh shadow row (the {@link #evaluateSequentialFallback} rerun pattern), fully materialized on the
+	 * pool thread. v1 pins the sequential family only — the trusted incumbent/runner-up in practice; other tags return
+	 * null and the race degrades to the serial path. Shadow reruns carry no explain target, so attempt metrics and
+	 * execution-path records are naturally suppressed.
+	 */
+	LmdbNativeHedgeSupport<List<BindingSet>> hedgeSupport() {
+		return new LmdbNativeHedgeSupport<>() {
+
+			@Override
+			public LmdbNativeHedgeSupport.ShadowContext openShadowContext() throws IOException {
+				NativeLmdbQuerySource.ParallelSource[] siblings = source.openParallelSources(1);
+				if (siblings == null || siblings.length != 1) {
+					return null;
+				}
+				RowState shadowRow = new RowState(siblings[0], layout, base);
+				return new LmdbNativeHedgeSupport.ShadowContext(siblings[0], shadowRow);
+			}
+
+			@Override
+			public List<BindingSet> produceBackup(LmdbNativeHedgeSupport.ShadowContext context, String pinnedTag,
+					LmdbNativeCostObservation observation) {
+				if (!supportsTag(pinnedTag)) {
+					return null;
+				}
+				RowState shadowRow = context.shadowRow;
+				if (!initialize(shadowRow)) {
+					return noInputResult();
+				}
+				return evaluateSequential(shadowRow, new AggContext(context.sibling, strictCompare, true),
+						LmdbNativeAttemptMetrics.root());
+			}
+
+			@Override
+			public List<BindingSet> adopt(List<BindingSet> result) {
+				return result;
+			}
+
+			@Override
+			public void discard(List<BindingSet> result) {
+				// a materialized heap list holds no native resources
+			}
+
+			@Override
+			public boolean supportsTag(String pinnedTag) {
+				return LmdbNativeAttemptMetrics.PATH_NESTED_LOOP.equals(pinnedTag);
+			}
+		};
 	}
 
 	List<BindingSet> evaluateSequentialFallback(RowState speculativeRow, EncounterOrderFallback.Reason reason) {
