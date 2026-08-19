@@ -71,6 +71,13 @@ public interface CoreDatatype {
 		return CoreDatatypeHelper.getReverseLookup().getOrDefault(datatype, CoreDatatype.NONE);
 	}
 
+	static CoreDatatype from(String datatype) {
+		if (datatype == null) {
+			return CoreDatatype.NONE;
+		}
+		return CoreDatatypeHelper.getReverseStringLookup().getOrDefault(datatype, CoreDatatype.NONE);
+	}
+
 	enum XSD implements CoreDatatype {
 
 		ENTITIES(iri("ENTITIES"), false, false, false, true, false, false, false),

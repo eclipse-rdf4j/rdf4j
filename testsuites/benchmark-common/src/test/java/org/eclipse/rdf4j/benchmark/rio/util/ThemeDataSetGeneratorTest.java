@@ -146,6 +146,29 @@ class ThemeDataSetGeneratorTest {
 		return (Model) generate.invoke(null, config);
 	}
 
+	private static void invoke(Object target, String methodName, int value) throws Exception {
+		target.getClass().getMethod(methodName, int.class).invoke(target, value);
+	}
+
+	private static void invoke(Object target, String methodName, long value) throws Exception {
+		target.getClass().getMethod(methodName, long.class).invoke(target, value);
+	}
+
+	private static long maxObjectsPerSubject(Model model, IRI predicate) {
+		return model.filter(null, predicate, null)
+				.subjects()
+				.stream()
+				.mapToLong(subject -> model.filter(subject, predicate, null).objects().size())
+				.max()
+				.orElse(0L);
+	}
+
+	private static double sparseCoverageSubjects(Model model, IRI subjectType, IRI predicate) {
+		long subjects = model.filter(null, RDF.TYPE, subjectType).subjects().size();
+		long withPredicate = model.filter(null, predicate, null).subjects().size();
+		return (double) withPredicate / subjects;
+	}
+
 	private static void assertClique(Model model, IRI follows, int startId, int size) {
 		for (int i = 0; i < size; i++) {
 			IRI source = socialUser(startId + i);

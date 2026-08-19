@@ -64,8 +64,18 @@ public interface ValueStoreRevision {
 			return valueStore;
 		}
 
+		@Override
 		public boolean resolveValue(long id, LmdbValue value) {
 			return valueStore != null && valueStore.resolveValue(id, value);
+		}
+
+		@Override
+		public void resolveValues(LmdbValue[] values, int[] order, int count) {
+			if (valueStore != null) {
+				valueStore.resolveValues(this, null, values, order, count);
+			} else {
+				resolveValuesOneByOne(values, order, count);
+			}
 		}
 	}
 
@@ -101,6 +111,15 @@ public interface ValueStoreRevision {
 			}
 			return false;
 		}
+
+		@Override
+		public void resolveValues(LmdbValue[] values, int[] order, int count) {
+			if (valueStore != null) {
+				valueStore.resolveValues(revision, revision, values, order, count);
+			} else {
+				resolveValuesOneByOne(values, order, count);
+			}
+		}
 	}
 
 	long getRevisionId();
@@ -108,6 +127,16 @@ public interface ValueStoreRevision {
 	ValueStore getValueStore();
 
 	boolean resolveValue(long id, LmdbValue value);
+
+	default void resolveValues(LmdbValue[] values, int[] order, int count) {
+		resolveValuesOneByOne(values, order, count);
+	}
+
+	private static void resolveValuesOneByOne(LmdbValue[] values, int[] order, int count) {
+		for (int i = 0; i < count; i++) {
+			values[order[i]].init();
+		}
+	}
 
 	default int getStoredHash(long id) {
 		ValueStore valueStore = getValueStore();

@@ -430,8 +430,11 @@ class TxnManager {
 	}
 
 	void close() {
-		for (Txn txn : activeTransactions()) {
-			txn.close();
+		synchronized (active) {
+			for (Txn txn : new ArrayList<>(active.keySet())) {
+				txn.close();
+			}
+			closePooledReaders();
 		}
 	}
 
@@ -562,13 +565,13 @@ class TxnManager {
 			if (closed) {
 				return;
 			}
+			version++;
 			if (txnActive) {
 				mdb_txn_reset(txn);
 				txnActive = false;
 				notifyReaderInactive(this);
 				activate();
 			}
-			version++;
 		}
 
 		/**
@@ -584,8 +587,8 @@ class TxnManager {
 			}
 			if (active) {
 				activate();
+			} else if (txnActive) {
 				version++;
-			} else {
 				deactivate();
 			}
 		}

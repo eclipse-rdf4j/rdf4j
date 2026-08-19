@@ -60,11 +60,15 @@ final class LmdbDataFile implements Closeable {
 	}
 
 	LmdbPage readPage(long pgno, LmdbMeta meta) throws IOException {
+		return readPage(pgno, meta, null);
+	}
+
+	LmdbPage readPage(long pgno, LmdbMeta meta, ByteBuffer reusableBuffer) throws IOException {
 		long offset = pgno * meta.pageSize();
 		if (offset < 0 || offset + meta.pageSize() > meta.mapSize()) {
 			throw new IOException("Page " + pgno + " is outside map bounds (mapsize=" + meta.mapSize() + ")");
 		}
-		ByteBuffer page = readAt(offset, meta.pageSize(), meta.byteOrder());
+		ByteBuffer page = readAt(offset, meta.pageSize(), meta.byteOrder(), reusableBuffer);
 		return LmdbPage.parse(pgno, page, meta.pageSize());
 	}
 
@@ -74,7 +78,7 @@ final class LmdbDataFile implements Closeable {
 	}
 
 	private LmdbMeta readMetaPage(int metaPage, int pageSize, ByteOrder order) throws IOException {
-		ByteBuffer page = readAt((long) metaPage * pageSize, pageSize, order);
+		ByteBuffer page = readAt((long) metaPage * pageSize, pageSize, order, null);
 		int flags = LmdbFormat.unsignedShort(page, 10);
 		if ((flags & LmdbFormat.P_META) == 0) {
 			return null;
@@ -98,7 +102,7 @@ final class LmdbDataFile implements Closeable {
 	}
 
 	private int probePageSize(ByteOrder order) throws IOException {
-		ByteBuffer probe = readAt(0, META_PROBE_BYTES, order);
+		ByteBuffer probe = readAt(0, META_PROBE_BYTES, order, null);
 		int pageSize = probe.getInt(META_BASE_OFFSET + LmdbFormat.META_DBS_OFFSET + LmdbFormat.MDB_DB_PAD_OFFSET);
 		if (pageSize < MIN_PAGE_SIZE || pageSize > MAX_PAGE_SIZE || (pageSize & (pageSize - 1)) != 0) {
 			throw new IOException("Invalid LMDB page size " + pageSize + " in " + dataFile);
@@ -107,7 +111,7 @@ final class LmdbDataFile implements Closeable {
 	}
 
 	private ByteOrder detectByteOrder() throws IOException {
-		ByteBuffer magicBytes = readAt(0, META_PROBE_BYTES, ByteOrder.BIG_ENDIAN);
+		ByteBuffer magicBytes = readAt(0, META_PROBE_BYTES, ByteOrder.BIG_ENDIAN, null);
 		int beMagic = magicBytes.getInt(META_BASE_OFFSET + LmdbFormat.META_MAGIC_OFFSET);
 		if (beMagic == LmdbFormat.MDB_MAGIC) {
 			return ByteOrder.BIG_ENDIAN;
@@ -118,8 +122,13 @@ final class LmdbDataFile implements Closeable {
 		throw new IOException("Unable to detect LMDB byte order for " + dataFile);
 	}
 
-	private ByteBuffer readAt(long offset, int length, ByteOrder order) throws IOException {
-		ByteBuffer buffer = ByteBuffer.allocate(length).order(order);
+	private ByteBuffer readAt(long offset, int length, ByteOrder order, ByteBuffer reusableBuffer) throws IOException {
+		ByteBuffer buffer = reusableBuffer == null || reusableBuffer.capacity() < length
+				? ByteBuffer.allocate(length)
+				: reusableBuffer;
+		buffer.clear();
+		buffer.limit(length);
+		buffer.order(order);
 		int read = 0;
 		while (read < length) {
 			int n = channel.read(buffer, offset + read);

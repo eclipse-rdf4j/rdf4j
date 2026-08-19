@@ -45,6 +45,7 @@ final class FilteredBindingSetAssignmentJoinIteration extends LookAheadIteration
 	private int assignmentIndex;
 	private long recordedPassedCount;
 	private long recordedFilteredCount;
+	private boolean inputExhausted;
 
 	FilteredBindingSetAssignmentJoinIteration(Filter filterNode, CloseableIteration<BindingSet> leftIter,
 			List<BindingSet> assignmentRows, QueryValueEvaluationStep condition, DirectCondition directCondition,
@@ -73,6 +74,7 @@ final class FilteredBindingSetAssignmentJoinIteration extends LookAheadIteration
 				}
 			}
 			if (!leftIter.hasNext()) {
+				inputExhausted = true;
 				return null;
 			}
 			currentLeft = leftIter.next();
@@ -137,9 +139,12 @@ final class FilteredBindingSetAssignmentJoinIteration extends LookAheadIteration
 		try {
 			leftIter.close();
 		} finally {
-			if (recordFilterOutcomes && (recordedPassedCount > 0L || recordedFilteredCount > 0L)) {
+			if (recordFilterOutcomes && inputExhausted
+					&& (recordedPassedCount > 0L || recordedFilteredCount > 0L)) {
 				try {
-					evaluationStatistics.recordFilterOutcome(filterNode, recordedPassedCount, recordedFilteredCount);
+					evaluationStatistics.recordFilterOutcome(filterNode,
+							EvaluationStatistics.FilterOutcomeObservation.completed(recordedPassedCount,
+									recordedFilteredCount));
 				} catch (RuntimeException e) {
 					// Estimation feedback must never break query evaluation.
 				}

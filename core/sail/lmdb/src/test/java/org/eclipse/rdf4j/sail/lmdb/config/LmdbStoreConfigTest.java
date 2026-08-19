@@ -72,6 +72,18 @@ class LmdbStoreConfigTest {
 	private static final IRI SKETCH_ESTIMATOR_THROTTLE_MILLIS = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorThrottleMillis");
 
+	private static final IRI SKETCH_ESTIMATOR_STRATEGY = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorStrategy");
+
+	private static final IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorOmniWitnessCohortBucketCount");
+
+	private static final IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorOmniWitnessCohortBucketIndex");
+
+	private static final IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorOmniWitnessCohortMaxEntries");
+
 	private static final IRI OPTIMIZER_SAMPLING_ENABLED = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "optimizerSamplingEnabled");
 
@@ -86,6 +98,15 @@ class LmdbStoreConfigTest {
 
 	private static final IRI BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "backgroundRawSamplingMaxMillisPerCycle");
+
+	private static final IRI PREDICATE_GUARANTEE_INDEX_ENABLED = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "predicateGuaranteeIndexEnabled");
+
+	private static final IRI PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "predicateGuaranteeIndexAutoRebuild");
+
+	private static final IRI PREDICATE_GUARANTEE_EXCLUDED_PREDICATES = Values
+			.iri(LmdbStoreSchema.NAMESPACE + "predicateGuaranteeExcludedPredicates");
 
 	@Test
 	void parsesAndExportsDirectAdjacencySettingsFromRawRdfProperties() {
@@ -333,6 +354,15 @@ class LmdbStoreConfigTest {
 	}
 
 	@Test
+	void predicateGuaranteeIndexDefaultsToEnabledWithStartupRebuildsAndNoExclusions() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+
+		assertThat(invokeBooleanGetter(config, "getPredicateGuaranteeIndexEnabled")).isTrue();
+		assertThat(invokeBooleanGetter(config, "getPredicateGuaranteeIndexAutoRebuild")).isTrue();
+		assertThat(invokeStringGetter(config, "getPredicateGuaranteeExcludedPredicates")).isEmpty();
+	}
+
+	@Test
 	void optimizerSamplingDefaultsToEnabledWithBoundedBudget() {
 		LmdbStoreConfig config = new LmdbStoreConfig();
 
@@ -355,6 +385,22 @@ class LmdbStoreConfigTest {
 
 		assertThat(invokeLongGetter(config, "getSketchEstimatorThrottleEveryN")).isEqualTo(1024L * 1024L);
 		assertThat(invokeLongGetter(config, "getSketchEstimatorThrottleMillis")).isEqualTo(2L);
+	}
+
+	@Test
+	void sketchEstimatorStrategyDefaultsToUnified() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+
+		assertThat(invokeStringGetter(config, "getSketchEstimatorStrategy")).isEqualTo("unified");
+	}
+
+	@Test
+	void sketchEstimatorOmniWitnessCohortDefaultsToSixteenBucketSeven() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+
+		assertThat(invokeIntGetter(config, "getSketchEstimatorOmniWitnessCohortBucketCount")).isEqualTo(16);
+		assertThat(invokeIntGetter(config, "getSketchEstimatorOmniWitnessCohortBucketIndex")).isEqualTo(7);
+		assertThat(invokeIntGetter(config, "getSketchEstimatorOmniWitnessCohortMaxEntries")).isEqualTo(1_000_000);
 	}
 
 	@Test
@@ -548,6 +594,41 @@ class LmdbStoreConfigTest {
 	}
 
 	@ParameterizedTest
+	@ValueSource(ints = { 0, 16, 64 })
+	void testThatLmdbStoreConfigParseAndExportSketchEstimatorOmniWitnessCohortBucketCount(final int bucketCount) {
+		testParseAndExportReflectiveInt(
+				SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT,
+				Values.literal(bucketCount),
+				"getSketchEstimatorOmniWitnessCohortBucketCount",
+				bucketCount,
+				true
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 7, 41 })
+	void testThatLmdbStoreConfigParseAndExportSketchEstimatorOmniWitnessCohortBucketIndex(final int bucketIndex) {
+		testParseAndExportReflectiveInt(
+				SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX,
+				Values.literal(bucketIndex),
+				"getSketchEstimatorOmniWitnessCohortBucketIndex",
+				bucketIndex,
+				true
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 1024, 1_000_000 })
+	void testThatLmdbStoreConfigParseAndExportSketchEstimatorOmniWitnessCohortMaxEntries(final int maxEntries) {
+		testParseAndExportReflectiveInt(
+				SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES,
+				Values.literal(maxEntries),
+				"getSketchEstimatorOmniWitnessCohortMaxEntries",
+				maxEntries,
+				true);
+	}
+
+	@ParameterizedTest
 	@ValueSource(booleans = { true, false })
 	void testThatLmdbStoreConfigParseAndExportSketchEstimatorContextPairSketchesEnabled(final boolean enabled) {
 		testParseAndExportReflective(
@@ -581,6 +662,37 @@ class LmdbStoreConfigTest {
 				throttleMillis,
 				true
 		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "omni", "fastagms", "countmin", "countmin-dual", "tuple", "joinsketch" })
+	void testThatLmdbStoreConfigNormalizesLegacySketchEstimatorStrategy(final String strategy) {
+		final BNode implNode = bnode();
+		final LmdbStoreConfig lmdbStoreConfig = new LmdbStoreConfig();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, SKETCH_ESTIMATOR_STRATEGY, Values.literal(strategy))
+				.build();
+
+		lmdbStoreConfig.parse(configModel, implNode);
+		assertThat(invokeStringGetter(lmdbStoreConfig, "getSketchEstimatorStrategy")).isEqualTo("unified");
+
+		final Model exportedModel = new LinkedHashModel();
+		final Resource exportImplNode = lmdbStoreConfig.export(exportedModel);
+
+		assertThat(exportedModel.contains(exportImplNode, SKETCH_ESTIMATOR_STRATEGY, null)).isFalse();
+	}
+
+	@Test
+	void invalidSketchEstimatorStrategyFailsClearly() {
+		final BNode implNode = bnode();
+		final LmdbStoreConfig lmdbStoreConfig = new LmdbStoreConfig();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, SKETCH_ESTIMATOR_STRATEGY, Values.literal("bad-sketch"))
+				.build();
+
+		assertThatThrownBy(() -> lmdbStoreConfig.parse(configModel, implNode))
+				.hasMessageContaining("Sketch estimator strategy value required")
+				.hasMessageContaining("bad-sketch");
 	}
 
 	@ParameterizedTest
@@ -640,6 +752,43 @@ class LmdbStoreConfigTest {
 				"getBackgroundRawSamplingMaxMillisPerCycle",
 				maxMillis,
 				maxMillis != 10L
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void testThatLmdbStoreConfigParseAndExportPredicateGuaranteeIndexEnabled(final boolean enabled) {
+		testParseAndExportReflective(
+				PREDICATE_GUARANTEE_INDEX_ENABLED,
+				Values.literal(enabled),
+				"getPredicateGuaranteeIndexEnabled",
+				enabled,
+				!enabled
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void testThatLmdbStoreConfigParseAndExportPredicateGuaranteeIndexAutoRebuild(final boolean enabled) {
+		testParseAndExportReflective(
+				PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD,
+				Values.literal(enabled),
+				"getPredicateGuaranteeIndexAutoRebuild",
+				enabled,
+				!enabled
+		);
+	}
+
+	@Test
+	void testThatLmdbStoreConfigParseAndExportPredicateGuaranteeExcludedPredicates() {
+		Literal excludedPredicates = Values.literal("http://example.com/a, http://example.com/b");
+
+		testParseAndExport(
+				PREDICATE_GUARANTEE_EXCLUDED_PREDICATES,
+				excludedPredicates,
+				config -> invokeStringGetter(config, "getPredicateGuaranteeExcludedPredicates"),
+				excludedPredicates.getLabel(),
+				true
 		);
 	}
 
@@ -792,6 +941,15 @@ class LmdbStoreConfigTest {
 		try {
 			Method getter = config.getClass().getMethod(getterName);
 			return (int) getter.invoke(config);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Missing LMDB config getter: " + getterName, e);
+		}
+	}
+
+	private String invokeStringGetter(LmdbStoreConfig config, String getterName) {
+		try {
+			Method getter = config.getClass().getMethod(getterName);
+			return (String) getter.invoke(config);
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Missing LMDB config getter: " + getterName, e);
 		}

@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -333,13 +335,13 @@ class StatementPatternQueryEvaluationStepTest {
 		}
 
 		@Override
-		public org.eclipse.rdf4j.model.Literal getNow() {
+		public Literal getNow() {
 			return null;
 		}
 	}
 
 	private static final class InstrumentedBindingSet
-			extends org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet {
+			extends QueryBindingSet {
 
 		private boolean isEmptyInvoked = false;
 

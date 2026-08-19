@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import org.junit.jupiter.api.Test;
 
@@ -82,6 +83,27 @@ class LeadingFieldSortersTest {
 			assertThat(Long.compareUnsigned(smallValues[i - 1], smallValues[i]))
 					.as("insertion tier output is unsigned nondecreasing at " + i)
 					.isLessThanOrEqualTo(0);
+		}
+	}
+
+	@Test
+	void lsdRadixSortSortsIndexOrderByLeadingValues() {
+		int length = 128;
+		int[] order = new int[length];
+		long[] leadingValues = new long[length];
+		for (int i = 0; i < length; i++) {
+			long value = length - i;
+			order[i] = i;
+			leadingValues[i] = value;
+		}
+
+		LeadingFieldSorters.lsdRadixSort(order, leadingValues, length, new int[length], new long[length],
+				new int[256], new int[256]);
+
+		for (int i = 0; i < length; i++) {
+			long expectedValue = i + 1L;
+			assertEquals(expectedValue, leadingValues[i]);
+			assertEquals(length - expectedValue, order[i]);
 		}
 	}
 }

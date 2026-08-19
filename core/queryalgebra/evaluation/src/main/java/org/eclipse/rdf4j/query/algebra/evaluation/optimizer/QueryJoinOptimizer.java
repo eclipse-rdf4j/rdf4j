@@ -442,7 +442,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 				}
 
-				// If ret is empty or next isn’t a StatementPattern, just drain in original order
+				// If ret is empty or next isn't a StatementPattern, just drain in original order.
 				if (ret.isEmpty() || !(tupleExprs.getFirst() instanceof StatementPattern)) {
 					TupleExpr next = tupleExprs.removeFirst();
 					ret.addLast(next);
@@ -454,8 +454,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				TupleExpr bestCandidate = null;
 				double bestCost = Double.MAX_VALUE;
 				boolean bestCandidateUsesExistingBinding = false;
+				boolean connectedCandidateAvailable = tupleExprs.stream()
+						.anyMatch(candidate -> sharesBindingWithAny(candidate, ret));
 				for (TupleExpr cand : tupleExprs) {
-					if (!statementPatternWithMinimumOneConstant(cand)) {
+					if (connectedCandidateAvailable && !sharesBindingWithAny(cand, ret)) {
 						continue;
 					}
 					boolean candidateUsesExistingBinding = usesExistingBinding(cand,
@@ -463,7 +465,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 					// compute the minimum join‐cost between cand and anything in ret
 					for (TupleExpr prev : ret) {
-						if (!statementPatternWithMinimumOneConstant(prev)) {
+						if (connectedCandidateAvailable && !sharesBinding(prev, cand)) {
 							continue;
 						}
 						double cost = getCard.apply(prev, cand);
@@ -592,6 +594,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				primary.addAll(candidates);
 			}
 			if (primary.size() > FULL_PAIRWISE_START_LIMIT) {
+				if (hasConnectedPair(candidates)) {
+					primary.removeIf(candidate -> !sharesBindingWithAny(candidate, candidates));
+				}
 				primary.sort(Comparator.comparingDouble(singleCard::get));
 				primary = new ArrayList<>(primary.subList(0, Math.min(3, primary.size())));
 			}
@@ -599,15 +604,16 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			TupleExpr bestA = null;
 			TupleExpr bestB = null;
 			double bestCost = Double.MAX_VALUE;
+			boolean connectedPairAvailable = hasConnectedPair(candidates);
 
 			for (TupleExpr a : primary) {
 				for (TupleExpr b : candidates) {
-					if (a == b) {
+					if (a == b || (connectedPairAvailable && !sharesBinding(a, b))) {
 						continue;
 					}
 
 					double cost = getCard.apply(a, b);
-					if (cost < bestCost) {
+					if (bestA == null || cost < bestCost) {
 						bestCost = cost;
 						bestA = a;
 						bestB = b;
@@ -628,6 +634,37 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			return cardA <= cardB ? bestA : bestB;
+		}
+
+		private boolean hasConnectedPair(List<TupleExpr> tupleExprs) {
+			for (int i = 0; i < tupleExprs.size(); i++) {
+				TupleExpr left = tupleExprs.get(i);
+				for (int j = i + 1; j < tupleExprs.size(); j++) {
+					if (sharesBinding(left, tupleExprs.get(j))) {
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		private boolean sharesBindingWithAny(TupleExpr candidate, Iterable<TupleExpr> tupleExprs) {
+			for (TupleExpr tupleExpr : tupleExprs) {
+				if (candidate != tupleExpr && sharesBinding(candidate, tupleExpr)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private boolean sharesBinding(TupleExpr left, TupleExpr right) {
+			Set<String> rightBindingNames = right.getBindingNames();
+			for (String bindingName : left.getBindingNames()) {
+				if (!bindingName.startsWith("_const_") && rightBindingNames.contains(bindingName)) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		private void optimizeInNewScope(List<TupleExpr> subSelects) {

@@ -270,7 +270,7 @@ class LmdbEvaluationStrategyTest extends EvaluationStrategyTest {
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) {
-			return getStatements(null, subj, pred, obj, contexts);
+			return getStatements((StatementOrder) null, subj, pred, obj, contexts);
 		}
 
 		@Override

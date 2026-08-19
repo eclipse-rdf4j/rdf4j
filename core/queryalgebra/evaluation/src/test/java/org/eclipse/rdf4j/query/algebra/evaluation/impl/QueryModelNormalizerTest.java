@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -142,6 +143,17 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 		subject.optimize(root, null, EmptyBindingSet.getInstance());
 
 		assertThat(filter.getCondition()).isSameAs(condition);
+	}
+
+	@Test
+	public void testDoesNotNormalizeDifferenceWithTwoSingletons() {
+		Projection p = new Projection();
+		Difference difference = new Difference(new SingletonSet(), new SingletonSet());
+		p.setArg(difference);
+
+		subject.meet(difference);
+
+		assertThat(p.getArg()).isEqualTo(difference);
 	}
 
 	@Override

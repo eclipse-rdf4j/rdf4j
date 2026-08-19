@@ -142,11 +142,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 			long internalID) {
 		assert label != null;
 		this.label = label;
-		assert datatype != null;
-		assert coreDatatype != null;
-		assert coreDatatype == CoreDatatype.NONE || coreDatatype.getIri() == datatype;
-		this.datatype = datatype;
-		this.coreDatatype = coreDatatype;
+		setDatatype(datatype, coreDatatype);
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
@@ -256,6 +252,17 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		cachedIntegerValue = null;
 	}
 
+	public void setDatatype(IRI datatype, CoreDatatype coreDatatype) {
+		assert datatype != null;
+		assert coreDatatype != null;
+		assert coreDatatype == CoreDatatype.NONE || coreDatatype.getIri().equals(datatype);
+		this.datatype = datatype;
+		this.coreDatatype = coreDatatype;
+		cachedHash = 0;
+		cachedCalendarValue = null;
+		cachedIntegerValue = null;
+	}
+
 	public void setDatatype(CoreDatatype coreDatatype) {
 		this.coreDatatype = coreDatatype;
 		datatype = coreDatatype.getIri();
@@ -329,6 +336,24 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 				}
 			}
 		}
+	}
+
+	@Override
+	public void init(Resolver resolver) {
+		if (!initialized) {
+			synchronized (this) {
+				if (!initialized) {
+					boolean resolved = resolver.resolve(internalID, this);
+					initialized = resolved;
+					assert resolved;
+				}
+			}
+		}
+	}
+
+	@Override
+	public boolean isInitialized() {
+		return initialized;
 	}
 
 	@Override

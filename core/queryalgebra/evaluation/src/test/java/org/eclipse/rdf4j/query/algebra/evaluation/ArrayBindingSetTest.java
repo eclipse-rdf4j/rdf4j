@@ -15,13 +15,17 @@ import static org.assertj.core.api.Assertions.fail;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Set;
 
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -66,6 +70,65 @@ public class ArrayBindingSetTest {
 		assertTrue(mbs.equals(qbs));
 		assertEquals(qbs.hashCode(), mbs.hashCode(),
 				"objects that return true on their equals() method must have identical hash codes");
+	}
+
+	@Test
+	public void bindingSetCollectionAvoidsPermutationCollisionTree() {
+		String[] names = { "v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9" };
+		Value[] values = new Value[names.length];
+		for (int index = 0; index < values.length; index++) {
+			values[index] = vf.createIRI("urn:collision-value:" + index);
+		}
+		Set<BindingSet> bindingSets = new DefaultCollectionFactory().createSetOfBindingSets();
+		CountingArrayBindingSet.resetEqualsCalls();
+		for (int permutation = 0; permutation < 1_024; permutation++) {
+			CountingArrayBindingSet bindingSet = new CountingArrayBindingSet(names);
+			Value[] remaining = values.clone();
+			int remainingCount = remaining.length;
+			int code = permutation;
+			for (String name : names) {
+				int selected = code % remainingCount;
+				code /= remainingCount;
+				bindingSet.setBinding(name, remaining[selected]);
+				remaining[selected] = remaining[--remainingCount];
+			}
+			assertTrue(bindingSets.add(bindingSet));
+		}
+
+		assertEquals(1_024, bindingSets.size());
+		assertTrue(CountingArrayBindingSet.equalsCalls() < 256,
+				() -> "permutation collisions required " + CountingArrayBindingSet.equalsCalls() + " equality probes");
+	}
+
+	@Test
+	public void bindingSetCollectionHonorsCrossImplementationSetContract() {
+		ArrayBindingSet array = new ArrayBindingSet("first", "second");
+		array.setBinding("first", vf.createIRI("urn:first"));
+		array.setBinding("second", vf.createLiteral("second"));
+		MapBindingSet map = new MapBindingSet();
+		map.addBinding("second", vf.createLiteral("second"));
+		map.addBinding("first", vf.createIRI("urn:first"));
+		Set<BindingSet> bindingSets = new DefaultCollectionFactory().createSetOfBindingSets();
+
+		assertTrue(bindingSets.add(array));
+		assertTrue(bindingSets.contains(map));
+		assertFalse(bindingSets.add(map));
+		assertTrue(bindingSets.remove(map));
+		assertTrue(bindingSets.isEmpty());
+	}
+
+	@Test
+	public void bindingSetCollectionSupportsNullAndIteratorRemoval() {
+		Set<BindingSet> bindingSets = new DefaultCollectionFactory().createSetOfBindingSets();
+
+		assertTrue(bindingSets.add(null));
+		assertFalse(bindingSets.add(null));
+		assertTrue(bindingSets.contains(null));
+		Iterator<BindingSet> iterator = bindingSets.iterator();
+		assertNull(iterator.next());
+		iterator.remove();
+		assertFalse(bindingSets.contains(null));
+		assertTrue(bindingSets.isEmpty());
 	}
 
 	/**
@@ -208,5 +271,27 @@ public class ArrayBindingSetTest {
 
 		assertEquals(List.of("a1", "z13"), leftSortedBindingNames);
 		assertSame(leftSortedBindingNames, rightSortedBindingNames);
+	}
+
+	private static final class CountingArrayBindingSet extends ArrayBindingSet {
+		private static int equalsCalls;
+
+		private CountingArrayBindingSet(String[] names) {
+			super(names);
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			equalsCalls++;
+			return super.equals(other);
+		}
+
+		private static void resetEqualsCalls() {
+			equalsCalls = 0;
+		}
+
+		private static int equalsCalls() {
+			return equalsCalls;
+		}
 	}
 }
