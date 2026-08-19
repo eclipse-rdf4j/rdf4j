@@ -1041,6 +1041,10 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	 * inputs.
 	 */
 	NativeUnorderedInput openUnorderedInput(RowState row) throws IOException {
+		return openUnorderedInput(row, null);
+	}
+
+	NativeUnorderedInput openUnorderedInput(RowState row, NativeTupleDistinctPlan distinctPlan) throws IOException {
 		MultiJoinPlan multiJoin = arg instanceof MultiJoinPlan && ((MultiJoinPlan) arg).children.length > 0
 				? (MultiJoinPlan) arg
 				: null;
@@ -1049,6 +1053,18 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		try (LmdbNativeStrategyArbiter<NativeUnorderedInput> arbiter = LmdbNativeStrategyArbiter
 				.<NativeUnorderedInput>forSlice(originalExpr, consumableRows(), row.source)
 				.probeHarness(new NativeProbeBufferHarness())) {
+			if (orderSlots.length == 0) {
+				// Emission strategy, never a sort input (the ORDER BY materializer callers all carry orderSlots).
+				arbiter.offer(() -> proposePrefixRun(row));
+			}
+			if (distinctPlan != null && distinct && orderSlots.length == 0
+					&& distinctPlan.strategy != NativeDistinctStrategy.GLOBAL_HASH) {
+				// The ordered-distinct plan competes instead of short-circuiting the ladder; its accepter marks the
+				// input ORDERED so the caller builds the order-relying tracker only for this winner.
+				arbiter.offer(() -> inputProposal(() -> acceptOrderedDistinct(row, distinctPlan.arg.open(row)),
+						LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT,
+						distinctPlan.arg.estimateWork(row, row.boundMask()), estimatedRows(row)));
+			}
 			if (LmdbNativeLeapfrogJoin.canOpen(arg, row.boundMask())) {
 				arbiter.offer(() -> inputProposal(
 						() -> acceptWcoj(row, LmdbNativeLeapfrogJoin.tryOpen(arg, row), multiJoin),
@@ -1063,6 +1079,14 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 					this::acceptParallel));
 			arbiter.offer(() -> wrapCursorProposal(row,
 					LmdbNativeKernelExecution.proposeRows(arg, row, originalExpr), this::acceptKernel));
+			if (distinct && orderSlots.length == 0) {
+				// The DISTINCT-sinking kernel replaces input AND dedup in one cursor; it competes here instead of
+				// capturing by ladder position (which starved factorized/batch and generated no cost evidence). The
+				// ORDER BY materializer callers need non-distinct sort slots, hence the orderSlots gate.
+				arbiter.offer(() -> wrapCursorProposal(row,
+						LmdbNativeKernelExecution.proposeDistinctRows(arg, row, originalExpr, sourceSlots),
+						this::acceptDistinctKernel));
+			}
 			arbiter.offer(() -> inputProposal(
 					() -> acceptAdaptive(row, LmdbNativeAdaptiveFilterPlacement.tryOpen(this, row), multiJoin),
 					LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT,
@@ -1107,7 +1131,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 					"not-applicable");
 			return null;
 		}
-		double cost = LmdbNativeStrategyProposal.factorizedCost(factorized.derived, factorized.flatCount, row);
+		double cost = factorized.proposalCost(row);
 		return inputProposal(() -> acceptFactorized(row, factorized, metrics),
 				LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS, workEstimate(cost), estimatedRows(row));
 	}
@@ -1181,6 +1205,55 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		return NativeUnorderedInput.rows(row, cursor);
 	}
 
+	/**
+	 * Accepter for the arbitrated DISTINCT-sinking kernel: the cursor owns emission restriction and dedup, so the
+	 * selected input marks the DISTINCT obligation as already handled and the caller skips its own tracker.
+	 */
+	private NativeUnorderedInput acceptDistinctKernel(RowState row, RowCursor cursor) {
+		if (cursor == null) {
+			return null;
+		}
+		LmdbNativeExplain.recordExecutionPath(originalExpr,
+				LmdbNativeJaninoCodegen.enabled() ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT
+						: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED);
+		NativeUnorderedInput input = NativeUnorderedInput.rows(row, cursor);
+		input.dedupMode = NativeUnorderedInput.DedupMode.HANDLED;
+		return input;
+	}
+
+	/**
+	 * Prefix-run as a priced rung: {@code UNKNOWN} work overlaps every rival, so the preference table (where prefix-run
+	 * sits above every other row strategy) decides exactly as the old positional capture did — the fold is
+	 * tie-preserving by construction — while the selected input finally accrues observe/calibrate evidence and a rival
+	 * with certain, strictly better cost may displace it.
+	 */
+	private LmdbNativeStrategyProposal<NativeUnorderedInput> proposePrefixRun(RowState row) {
+		if (prefixRunPlan == null || prefixPattern == null || prefixPattern.hasRuntimeBoundSlot(row)) {
+			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
+					"not-applicable");
+			return null;
+		}
+		return inputProposal(() -> acceptPrefixRun(row, openPrefixRunCursor(row)),
+				LmdbNativeAttemptMetrics.PATH_PREFIX_RUN, LmdbNativeWork.UNKNOWN, estimatedRows(row));
+	}
+
+	private NativeUnorderedInput acceptPrefixRun(RowState row, RowCursor cursor) {
+		if (cursor == null) {
+			return null;
+		}
+		LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN);
+		NativeUnorderedInput input = NativeUnorderedInput.rows(row, cursor);
+		input.dedupMode = NativeUnorderedInput.DedupMode.HANDLED;
+		return input;
+	}
+
+	private NativeUnorderedInput acceptOrderedDistinct(RowState row, RowCursor cursor) {
+		LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT);
+		NativeUnorderedInput input = NativeUnorderedInput.rows(row, cursor);
+		input.dedupMode = NativeUnorderedInput.DedupMode.ORDERED;
+		return input;
+	}
+
 	private NativeUnorderedInput acceptAdaptive(RowState row, RowCursor cursor, MultiJoinPlan multiJoin) {
 		if (cursor == null) {
 			return null;
@@ -1236,20 +1309,6 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 
 	private String runtimeStrategy(String selectedStrategy) {
 		return entryPath == null ? selectedStrategy : entryPath + " | " + selectedStrategy;
-	}
-
-	/**
-	 * DISTINCT-sinking kernel attempt (plan 32 M3/M4): a compiled cursor that emits only the distinct key slots and
-	 * owns the whole dedup (order-aware in-kernel tiers; the parallel rung's consumer removes cross-window duplicates),
-	 * or null to let the ordinary distinct tiers serve. A non-null cursor makes the consumer's own dedup redundant, so
-	 * the caller marks the DISTINCT as handled.
-	 */
-	RowCursor openDistinctKernelCursor(RowState row) throws IOException {
-		RowCursor kernel = LmdbNativeKernelExecution.tryOpenDistinctRows(arg, row, originalExpr, sourceSlots);
-		if (kernel != null) {
-			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
-		}
-		return kernel;
 	}
 
 	/**
@@ -1715,6 +1774,8 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 	LmdbFusedSipFactorizedRuntime.Session fusedSession;
 	boolean ownsFusedSession;
 	long emittedRows;
+	long startedNanos;
+	boolean evidenceRecorded;
 
 	NativeBareRowsIteration(NativeBareRowsStep step, NativeLmdbQuerySource source, BindingSet base) {
 		this.step = step;
@@ -1776,6 +1837,11 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 						LmdbNativeAttemptMetrics.PATH_CONSTANT_FALSE_FILTER);
 				return false;
 			}
+			// Intentionally positional, not arbitrated: this route runs once per outer binding of a correlated
+			// fragment (a per-call arbiter would multiply its overhead by the outer row count) and its plan is
+			// usually a single scan every rival structurally declines. The aggregated nanos/rows evidence recorded
+			// at close keeps the route auditable for a future memoized arbitration.
+			startedNanos = System.nanoTime();
 			cursor = step.arg.open(row);
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_BARE_DIRECT);
 			if (row.runtimePlan != null) {
@@ -1814,6 +1880,12 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 	}
 
 	private void closeResources(boolean completed) {
+		if (!evidenceRecorded && startedNanos != 0L) {
+			evidenceRecorded = true;
+			LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeBareDirectNanosActual",
+					System.nanoTime() - startedNanos);
+			LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeBareDirectRowsActual", emittedRows);
+		}
 		RowCursor activeCursor = cursor;
 		RowState activeRow = row;
 		LmdbFusedSipFactorizedRuntime.Session activeSession = fusedSession;
@@ -1861,6 +1933,21 @@ final class NativeUnorderedInput implements AutoCloseable {
 	boolean materializedRowsClaimed;
 	boolean closed;
 	boolean exhausted;
+
+	/**
+	 * Who owes the DISTINCT dedup for this input. {@code HASH}: the caller runs its global hash tracker (any ordinary
+	 * winner). {@code HANDLED}: the cursor already emits distinct rows (distinct-sinking kernel, prefix-run).
+	 * {@code ORDERED}: the winner is the ordered-distinct plan cursor, whose enumeration order the caller's ordered
+	 * tracker may rely on — an ordered tracker over any other winner would silently emit duplicates, which is exactly
+	 * why the mode travels with the selected input instead of being assumed from the plan.
+	 */
+	enum DedupMode {
+		HASH,
+		HANDLED,
+		ORDERED
+	}
+
+	DedupMode dedupMode = DedupMode.HASH;
 	String calibrationTag;
 	double calibrationWork = Double.NaN;
 	long calibrationStartedNanos;
@@ -2307,7 +2394,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 					unorderedInput.firstOutput();
 				}
 				row.recordExactValuesMatched(batch.selectedCount);
-				if (step.distinct) {
+				if (step.distinct && !distinctHandledByCursor) {
 					batch.selectedCount = distinctRows.selectBatch(batch, batch.selection, batch.selectedCount);
 				}
 				batchIndex = 0;
@@ -2358,30 +2445,22 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 					LmdbNativeAttemptMetrics.PATH_CONSTANT_FALSE_FILTER);
 			return false;
 		}
-		distinctRows = step.distinct ? new NativeOrderedDistinctTracker(distinctPlan) : null;
-		cursor = step.openPrefixRunCursor(row);
-		if (cursor != null) {
-			distinctHandledByCursor = true;
-			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN);
-			return true;
+		if (distinctPlan.strategy == NativeDistinctStrategy.GLOBAL_HASH) {
+			LmdbNativeAttemptMetrics.recordDecline(step.originalExpr, LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT,
+					"global-hash");
 		}
-		LmdbNativeAttemptMetrics.recordDecline(step.originalExpr, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
-				"not-applicable");
+		// Every row strategy — prefix-run, ordered-distinct, the distinct-sinking kernel included — meets in the
+		// arbiter; nothing captures the query by ladder position any more. The winner reports who owes the DISTINCT
+		// dedup, and the tracker is built AFTER selection: an ordered tracker may only serve the ordered-distinct
+		// plan cursor itself, every other winner dedups through the global hash tracker.
+		unorderedInput = step.openUnorderedInput(row, step.distinct ? distinctPlan : null);
+		distinctHandledByCursor = unorderedInput.dedupMode == NativeUnorderedInput.DedupMode.HANDLED;
 		if (step.distinct) {
-			cursor = step.openDistinctKernelCursor(row);
-			if (cursor != null) {
-				distinctHandledByCursor = true;
-				return true;
-			}
+			distinctRows = unorderedInput.dedupMode == NativeUnorderedInput.DedupMode.ORDERED
+					? new NativeOrderedDistinctTracker(distinctPlan)
+					: new NativeOrderedDistinctTracker(
+							NativeTupleDistinctPlan.global(step.arg, step.sourceSlots));
 		}
-		if (distinctPlan.strategy != NativeDistinctStrategy.GLOBAL_HASH) {
-			cursor = distinctPlan.arg.open(row);
-			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT);
-			return true;
-		}
-		LmdbNativeAttemptMetrics.recordDecline(step.originalExpr, LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT,
-				"global-hash");
-		unorderedInput = step.openUnorderedInput(row);
 		cursor = unorderedInput.cursor;
 		batchCursor = unorderedInput.batchCursor;
 		batch = unorderedInput.batch;

@@ -535,7 +535,6 @@ class CompactCsfPageReader {
 		if (targetOrdinal < 0 || targetOrdinal >= quads) {
 			throw new IllegalArgumentException("row ordinal out of range: " + targetOrdinal + " of " + quads);
 		}
-		int fiberContextStart = contextStart(start);
 		int neighborTailStart = start - rowIndex;
 		long currentNeighbor = PackedLongVector.nativeGet(firstNeighborsAddress(), rowIndex);
 		int ordinal = 0;
@@ -555,14 +554,15 @@ class CompactCsfPageReader {
 				long currentContext = flag(CompactCsfPageFormat.FLAG_COMMON_CONTEXT)
 						? UnsafeAccess.getLongLE(address + CompactCsfPageFormat.COMMON_CONTEXT_AT)
 						: PackedLongVector.nativeGet(firstContextsAddress(), fiber);
-				int contextTailStart = fiberContextStart - fiber;
+				// The context-tail prefix sum is only paid on the context path: contextStart(fiber) is exactly the
+				// running fiberContextStart the loop used to maintain, and a neighbor-only lookup never needs it.
+				int contextTailStart = contextStart(fiber) - fiber;
 				for (int c = 0; c < localContext; c++) {
 					currentContext += PackedLongVector.nativeGet(contextTailsAddress(), contextTailStart + c);
 				}
 				return currentContext;
 			}
 			ordinal += contexts;
-			fiberContextStart += contexts;
 		}
 		throw new IllegalStateException("row ordinal was not mapped to a fibre");
 	}

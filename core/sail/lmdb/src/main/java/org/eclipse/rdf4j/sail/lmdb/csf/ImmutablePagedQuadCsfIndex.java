@@ -4007,6 +4007,15 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		private long cachedPairOrdinal = -1;
 		private long cachedNeighbor;
 		private long cachedContext;
+		/**
+		 * Context decoding is lazy: {@link #ensurePair} resolves the pair coordinate and decodes the neighbor only,
+		 * while the context is decoded on first {@link #contextAt} for that ordinal from the stored coordinate. A
+		 * neighbor-only consumer (contexts=any, nothing projected) therefore never pays the context prefix-sum walk.
+		 */
+		private long cachedContextOrdinal = -1;
+		private int cachedPairPageId;
+		private int cachedPairRow;
+		private int cachedPairLocal;
 		private final boolean includeEdgeCount;
 		private long ordinal;
 		private boolean ready;
@@ -4064,6 +4073,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 						// for the run; key-only enumeration then remains a pure sequential row-id walk.
 						edgeCount = -1;
 						cachedPairOrdinal = -1;
+						cachedContextOrdinal = -1;
 						localRow++;
 						ordinal++;
 						ready = true;
@@ -4115,6 +4125,17 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 
 		public long contextAt(long ordinal) {
 			ensurePair(ordinal);
+			if (cachedContextOrdinal != ordinal) {
+				// Re-bind rather than caching a reader reference: interleaved copyPairs/countEdges calls reposition
+				// the shared extent page, but the stored coordinate stays valid for the current key.
+				CompactCsfPageReader reader = this;
+				if (cachedPairPageId != firstPageId) {
+					reader = extentPage();
+					owner.page(cachedPairPageId, reader);
+				}
+				cachedContext = reader.contextAtOrdinal(cachedPairRow, cachedPairLocal);
+				cachedContextOrdinal = ordinal;
+			}
 			return cachedContext;
 		}
 
@@ -4187,7 +4208,9 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				if (ordinal < pageEnd) {
 					int local = (int) (ordinal - global);
 					cachedNeighbor = reader.neighborAtOrdinal(row, local);
-					cachedContext = reader.contextAtOrdinal(row, local);
+					cachedPairPageId = pageId;
+					cachedPairRow = row;
+					cachedPairLocal = local;
 					cachedPairOrdinal = ordinal;
 					return;
 				}

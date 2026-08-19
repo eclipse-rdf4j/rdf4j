@@ -345,7 +345,16 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 
 	/** Serial factorization scans each physical leg once across its prefix keys instead of enumerating the product. */
 	static double factorizedCost(MultiJoinPlan.OrderedPlan derived, int prefixLength, RowState row) {
-		return factorizedCost(derived.order, prefixLength, row.boundMask(), row.source, row);
+		return factorizedCost(derived.order, prefixLength, row.boundMask(), row.source, row, Double.NaN);
+	}
+
+	/**
+	 * Keys-only-root variant: depth 0 enumerates the root's distinct keys instead of one row per edge, so its row count
+	 * is capped by {@code depth0RowsOverride} (NaN = no cap). Everything downstream prices identically.
+	 */
+	static double factorizedCost(MultiJoinPlan.OrderedPlan derived, int prefixLength, RowState row,
+			double depth0RowsOverride) {
+		return factorizedCost(derived.order, prefixLength, row.boundMask(), row.source, row, depth0RowsOverride);
 	}
 
 	/**
@@ -354,11 +363,11 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	 */
 	static double factorizedCost(SlotPlan[] order, int prefixLength, long boundMask,
 			NativeLmdbQuerySource source) {
-		return factorizedCost(order, prefixLength, boundMask, source, null);
+		return factorizedCost(order, prefixLength, boundMask, source, null, Double.NaN);
 	}
 
 	private static double factorizedCost(SlotPlan[] order, int prefixLength, long boundMask,
-			NativeLmdbQuerySource source, RowState row) {
+			NativeLmdbQuerySource source, RowState row, double depth0RowsOverride) {
 		if (prefixLength < 0 || prefixLength > order.length) {
 			return Double.POSITIVE_INFINITY;
 		}
@@ -373,6 +382,9 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			double rowsPerProbe = childEstimate(order[i], entryMask, source, row);
 			if (!(rowsPerProbe >= 0D) || !Double.isFinite(rowsPerProbe)) {
 				return Double.POSITIVE_INFINITY;
+			}
+			if (i == 0 && depth0RowsOverride >= 0D && Double.isFinite(depth0RowsOverride)) {
+				rowsPerProbe = Math.min(rowsPerProbe, depth0RowsOverride);
 			}
 			work += prefixRows * (1D + rowsPerProbe);
 			prefixRows *= rowsPerProbe;

@@ -83,6 +83,11 @@ final class LmdbNativeFactorizedRows {
 		return !"false".equals(System.getProperty("rdf4j.lmdb.factorizedRows.chunkedPrefix.enabled"));
 	}
 
+	/** Kill switch for the keys-only fan-out root (the depth-0 twin of {@code ROLE_EXISTS}). */
+	static boolean keysOnlyRootEnabled() {
+		return !"false".equals(System.getProperty("rdf4j.lmdb.factorizedRows.keysOnlyRoot.enabled"));
+	}
+
 	static final int BATCH_ROWS = 1024;
 	static final int MEMO_MAX_ENTRIES = 1 << 16;
 	static final int MEMO_MAX_VALUES = 1 << 20;
@@ -107,6 +112,14 @@ final class LmdbNativeFactorizedRows {
 	final LmdbNativeAttemptMetrics metrics;
 	/** Which prefix strategy the last {@link #open} chose; feeds the engagement string. */
 	String prefixStrategy = "chain";
+	/**
+	 * Non-null when the derived order's root pattern has exactly one dead fresh endpoint under DISTINCT: the flat
+	 * prefix may then enumerate the root's distinct keys instead of one row per edge — the depth-0 twin of
+	 * {@code ROLE_EXISTS}, whose soundness argument (DISTINCT makes multiplicity unobservable) it inherits. Duplicates
+	 * are impossible (keys are distinct); phantoms are excluded by the bind-time {@code keysImplyNonEmptyRuns()}
+	 * capability gate, falling back to the ordinary prefix ladder otherwise.
+	 */
+	KeysOnlyRoot keysOnlyRoot;
 	/** How many chunk-pipeline probe stages ran in merge/zig-zag mode (explain observability). */
 	int mergeStages;
 	boolean engagementRecorded;
@@ -323,7 +336,191 @@ final class LmdbNativeFactorizedRows {
 		for (TailBranch branch : branches) {
 			branch.memoBudget = result.memoBudget;
 		}
+		if (distinct && keysOnlyRootEnabled()) {
+			result.keysOnlyRoot = detectKeysOnlyRoot(order, split, flatCount, outputMask, requiredPrefixMask, filters,
+					filterDepth);
+		}
 		return result;
+	}
+
+	/**
+	 * Depth-0 twin of {@code ROLE_EXISTS}: when the derived order's root pattern binds exactly two fresh slots and one
+	 * of them is dead (not projected, not probed or filtered at any later depth, not an ORDER BY prefix requirement,
+	 * not read by a depth-0 filter), the flat prefix may enumerate the root's distinct keys instead of one row per
+	 * edge. Sound only under DISTINCT (multiplicity unobservable) and only over a view that guarantees non-empty runs —
+	 * the open-time gate in {@link KeysOnlyRoot#open}.
+	 */
+	private static KeysOnlyRoot detectKeysOnlyRoot(SlotPlan[] order, Split split, int flatCount, long outputMask,
+			long requiredPrefixMask, MaskedFilter[] filters, int[] filterDepth) {
+		if (flatCount < 1 || !(order[0] instanceof PatternPlan)) {
+			return null;
+		}
+		PatternPlan root = (PatternPlan) order[0];
+		if (!root.p.isConstant() || root.hasRepeatedSlot() || root.namedContextScope || root.contexts.isFixed()
+				|| root.c.isConstant() || root.c.hasSlot() || root.rejectsNullContextAtBind()) {
+			return null;
+		}
+		if (!root.s.hasSlot() || !root.o.hasSlot()) {
+			return null;
+		}
+		long fresh = split.fresh[0];
+		long subjectBit = 1L << root.s.slot;
+		long objectBit = 1L << root.o.slot;
+		if ((fresh & subjectBit) == 0L || (fresh & objectBit) == 0L) {
+			return null;
+		}
+		long liveMask = split.laterNeedsAfterRoot | outputMask | split.depth0FilterMask | requiredPrefixMask;
+		boolean subjectDead = (subjectBit & liveMask) == 0L;
+		boolean objectDead = (objectBit & liveMask) == 0L;
+		if (subjectDead == objectDead) {
+			// Both dead (a pure existence root, no join to drive) or both live: keep the flat enumeration.
+			return null;
+		}
+		ArrayList<NativeBooleanFilter> rootFilters = new ArrayList<>();
+		for (int f = 0; f < filters.length; f++) {
+			if (filterDepth[f] == 0) {
+				rootFilters.add(filters[f].filter);
+			}
+		}
+		boolean bySubject = objectDead;
+		int liveSlot = objectDead ? root.s.slot : root.o.slot;
+		return new KeysOnlyRoot(root, bySubject, liveSlot, rootFilters.toArray(new NativeBooleanFilter[0]));
+	}
+
+	/** The detected keys-only root: which adjacency side to enumerate and which slot its keys bind. */
+	static final class KeysOnlyRoot {
+		final PatternPlan pattern;
+		final boolean bySubject;
+		final int liveSlot;
+		final NativeBooleanFilter[] depth0Filters;
+
+		KeysOnlyRoot(PatternPlan pattern, boolean bySubject, int liveSlot, NativeBooleanFilter[] depth0Filters) {
+			this.pattern = pattern;
+			this.bySubject = bySubject;
+			this.liveSlot = liveSlot;
+			this.depth0Filters = depth0Filters;
+		}
+
+		/**
+		 * Distinct-key estimate for the enumerated side: the sampled per-predicate figure when the source has one, else
+		 * the pattern estimate divided by the mean fan-out, else NaN (no cap — pricing falls back to the flat
+		 * estimate).
+		 */
+		double distinctKeyEstimate(RowState row) {
+			long predicate = pattern.p.lookup(row.slots);
+			java.util.OptionalDouble keys = row.source.distinctFanOutKeys(predicate, bySubject);
+			if (keys.isPresent()) {
+				return keys.getAsDouble();
+			}
+			java.util.OptionalDouble fanOut = row.source.meanFanOut(predicate, bySubject);
+			double estimate = pattern.estimateForBoundMask(row.boundMask(), row.source);
+			if (fanOut.isPresent() && fanOut.getAsDouble() > 0D && Double.isFinite(estimate) && estimate >= 0D) {
+				return estimate / fanOut.getAsDouble();
+			}
+			return Double.NaN;
+		}
+
+		/**
+		 * Opens the keys-only enumeration, or null (with everything closed again) when the store cannot serve a
+		 * key-enumerable view that guarantees non-empty runs — the caller then falls back to the ordinary prefix.
+		 */
+		RowCursor open(RowState row) throws IOException {
+			long predicate = pattern.p.lookup(row.slots);
+			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+			boolean transferred = false;
+			try {
+				NativeLmdbQuerySource.NativeAdjacency view = probe.adjacency(predicate, bySubject);
+				if (view == null) {
+					return null;
+				}
+				if (!view.supportsKeyEnumeration() || view.keyCount() < 0 || !view.keysImplyNonEmptyRuns()) {
+					view.close();
+					return null;
+				}
+				NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor keys = view.openKeyRunCursor();
+				if (keys == null) {
+					view.close();
+					return null;
+				}
+				transferred = true;
+				return new KeysOnlyRootCursor(row, liveSlot, depth0Filters, probe, view, keys);
+			} finally {
+				if (!transferred) {
+					probe.close();
+				}
+			}
+		}
+	}
+
+	/** Batched keys-only enumeration writing the live slot; one row per distinct key, no run decode. */
+	private static final class KeysOnlyRootCursor implements RowCursor {
+		private static final int KEY_CHUNK = 256;
+
+		private final RowState row;
+		private final int liveSlot;
+		private final NativeBooleanFilter[] filters;
+		private final NativeLmdbQuerySource.NativeProbe probe;
+		private final NativeLmdbQuerySource.NativeAdjacency view;
+		private final NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor keys;
+		private final long[] buffer = new long[KEY_CHUNK];
+		private int filled;
+		private int index;
+		private boolean closed;
+
+		KeysOnlyRootCursor(RowState row, int liveSlot, NativeBooleanFilter[] filters,
+				NativeLmdbQuerySource.NativeProbe probe, NativeLmdbQuerySource.NativeAdjacency view,
+				NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor keys) {
+			this.row = row;
+			this.liveSlot = liveSlot;
+			this.filters = filters;
+			this.probe = probe;
+			this.view = view;
+			this.keys = keys;
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			while (!closed) {
+				while (index < filled) {
+					row.slots[liveSlot] = buffer[index++];
+					boolean accepted = true;
+					for (NativeBooleanFilter filter : filters) {
+						if (!filter.accept(row)) {
+							accepted = false;
+							break;
+						}
+					}
+					if (accepted) {
+						return true;
+					}
+				}
+				filled = keys.fillKeys(buffer, 0, KEY_CHUNK);
+				index = 0;
+				if (filled == 0) {
+					return false;
+				}
+			}
+			return false;
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			try {
+				keys.close();
+			} catch (Exception ignored) {
+				// closing the enclosing probe below releases the underlying resources regardless
+			} finally {
+				try {
+					view.close();
+				} finally {
+					probe.close();
+				}
+			}
+		}
 	}
 
 	/** The flat-prefix/branch split shared by planning ({@link #tryCreate}) and the cheap dispatch probe. */
@@ -331,11 +528,17 @@ final class LmdbNativeFactorizedRows {
 		final long[] fresh;
 		final long[] reads;
 		final int flatCount;
+		/** Slots consumed at depths >= 1 (probe reads and cross-depth filter reads); keys-only-root liveness input. */
+		final long laterNeedsAfterRoot;
+		/** Union of the masks of filters assigned to depth 0. */
+		final long depth0FilterMask;
 
-		Split(long[] fresh, long[] reads, int flatCount) {
+		Split(long[] fresh, long[] reads, int flatCount, long laterNeedsAfterRoot, long depth0FilterMask) {
 			this.fresh = fresh;
 			this.reads = reads;
 			this.flatCount = flatCount;
+			this.laterNeedsAfterRoot = laterNeedsAfterRoot;
+			this.depth0FilterMask = depth0FilterMask;
 		}
 	}
 
@@ -390,7 +593,13 @@ final class LmdbNativeFactorizedRows {
 		if (flatCount == n) {
 			return null;
 		}
-		return new Split(fresh, reads, flatCount);
+		long depth0FilterMask = 0L;
+		for (int f = 0; f < filters.length; f++) {
+			if (filterDepth[f] == 0) {
+				depth0FilterMask |= filters[f].mask;
+			}
+		}
+		return new Split(fresh, reads, flatCount, laterNeeds[1], depth0FilterMask);
 	}
 
 	private static long outputMask(int[] sourceSlots) {
@@ -445,6 +654,17 @@ final class LmdbNativeFactorizedRows {
 				+ prefixStrategy + ", " + branchCounts + ")";
 	}
 
+	/**
+	 * Proposal price: the ordinary factorized cost, with depth 0 capped by the distinct-key estimate when the keys-only
+	 * root applies.
+	 */
+	double proposalCost(RowState row) {
+		return keysOnlyRoot == null
+				? LmdbNativeStrategyProposal.factorizedCost(derived, flatCount, row)
+				: LmdbNativeStrategyProposal.factorizedCost(derived, flatCount, row,
+						keysOnlyRoot.distinctKeyEstimate(row));
+	}
+
 	void recordEngagement() {
 		if (!engagementRecorded) {
 			engagementRecorded = true;
@@ -472,6 +692,14 @@ final class LmdbNativeFactorizedRows {
 			prefix = new SingletonCursor();
 			prefixStrategy = "singleton";
 		} else {
+			if (keysOnlyRoot != null) {
+				RowCursor keysRoot = keysOnlyRoot.open(row);
+				if (keysRoot != null) {
+					prefixStrategy = "keysOnlyRoot";
+					return flatCount == 1 ? keysRoot : plan.openChainFrom(derived, keysRoot, flatCount, row);
+				}
+				// No key-enumerable non-empty-run view for this predicate side: the ordinary ladder stays exact.
+			}
 			prefix = LmdbNativeChunkPipeline.tryOpenPrefix(plan, derived, flatCount, row, memoBudget);
 			if (prefix != null) {
 				prefixStrategy = "chunkPipeline";

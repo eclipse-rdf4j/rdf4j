@@ -1378,6 +1378,102 @@ class LmdbNativeKernelLoweringTest {
 		assertNull(lowerCounting(core, 2), "a copy onto an already-bound slot is an equality test, not an alias");
 	}
 
+	// ------------------------------------------------------------------
+	// Distinct dead-value demotion (keys-only EnumerateAdjKeys under DISTINCT)
+	// ------------------------------------------------------------------
+
+	private static final long PRED2 = 9L << 7 | 1L << 1;
+	private static final long PRED3 = 11L << 7 | 1L << 1;
+
+	private static MultiJoinPlan deadFanoutPlan() {
+		// Derived order puts the cheap fan-out pattern first (estimate 5 vs 1000), so it lowers to the root
+		// EnumerateAdjKeys with the dead ?c (slot 2) as its value column; ?b (slot 1) arrives via a probe.
+		PatternPlan fanout = new PatternPlan(Term.slot(0), Term.constant(PRED2), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 5D);
+		PatternPlan retainedLeg = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1000D);
+		return new MultiJoinPlan(new SlotPlan[] { fanout, retainedLeg }, new MaskedFilter[0]);
+	}
+
+	@Test
+	void distinctSinkDemotesADeadValueRootToKeysOnly() {
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerDistinctRows(deadFanoutPlan(),
+				freshRow(), null, false, new int[] { 1 });
+		assertNotNull(lowered);
+		String shape = lowered.kernel.shapeKey();
+		assertTrue(shape.contains(",x-1)"), shape);
+		boolean witnessed = false;
+		for (LmdbNativeKernelBindings.AdjacencyRequest request : lowered.bindings.adjacencies) {
+			witnessed |= request.needsNonEmptyKeys;
+		}
+		assertTrue(witnessed, "the demoted enumeration must demand a non-empty-run view at bind time");
+	}
+
+	@Test
+	void distinctSinkKeepsTheValueColumnWhenItIsARetainedKey() {
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerDistinctRows(deadFanoutPlan(),
+				freshRow(), null, false, new int[] { 1, 2 });
+		assertNotNull(lowered);
+		String shape = lowered.kernel.shapeKey();
+		assertFalse(shape.contains(",x-1)"), shape);
+		for (LmdbNativeKernelBindings.AdjacencyRequest request : lowered.bindings.adjacencies) {
+			assertFalse(request.needsNonEmptyKeys, shape);
+		}
+	}
+
+	@Test
+	void distinctSinkKeepsTheValueColumnWhenALaterPatternJoinsOnIt() {
+		PatternPlan fanout = new PatternPlan(Term.slot(0), Term.constant(PRED2), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 5D);
+		PatternPlan retainedLeg = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1000D);
+		PatternPlan joinsDeadSlot = new PatternPlan(Term.slot(2), Term.constant(PRED3), Term.slot(3), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 2000D);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { fanout, retainedLeg, joinsDeadSlot },
+				new MaskedFilter[0]);
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerDistinctRows(plan, freshRow(), null,
+				false, new int[] { 1 });
+		assertNotNull(lowered);
+		assertFalse(lowered.kernel.shapeKey().contains(",x-1)"), lowered.kernel.shapeKey());
+	}
+
+	@Test
+	void distinctSinkDemotionHonoursItsKillSwitch() {
+		String previous = System.getProperty(LmdbNativeKernelLowering.DISTINCT_DEAD_VALUE_DEMOTION_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.DISTINCT_DEAD_VALUE_DEMOTION_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerDistinctRows(deadFanoutPlan(),
+					freshRow(), null, false, new int[] { 1 });
+			assertNotNull(lowered);
+			assertFalse(lowered.kernel.shapeKey().contains(",x-1)"), lowered.kernel.shapeKey());
+		} finally {
+			if (previous == null) {
+				System.clearProperty(LmdbNativeKernelLowering.DISTINCT_DEAD_VALUE_DEMOTION_PROPERTY);
+			} else {
+				System.setProperty(LmdbNativeKernelLowering.DISTINCT_DEAD_VALUE_DEMOTION_PROPERTY, previous);
+			}
+		}
+	}
+
+	@Test
+	void pipelineTouchesColumnSeparatesReadsWritesAndPrivateColumns() {
+		java.util.List<LmdbNativeKernelIr.Node> pipeline = java.util.List.of(
+				new LmdbNativeKernelIr.EnumerateAdjKeys(0, 0, 1),
+				new LmdbNativeKernelIr.Probe(1, LmdbNativeKernelIr.Operand.col(0), 2));
+		assertFalse(LmdbNativeKernelIr.Kernel.pipelineTouchesColumn(pipeline, 0, 1),
+				"a value column no other node reads or writes is private to its producer");
+		java.util.List<LmdbNativeKernelIr.Node> joined = java.util.List.of(
+				new LmdbNativeKernelIr.EnumerateAdjKeys(0, 0, 1),
+				new LmdbNativeKernelIr.Probe(1, LmdbNativeKernelIr.Operand.col(1), 2));
+		assertTrue(LmdbNativeKernelIr.Kernel.pipelineTouchesColumn(joined, 0, 1),
+				"a probe keyed on the column is a read");
+		java.util.List<LmdbNativeKernelIr.Node> rewritten = java.util.List.of(
+				new LmdbNativeKernelIr.EnumerateAdjKeys(0, 0, 1),
+				new LmdbNativeKernelIr.EnumerateAdjKeys(1, 1, 3));
+		assertTrue(LmdbNativeKernelIr.Kernel.pipelineTouchesColumn(rewritten, 0, 1),
+				"a column another node produces is a join coordinate, not a private value");
+	}
+
 	/** Minimal synthetic source: ids never resolve, no statements — the lowering must not need any of it. */
 	/**
 	 * A stub source that additionally reports a measured mean fan-out for exactly one (predicate, bySubject) pair, so

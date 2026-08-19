@@ -60,6 +60,11 @@ final class LmdbNativeStrategyPreference {
 	 * {@code LmdbNativeStrategyProposal.chooseTag} and {@code LmdbNativeGroupStep.evaluateParallelOrFactorized}, both
 	 * of which keep the sequential strategy when the costs are equal.
 	 */
+	// Deliberately absent from this ladder: the bare-fragment route (PATH_BARE_DIRECT). It runs once per outer
+	// binding of a correlated fragment — arbitrating each call would multiply arbiter overhead by the outer row
+	// count — and its plan is usually a single scan that every rival structurally declines. Its aggregated
+	// nanos/rows evidence (nativeBareDirect*Actual) keeps the route auditable; revisit with memoized first-call
+	// arbitration if that evidence shows losses.
 	private static final String[] ORDER = {
 			// Structural short-circuits: these answer the query from an index intersection outright.
 			LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION,
@@ -95,6 +100,12 @@ final class LmdbNativeStrategyPreference {
 			LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION,
 			LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES,
 			LmdbNativeAttemptMetrics.PATH_CHUNK_PIPELINE,
+			// The DISTINCT-sinking kernel is a same-family specialization of the row kernel (it prunes emission and
+			// demotes multiplicity probes but still enumerates the driving rows), so it heads the kernel family:
+			// deliberately BELOW the row-count reducers above (factorized/batch), which a positionally captured
+			// distinct kernel used to preempt — cost must strictly dominate for it to displace them.
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
 			// Row-side constant-factor reducer: same rows, cheaper per row (parallel rung directly below, C11).
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
 			// The interpreted tier of the row kernel sits directly below its compiled sibling, same as the

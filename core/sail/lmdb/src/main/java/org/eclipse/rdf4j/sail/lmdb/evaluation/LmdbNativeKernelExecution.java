@@ -364,6 +364,110 @@ final class LmdbNativeKernelExecution {
 				});
 	}
 
+	/** Kill switch for the DISTINCT-sinking kernel tiers (proposal and positional rung alike). */
+	static final String DISTINCT_ENABLED_PROPERTY = "rdf4j.lmdb.kernelDistinct.enabled";
+
+	static boolean distinctKernelEnabled() {
+		return Boolean.parseBoolean(System.getProperty(DISTINCT_ENABLED_PROPERTY, "true"));
+	}
+
+	/**
+	 * Cost-only proposal for the DISTINCT-sinking row kernel (plan 32 M3/M4): the kernel emits only the distinct key
+	 * columns and dedups them itself, replacing input and dedup in one cursor — the accepter marks the selected input
+	 * HANDLED so the caller skips its own tracker. Lowering and compilation stay behind the opener, exactly like
+	 * {@link #proposeRows}.
+	 * <p>
+	 * The price is an interval rather than the plain kernel's full-enumeration estimate: the distinct sink prunes
+	 * branches whose fresh variables fall outside the retained mask into existence probes, so its best case charges one
+	 * probe per prefix row for such a branch instead of its whole fan-out. The interval is deliberately wide — on
+	 * overlap the preference table decides, and the row-count reducers (factorized, batch) outrank this rung, which is
+	 * the arbitration this rung previously escaped by ladder position.
+	 */
+	static LmdbNativeStrategyProposal<RowCursor> proposeDistinctRows(SlotPlan arg, RowState row,
+			TupleExpr originalExpr, int[] distinctSlots) {
+		if (!distinctKernelEnabled()) {
+			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+					"disabled");
+			return null;
+		}
+		if (distinctSlots == null || distinctSlots.length == 0 || !hasFusionOpportunity(arg)) {
+			// Quiet: the plain kernel rung still gets its own opportunity, so recording this structural mismatch
+			// would double-count in the decline census.
+			return null;
+		}
+		if (!LmdbNativeJaninoCodegen.enabled() && !LmdbNativeKernelInterpreter.enabled()) {
+			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+					"disabled");
+			return null;
+		}
+		String tag = LmdbNativeJaninoCodegen.enabled() ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT
+				: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED;
+		long boundMask = row.boundMask();
+		LmdbNativeWork work = estimateDistinctWork(arg, row, boundMask, distinctSlots);
+		double rows = LmdbNativeWork.rowsOut(arg, row, boundMask);
+		return new LmdbNativeStrategyProposal<>(
+				() -> openWithFusedRuntime(arg, row,
+						() -> tryOpenRows(arg, row, originalExpr, false, distinctSlots, null)),
+				work, LmdbNativeWork.ZERO, rows, tag, () -> {
+				});
+	}
+
+	/**
+	 * Interval price of the distinct-sunk kernel: high = the plain full-enumeration estimate; low = a chain walk where
+	 * a witness-only child (every slot it introduces is neither retained by DISTINCT nor joined by a sibling) charges
+	 * one existence probe per prefix row instead of multiplying the chain by its fan-out — mirroring the branch pruning
+	 * {@code lowerDistinctRows} performs and the factorized route's EXISTS role. Children are priced in declared order;
+	 * a child whose join slots are not yet bound at its position simply keeps its full price, which only widens the
+	 * interval upward (never a wrong domination).
+	 */
+	private static LmdbNativeWork estimateDistinctWork(SlotPlan arg, RowState row, long boundMask,
+			int[] distinctSlots) {
+		LmdbNativeWork full = arg.estimateWork(row, boundMask);
+		if (!(arg instanceof MultiJoinPlan)) {
+			return full;
+		}
+		SlotPlan[] children = ((MultiJoinPlan) arg).children;
+		long retained = 0L;
+		for (int slot : distinctSlots) {
+			retained |= 1L << slot;
+		}
+		long seen = 0L;
+		long shared = 0L;
+		for (SlotPlan child : children) {
+			long produced = child.producedMask();
+			shared |= produced & seen;
+			seen |= produced;
+		}
+		double prefixRows = 1D;
+		double low = 0D;
+		long mask = boundMask;
+		for (SlotPlan child : children) {
+			long produced = child.producedMask();
+			long introduced = produced & ~shared & ~boundMask;
+			boolean witnessOnly = introduced != 0L && (introduced & retained) == 0L
+					&& (produced & ~introduced & ~mask) == 0L;
+			LmdbNativeWork childWork = child.estimateWork(row, mask);
+			double childRows = LmdbNativeWork.rowsOut(child, row, mask);
+			if (!childWork.known() || Double.isNaN(childRows)) {
+				return full;
+			}
+			if (witnessOnly) {
+				low += prefixRows * LmdbNativeWork.SEEK;
+			} else {
+				low += childWork.low() * prefixRows;
+				prefixRows *= childRows;
+				if (!Double.isFinite(prefixRows)) {
+					return full;
+				}
+			}
+			mask |= produced;
+		}
+		if (!full.known()) {
+			return LmdbNativeWork.atLeast(low);
+		}
+		return LmdbNativeWork.between(Math.min(low, full.high()), full.high());
+	}
+
 	/** The consumer's ORDER BY / LIMIT / OFFSET, offered to the kernel terminal (M7 OutputMods). */
 	static final class OrderedMods {
 		final int[] orderSlots;
@@ -395,22 +499,6 @@ final class LmdbNativeKernelExecution {
 		}
 		return openWithFusedRuntime(arg, row, () -> tryOpenRows(arg, row, originalExpr, false, null,
 				new OrderedMods(orderSlots, orderAscending, limit, offset, strictCompare)));
-	}
-
-	/**
-	 * DISTINCT-sinking row rung (plan 32 M3/M4): the kernel emits only the distinct key columns and dedups them itself,
-	 * order-aware where the pipeline's producers are sorted; the caller may therefore skip its own dedup entirely when
-	 * this returns a cursor. Null falls through to the ordinary distinct tiers.
-	 */
-	static RowCursor tryOpenDistinctRows(SlotPlan arg, RowState row, TupleExpr originalExpr, int[] distinctSlots)
-			throws IOException {
-		if (!hasFusionOpportunity(arg)) {
-			// Quiet: the ordinary ladder (including the plain kernel) still gets its opportunity, so recording this
-			// attempt against PATH_IR_KERNEL would double-count in the decline census.
-			return null;
-		}
-		return openWithFusedRuntime(arg, row,
-				() -> tryOpenRows(arg, row, originalExpr, false, distinctSlots, null));
 	}
 
 	@FunctionalInterface
@@ -624,8 +712,13 @@ final class LmdbNativeKernelExecution {
 					return null;
 				}
 			}
-			final String route = interpretedExecution ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED
-					: LmdbNativeAttemptMetrics.PATH_IR_KERNEL;
+			// The distinct sink carries its own tag pair so explain output, bind-time declines and calibration
+			// evidence never merge into the plain kernel's models (they price full-emission plans).
+			final String route = distinctSlots != null
+					? (interpretedExecution ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED
+							: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT)
+					: (interpretedExecution ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED
+							: LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
 			final String pathTag = route;
 			final long observedRowsForVariants = observedRows;
 			final boolean interpretedVariants = interpretedExecution;
@@ -698,6 +791,9 @@ final class LmdbNativeKernelExecution {
 									() -> LmdbNativeKernelEmitter.emit(variant), observedRowsForVariants));
 			if (parallel != null) {
 				OPENED.incrementAndGet();
+				// The engaged strategy is the parallel rung, not its serial sibling: record it so explain output
+				// distinguishes a parallel capture from the serial kernel the arbiter actually priced.
+				LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL);
 				if (row.runtimePlan != null) {
 					SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
 							? ((MultiJoinPlan) arg).derivedPlan(row).order

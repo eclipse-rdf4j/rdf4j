@@ -209,6 +209,28 @@ public class LmdbNativeStrategyArbiterTest {
 						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED);
 	}
 
+	/**
+	 * The DISTINCT-sinking kernel tiers head the kernel family (compiled above interpreted, both above the plain row
+	 * kernel) but sit BELOW the row-count reducers they used to preempt by ladder position — factorized or batch must
+	 * win every cost overlap, and only strict domination lets the distinct kernel displace them.
+	 */
+	@Test
+	public void distinctKernelRungsRankBelowRowCountReducersAndAboveThePlainKernel() {
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_BATCH,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP)).isTrue();
+		assertThat(LmdbNativeAttemptMetrics.EXECUTION_PATH_VOCABULARY)
+				.contains(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED);
+	}
+
 	@Test
 	public void dominatedCandidateCannotReturnWhenTwoCheapestCandidatesTie() {
 		List<LmdbNativeStrategyProposal<String>> candidates = List.of(

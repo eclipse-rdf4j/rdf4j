@@ -441,6 +441,11 @@ final class LmdbNativeKernelPartitions {
 		}
 
 		@Override
+		public boolean keysImplyNonEmptyRuns() {
+			return delegate.keysImplyNonEmptyRuns();
+		}
+
+		@Override
 		public long keyCount() {
 			return to - from;
 		}

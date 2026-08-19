@@ -849,6 +849,13 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	}
 
 	@Override
+	public boolean keysImplyNonEmptyRuns() {
+		// RootScanCursor.advance() only emits candidates with run > 0: fully-deleted keys become domain tombstones
+		// and zero-sized generation runs are skipped, so every enumerated key is an existence witness.
+		return true;
+	}
+
+	@Override
 	public long keyCount() {
 		ensureOpen();
 		prepareKeyDomain();

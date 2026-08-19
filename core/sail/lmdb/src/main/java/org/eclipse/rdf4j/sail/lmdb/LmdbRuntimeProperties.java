@@ -58,6 +58,8 @@ public final class LmdbRuntimeProperties {
 			on("Code generation", "rdf4j.lmdb.fragments.enabled", "Fragment fast paths",
 					"Serve recognized filter predicates from compiled id-space fragments with exact escape.",
 					UNLESS_FALSE_IGNORE_CASE),
+			on("Code generation", "rdf4j.lmdb.kernelDistinct.enabled", "DISTINCT-sinking row kernels",
+					"Offer DISTINCT-sunk generated row kernels to the strategy arbiter.", BOOLEAN),
 			on("Code generation", "rdf4j.lmdb.kernelInterpreter.enabled", "Kernel interpreter",
 					"Serve eligible aggregate kernels from the IR interpreter when no compiled kernel exists.",
 					BOOLEAN),

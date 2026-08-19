@@ -41,11 +41,25 @@ final class LmdbNativeKernelBindings {
 		final long predicate;
 		final boolean bySubject;
 		final boolean needsKeyEnum;
+		/**
+		 * The kernel enumerates this view's keys as an existence witness (distinct dead-value demotion): a key with a
+		 * zero-sized run would then wrongly produce a row, so the bound view must guarantee non-empty runs.
+		 */
+		final boolean needsNonEmptyKeys;
 
 		AdjacencyRequest(long predicate, boolean bySubject, boolean needsKeyEnum) {
+			this(predicate, bySubject, needsKeyEnum, false);
+		}
+
+		AdjacencyRequest(long predicate, boolean bySubject, boolean needsKeyEnum, boolean needsNonEmptyKeys) {
 			this.predicate = predicate;
 			this.bySubject = bySubject;
 			this.needsKeyEnum = needsKeyEnum;
+			this.needsNonEmptyKeys = needsNonEmptyKeys;
+		}
+
+		AdjacencyRequest withNonEmptyKeys() {
+			return needsNonEmptyKeys ? this : new AdjacencyRequest(predicate, bySubject, needsKeyEnum, true);
 		}
 	}
 
@@ -514,6 +528,13 @@ final class LmdbNativeKernelBindings {
 				continue;
 			}
 			if (request.needsKeyEnum && (!view.supportsKeyEnumeration() || view.keyCount() < 0)) {
+				view.close();
+				continue;
+			}
+			if (request.needsNonEmptyKeys && !view.keysImplyNonEmptyRuns()) {
+				// A demoted keys-only enumeration is an existence witness; a view that may expose zero-sized runs
+				// (the fallback key-run cursor's contract) would produce phantom keys, so it flows into the same
+				// unavailable-view ladder as a missing adjacency.
 				view.close();
 				continue;
 			}

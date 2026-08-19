@@ -624,6 +624,16 @@ public interface NativeLmdbQuerySource {
 			return false;
 		}
 
+		/**
+		 * True when every key this view enumerates is guaranteed a non-empty run, so keys-only enumeration doubles as
+		 * an existence witness. The default is {@code false} because {@link #openKeyRunCursor()}'s fallback contract
+		 * deliberately emits every logical key even when a lookup returns a zero-sized run; implementations whose
+		 * storage forbids empty rows (the CSF builder) or tombstones fully-deleted keys may override to {@code true}.
+		 */
+		default boolean keysImplyNonEmptyRuns() {
+			return false;
+		}
+
 		/** Number of distinct keys in this view, or {@code -1} when key enumeration is unsupported. */
 		default long keyCount() {
 			return -1L;

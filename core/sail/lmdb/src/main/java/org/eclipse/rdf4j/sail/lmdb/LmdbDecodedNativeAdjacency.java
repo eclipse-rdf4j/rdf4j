@@ -164,6 +164,13 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 	}
 
 	@Override
+	public boolean keysImplyNonEmptyRuns() {
+		// Base-only view over the immutable CSF, whose builder rejects empty rows (Builder.endRow throws on a row
+		// with no pairs), so every promoted key carries at least one neighbor.
+		return true;
+	}
+
+	@Override
 	public long keyCount() {
 		return keys.keyCount();
 	}

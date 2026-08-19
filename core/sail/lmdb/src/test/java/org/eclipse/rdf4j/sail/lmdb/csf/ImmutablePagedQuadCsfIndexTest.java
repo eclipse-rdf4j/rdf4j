@@ -588,6 +588,73 @@ class ImmutablePagedQuadCsfIndexTest {
 		}
 	}
 
+	/**
+	 * The key cursor's scalar path decodes the neighbor eagerly and the context lazily (a neighbor-only consumer must
+	 * never pay the context prefix-sum walk), with a separate context cache ordinal so repeated and interleaved
+	 * accesses stay exact. Fixtures cover multi-context fibers, a multi-page neighbor chain, a multi-page context
+	 * chain, and copyPairs repositioning the shared extent page between scalar reads.
+	 */
+	@Test
+	void keyCursorScalarNeighborAndLazyContextStayExactUnderInterleaving() {
+		int supernode = 80_000;
+		long[] fanNeighbours = new long[supernode];
+		long[] fanContexts = new long[supernode];
+		long[] contextNeighbours = new long[supernode];
+		long[] contextContexts = new long[supernode];
+		for (int i = 0; i < supernode; i++) {
+			fanNeighbours[i] = id(1, 1_000_000L + i);
+			contextNeighbours[i] = id(1, 5_000_000);
+			long coordinate = i + 1L;
+			contextContexts[i] = id(1, coordinate * coordinate);
+		}
+		long multiNeighbour = id(1, 900);
+		List<Row> rows = List.of(
+				new Row(id(1, 10),
+						new long[] { multiNeighbour, multiNeighbour, multiNeighbour, id(1, 901) },
+						new long[] { 0, id(1, 4), id(1, 8), 0 }),
+				new Row(id(1, 50), fanNeighbours, fanContexts),
+				new Row(id(1, 90), contextNeighbours, contextContexts),
+				new Row(id(1, 120), new long[] { id(1, 7_000_000) }, new long[] { id(1, 3) }));
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows)) {
+			assertThat(index.pageCount()).isGreaterThan(2);
+			ImmutablePagedQuadCsfIndex.KeyCursor cursor = index.keyDomain(0, 0).cursor();
+			int visited = 0;
+			while (cursor.advance()) {
+				Row expected = rows.get(visited++);
+				assertThat(cursor.key()).isEqualTo(expected.row);
+				int count = expected.neighbours.length;
+				assertThat(cursor.edgeCount()).isEqualTo(count);
+				long[] neighbours = new long[count];
+				long[] contexts = new long[count];
+				assertThat(cursor.copyPairs(0, count, neighbours, 0, contexts, 0)).isEqualTo(count);
+				assertThat(neighbours).containsExactly(expected.neighbours);
+				assertThat(contexts).containsExactly(expected.contexts);
+				int stride = Math.max(1, count / 17);
+				// Neighbor-only sweep: no contextAt call anywhere on this pass.
+				for (long ordinal = 0; ordinal < count; ordinal += stride) {
+					assertThat(cursor.neighborAt(ordinal)).isEqualTo(expected.neighbours[(int) ordinal]);
+				}
+				// Context-only sweep (context decoded on demand, no prior neighborAt at these ordinals).
+				for (long ordinal = count - 1; ordinal >= 0; ordinal -= stride) {
+					assertThat(cursor.contextAt(ordinal)).isEqualTo(expected.contexts[(int) ordinal]);
+				}
+				// Interleavings: repeat at one ordinal, jump back, and reposition the extent page via copyPairs
+				// between scalar reads of the same ordinal.
+				long probe = count - 1;
+				assertThat(cursor.neighborAt(probe)).isEqualTo(expected.neighbours[(int) probe]);
+				assertThat(cursor.contextAt(probe)).isEqualTo(expected.contexts[(int) probe]);
+				assertThat(cursor.contextAt(probe)).isEqualTo(expected.contexts[(int) probe]);
+				assertThat(cursor.contextAt(0)).isEqualTo(expected.contexts[0]);
+				assertThat(cursor.neighborAt(0)).isEqualTo(expected.neighbours[0]);
+				assertThat(cursor.copyPairs(0, Math.min(8, count), neighbours, 0, contexts, 0))
+						.isEqualTo(Math.min(8, count));
+				assertThat(cursor.contextAt(probe)).isEqualTo(expected.contexts[(int) probe]);
+				assertThat(cursor.neighborAt(probe)).isEqualTo(expected.neighbours[(int) probe]);
+			}
+			assertThat(visited).isEqualTo(rows.size());
+		}
+	}
+
 	private static ImmutablePagedQuadCsfIndex build(int predicates, long predicate, int plane, List<Row> rows) {
 		ImmutablePagedQuadCsfIndex.BuildPlan plan;
 		try (ImmutablePagedQuadCsfIndex.Builder sizing = ImmutablePagedQuadCsfIndex.sizingBuilder(predicates)) {

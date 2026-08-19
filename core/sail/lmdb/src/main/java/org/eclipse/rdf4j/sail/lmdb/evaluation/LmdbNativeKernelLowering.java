@@ -258,6 +258,13 @@ final class LmdbNativeKernelLowering {
 		return Boolean.parseBoolean(System.getProperty(MIXED_BINDING_PROPERTY, "true"));
 	}
 
+	/** Kill switch for the distinct dead-value demotion (keys-only {@code EnumerateAdjKeys} under DISTINCT). */
+	static final String DISTINCT_DEAD_VALUE_DEMOTION_PROPERTY = "rdf4j.lmdb.janinoCodegen.distinctDeadValueDemotion";
+
+	static boolean distinctDeadValueDemotionEnabled() {
+		return Boolean.parseBoolean(System.getProperty(DISTINCT_DEAD_VALUE_DEMOTION_PROPERTY, "true"));
+	}
+
 	/** Patterns lowered as scans because exactly their predicate's views were unavailable (M10 witness). */
 	static final AtomicLong MIXED_BINDING_LOWERINGS = new AtomicLong();
 
@@ -380,7 +387,7 @@ final class LmdbNativeKernelLowering {
 		}
 		if (core instanceof LeftJoinPlan) {
 			// v1 boundary: OPTIONAL introduces maybe-null key columns whose grouping story is not yet proven.
-			declineQuiet("distinct-sink:optional");
+			declineDistinct(declineTarget, "distinct-sink:optional");
 			return null;
 		}
 		long retained = 0L;
@@ -390,7 +397,7 @@ final class LmdbNativeKernelLowering {
 			}
 		}
 		if (retained == 0L) {
-			declineQuiet("distinct-sink:no-keys");
+			declineDistinct(declineTarget, "distinct-sink:no-keys");
 			return null;
 		}
 		Builder builder = new Builder(row, "");
@@ -399,11 +406,11 @@ final class LmdbNativeKernelLowering {
 		builder.distinctRetainedMask = retained;
 		List<MaskedFilter> coreFilters = new ArrayList<>(0);
 		if (!builder.lowerJoinOperand(core, coreFilters, row)) {
-			declineQuiet(builder.reason);
+			declineDistinct(declineTarget, builder.reason);
 			return null;
 		}
 		if (builder.joinOperands == 0) {
-			declineQuiet("no-children");
+			declineDistinct(declineTarget, "no-children");
 			return null;
 		}
 		for (MaskedFilter masked : coreFilters) {
@@ -414,10 +421,10 @@ final class LmdbNativeKernelLowering {
 		}
 		Lowered lowered = builder.build();
 		if (lowered == null) {
-			declineQuiet("no-columns");
+			declineDistinct(declineTarget, "no-columns");
 			return null;
 		}
-		return sinkDistinct(lowered, builder, distinctSlots);
+		return sinkDistinct(lowered, builder, distinctSlots, declineTarget);
 	}
 
 	/**
@@ -512,28 +519,40 @@ final class LmdbNativeKernelLowering {
 	}
 
 	/**
+	 * Distinct-sink refusals are loud, unlike the order-sink ones above: the DISTINCT rung carries its own census tag
+	 * ({@code irKernelDistinct}), which no later rung shares, so recording them cannot double-count — and an invisible
+	 * decline is how the distinct rung's behaviour went unaudited while it was capturing queries by ladder position.
+	 */
+	private static void declineDistinct(TupleExpr declineTarget, String reason) {
+		LmdbNativeAttemptMetrics.recordDecline(declineTarget, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+				reason);
+		declineQuiet(reason);
+	}
+
+	/**
 	 * Rewrites a plain row lowering into its DISTINCT-sunk form: emit columns restricted to the distinct keys
 	 * (aligned-prefix first), {@code Emit.distinct} with the order-aware dedup tiers, and multiplicity
 	 * {@code ProbeClose} nodes demoted to semi — a DISTINCT consumer cannot observe the repeat count, and semi keeps
 	 * emission grouped for the aligned tiers. Declines (null) whenever the emitted columns could not carry the exact
 	 * DISTINCT the consumer expects.
 	 */
-	private static Lowered sinkDistinct(Lowered lowered, Builder builder, int[] distinctSlots) {
+	private static Lowered sinkDistinct(Lowered lowered, Builder builder, int[] distinctSlots,
+			TupleExpr declineTarget) {
 		LmdbNativeKernelBindings bindings = lowered.bindings;
 		if (!bindings.residualFilters.isEmpty()) {
 			// Residual filters read arbitrary engine slots on the consumer row; restricting emission would starve them.
-			declineQuiet("distinct-sink:residual-filter");
+			declineDistinct(declineTarget, "distinct-sink:residual-filter");
 			return null;
 		}
 		if (bindings.planRequests.length > 0) {
-			declineQuiet("distinct-sink:plan-producer");
+			declineDistinct(declineTarget, "distinct-sink:plan-producer");
 			return null;
 		}
 		List<LmdbNativeKernelIr.Node> pipeline = new ArrayList<>(lowered.kernel.pipeline);
 		for (LmdbNativeKernelIr.Node node : pipeline) {
 			if (node instanceof LmdbNativeKernelIr.LeftProbe || node instanceof LmdbNativeKernelIr.LeftGroup
 					|| node instanceof LmdbNativeKernelIr.Union || node instanceof LmdbNativeKernelIr.PathExpand) {
-				declineQuiet("distinct-sink:node:" + node.getClass().getSimpleName());
+				declineDistinct(declineTarget, "distinct-sink:node:" + node.getClass().getSimpleName());
 				return null;
 			}
 		}
@@ -561,13 +580,41 @@ final class LmdbNativeKernelLowering {
 			if (col >= 0) {
 				keyCols.add(col);
 			} else if (slot < 0 || slot >= 64 || (builder.entryMask >>> slot & 1L) == 0L) {
-				declineQuiet("distinct-sink:unproduced-key[slot=" + slot + "]");
+				declineDistinct(declineTarget, "distinct-sink:unproduced-key[slot=" + slot + "]");
 				return null;
 			}
 		}
 		if (keyCols.isEmpty()) {
-			declineQuiet("distinct-sink:no-key-columns");
+			declineDistinct(declineTarget, "distinct-sink:no-key-columns");
 			return null;
+		}
+		// Dead-value demotion: an EnumerateAdjKeys whose value column is neither a distinct key nor touched by any
+		// other node multiplies every downstream row by its fan-out for nothing — under DISTINCT the multiplicity is
+		// unobservable, so it collapses to a keys-only enumeration (one row per key, batched fillKeys, no run
+		// decode). Soundness needs three gates: no context access (keys-only cannot carry it, IR invariant), the
+		// column untouched elsewhere (readsColumns is conservative; a produced column is a join coordinate), and a
+		// bound view that guarantees non-empty runs — a zero-run key would otherwise become a phantom witness, which
+		// the rebuilt AdjacencyRequest enforces at bind time via keysImplyNonEmptyRuns().
+		LmdbNativeKernelBindings.AdjacencyRequest[] adjacencyRequests = bindings.adjacencies;
+		if (distinctDeadValueDemotionEnabled()) {
+			for (int i = 0; i < pipeline.size(); i++) {
+				if (!(pipeline.get(i) instanceof LmdbNativeKernelIr.EnumerateAdjKeys)) {
+					continue;
+				}
+				LmdbNativeKernelIr.EnumerateAdjKeys keys = (LmdbNativeKernelIr.EnumerateAdjKeys) pipeline.get(i);
+				if (keys.valueCol < 0 || keys.ctxActive() || keyCols.contains(keys.valueCol)) {
+					continue;
+				}
+				if (LmdbNativeKernelIr.Kernel.pipelineTouchesColumn(pipeline, i, keys.valueCol)) {
+					continue;
+				}
+				pipeline.set(i, new LmdbNativeKernelIr.EnumerateAdjKeys(keys.adjacency, keys.keyCol, -1, -1, null,
+						false, keys.sipDriven, keys.sipConsumer));
+				if (adjacencyRequests == bindings.adjacencies) {
+					adjacencyRequests = adjacencyRequests.clone();
+				}
+				adjacencyRequests[keys.adjacency] = adjacencyRequests[keys.adjacency].withNonEmptyKeys();
+			}
 		}
 		// The aligned prefix: walking the loop producers outermost-in, a chain of sorted-producer columns that are
 		// all distinct keys emits its value combinations GROUPED (equal prefixes adjacent). Two ways a producer ends
@@ -647,7 +694,7 @@ final class LmdbNativeKernelLowering {
 		for (int i = 0; i < emitCols.length; i++) {
 			sunkSlots[i] = emittedSlots[emitCols[i]];
 		}
-		LmdbNativeKernelBindings sunk = new LmdbNativeKernelBindings(bindings.adjacencies, bindings.constants,
+		LmdbNativeKernelBindings sunk = new LmdbNativeKernelBindings(adjacencyRequests, bindings.constants,
 				bindings.entrySlotIds, bindings.keyDomains, bindings.filterHooks, bindings.bindHooks, sunkSlots,
 				bindings.residualFilters, bindings.scanSites, bindings.planRequests, bindings.groupLayout,
 				bindings.hooksRequired, bindings.distinctExpected);

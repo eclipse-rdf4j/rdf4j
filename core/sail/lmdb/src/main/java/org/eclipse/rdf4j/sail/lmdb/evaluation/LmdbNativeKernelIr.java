@@ -2639,7 +2639,104 @@ final class LmdbNativeKernelIr {
 				}
 				return false;
 			}
+			// Producers: they write fresh columns and read only their listed operands. Taught explicitly so the
+			// dead-column analyses (union-branch collapse, distinct dead-value demotion) accept realistic pipelines
+			// instead of tripping the conservative default on every producer.
+			if (node instanceof ScanQuad scan) {
+				for (Operand term : scan.terms) {
+					if (term != null && reads(term, columns)) {
+						return true;
+					}
+				}
+				return false;
+			}
+			if (node instanceof EnumerateAdjKeys keys) {
+				return keys.ctxMatch != null && reads(keys.ctxMatch, columns);
+			}
+			if (node instanceof EnumerateDomain || node instanceof EnumerateTerms || node instanceof EnumerateEntry) {
+				return false;
+			}
+			if (node instanceof SipDomainProbe probe) {
+				return probe.ctxMatch != null && reads(probe.ctxMatch, columns);
+			}
+			if (node instanceof SipKeyProbe probe) {
+				return probe.ctxMatch != null && reads(probe.ctxMatch, columns);
+			}
+			if (node instanceof EnumeratePredicates predicates) {
+				return reads(predicates.key, columns)
+						|| (predicates.ctxMatch != null && reads(predicates.ctxMatch, columns));
+			}
+			if (node instanceof ProbeVariable probe) {
+				return reads(probe.key, columns) || reads(probe.predicate, columns)
+						|| (probe.ctxMatch != null && reads(probe.ctxMatch, columns));
+			}
+			if (node instanceof BindHook hook) {
+				for (Operand operand : hook.args) {
+					if (reads(operand, columns)) {
+						return true;
+					}
+				}
+				return false;
+			}
+			if (node instanceof PathExpand expand) {
+				return reads(expand.source, columns);
+			}
+			if (node instanceof HashProbe probe) {
+				for (Operand operand : probe.keys) {
+					if (reads(operand, columns)) {
+						return true;
+					}
+				}
+				return false;
+			}
+			if (node instanceof HashBuild build) {
+				// The build sink reads its key and payload columns from the sub-pipeline's rows in the same register
+				// file; both count as reads alongside anything the sub-pipeline itself reads.
+				for (int col : build.keyCols) {
+					if (columns.get(col)) {
+						return true;
+					}
+				}
+				for (int col : build.payloadCols) {
+					if (columns.get(col)) {
+						return true;
+					}
+				}
+				for (Node inner : build.pipeline) {
+					if (readsColumns(inner, columns)) {
+						return true;
+					}
+				}
+				return false;
+			}
 			return true;
+		}
+
+		/**
+		 * Whether any pipeline node other than {@code excludeIndex} may read or (re)write {@code column}. Read access
+		 * uses {@link #readsColumns} (conservative: unknown node kinds count as reading everything); write access uses
+		 * {@link Node#produced}, because a column another node also produces is a join coordinate, not a private dead
+		 * value. Entry point for the distinct dead-value demotion in {@code LmdbNativeKernelLowering.sinkDistinct}.
+		 */
+		static boolean pipelineTouchesColumn(List<Node> pipeline, int excludeIndex, int column) {
+			BitSet columns = new BitSet();
+			columns.set(column);
+			BitSet produced = new BitSet();
+			for (int i = 0; i < pipeline.size(); i++) {
+				if (i == excludeIndex) {
+					continue;
+				}
+				Node node = pipeline.get(i);
+				if (readsColumns(node, columns)) {
+					return true;
+				}
+				produced.clear();
+				node.produced(produced);
+				if (produced.get(column)) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		private static boolean readsAny(Node node, BitSet columns) {

@@ -77,6 +77,14 @@ public final class LmdbNativeAttemptMetrics {
 	static final String PATH_IR_KERNEL_PARALLEL = "irKernelParallel";
 	static final String PATH_IR_AGGREGATE_PARALLEL = "irAggregateParallel";
 	/**
+	 * The DISTINCT-sinking tiers of the IR row kernel (plan 32 M3/M4): the kernel emits only the distinct key columns
+	 * and owns the dedup, so it replaces input <em>and</em> dedup in one cursor. Separate tags from the plain row
+	 * kernel because the distinct sink is offered as its own arbiter proposal — its cost evidence, declines and explain
+	 * output must not merge into the plain kernel's models, which price full-emission plans.
+	 */
+	static final String PATH_IR_KERNEL_DISTINCT = "irKernelDistinct";
+	static final String PATH_IR_KERNEL_DISTINCT_INTERPRETED = "irKernelDistinctInterpreted";
+	/**
 	 * Whole-stage codegen strategies; declines against these are logged at INFO to explain why Janino was not picked.
 	 */
 	private static final Set<String> JANINO_STRATEGIES = Set.of(PATH_JANINO_AGGREGATE,
@@ -119,7 +127,7 @@ public final class LmdbNativeAttemptMetrics {
 			PATH_PRIMITIVE_TUPLE_GROUPS, PATH_HASH_GROUPS, PATH_EXISTS_INTERSECTION, PATH_RUN_COUNT_HISTOGRAM,
 			PATH_DATATYPE_HISTOGRAM, PATH_TYPE_MATRIX, PATH_JANINO_AGGREGATE, PATH_IR_KERNEL,
 			PATH_IR_AGGREGATE, PATH_IR_AGGREGATE_INTERPRETED, PATH_IR_KERNEL_INTERPRETED, PATH_IR_KERNEL_PARALLEL,
-			PATH_IR_AGGREGATE_PARALLEL,
+			PATH_IR_AGGREGATE_PARALLEL, PATH_IR_KERNEL_DISTINCT, PATH_IR_KERNEL_DISTINCT_INTERPRETED,
 			PATH_WCOJ,
 			PATH_CONSTANT_FALSE_FILTER);
 
