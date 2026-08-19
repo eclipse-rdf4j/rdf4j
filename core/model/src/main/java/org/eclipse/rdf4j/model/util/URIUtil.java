@@ -371,4 +371,36 @@ public class URIUtil {
 				|| codePoint >= 0x0300 && codePoint <= 0x036F || codePoint >= 0x203F && codePoint <= 0x2040;
 	}
 
+	/**
+	 * True if the string starts with a valid RFC 3986 scheme followed by ':'. A colon appearing after '/', '?' or '#'
+	 * does not make the reference absolute.
+	 */
+	public static boolean isAbsoluteIri(String iri) {
+		for (int i = 0; i < iri.length(); i++) {
+			char c = iri.charAt(i);
+			if (c == ':') {
+				return i > 0;
+			}
+			if (c == '/' || c == '?' || c == '#') {
+				return false;
+			}
+			if (i == 0) {
+				if (!isAsciiAlpha(c)) {
+					return false;
+				}
+			} else if (!isAsciiAlpha(c) && !isAsciiDigit(c) && c != '+' && c != '-' && c != '.') {
+				return false;
+			}
+		}
+		return false;
+	}
+
+	private static boolean isAsciiAlpha(char c) {
+		return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+	}
+
+	private static boolean isAsciiDigit(char c) {
+		return c >= '0' && c <= '9';
+	}
+
 }
