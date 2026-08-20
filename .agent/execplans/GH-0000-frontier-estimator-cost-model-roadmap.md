@@ -864,7 +864,16 @@ rewrite.
   streaming-correlated implementation. Bound repeated-variable pairs fixed by a finite domain remain leaf equality
   constraints and are excluded from the unbound join-variable class domain; the focused constructor regression and
   Social Q7 self-loop integration pass. The final LMDB module gate passes 2,247 tests with zero failures or errors
-  (114 skipped). Still open: held-out audit/adaptive promotion, 24-hour asynchronous migration cleanup, cold-NVMe
+  (114 skipped). The shard-reader follow-up is complete: bounded metadata reads no longer retain header or directory
+  mappings; failed checksum mappings are explicitly cleaned; close seals and releases the mapping registry; and
+  contiguous columns promote after four successful dedicated touches to one shared mapping. The packed hot path now
+  uses one unaligned little-endian word load plus at most one spill byte, regular blocks use arithmetic lookup, and
+  large irregular layouts use bounded fences before binary search. Portable mapped-buffer regressions preserve the
+  existing logical `mappedDataBlockCount`; legacy/revision-3, widths 1 through 64, all codecs, irregular/tail, and
+  concurrent-first-touch verification pass on Temurin 26. Matched cached-read timing improves every measured width
+  and codec, while isolated cold first-touch is 43 to 46 percent slower and therefore remains an explicit cold-p95
+  qualification obligation rather than being hidden by the hot result. Still open: held-out audit/adaptive promotion,
+  24-hour asynchronous migration cleanup, cold-NVMe
   qualification, and physical 100M/250M/500M/1B scale runs. Milestone 8's immutable v96 artifacts
   remain valid and untouched; its timing campaign resumes only after V2 shadow-mode parity establishes a comparable
   estimator source.
@@ -1627,6 +1636,21 @@ Accuracy authority remains provisional until the shadow-mode 1B qualification pa
 
 ## Surprises & Discoveries
 
+- Observation: the Temurin 26 cached-read improvement is much larger than the OpenJ9 diagnostic suggested, but the
+  cold first touch remains slower. In alternating baseline/candidate runs, single-block width-31 random access moves
+  from 10.82/10.67 to 2.15/2.28 ns, regular 1,024-block width-31 access from 62.57/62.62 to 4.99/4.92 ns, and irregular
+  width-31 access from 73.54/70.33 to 14.53/13.61 ns. Widths 1 through 64 and codecs 1 through 4 all improve with
+  identical sinks. Open/close moves from 80.06/76.87 to 74.45/68.36 microseconds but per-open allocation grows from
+  120,842 to about 133,295 bytes. Isolated irregular-block first touch moves from 13.58/14.92 to 20.54/21.13
+  microseconds at width 31 and from 14.79/13.50 to 21.17/19.42 microseconds at width 63.
+- Observation: the supplied adaptive-layout verifier uses Linux `/proc/self/maps` and cannot run unchanged on macOS.
+  The repository regression exercises the same five-versus-eight physical-mapping contract through
+  `BufferPoolMXBean`, while the supplied cross-format semantic verifier runs unchanged and passes on Temurin 26.
+- Observation: the supplied shard correctness verifier passes unchanged against the pre-refactor reader, including
+  widths 1 through 64, all four codecs, legacy and revision-3 layouts, irregular blocks, tail reads, and concurrent
+  first touch. The implementation gap is native mapping topology and hot-path cost, not decoded-value semantics.
+  Evidence: compiling `FrontierStatisticsShardVerifier.java` against `core/sail/lmdb/target/classes` prints
+  `PASS widths=1..64, codecs=1..4, legacy+v3, irregular blocks, tail read-ahead, concurrent mapping`.
 - Observation: complete-store MEDICAL q9 estimates the exact 24,971-row `rdf:type med:Encounter` leaf as one
   projected subject because four independent projected-distinct lanes are approximately `[0, 0, 106808, 0]`. The
   median is zero and `FrontierMappedStatistics` clamps it to one. Mapped semi/anti costing then copies that point into
@@ -2329,6 +2353,21 @@ Accuracy authority remains provisional until the shadow-mode 1B qualification pa
 
 ## Decision Log
 
+- Decision: report cached lookup, open/close, and cold first-touch as separate shard-reader performance lanes and
+  leave cold-p95 qualification open despite the large steady-state win.
+  Rationale: one-time checksum validation and registry publication are intentionally paid on first block access, so
+  a hot-read aggregate cannot establish cold latency. The implementation is retained for its mapping-lifetime
+  correctness and repeatable 4.4x to 14.9x representative cached-read gains, but the 43 to 46 percent isolated
+  first-touch regression remains explicit evidence for the later cold-NVMe gate.
+  Date/Author: 2026-08-20 / Håvard and Codex.
+- Decision: preserve `mappedDataBlockCount` as a logical first-touch count and test native mapping topology through
+  the JDK mapped-buffer management bean rather than changing the public shard API or relying on Linux `/proc`.
+  Rationale: adaptive promotion deliberately maps eight logical blocks through four dedicated mappings and one
+  shared contiguous mapping. The supplied Linux verifier observes five file mappings, but RDF4J tests must remain
+  portable to macOS and Windows; `BufferPoolMXBean` exposes the same process-local mapping delta without a
+  platform-specific filesystem. Failed-checksum and metadata tests compare deltas around one isolated shard so
+  unrelated pre-existing mappings do not affect the assertion.
+  Date/Author: 2026-08-20 / Håvard and Codex.
 - Decision: Use the overflow-safe arithmetic mean for every complete projected-distinct design-lane ensemble, and
   keep its point estimate separate from the structural upper bound used for bounded-cache decisions.
   Rationale: each lane is an equal-weight independent inverse-probability replica. Zero is valid sampled evidence and
@@ -3087,6 +3126,18 @@ algorithm bounds RHS work; the old textual-order rule belonged to the retired st
 tests cover both distinctions. Physical 100M-1B scale, held-out calibration, cold p95, background interference, and
 the final post-repair module gate remain open, so no 20B authority claim follows from these results.
 
+The shard-reader slice now closes its mapping-lifetime and cached-decode contracts on Temurin 26. The focused
+`FrontierStatisticsShardTest` passes all 12 tests after formatting, and the supplied semantic verifier passes every
+width, codec, legacy/revision-3 layout, irregular boundary, tail read-ahead, and concurrent first-touch case. The
+complete LMDB run executes 2,237 tests and keeps the changed shard class green, but is not a module green: five
+tests fail `A join telemetry side cannot have overlapping evaluations` in `JoinMetricsTracking` and the dirty
+benchmark-default test still expects `SPARSE`. All five telemetry failures reproduce together in a focused rerun and
+have no shard-reader stack frame, so they remain a separate branch-level gate rather than being called a suite-order
+flake. The matched attached harnesses show repeatable cached-read gains
+across all measured shapes and a roughly nine-percent open/close gain; they also expose a 43-to-46-percent isolated
+cold-first-touch regression and about ten-percent more per-open heap allocation. Cold-NVMe/p95 acceptance therefore
+remains open even though the mapping cleanup and hot-reader implementation are complete.
+
 ## Context and Orientation
 
 Work from the repository root. RDF4J's public query algebra is `TupleExpr`, defined in the query-algebra model module.
@@ -3185,6 +3236,19 @@ preempts only the remaining Milestone 8 timing campaign because the current pers
 the required scale. It first closes the no-replay and no-Cartesian-allocation safety invariants, then delivers the
 query-ready format, bounded builder, estimator ensemble, online lifecycle, and scale qualification. Resume the
 remaining Milestone 8 comparisons only against a frozen V2 shadow/authoritative manifest.
+
+For the Milestone 9 shard-reader slice, first add focused tests in
+`core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsShardTest.java`. Construct a
+revision-3 shard with eight contiguous blocks and prove that touching all eight adds five physical mappings while
+retaining eight logical mapped blocks; construct the equivalent gapped layout and prove that it retains eight
+physical mappings. Corrupt one data block and prove repeated failed first touches do not retain mappings. Open a
+valid shard without touching data and prove header and directory validation leave no metadata mapping behind. After
+capturing the pre-change failure, reshape
+`core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsShard.java` so metadata regions
+are heap-read when small and explicitly unmapped otherwise, data blocks decode from a padded one-word window, regular
+block layouts use direct arithmetic, irregular layouts use bounded fences, and contiguous blocks promote to one
+shared mapping only after four successful dedicated touches. A close/first-touch race must not publish a mapping
+after the registry is sealed. Keep the revision-2 and revision-3 on-disk formats unchanged.
 
 Do not create another ExecPlan for a milestone. Before beginning a slice, update `Progress` so exactly one entry is
 marked as the active milestone, add the smallest failing in-repository test required by the repository's Routine A or D, and
@@ -3346,6 +3410,12 @@ stale-manifest, and lease replacement cases; mutation journal insert/delete/roll
 reserve-depletion cases; and exact-oracle properties for all 16 leaf bound masks and all 16 join-role pairs. Nested
 FILTER, VALUES, UNION, OPTIONAL, MINUS, EXISTS/NOT EXISTS, subquery, grouping, context, and explicit/inferred cases
 must remain semantically correct when statistics are absent or uncertain.
+
+Milestone 9 shard-reader acceptance additionally requires zero retained metadata mappings after `open`, zero mapping
+growth across repeated checksum failures, exactly five physical mappings for eight contiguous logical blocks after
+adaptive promotion, one physical mapping per touched block for a gapped layout, and correct decoding for legacy and
+revision-3 shards across widths 1 through 64, all four codecs, irregular block boundaries, the final packed value,
+and concurrent first touch. The focused `FrontierStatisticsShardTest` must pass before the complete LMDB module gate.
 
 Cost acceptance requires every physical dimension to have one unit, scope, uncertainty, and composition registry
 entry. Independent oracles agree for sequential, concurrent, first-result, blocking, repeated-open, materialized,
@@ -3739,3 +3809,23 @@ allocation. Focused tests, the final 1,446-test query-evaluation suite, the fres
 telemetry-related test in the 2,230-test LMDB run pass. The benchmark-only sampled-full comparison preserves plan
 fingerprint and result and adds 2.47 percent over the disabled fixed plan. The sole LMDB module failure remains the
 unrelated dirty-worktree `SPARSE` benchmark-default assertion.
+
+Plan revision note (2026-08-20 / Håvard and Codex): started the Milestone 9 shard-reader mapping and decode slice from
+the supplied candidate, correctness verifier, adaptive-layout verifier, and three focused probes. The revision makes
+physical mapping lifetime the test-first contract, keeps logical first-touch accounting and both disk formats stable,
+uses portable JDK mapped-buffer evidence in repository tests, and records the metadata, checksum-failure, contiguous,
+gapped, tail, codec, concurrency, and hot-path acceptance obligations before production changes.
+
+Plan revision note (2026-08-20 / Håvard and Codex): completed the shard-reader slice on Temurin 26. Metadata uses
+bounded heap reads or explicitly cleaned temporary mappings, checksum failures clean dedicated mappings, a sealed
+registry makes close/first-touch publication race-safe, and contiguous layouts promote from four dedicated mappings
+to one shared window. Regular and fenced irregular lookup plus one-word little-endian decode provide repeatable
+cached gains across widths 1 through 64 and all codecs. The final 12-test shard class and supplied semantic verifier
+pass. The 2,237-test module run leaves the shard green but exposes five separate telemetry-overlap errors and the
+known dirty `SPARSE` default assertion. The five telemetry methods reproduce in a focused five-test rerun at
+`JoinMetricsTracking$DeferredSideIteration.bind` with no shard-reader frame, so the broad gate remains independently
+red rather than being classified as an ordering flake. Attached-harness evidence records a roughly nine-percent open
+improvement, about ten-percent higher open allocation, and a 43-to-46-percent isolated first-touch regression;
+cold-p95 remains open. The root formatter was stopped after nine CPU-active minutes because preserved `.mvnf` trees make the
+repository-wide invocation pathological; the scoped LMDB formatter, repeated root quick installs, and
+`git diff --check` pass without unrelated tracked edits.

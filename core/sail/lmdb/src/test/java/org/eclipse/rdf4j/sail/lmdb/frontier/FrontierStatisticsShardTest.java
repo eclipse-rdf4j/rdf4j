@@ -17,16 +17,32 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.lang.management.BufferPoolMXBean;
+import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.zip.CRC32C;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class FrontierStatisticsShardTest {
+
+	private static final int ADAPTIVE_MAPPING_WIDTH = 31;
+	private static final int[] ADAPTIVE_MAPPING_BLOCK_ROWS = { 17, 33, 65, 129, 257, 19, 41, 73 };
+
+	private record TestBlock(long firstRow, int rows, long offset, byte[] data, int checksum) {
+	}
 
 	@Test
 	void queryReadyShardIsCompressedLazyAndChecksummed(@TempDir Path directory) throws Exception {
@@ -227,6 +243,99 @@ class FrontierStatisticsShardTest {
 		}
 	}
 
+	@Test
+	void openingShardDoesNotRetainMetadataMappings(@TempDir Path directory) throws Exception {
+		Path path = writeAdaptiveMappingShard(directory.resolve("metadata.fs2"), 0);
+		BufferPoolMXBean mappedBuffers = mappedBufferPool();
+		long before = mappedBuffers.getCount();
+
+		try (FrontierStatisticsShard ignored = FrontierStatisticsShard.open(path)) {
+			assertTrue(mappedBuffers.getCount() <= before,
+					"validated shard metadata must not retain native mappings");
+		}
+	}
+
+	@Test
+	void failedChecksumFirstTouchesDoNotRetainMappings(@TempDir Path directory) throws Exception {
+		Path path = writeAdaptiveMappingShard(directory.resolve("checksum.fs2"), 0);
+		try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+			ByteBuffer changed = ByteBuffer.allocate(1);
+			assertEquals(1, channel.read(changed, FrontierStatisticsShard.HEADER_BYTES));
+			changed.flip();
+			changed.put(0, (byte) (changed.get(0) ^ 0x5a));
+			assertEquals(1, channel.write(changed, FrontierStatisticsShard.HEADER_BYTES));
+			channel.force(true);
+		}
+
+		try (FrontierStatisticsShard shard = FrontierStatisticsShard.open(path)) {
+			BufferPoolMXBean mappedBuffers = mappedBufferPool();
+			long before = mappedBuffers.getCount();
+			for (int attempt = 0; attempt < 32; attempt++) {
+				assertThrows(IOException.class, () -> shard.column(11).value(0L));
+			}
+			assertTrue(mappedBuffers.getCount() <= before,
+					"a rejected mapping must be released before the next first-touch attempt");
+			assertEquals(0, shard.mappedDataBlockCount());
+		}
+	}
+
+	@Test
+	void contiguousBlocksPromoteAfterFourDedicatedMappings(@TempDir Path directory) throws Exception {
+		Path path = writeAdaptiveMappingShard(directory.resolve("contiguous.fs2"), 0);
+		try (FrontierStatisticsShard shard = FrontierStatisticsShard.open(path)) {
+			BufferPoolMXBean mappedBuffers = mappedBufferPool();
+			long before = mappedBuffers.getCount();
+			assertAdaptiveMappingValues(shard.column(11));
+			assertEquals(5L, mappedBuffers.getCount() - before,
+					"four dedicated mappings must be followed by one shared contiguous mapping");
+			assertEquals(ADAPTIVE_MAPPING_BLOCK_ROWS.length, shard.mappedDataBlockCount());
+		}
+	}
+
+	@Test
+	void gappedBlocksKeepIndependentMappings(@TempDir Path directory) throws Exception {
+		Path path = writeAdaptiveMappingShard(directory.resolve("gapped.fs2"), 7);
+		try (FrontierStatisticsShard shard = FrontierStatisticsShard.open(path)) {
+			BufferPoolMXBean mappedBuffers = mappedBufferPool();
+			long before = mappedBuffers.getCount();
+			assertAdaptiveMappingValues(shard.column(11));
+			assertEquals(ADAPTIVE_MAPPING_BLOCK_ROWS.length, mappedBuffers.getCount() - before,
+					"non-contiguous blocks must not share a mapping that spans unvalidated gaps");
+			assertEquals(ADAPTIVE_MAPPING_BLOCK_ROWS.length, shard.mappedDataBlockCount());
+		}
+	}
+
+	@Test
+	void concurrentFirstTouchMapsEveryLogicalBlockOnce(@TempDir Path directory) throws Exception {
+		Path path = writeAdaptiveMappingShard(directory.resolve("concurrent.fs2"), 0);
+		try (FrontierStatisticsShard shard = FrontierStatisticsShard.open(path)) {
+			FrontierStatisticsShard.ColumnReader column = shard.column(11);
+			CountDownLatch start = new CountDownLatch(1);
+			ExecutorService executor = Executors.newFixedThreadPool(16);
+			try {
+				List<Future<?>> futures = new ArrayList<>();
+				for (int thread = 0; thread < 16; thread++) {
+					int seed = thread;
+					futures.add(executor.submit(() -> {
+						start.await();
+						for (int access = 0; access < 10_000; access++) {
+							long row = (access * 31L + seed * 97L) % column.rowCount();
+							assertEquals(adaptiveMappingValue(row), column.value(row));
+						}
+						return null;
+					}));
+				}
+				start.countDown();
+				for (Future<?> future : futures) {
+					future.get();
+				}
+			} finally {
+				executor.shutdownNow();
+			}
+			assertEquals(ADAPTIVE_MAPPING_BLOCK_ROWS.length, shard.mappedDataBlockCount());
+		}
+	}
+
 	private static void writeShard(Path path, long[] terms, long[] postings) throws IOException {
 		try (FrontierStatisticsShardWriter writer = new FrontierStatisticsShardWriter(
 				path, 7L, 3, 11L, 20_000_000_000L, terms.length)) {
@@ -234,6 +343,126 @@ class FrontierStatisticsShardTest {
 			writer.addDeltaColumn(20, postings);
 			writer.finish();
 		}
+	}
+
+	private static Path writeAdaptiveMappingShard(Path path, int gap) throws IOException {
+		List<TestBlock> blocks = new ArrayList<>();
+		long cursor = FrontierStatisticsShard.HEADER_BYTES;
+		long firstRow = 0L;
+		for (int rows : ADAPTIVE_MAPPING_BLOCK_ROWS) {
+			byte[] data = packAdaptiveValues(firstRow, rows);
+			blocks.add(new TestBlock(firstRow, rows, cursor, data, checksum(data)));
+			cursor += data.length + gap;
+			firstRow += rows;
+		}
+		long blockDirectoryOffset = cursor;
+		ByteBuffer blockDirectory = ByteBuffer
+				.allocate(blocks.size() * FrontierStatisticsShard.BLOCK_DIRECTORY_ENTRY_BYTES)
+				.order(ByteOrder.BIG_ENDIAN);
+		for (int index = 0; index < blocks.size(); index++) {
+			TestBlock block = blocks.get(index);
+			int offset = index * FrontierStatisticsShard.BLOCK_DIRECTORY_ENTRY_BYTES;
+			blockDirectory.putLong(offset, block.firstRow);
+			blockDirectory.putInt(offset + 8, block.rows);
+			blockDirectory.putLong(offset + 16, block.offset);
+			blockDirectory.putLong(offset + 24, block.data.length);
+			blockDirectory.putInt(offset + 32, block.checksum);
+		}
+		cursor += blockDirectory.capacity();
+		long directoryOffset = cursor;
+		long fileLength = directoryOffset + FrontierStatisticsShard.DIRECTORY_ENTRY_BYTES;
+		ByteBuffer file = ByteBuffer.allocate(Math.toIntExact(fileLength)).order(ByteOrder.BIG_ENDIAN);
+		for (TestBlock block : blocks) {
+			file.position(Math.toIntExact(block.offset));
+			file.put(block.data);
+		}
+		file.position(Math.toIntExact(blockDirectoryOffset));
+		file.put(blockDirectory.array());
+
+		ByteBuffer directory = ByteBuffer.allocate(FrontierStatisticsShard.DIRECTORY_ENTRY_BYTES)
+				.order(ByteOrder.BIG_ENDIAN);
+		directory.putInt(0, 11);
+		directory.putInt(4, FrontierStatisticsShard.CODEC_UNSIGNED_BITS);
+		directory.putInt(8, ADAPTIVE_MAPPING_WIDTH);
+		directory.putInt(12, blocks.size());
+		directory.putLong(16, firstRow);
+		directory.putLong(24, blockDirectoryOffset);
+		directory.putLong(32, blockDirectory.capacity());
+		directory.putLong(40, 0L);
+		directory.putLong(48, 0L);
+		directory.putInt(56, checksum(blockDirectory.array()));
+		file.position(Math.toIntExact(directoryOffset));
+		file.put(directory.array());
+
+		ByteBuffer header = ByteBuffer.allocate(FrontierStatisticsShard.HEADER_BYTES).order(ByteOrder.BIG_ENDIAN);
+		header.putLong(0, FrontierStatisticsShard.MAGIC);
+		header.putInt(8, FrontierStatisticsShard.VERSION);
+		header.putInt(12, FrontierStatisticsShard.HEADER_BYTES);
+		header.putLong(16, 7L);
+		header.putInt(24, 3);
+		header.putLong(32, 99L);
+		header.putLong(40, Long.MAX_VALUE);
+		header.putLong(48, firstRow);
+		header.putInt(56, 1);
+		header.putLong(64, directoryOffset);
+		header.putLong(72, directory.capacity());
+		header.putLong(80, fileLength);
+		header.putInt(88, checksum(directory.array()));
+		header.putInt(FrontierStatisticsShard.HEADER_CHECKSUM_OFFSET, 0);
+		header.putInt(FrontierStatisticsShard.HEADER_CHECKSUM_OFFSET, checksum(header.array()));
+		file.position(0);
+		file.put(header.array());
+		Files.write(path, file.array());
+		return path;
+	}
+
+	private static void assertAdaptiveMappingValues(FrontierStatisticsShard.ColumnReader column) throws IOException {
+		long row = 0L;
+		for (int blockRows : ADAPTIVE_MAPPING_BLOCK_ROWS) {
+			assertEquals(adaptiveMappingValue(row), column.value(row));
+			assertEquals(adaptiveMappingValue(row + blockRows - 1L), column.value(row + blockRows - 1L));
+			row += blockRows;
+		}
+	}
+
+	private static byte[] packAdaptiveValues(long firstRow, int rows) {
+		byte[] packed = new byte[Math.toIntExact(
+				((long) rows * ADAPTIVE_MAPPING_WIDTH + Byte.SIZE - 1L) / Byte.SIZE)];
+		long bitPosition = 0L;
+		for (int row = 0; row < rows; row++) {
+			long value = adaptiveMappingValue(firstRow + row);
+			int remaining = ADAPTIVE_MAPPING_WIDTH;
+			int inputShift = 0;
+			while (remaining > 0) {
+				int byteIndex = Math.toIntExact(bitPosition >>> 3);
+				int bitOffset = (int) bitPosition & 7;
+				int copied = Math.min(remaining, Byte.SIZE - bitOffset);
+				int mask = (1 << copied) - 1;
+				packed[byteIndex] |= (byte) (((value >>> inputShift) & mask) << bitOffset);
+				bitPosition += copied;
+				inputShift += copied;
+				remaining -= copied;
+			}
+		}
+		return packed;
+	}
+
+	private static long adaptiveMappingValue(long row) {
+		return (row * 0x9e3779b9L + 0x1234567L) & ((1L << ADAPTIVE_MAPPING_WIDTH) - 1L);
+	}
+
+	private static int checksum(byte[] bytes) {
+		CRC32C checksum = new CRC32C();
+		checksum.update(bytes, 0, bytes.length);
+		return (int) checksum.getValue();
+	}
+
+	private static BufferPoolMXBean mappedBufferPool() {
+		return ManagementFactory.getPlatformMXBeans(BufferPoolMXBean.class)
+				.stream()
+				.filter(pool -> "mapped".equals(pool.getName()))
+				.findFirst()
+				.orElseThrow();
 	}
 
 	private static void repointSecondColumnAtFirstDataBlock(Path path) throws IOException {
