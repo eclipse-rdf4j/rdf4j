@@ -4,7 +4,7 @@
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/documents/edl-v10.php.
+ * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionService;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
@@ -121,12 +122,8 @@ public final class DerivedStateBuildExecutor implements AutoCloseable {
 			return 1;
 		}
 		int effective = Math.min(configuredThreads, workUnits);
-		if (readerSlots > 0) {
-			effective = Math.min(effective, readerSlots);
-		}
-		if (accumulatorPartitions > 0) {
-			effective = Math.min(effective, accumulatorPartitions);
-		}
+		effective = Math.min(effective, Math.max(1, readerSlots));
+		effective = Math.min(effective, Math.max(1, accumulatorPartitions));
 		return Math.max(1, effective);
 	}
 
@@ -141,11 +138,26 @@ public final class DerivedStateBuildExecutor implements AutoCloseable {
 		}
 		CompletionService<IndexedResult<T>> completions = new ExecutorCompletionService<>(executor);
 		ArrayList<Future<IndexedResult<T>>> indexedFutures = new ArrayList<>(tasks.size());
+		CountDownLatch settled = new CountDownLatch(tasks.size());
+		ArrayList<TaskState> states = new ArrayList<>(tasks.size());
+		for (int index = 0; index < tasks.size(); index++) {
+			states.add(new TaskState(settled));
+		}
 		try {
 			for (int index = 0; index < tasks.size(); index++) {
 				Callable<T> task = Objects.requireNonNull(tasks.get(index), "task");
 				int resultIndex = index;
-				indexedFutures.add(completions.submit(() -> new IndexedResult<>(resultIndex, task.call())));
+				TaskState state = states.get(index);
+				indexedFutures.add(completions.submit(() -> {
+					if (!state.start()) {
+						return new IndexedResult<>(resultIndex, null);
+					}
+					try {
+						return new IndexedResult<>(resultIndex, task.call());
+					} finally {
+						state.finish();
+					}
+				}));
 			}
 			Object[] ordered = new Object[tasks.size()];
 			for (int completed = 0; completed < tasks.size(); completed++) {
@@ -161,10 +173,10 @@ public final class DerivedStateBuildExecutor implements AutoCloseable {
 			return results;
 		} catch (InterruptedException interrupted) {
 			Thread.currentThread().interrupt();
-			cancel(indexedFutures);
+			cancelAndAwait(indexedFutures, states, settled);
 			throw new IOException("Interrupted while rebuilding LMDB derived state", interrupted);
 		} catch (IOException | RuntimeException | Error failure) {
-			cancel(indexedFutures);
+			cancelAndAwait(indexedFutures, states, settled);
 			throw failure;
 		}
 	}
@@ -190,9 +202,55 @@ public final class DerivedStateBuildExecutor implements AutoCloseable {
 		}
 	}
 
-	private static void cancel(List<? extends Future<?>> futures) {
-		for (Future<?> future : futures) {
-			future.cancel(true);
+	private static void cancelAndAwait(List<? extends Future<?>> futures, List<TaskState> states,
+			CountDownLatch settled) {
+		for (int index = 0; index < states.size(); index++) {
+			if (index >= futures.size() || futures.get(index).cancel(true)) {
+				states.get(index).cancelBeforeStart();
+			}
+		}
+		boolean interrupted = false;
+		while (settled.getCount() != 0L) {
+			try {
+				settled.await();
+			} catch (InterruptedException current) {
+				interrupted = true;
+			}
+		}
+		if (interrupted) {
+			Thread.currentThread().interrupt();
+		}
+	}
+
+	private static final class TaskState {
+
+		private final CountDownLatch settled;
+		private boolean started;
+		private boolean finished;
+
+		private TaskState(CountDownLatch settled) {
+			this.settled = settled;
+		}
+
+		private synchronized boolean start() {
+			if (finished) {
+				return false;
+			}
+			started = true;
+			return true;
+		}
+
+		private synchronized void cancelBeforeStart() {
+			if (!started) {
+				finish();
+			}
+		}
+
+		private synchronized void finish() {
+			if (!finished) {
+				finished = true;
+				settled.countDown();
+			}
 		}
 	}
 

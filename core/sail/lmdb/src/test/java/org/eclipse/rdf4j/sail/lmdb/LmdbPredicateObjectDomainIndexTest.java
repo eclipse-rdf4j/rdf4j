@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 import java.util.Optional;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -34,6 +35,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreSchema;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
@@ -382,6 +384,119 @@ class LmdbPredicateObjectDomainIndexTest {
 	}
 
 	@Test
+	void startupRebuildUsesDistinctPredicateObjectPrefixes(@TempDir File dataDir) {
+		String previousThreads = System.getProperty(DerivedStateBuildExecutor.THREAD_PROPERTY);
+		System.setProperty(DerivedStateBuildExecutor.THREAD_PROPERTY, "4");
+		try {
+			IRI[] predicates = {
+					VF.createIRI("http://example.com/p0"),
+					VF.createIRI("http://example.com/p1"),
+					VF.createIRI("http://example.com/p2"),
+					VF.createIRI("http://example.com/p3")
+			};
+			Literal repeatedObject = VF.createLiteral("7", XSD.INT);
+			int statementCount = 512;
+
+			SailRepository repository = repository(dataDir);
+			try {
+				try (RepositoryConnection connection = repository.getConnection()) {
+					for (int index = 0; index < statementCount; index++) {
+						connection.add(VF.createIRI("http://example.com/s" + index),
+								predicates[index % predicates.length], repeatedObject);
+					}
+				}
+			} finally {
+				repository.shutDown();
+			}
+
+			downgradeGuaranteeMetadata(dataDir);
+			SailRepository rebuilt = repository(dataDir);
+			try {
+				TripleStore tripleStore = backingStore(rebuilt).getTripleStore();
+				assertTrue(tripleStore.lastRdfTermDomainPrefixSeeks() > 0L,
+						"The startup rebuild must advance distinct prefixes with MDB_SET_RANGE");
+				assertTrue(tripleStore.lastRdfTermDomainSourceRows() < statementCount / 10L,
+						"Repeated subjects must not be classified as distinct predicate/object values");
+				assertEquals(Math.min(4, Runtime.getRuntime().availableProcessors()),
+						tripleStore.lastRdfTermDomainWorkers());
+				for (IRI predicate : predicates) {
+					assertHas(guarantee(rebuilt, predicate), RdfTermDomain.Fact.CANONICAL_INTEGER);
+				}
+			} finally {
+				rebuilt.shutDown();
+			}
+		} finally {
+			restoreSystemProperty(DerivedStateBuildExecutor.THREAD_PROPERTY, previousThreads);
+		}
+	}
+
+	@Test
+	void startupRebuildMergesOverlappingExplicitAndInferredObjects(@TempDir File dataDir) throws Exception {
+		IRI predicate = VF.createIRI("http://example.com/value");
+		IRI subject = VF.createIRI("http://example.com/subject");
+		Literal shared = VF.createLiteral("7", XSD.INT);
+		Literal inferredOnly = VF.createLiteral("008", XSD.INT);
+
+		SailRepository repository = repository(dataDir);
+		try {
+			LmdbSailStore backingStore = backingStore(repository);
+			try (SailSink explicit = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE);
+					SailSink inferred = backingStore.getInferredSailSource().sink(IsolationLevels.NONE)) {
+				explicit.approve(subject, predicate, shared, null);
+				explicit.flush();
+				inferred.approve(subject, predicate, shared, null);
+				inferred.approve(subject, predicate, inferredOnly, null);
+				inferred.flush();
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		downgradeGuaranteeMetadata(dataDir);
+		SailRepository rebuilt = repository(dataDir);
+		try {
+			RdfTermDomain guarantee = guarantee(rebuilt, predicate);
+			assertHas(guarantee, RdfTermDomain.Fact.NUMBER);
+			assertFalse(guarantee.has(RdfTermDomain.Fact.CANONICAL_INTEGER));
+			assertTrue(backingStore(rebuilt).getTripleStore().lastRdfTermDomainSourceRows() <= 5L,
+					"The object present in both statement planes must be classified once");
+		} finally {
+			rebuilt.shutDown();
+		}
+	}
+
+	@Test
+	void startupRebuildFallsBackToOneStatementPassWithoutPredicateLeadingIndex(@TempDir File dataDir) {
+		IRI firstPredicate = VF.createIRI("http://example.com/first");
+		IRI secondPredicate = VF.createIRI("http://example.com/second");
+		SailRepository repository = repository(dataDir, configWithoutPredicateObjectIndex());
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				for (int index = 0; index < 64; index++) {
+					connection.add(VF.createIRI("http://example.com/s" + index),
+							index % 2 == 0 ? firstPredicate : secondPredicate,
+							VF.createLiteral(index, CoreDatatype.XSD.INT));
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		downgradeGuaranteeMetadata(dataDir);
+		SailRepository rebuilt = repository(dataDir, configWithoutPredicateObjectIndex());
+		try {
+			TripleStore tripleStore = backingStore(rebuilt).getTripleStore();
+			assertEquals(0L, tripleStore.lastRdfTermDomainPrefixSeeks());
+			assertEquals(1, tripleStore.lastRdfTermDomainWorkers());
+			assertEquals(64L, tripleStore.lastRdfTermDomainSourceRows());
+			assertHas(guarantee(rebuilt, firstPredicate), RdfTermDomain.Fact.CANONICAL_INTEGER);
+			assertHas(guarantee(rebuilt, secondPredicate), RdfTermDomain.Fact.CANONICAL_INTEGER);
+		} finally {
+			rebuilt.shutDown();
+		}
+	}
+
+	@Test
 	void queryWithStoredNonCanonicalIntegerStillMatchesIntegerFilter(@TempDir File dataDir) {
 		IRI predicate = VF.createIRI("http://example.com/value");
 		IRI subject = VF.createIRI("http://example.com/s1");
@@ -622,6 +737,12 @@ class LmdbPredicateObjectDomainIndexTest {
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
 	}
 
+	private static LmdbStoreConfig configWithoutPredicateObjectIndex() {
+		return new LmdbStoreConfig("spoc,ospc")
+				.setOptimizerSamplingEnabled(false)
+				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+	}
+
 	private static LmdbStoreConfig configWith(IRI property, Literal value) {
 		Resource implNode = VF.createBNode();
 		Model configModel = new ModelBuilder()
@@ -718,5 +839,13 @@ class LmdbPredicateObjectDomainIndexTest {
 		properties.load();
 		properties.setRdfTermDomainsVersion("stale");
 		properties.save();
+	}
+
+	private static void restoreSystemProperty(String property, String previousValue) {
+		if (previousValue == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, previousValue);
+		}
 	}
 }

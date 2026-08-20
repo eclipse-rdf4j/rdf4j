@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsStatus;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbFrontierSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.eclipse.rdf4j.sail.lmdb.sketch.CharacteristicSetEstimate;
@@ -411,12 +412,22 @@ final class LmdbEstimatorRuntime {
 	}
 
 	long frontierPlanningRevision() {
-		return frontierSynopsis == null ? 0L : frontierSynopsis.planningRevision();
+		long legacyRevision = frontierSynopsis == null ? 0L : frontierSynopsis.planningRevision();
+		if (statistics == null) {
+			return legacyRevision;
+		}
+		FrontierStatisticsStatus status = statistics.status();
+		long revision = LmdbEstimatorRevisionSupport.mixRevision(0x46524f4e54494552L, legacyRevision);
+		revision = LmdbEstimatorRevisionSupport.mixRevision(revision, status.availability().ordinal() + 1L);
+		revision = LmdbEstimatorRevisionSupport.mixRevision(revision, status.fallbackReason().ordinal() + 1L);
+		revision = LmdbEstimatorRevisionSupport.mixRevision(revision, status.generationId());
+		revision = LmdbEstimatorRevisionSupport.mixRevision(revision, status.coveredEpoch());
+		return LmdbEstimatorRevisionSupport.mixRevision(revision, status.coveredSequence()) & Long.MAX_VALUE;
 	}
 
 	long learnedEvidenceRevision() {
 		return LmdbEstimatorRevisionSupport.learnedEvidenceRevision(
-				snapshotVersion(), leoRevision(), frontierStatusRevision());
+				snapshotVersion(), leoRevision(), frontierPlanningRevision());
 	}
 
 	PlanningRevisions capturePlanningRevisions() {
@@ -424,16 +435,12 @@ final class LmdbEstimatorRuntime {
 		long frontierRevision = frontierPlanningRevision();
 		long leoRevision = leoRevision();
 		long learnedEvidenceRevision = LmdbEstimatorRevisionSupport.learnedEvidenceRevision(
-				dataRevision, leoRevision, frontierStatusRevision());
+				dataRevision, leoRevision, frontierRevision);
 		long planLifecycleInvalidationRevision = feedback == null
 				? 0L
 				: feedback.planLifecycleInvalidationRevision();
 		return new PlanningRevisions(dataRevision, frontierRevision, leoRevision, learnedEvidenceRevision,
 				planLifecycleInvalidationRevision);
-	}
-
-	private long frontierStatusRevision() {
-		return frontierSynopsis == null ? 0L : frontierSynopsis.status().ordinal() + 1L;
 	}
 
 	record PlanningRevisions(

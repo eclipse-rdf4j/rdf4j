@@ -29,10 +29,21 @@ final class FrontierProjectedDistinctAccumulator {
 	}
 
 	void add(int plane, long subject, long predicate, long object, long context) {
-		addValue(plane, 0, subject);
-		addValue(plane, 1, predicate);
-		addValue(plane, 2, object);
-		addValue(plane, 3, context);
+		addComponent(plane, 0, subject, predicate, object, context);
+		addComponent(plane, 1, subject, predicate, object, context);
+		addComponent(plane, 2, subject, predicate, object, context);
+		addComponent(plane, 3, subject, predicate, object, context);
+	}
+
+	void addComponent(int plane, int component, long subject, long predicate, long object, long context) {
+		long value = switch (component) {
+		case 0 -> subject;
+		case 1 -> predicate;
+		case 2 -> object;
+		case 3 -> context;
+		default -> throw new IllegalArgumentException("Frontier projection component is invalid");
+		};
+		addValue(plane, component, value);
 	}
 
 	private void addValue(int plane, int component, long value) {

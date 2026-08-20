@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.frontier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -89,6 +90,32 @@ class FrontierOmniExternalSorterTest {
 		assertEquals(List.of("3:3", "4:4"), secondOutput);
 		try (var files = Files.list(directory)) {
 			assertTrue(files.findAny().isEmpty(), "successful collectors must remove every spill artifact");
+		}
+	}
+
+	@Test
+	void concurrentCollectorsShareAndReleaseOneTemporaryDiskReservation(@TempDir Path directory) throws Exception {
+		long oneRecord = FrontierOmniExternalSorter.RECORD_BYTES;
+		FrontierTemporaryDiskReservation reservation = new FrontierTemporaryDiskReservation(oneRecord);
+		FrontierOmniExternalSorter.Collector first = FrontierOmniExternalSorter.collector(
+				directory, oneRecord, 1024L, reservation);
+		FrontierOmniExternalSorter.Collector second = FrontierOmniExternalSorter.collector(
+				directory, oneRecord, 1024L, reservation);
+		try {
+			first.add(1L, 1L, 1L, 7L, 10L, 0L);
+			first.add(2L, 2L, 2L, 7L, 20L, 0L);
+			second.add(3L, 3L, 3L, 8L, 30L, 0L);
+			assertThrows(FrontierStatisticsException.class,
+					() -> second.add(4L, 4L, 4L, 8L, 40L, 0L));
+			assertEquals(oneRecord, reservation.reservedBytes());
+		} finally {
+			first.close();
+			second.close();
+		}
+
+		assertEquals(0L, reservation.reservedBytes());
+		try (var files = Files.list(directory)) {
+			assertTrue(files.findAny().isEmpty(), "failed collectors must remove every private spill namespace");
 		}
 	}
 }

@@ -36,7 +36,21 @@ final class FrontierCountMinMatrix {
 
 	void add(int plane, long subject, long predicate, long object, long context) {
 		totals[plane] = saturatedIncrement(totals[plane]);
-		for (int mask = 1; mask < MASKS; mask++) {
+		addMasks(plane, 1, MASKS, subject, predicate, object, context);
+	}
+
+	void addRows(int plane, int rows) {
+		for (int row = 0; row < rows; row++) {
+			totals[plane] = saturatedIncrement(totals[plane]);
+		}
+	}
+
+	void addMasks(int plane, int maskStartInclusive, int maskEndExclusive,
+			long subject, long predicate, long object, long context) {
+		if (maskStartInclusive <= 0 || maskEndExclusive > MASKS || maskStartInclusive >= maskEndExclusive) {
+			throw new IllegalArgumentException("Frontier Count-Min mask range is invalid");
+		}
+		for (int mask = maskStartInclusive; mask < maskEndExclusive; mask++) {
 			long key = FrontierStatisticsHash.conditioningKey(mask, subject, predicate, object, context);
 			int base = tableOffset(plane, mask);
 			for (int row = 0; row < depth; row++) {

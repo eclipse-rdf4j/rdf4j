@@ -88,6 +88,7 @@ import java.util.OptionalLong;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -280,6 +281,9 @@ class TripleStore implements Closeable {
 	private final LongOpenHashSet pendingRdfTermDomainCacheDeletes = new LongOpenHashSet();
 	private boolean pendingRdfTermDomainCacheClear;
 	private final Long2ObjectOpenHashMap<PendingRdfTermDomain> pendingRdfTermDomains = new Long2ObjectOpenHashMap<>();
+	private volatile long lastRdfTermDomainSourceRows;
+	private volatile long lastRdfTermDomainPrefixSeeks;
+	private volatile int lastRdfTermDomainWorkers = 1;
 
 	private static final class PreparedSortWorkspace {
 		private int[] mainOrder = new int[0];
@@ -1666,6 +1670,18 @@ class TripleStore implements Closeable {
 		return predicateGuaranteeIndexReadable ? version : version + "-unreadable";
 	}
 
+	long lastRdfTermDomainSourceRows() {
+		return lastRdfTermDomainSourceRows;
+	}
+
+	long lastRdfTermDomainPrefixSeeks() {
+		return lastRdfTermDomainPrefixSeeks;
+	}
+
+	int lastRdfTermDomainWorkers() {
+		return lastRdfTermDomainWorkers;
+	}
+
 	private String currentRdfTermDomainsVersion() {
 		if (predicateGuaranteeExcludedPredicates.isEmpty()) {
 			return PREDICATE_OBJECT_DOMAINS_VERSION;
@@ -1710,7 +1726,20 @@ class TripleStore implements Closeable {
 	}
 
 	private void rebuildRdfTermDomains() throws IOException {
+		TripleIndex predicateObjectIndex = predicateObjectIndex();
+		if (predicateObjectIndex == null) {
+			logger.info("Rebuilding LMDB predicate guarantees serially because no predicate/object-leading index is "
+					+ "configured");
+			rebuildRdfTermDomainsSequential();
+			return;
+		}
+		PredicateBuildResult[] results = buildRdfTermDomains(predicateObjectIndex, null);
+		publishAllRdfTermDomains(results);
+	}
+
+	private void rebuildRdfTermDomainsSequential() throws IOException {
 		boolean committed = false;
+		long scanned = 0L;
 		startTransaction();
 		try {
 			E(mdb_drop(writeTxn, predicateObjectDomainsDbi, false));
@@ -1725,6 +1754,7 @@ class TripleStore implements Closeable {
 						long previousObject = -1;
 						long[] quad;
 						while ((quad = triples.next()) != null) {
+							scanned++;
 							if (quad[PRED_IDX] == previousPredicate && quad[OBJ_IDX] == previousObject) {
 								continue;
 							}
@@ -1759,6 +1789,9 @@ class TripleStore implements Closeable {
 			}
 			endTransaction(true);
 			committed = true;
+			lastRdfTermDomainSourceRows = scanned;
+			lastRdfTermDomainPrefixSeeks = 0L;
+			lastRdfTermDomainWorkers = 1;
 		} finally {
 			if (!committed) {
 				endTransaction(false);
@@ -1767,17 +1800,216 @@ class TripleStore implements Closeable {
 	}
 
 	private void rebuildMarkedRdfTermDomains() throws IOException {
+		List<Long> predicateIds = getRdfTermDomainRebuilds();
+		if (predicateIds.isEmpty()) {
+			return;
+		}
+		predicateIds.sort(Long::compareUnsigned);
+		TripleIndex predicateObjectIndex = predicateObjectIndex();
+		if (predicateObjectIndex == null) {
+			logger.info("Rebuilding {} marked LMDB predicate guarantees with one serial statement pass because no "
+					+ "predicate/object-leading index is configured", predicateIds.size());
+			rebuildMarkedRdfTermDomainsSequential(predicateIds);
+			return;
+		}
+		long[] catalog = new long[predicateIds.size()];
+		for (int index = 0; index < catalog.length; index++) {
+			catalog[index] = predicateIds.get(index);
+		}
+		PredicateBuildResult[] results = buildRdfTermDomains(predicateObjectIndex, catalog);
+		publishMarkedRdfTermDomains(results);
+	}
+
+	private void rebuildMarkedRdfTermDomainsSequential(List<Long> predicateIds) throws IOException {
+		LongOpenHashSet requested = new LongOpenHashSet(predicateIds);
+		Map<Long, PendingRdfTermDomain> guarantees = new HashMap<>();
+		long scanned = 0L;
+		for (boolean explicit : new boolean[] { true, false }) {
+			try (Txn txn = txnManager.createReadTxn();
+					RecordIterator triples = getTriples(txn, -1, -1, -1, -1, explicit)) {
+				long[] quad;
+				while ((quad = triples.next()) != null) {
+					scanned++;
+					long predicateId = quad[PRED_IDX];
+					if (!requested.contains(predicateId) || isPredicateGuaranteeExcluded(predicateId)) {
+						continue;
+					}
+					RdfTermDomain observed = RdfTermDomain.classify(valueStore.getValue(quad[OBJ_IDX]));
+					PendingRdfTermDomain guarantee = guarantees.get(predicateId);
+					if (guarantee == null) {
+						guarantees.put(predicateId, PendingRdfTermDomain.of(observed));
+					} else {
+						guarantee.recordObserved(observed);
+					}
+				}
+			}
+		}
+		PredicateBuildResult[] results = new PredicateBuildResult[predicateIds.size()];
+		for (int index = 0; index < results.length; index++) {
+			long predicateId = predicateIds.get(index);
+			PendingRdfTermDomain guarantee = guarantees.get(predicateId);
+			results[index] = guarantee == null
+					? new PredicateBuildResult(predicateId, null, 0L, 0L, isPredicateGuaranteeExcluded(predicateId))
+					: new PredicateBuildResult(predicateId, guarantee.guarantee(), guarantee.observedMask(), 0L, false);
+		}
+		lastRdfTermDomainSourceRows = scanned;
+		lastRdfTermDomainPrefixSeeks = 0L;
+		lastRdfTermDomainWorkers = 1;
+		publishMarkedRdfTermDomains(results);
+	}
+
+	private PredicateBuildResult[] buildRdfTermDomains(TripleIndex predicateObjectIndex, long[] requestedCatalog)
+			throws IOException {
+		try (DerivedStateBuildExecutor executor = DerivedStateBuildExecutor.create("rdf4j-lmdb-predicate-build-")) {
+			int readerSlots = txnManager.availableReadTxnSlots(MAX_READERS, 16);
+			int openedReaders = executor.effectiveParallelism(
+					requestedCatalog == null ? Integer.MAX_VALUE : requestedCatalog.length,
+					readerSlots, Integer.MAX_VALUE);
+			Txn[] readers = txnManager.createReadTxnPinnedFamily(openedReaders, dataRevision::get);
+			try {
+				LongAdder sourceRows = new LongAdder();
+				LongAdder prefixSeeks = new LongAdder();
+				long[] catalog = requestedCatalog == null
+						? collectPredicateCatalog(predicateObjectIndex, readers[0], sourceRows, prefixSeeks)
+						: requestedCatalog;
+				int workers = executor.effectiveParallelism(catalog.length, readers.length, Integer.MAX_VALUE);
+				lastRdfTermDomainWorkers = workers;
+				PredicateBuildResult[] results = new PredicateBuildResult[catalog.length];
+				AtomicInteger next = new AtomicInteger();
+				ArrayList<Callable<Void>> tasks = new ArrayList<>(workers);
+				for (int worker = 0; worker < workers; worker++) {
+					Txn reader = readers[worker];
+					tasks.add(() -> {
+						int ordinal;
+						while ((ordinal = next.getAndIncrement()) < catalog.length) {
+							long predicateId = catalog[ordinal];
+							results[ordinal] = buildRdfTermDomain(predicateObjectIndex, reader, predicateId, workers,
+									sourceRows, prefixSeeks);
+						}
+						return null;
+					});
+				}
+				executor.runAll(tasks);
+				long revision = readers[0].snapshotRevision();
+				if (revision != dataRevision.get()) {
+					throw new IOException("LMDB predicate guarantee snapshot became stale before publication");
+				}
+				lastRdfTermDomainSourceRows = sourceRows.sum();
+				lastRdfTermDomainPrefixSeeks = prefixSeeks.sum();
+				return results;
+			} finally {
+				for (int reader = readers.length - 1; reader >= 0; reader--) {
+					readers[reader].close();
+				}
+			}
+		}
+	}
+
+	private long[] collectPredicateCatalog(TripleIndex predicateObjectIndex, Txn reader, LongAdder sourceRows,
+			LongAdder prefixSeeks) throws IOException {
+		LongOpenHashSet predicates = new LongOpenHashSet();
+		for (boolean explicit : new boolean[] { true, false }) {
+			try (RecordIterator records = distinctPredicateObjectRecords(
+					predicateObjectIndex, reader, -1L, explicit, 1)) {
+				long[] quad;
+				while ((quad = records.next()) != null) {
+					predicates.add(quad[PRED_IDX]);
+				}
+				recordPrefixTelemetry(records, sourceRows, prefixSeeks);
+			}
+		}
+		long[] catalog = predicates.toLongArray();
+		Arrays.sort(catalog);
+		return catalog;
+	}
+
+	private PredicateBuildResult buildRdfTermDomain(TripleIndex predicateObjectIndex, Txn reader, long predicateId,
+			int workers, LongAdder sourceRows, LongAdder prefixSeeks) throws IOException {
+		if (isPredicateGuaranteeExcluded(predicateId)) {
+			return new PredicateBuildResult(predicateId, null, 0L, 0L, true);
+		}
+		Value predicate = valueStore.getValue(predicateId);
+		long started = System.nanoTime();
+		long distinctObjects = 0L;
+		RdfTermDomain resolved = null;
+		logger.info("Starting LMDB predicate guarantee rebuild: predicateId={}, predicate={}, effectiveWorkers={}",
+				predicateId, predicate, workers);
+		try (RecordIterator explicit = distinctPredicateObjectRecords(
+				predicateObjectIndex, reader, predicateId, true, 2);
+				RecordIterator inferred = distinctPredicateObjectRecords(
+						predicateObjectIndex, reader, predicateId, false, 2)) {
+			PendingRdfTermDomain guarantee = null;
+			long[] explicitQuad = explicit.next();
+			long[] inferredQuad = inferred.next();
+			while (explicitQuad != null || inferredQuad != null) {
+				long objectId;
+				if (inferredQuad == null || explicitQuad != null
+						&& Long.compareUnsigned(explicitQuad[OBJ_IDX], inferredQuad[OBJ_IDX]) < 0) {
+					objectId = explicitQuad[OBJ_IDX];
+					explicitQuad = explicit.next();
+				} else if (explicitQuad == null
+						|| Long.compareUnsigned(inferredQuad[OBJ_IDX], explicitQuad[OBJ_IDX]) < 0) {
+					objectId = inferredQuad[OBJ_IDX];
+					inferredQuad = inferred.next();
+				} else {
+					objectId = explicitQuad[OBJ_IDX];
+					explicitQuad = explicit.next();
+					inferredQuad = inferred.next();
+				}
+				RdfTermDomain observed = RdfTermDomain.classify(valueStore.getValue(objectId));
+				if (guarantee == null) {
+					guarantee = PendingRdfTermDomain.of(observed);
+				} else {
+					guarantee.recordObserved(observed);
+				}
+				distinctObjects = distinctObjects == Long.MAX_VALUE ? Long.MAX_VALUE : distinctObjects + 1L;
+			}
+			recordPrefixTelemetry(explicit, sourceRows, prefixSeeks);
+			recordPrefixTelemetry(inferred, sourceRows, prefixSeeks);
+			resolved = guarantee == null ? null : guarantee.guarantee();
+			long elapsedMillis = (System.nanoTime() - started) / 1_000_000L;
+			logger.info("Finished LMDB predicate guarantee rebuild: predicateId={}, predicate={}, resolvedValue={}, "
+					+ "elapsedMillis={}, distinctObjects={}, effectiveWorkers={}", predicateId, predicate, resolved,
+					elapsedMillis, distinctObjects, workers);
+			return guarantee == null
+					? new PredicateBuildResult(predicateId, null, 0L, distinctObjects, false)
+					: new PredicateBuildResult(predicateId, resolved, guarantee.observedMask(), distinctObjects, false);
+		} catch (IOException | RuntimeException | Error failure) {
+			long elapsedMillis = (System.nanoTime() - started) / 1_000_000L;
+			logger.warn("Failed LMDB predicate guarantee rebuild: predicateId={}, predicate={}, resolvedValue={}, "
+					+ "elapsedMillis={}, distinctObjects={}, effectiveWorkers={}", predicateId, predicate, resolved,
+					elapsedMillis, distinctObjects, workers, failure);
+			throw failure;
+		}
+	}
+
+	private RecordIterator distinctPredicateObjectRecords(TripleIndex predicateObjectIndex, Txn reader,
+			long predicateId, boolean explicit, int prefixLength) throws IOException {
+		boolean rangeSearch = predicateObjectIndex.getPatternScore(-1L, predicateId, -1L, -1L) > 0;
+		return new LmdbRecordIterator(predicateObjectIndex, rangeSearch, -1L, predicateId, -1L, -1L, explicit,
+				reader, LmdbValueIdFilter.none(), prefixLength);
+	}
+
+	private static void recordPrefixTelemetry(RecordIterator records, LongAdder sourceRows, LongAdder prefixSeeks) {
+		long scanned = records.getSourceRowsScannedActual();
+		long seeks = records.getDistinctCursorSkipSeekCountActual();
+		if (scanned > 0L) {
+			sourceRows.add(scanned);
+		}
+		if (seeks > 0L) {
+			prefixSeeks.add(seeks);
+		}
+	}
+
+	private void publishAllRdfTermDomains(PredicateBuildResult[] results) throws IOException {
 		boolean completed = false;
 		startTransaction();
 		try {
-			List<Long> predicateIds = getRdfTermDomainRebuilds();
-			if (predicateIds.isEmpty()) {
-				endTransaction(false);
-				completed = true;
-				return;
-			}
-			for (long predicateId : predicateIds) {
-				rebuildRdfTermDomain(predicateId);
+			E(mdb_drop(writeTxn, predicateObjectDomainsDbi, false));
+			E(mdb_drop(writeTxn, predicateObjectDomainDegradationsDbi, false));
+			stageRdfTermDomainCacheClear();
+			for (PredicateBuildResult result : results) {
+				writePredicateBuildResult(result, false);
 			}
 			endTransaction(true);
 			completed = true;
@@ -1788,76 +2020,82 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private List<Long> getRdfTermDomainRebuilds() throws IOException {
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			PointerBuffer pp = stack.mallocPointer(1);
-			E(mdb_cursor_open(writeTxn, predicateObjectDomainDegradationsDbi, pp));
-			long cursor = pp.get(0);
-			try {
-				List<Long> predicateIds = new ArrayList<>();
-				MDBVal keyVal = MDBVal.malloc(stack);
-				MDBVal dataVal = MDBVal.malloc(stack);
-				int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_FIRST);
-				while (rc == MDB_SUCCESS) {
-					RdfTermDomainDegradation degradation = readRdfTermDomainDegradation(dataVal);
-					if (degradation.rebuildRequested()) {
-						ByteBuffer keyData = keyVal.mv_data();
-						if (keyData != null) {
-							predicateIds.add(Varint.readUnsigned(keyData, keyData.position()));
-						}
-					}
-					rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
-				}
-				if (rc != MDB_NOTFOUND) {
-					throw new IOException(mdb_strerror(rc));
-				}
-				return predicateIds;
-			} finally {
-				mdb_cursor_close(cursor);
+	private void publishMarkedRdfTermDomains(PredicateBuildResult[] results) throws IOException {
+		boolean completed = false;
+		startTransaction();
+		try {
+			for (PredicateBuildResult result : results) {
+				writePredicateBuildResult(result, true);
+			}
+			endTransaction(true);
+			completed = true;
+		} finally {
+			if (!completed) {
+				endTransaction(false);
 			}
 		}
 	}
 
-	private void rebuildRdfTermDomain(long predicateId) throws IOException {
-		if (isPredicateGuaranteeExcluded(predicateId)) {
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
-				deleteRdfTermDomain(predicateId, keyVal);
-				deleteRdfTermDomainDegradation(keyVal);
-			}
-			return;
-		}
-		PendingRdfTermDomain rebuilt = null;
-		for (boolean explicit : new boolean[] { true, false }) {
-			try (RecordIterator triples = getTriples(txnManager.createTxn(writeTxn), -1, predicateId, -1, -1,
-					explicit)) {
-				long[] quad;
-				while ((quad = triples.next()) != null) {
-					Value object = valueStore.getValue(quad[OBJ_IDX]);
-					RdfTermDomain observed = RdfTermDomain.classify(object);
-					if (rebuilt == null) {
-						rebuilt = PendingRdfTermDomain.of(observed);
-					} else {
-						rebuilt.recordObserved(observed);
-					}
-				}
-			}
-		}
+	private void writePredicateBuildResult(PredicateBuildResult result, boolean deleteEmpty) throws IOException {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
-			MDBVal keyVal = predicateObjectDomainKey(stack, predicateId);
-			if (rebuilt == null) {
-				deleteRdfTermDomain(predicateId, keyVal);
+			MDBVal keyVal = predicateObjectDomainKey(stack, result.predicateId());
+			if (result.excluded() || result.guarantee() == null) {
+				if (deleteEmpty) {
+					deleteRdfTermDomain(result.predicateId(), keyVal);
+				}
+				deleteRdfTermDomainDegradation(keyVal);
+				return;
+			}
+			writeRdfTermDomain(stack, result.predicateId(), keyVal, result.guarantee());
+			long candidateMask = degradationCandidateMask(result.guarantee(), result.observedMask());
+			if (candidateMask == 0L) {
 				deleteRdfTermDomainDegradation(keyVal);
 			} else {
-				writeRdfTermDomain(stack, predicateId, keyVal, rebuilt.guarantee());
-				long candidateMask = degradationCandidateMask(rebuilt.guarantee(), rebuilt.observedMask());
-				if (candidateMask == 0L) {
-					deleteRdfTermDomainDegradation(keyVal);
-				} else {
-					writeRdfTermDomainDegradation(stack, keyVal, candidateMask, 0L);
-				}
+				writeRdfTermDomainDegradation(stack, keyVal, candidateMask, 0L);
 			}
 		}
+	}
+
+	private List<Long> getRdfTermDomainRebuilds() throws IOException {
+		return txnManager.doWith((stack, txn) -> readRdfTermDomainRebuilds(stack, txn));
+	}
+
+	private List<Long> readRdfTermDomainRebuilds(MemoryStack stack, long txn) throws IOException {
+		PointerBuffer pp = stack.mallocPointer(1);
+		E(mdb_cursor_open(txn, predicateObjectDomainDegradationsDbi, pp));
+		long cursor = pp.get(0);
+		try {
+			List<Long> predicateIds = new ArrayList<>();
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.malloc(stack);
+			int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_FIRST);
+			while (rc == MDB_SUCCESS) {
+				RdfTermDomainDegradation degradation = readRdfTermDomainDegradation(dataVal);
+				if (degradation.rebuildRequested()) {
+					ByteBuffer keyData = keyVal.mv_data();
+					if (keyData != null) {
+						predicateIds.add(Varint.readUnsigned(keyData, keyData.position()));
+					}
+				}
+				rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
+			}
+			if (rc != MDB_NOTFOUND) {
+				throw new IOException(mdb_strerror(rc));
+			}
+			return predicateIds;
+		} finally {
+			mdb_cursor_close(cursor);
+		}
+	}
+
+	private TripleIndex predicateObjectIndex() {
+		for (TripleIndex index : indexes) {
+			char[] fields = index.getFieldSeq();
+			if (fields[0] == 'p' && fields[1] == 'o') {
+				return index;
+			}
+		}
+		return null;
 	}
 
 	private RecordIterator getTriplesSortedByPredicateObject(Txn txn, boolean explicit) throws IOException {
@@ -2179,6 +2417,10 @@ class TripleStore implements Closeable {
 	private static long degradationCandidateMask(RdfTermDomain combined, long observedMask) {
 		long lostFacts = observedMask & ~combined.mask();
 		return lostFacts | combined.restoringDeleteCandidateMask();
+	}
+
+	private record PredicateBuildResult(long predicateId, RdfTermDomain guarantee, long observedMask,
+			long distinctObjects, boolean excluded) {
 	}
 
 	private static final class PendingRdfTermDomain {
