@@ -104,6 +104,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	private final OptionalLong executionSnapshotEpoch;
 	private final SailDatasetTripleTermSource frontierStatementSource;
 	private final LmdbPackedPredicateRangeProvider rangeProvider;
+	private final boolean certificateRequired;
 	private PackedPlanDecisionCertificate decisionCertificate;
 
 	LmdbCascadesOptimizer(EvaluationStatistics statistics, boolean trackResultSize) {
@@ -117,6 +118,12 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	LmdbCascadesOptimizer(EvaluationStatistics statistics, boolean trackResultSize,
 			boolean preserveSerializableObservationOrder, EvaluationStrategy strategy, TripleSource tripleSource) {
+		this(statistics, trackResultSize, preserveSerializableObservationOrder, strategy, tripleSource, false);
+	}
+
+	LmdbCascadesOptimizer(EvaluationStatistics statistics, boolean trackResultSize,
+			boolean preserveSerializableObservationOrder, EvaluationStrategy strategy, TripleSource tripleSource,
+			boolean certificateRequired) {
 		this.statistics = statistics;
 		this.trackResultSize = trackResultSize;
 		this.preserveSerializableObservationOrder = preserveSerializableObservationOrder;
@@ -130,6 +137,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				? OptionalLong.empty()
 				: frontierStatementSource.getSnapshotEpoch();
 		this.rangeProvider = runtime == null ? null : new LmdbPackedPredicateRangeProvider(runtime);
+		this.certificateRequired = certificateRequired;
 	}
 
 	@Override
@@ -148,8 +156,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			tupleExpr.setStringMetricPlanned("optimizer.datasetRestricted", "true");
 		}
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = beginQueryOptimizationScope()) {
-			Mode mode = configuredMode();
-			OptimizationGoal goal = configuredGoal(tupleExpr, bindings, mode);
+			Mode configuredMode = configuredMode();
+			Mode effectiveMode = effectiveMode(configuredMode);
+			OptimizationGoal goal = configuredGoal(tupleExpr, bindings, effectiveMode);
 			annotateDistinctPhysicalRequirements(tupleExpr);
 			CascadesPlan plan;
 			try {
@@ -168,10 +177,10 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				decisionCertificate = plan.decisionCertificate();
 				installedRoot = replaceRoot(tupleExpr, plan.tupleExpr());
 				CascadesPlanProvenanceAnnotator.annotate(installedRoot, plan.provenance(), PLANNER_ID);
-				annotatePlanningMetrics(installedRoot, mode, plan);
+				annotatePlanningMetrics(installedRoot, configuredMode, effectiveMode, plan);
 				TupleExpr observableRoot = observablePlanRoot(installedRoot);
 				if (observableRoot != installedRoot) {
-					annotatePlanningMetrics(observableRoot, mode, plan);
+					annotatePlanningMetrics(observableRoot, configuredMode, effectiveMode, plan);
 					copyCacheValidationMetrics(installedRoot, observableRoot);
 				}
 				annotateObjectGuarantees(installedRoot);
@@ -195,8 +204,8 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			return null;
 		}
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = beginQueryOptimizationScope()) {
-			Mode mode = configuredMode();
-			OptimizationGoal goal = configuredGoal(tupleExpr, bindings, mode);
+			Mode configuredMode = configuredMode();
+			OptimizationGoal goal = configuredGoal(tupleExpr, bindings, effectiveMode(configuredMode));
 			LmdbPackedCostModel costModel = packedCostModel(dataset);
 			return certificate.validate(cacheContext(dataset, bindings, goal, costModel), costModel);
 		}
@@ -483,12 +492,16 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		source.copyPlannedMetricsTo(target);
 	}
 
-	private void annotatePlanningMetrics(TupleExpr root, Mode mode, CascadesPlan plan) {
+	private void annotatePlanningMetrics(TupleExpr root, Mode configuredMode, Mode effectiveMode, CascadesPlan plan) {
 		PlanningMetrics metrics = plan.metrics();
 		var searchStatus = plan.searchStatus();
 		var counters = searchStatus.counters();
 		var retention = searchStatus.retention();
-		root.setStringMetricPlanned("optimizer.cascadesMode", mode.name().toLowerCase(Locale.ROOT));
+		root.setStringMetricPlanned("optimizer.cascadesMode", configuredMode.name().toLowerCase(Locale.ROOT));
+		root.setStringMetricPlanned("optimizer.cascadesEffectiveMode", effectiveMode.name().toLowerCase(Locale.ROOT));
+		if (certificateRequired && configuredMode != effectiveMode) {
+			root.setStringMetricPlanned("optimizer.cascadesModeReason", "regret-bounded-certificate-seed");
+		}
 		root.setStringMetricPlanned(APPLIED_METRIC, "true");
 		root.setStringMetricPlanned(SKIP_SKETCH_JOIN_ORDER_METRIC, "false");
 		root.setStringMetricPlanned("optimizer.cascadesCompleteness", searchStatus.completeness().name());
@@ -883,6 +896,10 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		case "budgeted" -> Mode.BUDGETED;
 		default -> throw new CascadesPlanningException("Unsupported packed Cascades mode: " + configured);
 		};
+	}
+
+	private Mode effectiveMode(Mode configuredMode) {
+		return certificateRequired ? Mode.EXACT : configuredMode;
 	}
 
 	static long configuredTimeoutMillis() {

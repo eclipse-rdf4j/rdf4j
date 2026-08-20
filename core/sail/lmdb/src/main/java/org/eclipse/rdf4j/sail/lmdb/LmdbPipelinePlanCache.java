@@ -182,17 +182,23 @@ final class LmdbPipelinePlanCache {
 	}
 
 	Result getOrComputeCertified(TupleExpr source, Context context, Supplier<Revision> currentRevision,
-			CertificateValidator validator, AuditRecorder auditRecorder, Supplier<ComputedPlan> computer) {
+			CertificateValidator validator, AuditRecorder auditRecorder, PlanComputer computer) {
 		Objects.requireNonNull(computer, "computer");
 		if (!enabled || source == null || context == null || currentRevision == null
 				|| !context.revision().equals(currentRevision.get()) || !hasReusableInputs(source)) {
 			fullReplans.incrementAndGet();
-			return computedResult(computer.get(), false, false);
+			return computedResult(computer.compute(false), false, false);
 		}
 		PackedPlanCache.StructuralKey query = PackedPlanCache.structuralKey(source);
 		if (query == null) {
 			fullReplans.incrementAndGet();
-			return computedResult(computer.get(), false, false);
+			return computedResult(computer.compute(false), false, false);
+		}
+		long sourceRetainedBytes = FactorCostCacheKey.estimatedRetainedBytes(source);
+		long minimumEntryBytes = saturatedAdd(ENTRY_OBJECT_BYTES, saturatedMultiply(sourceRetainedBytes, 2L));
+		if (minimumEntryBytes > evidenceBudgetBytes) {
+			fullReplans.incrementAndGet();
+			return computedResult(computer.compute(false), false, false);
 		}
 		long fingerprint = fingerprintStrategy.fingerprint(context, query);
 		CacheKey key = new CacheKey(fingerprint, context.hardContext(), query);
@@ -219,13 +225,13 @@ final class LmdbPipelinePlanCache {
 				bypass = true;
 			} else {
 				misses.incrementAndGet();
-				owner = new Flight(key, FactorCostCacheKey.estimatedRetainedBytes(source));
+				owner = new Flight(key, sourceRetainedBytes);
 				segment.flights.put(key, owner);
 			}
 		}
 		if (bypass) {
 			fullReplans.incrementAndGet();
-			return computedResult(computer.get(), false, false);
+			return computedResult(computer.compute(false), false, false);
 		}
 		if (shared != null) {
 			Entry entry = shared.join();
@@ -256,7 +262,7 @@ final class LmdbPipelinePlanCache {
 							"posterior-risk-debt-reuse");
 				}
 				regretAudits.incrementAndGet();
-				ComputedPlan fresh = requireComputed(computer.get());
+				ComputedPlan fresh = requireComputed(computer.compute(true));
 				boolean stableAudit = false;
 				if (auditRecorder != null && fresh.certificate() != null) {
 					stableAudit = auditRecorder.record(cached.certificate, fresh.certificate());
@@ -296,7 +302,7 @@ final class LmdbPipelinePlanCache {
 						return new Result(refreshed.template.clone(), true, true, false, validationReason);
 					}
 					regretAudits.incrementAndGet();
-					ComputedPlan fresh = requireComputed(computer.get());
+					ComputedPlan fresh = requireComputed(computer.compute(true));
 					boolean stableAudit = false;
 					if (auditRecorder != null && fresh.certificate() != null) {
 						stableAudit = auditRecorder.record(cached.certificate, fresh.certificate());
@@ -318,7 +324,7 @@ final class LmdbPipelinePlanCache {
 			}
 
 			fullReplans.incrementAndGet();
-			ComputedPlan fresh = requireComputed(computer.get());
+			ComputedPlan fresh = requireComputed(computer.compute(mode == QueryPlanCacheMode.REGRET_BOUNDED));
 			boolean rejectionAudit = mode == QueryPlanCacheMode.REGRET_BOUNDED
 					&& cached != null && cached.certificate != null && fresh.certificate() != null
 					&& validator != null && auditRecorder != null;
@@ -416,7 +422,10 @@ final class LmdbPipelinePlanCache {
 		boolean stable = mode == QueryPlanCacheMode.REGRET_BOUNDED
 				? context.hardContext().equals(context.withRevision(observedRevision).hardContext())
 				: context.revision().equals(observedRevision);
-		TupleExpr template = stable && retainable(computed.plan()) ? detachedTemplate(computed.plan()) : null;
+		boolean certifiedForMode = mode != QueryPlanCacheMode.REGRET_BOUNDED || computed.certificate() != null;
+		TupleExpr template = stable && certifiedForMode && retainable(computed.plan())
+				? detachedTemplate(computed.plan())
+				: null;
 		Entry entry = template == null
 				? null
 				: new Entry(template, context, computed.certificate(), riskDebt, posteriorReuseExpectedRegret, 0L);
@@ -676,6 +685,11 @@ final class LmdbPipelinePlanCache {
 	}
 
 	record ComputedPlan(TupleExpr plan, PackedPlanDecisionCertificate certificate) {
+	}
+
+	@FunctionalInterface
+	interface PlanComputer {
+		ComputedPlan compute(boolean certificateRequired);
 	}
 
 	@FunctionalInterface

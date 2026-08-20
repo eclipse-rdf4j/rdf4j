@@ -94,14 +94,14 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 			return optimizeUncached(tupleExpr, dataset, bindings);
 		}
 		LmdbPipelinePlanCache.Context context = context(tupleExpr, dataset, bindings);
-		LmdbCascadesOptimizer cascadesOptimizer = cascadesOptimizer();
+		LmdbCascadesOptimizer validationOptimizer = cascadesOptimizer(true);
 		LmdbPipelinePlanCache.Result result = planCache.getOrComputeCertified(tupleExpr, context, this::revision,
 				new LmdbPipelinePlanCache.CertificateValidator() {
 					@Override
 					public LmdbPipelinePlanCache.CertificateValidation validate(
 							PackedPlanDecisionCertificate certificate) {
 						return LmdbPipelinePlanCache.CertificateValidation.from(
-								cascadesOptimizer.validateDecisionCertificate(certificate, tupleExpr, dataset,
+								validationOptimizer.validateDecisionCertificate(certificate, tupleExpr, dataset,
 										bindings));
 					}
 
@@ -113,11 +113,13 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 								.planLifecycleInvalidationRevision();
 					}
 				},
-				(cached, fresh) -> cascadesOptimizer.recordDecisionCertificateAudit(cached, fresh, dataset).stable(),
-				() -> {
-					TupleExpr optimized = optimizeUncached(tupleExpr, dataset, bindings, cascadesOptimizer);
+				(cached, fresh) -> validationOptimizer.recordDecisionCertificateAudit(cached, fresh, dataset).stable(),
+				certificateRequired -> {
+					LmdbCascadesOptimizer computationOptimizer = cascadesOptimizer(certificateRequired);
+					TupleExpr optimized = optimizeUncached(tupleExpr, dataset, bindings, computationOptimizer);
 					annotatePipelineCacheHit(optimized, false);
-					return new LmdbPipelinePlanCache.ComputedPlan(optimized, cascadesOptimizer.decisionCertificate());
+					return new LmdbPipelinePlanCache.ComputedPlan(optimized,
+							computationOptimizer.decisionCertificate());
 				});
 		if (!result.cacheHit()) {
 			annotatePipelineCache(result.plan(), result);
@@ -228,8 +230,12 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 	}
 
 	private LmdbCascadesOptimizer cascadesOptimizer() {
+		return cascadesOptimizer(false);
+	}
+
+	private LmdbCascadesOptimizer cascadesOptimizer(boolean certificateRequired) {
 		return new LmdbCascadesOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
-				preserveSerializableObservationOrder, strategy, tripleSource);
+				preserveSerializableObservationOrder, strategy, tripleSource, certificateRequired);
 	}
 
 	private Iterable<QueryOptimizer> getOptimizers(LmdbCascadesOptimizer cascadesOptimizer) {

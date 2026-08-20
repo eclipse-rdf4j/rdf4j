@@ -192,6 +192,47 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 	}
 
 	@Test
+	@Timeout(600)
+	void medicalQ5CompleteStoreBenchmarkLifecycleCompletesWithinGuard() throws Exception {
+		String previousMode = System.setProperty(CASCADES_MODE_PROPERTY, "auto");
+		String previousProfiling = System.setProperty(BENCHMARK_PROFILING_PROPERTY, "true");
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.themeName = Theme.MEDICAL_RECORDS.name();
+		benchmark.z_queryIndex = 5;
+		benchmark.sketchEstimatorEnabled = false;
+		benchmark.queryExplanationLevel = Explanation.Level.Telemetry.name();
+		benchmark.loadOnlySelectedTheme = false;
+
+		try {
+			benchmark.setup();
+			LmdbQueryPlanCacheStatistics primed = benchmark.planCacheStatistics();
+			assertTrue(primed.certifiedEntries() > 0,
+					"Medical Q5 must enter the benchmark lifecycle with a certified cache entry");
+
+			benchmark.snapshotPlanCacheBeforeIteration();
+			LmdbQueryPlanCacheStatistics beforeMeasurement = benchmark.planCacheStatistics();
+			assertEquals(0L, benchmark.executeQuery());
+			benchmark.verifyPlanCacheAfterIteration();
+
+			LmdbQueryPlanCacheStatistics afterMeasurement = benchmark.planCacheStatistics();
+			assertAll(
+					() -> assertTrue(afterMeasurement.hits() > beforeMeasurement.hits(),
+							"The measured-equivalent Q5 execution must reuse the certified plan"),
+					() -> assertEquals(beforeMeasurement.fullReplans(), afterMeasurement.fullReplans(),
+							"The measured-equivalent Q5 execution must not replan"),
+					() -> assertEquals(beforeMeasurement.regretAudits(), afterMeasurement.regretAudits(),
+							"The measured-equivalent Q5 execution must not audit"));
+		} finally {
+			try {
+				benchmark.tearDown();
+			} finally {
+				restoreProperty(BENCHMARK_PROFILING_PROPERTY, previousProfiling);
+				restoreProperty(CASCADES_MODE_PROPERTY, previousMode);
+			}
+		}
+	}
+
+	@Test
 	@Timeout(180)
 	void medicalQ4CostsFiniteCodeRelationAndRetainsCheapestLookup() throws Exception {
 		String previousMode = System.setProperty(CASCADES_MODE_PROPERTY, "exact");

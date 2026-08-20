@@ -35,6 +35,7 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 	static final int DIRECTORY_ENTRY_BYTES = 64;
 	static final int BLOCK_DIRECTORY_ENTRY_BYTES = 48;
 	static final int DATA_BLOCK_BYTES = 1 << 20;
+	private static final int DATA_READ_AHEAD_BYTES = Long.BYTES;
 	static final int HEADER_CHECKSUM_OFFSET = 96;
 	static final int CODEC_TERM_BITS = 1;
 	static final int CODEC_DELTA_FOR = 2;
@@ -313,7 +314,7 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 				blocks = new BlockReader[0];
 			} else {
 				blocks = new BlockReader[] {
-						new BlockReader(channel, mappedDataBlocks, columnId, 0L, Math.toIntExact(columnRows),
+						new BlockReader(channel, mappedDataBlocks, columnId, bitWidth, 0L, Math.toIntExact(columnRows),
 								dataOffset, dataLength, dataChecksum)
 				};
 				occupiedRegions.add(new Region(dataOffset, Math.addExact(dataOffset, dataLength)));
@@ -394,7 +395,8 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 				throw new IOException("Frontier statistics data block is invalid for column " + columnId
 						+ " at ordinal " + index);
 			}
-			blocks[index] = new BlockReader(channel, mappedDataBlocks, columnId, firstRow, blockRows, dataOffset,
+			blocks[index] = new BlockReader(channel, mappedDataBlocks, columnId, bitWidth, firstRow, blockRows,
+					dataOffset,
 					dataLength, dataChecksum);
 			occupiedRegions.add(new Region(dataOffset, Math.addExact(dataOffset, dataLength)));
 			expectedFirstRow = Math.addExact(firstRow, blockRows);
@@ -442,6 +444,9 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 		private final long baseValue;
 		private final long minimumValue;
 		private final BlockReader[] blocks;
+		private final BlockReader singleBlock;
+		private final long regularBlockRows;
+		private final int regularBlockShift;
 		private final long firstDataOffset;
 
 		private ColumnReader(int columnId, int codec, int bitWidth, long rowCount, long baseValue,
@@ -453,6 +458,10 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 			this.baseValue = baseValue;
 			this.minimumValue = minimumValue;
 			this.blocks = blocks;
+			this.singleBlock = blocks.length == 1 ? blocks[0] : null;
+			long regularRows = regularBlockRows(blocks);
+			this.regularBlockRows = regularRows;
+			this.regularBlockShift = Long.bitCount(regularRows) == 1 ? Long.numberOfTrailingZeros(regularRows) : -1;
 			this.firstDataOffset = firstDataOffset;
 		}
 
@@ -473,11 +482,14 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 		}
 
 		public long value(long row) throws IOException {
-			if (row < 0L || row >= rowCount) {
+			if (Long.compareUnsigned(row, rowCount) >= 0) {
 				throw new IndexOutOfBoundsException("Frontier statistics row " + row + " outside " + rowCount);
 			}
-			BlockReader block = findBlock(row);
-			long packed = block.value(row, bitWidth);
+			BlockReader block = singleBlock;
+			if (block == null) {
+				block = findBlock(row);
+			}
+			long packed = block.value(row);
 			if (codec == CODEC_DELTA_FOR) {
 				return Math.addExact(baseValue, packed);
 			}
@@ -491,7 +503,27 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 			return firstDataOffset;
 		}
 
+		private static long regularBlockRows(BlockReader[] blocks) {
+			if (blocks.length < 2) {
+				return 0L;
+			}
+			long rows = blocks[0].endRow - blocks[0].firstRow;
+			for (int index = 1; index < blocks.length; index++) {
+				BlockReader block = blocks[index];
+				if (block.firstRow != rows * index
+						|| index == blocks.length - 1 && block.endRow - block.firstRow > rows) {
+					return 0L;
+				}
+			}
+			return rows;
+		}
+
 		private BlockReader findBlock(long row) {
+			long regularRows = regularBlockRows;
+			if (regularRows != 0L) {
+				int block = regularBlockShift >= 0 ? (int) (row >>> regularBlockShift) : (int) (row / regularRows);
+				return blocks[block];
+			}
 			int low = 0;
 			int high = blocks.length - 1;
 			while (low <= high) {
@@ -499,7 +531,7 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 				BlockReader block = blocks[middle];
 				if (row < block.firstRow) {
 					high = middle - 1;
-				} else if (row >= block.firstRow + block.rowCount) {
+				} else if (row >= block.endRow) {
 					low = middle + 1;
 				} else {
 					return block;
@@ -514,68 +546,68 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 		private final FileChannel channel;
 		private final AtomicInteger mappedDataBlocks;
 		private final int columnId;
+		private final int bitWidth;
+		private final long valueMask;
 		private final long firstRow;
-		private final int rowCount;
+		private final long endRow;
 		private final long dataOffset;
 		private final long dataLength;
 		private final int dataChecksum;
 		private volatile ByteBuffer data;
 
-		private BlockReader(FileChannel channel, AtomicInteger mappedDataBlocks, int columnId, long firstRow,
-				int rowCount, long dataOffset, long dataLength, int dataChecksum) {
+		private BlockReader(FileChannel channel, AtomicInteger mappedDataBlocks, int columnId, int bitWidth,
+				long firstRow, int rowCount, long dataOffset, long dataLength, int dataChecksum) {
 			this.channel = channel;
 			this.mappedDataBlocks = mappedDataBlocks;
 			this.columnId = columnId;
+			this.bitWidth = bitWidth;
+			this.valueMask = -1L >>> (Long.SIZE - bitWidth);
 			this.firstRow = firstRow;
-			this.rowCount = rowCount;
+			this.endRow = Math.addExact(firstRow, rowCount);
 			this.dataOffset = dataOffset;
 			this.dataLength = dataLength;
 			this.dataChecksum = dataChecksum;
 		}
 
-		private long value(long row, int bitWidth) throws IOException {
-			long localRow = row - firstRow;
-			return readBits(mappedData(), Math.multiplyExact(localRow, bitWidth), bitWidth);
+		private long value(long row) throws IOException {
+			long bitPosition = (row - firstRow) * bitWidth;
+			int byteIndex = (int) (bitPosition >>> 3);
+			int bitOffset = (int) bitPosition & 7;
+			ByteBuffer source = mappedData();
+			long value = source.getLong(byteIndex) >>> bitOffset;
+			if (bitOffset + bitWidth > Long.SIZE) {
+				value |= (source.get(byteIndex + Long.BYTES) & 0xffL) << (Long.SIZE - bitOffset);
+			}
+			return value & valueMask;
 		}
 
 		private ByteBuffer mappedData() throws IOException {
 			ByteBuffer current = data;
-			if (current != null) {
-				return current;
-			}
-			synchronized (this) {
-				current = data;
-				if (current == null) {
-					current = channel.map(FileChannel.MapMode.READ_ONLY, dataOffset, dataLength);
-					if (checksum(current.duplicate()) != dataChecksum) {
-						throw new IOException("Frontier statistics data checksum mismatch for column " + columnId
-								+ " at row " + firstRow);
-					}
-					current.order(ByteOrder.BIG_ENDIAN);
-					data = current;
-					mappedDataBlocks.incrementAndGet();
-				}
-				return current;
-			}
+			return current != null ? current : mapData();
 		}
 
-		private static long readBits(ByteBuffer source, long bitPosition, int width) {
-			long value = 0L;
-			int outputShift = 0;
-			int remaining = width;
-			long position = bitPosition;
-			while (remaining > 0) {
-				int byteIndex = Math.toIntExact(position >>> 3);
-				int bitOffset = (int) (position & 7L);
-				int copied = Math.min(remaining, 8 - bitOffset);
-				int mask = (1 << copied) - 1;
-				int bits = (source.get(byteIndex) & 0xff) >>> bitOffset & mask;
-				value |= (long) bits << outputShift;
-				position += copied;
-				outputShift += copied;
-				remaining -= copied;
+		private synchronized ByteBuffer mapData() throws IOException {
+			ByteBuffer current = data;
+			if (current == null) {
+				/*
+				 * The main shard directory guarantees at least one directory entry after every data block. Mapping one
+				 * machine word of read-ahead therefore stays within the validated file bounds and lets the hot path use
+				 * one unaligned 64-bit load even for the final value. Bits outside dataLength are always discarded by
+				 * valueMask.
+				 */
+				long mappedLength = Math.addExact(dataLength, DATA_READ_AHEAD_BYTES);
+				current = channel.map(FileChannel.MapMode.READ_ONLY, dataOffset, mappedLength)
+						.order(ByteOrder.LITTLE_ENDIAN);
+				ByteBuffer checksumBytes = current.duplicate();
+				checksumBytes.limit(Math.toIntExact(dataLength));
+				if (checksum(checksumBytes) != dataChecksum) {
+					throw new IOException("Frontier statistics data checksum mismatch for column " + columnId
+							+ " at row " + firstRow);
+				}
+				data = current;
+				mappedDataBlocks.incrementAndGet();
 			}
-			return value;
+			return current;
 		}
 	}
 }
