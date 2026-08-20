@@ -72,9 +72,10 @@ import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierJoinProbe;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierJoinProgram;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafEstimate;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
-import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsView;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** LMDB storage-cardinality adapter for the packed ID-based cost boundary. */
 final class LmdbPackedCostModel
@@ -92,6 +93,8 @@ final class LmdbPackedCostModel
 	private static final int MAX_MAPPED_PROPERTY_PATH_DEPTH = 8;
 	static final int MAX_MAPPED_LINEAGE_FACTOR_WORK_PER_PATTERN = 2;
 	static final int MAX_MAPPED_CORRELATED_FACTOR_WORK_PER_PATTERN = 2;
+	private static final Logger logger = LoggerFactory.getLogger(LmdbPackedCostModel.class);
+
 	private static final String CARDINALITY_SOURCE = "lmdb-packed-cardinality";
 	private static final String FINITE_FILTER_SURFACE_SOURCE = "lmdb-finite-filter-surface";
 	private static final String FINITE_LOOKUP_SOURCE = "lmdb-finite-binding-lookup";
@@ -439,13 +442,20 @@ final class LmdbPackedCostModel
 	}
 
 	private boolean mappedStatisticsReady() {
-		LmdbStatisticsService statistics = runtime.statisticsService();
-		if (runtime.frontierSettings().mode() != FrontierEstimatorMode.AUTHORITATIVE || statistics == null) {
-			return false;
+		/*
+		 * Declining here silently routes the whole session to the legacy frontier-synopsis arena lane, whose status is
+		 * then what query plans report. Log the specific failed gate so a plan showing a legacy status is traceable to
+		 * the reason V2 was skipped rather than to the legacy generation it fell back onto.
+		 */
+		String decline = LmdbFrontierDiagnostics.mappedLaneDeclineReason(
+				runtime.frontierSettings().mode(), runtime.statisticsService());
+		if (decline == null) {
+			return true;
 		}
-		var status = statistics.status();
-		return status.availability() == FrontierStatisticsAvailability.READY
-				&& status.fallbackReason() == FrontierFallbackReason.NONE;
+		if (logger.isDebugEnabled()) {
+			logger.debug("Frontier Statistics V2 lane declined; using the legacy frontier-synopsis lane: {}", decline);
+		}
+		return false;
 	}
 
 	private FrontierLeafEstimate mappedLeafEstimate(PackedQueryView query, int relationId) {

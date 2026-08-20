@@ -205,6 +205,8 @@ class LmdbSailStore implements SailStore {
 	private final AlignedWriteBudget preparedImportBudget;
 	private final int estimatorAddChunkSize;
 	private final LmdbFrontierPlannerSettings frontierPlannerSettings;
+	/** Retained solely so Frontier diagnostics can report the configured budgets alongside observed state. */
+	private final LmdbStoreConfig frontierDiagnosticsConfig;
 	private int nextBulkOperationCapacity = INITIAL_BULK_OPERATION_CAPACITY;
 	private int nextPreparedBatchCapacity = PREPARED_BATCH_MIN_STATEMENTS;
 	private final Path frontierStatisticsDirectory;
@@ -956,6 +958,7 @@ class LmdbSailStore implements SailStore {
 		this.adaptiveEvidenceAllowed = !"snapshot-only"
 				.equalsIgnoreCase(config.getSketchEstimatorEvidenceMode());
 		this.frontierPlannerSettings = LmdbFrontierPlannerSettings.from(config);
+		this.frontierDiagnosticsConfig = config;
 		this.frontierStatisticsDirectory = new File(dataDir, "frontier-statistics-v2").toPath();
 		this.cascadesPlanCache = new PackedPlanCache(CASCADES_PLAN_CACHE_CAPACITY, 16,
 				config.getFrontierCacheEvidenceBudgetBytes());
@@ -1025,8 +1028,10 @@ class LmdbSailStore implements SailStore {
 					config.getFrontierAuditLanes(),
 					() -> new LmdbFrontierSnapshotSource(tripleStore),
 					config.getEffectiveFrontierQueryIndexBudgetBytes());
-			if (frontierEnabled && config.getFrontierSynopsisBudgetBytes() >= 16L * 1024L * 1024L
-					&& config.getFrontierHeapBudgetBytes() >= 1024L) {
+			String statisticsOpenFailure = null;
+			if (frontierEnabled
+					&& config.getFrontierSynopsisBudgetBytes() >= LmdbFrontierDiagnostics.MINIMUM_STATISTICS_DISK_BUDGET_BYTES
+					&& config.getFrontierHeapBudgetBytes() >= LmdbFrontierDiagnostics.MINIMUM_STATISTICS_HEAP_BUDGET_BYTES) {
 				try {
 					statisticsBuildConfig = FrontierStatisticsBuildConfig.forBudgets(
 							config.getFrontierSynopsisBudgetBytes(), config.getFrontierHeapBudgetBytes());
@@ -1041,11 +1046,14 @@ class LmdbSailStore implements SailStore {
 					installCurrentFrontierMutationTail(latestSequence);
 				} catch (IllegalArgumentException | IOException failure) {
 					logger.warn("Frontier Statistics V2 cannot open; conventional estimates remain available", failure);
+					statisticsOpenFailure = failure.getClass().getSimpleName()
+							+ (failure.getMessage() == null ? "" : ": " + failure.getMessage());
 					statisticsService = null;
 					statisticsBuildConfig = null;
 					statisticsHeapGovernor = null;
 				}
 			}
+			logFrontierDiagnostics("store startup", statisticsOpenFailure);
 			initialized = true;
 			if (statisticsService != null) {
 				FrontierStatisticsStatus status = statisticsService.status();
@@ -2126,6 +2134,34 @@ class LmdbSailStore implements SailStore {
 	private boolean frontierRebuildQuietPeriodElapsed() {
 		long elapsedNanos = System.nanoTime() - frontierRebuildRequestedNanos;
 		return elapsedNanos >= TimeUnit.MILLISECONDS.toNanos(estimatorPersistDelayMillis);
+	}
+
+	/**
+	 * Logs the complete Frontier picture: configuration, the statistics open gate, governed heap, generation state,
+	 * disk use, the legacy synopsis status, and which planner evidence lane results.
+	 *
+	 * <p>
+	 * A declined mapped lane is logged at warn level because it silently changes which evidence every subsequent query
+	 * plan reports. A healthy store logs the same report at debug level.
+	 * </p>
+	 *
+	 * @param context     short description of what triggered the report
+	 * @param openFailure the message that prevented Frontier Statistics V2 from opening, or {@code null}
+	 */
+	private void logFrontierDiagnostics(String context, String openFailure) {
+		FrontierSynopsisStatus legacy = frontierSynopsisService == null ? null : frontierSynopsisService.status();
+		boolean declined = LmdbFrontierDiagnostics.mappedLaneDeclineReason(
+				frontierDiagnosticsConfig.getFrontierEstimatorMode(), statisticsService) != null;
+		if (!declined && !logger.isDebugEnabled()) {
+			return;
+		}
+		String report = LmdbFrontierDiagnostics.report(context, frontierDiagnosticsConfig, statisticsService,
+				statisticsHeapGovernor, openFailure, legacy);
+		if (declined) {
+			logger.warn("{}", report);
+		} else {
+			logger.debug("{}", report);
+		}
 	}
 
 	private static boolean frontierSynopsisNeedsRebuild(FrontierSynopsisStatus status) {

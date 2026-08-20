@@ -22,6 +22,8 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Owns the persistent Frontier synopsis lifecycle.
@@ -32,6 +34,8 @@ import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
  * </p>
  */
 public final class LmdbFrontierSynopsisService implements AutoCloseable {
+
+	private static final Logger logger = LoggerFactory.getLogger(LmdbFrontierSynopsisService.class);
 
 	static final int SYNOPSIS_SCHEMA_VERSION = 1;
 	static final int HASH_VERSION = 1;
@@ -139,14 +143,20 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 		try {
 			manifest = new FrontierManifestStore(normalizedDirectory, fileOps).load();
 		} catch (FrontierManifestException e) {
+			logger.warn("Frontier synopsis manifest in {} is unusable ({}): {}", normalizedDirectory, e.status(),
+					e.getMessage());
 			return new LmdbFrontierSynopsisService(normalizedDirectory, fileOps, buildContext,
 					dirtyInsertion ? FrontierSynopsisStatus.DIRTY_INSERTION : e.status());
 		} catch (IOException e) {
+			logger.warn("Frontier synopsis manifest in {} could not be read; treating it as CORRUPT",
+					normalizedDirectory, e);
 			return new LmdbFrontierSynopsisService(normalizedDirectory, fileOps, buildContext,
 					dirtyInsertion ? FrontierSynopsisStatus.DIRTY_INSERTION : FrontierSynopsisStatus.CORRUPT);
 		}
 
 		if (durableStoreId == null) {
+			logger.warn("Frontier synopsis in {} has no durable LMDB store identity; reporting STORE_MISMATCH",
+					normalizedDirectory);
 			return new LmdbFrontierSynopsisService(normalizedDirectory, fileOps, buildContext,
 					FrontierSynopsisStatus.STORE_MISMATCH);
 		}
@@ -164,6 +174,15 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 		try {
 			manifest.identity().requireCompatible(expectedIdentity);
 		} catch (FrontierManifestException e) {
+			/*
+			 * This is the only route that yields HASH_MISMATCH, and nothing rebuilds the generation afterwards, so
+			 * name both identities. Otherwise an incompatible stored generation appears only as an opaque status on a
+			 * query plan with no indication of which stamp diverged.
+			 */
+			logger.warn("Frontier synopsis generation in {} is incompatible with this build ({}): {}."
+					+ " stored={}, expected={}. This generation is never rebuilt automatically;"
+					+ " remove the directory to discard it.",
+					normalizedDirectory, e.status(), e.getMessage(), manifest.identity(), expectedIdentity);
 			return new LmdbFrontierSynopsisService(normalizedDirectory, fileOps, buildContext,
 					dirtyInsertion ? FrontierSynopsisStatus.DIRTY_INSERTION : e.status());
 		}
@@ -175,6 +194,12 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 				fileOps);
 		if (dirtyInsertion) {
 			status = recoverInsertionMarker(normalizedDirectory, fileOps, status);
+		}
+		if (status != FrontierSynopsisStatus.READY) {
+			logger.warn("Frontier synopsis in {} opened with status {}", normalizedDirectory, status);
+		} else {
+			logger.debug("Frontier synopsis in {} opened READY at snapshot epoch {}", normalizedDirectory,
+					manifest.identity().snapshotEpoch());
 		}
 		LmdbFrontierSynopsisService service = new LmdbFrontierSynopsisService(
 				normalizedDirectory, fileOps, buildContext, status);
@@ -392,11 +417,21 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 			fileOps.deleteIfExists(frontierDirectory.resolve(INSERTION_MARKER_FILE));
 			fileOps.forceDirectory(frontierDirectory);
 		} catch (FrontierSnapshotInvalidatedException e) {
+			logger.warn("Frontier synopsis rebuild in {} lost its pinned snapshot", frontierDirectory, e);
 			publishStatus(FrontierSynopsisStatus.EPOCH_MISMATCH);
 		} catch (FrontierPayloadException e) {
+			logger.warn("Frontier synopsis rebuild in {} failed to write its payload ({}): {}", frontierDirectory,
+					e.status(), e.getMessage());
 			publishStatus(e.status());
 		} catch (IOException | RuntimeException e) {
+			logger.warn("Frontier synopsis rebuild in {} failed; reporting CORRUPT", frontierDirectory, e);
 			publishStatus(FrontierSynopsisStatus.CORRUPT);
+		}
+		if (status == FrontierSynopsisStatus.READY) {
+			logger.info("Frontier synopsis rebuild in {} completed READY (query index: {})", frontierDirectory,
+					queryIndexView == null ? queryIndexFailureReason : "available");
+		} else {
+			logger.warn("Frontier synopsis rebuild in {} completed with status {}", frontierDirectory, status);
 		}
 		return status;
 	}
@@ -653,6 +688,8 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 			}
 			replaceQueryIndex(new FrontierQueryIndexView(manifest.identity(), indexes), "");
 		} catch (IOException | RuntimeException failure) {
+			logger.warn("Frontier query index in {} could not be opened or rebuilt; the mapped fallback lane will"
+					+ " report query_index_build_failed", frontierDirectory, failure);
 			closeQueryIndexes(indexes);
 			replaceQueryIndex(null, "query_index_build_failed");
 		}

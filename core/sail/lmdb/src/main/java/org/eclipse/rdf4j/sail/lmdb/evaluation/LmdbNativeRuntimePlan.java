@@ -124,6 +124,7 @@ final class LmdbNativeRuntimePlan {
 				invocation.render(out);
 			}
 			return out.toString();
+//			return "";
 		}
 	}
 
