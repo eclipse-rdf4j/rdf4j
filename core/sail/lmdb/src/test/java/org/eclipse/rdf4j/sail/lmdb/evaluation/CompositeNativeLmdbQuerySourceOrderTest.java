@@ -91,6 +91,18 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 	}
 
 	@Test
+	void cancellationFromEitherChildIsTerminalForTheComposite() {
+		Object idSpace = new Object();
+		OrderedSource explicit = new OrderedSource(idSpace, "spoc", new long[0][]);
+		OrderedSource inferred = new OrderedSource(idSpace, "spoc", new long[0][]);
+		NativeLmdbQuerySource source = CompositeNativeLmdbQuerySource.combine(List.of(explicit, inferred));
+
+		assertThat(source.queryCancelled()).isFalse();
+		inferred.cancelled = true;
+		assertThat(source.queryCancelled()).isTrue();
+	}
+
+	@Test
 	void probeReusesChildHandlesAcrossFullAndPartialScans() throws IOException {
 		Object idSpace = new Object();
 		ProbeSource left = new ProbeSource(idSpace, 10, false);
@@ -576,6 +588,7 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 		final String index;
 		final long[][] rows;
 		int seekCalls;
+		boolean cancelled;
 
 		OrderedSource(Object idSpace, String index, long[][] rows) {
 			this.idSpace = idSpace;
@@ -596,6 +609,11 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 		@Override
 		public Object idSpace() {
 			return idSpace;
+		}
+
+		@Override
+		public boolean queryCancelled() {
+			return cancelled;
 		}
 
 		@Override

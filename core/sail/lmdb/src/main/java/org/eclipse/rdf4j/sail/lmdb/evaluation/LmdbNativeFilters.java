@@ -566,7 +566,7 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 					while ((quad = records.next()) != null) {
 						// one accept() can scan every default-graph statement of the pattern; poll or the probe
 						// deadline starves
-						LmdbNativeProbeDeadline.poll(++probePollTick);
+						LmdbNativeProbeDeadline.poll(++probePollTick, source);
 						if (quad[TripleIndex.CONTEXT_IDX] != NULL_CONTEXT_ID) {
 							return true;
 						}

@@ -59,7 +59,7 @@ class TxnManager {
 	 */
 	private final IdentityHashMap<Txn, Boolean> active = new IdentityHashMap<>();
 	private final long[] pool;
-	private final StampedLongAdderLockManager lockManager = new StampedLongAdderLockManager();
+	private final StampedLongAdderLockManager lockManager = new StampedLongAdderLockManager(10, 100);
 	private final long env;
 	private volatile int poolIndex = -1;
 	private final ConcurrentCleaner cleaner = new ConcurrentCleaner();

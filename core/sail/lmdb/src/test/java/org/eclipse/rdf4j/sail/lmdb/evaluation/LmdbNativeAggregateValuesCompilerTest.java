@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
@@ -87,6 +88,72 @@ class LmdbNativeAggregateValuesCompilerTest {
 					.isEqualTo(1L);
 			assertThat(rows.hasNext()).isFalse();
 		}
+	}
+
+	@Test
+	void optimizerExactValuesFuseOnlyAsImmediateLeftStatementPatternSibling() {
+		BindingSetAssignment exactValues = optimizerExactValues("name", NAME_1, NAME_2);
+		StatementPattern names = new StatementPattern(Var.of("subject"), Var.of("link", LINK, true),
+				Var.of("name"));
+
+		String physicalPlan = compilePhysicalPlan(new Join(exactValues, names));
+
+		assertThat(physicalPlan)
+				.contains("ExactDomainDrive(slot=?name#")
+				.doesNotContain("Values(rows=2)");
+	}
+
+	@Test
+	void optimizerExactValuesOnRightRemainAtSelectedPosition() {
+		BindingSetAssignment exactValues = optimizerExactValues("name", NAME_1, NAME_2);
+		StatementPattern names = new StatementPattern(Var.of("subject"), Var.of("link", LINK, true),
+				Var.of("name"));
+
+		String physicalPlan = compilePhysicalPlan(new Join(names, exactValues));
+
+		assertThat(physicalPlan)
+				.containsPattern("Pattern\\(.*\\) -> Values\\(rows=2\\)")
+				.doesNotContain("ExactDomainDrive(slot=");
+	}
+
+	@Test
+	void nestedOptimizerExactValuesDoNotCrossOuterJoinBoundary() {
+		StatementPattern prefix = new StatementPattern(Var.of("prefix"), Var.of("link", LINK, true),
+				Var.of("subject"));
+		BindingSetAssignment exactValues = optimizerExactValues("name", NAME_1, NAME_2);
+		StatementPattern names = new StatementPattern(Var.of("subject"), Var.of("link", LINK, true),
+				Var.of("name"));
+
+		String physicalPlan = compilePhysicalPlan(new Join(prefix, new Join(exactValues, names)));
+
+		assertThat(physicalPlan)
+				.containsPattern("Pattern\\(s=\\?prefix#.* -> ExactDomainDrive\\(slot=\\?name#")
+				.doesNotContain("ExactDomainDrive(slot=?name#0");
+	}
+
+	private static String compilePhysicalPlan(Join join) {
+		Group group = new Group(join);
+		group.addGroupElement(new GroupElem("count", new Count(Var.of("subject"), true)));
+		SingleStatementSource source = new SingleStatementSource();
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null,
+				0L, new EvaluationStatistics(), false);
+		QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(group,
+				new QueryEvaluationContext.Minimal((Dataset) null), strategy, source);
+		assertThat(step).as("the direct aggregate algebra must compile natively").isNotNull();
+		return ((LmdbNativePhysicalPlan) step).nativePhysicalPlan();
+	}
+
+	private static BindingSetAssignment optimizerExactValues(String name, Value... values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of(name));
+		List<BindingSet> rows = java.util.Arrays.stream(values).map(value -> {
+			MapBindingSet row = new MapBindingSet(1);
+			row.addBinding(name, value);
+			return (BindingSet) row;
+		}).toList();
+		assignment.setBindingSets(rows);
+		assignment.setLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES, 1L);
+		return assignment;
 	}
 
 	private static BindingSetAssignment values(String name, Value value) {

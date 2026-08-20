@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 
 /**
@@ -30,12 +31,19 @@ public final class KernelRuntime {
 	}
 
 	/**
-	 * Poll site emitted inside generated kernel loops (and mirrored by the interpreter): throws the stackless
-	 * {@link KernelCancelledException} when a probe deadline has fired. A {@code null} cancellation — every normal,
-	 * non-probe execution — costs one branch.
+	 * Poll site emitted inside generated kernel loops (and mirrored by the interpreter). Adaptive probe deadlines throw
+	 * the stackless {@link KernelCancelledException}; public query cancellation throws terminal
+	 * {@link QueryInterruptedException}. A {@code null} cancellation costs one branch.
 	 */
 	public static void checkCancelled(KernelCancellation cancellation) {
-		if (cancellation != null && cancellation.cancelled()) {
+		if (cancellation == null) {
+			return;
+		}
+		KernelCancellation.Reason reason = cancellation.reason();
+		if (reason == KernelCancellation.Reason.QUERY_INTERRUPTED) {
+			throw new QueryInterruptedException("Query evaluation was interrupted");
+		}
+		if (reason == KernelCancellation.Reason.PROBE_DEADLINE) {
 			throw KernelCancelledException.INSTANCE;
 		}
 	}

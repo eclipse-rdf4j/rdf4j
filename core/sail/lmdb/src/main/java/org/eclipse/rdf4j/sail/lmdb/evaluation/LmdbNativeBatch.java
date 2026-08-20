@@ -367,7 +367,7 @@ final class FilterBatchCursor implements BatchCursor {
 		while (arg.fill(batch) > 0) {
 			// a fully-rejecting filter spins over batches without returning; tick 0 forces a real deadline check
 			// per batch (a batch amortizes hundreds of rows, so the unmasked check is cheap here)
-			LmdbNativeProbeDeadline.poll(0);
+			LmdbNativeProbeDeadline.poll(0, row.source);
 			observedRows += batch.selectedCount;
 			int accepted = LmdbNativeSpecialization.applyFilter(batch, row, filter, observedRows, readMask);
 			NativeBatch.FILTER_BATCHES.incrementAndGet();

@@ -70,6 +70,8 @@ final class LmdbNativeParallelKernelAggregate {
 
 	/** Test observability: incremented whenever an aggregate kernel actually runs through the parallel path. */
 	static final AtomicLong PARALLEL_RUNS = new AtomicLong();
+	/** Test observability: includes parallel kernels interrupted before they can publish a result. */
+	static final AtomicLong PARALLEL_ATTEMPTS = new AtomicLong();
 
 	private static final int FILL_ROWS = 256;
 	private static final int RANGES_PER_WORKER = 4;
@@ -256,6 +258,7 @@ final class LmdbNativeParallelKernelAggregate {
 			if (sources == null) {
 				return debugDecline(explainTarget, "snapshot-unavailable");
 			}
+			PARALLEL_ATTEMPTS.incrementAndGet();
 			return execute(lowered, (Aggregate) workerKernelFinal.terminal, rootAdjacency, rootDomain, rootScan,
 					domains, rootKeys, scanPartitions, sources, threads, row, emitter, workerFactory);
 		} finally {

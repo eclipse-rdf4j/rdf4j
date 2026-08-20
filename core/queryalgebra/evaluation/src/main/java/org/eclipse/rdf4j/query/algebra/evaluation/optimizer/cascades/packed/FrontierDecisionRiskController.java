@@ -59,14 +59,21 @@ public final class FrontierDecisionRiskController {
 			return;
 		}
 		AuditPosterior posterior = families.computeIfAbsent(familyFingerprint, ignored -> new AuditPosterior());
+		if (stable && Double.isFinite(posterior.lastSelectedExpectedRegret)) {
+			posterior.selectedExpectedRegretCeiling = Math.min(posterior.selectedExpectedRegretCeiling,
+					posterior.lastSelectedExpectedRegret);
+		} else if (!stable) {
+			posterior.selectedExpectedRegretCeiling = Double.POSITIVE_INFINITY;
+		}
 		posterior.auditCount++;
 		globalAuditCount++;
 		if (stable) {
 			posterior.stableCount++;
 			globalStableCount++;
 		} else {
-			posterior.realizedRegret += realizedRegret;
-			globalRealizedRegret += realizedRegret;
+			double harmfulRegret = Math.max(realizedRegret, config.maximumExpectedRegret());
+			posterior.realizedRegret += harmfulRegret;
+			globalRealizedRegret += harmfulRegret;
 		}
 	}
 
@@ -99,11 +106,13 @@ public final class FrontierDecisionRiskController {
 					instability, expectedRegret <= config.maximumExpectedRegret(), "initial-confidence");
 		}
 
+		double allowedExpectedRegret = Math.min(config.maximumExpectedRegret(),
+				local.selectedExpectedRegretCeiling);
 		double[] tiers = confidenceTiers();
 		Decision best = null;
 		for (double confidence : tiers) {
 			double expectedRegret = baseRegret * (1.0d - confidence);
-			if (expectedRegret > config.maximumExpectedRegret()) {
+			if (expectedRegret > allowedExpectedRegret) {
 				continue;
 			}
 			double effort = validationEffort(validationWork, winnerExecutionCost, comparisonCount, confidence);
@@ -114,13 +123,27 @@ public final class FrontierDecisionRiskController {
 			}
 		}
 		if (best != null) {
+			local.lastSelectedExpectedRegret = best.expectedRegret();
 			return best;
 		}
 		double confidence = config.maximumConfidence();
 		double expectedRegret = baseRegret * (1.0d - confidence);
-		return new Decision(confidence, expectedRegret,
+		boolean certified = expectedRegret <= allowedExpectedRegret;
+		Decision fallback = new Decision(confidence, expectedRegret,
 				validationEffort(validationWork, winnerExecutionCost, comparisonCount, confidence), instability,
-				false, "regret-budget-requires-replan");
+				certified, allowedExpectedRegret < config.maximumExpectedRegret()
+						? "stable-audit-regret-ceiling-requires-replan"
+						: "regret-budget-requires-replan");
+		if (certified) {
+			local.lastSelectedExpectedRegret = expectedRegret;
+		}
+		return fallback;
+	}
+
+	/** Returns whether this decision family has at least one independently optimized audit outcome. */
+	public synchronized boolean hasAuditEvidence(long familyFingerprint) {
+		AuditPosterior posterior = families.get(familyFingerprint);
+		return posterior != null && posterior.auditCount > 0L;
 	}
 
 	private double posteriorExpectedRegret(AuditPosterior local) {
@@ -213,5 +236,7 @@ public final class FrontierDecisionRiskController {
 		private long auditCount;
 		private long stableCount;
 		private double realizedRegret;
+		private double selectedExpectedRegretCeiling = Double.POSITIVE_INFINITY;
+		private double lastSelectedExpectedRegret = Double.NaN;
 	}
 }

@@ -33,8 +33,10 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanDecisionCertificate;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.config.QueryPlanCacheMode;
 
 /** Store-owned cache of detached, fully optimized LMDB query-plan templates. */
 final class LmdbPipelinePlanCache {
@@ -47,25 +49,47 @@ final class LmdbPipelinePlanCache {
 	private final int segmentMask;
 	private final FingerprintStrategy fingerprintStrategy;
 	private final boolean enabled;
+	private final long evidenceBudgetBytes;
+	private final Object budgetLock = new Object();
+	private final QueryPlanCacheMode mode;
+	private final double maximumExpectedRegret;
 	private final AtomicInteger entryCount = new AtomicInteger();
+	private final AtomicInteger certifiedEntryCount = new AtomicInteger();
 	private final AtomicLong retainedBytes = new AtomicLong();
 	private final AtomicLong hits = new AtomicLong();
 	private final AtomicLong misses = new AtomicLong();
 	private final AtomicLong waits = new AtomicLong();
 	private final AtomicLong evictions = new AtomicLong();
+	private final AtomicLong certificateValidations = new AtomicLong();
+	private final AtomicLong regretAudits = new AtomicLong();
+	private final AtomicLong fullReplans = new AtomicLong();
+	private final AtomicLong hardInvalidations = new AtomicLong();
 
 	LmdbPipelinePlanCache(long evidenceBudgetBytes) {
 		this(DEFAULT_CAPACITY, DEFAULT_SEGMENTS, evidenceBudgetBytes,
-				(context, query) -> mix64(query.hashCode() ^ context.routingHash()));
+				QueryPlanCacheMode.REVISION_SENSITIVE, 0.01d,
+				(context, query) -> mix64(query.hashCode()));
 	}
 
 	LmdbPipelinePlanCache(int capacity, int segmentCount, long evidenceBudgetBytes) {
 		this(capacity, segmentCount, evidenceBudgetBytes,
-				(context, query) -> mix64(query.hashCode() ^ context.routingHash()));
+				QueryPlanCacheMode.REVISION_SENSITIVE, 0.01d,
+				(context, query) -> mix64(query.hashCode()));
 	}
 
 	LmdbPipelinePlanCache(int capacity, int segmentCount, long evidenceBudgetBytes,
 			FingerprintStrategy fingerprintStrategy) {
+		this(capacity, segmentCount, evidenceBudgetBytes, QueryPlanCacheMode.REVISION_SENSITIVE, 0.01d,
+				fingerprintStrategy);
+	}
+
+	LmdbPipelinePlanCache(long evidenceBudgetBytes, QueryPlanCacheMode mode, double maximumExpectedRegret) {
+		this(DEFAULT_CAPACITY, DEFAULT_SEGMENTS, evidenceBudgetBytes, mode, maximumExpectedRegret,
+				(context, query) -> mix64(query.hashCode()));
+	}
+
+	LmdbPipelinePlanCache(int capacity, int segmentCount, long evidenceBudgetBytes,
+			QueryPlanCacheMode mode, double maximumExpectedRegret, FingerprintStrategy fingerprintStrategy) {
 		if (capacity <= 0) {
 			throw new IllegalArgumentException("pipeline plan cache capacity must be positive");
 		}
@@ -75,22 +99,25 @@ final class LmdbPipelinePlanCache {
 		if (evidenceBudgetBytes < 0L) {
 			throw new IllegalArgumentException("pipeline plan cache evidence budget must be nonnegative");
 		}
+		if (!Double.isFinite(maximumExpectedRegret)
+				|| maximumExpectedRegret < 0.0d || maximumExpectedRegret > 1.0d) {
+			throw new IllegalArgumentException("pipeline plan cache expected-regret budget must be in [0, 1]");
+		}
 		this.fingerprintStrategy = Objects.requireNonNull(fingerprintStrategy, "fingerprintStrategy");
+		this.mode = Objects.requireNonNull(mode, "mode");
+		this.maximumExpectedRegret = maximumExpectedRegret;
+		this.evidenceBudgetBytes = evidenceBudgetBytes;
 		this.enabled = evidenceBudgetBytes > 0L;
 		int normalizedSegments = 1;
-		while (normalizedSegments < Math.min(capacity, segmentCount)) {
+		while (normalizedSegments << 1 <= Math.min(capacity, segmentCount)) {
 			normalizedSegments <<= 1;
 		}
 		segments = new Segment[normalizedSegments];
 		segmentMask = normalizedSegments - 1;
 		int baseCapacity = capacity / normalizedSegments;
 		int capacityRemainder = capacity % normalizedSegments;
-		long baseBudget = evidenceBudgetBytes / normalizedSegments;
-		long budgetRemainder = evidenceBudgetBytes % normalizedSegments;
 		for (int index = 0; index < normalizedSegments; index++) {
-			segments[index] = new Segment(
-					baseCapacity + (index < capacityRemainder ? 1 : 0),
-					baseBudget + (index < budgetRemainder ? 1L : 0L));
+			segments[index] = new Segment(baseCapacity + (index < capacityRemainder ? 1 : 0));
 		}
 	}
 
@@ -107,22 +134,22 @@ final class LmdbPipelinePlanCache {
 			return new Result(Objects.requireNonNull(computer.get(), "pipeline plan computation"), false);
 		}
 		long fingerprint = fingerprintStrategy.fingerprint(context, query);
-		CacheKey key = new CacheKey(fingerprint, context, query);
+		CacheKey key = new CacheKey(fingerprint, context.hardContext(), query);
 		Segment segment = segments[(int) mix64(fingerprint) & segmentMask];
 		Flight owner = null;
-		CompletableFuture<TupleExpr> shared = null;
+		CompletableFuture<Entry> shared = null;
 		boolean bypass = false;
 		synchronized (segment) {
 			Entry cached = segment.entries.get(key);
-			if (cached != null && context.revision().equals(currentRevision.get())) {
+			if (cached != null && cached.context.revision().equals(currentRevision.get())) {
 				hits.incrementAndGet();
-				return new Result(cached.template().clone(), true);
+				return new Result(cached.template.clone(), true);
 			}
 			Flight existing = segment.flights.get(key);
 			if (existing != null) {
 				waits.incrementAndGet();
 				shared = existing.result;
-			} else if (segment.evidenceBudgetBytes <= 0L || segment.flights.size() >= segment.capacity) {
+			} else if (segment.flights.size() >= segment.capacity) {
 				bypass = true;
 			} else {
 				misses.incrementAndGet();
@@ -134,9 +161,9 @@ final class LmdbPipelinePlanCache {
 			return new Result(Objects.requireNonNull(computer.get(), "pipeline plan computation"), false);
 		}
 		if (shared != null) {
-			TupleExpr template = shared.join();
-			if (template != null && context.revision().equals(currentRevision.get())) {
-				return new Result(template.clone(), true);
+			Entry entry = shared.join();
+			if (entry != null && entry.context.revision().equals(currentRevision.get())) {
+				return new Result(entry.template.clone(), true);
 			}
 			return new Result(Objects.requireNonNull(computer.get(), "pipeline plan computation"), false);
 		}
@@ -150,8 +177,168 @@ final class LmdbPipelinePlanCache {
 		}
 		boolean stable = context.revision().equals(currentRevision.get());
 		TupleExpr template = stable && retainable(computed) ? detachedTemplate(computed) : null;
-		publish(segment, owner, template);
+		publish(segment, owner, template == null ? null : new Entry(template, context, null, 0.0d, Double.NaN, 0L));
 		return new Result(computed, false);
+	}
+
+	Result getOrComputeCertified(TupleExpr source, Context context, Supplier<Revision> currentRevision,
+			CertificateValidator validator, AuditRecorder auditRecorder, Supplier<ComputedPlan> computer) {
+		Objects.requireNonNull(computer, "computer");
+		if (!enabled || source == null || context == null || currentRevision == null
+				|| !context.revision().equals(currentRevision.get()) || !hasReusableInputs(source)) {
+			fullReplans.incrementAndGet();
+			return computedResult(computer.get(), false, false);
+		}
+		PackedPlanCache.StructuralKey query = PackedPlanCache.structuralKey(source);
+		if (query == null) {
+			fullReplans.incrementAndGet();
+			return computedResult(computer.get(), false, false);
+		}
+		long fingerprint = fingerprintStrategy.fingerprint(context, query);
+		CacheKey key = new CacheKey(fingerprint, context.hardContext(), query);
+		Segment segment = segments[(int) mix64(fingerprint) & segmentMask];
+		Flight owner = null;
+		CompletableFuture<Entry> shared = null;
+		Entry cached;
+		boolean bypass = false;
+		synchronized (segment) {
+			cached = segment.entries.get(key);
+			Revision observedRevision = currentRevision.get();
+			if (cached != null && cached.context.revision().equals(observedRevision)) {
+				hits.incrementAndGet();
+				return new Result(cached.template.clone(), true, false, false);
+			}
+			if (cached == null && containsHardContextVariant(segment, query, key.hardContext)) {
+				hardInvalidations.incrementAndGet();
+			}
+			Flight existing = segment.flights.get(key);
+			if (existing != null) {
+				waits.incrementAndGet();
+				shared = existing.result;
+			} else if (segment.flights.size() >= segment.capacity) {
+				bypass = true;
+			} else {
+				misses.incrementAndGet();
+				owner = new Flight(key, FactorCostCacheKey.estimatedRetainedBytes(source));
+				segment.flights.put(key, owner);
+			}
+		}
+		if (bypass) {
+			fullReplans.incrementAndGet();
+			return computedResult(computer.get(), false, false);
+		}
+		if (shared != null) {
+			Entry entry = shared.join();
+			if (entry != null && entry.context.revision().equals(currentRevision.get())) {
+				hits.incrementAndGet();
+				return new Result(entry.template.clone(), true, false, false);
+			}
+			return getOrComputeCertified(source, context, currentRevision, validator, auditRecorder, computer);
+		}
+
+		try {
+			String validationReason = "";
+			CertificateValidation rejectedValidation = null;
+			if (mode == QueryPlanCacheMode.REGRET_BOUNDED && cached != null && cached.certificate != null
+					&& validator != null && auditRecorder != null && cached.posteriorReuseExpectedRegret >= 0.0d
+					&& !validator.requiresValidation(cached.context.revision(), context.revision())) {
+				double riskDebt = saturatedProbabilityAdd(cached.riskDebt,
+						cached.posteriorReuseExpectedRegret);
+				boolean exactZeroRegretLease = cached.posteriorReuseExpectedRegret == 0.0d;
+				if ((riskDebt < maximumExpectedRegret
+						|| exactZeroRegretLease && maximumExpectedRegret == 0.0d)
+						&& context.revision().equals(currentRevision.get())) {
+					Entry refreshed = new Entry(cached.template, context, cached.certificate, riskDebt,
+							cached.posteriorReuseExpectedRegret, cached.retainedBytes);
+					publish(segment, owner, refreshed);
+					hits.incrementAndGet();
+					return new Result(refreshed.template.clone(), true, false, false,
+							"posterior-risk-debt-reuse");
+				}
+				regretAudits.incrementAndGet();
+				ComputedPlan fresh = requireComputed(computer.get());
+				boolean stableAudit = false;
+				if (auditRecorder != null && fresh.certificate() != null) {
+					stableAudit = auditRecorder.record(cached.certificate, fresh.certificate());
+				}
+				double posteriorReuseExpectedRegret = stableAudit
+						? cached.posteriorReuseExpectedRegret * 0.5d
+						: Double.NaN;
+				publishComputed(segment, owner, context, currentRevision, fresh, 0.0d,
+						posteriorReuseExpectedRegret);
+				return computedResult(fresh, false, true, "posterior-risk-debt-audit");
+			}
+			if (mode == QueryPlanCacheMode.REGRET_BOUNDED && cached != null && cached.certificate != null
+					&& validator != null) {
+				certificateValidations.incrementAndGet();
+				CertificateValidation validation;
+				try {
+					validation = Objects.requireNonNull(validator.validate(cached.certificate),
+							"pipeline certificate validation");
+				} catch (RuntimeException validationFailure) {
+					validation = CertificateValidation.replan("certificate-validation-failed:"
+							+ validationFailure.getClass().getSimpleName());
+				}
+				validationReason = validation.reason();
+				if (validation.certified() && context.revision().equals(currentRevision.get())) {
+					double riskDebt = validation.exactProof()
+							? cached.riskDebt
+							: saturatedProbabilityAdd(cached.riskDebt, validation.expectedRegret());
+					if (riskDebt < maximumExpectedRegret
+							|| validation.exactProof() && maximumExpectedRegret == 0.0d) {
+						double posteriorReuseExpectedRegret = validation.exactProof()
+								? 0.0d
+								: validation.expectedRegret();
+						Entry refreshed = new Entry(cached.template, context, validation.certificate(), riskDebt,
+								posteriorReuseExpectedRegret, cached.retainedBytes);
+						publish(segment, owner, refreshed);
+						hits.incrementAndGet();
+						return new Result(refreshed.template.clone(), true, true, false, validationReason);
+					}
+					regretAudits.incrementAndGet();
+					ComputedPlan fresh = requireComputed(computer.get());
+					boolean stableAudit = false;
+					if (auditRecorder != null && fresh.certificate() != null) {
+						stableAudit = auditRecorder.record(cached.certificate, fresh.certificate());
+					}
+					double posteriorReuseExpectedRegret = stableAudit
+							? validation.expectedRegret() * 0.5d
+							: Double.NaN;
+					publishComputed(segment, owner, context, currentRevision, fresh, 0.0d,
+							posteriorReuseExpectedRegret);
+					return computedResult(fresh, true, true, validationReason);
+				}
+				if (!validation.certified()) {
+					rejectedValidation = validation;
+				}
+			} else if (mode == QueryPlanCacheMode.REGRET_BOUNDED && cached != null) {
+				validationReason = cached.certificate == null
+						? "missing-decision-certificate"
+						: "missing-certificate-validator";
+			}
+
+			fullReplans.incrementAndGet();
+			ComputedPlan fresh = requireComputed(computer.get());
+			boolean rejectionAudit = mode == QueryPlanCacheMode.REGRET_BOUNDED
+					&& cached != null && cached.certificate != null && fresh.certificate() != null
+					&& validator != null && auditRecorder != null;
+			if (rejectionAudit) {
+				regretAudits.incrementAndGet();
+				boolean stableAudit = auditRecorder.record(cached.certificate, fresh.certificate());
+				double posteriorReuseExpectedRegret = stableAudit && rejectedValidation != null
+						&& rejectedValidation.expectedRegret() > 0.0d
+								? rejectedValidation.expectedRegret() * 0.5d
+								: Double.NaN;
+				publishComputed(segment, owner, context, currentRevision, fresh, 0.0d,
+						posteriorReuseExpectedRegret);
+				return computedResult(fresh, false, true, validationReason);
+			}
+			publishComputed(segment, owner, context, currentRevision, fresh, 0.0d);
+			return computedResult(fresh, false, rejectionAudit, validationReason);
+		} catch (RuntimeException | Error failure) {
+			abandon(segment, owner, failure);
+			throw failure;
+		}
 	}
 
 	int entryCount() {
@@ -178,34 +365,108 @@ final class LmdbPipelinePlanCache {
 		return evictions.get();
 	}
 
-	private void publish(Segment segment, Flight flight, TupleExpr template) {
-		long entryBytes = template == null
-				? Long.MAX_VALUE
-				: saturatedAdd(ENTRY_OBJECT_BYTES, saturatedAdd(
-						saturatedMultiply(flight.sourceRetainedBytes, 2L),
-						FactorCostCacheKey.estimatedRetainedBytes(template)));
-		boolean retained = false;
-		synchronized (segment) {
-			if (segment.flights.remove(flight.key) != flight) {
-				throw new IllegalStateException("pipeline plan cache flight is no longer owned");
-			}
-			if (template != null && entryBytes <= segment.evidenceBudgetBytes) {
-				while (!segment.entries.isEmpty()
-						&& (segment.entries.size() >= segment.capacity
-								|| segment.retainedBytes > segment.evidenceBudgetBytes - entryBytes)) {
-					evictOldest(segment);
-				}
-				if (segment.entries.size() < segment.capacity
-						&& segment.retainedBytes <= segment.evidenceBudgetBytes - entryBytes) {
-					segment.entries.put(flight.key, new Entry(template, entryBytes));
-					segment.retainedBytes += entryBytes;
-					entryCount.incrementAndGet();
-					retainedBytes.addAndGet(entryBytes);
-					retained = true;
+	LmdbQueryPlanCacheStatistics statistics() {
+		RiskSnapshot risk = riskSnapshot();
+		return new LmdbQueryPlanCacheStatistics(hits.get(), certificateValidations.get(), regretAudits.get(),
+				fullReplans.get(), hardInvalidations.get(), evictions.get(), entryCount.get(),
+				certifiedEntryCount.get(),
+				retainedBytes.get(), risk.accumulatedDebt(), risk.minimumReusesBeforeAudit());
+	}
+
+	private RiskSnapshot riskSnapshot() {
+		double riskDebt = 0.0d;
+		long minimumReuses = Long.MAX_VALUE;
+		boolean foundLease = false;
+		for (Segment segment : segments) {
+			synchronized (segment) {
+				for (Entry entry : segment.entries.values()) {
+					riskDebt = saturatedProbabilityAdd(riskDebt, entry.riskDebt);
+					if (entry.posteriorReuseExpectedRegret >= 0.0d) {
+						foundLease = true;
+						minimumReuses = Math.min(minimumReuses, safeReusesBeforeAudit(entry));
+					}
 				}
 			}
 		}
-		flight.result.complete(retained ? template : null);
+		return new RiskSnapshot(riskDebt, foundLease ? minimumReuses : 0L);
+	}
+
+	private long safeReusesBeforeAudit(Entry entry) {
+		if (entry.posteriorReuseExpectedRegret == 0.0d && maximumExpectedRegret >= entry.riskDebt) {
+			return Long.MAX_VALUE;
+		}
+		if (!(entry.posteriorReuseExpectedRegret > 0.0d) || !(maximumExpectedRegret > entry.riskDebt)) {
+			return 0L;
+		}
+		double reuses = (maximumExpectedRegret - entry.riskDebt) / entry.posteriorReuseExpectedRegret;
+		if (!Double.isFinite(reuses) || reuses >= Long.MAX_VALUE) {
+			return Long.MAX_VALUE;
+		}
+		return Math.max(0L, (long) Math.ceil(reuses) - 1L);
+	}
+
+	private void publishComputed(Segment segment, Flight flight, Context context, Supplier<Revision> currentRevision,
+			ComputedPlan computed, double riskDebt) {
+		publishComputed(segment, flight, context, currentRevision, computed, riskDebt, Double.NaN);
+	}
+
+	private void publishComputed(Segment segment, Flight flight, Context context, Supplier<Revision> currentRevision,
+			ComputedPlan computed, double riskDebt, double posteriorReuseExpectedRegret) {
+		Revision observedRevision = currentRevision.get();
+		boolean stable = mode == QueryPlanCacheMode.REGRET_BOUNDED
+				? context.hardContext().equals(context.withRevision(observedRevision).hardContext())
+				: context.revision().equals(observedRevision);
+		TupleExpr template = stable && retainable(computed.plan()) ? detachedTemplate(computed.plan()) : null;
+		Entry entry = template == null
+				? null
+				: new Entry(template, context, computed.certificate(), riskDebt, posteriorReuseExpectedRegret, 0L);
+		publish(segment, flight, entry);
+	}
+
+	private void publish(Segment segment, Flight flight, Entry candidate) {
+		long certificateBytes = candidate == null || candidate.certificate == null
+				? 0L
+				: candidate.certificate.retainedBytes();
+		long entryBytes = candidate == null
+				? Long.MAX_VALUE
+				: saturatedAdd(ENTRY_OBJECT_BYTES, saturatedAdd(
+						saturatedMultiply(flight.sourceRetainedBytes, 2L),
+						saturatedAdd(FactorCostCacheKey.estimatedRetainedBytes(candidate.template), certificateBytes)));
+		boolean retained = false;
+		Entry published = null;
+		synchronized (budgetLock) {
+			synchronized (segment) {
+				if (segment.flights.remove(flight.key) != flight) {
+					throw new IllegalStateException("pipeline plan cache flight is no longer owned");
+				}
+				Entry previous = segment.entries.remove(flight.key);
+				if (previous != null) {
+					removeRetained(segment, previous);
+				}
+				if (candidate != null && entryBytes <= evidenceBudgetBytes) {
+					while (!segment.entries.isEmpty() && segment.entries.size() >= segment.capacity) {
+						evictOldest(segment);
+					}
+					while (retainedBytes.get() > evidenceBudgetBytes - entryBytes && evictOneEntry()) {
+						// Evict globally until the configured store-wide byte budget can admit this entry.
+					}
+					if (segment.entries.size() < segment.capacity
+							&& retainedBytes.get() <= evidenceBudgetBytes - entryBytes) {
+						published = new Entry(candidate.template, candidate.context, candidate.certificate,
+								candidate.riskDebt, candidate.posteriorReuseExpectedRegret, entryBytes);
+						segment.entries.put(flight.key, published);
+						segment.retainedBytes += entryBytes;
+						entryCount.incrementAndGet();
+						if (published.certificate != null) {
+							certifiedEntryCount.incrementAndGet();
+						}
+						retainedBytes.addAndGet(entryBytes);
+						retained = true;
+					}
+				}
+			}
+		}
+		flight.result.complete(retained ? published : null);
 	}
 
 	private static void abandon(Segment segment, Flight flight, Throwable failure) {
@@ -225,10 +486,55 @@ final class LmdbPipelinePlanCache {
 		}
 		Entry evicted = iterator.next().getValue();
 		iterator.remove();
-		segment.retainedBytes -= evicted.retainedBytes();
-		entryCount.decrementAndGet();
-		retainedBytes.addAndGet(-evicted.retainedBytes());
+		removeRetained(segment, evicted);
 		evictions.incrementAndGet();
+	}
+
+	private boolean evictOneEntry() {
+		for (Segment candidate : segments) {
+			synchronized (candidate) {
+				if (!candidate.entries.isEmpty()) {
+					evictOldest(candidate);
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private void removeRetained(Segment segment, Entry entry) {
+		segment.retainedBytes -= entry.retainedBytes;
+		entryCount.decrementAndGet();
+		if (entry.certificate != null) {
+			certifiedEntryCount.decrementAndGet();
+		}
+		retainedBytes.addAndGet(-entry.retainedBytes);
+	}
+
+	private static boolean containsHardContextVariant(Segment segment, PackedPlanCache.StructuralKey query,
+			HardContext requested) {
+		for (CacheKey existing : segment.entries.keySet()) {
+			if (existing.query.equals(query) && !existing.hardContext.equals(requested)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static ComputedPlan requireComputed(ComputedPlan computed) {
+		ComputedPlan checked = Objects.requireNonNull(computed, "pipeline plan computation");
+		Objects.requireNonNull(checked.plan(), "pipeline plan computation");
+		return checked;
+	}
+
+	private static Result computedResult(ComputedPlan computed, boolean certificateValidated, boolean regretAudit) {
+		return computedResult(computed, certificateValidated, regretAudit, "");
+	}
+
+	private static Result computedResult(ComputedPlan computed, boolean certificateValidated, boolean regretAudit,
+			String validationReason) {
+		ComputedPlan checked = requireComputed(computed);
+		return new Result(checked.plan(), false, certificateValidated, regretAudit, validationReason);
 	}
 
 	private static boolean retainable(TupleExpr plan) {
@@ -282,6 +588,11 @@ final class LmdbPipelinePlanCache {
 		return value > Long.MAX_VALUE / multiplier ? Long.MAX_VALUE : value * multiplier;
 	}
 
+	private static double saturatedProbabilityAdd(double left, double right) {
+		double sum = left + right;
+		return Double.isFinite(sum) ? Math.min(1.0d, Math.max(0.0d, sum)) : 1.0d;
+	}
+
 	@FunctionalInterface
 	interface FingerprintStrategy {
 		long fingerprint(Context context, PackedPlanCache.StructuralKey query);
@@ -329,35 +640,121 @@ final class LmdbPipelinePlanCache {
 			DatasetIdentity dataset, BindingIdentity bindings, String configuration, boolean preserveObservationOrder,
 			boolean trackResultSize, boolean trackTime, String queryEvaluationMode, boolean runtimeTelemetry) {
 
-		private long routingHash() {
-			long hash = revision.planningRevisions().dataRevision();
-			hash = mix64(hash ^ revision.planningRevisions().frontierRevision());
-			hash = mix64(hash ^ revision.planningRevisions().leoRevision());
-			hash = mix64(hash ^ revision.planningRevisions().learnedEvidenceRevision());
-			hash = mix64(hash ^ executionSnapshotEpoch);
-			hash = mix64(hash ^ dataset.defaultGraphs().size() ^ Long.rotateLeft(dataset.namedGraphs().size(), 17));
-			hash = mix64(hash ^ bindings.values().size() ^ configuration.hashCode());
-			return hash;
+		private HardContext hardContext() {
+			return new HardContext(revision.planningRevisions().dataRevision(), revision.adaptiveEvidenceAllowed(),
+					executionSnapshotPresent, executionSnapshotEpoch, dataset, bindings, configuration,
+					preserveObservationOrder, trackResultSize, trackTime, queryEvaluationMode, runtimeTelemetry);
+		}
+
+		private Context withRevision(Revision currentRevision) {
+			return new Context(currentRevision, executionSnapshotPresent, executionSnapshotEpoch, dataset, bindings,
+					configuration, preserveObservationOrder, trackResultSize, trackTime, queryEvaluationMode,
+					runtimeTelemetry);
 		}
 	}
 
-	record Result(TupleExpr plan, boolean cacheHit) {
+	record HardContext(long dataRevision, boolean adaptiveEvidenceAllowed, boolean executionSnapshotPresent,
+			long executionSnapshotEpoch, DatasetIdentity dataset, BindingIdentity bindings, String configuration,
+			boolean preserveObservationOrder, boolean trackResultSize, boolean trackTime, String queryEvaluationMode,
+			boolean runtimeTelemetry) {
 	}
 
-	private record CacheKey(long fingerprint, Context context, PackedPlanCache.StructuralKey query) {
+	record Result(TupleExpr plan, boolean cacheHit, boolean certificateValidated, boolean regretAudit,
+			String validationReason) {
+
+		Result {
+			validationReason = validationReason == null ? "" : validationReason;
+		}
+
+		Result(TupleExpr plan, boolean cacheHit) {
+			this(plan, cacheHit, false, false, "");
+		}
+
+		Result(TupleExpr plan, boolean cacheHit, boolean certificateValidated, boolean regretAudit) {
+			this(plan, cacheHit, certificateValidated, regretAudit, "");
+		}
+	}
+
+	record ComputedPlan(TupleExpr plan, PackedPlanDecisionCertificate certificate) {
+	}
+
+	@FunctionalInterface
+	interface CertificateValidator {
+		CertificateValidation validate(PackedPlanDecisionCertificate certificate);
+
+		default boolean requiresValidation(Revision cached, Revision current) {
+			return true;
+		}
+	}
+
+	@FunctionalInterface
+	interface AuditRecorder {
+		boolean record(PackedPlanDecisionCertificate cached, PackedPlanDecisionCertificate fresh);
+	}
+
+	record CertificateValidation(boolean certified, boolean exactProof,
+			PackedPlanDecisionCertificate certificate, double expectedRegret, String reason) {
+
+		CertificateValidation {
+			if (certified && certificate == null) {
+				throw new IllegalArgumentException("certified pipeline reuse requires a refreshed certificate");
+			}
+			if (!Double.isFinite(expectedRegret) || expectedRegret < 0.0d) {
+				throw new IllegalArgumentException("pipeline validation regret must be finite and nonnegative");
+			}
+			reason = reason == null ? "" : reason;
+		}
+
+		static CertificateValidation from(PackedPlanDecisionCertificate.Validation validation) {
+			if (validation == null) {
+				return replan("missing-certificate-validation");
+			}
+			if (!validation.certified()) {
+				return new CertificateValidation(false, false, null, validation.expectedRegret(),
+						validation.reason());
+			}
+			return new CertificateValidation(true, validation.exactProof(), validation.certificate(),
+					validation.expectedRegret(), validation.reason());
+		}
+
+		static CertificateValidation replan(String reason) {
+			return new CertificateValidation(false, false, null, 1.0d, reason);
+		}
+	}
+
+	private record CacheKey(long fingerprint, HardContext hardContext, PackedPlanCache.StructuralKey query) {
 		@Override
 		public int hashCode() {
 			return Long.hashCode(fingerprint);
 		}
 	}
 
-	private record Entry(TupleExpr template, long retainedBytes) {
+	private record RiskSnapshot(double accumulatedDebt, long minimumReusesBeforeAudit) {
+	}
+
+	private static final class Entry {
+		private final TupleExpr template;
+		private final Context context;
+		private final PackedPlanDecisionCertificate certificate;
+		private final double riskDebt;
+		private final double posteriorReuseExpectedRegret;
+		private final long retainedBytes;
+
+		private Entry(TupleExpr template, Context context, PackedPlanDecisionCertificate certificate,
+				double riskDebt, double posteriorReuseExpectedRegret, long retainedBytes) {
+			this.template = Objects.requireNonNull(template, "pipeline plan template");
+			this.context = Objects.requireNonNull(context, "pipeline plan context");
+			this.certificate = certificate;
+			this.riskDebt = riskDebt;
+			this.posteriorReuseExpectedRegret = posteriorReuseExpectedRegret;
+			this.retainedBytes = retainedBytes;
+		}
 	}
 
 	private static final class Flight {
 		private final CacheKey key;
 		private final long sourceRetainedBytes;
-		private final CompletableFuture<TupleExpr> result = new CompletableFuture<>();
+		private final CompletableFuture<Entry> result = new CompletableFuture<>();
 
 		private Flight(CacheKey key, long sourceRetainedBytes) {
 			this.key = key;
@@ -367,14 +764,12 @@ final class LmdbPipelinePlanCache {
 
 	private static final class Segment {
 		private final int capacity;
-		private final long evidenceBudgetBytes;
 		private final LinkedHashMap<CacheKey, Entry> entries = new LinkedHashMap<>(16, 0.75f, true);
 		private final Map<CacheKey, Flight> flights = new LinkedHashMap<>();
 		private long retainedBytes;
 
-		private Segment(int capacity, long evidenceBudgetBytes) {
+		private Segment(int capacity) {
 			this.capacity = capacity;
-			this.evidenceBudgetBytes = evidenceBudgetBytes;
 		}
 	}
 

@@ -551,6 +551,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 					| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException tripped) {
 				backupObservation.cancelled(tripped);
 			} catch (Throwable failure) {
+				LmdbNativeJaninoCodegen.rethrowTerminalFailure(failure);
 				backupObservation.failed(failure);
 				race.backupFailed(failure);
 			} finally {
@@ -591,6 +592,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 					| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException displaced) {
 				tripped = true;
 			} catch (Exception | Error failure) {
+				LmdbNativeJaninoCodegen.rethrowTerminalFailure(failure);
 				observation.failed(failure);
 				if (race.primaryFailed(failure)) {
 					LmdbNativeStrategySelection<T> adopted = awaitAndAdoptBackup(race, backupValue, backupSettled,
@@ -686,6 +688,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 					| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException expired) {
 				timedOut = true;
 			} catch (Exception | Error failure) {
+				LmdbNativeJaninoCodegen.rethrowTerminalFailure(failure);
 				observation.failed(failure);
 				if (failure instanceof Error error) {
 					throw error;
@@ -820,6 +823,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 					| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException tripped) {
 				backupObservation.cancelled(tripped); // the race's loser trip: no timing evidence
 			} catch (Throwable failure) {
+				LmdbNativeJaninoCodegen.rethrowTerminalFailure(failure);
 				backupObservation.failed(failure);
 				race.backupFailed(failure);
 			} finally {
@@ -863,9 +867,11 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 					| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException expired) {
 				timedOut = true;
 			} catch (IOException | RuntimeException | Error failure) {
+				LmdbNativeJaninoCodegen.rethrowTerminalFailure(failure);
 				return hedgeTrialFailed(plan, trialIndex, fallbackIndex, race, backupValue, backupSettled,
 						backupObservation, observation, failure, start, scheduler, trialKey);
 			} catch (Exception failure) {
+				LmdbNativeJaninoCodegen.rethrowTerminalFailure(failure);
 				return hedgeTrialFailed(plan, trialIndex, fallbackIndex, race, backupValue, backupSettled,
 						backupObservation, observation, new IOException("probe trial opener failed", failure), start,
 						scheduler, trialKey);
@@ -1083,12 +1089,14 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 					| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException expired) {
 				timedOut = true;
 			} catch (IOException | RuntimeException | Error failure) {
+				LmdbNativeJaninoCodegen.rethrowTerminalFailure(failure);
 				// a real failure is not a timeout: no silent fallback — record, charge, quarantine, rethrow
 				observation.failed(failure);
 				plan.reservation().commit(System.nanoTime() - start);
 				scheduler.quarantine(trialKey, plan.regime(), plan.epoch());
 				throw failure;
 			} catch (Exception failure) {
+				LmdbNativeJaninoCodegen.rethrowTerminalFailure(failure);
 				observation.failed(failure);
 				plan.reservation().commit(System.nanoTime() - start);
 				scheduler.quarantine(trialKey, plan.regime(), plan.epoch());

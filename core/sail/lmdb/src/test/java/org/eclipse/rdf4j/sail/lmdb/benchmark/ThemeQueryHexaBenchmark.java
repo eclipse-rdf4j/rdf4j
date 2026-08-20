@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryPlanCacheStatistics;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Disabled;
@@ -105,6 +106,7 @@ public class ThemeQueryHexaBenchmark {
 	private Theme theme;
 	private String query;
 	private long expected;
+	private LmdbQueryPlanCacheStatistics planCacheBeforeIteration;
 
 	public static void main(String[] args) throws RunnerException {
 		var opt = new OptionsBuilder()
@@ -130,14 +132,26 @@ public class ThemeQueryHexaBenchmark {
 		if (!STORE_DIRECTORY.exists() && !STORE_DIRECTORY.mkdirs()) {
 			throw new IOException("Unable to create fixed LMDB benchmark directory: " + STORE_DIRECTORY);
 		}
-		storeConfig = ConfigUtil.createConfig();
-		storeConfig.setTripleIndexes("spoc,sopc,psoc,posc,ospc,opsc");
+		storeConfig = createStoreConfig();
 		store = new LmdbStore(STORE_DIRECTORY, storeConfig);
 		repository = new SailRepository(store);
 		ensureDataLoadedAndValidated();
 		if (QueryPlanCapture.isCaptureEnabled()) {
 			captureQueryPlanSnapshot();
 		}
+		ThemeQueryPlanCacheGuard.prime(repository, store, query, 16);
+	}
+
+	@Setup(Level.Iteration)
+	public void snapshotPlanCacheBeforeIteration() {
+		ThemeQueryPlanCacheGuard.prepareMeasurementWindow(repository, store, query, 16);
+		planCacheBeforeIteration = store.getQueryPlanCacheStatistics();
+	}
+
+	@TearDown(Level.Iteration)
+	public void verifyPlanCacheAfterIteration() {
+		ThemeQueryPlanCacheGuard.verifyStable(planCacheBeforeIteration, store.getQueryPlanCacheStatistics());
+		planCacheBeforeIteration = null;
 	}
 
 	private void ensureDataLoadedAndValidated() throws IOException {
@@ -172,12 +186,17 @@ public class ThemeQueryHexaBenchmark {
 			throw new IOException("Unable to recreate fixed LMDB benchmark directory: " + STORE_DIRECTORY);
 		}
 
-		storeConfig = ConfigUtil.createConfig();
+		storeConfig = createStoreConfig();
 		store = new LmdbStore(STORE_DIRECTORY, storeConfig);
 		repository = new SailRepository(store);
 		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 		loadData();
 		BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+	}
+
+	private static LmdbStoreConfig createStoreConfig() {
+		return ThemeQueryPlanCacheGuard.configure(ConfigUtil.createConfig())
+				.setTripleIndexes("spoc,sopc,psoc,posc,ospc,opsc");
 	}
 
 	private DbFileSizes readExpectedDbFileSizes() throws IOException {

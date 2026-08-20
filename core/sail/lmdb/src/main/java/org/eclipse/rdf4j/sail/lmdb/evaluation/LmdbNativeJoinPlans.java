@@ -860,7 +860,7 @@ final class JoinCursor implements RowCursor {
 		while (true) {
 			// A long run of left rows with empty right sides spins here without emitting; the consumer's per-row
 			// polls never fire then, so this loop needs its own poll point (M0 poll-coverage pattern).
-			LmdbNativeProbeDeadline.poll(++probePollTick);
+			LmdbNativeProbeDeadline.poll(++probePollTick, row.source);
 			if (patternRightActive) {
 				if (nextPatternRight()) {
 					if (capturingReplay) {

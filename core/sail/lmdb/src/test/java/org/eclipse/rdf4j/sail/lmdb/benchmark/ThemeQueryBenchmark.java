@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryPlanCacheStatistics;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -75,7 +76,7 @@ import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
 @Warmup(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
-@BenchmarkMode({ Mode.AverageTime })
+@BenchmarkMode({ Mode.SingleShotTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
 @Measurement(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
@@ -98,17 +99,17 @@ public class ThemeQueryBenchmark {
 	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 300L;
 
 	@Param({
-			"0",
-			"1",
-			"2",
-			"3",
+//			"0",
+//			"1",
+//			"2",
+//			"3",
 			"4",
 			"5",
-			"6",
-			"7",
-			"8",
-			"9",
-			"10",
+//			"6",
+//			"7",
+//			"8",
+//			"9",
+//			"10",
 //			"11",
 //			"12"
 	})
@@ -141,6 +142,7 @@ public class ThemeQueryBenchmark {
 	private Theme theme;
 	private String query;
 	private long expected;
+	private LmdbQueryPlanCacheStatistics planCacheBeforeIteration;
 
 	public static void main(String[] args) throws RunnerException {
 		var opt = new OptionsBuilder()
@@ -188,7 +190,20 @@ public class ThemeQueryBenchmark {
 			}
 
 		}
+		ThemeQueryPlanCacheGuard.prime(repository, store, query, 16);
 
+	}
+
+	@Setup(Level.Iteration)
+	public void snapshotPlanCacheBeforeIteration() {
+		ThemeQueryPlanCacheGuard.prepareMeasurementWindow(repository, store, query, 16);
+		planCacheBeforeIteration = store.getQueryPlanCacheStatistics();
+	}
+
+	@TearDown(Level.Iteration)
+	public void verifyPlanCacheAfterIteration() {
+		ThemeQueryPlanCacheGuard.verifyStable(planCacheBeforeIteration, store.getQueryPlanCacheStatistics());
+		planCacheBeforeIteration = null;
 	}
 
 	@TearDown(Level.Trial)
@@ -229,7 +244,7 @@ public class ThemeQueryBenchmark {
 
 	@Benchmark
 	public long executeQuery() {
-		return executeQuery(120);
+		return executeQuery(ThemeQueryPlanCacheGuard.QUERY_TIMEOUT_SECONDS);
 	}
 
 	public long executeQuery(int maxExecutionTimeSeconds) {
@@ -520,7 +535,7 @@ public class ThemeQueryBenchmark {
 	}
 
 	private LmdbStoreConfig createStoreConfig() {
-		LmdbStoreConfig config = ConfigUtil.createConfig();
+		LmdbStoreConfig config = ThemeQueryPlanCacheGuard.configure(ConfigUtil.createConfig());
 		config.setSketchEstimatorEnabled(sketchEstimatorEnabled);
 		return config;
 	}
@@ -720,6 +735,10 @@ public class ThemeQueryBenchmark {
 		} catch (ReflectiveOperationException e) {
 			throw new IllegalStateException("Unable to access benchmark evaluation statistics", e);
 		}
+	}
+
+	LmdbQueryPlanCacheStatistics planCacheStatistics() {
+		return store.getQueryPlanCacheStatistics();
 	}
 
 	@Test

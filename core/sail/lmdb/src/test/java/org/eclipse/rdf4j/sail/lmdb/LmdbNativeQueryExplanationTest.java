@@ -149,31 +149,33 @@ public class LmdbNativeQueryExplanationTest {
 	}
 
 	@Test
-	public void rowOrOfEqualsFilterCompilesToMultiValueProbes() {
+	public void rowOrOfEqualsFilterRemainsInOptimizerSelectedPosition() {
 		addItemNames();
 		Explanation explanation = explain(Explanation.Level.Optimized, orOfEqualsRowQuery());
 		String rendered = explanation.toString();
 
 		assertThat(rendered)
-				.as("an OR-of-equals filter over a statement pattern should compile to per-value index probes "
-						+ "instead of a full predicate scan with a sticky filter")
-				.contains("ExactDomainDrive(slot=");
+				.as("physical lowering must not replace an optimizer-selected scalar filter with an exact-domain drive")
+				.contains("filterDepths=[")
+				.contains("Filter (planned")
+				.doesNotContain("ExactDomainDrive(slot=");
 	}
 
 	@Test
-	public void aggregateOrOfEqualsFilterCompilesToMultiValueProbes() {
+	public void aggregateOrOfEqualsFilterRemainsInOptimizerSelectedPosition() {
 		addItemNames();
 		Explanation explanation = explain(Explanation.Level.Optimized, orOfEqualsAggregateQuery());
 		String rendered = explanation.toString();
 
 		assertThat(rendered)
-				.as("an OR-of-equals filter under an aggregate should compile to per-value index probes "
-						+ "instead of a full predicate scan with a sticky filter")
-				.contains("ExactDomainDrive(slot=");
+				.as("aggregate lowering must honor the optimizer-selected scalar filter")
+				.contains("filterDepths=[")
+				.contains("Filter (planned")
+				.doesNotContain("ExactDomainDrive(slot=");
 	}
 
 	@Test
-	public void exactDomainDriveSurvivesMinus() {
+	public void scalarFilterRemainsAuthoritativeAcrossMinus() {
 		addItemNames();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
@@ -187,13 +189,13 @@ public class LmdbNativeQueryExplanationTest {
 		String rendered = explain(Explanation.Level.Optimized, query).toString();
 
 		assertThat(rendered)
-				.as("an exact domain above MINUS must still drive the left inverse access")
-				.contains("Minus(")
-				.contains("ExactDomainDrive(slot=");
+				.as("lowering must not turn a scalar filter above MINUS into a physical exact-domain drive")
+				.contains("Filter (planned")
+				.doesNotContain("ExactDomainDrive(slot=");
 	}
 
 	@Test
-	public void exactDomainDriveSurvivesNullRejectedOptionalJoin() {
+	public void nullRejectedOptionalDoesNotResurrectExactDomain() {
 		addItemNames();
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s WHERE { ?s a ex:Item . "
@@ -203,13 +205,13 @@ public class LmdbNativeQueryExplanationTest {
 		String rendered = explain(Explanation.Level.Optimized, query).toString();
 
 		assertThat(rendered)
-				.as("a null-rejected OPTIONAL join must become an inner path driven by the exact domain")
-				.contains("ExactDomainDrive(slot=")
-				.doesNotContain("LeftJoin(");
+				.as("lowering must preserve the optimizer's OPTIONAL/filter shape without inventing an exact domain")
+				.contains("Filter (planned")
+				.doesNotContain("ExactDomainDrive(slot=");
 	}
 
 	@Test
-	public void optimizerProducedExactValuesDriveThroughIndependentValuesAndMinus() {
+	public void optimizerValuesKeepTheirPositionsThroughIndependentValuesAndMinus() {
 		addItemNames();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
@@ -226,14 +228,15 @@ public class LmdbNativeQueryExplanationTest {
 		String rendered = explain(Explanation.Level.Optimized, query).toString();
 
 		assertThat(rendered)
-				.as("an optimizer-produced exact VALUES leaf must remain the inverse driver even when another "
-						+ "independent VALUES leaf and MINUS share the aggregate scope")
-				.contains("ExactDomainDrive(slot=")
-				.contains("Minus(");
+				.as("both VALUES leaves must remain at their optimizer-selected positions")
+				.contains("Pattern(s=?s#0")
+				.contains(" -> Values(rows=2) -> Pattern(s=?s#0")
+				.contains(" -> Values(rows=3)")
+				.doesNotContain("ExactDomainDrive(slot=");
 	}
 
 	@Test
-	public void optimizerExactDomainConnectsBridgeBeforeUnrelatedTypeFactor() {
+	public void optimizerConnectedOrderRemainsAuthoritativeWithoutExactDomain() {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI hasTag = vf.createIRI(EX, "hasTag");
@@ -250,15 +253,14 @@ public class LmdbNativeQueryExplanationTest {
 				+ "FILTER(?code = \"A\" || ?code = \"B\") }";
 
 		String rendered = explain(Explanation.Level.Optimized, query).toString();
-		Pattern disconnectedPrefix = Pattern.compile(
-				"MultiJoin\\(order=\\[ExactDomainDrive\\(slot=\\?code#[^)]*\\) -> "
-						+ "Pattern\\(s=\\?s#[^,]*, p=const\\([^)]*\\), o=const\\([^)]*\\)");
+		Pattern connectedOrder = Pattern.compile(
+				"MultiJoin\\(order=\\[Pattern\\(s=\\?s#[^)]*\\) -> Pattern\\(s=\\?s#[^)]*o=\\?tag#[^)]*\\) "
+						+ "-> Pattern\\(s=\\?tag#[^)]*o=\\?code#[^)]*\\)\\], filterDepths=\\[2\\]\\)");
 
-		assertThat(rendered).contains("ExactDomainDrive(slot=?code#");
-		assertThat(disconnectedPrefix.matcher(rendered).find())
-				.as("the exact domain must bind ?tag through ex:code, then cross ex:hasTag before scanning rdf:type\n%s",
-						rendered)
-				.isFalse();
+		assertThat(rendered).doesNotContain("ExactDomainDrive(slot=");
+		assertThat(connectedOrder.matcher(rendered).find())
+				.as("lowering must preserve the optimizer-selected connected ?s -> ?tag -> ?code order\n%s", rendered)
+				.isTrue();
 	}
 
 	private void addItemNames() {
@@ -774,7 +776,8 @@ public class LmdbNativeQueryExplanationTest {
 		Explanation explanation = explain(Explanation.Level.Telemetry, query);
 
 		assertThat(explanation.toString())
-				.contains("ExactDomainDrive(slot=")
+				.contains("Values(rows=2)")
+				.doesNotContain("ExactDomainDrive(slot=")
 				.contains("nativeExactValuesProbesActual=2")
 				.contains("nativeExactValuesMatchedRowsActual=2");
 	}
@@ -787,7 +790,8 @@ public class LmdbNativeQueryExplanationTest {
 		Explanation explanation = explain(Explanation.Level.Telemetry, query);
 
 		assertThat(explanation.toString())
-				.contains("ExactDomainDrive(slot=")
+				.contains("Values(rows=2)")
+				.doesNotContain("ExactDomainDrive(slot=")
 				.contains("nativeExecutionPath=aggState")
 				.contains("nativeExactValuesProbesActual=2")
 				.contains("nativeExactValuesMatchedRowsActual=2");
@@ -801,9 +805,9 @@ public class LmdbNativeQueryExplanationTest {
 		Explanation explanation = explain(Explanation.Level.Telemetry, query);
 
 		assertThat(explanation.toString())
-				.contains("ExactDomainDrive(slot=")
-				.contains("arity=1")
-				.contains("nativeExactValuesProbesActual=2")
+				.contains("Values(rows=2)")
+				.doesNotContain("ExactDomainDrive(slot=")
+				.contains("nativeExactValuesProbesActual=1")
 				.contains("nativeExactValuesMatchedRowsActual=1");
 	}
 

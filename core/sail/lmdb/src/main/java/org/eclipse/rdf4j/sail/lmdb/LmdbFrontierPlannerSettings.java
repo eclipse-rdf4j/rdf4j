@@ -14,12 +14,12 @@ package org.eclipse.rdf4j.sail.lmdb;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.FrontierDecisionRiskController;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.config.QueryPlanCacheMode;
 
 /** Store-scoped Frontier planning settings and adaptive cache-validation posterior. */
 final class LmdbFrontierPlannerSettings {
 	private static final int EXACT_FINITE_SURFACE_BUDGET_DIVISOR = 16;
 	private static final int HEURISTIC_FILTER_PASS_BUDGET_DIVISOR = 32;
-	private static final int PIPELINE_PLAN_BUDGET_DIVISOR = 16;
 	private static final int LEAF_PAYLOAD_BUDGET_DIVISOR = 4;
 
 	private final FrontierEstimatorMode mode;
@@ -42,13 +42,17 @@ final class LmdbFrontierPlannerSettings {
 			double maximumConfidence, double maximumExpectedRegret) {
 		this(mode, queryMemoryBudgetBytes, initialMaterializationWorkUnits, refinementWorkUnits,
 				targetRelativeStandardError, defensiveProposalEpsilon, initialConfidence, minimumConfidence,
-				maximumConfidence, maximumExpectedRegret, LmdbStoreConfig.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES);
+				maximumConfidence, maximumExpectedRegret, LmdbStoreConfig.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES,
+				LmdbStoreConfig.QUERY_PLAN_CACHE_MODE, LmdbStoreConfig.QUERY_PLAN_CACHE_BUDGET_BYTES,
+				LmdbStoreConfig.QUERY_PLAN_CACHE_MAXIMUM_EXPECTED_REGRET);
 	}
 
 	private LmdbFrontierPlannerSettings(FrontierEstimatorMode mode, long queryMemoryBudgetBytes,
 			long initialMaterializationWorkUnits, int refinementWorkUnits, double targetRelativeStandardError,
 			double defensiveProposalEpsilon, double initialConfidence, double minimumConfidence,
-			double maximumConfidence, double maximumExpectedRegret, long cacheEvidenceBudgetBytes) {
+			double maximumConfidence, double maximumExpectedRegret, long cacheEvidenceBudgetBytes,
+			QueryPlanCacheMode queryPlanCacheMode, long queryPlanCacheBudgetBytes,
+			double queryPlanCacheMaximumExpectedRegret) {
 		this.mode = mode == null ? FrontierEstimatorMode.OFF : mode;
 		this.queryMemoryBudgetBytes = queryMemoryBudgetBytes;
 		this.initialMaterializationWorkUnits = initialMaterializationWorkUnits;
@@ -59,15 +63,15 @@ final class LmdbFrontierPlannerSettings {
 				/ EXACT_FINITE_SURFACE_BUDGET_DIVISOR;
 		long heuristicFilterPassBudgetBytes = cacheEvidenceBudgetBytes
 				/ HEURISTIC_FILTER_PASS_BUDGET_DIVISOR;
-		long pipelinePlanBudgetBytes = cacheEvidenceBudgetBytes / PIPELINE_PLAN_BUDGET_DIVISOR;
 		long leafPayloadBudgetBytes = cacheEvidenceBudgetBytes / LEAF_PAYLOAD_BUDGET_DIVISOR;
 		long exactTransformBudgetBytes = cacheEvidenceBudgetBytes - exactFiniteSurfaceBudgetBytes
-				- heuristicFilterPassBudgetBytes - pipelinePlanBudgetBytes - leafPayloadBudgetBytes;
+				- heuristicFilterPassBudgetBytes - leafPayloadBudgetBytes;
 		this.leafPayloadCache = new LmdbFrontierLeafPayloadCache(leafPayloadBudgetBytes);
 		this.exactTransformCache = new LmdbFrontierExactTransformCache(exactTransformBudgetBytes);
 		this.exactFiniteSurfaceCache = new LmdbExactFiniteSurfaceCache(exactFiniteSurfaceBudgetBytes);
 		this.heuristicFilterPassCache = new LmdbHeuristicFilterPassCache(heuristicFilterPassBudgetBytes);
-		this.pipelinePlanCache = new LmdbPipelinePlanCache(pipelinePlanBudgetBytes);
+		this.pipelinePlanCache = new LmdbPipelinePlanCache(queryPlanCacheBudgetBytes, queryPlanCacheMode,
+				queryPlanCacheMaximumExpectedRegret);
 		this.riskConfig = new FrontierDecisionRiskController.Config(initialConfidence, minimumConfidence,
 				maximumConfidence, maximumExpectedRegret);
 		this.riskController = new FrontierDecisionRiskController(riskConfig);
@@ -90,7 +94,9 @@ final class LmdbFrontierPlannerSettings {
 				config.getFrontierRefinementWorkUnits(), config.getFrontierTargetRelativeStandardError(),
 				config.getFrontierDefensiveProposalEpsilon(), config.getFrontierCacheInitialConfidence(),
 				config.getFrontierCacheMinimumConfidence(), config.getFrontierCacheMaximumConfidence(),
-				config.getFrontierCacheMaximumExpectedRegret(), config.getFrontierCacheEvidenceBudgetBytes());
+				config.getFrontierCacheMaximumExpectedRegret(), config.getFrontierCacheEvidenceBudgetBytes(),
+				config.getQueryPlanCacheMode(), config.getQueryPlanCacheBudgetBytes(),
+				config.getQueryPlanCacheMaximumExpectedRegret());
 	}
 
 	FrontierEstimatorMode mode() {
@@ -156,6 +162,10 @@ final class LmdbFrontierPlannerSettings {
 	FrontierDecisionRiskController.Decision validationDecision(long familyFingerprint,
 			double winnerExecutionCost, double validationWork, int comparisonCount) {
 		return riskController.select(familyFingerprint, winnerExecutionCost, validationWork, comparisonCount);
+	}
+
+	boolean hasValidationAuditEvidence(long familyFingerprint) {
+		return riskController.hasAuditEvidence(familyFingerprint);
 	}
 
 	void recordAudit(long familyFingerprint, long auditIdentity, int auditLane, boolean stable,

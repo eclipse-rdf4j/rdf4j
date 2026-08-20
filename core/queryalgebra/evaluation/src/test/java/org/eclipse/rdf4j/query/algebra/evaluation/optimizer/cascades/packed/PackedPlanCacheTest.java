@@ -278,6 +278,34 @@ class PackedPlanCacheTest {
 	}
 
 	@Test
+	void executablePlanFlipRaisesRiskEvenWhenEstimatedObjectiveRegretIsZero() {
+		FrontierDecisionRiskController stable = new FrontierDecisionRiskController();
+		stable.observeAudit(7L, 1L, 0, true, 0.0d);
+		FrontierDecisionRiskController.Decision stableDecision = stable.select(7L, 100.0d, 5.0d, 4);
+
+		FrontierDecisionRiskController flipped = new FrontierDecisionRiskController();
+		flipped.observeAudit(7L, 1L, 0, false, 0.0d);
+		FrontierDecisionRiskController.Decision flippedDecision = flipped.select(7L, 100.0d, 5.0d, 4);
+
+		assertTrue(flippedDecision.expectedRegret() > stableDecision.expectedRegret(),
+				"an executable-plan flip is harmful posterior evidence even when the estimated objectives tie");
+	}
+
+	@Test
+	void stableAuditsNeverIncreaseSelectedExpectedRegret() {
+		FrontierDecisionRiskController controller = new FrontierDecisionRiskController();
+		double previous = Double.POSITIVE_INFINITY;
+		for (long audit = 1L; audit <= 20L; audit++) {
+			controller.observeAudit(7L, audit, 0, true, 0.0d);
+			FrontierDecisionRiskController.Decision decision = controller.select(7L, 100.0d, 5.0d, 4);
+			assertTrue(decision.expectedRegret() <= previous,
+					"stable audit " + audit + " raised expected regret from " + previous + " to "
+							+ decision.expectedRegret());
+			previous = decision.expectedRegret();
+		}
+	}
+
+	@Test
 	void pairedAnytimeSequencePreservesCovarianceAndExactZeroVariance() throws Exception {
 		Class<?> sequenceType = Class.forName(
 				"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.FrontierPairedCostSequence");
@@ -1015,7 +1043,7 @@ class PackedPlanCacheTest {
 	}
 
 	@Test
-	void lowConfidenceCertifiedReuseRunsAnIndependentShadowReplan() {
+	void certifiedReuseAccumulatesDeterministicRiskDebtBeforeShadowReplan() {
 		AtomicInteger sessions = new AtomicInteger();
 		AtomicInteger validations = new AtomicInteger();
 		AtomicInteger audits = new AtomicInteger();
@@ -1050,14 +1078,18 @@ class PackedPlanCacheTest {
 		PackedPlanCache cache = new PackedPlanCache(8, 1);
 		TupleExpr source = connectedJoin("left", "right");
 		PackedPlanCache.Context original = context(11L);
-		PackedPlanCache.Context revised = context(16L);
+		PackedPlanCache.Context firstRevision = context(16L);
+		PackedPlanCache.Context secondRevision = context(17L);
 
 		PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache, original, (PackedCostModel) proxy);
+		PackedPlanningResult reused = PackedCascadesPlanner.optimize(
+				source, OptimizationGoal.root(), cache, firstRevision, (PackedCostModel) proxy);
 		PackedPlanningResult audited = PackedCascadesPlanner.optimize(
-				source, OptimizationGoal.root(), cache, revised, (PackedCostModel) proxy);
+				source, OptimizationGoal.root(), cache, secondRevision, (PackedCostModel) proxy);
 
-		assertEquals(2, sessions.get(), "the certified stale plan must be independently shadow-replanned");
-		assertEquals(1, validations.get());
+		assertTrue(reused.metrics().planCacheHit(), "the first 0.5% risk must remain below the 1% debt budget");
+		assertEquals(2, sessions.get(), "the accumulated 1% risk must trigger one independent shadow replan");
+		assertEquals(2, validations.get());
 		assertEquals(1, audits.get());
 		assertTrue(auditLane.get() > 0, "a shadow replan must be assigned an independent deterministic audit lane");
 		assertFalse(audited.metrics().planCacheHit(), "an audited invocation returns the independently planned result");

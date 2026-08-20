@@ -30,6 +30,7 @@ import java.util.function.Supplier;
 
 import org.codehaus.janino.SimpleCompiler;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.slf4j.Logger;
@@ -351,8 +352,20 @@ final class LmdbNativeJaninoCodegen {
 	}
 
 	static void rethrowValidationFailure(Throwable problem) {
+		rethrowTerminalFailure(problem);
 		if (problem instanceof ValidationException validationException) {
 			throw validationException;
+		}
+	}
+
+	static void rethrowTerminalFailure(Throwable problem) {
+		for (Throwable current = problem; current != null; current = current.getCause()) {
+			if (current instanceof QueryInterruptedException queryInterruptedException) {
+				throw queryInterruptedException;
+			}
+			if (current.getCause() == current) {
+				break;
+			}
 		}
 	}
 

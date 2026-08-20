@@ -89,6 +89,11 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 		return context;
 	}
 
+	@Override
+	public boolean queryCancelled() {
+		return delegate.queryCancelled();
+	}
+
 	/** The evaluation's term authority, or null on the compile-scoped carrier. */
 	LmdbNativeTermAuthority authority() {
 		return authority;

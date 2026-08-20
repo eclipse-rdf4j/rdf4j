@@ -31,6 +31,7 @@ import org.slf4j.LoggerFactory;
 
 /** Tuple-expression boundary for the query-local packed Cascades engine. */
 public final class PackedCascadesPlanner {
+	private static final double MAXIMUM_ACCUMULATED_EXPECTED_REGRET = 0.01d;
 
 	private static final Logger logger = LoggerFactory.getLogger(PackedCascadesPlanner.class);
 
@@ -180,7 +181,10 @@ public final class PackedCascadesPlanner {
 						if (!Double.isFinite(validatedCost) || validatedCost < 0.0d) {
 							throw new IllegalArgumentException("certified-validation-invalid-selected-cost");
 						}
-						shadowAudit = shouldShadowAudit(validation, context);
+						double riskDebt = validation.expectedRegret() == 0.0d
+								? structural.riskDebt()
+								: saturatedProbabilityAdd(structural.riskDebt(), validation.expectedRegret());
+						shadowAudit = riskDebt >= MAXIMUM_ACCUMULATED_EXPECTED_REGRET;
 						if (!shadowAudit) {
 							PackedQuery cachedQuery = query.withoutOriginalBindingSets();
 							PackedPlanCache.QueryEntry publishedQuery = new PackedPlanCache.QueryEntry(fingerprint,
@@ -189,7 +193,7 @@ public final class PackedCascadesPlanner {
 									context, tupleExpr, sourceIdentity, cachedQuery, validatedRecipe,
 									structural.outputRows(),
 									validatedCost,
-									structural.completionStatus(), structural.retainedBytes(), limits);
+									structural.completionStatus(), structural.retainedBytes(), limits, riskDebt);
 							cache.publish(claim, publishedPlan, publishedQuery);
 							return validatedCachedResult(publishedPlan, tupleExpr, System.nanoTime() - cacheStart,
 									encodeNanos, validation.workUnits(), queryEntry != null);
@@ -246,12 +250,16 @@ public final class PackedCascadesPlanner {
 			PackedPlanCache.PlanEntry publishedPlan = new PackedPlanCache.PlanEntry(fingerprint, context, tupleExpr,
 					sourceIdentity, cachedQuery, computation.recipe(), result.outputRows(), result.totalCost(),
 					result.completionStatus(), result.retainedBytes(), limits);
-			if (result.exactComplete() || reusableWorkLimitedResult(result, limits)) {
+			boolean retained = result.exactComplete() || reusableWorkLimitedResult(result, limits);
+			if (retained) {
 				cache.publish(claim, publishedPlan, publishedQuery);
 			} else {
 				cache.publishTransient(claim, publishedPlan, publishedQuery);
 			}
-			return result;
+			return retained
+					? result.withDecisionCertificate(PackedPlanDecisionCertificate.from(publishedPlan,
+							result.selectedPlan()))
+					: result;
 		} catch (RuntimeException | Error failure) {
 			cache.fail(claim, failure);
 			throw failure;
@@ -272,17 +280,6 @@ public final class PackedCascadesPlanner {
 		return value ^ value >>> 33;
 	}
 
-	private static boolean shouldShadowAudit(PackedStalePlanValidation validation,
-			PackedPlanCache.Context context) {
-		double residualRisk = 1.0d - validation.confidence();
-		if (!(residualRisk > 0.0d)) {
-			return false;
-		}
-		long randomBits = auditIdentity(context) >>> 11;
-		double uniform = randomBits * 0x1.0p-53;
-		return uniform < residualRisk;
-	}
-
 	private static int auditLane(PackedPlanCache.Context context) {
 		long mixed = auditIdentity(context) ^ 0x9e3779b97f4a7c15L;
 		mixed ^= mixed >>> 33;
@@ -301,6 +298,11 @@ public final class PackedCascadesPlanner {
 		return Math.max(0.0d, (cachedCost - freshCost) / freshCost);
 	}
 
+	private static double saturatedProbabilityAdd(double left, double right) {
+		double sum = left + right;
+		return Double.isFinite(sum) ? Math.min(1.0d, Math.max(0.0d, sum)) : 1.0d;
+	}
+
 	private static PackedPlanningResult validatedCachedResult(PackedPlanCache.PlanEntry entry, TupleExpr source,
 			long cacheNanos, long encodeNanos, long validationWorkUnits, boolean queryTemplateCacheHit) {
 		long materializationStart = System.nanoTime();
@@ -311,7 +313,8 @@ public final class PackedCascadesPlanner {
 				validationWorkUnits, 0, 0, 0, 0, true, queryTemplateCacheHit);
 		return new PackedPlanningResult(selectedPlan, entry.outputRows(), entry.totalCost(), metrics,
 				entry.workLimitReached(), entry.deadlineReached(), entry.recipe().ruleProofMask(),
-				entry.completionStatus(), entry.retainedBytes());
+				entry.completionStatus(), entry.retainedBytes(),
+				PackedPlanDecisionCertificate.from(entry, selectedPlan));
 	}
 
 	public static PackedPlanningResult optimize(TupleExpr tupleExpr, long workLimit, long deadlineNanos) {
@@ -565,7 +568,8 @@ public final class PackedCascadesPlanner {
 				0, true, true);
 		return new PackedPlanningResult(selectedPlan, entry.outputRows(), entry.totalCost(), metrics,
 				entry.workLimitReached(), entry.deadlineReached(), entry.recipe().ruleProofMask(),
-				entry.completionStatus(), entry.retainedBytes());
+				entry.completionStatus(), entry.retainedBytes(),
+				PackedPlanDecisionCertificate.from(entry, selectedPlan));
 	}
 
 	private static boolean exploreReorderings(OptimizationGoal request) {

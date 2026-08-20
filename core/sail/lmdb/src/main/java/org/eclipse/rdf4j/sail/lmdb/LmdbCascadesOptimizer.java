@@ -57,6 +57,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanningMet
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCascadesPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanDecisionCertificate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanQualityAuditResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlannerLimits;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -103,6 +104,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	private final OptionalLong executionSnapshotEpoch;
 	private final SailDatasetTripleTermSource frontierStatementSource;
 	private final LmdbPackedPredicateRangeProvider rangeProvider;
+	private PackedPlanDecisionCertificate decisionCertificate;
 
 	LmdbCascadesOptimizer(EvaluationStatistics statistics, boolean trackResultSize) {
 		this(statistics, trackResultSize, false, null, null);
@@ -132,6 +134,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		decisionCertificate = null;
 		if (tupleExpr == null) {
 			return;
 		}
@@ -162,6 +165,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				plan = null;
 			}
 			if (plan != null) {
+				decisionCertificate = plan.decisionCertificate();
 				installedRoot = replaceRoot(tupleExpr, plan.tupleExpr());
 				CascadesPlanProvenanceAnnotator.annotate(installedRoot, plan.provenance(), PLANNER_ID);
 				annotatePlanningMetrics(installedRoot, mode, plan);
@@ -179,6 +183,31 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (runtimeTelemetry) {
 			enableRuntimeTelemetry(installedRoot);
 		}
+	}
+
+	PackedPlanDecisionCertificate decisionCertificate() {
+		return decisionCertificate;
+	}
+
+	PackedPlanDecisionCertificate.Validation validateDecisionCertificate(
+			PackedPlanDecisionCertificate certificate, TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		if (runtime == null) {
+			return null;
+		}
+		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = beginQueryOptimizationScope()) {
+			Mode mode = configuredMode();
+			OptimizationGoal goal = configuredGoal(tupleExpr, bindings, mode);
+			LmdbPackedCostModel costModel = packedCostModel(dataset);
+			return certificate.validate(cacheContext(dataset, bindings, goal, costModel), costModel);
+		}
+	}
+
+	PackedPlanDecisionCertificate.Audit recordDecisionCertificateAudit(
+			PackedPlanDecisionCertificate cached, PackedPlanDecisionCertificate fresh, Dataset dataset) {
+		LmdbPackedCostModel costModel = packedCostModel(dataset);
+		LmdbEstimatorRuntime.PlanningRevisions revisions = runtime.capturePlanningRevisions();
+		long auditIdentity = auditIdentity(revisions);
+		return cached.compareAndRecord(fresh, costModel, auditIdentity, auditLane(auditIdentity));
 	}
 
 	private static TupleExpr observablePlanRoot(TupleExpr installedRoot) {
@@ -277,16 +306,38 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	private CascadesPlan plan(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationGoal goal) {
 		CascadesPlanner planner = new CascadesPlanner();
-		LmdbPackedCostModel packedCostModel = runtime == null
-				? null
-				: new LmdbPackedCostModel(runtime, executionSnapshotEpoch, datasetUsesStoreDefaults(dataset),
-						frontierStatementSource, evaluationStrategy, !preserveSerializableObservationOrder);
+		LmdbPackedCostModel packedCostModel = runtime == null ? null : packedCostModel(dataset);
 		if (packedPlanCache == null) {
 			return planner.optimize(tupleExpr, goal, packedCostModel, rangeProvider);
 		}
 		return planner.optimize(tupleExpr, goal, packedPlanCache,
 				cacheContext(dataset, bindings, goal, packedCostModel),
 				packedCostModel, rangeProvider);
+	}
+
+	private LmdbPackedCostModel packedCostModel(Dataset dataset) {
+		return new LmdbPackedCostModel(runtime, executionSnapshotEpoch, datasetUsesStoreDefaults(dataset),
+				frontierStatementSource, evaluationStrategy, !preserveSerializableObservationOrder);
+	}
+
+	private static long auditIdentity(LmdbEstimatorRuntime.PlanningRevisions revisions) {
+		long value = revisions.dataRevision() ^ Long.rotateLeft(revisions.leoRevision(), 29)
+				^ Long.rotateLeft(revisions.frontierRevision(), 47);
+		value ^= value >>> 33;
+		value *= 0xff51afd7ed558ccdL;
+		value ^= value >>> 33;
+		value *= 0xc4ceb9fe1a85ec53L;
+		return value ^ value >>> 33;
+	}
+
+	private static int auditLane(long auditIdentity) {
+		long mixed = auditIdentity ^ 0x9e3779b97f4a7c15L;
+		mixed ^= mixed >>> 33;
+		mixed *= 0xff51afd7ed558ccdL;
+		mixed ^= mixed >>> 33;
+		mixed *= 0xc4ceb9fe1a85ec53L;
+		mixed ^= mixed >>> 33;
+		return 1 + (int) Long.remainderUnsigned(mixed, Integer.MAX_VALUE - 1L);
 	}
 
 	private OptimizationGoal configuredGoal(TupleExpr tupleExpr, BindingSet bindings, Mode mode) {

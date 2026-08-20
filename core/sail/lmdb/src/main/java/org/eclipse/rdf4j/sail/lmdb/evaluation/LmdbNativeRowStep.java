@@ -1615,7 +1615,7 @@ final class NativeExistsPatternCursor implements AutoCloseable {
 		while (!closed && depth >= 0) {
 			// one accept() can drive this backtracking search over arbitrarily many candidate rows; poll or the
 			// probe deadline starves (the consumer's drain loop only polls per emitted row)
-			LmdbNativeProbeDeadline.poll(++probePollTick);
+			LmdbNativeProbeDeadline.poll(++probePollTick, row.source);
 			Frame frame = frames[depth];
 			if (!frame.opened) {
 				frame.open(patterns[depth], row);
@@ -1730,7 +1730,7 @@ final class NativeExistsPatternCursor implements AutoCloseable {
 			release(row);
 			long[] quad;
 			while ((quad = cursor.next()) != null) {
-				LmdbNativeProbeDeadline.poll(++probePollTick);
+				LmdbNativeProbeDeadline.poll(++probePollTick, row.source);
 				int mark = row.mark();
 				if (pattern.bind(quad, row)) {
 					activeMark = mark;
@@ -2204,7 +2204,7 @@ final class NativeProbeBufferHarness implements LmdbNativeProbeHarness<NativeUno
 			}
 			System.arraycopy(row.slots, 0, arena, offset, slotCount);
 			buffered++;
-			LmdbNativeProbeDeadline.poll(++tick);
+			LmdbNativeProbeDeadline.poll(++tick, row.source);
 		}
 		// natural exhaustion: close the trial's native resources; the probe observation is not attached to the
 		// input, so this cannot double-record, and legacy calibration was never armed on a probe
@@ -2562,7 +2562,7 @@ final class PrefixRunRowCursor implements RowCursor {
 		rollback();
 		while (delegate.next()) {
 			// a run of bind failures advances without emitting; poll or the probe deadline starves
-			LmdbNativeProbeDeadline.poll(++probePollTick);
+			LmdbNativeProbeDeadline.poll(++probePollTick, row.source);
 			int candidateMark = row.mark();
 			if (pattern.bind(delegate.quad(), row)) {
 				mark = candidateMark;

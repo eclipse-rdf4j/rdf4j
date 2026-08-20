@@ -67,6 +67,11 @@ final class NativeFilterLease {
 			attempt = recorder;
 		} else if (original instanceof ExistsFilter exists) {
 			attempt = new ExistsFilter(borrow(exists.subPlan));
+		} else if (original instanceof NegatedNativeBooleanFilter negated) {
+			attempt = new NegatedNativeBooleanFilter(borrow(negated.delegate));
+		} else if (original instanceof BooleanCombinationFilter combination) {
+			attempt = new BooleanCombinationFilter(borrow(combination.left), borrow(combination.right),
+					combination.conjunction);
 		} else {
 			attempt = original;
 		}

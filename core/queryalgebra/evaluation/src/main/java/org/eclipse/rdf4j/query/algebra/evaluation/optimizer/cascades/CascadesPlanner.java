@@ -79,7 +79,8 @@ public final class CascadesPlanner {
 				List.of(), null, cost, goal.requiredProperties(), goal.requiredProperties(), List.of(),
 				PackedRuleProofs.materialize(result.ruleProofMask()),
 				status.approximate(), reason);
-		return new CascadesPlan(result.selectedPlan(), cost, status, provenance, result.metrics());
+		return new CascadesPlan(result.selectedPlan(), cost, status, provenance, result.metrics(),
+				result.decisionCertificate());
 	}
 
 	private static OptimizationSearchStatus searchStatus(PackedPlanningResult result) {

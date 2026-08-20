@@ -200,7 +200,7 @@ final class FilterCursor implements RowCursor {
 	@Override
 	public boolean next() throws IOException {
 		while (arg.next()) {
-			LmdbNativeProbeDeadline.poll(++probePollTick);
+			LmdbNativeProbeDeadline.poll(++probePollTick, row.source);
 			if (filter.accept(row)) {
 				return true;
 			}
@@ -301,7 +301,7 @@ final class ExtensionCursor implements RowCursor {
 		release();
 		while (arg.next()) {
 			// a run of bind conflicts advances without emitting; poll or the probe deadline starves
-			LmdbNativeProbeDeadline.poll(++probePollTick);
+			LmdbNativeProbeDeadline.poll(++probePollTick, row.source);
 			int mark = row.mark();
 			boolean ok = true;
 			for (CopyBinding copy : copies) {
@@ -365,7 +365,7 @@ final class RowDistinctPlan implements SlotPlan {
 			public boolean next() throws IOException {
 				while (inner.next()) {
 					// a long duplicate run advances without emitting; poll or the probe deadline starves
-					LmdbNativeProbeDeadline.poll(++probePollTick);
+					LmdbNativeProbeDeadline.poll(++probePollTick, row.source);
 					if (tracker.add(row.slots)) {
 						return true;
 					}
@@ -496,7 +496,7 @@ final class MinusCursor implements RowCursor {
 	public boolean next() throws IOException {
 		while (leftCursor.next()) {
 			// every removed left row performs right-side probe work without emitting; poll or the deadline starves
-			LmdbNativeProbeDeadline.poll(++probePollTick);
+			LmdbNativeProbeDeadline.poll(++probePollTick, row.source);
 			if (!hasCompatibleRight()) {
 				return true;
 			}
@@ -625,7 +625,7 @@ final class MinusCursor implements RowCursor {
 			// the left row. Iterate until a genuinely compatible right solution is found.
 			try (RowCursor cursor = right.open(row)) {
 				while (cursor.next()) {
-					LmdbNativeProbeDeadline.poll(++probePollTick);
+					LmdbNativeProbeDeadline.poll(++probePollTick, row.source);
 					long overlap = leftBoundMask & row.boundMask() & compatibilityMask;
 					if (overlap == 0L && !hasUnslottedBaseBindings) {
 						continue;
@@ -769,7 +769,7 @@ final class ValuesCursor implements RowCursor {
 	public boolean next() {
 		release();
 		while (index < rows.length) {
-			LmdbNativeProbeDeadline.poll(++probePollTick);
+			LmdbNativeProbeDeadline.poll(++probePollTick, row.source);
 			ValuesRow candidate = rows[index++];
 			int mark = row.mark();
 			boolean ok = true;

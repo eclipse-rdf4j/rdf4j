@@ -2146,6 +2146,10 @@ class LmdbSailStore implements SailStore {
 				frontierPlannerSettings, () -> mayHaveInferred, () -> adaptiveEvidenceAllowed, statisticsService);
 	}
 
+	LmdbQueryPlanCacheStatistics queryPlanCacheStatistics() {
+		return frontierPlannerSettings.pipelinePlanCache().statistics();
+	}
+
 	/** Store-scoped learned filter selectivity. Test hook. */
 	LmdbLearnedFilterSelectivity learnedFilterSelectivity() {
 		return learnedFilterSelectivity;
@@ -4515,13 +4519,15 @@ class LmdbSailStore implements SailStore {
 		private final long adjacencyLifetimeId;
 		private final long pinnedTxnVersion;
 		private final boolean directRowPathEnabled;
+		private final AtomicBoolean parentQueryCancelled;
 		private final AtomicBoolean closed = new AtomicBoolean();
 		/** Own refcounted direct-adjacency view for this sibling's snapshot revision; resolved lazily. */
 		private volatile LmdbAdjacencyReadView adjacencyView;
 		private volatile boolean adjacencyViewResolved;
 
 		ParallelSnapshotSource(Txn txn, boolean explicit, long snapshotId, ParallelSnapshotLease lease,
-				boolean adjacencyEligible, long adjacencyRevision, long adjacencyLifetimeId) {
+				boolean adjacencyEligible, long adjacencyRevision, long adjacencyLifetimeId,
+				AtomicBoolean parentQueryCancelled) {
 			this.txn = txn;
 			this.explicit = explicit;
 			this.snapshotId = snapshotId;
@@ -4531,6 +4537,7 @@ class LmdbSailStore implements SailStore {
 			this.adjacencyLifetimeId = adjacencyLifetimeId;
 			this.pinnedTxnVersion = txn.version();
 			this.directRowPathEnabled = parallelRowPathEnabled();
+			this.parentQueryCancelled = parentQueryCancelled;
 			lease.retain();
 		}
 
@@ -4643,6 +4650,11 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public long snapshotId() {
 			return snapshotId;
+		}
+
+		@Override
+		public boolean queryCancelled() {
+			return closed.get() || parentQueryCancelled.get();
 		}
 
 		@Override
@@ -5203,6 +5215,11 @@ class LmdbSailStore implements SailStore {
 		private final long snapshotEpoch;
 		private final Map<StatementCountCacheKey, Long> exactStatementCountCache = new ConcurrentHashMap<>();
 		private final Map<StatementLookupCacheKey, StatementLookupCacheEntry> exactStatementLookupCache = new ConcurrentHashMap<>();
+
+		@Override
+		public boolean queryCancelled() {
+			return closed.get();
+		}
 
 		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn) throws SailException {
 			this(explicit, trackActiveTxn, false, false);
@@ -6216,7 +6233,7 @@ class LmdbSailStore implements SailStore {
 							pending[i] = new ParallelSnapshotSource(siblingTxn, explicit, siblingSnapshotId, lease,
 									siblingAdjacencyEligible,
 									siblingAdjacencyEligible ? adjacencyView.snapshotRevision() : -1L,
-									siblingAdjacencyEligible ? adjacencyView.lifetimeId() : 0L);
+									siblingAdjacencyEligible ? adjacencyView.lifetimeId() : 0L, closed);
 							transferred = true;
 						} finally {
 							if (!transferred) {

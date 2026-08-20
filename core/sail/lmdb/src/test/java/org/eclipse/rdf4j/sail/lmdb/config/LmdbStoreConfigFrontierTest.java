@@ -51,6 +51,9 @@ class LmdbStoreConfigFrontierTest {
 		assertEquals(0.999d, (double) invoke(config, "getFrontierCacheMaximumConfidence"), 0.0d);
 		assertEquals(0.01d, (double) invoke(config, "getFrontierCacheMaximumExpectedRegret"), 0.0d);
 		assertEquals(64L * 1024L * 1024L, invoke(config, "getFrontierCacheEvidenceBudgetBytes"));
+		assertEquals("REVISION_SENSITIVE", invoke(config, "getQueryPlanCacheMode").toString());
+		assertEquals(4L * 1024L * 1024L, invoke(config, "getQueryPlanCacheBudgetBytes"));
+		assertEquals(0.01d, (double) invoke(config, "getQueryPlanCacheMaximumExpectedRegret"), 0.0d);
 	}
 
 	@Test
@@ -169,6 +172,35 @@ class LmdbStoreConfigFrontierTest {
 	}
 
 	@Test
+	void queryPlanCacheConfigurationRoundTripsThroughRdfModel() throws Exception {
+		Model configured = new LinkedHashModel();
+		Resource node = Values.bnode();
+		configured.add(node, Values.iri(LmdbStoreSchema.NAMESPACE, "queryPlanCacheMode"),
+				Values.literal("regret-bounded"));
+		configured.add(node, Values.iri(LmdbStoreSchema.NAMESPACE, "queryPlanCacheBudgetBytes"),
+				Values.literal(128L * 1024L * 1024L));
+		configured.add(node, Values.iri(LmdbStoreSchema.NAMESPACE, "queryPlanCacheMaximumExpectedRegret"),
+				Values.literal(0.005d));
+
+		LmdbStoreConfig parsed = new LmdbStoreConfig();
+		parsed.parse(configured, node);
+		assertEquals("REGRET_BOUNDED", invoke(parsed, "getQueryPlanCacheMode").toString());
+		assertEquals(128L * 1024L * 1024L, invoke(parsed, "getQueryPlanCacheBudgetBytes"));
+		assertEquals(0.005d, (double) invoke(parsed, "getQueryPlanCacheMaximumExpectedRegret"), 0.0d);
+
+		Model exported = new LinkedHashModel();
+		Resource exportedNode = parsed.export(exported);
+		assertTrue(exported.contains(exportedNode,
+				Values.iri(LmdbStoreSchema.NAMESPACE, "queryPlanCacheMode"), Values.literal("regret-bounded")));
+		assertTrue(exported.contains(exportedNode,
+				Values.iri(LmdbStoreSchema.NAMESPACE, "queryPlanCacheBudgetBytes"),
+				Values.literal(128L * 1024L * 1024L)));
+		assertTrue(exported.contains(exportedNode,
+				Values.iri(LmdbStoreSchema.NAMESPACE, "queryPlanCacheMaximumExpectedRegret"),
+				Values.literal(0.005d)));
+	}
+
+	@Test
 	void frontierConfigurationRejectsUnsoundOrUnboundedValues() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig();
 
@@ -195,12 +227,22 @@ class LmdbStoreConfigFrontierTest {
 		assertIllegalArgument(config, "setFrontierCacheMaximumExpectedRegret", double.class, -0.01d);
 		assertIllegalArgument(config, "setFrontierCacheMaximumExpectedRegret", double.class, 1.01d);
 		assertIllegalArgument(config, "setFrontierCacheEvidenceBudgetBytes", long.class, -1L);
+		assertIllegalArgument(config, "setQueryPlanCacheBudgetBytes", long.class, -1L);
+		assertIllegalArgument(config, "setQueryPlanCacheMaximumExpectedRegret", double.class, -0.01d);
+		assertIllegalArgument(config, "setQueryPlanCacheMaximumExpectedRegret", double.class, 1.01d);
+		assertIllegalArgument(config, "setQueryPlanCacheMaximumExpectedRegret", double.class, Double.NaN);
 
 		Model invalidMode = new LinkedHashModel();
 		Resource node = Values.bnode();
 		invalidMode.add(node, Values.iri(LmdbStoreSchema.NAMESPACE, "frontierEstimatorMode"),
 				Values.literal("unsafe"));
 		assertThrows(SailConfigException.class, () -> config.parse(invalidMode, node));
+
+		Model invalidQueryCacheMode = new LinkedHashModel();
+		Resource cacheNode = Values.bnode();
+		invalidQueryCacheMode.add(cacheNode, Values.iri(LmdbStoreSchema.NAMESPACE, "queryPlanCacheMode"),
+				Values.literal("unsafe"));
+		assertThrows(SailConfigException.class, () -> config.parse(invalidQueryCacheMode, cacheNode));
 	}
 
 	private static void assertContains(Model model, Resource node, String localName) {

@@ -554,6 +554,16 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return current.getMapGrowthCount();
 	}
 
+	/** Returns a read-only point-in-time snapshot of the full-pipeline LMDB query-plan cache. */
+	@Experimental
+	public LmdbQueryPlanCacheStatistics getQueryPlanCacheStatistics() {
+		LmdbSailStore current = backingStore;
+		if (current == null) {
+			throw new IllegalStateException("LMDB store is not initialized");
+		}
+		return current.queryPlanCacheStatistics();
+	}
+
 	EvaluationStrategyFactory getConnectionEvaluationStrategyFactory() {
 		EvaluationStrategyFactory factory = connectionEvalStratFactory;
 		if (factory == null) {

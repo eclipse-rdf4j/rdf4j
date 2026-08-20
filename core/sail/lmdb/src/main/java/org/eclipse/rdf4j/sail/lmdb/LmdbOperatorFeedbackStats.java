@@ -2034,6 +2034,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		return feedbackEpoch;
 	}
 
+	synchronized long planLifecycleInvalidationRevision() {
+		return planLifecycle.invalidationRevision();
+	}
+
 	synchronized PlanLifecycleStore.Decision planLifecycleDecision(LogicalLearningKey logicalKey,
 			PhysicalResidualKey physicalKey, LearningApplicability applicability,
 			PlanLifecycleStore.ObjectiveEnvelope envelope) {

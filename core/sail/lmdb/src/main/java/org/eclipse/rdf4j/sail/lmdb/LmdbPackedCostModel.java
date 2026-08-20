@@ -197,15 +197,11 @@ final class LmdbPackedCostModel
 
 	@Override
 	public PackedStalePlanValidation validateStalePlan(PackedPlanValidationRequest request) {
-		if (mappedStatisticsReady()) {
-			return PackedStalePlanValidation.replan(0.0d, 1.0d, 0L, "frontier-v2-generation-validation");
-		}
 		if (!frontierPlanningAllowed) {
 			return PackedStalePlanValidation.replan(0.0d, 1.0d, 0L, "frontier-planning-disabled");
 		}
-		try (LmdbFrontierPackedCostSession session = new LmdbFrontierPackedCostSession(this, request.query(), runtime,
-				executionSnapshotEpoch, datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy)) {
-			return session.validateStalePlan(request);
+		try (PackedCostSession session = openSession(request.query())) {
+			return LmdbPackedStalePlanReplay.validate(request, session, runtime.frontierSettings(), 0L);
 		} catch (RuntimeException validationFailure) {
 			String message = validationFailure.getMessage();
 			return PackedStalePlanValidation.replan(0.0d, 1.0d, 0L,

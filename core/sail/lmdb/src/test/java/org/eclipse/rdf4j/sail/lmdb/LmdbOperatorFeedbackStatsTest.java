@@ -325,11 +325,14 @@ class LmdbOperatorFeedbackStatsTest {
 			observed.setDoubleMetricPlanned("optimizer.objectiveUpper", planned.upper());
 			observed.setDoubleMetricPlanned("optimizer.lifecycleRegressionLimit", 110.0d);
 			long revisionBefore = stats.planningRevision();
+			long lifecycleInvalidationBefore = stats.planLifecycleInvalidationRevision();
 
 			stats.observe(observed, true);
 
 			assertTrue(stats.planningRevision() > revisionBefore,
 					"An actionable safety transition must invalidate packed plan-cache revisions");
+			assertTrue(stats.planLifecycleInvalidationRevision() > lifecycleInvalidationBefore,
+					"A runtime regression must bypass any outstanding posterior plan-cache lease");
 			assertEquals(PlanLifecycleStore.State.QUARANTINED,
 					stats.planLifecycleDecision(logical, physical, applicability, planned).state());
 			stats.persistIfDirty();

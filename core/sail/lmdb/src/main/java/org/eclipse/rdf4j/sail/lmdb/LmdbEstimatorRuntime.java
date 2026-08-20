@@ -425,7 +425,11 @@ final class LmdbEstimatorRuntime {
 		long leoRevision = leoRevision();
 		long learnedEvidenceRevision = LmdbEstimatorRevisionSupport.learnedEvidenceRevision(
 				dataRevision, leoRevision, frontierStatusRevision());
-		return new PlanningRevisions(dataRevision, frontierRevision, leoRevision, learnedEvidenceRevision);
+		long planLifecycleInvalidationRevision = feedback == null
+				? 0L
+				: feedback.planLifecycleInvalidationRevision();
+		return new PlanningRevisions(dataRevision, frontierRevision, leoRevision, learnedEvidenceRevision,
+				planLifecycleInvalidationRevision);
 	}
 
 	private long frontierStatusRevision() {
@@ -436,7 +440,12 @@ final class LmdbEstimatorRuntime {
 			long dataRevision,
 			long frontierRevision,
 			long leoRevision,
-			long learnedEvidenceRevision) {
+			long learnedEvidenceRevision,
+			long planLifecycleInvalidationRevision) {
+
+		PlanningRevisions(long dataRevision, long frontierRevision, long leoRevision, long learnedEvidenceRevision) {
+			this(dataRevision, frontierRevision, leoRevision, learnedEvidenceRevision, 0L);
+		}
 	}
 
 	QueryOptimizationScope beginScope() {

@@ -82,6 +82,14 @@ public interface NativeLmdbQuerySource {
 		return null;
 	}
 
+	/**
+	 * True once the owning query has been cancelled. Native execution polls this state cooperatively instead of relying
+	 * on dataset close to wait for every retained read lease. Wrappers must delegate to their backing query source.
+	 */
+	default boolean queryCancelled() {
+		return false;
+	}
+
 	RecordIterator statements(long subj, long pred, long obj, long context) throws IOException;
 
 	/**

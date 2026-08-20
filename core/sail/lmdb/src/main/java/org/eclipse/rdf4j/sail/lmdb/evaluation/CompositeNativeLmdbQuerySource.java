@@ -90,6 +90,16 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public boolean queryCancelled() {
+		for (NativeLmdbQuerySource source : sources) {
+			if (source.queryCancelled()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	@Override
 	public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
 		return statements(subj, pred, obj, context, (AdjacencyAccessObserver) null);
 	}
@@ -838,6 +848,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public long snapshotId() {
 			return snapshotId;
+		}
+
+		@Override
+		public boolean queryCancelled() {
+			return closed || delegate.queryCancelled();
 		}
 
 		@Override

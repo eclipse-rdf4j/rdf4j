@@ -164,7 +164,7 @@ final class LmdbNativeJaninoAggregate {
 			try {
 				LmdbNativeJaninoCodegen.bind(kernel, new KernelContext(adjacencies, shape.constants(), new long[0],
 						new long[][] { shape.domain })
-								.withCancellation(LmdbNativeProbeDeadline.currentKernelCancellation()),
+								.withCancellation(LmdbNativeProbeDeadline.currentKernelCancellation(row.source)),
 						"legacyAggregate");
 				List<BindingSet> results = new ArrayList<>();
 				long[] buffer = new long[2 * 64];

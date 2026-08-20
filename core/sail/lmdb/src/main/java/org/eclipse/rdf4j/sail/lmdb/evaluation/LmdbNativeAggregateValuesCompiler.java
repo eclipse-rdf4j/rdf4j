@@ -42,9 +42,6 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 @Experimental
 abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatternCompiler {
-	private record DomainDrivenPlan(SlotPlan plan, boolean driven) {
-	}
-
 	private record OptimizerExactDomain(ConstantFilter filter, int logicalProbeCount) {
 	}
 
@@ -98,21 +95,20 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 	}
 
 	/**
-	 * Turns the exact single-column VALUES anchor produced by {@code FilterInValuesOptimizer} into the physical
-	 * producer of its matching statement-pattern branch. Once the shared optimizer has replaced {@code IN} with a
-	 * {@link BindingSetAssignment}, there is no enclosing {@link Filter} left for the older value-filter folds to
-	 * recognize. Compiling the assignment as ordinary VALUES would therefore enumerate the unconstrained prefix and use
-	 * the constants only as late bound probes.
+	 * Locally fuses the exact single-column VALUES anchor produced by {@code FilterInValuesOptimizer} with its
+	 * immediately adjacent statement-pattern right child.
 	 *
 	 * <p>
 	 * Only optimizer-marked anchors are absorbed. User-authored VALUES retain their ordinary bag multiplicity. The
 	 * marker also guarantees that the values came from an equality form for which RDF-term equality is a safe VALUES
-	 * rewrite. The generated anchor is a set, so replacing it with one inverse run per distinct value preserves the
-	 * original filter's multiplicity.
+	 * rewrite. No descendant search or child swap is allowed here: all other shapes compile the VALUES relation as an
+	 * ordinary {@link ValuesPlan} at its optimizer-selected position.
 	 */
 	SlotPlan compileJoinWithOptimizerExactValues(Join join, boolean duplicateInsensitive) {
-		BindingSetAssignment exactValues = firstOptimizerExactValuesLeaf(join);
-		if (exactValues == null) {
+		if (!(join.getLeftArg()instanceof BindingSetAssignment exactValues)
+				|| !(join.getRightArg()instanceof StatementPattern statementPattern)
+				|| exactValues.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES) != 1L
+				|| exactValues.getBindingNames().size() != 1) {
 			return null;
 		}
 		OptimizerExactDomain optimizerDomain = optimizerExactDomain(exactValues);
@@ -123,22 +119,11 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 		if (domain.ids.length == 0) {
 			return SlotPlan.empty();
 		}
-
-		DomainDrivenPlan compiled = compileJoinTreeWithoutExactValues(join, exactValues, domain,
-				optimizerDomain.logicalProbeCount, duplicateInsensitive);
-		return compiled == null || !compiled.driven ? null : compiled.plan;
-	}
-
-	private BindingSetAssignment firstOptimizerExactValuesLeaf(TupleExpr expr) {
-		if (expr instanceof BindingSetAssignment values) {
-			return values.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES) == 1L
-					&& values.getBindingNames().size() == 1 ? values : null;
-		}
-		if (!(expr instanceof Join join)) {
+		if (!patternContainsVariable(statementPattern, domain.variable)) {
 			return null;
 		}
-		BindingSetAssignment left = firstOptimizerExactValuesLeaf(join.getLeftArg());
-		return left != null ? left : firstOptimizerExactValuesLeaf(join.getRightArg());
+		return compileMultiValueStatementPattern(statementPattern, domain.variable, domain.ids, domain.values,
+				true, true, true, optimizerDomain.logicalProbeCount);
 	}
 
 	private OptimizerExactDomain optimizerExactDomain(BindingSetAssignment values) {
@@ -165,36 +150,6 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			queryValues.add(value);
 		}
 		return new OptimizerExactDomain(uniqueConstantFilter(variable, ids, queryValues), logicalProbeCount);
-	}
-
-	private DomainDrivenPlan compileJoinTreeWithoutExactValues(TupleExpr expr,
-			BindingSetAssignment exactValues, ConstantFilter domain, int logicalProbeCount,
-			boolean duplicateInsensitive) {
-		if (expr == exactValues) {
-			return new DomainDrivenPlan(SlotPlan.singleton(), false);
-		}
-		if (expr instanceof Join join) {
-			DomainDrivenPlan left = compileJoinTreeWithoutExactValues(join.getLeftArg(), exactValues, domain,
-					logicalProbeCount, duplicateInsensitive);
-			DomainDrivenPlan right = compileJoinTreeWithoutExactValues(join.getRightArg(), exactValues, domain,
-					logicalProbeCount, duplicateInsensitive);
-			if (left == null || right == null) {
-				return null;
-			}
-			if (right.driven && !left.driven) {
-				return new DomainDrivenPlan(SlotPlan.join(right.plan, left.plan), true);
-			}
-			return new DomainDrivenPlan(SlotPlan.join(left.plan, right.plan), left.driven || right.driven);
-		}
-		if (expr.getBindingNames().contains(domain.variable)) {
-			SlotPlan driven = compileTupleWithConstantFilter(expr, domain.variable, domain.ids, domain.values,
-					duplicateInsensitive, true, logicalProbeCount);
-			if (driven != null) {
-				return new DomainDrivenPlan(driven, true);
-			}
-		}
-		SlotPlan ordinary = compileTuple(expr, duplicateInsensitive);
-		return ordinary == null ? null : new DomainDrivenPlan(ordinary, false);
 	}
 
 	/** Returns the sole VALUES leaf of an inner-join tree, or null for zero/multiple/non-join occurrences. */

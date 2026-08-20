@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
@@ -36,8 +37,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.ArrayBindingBasedQueryEva
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPartitionedDistinctIteration;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryOptimizerPipeline;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStableOrderPlanner;
 
 /**
@@ -61,6 +64,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	private final FederatedServiceResolver serviceResolverArg;
 	private final long iterationCacheSyncThresholdArg;
 	private final boolean trackResultSizeArg;
+	private QueryOptimizerPipeline optimizerPipeline;
 	// Shadows of post-construction setter state, mirrored onto the view (created lazily, possibly after the setters).
 	private volatile boolean trackTimeShadow;
 	private volatile boolean trackResultSizeShadow;
@@ -115,6 +119,21 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 			}
 		}
 		return view;
+	}
+
+	@Override
+	public void setOptimizerPipeline(QueryOptimizerPipeline pipeline) {
+		super.setOptimizerPipeline(pipeline);
+		optimizerPipeline = pipeline;
+	}
+
+	@Override
+	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics statistics, BindingSet bindings) {
+		if (optimizerPipeline instanceof LmdbQueryOptimizerPipeline lmdbPipeline) {
+			QueryEvaluationUtility.pinFunctions(expr);
+			return lmdbPipeline.optimize(expr, datasetArg, bindings);
+		}
+		return super.optimize(expr, statistics, bindings);
 	}
 
 	@Override

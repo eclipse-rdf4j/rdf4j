@@ -69,6 +69,7 @@ final class PlanLifecycleStore {
 	private final LinkedHashMap<LifecycleKey, Entry> entries = new LinkedHashMap<>();
 	private final LinkedHashMap<GroupKey, GroupCell> groups = new LinkedHashMap<>();
 	private long revision;
+	private long invalidationRevision;
 	private long generation;
 
 	PlanLifecycleStore(int maximumEntries) {
@@ -313,11 +314,16 @@ final class PlanLifecycleStore {
 		if (changed) {
 			generation++;
 			revision++;
+			invalidationRevision++;
 		}
 	}
 
 	synchronized long revision() {
 		return revision;
+	}
+
+	synchronized long invalidationRevision() {
+		return invalidationRevision;
 	}
 
 	synchronized int size() {
@@ -332,6 +338,7 @@ final class PlanLifecycleStore {
 		groups.clear();
 		generation++;
 		revision++;
+		invalidationRevision++;
 	}
 
 	synchronized void writeTo(DataOutputStream out) throws IOException {
@@ -442,10 +449,18 @@ final class PlanLifecycleStore {
 
 	private void transition(Entry entry, State state, String reason) {
 		if (entry.state != state || !Objects.equals(entry.reason, reason)) {
+			State priorState = entry.state;
 			entry.state = state;
 			entry.reason = reason;
 			revision++;
+			if (isSafetyInvalidation(state) && !isSafetyInvalidation(priorState)) {
+				invalidationRevision++;
+			}
 		}
+	}
+
+	private static boolean isSafetyInvalidation(State state) {
+		return state == State.BLOCKED || state == State.QUARANTINED || state == State.STALE;
 	}
 
 	private static int boundedCount(int value, int maximum, String label) throws IOException {

@@ -879,6 +879,10 @@ final class PackedPlanRecipe {
 				&& decisionCertificate.hasCompleteState();
 	}
 
+	boolean hasDecisionCertificateEvidence() {
+		return costingTrace.eventCount() > 0 && decisionCertificate.hasCompleteState();
+	}
+
 	PackedPlanRecipe withoutDetachedEvidence() {
 		if (!hasDetachedEvidence()) {
 			return this;

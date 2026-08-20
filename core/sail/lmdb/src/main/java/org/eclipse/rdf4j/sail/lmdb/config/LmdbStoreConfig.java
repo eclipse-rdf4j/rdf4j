@@ -122,6 +122,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public static final long FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES = 64L * 1024L * 1024L;
 
+	public static final QueryPlanCacheMode QUERY_PLAN_CACHE_MODE = QueryPlanCacheMode.REVISION_SENSITIVE;
+
+	public static final long QUERY_PLAN_CACHE_BUDGET_BYTES = FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES / 16L;
+
+	public static final double QUERY_PLAN_CACHE_MAXIMUM_EXPECTED_REGRET = 0.01d;
+
 	public static final long BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = 10L;
 
 	public static final long SKETCH_ESTIMATOR_THROTTLE_EVERY_N = 1024L * 1024L;
@@ -172,7 +178,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private boolean orderedNumericIds = true;
 
-	private Boolean sketchEstimatorEnabled;
+	private Boolean sketchEstimatorEnabled = false;
 
 	private int sketchEstimatorSubjectBucketCount = -1;
 
@@ -240,6 +246,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private double frontierCacheMaximumExpectedRegret = FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET;
 
 	private long frontierCacheEvidenceBudgetBytes = FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES;
+
+	private QueryPlanCacheMode queryPlanCacheMode = QUERY_PLAN_CACHE_MODE;
+
+	private long queryPlanCacheBudgetBytes = QUERY_PLAN_CACHE_BUDGET_BYTES;
+
+	private double queryPlanCacheMaximumExpectedRegret = QUERY_PLAN_CACHE_MAXIMUM_EXPECTED_REGRET;
 
 	private boolean optimizerSamplingEnabled = true;
 
@@ -859,6 +871,41 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public QueryPlanCacheMode getQueryPlanCacheMode() {
+		return queryPlanCacheMode;
+	}
+
+	public LmdbStoreConfig setQueryPlanCacheMode(QueryPlanCacheMode mode) {
+		queryPlanCacheMode = Objects.requireNonNull(mode, "mode");
+		return this;
+	}
+
+	public long getQueryPlanCacheBudgetBytes() {
+		return queryPlanCacheBudgetBytes;
+	}
+
+	public LmdbStoreConfig setQueryPlanCacheBudgetBytes(long budgetBytes) {
+		if (budgetBytes < 0L) {
+			throw new IllegalArgumentException("Query-plan cache budget must be nonnegative");
+		}
+		queryPlanCacheBudgetBytes = budgetBytes;
+		return this;
+	}
+
+	public double getQueryPlanCacheMaximumExpectedRegret() {
+		return queryPlanCacheMaximumExpectedRegret;
+	}
+
+	public LmdbStoreConfig setQueryPlanCacheMaximumExpectedRegret(double maximumExpectedRegret) {
+		if (!Double.isFinite(maximumExpectedRegret)
+				|| maximumExpectedRegret < 0.0d
+				|| maximumExpectedRegret > 1.0d) {
+			throw new IllegalArgumentException("Query-plan cache expected-regret budget must be in [0, 1]");
+		}
+		queryPlanCacheMaximumExpectedRegret = maximumExpectedRegret;
+		return this;
+	}
+
 	private static void requireProbability(double value, String name) {
 		if (!Double.isFinite(value) || value <= 0.0d || value >= 1.0d) {
 			throw new IllegalArgumentException(name + " must be in (0, 1)");
@@ -1232,6 +1279,19 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (frontierCacheEvidenceBudgetBytes != FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES) {
 			m.add(implNode, LmdbStoreSchema.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES,
 					vf.createLiteral(frontierCacheEvidenceBudgetBytes));
+		}
+		if (queryPlanCacheMode != QUERY_PLAN_CACHE_MODE) {
+			m.add(implNode, LmdbStoreSchema.QUERY_PLAN_CACHE_MODE,
+					vf.createLiteral(queryPlanCacheMode.getConfigValue()));
+		}
+		if (queryPlanCacheBudgetBytes != QUERY_PLAN_CACHE_BUDGET_BYTES) {
+			m.add(implNode, LmdbStoreSchema.QUERY_PLAN_CACHE_BUDGET_BYTES,
+					vf.createLiteral(queryPlanCacheBudgetBytes));
+		}
+		if (Double.compare(queryPlanCacheMaximumExpectedRegret,
+				QUERY_PLAN_CACHE_MAXIMUM_EXPECTED_REGRET) != 0) {
+			m.add(implNode, LmdbStoreSchema.QUERY_PLAN_CACHE_MAXIMUM_EXPECTED_REGRET,
+					vf.createLiteral(queryPlanCacheMaximumExpectedRegret));
 		}
 		if (!optimizerSamplingEnabled) {
 			m.add(implNode, LmdbStoreSchema.OPTIMIZER_SAMPLING_ENABLED, vf.createLiteral(false));
@@ -1719,6 +1779,37 @@ public class LmdbStoreConfig extends BaseSailConfig {
 									parseLong(lit, LmdbStoreSchema.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES));
 						} catch (IllegalArgumentException e) {
 							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES, lit, e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.QUERY_PLAN_CACHE_MODE, null))
+					.ifPresent(lit -> {
+						try {
+							setQueryPlanCacheMode(QueryPlanCacheMode.fromConfigValue(lit.getLabel()));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.QUERY_PLAN_CACHE_MODE, lit, e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.QUERY_PLAN_CACHE_BUDGET_BYTES, null))
+					.ifPresent(lit -> {
+						try {
+							setQueryPlanCacheBudgetBytes(
+									parseLong(lit, LmdbStoreSchema.QUERY_PLAN_CACHE_BUDGET_BYTES));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.QUERY_PLAN_CACHE_BUDGET_BYTES, lit, e);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.QUERY_PLAN_CACHE_MAXIMUM_EXPECTED_REGRET, null))
+					.ifPresent(lit -> {
+						try {
+							setQueryPlanCacheMaximumExpectedRegret(
+									parseDouble(lit, LmdbStoreSchema.QUERY_PLAN_CACHE_MAXIMUM_EXPECTED_REGRET));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(
+									LmdbStoreSchema.QUERY_PLAN_CACHE_MAXIMUM_EXPECTED_REGRET, lit, e);
 						}
 					});
 

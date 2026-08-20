@@ -398,12 +398,22 @@ public final class PackedPlanCache {
 		private final PackedSearchCompletionStatus completionStatus;
 		private final long retainedBytes;
 		private final PackedPlannerLimits planningLimits;
+		private final double riskDebt;
 
 		PlanEntry(Fingerprint fingerprint, Context context, TupleExpr source,
 				PackedQueryCacheIdentity sourceIdentity, PackedQuery query,
 				PackedPlanRecipe recipe, double outputRows, double totalCost,
 				PackedSearchCompletionStatus completionStatus, long retainedBytes,
 				PackedPlannerLimits planningLimits) {
+			this(fingerprint, context, source, sourceIdentity, query, recipe, outputRows, totalCost, completionStatus,
+					retainedBytes, planningLimits, 0.0d);
+		}
+
+		PlanEntry(Fingerprint fingerprint, Context context, TupleExpr source,
+				PackedQueryCacheIdentity sourceIdentity, PackedQuery query,
+				PackedPlanRecipe recipe, double outputRows, double totalCost,
+				PackedSearchCompletionStatus completionStatus, long retainedBytes,
+				PackedPlannerLimits planningLimits, double riskDebt) {
 			this.fingerprint = fingerprint;
 			this.context = context;
 			sourceSnapshot = source.clone();
@@ -418,6 +428,10 @@ public final class PackedPlanCache {
 			}
 			this.retainedBytes = retainedBytes;
 			this.planningLimits = Objects.requireNonNull(planningLimits, "planningLimits");
+			if (!Double.isFinite(riskDebt) || riskDebt < 0.0d || riskDebt > 1.0d) {
+				throw new IllegalArgumentException("packed plan risk debt must be in [0, 1]");
+			}
+			this.riskDebt = riskDebt;
 		}
 
 		PackedQuery query() {
@@ -456,8 +470,16 @@ public final class PackedPlanCache {
 			return retainedBytes;
 		}
 
-		private boolean exactComplete() {
+		Fingerprint fingerprint() {
+			return fingerprint;
+		}
+
+		boolean exactComplete() {
 			return completionStatus == PackedSearchCompletionStatus.EXACT_COMPLETE;
+		}
+
+		double riskDebt() {
+			return riskDebt;
 		}
 
 		private boolean reusableFor(PackedPlannerLimits requestedLimits) {
@@ -496,7 +518,7 @@ public final class PackedPlanCache {
 				return this;
 			}
 			return new PlanEntry(fingerprint, context, sourceSnapshot, sourceIdentity, query, stripped, outputRows,
-					totalCost, completionStatus, retainedBytes, planningLimits);
+					totalCost, completionStatus, retainedBytes, planningLimits, riskDebt);
 		}
 	}
 

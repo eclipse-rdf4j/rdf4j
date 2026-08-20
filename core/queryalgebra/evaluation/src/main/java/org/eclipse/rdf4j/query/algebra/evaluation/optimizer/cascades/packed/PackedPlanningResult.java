@@ -17,7 +17,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanningMet
 /** Detached boundary result from one query-local packed planning call. */
 public record PackedPlanningResult(TupleExpr selectedPlan, double outputRows, double totalCost,
 		PlanningMetrics metrics, boolean workLimitReached, boolean deadlineReached, long ruleProofMask,
-		PackedSearchCompletionStatus completionStatus, long retainedBytes) {
+		PackedSearchCompletionStatus completionStatus, long retainedBytes,
+		PackedPlanDecisionCertificate decisionCertificate) {
 
 	public PackedPlanningResult {
 		if (selectedPlan == null) {
@@ -43,7 +44,19 @@ public record PackedPlanningResult(TupleExpr selectedPlan, double outputRows, do
 	public PackedPlanningResult(TupleExpr selectedPlan, double outputRows, double totalCost,
 			PlanningMetrics metrics, boolean workLimitReached, boolean deadlineReached, long ruleProofMask) {
 		this(selectedPlan, outputRows, totalCost, metrics, workLimitReached, deadlineReached, ruleProofMask,
-				legacyStatus(workLimitReached, deadlineReached), 0L);
+				legacyStatus(workLimitReached, deadlineReached), 0L, null);
+	}
+
+	public PackedPlanningResult(TupleExpr selectedPlan, double outputRows, double totalCost,
+			PlanningMetrics metrics, boolean workLimitReached, boolean deadlineReached, long ruleProofMask,
+			PackedSearchCompletionStatus completionStatus, long retainedBytes) {
+		this(selectedPlan, outputRows, totalCost, metrics, workLimitReached, deadlineReached, ruleProofMask,
+				completionStatus, retainedBytes, null);
+	}
+
+	PackedPlanningResult withDecisionCertificate(PackedPlanDecisionCertificate certificate) {
+		return new PackedPlanningResult(selectedPlan, outputRows, totalCost, metrics, workLimitReached,
+				deadlineReached, ruleProofMask, completionStatus, retainedBytes, certificate);
 	}
 
 	public boolean exactComplete() {

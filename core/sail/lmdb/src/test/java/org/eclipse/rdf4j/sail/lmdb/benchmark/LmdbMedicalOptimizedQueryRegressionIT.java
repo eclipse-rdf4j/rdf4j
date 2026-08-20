@@ -33,11 +33,14 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryPlanCacheStatistics;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 class LmdbMedicalOptimizedQueryRegressionIT {
 	private static final String CASCADES_MODE_PROPERTY = "rdf4j.optimizer.lmdb.cascades.mode";
+	private static final String CASCADES_BUDGET_PROPERTY = "rdf4j.optimizer.lmdb.cascades.budget";
+	private static final String BENCHMARK_PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
 	private static final Pattern FINITE_VALUE_RELATION = Pattern.compile(
 			"(?m)^\\s*VALUES\\s+(?:\\?value\\b|\\([^\\r\\n]*\\?value\\b[^\\r\\n]*\\))");
 	private static final Pattern FINITE_CODE_RELATION = Pattern.compile(
@@ -49,6 +52,10 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 	private static final Pattern DISCONNECTED_CODE_DOMAIN_PREFIX = Pattern.compile(
 			"MultiJoin\\(order=\\[ExactDomainDrive\\(slot=\\?code#[^)]*\\) -> "
 					+ "Pattern\\(s=\\?enc#[^,]*, p=const\\([^)]*\\), o=const\\([^)]*\\)");
+	private static final Pattern CONNECTED_ENCOUNTER_CONDITION_CODE_ORDER = Pattern.compile(
+			"MultiJoin\\(order=\\[Pattern\\(s=\\?enc#[^,]*, p=const\\([^)]*\\), o=const\\([^)]*\\)[^]]* -> "
+					+ "Pattern\\(s=\\?enc#[^,]*, p=const\\([^)]*\\), o=\\?cond#[^)]*\\)[^]]* -> "
+					+ "Pattern\\(s=\\?cond#[^,]*, p=const\\([^)]*\\), o=\\?code#[^)]*\\)");
 	private static final double MAX_SAFE_CONTEXTUAL_INNER_JOIN_ROWS = 100_000_000.0d;
 
 	@Test
@@ -217,6 +224,58 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 	}
 
 	@Test
+	@Timeout(600)
+	void regretBoundedTinyBudgetRequestsExactCertificateAndReusesAcrossSoftRevision() throws Exception {
+		String previousMode = System.setProperty(CASCADES_MODE_PROPERTY, "budgeted");
+		String previousBudget = System.setProperty(CASCADES_BUDGET_PROPERTY, "1");
+		String previousProfiling = System.setProperty(BENCHMARK_PROFILING_PROPERTY, "true");
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.themeName = Theme.MEDICAL_RECORDS.name();
+		benchmark.z_queryIndex = 4;
+		benchmark.sketchEstimatorEnabled = false;
+		benchmark.queryExplanationLevel = Explanation.Level.Telemetry.name();
+		benchmark.loadOnlySelectedTheme = true;
+
+		try {
+			benchmark.setup();
+			LmdbQueryPlanCacheStatistics primed = benchmark.planCacheStatistics();
+			TupleExpr seeded = benchmark.explainOptimizedTupleExpr();
+
+			assertAll(
+					() -> assertEquals("budgeted", seeded.getStringMetricPlanned("optimizer.cascadesMode")),
+					() -> assertEquals("exact",
+							seeded.getStringMetricPlanned("optimizer.cascadesEffectiveMode")),
+					() -> assertEquals("regret-bounded-certificate-seed",
+							seeded.getStringMetricPlanned("optimizer.cascadesModeReason")),
+					() -> assertEquals("COMPLETE",
+							seeded.getStringMetricPlanned("optimizer.cascadesCompleteness")),
+					() -> assertTrue(primed.certifiedEntries() > 0));
+
+			benchmark.snapshotPlanCacheBeforeIteration();
+			LmdbQueryPlanCacheStatistics beforeMeasurement = benchmark.planCacheStatistics();
+			assertEquals(24_971L, benchmark.executeQuery());
+			benchmark.verifyPlanCacheAfterIteration();
+
+			LmdbQueryPlanCacheStatistics afterMeasurement = benchmark.planCacheStatistics();
+			benchmark.explainOptimizedTupleExpr();
+			LmdbQueryPlanCacheStatistics afterSoftRevision = benchmark.planCacheStatistics();
+			assertAll(
+					() -> assertTrue(afterSoftRevision.hits() > afterMeasurement.hits(),
+							"The exact certificate seed must remain reusable after execution feedback"),
+					() -> assertEquals(beforeMeasurement.fullReplans(), afterSoftRevision.fullReplans()),
+					() -> assertEquals(beforeMeasurement.regretAudits(), afterSoftRevision.regretAudits()));
+		} finally {
+			try {
+				benchmark.tearDown();
+			} finally {
+				restoreProperty(BENCHMARK_PROFILING_PROPERTY, previousProfiling);
+				restoreProperty(CASCADES_BUDGET_PROPERTY, previousBudget);
+				restoreProperty(CASCADES_MODE_PROPERTY, previousMode);
+			}
+		}
+	}
+
+	@Test
 	@Timeout(180)
 	void medicalQ4CompleteStoreWithoutDphypRetainsCheapestCodeLookup() throws Exception {
 		String previousMode = System.setProperty(CASCADES_MODE_PROPERTY, "exact");
@@ -264,15 +323,26 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		try {
 			state.setup();
 			ExplainedPlanSnapshot snapshot = state.explainedPlanSnapshot();
+			String rendered = snapshot.renderedQuery();
 			String plan = snapshot.plan();
 
 			assertAll(
 					() -> assertTrue(plan.contains("plannedFrontierStatus=ready")
 							&& plan.contains("plannedEstimateSource=frontier-v2-"),
 							"MEDICAL q4 must be planned from a ready Frontier synopsis\n" + plan),
+					() -> assertTrue(rendered.contains("FILTER ((?code = \"DX-200\") || (?code = \"DX-201\"))"),
+							"The selected scalar code filter must remain authoritative\n" + rendered),
+					() -> assertFalse(containsFiniteBinding(snapshot.optimized(), "code"),
+							"The selected algebra rejected the alternative exact code VALUES relation\n" + rendered),
+					() -> assertFalse(plan.contains("ExactDomainDrive(slot=?code#"),
+							"Native lowering must not resurrect an exact-domain alternative rejected by Cascades\n"
+									+ plan),
+					() -> assertTrue(CONNECTED_ENCOUNTER_CONDITION_CODE_ORDER.matcher(plan).find(),
+							"The native plan must preserve Encounter -> hasCondition -> code order\n" + plan),
 					() -> assertFalse(DISCONNECTED_CODE_DOMAIN_PREFIX.matcher(plan).find(),
 							"The finite code domain must reach the encounter component through hasCondition before "
 									+ "scanning the unrelated encounter type factor\n" + plan));
+			assertEquals(24_971L, state.evaluateCurrentQueryAndAssertExpectedResult());
 		} finally {
 			try {
 				state.disableTelemetryTeardown();

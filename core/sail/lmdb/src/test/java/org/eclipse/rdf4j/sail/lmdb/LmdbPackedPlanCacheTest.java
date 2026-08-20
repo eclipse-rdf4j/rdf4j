@@ -28,7 +28,9 @@ import java.io.File;
 import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
+import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -47,7 +49,9 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.config.QueryPlanCacheMode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -122,7 +126,8 @@ class LmdbPackedPlanCacheTest {
 			assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
 			assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
 			assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")),
-					"an equivalent freshly parsed query should reuse the complete revision-safe LMDB plan template");
+					() -> "an equivalent freshly parsed query should reuse the complete revision-safe LMDB plan template: "
+							+ store.getQueryPlanCacheStatistics());
 		} finally {
 			repository.shutDown();
 		}
@@ -185,6 +190,178 @@ class LmdbPackedPlanCacheTest {
 				assertEquals(values.createIRI("urn:subject"), result.next().getValue("subject"));
 				assertFalse(result.hasNext());
 			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void regretBoundedPipelineCacheSurvivesUnrelatedLearnedEvidenceRevision(@TempDir File dataDir) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setQueryPlanCacheMode(QueryPlanCacheMode.REGRET_BOUNDED);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			var values = connection.getValueFactory();
+			connection.add(values.createIRI("urn:subject"), values.createIRI("urn:left"),
+					values.createIRI("urn:shared"));
+			connection.add(values.createIRI("urn:shared"), values.createIRI("urn:right"),
+					values.createIRI("urn:object"));
+			String query = "SELECT ?subject ?object WHERE { "
+					+ "?subject <urn:left> ?shared . ?shared <urn:right> ?object }";
+			TupleExpr cold = optimized(connection, query);
+			TupleExpr hot = optimized(connection, query);
+			assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+			assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")),
+					() -> "second preparation should reuse the retained plan: "
+							+ store.getQueryPlanCacheStatistics() + ", validation="
+							+ hot.getStringMetricPlanned("optimizer.planCacheValidationReason"));
+
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			long initialLeoRevision = statistics.estimatorRuntime().leoRevision();
+			statistics.recordFilterOutcome(filteredPattern(), 3L, 1L);
+			assertNotEquals(initialLeoRevision, statistics.estimatorRuntime().leoRevision());
+
+			TupleExpr revised = optimized(connection, query);
+			assertTrue(Boolean.parseBoolean(revised.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")),
+					() -> "an unrelated LEO revision should validate the retained full plan instead of rerunning the "
+							+ "pipeline: " + store.getQueryPlanCacheStatistics() + ", completeness="
+							+ cold.getStringMetricPlanned("optimizer.cascadesCompleteness") + ", reason="
+							+ revised.getStringMetricPlanned("optimizer.planCacheValidationReason"));
+			assertEquals("current-candidate-costs-unchanged",
+					revised.getStringMetricPlanned("optimizer.planCacheValidationReason"));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void regretBoundedMedicalThemeExecutionConvergesToCertifiedReuse(@TempDir File dataDir) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setQueryPlanCacheMode(QueryPlanCacheMode.REGRET_BOUNDED)
+				.setQueryPlanCacheBudgetBytes(256L * 1024L * 1024L);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 0);
+			boolean stabilized = false;
+			for (int attempt = 0; attempt < 16; attempt++) {
+				LmdbQueryPlanCacheStatistics before = store.getQueryPlanCacheStatistics();
+				try (var connection = repository.getConnection();
+						var result = connection.prepareTupleQuery(query).evaluate()) {
+					while (result.hasNext()) {
+						result.next();
+					}
+				}
+				LmdbQueryPlanCacheStatistics after = store.getQueryPlanCacheStatistics();
+				if (after.hits() > before.hits() && after.fullReplans() == before.fullReplans()
+						&& after.regretAudits() == before.regretAudits()) {
+					stabilized = true;
+					break;
+				}
+			}
+
+			assertTrue(stabilized,
+					() -> "the representative theme query must converge before benchmark timing: "
+							+ store.getQueryPlanCacheStatistics());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void regretBoundedPopulatedMedicalThemeExecutionConvergesToCertifiedReuse(@TempDir File dataDir) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setQueryPlanCacheMode(QueryPlanCacheMode.REGRET_BOUNDED)
+				.setQueryPlanCacheBudgetBytes(256L * 1024L * 1024L);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (var connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				ThemeDataSetGenerator.generateMedicalRecords(
+						ThemeDataSetGenerator.medicalConfig(), new RDFInserter(connection));
+				connection.commit();
+			}
+			store.rebuildFrontierSynopsis();
+			String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 0);
+			boolean stabilized = false;
+			for (int attempt = 0; attempt < 16; attempt++) {
+				LmdbQueryPlanCacheStatistics before = store.getQueryPlanCacheStatistics();
+				try (var connection = repository.getConnection();
+						var result = connection.prepareTupleQuery(query).evaluate()) {
+					while (result.hasNext()) {
+						result.next();
+					}
+				}
+				LmdbQueryPlanCacheStatistics after = store.getQueryPlanCacheStatistics();
+				if (after.hits() > before.hits() && after.fullReplans() == before.fullReplans()
+						&& after.regretAudits() == before.regretAudits()) {
+					stabilized = true;
+					break;
+				}
+			}
+
+			assertTrue(stabilized,
+					() -> "the populated theme query must converge before benchmark timing: "
+							+ store.getQueryPlanCacheStatistics());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void regretBoundedMedicalOptionalMinusExecutionEstablishesNextExecutionLease(@TempDir File dataDir) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setQueryPlanCacheMode(QueryPlanCacheMode.REGRET_BOUNDED)
+				.setQueryPlanCacheBudgetBytes(256L * 1024L * 1024L);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (var connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				ThemeDataSetGenerator.generateMedicalRecords(
+						ThemeDataSetGenerator.medicalConfig()
+								.withPatientCount(500)
+								.withPractitionerCount(500),
+						new RDFInserter(connection));
+				connection.commit();
+			}
+			store.rebuildFrontierSynopsis();
+			String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 3);
+			try (var connection = repository.getConnection()) {
+				optimized(connection, query);
+			}
+
+			boolean stabilized = false;
+			for (int attempt = 0; attempt < 16; attempt++) {
+				LmdbQueryPlanCacheStatistics before = store.getQueryPlanCacheStatistics();
+				try (var connection = repository.getConnection()) {
+					var tupleQuery = connection.prepareTupleQuery(query);
+					tupleQuery.setMaxExecutionTime(5);
+					try (var result = tupleQuery.evaluate()) {
+						while (result.hasNext()) {
+							result.next();
+						}
+					}
+				}
+				LmdbQueryPlanCacheStatistics after = store.getQueryPlanCacheStatistics();
+				if (after.hits() > before.hits() && after.fullReplans() == before.fullReplans()
+						&& after.regretAudits() == before.regretAudits()
+						&& after.minimumReusesBeforeRegretAudit() >= 1L) {
+					stabilized = true;
+					break;
+				}
+			}
+
+			assertTrue(stabilized,
+					() -> "the OPTIONAL/MINUS query must establish a replay-free lease for the next execution: "
+							+ store.getQueryPlanCacheStatistics());
 		} finally {
 			repository.shutDown();
 		}

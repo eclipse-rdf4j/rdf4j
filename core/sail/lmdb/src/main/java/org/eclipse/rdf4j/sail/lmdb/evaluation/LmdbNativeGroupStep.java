@@ -378,10 +378,11 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			}
 		}
 		NativeFilterLease filterLease = new NativeFilterLease();
-		NativeGroupIteration speculative = withArg(filterLease.borrow(arg));
+		NativeGroupIteration speculative = withArg(filterLease.borrow(arg),
+				prefixRunFilter == null ? null : filterLease.borrow(prefixRunFilter));
 		LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root(explainTarget);
 		try {
-			List<BindingSet> results = speculative.evaluateArbitrated(row, metrics, arg);
+			List<BindingSet> results = speculative.evaluateArbitrated(row, metrics);
 			filterLease.commit();
 			metrics.commitToParent();
 			return results;
@@ -455,7 +456,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		try (cursor) {
 			int probePollTick0 = 0;
 			while (cursor.next()) {
-				LmdbNativeProbeDeadline.poll(++probePollTick0);
+				LmdbNativeProbeDeadline.poll(++probePollTick0, source);
 				// the leapfrog core surfaces each solution's duplicate count instead of replaying it (G6):
 				// consume the whole bag in one weighted accumulation rather than one next() per copy
 				table.add(row, surfacesMultiplicity ? ((FactorizedRowCursor) cursor).multiplicity() : 1L);
@@ -469,9 +470,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		return results;
 	}
 
-	private NativeGroupIteration withArg(SlotPlan attemptArg) {
+	private NativeGroupIteration withArg(SlotPlan attemptArg, NativeBooleanFilter attemptPrefixRunFilter) {
 		return new NativeGroupIteration(source, attemptArg, layout, groupSlots, aggregates, strictCompare, base,
-				prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns, prefixRunFilter,
+				prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns, attemptPrefixRunFilter,
 				prefixMinRunCount, existsIntersection, havingCondition, explainTarget);
 	}
 
@@ -488,7 +489,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		}
 	}
 
-	List<BindingSet> evaluateArbitrated(RowState row, LmdbNativeAttemptMetrics metrics, SlotPlan originalArg) {
+	List<BindingSet> evaluateArbitrated(RowState row, LmdbNativeAttemptMetrics metrics) {
 		boolean replaySafe = SlotPlan.encounterOrderReplaySafe(arg);
 		NativeAggregateDistinctPlan orderedDistinct = replaySafe
 				? LmdbNativeOrderPlanner.aggregate(arg, groupSlots, aggregates, row)
@@ -554,7 +555,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				arbiter.offer(() -> estimatedProposal(() -> evaluateWcoj(row),
 						LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.UNKNOWN));
 			}
-			if (originalArg instanceof MultiJoinPlan packedPlan) {
+			if (arg instanceof MultiJoinPlan packedPlan) {
 				arbiter.offer(() -> estimatedProposal(
 						() -> LmdbNativePackedFtree.tryEvaluateAggregate(packedPlan, row, groupSlots, aggregates, this,
 								explainTarget),
@@ -573,7 +574,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			if (parallelPlan != null) {
 				arbiter.offer(() -> LmdbNativeParallelAggregation.propose(this, parallelPlan, row, metrics));
 			}
-			if (originalArg instanceof MultiJoinPlan multiJoin) {
+			if (arg instanceof MultiJoinPlan multiJoin) {
 				arbiter.offer(() -> LmdbNativeJaninoAggregate.propose(multiJoin, row, groupSlots, aggregates, this,
 						explainTarget));
 			}
@@ -729,7 +730,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		try (RowCursor cursor = row.aggregateInput(arg.open(row))) {
 			int probePollTick1 = 0;
 			while (cursor.next()) {
-				LmdbNativeProbeDeadline.poll(++probePollTick1);
+				LmdbNativeProbeDeadline.poll(++probePollTick1, source);
 				table.add(row);
 			}
 		} catch (IOException e) {
@@ -749,7 +750,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			try (RowCursor cursor = row.aggregateInput(plan.arg.open(row))) {
 				int probePollTick2 = 0;
 				while (cursor.next()) {
-					LmdbNativeProbeDeadline.poll(++probePollTick2);
+					LmdbNativeProbeDeadline.poll(++probePollTick2, source);
 					sawRow = true;
 					state.add(row);
 				}
@@ -775,7 +776,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		try (RowCursor cursor = row.aggregateInput(plan.arg.open(row))) {
 			int probePollTick3 = 0;
 			while (cursor.next()) {
-				LmdbNativeProbeDeadline.poll(++probePollTick3);
+				LmdbNativeProbeDeadline.poll(++probePollTick3, source);
 				if (current == null || !sameKey(current, row, groupSlots)) {
 					if (current != null) {
 						results.add(toBindingSet(current, state, true));
@@ -804,7 +805,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		try (RowCursor cursor = row.aggregateInput(plan.arg.open(row))) {
 			int probePollTick4 = 0;
 			while (cursor.next()) {
-				LmdbNativeProbeDeadline.poll(++probePollTick4);
+				LmdbNativeProbeDeadline.poll(++probePollTick4, source);
 				if (!initialized || !sameValues(partition, row, plan.groupPrefixSlots)) {
 					if (initialized) {
 						appendGroupResults(results, groups);
@@ -835,7 +836,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		try (RowCursor cursor = row.aggregateInput(plan.arg.open(row))) {
 			int probePollTick5 = 0;
 			while (cursor.next()) {
-				LmdbNativeProbeDeadline.poll(++probePollTick5);
+				LmdbNativeProbeDeadline.poll(++probePollTick5, source);
 				table.add(row);
 			}
 		} catch (IOException e) {
@@ -901,7 +902,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 		try (RowCursor cursor = row.aggregateInput(ordered.open(row))) {
 			int probePollTick6 = 0;
 			while (cursor.next()) {
-				LmdbNativeProbeDeadline.poll(++probePollTick6);
+				LmdbNativeProbeDeadline.poll(++probePollTick6, source);
 				long key = row.slots[groupSlots[0]];
 				if (state == null || key != currentKey) {
 					if (state != null) {
@@ -991,7 +992,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				boolean sawRow = false;
 				int probePollTick7 = 0;
 				while (cursor.next()) {
-					LmdbNativeProbeDeadline.poll(++probePollTick7);
+					LmdbNativeProbeDeadline.poll(++probePollTick7, source);
 					int mark = row.mark();
 					try {
 						if (prefixPattern.bind(cursor.quad(), row) && acceptRun(row)) {
@@ -1019,7 +1020,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 				long distinctCount = 0;
 				int probePollTick8 = 0;
 				while (cursor.next()) {
-					LmdbNativeProbeDeadline.poll(++probePollTick8);
+					LmdbNativeProbeDeadline.poll(++probePollTick8, source);
 					int mark = row.mark();
 					try {
 						if (prefixPattern.bind(cursor.quad(), row) && acceptRun(row)) {
@@ -1046,7 +1047,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			ArrayList<BindingSet> results = new ArrayList<>();
 			int probePollTick9 = 0;
 			while (cursor.next()) {
-				LmdbNativeProbeDeadline.poll(++probePollTick9);
+				LmdbNativeProbeDeadline.poll(++probePollTick9, source);
 				int mark = row.mark();
 				try {
 					if (prefixPattern.bind(cursor.quad(), row) && acceptRun(row)) {
