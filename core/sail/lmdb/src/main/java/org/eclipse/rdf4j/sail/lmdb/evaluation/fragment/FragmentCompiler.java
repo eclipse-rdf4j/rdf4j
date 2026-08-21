@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.Compare;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.Constant;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.DecodeInline;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.IsBound;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.SameTerm;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.TypeGuard;
 
 /**
@@ -93,6 +94,12 @@ public final class FragmentCompiler {
 				return comparePrimitive;
 			}
 		}
+		if (root instanceof SameTerm sameTerm) {
+			LongPredicateFragment identity = sameTermPrimitive(sameTerm);
+			if (identity != null) {
+				return identity;
+			}
+		}
 		if (root instanceof BooleanAnd and && and.left()instanceof Compare lower
 				&& and.right()instanceof Compare upper) {
 			LongPredicateFragment range = orderedRangePrimitive(lower, upper);
@@ -132,6 +139,35 @@ public final class FragmentCompiler {
 			return rawIdCompare(rightArgument.index(), -1, constant.slot(), compare.op().flip());
 		}
 		return null;
+	}
+
+	/** Term identity over raw ids: exactly {@link FragmentInterpreter}'s SameTerm semantics, monomorphic. */
+	private static LongPredicateFragment sameTermPrimitive(SameTerm sameTerm) {
+		if (sameTerm.left()instanceof Argument leftArgument) {
+			if (sameTerm.right()instanceof Argument rightArgument) {
+				return sameTermIdentity(leftArgument.index(), rightArgument.index(), -1);
+			}
+			if (sameTerm.right()instanceof Constant constant) {
+				return sameTermIdentity(leftArgument.index(), -1, constant.slot());
+			}
+		}
+		if (sameTerm.left()instanceof Constant constant && sameTerm.right()instanceof Argument rightArgument) {
+			return sameTermIdentity(rightArgument.index(), -1, constant.slot());
+		}
+		return null;
+	}
+
+	private static LongPredicateFragment sameTermIdentity(int leftIndex, int rightArgumentIndex,
+			int rightConstantSlot) {
+		return (a0, a1, a2, binding) -> {
+			long left = argumentAt(leftIndex, a0, a1, a2);
+			long right = rightArgumentIndex >= 0 ? argumentAt(rightArgumentIndex, a0, a1, a2)
+					: binding.constants[rightConstantSlot];
+			if (left == -1L || right == -1L) {
+				return PredicateStatus.ERROR;
+			}
+			return left == right ? PredicateStatus.TRUE : PredicateStatus.FALSE;
+		};
 	}
 
 	private static LongPredicateFragment orderedCompareToConstant(int argumentIndex, int constantSlot,

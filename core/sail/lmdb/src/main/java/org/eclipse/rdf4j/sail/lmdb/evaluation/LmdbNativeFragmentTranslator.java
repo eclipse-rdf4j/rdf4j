@@ -123,8 +123,9 @@ final class LmdbNativeFragmentTranslator {
 			if (expr instanceof SameTerm sameTerm) {
 				FragmentNode left = idOperand(sameTerm.getLeftArg());
 				FragmentNode right = left == null ? null : idOperand(sameTerm.getRightArg());
-				// the IR's id-valued EQ is term equality where ids decide, ESCAPE where they cannot
-				return right == null ? null : new FragmentNode.Compare(FragmentCompareOp.EQ, left, right);
+				// term identity, never Compare EQ: EQ's numeric axis calls "1"^^xsd:int and "1"^^xsd:long equal,
+				// which sameTerm must reject — the SameTerm node decides by id identity alone
+				return right == null ? null : new FragmentNode.SameTerm(left, right);
 			}
 			if (expr instanceof Compare compare) {
 				// the IR forbids mixed id/numeric comparisons: an arithmetic side forces both sides numeric

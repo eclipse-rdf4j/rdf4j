@@ -58,12 +58,15 @@ final class GeneralPathPlan implements SlotPlan {
 	final int objSlot;
 	final long objConst;
 	final long minLength;
-	/** Constant graph-scope id for the zero-length node enumeration, or UNKNOWN for the unscoped default. */
-	final long ctxConst;
+	/**
+	 * Graph-scope ids for the zero-length node enumeration (a constant GRAPH scope and/or the query dataset's FROM /
+	 * FROM NAMED graphs), or {@code null} for the unscoped default; empty means the enumeration finds nothing.
+	 */
+	final long[] ctxIds;
 	private final long producedMask;
 
 	GeneralPathPlan(SlotPlan step, int stepSubjSlot, int stepObjSlot, int subjSlot, long subjConst, int objSlot,
-			long objConst, long minLength, long ctxConst) {
+			long objConst, long minLength, long[] ctxIds) {
 		this.step = step;
 		this.stepSubjSlot = stepSubjSlot;
 		this.stepObjSlot = stepObjSlot;
@@ -72,7 +75,7 @@ final class GeneralPathPlan implements SlotPlan {
 		this.objSlot = objSlot;
 		this.objConst = objConst;
 		this.minLength = minLength;
-		this.ctxConst = ctxConst;
+		this.ctxIds = ctxIds;
 		long mask = 0L;
 		if (subjSlot >= 0) {
 			mask |= 1L << subjSlot;
@@ -180,22 +183,26 @@ final class GeneralPathEvaluation {
 	private void evaluateBothFree() throws IOException {
 		boolean sameEndpoint = plan.subjSlot == plan.objSlot;
 		LongHashSet identitySeen = new LongHashSet(64);
-		if (plan.minLength == 0L) {
+		if (plan.minLength == 0L && (plan.ctxIds == null || plan.ctxIds.length > 0)) {
 			// zero-length identities: every distinct node occurring as subject or object of a scoped statement
 			try (NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe()) {
-				RecordIterator statements = probe.open(UNKNOWN, UNKNOWN, UNKNOWN, plan.ctxConst);
-				try {
-					long[] quad;
-					while ((quad = statements.next()) != null) {
-						if (identitySeen.add(quad[TripleIndex.SUBJ_IDX])) {
-							addPair(quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.SUBJ_IDX]);
+				int scopes = plan.ctxIds == null ? 1 : plan.ctxIds.length;
+				for (int scope = 0; scope < scopes; scope++) {
+					long ctx = plan.ctxIds == null ? UNKNOWN : plan.ctxIds[scope];
+					RecordIterator statements = probe.open(UNKNOWN, UNKNOWN, UNKNOWN, ctx);
+					try {
+						long[] quad;
+						while ((quad = statements.next()) != null) {
+							if (identitySeen.add(quad[TripleIndex.SUBJ_IDX])) {
+								addPair(quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.SUBJ_IDX]);
+							}
+							if (identitySeen.add(quad[TripleIndex.OBJ_IDX])) {
+								addPair(quad[TripleIndex.OBJ_IDX], quad[TripleIndex.OBJ_IDX]);
+							}
 						}
-						if (identitySeen.add(quad[TripleIndex.OBJ_IDX])) {
-							addPair(quad[TripleIndex.OBJ_IDX], quad[TripleIndex.OBJ_IDX]);
-						}
+					} finally {
+						statements.close();
 					}
-				} finally {
-					statements.close();
 				}
 			}
 		}

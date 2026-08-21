@@ -56,6 +56,13 @@ public class LmdbNativeFragmentTranslatorTest {
 			conn.add(vf.createIRI(EX, "s2"), val, vf.createLiteral(2));
 			conn.add(vf.createIRI(EX, "s3"), val, vf.createLiteral(3));
 			conn.add(vf.createIRI(EX, "s4"), val, vf.createLiteral("abc"));
+			IRI a = vf.createIRI(EX, "a");
+			IRI b = vf.createIRI(EX, "b");
+			// s5: numerically equal but distinct terms (xsd:int vs xsd:long); s6: the same term twice
+			conn.add(vf.createIRI(EX, "s5"), a, vf.createLiteral(1));
+			conn.add(vf.createIRI(EX, "s5"), b, vf.createLiteral(1L));
+			conn.add(vf.createIRI(EX, "s6"), a, vf.createLiteral(2));
+			conn.add(vf.createIRI(EX, "s6"), b, vf.createLiteral(2));
 			conn.commit();
 		}
 	}
@@ -118,6 +125,28 @@ public class LmdbNativeFragmentTranslatorTest {
 		assertSameAsGenericAndTranslated(
 				"SELECT ?s WHERE { ?s <" + EX + "val> ?v . OPTIONAL { ?s <" + EX + "other> ?w } "
 						+ "FILTER(!BOUND(?w)) }");
+	}
+
+	/**
+	 * sameTerm is term identity, not numeric equality: equal-valued inline integers of different XSD datatypes
+	 * ({@code "1"^^xsd:int} vs {@code "1"^^xsd:long}) are different terms and must be rejected. The disjunction keeps
+	 * the sameTerm out of SameTermFilterOptimizer's reach so the filter actually evaluates it.
+	 */
+	@Test
+	public void sameTermDistinguishesIntegerDatatypesAcrossVariables() {
+		assertSameAsGenericAndTranslated(
+				"SELECT ?s WHERE { ?s <" + EX + "a> ?x . ?s <" + EX + "b> ?y . "
+						+ "FILTER(sameTerm(?x, ?y) || ?x > 10) }");
+	}
+
+	/**
+	 * The variable-vs-constant shape of the same trap: sameTerm against an equal-valued constant of another datatype.
+	 */
+	@Test
+	public void sameTermDistinguishesIntegerDatatypesAgainstConstant() {
+		assertSameAsGenericAndTranslated(
+				"SELECT ?s WHERE { ?s <" + EX + "a> ?x . "
+						+ "FILTER(sameTerm(?x, \"1\"^^<http://www.w3.org/2001/XMLSchema#long>) || ?x > 10) }");
 	}
 
 	/** Conditions outside batch 1 (REGEX) keep today's generic route — differential only. */

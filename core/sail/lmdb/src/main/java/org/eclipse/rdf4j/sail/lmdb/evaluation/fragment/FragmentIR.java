@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.Constant;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.DecodeInline;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.Escape;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.IsBound;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.SameTerm;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.TypeGuard;
 
 /**
@@ -167,6 +168,13 @@ public final class FragmentIR {
 			analyze(compare.left(), analysis, key);
 			key.append(',');
 			analyze(compare.right(), analysis, key);
+			key.append(')');
+		} else if (node instanceof SameTerm sameTerm) {
+			analysis.estimatedBytecode += 8;
+			key.append("st(");
+			analyze(sameTerm.left(), analysis, key);
+			key.append(',');
+			analyze(sameTerm.right(), analysis, key);
 			key.append(')');
 		} else if (node instanceof BooleanAnd and) {
 			analysis.estimatedBytecode += 8;

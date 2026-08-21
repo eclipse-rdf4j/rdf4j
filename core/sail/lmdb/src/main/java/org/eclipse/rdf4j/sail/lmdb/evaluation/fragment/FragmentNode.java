@@ -73,6 +73,16 @@ public sealed interface FragmentNode {
 	record Compare(FragmentCompareOp op, FragmentNode left, FragmentNode right) implements FragmentNode {
 	}
 
+	/**
+	 * Predicate: SPARQL {@code sameTerm} — RDF term identity over id-valued operands, never value equality. An unbound
+	 * side is ERROR; otherwise id equality decides both directions, because the store encodes each term to exactly one
+	 * id (the invariant the exact tier's sameTerm compiler relies on). Unlike {@link Compare} EQ, equal-valued inline
+	 * numerics of different datatypes ({@code "1"^^xsd:int} vs {@code "1"^^xsd:long}) are different ids and therefore
+	 * FALSE, and an id equal to itself is TRUE even for doubles (NaN is the same term as itself).
+	 */
+	record SameTerm(FragmentNode left, FragmentNode right) implements FragmentNode {
+	}
+
 	/** SPARQL three-valued AND: {@code F && x = F}, {@code E && T = E}, {@code E && E = E}. */
 	record BooleanAnd(FragmentNode left, FragmentNode right) implements FragmentNode {
 	}

@@ -1614,18 +1614,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 * constant, whose term-equal spellings a synthetic id cannot probe.
 	 */
 	private SlotPlan compileZeroLengthPath(ZeroLengthPath zeroLength) {
-		Var contextVar = zeroLength.getContextVar();
-		long ctxConst = UNKNOWN;
-		boolean enumerationEmpty = false;
-		if (contextVar != null) {
-			if (!contextVar.hasValue()) {
-				return null;
-			}
-			ctxConst = idOf(contextVar.getValue());
-			if (ctxConst == UNKNOWN) {
-				// absent graph: enumeration finds nothing, but identity binds are store-free and still emit
-				enumerationEmpty = true;
-			}
+		long[] enumerationContexts = pathEnumerationContexts(zeroLength.getContextVar());
+		if (enumerationContexts == DECLINED_CONTEXTS) {
+			return null;
 		}
 		long[] subj = zeroLengthEndpoint(zeroLength.getSubjectVar());
 		if (subj == null) {
@@ -1635,7 +1626,37 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (obj == null) {
 			return null;
 		}
-		return new ZeroLengthPathPlan((int) subj[0], subj[1], (int) obj[0], obj[1], ctxConst, enumerationEmpty);
+		return new ZeroLengthPathPlan((int) subj[0], subj[1], (int) obj[0], obj[1], enumerationContexts);
+	}
+
+	/** Sentinel: an unbound graph variable declines the whole plan (never a valid context list). */
+	private static final long[] DECLINED_CONTEXTS = new long[0];
+
+	/**
+	 * The graph scope of a path's zero-length node enumeration: {@code null} for every context, else the exact context
+	 * ids to probe (possibly none — identity binds are store-free and still emit). Mirrors the generic
+	 * {@code ZeroLengthPathIteration}, which enumerates through a statement pattern scoped {@code NAMED_CONTEXTS}
+	 * exactly when a context var is present, so the query dataset (FROM / FROM NAMED) restricts the enumeration the
+	 * same way it restricts that pattern; a constant graph outside the dataset's scope enumerates nothing. Returns
+	 * {@link #DECLINED_CONTEXTS} for an unbound graph variable (recorded decline) and for an absent constant graph
+	 * keeps the empty-enumeration behavior.
+	 */
+	private long[] pathEnumerationContexts(Var contextVar) {
+		ContextConstraint constraint = compileContextConstraint(
+				contextVar != null ? StatementPattern.Scope.NAMED_CONTEXTS : StatementPattern.Scope.DEFAULT_CONTEXTS,
+				context.getDataset());
+		if (contextVar == null) {
+			return constraint.ids;
+		}
+		if (!contextVar.hasValue()) {
+			return DECLINED_CONTEXTS;
+		}
+		long ctxConst = idOf(contextVar.getValue());
+		if (ctxConst == UNKNOWN || !constraint.contains(ctxConst)) {
+			// absent graph, or a constant graph outside the dataset's named graphs: enumeration finds nothing
+			return new long[0];
+		}
+		return new long[] { ctxConst };
 	}
 
 	/** One endpoint as {slot, constant-id}: slot ≥ 0 XOR constant ≠ UNKNOWN; null when unrepresentable. */
@@ -1668,16 +1689,13 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return null;
 		}
 		Var contextVar = alp.getContextVar();
-		long ctxConst = UNKNOWN;
-		if (contextVar != null) {
-			if (!contextVar.hasValue()) {
-				// recorded decline: unbound graph variables need per-graph evaluation + graph binding semantics
-				return null;
-			}
-			ctxConst = idOf(contextVar.getValue());
-			if (ctxConst == UNKNOWN) {
-				return SlotPlan.empty();
-			}
+		if (contextVar != null && contextVar.hasValue() && idOf(contextVar.getValue()) == UNKNOWN) {
+			return SlotPlan.empty();
+		}
+		long[] enumerationContexts = pathEnumerationContexts(contextVar);
+		if (enumerationContexts == DECLINED_CONTEXTS) {
+			// recorded decline: unbound graph variables need per-graph evaluation + graph binding semantics
+			return null;
 		}
 		String subjName = alp.getSubjectVar().getName();
 		String objName = alp.getObjectVar().getName();
@@ -1715,7 +1733,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return null;
 		}
 		return new GeneralPathPlan(step, stepSubjSlot, stepObjSlot, (int) subj[0], subj[1], (int) obj[0], obj[1],
-				alp.getMinLength(), ctxConst);
+				alp.getMinLength(), enumerationContexts);
 	}
 
 	/**

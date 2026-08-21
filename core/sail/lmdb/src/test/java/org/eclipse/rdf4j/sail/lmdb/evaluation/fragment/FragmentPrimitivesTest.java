@@ -145,6 +145,34 @@ class FragmentPrimitivesTest {
 	}
 
 	@Test
+	void sameTermPrimitiveMatchesOracle() {
+		assertDifferentialBinary(
+				FragmentIR.predicate(new FragmentNode.SameTerm(new Argument(0), new Argument(1))),
+				FragmentBinding.EMPTY);
+		for (long constant : idMatrix()) {
+			FragmentBinding binding = FragmentBinding.of(constant);
+			assertDifferentialUnary(
+					FragmentIR.predicate(new FragmentNode.SameTerm(new Argument(0), new Constant(0))), binding);
+			assertDifferentialUnary(
+					FragmentIR.predicate(new FragmentNode.SameTerm(new Constant(0), new Argument(0))), binding);
+		}
+	}
+
+	/** sameTerm is term identity: equal-valued ordered integers of different datatypes are FALSE, never TRUE. */
+	@Test
+	void sameTermIsIdIdentityNotNumericEquality() {
+		long intFortyTwo = ValueIds.createId(ValueIds.T_ORD_INT, 42 + ValueIds.ORDERED_BIAS);
+		long longFortyTwo = ValueIds.createId(ValueIds.T_ORD_LONG, 42 + ValueIds.ORDERED_BIAS);
+		FragmentIR ir = FragmentIR.predicate(new FragmentNode.SameTerm(new Argument(0), new Argument(1)));
+		assertThat(FragmentInterpreter.testPredicate(ir, intFortyTwo, longFortyTwo, UNBOUND, FragmentBinding.EMPTY))
+				.isEqualTo(PredicateStatus.FALSE);
+		assertThat(FragmentInterpreter.testPredicate(ir, intFortyTwo, intFortyTwo, UNBOUND, FragmentBinding.EMPTY))
+				.isEqualTo(PredicateStatus.TRUE);
+		assertThat(FragmentInterpreter.testPredicate(ir, UNBOUND, intFortyTwo, UNBOUND, FragmentBinding.EMPTY))
+				.isEqualTo(PredicateStatus.ERROR);
+	}
+
+	@Test
 	void orderedRangePrimitiveMatchesOracle() {
 		long[][] bounds = { { orderedInt(18), orderedInt(65) }, { orderedInt(65), orderedInt(18) },
 				{ UNBOUND, orderedInt(65) }, { orderedInt(18), ValueIds.createId(ValueIds.T_LITERAL, 3) } };

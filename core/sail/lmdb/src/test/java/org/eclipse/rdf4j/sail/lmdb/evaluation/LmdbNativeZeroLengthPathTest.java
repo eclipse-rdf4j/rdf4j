@@ -165,4 +165,39 @@ public class LmdbNativeZeroLengthPathTest {
 		assertSameAsGeneric(
 				"SELECT ?g ?s ?o WHERE { GRAPH ?g { ?s <" + EX + "p>? ?o } }");
 	}
+
+	/** FROM restricts the both-free enumeration to the dataset's default graphs, not every context. */
+	@Test
+	public void zeroOrOnePathBothFreeWithFromDataset() {
+		assertSameAsGenericAndNative(
+				"SELECT ?s ?o FROM <" + EX + "g1> WHERE { ?s <" + EX + "p>? ?o }");
+	}
+
+	/** Several FROM graphs: the enumeration unions exactly those graphs, deduplicated by term. */
+	@Test
+	public void zeroOrOnePathBothFreeWithMultipleFromGraphs() {
+		assertSameAsGenericAndNative(
+				"SELECT ?s ?o FROM <" + EX + "g1> FROM <" + EX + "g2> WHERE { ?s <" + EX + "p>? ?o }");
+	}
+
+	/** FROM NAMED only: the default graph is empty, so the both-free enumeration emits nothing. */
+	@Test
+	public void zeroOrOnePathFromNamedOnlyLeavesDefaultGraphEmpty() {
+		assertSameAsGenericAndNative(
+				"SELECT ?s ?o FROM NAMED <" + EX + "g1> WHERE { ?s <" + EX + "p>? ?o }");
+	}
+
+	/** A constant graph scope outside the dataset's named graphs enumerates nothing. */
+	@Test
+	public void zeroOrOnePathConstantGraphOutsideFromNamed() {
+		assertSameAsGenericAndNative(
+				"SELECT ?s ?o FROM NAMED <" + EX + "g1> WHERE { GRAPH <" + EX + "g2> { ?s <" + EX + "p>? ?o } }");
+	}
+
+	/** Bound endpoints identity-bind store-free: a dataset must not suppress the identity row. */
+	@Test
+	public void zeroOrOnePathBoundSubjectKeepsIdentityUnderDataset() {
+		assertSameAsGenericAndNative(
+				"SELECT ?o FROM NAMED <" + EX + "g1> WHERE { <" + EX + "a> <" + EX + "p>? ?o }");
+	}
 }

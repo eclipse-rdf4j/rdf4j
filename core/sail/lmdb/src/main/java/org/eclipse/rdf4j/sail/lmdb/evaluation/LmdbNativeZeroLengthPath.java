@@ -43,20 +43,21 @@ final class ZeroLengthPathPlan implements SlotPlan {
 	final long subjConst;
 	final int objSlot;
 	final long objConst;
-	/** Constant graph-scope id, or UNKNOWN for the unscoped default (every context). */
-	final long ctxConst;
-	/** The scope names a graph absent from the store: enumeration is empty, identity binds still emit. */
-	final boolean enumerationEmpty;
+	/**
+	 * Graph-scope ids for the both-free enumeration (a constant GRAPH scope and/or the query dataset's FROM / FROM
+	 * NAMED graphs), or {@code null} for the unscoped default (every context). Empty means the enumeration finds
+	 * nothing — a graph absent from the store or outside the dataset — while identity binds are store-free and still
+	 * emit.
+	 */
+	final long[] ctxIds;
 	private final long producedMask;
 
-	ZeroLengthPathPlan(int subjSlot, long subjConst, int objSlot, long objConst, long ctxConst,
-			boolean enumerationEmpty) {
+	ZeroLengthPathPlan(int subjSlot, long subjConst, int objSlot, long objConst, long[] ctxIds) {
 		this.subjSlot = subjSlot;
 		this.subjConst = subjConst;
 		this.objSlot = objSlot;
 		this.objConst = objConst;
-		this.ctxConst = ctxConst;
-		this.enumerationEmpty = enumerationEmpty;
+		this.ctxIds = ctxIds;
 		long mask = 0L;
 		if (subjSlot >= 0) {
 			mask |= 1L << subjSlot;
@@ -81,7 +82,7 @@ final class ZeroLengthPathPlan implements SlotPlan {
 		if (obj != UNKNOWN) {
 			return new ZeroLengthIdentityCursor(row, subjSlot, obj);
 		}
-		if (enumerationEmpty) {
+		if (ctxIds != null && ctxIds.length == 0) {
 			return EmptyCursor.INSTANCE;
 		}
 		return new ZeroLengthNodeCursor(row, this);
@@ -102,7 +103,15 @@ final class ZeroLengthPathPlan implements SlotPlan {
 			return 1D;
 		}
 		try {
-			double statements = row.source.estimate(UNKNOWN, UNKNOWN, UNKNOWN, ctxConst);
+			double statements;
+			if (ctxIds == null) {
+				statements = row.source.estimate(UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN);
+			} else {
+				statements = 0D;
+				for (long ctx : ctxIds) {
+					statements += row.source.estimate(UNKNOWN, UNKNOWN, UNKNOWN, ctx);
+				}
+			}
 			return Double.isFinite(statements) ? Math.max(1D, statements * 2D) : Double.POSITIVE_INFINITY;
 		} catch (RuntimeException e) {
 			return Double.POSITIVE_INFINITY;
@@ -182,6 +191,8 @@ final class ZeroLengthNodeCursor implements RowCursor {
 	private final HashSet<Value> seenTerms = new HashSet<>();
 	private NativeLmdbQuerySource.NativeProbe probe;
 	private RecordIterator statements;
+	private int contextIndex;
+	private boolean exhausted;
 	private long pendingNode;
 	private boolean pendingSet;
 	private int mark = -1;
@@ -217,13 +228,30 @@ final class ZeroLengthNodeCursor implements RowCursor {
 				}
 				continue;
 			}
+			if (exhausted) {
+				return UNKNOWN;
+			}
 			if (statements == null) {
-				probe = row.source.newProbe();
-				statements = probe.open(UNKNOWN, UNKNOWN, UNKNOWN, plan.ctxConst);
+				if (plan.ctxIds != null && contextIndex >= plan.ctxIds.length) {
+					exhausted = true;
+					return UNKNOWN;
+				}
+				if (probe == null) {
+					probe = row.source.newProbe();
+				}
+				statements = probe.open(UNKNOWN, UNKNOWN, UNKNOWN,
+						plan.ctxIds == null ? UNKNOWN : plan.ctxIds[contextIndex]);
 			}
 			long[] quad = statements.next();
 			if (quad == null) {
-				return UNKNOWN;
+				statements.close();
+				statements = null;
+				if (plan.ctxIds == null) {
+					exhausted = true;
+					return UNKNOWN;
+				}
+				contextIndex++;
+				continue;
 			}
 			pendingNode = quad[TripleIndex.OBJ_IDX];
 			pendingSet = true;

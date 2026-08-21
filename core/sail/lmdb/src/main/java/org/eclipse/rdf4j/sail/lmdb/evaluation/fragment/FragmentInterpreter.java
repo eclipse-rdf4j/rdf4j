@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.Constant;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.DecodeInline;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.Escape;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.IsBound;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.SameTerm;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.TypeGuard;
 
 /**
@@ -77,6 +78,16 @@ public final class FragmentInterpreter {
 		}
 		if (node instanceof Compare compare) {
 			return compareTruth(compare, a0, a1, a2, binding);
+		}
+		if (node instanceof SameTerm sameTerm) {
+			long left = idValue(sameTerm.left(), a0, a1, a2, binding);
+			long right = idValue(sameTerm.right(), a0, a1, a2, binding);
+			if (left == -1L || right == -1L) {
+				return PredicateStatus.ERROR;
+			}
+			// term identity is id identity: the store encodes each term to exactly one id, so equality decides both
+			// directions — no numeric axis, no double exclusion (NaN is the same term as itself)
+			return left == right ? PredicateStatus.TRUE : PredicateStatus.FALSE;
 		}
 		if (node instanceof BooleanAnd and) {
 			PredicateStatus left = truth(and.left(), a0, a1, a2, binding);

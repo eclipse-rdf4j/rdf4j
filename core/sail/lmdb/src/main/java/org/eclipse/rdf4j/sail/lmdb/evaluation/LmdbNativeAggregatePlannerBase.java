@@ -903,12 +903,16 @@ abstract class LmdbNativeAggregatePlannerBase {
 	}
 
 	ContextConstraint compileContextConstraint(StatementPattern sp, Dataset dataset) {
+		return compileContextConstraint(sp.getScope(), dataset);
+	}
+
+	ContextConstraint compileContextConstraint(Scope scope, Dataset dataset) {
 		if (dataset == null) {
 			return ContextConstraint.UNRESTRICTED;
 		}
 		Set<IRI> graphs;
 		boolean emptyGraph;
-		if (sp.getScope() == Scope.DEFAULT_CONTEXTS) {
+		if (scope == Scope.DEFAULT_CONTEXTS) {
 			graphs = dataset.getDefaultGraphs();
 			emptyGraph = graphs.isEmpty() && !dataset.getNamedGraphs().isEmpty();
 		} else {

@@ -161,6 +161,36 @@ public class LmdbNativeGeneralPathTest {
 				"SELECT ?s ?o WHERE { ?s <" + EX + "r> ?m . ?s (<" + EX + "p>/<" + EX + "q>)+ ?o }");
 	}
 
+	/** FROM restricts the both-free zero-length identity enumeration to the dataset's default graphs. */
+	@Test
+	public void compoundSequenceStarBothFreeWithFromDataset() {
+		addGraphEdges();
+		assertSameAsGenericAndNative(
+				"SELECT ?s ?o FROM <" + EX + "g1> WHERE { ?s (<" + EX + "p>/<" + EX + "q>)* ?o }");
+	}
+
+	/** A constant graph scope outside the dataset's named graphs yields no identity pairs. */
+	@Test
+	public void compoundSequenceStarConstantGraphOutsideFromNamed() {
+		addGraphEdges();
+		assertSameAsGenericAndNative(
+				"SELECT ?s ?o FROM NAMED <" + EX + "g1> WHERE { GRAPH <" + EX + "g2> { ?s (<" + EX + "p>/<" + EX
+						+ "q>)* ?o } }");
+	}
+
+	private void addGraphEdges() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			conn.begin();
+			ValueFactory vf = conn.getValueFactory();
+			IRI g1 = vf.createIRI(EX, "g1");
+			IRI g2 = vf.createIRI(EX, "g2");
+			conn.add(vf.createIRI(EX, "a"), vf.createIRI(EX, "p"), vf.createIRI(EX, "b"), g1);
+			conn.add(vf.createIRI(EX, "b"), vf.createIRI(EX, "q"), vf.createIRI(EX, "c"), g1);
+			conn.add(vf.createIRI(EX, "c"), vf.createIRI(EX, "p"), vf.createIRI(EX, "d"), g2);
+			conn.commit();
+		}
+	}
+
 	/** Recorded decline: graph-variable scoping stays hosted, pinned differentially. */
 	@Test
 	public void graphVariableScopedPathStaysCorrect() {
