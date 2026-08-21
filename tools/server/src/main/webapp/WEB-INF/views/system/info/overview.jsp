@@ -17,18 +17,16 @@
     <h2><fmt:message key="system.overview.application" /></h2>
 	<table class="simple">
 		<tbody>
-			<tr><th><fmt:message key="system.overview.application.name" /></th><td>${appConfig.longName}</td></tr>
-			<tr><th><fmt:message key="system.overview.application.version" /></th><td>${appConfig.version}</td></tr>
-			<tr><th><fmt:message key="system.overview.application.datadir" /></th><td>${appConfig.dataDir}</td></tr>
+			<tr><th><fmt:message key="system.overview.application.name" /></th><td><c:out value="${appConfig.longName}" /></td></tr>
+			<tr><th><fmt:message key="system.overview.application.version" /></th><td><c:out value="${appConfig.version}" /></td></tr>
 		</tbody>
 	</table>
 	
 	<h2><fmt:message key="system.overview.runtime" /></h2>
 	<table class="simple">
 		<tbody>
-			<tr><th><fmt:message key="system.overview.runtime.os" /></th><td>${server.os}</td></tr>
-			<tr><th><fmt:message key="system.overview.runtime.java" /></th><td>${server.java}</td></tr>
-			<tr><th><fmt:message key="system.overview.runtime.user" /></th><td>${server.user}</td></tr>
+			<tr><th><fmt:message key="system.overview.runtime.os" /></th><td><c:out value="${server.os}" /></td></tr>
+			<tr><th><fmt:message key="system.overview.runtime.java" /></th><td><c:out value="${server.java}" /></td></tr>
 		</tbody>
 	</table>
 	
@@ -40,31 +38,6 @@
 			<tr><th><fmt:message key="system.overview.memory.maximum" /></th><td><fmt:message key="system.overview.memory.maximum.value"><fmt:param value="${memory.maximum}"/></fmt:message></td></tr>
 		</tbody>
 	</table>	
-
-	<h2><fmt:message key="system.info.javaprops" /></h2>
-	<table class="data">
-		<thead>
-			<tr><th><fmt:message key="system.info.javaprops.property" /></th><th><fmt:message key="system.info.javaprops.value" /></th></tr>
-		</thead>
-		<tbody>
-		<c:forEach var="item" items="${javaProps}">
-			<tr><td>${item.key}</td><td>${item.value}</td></tr>
-		</c:forEach>
-		</tbody>
-	</table>
-
-	<h2><fmt:message key="system.info.envvars" /></h2>
-	<table class="data">
-		<thead>
-			<tr><th><fmt:message key="system.info.envvars.variable" /></th><th><fmt:message key="system.info.envvars.value" /></th></tr>
-		</thead>
-		<tbody>
-		<c:forEach var="item" items="${envVars}">
-			<tr><td>${item.key}</td><td>${item.value}</td></tr>
-		</c:forEach>
-		</tbody>
-	</table>
-	
 
 </div>
 
