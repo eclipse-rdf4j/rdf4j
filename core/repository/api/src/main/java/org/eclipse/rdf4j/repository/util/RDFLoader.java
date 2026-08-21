@@ -248,18 +248,42 @@ public class RDFLoader {
 	 */
 	public void load(InputStream in, String baseURI, RDFFormat dataFormat, RDFHandler rdfHandler)
 			throws IOException, RDFParseException, RDFHandlerException {
+		RDFInputDecompressionBudget budget = new RDFInputDecompressionBudget(config);
+		try {
+			load(in, baseURI, dataFormat, rdfHandler, budget, 0, false);
+		} catch (RDFInputDecompressionBudget.LimitExceededException e) {
+			throw new RDFParseException(e.getMessage(), e);
+		} catch (RDFParseException e) {
+			RDFInputDecompressionBudget.LimitExceededException limit = findLimitExceeded(e);
+			if (limit != null) {
+				throw new RDFParseException(limit.getMessage(), limit);
+			}
+			throw e;
+		}
+	}
+
+	private void load(InputStream in, String baseURI, RDFFormat dataFormat, RDFHandler rdfHandler,
+			RDFInputDecompressionBudget budget, long depth, boolean expandedAccountingActive)
+			throws IOException, RDFParseException, RDFHandlerException {
 		if (!in.markSupported()) {
 			in = new BufferedInputStream(in, 1024);
 		}
 
 		if (ZipUtil.isZipStream(in)) {
-			loadZip(in, baseURI, dataFormat, rdfHandler);
+			long archiveDepth = depth + 1;
+			budget.enterCompressionLayer(archiveDepth);
+			loadZip(in, baseURI, dataFormat, rdfHandler, budget, archiveDepth);
 		} else {
-			InputStream decompressedInput = RioCompression.decompressIfDetected(in);
-			if (decompressedInput != in) {
-				load(decompressedInput, baseURI, dataFormat, rdfHandler);
+			InputStream compressedInput = budget.compressed(in);
+			InputStream decompressedInput = RioCompression.decompressIfDetected(compressedInput);
+			if (decompressedInput != compressedInput) {
+				long compressionDepth = depth + 1;
+				budget.enterCompressionLayer(compressionDepth);
+				load(budget.expanded(decompressedInput), baseURI, dataFormat, rdfHandler, budget, compressionDepth,
+						true);
 			} else {
-				loadInputStreamOrReader(in, baseURI, dataFormat, rdfHandler);
+				InputStream parserInput = expandedAccountingActive ? in : budget.expanded(compressedInput);
+				loadInputStreamOrReader(parserInput, baseURI, dataFormat, rdfHandler);
 			}
 		}
 	}
@@ -283,11 +307,14 @@ public class RDFLoader {
 		loadInputStreamOrReader(reader, baseURI, dataFormat, rdfHandler);
 	}
 
-	private void loadZip(InputStream in, String baseURI, RDFFormat dataFormat, RDFHandler rdfHandler)
+	private void loadZip(InputStream in, String baseURI, RDFFormat dataFormat, RDFHandler rdfHandler,
+			RDFInputDecompressionBudget budget, long depth)
 			throws IOException, RDFParseException, RDFHandlerException {
 
-		try (ZipInputStream zipIn = new ZipInputStream(in)) {
+		InputStream compressedInput = budget.compressed(in);
+		try (ZipInputStream zipIn = new ZipInputStream(compressedInput)) {
 			for (ZipEntry entry = zipIn.getNextEntry(); entry != null; entry = zipIn.getNextEntry()) {
+				budget.enterZipEntry();
 				if (entry.isDirectory()) {
 					continue;
 				}
@@ -296,8 +323,8 @@ public class RDFLoader {
 					RDFFormat format = Rio.getParserFormatForFileName(entry.getName()).orElse(dataFormat);
 
 					// Prevent parser (Xerces) from closing the input stream
-					UncloseableInputStream wrapper = new UncloseableInputStream(zipIn);
-					load(wrapper, baseURI, format, rdfHandler);
+					InputStream wrapper = new UncloseableInputStream(zipIn);
+					load(budget.expanded(wrapper), baseURI, format, rdfHandler, budget, depth, true);
 
 				} catch (RDFParseException e) {
 					String msg = e.getMessage() + " in " + entry.getName();
@@ -309,6 +336,16 @@ public class RDFLoader {
 				}
 			} // end for
 		}
+	}
+
+	private RDFInputDecompressionBudget.LimitExceededException findLimitExceeded(Throwable throwable) {
+		while (throwable != null) {
+			if (throwable instanceof RDFInputDecompressionBudget.LimitExceededException) {
+				return (RDFInputDecompressionBudget.LimitExceededException) throwable;
+			}
+			throwable = throwable.getCause();
+		}
+		return null;
 	}
 
 	/**

@@ -380,13 +380,14 @@ class AddServletCoverageTest {
 	}
 
 	@Test
-	void doPostDecompressesUploadedStreamFromFilenameBeforeParsing() throws Exception {
+	void doPostLeavesUploadedCompressionForRdfLoader() throws Exception {
 		AddServlet servlet = new AddServlet();
 		Repository repository = mock(Repository.class);
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		HttpServletResponse response = stubResponse();
 		String turtle = "<urn:s> <urn:p> <urn:o> .";
+		byte[] compressedTurtle = gzip(turtle);
 
 		servlet.setRepository(repository);
 		when(repository.getConnection()).thenReturn(connection);
@@ -395,11 +396,11 @@ class AddServletCoverageTest {
 		when(request.getParameter(ISOLATION_PARAM)).thenReturn(null);
 		when(request.isParameterPresent("context")).thenReturn(false);
 		when(request.isParameterPresent("url")).thenReturn(false);
-		when(request.getContentParameter()).thenReturn(new ByteArrayInputStream(gzip(turtle)));
+		when(request.getContentParameter()).thenReturn(new ByteArrayInputStream(compressedTurtle));
 		when(request.getContentFileName()).thenReturn("myData.ttl.gzip");
 		doAnswer(invocation -> {
 			InputStream inputStream = invocation.getArgument(0);
-			assertThat(new String(inputStream.readAllBytes(), StandardCharsets.UTF_8)).isEqualTo(turtle);
+			assertThat(inputStream.readAllBytes()).isEqualTo(compressedTurtle);
 			return null;
 		}).when(connection)
 				.add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),

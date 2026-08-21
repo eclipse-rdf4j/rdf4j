@@ -31,6 +31,7 @@ import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.util.Map;
 import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
+import org.eclipse.rdf4j.rio.RDFParseException;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -202,6 +204,30 @@ public class RDFLoaderTest {
 	}
 
 	@Test
+	public void sharesExpandedByteBudgetAcrossZipEntries() throws Exception {
+		String property = "org.eclipse.rdf4j.rio.loader.max_expanded_bytes";
+		String previous = System.getProperty(property);
+		System.setProperty(property, "80");
+		try {
+			byte[] archive = zip(Map.of(
+					"first.ttl", "<urn:first> <urn:p> \"" + "a".repeat(30) + "\" .",
+					"second.ttl", "<urn:second> <urn:p> \"" + "b".repeat(30) + "\" ."));
+			RDFLoader loader = new RDFLoader(new ParserConfig(), getValueFactory());
+
+			assertThatThrownBy(() -> loader.load(new ByteArrayInputStream(archive), "urn:base", RDFFormat.TURTLE,
+					mock(RDFHandler.class)))
+							.isInstanceOf(RDFParseException.class)
+							.hasMessageStartingWith("RDF input decompression limit exceeded: expanded bytes");
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
+	}
+
+	@Test
 	public void testAbortOverMaxRedirects(MockServerClient client) throws Exception {
 		/* nullable */
 		String oldMaxRedirects = System.getProperty("http.maxRedirects");
@@ -277,6 +303,18 @@ public class RDFLoaderTest {
 			outputStream.putNextEntry(new ZipEntry(entryName));
 			outputStream.write(body.getBytes(StandardCharsets.UTF_8));
 			outputStream.closeEntry();
+		}
+		return buffer.toByteArray();
+	}
+
+	private static byte[] zip(Map<String, String> entries) throws Exception {
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		try (ZipOutputStream outputStream = new ZipOutputStream(buffer)) {
+			for (Map.Entry<String, String> entry : entries.entrySet()) {
+				outputStream.putNextEntry(new ZipEntry(entry.getKey()));
+				outputStream.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
+				outputStream.closeEntry();
+			}
 		}
 		return buffer.toByteArray();
 	}
