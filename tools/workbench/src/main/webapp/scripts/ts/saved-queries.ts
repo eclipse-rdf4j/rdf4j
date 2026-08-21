@@ -11,20 +11,12 @@ module workbench {
         //need to declar YASQE library for typescript compilation
         declare var YASQE: any;
         
-        export function deleteQuery(savedBy: string, name: string, urn: string) {
-            var encoded = workbench.getCookie("server-user-password");
-            var decoded = encoded && window.atob ? window.atob(encoded) : encoded;
-            var currentUser = decoded && decoded.substring(0, decoded.indexOf(':'));
-            if ((!savedBy || currentUser == savedBy)) {
-                if (confirm("'"
-                    + name
-                    + "' will no longer be accessible, even using your browser's history. "
-                    + "Do you really wish to delete it?")) {
-                    (<HTMLFormElement>document.forms.namedItem(urn)).submit();
-                }
-            } else {
-                alert("'" + name + "' was saved by user '" + savedBy + "'.\nUser '"
-                    + currentUser + "' is not allowed do delete it.");
+        export function deleteQuery(name: string, urn: string) {
+            if (confirm("'"
+                + name
+                + "' will no longer be accessible, even using your browser's history. "
+                + "Do you really wish to delete it?")) {
+                (<HTMLFormElement>document.forms.namedItem(urn)).submit();
             }
         }
 
@@ -75,8 +67,21 @@ workbench
         // whitespace correctly
         var queries = document.getElementsByTagName('pre');
         for (var i = 0; i < queries.length; i++) {
-            queries[i].innerHTML = queries[i].innerHTML.trim();
+            queries[i].textContent = queries[i].textContent.trim();
         }
+
+		$('.saved-query-delete').each(function() {
+			var button = $(this);
+			button.on('click', function() {
+				workbench.savedQueries.deleteQuery(button.attr('data-query-name'), button.attr('data-query-urn'));
+			});
+		});
+		$('.saved-query-toggle').each(function() {
+			var button = $(this);
+			button.on('click', function() {
+				workbench.savedQueries.toggle(button.attr('data-query-urn'));
+			});
+		});
 
         $('[name="edit-query"]').find('[name="query"]').each(function() {
             $(this).attr('value', $(this).attr('value').trim());

@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
@@ -79,10 +80,7 @@ public class SavedQueriesServlet extends TransformationServlet {
 		}
 		final boolean accessible = storage.checkAccess(this.repository);
 		if (accessible) {
-			String userName = wreq.getParameter(SERVER_USER);
-			if (null == userName) {
-				userName = "";
-			}
+			String userName = authenticatedUser(wreq);
 			final IRI queryURI = SimpleValueFactory.getInstance().createIRI(urn);
 			if (storage.canChange(queryURI, userName)) {
 				storage.deleteQuery(queryURI, userName);
@@ -96,15 +94,17 @@ public class SavedQueriesServlet extends TransformationServlet {
 	private void getSavedQueries(final WorkbenchRequest req, final TupleResultBuilder builder)
 			throws RDF4JException, BadRequestException {
 		final String repositoryReference = getRepositoryReference();
-		String user = req.getParameter(SERVER_USER);
-		if (null == user) {
-			user = "";
-		}
+		String user = authenticatedUser(req);
 		if (!storage.checkAccess(this.repository)) {
 			throw new BadRequestException(
 					"User '" + user + "' not authorized to access repository '" + repositoryReference + "'");
 		}
 		storage.selectSavedQueries(repositoryReference, user, builder);
+	}
+
+	private String authenticatedUser(WorkbenchRequest request) {
+		Object username = request.getAttribute(WorkbenchServlet.AUTHENTICATED_USERNAME_ATTRIBUTE);
+		return username instanceof String value ? value : "";
 	}
 
 	private String getRepositoryReference() {

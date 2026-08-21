@@ -75,19 +75,10 @@ var workbench;
     workbench.addParam = addParam;
 })(workbench || (workbench = {}));
 /**
- * Code to run when the document loads: eliminate the 'noscript' warning
- * message, and display an unauthenticated user properly.
+ * Code to run when the document loads: eliminate the 'noscript' warning.
  */
 workbench
     .addLoad(function () {
     document.getElementById('noscript-message').style.display = 'none';
-    var encoded = workbench.getCookie("server-user-password");
-    var decoded = encoded && window.atob ? window.atob(encoded) : encoded;
-    var user = decoded && decoded.substring(0, decoded.indexOf(':'));
-    if (!user || user == '""') {
-        user = '<span class="disabled">None</span>';
-    }
-    var selectedUser = document.getElementById('selected-user');
-    selectedUser.innerHTML = user;
 });
 //# sourceMappingURL=template.js.map

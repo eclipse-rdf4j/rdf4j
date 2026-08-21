@@ -7,21 +7,12 @@ var workbench;
 (function (workbench) {
     var savedQueries;
     (function (savedQueries) {
-        function deleteQuery(savedBy, name, urn) {
-            var encoded = workbench.getCookie("server-user-password");
-            var decoded = encoded && window.atob ? window.atob(encoded) : encoded;
-            var currentUser = decoded && decoded.substring(0, decoded.indexOf(':'));
-            if ((!savedBy || currentUser == savedBy)) {
-                if (confirm("'"
-                    + name
-                    + "' will no longer be accessible, even using your browser's history. "
-                    + "Do you really wish to delete it?")) {
-                    document.forms.namedItem(urn).submit();
-                }
-            }
-            else {
-                alert("'" + name + "' was saved by user '" + savedBy + "'.\nUser '"
-                    + currentUser + "' is not allowed do delete it.");
+        function deleteQuery(name, urn) {
+            if (confirm("'"
+                + name
+                + "' will no longer be accessible, even using your browser's history. "
+                + "Do you really wish to delete it?")) {
+                document.forms.namedItem(urn).submit();
             }
         }
         savedQueries.deleteQuery = deleteQuery;
@@ -69,8 +60,20 @@ workbench
     // whitespace correctly
     var queries = document.getElementsByTagName('pre');
     for (var i = 0; i < queries.length; i++) {
-        queries[i].innerHTML = queries[i].innerHTML.trim();
+        queries[i].textContent = queries[i].textContent.trim();
     }
+    $('.saved-query-delete').each(function () {
+        var button = $(this);
+        button.on('click', function () {
+            workbench.savedQueries.deleteQuery(button.attr('data-query-name'), button.attr('data-query-urn'));
+        });
+    });
+    $('.saved-query-toggle').each(function () {
+        var button = $(this);
+        button.on('click', function () {
+            workbench.savedQueries.toggle(button.attr('data-query-urn'));
+        });
+    });
     $('[name="edit-query"]').find('[name="query"]').each(function () {
         $(this).attr('value', $(this).attr('value').trim());
     });

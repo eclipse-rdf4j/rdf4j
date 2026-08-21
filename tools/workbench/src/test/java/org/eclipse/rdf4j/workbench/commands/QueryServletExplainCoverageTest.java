@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.http.HTTPQueryEvaluationException;
+import org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
@@ -148,7 +149,7 @@ class QueryServletExplainCoverageTest {
 		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn("saved-query");
 		when(request.getParameter("owner")).thenReturn("owner");
-		when(request.getParameter("server-user")).thenReturn("alice");
+		when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_USERNAME_ATTRIBUTE)).thenReturn("alice");
 		servlet.substituteQueryStorage(storage);
 
 		servlet.service(request, response, "/transform");

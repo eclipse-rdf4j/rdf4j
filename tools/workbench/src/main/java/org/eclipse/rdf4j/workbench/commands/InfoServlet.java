@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.rio.RDFParserRegistry;
 import org.eclipse.rdf4j.rio.RDFWriterFactory;
 import org.eclipse.rdf4j.rio.RDFWriterRegistry;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
+import org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 
@@ -54,7 +55,7 @@ public class InfoServlet extends TransformationServlet {
 		builder.start("id", "description", "location", "server", "readable", "writeable", "default-limit",
 				"default-queryLn", "default-infer", "default-query-timeout", "default-Accept", "default-Content-Type",
 				"upload-format", "query-format", "graph-download-format", "tuple-download-format",
-				"boolean-download-format");
+				"boolean-download-format", "authenticated-user");
 		String desc = info.getDescription();
 		URL loc = info.getLocation();
 		URL server = getServer();
@@ -65,6 +66,10 @@ public class InfoServlet extends TransformationServlet {
 		builder.namedResult("default-query-timeout", getParameterOrEmpty(req, "query-timeout"));
 		builder.namedResult("default-Accept", getParameterOrEmpty(req, "Accept"));
 		builder.namedResult("default-Content-Type", getParameterOrEmpty(req, "Content-Type"));
+		Object authenticatedUser = req.getAttribute(WorkbenchServlet.AUTHENTICATED_USERNAME_ATTRIBUTE);
+		if (authenticatedUser instanceof String username && !username.isEmpty()) {
+			builder.namedResult("authenticated-user", username);
+		}
 		for (RDFParserFactory parser : RDFParserRegistry.getInstance().getAll()) {
 			String mimeType = parser.getRDFFormat().getDefaultMIMEType();
 			String name = parser.getRDFFormat().getName();
