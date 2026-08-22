@@ -64,6 +64,17 @@ public interface NativeLmdbQuerySource {
 	Object idSpace();
 
 	/**
+	 * Whether every RDF term resolves to at most one id in this source's id space. Stores written without canonical
+	 * language tags may hold two distinct ids for one language-tagged literal ({@code "x"@en} vs {@code "x"@EN}, equal
+	 * under RDF 1.1), and native id-keyed comparisons would then diverge from the generic engine's value-based results
+	 * — such sources must not be claimed natively.
+	 */
+	default boolean hasCanonicalIds() {
+		Object idSpace = idSpace();
+		return !(idSpace instanceof ValueStore) || ((ValueStore) idSpace).usesCanonicalLanguageTags();
+	}
+
+	/**
 	 * Identity under which learned cost-model corrections are accumulated. Unlike {@link #idSpace()} — which must
 	 * distinguish evaluation-scoped id spaces so ephemeral ids never cross evaluations raw — cost corrections describe
 	 * the persistent store and should be shared by every plan and evaluation over it, so wrappers delegate this to

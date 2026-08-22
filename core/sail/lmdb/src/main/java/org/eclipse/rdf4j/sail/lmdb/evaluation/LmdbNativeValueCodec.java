@@ -152,7 +152,8 @@ final class LmdbNativeValueCodec {
 			String language = literal.getLanguage().orElse(null);
 			CoreDatatype coreDatatype = literal.getCoreDatatype();
 			String datatype = literal.getDatatype().stringValue();
-			return DecodedValue.literal(literal.getLabel(), language, datatype, coreDatatype);
+			return DecodedValue.literal(literal.getLabel(), language, datatype, coreDatatype,
+					literal.getBaseDirection());
 		}
 		if (value instanceof IRI) {
 			return DecodedValue.iri(value.stringValue());
@@ -328,9 +329,15 @@ final class LmdbNativeValueCodec {
 		String language = data.language;
 		String label = data.text;
 		if (language != null) {
-			CoreDatatype datatype = (data.directionAndLangLength >> 6) == 0 ? CoreDatatype.RDF.LANGSTRING
+			int direction = data.directionAndLangLength >> 6;
+			CoreDatatype datatype = direction == 0 ? CoreDatatype.RDF.LANGSTRING
 					: CoreDatatype.RDF.DIRLANGSTRING;
-			return DecodedValue.literal(label, language, datatype.getIri().stringValue(), datatype);
+			Literal.BaseDirection baseDirection = switch (direction) {
+			case 1 -> Literal.BaseDirection.LTR;
+			case 2 -> Literal.BaseDirection.RTL;
+			default -> Literal.BaseDirection.NONE;
+			};
+			return DecodedValue.literal(label, language, datatype.getIri().stringValue(), datatype, baseDirection);
 		}
 		String datatype = data.referenceId == 0L ? CoreDatatype.XSD.STRING.getIri().stringValue()
 				: datatypeIri(data.referenceId);
@@ -515,7 +522,7 @@ final class LmdbNativeValueCodec {
 
 	static final class DecodedValue {
 		static final DecodedValue ERROR = new DecodedValue(Kind.ERROR, null, null, null, CoreDatatype.NONE, null,
-				null);
+				null, Literal.BaseDirection.NONE);
 
 		private final Kind kind;
 		private final String label;
@@ -524,9 +531,10 @@ final class LmdbNativeValueCodec {
 		private final CoreDatatype coreDatatype;
 		private final BigDecimal decimalValue;
 		private final Double floatingValue;
+		private final Literal.BaseDirection baseDirection;
 
 		private DecodedValue(Kind kind, String label, String language, String datatypeIri, CoreDatatype coreDatatype,
-				BigDecimal decimalValue, Double floatingValue) {
+				BigDecimal decimalValue, Double floatingValue, Literal.BaseDirection baseDirection) {
 			this.kind = kind;
 			this.label = label;
 			this.language = language;
@@ -534,28 +542,39 @@ final class LmdbNativeValueCodec {
 			this.coreDatatype = coreDatatype == null ? CoreDatatype.NONE : coreDatatype;
 			this.decimalValue = decimalValue;
 			this.floatingValue = floatingValue;
+			this.baseDirection = baseDirection == null ? Literal.BaseDirection.NONE : baseDirection;
 		}
 
 		static DecodedValue literal(String label, String language, String datatypeIri, CoreDatatype datatype) {
+			return literal(label, language, datatypeIri, datatype, Literal.BaseDirection.NONE);
+		}
+
+		static DecodedValue literal(String label, String language, String datatypeIri, CoreDatatype datatype,
+				Literal.BaseDirection baseDirection) {
 			BigDecimal decimal = decimalValue(label, datatype);
 			Double floating = floatingValue(label, datatype);
-			return new DecodedValue(Kind.LITERAL, label, language, datatypeIri, datatype, decimal, floating);
+			return new DecodedValue(Kind.LITERAL, label, language, datatypeIri, datatype, decimal, floating,
+					baseDirection);
 		}
 
 		static DecodedValue decimal(String label, BigDecimal value, CoreDatatype datatype) {
-			return new DecodedValue(Kind.LITERAL, label, null, datatype.getIri().stringValue(), datatype, value, null);
+			return new DecodedValue(Kind.LITERAL, label, null, datatype.getIri().stringValue(), datatype, value, null,
+					Literal.BaseDirection.NONE);
 		}
 
 		static DecodedValue floating(String label, double value, CoreDatatype datatype) {
-			return new DecodedValue(Kind.LITERAL, label, null, datatype.getIri().stringValue(), datatype, null, value);
+			return new DecodedValue(Kind.LITERAL, label, null, datatype.getIri().stringValue(), datatype, null, value,
+					Literal.BaseDirection.NONE);
 		}
 
 		static DecodedValue iri(String iri) {
-			return new DecodedValue(Kind.IRI, iri, null, null, CoreDatatype.NONE, null, null);
+			return new DecodedValue(Kind.IRI, iri, null, null, CoreDatatype.NONE, null, null,
+					Literal.BaseDirection.NONE);
 		}
 
 		static DecodedValue bnode(String id) {
-			return new DecodedValue(Kind.BNODE, id, null, null, CoreDatatype.NONE, null, null);
+			return new DecodedValue(Kind.BNODE, id, null, null, CoreDatatype.NONE, null, null,
+					Literal.BaseDirection.NONE);
 		}
 
 		boolean error() {
@@ -580,6 +599,10 @@ final class LmdbNativeValueCodec {
 
 		Optional<String> language() {
 			return Optional.ofNullable(language);
+		}
+
+		Literal.BaseDirection baseDirection() {
+			return baseDirection;
 		}
 
 		String datatypeIri() {

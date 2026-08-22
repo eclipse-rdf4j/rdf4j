@@ -305,29 +305,61 @@ final class LmdbNativeExpressionOps {
 		if (left.error() || right.error()) {
 			return LmdbNativeTruth.ERROR;
 		}
+		boolean equalityOp = op == Compare.CompareOp.EQ || op == Compare.CompareOp.NE;
 		if (left.numeric() && right.numeric() && (left.floatingValue() != null || right.floatingValue() != null)
-				&& (op == Compare.CompareOp.EQ || op == Compare.CompareOp.NE)) {
+				&& equalityOp) {
 			double l = left.floatingValue() != null ? left.floatingValue() : left.decimalValue().doubleValue();
 			double r = right.floatingValue() != null ? right.floatingValue() : right.decimalValue().doubleValue();
 			boolean equal = l == r;
 			return (op == Compare.CompareOp.EQ ? equal : !equal) ? LmdbNativeTruth.TRUE : LmdbNativeTruth.FALSE;
 		}
 		Integer cmp = nativeCompare(left, right);
-		if (cmp == null) {
-			if (op == Compare.CompareOp.EQ || op == Compare.CompareOp.NE) {
-				return rdfTermCompare(left, right, op, strict);
-			}
-			return LmdbNativeTruth.ERROR;
+		if (cmp != null && (equalityOp || orderableNatively(left, right))) {
+			boolean result = switch (op) {
+			case EQ -> cmp == 0;
+			case NE -> cmp != 0;
+			case LT -> cmp < 0;
+			case LE -> cmp <= 0;
+			case GT -> cmp > 0;
+			case GE -> cmp >= 0;
+			};
+			return result ? LmdbNativeTruth.TRUE : LmdbNativeTruth.FALSE;
 		}
-		boolean result = switch (op) {
-		case EQ -> cmp == 0;
-		case NE -> cmp != 0;
-		case LT -> cmp < 0;
-		case LE -> cmp <= 0;
-		case GT -> cmp > 0;
-		case GE -> cmp >= 0;
-		};
-		return result ? LmdbNativeTruth.TRUE : LmdbNativeTruth.FALSE;
+		if (equalityOp) {
+			return rdfTermCompare(left, right, op, strict);
+		}
+		if (left.literal() && right.literal()) {
+			// order comparisons the fast native comparison cannot decide (dates, booleans, durations, mixed
+			// datatypes, language-tagged pairs) delegate to the generic literal rules so both engines agree exactly
+			try {
+				boolean result = switch (op) {
+				case LT -> QueryEvaluationUtil.compareLiteralsLT(asLiteral(left), asLiteral(right), strict);
+				case LE -> QueryEvaluationUtil.compareLiteralsLE(asLiteral(left), asLiteral(right), strict);
+				case GT -> QueryEvaluationUtil.compareLiteralsGT(asLiteral(left), asLiteral(right), strict);
+				case GE -> QueryEvaluationUtil.compareLiteralsGE(asLiteral(left), asLiteral(right), strict);
+				default -> throw new IllegalStateException("equality already handled: " + op);
+				};
+				return result ? LmdbNativeTruth.TRUE : LmdbNativeTruth.FALSE;
+			} catch (ValueExprEvaluationException e) {
+				return LmdbNativeTruth.ERROR;
+			}
+		}
+		// SPARQL only orders literal pairs; <, <=, > and >= over IRIs or blank nodes are type errors
+		return LmdbNativeTruth.ERROR;
+	}
+
+	/**
+	 * Whether the raw {@link #nativeCompare} result may decide an order comparison ({@code <}, {@code <=}, {@code >},
+	 * {@code >=}). Numeric pairs and plain-string pairs order identically in both engines; IRI pairs and
+	 * language-tagged pairs must not be ordered natively — the generic engine raises a type error for them.
+	 */
+	private static boolean orderableNatively(LmdbNativeValueCodec.DecodedValue left,
+			LmdbNativeValueCodec.DecodedValue right) {
+		if (left.numeric() && right.numeric()) {
+			return true;
+		}
+		return left.stringLiteral() && right.stringLiteral()
+				&& left.language().isEmpty() && right.language().isEmpty();
 	}
 
 	/**
@@ -357,12 +389,41 @@ final class LmdbNativeExpressionOps {
 
 	private static Literal asLiteral(LmdbNativeValueCodec.DecodedValue value) {
 		if (value.language().isPresent()) {
+			if (value.baseDirection() != Literal.BaseDirection.NONE) {
+				return TERM_FACTORY.createLiteral(value.label(), value.language().get(), value.baseDirection());
+			}
 			return TERM_FACTORY.createLiteral(value.label(), value.language().get());
 		}
 		if (value.datatypeIri() != null) {
 			return TERM_FACTORY.createLiteral(value.label(), TERM_FACTORY.createIRI(value.datatypeIri()));
 		}
 		return TERM_FACTORY.createLiteral(value.label());
+	}
+
+	/**
+	 * String-relation argument compatibility (STRSTARTS/STRENDS/CONTAINS/STRBEFORE/STRAFTER), mirroring
+	 * {@code QueryEvaluationUtility.compatibleArguments}: both simple/xsd:string; both plain language literals with the
+	 * same tag; both directional language literals with the same tag and base direction; or a language literal with a
+	 * simple second argument.
+	 */
+	static boolean compatibleStringLiteralArguments(LmdbNativeValueCodec.DecodedValue arg1,
+			LmdbNativeValueCodec.DecodedValue arg2) {
+		boolean secondSimple = arg2.language().isEmpty() && arg2.coreDatatype() == CoreDatatype.XSD.STRING;
+		if (arg1.language().isEmpty()) {
+			return arg1.coreDatatype() == CoreDatatype.XSD.STRING && secondSimple;
+		}
+		if (secondSimple) {
+			return true;
+		}
+		if (arg2.language().isEmpty() || !arg1.language().get().equalsIgnoreCase(arg2.language().get())) {
+			return false;
+		}
+		boolean firstDirected = arg1.coreDatatype() == CoreDatatype.RDF.DIRLANGSTRING;
+		boolean secondDirected = arg2.coreDatatype() == CoreDatatype.RDF.DIRLANGSTRING;
+		if (firstDirected != secondDirected) {
+			return false;
+		}
+		return !firstDirected || arg1.baseDirection() == arg2.baseDirection();
 	}
 
 	/**
@@ -452,7 +513,10 @@ final class LmdbNativeExpressionOps {
 	private static boolean compatibleStringLiterals(LmdbNativeValueCodec.DecodedValue left,
 			LmdbNativeValueCodec.DecodedValue right) {
 		if (left.language().isPresent() || right.language().isPresent()) {
-			return left.language().map(l -> right.language().map(l::equalsIgnoreCase).orElse(false)).orElse(false);
+			// directional language literals are only comparable to their own kind with an equal base direction
+			return left.language().map(l -> right.language().map(l::equalsIgnoreCase).orElse(false)).orElse(false)
+					&& left.coreDatatype() == right.coreDatatype()
+					&& left.baseDirection() == right.baseDirection();
 		}
 		return left.coreDatatype() == right.coreDatatype();
 	}

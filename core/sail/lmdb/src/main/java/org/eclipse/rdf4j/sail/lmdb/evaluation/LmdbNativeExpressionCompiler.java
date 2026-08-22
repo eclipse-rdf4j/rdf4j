@@ -283,8 +283,14 @@ public final class LmdbNativeExpressionCompiler {
 		return truth(left.requiredMask | right.requiredMask, row -> {
 			long l = left.evaluator.eval(row);
 			long r = right.evaluator.eval(row);
-			return (!checkLeft || l != NativeLmdbQuerySource.UNKNOWN_ID)
-					&& (!checkRight || r != NativeLmdbQuerySource.UNKNOWN_ID) && l == r ? TRUE : FALSE;
+			// sameTerm over an unbound argument is a SPARQL type error, so NOT must not flip it to TRUE
+			if (checkLeft && (l == NativeLmdbQuerySource.UNKNOWN_ID || l == 0L)) {
+				return ERROR;
+			}
+			if (checkRight && (r == NativeLmdbQuerySource.UNKNOWN_ID || r == 0L)) {
+				return ERROR;
+			}
+			return l == r ? TRUE : FALSE;
 		});
 	}
 
@@ -348,24 +354,27 @@ public final class LmdbNativeExpressionCompiler {
 			if (args.size() != 2) {
 				return null;
 			}
-			LmdbNativeCompiledString left = compileString(args.get(0));
-			LmdbNativeCompiledString right = compileString(args.get(1));
+			LmdbNativeCompiledValue left = compileValue(args.get(0));
+			LmdbNativeCompiledValue right = compileValue(args.get(1));
 			if (left == null || right == null) {
 				return null;
 			}
 			return truth(left.requiredMask | right.requiredMask, row -> {
-				String l = left.evaluator.eval(row);
-				String r = right.evaluator.eval(row);
-				if (l == null || r == null) {
+				LmdbNativeValueCodec.DecodedValue l = left.evaluator.eval(row);
+				LmdbNativeValueCodec.DecodedValue r = right.evaluator.eval(row);
+				// the generic functions raise a type error for non-string operands and for incompatible
+				// language tags/base directions (e.g. STRSTARTS("abc"@en, "a"@fr))
+				if (l.error() || r.error() || !l.stringLiteral() || !r.stringLiteral()
+						|| !LmdbNativeExpressionOps.compatibleStringLiteralArguments(l, r)) {
 					return ERROR;
 				}
 				boolean result;
 				if (FN.CONTAINS.stringValue().equals(uri)) {
-					result = l.contains(r);
+					result = l.label().contains(r.label());
 				} else if (FN.STARTS_WITH.stringValue().equals(uri)) {
-					result = l.startsWith(r);
+					result = l.label().startsWith(r.label());
 				} else {
-					result = l.endsWith(r);
+					result = l.label().endsWith(r.label());
 				}
 				return result ? TRUE : FALSE;
 			});
@@ -380,9 +389,14 @@ public final class LmdbNativeExpressionCompiler {
 		if (text == null || patternText == null || flagsText == null) {
 			return null;
 		}
+		Integer flags = regexFlags(flagsText);
+		if (flags == null) {
+			// the generic engine raises a type error for unknown flags — never silently ignores them
+			return truth(text.requiredMask, row -> ERROR);
+		}
 		Pattern pattern;
 		try {
-			pattern = Pattern.compile(patternText, regexFlags(flagsText));
+			pattern = Pattern.compile(patternText, flags);
 		} catch (PatternSyntaxException e) {
 			return truth(text.requiredMask, row -> ERROR);
 		}
@@ -392,16 +406,35 @@ public final class LmdbNativeExpressionCompiler {
 		});
 	}
 
-	private int regexFlags(String flags) {
+	/** Mirrors the generic flag parsing exactly; {@code null} marks an unknown flag (a SPARQL type error). */
+	private Integer regexFlags(String flags) {
 		int patternFlags = 0;
 		for (int i = 0; i < flags.length(); i++) {
-			patternFlags |= switch (flags.charAt(i)) {
-			case 'i' -> Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
-			case 'm' -> Pattern.MULTILINE;
-			case 's' -> Pattern.DOTALL;
-			case 'x' -> Pattern.COMMENTS;
-			default -> 0;
-			};
+			switch (flags.charAt(i)) {
+			case 'i':
+				patternFlags |= Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
+				break;
+			case 'm':
+				patternFlags |= Pattern.MULTILINE;
+				break;
+			case 's':
+				patternFlags |= Pattern.DOTALL;
+				break;
+			case 'x':
+				patternFlags |= Pattern.COMMENTS;
+				break;
+			case 'd':
+				patternFlags |= Pattern.UNIX_LINES;
+				break;
+			case 'u':
+				patternFlags |= Pattern.UNICODE_CASE;
+				break;
+			case 'q':
+				patternFlags |= Pattern.LITERAL;
+				break;
+			default:
+				return null;
+			}
 		}
 		return patternFlags;
 	}
@@ -418,8 +451,9 @@ public final class LmdbNativeExpressionCompiler {
 		boolean checkBound = !assured(slot);
 		return truth(1L << slot, row -> {
 			long id = row.id(slot);
+			// a type test over an unbound argument is a SPARQL type error, so NOT must not flip it to TRUE
 			if ((checkBound && id == NativeLmdbQuerySource.UNKNOWN_ID) || id == 0L) {
-				return FALSE;
+				return ERROR;
 			}
 			int type = ValueIds.getIdType(id);
 			boolean result;

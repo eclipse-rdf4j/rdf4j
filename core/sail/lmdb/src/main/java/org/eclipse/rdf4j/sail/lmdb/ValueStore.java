@@ -3805,6 +3805,15 @@ public class ValueStore extends AbstractValueFactory {
 		return ValueStoreRecordCodec.literalData(label, lang, baseDirection, datatypeID, canonicalLanguageTags);
 	}
 
+	/**
+	 * Whether newly written language tags are canonicalized (lowercased), making value-to-id resolution unique per RDF
+	 * term. Stores written before the {@code canonical-language-tags} store property existed answer {@code false} and
+	 * may hold distinct ids for one language-tagged literal.
+	 */
+	public boolean usesCanonicalLanguageTags() {
+		return canonicalLanguageTags;
+	}
+
 	private Optional<String> canonicalLanguage(Optional<String> language) {
 		if (!canonicalLanguageTags || language.isEmpty()) {
 			return language;

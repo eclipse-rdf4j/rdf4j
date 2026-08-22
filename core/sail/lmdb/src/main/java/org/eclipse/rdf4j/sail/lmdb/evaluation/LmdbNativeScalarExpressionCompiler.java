@@ -14,7 +14,6 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
-import java.util.Locale;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -107,10 +106,24 @@ final class LmdbNativeScalarExpressionCompiler {
 						: value(numeric.requiredMask, row -> numeric.evaluator.eval(row).asValue());
 			}
 			if (FN.LOWER_CASE.stringValue().equals(uri) || FN.UPPER_CASE.stringValue().equals(uri)) {
-				LmdbNativeCompiledString string = compileString(expr);
-				return string == null ? null : value(string.requiredMask, row -> {
-					String result = string.evaluator.eval(row);
-					return stringLiteral(result);
+				List<ValueExpr> args = call.getArgs();
+				if (args.size() != 1) {
+					return null;
+				}
+				LmdbNativeCompiledValue arg = compileValue(args.get(0));
+				if (arg == null) {
+					return null;
+				}
+				boolean lower = FN.LOWER_CASE.stringValue().equals(uri);
+				return value(arg.requiredMask, row -> {
+					LmdbNativeValueCodec.DecodedValue decoded = arg.evaluator.eval(row);
+					if (decoded.error() || !decoded.stringLiteral()) {
+						return LmdbNativeValueCodec.DecodedValue.ERROR;
+					}
+					// the generic LCASE/UCASE keep the input's kind: language tag and base direction survive
+					String label = lower ? decoded.label().toLowerCase() : decoded.label().toUpperCase();
+					return LmdbNativeValueCodec.DecodedValue.literal(label, decoded.language().orElse(null),
+							decoded.datatypeIri(), decoded.coreDatatype(), decoded.baseDirection());
 				});
 			}
 		}
@@ -160,13 +173,14 @@ final class LmdbNativeScalarExpressionCompiler {
 			if (FN.LOWER_CASE.stringValue().equals(uri)) {
 				return string(arg.requiredMask, row -> {
 					String value = arg.evaluator.eval(row);
-					return value == null ? null : value.toLowerCase(Locale.ROOT);
+					// default-locale casing mirrors the generic LCASE function exactly
+					return value == null ? null : value.toLowerCase();
 				});
 			}
 			if (FN.UPPER_CASE.stringValue().equals(uri)) {
 				return string(arg.requiredMask, row -> {
 					String value = arg.evaluator.eval(row);
-					return value == null ? null : value.toUpperCase(Locale.ROOT);
+					return value == null ? null : value.toUpperCase();
 				});
 			}
 		}
