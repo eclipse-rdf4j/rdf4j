@@ -39,7 +39,8 @@ final class EncounterOrderFallback extends RuntimeException {
 	enum Reason {
 		FLOATING_SUM_OR_AVG,
 		DISTINCT_TERM_EXTREMA_TIE,
-		GROUP_CONCAT_ORDER
+		GROUP_CONCAT_ORDER,
+		CUSTOM_AGGREGATE_ORDER
 	}
 
 	final Reason reason;
@@ -60,6 +61,11 @@ final class EncounterOrderFallback extends RuntimeException {
 	/** GROUP_CONCAT's declared order policy is input encounter order: order-changing strategies must replay. */
 	static EncounterOrderFallback groupConcatOrder() {
 		return new EncounterOrderFallback(Reason.GROUP_CONCAT_ORDER);
+	}
+
+	/** A third-party custom aggregate may be order-sensitive: order-changing strategies must replay. */
+	static EncounterOrderFallback customAggregateOrder() {
+		return new EncounterOrderFallback(Reason.CUSTOM_AGGREGATE_ORDER);
 	}
 
 	static EncounterOrderFallback find(Throwable problem) {
@@ -128,7 +134,53 @@ enum AggKind {
 	 * policy — order-changing strategies raise {@link EncounterOrderFallback}); unbound inputs are ignored; empty input
 	 * concatenates to the empty string literal, matching the generic collector. Serial-path only.
 	 */
-	GROUP_CONCAT
+	GROUP_CONCAT,
+	/**
+	 * Custom aggregate (completion plan M5): a third-party {@code AggregateFunction}/{@code AggregateNAryFunction}
+	 * resolved from the custom-aggregate registries and driven exactly as the generic {@code GroupIterator} drives it —
+	 * per-row over a {@link RowBindingSetView}, with a fresh collector and DISTINCT predicate per group. Serial-path
+	 * only: the parallel, factorized, packed and kernel tiers decline, degrading to the serial native group step.
+	 */
+	CUSTOM
+}
+
+/**
+ * Compile-time description of one custom aggregate: the pinned third-party function (built once per compiled plan,
+ * stateless between rows), the per-group collector and DISTINCT-predicate suppliers, and whether it is the n-ary
+ * flavor. Argument evaluation happens inside the function through the generic precompiled steps it was built with,
+ * evaluated against the row's {@link RowBindingSetView} — the exact evaluation path the generic engine uses.
+ */
+@Experimental
+final class NativeCustomAggregate {
+	final org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor<?, ?> function;
+	final java.util.function.Supplier<org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector> collectorSupplier;
+	final boolean nAry;
+	final boolean distinct;
+
+	NativeCustomAggregate(org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor<?, ?> function,
+			java.util.function.Supplier<org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector> collectorSupplier,
+			boolean nAry, boolean distinct) {
+		this.function = function;
+		this.collectorSupplier = collectorSupplier;
+		this.nAry = nAry;
+		this.distinct = distinct;
+	}
+
+	/** A fresh DISTINCT predicate per group, mirroring the generic DistinctValues/DistinctTupleValues. */
+	java.util.function.Predicate<?> newPredicate() {
+		if (!distinct) {
+			return v -> true;
+		}
+		java.util.HashSet<Object> seen = new java.util.HashSet<>();
+		return seen::add;
+	}
+
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	void process(org.eclipse.rdf4j.query.BindingSet row, java.util.function.Predicate<?> predicate,
+			org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector collector) {
+		((org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor) function).processAggregate(row,
+				(java.util.function.Predicate) predicate, collector);
+	}
 }
 
 @Experimental
@@ -145,13 +197,20 @@ final class AggregateSpec {
 	 * null for every other aggregate shape. Bound status is part of the hashed row (UNKNOWN = binding absent).
 	 */
 	final int[] rowSlots;
+	/** Custom aggregate description (M5); non-null exactly when {@link #kind} is {@link AggKind#CUSTOM}. */
+	final NativeCustomAggregate custom;
 
 	AggregateSpec(String name, int slot, long constant, boolean distinct, AggKind kind) {
-		this(name, slot, constant, distinct, kind, null, null);
+		this(name, slot, constant, distinct, kind, null, null, null);
 	}
 
 	private AggregateSpec(String name, int slot, long constant, boolean distinct, AggKind kind, String separator,
 			int[] rowSlots) {
+		this(name, slot, constant, distinct, kind, separator, rowSlots, null);
+	}
+
+	private AggregateSpec(String name, int slot, long constant, boolean distinct, AggKind kind, String separator,
+			int[] rowSlots, NativeCustomAggregate custom) {
 		this.name = name;
 		this.slot = slot;
 		this.constant = constant;
@@ -159,6 +218,11 @@ final class AggregateSpec {
 		this.kind = kind;
 		this.separator = separator;
 		this.rowSlots = rowSlots;
+		this.custom = custom;
+	}
+
+	static AggregateSpec custom(String name, NativeCustomAggregate custom) {
+		return new AggregateSpec(name, -1, UNKNOWN, custom.distinct, AggKind.CUSTOM, null, null, custom);
 	}
 
 	static AggregateSpec slot(String name, int slot, boolean distinct, AggKind kind) {
@@ -301,6 +365,10 @@ final class AggState {
 	StringBuilder[] concats;
 	/** COUNT(DISTINCT *) full-row membership per spec; null unless {@link AggregateSpec#rowSlots} is set. */
 	NativeDistinctTracker[] rowDistinct;
+	/** Custom-aggregate per-group collectors; null unless a CUSTOM spec exists. Index-aligned with specs. */
+	org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector[] customCollectors;
+	/** Custom-aggregate per-group DISTINCT predicates, index-aligned with specs. */
+	java.util.function.Predicate<?>[] customPredicates;
 
 	AggState(AggregateSpec[] specs, int expectedDistinctSize, AggContext ctx,
 			AggregateDistinctChannels distinctChannels) {
@@ -338,6 +406,14 @@ final class AggState {
 					rowDistinct = new NativeDistinctTracker[specs.length];
 				}
 				rowDistinct[i] = new NativeDistinctTracker(specs[i].rowSlots);
+			}
+			if (specs[i].custom != null) {
+				if (customCollectors == null) {
+					customCollectors = new org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector[specs.length];
+					customPredicates = new java.util.function.Predicate<?>[specs.length];
+				}
+				customCollectors[i] = specs[i].custom.collectorSupplier.get();
+				customPredicates[i] = specs[i].custom.newPredicate();
 			}
 		}
 		if (anyConcat) {
@@ -384,6 +460,13 @@ final class AggState {
 				if (!fullyUnbound(row, specs[i].rowSlots) && rowDistinct[i].add(row.slots)) {
 					counts[i]++;
 				}
+				continue;
+			}
+			if (specs[i].custom != null) {
+				if (ctx.encounterOrderChanging) {
+					throw EncounterOrderFallback.customAggregateOrder();
+				}
+				specs[i].custom.process(row.view, customPredicates[i], customCollectors[i]);
 				continue;
 			}
 			long value = specs[i].value(row);
@@ -499,6 +582,11 @@ final class AggState {
 		}
 		long extra = weight - 1L;
 		for (int i = 0; i < specs.length; i++) {
+			if (specs[i].custom != null) {
+				// defense in depth: weighted producers must have declined CUSTOM at admission — a non-distinct
+				// custom aggregate needs one process call per copy, which this single-pass fold cannot provide
+				throw EncounterOrderFallback.customAggregateOrder();
+			}
 			long value = specs[i].value(row);
 			if (value == UNKNOWN) {
 				continue;
@@ -562,6 +650,8 @@ final class AggState {
 		case GROUP_CONCAT:
 			// defense in depth: the weighted paths must have declined at admission — never drop inputs silently
 			throw EncounterOrderFallback.groupConcatOrder();
+		case CUSTOM:
+			throw EncounterOrderFallback.customAggregateOrder();
 		}
 	}
 
@@ -728,6 +818,11 @@ final class AggState {
 				break;
 			case MAX:
 				mergeExtreme(i, other, false);
+				break;
+			case CUSTOM:
+				// defense in depth: parallel admission declines CUSTOM — partial collectors cannot merge
+				throw EncounterOrderFallback.customAggregateOrder();
+			default:
 				break;
 			}
 		}

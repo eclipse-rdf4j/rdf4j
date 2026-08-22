@@ -501,6 +501,51 @@ class LmdbNativeAdaptiveCostModelTest {
 				"displacement must never run backwards");
 	}
 
+	/**
+	 * 2026-08-22 HC:8 arbitration lock-in, cause 1: a fresh DIRECT-lane posterior starts at meanLog 0 (about one
+	 * nanosecond) and the Huber clip caps every update at a few log units, so an arm completing in tens of milliseconds
+	 * stayed priced orders of magnitude low for its first ~15 runs — long enough for its nEff to cross the cold-start
+	 * rescue floor while its price was still garbage. The FIRST completion must initialize the posterior near the
+	 * observation instead of being clip-filtered against the meaningless prior.
+	 */
+	@Test
+	void firstCompletionSeedsTheDirectPosteriorNearTheObservedLatency() {
+		LmdbNativeAdaptiveCostModel model = model(new LmdbNativeMachineCostModel(), new LmdbNativeStoreCostModel());
+		LmdbNativeCostEstimate est = estimate(key("seeded", 7), LmdbNativeCostVector.Feature.SCANNED_ROW, 100);
+
+		model.record(est, LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 100), 30_000_000.0,
+				true);
+
+		LmdbNativeCostPrediction after = model.predict(est);
+		assertEquals(LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT, after.evidenceSource());
+		assertEquals(1L, after.exactCompletedCount());
+		assertTrue(after.expectedNanos() > 3_000_000.0 && after.expectedNanos() < 300_000_000.0,
+				"one 30ms completion must price the arm near 30ms, not at the clip-walked prior: "
+						+ after.expectedNanos());
+	}
+
+	/**
+	 * Cause 1, censored variant: deadline censors anchor a never-completed arm near the (possibly tiny) probe
+	 * deadlines, and the clip then makes real completions crawl toward the truth. The first completion must override
+	 * the censored-only anchoring outright.
+	 */
+	@Test
+	void firstCompletionOverridesCensoredOnlyAnchoring() {
+		LmdbNativeAdaptiveCostModel model = model(new LmdbNativeMachineCostModel(), new LmdbNativeStoreCostModel());
+		LmdbNativeCostEstimate est = estimate(key("anchored", 8), LmdbNativeCostVector.Feature.SCANNED_ROW, 100);
+		for (int i = 0; i < 6; i++) {
+			model.recordCensored(est, 1_500_000L, LmdbNativeCostVector.zero(), model.currentRegime());
+		}
+		assertEquals(0L, model.predict(est).exactCompletedCount(), "censors are not completions");
+
+		model.record(est, LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 100), 400_000_000.0,
+				true);
+
+		LmdbNativeCostPrediction after = model.predict(est);
+		assertTrue(after.expectedNanos() > 40_000_000.0,
+				"a real 400ms completion must override censored-only anchoring near 1.5ms: " + after.expectedNanos());
+	}
+
 	private static LmdbNativeAdaptiveCostModel model(LmdbNativeMachineCostModel machine,
 			LmdbNativeStoreCostModel store) {
 		return new LmdbNativeAdaptiveCostModel(machine, store,

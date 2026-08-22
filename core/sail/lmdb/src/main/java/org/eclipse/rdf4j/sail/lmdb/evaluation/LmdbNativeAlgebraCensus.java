@@ -92,12 +92,16 @@ final class LmdbNativeAlgebraCensus {
 			Map.entry(Group.class, Kind.ROOT),
 			Map.entry(ZeroLengthPath.class, Kind.NATIVE),
 			Map.entry(Intersection.class, Kind.ISLAND),
-			Map.entry(TripleRef.class, Kind.ISLAND),
+			// M6: native triple-term index scan with island fallback (kill switch rdf4j.lmdb.nativeTripleTerms.enabled,
+			// unsupported sources); ReifiedTripleRef/AnnotationTripleRef do not normalize to TripleRef and stay islands
+			Map.entry(TripleRef.class, Kind.NATIVE),
 			Map.entry(ReifiedTripleRef.class, Kind.ISLAND),
 			Map.entry(AnnotationTripleRef.class, Kind.ISLAND),
 			Map.entry(Service.class, Kind.PERMANENT_ISLAND),
 			Map.entry(TupleFunctionCall.class, Kind.PERMANENT_ISLAND),
-			Map.entry(Lateral.class, Kind.PERMANENT_ISLAND));
+			// M7: exact-visibility LATERALs compile to the correlated native join; inexact visibility falls back
+			// to the island path (kill switch rdf4j.lmdb.nativeLateral.enabled)
+			Map.entry(Lateral.class, Kind.NATIVE));
 
 	private LmdbNativeAlgebraCensus() {
 	}

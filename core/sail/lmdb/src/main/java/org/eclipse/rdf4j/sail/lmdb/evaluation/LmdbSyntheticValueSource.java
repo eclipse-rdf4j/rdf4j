@@ -22,8 +22,6 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.base.CoreDatatype;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
@@ -99,9 +97,12 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	/**
-	 * Interns a computed value, returning a stable id for grouping. Same {@link Value} (by {@code equals}) always maps
-	 * to the same id within this evaluation, so equal computed keys land in the same group and unequal keys stay apart.
-	 * The compile-scoped carrier must never be asked: runtime interning belongs to an evaluation.
+	 * Interns a computed value, returning a stable id usable for grouping, joins, DISTINCT and sameTerm. The id is
+	 * canonicalized store-first: when the store (or the plan catalog) already knows the term, its existing id is
+	 * returned, so a computed value that also occurs in the data is id-equal to the stored occurrence and raw-id
+	 * joins/probes behave exactly like the generic engine. Only store-absent terms mint runtime ids; the same
+	 * {@link Value} (by {@code equals}) always maps to the same id within this evaluation. The compile-scoped carrier
+	 * must never be asked: runtime interning belongs to an evaluation.
 	 */
 	long internComputedValue(LmdbNativeValueCodec.DecodedValue decoded) {
 		Value value = toValue(decoded);
@@ -111,6 +112,10 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 		if (context == null) {
 			throw new IllegalStateException(
 					"compile-scoped synthetic source cannot intern computed values; use forEvaluation()");
+		}
+		long existing = idOf(value);
+		if (existing != UNKNOWN) {
+			return existing;
 		}
 		return context.internValue(value);
 	}
@@ -138,31 +143,7 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	private static Value toValue(LmdbNativeValueCodec.DecodedValue decoded) {
-		if (decoded == null || decoded.error()) {
-			return null;
-		}
-		SimpleValueFactory vf = SimpleValueFactory.getInstance();
-		if (decoded.iri()) {
-			return vf.createIRI(decoded.label());
-		}
-		if (decoded.resource()) {
-			return vf.createBNode(decoded.label());
-		}
-		if (decoded.literal()) {
-			String language = decoded.language().orElse(null);
-			if (language != null) {
-				return vf.createLiteral(decoded.label(), language);
-			}
-			CoreDatatype coreDatatype = decoded.coreDatatype();
-			if (coreDatatype != null && coreDatatype != CoreDatatype.NONE) {
-				return vf.createLiteral(decoded.label(), coreDatatype.getIri());
-			}
-			if (decoded.datatypeIri() != null) {
-				return vf.createLiteral(decoded.label(), vf.createIRI(decoded.datatypeIri()));
-			}
-			return vf.createLiteral(decoded.label());
-		}
-		return null;
+		return LmdbNativeValueCodec.toValue(decoded);
 	}
 
 	boolean anySynthetic(long subj, long pred, long obj, long context) {
@@ -213,6 +194,19 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public long literalDatatypeId(long id) {
 		return synthetic(id) ? -1L : delegate.literalDatatypeId(id);
+	}
+
+	@Override
+	public boolean supportsTripleTermScan() {
+		return delegate.supportsTripleTermScan();
+	}
+
+	@Override
+	public RecordIterator tripleTerms(long subj, long pred, long obj) throws IOException {
+		if (synthetic(subj) || synthetic(pred) || synthetic(obj)) {
+			return EMPTY;
+		}
+		return delegate.tripleTerms(subj, pred, obj);
 	}
 
 	@Override

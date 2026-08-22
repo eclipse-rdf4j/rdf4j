@@ -286,7 +286,10 @@ final class LmdbNativeAggregateCompiler {
 
 	static boolean safeResourceId(long id) {
 		int type = ValueIds.getIdType(id);
-		return type == ValueIds.T_URI || type == ValueIds.T_BNODE || type == ValueIds.T_TRIPLE;
+		// Triple terms are excluded: SPARQL 1.2 "=" over triple terms recurses into components with value
+		// equality, so <<( :a :b 123 )>> and <<( :a :b 123.0 )>> are value-equal under distinct ids — id
+		// identity does not decide value equality for them (W3C eval-triple-terms/op-2).
+		return type == ValueIds.T_URI || type == ValueIds.T_BNODE;
 	}
 
 	static boolean allSafeExactIds(long[] ids) {

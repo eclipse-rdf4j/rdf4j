@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.EffectClass;
 
 @Experimental
 final class LmdbNativeScalarExpressionCompiler {
@@ -36,6 +37,19 @@ final class LmdbNativeScalarExpressionCompiler {
 	private final LmdbNativeValueCodec codec;
 	private final LmdbNativeSlotResolver slots;
 	private final long assuredMask;
+	/**
+	 * Whether VOLATILE library functions (RAND/UUID/STRUUID) may compile here. Only the computed-BIND copy path sets
+	 * this: its {@code CopyBinding.encounterOrderReplaySafe=false} keeps volatiles off every re-running tier, while a
+	 * filter-position volatile could be re-evaluated per row and must decline to the generic bridge instead.
+	 */
+	private final boolean allowVolatile;
+	/**
+	 * Whether the compiled closures will run against a row reader that supplies the evaluation scope
+	 * ({@link LmdbNativeSlotReader#evaluationScope()}); required by QUERY_STABLE functions (NOW).
+	 */
+	private final boolean scopedEvaluation;
+	/** The compile-time generic context, when the caller has one; NOW needs it to build the per-evaluation scope. */
+	private final org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext compileContext;
 
 	LmdbNativeScalarExpressionCompiler(NativeLmdbQuerySource source, LmdbNativeValueCodec codec,
 			LmdbNativeSlotResolver slots) {
@@ -44,10 +58,19 @@ final class LmdbNativeScalarExpressionCompiler {
 
 	LmdbNativeScalarExpressionCompiler(NativeLmdbQuerySource source, LmdbNativeValueCodec codec,
 			LmdbNativeSlotResolver slots, long assuredMask) {
+		this(source, codec, slots, assuredMask, false, false, null);
+	}
+
+	LmdbNativeScalarExpressionCompiler(NativeLmdbQuerySource source, LmdbNativeValueCodec codec,
+			LmdbNativeSlotResolver slots, long assuredMask, boolean allowVolatile, boolean scopedEvaluation,
+			org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext compileContext) {
 		this.source = source;
 		this.codec = codec;
 		this.slots = slots;
 		this.assuredMask = assuredMask;
+		this.allowVolatile = allowVolatile;
+		this.scopedEvaluation = scopedEvaluation;
+		this.compileContext = compileContext;
 	}
 
 	LmdbNativeCompiledValue compileValue(ValueExpr expr) {
@@ -105,29 +128,99 @@ final class LmdbNativeScalarExpressionCompiler {
 				return numeric == null ? null
 						: value(numeric.requiredMask, row -> numeric.evaluator.eval(row).asValue());
 			}
-			if (FN.LOWER_CASE.stringValue().equals(uri) || FN.UPPER_CASE.stringValue().equals(uri)) {
-				List<ValueExpr> args = call.getArgs();
-				if (args.size() != 1) {
-					return null;
-				}
-				LmdbNativeCompiledValue arg = compileValue(args.get(0));
-				if (arg == null) {
-					return null;
-				}
-				boolean lower = FN.LOWER_CASE.stringValue().equals(uri);
-				return value(arg.requiredMask, row -> {
-					LmdbNativeValueCodec.DecodedValue decoded = arg.evaluator.eval(row);
-					if (decoded.error() || !decoded.stringLiteral()) {
-						return LmdbNativeValueCodec.DecodedValue.ERROR;
+			return compileLibraryFunction(call);
+		}
+		return null;
+	}
+
+	/**
+	 * Compiles a function call whose semantics live as a value-channel evaluator in {@link LmdbNativeFunctionLibrary}:
+	 * every argument compiles on the value channel, and the compiled closure decodes the arguments and applies the
+	 * library's single normative evaluator.
+	 */
+	private LmdbNativeCompiledValue compileLibraryFunction(FunctionCall call) {
+		LmdbNativeFunctionLibrary.Entry entry = LmdbNativeFunctionLibrary.entry(call.getURI());
+		if (entry == null) {
+			return null;
+		}
+		List<ValueExpr> args = call.getArgs();
+		if (args.size() < entry.minArity || args.size() > entry.maxArity) {
+			return null;
+		}
+		if (entry.effect == EffectClass.VOLATILE && !allowVolatile) {
+			// a volatile in a re-evaluating position (filters, probes) must decline to the generic bridge, which
+			// evaluates exactly once per row
+			return null;
+		}
+		if (entry.needsEvaluationScope) {
+			return compileScopedFunction(entry, args);
+		}
+		if (entry.evaluator == null) {
+			return null;
+		}
+		LmdbNativeFunctionLibrary.FunctionEvaluator evaluator = entry.evaluator;
+		if (entry.inlineFastPath != null && LmdbNativeFunctionLibrary.inlineFastPathEnabled() && args.size() == 1
+				&& args.get(0) instanceof Var && !((Var) args.get(0)).hasValue()) {
+			// raw-id fast path: decide date parts from the inline id's bits, skipping the decode entirely; a null
+			// fast-path answer falls through to the normative evaluator over the decoded value
+			int slot = slots.slot(((Var) args.get(0)).getName());
+			if (slot != NO_SLOT) {
+				LmdbNativeFunctionLibrary.InlineFastPath fastPath = entry.inlineFastPath;
+				boolean assured = assured(slot);
+				return value(1L << slot, row -> {
+					long id = row.id(slot);
+					LmdbNativeValueCodec.DecodedValue fast = fastPath.apply(id);
+					if (fast != null) {
+						return fast;
 					}
-					// the generic LCASE/UCASE keep the input's kind: language tag and base direction survive
-					String label = lower ? decoded.label().toLowerCase() : decoded.label().toUpperCase();
-					return LmdbNativeValueCodec.DecodedValue.literal(label, decoded.language().orElse(null),
-							decoded.datatypeIri(), decoded.coreDatatype(), decoded.baseDirection());
+					LmdbNativeValueCodec.DecodedValue decoded = assured ? codec.decodeAssured(id) : codec.decode(id);
+					return evaluator.apply(new LmdbNativeValueCodec.DecodedValue[] { decoded });
 				});
 			}
 		}
-		return null;
+		LmdbNativeCompiledValue[] compiled = new LmdbNativeCompiledValue[args.size()];
+		long mask = 0L;
+		for (int i = 0; i < args.size(); i++) {
+			LmdbNativeCompiledValue arg = compileValue(args.get(i));
+			if (arg == null) {
+				return null;
+			}
+			compiled[i] = arg;
+			mask |= arg.requiredMask;
+		}
+		return value(mask, row -> {
+			LmdbNativeValueCodec.DecodedValue[] decoded = new LmdbNativeValueCodec.DecodedValue[compiled.length];
+			for (int i = 0; i < compiled.length; i++) {
+				decoded[i] = compiled[i].evaluator.eval(row);
+			}
+			return evaluator.apply(decoded);
+		});
+	}
+
+	/**
+	 * Compiles a query-scope-dependent zero-argument function (NOW): the closure resolves the value once per evaluation
+	 * through the shared generic scope of the evaluation's execution context, so a native NOW and an island NOW inside
+	 * one evaluation observe the same instant. Compiles only where the row reader supplies the evaluation scope and the
+	 * caller provided the compile-time context.
+	 */
+	private LmdbNativeCompiledValue compileScopedFunction(LmdbNativeFunctionLibrary.Entry entry,
+			List<ValueExpr> args) {
+		if (!scopedEvaluation || compileContext == null || !args.isEmpty()
+				|| !LmdbNativeFunctionLibrary.NOW_URI.equals(entry.uri)) {
+			return null;
+		}
+		org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext capturedCompileContext = compileContext;
+		return value(0L, row -> {
+			SyntheticValueSource scope = row.evaluationScope();
+			NativeExecutionContext executionContext = scope == null ? null : scope.executionContext();
+			if (executionContext == null) {
+				return LmdbNativeValueCodec.DecodedValue.ERROR;
+			}
+			org.eclipse.rdf4j.model.Literal now = executionContext
+					.genericContext(() -> new EvaluationScopedQueryEvaluationContext(capturedCompileContext))
+					.getNow();
+			return LmdbNativeValueCodec.fromValue(now);
+		});
 	}
 
 	LmdbNativeCompiledString compileString(ValueExpr expr) {

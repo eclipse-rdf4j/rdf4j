@@ -287,10 +287,11 @@ final class LmdbNativeKernelLowering {
 		final LmdbNativeKernelBindings bindings;
 		final String planBridgeReason;
 		/**
-		 * ORDER-sunk kernels only (M7 OutputMods): whether the consumer evaluates in STRICT mode, so every hooks-backed
-		 * comparator this open constructs (sequential, parallel workers, parallel merge) aligns with the interpreted
-		 * sort's {@code ValueComparator.setStrict} configuration. Bind-time property — deliberately NOT part of the
-		 * kernel shape key, because the generated source never depends on it.
+		 * ORDER-sunk kernels (M7 OutputMods) and aggregate kernels: whether the consumer evaluates in STRICT mode, so
+		 * every hooks-backed comparator this open constructs (sequential, parallel workers, parallel merge) aligns with
+		 * the interpreted sort's / {@code AggContext}'s {@code ValueComparator.setStrict} configuration — MIN/MAX
+		 * extrema over calendar datatypes order differently under STRICT and STANDARD. Bind-time property —
+		 * deliberately NOT part of the kernel shape key, because the generated source never depends on it.
 		 */
 		final boolean strictOrderCompare;
 
@@ -313,6 +314,11 @@ final class LmdbNativeKernelLowering {
 		Lowered withTelemetry(Kernel.TelemetryMode mode) {
 			Kernel variant = kernel.withTelemetry(mode);
 			return variant == kernel ? this : new Lowered(variant, bindings, planBridgeReason, strictOrderCompare);
+		}
+
+		Lowered withStrictOrderCompare(boolean strict) {
+			return strict == strictOrderCompare ? this
+					: new Lowered(kernel, bindings, planBridgeReason, strict);
 		}
 	}
 
@@ -716,6 +722,18 @@ final class LmdbNativeKernelLowering {
 	static Lowered lowerAggregate(SlotPlan arg, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
 			TupleExpr declineTarget, boolean preferScans) {
 		return lowerAggregate(arg, row, groupSlots, aggregates, null, declineTarget, preferScans);
+	}
+
+	/**
+	 * As above with a recognized HAVING guard to sink into the aggregate terminal when its output is count-kind, and
+	 * the consumer's strict/extended evaluation mode stamped onto the lowering so every hooks-backed comparator the
+	 * open constructs (sequential, parallel workers, parallel merge) orders MIN/MAX extrema exactly as the interpreted
+	 * {@code AggContext} comparator would.
+	 */
+	static Lowered lowerAggregate(SlotPlan arg, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
+			LmdbNativeKernelIr.Having having, TupleExpr declineTarget, boolean preferScans, boolean strictCompare) {
+		Lowered lowered = lowerAggregate(arg, row, groupSlots, aggregates, having, declineTarget, preferScans);
+		return lowered == null ? null : lowered.withStrictOrderCompare(strictCompare);
 	}
 
 	/** As above with a recognized HAVING guard to sink into the aggregate terminal when its output is count-kind. */
@@ -1713,12 +1731,19 @@ final class LmdbNativeKernelLowering {
 					reason = reasonPrefix + "bind-target-bound";
 					return false;
 				}
-				if (copy.computedValue != null || copy.termChecked) {
-					// interned computed values (group keys, sort keys) belong to the serial value source, and
-					// term-checked VALUES guards need the authority-backed bindOrCheckTerm; lowering either as its
+				if (copy.termChecked) {
+					// term-checked VALUES guards need the authority-backed bindOrCheckTerm; lowering the
 					// sourceSlot/constant shape would silently change semantics
 					reason = reasonPrefix + "bind-computed-value";
 					return false;
+				}
+				if (copy.computedValue != null) {
+					// interned computed values (M1.3b): replay-safe copies lower through the computeBind hook,
+					// which evaluates and interns via the evaluation-scoped synthetic source
+					if (!lowerComputedValueCopy(copy)) {
+						return false;
+					}
+					continue;
 				}
 				if (copy.computed != null) {
 					if (!lowerComputedCopy(copy)) {
@@ -1809,6 +1834,54 @@ final class LmdbNativeKernelLowering {
 			// is maybe-null regardless of its inputs.
 			optionalColMask |= 1L << target;
 			bindHooks.add(new LmdbNativeKernelBindings.BindHook(copy.computed, argSlots));
+			currentDepthNodes().add(new LmdbNativeKernelIr.BindHook(bindHooks.size() - 1, args, target));
+			BIND_HOOK_LOWERINGS.incrementAndGet();
+			return true;
+		}
+
+		/**
+		 * Lowers an interned computed-value BIND copy through {@code hooks.computeBind} (completion plan M1.3b). The
+		 * hook evaluates the exact compiled decoded-value evaluator the interpreted {@code CopyBinding.value} would run
+		 * and interns the result through the evaluation-scoped synthetic source, so kernel-produced ids equal the
+		 * interpreted tier's ids within one evaluation. Volatiles keep the {@code bind-computed-unstable} refusal — a
+		 * re-runnable kernel cannot promise one evaluation per solution in encounter order.
+		 */
+		private boolean lowerComputedValueCopy(CopyBinding copy) {
+			if (!bindHooksEnabled()) {
+				reason = reasonPrefix + "bind-computed";
+				return false;
+			}
+			if (!copy.encounterOrderReplaySafe) {
+				reason = reasonPrefix + "bind-computed-unstable";
+				return false;
+			}
+			long mask = copy.computedValue.requiredMask;
+			int bits = Long.bitCount(mask);
+			if (bits > 2) {
+				reason = reasonPrefix + "bind-computed-args";
+				return false;
+			}
+			int[] argSlots = new int[bits];
+			Operand[] args = new Operand[bits];
+			int out = 0;
+			for (int slot = 0; slot < 64 && out < bits; slot++) {
+				if ((mask >>> slot & 1L) == 0L) {
+					continue;
+				}
+				Operand operand = expressionOperand(slot);
+				if (operand == null) {
+					reason = reasonPrefix + "bind-source-unavailable";
+					return false;
+				}
+				argSlots[out] = slot;
+				args[out] = operand;
+				out++;
+			}
+			int target = newColumn(copy.targetSlot);
+			// interned ids carry arbitrary type bits and the expression can error per row: maybe-null, and no
+			// raw-id shortcut may consume the column (the compile-time synthetic-var guard enforces the latter)
+			optionalColMask |= 1L << target;
+			bindHooks.add(new LmdbNativeKernelBindings.BindHook(copy.computedValue, argSlots));
 			currentDepthNodes().add(new LmdbNativeKernelIr.BindHook(bindHooks.size() - 1, args, target));
 			BIND_HOOK_LOWERINGS.incrementAndGet();
 			return true;

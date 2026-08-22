@@ -85,6 +85,14 @@ abstract class LmdbNativeAggregatePlannerBase {
 	final Map<String, Integer> slots = new HashMap<>();
 	final NativeSlotLayout layout;
 	QueryEvaluationContext slotAwareContext;
+
+	QueryEvaluationContext slotAwareContext() {
+		if (slotAwareContext == null) {
+			slotAwareContext = new SlotAwareQueryEvaluationContext(context, layout);
+		}
+		return slotAwareContext;
+	}
+
 	final ArrayList<String> slotNames = new ArrayList<>();
 	Set<String> requiredAggregateNames = Set.of();
 	/** One catalog builder per compiled root: every plan-synthetic constant of this compilation interns here. */
@@ -105,6 +113,12 @@ abstract class LmdbNativeAggregatePlannerBase {
 	final boolean forceInteriorIslands = Boolean.getBoolean("rdf4j.lmdb.nativeQueryEngine.forceInteriorIslands");
 	final boolean islandsEnabled = forceInteriorIslands
 			|| !"false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.islands.enabled"));
+	/**
+	 * Whether computed BINDs whose results are not inline-packable may compile on the row path as runtime-interned
+	 * values (store-canonical ids) instead of turning the enclosing subtree into a generic island.
+	 */
+	final boolean rowPathComputedInternEnabled = !"false"
+			.equalsIgnoreCase(System.getProperty("rdf4j.lmdb.computedIntern.rowPath.enabled"));
 	/**
 	 * Bare-fragment and EXISTS compiles suppress islands: those routes serve the generic evaluator's own recursion,
 	 * where a generic island inside a native fragment inside a generic host adds indirection without coverage.
@@ -593,9 +607,53 @@ abstract class LmdbNativeAggregatePlannerBase {
 		return false;
 	}
 
+	/**
+	 * Kill switch for the native LATERAL compilation (M7). Off restores the pre-plan posture: LATERAL is an ordinary
+	 * unsafe nested scope change, so roots containing one island every scope-change subtree.
+	 */
+	static boolean nativeLateralEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.nativeLateral.enabled"));
+	}
+
+	/**
+	 * Whether this LATERAL's visibility contract makes the correlated native join semantically exact: every name the
+	 * right arm shares with the left arm must be a declared input (`rightInputBindingNames`) — then probing the right
+	 * arm against the left row equals the generic evaluate-then-merge — and no other name of the right arm may collide
+	 * with a name available from the enclosing scope (which generic evaluation would hide from the right arm).
+	 */
+	boolean lateralVisibilityExact(org.eclipse.rdf4j.query.algebra.Lateral lateral, Set<String> available) {
+		Set<String> rightNames = lateral.getRightArg().getBindingNames();
+		Set<String> inputs = lateral.getRightInputBindingNames();
+		for (String shared : sharedBindingNames(lateral.getLeftArg(), lateral.getRightArg())) {
+			if (!inputs.contains(shared)) {
+				return false;
+			}
+		}
+		for (String name : rightNames) {
+			if (!inputs.contains(name) && available.contains(name)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	private boolean containsUnsafeScopeChange(TupleExpr node, Set<String> available, Set<String> hidden,
 			boolean nested) {
 		Set<String> effectiveHidden = hidden;
+		if (node instanceof org.eclipse.rdf4j.query.algebra.Lateral && nativeLateralEnabled()) {
+			// LATERAL's scope change is deliberate visibility: the declared inputs are legitimately visible to the
+			// right arm, so an exact-visibility LATERAL is not an unsafe change — its arms are checked recursively
+			// with the correct availability instead
+			org.eclipse.rdf4j.query.algebra.Lateral lateral = (org.eclipse.rdf4j.query.algebra.Lateral) node;
+			if (!lateralVisibilityExact(lateral, available)) {
+				return true;
+			}
+			if (containsUnsafeScopeChange(lateral.getLeftArg(), available, effectiveHidden, true)) {
+				return true;
+			}
+			return containsUnsafeScopeChange(lateral.getRightArg(),
+					unionNames(available, lateral.getRightInputBindingNames()), effectiveHidden, true);
+		}
 		if (nested && TupleExprs.isVariableScopeChange(node) && !available.isEmpty()) {
 			effectiveHidden = unionNames(hidden, available);
 			if (!QueryEvaluationUtility.isRepeatable(node)
@@ -775,6 +833,17 @@ abstract class LmdbNativeAggregatePlannerBase {
 			if (kind == null) {
 				return null;
 			}
+			if (kind == AggKind.CUSTOM) {
+				// AggregateFunctionCall is N-ary (no AbstractAggregateOperator.getArg()); compile it before the
+				// unary cast below
+				AggregateSpec custom = compileCustomAggregate(elem.getName(),
+						(org.eclipse.rdf4j.query.algebra.AggregateFunctionCall) op);
+				if (custom == null) {
+					return null;
+				}
+				specs[i] = custom;
+				continue;
+			}
 			ValueExpr arg = ((AbstractAggregateOperator) op).getArg();
 			if (arg == null) {
 				if (kind != AggKind.COUNT) {
@@ -847,7 +916,79 @@ abstract class LmdbNativeAggregatePlannerBase {
 		return null;
 	}
 
+	/**
+	 * Compiles a custom aggregate call (M5): resolves the third-party factory exactly as the generic
+	 * {@code GroupIterator} does (unary factory wins for one argument, else the n-ary registry with its arity window),
+	 * precompiles the argument expressions against the slot-aware context so they evaluate against the row's
+	 * {@link RowBindingSetView}, and pins the built function into the spec. Any resolution or arity failure declines to
+	 * the island path, where the generic engine raises its own error. Kill switch
+	 * {@code rdf4j.lmdb.customAggregates.native.enabled}.
+	 */
+	AggregateSpec compileCustomAggregate(String name, org.eclipse.rdf4j.query.algebra.AggregateFunctionCall call) {
+		if ("false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.customAggregates.native.enabled"))) {
+			return null;
+		}
+		java.util.List<ValueExpr> args = call.getArguments();
+		var unaryFactory = org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRegistry
+				.getInstance()
+				.get(call.getIRI());
+		var nAryFactory = org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateNAryFunctionRegistry
+				.getInstance()
+				.get(call.getIRI());
+		org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep[] steps = new org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep[args
+				.size()];
+		try {
+			for (int i = 0; i < args.size(); i++) {
+				steps[i] = strategy.precompile(args.get(i), slotAwareContext());
+			}
+		} catch (org.eclipse.rdf4j.query.QueryEvaluationException e) {
+			return null;
+		}
+		java.util.function.BiFunction<Integer, org.eclipse.rdf4j.query.BindingSet, org.eclipse.rdf4j.model.Value> evalByIndex = (
+				index, bindings) -> {
+			try {
+				return steps[index].evaluate(bindings);
+			} catch (org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException e) {
+				// treat missing or invalid expressions as null, like the generic QueryStepEvaluator
+				return null;
+			}
+		};
+		if (args.size() == 1 && unaryFactory.isPresent()) {
+			var factory = unaryFactory.get();
+			var function = factory.buildFunction(bindings -> evalByIndex.apply(0, bindings));
+			return AggregateSpec.custom(name,
+					new NativeCustomAggregate(function, factory::getCollector, false, call.isDistinct()));
+		}
+		if (nAryFactory.isPresent()) {
+			var factory = nAryFactory.get();
+			int minimum = factory.getMinNumberOfArguments();
+			int maximum = factory.getMaxNumberOfArguments();
+			if (minimum < 0 || maximum < minimum || args.size() < minimum || args.size() > maximum) {
+				// arity violation: the generic engine raises a query error — leave it to the island
+				return null;
+			}
+			var function = factory.buildFunction(evalByIndex);
+			return AggregateSpec.custom(name,
+					new NativeCustomAggregate(function, factory::getCollector, true, call.isDistinct()));
+		}
+		return null;
+	}
+
 	static AggKind aggKindOf(AggregateOperator op) {
+		if (op instanceof org.eclipse.rdf4j.query.algebra.AggregateFunctionCall) {
+			// CUSTOM only when a registry resolves the IRI; an unresolvable call stays an island, where the
+			// generic engine raises its "Unknown aggregate function" query error
+			String iri = ((org.eclipse.rdf4j.query.algebra.AggregateFunctionCall) op).getIRI();
+			boolean resolvable = org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRegistry
+					.getInstance()
+					.get(iri)
+					.isPresent()
+					|| org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateNAryFunctionRegistry
+							.getInstance()
+							.get(iri)
+							.isPresent();
+			return resolvable ? AggKind.CUSTOM : null;
+		}
 		if (op instanceof Count) {
 			return AggKind.COUNT;
 		}

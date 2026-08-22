@@ -218,6 +218,9 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 				previous1 = scratch.replaceSlot(argSlots[1], a1);
 				installed = 2;
 			}
+			if (hook.computedValue != null) {
+				return computeInternedBind(hook.computedValue);
+			}
 			return hook.computed.id(scratch);
 		} finally {
 			if (installed > 1) {
@@ -230,9 +233,39 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	}
 
 	/**
-	 * Ordered-emission kernels (M7 OutputMods) align this comparator with the consumer's strict/extended evaluation
-	 * mode at bind time, mirroring the interpreted sort's {@code AggContext} comparator configuration. Every other
-	 * route leaves the constructor default untouched.
+	 * Interned computed BIND (completion plan M1.3b): evaluates the decoded value against the scratch row and interns
+	 * it through the evaluation-scoped synthetic source — the exact runtime discipline of
+	 * {@code CopyBinding.value(RowState)} — so a kernel-produced computed id equals the interpreted tier's id for the
+	 * same value within one evaluation. An evaluation error, or a non-synthetic source (which lowering should have
+	 * prevented), surfaces as UNKNOWN: the row survives with the target unbound.
+	 */
+	private long computeInternedBind(LmdbNativeCompiledValue computedValue) {
+		RowState scratchRow = scratch;
+		LmdbNativeSlotReader reader = new LmdbNativeSlotReader() {
+			@Override
+			public long id(int slot) {
+				return scratchRow.slots[slot];
+			}
+
+			@Override
+			public SyntheticValueSource evaluationScope() {
+				return scratchRow.source instanceof SyntheticValueSource ? (SyntheticValueSource) scratchRow.source
+						: null;
+			}
+		};
+		LmdbNativeValueCodec.DecodedValue decoded = computedValue.evaluator.eval(reader);
+		if (decoded == null || decoded.error()) {
+			return UNKNOWN;
+		}
+		return scratchRow.source instanceof SyntheticValueSource
+				? ((SyntheticValueSource) scratchRow.source).internComputedValue(decoded)
+				: UNKNOWN;
+	}
+
+	/**
+	 * Ordered-emission kernels (M7 OutputMods) and aggregate kernels (whose MIN/MAX extrema compare through
+	 * {@link #replacesWinner}) align this comparator with the consumer's strict/extended evaluation mode at bind time,
+	 * mirroring the interpreted sort's {@code AggContext} comparator configuration.
 	 */
 	void orderComparatorStrict(boolean strict) {
 		comparator.setStrict(strict);

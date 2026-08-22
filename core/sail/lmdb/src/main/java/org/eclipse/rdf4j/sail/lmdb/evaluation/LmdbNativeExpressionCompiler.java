@@ -19,7 +19,15 @@ import java.util.regex.PatternSyntaxException;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.net.ParsedIRI;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Bound;
@@ -27,6 +35,9 @@ import org.eclipse.rdf4j.query.algebra.Coalesce;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.HasLang;
+import org.eclipse.rdf4j.query.algebra.HasLangDir;
+import org.eclipse.rdf4j.query.algebra.IRIFunction;
 import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.IsBNode;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
@@ -35,15 +46,21 @@ import org.eclipse.rdf4j.query.algebra.IsResource;
 import org.eclipse.rdf4j.query.algebra.IsTriple;
 import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.LangDir;
+import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.StrLangDir;
+import org.eclipse.rdf4j.query.algebra.TripleComponent;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 
@@ -72,8 +89,16 @@ public final class LmdbNativeExpressionCompiler {
 
 	private LmdbNativeExpressionCompiler(NativeLmdbQuerySource source, LmdbNativeValueCodec codec,
 			LmdbNativeSlotResolver slots, boolean strictCompare, long assuredMask) {
+		this(source, codec, slots, strictCompare, assuredMask, false, false, null);
+	}
+
+	private LmdbNativeExpressionCompiler(NativeLmdbQuerySource source, LmdbNativeValueCodec codec,
+			LmdbNativeSlotResolver slots, boolean strictCompare, long assuredMask, boolean allowVolatile,
+			boolean scopedEvaluation,
+			QueryEvaluationContext compileContext) {
 		this.slots = slots;
-		this.scalar = new LmdbNativeScalarExpressionCompiler(source, codec, slots, assuredMask);
+		this.scalar = new LmdbNativeScalarExpressionCompiler(source, codec, slots, assuredMask, allowVolatile,
+				scopedEvaluation, compileContext);
 		this.strictCompare = strictCompare;
 		this.assuredMask = assuredMask;
 	}
@@ -111,7 +136,7 @@ public final class LmdbNativeExpressionCompiler {
 		if (codec == null) {
 			return null;
 		}
-		LmdbNativeCompiledInlineId constant = compileConstantInlineId(expr, source);
+		LmdbNativeCompiledInlineId constant = compileConstantInlineId(expr, source, codec);
 		if (constant != null) {
 			return constant;
 		}
@@ -126,7 +151,7 @@ public final class LmdbNativeExpressionCompiler {
 		}
 		return new LmdbNativeCompiledInlineId(value.requiredMask,
 				QueryEvaluationUtility.isRepeatableWithinPreparation(expr),
-				row -> LmdbNativeValueCodec.packInline(value.evaluator.eval(row)));
+				row -> codec.packInlineId(value.evaluator.eval(row)));
 	}
 
 	/**
@@ -137,6 +162,17 @@ public final class LmdbNativeExpressionCompiler {
 	 */
 	static LmdbNativeCompiledValue compileComputedValue(ValueExpr expr, NativeLmdbQuerySource source,
 			LmdbNativeSlotResolver slots, boolean strictCompare) {
+		return compileComputedValue(expr, source, slots, strictCompare, null);
+	}
+
+	/**
+	 * The computed-BIND variant: volatiles are admitted (the copy carries {@code encounterOrderReplaySafe=false}) and,
+	 * when the caller passes its compile-time context, query-scope-dependent functions (NOW) compile against the
+	 * per-evaluation shared scope.
+	 */
+	static LmdbNativeCompiledValue compileComputedValue(ValueExpr expr, NativeLmdbQuerySource source,
+			LmdbNativeSlotResolver slots, boolean strictCompare,
+			QueryEvaluationContext compileContext) {
 		if (!enabled()) {
 			return null;
 		}
@@ -145,7 +181,7 @@ public final class LmdbNativeExpressionCompiler {
 			return null;
 		}
 		LmdbNativeExpressionCompiler compiler = new LmdbNativeExpressionCompiler(source, codec, slots, strictCompare,
-				0L);
+				0L, true, true, compileContext);
 		return compiler.compileValue(expr);
 	}
 
@@ -157,7 +193,8 @@ public final class LmdbNativeExpressionCompiler {
 		COMPILED_FILTERS.incrementAndGet();
 	}
 
-	private static LmdbNativeCompiledInlineId compileConstantInlineId(ValueExpr expr, NativeLmdbQuerySource source) {
+	private static LmdbNativeCompiledInlineId compileConstantInlineId(ValueExpr expr, NativeLmdbQuerySource source,
+			LmdbNativeValueCodec codec) {
 		Value value = null;
 		if (expr instanceof ValueConstant) {
 			value = ((ValueConstant) expr).getValue();
@@ -169,7 +206,8 @@ public final class LmdbNativeExpressionCompiler {
 		}
 		long id = source.idOf(value);
 		if (id == NativeLmdbQuerySource.UNKNOWN_ID) {
-			id = LmdbNativeValueCodec.packInline(LmdbNativeValueCodec.fromValue(value));
+			// store-encoding-aware so a minted constant id stays id-consistent with every other minted id
+			id = codec.packInlineId(LmdbNativeValueCodec.fromValue(value));
 		}
 		long constant = id;
 		return constant == NativeLmdbQuerySource.UNKNOWN_ID ? null
@@ -177,12 +215,15 @@ public final class LmdbNativeExpressionCompiler {
 	}
 
 	private boolean guaranteedInline(ValueExpr expr) {
-		return expr instanceof FunctionCall && FN.STRING_LENGTH.stringValue().equals(((FunctionCall) expr).getURI());
+		if (!(expr instanceof FunctionCall)) {
+			return false;
+		}
+		LmdbNativeFunctionLibrary.Entry entry = LmdbNativeFunctionLibrary.entry(((FunctionCall) expr).getURI());
+		return entry != null && entry.guaranteedInlineResult;
 	}
 
 	private LmdbNativeCompiledTruth compileTruth(ValueExpr expr) {
-		if (expr instanceof And) {
-			And and = (And) expr;
+		if (expr instanceof And and) {
 			LmdbNativeCompiledTruth left = compileTruth(and.getLeftArg());
 			LmdbNativeCompiledTruth right = compileTruth(and.getRightArg());
 			return left == null || right == null ? null : truth(left.requiredMask | right.requiredMask, row -> {
@@ -197,8 +238,7 @@ public final class LmdbNativeExpressionCompiler {
 				return l == ERROR || r == ERROR ? ERROR : TRUE;
 			});
 		}
-		if (expr instanceof Or) {
-			Or or = (Or) expr;
+		if (expr instanceof Or or) {
 			LmdbNativeCompiledTruth left = compileTruth(or.getLeftArg());
 			LmdbNativeCompiledTruth right = compileTruth(or.getRightArg());
 			return left == null || right == null ? null : truth(left.requiredMask | right.requiredMask, row -> {
@@ -221,8 +261,7 @@ public final class LmdbNativeExpressionCompiler {
 			case ERROR -> ERROR;
 			});
 		}
-		if (expr instanceof If) {
-			If branch = (If) expr;
+		if (expr instanceof If branch) {
 			if (!LmdbNativeAggregateFilterCompiler.cannotProduceError(branch.getCondition())) {
 				return null;
 			}
@@ -269,7 +308,64 @@ public final class LmdbNativeExpressionCompiler {
 				|| expr instanceof IsTriple || expr instanceof IsNumeric) {
 			return compileTypeTest(expr);
 		}
+		if (expr instanceof LangMatches) {
+			return compileLangMatches((LangMatches) expr);
+		}
+		if (expr instanceof HasLang) {
+			return compileHasLang(((HasLang) expr).getArg(), false);
+		}
+		if (expr instanceof HasLangDir) {
+			return compileHasLang(((HasLangDir) expr).getArg(), true);
+		}
 		return null;
+	}
+
+	/**
+	 * hasLANG / hasLANGDIR (SPARQL 1.2): true/false over literals, FALSE for other bound terms, type error on an
+	 * unbound/erroring argument — mirroring {@code QueryValueEvaluationStepSupplier.hasLang/hasLangDir}.
+	 */
+	private LmdbNativeCompiledTruth compileHasLang(ValueExpr argExpr, boolean requireDirection) {
+		LmdbNativeCompiledValue arg = compileValue(argExpr);
+		if (arg == null) {
+			return null;
+		}
+		return truth(arg.requiredMask, row -> {
+			LmdbNativeValueCodec.DecodedValue decoded = arg.evaluator.eval(row);
+			if (decoded.error()) {
+				return ERROR;
+			}
+			if (!decoded.literal()) {
+				return FALSE;
+			}
+			boolean result = requireDirection
+					? decoded.language().isPresent()
+							&& decoded.baseDirection() != Literal.BaseDirection.NONE
+					: decoded.language().isPresent();
+			return result ? TRUE : FALSE;
+		});
+	}
+
+	/**
+	 * Mirrors {@code DefaultEvaluationStrategy.evaluateLangMatch} exactly: both arguments must be simple literals
+	 * (plain {@code xsd:string}), else the result is a type error; otherwise the extended filtering rules of
+	 * {@link Literals#langMatches} decide.
+	 */
+	private LmdbNativeCompiledTruth compileLangMatches(LangMatches langMatches) {
+		LmdbNativeCompiledValue tag = compileValue(langMatches.getLeftArg());
+		LmdbNativeCompiledValue range = compileValue(langMatches.getRightArg());
+		if (tag == null || range == null) {
+			return null;
+		}
+		return truth(tag.requiredMask | range.requiredMask, row -> {
+			LmdbNativeValueCodec.DecodedValue tagValue = tag.evaluator.eval(row);
+			LmdbNativeValueCodec.DecodedValue rangeValue = range.evaluator.eval(row);
+			if (!LmdbNativeFunctionLibrary.simpleLiteral(tagValue)
+					|| !LmdbNativeFunctionLibrary.simpleLiteral(rangeValue)) {
+				return ERROR;
+			}
+			return Literals.langMatches(tagValue.label(), rangeValue.label()) ? TRUE
+					: FALSE;
+		});
 	}
 
 	private LmdbNativeCompiledTruth compileSameTerm(SameTerm sameTerm) {
@@ -324,9 +420,8 @@ public final class LmdbNativeExpressionCompiler {
 			return true;
 		}
 		if (expr instanceof FunctionCall) {
-			String uri = ((FunctionCall) expr).getURI();
-			return FN.STRING_LENGTH.stringValue().equals(uri) || FN.LOWER_CASE.stringValue().equals(uri)
-					|| FN.UPPER_CASE.stringValue().equals(uri) || numericBuiltin(uri);
+			LmdbNativeFunctionLibrary.Entry entry = LmdbNativeFunctionLibrary.entry(((FunctionCall) expr).getURI());
+			return entry != null && entry.comparableResult;
 		}
 		return false;
 	}
@@ -449,6 +544,7 @@ public final class LmdbNativeExpressionCompiler {
 			return null;
 		}
 		boolean checkBound = !assured(slot);
+		LmdbNativeCompiledValue decodedForNumeric = expr instanceof IsNumeric ? compileValue(arg) : null;
 		return truth(1L << slot, row -> {
 			long id = row.id(slot);
 			// a type test over an unbound argument is a SPARQL type error, so NOT must not flip it to TRUE
@@ -467,8 +563,18 @@ public final class LmdbNativeExpressionCompiler {
 				result = type == ValueIds.T_BNODE;
 			} else if (expr instanceof IsTriple) {
 				result = type == ValueIds.T_TRIPLE;
+			} else if (numericType(type)) {
+				result = true;
+			} else if (type == ValueIds.T_LITERAL && decodedForNumeric != null) {
+				// numeric literals with non-canonical lexical forms ("007"^^xsd:integer) live as dictionary
+				// records, not inline ids; the generic isNumeric decides by DATATYPE alone, so decode and
+				// mirror that (an invalid lexical form with a numeric datatype is still numeric there)
+				LmdbNativeValueCodec.DecodedValue decoded = decodedForNumeric.evaluator.eval(row);
+				CoreDatatype.XSD xsd = decoded.error() ? null
+						: decoded.coreDatatype().asXSDDatatypeOrNull();
+				result = xsd != null && xsd.isNumericDatatype();
 			} else {
-				result = numericType(type);
+				result = false;
 			}
 			return result ? TRUE : FALSE;
 		});
@@ -501,8 +607,7 @@ public final class LmdbNativeExpressionCompiler {
 	}
 
 	private LmdbNativeCompiledValue compileValue(ValueExpr expr) {
-		if (expr instanceof If) {
-			If branch = (If) expr;
+		if (expr instanceof If branch) {
 			if (!LmdbNativeAggregateFilterCompiler.cannotProduceError(branch.getCondition())) {
 				return null;
 			}
@@ -543,7 +648,202 @@ public final class LmdbNativeExpressionCompiler {
 				return LmdbNativeValueCodec.DecodedValue.ERROR;
 			});
 		}
-		return scalar.compileValue(expr);
+		if (expr instanceof IRIFunction) {
+			return compileIriFunction((IRIFunction) expr);
+		}
+		if (expr instanceof LangDir) {
+			return compileLangDir((LangDir) expr);
+		}
+		if (expr instanceof StrLangDir) {
+			return compileStrLangDir((StrLangDir) expr);
+		}
+		if (expr instanceof TripleComponent) {
+			return compileTripleComponent((TripleComponent) expr);
+		}
+		if (expr instanceof ValueExprTripleRef) {
+			return compileTripleConstructor((ValueExprTripleRef) expr);
+		}
+		LmdbNativeCompiledValue scalarValue = scalar.compileValue(expr);
+		if (scalarValue != null) {
+			return scalarValue;
+		}
+		// boolean-producing expressions in value position (BIND(?a > ?b), BIND(langMatches(...)), ...): the truth
+		// channel already implements the exact filter semantics; TRUE/FALSE become xsd:boolean literals, ERROR stays
+		// a type error (BIND leaves the target unbound)
+		LmdbNativeCompiledTruth booleanProducer = compileTruth(expr);
+		if (booleanProducer != null) {
+			return new LmdbNativeCompiledValue(booleanProducer.requiredMask,
+					row -> switch (booleanProducer.evaluator.eval(row)) {
+					case TRUE -> BOOLEAN_TRUE;
+					case FALSE -> BOOLEAN_FALSE;
+					case ERROR -> LmdbNativeValueCodec.DecodedValue.ERROR;
+					});
+		}
+		return null;
+	}
+
+	private static final LmdbNativeValueCodec.DecodedValue BOOLEAN_TRUE = LmdbNativeValueCodec.DecodedValue.literal(
+			"true", null, CoreDatatype.XSD.BOOLEAN.getIri().stringValue(),
+			CoreDatatype.XSD.BOOLEAN);
+	private static final LmdbNativeValueCodec.DecodedValue BOOLEAN_FALSE = LmdbNativeValueCodec.DecodedValue.literal(
+			"false", null, CoreDatatype.XSD.BOOLEAN.getIri().stringValue(),
+			CoreDatatype.XSD.BOOLEAN);
+
+	/**
+	 * Mirrors {@code QueryValueEvaluationStepSupplier.iriFunction} exactly: a literal's label resolves against the
+	 * node's base URI (relative references without a base are a type error), an IRI passes through, everything else is
+	 * a type error.
+	 */
+	private LmdbNativeCompiledValue compileIriFunction(IRIFunction node) {
+		LmdbNativeCompiledValue arg = compileValue(node.getArg());
+		if (arg == null) {
+			return null;
+		}
+		String baseURI = node.getBaseURI();
+		return new LmdbNativeCompiledValue(arg.requiredMask, row -> {
+			LmdbNativeValueCodec.DecodedValue decoded = arg.evaluator.eval(row);
+			if (decoded.error()) {
+				return LmdbNativeValueCodec.DecodedValue.ERROR;
+			}
+			if (decoded.literal()) {
+				String uriString = decoded.label();
+				try {
+					ParsedIRI iri = ParsedIRI
+							.create(uriString);
+					if (!iri.isAbsolute() && baseURI != null) {
+						uriString = ParsedIRI.create(baseURI).resolve(iri).toString();
+					} else if (!iri.isAbsolute()) {
+						return LmdbNativeValueCodec.DecodedValue.ERROR;
+					}
+					// mirror the generic engine's ValueFactory validation of the resolved form
+					SimpleValueFactory.getInstance().createIRI(uriString);
+				} catch (IllegalArgumentException e) {
+					return LmdbNativeValueCodec.DecodedValue.ERROR;
+				}
+				return LmdbNativeValueCodec.DecodedValue.iri(uriString);
+			}
+			if (decoded.iri()) {
+				return decoded;
+			}
+			return LmdbNativeValueCodec.DecodedValue.ERROR;
+		});
+	}
+
+	/**
+	 * LANGDIR (SPARQL 1.2): the base direction of a directional language literal as a simple string, the empty string
+	 * for other literals, a type error otherwise — mirroring {@code QueryValueEvaluationStepSupplier.langDir}.
+	 */
+	private LmdbNativeCompiledValue compileLangDir(LangDir node) {
+		LmdbNativeCompiledValue arg = compileValue(node.getArg());
+		if (arg == null) {
+			return null;
+		}
+		return new LmdbNativeCompiledValue(arg.requiredMask, row -> {
+			LmdbNativeValueCodec.DecodedValue decoded = arg.evaluator.eval(row);
+			if (decoded.error() || !decoded.literal()) {
+				return LmdbNativeValueCodec.DecodedValue.ERROR;
+			}
+			Literal.BaseDirection direction = decoded.baseDirection();
+			String label;
+			if (direction != null && direction != Literal.BaseDirection.NONE) {
+				// BaseDirection.toString() is "--ltr"/"--rtl"; the generic step strips the separator
+				label = direction.toString().substring(2);
+			} else {
+				String lang = decoded.language().orElse("");
+				int sep = lang.indexOf(Literal.BASE_DIR_SEPARATOR);
+				label = sep >= 0 ? lang.substring(sep + 2) : "";
+			}
+			return LmdbNativeValueCodec.DecodedValue.literal(label, null,
+					CoreDatatype.XSD.STRING.getIri().stringValue(),
+					CoreDatatype.XSD.STRING);
+		});
+	}
+
+	/** STRLANGDIR (SPARQL 1.2), mirroring {@code QueryValueEvaluationStepSupplier.strLangDir} exactly. */
+	private LmdbNativeCompiledValue compileStrLangDir(StrLangDir node) {
+		LmdbNativeCompiledValue lex = compileValue(node.getLexicalFormArg());
+		LmdbNativeCompiledValue lang = compileValue(node.getLangArg());
+		LmdbNativeCompiledValue dir = compileValue(node.getDirArg());
+		if (lex == null || lang == null || dir == null) {
+			return null;
+		}
+		return new LmdbNativeCompiledValue(lex.requiredMask | lang.requiredMask | dir.requiredMask, row -> {
+			LmdbNativeValueCodec.DecodedValue lexValue = lex.evaluator.eval(row);
+			LmdbNativeValueCodec.DecodedValue langValue = lang.evaluator.eval(row);
+			LmdbNativeValueCodec.DecodedValue dirValue = dir.evaluator.eval(row);
+			if (lexValue.error() || !lexValue.literal() || langValue.error() || !langValue.literal()
+					|| dirValue.error() || !dirValue.literal()) {
+				return LmdbNativeValueCodec.DecodedValue.ERROR;
+			}
+			String direction = dirValue.label();
+			if (!"ltr".equals(direction) && !"rtl".equals(direction) || langValue.label().isEmpty()) {
+				return LmdbNativeValueCodec.DecodedValue.ERROR;
+			}
+			Literal.BaseDirection baseDirection = Literal.BaseDirection
+					.fromString(Literal.BASE_DIR_SEPARATOR + direction);
+			return LmdbNativeValueCodec.DecodedValue.literal(lexValue.label(), langValue.label(),
+					CoreDatatype.RDF.DIRLANGSTRING.getIri().stringValue(),
+					CoreDatatype.RDF.DIRLANGSTRING, baseDirection);
+		});
+	}
+
+	/** SUBJECT/PREDICATE/OBJECT component access on a triple term (SPARQL 1.2). */
+	private LmdbNativeCompiledValue compileTripleComponent(TripleComponent node) {
+		if (!LmdbNativeValueCodec.nativeTripleTermsEnabled()) {
+			return null;
+		}
+		LmdbNativeCompiledValue arg = compileValue(node.getTripleRefVar());
+		if (arg == null) {
+			return null;
+		}
+		TripleComponent.Role role = node.getRole();
+		return new LmdbNativeCompiledValue(arg.requiredMask, row -> {
+			LmdbNativeValueCodec.DecodedValue decoded = arg.evaluator.eval(row);
+			if (!decoded.triple()) {
+				return LmdbNativeValueCodec.DecodedValue.ERROR;
+			}
+			TripleTerm term = (TripleTerm) decoded.tripleValue();
+			Value component = switch (role) {
+			case SUBJECT -> term.getSubject();
+			case PREDICATE -> term.getPredicate();
+			case OBJECT -> term.getObject();
+			};
+			return LmdbNativeValueCodec.fromValue(component);
+		});
+	}
+
+	/** {@code <<( s p o )>>} expression form (ValueExprTripleRef): constructs the triple term per row. */
+	private LmdbNativeCompiledValue compileTripleConstructor(ValueExprTripleRef node) {
+		if (!LmdbNativeValueCodec.nativeTripleTermsEnabled()) {
+			return null;
+		}
+		LmdbNativeCompiledValue subject = compileValue(node.getSubjectVar());
+		LmdbNativeCompiledValue predicate = compileValue(node.getPredicateVar());
+		LmdbNativeCompiledValue object = compileValue(node.getObjectVar());
+		if (subject == null || predicate == null || object == null) {
+			return null;
+		}
+		return new LmdbNativeCompiledValue(subject.requiredMask | predicate.requiredMask | object.requiredMask,
+				row -> {
+					Value subj = LmdbNativeValueCodec
+							.toValue(subject.evaluator.eval(row));
+					if (!(subj instanceof Resource)) {
+						return LmdbNativeValueCodec.DecodedValue.ERROR;
+					}
+					Value pred = LmdbNativeValueCodec
+							.toValue(predicate.evaluator.eval(row));
+					if (!(pred instanceof IRI)) {
+						return LmdbNativeValueCodec.DecodedValue.ERROR;
+					}
+					Value obj = LmdbNativeValueCodec.toValue(object.evaluator.eval(row));
+					if (obj == null) {
+						return LmdbNativeValueCodec.DecodedValue.ERROR;
+					}
+					return LmdbNativeValueCodec.DecodedValue
+							.triple(SimpleValueFactory.getInstance()
+									.createTripleTerm((Resource) subj,
+											(IRI) pred, obj));
+				});
 	}
 
 	private boolean assured(int slot) {
@@ -552,11 +852,6 @@ public final class LmdbNativeExpressionCompiler {
 
 	private boolean mayBeUnbound(long requiredMask) {
 		return (requiredMask & ~assuredMask) != 0L;
-	}
-
-	private static boolean numericBuiltin(String uri) {
-		return FN.NUMERIC_ABS.stringValue().equals(uri) || FN.NUMERIC_CEIL.stringValue().equals(uri)
-				|| FN.NUMERIC_FLOOR.stringValue().equals(uri) || FN.NUMERIC_ROUND.stringValue().equals(uri);
 	}
 
 	private LmdbNativeCompiledString compileString(ValueExpr expr) {

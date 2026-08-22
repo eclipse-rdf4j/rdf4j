@@ -65,6 +65,17 @@ final class LmdbNativeSafetyLedger {
 		return new Reservation(worstCaseNanos);
 	}
 
+	/**
+	 * Mandatory financing for a must-try arm's FIRST trial: always reserves, letting the credit balance go negative.
+	 * The debt is real — future normal completions must earn it back before {@link #tryReserve} finances any
+	 * value-optional probe — so total speculative overhead stays bounded; only the ORDER of spending changes (mandatory
+	 * exploration first). Never use this for repeat probes of an already-executed arm.
+	 */
+	synchronized Reservation reserveMandatory(long worstCaseNanos) {
+		outstandingNanos += Math.max(0L, worstCaseNanos);
+		return new Reservation(Math.max(0L, worstCaseNanos));
+	}
+
 	synchronized void noteNormalDecision() {
 		if (decisionsSinceLastProbe < Long.MAX_VALUE) {
 			decisionsSinceLastProbe++;

@@ -128,6 +128,35 @@ public class LmdbNativeStrategyArbiterTest {
 	}
 
 	/**
+	 * The cold band's blind spot (HC:8 2026-08-22 lock-in): G8 is a COLD gate — its rationale is that no family speed
+	 * ratio can explain a huge static work gap "before adaptive timing evidence exists". An arm whose exact variant
+	 * carries completed measurements is not cold: here the kernel arm is MEASURED ten times faster than the
+	 * statically-cheap rival, and culling it on the static gap would discard that evidence and lock the dispatch onto
+	 * the slower arm forever (statics never change their minds; measurements do).
+	 */
+	@Test
+	public void measuredArmSurvivesTheColdStaticDominationBand() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "true");
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(),
+				new LmdbNativeStoreCostModel(), new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		List<LmdbNativeStrategyProposal<String>> candidates = List.of(
+				proposal(LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL, 1_000D),
+				proposal(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 1_000_000D));
+		LmdbNativeCostEstimate rivalEstimate = candidates.get(0).adaptiveEstimate(-1D);
+		LmdbNativeCostEstimate kernelEstimate = candidates.get(1).adaptiveEstimate(-1D);
+		for (int i = 0; i < 6; i++) {
+			model.recordCompleted(rivalEstimate, rivalEstimate.total(), 300_000_000.0, 1.0, model.currentRegime());
+			model.recordCompleted(kernelEstimate, kernelEstimate.total(), 30_000_000.0, 1.0, model.currentRegime());
+		}
+
+		int index = LmdbNativeStrategyArbiter.rankAdaptive(candidates, -1D, model);
+
+		assertThat(index >= 0 ? candidates.get(index).tag : null)
+				.as("an arm with completed exact measurements is not cold; the static band may not cull it")
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
+	}
+
+	/**
 	 * Gap-analysis G8, second half: one unpriceable candidate must not force the whole set back to pure structural
 	 * ranking — the priced candidates keep their static interval evidence, so the statically absurd highest-preference
 	 * candidate still loses.

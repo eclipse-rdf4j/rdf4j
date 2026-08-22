@@ -347,14 +347,28 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 			completed = true;
 			return result;
 		} finally {
-			if (row.runtimePlan != null) {
-				row.runtimePlan.fusedTelemetry(session.telemetry());
-			}
-			if (completed) {
-				row.completeRuntimePlan();
-			}
-			if (ownsSession) {
-				session.close();
+			try {
+				if (row.runtimePlan != null) {
+					row.runtimePlan.fusedTelemetry(session.telemetry());
+				}
+				if (completed) {
+					row.completeRuntimePlan();
+				}
+			} finally {
+				try {
+					// The prefix-runs strategy's compiled filter lives outside the argument plan tree, so the
+					// NativeFilterLease never releases it: without this close, an EXISTS adjacency-semijoin probe
+					// it drove keeps a dataset read stamp and the dataset close spins forever in the write-lock
+					// acquisition (fuzz wedge 2026-08-22; LmdbNativePrefixRunFilterProbeCleanupTest). Closing per
+					// evaluation matches the lease's own commit discipline for shared filter originals.
+					if (prefixRunFilter != null) {
+						prefixRunFilter.close();
+					}
+				} finally {
+					if (ownsSession) {
+						session.close();
+					}
+				}
 			}
 		}
 	}
@@ -1401,6 +1415,24 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet> {
 								.createLiteral(state.concats == null || state.concats[i] == null ? ""
 										: state.concats[i].toString()));
 				break;
+			case CUSTOM: {
+				if (!sawRow) {
+					// mirror the generic empty-solution special case: the global group still processes one
+					// EmptyBindingSet solution through the function before the collector finalizes
+					state.specs[i].custom.process(org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance(),
+							state.customPredicates[i], state.customCollectors[i]);
+				}
+				try {
+					org.eclipse.rdf4j.model.Value value = state.customCollectors[i].getFinalValue();
+					if (value != null) {
+						result.addBinding(aggregates[i].name, value);
+					}
+				} catch (org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException e) {
+					// a type error while finalizing the aggregate leaves the binding absent, like the generic
+					// evaluator
+				}
+				break;
+			}
 			}
 		}
 		return result;

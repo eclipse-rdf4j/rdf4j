@@ -42,6 +42,8 @@ final class LmdbNativeAdaptiveCostModel {
 	 * walks a fresh posterior toward its first real measurements, every step "exceeds" a bound that meant nothing.
 	 */
 	private static final double SEVERE_MISS_EVIDENCE_FLOOR = 5.0;
+	/** Diagnostic: print every completed/censored training event with the arm's price before the update. */
+	private static final boolean TRACE = Boolean.getBoolean("rdf4j.lmdb.costModel.trace");
 	private static final Map<Object, LmdbNativeStoreCostModel> STORE_MODELS = Collections
 			.synchronizedMap(new WeakHashMap<>());
 
@@ -163,8 +165,8 @@ final class LmdbNativeAdaptiveCostModel {
 				? LmdbNativeCostPrediction.PriceBasis.FEATURE_POSTERIOR
 				: LmdbNativeCostPrediction.PriceBasis.DIRECT_POSTERIOR;
 		return new LmdbNativeCostPrediction(Math.min(low95, expected), expected, high95, Math.min(low99, low95),
-				high99, latentLow99, latentHigh99, basis, learnedAllowed, quarantined, reading.nEff(), source,
-				components, reason);
+				high99, latentLow99, latentHigh99, basis, learnedAllowed, quarantined, reading.nEff(),
+				reading.exact().completedCount, source, components, reason);
 	}
 
 	/**
@@ -188,6 +190,12 @@ final class LmdbNativeAdaptiveCostModel {
 		Quote quote = quote(estimate, regime);
 		boolean severe = before.uniformlyPriceable() && before.nEff() >= SEVERE_MISS_EVIDENCE_FLOOR
 				&& elapsedNanos > before.high99Nanos();
+		if (TRACE) {
+			System.err.printf(
+					"[cost-trace] COMPLETED %s lane=%s regime=%s elapsedMs=%.3f weight=%.2f beforeExpMs=%.3f nEff=%.1f%n",
+					estimate.variantKey().strategyFamily() + "/" + estimate.variantKey().executionMode(), quote.lane,
+					regime, elapsedNanos / 1e6, weight, before.expectedNanos() / 1e6, before.nEff());
+		}
 
 		store.updateFeatureRatios(estimate.variantKey(), estimate.total(), actualFeatures);
 		double residualShape = quote.lane == LmdbNativeCostPosteriorStore.Lane.RESIDUAL
@@ -230,6 +238,11 @@ final class LmdbNativeAdaptiveCostModel {
 		Quote quote = quote(estimate, regime);
 		boolean severeMiss = before.uniformlyPriceable() && before.nEff() >= SEVERE_MISS_EVIDENCE_FLOOR
 				&& deadlineNanos > before.high99Nanos();
+		if (TRACE) {
+			System.err.printf("[cost-trace] CENSORED %s lane=%s regime=%s boundMs=%.3f beforeExpMs=%.3f nEff=%.1f%n",
+					estimate.variantKey().strategyFamily() + "/" + estimate.variantKey().executionMode(), quote.lane,
+					regime, deadlineNanos / 1e6, before.expectedNanos() / 1e6, before.nEff());
+		}
 		double bound = Math.log(Math.max(1.0, (double) deadlineNanos)) - quote.logBase;
 		store.posteriors().updateCensored(quote.exactKey, bound, quote.epoch, quote.nowMillis);
 		if (severeMiss && before.components() != null) {

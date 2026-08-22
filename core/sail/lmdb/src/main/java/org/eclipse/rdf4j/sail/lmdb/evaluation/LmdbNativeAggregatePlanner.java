@@ -359,7 +359,16 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		// the row set, so the slot compiler may prune such branches (same rule as duplicate-insensitive
 		// aggregation)
 		valueGuardsSupported = true;
-		SlotPlan arg = compileTuple(node, distinct);
+		SlotPlan arg;
+		boolean previousAllowComputedValueInterning = allowComputedValueInterning;
+		// row-path computed BINDs: non-inline results intern to store-canonical ids instead of islanding the
+		// subtree; the synthetic-var guard keeps raw-id filter shortcuts away from interned target slots
+		allowComputedValueInterning = previousAllowComputedValueInterning || rowPathComputedInternEnabled;
+		try {
+			arg = compileTuple(node, distinct);
+		} finally {
+			allowComputedValueInterning = previousAllowComputedValueInterning;
+		}
 		if (arg == null) {
 			debugRowRootDecline("slot-plan", node);
 			return null;
@@ -385,12 +394,12 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (!pendingAggregateExpressions.isEmpty()) {
 			// M-F5: computed sort keys evaluate once per row into their hidden slots; interned keys force the
 			// synthetic step source and the serial sort (the ordered kernel/factorized tiers skip such plans)
-			boolean previousAllowComputedValueInterning = allowComputedValueInterning;
+			boolean savedAllowComputedValueInterning = allowComputedValueInterning;
 			allowComputedValueInterning = true;
 			try {
 				arg = applyAggregateExpressionCopies(arg);
 			} finally {
-				allowComputedValueInterning = previousAllowComputedValueInterning;
+				allowComputedValueInterning = savedAllowComputedValueInterning;
 			}
 			if (arg == null) {
 				debugRowRootDecline("order-key-expression", node);
@@ -580,7 +589,10 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 					&& pattern.s.hasSlot()) {
 				prefixSlots = new int[] { pattern.s.slot };
 				countRunRows = true;
-				wholePlaneCount = true;
+				// A run filter is evaluated once on the run representative, which is only sound when every
+				// row of the run agrees on the filter's inputs. The whole-plane collapse merges ALL subject
+				// runs into a single plane-wide run, so a filter reading ?s must keep per-subject runs.
+				wholePlaneCount = runFilter == null;
 			} else {
 				return null;
 			}
@@ -1339,6 +1351,70 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		return (surroundingMask & island.producedMask) == 0L;
 	}
 
+	/**
+	 * Native SPARQL 1.2 TripleRef scan (M6): compiles to a {@link TripleTermScanPlan} over the dedicated triple-term
+	 * indexes. Returns null (→ island fallback) when triple-term natives are switched off or the source cannot serve
+	 * triple-term scans (e.g. composite sources).
+	 */
+	private SlotPlan compileTripleRef(org.eclipse.rdf4j.query.algebra.TripleRef ref) {
+		if (!LmdbNativeValueCodec.nativeTripleTermsEnabled() || !source.supportsTripleTermScan()) {
+			return null;
+		}
+		long[] constants = new long[4];
+		int[] slots = new int[4];
+		Var[] vars = { ref.getSubjectVar(), ref.getPredicateVar(), ref.getObjectVar(), ref.getExprVar() };
+		boolean constantMiss = false;
+		for (int i = 0; i < vars.length; i++) {
+			Var var = vars[i];
+			if (var == null) {
+				return null;
+			}
+			if (var.hasValue()) {
+				slots[i] = -1;
+				long id = idOf(var.getValue());
+				constants[i] = id;
+				if (id == UNKNOWN) {
+					// a constant the store does not know can never match a stored triple term
+					constantMiss = true;
+				}
+			} else {
+				slots[i] = slot(var.getName());
+				constants[i] = UNKNOWN;
+			}
+		}
+		return new TripleTermScanPlan(slots[0], slots[1], slots[2], slots[3], constants[0], constants[1],
+				constants[2], constants[3], constantMiss);
+	}
+
+	/**
+	 * Native LATERAL (M7): the row engine is already a correlated nested-loop machine, so an exact-visibility LATERAL
+	 * compiles to a non-flattenable correlated join — the right arm evaluates once per left row with the left row's
+	 * bindings visible, exactly the declared {@code rightInputBindingNames} contract. The binary {@link JoinPlan} is
+	 * deliberately constructed directly (never through {@link SlotPlan#join}): it is not a flattenable bag member, so
+	 * no reorderer can move the right arm across the correlation barrier. Inexact-visibility laterals return null and
+	 * fall back to the existing island path unchanged.
+	 */
+	private SlotPlan compileLateral(org.eclipse.rdf4j.query.algebra.Lateral lateral, boolean duplicateInsensitive) {
+		if (!nativeLateralEnabled() || !lateralVisibilityExact(lateral, java.util.Set.of())) {
+			// the empty available-set here checks only the left-right contract; enclosing-scope collisions were
+			// already vetted by containsUnsafeScopeChange (a violation set islandScopeChanges, which islands this
+			// node before compileTuple reaches this branch)
+			return null;
+		}
+		SlotPlan left = compileTupleOrIsland(lateral.getLeftArg(), duplicateInsensitive);
+		if (left == null) {
+			return null;
+		}
+		SlotPlan right = compileTupleOrIsland(lateral.getRightArg(), duplicateInsensitive);
+		if (right == null) {
+			return null;
+		}
+		if (left == EmptyPlan.INSTANCE) {
+			return SlotPlan.empty();
+		}
+		return new JoinPlan(left, right);
+	}
+
 	SlotPlan compileTuple(TupleExpr expr, boolean duplicateInsensitive) {
 		Set<String> demotedVisible = demotedIslands.get(expr);
 		if (demotedVisible != null) {
@@ -1366,6 +1442,20 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				return SlotPlan.empty();
 			}
 			return plan;
+		}
+		if (expr instanceof org.eclipse.rdf4j.query.algebra.TripleRef) {
+			SlotPlan tripleScan = compileTripleRef((org.eclipse.rdf4j.query.algebra.TripleRef) expr);
+			if (tripleScan != null) {
+				return tripleScan;
+			}
+			// fall through to the island whitelist tail below (kill switch off, unsupported source, ...)
+		}
+		if (expr instanceof org.eclipse.rdf4j.query.algebra.Lateral) {
+			SlotPlan lateral = compileLateral((org.eclipse.rdf4j.query.algebra.Lateral) expr, duplicateInsensitive);
+			if (lateral != null) {
+				return lateral;
+			}
+			// fall through to the island fallback (kill switch off, inexact visibility, uncompilable arms)
 		}
 		if (expr instanceof ArbitraryLengthPath) {
 			SlotPlan path = compilePath((ArbitraryLengthPath) expr);

@@ -309,7 +309,8 @@ final class FactorizedTail {
 				// time, which this state does not represent yet — stay on the enumerating path
 				return null;
 			}
-			if (spec.kind == AggKind.SAMPLE || spec.kind == AggKind.GROUP_CONCAT || spec.rowSlots != null) {
+			if (spec.kind == AggKind.SAMPLE || spec.kind == AggKind.GROUP_CONCAT || spec.kind == AggKind.CUSTOM
+					|| spec.rowSlots != null) {
 				// M-F1/M-F3: samples, encounter-order concats and COUNT(DISTINCT *) have no weighted-combination
 				// rule — the factorized state would silently drop their inputs; stay on the enumerating path
 				return null;

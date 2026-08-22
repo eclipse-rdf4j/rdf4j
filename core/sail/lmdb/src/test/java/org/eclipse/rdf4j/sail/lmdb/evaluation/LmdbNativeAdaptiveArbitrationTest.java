@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
@@ -203,6 +204,188 @@ class LmdbNativeAdaptiveArbitrationTest {
 				"spacing forbids a consecutive probe even with credit remaining");
 	}
 
+	/**
+	 * 2026-08-22 HC:8 lock-in, cause 2: probe-deadline censors inflate nEff (ten 0.1-weight censors read as nEff 10)
+	 * while anchoring the price near the deadline instead of reality. An arm whose exact evidence contains no completed
+	 * run has never actually been measured and must not serve as the rescue target.
+	 */
+	@Test
+	void censoredOnlyEvidenceDoesNotRescueTheChoice() {
+		LmdbNativeAdaptiveArbitration.Priced<String> unmeasured = structuralOnly("newKernel", 0);
+		LmdbNativeAdaptiveArbitration.Priced<String> censoredOnly = pricedWithCensoredOnlyEvidence("factorizedTail", 1,
+				500_000, 1_200_000, 3_000_000, 10);
+
+		assertSame(null, LmdbNativeAdaptiveArbitration.coldStartRescue(List.of(unmeasured, censoredOnly)),
+				"censored-only evidence prices the arm near the probe deadline, not near reality — it must not rescue");
+	}
+
+	/**
+	 * 2026-08-22 HC:8 lock-in, cause 3: the rescue returned before {@code maybeProbe} ever ran, so the winner trained
+	 * only its own posterior, the incumbent stayed unmeasured forever, and the rescue re-fired on every dispatch. A
+	 * rescued dispatch must still explore: with a probe site and ledger credit, the never-executed must-try kernel
+	 * incumbent is probed with the measured rescue retained as fallback.
+	 */
+	@Test
+	void rescueDoesNotStarveTheUnmeasuredMustTryIncumbent() {
+		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		LmdbNativeCostEstimate rival = realEstimate("factorizedTail");
+		for (int i = 0; i < 6; i++) {
+			model.record(rival, LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 100),
+					50_000_000.0, true);
+		}
+		LmdbNativeCostEstimate kernelArm = realEstimate("irAggregateInterpreted");
+		store.safetyLedger().earn(1_000_000_000_000L);
+
+		List<LmdbNativeAdaptiveArbitration.Candidate<String>> offered = List.of(
+				new LmdbNativeAdaptiveArbitration.Candidate<>(kernelArm, 0, observation -> "kernel"),
+				new LmdbNativeAdaptiveArbitration.Candidate<>(rival, 1, observation -> "rival"));
+		LmdbNativeAdaptiveArbitration.DispatchPlan<String> plan = LmdbNativeAdaptiveArbitration.choose(offered, model,
+				new LmdbNativeAdaptiveArbitration.ProbeContext(LmdbNativeProbeConfig.defaults(),
+						new LmdbNativeQueryProbeBudget(), true));
+
+		assertTrue(plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Probe,
+				"a rescued dispatch must still probe the never-executed must-try incumbent, got " + plan);
+		LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<String> probe = (LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<String>) plan;
+		assertSame(kernelArm, probe.trial().estimate(), "the never-executed kernel arm is the mandatory trial");
+		assertSame(rival, probe.fallback().estimate(), "the measured rescue stays retained as fallback");
+		probe.reservation().refund();
+	}
+
+	/**
+	 * Probe credit is scarce (a probe reservation costs a multiple of the incumbent's runtime while credit accrues at
+	 * ~5% of normal execution), so a must-try kernel arm gets roughly one probe per twenty dispatches. Its single
+	 * completed probe — trustworthy since first-completion seeding — must therefore be enough for the rescue: with one
+	 * 41ms completion on the kernel arm against a 434ms rival, the rescue hands the dispatch to the kernel arm
+	 * (measured frontier: displacement plus static preference), not to the rival with more samples.
+	 */
+	@Test
+	void oneCompletedProbeOfAMustTryArmFlipsTheRescue() {
+		LmdbNativeAdaptiveArbitration.Priced<String> unmeasured = structuralOnly("packedFtreeAggregate", 0);
+		LmdbNativeAdaptiveArbitration.Priced<String> kernelOnce = pricedWithCompletions("irAggregate", 1,
+				20_000_000, 41_000_000, 90_000_000, 1);
+		LmdbNativeAdaptiveArbitration.Priced<String> rivalMany = pricedWithCompletions("factorizedTail", 2,
+				300_000_000, 434_000_000, 600_000_000, 21);
+
+		LmdbNativeAdaptiveArbitration.Priced<String> rescued = LmdbNativeAdaptiveArbitration
+				.coldStartRescue(List.of(unmeasured, kernelOnce, rivalMany));
+
+		assertSame(kernelOnce, rescued,
+				"one completed probe of a must-try kernel arm is real, seeded evidence — the rescue must "
+						+ "prefer it over a slower rival that merely has more samples");
+	}
+
+	/**
+	 * Must-try arms (the engine's own kernel tiers) bypass the probe value gate: a never-executed kernel arm may not
+	 * lose the probe slot to a value-scored rival, or it never earns the evidence that would let it win at all.
+	 */
+	@Test
+	void mustTryKernelArmTakesProbePriorityOverValueScoredRivals() {
+		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		store.safetyLedger().earn(1_000_000_000_000L);
+		LmdbNativeAdaptiveArbitration.Priced<String> incumbent = pricedWithEvidence("nestedLoop", 0,
+				30_000_000, 50_000_000, 90_000_000, 40);
+		LmdbNativeAdaptiveArbitration.Priced<String> valueScored = pricedWithEvidence("factorizedTail", 1,
+				500_000, 1_000_000, 2_000_000, 40);
+		LmdbNativeAdaptiveArbitration.Priced<String> mustTry = pricedWithFamilyEvidence("irAggregateInterpreted", 2,
+				5_000_000, 10_000_000, 20_000_000);
+
+		LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<String> probe = LmdbNativeAdaptiveArbitration.maybeProbe(
+				List.of(incumbent, valueScored, mustTry), incumbent, model,
+				new LmdbNativeAdaptiveArbitration.ProbeContext(LmdbNativeProbeConfig.defaults(),
+						new LmdbNativeQueryProbeBudget(), true));
+
+		assertSame(mustTry.candidate(), probe == null ? null : probe.trial(),
+				"the never-executed kernel arm must take probe priority over value-scored rivals");
+		probe.reservation().refund();
+	}
+
+	/**
+	 * Probe credit accrues at ~5% of normal execution while a probe reservation costs a multiple of the incumbent's
+	 * runtime, so waiting for credit delays a must-try arm's FIRST trial by dozens of dispatches — long enough for a
+	 * mispriced rival to keep the rescue. The mandatory first trial of a must-try arm is not speculative spend: it is
+	 * financed unconditionally (the ledger may go into debt, which future normal completions repay before any
+	 * value-optional probe runs).
+	 */
+	@Test
+	void mustTryFirstTrialIsFinancedEvenWithoutLedgerCredit() {
+		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		LmdbNativeAdaptiveArbitration.Priced<String> incumbent = pricedWithCompletions("factorizedTail", 0,
+				300_000_000, 434_000_000, 600_000_000, 6);
+		LmdbNativeAdaptiveArbitration.Priced<String> mustTry = pricedWithFamilyEvidence("irAggregate", 1,
+				5_000_000, 10_000_000, 20_000_000);
+
+		LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<String> probe = LmdbNativeAdaptiveArbitration.maybeProbe(
+				List.of(incumbent, mustTry), incumbent, model,
+				new LmdbNativeAdaptiveArbitration.ProbeContext(LmdbNativeProbeConfig.defaults(),
+						new LmdbNativeQueryProbeBudget(), true));
+
+		assertSame(mustTry.candidate(), probe == null ? null : probe.trial(),
+				"the mandatory first trial of a must-try arm must not wait for speculative-probe credit");
+		probe.reservation().refund();
+	}
+
+	private static LmdbNativeCostEstimate realEstimate(String family) {
+		LmdbNativePhysicalVariantKey key = LmdbNativePhysicalVariantKey.builder(family)
+				.physicalOrderAndProperties(family)
+				.build();
+		return new LmdbNativeCostEstimate(key, LmdbNativeCostVector.zero(),
+				LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 100), 100, 0.1);
+	}
+
+	/** Exact-variant evidence with the given completed-run count (nEff equal to it). */
+	private static LmdbNativeAdaptiveArbitration.Priced<String> pricedWithCompletions(String family, int preference,
+			double low95, double expected, double high95, long completions) {
+		LmdbNativePhysicalVariantKey key = LmdbNativePhysicalVariantKey.builder(family)
+				.physicalOrderAndProperties(family)
+				.build();
+		LmdbNativeCostVector vector = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, expected);
+		LmdbNativeCostEstimate estimate = new LmdbNativeCostEstimate(key, LmdbNativeCostVector.zero(), vector,
+				expected, 0.1);
+		LmdbNativeCostPrediction prediction = testPrediction(key, low95, expected, high95, low95, high95, completions,
+				completions, LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT);
+		return new LmdbNativeAdaptiveArbitration.Priced<>(
+				new LmdbNativeAdaptiveArbitration.Candidate<>(estimate, preference, observation -> family),
+				prediction);
+	}
+
+	/** Exact-variant evidence whose exact node holds censors only — nEff inflated, zero completions. */
+	private static LmdbNativeAdaptiveArbitration.Priced<String> pricedWithCensoredOnlyEvidence(String family,
+			int preference, double low95, double expected, double high95, long nEff) {
+		LmdbNativePhysicalVariantKey key = LmdbNativePhysicalVariantKey.builder(family)
+				.physicalOrderAndProperties(family)
+				.build();
+		LmdbNativeCostVector vector = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, expected);
+		LmdbNativeCostEstimate estimate = new LmdbNativeCostEstimate(key, LmdbNativeCostVector.zero(), vector,
+				expected, 0.1);
+		LmdbNativeCostPrediction prediction = testPrediction(key, low95, expected, high95, low95, high95, nEff, 0L,
+				LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT);
+		return new LmdbNativeAdaptiveArbitration.Priced<>(
+				new LmdbNativeAdaptiveArbitration.Candidate<>(estimate, preference, observation -> family),
+				prediction);
+	}
+
+	/** A priced arm whose evidence is family-level only: the exact variant has never executed. */
+	private static LmdbNativeAdaptiveArbitration.Priced<String> pricedWithFamilyEvidence(String family, int preference,
+			double low95, double expected, double high95) {
+		LmdbNativePhysicalVariantKey key = LmdbNativePhysicalVariantKey.builder(family)
+				.physicalOrderAndProperties(family)
+				.build();
+		LmdbNativeCostVector vector = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, expected);
+		LmdbNativeCostEstimate estimate = new LmdbNativeCostEstimate(key, LmdbNativeCostVector.zero(), vector,
+				expected, 0.1);
+		LmdbNativeCostPrediction prediction = testPrediction(key, low95, expected, high95, low95, high95, 0, 0L,
+				LmdbNativeCostPrediction.EvidenceSource.STRATEGY_FAMILY);
+		return new LmdbNativeAdaptiveArbitration.Priced<>(
+				new LmdbNativeAdaptiveArbitration.Candidate<>(estimate, preference, observation -> family),
+				prediction);
+	}
+
 	private static LmdbNativeAdaptiveArbitration.Priced<String> structuralOnly(String family, int preference) {
 		LmdbNativePhysicalVariantKey key = LmdbNativePhysicalVariantKey.builder(family)
 				.physicalOrderAndProperties(family)
@@ -218,6 +401,13 @@ class LmdbNativeAdaptiveArbitrationTest {
 	/** Builds a numerically priced test quote in the new posterior shape from classic interval inputs. */
 	private static LmdbNativeCostPrediction testPrediction(LmdbNativePhysicalVariantKey key, double low95,
 			double expected, double high95, double low99, double high99, long evidence) {
+		return testPrediction(key, low95, expected, high95, low99, high99, evidence, evidence,
+				LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT);
+	}
+
+	private static LmdbNativeCostPrediction testPrediction(LmdbNativePhysicalVariantKey key, double low95,
+			double expected, double high95, double low99, double high99, long nEff, long completedCount,
+			LmdbNativeCostPrediction.EvidenceSource source) {
 		double sigma = expected > 0.0 && high95 > expected ? Math.log(high95 / expected) / 1.959963984540054 : 0.1;
 		LmdbNativeCostPrediction.Components components = new LmdbNativeCostPrediction.Components(
 				LmdbNativeRegimeKey.STEADY, LmdbNativeCostPosteriorStore.Lane.DIRECT,
@@ -225,7 +415,7 @@ class LmdbNativeAdaptiveArbitrationTest {
 				sigma * sigma, 0.0);
 		return new LmdbNativeCostPrediction(low95, expected, high95, low99, high99, Math.min(low99, expected),
 				Math.max(high99, expected), LmdbNativeCostPrediction.PriceBasis.DIRECT_POSTERIOR, true, false,
-				evidence, LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT, components, "test");
+				nEff, completedCount, source, components, "test");
 	}
 
 	private static LmdbNativeAdaptiveArbitration.Priced<String> pricedWithEvidence(String family, int preference,

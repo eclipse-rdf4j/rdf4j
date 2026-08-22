@@ -95,6 +95,31 @@ final class LmdbNativeAdaptiveArbitration {
 			.comparingInt((Candidate<?> candidate) -> candidate.staticPreference)
 			.thenComparing(candidate -> candidate.estimate.variantKey());
 
+	/** Diagnostic: print every dispatch decision with each arm's evidence state. */
+	private static final boolean TRACE = Boolean.getBoolean("rdf4j.lmdb.costModel.trace");
+
+	private static <T> void traceDecision(String kind, List<Priced<T>> priced, Priced<T> winner) {
+		if (!TRACE) {
+			return;
+		}
+		StringBuilder out = new StringBuilder("[dispatch-trace] ").append(kind)
+				.append(" winner=")
+				.append(winner == null ? "-" : winner.candidate.estimate.variantKey().strategyFamily());
+		for (Priced<T> arm : priced) {
+			LmdbNativeCostPrediction p = arm.prediction;
+			out.append(" | ")
+					.append(arm.candidate.estimate.variantKey().strategyFamily())
+					.append(":src=")
+					.append(p.evidenceSource())
+					.append(",done=")
+					.append(p.exactCompletedCount())
+					.append(",expMs=")
+					.append(String.format("%.2f", p.expectedNanos() / 1e6))
+					.append(p.quarantined() ? ",QUARANTINED" : "");
+		}
+		System.err.println(out);
+	}
+
 	private LmdbNativeAdaptiveArbitration() {
 	}
 
@@ -127,25 +152,98 @@ final class LmdbNativeAdaptiveArbitration {
 		}
 		Priced<T> rescued = coldStartRescue(priced);
 		if (rescued != null) {
-			return maybeGuard(new DispatchPlan.Normal<>(rescued.candidate, rescued.prediction,
-					"cold-start guard: unmeasured incumbent yields to the cheapest measured rival"), priced,
-					hedgeContext);
+			traceDecision("rescue", priced, rescued);
+			return dispatchWithExploration(priced, rescued,
+					"cold-start guard: unmeasured incumbent yields to the cheapest measured rival", model,
+					probeContext, hedgeContext);
 		}
 
 		LmdbNativePosteriorConfig posteriorConfig = model.store().posteriorConfig();
 		Priced<T> selected = selectWithinFrontier(priced, posteriorConfig.displacementLogGamma(),
 				posteriorConfig.displacementLogGammaOrderLosing());
 		if (selected.candidate != incumbent) {
-			return maybeGuard(new DispatchPlan.Normal<>(selected.candidate, selected.prediction,
-					"99% latent displacement with shared-component cancellation"), priced, hedgeContext);
+			traceDecision("displacement", priced, selected);
+			return dispatchWithExploration(priced, selected,
+					"99% latent displacement with shared-component cancellation", model, probeContext, hedgeContext);
 		}
 
-		DispatchPlan.Probe<T> probe = maybeProbe(priced, selected, model, probeContext);
+		traceDecision("retained", priced, new Priced<>(incumbent, incumbentPrediction));
+		return dispatchWithExploration(priced, new Priced<>(incumbent, incumbentPrediction),
+				"latent intervals overlap; retained stable strategy preference", model, probeContext, hedgeContext);
+	}
+
+	/**
+	 * One dispatch of {@code winner} that may not permanently starve unexecuted arms (the 2026-08-22 HC:8 lock-in: the
+	 * rescue returned before {@code maybeProbe} ever ran, so the winner trained only its own posterior, the incumbent
+	 * stayed unmeasured forever, and the rescue re-fired on every dispatch). Bounded exploration runs on EVERY dispatch
+	 * branch with the winner retained as anchor and fallback; when probes are structurally impossible at this site (no
+	 * abort-safe harness, or the winner is too fast for any decision-useful deadline) a never-executed must-try arm
+	 * runs normally exactly once instead — the pre-adaptive ladder ran these arms unconditionally, and
+	 * {@code maybeGuard} still arms a watchdog over the mandatory run where the site supports one.
+	 */
+	private static <T> DispatchPlan<T> dispatchWithExploration(List<Priced<T>> priced, Priced<T> winner, String reason,
+			LmdbNativeAdaptiveCostModel model, ProbeContext probeContext, HedgeContext hedgeContext) {
+		DispatchPlan.Probe<T> probe = maybeProbe(priced, winner, model, probeContext);
 		if (probe != null) {
 			return maybeHedgeProbe(probe, probeContext, hedgeContext);
 		}
-		return maybeGuard(new DispatchPlan.Normal<>(incumbent, incumbentPrediction,
-				"latent intervals overlap; retained stable strategy preference"), priced, hedgeContext);
+		if (winner.prediction.evidenceSource() == LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
+				&& probeStructurallyImpossible(winner.prediction, probeContext)) {
+			Priced<T> mustTry = mustTryUnexecuted(priced, winner, model);
+			if (mustTry != null) {
+				return maybeGuard(new DispatchPlan.Normal<>(mustTry.candidate, mustTry.prediction,
+						"must-try exploration: never-executed engine arm at an unprobed site"), priced, hedgeContext);
+			}
+		}
+		return maybeGuard(new DispatchPlan.Normal<>(winner.candidate, winner.prediction, reason), priced,
+				hedgeContext);
+	}
+
+	/** Whether this arm has never actually executed (completed or censored) as its exact variant. */
+	static boolean neverExecuted(LmdbNativeCostPrediction prediction) {
+		return prediction.evidenceSource() != LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT;
+	}
+
+	/**
+	 * The highest-static-preference must-try arm that has never executed in the current regime and is not blocked by
+	 * the scheduler, or null. {@code priced} arrives static-preference sorted, so the first hit wins.
+	 */
+	static <T> Priced<T> mustTryUnexecuted(List<Priced<T>> priced, Priced<T> winner,
+			LmdbNativeAdaptiveCostModel model) {
+		LmdbNativeProbeScheduler scheduler = model.store().probeScheduler();
+		LmdbNativeRegimeKey regime = model.currentRegime();
+		long epoch = model.store().regimeTracker().epoch();
+		for (Priced<T> candidate : priced) {
+			if (candidate == winner || candidate.candidate == winner.candidate) {
+				continue;
+			}
+			LmdbNativePhysicalVariantKey key = candidate.candidate.estimate.variantKey();
+			if (LmdbNativeStrategyPreference.mustTryFamily(key.strategyFamily())
+					&& neverExecuted(candidate.prediction) && scheduler.mayProbe(key, regime, epoch)) {
+				return candidate;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Whether no bounded probe can ever run at this dispatch: the site registered no abort-safe harness, probing is
+	 * switched off, or the anchor is so fast that the decision-useful deadline sits below the floor. Ledger credit and
+	 * spacing are deliberately NOT part of this test — those recover on their own, and a must-try arm should wait for a
+	 * bounded probe rather than run unbounded.
+	 */
+	static boolean probeStructurallyImpossible(LmdbNativeCostPrediction anchor, ProbeContext context) {
+		if (context == null || !context.harnessPresent() || !context.config().enabled()) {
+			return true;
+		}
+		if (!anchor.uniformlyPriceable() || anchor.expectedNanos() <= 0.0) {
+			return true;
+		}
+		LmdbNativeProbeConfig config = context.config();
+		long usefulDeadline = (long) (anchor.expectedNanos() / config.gamma());
+		long slowdownCap = (long) (anchor.expectedNanos() * config.maxSlowdownFraction());
+		long deadline = Math.min(Math.min(usefulDeadline, slowdownCap), config.maxDeadlineNanos());
+		return deadline < config.minDeadlineNanos();
 	}
 
 	/**
@@ -245,14 +343,32 @@ final class LmdbNativeAdaptiveArbitration {
 				saturatingAdd(config.cancelBoundNanos(), deadline / 4));
 
 		Priced<T> best = null;
+		boolean bestMustTry = false;
 		double bestScore = Double.NEGATIVE_INFINITY;
 		for (Priced<T> rival : priced) {
-			if (rival == incumbent) {
+			if (rival == incumbent || rival.candidate == incumbent.candidate) {
 				continue;
 			}
 			LmdbNativeCostPrediction prediction = rival.prediction;
 			LmdbNativePhysicalVariantKey key = rival.candidate.estimate.variantKey();
 			if (!scheduler.mayProbe(key, regime, epoch)) {
+				continue;
+			}
+			// Must-try arms (the engine's own kernel tiers, never executed in this regime) bypass the value and
+			// deadline-optimism gates: their first execution is mandatory, not value-optional — a starved arm can
+			// never earn the evidence that would let it win. A censoring at the deadline is itself evidence and
+			// hands the arm to the scheduler's cooldown, so this cannot thrash. Among must-try arms the first in
+			// static-preference order wins (priced arrives sorted).
+			boolean mustTry = LmdbNativeStrategyPreference.mustTryFamily(key.strategyFamily())
+					&& neverExecuted(prediction);
+			if (mustTry) {
+				if (!bestMustTry) {
+					best = rival;
+					bestMustTry = true;
+				}
+				continue;
+			}
+			if (bestMustTry) {
 				continue;
 			}
 			if (prediction.uniformlyPriceable() && prediction.low95Nanos() > deadline) {
@@ -283,7 +399,13 @@ final class LmdbNativeAdaptiveArbitration {
 			context.queryBudget().release();
 			return null;
 		}
-		LmdbNativeSafetyLedger.Reservation reservation = ledger.tryReserve(reservationNanos);
+		// A must-try arm's mandatory first trial is financed unconditionally (the ledger goes into debt, repaid by
+		// future normal completions before any value-optional probe runs): credit accrues at ~5% of normal execution
+		// while a reservation costs a multiple of the incumbent's runtime, so waiting for credit delayed the first
+		// kernel trial by dozens of dispatches — long enough for a mispriced rival to keep the rescue (HC:8).
+		LmdbNativeSafetyLedger.Reservation reservation = bestMustTry
+				? ledger.reserveMandatory(reservationNanos)
+				: ledger.tryReserve(reservationNanos);
 		if (reservation == null) {
 			scheduler.probeAbandoned(bestKey, regime, epoch);
 			context.queryBudget().release();
@@ -338,23 +460,32 @@ final class LmdbNativeAdaptiveArbitration {
 				&& !incumbent.prediction.quarantined()) {
 			return null;
 		}
-		Priced<T> rescue = null;
+		List<Priced<T>> measured = new ArrayList<>();
 		for (int index = 1; index < priced.size(); index++) {
 			Priced<T> rival = priced.get(index);
 			LmdbNativeCostPrediction prediction = rival.prediction;
+			// COMPLETED evidence only: deadline censors inflate nEff (ten 0.1-weight censors read as nEff 10)
+			// while anchoring the price near the probe deadline instead of reality — an arm that never finished
+			// a run has never been measured and cannot serve as a rescue target (HC:8 2026-08-22 lock-in). The
+			// engine's own must-try kernel tiers qualify from their FIRST completion: probe credit affords them
+			// roughly one bounded trial per twenty dispatches, first-completion seeding makes that single sample
+			// trustworthy, and demanding the full floor left the kernel arm locked out for ~100 dispatches while
+			// a measured slow rival kept the rescue.
+			long floor = LmdbNativeStrategyPreference.mustTryFamily(rival.candidate.estimate.variantKey()
+					.strategyFamily()) ? 1L : COLD_START_EVIDENCE_FLOOR;
 			if (prediction.evidenceSource() != LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
-					|| prediction.evidenceCount() < COLD_START_EVIDENCE_FLOOR || prediction.quarantined()
+					|| prediction.exactCompletedCount() < floor || prediction.quarantined()
 					|| !prediction.uniformlyPriceable()) {
 				continue;
 			}
-			if (rescue == null || prediction.expectedNanos() < rescue.prediction.expectedNanos()
-					|| (prediction.expectedNanos() == rescue.prediction.expectedNanos()
-							&& rival.candidate.estimate.variantKey()
-									.compareTo(rescue.candidate.estimate.variantKey()) < 0)) {
-				rescue = rival;
-			}
+			measured.add(rival);
 		}
-		return rescue;
+		if (measured.isEmpty()) {
+			return null;
+		}
+		// The measured arms compete by the standard frontier rule (displacement plus static preference) rather than
+		// raw cheapest-expected: cost overrules preference only when it is certain, exactly as in the main selection.
+		return selectWithinFrontier(measured);
 	}
 
 	/**

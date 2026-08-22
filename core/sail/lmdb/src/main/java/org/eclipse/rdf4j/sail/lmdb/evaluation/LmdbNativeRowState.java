@@ -613,7 +613,20 @@ final class CopyBinding {
 
 	long value(RowState row) {
 		if (computedValue != null) {
-			LmdbNativeValueCodec.DecodedValue decoded = computedValue.evaluator.eval(slot -> row.slots[slot]);
+			// the reader exposes the evaluation-scoped source so query-scope-dependent expressions (NOW) can reach
+			// the shared per-evaluation generic scope; pure expressions never call evaluationScope()
+			LmdbNativeSlotReader reader = new LmdbNativeSlotReader() {
+				@Override
+				public long id(int slot) {
+					return row.slots[slot];
+				}
+
+				@Override
+				public SyntheticValueSource evaluationScope() {
+					return row.source instanceof SyntheticValueSource ? (SyntheticValueSource) row.source : null;
+				}
+			};
+			LmdbNativeValueCodec.DecodedValue decoded = computedValue.evaluator.eval(reader);
 			if (decoded == null || decoded.error()) {
 				return UNKNOWN;
 			}

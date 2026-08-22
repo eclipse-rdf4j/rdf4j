@@ -102,6 +102,31 @@ final class LmdbNativeKernelExecution {
 		}
 	}
 
+	/**
+	 * Worker-kernel factory for the parallel rungs. The serving tier follows the SEQUENTIAL execution that was just
+	 * admitted — not the codegen switch: while the warm-up tier serves a pending or failed compile, the workers
+	 * interpret the same IR variants (2026-08-22: keying this off the codegen switch declined every parallel open with
+	 * {@code worker-kernel-pending} whenever janino was enabled but the compile had not landed, pinning COUNT(DISTINCT)
+	 * aggregates to the serial interpreter). A compiled sequential open still prefers compiled workers, but a variant
+	 * whose own shape is below threshold, pending, or failed falls back to interpretation (warm-up tier discipline,
+	 * D16) instead of declining the whole rung.
+	 */
+	private static java.util.function.Function<LmdbNativeKernelIr.Kernel, JaninoKernel> workerKernelFactory(
+			boolean interpretedExecution, long observedRows,
+			java.util.function.Function<LmdbNativeKernelIr.Kernel, JaninoKernel> interpreterTier) {
+		if (interpretedExecution) {
+			return interpreterTier;
+		}
+		return variant -> {
+			JaninoKernel compiled = LmdbNativeJaninoCodegen.kernel(variant.shapeKey(), variant.className(),
+					() -> LmdbNativeKernelEmitter.emit(variant), observedRows);
+			if (compiled != null) {
+				return compiled;
+			}
+			return LmdbNativeKernelInterpreter.warmupEnabled() ? interpreterTier.apply(variant) : null;
+		};
+	}
+
 	private static List<BindingSet> tryEvaluateAggregate(SlotPlan arg, RowState row,
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
 			ValueExpr havingCondition, boolean preferScans) {
@@ -125,7 +150,7 @@ final class LmdbNativeKernelExecution {
 		try {
 			LmdbNativeKernelLowering.Lowered semantic = LmdbNativeKernelLowering.lowerAggregate(arg, row, groupSlots,
 					aggregates, LmdbNativeKernelLowering.recognizeHaving(havingCondition, aggregates), explainTarget,
-					preferScans);
+					preferScans, emitter.strictCompare);
 			if (semantic == null) {
 				AGG_DECLINED.incrementAndGet();
 				if (row.runtimePlan != null) {
@@ -231,11 +256,8 @@ final class LmdbNativeKernelExecution {
 			// shape compiles through the same cache under its own shape key, so the sequential shape stays untouched.
 			List<BindingSet> parallel = LmdbNativeParallelKernelAggregate
 					.tryEvaluate(lowered, views, domains, arg, row, emitter, explainTarget,
-							interpretedTier
-									? LmdbNativeKernelInterpreter::forAggregate
-									: variant -> LmdbNativeJaninoCodegen.kernel(variant.shapeKey(),
-											variant.className(),
-											() -> LmdbNativeKernelEmitter.emit(variant), observedRowsForVariants));
+							workerKernelFactory(interpretedExecution, observedRowsForVariants,
+									LmdbNativeKernelInterpreter::forAggregate));
 			if (parallel != null) {
 				AGG_OPENED.incrementAndGet();
 				AGG_ROWS.addAndGet(parallel.size());
@@ -251,6 +273,10 @@ final class LmdbNativeKernelExecution {
 			hooks = lowered.bindings.needsHooks()
 					? new LmdbNativeKernelHooks(row, lowered.bindings)
 					: null;
+			if (hooks != null) {
+				// MIN/MAX extrema must order under the consumer's strict/extended mode, like AggContext's comparator
+				hooks.orderComparatorStrict(lowered.strictOrderCompare);
+			}
 			scanner = lowered.kernel.requirements.scans > 0
 					? new LmdbNativeKernelScanner(row, lowered.bindings.scanSites)
 					: null;
@@ -785,10 +811,8 @@ final class LmdbNativeKernelExecution {
 			// Workers create their own probes and adjacency views. The query-thread views are used only to choose the
 			// partitioning root and are closed by this method if the parallel cursor is accepted.
 			RowCursor parallel = LmdbNativeParallelKernelRows.tryOpen(lowered, views, domains, arg, row, originalExpr,
-					interpretedVariants
-							? LmdbNativeKernelInterpreter::forRows
-							: variant -> LmdbNativeJaninoCodegen.kernel(variant.shapeKey(), variant.className(),
-									() -> LmdbNativeKernelEmitter.emit(variant), observedRowsForVariants));
+					workerKernelFactory(interpretedVariants, observedRowsForVariants,
+							LmdbNativeKernelInterpreter::forRows));
 			if (parallel != null) {
 				OPENED.incrementAndGet();
 				// The engaged strategy is the parallel rung, not its serial sibling: record it so explain output

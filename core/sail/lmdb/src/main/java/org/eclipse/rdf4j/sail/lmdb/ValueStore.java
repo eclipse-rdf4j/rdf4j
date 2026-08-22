@@ -3814,6 +3814,20 @@ public class ValueStore extends AbstractValueFactory {
 		return canonicalLanguageTags;
 	}
 
+	/**
+	 * Whether this store's inline integer-family ids use the value-ordered (biased) encoding recorded as
+	 * {@code numeric-id-encoding=ordered-v1} in the store properties. Anything minting inline ids meant to be id-equal
+	 * to store ids must honor this flag.
+	 */
+	public boolean usesOrderedNumericIds() {
+		return orderedNumericIds;
+	}
+
+	/** Whether this store inlines literals into ids at all; when false, no inline literal id is ever minted. */
+	public boolean inlinesLiterals() {
+		return inlineLiterals;
+	}
+
 	private Optional<String> canonicalLanguage(Optional<String> language) {
 		if (!canonicalLanguageTags || language.isEmpty()) {
 			return language;

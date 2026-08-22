@@ -106,10 +106,6 @@
     {
       "id": "org.eclipse.rdf4j.sail.lmdb.LmdbSPARQLComplianceTest#minusScope()[13]",
       "description": "SparqlMinusScopingTests.T16_rhs_bind_of_outer_var_produces_unbound_then_overremoves_on_shared_subset"
-    },
-    {
-      "id": "org.eclipse.rdf4j.sail.lmdb.LmbdSPARQL12QueryComplianceTest#tests()[46]",
-      "description": "Reified triples - embedded triple - value-equality"
     }
   ]
 }

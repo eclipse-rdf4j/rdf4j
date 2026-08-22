@@ -357,9 +357,10 @@ final class LmdbNativeParallelKernelAggregate {
 		Aggregate aggregate = (Aggregate) lowered.kernel.terminal;
 		KernelGroupLayout layout = bindings.groupLayout;
 		LmdbNativeKernelHooks mergeHooks = bindings.needsHooks() ? new LmdbNativeKernelHooks(row, bindings) : null;
-		if (mergeHooks != null && aggregate.mods.orderKeys != null && aggregate.mods.valueOrder) {
+		if (mergeHooks != null) {
 			// align the value comparator with the consumer's strict/extended evaluation mode, exactly as the row route
-			// and the interpreted sort's AggContext do — the consumer sort below runs through this same hooks object
+			// and the interpreted AggContext do — both the MIN/MAX partial merge (mergeWinner) and the consumer sort
+			// below run through this same hooks object
 			mergeHooks.orderComparatorStrict(lowered.strictOrderCompare);
 		}
 		HashMap<LongsKey, Partial> total = new HashMap<>();
@@ -577,6 +578,10 @@ final class LmdbNativeParallelKernelAggregate {
 							? new LmdbNativeKernelHooks(workerRow, bindings,
 									forkedHooks != null ? forkedHooks : bindings.filterHooks)
 							: null;
+					if (hooks != null) {
+						// worker-side MIN/MAX winners must order under the consumer's strict/extended mode too
+						hooks.orderComparatorStrict(lowered.strictOrderCompare);
+					}
 					NativeLmdbQuerySource.NativeAdjacency[] windowViews = views;
 					LmdbNativeKernelBindings.BoundDomains windowDomains = domains;
 					if (rootScan >= 0) {

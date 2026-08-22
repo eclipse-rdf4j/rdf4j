@@ -160,6 +160,26 @@ final class LmdbNativeCostPosteriorStore {
 		double innovation = clipped * sigma;
 
 		double w = Math.max(0.25, Math.min(1.0, weight));
+		if (reading.exact().completedCount == 0L) {
+			// First completion of this exact variant: initialize instead of filtering. The Huber clip protects an
+			// established posterior from one outlier; with no completed evidence there is nothing to protect, and
+			// clip-limited walking from the prior mean (log 1ns in the DIRECT lane) left arms priced orders of
+			// magnitude low for their first ~15 runs — long enough for nEff to cross the cold-start rescue floor
+			// with a garbage price (HC:8 2026-08-22 arbitration lock-in). Deadline censors, which only establish a
+			// lower bound, must not block the seeding either. The raw innovation is distributed by noise-free
+			// Kalman gains (they sum to one, so the hierarchy lands exactly on the observed value, and an
+			// established level's small variance keeps its share small automatically). One sample says nothing
+			// about run-to-run scatter, so the noise EWMA is not fed, and the change detector sees no drift signal
+			// from an initialization.
+			double rawInnovation = y - mean;
+			global.put(key.globalKey(), gainUpdate(reading.global(), epistemic, rawInnovation,
+					config.varianceFloorGlobal(), reading.global().noiseVariance, w, true, epoch, nowMillis));
+			families.put(key.familyKey(), gainUpdate(reading.family(), epistemic, rawInnovation,
+					config.varianceFloorFamily(), reading.family().noiseVariance, w, true, epoch, nowMillis));
+			storeExact(key, gainUpdate(reading.exact(), epistemic, rawInnovation, config.varianceFloorExact(),
+					reading.exact().noiseVariance, w, true, epoch, nowMillis));
+			return 0.0;
+		}
 		double newNoise = Math.max(config.noiseFloorLog(),
 				(1.0 - NOISE_BETA) * noise + NOISE_BETA * Math.max(0.0, innovation * innovation - epistemic));
 

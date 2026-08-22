@@ -24,8 +24,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
  */
 record LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double high95Nanos, double low99Nanos,
 		double high99Nanos, double latentLow99Nanos, double latentHigh99Nanos, PriceBasis priceBasis,
-		boolean learnedDominanceAllowed, boolean quarantined, double nEff, EvidenceSource evidenceSource,
-		Components components, String reason) {
+		boolean learnedDominanceAllowed, boolean quarantined, double nEff, long exactCompletedCount,
+		EvidenceSource evidenceSource, Components components, String reason) {
 
 	enum PriceBasis {
 		/** Feature model plus learned residual posterior: fully comparable. */
@@ -63,7 +63,8 @@ record LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double 
 				|| !valid(high99Nanos) || !valid(latentLow99Nanos) || !valid(latentHigh99Nanos)
 				|| low99Nanos > low95Nanos || low95Nanos > expectedNanos || expectedNanos > high95Nanos
 				|| high95Nanos > high99Nanos || latentLow99Nanos > expectedNanos
-				|| expectedNanos > latentHigh99Nanos || !Double.isFinite(nEff) || nEff < 0.0) {
+				|| expectedNanos > latentHigh99Nanos || !Double.isFinite(nEff) || nEff < 0.0
+				|| exactCompletedCount < 0L) {
 			throw new IllegalArgumentException("invalid prediction interval");
 		}
 		if ((priceBasis == PriceBasis.ORDINAL_ONLY) != (components == null)) {
@@ -74,7 +75,7 @@ record LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double 
 
 	static LmdbNativeCostPrediction ordinalOnly(String reason) {
 		return new LmdbNativeCostPrediction(0.0, 0.0, Double.MAX_VALUE, 0.0, Double.MAX_VALUE, 0.0, Double.MAX_VALUE,
-				PriceBasis.ORDINAL_ONLY, false, false, 0.0, EvidenceSource.STRUCTURAL_ONLY, null, reason);
+				PriceBasis.ORDINAL_ONLY, false, false, 0.0, 0L, EvidenceSource.STRUCTURAL_ONLY, null, reason);
 	}
 
 	/** Transitional alias retained until the arbitration cutover (M6) rewrites its callers. */

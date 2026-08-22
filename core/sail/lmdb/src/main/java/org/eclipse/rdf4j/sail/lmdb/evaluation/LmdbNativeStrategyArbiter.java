@@ -258,15 +258,20 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		List<AdaptiveCandidate<T>> converted = new ArrayList<>(candidates.size());
 		for (int i = 0; i < candidates.size(); i++) {
 			LmdbNativeStrategyProposal<T> proposal = candidates.get(i);
-			if (isColdStaticallyDominated(candidates, i, sliceRows)) {
-				// statically beyond any family speed ratio: never offered to the adaptive frontier (G8)
-				continue;
-			}
 			LmdbNativeCostEstimate estimate = proposal.adaptiveEstimate(sliceRows);
 			if (estimate == null) {
 				// unknown work is arm-local: the arm carries a direct-timing estimate, quotes ORDINAL_ONLY until it
 				// has been timed or censored once, and never disables numerical comparison among the others
 				estimate = proposal.directTimingEstimate();
+			}
+			if (isColdStaticallyDominated(candidates, i, sliceRows)
+					&& model.predict(estimate).exactCompletedCount() == 0L) {
+				// Statically beyond any family speed ratio: never offered to the adaptive frontier (G8). The band
+				// is a COLD gate — an arm with completed exact measurements is not cold, and culling it on a
+				// static work gap discards real evidence (HC:8 2026-08-22: warmed statistics collapsed a rival's
+				// static estimate, statically culling the kernel arm that was MEASURED ten times faster, and the
+				// dispatch locked onto the slower rival — statics never change their minds; measurements do).
+				continue;
 			}
 			LmdbNativeAdaptiveArbitration.Candidate<T> candidate = new LmdbNativeAdaptiveArbitration.Candidate<>(
 					estimate, LmdbNativeStrategyPreference.rank(proposal.tag), ignored -> proposal.open());

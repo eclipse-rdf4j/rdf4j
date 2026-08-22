@@ -77,10 +77,23 @@ final class LmdbNativeKernelBindings {
 	/** One computed-BIND registration, index-aligned with the IR's {@code BindHook.bindId}. */
 	static final class BindHook {
 		final LmdbNativeCompiledInlineId computed;
+		/**
+		 * Interned computed-value variant (completion plan M1.3b): the hook evaluates the decoded value and interns it
+		 * to a store-canonical id through the evaluation-scoped synthetic source. Exactly one of {@link #computed} and
+		 * this is non-null.
+		 */
+		final LmdbNativeCompiledValue computedValue;
 		final int[] argSlots; // engine slots receiving computeBind's a0..a1, ascending mask order
 
 		BindHook(LmdbNativeCompiledInlineId computed, int[] argSlots) {
 			this.computed = computed;
+			this.computedValue = null;
+			this.argSlots = argSlots;
+		}
+
+		BindHook(LmdbNativeCompiledValue computedValue, int[] argSlots) {
+			this.computed = null;
+			this.computedValue = computedValue;
 			this.argSlots = argSlots;
 		}
 	}

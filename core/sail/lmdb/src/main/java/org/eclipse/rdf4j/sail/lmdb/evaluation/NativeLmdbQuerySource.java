@@ -45,6 +45,23 @@ public interface NativeLmdbQuerySource {
 	Value lazyValue(long id) throws QueryEvaluationException;
 
 	/**
+	 * Whether {@link #tripleTerms(long, long, long)} is available on this source — the compile-time admission gate for
+	 * the native SPARQL 1.2 TripleRef scan.
+	 */
+	default boolean supportsTripleTermScan() {
+		return false;
+	}
+
+	/**
+	 * All triple terms of the store matching the bound component ids ({@link #UNKNOWN_ID} = wildcard), as quad records
+	 * whose subject/predicate/object fields carry the component ids and whose context field carries the triple term's
+	 * own id (the dedicated triple-term index layout).
+	 */
+	default RecordIterator tripleTerms(long subj, long pred, long obj) throws IOException {
+		throw new UnsupportedOperationException("triple-term scans are not supported by " + getClass().getName());
+	}
+
+	/**
 	 * Datatype value id of a referenced (non-inlined) literal, read from the record header without materializing the
 	 * label (0 = plain xsd:string, -1 = unsupported or not a literal record).
 	 */

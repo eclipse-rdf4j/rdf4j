@@ -27,10 +27,12 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.eclipse.rdf4j.sail.lmdb.Varint;
+import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 import org.lwjgl.system.MemoryUtil;
 
 /**
@@ -44,9 +46,6 @@ final class LmdbNativeValueCodec {
 	private static final byte LITERAL_VALUE = 1;
 	private static final byte BNODE_VALUE = 2;
 	private static final byte NAMESPACE_VALUE = 4;
-	private static final long MAX_INLINE_INTEGER = (1L << 55) - 1;
-	private static final long MIN_INLINE_INTEGER = -(1L << 55);
-	private static final int MAX_INLINE_STRING_BYTES = 6;
 	private static final int NO_FRACTION = 0x3FF;
 	private static final int NO_TIMEZONE_BITS = 0x7F;
 	private static final int CACHE_SIZE = 1 << 11;
@@ -129,6 +128,15 @@ final class LmdbNativeValueCodec {
 			if (ValueIds.isInlined(id)) {
 				return decodeInlined(id);
 			}
+			if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+				// SPARQL 1.2 triple terms decode to a lazy store-backed TripleTerm; components resolve on demand.
+				// Kill switch restores the pre-plan ERROR posture (triple-term value operations become type errors).
+				if (!nativeTripleTermsEnabled()) {
+					return DecodedValue.ERROR;
+				}
+				Value term = valueStore.getLazyValue(id);
+				return term == null ? DecodedValue.ERROR : DecodedValue.triple(term);
+			}
 			StoredPayload data = readStoredPayload(id);
 			if (data == null) {
 				return DecodedValue.ERROR;
@@ -146,7 +154,54 @@ final class LmdbNativeValueCodec {
 		}
 	}
 
+	/**
+	 * Materializes a decoded value as an RDF4J {@link Value} (shared by the synthetic value source's interning and the
+	 * function library's generic-delegation evaluators). Returns {@code null} for {@code null} or error inputs.
+	 */
+	static Value toValue(DecodedValue decoded) {
+		if (decoded == null || decoded.error()) {
+			return null;
+		}
+		if (decoded.triple()) {
+			return decoded.tripleValue();
+		}
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		if (decoded.iri()) {
+			return vf.createIRI(decoded.label());
+		}
+		if (decoded.resource()) {
+			return vf.createBNode(decoded.label());
+		}
+		if (decoded.literal()) {
+			String language = decoded.language().orElse(null);
+			if (language != null) {
+				if (decoded.baseDirection() != Literal.BaseDirection.NONE) {
+					return vf.createLiteral(decoded.label(), language, decoded.baseDirection());
+				}
+				return vf.createLiteral(decoded.label(), language);
+			}
+			CoreDatatype coreDatatype = decoded.coreDatatype();
+			if (coreDatatype != null && coreDatatype != CoreDatatype.NONE) {
+				return vf.createLiteral(decoded.label(), coreDatatype.getIri());
+			}
+			if (decoded.datatypeIri() != null) {
+				return vf.createLiteral(decoded.label(), vf.createIRI(decoded.datatypeIri()));
+			}
+			return vf.createLiteral(decoded.label());
+		}
+		return null;
+	}
+
+	static final String NATIVE_TRIPLE_TERMS_PROPERTY = "rdf4j.lmdb.nativeTripleTerms.enabled";
+
+	static boolean nativeTripleTermsEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty(NATIVE_TRIPLE_TERMS_PROPERTY));
+	}
+
 	static DecodedValue fromValue(Value value) {
+		if (value instanceof org.eclipse.rdf4j.model.TripleTerm) {
+			return nativeTripleTermsEnabled() ? DecodedValue.triple(value) : DecodedValue.ERROR;
+		}
 		if (value instanceof Literal) {
 			Literal literal = (Literal) value;
 			String language = literal.getLanguage().orElse(null);
@@ -164,35 +219,44 @@ final class LmdbNativeValueCodec {
 		return DecodedValue.ERROR;
 	}
 
-	static long packInline(DecodedValue value) {
-		if (value.error() || !value.literal()) {
+	/**
+	 * Packs a computed value into exactly the inline id the backing store would mint for it, honoring the store's
+	 * literal-inlining and numeric-id-encoding configuration. Returns {@code UNKNOWN_ID} when the store would not
+	 * inline the value — a raw-id comparison against a store-produced id is only sound when the encodings agree.
+	 */
+	long packInlineId(DecodedValue value) {
+		return packInline(value, valueStore.inlinesLiterals(), valueStore.usesOrderedNumericIds());
+	}
+
+	static long packInline(DecodedValue value, boolean orderedNumericIds) {
+		return packInline(value, true, orderedNumericIds);
+	}
+
+	static long packInline(DecodedValue value, boolean inlineLiterals, boolean orderedNumericIds) {
+		if (!inlineLiterals || value.error() || !value.literal() || value.language().isPresent()
+				|| value.label() == null) {
 			return NativeLmdbQuerySource.UNKNOWN_ID;
 		}
-		if (value.decimalValue() != null) {
-			try {
-				long integer = value.decimalValue().toBigIntegerExact().longValueExact();
-				if (integer >= MIN_INLINE_INTEGER && integer <= MAX_INLINE_INTEGER) {
-					return ValueIds.createId(ValueIds.T_INTEGER, encodeZigZag(integer));
-				}
-			} catch (ArithmeticException e) {
+		CoreDatatype coreDatatype = value.coreDatatype();
+		if (coreDatatype == null || coreDatatype == CoreDatatype.NONE) {
+			// non-core datatypes are never inlined by the store
+			return NativeLmdbQuerySource.UNKNOWN_ID;
+		}
+		try {
+			// delegate to the store's own inline encoder so minted ids are id-equal to store ids under every
+			// configuration, and mirror the store's round-trip guard: only lexical forms the encoding preserves
+			// exactly may be inlined (ValueStore declines "007"^^xsd:integer the same way)
+			SimpleValueFactory vf = SimpleValueFactory.getInstance();
+			Literal literal = vf.createLiteral(value.label(), coreDatatype.getIri());
+			long packed = Values.packLiteral(literal, orderedNumericIds);
+			if (packed == 0L) {
 				return NativeLmdbQuerySource.UNKNOWN_ID;
 			}
+			Literal unpacked = Values.unpackLiteral(packed, vf);
+			return unpacked != null && unpacked.equals(literal) ? packed : NativeLmdbQuerySource.UNKNOWN_ID;
+		} catch (RuntimeException e) {
+			return NativeLmdbQuerySource.UNKNOWN_ID;
 		}
-		if (value.language().isEmpty() && value.coreDatatype() == CoreDatatype.XSD.STRING && value.label() != null) {
-			byte[] bytes = value.label().getBytes(StandardCharsets.UTF_8);
-			if (bytes.length <= MAX_INLINE_STRING_BYTES) {
-				return ValueIds.createId(ValueIds.T_SHORTSTRING, packBytes(bytes) << 8 | bytes.length);
-			}
-		}
-		if (value.coreDatatype() == CoreDatatype.XSD.BOOLEAN) {
-			if ("true".equals(value.label()) || "1".equals(value.label())) {
-				return ValueIds.createId(ValueIds.T_BOOLEAN, 1L);
-			}
-			if ("false".equals(value.label()) || "0".equals(value.label())) {
-				return ValueIds.createId(ValueIds.T_BOOLEAN, 0L);
-			}
-		}
-		return NativeLmdbQuerySource.UNKNOWN_ID;
 	}
 
 	private DecodedValue decodeInlined(long id) {
@@ -466,19 +530,6 @@ final class LmdbNativeValueCodec {
 		return (encoded >>> 1) ^ -(encoded & 0x1);
 	}
 
-	private static long encodeZigZag(long value) {
-		return (value << 1) ^ (value >> 63);
-	}
-
-	private static long packBytes(byte[] bytes) {
-		long value = 0;
-		for (byte b : bytes) {
-			value <<= 8;
-			value |= b & 0xFFL;
-		}
-		return value;
-	}
-
 	private static double decodeDouble(long id) {
 		int sign = (int) ((id >> 1) & 1);
 		long mantissa = (id >> 2) & 0x000fffffffffffffL;
@@ -532,9 +583,17 @@ final class LmdbNativeValueCodec {
 		private final BigDecimal decimalValue;
 		private final Double floatingValue;
 		private final Literal.BaseDirection baseDirection;
+		/** The materialized (usually lazy store-backed) triple term; non-null exactly for {@link Kind#TRIPLE}. */
+		private final Value tripleValue;
 
 		private DecodedValue(Kind kind, String label, String language, String datatypeIri, CoreDatatype coreDatatype,
 				BigDecimal decimalValue, Double floatingValue, Literal.BaseDirection baseDirection) {
+			this(kind, label, language, datatypeIri, coreDatatype, decimalValue, floatingValue, baseDirection, null);
+		}
+
+		private DecodedValue(Kind kind, String label, String language, String datatypeIri, CoreDatatype coreDatatype,
+				BigDecimal decimalValue, Double floatingValue, Literal.BaseDirection baseDirection,
+				Value tripleValue) {
 			this.kind = kind;
 			this.label = label;
 			this.language = language;
@@ -543,6 +602,21 @@ final class LmdbNativeValueCodec {
 			this.decimalValue = decimalValue;
 			this.floatingValue = floatingValue;
 			this.baseDirection = baseDirection == null ? Literal.BaseDirection.NONE : baseDirection;
+			this.tripleValue = tripleValue;
+		}
+
+		/** A SPARQL 1.2 triple term (RDF-star). The carried value is typically a lazy store-backed TripleTerm. */
+		static DecodedValue triple(Value tripleTerm) {
+			return new DecodedValue(Kind.TRIPLE, null, null, null, CoreDatatype.NONE, null, null,
+					Literal.BaseDirection.NONE, tripleTerm);
+		}
+
+		boolean triple() {
+			return kind == Kind.TRIPLE;
+		}
+
+		Value tripleValue() {
+			return tripleValue;
 		}
 
 		static DecodedValue literal(String label, String language, String datatypeIri, CoreDatatype datatype) {
@@ -667,6 +741,7 @@ final class LmdbNativeValueCodec {
 		ERROR,
 		IRI,
 		BNODE,
-		LITERAL
+		LITERAL,
+		TRIPLE
 	}
 }

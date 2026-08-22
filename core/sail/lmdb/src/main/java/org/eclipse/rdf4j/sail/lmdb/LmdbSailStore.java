@@ -3307,6 +3307,16 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public boolean supportsTripleTermScan() {
+			return true;
+		}
+
+		@Override
+		public RecordIterator tripleTerms(long subj, long pred, long obj) throws IOException {
+			return valueStore.getTripleTerms(subj, pred, obj);
+		}
+
+		@Override
 		public long literalDatatypeId(long id) {
 			try {
 				return valueStore.literalDatatypeId(id);
@@ -4082,6 +4092,16 @@ class LmdbSailStore implements SailStore {
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
 			}
+		}
+
+		@Override
+		public boolean supportsTripleTermScan() {
+			return true;
+		}
+
+		@Override
+		public RecordIterator tripleTerms(long subj, long pred, long obj) throws IOException {
+			return valueStore.getTripleTerms(subj, pred, obj);
 		}
 
 		@Override

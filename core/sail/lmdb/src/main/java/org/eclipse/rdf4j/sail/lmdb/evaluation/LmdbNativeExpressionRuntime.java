@@ -33,6 +33,15 @@ interface LmdbNativeSlotResolver {
 @Experimental
 interface LmdbNativeSlotReader {
 	long id(int slot);
+
+	/**
+	 * The evaluation-scoped synthetic value source behind this row, or {@code null} at call sites that evaluate pure
+	 * expressions only. Query-scope-dependent compiled values (NOW) read the shared per-evaluation generic scope
+	 * through it; such expressions only compile in positions whose readers supply the scope (computed BIND copies).
+	 */
+	default SyntheticValueSource evaluationScope() {
+		return null;
+	}
 }
 
 @Experimental
@@ -304,6 +313,17 @@ final class LmdbNativeExpressionOps {
 			LmdbNativeValueCodec.DecodedValue right, Compare.CompareOp op, boolean strict) {
 		if (left.error() || right.error()) {
 			return LmdbNativeTruth.ERROR;
+		}
+		if (left.triple() || right.triple()) {
+			// SPARQL 1.2 triple terms compare by value: "=" recurses into components with numeric collapse
+			// (W3C eval-triple-terms/op-2); delegate to the generic comparison so both engines agree exactly
+			try {
+				boolean result = QueryEvaluationUtil
+						.compare(LmdbNativeValueCodec.toValue(left), LmdbNativeValueCodec.toValue(right), op, strict);
+				return result ? LmdbNativeTruth.TRUE : LmdbNativeTruth.FALSE;
+			} catch (ValueExprEvaluationException e) {
+				return LmdbNativeTruth.ERROR;
+			}
 		}
 		boolean equalityOp = op == Compare.CompareOp.EQ || op == Compare.CompareOp.NE;
 		if (left.numeric() && right.numeric() && (left.floatingValue() != null || right.floatingValue() != null)

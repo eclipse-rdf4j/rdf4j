@@ -67,9 +67,13 @@ final class NativeSlotOrder {
 						aliased[i] |= target;
 					}
 				}
-			} else if (copy.computed == null) {
+			} else if (copy.computed == null && copy.computedValue == null) {
+				// a true constant copy: the same id on every row, so the slot is fixed for ordering purposes
 				fixed |= target;
 			} else {
+				// computed (inline or interned-value) copies vary per row; claiming them fixed made the
+				// ordered-distinct planner exempt a computed DISTINCT key from its dedup keys entirely
+				// (M1.3a regression: SELECT DISTINCT over a computed BIND emitted duplicates)
 				computed = true;
 			}
 		}

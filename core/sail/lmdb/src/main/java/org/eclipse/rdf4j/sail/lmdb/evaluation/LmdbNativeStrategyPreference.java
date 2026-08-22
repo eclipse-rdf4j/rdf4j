@@ -161,4 +161,34 @@ final class LmdbNativeStrategyPreference {
 		int incumbentRank = rank(incumbent);
 		return candidateRank != Integer.MAX_VALUE && candidateRank < incumbentRank;
 	}
+
+	/**
+	 * Families the arbiter must eventually EXECUTE rather than starve behind measured rivals: the engine's own kernel
+	 * tiers (Janino-compiled and interpreted, row and aggregate, distinct rungs, and the legacy compiled aggregate). A
+	 * must-try arm that has never executed in the current regime bypasses the probe value gate — its first run is
+	 * mandatory, not value-optional — because a starved arm can never earn the evidence that would let it win. Regime
+	 * shifts re-arm these retries structurally: the adjacency store publishing, kernel compiles settling, or a
+	 * data-generation bump each change the {@link LmdbNativeRegimeKey}, whose fresh posterior nodes carry no exact
+	 * evidence, so the kernel tiers are re-tried under the new conditions (adjacency-backed, compiled) exactly once
+	 * they become available.
+	 */
+	static boolean mustTryFamily(String family) {
+		if (family == null) {
+			return false;
+		}
+		switch (family) {
+		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE:
+		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED:
+		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL:
+		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL:
+		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED:
+		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL:
+		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT:
+		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED:
+		case LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE:
+			return true;
+		default:
+			return false;
+		}
+	}
 }

@@ -209,7 +209,7 @@ final class LmdbNativePackedFtree {
 				return null;
 			}
 			if (aggregate.kind == AggKind.SAMPLE || aggregate.kind == AggKind.GROUP_CONCAT
-					|| aggregate.rowSlots != null) {
+					|| aggregate.kind == AggKind.CUSTOM || aggregate.rowSlots != null) {
 				// M-F1/M-F3: serial-only aggregates — the packed weighted/popcount paths have no combination rule
 				return null;
 			}

@@ -279,16 +279,20 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				if (computed != null) {
 					copies[i] = CopyBinding.computed(slot(elem.getName()), computed);
 				} else if (allowComputedValueInterning) {
-					// The result is not inline-packable (e.g. a long string). On the serial aggregate path we still
-					// compile it as a per-row decoded value and intern it to a stable group-key id at runtime.
+					// The result is not inline-packable (e.g. a long string). We compile it as a per-row decoded
+					// value and intern it to a stable, store-canonical id at runtime.
 					LmdbNativeCompiledValue computedValue = LmdbNativeExpressionCompiler
-							.compileComputedValue(expression, source, this::slot, strict);
+							.compileComputedValue(expression, source, this::slot, strict, context);
 					if (computedValue == null) {
 						return null;
 					}
 					copies[i] = CopyBinding.computedValue(slot(elem.getName()), computedValue,
 							QueryEvaluationUtility.isRepeatableWithinPreparation(expression));
 					sawComputedValueCopy = true;
+					// runtime-interned ids carry arbitrary type bits, so no raw-id filter shortcut (type-bit
+					// dispatch, cached compares, IN sets) may ever see this slot — the synthetic-var guard routes
+					// filters over it to the generic bridge, which materializes values instead
+					syntheticVarNames.add(elem.getName());
 				} else {
 					return null;
 				}
@@ -315,7 +319,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				continue;
 			}
 			LmdbNativeCompiledValue computedValue = LmdbNativeExpressionCompiler
-					.compileComputedValue(pending.expression, source, this::slot, strict);
+					.compileComputedValue(pending.expression, source, this::slot, strict, context);
 			if (computedValue == null) {
 				return null;
 			}
@@ -374,13 +378,6 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 
 	boolean nullRejects(ValueExpr condition, Set<String> nullableNames) {
 		return NativeExpressionFacts.of(condition).trueImpossibleWhen(nullableNames);
-	}
-
-	QueryEvaluationContext slotAwareContext() {
-		if (slotAwareContext == null) {
-			slotAwareContext = new SlotAwareQueryEvaluationContext(context, layout);
-		}
-		return slotAwareContext;
 	}
 
 	NativeBooleanFilter compileBoolean(ValueExpr expr) {

@@ -851,17 +851,26 @@ final class ValueSetFilter implements NativeBooleanFilter {
 			return cached;
 		}
 		boolean result = false;
+		Value value;
 		try {
-			Value value = source.lazyValue(id);
+			value = source.lazyValue(id);
+		} catch (RuntimeException e) {
+			value = null;
+		}
+		if (value != null) {
 			for (int i = 0; i < accepted.length; i++) {
-				Value acceptedValue = acceptedValue(i, source);
-				if (acceptedValue != null && QueryEvaluationUtil.compareEQ(value, acceptedValue, false)) {
-					result = true;
-					break;
+				// IN is an OR chain: a type error against one candidate must not mask a later TRUE, so each
+				// candidate gets its own error boundary (error || true = true)
+				try {
+					Value acceptedValue = acceptedValue(i, source);
+					if (acceptedValue != null && QueryEvaluationUtil.compareEQ(value, acceptedValue, false)) {
+						result = true;
+						break;
+					}
+				} catch (RuntimeException e) {
+					// this candidate errored; keep testing the rest
 				}
 			}
-		} catch (RuntimeException e) {
-			result = false;
 		}
 		memo.memoPut(id, result);
 		return result;

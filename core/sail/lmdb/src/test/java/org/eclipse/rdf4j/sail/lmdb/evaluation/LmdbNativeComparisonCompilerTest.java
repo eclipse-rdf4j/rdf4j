@@ -52,7 +52,7 @@ class LmdbNativeComparisonCompilerTest {
 		when(strategy.precompile(any(ValueExpr.class), any(QueryEvaluationContext.class))).thenReturn(generic);
 		when(source.nativeValueCodec()).thenReturn(codec);
 		when(source.idOf(any(Value.class))).thenAnswer(invocation -> LmdbNativeValueCodec
-				.packInline(LmdbNativeValueCodec.fromValue(invocation.getArgument(0))));
+				.packInline(LmdbNativeValueCodec.fromValue(invocation.getArgument(0)), false));
 
 		compiler = new LmdbNativeAggregatePlanner(context, strategy, source);
 		compiler.slot("a");
@@ -113,7 +113,7 @@ class LmdbNativeComparisonCompilerTest {
 
 		long resource = ValueIds.createId(ValueIds.T_URI, 11L);
 		long integer = LmdbNativeValueCodec
-				.packInline(LmdbNativeValueCodec.fromValue(SimpleValueFactory.getInstance().createLiteral(10)));
+				.packInline(LmdbNativeValueCodec.fromValue(SimpleValueFactory.getInstance().createLiteral(10)), false);
 
 		assertThat(filter.accept(rowWith(resource, integer)))
 				.as("mixed-kind comparisons must keep consulting the generic fallback")
