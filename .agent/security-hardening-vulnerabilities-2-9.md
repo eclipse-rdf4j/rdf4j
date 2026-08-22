@@ -30,6 +30,7 @@ The result is observable through focused regression tests. Before each behavior-
 - [x] (2026-08-21 06:14Z) Documented public-only remote access and allowlists, unsafe-ID offline renaming, credential keyrings and legacy-cookie invalidation, and both decompression budget families in the 6.0.0 release notes.
 - [x] (2026-08-21 06:41Z) Ran focused tests, affected module suites, copyright and formatting checks, the root quick clean install, generated-TypeScript consistency checks, and the final diff audit.
 - [x] (2026-08-21 06:50Z) Preserved and fixed final nested-symlink deletion and plain-stream ratio regressions; matching focused tests and both owning module suites pass.
+- [x] (2026-08-22 05:20Z) Preserved the post-hardening `ProxyTest` failure, injected exact-host policies into synthetic proxy and local MockServer fixtures without changing production defaults, and passed the focused test plus all 96 HTTP client tests.
 
 ## Surprises & Discoveries
 
@@ -71,6 +72,9 @@ The result is observable through focused regression tests. Before each behavior-
 
 - Observation: the first recursive RDF budget charged top-level uncompressed input only as expanded data, so a plain stream beyond the grace window appeared to have an infinite ratio.
   Evidence: `acceptsPlainInputAtOneToOneRatio` failed at a configured 1:1 ceiling; composing compressed/source and expanded accounting for plain top-level input fixed the method, and all 48 repository-api tests pass.
+
+- Observation: HTTP client tests use intentionally non-public origins: `ProxyTest` sends `rdf4j.invalid` through MockServer as a forward proxy, while protocol-session tests connect directly to loopback MockServer endpoints.
+  Evidence: the default public-only policy correctly rejected both fixture types. Exact-host test policies now preserve the intended proxy/protocol coverage, `ProxyTest` passes 1/1, and the HTTP client module passes 96 tests with 8 skips.
 
 ## Decision Log
 
@@ -270,6 +274,7 @@ Final affected-module evidence:
     tools/workbench: tests=397, failures=0, errors=0, skipped=0.
     Constant and bound SERVICE evaluation: tests=1, failures=0, errors=0, skipped=0.
     Malicious-username XSL transform: tests=1, failures=0, errors=0, skipped=0.
+    core/http/client follow-up: tests=96, failures=0, errors=0, skipped=8.
 
 Final repository checks:
 

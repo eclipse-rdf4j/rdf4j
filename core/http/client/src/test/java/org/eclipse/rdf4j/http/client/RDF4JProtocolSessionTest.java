@@ -22,7 +22,6 @@ import java.util.concurrent.Executors;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
-import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClients;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -58,7 +57,7 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 
 	@Override
 	RDF4JProtocolSession createProtocolSession() {
-		RDF4JHttpClient httpClient = RDF4JHttpClients.factory(factoryName).create();
+		RDF4JHttpClient httpClient = createTestHttpClient();
 		sessionManager = new SharedHttpClientSessionManager(httpClient, Executors.newCachedThreadPool());
 		RDF4JProtocolSession session = sessionManager.createRDF4JProtocolSession(serverURL);
 		session.setRepository(Protocol.getRepositoryLocation(serverURL, repositoryID));
