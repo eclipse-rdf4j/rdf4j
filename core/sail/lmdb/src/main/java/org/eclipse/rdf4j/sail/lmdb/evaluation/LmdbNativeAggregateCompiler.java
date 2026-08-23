@@ -159,7 +159,7 @@ final class LmdbNativeAggregateCompiler {
 		if (planner.containsUnsafeExistsScope(expr)) {
 			return null;
 		}
-		QueryEvaluationStep rows = planner.compileBareRoot(expr);
+		QueryEvaluationStep rows = planner.compileBareExists(expr);
 		if (!(rows instanceof NativeBareRowsStep)) {
 			return null;
 		}

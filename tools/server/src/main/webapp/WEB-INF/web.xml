@@ -110,6 +110,10 @@
         <role-name>rdf4j-admin</role-name>
     </security-role>
 -->
+	<security-role>
+		<description>The role permitted to change process-wide RDF4J Server configuration.</description>
+		<role-name>rdf4j-admin</role-name>
+	</security-role>
 	<session-config>
 		<session-timeout>30</session-timeout>
 		<tracking-mode>COOKIE</tracking-mode>

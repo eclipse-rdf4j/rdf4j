@@ -464,6 +464,15 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 * the compiler that owns the actual semantics.
 	 */
 	QueryEvaluationStep compileBareRoot(TupleExpr expr) {
+		return compileBareRoot(expr, false);
+	}
+
+	/** Compiles a correlated EXISTS operand after {@link #containsUnsafeExistsScope(TupleExpr)} approved its scope. */
+	QueryEvaluationStep compileBareExists(TupleExpr expr) {
+		return compileBareRoot(expr, true);
+	}
+
+	private QueryEvaluationStep compileBareRoot(TupleExpr expr, boolean rootScopeApproved) {
 		// bare fragments serve the generic evaluator's own recursion: a generic island inside a native fragment
 		// inside a generic host would add indirection without coverage, so islands are suppressed on this route
 		islandsSuppressed = true;
@@ -471,7 +480,10 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (node instanceof QueryRoot) {
 			node = ((QueryRoot) node).getArg();
 		}
-		if (containsUnsafeNestedVariableScopeChange(node)) {
+		// Bare fragments are evaluated with a caller-supplied mapping. A scope-changing root must hide that mapping,
+		// while NativeBareRowsStep deliberately carries it as base bindings, so generic evaluation must own the root.
+		if ((!rootScopeApproved && TupleExprs.isVariableScopeChange(node))
+				|| containsUnsafeNestedVariableScopeChange(node)) {
 			return null;
 		}
 		Set<String> optionalOnlyNames = wellDesignedOptionalOnlyNames(node);

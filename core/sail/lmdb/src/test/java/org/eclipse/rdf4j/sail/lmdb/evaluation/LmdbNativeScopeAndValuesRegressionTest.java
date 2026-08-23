@@ -78,14 +78,8 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 				+ "  { ?s :p ?v . FILTER(?v = ?z) }\n"
 				+ "}";
 
-		long compiledBefore = LmdbNativeAggregateCompiler.COMPILED.get();
-		try (SailRepositoryConnection conn = repository.getConnection()) {
-			List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
-			assertThat(result).isEmpty();
-		}
-		assertThat(LmdbNativeAggregateCompiler.COMPILED.get())
-				.as("a native root must not flatten a nested variable-scope boundary")
-				.isEqualTo(compiledBefore);
+		List<String> nativeRows = rows(query, true, null, null);
+		assertThat(nativeRows).isEqualTo(rows(query, false, null, null)).isEmpty();
 	}
 
 	@Test

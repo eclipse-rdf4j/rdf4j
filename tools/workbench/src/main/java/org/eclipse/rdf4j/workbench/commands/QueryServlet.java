@@ -211,7 +211,9 @@ public class QueryServlet extends TransformationServlet {
 		} else if (ACTION_LMDB_PROPERTIES.equals(action)) {
 			writeLmdbRuntimeProperties(resp);
 		} else if (ACTION_SET_LMDB_PROPERTY.equals(action)) {
-			writeSetLmdbRuntimeProperty(req, resp);
+			resp.setHeader("Allow", "POST");
+			writeRuntimePropertyJson(resp, HttpServletResponse.SC_METHOD_NOT_ALLOWED,
+					new RuntimePropertyError("LMDB runtime properties can only be changed with POST"));
 		} else if (ACTION_EXPLAIN.equals(action)) {
 			if (isSavedQueryReference(req) && !canReadSavedQuery(req)) {
 				throw new BadRequestException("Current user may not read the given query.");

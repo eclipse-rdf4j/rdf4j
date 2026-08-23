@@ -59,16 +59,32 @@ class LmdbRuntimePropertiesControllerTest {
 	void postAcceptsOnlyCanonicalBooleansAndIsLastWriteWins() throws Exception {
 		String previous = System.getProperty(NATIVE_ENGINE);
 		try {
-			MockHttpServletResponse disabled = request("POST", NATIVE_ENGINE, "false");
+			MockHttpServletResponse disabled = authorizedRequest("POST", NATIVE_ENGINE, "false");
 			assertThat(disabled.getStatus()).isEqualTo(200);
 			assertThat(disabled.getHeader("Cache-Control")).isEqualTo("no-store");
 			assertThat(disabled.getContentAsString()).contains("\"enabled\":false");
 			assertThat(System.getProperty(NATIVE_ENGINE)).isEqualTo("false");
 
-			MockHttpServletResponse enabled = request("POST", NATIVE_ENGINE, "true");
+			MockHttpServletResponse enabled = authorizedRequest("POST", NATIVE_ENGINE, "true");
 			assertThat(enabled.getStatus()).isEqualTo(200);
 			assertThat(enabled.getContentAsString()).contains("\"enabled\":true");
 			assertThat(System.getProperty(NATIVE_ENGINE)).isEqualTo("true");
+		} finally {
+			restore(NATIVE_ENGINE, previous);
+		}
+	}
+
+	@Test
+	void postRequiresAdministratorRoleAndDoesNotMutate() throws Exception {
+		String previous = System.getProperty(NATIVE_ENGINE);
+		try {
+			String requested = Boolean.toString(!Boolean.parseBoolean(previous));
+			MockHttpServletResponse response = request("POST", NATIVE_ENGINE, requested);
+
+			assertThat(response.getStatus()).isEqualTo(403);
+			assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+			assertThat(response.getContentAsString()).contains("\"error\"").contains("rdf4j-admin");
+			assertThat(System.getProperty(NATIVE_ENGINE)).isEqualTo(previous);
 		} finally {
 			restore(NATIVE_ENGINE, previous);
 		}
@@ -79,9 +95,9 @@ class LmdbRuntimePropertiesControllerTest {
 		String unknown = "rdf4j.lmdb.notAllowlisted.enabled";
 		String previous = System.getProperty(unknown);
 		try {
-			assertBadRequest(request("POST", unknown, "true"), "Unknown LMDB runtime property");
-			assertBadRequest(request("POST", NATIVE_ENGINE, "TRUE"), "enabled must be true or false");
-			assertBadRequest(request("POST", NATIVE_ENGINE, null), "enabled must be true or false");
+			assertBadRequest(authorizedRequest("POST", unknown, "true"), "Unknown LMDB runtime property");
+			assertBadRequest(authorizedRequest("POST", NATIVE_ENGINE, "TRUE"), "enabled must be true or false");
+			assertBadRequest(authorizedRequest("POST", NATIVE_ENGINE, null), "enabled must be true or false");
 			assertThat(System.getProperty(unknown)).isEqualTo(previous);
 
 			MockHttpServletResponse unsupported = request("PUT", NATIVE_ENGINE, "true");
@@ -100,6 +116,16 @@ class LmdbRuntimePropertiesControllerTest {
 	}
 
 	private static MockHttpServletResponse request(String method, String name, String enabled) throws Exception {
+		return request(method, name, enabled, false);
+	}
+
+	private static MockHttpServletResponse authorizedRequest(String method, String name, String enabled)
+			throws Exception {
+		return request(method, name, enabled, true);
+	}
+
+	private static MockHttpServletResponse request(String method, String name, String enabled, boolean administrator)
+			throws Exception {
 		Class<?> controllerType = Class
 				.forName("org.eclipse.rdf4j.common.webapp.system.LmdbRuntimePropertiesController");
 		Object controller = controllerType.getConstructor().newInstance();
@@ -107,6 +133,9 @@ class LmdbRuntimePropertiesControllerTest {
 				HttpServletResponse.class);
 		MockHttpServletRequest request = new MockHttpServletRequest();
 		request.setMethod(method);
+		if (administrator) {
+			request.addUserRole("rdf4j-admin");
+		}
 		if (name != null) {
 			request.addParameter("name", name);
 		}

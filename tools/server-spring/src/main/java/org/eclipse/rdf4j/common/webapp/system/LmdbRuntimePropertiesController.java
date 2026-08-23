@@ -24,6 +24,7 @@ import jakarta.servlet.http.HttpServletResponse;
 
 /** Process-wide, fixed-allowlist endpoint for live LMDB boolean features. */
 public class LmdbRuntimePropertiesController implements Controller {
+	private static final String ADMIN_ROLE = "rdf4j-admin";
 
 	@Override
 	public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -36,7 +37,12 @@ public class LmdbRuntimePropertiesController implements Controller {
 			write(response, HttpServletResponse.SC_OK, toJson(LmdbRuntimeProperties.list()));
 			break;
 		case "POST":
-			handlePost(request, response);
+			if (request.isUserInRole(ADMIN_ROLE)) {
+				handlePost(request, response);
+			} else {
+				writeError(response, HttpServletResponse.SC_FORBIDDEN,
+						"The rdf4j-admin role is required to change LMDB runtime properties");
+			}
 			break;
 		default:
 			response.setHeader("Allow", "GET, POST");
