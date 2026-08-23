@@ -193,6 +193,80 @@ class LmdbStatisticsServiceTest {
 	}
 
 	@Test
+	void startupRollsBackCleansAndRequiresRebuildWhenCurrentShardIsCorrupt() throws Exception {
+		service = openService();
+		service.publish(writeGeneration(1L, -1L, 7L, FIRST_PROBE_SHARD, 41L, true));
+		FrontierStatisticsManifest generationTwo = writeGeneration(
+				2L, 1L, 8L, SECOND_PROBE_SHARD, 82L, true);
+		service.publish(generationTwo);
+		service.close();
+		service = null;
+
+		Path corruptShard = directory.resolve(generationTwo.shards()
+				.stream()
+				.filter(descriptor -> descriptor.shardId() == SECOND_PROBE_SHARD)
+				.findFirst()
+				.orElseThrow()
+				.fileName());
+		Files.write(corruptShard, new byte[] { 0 });
+
+		service = openService();
+
+		assertEquals(FrontierStatisticsAvailability.READY, service.status().availability());
+		assertEquals(1L, service.status().generationId());
+		assertTrue(service.rebuildRequired());
+		assertFalse(Files.exists(corruptShard));
+		assertFalse(Files.exists(directory.resolve("manifest-%019d.fs2m".formatted(2L))));
+
+		service.publish(writeGeneration(2L, 1L, 8L, SECOND_PROBE_SHARD, 82L, true));
+		assertEquals(2L, service.status().generationId());
+		assertFalse(service.rebuildRequired());
+	}
+
+	@Test
+	void startupResetsOnlyOwnedArtifactsWhenCurrentPointerIsCorrupt() throws Exception {
+		service = openService();
+		service.publish(writeGeneration(1L, -1L, 7L, FIRST_PROBE_SHARD, 41L, true));
+		service.close();
+		service = null;
+		Path foreign = directory.resolve("keep-user-diagnostic.txt");
+		Files.writeString(foreign, "keep");
+		Path interruptedSort = Files.createDirectory(directory.resolve("omni-sort-interrupted"));
+		Files.writeString(interruptedSort.resolve("run-0.bin"), "partial");
+		Files.write(directory.resolve("CURRENT.fs2"), new byte[] { 0 });
+
+		service = openService();
+
+		assertEquals(FrontierStatisticsAvailability.NO_GENERATION, service.status().availability());
+		assertTrue(service.rebuildRequired());
+		assertFalse(Files.exists(directory.resolve("CURRENT.fs2")));
+		assertFalse(Files.exists(directory.resolve("manifest-%019d.fs2m".formatted(1L))));
+		assertFalse(Files.exists(interruptedSort));
+		assertTrue(Files.isRegularFile(foreign), "cleanup must retain files outside the owned name grammar");
+	}
+
+	@Test
+	void startupResetsCorruptManifestAndCleanRestartDoesNotRequestRebuild() throws Exception {
+		service = openService();
+		service.publish(writeGeneration(1L, -1L, 7L, FIRST_PROBE_SHARD, 41L, true));
+		service.close();
+		service = null;
+		Path manifest = directory.resolve("manifest-%019d.fs2m".formatted(1L));
+		Files.write(manifest, new byte[] { 0 });
+
+		service = openService();
+		assertEquals(FrontierStatisticsAvailability.NO_GENERATION, service.status().availability());
+		assertTrue(service.rebuildRequired());
+		assertFalse(Files.exists(manifest));
+
+		service.publish(writeGeneration(1L, -1L, 7L, FIRST_PROBE_SHARD, 41L, true));
+		service.close();
+		service = openService();
+		assertEquals(FrontierStatisticsAvailability.READY, service.status().availability());
+		assertFalse(service.rebuildRequired(), "a clean restart must keep using the published generation");
+	}
+
+	@Test
 	void optionalShardFailureDoesNotInvalidateMandatoryCore() throws Exception {
 		service = openService();
 		FrontierStatisticsManifest core = writeGeneration(

@@ -411,12 +411,14 @@ final class LmdbEstimatorRuntime {
 	}
 
 	long frontierPlanningRevision() {
-		return frontierSynopsis == null ? 0L : frontierSynopsis.planningRevision();
+		long legacyRevision = frontierSynopsis == null ? 0L : frontierSynopsis.planningRevision();
+		return statistics == null ? legacyRevision
+				: LmdbEstimatorRevisionSupport.frontierPlanningRevision(legacyRevision, statistics.status());
 	}
 
 	long learnedEvidenceRevision() {
 		return LmdbEstimatorRevisionSupport.learnedEvidenceRevision(
-				snapshotVersion(), leoRevision(), frontierStatusRevision());
+				snapshotVersion(), leoRevision(), frontierPlanningRevision());
 	}
 
 	PlanningRevisions capturePlanningRevisions() {
@@ -424,12 +426,8 @@ final class LmdbEstimatorRuntime {
 		long frontierRevision = frontierPlanningRevision();
 		long leoRevision = leoRevision();
 		long learnedEvidenceRevision = LmdbEstimatorRevisionSupport.learnedEvidenceRevision(
-				dataRevision, leoRevision, frontierStatusRevision());
+				dataRevision, leoRevision, frontierRevision);
 		return new PlanningRevisions(dataRevision, frontierRevision, leoRevision, learnedEvidenceRevision);
-	}
-
-	private long frontierStatusRevision() {
-		return frontierSynopsis == null ? 0L : frontierSynopsis.status().ordinal() + 1L;
 	}
 
 	record PlanningRevisions(

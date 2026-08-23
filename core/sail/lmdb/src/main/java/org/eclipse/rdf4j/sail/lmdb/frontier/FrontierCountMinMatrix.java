@@ -52,6 +52,42 @@ final class FrontierCountMinMatrix {
 		}
 	}
 
+	void addRows(int plane, int rows) {
+		if (rows < 0) {
+			throw new IllegalArgumentException("rows must be non-negative: " + rows);
+		}
+		for (int row = 0; row < rows; row++) {
+			totals[plane] = saturatedIncrement(totals[plane]);
+		}
+	}
+
+	void addMasks(int plane, int maskStartInclusive, int maskEndExclusive,
+			long[] subjectHashes, long[] predicateHashes, long[] objectHashes, long[] contextHashes, int rows,
+			long[] keyScratch, int[] bucketScratch) {
+		if (maskStartInclusive <= 0 || maskEndExclusive > MASKS || maskStartInclusive >= maskEndExclusive
+				|| rows < 0 || rows > subjectHashes.length || rows > predicateHashes.length
+				|| rows > objectHashes.length || rows > contextHashes.length
+				|| rows > keyScratch.length || rows > bucketScratch.length) {
+			throw new IllegalArgumentException("Frontier Count-Min page partition is invalid");
+		}
+		for (int mask = maskStartInclusive; mask < maskEndExclusive; mask++) {
+			for (int record = 0; record < rows; record++) {
+				keyScratch[record] = FrontierStatisticsHash.conditioningKeyFromComponentHashes(mask,
+						subjectHashes[record], predicateHashes[record], objectHashes[record], contextHashes[record]);
+			}
+			int base = tableOffset(plane, mask);
+			for (int row = 0; row < depth; row++) {
+				FrontierStatisticsHashBatch.buckets(
+						row, plane, mask, keyScratch, 0, rows, widthMask, bucketScratch, 0);
+				int rowBase = base + row * width;
+				for (int record = 0; record < rows; record++) {
+					int index = rowBase + bucketScratch[record];
+					counters[index] = saturatedIncrement(counters[index]);
+				}
+			}
+		}
+	}
+
 	long[] copyCounters(int plane, int mask) {
 		int offset = tableOffset(plane, mask);
 		return Arrays.copyOfRange(counters, offset, offset + tableLength);

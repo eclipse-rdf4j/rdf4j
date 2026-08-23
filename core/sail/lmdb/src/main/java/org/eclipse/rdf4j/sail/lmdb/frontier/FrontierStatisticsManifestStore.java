@@ -21,7 +21,9 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Objects;
+import java.util.regex.Pattern;
 import java.util.zip.CRC32C;
 
 /**
@@ -41,6 +43,10 @@ final class FrontierStatisticsManifestStore {
 	private static final int POINTER_CHECKSUM_OFFSET = 24;
 	private static final String CURRENT_FILE = "CURRENT.fs2";
 	private static final String CURRENT_TEMPORARY_FILE = "CURRENT.fs2.tmp";
+	private static final Pattern MANIFEST_FILE = Pattern.compile("manifest-[0-9]{1,19}\\.fs2m(?:\\.tmp)?");
+	private static final Pattern SHARD_FILE = Pattern
+			.compile("generation-[0-9]{1,19}-shard-[0-9]{1,5}\\.fs2s(?:\\.tmp)?");
+	private static final String SORT_DIRECTORY_PREFIX = "omni-sort-";
 
 	private final Path directory;
 	private final FrontierFileOps fileOps;
@@ -128,6 +134,130 @@ final class FrontierStatisticsManifestStore {
 				fileOps.deleteIfExists(temporary);
 			}
 		}
+	}
+
+	synchronized boolean cleanupTemporaryArtifacts() throws IOException {
+		return deleteOwnedPaths(false, true);
+	}
+
+	synchronized boolean cleanupUnpublishedManifests() throws IOException {
+		IOException failure = null;
+		boolean changed = false;
+		for (Path path : fileOps.list(directory).stream().sorted(Comparator.naturalOrder()).toList()) {
+			String name = path.getFileName().toString();
+			if (name.endsWith(".tmp") || !MANIFEST_FILE.matcher(name).matches()) {
+				continue;
+			}
+			try {
+				fileOps.deleteIfExists(path);
+				changed = true;
+			} catch (IOException current) {
+				failure = append(failure, current);
+			}
+		}
+		if (changed) {
+			try {
+				fileOps.forceDirectory(directory);
+			} catch (IOException current) {
+				failure = append(failure, current);
+			}
+		}
+		if (failure != null) {
+			throw failure;
+		}
+		return changed;
+	}
+
+	synchronized void discardGeneration(FrontierStatisticsManifest manifest) throws IOException {
+		Objects.requireNonNull(manifest, "manifest");
+		IOException failure = null;
+		for (FrontierStatisticsShardDescriptor descriptor : manifest.shards()) {
+			if (descriptor.resolvedOwnerGenerationId(manifest.generationId()) == manifest.generationId()) {
+				try {
+					Path shard = shardPath(descriptor);
+					fileOps.deleteIfExists(shard.resolveSibling(shard.getFileName() + ".tmp"));
+					fileOps.deleteIfExists(shard);
+				} catch (IOException current) {
+					failure = append(failure, current);
+				}
+			}
+		}
+		try {
+			Path manifestPath = manifestPath(manifest.generationId());
+			fileOps.deleteIfExists(manifestPath.resolveSibling(manifestPath.getFileName() + ".tmp"));
+			fileOps.deleteIfExists(manifestPath);
+		} catch (IOException current) {
+			failure = append(failure, current);
+		}
+		try {
+			fileOps.forceDirectory(directory);
+		} catch (IOException current) {
+			failure = append(failure, current);
+		}
+		if (failure != null) {
+			throw failure;
+		}
+	}
+
+	synchronized boolean resetOwnedArtifacts() throws IOException {
+		return deleteOwnedPaths(true, true);
+	}
+
+	private boolean deleteOwnedPaths(boolean includePublished, boolean includeTemporary) throws IOException {
+		IOException failure = null;
+		boolean changed = false;
+		ArrayList<Path> currentPointers = new ArrayList<>();
+		for (Path path : fileOps.list(directory).stream().sorted(Comparator.naturalOrder()).toList()) {
+			String name = path.getFileName().toString();
+			boolean currentPointer = CURRENT_FILE.equals(name);
+			boolean temporary = CURRENT_TEMPORARY_FILE.equals(name)
+					|| name.endsWith(".tmp") && (MANIFEST_FILE.matcher(name).matches()
+							|| SHARD_FILE.matcher(name).matches());
+			boolean published = MANIFEST_FILE.matcher(name).matches() || SHARD_FILE.matcher(name).matches();
+			boolean sortDirectory = name.startsWith(SORT_DIRECTORY_PREFIX) && fileOps.isDirectory(path);
+			if (currentPointer) {
+				if (includePublished) {
+					currentPointers.add(path);
+				}
+				continue;
+			}
+			if (!(includePublished && published || includeTemporary && (temporary || sortDirectory))) {
+				continue;
+			}
+			try {
+				fileOps.deleteRecursivelyIfExists(path);
+				changed = true;
+			} catch (IOException current) {
+				failure = append(failure, current);
+			}
+		}
+		for (Path currentPointer : currentPointers) {
+			try {
+				fileOps.deleteIfExists(currentPointer);
+				changed = true;
+			} catch (IOException current) {
+				failure = append(failure, current);
+			}
+		}
+		if (changed) {
+			try {
+				fileOps.forceDirectory(directory);
+			} catch (IOException current) {
+				failure = append(failure, current);
+			}
+		}
+		if (failure != null) {
+			throw failure;
+		}
+		return changed;
+	}
+
+	private static IOException append(IOException accumulated, IOException current) {
+		if (accumulated == null) {
+			return current;
+		}
+		accumulated.addSuppressed(current);
+		return accumulated;
 	}
 
 	Path shardPath(FrontierStatisticsShardDescriptor descriptor) throws IOException {

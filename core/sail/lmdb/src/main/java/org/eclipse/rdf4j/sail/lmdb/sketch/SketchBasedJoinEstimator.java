@@ -19,6 +19,7 @@ import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.sail.lmdb.DerivedStateBuildExecutor;
 import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 
@@ -59,10 +60,19 @@ public final class SketchBasedJoinEstimator implements AutoCloseable {
 	private final LmdbQuadSynopsisService service;
 
 	public SketchBasedJoinEstimator(SketchStatementSource statementSource, Config config) {
+		this(statementSource, config, null);
+	}
+
+	public SketchBasedJoinEstimator(SketchStatementSource statementSource, Config config,
+			DerivedStateBuildExecutor buildExecutor) {
 		Config normalized = config == null ? Config.defaults() : config;
-		service = new LmdbQuadSynopsisService(Objects.requireNonNull(statementSource, "statementSource"),
-				normalized.memoryBudgetBytes, normalized.coldSynopsisCapacity, normalized.throttleEveryN,
-				normalized.throttleMillis);
+		SketchStatementSource normalizedSource = Objects.requireNonNull(statementSource, "statementSource");
+		service = buildExecutor == null
+				? new LmdbQuadSynopsisService(normalizedSource, normalized.memoryBudgetBytes,
+						normalized.coldSynopsisCapacity, normalized.throttleEveryN, normalized.throttleMillis)
+				: new LmdbQuadSynopsisService(normalizedSource, normalized.memoryBudgetBytes,
+						normalized.coldSynopsisCapacity, normalized.throttleEveryN, normalized.throttleMillis,
+						buildExecutor);
 		service.setAdaptiveEvidenceAllowed(normalized.adaptiveEvidenceAllowed);
 	}
 

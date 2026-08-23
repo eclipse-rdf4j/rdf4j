@@ -15,15 +15,20 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
+import java.util.function.LongSupplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.sail.lmdb.DerivedStateBuildExecutor;
+import org.eclipse.rdf4j.sail.lmdb.DerivedStateBuildProgress;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchRebuildObserver;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSource;
 import org.slf4j.Logger;
@@ -42,6 +47,9 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 	private final QuadSynopsisBudget budget;
 	private final long throttleEveryN;
 	private final long throttleMillis;
+	private final DerivedStateBuildExecutor buildExecutor;
+	private final boolean ownsBuildExecutor;
+	private final LongSupplier nanoTime;
 	private final Object lifecycleMonitor = new Object();
 	private final Object rebuildMutex = new Object();
 	private final AtomicBoolean rebuildRequested = new AtomicBoolean();
@@ -62,10 +70,34 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 
 	public LmdbQuadSynopsisService(SketchStatementSource statementSource, long memoryBudgetBytes,
 			int coldSampleCapacity, long throttleEveryN, long throttleMillis) {
+		this(statementSource, memoryBudgetBytes, coldSampleCapacity, throttleEveryN, throttleMillis,
+				DerivedStateBuildExecutor.create("rdf4j-lmdb-derived-state-"), true, System::nanoTime);
+	}
+
+	public LmdbQuadSynopsisService(SketchStatementSource statementSource, long memoryBudgetBytes,
+			int coldSampleCapacity, long throttleEveryN, long throttleMillis,
+			DerivedStateBuildExecutor buildExecutor) {
+		this(statementSource, memoryBudgetBytes, coldSampleCapacity, throttleEveryN, throttleMillis,
+				buildExecutor, false, System::nanoTime);
+	}
+
+	LmdbQuadSynopsisService(SketchStatementSource statementSource, long memoryBudgetBytes,
+			int coldSampleCapacity, long throttleEveryN, long throttleMillis,
+			DerivedStateBuildExecutor buildExecutor, LongSupplier nanoTime) {
+		this(statementSource, memoryBudgetBytes, coldSampleCapacity, throttleEveryN, throttleMillis,
+				buildExecutor, false, nanoTime);
+	}
+
+	private LmdbQuadSynopsisService(SketchStatementSource statementSource, long memoryBudgetBytes,
+			int coldSampleCapacity, long throttleEveryN, long throttleMillis,
+			DerivedStateBuildExecutor buildExecutor, boolean ownsBuildExecutor, LongSupplier nanoTime) {
 		this.statementSource = Objects.requireNonNull(statementSource, "statementSource");
 		this.budget = QuadSynopsisBudget.create(memoryBudgetBytes, Math.max(0, coldSampleCapacity));
 		this.throttleEveryN = throttleEveryN <= 0L ? Long.MAX_VALUE : throttleEveryN;
 		this.throttleMillis = Math.max(0L, throttleMillis);
+		this.buildExecutor = Objects.requireNonNull(buildExecutor, "buildExecutor");
+		this.ownsBuildExecutor = ownsBuildExecutor;
+		this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
 		UUID storeId = UUID.randomUUID();
 		this.identity = new QuadSnapshotIdentity(storeId.getMostSignificantBits(), storeId.getLeastSignificantBits(),
 				0L);
@@ -256,12 +288,18 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 		if (!closed.compareAndSet(false, true)) {
 			return;
 		}
-		stopBackgroundRefresh();
-		if (rebuildAllowed.getAsBoolean() && mutationSequence.get() != publishedMutationSequence) {
-			rebuild();
+		try {
+			stopBackgroundRefresh();
+			if (rebuildAllowed.getAsBoolean() && mutationSequence.get() != publishedMutationSequence) {
+				rebuild();
+			}
+			persistIfDirty();
+			signalLifecycle();
+		} finally {
+			if (ownsBuildExecutor) {
+				buildExecutor.close();
+			}
 		}
-		persistIfDirty();
-		signalLifecycle();
 	}
 
 	private void load(Path source) {
@@ -299,35 +337,38 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 					identity.mutationVersion() + 1L);
 			QuadSynopsisBuilder builder = new QuadSynopsisBuilder(budget, nextIdentity,
 					publishedSnapshot.snapshotVersion() + 1L);
-			SketchRebuildObserver.RebuildObservation observation = startRebuildObservation(identity.mutationVersion());
-			boolean observationFinished = false;
+			ObservationState observation = new ObservationState(
+					startRebuildObservation(identity.mutationVersion()));
 			long scanned = 0L;
+			int effectiveWorkers = buildExecutor.effectiveParallelism(Integer.MAX_VALUE, Integer.MAX_VALUE,
+					QuadProbe.ALL + 2);
+			DerivedStateBuildProgress progress = new DerivedStateBuildProgress(0L, nanoTime);
+			logger.info("Starting LMDB quad synopsis rebuild; effectiveWorkers={}, pageRows={}", effectiveWorkers,
+					DerivedStateBuildExecutor.PAGE_ROWS);
 			try {
+				QuadPage page = new QuadPage();
 				try (CloseableIteration<? extends Statement> statements = statementSource.getStatements(null, null,
 						null)) {
 					while (statements.hasNext()) {
-						Statement statement = statements.next();
-						if (observation != null) {
-							try {
-								observation.statementScanned(statement);
-							} catch (RuntimeException e) {
-								logger.warn(
-										"Disabling quad synopsis rebuild observer after a statement callback failed",
-										e);
-								abortRebuildObservation(observation);
-								observation = null;
-								observationFinished = true;
-							}
+						page.statements[page.size++] = statements.next();
+						if (page.size == page.statements.length) {
+							processFullPage(page, builder, observation, effectiveWorkers);
+							long previousScanned = scanned;
+							scanned = saturatingAdd(scanned, page.size);
+							logProgress(progress.pageCompleted(scanned));
+							throttle(previousScanned, scanned);
+							page.clear();
 						}
-						builder.add(QuadValueHash.hash(statement.getSubject()),
-								QuadValueHash.hash(statement.getPredicate()),
-								QuadValueHash.hash(statement.getObject()), QuadValueHash.hash(statement.getContext()));
-						scanned++;
-						throttle(scanned);
 					}
+					processSerialPage(page.statements, page.size, builder, observation);
+					long previousScanned = scanned;
+					scanned = saturatingAdd(scanned, page.size);
+					throttle(previousScanned, scanned);
+					page.clear();
 				}
 				if (startMutation != mutationSequence.get()) {
 					rebuildRequested.set(true);
+					logFinish("stale", scanned, effectiveWorkers, progress.finish(scanned), null);
 					return;
 				}
 				QuadSynopsisSnapshot replacement = builder.build();
@@ -337,23 +378,166 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 				publishedMutationSequence = startMutation;
 				rebuildRequested.set(false);
 				dirty = true;
-				if (observation != null) {
+				if (observation.observation != null) {
 					try {
-						observation.complete(nextIdentity.mutationVersion());
+						observation.observation.complete(nextIdentity.mutationVersion());
 					} catch (RuntimeException e) {
 						logger.warn(
 								"Discarding quad synopsis rebuild observer result after publication callback failed",
 								e);
-						abortRebuildObservation(observation);
+						abortRebuildObservation(observation.observation);
 					}
-					observationFinished = true;
+					observation.finished = true;
 				}
 				signalLifecycle();
+				logFinish("successful", scanned, effectiveWorkers, progress.finish(scanned), null);
+			} catch (IOException e) {
+				rebuildRequested.set(true);
+				logFinish("failed", scanned, effectiveWorkers, progress.finish(scanned), e);
+				throw new UncheckedIOException(e);
+			} catch (RuntimeException | Error e) {
+				rebuildRequested.set(true);
+				logFinish("failed", scanned, effectiveWorkers, progress.finish(scanned), e);
+				throw e;
 			} finally {
-				if (!observationFinished && observation != null) {
-					abortRebuildObservation(observation);
+				if (!observation.finished && observation.observation != null) {
+					abortRebuildObservation(observation.observation);
 				}
 			}
+		}
+	}
+
+	private void processFullPage(QuadPage page, QuadSynopsisBuilder builder, ObservationState observation,
+			int effectiveWorkers) throws IOException {
+		if (effectiveWorkers == 1) {
+			processSerialPage(page.statements, page.size, builder, observation);
+			return;
+		}
+		ArrayList<Callable<Void>> conversions = new ArrayList<>(effectiveWorkers + 1);
+		for (int worker = 0; worker < effectiveWorkers; worker++) {
+			int from = page.size * worker / effectiveWorkers;
+			int to = page.size * (worker + 1) / effectiveWorkers;
+			conversions.add(() -> {
+				for (int row = from; row < to; row++) {
+					Statement statement = page.statements[row];
+					page.subjects[row] = QuadValueHash.hash(statement.getSubject());
+					page.predicates[row] = QuadValueHash.hash(statement.getPredicate());
+					page.objects[row] = QuadValueHash.hash(statement.getObject());
+					page.contexts[row] = QuadValueHash.hash(statement.getContext());
+				}
+				return null;
+			});
+		}
+		if (observation.observation != null) {
+			conversions.add(() -> {
+				scanObservation(page.statements, page.size, observation);
+				return null;
+			});
+		}
+		buildExecutor.runAll(conversions);
+
+		int countMinWorkers = Math.min(effectiveWorkers, QuadProbe.ALL);
+		ArrayList<Callable<Void>> accumulators = new ArrayList<>(countMinWorkers + 2);
+		for (int worker = 0; worker < countMinWorkers; worker++) {
+			int firstMask = 1 + QuadProbe.ALL * worker / countMinWorkers;
+			int limitMask = 1 + QuadProbe.ALL * (worker + 1) / countMinWorkers;
+			accumulators.add(() -> {
+				builder.addCountMin(page.subjects, page.predicates, page.objects, page.contexts, page.size,
+						firstMask, limitMask);
+				return null;
+			});
+		}
+		accumulators.add(() -> {
+			builder.addConditionedWitnesses(page.subjects, page.predicates, page.objects, page.contexts, page.size);
+			return null;
+		});
+		accumulators.add(() -> {
+			builder.addColdSample(page.subjects, page.predicates, page.objects, page.contexts, page.size);
+			return null;
+		});
+		buildExecutor.runAll(accumulators);
+		builder.addRows(page.size);
+	}
+
+	private void processSerialPage(Statement[] statements, int rows, QuadSynopsisBuilder builder,
+			ObservationState observation) {
+		for (int row = 0; row < rows; row++) {
+			Statement statement = statements[row];
+			scanObservation(statement, observation);
+			builder.add(QuadValueHash.hash(statement.getSubject()), QuadValueHash.hash(statement.getPredicate()),
+					QuadValueHash.hash(statement.getObject()), QuadValueHash.hash(statement.getContext()));
+		}
+	}
+
+	private void scanObservation(Statement[] statements, int rows, ObservationState observation) {
+		for (int row = 0; row < rows && observation.observation != null; row++) {
+			scanObservation(statements[row], observation);
+		}
+	}
+
+	private void scanObservation(Statement statement, ObservationState observation) {
+		if (observation.observation == null) {
+			return;
+		}
+		try {
+			observation.observation.statementScanned(statement);
+		} catch (RuntimeException e) {
+			logger.warn("Disabling quad synopsis rebuild observer after a statement callback failed", e);
+			abortRebuildObservation(observation.observation);
+			observation.observation = null;
+			observation.finished = true;
+		}
+	}
+
+	private void logProgress(DerivedStateBuildProgress.Sample sample) {
+		if (sample != null) {
+			logger.info("LMDB quad synopsis rebuild progress: statements={}, currentStatementsPerSecond={}, "
+					+ "averageStatementsPerSecond={}", sample.cumulativeVisits(), sample.currentRate(),
+					sample.averageRate());
+		}
+	}
+
+	private void logFinish(String state, long scanned, int effectiveWorkers, DerivedStateBuildProgress.Sample sample,
+			Throwable failure) {
+		if (failure == null) {
+			logger.info("LMDB quad synopsis rebuild {}: statements={}, elapsedMillis={}, "
+					+ "averageStatementsPerSecond={}, effectiveWorkers={}", state, scanned,
+					TimeUnit.NANOSECONDS.toMillis(sample.elapsedNanos()), sample.averageRate(), effectiveWorkers);
+		} else {
+			logger.warn("LMDB quad synopsis rebuild {}: statements={}, elapsedMillis={}, "
+					+ "averageStatementsPerSecond={}, effectiveWorkers={}", state, scanned,
+					TimeUnit.NANOSECONDS.toMillis(sample.elapsedNanos()), sample.averageRate(), effectiveWorkers,
+					failure);
+		}
+	}
+
+	private static long saturatingAdd(long left, long right) {
+		return Long.MAX_VALUE - left < right ? Long.MAX_VALUE : left + right;
+	}
+
+	private static final class QuadPage {
+
+		private final Statement[] statements = new Statement[DerivedStateBuildExecutor.PAGE_ROWS];
+		private final long[] subjects = new long[DerivedStateBuildExecutor.PAGE_ROWS];
+		private final long[] predicates = new long[DerivedStateBuildExecutor.PAGE_ROWS];
+		private final long[] objects = new long[DerivedStateBuildExecutor.PAGE_ROWS];
+		private final long[] contexts = new long[DerivedStateBuildExecutor.PAGE_ROWS];
+		private int size;
+
+		private void clear() {
+			for (int row = 0; row < size; row++) {
+				statements[row] = null;
+			}
+			size = 0;
+		}
+	}
+
+	private static final class ObservationState {
+		private SketchRebuildObserver.RebuildObservation observation;
+		private boolean finished;
+
+		private ObservationState(SketchRebuildObserver.RebuildObservation observation) {
+			this.observation = observation;
 		}
 	}
 
@@ -378,15 +562,18 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 		}
 	}
 
-	private void throttle(long scanned) {
-		if (throttleMillis <= 0L || scanned % throttleEveryN != 0L) {
+	private void throttle(long previousScanned, long scanned) {
+		if (throttleMillis <= 0L || scanned <= previousScanned) {
 			return;
 		}
-		try {
-			Thread.sleep(throttleMillis);
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new IllegalStateException("Quad synopsis rebuild interrupted", e);
+		long intervals = scanned / throttleEveryN - previousScanned / throttleEveryN;
+		for (long interval = 0L; interval < intervals; interval++) {
+			try {
+				Thread.sleep(throttleMillis);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException("Quad synopsis rebuild interrupted", e);
+			}
 		}
 	}
 

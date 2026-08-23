@@ -27,6 +27,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.util.Arrays;
+import java.util.List;
 import java.util.zip.CRC32C;
 
 import org.junit.jupiter.api.Test;
@@ -190,6 +191,16 @@ class FrontierManifestValidationTest {
 		}
 
 		@Override
+		public List<Path> list(Path directory) throws IOException {
+			return delegate.list(directory);
+		}
+
+		@Override
+		public boolean isDirectory(Path path) {
+			return delegate.isDirectory(path);
+		}
+
+		@Override
 		public byte[] readBounded(Path path, int maximumBytes) throws IOException {
 			lastBoundedReadLimit = maximumBytes;
 			long byteLength = delegate.size(path);
@@ -226,6 +237,11 @@ class FrontierManifestValidationTest {
 		@Override
 		public boolean deleteIfExists(Path path) throws IOException {
 			return delegate.deleteIfExists(path);
+		}
+
+		@Override
+		public void deleteRecursivelyIfExists(Path path) throws IOException {
+			delegate.deleteRecursivelyIfExists(path);
 		}
 
 		@Override

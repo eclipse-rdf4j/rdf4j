@@ -23,6 +23,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.PriorityQueue;
 
 /** Bounded-memory external sort for fixed-width Omni cell witness events. */
@@ -39,7 +40,13 @@ final class FrontierOmniExternalSorter {
 	}
 
 	static Collector collector(Path directory, long sortMemoryBytes, long temporaryBudgetBytes) throws IOException {
-		return new Collector(directory, sortMemoryBytes, temporaryBudgetBytes);
+		return new Collector(directory, sortMemoryBytes, temporaryBudgetBytes,
+				new FrontierTemporaryDiskReservation(temporaryBudgetBytes));
+	}
+
+	static Collector collector(Path directory, long sortMemoryBytes, long temporaryBudgetBytes,
+			FrontierTemporaryDiskReservation reservation) throws IOException {
+		return new Collector(directory, sortMemoryBytes, temporaryBudgetBytes, reservation);
 	}
 
 	static EventOutput openSpool(Path path) throws IOException {
@@ -201,6 +208,7 @@ final class FrontierOmniExternalSorter {
 
 		private final Path directory;
 		private final long temporaryBudgetBytes;
+		private final FrontierTemporaryDiskReservation reservation;
 		private final EventBuffer buffer;
 		private ArrayList<Path> runs = new ArrayList<>();
 		private long temporaryBytes;
@@ -208,12 +216,14 @@ final class FrontierOmniExternalSorter {
 		private int mergePass;
 		private boolean finished;
 
-		private Collector(Path directory, long sortMemoryBytes, long temporaryBudgetBytes) throws IOException {
+		private Collector(Path directory, long sortMemoryBytes, long temporaryBudgetBytes,
+				FrontierTemporaryDiskReservation reservation) throws IOException {
 			if (sortMemoryBytes < RECORD_BYTES || temporaryBudgetBytes < 0L) {
 				throw new IllegalArgumentException("Frontier Omni external-sort dimensions are invalid");
 			}
 			Path parent = directory.toAbsolutePath().normalize();
 			this.temporaryBudgetBytes = temporaryBudgetBytes;
+			this.reservation = Objects.requireNonNull(reservation, "reservation");
 			Files.createDirectories(parent);
 			this.directory = Files.createTempDirectory(parent, "omni-sort-");
 			int capacity = Math.toIntExact(Math.max(1L,
@@ -283,6 +293,12 @@ final class FrontierOmniExternalSorter {
 				throw new FrontierStatisticsException(FrontierFallbackReason.MEMORY_PRESSURE,
 						"Frontier Omni sort runs exceed the temporary-disk envelope");
 			}
+			try {
+				reservation.reserve(bytes);
+			} catch (IOException failure) {
+				Files.deleteIfExists(run);
+				throw failure;
+			}
 			temporaryBytes += bytes;
 			runs.add(run);
 			buffer.clear();
@@ -291,28 +307,48 @@ final class FrontierOmniExternalSorter {
 		private void mergePass() throws IOException {
 			ArrayList<Path> next = new ArrayList<>((runs.size() + MAXIMUM_MERGE_FAN_IN - 1)
 					/ MAXIMUM_MERGE_FAN_IN);
-			for (int start = 0; start < runs.size(); start += MAXIMUM_MERGE_FAN_IN) {
-				int end = Math.min(runs.size(), start + MAXIMUM_MERGE_FAN_IN);
-				List<Path> group = runs.subList(start, end);
-				long groupBytes = 0L;
-				for (Path run : group) {
-					groupBytes = Math.addExact(groupBytes, Files.size(run));
+			int completedEnd = 0;
+			try {
+				for (int start = 0; start < runs.size(); start += MAXIMUM_MERGE_FAN_IN) {
+					int end = Math.min(runs.size(), start + MAXIMUM_MERGE_FAN_IN);
+					List<Path> group = runs.subList(start, end);
+					long groupBytes = 0L;
+					for (Path run : group) {
+						groupBytes = Math.addExact(groupBytes, Files.size(run));
+					}
+					if (Math.addExact(temporaryBytes, groupBytes) > temporaryBudgetBytes) {
+						throw new FrontierStatisticsException(FrontierFallbackReason.MEMORY_PRESSURE,
+								"Frontier Omni merge overlap exceeds the temporary-disk envelope");
+					}
+					reservation.reserve(groupBytes);
+					Path merged = directory.resolve("omni-merge-%03d-%06d.tmp".formatted(mergePass, next.size()));
+					boolean retained = false;
+					try {
+						try (EventOutput output = new EventOutput(merged)) {
+							merge(group, output::write);
+						}
+						long mergedBytes = Files.size(merged);
+						if (mergedBytes != groupBytes) {
+							throw new IOException("Frontier Omni merge changed the fixed-width event byte count");
+						}
+						deleteRuns(group);
+						reservation.release(groupBytes);
+						next.add(merged);
+						retained = true;
+						completedEnd = end;
+					} finally {
+						if (!retained) {
+							Files.deleteIfExists(merged);
+							reservation.release(groupBytes);
+						}
+					}
 				}
-				if (Math.addExact(temporaryBytes, groupBytes) > temporaryBudgetBytes) {
-					throw new FrontierStatisticsException(FrontierFallbackReason.MEMORY_PRESSURE,
-							"Frontier Omni merge overlap exceeds the temporary-disk envelope");
-				}
-				Path merged = directory.resolve("omni-merge-%03d-%06d.tmp".formatted(mergePass, next.size()));
-				try (EventOutput output = new EventOutput(merged)) {
-					merge(group, output::write);
-				}
-				long mergedBytes = Files.size(merged);
-				if (mergedBytes != groupBytes) {
-					Files.deleteIfExists(merged);
-					throw new IOException("Frontier Omni merge changed the fixed-width event byte count");
-				}
-				deleteRuns(group);
-				next.add(merged);
+			} catch (IOException | RuntimeException failure) {
+				ArrayList<Path> retainedRuns = new ArrayList<>(next.size() + runs.size() - completedEnd);
+				retainedRuns.addAll(next);
+				retainedRuns.addAll(runs.subList(completedEnd, runs.size()));
+				runs = retainedRuns;
+				throw failure;
 			}
 			runs = next;
 			mergePass++;
@@ -335,6 +371,7 @@ final class FrontierOmniExternalSorter {
 				failure = current;
 			} finally {
 				runs.clear();
+				reservation.release(temporaryBytes);
 				temporaryBytes = 0L;
 			}
 			try {

@@ -31,14 +31,72 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.function.LongSupplier;
 
+import org.eclipse.rdf4j.sail.lmdb.DerivedStateBuildExecutor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class FrontierStatisticsBuilderTest {
+
+	@Test
+	void serialAndParallelPagedBuildsProduceIdenticalArtifactsAndExactProgress(@TempDir Path directory)
+			throws Exception {
+		Path serialDirectory = directory.resolve("serial");
+		Path parallelDirectory = directory.resolve("parallel");
+		FrontierStatisticsBuildConfig config = FrontierStatisticsBuildConfig.testing(
+				64L * 1024L * 1024L, 64, 32, 256, 2L * 1024L * 1024L);
+		FrontierStatisticsHeapGovernor serialGovernor = new FrontierStatisticsHeapGovernor(
+				128L * 1024L * 1024L, 8L * 1024L * 1024L, 16L * 1024L * 1024L, 8L * 1024L * 1024L);
+		FrontierStatisticsHeapGovernor parallelGovernor = new FrontierStatisticsHeapGovernor(
+				128L * 1024L * 1024L, 8L * 1024L * 1024L, 16L * 1024L * 1024L, 8L * 1024L * 1024L);
+		ArrayList<FrontierStatisticsBuildObserver.Progress> observed = new ArrayList<>();
+		AtomicLong serialNanos = new AtomicLong();
+		AtomicLong parallelNanos = new AtomicLong();
+		LongSupplier serialClock = () -> serialNanos.getAndAdd(10_000_000_000L);
+		LongSupplier parallelClock = () -> parallelNanos.getAndAdd(10_000_000_000L);
+
+		FrontierStatisticsManifest serial;
+		FrontierStatisticsManifest parallel;
+		try (DerivedStateBuildExecutor serialExecutor = DerivedStateBuildExecutor.create("frontier-serial-", 1);
+				DerivedStateBuildExecutor parallelExecutor = DerivedStateBuildExecutor.create("frontier-parallel-",
+						4)) {
+			serial = FrontierStatisticsBuilder.build(serialDirectory, 1L, -1L,
+					new DenseStreamingSnapshot(8_193), serialGovernor, config, NioFrontierFileOps.INSTANCE,
+					serialExecutor, FrontierStatisticsBuildObserver.NONE, serialClock, () -> 1_234L);
+			parallel = FrontierStatisticsBuilder.build(parallelDirectory, 1L, -1L,
+					new DenseStreamingSnapshot(8_193), parallelGovernor, config, NioFrontierFileOps.INSTANCE,
+					parallelExecutor, observed::add, parallelClock, () -> 1_234L);
+		}
+
+		assertEquals(serial, parallel, "fixed-time serial and parallel manifests must be identical");
+		for (FrontierStatisticsShardDescriptor descriptor : serial.shards()) {
+			assertArrayEquals(Files.readAllBytes(serialDirectory.resolve(descriptor.fileName())),
+					Files.readAllBytes(parallelDirectory.resolve(descriptor.fileName())), descriptor::fileName);
+		}
+		FrontierStatisticsManifestStore serialStore = new FrontierStatisticsManifestStore(
+				serialDirectory, NioFrontierFileOps.INSTANCE);
+		FrontierStatisticsManifestStore parallelStore = new FrontierStatisticsManifestStore(
+				parallelDirectory, NioFrontierFileOps.INSTANCE);
+		serialStore.publish(serial);
+		parallelStore.publish(parallel);
+		assertArrayEquals(Files.readAllBytes(serialDirectory.resolve("manifest-0000000000000000001.fs2m")),
+				Files.readAllBytes(parallelDirectory.resolve("manifest-0000000000000000001.fs2m")));
+
+		assertEquals(List.of(0L, 8_192L, 16_385L, 16_386L, 24_578L, 32_771L, 32_772L),
+				observed.stream().map(FrontierStatisticsBuildObserver.Progress::cumulativeVisits).toList());
+		assertEquals(FrontierStatisticsBuildPhase.PASS_ONE, observed.get(0).phase());
+		assertEquals(FrontierStatisticsBuildPhase.PASS_TWO, observed.get(3).phase());
+		assertEquals(0L, observed.get(observed.size() - 1).etaMillis());
+		assertTrue(observed.stream()
+				.filter(progress -> progress.cumulativeVisits() != 0L)
+				.anyMatch(progress -> progress.currentStatementsPerSecond() > 0.0d
+						&& progress.averageStatementsPerSecond() > 0.0d));
+	}
 
 	@ParameterizedTest
 	@ValueSource(ints = { 255, 256, 257 })

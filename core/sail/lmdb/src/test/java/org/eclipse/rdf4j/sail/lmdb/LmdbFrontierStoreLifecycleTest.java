@@ -73,6 +73,50 @@ class LmdbFrontierStoreLifecycleTest {
 	}
 
 	@Test
+	void corruptFrontierManifestIsRemovedRebuiltAndThenReused(@TempDir Path dataDirectory) throws Exception {
+		LmdbStoreConfig config = config(FrontierEstimatorMode.AUTHORITATIVE, 32L * 1024L * 1024L);
+		long initialGeneration;
+		LmdbStore initial = new LmdbStore(dataDirectory.toFile(), config);
+		try {
+			initial.init();
+			LmdbSailStore backingStore = initial.getBackingStore();
+			assertTrue(awaitStatisticsReady(backingStore, 10_000L));
+			initialGeneration = frontierStatisticsStatus(backingStore).generationId();
+		} finally {
+			initial.shutDown();
+		}
+
+		Path manifest = dataDirectory.resolve("frontier-statistics-v2")
+				.resolve("manifest-%019d.fs2m".formatted(initialGeneration));
+		Files.write(manifest, new byte[] { 0 });
+
+		long repairedGeneration;
+		LmdbStore recovering = new LmdbStore(dataDirectory.toFile(), config);
+		try {
+			recovering.init();
+			LmdbSailStore backingStore = recovering.getBackingStore();
+			assertTrue(awaitStatisticsReady(backingStore, 10_000L),
+					"startup must remove the corrupt deterministic manifest before rebuilding its generation");
+			repairedGeneration = frontierStatisticsStatus(backingStore).generationId();
+			assertTrue(Files.size(manifest) > 1L, "the corrupt manifest must be replaced by a complete manifest");
+		} finally {
+			recovering.shutDown();
+		}
+
+		LmdbStore cleanRestart = new LmdbStore(dataDirectory.toFile(), config);
+		try {
+			cleanRestart.init();
+			LmdbSailStore backingStore = cleanRestart.getBackingStore();
+			assertEquals(FrontierStatisticsAvailability.READY,
+					frontierStatisticsStatus(backingStore).availability());
+			assertEquals(repairedGeneration, frontierStatisticsStatus(backingStore).generationId(),
+					"a clean restart must reuse the repaired generation instead of rebuilding again");
+		} finally {
+			cleanRestart.shutDown();
+		}
+	}
+
+	@Test
 	void committedMutationPublishesSignedDeltaWithoutRebuildingBase(@TempDir Path dataDirectory) throws Exception {
 		LmdbStore store = new LmdbStore(dataDirectory.toFile(),
 				config(FrontierEstimatorMode.AUTHORITATIVE, 32L * 1024L * 1024L));

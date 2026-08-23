@@ -17,9 +17,12 @@ import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.Comparator;
+import java.util.List;
 
 final class NioFrontierFileOps implements FrontierFileOps {
 
@@ -109,6 +112,34 @@ final class NioFrontierFileOps implements FrontierFileOps {
 	@Override
 	public boolean deleteIfExists(Path path) throws IOException {
 		return Files.deleteIfExists(path);
+	}
+
+	@Override
+	public List<Path> list(Path directory) throws IOException {
+		try (var paths = Files.list(directory)) {
+			return paths.toList();
+		}
+	}
+
+	@Override
+	public boolean isDirectory(Path path) {
+		return Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS);
+	}
+
+	@Override
+	public void deleteRecursivelyIfExists(Path path) throws IOException {
+		if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+			return;
+		}
+		if (!isDirectory(path)) {
+			Files.deleteIfExists(path);
+			return;
+		}
+		try (var paths = Files.walk(path)) {
+			for (Path current : paths.sorted(Comparator.reverseOrder()).toList()) {
+				Files.deleteIfExists(current);
+			}
+		}
 	}
 
 	@Override

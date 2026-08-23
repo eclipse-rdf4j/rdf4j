@@ -47,6 +47,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 
 	private volatile FrontierStatisticsGeneration current;
 	private volatile boolean closed;
+	private volatile boolean rebuildRequired;
 	private volatile String lastFailure = "";
 	private volatile FrontierStatisticsBuildPhase buildPhase = FrontierStatisticsBuildPhase.IDLE;
 	private volatile BuildMetrics buildMetrics = BuildMetrics.EMPTY;
@@ -110,6 +111,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 			candidate = FrontierStatisticsGeneration.open(manifestStore, manifest, fileOps, heapGovernor, old);
 			manifestStore.publish(manifest);
 			current = candidate;
+			rebuildRequired = false;
 			mutationTail = mutationTail.after(manifest.coveredSequence());
 			buildMetrics = buildMetrics.withDeleteDebt(current.deleteDebt());
 			candidate = null;
@@ -669,6 +671,11 @@ public final class LmdbStatisticsService implements AutoCloseable {
 				lastFailure);
 	}
 
+	/** Returns whether startup recovery discarded corrupt derived state that must be rebuilt. */
+	public boolean rebuildRequired() {
+		return rebuildRequired;
+	}
+
 	@Override
 	public synchronized void close() {
 		if (!closed) {
@@ -683,38 +690,119 @@ public final class LmdbStatisticsService implements AutoCloseable {
 
 	private void loadPublishedGeneration() {
 		try {
-			FrontierStatisticsManifest manifest = manifestStore.loadCurrent();
-			if (manifest == null) {
-				return;
+			manifestStore.cleanupTemporaryArtifacts();
+		} catch (IOException cleanupFailure) {
+			lastFailure = "Could not clean interrupted Frontier statistics artifacts: "
+					+ failureMessage(cleanupFailure);
+		}
+
+		FrontierStatisticsManifest manifest;
+		try {
+			manifest = manifestStore.loadCurrent();
+		} catch (IOException | RuntimeException failure) {
+			discardUnreadablePublishedState(failure);
+			return;
+		}
+		if (manifest == null) {
+			try {
+				if (manifestStore.cleanupUnpublishedManifests()) {
+					rebuildRequired = true;
+					lastFailure = "Removed unpublished Frontier statistics manifests without a current pointer";
+				}
+			} catch (IOException cleanupFailure) {
+				rebuildRequired = true;
+				lastFailure = "Could not clean unpublished Frontier statistics manifests: "
+						+ failureMessage(cleanupFailure);
 			}
+			return;
+		}
+		try {
 			if (manifest.byteLength() > diskBudgetBytes) {
 				throw new FrontierStatisticsException(FrontierFallbackReason.MEMORY_PRESSURE,
 						"Published Frontier statistics generation exceeds the configured disk budget");
 			}
-			try {
-				current = FrontierStatisticsGeneration.open(manifestStore, manifest, fileOps, heapGovernor);
-			} catch (IOException currentFailure) {
-				if (manifest.previousGenerationId() < 0L) {
-					throw currentFailure;
-				}
-				FrontierStatisticsManifest previous = manifestStore.load(manifest.previousGenerationId());
-				current = FrontierStatisticsGeneration.open(manifestStore, previous, fileOps, heapGovernor);
-				try {
-					manifestStore.switchCurrent(previous.generationId());
-				} catch (IOException rollbackFailure) {
-					currentFailure.addSuppressed(rollbackFailure);
-				}
-				lastFailure = "Rolled back invalid generation " + manifest.generationId() + ": "
-						+ currentFailure.getMessage();
+			FrontierStatisticsGeneration loaded = FrontierStatisticsGeneration.open(
+					manifestStore, manifest, fileOps, heapGovernor);
+			if (!loaded.optionalFailures().isEmpty()) {
+				String optionalFailures = optionalFailureSummary(loaded);
+				loaded.release();
+				recoverInvalidGeneration(manifest, new IOException(optionalFailures));
+				return;
 			}
-			if (lastFailure.isEmpty()) {
-				lastFailure = optionalFailureSummary(current);
-			}
+			current = loaded;
 			buildMetrics = buildMetrics.withDeleteDebt(current.deleteDebt());
+		} catch (FrontierStatisticsException failure) {
+			if (failure.fallbackReason() == FrontierFallbackReason.MEMORY_PRESSURE) {
+				lastFailure = failureMessage(failure);
+				current = null;
+				return;
+			}
+			recoverInvalidGeneration(manifest, failure);
 		} catch (IOException | RuntimeException failure) {
-			lastFailure = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
-			current = null;
+			recoverInvalidGeneration(manifest, failure);
 		}
+	}
+
+	private void recoverInvalidGeneration(FrontierStatisticsManifest invalidManifest, Throwable currentFailure) {
+		rebuildRequired = true;
+		if (invalidManifest.previousGenerationId() >= 0L) {
+			FrontierStatisticsGeneration previous = null;
+			FrontierStatisticsManifest previousManifest = null;
+			try {
+				previousManifest = manifestStore.load(invalidManifest.previousGenerationId());
+				previous = FrontierStatisticsGeneration.open(manifestStore, previousManifest, fileOps, heapGovernor);
+				if (!previous.optionalFailures().isEmpty()) {
+					throw new IOException(optionalFailureSummary(previous));
+				}
+				manifestStore.discardGeneration(invalidManifest);
+				manifestStore.switchCurrent(previousManifest.generationId());
+				current = previous;
+				previous = null;
+				lastFailure = "Rolled back and removed invalid Frontier statistics generation "
+						+ invalidManifest.generationId() + ": " + failureMessage(currentFailure);
+				buildMetrics = buildMetrics.withDeleteDebt(current.deleteDebt());
+				return;
+			} catch (FrontierStatisticsException rollbackFailure) {
+				if (rollbackFailure.fallbackReason() == FrontierFallbackReason.MEMORY_PRESSURE
+						&& previousManifest != null) {
+					try {
+						manifestStore.discardGeneration(invalidManifest);
+						manifestStore.switchCurrent(previousManifest.generationId());
+						current = null;
+						lastFailure = "Removed invalid Frontier statistics generation "
+								+ invalidManifest.generationId()
+								+ " but could not map its valid predecessor under the current memory budget: "
+								+ failureMessage(rollbackFailure);
+						return;
+					} catch (IOException cleanupFailure) {
+						rollbackFailure.addSuppressed(cleanupFailure);
+					}
+				}
+				currentFailure.addSuppressed(rollbackFailure);
+			} catch (IOException | RuntimeException rollbackFailure) {
+				currentFailure.addSuppressed(rollbackFailure);
+			} finally {
+				if (previous != null) {
+					previous.release();
+				}
+			}
+		}
+		discardUnreadablePublishedState(currentFailure);
+	}
+
+	private void discardUnreadablePublishedState(Throwable failure) {
+		rebuildRequired = true;
+		try {
+			manifestStore.resetOwnedArtifacts();
+		} catch (IOException cleanupFailure) {
+			failure.addSuppressed(cleanupFailure);
+		}
+		FrontierStatisticsGeneration observed = current;
+		current = null;
+		if (observed != null) {
+			observed.release();
+		}
+		lastFailure = "Discarded unreadable Frontier statistics derived state: " + failureMessage(failure);
 	}
 
 	private static String optionalFailureSummary(FrontierStatisticsGeneration generation) {

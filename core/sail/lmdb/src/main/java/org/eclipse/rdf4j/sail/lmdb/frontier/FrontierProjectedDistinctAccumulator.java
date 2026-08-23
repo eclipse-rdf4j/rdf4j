@@ -35,6 +35,17 @@ final class FrontierProjectedDistinctAccumulator {
 		addValue(plane, 3, context);
 	}
 
+	void addComponent(int plane, int component, long subject, long predicate, long object, long context) {
+		long value = switch (component) {
+		case 0 -> subject;
+		case 1 -> predicate;
+		case 2 -> object;
+		case 3 -> context;
+		default -> throw new IllegalArgumentException("Unsupported RDF component: " + component);
+		};
+		addValue(plane, component, value);
+	}
+
 	private void addValue(int plane, int component, long value) {
 		long hash = FrontierStatisticsHash.componentHash(component, value);
 		int register = (int) (hash >>> (Long.SIZE - precision));

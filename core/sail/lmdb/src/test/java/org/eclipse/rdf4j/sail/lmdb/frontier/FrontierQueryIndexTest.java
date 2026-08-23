@@ -598,6 +598,16 @@ class FrontierQueryIndexTest {
 		}
 
 		@Override
+		public List<Path> list(Path directory) throws IOException {
+			return NioFrontierFileOps.INSTANCE.list(directory);
+		}
+
+		@Override
+		public boolean isDirectory(Path path) {
+			return NioFrontierFileOps.INSTANCE.isDirectory(path);
+		}
+
+		@Override
 		public byte[] readBounded(Path path, int maximumBytes) throws IOException {
 			return NioFrontierFileOps.INSTANCE.readBounded(path, maximumBytes);
 		}
@@ -638,6 +648,11 @@ class FrontierQueryIndexTest {
 		@Override
 		public boolean deleteIfExists(Path path) throws IOException {
 			return NioFrontierFileOps.INSTANCE.deleteIfExists(path);
+		}
+
+		@Override
+		public void deleteRecursivelyIfExists(Path path) throws IOException {
+			NioFrontierFileOps.INSTANCE.deleteRecursivelyIfExists(path);
 		}
 
 		@Override
