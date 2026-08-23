@@ -87,9 +87,7 @@ final class FrontierOmniBuilder implements AutoCloseable {
 	}
 
 	void addWitnesses(int plane, long subject, long predicate, long object, long context) throws IOException {
-		if (!prepared || finished) {
-			throw new IllegalStateException("Frontier Omni witness pass is not active");
-		}
+		requireActiveWitnessPass();
 		long rowPriority = FrontierStatisticsHash.rowPriority(plane, subject, predicate, object, context);
 		FrontierStatisticsHash.omniPrioritiesFromRowPriority(
 				rowPriority, 0, layout.lanes(), lanePriorities, 0);
@@ -99,6 +97,28 @@ final class FrontierOmniBuilder implements AutoCloseable {
 			addComponentWitnesses(plane, lane, 1, predicate, priority, subject, predicate, object, context);
 			addComponentWitnesses(plane, lane, 2, object, priority, subject, predicate, object, context);
 			addComponentWitnesses(plane, lane, 3, context, priority, subject, predicate, object, context);
+		}
+	}
+
+	void addWitnessBatch(int plane, long[] subjects, long[] predicates, long[] objects, long[] contexts, int count,
+			long[] priorities, int priorityStride, long[] bucketSequences, int sequenceStride) throws IOException {
+		requireActiveWitnessPass();
+		for (int record = 0; record < count; record++) {
+			for (int lane = 0; lane < layout.lanes(); lane++) {
+				long priority = priorities[lane * priorityStride + record];
+				addComponentWitnessesFromSequence(plane, lane, 0, priority,
+						subjects[record], predicates[record], objects[record], contexts[record],
+						bucketSequences[(lane * FrontierOmniLayout.COMPONENT_COUNT) * sequenceStride + record]);
+				addComponentWitnessesFromSequence(plane, lane, 1, priority,
+						subjects[record], predicates[record], objects[record], contexts[record],
+						bucketSequences[(lane * FrontierOmniLayout.COMPONENT_COUNT + 1) * sequenceStride + record]);
+				addComponentWitnessesFromSequence(plane, lane, 2, priority,
+						subjects[record], predicates[record], objects[record], contexts[record],
+						bucketSequences[(lane * FrontierOmniLayout.COMPONENT_COUNT + 2) * sequenceStride + record]);
+				addComponentWitnessesFromSequence(plane, lane, 3, priority,
+						subjects[record], predicates[record], objects[record], contexts[record],
+						bucketSequences[(lane * FrontierOmniLayout.COMPONENT_COUNT + 3) * sequenceStride + record]);
+			}
 		}
 	}
 
@@ -151,6 +171,12 @@ final class FrontierOmniBuilder implements AutoCloseable {
 	private void addComponentWitnesses(int plane, int lane, int component, long value, long priority,
 			long subject, long predicate, long object, long context) throws IOException {
 		long bucketSequence = FrontierStatisticsHash.omniBucketSequence(lane, component, value);
+		addComponentWitnessesFromSequence(plane, lane, component, priority,
+				subject, predicate, object, context, bucketSequence);
+	}
+
+	private void addComponentWitnessesFromSequence(int plane, int lane, int component, long priority,
+			long subject, long predicate, long object, long context, long bucketSequence) throws IOException {
 		for (int row = 0; row < layout.depth(); row++) {
 			int cell = layout.cellFromBucketSequence(plane, lane, component, row, bucketSequence);
 			long population = populations[cell];
@@ -159,6 +185,12 @@ final class FrontierOmniBuilder implements AutoCloseable {
 					|| FrontierStatisticsHash.unsignedMultiplyHigh(priority, population) < emission)) {
 				events.add(cell, priority, subject, predicate, object, context);
 			}
+		}
+	}
+
+	private void requireActiveWitnessPass() {
+		if (!prepared || finished) {
+			throw new IllegalStateException("Frontier Omni witness pass is not active");
 		}
 	}
 

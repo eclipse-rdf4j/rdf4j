@@ -61,7 +61,7 @@ import org.openjdk.jmh.annotations.Warmup;
 
 @Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
+@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "--add-modules=jdk.incubator.vector" })
 @Measurement(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @Threads(1)

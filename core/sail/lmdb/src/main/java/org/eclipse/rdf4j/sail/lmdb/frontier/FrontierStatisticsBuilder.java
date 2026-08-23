@@ -34,6 +34,7 @@ public final class FrontierStatisticsBuilder {
 	private static final long MINIMUM_HEAVY_OBJECT_HEAP_BYTES = 64L * 1024L;
 	private static final int HEAVY_OBJECT_BYTES_PER_ENTRY = 64;
 	private static final int HEAVY_OBJECT_DISTINCT_LIMIT = 65_536;
+	private static final int OMNI_WITNESS_BATCH_CAPACITY = 256;
 
 	private FrontierStatisticsBuilder() {
 	}
@@ -123,16 +124,20 @@ public final class FrontierStatisticsBuilder {
 					normalized, generationId, snapshotEpoch, expectedRows, projectedDistinct, config, fileOps)) {
 				for (int plane = 0; plane < 2; plane++) {
 					int currentPlane = plane;
+					FrontierStatisticsOmniBatcher omniBatcher = new FrontierStatisticsOmniBatcher(
+							currentPlane, config.totalLaneCount(), OMNI_WITNESS_BATCH_CAPACITY);
+					FrontierStatisticsOmniBatcher.Sink omniSink = omni::addWitnessBatch;
 					long callbacks = scanChecked(snapshot, plane == 0, (subject, predicate, object, context) -> {
 						requireQuad(subject, predicate, object, context);
 						heavy[currentPlane].add(subject, predicate, object, context);
-						omni.addWitnesses(currentPlane, subject, predicate, object, context);
 						centers.add(currentPlane, subject, predicate, object, context);
+						omniBatcher.add(subject, predicate, object, context, omniSink);
 					});
 					if (callbacks != expectedRows[plane]) {
 						throw new IOException(
 								"Frontier statistics pass-two row count disagrees with the pinned snapshot");
 					}
+					omniBatcher.flush(omniSink);
 				}
 				if (snapshot.snapshotEpoch() != snapshotEpoch || snapshot.coveredSequence() != snapshotSequence) {
 					throw new IOException("Frontier statistics snapshot identity changed during the two-pass build");
@@ -441,6 +446,8 @@ public final class FrontierStatisticsBuilder {
 		bytes = Math.addExact(bytes, heavyProjectedDistinctWriteScratch);
 		bytes = Math.addExact(bytes, heavyObjectBytes);
 		bytes = Math.addExact(bytes, FrontierOmniBuilder.estimatedHeapBytes(config));
+		bytes = Math.addExact(bytes, FrontierStatisticsOmniBatcher.estimatedHeapBytes(
+				config.totalLaneCount(), OMNI_WITNESS_BATCH_CAPACITY));
 		return Math.addExact(bytes, FrontierCenterBuilder.estimatedHeapBytes(config));
 	}
 

@@ -637,8 +637,51 @@
 				</configuration>
 			</plugin>
 			<plugin>
+				<groupId>org.apache.felix</groupId>
+				<artifactId>maven-bundle-plugin</artifactId>
+				<configuration>
+					<instructions>
+						<Import-Package>jdk.incubator.vector;resolution:=optional,*</Import-Package>
+					</instructions>
+				</configuration>
+				<executions>
+					<execution>
+						<id>generate-osgi-manifest</id>
+						<phase>process-classes</phase>
+						<goals>
+							<goal>manifest</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jar-plugin</artifactId>
+				<configuration>
+					<archive>
+						<manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
+					</archive>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-javadoc-plugin</artifactId>
+				<configuration>
+					<additionalOptions combine.children="append">
+						<additionalOption>--add-modules=jdk.incubator.vector</additionalOption>
+					</additionalOptions>
+				</configuration>
+			</plugin>
+			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
+				<configuration>
+					<compilerArgs combine.children="append">
+						<arg>--add-modules</arg>
+						<arg>jdk.incubator.vector</arg>
+						<arg>-Xlint:-incubating</arg>
+					</compilerArgs>
+				</configuration>
 				<executions>
 					<execution>
 						<id>default-testCompile</id>

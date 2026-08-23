@@ -16,14 +16,14 @@ final class FrontierStatisticsHash {
 	static final int HASH_SCHEMA_ID = 2;
 	static final int BUCKET_SCHEMA_ID = 1;
 
-	private static final long CONDITIONING_BASE = 0x6a09e667f3bcc909L;
-	private static final long MIX_MULTIPLIER_1 = 0xbf58476d1ce4e5b9L;
-	private static final long MIX_MULTIPLIER_2 = 0x94d049bb133111ebL;
+	static final long CONDITIONING_BASE = 0x6a09e667f3bcc909L;
+	static final long MIX_MULTIPLIER_1 = 0xbf58476d1ce4e5b9L;
+	static final long MIX_MULTIPLIER_2 = 0x94d049bb133111ebL;
 
-	private static final long SUBJECT_SEED = 0x243f6a8885a308d3L;
-	private static final long PREDICATE_SEED = 0x13198a2e03707344L;
-	private static final long OBJECT_SEED = 0xa4093822299f31d0L;
-	private static final long CONTEXT_SEED = 0x082efa98ec4e6c89L;
+	static final long SUBJECT_SEED = 0x243f6a8885a308d3L;
+	static final long PREDICATE_SEED = 0x13198a2e03707344L;
+	static final long OBJECT_SEED = 0xa4093822299f31d0L;
+	static final long CONTEXT_SEED = 0x082efa98ec4e6c89L;
 
 	private static final long[] COMPONENT_SEEDS = {
 			SUBJECT_SEED,
@@ -32,22 +32,22 @@ final class FrontierStatisticsHash {
 			CONTEXT_SEED
 	};
 
-	private static final long BUCKET_ROW_STEP = 0x9e3779b97f4a7c15L;
-	private static final long BUCKET_MASK_STEP = 0xbf58476d1ce4e5b9L;
-	private static final long BUCKET_PLANE_STEP = 0x94d049bb133111ebL;
-	private static final long ROW_PRIORITY_PLANE_STEP = 0xd1b54a32d192ed03L;
-	private static final long OMNI_PRIORITY_LANE_STEP = 0x8cb92baa3f3d8dd7L;
-	private static final long CENTER_PRIORITY_LANE_STEP = 0x4f1bbcdc6762c9d5L;
-	private static final long CENTER_EDGE_LANE_STEP = 0x632be59bd9b4e019L;
-	private static final long CENTER_EDGE_COMPONENT_STEP = 0x9e3779b97f4a7c15L;
-	private static final long OMNI_VALUE_LANE_STEP = 0x9e3779b97f4a7c15L;
-	private static final long OMNI_DELTA_SEED = 0xd1b54a32d192ed03L;
-	private static final long JOIN_BUCKET_LANE_STEP = 0x517cc1b727220a95L;
-	private static final long JOIN_SIGN_LANE_STEP = 0x6eed0e9da4d94a4fL;
-	private static final long DELTA_SIGN_LANE_STEP = 0xdb4f0b9175ae2165L;
-	private static final long DELTA_SIGN_BASE = 0xbbe0563303a4615fL;
-	private static final long DELTA_SIGN_PLANE_STEP = 0x9e3779b97f4a7c15L;
-	private static final long DELTA_SIGN_MASK_STEP = 0x94d049bb133111ebL;
+	static final long BUCKET_ROW_STEP = 0x9e3779b97f4a7c15L;
+	static final long BUCKET_MASK_STEP = 0xbf58476d1ce4e5b9L;
+	static final long BUCKET_PLANE_STEP = 0x94d049bb133111ebL;
+	static final long ROW_PRIORITY_PLANE_STEP = 0xd1b54a32d192ed03L;
+	static final long OMNI_PRIORITY_LANE_STEP = 0x8cb92baa3f3d8dd7L;
+	static final long CENTER_PRIORITY_LANE_STEP = 0x4f1bbcdc6762c9d5L;
+	static final long CENTER_EDGE_LANE_STEP = 0x632be59bd9b4e019L;
+	static final long CENTER_EDGE_COMPONENT_STEP = 0x9e3779b97f4a7c15L;
+	static final long OMNI_VALUE_LANE_STEP = 0x9e3779b97f4a7c15L;
+	static final long OMNI_DELTA_SEED = 0xd1b54a32d192ed03L;
+	static final long JOIN_BUCKET_LANE_STEP = 0x517cc1b727220a95L;
+	static final long JOIN_SIGN_LANE_STEP = 0x6eed0e9da4d94a4fL;
+	static final long DELTA_SIGN_LANE_STEP = 0xdb4f0b9175ae2165L;
+	static final long DELTA_SIGN_BASE = 0xbbe0563303a4615fL;
+	static final long DELTA_SIGN_PLANE_STEP = 0x9e3779b97f4a7c15L;
+	static final long DELTA_SIGN_MASK_STEP = 0x94d049bb133111ebL;
 
 	private static final int PRECOMPUTED_LANES = 16;
 	private static final int PRECOMPUTED_LANE_MASK = PRECOMPUTED_LANES - 1;

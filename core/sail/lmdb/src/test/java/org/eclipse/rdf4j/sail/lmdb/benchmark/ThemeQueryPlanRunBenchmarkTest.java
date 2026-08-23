@@ -24,6 +24,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Arrays;
 
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Param;
 
 class ThemeQueryPlanRunBenchmarkTest {
@@ -41,6 +43,18 @@ class ThemeQueryPlanRunBenchmarkTest {
 
 	@TempDir
 	Path tempDir;
+
+	@Test
+	void themeQueryForksResolveTheVectorModule() {
+		for (Class<?> benchmarkClass : new Class<?>[] {
+				ThemeQueryBenchmark.class, ThemeQueryPlanRunBenchmark.class
+		}) {
+			Fork fork = benchmarkClass.getAnnotation(Fork.class);
+			assertNotNull(fork, benchmarkClass.getSimpleName() + " must declare its forked JVM configuration");
+			assertTrue(Arrays.asList(fork.jvmArgs()).contains("--add-modules=jdk.incubator.vector"),
+					benchmarkClass.getSimpleName() + " must resolve jdk.incubator.vector in its JMH fork");
+		}
+	}
 
 	@Test
 	void leoRolloutProfileIsAnExplicitJmhParameter() throws Exception {
