@@ -301,15 +301,20 @@ final class FrontierOmniDeltaBuilder {
 			int event = 0;
 			for (int ordinal = 0; ordinal < rows.size; ordinal++) {
 				int plane = rows.planes[ordinal];
+				int priorityOffset = ordinal * layout.lanes();
+				long rowPriority = FrontierStatisticsHash.rowPriority(plane,
+						rows.components[0][ordinal], rows.components[1][ordinal],
+						rows.components[2][ordinal], rows.components[3][ordinal]);
+				FrontierStatisticsHash.omniPrioritiesFromRowPriority(
+						rowPriority, 0, layout.lanes(), priorities, priorityOffset);
 				for (int lane = 0; lane < layout.lanes(); lane++) {
-					long priority = FrontierStatisticsHash.omniPriority(plane, lane,
-							rows.components[0][ordinal], rows.components[1][ordinal],
-							rows.components[2][ordinal], rows.components[3][ordinal]);
-					priorities[ordinal * layout.lanes() + lane] = priority;
+					long priority = priorities[priorityOffset + lane];
 					for (int component = 0; component < FrontierOmniLayout.COMPONENT_COUNT; component++) {
+						long bucketSequence = FrontierStatisticsHash.omniBucketSequence(
+								lane, component, rows.components[component][ordinal]);
 						for (int depth = 0; depth < layout.depth(); depth++) {
-							int cell = layout.cell(plane, lane, component, depth,
-									rows.components[component][ordinal]);
+							int cell = layout.cellFromBucketSequence(
+									plane, lane, component, depth, bucketSequence);
 							eventCells[event] = cell;
 							eventOrdinals[event] = ordinal;
 							eligible[event] = (byte) (base.eligible(cell, priority) ? 1 : 0);

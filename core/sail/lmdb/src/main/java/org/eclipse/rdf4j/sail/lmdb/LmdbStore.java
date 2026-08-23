@@ -22,6 +22,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
+import org.apache.commons.lang3.time.StopWatch;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.mapdb.MapDb3CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -505,7 +506,13 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		if (backingStore == null) {
 			throw new SailException("LMDB store is not initialized");
 		}
-		return backingStore.rebuildFrontierSynopsis();
+		StopWatch started = StopWatch.createStarted();
+		try {
+			return backingStore.rebuildFrontierSynopsis();
+
+		} finally {
+			System.out.println(started.getTime(TimeUnit.MILLISECONDS) + " ms to rebuild Frontier synopsis");
+		}
 	}
 
 	/** Returns exact primitive and serialized footprint diagnostics for the current cold filter synopsis. */

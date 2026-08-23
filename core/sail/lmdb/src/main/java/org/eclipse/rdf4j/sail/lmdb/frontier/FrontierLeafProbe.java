@@ -31,6 +31,22 @@ public record FrontierLeafProbe(int planeMask, int boundMask, long subjectId, lo
 	public static final int OBJECT_CONTEXT_EQUAL = 1 << 5;
 	public static final int ALL_COMPONENT_PAIRS = (1 << 6) - 1;
 
+	/** Pair masks enabled by each of the sixteen possible bound-component masks. */
+	private static final byte[] BOUND_PAIR_MASKS = {
+			0, 0, 0, SUBJECT_PREDICATE_EQUAL,
+			0, SUBJECT_OBJECT_EQUAL, PREDICATE_OBJECT_EQUAL,
+			SUBJECT_PREDICATE_EQUAL | SUBJECT_OBJECT_EQUAL | PREDICATE_OBJECT_EQUAL,
+			0, SUBJECT_CONTEXT_EQUAL, PREDICATE_CONTEXT_EQUAL,
+			SUBJECT_PREDICATE_EQUAL | SUBJECT_CONTEXT_EQUAL | PREDICATE_CONTEXT_EQUAL,
+			OBJECT_CONTEXT_EQUAL,
+			SUBJECT_OBJECT_EQUAL | SUBJECT_CONTEXT_EQUAL | OBJECT_CONTEXT_EQUAL,
+			PREDICATE_OBJECT_EQUAL | PREDICATE_CONTEXT_EQUAL | OBJECT_CONTEXT_EQUAL,
+			ALL_COMPONENT_PAIRS
+	};
+
+	/** Four-bit pair-index lookup keyed by {@code (left << 2) | right}. */
+	private static final long COMPONENT_PAIR_SHIFTS = 0x0542503143002100L;
+
 	public FrontierLeafProbe(int planeMask, int boundMask, long subjectId, long predicateId, long objectId,
 			long contextId) {
 		this(planeMask, boundMask, subjectId, predicateId, objectId, contextId, 0, false);
@@ -42,9 +58,9 @@ public record FrontierLeafProbe(int planeMask, int boundMask, long subjectId, lo
 	}
 
 	public FrontierLeafProbe {
-		if (planeMask <= 0 || (planeMask & ~BOTH_PLANES) != 0
-				|| boundMask < 0 || (boundMask & ~ALL_COMPONENTS) != 0
-				|| repeatedComponentPairMask < 0 || (repeatedComponentPairMask & ~ALL_COMPONENT_PAIRS) != 0
+		if (planeMask == 0 || (planeMask & ~BOTH_PLANES) != 0
+				|| (boundMask & ~ALL_COMPONENTS) != 0
+				|| (repeatedComponentPairMask & ~ALL_COMPONENT_PAIRS) != 0
 				|| (boundMask & SUBJECT) != 0 && subjectId <= 0L
 				|| (boundMask & PREDICATE) != 0 && predicateId <= 0L
 				|| (boundMask & OBJECT) != 0 && objectId <= 0L
@@ -54,33 +70,43 @@ public record FrontierLeafProbe(int planeMask, int boundMask, long subjectId, lo
 	}
 
 	boolean contradictoryRepeatedBindings() {
-		for (int left = 0; left < 4; left++) {
-			if ((boundMask & 1 << left) == 0) {
-				continue;
-			}
-			for (int right = left + 1; right < 4; right++) {
-				if ((boundMask & 1 << right) != 0
-						&& (repeatedComponentPairMask & componentPairMask(left, right)) != 0
-						&& component(left) != component(right)) {
-					return true;
-				}
+		int repeated = repeatedComponentPairMask;
+		if (repeated == 0) {
+			return false;
+		}
+
+		int bound = boundMask;
+		if (bound != ALL_COMPONENTS) {
+			repeated &= BOUND_PAIR_MASKS[bound & ALL_COMPONENTS];
+			if (repeated == 0) {
+				return false;
 			}
 		}
-		return false;
+
+		if ((repeated & SUBJECT_PREDICATE_EQUAL) != 0 && subjectId != predicateId) {
+			return true;
+		}
+		if ((repeated & SUBJECT_OBJECT_EQUAL) != 0 && subjectId != objectId) {
+			return true;
+		}
+		if ((repeated & SUBJECT_CONTEXT_EQUAL) != 0 && subjectId != contextId) {
+			return true;
+		}
+		if ((repeated & PREDICATE_OBJECT_EQUAL) != 0 && predicateId != objectId) {
+			return true;
+		}
+		if ((repeated & PREDICATE_CONTEXT_EQUAL) != 0 && predicateId != contextId) {
+			return true;
+		}
+		return (repeated & OBJECT_CONTEXT_EQUAL) != 0 && objectId != contextId;
 	}
 
 	public static int componentPairMask(int left, int right) {
-		if (left < 0 || right < 0 || left >= 4 || right >= 4 || left == right) {
+		if (((left | right) >>> 2) != 0 || left == right) {
 			throw new IllegalArgumentException("Frontier component pair must contain two distinct indexes in [0, 3]");
 		}
-		int first = Math.min(left, right);
-		int second = Math.max(left, right);
-		return switch (first) {
-		case 0 -> 1 << second - 1;
-		case 1 -> 1 << second + 1;
-		case 2 -> OBJECT_CONTEXT_EQUAL;
-		default -> throw new IllegalArgumentException("Frontier component pair is invalid");
-		};
+		int packedIndex = ((left << 2) | right) << 2;
+		return 1 << ((int) (COMPONENT_PAIR_SHIFTS >>> packedIndex) & 0xf);
 	}
 
 	long component(int componentIndex) {

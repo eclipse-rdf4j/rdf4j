@@ -39,6 +39,7 @@ final class FrontierOmniBuilder implements AutoCloseable {
 	private final FrontierFileOps fileOps;
 	private final FrontierOmniLayout layout;
 	private final long[] populations;
+	private final long[] lanePriorities;
 	private int[] authorityCapacity;
 	private int[] retentionCapacity;
 	private int[] retainedByAuthority;
@@ -59,6 +60,7 @@ final class FrontierOmniBuilder implements AutoCloseable {
 		layout = new FrontierOmniLayout(config.designLaneCount(), config.auditLaneCount(), config.omniDepth(),
 				config.cellCount());
 		populations = new long[layout.cells()];
+		lanePriorities = new long[layout.lanes()];
 	}
 
 	void addPopulation(int plane, long subject, long predicate, long object, long context) {
@@ -88,8 +90,11 @@ final class FrontierOmniBuilder implements AutoCloseable {
 		if (!prepared || finished) {
 			throw new IllegalStateException("Frontier Omni witness pass is not active");
 		}
+		long rowPriority = FrontierStatisticsHash.rowPriority(plane, subject, predicate, object, context);
+		FrontierStatisticsHash.omniPrioritiesFromRowPriority(
+				rowPriority, 0, layout.lanes(), lanePriorities, 0);
 		for (int lane = 0; lane < layout.lanes(); lane++) {
-			long priority = FrontierStatisticsHash.omniPriority(plane, lane, subject, predicate, object, context);
+			long priority = lanePriorities[lane];
 			addComponentWitnesses(plane, lane, 0, subject, priority, subject, predicate, object, context);
 			addComponentWitnesses(plane, lane, 1, predicate, priority, subject, predicate, object, context);
 			addComponentWitnesses(plane, lane, 2, object, priority, subject, predicate, object, context);
@@ -122,7 +127,9 @@ final class FrontierOmniBuilder implements AutoCloseable {
 		long boundedBuffers = Math.addExact(config.sortMemoryBytes(), domainBufferBytes(config));
 		long cellBuffer = Math.multiplyExact((long) maximumRetention(config),
 				6L * Long.BYTES + Integer.BYTES + Byte.BYTES);
-		return Math.addExact(matrixAndDirectory, Math.addExact(boundedBuffers, cellBuffer));
+		long priorityScratch = Math.multiplyExact((long) layout.lanes(), Long.BYTES);
+		return Math.addExact(matrixAndDirectory,
+				Math.addExact(boundedBuffers, Math.addExact(cellBuffer, priorityScratch)));
 	}
 
 	@Override
@@ -134,16 +141,18 @@ final class FrontierOmniBuilder implements AutoCloseable {
 	}
 
 	private void addComponentPopulation(int plane, int lane, int component, long value) {
+		long bucketSequence = FrontierStatisticsHash.omniBucketSequence(lane, component, value);
 		for (int row = 0; row < layout.depth(); row++) {
-			int cell = layout.cell(plane, lane, component, row, value);
+			int cell = layout.cellFromBucketSequence(plane, lane, component, row, bucketSequence);
 			populations[cell] = Math.incrementExact(populations[cell]);
 		}
 	}
 
 	private void addComponentWitnesses(int plane, int lane, int component, long value, long priority,
 			long subject, long predicate, long object, long context) throws IOException {
+		long bucketSequence = FrontierStatisticsHash.omniBucketSequence(lane, component, value);
 		for (int row = 0; row < layout.depth(); row++) {
-			int cell = layout.cell(plane, lane, component, row, value);
+			int cell = layout.cellFromBucketSequence(plane, lane, component, row, bucketSequence);
 			long population = populations[cell];
 			int emission = emissionTarget[cell];
 			if (emission != 0 && (emission >= population

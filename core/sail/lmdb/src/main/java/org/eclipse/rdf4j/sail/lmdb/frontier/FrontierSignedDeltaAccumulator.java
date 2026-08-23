@@ -22,6 +22,8 @@ final class FrontierSignedDeltaAccumulator {
 	private final int width;
 	private final long[] totals = new long[PLANES];
 	private final long[] counters;
+	private final long[] componentHashes = new long[FrontierOmniLayout.COMPONENT_COUNT];
+	private final int[] bucketScratch;
 
 	FrontierSignedDeltaAccumulator(int lanes, int width) {
 		if (lanes < 1 || width < 2 || Integer.bitCount(width) != 1) {
@@ -30,17 +32,21 @@ final class FrontierSignedDeltaAccumulator {
 		this.lanes = lanes;
 		this.width = width;
 		counters = new long[Math.multiplyExact(Math.multiplyExact(PLANES * NONEMPTY_MASKS, lanes), width)];
+		bucketScratch = new int[lanes];
 	}
 
 	void add(FrontierMutation mutation) {
 		int plane = mutation.explicit() ? 0 : 1;
 		long direction = mutation.insertion() ? 1L : -1L;
 		totals[plane] = saturatedAdd(totals[plane], direction);
+		FrontierStatisticsHash.componentHashes(mutation.subjectId(), mutation.predicateId(), mutation.objectId(),
+				mutation.contextId(), componentHashes, 0);
 		for (int mask = 1; mask <= NONEMPTY_MASKS; mask++) {
-			long key = FrontierStatisticsHash.conditioningKey(mask, mutation.subjectId(), mutation.predicateId(),
-					mutation.objectId(), mutation.contextId());
+			long key = FrontierStatisticsHash.conditioningKeyFromComponentHashes(mask,
+					componentHashes[0], componentHashes[1], componentHashes[2], componentHashes[3]);
+			FrontierStatisticsHash.buckets(key, 0, lanes, plane, mask, width - 1, bucketScratch, 0);
 			for (int lane = 0; lane < lanes; lane++) {
-				int bucket = FrontierStatisticsHash.bucket(key, lane, plane, mask, width - 1);
+				int bucket = bucketScratch[lane];
 				int offset = counterOffset(plane, mask, lane, bucket, lanes, width);
 				long signedDirection = direction * FrontierStatisticsHash.deltaSign(key, lane, plane, mask);
 				counters[offset] = saturatedAdd(counters[offset], signedDirection);

@@ -74,6 +74,8 @@ final class FrontierCenterBuilder implements AutoCloseable {
 		if (events == null || overflowed) {
 			return;
 		}
+		long rowPriority = 0L;
+		boolean rowPriorityPrepared = false;
 		for (int lane = 0; lane < lanes; lane++) {
 			for (int component = 0; component < FrontierOmniLayout.COMPONENT_COUNT; component++) {
 				int domain = domain(plane, lane, component);
@@ -81,8 +83,12 @@ final class FrontierCenterBuilder implements AutoCloseable {
 				if (FrontierStatisticsHash.centerPriority(lane, center) > centerThresholds[domain]) {
 					continue;
 				}
-				if (FrontierStatisticsHash.centerEdgePriority(
-						plane, lane, component, subject, predicate, object, context) > edgeThresholds[domain]) {
+				if (!rowPriorityPrepared) {
+					rowPriority = FrontierStatisticsHash.rowPriority(plane, subject, predicate, object, context);
+					rowPriorityPrepared = true;
+				}
+				if (FrontierStatisticsHash.centerEdgePriorityFromRowPriority(
+						lane, component, rowPriority) > edgeThresholds[domain]) {
 					continue;
 				}
 				if (events.records() >= maximumEvents) {

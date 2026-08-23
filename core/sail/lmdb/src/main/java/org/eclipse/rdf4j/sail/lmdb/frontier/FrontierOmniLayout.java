@@ -56,11 +56,14 @@ final class FrontierOmniLayout {
 	}
 
 	int cell(int plane, int lane, int component, int row, long value) {
-		if (plane < 0 || plane >= PLANE_COUNT || lane < 0 || lane >= lanes
-				|| component < 0 || component >= COMPONENT_COUNT || row < 0 || row >= depth) {
-			throw new IllegalArgumentException("Frontier Omni cell coordinates are outside the layout");
-		}
+		requireCoordinates(plane, lane, component, row);
 		int bucket = FrontierStatisticsHash.omniBucket(lane, component, row, value, widthMask);
+		return plane * planeStride + lane * laneStride + component * componentStride + row * rowStride + bucket;
+	}
+
+	int cellFromBucketSequence(int plane, int lane, int component, int row, long bucketSequence) {
+		requireCoordinates(plane, lane, component, row);
+		int bucket = FrontierStatisticsHash.omniBucketFromSequence(bucketSequence, row, widthMask);
 		return plane * planeStride + lane * laneStride + component * componentStride + row * rowStride + bucket;
 	}
 
@@ -105,6 +108,13 @@ final class FrontierOmniLayout {
 	private void requireCell(int cell) {
 		if (cell < 0 || cell >= cells) {
 			throw new IllegalArgumentException("Frontier Omni cell ordinal is outside the layout");
+		}
+	}
+
+	private void requireCoordinates(int plane, int lane, int component, int row) {
+		if (plane < 0 || plane >= PLANE_COUNT || lane < 0 || lane >= lanes
+				|| component < 0 || component >= COMPONENT_COUNT || row < 0 || row >= depth) {
+			throw new IllegalArgumentException("Frontier Omni cell coordinates are outside the layout");
 		}
 	}
 }

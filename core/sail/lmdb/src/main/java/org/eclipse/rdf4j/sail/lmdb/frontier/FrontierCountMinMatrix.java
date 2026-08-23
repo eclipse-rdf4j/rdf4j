@@ -25,6 +25,8 @@ final class FrontierCountMinMatrix {
 	private final int tableLength;
 	private final long[] counters;
 	private final long[] totals = new long[PLANES];
+	private final long[] componentHashes = new long[FrontierOmniLayout.COMPONENT_COUNT];
+	private final int[] bucketScratch;
 
 	FrontierCountMinMatrix(int depth, int width) {
 		this.depth = depth;
@@ -32,16 +34,19 @@ final class FrontierCountMinMatrix {
 		widthMask = width - 1;
 		tableLength = Math.multiplyExact(depth, width);
 		counters = new long[Math.multiplyExact(Math.multiplyExact(PLANES, MASKS), tableLength)];
+		bucketScratch = new int[depth];
 	}
 
 	void add(int plane, long subject, long predicate, long object, long context) {
 		totals[plane] = saturatedIncrement(totals[plane]);
+		FrontierStatisticsHash.componentHashes(subject, predicate, object, context, componentHashes, 0);
 		for (int mask = 1; mask < MASKS; mask++) {
-			long key = FrontierStatisticsHash.conditioningKey(mask, subject, predicate, object, context);
+			long key = FrontierStatisticsHash.conditioningKeyFromComponentHashes(mask,
+					componentHashes[0], componentHashes[1], componentHashes[2], componentHashes[3]);
 			int base = tableOffset(plane, mask);
+			FrontierStatisticsHash.buckets(key, 0, depth, plane, mask, widthMask, bucketScratch, 0);
 			for (int row = 0; row < depth; row++) {
-				int index = base + row * width
-						+ FrontierStatisticsHash.bucket(key, row, plane, mask, widthMask);
+				int index = base + row * width + bucketScratch[row];
 				counters[index] = saturatedIncrement(counters[index]);
 			}
 		}
@@ -57,7 +62,8 @@ final class FrontierCountMinMatrix {
 	}
 
 	long allocatedBytes() {
-		return (long) counters.length * Long.BYTES + (long) totals.length * Long.BYTES;
+		return (long) (counters.length + totals.length + componentHashes.length) * Long.BYTES
+				+ (long) bucketScratch.length * Integer.BYTES;
 	}
 
 	private int tableOffset(int plane, int mask) {
