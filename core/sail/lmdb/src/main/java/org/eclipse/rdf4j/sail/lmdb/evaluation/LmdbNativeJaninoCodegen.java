@@ -322,6 +322,7 @@ final class LmdbNativeJaninoCodegen {
 		LmdbFusedKernelRuntime.recordKernelBind(route, kernel);
 		try {
 			kernel.bind(context);
+			LmdbNativeKernelExecution.recordKernelBind(route, kernel);
 		} catch (RuntimeException | Error problem) {
 			throwIfStrict("bind", route, problem);
 			throw problem;

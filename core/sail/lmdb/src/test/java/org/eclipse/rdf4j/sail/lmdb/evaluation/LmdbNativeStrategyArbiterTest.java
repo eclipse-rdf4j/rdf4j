@@ -13,13 +13,16 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -32,6 +35,29 @@ import org.junit.jupiter.api.Test;
  * nothing rather than changing everything.
  */
 public class LmdbNativeStrategyArbiterTest {
+
+	@Test
+	public void probeBufferClosesTheInputWhenRowProductionFails() {
+		AtomicBoolean closed = new AtomicBoolean();
+		RuntimeException failure = new RuntimeException("injected row failure");
+		RowState row = new RowState(null, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+		NativeUnorderedInput input = NativeUnorderedInput.rows(row, new RowCursor() {
+			@Override
+			public boolean next() {
+				throw failure;
+			}
+
+			@Override
+			public void close() {
+				closed.set(true);
+			}
+		});
+
+		assertThatThrownBy(() -> new NativeProbeBufferHarness().drainBounded(input, null, 8))
+				.isSameAs(failure);
+		assertThat(closed).as("the failing probe still owns the input's native read lease").isTrue();
+		assertThat(input.closed).isTrue();
+	}
 
 	/**
 	 * These cases pin the ranking RULE, so they must not inherit what other queries in the same JVM taught the runtime

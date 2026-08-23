@@ -15,7 +15,9 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -33,12 +35,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Milestone 3 parity fix (three-tier parity plan): the row-side factorized {@code TailBranch} must consult
  * {@code adjacencyCacheBacked()} like its aggregate twin and skip its per-key value memo when the probe is served from
  * the shared adjacency cache — the memo would only duplicate runs the cache already holds in process memory.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbNativeFactorizedAdjacencyMemoTest {
 
 	private static final String EX = "http://example.com/";
@@ -46,25 +51,44 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 	private static final String CHUNK_PIPELINE_FLAG = "rdf4j.lmdb.chunkPipeline.enabled";
 	private static final String PARALLEL_FLAG = "rdf4j.lmdb.parallel.enabled";
 	private static final String JANINO_CODEGEN_FLAG = "rdf4j.lmdb.janinoCodegen.enabled";
+	private static final String[] PROPERTIES = {
+			NATIVE_FLAG,
+			CHUNK_PIPELINE_FLAG,
+			PARALLEL_FLAG,
+			JANINO_CODEGEN_FLAG,
+			"rdf4j.lmdb.kernelInterpreter.enabled",
+			"rdf4j.lmdb.costCalibration.enabled",
+			"rdf4j.lmdb.factorizedRows.enabled",
+			"rdf4j.lmdb.wcoj.enabled",
+			"rdf4j.lmdb.nativeBatch.enabled",
+			"rdf4j.lmdb.packedFtree.enabled",
+			"rdf4j.lmdb.prefixRun.enabled",
+			"rdf4j.lmdb.adaptiveFilterPlacement.enabled" };
 
 	@TempDir
 	File dataDir;
 
 	private SailRepository repository;
 	private LmdbStore sail;
-	private String previousNative;
-	private String previousChunkPipeline;
-	private String previousParallel;
-	private String previousJaninoCodegen;
+	private final Map<String, String> previousProperties = new HashMap<>();
 
 	@BeforeEach
 	public void setUp() throws Exception {
-		previousNative = System.setProperty(NATIVE_FLAG, "true");
-		previousChunkPipeline = System.setProperty(CHUNK_PIPELINE_FLAG, "false");
-		previousParallel = System.setProperty(PARALLEL_FLAG, "false");
-		// The compiled IR kernel sits above factorized rows in the strategy ladder and becomes eligible once this
-		// repeated query crosses its hotness threshold. Keep it off so every repetition exercises TailBranch.
-		previousJaninoCodegen = System.setProperty(JANINO_CODEGEN_FLAG, "false");
+		for (String property : PROPERTIES) {
+			previousProperties.put(property, System.getProperty(property));
+		}
+		System.setProperty(NATIVE_FLAG, "true");
+		System.setProperty(CHUNK_PIPELINE_FLAG, "false");
+		System.setProperty(PARALLEL_FLAG, "false");
+		System.setProperty(JANINO_CODEGEN_FLAG, "false");
+		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
+		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
+		System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "true");
+		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+		System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");
+		System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
+		System.setProperty("rdf4j.lmdb.prefixRun.enabled", "false");
+		System.setProperty("rdf4j.lmdb.adaptiveFilterPlacement.enabled", "false");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
@@ -100,10 +124,9 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 				repository.shutDown();
 			}
 		} finally {
-			restoreProperty(JANINO_CODEGEN_FLAG, previousJaninoCodegen);
-			restoreProperty(PARALLEL_FLAG, previousParallel);
-			restoreProperty(CHUNK_PIPELINE_FLAG, previousChunkPipeline);
-			restoreProperty(NATIVE_FLAG, previousNative);
+			for (Map.Entry<String, String> property : previousProperties.entrySet()) {
+				restoreProperty(property.getKey(), property.getValue());
+			}
 		}
 	}
 

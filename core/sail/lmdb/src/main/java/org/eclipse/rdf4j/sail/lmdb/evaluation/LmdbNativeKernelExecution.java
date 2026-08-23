@@ -44,6 +44,10 @@ final class LmdbNativeKernelExecution {
 	static final AtomicLong AGG_OPENED = new AtomicLong();
 	static final AtomicLong AGG_ROWS = new AtomicLong();
 	static final AtomicLong AGG_DECLINED = new AtomicLong();
+	static final AtomicLong COMPILED_BINDS = new AtomicLong();
+	static final AtomicLong INTERPRETED_BINDS = new AtomicLong();
+	static final AtomicLong AGG_COMPILED_BINDS = new AtomicLong();
+	static final AtomicLong AGG_INTERPRETED_BINDS = new AtomicLong();
 
 	private static final int ROWS_PER_OPEN_ESTIMATE = 4096;
 	private static final int FILL_ROWS = 256;
@@ -61,6 +65,10 @@ final class LmdbNativeKernelExecution {
 		AGG_OPENED.set(0L);
 		AGG_ROWS.set(0L);
 		AGG_DECLINED.set(0L);
+		COMPILED_BINDS.set(0L);
+		INTERPRETED_BINDS.set(0L);
+		AGG_COMPILED_BINDS.set(0L);
+		AGG_INTERPRETED_BINDS.set(0L);
 		LmdbNativeKernelLowering.HAVING_SINKS.set(0L);
 		LmdbNativeKernelLowering.BIND_HOOK_LOWERINGS.set(0L);
 		LmdbNativeKernelLowering.CONTEXT_COLUMN_LOWERINGS.set(0L);
@@ -70,6 +78,16 @@ final class LmdbNativeKernelExecution {
 		LmdbNativeKernelLowering.ROW_EXISTS_LOWERINGS.set(0L);
 		LmdbNativeKernelLowering.AGG_RESIDUAL_LOWERINGS.set(0L);
 		SHAPE_OPENS.clear();
+	}
+
+	/** Records the concrete serving tier at the shared bind boundary, including parallel worker variants. */
+	static void recordKernelBind(String route, JaninoKernel kernel) {
+		boolean interpreted = kernel instanceof LmdbNativeKernelInterpreter;
+		if (route.startsWith(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE)) {
+			(interpreted ? AGG_INTERPRETED_BINDS : AGG_COMPILED_BINDS).incrementAndGet();
+		} else if (route.startsWith(LmdbNativeAttemptMetrics.PATH_IR_KERNEL)) {
+			(interpreted ? INTERPRETED_BINDS : COMPILED_BINDS).incrementAndGet();
+		}
 	}
 
 	/**

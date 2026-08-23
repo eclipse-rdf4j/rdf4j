@@ -44,6 +44,7 @@ class QueryServletLmdbRuntimePropertyPostTest {
 			when(request.getParameter("action")).thenReturn("set-lmdb-property");
 			when(request.getParameter("name")).thenReturn(MARK_JOIN);
 			when(request.getParameter("enabled")).thenReturn("true");
+			when(request.isUserInRole("rdf4j-admin")).thenReturn(true);
 
 			StringWriter body = new StringWriter();
 			HttpServletResponse response = mock(HttpServletResponse.class);
@@ -56,6 +57,34 @@ class QueryServletLmdbRuntimePropertyPostTest {
 					.contains("\"name\":\"" + MARK_JOIN + "\"")
 					.contains("\"enabled\":true");
 			assertThat(System.getProperty(MARK_JOIN)).isEqualTo("true");
+		} finally {
+			if (previous == null) {
+				System.clearProperty(MARK_JOIN);
+			} else {
+				System.setProperty(MARK_JOIN, previous);
+			}
+		}
+	}
+
+	@Test
+	void nonAdminCannotMutateLocalRuntimeProperty() throws Exception {
+		String previous = System.getProperty(MARK_JOIN);
+		try {
+			System.setProperty(MARK_JOIN, "false");
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			when(request.getParameter("action")).thenReturn("set-lmdb-property");
+			when(request.getParameter("name")).thenReturn(MARK_JOIN);
+			when(request.getParameter("enabled")).thenReturn("true");
+
+			StringWriter body = new StringWriter();
+			HttpServletResponse response = mock(HttpServletResponse.class);
+			when(response.getWriter()).thenReturn(new PrintWriter(body));
+
+			new QueryServlet().doPost(request, response, "/transform");
+
+			verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
+			assertThat(body.toString()).contains("rdf4j-admin");
+			assertThat(System.getProperty(MARK_JOIN)).isEqualTo("false");
 		} finally {
 			if (previous == null) {
 				System.clearProperty(MARK_JOIN);

@@ -145,6 +145,9 @@ class LmdbNativeKernelInterpreterWarmupTest {
 		assertThat(LmdbNativeKernelExecution.AGG_OPENED.get())
 				.as("warmup must serve the interpreter for a below-threshold compile")
 				.isPositive();
+		assertThat(JaninoPipelineTestAccess.openedAny())
+				.as("an interpreted aggregate must not count as an opened compiled kernel")
+				.isZero();
 	}
 
 	@Test
@@ -167,6 +170,9 @@ class LmdbNativeKernelInterpreterWarmupTest {
 		assertThat(LmdbNativeKernelExecution.OPENED.get())
 				.as("warmup must serve the row interpreter for a below-threshold compile")
 				.isPositive();
+		assertThat(JaninoPipelineTestAccess.openedAny())
+				.as("an interpreted row kernel must not count as an opened compiled kernel")
+				.isZero();
 	}
 
 	@Test

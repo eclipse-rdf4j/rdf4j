@@ -2178,39 +2178,48 @@ final class NativeProbeBufferHarness implements LmdbNativeProbeHarness<NativeUno
 		long[] entrySnapshot = row.slots.clone();
 		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.currentOrNull();
 		RowCursor rows = input.materializedRows();
-		long[] arena = new long[Math.max(slotCount, Math.min(rowCap, 256) * slotCount)];
-		int buffered = 0;
-		int tick = 0;
-		while (rows.next()) {
-			if (buffered == 0) {
-				observation.firstOutput();
-			}
-			observation.addProducedRow();
-			if (buffered >= rowCap) {
-				// buffer exhaustion IS the timeout: trip the scope and throw the identical exception
-				if (deadline != null) {
-					deadline.trip();
+		try {
+			long[] arena = new long[Math.max(slotCount, Math.min(rowCap, 256) * slotCount)];
+			int buffered = 0;
+			int tick = 0;
+			while (rows.next()) {
+				if (buffered == 0) {
+					observation.firstOutput();
 				}
-				restore(row, mark, entrySnapshot);
-				throw LmdbNativeProbeDeadlineExceeded.INSTANCE;
+				observation.addProducedRow();
+				if (buffered >= rowCap) {
+					// buffer exhaustion IS the timeout: trip the scope and throw the identical exception
+					if (deadline != null) {
+						deadline.trip();
+					}
+					throw LmdbNativeProbeDeadlineExceeded.INSTANCE;
+				}
+				int offset = buffered * slotCount;
+				if (offset + slotCount > arena.length) {
+					int target = (int) Math.min((long) rowCap * slotCount, Math.max((long) arena.length * 2L,
+							(long) offset + slotCount));
+					long[] bigger = new long[target];
+					System.arraycopy(arena, 0, bigger, 0, offset);
+					arena = bigger;
+				}
+				System.arraycopy(row.slots, 0, arena, offset, slotCount);
+				buffered++;
+				LmdbNativeProbeDeadline.poll(++tick);
 			}
-			int offset = buffered * slotCount;
-			if (offset + slotCount > arena.length) {
-				int target = (int) Math.min((long) rowCap * slotCount, Math.max((long) arena.length * 2L,
-						(long) offset + slotCount));
-				long[] bigger = new long[target];
-				System.arraycopy(arena, 0, bigger, 0, offset);
-				arena = bigger;
+			// natural exhaustion: close the trial's native resources; the probe observation is not attached to the
+			// input, so this cannot double-record, and legacy calibration was never armed on a probe
+			rows.close();
+			return NativeUnorderedInput.rows(row, new NativeProbeReplayCursor(row, arena, buffered, slotCount));
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				rows.close();
+			} catch (RuntimeException | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
 			}
-			System.arraycopy(row.slots, 0, arena, offset, slotCount);
-			buffered++;
-			LmdbNativeProbeDeadline.poll(++tick);
+			throw failure;
+		} finally {
+			restore(row, mark, entrySnapshot);
 		}
-		// natural exhaustion: close the trial's native resources; the probe observation is not attached to the
-		// input, so this cannot double-record, and legacy calibration was never armed on a probe
-		rows.close();
-		restore(row, mark, entrySnapshot);
-		return NativeUnorderedInput.rows(row, new NativeProbeReplayCursor(row, arena, buffered, slotCount));
 	}
 
 	@Override

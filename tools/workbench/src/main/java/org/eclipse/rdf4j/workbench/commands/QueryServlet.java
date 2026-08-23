@@ -91,6 +91,7 @@ public class QueryServlet extends TransformationServlet {
 	private static final String ACTION_CANCEL_EXPLAIN = "cancel-explain";
 	private static final String ACTION_LMDB_PROPERTIES = "lmdb-properties";
 	private static final String ACTION_SET_LMDB_PROPERTY = "set-lmdb-property";
+	private static final String ADMIN_ROLE = "rdf4j-admin";
 
 	private static final String EXPLAIN_REQUEST_ID = "explain-request-id";
 
@@ -244,6 +245,11 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	private void writeSetLmdbRuntimeProperty(WorkbenchRequest req, HttpServletResponse resp) throws IOException {
+		if (!req.isUserInRole(ADMIN_ROLE)) {
+			writeRuntimePropertyJson(resp, HttpServletResponse.SC_FORBIDDEN,
+					new RuntimePropertyError("The rdf4j-admin role is required to change LMDB runtime properties"));
+			return;
+		}
 		String enabled = req.getParameter("enabled");
 		if (!"true".equals(enabled) && !"false".equals(enabled)) {
 			writeRuntimePropertyJson(resp, HttpServletResponse.SC_BAD_REQUEST,

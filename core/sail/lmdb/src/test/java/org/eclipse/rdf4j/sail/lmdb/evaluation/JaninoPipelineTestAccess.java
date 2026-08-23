@@ -24,7 +24,7 @@ public final class JaninoPipelineTestAccess {
 	}
 
 	public static long opened() {
-		return LmdbNativeKernelExecution.OPENED.get();
+		return LmdbNativeKernelExecution.COMPILED_BINDS.get();
 	}
 
 	public static long planned() {
@@ -35,10 +35,10 @@ public final class JaninoPipelineTestAccess {
 		LmdbNativeKernelExecution.resetMetrics();
 	}
 
-	/** All generated-kernel opens across the IR row and aggregate rungs. */
+	/** All concrete compiled-kernel binds across the IR row and aggregate rungs. */
 	public static long openedAny() {
-		return LmdbNativeKernelExecution.OPENED.get()
-				+ LmdbNativeKernelExecution.AGG_OPENED.get();
+		return LmdbNativeKernelExecution.COMPILED_BINDS.get()
+				+ LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get();
 	}
 
 	/** Clears generated-kernel counters and compiled test shapes before a benchmark trial. */

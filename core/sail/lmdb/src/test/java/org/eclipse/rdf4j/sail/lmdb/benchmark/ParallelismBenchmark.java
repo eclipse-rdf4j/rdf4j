@@ -86,6 +86,13 @@ public class ParallelismBenchmark {
 	private static final String HASH_JOIN_MIN_ROWS = "rdf4j.lmdb.nativeHashJoin.minRows";
 	private static final String HASH_JOIN_MAX_BUILD_ROWS = "rdf4j.lmdb.nativeHashJoin.maxBuildRows";
 	private static final String FACTORIZED_ROWS_ENABLED = "rdf4j.lmdb.factorizedRows.enabled";
+	private static final String WCOJ_ENABLED = "rdf4j.lmdb.wcoj.enabled";
+	private static final String PACKED_FTREE_ENABLED = "rdf4j.lmdb.packedFtree.enabled";
+	private static final String PREFIX_RUN_ENABLED = "rdf4j.lmdb.prefixRun.enabled";
+	private static final String ADAPTIVE_FILTER_PLACEMENT_ENABLED = "rdf4j.lmdb.adaptiveFilterPlacement.enabled";
+	private static final String JANINO_CODEGEN_ENABLED = "rdf4j.lmdb.janinoCodegen.enabled";
+	private static final String KERNEL_INTERPRETER_ENABLED = "rdf4j.lmdb.kernelInterpreter.enabled";
+	private static final String COST_CALIBRATION_ENABLED = "rdf4j.lmdb.costCalibration.enabled";
 	private static final String PARALLEL_ENABLED = "rdf4j.lmdb.parallel.enabled";
 	private static final String PARALLEL_MIN_ROOT_ESTIMATE = "rdf4j.lmdb.parallel.minRootEstimate";
 	private static final String PARALLEL_THREADS = "rdf4j.lmdb.parallel.threads";
@@ -166,7 +173,8 @@ public class ParallelismBenchmark {
 			previousProperties = new LinkedHashMap<>();
 			for (String property : List.of(NATIVE_ENABLED, NATIVE_BATCH_ENABLED, MERGE_JOIN_ENABLED,
 					HASH_JOIN_ENABLED, HASH_JOIN_MIN_ROWS, HASH_JOIN_MAX_BUILD_ROWS, FACTORIZED_ROWS_ENABLED,
-					PARALLEL_ENABLED,
+					WCOJ_ENABLED, PACKED_FTREE_ENABLED, PREFIX_RUN_ENABLED, ADAPTIVE_FILTER_PLACEMENT_ENABLED,
+					JANINO_CODEGEN_ENABLED, KERNEL_INTERPRETER_ENABLED, COST_CALIBRATION_ENABLED, PARALLEL_ENABLED,
 					PARALLEL_MIN_ROOT_ESTIMATE, PARALLEL_THREADS, PARALLEL_MAX_TASKS, PARALLEL_STARTUP_WORK,
 					RANGE_PARTITION_ENABLED)) {
 				previousProperties.put(property, System.getProperty(property));
@@ -186,6 +194,13 @@ public class ParallelismBenchmark {
 			// This benchmark isolates the parallel and batch proposals. Factorized rows is a competing specialist
 			// measured by its own benchmark and would otherwise legitimately win the common arbiter here.
 			System.setProperty(FACTORIZED_ROWS_ENABLED, "false");
+			System.setProperty(WCOJ_ENABLED, "false");
+			System.setProperty(PACKED_FTREE_ENABLED, "false");
+			System.setProperty(PREFIX_RUN_ENABLED, "false");
+			System.setProperty(ADAPTIVE_FILTER_PLACEMENT_ENABLED, "false");
+			System.setProperty(JANINO_CODEGEN_ENABLED, "false");
+			System.setProperty(KERNEL_INTERPRETER_ENABLED, "false");
+			System.setProperty(COST_CALIBRATION_ENABLED, "false");
 			System.setProperty(PARALLEL_ENABLED, Boolean.toString(selected.parallelEnabled));
 			System.setProperty(PARALLEL_MIN_ROOT_ESTIMATE, "0");
 			System.setProperty(PARALLEL_THREADS, Integer.toString(Math.max(2, workersPerQuery)));
