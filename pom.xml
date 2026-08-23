@@ -446,16 +446,23 @@
 							</java>
 							<formats>
 								<format>
-                                    <!-- All XML files, except those excluded below -->
+                                    <!-- Restrict scanning to source layouts. Broad **/*.xml patterns make Plexus walk
+                                         large untracked build and profiling trees before applying excludes. -->
 									<includes>
-										<include>**/*.xml</include>
+										<include>pom.xml</include>
+										<include>src/**/*.xml</include>
+										<include>build.xml</include>
+										<include>build/test/**/*.xml</include>
+										<include>docker/**/*.xml</include>
 									</includes>
-                                    <!-- Mirror old xml-format-maven-plugin excludes and avoid double-formatting POMs -->
+                                    <!-- Mirror old xml-format-maven-plugin excludes and avoid generated POMs. -->
 									<excludes>
-										<exclude>esclipse-settings/**</exclude>
+										<exclude>eclipse-settings/**</exclude>
 										<exclude>**/target/**</exclude>
 										<exclude>**/site/themes/**</exclude>
 										<exclude>**/.*/**</exclude>
+										<exclude>dependency-reduced-pom.xml</exclude>
+										<exclude>dependency-reduced-pom-*.xml</exclude>
 										<exclude>**/dependency-reduced-pom.xml</exclude>
 										<exclude>**/dependency-reduced-pom-*.xml</exclude>
 									</excludes>
@@ -1197,7 +1204,7 @@
 				<plugin>
 					<groupId>org.apache.felix</groupId>
 					<artifactId>maven-bundle-plugin</artifactId>
-					<version>5.1.9</version>
+					<version>6.1.0</version>
 					<extensions>true</extensions>
 					<configuration>
 						<instructions>

@@ -711,6 +711,27 @@
 						<junit.jupiter.execution.timeout.mode.default>enabled</junit.jupiter.execution.timeout.mode.default>
 					</systemPropertyVariables>
 				</configuration>
+				<executions>
+					<execution>
+						<id>frontier-vector-tests</id>
+						<goals>
+							<goal>test</goal>
+						</goals>
+						<configuration>
+							<groups>frontier-vector</groups>
+							<includes>
+								<include>**/FrontierStatisticsHashBatchTest.java</include>
+							</includes>
+							<failIfNoTests>false</failIfNoTests>
+							<reportNameSuffix>vector</reportNameSuffix>
+							<argLine>@{argLine} ${mockito.javaagent} -Xmx16G -Djava.awt.headless=true --add-modules jdk.incubator.vector</argLine>
+							<systemPropertyVariables>
+								<rdf4j.frontier.vector.enabled>true</rdf4j.frontier.vector.enabled>
+								<rdf4j.frontier.vector.required>true</rdf4j.frontier.vector.required>
+							</systemPropertyVariables>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 			<plugin>
 				<artifactId>maven-failsafe-plugin</artifactId>

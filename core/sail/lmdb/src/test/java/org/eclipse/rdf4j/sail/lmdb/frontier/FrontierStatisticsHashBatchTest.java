@@ -17,9 +17,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.Arrays;
 import java.util.TreeSet;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
+@Tag("frontier-vector")
 class FrontierStatisticsHashBatchTest {
 
 	private static final int SOURCE_OFFSET = 3;
@@ -30,10 +32,15 @@ class FrontierStatisticsHashBatchTest {
 	@Test
 	void dispatchMatchesTheFreshJvmMode() {
 		boolean moduleResolved = ModuleLayer.boot().findModule("jdk.incubator.vector").isPresent();
+		boolean vectorRequired = Boolean.getBoolean("rdf4j.frontier.vector.required");
 		boolean propertyEnabled = !"false".equalsIgnoreCase(
 				System.getProperty("rdf4j.frontier.vector.enabled"));
 		boolean expected = moduleResolved && propertyEnabled && FrontierStatisticsHashBatch.vectorLength() > 1;
 
+		if (vectorRequired) {
+			assertTrue(moduleResolved, "the vector verification fork must resolve jdk.incubator.vector");
+			assertTrue(expected, "the vector verification fork must exercise vector dispatch");
+		}
 		assertEquals(expected, FrontierStatisticsHashBatch.vectorEnabled());
 		if (moduleResolved) {
 			assertEquals(FrontierStatisticsHashVector.vectorLength(), FrontierStatisticsHashBatch.vectorLength());

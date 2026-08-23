@@ -64,7 +64,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationSco
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -253,8 +252,7 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
-	@Disabled("Disabled until we can verify if this test is correct or not")
-	void keepsSelectiveFilterInAsLocalFilterForPlannerOptions() {
+	void materializesGuaranteedStringFilterInAsExactValues() {
 		Filter filter = new Filter(statementPatternWithPredicate("s", "http://example.com/theme/library/name", "o"),
 				listMember("o", "A", "B"));
 		QueryRoot root = new QueryRoot(filter);
@@ -263,15 +261,12 @@ class LmdbFilterSimplifierOptimizerTest {
 				new FixedGuaranteeFilterPassStatistics(0.50d, RdfTermDomain.classify(VF.createLiteral("A"))))
 						.optimize(root, null, null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
-		assertFalse(containsBindingSetAssignment(root.getArg()));
-		assertInstanceOf(ListMemberOperator.class, retainedFilter.getCondition());
+		assertFalse(containsFilter(root.getArg()));
+		assertEquals(Set.of(VF.createLiteral("A"), VF.createLiteral("B")), anchoredValues(root.getArg(), "o"));
 	}
 
 	@Test
-	@Disabled("Disabled until we can verify if this test is correct or not")
-	void keepsSelectiveTitleFilterInAsLocalFilterForPlannerOptions() {
+	void materializesGuaranteedTitleFilterInAsExactValues() {
 		Filter filter = new Filter(statementPatternWithPredicate("book", "http://example.com/theme/library/title",
 				"title"), listMember("title", "Book 1", "Book 2"));
 		QueryRoot root = new QueryRoot(filter);
@@ -281,15 +276,13 @@ class LmdbFilterSimplifierOptimizerTest {
 						RdfTermDomain.classify(VF.createLiteral("Book 1"))))
 								.optimize(root, null, null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
-		assertFalse(containsBindingSetAssignment(root.getArg()));
-		assertInstanceOf(ListMemberOperator.class, retainedFilter.getCondition());
+		assertFalse(containsFilter(root.getArg()));
+		assertEquals(Set.of(VF.createLiteral("Book 1"), VF.createLiteral("Book 2")),
+				anchoredValues(root.getArg(), "title"));
 	}
 
 	@Test
-	@Disabled("Disabled until we can verify if this test is correct or not")
-	void keepsMixedInAndEqualityDisjunctionAsLocalFilterForPlannerOptions() {
+	void materializesGuaranteedMixedEqualityDisjunctionAsExactValues() {
 		Filter filter = new Filter(statementPatternWithPredicate("s", "http://example.com/theme/library/name", "o"),
 				new Or(listMember("o", "A", "B"), compareLiteral("o", "C")));
 		QueryRoot root = new QueryRoot(filter);
@@ -298,10 +291,9 @@ class LmdbFilterSimplifierOptimizerTest {
 				new FixedGuaranteeFilterPassStatistics(0.50d, RdfTermDomain.classify(VF.createLiteral("A"))))
 						.optimize(root, null, null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
-		assertFalse(containsBindingSetAssignment(root.getArg()));
-		assertInstanceOf(Or.class, retainedFilter.getCondition());
+		assertFalse(containsFilter(root.getArg()));
+		assertEquals(Set.of(VF.createLiteral("A"), VF.createLiteral("B"), VF.createLiteral("C")),
+				anchoredValues(root.getArg(), "o"));
 	}
 
 	@Test
@@ -425,8 +417,7 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
-	@Disabled("Disabled until we can verify if this test is correct or not")
-	void keepsKnownSafeFilterInAsLocalFilterForPlannerOptions() {
+	void materializesGuaranteedSafeFilterInAsExactValues() {
 		Filter filter = new Filter(statementPatternWithPredicate("substation", "http://example.com/theme/grid/name",
 				"name"), listMember("name", "Substation 0", "Substation 1", "Substation 2"));
 		QueryRoot root = new QueryRoot(filter);
@@ -434,10 +425,9 @@ class LmdbFilterSimplifierOptimizerTest {
 		new LmdbFilterSimplifierOptimizer(new FixedGuaranteeFilterPassStatistics(0.83d,
 				RdfTermDomain.classify(VF.createLiteral("Substation 0")))).optimize(root, null, null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
-		assertFalse(containsBindingSetAssignment(root.getArg()));
-		assertInstanceOf(ListMemberOperator.class, retainedFilter.getCondition());
+		assertFalse(containsFilter(root.getArg()));
+		assertEquals(Set.of(VF.createLiteral("Substation 0"), VF.createLiteral("Substation 1"),
+				VF.createLiteral("Substation 2")), anchoredValues(root.getArg(), "name"));
 	}
 
 	@Test
@@ -593,8 +583,7 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
-	@Disabled("Disabled until we can verify if this test is correct or not")
-	void keepsCanonicalIntegerFilterInAsLocalFilterForPlannerOptions() {
+	void expandsCanonicalIntegerFilterInAcrossGuaranteedDatatypeFamily() {
 		Filter filter = new Filter(statementPatternWithPredicate("sensor",
 				"http://example.com/theme/grid/measuredValue", "value"),
 				listMemberValues("value", VF.createLiteral("1", XSD.INT), VF.createLiteral("-7", XSD.INTEGER)));
@@ -604,15 +593,17 @@ class LmdbFilterSimplifierOptimizerTest {
 				new FixedGuaranteeFilterPassStatistics(0.50d, RdfTermDomain.CANONICAL_INTEGER))
 						.optimize(root, null, null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
-		assertFalse(containsBindingSetAssignment(root.getArg()));
-		assertInstanceOf(ListMemberOperator.class, retainedFilter.getCondition());
+		assertFalse(containsFilter(root.getArg()));
+		Set<Value> values = anchoredValues(root.getArg(), "value");
+		assertEquals(18, values.size());
+		assertTrue(values.contains(VF.createLiteral("1", XSD.INTEGER)));
+		assertTrue(values.contains(VF.createLiteral("1", XSD.UNSIGNED_BYTE)));
+		assertTrue(values.contains(VF.createLiteral("-7", XSD.INTEGER)));
+		assertTrue(values.contains(VF.createLiteral("-7", XSD.NEGATIVE_INTEGER)));
 	}
 
 	@Test
-	@Disabled("Disabled until we can verify if this test is correct or not")
-	void keepsCanonicalIntegerFilterEqualAsLocalFilterForPlannerOptions() {
+	void expandsCanonicalIntegerEqualityAcrossGuaranteedDatatypeFamily() {
 		Filter filter = new Filter(statementPatternWithPredicate("sensor",
 				"http://example.com/theme/grid/measuredValue", "value"),
 				compareValue("value", VF.createLiteral("7", XSD.INT)));
@@ -622,15 +613,16 @@ class LmdbFilterSimplifierOptimizerTest {
 				new FixedGuaranteeFilterPassStatistics(0.50d, RdfTermDomain.CANONICAL_INTEGER))
 						.optimize(root, null, null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
-		assertFalse(containsBindingSetAssignment(root.getArg()));
-		assertInstanceOf(Compare.class, retainedFilter.getCondition());
+		assertFalse(containsFilter(root.getArg()));
+		Set<Value> values = anchoredValues(root.getArg(), "value");
+		assertEquals(11, values.size());
+		assertTrue(values.contains(VF.createLiteral("7", XSD.INTEGER)));
+		assertTrue(values.contains(VF.createLiteral("7", XSD.INT)));
+		assertTrue(values.contains(VF.createLiteral("7", XSD.UNSIGNED_BYTE)));
 	}
 
 	@Test
-	@Disabled("Disabled until we can verify if this test is correct or not")
-	void keepsCanonicalIntegerExpansionOutOfSimplifier() {
+	void expandsCanonicalIntegerTermToValueEqualDatatypeAliases() {
 		Filter filter = new Filter(statementPatternWithPredicate("sensor",
 				"http://example.com/theme/grid/measuredValue", "value"),
 				listMemberValues("value", VF.createLiteral("1", XSD.INTEGER)));
@@ -640,15 +632,16 @@ class LmdbFilterSimplifierOptimizerTest {
 				new FixedGuaranteeFilterPassStatistics(0.50d, RdfTermDomain.CANONICAL_INTEGER))
 						.optimize(root, null, null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
-		assertFalse(containsBindingSetAssignment(root.getArg()));
-		assertInstanceOf(ListMemberOperator.class, retainedFilter.getCondition());
+		assertFalse(containsFilter(root.getArg()));
+		Set<Value> values = anchoredValues(root.getArg(), "value");
+		assertEquals(11, values.size());
+		assertTrue(values.contains(VF.createLiteral("1", XSD.INTEGER)));
+		assertTrue(values.contains(VF.createLiteral("1", XSD.INT)));
+		assertTrue(values.contains(VF.createLiteral("1", XSD.UNSIGNED_BYTE)));
 	}
 
 	@Test
-	@Disabled("Disabled until we can verify if this test is correct or not")
-	void keepsSingleDatatypeIntegerAnchorOutOfSimplifier() {
+	void narrowsCanonicalIntegerAnchorToGuaranteedDatatype() {
 		Filter filter = new Filter(statementPatternWithPredicate("sensor",
 				"http://example.com/theme/grid/measuredValue", "value"),
 				listMemberValues("value", VF.createLiteral("7", XSD.INTEGER)));
@@ -657,15 +650,12 @@ class LmdbFilterSimplifierOptimizerTest {
 		new LmdbFilterSimplifierOptimizer(new FixedGuaranteeFilterPassStatistics(0.50d,
 				RdfTermDomain.classify(VF.createLiteral("7", XSD.INT)))).optimize(root, null, null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
-		assertFalse(containsBindingSetAssignment(root.getArg()));
-		assertInstanceOf(ListMemberOperator.class, retainedFilter.getCondition());
+		assertFalse(containsFilter(root.getArg()));
+		assertEquals(Set.of(VF.createLiteral("7", XSD.INT)), anchoredValues(root.getArg(), "value"));
 	}
 
 	@Test
-	@Disabled("Disabled until we can verify if this test is correct or not")
-	void keepsBooleanFilterAnchorOutOfSimplifier() {
+	void expandsBooleanFilterToValueEqualLexicalForms() {
 		Filter filter = new Filter(statementPatternWithPredicate("sensor",
 				"http://example.com/theme/grid/measuredValue", "value"),
 				compareValue("value", VF.createLiteral(true)));
@@ -674,15 +664,13 @@ class LmdbFilterSimplifierOptimizerTest {
 		new LmdbFilterSimplifierOptimizer(new FixedGuaranteeFilterPassStatistics(0.50d,
 				RdfTermDomain.classify(VF.createLiteral("1", XSD.BOOLEAN)))).optimize(root, null, null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
-		assertFalse(containsBindingSetAssignment(root.getArg()));
-		assertInstanceOf(Compare.class, retainedFilter.getCondition());
+		assertFalse(containsFilter(root.getArg()));
+		assertEquals(Set.of(VF.createLiteral("true", XSD.BOOLEAN), VF.createLiteral("1", XSD.BOOLEAN)),
+				anchoredValues(root.getArg(), "value"));
 	}
 
 	@Test
-	@Disabled("Disabled until we can verify if this test is correct or not")
-	void keepsDateFilterAnchorOutOfSimplifier() {
+	void materializesCanonicalDateFilterAsExactValue() {
 		Filter filter = new Filter(statementPatternWithPredicate("sensor",
 				"http://example.com/theme/grid/measuredValue", "value"),
 				compareValue("value", VF.createLiteral("2024-01-01", XSD.DATE)));
@@ -692,10 +680,9 @@ class LmdbFilterSimplifierOptimizerTest {
 				RdfTermDomain.classify(VF.createLiteral("2024-01-01", XSD.DATE)))).optimize(root, null,
 						null);
 
-		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
-		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
-		assertFalse(containsBindingSetAssignment(root.getArg()));
-		assertInstanceOf(Compare.class, retainedFilter.getCondition());
+		assertFalse(containsFilter(root.getArg()));
+		assertEquals(Set.of(VF.createLiteral("2024-01-01", XSD.DATE)),
+				anchoredValues(root.getArg(), "value"));
 	}
 
 	@Test
