@@ -12,17 +12,18 @@
 package org.eclipse.rdf4j.sail.lmdb.frontier;
 
 import java.io.IOException;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
+import java.util.Arrays;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.CRC32C;
 
 /** One immutable, query-ready, lazily mapped Frontier Statistics V2 shard. */
@@ -54,12 +55,12 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 	private final long fileLength;
 	private final ColumnReader[] columns;
 	private final ColumnReader[] columnsById;
-	private final AtomicInteger mappedDataBlocks;
+	private final MappedBlockRegistry mappedDataBlocks;
 	private volatile boolean closed;
 
 	private FrontierStatisticsShard(Path path, FileChannel channel, int formatVersion, long generationId, int shardId,
 			long snapshotEpoch, long maximumTermId, long rowCount, long fileLength, ColumnReader[] columns,
-			AtomicInteger mappedDataBlocks) {
+			MappedBlockRegistry mappedDataBlocks) {
 		this.path = path;
 		this.channel = channel;
 		this.formatVersion = formatVersion;
@@ -82,49 +83,64 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 			if (actualLength < HEADER_BYTES || actualLength > MAXIMUM_SHARD_BYTES) {
 				throw new IOException("Frontier statistics shard length is invalid: " + actualLength);
 			}
-			MappedByteBuffer mappedHeader = channel.map(FileChannel.MapMode.READ_ONLY, 0L, HEADER_BYTES);
-			mappedHeader.order(ByteOrder.BIG_ENDIAN);
-			byte[] headerBytes = new byte[HEADER_BYTES];
-			mappedHeader.duplicate().get(headerBytes);
-			ByteBuffer header = ByteBuffer.wrap(headerBytes).order(ByteOrder.BIG_ENDIAN);
-			int version = header.getInt(8);
-			if (header.getLong(0) != MAGIC || version != LEGACY_VERSION && version != VERSION
-					|| header.getInt(12) != HEADER_BYTES) {
-				throw new IOException("Frontier statistics shard header is incompatible");
-			}
-			int storedHeaderChecksum = header.getInt(HEADER_CHECKSUM_OFFSET);
-			header.putInt(HEADER_CHECKSUM_OFFSET, 0);
-			if (storedHeaderChecksum != checksum(headerBytes)) {
-				throw new IOException("Frontier statistics shard header checksum mismatch");
-			}
+			int version;
+			long generationId;
+			int shardId;
+			long snapshotEpoch;
+			long maximumTermId;
+			long rowCount;
+			int columnCount;
+			long directoryOffset;
+			long directoryLength;
+			long declaredFileLength;
+			int directoryChecksum;
+			try (MappedRegion mappedHeader = MappedRegion.map(channel, 0L, HEADER_BYTES)) {
+				ByteBuffer mapped = mappedHeader.buffer();
+				byte[] headerBytes = new byte[HEADER_BYTES];
+				mapped.duplicate().get(headerBytes);
+				ByteBuffer header = ByteBuffer.wrap(headerBytes).order(ByteOrder.BIG_ENDIAN);
+				version = header.getInt(8);
+				if (header.getLong(0) != MAGIC || version != LEGACY_VERSION && version != VERSION
+						|| header.getInt(12) != HEADER_BYTES) {
+					throw new IOException("Frontier statistics shard header is incompatible");
+				}
+				int storedHeaderChecksum = header.getInt(HEADER_CHECKSUM_OFFSET);
+				header.putInt(HEADER_CHECKSUM_OFFSET, 0);
+				if (storedHeaderChecksum != checksum(headerBytes)) {
+					throw new IOException("Frontier statistics shard header checksum mismatch");
+				}
 
-			long generationId = header.getLong(16);
-			int shardId = header.getInt(24);
-			long snapshotEpoch = header.getLong(32);
-			long maximumTermId = header.getLong(40);
-			long rowCount = header.getLong(48);
-			int columnCount = header.getInt(56);
-			long directoryOffset = header.getLong(64);
-			long directoryLength = header.getLong(72);
-			long declaredFileLength = header.getLong(80);
-			int directoryChecksum = header.getInt(88);
+				generationId = header.getLong(16);
+				shardId = header.getInt(24);
+				snapshotEpoch = header.getLong(32);
+				maximumTermId = header.getLong(40);
+				rowCount = header.getLong(48);
+				columnCount = header.getInt(56);
+				directoryOffset = header.getLong(64);
+				directoryLength = header.getLong(72);
+				declaredFileLength = header.getLong(80);
+				directoryChecksum = header.getInt(88);
+			}
 			validateHeader(generationId, shardId, snapshotEpoch, maximumTermId, rowCount, columnCount,
 					directoryOffset, directoryLength, declaredFileLength, actualLength);
 
-			ByteBuffer directory = mapDirectory(channel, directoryOffset, directoryLength);
-			if (directoryChecksum != checksum(directory.duplicate())) {
-				throw new IOException("Frontier statistics shard directory checksum mismatch");
+			MappedBlockRegistry mappedDataBlocks = new MappedBlockRegistry();
+			RegionTracker occupiedRegions = new RegionTracker();
+			occupiedRegions.add(0L, HEADER_BYTES);
+			occupiedRegions.add(directoryOffset, declaredFileLength);
+			ColumnReader[] columns;
+			try (MappedRegion mappedDirectory = MappedRegion.map(channel, directoryOffset, directoryLength)) {
+				ByteBuffer directory = mappedDirectory.buffer();
+				if (directoryChecksum != checksum(directory.duplicate())) {
+					throw new IOException("Frontier statistics shard directory checksum mismatch");
+				}
+				columns = version == LEGACY_VERSION
+						? readLegacyColumns(channel, directory, rowCount, directoryOffset, mappedDataBlocks,
+								occupiedRegions)
+						: readBlockColumns(channel, directory, rowCount, directoryOffset, mappedDataBlocks,
+								occupiedRegions);
 			}
-			AtomicInteger mappedDataBlocks = new AtomicInteger();
-			ArrayList<Region> occupiedRegions = new ArrayList<>();
-			occupiedRegions.add(new Region(0L, HEADER_BYTES));
-			occupiedRegions.add(new Region(directoryOffset, declaredFileLength));
-			ColumnReader[] columns = version == LEGACY_VERSION
-					? readLegacyColumns(channel, directory, rowCount, directoryOffset, mappedDataBlocks,
-							occupiedRegions)
-					: readBlockColumns(channel, directory, rowCount, directoryOffset, mappedDataBlocks,
-							occupiedRegions);
-			validateNonOverlapping(occupiedRegions);
+			occupiedRegions.validateNonOverlapping();
 			return new FrontierStatisticsShard(normalized, channel, version, generationId, shardId, snapshotEpoch,
 					maximumTermId, rowCount, actualLength, columns, mappedDataBlocks);
 		} catch (IOException | RuntimeException failure) {
@@ -166,7 +182,7 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 	}
 
 	public int mappedDataBlockCount() {
-		return mappedDataBlocks.get();
+		return mappedDataBlocks.count();
 	}
 
 	public ColumnReader column(int columnId) {
@@ -206,10 +222,15 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 	}
 
 	@Override
-	public void close() throws IOException {
+	public synchronized void close() throws IOException {
 		if (!closed) {
 			closed = true;
-			channel.close();
+			mappedDataBlocks.seal();
+			try {
+				channel.close();
+			} finally {
+				mappedDataBlocks.releaseMappings();
+			}
 		}
 	}
 
@@ -280,17 +301,12 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 		}
 	}
 
-	private static ByteBuffer mapDirectory(FileChannel channel, long offset, long length) throws IOException {
-		if (length == 0L) {
-			return ByteBuffer.allocate(0).order(ByteOrder.BIG_ENDIAN);
-		}
-		return channel.map(FileChannel.MapMode.READ_ONLY, offset, length).order(ByteOrder.BIG_ENDIAN);
-	}
-
 	private static ColumnReader[] readLegacyColumns(FileChannel channel, ByteBuffer directory, long rowCount,
-			long directoryOffset, AtomicInteger mappedDataBlocks, List<Region> occupiedRegions) throws IOException {
+			long directoryOffset, MappedBlockRegistry mappedDataBlocks, RegionTracker occupiedRegions)
+			throws IOException {
 		int columnCount = directory.remaining() / DIRECTORY_ENTRY_BYTES;
 		ColumnReader[] columns = new ColumnReader[columnCount];
+		occupiedRegions.ensureAdditionalCapacity(columnCount);
 		int previousColumnId = -1;
 		for (int index = 0; index < columnCount; index++) {
 			int offset = Math.multiplyExact(index, DIRECTORY_ENTRY_BYTES);
@@ -309,15 +325,17 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 					|| encodedBytes(columnRows, bitWidth) != dataLength) {
 				throw new IOException("Frontier statistics legacy column directory is invalid at ordinal " + index);
 			}
+			MappingContext mappingContext = new MappingContext(channel, mappedDataBlocks, columnId);
 			BlockReader[] blocks;
 			if (columnRows == 0L) {
 				blocks = new BlockReader[0];
 			} else {
 				blocks = new BlockReader[] {
-						new BlockReader(channel, mappedDataBlocks, columnId, bitWidth, 0L, Math.toIntExact(columnRows),
-								dataOffset, dataLength, dataChecksum)
+						new BlockReader(mappingContext, bitWidth, 0L, Math.toIntExact(columnRows), dataOffset,
+								dataLength,
+								dataChecksum)
 				};
-				occupiedRegions.add(new Region(dataOffset, Math.addExact(dataOffset, dataLength)));
+				occupiedRegions.add(dataOffset, Math.addExact(dataOffset, dataLength));
 			}
 			columns[index] = new ColumnReader(columnId, codec, bitWidth, columnRows, baseValue, minimumValue, blocks,
 					dataOffset);
@@ -327,7 +345,8 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 	}
 
 	private static ColumnReader[] readBlockColumns(FileChannel channel, ByteBuffer directory, long rowCount,
-			long directoryOffset, AtomicInteger mappedDataBlocks, List<Region> occupiedRegions) throws IOException {
+			long directoryOffset, MappedBlockRegistry mappedDataBlocks, RegionTracker occupiedRegions)
+			throws IOException {
 		int columnCount = directory.remaining() / DIRECTORY_ENTRY_BYTES;
 		ColumnReader[] columns = new ColumnReader[columnCount];
 		int previousColumnId = -1;
@@ -357,16 +376,22 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 					|| columnRows == 0L && blockCount != 0 || columnRows > 0L && blockCount == 0) {
 				throw new IOException("Frontier statistics block directory is invalid for column " + columnId);
 			}
-			ByteBuffer blockDirectory = mapDirectory(channel, blockDirectoryOffset, blockDirectoryLength);
-			if (blockDirectoryChecksum != checksum(blockDirectory.duplicate())) {
-				throw new IOException("Frontier statistics block-directory checksum mismatch for column " + columnId);
+			occupiedRegions.ensureAdditionalCapacity(blockCount + (blockCount == 0 ? 0 : 1));
+			BlockReader[] blocks;
+			try (MappedRegion mappedBlockDirectory = MappedRegion.map(channel, blockDirectoryOffset,
+					blockDirectoryLength)) {
+				ByteBuffer blockDirectory = mappedBlockDirectory.buffer();
+				if (blockDirectoryChecksum != checksum(blockDirectory.duplicate())) {
+					throw new IOException(
+							"Frontier statistics block-directory checksum mismatch for column " + columnId);
+				}
+				if (blockDirectoryLength > 0L) {
+					occupiedRegions.add(blockDirectoryOffset,
+							Math.addExact(blockDirectoryOffset, blockDirectoryLength));
+				}
+				blocks = readBlocks(channel, blockDirectory, columnId, bitWidth, columnRows, directoryOffset,
+						mappedDataBlocks, occupiedRegions);
 			}
-			if (blockDirectoryLength > 0L) {
-				occupiedRegions.add(new Region(blockDirectoryOffset,
-						Math.addExact(blockDirectoryOffset, blockDirectoryLength)));
-			}
-			BlockReader[] blocks = readBlocks(channel, blockDirectory, columnId, bitWidth, columnRows,
-					directoryOffset, mappedDataBlocks, occupiedRegions);
 			long firstDataOffset = blocks.length == 0 ? blockDirectoryOffset : blocks[0].dataOffset;
 			columns[index] = new ColumnReader(columnId, codec, bitWidth, columnRows, baseValue, minimumValue, blocks,
 					firstDataOffset);
@@ -376,10 +401,11 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 	}
 
 	private static BlockReader[] readBlocks(FileChannel channel, ByteBuffer blockDirectory, int columnId,
-			int bitWidth, long columnRows, long directoryOffset, AtomicInteger mappedDataBlocks,
-			List<Region> occupiedRegions) throws IOException {
+			int bitWidth, long columnRows, long directoryOffset, MappedBlockRegistry mappedDataBlocks,
+			RegionTracker occupiedRegions) throws IOException {
 		int blockCount = blockDirectory.remaining() / BLOCK_DIRECTORY_ENTRY_BYTES;
 		BlockReader[] blocks = new BlockReader[blockCount];
+		MappingContext mappingContext = new MappingContext(channel, mappedDataBlocks, columnId);
 		long expectedFirstRow = 0L;
 		for (int index = 0; index < blockCount; index++) {
 			int offset = Math.multiplyExact(index, BLOCK_DIRECTORY_ENTRY_BYTES);
@@ -395,10 +421,9 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 				throw new IOException("Frontier statistics data block is invalid for column " + columnId
 						+ " at ordinal " + index);
 			}
-			blocks[index] = new BlockReader(channel, mappedDataBlocks, columnId, bitWidth, firstRow, blockRows,
-					dataOffset,
-					dataLength, dataChecksum);
-			occupiedRegions.add(new Region(dataOffset, Math.addExact(dataOffset, dataLength)));
+			blocks[index] = new BlockReader(mappingContext, bitWidth, firstRow, blockRows, dataOffset, dataLength,
+					dataChecksum);
+			occupiedRegions.add(dataOffset, Math.addExact(dataOffset, dataLength));
 			expectedFirstRow = Math.addExact(firstRow, blockRows);
 		}
 		if (expectedFirstRow != columnRows) {
@@ -420,18 +445,41 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 				|| codec == CODEC_SIGNED_ZIGZAG;
 	}
 
-	private static void validateNonOverlapping(List<Region> occupiedRegions) throws IOException {
-		occupiedRegions.sort(Comparator.comparingLong(Region::start));
-		long end = -1L;
-		for (Region region : occupiedRegions) {
-			if (region.start < end) {
-				throw new IOException("Frontier statistics shard regions overlap");
-			}
-			end = region.end;
-		}
-	}
+	private static final class RegionTracker {
 
-	private record Region(long start, long end) {
+		private long[] regions = new long[16];
+		private int size;
+
+		private void ensureAdditionalCapacity(int additional) {
+			int required = Math.addExact(size, additional);
+			if (required > regions.length) {
+				int grown = regions.length + (regions.length >>> 1);
+				regions = Arrays.copyOf(regions, Math.max(required, grown));
+			}
+		}
+
+		private void add(long start, long end) {
+			if (start < 0L || start > MAXIMUM_SHARD_BYTES || end < start || end > MAXIMUM_SHARD_BYTES) {
+				throw new IllegalArgumentException("invalid Frontier statistics shard region");
+			}
+			if (size == regions.length) {
+				regions = Arrays.copyOf(regions, size << 1);
+			}
+			regions[size++] = start << Integer.SIZE | end;
+		}
+
+		private void validateNonOverlapping() throws IOException {
+			Arrays.sort(regions, 0, size);
+			long previousEnd = -1L;
+			for (int index = 0; index < size; index++) {
+				long region = regions[index];
+				long start = region >>> Integer.SIZE;
+				if (start < previousEnd) {
+					throw new IOException("Frontier statistics shard regions overlap");
+				}
+				previousEnd = region & 0xffff_ffffL;
+			}
+		}
 	}
 
 	/** Lazily mapped primitive column reader; one retained object is used per data block, never per row. */
@@ -445,8 +493,12 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 		private final long minimumValue;
 		private final BlockReader[] blocks;
 		private final BlockReader singleBlock;
+		private static final int MAX_BLOCK_FENCES = 1 << 10;
+
 		private final long regularBlockRows;
 		private final int regularBlockShift;
+		private final int[] blockFences;
+		private final int blockFenceCount;
 		private final long firstDataOffset;
 
 		private ColumnReader(int columnId, int codec, int bitWidth, long rowCount, long baseValue,
@@ -462,6 +514,10 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 			long regularRows = regularBlockRows(blocks);
 			this.regularBlockRows = regularRows;
 			this.regularBlockShift = Long.bitCount(regularRows) == 1 ? Long.numberOfTrailingZeros(regularRows) : -1;
+			int[] fences = regularRows == 0L && blocks.length >= 16 ? buildBlockFences(blocks, rowCount) : null;
+			this.blockFences = fences;
+			this.blockFenceCount = fences == null ? 0 : fences.length - 1;
+			configureContiguousMapping(blocks);
 			this.firstDataOffset = firstDataOffset;
 		}
 
@@ -503,6 +559,22 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 			return firstDataOffset;
 		}
 
+		private static void configureContiguousMapping(BlockReader[] blocks) {
+			if (blocks.length <= MappingContext.PROMOTION_THRESHOLD) {
+				return;
+			}
+			BlockReader first = blocks[0];
+			long offset = first.dataOffset;
+			long end = offset;
+			for (BlockReader block : blocks) {
+				if (block.dataOffset != end) {
+					return;
+				}
+				end = Math.addExact(end, block.dataLength);
+			}
+			first.mappingContext.configureShared(offset, Math.addExact(end - offset, DATA_READ_AHEAD_BYTES));
+		}
+
 		private static long regularBlockRows(BlockReader[] blocks) {
 			if (blocks.length < 2) {
 				return 0L;
@@ -518,54 +590,86 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 			return rows;
 		}
 
+		private static int[] buildBlockFences(BlockReader[] blocks, long rowCount) {
+			int fenceCount = Math.min(MAX_BLOCK_FENCES, blocks.length);
+			int[] fences = new int[fenceCount + 1];
+			int block = 0;
+			for (int fence = 0; fence <= fenceCount; fence++) {
+				long boundary = fence == fenceCount
+						? rowCount
+						: ((long) fence * rowCount + fenceCount - 1L) / fenceCount;
+				while (block < blocks.length - 1 && blocks[block].endRow <= boundary) {
+					block++;
+				}
+				fences[fence] = block;
+			}
+			return fences;
+		}
+
 		private BlockReader findBlock(long row) {
 			long regularRows = regularBlockRows;
 			if (regularRows != 0L) {
-				int block = regularBlockShift >= 0 ? (int) (row >>> regularBlockShift) : (int) (row / regularRows);
+				int shift = regularBlockShift;
+				int block = shift >= 0 ? (int) (row >>> shift) : (int) (row / regularRows);
 				return blocks[block];
 			}
-			int low = 0;
-			int high = blocks.length - 1;
-			while (low <= high) {
+			return findIrregularBlock(row);
+		}
+
+		private BlockReader findIrregularBlock(long row) {
+			int low;
+			int high;
+			int[] fences = blockFences;
+			if (fences == null) {
+				low = 0;
+				high = blocks.length - 1;
+			} else {
+				int fenceCount = blockFenceCount;
+				int fence = (int) (row * fenceCount / rowCount);
+				low = fences[fence];
+				high = fences[fence + 1];
+			}
+			BlockReader block = blocks[low];
+			if (row < block.endRow) {
+				return block;
+			}
+			if (++low >= high) {
+				return blocks[low];
+			}
+			while (low < high) {
 				int middle = low + high >>> 1;
-				BlockReader block = blocks[middle];
-				if (row < block.firstRow) {
-					high = middle - 1;
-				} else if (row >= block.endRow) {
+				if (blocks[middle].endRow <= row) {
 					low = middle + 1;
 				} else {
-					return block;
+					high = middle;
 				}
 			}
-			throw new IllegalStateException("Frontier statistics block directory does not cover row " + row);
+			return blocks[low];
 		}
+
 	}
 
-	private static final class BlockReader {
+	private static final class BlockReader implements MappingReference {
 
-		private final FileChannel channel;
-		private final AtomicInteger mappedDataBlocks;
-		private final int columnId;
+		private final MappingContext mappingContext;
 		private final int bitWidth;
 		private final long valueMask;
 		private final long firstRow;
 		private final long endRow;
-		private final long dataOffset;
-		private final long dataLength;
+		private final int dataOffset;
+		private final int dataLength;
 		private final int dataChecksum;
 		private volatile ByteBuffer data;
 
-		private BlockReader(FileChannel channel, AtomicInteger mappedDataBlocks, int columnId, int bitWidth,
-				long firstRow, int rowCount, long dataOffset, long dataLength, int dataChecksum) {
-			this.channel = channel;
-			this.mappedDataBlocks = mappedDataBlocks;
-			this.columnId = columnId;
+		private BlockReader(MappingContext mappingContext, int bitWidth, long firstRow, int rowCount,
+				long dataOffset, long dataLength, int dataChecksum) {
+			this.mappingContext = mappingContext;
 			this.bitWidth = bitWidth;
 			this.valueMask = -1L >>> (Long.SIZE - bitWidth);
 			this.firstRow = firstRow;
 			this.endRow = Math.addExact(firstRow, rowCount);
-			this.dataOffset = dataOffset;
-			this.dataLength = dataLength;
+			this.dataOffset = Math.toIntExact(dataOffset);
+			this.dataLength = Math.toIntExact(dataLength);
 			this.dataChecksum = dataChecksum;
 		}
 
@@ -588,26 +692,296 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 
 		private synchronized ByteBuffer mapData() throws IOException {
 			ByteBuffer current = data;
-			if (current == null) {
+			if (current != null) {
+				return current;
+			}
+			MappingContext context = mappingContext;
+			SharedMapping shared = context.mappingForFirstTouch();
+			MappedByteBuffer dedicated = null;
+			if (shared == null) {
 				/*
 				 * The main shard directory guarantees at least one directory entry after every data block. Mapping one
 				 * machine word of read-ahead therefore stays within the validated file bounds and lets the hot path use
 				 * one unaligned 64-bit load even for the final value. Bits outside dataLength are always discarded by
 				 * valueMask.
 				 */
-				long mappedLength = Math.addExact(dataLength, DATA_READ_AHEAD_BYTES);
-				current = channel.map(FileChannel.MapMode.READ_ONLY, dataOffset, mappedLength)
-						.order(ByteOrder.LITTLE_ENDIAN);
+				int mappedLength = Math.addExact(dataLength, DATA_READ_AHEAD_BYTES);
+				dedicated = context.channel.map(FileChannel.MapMode.READ_ONLY, dataOffset, mappedLength);
+				current = dedicated.order(ByteOrder.LITTLE_ENDIAN);
+			} else {
+				ByteBuffer window = shared.mappedData().duplicate();
+				int offset = Math.toIntExact(dataOffset - shared.dataOffset);
+				window.position(offset);
+				window.limit(Math.addExact(offset, Math.addExact(dataLength, DATA_READ_AHEAD_BYTES)));
+				current = window.slice().order(ByteOrder.LITTLE_ENDIAN);
+			}
+			boolean retained = false;
+			try {
 				ByteBuffer checksumBytes = current.duplicate();
-				checksumBytes.limit(Math.toIntExact(dataLength));
+				checksumBytes.limit(dataLength);
 				if (checksum(checksumBytes) != dataChecksum) {
-					throw new IOException("Frontier statistics data checksum mismatch for column " + columnId
+					throw new IOException("Frontier statistics data checksum mismatch for column " + context.columnId
 							+ " at row " + firstRow);
 				}
-				data = current;
-				mappedDataBlocks.incrementAndGet();
+				boolean registered = context.registry.registerBlock(this);
+				if (registered) {
+					data = current;
+				}
+				retained = true;
+				if (registered && dedicated != null) {
+					context.recordDedicatedSuccess();
+				}
+				return current;
+			} finally {
+				if (!retained && dedicated != null) {
+					BufferCleaner.clean(dedicated);
+				}
+			}
+		}
+
+		@Override
+		public synchronized void releaseMapping() {
+			data = null;
+		}
+	}
+
+	private static final class MappingContext {
+
+		private static final int PROMOTION_THRESHOLD = 4;
+
+		private final FileChannel channel;
+		private final MappedBlockRegistry registry;
+		private final int columnId;
+		private long sharedOffset;
+		private long sharedLength;
+		private volatile SharedMapping activeSharedMapping;
+		private volatile int successfulDedicatedMappings;
+
+		private MappingContext(FileChannel channel, MappedBlockRegistry registry, int columnId) {
+			this.channel = channel;
+			this.registry = registry;
+			this.columnId = columnId;
+		}
+
+		private void configureShared(long offset, long length) {
+			sharedOffset = offset;
+			sharedLength = length;
+		}
+
+		private SharedMapping mappingForFirstTouch() {
+			SharedMapping current = activeSharedMapping;
+			if (current != null || sharedLength == 0L
+					|| successfulDedicatedMappings < PROMOTION_THRESHOLD) {
+				return current;
+			}
+			return promote();
+		}
+
+		private synchronized SharedMapping promote() {
+			SharedMapping current = activeSharedMapping;
+			if (current == null) {
+				current = new SharedMapping(channel, registry, sharedOffset, sharedLength);
+				activeSharedMapping = current;
 			}
 			return current;
+		}
+
+		private void recordDedicatedSuccess() {
+			if (successfulDedicatedMappings < PROMOTION_THRESHOLD) {
+				recordDedicatedSuccessSlow();
+			}
+		}
+
+		private synchronized void recordDedicatedSuccessSlow() {
+			if (successfulDedicatedMappings < PROMOTION_THRESHOLD) {
+				successfulDedicatedMappings++;
+			}
+		}
+	}
+
+	private interface MappingReference {
+
+		void releaseMapping();
+	}
+
+	private static final class SharedMapping implements MappingReference {
+
+		private final FileChannel channel;
+		private final MappedBlockRegistry registry;
+		private final long dataOffset;
+		private final long mappedLength;
+		private volatile ByteBuffer data;
+
+		private SharedMapping(FileChannel channel, MappedBlockRegistry registry, long dataOffset, long mappedLength) {
+			this.channel = channel;
+			this.registry = registry;
+			this.dataOffset = dataOffset;
+			this.mappedLength = mappedLength;
+		}
+
+		private ByteBuffer mappedData() throws IOException {
+			ByteBuffer current = data;
+			return current != null ? current : mapData();
+		}
+
+		private synchronized ByteBuffer mapData() throws IOException {
+			ByteBuffer current = data;
+			if (current == null) {
+				MappedByteBuffer mapped = channel.map(FileChannel.MapMode.READ_ONLY, dataOffset, mappedLength);
+				current = mapped.order(ByteOrder.LITTLE_ENDIAN);
+				if (registry.registerMapping(this)) {
+					data = current;
+				}
+			}
+			return current;
+		}
+
+		@Override
+		public synchronized void releaseMapping() {
+			data = null;
+		}
+	}
+
+	private static final class MappedBlockRegistry {
+
+		private MappingReference[] readers;
+		private int size;
+		private volatile int mappedCount;
+		private boolean sealed;
+
+		private synchronized boolean registerBlock(BlockReader reader) {
+			if (!register(reader)) {
+				return false;
+			}
+			mappedCount++;
+			return true;
+		}
+
+		private synchronized boolean registerMapping(MappingReference mapping) {
+			return register(mapping);
+		}
+
+		private boolean register(MappingReference reference) {
+			if (sealed) {
+				return false;
+			}
+			if (readers == null) {
+				readers = new MappingReference[16];
+			} else if (size == readers.length) {
+				readers = Arrays.copyOf(readers, size << 1);
+			}
+			readers[size++] = reference;
+			return true;
+		}
+
+		private synchronized void seal() {
+			sealed = true;
+		}
+
+		private void releaseMappings() {
+			MappingReference[] release;
+			int releaseCount;
+			synchronized (this) {
+				release = readers;
+				releaseCount = size;
+				readers = null;
+				size = 0;
+				mappedCount = 0;
+			}
+			for (int index = 0; index < releaseCount; index++) {
+				release[index].releaseMapping();
+			}
+		}
+
+		private int count() {
+			return mappedCount;
+		}
+	}
+
+	private static final class MappedRegion implements AutoCloseable {
+
+		private static final int HEAP_READ_LIMIT = DATA_BLOCK_BYTES;
+
+		private final MappedByteBuffer mapping;
+		private final ByteBuffer buffer;
+		private boolean closed;
+
+		private MappedRegion(MappedByteBuffer mapping, ByteBuffer buffer) {
+			this.mapping = mapping;
+			this.buffer = buffer;
+		}
+
+		private static MappedRegion map(FileChannel channel, long offset, long length) throws IOException {
+			int size = Math.toIntExact(length);
+			if (size <= HEAP_READ_LIMIT) {
+				ByteBuffer buffer = ByteBuffer.allocate(size).order(ByteOrder.BIG_ENDIAN);
+				long position = offset;
+				while (buffer.hasRemaining()) {
+					int read = channel.read(buffer, position);
+					if (read < 0) {
+						throw new IOException("unexpected end of Frontier statistics metadata");
+					}
+					if (read == 0) {
+						Thread.onSpinWait();
+						continue;
+					}
+					position += read;
+				}
+				buffer.flip();
+				return new MappedRegion(null, buffer);
+			}
+			MappedByteBuffer mapped = channel.map(FileChannel.MapMode.READ_ONLY, offset, length);
+			return new MappedRegion(mapped, mapped.order(ByteOrder.BIG_ENDIAN));
+		}
+
+		private ByteBuffer buffer() {
+			return buffer;
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				if (mapping != null) {
+					BufferCleaner.clean(mapping);
+				}
+			}
+		}
+	}
+
+	/** Uses the public {@code sun.misc.Unsafe.invokeCleaner} entry point without a compile-time Unsafe dependency. */
+	private static final class BufferCleaner {
+
+		private static final MethodHandle INVOKE_CLEANER = findInvokeCleaner();
+
+		private BufferCleaner() {
+		}
+
+		private static MethodHandle findInvokeCleaner() {
+			try {
+				Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+				Field field = unsafeClass.getDeclaredField("theUnsafe");
+				field.setAccessible(true);
+				Object unsafe = field.get(null);
+				return MethodHandles.publicLookup()
+						.findVirtual(unsafeClass, "invokeCleaner", MethodType.methodType(void.class, ByteBuffer.class))
+						.bindTo(unsafe);
+			} catch (ReflectiveOperationException | RuntimeException unavailable) {
+				return null;
+			}
+		}
+
+		private static void clean(ByteBuffer buffer) {
+			MethodHandle cleaner = INVOKE_CLEANER;
+			if (cleaner != null) {
+				try {
+					cleaner.invokeExact(buffer);
+				} catch (RuntimeException | Error failure) {
+					throw failure;
+				} catch (Throwable failure) {
+					throw new IllegalStateException("unable to unmap Frontier statistics metadata", failure);
+				}
+			}
 		}
 	}
 }

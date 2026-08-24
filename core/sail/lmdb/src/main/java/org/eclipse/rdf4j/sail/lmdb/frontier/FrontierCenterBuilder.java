@@ -112,6 +112,7 @@ final class FrontierCenterBuilder implements AutoCloseable {
 			return;
 		}
 		FrontierOmniExternalSorter.Collector collector = events[partition];
+		long rowPriority = FrontierStatisticsHash.rowPriority(plane, subject, predicate, object, context);
 		for (int domain = partitionStarts[partition]; domain < partitionEnds[partition]; domain++) {
 			int planeAndLane = domain / FrontierOmniLayout.COMPONENT_COUNT;
 			if (planeAndLane / lanes != plane) {
@@ -123,8 +124,8 @@ final class FrontierCenterBuilder implements AutoCloseable {
 			if (FrontierStatisticsHash.centerPriority(lane, center) > centerThresholds[domain]) {
 				continue;
 			}
-			if (FrontierStatisticsHash.centerEdgePriority(
-					plane, lane, component, subject, predicate, object, context) > edgeThresholds[domain]) {
+			if (FrontierStatisticsHash.centerEdgePriorityFromRowPriority(
+					lane, component, rowPriority) > edgeThresholds[domain]) {
 				continue;
 			}
 			if (admittedEvents.incrementAndGet() > maximumEvents) {

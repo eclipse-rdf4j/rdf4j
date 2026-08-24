@@ -138,12 +138,13 @@ final class FrontierOmniBuilder implements AutoCloseable {
 			throw new IllegalStateException("Frontier Omni witness pass is not active");
 		}
 		FrontierOmniExternalSorter.Collector collector = events[partition];
+		long rowPriority = FrontierStatisticsHash.rowPriority(plane, subject, predicate, object, context);
 		for (int planeLane = partitionStarts[partition]; planeLane < partitionEnds[partition]; planeLane++) {
 			if (planeLane / layout.lanes() != plane) {
 				continue;
 			}
 			int lane = planeLane % layout.lanes();
-			long priority = FrontierStatisticsHash.omniPriority(plane, lane, subject, predicate, object, context);
+			long priority = FrontierStatisticsHash.omniPriorityFromRowPriority(lane, rowPriority);
 			addComponentWitnesses(collector, plane, lane, 0, subject, priority, subject, predicate, object, context);
 			addComponentWitnesses(collector, plane, lane, 1, predicate, priority, subject, predicate, object, context);
 			addComponentWitnesses(collector, plane, lane, 2, object, priority, subject, predicate, object, context);

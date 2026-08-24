@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Path;
+import java.util.List;
 
 /**
  * Injectable persistence boundary used by crash-stage tests.
@@ -44,6 +45,12 @@ interface FrontierFileOps {
 	void forceDirectory(Path directory) throws IOException;
 
 	boolean deleteIfExists(Path path) throws IOException;
+
+	List<Path> list(Path directory) throws IOException;
+
+	boolean isDirectory(Path path);
+
+	void deleteRecursivelyIfExists(Path path) throws IOException;
 
 	long size(Path path) throws IOException;
 }

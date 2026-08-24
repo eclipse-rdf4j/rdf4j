@@ -1054,7 +1054,8 @@ class LmdbSailStore implements SailStore {
 			if (statisticsService != null) {
 				FrontierStatisticsStatus status = statisticsService.status();
 				long latestSequence = tripleStore.latestFrontierMutationSequence();
-				if (status.availability() != FrontierStatisticsAvailability.READY
+				if (statisticsService.rebuildRequired()
+						|| status.availability() != FrontierStatisticsAvailability.READY
 						|| status.coveredSequence() < latestSequence) {
 					requestFrontierRebuild();
 				}
@@ -2084,7 +2085,8 @@ class LmdbSailStore implements SailStore {
 			logger.info("Starting Frontier Statistics V2 rebuild: epoch={}, sequence={}, effectiveWorkers={}",
 					snapshotEpoch, snapshotSequence, derivedStateBuildExecutor.configuredThreads());
 			FrontierStatisticsStatus before = service.status();
-			if (before.availability() == FrontierStatisticsAvailability.READY
+			if (!service.rebuildRequired()
+					&& before.availability() == FrontierStatisticsAvailability.READY
 					&& before.coveredEpoch() == snapshotEpoch
 					&& before.coveredSequence() == snapshotSequence
 					&& before.deleteDebt() < FRONTIER_DELETE_REBUILD_THRESHOLD) {

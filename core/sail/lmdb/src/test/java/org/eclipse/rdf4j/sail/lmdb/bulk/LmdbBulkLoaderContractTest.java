@@ -404,7 +404,7 @@ class LmdbBulkLoaderContractTest {
 		String repairedGeneration = startQueryAwaitFrontierAndShutDown(target, config);
 		assertThat(totalsShards(statisticsDirectory))
 				.as("startup must remove or replace every corrupt mandatory totals shard")
-				.allSatisfy(path -> assertThat(path).hasSizeGreaterThan(1L));
+				.allSatisfy(path -> assertThat(fileSize(path)).isGreaterThan(1L));
 		for (int restart = 0; restart < 3; restart++) {
 			assertThat(startQueryAwaitFrontierAndShutDown(target, config))
 					.as("post-repair clean restart %s must not rebuild Frontier", restart + 1)
@@ -505,6 +505,14 @@ class LmdbBulkLoaderContractTest {
 		}
 	}
 
+	private static long fileSize(Path path) {
+		try {
+			return Files.size(path);
+		} catch (IOException failure) {
+			throw new AssertionError("Cannot read Frontier shard size: " + path, failure);
+		}
+	}
+
 	private static void assertNoFrontierTemporaryArtifacts(Path statisticsDirectory) throws IOException {
 		try (var paths = Files.walk(statisticsDirectory)) {
 			assertThat(paths.filter(path -> {
@@ -529,7 +537,8 @@ class LmdbBulkLoaderContractTest {
 			repository.init();
 			try {
 				try (RepositoryConnection connection = repository.getConnection()) {
-					if (QueryResults.asList(connection.prepareTupleQuery(FRONTIER_STARTUP_QUERY).evaluate()).size() != 256) {
+					if (QueryResults.asList(connection.prepareTupleQuery(FRONTIER_STARTUP_QUERY).evaluate())
+							.size() != 256) {
 						throw new AssertionError("Bulk-loaded query returned the wrong row count");
 					}
 				}
