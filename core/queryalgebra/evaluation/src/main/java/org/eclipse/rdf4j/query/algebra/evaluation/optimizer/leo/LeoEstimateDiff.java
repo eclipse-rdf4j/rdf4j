@@ -18,8 +18,8 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  */
 @Experimental
 public record LeoEstimateDiff(double baseRows, double omniRows, double fanoutRows, double learnedRows,
-		double finalRows, double baseWorkRows, double learnedWorkRows, double finalWorkRows, String decision,
-		String evidenceKind, String evidenceSource, double confidence) {
+		double finalRows, double baseWorkRows, double learnedWorkRows, double finalWorkRows, String evidenceKind,
+		String evidenceSource, double confidence) {
 
 	public LeoEstimateDiff {
 		baseRows = nonNegativeOrNaN(baseRows);
@@ -30,7 +30,6 @@ public record LeoEstimateDiff(double baseRows, double omniRows, double fanoutRow
 		baseWorkRows = nonNegativeOrNaN(baseWorkRows);
 		learnedWorkRows = nonNegativeOrNaN(learnedWorkRows);
 		finalWorkRows = nonNegativeOrNaN(finalWorkRows);
-		decision = decision == null ? "" : decision;
 		evidenceKind = evidenceKind == null ? "" : evidenceKind;
 		evidenceSource = evidenceSource == null ? "" : evidenceSource;
 		confidence = Double.isFinite(confidence) ? Math.max(0.0d, Math.min(1.0d, confidence)) : 0.0d;
@@ -42,9 +41,7 @@ public record LeoEstimateDiff(double baseRows, double omniRows, double fanoutRow
 
 	public String explainSummary() {
 		StringBuilder builder = new StringBuilder(160);
-		builder.append("decision=")
-				.append(decision.isBlank() ? "unchanged" : decision)
-				.append(" baseRows=")
+		builder.append("baseRows=")
 				.append(baseRows)
 				.append(" omniRows=")
 				.append(omniRows)

@@ -1114,14 +1114,6 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		factors.add(tupleExpr);
 	}
 
-	private static TupleExpr leftDeep(List<TupleExpr> factors) {
-		TupleExpr root = factors.getFirst();
-		for (int i = 1; i < factors.size(); i++) {
-			root = new Join(root, factors.get(i));
-		}
-		return root;
-	}
-
 	private static boolean containsLeftJoinRightBinding(TupleExpr tupleExpr, String bindingName) {
 		if (tupleExpr == null || bindingName == null) {
 			return false;

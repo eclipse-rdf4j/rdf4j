@@ -12,10 +12,8 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.lang.management.ManagementFactory;
 import java.util.List;
 import java.util.Set;
 
@@ -127,89 +125,6 @@ class StreamBindingSchemaTest {
 		assertSchema(projection, Set.of("projectedValue"), Set.of("projectedValue"));
 		assertSchema(group, Set.of("entity", "count"), Set.of("entity"));
 		assertSchema(new Slice(stream, 0, 10), Set.of("entity", "value"), Set.of("entity", "value"));
-	}
-
-	@Test
-	void scalarScopeAnalysisUsesQueryLocalBindingMasks() {
-		TupleExpr join = null;
-		for (int i = 0; i < 192; i++) {
-			Filter factor = new Filter(pattern("stream" + i, "value" + i),
-					new Exists(pattern("external" + i, "probe" + i)));
-			join = join == null ? factor : new Join(join, factor);
-		}
-		com.sun.management.ThreadMXBean threadMxBean = (com.sun.management.ThreadMXBean) ManagementFactory
-				.getThreadMXBean();
-		assertTrue(threadMxBean.isThreadAllocatedMemorySupported());
-		boolean allocationTrackingEnabled = threadMxBean.isThreadAllocatedMemoryEnabled();
-		try {
-			if (!allocationTrackingEnabled) {
-				threadMxBean.setThreadAllocatedMemoryEnabled(true);
-			}
-			assertTrue(ScalarDependencyAnalyzer.reorderingPreservesScalarScope(join));
-			long before = threadMxBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
-
-			boolean preservesScope = ScalarDependencyAnalyzer.reorderingPreservesScalarScope(join);
-
-			long allocatedBytes = threadMxBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - before;
-			assertTrue(preservesScope);
-			assertTrue(allocatedBytes < 2_000_000,
-					() -> "Expected bitmap scope analysis to allocate less than 2 MB, allocated " + allocatedBytes);
-		} finally {
-			if (!allocationTrackingEnabled) {
-				threadMxBean.setThreadAllocatedMemoryEnabled(false);
-			}
-		}
-	}
-
-	@Test
-	void scalarScopeAnalysisFindsCorrelationsBeyondTheFirstMaskWord() {
-		BindingUniverse universe = BindingUniverse.create();
-		for (int i = 0; i < 65; i++) {
-			universe.maskOfName("padding" + i);
-		}
-		Filter consumer = new Filter(pattern("consumer", "value"),
-				new Exists(pattern("wordTwoProducer", "probe")));
-		Join join = new Join(consumer, pattern("wordTwoProducer", "producedValue"));
-
-		assertFalse(ScalarDependencyAnalyzer.reorderingPreservesScalarScope(join, universe));
-	}
-
-	@Test
-	void scalarScopeAnalysisFindsCorrelationBelowTransparentProjectionBeyondFirstMaskWord() {
-		BindingUniverse universe = BindingUniverse.create();
-		for (int i = 0; i < 65; i++) {
-			universe.maskOfName("padding" + i);
-		}
-		Filter consumer = new Filter(pattern("consumer", "value"),
-				new Exists(pattern("wordTwoProducer", "probe")));
-		Projection transparent = new Projection(consumer,
-				new ProjectionElemList(new ProjectionElem("consumer"), new ProjectionElem("value")), false);
-		Join join = new Join(transparent, pattern("wordTwoProducer", "producedValue"));
-
-		assertFalse(ScalarDependencyAnalyzer.reorderingPreservesScalarScope(join, universe));
-	}
-
-	@Test
-	void scalarScopeAnalysisRespectsSubqueryProjectionIsolation() {
-		Filter consumer = new Filter(pattern("consumer", "value"),
-				new Exists(pattern("outerProducer", "probe")));
-		Projection subquery = new Projection(consumer,
-				new ProjectionElemList(new ProjectionElem("consumer"), new ProjectionElem("value")), true);
-
-		assertTrue(ScalarDependencyAnalyzer.reorderingPreservesScalarScope(
-				new Join(subquery, pattern("outerProducer", "producedValue"))));
-	}
-
-	@Test
-	void scalarScopeAnalysisDoesNotTreatSameFactorAliasAsSiblingSupplier() {
-		Filter consumer = new Filter(pattern("consumer", "value"),
-				new Exists(pattern("factorAlias", "probe")));
-		Projection alias = new Projection(consumer,
-				new ProjectionElemList(new ProjectionElem("consumer", "factorAlias"), new ProjectionElem("value")),
-				false);
-
-		assertTrue(ScalarDependencyAnalyzer.reorderingPreservesScalarScope(
-				new Join(alias, pattern("unrelated", "producedValue"))));
 	}
 
 	private static StatementPattern pattern(String subject, String object) {

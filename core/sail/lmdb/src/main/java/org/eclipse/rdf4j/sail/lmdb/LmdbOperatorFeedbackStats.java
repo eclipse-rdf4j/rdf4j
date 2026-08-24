@@ -143,7 +143,6 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private static final String LEO_RECORDED_PLAN_ACTUAL = "optimizer.leoPlanFeedbackRecordedActual";
 	private static final String LEO_RECORDED_LIFECYCLE_ACTUAL = "optimizer.lifecycleFeedbackRecordedActual";
 	private static final String LEO_POISON_SKIP_REASON = "optimizer.leoFeedbackPoisonSkipReason";
-	private static final String PLANNED_LEO_CANDIDATE_COST_SCORE = "plannedLeoCandidateCostScore";
 	private static final String LEO_RULE_STEERING_PROPERTY = "rdf4j.optimizer.lmdb.leoRuleSteering";
 	private static final String LEO_MUTATION_POLICY_PROPERTY = "rdf4j.optimizer.lmdb.leoMutationPolicy";
 	private static final String LEO_PLAN_RERANKING_PROPERTY = "rdf4j.optimizer.lmdb.leoPlanReranking";
@@ -159,7 +158,6 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private static final String LEO_PHYSICAL_IMPLEMENTATION = "optimizer.leoPhysicalImplementation";
 	private static final String LEO_RULE_STEERING_APPLIED = "optimizer.leoRuleSteeringApplied";
 	private static final String PLANNED_PHYSICAL_IMPLEMENTATION = "plannedPhysicalImplementation";
-	private static final String PLANNED_LEO_CANDIDATE_ID = "plannedLeoCandidateId";
 	private static final String PLANNED_LEO_CANDIDATE_RULE_ID = "plannedLeoCandidateRuleId";
 	private static final String PLANNED_LEO_CANDIDATE_LOGICAL_FINGERPRINT = "plannedLeoCandidateLogicalFingerprint";
 	private static final String PLANNED_LEO_CANDIDATE_PHYSICAL_FINGERPRINT = "plannedLeoCandidatePhysicalFingerprint";
@@ -1357,41 +1355,6 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		return isFiniteNonNegative(observedWork) ? observedWork : Double.NaN;
 	}
 
-	/**
-	 * Runtime invocation count of the operator, or NaN when no counter is available. The dedicated cost-feedback close
-	 * counter is the only one maintained in cost-feedback-only mode; the telemetry close counter is exact when
-	 * telemetry is on; the exhausted-close counter (optimizer-prefixed, always recordable) is a lower bound, which errs
-	 * toward the unnormalized behavior and never past it.
-	 */
-	private static double actualInvocationCount(TupleExpr node) {
-		long closes = node.getCostFeedbackCloseCountActual();
-		if (closes > 0L) {
-			return closes;
-		}
-		closes = node.getLongMetricActual(TelemetryMetricNames.CLOSE_COUNT_ACTUAL);
-		if (closes > 0L) {
-			return closes;
-		}
-		closes = node.getLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL);
-		if (closes > 0L) {
-			return closes;
-		}
-		return Double.NaN;
-	}
-
-	/**
-	 * Invocation basis of the stamped row predictions: the originating costing event's invocation count (the same event
-	 * supplies {@code optimizer.costEventRows}), falling back to the materializer's repeated-invocations stamp. A
-	 * standalone estimate has basis 1 and divides out as an identity.
-	 */
-	private static double predictedInvocationBasis(TupleExpr node) {
-		double invocations = node.getDoubleMetricPlanned(COST_EVENT_INVOCATIONS);
-		if (!isFiniteNonNegative(invocations) || invocations < 1.0d) {
-			invocations = node.getDoubleMetricPlanned(PLANNED_REPEATED_INVOCATIONS);
-		}
-		return isFiniteNonNegative(invocations) && invocations > 1.0d ? invocations : 1.0d;
-	}
-
 	private static final String PLANNED_PHYSICAL_JOIN_IMPLEMENTATION = "optimizer.physicalJoinImplementation";
 	private static final Set<String> DEPENDENT_ITERATION_ALGORITHMS = Set.of(
 			"joiniterator", "boundstatementpatternjoiniteration", "boundstatementpatternguardjoiniteration",
@@ -1491,18 +1454,6 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			frontierLearning.observePhysical(logicalKey, physicalKey, applicability, dimension, featureEnvelope,
 					predicted, actual, epoch);
 		}
-	}
-
-	private static double sourceRowsScannedActual(TupleExpr node) {
-		double sourceRows = node.getSourceRowsScannedActual();
-		return isFiniteNonNegative(sourceRows)
-				? sourceRows
-				: longMetric(node, "actualSemiAntiSourceRowsScanned");
-	}
-
-	private static double firstAvailableActual(TupleExpr node, String primary, String fallback) {
-		double actual = longMetric(node, primary);
-		return isFiniteNonNegative(actual) ? actual : longMetric(node, fallback);
 	}
 
 	synchronized java.util.OptionalDouble frontierCorrection(FrontierLearningKey key,
@@ -3673,7 +3624,6 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				Double.isFinite(learnedRows) ? learnedRows : safeBaseRows);
 		double finalWorkRows = finiteOr(tupleExpr.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_WORK_ROWS),
 				Double.isFinite(learnedWorkRows) ? learnedWorkRows : safeBaseWorkRows);
-		String decision = tupleExpr.getStringMetricPlanned("plannedLeoReconciliationDecision");
 		String evidenceKind = tupleExpr.getStringMetricPlanned("plannedLeoEvidenceKind");
 		String source = estimate == null ? tupleExpr.getStringMetricPlanned("plannedLeoEvidenceSource")
 				: estimate.source();
@@ -3681,7 +3631,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				: estimate.correctionConfidence();
 		LeoEstimateDiff diff = new LeoEstimateDiff(safeBaseRows, Double.NaN,
 				tupleExpr.getDoubleMetricPlanned("plannedLeoFanoutRows"), learnedRows, finalRows, safeBaseWorkRows,
-				learnedWorkRows, finalWorkRows, decision, evidenceKind, source, confidence);
+				learnedWorkRows, finalWorkRows, evidenceKind, source, confidence);
 		StringBuilder builder = new StringBuilder(diff.explainSummary());
 		if (estimate != null) {
 			builder.append(", evidenceCount=")

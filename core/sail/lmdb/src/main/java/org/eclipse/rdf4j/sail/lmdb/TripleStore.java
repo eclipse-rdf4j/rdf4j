@@ -124,7 +124,6 @@ class TripleStore implements Closeable {
 	 * The default triple indexes.
 	 */
 	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,posc";
-	private static final String DEFAULT_INDEXES = "spoc,posc";
 
 	// Aliases into TripleIndex so predicate-guarantee code keeps its established names.
 	static final int SUBJ_IDX = TripleIndex.SUBJ_IDX;
@@ -187,7 +186,6 @@ class TripleStore implements Closeable {
 	private final boolean pageCardinalityEstimator;
 	private long mapSize;
 	private final TxnManager txnManager;
-	private final LeadingFieldSortAlgorithm leadingFieldSortAlgorithm = LeadingFieldSortAlgorithm.LSD_RADIX;
 	private long[] explicitAlignedWriteCursors = new long[0];
 	private long[] inferredAlignedWriteCursors = new long[0];
 	private int[] leadingFieldScratchIndices = new int[0];
@@ -2628,10 +2626,6 @@ class TripleStore implements Closeable {
 				alignedWriteCursors[i] = 0;
 			}
 		}
-	}
-
-	enum LeadingFieldSortAlgorithm {
-		LSD_RADIX
 	}
 
 	private void logAddedStatements(int count) {

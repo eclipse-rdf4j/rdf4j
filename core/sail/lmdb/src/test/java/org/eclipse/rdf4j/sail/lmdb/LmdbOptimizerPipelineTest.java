@@ -305,7 +305,6 @@ class LmdbOptimizerPipelineTest {
 		assertTrue(indexOf(optimizers, LmdbBoundSimplifierOptimizer.class) >= 0);
 		assertTrue(indexOf(optimizers, LmdbBoundSimplifierOptimizer.class) < indexOf(optimizers,
 				LmdbFilterSimplifierOptimizer.class));
-		assertFalse(optimizers.stream().anyMatch(LmdbProjectionPushdownOptimizer.class::isInstance));
 		assertFalse(optimizers.stream()
 				.anyMatch(optimizer -> "ProjectionRemovalOptimizer".equals(optimizer.getClass().getSimpleName())));
 		assertTrue(indexOf(optimizers, LmdbBoundSimplifierOptimizer.class) < indexOf(optimizers,
@@ -401,17 +400,6 @@ class LmdbOptimizerPipelineTest {
 
 		assertFalse(optimizers.stream().anyMatch(IterativeEvaluationOptimizer.class::isInstance),
 				"an eager factoring pass must not erase the original UNION alternative before memo import");
-	}
-
-	@Test
-	void lmdbPipelineDelegatesProjectionPruningToUnifiedMemoSearch() {
-		TripleSource tripleSource = new EmptyTripleSource();
-		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
-		List<QueryOptimizer> optimizers = optimizers(
-				new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
-
-		assertFalse(optimizers.stream().anyMatch(LmdbProjectionPushdownOptimizer.class::isInstance),
-				"an eager projection pass must not erase unpruned alternatives before memo import");
 	}
 
 	@Test

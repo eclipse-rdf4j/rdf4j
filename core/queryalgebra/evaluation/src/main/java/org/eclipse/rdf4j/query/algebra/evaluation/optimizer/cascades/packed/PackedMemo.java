@@ -1635,15 +1635,6 @@ final class PackedMemo implements AutoCloseable {
 		return -1;
 	}
 
-	private int decisionIndex(int[] representatives, int count, int candidate) {
-		for (int decision = 0; decision < count; decision++) {
-			if (decisionTrace.sameDecision(representatives[decision], candidate)) {
-				return decision;
-			}
-		}
-		return -1;
-	}
-
 	private boolean isFinalParetoCandidate(int candidateId) {
 		if (candidateId <= 0 || candidateId > candidates.size()) {
 			return false;
@@ -2236,19 +2227,6 @@ final class PackedMemo implements AutoCloseable {
 			logicalOverlay = new PackedExpressionInterner(expectedLogicalAlternatives, expectedLogicalChildLinks);
 		}
 		return logicalOverlay;
-	}
-
-	private void ensureTargetGroup(int logicalExpressionId, int targetGroupId) {
-		int existingGroupId = logicalGroupId(logicalExpressionId);
-		if (existingGroupId != targetGroupId) {
-			throw crossGroupInvariant("logical", logicalExpressionId, existingGroupId, targetGroupId);
-		}
-	}
-
-	private static PackedMemoInvariantException crossGroupInvariant(String kind, int expressionId,
-			int existingGroupId, int targetGroupId) {
-		return new PackedMemoInvariantException(kind + " expression " + expressionId + " already belongs to group "
-				+ existingGroupId + " and cannot move to group " + targetGroupId);
 	}
 
 	private void linkLogical(int groupId, int logicalExpressionId) {

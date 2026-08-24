@@ -421,23 +421,6 @@ final class FrontierLearningModel {
 		mergeCensored(physicalCensored, censorKey, bounds);
 	}
 
-	private <K> void observeExact(LinkedHashMap<K, DimensionCounts> store, K key,
-			FrontierCostDimension dimension, double predicted, double actual, long epoch) {
-		if (!finiteNonNegative(predicted) || !finiteNonNegative(actual)) {
-			return;
-		}
-		double logError = Math.log1p(actual) - Math.log1p(predicted);
-		if (!Double.isFinite(logError)) {
-			return;
-		}
-		DimensionCounts counts = cell(store, key);
-		if (counts == null) {
-			return;
-		}
-		counts.observe(dimension, Math.clamp(logError, -MAX_ABS_LOG_ERROR, MAX_ABS_LOG_ERROR), epoch);
-		revision = Math.max(revision + 1L, Math.max(0L, epoch));
-	}
-
 	private <K> void observeAbsolute(LinkedHashMap<K, DimensionCounts> store, K key,
 			FrontierCostDimension dimension, double actual, long epoch) {
 		if (!finiteNonNegative(actual)) {

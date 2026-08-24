@@ -212,7 +212,7 @@ public final class OptimizerRuleCatalog {
 		entries.add(productionRule(1006, "projection-below-order", "packed-projection-below-order",
 				"PROJECT(ORDER(input))", "PROJECT(ORDER(PROJECT(input)))", "narrowBeforeSort",
 				"LmdbOptimizerPipelineTest#narrowingProjectionSurvivesPrepassesAndIsCostedBeforeBlockingOrder",
-				"LmdbOptimizerPipelineTest#lmdbPipelineDelegatesProjectionPruningToUnifiedMemoSearch"));
+				"LmdbOptimizerPipelineTest#lmdbPipelineRunsNormalizationBeforePackedCascadesByDefault"));
 		entries.add(productionRule(1007, "trivial-bind-alias", "packed-trivial-bind-alias",
 				"FILTER(BIND(input))", "BIND(FILTER(input))", "assuredAliasSource",
 				"PackedSearchTest#safeAliasExtensionLetsFilterJoinSearchCostEveryFactorOrder",

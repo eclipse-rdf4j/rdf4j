@@ -2951,37 +2951,6 @@ final class PackedLogicalRuleProgram {
 		return rebuildUnaryIfChanged(expressionId, childId);
 	}
 
-	private String metricString(int metricSetId, String metricName) {
-		if (metricSetId == 0 || payloads.operatorTag(metricSetId) != PackedPayloadOp.PLANNED_METRICS) {
-			return null;
-		}
-		for (int ordinal = 0; ordinal < payloads.childCount(metricSetId); ordinal++) {
-			int entryId = payloads.childGroupId(metricSetId, ordinal);
-			if (payloads.operatorTag(entryId) == PackedPayloadOp.STRING_METRIC
-					&& metricName.equals(objects.value(payloads.payloadId(entryId)))) {
-				Object value = objects.value(payloads.semanticScopeId(entryId));
-				return value instanceof String ? (String) value : null;
-			}
-		}
-		return null;
-	}
-
-	private double metricDouble(int metricSetId, String metricName) {
-		if (metricSetId == 0 || payloads.operatorTag(metricSetId) != PackedPayloadOp.PLANNED_METRICS) {
-			return Double.NaN;
-		}
-		for (int ordinal = 0; ordinal < payloads.childCount(metricSetId); ordinal++) {
-			int entryId = payloads.childGroupId(metricSetId, ordinal);
-			if (payloads.operatorTag(entryId) == PackedPayloadOp.DOUBLE_METRIC
-					&& metricName.equals(objects.value(payloads.payloadId(entryId)))) {
-				long bits = Integer.toUnsignedLong(payloads.semanticScopeId(entryId))
-						| (long) payloads.executionDomainId(entryId) << 32;
-				return Double.longBitsToDouble(bits);
-			}
-		}
-		return Double.NaN;
-	}
-
 	private boolean containsExistsPredicate(int expressionId) {
 		if (relations.operatorTag(expressionId) == PackedRelOp.FILTER
 				&& scalarContainsExists(relations.payloadId(expressionId))) {

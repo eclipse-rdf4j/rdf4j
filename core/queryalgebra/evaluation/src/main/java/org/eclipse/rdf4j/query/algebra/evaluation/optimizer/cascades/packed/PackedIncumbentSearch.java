@@ -1257,18 +1257,6 @@ final class PackedIncumbentSearch {
 		return false;
 	}
 
-	private boolean hasFiniteJoinAlternative(int logicalExpressionId) {
-		int groupId = logicalGroupId(logicalExpressionId);
-		for (int alternativeId = memo.firstLogicalExpression(groupId); alternativeId != 0; alternativeId = memo
-				.nextLogicalExpression(alternativeId)) {
-			if (memo.logicalOperatorTag(alternativeId) == PackedRelOp.JOIN
-					&& (memo.logicalRuleMask(alternativeId) & PackedRuleProofs.FINITE_FILTER_VALUES) != 0L) {
-				return true;
-			}
-		}
-		return false;
-	}
-
 	private long queryShape() {
 		int features = 0;
 		int canonicalJoinRegionRoot = 0;

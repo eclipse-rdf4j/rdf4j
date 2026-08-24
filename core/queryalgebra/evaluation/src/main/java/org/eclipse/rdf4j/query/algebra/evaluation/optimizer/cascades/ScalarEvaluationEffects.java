@@ -48,8 +48,6 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 @Experimental
 public final class ScalarEvaluationEffects {
 
-	private static final String FN_STRING_IRI = "http://www.w3.org/2005/xpath-functions#string";
-
 	private ScalarEvaluationEffects() {
 	}
 

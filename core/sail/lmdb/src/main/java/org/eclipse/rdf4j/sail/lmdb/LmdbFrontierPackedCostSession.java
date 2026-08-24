@@ -281,7 +281,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private int factorCountVisitEpoch;
 	private String[] learningOperatorFamilies;
 	private String[] learningRawTransforms;
-	private String[] logicalGroupFactKeys;
 	private String[] canonicalRelationTopologies;
 	private FrontierLayout[] unaryTransformInputLayouts;
 	private FrontierLayout[] unaryTransformOutputLayouts;
@@ -2949,28 +2948,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	 * structural-topology hex. Group-canonical regardless of the A1 learning-key flag — facts are meaningless under
 	 * per-alternative identities. Empty-string cache slots encode "no key".
 	 */
-	private String logicalGroupFactKey(int relationId) {
-		if (relationId <= 0 || relationId > query.relationCount()) {
-			return null;
-		}
-		if (logicalGroupFactKeys == null) {
-			logicalGroupFactKeys = new String[query.relationCount() + 1];
-		}
-		String cached = logicalGroupFactKeys[relationId];
-		if (cached != null) {
-			return cached.isEmpty() ? null : cached;
-		}
-		int identity = contextualCanonicalGroupId(relationId);
-		TupleExpr expression = materializeRelation(identity);
-		String simpleName = expression.getClass().getSimpleName();
-		String family = simpleName.isBlank() ? "tuple-expr" : camelToKebab(simpleName);
-		String topology = LeoOperatorKey.from(expression, "", LeoOperatorKey.ConstantMode.EXACT)
-				.structuralFingerprint();
-		String key = family + '@' + fixedHex(avalancheLearningFingerprint(fnvFingerprint(topology)));
-		logicalGroupFactKeys[relationId] = key;
-		return key;
-	}
-
 	private ProductionLearningIdentity productionLearningIdentity(int relationId, EvidenceStateRef transformState,
 			FrontierStateKey stateKey, PackedCostContext context, PackedCostEstimate output) {
 		TupleExpr expression = null;
@@ -3475,14 +3452,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			learningRelationBindingNames[relationId] = names;
 		}
 		Collections.addAll(target, names);
-	}
-
-	private LogicalLearningKey uncorrelatedLogicalLearningKey(int relationId) {
-		if (relationId <= 0 || relationId > query.relationCount()) {
-			return null;
-		}
-		int identityId = contextualCanonicalGroupId(relationId);
-		return learningLogicalBasis(identityId).uncorrelatedKey();
 	}
 
 	private void stampProductionLearningIdentity(int relationId, PackedCostEstimate output,
@@ -4349,108 +4318,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			return 1.0d;
 		}
 		return Math.max(0.0d, Math.min(1.0d, (selectedCost - betterCost) / selectedCost));
-	}
-
-	private boolean sameExactSourceContent(FrontierEvidenceBundle cached, int cachedOrdinal,
-			EvidenceStateRef currentState) {
-		if (currentState == null || currentState.summary().guarantee() != EvidenceGuarantee.DATABASE_EXACT) {
-			return false;
-		}
-		FrontierEvidenceBundle current = arena.exportEvidence(new int[] { currentState.stateId() });
-		int currentOrdinal = current.requestedStateOrdinal(0);
-		return currentOrdinal > 0
-				&& cached.layout(cachedOrdinal).equals(current.layout(currentOrdinal))
-				&& cached.contentDigestHigh(cachedOrdinal) == current.contentDigestHigh(currentOrdinal)
-				&& cached.contentDigestLow(cachedOrdinal) == current.contentDigestLow(currentOrdinal);
-	}
-
-	@Override
-	public void close() {
-		if (closed) {
-			return;
-		}
-		closed = true;
-		scalar.close();
-		closePrimitiveMemo(storedFrontierValues);
-		storedFrontierValues = null;
-		closePrimitiveMemo(subjectCompleteCenters);
-		subjectCompleteCenters = null;
-		closePrimitiveMemo(objectCompleteCenters);
-		objectCompleteCenters = null;
-		if (statementProbeMemo != null) {
-			statementProbeMemo.close();
-			statementProbeMemo = null;
-		}
-		if (existsProbeMemos != null) {
-			for (LmdbFrontierExistsProbeMemo memo : existsProbeMemos) {
-				if (memo != null) {
-					memo.close();
-				}
-			}
-			existsProbeMemos = null;
-			existsProbeMemoGroupIds = null;
-			existsProbeMemoRightGroupIds = null;
-			existsProbeMemoCount = 0;
-		}
-		if (filterOutcomeMemos != null) {
-			for (LmdbFrontierFilterOutcomeMemo memo : filterOutcomeMemos) {
-				if (memo != null) {
-					memo.close();
-				}
-			}
-			filterOutcomeMemos = null;
-			filterOutcomeMemoGroupIds = null;
-			filterOutcomeMemoConditionKeys = null;
-			filterOutcomeMemoCount = 0;
-		}
-		if (sessionReservation != null) {
-			sessionReservation.close();
-			sessionReservation = null;
-		}
-		if (emissionScratchPool != null) {
-			recycleEmissionScratchPool(emissionScratchPool, settings.queryMemoryBudgetBytes());
-			emissionScratchPool = null;
-		}
-		if (arena != null) {
-			arena.close();
-			arena = null;
-		}
-		if (queryIndexLease != null) {
-			queryIndexLease.close();
-			queryIndexLease = null;
-		}
-		leafStates = null;
-		finiteLeafStates = null;
-		stateReferences = null;
-		factorCountWords = null;
-		candidateFactorWords = null;
-		factorCountVisitEpochs = null;
-		primitiveExtensionExpansion = null;
-		queryLocalValueIds.clear();
-		queryLocalValues.clear();
-		alternateReplayStates.clear();
-		alternateReplayFailures.clear();
-		canonicalJoinFactorTopologies.clear();
-		uncorrelatedJoinLogicalLearningKeys.clear();
-		joinLogicalGroupOrigins.clear();
-		canonicalRelationTopologies = null;
-		learningLogicalBases = null;
-		relationLogicalGroupOrigins = null;
-		if (primitiveStatementSource != null) {
-			try {
-				primitiveStatementSource.close();
-			} catch (IOException e) {
-				throw new IllegalStateException("Could not close the primitive Frontier snapshot source", e);
-			} finally {
-				primitiveStatementSource = null;
-			}
-		}
-	}
-
-	private static void closePrimitiveMemo(LmdbFrontierLongObjectMemo<?> memo) {
-		if (memo != null) {
-			memo.close();
-		}
 	}
 
 	private void prepare() {
@@ -6526,15 +6393,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		return true;
 	}
 
-	private double correlatedProbeWorkRows(TupleExpr rhs, String[] correlationNames, double fallbackRows) {
-		return lmdbCostModel.estimateCorrelatedFactor(rhs, correlationNames)
-				.filter(JoinFactorCostModel.FactorCostEstimate::hasPhysicalAccessPath)
-				.map(JoinFactorCostModel.FactorCostEstimate::getWorkRows)
-				.filter(LmdbFrontierPackedCostSession::finiteNonNegative)
-				.map(workRows -> Math.max(1.0d, workRows))
-				.orElse(fallbackRows);
-	}
-
 	private void applySemiAntiPhysicalFeedback(Filter filter, int semanticKind, int algorithm, double plannedOuterRows,
 			PackedCostEstimate output) {
 		if (output.evidenceStateId() != 0) {
@@ -8510,11 +8368,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		try (FrontierPayloadLease payload = arena.openPayload(input)) {
 			return payloadEntryCount(payload) > settings.refinementWorkUnits();
 		}
-	}
-
-	private static boolean containsExists(Filter filter) {
-		return filter.getCondition() instanceof Exists
-				|| filter.getCondition()instanceof Not not && not.getArg() instanceof Exists;
 	}
 
 	private void refineProjection(int relationId, EvidenceStateRef input, PackedCostEstimate output) {
@@ -10575,17 +10428,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		return variables;
 	}
 
-	private static boolean containsAnyExists(Filter filter) {
-		boolean[] exists = { false };
-		filter.getCondition().visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(Exists node) {
-				exists[0] = true;
-			}
-		});
-		return exists[0];
-	}
-
 	private static boolean filterCanInspectRetainedState(Filter filter, FrontierLayout layout) {
 		boolean[] deterministic = { true };
 		filter.getCondition().visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -10756,29 +10598,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			 */
 			output.setEvidenceGuarantee(estimateGuarantee);
 		}
-		output.putPlannedStringMetric("plannedFrontierFallbackReason", reason);
-	}
-
-	private void degradeBinaryOperator(int relationId, PackedCostEstimate output, EvidenceStateRef left,
-			EvidenceStateRef right, String reason) {
-		if (left == null || right == null) {
-			degradeOperator(relationId, output, left != null ? left : right, reason);
-			return;
-		}
-		double pointRows = finiteNonNegative(output.outputRows())
-				? output.outputRows()
-				: Math.max(left.summary().pointRows(), right.summary().pointRows());
-		EvidenceStateRef boundary = arena.deriveOpaqueBoundary(
-				left,
-				right,
-				outputLayout(relationId),
-				EvidenceStateSummary.unresolved(pointRows, Double.POSITIVE_INFINITY,
-						Double.POSITIVE_INFINITY, reason),
-				relationId);
-		rememberState(boundary);
-		output.setEvidenceStateId(boundary.stateId());
-		annotateState(output, boundary, "degraded");
-		annotateFactorCount(output, boundary);
 		output.putPlannedStringMetric("plannedFrontierFallbackReason", reason);
 	}
 
@@ -12985,10 +12804,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		return Double.isFinite(maximum) ? maximum : Double.MAX_VALUE;
 	}
 
-	private static long saturatedLongAdd(long left, long right) {
-		return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
-	}
-
 	private static Value statementValue(Statement statement, int component) {
 		return switch (component) {
 		case 0 -> statement.getSubject();
@@ -13795,15 +13610,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			}
 		}
 		return false;
-	}
-
-	private static FrontierMaskStrata allBoundMasks(FrontierLayout layout) {
-		long[] mask = new long[(layout.size() + 63) >>> 6];
-		Arrays.fill(mask, -1L);
-		if (layout.size() != 0 && (layout.size() & 63) != 0) {
-			mask[mask.length - 1] = (1L << (layout.size() & 63)) - 1L;
-		}
-		return FrontierMaskStrata.of(layout, 1, mask);
 	}
 
 	private static boolean sameSamplingIdentity(FrontierStateKey left, FrontierStateKey right) {
@@ -15322,20 +15128,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		return pool;
 	}
 
-	private static void recycleEmissionScratchPool(EmissionScratchPool pool, long maximumRetainedBytes) {
-		if (!pool.idle()) {
-			return;
-		}
-		pool.trimToBytes(maximumRetainedBytes);
-		EmissionScratchPool retained = EMISSION_SCRATCH_RECYCLER.get();
-		if (retained != null) {
-			retained.trimToBytes(maximumRetainedBytes);
-		}
-		if (retained == null || retained.storageBytes() < pool.storageBytes()) {
-			EMISSION_SCRATCH_RECYCLER.set(pool);
-		}
-	}
-
 	/** Segmented emission staging buffer whose retained bytes stay charged to the query arena while it is open. */
 	private static final class EmissionBuffer implements FrontierEmissionSink, AutoCloseable {
 
@@ -15634,10 +15426,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			borrowedSegments--;
 			available.add(segment);
 			storageBytes = Math.addExact(storageBytes, segment.storageBytes());
-		}
-
-		private boolean idle() {
-			return borrowedSegments == 0;
 		}
 
 		private long storageBytes() {

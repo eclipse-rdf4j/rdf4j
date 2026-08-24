@@ -38,7 +38,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
@@ -96,8 +95,6 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	private volatile Lock dirLock;
 
 	private EvaluationStrategyFactory explicitEvalStratFactory;
-
-	private DefaultEvaluationStrategyFactory defaultEvalStratFactory;
 
 	private LmdbEvaluationStrategyFactory lmdbEvalStratFactory;
 
@@ -237,9 +234,6 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		this.serviceResolver = resolver;
 		if (resolver != null && explicitEvalStratFactory instanceof FederatedServiceResolverClient) {
 			((FederatedServiceResolverClient) explicitEvalStratFactory).setFederatedServiceResolver(resolver);
-		}
-		if (resolver != null && defaultEvalStratFactory != null) {
-			defaultEvalStratFactory.setFederatedServiceResolver(resolver);
 		}
 		if (resolver != null && lmdbEvalStratFactory != null) {
 			lmdbEvalStratFactory.setFederatedServiceResolver(resolver);
@@ -533,25 +527,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return Boolean.TRUE.equals(config.getSketchEstimatorEnabled());
 	}
 
-	private boolean isSketchEstimatorReadyNonBlocking() {
-		SketchBasedJoinEstimator estimator = getSketchBasedJoinEstimator();
-		return estimator != null && estimator.isReadyNonBlocking();
-	}
-
 	private SketchBasedJoinEstimator getSketchBasedJoinEstimator() {
 		LmdbSailStore backingStore = this.backingStore;
 		return backingStore == null ? null : backingStore.getSketchBasedJoinEstimator();
-	}
-
-	private DefaultEvaluationStrategyFactory getAutomaticDefaultEvaluationStrategyFactory() {
-		QueryOptimizerPipeline optimizerPipeline = getAutomaticOptimizerPipeline();
-		if (defaultEvalStratFactory == null) {
-			defaultEvalStratFactory = new DefaultEvaluationStrategyFactory(getFederatedServiceResolver());
-		}
-		if (optimizerPipeline != null) {
-			defaultEvalStratFactory.setOptimizerPipeline(optimizerPipeline);
-		}
-		return defaultEvalStratFactory;
 	}
 
 	private LmdbEvaluationStrategyFactory getAutomaticLmdbEvaluationStrategyFactory() {
@@ -568,13 +546,6 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	private QueryOptimizerPipeline getAutomaticOptimizerPipeline() {
 		if (automaticOptimizerPipeline != null) {
 			return automaticOptimizerPipeline;
-		}
-		if (defaultEvalStratFactory != null) {
-			Optional<QueryOptimizerPipeline> optimizerPipeline = defaultEvalStratFactory.getOptimizerPipeline();
-			if (optimizerPipeline.isPresent()) {
-				automaticOptimizerPipeline = optimizerPipeline.get();
-				return automaticOptimizerPipeline;
-			}
 		}
 		if (lmdbEvalStratFactory != null) {
 			Optional<QueryOptimizerPipeline> optimizerPipeline = lmdbEvalStratFactory.getOptimizerPipeline();
@@ -613,9 +584,6 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			automaticOptimizerPipeline = pipeline;
 			if (explicitEvalStratFactory != null) {
 				explicitEvalStratFactory.setOptimizerPipeline(pipeline);
-			}
-			if (defaultEvalStratFactory != null) {
-				defaultEvalStratFactory.setOptimizerPipeline(pipeline);
 			}
 			if (lmdbEvalStratFactory != null) {
 				lmdbEvalStratFactory.setOptimizerPipeline(pipeline);

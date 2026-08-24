@@ -830,25 +830,6 @@ final class PackedQueryCodec {
 			originalBindingSets[relationId] = rows;
 		}
 
-		private int finiteBindingAssignment(FiniteDomain domain) {
-			int nameId = bindingName(domain.bindingName);
-			unary[0] = nameId;
-			int names = payloads.internCanonical(PackedPayloadOp.NAME_SET, 0, 0, 0, unary, 0, 1);
-			int start = reserveScratch(domain.values.length);
-			for (int ordinal = 0; ordinal < domain.values.length; ordinal++) {
-				binary[0] = nameId;
-				binary[1] = objects.intern(domain.values[ordinal]);
-				scratch[start + ordinal] = bindingSets.internRow(binary, 0, 1);
-			}
-			int payload = payloads.internCanonical(PackedPayloadOp.BINDING_SET_ASSIGNMENT, names, names, 1, scratch,
-					start, domain.values.length);
-			releaseScratch(start);
-			int relationId = relations.internCanonical(PackedRelOp.BINDING_SET_ASSIGNMENT, payload, 0, 0,
-					NO_CHILDREN, 0, 0);
-			metadata.attachRelation(relationId, 0, 0, domain.values.length, domain.values.length, 0);
-			return relationId;
-		}
-
 		private static FiniteDomain finiteDomain(ValueExpr condition) {
 			if (condition instanceof ListMemberOperator member) {
 				return finiteListDomain(member);

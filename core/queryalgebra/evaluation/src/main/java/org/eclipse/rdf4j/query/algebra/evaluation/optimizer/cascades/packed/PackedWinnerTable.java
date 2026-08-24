@@ -749,8 +749,4 @@ final class PackedWinnerTable {
 		}
 	}
 
-	private static double saturatedAdd(double left, double right) {
-		double sum = left + right;
-		return Double.isFinite(sum) ? sum : Double.MAX_VALUE;
-	}
 }

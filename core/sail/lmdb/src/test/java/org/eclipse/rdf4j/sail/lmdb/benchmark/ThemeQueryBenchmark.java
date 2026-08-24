@@ -116,14 +116,14 @@ public class ThemeQueryBenchmark {
 
 	@Param({
 			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
-			"LIBRARY",
-			"ENGINEERING",
-			"HIGHLY_CONNECTED",
-			"TRAIN",
-			"ELECTRICAL_GRID",
-			"PHARMA",
-			"SPARSE",
+//			"SOCIAL_MEDIA",
+//			"LIBRARY",
+//			"ENGINEERING",
+//			"HIGHLY_CONNECTED",
+//			"TRAIN",
+//			"ELECTRICAL_GRID",
+//			"PHARMA",
+//			"SPARSE",
 	})
 	public String themeName;
 
@@ -156,6 +156,11 @@ public class ThemeQueryBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
+//		try {
+//			Thread.sleep(4000);
+//		} catch (InterruptedException e) {
+//			throw new RuntimeException(e);
+//		}
 		theme = Theme.valueOf(themeName);
 		File storeDirectory = storeDirectory();
 		System.out.println(storeDirectory.getAbsolutePath());

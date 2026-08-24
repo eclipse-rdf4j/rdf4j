@@ -16,7 +16,8 @@ final class FrontierOmniLayout {
 
 	static final int PLANE_COUNT = 2;
 	static final int COMPONENT_COUNT = 4;
-	public static final IllegalArgumentException ILLEGAL_ARGUMENT_EXCEPTION = new IllegalArgumentException("Frontier Omni cell coordinates are outside the layout");
+	public static final IllegalArgumentException ILLEGAL_ARGUMENT_EXCEPTION = new IllegalArgumentException(
+			"Frontier Omni cell coordinates are outside the layout");
 
 	private final int designLanes;
 	private final int auditLanes;
@@ -70,7 +71,7 @@ final class FrontierOmniLayout {
 				|| component < 0 || component >= COMPONENT_COUNT || row < 0 || row >= depth) {
 			throw ILLEGAL_ARGUMENT_EXCEPTION;
 		}
-		int bucket = FrontierStatisticsHash.omniBucketFromSequence(bucketSequence, row, widthMask);
+		int bucket = ((int) bucketSequence + row * (int) (bucketSequence >>> 32)) & widthMask;
 		return plane * planeStride + lane * laneStride + component * componentStride + row * rowStride + bucket;
 	}
 

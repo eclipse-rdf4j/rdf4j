@@ -21,7 +21,6 @@ import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
  */
 final class FrontierHeavyObjectAccumulator {
 
-	private static final byte UNSEEN = 0;
 	private static final byte RETAINED = 1;
 	private static final byte EVICTED = 2;
 
