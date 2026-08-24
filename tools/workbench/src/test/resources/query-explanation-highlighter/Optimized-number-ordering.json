@@ -1,0 +1,18 @@
+{
+  "type": "ProjectionElemList",
+  "costEstimate": "Infinity",
+  "plans": [
+    {
+      "type": "ProjectionElem \"ä\"",
+      "costEstimate": 1000000
+    },
+    {
+      "type": "ProjectionElem \"a\"",
+      "resultSizeEstimate": 1001
+    },
+    {
+      "type": "ProjectionElem \"Z\"",
+      "costEstimate": 1000001
+    }
+  ]
+}

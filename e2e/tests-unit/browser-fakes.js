@@ -472,6 +472,12 @@ class FakeDocument {
         return createTextNode(this, text);
     }
 
+    createDocumentFragment() {
+        const fragment = new FakeElement(this, 'document-fragment');
+        fragment.nodeType = 11;
+        return fragment;
+    }
+
     getElementById(id) {
         return this.elementsById.get(id) || null;
     }

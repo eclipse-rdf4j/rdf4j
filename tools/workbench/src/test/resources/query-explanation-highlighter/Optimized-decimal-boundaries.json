@@ -1,0 +1,10 @@
+{
+  "type": "Join",
+  "costEstimate": 2.675,
+  "plans": [
+    {
+      "type": "StatementPattern",
+      "costEstimate": 10000000000000
+    }
+  ]
+}

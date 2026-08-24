@@ -1,0 +1,41 @@
+{
+  "type": "Filter",
+  "costEstimate": 5.0,
+  "resultSizeEstimate": 8.0,
+  "resultSizeActual": 6,
+  "totalTimeActual": 12.5,
+  "selfTimeActual": 5.0,
+  "hasNextCallCountActual": 8,
+  "hasNextTrueCountActual": 6,
+  "hasNextTimeNanosActual": 800,
+  "nextCallCountActual": 6,
+  "nextTimeNanosActual": 300,
+  "longMetricsPlanned": {
+    "plannedWorkRows": 12
+  },
+  "longMetricsActual": {
+    "outputRowsActual": 6,
+    "predicateErrorCountActual": 1,
+    "sampleCountActual": 2
+  },
+  "doubleMetricsActual": {
+    "selectivityActual": 0.6
+  },
+  "stringMetricsActual": {
+    "bindingState": "bound"
+  },
+  "plans": [
+    {
+      "type": "StatementPattern",
+      "resultSizeEstimate": 5.0,
+      "resultSizeActual": 10,
+      "totalTimeActual": 7.5,
+      "selfTimeActual": 7.5,
+      "sourceRowsScannedActual": 12,
+      "sourceRowsMatchedActual": 10,
+      "stringMetricsActual": {
+        "indexName": "spoc"
+      }
+    }
+  ]
+}

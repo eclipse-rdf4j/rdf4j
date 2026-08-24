@@ -1,0 +1,24 @@
+{
+  "type": "Join",
+  "plans": [
+    {
+      "type": "Join",
+      "plans": [
+        {
+          "type": "Projection",
+          "plans": [
+            {
+              "type": "StatementPattern"
+            }
+          ]
+        },
+        {
+          "type": "StatementPattern"
+        }
+      ]
+    },
+    {
+      "type": "StatementPattern"
+    }
+  ]
+}

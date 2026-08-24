@@ -21,6 +21,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.xml.transform.Templates;
 import javax.xml.transform.Transformer;
@@ -33,6 +35,62 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.junit.jupiter.api.Test;
 
 class QueryTemplateTest {
+
+	@Test
+	void textExplanationShouldLoadJsonHighlighterAndRadioControls() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.contains("id=\"explanation-highlight-mode\"")
+				.contains("<input id=\"explanation-highlight-syntax\"")
+				.contains("<input id=\"explanation-highlight-hotspot\"")
+				.contains("name=\"explanation-highlight-mode\"")
+				.contains("type=\"radio\"")
+				.contains("for=\"explanation-highlight-syntax\">Normal</label>")
+				.contains("for=\"explanation-highlight-hotspot\">Heatmap</label>")
+				.contains("scripts/queryExplanationHighlighter.js")
+				.containsSubsequence("scripts/queryExplanationHighlighter.js", "scripts/query.js");
+	}
+
+	@Test
+	void textExplanationShouldExposePropertyVisibilityConfig() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryStyles = readQueryStyles();
+
+		assertThat(queryTemplate)
+				.containsSubsequence("<select id=\"explain-level\">", "id=\"explanation-settings-toggle\"")
+				.containsPattern("(?s)<button id=\"explanation-settings-toggle\"[^>]*>\\s*Config\\s*</button>")
+				.contains("aria-controls=\"explanation-settings-panel\"")
+				.contains("aria-expanded=\"false\"")
+				.contains("id=\"explanation-settings-panel\"")
+				.contains("hidden=\"hidden\"")
+				.containsSubsequence("id=\"explanation-settings-panel\"", "id=\"explanation-highlight-mode\"",
+						"id=\"explanation-property-config\"")
+				.contains("id=\"explanation-property-config\"")
+				.contains("id=\"explanation-property-options\"")
+				.contains("id=\"explanation-properties-all\"")
+				.contains("id=\"explanation-properties-none\"")
+				.contains("aria-label=\"Visible query plan properties\"")
+				.doesNotContain("query-explanation-settings__icon")
+				.doesNotContain("<details id=\"explanation-property-config\"");
+		assertThat(queryStyles)
+				.containsPattern("\\.query-explanation-settings__panel\\s*\\{[^}]*"
+						+ "bottom:\\s*calc\\(100% \\+ 0\\.5rem\\);")
+				.contains(".query-explanation-property-config")
+				.contains(".query-explanation-property-option");
+	}
+
+	@Test
+	void propertyVisibilityConfigShouldUseResponsiveFlowBeforeItCanOverflow() throws IOException {
+		String queryStyles = readQueryStyles();
+
+		assertThat(queryStyles)
+				.containsPattern("\\.query-explanation-settings__panel\\s*\\{[^}]*max-width:\\s*100%;")
+				.containsPattern("(?s)@media \\(max-width: 48rem\\) \\{.{0,800}?"
+						+ "\\.query-explanation-property-config__options \\{\\s*grid-template-columns:");
+	}
 
 	@Test
 	void queryPageShouldIncludeOpenSourceGraphvizVisualizerScript() throws IOException {
@@ -51,7 +109,7 @@ class QueryTemplateTest {
 
 		assertThat(queryScript)
 				.contains("function clearRenderedExplanation(paneKey: string")
-				.contains("explanation.text('');")
+				.contains("explanation.removeClass('query-explanation--highlighted').text('');")
 				.contains("jqXHR.responseText")
 				.contains("css('min-height'")
 				.contains("css('min-width'");
@@ -590,6 +648,118 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void queryExplanationSyntaxHighlightingShouldUseEditorSurfaceColors() throws IOException {
+		String queryStyles = readQueryStyles();
+		String yasqeStyles = Files.readString(Path.of("src/main/webapp/styles/yasqe.min.css"), StandardCharsets.UTF_8);
+
+		assertThat(queryStyles)
+				.contains("--query-code-surface: "
+						+ cssProperty(yasqeStyles, ".yasqe .CodeMirror", "background") + ";")
+				.contains("--query-code-surface-hover: "
+						+ cssProperty(yasqeStyles, ".yasqe .CodeMirror-activeline-background", "background") + ";")
+				.contains("--query-code-selection: "
+						+ cssProperty(yasqeStyles, ".yasqe .CodeMirror-focused .CodeMirror-selected", "background")
+						+ ";")
+				.contains("--query-code-ink: "
+						+ cssColor(yasqeStyles, ".yasqe .CodeMirror") + ";")
+				.containsPattern(
+						"#query-explanation,\\s*#query-explanation-compare\\s*\\{[^}]*background:\\s*var\\(--query-code-surface\\);[^}]*color:\\s*var\\(--query-code-ink\\);")
+				.containsPattern(
+						"\\.query-explanation-token--node-type\\s*\\{[^}]*color:\\s*var\\(--query-code-node\\);")
+				.containsPattern(
+						"\\.query-explanation-token--variable\\s*\\{[^}]*color:\\s*var\\(--query-code-variable\\);")
+				.containsPattern(
+						"\\.query-explanation-token--value\\s*\\{[^}]*color:\\s*var\\(--query-code-value\\);")
+				.containsPattern(
+						"\\.query-explanation-token--metric-value\\s*\\{[^}]*color:\\s*var\\(--query-code-metric\\);")
+				.contains("background: var(--query-code-selection);")
+				.containsPattern(
+						"\\.query-explanation--highlighted \\.query-explanation-line:hover\\s*\\{[^}]*background:");
+	}
+
+	@Test
+	void queryExplanationShouldUseCompactTechnicalTheme() throws IOException {
+		String queryStyles = readQueryStyles();
+		String highlighter = Files.readString(
+				Path.of("src/main/webapp/scripts/ts/queryExplanationHighlighter.ts"), StandardCharsets.UTF_8);
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryStyles)
+				.contains("--query-code-muted: #3c3c3c;")
+				.contains("--query-code-connector: #8c9ab2;")
+				.contains("--query-code-node: #001caa;")
+				.contains("--query-code-annotation: #000510;")
+				.contains("--query-code-variable-label: #005264;")
+				.contains("--query-code-variable: #240098;")
+				.contains("--query-code-value: #006003;")
+				.contains("--query-code-bound: #006003;")
+				.contains("--query-code-unbound: #c40000;")
+				.contains("--query-code-metric: #8d2200;")
+				.contains("--query-code-border: #d0d0d0;")
+				.doesNotContain("filter: contrast(")
+				.containsPattern("#query-explanation,\\s*#query-explanation-compare\\s*\\{[^}]*"
+						+ "border-radius:\\s*0;[^}]*padding:\\s*0\\.578125rem 0\\.59375rem 0\\.609375rem;[^}]*"
+						+ "box-shadow:\\s*none;[^}]*"
+						+ "font-family:\\s*Menlo,[^}]*font-size:\\s*0\\.8125rem;[^}]*line-height:\\s*1rem;")
+				.containsPattern("\\.query-explanation-token--connector\\s*\\{[^}]*"
+						+ "letter-spacing:\\s*-0\\.005rem;")
+				.containsPattern("\\.query-explanation-token--node-type\\s*\\{[^}]*"
+						+ "letter-spacing:\\s*0;")
+				.containsPattern("\\.query-explanation--highlighted \\.query-explanation-line\\s*\\{[^}]*"
+						+ "border-left:\\s*0;[^}]*")
+				.containsPattern("\\.query-explanation--highlighted \\.query-explanation-line:hover\\s*\\{[^}]*"
+						+ "box-shadow:\\s*inset 2px 0 var\\(--query-code-border\\);")
+				.containsPattern("\\.query-explanation-copy\\s*\\{[^}]*opacity:\\s*0;")
+				.containsPattern("\\.query-explanation-surface:hover \\.query-explanation-copy,[^}]*"
+						+ "opacity:\\s*1;")
+				.containsPattern("\\.query-explanation-token--annotation\\s*\\{[^}]*"
+						+ "color:\\s*var\\(--query-code-annotation\\);[^}]*font-weight:\\s*400;")
+				.containsPattern("\\.query-explanation-token--algorithm\\s*\\{[^}]*"
+						+ "color:\\s*var\\(--query-code-ink\\);[^}]*font-weight:\\s*400;")
+				.containsPattern("\\.query-explanation-token--node-detail\\s*\\{[^}]*"
+						+ "color:\\s*var\\(--query-code-ink\\);[^}]*font-weight:\\s*400;")
+				.containsPattern("\\.query-explanation-token--variable-flag\\s*\\{[^}]*"
+						+ "color:\\s*var\\(--query-code-ink\\);[^}]*font-weight:\\s*400;")
+				.containsPattern("\\.query-explanation-token--join-side\\s*\\{[^}]*"
+						+ "color:\\s*var\\(--query-code-annotation\\);[^}]*font-style:\\s*italic;[^}]*"
+						+ "font-weight:\\s*400;")
+				.containsPattern("\\.query-explanation-token--operator\\s*\\{[^}]*"
+						+ "color:\\s*var\\(--query-code-ink\\);[^}]*font-weight:\\s*400;")
+				.containsPattern("\\.query-explanation-token--variable-label\\s*\\{[^}]*"
+						+ "color:\\s*var\\(--query-code-variable-label\\);")
+				.containsPattern("\\.query-explanation-token--variable\\s*\\{[^}]*font-weight:\\s*700;")
+				.containsPattern("\\.query-explanation-token--value\\s*\\{[^}]*font-weight:\\s*700;")
+				.containsPattern("\\.query-explanation-token--metric-name\\s*\\{[^}]*"
+						+ "color:\\s*var\\(--query-code-annotation\\);[^}]*font-weight:\\s*400;")
+				.containsPattern("\\.query-explanation-token--metric-value\\s*\\{[^}]*font-weight:\\s*400;")
+				.containsPattern("\\.query-explanation-token--binding-bound\\s*\\{[^}]*"
+						+ "color:\\s*var\\(--query-code-bound\\);")
+				.containsPattern("\\.query-explanation-token--binding-unbound\\s*\\{[^}]*"
+						+ "color:\\s*var\\(--query-code-unbound\\);");
+
+		assertThat(highlighter)
+				.contains("var structuralSuffix = hasNextMarker ? /(?:,\\s*|\\)\\s*\\()$/")
+				.contains("function appendNodeType(lineTokens: TextToken[], type: string): void")
+				.contains("function appendVariableStructure(lineTokens: TextToken[], text: string): void")
+				.contains("appendNodeType(lineTokens, type)")
+				.contains("details.substring(marker.index, marker.end - 1)")
+				.contains("lineTokens.push(token('=', 'operator'))")
+				.contains("token(', ', 'operator')")
+				.contains("'node-detail'")
+				.contains("'variable-flag'")
+				.contains("'algorithm'")
+				.contains("function metricValueKind(metric: MetricEntry): string")
+				.contains("token(nodeMetrics[i].value, metricValueKind(nodeMetrics[i]))")
+				.contains("namespaces?: { [prefix: string]: string };")
+				.contains("function compactIri")
+				.contains("rdf: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#'")
+				.contains("'binding-bound'")
+				.contains("'binding-unbound'");
+
+		assertThat(queryScript).contains("namespaces: sparqlNamespaces");
+	}
+
+	@Test
 	void queryTemplateShouldLetExplanationDiffUseMostOfModalHeight() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
@@ -989,6 +1159,18 @@ class QueryTemplateTest {
 		return Files.readString(Path.of("src/main/webapp/styles/query.css"), StandardCharsets.UTF_8)
 				+ Files.readString(Path.of("src/main/webapp/styles/query-explanation.css"), StandardCharsets.UTF_8)
 				+ Files.readString(Path.of("src/main/webapp/styles/query-compare.css"), StandardCharsets.UTF_8);
+	}
+
+	private static String cssColor(String styles, String selector) {
+		return cssProperty(styles, selector, "color");
+	}
+
+	private static String cssProperty(String styles, String selector, String property) {
+		Matcher matcher = Pattern
+				.compile(Pattern.quote(selector) + "\\{[^}]*" + Pattern.quote(property) + ":([^;}]+)")
+				.matcher(styles);
+		assertThat(matcher.find()).as("CSS %s for %s", property, selector).isTrue();
+		return matcher.group(1).trim();
 	}
 
 	private static String templateDefault(ConfigTemplate template, String name) {

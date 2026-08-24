@@ -1,0 +1,20 @@
+{
+  "type": "Join",
+  "resultSizeActual": 2,
+  "totalTimeActual": 1624.0,
+  "selfTimeActual": 100.0,
+  "plans": [
+    {
+      "type": "StatementPattern",
+      "resultSizeActual": 1,
+      "totalTimeActual": 24.0,
+      "selfTimeActual": 24.0
+    },
+    {
+      "type": "StatementPattern",
+      "resultSizeActual": 1,
+      "totalTimeActual": 1500.0,
+      "selfTimeActual": 1500.0
+    }
+  ]
+}
