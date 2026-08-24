@@ -486,6 +486,7 @@ public class ThemeQueryBenchmark {
 	}
 
 	@Test
+	@Disabled
 	public void benchmarkQuery() throws IOException {
 		themeName = "LIBRARY";
 		z_queryIndex = 7;
@@ -669,8 +670,8 @@ public class ThemeQueryBenchmark {
 	}
 
 	@Test
+	@Disabled
 	@Timeout(value = 5, unit = TimeUnit.MINUTES)
-//	@Disabled
 	public void testQueryExplanation() throws IOException {
 		var queryIndexes = paramValues("z_queryIndex");
 		var themeNames = paramValues("themeName");
