@@ -65,11 +65,14 @@ final class PackedQuery {
 	private final byte[] originalBindingSetRelations;
 	private final Object[] originalBindingSets;
 	private final boolean originalBindingSetsAttached;
+	private final PackedParameterSchema parameterSchema;
+	private final PackedParameterVector parameterVector;
 
 	PackedQuery(int rootRelId, PackedExpressionInterner relations, PackedExpressionInterner scalars,
 			PackedExpressionInterner payloads, PackedBindingSetArena bindingSets, PackedNodeMetadataArena metadata,
 			PackedObjectPool objects, PackedSymbolTable symbols, byte[] originalBindingSetRelations,
-			Object[] originalBindingSets) {
+			Object[] originalBindingSets, PackedParameterSchema parameterSchema,
+			PackedParameterVector parameterVector) {
 		if (rootRelId <= 0 || rootRelId > relations.size()) {
 			throw new IllegalArgumentException("root relation does not exist: " + rootRelId);
 		}
@@ -87,6 +90,8 @@ final class PackedQuery {
 		this.symbols = symbols;
 		this.originalBindingSetRelations = originalBindingSetRelations;
 		this.originalBindingSets = originalBindingSets;
+		this.parameterSchema = parameterSchema;
+		this.parameterVector = parameterVector;
 		originalBindingSetsAttached = true;
 		bindingFacts = new PackedBindingFacts(this);
 		bindingFlow = new BindingFlowState();
@@ -113,6 +118,26 @@ final class PackedQuery {
 		originalBindingSetRelations = template.originalBindingSetRelations;
 		this.originalBindingSets = originalBindingSets;
 		this.originalBindingSetsAttached = originalBindingSetsAttached;
+		parameterSchema = template.parameterSchema;
+		parameterVector = template.parameterVector;
+	}
+
+	private PackedQuery(PackedQuery template, PackedParameterVector parameterVector) {
+		rootRelId = template.rootRelId;
+		relations = template.relations;
+		scalars = template.scalars;
+		payloads = template.payloads;
+		bindingSets = template.bindingSets;
+		metadata = template.metadata;
+		objects = template.objects.withParameterVector(parameterVector);
+		symbols = template.symbols;
+		bindingFacts = template.bindingFacts;
+		bindingFlow = template.bindingFlow;
+		originalBindingSetRelations = template.originalBindingSetRelations;
+		originalBindingSets = new Object[originalBindingSetRelations.length];
+		originalBindingSetsAttached = false;
+		parameterSchema = template.parameterSchema;
+		this.parameterVector = parameterVector;
 	}
 
 	PackedQuery withoutOriginalBindingSets() {
@@ -129,6 +154,19 @@ final class PackedQuery {
 		return new PackedQuery(this, currentBindingSets, true);
 	}
 
+	PackedQuery withoutInvocationParameters() {
+		return parameterVector.size() == 0 && !originalBindingSetsAttached
+				? this
+				: new PackedQuery(this, PackedParameterVector.empty());
+	}
+
+	PackedQuery withParameterVector(PackedParameterVector current) {
+		if (!parameterSchema.accepts(current)) {
+			throw new IllegalArgumentException("packed parameter vector does not match the query template schema");
+		}
+		return new PackedQuery(this, current);
+	}
+
 	boolean isOriginalBindingSetRelation(int relationId) {
 		checkRelationId(relationId);
 		return originalBindingSetRelations[relationId] != 0;
@@ -136,6 +174,14 @@ final class PackedQuery {
 
 	boolean originalBindingSetsAttached() {
 		return originalBindingSetsAttached;
+	}
+
+	PackedParameterSchema parameterSchema() {
+		return parameterSchema;
+	}
+
+	PackedParameterVector parameterVector() {
+		return parameterVector;
 	}
 
 	boolean hasSameCacheIdentity(PackedQuery other) {
@@ -687,5 +733,9 @@ final class PackedQuery {
 
 	Object objectValue(int objectId) {
 		return objects.value(objectId);
+	}
+
+	Object rawObjectValue(int objectId) {
+		return objects.rawValue(objectId);
 	}
 }

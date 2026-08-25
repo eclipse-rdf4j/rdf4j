@@ -54,6 +54,7 @@ public final class PackedCostingReplay {
 			double[] eventPeakMemoryRows = new double[eventCount + 1];
 			double[] eventAccessRows = new double[eventCount + 1];
 			double[] eventInvocations = new double[eventCount + 1];
+			PackedCostEstimate[] eventEstimates = new PackedCostEstimate[eventCount + 1];
 			PackedCostContext context = new PackedCostContext();
 			PackedCostEstimate estimate = new PackedCostEstimate();
 			int maximumPrefix = 0;
@@ -125,6 +126,9 @@ public final class PackedCostingReplay {
 				eventPeakMemoryRows[eventId] = estimate.peakMemoryRows();
 				eventAccessRows[eventId] = estimate.accessRows();
 				eventInvocations[eventId] = estimate.invocations();
+				PackedCostEstimate retainedEstimate = new PackedCostEstimate();
+				retainedEstimate.copyCandidateFrom(estimate);
+				eventEstimates[eventId] = retainedEstimate;
 				bindCurrentState(trace.outputStateOrdinal(eventId), estimate.evidenceStateId(), estimate.outputRows(),
 						currentStateByCachedOrdinal, currentRowsByCachedOrdinal, eventId);
 			}
@@ -168,7 +172,8 @@ public final class PackedCostingReplay {
 			}
 			int traceRequestOffset = cachedEvidence.requestedStateCount() - trace.stateReferenceCount();
 			replayedTrace = replayedTrace.withDetachedStateOrdinals(currentEvidence, traceRequestOffset);
-			return new Result(currentEvidence, replayedTrace, candidateCosts, currentOrdinalByCachedOrdinal, eventCosts,
+			return new Result(currentEvidence, replayedTrace, candidateCosts, currentOrdinalByCachedOrdinal,
+					eventEstimates, eventCosts,
 					eventRows,
 					eventWorkRows, eventSequentialRows, eventRandomSeeks, eventIteratorOpens,
 					eventExpressionEvaluations, eventHashBuildRows, eventHashProbeRows, eventPathExpansions,
@@ -414,15 +419,18 @@ public final class PackedCostingReplay {
 		private final PackedCostingTrace replayedTrace;
 		private final double[] candidateCosts;
 		private final int[] currentOrdinalByCachedOrdinal;
+		private final PackedCostEstimate[] eventEstimates;
 		private final double[][] eventDimensions;
 
 		private Result(FrontierEvidenceBundle currentEvidence, PackedCostingTrace replayedTrace,
 				double[] candidateCosts,
-				int[] currentOrdinalByCachedOrdinal, double[]... eventDimensions) {
+				int[] currentOrdinalByCachedOrdinal, PackedCostEstimate[] eventEstimates,
+				double[]... eventDimensions) {
 			this.currentEvidence = currentEvidence;
 			this.replayedTrace = replayedTrace;
 			this.candidateCosts = candidateCosts;
 			this.currentOrdinalByCachedOrdinal = currentOrdinalByCachedOrdinal;
+			this.eventEstimates = eventEstimates;
 			this.eventDimensions = eventDimensions;
 		}
 
@@ -467,6 +475,29 @@ public final class PackedCostingReplay {
 
 		public long workUnits() {
 			return eventCount();
+		}
+
+		boolean matchesCachedTrace(PackedCostingTrace cachedTrace) {
+			Objects.requireNonNull(cachedTrace, "cachedTrace");
+			if (cachedTrace.eventCount() != replayedTrace.eventCount()) {
+				return false;
+			}
+			for (int eventId = 1; eventId <= replayedTrace.eventCount(); eventId++) {
+				if (cachedTrace.phase(eventId) != replayedTrace.phase(eventId)
+						|| cachedTrace.relationId(eventId) != replayedTrace.relationId(eventId)
+						|| !cachedTrace.digest(eventId).equals(replayedTrace.digest(eventId))) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		void copyEventEstimate(int eventId, PackedCostEstimate destination) {
+			Objects.requireNonNull(destination, "destination");
+			if (eventId <= 0 || eventId >= eventEstimates.length || eventEstimates[eventId] == null) {
+				throw new IndexOutOfBoundsException("current costing event " + eventId);
+			}
+			destination.copyCandidateFrom(eventEstimates[eventId]);
 		}
 
 		private double eventDimension(int dimension, int eventId) {

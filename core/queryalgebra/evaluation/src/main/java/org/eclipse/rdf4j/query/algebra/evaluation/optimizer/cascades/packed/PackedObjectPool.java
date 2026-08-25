@@ -34,6 +34,7 @@ final class PackedObjectPool {
 	private int resizeThreshold;
 	private int size;
 	private boolean frozen;
+	private PackedParameterVector parameterVector = PackedParameterVector.empty();
 
 	PackedObjectPool(int expectedSize) {
 		if (expectedSize < 0) {
@@ -47,6 +48,16 @@ final class PackedObjectPool {
 		}
 		slots = new int[tableCapacity];
 		resizeThreshold = maximumFill(tableCapacity);
+	}
+
+	private PackedObjectPool(PackedObjectPool template, PackedParameterVector parameterVector) {
+		values = template.values;
+		hashCodes = template.hashCodes;
+		slots = template.slots;
+		resizeThreshold = template.resizeThreshold;
+		size = template.size;
+		frozen = true;
+		this.parameterVector = Objects.requireNonNull(parameterVector, "parameterVector");
 	}
 
 	int intern(Object value) {
@@ -86,6 +97,13 @@ final class PackedObjectPool {
 	}
 
 	Object value(int objectId) {
+		Object value = rawValue(objectId);
+		return value instanceof PackedParameterReference parameter
+				? parameterVector.value(parameter.ordinal())
+				: value;
+	}
+
+	Object rawValue(int objectId) {
 		if (objectId == 0) {
 			return null;
 		}
@@ -93,6 +111,20 @@ final class PackedObjectPool {
 			throw new IndexOutOfBoundsException("unknown object " + objectId);
 		}
 		return values[objectId];
+	}
+
+	void setParameterVector(PackedParameterVector parameterVector) {
+		if (frozen) {
+			throw new IllegalStateException("packed object pool is frozen");
+		}
+		this.parameterVector = Objects.requireNonNull(parameterVector, "parameterVector");
+	}
+
+	PackedObjectPool withParameterVector(PackedParameterVector parameterVector) {
+		if (!frozen) {
+			throw new IllegalStateException("only a frozen packed object pool can be rebound");
+		}
+		return new PackedObjectPool(this, parameterVector);
 	}
 
 	int cachedHashCode(int objectId) {
@@ -115,7 +147,7 @@ final class PackedObjectPool {
 			return false;
 		}
 		for (int objectId = 1; objectId <= size; objectId++) {
-			if (!Objects.equals(value(objectId), other.value(objectId))) {
+			if (!Objects.equals(rawValue(objectId), other.rawValue(objectId))) {
 				return false;
 			}
 		}
@@ -123,7 +155,11 @@ final class PackedObjectPool {
 	}
 
 	Object[] snapshotValues() {
-		return Arrays.copyOf(values, size + 1);
+		Object[] snapshot = new Object[size + 1];
+		for (int objectId = 1; objectId <= size; objectId++) {
+			snapshot[objectId] = value(objectId);
+		}
+		return snapshot;
 	}
 
 	void freeze() {
@@ -135,6 +171,7 @@ final class PackedObjectPool {
 		Arrays.fill(slots, 0);
 		size = 0;
 		frozen = false;
+		parameterVector = PackedParameterVector.empty();
 	}
 
 	private int findEmptySlot(long hash) {

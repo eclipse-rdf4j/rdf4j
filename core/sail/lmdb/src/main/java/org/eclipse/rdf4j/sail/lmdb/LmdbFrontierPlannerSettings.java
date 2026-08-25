@@ -20,6 +20,7 @@ final class LmdbFrontierPlannerSettings {
 	private static final int EXACT_FINITE_SURFACE_BUDGET_DIVISOR = 16;
 	private static final int HEURISTIC_FILTER_PASS_BUDGET_DIVISOR = 32;
 	private static final int PIPELINE_PLAN_BUDGET_DIVISOR = 16;
+	private static final int PACKED_PLAN_BUDGET_DIVISOR = 4;
 	private static final int LEAF_PAYLOAD_BUDGET_DIVISOR = 4;
 
 	private final FrontierEstimatorMode mode;
@@ -33,6 +34,11 @@ final class LmdbFrontierPlannerSettings {
 	private final LmdbExactFiniteSurfaceCache exactFiniteSurfaceCache;
 	private final LmdbHeuristicFilterPassCache heuristicFilterPassCache;
 	private final LmdbPipelinePlanCache pipelinePlanCache;
+	private final long packedPlanCacheBudgetBytes;
+	private final long allocatedPlannerCacheBudgetBytes;
+	private final int planCacheMaximumVariants;
+	private final int planCacheRefreshThreads;
+	private final double planCacheMaximumCanaryFraction;
 	private final FrontierDecisionRiskController riskController;
 	private final FrontierDecisionRiskController.Config riskConfig;
 
@@ -42,32 +48,45 @@ final class LmdbFrontierPlannerSettings {
 			double maximumConfidence, double maximumExpectedRegret) {
 		this(mode, queryMemoryBudgetBytes, initialMaterializationWorkUnits, refinementWorkUnits,
 				targetRelativeStandardError, defensiveProposalEpsilon, initialConfidence, minimumConfidence,
-				maximumConfidence, maximumExpectedRegret, LmdbStoreConfig.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES);
+				maximumConfidence, maximumExpectedRegret, LmdbStoreConfig.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES,
+				LmdbStoreConfig.FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS,
+				LmdbStoreConfig.FRONTIER_PLAN_CACHE_REFRESH_THREADS,
+				LmdbStoreConfig.FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION);
 	}
 
 	private LmdbFrontierPlannerSettings(FrontierEstimatorMode mode, long queryMemoryBudgetBytes,
 			long initialMaterializationWorkUnits, int refinementWorkUnits, double targetRelativeStandardError,
 			double defensiveProposalEpsilon, double initialConfidence, double minimumConfidence,
-			double maximumConfidence, double maximumExpectedRegret, long cacheEvidenceBudgetBytes) {
+			double maximumConfidence, double maximumExpectedRegret, long cacheEvidenceBudgetBytes,
+			int planCacheMaximumVariants, int planCacheRefreshThreads, double planCacheMaximumCanaryFraction) {
 		this.mode = mode == null ? FrontierEstimatorMode.OFF : mode;
 		this.queryMemoryBudgetBytes = queryMemoryBudgetBytes;
 		this.initialMaterializationWorkUnits = initialMaterializationWorkUnits;
 		this.refinementWorkUnits = refinementWorkUnits;
 		this.targetRelativeStandardError = targetRelativeStandardError;
 		this.defensiveProposalEpsilon = defensiveProposalEpsilon;
+		this.planCacheMaximumVariants = planCacheMaximumVariants;
+		this.planCacheRefreshThreads = planCacheRefreshThreads;
+		this.planCacheMaximumCanaryFraction = planCacheMaximumCanaryFraction;
 		long exactFiniteSurfaceBudgetBytes = cacheEvidenceBudgetBytes
 				/ EXACT_FINITE_SURFACE_BUDGET_DIVISOR;
 		long heuristicFilterPassBudgetBytes = cacheEvidenceBudgetBytes
 				/ HEURISTIC_FILTER_PASS_BUDGET_DIVISOR;
 		long pipelinePlanBudgetBytes = cacheEvidenceBudgetBytes / PIPELINE_PLAN_BUDGET_DIVISOR;
+		this.packedPlanCacheBudgetBytes = cacheEvidenceBudgetBytes / PACKED_PLAN_BUDGET_DIVISOR;
 		long leafPayloadBudgetBytes = cacheEvidenceBudgetBytes / LEAF_PAYLOAD_BUDGET_DIVISOR;
 		long exactTransformBudgetBytes = cacheEvidenceBudgetBytes - exactFiniteSurfaceBudgetBytes
-				- heuristicFilterPassBudgetBytes - pipelinePlanBudgetBytes - leafPayloadBudgetBytes;
+				- heuristicFilterPassBudgetBytes - pipelinePlanBudgetBytes - packedPlanCacheBudgetBytes
+				- leafPayloadBudgetBytes;
+		this.allocatedPlannerCacheBudgetBytes = exactFiniteSurfaceBudgetBytes + heuristicFilterPassBudgetBytes
+				+ pipelinePlanBudgetBytes + packedPlanCacheBudgetBytes + leafPayloadBudgetBytes
+				+ exactTransformBudgetBytes;
 		this.leafPayloadCache = new LmdbFrontierLeafPayloadCache(leafPayloadBudgetBytes);
 		this.exactTransformCache = new LmdbFrontierExactTransformCache(exactTransformBudgetBytes);
 		this.exactFiniteSurfaceCache = new LmdbExactFiniteSurfaceCache(exactFiniteSurfaceBudgetBytes);
 		this.heuristicFilterPassCache = new LmdbHeuristicFilterPassCache(heuristicFilterPassBudgetBytes);
-		this.pipelinePlanCache = new LmdbPipelinePlanCache(pipelinePlanBudgetBytes);
+		this.pipelinePlanCache = new LmdbPipelinePlanCache(pipelinePlanBudgetBytes, planCacheMaximumVariants,
+				planCacheRefreshThreads, planCacheMaximumCanaryFraction);
 		this.riskConfig = new FrontierDecisionRiskController.Config(initialConfidence, minimumConfidence,
 				maximumConfidence, maximumExpectedRegret);
 		this.riskController = new FrontierDecisionRiskController(riskConfig);
@@ -90,7 +109,9 @@ final class LmdbFrontierPlannerSettings {
 				config.getFrontierRefinementWorkUnits(), config.getFrontierTargetRelativeStandardError(),
 				config.getFrontierDefensiveProposalEpsilon(), config.getFrontierCacheInitialConfidence(),
 				config.getFrontierCacheMinimumConfidence(), config.getFrontierCacheMaximumConfidence(),
-				config.getFrontierCacheMaximumExpectedRegret(), config.getFrontierCacheEvidenceBudgetBytes());
+				config.getFrontierCacheMaximumExpectedRegret(), config.getFrontierCacheEvidenceBudgetBytes(),
+				config.getFrontierPlanCacheMaximumVariants(), config.getFrontierPlanCacheRefreshThreads(),
+				config.getFrontierPlanCacheMaximumCanaryFraction());
 	}
 
 	FrontierEstimatorMode mode() {
@@ -137,6 +158,26 @@ final class LmdbFrontierPlannerSettings {
 		return pipelinePlanCache;
 	}
 
+	int planCacheMaximumVariants() {
+		return planCacheMaximumVariants;
+	}
+
+	int planCacheRefreshThreads() {
+		return planCacheRefreshThreads;
+	}
+
+	double planCacheMaximumCanaryFraction() {
+		return planCacheMaximumCanaryFraction;
+	}
+
+	long packedPlanCacheBudgetBytes() {
+		return packedPlanCacheBudgetBytes;
+	}
+
+	long allocatedPlannerCacheBudgetBytes() {
+		return allocatedPlannerCacheBudgetBytes;
+	}
+
 	double initialConfidence() {
 		return riskConfig.initialConfidence();
 	}
@@ -151,6 +192,10 @@ final class LmdbFrontierPlannerSettings {
 
 	double maximumExpectedRegret() {
 		return riskConfig.maximumExpectedRegret();
+	}
+
+	void close() {
+		pipelinePlanCache.close();
 	}
 
 	FrontierDecisionRiskController.Decision validationDecision(long familyFingerprint,

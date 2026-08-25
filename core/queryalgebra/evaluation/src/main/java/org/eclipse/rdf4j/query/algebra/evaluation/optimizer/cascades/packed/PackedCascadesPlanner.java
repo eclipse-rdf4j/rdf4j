@@ -16,9 +16,12 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
@@ -145,12 +148,23 @@ public final class PackedCascadesPlanner {
 		if (hit != null) {
 			return cachedResult(hit, tupleExpr, System.nanoTime() - cacheStart);
 		}
-		PackedPlanCache.FlightClaim claim = cache.beginFlight(fingerprint, context, tupleExpr, sourceIdentity, limits);
+		PackedQueryFamilyIdentity familyIdentity = PackedQueryFamilyIdentity.create(tupleExpr, rangeProvider);
+		PackedPlanCache.PlanEntry familyHit = cache.findFamilyPlan(fingerprint, context, familyIdentity, limits);
+		if (familyHit != null) {
+			return cachedResult(familyHit, familyIdentity.concreteQuery(), System.nanoTime() - cacheStart, false);
+		}
+		PackedPlanCache.FlightClaim claim = cache.beginFlight(fingerprint, context, tupleExpr, sourceIdentity,
+				familyIdentity, limits);
 		if (claim.hit() != null) {
-			return cachedResult(claim.hit(), tupleExpr, System.nanoTime() - cacheStart);
+			return familyIdentity == null
+					? cachedResult(claim.hit(), tupleExpr, System.nanoTime() - cacheStart)
+					: cachedResult(claim.hit(), familyIdentity.concreteQuery(), System.nanoTime() - cacheStart, false);
 		}
 		if (!claim.owner()) {
-			return cachedResult(claim.await(), tupleExpr, System.nanoTime() - cacheStart);
+			PackedPlanCache.PlanEntry awaited = claim.await();
+			return familyIdentity == null
+					? cachedResult(awaited, tupleExpr, System.nanoTime() - cacheStart)
+					: cachedResult(awaited, familyIdentity.concreteQuery(), System.nanoTime() - cacheStart, false);
 		}
 		try {
 			PackedStalePlanValidation staleValidation = null;
@@ -160,10 +174,12 @@ public final class PackedCascadesPlanner {
 			PackedPlanCache.QueryEntry queryEntry = cache.findQuery(fingerprint, context, tupleExpr, sourceIdentity);
 			long cacheNanos = System.nanoTime() - cacheStart;
 			long encodeStart = System.nanoTime();
-			PackedQuery query = queryEntry == null
-					? PackedQueryCodec.encodeForPlanning(tupleExpr, rangeProvider)
-					: PackedQueryCodec.rebindOriginalBindingSets(queryEntry.query(), tupleExpr);
-			long encodeNanos = queryEntry == null ? System.nanoTime() - encodeStart : 0L;
+			PackedQuery query = familyIdentity != null
+					? familyIdentity.concreteQuery()
+					: queryEntry == null
+							? PackedQueryCodec.encodeForPlanning(tupleExpr, rangeProvider)
+							: PackedQueryCodec.rebindOriginalBindingSets(queryEntry.query(), tupleExpr);
+			long encodeNanos = queryEntry == null && familyIdentity == null ? System.nanoTime() - encodeStart : 0L;
 			PackedPlanCache.PlanEntry structural = cache.findStructuralPlan(fingerprint, context, tupleExpr,
 					sourceIdentity);
 			if (structural != null && costModel instanceof PackedStalePlanValidator validator) {
@@ -186,7 +202,8 @@ public final class PackedCascadesPlanner {
 							PackedPlanCache.QueryEntry publishedQuery = new PackedPlanCache.QueryEntry(fingerprint,
 									context, tupleExpr, sourceIdentity, cachedQuery);
 							PackedPlanCache.PlanEntry publishedPlan = new PackedPlanCache.PlanEntry(fingerprint,
-									context, tupleExpr, sourceIdentity, cachedQuery, validatedRecipe,
+									context, tupleExpr, sourceIdentity, familyIdentity, cachedQuery, validatedRecipe,
+									structural.optimizationDecision().withChampion(validatedRecipe, validatedCost),
 									structural.outputRows(),
 									validatedCost,
 									structural.completionStatus(), structural.retainedBytes(), limits);
@@ -244,7 +261,10 @@ public final class PackedCascadesPlanner {
 					? new PackedPlanCache.QueryEntry(fingerprint, context, tupleExpr, sourceIdentity, cachedQuery)
 					: queryEntry;
 			PackedPlanCache.PlanEntry publishedPlan = new PackedPlanCache.PlanEntry(fingerprint, context, tupleExpr,
-					sourceIdentity, cachedQuery, computation.recipe(), result.outputRows(), result.totalCost(),
+					sourceIdentity, familyIdentity, cachedQuery, computation.recipe(),
+					computation.optimizationDecision(),
+					result.outputRows(),
+					result.totalCost(),
 					result.completionStatus(), result.retainedBytes(), limits);
 			if (result.exactComplete() || reusableWorkLimitedResult(result, limits)) {
 				cache.publish(claim, publishedPlan, publishedQuery);
@@ -333,6 +353,27 @@ public final class PackedCascadesPlanner {
 				.result();
 	}
 
+	static PackedPlanningResult resume(PackedSearchCheckpoint checkpoint, PackedQueryFamilyIdentity invocation,
+			PackedPlannerLimits limits, PackedCostModel costModel) {
+		Objects.requireNonNull(checkpoint, "checkpoint");
+		Objects.requireNonNull(invocation, "invocation");
+		Objects.requireNonNull(limits, "limits");
+		PackedQuery query = checkpoint.rehydrateQuery(invocation);
+		PackedPlanningResult resumed = costModel == null
+				? compute(query, new PackedSearchBudget(limits), true, null, null, 0L, 0L, false, -1, checkpoint)
+						.result()
+				: optimize(query, limits, true, costModel, 0L, 0L, false, -1, checkpoint).result();
+		long resumedWorkUnits = resumed.metrics().workUnits();
+		TupleExpr selectedPlan = resumed.selectedPlan();
+		double recostMetric = selectedPlan.getDoubleMetricPlanned("optimizer.planCacheRecostWorkUnits");
+		long recostWorkUnits = Double.isFinite(recostMetric) && recostMetric >= 0.0d
+				&& recostMetric < Long.MAX_VALUE ? (long) recostMetric : 0L;
+		selectedPlan.setDoubleMetricPlanned("optimizer.planCacheResumedWorkUnits", resumedWorkUnits);
+		selectedPlan.setDoubleMetricPlanned("optimizer.planCacheCumulativeWorkUnits",
+				saturatedAdd(checkpoint.cumulativeWorkUnits(), saturatedAdd(recostWorkUnits, resumedWorkUnits)));
+		return resumed;
+	}
+
 	private static Computation optimize(PackedQuery query, long workLimit, long deadlineNanos,
 			boolean exploreReorderings, PackedCostModel costModel, long encodeNanos, long cacheNanos,
 			boolean queryTemplateCacheHit) {
@@ -350,10 +391,16 @@ public final class PackedCascadesPlanner {
 	private static Computation optimize(PackedQuery query, PackedPlannerLimits limits,
 			boolean exploreReorderings, PackedCostModel costModel, long encodeNanos, long cacheNanos,
 			boolean queryTemplateCacheHit, int dominatedSamplesPerStratum) {
+		return optimize(query, limits, exploreReorderings, costModel, encodeNanos, cacheNanos,
+				queryTemplateCacheHit, dominatedSamplesPerStratum, null);
+	}
+
+	private static Computation optimize(PackedQuery query, PackedPlannerLimits limits,
+			boolean exploreReorderings, PackedCostModel costModel, long encodeNanos, long cacheNanos,
+			boolean queryTemplateCacheHit, int dominatedSamplesPerStratum, PackedSearchCheckpoint checkpoint) {
 		if (costModel == null) {
 			return compute(query, new PackedSearchBudget(limits), exploreReorderings, null, null, encodeNanos,
-					cacheNanos,
-					queryTemplateCacheHit, dominatedSamplesPerStratum);
+					cacheNanos, queryTemplateCacheHit, dominatedSamplesPerStratum, checkpoint);
 		}
 		PackedQueryView queryView = new PackedQueryView(query);
 		PackedSearchBudget budget = new PackedSearchBudget(limits);
@@ -362,8 +409,7 @@ public final class PackedCascadesPlanner {
 		PackedCostSession proofAware = new ProofAwarePackedCostSession(query, openedSession);
 		try (PackedCostSession costSession = new EventSourcingPackedCostSession(proofAware, query, budget)) {
 			return compute(query, budget, exploreReorderings, costSession, costModel, encodeNanos,
-					cacheNanos,
-					queryTemplateCacheHit, dominatedSamplesPerStratum);
+					cacheNanos, queryTemplateCacheHit, dominatedSamplesPerStratum, checkpoint);
 		}
 	}
 
@@ -371,19 +417,51 @@ public final class PackedCascadesPlanner {
 			boolean exploreReorderings, PackedCostSession costSession, PackedCostModel costModel,
 			long encodeNanos, long cacheNanos,
 			boolean queryTemplateCacheHit, int dominatedSamplesPerStratum) {
+		return compute(query, budget, exploreReorderings, costSession, costModel, encodeNanos, cacheNanos,
+				queryTemplateCacheHit, dominatedSamplesPerStratum, null);
+	}
+
+	private static Computation compute(PackedQuery query, PackedSearchBudget budget,
+			boolean exploreReorderings, PackedCostSession costSession, PackedCostModel costModel,
+			long encodeNanos, long cacheNanos,
+			boolean queryTemplateCacheHit, int dominatedSamplesPerStratum, PackedSearchCheckpoint checkpoint) {
 		long searchStart = System.nanoTime();
 		int relationCount = query.relationCount();
-		PackedMemo memo = costSession == null
-				? PackedMemo.scalarWinnerOnlyQueryLocal(query, query.symbolCount(), relationCount, relationCount, 4,
-						relationCount, relationCount * 2, budget)
-				: PackedMemo.queryLocal(query, query.symbolCount(), relationCount, relationCount, 4, relationCount,
-						relationCount * 2, budget);
+		PackedMemo memo = newQueryLocalMemo(query, budget, costSession, relationCount);
 		try {
+			long checkpointReplayWorkUnits = 0L;
+			PackedMemo.RestoredContinuationSeed restored = null;
+			if (checkpoint != null) {
+				try {
+					PackedPlanRecipe continuationRecipe = checkpoint.continuationRecipe();
+					if (costSession == null) {
+						restored = memo.restoreScalarContinuation(continuationRecipe);
+					} else if (continuationRecipe.hasDetachedEvidence()) {
+						int replayWorkUnits = continuationRecipe.costingTrace().eventCount();
+						if (budget.canBeginMandatoryCompletion(replayWorkUnits)
+								&& budget.tryReserveMandatoryCompletion(replayWorkUnits)) {
+							PackedPlanValidationRequest replayRequest = PackedPlanValidationRequest
+									.detachedContinuation(new PackedQueryView(query), continuationRecipe);
+							PackedCostingReplay.Result replay = PackedCostingReplay.replay(replayRequest, costSession);
+							checkpointReplayWorkUnits = replay.workUnits();
+							if (replay.matchesCachedTrace(continuationRecipe.costingTrace())) {
+								restored = memo.restoreProviderContinuation(continuationRecipe, replay);
+							}
+						}
+					}
+				} catch (IllegalArgumentException | IllegalStateException corruptCheckpoint) {
+					logger.debug("Packed checkpoint could not be rehydrated; restarting ordinary search",
+							corruptCheckpoint);
+					memo.close();
+					memo = newQueryLocalMemo(query, budget, costSession, relationCount);
+					restored = null;
+				}
+			}
 			PackedIncumbentSearch search = PackedIncumbentSearch.forSession(query, memo, budget, exploreReorderings,
 					costSession);
 			int rootWinnerId;
 			try {
-				rootWinnerId = search.build();
+				rootWinnerId = restored == null ? search.build() : search.resumeEnumeration(restored);
 			} catch (PackedCostSessionFailure providerFailure) {
 				if (!providerFailure.isResourceLimit()) {
 					throw providerFailure;
@@ -418,6 +496,9 @@ public final class PackedCascadesPlanner {
 			}
 			long materializationStart = System.nanoTime();
 			TupleExpr selectedPlan = PackedPlanMaterializer.materialize(query, recipe);
+			PortfolioBuild portfolio = buildOptimizationDecision(query, memo, budget, costSession,
+					search.selectedRowsByGroup(), rootWinnerId, recipe, selectedPlan,
+					memo.winnerTotalCost(rootWinnerId));
 			outputRows = certifiedRootRows(costModel, selectedPlan, outputRows, recipe.rootEvidenceSummary());
 			selectedPlan.setDoubleMetricPlanned("optimizer.cascadesCorrelatedLatticeBuilds",
 					search.correlatedLatticeBuilds());
@@ -425,10 +506,15 @@ public final class PackedCascadesPlanner {
 					search.correlatedLatticeReuses());
 			selectedPlan.setDoubleMetricPlanned("optimizer.cascadesCorrelatedSeedResumes",
 					search.correlatedSeedResumes());
+			if (checkpointReplayWorkUnits > 0L) {
+				selectedPlan.setDoubleMetricPlanned("optimizer.planCacheRecostWorkUnits", checkpointReplayWorkUnits);
+			}
 			long end = System.nanoTime();
+			long deterministicWorkUnits = saturatedAdd(search.workUnits(),
+					saturatedAdd(contextualWorkUnits, portfolio.workUnits()));
 			PlanningMetrics metrics = new PlanningMetrics(encodeNanos, extractionStart - searchStart,
 					materializationStart - extractionStart, end - materializationStart, cacheNanos,
-					search.workUnits() + contextualWorkUnits,
+					deterministicWorkUnits,
 					memo.groupCount(), memo.logicalExpressionCount(), memo.physicalExpressionCount(),
 					memo.winnerCount(),
 					false, queryTemplateCacheHit);
@@ -440,10 +526,130 @@ public final class PackedCascadesPlanner {
 					: buildPlanQualityAudit(query, memo, budget, costSession, search.selectedRowsByGroup(),
 							rootWinnerId,
 							recipe, result, dominatedSamplesPerStratum);
-			return new Computation(result, recipe, planQualityAudit);
+			return new Computation(result, recipe,
+					portfolio.decision().withDeterministicWorkUnits(deterministicWorkUnits), planQualityAudit);
 		} finally {
 			memo.close();
 		}
+	}
+
+	private static PackedMemo newQueryLocalMemo(PackedQuery query, PackedSearchBudget budget,
+			PackedCostSession costSession, int relationCount) {
+		return costSession == null
+				? PackedMemo.scalarWinnerOnlyQueryLocal(query, query.symbolCount(), relationCount, relationCount, 4,
+						relationCount, relationCount * 2, budget)
+				: PackedMemo.queryLocal(query, query.symbolCount(), relationCount, relationCount, 4, relationCount,
+						relationCount * 2, budget);
+	}
+
+	private static PortfolioBuild buildOptimizationDecision(PackedQuery query, PackedMemo memo,
+			PackedSearchBudget budget, PackedCostSession costSession, double[] selectedRowsByGroup, int rootWinnerId,
+			PackedPlanRecipe selectedRecipe, TupleExpr selectedPlan, double selectedCost) {
+		PackedOptimizationDecision champion = PackedOptimizationDecision.champion(selectedRecipe, selectedPlan,
+				selectedCost, budget.completionStatus(), 0L);
+		if (costSession == null || budget.resourceLimitReached()) {
+			return new PortfolioBuild(champion, 0L);
+		}
+		try {
+			/*
+			 * Final Pareto survivors alone are often all variations of one physical form. Retain one deterministic
+			 * dominated representative per operator/form stratum as challenger material; the bounded selection below
+			 * still prefers distinct strata and then the cheapest remaining executable candidates.
+			 */
+			PackedMemo.PackedPlanQualityDraft draft = memo.planQualityDraft(rootWinnerId, 1);
+			int[] traceIndexes = draft.traceIndexes();
+			if (traceIndexes.length <= 1) {
+				return new PortfolioBuild(champion, 0L);
+			}
+			long championDiversityKey = draft.stratumFingerprints()[traceIndexes[0]];
+			PackedOptimizationDecision.Candidate championCandidate = new PackedOptimizationDecision.Candidate(
+					selectedRecipe, selectedRecipe.portfolioIdentity(selectedPlan),
+					new PackedOptimizationDecision.EstimatedCostInterval(selectedCost, selectedCost, selectedCost),
+					championDiversityKey);
+			List<PackedOptimizationDecision.Candidate> alternatives = new ArrayList<>(traceIndexes.length - 1);
+			long workUnits = 0L;
+			for (int traceIndex : traceIndexes) {
+				if (draft.selected(traceIndex)) {
+					continue;
+				}
+				int alternativeWinnerId = memo.materializeDecisionTraceRootCandidate(rootWinnerId,
+						draft.selectedDecisionWinnerId(), traceIndex);
+				PackedSelectedPlanContextualizer contextualizer = PackedSelectedPlanContextualizer.forSession(query,
+						memo, budget, costSession, Arrays.copyOf(selectedRowsByGroup, selectedRowsByGroup.length));
+				alternativeWinnerId = contextualizer.contextualize(alternativeWinnerId);
+				workUnits = saturatedAdd(workUnits, contextualizer.workUnits());
+				PackedPlanRecipe alternativeRecipe = PackedPlanRecipe.extractPortfolioCandidate(memo,
+						alternativeWinnerId, contextualizer.dependentPlans(), costSession);
+				TupleExpr alternativePlan = PackedPlanMaterializer.materialize(query, alternativeRecipe);
+				PackedPlanRecipe.PhysicalIdentity physicalIdentity = alternativeRecipe
+						.physicalIdentity(alternativePlan);
+				if (sameExecutablePlan(championCandidate, alternatives, physicalIdentity)) {
+					continue;
+				}
+				double point = memo.winnerTotalCost(alternativeWinnerId);
+				double lower = memo.planQualityCandidateLowerBound(traceIndex);
+				if (!Double.isFinite(lower) || lower < 0.0d || lower > point) {
+					lower = point;
+				}
+				alternatives.add(new PackedOptimizationDecision.Candidate(alternativeRecipe, physicalIdentity,
+						new PackedOptimizationDecision.EstimatedCostInterval(lower, point, point),
+						draft.stratumFingerprints()[traceIndex]));
+			}
+			PackedOptimizationDecision.Candidate[] retained = retainDiversePortfolio(championCandidate, alternatives);
+			return new PortfolioBuild(new PackedOptimizationDecision(null, retained, budget.completionStatus(),
+					workUnits), workUnits);
+		} catch (RuntimeException portfolioFailure) {
+			logger.debug("Packed challenger portfolio capture failed closed to the selected champion",
+					portfolioFailure);
+			return new PortfolioBuild(champion, 0L);
+		}
+	}
+
+	private static PackedOptimizationDecision.Candidate[] retainDiversePortfolio(
+			PackedOptimizationDecision.Candidate champion,
+			List<PackedOptimizationDecision.Candidate> alternatives) {
+		alternatives.sort(Comparator
+				.comparingDouble((PackedOptimizationDecision.Candidate candidate) -> candidate.estimatedCost().point())
+				.thenComparingLong(candidate -> candidate.physicalIdentity().fingerprint()));
+		List<PackedOptimizationDecision.Candidate> retained = new ArrayList<>(4);
+		retained.add(champion);
+		Set<Long> diversityKeys = new HashSet<>();
+		diversityKeys.add(champion.diversityKey());
+		for (PackedOptimizationDecision.Candidate alternative : alternatives) {
+			if (retained.size() == 4) {
+				break;
+			}
+			if (diversityKeys.add(alternative.diversityKey())) {
+				retained.add(alternative);
+			}
+		}
+		for (PackedOptimizationDecision.Candidate alternative : alternatives) {
+			if (retained.size() == 4) {
+				break;
+			}
+			if (!retained.contains(alternative)) {
+				retained.add(alternative);
+			}
+		}
+		return retained.toArray(PackedOptimizationDecision.Candidate[]::new);
+	}
+
+	private static boolean sameExecutablePlan(PackedOptimizationDecision.Candidate champion,
+			List<PackedOptimizationDecision.Candidate> alternatives,
+			PackedPlanRecipe.PhysicalIdentity physicalIdentity) {
+		if (physicalIdentity.sameExecutablePlan(champion.physicalIdentity())) {
+			return true;
+		}
+		for (PackedOptimizationDecision.Candidate alternative : alternatives) {
+			if (physicalIdentity.sameExecutablePlan(alternative.physicalIdentity())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static long saturatedAdd(long left, long right) {
+		return right > Long.MAX_VALUE - left ? Long.MAX_VALUE : left + right;
 	}
 
 	private static double certifiedRootRows(PackedCostModel costModel, TupleExpr selectedPlan, double packedRows,
@@ -501,7 +707,7 @@ public final class PackedCascadesPlanner {
 				estimatedCost = memo.winnerTotalCost(alternativeWinnerId);
 				comparisonCost = memo.winnerComparisonCost(alternativeWinnerId);
 			}
-			PackedPlanRecipe.PhysicalIdentity physicalIdentity = alternativeRecipe.physicalIdentity(alternativePlan);
+			PackedPlanRecipe.PhysicalIdentity physicalIdentity = alternativeRecipe.portfolioIdentity(alternativePlan);
 			long physicalFingerprint = physicalIdentity.fingerprint();
 			PackedPlanQualityAlternative alternative = new PackedPlanQualityAlternative(
 					planQualityStableId(physicalIdentity), alternativePlan,
@@ -559,10 +765,20 @@ public final class PackedCascadesPlanner {
 			long cacheNanos) {
 		long materializationStart = System.nanoTime();
 		PackedQuery query = PackedQueryCodec.rebindOriginalBindingSets(entry.query(), source);
+		return cachedResult(entry, query, cacheNanos, true, materializationStart);
+	}
+
+	private static PackedPlanningResult cachedResult(PackedPlanCache.PlanEntry entry, PackedQuery query,
+			long cacheNanos, boolean queryTemplateCacheHit) {
+		return cachedResult(entry, query, cacheNanos, queryTemplateCacheHit, System.nanoTime());
+	}
+
+	private static PackedPlanningResult cachedResult(PackedPlanCache.PlanEntry entry, PackedQuery query,
+			long cacheNanos, boolean queryTemplateCacheHit, long materializationStart) {
 		TupleExpr selectedPlan = PackedPlanMaterializer.materialize(query, entry.recipe());
 		long materializationNanos = System.nanoTime() - materializationStart;
 		PlanningMetrics metrics = new PlanningMetrics(0L, 0L, 0L, materializationNanos, cacheNanos, 0L, 0, 0, 0,
-				0, true, true);
+				0, true, queryTemplateCacheHit);
 		return new PackedPlanningResult(selectedPlan, entry.outputRows(), entry.totalCost(), metrics,
 				entry.workLimitReached(), entry.deadlineReached(), entry.recipe().ruleProofMask(),
 				entry.completionStatus(), entry.retainedBytes());
@@ -573,7 +789,11 @@ public final class PackedCascadesPlanner {
 				.observationOrder() != PhysicalProperties.ObservationOrder.EXACT_SEQUENCE;
 	}
 
+	private record PortfolioBuild(PackedOptimizationDecision decision, long workUnits) {
+	}
+
 	private record Computation(PackedPlanningResult result, PackedPlanRecipe recipe,
+			PackedOptimizationDecision optimizationDecision,
 			PackedPlanQualityAuditResult planQualityAudit) {
 	}
 }

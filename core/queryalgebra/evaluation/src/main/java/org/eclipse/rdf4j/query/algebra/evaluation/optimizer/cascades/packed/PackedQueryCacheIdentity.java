@@ -70,6 +70,15 @@ final class PackedQueryCacheIdentity {
 		return encode(source, canonicalNames);
 	}
 
+	static Map<String, Integer> canonicalNamesForFamily(TupleExpr source) {
+		IdentitySurface surface = IdentitySurface.collect(source);
+		return surface.safeToCanonicalize(source) ? Map.copyOf(surface.anonymousNames) : null;
+	}
+
+	static void appendPackedIdentity(PackedQuery query, IdentitySink sink) {
+		new PackedQueryCacheIdentity(query, Map.of()).appendTo(sink);
+	}
+
 	private static PackedQueryCacheIdentity encode(TupleExpr source, Map<String, Integer> canonicalNames) {
 		try {
 			PackedQuery query = PackedQueryCodec.encodeForCacheIdentity(source, canonicalNames);
@@ -148,7 +157,7 @@ final class PackedQueryCacheIdentity {
 		sink.append(0x4f424a45435453L);
 		sink.append(query.objectCount());
 		for (int objectId = 1; objectId <= query.objectCount(); objectId++) {
-			appendObject(sink, query.objectValue(objectId));
+			appendObject(sink, query.rawObjectValue(objectId));
 		}
 
 		sink.append(0x53594d424f4c53L);
@@ -176,7 +185,10 @@ final class PackedQueryCacheIdentity {
 	}
 
 	private static void appendObject(IdentitySink sink, Object object) {
-		if (object instanceof CanonicalAnonymousName canonical) {
+		if (object instanceof PackedParameterReference parameter) {
+			sink.append("parameter");
+			sink.append(parameter.ordinal());
+		} else if (object instanceof CanonicalAnonymousName canonical) {
 			sink.append("anonymous-name");
 			sink.append(canonical.ordinal());
 		} else if (object instanceof String string) {

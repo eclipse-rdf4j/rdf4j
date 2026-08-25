@@ -147,6 +147,13 @@ public final class PackedPlanCache {
 		return segment(fingerprint, context).findStructuralPlan(fingerprint, context, source, sourceIdentity);
 	}
 
+	PlanEntry findFamilyPlan(Fingerprint fingerprint, Context context, PackedQueryFamilyIdentity familyIdentity,
+			PackedPlannerLimits limits) {
+		return familyIdentity == null
+				? null
+				: segment(fingerprint, context).findFamilyPlan(fingerprint, context, familyIdentity, limits);
+	}
+
 	QueryEntry findQuery(Fingerprint fingerprint, Context context, TupleExpr source) {
 		return findQuery(fingerprint, context, source, PackedQueryCacheIdentity.create(source));
 	}
@@ -168,8 +175,15 @@ public final class PackedPlanCache {
 
 	FlightClaim beginFlight(Fingerprint fingerprint, Context context, TupleExpr source,
 			PackedQueryCacheIdentity sourceIdentity, PackedPlannerLimits limits) {
+		return beginFlight(fingerprint, context, source, sourceIdentity, null, limits);
+	}
+
+	FlightClaim beginFlight(Fingerprint fingerprint, Context context, TupleExpr source,
+			PackedQueryCacheIdentity sourceIdentity, PackedQueryFamilyIdentity familyIdentity,
+			PackedPlannerLimits limits) {
 		return segment(fingerprint, context)
-				.beginFlight(fingerprint, context, source, sourceIdentity, Objects.requireNonNull(limits, "limits"));
+				.beginFlight(fingerprint, context, source, sourceIdentity, familyIdentity,
+						Objects.requireNonNull(limits, "limits"));
 	}
 
 	void publish(FlightClaim claim, PlanEntry planEntry, QueryEntry queryEntry) {
@@ -391,8 +405,10 @@ public final class PackedPlanCache {
 		private final Context context;
 		private final TupleExpr sourceSnapshot;
 		private final PackedQueryCacheIdentity sourceIdentity;
+		private final PackedQueryFamilyIdentity familyIdentity;
 		private final PackedQuery query;
 		private final PackedPlanRecipe recipe;
+		private final PackedOptimizationDecision optimizationDecision;
 		private final double outputRows;
 		private final double totalCost;
 		private final PackedSearchCompletionStatus completionStatus;
@@ -400,16 +416,20 @@ public final class PackedPlanCache {
 		private final PackedPlannerLimits planningLimits;
 
 		PlanEntry(Fingerprint fingerprint, Context context, TupleExpr source,
-				PackedQueryCacheIdentity sourceIdentity, PackedQuery query,
-				PackedPlanRecipe recipe, double outputRows, double totalCost,
+				PackedQueryCacheIdentity sourceIdentity, PackedQueryFamilyIdentity familyIdentity, PackedQuery query,
+				PackedPlanRecipe recipe, PackedOptimizationDecision optimizationDecision, double outputRows,
+				double totalCost,
 				PackedSearchCompletionStatus completionStatus, long retainedBytes,
 				PackedPlannerLimits planningLimits) {
 			this.fingerprint = fingerprint;
 			this.context = context;
 			sourceSnapshot = source.clone();
 			this.sourceIdentity = sourceIdentity;
+			this.familyIdentity = familyIdentity == null ? null : familyIdentity.detached();
 			this.query = query;
 			this.recipe = recipe;
+			this.optimizationDecision = Objects.requireNonNull(optimizationDecision, "optimizationDecision")
+					.withFamilyIdentity(familyIdentity);
 			this.outputRows = outputRows;
 			this.totalCost = totalCost;
 			this.completionStatus = Objects.requireNonNull(completionStatus, "completionStatus");
@@ -426,6 +446,10 @@ public final class PackedPlanCache {
 
 		PackedPlanRecipe recipe() {
 			return recipe;
+		}
+
+		PackedOptimizationDecision optimizationDecision() {
+			return optimizationDecision;
 		}
 
 		Context context() {
@@ -486,16 +510,27 @@ public final class PackedPlanCache {
 					&& sameSource(sourceSnapshot, sourceIdentity, source, candidateIdentity, candidateContext);
 		}
 
+		private boolean familyMatches(Fingerprint candidateFingerprint, Context candidateContext,
+				PackedQueryFamilyIdentity candidateIdentity) {
+			return fingerprint.equals(candidateFingerprint)
+					&& context.equals(candidateContext)
+					&& familyIdentity != null
+					&& familyIdentity.matches(candidateIdentity)
+					&& query.hasSameCacheIdentity(candidateIdentity.concreteQuery());
+		}
+
 		private long evidenceBytes() {
-			return recipe.hasDetachedEvidence() ? recipe.detachedEvidenceBytes() : 0L;
+			return recipe.hasDetachedEvidence() ? optimizationDecision.retainedBytes() : 0L;
 		}
 
 		private PlanEntry withoutDetachedEvidence() {
 			PackedPlanRecipe stripped = recipe.withoutDetachedEvidence();
-			if (stripped == recipe) {
+			PackedOptimizationDecision strippedDecision = optimizationDecision.withoutDetachedEvidence();
+			if (stripped == recipe && strippedDecision == optimizationDecision) {
 				return this;
 			}
-			return new PlanEntry(fingerprint, context, sourceSnapshot, sourceIdentity, query, stripped, outputRows,
+			return new PlanEntry(fingerprint, context, sourceSnapshot, sourceIdentity, familyIdentity, query, stripped,
+					strippedDecision, outputRows,
 					totalCost, completionStatus, retainedBytes, planningLimits);
 		}
 	}
@@ -539,23 +574,28 @@ public final class PackedPlanCache {
 		private final Context context;
 		private final TupleExpr sourceSnapshot;
 		private final PackedQueryCacheIdentity sourceIdentity;
+		private final PackedQueryFamilyIdentity familyIdentity;
 		private final PackedPlannerLimits planningLimits;
 		private final CompletableFuture<PlanEntry> result = new CompletableFuture<>();
 
 		private Flight(Fingerprint fingerprint, Context context, TupleExpr source,
-				PackedQueryCacheIdentity sourceIdentity, PackedPlannerLimits planningLimits) {
+				PackedQueryCacheIdentity sourceIdentity, PackedQueryFamilyIdentity familyIdentity,
+				PackedPlannerLimits planningLimits) {
 			this.fingerprint = fingerprint;
 			this.context = context;
 			sourceSnapshot = source.clone();
 			this.sourceIdentity = sourceIdentity;
+			this.familyIdentity = familyIdentity == null ? null : familyIdentity.detached();
 			this.planningLimits = planningLimits;
 		}
 
 		private boolean matches(Fingerprint candidateFingerprint, Context candidateContext, TupleExpr source,
-				PackedQueryCacheIdentity candidateIdentity, PackedPlannerLimits candidateLimits) {
+				PackedQueryCacheIdentity candidateIdentity, PackedQueryFamilyIdentity candidateFamilyIdentity,
+				PackedPlannerLimits candidateLimits) {
 			return fingerprint.equals(candidateFingerprint) && context.equals(candidateContext)
 					&& planningLimits.equals(candidateLimits)
-					&& sameSource(sourceSnapshot, sourceIdentity, source, candidateIdentity, candidateContext);
+					&& (sameSource(sourceSnapshot, sourceIdentity, source, candidateIdentity, candidateContext)
+							|| familyIdentity != null && familyIdentity.matches(candidateFamilyIdentity));
 		}
 	}
 
@@ -621,6 +661,25 @@ public final class PackedPlanCache {
 			return best;
 		}
 
+		private synchronized PlanEntry findFamilyPlan(Fingerprint fingerprint, Context context,
+				PackedQueryFamilyIdentity familyIdentity, PackedPlannerLimits limits) {
+			PlanEntry best = null;
+			int bestIndex = -1;
+			for (int index = 0; index < plans.length; index++) {
+				PlanEntry entry = plans[index];
+				if (entry != null && entry.familyMatches(fingerprint, context, familyIdentity)
+						&& entry.reusableFor(limits)
+						&& (best == null || entry.exactComplete() && !best.exactComplete())) {
+					best = entry;
+					bestIndex = index;
+				}
+			}
+			if (bestIndex >= 0) {
+				planFrequencies[bestIndex] = increment(planFrequencies[bestIndex]);
+			}
+			return best;
+		}
+
 		private synchronized QueryEntry findQuery(Fingerprint fingerprint, Context context, TupleExpr source,
 				PackedQueryCacheIdentity sourceIdentity) {
 			int start = slot(fingerprint.high() ^ context.queryHash(), queries.length);
@@ -636,9 +695,13 @@ public final class PackedPlanCache {
 		}
 
 		private synchronized FlightClaim beginFlight(Fingerprint fingerprint, Context context, TupleExpr source,
-				PackedQueryCacheIdentity sourceIdentity, PackedPlannerLimits limits) {
+				PackedQueryCacheIdentity sourceIdentity, PackedQueryFamilyIdentity familyIdentity,
+				PackedPlannerLimits limits) {
 			while (true) {
 				PlanEntry hit = findPlanLocked(fingerprint, context, source, sourceIdentity, limits);
+				if (hit == null && familyIdentity != null) {
+					hit = findFamilyPlan(fingerprint, context, familyIdentity, limits);
+				}
 				if (hit != null) {
 					return new FlightClaim(this, null, false, hit);
 				}
@@ -647,12 +710,12 @@ public final class PackedPlanCache {
 					Flight flight = flights[index];
 					if (flight == null) {
 						empty = empty < 0 ? index : empty;
-					} else if (flight.matches(fingerprint, context, source, sourceIdentity, limits)) {
+					} else if (flight.matches(fingerprint, context, source, sourceIdentity, familyIdentity, limits)) {
 						return new FlightClaim(this, flight, false, null);
 					}
 				}
 				if (empty >= 0) {
-					Flight flight = new Flight(fingerprint, context, source, sourceIdentity, limits);
+					Flight flight = new Flight(fingerprint, context, source, sourceIdentity, familyIdentity, limits);
 					flights[empty] = flight;
 					return new FlightClaim(this, flight, true, null);
 				}

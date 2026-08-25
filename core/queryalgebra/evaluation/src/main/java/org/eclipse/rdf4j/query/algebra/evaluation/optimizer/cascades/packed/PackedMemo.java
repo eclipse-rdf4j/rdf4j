@@ -190,6 +190,45 @@ final class PackedMemo implements AutoCloseable {
 				: logicalOverlay.operatorTag(logicalExpressionId - baseLogicalExpressionCount);
 	}
 
+	int baseLogicalExpressionCount() {
+		return baseLogicalExpressionCount;
+	}
+
+	int logicalPayloadId(int logicalExpressionId) {
+		checkLogicalExpressionId(logicalExpressionId);
+		return logicalExpressionId <= baseLogicalExpressionCount
+				? query.relPayload(logicalExpressionId)
+				: logicalOverlay.payloadId(logicalExpressionId - baseLogicalExpressionCount);
+	}
+
+	int logicalSemanticScopeId(int logicalExpressionId) {
+		checkLogicalExpressionId(logicalExpressionId);
+		return logicalExpressionId <= baseLogicalExpressionCount
+				? query.relSemanticScope(logicalExpressionId)
+				: logicalOverlay.semanticScopeId(logicalExpressionId - baseLogicalExpressionCount);
+	}
+
+	int logicalExecutionDomainId(int logicalExpressionId) {
+		checkLogicalExpressionId(logicalExpressionId);
+		return logicalExpressionId <= baseLogicalExpressionCount
+				? query.relExecutionDomain(logicalExpressionId)
+				: logicalOverlay.executionDomainId(logicalExpressionId - baseLogicalExpressionCount);
+	}
+
+	int logicalChildCount(int logicalExpressionId) {
+		checkLogicalExpressionId(logicalExpressionId);
+		return logicalExpressionId <= baseLogicalExpressionCount
+				? query.relChildCount(logicalExpressionId)
+				: logicalOverlay.childCount(logicalExpressionId - baseLogicalExpressionCount);
+	}
+
+	int logicalChildGroupId(int logicalExpressionId, int childOrdinal) {
+		checkLogicalExpressionId(logicalExpressionId);
+		return logicalExpressionId <= baseLogicalExpressionCount
+				? query.relChild(logicalExpressionId, childOrdinal)
+				: logicalOverlay.childGroupId(logicalExpressionId - baseLogicalExpressionCount, childOrdinal);
+	}
+
 	int groupCount() {
 		return groupCount;
 	}
@@ -489,6 +528,263 @@ final class PackedMemo implements AutoCloseable {
 
 	int physicalExpressionCount() {
 		return physicalExpressions.size();
+	}
+
+	/**
+	 * Rebuilds a detached property-agnostic scalar incumbent in this fresh memo.
+	 *
+	 * <p>
+	 * Evidence-sensitive metadata is deliberately not replayed here: a provider-backed resume must recost before it may
+	 * use old pruning bounds. Returning {@code null} makes the caller fall back to ordinary planning.
+	 */
+	RestoredContinuationSeed restoreScalarContinuation(PackedPlanRecipe recipe) {
+		PackedPlanContinuationSeed seed = recipe.continuationSeed();
+		int anyPropertyId = anyPropertyId();
+		if (!validContinuationSeed(recipe, seed, anyPropertyId)) {
+			return null;
+		}
+		int[] sourceLogicalExpressionIds = restoreContinuationLogicalExpressions(recipe, seed);
+		int[] winnerIds = new int[recipe.size() + 1];
+		int[] childGroupIds = new int[Math.max(1, maximumRecipeChildCount(recipe))];
+		int[] childWinnerIds = new int[childGroupIds.length];
+		for (int recipeId = 1; recipeId <= recipe.size(); recipeId++) {
+			int sourceLogicalExpressionId = sourceLogicalExpressionIds[recipeId];
+			int groupId = seed.groupId(recipeId);
+			if (sourceLogicalExpressionId == 0 || logicalGroupId(sourceLogicalExpressionId) != groupId) {
+				throw new PackedMemoInvariantException(
+						"checkpoint scalar source group changed at recipe row " + recipeId);
+			}
+			int childCount = recipe.childCount(recipeId);
+			for (int child = 0; child < childCount; child++) {
+				int childRecipeId = recipe.childRecipeId(recipeId, child);
+				if (childRecipeId <= 0 || childRecipeId >= recipeId || winnerIds[childRecipeId] == 0) {
+					throw new PackedMemoInvariantException(
+							"checkpoint scalar child topology changed at recipe row " + recipeId);
+				}
+				childGroupIds[child] = seed.groupId(childRecipeId);
+				childWinnerIds[child] = winnerIds[childRecipeId];
+			}
+			int physicalExpressionId = addPhysicalAlternative(groupId, recipe.operatorTag(recipeId),
+					recipe.payloadId(recipeId), anyPropertyId, recipe.implementationForm(recipeId),
+					sourceLogicalExpressionId, childGroupIds, 0, childCount);
+			int metadataId = addScalarPhysicalMetadata(recipe.outputRows(recipeId), recipe.workRows(recipeId));
+			winnerIds[recipeId] = materializeWinnerWithMetadata(groupId, anyPropertyId, 0, 0, 0,
+					physicalExpressionId, metadataId, 0, seed.startupCost(recipeId), seed.totalCost(recipeId),
+					seed.comparisonCost(recipeId), childWinnerIds, 0, childCount);
+		}
+		return new RestoredContinuationSeed(winnerIds[seed.rootRecipeId()], winnerIds);
+	}
+
+	/**
+	 * Rebuilds an evidence-equivalent provider-backed incumbent after its detached costing events were replayed in the
+	 * current query-local session.
+	 *
+	 * <p>
+	 * The current provider estimates supply live evidence-state identities and metadata; the detached seed supplies
+	 * only structural ordinals and costs that the caller has already authenticated as unchanged.
+	 * Contextual/property-specific winners require their interner definitions in the larger structural checkpoint and
+	 * therefore fail closed here.
+	 */
+	RestoredContinuationSeed restoreProviderContinuation(PackedPlanRecipe recipe, PackedCostingReplay.Result replay) {
+		PackedPlanContinuationSeed seed = recipe.continuationSeed();
+		int anyPropertyId = anyPropertyId();
+		if (!validContinuationSeed(recipe, seed, anyPropertyId)) {
+			return null;
+		}
+		int[] sourceLogicalExpressionIds = restoreContinuationLogicalExpressions(recipe, seed);
+		int[] winnerIds = new int[recipe.size() + 1];
+		int[] childGroupIds = new int[Math.max(1, maximumRecipeChildCount(recipe))];
+		int[] childWinnerIds = new int[childGroupIds.length];
+		PackedCostEstimate currentEstimate = new PackedCostEstimate();
+		for (int recipeId = 1; recipeId <= recipe.size(); recipeId++) {
+			int sourceLogicalExpressionId = sourceLogicalExpressionIds[recipeId];
+			int groupId = seed.groupId(recipeId);
+			if (sourceLogicalExpressionId == 0 || logicalGroupId(sourceLogicalExpressionId) != groupId) {
+				throw new PackedMemoInvariantException(
+						"checkpoint provider source group changed at recipe row " + recipeId);
+			}
+			int childCount = recipe.childCount(recipeId);
+			for (int child = 0; child < childCount; child++) {
+				int childRecipeId = recipe.childRecipeId(recipeId, child);
+				if (childRecipeId <= 0 || childRecipeId >= recipeId || winnerIds[childRecipeId] == 0) {
+					throw new PackedMemoInvariantException(
+							"checkpoint provider child topology changed at recipe row " + recipeId);
+				}
+				childGroupIds[child] = seed.groupId(childRecipeId);
+				childWinnerIds[child] = winnerIds[childRecipeId];
+			}
+			int physicalExpressionId = addPhysicalAlternative(groupId, recipe.operatorTag(recipeId),
+					recipe.payloadId(recipeId), anyPropertyId, recipe.implementationForm(recipeId),
+					sourceLogicalExpressionId, childGroupIds, 0, childCount);
+			int eventId = recipe.costEventId(recipeId);
+			int metadataId;
+			if (eventId == 0) {
+				metadataId = addScalarPhysicalMetadata(recipe.outputRows(recipeId), recipe.workRows(recipeId));
+			} else {
+				replay.copyEventEstimate(eventId, currentEstimate);
+				metadataId = addPhysicalMetadata(currentEstimate, recipe.outputRows(recipeId),
+						recipe.workRows(recipeId));
+			}
+			if (metadataId == 0) {
+				throw new PackedMemoInvariantException(
+						"checkpoint provider metadata could not be restored at recipe row " + recipeId);
+			}
+			winnerIds[recipeId] = materializeWinnerWithMetadata(groupId, anyPropertyId, 0, 0, 0,
+					physicalExpressionId, metadataId, 0, seed.startupCost(recipeId), seed.totalCost(recipeId),
+					seed.comparisonCost(recipeId), childWinnerIds, 0, childCount);
+		}
+		return new RestoredContinuationSeed(winnerIds[seed.rootRecipeId()], winnerIds);
+	}
+
+	private boolean validContinuationSeed(PackedPlanRecipe recipe, PackedPlanContinuationSeed seed,
+			int anyPropertyId) {
+		if (seed.size() != recipe.size() || seed.rootRecipeId() != recipe.rootRecipeId()) {
+			return false;
+		}
+		for (int recipeId = 1; recipeId <= recipe.size(); recipeId++) {
+			int sourceLogicalExpressionId = recipe.sourceLogicalExpressionId(recipeId);
+			if (sourceLogicalExpressionId <= 0
+					|| recipe.deliveredPropertyId(recipeId) != anyPropertyId
+					|| seed.requiredPropertyId(recipeId) != anyPropertyId
+					|| seed.semanticRowGoalId(recipeId) != 0
+					|| seed.inputContextId(recipeId) != 0
+					|| seed.costPolicyId(recipeId) != 0
+					|| !Double.isFinite(seed.startupCost(recipeId))
+					|| !Double.isFinite(seed.totalCost(recipeId))
+					|| !Double.isFinite(seed.comparisonCost(recipeId))) {
+				return false;
+			}
+			if (sourceLogicalExpressionId <= baseLogicalExpressionCount
+					&& !continuationLogicalDefinitionMatches(sourceLogicalExpressionId, seed, recipeId)) {
+				return false;
+			}
+			int childCount = recipe.childCount(recipeId);
+			for (int child = 0; child < childCount; child++) {
+				int childRecipeId = recipe.childRecipeId(recipeId, child);
+				if (childRecipeId <= 0 || childRecipeId >= recipeId) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	private int[] restoreContinuationLogicalExpressions(PackedPlanRecipe recipe, PackedPlanContinuationSeed seed) {
+		restoreContinuationLogicalOverlay(seed);
+		int[] restored = new int[recipe.size() + 1];
+		for (int recipeId = 1; recipeId <= recipe.size(); recipeId++) {
+			int detachedLogicalExpressionId = recipe.sourceLogicalExpressionId(recipeId);
+			if (detachedLogicalExpressionId <= 0 || detachedLogicalExpressionId > logicalExpressionCount()
+					|| !continuationLogicalDefinitionMatches(detachedLogicalExpressionId, seed, recipeId)) {
+				throw new PackedMemoInvariantException(
+						"checkpoint recipe logical definition does not match restored structure at " + recipeId);
+			}
+			restored[recipeId] = detachedLogicalExpressionId;
+		}
+		return restored;
+	}
+
+	private void restoreContinuationLogicalOverlay(PackedPlanContinuationSeed seed) {
+		int maximumChildCount = 0;
+		for (int ordinal = 1; ordinal <= seed.structuralLogicalCount(); ordinal++) {
+			maximumChildCount = Math.max(maximumChildCount, seed.structuralLogicalChildCount(ordinal));
+		}
+		int[] childGroupIds = new int[Math.max(1, maximumChildCount)];
+		for (int ordinal = 1; ordinal <= seed.structuralLogicalCount(); ordinal++) {
+			int childCount = seed.structuralLogicalChildCount(ordinal);
+			for (int child = 0; child < childCount; child++) {
+				childGroupIds[child] = seed.structuralLogicalChildGroupId(ordinal, child);
+			}
+			int targetGroupId = seed.structuralLogicalGroupId(ordinal);
+			int logicalExpressionId;
+			try {
+				if (targetGroupId <= groupCount) {
+					logicalExpressionId = addLogicalAlternative(targetGroupId,
+							seed.structuralLogicalOperatorTag(ordinal),
+							seed.structuralLogicalPayloadId(ordinal),
+							seed.structuralLogicalSemanticScopeId(ordinal),
+							seed.structuralLogicalExecutionDomainId(ordinal), childGroupIds, 0, childCount);
+				} else if (targetGroupId == groupCount + 1) {
+					logicalExpressionId = addCanonicalLogical(seed.structuralLogicalOperatorTag(ordinal),
+							seed.structuralLogicalPayloadId(ordinal),
+							seed.structuralLogicalSemanticScopeId(ordinal),
+							seed.structuralLogicalExecutionDomainId(ordinal), childGroupIds, 0, childCount);
+				} else {
+					throw new PackedMemoInvariantException(
+							"checkpoint logical group topology skips group " + targetGroupId);
+				}
+			} catch (IllegalArgumentException | IndexOutOfBoundsException corruptDefinition) {
+				throw new PackedMemoInvariantException(
+						"checkpoint structural logical definition could not be interned at " + ordinal + ": "
+								+ corruptDefinition.getMessage());
+			}
+			int expectedLogicalExpressionId = baseLogicalExpressionCount + ordinal;
+			if (logicalExpressionId != expectedLogicalExpressionId
+					|| logicalGroupId(logicalExpressionId) != targetGroupId) {
+				throw new PackedMemoInvariantException(
+						"checkpoint structural logical identity changed at " + ordinal);
+			}
+			addLogicalRuleMask(logicalExpressionId, seed.structuralLogicalRuleMask(ordinal));
+			if (!structuralLogicalDefinitionMatches(logicalExpressionId, seed, ordinal)) {
+				throw new PackedMemoInvariantException(
+						"checkpoint structural logical definition changed after interning at " + ordinal);
+			}
+		}
+	}
+
+	private boolean structuralLogicalDefinitionMatches(int logicalExpressionId, PackedPlanContinuationSeed seed,
+			int ordinal) {
+		if (logicalOperatorTag(logicalExpressionId) != seed.structuralLogicalOperatorTag(ordinal)
+				|| logicalPayloadId(logicalExpressionId) != seed.structuralLogicalPayloadId(ordinal)
+				|| logicalSemanticScopeId(logicalExpressionId) != seed.structuralLogicalSemanticScopeId(ordinal)
+				|| logicalExecutionDomainId(logicalExpressionId) != seed.structuralLogicalExecutionDomainId(ordinal)
+				|| logicalChildCount(logicalExpressionId) != seed.structuralLogicalChildCount(ordinal)
+				|| logicalRuleMask(logicalExpressionId) != seed.structuralLogicalRuleMask(ordinal)) {
+			return false;
+		}
+		for (int child = 0; child < seed.structuralLogicalChildCount(ordinal); child++) {
+			if (logicalChildGroupId(logicalExpressionId, child) != seed.structuralLogicalChildGroupId(ordinal, child)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private boolean continuationLogicalDefinitionMatches(int logicalExpressionId,
+			PackedPlanContinuationSeed seed, int recipeId) {
+		if (logicalOperatorTag(logicalExpressionId) != seed.logicalOperatorTag(recipeId)
+				|| logicalPayloadId(logicalExpressionId) != seed.logicalPayloadId(recipeId)
+				|| logicalSemanticScopeId(logicalExpressionId) != seed.logicalSemanticScopeId(recipeId)
+				|| logicalExecutionDomainId(logicalExpressionId) != seed.logicalExecutionDomainId(recipeId)
+				|| logicalChildCount(logicalExpressionId) != seed.logicalChildCount(recipeId)
+				|| logicalRuleMask(logicalExpressionId) != seed.logicalRuleMask(recipeId)) {
+			return false;
+		}
+		for (int child = 0; child < seed.logicalChildCount(recipeId); child++) {
+			if (logicalChildGroupId(logicalExpressionId, child) != seed.logicalChildGroupId(recipeId, child)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static int maximumRecipeChildCount(PackedPlanRecipe recipe) {
+		int maximum = 0;
+		for (int recipeId = 1; recipeId <= recipe.size(); recipeId++) {
+			maximum = Math.max(maximum, recipe.childCount(recipeId));
+		}
+		return maximum;
+	}
+
+	record RestoredContinuationSeed(int rootWinnerId, int[] winnerIdsByRecipe) {
+		RestoredContinuationSeed {
+			winnerIdsByRecipe = winnerIdsByRecipe.clone();
+		}
+
+		@Override
+		public int[] winnerIdsByRecipe() {
+			return winnerIdsByRecipe.clone();
+		}
 	}
 
 	int offerWinner(int groupId, int requiredPropertyId, int semanticRowGoalId, int inputContextId, int costPolicyId,
@@ -1141,12 +1437,24 @@ final class PackedMemo implements AutoCloseable {
 		return physicalExpressions.groupId(winners.physicalExpressionId(winnerId));
 	}
 
+	int winnerRequiredPropertyId(int winnerId) {
+		return winners.requiredPropertyId(winnerId);
+	}
+
+	int winnerSemanticRowGoalId(int winnerId) {
+		return winners.semanticRowGoalId(winnerId);
+	}
+
 	int winnerPhysicalMetadataId(int winnerId) {
 		return winners.physicalMetadataId(winnerId);
 	}
 
 	int winnerInputContextId(int winnerId) {
 		return winners.inputContextId(winnerId);
+	}
+
+	int winnerCostPolicyId(int winnerId) {
+		return winners.costPolicyId(winnerId);
 	}
 
 	String describeEvidenceContext(int contextId) {
@@ -1766,6 +2074,13 @@ final class PackedMemo implements AutoCloseable {
 		return new PackedPlanQualityDraft(selectedDecisionWinnerId, traceIndexes, pareto, selected, sampled,
 				stratumFingerprints, stratumOrdinals, stratumPopulations, rootCandidateCount, paretoSurvivorCount,
 				dominatedCandidateCount, sampledDominatedCount);
+	}
+
+	double planQualityCandidateLowerBound(int traceIndex) {
+		if (traceIndex < 0 || traceIndex >= decisionTrace.size()) {
+			throw new IndexOutOfBoundsException("packed plan-quality trace " + traceIndex);
+		}
+		return decisionTrace.lowerBound(traceIndex);
 	}
 
 	private int planQualityDecisionWinner(int rootWinnerId) {

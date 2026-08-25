@@ -115,6 +115,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public static final long FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES = 64L * 1024L * 1024L;
 
+	public static final int FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS = 4;
+
+	public static final int FRONTIER_PLAN_CACHE_REFRESH_THREADS = 1;
+
+	public static final double FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION = 0.01d;
+
 	public static final long BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = 10L;
 
 	public static final long SKETCH_ESTIMATOR_THROTTLE_EVERY_N = 1024L * 1024L;
@@ -231,6 +237,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private double frontierCacheMaximumExpectedRegret = FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET;
 
 	private long frontierCacheEvidenceBudgetBytes = FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES;
+
+	private int frontierPlanCacheMaximumVariants = FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS;
+
+	private int frontierPlanCacheRefreshThreads = FRONTIER_PLAN_CACHE_REFRESH_THREADS;
+
+	private double frontierPlanCacheMaximumCanaryFraction = FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION;
 
 	private boolean optimizerSamplingEnabled = true;
 
@@ -807,6 +819,44 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public int getFrontierPlanCacheMaximumVariants() {
+		return frontierPlanCacheMaximumVariants;
+	}
+
+	public LmdbStoreConfig setFrontierPlanCacheMaximumVariants(int maximumVariants) {
+		requirePlanCacheCount(maximumVariants, "Frontier plan-cache maximum variants");
+		frontierPlanCacheMaximumVariants = maximumVariants;
+		return this;
+	}
+
+	public int getFrontierPlanCacheRefreshThreads() {
+		return frontierPlanCacheRefreshThreads;
+	}
+
+	public LmdbStoreConfig setFrontierPlanCacheRefreshThreads(int refreshThreads) {
+		requirePlanCacheCount(refreshThreads, "Frontier plan-cache refresh threads");
+		frontierPlanCacheRefreshThreads = refreshThreads;
+		return this;
+	}
+
+	public double getFrontierPlanCacheMaximumCanaryFraction() {
+		return frontierPlanCacheMaximumCanaryFraction;
+	}
+
+	public LmdbStoreConfig setFrontierPlanCacheMaximumCanaryFraction(double canaryFraction) {
+		if (!Double.isFinite(canaryFraction) || canaryFraction < 0.0d || canaryFraction > 0.25d) {
+			throw new IllegalArgumentException("Frontier plan-cache canary fraction must be in [0, 0.25]");
+		}
+		frontierPlanCacheMaximumCanaryFraction = canaryFraction;
+		return this;
+	}
+
+	private static void requirePlanCacheCount(int value, String name) {
+		if (value < 1 || value > 16) {
+			throw new IllegalArgumentException(name + " must be in range 1..16");
+		}
+	}
+
 	private static void requireProbability(double value, String name) {
 		if (!Double.isFinite(value) || value <= 0.0d || value >= 1.0d) {
 			throw new IllegalArgumentException(name + " must be in (0, 1)");
@@ -1087,6 +1137,19 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (frontierCacheEvidenceBudgetBytes != FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES) {
 			m.add(implNode, LmdbStoreSchema.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES,
 					vf.createLiteral(frontierCacheEvidenceBudgetBytes));
+		}
+		if (frontierPlanCacheMaximumVariants != FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS,
+					vf.createLiteral(frontierPlanCacheMaximumVariants));
+		}
+		if (frontierPlanCacheRefreshThreads != FRONTIER_PLAN_CACHE_REFRESH_THREADS) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_PLAN_CACHE_REFRESH_THREADS,
+					vf.createLiteral(frontierPlanCacheRefreshThreads));
+		}
+		if (Double.compare(frontierPlanCacheMaximumCanaryFraction,
+				FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION) != 0) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION,
+					vf.createLiteral(frontierPlanCacheMaximumCanaryFraction));
 		}
 		if (!optimizerSamplingEnabled) {
 			m.add(implNode, LmdbStoreSchema.OPTIMIZER_SAMPLING_ENABLED, vf.createLiteral(false));
@@ -1543,6 +1606,40 @@ public class LmdbStoreConfig extends BaseSailConfig {
 									parseLong(lit, LmdbStoreSchema.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES));
 						} catch (IllegalArgumentException e) {
 							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES, lit, e);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierPlanCacheMaximumVariants(
+									parseInt(lit, LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS, lit, e);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_PLAN_CACHE_REFRESH_THREADS, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierPlanCacheRefreshThreads(
+									parseInt(lit, LmdbStoreSchema.FRONTIER_PLAN_CACHE_REFRESH_THREADS));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_PLAN_CACHE_REFRESH_THREADS, lit, e);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierPlanCacheMaximumCanaryFraction(
+									parseDouble(lit, LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION,
+									lit, e);
 						}
 					});
 

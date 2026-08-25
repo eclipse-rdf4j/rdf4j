@@ -19,6 +19,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenc
 /** Immutable resource-free input to one stale-generation validation event. */
 @Experimental
 public final class PackedPlanValidationRequest {
+	private static final PackedPlanCache.Context DETACHED_CONTINUATION_CONTEXT = new PackedPlanCache.Context(
+			0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
 
 	private final PackedQueryView query;
 	private final FrontierEvidenceBundle evidenceBundle;
@@ -45,6 +47,11 @@ public final class PackedPlanValidationRequest {
 	PackedPlanValidationRequest(PackedQueryView query, PackedPlanRecipe recipe,
 			PackedPlanCache.Context cachedContext, PackedPlanCache.Context currentContext) {
 		this(query, recipe, cachedContext, currentContext, null);
+	}
+
+	static PackedPlanValidationRequest detachedContinuation(PackedQueryView query, PackedPlanRecipe recipe) {
+		return new PackedPlanValidationRequest(query, recipe, DETACHED_CONTINUATION_CONTEXT,
+				DETACHED_CONTINUATION_CONTEXT);
 	}
 
 	PackedPlanValidationRequest(PackedQueryView query, PackedPlanRecipe recipe,

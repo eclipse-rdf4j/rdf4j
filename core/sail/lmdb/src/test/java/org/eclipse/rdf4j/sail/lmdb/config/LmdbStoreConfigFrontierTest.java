@@ -128,6 +128,9 @@ class LmdbStoreConfigFrontierTest {
 		assertSame(source, invokeSetter(source, "setFrontierCacheMaximumExpectedRegret", double.class, 0.005d));
 		assertSame(source,
 				invokeSetter(source, "setFrontierCacheEvidenceBudgetBytes", long.class, 32L * 1024L * 1024L));
+		assertSame(source, invokeSetter(source, "setFrontierPlanCacheMaximumVariants", int.class, 7));
+		assertSame(source, invokeSetter(source, "setFrontierPlanCacheRefreshThreads", int.class, 2));
+		assertSame(source, invokeSetter(source, "setFrontierPlanCacheMaximumCanaryFraction", double.class, 0.125d));
 
 		Model model = new LinkedHashModel();
 		Resource node = source.export(model);
@@ -146,6 +149,9 @@ class LmdbStoreConfigFrontierTest {
 		assertContains(model, node, "frontierCacheMaximumConfidence");
 		assertContains(model, node, "frontierCacheMaximumExpectedRegret");
 		assertContains(model, node, "frontierCacheEvidenceBudgetBytes");
+		assertContains(model, node, "frontierPlanCacheMaximumVariants");
+		assertContains(model, node, "frontierPlanCacheRefreshThreads");
+		assertContains(model, node, "frontierPlanCacheMaximumCanaryFraction");
 		assertTrue(model.contains(node, Values.iri(LmdbStoreSchema.NAMESPACE, "frontierEstimatorMode"),
 				Values.literal("shadow")));
 
@@ -166,6 +172,9 @@ class LmdbStoreConfigFrontierTest {
 		assertEquals(0.998d, (double) invoke(restored, "getFrontierCacheMaximumConfidence"), 0.0d);
 		assertEquals(0.005d, (double) invoke(restored, "getFrontierCacheMaximumExpectedRegret"), 0.0d);
 		assertEquals(32L * 1024L * 1024L, invoke(restored, "getFrontierCacheEvidenceBudgetBytes"));
+		assertEquals(7, invoke(restored, "getFrontierPlanCacheMaximumVariants"));
+		assertEquals(2, invoke(restored, "getFrontierPlanCacheRefreshThreads"));
+		assertEquals(0.125d, (double) invoke(restored, "getFrontierPlanCacheMaximumCanaryFraction"), 0.0d);
 	}
 
 	@Test
@@ -195,6 +204,13 @@ class LmdbStoreConfigFrontierTest {
 		assertIllegalArgument(config, "setFrontierCacheMaximumExpectedRegret", double.class, -0.01d);
 		assertIllegalArgument(config, "setFrontierCacheMaximumExpectedRegret", double.class, 1.01d);
 		assertIllegalArgument(config, "setFrontierCacheEvidenceBudgetBytes", long.class, -1L);
+		assertIllegalArgument(config, "setFrontierPlanCacheMaximumVariants", int.class, 0);
+		assertIllegalArgument(config, "setFrontierPlanCacheMaximumVariants", int.class, 17);
+		assertIllegalArgument(config, "setFrontierPlanCacheRefreshThreads", int.class, 0);
+		assertIllegalArgument(config, "setFrontierPlanCacheRefreshThreads", int.class, 17);
+		assertIllegalArgument(config, "setFrontierPlanCacheMaximumCanaryFraction", double.class, -0.01d);
+		assertIllegalArgument(config, "setFrontierPlanCacheMaximumCanaryFraction", double.class, 0.2500001d);
+		assertIllegalArgument(config, "setFrontierPlanCacheMaximumCanaryFraction", double.class, Double.NaN);
 
 		Model invalidMode = new LinkedHashModel();
 		Resource node = Values.bnode();

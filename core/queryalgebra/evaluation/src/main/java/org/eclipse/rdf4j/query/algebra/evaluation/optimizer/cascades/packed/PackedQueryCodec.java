@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -135,27 +136,38 @@ final class PackedQueryCodec {
 
 	static PackedQuery encodeForCacheIdentity(TupleExpr root, Map<String, Integer> anonymousNames) {
 		Objects.requireNonNull(anonymousNames, "anonymousNames");
-		return encode(root, false, null, anonymousNames, false).withoutOriginalBindingSets();
+		return encode(root, false, null, anonymousNames, false, false).withoutOriginalBindingSets();
+	}
+
+	static PackedQuery encodeForParameterizedCacheIdentity(TupleExpr root, Map<String, Integer> anonymousNames) {
+		Objects.requireNonNull(anonymousNames, "anonymousNames");
+		return encode(root, false, null, anonymousNames, false, true).withoutOriginalBindingSets();
+	}
+
+	static PackedQuery encodeForParameterizedPlanning(TupleExpr root, PackedPredicateRangeProvider rangeProvider) {
+		return encode(root, true, rangeProvider, Map.of(), true, true);
 	}
 
 	private static PackedQuery encode(TupleExpr root, boolean normalizeFiniteFilters,
 			PackedPredicateRangeProvider rangeProvider) {
-		return encode(root, normalizeFiniteFilters, rangeProvider, Map.of(), true);
+		return encode(root, normalizeFiniteFilters, rangeProvider, Map.of(), true, false);
 	}
 
 	private static PackedQuery encode(TupleExpr root, boolean normalizeFiniteFilters,
 			PackedPredicateRangeProvider rangeProvider, Map<String, Integer> anonymousNames,
-			boolean retainAnnotations) {
+			boolean retainAnnotations, boolean parameterizeValues) {
 		Objects.requireNonNull(root, "root");
 		EncodingShape shape = EncodingShape.measure(root);
 		Builder builder = new Builder(normalizeFiniteFilters, rangeProvider, shape, anonymousNames,
-				retainAnnotations);
+				retainAnnotations, parameterizeValues);
 		int rootRelId = builder.relation(root, "root");
+		builder.finishParameterization();
 		builder.deriveFactsAndSaturateRules();
 		return new PackedQuery(rootRelId, builder.relations, builder.scalars, builder.payloads, builder.bindingSets,
 				builder.metadata, builder.objects, builder.symbols,
 				Arrays.copyOf(builder.originalBindingSetRelations, builder.relations.size() + 1),
-				Arrays.copyOf(builder.originalBindingSets, builder.relations.size() + 1));
+				Arrays.copyOf(builder.originalBindingSets, builder.relations.size() + 1),
+				builder.parameterSchema, builder.parameterVector);
 	}
 
 	static PackedQuery rebindOriginalBindingSets(PackedQuery template, TupleExpr source) {
@@ -281,6 +293,7 @@ final class PackedQueryCodec {
 		private final PackedDomainFacts domainFacts;
 		private final Map<String, Integer> anonymousNames;
 		private final boolean retainAnnotations;
+		private final PackedParameterSchema.Builder parameters;
 		private final int[] unary = new int[1];
 		private final int[] binary = new int[2];
 		private final int[] ternary = new int[3];
@@ -290,15 +303,19 @@ final class PackedQueryCodec {
 		private int serviceDepth;
 		private byte[] originalBindingSetRelations = new byte[16];
 		private Object[] originalBindingSets = new Object[16];
+		private PackedParameterSchema parameterSchema = PackedParameterSchema.empty();
+		private PackedParameterVector parameterVector = PackedParameterVector.empty();
 
 		private Builder(boolean normalizeFiniteFilters, PackedPredicateRangeProvider rangeProvider,
-				EncodingShape shape, Map<String, Integer> anonymousNames, boolean retainAnnotations) {
+				EncodingShape shape, Map<String, Integer> anonymousNames, boolean retainAnnotations,
+				boolean parameterizeValues) {
 			relations = new PackedExpressionInterner(shape.relationNodes, shape.relationNodes);
 			scalars = new PackedExpressionInterner(shape.valueNodes, shape.valueNodes);
 			metadata = new PackedNodeMetadataArena(shape.relationNodes, shape.valueNodes, shape.termNodes);
 			this.normalizeFiniteFilters = normalizeFiniteFilters;
 			this.anonymousNames = anonymousNames;
 			this.retainAnnotations = retainAnnotations;
+			parameters = parameterizeValues ? new PackedParameterSchema.Builder() : null;
 			this.rangeProvider = normalizeFiniteFilters ? rangeProvider : null;
 			rangeSlot = this.rangeProvider == null ? null : new PackedPredicateRange();
 			rangeArena = this.rangeProvider == null ? null : new PackedPredicateRangeArena();
@@ -307,6 +324,17 @@ final class PackedQueryCodec {
 					? new PackedLogicalRuleProgram(relations, scalars, payloads, bindingSets, metadata, objects,
 							symbols)
 					: null;
+		}
+
+		private void finishParameterization() {
+			if (parameters != null) {
+				parameterSchema = parameters.schema();
+				parameterVector = parameters.vector();
+			}
+			if (!parameterSchema.accepts(parameterVector)) {
+				throw new PackedMemoInvariantException("packed parameter schema rejected its invocation vector");
+			}
+			objects.setParameterVector(parameterVector);
 		}
 
 		private int relation(TupleExpr expression, String path) {
@@ -801,7 +829,7 @@ final class PackedQueryCodec {
 					assuredNames.retainAll(row.getBindingNames());
 				}
 				int slot = reserveScratch(1);
-				scratch[slot] = bindingRow(row);
+				scratch[slot] = bindingRow(row, count);
 				count++;
 			}
 			if (assuredNames != null) {
@@ -900,16 +928,19 @@ final class PackedQueryCodec {
 			}
 		}
 
-		private int bindingRow(BindingSet row) {
+		private int bindingRow(BindingSet row, int rowOrdinal) {
 			int count = row.size();
 			int start = reserveScratch(count * 2);
+			List<Binding> orderedBindings = new ArrayList<>(count);
+			row.forEach(orderedBindings::add);
+			orderedBindings.sort(Comparator.comparing(Binding::getName));
 			int ordinal = 0;
-			for (Binding binding : row) {
+			for (Binding binding : orderedBindings) {
 				scratch[start + ordinal * 2] = bindingName(binding.getName());
-				scratch[start + ordinal * 2 + 1] = objects.intern(binding.getValue());
+				scratch[start + ordinal * 2 + 1] = objects.intern(parameterValue(binding.getValue(),
+						PackedParameterSchema.SourceKind.BINDING_ROW, binding.getName(), rowOrdinal, ordinal));
 				ordinal++;
 			}
-			sortBindingPairs(start, count);
 			int rowId = bindingSets.internRow(scratch, start, count);
 			releaseScratch(start);
 			return rowId;
@@ -1136,7 +1167,8 @@ final class PackedQueryCodec {
 				return scalars.internCanonical(PackedScalarOp.VARIABLE, term(variable), 0, 0, NO_CHILDREN, 0, 0);
 			}
 			if (expression instanceof ValueConstant constant) {
-				int valueId = objects.intern(constant.getValue());
+				int valueId = objects.intern(parameterValue(constant.getValue(),
+						PackedParameterSchema.SourceKind.VALUE_CONSTANT, null, -1, -1));
 				return scalars.internCanonical(PackedScalarOp.VALUE_CONSTANT, valueId, 0, 0, NO_CHILDREN, 0, 0);
 			}
 			if (expression instanceof Compare compare) {
@@ -1394,7 +1426,8 @@ final class PackedQueryCodec {
 			if (!variable.hasValue()) {
 				symbols.intern(nameId);
 			}
-			int valueId = objects.intern(variable.getValue());
+			int valueId = objects.intern(parameterValue(variable.getValue(),
+					PackedParameterSchema.SourceKind.TERM, variable.getName(), -1, -1));
 			int termId = payloads.internCanonical(PackedPayloadOp.TERM, nameId, valueId, flags, NO_CHILDREN, 0, 0);
 			int metadataFlags = variable.isVariableScopeChange()
 					? PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE
@@ -1417,6 +1450,13 @@ final class PackedQueryCodec {
 			}
 			Integer ordinal = anonymousNames.get(name);
 			return ordinal == null ? name : new PackedQueryCacheIdentity.CanonicalAnonymousName(ordinal);
+		}
+
+		private Object parameterValue(Value value, PackedParameterSchema.SourceKind sourceKind, String bindingName,
+				int rowOrdinal, int columnOrdinal) {
+			return parameters == null || value == null
+					? value
+					: parameters.add(value, sourceKind, bindingName, rowOrdinal, columnOrdinal);
 		}
 
 		private int plannedMetricsPayload(QueryModelNode node) {

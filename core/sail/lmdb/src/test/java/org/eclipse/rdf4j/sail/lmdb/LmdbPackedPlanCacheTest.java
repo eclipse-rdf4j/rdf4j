@@ -157,7 +157,7 @@ class LmdbPackedPlanCacheTest {
 	}
 
 	@Test
-	void completePlanCacheInvalidatesAcrossCommittedDataRevisions(@TempDir File dataDir) {
+	void completePlanCacheRetainsExecutableChampionAcrossCommittedDataRevisions(@TempDir File dataDir) {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -178,7 +178,8 @@ class LmdbPackedPlanCacheTest {
 
 			TupleExpr revised = optimized(connection, query);
 			TupleExpr revisedHot = optimized(connection, query);
-			assertFalse(Boolean.parseBoolean(revised.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+			assertTrue(Boolean.parseBoolean(revised.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+			assertEquals("USE_AND_REFRESH", revised.getStringMetricPlanned("optimizer.planCacheLookupOutcome"));
 			assertTrue(Boolean.parseBoolean(revisedHot.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
 			try (var result = connection.prepareTupleQuery(query).evaluate()) {
 				assertTrue(result.hasNext());

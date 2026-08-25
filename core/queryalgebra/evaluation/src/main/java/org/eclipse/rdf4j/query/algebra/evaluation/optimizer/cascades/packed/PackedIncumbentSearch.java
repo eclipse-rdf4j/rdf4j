@@ -49,6 +49,7 @@ final class PackedIncumbentSearch {
 	private final boolean hasLogicalAlternatives;
 	private final boolean hasCorrelatedPredicates;
 	private final int singleCanonicalJoinRegionRoot;
+	private boolean resumingDetachedCheckpoint;
 	private int workUnits;
 
 	PackedIncumbentSearch(PackedQuery query, PackedMemo memo, PackedSearchBudget budget,
@@ -132,14 +133,19 @@ final class PackedIncumbentSearch {
 			 * candidates are costed by the hypergraph pass below after all of their factor inputs exist.
 			 */
 			int groupId = logicalGroupId(logicalExpressionId);
-			if (!hasLogicalAlternatives && preparedLogicalGroups[groupId] == 2
-					&& logicalInputsAreCurrent(logicalExpressionId, anyPropertyId)) {
+			int preparedWinnerId = resumingDetachedCheckpoint
+					? preparedWinnerForExpression(logicalExpressionId, anyPropertyId)
+					: !hasLogicalAlternatives && preparedLogicalGroups[groupId] == 2
+							&& logicalInputsAreCurrent(logicalExpressionId, anyPropertyId)
+									? memo.findWinner(groupId, anyPropertyId, 0, 0, 0)
+									: 0;
+			if (preparedWinnerId != 0) {
 				/*
 				 * Containing-region preparation already installed this exact immutable candidate. DPhyp may improve an
 				 * intermediate group while filling its lattice, so reuse is valid only while the retained winner,
 				 * metadata, and any continuation generation still match. Changed inputs fall through and are re-costed.
 				 */
-				rootWinnerId = memo.findWinner(groupId, anyPropertyId, 0, 0, 0);
+				rootWinnerId = preparedWinnerId;
 			} else {
 				rootWinnerId = offerLogicalImplementation(logicalExpressionId, anyPropertyId, !hasLogicalAlternatives);
 			}
@@ -169,7 +175,12 @@ final class PackedIncumbentSearch {
 				if (isCanonicalRelation(logicalExpressionId)) {
 					continue;
 				}
-				rootWinnerId = offerLogicalImplementation(logicalExpressionId, anyPropertyId, false);
+				int preparedWinnerId = resumingDetachedCheckpoint
+						? preparedWinnerForExpression(logicalExpressionId, anyPropertyId)
+						: 0;
+				rootWinnerId = preparedWinnerId != 0
+						? preparedWinnerId
+						: offerLogicalImplementation(logicalExpressionId, anyPropertyId, false);
 			}
 			seedAccessEnablingAlternatives();
 			boolean[] prioritizedCorrelatedRegions = hasCorrelatedPredicates
@@ -225,6 +236,95 @@ final class PackedIncumbentSearch {
 			rootWinnerId = propagateChangedInputs(rootWinnerId, anyPropertyId, true, prioritizedCorrelatedRegions);
 		}
 		return rootWinnerIdFor(rootWinnerId, anyPropertyId);
+	}
+
+	/** Continues unfinished enumeration from an authenticated detached incumbent rebuilt in a fresh memo. */
+	int resumeEnumeration(PackedMemo.RestoredContinuationSeed restored) {
+		if (restored == null) {
+			return build();
+		}
+		int anyPropertyId = memo.anyPropertyId();
+		for (int winnerId : restored.winnerIdsByRecipe()) {
+			if (winnerId == 0) {
+				continue;
+			}
+			int groupId = memo.winnerGroupId(winnerId);
+			preparedLogicalGroups[groupId] = 2;
+			selectedRowsByGroup[groupId] = memo.winnerOutputRows(winnerId);
+		}
+		primeRestoredLogicalInputs(restored, anyPropertyId);
+		if (hasLogicalAlternatives) {
+			/*
+			 * The detached recipe retains only the incumbent expression in each represented group, not every rule
+			 * alternative. Re-enter the normal exhaustive phases so missing alternatives are regenerated, while the
+			 * expression-authenticated prepared-winner checks above preserve the restored incumbent work.
+			 */
+			resumingDetachedCheckpoint = true;
+			try {
+				return build();
+			} finally {
+				resumingDetachedCheckpoint = false;
+			}
+		}
+		for (int logicalExpressionId = 1; logicalExpressionId <= query.relationCount(); logicalExpressionId++) {
+			int childCount = query.relChildCount(logicalExpressionId);
+			for (int child = 0; child < childCount; child++) {
+				int childWinnerId = memo.findWinner(query.relChild(logicalExpressionId, child), anyPropertyId, 0, 0, 0);
+				if (childWinnerId == 0) {
+					return build();
+				}
+				childWinnerIds[child] = childWinnerId;
+			}
+			rememberLogicalInputs(logicalExpressionId, childCount);
+			enumerateJoinRegion(logicalExpressionId);
+			if (exploreReorderings && isCorrelatedPredicateOperator(query.relOperator(logicalExpressionId))) {
+				enumerateCorrelatedFilterRegion(logicalExpressionId);
+				applyUncoveredFilterPlacement(logicalExpressionId);
+			}
+		}
+		return rootWinnerIdFor(restored.rootWinnerId(), anyPropertyId);
+	}
+
+	private void primeRestoredLogicalInputs(PackedMemo.RestoredContinuationSeed restored, int anyPropertyId) {
+		for (int winnerId : restored.winnerIdsByRecipe()) {
+			if (winnerId == 0) {
+				continue;
+			}
+			int physicalExpressionId = memo.winnerPhysicalExpressionId(winnerId);
+			int logicalExpressionId = memo.physicalSourceLogicalExpressionId(physicalExpressionId);
+			if (logicalExpressionId <= 0 || logicalExpressionId > query.relationCount()) {
+				continue;
+			}
+			int childCount = query.relChildCount(logicalExpressionId);
+			boolean complete = true;
+			for (int child = 0; child < childCount; child++) {
+				int childWinnerId = memo.findWinner(query.relChild(logicalExpressionId, child), anyPropertyId, 0, 0,
+						0);
+				if (childWinnerId == 0) {
+					complete = false;
+					break;
+				}
+				childWinnerIds[child] = childWinnerId;
+			}
+			if (complete) {
+				rememberLogicalInputs(logicalExpressionId, childCount);
+			}
+		}
+	}
+
+	private int preparedWinnerForExpression(int logicalExpressionId, int anyPropertyId) {
+		int groupId = logicalGroupId(logicalExpressionId);
+		if (preparedLogicalGroups[groupId] != 2
+				|| !logicalInputsAreCurrent(logicalExpressionId, anyPropertyId)
+				|| !logicalInputContinuationsAreCurrent(logicalExpressionId)) {
+			return 0;
+		}
+		int winnerId = memo.findWinner(groupId, anyPropertyId, 0, 0, 0);
+		if (winnerId == 0) {
+			return 0;
+		}
+		int physicalExpressionId = memo.winnerPhysicalExpressionId(winnerId);
+		return memo.physicalSourceLogicalExpressionId(physicalExpressionId) == logicalExpressionId ? winnerId : 0;
 	}
 
 	int retainedRootWinnerId() {

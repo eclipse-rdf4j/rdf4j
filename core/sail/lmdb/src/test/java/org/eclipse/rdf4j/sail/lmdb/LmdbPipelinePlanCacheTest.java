@@ -13,9 +13,11 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Constructor;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -37,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -99,6 +102,26 @@ class LmdbPipelinePlanCacheTest {
 	}
 
 	@Test
+	void committedDataRevisionKeepsExecutableChampionAndRequestsRefresh() {
+		LmdbPipelinePlanCache cache = new LmdbPipelinePlanCache(8, 1, 1024 * 1024L);
+		LmdbPipelinePlanCache.Context initial = context(17L);
+		LmdbPipelinePlanCache.Context revised = context(18L);
+		AtomicInteger computations = new AtomicInteger();
+		QueryRoot source = query("_anon_1", "urn:left");
+
+		LmdbPipelinePlanCache.Result cold = cache.getOrCompute(source, initial, initial::revision,
+				() -> planned(source, computations));
+		LmdbPipelinePlanCache.Result reused = cache.getOrCompute(query("_anon_2", "urn:left"), revised,
+				revised::revision, () -> planned(query("_anon_2", "urn:left"), computations));
+
+		assertFalse(cold.cacheHit());
+		assertTrue(reused.cacheHit(), "committed-data drift must not hard-invalidate an executable recipe");
+		assertEquals("USE_AND_REFRESH", reused.plan().getStringMetricPlanned("optimizer.planCacheLookupOutcome"));
+		assertEquals("OUTSIDE", reused.plan().getStringMetricPlanned("optimizer.planCacheStabilityEnvelopeResult"));
+		assertEquals(1, computations.get(), "quality drift should schedule refresh instead of synchronous replanning");
+	}
+
+	@Test
 	void oversizedPlanCompletesWithoutRetention() {
 		LmdbPipelinePlanCache cache = new LmdbPipelinePlanCache(8, 1, 1L);
 		LmdbPipelinePlanCache.Context context = context(17L);
@@ -113,6 +136,33 @@ class LmdbPipelinePlanCacheTest {
 		assertEquals(2, computations.get());
 		assertEquals(0, cache.entryCount());
 		assertEquals(0L, cache.retainedBytes());
+	}
+
+	@Test
+	void planThatFitsAggregateDecisionBudgetIsNotRejectedByRoutingSegmentShare() {
+		LmdbPipelinePlanCache.Context context = context(17L);
+		LmdbPipelinePlanCache measuringCache = new LmdbPipelinePlanCache(8, 1, 1024 * 1024L);
+		AtomicInteger measuringComputations = new AtomicInteger();
+		QueryRoot measuredSource = query("_anon_1", "urn:left");
+
+		measuringCache.getOrCompute(measuredSource, context, context::revision,
+				() -> planned(measuredSource, measuringComputations));
+		long exactEntryBytes = measuringCache.retainedBytes();
+		assertTrue(exactEntryBytes > 0L);
+
+		LmdbPipelinePlanCache segmentedCache = new LmdbPipelinePlanCache(8, 2, exactEntryBytes);
+		AtomicInteger segmentedComputations = new AtomicInteger();
+		QueryRoot coldSource = query("_anon_2", "urn:left");
+		LmdbPipelinePlanCache.Result cold = segmentedCache.getOrCompute(coldSource, context, context::revision,
+				() -> planned(coldSource, segmentedComputations));
+		QueryRoot hotSource = query("_anon_3", "urn:left");
+		LmdbPipelinePlanCache.Result hot = segmentedCache.getOrCompute(hotSource, context, context::revision,
+				() -> planned(hotSource, segmentedComputations));
+
+		assertFalse(cold.cacheHit());
+		assertTrue(hot.cacheHit(), "routing segments must not partition the store-owned decision budget");
+		assertEquals(1, segmentedComputations.get());
+		assertEquals(exactEntryBytes, segmentedCache.retainedBytes());
 	}
 
 	@Test
@@ -226,6 +276,80 @@ class LmdbPipelinePlanCacheTest {
 			releaseOwner.countDown();
 			executor.shutdownNow();
 		}
+	}
+
+	@Test
+	void materializedCacheHitStampsValueOnlyPlanVersionFeedbackToken() throws Exception {
+		LmdbPipelinePlanCache cache = new LmdbPipelinePlanCache(8, 1, 1024 * 1024L);
+		LmdbPipelinePlanCache.Context context = context(17L);
+		AtomicInteger computations = new AtomicInteger();
+		QueryRoot coldSource = query("_anon_1", "urn:left");
+		statementPattern(coldSource).setRuntimeFeedbackContract(runtimeFeedbackContract());
+
+		cache.getOrCompute(coldSource, context, context::revision, () -> planned(coldSource, computations));
+		QueryRoot hotSource = query("_anon_2", "urn:left");
+		LmdbPipelinePlanCache.Result hot = cache.getOrCompute(hotSource, context, context::revision,
+				() -> planned(hotSource, computations));
+		LmdbRuntimeFeedbackDescriptor descriptor = (LmdbRuntimeFeedbackDescriptor) statementPattern(hot.plan())
+				.getRuntimeFeedbackContract()
+				.descriptor();
+		Object token = LmdbRuntimeFeedbackDescriptor.class.getDeclaredMethod("planExecutionToken").invoke(descriptor);
+
+		assertTrue(hot.cacheHit());
+		assertNotNull(token);
+		assertEquals("EXACT_COMPLETE", hot.plan().getStringMetricPlanned("optimizer.planCacheSearchCompletion"));
+		assertEquals("BEST_KNOWN_UNBOUNDED",
+				hot.plan().getStringMetricPlanned("optimizer.planCacheSearchBoundKind"));
+		assertEquals("WITHIN", hot.plan().getStringMetricPlanned("optimizer.planCacheStabilityEnvelopeResult"));
+		assertEquals(0.0d, hot.plan().getDoubleMetricPlanned("optimizer.planCacheEvidenceEpoch"), 0.0d);
+		assertEquals((long) hot.plan().getDoubleMetricPlanned("optimizer.planCachePlanVersion"),
+				(long) token.getClass().getDeclaredMethod("planVersion").invoke(token));
+		assertEquals(false, token.getClass().getDeclaredMethod("canary").invoke(token));
+	}
+
+	@Test
+	void configuredFacadeAppliesDecisionPolicyBoundsAndOwnsRefreshLifecycle() throws Exception {
+		Constructor<LmdbPipelinePlanCache> constructor = LmdbPipelinePlanCache.class.getDeclaredConstructor(
+				long.class, int.class, int.class, double.class);
+		LmdbPipelinePlanCache cache = constructor.newInstance(1024 * 1024L, 7, 3, 0.125d);
+		var decisionCacheField = LmdbPipelinePlanCache.class.getDeclaredField("decisionCache");
+		decisionCacheField.setAccessible(true);
+		LmdbPlanDecisionCache decisionCache = (LmdbPlanDecisionCache) decisionCacheField.get(cache);
+
+		var variantsField = LmdbPlanDecisionCache.class.getDeclaredField("maximumVariants");
+		variantsField.setAccessible(true);
+		var canaryField = LmdbPlanDecisionCache.class.getDeclaredField("maximumCanaryFraction");
+		canaryField.setAccessible(true);
+		var executorField = LmdbPlanDecisionCache.class.getDeclaredField("refreshExecutor");
+		executorField.setAccessible(true);
+		java.util.concurrent.ThreadPoolExecutor executor = (java.util.concurrent.ThreadPoolExecutor) executorField
+				.get(decisionCache);
+
+		assertEquals(7, variantsField.getInt(decisionCache));
+		assertEquals(3, executor.getCorePoolSize());
+		assertEquals(0.125d, canaryField.getDouble(decisionCache), 0.0d);
+
+		LmdbPipelinePlanCache.class.getDeclaredMethod("close").invoke(cache);
+		assertTrue(decisionCache.statistics().closed());
+		assertTrue(executor.isShutdown());
+	}
+
+	private static StatementPattern statementPattern(TupleExpr query) {
+		return (StatementPattern) ((Projection) ((QueryRoot) query).getArg()).getArg();
+	}
+
+	private static RuntimeFeedbackContract runtimeFeedbackContract() {
+		LogicalLearningKey logical = LogicalLearningKey.of("statement-pattern", "expression", "children",
+				"predicates", "v0", "none", "bag", "default");
+		LearningApplicability applicability = new LearningApplicability(1L, 0L, "unconditional", 1L, 1L, 1L);
+		PhysicalResidualKey physical = PhysicalResidualKey.of("scan", "statement-pattern", "spoc", "scan", "none",
+				"none", "none", "unbound");
+		RuntimeFeedbackContract.PredictionVector prediction = new RuntimeFeedbackContract.PredictionVector(1.0d,
+				1.0d, 1.0d, 1.0d, 0.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		return new RuntimeFeedbackContract(new LmdbRuntimeFeedbackDescriptor(null, null, logical, applicability,
+				physical), prediction, prediction, 1.0d, 1.0d, 1.0d, Double.POSITIVE_INFINITY,
+				RuntimeFeedbackContract.SemanticKind.ORDINARY, RuntimeFeedbackContract.Algorithm.SCAN,
+				RuntimeFeedbackContract.Access.FULL_SCAN, 1, 1L, 1L, 1L, RuntimeFeedbackContract.ADMIT_LOGICAL);
 	}
 
 	private static QueryRoot query(String anonymousName, String predicate) {

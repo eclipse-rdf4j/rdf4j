@@ -31,6 +31,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -208,6 +209,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private final LmdbLeoFeedbackConfig leoFeedbackConfig;
 	private final LmdbLeoFeedbackStore leoFeedbackStore;
 	private final LmdbLeoSurfaceStats leoSurfaceStats;
+	private volatile Consumer<LmdbPlanDecisionCache.ExecutionObservation> planExecutionObserver;
 	private final Map<OperatorKey, LearnedOperatorCounts> learnedByOperator = new LinkedHashMap<>();
 	private final Map<OperatorKey, LearnedMultiplierCounts> learnedMultipliers = new LinkedHashMap<>();
 	private final Map<OperatorKey, ShadowOperatorCounts> shadowByOperator = new LinkedHashMap<>();
@@ -346,11 +348,111 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return;
 		}
 		int limit = Math.min(targetCount, targets.length);
+		Map<LmdbPlanDecisionCache.PlanExecutionToken, PlanExecutionAggregate> planExecutions = null;
 		for (int index = 0; index < limit; index++) {
 			RuntimeFeedbackTarget target = targets[index];
 			if (target != null) {
 				target.publish(rootCompleted);
+				LmdbPlanDecisionCache.PlanExecutionToken token = planExecutionToken(target);
+				if (token != null && target.opens() > 0L) {
+					if (planExecutions == null) {
+						planExecutions = new LinkedHashMap<>();
+					}
+					planExecutions.computeIfAbsent(token, PlanExecutionAggregate::new)
+							.observe(target, rootCompleted, lifecycleBlocked(target));
+				}
 			}
+		}
+		Consumer<LmdbPlanDecisionCache.ExecutionObservation> observer = planExecutionObserver;
+		if (observer != null && planExecutions != null) {
+			for (PlanExecutionAggregate aggregate : planExecutions.values()) {
+				try {
+					observer.accept(aggregate.toObservation());
+				} catch (RuntimeException cacheFailure) {
+					// Runtime feedback remains advisory. Cache observation failure cannot fail query execution.
+				}
+			}
+		}
+	}
+
+	void setPlanExecutionObserver(Consumer<LmdbPlanDecisionCache.ExecutionObservation> observer) {
+		planExecutionObserver = observer;
+	}
+
+	private static LmdbPlanDecisionCache.PlanExecutionToken planExecutionToken(RuntimeFeedbackTarget target) {
+		RuntimeFeedbackContract contract = target.contract();
+		if (contract == null || !(contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor)) {
+			return null;
+		}
+		return descriptor.planExecutionToken();
+	}
+
+	private synchronized boolean lifecycleBlocked(RuntimeFeedbackTarget target) {
+		RuntimeFeedbackContract contract = target.contract();
+		if (contract == null || !contract.admits(RuntimeFeedbackContract.ADMIT_LIFECYCLE)
+				|| !(contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor)) {
+			return false;
+		}
+		PlanLifecycleStore.ObjectiveEnvelope envelope = new PlanLifecycleStore.ObjectiveEnvelope(
+				contract.objectiveLower(), contract.objectivePoint(), contract.objectiveUpper());
+		PlanLifecycleStore.Decision decision = planLifecycleDecision(descriptor.logicalKey(), descriptor.physicalKey(),
+				descriptor.applicability(), envelope);
+		return decision.state() == PlanLifecycleStore.State.BLOCKED
+				|| decision.state() == PlanLifecycleStore.State.QUARANTINED;
+	}
+
+	private static final class PlanExecutionAggregate {
+
+		private final LmdbPlanDecisionCache.PlanExecutionToken token;
+		private boolean complete = true;
+		private boolean censored;
+		private double maximumResidual = 1.0d;
+		private long peakMemoryRows;
+		private boolean lifecycleBlocked;
+
+		private PlanExecutionAggregate(LmdbPlanDecisionCache.PlanExecutionToken token) {
+			this.token = token;
+		}
+
+		private void observe(RuntimeFeedbackTarget target, boolean rootCompleted, boolean authoritativeLifecycleBlock) {
+			boolean targetComplete = rootCompleted && target.exhaustedOpens() == target.opens()
+					&& target.earlySuccesses() == 0L && target.partialCloses() == 0L
+					&& target.cancellations() == 0L && target.failures() == 0L;
+			complete &= targetComplete;
+			censored |= !targetComplete;
+			maximumResidual = Math.max(maximumResidual,
+					qError(target.appliedPredictedRowsSum(), target.actualRowsSum()));
+			maximumResidual = Math.max(maximumResidual, dimensionResidual(target, InvocationAggregateView.WORK_ROWS));
+			maximumResidual = Math.max(maximumResidual, dimensionResidual(target, InvocationAggregateView.RESULT_ROWS));
+			maximumResidual = Math.max(maximumResidual, dimensionResidual(target, InvocationAggregateView.SOURCE_ROWS));
+			maximumResidual = Math.max(maximumResidual,
+					dimensionResidual(target, InvocationAggregateView.PEAK_MEMORY_ROWS));
+			double peak = target.actualWork(InvocationAggregateView.PEAK_MEMORY_ROWS);
+			if (Double.isFinite(peak) && peak > 0.0d) {
+				peakMemoryRows = Math.max(peakMemoryRows,
+						peak >= Long.MAX_VALUE ? Long.MAX_VALUE : (long) Math.ceil(peak));
+			}
+			lifecycleBlocked |= authoritativeLifecycleBlock;
+		}
+
+		private LmdbPlanDecisionCache.ExecutionObservation toObservation() {
+			return new LmdbPlanDecisionCache.ExecutionObservation(token.familyKey(), token.variantId(),
+					token.planVersion(), complete && !censored, censored || !complete, maximumResidual,
+					peakMemoryRows, lifecycleBlocked, false);
+		}
+
+		private static double dimensionResidual(RuntimeFeedbackTarget target, int dimension) {
+			return qError(target.appliedPredictedWork(dimension), target.actualWork(dimension));
+		}
+
+		private static double qError(double predicted, double actual) {
+			if (!Double.isFinite(predicted) || predicted < 0.0d || !Double.isFinite(actual) || actual < 0.0d) {
+				return 1.0d;
+			}
+			if (predicted == 0.0d || actual == 0.0d) {
+				return predicted == actual ? 1.0d : Double.MAX_VALUE;
+			}
+			return Math.max(actual / predicted, predicted / actual);
 		}
 	}
 

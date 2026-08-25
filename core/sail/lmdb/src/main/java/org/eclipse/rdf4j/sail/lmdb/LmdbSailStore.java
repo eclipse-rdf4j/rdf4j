@@ -400,7 +400,7 @@ class LmdbSailStore implements SailStore {
 		this.frontierPlannerSettings = LmdbFrontierPlannerSettings.from(config);
 		this.frontierStatisticsDirectory = new File(dataDir, "frontier-statistics-v2").toPath();
 		this.cascadesPlanCache = new PackedPlanCache(CASCADES_PLAN_CACHE_CAPACITY, 16,
-				config.getFrontierCacheEvidenceBudgetBytes());
+				frontierPlannerSettings.packedPlanCacheBudgetBytes());
 		this.sketchBasedJoinEstimator = sketchBasedJoinEstimatorEnabled
 				? new SketchBasedJoinEstimator(new GuardedEstimatorStatementSource(), sketchEstimatorConfig(config),
 						derivedStateBuildExecutor)
@@ -499,6 +499,8 @@ class LmdbSailStore implements SailStore {
 						identitySupplier,
 						() -> adaptiveEvidenceAllowed,
 						this::learnedSidecarDataStamp);
+				operatorFeedbackStats.setPlanExecutionObserver(
+						frontierPlannerSettings.pipelinePlanCache()::observeExecution);
 				startBackgroundFilterSampling();
 			}
 			if (sketchBasedJoinEstimator != null) {
@@ -849,6 +851,7 @@ class LmdbSailStore implements SailStore {
 		synchronized (frontierStatisticsMonitor) {
 			frontierStatisticsMonitor.notifyAll();
 		}
+		frontierPlannerSettings.close();
 		try {
 			try {
 				cancelAndDrainScheduledBackgroundSampling();

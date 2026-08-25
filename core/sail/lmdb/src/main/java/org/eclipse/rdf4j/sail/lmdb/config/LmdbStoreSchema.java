@@ -168,6 +168,12 @@ public class LmdbStoreSchema {
 
 	public final static IRI FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES;
 
+	public final static IRI FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS;
+
+	public final static IRI FRONTIER_PLAN_CACHE_REFRESH_THREADS;
+
+	public final static IRI FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION;
+
 	public final static IRI OPTIMIZER_SAMPLING_ENABLED;
 
 	public final static IRI OPTIMIZER_SAMPLING_MAX_MILLIS;
@@ -250,6 +256,10 @@ public class LmdbStoreSchema {
 				NAMESPACE, "frontierCacheMaximumExpectedRegret");
 		FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES = factory.createIRI(
 				NAMESPACE, "frontierCacheEvidenceBudgetBytes");
+		FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS = factory.createIRI(NAMESPACE, "frontierPlanCacheMaximumVariants");
+		FRONTIER_PLAN_CACHE_REFRESH_THREADS = factory.createIRI(NAMESPACE, "frontierPlanCacheRefreshThreads");
+		FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION = factory.createIRI(NAMESPACE,
+				"frontierPlanCacheMaximumCanaryFraction");
 		OPTIMIZER_SAMPLING_ENABLED = factory.createIRI(NAMESPACE, "optimizerSamplingEnabled");
 		OPTIMIZER_SAMPLING_MAX_MILLIS = factory.createIRI(NAMESPACE, "optimizerSamplingMaxMillis");
 		OPTIMIZER_SAMPLING_MAX_ROWS = factory.createIRI(NAMESPACE, "optimizerSamplingMaxRows");

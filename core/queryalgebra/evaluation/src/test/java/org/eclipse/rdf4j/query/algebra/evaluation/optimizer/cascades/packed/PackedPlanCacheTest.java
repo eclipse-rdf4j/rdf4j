@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -154,6 +155,184 @@ class PackedPlanCacheTest {
 		assertTrue(exactPreferred.exactComplete(),
 				"a cached exact recipe must take precedence over a matching approximate recipe");
 		assertTrue(exactPreferred.metrics().planCacheHit());
+	}
+
+	@Test
+	void workLimitedDecisionRetainsDetachedSearchCheckpoint() throws Exception {
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context context = context(11L);
+		PackedPlannerLimits workLimited = new PackedPlannerLimits(0L, Long.MAX_VALUE);
+		TupleExpr source = threeFactorConnectedJoin();
+
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, workLimited, cache, context);
+		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), context, source,
+				PackedQueryCacheIdentity.create(source), workLimited);
+		Object decision = PackedPlanCache.PlanEntry.class
+				.getDeclaredMethod("optimizationDecision")
+				.invoke(entry);
+		Object checkpoint = decision.getClass().getDeclaredMethod("searchCheckpoint").invoke(decision);
+
+		assertTrue(checkpoint != null, "a deterministic incomplete search must retain resumable state");
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT,
+				checkpoint.getClass().getDeclaredMethod("completionStatus").invoke(checkpoint));
+		assertEquals("ENUMERATE_JOIN_AND_CORRELATION_REGIONS",
+				checkpoint.getClass().getDeclaredMethod("phase").invoke(checkpoint).toString());
+		assertEquals(result.metrics().workUnits(),
+				checkpoint.getClass().getDeclaredMethod("cumulativeWorkUnits").invoke(checkpoint));
+		assertTrue((long) checkpoint.getClass().getDeclaredMethod("retainedBytes").invoke(checkpoint) > 0L);
+	}
+
+	@Test
+	void detachedCheckpointReentryMatchesUninterruptedExactWinner() throws Exception {
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context context = context(11L);
+		PackedPlannerLimits workLimited = new PackedPlannerLimits(0L, Long.MAX_VALUE);
+		TupleExpr source = threeFactorConnectedJoin();
+
+		PackedCascadesPlanner.optimize(source.clone(), workLimited, cache, context);
+		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), context, source,
+				PackedQueryCacheIdentity.create(source), workLimited);
+		PackedSearchCheckpoint checkpoint = entry.optimizationDecision().searchCheckpoint();
+		PackedQueryFamilyIdentity invocation = PackedQueryFamilyIdentity.create(source, null);
+		PackedPlanningResult uninterrupted = PackedCascadesPlanner.optimize(source.clone(),
+				PackedPlannerLimits.unbounded());
+		Method resume = PackedCascadesPlanner.class.getDeclaredMethod("resume", PackedSearchCheckpoint.class,
+				PackedQueryFamilyIdentity.class, PackedPlannerLimits.class, PackedCostModel.class);
+		PackedPlanningResult resumed = (PackedPlanningResult) resume.invoke(null, checkpoint, invocation,
+				PackedPlannerLimits.unbounded(), null);
+
+		assertTrue(resumed.exactComplete());
+		assertEquals(uninterrupted.selectedPlan(), resumed.selectedPlan());
+		assertTrue(resumed.selectedPlan().getDoubleMetricPlanned("optimizer.planCacheResumedWorkUnits") > 0.0d);
+		assertTrue(resumed.metrics().workUnits() < uninterrupted.metrics().workUnits(),
+				() -> "resuming detached search state must avoid repeating completed deterministic work: resumed="
+						+ resumed.metrics().workUnits() + ", uninterrupted=" + uninterrupted.metrics().workUnits()
+						+ ", checkpoint=" + checkpoint.cumulativeWorkUnits());
+		assertEquals(checkpoint.cumulativeWorkUnits() + resumed.metrics().workUnits(),
+				(long) resumed.selectedPlan().getDoubleMetricPlanned("optimizer.planCacheCumulativeWorkUnits"));
+	}
+
+	@Test
+	void detachedCheckpointResumesFilterJoinLogicalAlternativesWithoutRepeatingCompletedWork() {
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context context = context(11L);
+		PackedPlannerLimits workLimited = new PackedPlannerLimits(0L, Long.MAX_VALUE);
+		Extension alias = new Extension(threeFactorConnectedJoin(),
+				new ExtensionElem(Var.of("secondObject"), "secondAlias"));
+		TupleExpr source = new Filter(alias, new Bound(Var.of("secondAlias")));
+
+		PackedCascadesPlanner.optimize(source.clone(), workLimited, cache, context);
+		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), context, source,
+				PackedQueryCacheIdentity.create(source), workLimited);
+		PackedSearchCheckpoint checkpoint = entry.optimizationDecision().searchCheckpoint();
+		PackedQuery invocationQuery = checkpoint.rehydrateQuery(PackedQueryFamilyIdentity.create(source, null));
+		PackedSearchBudget restoreBudget = new PackedSearchBudget(PackedPlannerLimits.unbounded());
+		try (PackedMemo restoreMemo = PackedMemo.scalarWinnerOnlyQueryLocal(invocationQuery,
+				invocationQuery.symbolCount(), invocationQuery.relationCount(), invocationQuery.relationCount(), 4,
+				invocationQuery.relationCount(), invocationQuery.relationCount() * 2, restoreBudget)) {
+			assertNotNull(restoreMemo.restoreScalarContinuation(checkpoint.continuationRecipe()),
+					"a rule-generated logical alternative must retain a rehydratable incumbent");
+		}
+		PackedPlanningResult uninterrupted = PackedCascadesPlanner.optimize(source.clone(),
+				PackedPlannerLimits.unbounded());
+		PackedPlanningResult resumed = PackedCascadesPlanner.resume(checkpoint,
+				PackedQueryFamilyIdentity.create(source, null), PackedPlannerLimits.unbounded(), null);
+
+		assertTrue(resumed.exactComplete());
+		assertEquals(uninterrupted.selectedPlan(), resumed.selectedPlan());
+		assertTrue(resumed.metrics().workUnits() < uninterrupted.metrics().workUnits(),
+				() -> "a logical-alternative checkpoint must preserve completed work: resumed="
+						+ resumed.metrics().workUnits() + ", uninterrupted=" + uninterrupted.metrics().workUnits());
+	}
+
+	@Test
+	void providerBackedCheckpointRecostsIncumbentBeforeResumingExactSearch() {
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context context = context(11L);
+		PackedPlannerLimits workLimited = new PackedPlannerLimits(1L, Long.MAX_VALUE);
+		OptimizationGoal budgeted = OptimizationGoal.root().asBudgeted(null, 1);
+		TupleExpr source = threeFactorConnectedJoin();
+		AtomicInteger interruptedProviderCalls = new AtomicInteger();
+
+		PackedPlanningResult interrupted = PackedCascadesPlanner.optimize(source.clone(), budgeted, cache, context,
+				countingFrontierCostModel(interruptedProviderCalls));
+		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), context, source,
+				PackedQueryCacheIdentity.create(source), workLimited);
+		PackedSearchCheckpoint checkpoint = entry.optimizationDecision().searchCheckpoint();
+		PackedQueryFamilyIdentity invocation = PackedQueryFamilyIdentity.create(source, null);
+		AtomicInteger uninterruptedProviderCalls = new AtomicInteger();
+		PackedPlanningResult uninterrupted = PackedCascadesPlanner.optimize(source.clone(), OptimizationGoal.root(),
+				countingFrontierCostModel(uninterruptedProviderCalls));
+		AtomicInteger resumedProviderCalls = new AtomicInteger();
+		PackedPlanningResult resumed = PackedCascadesPlanner.resume(checkpoint, invocation,
+				PackedPlannerLimits.unbounded(), countingFrontierCostModel(resumedProviderCalls));
+
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_WORK_LIMIT, interrupted.completionStatus());
+		assertTrue(checkpoint != null, "provider-backed incomplete search must retain detached continuation state");
+		assertTrue(resumed.exactComplete());
+		assertEquals(uninterrupted.selectedPlan(), resumed.selectedPlan());
+		assertTrue(resumedProviderCalls.get() < uninterruptedProviderCalls.get(),
+				() -> "current evidence must be replayed only for the retained incumbent before unfinished enumeration: "
+						+ "resumed=" + resumedProviderCalls + ", uninterrupted=" + uninterruptedProviderCalls
+						+ ", interrupted=" + interruptedProviderCalls);
+		assertTrue(resumed.metrics().workUnits() < uninterrupted.metrics().workUnits(),
+				"resuming a provider-backed checkpoint must avoid repeating deterministic search work");
+	}
+
+	@Test
+	void providerBackedCheckpointReopensSearchWhenEvidenceDigestChanges() {
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context context = context(11L);
+		OptimizationGoal budgeted = OptimizationGoal.root().asBudgeted(null, 1);
+		TupleExpr source = threeFactorConnectedJoin();
+
+		PackedCascadesPlanner.optimize(source.clone(), budgeted, cache, context, frontierCostModel());
+		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), context, source,
+				PackedQueryCacheIdentity.create(source), new PackedPlannerLimits(1L, Long.MAX_VALUE));
+		PackedSearchCheckpoint checkpoint = entry.optimizationDecision().searchCheckpoint();
+		PackedQueryFamilyIdentity invocation = PackedQueryFamilyIdentity.create(source, null);
+		PackedCostModel changedEvidence = multiplyingFrontierCostModel();
+		PackedPlanningResult uninterrupted = PackedCascadesPlanner.optimize(source.clone(), OptimizationGoal.root(),
+				changedEvidence);
+		PackedPlanningResult resumed = PackedCascadesPlanner.resume(checkpoint, invocation,
+				PackedPlannerLimits.unbounded(), multiplyingFrontierCostModel());
+
+		assertTrue(resumed.exactComplete());
+		assertEquals(uninterrupted.selectedPlan(), resumed.selectedPlan());
+		assertEquals(uninterrupted.totalCost(), resumed.totalCost(), 0.0d,
+				"changed provider evidence must reopen cost-pruned work instead of retaining the old incumbent cost");
+	}
+
+	@Test
+	void corruptProviderCheckpointIsRejectedBeforeMutatingTheFreshMemo() throws Exception {
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context context = context(11L);
+		OptimizationGoal budgeted = OptimizationGoal.root().asBudgeted(null, 1);
+		TupleExpr source = threeFactorConnectedJoin();
+
+		PackedCascadesPlanner.optimize(source.clone(), budgeted, cache, context, frontierCostModel());
+		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), context, source,
+				PackedQueryCacheIdentity.create(source), new PackedPlannerLimits(1L, Long.MAX_VALUE));
+		PackedSearchCheckpoint checkpoint = entry.optimizationDecision().searchCheckpoint();
+		PackedPlanContinuationSeed seed = checkpoint.continuationRecipe().continuationSeed();
+		var requiredPropertiesField = PackedPlanContinuationSeed.class.getDeclaredField("requiredPropertyIds");
+		requiredPropertiesField.setAccessible(true);
+		int[] requiredProperties = (int[]) requiredPropertiesField.get(seed);
+		requiredProperties[seed.rootRecipeId()] = Integer.MAX_VALUE;
+
+		AtomicInteger uninterruptedProviderCalls = new AtomicInteger();
+		PackedPlanningResult uninterrupted = PackedCascadesPlanner.optimize(source.clone(), OptimizationGoal.root(),
+				countingFrontierCostModel(uninterruptedProviderCalls));
+		AtomicInteger resumedProviderCalls = new AtomicInteger();
+		PackedPlanningResult resumed = PackedCascadesPlanner.resume(checkpoint,
+				PackedQueryFamilyIdentity.create(source, null), PackedPlannerLimits.unbounded(),
+				countingFrontierCostModel(resumedProviderCalls));
+
+		assertEquals(uninterrupted.selectedPlan(), resumed.selectedPlan());
+		assertEquals(uninterruptedProviderCalls.get(), resumedProviderCalls.get(),
+				"a corrupt checkpoint must not leave partially restored memo state for fallback planning");
+		assertEquals(uninterrupted.metrics().workUnits(), resumed.metrics().workUnits(),
+				"fallback planning after checkpoint rejection must start from an unmodified memo");
 	}
 
 	@Test
@@ -439,6 +618,37 @@ class PackedPlanCacheTest {
 		assertTrue(recipe.describeCostingDecisions().contains("costVector="));
 		assertTrue(recipe.describeCostingDecisions().contains("continuation="));
 		assertTrue(recipe.describeCostingDecisions().contains("proofMask="));
+	}
+
+	@Test
+	void cachedDecisionRetainsBoundedDistinctMaterializablePortfolio() throws Exception {
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		TupleExpr source = connectedJoin("left", "right");
+		PackedPlanCache.Context context = context(11L);
+		PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache, context, frontierCostModel());
+		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), context, source);
+		Method optimizationDecisionMethod = PackedPlanCache.PlanEntry.class
+				.getDeclaredMethod("optimizationDecision");
+		Object decision = optimizationDecisionMethod.invoke(entry);
+		Method candidateCountMethod = decision.getClass().getDeclaredMethod("candidateCount");
+		Method challengerCountMethod = decision.getClass().getDeclaredMethod("challengerCount");
+		Method fingerprintMethod = decision.getClass().getDeclaredMethod("candidatePhysicalFingerprint", int.class);
+		Method materializeMethod = decision.getClass()
+				.getDeclaredMethod("materializeCandidate", int.class, PackedQueryFamilyIdentity.class);
+		int candidateCount = (int) candidateCountMethod.invoke(decision);
+
+		assertTrue(candidateCount >= 2, "a join decision should retain its champion and a distinct challenger");
+		assertTrue(candidateCount <= 4,
+				"the packed decision portfolio is bounded to one champion and three challengers");
+		assertEquals(candidateCount - 1, challengerCountMethod.invoke(decision));
+		Set<Long> physicalFingerprints = new LinkedHashSet<>();
+		PackedQueryFamilyIdentity family = PackedQueryFamilyIdentity.create(source, null);
+		for (int candidate = 0; candidate < candidateCount; candidate++) {
+			physicalFingerprints.add((long) fingerprintMethod.invoke(decision, candidate));
+			assertTrue(materializeMethod.invoke(decision, candidate, family) instanceof TupleExpr);
+		}
+		assertEquals(candidateCount, physicalFingerprints.size(),
+				"executable duplicates must not consume challenger slots");
 	}
 
 	@Test
@@ -1249,6 +1459,44 @@ class PackedPlanCacheTest {
 	}
 
 	@Test
+	void cachedParameterizedStatementPatternUsesTheCurrentRdfValue() {
+		PackedPlanCache cache = new PackedPlanCache(32, 4);
+		PackedPlanCache.Context context = context(11L);
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		Value firstValue = values.createIRI("urn:first");
+		Value secondValue = values.createIRI("urn:second");
+		TupleExpr first = new StatementPattern(Var.of("subject", firstValue), Var.of("predicate"), Var.of("object"));
+		TupleExpr second = new StatementPattern(Var.of("subject", secondValue), Var.of("predicate"), Var.of("object"));
+
+		PackedPlanningResult cold = PackedCascadesPlanner.optimize(first, OptimizationGoal.root(), cache, context);
+		PackedPlanningResult hot = PackedCascadesPlanner.optimize(second, OptimizationGoal.root(), cache, context);
+
+		assertFalse(cold.metrics().planCacheHit());
+		assertTrue(hot.metrics().planCacheHit(), "the second value should reuse the parameterized family recipe");
+		StatementPattern materialized = (StatementPattern) hot.selectedPlan();
+		assertEquals(secondValue, materialized.getSubjectVar().getValue());
+		assertNotEquals(firstValue, materialized.getSubjectVar().getValue(),
+				"a family hit must never retain an RDF value from the prior invocation");
+	}
+
+	@Test
+	void cachedParameterizedBindingAssignmentUsesDifferentCurrentRows() {
+		PackedPlanCache cache = new PackedPlanCache(32, 4);
+		PackedPlanCache.Context context = context(11L);
+		QueryBindingSet firstRow = row(SimpleValueFactory.getInstance().createIRI("urn:first"));
+		QueryBindingSet secondRow = row(SimpleValueFactory.getInstance().createIRI("urn:second"));
+
+		PackedPlanningResult cold = PackedCascadesPlanner.optimize(assignment(firstRow), OptimizationGoal.root(),
+				cache, context);
+		PackedPlanningResult hot = PackedCascadesPlanner.optimize(assignment(secondRow), OptimizationGoal.root(),
+				cache, context);
+
+		assertFalse(cold.metrics().planCacheHit());
+		assertTrue(hot.metrics().planCacheHit());
+		assertSame(secondRow, onlyRow((BindingSetAssignment) hot.selectedPlan()));
+	}
+
+	@Test
 	void hashUnsafeRdfValuesCanBeFingerprintedEncodedAndCached() {
 		PackedPlanCache cache = new PackedPlanCache(32, 4);
 		PackedPlanCache.Context context = context(11L);
@@ -1276,6 +1524,15 @@ class PackedPlanCacheTest {
 	}
 
 	private static PackedCostModel frontierCostModel(RuntimeFeedbackContract runtimeFeedbackContract) {
+		return frontierCostModel(runtimeFeedbackContract, null);
+	}
+
+	private static PackedCostModel countingFrontierCostModel(AtomicInteger providerCalls) {
+		return frontierCostModel(null, providerCalls);
+	}
+
+	private static PackedCostModel frontierCostModel(RuntimeFeedbackContract runtimeFeedbackContract,
+			AtomicInteger providerCalls) {
 		return new PackedCostModel() {
 			@Override
 			public double estimateRows(PackedQueryView query, int relationId) {
@@ -1291,16 +1548,19 @@ class PackedPlanCacheTest {
 
 					@Override
 					public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						increment(providerCalls);
 						publish(output);
 					}
 
 					@Override
 					public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						increment(providerCalls);
 						publish(output);
 					}
 
 					@Override
 					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						increment(providerCalls);
 						publish(output);
 					}
 
@@ -1324,6 +1584,12 @@ class PackedPlanCacheTest {
 				};
 			}
 		};
+	}
+
+	private static void increment(AtomicInteger counter) {
+		if (counter != null) {
+			counter.incrementAndGet();
+		}
 	}
 
 	private static RuntimeFeedbackContract runtimeFeedbackContract() {

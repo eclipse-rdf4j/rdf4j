@@ -12,20 +12,26 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.management.ManagementFactory;
+import java.lang.reflect.Method;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackTarget;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoRolloutProfile;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -39,6 +45,104 @@ class LmdbRuntimeFeedbackTargetTest {
 	private static final PhysicalResidualKey PHYSICAL = PhysicalResidualKey.of(
 			"streaming-correlated", "statement-pattern", "spoc", "dependent-reopen", "none", "none",
 			"none", "bound");
+
+	@Test
+	void planExecutionFeedbackIsDeduplicatedAndCensoredAtTheExistingPublicationBoundary(@TempDir Path tempDir)
+			throws Exception {
+		LmdbOperatorFeedbackStats statistics = new LmdbOperatorFeedbackStats(tempDir.resolve("feedback"));
+		LmdbPlanDecisionCache.PlanFamilyKey familyKey = new LmdbPlanDecisionCache.PlanFamilyKey(
+				"family", "dataset", "bindings", "unordered", "none", 1L, 1L, "environment");
+		LmdbPlanDecisionCache.PlanExecutionToken token = new LmdbPlanDecisionCache.PlanExecutionToken(
+				familyKey, 7L, 11L, 13L, 17L, true);
+		RuntimeFeedbackContract stampedContract = contract().withDescriptor(
+				((LmdbRuntimeFeedbackDescriptor) contract().descriptor()).withPlanExecutionToken(token));
+		List<LmdbPlanDecisionCache.ExecutionObservation> observations = new ArrayList<>();
+		Method observerSetter = LmdbOperatorFeedbackStats.class.getDeclaredMethod(
+				"setPlanExecutionObserver", Consumer.class);
+		observerSetter.invoke(statistics,
+				(Consumer<LmdbPlanDecisionCache.ExecutionObservation>) observations::add);
+
+		RuntimeFeedbackTarget first = statistics.resolveRuntimeFeedbackTarget(stampedContract);
+		RuntimeFeedbackTarget second = statistics.resolveRuntimeFeedbackTarget(stampedContract);
+		first.open();
+		first.close(4L, 4.0d, 4L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+				EvaluationStatistics.TerminationClassification.EXHAUSTED);
+		first.recordActualPhysicalImplementation(stampedContract.physicalImplementationId());
+		second.open();
+		second.close(2L, 2.0d, 2L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+				EvaluationStatistics.TerminationClassification.EXHAUSTED);
+		second.recordActualPhysicalImplementation(stampedContract.physicalImplementationId());
+
+		statistics.publishRuntimeFeedbackTargets(new RuntimeFeedbackTarget[] { first, second }, 2, true);
+
+		assertEquals(1, observations.size(), "one execution must update its plan-version posterior once");
+		LmdbPlanDecisionCache.ExecutionObservation complete = observations.getFirst();
+		assertEquals(familyKey, complete.familyKey());
+		assertEquals(token.variantId(), complete.variantId());
+		assertEquals(token.planVersion(), complete.planVersion());
+		assertTrue(complete.complete());
+		assertEquals(false, complete.censored());
+		assertEquals(4.0d, complete.normalizedResidual(), 0.0d,
+				"the plan posterior must retain the most conservative typed residual");
+
+		RuntimeFeedbackTarget exhausted = statistics.resolveRuntimeFeedbackTarget(stampedContract);
+		RuntimeFeedbackTarget partial = statistics.resolveRuntimeFeedbackTarget(stampedContract);
+		exhausted.open();
+		exhausted.close(1L, 1.0d, 1L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+				EvaluationStatistics.TerminationClassification.EXHAUSTED);
+		exhausted.recordActualPhysicalImplementation(stampedContract.physicalImplementationId());
+		partial.open();
+		partial.close(20L, 20.0d, 20L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+				EvaluationStatistics.TerminationClassification.PARTIAL);
+		partial.recordActualPhysicalImplementation(stampedContract.physicalImplementationId());
+
+		statistics.publishRuntimeFeedbackTargets(new RuntimeFeedbackTarget[] { exhausted, partial }, 2, true);
+
+		assertEquals(2, observations.size());
+		LmdbPlanDecisionCache.ExecutionObservation censored = observations.get(1);
+		assertEquals(false, censored.complete());
+		assertTrue(censored.censored(), "one partial operator makes the plan execution censored");
+	}
+
+	@Test
+	void monitoringOnlyLifecycleRegressionRemainsPosteriorEvidenceInsteadOfBlockingThePlan(@TempDir Path tempDir)
+			throws Exception {
+		String previousProfile = System.setProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY,
+				"safe-cardinality-correction");
+		try {
+			LmdbOperatorFeedbackStats statistics = new LmdbOperatorFeedbackStats(tempDir.resolve("feedback"));
+			LmdbPlanDecisionCache.PlanFamilyKey familyKey = new LmdbPlanDecisionCache.PlanFamilyKey(
+					"family", "dataset", "bindings", "unordered", "none", 1L, 1L, "environment");
+			LmdbPlanDecisionCache.PlanExecutionToken token = new LmdbPlanDecisionCache.PlanExecutionToken(
+					familyKey, 7L, 11L, 13L, 17L, false);
+			RuntimeFeedbackContract finiteLimit = withRegressionLimit(contract(), 2.0d);
+			RuntimeFeedbackContract stampedContract = finiteLimit.withDescriptor(
+					((LmdbRuntimeFeedbackDescriptor) finiteLimit.descriptor()).withPlanExecutionToken(token));
+			List<LmdbPlanDecisionCache.ExecutionObservation> observations = new ArrayList<>();
+			Method observerSetter = LmdbOperatorFeedbackStats.class.getDeclaredMethod(
+					"setPlanExecutionObserver", Consumer.class);
+			observerSetter.invoke(statistics,
+					(Consumer<LmdbPlanDecisionCache.ExecutionObservation>) observations::add);
+
+			RuntimeFeedbackTarget target = statistics.resolveRuntimeFeedbackTarget(stampedContract);
+			target.open();
+			target.close(4L, 4.0d, 4L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+					EvaluationStatistics.TerminationClassification.EXHAUSTED);
+			target.recordActualPhysicalImplementation(stampedContract.physicalImplementationId());
+			statistics.publishRuntimeFeedbackTargets(new RuntimeFeedbackTarget[] { target }, 1, true);
+
+			assertEquals(1, observations.size());
+			assertFalse(observations.getFirst().lifecycleBlocked(),
+					"monitoring-only lifecycle evidence must not bypass the configured rollout policy");
+			assertEquals(4.0d, observations.getFirst().normalizedResidual(), 0.0d);
+		} finally {
+			if (previousProfile == null) {
+				System.clearProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY);
+			} else {
+				System.setProperty(LeoRolloutProfile.ROLLOUT_PROFILE_PROPERTY, previousProfile);
+			}
+		}
+	}
 
 	@Test
 	void directPublicationUpdatesPreboundCellsWithoutKeysOrNodeMetrics(@TempDir Path tempDir) {
@@ -379,6 +483,17 @@ class LmdbRuntimeFeedbackTargetTest {
 				RuntimeFeedbackContract.ADMIT_LOGICAL | RuntimeFeedbackContract.ADMIT_PHYSICAL
 						| RuntimeFeedbackContract.ADMIT_LIFECYCLE
 						| RuntimeFeedbackContract.EXACT_FACT_ELIGIBLE);
+	}
+
+	private static RuntimeFeedbackContract withRegressionLimit(RuntimeFeedbackContract contract,
+			double regressionLimit) {
+		return new RuntimeFeedbackContract(contract.descriptor(), contract.rawPrediction(),
+				contract.appliedPrediction(),
+				contract.rawLogicalCardinality(), contract.appliedLogicalCardinality(),
+				contract.rawDependentPrediction(), contract.appliedDependentPrediction(), contract.objectiveLower(),
+				contract.objectivePoint(), contract.objectiveUpper(), regressionLimit, contract.semanticKind(),
+				contract.algorithm(), contract.access(), contract.physicalImplementationId(), contract.dataEpoch(),
+				contract.catalogEpoch(), contract.modelEpoch(), contract.admissionFlags());
 	}
 
 	private static RuntimeFeedbackContract semiAntiContract() {

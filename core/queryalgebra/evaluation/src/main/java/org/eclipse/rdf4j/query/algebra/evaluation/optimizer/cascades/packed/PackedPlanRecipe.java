@@ -69,6 +69,7 @@ final class PackedPlanRecipe {
 	private final PackedCostingTrace costingTrace;
 	private final PackedDecisionCertificate decisionCertificate;
 	private final PackedCacheValidationEvent cacheValidationEvent;
+	private final PackedPlanContinuationSeed continuationSeed;
 	private final int[] frontierBundleOrdinals;
 	private final byte[] evidenceGuarantees;
 	private final byte[] evidenceDispositions;
@@ -89,7 +90,7 @@ final class PackedPlanRecipe {
 			int[] dependentSubqueryPayloadIds, int[] dependentRootRecipeIds,
 			FrontierEvidenceBundle frontierEvidenceBundle, PackedCostingTrace costingTrace,
 			PackedDecisionCertificate decisionCertificate,
-			PackedCacheValidationEvent cacheValidationEvent,
+			PackedCacheValidationEvent cacheValidationEvent, PackedPlanContinuationSeed continuationSeed,
 			int[] frontierBundleOrdinals, byte[] evidenceGuarantees,
 			byte[] evidenceDispositions, int[] costEventIds, Object[] providerObjects,
 			long ruleProofMask) {
@@ -131,6 +132,7 @@ final class PackedPlanRecipe {
 		this.costingTrace = costingTrace;
 		this.decisionCertificate = decisionCertificate;
 		this.cacheValidationEvent = cacheValidationEvent;
+		this.continuationSeed = continuationSeed;
 		this.frontierBundleOrdinals = frontierBundleOrdinals;
 		this.evidenceGuarantees = evidenceGuarantees;
 		this.evidenceDispositions = evidenceDispositions;
@@ -149,7 +151,12 @@ final class PackedPlanRecipe {
 
 	static PackedPlanRecipe extract(PackedMemo memo, int rootWinnerId, PackedDependentPlans dependentPlans,
 			PackedCostSession costSession) {
-		return new Extractor(memo, dependentPlans, costSession).extract(rootWinnerId);
+		return new Extractor(memo, dependentPlans, costSession, true).extract(rootWinnerId);
+	}
+
+	static PackedPlanRecipe extractPortfolioCandidate(PackedMemo memo, int rootWinnerId,
+			PackedDependentPlans dependentPlans, PackedCostSession costSession) {
+		return new Extractor(memo, dependentPlans, costSession, false).extract(rootWinnerId);
 	}
 
 	int size() {
@@ -184,6 +191,23 @@ final class PackedPlanRecipe {
 		identity.appendNested(physicalControlIdentity(rootRecipeId, new PhysicalIdentity[size() + 1],
 				new byte[size() + 1]));
 		return identity.build();
+	}
+
+	PhysicalIdentity portfolioIdentity(TupleExpr materializedPlan) {
+		try {
+			return physicalIdentity(materializedPlan);
+		} catch (PackedMemoInvariantException unsupportedSemanticIdentity) {
+			/*
+			 * A custom RDF Value may be executable while deliberately unsupported by the canonical family codec. Such a
+			 * query is exact-cache-only. The portfolio still needs a local physical-form identity for its champion, but
+			 * this control-only fallback is never used to authorize cross-query reuse.
+			 */
+			PhysicalIdentityBuilder identity = new PhysicalIdentityBuilder(0x706f7274666f6c69L);
+			identity.append("exact-only-physical-control");
+			identity.appendNested(physicalControlIdentity(rootRecipeId, new PhysicalIdentity[size() + 1],
+					new byte[size() + 1]));
+			return identity.build();
+		}
 	}
 
 	private PhysicalIdentity physicalControlIdentity(int recipeId, PhysicalIdentity[] identities, byte[] states) {
@@ -455,6 +479,10 @@ final class PackedPlanRecipe {
 
 	PackedCostingTrace costingTrace() {
 		return costingTrace;
+	}
+
+	PackedPlanContinuationSeed continuationSeed() {
+		return continuationSeed;
 	}
 
 	String describeCostingDecisions() {
@@ -857,7 +885,7 @@ final class PackedPlanRecipe {
 				plannedStringMetricValueIds, plannedDoubleMetricStarts, plannedDoubleMetricCounts,
 				plannedDoubleMetricNameIds, plannedDoubleMetricValues, dependentOwnerRecipeIds,
 				dependentSubqueryPayloadIds, dependentRootRecipeIds, validation.evidenceBundle(), validatedTrace,
-				certificateUpdate.certificate(), event, validatedStateOrdinals,
+				certificateUpdate.certificate(), event, continuationSeed, validatedStateOrdinals,
 				validatedGuarantees,
 				validatedDispositions, costEventIds, providerObjects, ruleProofMask);
 	}
@@ -869,9 +897,12 @@ final class PackedPlanRecipe {
 				? Long.MAX_VALUE
 				: frontierBytes + traceBytes;
 		long certificateBytes = decisionCertificate.retainedBytes();
-		return evidenceAndTrace > Long.MAX_VALUE - certificateBytes
+		long evidenceBytes = evidenceAndTrace > Long.MAX_VALUE - certificateBytes
 				? Long.MAX_VALUE
 				: evidenceAndTrace + certificateBytes;
+		return evidenceBytes > Long.MAX_VALUE - continuationSeed.retainedBytes()
+				? Long.MAX_VALUE
+				: evidenceBytes + continuationSeed.retainedBytes();
 	}
 
 	boolean hasDetachedEvidence() {
@@ -896,6 +927,7 @@ final class PackedPlanRecipe {
 				PackedCostingTrace.empty(),
 				PackedDecisionCertificate.empty(),
 				cacheValidationEvent,
+				continuationSeed,
 				new int[frontierBundleOrdinals.length], evidenceGuarantees, evidenceDispositions,
 				new int[costEventIds.length],
 				providerObjects, ruleProofMask);
@@ -1236,6 +1268,7 @@ final class PackedPlanRecipe {
 
 		private static final int INITIAL_ROW_CAPACITY = 8;
 		private static final int[] EMPTY_INTS = new int[0];
+		private static final long[] EMPTY_LONGS = new long[0];
 		private static final short[] EMPTY_SHORTS = new short[0];
 		private static final byte[] EMPTY_BYTES = new byte[0];
 		private static final double[] EMPTY_DOUBLES = new double[0];
@@ -1244,6 +1277,7 @@ final class PackedPlanRecipe {
 		private final PackedMemo memo;
 		private final PackedDependentPlans dependentPlans;
 		private final PackedCostSession costSession;
+		private final boolean retainDecisionCertificate;
 		private int[] mappedWinnerSlots = new int[16];
 		private int[] mappedRecipeIds = new int[16];
 		private byte[] mappedStates = new byte[16];
@@ -1259,6 +1293,31 @@ final class PackedPlanRecipe {
 		private int[] implementationForms = new int[INITIAL_ROW_CAPACITY];
 		private int[] sourcePhysicalExpressionIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] sourceLogicalExpressionIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationGroupIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationRequiredPropertyIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationSemanticRowGoalIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationInputContextIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationCostPolicyIds = new int[INITIAL_ROW_CAPACITY];
+		private short[] continuationLogicalOperatorTags = new short[INITIAL_ROW_CAPACITY];
+		private int[] continuationLogicalPayloadIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationLogicalSemanticScopeIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationLogicalExecutionDomainIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationLogicalChildStarts = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationLogicalChildCounts = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationLogicalChildGroupIds = new int[INITIAL_ROW_CAPACITY];
+		private long[] continuationLogicalRuleMasks = new long[INITIAL_ROW_CAPACITY];
+		private int[] continuationStructuralLogicalGroupIds = new int[INITIAL_ROW_CAPACITY];
+		private short[] continuationStructuralLogicalOperatorTags = new short[INITIAL_ROW_CAPACITY];
+		private int[] continuationStructuralLogicalPayloadIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationStructuralLogicalSemanticScopeIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationStructuralLogicalExecutionDomainIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationStructuralLogicalChildStarts = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationStructuralLogicalChildCounts = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationStructuralLogicalChildGroupIds = new int[INITIAL_ROW_CAPACITY];
+		private long[] continuationStructuralLogicalRuleMasks = new long[INITIAL_ROW_CAPACITY];
+		private double[] continuationStartupCosts = new double[INITIAL_ROW_CAPACITY];
+		private double[] continuationTotalCosts = new double[INITIAL_ROW_CAPACITY];
+		private double[] continuationComparisonCosts = new double[INITIAL_ROW_CAPACITY];
 		private int[] childStarts = new int[INITIAL_ROW_CAPACITY];
 		private int[] childCounts = new int[INITIAL_ROW_CAPACITY];
 		private int[] childRecipeIds = new int[INITIAL_ROW_CAPACITY];
@@ -1297,13 +1356,22 @@ final class PackedPlanRecipe {
 		private int plannedStringMetricSize;
 		private int plannedDoubleMetricSize;
 		private int dependentSize;
+		private int continuationLogicalChildSize;
+		private int continuationStructuralLogicalChildSize;
+		private int continuationStructuralLogicalCount;
 		private int size;
 		private long ruleProofMask;
 
 		private Extractor(PackedMemo memo, PackedDependentPlans dependentPlans, PackedCostSession costSession) {
+			this(memo, dependentPlans, costSession, true);
+		}
+
+		private Extractor(PackedMemo memo, PackedDependentPlans dependentPlans, PackedCostSession costSession,
+				boolean retainDecisionCertificate) {
 			this.memo = memo;
 			this.dependentPlans = dependentPlans;
 			this.costSession = costSession;
+			this.retainDecisionCertificate = retainDecisionCertificate;
 			dependentProcessed = dependentPlans == null ? new boolean[0] : new boolean[dependentPlans.size()];
 		}
 
@@ -1321,7 +1389,9 @@ final class PackedPlanRecipe {
 				return finish(rootRecipeId, FrontierEvidenceBundle.empty(size + 1), PackedCostingTrace.empty(),
 						PackedDecisionCertificate.empty());
 			}
-			PackedMemo.PackedDecisionDraft decisionDraft = memo.decisionDraft(rootWinnerId);
+			PackedMemo.PackedDecisionDraft decisionDraft = retainDecisionCertificate
+					? memo.decisionDraft(rootWinnerId)
+					: PackedMemo.PackedDecisionDraft.empty(0);
 			PackedCostingTrace.Projection traceProjection = costSession instanceof EventSourcingPackedCostSession eventSession
 					? eventSession.snapshotTrace(traceRootEventIds(decisionDraft))
 					: new PackedCostingTrace.Projection(PackedCostingTrace.empty(), new int[] { 0 });
@@ -1378,6 +1448,30 @@ final class PackedPlanRecipe {
 		private PackedPlanRecipe finish(int rootRecipeId, FrontierEvidenceBundle evidenceBundle,
 				PackedCostingTrace costingTrace, PackedDecisionCertificate decisionCertificate) {
 			int rowCount = size + 1;
+			captureContinuationStructuralLogicalState();
+			int structuralLogicalRowCount = continuationStructuralLogicalCount + 1;
+			PackedPlanContinuationSeed continuationSeed = new PackedPlanContinuationSeed(rootRecipeId,
+					take(continuationGroupIds, rowCount), take(continuationRequiredPropertyIds, rowCount),
+					take(continuationSemanticRowGoalIds, rowCount), take(continuationInputContextIds, rowCount),
+					take(continuationCostPolicyIds, rowCount), take(continuationLogicalOperatorTags, rowCount),
+					take(continuationLogicalPayloadIds, rowCount),
+					take(continuationLogicalSemanticScopeIds, rowCount),
+					take(continuationLogicalExecutionDomainIds, rowCount),
+					take(continuationLogicalChildStarts, rowCount),
+					take(continuationLogicalChildCounts, rowCount),
+					take(continuationLogicalChildGroupIds, continuationLogicalChildSize),
+					take(continuationLogicalRuleMasks, rowCount),
+					take(continuationStructuralLogicalGroupIds, structuralLogicalRowCount),
+					take(continuationStructuralLogicalOperatorTags, structuralLogicalRowCount),
+					take(continuationStructuralLogicalPayloadIds, structuralLogicalRowCount),
+					take(continuationStructuralLogicalSemanticScopeIds, structuralLogicalRowCount),
+					take(continuationStructuralLogicalExecutionDomainIds, structuralLogicalRowCount),
+					take(continuationStructuralLogicalChildStarts, structuralLogicalRowCount),
+					take(continuationStructuralLogicalChildCounts, structuralLogicalRowCount),
+					take(continuationStructuralLogicalChildGroupIds, continuationStructuralLogicalChildSize),
+					take(continuationStructuralLogicalRuleMasks, structuralLogicalRowCount),
+					take(continuationStartupCosts, rowCount),
+					take(continuationTotalCosts, rowCount), take(continuationComparisonCosts, rowCount));
 			return new PackedPlanRecipe(rootRecipeId, take(operatorTags, rowCount), take(payloadIds, rowCount),
 					take(deliveredPropertyIds, rowCount), take(implementationForms, rowCount),
 					take(sourcePhysicalExpressionIds, rowCount), take(sourceLogicalExpressionIds, rowCount),
@@ -1399,9 +1493,33 @@ final class PackedPlanRecipe {
 					take(dependentRootRecipeIds, dependentSize), evidenceBundle, costingTrace,
 					decisionCertificate,
 					PackedCacheValidationEvent.NONE,
+					continuationSeed,
 					take(frontierBundleOrdinals, rowCount), take(evidenceGuarantees, rowCount),
 					take(evidenceDispositions, rowCount), take(costEventIds, rowCount), snapshotProviderObjects(),
 					ruleProofMask);
+		}
+
+		private void captureContinuationStructuralLogicalState() {
+			continuationStructuralLogicalCount = memo.logicalExpressionCount() - memo.baseLogicalExpressionCount();
+			ensureContinuationStructuralLogicalCapacity(continuationStructuralLogicalCount + 1);
+			for (int ordinal = 1; ordinal <= continuationStructuralLogicalCount; ordinal++) {
+				int expressionId = memo.baseLogicalExpressionCount() + ordinal;
+				continuationStructuralLogicalGroupIds[ordinal] = memo.logicalGroupId(expressionId);
+				continuationStructuralLogicalOperatorTags[ordinal] = (short) memo.logicalOperatorTag(expressionId);
+				continuationStructuralLogicalPayloadIds[ordinal] = memo.logicalPayloadId(expressionId);
+				continuationStructuralLogicalSemanticScopeIds[ordinal] = memo.logicalSemanticScopeId(expressionId);
+				continuationStructuralLogicalExecutionDomainIds[ordinal] = memo.logicalExecutionDomainId(expressionId);
+				int childCount = memo.logicalChildCount(expressionId);
+				continuationStructuralLogicalChildStarts[ordinal] = continuationStructuralLogicalChildSize;
+				continuationStructuralLogicalChildCounts[ordinal] = childCount;
+				ensureContinuationStructuralLogicalChildCapacity(
+						continuationStructuralLogicalChildSize + childCount);
+				for (int child = 0; child < childCount; child++) {
+					continuationStructuralLogicalChildGroupIds[continuationStructuralLogicalChildSize++] = memo
+							.logicalChildGroupId(expressionId, child);
+				}
+				continuationStructuralLogicalRuleMasks[ordinal] = memo.logicalRuleMask(expressionId);
+			}
 		}
 
 		private Object[] snapshotProviderObjects() {
@@ -1428,6 +1546,13 @@ final class PackedPlanRecipe {
 		private static short[] take(short[] values, int size) {
 			if (size == 0) {
 				return EMPTY_SHORTS;
+			}
+			return values.length == size ? values : Arrays.copyOf(values, size);
+		}
+
+		private static long[] take(long[] values, int size) {
+			if (size == 0) {
+				return EMPTY_LONGS;
 			}
 			return values.length == size ? values : Arrays.copyOf(values, size);
 		}
@@ -1559,6 +1684,33 @@ final class PackedPlanRecipe {
 			implementationForms[recipeId] = memo.physicalImplementationForm(physicalExpressionId);
 			sourcePhysicalExpressionIds[recipeId] = physicalExpressionId;
 			sourceLogicalExpressionIds[recipeId] = memo.physicalSourceLogicalExpressionId(physicalExpressionId);
+			continuationGroupIds[recipeId] = memo.winnerGroupId(winnerId);
+			continuationRequiredPropertyIds[recipeId] = memo.winnerRequiredPropertyId(winnerId);
+			continuationSemanticRowGoalIds[recipeId] = memo.winnerSemanticRowGoalId(winnerId);
+			continuationInputContextIds[recipeId] = memo.winnerInputContextId(winnerId);
+			continuationCostPolicyIds[recipeId] = memo.winnerCostPolicyId(winnerId);
+			int sourceLogicalExpressionId = sourceLogicalExpressionIds[recipeId];
+			if (sourceLogicalExpressionId != 0) {
+				continuationLogicalOperatorTags[recipeId] = (short) memo
+						.logicalOperatorTag(sourceLogicalExpressionId);
+				continuationLogicalPayloadIds[recipeId] = memo.logicalPayloadId(sourceLogicalExpressionId);
+				continuationLogicalSemanticScopeIds[recipeId] = memo
+						.logicalSemanticScopeId(sourceLogicalExpressionId);
+				continuationLogicalExecutionDomainIds[recipeId] = memo
+						.logicalExecutionDomainId(sourceLogicalExpressionId);
+				int logicalChildCount = memo.logicalChildCount(sourceLogicalExpressionId);
+				continuationLogicalChildStarts[recipeId] = continuationLogicalChildSize;
+				continuationLogicalChildCounts[recipeId] = logicalChildCount;
+				ensureContinuationLogicalChildCapacity(continuationLogicalChildSize + logicalChildCount);
+				for (int child = 0; child < logicalChildCount; child++) {
+					continuationLogicalChildGroupIds[continuationLogicalChildSize++] = memo
+							.logicalChildGroupId(sourceLogicalExpressionId, child);
+				}
+				continuationLogicalRuleMasks[recipeId] = memo.logicalRuleMask(sourceLogicalExpressionId);
+			}
+			continuationStartupCosts[recipeId] = memo.winnerStartupCost(winnerId);
+			continuationTotalCosts[recipeId] = memo.winnerTotalCost(winnerId);
+			continuationComparisonCosts[recipeId] = memo.winnerComparisonCost(winnerId);
 			if (sourceLogicalExpressionIds[recipeId] != 0) {
 				ruleProofMask |= memo.logicalRuleMask(sourceLogicalExpressionIds[recipeId]);
 			}
@@ -1740,6 +1892,21 @@ final class PackedPlanRecipe {
 			implementationForms = Arrays.copyOf(implementationForms, newCapacity);
 			sourcePhysicalExpressionIds = Arrays.copyOf(sourcePhysicalExpressionIds, newCapacity);
 			sourceLogicalExpressionIds = Arrays.copyOf(sourceLogicalExpressionIds, newCapacity);
+			continuationGroupIds = Arrays.copyOf(continuationGroupIds, newCapacity);
+			continuationRequiredPropertyIds = Arrays.copyOf(continuationRequiredPropertyIds, newCapacity);
+			continuationSemanticRowGoalIds = Arrays.copyOf(continuationSemanticRowGoalIds, newCapacity);
+			continuationInputContextIds = Arrays.copyOf(continuationInputContextIds, newCapacity);
+			continuationCostPolicyIds = Arrays.copyOf(continuationCostPolicyIds, newCapacity);
+			continuationLogicalOperatorTags = Arrays.copyOf(continuationLogicalOperatorTags, newCapacity);
+			continuationLogicalPayloadIds = Arrays.copyOf(continuationLogicalPayloadIds, newCapacity);
+			continuationLogicalSemanticScopeIds = Arrays.copyOf(continuationLogicalSemanticScopeIds, newCapacity);
+			continuationLogicalExecutionDomainIds = Arrays.copyOf(continuationLogicalExecutionDomainIds, newCapacity);
+			continuationLogicalChildStarts = Arrays.copyOf(continuationLogicalChildStarts, newCapacity);
+			continuationLogicalChildCounts = Arrays.copyOf(continuationLogicalChildCounts, newCapacity);
+			continuationLogicalRuleMasks = Arrays.copyOf(continuationLogicalRuleMasks, newCapacity);
+			continuationStartupCosts = Arrays.copyOf(continuationStartupCosts, newCapacity);
+			continuationTotalCosts = Arrays.copyOf(continuationTotalCosts, newCapacity);
+			continuationComparisonCosts = Arrays.copyOf(continuationComparisonCosts, newCapacity);
 			childStarts = Arrays.copyOf(childStarts, newCapacity);
 			childCounts = Arrays.copyOf(childCounts, newCapacity);
 			physicalMetadataPresent = Arrays.copyOf(physicalMetadataPresent, newCapacity);
@@ -1775,6 +1942,54 @@ final class PackedPlanRecipe {
 				newCapacity <<= 1;
 			}
 			childRecipeIds = Arrays.copyOf(childRecipeIds, newCapacity);
+		}
+
+		private void ensureContinuationLogicalChildCapacity(int requiredSize) {
+			if (requiredSize <= continuationLogicalChildGroupIds.length) {
+				return;
+			}
+			int newCapacity = continuationLogicalChildGroupIds.length;
+			while (newCapacity < requiredSize) {
+				newCapacity <<= 1;
+			}
+			continuationLogicalChildGroupIds = Arrays.copyOf(continuationLogicalChildGroupIds, newCapacity);
+		}
+
+		private void ensureContinuationStructuralLogicalCapacity(int requiredSize) {
+			if (requiredSize <= continuationStructuralLogicalGroupIds.length) {
+				return;
+			}
+			int newCapacity = continuationStructuralLogicalGroupIds.length;
+			while (newCapacity < requiredSize) {
+				newCapacity <<= 1;
+			}
+			continuationStructuralLogicalGroupIds = Arrays.copyOf(continuationStructuralLogicalGroupIds, newCapacity);
+			continuationStructuralLogicalOperatorTags = Arrays.copyOf(continuationStructuralLogicalOperatorTags,
+					newCapacity);
+			continuationStructuralLogicalPayloadIds = Arrays.copyOf(continuationStructuralLogicalPayloadIds,
+					newCapacity);
+			continuationStructuralLogicalSemanticScopeIds = Arrays.copyOf(
+					continuationStructuralLogicalSemanticScopeIds, newCapacity);
+			continuationStructuralLogicalExecutionDomainIds = Arrays.copyOf(
+					continuationStructuralLogicalExecutionDomainIds, newCapacity);
+			continuationStructuralLogicalChildStarts = Arrays.copyOf(continuationStructuralLogicalChildStarts,
+					newCapacity);
+			continuationStructuralLogicalChildCounts = Arrays.copyOf(continuationStructuralLogicalChildCounts,
+					newCapacity);
+			continuationStructuralLogicalRuleMasks = Arrays.copyOf(continuationStructuralLogicalRuleMasks,
+					newCapacity);
+		}
+
+		private void ensureContinuationStructuralLogicalChildCapacity(int requiredSize) {
+			if (requiredSize <= continuationStructuralLogicalChildGroupIds.length) {
+				return;
+			}
+			int newCapacity = continuationStructuralLogicalChildGroupIds.length;
+			while (newCapacity < requiredSize) {
+				newCapacity <<= 1;
+			}
+			continuationStructuralLogicalChildGroupIds = Arrays.copyOf(
+					continuationStructuralLogicalChildGroupIds, newCapacity);
 		}
 
 		private void ensurePlannedStringMetricCapacity(int requiredSize) {

@@ -13,14 +13,12 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
@@ -32,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
@@ -47,24 +46,35 @@ final class LmdbPipelinePlanCache {
 	private final int segmentMask;
 	private final FingerprintStrategy fingerprintStrategy;
 	private final boolean enabled;
-	private final AtomicInteger entryCount = new AtomicInteger();
-	private final AtomicLong retainedBytes = new AtomicLong();
+	private final LmdbPlanDecisionCache decisionCache;
 	private final AtomicLong hits = new AtomicLong();
 	private final AtomicLong misses = new AtomicLong();
 	private final AtomicLong waits = new AtomicLong();
-	private final AtomicLong evictions = new AtomicLong();
 
 	LmdbPipelinePlanCache(long evidenceBudgetBytes) {
-		this(DEFAULT_CAPACITY, DEFAULT_SEGMENTS, evidenceBudgetBytes,
+		this(DEFAULT_CAPACITY, DEFAULT_SEGMENTS, evidenceBudgetBytes, 4, 1, 0.01d,
+				(context, query) -> mix64(query.hashCode() ^ context.routingHash()));
+	}
+
+	LmdbPipelinePlanCache(long evidenceBudgetBytes, int maximumVariants, int refreshThreads,
+			double maximumCanaryFraction) {
+		this(DEFAULT_CAPACITY, DEFAULT_SEGMENTS, evidenceBudgetBytes, maximumVariants, refreshThreads,
+				maximumCanaryFraction,
 				(context, query) -> mix64(query.hashCode() ^ context.routingHash()));
 	}
 
 	LmdbPipelinePlanCache(int capacity, int segmentCount, long evidenceBudgetBytes) {
-		this(capacity, segmentCount, evidenceBudgetBytes,
+		this(capacity, segmentCount, evidenceBudgetBytes, 4, 1, 0.01d,
 				(context, query) -> mix64(query.hashCode() ^ context.routingHash()));
 	}
 
 	LmdbPipelinePlanCache(int capacity, int segmentCount, long evidenceBudgetBytes,
+			FingerprintStrategy fingerprintStrategy) {
+		this(capacity, segmentCount, evidenceBudgetBytes, 4, 1, 0.01d, fingerprintStrategy);
+	}
+
+	private LmdbPipelinePlanCache(int capacity, int segmentCount, long evidenceBudgetBytes,
+			int maximumVariants, int refreshThreads, double maximumCanaryFraction,
 			FingerprintStrategy fingerprintStrategy) {
 		if (capacity <= 0) {
 			throw new IllegalArgumentException("pipeline plan cache capacity must be positive");
@@ -77,6 +87,8 @@ final class LmdbPipelinePlanCache {
 		}
 		this.fingerprintStrategy = Objects.requireNonNull(fingerprintStrategy, "fingerprintStrategy");
 		this.enabled = evidenceBudgetBytes > 0L;
+		decisionCache = new LmdbPlanDecisionCache(capacity, evidenceBudgetBytes, maximumVariants, refreshThreads,
+				maximumCanaryFraction);
 		int normalizedSegments = 1;
 		while (normalizedSegments < Math.min(capacity, segmentCount)) {
 			normalizedSegments <<= 1;
@@ -85,12 +97,8 @@ final class LmdbPipelinePlanCache {
 		segmentMask = normalizedSegments - 1;
 		int baseCapacity = capacity / normalizedSegments;
 		int capacityRemainder = capacity % normalizedSegments;
-		long baseBudget = evidenceBudgetBytes / normalizedSegments;
-		long budgetRemainder = evidenceBudgetBytes % normalizedSegments;
 		for (int index = 0; index < normalizedSegments; index++) {
-			segments[index] = new Segment(
-					baseCapacity + (index < capacityRemainder ? 1 : 0),
-					baseBudget + (index < budgetRemainder ? 1L : 0L));
+			segments[index] = new Segment(baseCapacity + (index < capacityRemainder ? 1 : 0));
 		}
 	}
 
@@ -108,21 +116,30 @@ final class LmdbPipelinePlanCache {
 		}
 		long fingerprint = fingerprintStrategy.fingerprint(context, query);
 		CacheKey key = new CacheKey(fingerprint, context, query);
+		LmdbPlanDecisionCache.LookupDecision decision;
+		try {
+			decision = decisionCache.lookupExact(exactInvocationKey(key), lookupRequest(context));
+		} catch (RuntimeException cacheFailure) {
+			decision = new LmdbPlanDecisionCache.ReplanBeforeUse("lookup-failure-closed");
+		}
+		if (decision instanceof LmdbPlanDecisionCache.Use use) {
+			hits.incrementAndGet();
+			return new Result(annotateDecision(use.plan().materialize(), use), true);
+		}
+		if (decision instanceof LmdbPlanDecisionCache.UseAndRefresh useAndRefresh) {
+			hits.incrementAndGet();
+			return new Result(annotateDecision(useAndRefresh.plan().materialize(), useAndRefresh), true);
+		}
 		Segment segment = segments[(int) mix64(fingerprint) & segmentMask];
 		Flight owner = null;
 		CompletableFuture<TupleExpr> shared = null;
 		boolean bypass = false;
 		synchronized (segment) {
-			Entry cached = segment.entries.get(key);
-			if (cached != null && context.revision().equals(currentRevision.get())) {
-				hits.incrementAndGet();
-				return new Result(cached.template().clone(), true);
-			}
 			Flight existing = segment.flights.get(key);
 			if (existing != null) {
 				waits.incrementAndGet();
 				shared = existing.result;
-			} else if (segment.evidenceBudgetBytes <= 0L || segment.flights.size() >= segment.capacity) {
+			} else if (segment.flights.size() >= segment.capacity) {
 				bypass = true;
 			} else {
 				misses.incrementAndGet();
@@ -155,11 +172,11 @@ final class LmdbPipelinePlanCache {
 	}
 
 	int entryCount() {
-		return entryCount.get();
+		return Math.toIntExact(decisionCache.statistics().families());
 	}
 
 	long retainedBytes() {
-		return retainedBytes.get();
+		return decisionCache.statistics().retainedBytes();
 	}
 
 	long hits() {
@@ -175,7 +192,19 @@ final class LmdbPipelinePlanCache {
 	}
 
 	long evictions() {
-		return evictions.get();
+		return decisionCache.statistics().evictions();
+	}
+
+	void observeExecution(LmdbPlanDecisionCache.ExecutionObservation observation) {
+		try {
+			decisionCache.observeExecution(observation);
+		} catch (RuntimeException cacheFailure) {
+			// Runtime feedback is advisory. A cache failure must not affect an executing query.
+		}
+	}
+
+	void close() {
+		decisionCache.close();
 	}
 
 	private void publish(Segment segment, Flight flight, TupleExpr template) {
@@ -184,27 +213,14 @@ final class LmdbPipelinePlanCache {
 				: saturatedAdd(ENTRY_OBJECT_BYTES, saturatedAdd(
 						saturatedMultiply(flight.sourceRetainedBytes, 2L),
 						FactorCostCacheKey.estimatedRetainedBytes(template)));
-		boolean retained = false;
+		boolean owned;
 		synchronized (segment) {
-			if (segment.flights.remove(flight.key) != flight) {
-				throw new IllegalStateException("pipeline plan cache flight is no longer owned");
-			}
-			if (template != null && entryBytes <= segment.evidenceBudgetBytes) {
-				while (!segment.entries.isEmpty()
-						&& (segment.entries.size() >= segment.capacity
-								|| segment.retainedBytes > segment.evidenceBudgetBytes - entryBytes)) {
-					evictOldest(segment);
-				}
-				if (segment.entries.size() < segment.capacity
-						&& segment.retainedBytes <= segment.evidenceBudgetBytes - entryBytes) {
-					segment.entries.put(flight.key, new Entry(template, entryBytes));
-					segment.retainedBytes += entryBytes;
-					entryCount.incrementAndGet();
-					retainedBytes.addAndGet(entryBytes);
-					retained = true;
-				}
-			}
+			owned = segment.flights.remove(flight.key) == flight;
 		}
+		if (!owned) {
+			throw new IllegalStateException("pipeline plan cache flight is no longer owned");
+		}
+		boolean retained = template != null && publishDecision(flight.key, template, entryBytes);
 		flight.result.complete(retained ? template : null);
 	}
 
@@ -218,17 +234,120 @@ final class LmdbPipelinePlanCache {
 		}
 	}
 
-	private void evictOldest(Segment segment) {
-		Iterator<Map.Entry<CacheKey, Entry>> iterator = segment.entries.entrySet().iterator();
-		if (!iterator.hasNext()) {
-			return;
+	private boolean publishDecision(CacheKey key, TupleExpr template, long entryBytes) {
+		LmdbPlanDecisionCache.EvidenceSnapshot evidence = evidence(key.context());
+		LmdbPlanDecisionCache.BuildPublication publication = new LmdbPlanDecisionCache.BuildPublication(
+				familyKey(key), exactInvocationKey(key), semanticDependencies(key.context()), evidence, evidence,
+				template,
+				Long.toUnsignedString(key.fingerprint(), 16), LmdbPlanDecisionCache.EstimatedCostInterval.unbounded(),
+				new LmdbPlanDecisionCache.SearchCertificate(LmdbPlanDecisionCache.SearchCompletion.EXACT_COMPLETE,
+						LmdbPlanDecisionCache.BoundKind.BEST_KNOWN_UNBOUNDED, Double.NaN,
+						evidence.globalEpoch(), evidence.globalEpoch(), 0.0d, 0L),
+				entryBytes, 0L);
+		try {
+			return decisionCache.publishBuild(publication);
+		} catch (RuntimeException cacheFailure) {
+			return false;
 		}
-		Entry evicted = iterator.next().getValue();
-		iterator.remove();
-		segment.retainedBytes -= evicted.retainedBytes();
-		entryCount.decrementAndGet();
-		retainedBytes.addAndGet(-evicted.retainedBytes());
-		evictions.incrementAndGet();
+	}
+
+	private static TupleExpr annotateDecision(TupleExpr plan, LmdbPlanDecisionCache.LookupDecision decision) {
+		plan.setStringMetricPlanned("optimizer.planCacheLookupOutcome", decision.outcome().name());
+		plan.setStringMetricPlanned("optimizer.planCacheRefreshReason", decision.reason());
+		if (decision instanceof LmdbPlanDecisionCache.Use use) {
+			annotateVersion(plan, use.familyVersion(), use.variantId(), use.plan(), use.qualityState());
+			annotateCertificate(plan, use.searchCertificate(), use.evidenceEpoch(),
+					use.stabilityEnvelopeCovered());
+			stampPlanExecutionToken(plan, use.executionToken());
+			plan.setDoubleMetricPlanned("optimizer.planCacheCanary", use.canary() ? 1.0d : 0.0d);
+		} else if (decision instanceof LmdbPlanDecisionCache.UseAndRefresh useAndRefresh) {
+			annotateVersion(plan, useAndRefresh.familyVersion(), useAndRefresh.variantId(), useAndRefresh.plan(),
+					useAndRefresh.qualityState());
+			annotateCertificate(plan, useAndRefresh.searchCertificate(), useAndRefresh.evidenceEpoch(),
+					useAndRefresh.stabilityEnvelopeCovered());
+			stampPlanExecutionToken(plan, useAndRefresh.executionToken());
+			plan.setDoubleMetricPlanned("optimizer.planCacheCanary", useAndRefresh.canary() ? 1.0d : 0.0d);
+		}
+		return plan;
+	}
+
+	private static void annotateCertificate(TupleExpr plan, LmdbPlanDecisionCache.SearchCertificate certificate,
+			long evidenceEpoch, boolean stabilityEnvelopeCovered) {
+		plan.setStringMetricPlanned("optimizer.planCacheSearchCompletion", certificate.completion().name());
+		plan.setStringMetricPlanned("optimizer.planCacheSearchBoundKind", certificate.boundKind().name());
+		plan.setDoubleMetricPlanned("optimizer.planCacheEvidenceEpoch", evidenceEpoch);
+		plan.setStringMetricPlanned("optimizer.planCacheStabilityEnvelopeResult",
+				stabilityEnvelopeCovered ? "WITHIN" : "OUTSIDE");
+	}
+
+	private static void stampPlanExecutionToken(TupleExpr plan,
+			LmdbPlanDecisionCache.PlanExecutionToken executionToken) {
+		plan.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				RuntimeFeedbackContract contract = node.getRuntimeFeedbackContract();
+				if (contract != null && contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor) {
+					node.setRuntimeFeedbackContract(
+							contract.withDescriptor(descriptor.withPlanExecutionToken(executionToken)));
+				}
+				super.meetNode(node);
+			}
+		});
+	}
+
+	private static void annotateVersion(TupleExpr plan, long familyVersion, long variantId,
+			LmdbPlanDecisionCache.PlanVersion version, LmdbPlanDecisionCache.QualityState qualityState) {
+		plan.setDoubleMetricPlanned("optimizer.planCacheFamily", familyVersion);
+		plan.setDoubleMetricPlanned("optimizer.planCacheVariant", variantId);
+		plan.setDoubleMetricPlanned("optimizer.planCachePlanVersion", version.version());
+		plan.setStringMetricPlanned("optimizer.planCacheQualityState", qualityState.name());
+		plan.setStringMetricPlanned("optimizer.planCacheDeploymentRole", version.deploymentRole().name());
+	}
+
+	private static LmdbPlanDecisionCache.PlanFamilyKey familyKey(CacheKey key) {
+		Context context = key.context();
+		return new LmdbPlanDecisionCache.PlanFamilyKey(key.query(), context.dataset(), context.bindings(),
+				Boolean.toString(context.preserveObservationOrder()), context.queryEvaluationMode(), 0L, 0L,
+				context.configuration());
+	}
+
+	private static LmdbPlanDecisionCache.ExactInvocationKey exactInvocationKey(CacheKey key) {
+		LmdbPlanDecisionCache.PlanFamilyKey familyKey = familyKey(key);
+		return new LmdbPlanDecisionCache.ExactInvocationKey(familyKey, key.query(), semanticContext(key.context()));
+	}
+
+	private static SemanticContext semanticContext(Context context) {
+		return new SemanticContext(context.executionSnapshotPresent(), context.dataset(), context.bindings(),
+				context.configuration(), context.preserveObservationOrder(), context.trackResultSize(),
+				context.trackTime(),
+				context.queryEvaluationMode(), context.runtimeTelemetry());
+	}
+
+	private static LmdbPlanDecisionCache.SemanticDependencies semanticDependencies(Context context) {
+		return new LmdbPlanDecisionCache.SemanticDependencies(context.dataset(), context.bindings(),
+				Boolean.toString(context.preserveObservationOrder()),
+				context.queryEvaluationMode() + ':' + context.trackResultSize() + ':' + context.trackTime() + ':'
+						+ context.runtimeTelemetry(),
+				0L, 0L, 0L, 0L, 0L, context.configuration(), null);
+	}
+
+	private static LmdbPlanDecisionCache.EvidenceSnapshot evidence(Context context) {
+		LmdbEstimatorRuntime.PlanningRevisions revisions = context.revision().planningRevisions();
+		return new LmdbPlanDecisionCache.EvidenceSnapshot(0L, revisions.dataRevision(),
+				revisions.frontierRevision(), revisions.leoRevision(), revisions.learnedEvidenceRevision(), 0L,
+				Set.of(
+						new LmdbPlanDecisionCache.EvidenceDependency(LmdbPlanDecisionCache.EvidenceKind.GLOBAL_DATA,
+								"global", revisions.dataRevision()),
+						new LmdbPlanDecisionCache.EvidenceDependency(LmdbPlanDecisionCache.EvidenceKind.FRONTIER,
+								"global", revisions.frontierRevision()),
+						new LmdbPlanDecisionCache.EvidenceDependency(LmdbPlanDecisionCache.EvidenceKind.LEO,
+								"global", revisions.leoRevision())));
+	}
+
+	private static LmdbPlanDecisionCache.LookupRequest lookupRequest(Context context) {
+		return new LmdbPlanDecisionCache.LookupRequest(semanticDependencies(context), evidence(context),
+				LmdbPlanDecisionCache.InvocationFeatures.empty(), 0.01d, true, false, false);
 	}
 
 	private static boolean retainable(TupleExpr plan) {
@@ -344,14 +463,16 @@ final class LmdbPipelinePlanCache {
 	record Result(TupleExpr plan, boolean cacheHit) {
 	}
 
+	private record SemanticContext(boolean executionSnapshotPresent, DatasetIdentity dataset,
+			BindingIdentity bindings, String configuration, boolean preserveObservationOrder, boolean trackResultSize,
+			boolean trackTime, String queryEvaluationMode, boolean runtimeTelemetry) {
+	}
+
 	private record CacheKey(long fingerprint, Context context, PackedPlanCache.StructuralKey query) {
 		@Override
 		public int hashCode() {
 			return Long.hashCode(fingerprint);
 		}
-	}
-
-	private record Entry(TupleExpr template, long retainedBytes) {
 	}
 
 	private static final class Flight {
@@ -367,14 +488,10 @@ final class LmdbPipelinePlanCache {
 
 	private static final class Segment {
 		private final int capacity;
-		private final long evidenceBudgetBytes;
-		private final LinkedHashMap<CacheKey, Entry> entries = new LinkedHashMap<>(16, 0.75f, true);
 		private final Map<CacheKey, Flight> flights = new LinkedHashMap<>();
-		private long retainedBytes;
 
-		private Segment(int capacity, long evidenceBudgetBytes) {
+		private Segment(int capacity) {
 			this.capacity = capacity;
-			this.evidenceBudgetBytes = evidenceBudgetBytes;
 		}
 	}
 

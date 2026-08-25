@@ -205,6 +205,17 @@ public final class RuntimeFeedbackContract {
 		return descriptor;
 	}
 
+	/** Returns an otherwise identical immutable contract addressed by a different typed destination descriptor. */
+	public RuntimeFeedbackContract withDescriptor(RuntimeFeedbackDescriptor replacement) {
+		if (descriptor == replacement) {
+			return this;
+		}
+		return new RuntimeFeedbackContract(replacement, rawPrediction, appliedPrediction, rawLogicalCardinality,
+				appliedLogicalCardinality, rawDependentPrediction, appliedDependentPrediction, objectiveLower,
+				objectivePoint, objectiveUpper, regressionLimit, semanticKind, algorithm, access,
+				physicalImplementationId, dataEpoch, catalogEpoch, modelEpoch, admissionFlags);
+	}
+
 	public PredictionVector rawPrediction() {
 		return rawPrediction;
 	}

@@ -20,7 +20,8 @@ record LmdbRuntimeFeedbackDescriptor(FrontierLearningKey legacyLogicalKey,
 		FrontierLearningKey legacyPhysicalKey, LogicalLearningKey logicalKey,
 		LearningApplicability applicability, PhysicalResidualKey physicalKey,
 		LogicalGroupOrigin logicalGroupOrigin, LearningFeatureEnvelope featureEnvelope,
-		FilterSurfaceKey exactFilterSurfaceKey, FilterSurfaceKey generalizedFilterSurfaceKey)
+		FilterSurfaceKey exactFilterSurfaceKey, FilterSurfaceKey generalizedFilterSurfaceKey,
+		LmdbPlanDecisionCache.PlanExecutionToken planExecutionToken)
 		implements RuntimeFeedbackDescriptor {
 
 	LmdbRuntimeFeedbackDescriptor {
@@ -29,6 +30,14 @@ record LmdbRuntimeFeedbackDescriptor(FrontierLearningKey legacyLogicalKey,
 		Objects.requireNonNull(physicalKey, "physical key");
 		Objects.requireNonNull(logicalGroupOrigin, "logical group origin");
 		Objects.requireNonNull(featureEnvelope, "learning feature envelope");
+	}
+
+	LmdbRuntimeFeedbackDescriptor(FrontierLearningKey legacyLogicalKey, FrontierLearningKey legacyPhysicalKey,
+			LogicalLearningKey logicalKey, LearningApplicability applicability, PhysicalResidualKey physicalKey,
+			LogicalGroupOrigin logicalGroupOrigin, LearningFeatureEnvelope featureEnvelope,
+			FilterSurfaceKey exactFilterSurfaceKey, FilterSurfaceKey generalizedFilterSurfaceKey) {
+		this(legacyLogicalKey, legacyPhysicalKey, logicalKey, applicability, physicalKey, logicalGroupOrigin,
+				featureEnvelope, exactFilterSurfaceKey, generalizedFilterSurfaceKey, null);
 	}
 
 	LmdbRuntimeFeedbackDescriptor(FrontierLearningKey legacyLogicalKey, FrontierLearningKey legacyPhysicalKey,
@@ -49,6 +58,14 @@ record LmdbRuntimeFeedbackDescriptor(FrontierLearningKey legacyLogicalKey,
 			LogicalGroupOrigin logicalGroupOrigin, LearningFeatureEnvelope featureEnvelope) {
 		this(legacyLogicalKey, legacyPhysicalKey, logicalKey, applicability, physicalKey, logicalGroupOrigin,
 				featureEnvelope, null, null);
+	}
+
+	LmdbRuntimeFeedbackDescriptor withPlanExecutionToken(LmdbPlanDecisionCache.PlanExecutionToken token) {
+		Objects.requireNonNull(token, "plan execution token");
+		return token.equals(planExecutionToken) ? this
+				: new LmdbRuntimeFeedbackDescriptor(legacyLogicalKey, legacyPhysicalKey, logicalKey, applicability,
+						physicalKey, logicalGroupOrigin, featureEnvelope, exactFilterSurfaceKey,
+						generalizedFilterSurfaceKey, token);
 	}
 
 	/** Query-local typed certificate for the canonical factor set that produced a logical contract. */
