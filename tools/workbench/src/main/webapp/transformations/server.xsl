@@ -13,7 +13,9 @@
 	<xsl:include href="template.xsl" />
 
 	<xsl:template match="sparql:sparql">
-		<form action="server" method="post" onsubmit="changeServer(event)">
+		<form action="server" method="post">
+			<input type="hidden" name="csrf-token"
+				value="{normalize-space(//sparql:binding[@name='csrf-token'])}" />
 			<table class="dataentry">
 				<tbody>
 					<tr>
@@ -70,8 +72,6 @@
 				</tbody>
 			</table>
 		</form>
-		<script src="../../scripts/server.js" type="text/javascript">
-		</script>
 	</xsl:template>
 
 </xsl:stylesheet>

@@ -5,20 +5,4 @@
 // corresponding *.ts source in the ts subfolder, and then invoke the
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
 
-/**
- * Invoked by the change server form in server.xsl.
- */
-function changeServer(event: JQueryEventObject) {
-    event.preventDefault();
-    var form = <HTMLFormElement>$(event.target).closest('form').get(0);
-    var user = $('#server-user').prop('value');
-    var password = $('#server-password').prop('value');
-    if (user && password) {
-        var decoded = user + ':' + password;
-        var encoded = window.btoa ? window.btoa(decoded) : decoded;
-        $('#server-password').attr('name', 'server-user-password').prop('value', encoded);
-    }
-    if (form) {
-        form.submit();
-    }
-}
+// Credentials are posted normally and encrypted only by the server.

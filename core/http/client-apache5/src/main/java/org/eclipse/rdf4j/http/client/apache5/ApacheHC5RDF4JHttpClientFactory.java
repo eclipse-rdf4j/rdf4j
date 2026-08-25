@@ -21,7 +21,6 @@ import org.apache.hc.client5.http.HttpRequestRetryStrategy;
 import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.cookie.StandardCookieSpec;
-import org.apache.hc.client5.http.impl.DefaultRedirectStrategy;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
@@ -126,7 +125,7 @@ public class ApacheHC5RDF4JHttpClientFactory implements RDF4JHttpClientFactory {
 			builder.evictIdleConnections(TimeValue.ofMilliseconds(config.getIdleConnectionTimeoutMs()));
 		}
 
-		builder.setRedirectStrategy(DefaultRedirectStrategy.INSTANCE);
+		builder.setRedirectStrategy(new PolicyAwareRedirectStrategy(config.getRemoteResourceAccessPolicy()));
 
 		if (!config.getDefaultHeaders().isEmpty()) {
 			List<BasicHeader> defaultHeaders = config.getDefaultHeaders()
@@ -137,7 +136,8 @@ public class ApacheHC5RDF4JHttpClientFactory implements RDF4JHttpClientFactory {
 		}
 
 		CloseableHttpClient httpClient = buildHttpClient(builder, config);
-		return new ApacheHC5RDF4JHttpClient(httpClient, config.getMaxConnectionsPerRoute(), requestConfig);
+		return new ApacheHC5RDF4JHttpClient(httpClient, config.getMaxConnectionsPerRoute(), requestConfig,
+				config.getRemoteResourceAccessPolicy());
 	}
 
 	/**

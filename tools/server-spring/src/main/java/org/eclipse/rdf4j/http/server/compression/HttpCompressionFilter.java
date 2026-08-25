@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.http.server.compression;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -32,6 +33,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.http.server.compression.RequestDecompressionBudget.DecompressionLimitException;
+import org.eclipse.rdf4j.http.server.compression.RequestDecompressionBudget.MalformedCompressionException;
 import org.eclipse.rdf4j.rio.helpers.RioCompression;
 
 import jakarta.servlet.Filter;
@@ -60,14 +63,27 @@ public class HttpCompressionFilter implements Filter {
 	private static final String ACCEPT_ENCODING = "Accept-Encoding";
 	private static final String EXCLUDE_CONTENT_TYPES = "excludeContentTypes";
 	private static final String FORM_CONTENT_TYPE = "application/x-www-form-urlencoded";
+	private static final String MAX_EXPANDED_FORM_BYTES = "maxExpandedFormBytes";
+	private static final String MAX_EXPANDED_REQUEST_BYTES = "maxExpandedRequestBytes";
+	private static final String MAX_EXPANSION_RATIO = "maxExpansionRatio";
+	private static final String EXPANSION_RATIO_GRACE_BYTES = "expansionRatioGraceBytes";
+	private static final String PROPERTY_PREFIX = "org.eclipse.rdf4j.http.decompression.";
+	private static final long DEFAULT_MAX_FORM_BYTES = 16L * 1024 * 1024;
+	private static final long DEFAULT_MAX_REQUEST_BYTES = 4L * 1024 * 1024 * 1024;
+	private static final double DEFAULT_MAX_RATIO = 200.0;
+	private static final long DEFAULT_RATIO_GRACE_BYTES = 1024L * 1024;
 	private static final Set<String> DEFAULT_EXCLUDED_CONTENT_TYPES = Set.of(
 			"application/x-binary-rdf",
 			"application/x-binary-rdf-results-table");
 
 	private Set<String> excludedContentTypes = DEFAULT_EXCLUDED_CONTENT_TYPES;
+	private long maxExpandedFormBytes = DEFAULT_MAX_FORM_BYTES;
+	private long maxExpandedRequestBytes = DEFAULT_MAX_REQUEST_BYTES;
+	private double maxExpansionRatio = DEFAULT_MAX_RATIO;
+	private long expansionRatioGraceBytes = DEFAULT_RATIO_GRACE_BYTES;
 
 	@Override
-	public void init(FilterConfig filterConfig) {
+	public void init(FilterConfig filterConfig) throws ServletException {
 		String configuredTypes = filterConfig.getInitParameter(EXCLUDE_CONTENT_TYPES);
 		if (configuredTypes != null && !configuredTypes.isBlank()) {
 			Set<String> parsedTypes = new HashSet<>();
@@ -78,6 +94,14 @@ public class HttpCompressionFilter implements Filter {
 				}
 			}
 			excludedContentTypes = Collections.unmodifiableSet(parsedTypes);
+		}
+		maxExpandedFormBytes = positiveLong(filterConfig, MAX_EXPANDED_FORM_BYTES, DEFAULT_MAX_FORM_BYTES);
+		maxExpandedRequestBytes = positiveLong(filterConfig, MAX_EXPANDED_REQUEST_BYTES, DEFAULT_MAX_REQUEST_BYTES);
+		maxExpansionRatio = positiveDouble(filterConfig, MAX_EXPANSION_RATIO, DEFAULT_MAX_RATIO);
+		expansionRatioGraceBytes = nonNegativeLong(filterConfig, EXPANSION_RATIO_GRACE_BYTES,
+				DEFAULT_RATIO_GRACE_BYTES);
+		if (maxExpandedFormBytes > maxExpandedRequestBytes) {
+			throw new ServletException("maxExpandedFormBytes must not exceed maxExpandedRequestBytes");
 		}
 	}
 
@@ -101,26 +125,57 @@ public class HttpCompressionFilter implements Filter {
 		HttpCompressionEncoding requestContentEncoding = HttpCompressionEncoding.requestContentEncoding(
 				contentEncodingHeader);
 		HttpCompressionEncoding responseContentEncoding = HttpCompressionEncoding.acceptedResponseEncoding(httpRequest);
-		ServletRequest requestToUse = requestToUse(httpRequest, requestContentEncoding);
+		RequestDecompressionBudget budget = new RequestDecompressionBudget(maxExpandedRequestBytes, maxExpansionRatio,
+				expansionRatioGraceBytes);
+		ServletRequest requestToUse = requestToUse(httpRequest, requestContentEncoding, budget,
+				maxExpandedFormBytes);
 		CompressedHttpServletResponseWrapper responseToUse = new CompressedHttpServletResponseWrapper(httpResponse,
 				"HEAD".equalsIgnoreCase(httpRequest.getMethod()) ? null : responseContentEncoding,
 				excludedContentTypes);
 
 		try {
 			chain.doFilter(requestToUse, responseToUse);
+		} catch (IOException | ServletException | RuntimeException e) {
+			if (!handleDecompressionFailure(e, httpResponse)) {
+				throw e;
+			}
 		} finally {
 			responseToUse.finish();
 		}
 	}
 
-	private static ServletRequest requestToUse(HttpServletRequest request, HttpCompressionEncoding contentEncoding) {
+	private static ServletRequest requestToUse(HttpServletRequest request, HttpCompressionEncoding contentEncoding,
+			RequestDecompressionBudget budget, long maxExpandedFormBytes) {
 		if (contentEncoding != null) {
-			return new CompressedHttpServletRequestWrapper(request, contentEncoding);
+			return new CompressedHttpServletRequestWrapper(request, contentEncoding, budget, maxExpandedFormBytes);
 		}
 		if (mayHaveRequestBody(request)) {
-			return new AutoDetectingHttpServletRequestWrapper(request);
+			return new AutoDetectingHttpServletRequestWrapper(request, budget);
 		}
 		return request;
+	}
+
+	private static boolean handleDecompressionFailure(Throwable failure, HttpServletResponse response)
+			throws IOException {
+		Throwable cause = failure;
+		while (cause != null && !(cause instanceof DecompressionLimitException)
+				&& !(cause instanceof MalformedCompressionException)) {
+			cause = cause.getCause();
+		}
+		if (cause == null) {
+			return false;
+		}
+		if (response.isCommitted()) {
+			if (cause instanceof IOException ioException) {
+				throw ioException;
+			}
+			throw new IOException(cause);
+		}
+		response.reset();
+		response.sendError(cause instanceof DecompressionLimitException
+				? HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE
+				: HttpServletResponse.SC_BAD_REQUEST, cause.getMessage());
+		return true;
 	}
 
 	private static boolean mayHaveRequestBody(HttpServletRequest request) {
@@ -145,15 +200,20 @@ public class HttpCompressionFilter implements Filter {
 	private static final class CompressedHttpServletRequestWrapper extends HttpServletRequestWrapper {
 
 		private final HttpCompressionEncoding contentEncoding;
+		private final RequestDecompressionBudget budget;
+		private final long maxExpandedFormBytes;
 		private ServletInputStream inputStream;
 		private BufferedReader reader;
 		private Map<String, String[]> parameterMap;
 		private boolean inputStreamRequested;
 		private boolean readerRequested;
 
-		CompressedHttpServletRequestWrapper(HttpServletRequest request, HttpCompressionEncoding contentEncoding) {
+		CompressedHttpServletRequestWrapper(HttpServletRequest request, HttpCompressionEncoding contentEncoding,
+				RequestDecompressionBudget budget, long maxExpandedFormBytes) {
 			super(request);
 			this.contentEncoding = contentEncoding;
+			this.budget = budget;
+			this.maxExpandedFormBytes = maxExpandedFormBytes;
 		}
 
 		@Override
@@ -261,8 +321,13 @@ public class HttpCompressionFilter implements Filter {
 
 		private ServletInputStream decompressedInputStream() throws IOException {
 			if (inputStream == null) {
-				inputStream = new DelegatingServletInputStream(
-						contentEncoding.decompressedInputStream(super.getInputStream()));
+				InputStream compressed = budget.compressedSource(super.getInputStream());
+				try {
+					inputStream = new DelegatingServletInputStream(
+							budget.expandedStream(contentEncoding.decompressedInputStream(compressed)));
+				} catch (IOException e) {
+					throw new MalformedCompressionException(e);
+				}
 			}
 			return inputStream;
 		}
@@ -279,8 +344,9 @@ public class HttpCompressionFilter implements Filter {
 			Charset charset = requestCharset();
 			Map<String, List<String>> parameters = new LinkedHashMap<>();
 			addUrlEncodedParameters(parameters, getQueryString(), charset);
-			try (InputStream formInputStream = contentEncoding.decompressedInputStream(super.getInputStream())) {
-				addUrlEncodedParameters(parameters, new String(formInputStream.readAllBytes(), charset), charset);
+			try (InputStream formInputStream = decompressedInputStream()) {
+				addUrlEncodedParameters(parameters,
+						new String(readBounded(formInputStream, maxExpandedFormBytes), charset), charset);
 			}
 
 			Map<String, String[]> result = new LinkedHashMap<>();
@@ -288,6 +354,20 @@ public class HttpCompressionFilter implements Filter {
 				result.put(entry.getKey(), entry.getValue().toArray(String[]::new));
 			}
 			return Collections.unmodifiableMap(result);
+		}
+
+		private static byte[] readBounded(InputStream input, long maximum) throws IOException {
+			ByteArrayOutputStream output = new ByteArrayOutputStream();
+			byte[] buffer = new byte[8192];
+			long count = 0;
+			for (int read; (read = input.read(buffer)) >= 0;) {
+				if (count > maximum - read) {
+					throw new DecompressionLimitException("expanded form bytes");
+				}
+				count += read;
+				output.write(buffer, 0, read);
+			}
+			return output.toByteArray();
 		}
 
 		private Charset requestCharset() {
@@ -319,9 +399,11 @@ public class HttpCompressionFilter implements Filter {
 		private BufferedReader reader;
 		private boolean inputStreamRequested;
 		private boolean readerRequested;
+		private final RequestDecompressionBudget budget;
 
-		AutoDetectingHttpServletRequestWrapper(HttpServletRequest request) {
+		AutoDetectingHttpServletRequestWrapper(HttpServletRequest request, RequestDecompressionBudget budget) {
 			super(request);
+			this.budget = budget;
 		}
 
 		@Override
@@ -360,10 +442,66 @@ public class HttpCompressionFilter implements Filter {
 
 		private ServletInputStream decompressedInputStream() throws IOException {
 			if (inputStream == null) {
-				inputStream = new DelegatingServletInputStream(
-						RioCompression.decompressIfDetected(super.getInputStream()));
+				InputStream compressed = budget.compressedSource(super.getInputStream());
+				try {
+					inputStream = new DelegatingServletInputStream(
+							budget.expandedStream(RioCompression.decompressIfDetected(compressed)));
+				} catch (IOException e) {
+					throw new MalformedCompressionException(e);
+				}
 			}
 			return inputStream;
+		}
+	}
+
+	private static long positiveLong(FilterConfig config, String name, long defaultValue) throws ServletException {
+		long value = configuredLong(config, name, defaultValue);
+		if (value <= 0) {
+			throw new ServletException(name + " must be positive");
+		}
+		return value;
+	}
+
+	private static long nonNegativeLong(FilterConfig config, String name, long defaultValue) throws ServletException {
+		long value = configuredLong(config, name, defaultValue);
+		if (value < 0) {
+			throw new ServletException(name + " must not be negative");
+		}
+		return value;
+	}
+
+	private static long configuredLong(FilterConfig config, String name, long defaultValue) throws ServletException {
+		String configured = config.getInitParameter(name);
+		if (configured == null) {
+			configured = System.getProperty(PROPERTY_PREFIX + name);
+		}
+		if (configured == null) {
+			return defaultValue;
+		}
+		try {
+			return Long.parseLong(configured.trim());
+		} catch (NumberFormatException e) {
+			throw new ServletException("Invalid " + name, e);
+		}
+	}
+
+	private static double positiveDouble(FilterConfig config, String name, double defaultValue)
+			throws ServletException {
+		String configured = config.getInitParameter(name);
+		if (configured == null) {
+			configured = System.getProperty(PROPERTY_PREFIX + name);
+		}
+		if (configured == null) {
+			return defaultValue;
+		}
+		try {
+			double value = Double.parseDouble(configured.trim());
+			if (!Double.isFinite(value) || value <= 0) {
+				throw new NumberFormatException();
+			}
+			return value;
+		} catch (NumberFormatException e) {
+			throw new ServletException("Invalid " + name, e);
 		}
 	}
 

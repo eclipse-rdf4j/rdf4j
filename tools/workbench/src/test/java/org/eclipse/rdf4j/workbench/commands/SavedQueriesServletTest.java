@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
@@ -83,7 +84,7 @@ class SavedQueriesServletTest {
 		TestSavedQueriesServlet servlet = initServlet(storage, repository, info);
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/saved");
 		request.setContextPath("/workbench");
-		request.addParameter("server-user", "alice");
+		request.setAttribute(WorkbenchServlet.AUTHENTICATED_USERNAME_ATTRIBUTE, "alice");
 		CapturingHttpServletResponse response = new CapturingHttpServletResponse();
 
 		servlet.service(request, response);
@@ -171,7 +172,7 @@ class SavedQueriesServletTest {
 
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/saved");
 		request.addParameter("delete", "urn:test:query");
-		request.addParameter("server-user", "bob");
+		request.setAttribute(WorkbenchServlet.AUTHENTICATED_USERNAME_ATTRIBUTE, "bob");
 
 		assertThatThrownBy(() -> servlet.service(request, new CapturingHttpServletResponse()))
 				.isInstanceOf(BadRequestException.class)
@@ -223,13 +224,37 @@ class SavedQueriesServletTest {
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/saved");
 		request.setContextPath("/workbench");
 		request.addParameter("delete", "urn:test:query");
-		request.addParameter("server-user", "alice");
+		request.setAttribute(WorkbenchServlet.AUTHENTICATED_USERNAME_ATTRIBUTE, "alice");
 		CapturingHttpServletResponse response = new CapturingHttpServletResponse();
 
 		servlet.service(request, response);
 
 		verify(storage).deleteQuery(eq(SimpleValueFactory.getInstance().createIRI("urn:test:query")), eq("alice"));
 		assertThat(response.getBody()).contains("remaining-query");
+	}
+
+	@Test
+	void ignoresClientSuppliedUserForSavedQueryAuthorization() throws Exception {
+		QueryStorage storage = mock(QueryStorage.class);
+		Repository repository = accessibleRepository();
+		when(storage.checkAccess(repository)).thenReturn(true);
+		when(storage.canChange(any(IRI.class), eq("alice"))).thenReturn(true);
+		doAnswer(invocation -> {
+			TupleResultBuilder builder = invocation.getArgument(2);
+			builder.variables("queryName");
+			return null;
+		}).when(storage).selectSavedQueries(any(), any(), any());
+		TestSavedQueriesServlet servlet = initServlet(storage, repository, new RepositoryInfo());
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/saved");
+		request.addParameter("delete", "urn:test:query");
+		request.addParameter("server-user", "bob");
+		request.setAttribute(WorkbenchServlet.AUTHENTICATED_USERNAME_ATTRIBUTE, "alice");
+
+		servlet.service(request, new CapturingHttpServletResponse());
+
+		verify(storage).canChange(any(IRI.class), eq("alice"));
+		verify(storage).deleteQuery(any(IRI.class), eq("alice"));
+		verify(storage).selectSavedQueries(any(), eq("alice"), any());
 	}
 
 	@Test

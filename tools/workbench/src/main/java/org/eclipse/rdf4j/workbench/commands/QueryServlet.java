@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet;
 import org.eclipse.rdf4j.workbench.util.QueryEvaluator;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
@@ -630,7 +631,7 @@ public class QueryServlet extends TransformationServlet {
 		jsonObject.put("accessible", accessible);
 		if (accessible) {
 			final String queryName = req.getParameter("query-name");
-			String userName = getUserNameFromParameter(req, SERVER_USER);
+			String userName = getAuthenticatedUser(req);
 			final boolean existed = storage.askExists(repositoryReference, queryName, userName);
 			jsonObject.put("existed", existed);
 			final boolean written = Boolean.valueOf(req.getParameter("overwrite")) || !existed;
@@ -674,6 +675,11 @@ public class QueryServlet extends TransformationServlet {
 			userName = "";
 		}
 		return userName;
+	}
+
+	private String getAuthenticatedUser(WorkbenchRequest req) {
+		Object userName = req.getAttribute(WorkbenchServlet.AUTHENTICATED_USERNAME_ATTRIBUTE);
+		return userName instanceof String value ? value : "";
 	}
 
 	private String getExplainRequestId(WorkbenchRequest req) {
@@ -851,7 +857,7 @@ public class QueryServlet extends TransformationServlet {
 					? storage.canRead(
 							storage.selectSavedQuery(getRepositoryReference(),
 									getUserNameFromParameter(req, "owner"), req.getParameter(QUERY)),
-							getUserNameFromParameter(req, SERVER_USER))
+							getAuthenticatedUser(req))
 					: true;
 		} else {
 			throw new BadRequestException("Expected 'ref' parameter in request.");

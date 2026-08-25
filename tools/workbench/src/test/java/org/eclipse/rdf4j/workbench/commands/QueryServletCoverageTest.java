@@ -55,6 +55,7 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.CookieHandler;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
@@ -259,7 +260,7 @@ class QueryServletCoverageTest {
 		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn("saved-query");
 		when(request.getParameter("owner")).thenReturn("owner");
-		when(request.getParameter("server-user")).thenReturn("alice");
+		when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_USERNAME_ATTRIBUTE)).thenReturn("alice");
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("infer")).thenReturn("false");
 		when(request.getParameter("limit_query")).thenReturn("20");
@@ -291,7 +292,7 @@ class QueryServletCoverageTest {
 		when(unreadableRequest.getParameter(QueryServlet.REF)).thenReturn("id");
 		when(unreadableRequest.getParameter(QueryServlet.QUERY)).thenReturn("saved-query");
 		when(unreadableRequest.getParameter("owner")).thenReturn("owner");
-		when(unreadableRequest.getParameter("server-user")).thenReturn("alice");
+		when(unreadableRequest.getAttribute(WorkbenchServlet.AUTHENTICATED_USERNAME_ATTRIBUTE)).thenReturn("alice");
 		when(unknownActionRequest.getParameter("action")).thenReturn("surprise");
 		servlet.substituteQueryStorage(storage);
 
@@ -393,15 +394,15 @@ class QueryServletCoverageTest {
 		if ("first".equals(queryName)) {
 			when(request.getParameter("overwrite")).thenReturn("false");
 			when(request.getParameter("save-private")).thenReturn("false");
-			when(request.getParameter("server-user")).thenReturn(null);
+			when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_USERNAME_ATTRIBUTE)).thenReturn(null);
 		} else if ("second".equals(queryName)) {
 			when(request.getParameter("overwrite")).thenReturn("false");
 			when(request.getParameter("save-private")).thenReturn("true");
-			when(request.getParameter("server-user")).thenReturn("bob");
+			when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_USERNAME_ATTRIBUTE)).thenReturn("bob");
 		} else {
 			when(request.getParameter("overwrite")).thenReturn("false");
 			when(request.getParameter("save-private")).thenReturn("true");
-			when(request.getParameter("server-user")).thenReturn("carol");
+			when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_USERNAME_ATTRIBUTE)).thenReturn("carol");
 		}
 		return request;
 	}

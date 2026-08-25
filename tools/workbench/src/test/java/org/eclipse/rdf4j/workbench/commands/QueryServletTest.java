@@ -56,6 +56,7 @@ import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet;
 import org.eclipse.rdf4j.workbench.util.CookieHandler;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
@@ -353,7 +354,7 @@ public class QueryServletTest {
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn("private-query");
 		when(request.getParameter("owner")).thenReturn("other-user");
-		when(request.getParameter("server-user")).thenReturn("current-user");
+		when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_USERNAME_ATTRIBUTE)).thenReturn("current-user");
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("explain")).thenReturn("Optimized");
 		when(request.getParameter("explain-format")).thenReturn("text");

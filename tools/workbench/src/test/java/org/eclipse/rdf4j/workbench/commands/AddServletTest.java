@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -24,7 +25,12 @@ import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.zip.GZIPOutputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import javax.xml.transform.Templates;
 import javax.xml.transform.Transformer;
@@ -34,8 +40,12 @@ import javax.xml.transform.stream.StreamSource;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
@@ -141,6 +151,69 @@ class AddServletTest {
 	}
 
 	@Test
+	void passesCompressedUploadToRepositoryLoaderWithoutPreDecompression() throws Exception {
+		AddServlet servlet = new AddServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		when(repository.getConnection()).thenReturn(connection);
+		servlet.setRepository(repository);
+
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("Content-Type")).thenReturn("text/turtle");
+		when(request.getParameter("baseURI")).thenReturn("urn:base");
+		when(request.isParameterPresent("context")).thenReturn(false);
+		when(request.isParameterPresent("url")).thenReturn(false);
+		when(request.getContentParameter()).thenReturn(new ByteArrayInputStream(gzip("<urn:s> <urn:p> <urn:o> .")));
+		when(request.getContentFileName()).thenReturn("data.ttl.gz");
+
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getOutputStream()).thenReturn(mock(ServletOutputStream.class));
+
+		servlet.doPost(request, response, "");
+
+		ArgumentCaptor<java.io.InputStream> input = ArgumentCaptor.forClass(java.io.InputStream.class);
+		verify(connection).add(input.capture(), eq("urn:base"), eq(RDFFormat.TURTLE));
+		assertThat(input.getValue().readNBytes(2)).containsExactly(0x1f, 0x8b);
+	}
+
+	@Test
+	void archiveLimitRollsBackEntireWorkbenchImport() throws Exception {
+		String property = "org.eclipse.rdf4j.rio.loader.max_expanded_bytes";
+		String previous = System.getProperty(property);
+		System.setProperty(property, "80");
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try {
+			AddServlet servlet = new AddServlet();
+			servlet.setRepository(repository);
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			when(request.getParameter("Content-Type")).thenReturn("text/turtle");
+			when(request.getParameter("baseURI")).thenReturn("urn:base");
+			when(request.isParameterPresent("context")).thenReturn(false);
+			when(request.isParameterPresent("url")).thenReturn(false);
+			when(request.getContentParameter()).thenReturn(new ByteArrayInputStream(zip(Map.of(
+					"first.ttl", "<urn:first> <urn:p> \"" + "a".repeat(30) + "\" .",
+					"second.ttl", "<urn:second> <urn:p> \"" + "b".repeat(30) + "\" ."))));
+			when(request.getContentFileName()).thenReturn("data.zip");
+
+			HttpServletResponse response = mock(HttpServletResponse.class);
+			when(response.getOutputStream()).thenReturn(mock(ServletOutputStream.class));
+			servlet.doPost(request, response, "");
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				assertThat(connection.size()).isZero();
+			}
+		} finally {
+			repository.shutDown();
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
+	}
+
+	@Test
 	void serviceUsesTwoColumnsForIsolationLevelOptions() throws Exception {
 		AddServlet servlet = new TestAddServlet();
 
@@ -242,6 +315,26 @@ class AddServletTest {
 		List<String> determineIsolationLevels() {
 			return List.of("READ_COMMITTED", "SNAPSHOT");
 		}
+	}
+
+	private static byte[] gzip(String value) throws Exception {
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		try (GZIPOutputStream gzip = new GZIPOutputStream(output)) {
+			gzip.write(value.getBytes(StandardCharsets.UTF_8));
+		}
+		return output.toByteArray();
+	}
+
+	private static byte[] zip(Map<String, String> entries) throws Exception {
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		try (ZipOutputStream zip = new ZipOutputStream(output)) {
+			for (Map.Entry<String, String> entry : new LinkedHashMap<>(entries).entrySet()) {
+				zip.putNextEntry(new ZipEntry(entry.getKey()));
+				zip.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
+				zip.closeEntry();
+			}
+		}
+		return output.toByteArray();
 	}
 
 	private static class RecordingServletOutputStream extends ServletOutputStream {

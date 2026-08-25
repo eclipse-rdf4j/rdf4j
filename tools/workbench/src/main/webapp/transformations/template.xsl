@@ -87,7 +87,16 @@
 							<th>
 								<xsl:value-of select="$server-user.label" />
 							</th>
-							<td id="selected-user"></td>
+							<td id="selected-user">
+								<xsl:choose>
+									<xsl:when test="$info//sparql:binding[@name='authenticated-user']">
+										<xsl:value-of select="$info//sparql:binding[@name='authenticated-user']/sparql:literal" />
+									</xsl:when>
+									<xsl:otherwise>
+										<span class="disabled"><xsl:value-of select="$none.label" /></span>
+									</xsl:otherwise>
+								</xsl:choose>
+							</td>
 							<td class="change">
 								<a href="../NONE/server">
 									<xsl:value-of select="$change.label" />

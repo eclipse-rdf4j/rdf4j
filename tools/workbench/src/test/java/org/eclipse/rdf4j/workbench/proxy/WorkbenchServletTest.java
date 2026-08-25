@@ -20,10 +20,7 @@ import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
-import java.util.Base64;
 import java.util.Deque;
 
 import org.eclipse.rdf4j.common.exception.ValidationException;
@@ -208,40 +205,23 @@ class WorkbenchServletTest {
 	}
 
 	@Test
-	void remoteManagersReceiveCookieCredentials() throws Exception {
+	void remoteManagerReceivesSessionCredentialsOnlyDuringInitialization() throws Exception {
 		RemoteRepositoryManager remoteManager = mock(RemoteRepositoryManager.class);
 		Repository repository = mock(Repository.class);
-		when(remoteManager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
 		when(remoteManager.getRepository(anyString())).thenReturn(repository);
 		when(remoteManager.getRepositoryInfo(anyString())).thenReturn(new RepositoryInfo());
+		RemoteFactoryWorkbenchServlet servlet = new RemoteFactoryWorkbenchServlet(remoteManager);
+		servlet.setCredentials("alice", "secret");
+		servlet.init(TestServletConfig.withParams("workbench",
+				"default-path", "/repositories",
+				WorkbenchServlet.SERVER_PARAM, "https://remote.example/rdf4j-server",
+				WorkbenchGateway.TRANSFORMATIONS, "/transform"));
+		servlet.createdServlets.add(new RecordingProxyRepositoryServlet());
+		servlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
+		servlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
 
-		TestWorkbenchServlet noCookieServlet = initServlet(remoteManager);
-		noCookieServlet.cookieHandler = new FixedCookieHandler(null);
-		noCookieServlet.createdServlets.add(new RecordingProxyRepositoryServlet());
-		noCookieServlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
-		verify(remoteManager).setUsernameAndPassword(null, null);
+		verify(remoteManager).setUsernameAndPassword("alice", "secret");
 		verify(remoteManager).init();
-
-		RemoteRepositoryManager base64Manager = mock(RemoteRepositoryManager.class);
-		when(base64Manager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
-		when(base64Manager.getRepository(anyString())).thenReturn(repository);
-		when(base64Manager.getRepositoryInfo(anyString())).thenReturn(new RepositoryInfo());
-		TestWorkbenchServlet base64Servlet = initServlet(base64Manager);
-		base64Servlet.cookieHandler = new FixedCookieHandler(
-				Base64.getEncoder().encodeToString("alice:secret".getBytes(StandardCharsets.UTF_8)));
-		base64Servlet.createdServlets.add(new RecordingProxyRepositoryServlet());
-		base64Servlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
-		verify(base64Manager).setUsernameAndPassword("alice", "secret");
-
-		RemoteRepositoryManager rawManager = mock(RemoteRepositoryManager.class);
-		when(rawManager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
-		when(rawManager.getRepository(anyString())).thenReturn(repository);
-		when(rawManager.getRepositoryInfo(anyString())).thenReturn(new RepositoryInfo());
-		TestWorkbenchServlet rawServlet = initServlet(rawManager);
-		rawServlet.cookieHandler = new FixedCookieHandler("bob:hunter2");
-		rawServlet.createdServlets.add(new RecordingProxyRepositoryServlet());
-		rawServlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
-		verify(rawManager).setUsernameAndPassword("bob", "hunter2");
 	}
 
 	@Test
@@ -344,6 +324,25 @@ class WorkbenchServletTest {
 		@Override
 		protected RepositoryManager createRepositoryManager(String param) {
 			return manager;
+		}
+	}
+
+	private static final class RemoteFactoryWorkbenchServlet extends WorkbenchServlet {
+		private final RemoteRepositoryManager manager;
+		private final Deque<RecordingProxyRepositoryServlet> createdServlets = new ArrayDeque<>();
+
+		private RemoteFactoryWorkbenchServlet(RemoteRepositoryManager manager) {
+			this.manager = manager;
+		}
+
+		@Override
+		protected RemoteRepositoryManager createRemoteRepositoryManager(String server) {
+			return manager;
+		}
+
+		@Override
+		protected ProxyRepositoryServlet createProxyRepositoryServlet() {
+			return createdServlets.removeFirst();
 		}
 	}
 

@@ -13,11 +13,9 @@ package org.eclipse.rdf4j.workbench.proxy;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -59,8 +57,12 @@ public class WorkbenchServlet extends AbstractServlet {
 	private static final String NO_REPOSITORY = "no-repository-id";
 
 	public static final String SERVER_PARAM = "server";
+	public static final String AUTHENTICATED_USERNAME_ATTRIBUTE = WorkbenchServlet.class.getName()
+			+ ".authenticatedUsername";
 
 	private RepositoryManager manager;
+	private String username;
+	private String password;
 
 	private final ConcurrentMap<String, ProxyRepositoryServlet> repositories = new ConcurrentHashMap<>();
 
@@ -81,12 +83,24 @@ public class WorkbenchServlet extends AbstractServlet {
 		}
 	}
 
+	public void setCredentials(String username, String password) {
+		if (manager != null) {
+			throw new IllegalStateException("Credentials must be set before Workbench servlet initialization");
+		}
+		this.username = username;
+		this.password = password;
+	}
+
 	@Override
 	public void destroy() {
 		for (Servlet servlet : repositories.values()) {
 			servlet.destroy();
 		}
-		manager.shutDown();
+		repositories.clear();
+		if (manager != null) {
+			manager.shutDown();
+			manager = null;
+		}
 	}
 
 	public void resetCache() {
@@ -192,7 +206,6 @@ public class WorkbenchServlet extends AbstractServlet {
 	private void service(final String repoID, final HttpServletRequest req, final HttpServletResponse resp)
 			throws RepositoryConfigException, RepositoryException, ServletException, IOException {
 		LOGGER.info("Servicing repository: {}", repoID);
-		setCredentials(req, resp);
 		final DynamicHttpRequest http = new DynamicHttpRequest(req);
 		final String path = req.getPathInfo();
 		final int idx = path.indexOf(repoID) + repoID.length();
@@ -227,49 +240,21 @@ public class WorkbenchServlet extends AbstractServlet {
 		return contextPath + config.getInitParameter(WorkbenchGateway.TRANSFORMATIONS);
 	}
 
-	/**
-	 * Set the username and password for all requests to the repository.
-	 *
-	 * @param req  the servlet request
-	 * @param resp the servlet response
-	 * @throws MalformedURLException if the repository location is malformed
-	 */
-	private void setCredentials(final HttpServletRequest req, final HttpServletResponse resp)
-			throws MalformedURLException, RepositoryException {
-		if (manager instanceof RemoteRepositoryManager) {
-			final RemoteRepositoryManager rrm = (RemoteRepositoryManager) manager;
-			LOGGER.info("RemoteRepositoryManager URL: {}", rrm.getLocation());
-			final CookieHandler cookies = createCookieHandler();
-			final String user_password = cookies.getCookieNullIfEmpty(req, resp, WorkbenchGateway.SERVER_USER_PASSWORD);
-			if (user_password == null) {
-				rrm.setUsernameAndPassword(null, null);
-			} else {
-				String decoded;
-				try {
-					decoded = new String(Base64.getDecoder().decode(user_password));
-				} catch (IllegalArgumentException e) {
-					decoded = user_password; // older browsers
-				}
-				final String user = decoded.substring(0, decoded.indexOf(':'));
-				final String password = decoded.substring(decoded.indexOf(':') + 1);
-				LOGGER.info("Setting user '{}' and their password.", user);
-				rrm.setUsernameAndPassword(user, password);
-			}
-			// init() required to push credentials to internal HTTP
-			// client.
-			rrm.init();
-		}
-	}
-
 	protected RepositoryManager createRepositoryManager(final String param) throws IOException, RepositoryException {
 		RepositoryManager manager;
 		if (param.startsWith("file:")) {
 			manager = new LocalRepositoryManager(asLocalFile(new URL(param)));
 		} else {
-			manager = new RemoteRepositoryManager(param);
+			RemoteRepositoryManager remote = createRemoteRepositoryManager(param);
+			remote.setUsernameAndPassword(username, password);
+			manager = remote;
 		}
 		manager.init();
 		return manager;
+	}
+
+	protected RemoteRepositoryManager createRemoteRepositoryManager(String server) {
+		return new RemoteRepositoryManager(server);
 	}
 
 	protected ProxyRepositoryServlet createProxyRepositoryServlet() {

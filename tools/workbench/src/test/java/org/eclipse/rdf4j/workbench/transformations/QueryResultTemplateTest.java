@@ -67,6 +67,15 @@ class QueryResultTemplateTest {
 		assertThat(html).doesNotContain("query-timeout=23");
 	}
 
+	@Test
+	void maliciousAuthenticatedUsernameIsRenderedAsText() throws Exception {
+		String html = transform("saved-queries.xsl", savedQueriesXml(), infoXml("0",
+				"&lt;img src=x onerror=alert(1)&gt;"));
+
+		assertThat(html).contains("&lt;img src=x onerror=alert(1)&gt;")
+				.doesNotContain("<img src=x onerror=alert(1)>");
+	}
+
 	private String transform(String stylesheetName, String xml, String infoXml) throws Exception {
 		Files.writeString(tempDir.resolve("info"), infoXml, StandardCharsets.UTF_8);
 		Path xmlPath = tempDir.resolve(stylesheetName + ".xml");
@@ -170,6 +179,10 @@ class QueryResultTemplateTest {
 	}
 
 	private static String infoXml(String defaultQueryTimeout) {
+		return infoXml(defaultQueryTimeout, null);
+	}
+
+	private static String infoXml(String defaultQueryTimeout, String authenticatedUser) {
 		return "<?xml version=\"1.0\"?>\n"
 				+ "<sparql:sparql xmlns:sparql=\"http://www.w3.org/2005/sparql-results#\">\n"
 				+ "  <sparql:head/>\n"
@@ -180,6 +193,9 @@ class QueryResultTemplateTest {
 				+ "</sparql:literal></sparql:binding>\n"
 				+ "      <sparql:binding name=\"tuple-download-format\"><sparql:literal>text/csv CSV</sparql:literal></sparql:binding>\n"
 				+ "      <sparql:binding name=\"graph-download-format\"><sparql:literal>text/turtle Turtle</sparql:literal></sparql:binding>\n"
+				+ (authenticatedUser == null ? ""
+						: "      <sparql:binding name=\"authenticated-user\"><sparql:literal>" + authenticatedUser
+								+ "</sparql:literal></sparql:binding>\n")
 				+ "    </sparql:result>\n"
 				+ "  </sparql:results>\n"
 				+ "</sparql:sparql>\n";
