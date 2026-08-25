@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 import java.io.File;
 import java.io.IOException;
@@ -34,6 +35,7 @@ import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
@@ -79,7 +81,10 @@ public class LmdbNativeKernelDeclineCensusTest {
 	 * failures.
 	 */
 	private static final Set<String> NON_CAPABILITY_REASONS = Set.of("below-threshold-or-pending",
-			"no-fusion-opportunity", "higher-cost", "outranked");
+			"no-fusion-opportunity", "higher-cost", "outranked", "probe-trial-lost", "adaptive-higher-cost",
+			"blocking-semantic-row");
+	/** The only non-capability outcome another warmup execution can actually clear. */
+	private static final Set<String> RETRYABLE_REASONS = Set.of("below-threshold-or-pending");
 
 	/** Repeats per query, so an asynchronous compile has landed before the reading run. */
 	private static final int WARMUP_RUNS = 6;
@@ -92,6 +97,12 @@ public class LmdbNativeKernelDeclineCensusTest {
 	 * find. Declines are recorded when a rung refuses at open time, so a truncated run still reports them.
 	 */
 	private static final int QUERY_TIMEOUT_SECONDS = 5;
+	/**
+	 * Minimal non-aggregate two-pattern join retained as a reachability witness for the set-at-a-time chunk pipeline.
+	 * The chunk pipeline is the semantic successor to the legacy batch route and owns this row-producing shape.
+	 */
+	private static final String ROW_JOIN_WITNESS_QUERY = "SELECT ?s ?p ?o ?q ?v WHERE { "
+			+ "?s ?p ?o . ?s ?q ?v . } LIMIT 1";
 
 	@TempDir
 	static File dataDir;
@@ -99,11 +110,14 @@ public class LmdbNativeKernelDeclineCensusTest {
 	private static LmdbStore store;
 	private static SailRepository repository;
 	private static String previousThreshold;
+	private static String previousSynchronous;
 
 	@BeforeAll
 	static void setUp() {
 		previousThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
+		previousSynchronous = System.getProperty(SYNCHRONOUS_CODEGEN_PROPERTY);
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+		System.setProperty(SYNCHRONOUS_CODEGEN_PROPERTY, "true");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
 				.setDirectAdjacencyBuildOnStart(false);
 		store = new LmdbStore(dataDir, config);
@@ -172,6 +186,11 @@ public class LmdbNativeKernelDeclineCensusTest {
 		} else {
 			System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", previousThreshold);
 		}
+		if (previousSynchronous == null) {
+			System.clearProperty(SYNCHRONOUS_CODEGEN_PROPERTY);
+		} else {
+			System.setProperty(SYNCHRONOUS_CODEGEN_PROPERTY, previousSynchronous);
+		}
 	}
 
 	@Test
@@ -233,8 +252,57 @@ public class LmdbNativeKernelDeclineCensusTest {
 				.isEmpty();
 	}
 
+	@Test
+	void pharmaUncorrelatedWitnessStaysOnSemanticNativeAggregateTier() {
+		Set<String> capabilityReasons = new LinkedHashSet<>(declineReasons(
+				ThemeQueryCatalog.queryFor(Theme.PHARMA, 10)));
+		capabilityReasons.removeIf(reason -> NON_CAPABILITY_REASONS
+				.contains(reason.substring(reason.indexOf(':') + 1)));
+		assertThat(capabilityReasons)
+				.as("PHARMA q10 must keep an uncorrelated EXISTS witness on the native aggregate tier")
+				.isEmpty();
+	}
+
+	@Test
+	void pharmaQ11RetainsTheRequiredSemanticNestedLoopFallback() {
+		for (int index = 0; index < 11; index++) {
+			declineReasons(ThemeQueryCatalog.queryFor(Theme.PHARMA, index));
+		}
+		assertThatCode(() -> executionPaths(ThemeQueryCatalog.queryFor(Theme.PHARMA, 11)))
+				.as("every speculative PHARMA q11 strategy may decline without removing the semantic native fallback")
+				.doesNotThrowAnyException();
+	}
+
+	@Test
+	void highlyConnectedDenormalizedViewCancelsBlockingKernelWithoutHeapExhaustion() {
+		Set<String> capabilityReasons = new LinkedHashSet<>(declineReasons(
+				ThemeQueryCatalog.queryFor(Theme.HIGHLY_CONNECTED, 11)));
+		capabilityReasons.removeIf(reason -> NON_CAPABILITY_REASONS
+				.contains(reason.substring(reason.indexOf(':') + 1)));
+		assertThat(capabilityReasons)
+				.as("HIGHLY_CONNECTED q11 must remain native while its blocking DISTINCT observes the query timeout")
+				.isEmpty();
+	}
+
+	@Test
+	void declineParserReadsOnlyTheNamedMetricAcrossThePlanTree() {
+		GenericPlanNode root = new GenericPlanNode("root");
+		root.setStringMetricActual("nativeAdaptiveCostDecision",
+				"irKernel:0:kind=PROBE_COMPLETED;source=STRATEGY_FAMILY");
+		GenericPlanNode child = new GenericPlanNode("child");
+		child.setStringMetricActual("nativeStrategyDeclines",
+				"irKernel:child:EmptyPlan | irAggregate:probe-trial-lost");
+		root.setPlans(List.of(child));
+
+		Set<String> reasons = new LinkedHashSet<>();
+		collectDeclineReasons(root, reasons);
+
+		assertThat(reasons).containsExactly("irKernel:child:EmptyPlan", "irAggregate:probe-trial-lost");
+	}
+
 	/**
-	 * Dispatch reachability census: every strategy the engine still ships must win at least one theme query.
+	 * Dispatch reachability census: every strategy the engine still ships must win at least one production-shaped
+	 * engagement case.
 	 * <p>
 	 * This is the anti-tautology gate for cost-based dispatch. The characteristic failure mode of ranking strategies —
 	 * whether by a specialization order or by a cost model — is not that the wrong one wins, but that one of them stops
@@ -247,7 +315,7 @@ public class LmdbNativeKernelDeclineCensusTest {
 	 * reachable, which does not depend on which particular query it wins and so does not drift with the corpus.
 	 */
 	@Test
-	void everyShippedStrategyWinsSomeThemeQuery() throws IOException {
+	void everyShippedStrategyWinsTheEngagementCensus() throws IOException {
 		Map<String, Set<String>> winners = new TreeMap<>();
 		for (Theme theme : Theme.values()) {
 			List<String> queries = ThemeQueryCatalog.queriesFor(theme);
@@ -260,6 +328,11 @@ public class LmdbNativeKernelDeclineCensusTest {
 							key -> new LinkedHashSet<>()).add(pair);
 				}
 			}
+		}
+		for (String path : executionPaths(ROW_JOIN_WITNESS_QUERY)) {
+			int paren = path.indexOf('(');
+			winners.computeIfAbsent(paren > 0 ? path.substring(0, paren) : path,
+					key -> new LinkedHashSet<>()).add("chunk-pipeline row-join witness");
 		}
 
 		StringBuilder out = new StringBuilder("=== Dispatch reachability census ===\n");
@@ -274,13 +347,22 @@ public class LmdbNativeKernelDeclineCensusTest {
 		assertThat(winners.keySet())
 				.as("a strategy that never wins is dead code; census written to target/dispatch-reachability-census.txt:%n%s",
 						out)
-				.contains("batch", "irKernel");
+				.contains("chunkPipeline", "irKernel");
+	}
+
+	@Test
+	void chunkPipelineWinsTheTwoPatternRowJoinWitness() {
+		assertThat(executionPaths(ROW_JOIN_WITNESS_QUERY))
+				.anyMatch(path -> path.startsWith("chunkPipeline("));
 	}
 
 	/** Distinct {@code nativeExecutionPath} tags a query records, across the whole explain tree. */
 	private static Set<String> executionPaths(String query) {
 		Set<String> paths = new LinkedHashSet<>();
-		for (int run = 0; run < warmupRuns(); run++) {
+		// Synchronous code generation removes the compiler warmup window, but it does not remove the adaptive
+		// dispatch model's observation window. Keep the production calibration repetitions for this reachability gate;
+		// otherwise the census describes only cold-start winners and can falsely declare a shipped strategy dead.
+		for (int run = 0; run < WARMUP_RUNS; run++) {
 			paths.clear();
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				org.eclipse.rdf4j.query.TupleQuery prepared = connection.prepareTupleQuery(query);
@@ -315,19 +397,33 @@ public class LmdbNativeKernelDeclineCensusTest {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				org.eclipse.rdf4j.query.TupleQuery prepared = connection.prepareTupleQuery(query);
 				prepared.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
-				Explanation explanation = prepared.explain(Explanation.Level.Telemetry);
-				Matcher matcher = KERNEL_DECLINE.matcher(explanation.toString());
-				while (matcher.find()) {
-					reasons.add(matcher.group(1) + ":" + matcher.group(2));
-				}
+				collectDeclineReasons(prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode(), reasons);
 			}
 			boolean onlyWarmup = !reasons.isEmpty() && reasons.stream()
-					.allMatch(reason -> NON_CAPABILITY_REASONS.contains(reason.substring(reason.indexOf(':') + 1)));
+					.allMatch(reason -> RETRYABLE_REASONS.contains(reason.substring(reason.indexOf(':') + 1)));
 			if (!onlyWarmup) {
 				return reasons;
 			}
 		}
 		return reasons;
+	}
+
+	private static void collectDeclineReasons(GenericPlanNode node, Set<String> reasons) {
+		if (node == null) {
+			return;
+		}
+		String declines = node.getStringMetricActual("nativeStrategyDeclines");
+		if (declines != null) {
+			Matcher matcher = KERNEL_DECLINE.matcher(declines);
+			while (matcher.find()) {
+				reasons.add(matcher.group(1) + ":" + matcher.group(2));
+			}
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				collectDeclineReasons(child, reasons);
+			}
+		}
 	}
 
 	private static int warmupRuns() {

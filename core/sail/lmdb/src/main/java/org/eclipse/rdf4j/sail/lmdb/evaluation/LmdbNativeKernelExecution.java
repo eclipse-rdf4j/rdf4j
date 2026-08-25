@@ -706,6 +706,20 @@ final class LmdbNativeKernelExecution {
 					? LmdbNativeKernelIr.Kernel.TelemetryMode.NONE
 					: LmdbNativeKernelIr.Kernel.TelemetryMode.FULL);
 			PLANNED.incrementAndGet();
+			if (!lowered.kernel.resumable) {
+				// A row kernel that cannot pause must materialize its complete input before the first row escapes. Keep
+				// stateful/whole-result shapes on the semantic native cursor, whose downstream DISTINCT/ORDER operator
+				// can consume incrementally and observe evaluation cancellation. This is a specialization decline, not
+				// a generic island and not a replay after output.
+				DECLINED.incrementAndGet();
+				LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
+						"blocking-semantic-row");
+				if (row.runtimePlan != null) {
+					row.runtimePlan.janinoDeclined(
+							"NATIVE_GENERAL[route=irKernel,reason=blocking-semantic-row]");
+				}
+				return null;
+			}
 
 			// Ask for the compiled kernel BEFORE touching the store: while the shape is below threshold or its compile
 			// is pending, this open must not disturb probe accounting or CSR admission at all.

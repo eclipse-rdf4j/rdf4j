@@ -554,7 +554,7 @@ public class LmdbNativeDifferentialFuzzTest {
 	}
 
 	@Test
-	public void irKernelOptionalShapes() {
+	public void optionalShapesStayOnTheSemanticNativeFloor() {
 		// Forced-on differential round for OPTIONAL lowering (plan 22, M3): LeftProbe null arms, chained and
 		// sibling OPTIONALs, and BOUND/optional-var filters above the left join (hook tier: the -1-arg-leaves-
 		// slot-unbound scratch convention is load-bearing here).
@@ -568,6 +568,9 @@ public class LmdbNativeDifferentialFuzzTest {
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
 		org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.resetMetrics();
+		long nativeBefore = org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.semanticNativeCompiles();
+		long hostedBefore = org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.hostedGenericCompiles();
+		long islandsBefore = org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.islandCompiles();
 		try {
 			List<String> queries = new ArrayList<>();
 			queries.add("SELECT * WHERE { VALUES ?a { <" + EX + "s1> <" + EX + "s8> } ?a " + edge + " ?b . "
@@ -611,9 +614,13 @@ public class LmdbNativeDifferentialFuzzTest {
 				}
 				assertSameResults(query);
 			}
-			assertThat(org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.opened())
-					.as("the IR kernel rung never engaged during the OPTIONAL round")
-					.isGreaterThan(0L);
+			assertThat(org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.semanticNativeCompiles())
+					.as("the semantic native floor must own the OPTIONAL round even when IR does not win")
+					.isGreaterThan(nativeBefore);
+			assertThat(org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.hostedGenericCompiles())
+					.isEqualTo(hostedBefore);
+			assertThat(org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.islandCompiles())
+					.isEqualTo(islandsBefore);
 		} finally {
 			restoreProperty("rdf4j.lmdb.janinoCodegen.enabled", prevEnabled);
 			restoreProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", prevThreshold);

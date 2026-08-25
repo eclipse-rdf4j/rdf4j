@@ -34,11 +34,16 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 	private final List<NativeLmdbQuerySource> sources;
 	private final List<NativeLmdbQuerySource> activeSources;
+	private final NativeLmdbQuerySource tripleTermSource;
 	private final Object idSpace;
 
 	private CompositeNativeLmdbQuerySource(List<NativeLmdbQuerySource> sources, Object idSpace) {
 		this.sources = sources;
 		this.activeSources = sources.stream().filter(NativeLmdbQuerySource::hasStatementsInSource).toList();
+		this.tripleTermSource = sources.stream()
+				.filter(NativeLmdbQuerySource::supportsTripleTermScan)
+				.findFirst()
+				.orElse(null);
 		this.idSpace = idSpace;
 	}
 
@@ -67,6 +72,22 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public Value lazyValue(long id) throws QueryEvaluationException {
 		return sources.get(0).lazyValue(id);
+	}
+
+	@Override
+	public boolean supportsTripleTermScan() {
+		return tripleTermSource != null;
+	}
+
+	@Override
+	public RecordIterator tripleTerms(long subj, long pred, long obj) throws IOException {
+		if (tripleTermSource == null) {
+			return NativeLmdbQuerySource.super.tripleTerms(subj, pred, obj);
+		}
+		// Triple terms live in the value dictionary shared by every member's idSpace. Scan that
+		// dictionary once: concatenating the explicit/inferred statement sources would duplicate
+		// each global triple term and invent multiplicity that is not present in the RDF value space.
+		return tripleTermSource.tripleTerms(subj, pred, obj);
 	}
 
 	@Override

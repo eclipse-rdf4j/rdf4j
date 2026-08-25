@@ -52,6 +52,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterValue;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Intersect;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel.TelemetryMode;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.LeftGroup;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.LeftProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
@@ -569,7 +570,7 @@ class LmdbNativeKernelIrEmitterTest {
 						null, OutputMods.none()));
 		String source = LmdbNativeKernelEmitter.emit(ir);
 		assertTrue(source.contains("KernelRuntime.unsignedNondecreasing(dom0, domO0, domL0)"), source);
-		assertTrue(source.contains("new KernelRuntime.LongHashSet(distinctExpected)"), source);
+		assertTrue(source.contains("new KernelRuntime.LongHashSet(distinctExpected, hooks)"), source);
 
 		assertRows(run(ir, context().domains(new long[] { 5, 5, 7, 9 }).distinctExpected(64)),
 				new long[][] { { 3 } });
@@ -1254,16 +1255,18 @@ class LmdbNativeKernelIrEmitterTest {
 	}
 
 	@Test
-	void vectorTailKeepsLeftProbeNullExtensionAndItsFilters() throws Exception {
+	void resumableLeftProbeDisablesVectorTailAndKeepsNullExtension() throws Exception {
 		// follows: 1->{2,3}, 2->{3}, 3->{1}, 4->{5}. Key 9 has no run at all, so it must be null-extended.
 		Supplier<Kernel> shape = () -> new Kernel(2,
 				List.of(new EnumerateDomain(0, 0), new LeftProbe(0, Operand.col(0), 1)), emit(0, 1));
 
 		Kernel vectorized = withVectorTail(true, shape);
-		assertEquals(1, vectorized.vectorTailIndex, "a left probe expands, so it can be the tail");
+		assertEquals(-1, vectorized.vectorTailIndex,
+				"a resumable left probe must preserve scalar cursor and null-extension state across output buffers");
 		String source = LmdbNativeKernelEmitter.emit(vectorized);
-		assertTrue(source.contains(".copyNeighbors("), "the matched arm must bulk-read; source:\n" + source);
-		assertTrue(source.contains("if (!matched) {"), "the null arm must survive vectorization");
+		assertFalse(source.contains(".copyNeighbors("), "the resumable arm must not use the stateless vector tail");
+		assertTrue(source.contains("private boolean lg0;"),
+				"the null-arm decision must survive output-buffer exhaustion");
 
 		long[][] expected = { { 1, 2 }, { 1, 3 }, { 4, 5 }, { 9, -1 } };
 		assertRows(run(vectorized, context().adjacencies(follows()).domains(new long[] { 1, 4, 9 })), expected);
@@ -1327,6 +1330,53 @@ class LmdbNativeKernelIrEmitterTest {
 					maxRows);
 			assertRows(rows, expected, "drained " + maxRows + " row(s) at a time");
 		}
+	}
+
+	@Test
+	void streamingLeftProbePreservesMatchesAndNullExtensionsAtEveryBufferSize() throws Exception {
+		Kernel streaming = new Kernel(2,
+				List.of(new EnumerateDomain(0, 0), new LeftProbe(0, Operand.col(0), 1)), emit(0, 1));
+		assertTrue(streaming.resumable);
+		long[][] expected = { { 1, 2 }, { 1, 3 }, { 4, 5 }, { 9, -1 } };
+		for (int maxRows : new int[] { 1, 2, 3, 64 }) {
+			assertRows(drain(streaming,
+					context().adjacencies(follows()).domains(new long[] { 1, 4, 9 }), maxRows), expected,
+					"drained " + maxRows + " row(s) at a time");
+		}
+	}
+
+	@Test
+	void streamingLeftGroupPreservesMultiProbeMatchesAndFallbackAtEveryBufferSize() throws Exception {
+		Kernel streaming = new Kernel(3,
+				List.of(new EnumerateDomain(0, 0),
+						new LeftGroup(List.of(new Probe(0, Operand.col(0), 1),
+								new Probe(1, Operand.col(0), 2)))),
+				emit(0, 1, 2));
+		assertTrue(streaming.resumable);
+		long[][] expected = {
+				{ 1, 2, 2 }, { 1, 2, 3 }, { 1, 3, 2 }, { 1, 3, 3 },
+				{ 4, 5, 5 }, { 9, -1, -1 } };
+		for (int maxRows : new int[] { 1, 2, 3, 5, 64 }) {
+			assertRows(drain(streaming,
+					context().adjacencies(follows(), follows()).domains(new long[] { 1, 4, 9 }), maxRows),
+					expected, "drained " + maxRows + " row(s) at a time");
+		}
+	}
+
+	@Test
+	void resumableOptionalArmsReuseBoundRunCursors() {
+		Kernel kernel = new Kernel(4,
+				List.of(new EnumerateDomain(0, 0),
+						new LeftGroup(List.of(new Probe(0, Operand.col(0), 1),
+								new Probe(1, Operand.col(0), 2)))),
+				emit(0, 1, 2));
+
+		String source = LmdbNativeKernelEmitter.emit(kernel);
+		assertTrue(kernel.resumable);
+		assertTrue(source.contains("ar0 = a0.openBoundRunCursor();"), source);
+		assertTrue(source.contains("ar1 = a1.openBoundRunCursor();"), source);
+		assertTrue(source.contains("ar0.bind(key)"), source);
+		assertTrue(source.contains("ar1.bind(key)"), source);
 	}
 
 	@Test
@@ -1672,7 +1722,7 @@ class LmdbNativeKernelIrEmitterTest {
 		private long[][] domains = new long[0][];
 		private int[] domainOffsets = new int[0];
 		private int[] domainLengths = new int[0];
-		private KernelHooks hooks;
+		private KernelHooks hooks = new TestHooks();
 		private KernelPlan[] plans = new KernelPlan[0];
 		private int distinctExpected = 16;
 

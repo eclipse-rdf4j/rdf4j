@@ -527,7 +527,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private void insertBeforeFirstConsumer(List<TupleExpr> args, BindingSetAssignment assignment) {
-			Set<String> assignmentNames = assignment.getAssuredBindingNames();
+			Set<String> assignmentNames = assignment.getBindingNames();
 			for (int i = 0; i < args.size(); i++) {
 				TupleExpr candidate = args.get(i);
 				if (!(candidate instanceof BindingSetAssignment)

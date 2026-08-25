@@ -54,6 +54,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.eclipse.collections.impl.map.mutable.primitive.LongObjectHashMap;
 import org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap;
@@ -807,6 +808,8 @@ class LmdbSailStore implements SailStore {
 	 * Constructed from {@link LmdbStoreConfig} settings.
 	 */
 	private final LmdbDirectAdjacencyStore directAdjacency;
+	/** Test-only interleaving hook: runs after planner statistics verify the dataset is open. */
+	volatile Runnable afterPlannerStatsOpenCheckForTest;
 
 	/**
 	 * Creates a new {@link LmdbSailStore}.
@@ -1145,6 +1148,10 @@ class LmdbSailStore implements SailStore {
 
 	@Override
 	public void close() throws SailException {
+		// Force pending adaptive evidence to disk and, crucially, unlink the per-store model before closing the objects
+		// captured by its live regime suppliers. Otherwise the weak-key registry's value retains its own ValueStore key
+		// and every short-lived store survives for the lifetime of a reused test/server JVM.
+		NativeLmdbQuerySource.releaseCostModel(valueStore);
 		if (directAdjacency != null) {
 			directAdjacency.close();
 		}
@@ -3850,61 +3857,103 @@ class LmdbSailStore implements SailStore {
 
 		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn, boolean pinSnapshot, boolean adjacencyBypass)
 				throws SailException {
-			this.explicit = explicit;
-			this.adjacencyEligible = (trackActiveTxn || pinSnapshot) && !adjacencyBypass;
+			boolean acquiredAdjacencyEligible = (trackActiveTxn || pinSnapshot) && !adjacencyBypass;
+			Txn acquiredTxn = null;
+			LmdbAdjacencyReadView acquiredAdjacencyView = null;
+			LmdbAdjacencyMetrics.Snapshot acquiredAdjacencyOpenSnapshot = null;
+			long acquiredSnapshotRevision;
+			long acquiredPinnedTxnVersion;
 			long registeredRevision = -1;
 			long registeredVersion = -1;
 			try {
 				TxnManager txnManager = tripleStore.getTxnManager();
 				if (pinSnapshot) {
-					this.txn = txnManager.createReadTxnPinned(tripleStore::getDataRevision);
+					acquiredTxn = txnManager.createReadTxnPinned(tripleStore::getDataRevision);
 				} else if (trackActiveTxn) {
 					TxnManager.ReadTxnRegistration registration = txnManager
 							.createReadTxnTrackedAtRevision(tripleStore::getDataRevision);
-					this.txn = registration.txn();
+					acquiredTxn = registration.txn();
 					registeredRevision = registration.dataRevision();
 					registeredVersion = registration.initialVersion();
 				} else {
-					this.txn = txnManager.createReadTxnUntracked();
+					acquiredTxn = txnManager.createReadTxnUntracked();
+				}
+				acquiredSnapshotRevision = acquiredTxn.snapshotRevision();
+				acquiredPinnedTxnVersion = registeredVersion >= 0 ? registeredVersion : acquiredTxn.version();
+				// acquisition after transaction registration: base replacement checks minPinnedSnapshotRevision(), so
+				// it
+				// cannot retire a view this dataset is about to retain (plan 27 read-view acquisition rule).
+				// An unpinned tracked transaction serves "latest committed": acquire the view at the current data
+				// revision. The version read above happens before the revision read, so a commit interleaving anywhere
+				// in between bumps this tracked transaction's version (reset-on-commit) and the
+				// tryDirect/directEligible
+				// version fence refuses to serve — the view can never be newer than the LMDB snapshot it accompanies.
+				long adjacencyRevision = acquiredSnapshotRevision >= 0 || !acquiredAdjacencyEligible
+						? acquiredSnapshotRevision
+						: registeredRevision;
+				acquiredAdjacencyView = directAdjacency != null && acquiredAdjacencyEligible
+						? directAdjacency.acquire(adjacencyRevision)
+						: null;
+				if (directAdjacency != null && logger.isInfoEnabled()) {
+					String kind = explicit ? "explicit" : "inferred";
+					if (!acquiredAdjacencyEligible) {
+						logger.info(
+								"Direct adjacency will not serve this {} dataset: reader ineligible (trackActiveTxn={}, "
+										+ "pinSnapshot={}, adjacencyBypass={}, snapshotRevision={}); SERIALIZABLE and untracked "
+										+ "readers always use LMDB",
+								kind, trackActiveTxn, pinSnapshot, adjacencyBypass, acquiredSnapshotRevision);
+					} else if (acquiredAdjacencyView == null || !acquiredAdjacencyView.isExact()) {
+						logger.info(
+								"Direct adjacency acquired a fallback view for this {} dataset (reason={}, snapshotRevision={}); "
+										+ "every probe will use LMDB",
+								kind,
+								acquiredAdjacencyView == null ? "NO_VIEW" : acquiredAdjacencyView.fallbackReason(),
+								acquiredSnapshotRevision);
+					} else {
+						logger.info(
+								"Direct adjacency acquired an exact view for this {} dataset (snapshotRevision={}); "
+										+ "shape-covered probes are served, others fall back (see close-time decline census)",
+								kind, acquiredSnapshotRevision);
+					}
+					acquiredAdjacencyOpenSnapshot = directAdjacency.snapshotMetrics();
 				}
 			} catch (IOException e) {
+				closeDatasetInitializationResources(acquiredAdjacencyView, acquiredTxn, e);
 				throw new SailException(e);
+			} catch (RuntimeException | Error e) {
+				closeDatasetInitializationResources(acquiredAdjacencyView, acquiredTxn, e);
+				throw e;
 			}
-			this.snapshotRevision = txn.snapshotRevision();
-			this.pinnedTxnVersion = registeredVersion >= 0 ? registeredVersion : txn.version();
-			// acquisition after transaction registration: base replacement checks minPinnedSnapshotRevision(), so it
-			// cannot retire a view this dataset is about to retain (plan 27 read-view acquisition rule).
-			// An unpinned tracked transaction serves "latest committed": acquire the view at the current data
-			// revision. The version read above happens before the revision read, so a commit interleaving anywhere
-			// in between bumps this tracked transaction's version (reset-on-commit) and the tryDirect/directEligible
-			// version fence refuses to serve — the view can never be newer than the LMDB snapshot it accompanies.
-			long adjacencyRevision = snapshotRevision >= 0 || !adjacencyEligible ? snapshotRevision
-					: registeredRevision;
-			this.adjacencyView = directAdjacency != null && adjacencyEligible
-					? directAdjacency.acquire(adjacencyRevision)
-					: null;
-			if (directAdjacency != null && logger.isInfoEnabled()) {
-				String kind = explicit ? "explicit" : "inferred";
-				if (!adjacencyEligible) {
-					logger.info(
-							"Direct adjacency will not serve this {} dataset: reader ineligible (trackActiveTxn={}, "
-									+ "pinSnapshot={}, adjacencyBypass={}, snapshotRevision={}); SERIALIZABLE and untracked "
-									+ "readers always use LMDB",
-							kind, trackActiveTxn, pinSnapshot, adjacencyBypass, snapshotRevision);
-				} else if (adjacencyView == null || !adjacencyView.isExact()) {
-					logger.info(
-							"Direct adjacency acquired a fallback view for this {} dataset (reason={}, snapshotRevision={}); "
-									+ "every probe will use LMDB",
-							kind, adjacencyView == null ? "NO_VIEW" : adjacencyView.fallbackReason(), snapshotRevision);
-				} else {
-					logger.info(
-							"Direct adjacency acquired an exact view for this {} dataset (snapshotRevision={}); "
-									+ "shape-covered probes are served, others fall back (see close-time decline census)",
-							kind, snapshotRevision);
+			this.explicit = explicit;
+			this.adjacencyEligible = acquiredAdjacencyEligible;
+			this.txn = acquiredTxn;
+			this.snapshotRevision = acquiredSnapshotRevision;
+			this.pinnedTxnVersion = acquiredPinnedTxnVersion;
+			this.adjacencyView = acquiredAdjacencyView;
+			this.adjacencyOpenSnapshot = acquiredAdjacencyOpenSnapshot;
+		}
+
+		private void closeDatasetInitializationResources(LmdbAdjacencyReadView acquiredView, Txn acquiredTxn,
+				Throwable failure) {
+			if (acquiredView != null) {
+				try {
+					acquiredView.close();
+				} catch (RuntimeException | Error cleanupFailure) {
+					addSuppressedCleanupFailure(failure, cleanupFailure);
 				}
-				this.adjacencyOpenSnapshot = directAdjacency.snapshotMetrics();
-			} else {
-				this.adjacencyOpenSnapshot = null;
+			}
+			if (acquiredTxn != null) {
+				try {
+					acquiredTxn.close();
+				} catch (RuntimeException | Error cleanupFailure) {
+					addSuppressedCleanupFailure(failure, cleanupFailure);
+				}
+			}
+		}
+
+		private void addSuppressedCleanupFailure(Throwable failure, Throwable cleanupFailure) {
+			if (failure != cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
 			}
 		}
 
@@ -4707,58 +4756,64 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public double estimate(long subj, long pred, long obj, long context) {
-			assertNativeSourceOpen();
-			if (!hasStatementsInSource()) {
-				return 0D;
-			}
-			try {
-				return tripleStore.cardinality(subj, pred, obj, context);
-			} catch (IOException | RuntimeException e) {
-				return Double.POSITIVE_INFINITY;
-			}
+			return withNativeSourceRead(() -> {
+				if (!hasStatementsInSource()) {
+					return 0D;
+				}
+				try {
+					return tripleStore.cardinality(subj, pred, obj, context);
+				} catch (IOException | RuntimeException e) {
+					return Double.POSITIVE_INFINITY;
+				}
+			});
 		}
 
 		@Override
 		public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
-			assertNativeSourceOpen();
-			if (!hasStatementsInSource()) {
-				return OptionalDouble.empty();
-			}
-			if (directEligible() && LmdbDirectAdjacencyStore.plannerStatsEnabled()
-					&& !directAdjacency.writeTransactionBlocksAdjacency()) {
-				OptionalDouble exact = cachedPlannerFanOut(predicate, bySubject);
-				if (exact == null) {
-					exact = directAdjacency.meanFanOut(adjacencyView, predicate, bySubject, explicit);
+			return withNativeSourceRead(() -> {
+				Runnable interleave = afterPlannerStatsOpenCheckForTest;
+				if (interleave != null) {
+					interleave.run();
+				}
+				if (!hasStatementsInSource()) {
+					return OptionalDouble.empty();
+				}
+				if (directEligible() && LmdbDirectAdjacencyStore.plannerStatsEnabled()
+						&& !directAdjacency.writeTransactionBlocksAdjacency()) {
+					OptionalDouble exact = cachedPlannerFanOut(predicate, bySubject);
+					if (exact == null) {
+						exact = directAdjacency.meanFanOut(adjacencyView, predicate, bySubject, explicit);
+						if (exact.isPresent()) {
+							cachePlannerFanOut(predicate, bySubject, exact);
+						}
+					}
 					if (exact.isPresent()) {
-						cachePlannerFanOut(predicate, bySubject, exact);
+						if (!plannerStatsHitRecorded) {
+							plannerStatsHitRecorded = true;
+							directAdjacency.recordPlannerStatsHit();
+						}
+						return exact;
 					}
 				}
-				if (exact.isPresent()) {
-					if (!plannerStatsHitRecorded) {
-						plannerStatsHitRecorded = true;
-						directAdjacency.recordPlannerStatsHit();
-					}
-					return exact;
-				}
-			}
-			return tripleStore.meanFanOut(predicate, bySubject, explicit);
+				return tripleStore.meanFanOut(predicate, bySubject, explicit);
+			});
 		}
 
 		@Override
 		public OptionalDouble distinctFanOutKeys(long predicate, boolean bySubject) {
-			assertNativeSourceOpen();
-			return hasStatementsInSource()
+			return withNativeSourceRead(() -> hasStatementsInSource()
 					? tripleStore.distinctFanOutKeys(predicate, bySubject, explicit)
-					: OptionalDouble.empty();
+					: OptionalDouble.empty());
 		}
 
 		@Override
 		public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
-			assertNativeSourceOpen();
-			if (!hasStatementsInSource() || !directEligible()) {
-				return OptionalLong.empty();
-			}
-			return directAdjacency.keyDomainCardinality(adjacencyView, predicate, bySubject, explicit);
+			return withNativeSourceRead(() -> {
+				if (!hasStatementsInSource() || !directEligible()) {
+					return OptionalLong.empty();
+				}
+				return directAdjacency.keyDomainCardinality(adjacencyView, predicate, bySubject, explicit);
+			});
 		}
 
 		private OptionalDouble cachedPlannerFanOut(long predicate, boolean bySubject) {
@@ -4781,24 +4836,25 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
-			assertNativeSourceOpen();
-			if (!hasStatementsInSource()) {
-				return OptionalLong.empty();
-			}
-			if (directEligible()) {
-				OptionalLong direct = directAdjacency.exactDegree(adjacencyView, predicate, key, bySubject, explicit);
-				if (direct.isPresent()) {
-					return direct;
+			return withNativeSourceRead(() -> {
+				if (!hasStatementsInSource()) {
+					return OptionalLong.empty();
 				}
-			}
-			return OptionalLong.empty();
+				if (directEligible()) {
+					OptionalLong direct = directAdjacency.exactDegree(adjacencyView, predicate, key, bySubject,
+							explicit);
+					if (direct.isPresent()) {
+						return direct;
+					}
+				}
+				return OptionalLong.empty();
+			});
 		}
 
 		@Override
 		public OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj, long context,
 				int varyingField) {
-			assertNativeSourceOpen();
-			return null;
+			return withNativeSourceRead(() -> null);
 		}
 
 		@Override
@@ -4929,6 +4985,16 @@ class LmdbSailStore implements SailStore {
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 				throw new SailException(e);
+			}
+		}
+
+		private <T> T withNativeSourceRead(Supplier<T> read) {
+			long readStamp = acquireNativeSourceReadLockUnchecked();
+			try {
+				assertNativeSourceOpen();
+				return read.get();
+			} finally {
+				nativeSourceLock.unlockRead(readStamp);
 			}
 		}
 

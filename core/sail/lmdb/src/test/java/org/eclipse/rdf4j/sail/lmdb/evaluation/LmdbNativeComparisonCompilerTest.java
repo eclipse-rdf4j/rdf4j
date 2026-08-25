@@ -17,6 +17,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -152,15 +153,120 @@ class LmdbNativeComparisonCompilerTest {
 	}
 
 	@Test
-	void genericBooleanRetainsItsExactSlotReadMask() {
+	void cachedComparisonDoesNotReuseRuntimeIdVerdictAcrossEvaluations() {
+		NativeLmdbQuerySource store = mock(NativeLmdbQuerySource.class);
+		LmdbNativeValueCodec codec = new LmdbNativeValueCodec(mock(ValueStore.class));
+		when(store.nativeValueCodec()).thenReturn(codec);
+		when(store.idOf(any(Value.class))).thenReturn(LmdbNativeAggregateCompiler.UNKNOWN);
+		SyntheticValueSource compiledSource = new SyntheticValueSource(store, PlanValueCatalog.EMPTY);
+		long seven = LmdbNativeValueCodec.packInline(
+				LmdbNativeValueCodec.fromValue(SimpleValueFactory.getInstance().createLiteral(7)), false);
+		CachedCompareFilter filter = new CachedCompareFilter(store, 0, seven, false, Compare.CompareOp.GE,
+				true, bindings -> ((org.eclipse.rdf4j.model.Literal) bindings.getValue("a"))
+						.decimalValue()
+						.compareTo(BigDecimal.valueOf(7)) >= 0);
+
+		SyntheticValueSource firstEvaluation = compiledSource.forEvaluation();
+		SyntheticValueSource secondEvaluation = compiledSource.forEvaluation();
+		try {
+			RowState accepted = runtimeRow(firstEvaluation, SimpleValueFactory.getInstance()
+					.createLiteral("8.0",
+							org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL));
+			RowState rejected = runtimeRow(secondEvaluation, SimpleValueFactory.getInstance()
+					.createLiteral("3.0",
+							org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL));
+
+			assertThat(rejected.slots[0]).as("runtime ids restart for each evaluation").isEqualTo(accepted.slots[0]);
+			assertThat(filter.accept(accepted)).isTrue();
+			assertThat(filter.accept(rejected))
+					.as("a reused numeric runtime id must be interpreted through the current evaluation's term authority")
+					.isFalse();
+		} finally {
+			firstEvaluation.executionContext().close();
+			secondEvaluation.executionContext().close();
+		}
+	}
+
+	@Test
+	void runtimeIdThatMimicsOrderedIntegerUsesAuthoritativeValue() {
+		NativeLmdbQuerySource store = mock(NativeLmdbQuerySource.class);
+		LmdbNativeValueCodec codec = new LmdbNativeValueCodec(mock(ValueStore.class));
+		when(store.nativeValueCodec()).thenReturn(codec);
+		when(store.idOf(any(Value.class))).thenReturn(LmdbNativeAggregateCompiler.UNKNOWN);
+		SyntheticValueSource evaluation = new SyntheticValueSource(store, PlanValueCatalog.EMPTY).forEvaluation();
+		long seven = LmdbNativeValueCodec.packInline(
+				LmdbNativeValueCodec.fromValue(SimpleValueFactory.getInstance().createLiteral(7)), false);
+		CachedCompareFilter filter = new CachedCompareFilter(store, 0, seven, false, Compare.CompareOp.GE,
+				true, bindings -> ((org.eclipse.rdf4j.model.Literal) bindings.getValue("a"))
+						.decimalValue()
+						.compareTo(BigDecimal.valueOf(7)) >= 0);
+		try {
+			RowState adversarial = null;
+			for (int index = 0; index < 4096; index++) {
+				Value value = SimpleValueFactory.getInstance()
+						.createLiteral(BigDecimal.valueOf(8).add(BigDecimal.valueOf(index, 3)));
+				RowState candidate = runtimeRow(evaluation, value);
+				long runtimeId = candidate.slots[0];
+				if (ValueIds.isOrderedInteger(runtimeId) && ValueIds.orderedIntegerValue(runtimeId) < 7L) {
+					adversarial = candidate;
+					break;
+				}
+			}
+			assertThat(adversarial).as("a runtime id with ordered-integer-looking bits").isNotNull();
+			assertThat(evaluation.authority().kind(adversarial.slots[0])).isEqualTo(NativeIdKind.RUNTIME);
+			assertThat(filter.accept(adversarial))
+					.as("runtime ids must be decoded by their authority before store-id numeric shortcuts")
+					.isTrue();
+		} finally {
+			evaluation.executionContext().close();
+		}
+	}
+
+	@Test
+	void valueSetDoesNotReuseRuntimeIdVerdictAcrossEvaluations() {
+		NativeLmdbQuerySource store = mock(NativeLmdbQuerySource.class);
+		when(store.idOf(any(Value.class))).thenReturn(LmdbNativeAggregateCompiler.UNKNOWN);
+		SyntheticValueSource compiledSource = new SyntheticValueSource(store, PlanValueCatalog.EMPTY);
+		Value seven = SimpleValueFactory.getInstance().createLiteral(7);
+		ValueSetFilter filter = new ValueSetFilter(compiledSource, 0,
+				new long[] { LmdbNativeAggregateCompiler.UNKNOWN }, new Value[] { seven });
+
+		SyntheticValueSource firstEvaluation = compiledSource.forEvaluation();
+		SyntheticValueSource secondEvaluation = compiledSource.forEvaluation();
+		try {
+			RowState accepted = runtimeRow(firstEvaluation, seven);
+			RowState rejected = runtimeRow(secondEvaluation, SimpleValueFactory.getInstance().createLiteral(9));
+
+			assertThat(rejected.slots[0]).as("runtime ids restart for each evaluation").isEqualTo(accepted.slots[0]);
+			assertThat(filter.accept(accepted)).isTrue();
+			assertThat(filter.accept(rejected))
+					.as("IN membership must resolve a reused runtime id in the current evaluation")
+					.isFalse();
+		} finally {
+			firstEvaluation.executionContext().close();
+			secondEvaluation.executionContext().close();
+		}
+	}
+
+	private static RowState runtimeRow(SyntheticValueSource source, Value value) {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("a", 0), null);
+		layout.freeze(List.of("a"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		row.slots[0] = source.internComputedValue(value);
+		row.recomputeBoundMask();
+		return row;
+	}
+
+	@Test
+	void semanticBooleanRetainsItsExactSlotReadMask() {
 		Compare oneSlot = new Compare(new Var("a"),
 				new ValueConstant(SimpleValueFactory.getInstance().createLiteral("")), Compare.CompareOp.NE);
 		Compare twoSlots = new Compare(new Var("a"), new Var("b"), Compare.CompareOp.NE);
 		Compare outsideFragment = new Compare(new Var("outside"), new Var("a"), Compare.CompareOp.NE);
 
-		assertThat(compiler.compileGenericBoolean(oneSlot).batchReadMask()).isEqualTo(1L);
-		assertThat(compiler.compileGenericBoolean(twoSlots).batchReadMask()).isEqualTo(3L);
-		assertThat(compiler.compileGenericBoolean(outsideFragment).batchReadMask())
+		assertThat(compiler.compileSemanticBoolean(oneSlot).batchReadMask()).isEqualTo(1L);
+		assertThat(compiler.compileSemanticBoolean(twoSlots).batchReadMask()).isEqualTo(3L);
+		assertThat(compiler.compileSemanticBoolean(outsideFragment).batchReadMask())
 				.as("a name owned by an outer fragment cannot be represented by this fragment's slot mask")
 				.isEqualTo(-1L);
 	}

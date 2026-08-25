@@ -110,6 +110,15 @@ public interface NativeLmdbQuerySource {
 		return null;
 	}
 
+	/**
+	 * Releases the adaptive model registered under a closing store's {@link #costModelIdentity()} token. This is an
+	 * internal lifecycle bridge for the LMDB store package; query-source wrappers must not call it when only a dataset
+	 * or evaluation closes because their backing persistent store is still live.
+	 */
+	static void releaseCostModel(Object identity) {
+		LmdbNativeAdaptiveCostModel.release(identity);
+	}
+
 	RecordIterator statements(long subj, long pred, long obj, long context) throws IOException;
 
 	/**

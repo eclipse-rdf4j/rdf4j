@@ -58,6 +58,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -218,7 +219,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				return null;
 			}
 			plan = SlotPlan.filter(plan, recordFilterOutcomes(filter, condition),
-					placeableFilterMask(filter.getCondition()));
+					placeableFilterMask(filter));
 		}
 		for (int i = hoisted.size() - 1; i >= 0; i--) {
 			CopyBinding[] copies = compileExtensionCopies(hoisted.get(i));
@@ -284,10 +285,14 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 					LmdbNativeCompiledValue computedValue = LmdbNativeExpressionCompiler
 							.compileComputedValue(expression, source, this::slot, strict, context);
 					if (computedValue == null) {
-						return null;
+						NativeBindingSetValueEvaluator semanticValue = NativeBindingSetValueCompiler.compile(expression,
+								strategy, context);
+						copies[i] = CopyBinding.semanticValue(slot(elem.getName()), semanticValue,
+								QueryEvaluationUtility.isRepeatableWithinPreparation(expression));
+					} else {
+						copies[i] = CopyBinding.computedValue(slot(elem.getName()), computedValue,
+								QueryEvaluationUtility.isRepeatableWithinPreparation(expression));
 					}
-					copies[i] = CopyBinding.computedValue(slot(elem.getName()), computedValue,
-							QueryEvaluationUtility.isRepeatableWithinPreparation(expression));
 					sawComputedValueCopy = true;
 					// runtime-interned ids carry arbitrary type bits, so no raw-id filter shortcut (type-bit
 					// dispatch, cached compares, IN sets) may ever see this slot — the synthetic-var guard routes
@@ -298,7 +303,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				}
 			}
 		}
-		return copies;
+		return configureExtensionErrorMode(extension, copies);
 	}
 
 	/**
@@ -321,10 +326,14 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			LmdbNativeCompiledValue computedValue = LmdbNativeExpressionCompiler
 					.compileComputedValue(pending.expression, source, this::slot, strict, context);
 			if (computedValue == null) {
-				return null;
+				NativeBindingSetValueEvaluator semanticValue = NativeBindingSetValueCompiler.compile(pending.expression,
+						strategy, context);
+				copies[i] = CopyBinding.semanticValue(pending.slot, semanticValue,
+						QueryEvaluationUtility.isRepeatableWithinPreparation(pending.expression));
+			} else {
+				copies[i] = CopyBinding.computedValue(pending.slot, computedValue,
+						QueryEvaluationUtility.isRepeatableWithinPreparation(pending.expression));
 			}
-			copies[i] = CopyBinding.computedValue(pending.slot, computedValue,
-					QueryEvaluationUtility.isRepeatableWithinPreparation(pending.expression));
 			sawComputedValueCopy = true;
 		}
 		return SlotPlan.extension(arg, copies);
@@ -356,7 +365,10 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	}
 
 	Set<String> rightOnlyBindingNames(LeftJoin leftJoin) {
-		java.util.HashSet<String> rightOnly = new java.util.HashSet<>(bindingAndExtensionNames(leftJoin.getRightArg()));
+		// getBindingNames is the query-model contract for every possibly produced name, including VALUES columns,
+		// while the traversal supplement retains explicit Extension targets across older/custom algebra nodes.
+		java.util.HashSet<String> rightOnly = new java.util.HashSet<>(leftJoin.getRightArg().getBindingNames());
+		rightOnly.addAll(bindingAndExtensionNames(leftJoin.getRightArg()));
 		rightOnly.removeAll(leftJoin.getLeftArg().getBindingNames());
 		return rightOnly;
 	}
@@ -393,7 +405,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				&& !Collections.disjoint(VarNameCollector.process(expr), syntheticVarNames)) {
 			// raw-id shortcuts (IN, sameTerm, = against constants) must never compare a plan-local
 			// synthetic id against a real store id; the generic path materializes values instead
-			return compileGenericBoolean(expr);
+			return compileSemanticBoolean(expr);
 		}
 		if (expr instanceof Compare) {
 			NativeBooleanFilter comparison = compileCompare((Compare) expr, assuredMask);
@@ -429,18 +441,9 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		}
 		if (expr instanceof Exists) {
 			Exists exists = (Exists) expr;
-			// A variable-scope-changing child cannot be represented by the current mutable-row witness contract. A
-			// SlotPlan can compile its local operators, but that alone does not prove which incoming bindings RDF4J
-			// hides at each nested scope. Claiming it here therefore turns physical bindings into semantic
-			// correlations (notably through UNION/MINUS and subqueries). Keep the whole witness on RDF4J's scoped
-			// evaluator until the IR carries an explicit scope frame.
-			if (containsUnsafeExistsScope(exists.getSubQuery())) {
-				LmdbNativeAggregateCompiler.EXISTS_SCOPE_DECLINES.incrementAndGet();
-				if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
-					System.err.println("[exists-compile] decline: variable-scope-change");
-				}
-				return null;
-			}
+			// The semantic row tier owns explicit lexical frames for OPTIONAL and solution-domain compatibility for
+			// MINUS. Let the scoped EXISTS compiler attempt the complete subtree; it still returns null when any nested
+			// operator cannot establish its visibility contract.
 			// value guards are root-scoped: a VALUES inside this witness must not record a guard the outer root
 			// would apply (the witness variable is not visible there) — the witness cell declines instead
 			boolean previousValueGuardsSupported = valueGuardsSupported;
@@ -466,7 +469,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			}
 		}
 
-		return guardConstantFalse(expr, fragmentBacked(expr, compileGenericBoolean(expr)));
+		return guardConstantFalse(expr, fragmentBacked(expr, compileSemanticBoolean(expr)));
 	}
 
 	/**
@@ -556,7 +559,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		return false;
 	}
 
-	NativeBooleanFilter compileGenericBoolean(ValueExpr expr) {
+	NativeBooleanFilter compileSemanticBoolean(ValueExpr expr) {
 		if (rootEvaluationScoped) {
 			GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(expr);
 			if (!descriptor.shareableAcrossEvaluations()) {
@@ -570,15 +573,15 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				QueryEvaluationContext compileContext = context;
 				NativeSlotLayout layoutSnapshot = layout;
 				ValueExpr pinned = descriptor.pinnedExpr();
-				Function<NativeExecutionContext, Predicate<BindingSet>> perEvaluation = executionContext -> {
+				Function<NativeExecutionContext, NativeBindingSetValueEvaluator> perEvaluation = executionContext -> {
 					QueryEvaluationContext scoped = executionContext
 							.genericContext(() -> new EvaluationScopedQueryEvaluationContext(compileContext));
-					return compileGenericPredicate(compilingStrategy, pinned,
+					return compileSemanticValue(compilingStrategy, pinned,
 							new SlotAwareQueryEvaluationContext(scoped, layoutSnapshot));
 				};
-				Supplier<Predicate<BindingSet>> sharedFallback = () -> compileGenericPredicate(compilingStrategy,
+				Supplier<NativeBindingSetValueEvaluator> sharedFallback = () -> compileSemanticValue(compilingStrategy,
 						pinned, new SlotAwareQueryEvaluationContext(compileContext, layoutSnapshot));
-				return new GenericBooleanFilter(descriptor, perEvaluation, sharedFallback, readMask);
+				return new NativeValueOutcomeBooleanFilter(descriptor, perEvaluation, sharedFallback, readMask);
 			}
 		}
 		QueryValueEvaluationStep step;
@@ -590,19 +593,27 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			// a condition that fails to precompile (e.g. a constant sub-expression that always raises a
 			// type error) can never accept a row; the generic engine folds it to constant-false the same
 			// way in FilterIterator.supply instead of surfacing the error at evaluate() time
-			return new GenericBooleanFilter(bindings -> false, 0L);
+			return new NativeValueOutcomeBooleanFilter(bindings -> NativeValueOutcome.ERROR, 0L);
 		}
-		Predicate<BindingSet> predicate = step.asPredicate();
-		return new GenericBooleanFilter(predicate, genericReadMask(expr));
+		NativeBindingSetValueEvaluator evaluator = bindings -> {
+			try {
+				return NativeValueOutcome.bound(step.evaluate(bindings));
+			} catch (ValueExprEvaluationException e) {
+				return NativeValueOutcome.ERROR;
+			}
+		};
+		return new NativeValueOutcomeBooleanFilter(evaluator, genericReadMask(expr));
 	}
 
-	/** Compiles a generic predicate, folding a precompile-time error to constant false like the generic engine. */
-	static Predicate<BindingSet> compileGenericPredicate(LmdbNativeEvaluationStrategy strategy, ValueExpr expr,
+	/**
+	 * Compiles a semantic value evaluator, folding a precompile-time error to FILTER error like the standard engine.
+	 */
+	static NativeBindingSetValueEvaluator compileSemanticValue(LmdbNativeEvaluationStrategy strategy, ValueExpr expr,
 			QueryEvaluationContext evaluationContext) {
 		try {
-			return strategy.precompile(expr, evaluationContext).asPredicate();
+			return NativeBindingSetValueCompiler.compile(expr, strategy, evaluationContext);
 		} catch (QueryEvaluationException e) {
-			return bindings -> false;
+			return bindings -> NativeValueOutcome.ERROR;
 		}
 	}
 

@@ -94,7 +94,8 @@ final class NativeFilterLease {
 			return SlotPlan.join(borrow(join.left), borrow(join.right));
 		}
 		if (plan instanceof LeftJoinPlan leftJoin) {
-			return new LeftJoinPlan(borrow(leftJoin.left), borrow(leftJoin.right));
+			return new LeftJoinPlan(borrow(leftJoin.left), borrow(leftJoin.right), leftJoin.lexicalSharedSlots,
+					leftJoin.lexicalHashKeys, leftJoin.lexicalProblemSlots);
 		}
 		if (plan instanceof UnionPlan union) {
 			return new UnionPlan(borrow(union.left), borrow(union.right));

@@ -35,9 +35,37 @@ public final class KernelRuntime {
 	 * non-probe execution — costs one branch.
 	 */
 	public static void checkCancelled(KernelCancellation cancellation) {
-		if (cancellation != null && cancellation.cancelled()) {
+		if (cancellation == null) {
+			return;
+		}
+		int cancellationReason = cancellation.cancellationReason();
+		if (cancellationReason == KernelCancellation.QUERY_CANCELLED) {
+			throw KernelQueryCancelledException.INSTANCE;
+		}
+		if (cancellationReason == KernelCancellation.PROBE_CANCELLED) {
 			throw KernelCancelledException.INSTANCE;
 		}
+	}
+
+	/**
+	 * Enforces the same private-row ceiling as the outer probe harness before a blocking row kernel grows its internal
+	 * output array. The probe has not published any row at this point, so this remains a replay-safe strategy decline.
+	 */
+	public static void checkMaterializationCapacity(KernelCancellation cancellation, int bufferedRows) {
+		// A blocking kernel may grow its private result array much faster than an enclosing query thread can regain
+		// control. Poll the shared cancellation first on every append, including ordinary (non-probe) execution, so a
+		// timeout or a cancelled worker group unwinds before the next allocation. The masked loop polls remain useful
+		// for pipelines that produce few or no rows.
+		checkCancelled(cancellation);
+		if (cancellation == null || cancellation.materializationRowLimit() < 0
+				|| bufferedRows < cancellation.materializationRowLimit()) {
+			return;
+		}
+		int reason = cancellation.cancellationReasonAtMaterializationLimit();
+		if (reason == KernelCancellation.QUERY_CANCELLED) {
+			throw KernelQueryCancelledException.INSTANCE;
+		}
+		throw KernelCancelledException.INSTANCE;
 	}
 
 	private static long mix(long key) {
@@ -367,6 +395,7 @@ public final class KernelRuntime {
 
 	public static final class LongHashSet {
 
+		private final KernelHooks semantics;
 		private long[] keys;
 		private int mask;
 		private int size;
@@ -374,10 +403,15 @@ public final class KernelRuntime {
 		private boolean hasZero;
 
 		public LongHashSet() {
-			this(16);
+			this(16, null);
 		}
 
 		public LongHashSet(int expected) {
+			this(expected, null);
+		}
+
+		public LongHashSet(int expected, KernelHooks semantics) {
+			this.semantics = semantics;
 			int capacity = tableSizeFor(Math.max(expected, 2));
 			keys = new long[capacity];
 			mask = capacity - 1;
@@ -394,7 +428,7 @@ public final class KernelRuntime {
 				size++;
 				return true;
 			}
-			int slot = (int) mix(key) & mask;
+			int slot = hash(key) & mask;
 			while (true) {
 				long current = keys[slot];
 				if (current == 0L) {
@@ -405,7 +439,7 @@ public final class KernelRuntime {
 					}
 					return true;
 				}
-				if (current == key) {
+				if (same(current, key)) {
 					return false;
 				}
 				slot = slot + 1 & mask;
@@ -416,13 +450,13 @@ public final class KernelRuntime {
 			if (key == 0L) {
 				return hasZero;
 			}
-			int slot = (int) mix(key) & mask;
+			int slot = hash(key) & mask;
 			while (true) {
 				long current = keys[slot];
 				if (current == 0L) {
 					return false;
 				}
-				if (current == key) {
+				if (same(current, key)) {
 					return true;
 				}
 				slot = slot + 1 & mask;
@@ -446,7 +480,7 @@ public final class KernelRuntime {
 			}
 			for (long key : other.keys) {
 				if (key != 0L) {
-					add(key);
+					add(importKey(other, key));
 				}
 			}
 		}
@@ -472,13 +506,28 @@ public final class KernelRuntime {
 			for (int i = 0; i < old.length; i++) {
 				long key = old[i];
 				if (key != 0L) {
-					int slot = (int) mix(key) & mask;
+					int slot = hash(key) & mask;
 					while (keys[slot] != 0L) {
 						slot = slot + 1 & mask;
 					}
 					keys[slot] = key;
 				}
 			}
+		}
+
+		private int hash(long key) {
+			return (int) mix(semantics == null ? key : semantics.rdfTermHash(key));
+		}
+
+		private boolean same(long left, long right) {
+			return left == right || semantics != null && semantics.sameRdfTerm(left, right);
+		}
+
+		private long importKey(LongHashSet other, long key) {
+			if (semantics == null || other.semantics == null || semantics == other.semantics) {
+				return key;
+			}
+			return semantics.importRdfTerm(other.semantics, key);
 		}
 	}
 
@@ -488,6 +537,7 @@ public final class KernelRuntime {
 	 */
 	public static final class LongIntMap {
 
+		private final KernelHooks semantics;
 		private long[] keys;
 		private int[] ordinals;
 		private long[] keysByOrdinal;
@@ -497,10 +547,19 @@ public final class KernelRuntime {
 		private int zeroOrdinal = -1;
 
 		public LongIntMap() {
-			this(16);
+			this(16, null);
 		}
 
 		public LongIntMap(int expected) {
+			this(expected, null);
+		}
+
+		public LongIntMap(KernelHooks semantics) {
+			this(16, semantics);
+		}
+
+		public LongIntMap(int expected, KernelHooks semantics) {
+			this.semantics = semantics;
 			int capacity = tableSizeFor(Math.max(expected, 2));
 			keys = new long[capacity];
 			ordinals = new int[capacity];
@@ -517,7 +576,7 @@ public final class KernelRuntime {
 				}
 				return zeroOrdinal;
 			}
-			int slot = (int) mix(key) & mask;
+			int slot = hash(key) & mask;
 			while (true) {
 				long current = keys[slot];
 				if (current == 0L) {
@@ -529,7 +588,7 @@ public final class KernelRuntime {
 					}
 					return ordinal;
 				}
-				if (current == key) {
+				if (same(current, key)) {
 					return ordinals[slot];
 				}
 				slot = slot + 1 & mask;
@@ -541,13 +600,13 @@ public final class KernelRuntime {
 			if (key == 0L) {
 				return zeroOrdinal;
 			}
-			int slot = (int) mix(key) & mask;
+			int slot = hash(key) & mask;
 			while (true) {
 				long current = keys[slot];
 				if (current == 0L) {
 					return -1;
 				}
-				if (current == key) {
+				if (same(current, key)) {
 					return ordinals[slot];
 				}
 				slot = slot + 1 & mask;
@@ -583,7 +642,7 @@ public final class KernelRuntime {
 			for (int i = 0; i < oldKeys.length; i++) {
 				long key = oldKeys[i];
 				if (key != 0L) {
-					int slot = (int) mix(key) & mask;
+					int slot = hash(key) & mask;
 					while (keys[slot] != 0L) {
 						slot = slot + 1 & mask;
 					}
@@ -591,6 +650,14 @@ public final class KernelRuntime {
 					ordinals[slot] = oldOrdinals[i];
 				}
 			}
+		}
+
+		private int hash(long key) {
+			return (int) mix(semantics == null ? key : semantics.rdfTermHash(key));
+		}
+
+		private boolean same(long left, long right) {
+			return left == right || semantics != null && semantics.sameRdfTerm(left, right);
 		}
 	}
 
@@ -601,6 +668,7 @@ public final class KernelRuntime {
 	public static final class RowSet {
 
 		private final int stride;
+		private final KernelHooks semantics;
 		private long[] rows;
 		private int count;
 		private int[] table;
@@ -608,14 +676,23 @@ public final class KernelRuntime {
 		private int threshold;
 
 		public RowSet(int stride) {
-			this(stride, 16);
+			this(stride, 16, null);
 		}
 
 		public RowSet(int stride, int expectedRows) {
+			this(stride, expectedRows, null);
+		}
+
+		public RowSet(int stride, KernelHooks semantics) {
+			this(stride, 16, semantics);
+		}
+
+		public RowSet(int stride, int expectedRows, KernelHooks semantics) {
 			if (stride < 1) {
 				throw new IllegalArgumentException("stride must be positive: " + stride);
 			}
 			this.stride = stride;
+			this.semantics = semantics;
 			int capacity = tableSizeFor(Math.max(expectedRows, 2));
 			rows = new long[Math.max(expectedRows, 4) * stride];
 			table = new int[capacity];
@@ -678,7 +755,9 @@ public final class KernelRuntime {
 		private boolean rowEquals(int ordinal, long[] buf, int offset) {
 			int base = ordinal * stride;
 			for (int i = 0; i < stride; i++) {
-				if (rows[base + i] != buf[offset + i]) {
+				long stored = rows[base + i];
+				long candidate = buf[offset + i];
+				if (stored != candidate && (semantics == null || !semantics.sameRdfTerm(stored, candidate))) {
 					return false;
 				}
 			}
@@ -688,7 +767,8 @@ public final class KernelRuntime {
 		private int hash(long[] buf, int offset) {
 			long hash = 0xCBF29CE484222325L;
 			for (int i = 0; i < stride; i++) {
-				hash = mix(hash ^ buf[offset + i]);
+				long value = buf[offset + i];
+				hash = mix(hash ^ (semantics == null ? value : semantics.rdfTermHash(value)));
 			}
 			return (int) hash;
 		}

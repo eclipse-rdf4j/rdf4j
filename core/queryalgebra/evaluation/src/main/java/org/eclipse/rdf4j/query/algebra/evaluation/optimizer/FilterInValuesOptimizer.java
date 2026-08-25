@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -83,7 +84,21 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 				return;
 			}
 
+			invalidateAncestorMergeJoins(filter);
 			filter.replaceWith(new Join(assignment, filter.getArg().clone()));
+		}
+	}
+
+	/**
+	 * This optimizer runs after physical join planning. Introducing an unordered VALUES input changes the ordering
+	 * contract of every containing join, so an ancestor merge-join hint derived from the old subtree is no longer
+	 * valid. Descendant hints remain valid because their inputs are unchanged.
+	 */
+	private static void invalidateAncestorMergeJoins(QueryModelNode rewrittenNode) {
+		for (QueryModelNode parent = rewrittenNode.getParentNode(); parent != null; parent = parent.getParentNode()) {
+			if (parent instanceof Join join) {
+				join.setMergeJoin(false);
+			}
 		}
 	}
 

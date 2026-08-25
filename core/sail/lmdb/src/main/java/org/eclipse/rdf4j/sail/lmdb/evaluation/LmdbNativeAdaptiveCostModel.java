@@ -70,6 +70,24 @@ final class LmdbNativeAdaptiveCostModel {
 		return new LmdbNativeAdaptiveCostModel(LmdbNativeMachineCostModel.jvmWide(), store, Configuration.system());
 	}
 
+	/**
+	 * Store-lifecycle hook. The map is weak-keyed, but a model's live regime suppliers deliberately refer back to the
+	 * owning store; without explicit removal that value-to-key path defeats weak-key reclamation. Persist before
+	 * unlinking so evidence below the periodic write threshold is not lost at a clean shutdown.
+	 */
+	static void release(Object identity) {
+		if (identity == null) {
+			return;
+		}
+		LmdbNativeStoreCostModel store;
+		synchronized (STORE_MODELS) {
+			store = STORE_MODELS.remove(identity);
+		}
+		if (store != null && store.persistence() != null) {
+			store.persistence().persistIfDue(true);
+		}
+	}
+
 	LmdbNativeAdaptiveCostModel(LmdbNativeMachineCostModel machine, LmdbNativeStoreCostModel store,
 			Configuration configuration) {
 		this.machine = Objects.requireNonNull(machine, "machine");

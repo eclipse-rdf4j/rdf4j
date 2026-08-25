@@ -19,6 +19,8 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.slotsOf;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
@@ -27,11 +29,36 @@ final class LeftJoinPlan implements SlotPlan {
 	final SlotPlan left;
 	final SlotPlan right;
 	final long producedMask;
+	/**
+	 * Statically shared slots for an OPTIONAL whose right operand contains a lexical scope boundary. A non-null array
+	 * selects independent right evaluation and hash-key compatibility, matching RDF4J's subquery-aware left join.
+	 */
+	final int[] lexicalSharedSlots;
+	/** True for RDF4J's subquery hash-left-join keys; false for compatible-mapping materialized replay. */
+	final boolean lexicalHashKeys;
+	/** Optional variables removed from a non-well-designed OPTIONAL's dynamic entry frame. */
+	final int[] lexicalProblemSlots;
 
 	LeftJoinPlan(SlotPlan left, SlotPlan right) {
+		this(left, right, null, false, null);
+	}
+
+	LeftJoinPlan(SlotPlan left, SlotPlan right, int[] lexicalSharedSlots) {
+		this(left, right, lexicalSharedSlots, true, null);
+	}
+
+	LeftJoinPlan(SlotPlan left, SlotPlan right, int[] lexicalSharedSlots, boolean lexicalHashKeys) {
+		this(left, right, lexicalSharedSlots, lexicalHashKeys, null);
+	}
+
+	LeftJoinPlan(SlotPlan left, SlotPlan right, int[] lexicalSharedSlots, boolean lexicalHashKeys,
+			int[] lexicalProblemSlots) {
 		this.left = left;
 		this.right = right;
 		this.producedMask = left.producedMask() | right.producedMask();
+		this.lexicalSharedSlots = lexicalSharedSlots;
+		this.lexicalHashKeys = lexicalHashKeys;
+		this.lexicalProblemSlots = lexicalProblemSlots;
 	}
 
 	@Override
@@ -57,6 +84,12 @@ final class LeftJoinPlan implements SlotPlan {
 
 	@Override
 	public RowCursor open(RowState row) throws IOException {
+		if (lexicalProblemSlots != null) {
+			return new LexicalFrameLeftJoinCursor(left, right, lexicalProblemSlots, row);
+		}
+		if (lexicalSharedSlots != null) {
+			return new LexicalLeftJoinCursor(left, right, lexicalSharedSlots, lexicalHashKeys, row);
+		}
 		double expectedProbes = Double.NaN;
 		double perProbeRows = Double.NaN;
 		double sweepEstimate = Double.NaN;
@@ -74,6 +107,297 @@ final class LeftJoinPlan implements SlotPlan {
 	@Override
 	public long producedMask() {
 		return producedMask;
+	}
+}
+
+/**
+ * Semantic native equivalent of RDF4J's badly-designed OPTIONAL iterator. Optional variables already bound by the
+ * physical entry row are hidden from both arms. Compatible right rows are produced with those values restored; if the
+ * correlated probe has no match, an independent existence probe distinguishes a genuinely empty right side (emit the
+ * left fallback) from right rows that exist but are all incompatible (suppress the fallback).
+ */
+@Experimental
+final class LexicalFrameLeftJoinCursor implements RowCursor {
+	private final SlotPlan rightPlan;
+	private final RowState row;
+	private final int[] problemSlots;
+	private final long[] problemValues;
+	private final int problemCount;
+	private final RowCursor left;
+	private final RowCursor plain;
+	private RowCursor right;
+	private boolean rightMatched;
+	private boolean fallbackEmitted;
+	private boolean closed;
+	private int pollTick;
+
+	LexicalFrameLeftJoinCursor(SlotPlan leftPlan, SlotPlan rightPlan, int[] candidateProblemSlots, RowState row)
+			throws IOException {
+		this.rightPlan = rightPlan;
+		this.row = row;
+		this.problemSlots = new int[candidateProblemSlots.length];
+		this.problemValues = new long[candidateProblemSlots.length];
+		int count = 0;
+		for (int slot : candidateProblemSlots) {
+			long value = row.slots[slot];
+			if (row.lexicalScopeDepth > 0 && (row.lexicalInputMask & 1L << slot) != 0L) {
+				// Correlated scope inputs are part of this OPTIONAL's semantic entry mapping. Hiding them would
+				// turn OPTIONAL inside EXISTS/LATERAL into an independent badly-designed OPTIONAL.
+				continue;
+			}
+			if (value != UNKNOWN) {
+				problemSlots[count] = slot;
+				problemValues[count] = value;
+				row.replaceSlot(slot, UNKNOWN);
+				count++;
+			}
+		}
+		this.problemCount = count;
+		try {
+			if (count == 0) {
+				this.left = null;
+				this.plain = new LeftJoinCursor(leftPlan.open(row), rightPlan, row, leftPlan.producedMask(),
+						Double.NaN, Double.NaN, Double.NaN);
+			} else {
+				this.left = leftPlan.open(row);
+				this.plain = null;
+			}
+		} catch (IOException | RuntimeException | Error problem) {
+			restoreProblemValues();
+			throw problem;
+		}
+	}
+
+	@Override
+	public boolean next() throws IOException {
+		if (closed || row.cancellation.isCancellationRequested()) {
+			return false;
+		}
+		if (plain != null) {
+			return plain.next();
+		}
+		if (fallbackEmitted) {
+			clearProblemValues();
+			fallbackEmitted = false;
+		}
+		while (true) {
+			if (right != null) {
+				if (right.next()) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					rightMatched = true;
+					return true;
+				}
+				right.close();
+				right = null;
+				clearProblemValues();
+				if (!rightMatched) {
+					try (RowCursor independent = rightPlan.open(row)) {
+						if (!independent.next()) {
+							restoreProblemValues();
+							fallbackEmitted = true;
+							return true;
+						}
+					}
+				}
+				rightMatched = false;
+			}
+			if (!left.next()) {
+				close();
+				return false;
+			}
+			restoreProblemValues();
+			right = rightPlan.open(row);
+		}
+	}
+
+	private void clearProblemValues() {
+		for (int i = 0; i < problemCount; i++) {
+			row.replaceSlot(problemSlots[i], UNKNOWN);
+		}
+	}
+
+	private void restoreProblemValues() {
+		for (int i = 0; i < problemCount; i++) {
+			row.replaceSlot(problemSlots[i], problemValues[i]);
+		}
+	}
+
+	@Override
+	public void close() {
+		if (closed) {
+			return;
+		}
+		closed = true;
+		Throwable failure = null;
+		try {
+			if (right != null) {
+				right.close();
+			}
+			if (plain != null) {
+				plain.close();
+			}
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+		}
+		try {
+			if (left != null) {
+				left.close();
+			}
+		} catch (RuntimeException | Error problem) {
+			if (failure == null) {
+				failure = problem;
+			} else if (failure != problem) {
+				failure.addSuppressed(problem);
+			}
+		} finally {
+			restoreProblemValues();
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+	}
+}
+
+/**
+ * Semantic native OPTIONAL for a right operand containing a subquery. The right relation is evaluated exactly once in
+ * the operator-entry frame, before the left relation adds any bindings, and is then joined by the statically shared
+ * binding domain. This is the native equivalent of {@code LeftJoinQueryEvaluationStep}'s subquery hash-left-join arm:
+ * an unbound shared attribute hashes as unbound and therefore does not match a bound value from the left.
+ */
+@Experimental
+final class LexicalLeftJoinCursor implements RowCursor {
+	private final RowState row;
+	private final RowCursor left;
+	private final int[] sharedSlots;
+	private final int[] rightSlots;
+	private final List<long[]> rightRows;
+	private final boolean hashKeys;
+	/** Native counterpart of HashJoinIteration's canonical EmptyBindingSet scan-row branch. */
+	private final boolean canonicalEmptyLeft;
+	private int rightIndex;
+	private int activeMark = -1;
+	private boolean haveLeft;
+	private boolean matchedLeft;
+	private int pollTick;
+
+	LexicalLeftJoinCursor(SlotPlan leftPlan, SlotPlan rightPlan, int[] sharedSlots, boolean hashKeys, RowState row)
+			throws IOException {
+		this.row = row;
+		this.sharedSlots = sharedSlots;
+		this.hashKeys = hashKeys;
+		this.canonicalEmptyLeft = leftPlan == SingletonPlan.INSTANCE && row.base.isEmpty();
+		this.rightSlots = slotsOf(rightPlan.producedMask());
+		this.rightRows = materializeRight(rightPlan);
+		this.left = leftPlan.open(row);
+	}
+
+	private List<long[]> materializeRight(SlotPlan rightPlan) throws IOException {
+		ArrayList<long[]> materialized = new ArrayList<>();
+		int entryMark = row.mark();
+		try (RowCursor cursor = rightPlan.open(row)) {
+			while (!row.cancellation.isCancellationRequested() && cursor.next()) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				long[] values = new long[rightSlots.length];
+				for (int i = 0; i < rightSlots.length; i++) {
+					values[i] = row.slots[rightSlots[i]];
+				}
+				materialized.add(values);
+			}
+		} finally {
+			row.rollback(entryMark);
+		}
+		return List.copyOf(materialized);
+	}
+
+	@Override
+	public boolean next() throws IOException {
+		releaseRight();
+		while (!row.cancellation.isCancellationRequested()) {
+			if (haveLeft) {
+				while (rightIndex < rightRows.size()) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					long[] rightValues = rightRows.get(rightIndex++);
+					if ((canonicalEmptyLeft || sharedKeyMatches(rightValues)) && bindRight(rightValues)) {
+						matchedLeft = true;
+						return true;
+					}
+				}
+				haveLeft = false;
+				if (!matchedLeft) {
+					return true;
+				}
+			}
+			if (!left.next()) {
+				return false;
+			}
+			if (canonicalEmptyLeft && rightRows.isEmpty()) {
+				// HashJoinIteration does not null-extend its canonical EmptyBindingSet scan row when the subquery
+				// hash table is empty. The lexical native path must preserve that observable RDF4J contract.
+				continue;
+			}
+			haveLeft = true;
+			matchedLeft = false;
+			rightIndex = 0;
+		}
+		return false;
+	}
+
+	private boolean sharedKeyMatches(long[] rightValues) {
+		for (int sharedSlot : sharedSlots) {
+			long leftValue = row.slots[sharedSlot];
+			long rightValue = valueForSlot(rightValues, sharedSlot);
+			if (leftValue == UNKNOWN || rightValue == UNKNOWN) {
+				if (hashKeys && leftValue != rightValue) {
+					return false;
+				}
+			} else if (leftValue != rightValue && !sameTerm(leftValue, rightValue)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private long valueForSlot(long[] values, int slot) {
+		for (int i = 0; i < rightSlots.length; i++) {
+			if (rightSlots[i] == slot) {
+				return values[i];
+			}
+		}
+		return (row.baseBindingMask & 1L << slot) != 0L ? row.slots[slot] : UNKNOWN;
+	}
+
+	private boolean bindRight(long[] values) {
+		int mark = row.mark();
+		for (int i = 0; i < rightSlots.length; i++) {
+			long value = values[i];
+			if (value != UNKNOWN && !row.bindOrCheckTerm(rightSlots[i], value)) {
+				row.rollback(mark);
+				return false;
+			}
+		}
+		activeMark = mark;
+		return true;
+	}
+
+	private boolean sameTerm(long leftValue, long rightValue) {
+		NativeTermAuthority authority = row.termAuthority();
+		return authority != null && authority.sameRdfTerm(leftValue, rightValue);
+	}
+
+	private void releaseRight() {
+		if (activeMark >= 0) {
+			row.rollback(activeMark);
+			activeMark = -1;
+		}
+	}
+
+	@Override
+	public void close() {
+		releaseRight();
+		left.close();
 	}
 }
 

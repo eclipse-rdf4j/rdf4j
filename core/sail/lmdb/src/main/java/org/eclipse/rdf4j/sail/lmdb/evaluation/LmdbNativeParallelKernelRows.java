@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Emit;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
@@ -109,6 +110,13 @@ final class LmdbNativeParallelKernelRows {
 		Emit emit = (Emit) lowered.kernel.terminal;
 		if (emit.cols.length == 0) {
 			return debugDecline(explainTarget, "zero-columns");
+		}
+		if (!lowered.kernel.resumable) {
+			// A blocking kernel cannot publish a page until it has materialized its complete partition. Running one
+			// instance per worker therefore multiplies an unbounded private result by the worker count and defeats the
+			// bounded output queue's backpressure. Keep stateful/whole-result shapes on the sequential native tier;
+			// resumable DISTINCT and other streaming kernels still partition normally.
+			return debugDecline(explainTarget, "blocking-worker-materialization");
 		}
 		OutputMods mods = emit.mods;
 		if (bindings.planRequests.length > 0) {
@@ -195,7 +203,7 @@ final class LmdbNativeParallelKernelRows {
 			// A per-worker OFFSET would skip rows in every partition; fold it into the worker limit and let the query
 			// thread apply the global slice. The variant is a distinct shape in the compile cache; while its compile is
 			// below threshold or pending, decline to the sequential kernel rather than stall the workers.
-			long widened = mods.limit >= 0 ? saturatedSum(mods.limit, mods.offset) : -1L;
+			long widened = mods.limit >= 0 ? NativeSliceMath.limitPlusOffset(mods.limit, mods.offset) : -1L;
 			workerKernel = new LmdbNativeKernelIr.Kernel(lowered.kernel.columnCount, lowered.kernel.pipeline,
 					emit.withMods(new OutputMods(mods.orderKeys, mods.descending, mods.valueOrder, widened, 0L)),
 					lowered.kernel.telemetryMode);
@@ -244,12 +252,6 @@ final class LmdbNativeParallelKernelRows {
 		Supplier<JaninoKernel> workerFactory = () -> kernelFactory.apply(workerKernelFinal);
 		return start(lowered, rootAdjacency, rootDomain, rootScan, domains, rootKeys, scanPartitions, sources, threads,
 				row, workerFactory, reservation, emit, hashLedger);
-	}
-
-	/** Non-negative saturating addition; both mods fields are non-negative by {@code OutputMods} construction. */
-	private static long saturatedSum(long limit, long offset) {
-		long sum = limit + offset;
-		return sum < 0L ? Long.MAX_VALUE : sum;
 	}
 
 	/**
@@ -313,7 +315,8 @@ final class LmdbNativeParallelKernelRows {
 		Page first = null;
 		int endedWorkers = 0;
 		boolean interrupted = false;
-		while (first == null && endedWorkers < threads && failure.get() == null) {
+		while (first == null && endedWorkers < threads && failure.get() == null
+				&& !row.cancellation.isCancellationRequested()) {
 			try {
 				Page page = output.poll(50, TimeUnit.MILLISECONDS);
 				if (page == Page.END) {
@@ -325,6 +328,13 @@ final class LmdbNativeParallelKernelRows {
 				interrupted = true;
 				failure.compareAndSet(null, e);
 			}
+		}
+		if (row.cancellation.isCancellationRequested()) {
+			abandon(sources, reservation, tasks, cancelled, interrupted);
+			if (hashLedger != null) {
+				hashLedger.close();
+			}
+			return EmptyCursor.INSTANCE;
 		}
 		if (first == null && failure.get() != null) {
 			abandon(sources, reservation, tasks, cancelled, interrupted);
@@ -379,7 +389,7 @@ final class LmdbNativeParallelKernelRows {
 		long totalRows = 0L;
 		int endedWorkers = 0;
 		boolean interrupted = false;
-		while (endedWorkers < threads && failure.get() == null) {
+		while (endedWorkers < threads && failure.get() == null && !row.cancellation.isCancellationRequested()) {
 			try {
 				Page page = output.poll(50, TimeUnit.MILLISECONDS);
 				if (page == Page.END) {
@@ -392,6 +402,13 @@ final class LmdbNativeParallelKernelRows {
 				interrupted = true;
 				failure.compareAndSet(null, e);
 			}
+		}
+		if (row.cancellation.isCancellationRequested()) {
+			abandon(sources, reservation, tasks, cancelled, interrupted);
+			if (hashLedger != null) {
+				hashLedger.close();
+			}
+			return EmptyCursor.INSTANCE;
 		}
 		if (failure.get() != null || totalRows > Integer.MAX_VALUE / Math.max(stride, 1)) {
 			if (failure.get() == null) {
@@ -449,13 +466,13 @@ final class LmdbNativeParallelKernelRows {
 			orderHooks.orderComparatorStrict(lowered.strictOrderCompare);
 		}
 		if (mods.limit >= 0) {
-			int cap = (int) Math.min(saturatedSum(mods.limit, mods.offset), Integer.MAX_VALUE);
+			int cap = NativeSliceMath.boundedInt(NativeSliceMath.limitPlusOffset(mods.limit, mods.offset));
 			count = KernelRuntime.topKRows(rows, count, stride, mods.orderKeys, mods.descending, orderHooks, cap);
 		} else {
 			KernelRuntime.sortRows(rows, count, stride, mods.orderKeys, mods.descending, orderHooks);
 		}
-		int from = (int) Math.min(mods.offset, count);
-		int to = mods.limit < 0 ? count : (int) Math.min(count, from + Math.min(mods.limit, Integer.MAX_VALUE));
+		int from = NativeSliceMath.fromIndex(mods.offset, count);
+		int to = NativeSliceMath.toIndex(from, count, mods.limit);
 		PARALLEL_RUNS.incrementAndGet();
 		return new MaterializedKernelRowCursor(row, columnSlots, rows, from, to);
 	}
@@ -467,7 +484,8 @@ final class LmdbNativeParallelKernelRows {
 			ArrayBlockingQueue<Page> output, Supplier<JaninoKernel> kernelFactory, AtomicReference<Throwable> failure,
 			AtomicBoolean cancelled, CountDownLatch startup) throws IOException, InterruptedException {
 		LmdbNativeKernelBindings bindings = lowered.bindings;
-		RowState workerRow = new RowState(source, consumerRow.layout, consumerRow.base);
+		RowState workerRow = new RowState(source, consumerRow.layout, consumerRow.base,
+				consumerRow.exactValuesMetrics, consumerRow.cancellation);
 		// Worker-confined forks of the shared plan filters (admission proved every filter forkable); the worker owns
 		// their release — a fork may lazily acquire native read state, and leaking it wedges the dataset close exactly
 		// like the sequential route's LmdbNativeKernelHooks.closeFilters.
@@ -515,7 +533,8 @@ final class LmdbNativeParallelKernelRows {
 			if (forkedResiduals != null) {
 				// residual filters see exactly the state the consumer's bind loop would produce: a fresh entry-seeded
 				// row with the packed columns bound on top (admission guarantees the entry is reproducible)
-				residualRow = new RowState(source, consumerRow.layout, consumerRow.base);
+				residualRow = new RowState(source, consumerRow.layout, consumerRow.base,
+						consumerRow.exactValuesMetrics, consumerRow.cancellation);
 				if (!NativeRowSeeder.seed(residualRow.slots, consumerRow.layout, consumerRow.base, source)) {
 					throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-seed-unavailable");
 				}
@@ -531,12 +550,13 @@ final class LmdbNativeParallelKernelRows {
 			startupReported = true;
 			startup.countDown();
 			startup.await();
-			if (cancelled.get() || failure.get() != null) {
+			if (cancelled.get() || failure.get() != null || workerRow.cancellation.isCancellationRequested()) {
 				return;
 			}
 			int stride = lowered.kernel.stride();
 			long[] buffer = new long[stride * FILL_ROWS];
-			while (!cancelled.get() && failure.get() == null) {
+			while (!cancelled.get() && failure.get() == null
+					&& !workerRow.cancellation.isCancellationRequested()) {
 				// One unit of work per kernel instance: a key-ordinal window, or one planned scan range.
 				long[] range = null;
 				LmdbRootScanPartition scanPartition = null;
@@ -574,7 +594,8 @@ final class LmdbNativeParallelKernelRows {
 						windowDomains = domains.window(rootDomain, range[0], range[1]);
 					}
 					LmdbNativeJaninoCodegen.bind(kernel,
-							bindings.context(windowViews, windowDomains, workerRow, hooks, scanner, variableViews),
+							bindings.context(windowViews, windowDomains, workerRow, hooks, scanner, variableViews,
+									cancelled::get),
 							"irKernelParallel");
 					int filled;
 					while ((filled = LmdbNativeJaninoCodegen.fill(kernel, buffer, FILL_ROWS,
@@ -592,7 +613,11 @@ final class LmdbNativeParallelKernelRows {
 					kernel.close();
 				}
 			}
-			offer(output, Page.END, failure, cancelled);
+			if (!workerRow.cancellation.isCancellationRequested()) {
+				offer(output, Page.END, failure, cancelled);
+			}
+		} catch (KernelQueryCancelledException cancelledByQuery) {
+			cancelled.set(true);
 		} catch (IOException | InterruptedException | RuntimeException | Error problem) {
 			failure.compareAndSet(null, problem);
 			cancelled.set(true);
@@ -818,7 +843,8 @@ final class LmdbNativeParallelKernelRows {
 
 		@Override
 		public boolean next() throws IOException {
-			if (closed) {
+			if (closed || row.cancellation.isCancellationRequested()) {
+				close();
 				return false;
 			}
 			if (activeMark >= 0) {
@@ -826,6 +852,10 @@ final class LmdbNativeParallelKernelRows {
 				activeMark = -1;
 			}
 			while (true) {
+				if (row.cancellation.isCancellationRequested()) {
+					close();
+					return false;
+				}
 				while (active != null && activeIndex < active.count) {
 					int base = activeIndex * columnSlots.length;
 					activeIndex++;

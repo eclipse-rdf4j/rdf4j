@@ -408,6 +408,7 @@ final class ThreeTierParityFixtures {
 					+ " planes=" + (planes - reportedPlanes)
 					+ " kernelViews=" + (views - reportedViews)
 					+ " kernelOpens=" + (kernels - reportedKernels)
+					+ " janinoCache=" + JaninoPipelineTestAccess.cacheSummary()
 					+ " fallbacks=" + AdjacencyEngagementTestAccess.fallbackSummary(store);
 			reportedPlanes = planes;
 			reportedViews = views;

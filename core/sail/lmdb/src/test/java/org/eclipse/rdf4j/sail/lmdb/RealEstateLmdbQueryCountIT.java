@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
@@ -26,12 +27,20 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.Arm;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.CanonicalBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.EvaluationResult;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.ResultOrder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Full-size correctness check: loads the default REAL_ESTATE dataset into an LMDB store and asserts every catalog
@@ -42,6 +51,60 @@ public class RealEstateLmdbQueryCountIT {
 
 	@TempDir
 	File dataDir;
+
+	@Test
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void query8MatchesIndependentFourArmOracle() throws Exception {
+		String prefix = "PREFIX re: <http://example.com/theme/realestate/>\n";
+		String grouped = prefix + "SELECT ?agent (AVG(?score) AS ?avgScore) WHERE { "
+				+ "?v a re:Viewing ; re:byAgent ?agent ; re:feedbackScore ?score . "
+				+ "} GROUP BY ?agent";
+		String replayed = prefix + "SELECT ?agent ?avgScore WHERE { { "
+				+ "SELECT ?agent (AVG(?score) AS ?avgScore) WHERE { "
+				+ "?v a re:Viewing ; re:byAgent ?agent ; re:feedbackScore ?score . "
+				+ "} GROUP BY ?agent } }";
+		String filtered = prefix + "SELECT ?agent ?avgScore WHERE { { "
+				+ "SELECT ?agent (AVG(?score) AS ?avgScore) WHERE { "
+				+ "?v a re:Viewing ; re:byAgent ?agent ; re:feedbackScore ?score . "
+				+ "} GROUP BY ?agent } FILTER(?avgScore >= 7 || ?avgScore = 10) }";
+		String optional = prefix + "SELECT ?agent ?avgScore ?optPhone WHERE { { "
+				+ "SELECT ?agent (AVG(?score) AS ?avgScore) WHERE { "
+				+ "?v a re:Viewing ; re:byAgent ?agent ; re:feedbackScore ?score . "
+				+ "} GROUP BY ?agent } FILTER(?avgScore >= 7 || ?avgScore = 10) "
+				+ "OPTIONAL { ?agent re:phone ?optPhone . } }";
+		try (IndependentSparqlOracle oracle = IndependentSparqlOracle.builder(dataDir.toPath().resolve("oracle"))
+				.load(connection -> ThemeDataSetGenerator.generate(Theme.REAL_ESTATE, new RDFInserter(connection)))
+				.build()) {
+			oracle.assertEquivalent(grouped, ResultOrder.UNORDERED);
+			assertEquivalentWithCompactDiff(oracle, replayed);
+			assertEquivalentWithCompactDiff(oracle, filtered);
+			oracle.assertEquivalent(optional, ResultOrder.UNORDERED);
+			oracle.assertEquivalent(ThemeQueryCatalog.queryFor(Theme.REAL_ESTATE, 8), ResultOrder.UNORDERED);
+		}
+	}
+
+	private static void assertEquivalentWithCompactDiff(IndependentSparqlOracle oracle, String query) {
+		Map<Arm, EvaluationResult> results = oracle.evaluateAll(query);
+		Map<CanonicalBindingSet, Long> expected = results.get(Arm.MEMORY_STANDARD).multiset();
+		for (Arm arm : Arm.values()) {
+			Map<CanonicalBindingSet, Long> actual = results.get(arm).multiset();
+			if (!expected.equals(actual)) {
+				List<CanonicalBindingSet> missing = expected.keySet()
+						.stream()
+						.filter(row -> !expected.get(row).equals(actual.get(row)))
+						.limit(20)
+						.toList();
+				List<CanonicalBindingSet> extra = actual.keySet()
+						.stream()
+						.filter(row -> !actual.get(row).equals(expected.get(row)))
+						.limit(20)
+						.toList();
+				throw new AssertionError(arm + " differs: expectedRows=" + expected.size() + ", actualRows="
+						+ actual.size() + ", missing=" + missing + ", extra=" + extra + "\n"
+						+ oracle.explain(arm, query, Explanation.Level.Optimized).rendered());
+			}
+		}
+	}
 
 	@Test
 	void expectedCountsMatchLmdbStoreResults() {

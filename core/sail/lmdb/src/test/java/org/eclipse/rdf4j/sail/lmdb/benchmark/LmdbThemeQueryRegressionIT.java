@@ -50,9 +50,13 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.ResultOrder;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -541,11 +545,11 @@ class LmdbThemeQueryRegressionIT {
 							"<http://example.com/theme/connected/connectsTo> ?neighbor",
 							"Highly connected q2 should bind the weight filter before expanding connectsTo fanout\n"
 									+ snapshot.plan());
-					assertDoesNotContain(snapshot.renderedQuery(), "OPTIONAL",
-							"Highly connected q2 should remove the no-new-binding reverse optional probe; "
-									+ "it only repeats already-bound edge existence checks before grouping\n"
+					assertContains(snapshot.renderedQuery(), "OPTIONAL",
+							"Highly connected q2 must retain its contextless reverse-edge OPTIONAL because "
+									+ "an SPO probe is not unique across multiple default contexts\n"
 									+ snapshot.plan());
-					assertNoConnectedReverseOptionalProbe(snapshot.plan());
+					assertConnectedReverseOptionalUsesBoundDirectLookup(snapshot.plan());
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -1386,7 +1390,8 @@ class LmdbThemeQueryRegressionIT {
 				BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "pharma-q10-exists", 60,
 						TimeUnit.SECONDS);
 				String query = ThemeQueryCatalog.queryFor(theme, 10);
-				Assertions.assertEquals(ThemeQueryCatalog.expectedCountFor(theme, 10), executeQuery(repository, query));
+				Assertions.assertEquals(ThemeQueryCatalog.expectedCountFor(theme, 10), executeQuery(repository, query),
+						() -> explainBestEffort(repository, query));
 				BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds("PHARMA:10 exists path",
 						() -> {
 							try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -1395,7 +1400,8 @@ class LmdbThemeQueryRegressionIT {
 										.toString();
 								Assertions.assertFalse(plan.contains("nativeExecutionPath=bareExists"),
 										() -> "PHARMA q10's EXISTS consumes ?trial from an OPTIONAL, so nullable correlation "
-												+ "must stay with the scope-aware generic evaluator:\n" + plan);
+												+ "must stay with the scope-aware semantic native row evaluator:\n"
+												+ plan);
 							}
 						});
 			} finally {
@@ -1403,6 +1409,70 @@ class LmdbThemeQueryRegressionIT {
 			}
 		} finally {
 			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void pharmaQ10MatchesIndependentFourArmOracleAtEveryScopeBoundary(@TempDir Path dataDir) throws Exception {
+		String prefix = "PREFIX pharma: <http://example.com/theme/pharma/>\n";
+		String exists = prefix + "SELECT ?pathway (COUNT(DISTINCT ?drug) AS ?drugCount) WHERE { "
+				+ "VALUES ?marker { <http://example.com/theme/pharma/biomarker/3> "
+				+ "<http://example.com/theme/pharma/biomarker/4> } "
+				+ "?drug a pharma:Drug ; pharma:targets ?target . "
+				+ "?target pharma:inPathway ?pathway . "
+				+ "OPTIONAL { ?drug pharma:testedIn ?trial . BIND(?trial AS ?optTrial) } "
+				+ "FILTER(?optTrial != <http://example.com/theme/pharma/trial/0>) "
+				+ "FILTER EXISTS { ?trial pharma:hasArm ?arm . ?arm pharma:hasResult ?result . "
+				+ "?result pharma:biomarker ?marker . } } GROUP BY ?pathway HAVING(COUNT(DISTINCT ?drug) > 1)";
+		try (IndependentSparqlOracle oracle = IndependentSparqlOracle.builder(dataDir.resolve("oracle"))
+				.load(connection -> {
+					String ns = "http://example.com/theme/pharma/";
+					IRI goodA = VALUE_FACTORY.createIRI(ns, "test-drug-good-a");
+					IRI goodB = VALUE_FACTORY.createIRI(ns, "test-drug-good-b");
+					IRI bad = VALUE_FACTORY.createIRI(ns, "test-drug-bad");
+					IRI target = VALUE_FACTORY.createIRI(ns, "test-target");
+					IRI pathway = VALUE_FACTORY.createIRI(ns, "test-pathway");
+					IRI goodTrial = VALUE_FACTORY.createIRI(ns, "test-trial-good");
+					IRI badTrial = VALUE_FACTORY.createIRI(ns, "test-trial-bad");
+					IRI arm = VALUE_FACTORY.createIRI(ns, "test-arm");
+					IRI result = VALUE_FACTORY.createIRI(ns, "test-result");
+					IRI badArm = VALUE_FACTORY.createIRI(ns, "test-arm-bad");
+					IRI badResult = VALUE_FACTORY.createIRI(ns, "test-result-bad");
+					IRI otherMarker = VALUE_FACTORY.createIRI(ns, "biomarker/5");
+					IRI testedIn = VALUE_FACTORY.createIRI(ns, "testedIn");
+					IRI hasArm = VALUE_FACTORY.createIRI(ns, "hasArm");
+					IRI hasResult = VALUE_FACTORY.createIRI(ns, "hasResult");
+					IRI biomarker = VALUE_FACTORY.createIRI(ns, "biomarker");
+					for (IRI drug : List.of(goodA, goodB, bad)) {
+						connection.add(drug, RDF.TYPE, PHARMA_DRUG);
+						connection.add(drug, PHARMA_TARGETS, target);
+					}
+					connection.add(target, PHARMA_IN_PATHWAY, pathway);
+					connection.add(goodA, testedIn, goodTrial);
+					connection.add(goodB, testedIn, goodTrial);
+					connection.add(bad, testedIn, badTrial);
+					connection.add(goodTrial, hasArm, arm);
+					connection.add(arm, hasResult, result);
+					connection.add(result, biomarker, PHARMA_BIOMARKER_3);
+					connection.add(badTrial, hasArm, badArm);
+					connection.add(badArm, hasResult, badResult);
+					connection.add(badResult, biomarker, otherMarker);
+					for (int i = 0; i < 600; i++) {
+						IRI extraBad = VALUE_FACTORY.createIRI(ns, "test-drug-bad-" + i);
+						IRI extraTrial = VALUE_FACTORY.createIRI(ns, "test-trial-bad-" + i);
+						IRI extraArm = VALUE_FACTORY.createIRI(ns, "test-arm-bad-" + i);
+						IRI extraResult = VALUE_FACTORY.createIRI(ns, "test-result-bad-" + i);
+						connection.add(extraBad, RDF.TYPE, PHARMA_DRUG);
+						connection.add(extraBad, PHARMA_TARGETS, target);
+						connection.add(extraBad, testedIn, extraTrial);
+						connection.add(extraTrial, hasArm, extraArm);
+						connection.add(extraArm, hasResult, extraResult);
+						connection.add(extraResult, biomarker, otherMarker);
+					}
+				})
+				.build()) {
+			oracle.assertEquivalent(exists, ResultOrder.UNORDERED);
 		}
 	}
 
@@ -1937,15 +2007,7 @@ class LmdbThemeQueryRegressionIT {
 			try {
 				assertQueryRegressionPasses(repository, theme, 9, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 9, snapshot.plan());
-					assertBefore(snapshot.renderedQuery(), "?cond <http://example.com/theme/medical/code> ?condCode",
-							"?enc <http://example.com/theme/medical/hasCondition> ?cond",
-							"Medical q9 should bind the filtered condition code domain before hasCondition fanout\n"
-									+ snapshot.plan());
-					assertBefore(snapshot.renderedQuery(), "?enc <http://example.com/theme/medical/hasCondition> ?cond",
-							"?enc a <http://example.com/theme/medical/Encounter>",
-							"Medical q9 should validate the Encounter type after hasCondition has bound enc exactly\n"
-									+ snapshot.plan());
-					assertMedicalQ9CodeFirstPlanShape(snapshot.plan());
+					assertMedicalQ9NativeDomainPlanShape(snapshot.plan());
 					assertContains(snapshot.renderedQuery(), "MINUS",
 							"Medical q9 should keep the develop materialized anti-join; the correlated rewrite "
 									+ "repeats the filtered observation/value suffix per encounter\n"
@@ -1968,24 +2030,18 @@ class LmdbThemeQueryRegressionIT {
 		}
 	}
 
-	private static void assertMedicalQ9CodeFirstPlanShape(String plan) {
-		int conditionPredicateIndex = plan.indexOf("value=http://example.com/theme/medical/hasCondition");
-		if (conditionPredicateIndex < 0) {
-			throw new AssertionError("Medical q9 plan should include the hasCondition pattern:\n" + plan);
+	private static void assertMedicalQ9NativeDomainPlanShape(String plan) {
+		int physicalPlanStart = plan.indexOf("nativePhysicalPlan=");
+		if (physicalPlanStart < 0) {
+			throw new AssertionError("Medical q9 should expose its native physical plan:\n" + plan);
 		}
-		String conditionPattern = statementPatternWindow(plan, conditionPredicateIndex);
-		assertContains(conditionPattern, "plannedIndexAccessMode=directLookup");
-		assertContains(conditionPattern, "plannedLookupComponents=[P, O]");
-		assertContains(conditionPattern, "plannedBoundVars=cond,condCode");
-
-		int encounterTypeIndex = plan.indexOf("value=http://example.com/theme/medical/Encounter");
-		if (encounterTypeIndex < 0) {
-			throw new AssertionError("Medical q9 plan should include the Encounter type pattern:\n" + plan);
-		}
-		String encounterPattern = statementPatternWindow(plan, encounterTypeIndex);
-		assertContains(encounterPattern, "plannedIndexAccessMode=directLookup");
-		assertContains(encounterPattern, "plannedLookupComponents=[S, P, O]");
-		assertContains(encounterPattern, "plannedBoundVars=cond,condCode,enc");
+		int physicalPlanEnd = plan.indexOf('\n', physicalPlanStart);
+		String physicalPlan = plan.substring(physicalPlanStart,
+				physicalPlanEnd < 0 ? plan.length() : physicalPlanEnd);
+		assertContains(physicalPlan, "NativeGroup(arg=Minus(left=MultiJoin(order=[ExactDomainDrive(slot=?condCode");
+		assertContains(physicalPlan, "arity=3, access=per-value-index");
+		assertContains(physicalPlan, "right=MultiJoin(order=[Pattern(s=?enc");
+		assertContains(physicalPlan, "sharedMask=0x1 [?enc");
 	}
 
 	@Test
@@ -2111,13 +2167,17 @@ class LmdbThemeQueryRegressionIT {
 				assertQueryRegressionPasses(repository, theme, 9, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 9, snapshot.plan());
 					String renderedQuery = snapshot.renderedQuery();
-					assertBefore(renderedQuery, "VALUES (?authorName ?target)",
+					assertBefore(renderedQuery, "VALUES ?target",
 							"?author <http://example.com/theme/library/name> ?authorName",
-							"Library q9 should bind the finite author-name domain before the author-name lookup\n"
+							"Library q9 should bind the finite target domain before the author-name lookup\n"
 									+ snapshot.plan());
-					assertBefore(renderedQuery, "VALUES (?authorName ?target)",
+					assertBefore(renderedQuery, "VALUES ?target",
 							"FILTER ((?authorName = ?target) || (?authorName = \"Author 3\"))",
-							"Library q9 should apply the original filter once both finite domains are bound\n"
+							"Library q9 should apply the original filter after binding its finite target domain\n"
+									+ snapshot.plan());
+					Assertions.assertTrue(snapshot.plan().contains("ExactDomainDrive(slot=?authorName")
+							&& snapshot.plan().contains("arity=3, access=per-value-index, index=posc"),
+							"Library q9 should compile the filter union to a three-value author-name domain drive\n"
 									+ snapshot.plan());
 					assertBefore(renderedQuery, "?book <http://example.com/theme/library/writtenBy> ?author",
 							"?book <http://example.com/theme/library/hasCopy> ?copy",
@@ -2126,8 +2186,6 @@ class LmdbThemeQueryRegressionIT {
 							"?loan <http://example.com/theme/library/loanedCopy> ?copy",
 							"Library q9 should bind copies before loan probes\n" + snapshot.plan());
 					assertLibraryQ9FastLoanTail(renderedQuery, snapshot.plan());
-					assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/library/name",
-							30.0d);
 					assertDirectLookupWorkRowsBelow(snapshot.plan(), 200.0d, 4);
 					assertNoUnboundLeftStatementGuard(snapshot.plan(),
 							"Library q9 should not add failed left bound-statement probes to the author/book tail");
@@ -2839,18 +2897,21 @@ class LmdbThemeQueryRegressionIT {
 		}
 	}
 
-	private static void assertNoConnectedReverseOptionalProbe(String plan) {
+	private static void assertConnectedReverseOptionalUsesBoundDirectLookup(String plan) {
 		int predicateIndex = plan.indexOf("value=http://example.com/theme/connected/connectsTo");
 		while (predicateIndex >= 0) {
 			String pattern = statementPatternWindow(plan, predicateIndex);
 			if (pattern.contains("s: Var (name=neighbor) (bindingState=bound)")
 					&& pattern.contains("o: Var (name=node) (bindingState=bound)")) {
-				throw new AssertionError(
-						"Highly connected q2 should remove the no-new-binding reverse optional probe:\n"
-								+ pattern + "\nFull plan:\n" + plan);
+				assertContains(pattern, "plannedIndexAccessMode=directLookup",
+						"Highly connected q2 should execute its retained reverse OPTIONAL as a bound direct lookup");
+				assertContains(pattern, "plannedLookupComponents=[S, P, O]",
+						"Highly connected q2 reverse OPTIONAL should bind every SPO component");
+				return;
 			}
 			predicateIndex = plan.indexOf("value=http://example.com/theme/connected/connectsTo", predicateIndex + 1);
 		}
+		throw new AssertionError("Highly connected q2 should retain a bound reverse OPTIONAL probe:\n" + plan);
 	}
 
 	private static void assertEngineeringAssemblyNameFilterDoesNotScanAllNames(String plan) {

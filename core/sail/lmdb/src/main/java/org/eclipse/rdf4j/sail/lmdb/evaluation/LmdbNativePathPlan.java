@@ -261,6 +261,10 @@ final class PathPlan implements SlotPlan {
 		ENGAGED.incrementAndGet();
 		long start = endpointId(subjSlot, subjConst, row);
 		long target = endpointId(objSlot, objConst, row);
+		if (start == NULL_CONTEXT_ID || target == NULL_CONTEXT_ID) {
+			// Zero is the row tier's occupied-but-unbound assignment-error marker, never an RDF path endpoint.
+			return EmptyCursor.INSTANCE;
+		}
 		return new PathCursor(this, row, start, target, probe, memo, targets);
 	}
 

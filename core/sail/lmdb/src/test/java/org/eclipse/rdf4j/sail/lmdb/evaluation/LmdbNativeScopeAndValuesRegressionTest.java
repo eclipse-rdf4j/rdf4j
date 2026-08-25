@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -49,6 +50,11 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 		repository = new SailRepository(new LmdbStore(dataDir, config));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
+			conn.add(vf.createIRI(EX, "valuesDriver"), vf.createIRI(EX, "p1"), vf.createIRI(EX, "valuesA1"));
+			conn.add(vf.createIRI(EX, "valuesDriver"), vf.createIRI(EX, "p1"), vf.createIRI(EX, "valuesA2"));
+			conn.add(vf.createIRI(EX, "valuesA1"), vf.createIRI(EX, "name"), vf.createLiteral("one"));
+			conn.add(vf.createIRI(EX, "valuesA2"), vf.createIRI(EX, "name"), vf.createLiteral("two"));
+			conn.add(vf.createIRI(EX, "valuesA1"), RDF.TYPE, vf.createIRI(EX, "X"));
 			conn.add(vf.createIRI(EX, "s4"), vf.createIRI(EX, "p"), vf.createLiteral(4));
 			conn.add(vf.createIRI(EX, "a"), vf.createIRI(EX, "name"), vf.createLiteral("Alan"));
 			conn.add(vf.createIRI(EX, "a"), vf.createIRI(EX, "email"), vf.createLiteral("alan@example.org"));
@@ -71,6 +77,23 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 	}
 
 	@Test
+	public void projectedValuesBindingSurvivesOptionalJoin() {
+		String query = "PREFIX : <" + EX + ">\n"
+				+ "SELECT DISTINCT ?a ?name ?isX WHERE {\n"
+				+ "  ?b :p1 ?a . ?a :name ?name .\n"
+				+ "  OPTIONAL { ?a a :X . VALUES (?isX) { (:X) } }\n"
+				+ "}";
+
+		List<String> generic = rows(query, false, null, null);
+		assertThat(rows(query, true, null, null))
+				.as("native plan:\n%s", explain(query))
+				.isEqualTo(generic);
+		assertThat(generic).containsExactly(
+				"[a=http://example.org/valuesA1;isX=http://example.org/X;name=\"one\"]",
+				"[a=http://example.org/valuesA2;name=\"two\"]");
+	}
+
+	@Test
 	public void nestedGroupFilterDoesNotSeeOuterBind() {
 		String query = "PREFIX : <" + EX + ">\n"
 				+ "SELECT ?s ?v ?z WHERE {\n"
@@ -80,6 +103,21 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 
 		List<String> nativeRows = rows(query, true, null, null);
 		assertThat(nativeRows).isEqualTo(rows(query, false, null, null)).isEmpty();
+	}
+
+	@Test
+	public void emptyOptionalSubselectDoesNotCreateSyntheticOuterRow() {
+		String query = "PREFIX : <" + EX + ">\n"
+				+ "SELECT ?visibility WHERE {\n"
+				+ "  OPTIONAL { SELECT ?var WHERE { :missing a :MyType . BIND(:missing AS ?var) } }\n"
+				+ "  BIND(IF(BOUND(?var), 'VISIBLE', 'HIDDEN') AS ?visibility)\n"
+				+ "}";
+
+		List<String> generic = rows(query, false, null, null);
+		assertThat(rows(query, true, null, null))
+				.as("native plan:\n%s", explain(query))
+				.isEqualTo(generic);
+		assertThat(generic).isEmpty();
 	}
 
 	@Test
@@ -136,8 +174,8 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 		List<String> nativeRows = rows(query, true, null, null);
 		assertThat(nativeRows).isEqualTo(rows(query, false, null, null));
 		assertThat(LmdbNativeAggregateCompiler.COMPILED.get())
-				.as("a computed extension must not consume a plan-local synthetic id")
-				.isEqualTo(compiledBefore);
+				.as("computed extensions over synthetic VALUES stay on the semantic native row tier")
+				.isGreaterThan(compiledBefore);
 		assertThat(nativeRows).hasSize(2);
 		assertThat(nativeRows.get(0)).contains("length=\"10\"");
 		assertThat(nativeRows.get(1)).contains("length=\"12\"");
@@ -186,6 +224,34 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 	}
 
 	@Test
+	public void orderedLanguageTagCaseVariantsDeduplicate() {
+		String query = "SELECT DISTINCT ?value WHERE {\n"
+				+ "  VALUES ?value { \"hello\"@EN \"hello\"@en }\n"
+				+ "} ORDER BY ?value";
+
+		List<String> nativeRows = rows(query, true, null, null);
+		assertThat(nativeRows).isEqualTo(rows(query, false, null, null));
+		assertThat(nativeRows).hasSize(1);
+	}
+
+	@Test
+	public void countDistinctLanguageTagCaseVariantsDeduplicates() {
+		String query = "SELECT (COUNT(DISTINCT ?value) AS ?count) WHERE {\n"
+				+ "  VALUES ?value { \"hello\"@EN \"hello\"@en }\n"
+				+ "}";
+
+		long compiledBefore = LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get();
+		long interpretedBefore = LmdbNativeKernelExecution.AGG_INTERPRETED_BINDS.get();
+		List<String> nativeRows = rows(query, true, null, null);
+		assertThat(nativeRows)
+				.as("aggregate kernel binds: compiled=%s, interpreted=%s",
+						LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get() - compiledBefore,
+						LmdbNativeKernelExecution.AGG_INTERPRETED_BINDS.get() - interpretedBefore)
+				.isEqualTo(rows(query, false, null, null));
+		assertThat(nativeRows).containsExactly("[count=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>]");
+	}
+
+	@Test
 	public void languageTagCaseVariantsUseRdfTermEqualityForSameTerm() {
 		String query = "SELECT ?value1 ?value2 WHERE {\n"
 				+ "  VALUES (?value1 ?value2) { (\"hello\"@EN \"hello\"@en) }\n"
@@ -228,8 +294,8 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 		long compiledBefore = LmdbNativeAggregateCompiler.COMPILED.get();
 		List<String> nativeRows = rows(query, true, null, null);
 		assertThat(LmdbNativeAggregateCompiler.COMPILED.get())
-				.as("optimizer-valued statement variables retain identity outside OPTIONAL")
-				.isEqualTo(compiledBefore);
+				.as("optimizer-valued variables outside OPTIONAL retain identity on the native row tier")
+				.isGreaterThan(compiledBefore);
 		assertThat(nativeRows).isEqualTo(rows(query, false, null, null));
 		assertThat(nativeRows).containsExactly("[s=http://example.org/optionalSubject;value=\"target\"]");
 	}
@@ -251,6 +317,14 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 			}
 		} finally {
 			restoreNativeFlag(previous);
+		}
+	}
+
+	private String explain(String query) {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			return conn.prepareTupleQuery(query)
+					.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Optimized)
+					.toString();
 		}
 	}
 

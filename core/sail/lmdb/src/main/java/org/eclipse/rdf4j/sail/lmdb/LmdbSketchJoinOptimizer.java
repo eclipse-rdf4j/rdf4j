@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
@@ -113,7 +114,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		QueryEvaluationUtility.pinFunctions(tupleExpr);
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope scope = beginQueryOptimizationScope()) {
 			Set<String> initiallyBoundVars = bindings == null ? Set.of() : bindings.getBindingNames();
-			tupleExpr.visit(new JoinVisitor(initiallyBoundVars));
+			tupleExpr.visit(new JoinVisitor(initiallyBoundVars, dataset));
 			new LmdbTupleExprEstimateAnnotator(statistics).annotate(tupleExpr);
 		}
 	}
@@ -127,6 +128,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 	private final class JoinVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
+		private final Dataset dataset;
 		private Set<String> boundVars;
 		private List<Filter> contextualCostingFilters = List.of();
 		private double repeatedSubplanInvocations = 1.0d;
@@ -135,8 +137,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		private Map<String, String> selectedPlanSummaryStringMetrics = Map.of();
 		private Map<String, Double> selectedPlanSummaryDoubleMetrics = Map.of();
 
-		private JoinVisitor(Set<String> initiallyBoundVars) {
+		private JoinVisitor(Set<String> initiallyBoundVars, Dataset dataset) {
 			super(trackResultSize);
+			this.dataset = dataset;
 			this.boundVars = new HashSet<>(initiallyBoundVars);
 		}
 
@@ -338,13 +341,14 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (branches.size() < 2) {
 				return false;
 			}
-			Map<String, Set<Value>> discriminatorValues = new LinkedHashMap<>();
+			Map<String, List<List<EqualityDomainProof>>> discriminatorProofs = new LinkedHashMap<>();
 			Set<String> candidateNames = null;
 			for (OptionalBranch branch : branches) {
 				if (branch.condition() == null) {
 					return false;
 				}
-				Map<String, Value> branchDiscriminators = baseConstantEqualities(branch.condition(), baseNames);
+				Map<String, List<EqualityDomainProof>> branchDiscriminators = baseConstantEqualities(branch.condition(),
+						baseNames);
 				if (branchDiscriminators.isEmpty()) {
 					return false;
 				}
@@ -353,25 +357,50 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				} else {
 					candidateNames.retainAll(branchDiscriminators.keySet());
 				}
-				for (Map.Entry<String, Value> entry : branchDiscriminators.entrySet()) {
-					discriminatorValues.computeIfAbsent(entry.getKey(), key -> new LinkedHashSet<>())
-							.add(entry.getValue());
+				for (Map.Entry<String, List<EqualityDomainProof>> entry : branchDiscriminators.entrySet()) {
+					discriminatorProofs.computeIfAbsent(entry.getKey(), key -> new ArrayList<>())
+							.add(List.copyOf(entry.getValue()));
 				}
 			}
 			if (candidateNames == null || candidateNames.isEmpty()) {
 				return false;
 			}
 			for (String candidateName : candidateNames) {
-				Set<Value> values = discriminatorValues.get(candidateName);
-				if (values != null && values.size() == branches.size()) {
+				List<List<EqualityDomainProof>> proofGroups = discriminatorProofs.get(candidateName);
+				if (proofGroups != null && proofGroups.size() == branches.size()
+						&& pairwiseMutuallyExclusive(proofGroups)) {
 					return true;
 				}
 			}
 			return false;
 		}
 
-		private Map<String, Value> baseConstantEqualities(ValueExpr condition, Set<String> baseNames) {
-			Map<String, Value> equalities = new LinkedHashMap<>();
+		private boolean pairwiseMutuallyExclusive(List<List<EqualityDomainProof>> proofGroups) {
+			for (int left = 0; left < proofGroups.size(); left++) {
+				for (int right = left + 1; right < proofGroups.size(); right++) {
+					if (!hasMutuallyExclusiveProofPair(proofGroups.get(left), proofGroups.get(right))) {
+						return false;
+					}
+				}
+			}
+			return true;
+		}
+
+		private boolean hasMutuallyExclusiveProofPair(List<EqualityDomainProof> leftProofs,
+				List<EqualityDomainProof> rightProofs) {
+			for (EqualityDomainProof left : leftProofs) {
+				for (EqualityDomainProof right : rightProofs) {
+					if (left.provesMutuallyExclusiveWith(right)) {
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		private Map<String, List<EqualityDomainProof>> baseConstantEqualities(ValueExpr condition,
+				Set<String> baseNames) {
+			Map<String, List<EqualityDomainProof>> equalities = new LinkedHashMap<>();
 			for (ValueExpr conjunct : LmdbJoinPlanSupport.splitConjuncts(condition)) {
 				recordBaseConstantEquality(conjunct, baseNames, equalities);
 			}
@@ -379,26 +408,30 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private void recordBaseConstantEquality(ValueExpr expression, Set<String> baseNames,
-				Map<String, Value> equalities) {
+				Map<String, List<EqualityDomainProof>> equalities) {
 			if (expression instanceof SameTerm sameTerm) {
-				recordBaseConstantEquality(sameTerm.getLeftArg(), sameTerm.getRightArg(), baseNames, equalities);
+				recordBaseConstantEquality(sameTerm.getLeftArg(), sameTerm.getRightArg(), baseNames, equalities,
+						EqualityOperator.SAME_TERM);
 				return;
 			}
 			if (expression instanceof Compare compare && compare.getOperator() == Compare.CompareOp.EQ) {
-				recordBaseConstantEquality(compare.getLeftArg(), compare.getRightArg(), baseNames, equalities);
+				recordBaseConstantEquality(compare.getLeftArg(), compare.getRightArg(), baseNames, equalities,
+						EqualityOperator.VALUE_EQUAL);
 			}
 		}
 
 		private void recordBaseConstantEquality(ValueExpr left, ValueExpr right, Set<String> baseNames,
-				Map<String, Value> equalities) {
+				Map<String, List<EqualityDomainProof>> equalities, EqualityOperator operator) {
 			if (left instanceof Var var && !var.hasValue() && baseNames.contains(var.getName())
 					&& right instanceof ValueConstant constant) {
-				equalities.put(var.getName(), constant.getValue());
+				equalities.computeIfAbsent(var.getName(), key -> new ArrayList<>())
+						.add(new EqualityDomainProof(constant.getValue(), operator));
 				return;
 			}
 			if (right instanceof Var var && !var.hasValue() && baseNames.contains(var.getName())
 					&& left instanceof ValueConstant constant) {
-				equalities.put(var.getName(), constant.getValue());
+				equalities.computeIfAbsent(var.getName(), key -> new ArrayList<>())
+						.add(new EqualityDomainProof(constant.getValue(), operator));
 			}
 		}
 
@@ -587,44 +620,109 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private boolean isNullRejectingOptionalExpression(ValueExpr expression, Set<String> optionalBindings,
 				Set<String> leftAssuredBindings) {
+			return !optionalUnboundEbvOutcomes(expression, optionalBindings, leftAssuredBindings)
+					.contains(EbvOutcome.TRUE);
+		}
+
+		private EnumSet<EbvOutcome> optionalUnboundEbvOutcomes(ValueExpr expression, Set<String> optionalBindings,
+				Set<String> leftAssuredBindings) {
 			if (expression instanceof And and) {
-				return isNullRejectingOptionalExpression(and.getLeftArg(), optionalBindings, leftAssuredBindings)
-						|| isNullRejectingOptionalExpression(and.getRightArg(), optionalBindings,
-								leftAssuredBindings);
+				return combineEbvOutcomes(
+						optionalUnboundEbvOutcomes(and.getLeftArg(), optionalBindings, leftAssuredBindings),
+						optionalUnboundEbvOutcomes(and.getRightArg(), optionalBindings, leftAssuredBindings), true);
 			}
 			if (expression instanceof Or or) {
-				return isNullRejectingOptionalExpression(or.getLeftArg(), optionalBindings, leftAssuredBindings)
-						&& isNullRejectingOptionalExpression(or.getRightArg(), optionalBindings,
-								leftAssuredBindings);
+				return combineEbvOutcomes(
+						optionalUnboundEbvOutcomes(or.getLeftArg(), optionalBindings, leftAssuredBindings),
+						optionalUnboundEbvOutcomes(or.getRightArg(), optionalBindings, leftAssuredBindings), false);
 			}
 			if (expression instanceof Not not) {
-				return isNullRejectingOptionalExpression(not.getArg(), optionalBindings, leftAssuredBindings);
+				EnumSet<EbvOutcome> outcomes = EnumSet.noneOf(EbvOutcome.class);
+				for (EbvOutcome outcome : optionalUnboundEbvOutcomes(not.getArg(), optionalBindings,
+						leftAssuredBindings)) {
+					outcomes.add(switch (outcome) {
+					case TRUE -> EbvOutcome.FALSE;
+					case FALSE -> EbvOutcome.TRUE;
+					case ERROR -> EbvOutcome.ERROR;
+					});
+				}
+				return outcomes;
 			}
 			if (expression instanceof Compare compare) {
-				return isNullRejectingOptionalCompare(compare, optionalBindings, leftAssuredBindings);
+				return strictOptionalExpressionOutcomes(
+						isNullRejectingOptionalCompare(compare, optionalBindings, leftAssuredBindings));
 			}
 			if (expression instanceof SameTerm sameTerm) {
-				return isNullRejectingOptionalSameTerm(sameTerm, optionalBindings, leftAssuredBindings);
+				return strictOptionalExpressionOutcomes(
+						isNullRejectingOptionalSameTerm(sameTerm, optionalBindings, leftAssuredBindings));
 			}
 			if (expression instanceof Bound bound) {
-				return optionalBindings.contains(bound.getArg().getName());
+				Var argument = bound.getArg();
+				if (argument.hasValue() || leftAssuredBindings.contains(argument.getName())) {
+					return EnumSet.of(EbvOutcome.TRUE);
+				}
+				if (optionalBindings.contains(argument.getName())) {
+					return EnumSet.of(EbvOutcome.FALSE);
+				}
+				return EnumSet.allOf(EbvOutcome.class);
 			}
 			if (isTermKindPredicateOnOptionalBinding(expression, optionalBindings)) {
-				return true;
+				return EnumSet.of(EbvOutcome.ERROR);
 			}
 			if (expression instanceof LangMatches langMatches) {
-				return isNullRejectingOptionalLangMatches(langMatches, optionalBindings, leftAssuredBindings);
+				return strictOptionalExpressionOutcomes(
+						isNullRejectingOptionalLangMatches(langMatches, optionalBindings, leftAssuredBindings));
 			}
 			if (expression instanceof FunctionCall functionCall) {
-				return isNullRejectingOptionalStringFunction(functionCall, optionalBindings, leftAssuredBindings);
+				return strictOptionalExpressionOutcomes(
+						isNullRejectingOptionalStringFunction(functionCall, optionalBindings, leftAssuredBindings));
 			}
 			if (expression instanceof Regex regex) {
-				return isNullRejectingOptionalRegex(regex, optionalBindings, leftAssuredBindings);
+				return strictOptionalExpressionOutcomes(
+						isNullRejectingOptionalRegex(regex, optionalBindings, leftAssuredBindings));
 			}
 			if (expression instanceof ListMemberOperator list) {
-				return isNullRejectingOptionalListMember(list, optionalBindings, leftAssuredBindings);
+				return strictOptionalExpressionOutcomes(
+						isNullRejectingOptionalListMember(list, optionalBindings, leftAssuredBindings));
 			}
-			return false;
+			return EnumSet.allOf(EbvOutcome.class);
+		}
+
+		private EnumSet<EbvOutcome> strictOptionalExpressionOutcomes(boolean mustErrorWhenOptionalUnbound) {
+			return mustErrorWhenOptionalUnbound
+					? EnumSet.of(EbvOutcome.ERROR)
+					: EnumSet.allOf(EbvOutcome.class);
+		}
+
+		private EnumSet<EbvOutcome> combineEbvOutcomes(Set<EbvOutcome> leftOutcomes,
+				Set<EbvOutcome> rightOutcomes, boolean conjunction) {
+			EnumSet<EbvOutcome> outcomes = EnumSet.noneOf(EbvOutcome.class);
+			for (EbvOutcome left : leftOutcomes) {
+				for (EbvOutcome right : rightOutcomes) {
+					outcomes.add(conjunction ? andOutcome(left, right) : orOutcome(left, right));
+				}
+			}
+			return outcomes;
+		}
+
+		private EbvOutcome andOutcome(EbvOutcome left, EbvOutcome right) {
+			if (left == EbvOutcome.FALSE || right == EbvOutcome.FALSE) {
+				return EbvOutcome.FALSE;
+			}
+			if (left == EbvOutcome.ERROR || right == EbvOutcome.ERROR) {
+				return EbvOutcome.ERROR;
+			}
+			return EbvOutcome.TRUE;
+		}
+
+		private EbvOutcome orOutcome(EbvOutcome left, EbvOutcome right) {
+			if (left == EbvOutcome.TRUE || right == EbvOutcome.TRUE) {
+				return EbvOutcome.TRUE;
+			}
+			if (left == EbvOutcome.ERROR || right == EbvOutcome.ERROR) {
+				return EbvOutcome.ERROR;
+			}
+			return EbvOutcome.FALSE;
 		}
 
 		private boolean isNullRejectingOptionalCompare(Compare compare, Set<String> optionalBindings,
@@ -650,13 +748,17 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private boolean isNullRejectingOptionalListMember(ListMemberOperator list, Set<String> optionalBindings,
 				Set<String> leftAssuredBindings) {
+			if (list.getArguments().isEmpty()
+					|| !referencesAnyOptionalBinding(list.getArguments().getFirst(), optionalBindings)) {
+				return false;
+			}
 			for (ValueExpr argument : list.getArguments()) {
 				if (!isSupportedNullRejectingCompareOperand(argument, optionalBindings)
 						|| !nonOptionalCompareOperandIsAssured(argument, optionalBindings, leftAssuredBindings)) {
 					return false;
 				}
 			}
-			return referencesAnyOptionalBinding(list, optionalBindings);
+			return true;
 		}
 
 		private boolean isSupportedNullRejectingCompareOperand(ValueExpr expression, Set<String> optionalBindings) {
@@ -973,18 +1075,17 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					&& isFixedOrBoundPatternVar(statementPattern.getObjectVar(), boundNames)
 					&& (contextVar != null
 							? isFixedOrBoundPatternVar(contextVar, boundNames)
-							: estimatedBoundContextlessProbeIsUnique(statementPattern, boundNames));
+							: datasetFixesSingleContext(statementPattern));
 		}
 
-		private boolean estimatedBoundContextlessProbeIsUnique(StatementPattern statementPattern,
-				Set<String> boundNames) {
-			if (!(statistics instanceof JoinFactorCostModel costModel)) {
+		private boolean datasetFixesSingleContext(StatementPattern statementPattern) {
+			if (dataset == null) {
 				return false;
 			}
-			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(statementPattern,
-					boundNames);
-			return estimate.isPresent()
-					&& estimate.get().getOutputRows() <= 1.0d;
+			return switch (statementPattern.getScope()) {
+			case DEFAULT_CONTEXTS -> dataset.getDefaultGraphs().size() == 1;
+			case NAMED_CONTEXTS -> dataset.getNamedGraphs().size() == 1;
+			};
 		}
 
 		private boolean isFixedOrBoundPatternVar(Var var, Set<String> boundNames) {
@@ -1543,7 +1644,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private double finiteBindingRows(TupleExpr tupleExpr, Set<String> finiteBindingNames) {
 			if (tupleExpr instanceof BindingSetAssignment assignment) {
-				finiteBindingNames.addAll(assignment.getBindingNames());
+				finiteBindingNames.addAll(assignment.getAssuredBindingNames());
 				return bindingSetRows(assignment);
 			}
 			if (tupleExpr instanceof StatementPattern) {
@@ -2664,7 +2765,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 						|| assignmentNames.get().isEmpty()
 						|| isSingleBindingSetAssignment(tupleExpr)
 						|| !isSingleLiteralBindingAssignment(tupleExpr)) {
-					bound.addAll(plannerBindingNames(tupleExpr.getBindingNames()));
+					bound.addAll(plannerBindingNames(tupleExpr.getAssuredBindingNames()));
 					i++;
 					continue;
 				}
@@ -4086,6 +4187,65 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 	private record OptionalBranch(TupleExpr tupleExpr, ValueExpr condition) {
 
+	}
+
+	private enum EbvOutcome {
+		TRUE,
+		FALSE,
+		ERROR
+	}
+
+	private record EqualityDomainProof(Value constant, EqualityOperator operator) {
+
+		private boolean provesMutuallyExclusiveWith(EqualityDomainProof other) {
+			if (operator == EqualityOperator.SAME_TERM && other.operator == EqualityOperator.SAME_TERM) {
+				return !constant.equals(other.constant);
+			}
+
+			EqualityDomain domain = equalityDomain(constant);
+			EqualityDomain otherDomain = equalityDomain(other.constant);
+			if (domain == EqualityDomain.UNPROVEN || otherDomain == EqualityDomain.UNPROVEN) {
+				return false;
+			}
+			if (domain != otherDomain) {
+				return true;
+			}
+			return QueryEvaluationUtility.compare(constant, other.constant,
+					Compare.CompareOp.EQ) != QueryEvaluationUtility.Result._true;
+		}
+
+		private static EqualityDomain equalityDomain(Value value) {
+			if (value.isResource()) {
+				return EqualityDomain.RESOURCE;
+			}
+			if (!(value instanceof Literal literal)) {
+				return EqualityDomain.UNPROVEN;
+			}
+			CoreDatatype datatype = literal.getCoreDatatype();
+			if (datatype == CoreDatatype.XSD.BOOLEAN) {
+				return EqualityDomain.BOOLEAN;
+			}
+			if (datatype == CoreDatatype.XSD.STRING) {
+				return EqualityDomain.STRING;
+			}
+			if (datatype == CoreDatatype.RDF.LANGSTRING || datatype == CoreDatatype.RDF.DIRLANGSTRING) {
+				return EqualityDomain.LANGUAGE_STRING;
+			}
+			return EqualityDomain.UNPROVEN;
+		}
+	}
+
+	private enum EqualityOperator {
+		SAME_TERM,
+		VALUE_EQUAL
+	}
+
+	private enum EqualityDomain {
+		RESOURCE,
+		BOOLEAN,
+		STRING,
+		LANGUAGE_STRING,
+		UNPROVEN
 	}
 
 }

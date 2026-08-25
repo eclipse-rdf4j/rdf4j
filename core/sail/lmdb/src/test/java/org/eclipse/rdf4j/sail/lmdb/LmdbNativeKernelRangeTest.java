@@ -45,6 +45,7 @@ class LmdbNativeKernelRangeTest {
 			"rdf4j.lmdb.janinoCodegen.synchronous",
 			"rdf4j.lmdb.janinoCodegen.scanSources",
 			"rdf4j.lmdb.wcoj.enabled",
+			"rdf4j.lmdb.packedFtree.enabled",
 			"rdf4j.lmdb.factorizedRows.enabled",
 			"rdf4j.lmdb.factorizedTail.enabled",
 			"rdf4j.lmdb.nativeBatch.enabled",
@@ -71,6 +72,7 @@ class LmdbNativeKernelRangeTest {
 		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
 		// These tests exercise the generated range route itself. The unified arbiter correctly prefers a specialist
 		// with an overlapping cost interval, so remove those competing proposals from this focused route test.
+		System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
 		System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
 		System.setProperty("rdf4j.lmdb.factorizedTail.enabled", "false");
 		System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");

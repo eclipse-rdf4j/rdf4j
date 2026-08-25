@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
 import java.io.IOException;
@@ -22,11 +23,13 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -412,6 +415,76 @@ class LmdbDirectAdjacencyQueryTest {
 			} else {
 				dataset.close();
 			}
+		}
+	}
+
+	@Test
+	void datasetConstructorClosesTxnWhenAdjacencyAcquireFails() throws IOException {
+		openPreferStore();
+		RuntimeException acquireFailure = new IllegalStateException("synthetic adjacency acquisition failure");
+		TxnManager txnManager = backing.getTripleStore().getTxnManager();
+		int availableReadersBefore = txnManager.availableReadTxnSlots(1_024, 0);
+		direct.beforeExactViewReturnForTest = () -> {
+			throw acquireFailure;
+		};
+		try {
+			assertThatThrownBy(() -> backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT))
+					.isSameAs(acquireFailure);
+		} finally {
+			direct.beforeExactViewReturnForTest = null;
+		}
+
+		assertThat(direct.snapshotMetrics().activeViews)
+				.as("the failed adjacency acquisition releases its provisional view")
+				.isZero();
+		assertThat(txnManager.availableReadTxnSlots(1_024, 0))
+				.as("the dataset constructor closes the read transaction acquired before the adjacency view")
+				.isEqualTo(availableReadersBefore);
+	}
+
+	@Test
+	void plannerStatsHoldNativeReadLockAgainstConcurrentClose() throws Exception {
+		openPreferStore();
+		CloseableDataset dataset = dataset();
+		CountDownLatch statsPassedOpenCheck = new CountDownLatch(1);
+		CountDownLatch allowStatsRead = new CountDownLatch(1);
+		CountDownLatch closeStarted = new CountDownLatch(1);
+		backing.afterPlannerStatsOpenCheckForTest = () -> {
+			statsPassedOpenCheck.countDown();
+			try {
+				if (!allowStatsRead.await(5, TimeUnit.SECONDS)) {
+					throw new IllegalStateException("planner statistics test hook timed out");
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException("planner statistics test hook interrupted", e);
+			}
+		};
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		Future<OptionalDouble> stats = null;
+		Future<?> close = null;
+		try {
+			stats = executor.submit(() -> dataset.source.meanFanOut(p1, true));
+			assertThat(statsPassedOpenCheck.await(5, TimeUnit.SECONDS)).isTrue();
+			close = executor.submit(() -> {
+				closeStarted.countDown();
+				dataset.close();
+			});
+			assertThat(closeStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			Future<?> closeWhileStatsRead = close;
+			assertThatThrownBy(() -> closeWhileStatsRead.get(1, TimeUnit.SECONDS))
+					.as("dataset close must wait for the in-flight planner statistics read")
+					.isInstanceOf(TimeoutException.class);
+
+			allowStatsRead.countDown();
+			assertThat(stats.get(5, TimeUnit.SECONDS)).isPresent();
+			close.get(5, TimeUnit.SECONDS);
+		} finally {
+			allowStatsRead.countDown();
+			backing.afterPlannerStatsOpenCheckForTest = null;
+			executor.shutdownNow();
+			executor.awaitTermination(5, TimeUnit.SECONDS);
+			dataset.close();
 		}
 	}
 
@@ -988,6 +1061,27 @@ class LmdbDirectAdjacencyQueryTest {
 		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		openPreferStore();
+		try (var pinnedDataset = dataset();
+				var unpinnedDataset = new CloseableDataset(
+						backing.getExplicitSailSource().dataset(IsolationLevels.NONE))) {
+			LmdbPrefixRunPlan predicateRuns = pinnedDataset.source.prefixRunPlan(
+					new int[] { TripleIndex.PRED_IDX }, -1, -1, -1, -1);
+			assertThat(predicateRuns).isNotNull();
+			assertThat(predicateRuns.usesAdjacency()).isTrue();
+			LmdbPrefixRunPlan unpinnedPredicateRuns = unpinnedDataset.source.prefixRunPlan(
+					new int[] { TripleIndex.PRED_IDX }, -1, -1, -1, -1);
+			assertThat(unpinnedPredicateRuns).isNotNull();
+			assertThat(unpinnedPredicateRuns.usesAdjacency()).isTrue();
+			Map<Long, Long> predicateCounts = new HashMap<>();
+			try (LmdbPrefixRunCursor cursor = unpinnedDataset.source.prefixRuns(
+					unpinnedPredicateRuns, -1, -1, -1, -1, true)) {
+				assertThat(cursor).isNotNull();
+				while (cursor.next()) {
+					predicateCounts.put(cursor.quad()[TripleIndex.PRED_IDX], cursor.runRowCount());
+				}
+			}
+			assertThat(predicateCounts).containsExactlyInAnyOrderEntriesOf(Map.of(p1, 3L, p2, 1L, p3, 1L));
+		}
 
 		LmdbPrefixRunPlan.resetMetrics();
 		assertThat(queryRows("SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P1 + "> ?o }", "count"))

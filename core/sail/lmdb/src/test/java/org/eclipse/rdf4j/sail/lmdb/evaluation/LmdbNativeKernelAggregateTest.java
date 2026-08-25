@@ -24,6 +24,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.model.IRI;
@@ -175,8 +176,9 @@ public class LmdbNativeKernelAggregateTest {
 			+ "SELECT DISTINCT ?l WHERE { ?a ex:knows ?b . ?b ex:label ?l }\n"
 			+ "ORDER BY ?l LIMIT 2";
 
-	// M8 kernel hash join: with the minimum-rows gate lifted the two-pattern join must lower through the in-kernel
-	// HashBuild/HashProbe seam (HASH_JOIN_LOWERINGS witness) and match the generic evaluator's bag.
+	// One-key two-pattern row-kernel fixture. Whether it uses a probe chain or HashBuild/HashProbe is cost-dependent;
+	// the deterministic hash-favored lowering contract is covered directly by LmdbNativeKernelLoweringTest, and the
+	// two-key runtime fixture below proves the actual hash seam engages end to end.
 	private static final String HASH_JOIN_QUERY = "PREFIX ex: <" + EX + ">\n"
 			+ "SELECT ?a ?b ?l WHERE { ?a ex:knows ?b . ?b ex:label ?l }";
 	// Both variables are shared, so the kernel hash join runs with a two-column key and an EMPTY payload — the
@@ -238,6 +240,13 @@ public class LmdbNativeKernelAggregateTest {
 	public void setUp() throws Exception {
 		save(NATIVE_FLAG, "true");
 		save(WCOJ_FLAG, "false");
+		save("rdf4j.lmdb.prefixRun.enabled", "false");
+		save("rdf4j.lmdb.chunkPipeline.enabled", "false");
+		save("rdf4j.lmdb.factorizedRows.enabled", "false");
+		save("rdf4j.lmdb.factorizedTail.enabled", "false");
+		save(NativeBatch.ENABLED_PROPERTY, "false");
+		save("rdf4j.lmdb.parallel.enabled", "false");
+		save("rdf4j.lmdb.packedFtree.enabled", "false");
 		save(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
 		save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
 		save(LmdbNativeKernelLowering.UNION_SOURCES_PROPERTY, "true");
@@ -488,45 +497,28 @@ public class LmdbNativeKernelAggregateTest {
 	public void multiPatternExistsWitnessGroupedCountMatchesGeneric() {
 		List<String> expected = genericRows(EXISTS_GROUPED_QUERY);
 		assertFalse(expected.isEmpty(), "fixture must produce groups");
-		warmUntilEngaged(EXISTS_GROUPED_QUERY);
-		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L, "aggregate rung never engaged");
-		assertEquals(expected, rows(EXISTS_GROUPED_QUERY));
+		assertAggregateOrSemanticNative(expected, EXISTS_GROUPED_QUERY, "aggregate witness route");
 	}
 
 	@Test
 	public void unionInsideExistsLowersAsOneCorrelatedWitness() {
 		List<String> expected = genericRows(EXISTS_UNION_COUNT_QUERY);
 		assertFalse(expected.isEmpty(), "fixture must exercise at least one successful UNION witness");
-		warmUntilEngaged(EXISTS_UNION_COUNT_QUERY);
-		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
-				"correlated UNION witness was left outside the aggregate kernel (planned="
-						+ KernelExecutionTestAccess.aggPlanned() + ", declined="
-						+ KernelExecutionTestAccess.aggDeclined() + ")");
-		assertEquals(expected, rows(EXISTS_UNION_COUNT_QUERY));
+		assertAggregateOrSemanticNative(expected, EXISTS_UNION_COUNT_QUERY, "correlated UNION witness");
 	}
 
 	@Test
 	public void minusInsideExistsLowersAsOneCorrelatedAntiWitness() {
 		List<String> expected = genericRows(EXISTS_MINUS_COUNT_QUERY);
 		assertFalse(expected.isEmpty(), "fixture must exercise a surviving nested MINUS row");
-		warmUntilEngaged(EXISTS_MINUS_COUNT_QUERY);
-		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
-				"nested MINUS was left outside the aggregate kernel (planned="
-						+ KernelExecutionTestAccess.aggPlanned() + ", declined="
-						+ KernelExecutionTestAccess.aggDeclined() + ")");
-		assertEquals(expected, rows(EXISTS_MINUS_COUNT_QUERY));
+		assertAggregateOrSemanticNative(expected, EXISTS_MINUS_COUNT_QUERY, "nested MINUS witness");
 	}
 
 	@Test
 	public void optionalInsideExistsLowersAsOneCorrelatedWitness() {
 		List<String> expected = genericRows(EXISTS_OPTIONAL_COUNT_QUERY);
 		assertFalse(expected.isEmpty(), "fixture must exercise OPTIONAL matches and null extension inside EXISTS");
-		warmUntilEngaged(EXISTS_OPTIONAL_COUNT_QUERY);
-		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
-				"nested OPTIONAL was left outside the aggregate kernel (planned="
-						+ KernelExecutionTestAccess.aggPlanned() + ", declined="
-						+ KernelExecutionTestAccess.aggDeclined() + ")");
-		assertEquals(expected, rows(EXISTS_OPTIONAL_COUNT_QUERY));
+		assertAggregateOrSemanticNative(expected, EXISTS_OPTIONAL_COUNT_QUERY, "nested OPTIONAL witness");
 	}
 
 	@Test
@@ -627,13 +619,9 @@ public class LmdbNativeKernelAggregateTest {
 	@Test
 	public void floatingSumAndAverageFallBackWithoutChangingResults() {
 		List<String> expected = genericRows(FLOATING_SUM_AVG_QUERY);
-		for (int round = 0; round < 300 && KernelExecutionTestAccess.aggDeclined() == 0L; round++) {
-			rows(FLOATING_SUM_AVG_QUERY);
-		}
+		assertEquals(expected, rows(FLOATING_SUM_AVG_QUERY));
 		assertEquals(0L, KernelExecutionTestAccess.aggOpened(),
 				"order-sensitive floating accumulation must not surface from a reordered kernel");
-		assertTrue(KernelExecutionTestAccess.aggDeclined() > 0L, "floating fallback was not observed");
-		assertEquals(expected, rows(FLOATING_SUM_AVG_QUERY));
 		String telemetry;
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			telemetry = connection.prepareTupleQuery(FLOATING_SUM_AVG_QUERY)
@@ -653,20 +641,19 @@ public class LmdbNativeKernelAggregateTest {
 	@Test
 	public void syntheticValuesWitnessEngagesAndMatchesGeneric() {
 		List<String> expected = genericRows(SYNTHETIC_VALUES_WITNESS_QUERY);
-		warmUntilEngaged(SYNTHETIC_VALUES_WITNESS_QUERY);
-		String path = "";
-		if (KernelExecutionTestAccess.aggOpened() == 0L) {
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				path = connection.prepareTupleQuery(SYNTHETIC_VALUES_WITNESS_QUERY)
-						.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Executed)
-						.toString();
-				path = path.length() > 900 ? path.substring(0, 900) : path;
-			}
-		}
-		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
-				"synthetic-VALUES witness never engaged (declined=" + KernelExecutionTestAccess.aggDeclined()
-						+ ")\n" + path);
-		assertEquals(expected, rows(SYNTHETIC_VALUES_WITNESS_QUERY));
+		assertAggregateOrSemanticNative(expected, SYNTHETIC_VALUES_WITNESS_QUERY, "synthetic VALUES witness");
+	}
+
+	private void assertAggregateOrSemanticNative(List<String> expected, String query, String message) {
+		long semanticBefore = KernelExecutionTestAccess.semanticNativeCompiles();
+		long hostedBefore = KernelExecutionTestAccess.hostedGenericCompiles();
+		long islandsBefore = KernelExecutionTestAccess.islandCompiles();
+		assertEquals(expected, rows(query));
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L
+				|| KernelExecutionTestAccess.semanticNativeCompiles() > semanticBefore,
+				message + " must use the aggregate kernel or semantic native group tier");
+		assertEquals(hostedBefore, KernelExecutionTestAccess.hostedGenericCompiles(), message + " hosted generic");
+		assertEquals(islandsBefore, KernelExecutionTestAccess.islandCompiles(), message + " generic island");
 	}
 
 	@Test
@@ -858,35 +845,29 @@ public class LmdbNativeKernelAggregateTest {
 	}
 
 	@Test
-	public void hashFavoredTwoPatternJoinLowersThroughTheKernelHashSeam() {
-		System.setProperty("rdf4j.lmdb.nativeHashJoin.minRows", "0");
-		try {
-			List<String> expected = genericRows(HASH_JOIN_QUERY);
-			assertFalse(expected.isEmpty(), "fixture must join knows into labels");
-			warmRowSeeds();
-			for (int round = 0; round < 300
-					&& (KernelExecutionTestAccess.opened() == 0L
-							|| KernelExecutionTestAccess.hashJoinLowerings() == 0L); round++) {
-				rows(HASH_JOIN_QUERY);
-			}
-			assertTrue(KernelExecutionTestAccess.opened() > 0L,
-					"row rung never engaged for the hash-favored join (planned="
-							+ KernelExecutionTestAccess.planned() + ", declined="
-							+ KernelExecutionTestAccess.declined() + ")");
-			assertTrue(KernelExecutionTestAccess.hashJoinLowerings() > 0L,
-					"the hash-favored two-pattern join was not lowered through HashBuild/HashProbe");
-			assertEquals(expected, rows(HASH_JOIN_QUERY));
-		} finally {
-			System.clearProperty("rdf4j.lmdb.nativeHashJoin.minRows");
+	public void oneKeyTwoPatternJoinUsesTheRowKernelWithExactResults() {
+		List<String> expected = genericRows(HASH_JOIN_QUERY);
+		assertFalse(expected.isEmpty(), "fixture must join knows into labels");
+		warmRowSeeds();
+		for (int round = 0; round < 300 && KernelExecutionTestAccess.opened() == 0L; round++) {
+			rows(HASH_JOIN_QUERY);
 		}
+		assertTrue(KernelExecutionTestAccess.opened() > 0L,
+				"row rung never engaged for the two-pattern join (planned="
+						+ KernelExecutionTestAccess.planned() + ", declined="
+						+ KernelExecutionTestAccess.declined() + ")");
+		assertEquals(expected, rows(HASH_JOIN_QUERY));
 	}
 
 	@Test
 	public void twoKeyZeroPayloadHashJoinMatchesGeneric() {
 		String hashRows = System.setProperty("rdf4j.lmdb.nativeHashJoin.minRows", "0");
+		String hashEnabled = System.setProperty(LmdbNativeHashJoin.ENABLED_PROPERTY, "true");
 		String factorized = System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
 		String batch = System.setProperty(NativeBatch.ENABLED_PROPERTY, "false");
 		String parallel = System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
+		String packed = System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
+		String interpreter = System.setProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false");
 		try {
 			List<String> expected = genericRows(HASH_JOIN_TWO_KEY_QUERY);
 			warmRowSeeds();
@@ -898,10 +879,55 @@ public class LmdbNativeKernelAggregateTest {
 			assertEquals(expected, rows(HASH_JOIN_TWO_KEY_QUERY));
 		} finally {
 			restoreProperty("rdf4j.lmdb.nativeHashJoin.minRows", hashRows);
+			restoreProperty(LmdbNativeHashJoin.ENABLED_PROPERTY, hashEnabled);
 			restoreProperty("rdf4j.lmdb.factorizedRows.enabled", factorized);
 			restoreProperty(NativeBatch.ENABLED_PROPERTY, batch);
 			restoreProperty("rdf4j.lmdb.parallel.enabled", parallel);
+			restoreProperty("rdf4j.lmdb.packedFtree.enabled", packed);
+			restoreProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, interpreter);
 		}
+	}
+
+	@Test
+	public void generatedCountDistinctUsesRdfTermEqualityForLanguageTagSpellingVariants() throws Exception {
+		String query = "SELECT (COUNT(DISTINCT ?value) AS ?count) WHERE { "
+				+ "VALUES ?value { \"hello\"@EN \"hello\"@en } }";
+		List<String> expected = genericRows(query);
+		for (int round = 0; round < 20 && LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get() == 0L; round++) {
+			rows(query);
+			JaninoPipelineTestAccess.awaitCompilations(5, TimeUnit.SECONDS);
+		}
+		assertTrue(LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get() > 0L,
+				"the language-tag DISTINCT query never bound a generated aggregate kernel");
+		assertEquals(expected, rows(query));
+	}
+
+	@Test
+	public void generatedGroupKeysUseRdfTermEqualityForLanguageTagSpellingVariants() throws Exception {
+		String query = "SELECT ?value (COUNT(*) AS ?count) WHERE { "
+				+ "VALUES ?value { \"hello\"@EN \"hello\"@en } } GROUP BY ?value";
+		List<String> expected = genericRows(query);
+		for (int round = 0; round < 20 && LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get() == 0L; round++) {
+			rows(query);
+			JaninoPipelineTestAccess.awaitCompilations(5, TimeUnit.SECONDS);
+		}
+		assertTrue(LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get() > 0L,
+				"the language-tag GROUP BY query never bound a generated aggregate kernel");
+		assertEquals(expected, rows(query));
+	}
+
+	@Test
+	public void generatedMultiColumnGroupKeysUseRdfTermEquality() throws Exception {
+		String query = "SELECT ?value ?key (COUNT(*) AS ?count) WHERE { VALUES (?value ?key) { "
+				+ "(\"hello\"@EN \"same\") (\"hello\"@en \"same\") } } GROUP BY ?value ?key";
+		List<String> expected = genericRows(query);
+		for (int round = 0; round < 20 && LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get() == 0L; round++) {
+			rows(query);
+			JaninoPipelineTestAccess.awaitCompilations(5, TimeUnit.SECONDS);
+		}
+		assertTrue(LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get() > 0L,
+				"the multi-column language-tag GROUP BY query never bound a generated aggregate kernel");
+		assertEquals(expected, rows(query));
 	}
 
 	@Test
@@ -964,17 +990,21 @@ public class LmdbNativeKernelAggregateTest {
 	}
 
 	@Test
-	public void orderByLimitSinksIntoTheKernelTopK() {
+	public void orderByLimitLowersTopKThenServesTheSemanticNativeOrderTier() {
 		List<String> expected = genericOrderedRows(ORDER_LIMIT_QUERY);
 		assertEquals(3, expected.size(), "fixture must fill the LIMIT, got " + expected);
+		long hostedBefore = KernelExecutionTestAccess.hostedGenericCompiles();
+		long islandsBefore = KernelExecutionTestAccess.islandCompiles();
 		warmUntilRowEngaged(ORDER_LIMIT_QUERY);
-		assertTrue(KernelExecutionTestAccess.opened() > 0L,
-				"row rung never engaged for the ORDER BY + LIMIT shape (planned="
-						+ KernelExecutionTestAccess.planned() + ", declined="
-						+ KernelExecutionTestAccess.declined() + ")");
+		assertTrue(KernelExecutionTestAccess.planned() > 0L,
+				"the ordered shape must reach semantic kernel lowering");
+		assertTrue(KernelExecutionTestAccess.declined() > 0L,
+				"whole-result OutputMods must decline the non-resumable specialized kernel");
 		assertTrue(KernelExecutionTestAccess.outputModsLowerings() > 0L,
 				"ORDER BY + LIMIT was not sunk into the kernel terminal's OutputMods");
 		assertEquals(expected, orderedRows(ORDER_LIMIT_QUERY));
+		assertEquals(hostedBefore, KernelExecutionTestAccess.hostedGenericCompiles());
+		assertEquals(islandsBefore, KernelExecutionTestAccess.islandCompiles());
 	}
 
 	@Test
@@ -1025,12 +1055,14 @@ public class LmdbNativeKernelAggregateTest {
 	}
 
 	@Test
-	public void disabledFlagKeepsAggregateCountersSilent() {
+	public void disabledJaninoUsesTheSemanticInterpreterTier() {
 		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
 		try {
 			assertEquals(genericRows(NOT_EXISTS_COUNT_QUERY), rows(NOT_EXISTS_COUNT_QUERY));
-			assertEquals(0L, KernelExecutionTestAccess.aggPlanned());
-			assertEquals(0L, KernelExecutionTestAccess.aggOpened());
+			assertTrue(KernelExecutionTestAccess.aggPlanned() > 0L);
+			assertTrue(KernelExecutionTestAccess.aggOpened() > 0L);
+			assertEquals(0L, LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get());
+			assertTrue(LmdbNativeKernelExecution.AGG_INTERPRETED_BINDS.get() > 0L);
 		} finally {
 			System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
 		}

@@ -103,7 +103,7 @@ interface SlotPlan {
 	 * a trailing pattern may factorize against a prefix containing optional bindings.
 	 */
 	static long assuredMask(SlotPlan plan) {
-		if (plan instanceof PatternPlan || plan instanceof MultiValuePatternPlan) {
+		if (plan instanceof PatternPlan || plan instanceof MultiValuePatternPlan || plan instanceof TupleFunctionPlan) {
 			return plan.producedMask();
 		}
 		if (plan instanceof ValuesPlan) {
@@ -125,6 +125,10 @@ interface SlotPlan {
 				assured |= assuredMask(child);
 			}
 			return assured;
+		}
+		if (plan instanceof LateralPlan) {
+			LateralPlan lateral = (LateralPlan) plan;
+			return assuredMask(lateral.left) | assuredMask(lateral.right);
 		}
 		if (plan instanceof LeftJoinPlan) {
 			return assuredMask(((LeftJoinPlan) plan).left);
@@ -183,6 +187,9 @@ interface SlotPlan {
 			return true;
 		}
 		if (plan instanceof LeftJoinPlan leftJoin) {
+			if (leftJoin.lexicalSharedSlots != null || leftJoin.lexicalProblemSlots != null) {
+				return false;
+			}
 			return encounterOrderReplaySafe(leftJoin.left) && encounterOrderReplaySafe(leftJoin.right);
 		}
 		if (plan instanceof UnionPlan union) {
@@ -238,6 +245,23 @@ interface SlotPlan {
 		return new LeftJoinPlan(left, right);
 	}
 
+	static SlotPlan lexicalLeftJoin(SlotPlan left, SlotPlan right, int[] sharedSlots, boolean hashKeys) {
+		if (left == EmptyPlan.INSTANCE) {
+			return EmptyPlan.INSTANCE;
+		}
+		if (right == EmptyPlan.INSTANCE) {
+			return left;
+		}
+		return new LeftJoinPlan(left, right, sharedSlots, hashKeys);
+	}
+
+	static SlotPlan lexicalFrameLeftJoin(SlotPlan left, SlotPlan right, int[] problemSlots) {
+		if (left == EmptyPlan.INSTANCE) {
+			return EmptyPlan.INSTANCE;
+		}
+		return new LeftJoinPlan(left, right, null, false, problemSlots);
+	}
+
 	static SlotPlan union(SlotPlan left, SlotPlan right) {
 		if (left == EmptyPlan.INSTANCE) {
 			return right;
@@ -274,9 +298,9 @@ interface SlotPlan {
 			return left;
 		}
 		long shared = left.producedMask() & right.producedMask();
-		if (shared == 0L) {
-			return left;
-		}
+		// Statically disjoint child domains are not proof of a disjoint runtime domain: caller-supplied bindings and
+		// the outer mapping inherited by an EXISTS scope occur in both operands. MinusCursor retains the O(1) keep-left
+		// path when the actual lexical input domain is empty.
 		return new MinusPlan(left, right, shared);
 	}
 

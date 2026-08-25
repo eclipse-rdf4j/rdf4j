@@ -39,8 +39,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Differential tests for SPARQL OPTIONAL shapes that are not well-designed: optional-only variables can be bound by
- * sibling patterns, join conditions, or external base bindings. The native engine must either refuse those static
- * shapes or delegate the dynamic base-binding case to the generic evaluator.
+ * sibling patterns, join conditions, or external base bindings. The semantic native lexical-frame plan must preserve
+ * the same dynamic scope behavior without a generic host or island.
  */
 public class LmdbNativeLeftJoinWellDesignedTest {
 
@@ -110,8 +110,8 @@ public class LmdbNativeLeftJoinWellDesignedTest {
 	}
 
 	@Test
-	public void badlyDesignedSiblingFallsBackForGroupRoot() {
-		assertFallsBackAndMatchesGeneric(q("SELECT (COUNT(?x) AS ?count) WHERE {\n"
+	public void badlyDesignedSiblingRunsNativelyForGroupRoot() {
+		assertNativeAndMatchesGeneric(q("SELECT (COUNT(?x) AS ?count) WHERE {\n"
 				+ "  ?x ex:p ?n .\n"
 				+ "  OPTIONAL { ?x ex:q ?e }\n"
 				+ "  ?y ex:r ?e .\n"
@@ -119,8 +119,8 @@ public class LmdbNativeLeftJoinWellDesignedTest {
 	}
 
 	@Test
-	public void badlyDesignedSiblingFallsBackForRowStreamRoot() {
-		assertFallsBackAndMatchesGeneric(q("SELECT ?x ?y ?e WHERE {\n"
+	public void badlyDesignedSiblingRunsNativelyForRowStreamRoot() {
+		assertNativeAndMatchesGeneric(q("SELECT ?x ?y ?e WHERE {\n"
 				+ "  ?x ex:p ?n .\n"
 				+ "  OPTIONAL { ?x ex:q ?e }\n"
 				+ "  ?y ex:r ?e .\n"
@@ -128,8 +128,8 @@ public class LmdbNativeLeftJoinWellDesignedTest {
 	}
 
 	@Test
-	public void conditionOnlyOptionalVariableFallsBackWhenBoundBySibling() {
-		assertFallsBackAndMatchesGeneric(q("SELECT ?x ?y ?marker WHERE {\n"
+	public void conditionOnlyOptionalVariableUsesLexicalFrameWhenBoundBySibling() {
+		assertNativeAndMatchesGeneric(q("SELECT ?x ?y ?marker WHERE {\n"
 				+ "  ?x ex:p ?n .\n"
 				+ "  OPTIONAL { ?x ex:q ?q FILTER(?marker = ex:e1) }\n"
 				+ "  ?y ex:r ?marker .\n"
@@ -140,6 +140,8 @@ public class LmdbNativeLeftJoinWellDesignedTest {
 	public void realEstateNativeCoverageDoesNotShrink(@TempDir File realEstateDir) {
 		SailRepository realEstate = new SailRepository(new LmdbStore(realEstateDir,
 				new LmdbStoreConfig("spoc,posc,ospc")));
+		String previousCalibration = System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
+		LmdbNativeCostCalibration.reset();
 		try {
 			try (SailRepositoryConnection connection = realEstate.getConnection()) {
 				connection.begin(IsolationLevels.NONE);
@@ -153,6 +155,14 @@ public class LmdbNativeLeftJoinWellDesignedTest {
 				connection.commit();
 			}
 			for (int queryIndex = 0; queryIndex < 13; queryIndex++) {
+				if (queryIndex == 8) {
+					for (int sample = 0; sample < 100; sample++) {
+						LmdbNativeCostCalibration.record(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 1_000_000D,
+								1_000L);
+						LmdbNativeCostCalibration.record(LmdbNativeAttemptMetrics.PATH_AGG_STATE, 1_000_000D,
+								1_000_000_000L);
+					}
+				}
 				String query = ThemeQueryCatalog.queryFor(Theme.REAL_ESTATE, queryIndex);
 				String previousCheck = System.getProperty(WELL_DESIGNED_FLAG);
 				List<String> uncheckedRows;
@@ -184,15 +194,21 @@ public class LmdbNativeLeftJoinWellDesignedTest {
 			}
 		} finally {
 			realEstate.shutDown();
+			restore(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousCalibration);
+			LmdbNativeCostCalibration.reset();
 		}
 	}
 
-	private void assertFallsBackAndMatchesGeneric(String query) {
-		long before = LmdbNativeAggregateCompiler.COMPILED.get();
+	private void assertNativeAndMatchesGeneric(String query) {
+		long compiledBefore = LmdbNativeAggregateCompiler.COMPILED.get();
+		long hostsBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+		long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
 		List<String> nativeRows = rows(query, null, null);
 		assertThat(LmdbNativeAggregateCompiler.COMPILED.get())
-				.as("badly-designed OPTIONAL should fall back to generic:\n" + query)
-				.isEqualTo(before);
+				.as("badly-designed OPTIONAL should compile through the semantic native tier:\n" + query)
+				.isGreaterThan(compiledBefore);
+		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get()).isEqualTo(hostsBefore);
+		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get()).isEqualTo(islandsBefore);
 		assertThat(nativeRows).isEqualTo(genericRows(query, null, null));
 	}
 

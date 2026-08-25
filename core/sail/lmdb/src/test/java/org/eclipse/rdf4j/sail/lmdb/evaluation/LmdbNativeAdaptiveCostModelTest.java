@@ -85,6 +85,19 @@ class LmdbNativeAdaptiveCostModelTest {
 	}
 
 	@Test
+	void calibrationResetRestoresTheJvmWideMachinePrior() {
+		LmdbNativeMachineCostModel machine = LmdbNativeMachineCostModel.jvmWide();
+		LmdbNativeCostCalibration.reset();
+		machine.update(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1), 1_000.0);
+		assertTrue(machine.snapshot().sampleCount() > 0L);
+
+		LmdbNativeCostCalibration.reset();
+
+		assertEquals(0L, machine.snapshot().sampleCount(),
+				"the shared calibration reset must isolate physical-route tests from earlier stores");
+	}
+
+	@Test
 	void huberClippingPreventsOneOutlierFromReplacingTheModel() {
 		LmdbNativeMachineCostModel model = new LmdbNativeMachineCostModel();
 		LmdbNativeCostVector rows = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.GENERATED_ROW, 1_000);

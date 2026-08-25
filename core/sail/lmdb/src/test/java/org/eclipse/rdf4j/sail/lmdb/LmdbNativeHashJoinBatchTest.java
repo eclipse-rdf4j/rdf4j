@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -51,6 +52,7 @@ class LmdbNativeHashJoinBatchTest {
 	File dataDir;
 
 	SailRepository repository;
+	private final Map<String, String> previousProperties = new LinkedHashMap<>();
 
 	@BeforeEach
 	void setUp() {
@@ -62,24 +64,47 @@ class LmdbNativeHashJoinBatchTest {
 				connection.add(vf.createIRI(EX, "row" + i), predicate, vf.createIRI(EX, "key" + (i % 20)));
 			}
 		}
-		System.setProperty(NativeBatch.ENABLED_PROPERTY, "true");
-		System.setProperty(LmdbNativeHashJoin.MIN_ROWS_PROPERTY, "0");
-		System.setProperty(NativeBatch.ROWS_PROPERTY, "31");
+		setProperty(NATIVE_FLAG, "true");
+		setProperty(NativeBatch.ENABLED_PROPERTY, "true");
+		setProperty(NativeBatch.ROWS_PROPERTY, "31");
+		setProperty(LmdbNativeHashJoin.ENABLED_PROPERTY, "true");
+		setProperty(LmdbNativeHashJoin.MIN_ROWS_PROPERTY, "0");
+		setProperty(LmdbNativeHashJoin.MAX_BUILD_ROWS_PROPERTY,
+				Integer.toString(LmdbNativeHashJoin.DEFAULT_MAX_BUILD_ROWS));
+		setProperty(LmdbNativeHashJoin.BYTE_ADMISSION_PROPERTY, "false");
+		setProperty(LmdbNativeHashJoin.BUSHY_BUILD_PROPERTY, "true");
+		setProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY, "false");
+		setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+		setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
+		setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
+		setProperty("rdf4j.lmdb.factorizedTail.enabled", "false");
+		setProperty("rdf4j.lmdb.chunkPipeline.enabled", "false");
+		setProperty("rdf4j.lmdb.parallel.enabled", "false");
+		setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+		setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
+		setProperty("rdf4j.lmdb.adaptiveFilterPlacement.enabled", "false");
+		setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 	}
 
 	@AfterEach
 	void tearDown() {
-		System.clearProperty(NATIVE_FLAG);
-		System.clearProperty(NativeBatch.ENABLED_PROPERTY);
-		System.clearProperty(NativeBatch.ROWS_PROPERTY);
-		System.clearProperty(LmdbNativeHashJoin.ENABLED_PROPERTY);
-		System.clearProperty(LmdbNativeHashJoin.MIN_ROWS_PROPERTY);
-		System.clearProperty(LmdbNativeHashJoin.MAX_BUILD_ROWS_PROPERTY);
-		System.clearProperty(LmdbNativeHashJoin.BYTE_ADMISSION_PROPERTY);
-		System.clearProperty(LmdbNativeHashJoin.BUSHY_BUILD_PROPERTY);
-		System.clearProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY);
 		LmdbNativeHashJoin.queryMemoryOverride = null;
 		repository.shutDown();
+		previousProperties.forEach((name, value) -> {
+			if (value == null) {
+				System.clearProperty(name);
+			} else {
+				System.setProperty(name, value);
+			}
+		});
+		previousProperties.clear();
+	}
+
+	private void setProperty(String name, String value) {
+		if (!previousProperties.containsKey(name)) {
+			previousProperties.put(name, System.getProperty(name));
+		}
+		System.setProperty(name, value);
 	}
 
 	@Test

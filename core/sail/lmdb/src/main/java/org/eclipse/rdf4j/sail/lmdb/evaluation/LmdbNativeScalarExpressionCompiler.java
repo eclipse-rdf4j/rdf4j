@@ -16,12 +16,18 @@ import java.math.RoundingMode;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FN;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Label;
 import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.LocalName;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.Namespace;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -84,8 +90,7 @@ final class LmdbNativeScalarExpressionCompiler {
 			if (slot == NO_SLOT) {
 				return null;
 			}
-			return assured(slot) ? value(1L << slot, row -> codec.decodeAssured(row.id(slot)))
-					: value(1L << slot, row -> codec.decode(row.id(slot)));
+			return value(1L << slot, row -> decode(row, slot, assured(slot)));
 		}
 		if (expr instanceof ValueConstant) {
 			LmdbNativeValueCodec.DecodedValue constant = LmdbNativeValueCodec
@@ -116,6 +121,42 @@ final class LmdbNativeScalarExpressionCompiler {
 				return LmdbNativeValueCodec.DecodedValue.iri(value.datatypeIri());
 			});
 		}
+		if (expr instanceof BNodeGenerator) {
+			return compileBNode((BNodeGenerator) expr);
+		}
+		if (expr instanceof Label) {
+			LmdbNativeCompiledValue arg = compileValue(((Label) expr).getArg());
+			return arg == null ? null : value(arg.requiredMask, row -> {
+				LmdbNativeValueCodec.DecodedValue decoded = arg.evaluator.eval(row);
+				return decoded.literal() ? stringLiteral(decoded.label()) : LmdbNativeValueCodec.DecodedValue.ERROR;
+			});
+		}
+		if (expr instanceof LocalName) {
+			LmdbNativeCompiledValue arg = compileValue(((LocalName) expr).getArg());
+			return arg == null ? null : value(arg.requiredMask, row -> {
+				LmdbNativeValueCodec.DecodedValue decoded = arg.evaluator.eval(row);
+				if (!decoded.iri()) {
+					return LmdbNativeValueCodec.DecodedValue.ERROR;
+				}
+				String localName = SimpleValueFactory.getInstance()
+						.createIRI(decoded.stringValue())
+						.getLocalName();
+				return stringLiteral(localName);
+			});
+		}
+		if (expr instanceof Namespace) {
+			LmdbNativeCompiledValue arg = compileValue(((Namespace) expr).getArg());
+			return arg == null ? null : value(arg.requiredMask, row -> {
+				LmdbNativeValueCodec.DecodedValue decoded = arg.evaluator.eval(row);
+				if (!decoded.iri()) {
+					return LmdbNativeValueCodec.DecodedValue.ERROR;
+				}
+				String namespace = SimpleValueFactory.getInstance()
+						.createIRI(decoded.stringValue())
+						.getNamespace();
+				return LmdbNativeValueCodec.DecodedValue.iri(namespace);
+			});
+		}
 		if (expr instanceof MathExpr) {
 			LmdbNativeCompiledNumeric numeric = compileNumeric(expr);
 			return numeric == null ? null : value(numeric.requiredMask, row -> numeric.evaluator.eval(row).asValue());
@@ -131,6 +172,47 @@ final class LmdbNativeScalarExpressionCompiler {
 			return compileLibraryFunction(call);
 		}
 		return null;
+	}
+
+	private LmdbNativeValueCodec.DecodedValue decode(LmdbNativeSlotReader row, int slot, boolean assured) {
+		long id = row.id(slot);
+		NativeTermAuthority authority = row.termAuthority();
+		if (authority != null && authority.kind(id) != NativeIdKind.STORE) {
+			org.eclipse.rdf4j.model.Value value = authority.valueOf(id);
+			return value != null ? LmdbNativeValueCodec.fromValue(value) : LmdbNativeValueCodec.DecodedValue.ERROR;
+		}
+		return assured ? codec.decodeAssured(id) : codec.decode(id);
+	}
+
+	private LmdbNativeCompiledValue compileBNode(BNodeGenerator generator) {
+		if (!scopedEvaluation || compileContext == null) {
+			return null;
+		}
+		ValueExpr labelExpression = generator.getNodeIdExpr();
+		if (labelExpression == null) {
+			return value(0L, row -> {
+				SyntheticValueSource scope = row.evaluationScope();
+				return scope == null ? LmdbNativeValueCodec.DecodedValue.ERROR
+						: LmdbNativeValueCodec.fromValue(scope.executionContext().createBNode());
+			});
+		}
+		if (labelExpression instanceof ValueConstant
+				&& !(((ValueConstant) labelExpression).getValue() instanceof Literal)) {
+			return value(0L, row -> LmdbNativeValueCodec.DecodedValue.ERROR);
+		}
+		LmdbNativeCompiledValue label = compileValue(labelExpression);
+		if (label == null) {
+			return null;
+		}
+		return value(label.requiredMask, row -> {
+			LmdbNativeValueCodec.DecodedValue decoded = label.evaluator.eval(row);
+			SyntheticValueSource scope = row.evaluationScope();
+			if (decoded.error() || scope == null || row.logicalSolutionIdentity() == 0L) {
+				return LmdbNativeValueCodec.DecodedValue.ERROR;
+			}
+			return LmdbNativeValueCodec.fromValue(scope.executionContext()
+					.getOrCreateBNode(row.logicalSolutionIdentity(), decoded.stringValue()));
+		});
 	}
 
 	/**
@@ -219,6 +301,7 @@ final class LmdbNativeScalarExpressionCompiler {
 			org.eclipse.rdf4j.model.Literal now = executionContext
 					.genericContext(() -> new EvaluationScopedQueryEvaluationContext(capturedCompileContext))
 					.getNow();
+			scope.retainQueryScopedValue(now);
 			return LmdbNativeValueCodec.fromValue(now);
 		});
 	}

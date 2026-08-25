@@ -15,10 +15,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -108,11 +112,41 @@ public class LmdbNativeLazyProjectedResultTest {
 		assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES.get()).isEqualTo(1);
 	}
 
+	@Test
+	public void projectedRowCanonicalizesDuplicateTargetBindings() {
+		ValueFactory vf = repository.getValueFactory();
+		Value firstX = vf.createLiteral("first x");
+		Value y = vf.createLiteral("y");
+		Value lastBoundX = vf.createLiteral("last bound x");
+		NativeLmdbQuerySource source = new StubSource(Map.of(11L, firstX, 22L, y, 33L, lastBoundX));
+		NativeProjectedBindingSet row = new NativeProjectedBindingSet(source,
+				new String[] { "x", "y", "x", "x" }, new int[] { 0, 1, 2, 3 },
+				new long[] { 11L, 22L, 33L, NativeLmdbQuerySource.UNKNOWN_ID });
+
+		assertThat(row.size()).isEqualTo(2);
+		assertThat(row.getBindingNames()).containsExactly("x", "y");
+		assertThat(row.getValue("x"))
+				.as("a later bound projection occurrence updates the unique target")
+				.isSameAs(lastBoundX);
+		assertThat(row.getValue("y")).isSameAs(y);
+		assertThat(row.hasBinding("x")).isTrue();
+		assertThat(row.getBinding("x").getValue()).isSameAs(lastBoundX);
+
+		List<Binding> bindings = new ArrayList<>();
+		row.forEach(bindings::add);
+		assertThat(bindings).extracting(Binding::getName).containsExactly("x", "y");
+		assertThat(bindings).extracting(Binding::getValue).containsExactly(lastBoundX, y);
+	}
+
 	private static final class StubSource implements NativeLmdbQuerySource {
-		private final Value value;
+		private final Map<Long, Value> values;
 
 		private StubSource(Value value) {
-			this.value = value;
+			this(Map.of(42L, value));
+		}
+
+		private StubSource(Map<Long, Value> values) {
+			this.values = values;
 		}
 
 		@Override
@@ -122,7 +156,7 @@ public class LmdbNativeLazyProjectedResultTest {
 
 		@Override
 		public Value lazyValue(long id) {
-			return value;
+			return values.get(id);
 		}
 
 		@Override

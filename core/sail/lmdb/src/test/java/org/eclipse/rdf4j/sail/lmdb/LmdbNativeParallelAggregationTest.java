@@ -62,6 +62,9 @@ public class LmdbNativeParallelAggregationTest {
 	private static final String COST_CALIBRATION_FLAG = "rdf4j.lmdb.costCalibration.enabled";
 	private static final String COST_EXPLORATION_FLAG = "rdf4j.lmdb.costCalibration.explore";
 	private static final String PARALLEL_STARTUP_WORK_FLAG = LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY;
+	private static final String PACKED_FTREE_FLAG = "rdf4j.lmdb.packedFtree.enabled";
+	private static final String JANINO_FLAG = "rdf4j.lmdb.janinoCodegen.enabled";
+	private static final String KERNEL_INTERPRETER_FLAG = "rdf4j.lmdb.kernelInterpreter.enabled";
 	private static final String COUNTING_TRUE_FUNCTION = "urn:rdf4j:test:lmdb:counting-true";
 
 	@TempDir
@@ -74,7 +77,8 @@ public class LmdbNativeParallelAggregationTest {
 	public void setUp() {
 		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, THRESHOLD_FLAG, THREADS_FLAG,
 				MAX_TASKS_FLAG, MERGE_FLAG, EXTERNAL_ROOT_CANDIDATE_FLAG, COST_CALIBRATION_FLAG,
-				COST_EXPLORATION_FLAG, PARALLEL_STARTUP_WORK_FLAG);
+				COST_EXPLORATION_FLAG, PARALLEL_STARTUP_WORK_FLAG, PACKED_FTREE_FLAG, JANINO_FLAG,
+				KERNEL_INTERPRETER_FLAG);
 		System.setProperty(PARALLEL_FLAG, "true");
 		System.setProperty(THRESHOLD_FLAG, "0");
 		System.setProperty(THREADS_FLAG, "4");
@@ -84,6 +88,9 @@ public class LmdbNativeParallelAggregationTest {
 		System.setProperty(PARALLEL_STARTUP_WORK_FLAG, "0");
 		System.setProperty(COST_CALIBRATION_FLAG, "false");
 		System.setProperty(COST_EXPLORATION_FLAG, "false");
+		System.setProperty(PACKED_FTREE_FLAG, "false");
+		System.setProperty(JANINO_FLAG, "false");
+		System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
 		LmdbNativeCostCalibration.reset();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
 				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
@@ -286,7 +293,7 @@ public class LmdbNativeParallelAggregationTest {
 					.contains("factorizedTail=")
 					.contains("parallelAggregation=");
 			assertThat(findMetric(plan, "nativeStrategyDeclines"))
-					.contains("parallelAggregation:higher-cost");
+					.contains("parallelAggregation:outranked");
 			assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
 					.as("parallel startup must not run when the factorized proposal is cheaper")
 					.isEqualTo(parallelBefore);

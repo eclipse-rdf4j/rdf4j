@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -54,6 +55,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.junit.jupiter.api.Test;
 
 class LmdbSketchJoinOptimizerTest {
@@ -426,6 +428,35 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
+	void keepsContextlessOptionalWhenEstimateClaimsUniqueness() {
+		StatementPattern type = statementPattern("node", "type", "nodeType");
+		StatementPattern connects = statementPattern("node", "connectsTo", "neighbor");
+		StatementPattern reverseProbe = statementPattern("neighbor", "connectsTo", "node");
+		QueryRoot root = new QueryRoot(new LeftJoin(new Join(type, connects), reverseProbe));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.claimingContextlessProbeUnique(), false)
+				.optimize(root, null, null);
+
+		assertTrue(containsLeftJoin(root.getArg()),
+				"a cardinality estimate is a cost input, not proof that a contextless SPO probe is unique");
+	}
+
+	@Test
+	void removesNoNewBindingOptionalProbeWithSingleDefaultDatasetContext() {
+		StatementPattern type = statementPattern("node", "type", "nodeType");
+		StatementPattern connects = statementPattern("node", "connectsTo", "neighbor");
+		StatementPattern reverseProbe = statementPattern("neighbor", "connectsTo", "node");
+		QueryRoot root = new QueryRoot(new LeftJoin(new Join(type, connects), reverseProbe));
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addDefaultGraph(VF.createIRI("urn:only-default-graph"));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, dataset, null);
+
+		assertTrue(!containsLeftJoin(root.getArg()),
+				"a fully bound SPO probe is unique when its dataset fixes exactly one default context");
+	}
+
+	@Test
 	void rewritesNoNewBindingExistsDirectProbeToJoinFactor() {
 		StatementPattern hasTrack = statementPattern("section", "hasTrack", "track");
 		StatementPattern trackType = new StatementPattern(new Var("track"),
@@ -469,6 +500,37 @@ class LmdbSketchJoinOptimizerTest {
 		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
 
 		assertTrue(containsExistsFilter(root.getArg()));
+	}
+
+	@Test
+	void keepsContextlessExistsWhenEstimateClaimsUniqueness() {
+		StatementPattern hasTrack = statementPattern("section", "hasTrack", "track");
+		StatementPattern trackType = new StatementPattern(new Var("track"),
+				new Var("_const_type", VF.createIRI("urn:type")),
+				new Var("_const_trackType", VF.createIRI("urn:TrackSection")));
+		QueryRoot root = new QueryRoot(new Filter(hasTrack, new Exists(trackType)));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.claimingContextlessProbeUnique(), false)
+				.optimize(root, null, null);
+
+		assertTrue(containsExistsFilter(root.getArg()),
+				"a cardinality estimate is a cost input, not proof that a contextless EXISTS probe is unique");
+	}
+
+	@Test
+	void rewritesNoNewBindingExistsProbeWithSingleNamedDatasetContext() {
+		StatementPattern hasTrack = statementPattern("section", "hasTrack", "track");
+		StatementPattern trackType = new StatementPattern(Scope.NAMED_CONTEXTS, new Var("track"),
+				new Var("_const_type", VF.createIRI("urn:type")),
+				new Var("_const_trackType", VF.createIRI("urn:TrackSection")));
+		QueryRoot root = new QueryRoot(new Filter(hasTrack, new Exists(trackType)));
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addNamedGraph(VF.createIRI("urn:only-named-graph"));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, dataset, null);
+
+		assertTrue(!containsExistsFilter(root.getArg()),
+				"a fully bound SPO probe is unique when its dataset fixes exactly one named context");
 	}
 
 	@Test
@@ -1050,6 +1112,7 @@ class LmdbSketchJoinOptimizerTest {
 		private boolean repeatedFiniteAntiProbeMoreExpensive;
 		private boolean lowPassFilteredAntiProbeLacksWorkProof;
 		private boolean highPassFilteredAntiProbeCheaper;
+		private boolean claimsContextlessProbeUnique;
 
 		private PlanningStatistics(List<TupleExpr> plan) {
 			this.plan = plan;
@@ -1099,6 +1162,12 @@ class LmdbSketchJoinOptimizerTest {
 			return statistics;
 		}
 
+		static PlanningStatistics claimingContextlessProbeUnique() {
+			PlanningStatistics statistics = new PlanningStatistics(null);
+			statistics.claimsContextlessProbeUnique = true;
+			return statistics;
+		}
+
 		@Override
 		public double getCardinality(TupleExpr expr) {
 			if (expr instanceof Join) {
@@ -1124,6 +1193,9 @@ class LmdbSketchJoinOptimizerTest {
 
 		@Override
 		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+			if (claimsContextlessProbeUnique) {
+				return Optional.of(new FactorCostEstimate(1.0d, 1.0d));
+			}
 			if (lowPassFilteredAntiProbeLacksWorkProof) {
 				if (factor.getBindingNames().contains("neighbor")) {
 					if (currentlyBoundVars.contains("node")) {

@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,11 +49,13 @@ public class LmdbNativeQueryExplanationTest {
 	// here too.
 	private static String previousJaninoCodegenEnabled;
 	private static String previousKernelInterpreterEnabled;
+	private static String previousPackedFtreeEnabled;
 
 	@org.junit.jupiter.api.BeforeAll
 	static void disableKernelCodegen() {
 		previousJaninoCodegenEnabled = System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		previousKernelInterpreterEnabled = System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
+		previousPackedFtreeEnabled = System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
 	}
 
 	@org.junit.jupiter.api.AfterAll
@@ -66,6 +69,11 @@ public class LmdbNativeQueryExplanationTest {
 			System.clearProperty("rdf4j.lmdb.kernelInterpreter.enabled");
 		} else {
 			System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", previousKernelInterpreterEnabled);
+		}
+		if (previousPackedFtreeEnabled == null) {
+			System.clearProperty("rdf4j.lmdb.packedFtree.enabled");
+		} else {
+			System.setProperty("rdf4j.lmdb.packedFtree.enabled", previousPackedFtreeEnabled);
 		}
 	}
 
@@ -86,6 +94,7 @@ public class LmdbNativeQueryExplanationTest {
 
 	@BeforeEach
 	public void setUp() {
+		KernelExecutionTestAccess.resetCostCalibration();
 		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
 				.setDirectAdjacencyMaxBytes(1L << 30));
 		repository = new SailRepository(store);
@@ -278,16 +287,17 @@ public class LmdbNativeQueryExplanationTest {
 
 		Explanation optimized = explain(Explanation.Level.Optimized, query);
 
-		assertThat(hasPlannedMetricOnType(optimized.toGenericPlanNode(), "Join", PLANNED_EXECUTION_KIND, "bgp"))
+		assertThat(hasPlannedMetric(optimized.toGenericPlanNode(), PLANNED_EXECUTION_KIND, "row"))
 				.as(optimized.toString())
 				.isTrue();
-		assertThat(optimized.toString()).contains("nativePhysicalPlan=NativeRows(");
+		assertThat(optimized.toString())
+				.contains("nativePhysicalPlan=NativeRows(")
+				.contains("MultiJoin(")
+				.contains("GeneralPathPlan");
 
 		Explanation executed = explain(Explanation.Level.Executed, query);
 
-		assertThat(hasActualMetricOnType(executed.toGenericPlanNode(), "Join", NATIVE_EXECUTION_PATH))
-				.as(executed.toString())
-				.isTrue();
+		assertThat(executed.toString()).contains(NATIVE_EXECUTION_PATH + "=");
 	}
 
 	@Test
@@ -301,7 +311,7 @@ public class LmdbNativeQueryExplanationTest {
 		assertThat(explanation.toJson()).contains("\"" + NATIVE_EXECUTION_PATH + "\"");
 		assertThat(explanation.toDot())
 				.contains("Native execution path")
-				.contains("factorizedRows")
+				.contains("chunkPipeline")
 				.contains("enumBranches=1");
 	}
 
@@ -313,7 +323,8 @@ public class LmdbNativeQueryExplanationTest {
 		String rendered = explanation.toString();
 
 		assertThat(rendered)
-				.contains(NATIVE_EXECUTION_PATH + "=factorizedRows(")
+				.contains(NATIVE_EXECUTION_PATH + "=chunkPipeline(")
+				.contains("nativeFactorizedRowsEngagedActual=1")
 				.contains("countBranches=1")
 				.startsWith("LMDB native physical plan (executed)\n")
 				.contains("    actualOrder:\n      0: Pattern(")
@@ -350,7 +361,8 @@ public class LmdbNativeQueryExplanationTest {
 						+ "      state: NOT_CONSIDERED\n"
 						+ "      reason: FEATURE_DISABLED[rdf4j.lmdb.sip.adjacencyMasks.enabled=false]")
 				.contains("\n\nQuery explanation\n")
-				.contains(NATIVE_EXECUTION_PATH + "=factorizedRows(");
+				.contains(NATIVE_EXECUTION_PATH + "=chunkPipeline(")
+				.contains("nativeFactorizedRowsEngagedActual=1");
 		assertThat(rendered.indexOf("LMDB native physical plan (executed)"))
 				.isLessThan(rendered.indexOf("Query explanation\n"));
 	}
@@ -632,7 +644,7 @@ public class LmdbNativeQueryExplanationTest {
 
 			assertThat(explanation.toString())
 					.contains(NATIVE_EXECUTION_PATH + "=")
-					.contains("    strategy: bareBulk | batch\n")
+					.contains("    strategy: batch\n")
 					.contains("    actualOrder:\n      0: Pattern(")
 					.doesNotContain("staleExecutionPath")
 					.doesNotContain("staleRuntimeEntryPlan")
@@ -673,7 +685,7 @@ public class LmdbNativeQueryExplanationTest {
 	}
 
 	@Test
-	public void telemetryExplanationCompletesEveryCorrelatedExistsInvocation() {
+	public void telemetryExplanationCompletesSemanticCorrelatedExists() {
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT (COUNT(DISTINCT ?s) AS ?count) WHERE { "
 				+ "?s a ex:Item . OPTIONAL { ?s ex:price ?price } "
@@ -682,14 +694,11 @@ public class LmdbNativeQueryExplanationTest {
 		String rendered = explain(Explanation.Level.Telemetry, query).toString();
 
 		assertThat(rendered)
-				.contains("    strategy: bareExists\n")
 				.doesNotContain("    status: ACTIVE_OR_PARTIAL\n")
 				.contains("    status: COMPLETED\n")
-				.contains("    actualOrder:\n      0: Pattern(")
-				.contains("    janino:\n      used: false\n      reason: UNSUPPORTED_ROUTE[bareExists]")
-				.contains("    adjacencySIP:\n      used: false\n      scope: planner/interpreted\n"
-						+ "      state: NOT_CONSIDERED\n"
-						+ "      reason: UNSUPPORTED_ROUTE[bareExists]");
+				.contains("nativePhysicalPlan=NativeProjection(arg=NativeGroup(")
+				.contains("LexicalFrameLeftJoin(")
+				.contains("nativeExecutionPath=aggState");
 	}
 
 	@Test
@@ -722,18 +731,24 @@ public class LmdbNativeQueryExplanationTest {
 		Explanation explanation = explain(Explanation.Level.Telemetry, query);
 
 		assertThat(explanation.toString())
-				.contains("nativeExecutionPath=factorizedRows(")
+				.contains("nativeExecutionPath=chunkPipeline(")
+				.contains("nativeFactorizedRowsEngagedActual=1")
 				.contains("countBranches=1")
 				.contains(NATIVE_CHUNK_ENGAGED_ACTUAL + "=1");
 	}
 
 	@Test
 	public void telemetryExplanationShowsFactorizedTailEngagement() {
-		String query = "PREFIX ex: <" + EX + ">\n"
-				+ "SELECT (COUNT(?price) AS ?c) WHERE { ?s a ex:Item . ?s ex:price ?price }";
-		Explanation explanation = explain(Explanation.Level.Telemetry, query);
+		String previous = System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
+		try {
+			String query = "PREFIX ex: <" + EX + ">\n"
+					+ "SELECT (COUNT(?price) AS ?c) WHERE { ?s a ex:Item . ?s ex:price ?price }";
+			Explanation explanation = explain(Explanation.Level.Telemetry, query);
 
-		assertThat(explanation.toString()).contains("nativeExecutionPath=factorizedTail");
+			assertThat(explanation.toString()).contains("nativeExecutionPath=factorizedTail");
+		} finally {
+			restoreProperty(previous, "rdf4j.lmdb.packedFtree.enabled");
+		}
 	}
 
 	@Test
@@ -860,38 +875,6 @@ public class LmdbNativeQueryExplanationTest {
 		return node.getPlans()
 				.stream()
 				.anyMatch(child -> hasPlannedMetric(child, metricName, metricValue));
-	}
-
-	private static boolean hasPlannedMetricOnType(GenericPlanNode node, String type, String metricName,
-			String metricValue) {
-		if (node == null) {
-			return false;
-		}
-		if (Objects.equals(type, node.getType())
-				&& Objects.equals(metricValue, node.getStringMetricPlanned(metricName))) {
-			return true;
-		}
-		if (node.getPlans() == null) {
-			return false;
-		}
-		return node.getPlans()
-				.stream()
-				.anyMatch(child -> hasPlannedMetricOnType(child, type, metricName, metricValue));
-	}
-
-	private static boolean hasActualMetricOnType(GenericPlanNode node, String type, String metricName) {
-		if (node == null) {
-			return false;
-		}
-		if (Objects.equals(type, node.getType()) && node.getStringMetricActual(metricName) != null) {
-			return true;
-		}
-		if (node.getPlans() == null) {
-			return false;
-		}
-		return node.getPlans()
-				.stream()
-				.anyMatch(child -> hasActualMetricOnType(child, type, metricName));
 	}
 
 	private static String planSection(String rendered, String startMarker, String endMarker) {

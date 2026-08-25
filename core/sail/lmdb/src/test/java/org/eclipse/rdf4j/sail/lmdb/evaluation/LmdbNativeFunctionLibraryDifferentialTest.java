@@ -26,6 +26,8 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -273,6 +275,27 @@ public class LmdbNativeFunctionLibraryDifferentialTest {
 		String query = PREFIX + "SELECT ?same WHERE { BIND(NOW() AS ?a) BIND(NOW() AS ?b) BIND(?a = ?b AS ?same) }";
 		assertSameRowsNonEmpty(query);
 		assertThat(rows(query, true)).allMatch(row -> row.contains("true"));
+	}
+
+	@Test
+	public void nowUsesOneLiteralObjectAcrossBindAndProjection() {
+		String previous = System.getProperty(NATIVE_FLAG);
+		System.setProperty(NATIVE_FLAG, "true");
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			TupleQuery query = conn.prepareTupleQuery("SELECT ?p (NOW() AS ?n) { BIND(NOW() AS ?p) }");
+			String plan = query.explain(Explanation.Level.Optimized).toString();
+			List<BindingSet> results = QueryResults.asList(query.evaluate());
+			assertThat(results).singleElement().satisfies(bindings -> {
+				assertThat(bindings.getValue("p")).isNotNull();
+				assertThat(bindings.getValue("n")).as("native plan:\n%s", plan).isSameAs(bindings.getValue("p"));
+			});
+		} finally {
+			if (previous == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previous);
+			}
+		}
 	}
 
 	// ---------------------------------------------------------------- M4: casts

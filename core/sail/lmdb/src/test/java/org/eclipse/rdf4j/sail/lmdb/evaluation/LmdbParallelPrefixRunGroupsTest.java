@@ -46,27 +46,42 @@ public class LmdbParallelPrefixRunGroupsTest {
 	File dataDir;
 
 	private SailRepository repository;
-	private String previousJaninoEnabled;
+	private final Map<String, String> previousProperties = new HashMap<>();
 
 	@BeforeEach
 	public void setUp() {
-		previousJaninoEnabled = System.getProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY);
-		// This class asserts engagement of the prefix-run grouping tier itself; a validation profile may otherwise
-		// make the higher Janino tier win first and turn the strategy counter assertions into false negatives.
-		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
+		remember(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY);
+		// This class asserts engagement of the parallel prefix-run grouping tier itself. Competing aggregate tiers and
+		// the adaptive arbiter may otherwise win after earlier methods have supplied execution evidence, turning the
+		// strategy counter assertions into order-dependent false negatives.
+		disable(LmdbNativeJaninoCodegen.ENABLED_PROPERTY);
+		disable(LmdbNativeKernelInterpreter.ENABLED_PROPERTY);
+		disable("rdf4j.lmdb.packedFtree.enabled");
+		disable("rdf4j.lmdb.factorizedTail.enabled");
+		disable(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY);
 	}
 
 	@AfterEach
 	public void tearDown() {
-		System.clearProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY);
-		if (previousJaninoEnabled == null) {
-			System.clearProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY);
-		} else {
-			System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, previousJaninoEnabled);
-		}
 		if (repository != null) {
 			repository.shutDown();
 		}
+		previousProperties.forEach((property, value) -> {
+			if (value == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, value);
+			}
+		});
+		previousProperties.clear();
+	}
+
+	private void remember(String property) {
+		previousProperties.put(property, System.getProperty(property));
+	}
+
+	private void disable(String property) {
+		previousProperties.put(property, System.setProperty(property, "false"));
 	}
 
 	@Test

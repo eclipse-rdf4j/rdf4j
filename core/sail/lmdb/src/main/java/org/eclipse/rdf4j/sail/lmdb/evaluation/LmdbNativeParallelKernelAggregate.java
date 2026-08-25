@@ -453,17 +453,16 @@ final class LmdbNativeParallelKernelAggregate {
 		if (mods.orderKeys != null) {
 			// the same KernelRuntime comparator the generated drain uses, with the hook sidecar for value order
 			if (mods.limit >= 0) {
-				long cap = mods.limit + mods.offset;
+				long cap = NativeSliceMath.limitPlusOffset(mods.limit, mods.offset);
 				count = KernelRuntime.topKRows(rows, count, stride, mods.orderKeys, mods.descending,
-						mods.valueOrder ? mergeHooks : null, (int) Math.min(cap < 0L ? Long.MAX_VALUE : cap,
-								Integer.MAX_VALUE));
+						mods.valueOrder ? mergeHooks : null, NativeSliceMath.boundedInt(cap));
 			} else {
 				KernelRuntime.sortRows(rows, count, stride, mods.orderKeys, mods.descending,
 						mods.valueOrder ? mergeHooks : null);
 			}
 		}
-		int from = (int) Math.min(mods.offset, count);
-		int to = mods.limit < 0 ? count : (int) Math.min(count, from + Math.min(mods.limit, Integer.MAX_VALUE));
+		int from = NativeSliceMath.fromIndex(mods.offset, count);
+		int to = NativeSliceMath.toIndex(from, count, mods.limit);
 		List<BindingSet> results = new ArrayList<>(to - from);
 		for (int r = from; r < to; r++) {
 			results.add(emitter.kernelGroupRow(rows, r * stride, layout, mergeHooks));
@@ -518,7 +517,8 @@ final class LmdbNativeParallelKernelAggregate {
 				break;
 			}
 		}
-		RowState workerRow = new RowState(source, emitter.layout, emitter.base);
+		RowState workerRow = new RowState(source, emitter.layout, emitter.base, emitter.explainTarget,
+				emitter.cancellation);
 		if (!NativeRowSeeder.seed(workerRow.slots, emitter.layout, emitter.base, source)) {
 			throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-seed-unavailable");
 		}

@@ -352,7 +352,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			NativeBooleanFilter condition = compileBoolean(filter.getCondition(), SlotPlan.assuredMask(arg));
 			return condition == null ? null
 					: SlotPlan.filter(arg, recordFilterOutcomes(filter, condition),
-							placeableFilterMask(filter.getCondition()));
+							placeableFilterMask(filter));
 		}
 		if (expr instanceof Extension) {
 			Extension extension = (Extension) expr;
@@ -386,7 +386,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 					copies[i] = CopyBinding.computed(slot(elem.getName()), computed);
 				}
 			}
-			return SlotPlan.extension(arg, copies);
+			return SlotPlan.extension(arg, configureExtensionErrorMode(extension, copies));
 		}
 		if (expr instanceof org.eclipse.rdf4j.query.algebra.Union) {
 			org.eclipse.rdf4j.query.algebra.Union union = (org.eclipse.rdf4j.query.algebra.Union) expr;

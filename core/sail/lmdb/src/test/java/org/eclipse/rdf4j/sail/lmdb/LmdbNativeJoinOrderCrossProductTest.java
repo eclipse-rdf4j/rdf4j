@@ -397,6 +397,11 @@ public class LmdbNativeJoinOrderCrossProductTest {
 		}
 
 		@Override
+		public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context) {
+			return statements(subj, pred, obj, context);
+		}
+
+		@Override
 		public long count(long subj, long pred, long obj, long context) {
 			return 1L;
 		}

@@ -64,7 +64,7 @@ class LmdbNativeParallelAggregationPreflightFailureTest {
 				"synthetic earlier probe close failure");
 		PreflightFailureSource source = new PreflightFailureSource(creationFailure, earlierProbeCloseFailure, null);
 
-		Throwable problem = catchThrowable(() -> iteration(source).evaluateAll());
+		Throwable problem = catchThrowable(() -> evaluateParallelPreflight(source));
 
 		assertThat(problem).isSameAs(creationFailure);
 		assertThat(problem.getSuppressed()).containsExactly(earlierProbeCloseFailure);
@@ -85,7 +85,7 @@ class LmdbNativeParallelAggregationPreflightFailureTest {
 				"synthetic second probe close failure");
 		PreflightFailureSource source = new PreflightFailureSource(null, firstCloseFailure, secondCloseFailure);
 
-		Throwable problem = catchThrowable(() -> iteration(source).evaluateAll());
+		Throwable problem = catchThrowable(() -> evaluateParallelPreflight(source));
 
 		assertThat(problem).isSameAs(firstCloseFailure);
 		assertThat(problem.getSuppressed()).containsExactly(secondCloseFailure);
@@ -104,7 +104,7 @@ class LmdbNativeParallelAggregationPreflightFailureTest {
 		IllegalStateException sharedFailure = new IllegalStateException("synthetic shared setup and close failure");
 		PreflightFailureSource source = PreflightFailureSource.withIdenticalSetupAndRootCloseFailure(sharedFailure);
 
-		Throwable problem = catchThrowable(() -> iteration(source).evaluateAll());
+		Throwable problem = catchThrowable(() -> evaluateParallelPreflight(source));
 
 		assertThat(problem).isSameAs(sharedFailure);
 		assertThat(problem.getSuppressed()).isEmpty();
@@ -139,7 +139,7 @@ class LmdbNativeParallelAggregationPreflightFailureTest {
 		assertOuterResourcesClosed(source);
 	}
 
-	private static NativeGroupIteration iteration(PreflightFailureSource source) {
+	private static void evaluateParallelPreflight(PreflightFailureSource source) {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("value", 0), null);
 		layout.freeze(List.of("value"));
 		PatternPlan root = new PatternPlan(Term.constant(1L), Term.constant(7L), Term.slot(0), Term.unbound(),
@@ -157,7 +157,7 @@ class LmdbNativeParallelAggregationPreflightFailureTest {
 				EmptyBindingSet.getInstance(), null, null, false, null);
 		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
 		assertThat(iteration.initialize(row)).isTrue();
-		return iteration;
+		LmdbNativeParallelAggregation.tryEvaluate(iteration, plan, row);
 	}
 
 	private static void assertOuterResourcesClosed(PreflightFailureSource source) {

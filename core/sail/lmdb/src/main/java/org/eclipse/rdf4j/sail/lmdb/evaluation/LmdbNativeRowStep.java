@@ -20,7 +20,6 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
@@ -29,6 +28,9 @@ import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
+import org.eclipse.rdf4j.common.iteration.DelayedIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.Binding;
@@ -42,13 +44,14 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 
 @Experimental
-final class FilteringIteration implements CloseableIteration<BindingSet> {
+final class FilteringIteration implements CloseableIteration<BindingSet>, CooperativeCancellation {
 	final CloseableIteration<BindingSet> delegate;
 	final Predicate<BindingSet> predicate;
 	BindingSet next;
-	boolean closed;
+	volatile boolean closed;
 
 	FilteringIteration(CloseableIteration<BindingSet> delegate, Predicate<BindingSet> predicate) {
 		this.delegate = delegate;
@@ -89,6 +92,14 @@ final class FilteringIteration implements CloseableIteration<BindingSet> {
 		closed = true;
 		next = null;
 		delegate.close();
+	}
+
+	@Override
+	public boolean requestCancellation() {
+		if (closed || !(delegate instanceof CooperativeCancellation cancellation)) {
+			return false;
+		}
+		return cancellation.requestCancellation();
 	}
 }
 
@@ -175,6 +186,59 @@ final class NativeSortLayout {
 			remapped[i] = planToLive[planSlots[i]];
 		}
 		return remapped;
+	}
+}
+
+/** Defers ORDER BY's blocking materialization until the result iteration receives its first demand. */
+@Experimental
+final class NativeOrderedRowsIteration extends DelayedIteration<BindingSet> implements CooperativeCancellation {
+	private NativeRowsStep step;
+	private NativeLmdbQuerySource source;
+	private BindingSet base;
+	private final NativeCancellationToken cancellation = new NativeCancellationToken();
+	private volatile boolean cancellationClosed;
+
+	NativeOrderedRowsIteration(NativeRowsStep step, NativeLmdbQuerySource source, BindingSet base) {
+		this.step = step;
+		this.source = source;
+		this.base = base;
+	}
+
+	@Override
+	protected CloseableIteration<BindingSet> createIteration() {
+		try {
+			return new CloseableIteratorIteration<>(step.evaluateAll(base, source, cancellation).iterator());
+		} catch (KernelQueryCancelledException cancelled) {
+			return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
+		} finally {
+			releasePreparationState();
+		}
+	}
+
+	@Override
+	protected void handleClose() {
+		cancellationClosed = true;
+		cancellation.requestCancellation();
+		try {
+			super.handleClose();
+		} finally {
+			releasePreparationState();
+		}
+	}
+
+	@Override
+	public boolean requestCancellation() {
+		if (cancellationClosed || isClosed()) {
+			return false;
+		}
+		cancellation.requestCancellation();
+		return true;
+	}
+
+	private void releasePreparationState() {
+		step = null;
+		source = null;
+		base = null;
 	}
 }
 
@@ -333,31 +397,11 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			return withEntryBindingVariant(variant).evaluate(variant.filteredBase);
 		}
 		NativeLmdbQuerySource evalSource = evaluationSource();
+		initializeQueryBase(evalSource, bindings);
 		if (orderSlots.length == 0) {
 			return withContextLifetime(new NativeRowsIteration(this, evalSource, bindings), evalSource);
 		}
-		List<BindingSet> rows = evaluateAll(bindings, evalSource);
-		Iterator<BindingSet> iterator = rows.iterator();
-		return withContextLifetime(new CloseableIteration<>() {
-			@Override
-			public boolean hasNext() {
-				return iterator.hasNext();
-			}
-
-			@Override
-			public BindingSet next() {
-				return iterator.next();
-			}
-
-			@Override
-			public void remove() {
-				throw new UnsupportedOperationException();
-			}
-
-			@Override
-			public void close() {
-			}
-		}, evalSource);
+		return withContextLifetime(new NativeOrderedRowsIteration(this, evalSource, bindings), evalSource);
 	}
 
 	/**
@@ -367,7 +411,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	 */
 	CloseableIteration<BindingSet> withContextLifetime(CloseableIteration<BindingSet> iteration,
 			NativeLmdbQuerySource evalSource) {
-		if (evalSource == source || !(evalSource instanceof SyntheticValueSource)) {
+		if (evalSource == source || !(evalSource instanceof SyntheticValueSource)
+				|| SyntheticValueSource.inheritedEvaluation(evalSource)) {
 			return iteration;
 		}
 		return new NativeContextClosingIteration(iteration, ((SyntheticValueSource) evalSource).executionContext());
@@ -460,7 +505,13 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	}
 
 	List<BindingSet> evaluateAll(BindingSet base, NativeLmdbQuerySource evalSource) {
-		RowState row = new RowState(evalSource, layout, base, originalExpr);
+		return evaluateAll(base, evalSource, new NativeCancellationToken());
+	}
+
+	List<BindingSet> evaluateAll(BindingSet base, NativeLmdbQuerySource evalSource,
+			NativeCancellationToken cancellation) {
+		initializeQueryBase(evalSource, base);
+		RowState row = new RowState(evalSource, layout, base, originalExpr, cancellation);
 		if (!initializeRow(row, base, evalSource, layout)) {
 			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return List.of();
@@ -491,6 +542,12 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		}
 	}
 
+	static void initializeQueryBase(NativeLmdbQuerySource source, BindingSet bindings) {
+		if (source instanceof SyntheticValueSource synthetic) {
+			synthetic.executionContext().initializeQueryBase(bindings);
+		}
+	}
+
 	private List<BindingSet> evaluateAllInitialized(BindingSet base, RowState row) {
 		if (limit == 0L) {
 			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_LIMIT_ZERO);
@@ -501,7 +558,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			return List.of();
 		}
 		AggContext values = new AggContext(row.source, strictCompare);
-		long emitCap = limit < 0 ? Long.MAX_VALUE : saturatingAdd(Math.max(0L, offset), limit);
+		long emitCap = NativeSliceMath.limitPlusOffset(limit, Math.max(0L, offset));
 
 		// ORDER BY: pack slot rows into one reusable arena (keys may be unprojected), sort primitive row indexes,
 		// then project/dedup/slice in SPARQL pipeline order.
@@ -587,13 +644,14 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			long ordinal = 0L;
 			long[] packed = new long[sortLayout.liveToPlan.length];
 			try (RowCursor cursor = openUnorderedInput(row).materializedRows()) {
-				while (cursor.next()) {
+				while (row.advance(cursor)) {
 					sortLayout.pack(row.slots, packed);
 					snapshots.add(packed, ordinal++);
 				}
 			}
 			try (NativeSortedRows sorted = snapshots.sortedRows()) {
-				List<BindingSet> result = projectSortedRows(sorted, sortLayout, emitCap, values, false);
+				List<BindingSet> result = projectSortedRows(sorted, sortLayout, emitCap, values, false,
+						row.cancellation);
 				if (sortMetrics != null) {
 					sortMetrics.commitToParent();
 				}
@@ -620,7 +678,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			try (RowCursor ordered = cursor) {
 				LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
 				ArrayList<BindingSet> results = new ArrayList<>();
-				while (ordered.next()) {
+				while (row.advance(ordered)) {
 					results.add(project(row.slots, values));
 				}
 				return results;
@@ -635,12 +693,13 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		LmdbNativeAttemptMetrics metrics = sortMetrics == null ? LmdbNativeAttemptMetrics.direct() : sortMetrics;
 		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES, metrics);
 		NativeTopKBuffer best = new NativeTopKBuffer(sortLayout.liveToPlan.length, topK, comparator, budget);
-		NativeDistinctTracker topKDistinct = distinct ? new NativeDistinctTracker(sourceSlots) : null;
+		NativeDistinctTracker topKDistinct = distinct ? new NativeDistinctTracker(sourceSlots, row.termAuthority())
+				: null;
 		long[] packed = new long[sortLayout.liveToPlan.length];
 		long ordinal = 0L;
 		try {
 			try (RowCursor cursor = openUnorderedInput(row).materializedRows()) {
-				while (cursor.next()) {
+				while (row.advance(cursor)) {
 					if (topKDistinct == null || topKDistinct.add(row.slots)) {
 						sortLayout.pack(row.slots, packed);
 						int admitted = best.tryAdmit(packed, ordinal++, packed.length);
@@ -651,7 +710,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				}
 			}
 			try (NativeSortedRows sorted = best.buffer.sortedRows(comparator)) {
-				List<BindingSet> result = projectSortedRows(sorted, sortLayout, emitCap, values, distinct);
+				List<BindingSet> result = projectSortedRows(sorted, sortLayout, emitCap, values, distinct,
+						row.cancellation);
 				if (sortMetrics != null) {
 					sortMetrics.commitToParent();
 				}
@@ -670,13 +730,14 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	private List<BindingSet> evaluateReducingTopK(RowState row, AggContext values, PackedRowComparator comparator,
 			int topK, long emitCap, LmdbNativeAttemptMetrics sortMetrics) {
 		LmdbNativeAttemptMetrics metrics = sortMetrics == null ? LmdbNativeAttemptMetrics.direct() : sortMetrics;
-		NativeDistinctTracker topKDistinct = distinct ? new NativeDistinctTracker(sourceSlots) : null;
+		NativeDistinctTracker topKDistinct = distinct ? new NativeDistinctTracker(sourceSlots, row.termAuthority())
+				: null;
 		try (NativeSpillSort snapshots = new NativeSpillSort(sortLayout.liveToPlan.length, sortLayout.keyWidth,
 				comparator, topK, metrics)) {
 			long[] packed = new long[sortLayout.liveToPlan.length];
 			long ordinal = 0L;
 			try (RowCursor cursor = openUnorderedInput(row).materializedRows()) {
-				while (cursor.next()) {
+				while (row.advance(cursor)) {
 					if (topKDistinct == null || topKDistinct.add(row.slots)) {
 						sortLayout.pack(row.slots, packed);
 						snapshots.add(packed, ordinal++);
@@ -684,7 +745,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				}
 			}
 			try (NativeSortedRows sorted = snapshots.sortedRows()) {
-				List<BindingSet> result = projectSortedRows(sorted, sortLayout, emitCap, values, distinct);
+				List<BindingSet> result = projectSortedRows(sorted, sortLayout, emitCap, values, distinct,
+						row.cancellation);
 				if (sortMetrics != null) {
 					sortMetrics.commitToParent();
 				}
@@ -827,7 +889,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		List<BindingSet> result;
 		try {
 			try (FlatRowCursor cursor = factorized.openFlat(row)) {
-				while (cursor.next()) {
+				while (row.advance(cursor)) {
 					activeLayout.pack(row.slots, packed);
 					packed[slotCount] = cursor.multiplicity();
 					int acceptedSlot = -1;
@@ -975,18 +1037,32 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	}
 
 	List<BindingSet> projectSortedRows(NativeSortedRows sortedRows, NativeSortLayout activeLayout, long emitCap,
-			AggContext values, boolean distinctAlreadyApplied) throws IOException {
+			AggContext values, boolean distinctAlreadyApplied, NativeCancellationToken cancellation)
+			throws IOException {
 		ArrayList<BindingSet> results = new ArrayList<>();
 		NativeDistinctTracker distinctRows = distinct && !distinctAlreadyApplied
-				? new NativeDistinctTracker(activeLayout.sourceSlots)
+				? new NativeDistinctTracker(activeLayout.sourceSlots,
+						values.source instanceof SyntheticValueSource
+								? ((SyntheticValueSource) values.source).authority()
+								: null)
 				: null;
 		long[] snapshot = new long[activeLayout.liveToPlan.length];
 		try {
-			while (sortedRows.next(snapshot)) {
+			while (!cancellation.isCancellationRequested() && sortedRows.next(snapshot)) {
+				if (cancellation.isCancellationRequested()) {
+					break;
+				}
 				if (distinctRows != null && !distinctRows.add(snapshot)) {
 					continue;
 				}
-				results.add(project(snapshot, values, activeLayout.sourceSlots));
+				if (cancellation.isCancellationRequested()) {
+					break;
+				}
+				BindingSet projected = project(snapshot, values, activeLayout.sourceSlots);
+				if (cancellation.isCancellationRequested()) {
+					break;
+				}
+				results.add(projected);
 				if (results.size() >= emitCap) {
 					break;
 				}
@@ -1190,10 +1266,10 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		if (row.runtimePlan != null) {
 			row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS, factorized.derived.order);
 		}
+		RowCursor cursor = factorized.open(row);
 		if (LmdbNativeExplain.recordsExecutionPaths(originalExpr)) {
 			metrics.deferStrategy(originalExpr, factorized.describeEngagement());
 		}
-		RowCursor cursor = factorized.open(row);
 		return NativeUnorderedInput.factorized(row, cursor, factorized, metrics);
 	}
 
@@ -1323,8 +1399,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		if (orderSlots.length != 0 || limit < 0L) {
 			return -1D;
 		}
-		long consumable = offset + limit;
-		return consumable < 0L ? -1D : (double) consumable;
+		return (double) NativeSliceMath.limitPlusOffset(limit, offset);
 	}
 
 	private NativeUnorderedInput acceptBatch(RowState row, BatchCursor candidate, int capacity) {
@@ -1424,14 +1499,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		if (offset <= 0 && limit < 0) {
 			return results;
 		}
-		int from = (int) Math.min(Math.max(0L, offset), results.size());
-		int remaining = results.size() - from;
-		int count = limit < 0 ? remaining : (int) Math.min(limit, (long) remaining);
-		return results.subList(from, from + count);
-	}
-
-	private static long saturatingAdd(long left, long right) {
-		return right > Long.MAX_VALUE - left ? Long.MAX_VALUE : left + right;
+		int from = NativeSliceMath.fromIndex(Math.max(0L, offset), results.size());
+		return results.subList(from, NativeSliceMath.toIndex(from, results.size(), limit));
 	}
 }
 
@@ -1464,6 +1533,7 @@ final class NativeBareRowsStep implements QueryEvaluationStep, LmdbNativePhysica
 			return bulk.evaluate(bindings);
 		}
 		NativeLmdbQuerySource evalSource = bulk.evaluationSource();
+		NativeRowsStep.initializeQueryBase(evalSource, bindings);
 		return bulk.withContextLifetime(new NativeBareRowsIteration(this, evalSource, bindings), evalSource);
 	}
 
@@ -1761,7 +1831,7 @@ final class NativeExistsPatternCursor implements AutoCloseable {
 }
 
 @Experimental
-final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
+final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, CooperativeCancellation {
 	NativeBareRowsStep step;
 	/** This evaluation's value source (see {@link NativeRowsStep#evaluationSource()}). */
 	final NativeLmdbQuerySource source;
@@ -1776,6 +1846,7 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 	long emittedRows;
 	long startedNanos;
 	boolean evidenceRecorded;
+	final NativeCancellationToken cancellation = new NativeCancellationToken();
 
 	NativeBareRowsIteration(NativeBareRowsStep step, NativeLmdbQuerySource source, BindingSet base) {
 		this.step = step;
@@ -1798,7 +1869,7 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 			}
 			boolean advanced;
 			try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(fusedSession)) {
-				advanced = cursor.next();
+				advanced = row.advance(cursor);
 			}
 			if (advanced) {
 				emittedRows++;
@@ -1806,6 +1877,9 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 				return true;
 			}
 			finish(true);
+			return false;
+		} catch (KernelQueryCancelledException cancelled) {
+			finish(false);
 			return false;
 		} catch (IOException e) {
 			finish(false);
@@ -1818,7 +1892,7 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 
 	private boolean initialize() throws IOException {
 		initialized = true;
-		row = new RowState(source, step.layout, base, step.originalExpr);
+		row = new RowState(source, step.layout, base, step.originalExpr, cancellation);
 		if (!initializeRow(row, base, source, step.layout)) {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return false;
@@ -1869,9 +1943,19 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet> {
 	@Override
 	public void close() {
 		closed = true;
+		cancellation.requestCancellation();
 		synchronized (this) {
 			closeResources(false);
 		}
+	}
+
+	@Override
+	public boolean requestCancellation() {
+		if (closed) {
+			return false;
+		}
+		cancellation.requestCancellation();
+		return true;
 	}
 
 	private void finish(boolean completed) {
@@ -2117,7 +2201,7 @@ final class MaterializedUnorderedRowCursor implements RowCursor {
 		}
 		if (active.batchCursor != null) {
 			while (batchIndex >= active.batch.selectedCount) {
-				int filled = active.batchCursor.fill(active.batch);
+				int filled = active.row.fill(active.batchCursor, active.batch);
 				if (filled == 0) {
 					active.markExhausted();
 					return false;
@@ -2137,7 +2221,7 @@ final class MaterializedUnorderedRowCursor implements RowCursor {
 			repeatedFactorizedRows--;
 			return true;
 		}
-		boolean advanced = active.cursor.next();
+		boolean advanced = active.row.advance(active.cursor);
 		active.commitFactorizedAttemptIfEngaged();
 		if (!advanced) {
 			active.markExhausted();
@@ -2275,7 +2359,7 @@ final class NativeProbeReplayCursor implements RowCursor {
 }
 
 @Experimental
-final class NativeRowsIteration implements CloseableIteration<BindingSet> {
+final class NativeRowsIteration implements CloseableIteration<BindingSet>, CooperativeCancellation {
 	NativeRowsStep step;
 	BindingSet base;
 	NativeOrderedDistinctTracker distinctRows;
@@ -2298,6 +2382,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 
 	/** This evaluation's value source (see {@link NativeRowsStep#evaluationSource()}). */
 	final NativeLmdbQuerySource source;
+	final NativeCancellationToken cancellation = new NativeCancellationToken();
 
 	NativeRowsIteration(NativeRowsStep step, NativeLmdbQuerySource source, BindingSet base) {
 		this.step = step;
@@ -2321,6 +2406,9 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 				finish(true);
 			}
 			return next != null;
+		} catch (KernelQueryCancelledException cancelled) {
+			finish(false);
+			return false;
 		} catch (IOException e) {
 			finish(false);
 			throw new QueryEvaluationException(e);
@@ -2352,8 +2440,8 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 			return getNextBatchElement();
 		}
 
-		while (!closed) {
-			boolean advanced = cursor.next();
+		while (!closed && !cancellation.isCancellationRequested()) {
+			boolean advanced = row.advance(cursor);
 			if (unorderedInput != null) {
 				unorderedInput.commitFactorizedAttemptIfEngaged();
 			}
@@ -2393,9 +2481,9 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 	}
 
 	private BindingSet getNextBatchElement() throws IOException {
-		while (!closed) {
+		while (!closed && !cancellation.isCancellationRequested()) {
 			if (batchIndex >= batch.selectedCount) {
-				int filled = batchCursor.fill(batch);
+				int filled = row.fill(batchCursor, batch);
 				if (filled == 0) {
 					return null;
 				}
@@ -2434,7 +2522,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 
 	private boolean initialize() throws IOException {
 		initialized = true;
-		row = new RowState(source, step.layout, base, step.originalExpr);
+		row = new RowState(source, step.layout, base, step.originalExpr, cancellation);
 		if (!initializeRow(row, base, source, step.layout)) {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return false;
@@ -2466,9 +2554,9 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 		distinctHandledByCursor = unorderedInput.dedupMode == NativeUnorderedInput.DedupMode.HANDLED;
 		if (step.distinct) {
 			distinctRows = unorderedInput.dedupMode == NativeUnorderedInput.DedupMode.ORDERED
-					? new NativeOrderedDistinctTracker(distinctPlan)
+					? new NativeOrderedDistinctTracker(distinctPlan, row.termAuthority())
 					: new NativeOrderedDistinctTracker(
-							NativeTupleDistinctPlan.global(step.arg, step.sourceSlots));
+							NativeTupleDistinctPlan.global(step.arg, step.sourceSlots), row.termAuthority());
 		}
 		cursor = unorderedInput.cursor;
 		batchCursor = unorderedInput.batchCursor;
@@ -2494,9 +2582,19 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet> {
 	@Override
 	public void close() {
 		closed = true;
+		cancellation.requestCancellation();
 		synchronized (this) {
 			closeResources(false);
 		}
+	}
+
+	@Override
+	public boolean requestCancellation() {
+		if (closed) {
+			return false;
+		}
+		cancellation.requestCancellation();
+		return true;
 	}
 
 	private void finish(boolean completed) {

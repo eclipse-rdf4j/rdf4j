@@ -28,22 +28,35 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 class LmdbAdaptiveFilterPlacementThemeIT {
 
 	private static final String ADAPTIVE_ENABLED_PROPERTY = "rdf4j.lmdb.adaptiveFilterPlacement.enabled";
 	private static final String NATIVE_ENABLED_PROPERTY = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final String JANINO_ENABLED_PROPERTY = "rdf4j.lmdb.janinoCodegen.enabled";
+	private static final String KERNEL_INTERPRETER_ENABLED_PROPERTY = "rdf4j.lmdb.kernelInterpreter.enabled";
 
 	@Test
 	@Timeout(60)
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
 	void catalogQueriesRemainCorrectAndAdaptiveMovesByDefaultAfterPlannedObservation(@TempDir Path dataDir) {
 		String previousAdaptive = System.getProperty(ADAPTIVE_ENABLED_PROPERTY);
 		String previousNative = System.getProperty(NATIVE_ENABLED_PROPERTY);
+		String previousJanino = System.getProperty(JANINO_ENABLED_PROPERTY);
+		String previousKernelInterpreter = System.getProperty(KERNEL_INTERPRETER_ENABLED_PROPERTY);
 		System.clearProperty(ADAPTIVE_ENABLED_PROPERTY);
 		System.setProperty(NATIVE_ENABLED_PROPERTY, Boolean.TRUE.toString());
+		// This is the semantic adaptive-tier engagement test. The generated and interpreted IR kernels have their own
+		// relocation telemetry specifications and normally outrank this tier when they can lower the whole root.
+		System.setProperty(JANINO_ENABLED_PROPERTY, Boolean.FALSE.toString());
+		System.setProperty(KERNEL_INTERPRETER_ENABLED_PROPERTY, Boolean.FALSE.toString());
+		KernelExecutionTestAccess.resetCostCalibration();
 		LmdbStore store = new LmdbStore(dataDir.toFile(), ConfigUtil.createConfig().setSketchEstimatorEnabled(false));
 		SailRepository repository = new SailRepository(store);
 		try {
@@ -74,6 +87,10 @@ class LmdbAdaptiveFilterPlacementThemeIT {
 			}
 
 			String query = ThemeQueryCatalog.queryFor(Theme.ADAPTIVE_FILTER_PLACEMENT, 0);
+			// This specification observes the adaptive-filter candidate after the store-level planner observation. The
+			// preceding correctness sweep must not turn into unrelated cross-strategy timing evidence that outranks the
+			// candidate before it opens.
+			KernelExecutionTestAccess.resetCostCalibration();
 			TupleExpr telemetry;
 			Explanation telemetryExplanation;
 			try (var connection = repository.getConnection()) {
@@ -99,8 +116,11 @@ class LmdbAdaptiveFilterPlacementThemeIT {
 					adaptiveNode.getStringMetricActual("adaptiveFilterPlacementCandidateArrivals"));
 		} finally {
 			repository.shutDown();
+			KernelExecutionTestAccess.resetCostCalibration();
 			restoreProperty(ADAPTIVE_ENABLED_PROPERTY, previousAdaptive);
 			restoreProperty(NATIVE_ENABLED_PROPERTY, previousNative);
+			restoreProperty(JANINO_ENABLED_PROPERTY, previousJanino);
+			restoreProperty(KERNEL_INTERPRETER_ENABLED_PROPERTY, previousKernelInterpreter);
 		}
 	}
 

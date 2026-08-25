@@ -291,8 +291,16 @@ final class LmdbNativeExplain {
 		}
 		if (plan instanceof LeftJoinPlan) {
 			LeftJoinPlan leftJoin = (LeftJoinPlan) plan;
-			return "LeftJoin(left=" + describe(leftJoin.left, slotNames, boundMask) + ", right="
+			String kind = leftJoin.lexicalProblemSlots != null ? "LexicalFrameLeftJoin"
+					: leftJoin.lexicalSharedSlots == null ? "LeftJoin"
+							: leftJoin.lexicalHashKeys ? "LexicalHashLeftJoin" : "LexicalReplayLeftJoin";
+			return kind + "(left=" + describe(leftJoin.left, slotNames, boundMask) + ", right="
 					+ describe(leftJoin.right, slotNames, boundMask) + ")";
+		}
+		if (plan instanceof LateralPlan lateral) {
+			return "Lateral(inputs=" + describeBoundMask(lateral.rightInputMask, slotNames) + ", left="
+					+ describe(lateral.left, slotNames, boundMask) + ", right="
+					+ describe(lateral.right, slotNames, boundMask | lateral.rightInputMask) + ")";
 		}
 		if (plan instanceof UnionPlan) {
 			UnionPlan union = (UnionPlan) plan;
@@ -341,6 +349,9 @@ final class LmdbNativeExplain {
 		if (plan instanceof GenericEvalPlan island) {
 			return "GenericEvalPlan(node=" + island.nodeName + ", outSlots="
 					+ describeSlots(island.outSlots, slotNames) + ")";
+		}
+		if (plan instanceof NativeSubqueryPlan subquery) {
+			return subquery.describe();
 		}
 		if (plan instanceof DrainGuardPlan guard) {
 			return "DrainGuard(delegate=" + describe(guard.delegate, slotNames, boundMask) + ", drained="

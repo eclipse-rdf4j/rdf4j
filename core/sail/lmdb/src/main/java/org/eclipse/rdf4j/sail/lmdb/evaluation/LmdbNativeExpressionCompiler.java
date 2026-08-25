@@ -372,7 +372,19 @@ public final class LmdbNativeExpressionCompiler {
 		LmdbNativeCompiledId left = compileId(sameTerm.getLeftArg());
 		LmdbNativeCompiledId right = compileId(sameTerm.getRightArg());
 		if (left == null || right == null) {
-			return null;
+			LmdbNativeCompiledValue leftValue = compileValue(sameTerm.getLeftArg());
+			LmdbNativeCompiledValue rightValue = compileValue(sameTerm.getRightArg());
+			if (leftValue == null || rightValue == null) {
+				return null;
+			}
+			return truth(leftValue.requiredMask | rightValue.requiredMask, row -> {
+				Value l = LmdbNativeValueCodec.toValue(leftValue.evaluator.eval(row));
+				Value r = LmdbNativeValueCodec.toValue(rightValue.evaluator.eval(row));
+				if (l == null || r == null) {
+					return ERROR;
+				}
+				return l.equals(r) ? TRUE : FALSE;
+			});
 		}
 		boolean checkLeft = mayBeUnbound(left.requiredMask);
 		boolean checkRight = mayBeUnbound(right.requiredMask);

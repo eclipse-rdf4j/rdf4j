@@ -634,17 +634,21 @@ public class LmdbNativeOrderedFactorizedTest {
 	}
 
 	@Test
-	public void classicSortPreservesHiddenTailOrderKeyAndMultiplicity() {
+	public void classicSortPreservesHiddenTailOrderKeyAndMultiplicityNatively() {
 		Map<String, String> previous = setProperties(Map.of(
 				"rdf4j.lmdb.orderedFactorizedRows.enabled", "false",
 				NativeBatch.ENABLED_PROPERTY, "false",
-				"rdf4j.lmdb.parallel.enabled", "false"));
+				"rdf4j.lmdb.parallel.enabled", "false",
+				LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false",
+				LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false"));
 		try {
 			String query = "PREFIX ex: <" + EX + ">\n"
 					+ "SELECT ?s ?y WHERE { ?s ex:p1 ?x . ?x ex:p2 ?y . ?y ex:p3 ?z } "
 					+ "ORDER BY DESC(?z) ?y ?s";
 			List<String> expected = genericRows(query);
-			long factorizedBefore = LmdbNativeFactorizedRows.ENGAGED.get();
+			long compiledBefore = LmdbNativeAggregateCompiler.COMPILED.get();
+			long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+			long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
 			long orderedSortsBefore = NativeRowsStep.ORDERED_FACTORIZED_SORTS.get();
 			long orderedTopKBefore = NativeRowsStep.ORDERED_FACTORIZED_TOPK.get();
 
@@ -654,9 +658,9 @@ public class LmdbNativeOrderedFactorizedTest {
 					.as("ordinary factorization must retain an unprojected tail key for descending full sort")
 					.containsExactlyElementsOf(expected)
 					.hasSize(720);
-			assertThat(LmdbNativeFactorizedRows.ENGAGED.get())
-					.as("the measured query must use ordinary factorized materialization")
-					.isGreaterThan(factorizedBefore);
+			assertThat(LmdbNativeAggregateCompiler.COMPILED.get()).isGreaterThan(compiledBefore);
+			assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get()).isEqualTo(hostedBefore);
+			assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get()).isEqualTo(islandsBefore);
 			assertThat(NativeRowsStep.ORDERED_FACTORIZED_SORTS.get()).isEqualTo(orderedSortsBefore);
 			assertThat(NativeRowsStep.ORDERED_FACTORIZED_TOPK.get()).isEqualTo(orderedTopKBefore);
 		} finally {
@@ -665,7 +669,7 @@ public class LmdbNativeOrderedFactorizedTest {
 	}
 
 	@Test
-	public void topKPreservesHiddenTailOrderKey() {
+	public void topKPreservesHiddenTailOrderKeyNatively() {
 		// Codegen has to be pinned off alongside the other rival paths: this shape's kernel is compiled in the
 		// background, so from whichever execution the compile happens to land on, the kernel serves the query and
 		// the interpreted factorized path under test stops running. That makes the assertion below a function of
@@ -674,13 +678,16 @@ public class LmdbNativeOrderedFactorizedTest {
 				"rdf4j.lmdb.orderedFactorizedRows.enabled", "false",
 				NativeBatch.ENABLED_PROPERTY, "false",
 				"rdf4j.lmdb.parallel.enabled", "false",
-				LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false"));
+				LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false",
+				LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false"));
 		try {
 			String query = "PREFIX ex: <" + EX + ">\n"
 					+ "SELECT ?s ?y WHERE { ?s ex:p1 ?x . ?x ex:p2 ?y . ?y ex:p3 ?z } "
 					+ "ORDER BY DESC(?z) ?y ?s LIMIT 17";
 			List<String> expected = genericRows(query);
-			long factorizedBefore = LmdbNativeFactorizedRows.ENGAGED.get();
+			long compiledBefore = LmdbNativeAggregateCompiler.COMPILED.get();
+			long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+			long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
 			long orderedSortsBefore = NativeRowsStep.ORDERED_FACTORIZED_SORTS.get();
 			long orderedTopKBefore = NativeRowsStep.ORDERED_FACTORIZED_TOPK.get();
 
@@ -690,9 +697,9 @@ public class LmdbNativeOrderedFactorizedTest {
 					.as("ordinary factorization must retain an unprojected tail key before applying LIMIT")
 					.containsExactlyElementsOf(expected)
 					.hasSize(17);
-			assertThat(LmdbNativeFactorizedRows.ENGAGED.get())
-					.as("the measured LIMIT query must use ordinary factorized materialization")
-					.isGreaterThan(factorizedBefore);
+			assertThat(LmdbNativeAggregateCompiler.COMPILED.get()).isGreaterThan(compiledBefore);
+			assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get()).isEqualTo(hostedBefore);
+			assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get()).isEqualTo(islandsBefore);
 			assertThat(NativeRowsStep.ORDERED_FACTORIZED_SORTS.get()).isEqualTo(orderedSortsBefore);
 			assertThat(NativeRowsStep.ORDERED_FACTORIZED_TOPK.get()).isEqualTo(orderedTopKBefore);
 		} finally {

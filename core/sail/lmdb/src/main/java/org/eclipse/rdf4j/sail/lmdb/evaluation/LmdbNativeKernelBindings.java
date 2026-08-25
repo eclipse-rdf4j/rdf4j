@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -696,6 +697,12 @@ final class LmdbNativeKernelBindings {
 
 	KernelContext context(NativeLmdbQuerySource.NativeAdjacency[] views, BoundDomains domains, RowState row,
 			KernelHooks hooks, KernelScanner scanner, VariablePredicateViews variablePredicateViews) {
+		return context(views, domains, row, hooks, scanner, variablePredicateViews, null);
+	}
+
+	KernelContext context(NativeLmdbQuerySource.NativeAdjacency[] views, BoundDomains domains, RowState row,
+			KernelHooks hooks, KernelScanner scanner, VariablePredicateViews variablePredicateViews,
+			BooleanSupplier workerCancellation) {
 		long[] entrySlots = new long[entrySlotIds.length];
 		for (int i = 0; i < entrySlots.length; i++) {
 			entrySlots[i] = row.slots[entrySlotIds[i]];
@@ -707,7 +714,9 @@ final class LmdbNativeKernelBindings {
 		return new KernelContext(views, constants, entrySlots, domains.values, domains.offsets, domains.lengths,
 				hooks, scanner, plans, distinctExpected,
 				variablePredicateViews.nodePredicates(), variablePredicateViews.dynamics())
-						.withCancellation(LmdbNativeProbeDeadline.currentKernelCancellation());
+						.withCancellation(LmdbNativeProbeDeadline
+								.currentKernelCancellation(row.cancellation::isCancellationRequested,
+										workerCancellation));
 	}
 
 	private static BoundDomains wholeDomains(long[][] domains) {
@@ -734,7 +743,8 @@ final class LmdbNativeKernelBindings {
 		@Override
 		public Cursor open() {
 			close();
-			RowState scratch = new RowState(parent.source, parent.layout, parent.base, parent.exactValuesMetrics);
+			RowState scratch = new RowState(parent.source, parent.layout, parent.base, parent.exactValuesMetrics,
+					parent.cancellation);
 			scratch.memoryScope = parent.memoryScope;
 			scratch.runtimePlan = parent.runtimePlan;
 			System.arraycopy(parent.slots, 0, scratch.slots, 0, parent.slots.length);

@@ -209,7 +209,7 @@ final class LmdbNativePackedFtree {
 				return null;
 			}
 			if (aggregate.kind == AggKind.SAMPLE || aggregate.kind == AggKind.GROUP_CONCAT
-					|| aggregate.kind == AggKind.CUSTOM || aggregate.rowSlots != null) {
+					|| aggregate.kind == AggKind.CUSTOM || aggregate.distinct && aggregate.rowSlots != null) {
 				// M-F1/M-F3: serial-only aggregates — the packed weighted/popcount paths have no combination rule
 				return null;
 			}
@@ -430,7 +430,8 @@ final class LmdbNativePackedFtree {
 			NativeLmdbQuerySource workerSource, RowState parentRow, int expectedRootSlot, int[] demandedSlots,
 			RootPartition[] partitions, AtomicInteger nextPartition, int[] groupSlots, AggregateSpec[] aggregates,
 			boolean strictCompare, AtomicReference<Throwable> failure) throws IOException {
-		RowState workerRow = new RowState(workerSource, parentRow.layout, parentRow.base);
+		RowState workerRow = new RowState(workerSource, parentRow.layout, parentRow.base,
+				parentRow.exactValuesMetrics, parentRow.cancellation);
 		System.arraycopy(parentRow.slots, 0, workerRow.slots, 0, workerRow.slots.length);
 		workerRow.recomputeBoundMask();
 		workerRow.memoryScope = parentRow.memoryScope;
@@ -3310,14 +3311,17 @@ final class LmdbNativePackedFtree {
 	static final class WitnessRuntime {
 		final WitnessPlan plan;
 		final NativeLmdbQuerySource.NativeAdjacency adjacency;
+		final NativeLmdbQuerySource source;
 
-		private WitnessRuntime(WitnessPlan plan, NativeLmdbQuerySource.NativeAdjacency adjacency) {
+		private WitnessRuntime(WitnessPlan plan, NativeLmdbQuerySource.NativeAdjacency adjacency,
+				NativeLmdbQuerySource source) {
 			this.plan = plan;
 			this.adjacency = adjacency;
+			this.source = source;
 		}
 
 		static WitnessRuntime open(Runtime runtime, WitnessPlan plan) throws IOException {
-			return new WitnessRuntime(plan, runtime.adjacency(plan.predicate, plan.keyIsSubject));
+			return new WitnessRuntime(plan, runtime.adjacency(plan.predicate, plan.keyIsSubject), runtime.row.source);
 		}
 
 		boolean accept(long key) {
@@ -3332,7 +3336,7 @@ final class LmdbNativePackedFtree {
 			}
 			long subj = plan.keyIsSubject ? key : plan.otherConstant;
 			long obj = plan.keyIsSubject ? plan.otherConstant : key;
-			boolean exists = plan.fallback.evaluate(subj, plan.predicate, obj, UNKNOWN);
+			boolean exists = plan.fallback.evaluate(source, subj, plan.predicate, obj, UNKNOWN);
 			return exists != plan.negated;
 		}
 

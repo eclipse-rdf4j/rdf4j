@@ -193,8 +193,9 @@ final class AggregateSpec {
 	/** GROUP_CONCAT separator (M-F3); null for every other kind. */
 	final String separator;
 	/**
-	 * COUNT(DISTINCT *) (M-F3): slot indexes of every visible binding name of the group's argument, in a fixed order;
-	 * null for every other aggregate shape. Bound status is part of the hashed row (UNKNOWN = binding absent).
+	 * COUNT([DISTINCT] *) (M-F3): slot indexes of every visible binding name of the group's argument, in a fixed order;
+	 * null for every other aggregate shape. Bound status is part of a DISTINCT hashed row (UNKNOWN = binding absent),
+	 * and both forms use the domain to identify RDF4J's non-countable empty solution mapping.
 	 */
 	final int[] rowSlots;
 	/** Custom aggregate description (M5); non-null exactly when {@link #kind} is {@link AggKind#CUSTOM}. */
@@ -241,6 +242,13 @@ final class AggregateSpec {
 	 * COUNT(*): every solution row contributes exactly once, so the spec only needs a constant that is never UNKNOWN.
 	 * Must not be used with DISTINCT — COUNT(DISTINCT *) deduplicates full rows through {@link #starDistinct}.
 	 */
+	static AggregateSpec star(String name, int[] rowSlots) {
+		return new AggregateSpec(name, -1, NULL_CONTEXT_ID, false, AggKind.COUNT, null, rowSlots);
+	}
+
+	/**
+	 * Low-level aggregate-state form for callers that have already established that every supplied row is non-empty.
+	 */
 	static AggregateSpec star(String name) {
 		return new AggregateSpec(name, -1, NULL_CONTEXT_ID, false, AggKind.COUNT);
 	}
@@ -252,6 +260,29 @@ final class AggregateSpec {
 	 */
 	static AggregateSpec starDistinct(String name, int[] rowSlots) {
 		return new AggregateSpec(name, -1, NULL_CONTEXT_ID, true, AggKind.COUNT, null, rowSlots);
+	}
+
+	/** True for COUNT([DISTINCT] *), whose sentinel represents a row rather than an RDF value argument. */
+	boolean isWildcardCount() {
+		return kind == AggKind.COUNT && slot < 0 && constant == NULL_CONTEXT_ID;
+	}
+
+	/** Whether this aggregate has an input on the current solution row. */
+	boolean hasInput(RowState row) {
+		if (isWildcardCount()) {
+			if (rowSlots == null) {
+				return true;
+			}
+			for (int rowSlot : rowSlots) {
+				long value = row.slots[rowSlot];
+				if (value != UNKNOWN && value != NULL_CONTEXT_ID) {
+					return true;
+				}
+			}
+			return false;
+		}
+		long value = value(row);
+		return value != UNKNOWN && value != NULL_CONTEXT_ID;
 	}
 
 	long value(RowState row) {
@@ -270,7 +301,7 @@ final class AggregateSpec {
 	/** True when any spec is the COUNT(DISTINCT *) full-row shape, which only the serial group step can answer. */
 	static boolean anyFullRowDistinct(AggregateSpec[] specs) {
 		for (AggregateSpec spec : specs) {
-			if (spec.rowSlots != null) {
+			if (spec.distinct && spec.rowSlots != null) {
 				return true;
 			}
 		}
@@ -285,6 +316,9 @@ final class AggregateSpec {
  */
 @Experimental
 final class AggContext {
+	private static final int INITIAL_VALUE_CACHE_CAPACITY = 16;
+	private static final byte OCCUPIED = 1;
+
 	static final Literal INTEGER_ZERO = SimpleValueFactory.getInstance()
 			.createLiteral("0", CoreDatatype.XSD.INTEGER);
 
@@ -293,10 +327,15 @@ final class AggContext {
 	}
 
 	final NativeLmdbQuerySource source;
+	final NativeTermAuthority termAuthority;
 	final ValueComparator comparator = new ValueComparator();
-	final HashMap<Long, Value> valueCache = new HashMap<>();
 	final boolean encounterOrderChanging;
 	final boolean deferDistinctValueAggregates;
+	private long[] valueCacheIds = new long[INITIAL_VALUE_CACHE_CAPACITY];
+	private Value[] valueCacheValues = new Value[INITIAL_VALUE_CACHE_CAPACITY];
+	private byte[] valueCacheStates = new byte[INITIAL_VALUE_CACHE_CAPACITY];
+	private int valueCacheSize;
+	private int valueCacheThreshold = INITIAL_VALUE_CACHE_CAPACITY * 3 >>> 2;
 
 	AggContext(NativeLmdbQuerySource source, boolean strictCompare) {
 		this(source, strictCompare, false, false);
@@ -309,13 +348,68 @@ final class AggContext {
 	AggContext(NativeLmdbQuerySource source, boolean strictCompare, boolean encounterOrderChanging,
 			boolean deferDistinctValueAggregates) {
 		this.source = source;
+		this.termAuthority = source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).authority()
+				: null;
 		this.encounterOrderChanging = encounterOrderChanging;
 		this.deferDistinctValueAggregates = deferDistinctValueAggregates;
 		this.comparator.setStrict(strictCompare);
 	}
 
 	Value value(long id) {
-		return valueCache.computeIfAbsent(id, source::lazyValue);
+		int slot = valueCacheSlot(id);
+		if (valueCacheStates[slot] == OCCUPIED) {
+			return valueCacheValues[slot];
+		}
+		Value value = source.lazyValue(id);
+		if (value == null) {
+			return null;
+		}
+		if (valueCacheSize >= valueCacheThreshold) {
+			growValueCache();
+			slot = valueCacheSlot(id);
+		}
+		valueCacheIds[slot] = id;
+		valueCacheValues[slot] = value;
+		valueCacheStates[slot] = OCCUPIED;
+		valueCacheSize++;
+		return value;
+	}
+
+	private int valueCacheSlot(long id) {
+		int slot = mixValueId(id) & (valueCacheIds.length - 1);
+		while (valueCacheStates[slot] == OCCUPIED && valueCacheIds[slot] != id) {
+			slot = slot + 1 & (valueCacheIds.length - 1);
+		}
+		return slot;
+	}
+
+	private void growValueCache() {
+		long[] oldIds = valueCacheIds;
+		Value[] oldValues = valueCacheValues;
+		byte[] oldStates = valueCacheStates;
+		int capacity = oldIds.length << 1;
+		valueCacheIds = new long[capacity];
+		valueCacheValues = new Value[capacity];
+		valueCacheStates = new byte[capacity];
+		valueCacheThreshold = capacity * 3 >>> 2;
+		for (int i = 0; i < oldIds.length; i++) {
+			if (oldStates[i] != OCCUPIED) {
+				continue;
+			}
+			int slot = valueCacheSlot(oldIds[i]);
+			valueCacheIds[slot] = oldIds[i];
+			valueCacheValues[slot] = oldValues[i];
+			valueCacheStates[slot] = OCCUPIED;
+		}
+	}
+
+	private static int mixValueId(long value) {
+		value ^= value >>> 33;
+		value *= 0xff51afd7ed558ccdL;
+		value ^= value >>> 33;
+		value *= 0xc4ceb9fe1a85ec53L;
+		value ^= value >>> 33;
+		return (int) value;
 	}
 
 	void preserveFloatingEncounterOrder(Literal literal) {
@@ -363,7 +457,7 @@ final class AggState {
 	boolean[] typeErrors;
 	/** GROUP_CONCAT running concatenations; null per spec until its first value. */
 	StringBuilder[] concats;
-	/** COUNT(DISTINCT *) full-row membership per spec; null unless {@link AggregateSpec#rowSlots} is set. */
+	/** COUNT(DISTINCT *) full-row membership per spec; null unless DISTINCT and row slots are both present. */
 	NativeDistinctTracker[] rowDistinct;
 	/** Custom-aggregate per-group collectors; null unless a CUSTOM spec exists. Index-aligned with specs. */
 	org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector[] customCollectors;
@@ -384,7 +478,7 @@ final class AggState {
 		this.distinctSets = channelCount == 0 ? NO_DISTINCT_SETS : new LongHashSet[specs.length];
 		for (int channel = 0; channel < distinctChannels.channelCount(); channel++) {
 			if (distinctChannels.modes[channel] == NativeDistinctChannelMode.HASH) {
-				channelSets[channel] = new LongHashSet(expectedDistinctSize);
+				channelSets[channel] = new LongHashSet(expectedDistinctSize, ctx.termAuthority);
 			}
 		}
 		boolean anyValueTyped = false;
@@ -401,11 +495,14 @@ final class AggState {
 			if (kind == AggKind.GROUP_CONCAT) {
 				anyConcat = true;
 			}
-			if (specs[i].rowSlots != null) {
+			if (specs[i].distinct && specs[i].rowSlots != null) {
 				if (rowDistinct == null) {
 					rowDistinct = new NativeDistinctTracker[specs.length];
 				}
-				rowDistinct[i] = new NativeDistinctTracker(specs[i].rowSlots);
+				rowDistinct[i] = new NativeDistinctTracker(specs[i].rowSlots,
+						ctx.source instanceof SyntheticValueSource
+								? ((SyntheticValueSource) ctx.source).authority()
+								: null);
 			}
 			if (specs[i].custom != null) {
 				if (customCollectors == null) {
@@ -434,14 +531,15 @@ final class AggState {
 			long value = distinctChannels.slots[channel] >= 0
 					? row.slots[distinctChannels.slots[channel]]
 					: distinctChannels.constants[channel];
-			if (value == UNKNOWN) {
+			if (value == UNKNOWN || value == NULL_CONTEXT_ID) {
 				channelFresh[channel] = false;
 				continue;
 			}
 			channelFresh[channel] = switch (distinctChannels.modes[channel]) {
 			case HASH -> channelSets[channel].add(value);
 			case MONOTONIC -> {
-				boolean fresh = !channelInitialized[channel] || channelLastIds[channel] != value;
+				boolean fresh = !channelInitialized[channel]
+						|| !sameRdfTerm(channelLastIds[channel], value);
 				channelInitialized[channel] = true;
 				channelLastIds[channel] = value;
 				yield fresh;
@@ -455,9 +553,12 @@ final class AggState {
 		}
 		for (int i = 0; i < specs.length; i++) {
 			if (specs[i].rowSlots != null) {
-				// COUNT(DISTINCT *): dedup by the full visible row; the empty solution is not a countable row
-				// (matching the generic WildCardCountAggregate's !s.isEmpty() guard)
-				if (!fullyUnbound(row, specs[i].rowSlots) && rowDistinct[i].add(row.slots)) {
+				// RDF4J's wildcard collector skips the empty solution mapping. DISTINCT keeps one copy of every
+				// remaining full visible mapping.
+				if (!specs[i].hasInput(row)) {
+					continue;
+				}
+				if (!specs[i].distinct || rowDistinct[i].add(row.slots)) {
 					counts[i]++;
 				}
 				continue;
@@ -470,7 +571,7 @@ final class AggState {
 				continue;
 			}
 			long value = specs[i].value(row);
-			if (value == UNKNOWN) {
+			if (!specs[i].isWildcardCount() && (value == UNKNOWN || value == NULL_CONTEXT_ID)) {
 				continue;
 			}
 			int channel = distinctChannels.specChannels[i];
@@ -522,15 +623,8 @@ final class AggState {
 		}
 	}
 
-	/** True when every visible slot of the row is unbound — the empty solution (NULL_CONTEXT_ID counts as unbound). */
-	private static boolean fullyUnbound(RowState row, int[] rowSlots) {
-		for (int slot : rowSlots) {
-			long id = row.slots[slot];
-			if (id != UNKNOWN && id != NULL_CONTEXT_ID) {
-				return false;
-			}
-		}
-		return true;
+	private boolean sameRdfTerm(long left, long right) {
+		return left == right || ctx.termAuthority != null && ctx.termAuthority.sameRdfTerm(left, right);
 	}
 
 	void addSum(int i, long id) {
@@ -587,8 +681,14 @@ final class AggState {
 				// custom aggregate needs one process call per copy, which this single-pass fold cannot provide
 				throw EncounterOrderFallback.customAggregateOrder();
 			}
+			if (specs[i].rowSlots != null) {
+				if (!specs[i].distinct && specs[i].hasInput(row)) {
+					counts[i] = FactorizedTail.addCounts(counts[i], extra);
+				}
+				continue;
+			}
 			long value = specs[i].value(row);
-			if (value == UNKNOWN) {
+			if (!specs[i].isWildcardCount() && (value == UNKNOWN || value == NULL_CONTEXT_ID)) {
 				continue;
 			}
 			if (distinctChannels.specChannels[i] >= 0) {
@@ -909,12 +1009,20 @@ final class GroupKey {
 @Experimental
 final class LongHashSet {
 	static final long EMPTY = Long.MIN_VALUE;
+	final NativeTermAuthority authority;
+	final HashMap<Value, Long> nonCanonicalValues;
 	long[] table;
 	int size;
 	int threshold;
 	boolean containsEmptySentinel;
 
 	LongHashSet(int expectedSize) {
+		this(expectedSize, null);
+	}
+
+	LongHashSet(int expectedSize, NativeTermAuthority authority) {
+		this.authority = authority;
+		this.nonCanonicalValues = authority == null ? null : new HashMap<>();
 		int capacity = 1;
 		while (capacity < expectedSize * 2) {
 			capacity <<= 1;
@@ -925,6 +1033,16 @@ final class LongHashSet {
 	}
 
 	boolean add(long value) {
+		if (isNonCanonical(value)) {
+			Value term = authority.valueOf(value);
+			if (term != null && nonCanonicalValues.putIfAbsent(term, value) != null) {
+				return false;
+			}
+		}
+		return addRaw(value);
+	}
+
+	private boolean addRaw(long value) {
 		if (value == EMPTY) {
 			boolean added = !containsEmptySentinel;
 			containsEmptySentinel = true;
@@ -972,9 +1090,20 @@ final class LongHashSet {
 		Arrays.fill(table, EMPTY);
 		size = 0;
 		containsEmptySentinel = false;
+		if (nonCanonicalValues != null) {
+			nonCanonicalValues.clear();
+		}
 	}
 
 	boolean contains(long value) {
+		if (isNonCanonical(value)) {
+			Value term = authority.valueOf(value);
+			return term != null && nonCanonicalValues.containsKey(term);
+		}
+		return containsRaw(value);
+	}
+
+	private boolean containsRaw(long value) {
 		if (value == EMPTY) {
 			return containsEmptySentinel;
 		}
@@ -994,6 +1123,17 @@ final class LongHashSet {
 	}
 
 	boolean remove(long value) {
+		boolean removed = removeRaw(value);
+		if (removed && isNonCanonical(value)) {
+			Value term = authority.valueOf(value);
+			if (term != null) {
+				nonCanonicalValues.remove(term);
+			}
+		}
+		return removed;
+	}
+
+	private boolean removeRaw(long value) {
 		if (value == EMPTY) {
 			if (!containsEmptySentinel) {
 				return false;
@@ -1021,7 +1161,7 @@ final class LongHashSet {
 			long displaced = t[scan];
 			t[scan] = EMPTY;
 			size--;
-			add(displaced);
+			addRaw(displaced);
 		}
 		return true;
 	}
@@ -1037,7 +1177,11 @@ final class LongHashSet {
 		}
 		for (long value : other.table) {
 			if (value != EMPTY) {
-				add(value);
+				long imported = authority != null && other.authority != null
+						&& authority.token() != other.authority.token()
+								? authority.importId(other.authority, value)
+								: value;
+				add(imported);
 			}
 		}
 	}
@@ -1051,9 +1195,17 @@ final class LongHashSet {
 		size = oldSize;
 		for (long value : old) {
 			if (value != EMPTY) {
-				add(value);
+				addRaw(value);
 			}
 		}
+	}
+
+	private boolean isNonCanonical(long value) {
+		if (authority == null || value == EMPTY || value == UNKNOWN || value == NULL_CONTEXT_ID) {
+			return false;
+		}
+		NativeTermRef term = authority.termRef(value);
+		return term == null || term.canonicalId().isEmpty();
 	}
 
 	static int mix(long value) {

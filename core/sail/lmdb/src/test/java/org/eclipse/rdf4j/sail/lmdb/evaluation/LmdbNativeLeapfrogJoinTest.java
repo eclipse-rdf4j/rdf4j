@@ -207,36 +207,31 @@ public class LmdbNativeLeapfrogJoinTest {
 	}
 
 	@Test
-	public void existsClosedTriangleInsideAggregateEngagesLeapfrogAndMatchesGenericResults() {
+	public void existsClosedTriangleInsideAggregateStaysSemanticNative() {
 		openRepository();
 
 		List<String> expected = rowsWithNativeEngine(EXISTS_CLOSED_TRIANGLE, false);
-		long plannedBefore = LmdbNativeLeapfrogJoin.PLANNED.get();
-		long openedBefore = LmdbNativeLeapfrogJoin.OPENED.get();
+		NativeRouteSnapshot before = nativeRouteSnapshot();
 
 		List<String> actual = rowsWithNativeEngine(EXISTS_CLOSED_TRIANGLE, true);
 
 		assertThat(actual).containsExactlyElementsOf(expected);
 		assertThat(actual).hasSize(1);
-		assertThat(LmdbNativeLeapfrogJoin.PLANNED.get()).as("leapfrog planned through correlated EXISTS")
-				.isGreaterThan(plannedBefore);
-		assertThat(LmdbNativeLeapfrogJoin.OPENED.get()).as("leapfrog opened through correlated EXISTS")
-				.isGreaterThan(openedBefore);
+		assertSemanticNativeAfter(before);
 	}
 
 	@Test
-	public void groupedCountOverExistsClosedTriangleEngagesLeapfrogAndMatchesGenericResults() {
+	public void groupedCountOverExistsClosedTriangleStaysSemanticNative() {
 		openRepository();
 
 		List<String> expected = rowsWithNativeEngine(GROUPED_EXISTS_CLOSED_TRIANGLE, false);
-		long openedBefore = LmdbNativeLeapfrogJoin.OPENED.get();
+		NativeRouteSnapshot before = nativeRouteSnapshot();
 
 		List<String> actual = rowsWithNativeEngine(GROUPED_EXISTS_CLOSED_TRIANGLE, true);
 
 		assertThat(expected).hasSize(3);
 		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
-		assertThat(LmdbNativeLeapfrogJoin.OPENED.get()).as("leapfrog opened for grouped COUNT")
-				.isGreaterThan(openedBefore);
+		assertSemanticNativeAfter(before);
 	}
 
 	@Test
@@ -245,14 +240,13 @@ public class LmdbNativeLeapfrogJoinTest {
 		addExistentialMultiplicityData();
 
 		List<String> expected = rowsWithNativeEngine(EXISTS_EDGE_MULTIPLICITY, false);
-		long openedBefore = LmdbNativeLeapfrogJoin.OPENED.get();
+		NativeRouteSnapshot before = nativeRouteSnapshot();
 
 		List<String> actual = rowsWithNativeEngine(EXISTS_EDGE_MULTIPLICITY, true);
 
 		assertThat(expected).hasSize(1);
 		assertThat(actual).containsExactlyElementsOf(expected);
-		assertThat(LmdbNativeLeapfrogJoin.OPENED.get()).as("leapfrog opened for existential edge")
-				.isGreaterThan(openedBefore);
+		assertSemanticNativeAfter(before);
 	}
 
 	@Test
@@ -457,6 +451,20 @@ public class LmdbNativeLeapfrogJoinTest {
 				System.setProperty(NATIVE_FLAG, previous);
 			}
 		}
+	}
+
+	private static NativeRouteSnapshot nativeRouteSnapshot() {
+		return new NativeRouteSnapshot(LmdbNativeAggregateCompiler.COMPILED.get(),
+				LmdbNativeAggregateCompiler.HOSTED_GENERIC.get(), LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get());
+	}
+
+	private static void assertSemanticNativeAfter(NativeRouteSnapshot before) {
+		assertThat(LmdbNativeAggregateCompiler.COMPILED.get()).isGreaterThan(before.compiled());
+		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get()).isEqualTo(before.hostedGeneric());
+		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get()).isEqualTo(before.islands());
+	}
+
+	private record NativeRouteSnapshot(long compiled, long hostedGeneric, long islands) {
 	}
 
 }

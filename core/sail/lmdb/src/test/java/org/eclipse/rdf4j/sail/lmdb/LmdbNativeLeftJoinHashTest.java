@@ -45,15 +45,21 @@ public class LmdbNativeLeftJoinHashTest {
 	private static final String MIN_PROBES = "rdf4j.lmdb.leftjoin.hash.minProbes";
 	private static final String MAX_ROWS = "rdf4j.lmdb.leftjoin.hash.maxRows";
 	private static final String MEMBERSHIP_MAX_SIZE = "rdf4j.lmdb.membership.maxSize";
+	private static final String JANINO_FLAG = "rdf4j.lmdb.janinoCodegen.enabled";
+	private static final String KERNEL_INTERPRETER_FLAG = "rdf4j.lmdb.kernelInterpreter.enabled";
 
 	@TempDir
 	File dataDir;
 
 	private SailRepository repository;
+	private String previousJanino;
+	private String previousKernelInterpreter;
 
 	@BeforeEach
 	public void setUp() {
 		System.setProperty(MIN_PROBES, "0");
+		previousJanino = System.setProperty(JANINO_FLAG, "false");
+		previousKernelInterpreter = System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
@@ -93,6 +99,8 @@ public class LmdbNativeLeftJoinHashTest {
 		System.clearProperty(MIN_PROBES);
 		System.clearProperty(MAX_ROWS);
 		System.clearProperty(MEMBERSHIP_MAX_SIZE);
+		restore(JANINO_FLAG, previousJanino);
+		restore(KERNEL_INTERPRETER_FLAG, previousKernelInterpreter);
 	}
 
 	@Test

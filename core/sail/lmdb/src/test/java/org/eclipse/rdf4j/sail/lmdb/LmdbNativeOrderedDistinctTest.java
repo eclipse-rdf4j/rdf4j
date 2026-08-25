@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -34,6 +35,8 @@ class LmdbNativeOrderedDistinctTest {
 
 	private static final String EX = "urn:ordered-distinct:";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final String JANINO_FLAG = "rdf4j.lmdb.janinoCodegen.enabled";
+	private static final String INTERPRETER_FLAG = "rdf4j.lmdb.kernelInterpreter.enabled";
 
 	@TempDir
 	File dataDir;
@@ -101,6 +104,11 @@ class LmdbNativeOrderedDistinctTest {
 
 	@Test
 	void groupArgumentOrderStreamsGroupAndUsesMonotonicChannel() {
+		String previousJanino = System.getProperty(JANINO_FLAG);
+		String previousInterpreter = System.getProperty(INTERPRETER_FLAG);
+		System.setProperty(JANINO_FLAG, "false");
+		System.setProperty(INTERPRETER_FLAG, "false");
+		KernelExecutionTestAccess.resetCostCalibration();
 		SailRepository repository = repository("group-argument", "spoc");
 		try {
 			addNumericGroups(repository);
@@ -114,6 +122,8 @@ class LmdbNativeOrderedDistinctTest {
 			assertThat(strategy(repository, query)).isEqualTo("orderedDistinctGroups");
 		} finally {
 			repository.shutDown();
+			restoreProperty(JANINO_FLAG, previousJanino);
+			restoreProperty(INTERPRETER_FLAG, previousInterpreter);
 		}
 	}
 
@@ -401,6 +411,14 @@ class LmdbNativeOrderedDistinctTest {
 				new LmdbStore(new File(dataDir, name), new LmdbStoreConfig(indexes)));
 		repository.init();
 		return repository;
+	}
+
+	private static void restoreProperty(String name, String value) {
+		if (value == null) {
+			System.clearProperty(name);
+		} else {
+			System.setProperty(name, value);
+		}
 	}
 
 	private void addPeople(SailRepository repository) {

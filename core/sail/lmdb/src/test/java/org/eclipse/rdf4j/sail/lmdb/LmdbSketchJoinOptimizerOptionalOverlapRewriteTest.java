@@ -14,8 +14,13 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.stream.Stream;
+
+import org.eclipse.rdf4j.model.Literal.BaseDirection;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FN;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -38,6 +43,9 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class LmdbSketchJoinOptimizerOptionalOverlapRewriteTest {
 
@@ -140,6 +148,59 @@ class LmdbSketchJoinOptimizerOptionalOverlapRewriteTest {
 		StatementPattern phone = statementPattern("person", "phone", "phone");
 		TupleExpr input = new LeftJoin(new LeftJoin(base, email, sameTermLiteral("contactKind", "email")), phone,
 				sameTermLiteral("contactKind", "phone"));
+
+		QueryRoot root = optimize(input);
+
+		assertRegroupedAsOptionalUnion(root, 1);
+	}
+
+	@Test
+	void keepsValueEqualNumericOptionalsOnOriginalLeftSpine() {
+		TupleExpr base = new Join(statementPattern("sensor", "type", "sensorType"),
+				statementPattern("sensor", "measurementKind", "measurementKind"));
+		StatementPattern integerReading = statementPattern("sensor", "integerReading", "integerValue");
+		StatementPattern decimalReading = statementPattern("sensor", "decimalReading", "decimalValue");
+		ValueExpr integerCondition = new Compare(new Var("measurementKind"),
+				new ValueConstant(VF.createLiteral("1", XSD.INTEGER)), Compare.CompareOp.EQ);
+		ValueExpr decimalCondition = new Compare(new Var("measurementKind"),
+				new ValueConstant(VF.createLiteral("1.0", XSD.DECIMAL)), Compare.CompareOp.EQ);
+		TupleExpr input = new LeftJoin(new LeftJoin(base, integerReading, integerCondition), decimalReading,
+				decimalCondition);
+
+		QueryRoot root = optimize(input);
+
+		LeftJoin retainedOuter = assertInstanceOf(LeftJoin.class, root.getArg());
+		assertInstanceOf(LeftJoin.class, retainedOuter.getLeftArg(),
+				"SPARQL value-equal numeric constants do not prove mutually exclusive OPTIONAL branches");
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("provablyDistinctValueEqualConstants")
+	void mergesProvablyDistinctValueEqualOptionalsIntoOptionalUnion(String caseName, Value first, Value second) {
+		TupleExpr base = new Join(statementPattern("item", "type", "itemType"),
+				statementPattern("item", "kind", "kind"));
+		StatementPattern firstValue = statementPattern("item", "firstValue", "firstValue");
+		StatementPattern secondValue = statementPattern("item", "secondValue", "secondValue");
+		TupleExpr input = new LeftJoin(new LeftJoin(base, firstValue, valueEqual("kind", first)), secondValue,
+				valueEqual("kind", second));
+
+		QueryRoot root = optimize(input);
+
+		assertRegroupedAsOptionalUnion(root, 1);
+	}
+
+	@Test
+	void mergesDistinctSameTermNumericOptionalsIntoOptionalUnion() {
+		TupleExpr base = new Join(statementPattern("sensor", "type", "sensorType"),
+				statementPattern("sensor", "measurementKind", "measurementKind"));
+		StatementPattern integerReading = statementPattern("sensor", "integerReading", "integerValue");
+		StatementPattern decimalReading = statementPattern("sensor", "decimalReading", "decimalValue");
+		ValueExpr integerCondition = new SameTerm(new Var("measurementKind"),
+				new ValueConstant(VF.createLiteral("1", XSD.INTEGER)));
+		ValueExpr decimalCondition = new SameTerm(new Var("measurementKind"),
+				new ValueConstant(VF.createLiteral("1.0", XSD.DECIMAL)));
+		TupleExpr input = new LeftJoin(new LeftJoin(base, integerReading, integerCondition), decimalReading,
+				decimalCondition);
 
 		QueryRoot root = optimize(input);
 
@@ -284,6 +345,21 @@ class LmdbSketchJoinOptimizerOptionalOverlapRewriteTest {
 
 	private static SameTerm sameTermLiteral(String varName, String value) {
 		return new SameTerm(new Var(varName), literal(value));
+	}
+
+	private static Compare valueEqual(String varName, Value value) {
+		return new Compare(new Var(varName), new ValueConstant(value), Compare.CompareOp.EQ);
+	}
+
+	private static Stream<Arguments> provablyDistinctValueEqualConstants() {
+		return Stream.of(
+				Arguments.of("resources", VF.createIRI("urn:first"), VF.createIRI("urn:second")),
+				Arguments.of("booleans", VF.createLiteral(true), VF.createLiteral(false)),
+				Arguments.of("strings", VF.createLiteral("first", XSD.STRING),
+						VF.createLiteral("second", XSD.STRING)),
+				Arguments.of("language strings", VF.createLiteral("label", "en"), VF.createLiteral("label", "fr")),
+				Arguments.of("directional language strings", VF.createLiteral("label", "en", BaseDirection.LTR),
+						VF.createLiteral("label", "en", BaseDirection.RTL)));
 	}
 
 	private static ValueConstant literal(String value) {

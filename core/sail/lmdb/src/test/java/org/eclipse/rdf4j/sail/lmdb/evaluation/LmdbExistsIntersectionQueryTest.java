@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -56,6 +57,11 @@ public class LmdbExistsIntersectionQueryTest {
 	File dataDir;
 
 	private SailRepository repository;
+
+	@BeforeEach
+	public void resetCostCalibration() {
+		LmdbNativeCostCalibration.reset();
+	}
 
 	@AfterEach
 	public void tearDown() {

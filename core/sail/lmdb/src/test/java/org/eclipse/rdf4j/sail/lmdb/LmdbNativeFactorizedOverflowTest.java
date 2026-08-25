@@ -15,7 +15,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -42,21 +44,34 @@ public class LmdbNativeFactorizedOverflowTest {
 
 	private static final String EX = "http://example.com/";
 	private static final int LEG_FANOUT = 1 << 16;
-	private static final String PARALLEL_FLAG = "rdf4j.lmdb.parallel.enabled";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final String[] ROUTE_PROPERTIES = {
+			NATIVE_FLAG,
+			"rdf4j.lmdb.parallel.enabled",
+			"rdf4j.lmdb.wcoj.enabled",
+			"rdf4j.lmdb.packedFtree.enabled",
+			"rdf4j.lmdb.janinoCodegen.enabled",
+			"rdf4j.lmdb.factorizedTail.enabled" };
 
 	@TempDir
 	File dataDir;
 
 	private SailRepository repository;
-	private String previousParallel;
+	private final Map<String, String> previousProperties = new HashMap<>();
 
 	@BeforeEach
 	public void setUp() {
 		// keep the query on the sequential factorized-tail path; the parallel strategy shares the same
 		// aggregate-state arithmetic and is covered by the same guard
-		previousParallel = System.getProperty(PARALLEL_FLAG);
-		System.setProperty(PARALLEL_FLAG, "false");
+		for (String property : ROUTE_PROPERTIES) {
+			previousProperties.put(property, System.getProperty(property));
+		}
+		System.setProperty(NATIVE_FLAG, "true");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
+		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+		System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+		System.setProperty("rdf4j.lmdb.factorizedTail.enabled", "true");
 
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
@@ -78,12 +93,17 @@ public class LmdbNativeFactorizedOverflowTest {
 
 	@AfterEach
 	public void tearDown() {
-		if (previousParallel == null) {
-			System.clearProperty(PARALLEL_FLAG);
-		} else {
-			System.setProperty(PARALLEL_FLAG, previousParallel);
+		try {
+			repository.shutDown();
+		} finally {
+			previousProperties.forEach((property, value) -> {
+				if (value == null) {
+					System.clearProperty(property);
+				} else {
+					System.setProperty(property, value);
+				}
+			});
 		}
-		repository.shutDown();
 	}
 
 	/**

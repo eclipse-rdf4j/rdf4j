@@ -34,6 +34,16 @@ interface LmdbNativeSlotResolver {
 interface LmdbNativeSlotReader {
 	long id(int slot);
 
+	/** The authority that can materialize every id visible through this reader, including plan/runtime ids. */
+	default NativeTermAuthority termAuthority() {
+		return null;
+	}
+
+	/** Identity of the logical solution mapping currently being evaluated, scoped to one query evaluation. */
+	default long logicalSolutionIdentity() {
+		return 0L;
+	}
+
 	/**
 	 * The evaluation-scoped synthetic value source behind this row, or {@code null} at call sites that evaluate pure
 	 * expressions only. Query-scope-dependent compiled values (NOW) read the shared per-evaluation generic scope
@@ -92,12 +102,12 @@ final class LmdbNativeCompiledBoolean implements NativeBooleanFilter {
 
 	@Override
 	public boolean accept(RowState row) {
-		return accept(slot -> row.slots[slot]);
+		return accept((LmdbNativeSlotReader) row);
 	}
 
 	@Override
 	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
-		BatchSlotReader reader = new BatchSlotReader(batch);
+		BatchSlotReader reader = new BatchSlotReader(batch, scratch.termAuthority());
 		int accepted = 0;
 		for (int i = 0; i < n; i++) {
 			int physicalRow = sel[i];
@@ -130,15 +140,22 @@ final class LmdbNativeCompiledBoolean implements NativeBooleanFilter {
 
 	private static final class BatchSlotReader implements LmdbNativeSlotReader {
 		private final NativeBatch batch;
+		private final NativeTermAuthority termAuthority;
 		private int physicalRow;
 
-		private BatchSlotReader(NativeBatch batch) {
+		private BatchSlotReader(NativeBatch batch, NativeTermAuthority termAuthority) {
 			this.batch = batch;
+			this.termAuthority = termAuthority;
 		}
 
 		@Override
 		public long id(int slot) {
 			return batch.slots[slot * batch.capacity + physicalRow];
+		}
+
+		@Override
+		public NativeTermAuthority termAuthority() {
+			return termAuthority;
 		}
 	}
 }
@@ -165,7 +182,7 @@ final class LmdbNativeCompiledInlineId {
 	}
 
 	long id(RowState row) {
-		return evaluator.eval(slot -> row.slots[slot]);
+		return evaluator.eval(row);
 	}
 
 	long id(LmdbNativeSlotReader row) {

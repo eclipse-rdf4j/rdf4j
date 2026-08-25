@@ -41,6 +41,15 @@ public final class JaninoPipelineTestAccess {
 				+ LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get();
 	}
 
+	public static String cacheSummary() {
+		return "hits:" + LmdbNativeJaninoCodegen.CACHE_HITS.get()
+				+ ",misses:" + LmdbNativeJaninoCodegen.CACHE_MISSES.get()
+				+ ",compilations:" + LmdbNativeJaninoCodegen.COMPILATIONS.get()
+				+ ",failures:" + LmdbNativeJaninoCodegen.COMPILE_FAILURES.get()
+				+ ",instantiations:" + LmdbNativeJaninoCodegen.KERNEL_INSTANTIATIONS.get()
+				+ ",fallbacks:" + LmdbNativeJaninoCodegen.FALLBACKS.get();
+	}
+
 	/** Clears generated-kernel counters and compiled test shapes before a benchmark trial. */
 	public static void resetAll() {
 		LmdbNativeKernelExecution.resetMetrics();

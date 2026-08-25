@@ -254,6 +254,20 @@ public class LmdbNativePromotionFuzzTest {
 		}
 	}
 
+	@Test
+	public void minOverComputedExpressionMatchesGenericForSeedFixture() {
+		String projectionQuery = "SELECT ?v (?v * 2 AS ?twice) WHERE { ?s <" + EX + "p> ?v . }";
+		List<BindingSet> projectedGeneric = rows(projectionQuery, false);
+		assertThat(rows(projectionQuery, true))
+				.as("native arithmetic rows must equal generic rows %s", projectedGeneric)
+				.containsExactlyInAnyOrderElementsOf(projectedGeneric);
+		String query = "SELECT (MIN(?v * 2) AS ?c) WHERE { ?s <" + EX + "p> ?v . }";
+		List<BindingSet> generic = rows(query, false);
+		assertThat(rows(query, true))
+				.as("native MIN result must equal generic result %s", generic)
+				.containsExactlyInAnyOrderElementsOf(generic);
+	}
+
 	/** ORDER BY expressions: multiset differential (ties leave inter-row order unspecified). */
 	@Test
 	public void orderByExpressionShapes() {

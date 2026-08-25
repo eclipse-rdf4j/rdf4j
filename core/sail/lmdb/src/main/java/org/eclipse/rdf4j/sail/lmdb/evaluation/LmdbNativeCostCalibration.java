@@ -262,5 +262,6 @@ final class LmdbNativeCostCalibration {
 
 	static void reset() {
 		FACTORS.clear();
+		LmdbNativeMachineCostModel.jvmWide().resetForTests();
 	}
 }

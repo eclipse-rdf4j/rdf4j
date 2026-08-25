@@ -751,7 +751,8 @@ final class LmdbNativeParallelPipelines {
 			if (!producerInitialized) {
 				producerInitialized = true;
 				NativeLmdbQuerySource producerSource = sources[workerPlans.length];
-				producerRow = new RowState(producerSource, step.layout, consumerRow.base);
+				producerRow = new RowState(producerSource, step.layout, consumerRow.base,
+						consumerRow.exactValuesMetrics, consumerRow.cancellation);
 				producerRow.memoryScope = consumerRow.memoryScope;
 				producerRow.runtimePlan = consumerRow.runtimePlan;
 				if (NativeRowSeeder.seed(producerRow.slots, step.layout, consumerRow.base, producerSource)) {
@@ -815,7 +816,8 @@ final class LmdbNativeParallelPipelines {
 
 		void runWorker(int worker) throws IOException {
 			NativeLmdbQuerySource source = sources[worker];
-			RowState row = new RowState(source, step.layout, consumerRow.base);
+			RowState row = new RowState(source, step.layout, consumerRow.base, consumerRow.exactValuesMetrics,
+					consumerRow.cancellation);
 			row.memoryScope = consumerRow.memoryScope;
 			row.runtimePlan = consumerRow.runtimePlan;
 			if (!NativeRowSeeder.seed(row.slots, step.layout, consumerRow.base, source)) {
@@ -863,11 +865,12 @@ final class LmdbNativeParallelPipelines {
 			try (RowCursor cursor = pipeline) {
 				NativeBatch batch = new NativeBatch(row.slots.length, OUTPUT_ROWS);
 				int rows = 0;
-				while (!cancelled.get() && cursor.next()) {
+				while (!cancelled.get() && row.advance(cursor)) {
 					long multiplicity = cursor instanceof FactorizedRowCursor
 							? ((FactorizedRowCursor) cursor).multiplicity()
 							: 1L;
-					while (multiplicity-- > 0 && !cancelled.get()) {
+					while (multiplicity-- > 0 && !cancelled.get()
+							&& !row.cancellation.isCancellationRequested()) {
 						batch.copyFromRow(row.slots, rows++);
 						if (rows == batch.capacity) {
 							emit(batch, rows);
@@ -876,11 +879,11 @@ final class LmdbNativeParallelPipelines {
 						}
 					}
 				}
-				if (rows > 0 && !cancelled.get()) {
+				if (rows > 0 && !cancelled.get() && !row.cancellation.isCancellationRequested()) {
 					emit(batch, rows);
 				}
 			}
-			if (!cancelled.get()) {
+			if (!cancelled.get() && !row.cancellation.isCancellationRequested()) {
 				offerOutput(OutputPage.END);
 			}
 		}

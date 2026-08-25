@@ -168,6 +168,14 @@ class LmdbNativeFeatureFlagForkTest {
 			System.setProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", "true");
 			System.setProperty("rdf4j.lmdb.chunkPipeline.sip.enabled", "true");
 			System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");
+			// Each child proves one switch's documented fallback. The now-total packed f-tree is an independent
+			// competing tier, and the completed IR tier is another; neither may absorb the fallback witness before the
+			// switch under test is observed. Adaptive calibration is disabled so the explanation run cannot train a
+			// different winner for the subsequent execution.
+			System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
+			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+			System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
+			System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 			System.setProperty("rdf4j.lmdb.parallel.minRootEstimate",
 					disabled == Scenario.PARALLEL ? "0" : Long.toString(Long.MAX_VALUE));
 			System.setProperty("rdf4j.lmdb.parallel.threads", "2");
@@ -258,6 +266,11 @@ class LmdbNativeFeatureFlagForkTest {
 			checkEquals(parallelAggregatesBefore, LmdbNativeParallelAggregation.PARALLEL_RUNS.get(),
 					"serial aggregate setup must stay below the parallel threshold");
 
+			// The chunk-off scenario validates both callers. Having proved the sequential factorized fallbacks above,
+			// remove those higher-preference owners so the second arm specifically exercises the parallel external-root
+			// callers with the chunk implementation unavailable.
+			System.setProperty(FACTORIZED_ROWS_FLAG, "false");
+			System.setProperty(FACTORIZED_TAIL_FLAG, "false");
 			System.setProperty("rdf4j.lmdb.parallel.minRootEstimate", "0");
 			String parallelSelectStrategy = strategy(repository, SELECT_QUERY);
 			String parallelAggregateStrategy = strategy(repository, PARALLEL_AGGREGATE_QUERY);
@@ -325,8 +338,8 @@ class LmdbNativeFeatureFlagForkTest {
 
 			checkEquals(expectedSelect, actualSelect, "parallel-off SELECT result parity");
 			checkEquals(expectedAggregate, actualAggregate, "parallel-off aggregate result parity");
-			check(selectStrategy.startsWith("factorizedRows("),
-					"parallel-off SELECT must use sequential factorized rows, got " + selectStrategy);
+			check(selectStrategy.startsWith("chunkPipeline("),
+					"parallel-off SELECT must use the sequential chunk substrate, got " + selectStrategy);
 			check(aggregateStrategy.startsWith("factorizedTail("),
 					"parallel-off aggregate must use sequential factorized aggregation, got "
 							+ aggregateStrategy);

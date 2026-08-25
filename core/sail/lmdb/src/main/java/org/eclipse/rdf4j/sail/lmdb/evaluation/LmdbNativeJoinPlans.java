@@ -685,6 +685,183 @@ final class SuffixFilterCursor implements RowCursor {
 }
 
 @Experimental
+final class LateralPlan implements SlotPlan {
+	final SlotPlan left;
+	final SlotPlan right;
+	final long rightInputMask;
+	final long producedMask;
+
+	LateralPlan(SlotPlan left, SlotPlan right, long rightInputMask) {
+		this.left = left;
+		this.right = right;
+		this.rightInputMask = rightInputMask;
+		this.producedMask = left.producedMask() | right.producedMask();
+	}
+
+	@Override
+	public RowCursor open(RowState row) throws IOException {
+		long entryMask = row.boundMask();
+		return new LateralCursor(left.open(row), right, rightInputMask | entryMask, row);
+	}
+
+	@Override
+	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		return LmdbNativeWork.probeChain(left, right, row, boundMask);
+	}
+
+	@Override
+	public double estimateRows(RowState row, long boundMask) {
+		double leftRows = LmdbNativeWork.rowsOut(left, row, boundMask);
+		double rightRows = LmdbNativeWork.rowsOut(right, row, boundMask | rightInputMask);
+		if (Double.isNaN(leftRows) || Double.isNaN(rightRows)) {
+			return Double.NaN;
+		}
+		double rows = leftRows * rightRows;
+		return Double.isFinite(rows) ? rows : Double.NaN;
+	}
+
+	@Override
+	public long producedMask() {
+		return producedMask;
+	}
+}
+
+/**
+ * Non-reorderable correlated LATERAL cursor. Bindings present at operator entry remain visible to the right arm;
+ * bindings added by the left arm are visible only when declared in {@code rightInputBindingNames}. Hidden left values
+ * are restored before each merged row is exposed and before control returns to the outer plan.
+ */
+@Experimental
+final class LateralCursor implements RowCursor {
+	private final RowCursor left;
+	private final SlotPlan rightPlan;
+	private final long visibleInputMask;
+	private final RowState row;
+	private final int[] hiddenSlots;
+	private final long[] hiddenValues;
+	private RowCursor right;
+	private int hiddenCount;
+	private long rightLexicalInputMask;
+	private boolean leftHidden;
+	private boolean closed;
+	private int pollTick;
+
+	LateralCursor(RowCursor left, SlotPlan rightPlan, long visibleInputMask, RowState row) {
+		this.left = left;
+		this.rightPlan = rightPlan;
+		this.visibleInputMask = visibleInputMask;
+		this.row = row;
+		this.hiddenSlots = new int[row.slots.length];
+		this.hiddenValues = new long[row.slots.length];
+	}
+
+	@Override
+	public boolean next() throws IOException {
+		if (closed || row.cancellation.isCancellationRequested()) {
+			return false;
+		}
+		while (true) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
+			if (right != null) {
+				hideLeftBindings();
+				long previousScope = row.enterLexicalScope(rightLexicalInputMask);
+				boolean available;
+				try {
+					available = right.next();
+				} finally {
+					row.restoreLexicalScope(previousScope);
+					restoreLeftBindings();
+				}
+				if (available) {
+					return true;
+				}
+				right.close();
+				right = null;
+			}
+			if (!left.next()) {
+				close();
+				return false;
+			}
+			captureAndHideLeftBindings();
+			rightLexicalInputMask = row.boundMask();
+			long previousScope = row.enterLexicalScope(rightLexicalInputMask);
+			try {
+				right = rightPlan.open(row);
+			} finally {
+				row.restoreLexicalScope(previousScope);
+				restoreLeftBindings();
+			}
+		}
+	}
+
+	private void captureAndHideLeftBindings() {
+		hiddenCount = 0;
+		long hiddenMask = row.boundMask() & ~visibleInputMask;
+		while (hiddenMask != 0L) {
+			int slot = Long.numberOfTrailingZeros(hiddenMask);
+			hiddenMask &= hiddenMask - 1L;
+			hiddenSlots[hiddenCount] = slot;
+			hiddenValues[hiddenCount] = row.slots[slot];
+			hiddenCount++;
+		}
+		hideLeftBindings();
+	}
+
+	private void hideLeftBindings() {
+		if (leftHidden) {
+			return;
+		}
+		for (int i = 0; i < hiddenCount; i++) {
+			row.replaceSlot(hiddenSlots[i], UNKNOWN);
+		}
+		leftHidden = true;
+	}
+
+	private void restoreLeftBindings() {
+		if (!leftHidden) {
+			return;
+		}
+		for (int i = 0; i < hiddenCount; i++) {
+			row.replaceSlot(hiddenSlots[i], hiddenValues[i]);
+		}
+		leftHidden = false;
+	}
+
+	@Override
+	public void close() {
+		if (closed) {
+			return;
+		}
+		closed = true;
+		Throwable failure = null;
+		try {
+			if (right != null) {
+				right.close();
+			}
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+		}
+		try {
+			left.close();
+		} catch (RuntimeException | Error problem) {
+			if (failure == null) {
+				failure = problem;
+			} else if (failure != problem) {
+				failure.addSuppressed(problem);
+			}
+		} finally {
+			restoreLeftBindings();
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+	}
+}
+
+@Experimental
 final class JoinPlan implements SlotPlan {
 	final SlotPlan left;
 	final SlotPlan right;

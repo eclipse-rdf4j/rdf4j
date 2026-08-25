@@ -45,6 +45,7 @@ public class LmdbNativeRangePartitionedScanTest {
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String PARALLEL_FLAG = "rdf4j.lmdb.parallel.enabled";
 	private static final String THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minRootEstimate";
+	private static final String WORK_THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minWorkEstimate";
 	private static final String THREADS_FLAG = "rdf4j.lmdb.parallel.threads";
 	private static final String MAX_TASKS_FLAG = "rdf4j.lmdb.parallel.maxTasks";
 	private static final String RANGE_FLAG = "rdf4j.lmdb.parallel.rangePartition.enabled";
@@ -55,6 +56,8 @@ public class LmdbNativeRangePartitionedScanTest {
 	private static final String FACTORIZED_TAIL_FLAG = "rdf4j.lmdb.factorizedTail.enabled";
 	private static final String NATIVE_BATCH_FLAG = "rdf4j.lmdb.nativeBatch.enabled";
 	private static final String WCOJ_FLAG = "rdf4j.lmdb.wcoj.enabled";
+	private static final String PACKED_FTREE_FLAG = "rdf4j.lmdb.packedFtree.enabled";
+	private static final String KERNEL_INTERPRETER_FLAG = "rdf4j.lmdb.kernelInterpreter.enabled";
 
 	@TempDir
 	File dataDir;
@@ -64,10 +67,15 @@ public class LmdbNativeRangePartitionedScanTest {
 
 	@BeforeEach
 	public void setUp() {
-		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, THRESHOLD_FLAG, THREADS_FLAG,
+		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, THRESHOLD_FLAG, WORK_THRESHOLD_FLAG,
+				THREADS_FLAG,
 				MAX_TASKS_FLAG, RANGE_FLAG, RANGE_FACTOR_FLAG, JANINO_FLAG, FACTORIZED_ROWS_FLAG,
-				FACTORIZED_TAIL_FLAG, NATIVE_BATCH_FLAG, WCOJ_FLAG, PARALLEL_STARTUP_FLAG);
+				FACTORIZED_TAIL_FLAG, NATIVE_BATCH_FLAG, WCOJ_FLAG, PACKED_FTREE_FLAG, KERNEL_INTERPRETER_FLAG,
+				PARALLEL_STARTUP_FLAG);
+		System.setProperty(NATIVE_FLAG, "true");
+		System.setProperty(PARALLEL_FLAG, "true");
 		System.setProperty(THRESHOLD_FLAG, "0");
+		System.setProperty(WORK_THRESHOLD_FLAG, "0");
 		System.setProperty(THREADS_FLAG, "4");
 		System.setProperty(MAX_TASKS_FLAG, "5");
 		System.setProperty(RANGE_FLAG, "true");
@@ -76,7 +84,10 @@ public class LmdbNativeRangePartitionedScanTest {
 		System.setProperty(FACTORIZED_TAIL_FLAG, "false");
 		System.setProperty(NATIVE_BATCH_FLAG, "false");
 		System.setProperty(WCOJ_FLAG, "false");
+		System.setProperty(PACKED_FTREE_FLAG, "false");
+		System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
 		System.setProperty(PARALLEL_STARTUP_FLAG, "0");
+		LmdbNativeCostCalibration.reset();
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
@@ -106,6 +117,7 @@ public class LmdbNativeRangePartitionedScanTest {
 				repository.shutDown();
 			}
 		} finally {
+			LmdbNativeCostCalibration.reset();
 			restoreProperties(previousProperties);
 		}
 	}

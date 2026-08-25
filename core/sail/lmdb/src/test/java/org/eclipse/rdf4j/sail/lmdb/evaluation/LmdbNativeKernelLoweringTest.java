@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties;
@@ -268,6 +269,21 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	@Test
+	void sixtyJoinProducersLowerWhenOnlyFourSlotsAreLive() {
+		SlotPlan plan = pattern(Term.slot(0), Term.slot(1));
+		for (int i = 1; i < LmdbNativeAggregateCompiler.MAX_NATIVE_SLOTS; i++) {
+			int subject = i & 1;
+			int object = 2 + (i & 1);
+			plan = new JoinPlan(plan, pattern(Term.slot(subject), Term.slot(object)));
+		}
+
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
+
+		assertNotNull(lowered,
+				"producer count must not impose a smaller capability ceiling than the 60-live-slot contract");
+	}
+
+	@Test
 	void closingEdgeLowersToProbeCloseWithMultiplicity() {
 		// Since M9 the simple-cycle core lowers to the Intersect closing level by default; the ProbeClose closing
 		// edge is the fallback contract this test keeps pinned, so it runs with the WCOJ seam off.
@@ -329,6 +345,84 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	@Test
+	void terminalOptionalProbeArmsAreResumable() {
+		SlotPlan core = pattern(Term.slot(0), Term.slot(1));
+		SlotPlan singleProbe = new LeftJoinPlan(core, pattern(Term.slot(1), Term.slot(2)));
+		SlotPlan multiProbe = new LeftJoinPlan(core,
+				new MultiJoinPlan(new SlotPlan[] {
+						pattern(Term.slot(1), Term.slot(2)),
+						pattern(Term.slot(1), Term.slot(3)) }, new MaskedFilter[0]));
+
+		LmdbNativeKernelLowering.Lowered single = LmdbNativeKernelLowering.lowerRows(singleProbe, freshRow(), null);
+		LmdbNativeKernelLowering.Lowered multi = LmdbNativeKernelLowering.lowerRows(multiProbe, freshRow(), null);
+
+		assertNotNull(single);
+		assertNotNull(multi);
+		assertTrue(single.kernel.resumable, single.kernel.shapeKey());
+		assertTrue(multi.kernel.resumable, multi.kernel.shapeKey());
+	}
+
+	@Test
+	void lexicalFrameLeftJoinLowersWithoutAPlanBridge() {
+		RowState row = freshRow();
+		row.bind(2, 777L);
+		SlotPlan plan = SlotPlan.lexicalFrameLeftJoin(
+				pattern(Term.slot(0), Term.slot(1)),
+				pattern(Term.slot(1), Term.slot(2)),
+				new int[] { 2 });
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, row, null);
+
+			assertNotNull(lowered, "the lexical frame must lower to semantic kernel IR");
+			assertNull(lowered.planBridgeReason, "the semantic row bridge must not carry the lexical frame");
+			assertTrue(lowered.kernel.shapeKey().contains("lfj["), lowered.kernel.shapeKey());
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	@Test
+	void lexicalHashLeftJoinLowersThroughSemanticPlanRowsWithoutBridgeFlag() {
+		SlotPlan plan = new LeftJoinPlan(
+				pattern(Term.slot(0), Term.slot(1)),
+				pattern(Term.slot(1), Term.slot(2)),
+				new int[] { 1 }, true);
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
+
+			assertNotNull(lowered, "the stateful lexical join must stay on the semantic native row tier");
+			assertNull(lowered.planBridgeReason);
+			assertTrue(lowered.kernel.shapeKey().contains("PR(p0->"), lowered.kernel.shapeKey());
+			assertEquals(1, lowered.kernel.requirements.plans);
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	@Test
+	void optionalChainWithMaybeUnboundKeyStaysOnSemanticNativeRowTier() {
+		SlotPlan first = new LeftJoinPlan(
+				pattern(Term.slot(0), Term.slot(1)),
+				pattern(Term.slot(1), Term.slot(2)));
+		SlotPlan plan = new LeftJoinPlan(first, pattern(Term.slot(2), Term.slot(3)));
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
+
+			assertNotNull(lowered, "an unbound earlier OPTIONAL key must use semantic native evaluation");
+			assertNull(lowered.planBridgeReason);
+			assertTrue(lowered.kernel.shapeKey().contains("PR(p0->"), lowered.kernel.shapeKey());
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	@Test
 	void filterTiersAssignIdHookAndResidual() {
 		StubSource source = new StubSource();
 		// id tier: slot-vs-slot NE with a subject-assured operand
@@ -381,18 +475,22 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	@Test
-	void unsupportedRootDeclines() {
+	void emptyRootLowersToSemanticNativePlanWithoutBridgeFlag() {
 		String previous = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
 		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
 		try {
-			assertNull(LmdbNativeKernelLowering.lowerRows(EmptyPlan.INSTANCE, freshRow(), null));
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(EmptyPlan.INSTANCE,
+					freshRow(), null);
+			assertNotNull(lowered);
+			assertTrue(lowered.kernel.shapeKey().contains("PR(p0->);"), lowered.kernel.shapeKey());
+			assertNull(lowered.planBridgeReason);
 		} finally {
 			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previous);
 		}
 	}
 
 	@Test
-	void unsupportedRootUsesPlanBridgeOnlyWhenExplicitlyEnabled() {
+	void emptyRootRemainsSemanticNativeWhenPlanBridgeIsExplicitlyEnabled() {
 		String previous = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
 		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "true");
 		try {
@@ -400,7 +498,7 @@ class LmdbNativeKernelLoweringTest {
 					freshRow(), null);
 			assertNotNull(lowered);
 			assertTrue(lowered.kernel.shapeKey().contains("PR(p0->);"), lowered.kernel.shapeKey());
-			assertEquals("unsupported:EmptyPlan", lowered.planBridgeReason);
+			assertNull(lowered.planBridgeReason);
 			assertEquals(1, lowered.kernel.requirements.plans);
 		} finally {
 			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previous);
@@ -691,6 +789,20 @@ class LmdbNativeKernelLoweringTest {
 			assertNotNull(lowered, "the EXISTS-bearing chain must still lower");
 			assertTrue(lowered.kernel.shapeKey().contains("ex{"),
 					"expected an in-kernel Exists witness in the shape key: " + lowered.kernel.shapeKey());
+			LmdbNativeKernelIr.Exists witness = lowered.kernel.pipeline.stream()
+					.filter(LmdbNativeKernelIr.Exists.class::isInstance)
+					.map(LmdbNativeKernelIr.Exists.class::cast)
+					.findFirst()
+					.orElseThrow();
+			LmdbNativeKernelIr.ProbeClose witnessProbe = witness.pipeline.stream()
+					.filter(LmdbNativeKernelIr.ProbeClose.class::isInstance)
+					.map(LmdbNativeKernelIr.ProbeClose.class::cast)
+					.findFirst()
+					.orElseThrow();
+			assertEquals(LmdbNativeKernelIr.Operand.COL, witnessProbe.key.kind,
+					"a correlated witness must anchor its probe on the produced variable column, never a constant");
+			assertEquals(LmdbNativeKernelIr.Operand.CONST, witnessProbe.target.kind,
+					"the bound object remains the close probe's constant target");
 			assertTrue(lowered.bindings.residualFilters.isEmpty(),
 					"the sticky filter must not fall to the residual tier");
 		} finally {
@@ -718,6 +830,24 @@ class LmdbNativeKernelLoweringTest {
 		int fanOutProbe = key.indexOf("P(a1");
 		assertTrue(firstProbe >= 0 && witness > firstProbe && fanOutProbe > witness,
 				"the witness must run after its ?enc producer and before the unrelated fan-out; key=" + key);
+	}
+
+	@Test
+	void aggregateWitnessCorrelatedOnNullableOptionalSlotDeclinesIrLowering() {
+		StubSource source = new StubSource();
+		SlotPlan optional = new LeftJoinPlan(
+				pattern(Term.slot(0), Term.slot(1)),
+				new ExtensionPlan(pattern(Term.slot(1), Term.slot(2)),
+						new CopyBinding[] { CopyBinding.slot(3, 2) }));
+		StatementPatternExistsFilter exists = new StatementPatternExistsFilter(source, Term.slot(3),
+				Term.constant(PRED + 4), Term.constant(17L), Term.unbound(), ContextConstraint.UNRESTRICTED, false);
+		SlotPlan plan = new FilterPlan(optional, exists, -1L);
+
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(plan, freshRow(source),
+				new int[0], new AggregateSpec[] { AggregateSpec.slot("count", 0, false, AggKind.COUNT) }, null);
+
+		assertNull(lowered,
+				"a nullable outer correlation needs a per-row shared-domain mask and must stay on the semantic native row tier");
 	}
 
 	/**
@@ -1179,21 +1309,42 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	/**
-	 * A branch the kernel cannot express must decline the whole union rather than silently dropping that branch.
-	 *
-	 * The branch used here is an {@code EmptyPlan}, which no rung has a lowering case for. It was originally a
-	 * {@code LeftJoinPlan}, on the stated grounds that "the aggregate rung has no OPTIONAL support" — that is no longer
-	 * true (OPTIONAL lowers to a {@code LeftGroup} on both rungs), so keeping it would have left the test asserting a
-	 * capability boundary instead of the invariant it is named for. The invariant is what matters and is unchanged: a
-	 * branch that cannot be lowered must fail the whole union, because a union that quietly loses a branch loses that
-	 * branch's solutions.
+	 * An empty UNION branch remains a real zero-row producer. It must lower explicitly rather than being dropped as an
+	 * algebra simplification, because branch-local filters and wrappers still own the branch boundary.
 	 */
 	@Test
-	void aggregateRungDeclinesAUnionWithAnUnlowerableBranch() {
+	void aggregateRungLowersAnEmptyUnionBranchAsAZeroRowProducer() {
 		SlotPlan anchor = pattern(Term.slot(0), Term.slot(1));
 		SlotPlan union = new UnionPlan(pattern(Term.slot(1), Term.slot(2)), EmptyPlan.INSTANCE);
-		assertNull(lowerCountingWithUnions(SlotPlan.join(anchor, union), 2),
-				"an unlowerable branch must decline the union, not be dropped");
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithUnions(SlotPlan.join(anchor, union), 2);
+		assertNotNull(lowered);
+		assertTrue(lowered.kernel.shapeKey().contains("PR(p0->);"), lowered.kernel.shapeKey());
+	}
+
+	@Test
+	void aggregateRungConsumesNativeSubqueriesThroughSemanticPlanRows() {
+		NativeSubqueryPlan subquery = new NativeSubqueryPlan(
+				bindings -> QueryEvaluationStep.EMPTY_ITERATION,
+				new int[] { 2 }, new String[] { "c" }, new int[0], new String[0]);
+		AggregateSpec[] count = { AggregateSpec.slot("count", 2, false, AggKind.COUNT) };
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered root = LmdbNativeKernelLowering.lowerAggregate(subquery, freshRow(),
+					new int[0], count, null);
+			LmdbNativeKernelLowering.Lowered child = LmdbNativeKernelLowering.lowerAggregate(
+					SlotPlan.join(pattern(Term.slot(0), Term.slot(1)), subquery), freshRow(), new int[0], count,
+					null);
+
+			assertNotNull(root, "a native subquery root must feed the native aggregate tier");
+			assertNotNull(child, "a native subquery inside a join must feed the native aggregate tier");
+			assertNull(root.planBridgeReason);
+			assertNull(child.planBridgeReason);
+			assertTrue(root.kernel.shapeKey().contains("PR(p0->"), root.kernel.shapeKey());
+			assertTrue(child.kernel.shapeKey().contains("PR(p0->"), child.kernel.shapeKey());
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
 	}
 
 	// ------------------------------------------------------------------
@@ -1255,6 +1406,44 @@ class LmdbNativeKernelLoweringTest {
 		assertTrue(key.contains("ex{ED(d0,k"), "the witness must enumerate its VALUES domain; key=" + key);
 		assertTrue(key.contains("C(a2,v1,v"), "the graph pattern must probe the enumerated value; key=" + key);
 		assertArrayEquals(new long[] { 100L, 200L }, lowered.bindings.keyDomains[0].literal);
+	}
+
+	@Test
+	void aggregateWitnessLowersFourSlotFilterThroughExactResidual() {
+		StubSource source = new StubSource();
+		NativeBooleanFilter fourSlotFilter = new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState row) {
+				return row.view.size() >= 0;
+			}
+
+			@Override
+			public long batchReadMask() {
+				return 0b1111L;
+			}
+		};
+		SlotPlan witness = new FilterPlan(pattern(Term.slot(1), Term.slot(3)), fourSlotFilter, -1L);
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithSticky(source, new ExistsFilter(witness));
+
+		assertNotNull(lowered, "a witness filter may read every live slot without leaving the kernel tier");
+		assertTrue(lowered.kernel.shapeKey().contains("fr0("), lowered.kernel.shapeKey());
+		assertEquals(1, lowered.bindings.kernelResiduals.length);
+	}
+
+	@Test
+	void aggregateWitnessLowersAssuredAliasWithNullOnErrorContract() {
+		StubSource source = new StubSource();
+		SlotPlan witness = new ExtensionPlan(pattern(Term.slot(1), Term.slot(2)),
+				new CopyBinding[] { CopyBinding.slot(3, 2) });
+		SlotPlan producer = new FilterPlan(pattern(Term.slot(0), Term.slot(1)), new ExistsFilter(witness), -1L);
+
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(producer,
+				freshRow(source), new int[0],
+				new AggregateSpec[] { AggregateSpec.slot("count", 1, false, AggKind.COUNT) }, null);
+
+		assertNotNull(lowered, "an alias of a pattern-assured source cannot raise a BIND error");
+		assertTrue(lowered.kernel.shapeKey().contains("ba(v"), lowered.kernel.shapeKey());
 	}
 
 	@Test
@@ -1401,7 +1590,10 @@ class LmdbNativeKernelLoweringTest {
 				freshRow(), null, false, new int[] { 1 });
 		assertNotNull(lowered);
 		String shape = lowered.kernel.shapeKey();
-		assertTrue(shape.contains(",x-1)"), shape);
+		assertTrue(lowered.kernel.pipeline.stream()
+				.anyMatch(node -> node instanceof LmdbNativeKernelIr.EnumerateAdjKeys enumerate
+						&& enumerate.valueCol < 0),
+				shape);
 		boolean witnessed = false;
 		for (LmdbNativeKernelBindings.AdjacencyRequest request : lowered.bindings.adjacencies) {
 			witnessed |= request.needsNonEmptyKeys;

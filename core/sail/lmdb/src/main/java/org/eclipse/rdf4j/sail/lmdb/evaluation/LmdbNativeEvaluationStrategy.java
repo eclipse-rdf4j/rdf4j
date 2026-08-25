@@ -20,6 +20,8 @@ import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -29,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
@@ -58,10 +61,11 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	// Constructor inputs retained so the claim-suppressed sibling view can be built with identical configuration.
 	private final TripleSource tripleSourceArg;
 	private final Dataset datasetArg;
-	private final FederatedServiceResolver serviceResolverArg;
 	private final long iterationCacheSyncThresholdArg;
 	private final boolean trackResultSizeArg;
 	// Shadows of post-construction setter state, mirrored onto the view (created lazily, possibly after the setters).
+	private volatile FederatedServiceResolver serviceResolverShadow;
+	private volatile QueryOptimizerPipeline optimizerPipelineShadow;
 	private volatile boolean trackTimeShadow;
 	private volatile boolean trackResultSizeShadow;
 	private volatile LmdbNativeEvaluationStrategy genericOnlyView;
@@ -88,7 +92,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		this.stableOrderPlanner = new LmdbStableOrderPlanner(tripleSource);
 		this.tripleSourceArg = tripleSource;
 		this.datasetArg = dataset;
-		this.serviceResolverArg = serviceResolver;
+		this.serviceResolverShadow = serviceResolver;
 		this.iterationCacheSyncThresholdArg = iterationCacheSyncTreshold;
 		this.trackResultSizeArg = trackResultSize;
 		this.trackResultSizeShadow = trackResultSize;
@@ -108,11 +112,15 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 			synchronized (this) {
 				view = genericOnlyView;
 				if (view == null) {
-					view = new LmdbNativeEvaluationStrategy(tripleSourceArg, datasetArg, serviceResolverArg,
+					view = new LmdbNativeEvaluationStrategy(tripleSourceArg, datasetArg, serviceResolverShadow,
 							iterationCacheSyncThresholdArg, evaluationStatistics, trackResultSizeArg, false);
 					view.setCollectionFactory(getCollectionFactory());
 					view.setTrackTime(trackTimeShadow);
 					view.setTrackResultSize(trackResultSizeShadow);
+					view.setQueryEvaluationMode(getQueryEvaluationMode());
+					if (optimizerPipelineShadow != null) {
+						view.setOptimizerPipeline(optimizerPipelineShadow);
+					}
 					genericOnlyView = view;
 				}
 			}
@@ -120,8 +128,36 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		return view;
 	}
 
+	ValueFactory valueFactory() {
+		return tripleSourceArg.getValueFactory();
+	}
+
+	NativeLmdbQuerySource nativeSource() {
+		return nativeSource;
+	}
+
 	@Override
-	public void setTrackTime(boolean trackTime) {
+	public synchronized void setFederatedServiceResolver(FederatedServiceResolver resolver) {
+		super.setFederatedServiceResolver(resolver);
+		this.serviceResolverShadow = resolver;
+		LmdbNativeEvaluationStrategy view = genericOnlyView;
+		if (view != null) {
+			view.setFederatedServiceResolver(resolver);
+		}
+	}
+
+	@Override
+	public synchronized void setOptimizerPipeline(QueryOptimizerPipeline pipeline) {
+		super.setOptimizerPipeline(pipeline);
+		this.optimizerPipelineShadow = pipeline;
+		LmdbNativeEvaluationStrategy view = genericOnlyView;
+		if (view != null) {
+			view.setOptimizerPipeline(pipeline);
+		}
+	}
+
+	@Override
+	public synchronized void setTrackTime(boolean trackTime) {
 		super.setTrackTime(trackTime);
 		this.trackTimeShadow = trackTime;
 		LmdbNativeEvaluationStrategy view = genericOnlyView;
@@ -131,7 +167,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	}
 
 	@Override
-	public void setTrackResultSize(boolean trackResultSize) {
+	public synchronized void setTrackResultSize(boolean trackResultSize) {
 		super.setTrackResultSize(trackResultSize);
 		this.trackResultSizeShadow = trackResultSize;
 		LmdbNativeEvaluationStrategy view = genericOnlyView;
@@ -141,11 +177,20 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	}
 
 	@Override
-	public void setCollectionFactory(Supplier<CollectionFactory> collectionFactory) {
+	public synchronized void setCollectionFactory(Supplier<CollectionFactory> collectionFactory) {
 		super.setCollectionFactory(collectionFactory);
 		LmdbNativeEvaluationStrategy view = genericOnlyView;
 		if (view != null) {
 			view.setCollectionFactory(collectionFactory);
+		}
+	}
+
+	@Override
+	public synchronized void setQueryEvaluationMode(QueryEvaluationMode queryEvaluationMode) {
+		super.setQueryEvaluationMode(queryEvaluationMode);
+		LmdbNativeEvaluationStrategy view = genericOnlyView;
+		if (view != null) {
+			view.setQueryEvaluationMode(queryEvaluationMode);
 		}
 	}
 
@@ -166,10 +211,6 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
-		if (expr instanceof NativeRootPipeline.PrecompiledStub) {
-			// a rebuilt pipeline chain's inner source (M-A2): compilation already happened
-			return ((NativeRootPipeline.PrecompiledStub) expr).step();
-		}
 		if (nativeEnabled && nativeSource != null) {
 			if (expr instanceof QueryRoot) {
 				return compileHostedPlan(expr, context);
@@ -213,7 +254,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		// this strategy and preserves the interior native fragment claims.
 		LmdbNativeEvaluationStrategy hostCompiler = forceRootGeneric ? genericOnlyView() : this;
 		GenericRootPlan hosted = new GenericRootPlan(hostCompiler.genericPrecompile(expr, context),
-				outcome.unsupportedReason());
+				outcome.hostReason());
 		LmdbNativeAggregateCompiler.HOSTED_GENERIC.incrementAndGet();
 		if (LmdbNativeExplain.recordsExecutionPaths(expr)) {
 			LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_GENERIC_HOSTED, hosted.nativePhysicalPlan());

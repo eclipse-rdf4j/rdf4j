@@ -26,6 +26,21 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 @InternalUseOnly
 public interface KernelHooks {
 
+	/** RDF-term equality for ids in this bound kernel's evaluation-scoped authority. */
+	default boolean sameRdfTerm(long left, long right) {
+		return left == right;
+	}
+
+	/** Hash consistent with {@link #sameRdfTerm(long, long)}. */
+	default long rdfTermHash(long id) {
+		return id;
+	}
+
+	/** Imports an id owned by another bound kernel before parallel DISTINCT sets are merged. */
+	default long importRdfTerm(KernelHooks source, long sourceId) {
+		return sourceId;
+	}
+
 	/**
 	 * Evaluates the registered filter expression {@code filterId} over up to three argument ids (unused trailing
 	 * arguments are {@code -1}). Returns false when the row must be dropped, including the SPARQL

@@ -29,7 +29,9 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -44,13 +46,37 @@ public class LmdbPrefixRunQueryTest {
 	File dataDir;
 
 	private SailRepository repository;
+	private final Map<String, String> previousProperties = new HashMap<>();
+
+	@BeforeEach
+	public void isolatePrefixRunTier() {
+		KernelExecutionTestAccess.resetCostCalibration();
+		disable("rdf4j.lmdb.janinoCodegen.enabled");
+		disable("rdf4j.lmdb.kernelInterpreter.enabled");
+		disable("rdf4j.lmdb.packedFtree.enabled");
+		disable("rdf4j.lmdb.factorizedTail.enabled");
+		disable("rdf4j.lmdb.parallel.enabled");
+		previousProperties.put(LmdbPrefixRunPlan.ENABLED_PROPERTY,
+				System.getProperty(LmdbPrefixRunPlan.ENABLED_PROPERTY));
+	}
 
 	@AfterEach
 	public void tearDown() {
-		System.clearProperty(LmdbPrefixRunPlan.ENABLED_PROPERTY);
 		if (repository != null) {
 			repository.shutDown();
 		}
+		previousProperties.forEach((property, value) -> {
+			if (value == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, value);
+			}
+		});
+		previousProperties.clear();
+	}
+
+	private void disable(String property) {
+		previousProperties.put(property, System.setProperty(property, "false"));
 	}
 
 	@Test

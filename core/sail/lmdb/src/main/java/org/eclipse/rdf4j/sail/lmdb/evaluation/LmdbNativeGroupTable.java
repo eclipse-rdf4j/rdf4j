@@ -179,7 +179,7 @@ final class NativeGroupTable {
 			}
 			int offset = group * aggregates.length;
 			for (int i = 0; i < aggregates.length; i++) {
-				if (aggregates[i].value(row) != UNKNOWN) {
+				if (aggregates[i].hasInput(row)) {
 					tupleCounts[offset + i] = FactorizedTail.addCounts(tupleCounts[offset + i], weight);
 				}
 			}
@@ -232,7 +232,7 @@ final class NativeGroupTable {
 			}
 			int offset = group * aggregates.length;
 			for (int i = 0; i < aggregates.length; i++) {
-				if (aggregates[i].value(row) != UNKNOWN) {
+				if (aggregates[i].hasInput(row)) {
 					tupleCounts[offset + i]++;
 				}
 			}

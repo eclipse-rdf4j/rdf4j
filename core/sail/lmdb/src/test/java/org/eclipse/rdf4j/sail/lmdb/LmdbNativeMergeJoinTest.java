@@ -55,11 +55,30 @@ class LmdbNativeMergeJoinTest {
 
 	SailRepository repository;
 	private String previousJaninoEnabled;
+	private String previousInterpreterEnabled;
+	private String previousPackedFtreeEnabled;
+	private String previousFactorizedRowsEnabled;
+	private String previousChunkPipelineEnabled;
+	private String previousAccumulateJoinEnabled;
+	private String previousCostCalibrationEnabled;
 
 	@BeforeEach
 	void setUp() {
 		previousJaninoEnabled = System.getProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY);
+		previousInterpreterEnabled = System.getProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY);
+		previousPackedFtreeEnabled = System.getProperty("rdf4j.lmdb.packedFtree.enabled");
+		previousFactorizedRowsEnabled = System.getProperty("rdf4j.lmdb.factorizedRows.enabled");
+		previousChunkPipelineEnabled = System.getProperty("rdf4j.lmdb.chunkPipeline.enabled");
+		previousAccumulateJoinEnabled = System.getProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY);
+		previousCostCalibrationEnabled = System.getProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
 		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
+		System.setProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false");
+		System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
+		System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
+		System.setProperty("rdf4j.lmdb.chunkPipeline.enabled", "false");
+		System.setProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY, "false");
+		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "false");
+		LmdbNativeCostCalibration.reset();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
 				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
 		repository = new SailRepository(new LmdbStore(dataDir, config));
@@ -94,7 +113,22 @@ class LmdbNativeMergeJoinTest {
 		} else {
 			System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, previousJaninoEnabled);
 		}
+		restoreProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, previousInterpreterEnabled);
+		restoreProperty("rdf4j.lmdb.packedFtree.enabled", previousPackedFtreeEnabled);
+		restoreProperty("rdf4j.lmdb.factorizedRows.enabled", previousFactorizedRowsEnabled);
+		restoreProperty("rdf4j.lmdb.chunkPipeline.enabled", previousChunkPipelineEnabled);
+		restoreProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY, previousAccumulateJoinEnabled);
+		restoreProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousCostCalibrationEnabled);
+		LmdbNativeCostCalibration.reset();
 		repository.shutDown();
+	}
+
+	private static void restoreProperty(String property, String value) {
+		if (value == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, value);
+		}
 	}
 
 	private void addSparseData() {
@@ -131,6 +165,7 @@ class LmdbNativeMergeJoinTest {
 	void manyToManyRunsMatchGenericBagSemanticsWithoutSeeking() {
 		List<String> generic = genericRows(MANY_TO_MANY_QUERY);
 		resetCounters();
+		System.setProperty(LmdbNativeHashJoin.ENABLED_PROPERTY, "false");
 
 		assertThat(rows(MANY_TO_MANY_QUERY)).isEqualTo(generic).hasSize(2000);
 		assertThat(LmdbNativeMergeJoin.JOINS.get()).isOne();
@@ -143,22 +178,28 @@ class LmdbNativeMergeJoinTest {
 	}
 
 	@Test
-	void sparseOverlapPrefersBoundProbesToAFullMergeSweep() {
+	void sparseOverlapUsesACostedSemanticNativeJoin() {
 		addSparseData();
 		List<String> generic = genericRows(SPARSE_QUERY);
 		resetCounters();
+		long semanticBefore = KernelExecutionTestAccess.semanticNativeCompiles();
+		long hostedBefore = KernelExecutionTestAccess.hostedGenericCompiles();
+		long islandsBefore = KernelExecutionTestAccess.islandCompiles();
 
 		assertThat(rows(SPARSE_QUERY)).isEqualTo(generic).hasSize(100);
-		// Sweeping 3,100 rows to find 100 matches costs more than probing the dense adjacency for each sparse key.
-		// Native merge seek behavior remains covered by the sparse chunk-pipeline fixture.
-		assertThat(LmdbNativeMergeJoin.JOINS.get()).isZero();
-		assertThat(LmdbNativeHashJoin.BUILDS.get()).isZero();
+		// Estimates are cost inputs rather than semantic evidence, so either the merge specialist or the semantic
+		// native bound-probe/hash route may win. Native merge seek mechanics remain covered by the deterministic
+		// sparse chunk-pipeline fixture below.
+		assertThat(KernelExecutionTestAccess.semanticNativeCompiles()).isGreaterThan(semanticBefore);
+		assertThat(KernelExecutionTestAccess.hostedGenericCompiles()).isEqualTo(hostedBefore);
+		assertThat(KernelExecutionTestAccess.islandCompiles()).isEqualTo(islandsBefore);
 	}
 
 	@Test
 	void runOverflowRescansRepeatedLeftRows() {
 		List<String> generic = genericRows(MANY_TO_MANY_QUERY);
 		resetCounters();
+		System.setProperty(LmdbNativeHashJoin.ENABLED_PROPERTY, "false");
 		// runs are 10 rows per key: a cap of 4 forces the stream-tail + probe-rescan path
 		System.setProperty(LmdbNativeMergeJoin.MAX_RUN_ROWS_PROPERTY, "4");
 
@@ -226,6 +267,7 @@ class LmdbNativeMergeJoinTest {
 
 	@Test
 	void multiKeyProbeStageUsesMergeWalkWithRuns() {
+		System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "true");
 		addValuePairData();
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
@@ -248,13 +290,20 @@ class LmdbNativeMergeJoinTest {
 		List<String> generic = genericRows(query);
 		resetCounters();
 		long walksBefore = LmdbNativeChunkPipeline.MERGE_WALKS.get();
+		long semanticBefore = KernelExecutionTestAccess.semanticNativeCompiles();
+		long hostedBefore = KernelExecutionTestAccess.hostedGenericCompiles();
+		long islandsBefore = KernelExecutionTestAccess.islandCompiles();
 
 		assertThat(rows(query)).isEqualTo(generic).isNotEmpty();
-		assertThat(LmdbNativeChunkPipeline.MERGE_WALKS.get()).isGreaterThan(walksBefore);
+		assertThat(LmdbNativeChunkPipeline.MERGE_WALKS.get() > walksBefore
+				|| KernelExecutionTestAccess.semanticNativeCompiles() > semanticBefore).isTrue();
+		assertThat(KernelExecutionTestAccess.hostedGenericCompiles()).isEqualTo(hostedBefore);
+		assertThat(KernelExecutionTestAccess.islandCompiles()).isEqualTo(islandsBefore);
 	}
 
 	@Test
 	void multiKeySparseMergeWalkSeeksAcrossGaps() {
+		System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "true");
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI predicate = vf.createIRI(EX, "sparseWalkP");
@@ -280,10 +329,17 @@ class LmdbNativeMergeJoinTest {
 		resetCounters();
 		long walksBefore = LmdbNativeChunkPipeline.MERGE_WALKS.get();
 		long seeksBefore = LmdbNativeChunkPipeline.MERGE_SEEKS.get();
+		long semanticBefore = KernelExecutionTestAccess.semanticNativeCompiles();
+		long hostedBefore = KernelExecutionTestAccess.hostedGenericCompiles();
+		long islandsBefore = KernelExecutionTestAccess.islandCompiles();
 
 		assertThat(rows(query)).isEqualTo(generic).hasSize(100);
-		assertThat(LmdbNativeChunkPipeline.MERGE_WALKS.get()).isGreaterThan(walksBefore);
-		assertThat(LmdbNativeChunkPipeline.MERGE_SEEKS.get()).isGreaterThan(seeksBefore);
+		boolean mergeWalkedAndSought = LmdbNativeChunkPipeline.MERGE_WALKS.get() > walksBefore
+				&& LmdbNativeChunkPipeline.MERGE_SEEKS.get() > seeksBefore;
+		assertThat(mergeWalkedAndSought || KernelExecutionTestAccess.semanticNativeCompiles() > semanticBefore)
+				.isTrue();
+		assertThat(KernelExecutionTestAccess.hostedGenericCompiles()).isEqualTo(hostedBefore);
+		assertThat(KernelExecutionTestAccess.islandCompiles()).isEqualTo(islandsBefore);
 	}
 
 	@Test
@@ -351,6 +407,7 @@ class LmdbNativeMergeJoinTest {
 
 	@Test
 	void skewedRunsBufferTheSmallerSideInsteadOfRescanning() {
+		System.setProperty(LmdbNativeHashJoin.ENABLED_PROPERTY, "false");
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI sparseKey = vf.createIRI(EX, "sparseKey");

@@ -299,7 +299,16 @@ final class ExtensionCursor implements RowCursor {
 	@Override
 	public boolean next() throws IOException {
 		release();
+		long previousSolution = row.logicalSolutionIdentity;
 		while (arg.next()) {
+			// The innermost Extension seeing a physical input row establishes its logical-solution identity. Outer
+			// chained Extensions retain the identity established by their argument so every expression evaluated over
+			// the same mapping shares labeled BNODE state, while the next physical occurrence receives a fresh
+			// identity.
+			if (row.logicalSolutionIdentity == previousSolution) {
+				row.beginLogicalSolution();
+			}
+			previousSolution = row.logicalSolutionIdentity;
 			// a run of bind conflicts advances without emitting; poll or the probe deadline starves
 			LmdbNativeProbeDeadline.poll(++probePollTick);
 			int mark = row.mark();
@@ -307,7 +316,13 @@ final class ExtensionCursor implements RowCursor {
 			for (CopyBinding copy : copies) {
 				long id = copy.value(row);
 				if (id == UNKNOWN) {
-					continue;
+					if (!copy.setNullOnError) {
+						continue;
+					}
+					// Match ExtensionIterator's setNullOnError contract. The zero id is an occupied slot for
+					// join/conflict purposes but remains absent from the visible BindingSet, so a later pattern cannot
+					// turn a failed assignment into a new binding.
+					id = LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
 				}
 				boolean bound = copy.termChecked ? row.bindOrCheckTerm(copy.targetSlot, id)
 						: row.bind(copy.targetSlot, id);
@@ -357,7 +372,7 @@ final class RowDistinctPlan implements SlotPlan {
 	@Override
 	public RowCursor open(RowState row) throws IOException {
 		RowCursor inner = arg.open(row);
-		NativeDistinctTracker tracker = new NativeDistinctTracker(slots);
+		NativeDistinctTracker tracker = new NativeDistinctTracker(slots, row.termAuthority());
 		return new RowCursor() {
 			int probePollTick;
 
@@ -464,9 +479,10 @@ final class MinusCursor implements RowCursor {
 		this.sharedMask = sharedMask;
 		this.row = row;
 		// The monolithic native plan keeps surrounding join bindings in the mutable row. They are physical probe
-		// constraints, not part of either MINUS operand's algebraic solution domain. Only externally supplied base
-		// bindings occur in both operands in addition to names statically shared by the two children.
-		this.compatibilityMask = sharedMask | row.baseBindingMask;
+		// constraints, not part of either MINUS operand's algebraic solution domain. Bindings inherited at the current
+		// lexical boundary (the caller's base mapping at a root, or the complete outer mapping inside EXISTS) occur in
+		// both operands in addition to names statically shared by the two children.
+		this.compatibilityMask = sharedMask | row.lexicalInputMask;
 		this.sharedSlots = slotsOf(compatibilityMask);
 		this.leftSharedValues = new long[sharedSlots.length];
 		this.clearedSlots = new int[row.slots.length];
@@ -489,7 +505,9 @@ final class MinusCursor implements RowCursor {
 				: null;
 		// The mark table reproduces the independent-evaluation verdict, which is only memoizable at all when the
 		// right plan's read set is known — the same gate the per-key memo uses.
-		this.markProbe = memoSlots != null ? SubplanMarkProbe.tryCreateMinus(right, sharedMask) : null;
+		this.markProbe = memoSlots != null && row.lexicalInputMask == row.baseBindingMask
+				? SubplanMarkProbe.tryCreateMinus(right, sharedMask)
+				: null;
 	}
 
 	@Override
@@ -519,7 +537,7 @@ final class MinusCursor implements RowCursor {
 		// A direct membership probe may correlate shared left values, but it must not see physical bindings from
 		// surrounding joins that the independently evaluated right operand does not own.
 		if (membershipProbe != null
-				&& (row.boundMask() & ~(sharedMask | row.baseBindingMask)) == 0L) {
+				&& (row.boundMask() & ~(sharedMask | row.lexicalInputMask)) == 0L) {
 			int result = membershipProbe.test(row);
 			if (result >= 0) {
 				return result == 1;
@@ -528,7 +546,7 @@ final class MinusCursor implements RowCursor {
 			// the masked correlated existence verdict (the openCorrelatedRight semantics) can be answered straight
 			// from the planes while membership admission warms up, replacing the per-row store probe.
 			if (adjacencyProbe != null) {
-				int served = adjacencyProbe.test(row, sharedMask | row.baseBindingMask);
+				int served = adjacencyProbe.test(row, sharedMask | row.lexicalInputMask);
 				if (served >= 0) {
 					boolean matched = served == 1;
 					membershipProbe.recordDirectResult(matched);
@@ -549,7 +567,7 @@ final class MinusCursor implements RowCursor {
 				&& (row.boundMask() & sharedMask & ~assuredRightMask) == 0L;
 		if (memoSlots == null) {
 			if (adjacencyEligible) {
-				int served = adjacencyProbe.test(row, sharedMask | row.baseBindingMask);
+				int served = adjacencyProbe.test(row, sharedMask | row.lexicalInputMask);
 				if (served >= 0) {
 					return served == 1;
 				}
@@ -566,7 +584,7 @@ final class MinusCursor implements RowCursor {
 		// The per-key memo stays the O(1) front; the plane views answer memo misses (the masked lookups reproduce
 		// openCorrelatedRight, which is exact for a single-pattern right side).
 		if (adjacencyEligible) {
-			int served = adjacencyProbe.test(row, sharedMask | row.baseBindingMask);
+			int served = adjacencyProbe.test(row, sharedMask | row.lexicalInputMask);
 			if (served >= 0) {
 				boolean result = served == 1;
 				memo.put(row.slots, memoSlots, result);
@@ -597,7 +615,7 @@ final class MinusCursor implements RowCursor {
 	 * is still physical probe state and must not leak into the right operand.
 	 */
 	boolean openCorrelatedRight() throws IOException {
-		long clearMask = row.boundMask() & ~(sharedMask | row.baseBindingMask);
+		long clearMask = row.boundMask() & ~(sharedMask | row.lexicalInputMask);
 		int clearedCount = clearSlots(clearMask);
 		try {
 			try (RowCursor cursor = right.open(row)) {
@@ -609,10 +627,11 @@ final class MinusCursor implements RowCursor {
 	}
 
 	boolean openIndependentAndCheckRight(long leftBoundMask) throws IOException {
-		// Evaluate the right operand from the external base row, exactly like RDF4J's algebra evaluator. Values
-		// accumulated by surrounding joins or by the left operand are only physical probe state and must not
-		// correlate the right operand. Save and clear all of them, then restore the active left row after the probe.
-		long clearMask = row.boundMask() & ~row.baseBindingMask;
+		// Evaluate the right operand from the current lexical input row, exactly like RDF4J's algebra evaluator. Values
+		// accumulated by this operand's surrounding joins or by its left child are only physical probe state and must
+		// not correlate the right operand. Save and clear all of them, then restore the active left row after the
+		// probe.
+		long clearMask = row.boundMask() & ~row.lexicalInputMask;
 		for (int i = 0; i < sharedSlots.length; i++) {
 			int slot = sharedSlots[i];
 			leftSharedValues[i] = row.slots[slot];

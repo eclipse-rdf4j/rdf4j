@@ -204,6 +204,27 @@ class LmdbNativeAdaptiveArbitrationTest {
 				"spacing forbids a consecutive probe even with credit remaining");
 	}
 
+	@Test
+	void semanticNestedLoopFallbackIsNeverConsumedAsAnExperimentalProbe() {
+		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		LmdbNativeAdaptiveArbitration.Priced<String> incumbent = pricedWithEvidence("factorizedTail", 0,
+				5_000_000, 10_000_000, 20_000_000, 12);
+		LmdbNativeAdaptiveArbitration.Priced<String> semanticFallback = structuralOnly(
+				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 2);
+		store.safetyLedger().earn(1_000_000_000_000L);
+
+		LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<String> probe = LmdbNativeAdaptiveArbitration.maybeProbe(
+				List.of(incumbent, semanticFallback), incumbent, model,
+				new LmdbNativeAdaptiveArbitration.ProbeContext(LmdbNativeProbeConfig.defaults(),
+						new LmdbNativeQueryProbeBudget(), true));
+
+		assertSame(null, probe,
+				"a timed-out experiment is removed from the dispatch; the semantic fallback must remain available "
+						+ "after every specialized candidate declines");
+	}
+
 	/**
 	 * 2026-08-22 HC:8 lock-in, cause 2: probe-deadline censors inflate nEff (ten 0.1-weight censors read as nEff 10)
 	 * while anchoring the price near the deadline instead of reality. An arm whose exact evidence contains no completed

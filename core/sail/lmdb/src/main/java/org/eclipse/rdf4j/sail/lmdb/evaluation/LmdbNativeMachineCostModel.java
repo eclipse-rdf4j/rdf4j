@@ -53,6 +53,11 @@ final class LmdbNativeMachineCostModel {
 		return JVM_WIDE;
 	}
 
+	/** Restores the process-wide learner to its deterministic startup prior for isolated physical-route tests. */
+	synchronized void resetForTests() {
+		published.set(new LmdbNativeMachineCostModel(defaultPrior()).snapshot());
+	}
+
 	Snapshot snapshot() {
 		return published.get();
 	}

@@ -93,6 +93,7 @@ class LmdbNativeKernelAggregatePollPointTest {
 		System.setProperty("rdf4j.lmdb.irAggregateParallel.enabled", "false");
 		System.setProperty("rdf4j.lmdb.adaptiveProbe.enabled", "false");
 		System.setProperty("rdf4j.lmdb.adaptiveHedge.enabled", "false");
+		KernelExecutionTestAccess.resetCostCalibration();
 
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)

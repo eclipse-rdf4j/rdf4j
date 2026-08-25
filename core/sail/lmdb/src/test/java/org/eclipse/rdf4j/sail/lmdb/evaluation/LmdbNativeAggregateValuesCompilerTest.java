@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.UNKNOWN_ID;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -36,6 +37,8 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -85,6 +88,38 @@ class LmdbNativeAggregateValuesCompilerTest {
 			assertThat(count.longValue())
 					.as("the residual value-set filter must reject the compileTuple-only UNION child")
 					.isEqualTo(1L);
+			assertThat(rows.hasNext()).isFalse();
+		}
+	}
+
+	@Test
+	void unusedDeclaredLateralInputsDoNotConsumeNativeSlots() {
+		MapBindingSet valuesRow = new MapBindingSet(60);
+		Set<String> valueNames = new LinkedHashSet<>();
+		for (int i = 0; i < 60; i++) {
+			String name = "v" + i;
+			valueNames.add(name);
+			valuesRow.addBinding(name, VF.createLiteral(i));
+		}
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(valueNames);
+		values.setBindingSets(List.of(valuesRow));
+		Set<String> unusedInputs = new LinkedHashSet<>();
+		for (int i = 0; i < 20; i++) {
+			unusedInputs.add("unused" + i);
+		}
+		Lateral lateral = new Lateral(values, new SingletonSet(), unusedInputs);
+		SingleStatementSource source = new SingleStatementSource();
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null,
+				0L, new EvaluationStatistics(), false);
+
+		QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(lateral,
+				new QueryEvaluationContext.Minimal((Dataset) null), strategy, source);
+
+		assertThat(step).as("only the sixty live VALUES names may occupy native slots").isNotNull();
+		try (CloseableIteration<BindingSet> rows = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(rows.hasNext()).isTrue();
+			assertThat(rows.next().size()).isEqualTo(60);
 			assertThat(rows.hasNext()).isFalse();
 		}
 	}

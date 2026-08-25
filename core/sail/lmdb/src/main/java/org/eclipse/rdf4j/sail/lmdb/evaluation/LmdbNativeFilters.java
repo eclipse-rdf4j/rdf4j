@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
@@ -82,26 +83,26 @@ interface NativeBooleanFilter {
 }
 
 /**
- * Generic SPARQL predicate together with the exact fragment-local slots it reads.
+ * Semantic native SPARQL value outcome together with the exact fragment-local slots it reads.
  * <p>
- * The evaluator is intentionally still RDF4J's precompiled value-expression step; naming this wrapper does not
- * substitute native comparison semantics. It only preserves information that an anonymous lambda discarded, allowing
- * batch execution and generated-kernel hooks to install precisely the slots the generic evaluator reads. A
- * {@code readMask} of {@code -1} means at least one name belongs to an outer fragment and remains sticky.
+ * The evaluator is RDF4J's prepared value-expression semantics hosted directly by the native row tier. It preserves
+ * BOUND/UNBOUND/ERROR until the FILTER truth boundary while allowing batch execution and generated-kernel hooks to
+ * install precisely the slots the semantic evaluator reads. A {@code readMask} of {@code -1} means at least one name
+ * belongs to an outer fragment and remains sticky.
  */
 @Experimental
-final class GenericBooleanFilter implements NativeBooleanFilter {
-	/** The shared predicate (compile-once mode); null in per-evaluation mode. */
-	private final Predicate<BindingSet> predicate;
+final class NativeValueOutcomeBooleanFilter implements NativeBooleanFilter {
+	/** The shared evaluator (compile-once mode); null in per-evaluation mode. */
+	private final NativeBindingSetValueEvaluator evaluator;
 	private final long readMask;
 	/** Per-evaluation mode (M-A1a): the pinned condition, compiled once per evaluation through the row's context. */
 	private final GenericSubplanDescriptor descriptor;
-	private final Function<NativeExecutionContext, Predicate<BindingSet>> perEvaluationCompile;
-	private final Supplier<Predicate<BindingSet>> sharedFallbackCompile;
-	private volatile Predicate<BindingSet> sharedFallback;
+	private final Function<NativeExecutionContext, NativeBindingSetValueEvaluator> perEvaluationCompile;
+	private final Supplier<NativeBindingSetValueEvaluator> sharedFallbackCompile;
+	private volatile NativeBindingSetValueEvaluator sharedFallback;
 
-	GenericBooleanFilter(Predicate<BindingSet> predicate, long readMask) {
-		this.predicate = predicate;
+	NativeValueOutcomeBooleanFilter(NativeBindingSetValueEvaluator evaluator, long readMask) {
+		this.evaluator = evaluator;
 		this.readMask = readMask;
 		this.descriptor = null;
 		this.perEvaluationCompile = null;
@@ -109,15 +110,15 @@ final class GenericBooleanFilter implements NativeBooleanFilter {
 	}
 
 	/**
-	 * Per-evaluation mode: the condition carries query-scope state (e.g. NOW), so its predicate is compiled once per
+	 * Per-evaluation mode: the condition carries query-scope state (e.g. NOW), so its evaluator is compiled once per
 	 * evaluation via {@link NativeExecutionContext#genericStep} — every evaluation of a retained compiled step observes
 	 * a fresh query scope, and all rows of one evaluation share one. The shared fallback covers rows whose source
 	 * carries no execution context (defensive; the compiling planner marks such plans context-requiring).
 	 */
-	GenericBooleanFilter(GenericSubplanDescriptor descriptor,
-			Function<NativeExecutionContext, Predicate<BindingSet>> perEvaluationCompile,
-			Supplier<Predicate<BindingSet>> sharedFallbackCompile, long readMask) {
-		this.predicate = null;
+	NativeValueOutcomeBooleanFilter(GenericSubplanDescriptor descriptor,
+			Function<NativeExecutionContext, NativeBindingSetValueEvaluator> perEvaluationCompile,
+			Supplier<NativeBindingSetValueEvaluator> sharedFallbackCompile, long readMask) {
+		this.evaluator = null;
 		this.readMask = readMask;
 		this.descriptor = descriptor;
 		this.perEvaluationCompile = perEvaluationCompile;
@@ -126,12 +127,14 @@ final class GenericBooleanFilter implements NativeBooleanFilter {
 
 	@Override
 	public boolean accept(RowState row) {
-		return resolvePredicate(row).test(row.view);
+		NativeValueOutcome outcome = resolveEvaluator(row).evaluate(row.view);
+		return outcome.isBound()
+				&& QueryEvaluationUtility.getEffectiveBooleanValue(outcome.value()).orElse(false);
 	}
 
-	private Predicate<BindingSet> resolvePredicate(RowState row) {
-		if (predicate != null) {
-			return predicate;
+	private NativeBindingSetValueEvaluator resolveEvaluator(RowState row) {
+		if (evaluator != null) {
+			return evaluator;
 		}
 		if (row.source instanceof SyntheticValueSource) {
 			NativeExecutionContext context = ((SyntheticValueSource) row.source).executionContext();
@@ -139,7 +142,7 @@ final class GenericBooleanFilter implements NativeBooleanFilter {
 				return context.genericStep(descriptor, () -> perEvaluationCompile.apply(context));
 			}
 		}
-		Predicate<BindingSet> shared = sharedFallback;
+		NativeBindingSetValueEvaluator shared = sharedFallback;
 		if (shared == null) {
 			synchronized (this) {
 				shared = sharedFallback;
@@ -344,7 +347,6 @@ final class CloseOnceNativeBooleanFilter implements NativeBooleanFilter {
 
 @Experimental
 final class StatementPatternExistsFilter implements NativeBooleanFilter {
-	final NativeLmdbQuerySource source;
 	final Term s;
 	final Term p;
 	final Term o;
@@ -357,14 +359,9 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 	 * values through the arity-adaptive keyed-match store.
 	 */
 	final int[] varyingSlots;
-	final PatternMembershipProbe membershipProbe;
-	final AdjacencyIntersectionProbe adjacencyProbe;
-	KeyedMatches memo;
-	byte constantResult;
 
 	StatementPatternExistsFilter(NativeLmdbQuerySource source, Term s, Term p, Term o, Term c,
 			ContextConstraint contexts, boolean namedContextScope) {
-		this.source = source;
 		this.s = s;
 		this.p = p;
 		this.o = o;
@@ -379,17 +376,30 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 			}
 		}
 		this.varyingSlots = Arrays.copyOf(varying, n);
-		this.membershipProbe = PatternMembershipProbe.tryCreate(s, p, o, c, contexts, namedContextScope);
-		this.adjacencyProbe = AdjacencyIntersectionProbe.tryCreate(s, p, o, c, contexts, namedContextScope);
 	}
 
 	@Override
 	public boolean accept(RowState row) {
-		if (adjacencyProbe != null) {
-			return acceptWithAdjacency(row);
+		NativeExecutionContext execution = executionContext(row);
+		State state = execution == null ? new State() : execution.nativeState(this, State::new);
+		try {
+			return accept(row, state);
+		} finally {
+			if (execution == null) {
+				state.close();
+			}
 		}
-		if (membershipProbe != null) {
-			int result = membershipProbe.test(row);
+	}
+
+	private boolean accept(RowState row, State state) {
+		if (hasUnboundMarker(row)) {
+			return acceptUnboundMarker(row, state);
+		}
+		if (state.adjacencyProbe != null) {
+			return acceptWithAdjacency(row, state);
+		}
+		if (state.membershipProbe != null) {
+			int result = state.membershipProbe.test(row);
 			if (result >= 0) {
 				return result == 1;
 			}
@@ -402,23 +412,21 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 			return false;
 		}
 		if (varyingSlots.length == 0) {
-			if (constantResult != 0) {
-				return constantResult == 1;
+			if (state.constantResult != 0) {
+				return state.constantResult == 1;
 			}
-			boolean result = evaluate(subj, pred, obj, context);
-			constantResult = result ? (byte) 1 : (byte) 2;
+			boolean result = evaluate(row.source, subj, pred, obj, context);
+			state.constantResult = result ? (byte) 1 : (byte) 2;
 			return result;
 		}
-		if (memo == null) {
-			memo = new KeyedMatches(varyingSlots.length, 256).withVerdicts();
-		}
+		KeyedMatches memo = state.memo();
 		Boolean cached = memo.memoGet(row.slots, varyingSlots);
 		if (cached != null) {
 			return cached;
 		}
-		boolean result = evaluate(subj, pred, obj, context);
-		if (membershipProbe != null) {
-			membershipProbe.recordDirectResult(result);
+		boolean result = evaluate(row.source, subj, pred, obj, context);
+		if (state.membershipProbe != null) {
+			state.membershipProbe.recordDirectResult(result);
 		}
 		memo.memoPut(row.slots, varyingSlots, result);
 		return result;
@@ -429,9 +437,9 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 	 * path — the plane views only replace the expensive store probe on a miss, and their verdicts feed the same
 	 * membership admission and memo so the steady state is unchanged.
 	 */
-	private boolean acceptWithAdjacency(RowState row) {
-		if (membershipProbe != null) {
-			int result = membershipProbe.test(row);
+	private boolean acceptWithAdjacency(RowState row, State state) {
+		if (state.membershipProbe != null) {
+			int result = state.membershipProbe.test(row);
 			if (result >= 0) {
 				return result == 1;
 			}
@@ -444,25 +452,23 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 			return false;
 		}
 		if (varyingSlots.length == 0) {
-			if (constantResult != 0) {
-				return constantResult == 1;
+			if (state.constantResult != 0) {
+				return state.constantResult == 1;
 			}
-			int served = adjacencyProbe.test(row, -1L);
-			boolean result = served >= 0 ? served == 1 : evaluate(subj, pred, obj, context);
-			constantResult = result ? (byte) 1 : (byte) 2;
+			int served = state.adjacencyProbe.test(row, -1L);
+			boolean result = served >= 0 ? served == 1 : evaluate(row.source, subj, pred, obj, context);
+			state.constantResult = result ? (byte) 1 : (byte) 2;
 			return result;
 		}
-		if (memo == null) {
-			memo = new KeyedMatches(varyingSlots.length, 256).withVerdicts();
-		}
+		KeyedMatches memo = state.memo();
 		Boolean cached = memo.memoGet(row.slots, varyingSlots);
 		if (cached != null) {
 			return cached;
 		}
-		int served = adjacencyProbe.test(row, -1L);
-		boolean result = served >= 0 ? served == 1 : evaluate(subj, pred, obj, context);
-		if (membershipProbe != null) {
-			membershipProbe.recordDirectResult(result);
+		int served = state.adjacencyProbe.test(row, -1L);
+		boolean result = served >= 0 ? served == 1 : evaluate(row.source, subj, pred, obj, context);
+		if (state.membershipProbe != null) {
+			state.membershipProbe.recordDirectResult(result);
 		}
 		memo.memoPut(row.slots, varyingSlots, result);
 		return result;
@@ -473,28 +479,37 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 		if (varyingSlots.length < 2 || varyingSlots.length > 4) {
 			return NativeBooleanFilter.super.selectBatch(batch, sel, n, scratch);
 		}
-		if (memo == null) {
-			memo = new KeyedMatches(varyingSlots.length, 256).withVerdicts();
-		}
+		NativeExecutionContext execution = executionContext(scratch);
+		State state = execution == null ? new State() : execution.nativeState(this, State::new);
+		KeyedMatches memo = state.memo();
 		memo.prepareBatch(batch, sel, n, varyingSlots);
-		int accepted = 0;
-		for (int i = 0; i < n; i++) {
-			int physicalRow = sel[i];
-			batch.copyToRow(physicalRow, scratch.slots);
-			scratch.recomputeBoundMask();
-			if (acceptPrepared(batch, physicalRow, i, scratch)) {
-				sel[accepted++] = physicalRow;
+		try {
+			int accepted = 0;
+			for (int i = 0; i < n; i++) {
+				int physicalRow = sel[i];
+				batch.copyToRow(physicalRow, scratch.slots);
+				scratch.recomputeBoundMask();
+				if (acceptPrepared(batch, physicalRow, i, scratch, state)) {
+					sel[accepted++] = physicalRow;
+				}
+			}
+			return accepted;
+		} finally {
+			if (execution == null) {
+				state.close();
 			}
 		}
-		return accepted;
 	}
 
-	private boolean acceptPrepared(NativeBatch batch, int physicalRow, int preparedIndex, RowState row) {
-		if (adjacencyProbe != null) {
-			return acceptPreparedWithAdjacency(batch, physicalRow, preparedIndex, row);
+	private boolean acceptPrepared(NativeBatch batch, int physicalRow, int preparedIndex, RowState row, State state) {
+		if (hasUnboundMarker(row)) {
+			return acceptPreparedUnboundMarker(batch, physicalRow, preparedIndex, row, state);
 		}
-		if (membershipProbe != null) {
-			int result = membershipProbe.test(row);
+		if (state.adjacencyProbe != null) {
+			return acceptPreparedWithAdjacency(batch, physicalRow, preparedIndex, row, state);
+		}
+		if (state.membershipProbe != null) {
+			int result = state.membershipProbe.test(row);
 			if (result >= 0) {
 				return result == 1;
 			}
@@ -506,22 +521,71 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 		if (namedContextScope && context == NULL_CONTEXT_ID) {
 			return false;
 		}
+		KeyedMatches memo = state.memo();
 		Boolean cached = memo.memoGetPrepared(batch, physicalRow, varyingSlots, preparedIndex);
 		if (cached != null) {
 			return cached;
 		}
-		boolean result = evaluate(subj, pred, obj, context);
-		if (membershipProbe != null) {
-			membershipProbe.recordDirectResult(result);
+		boolean result = evaluate(row.source, subj, pred, obj, context);
+		if (state.membershipProbe != null) {
+			state.membershipProbe.recordDirectResult(result);
 		}
 		memo.memoPutPrepared(row.slots, varyingSlots, preparedIndex, result);
 		return result;
+	}
+
+	/**
+	 * Assignment errors occupy their native slot with the zero marker so an ordinary later tuple producer cannot bind
+	 * the failed target. EXISTS has different substitution semantics: an absent outer binding is not substituted into
+	 * the body, so the same variable remains free there. Fast membership and adjacency probes consume raw slot ids and
+	 * would interpret zero as a correlated value; bypass them for this row and evaluate the pattern with marker-bearing
+	 * slot terms normalized to {@link LmdbNativeAggregateCompiler#UNKNOWN}.
+	 */
+	private boolean acceptUnboundMarker(RowState row, State state) {
+		KeyedMatches memo = state.memo();
+		Boolean cached = memo.memoGet(row.slots, varyingSlots);
+		if (cached != null) {
+			return cached;
+		}
+		boolean result = evaluate(row.source, lookupForExists(s, row.slots), lookupForExists(p, row.slots),
+				lookupForExists(o, row.slots), lookupForExists(c, row.slots));
+		memo.memoPut(row.slots, varyingSlots, result);
+		return result;
+	}
+
+	/** Prepared-batch twin of {@link #acceptUnboundMarker(RowState, State)}. */
+	private boolean acceptPreparedUnboundMarker(NativeBatch batch, int physicalRow, int preparedIndex, RowState row,
+			State state) {
+		KeyedMatches memo = state.memo();
+		Boolean cached = memo.memoGetPrepared(batch, physicalRow, varyingSlots, preparedIndex);
+		if (cached != null) {
+			return cached;
+		}
+		boolean result = evaluate(row.source, lookupForExists(s, row.slots), lookupForExists(p, row.slots),
+				lookupForExists(o, row.slots), lookupForExists(c, row.slots));
+		memo.memoPutPrepared(row.slots, varyingSlots, preparedIndex, result);
+		return result;
+	}
+
+	private boolean hasUnboundMarker(RowState row) {
+		for (int slot : varyingSlots) {
+			if (row.slots[slot] == NULL_CONTEXT_ID) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static long lookupForExists(Term term, long[] slots) {
+		long value = term.lookup(slots);
+		return term.hasSlot() && value == NULL_CONTEXT_ID ? LmdbNativeAggregateCompiler.UNKNOWN : value;
 	}
 
 	/** Prepared-batch twin of {@link #acceptWithAdjacency}: same layers, planes replacing the store probe on miss. */
-	private boolean acceptPreparedWithAdjacency(NativeBatch batch, int physicalRow, int preparedIndex, RowState row) {
-		if (membershipProbe != null) {
-			int result = membershipProbe.test(row);
+	private boolean acceptPreparedWithAdjacency(NativeBatch batch, int physicalRow, int preparedIndex, RowState row,
+			State state) {
+		if (state.membershipProbe != null) {
+			int result = state.membershipProbe.test(row);
 			if (result >= 0) {
 				return result == 1;
 			}
@@ -533,20 +597,21 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 		if (namedContextScope && context == NULL_CONTEXT_ID) {
 			return false;
 		}
+		KeyedMatches memo = state.memo();
 		Boolean cached = memo.memoGetPrepared(batch, physicalRow, varyingSlots, preparedIndex);
 		if (cached != null) {
 			return cached;
 		}
-		int served = adjacencyProbe.test(row, -1L);
-		boolean result = served >= 0 ? served == 1 : evaluate(subj, pred, obj, context);
-		if (membershipProbe != null) {
-			membershipProbe.recordDirectResult(result);
+		int served = state.adjacencyProbe.test(row, -1L);
+		boolean result = served >= 0 ? served == 1 : evaluate(row.source, subj, pred, obj, context);
+		if (state.membershipProbe != null) {
+			state.membershipProbe.recordDirectResult(result);
 		}
 		memo.memoPutPrepared(row.slots, varyingSlots, preparedIndex, result);
 		return result;
 	}
 
-	boolean evaluate(long subj, long pred, long obj, long context) {
+	boolean evaluate(NativeLmdbQuerySource source, long subj, long pred, long obj, long context) {
 		try {
 			if (contexts.isFixed()) {
 				if (context != UNKNOWN) {
@@ -580,10 +645,33 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 		}
 	}
 
-	@Override
-	public void close() {
-		if (adjacencyProbe != null) {
-			adjacencyProbe.close();
+	private static NativeExecutionContext executionContext(RowState row) {
+		if (row.source instanceof SyntheticValueSource synthetic) {
+			return synthetic.executionContext();
+		}
+		return null;
+	}
+
+	private final class State implements AutoCloseable {
+		final PatternMembershipProbe membershipProbe = PatternMembershipProbe.tryCreate(s, p, o, c, contexts,
+				namedContextScope);
+		final AdjacencyIntersectionProbe adjacencyProbe = AdjacencyIntersectionProbe.tryCreate(s, p, o, c, contexts,
+				namedContextScope);
+		KeyedMatches memo;
+		byte constantResult;
+
+		KeyedMatches memo() {
+			if (memo == null) {
+				memo = new KeyedMatches(varyingSlots.length, 256).withVerdicts();
+			}
+			return memo;
+		}
+
+		@Override
+		public void close() {
+			if (adjacencyProbe != null) {
+				adjacencyProbe.close();
+			}
 		}
 	}
 }
@@ -595,40 +683,37 @@ final class ExistsFilter implements NativeBooleanFilter {
 	/**
 	 * When the subplan's outcome depends only on the current values of a known slot set (see {@link #memoReadMask}),
 	 * the per-row existence probe is memoized on those values instead of reopening the whole subplan cursor tree per
-	 * row. Compiled plans live for a single query execution, so the memo never spans transaction snapshots.
+	 * row. The memo and all adaptive probes belong to {@link NativeExecutionContext}, because this compiled filter may
+	 * be evaluated repeatedly or concurrently across transaction snapshots.
 	 */
 	final int[] memoSlots;
-	final PatternMembershipProbe membershipProbe;
-	final AdjacencyIntersectionProbe adjacencyProbe;
-	/** Build-once mark tier for multi-operator subplans (Milestone 5); single patterns use the probes above. */
-	final SubplanMarkProbe markProbe;
-	KeyedMatches memo;
 
 	ExistsFilter(SlotPlan subPlan) {
 		this.subPlan = subPlan;
 		this.existsPlan = NativeExistsPatternCursor.plan(subPlan);
 		long readMask = memoReadMask(subPlan);
 		this.memoSlots = readMask < 0L ? null : slotsOf(readMask);
-		this.membershipProbe = subPlan instanceof PatternPlan
-				? PatternMembershipProbe.tryCreate(((PatternPlan) subPlan).s, ((PatternPlan) subPlan).p,
-						((PatternPlan) subPlan).o, ((PatternPlan) subPlan).c, ((PatternPlan) subPlan).contexts,
-						((PatternPlan) subPlan).namedContextScope)
-				: null;
-		this.adjacencyProbe = subPlan instanceof PatternPlan
-				? AdjacencyIntersectionProbe.tryCreate(((PatternPlan) subPlan).s, ((PatternPlan) subPlan).p,
-						((PatternPlan) subPlan).o, ((PatternPlan) subPlan).c, ((PatternPlan) subPlan).contexts,
-						((PatternPlan) subPlan).namedContextScope)
-				: null;
-		this.markProbe = memoSlots != null ? SubplanMarkProbe.tryCreateExists(subPlan, memoSlots) : null;
 	}
 
 	@Override
 	public boolean accept(RowState row) {
-		if (adjacencyProbe != null) {
-			return acceptWithAdjacency(row);
+		NativeExecutionContext execution = executionContext(row);
+		State state = execution == null ? new State() : execution.nativeState(this, State::new);
+		try {
+			return accept(row, state);
+		} finally {
+			if (execution == null) {
+				state.close();
+			}
 		}
-		if (membershipProbe != null) {
-			int result = membershipProbe.test(row);
+	}
+
+	private boolean accept(RowState row, State state) {
+		if (state.adjacencyProbe != null) {
+			return acceptWithAdjacency(row, state);
+		}
+		if (state.membershipProbe != null) {
+			int result = state.membershipProbe.test(row);
 			if (result >= 0) {
 				return result == 1;
 			}
@@ -636,17 +721,15 @@ final class ExistsFilter implements NativeBooleanFilter {
 		if (memoSlots == null) {
 			return exists(row);
 		}
-		if (memo == null) {
-			memo = new KeyedMatches(memoSlots.length, 256).withVerdicts();
-		}
+		KeyedMatches memo = state.memo();
 		Boolean cached = memo.memoGet(row.slots, memoSlots);
 		if (cached != null) {
 			return cached;
 		}
-		int marked = markProbe != null ? markProbe.test(row) : PatternMembershipProbe.NOT_APPLICABLE;
+		int marked = state.markProbe != null ? state.markProbe.test(row) : PatternMembershipProbe.NOT_APPLICABLE;
 		boolean result = marked >= 0 ? marked == 1 : exists(row);
-		if (membershipProbe != null) {
-			membershipProbe.recordDirectResult(result);
+		if (state.membershipProbe != null) {
+			state.membershipProbe.recordDirectResult(result);
 		}
 		memo.memoPut(row.slots, memoSlots, result);
 		return result;
@@ -657,35 +740,33 @@ final class ExistsFilter implements NativeBooleanFilter {
 	 * path — the plane views only replace the expensive subplan probe on a miss, and their verdicts feed the same
 	 * membership admission and memo so the steady state is unchanged.
 	 */
-	private boolean acceptWithAdjacency(RowState row) {
-		if (membershipProbe != null) {
-			int result = membershipProbe.test(row);
+	private boolean acceptWithAdjacency(RowState row, State state) {
+		if (state.membershipProbe != null) {
+			int result = state.membershipProbe.test(row);
 			if (result >= 0) {
 				return result == 1;
 			}
 		}
 		if (memoSlots == null) {
-			int served = adjacencyProbe.test(row, -1L);
+			int served = state.adjacencyProbe.test(row, -1L);
 			if (served >= 0) {
 				boolean result = served == 1;
-				if (membershipProbe != null) {
-					membershipProbe.recordDirectResult(result);
+				if (state.membershipProbe != null) {
+					state.membershipProbe.recordDirectResult(result);
 				}
 				return result;
 			}
 			return exists(row);
 		}
-		if (memo == null) {
-			memo = new KeyedMatches(memoSlots.length, 256).withVerdicts();
-		}
+		KeyedMatches memo = state.memo();
 		Boolean cached = memo.memoGet(row.slots, memoSlots);
 		if (cached != null) {
 			return cached;
 		}
-		int served = adjacencyProbe.test(row, -1L);
+		int served = state.adjacencyProbe.test(row, -1L);
 		boolean result = served >= 0 ? served == 1 : exists(row);
-		if (membershipProbe != null) {
-			membershipProbe.recordDirectResult(result);
+		if (state.membershipProbe != null) {
+			state.membershipProbe.recordDirectResult(result);
 		}
 		memo.memoPut(row.slots, memoSlots, result);
 		return result;
@@ -696,67 +777,77 @@ final class ExistsFilter implements NativeBooleanFilter {
 		if (memoSlots == null || memoSlots.length < 2 || memoSlots.length > 4) {
 			return NativeBooleanFilter.super.selectBatch(batch, sel, n, scratch);
 		}
-		if (memo == null) {
-			memo = new KeyedMatches(memoSlots.length, 256).withVerdicts();
-		}
+		NativeExecutionContext execution = executionContext(scratch);
+		State state = execution == null ? new State() : execution.nativeState(this, State::new);
+		KeyedMatches memo = state.memo();
 		memo.prepareBatch(batch, sel, n, memoSlots);
-		int accepted = 0;
-		for (int i = 0; i < n; i++) {
-			int physicalRow = sel[i];
-			batch.copyToRow(physicalRow, scratch.slots);
-			scratch.recomputeBoundMask();
-			if (acceptPrepared(batch, physicalRow, i, scratch)) {
-				sel[accepted++] = physicalRow;
+		try {
+			int accepted = 0;
+			for (int i = 0; i < n; i++) {
+				int physicalRow = sel[i];
+				batch.copyToRow(physicalRow, scratch.slots);
+				scratch.recomputeBoundMask();
+				if (acceptPrepared(batch, physicalRow, i, scratch, state)) {
+					sel[accepted++] = physicalRow;
+				}
+			}
+			return accepted;
+		} finally {
+			if (execution == null) {
+				state.close();
 			}
 		}
-		return accepted;
 	}
 
-	private boolean acceptPrepared(NativeBatch batch, int physicalRow, int preparedIndex, RowState row) {
-		if (adjacencyProbe != null) {
-			return acceptPreparedWithAdjacency(batch, physicalRow, preparedIndex, row);
+	private boolean acceptPrepared(NativeBatch batch, int physicalRow, int preparedIndex, RowState row, State state) {
+		if (state.adjacencyProbe != null) {
+			return acceptPreparedWithAdjacency(batch, physicalRow, preparedIndex, row, state);
 		}
-		if (membershipProbe != null) {
-			int result = membershipProbe.test(row);
+		if (state.membershipProbe != null) {
+			int result = state.membershipProbe.test(row);
 			if (result >= 0) {
 				return result == 1;
 			}
 		}
+		KeyedMatches memo = state.memo();
 		Boolean cached = memo.memoGetPrepared(batch, physicalRow, memoSlots, preparedIndex);
 		if (cached != null) {
 			return cached;
 		}
-		int marked = markProbe != null ? markProbe.test(row) : PatternMembershipProbe.NOT_APPLICABLE;
+		int marked = state.markProbe != null ? state.markProbe.test(row) : PatternMembershipProbe.NOT_APPLICABLE;
 		boolean result = marked >= 0 ? marked == 1 : exists(row);
-		if (membershipProbe != null) {
-			membershipProbe.recordDirectResult(result);
+		if (state.membershipProbe != null) {
+			state.membershipProbe.recordDirectResult(result);
 		}
 		memo.memoPutPrepared(row.slots, memoSlots, preparedIndex, result);
 		return result;
 	}
 
 	/** Prepared-batch twin of {@link #acceptWithAdjacency}: same layers, planes replacing the subplan probe on miss. */
-	private boolean acceptPreparedWithAdjacency(NativeBatch batch, int physicalRow, int preparedIndex, RowState row) {
-		if (membershipProbe != null) {
-			int result = membershipProbe.test(row);
+	private boolean acceptPreparedWithAdjacency(NativeBatch batch, int physicalRow, int preparedIndex, RowState row,
+			State state) {
+		if (state.membershipProbe != null) {
+			int result = state.membershipProbe.test(row);
 			if (result >= 0) {
 				return result == 1;
 			}
 		}
+		KeyedMatches memo = state.memo();
 		Boolean cached = memo.memoGetPrepared(batch, physicalRow, memoSlots, preparedIndex);
 		if (cached != null) {
 			return cached;
 		}
-		int served = adjacencyProbe.test(row, -1L);
+		int served = state.adjacencyProbe.test(row, -1L);
 		boolean result = served >= 0 ? served == 1 : exists(row);
-		if (membershipProbe != null) {
-			membershipProbe.recordDirectResult(result);
+		if (state.membershipProbe != null) {
+			state.membershipProbe.recordDirectResult(result);
 		}
 		memo.memoPutPrepared(row.slots, memoSlots, preparedIndex, result);
 		return result;
 	}
 
 	boolean exists(RowState row) {
+		long previousLexicalInput = row.enterLexicalScope(row.boundMask());
 		try {
 			if (existsPlan != null) {
 				try (NativeExistsPatternCursor cursor = new NativeExistsPatternCursor(existsPlan, row)) {
@@ -768,13 +859,48 @@ final class ExistsFilter implements NativeBooleanFilter {
 			}
 		} catch (IOException e) {
 			throw new SailException(e);
+		} finally {
+			row.restoreLexicalScope(previousLexicalInput);
 		}
 	}
 
-	@Override
-	public void close() {
-		if (adjacencyProbe != null) {
-			adjacencyProbe.close();
+	private static NativeExecutionContext executionContext(RowState row) {
+		if (row.source instanceof SyntheticValueSource synthetic) {
+			return synthetic.executionContext();
+		}
+		return null;
+	}
+
+	private final class State implements AutoCloseable {
+		final PatternMembershipProbe membershipProbe;
+		final AdjacencyIntersectionProbe adjacencyProbe;
+		/** Build-once mark tier for multi-operator subplans; single patterns use the probes above. */
+		final SubplanMarkProbe markProbe;
+		KeyedMatches memo;
+
+		State() {
+			PatternPlan pattern = subPlan instanceof PatternPlan ? (PatternPlan) subPlan : null;
+			membershipProbe = pattern == null ? null
+					: PatternMembershipProbe.tryCreate(pattern.s, pattern.p, pattern.o, pattern.c, pattern.contexts,
+							pattern.namedContextScope);
+			adjacencyProbe = pattern == null ? null
+					: AdjacencyIntersectionProbe.tryCreate(pattern.s, pattern.p, pattern.o, pattern.c, pattern.contexts,
+							pattern.namedContextScope);
+			markProbe = memoSlots != null ? SubplanMarkProbe.tryCreateExists(subPlan, memoSlots) : null;
+		}
+
+		KeyedMatches memo() {
+			if (memo == null) {
+				memo = new KeyedMatches(memoSlots.length, 256).withVerdicts();
+			}
+			return memo;
+		}
+
+		@Override
+		public void close() {
+			if (adjacencyProbe != null) {
+				adjacencyProbe.close();
+			}
 		}
 	}
 }
@@ -784,9 +910,9 @@ final class ValueSetFilter implements NativeBooleanFilter {
 	final int slot;
 	final long[] accepted;
 	final Value[] queryValues;
-	final Value[] acceptedValues;
 	final boolean checkBound;
-	final KeyedMatches memo = new KeyedMatches(1, 256).withVerdicts();
+	/** Worker-confined fallback for raw worker sources that do not carry a NativeExecutionContext. */
+	final State workerState;
 
 	ValueSetFilter(NativeLmdbQuerySource source, int slot, long[] accepted) {
 		this(source, slot, accepted, null);
@@ -797,11 +923,16 @@ final class ValueSetFilter implements NativeBooleanFilter {
 	}
 
 	ValueSetFilter(NativeLmdbQuerySource source, int slot, long[] accepted, Value[] queryValues, boolean checkBound) {
+		this(slot, accepted, queryValues, checkBound, false);
+	}
+
+	private ValueSetFilter(int slot, long[] accepted, Value[] queryValues, boolean checkBound,
+			boolean workerConfined) {
 		this.slot = slot;
 		this.accepted = accepted;
 		this.queryValues = queryValues;
-		this.acceptedValues = new Value[accepted.length];
 		this.checkBound = checkBound;
+		this.workerState = workerConfined ? new State(accepted.length) : null;
 	}
 
 	@Override
@@ -834,7 +965,7 @@ final class ValueSetFilter implements NativeBooleanFilter {
 
 	@Override
 	public ValueSetFilter forkForParallelWorker() {
-		return new ValueSetFilter(null, slot, accepted, queryValues, checkBound);
+		return new ValueSetFilter(slot, accepted, queryValues, checkBound, true);
 	}
 
 	private boolean acceptId(long id, NativeLmdbQuerySource source) {
@@ -846,7 +977,8 @@ final class ValueSetFilter implements NativeBooleanFilter {
 				return true;
 			}
 		}
-		Boolean cached = memo.memoGet(id);
+		State state = state(source);
+		Boolean cached = state == null ? null : state.memo.memoGet(id);
 		if (cached != null) {
 			return cached;
 		}
@@ -862,7 +994,7 @@ final class ValueSetFilter implements NativeBooleanFilter {
 				// IN is an OR chain: a type error against one candidate must not mask a later TRUE, so each
 				// candidate gets its own error boundary (error || true = true)
 				try {
-					Value acceptedValue = acceptedValue(i, source);
+					Value acceptedValue = acceptedValue(i, source, state);
 					if (acceptedValue != null && QueryEvaluationUtil.compareEQ(value, acceptedValue, false)) {
 						result = true;
 						break;
@@ -872,20 +1004,43 @@ final class ValueSetFilter implements NativeBooleanFilter {
 				}
 			}
 		}
-		memo.memoPut(id, result);
+		if (state != null) {
+			state.memo.memoPut(id, result);
+		}
 		return result;
 	}
 
-	Value acceptedValue(int index, NativeLmdbQuerySource source) {
+	private State state(NativeLmdbQuerySource source) {
+		if (source instanceof SyntheticValueSource synthetic) {
+			NativeExecutionContext context = synthetic.executionContext();
+			if (context != null) {
+				return context.nativeState(this, () -> new State(accepted.length));
+			}
+		}
+		return workerState;
+	}
+
+	Value acceptedValue(int index, NativeLmdbQuerySource source, State state) {
 		if (queryValues != null) {
 			return queryValues[index];
 		}
-		Value acceptedValue = acceptedValues[index];
+		Value acceptedValue = state == null ? null : state.acceptedValues[index];
 		if (acceptedValue == null) {
 			acceptedValue = source.lazyValue(accepted[index]);
-			acceptedValues[index] = acceptedValue;
+			if (state != null) {
+				state.acceptedValues[index] = acceptedValue;
+			}
 		}
 		return acceptedValue;
+	}
+
+	private static final class State {
+		final KeyedMatches memo = new KeyedMatches(1, 256).withVerdicts();
+		final Value[] acceptedValues;
+
+		State(int acceptedCount) {
+			acceptedValues = new Value[acceptedCount];
+		}
 	}
 }
 
@@ -900,18 +1055,20 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 	final LmdbNativeValueCodec codec;
 	final LmdbNativeValueCodec.DecodedValue constantDecoded;
 	final Long constantIntegerValue;
+	final boolean constantStoreId;
 	final boolean checkBound;
 	final KeyedMatches memo = new KeyedMatches(1, 512).withVerdicts();
 
 	CachedCompareFilter(NativeLmdbQuerySource source, int slot, long constant, boolean constantOnLeft,
 			Compare.CompareOp op, boolean strict,
 			Predicate<BindingSet> fallback) {
-		this(slot, constant, constantOnLeft, op, strict, fallback, source.nativeValueCodec(), true);
+		this(source, slot, constant, constantOnLeft, op, strict, fallback, true);
 	}
 
 	CachedCompareFilter(NativeLmdbQuerySource source, int slot, long constant, boolean constantOnLeft,
 			Compare.CompareOp op, boolean strict, Predicate<BindingSet> fallback, boolean checkBound) {
-		this(slot, constant, constantOnLeft, op, strict, fallback, source.nativeValueCodec(), checkBound);
+		this(slot, constant, constantOnLeft, op, strict, fallback, source.nativeValueCodec(),
+				decodeConstant(source, constant), isStoreId(source, constant), checkBound);
 	}
 
 	CachedCompareFilter(int slot, long constant, boolean constantOnLeft, Compare.CompareOp op,
@@ -921,6 +1078,13 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 
 	CachedCompareFilter(int slot, long constant, boolean constantOnLeft, Compare.CompareOp op,
 			boolean strict, Predicate<BindingSet> fallback, LmdbNativeValueCodec codec, boolean checkBound) {
+		this(slot, constant, constantOnLeft, op, strict, fallback, codec,
+				codec == null ? null : codec.decode(constant), true, checkBound);
+	}
+
+	private CachedCompareFilter(int slot, long constant, boolean constantOnLeft, Compare.CompareOp op,
+			boolean strict, Predicate<BindingSet> fallback, LmdbNativeValueCodec codec,
+			LmdbNativeValueCodec.DecodedValue constantDecoded, boolean constantStoreId, boolean checkBound) {
 		this.slot = slot;
 		this.constant = constant;
 		this.constantOnLeft = constantOnLeft;
@@ -928,17 +1092,31 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 		this.strict = strict;
 		this.fallback = fallback;
 		this.codec = codec;
-		this.constantDecoded = codec == null ? null : codec.decode(constant);
-		this.constantIntegerValue = exactIntegerValue(constant, constantDecoded);
+		this.constantDecoded = constantDecoded;
+		this.constantIntegerValue = exactIntegerValue(constant, constantDecoded, constantStoreId);
+		this.constantStoreId = constantStoreId;
 		this.checkBound = checkBound;
+	}
+
+	private static LmdbNativeValueCodec.DecodedValue decodeConstant(NativeLmdbQuerySource source, long id) {
+		if (source instanceof SyntheticValueSource synthetic && synthetic.synthetic(id)) {
+			Value value = source.lazyValue(id);
+			return value == null ? LmdbNativeValueCodec.DecodedValue.ERROR : LmdbNativeValueCodec.fromValue(value);
+		}
+		return source.nativeValueCodec().decode(id);
+	}
+
+	private static boolean isStoreId(NativeLmdbQuerySource source, long id) {
+		return !(source instanceof SyntheticValueSource synthetic) || !synthetic.synthetic(id);
 	}
 
 	/**
 	 * The constant's exact integer value when it has one (an ordered-integer id, or any numeric constant that is
 	 * exactly integral), enabling decode-free raw-long comparison against ordered-integer candidate ids.
 	 */
-	private static Long exactIntegerValue(long constantId, LmdbNativeValueCodec.DecodedValue decoded) {
-		if (ValueIds.isOrderedInteger(constantId)) {
+	private static Long exactIntegerValue(long constantId, LmdbNativeValueCodec.DecodedValue decoded,
+			boolean constantStoreId) {
+		if (constantStoreId && ValueIds.isOrderedInteger(constantId)) {
 			return ValueIds.orderedIntegerValue(constantId);
 		}
 		if (decoded == null || decoded.error() || !decoded.numeric() || decoded.floatingValue() != null
@@ -959,13 +1137,14 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 
 	@Override
 	public NativeBooleanFilter forkForParallelWorker() {
-		return new CachedCompareFilter(slot, constant, constantOnLeft, op, strict, fallback, codec, checkBound);
+		return new CachedCompareFilter(slot, constant, constantOnLeft, op, strict, fallback, codec, constantDecoded,
+				constantStoreId, checkBound);
 	}
 
 	@Override
 	public boolean accept(RowState row) {
 		long id = row.slots[slot];
-		Boolean decision = nativeDecision(id);
+		Boolean decision = nativeDecision(id, row);
 		return decision != null ? decision : fallbackDecision(id, row);
 	}
 
@@ -976,8 +1155,11 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 		for (int i = 0; i < n; i++) {
 			int physicalRow = sel[i];
 			long id = batch.slots[columnOffset + physicalRow];
-			Boolean decision = nativeDecision(id);
+			Boolean decision = nativeDecision(id, scratch);
 			if (decision == null) {
+				// The native decision needs only the candidate id and the evaluation-scoped term authority. Materialize
+				// the row lazily for the generic fallback so a fully native batch remains columnar and cannot perturb
+				// scratch-row state observed by a following fused stage.
 				batch.copyToRow(physicalRow, scratch.slots);
 				scratch.recomputeBoundMask();
 				decision = fallbackDecision(id, scratch);
@@ -994,16 +1176,20 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 		return 1L << slot;
 	}
 
-	private Boolean nativeDecision(long id) {
+	private Boolean nativeDecision(long id, RowState row) {
 		if (checkBound && id == UNKNOWN) {
 			return false;
 		}
-		if ((op == Compare.CompareOp.EQ || op == Compare.CompareOp.NE) && safeResourceId(id)
+		NativeTermAuthority authority = row.termAuthority();
+		NativeIdKind idKind = authority == null ? NativeIdKind.STORE : authority.kind(id);
+		boolean stableAcrossEvaluations = idKind != NativeIdKind.RUNTIME;
+		if (constantStoreId && idKind == NativeIdKind.STORE
+				&& (op == Compare.CompareOp.EQ || op == Compare.CompareOp.NE) && safeResourceId(id)
 				&& safeResourceId(constant)) {
 			boolean equal = id == constant;
 			return op == Compare.CompareOp.EQ ? equal : !equal;
 		}
-		if (constantIntegerValue != null && ValueIds.isOrderedInteger(id)) {
+		if (constantIntegerValue != null && idKind == NativeIdKind.STORE && ValueIds.isOrderedInteger(id)) {
 			// both sides are exact integers: numeric SPARQL comparison reduces to one long compare — no
 			// decode, no memo, no BigDecimal
 			int cmp = Long.compare(ValueIds.orderedIntegerValue(id), constantIntegerValue);
@@ -1019,17 +1205,23 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 			case NE -> cmp != 0;
 			};
 		}
-		Boolean cached = memo.memoGet(id);
-		if (cached != null) {
-			return cached;
+		if (stableAcrossEvaluations) {
+			Boolean cached = memo.memoGet(id);
+			if (cached != null) {
+				return cached;
+			}
 		}
 		if (codec != null && constantDecoded != null && !constantDecoded.error()) {
-			LmdbNativeValueCodec.DecodedValue value = codec.decode(id);
+			LmdbNativeValueCodec.DecodedValue value = idKind == NativeIdKind.STORE
+					? codec.decode(id)
+					: decodeAuthoritative(authority, id);
 			Boolean result = constantOnLeft
 					? LmdbNativeExpressionCompiler.compareAsBoolean(constantDecoded, value, op, strict)
 					: LmdbNativeExpressionCompiler.compareAsBoolean(value, constantDecoded, op, strict);
 			if (result != null) {
-				memo.memoPut(id, result);
+				if (stableAcrossEvaluations) {
+					memo.memoPut(id, result);
+				}
 				return result;
 			}
 		}
@@ -1038,8 +1230,16 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 
 	private boolean fallbackDecision(long id, RowState fallbackRow) {
 		boolean result = fallback.test(fallbackRow.view);
-		memo.memoPut(id, result);
+		NativeTermAuthority authority = fallbackRow.termAuthority();
+		if (authority == null || authority.kind(id) != NativeIdKind.RUNTIME) {
+			memo.memoPut(id, result);
+		}
 		return result;
+	}
+
+	private static LmdbNativeValueCodec.DecodedValue decodeAuthoritative(NativeTermAuthority authority, long id) {
+		Value value = authority == null ? null : authority.valueOf(id);
+		return value == null ? LmdbNativeValueCodec.DecodedValue.ERROR : LmdbNativeValueCodec.fromValue(value);
 	}
 }
 
@@ -1161,7 +1361,7 @@ final class OrderedSlotCompareFilter implements NativeBooleanFilter {
 	public boolean accept(RowState row) {
 		long left = row.slots[leftSlot];
 		long right = row.slots[rightSlot];
-		Boolean nativeDecision = nativeDecision(left, right);
+		Boolean nativeDecision = nativeDecision(left, right, row.termAuthority());
 		return nativeDecision != null ? nativeDecision : fallback.test(row.view);
 	}
 
@@ -1173,7 +1373,7 @@ final class OrderedSlotCompareFilter implements NativeBooleanFilter {
 		for (int i = 0; i < n; i++) {
 			int physicalRow = sel[i];
 			Boolean decision = nativeDecision(batch.slots[leftOffset + physicalRow],
-					batch.slots[rightOffset + physicalRow]);
+					batch.slots[rightOffset + physicalRow], scratch.termAuthority());
 			if (decision == null) {
 				batch.copyToRow(physicalRow, scratch.slots);
 				scratch.recomputeBoundMask();
@@ -1201,11 +1401,13 @@ final class OrderedSlotCompareFilter implements NativeBooleanFilter {
 		return new OrderedSlotCompareFilter(leftSlot, rightSlot, op, fallback, checkLeftBound, checkRightBound);
 	}
 
-	private Boolean nativeDecision(long left, long right) {
+	private Boolean nativeDecision(long left, long right, NativeTermAuthority authority) {
 		if ((checkLeftBound && left == UNKNOWN) || (checkRightBound && right == UNKNOWN)) {
 			return false;
 		}
-		if (ValueIds.isOrderedInteger(left) && ValueIds.isOrderedInteger(right)) {
+		boolean leftStoreId = authority == null || authority.kind(left) == NativeIdKind.STORE;
+		boolean rightStoreId = authority == null || authority.kind(right) == NativeIdKind.STORE;
+		if (leftStoreId && rightStoreId && ValueIds.isOrderedInteger(left) && ValueIds.isOrderedInteger(right)) {
 			int comparison = ValueIds.compareOrderedIntegers(left, right);
 			return switch (op) {
 			case LT -> comparison < 0;
@@ -1220,7 +1422,7 @@ final class OrderedSlotCompareFilter implements NativeBooleanFilter {
 		// = and != directly. Everything else (value-collapsible literals, mixed kinds) must consult the
 		// generic evaluator for full value-equality and type-error semantics.
 		if ((op == Compare.CompareOp.EQ || op == Compare.CompareOp.NE)
-				&& safeResourceId(left) && safeResourceId(right)) {
+				&& leftStoreId && rightStoreId && safeResourceId(left) && safeResourceId(right)) {
 			return op == Compare.CompareOp.EQ ? left == right : left != right;
 		}
 		return null;

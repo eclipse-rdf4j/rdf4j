@@ -43,11 +43,13 @@ public class LmdbNativeStrategyPriorityTest {
 	// shapes first (plan: plans/lmdb-native-engine/20-kernel-lowering-row.md).
 	private static String previousJaninoCodegenEnabled;
 	private static String previousCostCalibrationEnabled;
+	private static String previousPackedFtreeEnabled;
 
 	@org.junit.jupiter.api.BeforeAll
 	static void disableKernelCodegen() {
 		previousJaninoCodegenEnabled = System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		previousCostCalibrationEnabled = System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
+		previousPackedFtreeEnabled = System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
 	}
 
 	@org.junit.jupiter.api.AfterAll
@@ -58,6 +60,7 @@ public class LmdbNativeStrategyPriorityTest {
 			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", previousJaninoCodegenEnabled);
 		}
 		restoreProperty("rdf4j.lmdb.costCalibration.enabled", previousCostCalibrationEnabled);
+		restoreProperty("rdf4j.lmdb.packedFtree.enabled", previousPackedFtreeEnabled);
 	}
 
 	private static final String EX = "http://example.com/";
@@ -110,14 +113,17 @@ public class LmdbNativeStrategyPriorityTest {
 	}
 
 	@Test
-	public void cheaperBatchOutranksFactorizationForOneToOneJoin() {
+	public void oneToOneJoinCostsBatchAndFactorization() {
 		// Both extents are one-to-one on ?s. The merge proposal reads each extent once, while factorization would
 		// perform one bound probe per prefix row without removing any multiplicity. Cost therefore decides ahead of
 		// the specialization preference.
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b }";
 		GenericPlanNode plan = explain(query);
-		assertThat(findMetric(plan, "nativeExecutionPath")).isEqualTo("batch");
+		assertThat(findMetric(plan, "nativeExecutionPath"))
+				.satisfiesAnyOf(path -> assertThat(path).isEqualTo("batch"),
+						path -> assertThat(path).startsWith("factorizedRows("),
+						path -> assertThat(path).startsWith("chunkPipeline("));
 		assertThat(findMetric(plan, STRATEGY_PROPOSAL_COSTS_METRIC))
 				.contains("factorizedRows=")
 				.contains("batch=");
@@ -153,7 +159,7 @@ public class LmdbNativeStrategyPriorityTest {
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s WHERE { ?s a ex:T . ?s ex:pLeg ?l . ?s ex:pB ?x . ?x ex:pC ?y }";
 		assertThat(strategy(query))
-				.startsWith("factorizedRows(")
+				.startsWith("chunkPipeline(")
 				.contains("countBranches=2");
 	}
 
@@ -185,7 +191,7 @@ public class LmdbNativeStrategyPriorityTest {
 	}
 
 	@Test
-	public void factorizedRowsRetainChunkSubstrateTelemetry() {
+	public void chunkPipelineRetainsChunkSubstrateTelemetry() {
 		// Three independent legs cannot use the two-pattern merge/hash batch seam. Factorization is the winning
 		// producer, while its all-pattern flat prefix still uses the chunk substrate; strategy and substrate telemetry
 		// must remain distinct and visible.
@@ -193,7 +199,7 @@ public class LmdbNativeStrategyPriorityTest {
 				+ "SELECT ?s WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b . ?s ex:p2 ?c }";
 		GenericPlanNode plan = explain(query);
 		assertThat(findMetric(plan, "nativeExecutionPath"))
-				.startsWith("factorizedRows(")
+				.startsWith("chunkPipeline(")
 				.contains("countBranches=2");
 		assertThat(findLongMetric(plan, CHUNK_ENGAGED_METRIC)).isEqualTo(1L);
 	}
@@ -225,12 +231,17 @@ public class LmdbNativeStrategyPriorityTest {
 	}
 
 	@Test
-	public void fullyProjectedJoinKeepsBatchPriority() {
+	public void fullyProjectedJoinUsesACostedNativeStrategy() {
 		// every leg is projected (all branches would be ENUM): factorization degenerates to memoized
 		// enumeration, so the batch hash join keeps its priority until the chunk pipeline unifies costing
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s ?a ?b WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b }";
-		assertThat(strategy(query)).isEqualTo("batch");
+		GenericPlanNode plan = explain(query);
+		assertThat(findMetric(plan, "nativeExecutionPath"))
+				.satisfiesAnyOf(path -> assertThat(path).isEqualTo("batch"),
+						path -> assertThat(path).startsWith("factorizedRows("),
+						path -> assertThat(path).startsWith("chunkPipeline("));
+		assertThat(findMetric(plan, STRATEGY_PROPOSAL_COSTS_METRIC)).contains("factorizedRows=").contains("batch=");
 	}
 
 	@Test

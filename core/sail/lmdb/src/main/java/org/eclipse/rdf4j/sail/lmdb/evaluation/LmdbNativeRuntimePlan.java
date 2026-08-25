@@ -89,8 +89,9 @@ final class LmdbNativeRuntimePlan {
 		private Invocation begin(SlotPlan entryPlan, String[] slotNames, long initialBoundMask) {
 			Invocation invocation;
 			boolean fresh;
+			String renderedShape = LmdbNativeExplain.describe(entryPlan, slotNames, initialBoundMask);
 			synchronized (this) {
-				InvocationShape shape = new InvocationShape(entryPlan, initialBoundMask);
+				InvocationShape shape = new InvocationShape(renderedShape, initialBoundMask);
 				invocation = byShape.get(shape);
 				fresh = invocation == null;
 				if (fresh) {
@@ -127,13 +128,17 @@ final class LmdbNativeRuntimePlan {
 		}
 	}
 
-	/** Identity of a runtime entry: the same compiled plan object re-opened with the same runtime bound mask. */
+	/**
+	 * Identity of a runtime entry. Nested lexical evaluation may compile a fresh {@link SlotPlan} object for every
+	 * outer row, so object identity is not stable enough for telemetry aggregation. The deterministic physical-plan
+	 * rendering is the semantic shape key; the entry mask remains separate because it changes binding specialization.
+	 */
 	private static final class InvocationShape {
-		private final SlotPlan entryPlan;
+		private final String renderedPlan;
 		private final long initialBoundMask;
 
-		private InvocationShape(SlotPlan entryPlan, long initialBoundMask) {
-			this.entryPlan = entryPlan;
+		private InvocationShape(String renderedPlan, long initialBoundMask) {
+			this.renderedPlan = renderedPlan;
 			this.initialBoundMask = initialBoundMask;
 		}
 
@@ -143,12 +148,12 @@ final class LmdbNativeRuntimePlan {
 				return false;
 			}
 			InvocationShape shape = (InvocationShape) other;
-			return entryPlan == shape.entryPlan && initialBoundMask == shape.initialBoundMask;
+			return renderedPlan.equals(shape.renderedPlan) && initialBoundMask == shape.initialBoundMask;
 		}
 
 		@Override
 		public int hashCode() {
-			return System.identityHashCode(entryPlan) * 31 + Long.hashCode(initialBoundMask);
+			return renderedPlan.hashCode() * 31 + Long.hashCode(initialBoundMask);
 		}
 	}
 

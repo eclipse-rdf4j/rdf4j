@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.AbstractAggregateOperator;
+import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Avg;
@@ -46,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -303,6 +305,62 @@ abstract class LmdbNativeAggregatePlannerBase {
 
 	abstract long placeableFilterMask(ValueExpr condition);
 
+	/** Applies RDF4J's context-sensitive assignment-error contract to every copy in one Extension node. */
+	CopyBinding[] configureExtensionErrorMode(Extension extension, CopyBinding[] copies) {
+		boolean setNullOnError = !isWithinMinusRightArg(extension);
+		for (CopyBinding copy : copies) {
+			copy.setNullOnError = setNullOnError;
+		}
+		return copies;
+	}
+
+	/** Mirrors DefaultEvaluationStrategy: only an Extension inside the right operand of MINUS skips null markers. */
+	private static boolean isWithinMinusRightArg(QueryModelNode node) {
+		QueryModelNode child = node;
+		QueryModelNode parent = node.getParentNode();
+		while (parent != null) {
+			if (parent instanceof Difference difference) {
+				if (difference.getRightArg() == child) {
+					return true;
+				}
+				if (difference.getLeftArg() == child) {
+					return false;
+				}
+			}
+			child = parent;
+			parent = parent.getParentNode();
+		}
+		return false;
+	}
+
+	/**
+	 * Placement mask for an algebra {@link Filter}. A condition may mention a slot allocated by an enclosing tuple
+	 * expression even though that name is outside this Filter's lexical input. Such a condition must remain attached to
+	 * this Filter node: deferring it until the enclosing expression happens to bind the same name changes SPARQL error
+	 * into a value. Incoming evaluation bindings remain visible because a pinned filter still evaluates over its
+	 * argument row and the row's base bindings.
+	 */
+	long placeableFilterMask(Filter filter) {
+		HashSet<String> lexicalReads = new HashSet<>();
+		filter.getCondition().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var node) {
+				if (!node.hasValue()) {
+					lexicalReads.add(node.getName());
+				}
+			}
+
+			@Override
+			public void meet(Exists node) {
+				// EXISTS body variables are local witnesses or correlations resolved by the EXISTS compiler.
+			}
+		});
+		if (!filter.getArg().getBindingNames().containsAll(lexicalReads)) {
+			return -1L;
+		}
+		return placeableFilterMask(filter.getCondition());
+	}
+
 	NativeBooleanFilter recordFilterOutcomes(Filter filter, NativeBooleanFilter delegate) {
 		if (filter == null || strategy.evaluationStatistics() == null) {
 			return delegate;
@@ -485,7 +543,6 @@ abstract class LmdbNativeAggregatePlannerBase {
 	 */
 	void collectSyntheticValues(TupleExpr expr) {
 		HashSet<String> patternOrCopyVars = new HashSet<>();
-		HashSet<String> computedExtensionVars = new HashSet<>();
 		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(StatementPattern node) {
@@ -505,8 +562,6 @@ abstract class LmdbNativeAggregatePlannerBase {
 				patternOrCopyVars.add(node.getName());
 				if (node.getExpr() instanceof Var) {
 					patternOrCopyVars.add(((Var) node.getExpr()).getName());
-				} else {
-					computedExtensionVars.addAll(VarNameCollector.process(node.getExpr()));
 				}
 				super.meet(node);
 			}
@@ -519,13 +574,6 @@ abstract class LmdbNativeAggregatePlannerBase {
 						Value value = binding.getValue();
 						long id = idOf(value);
 						boolean unknown = id == UNKNOWN;
-						if ((unknown || !valueProbeSafeId(id, value))
-								&& computedExtensionVars.contains(binding.getName())) {
-							// Computed inline expressions decode through the physical LMDB codec. A
-							// plan-local synthetic id is outside that codec's domain, so leave this
-							// binding unallocated and make compileValues decline the native root.
-							continue;
-						}
 						boolean unsafeEligible = !unknown && !valueProbeSafeId(id, value)
 								&& !patternOrCopyVars.contains(binding.getName());
 						if (unknown && !termSafeAbsenceProof(value)
@@ -736,21 +784,53 @@ abstract class LmdbNativeAggregatePlannerBase {
 		java.util.HashSet<String> names = new java.util.HashSet<>(group.getGroupBindingNames());
 		for (GroupElem elem : group.getGroupElements()) {
 			AggregateOperator op = elem.getOperator();
-			if (op instanceof AbstractAggregateOperator) {
-				ValueExpr arg = ((AbstractAggregateOperator) op).getArg();
+			if (op instanceof AbstractAggregateOperator aggregate) {
+				ValueExpr arg = aggregate.getArg();
 				if (arg instanceof Var && !((Var) arg).hasValue()) {
 					names.add(((Var) arg).getName());
 				} else if (arg != null) {
 					// aggregate over an expression: every variable the expression reads is required
-					names.addAll(org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector.process(arg));
+					names.addAll(VarNameCollector.process(arg));
 				}
 				if (arg == null && op.isDistinct()) {
 					// COUNT(DISTINCT *) hashes the full visible solution mapping: every visible name is required
 					names.addAll(group.getArg().getBindingNames());
 				}
+			} else if (op instanceof AggregateFunctionCall aggregate) {
+				for (ValueExpr arg : aggregate.getArguments()) {
+					names.addAll(VarNameCollector.process(arg));
+				}
 			}
 		}
+		closeOverExtensionDependencies(group.getArg(), names);
 		return names;
+	}
+
+	/**
+	 * Retains the source variables of every live BIND target. Extension elements can form dependency chains and an
+	 * aggregate can read more than one target, so collect all definitions first and close the live-name set to a fixed
+	 * point. Definitions with the same target in separate lexical branches are deliberately unioned: retaining an
+	 * otherwise-unused source is conservative, while dropping the source from any reachable branch changes results.
+	 */
+	private void closeOverExtensionDependencies(TupleExpr tupleExpr, Set<String> names) {
+		Map<String, Set<String>> dependencies = new HashMap<>();
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(ExtensionElem elem) {
+				dependencies.computeIfAbsent(elem.getName(), ignored -> new HashSet<>())
+						.addAll(VarNameCollector.process(elem.getExpr()));
+				super.meet(elem);
+			}
+		});
+		boolean changed;
+		do {
+			changed = false;
+			for (Map.Entry<String, Set<String>> dependency : dependencies.entrySet()) {
+				if (names.contains(dependency.getKey())) {
+					changed |= names.addAll(dependency.getValue());
+				}
+			}
+		} while (changed);
 	}
 
 	boolean duplicatesMatter(AggregateSpec[] aggregates, ValueExpr havingCondition) {
@@ -849,18 +929,20 @@ abstract class LmdbNativeAggregatePlannerBase {
 				if (kind != AggKind.COUNT) {
 					return null;
 				}
+				// RDF4J's WildCardCountAggregate skips the empty solution mapping for both plain and DISTINCT
+				// wildcard counts. Keep the complete visible domain so the row tier can recognize that mapping.
+				java.util.TreeSet<String> visible = new java.util.TreeSet<>(group.getArg().getBindingNames());
+				int[] rowSlots = new int[visible.size()];
+				int slotIndex = 0;
+				for (String name : visible) {
+					rowSlots[slotIndex++] = slot(name);
+				}
 				if (op.isDistinct()) {
 					// COUNT(DISTINCT *) (M-F3): hash the full visible solution mapping of the group's argument.
 					// Sorted name order keeps the hashed slot order deterministic across compiles.
-					java.util.TreeSet<String> visible = new java.util.TreeSet<>(group.getArg().getBindingNames());
-					int[] rowSlots = new int[visible.size()];
-					int slotIndex = 0;
-					for (String name : visible) {
-						rowSlots[slotIndex++] = slot(name);
-					}
 					specs[i] = AggregateSpec.starDistinct(elem.getName(), rowSlots);
 				} else {
-					specs[i] = AggregateSpec.star(elem.getName());
+					specs[i] = AggregateSpec.star(elem.getName(), rowSlots);
 				}
 				continue;
 			}
@@ -1070,7 +1152,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 		int size = 0;
 		for (IRI graph : graphs) {
 			long id;
-			if (RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph)) {
+			if (graph == null || RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph)) {
 				id = NULL_CONTEXT_ID;
 			} else {
 				id = idOf(graph);
@@ -1155,6 +1237,9 @@ abstract class LmdbNativeAggregatePlannerBase {
 		requiresExecutionContext = true;
 		sawIsland = true;
 		LmdbNativeAggregateCompiler.ISLANDS_COMPILED.incrementAndGet();
+		if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
+			System.err.println("[native-island] " + expr.getClass().getSimpleName() + " " + expr);
+		}
 		Set<String> varNames = bindingAndExtensionNames(expr);
 		varNames.addAll(names);
 		return new GenericEvalPlan(GenericSubplanDescriptor.create(expr), expr.getClass().getSimpleName(), outSlots,

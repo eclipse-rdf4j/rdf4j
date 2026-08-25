@@ -236,7 +236,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 
 	private static void assertEngineeringQ10DevelopPlanShape(String plan) {
 		assertContainsAny(plan, "plannerId=lmdb-sketch", "plannerId=lmdb-finite-anchor");
-		assertContains(plan, "nativePhysicalPlan=NativeGroup(arg=Minus(left=Filter");
+		assertContains(plan, "nativePhysicalPlan=NativeProjection(arg=NativeGroup(arg=Minus(left=Filter");
 		assertContains(plan, "arg=Join(left=MultiJoin");
 		assertDoesNotContain(plan, "nativePhysicalPlan=NativeRows",
 				"Engineering q10 should remain one aggregate-owned native pipeline");

@@ -99,16 +99,58 @@ class LmdbNativePackedFtreeTest {
 		LmdbNativePackedFtree.Plan plan = LmdbNativePackedFtree.Planner.plan(join, row,
 				new int[] { 0, 1, 2, 3, 4 });
 		assertNotNull(plan);
+		LmdbNativePackedFtree.RootSeed seed = plan.root.seed;
+		assertNotNull(seed);
+		try (NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe()) {
+			NativeAdjacency rootAdjacency = probe.adjacency(seed.pattern.p.constant,
+					seed.bySubjectForVariableKey);
+			assertNotNull(rootAdjacency);
+			assertEquals(1L, rootAdjacency.keyCount());
+			assertEquals(20L, rootAdjacency.keyAt(0L));
+			try (NativeAdjacency.KeyRunCursor cursor = rootAdjacency.openKeyRunCursor()) {
+				long[] keys = new long[1];
+				assertEquals(1, cursor.fillKeys(keys, 0, 1));
+				assertArrayEquals(new long[] { 20L }, keys);
+			}
+		}
+		try (LmdbNativePackedFtree.Runtime producerRuntime = LmdbNativePackedFtree.Runtime.open(plan, row)) {
+			assertTrue(producerRuntime.roots instanceof LmdbNativePackedFtree.KeyRootProducer,
+					"unexpected root producer: " + producerRuntime.roots.getClass().getName());
+			LmdbNativePackedFtree.NodeData staged = new LmdbNativePackedFtree.NodeData(plan.root);
+			assertEquals(1, producerRuntime.roots.fill(staged, 1));
+			assertEquals(20L, staged.value(0));
+		}
 
 		try (LmdbNativePackedFtree.Runtime runtime = LmdbNativePackedFtree.Runtime.open(plan, row)) {
 			assertNotNull(runtime);
 			LmdbNativePackedFtree.Chunk chunk = runtime.nextChunk();
 			assertNotNull(chunk);
+			assertNode(chunk.data[plan.bySlot.get(2).ordinal], 20L);
+			assertNode(chunk.data[plan.bySlot.get(1).ordinal], 11L, 12L);
+			assertNode(chunk.data[plan.bySlot.get(0).ordinal], 1L, 2L, 3L);
+			assertNode(chunk.data[plan.bySlot.get(3).ordinal], 31L, 32L);
+			assertNode(chunk.data[plan.bySlot.get(4).ordinal], 41L, 42L, 43L, 44L, 45L);
+			assertActive(chunk.data[plan.bySlot.get(0).ordinal], 3);
+			assertActive(chunk.data[plan.bySlot.get(4).ordinal], 5);
+			assertActive(chunk.data[plan.bySlot.get(1).ordinal], 2);
+			assertActive(chunk.data[plan.bySlot.get(3).ordinal], 2);
+			assertActive(chunk.data[plan.bySlot.get(2).ordinal], 1);
 			assertEquals(15L, chunk.computeSubtreeCountsInterpreted());
 			assertEquals(13, physicalValues(chunk),
 					"1 root + 2 b + 3 a + 2 d + 5 e values, not the 15-row sibling product");
 			assertNull(runtime.nextChunk());
 		}
+	}
+
+	private static void assertNode(LmdbNativePackedFtree.NodeData data, long... expected) {
+		assertEquals(expected.length, data.size);
+		for (int i = 0; i < expected.length; i++) {
+			assertEquals(expected[i], data.value(i));
+		}
+	}
+
+	private static void assertActive(LmdbNativePackedFtree.NodeData data, int expected) {
+		assertEquals(expected, data.state.cardinality(0, data.size));
 	}
 
 	@Test
@@ -155,9 +197,7 @@ class LmdbNativePackedFtreeTest {
 	}
 
 	@Test
-	void diagDumpAdjacencyBuilds() throws Exception {
-		StringBuilder sb = new StringBuilder();
-
+	void adjacencyBuildsPreserveSiblingProductsAndContextMultiplicity() throws Exception {
 		TestGraph graph = pathGraph();
 		RowState row = row(graph.source(), "a", "b", "c", "d", "e");
 		MultiJoinPlan join = join(
@@ -166,12 +206,9 @@ class LmdbNativePackedFtreeTest {
 				pattern(2, P3, 3),
 				pattern(3, P4, 4));
 		LmdbNativePackedFtree.Plan plan = LmdbNativePackedFtree.Planner.plan(join, row, new int[] { 0, 1, 2, 3, 4 });
-		sb.append("PATH root slot=").append(plan.root.slot).append('\n');
 		try (LmdbNativePackedFtree.Runtime runtime = LmdbNativePackedFtree.Runtime.open(plan, row)) {
 			LmdbNativePackedFtree.Chunk chunk = runtime.nextChunk();
-			long total = chunk.computeSubtreeCountsInterpreted();
-			sb.append("PATH total=").append(total).append('\n');
-			dumpChunk(sb, plan, chunk);
+			assertEquals(15L, chunk.computeSubtreeCountsInterpreted());
 		}
 
 		TestGraph dup = new TestGraph();
@@ -180,56 +217,9 @@ class LmdbNativePackedFtreeTest {
 		RowState dupRow = row(dup.source(), "a", "b");
 		LmdbNativePackedFtree.Plan dupPlan = LmdbNativePackedFtree.Planner.plan(join(pattern(0, P1, 1)), dupRow,
 				new int[] { 0, 1 });
-		sb.append("DUP root slot=").append(dupPlan.root.slot).append('\n');
 		try (LmdbNativePackedFtree.Runtime runtime = LmdbNativePackedFtree.Runtime.open(dupPlan, dupRow)) {
 			LmdbNativePackedFtree.Chunk chunk = runtime.nextChunk();
-			sb.append("DUP total=").append(chunk.computeSubtreeCountsInterpreted()).append('\n');
-			dumpChunk(sb, dupPlan, chunk);
-		}
-
-		throw new AssertionError(sb.toString());
-	}
-
-	private static void dumpChunk(StringBuilder sb, LmdbNativePackedFtree.Plan plan,
-			LmdbNativePackedFtree.Chunk chunk) {
-		for (LmdbNativePackedFtree.NodePlan node : plan.nodes) {
-			LmdbNativePackedFtree.NodeData d = chunk.data[node.ordinal];
-			sb.append("  node slot=")
-					.append(node.slot)
-					.append(" ord=")
-					.append(node.ordinal)
-					.append(" parent=")
-					.append(node.parent == null ? -1 : node.parent.slot)
-					.append(" size=")
-					.append(d.size)
-					.append(" card=")
-					.append(d.state.cardinality(0, d.size))
-					.append(" start=")
-					.append(d.startLane())
-					.append(" end=")
-					.append(d.endLane())
-					.append(" shared=")
-					.append(d.sharedWithParent);
-			sb.append(" values=");
-			for (int i = 0; i < Math.min(d.size, 8); i++) {
-				sb.append(d.value(i)).append(',');
-			}
-			sb.append(" weights=");
-			for (int i = 0; i < Math.min(d.size, 8); i++) {
-				sb.append(d.weight(i)).append(',');
-			}
-			sb.append(" offsets=");
-			if (d.offsets != null && node.parent != null) {
-				int parentSize = chunk.data[node.parent.ordinal].size;
-				for (int i = 0; i <= Math.min(parentSize, 8); i++) {
-					sb.append(d.offsets[i]).append(',');
-				}
-			}
-			sb.append(" subtree=");
-			for (int i = 0; i < Math.min(d.size, 8); i++) {
-				sb.append(d.subtreeCounts == null || d.subtreeCounts.length <= i ? -1 : d.subtreeCounts[i]).append(',');
-			}
-			sb.append('\n');
+			assertEquals(2L, chunk.computeSubtreeCountsInterpreted());
 		}
 	}
 
@@ -471,7 +461,9 @@ class LmdbNativePackedFtreeTest {
 		}
 		NativeSlotLayout layout = new NativeSlotLayout(slots, null);
 		layout.freeze(List.of(names));
-		return new RowState(source, layout, EmptyBindingSet.getInstance());
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		assertTrue(NativeRowSeeder.seed(row.slots, layout, EmptyBindingSet.getInstance(), source));
+		return row;
 	}
 
 	private static TestGraph pathGraph() {

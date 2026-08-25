@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
+import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 
 /**
@@ -46,7 +47,8 @@ import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
  * going cold with every compiled plan or evaluation.
  */
 @Experimental
-final class SyntheticValueSource implements NativeLmdbQuerySource {
+class SyntheticValueSource implements NativeLmdbQuerySource {
+	private static final ThreadLocal<SyntheticValueSource> ACTIVE_EVALUATION = new ThreadLocal<>();
 	static final RecordIterator EMPTY = new RecordIterator() {
 		@Override
 		public long[] next() {
@@ -63,23 +65,75 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 	/** Runtime interner of this evaluation; null on the compile-scoped carrier. */
 	private final NativeExecutionContext context;
 	private final LmdbNativeTermAuthority authority;
+	/** Shared identity token for same-evaluation parallel decorators; {@code null} means this instance is the token. */
+	private final Object syntheticIdSpace;
 
 	/** Compile-scoped carrier: catalog resolution only, no runtime interning. */
 	SyntheticValueSource(NativeLmdbQuerySource delegate, PlanValueCatalog catalog) {
-		this(delegate, catalog, null);
+		this(delegate, catalog, null, null);
 	}
 
 	private SyntheticValueSource(NativeLmdbQuerySource delegate, PlanValueCatalog catalog,
 			NativeExecutionContext context) {
+		this(delegate, catalog, context, null);
+	}
+
+	private SyntheticValueSource(NativeLmdbQuerySource delegate, PlanValueCatalog catalog,
+			NativeExecutionContext context, Object syntheticIdSpace) {
 		this.delegate = delegate;
 		this.catalog = catalog;
 		this.context = context;
 		this.authority = context == null ? null : new LmdbNativeTermAuthority(delegate, catalog, context);
+		this.syntheticIdSpace = syntheticIdSpace;
 	}
 
 	/** A fresh evaluation-scoped instance over the same store and catalog, owning its own runtime interner. */
 	SyntheticValueSource forEvaluation() {
+		SyntheticValueSource active = ACTIVE_EVALUATION.get();
+		if (active != null) {
+			if (active.delegate == delegate && active.catalog == catalog) {
+				return active;
+			}
+			return new SyntheticValueSource(delegate, catalog, new NativeExecutionContext(active.context));
+		}
 		return new SyntheticValueSource(delegate, catalog, new NativeExecutionContext());
+	}
+
+	/** Makes this evaluation's context inheritable by semantic-native steps invoked recursively on the same thread. */
+	static EvaluationScope attachEvaluation(NativeLmdbQuerySource source) {
+		SyntheticValueSource active = source instanceof SyntheticValueSource ? (SyntheticValueSource) source : null;
+		SyntheticValueSource previous = ACTIVE_EVALUATION.get();
+		if (active != null) {
+			ACTIVE_EVALUATION.set(active);
+		}
+		return new EvaluationScope(previous, active != null);
+	}
+
+	/** True while a nested step is borrowing this context; only the outer evaluation owns its lifetime. */
+	static boolean inheritedEvaluation(NativeLmdbQuerySource source) {
+		return source != null && ACTIVE_EVALUATION.get() == source;
+	}
+
+	static final class EvaluationScope implements AutoCloseable {
+		private final SyntheticValueSource previous;
+		private final boolean changed;
+
+		private EvaluationScope(SyntheticValueSource previous, boolean changed) {
+			this.previous = previous;
+			this.changed = changed;
+		}
+
+		@Override
+		public void close() {
+			if (!changed) {
+				return;
+			}
+			if (previous == null) {
+				ACTIVE_EVALUATION.remove();
+			} else {
+				ACTIVE_EVALUATION.set(previous);
+			}
+		}
 	}
 
 	/** The evaluation's interner, or null on the compile-scoped carrier. */
@@ -105,7 +159,11 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 	 * must never be asked: runtime interning belongs to an evaluation.
 	 */
 	long internComputedValue(LmdbNativeValueCodec.DecodedValue decoded) {
-		Value value = toValue(decoded);
+		return internComputedValue(toValue(decoded));
+	}
+
+	/** Store-first interning for semantic row evaluators that already produce an authoritative RDF value. */
+	long internComputedValue(Value value) {
 		if (value == null) {
 			return UNKNOWN;
 		}
@@ -113,11 +171,25 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 			throw new IllegalStateException(
 					"compile-scoped synthetic source cannot intern computed values; use forEvaluation()");
 		}
+		value = context.authoritativeQueryScopedValue(value);
 		long existing = idOf(value);
 		if (existing != UNKNOWN) {
 			return existing;
 		}
 		return context.internValue(value);
+	}
+
+	/**
+	 * Retains the authoritative object returned by a query-scoped function while preserving its canonical store id.
+	 * This is distinct from ordinary term interning: callers may rely on NOW returning the same object everywhere in
+	 * one evaluation, including across native and generic scopes.
+	 */
+	void retainQueryScopedValue(Value value) {
+		if (context == null) {
+			throw new IllegalStateException(
+					"compile-scoped synthetic source cannot retain query-scoped values; use forEvaluation()");
+		}
+		context.retainQueryScopedValue(value, delegate.idOf(value));
 	}
 
 	/**
@@ -178,7 +250,7 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	@Override
 	public Object idSpace() {
-		return this;
+		return syntheticIdSpace == null ? this : syntheticIdSpace;
 	}
 
 	@Override
@@ -347,6 +419,25 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 			}
 
 			@Override
+			public NativeAdjacency adjacency(long predicate, boolean bySubject,
+					AdjacencyAccessObserver observer) throws IOException {
+				if (synthetic(predicate)) {
+					return null;
+				}
+				return inner.adjacency(predicate, bySubject, observer);
+			}
+
+			@Override
+			public NodePredicates nodePredicates(boolean bySubject) throws IOException {
+				return inner.nodePredicates(bySubject);
+			}
+
+			@Override
+			public DynamicAdjacency dynamicAdjacency(boolean bySubject) throws IOException {
+				return inner.dynamicAdjacency(bySubject);
+			}
+
+			@Override
 			public void close() {
 				inner.close();
 			}
@@ -383,6 +474,11 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public OptionalDouble distinctFanOutKeys(long predicate, boolean bySubject) {
+		return synthetic(predicate) ? OptionalDouble.empty() : delegate.distinctFanOutKeys(predicate, bySubject);
+	}
+
+	@Override
 	public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
 		return synthetic(predicate) ? OptionalLong.empty()
 				: delegate.adjacencyKeyDomainCardinality(predicate, bySubject);
@@ -404,5 +500,97 @@ final class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public boolean hasStatementsInSource() {
 		return delegate.hasStatementsInSource();
+	}
+
+	@Override
+	public LmdbRootScanPartition[] planRootScanPartitions(long subj, long pred, long obj, long context,
+			int targetPartitions) throws IOException {
+		if (anySynthetic(subj, pred, obj, context)) {
+			return new LmdbRootScanPartition[0];
+		}
+		return delegate.planRootScanPartitions(subj, pred, obj, context, targetPartitions);
+	}
+
+	@Override
+	public RecordIterator statements(long subj, long pred, long obj, long context,
+			LmdbRootScanPartition partition) throws IOException {
+		if (anySynthetic(subj, pred, obj, context)) {
+			return EMPTY;
+		}
+		return delegate.statements(subj, pred, obj, context, partition);
+	}
+
+	@Override
+	public ParallelSource[] openParallelSources(int count) throws IOException {
+		ParallelSource[] opened = delegate.openParallelSources(count);
+		if (opened == null) {
+			return null;
+		}
+		boolean complete = false;
+		Throwable primary = null;
+		try {
+			if (opened.length != count) {
+				return null;
+			}
+			ParallelSource[] result = new ParallelSource[count];
+			for (int i = 0; i < count; i++) {
+				if (opened[i] == null) {
+					return null;
+				}
+				result[i] = new SyntheticParallelSource(opened[i], catalog, context, idSpace());
+			}
+			complete = true;
+			return result;
+		} catch (RuntimeException | Error problem) {
+			primary = problem;
+			throw problem;
+		} finally {
+			if (!complete) {
+				Throwable closeFailure = null;
+				for (ParallelSource source : opened) {
+					if (source == null) {
+						continue;
+					}
+					try {
+						source.close();
+					} catch (RuntimeException | Error closeProblem) {
+						if (primary != null && primary != closeProblem) {
+							primary.addSuppressed(closeProblem);
+						} else if (closeFailure == null) {
+							closeFailure = closeProblem;
+						} else if (closeFailure != closeProblem) {
+							closeFailure.addSuppressed(closeProblem);
+						}
+					}
+				}
+				if (primary == null && closeFailure instanceof RuntimeException runtimeException) {
+					throw runtimeException;
+				}
+				if (primary == null && closeFailure instanceof Error error) {
+					throw error;
+				}
+			}
+		}
+	}
+
+	private static final class SyntheticParallelSource extends SyntheticValueSource implements ParallelSource {
+
+		private final ParallelSource owned;
+
+		private SyntheticParallelSource(ParallelSource owned, PlanValueCatalog catalog,
+				NativeExecutionContext context, Object syntheticIdSpace) {
+			super(owned, catalog, context, syntheticIdSpace);
+			this.owned = owned;
+		}
+
+		@Override
+		public long snapshotId() {
+			return owned.snapshotId();
+		}
+
+		@Override
+		public void close() {
+			owned.close();
+		}
 	}
 }

@@ -94,7 +94,8 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	LmdbNativeKernelHooks(RowState liveRow, LmdbNativeKernelBindings bindings,
 			LmdbNativeKernelBindings.FilterHook[] filterHooks) {
 		this.source = liveRow.source;
-		this.scratch = new RowState(liveRow.source, liveRow.layout, liveRow.base);
+		this.scratch = new RowState(liveRow.source, liveRow.layout, liveRow.base, liveRow.exactValuesMetrics,
+				liveRow.cancellation);
 		this.scratch.memoryScope = liveRow.memoryScope;
 		this.codec = liveRow.source.nativeValueCodec();
 		this.filters = filterHooks;
@@ -144,6 +145,28 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			this.fragmentFastPaths = null;
 			this.fragmentFastBindings = null;
 		}
+	}
+
+	@Override
+	public boolean sameRdfTerm(long left, long right) {
+		return scratch.termAuthority().sameRdfTerm(left, right);
+	}
+
+	@Override
+	public long rdfTermHash(long id) {
+		return scratch.termAuthority().rdfTermHash(id);
+	}
+
+	@Override
+	public long importRdfTerm(KernelHooks sourceHooks, long sourceId) {
+		if (sourceHooks == this) {
+			return sourceId;
+		}
+		if (!(sourceHooks instanceof LmdbNativeKernelHooks)) {
+			return sourceId;
+		}
+		LmdbNativeKernelHooks other = (LmdbNativeKernelHooks) sourceHooks;
+		return scratch.termAuthority().importId(other.scratch.termAuthority(), sourceId);
 	}
 
 	@Override
@@ -241,19 +264,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	 */
 	private long computeInternedBind(LmdbNativeCompiledValue computedValue) {
 		RowState scratchRow = scratch;
-		LmdbNativeSlotReader reader = new LmdbNativeSlotReader() {
-			@Override
-			public long id(int slot) {
-				return scratchRow.slots[slot];
-			}
-
-			@Override
-			public SyntheticValueSource evaluationScope() {
-				return scratchRow.source instanceof SyntheticValueSource ? (SyntheticValueSource) scratchRow.source
-						: null;
-			}
-		};
-		LmdbNativeValueCodec.DecodedValue decoded = computedValue.evaluator.eval(reader);
+		LmdbNativeValueCodec.DecodedValue decoded = computedValue.evaluator.eval(scratchRow);
 		if (decoded == null || decoded.error()) {
 			return UNKNOWN;
 		}
@@ -381,7 +392,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		KernelRuntime.LongHashSet[] sets = distinctSets[aggregateId];
 		KernelRuntime.LongHashSet set = sets[groupId];
 		if (set == null) {
-			set = new KernelRuntime.LongHashSet(distinctExpected);
+			set = new KernelRuntime.LongHashSet(distinctExpected, this);
 			sets[groupId] = set;
 		}
 		return set.add(valueId);

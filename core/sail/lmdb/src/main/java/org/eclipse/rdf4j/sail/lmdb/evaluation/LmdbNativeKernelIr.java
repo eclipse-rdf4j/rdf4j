@@ -1526,6 +1526,79 @@ final class LmdbNativeKernelIr {
 		}
 	}
 
+	/**
+	 * A badly-designed OPTIONAL evaluated in its lexical caller frame. The problem columns are bound before the
+	 * operator but must be hidden from both arms. At run time the container saves and clears them, evaluates the left
+	 * pipeline, and runs the right pipeline once per left row. A right row marks the arm as existing before mapping
+	 * compatibility is checked: incompatible right rows therefore suppress the fallback exactly like RDF4J's
+	 * {@code BadlyDesignedLeftJoinIterator}. Compatible rows and genuine empty-right fallbacks restore the saved caller
+	 * values before continuing.
+	 */
+	static final class LexicalFrameLeftJoin extends Node {
+		final List<Node> left;
+		final List<Node> right;
+		final int[] problemCols;
+
+		LexicalFrameLeftJoin(List<Node> left, List<Node> right, int[] problemCols) {
+			if (left.isEmpty() || right.isEmpty() || problemCols.length == 0) {
+				throw new IllegalArgumentException("lexical frame left join needs two arms and a problem column");
+			}
+			this.left = List.copyOf(left);
+			this.right = List.copyOf(right);
+			this.problemCols = problemCols.clone();
+		}
+
+		int[] resetColumns() {
+			BitSet columns = new BitSet();
+			for (Node node : right) {
+				node.produced(columns);
+			}
+			int[] result = new int[columns.cardinality()];
+			int out = 0;
+			for (int col = columns.nextSetBit(0); col >= 0; col = columns.nextSetBit(col + 1)) {
+				result[out++] = col;
+			}
+			return result;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("lfj[");
+			for (int i = 0; i < problemCols.length; i++) {
+				key.append(i == 0 ? "" : ",").append('v').append(problemCols[i]);
+			}
+			key.append("]{");
+			for (Node node : left) {
+				node.key(key);
+			}
+			key.append("}{");
+			for (Node node : right) {
+				node.key(key);
+			}
+			key.append("};");
+		}
+
+		@Override
+		void produced(BitSet columns) {
+			for (Node node : left) {
+				node.produced(columns);
+			}
+			for (Node node : right) {
+				node.produced(columns);
+			}
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			for (Node node : left) {
+				node.requirements(requirements);
+			}
+			for (Node node : right) {
+				node.requirements(requirements);
+			}
+		}
+	}
+
 	/** BIND alias: copy an operand into a column. */
 	static final class BindAlias extends Node {
 		final Operand source;
@@ -2004,8 +2077,14 @@ final class LmdbNativeKernelIr {
 
 		@Override
 		void requirements(Requirements requirements) {
+			if (groupCols.length > 0) {
+				// Streaming groups compare authoritative RDF terms at run boundaries, not merely physical ids.
+				requirements.hooks = true;
+			}
 			for (AggregateOutput output : outputs) {
-				if (output.needsHooks()) {
+				if (output.needsHooks() || output.kind == AGG_COUNT_DISTINCT) {
+					// Ordered COUNT(DISTINCT) uses last-seen RDF-term equality; its disordered fallback also
+					// carries the hook into the equality-aware hash set.
 					requirements.hooks = true;
 				}
 			}
@@ -2106,16 +2185,36 @@ final class LmdbNativeKernelIr {
 		if (pipeline.isEmpty()) {
 			return false;
 		}
-		for (Node node : pipeline) {
-			boolean streamable = isStatelessRowNode(node)
-					|| node instanceof EnumerateDomain || node instanceof Probe
-					|| node instanceof ScanQuad || node instanceof PlanRows || node instanceof ProbeClose
-					|| node instanceof EnumerateAdjKeys && ((EnumerateAdjKeys) node).valueCol >= 0;
+		for (int i = 0; i < pipeline.size(); i++) {
+			Node node = pipeline.get(i);
+			boolean streamable = isResumableProducer(node)
+					|| i == pipeline.size() - 1 && node instanceof LeftProbe
+					|| i == pipeline.size() - 1 && node instanceof LeftGroup
+							&& isResumableArm(((LeftGroup) node).arm);
 			if (!streamable) {
 				return false;
 			}
 		}
 		return true;
+	}
+
+	private static boolean isResumableArm(List<Node> arm) {
+		if (arm.isEmpty()) {
+			return false;
+		}
+		for (Node node : arm) {
+			if (!isResumableProducer(node)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean isResumableProducer(Node node) {
+		return isStatelessRowNode(node)
+				|| node instanceof EnumerateDomain || node instanceof Probe
+				|| node instanceof ScanQuad || node instanceof PlanRows || node instanceof ProbeClose
+				|| node instanceof EnumerateAdjKeys && ((EnumerateAdjKeys) node).valueCol >= 0;
 	}
 
 	/** True for straight-line row nodes which are safe to re-evaluate after a streaming pause. */
@@ -2200,8 +2299,13 @@ final class LmdbNativeKernelIr {
 			this.aggregateDistinctModes = aggregateProperties.distinctModes;
 			this.orderedInputsRequired = aggregateProperties.orderedInputsRequired;
 			this.uniqueDomainsRequired = (BitSet) aggregateProperties.uniqueDomainsRequired.clone();
-			this.vectorTailIndex = vectorTailEnabled() ? findVectorTail(this.pipeline) : -1;
 			this.resumable = resumableEnabled() && isResumable(this.pipeline, this.terminal);
+			int vectorTail = vectorTailEnabled() ? findVectorTail(this.pipeline) : -1;
+			// LeftProbe's null-extension phase has its own resumable state machine. Keep that terminal scalar when
+			// streaming; the vector-tail emitter intentionally handles only ordinary run producers.
+			this.vectorTailIndex = resumable && vectorTail >= 0 && this.pipeline.get(vectorTail) instanceof LeftProbe
+					? -1
+					: vectorTail;
 			StringBuilder key = new StringBuilder("ir1:");
 			if (vectorTailIndex >= 0) {
 				key.append("vt").append(vectorTailIndex).append(';');

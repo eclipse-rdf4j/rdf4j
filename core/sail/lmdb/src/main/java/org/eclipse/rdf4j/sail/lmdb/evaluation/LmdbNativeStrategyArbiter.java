@@ -18,6 +18,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 
 /**
  * Chooses among candidate execution strategies by cost, falling back to the engine's declared specialization order
@@ -75,7 +76,9 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 
 	/** Production arbiter whose corrections are scoped to the source's LMDB id space. */
 	static <T> LmdbNativeStrategyArbiter<T> forExpr(TupleExpr explainTarget, NativeLmdbQuerySource source) {
-		return new LmdbNativeStrategyArbiter<>(explainTarget, -1D, LmdbNativeAdaptiveCostModel.forSource(source));
+		return source == null ? forExpr(explainTarget)
+				: new LmdbNativeStrategyArbiter<>(explainTarget, -1D,
+						LmdbNativeAdaptiveCostModel.forSource(source));
 	}
 
 	/**
@@ -91,8 +94,9 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	/** Production slice-aware arbiter whose corrections are scoped to the source's LMDB id space. */
 	static <T> LmdbNativeStrategyArbiter<T> forSlice(TupleExpr explainTarget, double sliceRows,
 			NativeLmdbQuerySource source) {
-		return new LmdbNativeStrategyArbiter<>(explainTarget, sliceRows,
-				LmdbNativeAdaptiveCostModel.forSource(source));
+		return source == null ? forSlice(explainTarget, sliceRows)
+				: new LmdbNativeStrategyArbiter<>(explainTarget, sliceRows,
+						LmdbNativeAdaptiveCostModel.forSource(source));
 	}
 
 	/** Test seam: an arbiter over an explicit adaptive model (probe-execution specifications). */
@@ -552,6 +556,9 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 						guardReservation = null;
 					}
 				}
+			} catch (KernelQueryCancelledException cancelled) {
+				backupObservation.cancelled(cancelled);
+				race.backupFailed(cancelled);
 			} catch (LmdbNativeProbeDeadlineExceeded
 					| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException tripped) {
 				backupObservation.cancelled(tripped);
@@ -592,6 +599,8 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		try (LmdbNativeProbeDeadline.Scope scope = LmdbNativeProbeDeadline.enter(primaryDeadline)) {
 			try {
 				value = normalPlan.candidate().opener().open(observation);
+			} catch (KernelQueryCancelledException cancelled) {
+				throw cancelled;
 			} catch (LmdbNativeProbeDeadlineExceeded
 					| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException displaced) {
 				tripped = true;
@@ -687,6 +696,8 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		try (LmdbNativeProbeDeadline.Scope scope = LmdbNativeProbeDeadline.enter(start + plan.triggerNanos())) {
 			try {
 				value = normalPlan.candidate().opener().open(observation);
+			} catch (KernelQueryCancelledException cancelled) {
+				throw cancelled;
 			} catch (LmdbNativeProbeDeadlineExceeded
 					| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException expired) {
 				timedOut = true;
@@ -821,6 +832,9 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 						hedgeSupport.discard(produced);
 					}
 				}
+			} catch (KernelQueryCancelledException cancelled) {
+				backupObservation.cancelled(cancelled);
+				race.backupFailed(cancelled);
 			} catch (LmdbNativeProbeDeadlineExceeded
 					| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException tripped) {
 				backupObservation.cancelled(tripped); // the race's loser trip: no timing evidence
@@ -864,6 +878,8 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				if (value != null) {
 					value = probeHarness.drainBounded(value, observation, probeConfig.bufferRows());
 				}
+			} catch (KernelQueryCancelledException cancelled) {
+				throw cancelled;
 			} catch (LmdbNativeProbeDeadlineExceeded
 					| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException expired) {
 				timedOut = true;
@@ -1084,6 +1100,8 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				if (value != null) {
 					value = probeHarness.drainBounded(value, observation, probeConfig.bufferRows());
 				}
+			} catch (KernelQueryCancelledException cancelled) {
+				throw cancelled;
 			} catch (LmdbNativeProbeDeadlineExceeded
 					| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException expired) {
 				timedOut = true;

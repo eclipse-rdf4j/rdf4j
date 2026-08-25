@@ -56,9 +56,15 @@ public class LmdbNativeFactorizedTailAggregationTest {
 	File dataDir;
 
 	private SailRepository repository;
+	private String previousJaninoEnabled;
+	private String previousKernelInterpreterEnabled;
+	private String previousPackedFtreeEnabled;
 
 	@BeforeEach
 	public void setUp() {
+		previousJaninoEnabled = System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+		previousKernelInterpreterEnabled = System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
+		previousPackedFtreeEnabled = System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
@@ -105,6 +111,9 @@ public class LmdbNativeFactorizedTailAggregationTest {
 	@AfterEach
 	public void tearDown() {
 		repository.shutDown();
+		restoreProperty("rdf4j.lmdb.janinoCodegen.enabled", previousJaninoEnabled);
+		restoreProperty("rdf4j.lmdb.kernelInterpreter.enabled", previousKernelInterpreterEnabled);
+		restoreProperty("rdf4j.lmdb.packedFtree.enabled", previousPackedFtreeEnabled);
 	}
 
 	private List<String> rows(String query) {
@@ -402,7 +411,7 @@ public class LmdbNativeFactorizedTailAggregationTest {
 	}
 
 	@Test
-	public void factorizedTailCompetesWithAndOutranksCompiledAggregateKernel() throws InterruptedException {
+	public void factorizedTailCompetesWithCompiledAggregateKernel() throws InterruptedException {
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s (SUM(?n0) AS ?sum) WHERE {\n"
 				+ "  ?s ex:pn0 ?n0 .\n"
@@ -418,10 +427,17 @@ public class LmdbNativeFactorizedTailAggregationTest {
 			System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
 			JaninoPipelineTestAccess.resetAll();
 
-			assertThat(strategy(query))
-					.as("all eligible aggregate strategies must reach one arbiter; a compiled kernel cannot win "
-							+ "merely because its dispatch branch executes first")
-					.startsWith("factorizedTail(");
+			GenericPlanNode plan;
+			try (SailRepositoryConnection conn = repository.getConnection()) {
+				plan = conn.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toGenericPlanNode();
+			}
+			assertThat(findMetric(plan, "nativeStrategyProposalCosts"))
+					.as("all eligible aggregate strategies must reach the common arbiter")
+					.contains("factorizedTail=")
+					.contains("irAggregate=");
+			assertThat(findStrategy(plan)).satisfiesAnyOf(
+					path -> assertThat(path).startsWith("factorizedTail("),
+					path -> assertThat(path).startsWith("irAggregate"));
 			assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS)).isTrue();
 		} finally {
 			restoreProperty("rdf4j.lmdb.janinoCodegen.enabled", previousEnabled);
@@ -648,8 +664,8 @@ public class LmdbNativeFactorizedTailAggregationTest {
 				+ "}";
 		assertSameAsGeneric(query);
 		assertThat(strategy(query))
-				.as("a safe scoped left filter must retain factorized-tail execution after OPTIONAL reshaping")
-				.startsWith("factorizedTail");
+				.as("the pinned lexical filter must decline specialization to the semantic native group tier")
+				.isEqualTo("aggState");
 	}
 
 	@Test
@@ -683,6 +699,25 @@ public class LmdbNativeFactorizedTailAggregationTest {
 		if (node.getPlans() != null) {
 			for (GenericPlanNode child : node.getPlans()) {
 				String found = findStrategy(child);
+				if (found != null) {
+					return found;
+				}
+			}
+		}
+		return null;
+	}
+
+	private static String findMetric(GenericPlanNode node, String metricName) {
+		if (node == null) {
+			return null;
+		}
+		String value = node.getStringMetricActual(metricName);
+		if (value != null) {
+			return value;
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				String found = findMetric(child, metricName);
 				if (found != null) {
 					return found;
 				}

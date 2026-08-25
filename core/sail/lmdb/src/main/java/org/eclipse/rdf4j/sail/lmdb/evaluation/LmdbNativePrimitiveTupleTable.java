@@ -403,9 +403,14 @@ final class NativeDistinctTracker {
 	static final AtomicLong OBJECT_ROWS = new AtomicLong();
 
 	final int[] slots;
+	final NativeTermAuthority authority;
+	final NativeTermReferenceCache termCache;
 	final PrimitiveTupleTable primitive;
 	final HashMap<GroupKey, Boolean> objects;
 	final GroupKey probe;
+	final long[] normalizedRow;
+	final int[] normalizedSlots;
+	NativeBatch normalizedBatch;
 	boolean emptySeen;
 	long primitiveRows;
 	long objectRows;
@@ -416,10 +421,18 @@ final class NativeDistinctTracker {
 	int[] batchEntries = new int[0];
 
 	NativeDistinctTracker(int[] slots) {
+		this(slots, null);
+	}
+
+	NativeDistinctTracker(int[] slots, NativeTermAuthority authority) {
 		this.slots = slots;
+		this.authority = authority;
+		this.termCache = authority == null ? null : new NativeTermReferenceCache(authority);
 		this.primitive = slots.length >= 1 && slots.length <= 4 ? new PrimitiveTupleTable(slots.length, 256) : null;
 		this.objects = primitive == null && slots.length > 0 ? new HashMap<>() : null;
 		this.probe = objects == null ? null : new GroupKey(new long[slots.length]);
+		this.normalizedRow = authority == null ? null : new long[slots.length];
+		this.normalizedSlots = authority == null ? null : identitySlots(slots.length);
 	}
 
 	boolean add(long[] row) {
@@ -428,14 +441,23 @@ final class NativeDistinctTracker {
 			emptySeen = true;
 			return fresh;
 		}
+		long[] candidate = row;
+		int[] candidateSlots = slots;
+		boolean nullAsUnknown = true;
+		if (termCache != null) {
+			normalize(row);
+			candidate = normalizedRow;
+			candidateSlots = normalizedSlots;
+			nullAsUnknown = false;
+		}
 		if (primitive != null) {
 			int before = primitive.size;
-			primitive.findOrInsert(row, slots, true);
+			primitive.findOrInsert(candidate, candidateSlots, nullAsUnknown);
 			primitiveRows++;
 			return primitive.size != before;
 		}
 		for (int i = 0; i < slots.length; i++) {
-			long id = row[slots[i]];
+			long id = candidate[candidateSlots[i]];
 			probe.ids[i] = id == NULL_CONTEXT_ID ? UNKNOWN : id;
 		}
 		probe.rehash();
@@ -452,6 +474,25 @@ final class NativeDistinctTracker {
 			boolean fresh = !emptySeen;
 			emptySeen = true;
 			return fresh;
+		}
+		if (termCache != null) {
+			normalize(batch, row);
+			if (primitive != null) {
+				int before = primitive.size;
+				primitive.findOrInsert(normalizedRow, normalizedSlots, false);
+				primitiveRows++;
+				return primitive.size != before;
+			}
+			for (int i = 0; i < slots.length; i++) {
+				probe.ids[i] = normalizedRow[i];
+			}
+			probe.rehash();
+			objectRows++;
+			if (objects.containsKey(probe)) {
+				return false;
+			}
+			objects.put(probe.storedCopy(), Boolean.TRUE);
+			return true;
 		}
 		if (primitive != null) {
 			int before = primitive.size;
@@ -490,8 +531,24 @@ final class NativeDistinctTracker {
 			}
 			return accepted;
 		}
+		NativeBatch candidateBatch = batch;
+		int[] candidateSlots = slots;
+		boolean nullAsUnknown = true;
+		if (termCache != null) {
+			ensureNormalizedBatch(batch.capacity);
+			for (int i = 0; i < count; i++) {
+				int row = selection[i];
+				for (int slot = 0; slot < slots.length; slot++) {
+					normalizedBatch.set(slot, row, termCache.equivalenceId(batch.get(slots[slot], row)));
+				}
+			}
+			candidateBatch = normalizedBatch;
+			candidateSlots = normalizedSlots;
+			nullAsUnknown = false;
+		}
 		ensureBatchCapacity(count);
-		primitive.hashBatch(batch, selection, count, slots, true, batchHashState, batchHashes);
+		primitive.hashBatch(candidateBatch, selection, count, candidateSlots, nullAsUnknown, batchHashState,
+				batchHashes);
 		primitive.headBatch(batchHashes, count, batchBuckets, batchEntries);
 		long preparedVersion = primitive.version;
 		primitiveRows += count;
@@ -499,10 +556,10 @@ final class NativeDistinctTracker {
 		for (int i = 0; i < count; i++) {
 			int row = selection[i];
 			int before = primitive.size;
-			int existing = primitive.findPrepared(batch, row, slots, true, batchHashes[i], batchBuckets[i],
-					batchEntries[i], preparedVersion);
+			int existing = primitive.findPrepared(candidateBatch, row, candidateSlots, nullAsUnknown, batchHashes[i],
+					batchBuckets[i], batchEntries[i], preparedVersion);
 			if (existing < 0) {
-				primitive.findOrInsertHashed(batch, row, slots, true, batchHashes[i]);
+				primitive.findOrInsertHashed(candidateBatch, row, candidateSlots, nullAsUnknown, batchHashes[i]);
 			}
 			if (primitive.size != before) {
 				selection[accepted++] = row;
@@ -519,6 +576,12 @@ final class NativeDistinctTracker {
 		batchHashes = new int[capacity];
 		batchBuckets = new int[capacity];
 		batchEntries = new int[capacity];
+	}
+
+	private void ensureNormalizedBatch(int capacity) {
+		if (normalizedBatch == null || normalizedBatch.capacity < capacity) {
+			normalizedBatch = new NativeBatch(slots.length, capacity);
+		}
 	}
 
 	void commitMetrics() {
@@ -538,6 +601,144 @@ final class NativeDistinctTracker {
 			objects.clear();
 		}
 	}
+
+	private void normalize(long[] row) {
+		for (int i = 0; i < slots.length; i++) {
+			normalizedRow[i] = termCache.equivalenceId(row[slots[i]]);
+		}
+	}
+
+	private void normalize(NativeBatch batch, int row) {
+		for (int i = 0; i < slots.length; i++) {
+			normalizedRow[i] = termCache.equivalenceId(batch.get(slots[i], row));
+		}
+	}
+
+	private static int[] identitySlots(int width) {
+		int[] identity = new int[width];
+		for (int i = 0; i < width; i++) {
+			identity[i] = i;
+		}
+		return identity;
+	}
+}
+
+/** Evaluation-local primitive-id cache shared by DISTINCT classification, hashing, and equality. */
+final class NativeTermReferenceCache {
+	private static final byte OCCUPIED = 1;
+
+	private final NativeTermAuthority authority;
+	private final HashMap<Object, Long> equivalenceIds = new HashMap<>();
+	private long[] ids = new long[256];
+	private NativeTermRef[] refs = new NativeTermRef[256];
+	private long[] equivalents = new long[256];
+	private byte[] states = new byte[256];
+	private int size;
+	private int threshold = 192;
+	private long nextEquivalenceId = 1L;
+
+	NativeTermReferenceCache(NativeTermAuthority authority) {
+		this.authority = authority;
+	}
+
+	NativeTermRef termRef(long id) {
+		if (id == UNKNOWN || id == NULL_CONTEXT_ID) {
+			return null;
+		}
+		int slot = slot(id);
+		if ((states[slot] & OCCUPIED) == 0) {
+			slot = insert(id, slot);
+		}
+		return refs[slot];
+	}
+
+	long equivalenceId(long id) {
+		if (id == UNKNOWN || id == NULL_CONTEXT_ID) {
+			return UNKNOWN;
+		}
+		int slot = slot(id);
+		if ((states[slot] & OCCUPIED) == 0) {
+			slot = insert(id, slot);
+		}
+		return equivalents[slot];
+	}
+
+	private int insert(long id, int slot) {
+		if (size >= threshold) {
+			grow();
+			slot = slot(id);
+		}
+		ids[slot] = id;
+		NativeTermRef ref = refs[slot] = authority.termRef(id);
+		Object value = ref != null ? ref.value() : new MissingTerm(id);
+		Long equivalent = equivalenceIds.get(value);
+		if (equivalent == null) {
+			equivalent = nextEquivalenceId++;
+			equivalenceIds.put(value, equivalent);
+		}
+		equivalents[slot] = equivalent;
+		states[slot] = OCCUPIED;
+		size++;
+		return slot;
+	}
+
+	private int slot(long id) {
+		int slot = mix(id) & (ids.length - 1);
+		while ((states[slot] & OCCUPIED) != 0 && ids[slot] != id) {
+			slot = slot + 1 & (ids.length - 1);
+		}
+		return slot;
+	}
+
+	private void grow() {
+		long[] oldIds = ids;
+		NativeTermRef[] oldRefs = refs;
+		long[] oldEquivalents = equivalents;
+		byte[] oldStates = states;
+		int capacity = oldIds.length << 1;
+		ids = new long[capacity];
+		refs = new NativeTermRef[capacity];
+		equivalents = new long[capacity];
+		states = new byte[capacity];
+		threshold = capacity * 3 >>> 2;
+		for (int i = 0; i < oldIds.length; i++) {
+			if ((oldStates[i] & OCCUPIED) == 0) {
+				continue;
+			}
+			int slot = slot(oldIds[i]);
+			ids[slot] = oldIds[i];
+			refs[slot] = oldRefs[i];
+			equivalents[slot] = oldEquivalents[i];
+			states[slot] = oldStates[i];
+		}
+	}
+
+	private static int mix(long value) {
+		value ^= value >>> 33;
+		value *= 0xff51afd7ed558ccdl;
+		value ^= value >>> 33;
+		value *= 0xc4ceb9fe1a85ec53l;
+		value ^= value >>> 33;
+		return (int) value;
+	}
+
+	private static final class MissingTerm {
+		private final long id;
+
+		private MissingTerm(long id) {
+			this.id = id;
+		}
+
+		@Override
+		public int hashCode() {
+			return Long.hashCode(id);
+		}
+
+		@Override
+		public boolean equals(Object object) {
+			return object instanceof MissingTerm && id == ((MissingTerm) object).id;
+		}
+	}
 }
 
 /** DISTINCT tracker that uses a proven order frontier instead of retaining every projected tuple. */
@@ -545,17 +746,23 @@ final class NativeDistinctTracker {
 final class NativeOrderedDistinctTracker {
 
 	final NativeTupleDistinctPlan plan;
+	final NativeTermAuthority authority;
 	final NativeDistinctTracker residual;
 	final long[] previous;
 	boolean initialized;
 	boolean emptySeen;
 
 	NativeOrderedDistinctTracker(NativeTupleDistinctPlan plan) {
+		this(plan, null);
+	}
+
+	NativeOrderedDistinctTracker(NativeTupleDistinctPlan plan, NativeTermAuthority authority) {
 		this.plan = plan;
+		this.authority = authority;
 		this.residual = plan.strategy == NativeDistinctStrategy.GLOBAL_HASH
-				? new NativeDistinctTracker(plan.keySlots)
+				? new NativeDistinctTracker(plan.keySlots, authority)
 				: plan.strategy == NativeDistinctStrategy.PARTITIONED_HASH
-						? new NativeDistinctTracker(plan.residualSlots)
+						? new NativeDistinctTracker(plan.residualSlots, authority)
 						: null;
 		int previousWidth = plan.strategy == NativeDistinctStrategy.ADJACENT ? plan.keySlots.length
 				: plan.partitionSlots.length;
@@ -620,7 +827,7 @@ final class NativeOrderedDistinctTracker {
 		boolean changed = !initialized;
 		for (int i = 0; i < slots.length; i++) {
 			long value = normalize(row[slots[i]]);
-			if (!changed && previous[i] != value) {
+			if (!changed && !sameTerm(previous[i], value)) {
 				changed = true;
 			}
 		}
@@ -637,7 +844,7 @@ final class NativeOrderedDistinctTracker {
 		boolean changed = !initialized;
 		for (int i = 0; i < slots.length; i++) {
 			long value = normalize(batch.get(slots[i], row));
-			if (!changed && previous[i] != value) {
+			if (!changed && !sameTerm(previous[i], value)) {
 				changed = true;
 			}
 		}
@@ -652,5 +859,9 @@ final class NativeOrderedDistinctTracker {
 
 	private long normalize(long value) {
 		return value == NULL_CONTEXT_ID ? UNKNOWN : value;
+	}
+
+	private boolean sameTerm(long left, long right) {
+		return left == right || authority != null && authority.sameRdfTerm(left, right);
 	}
 }

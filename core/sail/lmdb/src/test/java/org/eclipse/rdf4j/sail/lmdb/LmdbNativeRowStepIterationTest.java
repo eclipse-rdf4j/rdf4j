@@ -19,10 +19,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -101,8 +103,9 @@ class LmdbNativeRowStepIterationTest {
 	@Test
 	void evaluateDoesNotConsumeRowsBeforeIterationDemand() {
 		RecordingPlan plan = new RecordingPlan(2);
-		NativeRowsStep step = new NativeRowsStep(null, plan, NativeSlotLayout.empty(), new int[0], new String[0],
-				false, new int[0], new boolean[0], 0, -1, true, null, null, null, Set.of(), null, null);
+		NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(), plan, NativeSlotLayout.empty(),
+				new int[0],
+				new String[0], false, new int[0], new boolean[0], 0, -1, true, null, null, null, Set.of(), null, null);
 
 		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
 			assertThat(plan.openCalls).as("cursor opens during evaluate()").isZero();
@@ -114,6 +117,80 @@ class LmdbNativeRowStepIterationTest {
 		}
 
 		assertThat(plan.closeCalls).as("active cursor closes with the result iteration").isOne();
+	}
+
+	@Test
+	void orderedEvaluateDoesNotConsumeRowsBeforeDemand() {
+		RecordingPlan plan = new RecordingPlan(2);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("x", 0), null);
+		layout.freeze(List.of("x"));
+		NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(), plan, layout, new int[] { 0 },
+				new String[] { "x" }, false, new int[] { 0 }, new boolean[] { true }, 0, -1, true, null, null,
+				null, Set.of(), null, null);
+
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(plan.openCalls).as("ordered evaluate() must not open its producer").isZero();
+			assertThat(plan.nextCalls).as("ordered evaluate() must not materialize rows").isZero();
+
+			assertThat(iteration.hasNext()).isTrue();
+			assertThat(plan.openCalls).as("first demand opens the ordered producer").isOne();
+			assertThat(plan.nextCalls).as("first demand materializes the complete ordered input").isEqualTo(3);
+		}
+
+		assertThat(plan.closeCalls).as("ordered materialization closes its producer").isOne();
+	}
+
+	@Test
+	void orderedCloseBeforeDemandDoesNoWork() {
+		RecordingPlan plan = new RecordingPlan(2);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("x", 0), null);
+		layout.freeze(List.of("x"));
+		NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(), plan, layout, new int[] { 0 },
+				new String[] { "x" }, false, new int[] { 0 }, new boolean[] { true }, 0, -1, true, null, null,
+				null, Set.of(), null, null);
+
+		CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance());
+		iteration.close();
+
+		assertThat(plan.openCalls).as("close-before-demand must not open the ordered producer").isZero();
+		assertThat(plan.nextCalls).as("close-before-demand must not materialize rows").isZero();
+		assertThat(plan.closeCalls).as("no unopened producer needs closing").isZero();
+	}
+
+	@Test
+	void orderedEvaluateReturnsBeforeBlockedInputSoTimeoutCanBeArmed() throws Exception {
+		CountDownLatch evaluationStarted = new CountDownLatch(1);
+		CountDownLatch inputOpened = new CountDownLatch(1);
+		CountDownLatch allowInput = new CountDownLatch(1);
+		BlockingOpenPlan plan = new BlockingOpenPlan(inputOpened, allowInput);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("x", 0), null);
+		layout.freeze(List.of("x"));
+		NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(), plan, layout, new int[] { 0 },
+				new String[] { "x" }, false, new int[] { 0 }, new boolean[] { true }, 0, -1, true, null, null,
+				null, Set.of(), null, null);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Future<CloseableIteration<BindingSet>> evaluation = executor.submit(() -> {
+			evaluationStarted.countDown();
+			return step.evaluate(EmptyBindingSet.getInstance());
+		});
+		CloseableIteration<BindingSet> iteration = null;
+		try {
+			assertThat(evaluationStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			iteration = evaluation.get(5, TimeUnit.SECONDS);
+			iteration.close();
+
+			assertThat(inputOpened.getCount())
+					.as("evaluate must return so the caller can install its timeout before ordered input opens")
+					.isOne();
+			assertThat(plan.nextCalls).as("close-before-demand does not enter the blocked input").hasValue(0);
+		} finally {
+			allowInput.countDown();
+			if (iteration == null) {
+				evaluation.cancel(true);
+			}
+			executor.shutdownNow();
+			executor.awaitTermination(5, TimeUnit.SECONDS);
+		}
 	}
 
 	@Test
@@ -457,8 +534,9 @@ class LmdbNativeRowStepIterationTest {
 	@Test
 	void closeIsIdempotentAndDropsRetainedDistinctState() {
 		RecordingPlan plan = new RecordingPlan(2);
-		NativeRowsStep step = new NativeRowsStep(null, plan, NativeSlotLayout.empty(), new int[0], new String[0],
-				true, new int[0], new boolean[0], 0, -1, true, null, null, null, Set.of(), null, null);
+		NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(), plan, NativeSlotLayout.empty(),
+				new int[0],
+				new String[0], true, new int[0], new boolean[0], 0, -1, true, null, null, null, Set.of(), null, null);
 		NativeRowsIteration iteration = (NativeRowsIteration) step.evaluate(EmptyBindingSet.getInstance());
 
 		assertThat(iteration.hasNext()).isTrue();
@@ -652,7 +730,9 @@ class LmdbNativeRowStepIterationTest {
 				new String[] { "s" }, false, new int[] { 0 }, new boolean[] { true }, 0, 0, true, null,
 				explanationTarget, null, Set.of(), null, null);
 
-		step.evaluate(EmptyBindingSet.getInstance()).close();
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration.hasNext()).isFalse();
+		}
 
 		assertThat(explanationTarget.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
 				.isEqualTo("limitZero");
@@ -662,9 +742,9 @@ class LmdbNativeRowStepIterationTest {
 	void exhaustedPositiveLimitDoesNotReportZeroLimitEarlyExit() {
 		SingletonSet explanationTarget = new SingletonSet();
 		explanationTarget.setExecutionSummaryEnabled(true);
-		NativeRowsStep step = new NativeRowsStep(null, new RecordingPlan(2), NativeSlotLayout.empty(), new int[0],
-				new String[0], false, new int[0], new boolean[0], 0, 1, true, null, explanationTarget, null,
-				Set.of(), null, null);
+		NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(), new RecordingPlan(2),
+				NativeSlotLayout.empty(), new int[0], new String[0], false, new int[0], new boolean[0], 0, 1, true,
+				null, explanationTarget, null, Set.of(), null, null);
 
 		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
 			assertThat(iteration.hasNext()).isTrue();
@@ -777,6 +857,46 @@ class LmdbNativeRowStepIterationTest {
 		@Override
 		public long producedMask() {
 			return 0;
+		}
+	}
+
+	private static final class BlockingOpenPlan implements SlotPlan {
+		private final CountDownLatch inputOpened;
+		private final CountDownLatch allowInput;
+		private final AtomicInteger nextCalls = new AtomicInteger();
+
+		private BlockingOpenPlan(CountDownLatch inputOpened, CountDownLatch allowInput) {
+			this.inputOpened = inputOpened;
+			this.allowInput = allowInput;
+		}
+
+		@Override
+		public RowCursor open(RowState row) {
+			inputOpened.countDown();
+			try {
+				if (!allowInput.await(10, TimeUnit.SECONDS)) {
+					throw new QueryEvaluationException("ordered input test fixture timed out");
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new QueryEvaluationException(e);
+			}
+			return new RowCursor() {
+				@Override
+				public boolean next() {
+					nextCalls.incrementAndGet();
+					return false;
+				}
+
+				@Override
+				public void close() {
+				}
+			};
+		}
+
+		@Override
+		public long producedMask() {
+			return 0L;
 		}
 	}
 

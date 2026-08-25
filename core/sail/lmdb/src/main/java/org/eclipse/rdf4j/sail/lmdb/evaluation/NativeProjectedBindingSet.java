@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
@@ -47,19 +48,60 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 
 	NativeProjectedBindingSet(NativeLmdbQuerySource source, String[] names, int[] sourceSlots, long[] row) {
 		this.source = source;
-		this.names = names;
-		this.ids = new long[sourceSlots.length];
-		this.values = new Value[sourceSlots.length];
+		if (hasDuplicateNames(names)) {
+			String[] uniqueNames = new String[names.length];
+			long[] uniqueIds = new long[names.length];
+			Arrays.fill(uniqueIds, UNKNOWN);
+			int uniqueCount = 0;
+			for (int i = 0; i < names.length; i++) {
+				int target = indexOf(uniqueNames, uniqueCount, names[i]);
+				if (target < 0) {
+					target = uniqueCount++;
+					uniqueNames[target] = names[i];
+				}
+				long id = row[sourceSlots[i]];
+				if (isBound(id)) {
+					// SPARQL projection applies elements in order: a later bound occurrence updates the target,
+					// while an unbound occurrence contributes no binding and therefore cannot erase it.
+					uniqueIds[target] = id;
+				}
+			}
+			this.names = Arrays.copyOf(uniqueNames, uniqueCount);
+			this.ids = Arrays.copyOf(uniqueIds, uniqueCount);
+		} else {
+			this.names = names;
+			this.ids = new long[sourceSlots.length];
+			for (int i = 0; i < sourceSlots.length; i++) {
+				this.ids[i] = row[sourceSlots[i]];
+			}
+		}
+		this.values = new Value[this.ids.length];
 		int bound = 0;
-		for (int i = 0; i < sourceSlots.length; i++) {
-			long id = row[sourceSlots[i]];
-			ids[i] = id;
+		for (long id : this.ids) {
 			if (isBound(id)) {
 				bound++;
 			}
 		}
 		this.size = bound;
 		CREATED.incrementAndGet();
+	}
+
+	private static boolean hasDuplicateNames(String[] names) {
+		for (int i = 1; i < names.length; i++) {
+			if (indexOf(names, i, names[i]) >= 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static int indexOf(String[] names, int length, String name) {
+		for (int i = 0; i < length; i++) {
+			if (names[i].equals(name)) {
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	static boolean enabled() {
@@ -166,11 +208,19 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	Value value(int index) {
 		Value value = values[index];
 		if (value == null) {
+			long id = ids[index];
+			for (int i = 0; i < values.length; i++) {
+				if (i != index && ids[i] == id && values[i] != null) {
+					value = values[i];
+					values[index] = value;
+					return value;
+				}
+			}
 			NativeLmdbQuerySource currentSource = source;
 			if (currentSource == null) {
 				throw new IllegalStateException("detached native result has an unresolved value");
 			}
-			value = currentSource.lazyValue(ids[index]);
+			value = currentSource.lazyValue(id);
 			values[index] = value;
 			MATERIALIZED_VALUES.incrementAndGet();
 		}

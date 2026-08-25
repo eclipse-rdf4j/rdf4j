@@ -96,7 +96,7 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 				copies[i] = CopyBinding.computed(slot(elem.getName()), computed);
 			}
 		}
-		return copies;
+		return configureExtensionErrorMode(extension, copies);
 	}
 
 	SlotPlan compileFilterIntoStatementPattern(StatementPattern pattern, ValueExpr condition) {
@@ -447,7 +447,7 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		if (provablyEmptyByAdjacency(s, p, o)) {
 			return null;
 		}
-		return new PatternPlan(s, p, o, c, contexts, sp.getScope() == Scope.NAMED_CONTEXTS,
+		return new PatternPlan(s, p, o, c, contexts, isNamedContextScope(sp, c),
 				sp.getStatementOrder(), indexName(sp.getStatementOrder(), s, p, o, c),
 				staticEstimate(s, p, o, c, contexts));
 	}
@@ -633,9 +633,15 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		if (provablyEmptyByAdjacency(s, p, o)) {
 			return null;
 		}
-		return new PatternPlan(s, p, o, c, contexts, sp.getScope() == Scope.NAMED_CONTEXTS,
+		return new PatternPlan(s, p, o, c, contexts, isNamedContextScope(sp, c),
 				sp.getStatementOrder(), indexName(sp.getStatementOrder(), s, p, o, c),
 				algebraEstimate(sp));
+	}
+
+	/** A parser-level {@code GRAPH rdf4j:nil} denotes the default graph despite its named-context algebra scope. */
+	private static boolean isNamedContextScope(StatementPattern pattern, Term contextTerm) {
+		return pattern.getScope() == Scope.NAMED_CONTEXTS
+				&& !(contextTerm.isConstant() && contextTerm.constant == NULL_CONTEXT_ID);
 	}
 
 	/**

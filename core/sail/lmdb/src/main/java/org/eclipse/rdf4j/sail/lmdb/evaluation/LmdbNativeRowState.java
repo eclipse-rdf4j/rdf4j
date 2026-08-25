@@ -23,7 +23,8 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 @Experimental
-final class RowState {
+final class RowState implements LmdbNativeSlotReader {
+	private static final AtomicLong FALLBACK_SOLUTION_IDENTITIES = new AtomicLong(1L);
 	final NativeLmdbQuerySource source;
 	final NativeSlotLayout layout;
 	final BindingSet base;
@@ -32,6 +33,8 @@ final class RowState {
 	final long baseBindingMask;
 	final RowBindingSetView view;
 	final ExactValuesRuntimeMetrics exactValuesMetrics;
+	/** One outcome-only cancellation signal shared by every row, cursor, kernel, and worker in this evaluation. */
+	final NativeCancellationToken cancellation;
 	final int[] trailSlots;
 	final long[] trailOldValues;
 	LmdbNativeRuntimePlan.Invocation runtimePlan;
@@ -40,26 +43,47 @@ final class RowState {
 	int trailSize;
 	long boundMask;
 	/**
+	 * Bindings inherited at the current lexical scope boundary. At a root this is the caller-supplied base mapping;
+	 * EXISTS/NOT EXISTS temporarily replace it with the complete outer solution domain. Operators such as MINUS use
+	 * this mask to distinguish inherited bindings from physical bindings produced by their own left operand.
+	 */
+	long lexicalInputMask;
+	/** Nesting depth of explicit correlated scope frames such as EXISTS and LATERAL. */
+	int lexicalScopeDepth;
+	long logicalSolutionIdentity;
+	/**
 	 * Query-scoped memory ledger holder. Fresh per root row; derived rows (parallel workers, rescan rows, kernel
 	 * scratch) alias their parent's scope so byte admission draws on one per-query ledger.
 	 */
 	LmdbNativeQueryMemoryScope memoryScope = new LmdbNativeQueryMemoryScope();
 
 	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base) {
-		this(source, layout, base, null, null);
+		this(source, layout, base, null, null, new NativeCancellationToken());
 	}
 
 	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base, TupleExpr telemetryTarget) {
-		this(source, layout, base, telemetryTarget, ExactValuesRuntimeMetrics.create(telemetryTarget));
+		this(source, layout, base, telemetryTarget, ExactValuesRuntimeMetrics.create(telemetryTarget),
+				new NativeCancellationToken());
 	}
 
 	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base,
 			ExactValuesRuntimeMetrics exactValuesMetrics) {
-		this(source, layout, base, null, exactValuesMetrics);
+		this(source, layout, base, null, exactValuesMetrics, new NativeCancellationToken());
+	}
+
+	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base, TupleExpr telemetryTarget,
+			NativeCancellationToken cancellation) {
+		this(source, layout, base, telemetryTarget, ExactValuesRuntimeMetrics.create(telemetryTarget), cancellation);
+	}
+
+	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base,
+			ExactValuesRuntimeMetrics exactValuesMetrics, NativeCancellationToken cancellation) {
+		this(source, layout, base, null, exactValuesMetrics, cancellation);
 	}
 
 	private RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base,
-			TupleExpr telemetryTarget, ExactValuesRuntimeMetrics exactValuesMetrics) {
+			TupleExpr telemetryTarget, ExactValuesRuntimeMetrics exactValuesMetrics,
+			NativeCancellationToken cancellation) {
 		this.source = source;
 		this.layout = layout;
 		this.base = base;
@@ -72,10 +96,54 @@ final class RowState {
 			}
 		}
 		this.baseBindingMask = baseMask;
+		this.lexicalInputMask = baseMask;
 		this.view = new RowBindingSetView(source, layout, base, slots, false);
 		this.exactValuesMetrics = exactValuesMetrics;
+		this.cancellation = cancellation;
 		this.trailSlots = new int[Math.max(8, slots.length * 4)];
 		this.trailOldValues = new long[this.trailSlots.length];
+	}
+
+	@Override
+	public long id(int slot) {
+		return slots[slot];
+	}
+
+	@Override
+	public NativeTermAuthority termAuthority() {
+		return source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).authority() : null;
+	}
+
+	@Override
+	public SyntheticValueSource evaluationScope() {
+		return source instanceof SyntheticValueSource ? (SyntheticValueSource) source : null;
+	}
+
+	@Override
+	public long logicalSolutionIdentity() {
+		return logicalSolutionIdentity;
+	}
+
+	boolean advance(RowCursor cursor) throws IOException {
+		if (cancellation.isCancellationRequested()) {
+			return false;
+		}
+		return cursor.next() && !cancellation.isCancellationRequested();
+	}
+
+	boolean advance(FlatRowCursor cursor) throws IOException {
+		if (cancellation.isCancellationRequested()) {
+			return false;
+		}
+		return cursor.next() && !cancellation.isCancellationRequested();
+	}
+
+	int fill(BatchCursor cursor, NativeBatch batch) throws IOException {
+		if (cancellation.isCancellationRequested()) {
+			return 0;
+		}
+		int filled = cursor.fill(batch);
+		return cancellation.isCancellationRequested() ? 0 : filled;
 	}
 
 	void recordExactValuesMatched(long rows) {
@@ -138,6 +206,24 @@ final class RowState {
 
 	long boundMask() {
 		return boundMask;
+	}
+
+	long enterLexicalScope(long inputMask) {
+		long previous = lexicalInputMask;
+		lexicalInputMask = inputMask;
+		lexicalScopeDepth++;
+		return previous;
+	}
+
+	void restoreLexicalScope(long previous) {
+		lexicalInputMask = previous;
+		lexicalScopeDepth--;
+	}
+
+	void beginLogicalSolution() {
+		logicalSolutionIdentity = source instanceof SyntheticValueSource
+				? ((SyntheticValueSource) source).executionContext().nextLogicalSolutionIdentity()
+				: FALLBACK_SOLUTION_IDENTITIES.getAndIncrement();
 	}
 
 	void completeRuntimePlan() {
@@ -547,6 +633,8 @@ final class CopyBinding {
 	 * it can serve as a native group key and be materialized back at output. Only used on the serial aggregate path.
 	 */
 	final LmdbNativeCompiledValue computedValue;
+	/** General semantic-row evaluator for legal value expressions outside the specialized decoded-value compiler. */
+	final NativeBindingSetValueEvaluator semanticValue;
 	final boolean encounterOrderReplaySafe;
 	/**
 	 * Value-guarded VALUES constant (M-F1): when the target slot is free the constant binds; when it is already bound
@@ -554,6 +642,8 @@ final class CopyBinding {
 	 * ({@link RowState#bindOrCheckTerm}). Deterministic per row, so replay-safe; kernel lowering declines it.
 	 */
 	final boolean termChecked;
+	/** ExtensionIterator-compatible error mode; false only within a MINUS right operand. */
+	boolean setNullOnError = true;
 
 	CopyBinding(int targetSlot, int sourceSlot, long constant) {
 		this(targetSlot, sourceSlot, constant, null);
@@ -566,6 +656,7 @@ final class CopyBinding {
 		this.constant = constant;
 		this.computed = computed;
 		this.computedValue = null;
+		this.semanticValue = null;
 		this.encounterOrderReplaySafe = computed == null || computed.encounterOrderReplaySafe();
 		this.termChecked = false;
 	}
@@ -576,6 +667,7 @@ final class CopyBinding {
 		this.constant = UNKNOWN;
 		this.computed = null;
 		this.computedValue = computedValue;
+		this.semanticValue = null;
 		this.encounterOrderReplaySafe = encounterOrderReplaySafe;
 		this.termChecked = false;
 	}
@@ -586,8 +678,21 @@ final class CopyBinding {
 		this.constant = constant;
 		this.computed = null;
 		this.computedValue = null;
+		this.semanticValue = null;
 		this.encounterOrderReplaySafe = true;
 		this.termChecked = termChecked;
+	}
+
+	private CopyBinding(int targetSlot, NativeBindingSetValueEvaluator semanticValue,
+			boolean encounterOrderReplaySafe) {
+		this.targetSlot = targetSlot;
+		this.sourceSlot = -1;
+		this.constant = UNKNOWN;
+		this.computed = null;
+		this.computedValue = null;
+		this.semanticValue = semanticValue;
+		this.encounterOrderReplaySafe = encounterOrderReplaySafe;
+		this.termChecked = false;
 	}
 
 	static CopyBinding slot(int targetSlot, int sourceSlot) {
@@ -607,26 +712,25 @@ final class CopyBinding {
 		return new CopyBinding(targetSlot, computedValue, encounterOrderReplaySafe);
 	}
 
+	static CopyBinding semanticValue(int targetSlot, NativeBindingSetValueEvaluator semanticValue,
+			boolean encounterOrderReplaySafe) {
+		return new CopyBinding(targetSlot, semanticValue, encounterOrderReplaySafe);
+	}
+
 	static CopyBinding termCheckedConstant(int targetSlot, long constant) {
 		return new CopyBinding(targetSlot, constant, true);
 	}
 
 	long value(RowState row) {
+		if (semanticValue != null) {
+			NativeValueOutcome outcome = semanticValue.evaluate(row.view);
+			if (!outcome.isBound() || !(row.source instanceof SyntheticValueSource)) {
+				return UNKNOWN;
+			}
+			return ((SyntheticValueSource) row.source).internComputedValue(outcome.value());
+		}
 		if (computedValue != null) {
-			// the reader exposes the evaluation-scoped source so query-scope-dependent expressions (NOW) can reach
-			// the shared per-evaluation generic scope; pure expressions never call evaluationScope()
-			LmdbNativeSlotReader reader = new LmdbNativeSlotReader() {
-				@Override
-				public long id(int slot) {
-					return row.slots[slot];
-				}
-
-				@Override
-				public SyntheticValueSource evaluationScope() {
-					return row.source instanceof SyntheticValueSource ? (SyntheticValueSource) row.source : null;
-				}
-			};
-			LmdbNativeValueCodec.DecodedValue decoded = computedValue.evaluator.eval(reader);
+			LmdbNativeValueCodec.DecodedValue decoded = computedValue.evaluator.eval(row);
 			if (decoded == null || decoded.error()) {
 				return UNKNOWN;
 			}

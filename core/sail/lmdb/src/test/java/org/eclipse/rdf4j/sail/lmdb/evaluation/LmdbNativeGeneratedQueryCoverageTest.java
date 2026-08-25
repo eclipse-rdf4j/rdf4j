@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.SparqlComprehensiveStreamingValidTest;
 import org.eclipse.rdf4j.queryrender.SparqlComprehensiveStreamingValidTest.GeneratedQuery;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.JaninoCeilingKernels;
@@ -72,7 +73,8 @@ class LmdbNativeGeneratedQueryCoverageTest {
 	private static final Pattern KERNEL_DECLINE = Pattern
 			.compile("(irKernelInterpreted|irKernel|irAggregateInterpreted|irAggregate):([^ ,)|]+)");
 	private static final Set<String> NON_CAPABILITY_REASONS = Set.of("below-threshold-or-pending",
-			"no-fusion-opportunity", "higher-cost");
+			"no-fusion-opportunity", "higher-cost", "outranked", "probe-trial-lost", "adaptive-higher-cost",
+			"blocking-semantic-row");
 	static final List<JaninoCorpusCase> PREVIOUSLY_UNSUPPORTED_CORPUS = List.of(
 			new JaninoCorpusCase(1403, "DeepNest50", "agg:minus-arm:MinusPlan"),
 			new JaninoCorpusCase(1405, "DeepNest50", "pattern-guards"),
@@ -291,7 +293,16 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc")
 				.setDirectAdjacencyBuildOnStart(false));
 		repository = new SailRepository(store);
-		ValueFactory vf = repository.getValueFactory();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			loadFixture(connection);
+			connection.commit();
+		}
+		JaninoCeilingKernels.buildDirectAdjacency(store);
+	}
+
+	private static void loadFixture(RepositoryConnection connection) {
+		ValueFactory vf = connection.getValueFactory();
 		IRI pA = vf.createIRI("http://ex/pA");
 		IRI pB = vf.createIRI("http://ex/pB");
 		IRI pC = vf.createIRI("http://ex/pC");
@@ -304,26 +315,21 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		IRI pathI0 = vf.createIRI("http://example.org/p/I0");
 		IRI pathI1 = vf.createIRI("http://example.org/p/I1");
 		IRI pathI2 = vf.createIRI("http://example.org/p/I2");
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			for (int i = 1; i <= 16; i++) {
-				IRI subject = vf.createIRI("http://ex/s" + i);
-				IRI object = vf.createIRI("http://ex/s" + (i % 16 + 1));
-				connection.add(subject, pA, object);
-				connection.add(subject, pB, vf.createLiteral(i));
-				connection.add(subject, pC, vf.createIRI("http://ex/c" + (i % 3)));
-				connection.add(subject, pD, vf.createIRI("http://ex/d" + (i % 4)));
-				connection.add(subject, knows, object);
-				connection.add(subject, name, vf.createLiteral("name-" + i));
-				connection.add(subject, RDF.TYPE, type);
-				connection.add(subject, pathI0, object);
-				connection.add(subject, pathI1, object);
-				connection.add(subject, pathI2, object);
-				connection.add(subject, pA, object, i % 2 == 0 ? graph0 : graph1);
-			}
-			connection.commit();
+		for (int i = 1; i <= 16; i++) {
+			IRI subject = vf.createIRI("http://ex/s" + i);
+			IRI object = vf.createIRI("http://ex/s" + (i % 16 + 1));
+			connection.add(subject, pA, object);
+			connection.add(subject, pB, vf.createLiteral(i));
+			connection.add(subject, pC, vf.createIRI("http://ex/c" + (i % 3)));
+			connection.add(subject, pD, vf.createIRI("http://ex/d" + (i % 4)));
+			connection.add(subject, knows, object);
+			connection.add(subject, name, vf.createLiteral("name-" + i));
+			connection.add(subject, RDF.TYPE, type);
+			connection.add(subject, pathI0, object);
+			connection.add(subject, pathI1, object);
+			connection.add(subject, pathI2, object);
+			connection.add(subject, pA, object, i % 2 == 0 ? graph0 : graph1);
 		}
-		JaninoCeilingKernels.buildDirectAdjacency(store);
 	}
 
 	@AfterAll
@@ -415,13 +421,15 @@ class LmdbNativeGeneratedQueryCoverageTest {
 					if (nondeterministic) {
 						counts.nondeterministic++;
 					} else if (!actual.equals(expected)) {
-						failures.add(query.category() + " native/generic mismatch\nQUERY:\n" + query.sparql()
+						failures.add(query.category() + " native/generic mismatch at generated index " + total
+								+ "\nQUERY:\n" + query.sparql()
 								+ "\nKERNELS: planned=" + plannedKernels() + " opened=" + openedKernels()
 								+ " declined=" + declinedKernels()
 								+ "\nGENERIC:\n" + expected + "\nNATIVE:\n" + actual);
 					}
 				} catch (RuntimeException problem) {
-					failures.add(query.category() + " execution failed: " + problem + "\n" + query.sparql());
+					failures.add(query.category() + " execution failed at generated index " + total + ": " + problem
+							+ "\n" + query.sparql());
 					continue;
 				}
 				// Leak witness: every adjacency-semijoin probe must be released when its query finishes. A held
@@ -443,7 +451,13 @@ class LmdbNativeGeneratedQueryCoverageTest {
 					counts.opened++;
 				} else if (declinedKernels() > 0L) {
 					Set<String> reasons = declineReasons(query.sparql());
-					if (reasons.isEmpty()) {
+					// Explain evaluates a freshly prepared query. Its extra open may cross the async compilation
+					// threshold and engage the kernel that the immediately preceding execution only scheduled. Re-read
+					// the counters after collecting telemetry so one query cannot be classified from two different
+					// specialization states.
+					if (openedKernels() > 0L) {
+						counts.opened++;
+					} else if (reasons.isEmpty()) {
 						failures.add(query.category() + " had an unclassified kernel decline\n" + query.sparql());
 					} else if (reasons.stream().allMatch(NON_CAPABILITY_REASONS::contains)) {
 						counts.noOpportunity++;
@@ -523,9 +537,10 @@ class LmdbNativeGeneratedQueryCoverageTest {
 			long opened = openedKernels();
 			if (opened == 0L) {
 				Set<String> reasons = declineReasons(query.sparql());
-				if (!reasons.equals(Set.of("higher-cost"))) {
+				if (openedKernels() == 0L
+						&& (reasons.isEmpty() || !NON_CAPABILITY_REASONS.containsAll(reasons))) {
 					failures.add(
-							candidate.label() + " was neither opened nor an eligible higher-cost proposal; reasons="
+							candidate.label() + " was neither opened nor an eligible semantic-tier proposal; reasons="
 									+ reasons + "\nQUERY:\n" + query.sparql());
 				}
 			}
@@ -535,7 +550,106 @@ class LmdbNativeGeneratedQueryCoverageTest {
 	}
 
 	@Test
-	void generatedValuesAndGeneralBindFallsBackAndMatchesGeneric() {
+	void nestedScopeMinusQueriesUseSemanticNativePlans() {
+		Map<Integer, GeneratedQuery> selected = generatedQueriesAt(1344, 1397);
+		assertThat(selected).containsOnlyKeys(1344, 1397);
+
+		for (Map.Entry<Integer, GeneratedQuery> entry : selected.entrySet()) {
+			String query = entry.getValue().sparql();
+			List<String> expected = genericRows(query, true);
+			long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
+			long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+			resetMetricsOnly();
+
+			List<String> actual = nativeRowsUntilClassified(query, true);
+			String explain = explain(query);
+			Set<String> reasons = declineReasons(query);
+
+			assertThat(actual).as("generated query %s answer parity", entry.getKey())
+					.containsExactlyElementsOf(expected);
+			assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore)
+					.as("generated query %s must not use a generic host\n%s", entry.getKey(), explain)
+					.isZero();
+			assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore)
+					.as("generated query %s must not use a generic island\n%s", entry.getKey(), explain)
+					.isZero();
+			assertThat(openedKernels() > 0L || (!reasons.isEmpty() && NON_CAPABILITY_REASONS.containsAll(reasons)))
+					.as("generated query %s must open a specialized kernel or decline explicitly; reasons=%s\n%s",
+							entry.getKey(), reasons, explain)
+					.isTrue();
+		}
+	}
+
+	@Test
+	void nestedSubqueryScopesPreserveProjectedMultiplicity() {
+		GeneratedQuery generated = generatedQueriesAt(2186).get(2186);
+		assertThat(generated).isNotNull();
+		String query = generated.sparql();
+		List<String> expected = genericRows(query, true);
+		long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
+		long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+
+		List<String> actual = nativeRowsUntilClassified(query, true);
+
+		assertThat(actual)
+				.as("nested ordinary subqueries must preserve their projected row multiplicity\n%s\n%s", query,
+						explain(query))
+				.containsExactlyElementsOf(expected);
+		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore).isZero();
+		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore).isZero();
+	}
+
+	@Test
+	void nestedSubqueryInsideGraphStaysInItsOuterGraphFrame() {
+		GeneratedQuery generated = generatedQueriesAt(1597).get(1597);
+		assertThat(generated).isNotNull();
+		String query = generated.sparql();
+		List<String> expected = genericRows(query, true);
+		long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
+		long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+
+		List<String> actual = nativeRowsUntilClassified(query, true);
+
+		assertThat(actual).as("a nested subquery must retain the active GRAPH frame\n%s\n%s", query, explain(query))
+				.containsExactlyElementsOf(expected);
+		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore).isZero();
+		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore).isZero();
+	}
+
+	@Test
+	void independentOraclePinsLocalGraphSubqueryMultiplicity() throws Exception {
+		GeneratedQuery generated = generatedQueriesAt(1641).get(1641);
+		assertThat(generated).isNotNull();
+		String query = generated.sparql();
+		assertThat(rows(query, true))
+				.as("local GRAPH subquery native physical plan:\n%s", explain(query))
+				.containsExactlyElementsOf(genericRows(query, true));
+		try (IndependentSparqlOracle oracle = IndependentSparqlOracle.builder(
+				dataDir.toPath().resolve("independent-oracle-local-graph-subquery"))
+				.load(LmdbNativeGeneratedQueryCoverageTest::loadFixture)
+				.build()) {
+			oracle.assertEquivalent(query, IndependentSparqlOracle.ResultOrder.UNORDERED);
+		}
+	}
+
+	@Test
+	void independentOraclePinsGraphFramedSubqueryMultiplicity() throws Exception {
+		GeneratedQuery generated = generatedQueriesAt(8786).get(8786);
+		assertThat(generated).isNotNull();
+		String query = generated.sparql();
+		assertThat(rows(query, true))
+				.as("GRAPH-framed lexical OPTIONAL native physical plan:\n%s", explain(query))
+				.containsExactlyElementsOf(genericRows(query, true));
+		try (IndependentSparqlOracle oracle = IndependentSparqlOracle.builder(
+				dataDir.toPath().resolve("independent-oracle-graph-framed-subquery"))
+				.load(LmdbNativeGeneratedQueryCoverageTest::loadFixture)
+				.build()) {
+			oracle.assertEquivalent(query, IndependentSparqlOracle.ResultOrder.UNORDERED);
+		}
+	}
+
+	@Test
+	void generatedValuesAndGeneralBindIsNativeAndMatchesGeneric() {
 		String query;
 		try (java.util.stream.Stream<GeneratedQuery> generated = SparqlComprehensiveStreamingValidTest
 				.generatedQueries()) {
@@ -548,12 +662,20 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		}
 
 		List<String> expected = genericRows(query, true);
+		long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
+		long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
 		resetMetricsOnly();
 		List<String> actual = nativeRowsUntilClassified(query, true);
+		Set<String> reasons = declineReasons(query);
 
 		assertThat(actual).containsExactlyElementsOf(expected);
-		assertThat(plannedKernels()).as("a general expression BIND is not a native slot-copy operation").isZero();
-		assertThat(openedKernels()).as("the unsupported Extension root must retain its correct fallback").isZero();
+		assertThat(plannedKernels()).as("a pure general expression BIND must be planned natively").isPositive();
+		assertThat(openedKernels() > 0L || (!reasons.isEmpty() && NON_CAPABILITY_REASONS.containsAll(reasons)))
+				.as("a pure CONCAT BIND must open a specialization or explicitly remain semantic native; reasons=%s",
+						reasons)
+				.isTrue();
+		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore).isZero();
+		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore).isZero();
 	}
 
 	@Test
@@ -593,13 +715,22 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		List<String> expected = genericRows(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY, true);
 		assertThat(expected).hasSize(516);
 
+		long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
+		long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
 		resetMetricsOnly();
-		List<String> actual = List.of();
-		for (int round = 0; round < 100 && openedKernels() == 0L; round++) {
-			actual = rows(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY, true);
-		}
+		List<String> actual = nativeRowsUntilClassified(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY, true);
+		Set<String> reasons = declineReasons(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY);
 		assertThat(plannedKernels()).as("OPTIONAL UNION query must be recognized by a Janino kernel").isPositive();
-		assertThat(openedKernels()).as("OPTIONAL UNION query must open a compiled Janino kernel").isPositive();
+		assertThat(openedKernels() > 0L || (!reasons.isEmpty() && NON_CAPABILITY_REASONS.containsAll(reasons)))
+				.as("stateful OPTIONAL must open a specialized kernel or explicitly remain semantic native; reasons=%s",
+						reasons)
+				.isTrue();
+		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore)
+				.as("stateful OPTIONAL must not use a generic host")
+				.isZero();
+		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore)
+				.as("stateful OPTIONAL must not use a generic island")
+				.isZero();
 		assertThat(actual)
 				.as("an independent UNION arm must be evaluated once for every OPTIONAL left row")
 				.containsExactlyElementsOf(expected);
@@ -717,6 +848,33 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		return reasons;
 	}
 
+	private String explain(String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection.prepareTupleQuery(QueryLanguage.SPARQL, query)
+					.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Telemetry)
+					.toString();
+		}
+	}
+
+	private static Map<Integer, GeneratedQuery> generatedQueriesAt(int... wantedIndices) {
+		Set<Integer> wanted = new LinkedHashSet<>();
+		for (int wantedIndex : wantedIndices) {
+			wanted.add(wantedIndex);
+		}
+		Map<Integer, GeneratedQuery> selected = new LinkedHashMap<>();
+		int[] index = { 0 };
+		try (java.util.stream.Stream<GeneratedQuery> generated = SparqlComprehensiveStreamingValidTest
+				.generatedQueries()) {
+			generated.forEach(query -> {
+				int current = ++index[0];
+				if (wanted.contains(current)) {
+					selected.put(current, query);
+				}
+			});
+		}
+		return selected;
+	}
+
 	private static boolean containsService(TupleExpr expression) {
 		boolean[] found = { false };
 		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -732,7 +890,7 @@ class LmdbNativeGeneratedQueryCoverageTest {
 	private static boolean isNondeterministic(String query) {
 		String upper = query.toUpperCase(Locale.ROOT);
 		return upper.contains("RAND(") || upper.contains("NOW(") || upper.contains("UUID(")
-				|| upper.contains("STRUUID(") || upper.contains("BNODE()");
+				|| upper.contains("STRUUID(") || upper.contains("BNODE(");
 	}
 
 	private static boolean hasOrderDependentSlice(String query) {

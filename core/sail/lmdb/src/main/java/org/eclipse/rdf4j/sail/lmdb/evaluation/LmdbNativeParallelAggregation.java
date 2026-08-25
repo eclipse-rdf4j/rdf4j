@@ -89,7 +89,7 @@ final class LmdbNativeParallelAggregation {
 		}
 		for (AggregateSpec spec : it.aggregates) {
 			if (spec.kind == AggKind.SAMPLE || spec.kind == AggKind.GROUP_CONCAT || spec.kind == AggKind.CUSTOM
-					|| spec.rowSlots != null) {
+					|| spec.distinct && spec.rowSlots != null) {
 				// serial-path only (M-F1/M-F3): no defined parallel merge for samples, encounter-order concats,
 				// or COUNT(DISTINCT *) full-row membership sets
 				return reject(it, "serial-only-aggregate");
@@ -183,14 +183,15 @@ final class LmdbNativeParallelAggregation {
 					// no producer sibling exists in partition mode: run the floating SUM/AVG sample on the query
 					// thread's own source over a throwaway cursor and discard it (partition 0's worker re-reads
 					// those rows — noise against the >=50k-row gate); EncounterOrderFallback propagates unchanged
-					RowState sampleRow = new RowState(it.source, it.layout, it.base);
+					RowState sampleRow = new RowState(it.source, it.layout, it.base, it.explainTarget, it.cancellation);
 					if (NativeRowSeeder.seed(sampleRow.slots, it.layout, it.base, it.source)) {
 						sampleRow.recomputeBoundMask();
 						prepareFloatingRootSample(derived, root, sampleRow, preflightAggregateSlots).close();
 						setupReady = true;
 					}
 				} else if (!setupReady) {
-					RowState producerRow = new RowState(sources[threads], it.layout, it.base);
+					RowState producerRow = new RowState(sources[threads], it.layout, it.base, it.explainTarget,
+							it.cancellation);
 					if (NativeRowSeeder.seed(producerRow.slots, it.layout, it.base, sources[threads])) {
 						producerRow.recomputeBoundMask();
 						preparedRoot = prepareFloatingRootSample(derived, root, producerRow,
@@ -375,15 +376,22 @@ final class LmdbNativeParallelAggregation {
 			}
 			return new PreparedRootScan(cursor, firstMorsel);
 		} catch (IOException | RuntimeException | Error problem) {
+			Throwable failure = problem;
 			if (branches != null) {
-				branches.closeProbes(problem);
+				failure = branches.closeProbes(failure);
 			}
 			try {
 				cursor.close();
 			} catch (RuntimeException | Error closeFailure) {
-				addCleanupFailure(problem, closeFailure);
+				failure = addPreflightCleanupFailure(failure, closeFailure);
 			}
-			throw problem;
+			if (failure instanceof IOException ioException) {
+				throw ioException;
+			}
+			if (failure instanceof RuntimeException runtimeException) {
+				throw runtimeException;
+			}
+			throw (Error) failure;
 		}
 	}
 
@@ -477,7 +485,7 @@ final class LmdbNativeParallelAggregation {
 				try {
 					probe.close();
 				} catch (RuntimeException | Error closeFailure) {
-					failure = addCleanupFailure(failure, closeFailure);
+					failure = addPreflightCleanupFailure(failure, closeFailure);
 				}
 			}
 			return failure;
@@ -585,6 +593,11 @@ final class LmdbNativeParallelAggregation {
 			primary.addSuppressed(cleanup);
 		}
 		return primary;
+	}
+
+	/** A real preflight cleanup failure outranks the internal encounter-order retry signal. */
+	private static Throwable addPreflightCleanupFailure(Throwable primary, Throwable cleanup) {
+		return EncounterOrderFallback.find(primary) != null ? cleanup : addCleanupFailure(primary, cleanup);
 	}
 
 	static List<BindingSet> evaluate(NativeGroupIteration it, MultiJoinPlan[] workerPlans, PatternPlan root,
@@ -731,10 +744,10 @@ final class LmdbNativeParallelAggregation {
 			PreparedRootScan preparedRoot) throws IOException {
 		if (preparedRoot != null) {
 			LmdbNativeExchange.produceMorsels(preparedRoot.cursor, preparedRoot.firstMorsel, queue, workers, failure,
-					new AtomicBoolean());
+					new AtomicBoolean(), it.cancellation);
 			return;
 		}
-		RowState row = new RowState(producerSource, it.layout, it.base);
+		RowState row = new RowState(producerSource, it.layout, it.base, it.explainTarget, it.cancellation);
 		boolean seeded = NativeRowSeeder.seed(row.slots, it.layout, it.base, producerSource);
 		if (seeded) {
 			row.recomputeBoundMask();
@@ -752,7 +765,7 @@ final class LmdbNativeParallelAggregation {
 			PatternPlan root, NativeLmdbQuerySource source, ArrayBlockingQueue<LmdbNativeExchange.Morsel> queue,
 			ConcurrentLinkedQueue<LmdbRootScanPartition> partitions, AtomicReference<Throwable> failure,
 			LmdbNativeAttemptMetrics metrics) throws IOException {
-		RowState row = new RowState(source, it.layout, it.base);
+		RowState row = new RowState(source, it.layout, it.base, it.explainTarget, it.cancellation);
 		if (!NativeRowSeeder.seed(row.slots, it.layout, it.base, source)) {
 			// the main thread seeded the identical bindings against the same value store before gating in
 			throw new IllegalStateException("worker seeding diverged from the query thread");
@@ -797,15 +810,15 @@ final class LmdbNativeParallelAggregation {
 			}
 			try (RowCursor cursor = prefix) {
 				if (tail != null && tail.groupsByTail()) {
-					while (cursor.next()) {
+					while (row.advance(cursor)) {
 						tail.aggregateGrouped(row, table.longGroups());
 					}
 				} else if (tail != null) {
-					while (cursor.next()) {
+					while (row.advance(cursor)) {
 						table.aggregateFactorized(row, tail);
 					}
 				} else {
-					while (cursor.next()) {
+					while (row.advance(cursor)) {
 						table.add(row);
 					}
 				}

@@ -278,6 +278,7 @@ class LmdbAdjacencyUsageCensusTest {
 						"predicate_histogram").contains(scenario.name())) {
 					continue;
 				}
+				KernelExecutionTestAccess.resetCostCalibration();
 				long adjacencyOpenedBefore = LmdbPrefixRunPlan.ADJACENCY_OPENED.get();
 				LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
 				long rows = executeAndCount(scenario.query());
@@ -382,8 +383,11 @@ class LmdbAdjacencyUsageCensusTest {
 			assertEquals(generic, sequential, "sequential native parity");
 			assertEquals(generic, parallel, "forced-parallel multiset parity");
 			assertTrue(telemetry.contains("parallelPipelines"), telemetry);
-			assertTrue(hitsAfter >= hitsBefore + COMPANIES,
-					"each company-rooted worker lookup should be adjacency-served: before=" + hitsBefore
+			// Retained worker probes record one hit when they acquire an adjacency-backed source, then re-aim the same
+			// cursor for every company key. The hit counter therefore measures worker-source engagement, not lookup-key
+			// cardinality.
+			assertTrue(hitsAfter > hitsBefore,
+					"bound worker probes should acquire adjacency-backed sources: before=" + hitsBefore
 							+ ", after=" + hitsAfter);
 		} finally {
 			restoreProperties(previous);

@@ -351,6 +351,12 @@ final class LmdbNativeAdaptiveArbitration {
 			}
 			LmdbNativeCostPrediction prediction = rival.prediction;
 			LmdbNativePhysicalVariantKey key = rival.candidate.estimate.variantKey();
+			if (LmdbNativeAttemptMetrics.PATH_NESTED_LOOP.equals(key.strategyFamily())) {
+				// A censored or declined probe is removed from this dispatch. The nested loop is the semantic
+				// last resort, so consuming it as an experiment could leave only speculative strategies; if those
+				// then decline at bind time, a legal native plan would incorrectly have no execution path.
+				continue;
+			}
 			if (!scheduler.mayProbe(key, regime, epoch)) {
 				continue;
 			}

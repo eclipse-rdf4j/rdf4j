@@ -1984,7 +1984,8 @@ final class LmdbNativeLeapfrogJoin {
 				// the plan and its frontier cache are shared: cached frontiers are immutable, and worker scans
 				// happen against snapshot-sibling sources of the same store snapshot
 				LeapfrogPlan workerPlan = sharedPlan;
-				RowState workerRow = new RowState(workerSource, consumerRow.layout, consumerRow.base);
+				RowState workerRow = new RowState(workerSource, consumerRow.layout, consumerRow.base,
+						consumerRow.exactValuesMetrics, consumerRow.cancellation);
 				workerRow.memoryScope = consumerRow.memoryScope;
 				for (int i = 0; i < entrySlots.length; i++) {
 					workerRow.slots[i] = entrySlots[i];

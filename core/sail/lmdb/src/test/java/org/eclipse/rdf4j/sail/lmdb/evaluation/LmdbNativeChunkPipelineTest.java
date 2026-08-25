@@ -15,7 +15,9 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -40,22 +42,29 @@ import org.junit.jupiter.api.io.TempDir;
  * runs of identical probe keys — the access shape the pipeline accelerates.
  */
 public class LmdbNativeChunkPipelineTest {
-	// This class asserts interpreted-strategy internals; the IR kernel rung must stay off so it cannot absorb the
-	// shapes first (plan: plans/lmdb-native-engine/20-kernel-lowering-row.md).
-	private static String previousJaninoCodegenEnabled;
+	private static final Map<String, String> PREVIOUS_PROPERTIES = new LinkedHashMap<>();
 
 	@org.junit.jupiter.api.BeforeAll
-	static void disableKernelCodegen() {
-		previousJaninoCodegenEnabled = System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+	static void isolateChunkPipelineTier() {
+		// This class asserts the chunk pipeline's internal algorithms. Pin its owning factorized-row tier and remove
+		// every competing row executor and adaptive price source so engagement is independent of suite order.
+		setProperty("rdf4j.lmdb.factorizedRows.enabled", "true");
+		setProperty("rdf4j.lmdb.chunkPipeline.enabled", "true");
+		setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+		setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
+		setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
+		setProperty("rdf4j.lmdb.parallel.enabled", "false");
+		setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 	}
 
 	@org.junit.jupiter.api.AfterAll
-	static void restoreKernelCodegen() {
-		if (previousJaninoCodegenEnabled == null) {
-			System.clearProperty("rdf4j.lmdb.janinoCodegen.enabled");
-		} else {
-			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", previousJaninoCodegenEnabled);
-		}
+	static void restoreStrategyProperties() {
+		PREVIOUS_PROPERTIES.forEach(LmdbNativeChunkPipelineTest::restoreProperty);
+		PREVIOUS_PROPERTIES.clear();
+	}
+
+	private static void setProperty(String property, String value) {
+		PREVIOUS_PROPERTIES.put(property, System.setProperty(property, value));
 	}
 
 	private static final String EX = "http://example.com/";

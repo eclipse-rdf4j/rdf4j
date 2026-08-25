@@ -86,6 +86,8 @@ public class LmdbNativeParallelPipelinesTest {
 	private static final String THREADS_FLAG = "rdf4j.lmdb.parallel.threads";
 	private static final String MAX_TASKS_FLAG = "rdf4j.lmdb.parallel.maxTasks";
 	private static final String EXTERNAL_ROOT_CANDIDATE_FLAG = "rdf4j.lmdb.chunkPipeline.externalRoot.experimental";
+	private static final String PACKED_FTREE_FLAG = "rdf4j.lmdb.packedFtree.enabled";
+	private static final String KERNEL_INTERPRETER_FLAG = "rdf4j.lmdb.kernelInterpreter.enabled";
 
 	@TempDir
 	File dataDir;
@@ -97,12 +99,14 @@ public class LmdbNativeParallelPipelinesTest {
 	public void setUp() {
 		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, THRESHOLD_FLAG, WORK_THRESHOLD_FLAG,
 				THREADS_FLAG,
-				MAX_TASKS_FLAG, EXTERNAL_ROOT_CANDIDATE_FLAG);
+				MAX_TASKS_FLAG, EXTERNAL_ROOT_CANDIDATE_FLAG, PACKED_FTREE_FLAG, KERNEL_INTERPRETER_FLAG);
 		System.setProperty(PARALLEL_FLAG, "true");
 		System.setProperty(THRESHOLD_FLAG, "0");
 		System.setProperty(WORK_THRESHOLD_FLAG, "0");
 		System.setProperty(THREADS_FLAG, "4");
 		System.setProperty(MAX_TASKS_FLAG, "5");
+		System.setProperty(PACKED_FTREE_FLAG, "false");
+		System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
 		LmdbNativeCostCalibration.reset();
 		for (int i = 0; i < 100; i++) {
 			// This class validates the selected operator, not its real scheduling crossover. Supply stable executor
@@ -227,9 +231,16 @@ public class LmdbNativeParallelPipelinesTest {
 	@Test
 	public void immutableCompiledFilterRunsInsideWorkers() {
 		String query = chain(" FILTER(BOUND(?value))");
-		List<String> parallel = rows(query);
-		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(1L);
-		assertThat(parallel).isEqualTo(rowsWithProperty(PARALLEL_FLAG, "false", query));
+		String previous = System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
+		try {
+			List<String> parallel = rows(query);
+			assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
+					.as("parallel rejection: %s", LmdbNativeParallelPipelines.LAST_REJECTION.get())
+					.isEqualTo(1L);
+			assertThat(parallel).isEqualTo(rowsWithProperty(PARALLEL_FLAG, "false", query));
+		} finally {
+			restoreProperty("rdf4j.lmdb.factorizedRows.enabled", previous);
+		}
 	}
 
 	@Test

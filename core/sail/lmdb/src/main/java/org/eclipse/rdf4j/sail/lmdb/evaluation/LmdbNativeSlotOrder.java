@@ -67,7 +67,7 @@ final class NativeSlotOrder {
 						aliased[i] |= target;
 					}
 				}
-			} else if (copy.computed == null && copy.computedValue == null) {
+			} else if (copy.computed == null && copy.computedValue == null && copy.semanticValue == null) {
 				// a true constant copy: the same id on every row, so the slot is fixed for ordering purposes
 				fixed |= target;
 			} else {
@@ -509,7 +509,10 @@ final class LmdbNativeOrderPlanner {
 		if (plan instanceof LeftJoinPlan) {
 			LeftJoinPlan join = (LeftJoinPlan) plan;
 			NativeOrderedPlan left = best(join.left, requested, row);
-			return new NativeOrderedPlan(new LeftJoinPlan(left.plan, join.right), left.order.withBarrier());
+			return new NativeOrderedPlan(
+					new LeftJoinPlan(left.plan, join.right, join.lexicalSharedSlots, join.lexicalHashKeys,
+							join.lexicalProblemSlots),
+					left.order.withBarrier());
 		}
 		if (plan instanceof MinusPlan) {
 			MinusPlan minus = (MinusPlan) plan;
@@ -1099,7 +1102,8 @@ final class OrderedUnionCursor implements RowCursor {
 		boolean initial = true;
 
 		Branch(SlotPlan plan, RowState parent) throws IOException {
-			this.row = new RowState(parent.source, parent.layout, parent.base);
+			this.row = new RowState(parent.source, parent.layout, parent.base, parent.exactValuesMetrics,
+					parent.cancellation);
 			this.row.memoryScope = parent.memoryScope;
 			this.row.runtimePlan = parent.runtimePlan;
 			System.arraycopy(parent.slots, 0, row.slots, 0, parent.slots.length);

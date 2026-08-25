@@ -203,6 +203,25 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void filterInValuesInvalidatesAncestorMergeJoinPlannedBeforeRewrite() {
+		Filter filter = new Filter(pattern("label", "filtered"),
+				new SameTerm(Var.of("label"),
+						new ValueConstant(SimpleValueFactory.getInstance().createLiteral("kept"))));
+		Join plannedMergeJoin = new Join(pattern("label", "outer"), filter);
+		plannedMergeJoin.setOrder(Var.of("label"));
+		plannedMergeJoin.setMergeJoin(true);
+		QueryRoot root = new QueryRoot(plannedMergeJoin);
+
+		StandardQueryOptimizerPipeline.getFilterInValuesOptimizer()
+				.optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertThat(findAll(root, BindingSetAssignment.class)).singleElement();
+		assertThat(plannedMergeJoin.isMergeJoin())
+				.as("a post-planning rewrite that adds unordered VALUES must invalidate ancestor merge joins")
+				.isFalse();
+	}
+
+	@Test
 	public void merge() {
 		String expectedQuery = "SELECT * WHERE {?s ?p ?o . FILTER( ?o <4 && ?o > 2) }";
 		String query = "SELECT * WHERE {?s ?p ?o . FILTER(?o > 2) . FILTER(?o <4) }";
