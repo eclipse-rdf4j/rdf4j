@@ -1,0 +1,7 @@
+SELECT * WHERE {
+  VALUES (?x ?limit) { ("1" "1") ("2" "2") ("3" "3") ("4" "4") }
+  OPTIONAL {
+    VALUES (?x ?y) { ("1" "1") ("2" "2") ("3" "3") ("4" "4") }
+    FILTER(?y = ?limit)
+  }
+}

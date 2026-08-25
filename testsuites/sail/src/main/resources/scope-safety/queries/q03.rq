@@ -1,0 +1,4 @@
+SELECT * WHERE {
+  VALUES (?x ?y) { ("1" UNDEF) ("2" "20") }
+  VALUES (?x ?z) { ("1" "a") ("2" "b") }
+}

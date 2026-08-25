@@ -46,6 +46,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	public static final SameTermFilterOptimizer SAME_TERM_FILTER_OPTIMIZER = new SameTermFilterOptimizer();
 	public static final UnionScopeChangeOptimizer UNION_SCOPE_CHANGE_OPTIMIZER = new UnionScopeChangeOptimizer();
 	public static final QueryModelNormalizerOptimizer QUERY_MODEL_NORMALIZER = new QueryModelNormalizerOptimizer();
+	public static final ScopeSafeAlgebraOptimizer SCOPE_SAFE_ALGEBRA_OPTIMIZER = new ScopeSafeAlgebraOptimizer();
 	public static final ProjectionRemovalOptimizer PROJECTION_REMOVAL_OPTIMIZER = new ProjectionRemovalOptimizer();
 	public static final IterativeEvaluationOptimizer ITERATIVE_EVALUATION_OPTIMIZER = new IterativeEvaluationOptimizer();
 	public static final FilterInValuesOptimizer FILTER_IN_VALUES_OPTIMIZER = new FilterInValuesOptimizer();
@@ -79,6 +80,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				SAME_TERM_FILTER_OPTIMIZER,
 				UNION_SCOPE_CHANGE_OPTIMIZER,
 				QUERY_MODEL_NORMALIZER,
+				SCOPE_SAFE_ALGEBRA_OPTIMIZER,
 				PROJECTION_REMOVAL_OPTIMIZER, // Make sure this is after the UnionScopeChangeOptimizer
 				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource),
 				ITERATIVE_EVALUATION_OPTIMIZER,

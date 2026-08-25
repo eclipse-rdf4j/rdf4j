@@ -630,7 +630,15 @@ final class CartesianJoinExplainAnalyzer {
 			atoms.addAll(((Extension) node).getElements());
 		}
 		if (node instanceof Projection && !((Projection) node).isSubquery()) {
-			atoms.add(((Projection) node).getProjectionElemList());
+			// A transparent projection's element only links variables when it RENAMES (?name AS ?alias);
+			// identity elements select output columns without correlating anything. Adding the whole
+			// element list would spuriously connect every pattern under a top-level SELECT, hiding real
+			// Cartesian products, because the parser marks the top-level projection subquery=false.
+			for (ProjectionElem element : ((Projection) node).getProjectionElemList().getElements()) {
+				if (element.getProjectionAlias().filter(alias -> !alias.equals(element.getName())).isPresent()) {
+					atoms.add(element);
+				}
+			}
 		}
 		if (isMandatoryJoinNode(node) || isTransparentRegionWrapper(node)) {
 			for (TupleExpr child : tupleChildren(node)) {

@@ -1,0 +1,1025 @@
+rule,target,observation,context,status,reference
+STRUCTURAL_EQUALITY,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,RDF4J_RUNTIME,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,SPARQL_1_1,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,SPARQL_1_1,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,SPARQL_1_1,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+STRUCTURAL_EQUALITY,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.equivalent_in_context_refl
+JOIN_ASSOCIATIVE,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_ASSOCIATIVE,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_COMMUTATIVE,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_UNIT_IDENTITY,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,RDF4J_RUNTIME,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+JOIN_UNIT_IDENTITY,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+JOIN_UNIT_IDENTITY,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,SPARQL_1_1,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,SPARQL_1_1,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+JOIN_UNIT_IDENTITY,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+JOIN_UNIT_IDENTITY,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,SPARQL_1_1,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+JOIN_UNIT_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+JOIN_UNIT_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+JOIN_UNIT_IDENTITY,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+JOIN_UNIT_IDENTITY,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_UNIT_IDENTITY,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_join_unit_left and reference_join_unit_right via equivalent_in_every_context
+JOIN_EMPTY_ANNIHILATOR,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+JOIN_EMPTY_ANNIHILATOR,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_ASSOCIATIVE,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_COMMUTATIVE,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+UNION_EMPTY_IDENTITY,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,RDF4J_RUNTIME,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native UNION node; the implementation does not eliminate empty branches
+UNION_EMPTY_IDENTITY,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native UNION node; the implementation does not eliminate empty branches
+UNION_EMPTY_IDENTITY,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,SPARQL_1_1,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,SPARQL_1_1,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native UNION node; the implementation does not eliminate empty branches
+UNION_EMPTY_IDENTITY,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native UNION node; the implementation does not eliminate empty branches
+UNION_EMPTY_IDENTITY,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,SPARQL_1_1,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native UNION node; the implementation does not eliminate empty branches
+UNION_EMPTY_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native UNION node; the implementation does not eliminate empty branches
+UNION_EMPTY_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native UNION node; the implementation does not eliminate empty branches
+UNION_EMPTY_IDENTITY,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native UNION node; the implementation does not eliminate empty branches
+UNION_EMPTY_IDENTITY,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_EMPTY_IDENTITY,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_empty_left and reference_union_empty_right via equivalent_in_every_context
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,Duplicate UNION branches are removed only when multiplicity is hidden by SET or ASK observation
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,Duplicate UNION branches are removed only when multiplicity is hidden by SET or ASK observation
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_set_idempotent via equivalent_in_every_context
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_set_idempotent via equivalent_in_every_context
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Duplicate UNION branches are removed only when multiplicity is hidden by SET or ASK observation
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Duplicate UNION branches are removed only when multiplicity is hidden by SET or ASK observation
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_ask_idempotent via equivalent_in_every_context
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_ask_idempotent via equivalent_in_every_context
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,Duplicate UNION branches are removed only when multiplicity is hidden by SET or ASK observation
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,Duplicate UNION branches are removed only when multiplicity is hidden by SET or ASK observation
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_set_idempotent via equivalent_in_every_context
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,SPARQL_1_1,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_set_idempotent via equivalent_in_every_context
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Duplicate UNION branches are removed only when multiplicity is hidden by SET or ASK observation
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Duplicate UNION branches are removed only when multiplicity is hidden by SET or ASK observation
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_ask_idempotent via equivalent_in_every_context
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,SPARQL_1_1,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_ask_idempotent via equivalent_in_every_context
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,Duplicate UNION branches are removed only when multiplicity is hidden by SET or ASK observation
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,Duplicate UNION branches are removed only when multiplicity is hidden by SET or ASK observation
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_set_idempotent via equivalent_in_every_context
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_set_idempotent via equivalent_in_every_context
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Duplicate UNION branches are removed only when multiplicity is hidden by SET or ASK observation
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Duplicate UNION branches are removed only when multiplicity is hidden by SET or ASK observation
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_ask_idempotent via equivalent_in_every_context
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_ask_idempotent via equivalent_in_every_context
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,Duplicate UNION branches are removed only when multiplicity is hidden by SET or ASK observation
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,Duplicate UNION branches are removed only when multiplicity is hidden by SET or ASK observation
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_set_idempotent via equivalent_in_every_context
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_set_idempotent via equivalent_in_every_context
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Duplicate UNION branches are removed only when multiplicity is hidden by SET or ASK observation
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Duplicate UNION branches are removed only when multiplicity is hidden by SET or ASK observation
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_union_ask_idempotent via equivalent_in_every_context
+UNION_IDEMPOTENT_UNDER_SET_OBSERVATION,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_union_ask_idempotent via equivalent_in_every_context
+FILTER_DISTRIBUTES_OVER_UNION,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_DISTRIBUTES_OVER_UNION,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_LEFT,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_JOIN_RIGHT,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_PUSHED_TO_LEFT_JOIN_LEFT,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_TRUE_IDENTITY,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,RDF4J_RUNTIME,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,SPARQL_1_1,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,SPARQL_1_1,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,SPARQL_1_1,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_TRUE_IDENTITY,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_filter_true_identity via equivalent_in_every_context
+FILTER_FALSE_EMPTY,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+FILTER_FALSE_EMPTY,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_EMPTY_LEFT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_EMPTY_LEFT,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,SPARQL_1_1,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,SPARQL_1_1,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_EMPTY_LEFT,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_EMPTY_LEFT,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,SPARQL_1_1,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_EMPTY_LEFT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_EMPTY_LEFT,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_EMPTY_LEFT,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_EMPTY_LEFT,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_LEFT,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_left via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_EMPTY_RIGHT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_1,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_1,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_1,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_EMPTY_RIGHT,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_EMPTY_RIGHT,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_EMPTY_RIGHT,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_empty_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_UNIT_RIGHT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+LEFT_JOIN_UNIT_RIGHT,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,SPARQL_1_1,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,SPARQL_1_1,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_UNIT_RIGHT,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_UNIT_RIGHT,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,SPARQL_1_1,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_UNIT_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_UNIT_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_UNIT_RIGHT,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+LEFT_JOIN_UNIT_RIGHT,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_UNIT_RIGHT,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_leftJoin_unit_right via equivalent_in_every_context
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+LEFT_JOIN_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_EMPTY_LEFT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+MINUS_EMPTY_LEFT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+MINUS_EMPTY_LEFT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+MINUS_EMPTY_LEFT,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+MINUS_EMPTY_LEFT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+MINUS_EMPTY_LEFT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+MINUS_EMPTY_LEFT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+MINUS_EMPTY_LEFT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context; runtime cells discharge the elisionFree premise per tree (absent condition / trivially total operand)
+MINUS_EMPTY_LEFT,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,SPARQL_1_1,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,SPARQL_1_1,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+MINUS_EMPTY_LEFT,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+MINUS_EMPTY_LEFT,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,SPARQL_1_1,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+MINUS_EMPTY_LEFT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+MINUS_EMPTY_LEFT,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+MINUS_EMPTY_LEFT,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+MINUS_EMPTY_LEFT,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_LEFT,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_left via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+MINUS_EMPTY_RIGHT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+MINUS_EMPTY_RIGHT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,SPARQL_1_1,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,SPARQL_1_1,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+MINUS_EMPTY_RIGHT,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+MINUS_EMPTY_RIGHT,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,SPARQL_1_1,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+MINUS_EMPTY_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+MINUS_EMPTY_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+MINUS_EMPTY_RIGHT,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode preserves the native operator shape; the implementation does not apply this rule
+MINUS_EMPTY_RIGHT,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_EMPTY_RIGHT,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_minus_empty_right via equivalent_in_every_context
+MINUS_UNIT_RIGHT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_UNIT_RIGHT,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISJOINT_DOMAINS,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_DISTRIBUTES_OVER_LEFT_UNION,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_RIGHT_UNION_TO_CHAIN,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+MINUS_CHAIN_REORDER,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+DISTINCT_IDEMPOTENT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,SPARQL_1_1,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,SPARQL_1_1,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,SPARQL_1_1,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_IDEMPOTENT,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_idempotent via equivalent_in_every_context
+DISTINCT_OR_SET_OBSERVATION,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,DISTINCT elimination is implemented only when SET or ASK observation hides multiplicity
+DISTINCT_OR_SET_OBSERVATION,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,DISTINCT elimination is implemented only when SET or ASK observation hides multiplicity
+DISTINCT_OR_SET_OBSERVATION,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_set_hidden via equivalent_in_every_context
+DISTINCT_OR_SET_OBSERVATION,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_set_hidden via equivalent_in_every_context
+DISTINCT_OR_SET_OBSERVATION,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,DISTINCT elimination is implemented only when SET or ASK observation hides multiplicity
+DISTINCT_OR_SET_OBSERVATION,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,DISTINCT elimination is implemented only when SET or ASK observation hides multiplicity
+DISTINCT_OR_SET_OBSERVATION,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_ask_hidden via equivalent_in_every_context
+DISTINCT_OR_SET_OBSERVATION,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_ask_hidden via equivalent_in_every_context
+DISTINCT_OR_SET_OBSERVATION,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,DISTINCT elimination is implemented only when SET or ASK observation hides multiplicity
+DISTINCT_OR_SET_OBSERVATION,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,DISTINCT elimination is implemented only when SET or ASK observation hides multiplicity
+DISTINCT_OR_SET_OBSERVATION,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_set_hidden via equivalent_in_every_context
+DISTINCT_OR_SET_OBSERVATION,SPARQL_1_1,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_set_hidden via equivalent_in_every_context
+DISTINCT_OR_SET_OBSERVATION,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,DISTINCT elimination is implemented only when SET or ASK observation hides multiplicity
+DISTINCT_OR_SET_OBSERVATION,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,DISTINCT elimination is implemented only when SET or ASK observation hides multiplicity
+DISTINCT_OR_SET_OBSERVATION,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_ask_hidden via equivalent_in_every_context
+DISTINCT_OR_SET_OBSERVATION,SPARQL_1_1,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_ask_hidden via equivalent_in_every_context
+DISTINCT_OR_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,DISTINCT elimination is implemented only when SET or ASK observation hides multiplicity
+DISTINCT_OR_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,DISTINCT elimination is implemented only when SET or ASK observation hides multiplicity
+DISTINCT_OR_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_set_hidden via equivalent_in_every_context
+DISTINCT_OR_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_set_hidden via equivalent_in_every_context
+DISTINCT_OR_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,DISTINCT elimination is implemented only when SET or ASK observation hides multiplicity
+DISTINCT_OR_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,DISTINCT elimination is implemented only when SET or ASK observation hides multiplicity
+DISTINCT_OR_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_ask_hidden via equivalent_in_every_context
+DISTINCT_OR_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_ask_hidden via equivalent_in_every_context
+DISTINCT_OR_SET_OBSERVATION,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,DISTINCT elimination is implemented only when SET or ASK observation hides multiplicity
+DISTINCT_OR_SET_OBSERVATION,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,DISTINCT elimination is implemented only when SET or ASK observation hides multiplicity
+DISTINCT_OR_SET_OBSERVATION,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_set_hidden via equivalent_in_every_context
+DISTINCT_OR_SET_OBSERVATION,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_set_hidden via equivalent_in_every_context
+DISTINCT_OR_SET_OBSERVATION,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,DISTINCT elimination is implemented only when SET or ASK observation hides multiplicity
+DISTINCT_OR_SET_OBSERVATION,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,DISTINCT elimination is implemented only when SET or ASK observation hides multiplicity
+DISTINCT_OR_SET_OBSERVATION,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_ask_hidden via equivalent_in_every_context
+DISTINCT_OR_SET_OBSERVATION,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_distinct_ask_hidden via equivalent_in_every_context
+REDUCED_HIDDEN_BY_SET_OBSERVATION,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME preserves REDUCED sequence behavior and never applies this rule
+REDUCED_HIDDEN_BY_SET_OBSERVATION,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME preserves REDUCED sequence behavior and never applies this rule
+REDUCED_HIDDEN_BY_SET_OBSERVATION,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME preserves REDUCED sequence behavior and never applies this rule
+REDUCED_HIDDEN_BY_SET_OBSERVATION,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME preserves REDUCED sequence behavior and never applies this rule
+REDUCED_HIDDEN_BY_SET_OBSERVATION,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME preserves REDUCED sequence behavior and never applies this rule
+REDUCED_HIDDEN_BY_SET_OBSERVATION,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME preserves REDUCED sequence behavior and never applies this rule
+REDUCED_HIDDEN_BY_SET_OBSERVATION,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,RDF4J_RUNTIME preserves REDUCED sequence behavior and never applies this rule
+REDUCED_HIDDEN_BY_SET_OBSERVATION,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,RDF4J_RUNTIME preserves REDUCED sequence behavior and never applies this rule
+REDUCED_HIDDEN_BY_SET_OBSERVATION,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,The rule is implemented only when SET or ASK observation hides multiplicity
+REDUCED_HIDDEN_BY_SET_OBSERVATION,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,The rule is implemented only when SET or ASK observation hides multiplicity
+REDUCED_HIDDEN_BY_SET_OBSERVATION,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_reduced_set_hidden via equivalent_in_every_context
+REDUCED_HIDDEN_BY_SET_OBSERVATION,SPARQL_1_1,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_reduced_set_hidden via equivalent_in_every_context
+REDUCED_HIDDEN_BY_SET_OBSERVATION,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,The rule is implemented only when SET or ASK observation hides multiplicity
+REDUCED_HIDDEN_BY_SET_OBSERVATION,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,The rule is implemented only when SET or ASK observation hides multiplicity
+REDUCED_HIDDEN_BY_SET_OBSERVATION,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_reduced_ask_hidden via equivalent_in_every_context
+REDUCED_HIDDEN_BY_SET_OBSERVATION,SPARQL_1_1,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_reduced_ask_hidden via equivalent_in_every_context
+REDUCED_HIDDEN_BY_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,The rule is implemented only when SET or ASK observation hides multiplicity
+REDUCED_HIDDEN_BY_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,The rule is implemented only when SET or ASK observation hides multiplicity
+REDUCED_HIDDEN_BY_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_reduced_set_hidden via equivalent_in_every_context
+REDUCED_HIDDEN_BY_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_reduced_set_hidden via equivalent_in_every_context
+REDUCED_HIDDEN_BY_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,The rule is implemented only when SET or ASK observation hides multiplicity
+REDUCED_HIDDEN_BY_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,The rule is implemented only when SET or ASK observation hides multiplicity
+REDUCED_HIDDEN_BY_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_reduced_ask_hidden via equivalent_in_every_context
+REDUCED_HIDDEN_BY_SET_OBSERVATION,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_reduced_ask_hidden via equivalent_in_every_context
+REDUCED_HIDDEN_BY_SET_OBSERVATION,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,The rule is implemented only when SET or ASK observation hides multiplicity
+REDUCED_HIDDEN_BY_SET_OBSERVATION,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,The rule is implemented only when SET or ASK observation hides multiplicity
+REDUCED_HIDDEN_BY_SET_OBSERVATION,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_reduced_set_hidden via equivalent_in_every_context
+REDUCED_HIDDEN_BY_SET_OBSERVATION,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_reduced_set_hidden via equivalent_in_every_context
+REDUCED_HIDDEN_BY_SET_OBSERVATION,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,The rule is implemented only when SET or ASK observation hides multiplicity
+REDUCED_HIDDEN_BY_SET_OBSERVATION,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,The rule is implemented only when SET or ASK observation hides multiplicity
+REDUCED_HIDDEN_BY_SET_OBSERVATION,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_reduced_ask_hidden via equivalent_in_every_context
+REDUCED_HIDDEN_BY_SET_OBSERVATION,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_reduced_ask_hidden via equivalent_in_every_context
+PROJECTION_ELEMENT_ORDER_IGNORED,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,RDF4J_RUNTIME,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,RDF4J_RUNTIME,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,RDF4J_RUNTIME,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+PROJECTION_ELEMENT_ORDER_IGNORED,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,CertifiedRuleRegistry disables this rule until its totality/error and Java-to-Lean step-replay obligations are discharged
+VALUES_EMPTY,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,RDF4J_RUNTIME,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode keeps BindingSetAssignment opaque and does not apply VALUES_EMPTY
+VALUES_EMPTY,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode keeps BindingSetAssignment opaque and does not apply VALUES_EMPTY
+VALUES_EMPTY,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,SPARQL_1_1,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,SPARQL_1_1,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode keeps BindingSetAssignment opaque and does not apply VALUES_EMPTY
+VALUES_EMPTY,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode keeps BindingSetAssignment opaque and does not apply VALUES_EMPTY
+VALUES_EMPTY,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,SPARQL_1_1,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode keeps BindingSetAssignment opaque and does not apply VALUES_EMPTY
+VALUES_EMPTY,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode keeps BindingSetAssignment opaque and does not apply VALUES_EMPTY
+VALUES_EMPTY,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode keeps BindingSetAssignment opaque and does not apply VALUES_EMPTY
+VALUES_EMPTY,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode keeps BindingSetAssignment opaque and does not apply VALUES_EMPTY
+VALUES_EMPTY,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_EMPTY,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_values_empty via equivalent_in_every_context
+VALUES_UNIT,RDF4J_RUNTIME,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_unit_top_level
+VALUES_UNIT,RDF4J_RUNTIME,BAG,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_runtime_values_unit_all_bindings
+VALUES_UNIT,RDF4J_RUNTIME,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_unit_top_level
+VALUES_UNIT,RDF4J_RUNTIME,SET,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_runtime_values_unit_all_bindings
+VALUES_UNIT,RDF4J_RUNTIME,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode keeps BindingSetAssignment opaque and does not apply VALUES_UNIT
+VALUES_UNIT,RDF4J_RUNTIME,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode keeps BindingSetAssignment opaque and does not apply VALUES_UNIT
+VALUES_UNIT,RDF4J_RUNTIME,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_unit_top_level
+VALUES_UNIT,RDF4J_RUNTIME,ASK,ALL_BINDINGS,THEOREM,Rdf4jEquivalenceFormal.reference_runtime_values_unit_all_bindings
+VALUES_UNIT,SPARQL_1_1,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_unit_top_level
+VALUES_UNIT,SPARQL_1_1,BAG,ALL_BINDINGS,INAPPLICABLE,Specification targets apply VALUES_UNIT only with an empty top-level incoming mapping
+VALUES_UNIT,SPARQL_1_1,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_unit_top_level
+VALUES_UNIT,SPARQL_1_1,SET,ALL_BINDINGS,INAPPLICABLE,Specification targets apply VALUES_UNIT only with an empty top-level incoming mapping
+VALUES_UNIT,SPARQL_1_1,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode keeps BindingSetAssignment opaque and does not apply VALUES_UNIT
+VALUES_UNIT,SPARQL_1_1,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode keeps BindingSetAssignment opaque and does not apply VALUES_UNIT
+VALUES_UNIT,SPARQL_1_1,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_unit_top_level
+VALUES_UNIT,SPARQL_1_1,ASK,ALL_BINDINGS,INAPPLICABLE,Specification targets apply VALUES_UNIT only with an empty top-level incoming mapping
+VALUES_UNIT,SPARQL_1_2_DRAFT_2026_06_05,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_unit_top_level
+VALUES_UNIT,SPARQL_1_2_DRAFT_2026_06_05,BAG,ALL_BINDINGS,INAPPLICABLE,Specification targets apply VALUES_UNIT only with an empty top-level incoming mapping
+VALUES_UNIT,SPARQL_1_2_DRAFT_2026_06_05,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_unit_top_level
+VALUES_UNIT,SPARQL_1_2_DRAFT_2026_06_05,SET,ALL_BINDINGS,INAPPLICABLE,Specification targets apply VALUES_UNIT only with an empty top-level incoming mapping
+VALUES_UNIT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode keeps BindingSetAssignment opaque and does not apply VALUES_UNIT
+VALUES_UNIT,SPARQL_1_2_DRAFT_2026_06_05,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode keeps BindingSetAssignment opaque and does not apply VALUES_UNIT
+VALUES_UNIT,SPARQL_1_2_DRAFT_2026_06_05,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_unit_top_level
+VALUES_UNIT,SPARQL_1_2_DRAFT_2026_06_05,ASK,ALL_BINDINGS,INAPPLICABLE,Specification targets apply VALUES_UNIT only with an empty top-level incoming mapping
+VALUES_UNIT,BOTH_1_1_AND_1_2,BAG,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_unit_top_level
+VALUES_UNIT,BOTH_1_1_AND_1_2,BAG,ALL_BINDINGS,INAPPLICABLE,Specification targets apply VALUES_UNIT only with an empty top-level incoming mapping
+VALUES_UNIT,BOTH_1_1_AND_1_2,SET,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_unit_top_level
+VALUES_UNIT,BOTH_1_1_AND_1_2,SET,ALL_BINDINGS,INAPPLICABLE,Specification targets apply VALUES_UNIT only with an empty top-level incoming mapping
+VALUES_UNIT,BOTH_1_1_AND_1_2,SEQUENCE,TOP_LEVEL_EMPTY,INAPPLICABLE,Sequence mode keeps BindingSetAssignment opaque and does not apply VALUES_UNIT
+VALUES_UNIT,BOTH_1_1_AND_1_2,SEQUENCE,ALL_BINDINGS,INAPPLICABLE,Sequence mode keeps BindingSetAssignment opaque and does not apply VALUES_UNIT
+VALUES_UNIT,BOTH_1_1_AND_1_2,ASK,TOP_LEVEL_EMPTY,THEOREM,Rdf4jEquivalenceFormal.reference_values_unit_top_level
+VALUES_UNIT,BOTH_1_1_AND_1_2,ASK,ALL_BINDINGS,INAPPLICABLE,Specification targets apply VALUES_UNIT only with an empty top-level incoming mapping

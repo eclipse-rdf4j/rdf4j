@@ -1,0 +1,4 @@
+interface:
+  display_name: "Docker JFR Benchmark Loop"
+  short_description: "Iterative Docker JFR perf loop"
+  default_prompt: "Use $docker-jfr-benchmark-loop to run a Docker JFR benchmark baseline, read hotspots, compare reruns, and guide the next optimization loop."

@@ -135,8 +135,20 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 				} else {
 					BindingSetHashKey key = BindingSetHashKey.create(joinAttributes, currentScanElem);
 					List<BindingSet> hashValue = nextHashTable.get(key);
+					// The hash attributes only cover names that are assuredly bound on both sides, so
+					// bucket rows still need a full SPARQL compatibility check: a shared name outside the
+					// attributes may be bound on both sides to different values.
+					List<BindingSet> compatibleValue = null;
 					if (hashValue != null && !hashValue.isEmpty()) {
-						nextHashTableValues = hashTableValues = hashValue.iterator();
+						compatibleValue = new ArrayList<>(hashValue.size());
+						for (BindingSet hashRow : hashValue) {
+							if (currentScanElem.isCompatible(hashRow)) {
+								compatibleValue.add(hashRow);
+							}
+						}
+					}
+					if (compatibleValue != null && !compatibleValue.isEmpty()) {
+						nextHashTableValues = hashTableValues = compatibleValue.iterator();
 					} else if (leftJoin) {
 						nextHashTableValues = hashTableValues = Collections.singletonList(EmptyBindingSet.getInstance())
 								.iterator();
@@ -349,15 +361,20 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 		col.addAll(values);
 	}
 
+	/**
+	 * Attributes for the hash key: only names that are ASSUREDLY bound on both sides qualify. A name that is merely
+	 * possible on one side lands in a different bucket when unbound, silently dropping solutions SPARQL considers
+	 * compatible; the remaining shared names are verified by the per-bucket compatibility check instead.
+	 */
 	public static String[] hashJoinAttributeNames(Join join) {
-		Set<String> leftBindingNames = join.getLeftArg().getBindingNames();
-		Set<String> rightBindingNames = join.getRightArg().getBindingNames();
+		Set<String> leftBindingNames = join.getLeftArg().getAssuredBindingNames();
+		Set<String> rightBindingNames = join.getRightArg().getAssuredBindingNames();
 		return leftBindingNames.stream().filter(rightBindingNames::contains).toArray(String[]::new);
 	}
 
 	public static String[] hashJoinAttributeNames(LeftJoin join) {
-		Set<String> leftBindingNames = join.getLeftArg().getBindingNames();
-		Set<String> rightBindingNames = join.getRightArg().getBindingNames();
+		Set<String> leftBindingNames = join.getLeftArg().getAssuredBindingNames();
+		Set<String> rightBindingNames = join.getRightArg().getAssuredBindingNames();
 		return leftBindingNames.stream().filter(rightBindingNames::contains).toArray(String[]::new);
 	}
 }

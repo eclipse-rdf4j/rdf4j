@@ -1,0 +1,3 @@
+SELECT * WHERE {
+  { SELECT (?inner AS ?x) WHERE { VALUES ?inner { "a" "b" "c" "d" "e" } } }
+}

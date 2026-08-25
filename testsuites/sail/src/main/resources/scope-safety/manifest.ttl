@@ -1,0 +1,408 @@
+@prefix mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> .
+@prefix qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> .
+@prefix ss: <https://rdf4j.org/tests/scope-safety#> .
+
+<> a mf:Manifest ;
+   mf:name "RDF4J scope-safety optimizer regression suite" ;
+   mf:entries (
+      <#q01>
+      <#q02>
+      <#q03>
+      <#q04>
+      <#q05>
+      <#q06>
+      <#q07>
+      <#q08>
+      <#q09>
+      <#q10>
+      <#q11>
+      <#q12>
+      <#q13>
+      <#q14>
+      <#q15>
+      <#q16>
+      <#q17>
+      <#q18>
+      <#q19>
+      <#q20>
+      <#q21>
+      <#q22>
+      <#q23>
+      <#q24>
+      <#q25>
+      <#q26>
+      <#q27>
+      <#q28>
+      <#q29>
+      <#q30>
+      <#q31>
+      <#q32>
+      <#q33>
+      <#q34>
+      <#q35>
+      <#q36>
+      <#q37>
+      <#q38>
+      <#q39>
+      <#q40>
+      <#q41>
+      <#q42>
+      <#q43>
+      <#q44>
+      <#q45>
+      <#q46>
+      <#q47>
+      <#q48>
+      <#q49>
+      <#q50>
+   ) .
+
+<#q01> a mf:QueryEvaluationTest ;
+   mf:name "OPTIONAL introduces a possibly unbound variable" ;
+   mf:action [ qt:query <queries/q01.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q01.srx> ;
+   ss:ordered false ;
+   ss:category "boundness" .
+
+<#q02> a mf:QueryEvaluationTest ;
+   mf:name "UNION branch-only bindings" ;
+   mf:action [ qt:query <queries/q02.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q02.srx> ;
+   ss:ordered false ;
+   ss:category "union" .
+
+<#q03> a mf:QueryEvaluationTest ;
+   mf:name "VALUES UNDEF can be supplied by a later join" ;
+   mf:action [ qt:query <queries/q03.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q03.srx> ;
+   ss:ordered false ;
+   ss:category "values" .
+
+<#q04> a mf:QueryEvaluationTest ;
+   mf:name "VALUES binding constrains OPTIONAL compatibility" ;
+   mf:action [ qt:query <queries/q04.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q04.srx> ;
+   ss:ordered false ;
+   ss:category "values" .
+
+<#q05> a mf:QueryEvaluationTest ;
+   mf:name "BIND error preserves the input mapping" ;
+   mf:action [ qt:query <queries/q05.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q05.srx> ;
+   ss:ordered false ;
+   ss:category "bind" .
+
+<#q06> a mf:QueryEvaluationTest ;
+   mf:name "Sequential BIND targets are immediately available" ;
+   mf:action [ qt:query <queries/q06.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q06.srx> ;
+   ss:ordered false ;
+   ss:category "bind" .
+
+<#q07> a mf:QueryEvaluationTest ;
+   mf:name "FILTER textual position within one group" ;
+   mf:action [ qt:query <queries/q07.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q07.srx> ;
+   ss:ordered false ;
+   ss:category "filter" .
+
+<#q08> a mf:QueryEvaluationTest ;
+   mf:name "Nested ordinary group is not lateral" ;
+   mf:action [ qt:query <queries/q08.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q08.srx> ;
+   ss:ordered false ;
+   ss:category "group-scope" .
+
+<#q09> a mf:QueryEvaluationTest ;
+   mf:name "Same-group FILTER sees preceding VALUES" ;
+   mf:action [ qt:query <queries/q09.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q09.srx> ;
+   ss:ordered false ;
+   ss:category "group-scope" .
+
+<#q10> a mf:QueryEvaluationTest ;
+   mf:name "BIND before producer is not retroactive" ;
+   mf:action [ qt:query <queries/q10.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q10.srx> ;
+   ss:ordered false ;
+   ss:category "bind" .
+
+<#q11> a mf:QueryEvaluationTest ;
+   mf:name "FILTER outside UNION on branch-only binding" ;
+   mf:action [ qt:query <queries/q11.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q11.srx> ;
+   ss:ordered false ;
+   ss:category "filter-union" .
+
+<#q12> a mf:QueryEvaluationTest ;
+   mf:name "Property-path intermediate variable remains hidden" ;
+   mf:action [ qt:query <queries/q12.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q12.srx> ;
+   ss:ordered false ;
+   ss:category "property-path" .
+
+<#q13> a mf:QueryEvaluationTest ;
+   mf:name "FILTER depends on a variable supplied by crossed JOIN operand" ;
+   mf:action [ qt:query <queries/q13.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q13.srx> ;
+   ss:ordered false ;
+   ss:category "filter-join" .
+
+<#q14> a mf:QueryEvaluationTest ;
+   mf:name "BOUND after OPTIONAL must not move before OPTIONAL" ;
+   mf:action [ qt:query <queries/q14.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q14.srx> ;
+   ss:ordered false ;
+   ss:category "filter-optional" .
+
+<#q15> a mf:QueryEvaluationTest ;
+   mf:name "OR filter is not bag-union of its disjuncts" ;
+   mf:action [ qt:query <queries/q15.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q15.srx> ;
+   ss:ordered false ;
+   ss:category "filter-bag" .
+
+<#q16> a mf:QueryEvaluationTest ;
+   mf:name "Short-circuit conjunction with possibly unbound operand" ;
+   mf:action [ qt:query <queries/q16.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q16.srx> ;
+   ss:ordered false ;
+   ss:category "filter-errors" .
+
+<#q17> a mf:QueryEvaluationTest ;
+   mf:name "COALESCE observes OPTIONAL boundness" ;
+   mf:action [ qt:query <queries/q17.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q17.srx> ;
+   ss:ordered false ;
+   ss:category "bind-errors" .
+
+<#q18> a mf:QueryEvaluationTest ;
+   mf:name "FILTER over MINUS must not be cloned into RHS" ;
+   mf:action [ qt:query <queries/q18.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q18.srx> ;
+   ss:ordered false ;
+   ss:category "minus-filter" .
+
+<#q19> a mf:QueryEvaluationTest ;
+   mf:name "Second MINUS filter regression with fallback row" ;
+   mf:action [ qt:query <queries/q19.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q19.srx> ;
+   ss:ordered false ;
+   ss:category "minus-filter" .
+
+<#q20> a mf:QueryEvaluationTest ;
+   mf:name "FILTER/UNION distribution preserves duplicate multiplicity" ;
+   mf:action [ qt:query <queries/q20.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q20.srx> ;
+   ss:ordered false ;
+   ss:category "filter-union" .
+
+<#q21> a mf:QueryEvaluationTest ;
+   mf:name "Filter inside OPTIONAL condition preserves fallback" ;
+   mf:action [ qt:query <queries/q21.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q21.srx> ;
+   ss:ordered false ;
+   ss:category "optional-filter" .
+
+<#q22> a mf:QueryEvaluationTest ;
+   mf:name "Same filter outside OPTIONAL removes fallback" ;
+   mf:action [ qt:query <queries/q22.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q22.srx> ;
+   ss:ordered false ;
+   ss:category "optional-filter" .
+
+<#q23> a mf:QueryEvaluationTest ;
+   mf:name "OPTIONAL multiple witnesses and fallback multiplicity" ;
+   mf:action [ qt:query <queries/q23.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q23.srx> ;
+   ss:ordered false ;
+   ss:category "optional-bag" .
+
+<#q24> a mf:QueryEvaluationTest ;
+   mf:name "OPTIONAL does not distribute over right UNION" ;
+   mf:action [ qt:query <queries/q24.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q24.srx> ;
+   ss:ordered false ;
+   ss:category "optional-union" .
+
+<#q25> a mf:QueryEvaluationTest ;
+   mf:name "OPTIONAL distributes over left UNION" ;
+   mf:action [ qt:query <queries/q25.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q25.srx> ;
+   ss:ordered false ;
+   ss:category "optional-union" .
+
+<#q26> a mf:QueryEvaluationTest ;
+   mf:name "OPTIONAL condition sees left and right bindings" ;
+   mf:action [ qt:query <queries/q26.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q26.srx> ;
+   ss:ordered false ;
+   ss:category "optional-correlation" .
+
+<#q27> a mf:QueryEvaluationTest ;
+   mf:name "All OPTIONAL candidates fail condition: one fallback" ;
+   mf:action [ qt:query <queries/q27.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q27.srx> ;
+   ss:ordered false ;
+   ss:category "optional-fallback" .
+
+<#q28> a mf:QueryEvaluationTest ;
+   mf:name "OPTIONAL compatibility conflict retains left binding" ;
+   mf:action [ qt:query <queries/q28.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q28.srx> ;
+   ss:ordered false ;
+   ss:category "optional-compatibility" .
+
+<#q29> a mf:QueryEvaluationTest ;
+   mf:name "Later JOIN and BIND after OPTIONAL fallback" ;
+   mf:action [ qt:query <queries/q29.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q29.srx> ;
+   ss:ordered false ;
+   ss:category "optional-bind" .
+
+<#q30> a mf:QueryEvaluationTest ;
+   mf:name "Dead-looking OPTIONAL is multiplicity-live" ;
+   mf:action [ qt:query <queries/q30.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q30.srx> ;
+   ss:ordered false ;
+   ss:category "optional-projection" .
+
+<#q31> a mf:QueryEvaluationTest ;
+   mf:name "MINUS with disjoint domains is a no-op" ;
+   mf:action [ qt:query <queries/q31.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q31.srx> ;
+   ss:ordered false ;
+   ss:category "minus" .
+
+<#q32> a mf:QueryEvaluationTest ;
+   mf:name "MINUS RHS variables do not escape SELECT star" ;
+   mf:action [ qt:query <queries/q32.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q32.srx> ;
+   ss:ordered false ;
+   ss:category "minus-scope" .
+
+<#q33> a mf:QueryEvaluationTest ;
+   mf:name "MINUS empty mapping does not remove rows" ;
+   mf:action [ qt:query <queries/q33.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q33.srx> ;
+   ss:ordered false ;
+   ss:category "minus-empty-domain" .
+
+<#q34> a mf:QueryEvaluationTest ;
+   mf:name "MINUS right UNION is existential across both branches" ;
+   mf:action [ qt:query <queries/q34.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q34.srx> ;
+   ss:ordered false ;
+   ss:category "minus-union" .
+
+<#q35> a mf:QueryEvaluationTest ;
+   mf:name "MINUS RHS OPTIONAL mappings remain witnesses" ;
+   mf:action [ qt:query <queries/q35.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q35.srx> ;
+   ss:ordered false ;
+   ss:category "minus-optional" .
+
+<#q36> a mf:QueryEvaluationTest ;
+   mf:name "MINUS RHS FILTER is not correlated" ;
+   mf:action [ qt:query <queries/q36.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q36.srx> ;
+   ss:ordered false ;
+   ss:category "minus-correlation" .
+
+<#q37> a mf:QueryEvaluationTest ;
+   mf:name "NOT EXISTS is correlated unlike MINUS" ;
+   mf:action [ qt:query <queries/q37.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q37.srx> ;
+   ss:ordered false ;
+   ss:category "exists-correlation" .
+
+<#q38> a mf:QueryEvaluationTest ;
+   mf:name "MINUS overlap depends on actual VALUES domains" ;
+   mf:action [ qt:query <queries/q38.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q38.srx> ;
+   ss:ordered false ;
+   ss:category "minus-values" .
+
+<#q39> a mf:QueryEvaluationTest ;
+   mf:name "EXISTS sees current outer mapping" ;
+   mf:action [ qt:query <queries/q39.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q39.srx> ;
+   ss:ordered false ;
+   ss:category "exists" .
+
+<#q40> a mf:QueryEvaluationTest ;
+   mf:name "EXISTS-local variables do not escape SELECT star" ;
+   mf:action [ qt:query <queries/q40.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q40.srx> ;
+   ss:ordered false ;
+   ss:category "exists-scope" .
+
+<#q41> a mf:QueryEvaluationTest ;
+   mf:name "NOT EXISTS over missing property" ;
+   mf:action [ qt:query <queries/q41.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q41.srx> ;
+   ss:ordered false ;
+   ss:category "exists" .
+
+<#q42> a mf:QueryEvaluationTest ;
+   mf:name "EXISTS correlation varies per duplicate outer row" ;
+   mf:action [ qt:query <queries/q42.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q42.srx> ;
+   ss:ordered false ;
+   ss:category "exists-bag" .
+
+<#q43> a mf:QueryEvaluationTest ;
+   mf:name "Subselect hidden variable is independent outside" ;
+   mf:action [ qt:query <queries/q43.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q43.srx> ;
+   ss:ordered false ;
+   ss:category "subquery-scope" .
+
+<#q44> a mf:QueryEvaluationTest ;
+   mf:name "Subselect flattening must not capture hidden same-name variable" ;
+   mf:action [ qt:query <queries/q44.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q44.srx> ;
+   ss:ordered false ;
+   ss:category "subquery-capture" .
+
+<#q45> a mf:QueryEvaluationTest ;
+   mf:name "Subselect DISTINCT is cardinality-visible outside" ;
+   mf:action [ qt:query <queries/q45.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q45.srx> ;
+   ss:ordered false ;
+   ss:category "subquery-distinct" .
+
+<#q46> a mf:QueryEvaluationTest ;
+   mf:name "Subselect without DISTINCT preserves projected duplicates" ;
+   mf:action [ qt:query <queries/q46.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q46.srx> ;
+   ss:ordered false ;
+   ss:category "subquery-bag" .
+
+<#q47> a mf:QueryEvaluationTest ;
+   mf:name "Subselect alias is the exported interface" ;
+   mf:action [ qt:query <queries/q47.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q47.srx> ;
+   ss:ordered false ;
+   ss:category "subquery-alias" .
+
+<#q48> a mf:QueryEvaluationTest ;
+   mf:name "Grouping creates a query-level interface" ;
+   mf:action [ qt:query <queries/q48.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q48.srx> ;
+   ss:ordered false ;
+   ss:category "grouping" .
+
+<#q49> a mf:QueryEvaluationTest ;
+   mf:name "Subselect ORDER BY and LIMIT remain local" ;
+   mf:action [ qt:query <queries/q49.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q49.srx> ;
+   ss:ordered true ;
+   ss:category "subquery-sequence" .
+
+<#q50> a mf:QueryEvaluationTest ;
+   mf:name "GRAPH variable is exported from named-graph matching" ;
+   mf:action [ qt:query <queries/q50.rq> ; ss:dataset <data/scope-data.trig> ] ;
+   mf:result <results/q50.srx> ;
+   ss:ordered false ;
+   ss:category "graph-scope" .

@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -56,8 +57,17 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 		final Iterator<BindingSet> assignments = node.getBindingSets().iterator();
 		CloseableIteration<BindingSet> result;
 		if (bindings.isEmpty()) {
-			// we can just return the assignments directly without checking existing bindings
-			result = new CloseableIteratorIteration<>(assignments);
+			// we can just return the assignments directly without checking existing bindings,
+			// but stored rows may carry declared-but-UNDEF columns as names with null values
+			// (e.g. parser-built ListBindingSets). Such a column is not a binding, and leaking it
+			// into the pipeline makes downstream hasBinding/name checks behave differently from an
+			// equal row without the name.
+			result = new CloseableIteratorIteration<>(assignments) {
+				@Override
+				public BindingSet next() {
+					return stripUndefColumns(super.next());
+				}
+			};
 		} else {
 			// we need to verify that new binding assignments do not overwrite existing bindings
 			final boolean hasParentOverlap = hasParentOverlap(bindings);
@@ -99,41 +109,43 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 
 					@Override
 					protected BindingSet getNextElement() throws QueryEvaluationException {
-						MutableBindingSet nextResult = null;
-						while (nextResult == null && assignments.hasNext()) {
+						while (assignments.hasNext()) {
 							final BindingSet assignedBindings = assignments.next();
 
+							// The empty mapping (and a row whose every column is a declared-but-UNDEF
+							// null) is compatible with anything and joins as the identity: it must
+							// yield the incoming bindings, not be dropped.
+							MutableBindingSet nextResult = bsMaker.apply(bindings);
+							boolean compatible = true;
 							for (String name : assignedBindings.getBindingNames()) {
-								if (nextResult == null) {
-									nextResult = bsMaker.apply(bindings);
-								}
-
 								final Value assignedValue = assignedBindings.getValue(name);
-								if (assignedValue != null) {
-									BindingNameAccess bindingName = bindingNamesByName.get(name);
+								if (assignedValue == null) {
+									continue;
+								}
+								BindingNameAccess bindingName = bindingNamesByName.get(name);
 
-									// check that the binding assignment does not overwrite existing bindings.
-									Value existingValue = bindingName == null ? bindings.getValue(name)
-											: bindingName.getValue.apply(bindings);
-									if (existingValue == null || assignedValue.equals(existingValue)) {
-										if (existingValue == null) {
-											// we are not overwriting an existing binding.
-											if (bindingName == null) {
-												nextResult.addBinding(name, assignedValue);
-											} else {
-												bindingName.addBinding.accept(assignedValue, nextResult);
-											}
-										}
+								// check that the binding assignment does not overwrite existing bindings.
+								Value existingValue = bindingName == null ? bindings.getValue(name)
+										: bindingName.getValue.apply(bindings);
+								if (existingValue == null) {
+									// we are not overwriting an existing binding.
+									if (bindingName == null) {
+										nextResult.addBinding(name, assignedValue);
 									} else {
-										// if values are not equal there is no compatible merge and we should return no
-										// next element.
-										nextResult = null;
-										break;
+										bindingName.addBinding.accept(assignedValue, nextResult);
 									}
+								} else if (!assignedValue.equals(existingValue)) {
+									// if values are not equal there is no compatible merge and this
+									// row contributes no solution.
+									compatible = false;
+									break;
 								}
 							}
+							if (compatible) {
+								return nextResult;
+							}
 						}
-						return nextResult;
+						return null;
 					}
 
 					@Override
@@ -178,6 +190,27 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 			}
 		}
 		return false;
+	}
+
+	private static BindingSet stripUndefColumns(BindingSet row) {
+		boolean clean = true;
+		for (String name : row.getBindingNames()) {
+			if (row.getValue(name) == null) {
+				clean = false;
+				break;
+			}
+		}
+		if (clean) {
+			return row;
+		}
+		QueryBindingSet stripped = new QueryBindingSet(row.size());
+		for (String name : row.getBindingNames()) {
+			Value value = row.getValue(name);
+			if (value != null) {
+				stripped.addBinding(name, value);
+			}
+		}
+		return stripped;
 	}
 
 	private static final class BindingNameAccess {

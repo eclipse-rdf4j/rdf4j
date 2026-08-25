@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -139,6 +140,19 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		String query = "SELECT * WHERE {?branch <urn:name> ?branchName . ?copy <urn:locatedAt> ?branch . FILTER(?branchName = \"Branch 0\") }";
 
 		testOptimizer(expectedQuery, query, new SelectiveJoinStatistics(200.0d, 100.0d, 20.0d));
+	}
+
+	@Test
+	public void filterOverDifferenceMovesOnlyIntoLeftOperand() {
+		ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+				"SELECT * WHERE { ?s <urn:left> ?value . MINUS { ?s <urn:right> ?witness } FILTER(?value = 1) }",
+				null);
+
+		getOptimizer().optimize(parsed.getTupleExpr(), null, EmptyBindingSet.getInstance());
+
+		Difference difference = findAll(parsed.getTupleExpr(), Difference.class).getFirst();
+		assertThat(difference.getLeftArg()).isInstanceOf(Filter.class);
+		assertThat(findAll(difference.getRightArg(), Filter.class)).isEmpty();
 	}
 
 	@Test

@@ -1,0 +1,6 @@
+SELECT * WHERE {
+  { SELECT ?x WHERE {
+      VALUES (?x ?hidden) { ("a" "i1") ("b" "i2") ("c" "i3") ("d" "i4") }
+    } }
+  VALUES ?hidden { "outer" }
+}

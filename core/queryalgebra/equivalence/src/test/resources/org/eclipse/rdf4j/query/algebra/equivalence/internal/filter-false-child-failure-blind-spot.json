@@ -1,0 +1,31 @@
+{
+  "format": "rdf4j-tuple-expr",
+  "version": 1,
+  "expression": {
+    "type": "Filter",
+    "arg": {
+      "type": "StatementPattern",
+      "subjectVar": {
+        "type": "Var",
+        "name": "s"
+      },
+      "predicateVar": {
+        "type": "Var",
+        "name": "p"
+      },
+      "objectVar": {
+        "type": "Var",
+        "name": "o"
+      },
+      "statementOrder": "S"
+    },
+    "condition": {
+      "type": "ValueConstant",
+      "value": {
+        "type": "Literal",
+        "label": "false",
+        "datatype": "http://www.w3.org/2001/XMLSchema#boolean"
+      }
+    }
+  }
+}

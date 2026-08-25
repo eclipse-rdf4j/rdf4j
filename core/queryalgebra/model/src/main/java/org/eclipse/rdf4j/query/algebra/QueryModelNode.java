@@ -17,6 +17,9 @@ import java.util.Map;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 /**
  * Main interface for all query model nodes.
@@ -350,6 +353,30 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	@Experimental
 	default void setRuntimeTelemetryEnabled(boolean runtimeTelemetryEnabled) {
 		// no-op
+	}
+
+	/**
+	 * Returns the packed, query-local optimization tag. The upper 32 bits identify immutable parser origin and the
+	 * lower 32 bits identify a mutable node in the current optimization session. Custom query model nodes may retain
+	 * the default zero value and are then indexed through a conservative query-local fallback.
+	 *
+	 * @return the packed optimization tag, or zero when unsupported
+	 */
+	@InternalUseOnly
+	@JsonIgnore
+	default long getOptimizationTag() {
+		return 0L;
+	}
+
+	/**
+	 * Sets the packed, query-local optimization tag. The default implementation is a no-op for compatibility with
+	 * custom query model node implementations.
+	 *
+	 * @param optimizationTag the packed optimization tag
+	 */
+	@InternalUseOnly
+	default void setOptimizationTag(long optimizationTag) {
+		// no-op for backwards compatibility
 	}
 
 	/**

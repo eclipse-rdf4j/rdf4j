@@ -1,0 +1,29 @@
+rule,name,source,replacement,equivalence,preconditions_or_reason,tests,status
+R01,JOIN_COMMUTE,"Join(A,B)","Join(B,A)",exact bag,"same frame/region/environment; neither side has required directional input; no hard barrier; no order or external effect","q07,q14,q33",ALLOW
+R02,JOIN_ASSOCIATE,"Join(Join(A,B),C)","Join(A,Join(B,C))",exact bag,"same constraints as R01 for all factors; dependency DAG preserved","q07,q14,q33",ALLOW
+R03,FILTER_OVER_UNION,"Filter(F,Union(A,B))","Union(Filter(F,A),Filter(F,B))",exact bag,"condition clones preserve symbols/captures; condition duplicable; same region/environment","q06,q07,q08,q22",ALLOW
+R04,FILTER_BELOW_JOIN_LEFT,"Filter(F,Join(A,B))","Join(Filter(F,A),B)",exact bag,"reads(F) & ~must(A) & may(B) = empty; F pure/invocation-safe; target environment unchanged","q07,q14,q21,q22",ALLOW
+R05,FILTER_BELOW_JOIN_RIGHT,"Filter(F,Join(A,B))","Join(A,Filter(F,B))",exact bag,"reads(F) & ~must(B) & may(A) = empty; F pure/invocation-safe; target environment unchanged","q07,q14,q21,q22",ALLOW
+R06,FILTER_BELOW_LEFTJOIN_LEFT,"Filter(F,LeftJoin(A,B,C))","LeftJoin(Filter(F,A),B,C)",exact bag,"reads(F) & ~must(A) & may(B) = empty; F pure/invocation-safe; no change to optional condition/fallback","q01,q02,q20,q24",ALLOW
+R07,FILTER_INTO_MINUS_LEFT,"Filter(F,Minus(A,B))","Minus(Filter(F,A),B)",exact bag,"F only observes left mapping/context; F pure/invocation-safe; RHS unchanged","q18,q19,q37",ALLOW
+R08,FILTER_INTO_MINUS_BOTH,"Filter(F,Minus(A,B))","Minus(Filter(F,A),Filter(F,B))",not equivalent,"never legal as a generic rule; filtering RHS can remove an eliminating witness","q18,q19",DENY
+R09,LEFTJOIN_OVER_LEFT_UNION,"LeftJoin(Union(A,B),R,C)","Union(LeftJoin(A,R,C),LeftJoin(B,R,C))",exact bag,"R and C hygienically cloneable; no volatile/external duplicated evaluation; same region/environment","q23,q25",ALLOW
+R10,LEFTJOIN_OVER_RIGHT_UNION,"LeftJoin(L,Union(A,B),C)","Union(LeftJoin(L,A,C),LeftJoin(L,B,C))",not equivalent,"never legal generically; creates one fallback per branch",q24,DENY
+R11,MINUS_OVER_LEFT_UNION,"Minus(Union(A,B),R)","Union(Minus(A,R),Minus(B,R))",exact bag,"R cloneable; no duplicated volatile/external evaluation; same independent MINUS region","q17,q18,q19",ALLOW
+R12,MINUS_RIGHT_UNION_TO_SEQUENCE,"Minus(L,Union(A,B))","Minus(Minus(L,A),B)",exact bag,"same independent regions/environments; effect order not observable","q17,q37",ALLOW
+R13,MINUS_RIGHT_UNION_AS_UNION,"Minus(L,Union(A,B))","Union(Minus(L,A),Minus(L,B))",not equivalent,"never legal generically; a row removed by one branch can survive the other","q17,q37",DENY
+R14,EXTENSION_OVER_UNION,"Extend(Union(A,B),v,E)","Union(Extend(A,v,E),Extend(B,v,E))",exact bag,"target fresh in both branches; same symbol/capture mapping; one call per original occurrence; no external side effects","q12,q13,q35,q36",ALLOW
+R15,EXTENSION_BELOW_JOIN_LEFT,"Extend(Join(A,B),v,E)","Join(Extend(A,v,E),B)",exact bag,"reads(E) & ~must(A) & may(B)=empty; v absent from scope/may/semanticDependencies of A and B; E deterministic, side-effect-free, row-identity-insensitive","q12,q13,q14,q15",ALLOW
+R16,EXTENSION_BELOW_JOIN_VOLATILE,"Extend(Join(A,B),v,RAND())","Join(Extend(A,v,RAND()),B)",not equivalent,"never when crossed side can multiply rows; invocation partition changes",q15,DENY
+R17,IDENTITY_PROJECTION_REMOVE,Project_identity(A),A,exact interface bag,"projection is one-to-one identity; exports equal child scope; no hidden vars, rename, subquery barrier, sequence contract, construct alias","q41,q42",ALLOW
+R18,TRANSPARENT_SUBQUERY_FLATTEN,Subquery(Project_identity(A)),A imported into parent frame,exact interface bag,"injective identity exports cover all child may-bind vars; no hidden vars/captures/group/distinct/reduced/order/slice/service/lateral/environment change","q39,q40,q41,q42",ALLOW
+R19,SUBQUERY_FLATTEN_HIDDEN,"Subquery(Project_x(A(x,y)))","A(x,y)",not equivalent,"hidden y would leak, alter joins, MINUS overlap, SELECT *, and domains","q43,q44",DENY
+R20,SUBQUERY_FLATTEN_DISTINCT,"Subquery(Distinct(Project_x(A)))",A,not equivalent,"duplicate elimination changes outer multiplicity","q45,q46",DENY
+R21,DISTINCT_PROJECT_COMMUTE,"Distinct(Project_V(A))","Project_V(Distinct(A))",not equivalent,"projection can collapse mappings only after the inner DISTINCT","q45,q46",DENY
+R22,PROJECT_BELOW_JOIN,"Project_V(Join(A,B))","Project_VA(A) Join Project_VB(B)",exact bag,"retain output vars, every possible shared compatibility var, expression/liveness vars, and boundary exports","q33,q43,q44",ALLOW
+R23,MINUS_AS_NOT_EXISTS,"Minus(A,B)","Filter(NOT EXISTS B,A)",not equivalent,"MINUS has shared-domain guard and independent RHS; NOT EXISTS is correlated","q16,q17,q26,q37",DENY
+R24,EXISTS_AS_JOIN_PROJECT,"Filter(EXISTS B,A)","Project_A(Join(A,B))",not equivalent,"join counts witnesses; EXISTS preserves each left occurrence once","q26,q27,q28",DENY
+R25,FILTER_OPTIONAL_CONDITION_MOVE,"Filter(F,LeftJoin(A,B,true))","LeftJoin(A,B,F)",not equivalent,"outer rejection is not optional fallback","q20,q21",DENY
+R26,SLICE_PUSHDOWN,"Slice(Join(A,B))","Join(Slice(A),B)",not equivalent,"slice selects sequence positions before multiplication/order is complete","q49,q50",DENY
+R27,VALUES_ASSURED_UNION,mustBind(VALUES rows),union(row domains),unsound analysis,"mustBind is intersection of row domains; declared scope is separate","q03,q38",DENY
+R28,GRAPH_BOUNDARY_CROSS,"Graph(g,A) move A outside",A in surrounding graph,not equivalent,"active graph and graph-name binding change","q47,q48",DENY
