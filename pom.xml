@@ -57,13 +57,13 @@
 		<enforce-javaee-provided.fail>true</enforce-javaee-provided.fail>
 		<slf4j.version>2.0.17</slf4j.version>
 		<logback.version>1.5.37</logback.version>
-		<log4j.version>2.25.4</log4j.version>
+		<log4j.version>2.25.5</log4j.version>
 		<httpclient.version>4.5.14</httpclient.version>
-		<httpclient5.version>5.6.2</httpclient5.version>
+		<httpclient5.version>5.6.3</httpclient5.version>
 		<httpcore5.version>5.4.3</httpcore5.version>
 		<jackson.version>2.22.0</jackson.version>
 		<jackson.annotations.version>2.22</jackson.annotations.version>
-		<jackson3.version>3.2.0</jackson3.version>
+		<jackson3.version>3.2.1</jackson3.version>
 		<httpcore.version>4.4.16</httpcore.version>
 		<jsonldjava.version>0.13.6</jsonldjava.version>
 		<last.japicmp.compare.version>6.0.0</last.japicmp.compare.version>

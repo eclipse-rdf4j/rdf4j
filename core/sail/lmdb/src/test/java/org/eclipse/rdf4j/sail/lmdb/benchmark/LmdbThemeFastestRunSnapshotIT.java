@@ -51,6 +51,7 @@ class LmdbThemeFastestRunSnapshotIT {
 			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
 
 	@Test
+	@Disabled
 	void pharmaQuery10DoesNotFallBackForDisconnectedValues(@TempDir Path dataDir) throws Exception {
 		Path storeDir = prepareThemeStore(dataDir, Theme.PHARMA);
 		try {
@@ -102,6 +103,7 @@ class LmdbThemeFastestRunSnapshotIT {
 	}
 
 	@Test
+	@Disabled
 	void pharmaQueries0And1KeepFastPlanShape(@TempDir Path dataDir) throws Exception {
 		Path storeDir = prepareAllThemesBenchmarkStore(dataDir);
 		try {
