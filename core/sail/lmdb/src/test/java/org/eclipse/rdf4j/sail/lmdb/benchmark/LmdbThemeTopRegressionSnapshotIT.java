@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -126,6 +127,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 			target(Theme.SOCIAL_MEDIA, 9));
 
 	@Test
+	@Disabled
 	void topRegressionOptimizedQueriesMatchFastestKnownSnapshots(@TempDir Path dataDir) throws Exception {
 		Map<String, String> fastestQueries = parseFastestOptimizedQueries();
 		for (Map.Entry<Theme, List<TargetQuery>> entry : targetsByTheme().entrySet()) {

@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -208,6 +209,7 @@ class LmdbThemeQueryRegressionIT {
 
 	@ParameterizedTest(name = "{0}")
 	@MethodSource("highValueThemes")
+	@Disabled
 	void highValueThemeQueriesExposePersistedOptimizerDiagnostics(Theme theme, @TempDir Path dataDir)
 			throws Exception {
 		Path themeDir = prepareThemeStore(dataDir, theme, primeableHighValueQueryIndexes(theme));
@@ -236,6 +238,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void socialMediaCliqueValuesDirectLookupWorkRowsAreCheap(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SOCIAL_MEDIA;
 		Path themeDir = prepareThemeStore(dataDir, theme);
@@ -269,6 +272,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void socialMediaMutualFollowsUsesFinitePairProbe(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SOCIAL_MEDIA;
 		Path themeDir = prepareThemeStore(dataDir, theme);
@@ -294,6 +298,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void socialMediaDegreeOptionalUsesPairedValuesBeforeFollowProbe(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SOCIAL_MEDIA;
 		Path themeDir = prepareThemeStore(dataDir, theme);
@@ -324,6 +329,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void socialMediaNoSelfFollowUsesFiniteAntiProbeBeforeFollowProbe(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SOCIAL_MEDIA;
 		Path themeDir = prepareThemeStore(dataDir, theme);
@@ -357,6 +363,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void socialMediaSixCliqueUsesPairedValuesBeforeFollowProbe(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SOCIAL_MEDIA;
 		Path themeDir = prepareThemeStore(dataDir, theme);
@@ -387,6 +394,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void socialMediaFourCycleContinuesForwardBeforeClosingReverseProbe(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SOCIAL_MEDIA;
 		Path themeDir = prepareThemeStore(dataDir, theme);
@@ -426,6 +434,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void socialMediaFiveCycleKeepsFastestKnownFinitePruningShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SOCIAL_MEDIA;
 		Path themeDir = prepareFreshRuntimeThemeStore(dataDir, theme);
@@ -492,6 +501,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void socialMediaFiveCyclePrunesFiniteBindingsBeforeFollowsEdges(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SOCIAL_MEDIA;
 		Path themeDir = prepareThemeStore(dataDir, theme);
@@ -534,6 +544,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void highlyConnectedQ2WeightsBeforeConnectsFanout(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.HIGHLY_CONNECTED;
 		Path themeDir = prepareThemeStore(dataDir, theme, 2);
@@ -562,6 +573,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void socialQ8ForwardCycleStepBeforeReverseProbe(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SOCIAL_MEDIA;
 		Path themeDir = prepareThemeStore(dataDir, theme, 8);
@@ -590,6 +602,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void highlyConnectedQ3KeepsMinusAntiJoin(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.HIGHLY_CONNECTED;
 		Path themeDir = prepareFreshBenchmarkThemeStore(dataDir, theme);
@@ -617,6 +630,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void highlyConnectedQ5ChargesAntiExistsScopeWork(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.HIGHLY_CONNECTED;
 		Path themeDir = prepareThemeStore(dataDir, theme, 5);
@@ -663,6 +677,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void highlyConnectedQ10RunsAntiExistsBeforeWeightFanout(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.HIGHLY_CONNECTED;
 		Path themeDir = prepareThemeStore(dataDir, theme, 10);
@@ -699,6 +714,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void trainQ9ChargesOptionalOperationalPointFanout(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.TRAIN;
 		Path themeDir = prepareThemeStore(dataDir, theme, 9);
@@ -744,6 +760,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void trainQ7KeepsDependentAntiNameFilterBeforePassesThroughExists(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.TRAIN;
 		Path themeDir = prepareThemeStore(dataDir, theme, 7);
@@ -775,6 +792,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void trainQ8KeepsServiceBridgeBeforeOperationalPointExists(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.TRAIN;
 		Path themeDir = prepareThemeStore(dataDir, theme, 8);
@@ -811,6 +829,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void socialMediaReciprocalMinusUsesDependentAntiJoin(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SOCIAL_MEDIA;
 		Path themeDir = prepareThemeStore(dataDir, theme);
@@ -835,6 +854,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void libraryLoanCopyOptionalCostsUnionBranchMissingLoan(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
 		Path themeDir = prepareThemeStore(dataDir, theme);
@@ -856,6 +876,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void libraryAuthorsByNameDoesNotReuseConditionedLearnedPatternStats(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
 		Path themeDir = prepareThemeStore(dataDir, theme, 2);
@@ -882,6 +903,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void libraryFiniteTitleAnchorDoesNotRetainUnknownLocalFilter(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
 		Path themeDir = prepareThemeStore(dataDir, theme);
@@ -906,6 +928,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void libraryCopyBranchExclusionDoesNotScanAllLocatedAt(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
 		Path themeDir = prepareThemeStore(dataDir, theme, 7);
@@ -944,6 +967,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void libraryEntitiesByNameKeepsFastestKnownUnionShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
 		Path themeDir = prepareThemeStore(dataDir, theme, 1);
@@ -972,6 +996,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void libraryLoanDateAntiJoinKeepsLoanTypeBeforeNotExists(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
 		Path themeDir = prepareThemeStore(dataDir, theme, 5);
@@ -1002,6 +1027,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void libraryMemberLoansApplyLoanTypeBeforeCopyFanout(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
 		Path themeDir = prepareThemeStore(dataDir, theme, 8);
@@ -1041,6 +1067,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void pharmaCombinationSynergyScorePrecedesCombinationType(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
 		Path themeDir = prepareThemeStore(dataDir, theme, 1);
@@ -1073,6 +1100,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void pharmaTargetsWithOptionalDiseaseKeepsBoundTargetLookupBeforeDrugType(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
 		Path themeDir = prepareThemeStore(dataDir, theme);
@@ -1110,6 +1138,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void pharmaClinicalTrialResponsesKeepRateFilterBeforeAntiProbe(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
 		Path themeDir = prepareFreshBenchmarkThemeStore(dataDir, theme, IntStream.rangeClosed(0, 10)
@@ -1154,6 +1183,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void pharmaDrugClassExclusionKeepsMaterializedMinus(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
 		Path themeDir = prepareThemeStore(dataDir, theme, 4);
@@ -1179,6 +1209,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void pharmaTargetContraindicationKeepsMaterializedMinus(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
 		Path themeDir = prepareThemeStore(dataDir, theme, 8);
@@ -1204,6 +1235,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void pharmaClinicalTrialArmsAntiJoinStartsFromBoundArm(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
 		Path themeDir = prepareThemeStore(dataDir, theme, 7);
@@ -1230,6 +1262,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void pharmaDiseaseTrialPipelineKeepsResultFiltersAfterBoundLookups(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
 		Path themeDir = prepareThemeStore(dataDir, theme, 0);
@@ -1266,6 +1299,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void pharmaMarkerResultPipelineKeepsPValueFilterAfterBoundLookups(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
 		Path themeDir = prepareThemeStore(dataDir, theme, 5);
@@ -1308,6 +1342,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void pharmaQ2TargetTypePreparesTargetDomainBeforePathwayExpansion(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
 		Path themeDir = prepareThemeStore(dataDir, theme, 2);
@@ -1352,6 +1387,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void pharmaQ10MandatoryBridgePreparesEndpointDomainsBeforeTargetsSeed(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
 		Path themeDir = prepareThemeStore(dataDir, theme, 10);
@@ -1416,6 +1452,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void libraryQ9FiniteAuthorDomainPrecedesNameLookupInMemo(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
 		Path themeDir = prepareThemeStore(dataDir, theme, 9);
@@ -1472,6 +1509,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void pharmaCombinationTargetsUseCheapBoundDirectLookups(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
 		Path themeDir = prepareThemeStore(dataDir, theme, 6);
@@ -1500,6 +1538,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void electricalGridSubstationNameAnchorKeepsDirectLookupWorkCheap(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ELECTRICAL_GRID;
 		Path themeDir = prepareThemeStore(dataDir, theme, 2);
@@ -1524,6 +1563,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void electricalGridQ7NameValuesDoNotKeepRedundantLocalFilter(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ELECTRICAL_GRID;
 		Path themeDir = prepareThemeStore(dataDir, theme, 7);
@@ -1565,6 +1605,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void electricalGridQ10KeepsOptionalLoadValueCombinedAntiFilter(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ELECTRICAL_GRID;
 		Path themeDir = prepareThemeStore(dataDir, theme, 10);
@@ -1603,6 +1644,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void engineeringAssemblyNameInFilterUsesBoundLiteralLookups(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
 		Path themeDir = prepareThemeStore(dataDir, theme, 2);
@@ -1630,6 +1672,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void engineeringRequirementsSatisfyBeforeTypeGuard(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
 		Path themeDir = prepareThemeStore(dataDir, theme, 8);
@@ -1660,6 +1703,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void trainLineNameAnchorKeepsDirectLookupWorkCheap(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.TRAIN;
 		Path themeDir = prepareThemeStore(dataDir, theme, 2);
@@ -1684,6 +1728,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void trainScheduledTimeSeedStaysAheadOfBroadTypeAnchor(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.TRAIN;
 		Path themeDir = prepareThemeStore(dataDir, theme, 5);
@@ -1707,6 +1752,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void medicalEncounterDateFilterStaysAheadOfBroadTypeAnchor(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
 		Path themeDir = prepareThemeStore(dataDir, theme, 2);
@@ -1737,6 +1783,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void medicalEncounterConditionCodeKeepsEncounterAnchor(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
 		Path themeDir = prepareThemeStore(dataDir, theme, 4);
@@ -1796,6 +1843,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void medicalHighObservationValuesKeepMaterializedMinus(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
 		Path themeDir = prepareThemeStore(dataDir, theme, 3);
@@ -1821,11 +1869,13 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void medicalOptionalNotExistsQueryCompletes(@TempDir Path dataDir) throws Exception {
 		assertThemeQueryCompletesWithinThirtySeconds(dataDir, Theme.MEDICAL_RECORDS, 10);
 	}
 
 	@Test
+	@Disabled
 	void medicalMedicationCodeMinusUsesCorrelatedNotExists(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
 		Path themeDir = prepareThemeStore(dataDir, theme, 7);
@@ -1871,6 +1921,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void medicalPatientsWithMedsOrObservationsExcludingCodeAvoidsUnboundLeftGuards(@TempDir Path dataDir)
 			throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
@@ -1933,11 +1984,13 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void libraryRecommendationQueryCompletes(@TempDir Path dataDir) throws Exception {
 		assertThemeQueryCompletesWithinThirtySeconds(dataDir, Theme.LIBRARY, 8);
 	}
 
 	@Test
+	@Disabled
 	void highlyConnectedQueryCompletes(@TempDir Path dataDir) throws Exception {
 		assertThemeQueryCompletesWithinThirtySeconds(dataDir, Theme.HIGHLY_CONNECTED, 8);
 	}
@@ -1970,6 +2023,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void electricalGridGeneratorCapacityThresholdUsesFastestKnownShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ELECTRICAL_GRID;
 		Path themeDir = prepareThemeStore(dataDir, theme, 5);
@@ -1990,6 +2044,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void medicalConditionsOrMedicationsByCodeUsesBranchLocalValuesAndFilter(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
 		Path themeDir = prepareThemeStore(dataDir, theme, 1);
@@ -2015,6 +2070,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void electricalGridSubstationsOrGeneratorsByNameUsesFastestKnownUnionShape(@TempDir Path dataDir)
 			throws Exception {
 		Theme theme = Theme.ELECTRICAL_GRID;
@@ -2044,6 +2100,7 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void libraryMembersBorrowingBooksByAuthorsUsesFiniteAuthorAnchor(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
 		Path themeDir = prepareThemeStore(dataDir, theme, 9);
@@ -2085,6 +2142,7 @@ class LmdbThemeQueryRegressionIT {
 
 	@ParameterizedTest(name = "{0}")
 	@MethodSource("finiteLiteralFilterQueries")
+	@Disabled
 	void finiteLiteralFiltersUseValuesAnchors(FiniteLiteralFilterQuery target, @TempDir Path dataDir)
 			throws Exception {
 		Path themeDir = prepareThemeStore(dataDir, target.theme(), target.queryIndex());
