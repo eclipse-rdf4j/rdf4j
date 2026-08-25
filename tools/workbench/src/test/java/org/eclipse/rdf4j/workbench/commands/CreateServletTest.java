@@ -30,8 +30,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import javax.xml.parsers.DocumentBuilderFactory;
-
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.xml.DocumentUtil;
 import org.eclipse.rdf4j.repository.config.ConfigTemplate;

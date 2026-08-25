@@ -76,6 +76,66 @@
 			<artifactId>guava</artifactId>
 		</dependency>
 		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>brotli4j</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-aarch64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-armv7</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-ppc64le</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-riscv64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-s390x</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-x86_64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-osx-aarch64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-osx-x86_64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-windows-aarch64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-windows-x86_64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.github.luben</groupId>
+			<artifactId>zstd-jni</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
 			<groupId>org.mockito</groupId>
 			<artifactId>mockito-core</artifactId>
 			<scope>test</scope>

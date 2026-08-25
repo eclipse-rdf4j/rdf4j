@@ -18,9 +18,6 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -140,7 +137,7 @@ public class TripleSources {
 				stmt = stmts.next();
 				while (stmts.hasNext()) {
 					Statement nextStmt = stmts.next();
-					if (!Statements.isSameTriple(stmt, nextStmt)) {
+					if (!org.eclipse.rdf4j.model.util.Statements.isSameTriple(stmt, nextStmt)) {
 						throw new QueryEvaluationException(
 								"Multiple statements for pattern: " + subj + " " + pred + " " + obj);
 					}

@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.rio.helpers;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -24,10 +23,6 @@ import java.util.zip.GZIPOutputStream;
 
 import org.junit.jupiter.api.Test;
 
-import com.aayushatharva.brotli4j.encoder.BrotliOutputStream;
-import com.aayushatharva.brotli4j.encoder.Encoder;
-import com.github.luben.zstd.Zstd;
-
 class RioCompressionTest {
 
 	private static final byte[] TURTLE = "<urn:s> <urn:p> <urn:o> .".getBytes(StandardCharsets.UTF_8);
@@ -38,16 +33,14 @@ class RioCompressionTest {
 				"myData.ttl.gzip"))).isEqualTo(TURTLE);
 		assertThat(read(RioCompression.decompressIfDetected(new ByteArrayInputStream(deflate(TURTLE)),
 				"myData.ttl.deflate"))).isEqualTo(TURTLE);
-		assertThat(read(RioCompression.decompressIfDetected(new ByteArrayInputStream(Zstd.compress(TURTLE)),
-				"myData.ttl.zstd"))).isEqualTo(TURTLE);
 	}
 
 	@Test
-	void decompressesBrotliByFileNameSuffixWhenAvailable() throws Exception {
-		assumeTrue(RioCompression.BROTLI.isAvailable());
-
-		assertThat(read(RioCompression.decompressIfDetected(new ByteArrayInputStream(brotli(TURTLE)),
-				"myData.ttl.br"))).isEqualTo(TURTLE);
+	void externalCodecsAreUnavailableWithoutRuntimeDependencies() {
+		assertThat(RioCompression.forContentEncoding("br")).isEmpty();
+		assertThat(RioCompression.forContentEncoding("zstd")).isEmpty();
+		assertThat(RioCompression.forFileName("myData.ttl.br")).isEmpty();
+		assertThat(RioCompression.forFileName("myData.ttl.zstd")).isEmpty();
 	}
 
 	@Test
@@ -55,8 +48,6 @@ class RioCompressionTest {
 		assertThat(read(RioCompression.decompressIfDetected(new ByteArrayInputStream(gzip(TURTLE)))))
 				.isEqualTo(TURTLE);
 		assertThat(read(RioCompression.decompressIfDetected(new ByteArrayInputStream(deflate(TURTLE)))))
-				.isEqualTo(TURTLE);
-		assertThat(read(RioCompression.decompressIfDetected(new ByteArrayInputStream(Zstd.compress(TURTLE)))))
 				.isEqualTo(TURTLE);
 	}
 
@@ -85,12 +76,4 @@ class RioCompressionTest {
 		return buffer.toByteArray();
 	}
 
-	private static byte[] brotli(byte[] body) throws IOException {
-		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-		try (BrotliOutputStream outputStream = new BrotliOutputStream(buffer,
-				new Encoder.Parameters().setQuality(1))) {
-			outputStream.write(body);
-		}
-		return buffer.toByteArray();
-	}
 }
