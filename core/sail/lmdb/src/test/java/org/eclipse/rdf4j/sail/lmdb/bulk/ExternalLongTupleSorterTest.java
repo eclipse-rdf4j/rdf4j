@@ -64,7 +64,8 @@ class ExternalLongTupleSorterTest {
 
 	@Test
 	void failedMergeDeletesThePartialPassFile() throws Exception {
-		try (ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(temporaryDirectory, "leak", 1, 16L, 3)) {
+		try (ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(temporaryDirectory, "leak", 1, 16L, 3,
+				BulkCompression.FASTEST)) {
 			for (long value = 0; value < 5; value++) {
 				sorter.add1(value);
 			}
