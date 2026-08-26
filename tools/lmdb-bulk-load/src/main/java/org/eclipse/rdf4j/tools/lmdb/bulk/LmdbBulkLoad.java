@@ -67,10 +67,6 @@ public final class LmdbBulkLoad {
 			error.println(e.getMessage());
 			printUsage(error);
 			return USAGE_ERROR;
-		} catch (CancellationException e) {
-			// Ctrl-C inside the arrow-key menu: raw mode swallows SIGINT, so the menu reports it this way instead.
-			error.println("LMDB bulk load cancelled");
-			return CANCELLED;
 		}
 		if (options.help()) {
 			printUsage(output);
@@ -372,7 +368,8 @@ public final class LmdbBulkLoad {
 		promptOptionalValue(values, "max-open-files", "Maximum open files", "loader default", input, output);
 		promptOptionalValue(values, "workers", "Worker count", "automatic", input, output);
 		promptOptionalValue(values, "queue-batches", "Queued batch count", "automatic", input, output);
-		promptCompression(values, standardInput, input, output);
+		promptOptionalValue(values, "compression", "Intermediate-file compression (fastest, none, or 1-17)",
+				"fastest", input, output);
 		promptOptionalValue(values, "progress", "Progress mode (plain, json, or none)", "plain", input, output);
 		promptOptionalValue(values, "temporary-directory", "Temporary-file parent directory", "system default", input,
 				output);
@@ -382,32 +379,6 @@ public final class LmdbBulkLoad {
 				"loader default", input, output);
 		promptOptionalValue(values, "write-transaction-bytes", "Maximum bytes per write transaction",
 				"loader default", input, output);
-	}
-
-	/**
-	 * Offers the intermediate-file codecs as an arrow-key menu, with {@code fastest} on top as the default. Falls back
-	 * to a numbered line prompt whenever standard input is not a terminal.
-	 */
-	private static void promptCompression(Map<String, String> values, InputStream standardInput, BufferedReader input,
-			PrintStream output) throws UsageException {
-		if (values.containsKey("compression")) {
-			return;
-		}
-		List<TerminalMenu.Option> options = new ArrayList<>();
-		options.add(new TerminalMenu.Option("fastest", "LZ4 fast on run files, LZ4 high-9 on staged inputs"));
-		options.add(new TerminalMenu.Option("none", "no compression; smallest CPU cost, largest spill"));
-		for (int level = BulkCompression.MINIMUM_LEVEL; level <= BulkCompression.MAXIMUM_LEVEL; level++) {
-			options.add(new TerminalMenu.Option(Integer.toString(level),
-					level == BulkCompression.MINIMUM_LEVEL ? "LZ4 high-ratio levels; higher is smaller and slower"
-							: null));
-		}
-		try {
-			values.put("compression",
-					TerminalMenu.select("Intermediate-file compression:", options, 0, standardInput, input::readLine,
-							output));
-		} catch (IOException e) {
-			throw new UsageException("Could not read interactive input: " + e.getMessage());
-		}
 	}
 
 	private static void promptRequiredValue(Map<String, String> values, String name, String label, BufferedReader input,

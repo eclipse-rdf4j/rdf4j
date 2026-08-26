@@ -98,10 +98,6 @@ final class LmdbAdjacencyPredicateCatalog {
 		return size;
 	}
 
-	int predicateWidth() {
-		return LmdbReferenceNodeLocator.predicateWidthForCount(size);
-	}
-
 	/**
 	 * The dense ordinal for a raw predicate ID, or {@code -1} when absent from the base.
 	 */

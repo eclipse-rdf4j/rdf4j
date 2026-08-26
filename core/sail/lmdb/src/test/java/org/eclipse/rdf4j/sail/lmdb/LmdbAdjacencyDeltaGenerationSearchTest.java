@@ -32,12 +32,12 @@ class LmdbAdjacencyDeltaGenerationSearchTest {
 			LmdbAdjacencyDeltaGeneration generation = fixture.generation;
 			LmdbAdjacencyDeltaGeneration.SearchContext context = new LmdbAdjacencyDeltaGeneration.SearchContext();
 			List<List<Target>> targetsByPlane = new ArrayList<>();
-			for (int plane = 0; plane < LmdbReferenceNodeLocator.PLANE_COUNT; plane++) {
+			for (int plane = 0; plane < LmdbAdjacencyPlane.PLANE_COUNT; plane++) {
 				targetsByPlane.add(targets(plane));
 			}
 
 			for (int targetIndex = 0; targetIndex < targetsByPlane.get(0).size(); targetIndex++) {
-				for (int plane = LmdbReferenceNodeLocator.PLANE_COUNT - 1; plane >= 0; plane--) {
+				for (int plane = LmdbAdjacencyPlane.PLANE_COUNT - 1; plane >= 0; plane--) {
 					Target target = targetsByPlane.get(plane).get(targetIndex);
 					long expected = generation.find(target.key, target.plane, target.predicate);
 					assertThat(generation.find(target.key, target.plane, target.predicate, context))
@@ -46,7 +46,7 @@ class LmdbAdjacencyDeltaGenerationSearchTest {
 				}
 			}
 
-			for (int plane = 0; plane < LmdbReferenceNodeLocator.PLANE_COUNT; plane++) {
+			for (int plane = 0; plane < LmdbAdjacencyPlane.PLANE_COUNT; plane++) {
 				long predicate = predicateFor(plane);
 				assertThat(generation.find(0, plane, predicate))
 						.as("stateless lookup remains independent after plane %s reaches the end", plane)
@@ -63,7 +63,7 @@ class LmdbAdjacencyDeltaGenerationSearchTest {
 			long[] keys = { 0, 128, Long.MAX_VALUE, Long.MIN_VALUE, -2, -1 };
 
 			for (long key : keys) {
-				for (int plane = LmdbReferenceNodeLocator.PLANE_COUNT - 1; plane >= 0; plane--) {
+				for (int plane = LmdbAdjacencyPlane.PLANE_COUNT - 1; plane >= 0; plane--) {
 					long predicate = predicateFor(plane);
 					assertThat(generation.find(key, plane, predicate, context))
 							.as("sparse target key %s in plane %s", Long.toUnsignedString(key), plane)
@@ -77,13 +77,13 @@ class LmdbAdjacencyDeltaGenerationSearchTest {
 	void ascendingSearchHandlesEmptyDirectoriesAndRejectsInvalidPlanes() {
 		try (GenerationFixture fixture = new GenerationFixture(List.of())) {
 			LmdbAdjacencyDeltaGeneration.SearchContext context = new LmdbAdjacencyDeltaGeneration.SearchContext();
-			assertThat(fixture.generation.find(0, LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT, 0, context))
+			assertThat(fixture.generation.find(0, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, 0, context))
 					.isEqualTo(LmdbAdjacencyDeltaGeneration.NO_VERSION);
 			assertThatIllegalArgumentException()
 					.isThrownBy(() -> fixture.generation.find(0, -1, 0, context))
 					.withMessage("plane out of range: -1");
 			assertThatIllegalArgumentException()
-					.isThrownBy(() -> fixture.generation.find(0, LmdbReferenceNodeLocator.PLANE_COUNT, 0, context))
+					.isThrownBy(() -> fixture.generation.find(0, LmdbAdjacencyPlane.PLANE_COUNT, 0, context))
 					.withMessage("plane out of range: 4");
 		}
 	}
@@ -91,7 +91,7 @@ class LmdbAdjacencyDeltaGenerationSearchTest {
 	private static List<Row> rows() {
 		List<Row> rows = new ArrayList<>();
 		int ordinal = 0;
-		for (int plane = 0; plane < LmdbReferenceNodeLocator.PLANE_COUNT; plane++) {
+		for (int plane = 0; plane < LmdbAdjacencyPlane.PLANE_COUNT; plane++) {
 			long predicate = predicateFor(plane);
 			for (long key = 0; key <= 128; key += 2) {
 				rows.add(new Row(key, plane, predicate, runRef(ordinal++)));

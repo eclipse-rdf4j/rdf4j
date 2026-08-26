@@ -17,7 +17,6 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.Executor;
 
-import org.eclipse.rdf4j.sail.lmdb.LmdbReferenceNodeLocator.SearchContext;
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 
@@ -70,11 +69,11 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	private final long predicate;
 	private final long basePredicateOrdinal;
 	private final int plane;
-	private final LmdbAdjacencyKeyIndex baseKeys;
+	private final ImmutablePagedQuadCsfIndex.KeyDomain baseKeys;
 	/** Index 0 is the base catalog; index i+1 is generation i's catalog of the retained state. */
 	private final LmdbAdjacencyArenaCatalog[] sources;
 	private final ContextCatalog contexts;
-	/** CSF base eligible for batch/frontier lookup; null for absent predicates and legacy bases. */
+	/** CSF base eligible for batch/frontier lookup; null only when the predicate is absent from the base. */
 	private final ImmutablePagedQuadCsfIndex baseCsf;
 	/** Store-owned executor; expensive shared verification/decode never runs on the query thread. */
 	private final Executor adaptiveExecutor;
@@ -94,7 +93,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	private boolean probeOwned;
 
 	/** One non-shared group-search hint for this operator-owned adjacency request. */
-	private final SearchContext searchContext = new SearchContext();
+	private final LmdbAdjacencyLookupContext searchContext = new LmdbAdjacencyLookupContext();
 	private final LmdbAdjacencyRunCodec.RunCursor runCursor = new LmdbAdjacencyRunCodec.RunCursor();
 
 	/** Single-threaded probe scope (probe contract): one materialized run cached per adapter. */
@@ -141,10 +140,10 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		this.predicate = predicate;
 		this.basePredicateOrdinal = basePredicateOrdinal;
 		this.plane = plane;
-		this.baseKeys = base.keyIndex(basePredicateOrdinal, plane);
+		this.baseKeys = base.keyDomain(basePredicateOrdinal, plane);
 		this.sources = sources;
 		this.contexts = contexts;
-		this.baseCsf = !baseAbsent && base.usesPagedCsf() ? base.csfBase() : null;
+		this.baseCsf = baseAbsent ? null : base.csfBase();
 		this.adaptiveExecutor = Objects.requireNonNull(adaptiveExecutor, "adaptiveExecutor");
 	}
 
@@ -614,7 +613,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		prepareKeyDomain();
 		boolean merged = domainChangeKeys.length != 0;
 		long baseCount = baseKeys == null ? 0 : baseKeys.keyCount();
-		LmdbAdjacencyKeyIndex.Cursor baseCursor = baseKeys == null ? null
+		ImmutablePagedQuadCsfIndex.KeyCursor baseCursor = baseKeys == null ? null
 				: baseKeys.cursor(merged ? 0 : fromOrdinal, merged ? baseCount : toOrdinal);
 		return new RootScanCursor(baseCursor, fromOrdinal, toOrdinal, merged);
 	}
@@ -627,7 +626,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	final class RootScanCursor implements NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor {
 		private static final long SIZE_UNKNOWN = Long.MIN_VALUE;
 
-		private final LmdbAdjacencyKeyIndex.Cursor baseCursor;
+		private final ImmutablePagedQuadCsfIndex.KeyCursor baseCursor;
 		private final long fromOrdinal;
 		private final long toOrdinal;
 		private final boolean merged;
@@ -639,7 +638,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		private long size = SIZE_UNKNOWN;
 		private boolean directBaseRun;
 
-		private RootScanCursor(LmdbAdjacencyKeyIndex.Cursor baseCursor, long fromOrdinal, long toOrdinal,
+		private RootScanCursor(ImmutablePagedQuadCsfIndex.KeyCursor baseCursor, long fromOrdinal, long toOrdinal,
 				boolean merged) {
 			this.baseCursor = baseCursor;
 			this.fromOrdinal = fromOrdinal;
@@ -717,13 +716,8 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 
 		private void bindBaseCandidate() {
 			key = baseCursor.key();
-			directBaseRun = baseCursor.hasDirectRunReference();
-			if (directBaseRun) {
-				run = packHandle(0, sources[0].packCsfHandle(baseCursor.directRunReference()));
-			} else {
-				long baseHandle = base.findRunByOrdinal(key, plane, basePredicateOrdinal, searchContext);
-				run = baseHandle > 0 ? packHandle(0, baseHandle) : NOT_FOUND;
-			}
+			directBaseRun = true;
+			run = packHandle(0, sources[0].packCsfHandle(baseCursor.localReference()));
 			size = SIZE_UNKNOWN;
 		}
 
@@ -752,7 +746,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		public long runSize() {
 			long current = size;
 			if (current == SIZE_UNKNOWN) {
-				current = directBaseRun ? baseCursor.directRunSize() : LmdbDirectNativeAdjacency.this.size(run);
+				current = directBaseRun ? baseCursor.edgeCount() : LmdbDirectNativeAdjacency.this.size(run);
 				size = current;
 			}
 			return current;
@@ -764,32 +758,32 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 
 		int copyPairs(long runOffset, int length, long[] neighborTarget, long[] contextTarget) {
 			return directBaseRun
-					? baseCursor.copyDirectPairs(runOffset, length, neighborTarget, 0, contextTarget, 0)
+					? baseCursor.copyPairs(runOffset, length, neighborTarget, 0, contextTarget, 0)
 					: LmdbDirectNativeAdjacency.this.copyPairs(run, runOffset, length, neighborTarget, 0,
 							contextTarget, 0);
 		}
 
 		@Override
 		public int copyNeighbors(long runOffset, int length, long[] target, int targetOffset) {
-			return directBaseRun ? baseCursor.copyDirectPairs(runOffset, length, target, targetOffset, null, 0)
+			return directBaseRun ? baseCursor.copyPairs(runOffset, length, target, targetOffset, null, 0)
 					: LmdbDirectNativeAdjacency.this.copyNeighbors(run, runOffset, length, target, targetOffset);
 		}
 
 		@Override
 		public int copyContexts(long runOffset, int length, long[] target, int targetOffset) {
-			return directBaseRun ? baseCursor.copyDirectPairs(runOffset, length, null, 0, target, targetOffset)
+			return directBaseRun ? baseCursor.copyPairs(runOffset, length, null, 0, target, targetOffset)
 					: LmdbDirectNativeAdjacency.this.copyContexts(run, runOffset, length, target, targetOffset);
 		}
 
 		@Override
 		public long neighborAt(long runOffset) {
-			return directBaseRun ? baseCursor.directNeighborAt(runOffset)
+			return directBaseRun ? baseCursor.neighborAt(runOffset)
 					: LmdbDirectNativeAdjacency.this.neighborAt(run, runOffset);
 		}
 
 		@Override
 		public long contextAt(long runOffset) {
-			return directBaseRun ? baseCursor.directContextAt(runOffset)
+			return directBaseRun ? baseCursor.contextAt(runOffset)
 					: LmdbDirectNativeAdjacency.this.contextAt(run, runOffset);
 		}
 	}

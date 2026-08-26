@@ -336,12 +336,10 @@ class LmdbBulkLoadTest {
 	}
 
 	@Test
-	void interactiveSetupOffersCompressionWithFastestFirstAndFallsBackToALineListWithoutATerminal()
-			throws Exception {
+	void interactiveSetupOffersEveryCompressionModeThroughTheLinePrompt() throws Exception {
 		Path input = temporaryDirectory.resolve("input.nt");
 		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
 		Path store = temporaryDirectory.resolve("store");
-		// Piped standard input is not a terminal, so the arrow-key menu must degrade to a numbered line prompt.
 		// Prompts in order: format, parser, base-uri, statement-indexes, triple-term-indexes, memory, partitions,
 		// max-open-files, workers, queue-batches, compression, progress, temporary-directory, inline-literals,
 		// value-hash-cache, write-transaction-records, write-transaction-bytes.

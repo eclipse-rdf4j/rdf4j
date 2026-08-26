@@ -236,18 +236,18 @@ final class LmdbDirectAdjacencyCommitDelta {
 
 			if (directlyOrdered) {
 				boolean explicit = (flags[event] & 1) != 0;
-				byte outgoingPlane = (byte) (explicit ? LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
-						: LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED);
-				byte incomingPlane = (byte) (explicit ? LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT
-						: LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED);
+				byte outgoingPlane = (byte) (explicit ? LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+						: LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED);
+				byte incomingPlane = (byte) (explicit ? LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT
+						: LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED);
 				if (compareRow(subject, outgoingPlane, predicate, object, incomingPlane, predicate) > 0) {
 					directlyOrdered = false;
 				}
 				if (directlyOrdered && event > 0) {
 					boolean previousExplicit = (flags[event - 1] & 1) != 0;
 					byte previousIncomingPlane = (byte) (previousExplicit
-							? LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT
-							: LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED);
+							? LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT
+							: LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED);
 					if (compareRow(objects[event - 1], previousIncomingPlane, predicates[event - 1],
 							subject, outgoingPlane, predicate) > 0) {
 						directlyOrdered = false;
@@ -322,15 +322,15 @@ final class LmdbDirectAdjacencyCommitDelta {
 
 			keys[row] = subject;
 			rowPredicates[row] = predicate;
-			planes[row] = (byte) (explicit ? LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
-					: LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED);
+			planes[row] = (byte) (explicit ? LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+					: LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED);
 			keyDifference |= subject ^ firstKey;
 			row++;
 
 			keys[row] = object;
 			rowPredicates[row] = predicate;
-			planes[row] = (byte) (explicit ? LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT
-					: LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED);
+			planes[row] = (byte) (explicit ? LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT
+					: LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED);
 			keyDifference |= object ^ firstKey;
 			row++;
 		}
@@ -665,10 +665,10 @@ final class LmdbDirectAdjacencyCommitDelta {
 	}
 
 	private void partitionDirections(int[] predicateOrder, int[] outgoing, int[] incoming, int explicitCount) {
-		byte outgoingExplicit = (byte) LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT;
-		byte outgoingInferred = (byte) LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED;
-		byte incomingExplicit = (byte) LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT;
-		byte incomingInferred = (byte) LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED;
+		byte outgoingExplicit = (byte) LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT;
+		byte outgoingInferred = (byte) LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED;
+		byte incomingExplicit = (byte) LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT;
+		byte incomingInferred = (byte) LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED;
 
 		int inferredCount = count - explicitCount;
 		boolean outgoingExplicitFirst = Byte.compare(outgoingExplicit, outgoingInferred) < 0;
@@ -834,10 +834,10 @@ final class LmdbDirectAdjacencyCommitDelta {
 		long[] preds = new long[tokens];
 		byte[] planes = new byte[tokens];
 
-		byte outgoingExplicit = (byte) LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT;
-		byte outgoingInferred = (byte) LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED;
-		byte incomingExplicit = (byte) LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT;
-		byte incomingInferred = (byte) LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED;
+		byte outgoingExplicit = (byte) LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT;
+		byte outgoingInferred = (byte) LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED;
+		byte incomingExplicit = (byte) LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT;
+		byte incomingInferred = (byte) LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED;
 
 		int outgoingIndex = 0;
 		int incomingIndex = 0;

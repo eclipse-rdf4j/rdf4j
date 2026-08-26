@@ -214,20 +214,6 @@ final class LmdbNativeKernelBindings {
 			return new BoundDomains(values, windowOffsets, windowLengths);
 		}
 
-		/**
-		 * Compatibility/testing view. Whole-array domains are returned without copying; borrowed slices are copied only
-		 * for callers that explicitly require the legacy {@code long[][]} representation.
-		 */
-		long[][] materializedArrays() {
-			long[][] materialized = values.clone();
-			for (int i = 0; i < materialized.length; i++) {
-				long[] domain = values[i];
-				if (offsets[i] != 0 || lengths[i] != domain.length) {
-					materialized[i] = Arrays.copyOfRange(domain, offsets[i], offsets[i] + lengths[i]);
-				}
-			}
-			return materialized;
-		}
 	}
 
 	private record BoundDomain(long[] values, int offset, int length) {
@@ -558,20 +544,6 @@ final class LmdbNativeKernelBindings {
 	}
 
 	/**
-	 * Materializes every key domain. Literal ids pass through. A store-backed domain first borrows the probe's
-	 * revision-valid native adjacency and bulk-copies its immutable run; when no complete native view exists, the
-	 * retained LMDB iterator remains the correctness fallback.
-	 */
-	long[][] materializeDomains(NativeLmdbQuerySource.NativeProbe probe) throws java.io.IOException {
-		return bindDomains(probe, null, null).materializedArrays();
-	}
-
-	long[][] materializeDomains(NativeLmdbQuerySource.NativeProbe probe, RowState row, String route)
-			throws java.io.IOException {
-		return bindDomains(probe, row, route).materializedArrays();
-	}
-
-	/**
 	 * Binds every domain as an immutable array slice. A decoded native adjacency lends its base-owned CSR row directly;
 	 * packed/native and LMDB fallbacks retain the exact copied representation.
 	 */
@@ -670,21 +642,6 @@ final class LmdbNativeKernelBindings {
 	}
 
 	/** Assembles the runtime context for {@code JaninoKernel.bind}, snapshotting correlated entry slot values. */
-	KernelContext context(NativeLmdbQuerySource.NativeAdjacency[] views, long[][] domains, RowState row,
-			KernelHooks hooks) {
-		return context(views, wholeDomains(domains), row, hooks, null);
-	}
-
-	KernelContext context(NativeLmdbQuerySource.NativeAdjacency[] views, long[][] domains, RowState row,
-			KernelHooks hooks, KernelScanner scanner) {
-		return context(views, wholeDomains(domains), row, hooks, scanner, VariablePredicateViews.NONE);
-	}
-
-	KernelContext context(NativeLmdbQuerySource.NativeAdjacency[] views, long[][] domains, RowState row,
-			KernelHooks hooks, KernelScanner scanner, VariablePredicateViews variablePredicateViews) {
-		return context(views, wholeDomains(domains), row, hooks, scanner, variablePredicateViews);
-	}
-
 	KernelContext context(NativeLmdbQuerySource.NativeAdjacency[] views, BoundDomains domains, RowState row,
 			KernelHooks hooks) {
 		return context(views, domains, row, hooks, null);
@@ -717,16 +674,6 @@ final class LmdbNativeKernelBindings {
 						.withCancellation(LmdbNativeProbeDeadline
 								.currentKernelCancellation(row.cancellation::isCancellationRequested,
 										workerCancellation));
-	}
-
-	private static BoundDomains wholeDomains(long[][] domains) {
-		Objects.requireNonNull(domains, "domains");
-		int[] offsets = new int[domains.length];
-		int[] lengths = new int[domains.length];
-		for (int i = 0; i < domains.length; i++) {
-			lengths[i] = Objects.requireNonNull(domains[i], "domain " + i).length;
-		}
-		return new BoundDomains(domains, offsets, lengths);
 	}
 
 	/** Runtime wrapper that isolates an interpreted producer from the row receiving generated-kernel output. */

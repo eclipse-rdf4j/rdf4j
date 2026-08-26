@@ -55,7 +55,7 @@ Ordered by expected leverage. Each item names the blocking code seam.
 
 1. **Adjacency-served full predicate scans (kills `ROOT_SCAN`).** `LmdbDirectAdjacencyStore.open` branch 3
    (`:1626-1628`) structurally refuses both-endpoints-free patterns even though the plane holds the complete sorted
-   key domain (`LmdbAdjacencyKeyIndex`) and every run. An iterator that walks `keyAt(0..keyCount)` × run neighbors
+   key domain (`ImmutablePagedQuadCsfIndex.KeyDomain`) and every run. An iterator that walks `keyAt(0..keyCount)` × run neighbors
    yields the whole predicate in (s,o) order without touching LMDB — this is Kuzu's predicate-table scan. It also
    fixes the leading-scan half of every open-ended join (star/chain/object-object/EXISTS census rows). Delta
    generations and pending tables must be merged per key (same rules `resolveRow` already implements); decline on

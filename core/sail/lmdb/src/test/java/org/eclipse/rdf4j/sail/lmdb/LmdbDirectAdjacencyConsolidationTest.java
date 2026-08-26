@@ -142,7 +142,6 @@ class LmdbDirectAdjacencyConsolidationTest {
 	void pagedConsolidationFoldsOverlaysIntoANewBaseRevision() throws Exception {
 		commitAdd(S1, P1, O_BASE);
 		assertThat(store.buildNowForTest()).isTrue();
-		assertThat(store.publishedStateForTest().base().usesPagedCsf()).isTrue();
 
 		int commits = store.options().maxDeltaGenerations() + 1;
 		for (int i = 1; i <= commits; i++) {

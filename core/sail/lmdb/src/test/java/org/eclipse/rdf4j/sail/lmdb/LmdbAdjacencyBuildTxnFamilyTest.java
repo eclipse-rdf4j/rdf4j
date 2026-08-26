@@ -43,14 +43,14 @@ class LmdbAdjacencyBuildTxnFamilyTest {
 		tripleStore.commit();
 
 		try (LmdbAdjacencyBuildTxnFamily family = new LmdbAdjacencyBuildTxnFamily(tripleStore)) {
-			assertPlanes(family.scanner(LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT), true, true,
-					LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT);
-			assertPlanes(family.scanner(LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT), false, true,
-					LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT);
-			assertPlanes(family.scanner(LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED), true, false,
-					LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED);
-			assertPlanes(family.scanner(LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED), false, false,
-					LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED);
+			assertPlanes(family.scanner(LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT), true, true,
+					LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT);
+			assertPlanes(family.scanner(LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT), false, true,
+					LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT);
+			assertPlanes(family.scanner(LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED), true, false,
+					LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED);
+			assertPlanes(family.scanner(LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED), false, false,
+					LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED);
 		}
 	}
 
@@ -67,8 +67,8 @@ class LmdbAdjacencyBuildTxnFamilyTest {
 
 			try (LmdbAdjacencyBuildTxnFamily family = new LmdbAdjacencyBuildTxnFamily(tripleStore, 8)) {
 				assertThat(family.workerScannerCount()).isEqualTo(2);
-				assertThat(family.scanner(LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT)).isNotNull();
-				assertThat(family.scanner(LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED)).isNotNull();
+				assertThat(family.scanner(LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT)).isNotNull();
+				assertThat(family.scanner(LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED)).isNotNull();
 				assertThat(txnManager.availableReadTxnSlots(TripleStore.MAX_READERS, 1)).isZero();
 			}
 
@@ -101,9 +101,9 @@ class LmdbAdjacencyBuildTxnFamilyTest {
 			assertThat(snapshot.lastBuildThreads).isGreaterThan(4);
 			assertThat(index.statementCount()).isEqualTo(4_096);
 			assertThat(index.incidenceCount()).isEqualTo(8_192);
-			assertThat(index.findRun(uri(1_000), LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT, predicate))
+			assertThat(index.findRun(uri(1_000), LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, predicate))
 					.isPositive();
-			assertThat(index.findRun(uri(14_095), LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT, predicate))
+			assertThat(index.findRun(uri(14_095), LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT, predicate))
 					.isPositive();
 		}
 		assertThat(account.totalChargedBytes()).isZero();
@@ -133,8 +133,8 @@ class LmdbAdjacencyBuildTxnFamilyTest {
 			assertThat(index.statementCount()).isEqualTo(4_096);
 			assertThat(index.incidenceCount()).isEqualTo(8_192);
 
-			long outgoing = index.findRun(subject, LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT, predicate);
-			long incoming = index.findRun(object, LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT, predicate);
+			long outgoing = index.findRun(subject, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, predicate);
+			long incoming = index.findRun(object, LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT, predicate);
 			assertThat(LmdbAdjacencyRunCodec.edgeCount(index.arenaCatalog(), outgoing)).isEqualTo(4_096);
 			assertThat(LmdbAdjacencyRunCodec.edgeCount(index.arenaCatalog(), incoming)).isEqualTo(4_096);
 			assertThat(LmdbAdjacencyRunCodec.contextAt(index.arenaCatalog(), index.contextCatalog(), outgoing, 0))
@@ -175,7 +175,7 @@ class LmdbAdjacencyBuildTxnFamilyTest {
 					.isLessThan(4_500);
 			assertThat(index.statementCount()).isEqualTo(1_024);
 			assertThat(index.incidenceCount()).isEqualTo(2_048);
-			assertThat(index.findRun(uri(1_000), LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT,
+			assertThat(index.findRun(uri(1_000), LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT,
 					selectedPredicate)).isPositive();
 		}
 		assertThat(account.totalChargedBytes()).isZero();
@@ -211,7 +211,7 @@ class LmdbAdjacencyBuildTxnFamilyTest {
 					.isLessThan(2_300);
 			assertThat(index.statementCount()).isEqualTo(256);
 			assertThat(index.incidenceCount()).isEqualTo(512);
-			assertThat(index.findRun(uri(1_255), LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT,
+			assertThat(index.findRun(uri(1_255), LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT,
 					selectedPredicate)).isPositive();
 		}
 		assertThat(account.totalChargedBytes()).isZero();

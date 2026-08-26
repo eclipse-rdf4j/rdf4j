@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
  */
 final class LmdbAdjacencyBuildTxnFamily implements AdjacencySourceFamily {
 
-	private static final int STREAM_COUNT = LmdbReferenceNodeLocator.PLANE_COUNT;
+	private static final int STREAM_COUNT = LmdbAdjacencyPlane.PLANE_COUNT;
 
 	private final Txn[] transactions;
 	private final LmdbAdjacencyTripleStoreScanner[] scanners;
@@ -69,12 +69,12 @@ final class LmdbAdjacencyBuildTxnFamily implements AdjacencySourceFamily {
 							+ snapshotId + ", worker " + worker + "=" + scanners[worker].snapshotId());
 				}
 			}
-			activePlanes[LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT] = tripleStore.hasTriples(transactions[0],
+			activePlanes[LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT] = tripleStore.hasTriples(transactions[0],
 					-1, -1, -1, -1, true);
-			activePlanes[LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT] = activePlanes[LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT];
-			activePlanes[LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED] = tripleStore.hasTriples(transactions[0],
+			activePlanes[LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT] = activePlanes[LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT];
+			activePlanes[LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED] = tripleStore.hasTriples(transactions[0],
 					-1, -1, -1, -1, false);
-			activePlanes[LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED] = activePlanes[LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED];
+			activePlanes[LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED] = activePlanes[LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED];
 			int streams = 0;
 			for (boolean activePlane : activePlanes) {
 				if (activePlane) {

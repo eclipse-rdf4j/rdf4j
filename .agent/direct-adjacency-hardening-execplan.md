@@ -166,10 +166,10 @@ its data revision. `LmdbSailStore.LmdbSailDataset` owns one LMDB read transactio
 
 `LmdbDirectAdjacencyStore` captures commit deltas, publishes immutable base/delta generations, and falls back to LMDB
 when it cannot prove revision-exact coverage. An emergency gap is a marker saying that direct adjacency may be missing
-one or more durable commits beginning at a revision. `LmdbAdjacencyBaseBuilder` creates a base generation by scanning
+one or more durable commits beginning at a revision. `LmdbPagedCsfBaseBuilder` creates a base generation by scanning
 four statement-order planes with pinned read transactions. `LmdbAdjacencyMemoryAccount` enforces the configured
 off-heap and heap-derived-state budget. `LmdbAdjacencyRunCodec`, `LmdbAdjacencyArena`, and
-`LmdbInlineIncomingIndex` store compressed adjacency rows in native arenas.
+`ImmutablePagedQuadCsfIndex.KeyDomain` store compressed adjacency rows in native arenas.
 
 Tests live beside the module in `core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb`. Reuse the existing
 commit, snapshot, parallel-builder, memory-account, consolidation, arena, codec, inline-index, query, and benchmark
@@ -272,7 +272,7 @@ changes, duplicate incoming groups, and checked long-count overflow. Add a pass-
 release assertions. Use long-valued counters and small deterministic fixtures rather than attempting a billion-row
 test.
 
-Implement `LmdbInlineIncomingIndex.StreamingBuilder`. It accepts sorted `(inlineObjectKey, runRef)` pairs for one
+Implement `ImmutablePagedQuadCsfIndex.KeyDomain.StreamingBuilder`. It accepts sorted `(inlineObjectKey, runRef)` pairs for one
 predicate, rejects out-of-order or duplicate keys, buffers at most one fixed-size block, emits a block on the
 256-key boundary or radix-prefix change, and fills radix entries as prefixes advance. Pass 1 must size radix,
 directory, and block payload allocations with long arithmetic. Pass 3 must allocate from the planned plane partition,
@@ -376,7 +376,7 @@ The initial baseline transcript is:
 No public API or dependency changes are permitted. The final internal interfaces are package-private
 `TxnManager.ReadTxnRegistration`, package-private commit-phase test hooks, a private `TripleStore` commit-progress
 carrier, an internal transferable `LmdbAdjacencyMemoryAccount` charge, immutable
-`LmdbDirectAdjacencyStore.GapMarker`, and `LmdbInlineIncomingIndex.StreamingBuilder`.
+`LmdbDirectAdjacencyStore.GapMarker`, and `ImmutablePagedQuadCsfIndex.KeyDomain.StreamingBuilder`.
 
 Use existing JDK concurrency primitives, Foreign Function and Memory API segments already used by the module, LWJGL
 LMDB bindings, AssertJ/JUnit fixtures, and existing RDF4J scanner/catalog abstractions. Preserve the current public

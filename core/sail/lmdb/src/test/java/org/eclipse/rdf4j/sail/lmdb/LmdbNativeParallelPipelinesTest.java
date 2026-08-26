@@ -81,7 +81,6 @@ public class LmdbNativeParallelPipelinesTest {
 	private static final String EX = "http://example.com/";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String PARALLEL_FLAG = "rdf4j.lmdb.parallel.enabled";
-	private static final String THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minRootEstimate";
 	private static final String WORK_THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minWorkEstimate";
 	private static final String THREADS_FLAG = "rdf4j.lmdb.parallel.threads";
 	private static final String MAX_TASKS_FLAG = "rdf4j.lmdb.parallel.maxTasks";
@@ -97,11 +96,10 @@ public class LmdbNativeParallelPipelinesTest {
 
 	@BeforeEach
 	public void setUp() {
-		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, THRESHOLD_FLAG, WORK_THRESHOLD_FLAG,
+		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, WORK_THRESHOLD_FLAG,
 				THREADS_FLAG,
 				MAX_TASKS_FLAG, EXTERNAL_ROOT_CANDIDATE_FLAG, PACKED_FTREE_FLAG, KERNEL_INTERPRETER_FLAG);
 		System.setProperty(PARALLEL_FLAG, "true");
-		System.setProperty(THRESHOLD_FLAG, "0");
 		System.setProperty(WORK_THRESHOLD_FLAG, "0");
 		System.setProperty(THREADS_FLAG, "4");
 		System.setProperty(MAX_TASKS_FLAG, "5");
@@ -615,7 +613,6 @@ public class LmdbNativeParallelPipelinesTest {
 	@Test
 	public void planLevelWorkAdmitsFanoutAndRejectsDeadTail() throws Exception {
 		String previousWorkThreshold = System.clearProperty(WORK_THRESHOLD_FLAG);
-		String previousRootThreshold = System.clearProperty(THRESHOLD_FLAG);
 		try {
 			NativeSlotLayout layout = twoSlotLayout();
 			PatternPlan highFanoutRoot = pattern(Term.slot(0), 7L, Term.constant(8L), 8_000D);
@@ -656,7 +653,6 @@ public class LmdbNativeParallelPipelinesTest {
 			}
 		} finally {
 			restoreProperty(WORK_THRESHOLD_FLAG, previousWorkThreshold);
-			restoreProperty(THRESHOLD_FLAG, previousRootThreshold);
 		}
 	}
 

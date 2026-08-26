@@ -60,20 +60,20 @@ final class LmdbAdjacencyDeltaGeneration {
 
 		private int position(int plane) {
 			return switch (plane) {
-			case LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT -> outgoingExplicit;
-			case LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT -> incomingExplicit;
-			case LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED -> outgoingInferred;
-			case LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED -> incomingInferred;
+			case LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT -> outgoingExplicit;
+			case LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT -> incomingExplicit;
+			case LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED -> outgoingInferred;
+			case LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED -> incomingInferred;
 			default -> throw new IllegalArgumentException("plane out of range: " + plane);
 			};
 		}
 
 		private void position(int plane, int position) {
 			switch (plane) {
-			case LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT -> outgoingExplicit = position;
-			case LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT -> incomingExplicit = position;
-			case LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED -> outgoingInferred = position;
-			case LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED -> incomingInferred = position;
+			case LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT -> outgoingExplicit = position;
+			case LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT -> incomingExplicit = position;
+			case LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED -> outgoingInferred = position;
+			case LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED -> incomingInferred = position;
 			default -> throw new IllegalArgumentException("plane out of range: " + plane);
 			}
 		}

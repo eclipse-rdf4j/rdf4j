@@ -65,9 +65,7 @@ final class PackedLongVector {
 		/** Random-access counts: independently decodable, but never cumulative-indexed. */
 		COUNTS_RANDOM_ACCESS,
 		/** Delta/count lanes consumed cumulatively; page-slack or hot-cursor prefixes may accelerate them. */
-		CUMULATIVE_DELTAS,
-		/** Legacy alias retained for source compatibility; encoded without persistent metadata. */
-		COUNTS_OR_DELTAS
+		CUMULATIVE_DELTAS
 	}
 
 	private PackedLongVector() {

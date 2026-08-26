@@ -74,7 +74,7 @@ public class OrderByBenchmark {
 	private static final String JANINO_ENABLED = "rdf4j.lmdb.janinoCodegen.enabled";
 	private static final String BATCH_ENABLED = "rdf4j.lmdb.nativeBatch.enabled";
 	private static final String PARALLEL_ENABLED = "rdf4j.lmdb.parallel.enabled";
-	private static final String PARALLEL_MIN_ROOT_ESTIMATE = "rdf4j.lmdb.parallel.minRootEstimate";
+	private static final String PARALLEL_MIN_ROOT_ESTIMATE = "rdf4j.lmdb.parallel.minWorkEstimate";
 	private static final String SORT_MAX_BYTES = "rdf4j.lmdb.nativeSort.maxBytes";
 	private static final String NATIVE_EXECUTION_PATH = "nativeExecutionPath";
 	private static final String SORT_PACKED_ROWS = "nativeSortPackedRowsActual";

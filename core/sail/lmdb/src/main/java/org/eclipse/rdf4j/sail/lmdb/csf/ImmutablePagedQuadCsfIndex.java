@@ -1514,11 +1514,6 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			return nativeBytes - pageCapacityBytes();
 		}
 
-		/** Retained for compatibility; shard directories contain the page-address table. */
-		public long pageTableBytes() {
-			return 0;
-		}
-
 		public long nativeBytes() {
 			return nativeBytes;
 		}
@@ -1547,14 +1542,6 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				total = Math.addExact(total, shardPlans[start + i].pageCount);
 			}
 			return total;
-		}
-
-		/** Compatibility diagnostic: counts pages by the 256-byte capacity class. */
-		public long[] pageClassCountsCopy() {
-			long[] counts = new long[NativeSlabAllocator.CLASS_COUNT];
-			// Exact class sequence is deliberately not retained in the compact plan. Reconstructing it would require
-			// four bytes per page; callers should use capacity/used totals for production sizing.
-			return counts;
 		}
 
 		private int partition(long predicateOrdinal, int plane) {

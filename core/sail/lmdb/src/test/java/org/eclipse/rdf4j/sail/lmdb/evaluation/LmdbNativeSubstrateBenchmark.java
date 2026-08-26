@@ -71,7 +71,7 @@ public class LmdbNativeSubstrateBenchmark {
 
 	private static final String EX = "http://example.com/benchmark/";
 	private static final String PARALLEL_FLAG = "rdf4j.lmdb.parallel.enabled";
-	private static final String PARALLEL_THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minRootEstimate";
+	private static final String PARALLEL_THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minWorkEstimate";
 	private static final String PARALLEL_THREADS_FLAG = "rdf4j.lmdb.parallel.threads";
 	private static final String PARALLEL_TASKS_FLAG = "rdf4j.lmdb.parallel.maxTasks";
 	private static final String CHUNK_FLAG = "rdf4j.lmdb.chunkPipeline.enabled";

@@ -173,10 +173,10 @@ interface AdjacencySourceScanner extends AutoCloseable {
 			throw new UnsupportedOperationException("this adjacency source does not support planned key ranges");
 		}
 		switch (plane) {
-		case LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT -> scanOutgoing(true, coverage, consumer);
-		case LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT -> scanIncoming(true, coverage, consumer);
-		case LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED -> scanOutgoing(false, coverage, consumer);
-		case LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED -> scanIncoming(false, coverage, consumer);
+		case LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT -> scanOutgoing(true, coverage, consumer);
+		case LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT -> scanIncoming(true, coverage, consumer);
+		case LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED -> scanOutgoing(false, coverage, consumer);
+		case LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED -> scanIncoming(false, coverage, consumer);
 		default -> throw new IllegalArgumentException("plane out of range: " + plane);
 		}
 	}

@@ -208,8 +208,8 @@ class LmdbNativeRowCancellationTest {
 				new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0], new int[0],
 				List.of());
 
-		KernelContext context = bindings.context(new NativeLmdbQuerySource.NativeAdjacency[0], new long[0][], row,
-				null);
+		KernelContext context = bindings.context(new NativeLmdbQuerySource.NativeAdjacency[0],
+				new LmdbNativeKernelBindings.BoundDomains(new long[0][], new int[0], new int[0]), row, null);
 		assertThat(context.cancellation)
 				.as("normal generated kernels must poll the evaluation token even outside a probe deadline")
 				.isNotNull();

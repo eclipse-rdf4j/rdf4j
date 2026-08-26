@@ -56,8 +56,8 @@ class LmdbAdjacencyDeltaApplierTest {
 				assertThat(result.generation).isNotNull();
 				assertThat(lookupCount).hasValue(2);
 				assertThat(resolvedRows).containsExactly(
-						new Row(subject, LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT, predicate),
-						new Row(object, LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT, predicate));
+						new Row(subject, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, predicate),
+						new Row(object, LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT, predicate));
 			} finally {
 				if (result != null && result.generation != null) {
 					result.generation.release();
@@ -98,10 +98,10 @@ class LmdbAdjacencyDeltaApplierTest {
 				assertThat(result.generation).isNotNull();
 				assertThat(lookupCount).hasValue(2);
 				assertThat(resolvedRows).containsExactly(
-						new Row(subject, LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT, predicate),
-						new Row(addedObject, LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT, predicate));
+						new Row(subject, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, predicate),
+						new Row(addedObject, LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT, predicate));
 				long outgoing = result.generation.find(subject,
-						LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT, predicate);
+						LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, predicate);
 				assertThat(LmdbAdjacencyRunCodec.edgeCount(result.generation.catalog(), outgoing)).isEqualTo(2);
 			} finally {
 				if (result != null && result.generation != null) {
@@ -115,13 +115,13 @@ class LmdbAdjacencyDeltaApplierTest {
 	}
 
 	private static LmdbInMemoryAdjacencyIndex emptyBase(LmdbAdjacencyMemoryAccount account) throws IOException {
-		return LmdbAdjacencyBaseBuilder.build(new EmptyScanner(), LmdbAdjacencyCoverage.full(), account,
+		return LmdbPagedCsfBaseBuilder.build(new EmptyScanner(), LmdbAdjacencyCoverage.full(), account,
 				BASE_REGION_BYTES, WORKSPACE_REGION_BYTES);
 	}
 
 	private static LmdbInMemoryAdjacencyIndex baseWithStatement(LmdbAdjacencyMemoryAccount account, long subject,
 			long predicate, long object) throws IOException {
-		return LmdbAdjacencyBaseBuilder.build(new SingleStatementScanner(subject, predicate, object),
+		return LmdbPagedCsfBaseBuilder.build(new SingleStatementScanner(subject, predicate, object),
 				LmdbAdjacencyCoverage.full(), account, BASE_REGION_BYTES, BASE_BUILD_WORKSPACE_REGION_BYTES);
 	}
 
@@ -152,7 +152,7 @@ class LmdbAdjacencyDeltaApplierTest {
 		@Override
 		public void scanOutgoing(boolean explicit, GroupConsumer consumer) {
 			if (explicit) {
-				consumer.begin(subject, predicate, LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT);
+				consumer.begin(subject, predicate, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT);
 				consumer.pair(object, 0);
 				consumer.end();
 			}
@@ -161,7 +161,7 @@ class LmdbAdjacencyDeltaApplierTest {
 		@Override
 		public void scanIncoming(boolean explicit, GroupConsumer consumer) {
 			if (explicit) {
-				consumer.begin(object, predicate, LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT);
+				consumer.begin(object, predicate, LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT);
 				consumer.pair(subject, 0);
 				consumer.end();
 			}

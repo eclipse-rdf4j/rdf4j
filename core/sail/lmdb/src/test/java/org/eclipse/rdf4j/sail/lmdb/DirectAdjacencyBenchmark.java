@@ -71,9 +71,6 @@ public class DirectAdjacencyBenchmark {
 	@Param({ "base", "delta" })
 	public String sourceKind;
 
-	@Param({ "paged", "legacy" })
-	public String baseFormat;
-
 	private File dataDir;
 	private TripleStore tripleStore;
 	private LmdbDirectAdjacencyStore store;
@@ -101,11 +98,6 @@ public class DirectAdjacencyBenchmark {
 		if (predicateCount != 1 && predicateCount != 100) {
 			throw new IllegalArgumentException("predicate count must be 1 or 100: " + predicateCount);
 		}
-		boolean legacyBase = "legacy".equals(baseFormat);
-		if (!legacyBase && !"paged".equals(baseFormat)) {
-			throw new IllegalArgumentException("unknown base format: " + baseFormat);
-		}
-
 		dataDir = Files.createTempDirectory("rdf4j-direct-adjacency-jmh-").toFile();
 		LmdbStoreConfig tripleConfig = new LmdbStoreConfig("spoc,posc");
 		tripleStore = new TripleStore(dataDir, tripleConfig, null);
@@ -114,10 +106,7 @@ public class DirectAdjacencyBenchmark {
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(directConfig, 8L << 30, name -> null,
 				1);
-		try (LmdbDirectAdjacencyStore.BaseFormatSelection ignored = LmdbDirectAdjacencyStore
-				.overrideBaseFormatForCurrentThread(legacyBase)) {
-			store = new LmdbDirectAdjacencyStore(tripleStore, null, new AtomicBoolean(false), options);
-		}
+		store = new LmdbDirectAdjacencyStore(tripleStore, null, new AtomicBoolean(false), options);
 		tripleStore.setDirectAdjacencyCommitHooks(store.commitListener(), store.newCommitDelta());
 
 		targetPredicate = predicate(predicateCount - 1);
@@ -283,10 +272,6 @@ public class DirectAdjacencyBenchmark {
 	}
 
 	void verifyFixture() {
-		boolean expectPaged = "paged".equals(baseFormat);
-		if (store.publishedStateForTest().base().usesPagedCsf() != expectPaged) {
-			throw new IllegalStateException("wrong base format: " + baseFormat);
-		}
 		for (int key = 0; key < KEY_COUNT; key++) {
 			long run = adjacency.find(keys[key]);
 			if (run <= 0 || adjacency.size(run) != degree) {

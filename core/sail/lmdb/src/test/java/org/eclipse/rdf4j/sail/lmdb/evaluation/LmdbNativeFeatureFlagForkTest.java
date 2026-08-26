@@ -176,7 +176,7 @@ class LmdbNativeFeatureFlagForkTest {
 			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 			System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
 			System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
-			System.setProperty("rdf4j.lmdb.parallel.minRootEstimate",
+			System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate",
 					disabled == Scenario.PARALLEL ? "0" : Long.toString(Long.MAX_VALUE));
 			System.setProperty("rdf4j.lmdb.parallel.threads", "2");
 			System.setProperty("rdf4j.lmdb.parallel.maxTasks", "3");
@@ -271,7 +271,7 @@ class LmdbNativeFeatureFlagForkTest {
 			// callers with the chunk implementation unavailable.
 			System.setProperty(FACTORIZED_ROWS_FLAG, "false");
 			System.setProperty(FACTORIZED_TAIL_FLAG, "false");
-			System.setProperty("rdf4j.lmdb.parallel.minRootEstimate", "0");
+			System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "0");
 			String parallelSelectStrategy = strategy(repository, SELECT_QUERY);
 			String parallelAggregateStrategy = strategy(repository, PARALLEL_AGGREGATE_QUERY);
 			List<String> parallelSelect = nativeRows(repository, SELECT_QUERY, false);

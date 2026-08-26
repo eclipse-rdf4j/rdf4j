@@ -44,7 +44,6 @@ public class LmdbNativeRangePartitionedScanTest {
 	private static final String EX = "http://example.com/";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String PARALLEL_FLAG = "rdf4j.lmdb.parallel.enabled";
-	private static final String THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minRootEstimate";
 	private static final String WORK_THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minWorkEstimate";
 	private static final String THREADS_FLAG = "rdf4j.lmdb.parallel.threads";
 	private static final String MAX_TASKS_FLAG = "rdf4j.lmdb.parallel.maxTasks";
@@ -67,14 +66,13 @@ public class LmdbNativeRangePartitionedScanTest {
 
 	@BeforeEach
 	public void setUp() {
-		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, THRESHOLD_FLAG, WORK_THRESHOLD_FLAG,
+		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, WORK_THRESHOLD_FLAG,
 				THREADS_FLAG,
 				MAX_TASKS_FLAG, RANGE_FLAG, RANGE_FACTOR_FLAG, JANINO_FLAG, FACTORIZED_ROWS_FLAG,
 				FACTORIZED_TAIL_FLAG, NATIVE_BATCH_FLAG, WCOJ_FLAG, PACKED_FTREE_FLAG, KERNEL_INTERPRETER_FLAG,
 				PARALLEL_STARTUP_FLAG);
 		System.setProperty(NATIVE_FLAG, "true");
 		System.setProperty(PARALLEL_FLAG, "true");
-		System.setProperty(THRESHOLD_FLAG, "0");
 		System.setProperty(WORK_THRESHOLD_FLAG, "0");
 		System.setProperty(THREADS_FLAG, "4");
 		System.setProperty(MAX_TASKS_FLAG, "5");

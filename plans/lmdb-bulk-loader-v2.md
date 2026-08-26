@@ -180,20 +180,17 @@ records concrete completed phases and their frontiers; restarting the same targe
 Cleanup runs immediately after each durable consumer phase, so value-analysis inputs, mapped dictionaries, resolved
 spools, native runs, and merge inputs do not accumulate after their last resumable use.
 
-The concurrency increment deliberately pipelines predicate extraction and reduction through the reusable
-`BulkPipeline` rather than attempting multiple concurrent writers inside one LMDB environment. Its producer,
-multiple fixed workers, and ordered sink exchange batches of at most 2,048 records, bound queued batches with a
-semaphore, and cancel and join as one unit. Other phases retain their existing bounded external-sort concurrency
-boundaries. Finer sub-phase work-unit checkpointing and a free-space-aware disk scheduler from the original design
-remain possible follow-ups; they are not required to satisfy the phase-resume and continuous phase-frontier cleanup
-contract delivered here.
+Predicate counts are collected directly by `CanonicalStatementStager` while it writes the canonical staged input.
+Other phases retain their existing bounded external-sort concurrency boundaries. Finer sub-phase work-unit
+checkpointing and a free-space-aware disk scheduler from the original design remain possible follow-ups; they are
+not required to satisfy the phase-resume and continuous phase-frontier cleanup contract delivered here.
 
 On JDK 25, the repository's representative 10,000-statement JMH case completed in a mean 2,972.768 ms/op after the
 small-map fix, with six automatic map growths, 4,547,459 temporary bytes, and 12,682,614 final store bytes. This is an
 absolute smoke/performance measurement rather than a before/after speedup claim.
 
-The final bulk-loader contract run passed 29 tests with no failures or errors. `BulkPipelineTest` and all neighboring
-bulk tests passed in the broader module run, and the CLI module's end-to-end test passed. The complete LMDB module
+The final bulk-loader contract run passed 29 tests with no failures or errors. The bulk tests passed in the broader
+module run, and the CLI module's end-to-end test passed. The complete LMDB module
 run still contains pre-existing failures in unrelated adjacency, query-strategy, garbage-collection, and benchmark
 assertions; none of its eight bulk-loader test classes failed. The SDK assembly package and source launcher also
 completed successfully.
@@ -262,13 +259,10 @@ resolved chunk to every required sorter and deletes it after all sorter inputs a
 sorters use generation manifests so each successful merge deletes its input generation. Generation writing commits
 one LMDB database or configured index at a time and deletes that unit's sorted source.
 
-Add `BulkPipeline`, `BulkBatch`, and resource-budget helpers inside the bulk package. A batch stores primitive
-metadata and byte-slab offsets rather than one wrapper object per record. Producers flush at 2,048 records, at the
-derived byte ceiling, or at end of input. Queue capacity defaults to two batches per downstream worker. A global
-memory permit pool accounts for all retained batch bytes. A disk permit pool accounts for predicted output; actual
-sizes replace predictions after commit. If disk would fall below the larger of one GiB or five percent of filesystem
-capacity, the scheduler stops starting producers, prioritizes work that releases the most input bytes, and exits at
-a resumable unit boundary if no legal work remains.
+Keep batch and resource budgets inside the phase implementations that consume them. A disk permit pool accounts for
+predicted output; actual sizes replace predictions after commit. If disk would fall below the larger of one GiB or
+five percent of filesystem capacity, the scheduler stops starting producers, prioritizes work that releases the
+most input bytes, and exits at a resumable unit boundary if no legal work remains.
 
 Default CPU workers are all processors minus one when at least four are available, otherwise all processors, capped
 at 32. Default I/O workers are the smaller of four and the CPU count, further constrained by file descriptors and

@@ -545,13 +545,4 @@ final class LmdbNativeAggregateCompiler {
 		}
 		return -1L;
 	}
-
-	/** Compatibility holder for tests that read factorized-tail observability through the facade. */
-	static final class FactorizedTail {
-		static final AtomicLong ENGAGED = org.eclipse.rdf4j.sail.lmdb.evaluation.FactorizedTail.ENGAGED;
-		static final AtomicLong SCAN_ONCE_BUILDS = org.eclipse.rdf4j.sail.lmdb.evaluation.FactorizedTail.SCAN_ONCE_BUILDS;
-
-		private FactorizedTail() {
-		}
-	}
 }

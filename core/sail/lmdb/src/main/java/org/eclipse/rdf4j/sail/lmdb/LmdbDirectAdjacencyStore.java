@@ -65,7 +65,6 @@ import org.slf4j.LoggerFactory;
 final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbDirectAdjacencyStore.class);
-	private static final String LEGACY_BASE_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.directAdjacency.legacyBase";
 	static final String ROOT_SCAN_PROPERTY = "rdf4j.lmdb.directAdjacency.rootScan.enabled";
 	static final String BOUND_PROBE_PROPERTY = "rdf4j.lmdb.directAdjacency.boundProbe.enabled";
 	static final String CLEAN_TXN_READS_PROPERTY = "rdf4j.lmdb.directAdjacency.cleanTxnReads.enabled";
@@ -73,7 +72,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	static final String SCAN_AGGREGATES_PROPERTY = "rdf4j.lmdb.directAdjacency.scanAggregates.enabled";
 	static final String PLANNER_STATS_PROPERTY = "rdf4j.lmdb.directAdjacency.plannerStats.enabled";
 	static final String NODE_PREDICATE_SERVE_PROPERTY = "rdf4j.lmdb.directAdjacency.nodePredicateProjection.serve.enabled";
-	private static final ThreadLocal<Boolean> BASE_FORMAT_OVERRIDE = new ThreadLocal<>();
 	/** Kernel adjacency views served; one increment per successful operator bind, never per row lookup. */
 	static final AtomicLong KERNEL_VIEWS_SERVED = new AtomicLong();
 	/** Subset of {@link #KERNEL_VIEWS_SERVED} bound directly to a base-owned decoded neighbor CSR. */
@@ -116,7 +114,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final LmdbAdjacencyMetrics metrics = new LmdbAdjacencyMetrics();
 	private final long baseArenaRegionBytes;
 	private final long workspaceRegionBytes;
-	private final boolean legacyBase;
 
 	private final AtomicReference<LmdbAdjacencyPublishedState> published;
 	private final AtomicReference<GapMarker> emergencyGap = new AtomicReference<>(INITIAL_GAP_MARKER);
@@ -177,8 +174,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		this.storeTxnStarted = storeTxnStarted;
 		this.storeTxnDirty = storeTxnDirty;
 		this.options = options;
-		Boolean baseFormatOverride = BASE_FORMAT_OVERRIDE.get();
-		this.legacyBase = baseFormatOverride != null ? baseFormatOverride : Boolean.getBoolean(LEGACY_BASE_PROPERTY);
 		this.account = new LmdbAdjacencyMemoryAccount(options.effectiveMaxBytes());
 		long region = LmdbAdjacencyArena.MAX_REGION_BYTES;
 		while (region > (1L << 20) && region * 4 > options.effectiveMaxBytes()) {
@@ -199,38 +194,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			logger.warn("Direct adjacency stays unavailable: the effective memory cap {} bytes is below the {}-byte "
 					+ "minimum; the store remains fully usable through LMDB", options.effectiveMaxBytes(),
 					LmdbDirectAdjacencyOptions.MIN_EXPLICIT_BYTES);
-		}
-	}
-
-	/**
-	 * Scoped, current-thread-only base selection for benchmarks that construct a complete {@link LmdbStore}. The
-	 * production constructor still samples the documented system property when no internal scope is active.
-	 */
-	static BaseFormatSelection overrideBaseFormatForCurrentThread(boolean legacyBase) {
-		Boolean previous = BASE_FORMAT_OVERRIDE.get();
-		BASE_FORMAT_OVERRIDE.set(legacyBase);
-		return new BaseFormatSelection(previous);
-	}
-
-	static final class BaseFormatSelection implements AutoCloseable {
-		private final Boolean previous;
-		private boolean closed;
-
-		private BaseFormatSelection(Boolean previous) {
-			this.previous = previous;
-		}
-
-		@Override
-		public void close() {
-			if (closed) {
-				return;
-			}
-			closed = true;
-			if (previous == null) {
-				BASE_FORMAT_OVERRIDE.remove();
-			} else {
-				BASE_FORMAT_OVERRIDE.set(previous);
-			}
 		}
 	}
 
@@ -688,24 +651,22 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			return;
 		}
 		maintenanceState = MaintenanceState.CONSOLIDATING;
-		if (state.base().usesPagedCsf()) {
-			try {
-				consolidatePagedCsf(state, overlays);
-				return;
-			} catch (LmdbAdjacencyMemoryRefusedException refusal) {
-				// A pinned old view may temporarily retain pages that this rewrite wants to replace. Keep the exact
-				// published state and attempt only the bounded overlay coalescing fallback under memory pressure.
-				logger.debug("Paged-CSF merge-down refused; retaining the base and coalescing overlays", refusal);
-			} catch (RuntimeException failure) {
-				maintenanceState = MaintenanceState.ACTIVE;
-				logger.warn("Paged-CSF merge-down failed; the current base and overlays remain published", failure);
-				if (options.failOnMaintenanceError()) {
-					throw unexpectedMaintenanceFailure("paged consolidation", failure);
-				}
-				return;
+		try {
+			consolidatePagedCsf(state, overlays);
+			return;
+		} catch (LmdbAdjacencyMemoryRefusedException refusal) {
+			// A pinned old view may temporarily retain pages that this rewrite wants to replace. Keep the exact
+			// published state and attempt only the bounded overlay coalescing fallback under memory pressure.
+			logger.debug("Paged-CSF merge-down refused; retaining the base and coalescing overlays", refusal);
+		} catch (RuntimeException failure) {
+			maintenanceState = MaintenanceState.ACTIVE;
+			logger.warn("Paged-CSF merge-down failed; the current base and overlays remain published", failure);
+			if (options.failOnMaintenanceError()) {
+				throw unexpectedMaintenanceFailure("paged consolidation", failure);
 			}
+			return;
 		}
-		consolidateOverlayOnly(state, overlays, state.base().usesPagedCsf());
+		consolidateOverlayOnly(state, overlays);
 	}
 
 	private void consolidatePagedCsf(LmdbAdjacencyPublishedState state, LmdbAdjacencyOverlaySet overlays) {
@@ -759,8 +720,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				+ rewrite.allocatedNativeBytes() + " newly allocated native bytes";
 	}
 
-	private void consolidateOverlayOnly(LmdbAdjacencyPublishedState state, LmdbAdjacencyOverlaySet overlays,
-			boolean pagedBase) {
+	private void consolidateOverlayOnly(LmdbAdjacencyPublishedState state, LmdbAdjacencyOverlaySet overlays) {
 		try {
 			LmdbAdjacencyDeltaGeneration merged = mergeGenerations(state);
 			publicationLock.lock();
@@ -789,16 +749,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				publicationLock.unlock();
 			}
 		} catch (LmdbAdjacencyMemoryRefusedException e) {
-			maintenanceState = pagedBase ? MaintenanceState.ACTIVE : MaintenanceState.QUIESCING_FOR_REBUILD;
-			if (pagedBase) {
-				logger.warn("Direct adjacency overlay coalescing was refused; retaining the exact paged base/overlay "
-						+ "state until memory is reclaimed or a later commit retries", e);
-			} else {
-				logger.warn(
-						"Direct adjacency consolidation refused by the memory account; scheduling quiescent rebuild",
-						e);
-				scheduleQuiescentRebuild();
-			}
+			maintenanceState = MaintenanceState.ACTIVE;
+			logger.warn("Direct adjacency overlay coalescing was refused; retaining the exact paged base/overlay "
+					+ "state until memory is reclaimed or a later commit retries", e);
 		} catch (RuntimeException e) {
 			maintenanceState = MaintenanceState.ACTIVE;
 			logger.warn("Direct adjacency consolidation failed; the current overlay set remains published", e);
@@ -1156,7 +1109,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		LmdbAdjacencyContextCatalog overlayContexts = state.contextCatalog();
 		LmdbInMemoryAdjacencyIndex base = state.base();
-		LmdbReferenceNodeLocator.SearchContext baseSearch = new LmdbReferenceNodeLocator.SearchContext();
+		LmdbAdjacencyLookupContext baseSearch = new LmdbAdjacencyLookupContext();
 		return (rawKey, plane, rawPredicateId) -> {
 			for (int i = generationCount - 1; i >= 0; i--) {
 				LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
@@ -1383,25 +1336,20 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		metrics.recordBuildStarted();
 		maintenanceState = MaintenanceState.BUILDING;
-		String baseFormat = legacyBase ? "legacy" : "paged-csf";
 		try {
 			LmdbAdjacencyCoverage coverage = resolveCoverage();
 			LmdbInMemoryAdjacencyIndex index;
 			long baseRevision;
 			GapMarker capturedGap;
-			int sourceWorkers = legacyBase ? LmdbReferenceNodeLocator.PLANE_COUNT : options.buildThreads();
 			try (LmdbAdjacencyBuildTxnFamily sourceFamily = new LmdbAdjacencyBuildTxnFamily(tripleStore,
-					sourceWorkers)) {
+					options.buildThreads())) {
 				baseRevision = sourceFamily.snapshotRevision();
 				capturedGap = emergencyGap.get();
 				account.beginProgressLogging();
-				logger.info("Creating in-memory adjacency structures: format={}, snapshotRevision={}, {}", baseFormat,
+				logger.info("Creating in-memory adjacency structures: format=paged-csf, snapshotRevision={}, {}",
 						baseRevision, account.memoryUsageSummary());
-				index = legacyBase
-						? LmdbAdjacencyBaseBuilder.build(sourceFamily, coverage, account, baseArenaRegionBytes,
-								workspaceRegionBytes, options.buildThreads(), metrics)
-						: LmdbPagedCsfBaseBuilder.build(sourceFamily, coverage, account, baseArenaRegionBytes,
-								workspaceRegionBytes, options.buildThreads(), metrics, nodePredicateOptions());
+				index = LmdbPagedCsfBaseBuilder.build(sourceFamily, coverage, account, baseArenaRegionBytes,
+						workspaceRegionBytes, options.buildThreads(), metrics, nodePredicateOptions());
 			}
 			Runnable interleave = afterBuildScanForTest;
 			if (interleave != null) {
@@ -1420,13 +1368,13 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				// A freshly derived projection supersedes the corrupt one, so this capability comes back.
 				nodePredicateInconsistent.set(false);
 				metrics.recordBuildCompleted();
-				logger.info("Published in-memory adjacency structures: format={}, snapshotRevision={}, {}", baseFormat,
+				logger.info("Published in-memory adjacency structures: format=paged-csf, snapshotRevision={}, {}",
 						baseRevision, account.memoryUsageSummary());
 			} else {
 				lastBuildFailureDescription = "online catch-up could not prove revision continuity";
 				metrics.recordBuildAborted();
-				logger.info("Aborted in-memory adjacency structure build before publication: format={}, "
-						+ "snapshotRevision={}, {}", baseFormat, baseRevision, account.memoryUsageSummary());
+				logger.info("Aborted in-memory adjacency structure build before publication: format=paged-csf, "
+						+ "snapshotRevision={}, {}", baseRevision, account.memoryUsageSummary());
 				if (!closed) {
 					maintenanceState = MaintenanceState.EMPTY;
 					triggerBuild();
@@ -1643,7 +1591,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		for (int i = 0; i < generationSearches.length; i++) {
 			generationSearches[i] = new SearchContext();
 		}
-		LmdbReferenceNodeLocator.SearchContext baseSearch = new LmdbReferenceNodeLocator.SearchContext();
+		LmdbAdjacencyLookupContext baseSearch = new LmdbAdjacencyLookupContext();
 		return (rawKey, plane, rawPredicateId) -> {
 			for (int i = generationSnapshot.length - 1; i >= 0; i--) {
 				LmdbAdjacencyDeltaGeneration generation = generationSnapshot[i];
@@ -1889,7 +1837,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	private ResolvedRow resolveRow(LmdbAdjacencyReadView view, long rawKey, int plane, long rawPredicateId,
-			LmdbReferenceNodeLocator.SearchContext searchContext) {
+			LmdbAdjacencyLookupContext searchContext) {
 		LmdbAdjacencyPublishedState state = view.state();
 		long snapshot = view.snapshotRevision();
 		ResolvedRow resolved = new ResolvedRow();
@@ -1947,18 +1895,18 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	RecordIterator tryOpen(LmdbAdjacencyReadView view, Txn txn, long subject, long predicate, long object, long context,
-			boolean explicit, LmdbReferenceNodeLocator.SearchContext searchContext) throws IOException {
+			boolean explicit, LmdbAdjacencyLookupContext searchContext) throws IOException {
 		return open(view, txn, null, subject, predicate, object, context, explicit, searchContext, null, null);
 	}
 
 	RecordIterator tryOpen(LmdbAdjacencyReadView view, Txn txn, long subject, long predicate, long object, long context,
-			boolean explicit, LmdbReferenceNodeLocator.SearchContext searchContext,
+			boolean explicit, LmdbAdjacencyLookupContext searchContext,
 			LmdbDirectAdjacencyIterator reusableIterator) throws IOException {
 		return tryOpen(view, txn, subject, predicate, object, context, explicit, searchContext, reusableIterator, null);
 	}
 
 	RecordIterator tryOpen(LmdbAdjacencyReadView view, Txn txn, long subject, long predicate, long object, long context,
-			boolean explicit, LmdbReferenceNodeLocator.SearchContext searchContext,
+			boolean explicit, LmdbAdjacencyLookupContext searchContext,
 			LmdbDirectAdjacencyIterator reusableIterator, AdjacencyAccessObserver observer) throws IOException {
 		return open(view, txn, null, subject, predicate, object, context, explicit, searchContext, reusableIterator,
 				observer);
@@ -1972,20 +1920,20 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	RecordIterator tryOpenOrdered(LmdbAdjacencyReadView view, Txn txn, StatementOrder order, long subject,
 			long predicate,
-			long object, long context, boolean explicit, LmdbReferenceNodeLocator.SearchContext searchContext)
+			long object, long context, boolean explicit, LmdbAdjacencyLookupContext searchContext)
 			throws IOException {
 		return tryOpenOrdered(view, txn, order, subject, predicate, object, context, explicit, searchContext, null);
 	}
 
 	RecordIterator tryOpenOrdered(LmdbAdjacencyReadView view, Txn txn, StatementOrder order, long subject,
 			long predicate, long object, long context, boolean explicit,
-			LmdbReferenceNodeLocator.SearchContext searchContext, AdjacencyAccessObserver observer) throws IOException {
+			LmdbAdjacencyLookupContext searchContext, AdjacencyAccessObserver observer) throws IOException {
 		return open(view, txn, order, subject, predicate, object, context, explicit, searchContext, null, observer);
 	}
 
 	private RecordIterator open(LmdbAdjacencyReadView view, Txn txn, StatementOrder order, long subject,
 			long predicate, long object, long context, boolean explicit,
-			LmdbReferenceNodeLocator.SearchContext searchContext, LmdbDirectAdjacencyIterator reusableIterator,
+			LmdbAdjacencyLookupContext searchContext, LmdbDirectAdjacencyIterator reusableIterator,
 			AdjacencyAccessObserver observer)
 			throws IOException {
 		if (view == null || !view.servesSnapshot() || closed) {
@@ -2073,16 +2021,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				observe(observer, true, "EXACT_EMPTY", order, subject, predicate, object, context);
 				return options.mode() == DirectAdjacencyMode.SHADOW ? null : EmptyRecordIterator.INSTANCE;
 			}
-			if (!ValueIds.isReference(key) && !base.usesPagedCsf()) {
-				// A legacy base keeps inlined incoming keys in separate inline planes that the node iterator cannot
-				// enumerate; it resolves a header reference and would read an inlined key as "no predicates at all".
-				// A paged base has no such split: its incoming planes are keyed by the raw object id, inlined or not,
-				// so the projection covers them and the lookup below is exact.
-				metrics.recordFallback(FallbackReason.INLINE_NOT_COVERED);
-				observe(observer, false, FallbackReason.INLINE_NOT_COVERED.name(), order, subject, predicate, object,
-						context);
-				return null;
-			}
 			int direction = subjectBound ? LmdbDirectAdjacencyIterator.BY_SUBJECT
 					: LmdbDirectAdjacencyIterator.BY_OBJECT;
 			if (options.mode() == DirectAdjacencyMode.SHADOW) {
@@ -2112,7 +2050,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	private RecordIterator openBoundProbe(LmdbAdjacencyReadView view, long subject, long predicate, long object,
-			long context, boolean explicit, LmdbReferenceNodeLocator.SearchContext searchContext,
+			long context, boolean explicit, LmdbAdjacencyLookupContext searchContext,
 			LmdbDirectAdjacencyIterator reusableIterator, AdjacencyAccessObserver observer,
 			StatementOrder requestedOrder) {
 		if (!boundProbeEnabled() || options.mode() != DirectAdjacencyMode.PREFER) {
@@ -2319,11 +2257,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	private static int plane(boolean bySubject, boolean explicit) {
 		if (bySubject) {
-			return explicit ? LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
-					: LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED;
+			return explicit ? LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+					: LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED;
 		}
-		return explicit ? LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT
-				: LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED;
+		return explicit ? LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT
+				: LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED;
 	}
 
 	private static boolean orderCompatible(StatementOrder order, boolean bySubject) {
@@ -2458,16 +2396,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		int plane = plane(bySubject, explicit);
 		LmdbAdjacencyPublishedState state = view.state();
 		LmdbInMemoryAdjacencyIndex base = state.base();
-		if (basePredicateOrdinal >= 0 && base.usesPagedCsf()
-				&& !hasApplicableOverlay(state.overlays(), view.snapshotRevision())) {
+		if (basePredicateOrdinal >= 0 && !hasApplicableOverlay(state.overlays(), view.snapshotRevision())) {
 			ImmutablePagedQuadCsfIndex csf = base.csfBase();
 			ImmutablePagedQuadCsfIndex.SharedPartitionLookup shared = csf
 					.sharedPartitionLookupIfPresent(basePredicateOrdinal, plane);
 			if (shared != null && shared.neighborsDecoded()) {
-				LmdbAdjacencyKeyIndex keys = base.keyIndex(basePredicateOrdinal, plane);
-				if (keys != null) {
-					return new LmdbDecodedNativeAdjacency(csf, shared, keys);
-				}
+				return new LmdbDecodedNativeAdjacency(csf, shared, base.keyDomain(basePredicateOrdinal, plane));
 			}
 		}
 		return bindRetainedAdjacency(view, predicate, basePredicateOrdinal, bySubject, explicit);
@@ -2568,11 +2502,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				&& (!nodePredicateServingEnabled() || !base.supportsPredicateEnumeration(plane)
 						|| base.nodePredicateIndexOrNull() == null)) {
 			return FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE.name();
-		}
-		if (!base.usesPagedCsf()) {
-			// The legacy base resolves rows through a header locator that an inlined key cannot address, and its
-			// enumeration order is base ordinals rather than raw ids. Compiled access binds against paged bases only.
-			return "VARIABLE_PREDICATE_REQUIRES_PAGED_BASE";
 		}
 		return null;
 	}
@@ -2729,7 +2658,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 * than under-reporting rows.
 	 */
 	long kernelFind(LmdbAdjacencyReadView view, long key, int plane, long predicate, long basePredicateOrdinal,
-			LmdbReferenceNodeLocator.SearchContext searchContext) {
+			LmdbAdjacencyLookupContext searchContext) {
 		if (key <= 0) {
 			return NativeLmdbQuerySource.NativeAdjacency.NOT_FOUND;
 		}
@@ -2948,10 +2877,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				// subjects are never inlined: nothing can match an inlined subject key
 				metrics.recordExactMiss();
 				return 0;
-			}
-			if (!view.state().base().usesPagedCsf()) {
-				metrics.recordFallback(FallbackReason.INLINE_NOT_COVERED);
-				return -1;
 			}
 		}
 		int direction = subjectBound ? LmdbDirectAdjacencyIterator.BY_SUBJECT

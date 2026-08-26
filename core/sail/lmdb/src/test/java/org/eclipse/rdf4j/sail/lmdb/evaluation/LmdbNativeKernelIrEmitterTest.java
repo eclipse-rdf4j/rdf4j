@@ -605,7 +605,10 @@ class LmdbNativeKernelIrEmitterTest {
 						new LmdbNativeKernelBindings.DomainRequest(77L, 1L, true) },
 				new LmdbNativeKernelBindings.FilterHook[0], new int[0], List.of());
 
-		assertArrayEquals(new long[] { 2L, 3L }, bindings.materializeDomains(probe)[0]);
+		LmdbNativeKernelBindings.BoundDomains domains = bindings.bindDomains(probe, null, null);
+		assertEquals(2, domains.length(0));
+		assertEquals(2L, domains.valueAt(0, 0));
+		assertEquals(3L, domains.valueAt(0, 1));
 	}
 
 	@Test

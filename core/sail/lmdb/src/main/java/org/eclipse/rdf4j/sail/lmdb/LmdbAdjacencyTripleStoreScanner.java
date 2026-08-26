@@ -101,11 +101,11 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 
 	@Override
 	public ScanRange[] planRanges(int plane, LmdbAdjacencyCoverage coverage, int targetRanges) throws IOException {
-		boolean outgoing = plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
-				|| plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED;
-		boolean explicit = plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
-				|| plane == LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT;
-		if (plane < 0 || plane >= LmdbReferenceNodeLocator.PLANE_COUNT) {
+		boolean outgoing = plane == LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+				|| plane == LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED;
+		boolean explicit = plane == LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+				|| plane == LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT;
+		if (plane < 0 || plane >= LmdbAdjacencyPlane.PLANE_COUNT) {
 			throw new IllegalArgumentException("plane out of range: " + plane);
 		}
 		if (targetRanges <= 1) {
@@ -233,11 +233,11 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 			AdjacencySourceScanner.super.scanRange(plane, coverage, null, consumer);
 			return;
 		}
-		boolean outgoing = plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
-				|| plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED;
-		boolean explicit = plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
-				|| plane == LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT;
-		if (plane < 0 || plane >= LmdbReferenceNodeLocator.PLANE_COUNT) {
+		boolean outgoing = plane == LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+				|| plane == LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED;
+		boolean explicit = plane == LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+				|| plane == LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT;
+		if (plane < 0 || plane >= LmdbAdjacencyPlane.PLANE_COUNT) {
 			throw new IllegalArgumentException("plane out of range: " + plane);
 		}
 		cursorSeeks++;
@@ -472,8 +472,8 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 						consumer.end();
 					}
 					consumer.begin(subject, predicate,
-							explicit ? LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
-									: LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED);
+							explicit ? LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+									: LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED);
 					groupSubject = subject;
 					groupPredicate = predicate;
 					inGroup = true;
@@ -579,11 +579,11 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 
 	private static int plane(boolean outgoing, boolean explicit) {
 		if (outgoing) {
-			return explicit ? LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
-					: LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED;
+			return explicit ? LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+					: LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED;
 		}
-		return explicit ? LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT
-				: LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED;
+		return explicit ? LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT
+				: LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED;
 	}
 
 	private RecordIterator incomingIterator(boolean explicit) throws IOException {

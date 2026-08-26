@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
  */
 final class LmdbAdjacencyPlaneStatistics {
 
-	private static final int PLANE_COUNT = LmdbReferenceNodeLocator.PLANE_COUNT;
+	private static final int PLANE_COUNT = LmdbAdjacencyPlane.PLANE_COUNT;
 	private static final Update[] NO_UPDATES = {};
 	private static final LmdbAdjacencyPlaneStatistics EMPTY = new LmdbAdjacencyPlaneStatistics(new long[0],
 			new long[0], new long[0], NO_UPDATES);

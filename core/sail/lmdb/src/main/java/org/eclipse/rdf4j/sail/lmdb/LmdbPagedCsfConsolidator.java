@@ -63,7 +63,7 @@ final class LmdbPagedCsfConsolidator {
 			long contextArenaRegionBytes) {
 		LmdbInMemoryAdjacencyIndex oldBase = state.base();
 		LmdbAdjacencyOverlaySet overlays = state.overlays();
-		if (oldBase == null || !oldBase.usesPagedCsf() || overlays == null || overlays.generationCount() == 0) {
+		if (oldBase == null || overlays == null || overlays.generationCount() == 0) {
 			throw new IllegalArgumentException("paged-CSF consolidation requires a paged base and committed overlays");
 		}
 
@@ -150,14 +150,6 @@ final class LmdbPagedCsfConsolidator {
 					catalog = withContexts;
 				}
 
-				LmdbAdjacencyKeyIndex[] keyIndexes = new LmdbAdjacencyKeyIndex[partitionCount];
-				for (int predicate = 0; predicate < predicates.size(); predicate++) {
-					for (int plane = 0; plane < ImmutablePagedQuadCsfIndex.PLANE_COUNT; plane++) {
-						int partition = predicate * ImmutablePagedQuadCsfIndex.PLANE_COUNT + plane;
-						keyIndexes[partition] = LmdbAdjacencyKeyIndex.fromCsf(newCsf.keyDomain(predicate, plane));
-					}
-				}
-
 				sharedDictionaryCharge = oldBase.retainSharedBaseCharge();
 				Charge[] ownedNative = contextCharge == null ? new Charge[0] : new Charge[] { contextCharge };
 				Charge persistentMetadata = metadataCharge.transfer();
@@ -168,8 +160,8 @@ final class LmdbPagedCsfConsolidator {
 				}
 				LmdbInMemoryAdjacencyIndex replacement = new LmdbInMemoryAdjacencyIndex(state.appliedRevision(),
 						catalog,
-						predicates, contexts, coverage, null, newCsf, newNodePredicates, keyIndexes, new long[0],
-						new LmdbInlineIncomingIndex[0], sharedDictionaryCharge, ownedNative, persistentMetadata,
+						predicates, contexts, coverage, newCsf, newNodePredicates, sharedDictionaryCharge, ownedNative,
+						persistentMetadata,
 						statements, incidences, state.planeStatistics().flattened());
 				catalog = null;
 				newNodePredicates = null;

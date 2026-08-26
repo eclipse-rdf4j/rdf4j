@@ -358,7 +358,6 @@ class LmdbAdjacencyUsageCensusTest {
 				"rdf4j.lmdb.wcoj.enabled", "false",
 				"rdf4j.lmdb.janinoCodegen.enabled", "false",
 				"rdf4j.lmdb.parallel.enabled", "true",
-				"rdf4j.lmdb.parallel.minRootEstimate", "0",
 				"rdf4j.lmdb.parallel.minWorkEstimate", "0",
 				"rdf4j.lmdb.parallel.threads", "4",
 				"rdf4j.lmdb.parallel.maxTasks", "5",
