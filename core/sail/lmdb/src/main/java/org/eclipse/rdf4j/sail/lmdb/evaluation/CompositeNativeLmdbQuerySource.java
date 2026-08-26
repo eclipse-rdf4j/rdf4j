@@ -881,13 +881,60 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public boolean supportsTripleTermScan() {
+			return delegate.supportsTripleTermScan();
+		}
+
+		@Override
+		public RecordIterator tripleTerms(long subj, long pred, long obj) throws IOException {
+			return delegate.tripleTerms(subj, pred, obj);
+		}
+
+		@Override
+		public long literalDatatypeId(long id) {
+			return delegate.literalDatatypeId(id);
+		}
+
+		@Override
+		public LmdbNativeValueCodec nativeValueCodec() {
+			return delegate.nativeValueCodec();
+		}
+
+		@Override
 		public Object idSpace() {
 			return delegate.idSpace();
 		}
 
 		@Override
+		public boolean hasCanonicalIds() {
+			return delegate.hasCanonicalIds();
+		}
+
+		@Override
+		public Object costModelIdentity() {
+			return delegate.costModelIdentity();
+		}
+
+		@Override
+		public LmdbNativeCostModelContext costModelContext() {
+			return delegate.costModelContext();
+		}
+
+		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
 			return delegate.statements(subj, pred, obj, context);
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) throws IOException {
+			return delegate.statements(subj, pred, obj, context, observer);
+		}
+
+		@Override
+		public RecordIterator lmdbStatements(long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) throws IOException {
+			return delegate.lmdbStatements(subj, pred, obj, context, observer);
 		}
 
 		@Override
@@ -897,9 +944,50 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range,
+				AdjacencyAccessObserver observer) throws IOException {
+			return delegate.statements(subj, pred, obj, context, range, observer);
+		}
+
+		@Override
 		public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
 				throws IOException {
 			return delegate.statements(order, subj, pred, obj, context);
+		}
+
+		@Override
+		public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) throws IOException {
+			return delegate.statements(order, subj, pred, obj, context, observer);
+		}
+
+		@Override
+		public RecordIterator lmdbStatements(StatementOrder order, long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) throws IOException {
+			return delegate.lmdbStatements(order, subj, pred, obj, context, observer);
+		}
+
+		@Override
+		public LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
+			return delegate.prefixRunPlan(prefixFields, subj, pred, obj, context);
+		}
+
+		@Override
+		public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+				boolean countRunRows) throws IOException {
+			return delegate.prefixRuns(plan, subj, pred, obj, context, countRunRows);
+		}
+
+		@Override
+		public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+				boolean countRunRows, AdjacencyAccessObserver observer) throws IOException {
+			return delegate.prefixRuns(plan, subj, pred, obj, context, countRunRows, observer);
+		}
+
+		@Override
+		public long[][] prefixRunSplitValues(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+				int targetPartitions, int tupleLength) throws IOException {
+			return delegate.prefixRunSplitValues(plan, subj, pred, obj, context, targetPartitions, tupleLength);
 		}
 
 		@Override
@@ -947,6 +1035,16 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
 			return delegate.meanFanOut(predicate, bySubject);
+		}
+
+		@Override
+		public OptionalDouble distinctFanOutKeys(long predicate, boolean bySubject) {
+			return delegate.distinctFanOutKeys(predicate, bySubject);
+		}
+
+		@Override
+		public OptionalDouble matchProbability(long predicate, boolean bySubject, double candidateKeys) {
+			return delegate.matchProbability(predicate, bySubject, candidateKeys);
 		}
 
 		@Override

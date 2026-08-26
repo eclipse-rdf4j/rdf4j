@@ -271,13 +271,19 @@ class TxnManager {
 			Thread.currentThread().interrupt();
 			throw new IOException(e);
 		}
+		Txn txnRef = null;
 		try {
-			Txn txnRef = new Txn(createReadTxnInternal());
+			txnRef = new Txn(createReadTxnInternal());
 			txnRef.snapshotRevision = dataRevision.getAsLong();
 			synchronized (active) {
 				active.put(txnRef, Boolean.FALSE);
 			}
 			return txnRef;
+		} catch (IOException | RuntimeException | Error e) {
+			if (txnRef != null) {
+				txnRef.close();
+			}
+			throw e;
 		} finally {
 			lockManager.unlockRead(readStamp);
 		}

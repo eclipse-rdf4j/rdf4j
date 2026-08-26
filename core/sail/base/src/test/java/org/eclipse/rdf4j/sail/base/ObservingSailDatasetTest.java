@@ -52,6 +52,46 @@ class ObservingSailDatasetTest {
 		}
 	}
 
+	@Test
+	void getStatementCountObservesPattern() throws SailException {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		Resource subj = vf.createIRI("urn:s");
+		IRI pred = vf.createIRI("urn:p");
+		Value obj = vf.createIRI("urn:o");
+		Resource context = vf.createIRI("urn:c");
+		RecordingSailSink observer = new RecordingSailSink();
+
+		ObservingSailDataset dataset = new ObservingSailDataset(new OrderedDataset(), observer);
+
+		dataset.getStatementCount(subj, pred, obj, context);
+
+		assertEquals(1, observer.observeCount);
+		assertSame(subj, observer.observedSubject);
+		assertSame(pred, observer.observedPredicate);
+		assertSame(obj, observer.observedObject);
+		assertArrayEquals(new Resource[] { context }, observer.observedContexts);
+	}
+
+	@Test
+	void hasStatementsObservesPattern() throws SailException {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		Resource subj = vf.createIRI("urn:s");
+		IRI pred = vf.createIRI("urn:p");
+		Value obj = vf.createIRI("urn:o");
+		Resource context = vf.createIRI("urn:c");
+		RecordingSailSink observer = new RecordingSailSink();
+
+		ObservingSailDataset dataset = new ObservingSailDataset(new OrderedDataset(), observer);
+
+		dataset.hasStatements(subj, pred, obj, context);
+
+		assertEquals(1, observer.observeCount);
+		assertSame(subj, observer.observedSubject);
+		assertSame(pred, observer.observedPredicate);
+		assertSame(obj, observer.observedObject);
+		assertArrayEquals(new Resource[] { context }, observer.observedContexts);
+	}
+
 	private static final class OrderedDataset implements SailDataset {
 
 		@Override

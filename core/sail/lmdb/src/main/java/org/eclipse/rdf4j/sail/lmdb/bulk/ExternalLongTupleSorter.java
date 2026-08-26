@@ -372,7 +372,16 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 			for (int start = 0; start < current.size(); start += maxFanIn) {
 				List<Path> group = current.subList(start, Math.min(current.size(), start + maxFanIn));
 				Path merged = Files.createTempFile(directory, prefix + "-pass-" + pass + "-", ".bin");
-				mergeGroup(group, merged);
+				try {
+					mergeGroup(group, merged);
+				} catch (Throwable failure) {
+					try {
+						Files.deleteIfExists(merged);
+					} catch (IOException cleanupFailure) {
+						failure.addSuppressed(cleanupFailure);
+					}
+					throw failure;
+				}
 				deleteRuns(group);
 				next.add(merged);
 			}

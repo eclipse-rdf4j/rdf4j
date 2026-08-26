@@ -1519,8 +1519,6 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			};
 		}
 
-		System.out.println(size);
-
 		return bindings -> {
 
 			for (QueryValueEvaluationStep expr : compiledArgs) {

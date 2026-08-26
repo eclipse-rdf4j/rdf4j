@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.junit.jupiter.api.Test;
 
 class StatementPatternHasStatementTest {
@@ -56,23 +57,62 @@ class StatementPatternHasStatementTest {
 		assertThat(tripleSource.materializingLookups.get()).isZero();
 	}
 
+	@Test
+	void fullyBoundMultiContextPatternKeepsExistenceAndCountProbes() {
+		ExistsProbeTripleSource tripleSource = new ExistsProbeTripleSource();
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addDefaultGraph((IRI) tripleSource.statement.getContext());
+		dataset.addDefaultGraph(tripleSource.valueFactory.createIRI("urn:graph:two"));
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset);
+		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				context,
+				tripleSource);
+
+		MutableBindingSet bindings = context.createBindingSet();
+		bindings.addBinding("s", tripleSource.statement.getSubject());
+		bindings.addBinding("p", tripleSource.statement.getPredicate());
+		bindings.addBinding("o", tripleSource.statement.getObject());
+
+		assertThat(evaluationStep.hasStatement(bindings)).isTrue();
+		assertThat(evaluationStep.getFullyBoundStatementCount(bindings)).isOne();
+		assertThat(tripleSource.hasStatementLookups.get()).isOne();
+		assertThat(tripleSource.statementCountLookups.get()).isOne();
+		assertThat(tripleSource.materializingLookups.get()).isZero();
+		assertThat(tripleSource.lastContexts)
+				.containsExactly(tripleSource.statement.getContext(),
+						tripleSource.valueFactory.createIRI("urn:graph:two"));
+	}
+
 	private static final class ExistsProbeTripleSource implements TripleSource {
 
 		private final ValueFactory valueFactory = SimpleValueFactory.getInstance();
 		private final AtomicInteger hasStatementLookups = new AtomicInteger();
+		private final AtomicInteger statementCountLookups = new AtomicInteger();
 		private final AtomicInteger materializingLookups = new AtomicInteger();
 		private final Statement statement = valueFactory.createStatement(
 				valueFactory.createIRI("urn:s"),
 				valueFactory.createIRI("urn:p"),
-				valueFactory.createLiteral("o"));
+				valueFactory.createLiteral("o"),
+				valueFactory.createIRI("urn:graph:one"));
+		private Resource[] lastContexts;
 
 		@Override
 		public boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
 				throws QueryEvaluationException {
 			hasStatementLookups.incrementAndGet();
+			lastContexts = contexts;
 			return statement.getSubject().equals(subj)
 					&& statement.getPredicate().equals(pred)
 					&& statement.getObject().equals(obj);
+		}
+
+		@Override
+		public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts)
+				throws QueryEvaluationException {
+			statementCountLookups.incrementAndGet();
+			lastContexts = contexts;
+			return hasMatch(subj, pred, obj) ? 1L : 0L;
 		}
 
 		@Override
@@ -85,6 +125,12 @@ class StatementPatternHasStatementTest {
 		@Override
 		public ValueFactory getValueFactory() {
 			return valueFactory;
+		}
+
+		private boolean hasMatch(Resource subj, IRI pred, Value obj) {
+			return statement.getSubject().equals(subj)
+					&& statement.getPredicate().equals(pred)
+					&& statement.getObject().equals(obj);
 		}
 	}
 }

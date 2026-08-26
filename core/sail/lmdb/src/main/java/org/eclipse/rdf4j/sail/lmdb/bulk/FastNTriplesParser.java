@@ -294,12 +294,12 @@ final class FastNTriplesParser {
 				int digits = escaped == 'u' ? 4 : 8;
 				int codePoint = unicodeCodePoint(cursor, digits);
 				int next = cursor + digits + 2;
-				if (Character.isHighSurrogate((char) codePoint)) {
+				if (isHighSurrogate(codePoint)) {
 					if (next + 1 < lineEnd && activeLine[next] == '\\'
 							&& (activeLine[next + 1] == 'u' || activeLine[next + 1] == 'U')) {
 						int lowDigits = activeLine[next + 1] == 'u' ? 4 : 8;
 						int low = unicodeCodePoint(next, lowDigits);
-						if (Character.isLowSurrogate((char) low)) {
+						if (isLowSurrogate(low)) {
 							codePoint = Character.toCodePoint((char) codePoint, (char) low);
 							next += lowDigits + 2;
 						} else {
@@ -308,7 +308,7 @@ final class FastNTriplesParser {
 					} else {
 						codePoint = '?';
 					}
-				} else if (Character.isLowSurrogate((char) codePoint)) {
+				} else if (isLowSurrogate(codePoint)) {
 					codePoint = '?';
 				}
 				decodedLength = appendUtf8(decoded, decodedLength, codePoint);
@@ -408,7 +408,7 @@ final class FastNTriplesParser {
 			if (cursor < end) {
 				int digits = activeLine[cursor + 1] == 'u' ? 4 : 8;
 				int codePoint = unicodeCodePoint(cursor, digits);
-				if (Character.isSurrogate((char) codePoint) || codePoint > Character.MAX_CODE_POINT) {
+				if (isSurrogate(codePoint)) {
 					throw error("Invalid Unicode escape sequence", cursor);
 				}
 				output = appendUtf8(decoded, output, codePoint);
@@ -432,7 +432,7 @@ final class FastNTriplesParser {
 		if (cursor + 1 + digits >= lineEnd) {
 			throw error("Incomplete Unicode escape sequence", cursor);
 		}
-		int codePoint = 0;
+		long codePoint = 0;
 		for (int i = cursor + 2; i < cursor + 2 + digits; i++) {
 			int value = hexValue(activeLine[i]);
 			if (value < 0) {
@@ -443,7 +443,19 @@ final class FastNTriplesParser {
 		if (codePoint > Character.MAX_CODE_POINT) {
 			throw error("Invalid Unicode escape sequence", cursor);
 		}
-		return codePoint;
+		return (int) codePoint;
+	}
+
+	private static boolean isSurrogate(int codePoint) {
+		return codePoint >= Character.MIN_SURROGATE && codePoint <= Character.MAX_SURROGATE;
+	}
+
+	private static boolean isHighSurrogate(int codePoint) {
+		return codePoint >= Character.MIN_HIGH_SURROGATE && codePoint <= Character.MAX_HIGH_SURROGATE;
+	}
+
+	private static boolean isLowSurrogate(int codePoint) {
+		return codePoint >= Character.MIN_LOW_SURROGATE && codePoint <= Character.MAX_LOW_SURROGATE;
 	}
 
 	private void appendRange(byte[] source, int offset, int length) {

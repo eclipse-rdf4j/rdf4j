@@ -21,6 +21,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +42,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+import org.eclipse.rdf4j.query.algebra.Coalesce;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -72,6 +75,8 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 public class StrictEvaluationStrategyTest {
 
@@ -255,6 +260,26 @@ public class StrictEvaluationStrategyTest {
 				new QueryEvaluationContext.Minimal(null));
 
 		assertThat(step.isConstant()).isFalse();
+	}
+
+	@Test
+	@ResourceLock(Resources.SYSTEM_OUT)
+	void precompilingThreeArgumentCoalesceDoesNotWriteToStdout() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		ByteArrayOutputStream captured = new ByteArrayOutputStream();
+		PrintStream original = System.out;
+		try (PrintStream replacement = new PrintStream(captured)) {
+			System.setOut(replacement);
+			strategy.precompile(new Coalesce(List.of(
+					new ValueConstant(vf.createLiteral("first")),
+					new ValueConstant(vf.createLiteral("second")),
+					new ValueConstant(vf.createLiteral("third")))),
+					new QueryEvaluationContext.Minimal(null));
+		} finally {
+			System.setOut(original);
+		}
+
+		assertThat(captured).asString().isEmpty();
 	}
 
 	private static StatementPattern statementPattern(String suffix) {
