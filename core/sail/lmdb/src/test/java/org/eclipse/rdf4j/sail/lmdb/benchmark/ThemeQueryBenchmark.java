@@ -69,9 +69,9 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
+@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 5)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
+@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
 @Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
@@ -184,7 +184,7 @@ public class ThemeQueryBenchmark {
 			OptionalLong expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme,
 					z_queryIndex);
 			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
-			tupleQuery.setMaxExecutionTime(70);
+			tupleQuery.setMaxExecutionTime(30);
 			try (var evaluate = tupleQuery.evaluate()) {
 				count = countRowsAndVerifyCountBinding(evaluate, expectedCountBindingValue);
 			}
@@ -461,7 +461,7 @@ public class ThemeQueryBenchmark {
 
 		if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				System.out.println("### Optimized Query ###");
+				System.out.println("\n### Optimized Query ###");
 				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
 				System.out.println(explain);
 				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
