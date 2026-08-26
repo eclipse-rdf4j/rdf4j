@@ -53,16 +53,24 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		Objects.requireNonNull(tupleExpr, "tupleExpr must not be null");
-		tupleExpr.visit(new SetSemanticsVisitor());
+		Set<String> externallyBoundNames = bindings == null || bindings.isEmpty()
+				? Set.of()
+				: Set.copyOf(bindings.getBindingNames());
+		tupleExpr.visit(new SetSemanticsVisitor(externallyBoundNames));
 	}
 
 	private static final class SetSemanticsVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+		private final Set<String> externallyBoundNames;
 
 		private boolean setContext;
 
 		private boolean askRootSliceContext;
 
 		private String setContextName;
+
+		private SetSemanticsVisitor(Set<String> externallyBoundNames) {
+			this.externallyBoundNames = externallyBoundNames;
+		}
 
 		@Override
 		public void meet(QueryRoot queryRoot) {
@@ -123,11 +131,81 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 			}
 			Set<String> distinctCountVars = duplicateInsensitiveDistinctCountVars(group);
 			if (!distinctCountVars.isEmpty()) {
-				TupleExpr replacement = rewriteFiniteMembershipAsSemiFilter(group.getArg(), distinctCountVars);
+				TupleExpr replacement = rewriteDisconnectedUnusedValues(group.getArg(), distinctCountVars);
+				if (replacement != group.getArg()) {
+					group.setArg(replacement);
+				}
+				replacement = rewriteFiniteMembershipAsSemiFilter(group.getArg(), distinctCountVars);
 				if (replacement != group.getArg()) {
 					group.setArg(replacement);
 				}
 			}
+		}
+
+		private TupleExpr rewriteDisconnectedUnusedValues(TupleExpr tupleExpr, Set<String> observedNames) {
+			if (tupleExpr instanceof Filter filter) {
+				Set<String> childObservedNames = new LinkedHashSet<>(observedNames);
+				childObservedNames.addAll(VarNameCollector.process(filter.getCondition()));
+				TupleExpr rewrittenArg = rewriteDisconnectedUnusedValues(filter.getArg(), childObservedNames);
+				if (rewrittenArg == filter.getArg()) {
+					return tupleExpr;
+				}
+				Filter replacement = filter.clone();
+				replacement.setArg(rewrittenArg);
+				annotateUnusedValuesIdentity(replacement);
+				return replacement;
+			}
+			if (!(tupleExpr instanceof Join)) {
+				return tupleExpr;
+			}
+
+			List<TupleExpr> factors = new ArrayList<>();
+			collectJoinFactors(tupleExpr, factors);
+			boolean[] removed = new boolean[factors.size()];
+			int retainedFactorCount = factors.size();
+			for (int candidateIndex = 0; candidateIndex < factors.size(); candidateIndex++) {
+				if (!(factors.get(candidateIndex)instanceof BindingSetAssignment assignment)
+						|| !hasRows(assignment)
+						|| !java.util.Collections.disjoint(assignment.getBindingNames(), externallyBoundNames)
+						|| !java.util.Collections.disjoint(assignment.getBindingNames(), observedNames)) {
+					continue;
+				}
+				boolean connected = false;
+				for (int otherIndex = 0; otherIndex < factors.size() && !connected; otherIndex++) {
+					if (otherIndex != candidateIndex) {
+						connected = !java.util.Collections.disjoint(assignment.getBindingNames(),
+								VarNameCollector.process(factors.get(otherIndex)));
+					}
+				}
+				if (!connected) {
+					removed[candidateIndex] = true;
+					retainedFactorCount--;
+				}
+			}
+			if (retainedFactorCount == factors.size() || retainedFactorCount == 0) {
+				return tupleExpr;
+			}
+
+			List<TupleExpr> retained = new ArrayList<>(retainedFactorCount);
+			for (int index = 0; index < factors.size(); index++) {
+				if (!removed[index]) {
+					retained.add(factors.get(index).clone());
+				}
+			}
+			TupleExpr replacement = leftDeep(retained);
+			annotateUnusedValuesIdentity(replacement);
+			return replacement;
+		}
+
+		private static boolean hasRows(BindingSetAssignment assignment) {
+			return assignment.getBindingSets().iterator().hasNext();
+		}
+
+		private void annotateUnusedValuesIdentity(TupleExpr tupleExpr) {
+			annotateProof(tupleExpr, LmdbRewriteProof.RewriteKind.UNUSED_VALUES_IDENTITY,
+					LmdbRewriteProof.EquivalenceScope.SET_EQUIVALENT,
+					Set.of("distinctCount", "nonemptyValues", "disconnectedBindings", "unobservedBindings"),
+					"nonempty disconnected VALUES only multiplies rows discarded by COUNT DISTINCT");
 		}
 
 		@Override
@@ -401,6 +479,14 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 		}
 
 		private RewriteCertificate certificate(LmdbRewriteProof.RewriteKind kind) {
+			if (kind == LmdbRewriteProof.RewriteKind.UNUSED_VALUES_IDENTITY) {
+				return new RewriteCertificate("29", "disconnected-unused-values", "relational-identity",
+						RewriteSafety.builder()
+								.preservedMultiplicity(false)
+								.build(),
+						Set.of(RewriteAssumption.STANDARD_SPARQL_SEMANTICS,
+								RewriteAssumption.DUPLICATE_INSENSITIVE_CONTEXT));
+			}
 			if (kind == LmdbRewriteProof.RewriteKind.SET_UNION_IDEMPOTENCE) {
 				return new RewriteCertificate("19", "duplicate-union-branches", "single-union-branch",
 						RewriteSafety.builder()

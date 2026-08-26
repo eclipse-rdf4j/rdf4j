@@ -4,7 +4,7 @@
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/documents/edl-v10.php.
+ * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
@@ -638,6 +638,21 @@ class FrontierQueryIndexTest {
 		@Override
 		public boolean deleteIfExists(Path path) throws IOException {
 			return NioFrontierFileOps.INSTANCE.deleteIfExists(path);
+		}
+
+		@Override
+		public List<Path> list(Path directory) throws IOException {
+			return NioFrontierFileOps.INSTANCE.list(directory);
+		}
+
+		@Override
+		public boolean isDirectory(Path path) {
+			return NioFrontierFileOps.INSTANCE.isDirectory(path);
+		}
+
+		@Override
+		public void deleteRecursivelyIfExists(Path path) throws IOException {
+			NioFrontierFileOps.INSTANCE.deleteRecursivelyIfExists(path);
 		}
 
 		@Override

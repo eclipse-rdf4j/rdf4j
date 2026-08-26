@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.bulk;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.fail;
+import static org.awaitility.Awaitility.await;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -26,6 +27,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -35,8 +37,13 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.GZIPOutputStream;
 
 import org.eclipse.rdf4j.model.Resource;
@@ -44,6 +51,8 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -52,6 +61,8 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbNativeBulkStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
@@ -61,6 +72,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbBulkLoaderContractTest {
+
+	private static final String FRONTIER_STARTUP_QUERY = """
+			SELECT ?item ?price
+			WHERE {
+			  ?item <urn:type> <urn:Item> .
+			  ?item <urn:price> ?price
+			}
+			""";
+	private static final Pattern FRONTIER_GENERATION_ID = Pattern
+			.compile("plannedFrontierGenerationId=([-+0-9.Ee]+)");
 
 	@TempDir
 	Path temporaryDirectory;
@@ -342,6 +363,207 @@ class LmdbBulkLoaderContractTest {
 			}
 		} finally {
 			repository.shutDown();
+		}
+	}
+
+	@Test
+	void bulkLoadedStoreRecoversAndReusesFrontierThroughRestartCrashAndCorruption() throws Exception {
+		StringBuilder input = new StringBuilder();
+		for (int i = 0; i < 256; i++) {
+			input.append("<urn:item:").append(i).append("> <urn:type> <urn:Item> .\n");
+			input.append("<urn:item:").append(i).append("> <urn:price> <urn:price:").append(i).append("> .\n");
+		}
+		Path target = temporaryDirectory.resolve("frontier-startup-store");
+		LmdbStoreConfig config = frontierStartupConfig();
+
+		LmdbBulkLoader.builder(target, config)
+				.partitionCount(4)
+				.build()
+				.load(new ByteArrayInputStream(input.toString().getBytes(StandardCharsets.UTF_8)), "urn:bulk-test:",
+						RDFFormat.NQUADS);
+
+		String initialGeneration = startQueryAwaitFrontierAndShutDown(target, config);
+		for (int restart = 0; restart < 3; restart++) {
+			assertThat(startQueryAwaitFrontierAndShutDown(target, config))
+					.as("clean restart %s must reuse the ready Frontier generation", restart + 1)
+					.isEqualTo(initialGeneration);
+		}
+
+		assertThat(runReadyStoreUntilForciblyKilled(target, temporaryDirectory))
+				.as("the live process must observe the already-published generation before it is killed")
+				.isEqualTo(initialGeneration);
+		assertThat(startQueryAwaitFrontierAndShutDown(target, config))
+				.as("startup after a forced process death must retain the complete published generation")
+				.isEqualTo(initialGeneration);
+
+		Path statisticsDirectory = target.resolve("frontier-statistics-v2");
+		Path corruptedTotalsShard = onlyTotalsShard(statisticsDirectory);
+		assertThat(Files.size(corruptedTotalsShard)).isGreaterThan(1L);
+		Files.write(corruptedTotalsShard, new byte[] { 0 }, StandardOpenOption.TRUNCATE_EXISTING);
+
+		String repairedGeneration = startQueryAwaitFrontierAndShutDown(target, config);
+		assertThat(totalsShards(statisticsDirectory))
+				.as("startup must remove or replace every corrupt mandatory totals shard")
+				.allSatisfy(path -> assertThat(fileSize(path)).isGreaterThan(1L));
+		for (int restart = 0; restart < 3; restart++) {
+			assertThat(startQueryAwaitFrontierAndShutDown(target, config))
+					.as("post-repair clean restart %s must not rebuild Frontier", restart + 1)
+					.isEqualTo(repairedGeneration);
+		}
+		assertNoFrontierTemporaryArtifacts(statisticsDirectory);
+	}
+
+	private static LmdbStoreConfig frontierStartupConfig() {
+		return new LmdbStoreConfig("spoc,posc,ospc")
+				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED)
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
+				.setFrontierSynopsisBudgetBytes(32L * 1024L * 1024L);
+	}
+
+	private static String startQueryAwaitFrontierAndShutDown(Path target, LmdbStoreConfig config) {
+		SailRepository repository = new SailRepository(new LmdbStore(target.toFile(), config));
+		repository.init();
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				assertThat(QueryResults.asList(connection.prepareTupleQuery(FRONTIER_STARTUP_QUERY).evaluate()))
+						.hasSize(256);
+			}
+
+			AtomicReference<String> generation = new AtomicReference<>();
+			await().alias("Frontier statistics visible through query explanation telemetry")
+					.pollInSameThread()
+					.pollInterval(Duration.ofMillis(100))
+					.atMost(Duration.ofSeconds(60))
+					.untilAsserted(() -> {
+						try (RepositoryConnection connection = repository.getConnection()) {
+							Explanation explanation = connection.prepareTupleQuery(FRONTIER_STARTUP_QUERY)
+									.explain(Explanation.Level.Telemetry);
+							String telemetry = explanation.toString();
+							assertThat(telemetry)
+									.contains("plannerId=lmdb-packed-cascades")
+									.contains("plannedFrontierStatus=ready")
+									.contains("plannedEstimateSource=frontier-v2-");
+							generation.set(frontierGenerationId(telemetry));
+						}
+					});
+			return generation.get();
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static String runReadyStoreUntilForciblyKilled(Path target, Path probeDirectory) throws Exception {
+		Path readyMarker = probeDirectory.resolve("frontier-crash-probe.ready");
+		Path output = probeDirectory.resolve("frontier-crash-probe.log");
+		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		List<String> command = List.of(
+				javaBinary,
+				"--enable-native-access=ALL-UNNAMED",
+				"-cp",
+				System.getProperty("java.class.path"),
+				StartupCrashProbe.class.getName(),
+				target.toAbsolutePath().toString(),
+				readyMarker.toAbsolutePath().toString());
+		Process process = new ProcessBuilder(command)
+				.redirectErrorStream(true)
+				.redirectOutput(output.toFile())
+				.start();
+		try {
+			await().alias("child process to query with ready Frontier statistics")
+					.pollInterval(Duration.ofMillis(100))
+					.atMost(Duration.ofSeconds(60))
+					.until(() -> Files.isRegularFile(readyMarker) || !process.isAlive());
+			if (!Files.isRegularFile(readyMarker)) {
+				fail("Frontier crash probe exited before becoming ready:\n"
+						+ Files.readString(output, StandardCharsets.UTF_8));
+			}
+			String generation = Files.readString(readyMarker, StandardCharsets.UTF_8);
+			assertThat(process.isAlive()).as("probe must still own an open LMDB store when killed").isTrue();
+			process.destroyForcibly();
+			assertThat(process.waitFor(30, TimeUnit.SECONDS)).as("forcibly killed probe must terminate").isTrue();
+			return generation;
+		} finally {
+			if (process.isAlive()) {
+				process.destroyForcibly();
+				process.waitFor(30, TimeUnit.SECONDS);
+			}
+		}
+	}
+
+	private static Path onlyTotalsShard(Path statisticsDirectory) throws IOException {
+		List<Path> shards = totalsShards(statisticsDirectory);
+		assertThat(shards).as("one initial Frontier totals shard").hasSize(1);
+		return shards.get(0);
+	}
+
+	private static List<Path> totalsShards(Path statisticsDirectory) throws IOException {
+		try (var paths = Files.list(statisticsDirectory)) {
+			return paths
+					.filter(path -> path.getFileName().toString().matches("generation-[0-9]+-shard-00000\\.fs2s"))
+					.sorted()
+					.toList();
+		}
+	}
+
+	private static long fileSize(Path path) {
+		try {
+			return Files.size(path);
+		} catch (IOException failure) {
+			throw new AssertionError("Cannot read Frontier shard size: " + path, failure);
+		}
+	}
+
+	private static void assertNoFrontierTemporaryArtifacts(Path statisticsDirectory) throws IOException {
+		try (var paths = Files.walk(statisticsDirectory)) {
+			assertThat(paths.filter(path -> {
+				String name = path.getFileName().toString();
+				return name.endsWith(".tmp") || name.startsWith("omni-sort-");
+			}).toList()).as("Frontier rebuild temporary artifacts").isEmpty();
+		}
+	}
+
+	private static String frontierGenerationId(String telemetry) {
+		Matcher matcher = FRONTIER_GENERATION_ID.matcher(telemetry);
+		assertThat(matcher.find()).as("Frontier generation in explain telemetry").isTrue();
+		return matcher.group(1);
+	}
+
+	public static final class StartupCrashProbe {
+
+		public static void main(String[] args) throws Exception {
+			Path target = Path.of(args[0]);
+			Path readyMarker = Path.of(args[1]);
+			SailRepository repository = new SailRepository(new LmdbStore(target.toFile(), frontierStartupConfig()));
+			repository.init();
+			try {
+				try (RepositoryConnection connection = repository.getConnection()) {
+					if (QueryResults.asList(connection.prepareTupleQuery(FRONTIER_STARTUP_QUERY).evaluate())
+							.size() != 256) {
+						throw new AssertionError("Bulk-loaded query returned the wrong row count");
+					}
+				}
+				AtomicReference<String> generation = new AtomicReference<>();
+				await().pollInSameThread()
+						.pollInterval(Duration.ofMillis(100))
+						.atMost(Duration.ofSeconds(60))
+						.untilAsserted(() -> {
+							try (RepositoryConnection connection = repository.getConnection()) {
+								String telemetry = connection.prepareTupleQuery(FRONTIER_STARTUP_QUERY)
+										.explain(Explanation.Level.Telemetry)
+										.toString();
+								if (!telemetry.contains("plannedFrontierStatus=ready")
+										|| !telemetry.contains("plannedEstimateSource=frontier-v2-")) {
+									throw new AssertionError(telemetry);
+								}
+								generation.set(frontierGenerationId(telemetry));
+							}
+						});
+				Files.writeString(readyMarker, generation.get(), StandardCharsets.UTF_8,
+						StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+				new CountDownLatch(1).await();
+			} finally {
+				repository.shutDown();
+			}
 		}
 	}
 

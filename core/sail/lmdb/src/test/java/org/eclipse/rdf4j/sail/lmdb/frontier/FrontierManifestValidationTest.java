@@ -4,7 +4,7 @@
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/documents/edl-v10.php.
+ * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
@@ -27,6 +27,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.util.Arrays;
+import java.util.List;
 import java.util.zip.CRC32C;
 
 import org.junit.jupiter.api.Test;
@@ -226,6 +227,21 @@ class FrontierManifestValidationTest {
 		@Override
 		public boolean deleteIfExists(Path path) throws IOException {
 			return delegate.deleteIfExists(path);
+		}
+
+		@Override
+		public List<Path> list(Path directory) throws IOException {
+			return delegate.list(directory);
+		}
+
+		@Override
+		public boolean isDirectory(Path path) {
+			return delegate.isDirectory(path);
+		}
+
+		@Override
+		public void deleteRecursivelyIfExists(Path path) throws IOException {
+			delegate.deleteRecursivelyIfExists(path);
 		}
 
 		@Override

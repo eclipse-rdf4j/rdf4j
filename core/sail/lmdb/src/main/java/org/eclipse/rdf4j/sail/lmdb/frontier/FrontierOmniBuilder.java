@@ -38,19 +38,30 @@ final class FrontierOmniBuilder implements AutoCloseable {
 	private final FrontierStatisticsBuildConfig config;
 	private final FrontierFileOps fileOps;
 	private final FrontierOmniLayout layout;
+	private final int[] partitionStarts;
+	private final int[] partitionEnds;
+	private final long sortMemoryPerCollector;
+	private final FrontierTemporaryDiskReservation temporaryDisk;
 	private final long[] populations;
 	private int[] authorityCapacity;
 	private int[] retentionCapacity;
 	private int[] retainedByAuthority;
 	private long reservePopulatedCells;
 	private int[] emissionTarget;
-	private FrontierOmniExternalSorter.Collector events;
+	private FrontierOmniExternalSorter.Collector[] events;
 	private long maximumTermId;
 	private boolean prepared;
 	private boolean finished;
 
 	FrontierOmniBuilder(Path directory, long generationId, long epoch, FrontierStatisticsBuildConfig config,
 			FrontierFileOps fileOps) {
+		this(directory, generationId, epoch, config, fileOps, 1, config.sortMemoryBytes(),
+				new FrontierTemporaryDiskReservation(temporaryBudgetBytes(config)));
+	}
+
+	FrontierOmniBuilder(Path directory, long generationId, long epoch, FrontierStatisticsBuildConfig config,
+			FrontierFileOps fileOps, int partitions, long sortMemoryPerCollector,
+			FrontierTemporaryDiskReservation temporaryDisk) {
 		this.directory = directory.toAbsolutePath().normalize();
 		this.generationId = generationId;
 		this.epoch = epoch;
@@ -58,14 +69,37 @@ final class FrontierOmniBuilder implements AutoCloseable {
 		this.fileOps = fileOps;
 		layout = new FrontierOmniLayout(config.designLaneCount(), config.auditLaneCount(), config.omniDepth(),
 				config.cellCount());
+		int planeLanes = Math.multiplyExact(FrontierOmniLayout.PLANE_COUNT, layout.lanes());
+		if (partitions <= 0 || partitions > planeLanes
+				|| sortMemoryPerCollector < FrontierOmniExternalSorter.RECORD_BYTES) {
+			throw new IllegalArgumentException("Frontier Omni partition dimensions are invalid");
+		}
+		this.sortMemoryPerCollector = sortMemoryPerCollector;
+		this.temporaryDisk = temporaryDisk;
+		partitionStarts = new int[partitions];
+		partitionEnds = new int[partitions];
+		for (int partition = 0; partition < partitions; partition++) {
+			partitionStarts[partition] = partition * planeLanes / partitions;
+			partitionEnds[partition] = (partition + 1) * planeLanes / partitions;
+		}
 		populations = new long[layout.cells()];
 	}
 
 	void addPopulation(int plane, long subject, long predicate, long object, long context) {
+		for (int partition = 0; partition < partitionStarts.length; partition++) {
+			addPopulation(partition, plane, subject, predicate, object, context);
+		}
+	}
+
+	void addPopulation(int partition, int plane, long subject, long predicate, long object, long context) {
 		if (prepared) {
 			throw new IllegalStateException("Frontier Omni populations are already sealed");
 		}
-		for (int lane = 0; lane < layout.lanes(); lane++) {
+		for (int planeLane = partitionStarts[partition]; planeLane < partitionEnds[partition]; planeLane++) {
+			if (planeLane / layout.lanes() != plane) {
+				continue;
+			}
+			int lane = planeLane % layout.lanes();
 			addComponentPopulation(plane, lane, 0, subject);
 			addComponentPopulation(plane, lane, 1, predicate);
 			addComponentPopulation(plane, lane, 2, object);
@@ -80,20 +114,41 @@ final class FrontierOmniBuilder implements AutoCloseable {
 		prepared = true;
 		this.maximumTermId = maximumTermId;
 		allocateSamples();
-		events = FrontierOmniExternalSorter.collector(directory, config.sortMemoryBytes(),
-				temporaryBudgetBytes());
+		events = new FrontierOmniExternalSorter.Collector[partitionStarts.length];
+		try {
+			for (int partition = 0; partition < events.length; partition++) {
+				events[partition] = FrontierOmniExternalSorter.collector(directory, sortMemoryPerCollector,
+						temporaryBudgetBytes(config), temporaryDisk);
+			}
+		} catch (IOException failure) {
+			closeCollectors();
+			throw failure;
+		}
 	}
 
 	void addWitnesses(int plane, long subject, long predicate, long object, long context) throws IOException {
+		for (int partition = 0; partition < partitionStarts.length; partition++) {
+			addWitnesses(partition, plane, subject, predicate, object, context);
+		}
+	}
+
+	void addWitnesses(int partition, int plane, long subject, long predicate, long object, long context)
+			throws IOException {
 		if (!prepared || finished) {
 			throw new IllegalStateException("Frontier Omni witness pass is not active");
 		}
-		for (int lane = 0; lane < layout.lanes(); lane++) {
-			long priority = FrontierStatisticsHash.omniPriority(plane, lane, subject, predicate, object, context);
-			addComponentWitnesses(plane, lane, 0, subject, priority, subject, predicate, object, context);
-			addComponentWitnesses(plane, lane, 1, predicate, priority, subject, predicate, object, context);
-			addComponentWitnesses(plane, lane, 2, object, priority, subject, predicate, object, context);
-			addComponentWitnesses(plane, lane, 3, context, priority, subject, predicate, object, context);
+		FrontierOmniExternalSorter.Collector collector = events[partition];
+		long rowPriority = FrontierStatisticsHash.rowPriority(plane, subject, predicate, object, context);
+		for (int planeLane = partitionStarts[partition]; planeLane < partitionEnds[partition]; planeLane++) {
+			if (planeLane / layout.lanes() != plane) {
+				continue;
+			}
+			int lane = planeLane % layout.lanes();
+			long priority = FrontierStatisticsHash.omniPriorityFromRowPriority(lane, rowPriority);
+			addComponentWitnesses(collector, plane, lane, 0, subject, priority, subject, predicate, object, context);
+			addComponentWitnesses(collector, plane, lane, 1, predicate, priority, subject, predicate, object, context);
+			addComponentWitnesses(collector, plane, lane, 2, object, priority, subject, predicate, object, context);
+			addComponentWitnesses(collector, plane, lane, 3, context, priority, subject, predicate, object, context);
 		}
 	}
 
@@ -104,22 +159,32 @@ final class FrontierOmniBuilder implements AutoCloseable {
 		finished = true;
 		Output output = new Output();
 		try {
-			events.finish(output::accept);
+			for (FrontierOmniExternalSorter.Collector collector : events) {
+				collector.finish(output::accept);
+			}
 			output.finish();
 			return output.descriptors();
 		} finally {
-			events.close();
+			closeCollectors();
 			events = null;
 		}
 	}
 
+	int partitions() {
+		return partitionStarts.length;
+	}
+
 	static long estimatedHeapBytes(FrontierStatisticsBuildConfig config) {
+		return estimatedHeapBytes(config, config.sortMemoryBytes());
+	}
+
+	static long estimatedHeapBytes(FrontierStatisticsBuildConfig config, long sortMemoryBytes) {
 		FrontierOmniLayout layout = new FrontierOmniLayout(config.designLaneCount(), config.auditLaneCount(),
 				config.omniDepth(), config.cellCount());
 		long cells = layout.cells();
 		long matrixAndDirectory = Math.multiplyExact(cells,
 				2L * Long.BYTES + 6L * Integer.BYTES + Byte.BYTES);
-		long boundedBuffers = Math.addExact(config.sortMemoryBytes(), domainBufferBytes(config));
+		long boundedBuffers = Math.addExact(sortMemoryBytes, domainBufferBytes(config));
 		long cellBuffer = Math.multiplyExact((long) maximumRetention(config),
 				6L * Long.BYTES + Integer.BYTES + Byte.BYTES);
 		return Math.addExact(matrixAndDirectory, Math.addExact(boundedBuffers, cellBuffer));
@@ -128,7 +193,7 @@ final class FrontierOmniBuilder implements AutoCloseable {
 	@Override
 	public void close() throws IOException {
 		if (events != null) {
-			events.close();
+			closeCollectors();
 			events = null;
 		}
 	}
@@ -140,7 +205,8 @@ final class FrontierOmniBuilder implements AutoCloseable {
 		}
 	}
 
-	private void addComponentWitnesses(int plane, int lane, int component, long value, long priority,
+	private void addComponentWitnesses(FrontierOmniExternalSorter.Collector collector,
+			int plane, int lane, int component, long value, long priority,
 			long subject, long predicate, long object, long context) throws IOException {
 		for (int row = 0; row < layout.depth(); row++) {
 			int cell = layout.cell(plane, lane, component, row, value);
@@ -148,8 +214,29 @@ final class FrontierOmniBuilder implements AutoCloseable {
 			int emission = emissionTarget[cell];
 			if (emission != 0 && (emission >= population
 					|| FrontierStatisticsHash.unsignedMultiplyHigh(priority, population) < emission)) {
-				events.add(cell, priority, subject, predicate, object, context);
+				collector.add(cell, priority, subject, predicate, object, context);
 			}
+		}
+	}
+
+	private void closeCollectors() throws IOException {
+		IOException failure = null;
+		for (FrontierOmniExternalSorter.Collector collector : events) {
+			if (collector == null) {
+				continue;
+			}
+			try {
+				collector.close();
+			} catch (IOException current) {
+				if (failure == null) {
+					failure = current;
+				} else {
+					failure.addSuppressed(current);
+				}
+			}
+		}
+		if (failure != null) {
+			throw failure;
 		}
 	}
 
@@ -265,7 +352,7 @@ final class FrontierOmniBuilder implements AutoCloseable {
 	}
 
 	private void fitTemporaryEventEnvelope() throws FrontierStatisticsException {
-		long temporaryRecords = temporaryBudgetBytes() / FrontierOmniExternalSorter.RECORD_BYTES;
+		long temporaryRecords = temporaryBudgetBytes(config) / FrontierOmniExternalSorter.RECORD_BYTES;
 		long proportionalHeadroom = Math.max(1L,
 				temporaryRecords / TEMPORARY_EVENT_HEADROOM_DENOMINATOR);
 		double correlatedEvents = 4.0d * layout.depth() * temporaryRecords;
@@ -331,7 +418,7 @@ final class FrontierOmniBuilder implements AutoCloseable {
 		return Math.toIntExact(Math.min(population, retained));
 	}
 
-	private long temporaryBudgetBytes() {
+	static long temporaryBudgetBytes(FrontierStatisticsBuildConfig config) {
 		return Math.min(MAXIMUM_TEMPORARY_BYTES, config.diskBudgetBytes());
 	}
 

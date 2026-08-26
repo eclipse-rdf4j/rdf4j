@@ -52,6 +52,44 @@ public final class QuadSynopsisBuilder {
 		}
 	}
 
+	void addCountMin(long[] subjects, long[] predicates, long[] objects, long[] contexts, int rows,
+			int firstMask, int limitMask) {
+		requireOpen();
+		if (rows < 0 || rows > subjects.length || rows > predicates.length || rows > objects.length
+				|| rows > contexts.length || firstMask < 1 || limitMask > tables.length || firstMask >= limitMask) {
+			throw new IllegalArgumentException("invalid quad synopsis page partition");
+		}
+		for (int mask = firstMask; mask < limitMask; mask++) {
+			PrimitiveCountMin table = tables[mask];
+			for (int row = 0; row < rows; row++) {
+				table.add(QuadHash.conditioningKey(mask, subjects[row], predicates[row], objects[row], contexts[row]),
+						1L);
+			}
+		}
+	}
+
+	void addConditionedWitnesses(long[] subjects, long[] predicates, long[] objects, long[] contexts, int rows) {
+		requireOpen();
+		for (int row = 0; row < rows; row++) {
+			conditionedWitnesses.add(subjects[row], predicates[row], objects[row], contexts[row]);
+		}
+	}
+
+	void addColdSample(long[] subjects, long[] predicates, long[] objects, long[] contexts, int rows) {
+		requireOpen();
+		for (int row = 0; row < rows; row++) {
+			coldSample.offer(subjects[row], predicates[row], objects[row], contexts[row]);
+		}
+	}
+
+	void addRows(int rows) {
+		requireOpen();
+		if (rows < 0) {
+			throw new IllegalArgumentException("rows must be non-negative: " + rows);
+		}
+		totalRows = Long.MAX_VALUE - totalRows < rows ? Long.MAX_VALUE : totalRows + rows;
+	}
+
 	public QuadSynopsisSnapshot build() {
 		requireOpen();
 		built = true;

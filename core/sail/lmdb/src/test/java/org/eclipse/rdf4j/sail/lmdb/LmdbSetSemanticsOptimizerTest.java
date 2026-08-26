@@ -192,6 +192,56 @@ class LmdbSetSemanticsOptimizerTest {
 	}
 
 	@Test
+	void removesDisconnectedUnusedValuesFromDistinctCountInput() {
+		BindingSetAssignment limits = values("limit", "55", "65");
+		StatementPattern patients = statementPattern("patient", "type", "patientType");
+		StatementPattern conditions = statementPattern("patient", "condition", "conditionValue");
+		Group group = new Group(new Filter(new Join(limits, patients), new Exists(conditions)));
+		group.addGroupElement(new GroupElem("count", new Count(new Var("patient"), true)));
+		QueryRoot root = optimizeSetSemantics(group);
+
+		Group optimized = assertInstanceOf(Group.class, root.getArg(), () -> root.toString());
+		assertFalse(containsBindingSetAssignmentFor(optimized.getArg(), "limit"), () -> root.toString());
+		assertRewriteCertificate(optimized.getArg(), "UNUSED_VALUES_IDENTITY", "29", "false");
+	}
+
+	@Test
+	void retainsDisconnectedValuesWhenTheyCanAffectDistinctCount() {
+		StatementPattern patients = statementPattern("patient", "type", "patientType");
+
+		Group emptyValues = distinctCount(new Join(values("limit"), patients.clone()), "patient");
+		QueryRoot emptyRoot = optimizeSetSemantics(emptyValues);
+		assertTrue(containsBindingSetAssignmentFor(((Group) emptyRoot.getArg()).getArg(), "limit"),
+				() -> emptyRoot.toString());
+
+		Group observedValues = distinctCount(new Join(values("limit", "55"), patients.clone()), "limit");
+		QueryRoot observedRoot = optimizeSetSemantics(observedValues);
+		assertTrue(containsBindingSetAssignmentFor(((Group) observedRoot.getArg()).getArg(), "limit"),
+				() -> observedRoot.toString());
+
+		Group bagCount = new Group(new Join(values("limit", "55"), patients));
+		bagCount.addGroupElement(new GroupElem("count", new Count(new Var("patient"))));
+		QueryRoot bagRoot = optimizeSetSemantics(bagCount);
+		assertTrue(containsBindingSetAssignmentFor(((Group) bagRoot.getArg()).getArg(), "limit"),
+				() -> bagRoot.toString());
+	}
+
+	@Test
+	void retainsDisconnectedValuesConstrainedByIncomingBindings() {
+		Group group = distinctCount(
+				new Join(values("limit", "55"), statementPattern("patient", "type", "patientType")),
+				"patient");
+		QueryRoot root = new QueryRoot(group);
+		MapBindingSet incoming = new MapBindingSet(1);
+		incoming.addBinding("limit", VF.createLiteral("65"));
+
+		new LmdbSetSemanticsOptimizer().optimize(root, null, incoming);
+
+		assertTrue(containsBindingSetAssignmentFor(((Group) root.getArg()).getArg(), "limit"),
+				() -> root.toString());
+	}
+
+	@Test
 	void keepsDuplicateJoinUnderBagSemantics() {
 		StatementPattern pattern = statementPattern("person", "type", "type");
 		QueryRoot root = optimizeBeforeSketch(new Join(pattern, pattern.clone()));
@@ -318,6 +368,12 @@ class LmdbSetSemanticsOptimizerTest {
 		y.addBinding("y", VF.createLiteral("y"));
 		assignment.setBindingSets(List.of(x, y));
 		return assignment;
+	}
+
+	private static Group distinctCount(TupleExpr input, String bindingName) {
+		Group group = new Group(input);
+		group.addGroupElement(new GroupElem("count", new Count(new Var(bindingName), true)));
+		return group;
 	}
 
 	private static int countBindingSets(BindingSetAssignment assignment) {

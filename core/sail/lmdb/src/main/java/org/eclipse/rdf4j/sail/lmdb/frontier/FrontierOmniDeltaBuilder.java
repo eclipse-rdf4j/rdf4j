@@ -301,10 +301,11 @@ final class FrontierOmniDeltaBuilder {
 			int event = 0;
 			for (int ordinal = 0; ordinal < rows.size; ordinal++) {
 				int plane = rows.planes[ordinal];
+				long rowPriority = FrontierStatisticsHash.rowPriority(plane,
+						rows.components[0][ordinal], rows.components[1][ordinal],
+						rows.components[2][ordinal], rows.components[3][ordinal]);
 				for (int lane = 0; lane < layout.lanes(); lane++) {
-					long priority = FrontierStatisticsHash.omniPriority(plane, lane,
-							rows.components[0][ordinal], rows.components[1][ordinal],
-							rows.components[2][ordinal], rows.components[3][ordinal]);
+					long priority = FrontierStatisticsHash.omniPriorityFromRowPriority(lane, rowPriority);
 					priorities[ordinal * layout.lanes() + lane] = priority;
 					for (int component = 0; component < FrontierOmniLayout.COMPONENT_COUNT; component++) {
 						for (int depth = 0; depth < layout.depth(); depth++) {

@@ -18,9 +18,19 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.Callable;
+import java.util.function.LongConsumer;
+import java.util.function.LongSupplier;
+
+import org.eclipse.rdf4j.sail.lmdb.DerivedStateBuildExecutor;
+import org.eclipse.rdf4j.sail.lmdb.DerivedStateBuildProgress;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Two-pass, bounded-heap builder for the directly queryable V2 core leaf layer. */
 public final class FrontierStatisticsBuilder {
+
+	private static final Logger logger = LoggerFactory.getLogger(FrontierStatisticsBuilder.class);
 
 	private static final int TOTALS_SHARD = 0;
 	private static final int COUNT_MIN_SHARD_BASE = 1;
@@ -41,22 +51,49 @@ public final class FrontierStatisticsBuilder {
 	public static FrontierStatisticsManifest build(Path directory, long generationId, long previousGenerationId,
 			FrontierSnapshotSource snapshot, FrontierStatisticsHeapGovernor governor,
 			FrontierStatisticsBuildConfig config) throws IOException {
+		try (DerivedStateBuildExecutor executor = DerivedStateBuildExecutor.create("rdf4j-lmdb-frontier-build-")) {
+			return build(directory, generationId, previousGenerationId, snapshot, governor, config,
+					NioFrontierFileOps.INSTANCE, executor, FrontierStatisticsBuildObserver.NONE,
+					System::nanoTime, System::currentTimeMillis);
+		}
+	}
+
+	public static FrontierStatisticsManifest build(Path directory, long generationId, long previousGenerationId,
+			FrontierSnapshotSource snapshot, FrontierStatisticsHeapGovernor governor,
+			FrontierStatisticsBuildConfig config, DerivedStateBuildExecutor executor,
+			FrontierStatisticsBuildObserver observer) throws IOException {
 		return build(directory, generationId, previousGenerationId, snapshot, governor, config,
-				NioFrontierFileOps.INSTANCE);
+				NioFrontierFileOps.INSTANCE, executor, observer, System::nanoTime, System::currentTimeMillis);
 	}
 
 	static FrontierStatisticsManifest build(Path directory, long generationId, long previousGenerationId,
 			FrontierSnapshotSource snapshot, FrontierStatisticsHeapGovernor governor,
 			FrontierStatisticsBuildConfig config, FrontierFileOps fileOps) throws IOException {
+		try (DerivedStateBuildExecutor executor = DerivedStateBuildExecutor.create("rdf4j-lmdb-frontier-build-")) {
+			return build(directory, generationId, previousGenerationId, snapshot, governor, config, fileOps, executor,
+					FrontierStatisticsBuildObserver.NONE, System::nanoTime, System::currentTimeMillis);
+		}
+	}
+
+	static FrontierStatisticsManifest build(Path directory, long generationId, long previousGenerationId,
+			FrontierSnapshotSource snapshot, FrontierStatisticsHeapGovernor governor,
+			FrontierStatisticsBuildConfig config, FrontierFileOps fileOps, DerivedStateBuildExecutor executor,
+			FrontierStatisticsBuildObserver observer, LongSupplier nanoTime, LongSupplier currentTimeMillis)
+			throws IOException {
 		Objects.requireNonNull(directory, "directory");
 		Objects.requireNonNull(snapshot, "snapshot");
 		Objects.requireNonNull(governor, "governor");
 		Objects.requireNonNull(config, "config");
 		Objects.requireNonNull(fileOps, "fileOps");
+		Objects.requireNonNull(executor, "executor");
+		Objects.requireNonNull(observer, "observer");
+		Objects.requireNonNull(nanoTime, "nanoTime");
+		Objects.requireNonNull(currentTimeMillis, "currentTimeMillis");
 		if (generationId < 0L || previousGenerationId < -1L || previousGenerationId == generationId) {
 			throw new IllegalArgumentException("Frontier statistics generation lineage is invalid");
 		}
 
+		BuildPartitions partitions = buildPartitions(config, executor);
 		long estimatedHeap = estimatedHeapBytes(config);
 		FrontierStatisticsHeapGovernor.Lease buildLease = governor.tryAcquire(
 				FrontierStatisticsMemoryPurpose.BUILDER, estimatedHeap);
@@ -68,11 +105,21 @@ public final class FrontierStatisticsBuilder {
 		Path normalized = directory.toAbsolutePath().normalize();
 		fileOps.createDirectories(normalized);
 		long snapshotEpoch = snapshot.snapshotEpoch();
+		long sharedTemporaryBytes = Math.addExact(
+				FrontierOmniBuilder.temporaryBudgetBytes(config), config.joinSampleBudgetBytes());
+		FrontierTemporaryDiskReservation temporaryDisk = new FrontierTemporaryDiskReservation(sharedTemporaryBytes);
 		try (buildLease;
 				FrontierOmniBuilder omni = new FrontierOmniBuilder(
-						normalized, generationId, snapshotEpoch, config, fileOps)) {
+						normalized, generationId, snapshotEpoch, config, fileOps, partitions.omniPartitions(),
+						partitions.sortMemoryPerCollector(), temporaryDisk)) {
 			long snapshotSequence = snapshot.coveredSequence();
 			long[] expectedRows = { snapshot.rowCount(true), snapshot.rowCount(false) };
+			long datasetRows = saturatingAdd(expectedRows[0], expectedRows[1]);
+			long expectedVisits = saturatingAdd(datasetRows, datasetRows);
+			DerivedStateBuildProgress progress = new DerivedStateBuildProgress(expectedVisits, nanoTime);
+			notifyObserver(observer, new FrontierStatisticsBuildObserver.Progress(
+					FrontierStatisticsBuildPhase.PASS_ONE, datasetRows, 0L, expectedVisits,
+					0.0d, 0.0d, -1L));
 			FrontierCountMinMatrix countMin = new FrontierCountMinMatrix(
 					config.countMinDepth(), config.countMinWidth());
 			FrontierProjectedDistinctAccumulator projectedDistinct = new FrontierProjectedDistinctAccumulator(
@@ -88,20 +135,16 @@ public final class FrontierStatisticsBuilder {
 
 			for (int plane = 0; plane < 2; plane++) {
 				int currentPlane = plane;
-				long callbacks = scanChecked(snapshot, plane == 0, (subject, predicate, object, context) -> {
-					requireQuad(subject, predicate, object, context);
-					countMin.add(currentPlane, subject, predicate, object, context);
-					omni.addPopulation(currentPlane, subject, predicate, object, context);
-					projectedDistinct.add(currentPlane, subject, predicate, object, context);
-					if (context != 0L) {
-						namedProjectedDistinct.add(currentPlane, subject, predicate, object, context);
-					} else {
-						defaultContextRows[currentPlane] = Math.incrementExact(defaultContextRows[currentPlane]);
-					}
-					heavyPredicates[currentPlane].observe(predicate);
-					maximumTermId[0] = Math.max(maximumTermId[0],
-							Math.max(Math.max(subject, predicate), Math.max(object, context)));
-				});
+				long visitBase = plane == 0 ? 0L : expectedRows[0];
+				long callbacks = scanPaged(snapshot, plane == 0,
+						(page, rows) -> processPassOnePage(executor, page, rows, currentPlane, countMin,
+								projectedDistinct, namedProjectedDistinct, heavyPredicates[currentPlane], omni,
+								defaultContextRows, maximumTermId),
+						(subject, predicate, object, context) -> addPassOneSerial(currentPlane, subject, predicate,
+								object, context, countMin, projectedDistinct, namedProjectedDistinct,
+								heavyPredicates[currentPlane], omni, defaultContextRows, maximumTermId),
+						completed -> reportProgress(observer, progress, FrontierStatisticsBuildPhase.PASS_ONE,
+								datasetRows, saturatingAdd(visitBase, completed)));
 				if (callbacks != expectedRows[plane] || callbacks != countMin.total(plane)) {
 					throw new IOException("Frontier statistics pass-one row count disagrees with the pinned snapshot");
 				}
@@ -119,16 +162,25 @@ public final class FrontierStatisticsBuilder {
 							Math.max(1, Math.min(HEAVY_OBJECT_DISTINCT_LIMIT, inferredHeavyObjectEntries)))
 			};
 			omni.prepareWitnessPass(maximumTermId[0]);
+			notifyObserver(observer, new FrontierStatisticsBuildObserver.Progress(
+					FrontierStatisticsBuildPhase.PASS_TWO, datasetRows, datasetRows, expectedVisits,
+					0.0d, 0.0d, -1L));
 			try (FrontierCenterBuilder centers = new FrontierCenterBuilder(
-					normalized, generationId, snapshotEpoch, expectedRows, projectedDistinct, config, fileOps)) {
+					normalized, generationId, snapshotEpoch, expectedRows, projectedDistinct, config, fileOps,
+					partitions.centerPartitions(), partitions.sortMemoryPerCollector(), temporaryDisk)) {
 				for (int plane = 0; plane < 2; plane++) {
 					int currentPlane = plane;
-					long callbacks = scanChecked(snapshot, plane == 0, (subject, predicate, object, context) -> {
-						requireQuad(subject, predicate, object, context);
-						heavy[currentPlane].add(subject, predicate, object, context);
-						omni.addWitnesses(currentPlane, subject, predicate, object, context);
-						centers.add(currentPlane, subject, predicate, object, context);
-					});
+					long visitBase = saturatingAdd(datasetRows, plane == 0 ? 0L : expectedRows[0]);
+					long callbacks = scanPaged(snapshot, plane == 0,
+							(page, rows) -> processPassTwoPage(executor, page, rows, currentPlane,
+									heavy[currentPlane], omni, centers),
+							(subject, predicate, object, context) -> {
+								heavy[currentPlane].add(subject, predicate, object, context);
+								omni.addWitnesses(currentPlane, subject, predicate, object, context);
+								centers.add(currentPlane, subject, predicate, object, context);
+							},
+							completed -> reportProgress(observer, progress, FrontierStatisticsBuildPhase.PASS_TWO,
+									datasetRows, saturatingAdd(visitBase, completed)));
 					if (callbacks != expectedRows[plane]) {
 						throw new IOException(
 								"Frontier statistics pass-two row count disagrees with the pinned snapshot");
@@ -164,8 +216,11 @@ public final class FrontierStatisticsBuilder {
 
 				/* Every shard file is already forced; persist all atomic names with one generation barrier. */
 				fileOps.forceDirectory(normalized);
+				DerivedStateBuildProgress.Sample finalSample = progress.finish(expectedVisits);
+				notifyObserver(observer, observedProgress(FrontierStatisticsBuildPhase.PASS_TWO, datasetRows,
+						finalSample));
 				return new FrontierStatisticsManifest(generationId, previousGenerationId, snapshotEpoch, snapshotEpoch,
-						snapshotSequence, System.currentTimeMillis(), maximumTermId[0], descriptors);
+						snapshotSequence, currentTimeMillis.getAsLong(), maximumTermId[0], descriptors);
 			}
 		} catch (ArithmeticException overflow) {
 			throw new FrontierStatisticsException(FrontierFallbackReason.MEMORY_PRESSURE,
@@ -395,17 +450,213 @@ public final class FrontierStatisticsBuilder {
 		}
 	}
 
-	private static long scanChecked(FrontierSnapshotSource snapshot, boolean explicit,
-			FrontierSnapshotSource.RawQuadSink consumer) throws IOException {
+	private static long scanPaged(FrontierSnapshotSource snapshot, boolean explicit, PageHandler fullPage,
+			FrontierSnapshotSource.RawQuadSink serialTail, LongConsumer completedPage) throws IOException {
+		QuadPage page = new QuadPage();
 		long[] callbacks = { 0L };
 		long reported = snapshot.scan(explicit, (subject, predicate, object, context) -> {
-			consumer.accept(subject, predicate, object, context);
+			requireQuad(subject, predicate, object, context);
+			page.add(subject, predicate, object, context);
 			callbacks[0] = Math.incrementExact(callbacks[0]);
+			if (page.size == DerivedStateBuildExecutor.PAGE_ROWS) {
+				fullPage.process(page, page.size);
+				completedPage.accept(callbacks[0]);
+				page.size = 0;
+			}
 		});
 		if (reported != callbacks[0]) {
 			throw new IOException("Frontier statistics snapshot scan count disagrees with delivered rows");
 		}
+		for (int row = 0; row < page.size; row++) {
+			serialTail.accept(page.subjects[row], page.predicates[row], page.objects[row], page.contexts[row]);
+		}
 		return reported;
+	}
+
+	private static void processPassOnePage(DerivedStateBuildExecutor executor, QuadPage page, int rows, int plane,
+			FrontierCountMinMatrix countMin, FrontierProjectedDistinctAccumulator projectedDistinct,
+			FrontierProjectedDistinctAccumulator namedProjectedDistinct, FrontierHeavyKeyTracker heavyPredicates,
+			FrontierOmniBuilder omni, long[] defaultContextRows, long[] maximumTermId) throws IOException {
+		ArrayList<Callable<Void>> tasks = new ArrayList<>();
+		int countMinPartitions = Math.min(executor.configuredThreads(), FrontierLeafProbe.ALL_COMPONENTS);
+		for (int partition = 0; partition < countMinPartitions; partition++) {
+			int maskStart = 1 + partition * FrontierLeafProbe.ALL_COMPONENTS / countMinPartitions;
+			int maskEnd = 1 + (partition + 1) * FrontierLeafProbe.ALL_COMPONENTS / countMinPartitions;
+			tasks.add(() -> {
+				for (int row = 0; row < rows; row++) {
+					countMin.addMasks(plane, maskStart, maskEnd, page.subjects[row], page.predicates[row],
+							page.objects[row], page.contexts[row]);
+				}
+				return null;
+			});
+		}
+		for (int component = 0; component < FrontierOmniLayout.COMPONENT_COUNT; component++) {
+			int currentComponent = component;
+			tasks.add(() -> {
+				for (int row = 0; row < rows; row++) {
+					projectedDistinct.addComponent(plane, currentComponent, page.subjects[row], page.predicates[row],
+							page.objects[row], page.contexts[row]);
+					if (page.contexts[row] != 0L) {
+						namedProjectedDistinct.addComponent(plane, currentComponent, page.subjects[row],
+								page.predicates[row], page.objects[row], page.contexts[row]);
+					}
+				}
+				return null;
+			});
+		}
+		tasks.add(() -> {
+			for (int row = 0; row < rows; row++) {
+				heavyPredicates.observe(page.predicates[row]);
+			}
+			return null;
+		});
+		for (int partition = 0; partition < omni.partitions(); partition++) {
+			int currentPartition = partition;
+			tasks.add(() -> {
+				for (int row = 0; row < rows; row++) {
+					omni.addPopulation(currentPartition, plane, page.subjects[row], page.predicates[row],
+							page.objects[row], page.contexts[row]);
+				}
+				return null;
+			});
+		}
+		executor.runAll(tasks);
+		countMin.addRows(plane, rows);
+		for (int row = 0; row < rows; row++) {
+			if (page.contexts[row] == 0L) {
+				defaultContextRows[plane] = Math.incrementExact(defaultContextRows[plane]);
+			}
+			maximumTermId[0] = maximum(maximumTermId[0], page.subjects[row], page.predicates[row],
+					page.objects[row], page.contexts[row]);
+		}
+	}
+
+	private static void addPassOneSerial(int plane, long subject, long predicate, long object, long context,
+			FrontierCountMinMatrix countMin, FrontierProjectedDistinctAccumulator projectedDistinct,
+			FrontierProjectedDistinctAccumulator namedProjectedDistinct, FrontierHeavyKeyTracker heavyPredicates,
+			FrontierOmniBuilder omni, long[] defaultContextRows, long[] maximumTermId) {
+		countMin.add(plane, subject, predicate, object, context);
+		omni.addPopulation(plane, subject, predicate, object, context);
+		projectedDistinct.add(plane, subject, predicate, object, context);
+		if (context != 0L) {
+			namedProjectedDistinct.add(plane, subject, predicate, object, context);
+		} else {
+			defaultContextRows[plane] = Math.incrementExact(defaultContextRows[plane]);
+		}
+		heavyPredicates.observe(predicate);
+		maximumTermId[0] = maximum(maximumTermId[0], subject, predicate, object, context);
+	}
+
+	private static void processPassTwoPage(DerivedStateBuildExecutor executor, QuadPage page, int rows, int plane,
+			FrontierHeavyPredicateAccumulator heavy, FrontierOmniBuilder omni, FrontierCenterBuilder centers)
+			throws IOException {
+		ArrayList<Callable<Void>> tasks = new ArrayList<>();
+		tasks.add(() -> {
+			for (int row = 0; row < rows; row++) {
+				heavy.add(page.subjects[row], page.predicates[row], page.objects[row], page.contexts[row]);
+			}
+			return null;
+		});
+		for (int partition = 0; partition < omni.partitions(); partition++) {
+			int currentPartition = partition;
+			tasks.add(() -> {
+				for (int row = 0; row < rows; row++) {
+					omni.addWitnesses(currentPartition, plane, page.subjects[row], page.predicates[row],
+							page.objects[row], page.contexts[row]);
+				}
+				return null;
+			});
+		}
+		for (int partition = 0; partition < centers.partitions(); partition++) {
+			int currentPartition = partition;
+			tasks.add(() -> {
+				for (int row = 0; row < rows; row++) {
+					centers.add(currentPartition, plane, page.subjects[row], page.predicates[row],
+							page.objects[row], page.contexts[row]);
+				}
+				return null;
+			});
+		}
+		executor.runAll(tasks);
+	}
+
+	private static BuildPartitions buildPartitions(FrontierStatisticsBuildConfig config,
+			DerivedStateBuildExecutor executor) {
+		int maximumCollectors = Math.toIntExact(Math.min(Integer.MAX_VALUE,
+				config.sortMemoryBytes() / FrontierOmniExternalSorter.RECORD_BYTES));
+		int omniPartitions = Math.min(executor.configuredThreads(), Math.multiplyExact(2,
+				Math.addExact(config.designLaneCount(), config.auditLaneCount())));
+		int centerPartitions = Math.min(executor.configuredThreads(), Math.multiplyExact(
+				Math.multiplyExact(2, config.designLaneCount()), FrontierOmniLayout.COMPONENT_COUNT));
+		while (omniPartitions + centerPartitions > maximumCollectors) {
+			if (omniPartitions >= centerPartitions && omniPartitions > 1) {
+				omniPartitions--;
+			} else if (centerPartitions > 1) {
+				centerPartitions--;
+			} else {
+				throw new IllegalArgumentException("Frontier sort-memory allowance cannot hold both collectors");
+			}
+		}
+		long sortMemoryPerCollector = config.sortMemoryBytes() / (omniPartitions + centerPartitions);
+		return new BuildPartitions(omniPartitions, centerPartitions, sortMemoryPerCollector);
+	}
+
+	private static void reportProgress(FrontierStatisticsBuildObserver observer, DerivedStateBuildProgress progress,
+			FrontierStatisticsBuildPhase phase, long datasetRows, long cumulativeVisits) {
+		DerivedStateBuildProgress.Sample sample = progress.pageCompleted(cumulativeVisits);
+		if (sample != null) {
+			notifyObserver(observer, observedProgress(phase, datasetRows, sample));
+		}
+	}
+
+	private static FrontierStatisticsBuildObserver.Progress observedProgress(FrontierStatisticsBuildPhase phase,
+			long datasetRows, DerivedStateBuildProgress.Sample sample) {
+		return new FrontierStatisticsBuildObserver.Progress(phase, datasetRows, sample.cumulativeVisits(),
+				sample.expectedVisits(), sample.currentRate(), sample.averageRate(), sample.etaMillis());
+	}
+
+	private static void notifyObserver(FrontierStatisticsBuildObserver observer,
+			FrontierStatisticsBuildObserver.Progress progress) {
+		try {
+			observer.update(progress);
+		} catch (RuntimeException telemetryFailure) {
+			logger.warn("Frontier Statistics V2 build observer failed; continuing the build", telemetryFailure);
+		}
+	}
+
+	private static long maximum(long current, long subject, long predicate, long object, long context) {
+		return Math.max(current, Math.max(Math.max(subject, predicate), Math.max(object, context)));
+	}
+
+	private static long saturatingAdd(long left, long right) {
+		long result = left + right;
+		return result < 0L || result < left ? Long.MAX_VALUE : result;
+	}
+
+	@FunctionalInterface
+	private interface PageHandler {
+
+		void process(QuadPage page, int rows) throws IOException;
+	}
+
+	private static final class QuadPage {
+
+		private final long[] subjects = new long[DerivedStateBuildExecutor.PAGE_ROWS];
+		private final long[] predicates = new long[DerivedStateBuildExecutor.PAGE_ROWS];
+		private final long[] objects = new long[DerivedStateBuildExecutor.PAGE_ROWS];
+		private final long[] contexts = new long[DerivedStateBuildExecutor.PAGE_ROWS];
+		private int size;
+
+		private void add(long subject, long predicate, long object, long context) {
+			subjects[size] = subject;
+			predicates[size] = predicate;
+			objects[size] = object;
+			contexts[size] = context;
+			size++;
+		}
+	}
+
+	private record BuildPartitions(int omniPartitions, int centerPartitions, long sortMemoryPerCollector) {
 	}
 
 	private static void requireQuad(long subject, long predicate, long object, long context) throws IOException {
@@ -440,8 +691,10 @@ public final class FrontierStatisticsBuilder {
 		bytes = Math.addExact(bytes, agmsBytes);
 		bytes = Math.addExact(bytes, heavyProjectedDistinctWriteScratch);
 		bytes = Math.addExact(bytes, heavyObjectBytes);
-		bytes = Math.addExact(bytes, FrontierOmniBuilder.estimatedHeapBytes(config));
-		return Math.addExact(bytes, FrontierCenterBuilder.estimatedHeapBytes(config));
+		long omniSortMemory = config.sortMemoryBytes() / 2L;
+		long centerSortMemory = config.sortMemoryBytes() - omniSortMemory;
+		bytes = Math.addExact(bytes, FrontierOmniBuilder.estimatedHeapBytes(config, omniSortMemory));
+		return Math.addExact(bytes, FrontierCenterBuilder.estimatedHeapBytes(config, centerSortMemory));
 	}
 
 	private static int heavyObjectEntryBudget(FrontierStatisticsBuildConfig config) {

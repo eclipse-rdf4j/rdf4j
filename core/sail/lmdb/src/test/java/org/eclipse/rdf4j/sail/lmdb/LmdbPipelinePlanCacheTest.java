@@ -232,6 +232,127 @@ class LmdbPipelinePlanCacheTest {
 	}
 
 	@Test
+	void regretBoundedComputationsRequireCertificatesAndDoNotRetainMissingOnes() {
+		LmdbPipelinePlanCache cache = new LmdbPipelinePlanCache(8, 1, 1024 * 1024L,
+				QueryPlanCacheMode.REGRET_BOUNDED, 0.01d, (context, query) -> 17L);
+		AtomicReference<Boolean> certificateRequired = new AtomicReference<>();
+		AtomicInteger computations = new AtomicInteger();
+		LmdbPipelinePlanCache.Context context = softContext(1L);
+
+		LmdbPipelinePlanCache.Result first = cache.getOrComputeCertified(query("_anon_1", "urn:left"), context,
+				context::revision, ignored -> {
+					throw new AssertionError("An uncertified entry must never reach validation");
+				}, (cached, fresh) -> false, required -> {
+					certificateRequired.set(required);
+					return computedPlan(null, computations);
+				});
+		LmdbPipelinePlanCache.Result second = cache.getOrComputeCertified(query("_anon_2", "urn:left"), context,
+				context::revision, ignored -> {
+					throw new AssertionError("An uncertified entry must never reach validation");
+				}, (cached, fresh) -> false, required -> {
+					certificateRequired.set(required);
+					return computedPlan(null, computations);
+				});
+
+		assertTrue(certificateRequired.get());
+		assertFalse(first.cacheHit());
+		assertFalse(second.cacheHit());
+		assertEquals(2, computations.get());
+		assertEquals(0, cache.statistics().entries());
+		assertEquals(0, cache.statistics().certifiedEntries());
+		assertEquals(0L, cache.statistics().hits());
+	}
+
+	@Test
+	void nonRetainableAndRevisionSensitiveComputationsDoNotRequireCertificates() {
+		PackedPlanDecisionCertificate certificate = mock(PackedPlanDecisionCertificate.class);
+		AtomicInteger computations = new AtomicInteger();
+		List<Boolean> requirements = new ArrayList<>();
+		LmdbPipelinePlanCache.Context context = softContext(1L);
+		LmdbPipelinePlanCache.CertificateValidator validator = ignored -> certified(certificate, 0.0d);
+		LmdbPipelinePlanCache.AuditRecorder recorder = (cached, fresh) -> true;
+
+		LmdbPipelinePlanCache disabled = new LmdbPipelinePlanCache(8, 1, 0L,
+				QueryPlanCacheMode.REGRET_BOUNDED, 0.01d, (ignored, query) -> 17L);
+		disabled.getOrComputeCertified(query("_anon_disabled", "urn:disabled"), context, context::revision,
+				validator, recorder, required -> {
+					requirements.add(required);
+					return computedPlan(certificate, computations);
+				});
+
+		LmdbPipelinePlanCache oversized = new LmdbPipelinePlanCache(8, 1, 1L,
+				QueryPlanCacheMode.REGRET_BOUNDED, 0.01d, (ignored, query) -> 17L);
+		oversized.getOrComputeCertified(query("_anon_oversized", "urn:oversized"), context, context::revision,
+				validator, recorder, required -> {
+					requirements.add(required);
+					return computedPlan(certificate, computations);
+				});
+
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("value"));
+		assignment.setBindingSets(() -> List.<BindingSet>of().iterator());
+		LmdbPipelinePlanCache nonReusable = new LmdbPipelinePlanCache(8, 1, 1024 * 1024L,
+				QueryPlanCacheMode.REGRET_BOUNDED, 0.01d, (ignored, query) -> 17L);
+		nonReusable.getOrComputeCertified(new QueryRoot(assignment), context, context::revision,
+				validator, recorder, required -> {
+					requirements.add(required);
+					return computedPlan(certificate, computations);
+				});
+
+		LmdbPipelinePlanCache revisionSensitive = new LmdbPipelinePlanCache(8, 1, 1024 * 1024L,
+				QueryPlanCacheMode.REVISION_SENSITIVE, 0.01d, (ignored, query) -> 17L);
+		revisionSensitive.getOrComputeCertified(query("_anon_revision", "urn:revision"), context,
+				context::revision, validator, recorder, required -> {
+					requirements.add(required);
+					return computedPlan(certificate, computations);
+				});
+
+		assertEquals(List.of(false, false, false, false), requirements);
+	}
+
+	@Test
+	void saturatedFlightCapacityBypassDoesNotRequireCertificate() throws Exception {
+		LmdbPipelinePlanCache cache = new LmdbPipelinePlanCache(1, 1, 1024 * 1024L,
+				QueryPlanCacheMode.REGRET_BOUNDED, 0.01d, (context, query) -> 17L);
+		PackedPlanDecisionCertificate certificate = mock(PackedPlanDecisionCertificate.class);
+		LmdbPipelinePlanCache.Context context = softContext(1L);
+		AtomicReference<Boolean> ownerRequirement = new AtomicReference<>();
+		AtomicReference<Boolean> bypassRequirement = new AtomicReference<>();
+		AtomicInteger computations = new AtomicInteger();
+		CountDownLatch ownerEntered = new CountDownLatch(1);
+		CountDownLatch releaseOwner = new CountDownLatch(1);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		try {
+			Future<LmdbPipelinePlanCache.Result> owner = executor.submit(() -> cache.getOrComputeCertified(
+					query("_anon_owner", "urn:owner"), context, context::revision,
+					ignored -> certified(certificate, 0.0d), (cached, fresh) -> true, required -> {
+						ownerRequirement.set(required);
+						ownerEntered.countDown();
+						await(releaseOwner);
+						return computedPlan("urn:owner", certificate, computations);
+					}));
+			assertTrue(ownerEntered.await(Duration.ofSeconds(5).toMillis(),
+					java.util.concurrent.TimeUnit.MILLISECONDS));
+
+			LmdbPipelinePlanCache.Result bypassed = cache.getOrComputeCertified(
+					query("_anon_bypass", "urn:bypass"), context, context::revision,
+					ignored -> certified(certificate, 0.0d), (cached, fresh) -> true, required -> {
+						bypassRequirement.set(required);
+						return computedPlan("urn:bypass", certificate, computations);
+					});
+			releaseOwner.countDown();
+
+			assertTrue(ownerRequirement.get());
+			assertFalse(bypassRequirement.get());
+			assertFalse(bypassed.cacheHit());
+			assertFalse(owner.get().cacheHit());
+		} finally {
+			releaseOwner.countDown();
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
 	void deterministicRiskDebtLengthensStableIntervalsAndShortensAfterHarm() {
 		LmdbPipelinePlanCache cache = new LmdbPipelinePlanCache(8, 1, 1024 * 1024L,
 				QueryPlanCacheMode.REGRET_BOUNDED, 0.01d, (context, query) -> 17L);
@@ -250,7 +371,7 @@ class LmdbPipelinePlanCacheTest {
 					int audit = audits.incrementAndGet();
 					expectedRegret.set(audit == 1 ? 0.002d : 0.01d);
 					return audit == 1;
-				}, () -> computedPlan(certificate, computations));
+				}, certificateRequired -> computedPlan(certificate, computations));
 		assertFalse(cold.cacheHit());
 
 		for (long softRevision = 2L; softRevision <= 10L; softRevision++) {
@@ -262,7 +383,7 @@ class LmdbPipelinePlanCacheTest {
 						int audit = audits.incrementAndGet();
 						expectedRegret.set(audit == 1 ? 0.002d : 0.01d);
 						return audit == 1;
-					}, () -> computedPlan(certificate, computations));
+					}, certificateRequired -> computedPlan(certificate, computations));
 			validationsSinceAudit[0]++;
 			if (result.regretAudit()) {
 				validationIntervals.add(validationsSinceAudit[0]);
@@ -289,7 +410,7 @@ class LmdbPipelinePlanCacheTest {
 		cache.getOrComputeCertified(query("_anon_1", "urn:left"), softContext(1L), current::get,
 				ignored -> certified(certificate, 0.001d), (cached, fresh) -> {
 					return true;
-				}, () -> computedPlan(certificate, computations));
+				}, certificateRequired -> computedPlan(certificate, computations));
 		LmdbPipelinePlanCache.Context firstRevision = softContext(2L);
 		current.set(firstRevision.revision());
 		LmdbPipelinePlanCache.Result validated = cache.getOrComputeCertified(
@@ -298,7 +419,7 @@ class LmdbPipelinePlanCacheTest {
 					return certified(certificate, 0.001d);
 				}, (cached, fresh) -> {
 					return true;
-				}, () -> computedPlan(certificate, computations));
+				}, certificateRequired -> computedPlan(certificate, computations));
 
 		LmdbPipelinePlanCache.Context secondRevision = softContext(3L);
 		current.set(secondRevision.revision());
@@ -319,7 +440,7 @@ class LmdbPipelinePlanCacheTest {
 					}
 				}, (cached, fresh) -> {
 					return true;
-				}, () -> computedPlan(certificate, computations));
+				}, certificateRequired -> computedPlan(certificate, computations));
 
 		assertTrue(validated.cacheHit());
 		assertTrue(posteriorReuse.cacheHit());
@@ -340,20 +461,20 @@ class LmdbPipelinePlanCacheTest {
 
 		cache.getOrComputeCertified(query("_anon_1", "urn:left"), softContext(1L), current::get,
 				ignored -> certified(certificate, 0.0d), (cached, fresh) -> true,
-				() -> computedPlan(certificate, computations));
+				certificateRequired -> computedPlan(certificate, computations));
 		LmdbPipelinePlanCache.Context firstRevision = softContext(2L);
 		current.set(firstRevision.revision());
 		LmdbPipelinePlanCache.Result validated = cache.getOrComputeCertified(
 				query("_anon_2", "urn:left"), firstRevision, current::get,
 				validationCountingValidator(certificate, validations), (cached, fresh) -> true,
-				() -> computedPlan(certificate, computations));
+				certificateRequired -> computedPlan(certificate, computations));
 
 		LmdbPipelinePlanCache.Context secondRevision = softContext(3L);
 		current.set(secondRevision.revision());
 		LmdbPipelinePlanCache.Result replayFree = cache.getOrComputeCertified(
 				query("_anon_3", "urn:left"), secondRevision, current::get,
 				validationCountingValidator(certificate, validations), (cached, fresh) -> true,
-				() -> computedPlan(certificate, computations));
+				certificateRequired -> computedPlan(certificate, computations));
 
 		assertTrue(validated.cacheHit());
 		assertTrue(replayFree.cacheHit());
@@ -374,17 +495,17 @@ class LmdbPipelinePlanCacheTest {
 
 		cache.getOrComputeCertified(query("_anon_explain", "urn:explain"), softContext(1L), current::get,
 				ignored -> certified(certificate, 0.0d), (cached, fresh) -> true,
-				() -> computedPlan("urn:explain", certificate, computations));
+				certificateRequired -> computedPlan("urn:explain", certificate, computations));
 		cache.getOrComputeCertified(query("_anon_query_1", "urn:query"), softContext(1L), current::get,
 				ignored -> certified(certificate, 0.0d), (cached, fresh) -> true,
-				() -> computedPlan("urn:query", certificate, computations));
+				certificateRequired -> computedPlan("urn:query", certificate, computations));
 
 		LmdbPipelinePlanCache.Context validatedRevision = softContext(2L);
 		current.set(validatedRevision.revision());
 		LmdbPipelinePlanCache.Result validated = cache.getOrComputeCertified(
 				query("_anon_query_2", "urn:query"), validatedRevision, current::get,
 				ignored -> certified(certificate, 0.0d), (cached, fresh) -> true,
-				() -> computedPlan("urn:query", certificate, computations));
+				certificateRequired -> computedPlan("urn:query", certificate, computations));
 
 		assertTrue(validated.cacheHit());
 		assertEquals(Long.MAX_VALUE, cache.statistics().minimumReusesBeforeRegretAudit(),
@@ -402,13 +523,13 @@ class LmdbPipelinePlanCacheTest {
 
 		cache.getOrComputeCertified(query("_anon_1", "urn:left"), softContext(1L), current::get,
 				ignored -> certified(certificate, 0.001d), (cached, fresh) -> true,
-				() -> computedPlan(certificate, computations));
+				certificateRequired -> computedPlan(certificate, computations));
 		LmdbPipelinePlanCache.Context firstRevision = softContext(2L);
 		current.set(firstRevision.revision());
 		cache.getOrComputeCertified(query("_anon_2", "urn:left"), firstRevision, current::get, ignored -> {
 			validations.incrementAndGet();
 			return certified(certificate, 0.001d);
-		}, (cached, fresh) -> true, () -> computedPlan(certificate, computations));
+		}, (cached, fresh) -> true, certificateRequired -> computedPlan(certificate, computations));
 
 		LmdbPipelinePlanCache.Context runtimeRegression = softContext(3L);
 		current.set(runtimeRegression.revision());
@@ -416,7 +537,7 @@ class LmdbPipelinePlanCacheTest {
 				query("_anon_3", "urn:left"), runtimeRegression, current::get, ignored -> {
 					validations.incrementAndGet();
 					return LmdbPipelinePlanCache.CertificateValidation.replan("runtime-regression");
-				}, (cached, fresh) -> false, () -> computedPlan(certificate, computations));
+				}, (cached, fresh) -> false, certificateRequired -> computedPlan(certificate, computations));
 
 		assertFalse(result.cacheHit(), "runtime safety invalidation must bypass an outstanding posterior lease");
 		assertEquals("runtime-regression", result.validationReason());
@@ -439,7 +560,7 @@ class LmdbPipelinePlanCacheTest {
 					return certified(certificate, 0.0d);
 				}, (cached, fresh) -> {
 					return true;
-				}, () -> computedPlan(certificate, computations));
+				}, certificateRequired -> computedPlan(certificate, computations));
 		LmdbPipelinePlanCache.Context changed = softContext(2L);
 		current.set(changed.revision());
 		LmdbPipelinePlanCache.Result result = cache.getOrComputeCertified(
@@ -449,7 +570,7 @@ class LmdbPipelinePlanCacheTest {
 					return certified(certificate, 0.0d);
 				}, (cached, fresh) -> {
 					return true;
-				}, () -> computedPlan(certificate, computations));
+				}, certificateRequired -> computedPlan(certificate, computations));
 
 		assertFalse(result.cacheHit());
 		assertEquals(2, computations.get());
@@ -469,14 +590,14 @@ class LmdbPipelinePlanCacheTest {
 		cache.getOrComputeCertified(query("_anon_1", "urn:left"), first, current::get,
 				ignored -> certified(certificate, 0.0d), (cached, fresh) -> {
 					return true;
-				}, () -> computedPlan(certificate, computations));
+				}, certificateRequired -> computedPlan(certificate, computations));
 		LmdbPipelinePlanCache.Context committed = context(18L);
 		current.set(committed.revision());
 		LmdbPipelinePlanCache.Result result = cache.getOrComputeCertified(
 				query("_anon_2", "urn:left"), committed, current::get,
 				ignored -> certified(certificate, 0.0d), (cached, fresh) -> {
 					return true;
-				}, () -> computedPlan(certificate, computations));
+				}, certificateRequired -> computedPlan(certificate, computations));
 
 		assertFalse(result.cacheHit());
 		assertEquals(2, computations.get());
@@ -494,7 +615,7 @@ class LmdbPipelinePlanCacheTest {
 		cache.getOrComputeCertified(query("_anon_1", "urn:left"), softContext(1L), current::get,
 				ignored -> certified(certificate, 0.0d), (cached, fresh) -> {
 					return true;
-				}, () -> computedPlan(certificate, computations));
+				}, certificateRequired -> computedPlan(certificate, computations));
 		LmdbPipelinePlanCache.Context rejectedContext = softContext(2L);
 		current.set(rejectedContext.revision());
 		LmdbPipelinePlanCache.Result rejected = cache.getOrComputeCertified(
@@ -502,7 +623,7 @@ class LmdbPipelinePlanCacheTest {
 				ignored -> LmdbPipelinePlanCache.CertificateValidation.replan("winner-changed"),
 				(cached, fresh) -> {
 					return true;
-				}, () -> computedPlan(certificate, computations));
+				}, certificateRequired -> computedPlan(certificate, computations));
 
 		LmdbPipelinePlanCache.Context exceptionalContext = softContext(3L);
 		current.set(exceptionalContext.revision());
@@ -512,7 +633,7 @@ class LmdbPipelinePlanCacheTest {
 					throw new IllegalStateException("unavailable evidence");
 				}, (cached, fresh) -> {
 					return true;
-				}, () -> computedPlan(certificate, computations));
+				}, certificateRequired -> computedPlan(certificate, computations));
 
 		assertFalse(rejected.cacheHit());
 		assertEquals("winner-changed", rejected.validationReason());
@@ -538,7 +659,7 @@ class LmdbPipelinePlanCacheTest {
 					audits.incrementAndGet();
 					return true;
 				},
-				() -> computedPlan(certificate, computations));
+				certificateRequired -> computedPlan(certificate, computations));
 
 		LmdbPipelinePlanCache.Context rejectedContext = softContext(2L);
 		current.set(rejectedContext.revision());
@@ -548,7 +669,7 @@ class LmdbPipelinePlanCacheTest {
 				(cached, fresh) -> {
 					audits.incrementAndGet();
 					return true;
-				}, () -> computedPlan(certificate, computations));
+				}, certificateRequired -> computedPlan(certificate, computations));
 
 		LmdbPipelinePlanCache.Context recoveredContext = softContext(3L);
 		current.set(recoveredContext.revision());
@@ -558,7 +679,7 @@ class LmdbPipelinePlanCacheTest {
 				(cached, fresh) -> {
 					audits.incrementAndGet();
 					return true;
-				}, () -> computedPlan(certificate, computations));
+				}, certificateRequired -> computedPlan(certificate, computations));
 
 		assertFalse(rejected.cacheHit());
 		assertEquals(1, audits.get(), "the mandatory replan is also an independent decision audit");
@@ -593,7 +714,7 @@ class LmdbPipelinePlanCacheTest {
 		cache.getOrComputeCertified(query("_anon_1", "urn:left"), softContext(1L), current::get,
 				ignored -> certified(certificate, 0.0d), (cached, fresh) -> {
 					return true;
-				}, () -> computedPlan(certificate, computations));
+				}, certificateRequired -> computedPlan(certificate, computations));
 
 		LmdbPipelinePlanCache.Context changed = softContext(2L);
 		current.set(changed.revision());
@@ -609,7 +730,7 @@ class LmdbPipelinePlanCacheTest {
 						return certified(certificate, 0.0d);
 					}, (cached, fresh) -> {
 						return true;
-					}, () -> computedPlan(certificate, computations)));
+					}, certificateRequired -> computedPlan(certificate, computations)));
 			assertTrue(validatorEntered.await(Duration.ofSeconds(5).toMillis(),
 					java.util.concurrent.TimeUnit.MILLISECONDS));
 			Future<LmdbPipelinePlanCache.Result> second = executor.submit(() -> cache.getOrComputeCertified(
@@ -618,7 +739,7 @@ class LmdbPipelinePlanCacheTest {
 						return certified(certificate, 0.0d);
 					}, (cached, fresh) -> {
 						return true;
-					}, () -> computedPlan(certificate, computations)));
+					}, certificateRequired -> computedPlan(certificate, computations)));
 			long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
 			while (cache.waits() == 0L && System.nanoTime() < deadline) {
 				Thread.onSpinWait();

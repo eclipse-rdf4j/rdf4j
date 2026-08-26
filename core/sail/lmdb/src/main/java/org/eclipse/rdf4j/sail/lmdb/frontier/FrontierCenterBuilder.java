@@ -4,7 +4,7 @@
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/documents/edl-v10.php.
+ * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** Two-stage coordinated sampler with independent center and bounded incident-row admission. */
 final class FrontierCenterBuilder implements AutoCloseable {
@@ -37,13 +38,25 @@ final class FrontierCenterBuilder implements AutoCloseable {
 	private final long maximumEvents;
 	private final long[] centerThresholds;
 	private final long[] edgeThresholds;
-	private FrontierOmniExternalSorter.Collector events;
-	private boolean overflowed;
+	private final int[] partitionStarts;
+	private final int[] partitionEnds;
+	private final AtomicLong admittedEvents = new AtomicLong();
+	private FrontierOmniExternalSorter.Collector[] events;
+	private volatile boolean overflowed;
 	private boolean finished;
 
 	FrontierCenterBuilder(Path directory, long generationId, long epoch, long[] planeRows,
 			FrontierProjectedDistinctAccumulator projectedDistinct, FrontierStatisticsBuildConfig config,
 			FrontierFileOps fileOps)
+			throws IOException {
+		this(directory, generationId, epoch, planeRows, projectedDistinct, config, fileOps, 1,
+				config.sortMemoryBytes(), new FrontierTemporaryDiskReservation(config.joinSampleBudgetBytes()));
+	}
+
+	FrontierCenterBuilder(Path directory, long generationId, long epoch, long[] planeRows,
+			FrontierProjectedDistinctAccumulator projectedDistinct, FrontierStatisticsBuildConfig config,
+			FrontierFileOps fileOps, int partitions, long sortMemoryPerCollector,
+			FrontierTemporaryDiskReservation temporaryDisk)
 			throws IOException {
 		if (planeRows.length != FrontierOmniLayout.PLANE_COUNT) {
 			throw new IllegalArgumentException("Frontier center sampling requires both statement planes");
@@ -56,41 +69,70 @@ final class FrontierCenterBuilder implements AutoCloseable {
 		lanes = config.designLaneCount();
 		domains = Math.multiplyExact(
 				Math.multiplyExact(FrontierOmniLayout.PLANE_COUNT, lanes), FrontierOmniLayout.COMPONENT_COUNT);
+		if (partitions <= 0 || partitions > domains
+				|| sortMemoryPerCollector < FrontierOmniExternalSorter.RECORD_BYTES) {
+			throw new IllegalArgumentException("Frontier center partition dimensions are invalid");
+		}
+		partitionStarts = new int[partitions];
+		partitionEnds = new int[partitions];
+		for (int partition = 0; partition < partitions; partition++) {
+			partitionStarts[partition] = partition * domains / partitions;
+			partitionEnds[partition] = (partition + 1) * domains / partitions;
+		}
 		rowCapacity = bufferCapacity(config);
 		maximumEvents = config.joinSampleBudgetBytes() / EVENT_BYTES;
 		centerThresholds = new long[domains];
 		edgeThresholds = new long[domains];
 		allocateThresholds(planeRows, projectedDistinct);
 		if (maximumEvents >= domains && config.joinSampleBudgetBytes() >= EVENT_BYTES) {
-			events = FrontierOmniExternalSorter.collector(
-					this.directory, config.sortMemoryBytes(), config.joinSampleBudgetBytes());
+			events = new FrontierOmniExternalSorter.Collector[partitions];
+			try {
+				for (int partition = 0; partition < events.length; partition++) {
+					events[partition] = FrontierOmniExternalSorter.collector(
+							this.directory, sortMemoryPerCollector, config.joinSampleBudgetBytes(), temporaryDisk);
+				}
+			} catch (IOException failure) {
+				closeEvents();
+				throw failure;
+			}
 		}
 	}
 
 	void add(int plane, long subject, long predicate, long object, long context) throws IOException {
+		for (int partition = 0; partition < partitionStarts.length; partition++) {
+			add(partition, plane, subject, predicate, object, context);
+		}
+	}
+
+	void add(int partition, int plane, long subject, long predicate, long object, long context) throws IOException {
 		if (finished) {
 			throw new IllegalStateException("Frontier center sample pass is already finished");
 		}
 		if (events == null || overflowed) {
 			return;
 		}
-		for (int lane = 0; lane < lanes; lane++) {
-			for (int component = 0; component < FrontierOmniLayout.COMPONENT_COUNT; component++) {
-				int domain = domain(plane, lane, component);
-				long center = component(component, subject, predicate, object, context);
-				if (FrontierStatisticsHash.centerPriority(lane, center) > centerThresholds[domain]) {
-					continue;
-				}
-				if (FrontierStatisticsHash.centerEdgePriority(
-						plane, lane, component, subject, predicate, object, context) > edgeThresholds[domain]) {
-					continue;
-				}
-				if (events.records() >= maximumEvents) {
-					disable();
-					return;
-				}
-				events.add(domain, center, subject, predicate, object, context);
+		FrontierOmniExternalSorter.Collector collector = events[partition];
+		long rowPriority = FrontierStatisticsHash.rowPriority(plane, subject, predicate, object, context);
+		for (int domain = partitionStarts[partition]; domain < partitionEnds[partition]; domain++) {
+			int planeAndLane = domain / FrontierOmniLayout.COMPONENT_COUNT;
+			if (planeAndLane / lanes != plane) {
+				continue;
 			}
+			int lane = planeAndLane % lanes;
+			int component = domain % FrontierOmniLayout.COMPONENT_COUNT;
+			long center = component(component, subject, predicate, object, context);
+			if (FrontierStatisticsHash.centerPriority(lane, center) > centerThresholds[domain]) {
+				continue;
+			}
+			if (FrontierStatisticsHash.centerEdgePriorityFromRowPriority(
+					lane, component, rowPriority) > edgeThresholds[domain]) {
+				continue;
+			}
+			if (admittedEvents.incrementAndGet() > maximumEvents) {
+				overflowed = true;
+				return;
+			}
+			collector.add(domain, center, subject, predicate, object, context);
 		}
 	}
 
@@ -105,7 +147,9 @@ final class FrontierCenterBuilder implements AutoCloseable {
 		}
 		DomainWriter writer = new DomainWriter(maximumTermId);
 		try {
-			events.finish(writer::accept);
+			for (FrontierOmniExternalSorter.Collector collector : events) {
+				collector.finish(writer::accept);
+			}
 			events = null;
 			writer.finish();
 			return writer.descriptors();
@@ -115,9 +159,13 @@ final class FrontierCenterBuilder implements AutoCloseable {
 	}
 
 	static long estimatedHeapBytes(FrontierStatisticsBuildConfig config) {
+		return estimatedHeapBytes(config, config.sortMemoryBytes());
+	}
+
+	static long estimatedHeapBytes(FrontierStatisticsBuildConfig config, long sortMemoryBytes) {
 		long rows = bufferCapacity(config);
 		long domainBuffer = Math.multiplyExact(rows, ROW_BYTES);
-		return Math.addExact(config.sortMemoryBytes(), domainBuffer);
+		return Math.addExact(sortMemoryBytes, domainBuffer);
 	}
 
 	@Override
@@ -149,16 +197,32 @@ final class FrontierCenterBuilder implements AutoCloseable {
 		}
 	}
 
-	private void disable() throws IOException {
-		overflowed = true;
-		closeEvents();
-	}
-
 	private void closeEvents() throws IOException {
 		if (events != null) {
-			events.close();
+			IOException failure = null;
+			for (FrontierOmniExternalSorter.Collector collector : events) {
+				if (collector == null) {
+					continue;
+				}
+				try {
+					collector.close();
+				} catch (IOException current) {
+					if (failure == null) {
+						failure = current;
+					} else {
+						failure.addSuppressed(current);
+					}
+				}
+			}
 			events = null;
+			if (failure != null) {
+				throw failure;
+			}
 		}
+	}
+
+	int partitions() {
+		return partitionStarts.length;
 	}
 
 	private int domain(int plane, int lane, int component) {
