@@ -45,7 +45,7 @@ final class LmdbBulkLoaderEngine {
 			throws IOException {
 		long started = System.nanoTime();
 		try (BulkLoadWorkspace workspace = BulkLoadWorkspace.open(loader.target(), loader.temporaryDirectory(),
-				loader.progressListener(), loader.workers(), loader.queueBatches())) {
+				loader.progressListener(), loader.workers(), loader.queueBatches(), loader.compression())) {
 			try {
 				workspace.startPhase(BulkLoadPhase.PREFLIGHT);
 				checkCancelled(loader);
@@ -92,7 +92,7 @@ final class LmdbBulkLoaderEngine {
 								workspace.startPhase(BulkLoadPhase.DISTINCT_AND_ANALYZE_VALUES);
 								dependencies = ValueDependencyCollector.collect(staged, workspace.directory(),
 										loader.partitionCount(), loader.maxOpenFiles(), loader.config(),
-										loader.cancellationSignal());
+										workspace.compression(), loader.cancellationSignal());
 								workspace.progress(staged.statements(), 0L);
 								workspace.completePhase(BulkLoadPhase.DISTINCT_AND_ANALYZE_VALUES);
 							}
@@ -116,8 +116,8 @@ final class LmdbBulkLoaderEngine {
 							workspace.startPhase(BulkLoadPhase.BUILD_MAPPED_DICTIONARY);
 							dictionary = PartitionValueDictionaryBuilder.build(staged, dependencies,
 									workspace.directory(), loader.partitionCount(), loader.memoryBudgetBytes(),
-									loader.maxOpenFiles(), loader.config(), loader.cancellationSignal(),
-									predicateIdPlan);
+									loader.maxOpenFiles(), loader.config(), workspace.compression(),
+									loader.cancellationSignal(), predicateIdPlan);
 							workspace.recordDictionary(dictionary);
 							workspace.progress(
 									Math.addExact(dictionary.persistedValues(), dictionary.inlineValues()), 0L);
@@ -127,10 +127,11 @@ final class LmdbBulkLoaderEngine {
 
 						workspace.startPhase(BulkLoadPhase.RESOLVE_IDS);
 						statements = ResolvedIdQuadSpool.build(staged, dictionary, workspace.directory(),
-								loader.maxOpenFiles(), loader.memoryBudgetBytes(), loader.cancellationSignal());
+								loader.maxOpenFiles(), loader.memoryBudgetBytes(), workspace.compression(),
+								loader.cancellationSignal());
 						resolvedValues = ResolvedValueRecords.build(dictionary, workspace.directory(),
 								loader.maxOpenFiles(), loader.memoryBudgetBytes(), loader.config(),
-								loader.cancellationSignal());
+								workspace.compression(), loader.cancellationSignal());
 						workspace.recordResolved(statements, resolvedValues);
 						workspace.progress(Math.addExact(statements.statements(), resolvedValues.records()), 0L);
 						workspace.completePhase(BulkLoadPhase.RESOLVE_IDS);
@@ -148,7 +149,8 @@ final class LmdbBulkLoaderEngine {
 							throw new IOException("Resolved value records are unavailable for native-run construction");
 						}
 						nativeValueRecords = ValueStoreBulkRecords.build(resolvedValues, workspace.directory(),
-								loader.memoryBudgetBytes(), loader.maxOpenFiles(), loader.cancellationSignal());
+								loader.memoryBudgetBytes(), loader.maxOpenFiles(), workspace.compression(),
+								loader.cancellationSignal());
 						workspace.recordNativeRecords(nativeValueRecords);
 						workspace.progress(nativeRecordCount(nativeValueRecords), 0L);
 						workspace.completePhase(BulkLoadPhase.BUILD_NATIVE_RUNS);
@@ -159,7 +161,7 @@ final class LmdbBulkLoaderEngine {
 					NativeStoreWriter.WriteResult writeResult = NativeStoreWriter.write(generation.directory(),
 							loader.config(),
 							nativeValueRecords, statements, staged, loader.memoryBudgetBytes(), loader.maxOpenFiles(),
-							loader.writeTransactionRecords(), loader.writeTransactionBytes(),
+							loader.writeTransactionRecords(), loader.writeTransactionBytes(), workspace.compression(),
 							loader.cancellationSignal());
 					workspace.progress(writeResult.storedStatements(), 0L);
 					workspace.completePhase(BulkLoadPhase.WRITE_GENERATION);
@@ -193,7 +195,8 @@ final class LmdbBulkLoaderEngine {
 	private static CanonicalStagedInput stage(LmdbBulkLoader loader, BulkLoadWorkspace workspace, InputStream input,
 			String baseUri, RDFFormat format) throws IOException {
 		try (CanonicalStatementStager stager = new CanonicalStatementStager(workspace.directory(), loader.config(),
-				loader.partitionCount(), loader.maxOpenFiles(), loader.memoryBudgetBytes())) {
+				loader.partitionCount(), loader.maxOpenFiles(), loader.memoryBudgetBytes(),
+				workspace.compression())) {
 			parse(loader, workspace, stager, input, baseUri, format);
 			return stager.stagedInput();
 		}
@@ -202,7 +205,8 @@ final class LmdbBulkLoaderEngine {
 	private static CanonicalStagedInput stage(LmdbBulkLoader loader, BulkLoadWorkspace workspace,
 			List<LmdbBulkLoader.PathInput> inputs) throws IOException {
 		try (CanonicalStatementStager stager = new CanonicalStatementStager(workspace.directory(), loader.config(),
-				loader.partitionCount(), loader.maxOpenFiles(), loader.memoryBudgetBytes())) {
+				loader.partitionCount(), loader.maxOpenFiles(), loader.memoryBudgetBytes(),
+				workspace.compression())) {
 			for (LmdbBulkLoader.PathInput input : inputs) {
 				checkCancelled(loader);
 				try (InputStream stream = Files.newInputStream(input.path())) {

@@ -39,15 +39,18 @@ final class ResolvedValueRecords {
 	private final Path descriptors;
 	private final ExternalLongTupleSorter.SortedTupleFile dependencies;
 	private final long records;
+	private final BulkCompression compression;
 
-	private ResolvedValueRecords(Path descriptors, ExternalLongTupleSorter.SortedTupleFile dependencies, long records) {
+	private ResolvedValueRecords(Path descriptors, ExternalLongTupleSorter.SortedTupleFile dependencies, long records,
+			BulkCompression compression) {
 		this.descriptors = descriptors;
 		this.dependencies = dependencies;
 		this.records = records;
+		this.compression = compression;
 	}
 
-	static ResolvedValueRecords restore(Path workspace, long records, long dependencyRecords, long dependencyBytes)
-			throws IOException {
+	static ResolvedValueRecords restore(Path workspace, long records, long dependencyRecords, long dependencyBytes,
+			BulkCompression compression) throws IOException {
 		if (records < 0L || dependencyRecords < 0L) {
 			throw new IOException("Invalid resolved value metadata in " + workspace);
 		}
@@ -56,22 +59,23 @@ final class ResolvedValueRecords {
 			throw new IOException("Missing resolved value descriptors: " + descriptors);
 		}
 		ExternalLongTupleSorter.SortedTupleFile dependencies = ExternalLongTupleSorter.SortedTupleFile.restore(
-				workspace.resolve("resolved-value-components.bin"), 3, dependencyRecords, dependencyBytes);
-		return new ResolvedValueRecords(descriptors, dependencies, records);
+				workspace.resolve("resolved-value-components.bin"), 3, dependencyRecords, dependencyBytes, compression);
+		return new ResolvedValueRecords(descriptors, dependencies, records, compression);
 	}
 
 	static ResolvedValueRecords build(PartitionValueDictionary dictionary, Path workspace, int maxOpenFiles,
-			long memoryBudgetBytes, LmdbStoreConfig config, BooleanSupplier cancellationSignal) throws IOException {
+			long memoryBudgetBytes, LmdbStoreConfig config, BulkCompression compression,
+			BooleanSupplier cancellationSignal) throws IOException {
 		Path bucketDirectory = workspace.resolve("value-component-buckets");
 		Path descriptorPath = workspace.resolve("assigned-values.bin");
 		Path sortedDependencies = workspace.resolve("resolved-value-components.bin");
 		Files.createDirectories(bucketDirectory);
 		long[] sequence = { 0L };
-		try (DataOutputStream descriptors = BulkLz4.output(descriptorPath);
-				DependencyBucketWriter buckets = new DependencyBucketWriter(bucketDirectory,
+		try (DataOutputStream descriptors = BulkLz4.output(descriptorPath, compression);
+				DependencyBucketWriter buckets = new DependencyBucketWriter(compression, bucketDirectory,
 						dictionary.partitionCount(), maxOpenFiles);
 				ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(workspace, "resolved-value-components", 3,
-						Math.max(16 * 1024L, memoryBudgetBytes / 2L), maxOpenFiles)) {
+						Math.max(16 * 1024L, memoryBudgetBytes / 2L), maxOpenFiles, compression)) {
 			dictionary.forEachEntry(entry -> {
 				checkCancelled(cancellationSignal);
 				if (ValueIds.isInlined(entry.id())) {
@@ -107,7 +111,7 @@ final class ResolvedValueRecords {
 				checkCancelled(cancellationSignal);
 				try (PartitionValueDictionary.PartitionReader reader = dictionary.openPartition(partition)) {
 					LookupCache cache = new LookupCache(16_384);
-					readBucket(bucketDirectory, partition, (owner, component, key) -> {
+					readBucket(bucketDirectory, partition, compression, (owner, component, key) -> {
 						long hash = CanonicalTermCodec.routeHash64(key);
 						long id = cache.lookup(hash, key);
 						if (id == 0L) {
@@ -122,7 +126,8 @@ final class ResolvedValueRecords {
 					});
 				}
 			}
-			return new ResolvedValueRecords(descriptorPath, sorter.finish(sortedDependencies), sequence[0]);
+			return new ResolvedValueRecords(descriptorPath, sorter.finish(sortedDependencies), sequence[0],
+					compression);
 		}
 	}
 
@@ -139,8 +144,8 @@ final class ResolvedValueRecords {
 	}
 
 	void forEach(ResolvedValueConsumer consumer, BooleanSupplier cancellationSignal) throws IOException {
-		try (DataInputStream descriptorInput = BulkLz4.input(descriptors);
-				DataInputStream dependencyInput = BulkLz4.input(dependencies.path())) {
+		try (DataInputStream descriptorInput = BulkLz4.input(descriptors, compression);
+				DataInputStream dependencyInput = BulkLz4.input(dependencies.path(), compression)) {
 			long seen = 0L;
 			while (true) {
 				long sequence;
@@ -200,8 +205,9 @@ final class ResolvedValueRecords {
 		};
 	}
 
-	private static void readBucket(Path directory, int partition, DependencyVisitor visitor) throws IOException {
-		BulkLz4.readConcatenated(DependencyBucketWriter.path(directory, partition),
+	private static void readBucket(Path directory, int partition, BulkCompression compression,
+			DependencyVisitor visitor) throws IOException {
+		BulkLz4.readConcatenated(DependencyBucketWriter.path(directory, partition), compression,
 				input -> readBucketFrame(input, partition, visitor));
 	}
 
@@ -246,7 +252,11 @@ final class ResolvedValueRecords {
 		private final BoundedBucketOutputLimiter outputs;
 		private boolean closed;
 
-		private DependencyBucketWriter(Path directory, int partitionCount, int maxOpenFiles) {
+		private final BulkCompression compression;
+
+		private DependencyBucketWriter(BulkCompression compression, Path directory, int partitionCount,
+				int maxOpenFiles) {
+			this.compression = compression;
 			this.directory = directory;
 			this.partitionCount = partitionCount;
 			outputs = new BoundedBucketOutputLimiter(maxOpenFiles);
@@ -263,7 +273,8 @@ final class ResolvedValueRecords {
 			}
 			long routeHash = CanonicalTermCodec.routeHash64(key);
 			int partition = (int) routeHash & (partitionCount - 1);
-			DataOutputStream output = outputs.output(partition, () -> BulkLz4.appendOutput(path(directory, partition)));
+			DataOutputStream output = outputs.output(partition,
+					() -> BulkLz4.appendOutput(path(directory, partition), compression));
 			output.writeLong(owner);
 			output.writeByte(component);
 			output.writeLong(routeHash);

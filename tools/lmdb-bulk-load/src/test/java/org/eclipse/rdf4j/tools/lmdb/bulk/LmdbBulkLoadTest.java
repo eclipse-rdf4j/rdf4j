@@ -49,6 +49,7 @@ class LmdbBulkLoadTest {
 				"",
 				"1",
 				"2",
+				"",
 				"none",
 				"",
 				"false",
@@ -141,6 +142,7 @@ class LmdbBulkLoadTest {
 				"",
 				"1",
 				"2",
+				"",
 				"none",
 				"",
 				"",
@@ -224,5 +226,149 @@ class LmdbBulkLoadTest {
 				.filter(line -> line.matches(".*phase-ops=[1-9][0-9]*.*"))
 				.toList())
 						.allMatch(line -> !line.contains(" ops/s=0.0 "));
+	}
+
+	@Test
+	void reportsTheSelectedCompressionInTheSummary() throws Exception {
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", temporaryDirectory.resolve("store").toString(),
+				"--input", input.toString(),
+				"--compression", "7",
+				"--progress", "none"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
+
+		assertThat(exitCode)
+				.as(standardError.toString(StandardCharsets.UTF_8))
+				.isZero();
+		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
+				.contains("stored=1")
+				.contains("compression=7");
+	}
+
+	@Test
+	void acceptsUncompressedIntermediateFiles() throws Exception {
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", temporaryDirectory.resolve("store").toString(),
+				"--input", input.toString(),
+				"--compression", "none",
+				"--progress", "none"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
+
+		assertThat(exitCode)
+				.as(standardError.toString(StandardCharsets.UTF_8))
+				.isZero();
+		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
+				.contains("stored=1")
+				.contains("compression=none");
+	}
+
+	@Test
+	void defaultsToFastestCompression() throws Exception {
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", temporaryDirectory.resolve("store").toString(),
+				"--input", input.toString(),
+				"--progress", "none"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
+
+		assertThat(exitCode)
+				.as(standardError.toString(StandardCharsets.UTF_8))
+				.isZero();
+		assertThat(standardOutput.toString(StandardCharsets.UTF_8)).contains("compression=fastest");
+	}
+
+	@Test
+	void rejectsACompressionLevelOutsideTheLz4Range() {
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", temporaryDirectory.resolve("store").toString(),
+				"--input", temporaryDirectory.resolve("missing.nt").toString(),
+				"--compression", "18"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
+
+		assertThat(exitCode).isEqualTo(2);
+		assertThat(standardError.toString(StandardCharsets.UTF_8))
+				.contains("--compression")
+				.contains("17");
+	}
+
+	@Test
+	void rejectsAnUnknownCompressionName() {
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", temporaryDirectory.resolve("store").toString(),
+				"--input", temporaryDirectory.resolve("missing.nt").toString(),
+				"--compression", "high"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
+
+		assertThat(exitCode).isEqualTo(2);
+		assertThat(standardError.toString(StandardCharsets.UTF_8)).contains("--compression");
+	}
+
+	@Test
+	void helpDocumentsCompression() {
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] { "--help" }, new ByteArrayInputStream(new byte[0]),
+				new PrintStream(standardOutput), new PrintStream(standardError));
+
+		assertThat(exitCode).isZero();
+		assertThat(standardOutput.toString(StandardCharsets.UTF_8)).contains("--compression");
+	}
+
+	@Test
+	void interactiveSetupOffersCompressionWithFastestFirstAndFallsBackToALineListWithoutATerminal()
+			throws Exception {
+		Path input = temporaryDirectory.resolve("input.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+		Path store = temporaryDirectory.resolve("store");
+		// Piped standard input is not a terminal, so the arrow-key menu must degrade to a numbered line prompt.
+		// Prompts in order: format, parser, base-uri, statement-indexes, triple-term-indexes, memory, partitions,
+		// max-open-files, workers, queue-batches, compression, progress, temporary-directory, inline-literals,
+		// value-hash-cache, write-transaction-records, write-transaction-bytes.
+		String answers = String.join("\n",
+				"", "", "", "", "", "", "", "", "", "",
+				"9",
+				"none",
+				"", "", "", "", "") + "\n";
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--interactive",
+				"--store", store.toString(),
+				"--input", input.toString()
+		}, new ByteArrayInputStream(answers.getBytes(StandardCharsets.UTF_8)),
+				new PrintStream(standardOutput), new PrintStream(standardError));
+
+		assertThat(exitCode)
+				.as(standardError.toString(StandardCharsets.UTF_8))
+				.isZero();
+		String prompts = standardError.toString(StandardCharsets.UTF_8);
+		assertThat(prompts).contains("Intermediate-file compression");
+		assertThat(prompts.indexOf("fastest"))
+				.as("fastest must be listed above none")
+				.isLessThan(prompts.indexOf("none"));
+		assertThat(prompts).contains("17");
+		assertThat(standardOutput.toString(StandardCharsets.UTF_8)).contains("compression=9");
 	}
 }

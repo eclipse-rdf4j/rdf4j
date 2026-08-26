@@ -45,8 +45,8 @@ final class TripleTermIndexBulkRecords implements AutoCloseable {
 	}
 
 	static TripleTermIndexBulkRecords build(ExternalLongTupleSorter.SortedTupleFile source, Path workspace,
-			String configuredIndexes, long memoryBudgetBytes, int maxOpenFiles, BooleanSupplier cancellationSignal)
-			throws IOException {
+			String configuredIndexes, long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
+			BooleanSupplier cancellationSignal) throws IOException {
 		List<String> specifications = specifications(configuredIndexes);
 		if (specifications.isEmpty()) {
 			// Triple-term indexing disabled ("none"): skip reading the source and build no runs.
@@ -58,7 +58,7 @@ final class TripleTermIndexBulkRecords implements AutoCloseable {
 		try {
 			for (String specification : specifications) {
 				sorters.add(new ExternalLongTupleSorter(workspace, "term-index-" + specification, 4,
-						perSorterBudget, perSorterOpenFiles));
+						perSorterBudget, perSorterOpenFiles, compression));
 			}
 			source.forEach(tuple -> {
 				checkCancelled(cancellationSignal);

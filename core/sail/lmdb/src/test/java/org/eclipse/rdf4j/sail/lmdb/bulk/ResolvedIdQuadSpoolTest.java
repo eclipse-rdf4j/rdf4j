@@ -48,27 +48,29 @@ class ResolvedIdQuadSpoolTest {
 		Path staging = Files.createDirectory(temporaryDirectory.resolve("staging"));
 
 		CanonicalStagedInput staged;
-		try (CanonicalStatementStager stager = new CanonicalStatementStager(staging, config, 4, 4, 64 * 1024L)) {
+		try (CanonicalStatementStager stager = new CanonicalStatementStager(staging, config, 4, 4, 64 * 1024L,
+				BulkCompression.FASTEST)) {
 			stager.writeStatement(first);
 			stager.writeStatement(second);
 			staged = stager.stagedInput();
 		}
 		ValueDependencyBuckets dependencies = ValueDependencyCollector.collect(staged, staging, 4, 4, config,
-				() -> false);
+				BulkCompression.FASTEST, () -> false);
 		PartitionValueDictionary dictionary = PartitionValueDictionaryBuilder.build(staged, dependencies, staging, 4,
-				64 * 1024L, 4, config, () -> false);
+				64 * 1024L, 4, config, BulkCompression.FASTEST, () -> false);
 
 		Class<?> spoolClass = Class.forName("org.eclipse.rdf4j.sail.lmdb.bulk.ResolvedIdQuadSpool");
 		Method build = spoolClass.getDeclaredMethod("build", CanonicalStagedInput.class,
-				PartitionValueDictionary.class, Path.class, int.class, long.class, BooleanSupplier.class);
+				PartitionValueDictionary.class, Path.class, int.class, long.class, BulkCompression.class,
+				BooleanSupplier.class);
 		build.setAccessible(true);
-		Object spool = build.invoke(null, staged, dictionary, staging, 4, 64 * 1024L,
+		Object spool = build.invoke(null, staged, dictionary, staging, 4, 64 * 1024L, BulkCompression.FASTEST,
 				(BooleanSupplier) () -> false);
 		Method path = spoolClass.getDeclaredMethod("path");
 		path.setAccessible(true);
 		byte[] optimizedBytes = Files.readAllBytes((Path) path.invoke(spool));
 
-		try (DataInputStream input = BulkLz4.input((Path) path.invoke(spool))) {
+		try (DataInputStream input = BulkLz4.input((Path) path.invoke(spool), BulkCompression.FASTEST)) {
 			assertRow(input, 0L, dictionary, first);
 			assertRow(input, 1L, dictionary, second);
 			assertThat(input.read()).isEqualTo(-1);
@@ -76,10 +78,11 @@ class ResolvedIdQuadSpoolTest {
 
 		Path genericWorkspace = Files.createDirectory(temporaryDirectory.resolve("generic-resolver"));
 		Method buildGeneric = spoolClass.getDeclaredMethod("buildGeneric", CanonicalStagedInput.class,
-				PartitionValueDictionary.class, Path.class, int.class, long.class, BooleanSupplier.class);
+				PartitionValueDictionary.class, Path.class, int.class, long.class, BulkCompression.class,
+				BooleanSupplier.class);
 		buildGeneric.setAccessible(true);
 		Object genericSpool = buildGeneric.invoke(null, staged, dictionary, genericWorkspace, 4, 64 * 1024L,
-				(BooleanSupplier) () -> false);
+				BulkCompression.FASTEST, (BooleanSupplier) () -> false);
 
 		assertThat(Files.readAllBytes((Path) path.invoke(genericSpool))).isEqualTo(optimizedBytes);
 	}

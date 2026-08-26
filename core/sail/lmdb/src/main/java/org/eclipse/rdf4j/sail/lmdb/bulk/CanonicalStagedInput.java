@@ -36,8 +36,11 @@ final class CanonicalStagedInput {
 	private final int partitionCount;
 	private final long statements;
 	private final long inlineValueOccurrences;
+	private final BulkCompression compression;
 
-	CanonicalStagedInput(Path directory, int partitionCount, long statements, long inlineValueOccurrences) {
+	CanonicalStagedInput(Path directory, int partitionCount, long statements, long inlineValueOccurrences,
+			BulkCompression compression) {
+		this.compression = compression;
 		this.directory = directory;
 		this.statementPath = directory.resolve("statements.lz4");
 		this.namespacePath = directory.resolve("namespaces.lz4");
@@ -85,7 +88,8 @@ final class CanonicalStagedInput {
 
 	void forEachRawStatement(RawStatementVisitor visitor) throws IOException {
 		long[] expectedOrdinal = { 0L };
-		BulkLz4.readConcatenated(statementPath, input -> readRawStatements(input, expectedOrdinal, visitor));
+		BulkLz4.readConcatenated(statementPath, compression,
+				input -> readRawStatements(input, expectedOrdinal, visitor));
 		if (expectedOrdinal[0] != statements) {
 			throw new IOException("Staged statement count mismatch: expected " + statements + " but read "
 					+ expectedOrdinal[0]);
@@ -93,7 +97,7 @@ final class CanonicalStagedInput {
 	}
 
 	void forEachNamespace(NamespaceVisitor visitor) throws IOException {
-		BulkLz4.readConcatenated(namespacePath, input -> readNamespaces(input, visitor));
+		BulkLz4.readConcatenated(namespacePath, compression, input -> readNamespaces(input, visitor));
 	}
 
 	void forEachPredicateCount(PredicateCountVisitor visitor) throws IOException {
@@ -124,7 +128,7 @@ final class CanonicalStagedInput {
 			throw new IllegalArgumentException("Value partition out of range: " + partition);
 		}
 		Path path = CanonicalStatementStager.valueBucketPath(valueDirectory, partition);
-		BulkLz4.readConcatenated(path, input -> readValues(input, partition, partitionCount, visitor));
+		BulkLz4.readConcatenated(path, compression, input -> readValues(input, partition, partitionCount, visitor));
 	}
 
 	private static void readRawStatements(DataInputStream input, long[] expectedOrdinal, RawStatementVisitor visitor)

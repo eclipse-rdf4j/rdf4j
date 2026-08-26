@@ -42,6 +42,7 @@ final class BulkLoadWorkspace implements AutoCloseable {
 	private static final String STATE_FILE_NAME = "state.properties";
 	private static final String PREVIOUS_STATE_FILE_NAME = "state.previous.properties";
 	private static final String STATE_VERSION = "1";
+	private static final String COMPRESSION_KEY = "compression";
 
 	private final Path directory;
 	private final Path stateFile;
@@ -49,10 +50,13 @@ final class BulkLoadWorkspace implements AutoCloseable {
 	private final Path target;
 	private final Properties state;
 	private final BulkLoadProgress progress;
+	private final BulkCompression compression;
 	private long revision;
 	private boolean completed;
 
-	private BulkLoadWorkspace(Path directory, Path target, Properties state, long revision, BulkLoadProgress progress) {
+	private BulkLoadWorkspace(Path directory, Path target, Properties state, long revision, BulkLoadProgress progress,
+			BulkCompression compression) {
+		this.compression = compression;
 		this.directory = directory;
 		this.target = target;
 		this.stateFile = directory.resolve(STATE_FILE_NAME);
@@ -63,11 +67,12 @@ final class BulkLoadWorkspace implements AutoCloseable {
 	}
 
 	static BulkLoadWorkspace open(Path target, Path spillDirectory) throws IOException {
-		return open(target, spillDirectory, ProgressListener.NONE, 1, 1);
+		return open(target, spillDirectory, ProgressListener.NONE, 1, 1, BulkCompression.FASTEST);
 	}
 
 	static BulkLoadWorkspace open(Path target, Path spillDirectory, ProgressListener listener, int workers,
-			int queueBatches) throws IOException {
+			int queueBatches, BulkCompression requestedCompression) throws IOException {
+		Objects.requireNonNull(requestedCompression, "requestedCompression");
 		Path normalizedTarget = Objects.requireNonNull(target, "target").toAbsolutePath().normalize();
 		Path parent = normalizedTarget.getParent();
 		if (parent == null) {
@@ -88,8 +93,19 @@ final class BulkLoadWorkspace implements AutoCloseable {
 				throw new IOException("LMDB bulk-load state belongs to another target: " + recordedTarget);
 			}
 			BulkLoadProgress progress = new BulkLoadProgress(directory, listener, workers, queueBatches, true);
+			// A resumed load has to decode the intermediate files that are already on disk, so the recorded setting
+			// wins over whatever this invocation asked for. Workspaces written before the setting existed used
+			// FASTEST.
+			BulkCompression recorded = recordedCompression(existing.properties(), directory.resolve(STATE_FILE_NAME));
+			if (!recorded.equals(requestedCompression)) {
+				System.getLogger(BulkLoadWorkspace.class.getName())
+						.log(System.Logger.Level.WARNING,
+								"Resuming LMDB bulk load with compression " + recorded.token()
+										+ " recorded in the workspace, ignoring the requested "
+										+ requestedCompression.token());
+			}
 			return new BulkLoadWorkspace(directory, normalizedTarget, existing.properties(), existing.revision(),
-					progress);
+					progress, recorded);
 		}
 
 		try (var children = Files.list(directory)) {
@@ -102,6 +118,7 @@ final class BulkLoadWorkspace implements AutoCloseable {
 		state.setProperty("run.id", UUID.randomUUID().toString());
 		state.setProperty("target", normalizedTarget.toString());
 		state.setProperty("lifecycle", "ACTIVE");
+		state.setProperty(COMPRESSION_KEY, requestedCompression.token());
 		state.setProperty("spill.directory", spillDirectory == null ? ""
 				: spillDirectory.toAbsolutePath()
 						.normalize()
@@ -110,7 +127,8 @@ final class BulkLoadWorkspace implements AutoCloseable {
 			state.setProperty(phaseKey(phase), "PENDING");
 		}
 		BulkLoadProgress progress = new BulkLoadProgress(directory, listener, workers, queueBatches, false);
-		BulkLoadWorkspace workspace = new BulkLoadWorkspace(directory, normalizedTarget, state, 0L, progress);
+		BulkLoadWorkspace workspace = new BulkLoadWorkspace(directory, normalizedTarget, state, 0L, progress,
+				requestedCompression);
 		try {
 			workspace.persist();
 			return workspace;
@@ -127,6 +145,26 @@ final class BulkLoadWorkspace implements AutoCloseable {
 
 	Path directory() {
 		return directory;
+	}
+
+	/**
+	 * The codec this workspace's intermediate files are written with. For a resumed load this is the value recorded
+	 * when the workspace was created, not necessarily the one the caller requested.
+	 */
+	BulkCompression compression() {
+		return compression;
+	}
+
+	private static BulkCompression recordedCompression(Properties properties, Path stateFile) throws IOException {
+		String recorded = properties.getProperty(COMPRESSION_KEY);
+		if (recorded == null) {
+			return BulkCompression.FASTEST;
+		}
+		try {
+			return BulkCompression.parse(recorded);
+		} catch (IllegalArgumentException e) {
+			throw new IOException("Invalid LMDB bulk-load compression in " + stateFile + ": " + recorded, e);
+		}
 	}
 
 	boolean phaseComplete(BulkLoadPhase phase) {
@@ -183,7 +221,7 @@ final class BulkLoadWorkspace implements AutoCloseable {
 				|| valuesAreStillNeeded && !Files.isDirectory(valuesPath)) {
 			throw new IOException("LMDB bulk-load staged frontier is incomplete in " + directory);
 		}
-		return new CanonicalStagedInput(directory, partitionCount, statements, inlineValueOccurrences);
+		return new CanonicalStagedInput(directory, partitionCount, statements, inlineValueOccurrences, compression);
 	}
 
 	void recordDictionary(PartitionValueDictionary dictionary) {
@@ -226,7 +264,7 @@ final class BulkLoadWorkspace implements AutoCloseable {
 		if (!Files.isDirectory(dependencies)) {
 			throw new IOException("LMDB bulk-load dependency frontier is incomplete in " + directory);
 		}
-		return new ValueDependencyBuckets(dependencies, partitionCount);
+		return new ValueDependencyBuckets(dependencies, partitionCount, compression);
 	}
 
 	void reclaimAfterDictionary() throws IOException {
@@ -260,14 +298,14 @@ final class BulkLoadWorkspace implements AutoCloseable {
 	ResolvedIdQuadSpool resolvedStatements() throws IOException {
 		requireComplete(BulkLoadPhase.RESOLVE_IDS);
 		return ResolvedIdQuadSpool.restore(directory, parseNonNegativeLong("resolved.statements"),
-				parseNonNegativeLong("resolved.statements.bytes"));
+				parseNonNegativeLong("resolved.statements.bytes"), compression);
 	}
 
 	ResolvedValueRecords resolvedValues() throws IOException {
 		requireComplete(BulkLoadPhase.RESOLVE_IDS);
 		return ResolvedValueRecords.restore(directory, parseNonNegativeLong("resolved.values"),
 				parseNonNegativeLong("resolved.value-dependencies"),
-				parseNonNegativeLong("resolved.value-dependencies.bytes"));
+				parseNonNegativeLong("resolved.value-dependencies.bytes"), compression);
 	}
 
 	long dictionaryPersistedValues() throws IOException {
@@ -302,7 +340,7 @@ final class BulkLoadWorkspace implements AutoCloseable {
 				parseNonNegativeLong("native.triple-terms.records"),
 				parseNonNegativeLong("native.triple-terms.bytes"),
 				parseNonNegativeLong("native.value-hashes.records"),
-				parseNonNegativeLong("native.value-hashes.bytes"));
+				parseNonNegativeLong("native.value-hashes.bytes"), compression);
 	}
 
 	void reclaimAfterNativeRecords() throws IOException {

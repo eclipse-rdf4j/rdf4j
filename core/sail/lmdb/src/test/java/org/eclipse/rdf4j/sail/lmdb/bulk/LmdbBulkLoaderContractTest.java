@@ -109,7 +109,7 @@ class LmdbBulkLoaderContractTest {
 	void nativeWriterRequiresExplicitTransactionLimits() throws Exception {
 		assertThat(NativeStoreWriter.class.getDeclaredMethod("write", Path.class, LmdbStoreConfig.class,
 				ValueStoreBulkRecords.Output.class, ResolvedIdQuadSpool.class, CanonicalStagedInput.class, long.class,
-				int.class, int.class, long.class, BooleanSupplier.class)).isNotNull();
+				int.class, int.class, long.class, BulkCompression.class, BooleanSupplier.class)).isNotNull();
 	}
 
 	@Test
@@ -914,7 +914,7 @@ class LmdbBulkLoaderContractTest {
 		Path staging = Files.createDirectory(temporaryDirectory.resolve("predicate-count-staging"));
 		CanonicalStagedInput staged;
 		try (CanonicalStatementStager stager = new CanonicalStatementStager(staging,
-				new LmdbStoreConfig("spoc,psoc"), 4, 4, 64 * 1024L)) {
+				new LmdbStoreConfig("spoc,psoc"), 4, 4, 64 * 1024L, BulkCompression.FASTEST)) {
 			stager.writeStatement(valueFactory.createStatement(valueFactory.createIRI("urn:staged-count:subject"),
 					popularPredicate, valueFactory.createIRI("urn:staged-count:object")));
 			stager.writeCanonicalStatement(CanonicalTermCodec.encode(valueFactory.createIRI("urn:staged-count:second")),

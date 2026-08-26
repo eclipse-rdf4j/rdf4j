@@ -32,13 +32,16 @@ final class ResolvedIdQuadSpool {
 
 	private final Path path;
 	private final long statements;
+	private final BulkCompression compression;
 
-	private ResolvedIdQuadSpool(Path path, long statements) {
+	private ResolvedIdQuadSpool(Path path, long statements, BulkCompression compression) {
 		this.path = path;
 		this.statements = statements;
+		this.compression = compression;
 	}
 
-	static ResolvedIdQuadSpool restore(Path workspace, long statements, long bytes) throws IOException {
+	static ResolvedIdQuadSpool restore(Path workspace, long statements, long bytes, BulkCompression compression)
+			throws IOException {
 		if (statements < 0L || bytes < 0L) {
 			throw new IOException("Invalid resolved statement metadata: " + statements);
 		}
@@ -49,23 +52,26 @@ final class ResolvedIdQuadSpool {
 			throw new IOException("Resolved statement file size mismatch for " + path + ": expected "
 					+ bytes + " bytes");
 		}
-		return new ResolvedIdQuadSpool(path, statements);
+		return new ResolvedIdQuadSpool(path, statements, compression);
 	}
 
 	static ResolvedIdQuadSpool build(CanonicalStagedInput staged, PartitionValueDictionary dictionary, Path workspace,
-			int maxOpenFiles, long memoryBudgetBytes, BooleanSupplier cancellationSignal) throws IOException {
-		return build(staged, dictionary, workspace, maxOpenFiles, memoryBudgetBytes, cancellationSignal, true);
+			int maxOpenFiles, long memoryBudgetBytes, BulkCompression compression,
+			BooleanSupplier cancellationSignal) throws IOException {
+		return build(staged, dictionary, workspace, maxOpenFiles, memoryBudgetBytes, compression, cancellationSignal,
+				true);
 	}
 
 	static ResolvedIdQuadSpool buildGeneric(CanonicalStagedInput staged, PartitionValueDictionary dictionary,
-			Path workspace, int maxOpenFiles, long memoryBudgetBytes, BooleanSupplier cancellationSignal)
-			throws IOException {
-		return build(staged, dictionary, workspace, maxOpenFiles, memoryBudgetBytes, cancellationSignal, false);
+			Path workspace, int maxOpenFiles, long memoryBudgetBytes, BulkCompression compression,
+			BooleanSupplier cancellationSignal) throws IOException {
+		return build(staged, dictionary, workspace, maxOpenFiles, memoryBudgetBytes, compression, cancellationSignal,
+				false);
 	}
 
 	private static ResolvedIdQuadSpool build(CanonicalStagedInput staged, PartitionValueDictionary dictionary,
-			Path workspace, int maxOpenFiles, long memoryBudgetBytes, BooleanSupplier cancellationSignal,
-			boolean useLocalityOptimization) throws IOException {
+			Path workspace, int maxOpenFiles, long memoryBudgetBytes, BulkCompression compression,
+			BooleanSupplier cancellationSignal, boolean useLocalityOptimization) throws IOException {
 		int partitionCount = dictionary.partitionCount();
 		Path bucketDirectory = workspace.resolve("component-buckets");
 		Files.createDirectories(bucketDirectory);
@@ -73,12 +79,13 @@ final class ResolvedIdQuadSpool {
 		Path spoolPath = workspace.resolve("id-quads.bin");
 
 		try (ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(workspace, "resolved-components", 3,
-				memoryBudgetBytes, maxOpenFiles)) {
+				memoryBudgetBytes, maxOpenFiles, compression)) {
 			if (useLocalityOptimization) {
 				resolveWithSubjectLocality(staged, dictionary, workspace, bucketDirectory, maxOpenFiles, sorter,
-						cancellationSignal);
+						compression, cancellationSignal);
 			} else {
-				resolveGeneric(staged, dictionary, bucketDirectory, maxOpenFiles, sorter, cancellationSignal);
+				resolveGeneric(staged, dictionary, bucketDirectory, maxOpenFiles, sorter, compression,
+						cancellationSignal);
 			}
 			ExternalLongTupleSorter.SortedTupleFile sorted = sorter.finish(sortedComponents);
 			long expectedComponents = Math.multiplyExact(staged.statements(), COMPONENTS);
@@ -86,18 +93,19 @@ final class ResolvedIdQuadSpool {
 				throw new IOException("Resolved component count mismatch: expected " + expectedComponents + " but got "
 						+ sorted.rows());
 			}
-			assemble(sorted, spoolPath, staged.statements(), cancellationSignal);
+			assemble(sorted, spoolPath, staged.statements(), compression, cancellationSignal);
 			// The sorted components have been folded into the id-quad spool; free the large intermediate immediately
 			// instead of waiting for the phase-level reclaim. reclaimAfterResolution still lists it as a safety net.
 			Files.deleteIfExists(sortedComponents);
 		}
-		return new ResolvedIdQuadSpool(spoolPath, staged.statements());
+		return new ResolvedIdQuadSpool(spoolPath, staged.statements(), compression);
 	}
 
 	private static void resolveGeneric(CanonicalStagedInput staged, PartitionValueDictionary dictionary,
-			Path bucketDirectory, int maxOpenFiles, ExternalLongTupleSorter sorter,
+			Path bucketDirectory, int maxOpenFiles, ExternalLongTupleSorter sorter, BulkCompression compression,
 			BooleanSupplier cancellationSignal) throws IOException {
-		try (ComponentBucketWriter buckets = new ComponentBucketWriter(bucketDirectory, dictionary.partitionCount(),
+		try (ComponentBucketWriter buckets = new ComponentBucketWriter(compression, bucketDirectory,
+				dictionary.partitionCount(),
 				maxOpenFiles)) {
 			staged.forEachRawStatement((ordinal, subject, predicate, object, context) -> {
 				checkCancelled(cancellationSignal);
@@ -111,24 +119,25 @@ final class ResolvedIdQuadSpool {
 				}
 			});
 			buckets.closeOutputs();
-			resolveComponentBuckets(dictionary, bucketDirectory, sorter, cancellationSignal);
+			resolveComponentBuckets(dictionary, bucketDirectory, sorter, compression, cancellationSignal);
 		}
 	}
 
 	private static void resolveWithSubjectLocality(CanonicalStagedInput staged,
 			PartitionValueDictionary dictionary, Path workspace, Path componentBucketDirectory, int maxOpenFiles,
-			ExternalLongTupleSorter sorter, BooleanSupplier cancellationSignal) throws IOException {
+			ExternalLongTupleSorter sorter, BulkCompression compression, BooleanSupplier cancellationSignal)
+			throws IOException {
 		Path subjectBucketDirectory = workspace.resolve("subject-statement-buckets");
 		Files.createDirectories(subjectBucketDirectory);
-		try (SubjectStatementBucketWriter subjects = new SubjectStatementBucketWriter(subjectBucketDirectory,
-				dictionary.partitionCount(), maxOpenFiles)) {
+		try (SubjectStatementBucketWriter subjects = new SubjectStatementBucketWriter(compression,
+				subjectBucketDirectory, dictionary.partitionCount(), maxOpenFiles)) {
 			staged.forEachRawStatement((ordinal, subject, predicate, object, context) -> {
 				checkCancelled(cancellationSignal);
 				subjects.write(ordinal, subject, predicate, object, context);
 			});
 		}
 
-		try (ComponentBucketWriter remaining = new ComponentBucketWriter(componentBucketDirectory,
+		try (ComponentBucketWriter remaining = new ComponentBucketWriter(compression, componentBucketDirectory,
 				dictionary.partitionCount(), maxOpenFiles)) {
 			for (int partition = 0; partition < dictionary.partitionCount(); partition++) {
 				checkCancelled(cancellationSignal);
@@ -136,6 +145,7 @@ final class ResolvedIdQuadSpool {
 				try (PartitionValueDictionary.PartitionReader reader = dictionary.openPartition(partition)) {
 					LookupCache cache = new LookupCache(16_384);
 					readSubjectStatementBucket(subjectBucketDirectory, partition, dictionary.partitionCount(),
+							compression,
 							(ordinal, subjectHash, subject, predicateHash, predicate, objectHash, object, contextHash,
 									context) -> {
 								resolveOrRebucket(localPartition, ordinal, 0, subjectHash, subject, reader, cache,
@@ -155,7 +165,7 @@ final class ResolvedIdQuadSpool {
 				Files.deleteIfExists(SubjectStatementBucketWriter.path(subjectBucketDirectory, partition));
 			}
 			remaining.closeOutputs();
-			resolveComponentBuckets(dictionary, componentBucketDirectory, sorter, cancellationSignal);
+			resolveComponentBuckets(dictionary, componentBucketDirectory, sorter, compression, cancellationSignal);
 		}
 	}
 
@@ -171,14 +181,16 @@ final class ResolvedIdQuadSpool {
 	}
 
 	private static void resolveComponentBuckets(PartitionValueDictionary dictionary, Path bucketDirectory,
-			ExternalLongTupleSorter sorter, BooleanSupplier cancellationSignal) throws IOException {
+			ExternalLongTupleSorter sorter, BulkCompression compression, BooleanSupplier cancellationSignal)
+			throws IOException {
 		for (int partition = 0; partition < dictionary.partitionCount(); partition++) {
 			checkCancelled(cancellationSignal);
 			try (PartitionValueDictionary.PartitionReader reader = dictionary.openPartition(partition)) {
 				LookupCache cache = new LookupCache(16_384);
-				readComponentBucket(bucketDirectory, partition, (ordinal, component, routeHash, key) -> sorter
-						.add3(ordinal, component,
-								lookup(reader, cache, routeHash, key, ordinal, component)));
+				readComponentBucket(bucketDirectory, partition, compression,
+						(ordinal, component, routeHash, key) -> sorter
+								.add3(ordinal, component,
+										lookup(reader, cache, routeHash, key, ordinal, component)));
 			}
 		}
 	}
@@ -206,11 +218,11 @@ final class ResolvedIdQuadSpool {
 	}
 
 	private static void assemble(ExternalLongTupleSorter.SortedTupleFile sorted, Path spoolPath, long statements,
-			BooleanSupplier cancellationSignal) throws IOException {
+			BulkCompression compression, BooleanSupplier cancellationSignal) throws IOException {
 		long[] expectedOrdinal = { 0L };
 		int[] expectedComponent = { 0 };
 		long[] ids = new long[COMPONENTS];
-		try (DataOutputStream output = BulkLz4.output(spoolPath)) {
+		try (DataOutputStream output = BulkLz4.output(spoolPath, compression)) {
 			sorted.forEach(tuple -> {
 				checkCancelled(cancellationSignal);
 				long ordinal = tuple[0];
@@ -238,10 +250,10 @@ final class ResolvedIdQuadSpool {
 		}
 	}
 
-	private static void readComponentBucket(Path directory, int partition, ComponentVisitor visitor)
-			throws IOException {
+	private static void readComponentBucket(Path directory, int partition, BulkCompression compression,
+			ComponentVisitor visitor) throws IOException {
 		Path path = ComponentBucketWriter.path(directory, partition);
-		BulkLz4.readConcatenated(path, input -> readComponentFrame(input, partition, visitor));
+		BulkLz4.readConcatenated(path, compression, input -> readComponentFrame(input, partition, visitor));
 	}
 
 	private static void readComponentFrame(DataInputStream input, int partition, ComponentVisitor visitor)
@@ -280,12 +292,15 @@ final class ResolvedIdQuadSpool {
 
 	private static final class ComponentBucketWriter implements AutoCloseable {
 
+		private final BulkCompression compression;
 		private final Path directory;
 		private final int partitionCount;
 		private final BoundedBucketOutputLimiter outputs;
 		private boolean closed;
 
-		private ComponentBucketWriter(Path directory, int partitionCount, int maxOpenFiles) {
+		private ComponentBucketWriter(BulkCompression compression, Path directory, int partitionCount,
+				int maxOpenFiles) {
+			this.compression = compression;
 			this.directory = directory;
 			this.partitionCount = partitionCount;
 			this.outputs = new BoundedBucketOutputLimiter(maxOpenFiles);
@@ -298,7 +313,8 @@ final class ResolvedIdQuadSpool {
 
 		private void write(long ordinal, int component, long routeHash, byte[] key) throws IOException {
 			int partition = (int) routeHash & (partitionCount - 1);
-			DataOutputStream output = outputs.output(partition, () -> BulkLz4.appendOutput(path(directory, partition)));
+			DataOutputStream output = outputs.output(partition,
+					() -> BulkLz4.appendOutput(path(directory, partition), compression));
 			output.writeLong(ordinal);
 			output.writeByte(component);
 			output.writeLong(routeHash);
@@ -328,8 +344,8 @@ final class ResolvedIdQuadSpool {
 	}
 
 	private static void readSubjectStatementBucket(Path directory, int partition, int partitionCount,
-			SubjectStatementVisitor visitor) throws IOException {
-		BulkLz4.readConcatenated(SubjectStatementBucketWriter.path(directory, partition),
+			BulkCompression compression, SubjectStatementVisitor visitor) throws IOException {
+		BulkLz4.readConcatenated(SubjectStatementBucketWriter.path(directory, partition), compression,
 				input -> readSubjectStatementFrame(input, partition, partitionCount, visitor));
 	}
 
@@ -400,11 +416,14 @@ final class ResolvedIdQuadSpool {
 
 	private static final class SubjectStatementBucketWriter implements AutoCloseable {
 
+		private final BulkCompression compression;
 		private final Path directory;
 		private final int partitionCount;
 		private final BoundedBucketOutputLimiter outputs;
 
-		private SubjectStatementBucketWriter(Path directory, int partitionCount, int maxOpenFiles) {
+		private SubjectStatementBucketWriter(BulkCompression compression, Path directory, int partitionCount,
+				int maxOpenFiles) {
+			this.compression = compression;
 			this.directory = directory;
 			this.partitionCount = partitionCount;
 			outputs = new BoundedBucketOutputLimiter(maxOpenFiles);
@@ -414,7 +433,8 @@ final class ResolvedIdQuadSpool {
 				throws IOException {
 			long subjectHash = CanonicalTermCodec.routeHash64(subject);
 			int partition = (int) subjectHash & (partitionCount - 1);
-			DataOutputStream output = outputs.output(partition, () -> BulkLz4.appendOutput(path(directory, partition)));
+			DataOutputStream output = outputs.output(partition,
+					() -> BulkLz4.appendOutput(path(directory, partition), compression));
 			output.writeLong(ordinal);
 			writeKey(output, subjectHash, subject);
 			writeKey(output, CanonicalTermCodec.routeHash64(predicate), predicate);

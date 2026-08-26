@@ -47,14 +47,15 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 	}
 
 	static StatementIndexBulkRecords build(ResolvedIdQuadSpool spool, Path workspace, String configuredIndexes,
-			long memoryBudgetBytes, int maxOpenFiles, BooleanSupplier cancellationSignal) throws IOException {
-		return build(spool, workspace, configuredIndexes, memoryBudgetBytes, maxOpenFiles, cancellationSignal,
-				TripleIndex::usesUnsignedTupleOrder);
+			long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
+			BooleanSupplier cancellationSignal) throws IOException {
+		return build(spool, workspace, configuredIndexes, memoryBudgetBytes, maxOpenFiles, compression,
+				cancellationSignal, TripleIndex::usesUnsignedTupleOrder);
 	}
 
 	static StatementIndexBulkRecords build(ResolvedIdQuadSpool spool, Path workspace, String configuredIndexes,
-			long memoryBudgetBytes, int maxOpenFiles, BooleanSupplier cancellationSignal,
-			Predicate<String> tupleOrderEquivalence) throws IOException {
+			long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
+			BooleanSupplier cancellationSignal, Predicate<String> tupleOrderEquivalence) throws IOException {
 		List<String> specifications = parseSpecifications(configuredIndexes);
 		long perSorterBudget = Math.max(2L * COMPONENT_COUNT * Long.BYTES,
 				memoryBudgetBytes / specifications.size());
@@ -65,15 +66,15 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 			for (String specification : specifications) {
 				if (tupleOrderEquivalence.test(specification)) {
 					tupleSorters.add(new ExternalLongTupleSorter(workspace, "index-" + specification, COMPONENT_COUNT,
-							perSorterBudget, perSorterOpenFiles));
+							perSorterBudget, perSorterOpenFiles, compression));
 					encodedSorters.add(null);
 				} else {
 					tupleSorters.add(null);
 					encodedSorters.add(new ExternalByteKeySorter(workspace, "index-key-" + specification,
-							perSorterBudget, perSorterOpenFiles));
+							perSorterBudget, perSorterOpenFiles, compression));
 				}
 			}
-			scanOnce(spool, specifications, tupleSorters, encodedSorters, cancellationSignal);
+			scanOnce(spool, specifications, tupleSorters, encodedSorters, compression, cancellationSignal);
 			List<IndexRun> runs = new ArrayList<>(specifications.size());
 			for (int i = 0; i < specifications.size(); i++) {
 				checkCancelled(cancellationSignal);
@@ -87,7 +88,7 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 				}
 			}
 			ExternalLongTupleSorter.SortedTupleFile contexts = buildContexts(runs.getFirst(), workspace,
-					memoryBudgetBytes, maxOpenFiles, cancellationSignal);
+					memoryBudgetBytes, maxOpenFiles, compression, cancellationSignal);
 			return new StatementIndexBulkRecords(runs, contexts);
 		} catch (IOException | RuntimeException | Error failure) {
 			closeSorters(tupleSorters, failure);
@@ -133,9 +134,10 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 	}
 
 	private static ExternalLongTupleSorter.SortedTupleFile buildContexts(IndexRun source, Path workspace,
-			long memoryBudgetBytes, int maxOpenFiles, BooleanSupplier cancellationSignal) throws IOException {
+			long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
+			BooleanSupplier cancellationSignal) throws IOException {
 		try (ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(workspace, "contexts", 1,
-				memoryBudgetBytes, maxOpenFiles)) {
+				memoryBudgetBytes, maxOpenFiles, compression)) {
 			if (source.tuples() != null) {
 				addTupleContexts(source, sorter, cancellationSignal);
 			} else {
@@ -216,8 +218,8 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 
 	private static void scanOnce(ResolvedIdQuadSpool spool, List<String> specifications,
 			List<ExternalLongTupleSorter> tupleSorters, List<ExternalByteKeySorter> encodedSorters,
-			BooleanSupplier cancellationSignal) throws IOException {
-		try (DataInputStream input = BulkLz4.input(spool.path())) {
+			BulkCompression compression, BooleanSupplier cancellationSignal) throws IOException {
+		try (DataInputStream input = BulkLz4.input(spool.path(), compression)) {
 			long expectedOrdinal = 0L;
 			long[] quad = new long[COMPONENT_COUNT];
 			while (true) {

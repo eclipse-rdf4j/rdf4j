@@ -42,6 +42,7 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 	private final long runBufferBytes;
 	private final RunBufferAllocator runBufferAllocator;
 	private final boolean nativeStorage;
+	private final BulkCompression compression;
 	private final List<Path> runs = new ArrayList<>();
 
 	private Arena runBufferArena;
@@ -51,14 +52,15 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 	private long rowCount;
 	private boolean finished;
 
-	ExternalLongTupleSorter(Path directory, String prefix, int width, long memoryBudgetBytes, int maxOpenFiles)
-			throws IOException {
-		this(directory, prefix, width, memoryBudgetBytes, maxOpenFiles,
+	ExternalLongTupleSorter(Path directory, String prefix, int width, long memoryBudgetBytes, int maxOpenFiles,
+			BulkCompression compression) throws IOException {
+		this(directory, prefix, width, memoryBudgetBytes, maxOpenFiles, compression,
 				(arena, bytes) -> arena.allocate(bytes, Long.BYTES));
 	}
 
 	ExternalLongTupleSorter(Path directory, String prefix, int width, long memoryBudgetBytes, int maxOpenFiles,
-			RunBufferAllocator runBufferAllocator) throws IOException {
+			BulkCompression compression, RunBufferAllocator runBufferAllocator) throws IOException {
+		this.compression = Objects.requireNonNull(compression, "compression");
 		this.directory = Objects.requireNonNull(directory, "directory");
 		this.prefix = Objects.requireNonNull(prefix, "prefix");
 		this.runBufferAllocator = Objects.requireNonNull(runBufferAllocator, "runBufferAllocator");
@@ -163,7 +165,7 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		}
 		runs.clear();
 		finished = true;
-		return new SortedTupleFile(output, width, rowCount);
+		return new SortedTupleFile(output, width, rowCount, compression);
 	}
 
 	private void ensureWritable() throws IOException {
@@ -193,7 +195,7 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 			}
 		}
 		Path run = Files.createTempFile(directory, prefix + "-run-", ".bin");
-		try (DataOutputStream output = BulkLz4.output(run)) {
+		try (DataOutputStream output = BulkLz4.output(run, compression)) {
 			int values = bufferedRows * width;
 			for (int i = 0; i < values; i++) {
 				output.writeLong(get(i));
@@ -382,9 +384,9 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 
 	private void mergeGroup(List<Path> group, Path outputPath) throws IOException {
 		RunCursor[] cursors = new RunCursor[group.size()];
-		try (DataOutputStream output = BulkLz4.output(outputPath)) {
+		try (DataOutputStream output = BulkLz4.output(outputPath, compression)) {
 			for (int i = 0; i < group.size(); i++) {
-				RunCursor cursor = new RunCursor(group.get(i), width, true);
+				RunCursor cursor = new RunCursor(group.get(i), width, compression, true);
 				cursors[i] = cursor;
 				cursor.advance();
 			}
@@ -486,14 +488,15 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		private boolean present;
 		private boolean closed;
 
-		private RunCursor(Path path, int width) throws IOException {
-			this(path, width, false);
+		private RunCursor(Path path, int width, BulkCompression compression) throws IOException {
+			this(path, width, compression, false);
 		}
 
-		private RunCursor(Path path, int width, boolean deleteWhenClosed) throws IOException {
+		private RunCursor(Path path, int width, BulkCompression compression, boolean deleteWhenClosed)
+				throws IOException {
 			this.path = path;
 			this.deleteWhenClosed = deleteWhenClosed;
-			input = BulkLz4.input(path);
+			input = BulkLz4.input(path, compression);
 			tuple = new long[width];
 		}
 
@@ -589,14 +592,17 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		private final Path path;
 		private final int width;
 		private final long rows;
+		private final BulkCompression compression;
 
-		private SortedTupleFile(Path path, int width, long rows) {
+		private SortedTupleFile(Path path, int width, long rows, BulkCompression compression) {
 			this.path = path;
 			this.width = width;
 			this.rows = rows;
+			this.compression = compression;
 		}
 
-		static SortedTupleFile restore(Path path, int width, long rows, long bytes) throws IOException {
+		static SortedTupleFile restore(Path path, int width, long rows, long bytes, BulkCompression compression)
+				throws IOException {
 			if (width <= 0 || rows < 0L || bytes < 0L) {
 				throw new IOException("Invalid sorted tuple metadata for " + path);
 			}
@@ -606,7 +612,7 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 				throw new IOException("Sorted tuple file size mismatch for " + path + ": expected "
 						+ bytes + " bytes");
 			}
-			return new SortedTupleFile(path, width, rows);
+			return new SortedTupleFile(path, width, rows, compression);
 		}
 
 		Path path() {
@@ -618,7 +624,7 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		}
 
 		void forEach(TupleConsumer consumer) throws IOException {
-			try (RunCursor cursor = new RunCursor(path, width)) {
+			try (RunCursor cursor = new RunCursor(path, width, compression)) {
 				while (cursor.advance()) {
 					consumer.accept(cursor.tuple);
 				}

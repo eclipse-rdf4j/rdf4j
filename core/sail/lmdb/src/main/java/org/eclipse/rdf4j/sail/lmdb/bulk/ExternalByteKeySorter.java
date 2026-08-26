@@ -41,6 +41,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 	private final int maxFanIn;
 	private final RunBufferAllocator runBufferAllocator;
 	private final boolean nativeStorage;
+	private final BulkCompression compression;
 	private final int dataCapacity;
 	private final int[] offsets;
 	private final int[] keyLengths;
@@ -57,13 +58,15 @@ final class ExternalByteKeySorter implements AutoCloseable {
 	private long recordCount;
 	private boolean finished;
 
-	ExternalByteKeySorter(Path directory, String prefix, long memoryBudgetBytes, int maxOpenFiles) throws IOException {
-		this(directory, prefix, memoryBudgetBytes, maxOpenFiles,
+	ExternalByteKeySorter(Path directory, String prefix, long memoryBudgetBytes, int maxOpenFiles,
+			BulkCompression compression) throws IOException {
+		this(directory, prefix, memoryBudgetBytes, maxOpenFiles, compression,
 				(arena, bytes) -> arena.allocate(bytes, Byte.BYTES));
 	}
 
 	ExternalByteKeySorter(Path directory, String prefix, long memoryBudgetBytes, int maxOpenFiles,
-			RunBufferAllocator runBufferAllocator) throws IOException {
+			BulkCompression compression, RunBufferAllocator runBufferAllocator) throws IOException {
+		this.compression = Objects.requireNonNull(compression, "compression");
 		this.directory = Objects.requireNonNull(directory, "directory");
 		this.prefix = Objects.requireNonNull(prefix, "prefix");
 		this.runBufferAllocator = Objects.requireNonNull(runBufferAllocator, "runBufferAllocator");
@@ -162,12 +165,12 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		} else if (mergeRuns.size() == 1) {
 			Files.move(mergeRuns.getFirst(), output, StandardCopyOption.REPLACE_EXISTING);
 		} else {
-			mergeGroup(mergeRuns, output);
+			mergeGroup(mergeRuns, output, compression);
 			deleteRuns(mergeRuns);
 		}
 		runs.clear();
 		finished = true;
-		return new SortedRecordFile(output, recordCount);
+		return new SortedRecordFile(output, recordCount, compression);
 	}
 
 	private void ensureWritable() {
@@ -185,7 +188,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		}
 		sortOrder(0, bufferedRecords - 1);
 		Path run = Files.createTempFile(directory, prefix + "-run-", ".bin");
-		try (DataOutputStream output = BulkLz4.output(run)) {
+		try (DataOutputStream output = BulkLz4.output(run, compression)) {
 			for (int position = 0; position < bufferedRecords; position++) {
 				writeBufferedRecord(output, order[position]);
 			}
@@ -200,7 +203,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 
 	private void writeSingleRecordRun(byte[] key, byte[] value) throws IOException {
 		Path run = Files.createTempFile(directory, prefix + "-run-", ".bin");
-		try (DataOutputStream output = BulkLz4.output(run)) {
+		try (DataOutputStream output = BulkLz4.output(run, compression)) {
 			output.writeInt(key.length);
 			output.writeInt(value.length);
 			output.write(key);
@@ -315,7 +318,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 				List<Path> group = current.subList(start, Math.min(current.size(), start + maxFanIn));
 				Path merged = Files.createTempFile(directory, prefix + "-pass-" + pass + "-", ".bin");
 				try {
-					mergeGroup(group, merged);
+					mergeGroup(group, merged, compression);
 				} catch (Throwable failure) {
 					Files.deleteIfExists(merged);
 					throw failure;
@@ -329,11 +332,12 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		return current;
 	}
 
-	private static void mergeGroup(List<Path> group, Path outputPath) throws IOException {
+	private static void mergeGroup(List<Path> group, Path outputPath, BulkCompression compression)
+			throws IOException {
 		RunCursor[] cursors = new RunCursor[group.size()];
-		try (DataOutputStream output = BulkLz4.output(outputPath)) {
+		try (DataOutputStream output = BulkLz4.output(outputPath, compression)) {
 			for (int i = 0; i < group.size(); i++) {
-				cursors[i] = new RunCursor(group.get(i), true);
+				cursors[i] = new RunCursor(group.get(i), compression, true);
 				cursors[i].advance();
 			}
 			LoserTree tree = new LoserTree(cursors);
@@ -429,14 +433,14 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		private Record current;
 		private boolean closed;
 
-		private RunCursor(Path path) throws IOException {
-			this(path, false);
+		private RunCursor(Path path, BulkCompression compression) throws IOException {
+			this(path, compression, false);
 		}
 
-		private RunCursor(Path path, boolean deleteWhenClosed) throws IOException {
+		private RunCursor(Path path, BulkCompression compression, boolean deleteWhenClosed) throws IOException {
 			this.path = path;
 			this.deleteWhenClosed = deleteWhenClosed;
-			input = BulkLz4.input(path);
+			input = BulkLz4.input(path, compression);
 		}
 
 		private boolean advance() throws IOException {
@@ -535,17 +539,20 @@ final class ExternalByteKeySorter implements AutoCloseable {
 
 		private final Path path;
 		private final long records;
+		private final BulkCompression compression;
 
-		private SortedRecordFile(Path path, long records) {
+		private SortedRecordFile(Path path, long records, BulkCompression compression) {
 			this.path = path;
 			this.records = records;
+			this.compression = compression;
 		}
 
-		static SortedRecordFile restore(Path path, long records, long bytes) throws IOException {
+		static SortedRecordFile restore(Path path, long records, long bytes, BulkCompression compression)
+				throws IOException {
 			if (records < 0L || bytes < 0L || !Files.isRegularFile(path) || Files.size(path) != bytes) {
 				throw new IOException("Sorted byte-record metadata mismatch for " + path);
 			}
-			return new SortedRecordFile(path, records);
+			return new SortedRecordFile(path, records, compression);
 		}
 
 		Path path() {
@@ -557,7 +564,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		}
 
 		void forEach(RecordConsumer consumer) throws IOException {
-			try (RunCursor cursor = new RunCursor(path)) {
+			try (RunCursor cursor = new RunCursor(path, compression)) {
 				while (cursor.advance()) {
 					consumer.accept(cursor.current.key, cursor.current.value);
 				}

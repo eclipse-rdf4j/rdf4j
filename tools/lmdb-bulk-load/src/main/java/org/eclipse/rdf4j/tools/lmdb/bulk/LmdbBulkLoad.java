@@ -32,6 +32,7 @@ import java.util.concurrent.CancellationException;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParserRegistry;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.sail.lmdb.bulk.BulkCompression;
 import org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader;
 import org.eclipse.rdf4j.sail.lmdb.bulk.ProgressListener;
 import org.eclipse.rdf4j.sail.lmdb.bulk.ProgressSnapshot;
@@ -66,6 +67,10 @@ public final class LmdbBulkLoad {
 			error.println(e.getMessage());
 			printUsage(error);
 			return USAGE_ERROR;
+		} catch (CancellationException e) {
+			// Ctrl-C inside the arrow-key menu: raw mode swallows SIGINT, so the menu reports it this way instead.
+			error.println("LMDB bulk load cancelled");
+			return CANCELLED;
 		}
 		if (options.help()) {
 			printUsage(output);
@@ -90,7 +95,8 @@ public final class LmdbBulkLoad {
 			}
 
 			LmdbBulkLoader.Builder builder = LmdbBulkLoader.builder(options.store(), config)
-					.parserMode(options.parserMode());
+					.parserMode(options.parserMode())
+					.compression(options.compression());
 			if (options.memoryBudgetBytes() != null) {
 				builder.memoryBudgetBytes(options.memoryBudgetBytes());
 			}
@@ -131,9 +137,10 @@ public final class LmdbBulkLoad {
 			}
 			output.printf(Locale.ROOT,
 					"LMDB bulk load complete: parsed=%d stored=%d persisted-values=%d inline-values=%d "
-							+ "temporary-bytes=%d elapsed-ms=%d%n",
+							+ "temporary-bytes=%d elapsed-ms=%d compression=%s%n",
 					result.parsedStatements(), result.storedStatements(), result.persistedValues(),
-					result.inlineValues(), result.temporaryBytes(), result.elapsedMillis());
+					result.inlineValues(), result.temporaryBytes(), result.elapsedMillis(),
+					options.compression().token());
 			return SUCCESS;
 		} catch (CancellationException e) {
 			error.println("LMDB bulk load cancelled");
@@ -239,6 +246,7 @@ public final class LmdbBulkLoad {
 				  --max-open-files COUNT           Maximum staging and merge files
 				  --workers COUNT                  Parallel action workers (smart default: CPU-based)
 				  --queue-batches COUNT            Bounded batches queued between actions
+				  --compression fastest|none|1-17  Codec for the loader's intermediate files
 				  --progress plain|json|none        Progress on stderr (default: plain)
 				  --temporary-directory PATH       Parent for loader spill files
 				  --inline-literals true|false     Enable LMDB inline literal IDs
@@ -253,7 +261,7 @@ public final class LmdbBulkLoad {
 			String baseUri, String statementIndexes, String tripleTermIndexes, Long memoryBudgetBytes,
 			Integer partitionCount, Integer maxOpenFiles, Integer workers, Integer queueBatches,
 			ProgressMode progressMode, Path temporaryDirectory, Boolean inlineLiterals, Boolean valueHashCache,
-			Integer writeTransactionRecords, Long writeTransactionBytes, boolean help) {
+			Integer writeTransactionRecords, Long writeTransactionBytes, BulkCompression compression, boolean help) {
 
 		private static Options parse(String[] arguments, InputStream standardInput, PrintStream promptOutput)
 				throws UsageException {
@@ -295,7 +303,8 @@ public final class LmdbBulkLoad {
 			}
 			if (help) {
 				return new Options(null, List.of(), null, LmdbBulkLoader.ParserMode.AUTO, null, null, null, null,
-						null, null, null, null, ProgressMode.PLAIN, null, null, null, null, null, true);
+						null, null, null, null, ProgressMode.PLAIN, null, null, null, null, null,
+						BulkCompression.FASTEST, true);
 			}
 			if (interactive) {
 				collectInteractiveArguments(values, inputs, standardInput, promptOutput);
@@ -321,7 +330,8 @@ public final class LmdbBulkLoad {
 					parseBoolean(values.get("inline-literals"), "--inline-literals"),
 					parseBoolean(values.get("value-hash-cache"), "--value-hash-cache"),
 					parseInteger(values.get("write-transaction-records"), "--write-transaction-records"),
-					parseBytes(values.get("write-transaction-bytes"), "--write-transaction-bytes"), false);
+					parseBytes(values.get("write-transaction-bytes"), "--write-transaction-bytes"),
+					parseCompression(values.get("compression")), false);
 		}
 	}
 
@@ -362,6 +372,7 @@ public final class LmdbBulkLoad {
 		promptOptionalValue(values, "max-open-files", "Maximum open files", "loader default", input, output);
 		promptOptionalValue(values, "workers", "Worker count", "automatic", input, output);
 		promptOptionalValue(values, "queue-batches", "Queued batch count", "automatic", input, output);
+		promptCompression(values, standardInput, input, output);
 		promptOptionalValue(values, "progress", "Progress mode (plain, json, or none)", "plain", input, output);
 		promptOptionalValue(values, "temporary-directory", "Temporary-file parent directory", "system default", input,
 				output);
@@ -371,6 +382,32 @@ public final class LmdbBulkLoad {
 				"loader default", input, output);
 		promptOptionalValue(values, "write-transaction-bytes", "Maximum bytes per write transaction",
 				"loader default", input, output);
+	}
+
+	/**
+	 * Offers the intermediate-file codecs as an arrow-key menu, with {@code fastest} on top as the default. Falls back
+	 * to a numbered line prompt whenever standard input is not a terminal.
+	 */
+	private static void promptCompression(Map<String, String> values, InputStream standardInput, BufferedReader input,
+			PrintStream output) throws UsageException {
+		if (values.containsKey("compression")) {
+			return;
+		}
+		List<TerminalMenu.Option> options = new ArrayList<>();
+		options.add(new TerminalMenu.Option("fastest", "LZ4 fast on run files, LZ4 high-9 on staged inputs"));
+		options.add(new TerminalMenu.Option("none", "no compression; smallest CPU cost, largest spill"));
+		for (int level = BulkCompression.MINIMUM_LEVEL; level <= BulkCompression.MAXIMUM_LEVEL; level++) {
+			options.add(new TerminalMenu.Option(Integer.toString(level),
+					level == BulkCompression.MINIMUM_LEVEL ? "LZ4 high-ratio levels; higher is smaller and slower"
+							: null));
+		}
+		try {
+			values.put("compression",
+					TerminalMenu.select("Intermediate-file compression:", options, 0, standardInput, input::readLine,
+							output));
+		} catch (IOException e) {
+			throw new UsageException("Could not read interactive input: " + e.getMessage());
+		}
 	}
 
 	private static void promptRequiredValue(Map<String, String> values, String name, String label, BufferedReader input,
@@ -432,6 +469,7 @@ public final class LmdbBulkLoad {
 			Map.entry("max-open-files", true),
 			Map.entry("workers", true),
 			Map.entry("queue-batches", true),
+			Map.entry("compression", true),
 			Map.entry("progress", true),
 			Map.entry("temporary-directory", true),
 			Map.entry("inline-literals", true),
@@ -453,6 +491,18 @@ public final class LmdbBulkLoad {
 
 	private static Path optionalPath(String value) {
 		return value == null ? null : Path.of(value).toAbsolutePath().normalize();
+	}
+
+	private static BulkCompression parseCompression(String value) throws UsageException {
+		if (value == null) {
+			return BulkCompression.FASTEST;
+		}
+		try {
+			return BulkCompression.parse(value);
+		} catch (IllegalArgumentException e) {
+			throw new UsageException("--compression must be fastest, none, or a level between "
+					+ BulkCompression.MINIMUM_LEVEL + " and " + BulkCompression.MAXIMUM_LEVEL + ", but was: " + value);
+		}
 	}
 
 	private static LmdbBulkLoader.ParserMode parseParser(String value) throws UsageException {

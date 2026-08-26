@@ -56,6 +56,7 @@ final class CanonicalStatementStager implements Closeable {
 	private final Path valueDirectory;
 	private final int partitionCount;
 	private final LmdbStoreConfig config;
+	private final BulkCompression compression;
 	private final BoundedBucketOutputLimiter outputs;
 	private final FrontCache frontCache;
 	private final Map<ByteKey, long[]> predicateCounts = new HashMap<>();
@@ -64,7 +65,8 @@ final class CanonicalStatementStager implements Closeable {
 	private long inlineValueOccurrences;
 
 	CanonicalStatementStager(Path directory, LmdbStoreConfig config, int partitionCount, int maxOpenFiles,
-			long memoryBudgetBytes) throws IOException {
+			long memoryBudgetBytes, BulkCompression compression) throws IOException {
+		this.compression = compression;
 		this.directory = directory;
 		this.statementPath = directory.resolve("statements.lz4");
 		this.namespacePath = directory.resolve("namespaces.lz4");
@@ -109,7 +111,8 @@ final class CanonicalStatementStager implements Closeable {
 
 	private void writeCanonicalRecord(byte[] subject, byte[] predicate, byte[] object, byte[] context)
 			throws IOException {
-		DataOutputStream output = outputs.output(STATEMENT_OUTPUT_KEY, () -> BulkLz4.appendOutputHigh(statementPath));
+		DataOutputStream output = outputs.output(STATEMENT_OUTPUT_KEY,
+				() -> BulkLz4.appendOutputHigh(statementPath, compression));
 		output.writeLong(statements);
 		writeBytes(output, subject);
 		writeBytes(output, predicate);
@@ -137,7 +140,8 @@ final class CanonicalStatementStager implements Closeable {
 	}
 
 	void writeNamespace(String prefix, String namespace) throws IOException {
-		DataOutputStream output = outputs.output(NAMESPACE_OUTPUT_KEY, () -> BulkLz4.appendOutputHigh(namespacePath));
+		DataOutputStream output = outputs.output(NAMESPACE_OUTPUT_KEY,
+				() -> BulkLz4.appendOutputHigh(namespacePath, compression));
 		writeUtf8(output, prefix);
 		writeUtf8(output, namespace);
 	}
@@ -151,7 +155,7 @@ final class CanonicalStatementStager implements Closeable {
 	}
 
 	CanonicalStagedInput stagedInput() {
-		return new CanonicalStagedInput(directory, partitionCount, statements, inlineValueOccurrences);
+		return new CanonicalStagedInput(directory, partitionCount, statements, inlineValueOccurrences, compression);
 	}
 
 	private void emitValue(Value value, byte[] canonicalBytes, int role) throws IOException {
@@ -190,7 +194,7 @@ final class CanonicalStatementStager implements Closeable {
 		}
 		int partition = (int) hash & (partitionCount - 1);
 		DataOutputStream output = outputs.output(partition,
-				() -> BulkLz4.appendOutputHigh(valueBucketPath(valueDirectory, partition)));
+				() -> BulkLz4.appendOutputHigh(valueBucketPath(valueDirectory, partition), compression));
 		output.writeLong(hash);
 		output.writeByte(newRoles);
 		writeBytes(output, canonicalBytes);

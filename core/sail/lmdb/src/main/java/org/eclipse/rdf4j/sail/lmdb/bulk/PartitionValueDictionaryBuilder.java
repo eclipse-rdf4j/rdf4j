@@ -59,12 +59,16 @@ final class PartitionValueDictionaryBuilder {
 	private final PredicateIdPlan predicateIdPlan;
 	private final IdAllocator idAllocator = new IdAllocator();
 
+	private final BulkCompression compression;
+
 	private long persistedValues;
 	private long inlineValues;
 
 	private PartitionValueDictionaryBuilder(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
 			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
-			BooleanSupplier cancellationSignal, PredicateIdPlan predicateIdPlan) throws IOException {
+			BulkCompression compression, BooleanSupplier cancellationSignal, PredicateIdPlan predicateIdPlan)
+			throws IOException {
+		this.compression = compression;
 		this.staged = staged;
 		this.dependencies = dependencies;
 		this.dictionaryDirectory = workspace.resolve("partition-dictionary");
@@ -81,17 +85,19 @@ final class PartitionValueDictionaryBuilder {
 
 	static PartitionValueDictionary build(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
 			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
-			BooleanSupplier cancellationSignal) throws IOException {
+			BulkCompression compression, BooleanSupplier cancellationSignal) throws IOException {
 		PredicateIdPlan predicateIdPlan = PredicateIdPlan.build(staged, workspace, cancellationSignal);
 		return build(staged, dependencies, workspace, partitionCount, memoryBudgetBytes, maxOpenFiles, config,
-				cancellationSignal, predicateIdPlan);
+				compression, cancellationSignal, predicateIdPlan);
 	}
 
 	static PartitionValueDictionary build(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
 			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
-			BooleanSupplier cancellationSignal, PredicateIdPlan predicateIdPlan) throws IOException {
+			BulkCompression compression, BooleanSupplier cancellationSignal, PredicateIdPlan predicateIdPlan)
+			throws IOException {
 		PartitionValueDictionaryBuilder builder = new PartitionValueDictionaryBuilder(staged, dependencies, workspace,
-				partitionCount, memoryBudgetBytes, maxOpenFiles, config, cancellationSignal, predicateIdPlan);
+				partitionCount, memoryBudgetBytes, maxOpenFiles, config, compression, cancellationSignal,
+				predicateIdPlan);
 		return builder.build();
 	}
 
@@ -220,7 +226,7 @@ final class PartitionValueDictionaryBuilder {
 		entries.sort(Comparator.comparing((MutableEntry entry) -> entry.key, Arrays::compareUnsigned));
 		Path run = runDirectory.resolve(String.format(java.util.Locale.ROOT, "partition-%05d-run-%08d.bin",
 				partition, runNumber));
-		try (DataOutputStream output = BulkLz4.output(run)) {
+		try (DataOutputStream output = BulkLz4.output(run, compression)) {
 			for (MutableEntry entry : entries) {
 				writeRunEntry(output, entry);
 			}
@@ -238,7 +244,7 @@ final class PartitionValueDictionaryBuilder {
 				List<Path> group = runs.subList(start, Math.min(runs.size(), start + fanIn));
 				Path merged = runDirectory.resolve(String.format(java.util.Locale.ROOT,
 						"partition-%05d-pass-%04d-run-%08d.bin", partition, pass, mergedRuns.size()));
-				try (DataOutputStream output = BulkLz4.output(merged)) {
+				try (DataOutputStream output = BulkLz4.output(merged, compression)) {
 					merge(group, entry -> writeRunEntry(output, entry));
 				}
 				mergedRuns.add(merged);
@@ -254,7 +260,7 @@ final class PartitionValueDictionaryBuilder {
 		RunCursor[] cursors = new RunCursor[runs.size()];
 		try {
 			for (int index = 0; index < runs.size(); index++) {
-				cursors[index] = new RunCursor(runs.get(index), true);
+				cursors[index] = new RunCursor(runs.get(index), compression, true);
 				cursors[index].advance();
 			}
 			LoserTree tree = new LoserTree(cursors);
@@ -456,14 +462,10 @@ final class PartitionValueDictionaryBuilder {
 		private MutableEntry current;
 		private boolean closed;
 
-		private RunCursor(Path path) throws IOException {
-			this(path, false);
-		}
-
-		private RunCursor(Path path, boolean deleteWhenClosed) throws IOException {
+		private RunCursor(Path path, BulkCompression compression, boolean deleteWhenClosed) throws IOException {
 			this.path = path;
 			this.deleteWhenClosed = deleteWhenClosed;
-			input = BulkLz4.input(path);
+			input = BulkLz4.input(path, compression);
 		}
 
 		private boolean advance() throws IOException {

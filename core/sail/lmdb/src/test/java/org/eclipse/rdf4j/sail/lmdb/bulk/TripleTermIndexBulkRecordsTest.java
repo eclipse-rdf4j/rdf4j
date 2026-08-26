@@ -40,7 +40,7 @@ class TripleTermIndexBulkRecordsTest {
 	void exposesIndependentTermIndexRunsAndNativeAppend() throws Exception {
 		Class<?> stage = Class.forName("org.eclipse.rdf4j.sail.lmdb.bulk.TripleTermIndexBulkRecords");
 		assertThat(stage.getDeclaredMethod("build", ExternalLongTupleSorter.SortedTupleFile.class, Path.class,
-				String.class, long.class, int.class, BooleanSupplier.class))
+				String.class, long.class, int.class, BulkCompression.class, BooleanSupplier.class))
 						.isNotNull();
 		assertThat(ValueStore.class.getDeclaredMethod("appendBulkTripleTermIndex", String.class,
 				ValueStore.BulkLongQuadSource.class, int.class, long.class))

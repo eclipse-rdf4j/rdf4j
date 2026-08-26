@@ -33,14 +33,14 @@ class ExternalLongTupleSorterTest {
 		Class<?> allocatorType = Class
 				.forName("org.eclipse.rdf4j.sail.lmdb.bulk.ExternalLongTupleSorter$RunBufferAllocator");
 		Constructor<ExternalLongTupleSorter> constructor = ExternalLongTupleSorter.class.getDeclaredConstructor(
-				Path.class, String.class, int.class, long.class, int.class, allocatorType);
+				Path.class, String.class, int.class, long.class, int.class, BulkCompression.class, allocatorType);
 		Object failingAllocator = Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] { allocatorType },
 				(proxy, method, arguments) -> {
 					throw new OutOfMemoryError("injected direct-memory pressure");
 				});
 
 		try (ExternalLongTupleSorter nativeSorter = new ExternalLongTupleSorter(temporaryDirectory, "native", 3,
-				1024, 3)) {
+				1024, 3, BulkCompression.FASTEST)) {
 			assertThat(usesNativeBuffer(nativeSorter)).isTrue();
 		}
 
@@ -68,7 +68,8 @@ class ExternalLongTupleSorterTest {
 	private ExternalLongTupleSorter newSorter(Constructor<ExternalLongTupleSorter> constructor, Object allocator)
 			throws Exception {
 		try {
-			return constructor.newInstance(temporaryDirectory, "fallback", 3, 48L, 3, allocator);
+			return constructor.newInstance(temporaryDirectory, "fallback", 3, 48L, 3, BulkCompression.FASTEST,
+					allocator);
 		} catch (InvocationTargetException e) {
 			if (e.getCause()instanceof Exception exception) {
 				throw exception;

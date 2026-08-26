@@ -38,12 +38,14 @@ final class ValueDependencyCollector implements AutoCloseable {
 	private final int partitionCount;
 	private final LmdbStoreConfig config;
 	private final BooleanSupplier cancellationSignal;
+	private final BulkCompression compression;
 	private final BoundedBucketOutputLimiter outputs;
 	private final DirectCache expanded = new DirectCache(CACHE_CAPACITY);
 	private final DirectCache emitted = new DirectCache(CACHE_CAPACITY);
 
 	private ValueDependencyCollector(Path directory, int partitionCount, int maxOpenFiles, LmdbStoreConfig config,
-			BooleanSupplier cancellationSignal) throws IOException {
+			BulkCompression compression, BooleanSupplier cancellationSignal) throws IOException {
+		this.compression = compression;
 		this.directory = directory;
 		this.partitionCount = partitionCount;
 		this.config = config;
@@ -53,17 +55,18 @@ final class ValueDependencyCollector implements AutoCloseable {
 	}
 
 	static ValueDependencyBuckets collect(CanonicalStagedInput staged, Path workspace, int partitionCount,
-			int maxOpenFiles, LmdbStoreConfig config, BooleanSupplier cancellationSignal) throws IOException {
+			int maxOpenFiles, LmdbStoreConfig config, BulkCompression compression,
+			BooleanSupplier cancellationSignal) throws IOException {
 		Path directory = workspace.resolve("dependency-buckets");
 		try (ValueDependencyCollector collector = new ValueDependencyCollector(directory, partitionCount, maxOpenFiles,
-				config, cancellationSignal)) {
+				config, compression, cancellationSignal)) {
 			for (int partition = 0; partition < partitionCount; partition++) {
 				collector.checkCancelled();
 				staged.forEachPartitionValue(partition,
 						(ignored, routeHash, roles, key) -> collector.expand(routeHash, key));
 			}
 		}
-		return new ValueDependencyBuckets(directory, partitionCount);
+		return new ValueDependencyBuckets(directory, partitionCount, compression);
 	}
 
 	private void expand(long routeHash, byte[] canonicalKey) throws IOException {
@@ -112,7 +115,7 @@ final class ValueDependencyCollector implements AutoCloseable {
 		checkCancelled();
 		int partition = (int) hash & (partitionCount - 1);
 		DataOutputStream output = outputs.output(partition,
-				() -> BulkLz4.appendOutput(ValueDependencyBuckets.bucketPath(directory, partition)));
+				() -> BulkLz4.appendOutput(ValueDependencyBuckets.bucketPath(directory, partition), compression));
 		output.writeLong(hash);
 		output.writeByte(roles);
 		output.writeInt(key.length);

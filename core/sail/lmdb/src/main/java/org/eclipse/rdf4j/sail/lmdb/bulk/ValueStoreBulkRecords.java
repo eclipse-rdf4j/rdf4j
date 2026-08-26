@@ -34,22 +34,22 @@ final class ValueStoreBulkRecords {
 	}
 
 	static Output build(ResolvedValueRecords values, Path workspace, long memoryBudgetBytes, int maxOpenFiles,
-			BooleanSupplier cancellationSignal) throws IOException {
+			BulkCompression compression, BooleanSupplier cancellationSignal) throws IOException {
 		long sorterBudget = Math.max(16 * 1024L, memoryBudgetBytes / 4L);
 		Path hashCandidatesPath = workspace.resolve("value-hash-candidates.bin");
 		Path referenceCandidatesPath = workspace.resolve("value-reference-candidates.bin");
 		Path tripleTermsPath = workspace.resolve("value-triple-terms.bin");
 		Path hashesPath = workspace.resolve("value-hashes.bin");
 		try (ExternalByteKeySorter main = new ExternalByteKeySorter(workspace, "value-main", sorterBudget,
-				maxOpenFiles);
+				maxOpenFiles, compression);
 				ExternalLongTupleSorter hashCandidates = new ExternalLongTupleSorter(workspace,
-						"value-hash-candidates", 3, sorterBudget, maxOpenFiles);
+						"value-hash-candidates", 3, sorterBudget, maxOpenFiles, compression);
 				ExternalLongTupleSorter referenceCandidates = new ExternalLongTupleSorter(workspace,
-						"value-reference-candidates", 3, sorterBudget, maxOpenFiles);
+						"value-reference-candidates", 3, sorterBudget, maxOpenFiles, compression);
 				ExternalLongTupleSorter tripleTerms = new ExternalLongTupleSorter(workspace, "value-triple-terms", 4,
-						sorterBudget, maxOpenFiles);
+						sorterBudget, maxOpenFiles, compression);
 				ExternalLongTupleSorter hashes = new ExternalLongTupleSorter(workspace, "value-hashes", 3,
-						sorterBudget, maxOpenFiles)) {
+						sorterBudget, maxOpenFiles, compression)) {
 			values.forEach((sequence, id, roles, canonicalKey, dependencyIds) -> {
 				checkCancelled(cancellationSignal);
 				for (long dependencyId : dependencyIds) {
@@ -84,24 +84,24 @@ final class ValueStoreBulkRecords {
 			ExternalLongTupleSorter.SortedTupleFile sortedReferences = referenceCandidates
 					.finish(referenceCandidatesPath);
 			ExternalByteKeySorter.SortedRecordFile referenceCounts = reduceReferenceCounts(sortedReferences, workspace,
-					sorterBudget, maxOpenFiles, cancellationSignal);
+					sorterBudget, maxOpenFiles, compression, cancellationSignal);
 			return new Output(sortedMain, referenceCounts, tripleTerms.finish(tripleTermsPath),
 					hashes.finish(hashesPath));
 		}
 	}
 
 	static Output restore(Path workspace, long mainRecords, long mainBytes, long referenceCounts,
-			long referenceCountBytes, long tripleTerms, long tripleTermBytes, long valueHashes, long valueHashBytes)
-			throws IOException {
+			long referenceCountBytes, long tripleTerms, long tripleTermBytes, long valueHashes, long valueHashBytes,
+			BulkCompression compression) throws IOException {
 		return new Output(
 				ExternalByteKeySorter.SortedRecordFile.restore(workspace.resolve("value-main-records.bin"),
-						mainRecords, mainBytes),
+						mainRecords, mainBytes, compression),
 				ExternalByteKeySorter.SortedRecordFile.restore(workspace.resolve("value-ref-count-records.bin"),
-						referenceCounts, referenceCountBytes),
+						referenceCounts, referenceCountBytes, compression),
 				ExternalLongTupleSorter.SortedTupleFile.restore(workspace.resolve("value-triple-terms.bin"), 4,
-						tripleTerms, tripleTermBytes),
+						tripleTerms, tripleTermBytes, compression),
 				ExternalLongTupleSorter.SortedTupleFile.restore(workspace.resolve("value-hashes.bin"), 3,
-						valueHashes, valueHashBytes));
+						valueHashes, valueHashBytes, compression));
 	}
 
 	private static void addDataRecords(ExternalByteKeySorter sorter, long sequence, long id, byte[] data,
@@ -134,10 +134,9 @@ final class ValueStoreBulkRecords {
 
 	private static ExternalByteKeySorter.SortedRecordFile reduceReferenceCounts(
 			ExternalLongTupleSorter.SortedTupleFile references, Path workspace, long memoryBudgetBytes,
-			int maxOpenFiles,
-			BooleanSupplier cancellationSignal) throws IOException {
+			int maxOpenFiles, BulkCompression compression, BooleanSupplier cancellationSignal) throws IOException {
 		try (ExternalByteKeySorter counts = new ExternalByteKeySorter(workspace, "value-ref-counts", memoryBudgetBytes,
-				maxOpenFiles)) {
+				maxOpenFiles, compression)) {
 			long[] currentId = { 0L };
 			long[] count = { 0L };
 			references.forEach(tuple -> {

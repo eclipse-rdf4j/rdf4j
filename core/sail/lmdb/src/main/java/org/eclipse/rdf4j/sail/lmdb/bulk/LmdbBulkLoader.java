@@ -46,6 +46,7 @@ public final class LmdbBulkLoader {
 	private final BooleanSupplier cancellationSignal;
 	private final int writeTransactionRecords;
 	private final long writeTransactionBytes;
+	private final BulkCompression compression;
 	private final LmdbBulkLoadGeneration.PromotionHook publicationHook;
 
 	private LmdbBulkLoader(Builder builder) {
@@ -62,6 +63,7 @@ public final class LmdbBulkLoader {
 		cancellationSignal = builder.cancellationSignal;
 		writeTransactionRecords = builder.writeTransactionRecords;
 		writeTransactionBytes = builder.writeTransactionBytes;
+		compression = builder.compression;
 		publicationHook = builder.publicationHook;
 	}
 
@@ -160,6 +162,14 @@ public final class LmdbBulkLoader {
 		return writeTransactionBytes;
 	}
 
+	/**
+	 * The codec used for the loader's intermediate files. A resumed load keeps whatever its workspace was created with,
+	 * so this is a request rather than a guarantee.
+	 */
+	public BulkCompression compression() {
+		return compression;
+	}
+
 	LmdbBulkLoadGeneration.PromotionHook publicationHook() {
 		return publicationHook;
 	}
@@ -210,6 +220,7 @@ public final class LmdbBulkLoader {
 		private BooleanSupplier cancellationSignal = () -> false;
 		private int writeTransactionRecords = DEFAULT_WRITE_TRANSACTION_RECORDS;
 		private long writeTransactionBytes = DEFAULT_WRITE_TRANSACTION_BYTES;
+		private BulkCompression compression = BulkCompression.FASTEST;
 		private LmdbBulkLoadGeneration.PromotionHook publicationHook = LmdbBulkLoadGeneration.PromotionHook.NONE;
 
 		private Builder(Path target, LmdbStoreConfig config) {
@@ -292,6 +303,16 @@ public final class LmdbBulkLoader {
 				throw new IllegalArgumentException("writeTransactionBytes must be positive");
 			}
 			this.writeTransactionBytes = writeTransactionBytes;
+			return this;
+		}
+
+		/**
+		 * Selects the codec for the loader's intermediate files, trading CPU against spill-disk volume. Defaults to
+		 * {@link BulkCompression#FASTEST}. Resuming an existing workspace keeps the setting that workspace was created
+		 * with.
+		 */
+		public Builder compression(BulkCompression compression) {
+			this.compression = Objects.requireNonNull(compression, "compression");
 			return this;
 		}
 

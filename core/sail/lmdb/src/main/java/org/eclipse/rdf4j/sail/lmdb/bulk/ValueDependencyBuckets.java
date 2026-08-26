@@ -23,17 +23,20 @@ final class ValueDependencyBuckets {
 
 	private final Path directory;
 	private final int partitionCount;
+	private final BulkCompression compression;
 
-	ValueDependencyBuckets(Path directory, int partitionCount) {
+	ValueDependencyBuckets(Path directory, int partitionCount, BulkCompression compression) {
 		this.directory = directory;
 		this.partitionCount = partitionCount;
+		this.compression = compression;
 	}
 
 	void forEachPartitionValue(int partition, CanonicalStagedInput.ValueVisitor visitor) throws IOException {
 		if (partition < 0 || partition >= partitionCount) {
 			throw new IllegalArgumentException("Value partition out of range: " + partition);
 		}
-		BulkLz4.readConcatenated(bucketPath(directory, partition), input -> readValues(input, partition, visitor));
+		BulkLz4.readConcatenated(bucketPath(directory, partition), compression,
+				input -> readValues(input, partition, visitor));
 	}
 
 	static Path bucketPath(Path directory, int partition) {

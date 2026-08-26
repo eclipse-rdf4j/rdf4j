@@ -48,23 +48,24 @@ class StatementIndexBulkRecordsTest {
 		Path staging = Files.createDirectory(temporaryDirectory.resolve("staging"));
 
 		CanonicalStagedInput staged;
-		try (CanonicalStatementStager stager = new CanonicalStatementStager(staging, config, 4, 4, 64 * 1024L)) {
+		try (CanonicalStatementStager stager = new CanonicalStatementStager(staging, config, 4, 4, 64 * 1024L,
+				BulkCompression.FASTEST)) {
 			stager.writeStatement(first);
 			stager.writeStatement(second);
 			stager.writeStatement(first);
 			staged = stager.stagedInput();
 		}
 		ValueDependencyBuckets dependencies = ValueDependencyCollector.collect(staged, staging, 4, 4, config,
-				() -> false);
+				BulkCompression.FASTEST, () -> false);
 		PartitionValueDictionary dictionary = PartitionValueDictionaryBuilder.build(staged, dependencies, staging, 4,
-				64 * 1024L, 4, config, () -> false);
+				64 * 1024L, 4, config, BulkCompression.FASTEST, () -> false);
 		ResolvedIdQuadSpool spool = ResolvedIdQuadSpool.build(staged, dictionary, staging, 4, 64 * 1024L,
-				() -> false);
+				BulkCompression.FASTEST, () -> false);
 
 		long[] firstQuad = quad(dictionary, first);
 		long[] secondQuad = quad(dictionary, second);
 		try (StatementIndexBulkRecords records = StatementIndexBulkRecords.build(spool, staging, "spoc, psoc",
-				128L, 8, () -> false)) {
+				128L, 8, BulkCompression.FASTEST, () -> false)) {
 			assertThat(records.runs()).extracting(StatementIndexBulkRecords.IndexRun::specification)
 					.containsExactly("spoc", "psoc");
 			assertThat(read(records.runs().get(0))).containsExactlyElementsOf(
@@ -99,19 +100,21 @@ class StatementIndexBulkRecordsTest {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc");
 		Path staging = Files.createDirectory(temporaryDirectory.resolve("encoded-staging"));
 		CanonicalStagedInput staged;
-		try (CanonicalStatementStager stager = new CanonicalStatementStager(staging, config, 4, 4, 64 * 1024L)) {
+		try (CanonicalStatementStager stager = new CanonicalStatementStager(staging, config, 4, 4, 64 * 1024L,
+				BulkCompression.FASTEST)) {
 			stager.writeStatement(statement);
 			staged = stager.stagedInput();
 		}
 		ValueDependencyBuckets dependencies = ValueDependencyCollector.collect(staged, staging, 4, 4, config,
-				() -> false);
+				BulkCompression.FASTEST, () -> false);
 		PartitionValueDictionary dictionary = PartitionValueDictionaryBuilder.build(staged, dependencies, staging, 4,
-				64 * 1024L, 4, config, () -> false);
+				64 * 1024L, 4, config, BulkCompression.FASTEST, () -> false);
 		ResolvedIdQuadSpool spool = ResolvedIdQuadSpool.build(staged, dictionary, staging, 4, 64 * 1024L,
-				() -> false);
+				BulkCompression.FASTEST, () -> false);
 
 		List<ValueStore.BulkRecord> encoded = new ArrayList<>();
 		try (StatementIndexBulkRecords records = StatementIndexBulkRecords.build(spool, staging, "spoc", 128L, 4,
+				BulkCompression.FASTEST,
 				(BooleanSupplier) () -> false, (Predicate<String>) ignored -> false)) {
 			StatementIndexBulkRecords.IndexRun run = records.runs().getFirst();
 			assertThat(run.encodedRecords()).isNotNull();
