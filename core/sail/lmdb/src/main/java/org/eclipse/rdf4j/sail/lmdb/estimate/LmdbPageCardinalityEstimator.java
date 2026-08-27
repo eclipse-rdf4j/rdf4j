@@ -19,7 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
+import org.eclipse.rdf4j.sail.lmdb.util.EntryMatcher;
 
 public final class LmdbPageCardinalityEstimator implements Closeable {
 
@@ -32,7 +32,7 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 
 	public long estimateEntries(long txnId, String dbName, byte[] minKey, int minKeyLength, byte[] maxKey,
 			int maxKeyLength,
-			GroupMatcher matcher) throws IOException {
+			EntryMatcher matcher) throws IOException {
 		SnapshotCache snapshot = snapshot(txnId);
 		LmdbDb db = namedDb(snapshot, dbName);
 		if (db == null || db.isEmpty()) {

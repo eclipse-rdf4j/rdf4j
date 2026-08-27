@@ -137,9 +137,12 @@ public class TripleStoreTest {
 				MDBVal keyVal = MDBVal.malloc(stack);
 				MDBVal dataVal = MDBVal.calloc(stack);
 				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-				mainIndex.toKey(keyBuf, subj[0], pred[0], obj[0], context[0]);
+				ByteBuffer valueBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				mainIndex.toEntry(keyBuf, valueBuf, subj[0], pred[0], obj[0], context[0]);
 				keyBuf.flip();
+				valueBuf.flip();
 				keyVal.mv_data(keyBuf);
+				dataVal.mv_data(valueBuf);
 				LmdbUtil.E(mdb_put(writeTxn, mainIndex.getDB(true), keyVal, dataVal, MDB_NOOVERWRITE));
 				assertEquals("Main inferred row should be removed before fallback replay", MDB_SUCCESS,
 						mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal));

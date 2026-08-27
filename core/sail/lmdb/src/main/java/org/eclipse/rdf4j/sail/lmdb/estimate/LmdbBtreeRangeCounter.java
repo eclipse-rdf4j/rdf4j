@@ -16,7 +16,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
+import org.eclipse.rdf4j.sail.lmdb.util.EntryMatcher;
 
 final class LmdbBtreeRangeCounter {
 
@@ -29,7 +29,7 @@ final class LmdbBtreeRangeCounter {
 	}
 
 	RangeCountResult countRange(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
-			GroupMatcher matcher) throws IOException {
+			EntryMatcher matcher) throws IOException {
 		RangeCountResult result = new RangeCountResult();
 		if (db.isEmpty()) {
 			return result;
@@ -214,14 +214,16 @@ final class LmdbBtreeRangeCounter {
 		return new SearchResult(index, false);
 	}
 
-	private boolean matches(LmdbNode node, ByteBuffer pageBuffer, GroupMatcher matcher) {
+	private boolean matches(LmdbNode node, ByteBuffer pageBuffer, EntryMatcher matcher) {
 		ByteBuffer keySlice = pageBuffer.duplicate();
 		keySlice.order(pageBuffer.order());
 		keySlice.position(node.keyOffset());
 		keySlice.limit(node.keyOffset() + node.keySize());
 		ByteBuffer keyView = keySlice.slice();
 		keyView.order(pageBuffer.order());
-		return matcher.matches(keyView);
+		// TODO: If we want to match values, we need to read the value from the page or overflow pages. For now, we only
+		// match keys.
+		return matcher.matches(keyView, /* valueView */ null);
 	}
 
 	private long countNodeEntries(LmdbNode node, LmdbPage page, RangeCountResult stats) throws IOException {

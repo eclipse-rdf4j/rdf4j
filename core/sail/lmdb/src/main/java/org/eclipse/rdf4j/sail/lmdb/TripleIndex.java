@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabaseWithTxn;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
+import static org.lwjgl.util.lmdb.LMDB.MDB_DUPSORT;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 
@@ -28,8 +29,8 @@ import java.util.Set;
 import java.util.StringTokenizer;
 
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
-import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
+import org.eclipse.rdf4j.sail.lmdb.util.EntryMatcher;
+import org.eclipse.rdf4j.sail.lmdb.util.IndexEntryWriters;
 
 class TripleIndex {
 	static final int MAX_KEY_LENGTH = 4 * 9;
@@ -46,28 +47,33 @@ class TripleIndex {
 	}
 
 	private final char[] fieldSeq;
-	private final IndexKeyWriters.KeyWriter keyWriter;
-	private final IndexKeyWriters.MatcherFactory matcherFactory;
+	private final IndexEntryWriters.EntryWriter entryWriter;
+	private final IndexEntryWriters.MatcherFactory matcherFactory;
 	final StatementFieldValueAccessor[] fieldValueAccessors;
 	final StatementFieldValueAccessor leadingFieldValueAccessor;
 	private final int dbiExplicit, dbiInferred;
 	private final int[] indexMap;
 	private final long env;
 	private String name;
+	private int indexSplitPosition;
 
-	TripleIndex(String name, String fieldSeq, boolean createInferredIndex, long env, long writeTxn) throws IOException {
+	public TripleIndex(String name, String fieldSeq, int indexSplitPosition, boolean createInferredIndex, long env,
+			long writeTxn) throws IOException {
 		this.name = name;
 		this.fieldSeq = fieldSeq.toCharArray();
-		this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
-		this.matcherFactory = IndexKeyWriters.matcherFactory(fieldSeq);
+		// adjust split position for indexes starting with context
+		this.indexSplitPosition = fieldSeq.startsWith("c") ? Math.min(indexSplitPosition + 1, 4)
+				: indexSplitPosition;
+		this.entryWriter = IndexEntryWriters.forFieldSeq(fieldSeq);
+		this.matcherFactory = IndexEntryWriters.matcherFactory(fieldSeq);
 		this.fieldValueAccessors = createFieldValueAccessors(this.fieldSeq);
 		this.leadingFieldValueAccessor = this.fieldValueAccessors[0];
 		this.indexMap = getIndexes(this.fieldSeq);
 		this.env = env;
 		// open database and use native sort order without comparator
-		dbiExplicit = openDatabaseWithTxn(writeTxn, getName(true), MDB_CREATE);
+		dbiExplicit = openDatabaseWithTxn(writeTxn, getName(true), MDB_CREATE | MDB_DUPSORT);
 		if (createInferredIndex) {
-			dbiInferred = openDatabaseWithTxn(writeTxn, getName(false), MDB_CREATE);
+			dbiInferred = openDatabaseWithTxn(writeTxn, getName(false), MDB_CREATE | MDB_DUPSORT);
 		} else {
 			dbiInferred = -1;
 		}
@@ -198,30 +204,33 @@ class TripleIndex {
 		return score;
 	}
 
-	void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+	void getMinEntry(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
 		subj = subj <= 0 ? 0 : subj;
 		pred = pred <= 0 ? 0 : pred;
 		obj = obj <= 0 ? 0 : obj;
 		context = context <= 0 ? 0 : context;
-		toKey(bb, subj, pred, obj, context);
+		toEntry(key, value, subj, pred, obj, context);
 	}
 
-	void getMaxKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+	void getMaxEntry(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
 		subj = subj <= 0 ? Long.MAX_VALUE : subj;
 		pred = pred <= 0 ? Long.MAX_VALUE : pred;
 		obj = obj <= 0 ? Long.MAX_VALUE : obj;
 		context = context < 0 ? Long.MAX_VALUE : context;
-		toKey(bb, subj, pred, obj, context);
+		toEntry(key, value, subj, pred, obj, context);
 	}
 
-	GroupMatcher createMatcher(long subj, long pred, long obj, long context) {
-		int length = getLength(subj, pred, obj, context);
+	EntryMatcher createMatcher(long subj, long pred, long obj, long context) {
+		ByteBuffer key = ByteBuffer.allocate(Math.max(1, indexSplitPosition) * (Long.BYTES + 1));
+		ByteBuffer value = ByteBuffer.allocate((4 - indexSplitPosition) * (Long.BYTES + 1));
+		toEntry(key, value, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj,
+				context == -1 ? 0 : context);
+		return new EntryMatcher(indexSplitPosition, key.array(), value.array(),
+				matcherFactory.create(subj, pred, obj, context));
+	}
 
-		ByteBuffer bb = ByteBuffer.allocate(length);
-		toKey(bb, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj, context == -1 ? 0 : context);
-		bb.flip();
-
-		return new GroupMatcher(bb.array(), matcherFactory.create(subj, pred, obj, context));
+	public int getIndexSplitPosition() {
+		return indexSplitPosition;
 	}
 
 	private int getLength(long subj, long pred, long obj, long context) {
@@ -244,49 +253,161 @@ class TripleIndex {
 		return length;
 	}
 
-	void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		boolean shouldCache = threeOfFourAreZeroOrMax(subj, pred, obj, context);
-		if (shouldCache) {
-			long sum = subj + pred + obj + context;
-			if (sum == 0 && subj == pred && obj == context) {
-				bb.put(Varint.ALL_ZERO_QUAD);
-				return;
-			}
-
-			if (sum < 241) { // keys with sum < 241 only need 4 bytes to write and don't need caching
-				shouldCache = false;
-			}
-		}
-
-		// Pass through to the keyWriter with caching hint
-		keyWriter.write(bb, subj, pred, obj, context, shouldCache);
+	void toEntry(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
+		entryWriter.write(key, value, indexSplitPosition, subj, pred, obj, context);
 	}
 
-	void keyToQuad(ByteBuffer key, long[] quad) {
-		Varint.readQuadUnsigned(key, indexMap, quad);
-	}
-
-	void keyToQuad(ByteBuffer key, long[] originalQuad, long[] quad) {
-		// directly use index map to read values in to correct positions
-		if (originalQuad[indexMap[0]] != -1) {
-			Varint.skipUnsigned(key);
-		} else {
+	void entryToQuad(ByteBuffer key, ByteBuffer value, long[] quad) {
+		switch (indexSplitPosition) {
+		case 0:
+			quad[indexMap[0]] = Varint.readUnsigned(value);
+			quad[indexMap[1]] = Varint.readUnsigned(value);
+			quad[indexMap[2]] = Varint.readUnsigned(value);
+			quad[indexMap[3]] = Varint.readUnsigned(value);
+			break;
+		case 1:
 			quad[indexMap[0]] = Varint.readUnsigned(key);
-		}
-		if (originalQuad[indexMap[1]] != -1) {
-			Varint.skipUnsigned(key);
-		} else {
+			quad[indexMap[1]] = Varint.readUnsigned(value);
+			quad[indexMap[2]] = Varint.readUnsigned(value);
+			quad[indexMap[3]] = Varint.readUnsigned(value);
+			break;
+		case 2:
+			quad[indexMap[0]] = Varint.readUnsigned(key);
 			quad[indexMap[1]] = Varint.readUnsigned(key);
-		}
-		if (originalQuad[indexMap[2]] != -1) {
-			Varint.skipUnsigned(key);
-		} else {
+			quad[indexMap[2]] = Varint.readUnsigned(value);
+			quad[indexMap[3]] = Varint.readUnsigned(value);
+			break;
+		case 3:
+			quad[indexMap[0]] = Varint.readUnsigned(key);
+			quad[indexMap[1]] = Varint.readUnsigned(key);
 			quad[indexMap[2]] = Varint.readUnsigned(key);
-		}
-		if (originalQuad[indexMap[3]] != -1) {
-			Varint.skipUnsigned(key);
-		} else {
+			quad[indexMap[3]] = Varint.readUnsigned(value);
+			break;
+		case 4:
+			quad[indexMap[0]] = Varint.readUnsigned(key);
+			quad[indexMap[1]] = Varint.readUnsigned(key);
+			quad[indexMap[2]] = Varint.readUnsigned(key);
 			quad[indexMap[3]] = Varint.readUnsigned(key);
+			break;
+		}
+	}
+
+	void entryToQuad(ByteBuffer key, ByteBuffer value, long[] originalQuad, long[] quad) {
+		switch (indexSplitPosition) {
+		case 0:
+			// directly use index map to read values in to correct positions
+			if (originalQuad[indexMap[0]] != -1) {
+				Varint.skipUnsigned(value);
+			} else {
+				quad[indexMap[0]] = Varint.readUnsigned(value);
+			}
+			if (originalQuad[indexMap[1]] != -1) {
+				Varint.skipUnsigned(value);
+			} else {
+				quad[indexMap[1]] = Varint.readUnsigned(value);
+			}
+			if (originalQuad[indexMap[2]] != -1) {
+				Varint.skipUnsigned(value);
+			} else {
+				quad[indexMap[2]] = Varint.readUnsigned(value);
+			}
+			if (originalQuad[indexMap[3]] != -1) {
+				Varint.skipUnsigned(value);
+			} else {
+				quad[indexMap[3]] = Varint.readUnsigned(value);
+			}
+			break;
+		case 1:
+			// directly use index map to read values in to correct positions
+			if (originalQuad[indexMap[0]] != -1) {
+				Varint.skipUnsigned(key);
+			} else {
+				quad[indexMap[0]] = Varint.readUnsigned(key);
+			}
+			if (originalQuad[indexMap[1]] != -1) {
+				Varint.skipUnsigned(value);
+			} else {
+				quad[indexMap[1]] = Varint.readUnsigned(value);
+			}
+			if (originalQuad[indexMap[2]] != -1) {
+				Varint.skipUnsigned(value);
+			} else {
+				quad[indexMap[2]] = Varint.readUnsigned(value);
+			}
+			if (originalQuad[indexMap[3]] != -1) {
+				Varint.skipUnsigned(value);
+			} else {
+				quad[indexMap[3]] = Varint.readUnsigned(value);
+			}
+			break;
+		case 2:
+			// directly use index map to read values in to correct positions
+			if (originalQuad[indexMap[0]] != -1) {
+				Varint.skipUnsigned(key);
+			} else {
+				quad[indexMap[0]] = Varint.readUnsigned(key);
+			}
+			if (originalQuad[indexMap[1]] != -1) {
+				Varint.skipUnsigned(key);
+			} else {
+				quad[indexMap[1]] = Varint.readUnsigned(key);
+			}
+			if (originalQuad[indexMap[2]] != -1) {
+				Varint.skipUnsigned(value);
+			} else {
+				quad[indexMap[2]] = Varint.readUnsigned(value);
+			}
+			if (originalQuad[indexMap[3]] != -1) {
+				Varint.skipUnsigned(value);
+			} else {
+				quad[indexMap[3]] = Varint.readUnsigned(value);
+			}
+			break;
+		case 3:
+			// directly use index map to read values in to correct positions
+			if (originalQuad[indexMap[0]] != -1) {
+				Varint.skipUnsigned(key);
+			} else {
+				quad[indexMap[0]] = Varint.readUnsigned(key);
+			}
+			if (originalQuad[indexMap[1]] != -1) {
+				Varint.skipUnsigned(key);
+			} else {
+				quad[indexMap[1]] = Varint.readUnsigned(key);
+			}
+			if (originalQuad[indexMap[2]] != -1) {
+				Varint.skipUnsigned(key);
+			} else {
+				quad[indexMap[2]] = Varint.readUnsigned(key);
+			}
+			if (originalQuad[indexMap[3]] != -1) {
+				Varint.skipUnsigned(value);
+			} else {
+				quad[indexMap[3]] = Varint.readUnsigned(value);
+			}
+			break;
+		case 4:
+			// directly use index map to read values in to correct positions
+			if (originalQuad[indexMap[0]] != -1) {
+				Varint.skipUnsigned(key);
+			} else {
+				quad[indexMap[0]] = Varint.readUnsigned(key);
+			}
+			if (originalQuad[indexMap[1]] != -1) {
+				Varint.skipUnsigned(key);
+			} else {
+				quad[indexMap[1]] = Varint.readUnsigned(key);
+			}
+			if (originalQuad[indexMap[2]] != -1) {
+				Varint.skipUnsigned(key);
+			} else {
+				quad[indexMap[2]] = Varint.readUnsigned(key);
+			}
+			if (originalQuad[indexMap[3]] != -1) {
+				Varint.skipUnsigned(key);
+			} else {
+				quad[indexMap[3]] = Varint.readUnsigned(key);
+			}
 		}
 	}
 
