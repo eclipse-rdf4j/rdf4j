@@ -38,7 +38,7 @@ import org.openjdk.jmh.annotations.Warmup;
 
 /** Isolates construction of the paged-CSF base index over the protected multi-theme benchmark store. */
 @State(Scope.Benchmark)
-@Warmup(iterations = 0)
+@Warmup(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
 @Measurement(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode(Mode.SingleShotTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)

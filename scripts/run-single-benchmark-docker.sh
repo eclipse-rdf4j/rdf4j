@@ -6,6 +6,7 @@ usage() {
 Usage: $0 [existing run-single-benchmark.sh options]
        $0 <fullyQualifiedClass.method> [existing run-single-benchmark.sh options]
        $0 <fullyQualifiedClass.method> [flexible benchmark @Param values]
+       $0 --module <modulePath> --main-class <fullyQualifiedClass> [options]
 
 Runs the benchmark helper inside a Linux Java 26 container with JFR CPU time profiling enabled.
 Trailing benchmark parameter values are parsed flexibly. Examples:
@@ -449,6 +450,10 @@ while [[ $# -gt 0 ]]; do
         --method|-b|--benchmark)
                 has_explicit_method=true
                 benchmark_method_name="$2"
+                passthrough_args+=("$1" "$2")
+                shift 2
+                ;;
+        --main-class|--main-arg)
                 passthrough_args+=("$1" "$2")
                 shift 2
                 ;;
