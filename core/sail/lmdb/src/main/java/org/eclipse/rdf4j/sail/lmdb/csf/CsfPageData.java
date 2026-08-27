@@ -189,12 +189,11 @@ final class CsfPageData {
 		rowOpen = true;
 	}
 
-	void appendPair(long neighbor, long context) {
+	void appendPair(long neighbor, long context, boolean newFiber) {
 		if (!rowOpen) {
 			throw new IllegalStateException("pair outside a CSF scratch row");
 		}
-		int rowFiberFrom = rowFiberStarts[rowCount];
-		if (fiberCount == rowFiberFrom || neighbors[fiberCount - 1] != neighbor) {
+		if (newFiber) {
 			ensureFibers(fiberCount + 1);
 			neighbors[fiberCount] = neighbor;
 			fiberContextStarts[fiberCount] = quadCount;

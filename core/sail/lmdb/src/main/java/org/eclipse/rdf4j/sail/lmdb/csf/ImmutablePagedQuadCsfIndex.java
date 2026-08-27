@@ -1692,10 +1692,11 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				currentFibers = 0;
 				currentQuads = 0;
 			}
-			if (currentQuads == 0 || lastNeighbor != rawNeighborId) {
+			boolean newFiber = currentQuads == 0 || lastNeighbor != rawNeighborId;
+			if (newFiber) {
 				currentFibers++;
 			}
-			currentAccumulator.appendPair(rawNeighborId, rawContextId);
+			currentAccumulator.appendPair(rawNeighborId, rawContextId, newFiber);
 			currentQuads++;
 			lastNeighbor = rawNeighborId;
 			lastContext = rawContextId;
@@ -4716,8 +4717,8 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			pending.beginRow(row);
 		}
 
-		void appendPair(long neighbor, long context) {
-			pending.appendPair(neighbor, context);
+		void appendPair(long neighbor, long context, boolean newFiber) {
+			pending.appendPair(neighbor, context, newFiber);
 		}
 
 		long emitPartialInputRow(boolean continuation, long rowOrdinal) {
