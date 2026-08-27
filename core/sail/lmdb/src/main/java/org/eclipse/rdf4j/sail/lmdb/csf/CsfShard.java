@@ -32,7 +32,7 @@ final class CsfShard {
 	static final long MODELED_JAVA_BYTES = 192;
 
 	private static final int MAGIC = 0x53435346; // SCSF
-	private static final int VERSION = 2;
+	private static final int VERSION = 3;
 	private static final int HEADER_BYTES = 64;
 	private static final int ENTRY_BYTES = 32;
 	private static final int PAGE_ADDRESS_AT = 0;
@@ -59,6 +59,7 @@ final class CsfShard {
 	private final long quadCount;
 	private final long firstRow;
 	private final long lastRow;
+	private final long pageRadixDescriptor;
 	private final CsfShard[] dependencies;
 	private final int chainDepth;
 	private final long retainedPhysicalBytes;
@@ -84,6 +85,11 @@ final class CsfShard {
 		this.quadCount = quadCount;
 		this.firstRow = firstRow;
 		this.lastRow = lastRow;
+		this.pageRadixDescriptor = pageCount < 2 ? 0
+				: CsfRadixDirectory.descriptor(0, pageCount,
+						UnsafeAccess.getLongLE(address + HEADER_BYTES + FIRST_ROW_AT),
+						UnsafeAccess.getLongLE(address + HEADER_BYTES + (long) (pageCount - 1) * ENTRY_BYTES
+								+ FIRST_ROW_AT));
 		this.dependencies = dependencies;
 		this.chainDepth = chainDepth;
 		this.retainedPhysicalBytes = retainedPhysicalBytes;
@@ -210,6 +216,7 @@ final class CsfShard {
 			if (outputPageBytes != metrics.ownedPageCapacityBytes || rowOrdinal != metrics.rowCount) {
 				throw new IllegalStateException("CSF shard composition did not match its exact sizing pass");
 			}
+			buildPageRadixDirectory(address, metrics.pageCount);
 			int chainDepth = dependencies.length == 0 ? 1 : metrics.maxDependencyDepth + 1;
 			long retainedPhysical = metrics.exclusiveNativeBytes;
 			for (CsfShard dependency : dependencies) {
@@ -353,26 +360,19 @@ final class CsfShard {
 	}
 
 	int floorPage(long row) {
-		int low = 0;
-		int high = pageCount - 1;
-		int floor = -1;
-		while (low <= high) {
-			int mid = (low + high) >>> 1;
-			int comparison = Long.compareUnsigned(pageFirstRow(mid), row);
-			if (comparison <= 0) {
-				floor = mid;
-				low = mid + 1;
-			} else {
-				high = mid - 1;
-			}
+		if (pageCount == 1) {
+			return Long.compareUnsigned(row, firstRow) < 0 ? -1 : 0;
 		}
-		if (floor < 0) {
-			return -1;
-		}
-		while (floor > 0 && pageFirstRow(floor - 1) == row) {
-			floor--;
-		}
-		return floor;
+		return floorPageRadix(row);
+	}
+
+	private int floorPageRadix(long row) {
+		return CsfRadixDirectory.floorNative(address + HEADER_BYTES, pageCount, ENTRY_BYTES, FIRST_ROW_AT,
+				pageRadixBoundsAddress(address, pageCount), pageRadixDescriptor, row);
+	}
+
+	long routingLayoutBytesForTest() {
+		return routingLayoutBytesFor(pageCount);
 	}
 
 	void retain() {
@@ -507,7 +507,33 @@ final class CsfShard {
 	}
 
 	private static long pageAreaOffset(int pageCount) {
+		return align256(Math.addExact(pageRadixBoundsAddress(0, pageCount),
+				CsfRadixDirectory.nativeShortBoundsBytes(pageCount)));
+	}
+
+	private static long legacyPageAreaOffset(int pageCount) {
 		return align256(Math.addExact(HEADER_BYTES, Math.multiplyExact((long) pageCount, ENTRY_BYTES)));
+	}
+
+	static long routingLayoutBytesFor(int pageCount) {
+		return Math.subtractExact(pageAreaOffset(pageCount), legacyPageAreaOffset(pageCount));
+	}
+
+	private static long pageRadixBoundsAddress(long address, int pageCount) {
+		return Math.addExact(address,
+				Math.addExact(HEADER_BYTES, Math.multiplyExact((long) pageCount, ENTRY_BYTES)));
+	}
+
+	private static void buildPageRadixDirectory(long address, int pageCount) {
+		if (pageCount < 2) {
+			return;
+		}
+		long entries = address + HEADER_BYTES;
+		long descriptor = CsfRadixDirectory.descriptor(0, pageCount,
+				UnsafeAccess.getLongLE(entries + FIRST_ROW_AT),
+				UnsafeAccess.getLongLE(entries + (long) (pageCount - 1) * ENTRY_BYTES + FIRST_ROW_AT));
+		CsfRadixDirectory.buildNativeBounds(entries, pageCount, ENTRY_BYTES, FIRST_ROW_AT,
+				pageRadixBoundsAddress(address, pageCount), descriptor);
 	}
 
 	private static long align256(long value) {
@@ -690,6 +716,7 @@ final class CsfShard {
 						+ emittedUsed + "/" + plan.usedPageBytes + ", rows " + emittedRows + "/" + plan.rowCount
 						+ ", quads " + emittedQuads + "/" + plan.quadCount);
 			}
+			buildPageRadixDirectory(address, emittedPages);
 			CsfShard shard = new CsfShard(address, plan.nativeBytes(), plan.nativeBytes(), emittedUsed, emittedPages,
 					emittedRows, emittedQuads, plan.firstRow, plan.lastRow, new CsfShard[0], 1, plan.nativeBytes(),
 					reservation);

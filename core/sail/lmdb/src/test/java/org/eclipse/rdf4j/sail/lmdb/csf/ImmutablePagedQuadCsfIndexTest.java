@@ -90,6 +90,51 @@ class ImmutablePagedQuadCsfIndexTest {
 	}
 
 	@Test
+	void lookupMatchesUnsignedExactMembershipAcrossPagesShardsAndGaps() {
+		String previous = System.getProperty(SHARD_TARGET_PAGES_PROPERTY);
+		System.setProperty(SHARD_TARGET_PAGES_PROPERTY, "2");
+		try {
+			Random random = new Random(0x5241_4449_584cL);
+			long[] keys = new long[6_000];
+			for (int i = 0; i < keys.length; i++) {
+				keys[i] = random.nextLong();
+			}
+			for (int i = 0; i < keys.length; i++) {
+				keys[i] ^= Long.MIN_VALUE;
+			}
+			Arrays.sort(keys);
+			for (int i = 0; i < keys.length; i++) {
+				keys[i] ^= Long.MIN_VALUE;
+				if (i > 0 && keys[i] == keys[i - 1]) {
+					keys[i]++;
+				}
+			}
+
+			List<Row> rows = new ArrayList<>(keys.length);
+			for (int i = 0; i < keys.length; i++) {
+				rows.add(new Row(keys[i], new long[] { id(1, 10_000_000L + i) }, new long[] { 0 }));
+			}
+			try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows);
+					ImmutablePagedQuadCsfIndex.LookupCursor cursor = new ImmutablePagedQuadCsfIndex.LookupCursor()) {
+				assertThat(index.pageCount()).isGreaterThan(2);
+				assertThat(index.shardCount()).isGreaterThan(1);
+				for (int i = 0; i < keys.length; i += 17) {
+					assertThat(index.findLocalReference(0, 0, keys[i], cursor)).isNotZero();
+					assertThat(index.findLocalReference(0, 0, keys[i] ^ 1L, cursor)).isZero();
+				}
+				assertThat(index.findLocalReference(0, 0, keys[0], cursor)).isNotZero();
+				assertThat(index.findLocalReference(0, 0, keys[keys.length - 1], cursor)).isNotZero();
+			}
+		} finally {
+			if (previous == null) {
+				System.clearProperty(SHARD_TARGET_PAGES_PROPERTY);
+			} else {
+				System.setProperty(SHARD_TARGET_PAGES_PROPERTY, previous);
+			}
+		}
+	}
+
+	@Test
 	void packsTheCompleteNonDoubleLmdbTypeAndPayloadLayout() {
 		long[] values = new long[600];
 		for (int i = 0; i < values.length; i++) {
@@ -437,6 +482,85 @@ class ImmutablePagedQuadCsfIndexTest {
 				assertThat(index.findLocalReference(0, 0, 1)).isZero();
 			}
 		}
+	}
+
+	@Test
+	void routesAllPlanesAndPredicatesThroughOneImmutableRoot() {
+		int predicates = 2;
+		List<Row> rows = irregularRows(96);
+		ImmutablePagedQuadCsfIndex.BuildPlan plan;
+		try (ImmutablePagedQuadCsfIndex.Builder sizing = ImmutablePagedQuadCsfIndex.sizingBuilder(predicates)) {
+			for (int predicate = 0; predicate < predicates; predicate++) {
+				for (int plane = 0; plane < 4; plane++) {
+					feed(sizing, predicate, plane, rows);
+				}
+			}
+			plan = sizing.finishPlan();
+		}
+		try (ImmutablePagedQuadCsfIndex.Builder materializing = ImmutablePagedQuadCsfIndex.materializingBuilder(plan)) {
+			for (int predicate = 0; predicate < predicates; predicate++) {
+				for (int plane = 0; plane < 4; plane++) {
+					feed(materializing, predicate, plane, rows);
+				}
+			}
+			try (ImmutablePagedQuadCsfIndex index = materializing.finishIndex()) {
+				for (int predicate = 0; predicate < predicates; predicate++) {
+					for (int plane = 0; plane < 4; plane++) {
+						ImmutablePagedQuadCsfIndex.LookupCursor cursor = new ImmutablePagedQuadCsfIndex.LookupCursor();
+						for (int row = 0; row < rows.size(); row += 7) {
+							assertThat(index.findLocalReference(predicate, plane, rows.get(row).row, cursor))
+									.isNotZero();
+							assertThat(index.findLocalReference(predicate, plane, rows.get(row).row + 1, cursor))
+									.isZero();
+						}
+					}
+				}
+			}
+		}
+	}
+
+	@Test
+	void plannedAndMaterializedRoutingBytesAreExactAndCloseEveryCharge() {
+		String previous = System.getProperty(SHARD_TARGET_PAGES_PROPERTY);
+		System.setProperty(SHARD_TARGET_PAGES_PROPERTY, "2");
+		TrackingBudget budget = new TrackingBudget();
+		try {
+			List<Row> rows = irregularRows(6_000);
+			ImmutablePagedQuadCsfIndex.BuildPlan plan;
+			try (ImmutablePagedQuadCsfIndex.Builder sizing = ImmutablePagedQuadCsfIndex.sizingBuilder(1)) {
+				feed(sizing, 0, 0, rows);
+				plan = sizing.finishPlan();
+			}
+			assertThat(plan.pageCount()).isGreaterThan(2);
+			assertThat(plan.shardCount()).isGreaterThan(1);
+			try (ImmutablePagedQuadCsfIndex.Builder materializing = ImmutablePagedQuadCsfIndex
+					.materializingBuilder(plan, budget)) {
+				feed(materializing, 0, 0, rows);
+				try (ImmutablePagedQuadCsfIndex index = materializing.finishIndex()) {
+					assertThat(index.nativeBytes()).isEqualTo(plan.nativeBytes());
+					assertThat(index.modeledJavaBytes())
+							.isEqualTo(
+									plan.modeledJavaBytes() - (long) plan.shardCount() * CsfShard.MODELED_JAVA_BYTES);
+					assertThat(budget.liveBytes).hasValue(plan.totalModeledBytes());
+					assertThat(index.routingDirectoryBytesForTest()).isPositive();
+				}
+			}
+			assertThat(budget.liveBytes).hasValue(0);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(SHARD_TARGET_PAGES_PROPERTY);
+			} else {
+				System.setProperty(SHARD_TARGET_PAGES_PROPERTY, previous);
+			}
+		}
+	}
+
+	@Test
+	void defaultShardRoutingLayoutStaysBelowFiveBytesPerPage() {
+		long rootBytes = ImmutablePagedQuadCsfIndex.rootRoutingDirectoryBytesForTest(1,
+				new int[] { 1, 0, 0, 0 });
+		long nativeBytes = CsfShard.routingLayoutBytesFor(256);
+		assertThat(Math.addExact(rootBytes, nativeBytes)).isLessThanOrEqualTo(5L * 256);
 	}
 
 	@Test
