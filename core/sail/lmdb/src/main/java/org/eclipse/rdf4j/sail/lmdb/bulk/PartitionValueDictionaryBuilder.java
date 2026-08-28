@@ -86,7 +86,8 @@ final class PartitionValueDictionaryBuilder {
 	static PartitionValueDictionary build(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
 			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
 			BulkCompression compression, BooleanSupplier cancellationSignal) throws IOException {
-		PredicateIdPlan predicateIdPlan = PredicateIdPlan.build(staged, workspace, cancellationSignal);
+		PredicateIdPlan predicateIdPlan = PredicateIdPlan.build(staged, workspace,
+				compression.codecFor(BulkArtifact.PREDICATE_ID_PLAN), cancellationSignal);
 		return build(staged, dependencies, workspace, partitionCount, memoryBudgetBytes, maxOpenFiles, config,
 				compression, cancellationSignal, predicateIdPlan);
 	}
@@ -226,7 +227,7 @@ final class PartitionValueDictionaryBuilder {
 		entries.sort(Comparator.comparing((MutableEntry entry) -> entry.key, Arrays::compareUnsigned));
 		Path run = runDirectory.resolve(String.format(java.util.Locale.ROOT, "partition-%05d-run-%08d.bin",
 				partition, runNumber));
-		try (DataOutputStream output = BulkLz4.output(run, compression)) {
+		try (DataOutputStream output = BulkLz4.output(run, compression.codecFor(BulkArtifact.DICTIONARY))) {
 			for (MutableEntry entry : entries) {
 				writeRunEntry(output, entry);
 			}
@@ -244,7 +245,7 @@ final class PartitionValueDictionaryBuilder {
 				List<Path> group = runs.subList(start, Math.min(runs.size(), start + fanIn));
 				Path merged = runDirectory.resolve(String.format(java.util.Locale.ROOT,
 						"partition-%05d-pass-%04d-run-%08d.bin", partition, pass, mergedRuns.size()));
-				try (DataOutputStream output = BulkLz4.output(merged, compression)) {
+				try (DataOutputStream output = BulkLz4.output(merged, compression.codecFor(BulkArtifact.DICTIONARY))) {
 					merge(group, entry -> writeRunEntry(output, entry));
 				}
 				mergedRuns.add(merged);
@@ -465,7 +466,7 @@ final class PartitionValueDictionaryBuilder {
 		private RunCursor(Path path, BulkCompression compression, boolean deleteWhenClosed) throws IOException {
 			this.path = path;
 			this.deleteWhenClosed = deleteWhenClosed;
-			input = BulkLz4.input(path, compression);
+			input = BulkLz4.input(path, compression.codecFor(BulkArtifact.DICTIONARY));
 		}
 
 		private boolean advance() throws IOException {

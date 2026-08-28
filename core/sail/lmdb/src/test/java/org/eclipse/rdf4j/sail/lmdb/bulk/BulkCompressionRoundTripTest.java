@@ -24,12 +24,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -38,6 +42,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
@@ -62,23 +67,30 @@ class BulkCompressionRoundTripTest {
 
 	static List<BulkCompression> codecs() {
 		return List.of(BulkCompression.FASTEST, BulkCompression.NONE, BulkCompression.level(1),
-				BulkCompression.level(9), BulkCompression.level(17));
+				BulkCompression.level(9), BulkCompression.level(17), BulkCompression.parse("runs=fast,staged=17"),
+				BulkCompression.parse("runs=none,staged=9"), BulkCompression.parse("runs=12,staged=none"),
+				BulkCompression.parse("all=none,staged-statements=17,id-quads=fast,predicate-id-plan=9"),
+				BulkCompression.parse("buckets=none,sorters=12,indexes=fast,staged=none,plan=5"));
+	}
+
+	static List<BulkCodec> streamCodecs() {
+		return List.of(BulkCodec.FAST, BulkCodec.NONE, BulkCodec.level(1), BulkCodec.level(9), BulkCodec.level(17));
 	}
 
 	// --- the codec actually reaches the bytes on disk -------------------------------------------------------------
 
 	@ParameterizedTest
-	@MethodSource("codecs")
-	void singleStreamFilesRoundTripUnderEveryCodec(BulkCompression compression) throws Exception {
-		Path file = temporaryDirectory.resolve("single-" + compression.token() + ".bin");
-		try (DataOutputStream output = BulkLz4.output(file, compression)) {
+	@MethodSource("streamCodecs")
+	void singleStreamFilesRoundTripUnderEveryCodec(BulkCodec codec) throws Exception {
+		Path file = temporaryDirectory.resolve("single-" + codec.token() + ".bin");
+		try (DataOutputStream output = BulkLz4.output(file, codec)) {
 			for (long value = 0; value < 5000; value++) {
 				output.writeLong(value);
 			}
 		}
 
 		List<Long> read = new ArrayList<>();
-		try (DataInputStream input = BulkLz4.input(file, compression)) {
+		try (DataInputStream input = BulkLz4.input(file, codec)) {
 			for (long value = 0; value < 5000; value++) {
 				read.add(input.readLong());
 			}
@@ -89,11 +101,11 @@ class BulkCompressionRoundTripTest {
 	}
 
 	@ParameterizedTest
-	@MethodSource("codecs")
-	void concatenatedFramesRoundTripUnderEveryCodec(BulkCompression compression) throws Exception {
-		Path file = temporaryDirectory.resolve("frames-" + compression.token() + ".bin");
+	@MethodSource("streamCodecs")
+	void concatenatedFramesRoundTripUnderEveryCodec(BulkCodec codec) throws Exception {
+		Path file = temporaryDirectory.resolve("frames-" + codec.token() + ".bin");
 		for (int frame = 0; frame < 4; frame++) {
-			try (DataOutputStream output = BulkLz4.appendOutput(file, compression)) {
+			try (DataOutputStream output = BulkLz4.appendOutput(file, codec)) {
 				for (long value = 0; value < 100; value++) {
 					output.writeLong(frame * 100L + value);
 				}
@@ -101,7 +113,7 @@ class BulkCompressionRoundTripTest {
 		}
 
 		List<Long> read = new ArrayList<>();
-		boolean present = BulkLz4.readConcatenated(file, compression, input -> {
+		boolean present = BulkLz4.readConcatenated(file, codec, input -> {
 			while (true) {
 				try {
 					read.add(input.readLong());
@@ -116,29 +128,29 @@ class BulkCompressionRoundTripTest {
 	}
 
 	@ParameterizedTest
-	@MethodSource("codecs")
-	void anEmptyConcatenatedFileYieldsNoFrames(BulkCompression compression) throws Exception {
-		Path file = temporaryDirectory.resolve("empty-" + compression.token() + ".bin");
+	@MethodSource("streamCodecs")
+	void anEmptyConcatenatedFileYieldsNoFrames(BulkCodec codec) throws Exception {
+		Path file = temporaryDirectory.resolve("empty-" + codec.token() + ".bin");
 		Files.createFile(file);
 
 		boolean[] invoked = { false };
-		assertThat(BulkLz4.readConcatenated(file, compression, input -> invoked[0] = true)).isTrue();
+		assertThat(BulkLz4.readConcatenated(file, codec, input -> invoked[0] = true)).isTrue();
 
 		assertThat(invoked[0]).isFalse();
 	}
 
 	@Test
 	void noneWritesRawBytesWhileEveryOtherCodecWritesLz4Frames() throws Exception {
-		assertThat(Arrays.copyOf(prefixOf(BulkCompression.NONE), LZ4_MAGIC.length)).isNotEqualTo(LZ4_MAGIC);
-		assertThat(prefixOf(BulkCompression.FASTEST)).startsWith(LZ4_MAGIC);
-		assertThat(prefixOf(BulkCompression.level(1))).startsWith(LZ4_MAGIC);
-		assertThat(prefixOf(BulkCompression.level(17))).startsWith(LZ4_MAGIC);
+		assertThat(Arrays.copyOf(prefixOf(BulkCodec.NONE), LZ4_MAGIC.length)).isNotEqualTo(LZ4_MAGIC);
+		assertThat(prefixOf(BulkCodec.FAST)).startsWith(LZ4_MAGIC);
+		assertThat(prefixOf(BulkCodec.level(1))).startsWith(LZ4_MAGIC);
+		assertThat(prefixOf(BulkCodec.level(17))).startsWith(LZ4_MAGIC);
 	}
 
 	@Test
 	void noneWritesTheFullUncompressedPayload() throws Exception {
 		Path file = temporaryDirectory.resolve("raw-size.bin");
-		try (DataOutputStream output = BulkLz4.output(file, BulkCompression.NONE)) {
+		try (DataOutputStream output = BulkLz4.output(file, BulkCodec.NONE)) {
 			for (long value = 0; value < 1000; value++) {
 				output.writeLong(value);
 			}
@@ -148,38 +160,149 @@ class BulkCompressionRoundTripTest {
 	}
 
 	/**
-	 * {@link BulkCompression#FASTEST} must keep the loader's two-tier split: the fast compressor for run and spool
+	 * Every artifact must reach {@link BulkLz4} with its own codec, in both kinds, and survive the round trip. This is
+	 * the test that would catch an artifact whose reader re-derives a different codec than its writer used.
+	 */
+	@ParameterizedTest
+	@EnumSource(BulkArtifact.class)
+	void everyArtifactRoundTripsUnderItsOwnCodec(BulkArtifact artifact) throws Exception {
+		for (BulkCodec codec : List.of(BulkCodec.NONE, BulkCodec.FAST, BulkCodec.level(12))) {
+			BulkCompression compression = BulkCompression.FASTEST.with(artifact, codec);
+			assertThat(compression.codecFor(artifact)).isEqualTo(codec);
+
+			Path file = temporaryDirectory.resolve("artifact-" + artifact.key() + "-" + codec.token() + ".bin");
+			try (DataOutputStream output = BulkLz4.output(file, compression.codecFor(artifact))) {
+				writeCompressiblePayload(output);
+			}
+
+			List<Long> read = new ArrayList<>();
+			try (DataInputStream input = BulkLz4.input(file, compression.codecFor(artifact))) {
+				drainLongs(input, read);
+			}
+			assertThat(read).as("payload for %s under %s", artifact.key(), codec.token()).hasSize(20_000);
+		}
+	}
+
+	/**
+	 * {@link BulkCompression#FASTEST} must keep the loader's original split: the fast compressor for the busy run-time
 	 * files, the high-ratio one for the staged inputs that get re-read.
 	 */
 	@Test
-	void fastestKeepsTheHighRatioTierForStagedInputs() throws Exception {
-		Path fast = temporaryDirectory.resolve("tier-fast.bin");
-		Path high = temporaryDirectory.resolve("tier-high.bin");
-		try (DataOutputStream output = BulkLz4.appendOutput(fast, BulkCompression.FASTEST)) {
-			writeCompressiblePayload(output);
-		}
-		try (DataOutputStream output = BulkLz4.appendOutputHigh(high, BulkCompression.FASTEST)) {
-			writeCompressiblePayload(output);
-		}
+	void fastestKeepsTheHighRatioCodecForStagedInputs() throws Exception {
+		Path fast = write("default-run.bin", BulkCompression.FASTEST.codecFor(BulkArtifact.ID_QUADS));
+		Path high = write("default-staged.bin", BulkCompression.FASTEST.codecFor(BulkArtifact.STAGED_STATEMENTS));
 
 		assertThat(Files.size(high)).isLessThan(Files.size(fast));
 	}
 
 	/**
-	 * An explicit level overrides both tiers, so the staged-input writer and the run writer must agree byte for byte.
+	 * An explicit level covers every artifact, so any two of them must come out byte for byte identical.
 	 */
 	@Test
-	void anExplicitLevelAppliesToBothTiers() throws Exception {
-		Path fast = temporaryDirectory.resolve("level-fast.bin");
-		Path high = temporaryDirectory.resolve("level-high.bin");
-		try (DataOutputStream output = BulkLz4.appendOutput(fast, BulkCompression.level(12))) {
+	void anExplicitLevelAppliesToEveryArtifact() throws Exception {
+		BulkCompression compression = BulkCompression.level(12);
+		Path run = write("level-run.bin", compression.codecFor(BulkArtifact.ID_QUADS));
+		Path staged = write("level-staged.bin", compression.codecFor(BulkArtifact.STAGED_STATEMENTS));
+		Path plan = write("level-plan.bin", compression.codecFor(BulkArtifact.PREDICATE_ID_PLAN));
+
+		assertThat(Files.readAllBytes(staged)).isEqualTo(Files.readAllBytes(run));
+		assertThat(Files.readAllBytes(plan)).isEqualTo(Files.readAllBytes(run));
+	}
+
+	/**
+	 * A per-artifact selection must reach each artifact's own writer, even when neighbours in the same group disagree.
+	 */
+	@Test
+	void neighbouringArtifactsTakeTheirOwnCodecs() throws Exception {
+		BulkCompression compression = BulkCompression.parse("staged-statements=17,staged-values=none");
+		Path statements = write("neighbour-statements.bin",
+				compression.codecFor(BulkArtifact.STAGED_STATEMENTS));
+		Path values = write("neighbour-values.bin", compression.codecFor(BulkArtifact.STAGED_VALUES));
+		Path namespaces = write("neighbour-namespaces.bin",
+				compression.codecFor(BulkArtifact.STAGED_NAMESPACES));
+
+		assertThat(Files.size(values)).as("staged-values is raw").isEqualTo(160_000L);
+		assertThat(Arrays.copyOf(Files.readAllBytes(statements), LZ4_MAGIC.length)).isEqualTo(LZ4_MAGIC);
+		assertThat(Files.size(statements)).as("high-17 must beat the untouched high-9 default")
+				.isLessThanOrEqualTo(Files.size(namespaces));
+	}
+
+	/**
+	 * One artifact may be uncompressed while another is framed. Both the write and the read side have to pick the codec
+	 * by artifact for that to survive a round trip.
+	 */
+	@Test
+	void oneArtifactMayBeUncompressedWhileAnotherIsFramed() throws Exception {
+		BulkCompression compression = BulkCompression.parse("runs=none,staged=9");
+		Path runFile = temporaryDirectory.resolve("mixed-run.bin");
+		Path stagedFile = temporaryDirectory.resolve("mixed-staged.bin");
+		BulkCodec runCodec = compression.codecFor(BulkArtifact.ID_QUADS);
+		BulkCodec stagedCodec = compression.codecFor(BulkArtifact.STAGED_STATEMENTS);
+		try (DataOutputStream output = BulkLz4.appendOutput(runFile, runCodec)) {
 			writeCompressiblePayload(output);
 		}
-		try (DataOutputStream output = BulkLz4.appendOutputHigh(high, BulkCompression.level(12))) {
+		try (DataOutputStream output = BulkLz4.appendOutput(stagedFile, stagedCodec)) {
 			writeCompressiblePayload(output);
 		}
 
-		assertThat(Files.readAllBytes(high)).isEqualTo(Files.readAllBytes(fast));
+		assertThat(Files.size(runFile)).as("the run artifacts are raw").isEqualTo(160_000L);
+		assertThat(Arrays.copyOf(Files.readAllBytes(stagedFile), LZ4_MAGIC.length)).isEqualTo(LZ4_MAGIC);
+
+		List<Long> runRecords = new ArrayList<>();
+		assertThat(BulkLz4.readConcatenated(runFile, runCodec, input -> drainLongs(input, runRecords))).isTrue();
+		List<Long> stagedRecords = new ArrayList<>();
+		assertThat(BulkLz4.readConcatenated(stagedFile, stagedCodec, input -> drainLongs(input, stagedRecords)))
+				.isTrue();
+
+		assertThat(runRecords).hasSize(20_000).isEqualTo(stagedRecords);
+	}
+
+	// --- the two small plan files ---------------------------------------------------------------------------------
+
+	/**
+	 * The predicate counts and the predicate ID plan were written as raw bytes before they became selectable. Keeping
+	 * them raw under {@code fastest} is what lets a workspace created by the older loader be resumed by this one, and
+	 * it costs nothing worth having: both files hold one short record per distinct predicate.
+	 */
+	@Test
+	void thePlanFilesStayRawUnderFastest() throws Exception {
+		Path staging = stagePlanFiles("plan-fastest", BulkCompression.FASTEST);
+
+		assertThat(prefixOfFile(staging.resolve("predicate-counts.bin"))).isNotEqualTo(LZ4_MAGIC);
+		assertThat(prefixOfFile(staging.resolve("predicate-id-plan.bin"))).isNotEqualTo(LZ4_MAGIC);
+	}
+
+	@Test
+	void thePlanFilesAreFramedWhenTheirArtifactsAreCompressed() throws Exception {
+		Path staging = stagePlanFiles("plan-compressed",
+				BulkCompression.parse("predicate-counts=9,predicate-id-plan=9"));
+
+		assertThat(prefixOfFile(staging.resolve("predicate-counts.bin"))).isEqualTo(LZ4_MAGIC);
+		assertThat(prefixOfFile(staging.resolve("predicate-id-plan.bin"))).isEqualTo(LZ4_MAGIC);
+	}
+
+	/**
+	 * Whatever codec the two plan files are written with, reading them back has to yield the same predicates and the
+	 * same occurrence counts.
+	 */
+	@ParameterizedTest
+	@MethodSource("streamCodecs")
+	void thePlanFilesRoundTripUnderEveryCodec(BulkCodec codec) throws Exception {
+		BulkCompression compression = BulkCompression.FASTEST
+				.with(BulkArtifact.PREDICATE_COUNTS, codec)
+				.with(BulkArtifact.PREDICATE_ID_PLAN, codec);
+		Path staging = stagePlanFiles("plan-roundtrip-" + codec.token(), compression);
+
+		CanonicalStagedInput staged = stagedInputs.get(staging);
+		List<String> counts = new ArrayList<>();
+		staged.forEachPredicateCount(
+				(predicate, occurrences) -> counts
+						.add(new String(predicate, StandardCharsets.UTF_8) + "=" + occurrences));
+		assertThat(counts).hasSize(3);
+
+		PredicateIdPlan restored = PredicateIdPlan.restore(staging, 3,
+				compression.codecFor(BulkArtifact.PREDICATE_ID_PLAN));
+		assertThat(restored.size()).isEqualTo(3);
 	}
 
 	// --- end-to-end loads -----------------------------------------------------------------------------------------
@@ -225,6 +348,32 @@ class BulkCompressionRoundTripTest {
 		}
 	}
 
+	/**
+	 * The strongest end-to-end check that per-artifact codecs are wired consistently: give every artifact a codec that
+	 * differs from its neighbours, including the two kinds that are not interchangeable on read, and require the
+	 * resulting store to hold exactly what {@code fastest} produces. Any reader that resolves a different artifact than
+	 * its writer did fails here.
+	 */
+	@Test
+	void aProfileThatVariesPerArtifactStillProducesTheSameStore() throws Exception {
+		Set<String> reference = statementsUnder("varied-reference", BulkCompression.FASTEST);
+
+		BulkCompression varied = BulkCompression.FASTEST;
+		int level = BulkCompression.MINIMUM_LEVEL;
+		for (BulkArtifact artifact : BulkArtifact.values()) {
+			varied = switch (artifact.ordinal() % 3) {
+			case 0 -> varied.with(artifact, BulkCodec.NONE);
+			case 1 -> varied.with(artifact, BulkCodec.FAST);
+			default -> varied.with(artifact, BulkCodec.level(level));
+			};
+			level = level == BulkCompression.MAXIMUM_LEVEL ? BulkCompression.MINIMUM_LEVEL : level + 1;
+		}
+
+		assertThat(statementsUnder("varied", varied))
+				.as("statements loaded under %s", varied.token())
+				.isEqualTo(reference);
+	}
+
 	@Test
 	void defaultsToFastest() {
 		LmdbBulkLoader loader = LmdbBulkLoader
@@ -249,6 +398,28 @@ class BulkCompressionRoundTripTest {
 	}
 
 	@Test
+	void recordsAPerArtifactCodecInTheWorkspaceManifest() throws Exception {
+		Path target = temporaryDirectory.resolve("per-tier-manifest-store");
+		BulkCompression compression = BulkCompression.parse("runs=fast,staged=17");
+
+		try (BulkLoadWorkspace opened = BulkLoadWorkspace.open(target, null, ProgressListener.NONE, 1, 1,
+				compression)) {
+			assertThat(opened.compression()).isEqualTo(compression);
+		}
+
+		// runs=fast is the base, so the recorded token names only the staged tier that differs from it.
+		assertThat(readState(BulkLoadWorkspace.controlDirectory(target)).getProperty("compression"))
+				.isEqualTo("staged=17");
+
+		// Reopening has to decode the files already on disk, so the recorded per-tier split must survive the trip
+		// through the manifest verbatim.
+		try (BulkLoadWorkspace resumed = BulkLoadWorkspace.open(target, null, ProgressListener.NONE, 1, 1,
+				BulkCompression.FASTEST)) {
+			assertThat(resumed.compression()).isEqualTo(compression);
+		}
+	}
+
+	@Test
 	void resumeKeepsTheRecordedCodecInsteadOfTheRequestedOne() throws Exception {
 		Path target = temporaryDirectory.resolve("resume-store");
 
@@ -261,6 +432,49 @@ class BulkCompressionRoundTripTest {
 		try (BulkLoadWorkspace resumed = BulkLoadWorkspace.open(target, null, ProgressListener.NONE, 1, 1,
 				BulkCompression.level(9))) {
 			assertThat(resumed.compression()).isEqualTo(BulkCompression.NONE);
+		}
+	}
+
+	/**
+	 * A workspace created before the plan files became selectable wrote them raw whatever its recorded token said, so
+	 * resuming one has to read them raw too. The absence of {@code compression.version} is what marks such a workspace.
+	 */
+	@Test
+	void aWorkspaceWithoutACompressionVersionKeepsThePlanFilesRaw() throws Exception {
+		Path target = temporaryDirectory.resolve("legacy-version-store");
+		Path workspace = BulkLoadWorkspace.controlDirectory(target);
+
+		try (BulkLoadWorkspace ignored = BulkLoadWorkspace.open(target, null, ProgressListener.NONE, 1, 1,
+				BulkCompression.level(9))) {
+			// Only creating the workspace on disk.
+		}
+		rewriteState(workspace, properties -> properties.remove("compression.version"));
+
+		try (BulkLoadWorkspace resumed = BulkLoadWorkspace.open(target, null, ProgressListener.NONE, 1, 1,
+				BulkCompression.FASTEST)) {
+			assertThat(resumed.compression().codecFor(BulkArtifact.PREDICATE_COUNTS)).isEqualTo(BulkCodec.NONE);
+			assertThat(resumed.compression().codecFor(BulkArtifact.PREDICATE_ID_PLAN)).isEqualTo(BulkCodec.NONE);
+			assertThat(resumed.compression().codecFor(BulkArtifact.ID_QUADS)).isEqualTo(BulkCodec.level(9));
+			assertThat(resumed.compression().codecFor(BulkArtifact.STAGED_STATEMENTS)).isEqualTo(BulkCodec.level(9));
+		}
+	}
+
+	@Test
+	void aWorkspaceWithACompressionVersionTakesTheTokenLiterally() throws Exception {
+		Path target = temporaryDirectory.resolve("versioned-store");
+		Path workspace = BulkLoadWorkspace.controlDirectory(target);
+
+		try (BulkLoadWorkspace created = BulkLoadWorkspace.open(target, null, ProgressListener.NONE, 1, 1,
+				BulkCompression.level(9))) {
+			assertThat(created.compression().codecFor(BulkArtifact.PREDICATE_COUNTS)).isEqualTo(BulkCodec.level(9));
+		}
+
+		assertThat(readState(workspace).getProperty("compression.version")).isEqualTo("2");
+
+		try (BulkLoadWorkspace resumed = BulkLoadWorkspace.open(target, null, ProgressListener.NONE, 1, 1,
+				BulkCompression.FASTEST)) {
+			assertThat(resumed.compression()).isEqualTo(BulkCompression.level(9));
+			assertThat(resumed.compression().codecFor(BulkArtifact.PREDICATE_ID_PLAN)).isEqualTo(BulkCodec.level(9));
 		}
 	}
 
@@ -289,13 +503,69 @@ class BulkCompressionRoundTripTest {
 		}
 	}
 
-	private byte[] prefixOf(BulkCompression compression) throws IOException {
-		Path file = temporaryDirectory.resolve("magic-" + compression.token() + ".bin");
-		try (DataOutputStream output = BulkLz4.output(file, compression)) {
+	private static void drainLongs(DataInputStream input, List<Long> into) throws IOException {
+		while (true) {
+			try {
+				into.add(input.readLong());
+			} catch (EOFException e) {
+				return;
+			}
+		}
+	}
+
+	private byte[] prefixOf(BulkCodec codec) throws IOException {
+		byte[] all = Files.readAllBytes(write("magic-" + codec.token() + ".bin", codec));
+		return all.length <= 8 ? all : Arrays.copyOf(all, 8);
+	}
+
+	private final Map<Path, CanonicalStagedInput> stagedInputs = new HashMap<>();
+
+	/**
+	 * Stages three predicates into a fresh directory and builds the predicate ID plan from them, so both plan files
+	 * exist on disk under {@code compression}.
+	 */
+	private Path stagePlanFiles(String name, BulkCompression compression) throws IOException {
+		Path staging = Files.createDirectory(temporaryDirectory.resolve(name));
+		var factory = SimpleValueFactory.getInstance();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,psoc");
+		CanonicalStagedInput staged;
+		try (CanonicalStatementStager stager = new CanonicalStatementStager(staging, config, 4, 4, 64 * 1024L,
+				compression)) {
+			for (int predicate = 1; predicate <= 3; predicate++) {
+				for (int subject = 0; subject <= predicate; subject++) {
+					stager.writeStatement(factory.createStatement(factory.createIRI("urn:s" + subject),
+							factory.createIRI("urn:p" + predicate), factory.createIRI("urn:o" + subject)));
+				}
+			}
+			staged = stager.stagedInput();
+		}
+		PredicateIdPlan.build(staged, staging, compression.codecFor(BulkArtifact.PREDICATE_ID_PLAN), () -> false);
+		stagedInputs.put(staging, staged);
+		return staging;
+	}
+
+	private static byte[] prefixOfFile(Path file) throws IOException {
+		byte[] all = Files.readAllBytes(file);
+		return Arrays.copyOf(all, LZ4_MAGIC.length);
+	}
+
+	private Set<String> statementsUnder(String name, BulkCompression compression) throws IOException {
+		Path target = temporaryDirectory.resolve(name);
+		LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
+				.partitionCount(4)
+				.compression(compression)
+				.build()
+				.load(new ByteArrayInputStream(INPUT.getBytes(StandardCharsets.UTF_8)), "urn:compression-test:",
+						RDFFormat.NQUADS);
+		return readStatements(target).stream().map(Statement::toString).collect(Collectors.toSet());
+	}
+
+	private Path write(String name, BulkCodec codec) throws IOException {
+		Path file = temporaryDirectory.resolve(name);
+		try (DataOutputStream output = BulkLz4.output(file, codec)) {
 			writeCompressiblePayload(output);
 		}
-		byte[] all = Files.readAllBytes(file);
-		return all.length <= 8 ? all : Arrays.copyOf(all, 8);
+		return file;
 	}
 
 	private static Properties readState(Path workspace) throws IOException {
@@ -312,6 +582,13 @@ class BulkCompressionRoundTripTest {
 	 * state file with a stale checksum is discarded as invalid rather than treated as legacy.
 	 */
 	private static void stripRecordedCompression(Path workspace) throws Exception {
+		rewriteState(workspace, properties -> {
+			properties.remove("compression");
+			properties.remove("compression.version");
+		});
+	}
+
+	private static void rewriteState(Path workspace, Consumer<Properties> edit) throws Exception {
 		Method checksum = BulkLoadWorkspace.class.getDeclaredMethod("checksum", Properties.class);
 		checksum.setAccessible(true);
 		for (String name : List.of("state.properties", "state.previous.properties")) {
@@ -323,7 +600,7 @@ class BulkCompressionRoundTripTest {
 			try (var input = Files.newInputStream(file)) {
 				properties.load(input);
 			}
-			properties.remove("compression");
+			edit.accept(properties);
 			properties.remove("checksum");
 			properties.setProperty("checksum", (String) checksum.invoke(null, properties));
 			try (var output = Files.newOutputStream(file)) {

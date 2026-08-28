@@ -88,7 +88,7 @@ final class CanonicalStagedInput {
 
 	void forEachRawStatement(RawStatementVisitor visitor) throws IOException {
 		long[] expectedOrdinal = { 0L };
-		BulkLz4.readConcatenated(statementPath, compression,
+		BulkLz4.readConcatenated(statementPath, compression.codecFor(BulkArtifact.STAGED_STATEMENTS),
 				input -> readRawStatements(input, expectedOrdinal, visitor));
 		if (expectedOrdinal[0] != statements) {
 			throw new IOException("Staged statement count mismatch: expected " + statements + " but read "
@@ -97,12 +97,13 @@ final class CanonicalStagedInput {
 	}
 
 	void forEachNamespace(NamespaceVisitor visitor) throws IOException {
-		BulkLz4.readConcatenated(namespacePath, compression, input -> readNamespaces(input, visitor));
+		BulkLz4.readConcatenated(namespacePath, compression.codecFor(BulkArtifact.STAGED_NAMESPACES),
+				input -> readNamespaces(input, visitor));
 	}
 
 	void forEachPredicateCount(PredicateCountVisitor visitor) throws IOException {
-		try (DataInputStream input = new DataInputStream(
-				new BufferedInputStream(Files.newInputStream(predicateCountsPath), 64 * 1024))) {
+		try (DataInputStream input = BulkLz4.input(predicateCountsPath,
+				compression.codecFor(BulkArtifact.PREDICATE_COUNTS))) {
 			int distinctPredicates = input.readInt();
 			if (distinctPredicates < 0) {
 				throw new IOException("Invalid staged predicate count: " + distinctPredicates);
@@ -128,7 +129,8 @@ final class CanonicalStagedInput {
 			throw new IllegalArgumentException("Value partition out of range: " + partition);
 		}
 		Path path = CanonicalStatementStager.valueBucketPath(valueDirectory, partition);
-		BulkLz4.readConcatenated(path, compression, input -> readValues(input, partition, partitionCount, visitor));
+		BulkLz4.readConcatenated(path, compression.codecFor(BulkArtifact.STAGED_VALUES),
+				input -> readValues(input, partition, partitionCount, visitor));
 	}
 
 	private static void readRawStatements(DataInputStream input, long[] expectedOrdinal, RawStatementVisitor visitor)

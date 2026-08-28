@@ -33,20 +33,46 @@ final class LmdbBulkLoaderEngine {
 
 	static LmdbBulkLoader.Result load(LmdbBulkLoader loader, InputStream input, String baseUri, RDFFormat format)
 			throws IOException {
-		return load(loader, workspace -> stage(loader, workspace, input, baseUri, format));
+		return load(loader, workspace -> stage(loader, workspace, input, baseUri, format), BulkLoadInputs.ofStream());
 	}
 
 	static LmdbBulkLoader.Result load(LmdbBulkLoader loader, List<LmdbBulkLoader.PathInput> inputs)
 			throws IOException {
-		return load(loader, workspace -> stage(loader, workspace, inputs));
+		return load(loader, workspace -> stage(loader, workspace, inputs), BulkLoadInputs.ofPaths(inputs));
 	}
 
-	private static LmdbBulkLoader.Result load(LmdbBulkLoader loader, StagingAction stagingAction)
-			throws IOException {
+	/**
+	 * Picks a load up from its recorded frontier. The staging action is only reached when staging did not complete, in
+	 * which case the run has to be re-read from the inputs it recorded for itself.
+	 */
+	static LmdbBulkLoader.Result resume(LmdbBulkLoader loader) throws IOException {
+		return load(loader, workspace -> {
+			BulkLoadInputs recorded = workspace.recordedInputs();
+			if (recorded == null) {
+				throw new IOException("LMDB bulk load for " + loader.target()
+						+ " stopped before its inputs were staged and did not record them; resume it with those inputs");
+			}
+			if (recorded.source() == BulkLoadInputs.Source.STREAM) {
+				throw new IOException("LMDB bulk load for " + loader.target()
+						+ " read a caller-owned stream that cannot be opened again, and stopped before that stream was"
+						+ " staged; resume it by supplying the same stream");
+			}
+			return stage(loader, workspace, recorded.paths());
+		}, null);
+	}
+
+	private static LmdbBulkLoader.Result load(LmdbBulkLoader loader, StagingAction stagingAction,
+			BulkLoadInputs inputs) throws IOException {
 		long started = System.nanoTime();
 		try (BulkLoadWorkspace workspace = BulkLoadWorkspace.open(loader.target(), loader.temporaryDirectory(),
-				loader.progressListener(), loader.workers(), loader.queueBatches(), loader.compression())) {
+				loader.progressListener(), loader.workers(), loader.queueBatches(), loader.compression(),
+				BulkLoadSettings.of(loader))) {
 			try {
+				if (inputs != null) {
+					// Recorded before the first phase persists, so an interruption anywhere after this knows what to
+					// read.
+					workspace.recordInputs(inputs);
+				}
 				workspace.startPhase(BulkLoadPhase.PREFLIGHT);
 				checkCancelled(loader);
 				try (LmdbBulkLoadGeneration generation = LmdbBulkLoadGeneration.create(loader.target(),
@@ -108,6 +134,7 @@ final class LmdbBulkLoaderEngine {
 							} else {
 								workspace.startPhase(BulkLoadPhase.PLAN_VALUE_IDS);
 								predicateIdPlan = PredicateIdPlan.build(staged, workspace.directory(),
+										workspace.compression().codecFor(BulkArtifact.PREDICATE_ID_PLAN),
 										loader.cancellationSignal());
 								workspace.recordPredicateIdPlan(predicateIdPlan);
 								workspace.progress(staged.statements(), 0L);

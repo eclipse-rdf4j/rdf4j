@@ -66,12 +66,14 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 			for (String specification : specifications) {
 				if (tupleOrderEquivalence.test(specification)) {
 					tupleSorters.add(new ExternalLongTupleSorter(workspace, "index-" + specification, COMPONENT_COUNT,
-							perSorterBudget, perSorterOpenFiles, compression));
+							perSorterBudget, perSorterOpenFiles,
+							compression.codecFor(BulkArtifact.STATEMENT_INDEXES)));
 					encodedSorters.add(null);
 				} else {
 					tupleSorters.add(null);
 					encodedSorters.add(new ExternalByteKeySorter(workspace, "index-key-" + specification,
-							perSorterBudget, perSorterOpenFiles, compression));
+							perSorterBudget, perSorterOpenFiles,
+							compression.codecFor(BulkArtifact.STATEMENT_INDEXES)));
 				}
 			}
 			scanOnce(spool, specifications, tupleSorters, encodedSorters, compression, cancellationSignal);
@@ -137,7 +139,7 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 			long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
 			BooleanSupplier cancellationSignal) throws IOException {
 		try (ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(workspace, "contexts", 1,
-				memoryBudgetBytes, maxOpenFiles, compression)) {
+				memoryBudgetBytes, maxOpenFiles, compression.codecFor(BulkArtifact.STATEMENT_INDEXES))) {
 			if (source.tuples() != null) {
 				addTupleContexts(source, sorter, cancellationSignal);
 			} else {
@@ -219,7 +221,7 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 	private static void scanOnce(ResolvedIdQuadSpool spool, List<String> specifications,
 			List<ExternalLongTupleSorter> tupleSorters, List<ExternalByteKeySorter> encodedSorters,
 			BulkCompression compression, BooleanSupplier cancellationSignal) throws IOException {
-		try (DataInputStream input = BulkLz4.input(spool.path(), compression)) {
+		try (DataInputStream input = BulkLz4.input(spool.path(), compression.codecFor(BulkArtifact.ID_QUADS))) {
 			long expectedOrdinal = 0L;
 			long[] quad = new long[COMPONENT_COUNT];
 			while (true) {

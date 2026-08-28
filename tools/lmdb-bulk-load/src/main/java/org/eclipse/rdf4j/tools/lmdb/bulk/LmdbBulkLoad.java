@@ -18,24 +18,35 @@ import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.CancellationException;
 
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParserRegistry;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.sail.lmdb.bulk.BulkArtifact;
+import org.eclipse.rdf4j.sail.lmdb.bulk.BulkCodec;
 import org.eclipse.rdf4j.sail.lmdb.bulk.BulkCompression;
+import org.eclipse.rdf4j.sail.lmdb.bulk.BulkLoadPhase;
+import org.eclipse.rdf4j.sail.lmdb.bulk.BulkLoadSettings;
 import org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader;
 import org.eclipse.rdf4j.sail.lmdb.bulk.ProgressListener;
 import org.eclipse.rdf4j.sail.lmdb.bulk.ProgressSnapshot;
+import org.eclipse.rdf4j.sail.lmdb.bulk.UnfinishedBulkLoad;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /**
@@ -46,36 +57,77 @@ public final class LmdbBulkLoad {
 	private static final int SUCCESS = 0;
 	private static final int LOAD_FAILURE = 1;
 	private static final int USAGE_ERROR = 2;
+	private static final int DISK_EXHAUSTED = 3;
 	private static final int CANCELLED = 130;
 	private static final String STDIN_BASE_URI = "urn:rdf4j:lmdb-bulk-load:stdin";
+	private static final DateTimeFormatter TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+			.withZone(ZoneId.systemDefault());
 
 	private LmdbBulkLoad() {
 	}
 
 	public static void main(String[] arguments) {
-		int result = run(arguments, System.in, System.out, System.err);
+		Path workingDirectory = Path.of("").toAbsolutePath().normalize();
+		int result;
+		// The run owns this JVM, so it is the one that gets to end it when the disk it writes to runs out. It starts
+		// watching nothing and is pointed at the store once the command line names it.
+		try (DiskSpaceMonitor diskSpace = DiskSpaceMonitor.started(LmdbBulkLoad::reportToStandardError,
+				LmdbBulkLoad::haltForDiskExhaustion)) {
+			result = run(arguments, System.in, System.out, System.err, workingDirectory, diskSpace);
+		}
 		if (result != SUCCESS) {
 			System.exit(result);
 		}
 	}
 
+	private static void reportToStandardError(String message) {
+		System.err.println(TIMESTAMP.format(Instant.now()) + " " + message);
+	}
+
+	/**
+	 * Ends the run the moment the disk it writes to is nearly full. Shutdown hooks are skipped deliberately: anything
+	 * they would write needs the space that has just run out, and the workspace left behind is resumable anyway, so the
+	 * cheapest correct thing to do is stop touching the disk at once.
+	 */
+	private static void haltForDiskExhaustion() {
+		System.out.flush();
+		System.err.flush();
+		Runtime.getRuntime().halt(DISK_EXHAUSTED);
+	}
+
 	static int run(String[] arguments, InputStream standardInput, PrintStream output, PrintStream error) {
+		return run(arguments, standardInput, output, error, Path.of("").toAbsolutePath().normalize());
+	}
+
+	/**
+	 * @param unfinishedRunRoot directory the interactive setup searches for loads a previous run left unfinished
+	 */
+	static int run(String[] arguments, InputStream standardInput, PrintStream output, PrintStream error,
+			Path unfinishedRunRoot) {
+		return run(arguments, standardInput, output, error, unfinishedRunRoot, DiskSpaceMonitor.inert());
+	}
+
+	/**
+	 * @param unfinishedRunRoot directory the interactive setup searches for loads a previous run left unfinished
+	 * @param diskSpaceMonitor  pointed at the volumes this run writes to as soon as its options are known
+	 */
+	static int run(String[] arguments, InputStream standardInput, PrintStream output, PrintStream error,
+			Path unfinishedRunRoot, DiskSpaceMonitor diskSpaceMonitor) {
 		Options options;
 		try {
-			options = Options.parse(arguments, standardInput, error);
+			options = Options.parse(arguments, standardInput, error, unfinishedRunRoot);
 		} catch (UsageException e) {
 			error.println(e.getMessage());
 			printUsage(error);
 			return USAGE_ERROR;
-		} catch (CancellationException e) {
-			// Ctrl-C inside the arrow-key menu: raw mode swallows SIGINT, so the menu reports it this way instead.
-			error.println("LMDB bulk load cancelled");
-			return CANCELLED;
 		}
 		if (options.help()) {
 			printUsage(output);
 			return SUCCESS;
 		}
+		// The loader spills beside the store, so the store's volume is the one that fills up; a separate temporary
+		// directory only adds a second one to watch.
+		diskSpaceMonitor.watch(options.store(), options.temporaryDirectory());
 
 		try {
 			LmdbStoreConfig config = new LmdbStoreConfig();
@@ -125,7 +177,9 @@ public final class LmdbBulkLoad {
 
 			LmdbBulkLoader loader = builder.build();
 			LmdbBulkLoader.Result result;
-			if (options.inputs().size() == 1 && "-".equals(options.inputs().getFirst())) {
+			if (options.resumeRecordedRun()) {
+				result = loader.resume();
+			} else if (options.inputs().size() == 1 && "-".equals(options.inputs().getFirst())) {
 				RDFFormat format = resolveFormat(options, "-");
 				result = loader.load(standardInput, options.baseUri() == null ? STDIN_BASE_URI : options.baseUri(),
 						format);
@@ -234,7 +288,8 @@ public final class LmdbBulkLoad {
 		output.println("""
 				Usage: rdf4j-lmdb-bulk-load --store PATH --input PATH|- [--input PATH ...] [options]
 				   or: rdf4j-lmdb-bulk-load --interactive [options]
-				  --interactive                    Prompt for each missing argument
+				  --interactive                    Prompt for each missing argument, after offering to
+				                                   resume or discard any unfinished load found nearby
 				  --input PATH|-                   RDF file, directory, or stdin; paths may repeat
 				  --format FORMAT                  RDF format name, extension, or MIME type
 				  --parser auto|fast|rio           Parser selection (default: auto)
@@ -246,7 +301,12 @@ public final class LmdbBulkLoad {
 				  --max-open-files COUNT           Maximum staging and merge files
 				  --workers COUNT                  Parallel action workers (smart default: CPU-based)
 				  --queue-batches COUNT            Bounded batches queued between actions
-				  --compression fastest|none|1-17  Codec for the loader's intermediate files
+				  --compression fastest|none|1-17  Codec for the loader's intermediate files;
+				                                   also a KEY=CODEC,... list (see below)
+				  --compression-runs CODEC         Codec for every non-staged intermediate file
+				  --compression-staged CODEC       Codec for the staged inputs only
+				  --compression-artifact KEY=CODEC Codec for one artifact or group; repeatable
+				                                   CODEC is fast, none, or an LZ4 level 1-17
 				  --progress plain|json|none        Progress on stderr (default: plain)
 				  --temporary-directory PATH       Parent for loader spill files
 				  --inline-literals true|false     Enable LMDB inline literal IDs
@@ -255,18 +315,51 @@ public final class LmdbBulkLoad {
 				  --write-transaction-bytes BYTES  Maximum bytes per LMDB transaction
 				  --help                           Show this help
 				""");
+		printCompressionKeys(output);
 	}
+
+	/**
+	 * Lists every key a compression selection accepts, generated from the artifacts themselves so the help can never
+	 * drift from what the parser takes. Groups come first because they are what most users want; the artifact names
+	 * below them are what makes every intermediate file individually selectable.
+	 */
+	private static void printCompressionKeys(PrintStream output) {
+		output.println("Compression keys (KEY=CODEC, later entries win, unnamed keys keep the fastest default):");
+		output.println("  all                              every artifact");
+		output.println("  runs                             every artifact outside staged and plan");
+		for (BulkArtifact.Group group : BulkArtifact.Group.values()) {
+			StringBuilder members = new StringBuilder();
+			for (BulkArtifact artifact : group.artifacts()) {
+				members.append(members.isEmpty() ? "" : ", ").append(artifact.key());
+			}
+			output.println("  " + pad(group.key()) + members);
+		}
+		output.println("Defaults under fastest: staged " + BulkCompression.FASTEST.codecFor(
+				BulkArtifact.STAGED_STATEMENTS).token() + ", plan "
+				+ BulkCompression.FASTEST.codecFor(BulkArtifact.PREDICATE_COUNTS).token() + ", everything else "
+				+ BulkCompression.FASTEST.codecFor(BulkArtifact.ID_QUADS).token() + ".");
+	}
+
+	private static String pad(String key) {
+		return key.length() >= COMPRESSION_KEY_COLUMN ? key + " "
+				: key + " ".repeat(COMPRESSION_KEY_COLUMN - key.length());
+	}
+
+	private static final int COMPRESSION_KEY_COLUMN = 33;
 
 	private record Options(Path store, List<String> inputs, String format, LmdbBulkLoader.ParserMode parserMode,
 			String baseUri, String statementIndexes, String tripleTermIndexes, Long memoryBudgetBytes,
 			Integer partitionCount, Integer maxOpenFiles, Integer workers, Integer queueBatches,
 			ProgressMode progressMode, Path temporaryDirectory, Boolean inlineLiterals, Boolean valueHashCache,
-			Integer writeTransactionRecords, Long writeTransactionBytes, BulkCompression compression, boolean help) {
+			Integer writeTransactionRecords, Long writeTransactionBytes, BulkCompression compression,
+			boolean resumeRecordedRun, boolean help) {
 
-		private static Options parse(String[] arguments, InputStream standardInput, PrintStream promptOutput)
-				throws UsageException {
+		private static Options parse(String[] arguments, InputStream standardInput, PrintStream promptOutput,
+				Path unfinishedRunRoot) throws UsageException {
 			Map<String, String> values = new HashMap<>();
 			List<String> inputs = new ArrayList<>();
+			// --compression-artifact names one artifact at a time, so it has to repeat the way --input does.
+			List<String> compressionArtifacts = new ArrayList<>();
 			boolean help = false;
 			boolean interactive = false;
 			for (int index = 0; index < arguments.length; index++) {
@@ -289,7 +382,7 @@ public final class LmdbBulkLoad {
 				if (!KNOWN_OPTIONS.containsKey(name)) {
 					throw new UsageException("Unknown option: " + argument);
 				}
-				if (!"input".equals(name) && values.containsKey(name)) {
+				if (!REPEATABLE_OPTIONS.contains(name) && values.containsKey(name)) {
 					throw new UsageException("Option specified more than once: " + argument);
 				}
 				if (++index >= arguments.length) {
@@ -297,6 +390,8 @@ public final class LmdbBulkLoad {
 				}
 				if ("input".equals(name)) {
 					inputs.add(arguments[index]);
+				} else if ("compression-artifact".equals(name)) {
+					compressionArtifacts.add(arguments[index]);
 				} else {
 					values.put(name, arguments[index]);
 				}
@@ -304,13 +399,15 @@ public final class LmdbBulkLoad {
 			if (help) {
 				return new Options(null, List.of(), null, LmdbBulkLoader.ParserMode.AUTO, null, null, null, null,
 						null, null, null, null, ProgressMode.PLAIN, null, null, null, null, null,
-						BulkCompression.FASTEST, true);
+						BulkCompression.FASTEST, false, true);
 			}
+			boolean resumeRecordedRun = false;
 			if (interactive) {
-				collectInteractiveArguments(values, inputs, standardInput, promptOutput);
+				resumeRecordedRun = collectInteractiveArguments(values, inputs, standardInput, promptOutput,
+						unfinishedRunRoot);
 			}
 			Path store = requiredPath(values, "store");
-			if (inputs.isEmpty()) {
+			if (inputs.isEmpty() && !resumeRecordedRun) {
 				throw new UsageException("--input is required");
 			}
 			LmdbBulkLoader.ParserMode parser = parseParser(values.getOrDefault("parser", "auto"));
@@ -331,20 +428,28 @@ public final class LmdbBulkLoad {
 					parseBoolean(values.get("value-hash-cache"), "--value-hash-cache"),
 					parseInteger(values.get("write-transaction-records"), "--write-transaction-records"),
 					parseBytes(values.get("write-transaction-bytes"), "--write-transaction-bytes"),
-					parseCompression(values.get("compression")), false);
+					parseCompression(values, compressionArtifacts), resumeRecordedRun, false);
 		}
 	}
 
-	private static void collectInteractiveArguments(Map<String, String> values, List<String> inputs,
-			InputStream standardInput, PrintStream output) throws UsageException {
+	/**
+	 * @return whether the caller is resuming a run the loader can finish on its own, so no inputs are needed
+	 */
+	private static boolean collectInteractiveArguments(Map<String, String> values, List<String> inputs,
+			InputStream standardInput, PrintStream output, Path unfinishedRunRoot) throws UsageException {
 		if (inputs.contains("-")) {
 			throw new UsageException("--interactive cannot be combined with --input -");
 		}
 		BufferedReader input = new BufferedReader(new InputStreamReader(standardInput, StandardCharsets.UTF_8));
 		output.println("Interactive LMDB bulk-load setup (press Enter to accept the value in brackets).");
 
+		// Settings a resumed run takes from its workspace: asking for them would only invite an answer that gets
+		// refused, and an unset setting cannot be expressed as an answer anyway.
+		Set<String> recorded = new HashSet<>();
+		boolean resumeRecordedRun = offerResume(values, inputs, recorded, input, output, unfinishedRunRoot);
+
 		promptRequiredValue(values, "store", "Store directory", input, output);
-		if (inputs.isEmpty()) {
+		if (!resumeRecordedRun && inputs.isEmpty()) {
 			inputs.add(promptRequired("RDF input file or directory", input, output));
 			if ("-".equals(inputs.getFirst())) {
 				throw new UsageException("--interactive cannot be combined with --input -");
@@ -361,54 +466,349 @@ public final class LmdbBulkLoad {
 			}
 		}
 
-		promptOptionalValue(values, "format", "RDF format", "infer from file name", input, output);
-		promptOptionalValue(values, "parser", "Parser (auto, fast, or rio)", "auto", input, output);
-		promptOptionalValue(values, "base-uri", "Base URI", "input URI", input, output);
-		output.println("Index fields: s=subject, p=predicate, o=object, c=context.");
-		promptOptionalValue(values, "statement-indexes", "Statement indexes", "spoc,posc", input, output);
-		promptOptionalValue(values, "triple-term-indexes", "RDF-star term indexes", "spoc,cspo", input, output);
-		promptOptionalValue(values, "memory", "Memory budget", "automatic", input, output);
-		promptOptionalValue(values, "partitions", "Value partition count", "loader default", input, output);
-		promptOptionalValue(values, "max-open-files", "Maximum open files", "loader default", input, output);
-		promptOptionalValue(values, "workers", "Worker count", "automatic", input, output);
-		promptOptionalValue(values, "queue-batches", "Queued batch count", "automatic", input, output);
-		promptCompression(values, standardInput, input, output);
-		promptOptionalValue(values, "progress", "Progress mode (plain, json, or none)", "plain", input, output);
-		promptOptionalValue(values, "temporary-directory", "Temporary-file parent directory", "system default", input,
+		if (!resumeRecordedRun) {
+			promptOptionalValue(values, recorded, "format", "RDF format", "infer from file name", input, output);
+			promptOptionalValue(values, recorded, "base-uri", "Base URI", "input URI", input, output);
+		}
+		promptOptionalValue(values, recorded, "parser", "Parser (auto, fast, or rio)", "auto", input, output);
+		if (!recorded.contains("statement-indexes")) {
+			output.println("Index fields: s=subject, p=predicate, o=object, c=context.");
+		}
+		promptOptionalValue(values, recorded, "statement-indexes", "Statement indexes", "spoc,posc", input, output);
+		promptOptionalValue(values, recorded, "triple-term-indexes", "RDF-star term indexes", "spoc,cspo", input,
 				output);
-		promptOptionalValue(values, "inline-literals", "Inline literals (true or false)", "true", input, output);
-		promptOptionalValue(values, "value-hash-cache", "Value hash cache (true or false)", "false", input, output);
-		promptOptionalValue(values, "write-transaction-records", "Maximum records per write transaction",
+		promptOptionalValue(values, recorded, "memory", "Memory budget", "automatic", input, output);
+		promptOptionalValue(values, recorded, "partitions", "Value partition count", "loader default", input, output);
+		promptOptionalValue(values, recorded, "max-open-files", "Maximum open files", "loader default", input, output);
+		promptOptionalValue(values, recorded, "workers", "Worker count", "automatic", input, output);
+		promptOptionalValue(values, recorded, "queue-batches", "Queued batch count", "automatic", input, output);
+		promptCompression(values, input, output);
+		promptOptionalValue(values, recorded, "progress", "Progress mode (plain, json, or none)", "plain", input,
+				output);
+		promptOptionalValue(values, recorded, "temporary-directory", "Temporary-file parent directory",
+				"system default", input, output);
+		promptOptionalValue(values, recorded, "inline-literals", "Inline literals (true or false)", "true", input,
+				output);
+		promptOptionalValue(values, recorded, "value-hash-cache", "Value hash cache (true or false)", "false", input,
+				output);
+		promptOptionalValue(values, recorded, "write-transaction-records", "Maximum records per write transaction",
 				"loader default", input, output);
-		promptOptionalValue(values, "write-transaction-bytes", "Maximum bytes per write transaction",
+		promptOptionalValue(values, recorded, "write-transaction-bytes", "Maximum bytes per write transaction",
 				"loader default", input, output);
+		return resumeRecordedRun;
 	}
 
 	/**
-	 * Offers the intermediate-file codecs as an arrow-key menu, with {@code fastest} on top as the default. Falls back
-	 * to a numbered line prompt whenever standard input is not a terminal.
+	 * Offers the work a previous run left behind before the setup asks anything else, because continuing one answers
+	 * most of the questions that follow: the store, the intermediate-file codec and the partitioning are all fixed by
+	 * the workspace on disk, and so are the RDF inputs once they have been staged.
+	 *
+	 * @return whether a run whose inputs are already staged is being resumed, so no inputs are needed
 	 */
-	private static void promptCompression(Map<String, String> values, InputStream standardInput, BufferedReader input,
-			PrintStream output) throws UsageException {
+	private static boolean offerResume(Map<String, String> values, List<String> inputs, Set<String> recorded,
+			BufferedReader input, PrintStream output, Path unfinishedRunRoot) throws UsageException {
+		List<UnfinishedBulkLoad> runs = new ArrayList<>(unfinishedRuns(values, unfinishedRunRoot, output));
+		while (!runs.isEmpty()) {
+			describeRuns(runs, output);
+			String answer = prompt(resumeQuestion(runs.size()), runs.size() == 1 ? "y" : "1", input, output);
+			Choice choice = Choice.parse(answer, runs.size());
+			if (choice == null) {
+				output.println("Answer with a run to resume, d to discard one, or n to configure a new load.");
+				continue;
+			}
+			if (choice.declined()) {
+				return false;
+			}
+			UnfinishedBulkLoad run = runs.get(choice.index());
+			if (choice.discard()) {
+				if (discard(run, input, output)) {
+					runs.remove(choice.index());
+				}
+				continue;
+			}
+			return resume(run, values, inputs, recorded, output);
+		}
+		return false;
+	}
+
+	private static List<UnfinishedBulkLoad> unfinishedRuns(Map<String, String> values, Path unfinishedRunRoot,
+			PrintStream output) {
+		try {
+			String store = values.get("store");
+			if (store != null && !store.isBlank()) {
+				// A named store is the only place worth looking: it is the one this run would load into.
+				return UnfinishedBulkLoad.find(Path.of(store)).map(List::of).orElseGet(List::of);
+			}
+			return UnfinishedBulkLoad.discover(unfinishedRunRoot, UnfinishedBulkLoad.DEFAULT_SCAN_DEPTH);
+		} catch (IOException | InvalidPathException unreadable) {
+			output.println("Could not check for unfinished bulk loads: " + unreadable);
+			return List.of();
+		}
+	}
+
+	/**
+	 * Takes everything the interrupted run recorded about itself, so the questions it already answered are not asked
+	 * again. Values given on this command line still win, and the loader refuses any of them that the staged data was
+	 * not built for.
+	 */
+	private static boolean resume(UnfinishedBulkLoad run, Map<String, String> values, List<String> inputs,
+			Set<String> recorded, PrintStream output) {
+		values.putIfAbsent("store", run.target().toString());
+		values.putIfAbsent("compression", run.compression().token());
+		output.println("Resuming the load of " + run.target() + ".");
+		Optional<BulkLoadSettings> settings = run.settings();
+		if (settings.isEmpty()) {
+			// Workspaces from before configurations were recorded can only be described by what the caller remembers.
+			output.println("It predates configuration recording, so answer the remaining questions the way it was"
+					+ " configured; only its compression " + run.compression().token() + " is known.");
+			if (run.stagedPartitionCount() > 0) {
+				values.putIfAbsent("partitions", Integer.toString(run.stagedPartitionCount()));
+			}
+			return resumesWithoutInputs(run, inputs, output);
+		}
+		restore(values, recorded, settings.get(), run.spillDirectory());
+		output.printf(Locale.ROOT,
+				"Its configuration is taken from the workspace: statement indexes %s, RDF-star term indexes %s, "
+						+ "%d partitions, compression %s, inline literals %s.%n",
+				describeSetting(settings.get().tripleIndexes()), describeSetting(settings.get().tripleTermIndexes()),
+				settings.get().partitionCount(), run.compression().token(), settings.get().inlineLiterals());
+		return resumesWithoutInputs(run, inputs, output);
+	}
+
+	private static boolean resumesWithoutInputs(UnfinishedBulkLoad run, List<String> inputs, PrintStream output) {
+		if (!inputs.isEmpty()) {
+			output.println("The inputs given on the command line are used only if it has to stage again.");
+			return false;
+		}
+		if (run.stagingComplete()) {
+			output.println("Its inputs are already staged, so they are not needed again.");
+			return true;
+		}
+		if (run.resumableWithoutInputs()) {
+			output.println("It stopped while staging, so it reads its recorded inputs again:");
+			for (LmdbBulkLoader.PathInput recordedInput : run.recordedInputs()) {
+				output.println("  " + recordedInput.path());
+			}
+			output.println("Pass --input to read something else instead.");
+			return true;
+		}
+		output.println("It stopped before staging finished without recording its inputs, so they are needed again.");
+		return false;
+	}
+
+	private static void restore(Map<String, String> values, Set<String> recorded, BulkLoadSettings settings,
+			Path spillDirectory) {
+		restore(values, recorded, "statement-indexes", settings.tripleIndexes());
+		restore(values, recorded, "triple-term-indexes", settings.tripleTermIndexes());
+		restore(values, recorded, "inline-literals", Boolean.toString(settings.inlineLiterals()));
+		restore(values, recorded, "value-hash-cache", Boolean.toString(settings.valueHashCache()));
+		restore(values, recorded, "partitions", Integer.toString(settings.partitionCount()));
+		restore(values, recorded, "parser", settings.parserMode().name().toLowerCase(Locale.ROOT));
+		restore(values, recorded, "memory", Long.toString(settings.memoryBudgetBytes()));
+		restore(values, recorded, "max-open-files", Integer.toString(settings.maxOpenFiles()));
+		restore(values, recorded, "workers", Integer.toString(settings.workers()));
+		restore(values, recorded, "queue-batches", settings.queueBatches() > 0
+				? Integer.toString(settings.queueBatches())
+				: null);
+		restore(values, recorded, "write-transaction-records", Integer.toString(settings.writeTransactionRecords()));
+		restore(values, recorded, "write-transaction-bytes", Long.toString(settings.writeTransactionBytes()));
+		restore(values, recorded, "temporary-directory", spillDirectory == null ? null : spillDirectory.toString());
+	}
+
+	/**
+	 * Marks a setting as answered by the workspace, and supplies the recorded answer when there was one. A setting the
+	 * run left unset stays unset: there is no answer that means "unset", so the question is dropped instead.
+	 */
+	private static void restore(Map<String, String> values, Set<String> recorded, String name, String value) {
+		recorded.add(name);
+		if (value != null && !value.isBlank()) {
+			values.putIfAbsent(name, value);
+		}
+	}
+
+	private static String describeSetting(String value) {
+		return value == null || value.isBlank() ? "the store defaults" : value;
+	}
+
+	private static boolean discard(UnfinishedBulkLoad run, BufferedReader input, PrintStream output)
+			throws UsageException {
+		String size;
+		try {
+			size = describeBytes(run.workspaceBytes());
+		} catch (IOException unreadable) {
+			size = "the";
+		}
+		String answer = prompt("Delete " + size + " of staged files in " + run.controlDirectory() + "? (y or n)", "n",
+				input, output);
+		if (!isAffirmative(answer)) {
+			return false;
+		}
+		try {
+			run.discard();
+		} catch (IOException failure) {
+			output.println("Could not discard the run for " + run.target() + ": " + failure);
+			return false;
+		}
+		output.println("Discarded the unfinished load of " + run.target() + ".");
+		return true;
+	}
+
+	private static void describeRuns(List<UnfinishedBulkLoad> runs, PrintStream output) {
+		output.println(runs.size() == 1 ? "Found an unfinished LMDB bulk load:"
+				: "Found " + runs.size() + " unfinished LMDB bulk loads:");
+		for (int index = 0; index < runs.size(); index++) {
+			UnfinishedBulkLoad run = runs.get(index);
+			output.println("  " + (index + 1) + ") " + run.target());
+			output.printf(Locale.ROOT, "     stopped %s after %d of %d phases, %s, last written %s%n",
+					run.currentPhase() == null ? "between phases" : "in " + run.currentPhase(),
+					run.completedPhases(), BulkLoadPhase.values().length, run.lifecycle().toLowerCase(Locale.ROOT),
+					describeTime(run.updated()));
+			if (run.operations() > 0L) {
+				output.printf(Locale.ROOT, "     %,d operations, %s processed%n", run.operations(),
+						describeBytes(Math.max(0L, run.bytesProcessed())));
+			}
+			if (run.stagingComplete()) {
+				output.println("     inputs already staged, so resuming does not read them again");
+			}
+			if (run.failureMessage() != null) {
+				output.println("     stopped on: " + run.failureMessage());
+			}
+		}
+	}
+
+	private static String resumeQuestion(int runs) {
+		if (runs == 1) {
+			return "Resume it? (y to resume, d to discard it and start over, n to configure a new load)";
+		}
+		return "Resume one? (1-" + runs + " to resume, d1-d" + runs
+				+ " to discard one, n to configure a new load)";
+	}
+
+	private static boolean isAffirmative(String answer) {
+		String normalized = answer.trim().toLowerCase(Locale.ROOT);
+		return "y".equals(normalized) || "yes".equals(normalized);
+	}
+
+	private static String describeTime(Instant instant) {
+		return Instant.EPOCH.equals(instant) ? "an unknown time"
+				: TIMESTAMP.format(instant);
+	}
+
+	static String describeBytes(long bytes) {
+		if (bytes < 1024L) {
+			return bytes + " B";
+		}
+		String[] units = { "KiB", "MiB", "GiB", "TiB" };
+		double scaled = bytes;
+		int unit = -1;
+		while (scaled >= 1024.0 && unit < units.length - 1) {
+			scaled /= 1024.0;
+			unit++;
+		}
+		return String.format(Locale.ROOT, "%.1f %s", scaled, units[unit]);
+	}
+
+	/**
+	 * One answer to the resume question: a run to continue, a run to delete, or a refusal to touch either.
+	 */
+	private record Choice(int index, boolean discard, boolean declined) {
+
+		/**
+		 * @return the answer, or {@code null} when it names nothing the question offered
+		 */
+		static Choice parse(String answer, int runs) {
+			String normalized = answer.trim().toLowerCase(Locale.ROOT);
+			if ("n".equals(normalized) || "no".equals(normalized)) {
+				return new Choice(-1, false, true);
+			}
+			boolean discard = false;
+			if ("d".equals(normalized) || "discard".equals(normalized)) {
+				discard = true;
+				normalized = "";
+			} else if (normalized.startsWith("d")) {
+				discard = true;
+				normalized = normalized.substring(1).trim();
+			} else if ("y".equals(normalized) || "yes".equals(normalized)) {
+				normalized = "";
+			}
+			if (normalized.isEmpty()) {
+				// Plain Enter and a bare y take the run listed first; deleting one is never left to a default.
+				return discard && runs > 1 ? null : new Choice(0, discard, false);
+			}
+			int index;
+			try {
+				index = Integer.parseInt(normalized) - 1;
+			} catch (NumberFormatException notARun) {
+				return null;
+			}
+			return index < 0 || index >= runs ? null : new Choice(index, discard, false);
+		}
+	}
+
+	/**
+	 * Lists the intermediate-file codecs and reads the answer as one typed line, so plain Enter keeps the fastest
+	 * codec. An answer the codec parser rejects is re-prompted rather than aborting the whole setup.
+	 */
+	private static void promptCompression(Map<String, String> values, BufferedReader input, PrintStream output)
+			throws UsageException {
 		if (values.containsKey("compression")) {
 			return;
 		}
-		List<TerminalMenu.Option> options = new ArrayList<>();
-		options.add(new TerminalMenu.Option("fastest", "LZ4 fast on run files, LZ4 high-9 on staged inputs"));
-		options.add(new TerminalMenu.Option("none", "no compression; smallest CPU cost, largest spill"));
-		for (int level = BulkCompression.MINIMUM_LEVEL; level <= BulkCompression.MAXIMUM_LEVEL; level++) {
-			options.add(new TerminalMenu.Option(Integer.toString(level),
-					level == BulkCompression.MINIMUM_LEVEL ? "LZ4 high-ratio levels; higher is smaller and slower"
-							: null));
-		}
-		try {
-			values.put("compression",
-					TerminalMenu.select("Intermediate-file compression:", options, 0, standardInput, input::readLine,
-							output));
-		} catch (IOException e) {
-			throw new UsageException("Could not read interactive input: " + e.getMessage());
+		String levels = BulkCompression.MINIMUM_LEVEL + "-" + BulkCompression.MAXIMUM_LEVEL;
+		output.println("Intermediate-file compression:");
+		output.println("  fastest              LZ4 fast on run files, LZ4 high-9 on staged inputs");
+		output.println("  none                 no compression; smallest CPU cost, largest spill");
+		output.println(
+				"  " + levels + "                 LZ4 high-ratio level everywhere; higher is smaller and slower");
+		output.println("  runs=X,staged=Y      per group, each fast, none, or a level " + levels);
+		output.println("  custom               choose a codec for each intermediate file in turn");
+		while (true) {
+			String answer = prompt("Compression (fastest, none, a level " + levels + ", custom, or KEY=CODEC,...)",
+					"fastest", input, output);
+			if (answer.isEmpty()) {
+				values.put("compression", BulkCompression.FASTEST.token());
+				return;
+			}
+			if (CUSTOM_COMPRESSION.equalsIgnoreCase(answer.trim())) {
+				values.put("compression", promptEachArtifact(input, output).token());
+				return;
+			}
+			try {
+				values.put("compression", BulkCompression.parse(answer).token());
+				return;
+			} catch (IllegalArgumentException rejected) {
+				output.println("Not one of the listed options: " + answer);
+			}
 		}
 	}
+
+	/**
+	 * Walks every intermediate file the loader writes, offering each one's current codec as the default so plain Enter
+	 * keeps it. An answer the codec parser rejects re-prompts for that artifact rather than aborting the walk.
+	 */
+	private static BulkCompression promptEachArtifact(BufferedReader input, PrintStream output) throws UsageException {
+		output.println("A codec for each intermediate file; Enter keeps the value in brackets.");
+		BulkCompression compression = BulkCompression.FASTEST;
+		for (BulkArtifact artifact : BulkArtifact.values()) {
+			BulkCodec current = compression.codecFor(artifact);
+			while (true) {
+				String answer = prompt("  " + pad(artifact.key()), current.token(), input, output);
+				if (answer.isEmpty()) {
+					break;
+				}
+				try {
+					compression = compression.with(artifact, BulkCodec.parse(answer));
+					break;
+				} catch (IllegalArgumentException rejected) {
+					output.println("  Not fast, none, or a level between " + BulkCodec.MINIMUM_LEVEL + " and "
+							+ BulkCodec.MAXIMUM_LEVEL + ": " + answer);
+				}
+			}
+		}
+		return compression;
+	}
+
+	private static final String CUSTOM_COMPRESSION = "custom";
 
 	private static void promptRequiredValue(Map<String, String> values, String name, String label, BufferedReader input,
 			PrintStream output) throws UsageException {
@@ -417,9 +817,9 @@ public final class LmdbBulkLoad {
 		}
 	}
 
-	private static void promptOptionalValue(Map<String, String> values, String name, String label, String defaultLabel,
-			BufferedReader input, PrintStream output) throws UsageException {
-		if (!values.containsKey(name)) {
+	private static void promptOptionalValue(Map<String, String> values, Set<String> recorded, String name, String label,
+			String defaultLabel, BufferedReader input, PrintStream output) throws UsageException {
+		if (!recorded.contains(name) && !values.containsKey(name)) {
 			String value = prompt(label, defaultLabel, input, output);
 			if (!value.isEmpty()) {
 				values.put(name, value);
@@ -470,12 +870,17 @@ public final class LmdbBulkLoad {
 			Map.entry("workers", true),
 			Map.entry("queue-batches", true),
 			Map.entry("compression", true),
+			Map.entry("compression-runs", true),
+			Map.entry("compression-staged", true),
+			Map.entry("compression-artifact", true),
 			Map.entry("progress", true),
 			Map.entry("temporary-directory", true),
 			Map.entry("inline-literals", true),
 			Map.entry("value-hash-cache", true),
 			Map.entry("write-transaction-records", true),
 			Map.entry("write-transaction-bytes", true));
+
+	private static final Set<String> REPEATABLE_OPTIONS = Set.of("input", "compression-artifact");
 
 	private static String required(Map<String, String> values, String name) throws UsageException {
 		String value = values.get(name);
@@ -493,15 +898,61 @@ public final class LmdbBulkLoad {
 		return value == null ? null : Path.of(value).toAbsolutePath().normalize();
 	}
 
-	private static BulkCompression parseCompression(String value) throws UsageException {
-		if (value == null) {
-			return BulkCompression.FASTEST;
+	/**
+	 * Resolves the three compression options into one selection. {@code --compression} names both tiers at once, and
+	 * each per-tier option then replaces only its own tier, so the two can be combined to change one tier of a preset.
+	 */
+	private static BulkCompression parseCompression(Map<String, String> values, List<String> artifacts)
+			throws UsageException {
+		BulkCompression compression = parseCompression(values);
+		// The artifact options are the narrowest thing a user can say, so they are applied last and win over both the
+		// shorthand and the two tier flags.
+		for (String artifact : artifacts) {
+			int separator = artifact.indexOf('=');
+			if (separator <= 0 || separator == artifact.length() - 1) {
+				throw new UsageException("--compression-artifact must be KEY=CODEC, but was: " + artifact);
+			}
+			String key = artifact.substring(0, separator);
+			BulkCodec codec = parseCodec(artifact.substring(separator + 1), "--compression-artifact");
+			try {
+				compression = compression.with(key, codec);
+			} catch (IllegalArgumentException unknownKey) {
+				throw new UsageException("--compression-artifact does not know the key " + key
+						+ "; run --help for the list of artifacts and groups");
+			}
 		}
+		return compression;
+	}
+
+	private static BulkCompression parseCompression(Map<String, String> values) throws UsageException {
+		String shorthand = values.get("compression");
+		BulkCompression compression = BulkCompression.FASTEST;
+		if (shorthand != null) {
+			try {
+				compression = BulkCompression.parse(shorthand);
+			} catch (IllegalArgumentException e) {
+				throw new UsageException("--compression must be fastest, none, a level between "
+						+ BulkCompression.MINIMUM_LEVEL + " and " + BulkCompression.MAXIMUM_LEVEL
+						+ ", or runs=<codec>,staged=<codec>, but was: " + shorthand);
+			}
+		}
+		String runFiles = values.get("compression-runs");
+		if (runFiles != null) {
+			compression = compression.withRunFiles(parseCodec(runFiles, "--compression-runs"));
+		}
+		String stagedInputs = values.get("compression-staged");
+		if (stagedInputs != null) {
+			compression = compression.withStagedInputs(parseCodec(stagedInputs, "--compression-staged"));
+		}
+		return compression;
+	}
+
+	private static BulkCodec parseCodec(String value, String option) throws UsageException {
 		try {
-			return BulkCompression.parse(value);
+			return BulkCodec.parse(value);
 		} catch (IllegalArgumentException e) {
-			throw new UsageException("--compression must be fastest, none, or a level between "
-					+ BulkCompression.MINIMUM_LEVEL + " and " + BulkCompression.MAXIMUM_LEVEL + ", but was: " + value);
+			throw new UsageException(option + " must be fast, none, or a level between " + BulkCodec.MINIMUM_LEVEL
+					+ " and " + BulkCodec.MAXIMUM_LEVEL + ", but was: " + value);
 		}
 	}
 

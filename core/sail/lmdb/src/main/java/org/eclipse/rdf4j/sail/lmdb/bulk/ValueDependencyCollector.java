@@ -115,7 +115,8 @@ final class ValueDependencyCollector implements AutoCloseable {
 		checkCancelled();
 		int partition = (int) hash & (partitionCount - 1);
 		DataOutputStream output = outputs.output(partition,
-				() -> BulkLz4.appendOutput(ValueDependencyBuckets.bucketPath(directory, partition), compression));
+				() -> BulkLz4.appendOutput(ValueDependencyBuckets.bucketPath(directory, partition),
+						compression.codecFor(BulkArtifact.DEPENDENCY_BUCKETS)));
 		output.writeLong(hash);
 		output.writeByte(roles);
 		output.writeInt(key.length);

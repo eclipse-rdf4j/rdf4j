@@ -38,69 +38,63 @@ final class BulkLz4 {
 	private BulkLz4() {
 	}
 
-	static DataOutputStream appendOutput(Path path, BulkCompression compression) throws IOException {
-		return appendOutput(path, compression, false);
-	}
-
 	/**
-	 * Append-mode output for long-lived staged inputs that are read multiple times and therefore warrant spending extra
-	 * CPU to shrink on disk. Under {@link BulkCompression#FASTEST} this uses the high-ratio LZ4 compressor while
-	 * {@link #appendOutput(Path, BulkCompression)} uses the fast one; an explicit level applies to both.
+	 * Append-mode output for a file that several writes extend, each write producing one independently framed block.
+	 * {@link #readConcatenated(Path, BulkCodec, StreamReader)} reads it back, and must be given the same codec.
 	 */
-	static DataOutputStream appendOutputHigh(Path path, BulkCompression compression) throws IOException {
-		return appendOutput(path, compression, true);
-	}
-
-	private static DataOutputStream appendOutput(Path path, BulkCompression compression, boolean stagedInput)
-			throws IOException {
+	static DataOutputStream appendOutput(Path path, BulkCodec codec) throws IOException {
 		Objects.requireNonNull(path, "path");
 		Files.createDirectories(path.getParent());
 		OutputStream raw = new BufferedOutputStream(Files.newOutputStream(path, StandardOpenOption.CREATE,
 				StandardOpenOption.WRITE, StandardOpenOption.APPEND));
-		return new DataOutputStream(compress(raw, compression, stagedInput));
+		return new DataOutputStream(compress(raw, codec));
 	}
 
 	/**
-	 * Single-stream (truncating) output for fixed-width binary run and spool files that are written once and read back
-	 * sequentially. Uses the fast LZ4 compressor under {@link BulkCompression#FASTEST} to keep the hot merge/spool path
-	 * cheap.
+	 * Single-stream (truncating) output for a file written once and read back sequentially by
+	 * {@link #input(Path, BulkCodec)}, which must be given the same codec.
 	 */
-	static DataOutputStream output(Path path, BulkCompression compression) throws IOException {
+	static DataOutputStream output(Path path, BulkCodec codec) throws IOException {
 		Objects.requireNonNull(path, "path");
+		Objects.requireNonNull(codec, "codec");
 		Path parent = path.getParent();
 		if (parent != null) {
 			Files.createDirectories(parent);
 		}
 		OutputStream raw = new BufferedOutputStream(Files.newOutputStream(path, StandardOpenOption.CREATE,
 				StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING));
-		return new DataOutputStream(compress(raw, compression, false));
+		return new DataOutputStream(compress(raw, codec));
 	}
 
 	/**
-	 * Sequential read side for a single-stream {@link #output(Path, BulkCompression)} file. Empty files (zero bytes,
-	 * e.g. a sorter run with no records) yield an immediately-exhausted stream. The LZ4 block format is codec-agnostic
-	 * on read, so this decompresses output produced at any level; only {@link BulkCompression.Kind#NONE} needs to be
-	 * distinguished, because those files carry no LZ4 framing at all.
+	 * Sequential read side for a single-stream {@link #output(Path, BulkCodec)} file. Empty files (zero bytes, e.g. a
+	 * sorter run with no records) yield an immediately-exhausted stream. The LZ4 block format is level-agnostic on
+	 * read, so this decompresses output produced at any level; only {@link BulkCodec.Kind#NONE} needs to be
+	 * distinguished, because those files carry no LZ4 framing at all. That distinction is per artifact, so the read
+	 * side has to be given the codec the file was written with.
 	 */
-	static DataInputStream input(Path path, BulkCompression compression) throws IOException {
+	static DataInputStream input(Path path, BulkCodec codec) throws IOException {
 		Objects.requireNonNull(path, "path");
-		Objects.requireNonNull(compression, "compression");
+		Objects.requireNonNull(codec, "codec");
 		if (Files.size(path) == 0L) {
 			return new DataInputStream(InputStream.nullInputStream());
 		}
 		BufferedInputStream buffered = new BufferedInputStream(Files.newInputStream(path));
-		return new DataInputStream(decompress(buffered, compression));
+		return new DataInputStream(decompress(buffered, codec));
 	}
 
-	static boolean readConcatenated(Path path, BulkCompression compression, StreamReader reader) throws IOException {
+	/**
+	 * Reads the concatenated frames of an {@link #appendOutput(Path, BulkCodec)} file.
+	 */
+	static boolean readConcatenated(Path path, BulkCodec codec, StreamReader reader) throws IOException {
 		Objects.requireNonNull(path, "path");
-		Objects.requireNonNull(compression, "compression");
+		Objects.requireNonNull(codec, "codec");
 		Objects.requireNonNull(reader, "reader");
 		if (Files.notExists(path)) {
 			return false;
 		}
 		try (BufferedInputStream input = new BufferedInputStream(Files.newInputStream(path))) {
-			if (compression.kind() == BulkCompression.Kind.NONE) {
+			if (codec.kind() == BulkCodec.Kind.NONE) {
 				// Without LZ4 framing the appended writes form one continuous byte stream. Every frame reader
 				// terminates on EOF, so handing the whole file over as a single frame yields the same records the
 				// framed path would produce. The hasMore guard keeps the "no frames for an empty file" contract.
@@ -117,25 +111,24 @@ final class BulkLz4 {
 		return true;
 	}
 
-	private static OutputStream compress(OutputStream raw, BulkCompression compression, boolean stagedInput) {
-		Objects.requireNonNull(compression, "compression");
-		if (compression.kind() == BulkCompression.Kind.NONE) {
+	private static OutputStream compress(OutputStream raw, BulkCodec codec) {
+		if (codec.kind() == BulkCodec.Kind.NONE) {
 			return raw;
 		}
-		return new LZ4BlockOutputStream(raw, BLOCK_BYTES, compressor(compression, stagedInput));
+		return new LZ4BlockOutputStream(raw, BLOCK_BYTES, compressor(codec));
 	}
 
-	private static InputStream decompress(InputStream raw, BulkCompression compression) {
-		if (compression.kind() == BulkCompression.Kind.NONE) {
+	private static InputStream decompress(InputStream raw, BulkCodec codec) {
+		if (codec.kind() == BulkCodec.Kind.NONE) {
 			return raw;
 		}
 		return new LZ4BlockInputStream(raw, LZ4.fastDecompressor());
 	}
 
-	private static LZ4Compressor compressor(BulkCompression compression, boolean stagedInput) {
-		return switch (compression.kind()) {
-		case FASTEST -> stagedInput ? LZ4.highCompressor(BulkCompression.STAGED_INPUT_LEVEL) : LZ4.fastCompressor();
-		case HIGH -> LZ4.highCompressor(compression.level());
+	private static LZ4Compressor compressor(BulkCodec codec) {
+		return switch (codec.kind()) {
+		case FAST -> LZ4.fastCompressor();
+		case HIGH -> LZ4.highCompressor(codec.level());
 		case NONE -> throw new IllegalStateException("Uncompressed output does not use a compressor");
 		};
 	}

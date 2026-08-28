@@ -42,13 +42,15 @@ final class NativeStoreWriter {
 						statements.path().getParent(), config.getTripleTermIndexes(), memoryBudgetBytes, maxOpenFiles,
 						compression, cancellationSignal);
 				LmdbNativeBulkStore store = new LmdbNativeBulkStore(generation, config)) {
-			try (ByteRecordCursor cursor = new ByteRecordCursor(values.mainRecords().path(), compression)) {
+			try (ByteRecordCursor cursor = new ByteRecordCursor(values.mainRecords().path(),
+					values.mainRecords().codec())) {
 				store.appendValueRecords(() -> {
 					checkCancelled(cancellationSignal);
 					return cursor.next();
 				}, maxTransactionRecords, maxTransactionBytes);
 			}
-			try (ByteRecordCursor cursor = new ByteRecordCursor(values.referenceCounts().path(), compression)) {
+			try (ByteRecordCursor cursor = new ByteRecordCursor(values.referenceCounts().path(),
+					values.referenceCounts().codec())) {
 				store.appendReferenceCounts(() -> {
 					checkCancelled(cancellationSignal);
 					return cursor.next();
@@ -56,7 +58,8 @@ final class NativeStoreWriter {
 			}
 			long expectedTripleTerms = -1L;
 			for (TripleTermIndexBulkRecords.IndexRun indexRun : tripleTermIndexes.runs()) {
-				try (LongTupleCursor cursor = new LongTupleCursor(indexRun.tuples().path(), 4, compression)) {
+				try (LongTupleCursor cursor = new LongTupleCursor(indexRun.tuples().path(), 4,
+						indexRun.tuples().codec())) {
 					long termsInIndex = store.appendTripleTermIndex(indexRun.specification(), target -> {
 						checkCancelled(cancellationSignal);
 						return cursor.next(target);
@@ -73,7 +76,8 @@ final class NativeStoreWriter {
 				Files.deleteIfExists(indexRun.tuples().path());
 			}
 			if (config.getValueHashCacheEnabled()) {
-				try (LongTupleCursor cursor = new LongTupleCursor(values.valueHashes().path(), 3, compression)) {
+				try (LongTupleCursor cursor = new LongTupleCursor(values.valueHashes().path(), 3,
+						values.valueHashes().codec())) {
 					long[] tuple = new long[3];
 					store.appendValueHashes(target -> {
 						checkCancelled(cancellationSignal);
@@ -95,7 +99,8 @@ final class NativeStoreWriter {
 			for (StatementIndexBulkRecords.IndexRun indexRun : statementIndexes.runs()) {
 				long statementsInIndex;
 				if (indexRun.tuples() != null) {
-					try (LongTupleCursor cursor = new LongTupleCursor(indexRun.tuples().path(), 4, compression)) {
+					try (LongTupleCursor cursor = new LongTupleCursor(indexRun.tuples().path(), 4,
+							indexRun.tuples().codec())) {
 						statementsInIndex = store.appendExplicitIndex(indexRun.specification(), target -> {
 							checkCancelled(cancellationSignal);
 							return cursor.next(target);
@@ -103,7 +108,7 @@ final class NativeStoreWriter {
 					}
 				} else {
 					try (ByteRecordCursor cursor = new ByteRecordCursor(indexRun.encodedRecords().path(),
-							compression)) {
+							indexRun.encodedRecords().codec())) {
 						statementsInIndex = store.appendExplicitEncodedIndex(indexRun.specification(), () -> {
 							checkCancelled(cancellationSignal);
 							return cursor.next();
@@ -119,7 +124,8 @@ final class NativeStoreWriter {
 				// The run has been appended to LMDB and is rebuilt from id-quads on resume; free it now.
 				Files.deleteIfExists(indexRun.path());
 			}
-			try (ContextCountCursor cursor = new ContextCountCursor(statementIndexes.contexts().path(), compression)) {
+			try (ContextCountCursor cursor = new ContextCountCursor(statementIndexes.contexts().path(),
+					statementIndexes.contexts().codec())) {
 				store.appendContexts(target -> {
 					checkCancelled(cancellationSignal);
 					return cursor.next(target);
@@ -141,8 +147,8 @@ final class NativeStoreWriter {
 		private static final int MAX_RECORD_BYTES = 1024 * 1024 * 1024;
 		private final DataInputStream input;
 
-		private ByteRecordCursor(Path path, BulkCompression compression) throws IOException {
-			input = BulkLz4.input(path, compression);
+		private ByteRecordCursor(Path path, BulkCodec codec) throws IOException {
+			input = BulkLz4.input(path, codec);
 		}
 
 		private ValueStore.BulkRecord next() throws IOException {
@@ -183,8 +189,8 @@ final class NativeStoreWriter {
 		private final DataInputStream input;
 		private final int width;
 
-		private LongTupleCursor(Path path, int width, BulkCompression compression) throws IOException {
-			input = BulkLz4.input(path, compression);
+		private LongTupleCursor(Path path, int width, BulkCodec codec) throws IOException {
+			input = BulkLz4.input(path, codec);
 			this.width = width;
 		}
 
@@ -219,8 +225,8 @@ final class NativeStoreWriter {
 		private boolean hasPending;
 		private long pending;
 
-		private ContextCountCursor(Path path, BulkCompression compression) throws IOException {
-			input = BulkLz4.input(path, compression);
+		private ContextCountCursor(Path path, BulkCodec codec) throws IOException {
+			input = BulkLz4.input(path, codec);
 		}
 
 		private boolean next(long[] target) throws IOException {

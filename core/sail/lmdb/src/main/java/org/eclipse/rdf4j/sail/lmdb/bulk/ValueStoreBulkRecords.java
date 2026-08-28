@@ -41,15 +41,17 @@ final class ValueStoreBulkRecords {
 		Path tripleTermsPath = workspace.resolve("value-triple-terms.bin");
 		Path hashesPath = workspace.resolve("value-hashes.bin");
 		try (ExternalByteKeySorter main = new ExternalByteKeySorter(workspace, "value-main", sorterBudget,
-				maxOpenFiles, compression);
+				maxOpenFiles, compression.codecFor(BulkArtifact.VALUE_RECORDS));
 				ExternalLongTupleSorter hashCandidates = new ExternalLongTupleSorter(workspace,
-						"value-hash-candidates", 3, sorterBudget, maxOpenFiles, compression);
+						"value-hash-candidates", 3, sorterBudget, maxOpenFiles,
+						compression.codecFor(BulkArtifact.VALUE_HASHES));
 				ExternalLongTupleSorter referenceCandidates = new ExternalLongTupleSorter(workspace,
-						"value-reference-candidates", 3, sorterBudget, maxOpenFiles, compression);
+						"value-reference-candidates", 3, sorterBudget, maxOpenFiles,
+						compression.codecFor(BulkArtifact.VALUE_REFERENCE_COUNTS));
 				ExternalLongTupleSorter tripleTerms = new ExternalLongTupleSorter(workspace, "value-triple-terms", 4,
-						sorterBudget, maxOpenFiles, compression);
+						sorterBudget, maxOpenFiles, compression.codecFor(BulkArtifact.TRIPLE_TERMS));
 				ExternalLongTupleSorter hashes = new ExternalLongTupleSorter(workspace, "value-hashes", 3,
-						sorterBudget, maxOpenFiles, compression)) {
+						sorterBudget, maxOpenFiles, compression.codecFor(BulkArtifact.VALUE_HASHES))) {
 			values.forEach((sequence, id, roles, canonicalKey, dependencyIds) -> {
 				checkCancelled(cancellationSignal);
 				for (long dependencyId : dependencyIds) {
@@ -95,13 +97,14 @@ final class ValueStoreBulkRecords {
 			BulkCompression compression) throws IOException {
 		return new Output(
 				ExternalByteKeySorter.SortedRecordFile.restore(workspace.resolve("value-main-records.bin"),
-						mainRecords, mainBytes, compression),
+						mainRecords, mainBytes, compression.codecFor(BulkArtifact.VALUE_RECORDS)),
 				ExternalByteKeySorter.SortedRecordFile.restore(workspace.resolve("value-ref-count-records.bin"),
-						referenceCounts, referenceCountBytes, compression),
+						referenceCounts, referenceCountBytes,
+						compression.codecFor(BulkArtifact.VALUE_REFERENCE_COUNTS)),
 				ExternalLongTupleSorter.SortedTupleFile.restore(workspace.resolve("value-triple-terms.bin"), 4,
-						tripleTerms, tripleTermBytes, compression),
+						tripleTerms, tripleTermBytes, compression.codecFor(BulkArtifact.TRIPLE_TERMS)),
 				ExternalLongTupleSorter.SortedTupleFile.restore(workspace.resolve("value-hashes.bin"), 3,
-						valueHashes, valueHashBytes, compression));
+						valueHashes, valueHashBytes, compression.codecFor(BulkArtifact.VALUE_HASHES)));
 	}
 
 	private static void addDataRecords(ExternalByteKeySorter sorter, long sequence, long id, byte[] data,
@@ -136,7 +139,7 @@ final class ValueStoreBulkRecords {
 			ExternalLongTupleSorter.SortedTupleFile references, Path workspace, long memoryBudgetBytes,
 			int maxOpenFiles, BulkCompression compression, BooleanSupplier cancellationSignal) throws IOException {
 		try (ExternalByteKeySorter counts = new ExternalByteKeySorter(workspace, "value-ref-counts", memoryBudgetBytes,
-				maxOpenFiles, compression)) {
+				maxOpenFiles, compression.codecFor(BulkArtifact.VALUE_REFERENCE_COUNTS))) {
 			long[] currentId = { 0L };
 			long[] count = { 0L };
 			references.forEach(tuple -> {

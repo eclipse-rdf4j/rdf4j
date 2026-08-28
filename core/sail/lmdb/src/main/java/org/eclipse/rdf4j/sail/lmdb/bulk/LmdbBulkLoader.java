@@ -99,6 +99,18 @@ public final class LmdbBulkLoader {
 	}
 
 	/**
+	 * Continues an interrupted load of this target that has already staged its inputs, without reading any RDF again. A
+	 * run reports whether it reached that point through {@link UnfinishedBulkLoad#stagingComplete()}.
+	 *
+	 * @return the summary of the completed load
+	 * @throws IOException if there is no resumable state for this target, or if it stopped before staging finished and
+	 *                     therefore still needs its inputs
+	 */
+	public Result resume() throws IOException {
+		return LmdbBulkLoaderEngine.resume(this);
+	}
+
+	/**
 	 * Loads multiple RDF files as one atomic store publication. Files are staged in list order and are opened and
 	 * closed by the loader.
 	 */
@@ -307,9 +319,10 @@ public final class LmdbBulkLoader {
 		}
 
 		/**
-		 * Selects the codec for the loader's intermediate files, trading CPU against spill-disk volume. Defaults to
-		 * {@link BulkCompression#FASTEST}. Resuming an existing workspace keeps the setting that workspace was created
-		 * with.
+		 * Selects the codecs for the loader's intermediate files, trading CPU against spill-disk volume. The run files
+		 * and the staged inputs each carry their own {@link BulkCodec} and can be set independently; see
+		 * {@link BulkCompression}. Defaults to {@link BulkCompression#FASTEST}. Resuming an existing workspace keeps
+		 * the setting that workspace was created with.
 		 */
 		public Builder compression(BulkCompression compression) {
 			this.compression = Objects.requireNonNull(compression, "compression");

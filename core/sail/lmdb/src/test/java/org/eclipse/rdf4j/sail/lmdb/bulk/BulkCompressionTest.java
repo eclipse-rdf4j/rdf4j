@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class BulkCompressionTest {
@@ -69,6 +70,11 @@ class BulkCompressionTest {
 				.hasMessageContaining("between 1 and 17");
 	}
 
+	/**
+	 * {@code fast} is deliberately not a whole-profile preset: it differs from {@code fastest} by three characters but
+	 * would put the cheap codec on the large staged files too, so a typo would quietly multiply the spill size.
+	 * {@code all=fast} says the same thing unambiguously.
+	 */
 	@ParameterizedTest
 	@ValueSource(strings = { "0", "18", "fast", "high", "lz4", "", "9.5", "-3" })
 	void rejectsUnparseableTokens(String token) {
@@ -81,10 +87,169 @@ class BulkCompressionTest {
 	}
 
 	@Test
-	void exposesTheEffectiveCodecKind() {
-		assertThat(BulkCompression.FASTEST.kind()).isEqualTo(BulkCompression.Kind.FASTEST);
-		assertThat(BulkCompression.NONE.kind()).isEqualTo(BulkCompression.Kind.NONE);
-		assertThat(BulkCompression.level(4).kind()).isEqualTo(BulkCompression.Kind.HIGH);
-		assertThat(BulkCompression.level(4).level()).isEqualTo(4);
+	void fastestGivesEveryArtifactItsDocumentedDefault() {
+		assertThat(BulkCompression.FASTEST.codecFor(BulkArtifact.STAGED_STATEMENTS)).isEqualTo(BulkCodec.level(9));
+		assertThat(BulkCompression.FASTEST.codecFor(BulkArtifact.STAGED_NAMESPACES)).isEqualTo(BulkCodec.level(9));
+		assertThat(BulkCompression.FASTEST.codecFor(BulkArtifact.STAGED_VALUES)).isEqualTo(BulkCodec.level(9));
+		assertThat(BulkCompression.FASTEST.codecFor(BulkArtifact.ID_QUADS)).isEqualTo(BulkCodec.FAST);
+		assertThat(BulkCompression.FASTEST.codecFor(BulkArtifact.STATEMENT_INDEXES)).isEqualTo(BulkCodec.FAST);
+	}
+
+	/**
+	 * The predicate counts and the predicate ID plan were written as raw bytes before they became selectable, and
+	 * {@code fastest} has to keep behaving exactly as it did or a workspace created by the older loader could not be
+	 * resumed by this one.
+	 */
+	@Test
+	void fastestLeavesTheTinyPlanFilesUncompressed() {
+		assertThat(BulkCompression.FASTEST.codecFor(BulkArtifact.PREDICATE_COUNTS)).isEqualTo(BulkCodec.NONE);
+		assertThat(BulkCompression.FASTEST.codecFor(BulkArtifact.PREDICATE_ID_PLAN)).isEqualTo(BulkCodec.NONE);
+	}
+
+	@Test
+	void noneAndALevelCoverEveryArtifact() {
+		for (BulkArtifact artifact : BulkArtifact.values()) {
+			assertThat(BulkCompression.NONE.codecFor(artifact)).isEqualTo(BulkCodec.NONE);
+			assertThat(BulkCompression.level(12).codecFor(artifact)).isEqualTo(BulkCodec.level(12));
+		}
+	}
+
+	/**
+	 * {@code runs} and {@code staged} were the only two knobs before every artifact became selectable, so the tokens
+	 * users and workspace manifests already contain have to keep meaning exactly what they meant.
+	 */
+	@Test
+	void aLegacyPerTierTokenStillMeansTheSameProfile() {
+		assertThat(BulkCompression.parse("runs=fast,staged=9")).isEqualTo(BulkCompression.FASTEST);
+		assertThat(BulkCompression.parse("runs=none,staged=none")).isEqualTo(BulkCompression.NONE);
+		BulkCompression mixed = BulkCompression.parse("runs=none,staged=17");
+		assertThat(mixed.codecFor(BulkArtifact.ID_QUADS)).isEqualTo(BulkCodec.NONE);
+		assertThat(mixed.codecFor(BulkArtifact.DEPENDENCY_BUCKETS)).isEqualTo(BulkCodec.NONE);
+		assertThat(mixed.codecFor(BulkArtifact.STAGED_STATEMENTS)).isEqualTo(BulkCodec.level(17));
+		assertThat(mixed.codecFor(BulkArtifact.PREDICATE_COUNTS)).isEqualTo(BulkCodec.NONE);
+	}
+
+	@ParameterizedTest
+	@EnumSource(BulkArtifact.class)
+	void everyArtifactIsAddressableByName(BulkArtifact artifact) {
+		BulkCompression selection = BulkCompression.parse(artifact.key() + "=13");
+		assertThat(selection.codecFor(artifact)).isEqualTo(BulkCodec.level(13));
+		for (BulkArtifact other : BulkArtifact.values()) {
+			if (other != artifact) {
+				assertThat(selection.codecFor(other)).isEqualTo(other.fastestDefault());
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(BulkArtifact.Group.class)
+	void everyGroupIsAddressableByName(BulkArtifact.Group group) {
+		BulkCompression selection = BulkCompression.parse(group.key() + "=none");
+		for (BulkArtifact artifact : BulkArtifact.values()) {
+			assertThat(selection.codecFor(artifact))
+					.isEqualTo(artifact.group() == group ? BulkCodec.NONE : artifact.fastestDefault());
+		}
+	}
+
+	/**
+	 * A list is read left to right over the {@code fastest} base, so a broad key followed by a narrow one is the
+	 * natural way to say "all of it like this, except that one".
+	 */
+	@Test
+	void laterEntriesOverrideEarlierOnes() {
+		BulkCompression selection = BulkCompression.parse("all=none,staged-statements=17");
+		assertThat(selection.codecFor(BulkArtifact.STAGED_STATEMENTS)).isEqualTo(BulkCodec.level(17));
+		assertThat(selection.codecFor(BulkArtifact.STAGED_VALUES)).isEqualTo(BulkCodec.NONE);
+		assertThat(selection.codecFor(BulkArtifact.ID_QUADS)).isEqualTo(BulkCodec.NONE);
+	}
+
+	/**
+	 * Unlike the old two-tier grammar, a list does not have to name everything: whatever it leaves out keeps its
+	 * {@code fastest} default. With twenty artifacts the alternative would be unusable.
+	 */
+	@Test
+	void aPartialListLeavesEverythingElseAtItsDefault() {
+		BulkCompression selection = BulkCompression.parse("id-quads=none");
+		assertThat(selection.codecFor(BulkArtifact.ID_QUADS)).isEqualTo(BulkCodec.NONE);
+		assertThat(selection.codecFor(BulkArtifact.STAGED_STATEMENTS)).isEqualTo(BulkCodec.level(9));
+		assertThat(selection.codecFor(BulkArtifact.COMPONENT_BUCKETS)).isEqualTo(BulkCodec.FAST);
+	}
+
+	@Test
+	void aSelectionThatMatchesAPresetCollapsesToThePresetToken() {
+		assertThat(BulkCompression.parse("runs=fast,staged=9").token()).isEqualTo("fastest");
+		assertThat(BulkCompression.parse("all=none").token()).isEqualTo("none");
+		assertThat(BulkCompression.parse("all=12").token()).isEqualTo("12");
+	}
+
+	/**
+	 * A token names only what differs from the {@code fastest} base, and prefers the coarsest key that covers the
+	 * difference, so a whole-tier change stays as short to read as it was to type.
+	 */
+	@Test
+	void aTokenNamesOnlyWhatDiffersFromTheBase() {
+		assertThat(BulkCompression.parse("runs=fast,staged=17").token()).isEqualTo("staged=17");
+		assertThat(BulkCompression.parse("runs=none,staged=9").token()).isEqualTo("runs=none");
+		assertThat(BulkCompression.parse("runs=12,staged=none").token()).isEqualTo("runs=12,staged=none");
+		assertThat(BulkCompression.parse("id-quads=none").token()).isEqualTo("id-quads=none");
+		assertThat(BulkCompression.parse("predicate-id-plan=9").token()).isEqualTo("predicate-id-plan=9");
+	}
+
+	@Test
+	void mixedTokensRoundTripThroughParse() {
+		String[] tokens = { "staged=17", "runs=none", "runs=12,staged=none", "id-quads=none",
+				"all=none,staged-statements=17", "buckets=9,sorters=none", "predicate-counts=3",
+				"staged-statements=17,id-quads=none,predicate-id-plan=9" };
+		for (String token : tokens) {
+			BulkCompression selection = BulkCompression.parse(token);
+			assertThat(BulkCompression.parse(selection.token())).isEqualTo(selection);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "runs=fast,staged=18", "runs=fastest,staged=9", "runs=fast,staged=fastest",
+			"runs=fast,staged=9,extra=1", "runs=,staged=9", "=none", "id-quads", "id_quads=none", "all=" })
+	void rejectsMalformedSelections(String token) {
+		assertThatThrownBy(() -> BulkCompression.parse(token)).isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void rejectsAnUnknownKeyByName() {
+		assertThatThrownBy(() -> BulkCompression.parse("nonsense=none"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("nonsense=none");
+	}
+
+	/**
+	 * The keys name themselves, so the order they are written in carries no meaning beyond later-wins.
+	 */
+	@Test
+	void acceptsTheKeysInEitherOrder() {
+		assertThat(BulkCompression.parse("staged=17,runs=none"))
+				.isEqualTo(BulkCompression.parse("runs=none,staged=17"));
+	}
+
+	@Test
+	void buildsASelectionFromCodecs() {
+		assertThat(BulkCompression.FASTEST.with(BulkArtifact.STAGED_STATEMENTS, BulkCodec.level(17)))
+				.isEqualTo(BulkCompression.parse("staged-statements=17"));
+		assertThat(BulkCompression.FASTEST.withStagedInputs(BulkCodec.level(17)))
+				.isEqualTo(BulkCompression.parse("runs=fast,staged=17"));
+		assertThat(BulkCompression.level(12).withRunFiles(BulkCodec.FAST))
+				.isEqualTo(BulkCompression.parse("all=12,runs=fast"));
+	}
+
+	@Test
+	void everyArtifactBelongsToExactlyOneGroup() {
+		for (BulkArtifact.Group group : BulkArtifact.Group.values()) {
+			for (BulkArtifact artifact : group.artifacts()) {
+				assertThat(artifact.group()).isEqualTo(group);
+			}
+		}
+		int grouped = 0;
+		for (BulkArtifact.Group group : BulkArtifact.Group.values()) {
+			grouped += group.artifacts().size();
+		}
+		assertThat(grouped).isEqualTo(BulkArtifact.values().length);
 	}
 }

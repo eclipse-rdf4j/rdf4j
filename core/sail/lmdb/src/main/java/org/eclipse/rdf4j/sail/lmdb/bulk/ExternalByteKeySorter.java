@@ -41,7 +41,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 	private final int maxFanIn;
 	private final RunBufferAllocator runBufferAllocator;
 	private final boolean nativeStorage;
-	private final BulkCompression compression;
+	private final BulkCodec codec;
 	private final int dataCapacity;
 	private final int[] offsets;
 	private final int[] keyLengths;
@@ -59,14 +59,14 @@ final class ExternalByteKeySorter implements AutoCloseable {
 	private boolean finished;
 
 	ExternalByteKeySorter(Path directory, String prefix, long memoryBudgetBytes, int maxOpenFiles,
-			BulkCompression compression) throws IOException {
-		this(directory, prefix, memoryBudgetBytes, maxOpenFiles, compression,
+			BulkCodec codec) throws IOException {
+		this(directory, prefix, memoryBudgetBytes, maxOpenFiles, codec,
 				(arena, bytes) -> arena.allocate(bytes, Byte.BYTES));
 	}
 
 	ExternalByteKeySorter(Path directory, String prefix, long memoryBudgetBytes, int maxOpenFiles,
-			BulkCompression compression, RunBufferAllocator runBufferAllocator) throws IOException {
-		this.compression = Objects.requireNonNull(compression, "compression");
+			BulkCodec codec, RunBufferAllocator runBufferAllocator) throws IOException {
+		this.codec = Objects.requireNonNull(codec, "codec");
 		this.directory = Objects.requireNonNull(directory, "directory");
 		this.prefix = Objects.requireNonNull(prefix, "prefix");
 		this.runBufferAllocator = Objects.requireNonNull(runBufferAllocator, "runBufferAllocator");
@@ -165,12 +165,12 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		} else if (mergeRuns.size() == 1) {
 			Files.move(mergeRuns.getFirst(), output, StandardCopyOption.REPLACE_EXISTING);
 		} else {
-			mergeGroup(mergeRuns, output, compression);
+			mergeGroup(mergeRuns, output, codec);
 			deleteRuns(mergeRuns);
 		}
 		runs.clear();
 		finished = true;
-		return new SortedRecordFile(output, recordCount, compression);
+		return new SortedRecordFile(output, recordCount, codec);
 	}
 
 	private void ensureWritable() {
@@ -188,7 +188,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		}
 		sortOrder(0, bufferedRecords - 1);
 		Path run = Files.createTempFile(directory, prefix + "-run-", ".bin");
-		try (DataOutputStream output = BulkLz4.output(run, compression)) {
+		try (DataOutputStream output = BulkLz4.output(run, codec)) {
 			for (int position = 0; position < bufferedRecords; position++) {
 				writeBufferedRecord(output, order[position]);
 			}
@@ -203,7 +203,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 
 	private void writeSingleRecordRun(byte[] key, byte[] value) throws IOException {
 		Path run = Files.createTempFile(directory, prefix + "-run-", ".bin");
-		try (DataOutputStream output = BulkLz4.output(run, compression)) {
+		try (DataOutputStream output = BulkLz4.output(run, codec)) {
 			output.writeInt(key.length);
 			output.writeInt(value.length);
 			output.write(key);
@@ -318,7 +318,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 				List<Path> group = current.subList(start, Math.min(current.size(), start + maxFanIn));
 				Path merged = Files.createTempFile(directory, prefix + "-pass-" + pass + "-", ".bin");
 				try {
-					mergeGroup(group, merged, compression);
+					mergeGroup(group, merged, codec);
 				} catch (Throwable failure) {
 					Files.deleteIfExists(merged);
 					throw failure;
@@ -332,12 +332,12 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		return current;
 	}
 
-	private static void mergeGroup(List<Path> group, Path outputPath, BulkCompression compression)
+	private static void mergeGroup(List<Path> group, Path outputPath, BulkCodec codec)
 			throws IOException {
 		RunCursor[] cursors = new RunCursor[group.size()];
-		try (DataOutputStream output = BulkLz4.output(outputPath, compression)) {
+		try (DataOutputStream output = BulkLz4.output(outputPath, codec)) {
 			for (int i = 0; i < group.size(); i++) {
-				cursors[i] = new RunCursor(group.get(i), compression, true);
+				cursors[i] = new RunCursor(group.get(i), codec, true);
 				cursors[i].advance();
 			}
 			LoserTree tree = new LoserTree(cursors);
@@ -433,14 +433,14 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		private Record current;
 		private boolean closed;
 
-		private RunCursor(Path path, BulkCompression compression) throws IOException {
-			this(path, compression, false);
+		private RunCursor(Path path, BulkCodec codec) throws IOException {
+			this(path, codec, false);
 		}
 
-		private RunCursor(Path path, BulkCompression compression, boolean deleteWhenClosed) throws IOException {
+		private RunCursor(Path path, BulkCodec codec, boolean deleteWhenClosed) throws IOException {
 			this.path = path;
 			this.deleteWhenClosed = deleteWhenClosed;
-			input = BulkLz4.input(path, compression);
+			input = BulkLz4.input(path, codec);
 		}
 
 		private boolean advance() throws IOException {
@@ -539,20 +539,20 @@ final class ExternalByteKeySorter implements AutoCloseable {
 
 		private final Path path;
 		private final long records;
-		private final BulkCompression compression;
+		private final BulkCodec codec;
 
-		private SortedRecordFile(Path path, long records, BulkCompression compression) {
+		private SortedRecordFile(Path path, long records, BulkCodec codec) {
 			this.path = path;
 			this.records = records;
-			this.compression = compression;
+			this.codec = codec;
 		}
 
-		static SortedRecordFile restore(Path path, long records, long bytes, BulkCompression compression)
+		static SortedRecordFile restore(Path path, long records, long bytes, BulkCodec codec)
 				throws IOException {
 			if (records < 0L || bytes < 0L || !Files.isRegularFile(path) || Files.size(path) != bytes) {
 				throw new IOException("Sorted byte-record metadata mismatch for " + path);
 			}
-			return new SortedRecordFile(path, records, compression);
+			return new SortedRecordFile(path, records, codec);
 		}
 
 		Path path() {
@@ -563,8 +563,16 @@ final class ExternalByteKeySorter implements AutoCloseable {
 			return records;
 		}
 
+		/**
+		 * The codec this file was written with. Carrying it on the handle means a reader cannot pick a different one
+		 * than the sorter used, which for {@link BulkCodec.Kind#NONE} would silently decode nonsense.
+		 */
+		BulkCodec codec() {
+			return codec;
+		}
+
 		void forEach(RecordConsumer consumer) throws IOException {
-			try (RunCursor cursor = new RunCursor(path, compression)) {
+			try (RunCursor cursor = new RunCursor(path, codec)) {
 				while (cursor.advance()) {
 					consumer.accept(cursor.current.key, cursor.current.value);
 				}

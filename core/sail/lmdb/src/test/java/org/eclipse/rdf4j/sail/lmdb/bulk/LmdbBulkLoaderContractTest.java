@@ -576,6 +576,103 @@ class LmdbBulkLoaderContractTest {
 		}
 	}
 
+	/**
+	 * The staged files, the dictionary and the value IDs are all built for one configuration. Continuing a run under a
+	 * different one produces a store that matches neither, so the workspace records what it was created with and
+	 * refuses anything else rather than quietly writing the wrong thing.
+	 */
+	@Test
+	void refusesToResumeUnderAConfigurationTheStagedDataWasNotBuiltFor() throws Exception {
+		Path target = temporaryDirectory.resolve("reconfigured-store");
+		Path stateFile = BulkLoadWorkspace.controlDirectory(target).resolve("state.properties");
+		AtomicInteger checks = new AtomicInteger();
+
+		assertThatThrownBy(() -> LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
+				.partitionCount(8)
+				.cancellationSignal(() -> checks.incrementAndGet() >= 16)
+				.build()
+				.load(new ByteArrayInputStream("<urn:s> <urn:p> <urn:o> .\n".getBytes(StandardCharsets.UTF_8)),
+						"urn:reconfigured:", RDFFormat.NQUADS))
+								.isInstanceOf(CancellationException.class);
+
+		Properties state = new Properties();
+		try (InputStream input = Files.newInputStream(stateFile)) {
+			state.load(input);
+		}
+		assertThat(state)
+				.as("the configuration a run was created with is part of its recorded state")
+				.containsEntry("config.triple-indexes", "spoc,psoc")
+				.containsEntry("config.inline-literals", "true")
+				.containsEntry("loader.partition-count", "8");
+
+		assertThatThrownBy(() -> LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,posc"))
+				.partitionCount(8)
+				.build()
+				.resume())
+						.isInstanceOf(IOException.class)
+						.hasMessageContaining("triple-indexes")
+						.hasMessageContaining("spoc,psoc")
+						.hasMessageContaining("spoc,posc");
+	}
+
+	/**
+	 * A run that was interrupted while staging still knows which files it was reading, so continuing it does not depend
+	 * on the caller producing that list a second time.
+	 */
+	@Test
+	void resumesFromTheRecordedInputsWhenStagingDidNotFinish() throws Exception {
+		Path first = temporaryDirectory.resolve("first.nq");
+		Files.writeString(first, "<urn:s:1> <urn:p> <urn:o:1> <urn:g> .\n");
+		Path second = temporaryDirectory.resolve("second.nq");
+		Files.writeString(second, "<urn:s:2> <urn:p> <urn:o:2> <urn:g> .\n");
+		Path target = temporaryDirectory.resolve("restaged-store");
+		Path stateFile = BulkLoadWorkspace.controlDirectory(target).resolve("state.properties");
+		AtomicInteger checks = new AtomicInteger();
+
+		assertThatThrownBy(() -> LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
+				.partitionCount(8)
+				.cancellationSignal(() -> checks.incrementAndGet() >= 4)
+				.build()
+				.load(List.of(new LmdbBulkLoader.PathInput(first, RDFFormat.NQUADS, "urn:restaged:"),
+						new LmdbBulkLoader.PathInput(second, RDFFormat.NQUADS, "urn:restaged:"))))
+								.isInstanceOf(CancellationException.class);
+		assertThat(stateHasPhase(stateFile, "STAGE_INPUTS", "IN_PROGRESS")).isTrue();
+
+		LmdbBulkLoader.Result result = LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
+				.partitionCount(8)
+				.build()
+				.resume();
+
+		assertThat(result.storedStatements()).isEqualTo(2);
+		assertThat(BulkLoadWorkspace.controlDirectory(target)).doesNotExist();
+	}
+
+	/**
+	 * A load from a caller-owned stream cannot be re-read from a path, so a resume that would have to stage it again
+	 * has to say so instead of failing somewhere deeper.
+	 */
+	@Test
+	void refusesToResumeAStreamLoadThatNeverFinishedStaging() throws Exception {
+		// Deliberately not named after a stream: the assertion below must match the message, not the path in it.
+		Path target = temporaryDirectory.resolve("piped-store");
+		AtomicInteger checks = new AtomicInteger();
+
+		assertThatThrownBy(() -> LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
+				.partitionCount(8)
+				.cancellationSignal(() -> checks.incrementAndGet() >= 4)
+				.build()
+				.load(new ByteArrayInputStream("<urn:s> <urn:p> <urn:o> .\n".getBytes(StandardCharsets.UTF_8)),
+						"urn:piped:", RDFFormat.NQUADS))
+								.isInstanceOf(CancellationException.class);
+
+		assertThatThrownBy(() -> LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
+				.partitionCount(8)
+				.build()
+				.resume())
+						.isInstanceOf(IOException.class)
+						.hasMessageContaining("stream");
+	}
+
 	@Test
 	void resumesFromLastCommittedStageWithoutReadingInputAgain() throws Exception {
 		StringBuilder input = new StringBuilder();
@@ -923,7 +1020,8 @@ class LmdbBulkLoaderContractTest {
 		}
 		Files.move(staging.resolve("statements.lz4"), staging.resolve("statements.saved.lz4"));
 
-		PredicateIdPlan plan = PredicateIdPlan.build(staged, staging, () -> false);
+		PredicateIdPlan plan = PredicateIdPlan.build(staged, staging,
+				BulkCompression.FASTEST.codecFor(BulkArtifact.PREDICATE_ID_PLAN), () -> false);
 
 		assertThat(ValueIds.getValue(plan.idFor(CanonicalTermCodec.encode(popularPredicate)))).isEqualTo(1L);
 		assertThat(ValueIds.getValue(plan.idFor(CanonicalTermCodec.encode(rarePredicate)))).isEqualTo(2L);

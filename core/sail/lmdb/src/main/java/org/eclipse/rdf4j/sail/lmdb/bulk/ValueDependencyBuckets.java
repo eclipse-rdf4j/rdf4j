@@ -35,7 +35,8 @@ final class ValueDependencyBuckets {
 		if (partition < 0 || partition >= partitionCount) {
 			throw new IllegalArgumentException("Value partition out of range: " + partition);
 		}
-		BulkLz4.readConcatenated(bucketPath(directory, partition), compression,
+		BulkLz4.readConcatenated(bucketPath(directory, partition),
+				compression.codecFor(BulkArtifact.DEPENDENCY_BUCKETS),
 				input -> readValues(input, partition, visitor));
 	}
 

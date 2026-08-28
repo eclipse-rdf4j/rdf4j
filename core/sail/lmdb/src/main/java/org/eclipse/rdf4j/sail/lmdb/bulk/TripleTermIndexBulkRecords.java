@@ -58,7 +58,8 @@ final class TripleTermIndexBulkRecords implements AutoCloseable {
 		try {
 			for (String specification : specifications) {
 				sorters.add(new ExternalLongTupleSorter(workspace, "term-index-" + specification, 4,
-						perSorterBudget, perSorterOpenFiles, compression));
+						perSorterBudget, perSorterOpenFiles,
+						compression.codecFor(BulkArtifact.TRIPLE_TERM_INDEXES)));
 			}
 			source.forEach(tuple -> {
 				checkCancelled(cancellationSignal);

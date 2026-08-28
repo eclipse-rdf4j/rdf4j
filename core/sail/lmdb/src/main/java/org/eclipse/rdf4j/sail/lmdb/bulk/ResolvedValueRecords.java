@@ -59,7 +59,8 @@ final class ResolvedValueRecords {
 			throw new IOException("Missing resolved value descriptors: " + descriptors);
 		}
 		ExternalLongTupleSorter.SortedTupleFile dependencies = ExternalLongTupleSorter.SortedTupleFile.restore(
-				workspace.resolve("resolved-value-components.bin"), 3, dependencyRecords, dependencyBytes, compression);
+				workspace.resolve("resolved-value-components.bin"), 3, dependencyRecords, dependencyBytes,
+				compression.codecFor(BulkArtifact.RESOLVED_VALUE_COMPONENTS));
 		return new ResolvedValueRecords(descriptors, dependencies, records, compression);
 	}
 
@@ -71,11 +72,12 @@ final class ResolvedValueRecords {
 		Path sortedDependencies = workspace.resolve("resolved-value-components.bin");
 		Files.createDirectories(bucketDirectory);
 		long[] sequence = { 0L };
-		try (DataOutputStream descriptors = BulkLz4.output(descriptorPath, compression);
+		try (DataOutputStream descriptors = BulkLz4.output(descriptorPath, compression.codecFor(BulkArtifact.RESOLVED_VALUES));
 				DependencyBucketWriter buckets = new DependencyBucketWriter(compression, bucketDirectory,
 						dictionary.partitionCount(), maxOpenFiles);
 				ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(workspace, "resolved-value-components", 3,
-						Math.max(16 * 1024L, memoryBudgetBytes / 2L), maxOpenFiles, compression)) {
+						Math.max(16 * 1024L, memoryBudgetBytes / 2L), maxOpenFiles,
+						compression.codecFor(BulkArtifact.RESOLVED_VALUE_COMPONENTS))) {
 			dictionary.forEachEntry(entry -> {
 				checkCancelled(cancellationSignal);
 				if (ValueIds.isInlined(entry.id())) {
@@ -144,8 +146,9 @@ final class ResolvedValueRecords {
 	}
 
 	void forEach(ResolvedValueConsumer consumer, BooleanSupplier cancellationSignal) throws IOException {
-		try (DataInputStream descriptorInput = BulkLz4.input(descriptors, compression);
-				DataInputStream dependencyInput = BulkLz4.input(dependencies.path(), compression)) {
+		try (DataInputStream descriptorInput = BulkLz4.input(descriptors,
+				compression.codecFor(BulkArtifact.RESOLVED_VALUES));
+				DataInputStream dependencyInput = BulkLz4.input(dependencies.path(), dependencies.codec())) {
 			long seen = 0L;
 			while (true) {
 				long sequence;
@@ -207,7 +210,8 @@ final class ResolvedValueRecords {
 
 	private static void readBucket(Path directory, int partition, BulkCompression compression,
 			DependencyVisitor visitor) throws IOException {
-		BulkLz4.readConcatenated(DependencyBucketWriter.path(directory, partition), compression,
+		BulkLz4.readConcatenated(DependencyBucketWriter.path(directory, partition),
+				compression.codecFor(BulkArtifact.VALUE_COMPONENT_BUCKETS),
 				input -> readBucketFrame(input, partition, visitor));
 	}
 
@@ -274,7 +278,8 @@ final class ResolvedValueRecords {
 			long routeHash = CanonicalTermCodec.routeHash64(key);
 			int partition = (int) routeHash & (partitionCount - 1);
 			DataOutputStream output = outputs.output(partition,
-					() -> BulkLz4.appendOutput(path(directory, partition), compression));
+					() -> BulkLz4.appendOutput(path(directory, partition),
+							compression.codecFor(BulkArtifact.VALUE_COMPONENT_BUCKETS)));
 			output.writeLong(owner);
 			output.writeByte(component);
 			output.writeLong(routeHash);

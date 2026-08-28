@@ -33,7 +33,7 @@ class ExternalByteKeySorterTest {
 	void boundsVariableRecordsInAReleasableNativeArenaAcrossMultiPassMerges() throws Exception {
 		Path output = temporaryDirectory.resolve("sorted.bin");
 		ExternalByteKeySorter sorter = new ExternalByteKeySorter(temporaryDirectory, "bytes", 192L, 3,
-				BulkCompression.FASTEST);
+				BulkCodec.FAST);
 
 		assertThat(usesNativeBuffer(sorter)).isTrue();
 		for (int value = 31; value >= 0; value--) {
@@ -55,7 +55,7 @@ class ExternalByteKeySorterTest {
 	void fallsBackToTheSameBoundedHeapLayoutWhenNativeAllocationFails() throws Exception {
 		Path output = temporaryDirectory.resolve("fallback.bin");
 		try (ExternalByteKeySorter sorter = new ExternalByteKeySorter(temporaryDirectory, "fallback", 192L, 3,
-				BulkCompression.FASTEST, (arena, bytes) -> {
+				BulkCodec.FAST, (arena, bytes) -> {
 					throw new OutOfMemoryError("injected direct-memory pressure");
 				})) {
 			assertThat(usesNativeBuffer(sorter)).isFalse();

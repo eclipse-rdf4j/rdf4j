@@ -79,7 +79,7 @@ final class ResolvedIdQuadSpool {
 		Path spoolPath = workspace.resolve("id-quads.bin");
 
 		try (ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(workspace, "resolved-components", 3,
-				memoryBudgetBytes, maxOpenFiles, compression)) {
+				memoryBudgetBytes, maxOpenFiles, compression.codecFor(BulkArtifact.RESOLVED_COMPONENTS))) {
 			if (useLocalityOptimization) {
 				resolveWithSubjectLocality(staged, dictionary, workspace, bucketDirectory, maxOpenFiles, sorter,
 						compression, cancellationSignal);
@@ -222,7 +222,7 @@ final class ResolvedIdQuadSpool {
 		long[] expectedOrdinal = { 0L };
 		int[] expectedComponent = { 0 };
 		long[] ids = new long[COMPONENTS];
-		try (DataOutputStream output = BulkLz4.output(spoolPath, compression)) {
+		try (DataOutputStream output = BulkLz4.output(spoolPath, compression.codecFor(BulkArtifact.ID_QUADS))) {
 			sorted.forEach(tuple -> {
 				checkCancelled(cancellationSignal);
 				long ordinal = tuple[0];
@@ -253,7 +253,8 @@ final class ResolvedIdQuadSpool {
 	private static void readComponentBucket(Path directory, int partition, BulkCompression compression,
 			ComponentVisitor visitor) throws IOException {
 		Path path = ComponentBucketWriter.path(directory, partition);
-		BulkLz4.readConcatenated(path, compression, input -> readComponentFrame(input, partition, visitor));
+		BulkLz4.readConcatenated(path, compression.codecFor(BulkArtifact.COMPONENT_BUCKETS),
+				input -> readComponentFrame(input, partition, visitor));
 	}
 
 	private static void readComponentFrame(DataInputStream input, int partition, ComponentVisitor visitor)
@@ -314,7 +315,8 @@ final class ResolvedIdQuadSpool {
 		private void write(long ordinal, int component, long routeHash, byte[] key) throws IOException {
 			int partition = (int) routeHash & (partitionCount - 1);
 			DataOutputStream output = outputs.output(partition,
-					() -> BulkLz4.appendOutput(path(directory, partition), compression));
+					() -> BulkLz4.appendOutput(path(directory, partition),
+							compression.codecFor(BulkArtifact.COMPONENT_BUCKETS)));
 			output.writeLong(ordinal);
 			output.writeByte(component);
 			output.writeLong(routeHash);
@@ -345,7 +347,8 @@ final class ResolvedIdQuadSpool {
 
 	private static void readSubjectStatementBucket(Path directory, int partition, int partitionCount,
 			BulkCompression compression, SubjectStatementVisitor visitor) throws IOException {
-		BulkLz4.readConcatenated(SubjectStatementBucketWriter.path(directory, partition), compression,
+		BulkLz4.readConcatenated(SubjectStatementBucketWriter.path(directory, partition),
+				compression.codecFor(BulkArtifact.SUBJECT_STATEMENT_BUCKETS),
 				input -> readSubjectStatementFrame(input, partition, partitionCount, visitor));
 	}
 
@@ -434,7 +437,8 @@ final class ResolvedIdQuadSpool {
 			long subjectHash = CanonicalTermCodec.routeHash64(subject);
 			int partition = (int) subjectHash & (partitionCount - 1);
 			DataOutputStream output = outputs.output(partition,
-					() -> BulkLz4.appendOutput(path(directory, partition), compression));
+					() -> BulkLz4.appendOutput(path(directory, partition),
+							compression.codecFor(BulkArtifact.SUBJECT_STATEMENT_BUCKETS)));
 			output.writeLong(ordinal);
 			writeKey(output, subjectHash, subject);
 			writeKey(output, CanonicalTermCodec.routeHash64(predicate), predicate);

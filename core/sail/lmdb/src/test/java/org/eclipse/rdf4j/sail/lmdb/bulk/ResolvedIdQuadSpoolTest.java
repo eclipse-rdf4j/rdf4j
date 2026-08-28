@@ -70,7 +70,8 @@ class ResolvedIdQuadSpoolTest {
 		path.setAccessible(true);
 		byte[] optimizedBytes = Files.readAllBytes((Path) path.invoke(spool));
 
-		try (DataInputStream input = BulkLz4.input((Path) path.invoke(spool), BulkCompression.FASTEST)) {
+		try (DataInputStream input = BulkLz4.input((Path) path.invoke(spool),
+				BulkCompression.FASTEST.codecFor(BulkArtifact.ID_QUADS))) {
 			assertRow(input, 0L, dictionary, first);
 			assertRow(input, 1L, dictionary, second);
 			assertThat(input.read()).isEqualTo(-1);

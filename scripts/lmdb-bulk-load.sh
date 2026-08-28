@@ -12,6 +12,8 @@
 
 set -eu
 
+date
+
 script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repository_root=$(CDPATH= cd -- "$script_directory/.." && pwd)
 tool_target="$repository_root/tools/lmdb-bulk-load/target"
@@ -65,3 +67,5 @@ else
 fi
 
 exec "$java_command" --enable-native-access=ALL-UNNAMED -jar "$tool_jar" "$@"
+
+date

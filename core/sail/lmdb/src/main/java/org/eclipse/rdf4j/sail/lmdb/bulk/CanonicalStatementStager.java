@@ -112,7 +112,7 @@ final class CanonicalStatementStager implements Closeable {
 	private void writeCanonicalRecord(byte[] subject, byte[] predicate, byte[] object, byte[] context)
 			throws IOException {
 		DataOutputStream output = outputs.output(STATEMENT_OUTPUT_KEY,
-				() -> BulkLz4.appendOutputHigh(statementPath, compression));
+				() -> BulkLz4.appendOutput(statementPath, compression.codecFor(BulkArtifact.STAGED_STATEMENTS)));
 		output.writeLong(statements);
 		writeBytes(output, subject);
 		writeBytes(output, predicate);
@@ -141,7 +141,7 @@ final class CanonicalStatementStager implements Closeable {
 
 	void writeNamespace(String prefix, String namespace) throws IOException {
 		DataOutputStream output = outputs.output(NAMESPACE_OUTPUT_KEY,
-				() -> BulkLz4.appendOutputHigh(namespacePath, compression));
+				() -> BulkLz4.appendOutput(namespacePath, compression.codecFor(BulkArtifact.STAGED_NAMESPACES)));
 		writeUtf8(output, prefix);
 		writeUtf8(output, namespace);
 	}
@@ -194,7 +194,8 @@ final class CanonicalStatementStager implements Closeable {
 		}
 		int partition = (int) hash & (partitionCount - 1);
 		DataOutputStream output = outputs.output(partition,
-				() -> BulkLz4.appendOutputHigh(valueBucketPath(valueDirectory, partition), compression));
+				() -> BulkLz4.appendOutput(valueBucketPath(valueDirectory, partition),
+						compression.codecFor(BulkArtifact.STAGED_VALUES)));
 		output.writeLong(hash);
 		output.writeByte(newRoles);
 		writeBytes(output, canonicalBytes);
@@ -234,8 +235,8 @@ final class CanonicalStatementStager implements Closeable {
 	}
 
 	private void writePredicateCounts() throws IOException {
-		try (DataOutputStream output = new DataOutputStream(
-				new BufferedOutputStream(Files.newOutputStream(predicateCountsPath), 64 * 1024))) {
+		try (DataOutputStream output = BulkLz4.output(predicateCountsPath,
+				compression.codecFor(BulkArtifact.PREDICATE_COUNTS))) {
 			output.writeInt(predicateCounts.size());
 			for (Map.Entry<ByteKey, long[]> entry : predicateCounts.entrySet()) {
 				writeBytes(output, entry.getKey().bytes());

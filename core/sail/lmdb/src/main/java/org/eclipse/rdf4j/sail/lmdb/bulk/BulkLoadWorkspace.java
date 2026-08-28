@@ -28,6 +28,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
@@ -38,11 +39,20 @@ import java.util.UUID;
  */
 final class BulkLoadWorkspace implements AutoCloseable {
 
-	private static final String DIRECTORY_SUFFIX = ".lmdb-bulk-load";
+	static final String DIRECTORY_SUFFIX = ".lmdb-bulk-load";
 	private static final String STATE_FILE_NAME = "state.properties";
 	private static final String PREVIOUS_STATE_FILE_NAME = "state.previous.properties";
 	private static final String STATE_VERSION = "1";
 	private static final String COMPRESSION_KEY = "compression";
+	/**
+	 * Marks how the recorded {@link #COMPRESSION_KEY} token is to be read. Version 2 is the per-artifact grammar, where
+	 * a preset such as {@code 9} covers every artifact. Its absence marks a workspace written by a loader that only
+	 * knew two tiers and always wrote the predicate counts and the predicate ID plan as raw bytes, whatever its token
+	 * said; those two artifacts have to be forced back to {@link BulkCodec#NONE} or a resume would try to LZ4-decode
+	 * raw files.
+	 */
+	private static final String COMPRESSION_VERSION_KEY = "compression.version";
+	private static final String COMPRESSION_VERSION = "2";
 
 	private final Path directory;
 	private final Path stateFile;
@@ -72,6 +82,16 @@ final class BulkLoadWorkspace implements AutoCloseable {
 
 	static BulkLoadWorkspace open(Path target, Path spillDirectory, ProgressListener listener, int workers,
 			int queueBatches, BulkCompression requestedCompression) throws IOException {
+		return open(target, spillDirectory, listener, workers, queueBatches, requestedCompression, null);
+	}
+
+	/**
+	 * @param requestedSettings the configuration this invocation would run under, recorded when the workspace is
+	 *                          created and checked against the recording when it is resumed; {@code null} skips both
+	 */
+	static BulkLoadWorkspace open(Path target, Path spillDirectory, ProgressListener listener, int workers,
+			int queueBatches, BulkCompression requestedCompression, BulkLoadSettings requestedSettings)
+			throws IOException {
 		Objects.requireNonNull(requestedCompression, "requestedCompression");
 		Path normalizedTarget = Objects.requireNonNull(target, "target").toAbsolutePath().normalize();
 		Path parent = normalizedTarget.getParent();
@@ -92,6 +112,7 @@ final class BulkLoadWorkspace implements AutoCloseable {
 			if (!normalizedTarget.toString().equals(recordedTarget)) {
 				throw new IOException("LMDB bulk-load state belongs to another target: " + recordedTarget);
 			}
+			requireSameConfiguration(existing.properties(), requestedSettings, normalizedTarget, directory);
 			BulkLoadProgress progress = new BulkLoadProgress(directory, listener, workers, queueBatches, true);
 			// A resumed load has to decode the intermediate files that are already on disk, so the recorded setting
 			// wins over whatever this invocation asked for. Workspaces written before the setting existed used
@@ -119,10 +140,14 @@ final class BulkLoadWorkspace implements AutoCloseable {
 		state.setProperty("target", normalizedTarget.toString());
 		state.setProperty("lifecycle", "ACTIVE");
 		state.setProperty(COMPRESSION_KEY, requestedCompression.token());
+		state.setProperty(COMPRESSION_VERSION_KEY, COMPRESSION_VERSION);
 		state.setProperty("spill.directory", spillDirectory == null ? ""
 				: spillDirectory.toAbsolutePath()
 						.normalize()
 						.toString());
+		if (requestedSettings != null) {
+			requestedSettings.store(state);
+		}
 		for (BulkLoadPhase phase : BulkLoadPhase.values()) {
 			state.setProperty(phaseKey(phase), "PENDING");
 		}
@@ -136,6 +161,52 @@ final class BulkLoadWorkspace implements AutoCloseable {
 			progress.close();
 			throw failure;
 		}
+	}
+
+	/**
+	 * Refuses a resume that would build on staged data with a configuration it was not built for. Workspaces written
+	 * before configurations were recorded carry no recording to check, and keep their previous behaviour.
+	 */
+	private static void requireSameConfiguration(Properties state, BulkLoadSettings requested, Path target,
+			Path directory) throws IOException {
+		if (requested == null) {
+			return;
+		}
+		BulkLoadSettings recorded = BulkLoadSettings.restore(state);
+		if (recorded == null) {
+			return;
+		}
+		List<String> differences = requested.structuralDifferencesFrom(recorded);
+		if (!differences.isEmpty()) {
+			throw new IOException("LMDB bulk load for " + target + " was started with a different configuration: "
+					+ String.join("; ", differences) + ". Resume it with the recorded configuration, or discard "
+					+ directory + " to start over.");
+		}
+	}
+
+	/**
+	 * Records what this load is reading, so a run interrupted while staging can read it again without being told.
+	 */
+	void recordInputs(BulkLoadInputs inputs) {
+		inputs.store(state);
+	}
+
+	/**
+	 * @return what the run was reading, or {@code null} when it was never recorded
+	 */
+	BulkLoadInputs recordedInputs() {
+		return BulkLoadInputs.restore(state);
+	}
+
+	/**
+	 * Reads a control directory's newest valid state without opening or locking the workspace, so a run can be
+	 * described before anyone decides to continue it. Returns {@code null} when the directory holds no state this
+	 * version can read.
+	 */
+	static Properties inspect(Path controlDirectory) throws IOException {
+		StateRevision newest = loadNewest(controlDirectory.resolve(STATE_FILE_NAME),
+				controlDirectory.resolve(PREVIOUS_STATE_FILE_NAME));
+		return newest == null ? null : newest.properties();
 	}
 
 	static Path controlDirectory(Path target) {
@@ -160,11 +231,17 @@ final class BulkLoadWorkspace implements AutoCloseable {
 		if (recorded == null) {
 			return BulkCompression.FASTEST;
 		}
+		BulkCompression compression;
 		try {
-			return BulkCompression.parse(recorded);
+			compression = BulkCompression.parse(recorded);
 		} catch (IllegalArgumentException e) {
 			throw new IOException("Invalid LMDB bulk-load compression in " + stateFile + ": " + recorded, e);
 		}
+		if (properties.getProperty(COMPRESSION_VERSION_KEY) == null) {
+			compression = compression.with(BulkArtifact.PREDICATE_COUNTS, BulkCodec.NONE)
+					.with(BulkArtifact.PREDICATE_ID_PLAN, BulkCodec.NONE);
+		}
+		return compression;
 	}
 
 	boolean phaseComplete(BulkLoadPhase phase) {
@@ -284,7 +361,7 @@ final class BulkLoadWorkspace implements AutoCloseable {
 		} catch (NumberFormatException e) {
 			throw new IOException("Invalid predicate ID plan count in " + stateFile, e);
 		}
-		return PredicateIdPlan.restore(directory, count);
+		return PredicateIdPlan.restore(directory, count, compression.codecFor(BulkArtifact.PREDICATE_ID_PLAN));
 	}
 
 	void recordResolved(ResolvedIdQuadSpool statements, ResolvedValueRecords values) throws IOException {
@@ -609,7 +686,7 @@ final class BulkLoadWorkspace implements AutoCloseable {
 		}
 	}
 
-	private static void deleteOwnedTree(Path root) throws IOException {
+	static void deleteOwnedTree(Path root) throws IOException {
 		if (Files.notExists(root)) {
 			return;
 		}
