@@ -1731,7 +1731,7 @@ class TripleStore implements Closeable {
 	 */
 	public void removeTriplesByContext(long subj, long pred, long obj, long context,
 			boolean explicit, Consumer<long[]> handler) throws IOException {
-		RecordIterator records = getTriples(txnManager.createTxn(writeTxn), subj, pred, obj, context, explicit);
+		RecordIterator records = getTriples(txnManager.createReadTxn(), subj, pred, obj, context, explicit);
 		removeTriples(records, explicit, handler);
 	}
 
@@ -1763,7 +1763,7 @@ class TripleStore implements Closeable {
 				}
 
 				// copy quad that is going to be deleted and go to next one
-				// this is required as the it.next() relies on the key and value buffers of the current quad
+				// this is required as it.next() relies on the key and value buffers of the current quad
 				System.arraycopy(quad, 0, toDelete, 0, 4);
 				quad = it.next();
 				for (TripleIndex index : indexes) {
