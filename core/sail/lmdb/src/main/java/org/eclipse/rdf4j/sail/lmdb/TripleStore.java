@@ -343,13 +343,17 @@ class TripleStore implements Closeable {
 					MDBVal dataValue = MDBVal.callocStack(stack);
 					ByteBuffer dataBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 					dataValue.mv_data(dataBuf);
+					ByteBuffer mergedBuf = stack.malloc(500 + TripleIndex.MAX_KEY_LENGTH);
+					PointerBuffer pCursor = stack.mallocPointer(1);
 					for (String fieldSeq : addedIndexSpecs) {
 						logger.debug("Initializing new index '{}'...", fieldSeq);
 
 						TripleIndex addedIndex = new TripleIndex(getIndexName(fieldSeq), fieldSeq,
-								sourceIndex.getIndexSplitPosition(),
-								true, env, writeTxn);
+								sourceIndex.getIndexSplitPosition(), true, env, writeTxn);
 						RecordIterator[] sourceIter = { null };
+						long cursor;
+						E(mdb_cursor_open(writeTxn, addedIndex.getDB(explicit), pCursor));
+						cursor = pCursor.get(0);
 						try {
 							sourceIter[0] = new LmdbRecordIterator(sourceIndex, 0, -1, -1, -1, -1,
 									explicit, txnManager.createTxn(writeTxn));
@@ -359,8 +363,7 @@ class TripleStore implements Closeable {
 							while ((quad = it.next()) != null) {
 								keyBuf.clear();
 								dataBuf.clear();
-								addedIndex.toEntry(keyBuf, dataBuf, quad[0], quad[1], quad[2],
-										quad[3]);
+								addedIndex.toEntry(keyBuf, dataBuf, quad[0], quad[1], quad[2], quad[3]);
 								keyBuf.flip();
 								dataBuf.flip();
 
@@ -391,9 +394,11 @@ class TripleStore implements Closeable {
 									startTransaction();
 								}
 
-								E(mdb_put(writeTxn, addedIndex.getDB(explicit), keyValue, dataValue, 0));
+								E(merge(cursor, 4 - addedIndex.getIndexSplitPosition(), keyValue, dataValue, dataBuf,
+										mergedBuf));
 							}
 						} finally {
+							mdb_cursor_close(cursor);
 							if (sourceIter[0] != null) {
 								sourceIter[0].close();
 							}
@@ -1583,8 +1588,7 @@ class TripleStore implements Closeable {
 	}
 
 	private long getAlignedWriteCursor(int indexPosition, TripleIndex index, boolean explicit,
-			PointerBuffer cursorHandle)
-			throws IOException {
+			PointerBuffer cursorHandle) throws IOException {
 		long[] alignedWriteCursors = explicit ? explicitAlignedWriteCursors : inferredAlignedWriteCursors;
 		long cursor = alignedWriteCursors[indexPosition];
 		if (cursor != 0) {
