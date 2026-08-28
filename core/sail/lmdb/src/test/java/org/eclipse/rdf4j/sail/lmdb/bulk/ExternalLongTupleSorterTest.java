@@ -12,10 +12,13 @@
 package org.eclipse.rdf4j.sail.lmdb.bulk;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -56,6 +59,34 @@ class ExternalLongTupleSorterTest {
 					.forEach(tuple -> firstColumns.add(tuple[0]));
 
 			assertThat(firstColumns).containsExactly(0L, 1L, Long.MIN_VALUE, -1L);
+		}
+	}
+
+	@Test
+	void failedMergeDeletesThePartialPassFile() throws Exception {
+		try (ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(temporaryDirectory, "leak", 1, 16L, 3,
+				BulkCompression.FASTEST)) {
+			for (long value = 0; value < 5; value++) {
+				sorter.add1(value);
+			}
+
+			List<Path> runs;
+			try (var files = Files.list(temporaryDirectory)) {
+				runs = files.filter(path -> path.getFileName().toString().startsWith("leak-run-"))
+						.toList();
+			}
+			assertThat(runs).hasSizeGreaterThan(2);
+			for (Path run : runs) {
+				Files.delete(run);
+			}
+
+			assertThatThrownBy(() -> sorter.finish(temporaryDirectory.resolve("leak-output.bin")))
+					.isInstanceOfAny(IOException.class, RuntimeException.class);
+
+			try (var files = Files.list(temporaryDirectory)) {
+				assertThat(files.filter(path -> path.getFileName().toString().startsWith("leak-pass-")))
+						.isEmpty();
+			}
 		}
 	}
 

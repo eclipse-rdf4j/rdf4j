@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 
+import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 import org.junit.jupiter.api.Test;
 
 class LmdbPagedCsfBaseBuilderTest {
@@ -80,9 +81,8 @@ class LmdbPagedCsfBaseBuilderTest {
 		try (LmdbInMemoryAdjacencyIndex base = LmdbPagedCsfBaseBuilder.build(new SyntheticScanner(),
 				LmdbAdjacencyCoverage.full(), account, 1L << 20, 1L << 16)) {
 			// The base survives, in the paged format, simply without the projection.
-			assertThat(base.usesPagedCsf()).isTrue();
 			assertThat(base.nodePredicateIndexOrNull()).isNull();
-			assertThat(base.supportsPredicateEnumeration(LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT)).isFalse();
+			assertThat(base.supportsPredicateEnumeration(LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT)).isFalse();
 			assertThatThrownBy(base::nodePredicateIndex).isInstanceOf(IllegalStateException.class);
 
 			// The primary index is fully usable.
@@ -121,15 +121,13 @@ class LmdbPagedCsfBaseBuilderTest {
 	}
 
 	@Test
-	void preservesTheLegacyRunApiWhileStoringRawContextFibresInCsf() throws IOException {
+	void storesRawContextFibresInCsf() throws IOException {
 		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
 		try (LmdbInMemoryAdjacencyIndex base = LmdbPagedCsfBaseBuilder.build(new SyntheticScanner(),
 				LmdbAdjacencyCoverage.full(), account, 1L << 20, 1L << 16)) {
-			assertThat(base.usesPagedCsf()).isTrue();
-			assertThat(base.supportsPredicateEnumeration()).isFalse();
-			assertThat(base.supportsPredicateEnumeration(LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT)).isTrue();
-			assertThat(base.supportsPredicateEnumeration(LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED)).isTrue();
-			assertThat(base.supportsPredicateEnumeration(LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT)).isFalse();
+			assertThat(base.supportsPredicateEnumeration(LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT)).isTrue();
+			assertThat(base.supportsPredicateEnumeration(LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED)).isTrue();
+			assertThat(base.supportsPredicateEnumeration(LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT)).isFalse();
 			assertThat(base.statementCount()).isEqualTo(4);
 			assertThat(base.incidenceCount()).isEqualTo(8);
 
@@ -149,7 +147,7 @@ class LmdbPagedCsfBaseBuilderTest {
 			assertThat(LmdbAdjacencyRunCodec.neighborAt(base.arenaCatalog(), inferredIncoming, 0))
 					.isEqualTo(id(1, 10));
 
-			LmdbAdjacencyKeyIndex keys = base.keyIndex(predicate, 0);
+			ImmutablePagedQuadCsfIndex.KeyDomain keys = base.keyDomain(predicate, 0);
 			assertThat(keys.keyCount()).isEqualTo(2);
 			assertThat(keys.keyAt(0)).isEqualTo(id(1, 10));
 			assertThat(keys.keyAt(1)).isEqualTo(id(1, 12));

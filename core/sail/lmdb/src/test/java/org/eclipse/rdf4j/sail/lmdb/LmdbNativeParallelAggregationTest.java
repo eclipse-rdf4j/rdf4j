@@ -54,7 +54,7 @@ public class LmdbNativeParallelAggregationTest {
 	private static final String EX = "http://example.com/";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String PARALLEL_FLAG = "rdf4j.lmdb.parallel.enabled";
-	private static final String THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minRootEstimate";
+	private static final String THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minWorkEstimate";
 	private static final String THREADS_FLAG = "rdf4j.lmdb.parallel.threads";
 	private static final String MAX_TASKS_FLAG = "rdf4j.lmdb.parallel.maxTasks";
 	private static final String MERGE_FLAG = "rdf4j.lmdb.chunkPipeline.merge.enabled";

@@ -158,7 +158,6 @@ final class LmdbPagedCsfBaseBuilder {
 					sortedContexts);
 			long partitionCountLong = Math.multiplyExact((long) sortedPredicates.length,
 					ImmutablePagedQuadCsfIndex.PLANE_COUNT);
-			int partitionCount = Math.toIntExact(partitionCountLong);
 			long wrapperMetadataBytes = Math.addExact(arrayBytes(sortedPredicates.length, Long.BYTES),
 					Math.addExact(arrayBytes(partitionCountLong, REFERENCE_BYTES),
 							Math.addExact(Math.multiplyExact(partitionCountLong, 64L), 2_048L)));
@@ -260,23 +259,14 @@ final class LmdbPagedCsfBaseBuilder {
 					}
 				}
 
-				LmdbAdjacencyKeyIndex[] keyIndexes = new LmdbAdjacencyKeyIndex[partitionCount];
-				for (int predicate = 0; predicate < sortedPredicates.length; predicate++) {
-					for (int plane = 0; plane < ImmutablePagedQuadCsfIndex.PLANE_COUNT; plane++) {
-						int index = predicate * ImmutablePagedQuadCsfIndex.PLANE_COUNT + plane;
-						keyIndexes[index] = LmdbAdjacencyKeyIndex.fromCsf(csf.keyDomain(predicate, plane));
-					}
-				}
-
 				catalog = LmdbAdjacencyArenaCatalog.of(dictionaryArena, csf);
 				sharedDictionaryCharge = new LmdbAdjacencySharedCharge(dictionaryCharge.transfer());
 				persistentWrapperMetadata = wrapperMetadataCharge.transfer();
 				long statements = Math.addExact(sizingTotals.pairs[0], sizingTotals.pairs[2]);
 				long incidences = sizingTotals.totalPairs();
 				LmdbInMemoryAdjacencyIndex index = new LmdbInMemoryAdjacencyIndex(baseRevision, catalog,
-						predicateCatalog, contextCatalog, coverage, null, csf, nodePredicateIndex, keyIndexes,
-						new long[0],
-						new LmdbInlineIncomingIndex[0], sharedDictionaryCharge, new Charge[0],
+						predicateCatalog, contextCatalog, coverage, csf, nodePredicateIndex, sharedDictionaryCharge,
+						new Charge[0],
 						persistentWrapperMetadata, statements, incidences,
 						LmdbAdjacencyPlaneStatistics.fromCsf(sortedPredicates, csf));
 				catalog = null;
@@ -524,8 +514,8 @@ final class LmdbPagedCsfBaseBuilder {
 				}
 				continue;
 			}
-			boolean outgoing = plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
-					|| plane == LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED;
+			boolean outgoing = plane == LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+					|| plane == LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED;
 			if (predicateTargetRanges > 1 && primary.supportsPredicatePartitionedScan(outgoing)) {
 				partitioned = true;
 				copiedPredicateIds = Math.addExact(copiedPredicateIds, sortedPredicates.length);
@@ -541,7 +531,7 @@ final class LmdbPagedCsfBaseBuilder {
 		}
 		if (ranges.isEmpty()) {
 			// mergeBuildPlans requires one exact empty fragment. No source row can match an empty predicate catalog.
-			ranges.add(new ScanRange(0, LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT,
+			ranges.add(new ScanRange(0, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT,
 					LmdbAdjacencyCoverage.selectedRange(sortedPredicates, 0, 0), 0, 0, null));
 		}
 		long metadataBytes = Math.addExact(Math.multiplyExact((long) ranges.size(), MODELED_RANGE_METADATA_BYTES),

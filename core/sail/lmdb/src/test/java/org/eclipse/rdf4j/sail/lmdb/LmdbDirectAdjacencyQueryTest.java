@@ -64,7 +64,6 @@ import ch.qos.logback.core.read.ListAppender;
  * fall back with its closed-enum reason while results stay correct.
  */
 class LmdbDirectAdjacencyQueryTest {
-	private static final String LEGACY_BASE_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.directAdjacency.legacyBase";
 
 	private static final ValueFactory F = SimpleValueFactory.getInstance();
 
@@ -126,7 +125,6 @@ class LmdbDirectAdjacencyQueryTest {
 			repo.shutDown();
 		}
 		System.clearProperty(LmdbDirectAdjacencyOptions.SHADOW_SAMPLE_EVERY_PROPERTY);
-		System.clearProperty(LEGACY_BASE_PROPERTY);
 		System.clearProperty(LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY);
 		System.clearProperty(LmdbDirectAdjacencyStore.BOUND_PROBE_PROPERTY);
 		System.clearProperty(LmdbDirectAdjacencyStore.CLEAN_TXN_READS_PROPERTY);
@@ -690,7 +688,6 @@ class LmdbDirectAdjacencyQueryTest {
 	@Test
 	void boundSubjectUnboundPredicateEnumeratesEveryGroup() throws IOException {
 		openPreferStore();
-		assertThat(direct.publishedStateForTest().base().usesPagedCsf()).isTrue();
 		long fallbackBefore = direct.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
 		long hitsBefore = direct.snapshotMetrics().lookupHits;
 		try (var dataset = dataset()) {
@@ -706,26 +703,7 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
-	void legacyBaseSwitchRetainsAcceleratedPredicateEnumeration() throws IOException {
-		System.setProperty(LEGACY_BASE_PROPERTY, "true");
-		openPreferStore();
-		assertThat(direct.publishedStateForTest().base().usesPagedCsf()).isFalse();
-		long fallbackBefore = direct.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
-		long hitsBefore = direct.snapshotMetrics().lookupHits;
-		try (var dataset = dataset()) {
-			assertSameRows(dataset.rows(s1, -1, -1, -1), List.of(
-					new long[] { s1, p1, o1, 0 },
-					new long[] { s1, p1, o2, g1 },
-					new long[] { s1, p2, o1, 0 },
-					new long[] { s1, p3, inline42, 0 }));
-		}
-		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE))
-				.isEqualTo(fallbackBefore);
-		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
-	}
-
-	@Test
-	void pagedBaseUnboundPredicateInlineObjectFallsBackBeforeFirstResult() throws IOException {
+	void unboundPredicateInlineObjectFallsBackWithoutIncomingProjection() throws IOException {
 		openPreferStore();
 		long fallbackBefore = direct.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
 		long hitsBefore = direct.snapshotMetrics().lookupHits;
@@ -734,21 +712,6 @@ class LmdbDirectAdjacencyQueryTest {
 					new long[] { s1, p3, inline42, 0 }));
 		}
 		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE))
-				.isGreaterThan(fallbackBefore);
-		assertThat(direct.snapshotMetrics().lookupHits).isEqualTo(hitsBefore);
-	}
-
-	@Test
-	void legacyBaseUnboundPredicateInlineObjectUsesInlineFallback() throws IOException {
-		System.setProperty(LEGACY_BASE_PROPERTY, "true");
-		openPreferStore();
-		long fallbackBefore = direct.snapshotMetrics().fallbacks(FallbackReason.INLINE_NOT_COVERED);
-		long hitsBefore = direct.snapshotMetrics().lookupHits;
-		try (var dataset = dataset()) {
-			assertSameRows(dataset.rows(-1, -1, inline42, -1), List.of(
-					new long[] { s1, p3, inline42, 0 }));
-		}
-		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.INLINE_NOT_COVERED))
 				.isEqualTo(fallbackBefore + 1);
 		assertThat(direct.snapshotMetrics().lookupHits).isEqualTo(hitsBefore);
 	}
@@ -1056,8 +1019,7 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
-	void flaggedLegacyBaseServesExactCountAndPredicateAnalytics() throws IOException {
-		System.setProperty(LEGACY_BASE_PROPERTY, "true");
+	void pagedBaseServesExactCountAndPredicateAnalytics() throws IOException {
 		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		openPreferStore();

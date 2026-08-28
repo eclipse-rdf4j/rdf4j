@@ -52,9 +52,6 @@ public class DirectAdjacencyRetainedProbeBenchmark {
 
 	private static final int KEY_COUNT = 16;
 
-	@Param({ "paged", "legacy" })
-	public String baseFormat;
-
 	private File dataDir;
 	private SailRepository repository;
 	private SailDataset dataset;
@@ -64,21 +61,13 @@ public class DirectAdjacencyRetainedProbeBenchmark {
 
 	@Setup(Level.Trial)
 	public void setUp() throws IOException {
-		boolean legacyBase = "legacy".equals(baseFormat);
-		if (!legacyBase && !"paged".equals(baseFormat)) {
-			throw new IllegalArgumentException("unknown base format: " + baseFormat);
-		}
 		dataDir = Files.createTempDirectory("rdf4j-retained-direct-probe-jmh-").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
-		LmdbStore sail;
-		try (LmdbDirectAdjacencyStore.BaseFormatSelection ignored = LmdbDirectAdjacencyStore
-				.overrideBaseFormatForCurrentThread(legacyBase)) {
-			sail = new LmdbStore(dataDir, config);
-			repository = new SailRepository(sail);
-			repository.init();
-		}
+		LmdbStore sail = new LmdbStore(dataDir, config);
+		repository = new SailRepository(sail);
+		repository.init();
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		IRI predicateValue = values.createIRI("urn:jmh:predicate");
 		try (RepositoryConnection connection = repository.getConnection()) {
@@ -91,13 +80,9 @@ public class DirectAdjacencyRetainedProbeBenchmark {
 		LmdbDirectAdjacencyStore direct = backing.directAdjacencyStore();
 		if (!direct.buildNowForTest()) {
 			LmdbAdjacencyPublishedState published = direct.publishedStateForTest();
-			throw new IllegalStateException("direct adjacency build was refused for " + baseFormat + ": maintenance="
+			throw new IllegalStateException("direct adjacency build was refused: maintenance="
 					+ direct.maintenanceState() + ", serving=" + published.servingState() + ", base="
 					+ (published.base() != null));
-		}
-		boolean expectPaged = "paged".equals(baseFormat);
-		if (direct.publishedStateForTest().base().usesPagedCsf() != expectPaged) {
-			throw new IllegalStateException("wrong base format: " + baseFormat);
 		}
 		dataset = backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
 		NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;

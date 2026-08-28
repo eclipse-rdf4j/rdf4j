@@ -76,11 +76,11 @@ class LmdbDirectAdjacencyCommitDeltaSortTest {
 		try {
 			PendingTable pending = sealed.pendingTable();
 			assertThat(pending.rowCount()).isEqualTo(2);
-			assertThat(pending.touches(Long.MIN_VALUE, LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED, -1))
+			assertThat(pending.touches(Long.MIN_VALUE, LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED, -1))
 					.isTrue();
-			assertThat(pending.touches(Long.MAX_VALUE, LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED, -1))
+			assertThat(pending.touches(Long.MAX_VALUE, LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED, -1))
 					.isTrue();
-			assertThat(pending.touches(0, LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED, -1)).isFalse();
+			assertThat(pending.touches(0, LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED, -1)).isFalse();
 		} finally {
 			sealed.close();
 		}
@@ -117,10 +117,10 @@ class LmdbDirectAdjacencyCommitDeltaSortTest {
 				delta.recordRemove(event.subject, event.predicate, event.object, 0, event.explicit);
 			}
 
-			int outgoingPlane = event.explicit ? LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
-					: LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED;
-			int incomingPlane = event.explicit ? LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT
-					: LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED;
+			int outgoingPlane = event.explicit ? LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+					: LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED;
+			int incomingPlane = event.explicit ? LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT
+					: LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED;
 			expectedRows.add(new Row(event.subject, outgoingPlane, event.predicate));
 			expectedRows.add(new Row(event.object, incomingPlane, event.predicate));
 			expectedNodes.add(new Node(event.subject, outgoingPlane));
@@ -210,8 +210,8 @@ class LmdbDirectAdjacencyCommitDeltaSortTest {
 	}
 
 	private static void assertAbsentRowsAndNodes(PendingTable pending, Set<Row> rows, Set<Node> nodes) {
-		int firstPlane = LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT;
-		int lastPlane = LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED;
+		int firstPlane = LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT;
+		int lastPlane = LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED;
 		for (int plane = firstPlane; plane <= lastPlane; plane++) {
 			long rowKey = 0x243f6a8885a308d3L ^ plane;
 			long predicate = 0x13198a2e03707344L;

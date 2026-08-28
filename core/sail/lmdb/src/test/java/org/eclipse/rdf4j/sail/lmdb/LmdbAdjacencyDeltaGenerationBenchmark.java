@@ -172,7 +172,7 @@ public class LmdbAdjacencyDeltaGenerationBenchmark {
 	}
 
 	private static int planeFor(long rawKey) {
-		return (int) ((rawKey >>> 1) & (LmdbReferenceNodeLocator.PLANE_COUNT - 1));
+		return (int) ((rawKey >>> 1) & (LmdbAdjacencyPlane.PLANE_COUNT - 1));
 	}
 
 	private static long predicateFor(long rawKey) {

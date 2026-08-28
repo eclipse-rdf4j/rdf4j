@@ -25,6 +25,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
+import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
+import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ParallelSource;
 import org.junit.jupiter.api.Test;
@@ -469,6 +472,75 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 	}
 
 	@Test
+	void parallelCompositeDelegatesTripleTermAndMetadataCapabilities() throws IOException {
+		try (CapabilityFixture fixture = openCapabilityFixture()) {
+			assertThat(fixture.parallel.supportsTripleTermScan()).isTrue();
+			try (RecordIterator iterator = fixture.parallel.tripleTerms(1, 2, 3)) {
+				assertThat(iterator.next()).containsExactly(1, 2, 3, 91);
+				assertThat(iterator.next()).isNull();
+			}
+			assertThat(fixture.parallel.literalDatatypeId(17)).isEqualTo(91L);
+			assertThat(fixture.parallel.costModelIdentity()).isSameAs(fixture.costModelIdentity);
+		}
+	}
+
+	@Test
+	void parallelCompositeForwardsEveryAdjacencyObserverVariant() throws IOException {
+		try (CapabilityFixture fixture = openCapabilityFixture()) {
+			NativeLmdbQuerySource.AdjacencyAccessObserver observer = (used, reason, order, subj, pred, obj,
+					context) -> {
+			};
+			LmdbKeyRange range = new LmdbKeyRange(null, null, "spoc");
+
+			drain(fixture.parallel.statements(1, 2, 3, 4, observer));
+			drain(fixture.parallel.statements(1, 2, 3, 4, range, observer));
+			drain(fixture.parallel.statements(StatementOrder.S, 1, 2, 3, 4, observer));
+			drain(fixture.parallel.lmdbStatements(1, 2, 3, 4, observer));
+			drain(fixture.parallel.lmdbStatements(StatementOrder.S, 1, 2, 3, 4, observer));
+
+			for (CapabilityParallelSource child : List.of(fixture.left, fixture.right)) {
+				assertThat(child.observedStatements).isOne();
+				assertThat(child.observedRangeStatements).isOne();
+				assertThat(child.observedOrderedStatements).isOne();
+				assertThat(child.observedLmdbStatements).isOne();
+				assertThat(child.observedOrderedLmdbStatements).isOne();
+			}
+		}
+	}
+
+	@Test
+	void parallelCompositeDelegatesPrefixRunCapabilities() throws IOException {
+		try (CapabilityFixture fixture = openCapabilityFixture()) {
+			LmdbPrefixRunPlan plan = fixture.parallel.prefixRunPlan(new int[] { 0 }, -1, -1, -1, -1);
+			LmdbPrefixRunCursor cursor = fixture.parallel.prefixRuns(null, -1, -1, -1, -1, false);
+
+			assertThat(plan).isNull();
+			assertThat(fixture.left.prefixPlanCalls).isOne();
+			assertThat(cursor).isSameAs(LmdbPrefixRunCursor.EMPTY);
+			cursor.close();
+		}
+	}
+
+	private static CapabilityFixture openCapabilityFixture() throws IOException {
+		Object idSpace = new Object();
+		Object costModelIdentity = new Object();
+		CapabilityParallelSource left = new CapabilityParallelSource(idSpace, costModelIdentity);
+		CapabilityParallelSource right = new CapabilityParallelSource(idSpace, costModelIdentity);
+		NativeLmdbQuerySource source = CompositeNativeLmdbQuerySource.combine(List.of(
+				ParallelOpeningSource.active(idSpace, left),
+				ParallelOpeningSource.active(idSpace, right)));
+		return new CapabilityFixture(source.openParallelSources(1)[0], left, right, costModelIdentity);
+	}
+
+	private static void drain(RecordIterator iterator) throws IOException {
+		try (iterator) {
+			while (iterator.next() != null) {
+				// drain all composite members so every delegated observer call is visible
+			}
+		}
+	}
+
+	@Test
 	void parallelOpenFailurePreservesPrimaryAndClosesEveryOpenedSibling() {
 		Object idSpace = new Object();
 		IOException openFailure = new IOException("synthetic parallel open failure");
@@ -568,6 +640,143 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 			assertThat(source.probeCreations).isEqualTo(1);
 			assertThat(source.probeCloseCalls).isEqualTo(1);
 			assertThat(source.probeCloses).isEqualTo(1);
+		}
+	}
+
+	private record CapabilityFixture(ParallelSource parallel, CapabilityParallelSource left,
+			CapabilityParallelSource right, Object costModelIdentity) implements AutoCloseable {
+
+		@Override
+		public void close() {
+			parallel.close();
+		}
+	}
+
+	private static final class CapabilityParallelSource extends StubSource implements ParallelSource {
+
+		private final Object costModelIdentity;
+		private int prefixPlanCalls;
+		private int observedStatements;
+		private int observedRangeStatements;
+		private int observedOrderedStatements;
+		private int observedLmdbStatements;
+		private int observedOrderedLmdbStatements;
+
+		private CapabilityParallelSource(Object idSpace, Object costModelIdentity) {
+			super(idSpace);
+			this.costModelIdentity = costModelIdentity;
+		}
+
+		@Override
+		public boolean supportsTripleTermScan() {
+			return true;
+		}
+
+		@Override
+		public RecordIterator tripleTerms(long subj, long pred, long obj) {
+			return singleRow(subj, pred, obj, 91);
+		}
+
+		@Override
+		public long literalDatatypeId(long id) {
+			return 91L;
+		}
+
+		@Override
+		public Object costModelIdentity() {
+			return costModelIdentity;
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context) {
+			return emptyRows();
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) {
+			if (observer != null) {
+				observedStatements++;
+			}
+			return emptyRows();
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range,
+				AdjacencyAccessObserver observer) {
+			if (observer != null) {
+				observedRangeStatements++;
+			}
+			return emptyRows();
+		}
+
+		@Override
+		public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) {
+			if (observer != null) {
+				observedOrderedStatements++;
+			}
+			return emptyRows();
+		}
+
+		@Override
+		public RecordIterator lmdbStatements(long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) {
+			if (observer != null) {
+				observedLmdbStatements++;
+			}
+			return emptyRows();
+		}
+
+		@Override
+		public RecordIterator lmdbStatements(StatementOrder order, long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) {
+			if (observer != null) {
+				observedOrderedLmdbStatements++;
+			}
+			return emptyRows();
+		}
+
+		@Override
+		public LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
+			prefixPlanCalls++;
+			return null;
+		}
+
+		@Override
+		public void close() {
+		}
+
+		private static RecordIterator singleRow(long subj, long pred, long obj, long context) {
+			return new RecordIterator() {
+				private boolean emitted;
+
+				@Override
+				public long[] next() {
+					if (emitted) {
+						return null;
+					}
+					emitted = true;
+					return new long[] { subj, pred, obj, context };
+				}
+
+				@Override
+				public void close() {
+				}
+			};
+		}
+
+		private static RecordIterator emptyRows() {
+			return new RecordIterator() {
+				@Override
+				public long[] next() {
+					return null;
+				}
+
+				@Override
+				public void close() {
+				}
+			};
 		}
 	}
 

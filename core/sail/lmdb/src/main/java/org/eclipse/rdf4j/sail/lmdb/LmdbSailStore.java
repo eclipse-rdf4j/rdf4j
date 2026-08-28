@@ -3227,13 +3227,13 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private RecordIterator tryDirect(StatementOrder order, long subj, long pred, long obj, long context,
-				LmdbReferenceNodeLocator.SearchContext searchContext,
+				LmdbAdjacencyLookupContext searchContext,
 				LmdbDirectAdjacencyIterator reusableIterator) throws IOException {
 			return tryDirect(order, subj, pred, obj, context, searchContext, reusableIterator, null);
 		}
 
 		private RecordIterator tryDirect(StatementOrder order, long subj, long pred, long obj, long context,
-				LmdbReferenceNodeLocator.SearchContext searchContext,
+				LmdbAdjacencyLookupContext searchContext,
 				LmdbDirectAdjacencyIterator reusableIterator, AdjacencyAccessObserver observer) throws IOException {
 			LmdbAdjacencyReadView view = exactAdjacencyView(true);
 			if (view == null) {
@@ -3562,7 +3562,7 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public NativeProbe newProbe() {
 			return new NativeProbe() {
-				private final LmdbReferenceNodeLocator.SearchContext searchContext = new LmdbReferenceNodeLocator.SearchContext();
+				private final LmdbAdjacencyLookupContext searchContext = new LmdbAdjacencyLookupContext();
 				private final LmdbDirectAdjacencyIterator retainedDirect = new LmdbDirectAdjacencyIterator();
 				private LmdbRecordIterator retained;
 				private RecordIterator currentDirect;
@@ -3967,18 +3967,18 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private RecordIterator tryDirect(StatementOrder order, long subj, long pred, long obj, long context,
-				LmdbReferenceNodeLocator.SearchContext searchContext) throws IOException {
+				LmdbAdjacencyLookupContext searchContext) throws IOException {
 			return tryDirect(order, subj, pred, obj, context, searchContext, null);
 		}
 
 		private RecordIterator tryDirect(StatementOrder order, long subj, long pred, long obj, long context,
-				LmdbReferenceNodeLocator.SearchContext searchContext,
+				LmdbAdjacencyLookupContext searchContext,
 				LmdbDirectAdjacencyIterator reusableIterator) throws IOException {
 			return tryDirect(order, subj, pred, obj, context, searchContext, reusableIterator, null);
 		}
 
 		private RecordIterator tryDirect(StatementOrder order, long subj, long pred, long obj, long context,
-				LmdbReferenceNodeLocator.SearchContext searchContext,
+				LmdbAdjacencyLookupContext searchContext,
 				LmdbDirectAdjacencyIterator reusableIterator, AdjacencyAccessObserver observer) throws IOException {
 			if (adjacencyView == null || !adjacencyView.isExact()) {
 				observeDirectUnavailable(observer, order, subj, pred, obj, context,
@@ -4497,7 +4497,7 @@ class LmdbSailStore implements SailStore {
 		 * source-open check runs once per open(), the same granularity the batched wrapper already reduced it to.
 		 */
 		private final class RetainedNativeProbe implements NativeProbe {
-			private final LmdbReferenceNodeLocator.SearchContext searchContext = new LmdbReferenceNodeLocator.SearchContext();
+			private final LmdbAdjacencyLookupContext searchContext = new LmdbAdjacencyLookupContext();
 			private final LmdbDirectAdjacencyIterator retainedDirect = new LmdbDirectAdjacencyIterator();
 			private long readStamp;
 			private boolean stampHeld;

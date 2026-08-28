@@ -70,10 +70,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 4, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
+@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
-@Measurement(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
+@Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
@@ -136,10 +136,10 @@ public class ThemeQueryBenchmark {
 	public int z_queryIndex;
 
 	@Param({
-//			"MEDICAL_RECORDS",
-//			"SOCIAL_MEDIA",
-//			"LIBRARY",
-//			"ENGINEERING",
+			"MEDICAL_RECORDS",
+			"SOCIAL_MEDIA",
+			"LIBRARY",
+			"ENGINEERING",
 //			"HIGHLY_CONNECTED",
 //			"TRAIN",
 //			"ELECTRICAL_GRID",
@@ -199,12 +199,23 @@ public class ThemeQueryBenchmark {
 			if (QueryPlanCapture.isCaptureEnabled()) {
 				captureQueryPlanSnapshot();
 			}
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+				tupleQuery.setMaxExecutionTime(1);
+				try (TupleQueryResult evaluate = tupleQuery.evaluate()) {
+					evaluate.stream().count();
+				}
+			}
+			Thread.sleep(4000);
+
 		} catch (IOException | RuntimeException e) {
 			if (repository != null) {
 				repository.shutDown();
 			}
 			restoreJaninoCodegenProperties();
 			throw e;
+		} catch (InterruptedException e) {
+			throw new RuntimeException(e);
 		}
 
 	}

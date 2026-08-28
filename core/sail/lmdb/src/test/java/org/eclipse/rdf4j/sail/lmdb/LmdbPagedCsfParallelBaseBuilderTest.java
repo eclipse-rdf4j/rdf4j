@@ -158,7 +158,7 @@ class LmdbPagedCsfParallelBaseBuilderTest {
 				long predicate = ManyRangeScanner.predicate(predicateOrdinal);
 				long row = ValueIds.createId(ValueIds.T_URI, 100 + predicateOrdinal);
 				long neighbor = ValueIds.createId(ValueIds.T_URI, 200 + predicateOrdinal);
-				for (int plane = 0; plane < LmdbReferenceNodeLocator.PLANE_COUNT; plane++) {
+				for (int plane = 0; plane < LmdbAdjacencyPlane.PLANE_COUNT; plane++) {
 					long handle = index.findRun(row, plane, predicate);
 					assertThat(handle).isPositive();
 					handles.append(handle).append(',');
@@ -544,10 +544,10 @@ class LmdbPagedCsfParallelBaseBuilderTest {
 				GroupConsumer consumer) {
 			family.enter(coverage);
 			int plane = outgoing
-					? explicit ? LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
-							: LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED
-					: explicit ? LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT
-							: LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED;
+					? explicit ? LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+							: LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED
+					: explicit ? LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT
+							: LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED;
 			try {
 				for (int i = 0; i < PREDICATE_COUNT; i++) {
 					long predicate = predicate(i);
@@ -822,7 +822,7 @@ class LmdbPagedCsfParallelBaseBuilderTest {
 			int scan = scans.getAndIncrement();
 			consumer.begin(SUBJECT, PREDICATE, plane);
 			consumer.pair(OBJECT, 0);
-			if (scan >= LmdbReferenceNodeLocator.PLANE_COUNT) {
+			if (scan >= LmdbAdjacencyPlane.PLANE_COUNT) {
 				consumer.pair(ValueIds.createId(ValueIds.T_URI, 30), 0);
 			}
 			consumer.end();

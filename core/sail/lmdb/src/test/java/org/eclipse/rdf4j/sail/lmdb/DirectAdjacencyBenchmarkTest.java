@@ -16,37 +16,33 @@ import org.junit.jupiter.api.Test;
 class DirectAdjacencyBenchmarkTest {
 
 	@Test
-	void pagedBasePlainFixtureExercisesWideHeadersAndEnumerationFallback() throws Exception {
-		verify(16, 100, "plain", "base", "paged");
+	void plainFixtureExercisesWideHeadersAndEnumerationFallback() throws Exception {
+		verify(16, 100, "plain", "base");
 	}
 
 	@Test
-	void legacyDeltaMixedFixtureExercisesEncodedContextsAndAcceleratedEnumeration() throws Exception {
-		verify(16, 1, "mixed", "delta", "legacy");
+	void deltaMixedFixtureExercisesEncodedContextsAndAcceleratedEnumeration() throws Exception {
+		verify(16, 1, "mixed", "delta");
 	}
 
 	@Test
-	void retainedProbeFixtureCoversBothBaseFormats() throws Exception {
-		for (String baseFormat : new String[] { "paged", "legacy" }) {
-			DirectAdjacencyRetainedProbeBenchmark benchmark = new DirectAdjacencyRetainedProbeBenchmark();
-			benchmark.baseFormat = baseFormat;
-			try {
-				benchmark.setUp();
-				benchmark.probeAll();
-			} finally {
-				benchmark.tearDown();
-			}
+	void retainedProbeFixtureUsesPagedBase() throws Exception {
+		DirectAdjacencyRetainedProbeBenchmark benchmark = new DirectAdjacencyRetainedProbeBenchmark();
+		try {
+			benchmark.setUp();
+			benchmark.probeAll();
+		} finally {
+			benchmark.tearDown();
 		}
 	}
 
-	private static void verify(int degree, int predicateCount, String contextMode, String sourceKind, String baseFormat)
+	private static void verify(int degree, int predicateCount, String contextMode, String sourceKind)
 			throws Exception {
 		DirectAdjacencyBenchmark benchmark = new DirectAdjacencyBenchmark();
 		benchmark.degree = degree;
 		benchmark.predicateCount = predicateCount;
 		benchmark.contextMode = contextMode;
 		benchmark.sourceKind = sourceKind;
-		benchmark.baseFormat = baseFormat;
 		try {
 			benchmark.setUp();
 			benchmark.verifyFixture();

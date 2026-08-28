@@ -189,7 +189,7 @@ class LmdbDirectAdjacencyEphemeralTest {
 			assertThat(scanner.supportsOrderedScan(false)).isTrue();
 			assertThat(scanner.snapshotId()).isEqualTo(mdb_txn_id(txn.get()));
 
-			LmdbInMemoryAdjacencyIndex index = LmdbAdjacencyBaseBuilder.build(scanner, LmdbAdjacencyCoverage.full(),
+			LmdbInMemoryAdjacencyIndex index = LmdbPagedCsfBaseBuilder.build(scanner, LmdbAdjacencyCoverage.full(),
 					account, 1 << 20, 1 << 17);
 			try {
 				assertThat(index.statementCount()).isEqualTo(quads.length);
@@ -200,7 +200,7 @@ class LmdbDirectAdjacencyEphemeralTest {
 			assertThat(account.totalChargedBytes()).isZero();
 
 			// rebuild from the same snapshot: every restart discards and rebuilds (I1)
-			LmdbInMemoryAdjacencyIndex rebuilt = LmdbAdjacencyBaseBuilder.build(scanner,
+			LmdbInMemoryAdjacencyIndex rebuilt = LmdbPagedCsfBaseBuilder.build(scanner,
 					LmdbAdjacencyCoverage.full(), account, 1 << 20, 1 << 17);
 			try {
 				verifyAgainstLmdb(rebuilt, txn, quads);
@@ -228,10 +228,10 @@ class LmdbDirectAdjacencyEphemeralTest {
 		TreeSet<String> probed = new TreeSet<>();
 		for (long[] quad : quads) {
 			boolean explicit = quad[4] == 1;
-			int outPlane = explicit ? LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
-					: LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED;
-			int inPlane = explicit ? LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT
-					: LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED;
+			int outPlane = explicit ? LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+					: LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED;
+			int inPlane = explicit ? LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT
+					: LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED;
 			if (probed.add(quad[0] + "/" + outPlane + "/" + quad[1])) {
 				List<long[]> expected = new ArrayList<>();
 				try (RecordIterator it = tripleStore.getTriples(txn, quad[0], quad[1], -1, -1, explicit)) {

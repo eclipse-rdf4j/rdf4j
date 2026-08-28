@@ -109,23 +109,6 @@ final class LmdbNativeJaninoAggregate {
 		});
 	}
 
-	/** Compatibility front door for focused tests and callers that do not arbitrate. */
-	static List<BindingSet> tryEvaluate(MultiJoinPlan multiJoin, RowState row, int[] groupSlots,
-			AggregateSpec[] aggregates, NativeGroupIteration emitter) {
-		LmdbNativeStrategyProposal<List<BindingSet>> proposal = propose(multiJoin, row, groupSlots, aggregates,
-				emitter, null);
-		if (proposal == null) {
-			return null;
-		}
-		try {
-			return proposal.open();
-		} catch (IOException e) {
-			throw new org.eclipse.rdf4j.query.QueryEvaluationException(e);
-		} finally {
-			proposal.close();
-		}
-	}
-
 	private static List<BindingSet> evaluate(Recognized shape, RowState row, NativeGroupIteration emitter) {
 		NativeLmdbQuerySource.NativeProbe probe = null;
 		try {

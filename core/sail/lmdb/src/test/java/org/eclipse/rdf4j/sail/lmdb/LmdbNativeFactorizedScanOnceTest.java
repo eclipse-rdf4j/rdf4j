@@ -111,7 +111,7 @@ public class LmdbNativeFactorizedScanOnceTest {
 
 	@Test
 	public void scanOnceModeStaysCorrectAndEngages() {
-		long buildsBefore = LmdbNativeAggregateCompiler.FactorizedTail.SCAN_ONCE_BUILDS.get();
+		long buildsBefore = FactorizedTail.SCAN_ONCE_BUILDS.get();
 		long semanticBefore = KernelExecutionTestAccess.semanticNativeCompiles();
 		long hostedBefore = KernelExecutionTestAccess.hostedGenericCompiles();
 		long islandsBefore = KernelExecutionTestAccess.islandCompiles();
@@ -120,7 +120,7 @@ public class LmdbNativeFactorizedScanOnceTest {
 				+ "  ?s ex:p1 ?a .\n"
 				+ "  ?s ex:p2 ?b .\n"
 				+ "}");
-		assertThat(LmdbNativeAggregateCompiler.FactorizedTail.SCAN_ONCE_BUILDS.get() > buildsBefore
+		assertThat(FactorizedTail.SCAN_ONCE_BUILDS.get() > buildsBefore
 				|| KernelExecutionTestAccess.semanticNativeCompiles() > semanticBefore)
 						.as("the shape must use scan-once factorization or semantic native grouping")
 						.isTrue();

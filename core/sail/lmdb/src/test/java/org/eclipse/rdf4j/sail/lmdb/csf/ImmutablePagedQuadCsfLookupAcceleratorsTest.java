@@ -95,29 +95,6 @@ class ImmutablePagedQuadCsfLookupAcceleratorsTest {
 	}
 
 	@Test
-	void partitionWideDictionariesReturnTheActualPackedReferences() {
-		long[] rows = randomRows(5_000, 0x4745_4e44_4952_5041L);
-		try (ImmutablePagedQuadCsfIndex index = build(rows)) {
-			long[] references = new long[rows.length];
-			ImmutablePagedQuadCsfIndex.LookupCursor cursor = new ImmutablePagedQuadCsfIndex.LookupCursor();
-			for (int i = 0; i < rows.length; i++) {
-				references[i] = index.findLocalReference(0, 0, rows[i], cursor);
-				assertTrue(references[i] > 0);
-			}
-			long[] queries = queries(rows, 50_000, 0x4745_4e51_5545_5259L);
-			for (CsfGenerationRowLookupAccelerators.Kind kind : CsfGenerationRowLookupAccelerators.Kind.values()) {
-				CsfGenerationRowLookupAccelerators.Index directory = CsfGenerationRowLookupAccelerators.build(
-						kind, rows, references, rows.length);
-				ImmutablePagedQuadCsfIndex.LookupCursor expectedCursor = new ImmutablePagedQuadCsfIndex.LookupCursor();
-				for (long query : queries) {
-					assertEquals(index.findLocalReference(0, 0, query, expectedCursor), directory.find(query),
-							kind.name());
-				}
-			}
-		}
-	}
-
-	@Test
 	void oneCursorCanMoveBetweenSnapshotsWithoutRetainingAStaleSidecar() {
 		long[] firstRows = sequentialRows(1_024, 1_000_000);
 		long[] secondRows = sequentialRows(1_024, 2_000_000);

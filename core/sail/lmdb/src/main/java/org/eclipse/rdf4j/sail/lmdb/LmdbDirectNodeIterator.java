@@ -21,10 +21,9 @@ import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
  * base entry serves when no version exists. All pending checks finish before the first result (caller's
  * responsibility), so this iterator never needs a mid-stream LMDB fallback.
  * <p>
- * Groups stream in unsigned raw-predicate order. Legacy headers map their sorted base ordinals to raw IDs; paged bases
- * read raw IDs directly from the node-to-predicate projection. Post-base predicates merge by raw ID. This is exact for
- * unordered graph-pattern evaluation; ordered requests decline upstream. Holds one read-view lease released exactly
- * once on close (invariant I14).
+ * Groups stream in unsigned raw-predicate order. The base reads raw IDs from the node-to-predicate projection and
+ * post-base predicates merge by raw ID. This is exact for unordered graph-pattern evaluation; ordered requests decline
+ * upstream. Holds one read-view lease released exactly once on close (invariant I14).
  */
 final class LmdbDirectNodeIterator implements RecordIterator {
 
@@ -35,12 +34,10 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 	private final LmdbAdjacencyArenaCatalog baseCatalog;
 	private final ContextCatalog contextCatalog;
 	private final LmdbAdjacencyPredicateCatalog predicateCatalog;
-	private final LmdbReferenceNodeLocator locator;
 	private final LmdbNodePredicateIndex nodePredicateIndex;
 	private final ImmutablePagedQuadCsfIndex.RowCursor nodePredicateCursor;
 	private final InconsistencyListener inconsistencyListener;
-	private final LmdbReferenceNodeLocator.SearchContext baseSearchContext;
-	private final long headerRef;
+	private final LmdbAdjacencyLookupContext baseSearchContext;
 	private final int plane;
 	private final long key;
 	private final long boundContext;
@@ -102,28 +99,15 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 			this.key = key;
 			this.boundContext = boundContext;
 			this.direction = direction;
-			if (base.usesPagedCsf()) {
-				this.locator = null;
-				this.headerRef = 0;
-				this.nodePredicateIndex = base.nodePredicateIndex();
-				this.nodePredicateCursor = new ImmutablePagedQuadCsfIndex.RowCursor();
-				this.baseSearchContext = new LmdbReferenceNodeLocator.SearchContext();
-				long localReference = nodePredicateIndex.findLocalReference(plane, key, baseSearchContext.csfCursor());
-				if (localReference == 0) {
-					this.baseGroupCount = 0;
-				} else {
-					nodePredicateIndex.resolve(localReference, nodePredicateCursor);
-					this.baseGroupCount = nodePredicateCursor.edgeCount();
-				}
+			this.nodePredicateIndex = base.nodePredicateIndex();
+			this.nodePredicateCursor = new ImmutablePagedQuadCsfIndex.RowCursor();
+			this.baseSearchContext = new LmdbAdjacencyLookupContext();
+			long localReference = nodePredicateIndex.findLocalReference(plane, key, baseSearchContext.csfCursor());
+			if (localReference == 0) {
+				this.baseGroupCount = 0;
 			} else {
-				this.locator = base.locator();
-				this.nodePredicateIndex = null;
-				this.nodePredicateCursor = null;
-				this.baseSearchContext = null;
-				this.headerRef = ValueIds.isReference(key)
-						? locator.headerRef(ValueIds.getIdType(key), ValueIds.getValue(key))
-						: 0;
-				this.baseGroupCount = headerRef == 0 ? 0 : locator.planeGroupCount(headerRef, plane);
+				nodePredicateIndex.resolve(localReference, nodePredicateCursor);
+				this.baseGroupCount = nodePredicateCursor.edgeCount();
 			}
 			LmdbAdjacencyOverlaySet overlays = state.overlays();
 			int count = overlays == null ? 0 : overlays.generationCount();
@@ -216,15 +200,10 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 	}
 
 	private long basePredicateAt(long index) {
-		if (nodePredicateIndex == null) {
-			locator.planeEntry(headerRef, plane, index, entry);
-			return predicateCatalog.rawForOrdinal(entry[0]);
-		}
 		if (index < basePredicateChunkStart || index >= basePredicateChunkStart + basePredicateChunkLength) {
 			int length = (int) Math.min(CHUNK_EDGES, baseGroupCount - index);
 			if (basePredicateChunk == null) {
-				// The legacy two-long entry buffer is otherwise unused by paged bases. Reuse it for the overwhelmingly
-				// common one- or two-predicate subject instead of allocating another array per iterator.
+				// Reuse the two-long scratch for the overwhelmingly common one- or two-predicate subject.
 				basePredicateChunk = length <= entry.length ? entry : new long[length];
 			} else if (basePredicateChunk.length < length) {
 				basePredicateChunk = new long[length];
@@ -294,18 +273,14 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 					continue;
 				}
 				runCatalog = baseCatalog;
-				if (nodePredicateIndex == null) {
-					runHandle = baseCatalog.packHandle(0, entry[1]);
-				} else {
-					long ordinal = predicateCatalog.ordinalForRaw(chosen);
-					if (ordinal < 0) {
-						throw inconsistent("references unknown predicate " + Long.toUnsignedString(chosen));
-					}
-					runHandle = base.findRunByOrdinal(key, plane, ordinal, baseSearchContext);
-					if (runHandle <= 0) {
-						throw inconsistent("references absent adjacency row for " + Long.toUnsignedString(key) + "/"
-								+ Long.toUnsignedString(chosen) + "/" + plane);
-					}
+				long ordinal = predicateCatalog.ordinalForRaw(chosen);
+				if (ordinal < 0) {
+					throw inconsistent("references unknown predicate " + Long.toUnsignedString(chosen));
+				}
+				runHandle = base.findRunByOrdinal(key, plane, ordinal, baseSearchContext);
+				if (runHandle <= 0) {
+					throw inconsistent("references absent adjacency row for " + Long.toUnsignedString(key) + "/"
+							+ Long.toUnsignedString(chosen) + "/" + plane);
 				}
 			}
 			rawPredicate = chosen;

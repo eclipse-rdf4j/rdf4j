@@ -28,7 +28,7 @@ Sealing a large LMDB direct-adjacency commit currently decodes each event token 
   Evidence: `rg -n "PendingTable|pendingTable\\(\\)|rowCount\\(\\)|touchesNode" core/sail/lmdb/src/main core/sail/lmdb/src/test --glob '*.java'` found construction only in `LmdbDirectAdjacencyCommitDelta` and pending-table publication in `LmdbDirectAdjacencyStore`.
 
 - Observation: direct-adjacency planes are the non-negative values 0, 1, 2, and 3, so both `byte` tuple storage and `1 << plane` masks are safe for every supported plane.
-  Evidence: `LmdbReferenceNodeLocator` defines outgoing explicit, incoming explicit, outgoing inferred, and incoming inferred as 0 through 3 respectively.
+  Evidence: `LmdbAdjacencyPlane` defines outgoing explicit, incoming explicit, outgoing inferred, and incoming inferred as 0 through 3 respectively.
 
 - Observation: the existing seal reservation already charges 64 bytes per event for two integer token arrays and the worst-case three-column pending table. The proposed implementation changes when those arrays are populated, not the charged upper bound.
   Evidence: `LmdbDirectAdjacencyCommitDelta.seal(long)` reserves `count * 64` bytes before calling `buildPendingTable()`.

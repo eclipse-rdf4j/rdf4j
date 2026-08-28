@@ -94,7 +94,7 @@ public class ParallelismBenchmark {
 	private static final String KERNEL_INTERPRETER_ENABLED = "rdf4j.lmdb.kernelInterpreter.enabled";
 	private static final String COST_CALIBRATION_ENABLED = "rdf4j.lmdb.costCalibration.enabled";
 	private static final String PARALLEL_ENABLED = "rdf4j.lmdb.parallel.enabled";
-	private static final String PARALLEL_MIN_ROOT_ESTIMATE = "rdf4j.lmdb.parallel.minRootEstimate";
+	private static final String PARALLEL_MIN_ROOT_ESTIMATE = "rdf4j.lmdb.parallel.minWorkEstimate";
 	private static final String PARALLEL_THREADS = "rdf4j.lmdb.parallel.threads";
 	private static final String PARALLEL_MAX_TASKS = "rdf4j.lmdb.parallel.maxTasks";
 	private static final String PARALLEL_STARTUP_WORK = "rdf4j.lmdb.parallel.startupWork";

@@ -36,7 +36,7 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 
 	private final ImmutablePagedQuadCsfIndex csf;
 	private final ImmutablePagedQuadCsfIndex.SharedPartitionLookup lookup;
-	private final LmdbAdjacencyKeyIndex keys;
+	private final ImmutablePagedQuadCsfIndex.KeyDomain keys;
 
 	/** Lazily allocated only for context/lower-bound consumers; neighbor-only generated kernels never pay for it. */
 	private ImmutablePagedQuadCsfIndex.RowCursor rowCursor;
@@ -45,7 +45,7 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 	private ImmutablePagedQuadCsfIndex.SharedPartitionLookup.DecodedRunCursor borrowedSliceCursor;
 
 	LmdbDecodedNativeAdjacency(ImmutablePagedQuadCsfIndex csf,
-			ImmutablePagedQuadCsfIndex.SharedPartitionLookup lookup, LmdbAdjacencyKeyIndex keys) {
+			ImmutablePagedQuadCsfIndex.SharedPartitionLookup lookup, ImmutablePagedQuadCsfIndex.KeyDomain keys) {
 		this.csf = Objects.requireNonNull(csf, "csf");
 		this.lookup = Objects.requireNonNull(lookup, "lookup");
 		this.keys = Objects.requireNonNull(keys, "keys");
@@ -282,11 +282,11 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 
 	/** Physical key/run enumeration without logical-key re-lookup. */
 	private static final class DecodedKeyRunCursor implements NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor {
-		private final LmdbAdjacencyKeyIndex.Cursor cursor;
+		private final ImmutablePagedQuadCsfIndex.KeyCursor cursor;
 		private long nextOrdinal;
 		private long token;
 
-		private DecodedKeyRunCursor(LmdbAdjacencyKeyIndex.Cursor cursor, long fromOrdinal) {
+		private DecodedKeyRunCursor(ImmutablePagedQuadCsfIndex.KeyCursor cursor, long fromOrdinal) {
 			this.cursor = cursor;
 			this.nextOrdinal = fromOrdinal;
 		}
@@ -327,17 +327,17 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 
 		@Override
 		public long runSize() {
-			return cursor.directRunSize();
+			return cursor.edgeCount();
 		}
 
 		@Override
 		public long neighborAt(long runOffset) {
-			return cursor.directNeighborAt(runOffset);
+			return cursor.neighborAt(runOffset);
 		}
 
 		@Override
 		public long contextAt(long runOffset) {
-			return cursor.directContextAt(runOffset);
+			return cursor.contextAt(runOffset);
 		}
 
 		@Override
@@ -346,7 +346,7 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 			if (targetOffset < 0 || length < 0 || targetOffset > target.length - length) {
 				throw new IllegalArgumentException("invalid decoded key-run neighbor target range");
 			}
-			return cursor.copyDirectPairs(runOffset, length, target, targetOffset, null, 0);
+			return cursor.copyPairs(runOffset, length, target, targetOffset, null, 0);
 		}
 
 		@Override
@@ -355,7 +355,7 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 			if (targetOffset < 0 || length < 0 || targetOffset > target.length - length) {
 				throw new IllegalArgumentException("invalid decoded key-run context target range");
 			}
-			return cursor.copyDirectPairs(runOffset, length, null, 0, target, targetOffset);
+			return cursor.copyPairs(runOffset, length, null, 0, target, targetOffset);
 		}
 	}
 }

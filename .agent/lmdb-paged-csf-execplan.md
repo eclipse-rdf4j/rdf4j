@@ -14,7 +14,7 @@ node remain correct by falling back to authoritative LMDB because the compact ba
 locator.
 
 After completion, paged CSF is the default base. Setting
-`-Dorg.eclipse.rdf4j.sail.lmdb.directAdjacency.legacyBase=true` selects the prior format. Consolidation rewrites only
+`-Dremoved direct-adjacency rollback selector=true` selects the prior format. Consolidation rewrites only
 affected CSF shards and retains untouched shards for pinned snapshots. Tests demonstrate exact query parity,
 revision behavior, and memory-account cleanup; matched JMH and sizing probes provide evidence before making
 performance claims.
@@ -26,7 +26,7 @@ performance claims.
 - [x] (2026-08-01 11:11Z) Ran the mandatory root quick clean install; the reactor completed with `BUILD SUCCESS` in
   33.214 seconds and the full output is in `maven-build.log`.
 - [x] (2026-08-01 11:14Z) Added the default-selection regression and preserved the intended one-test Surefire failure
-  in `initial-evidence.txt`: expected one predicate-enumeration fallback but the legacy base recorded zero.
+  in `initial-evidence.txt`: expected one predicate-enumeration fallback but the retired implementation recorded zero.
 - [x] (2026-08-01 11:25Z) Ported the immutable page/vector/shard/index core and passed seven focused JUnit tests,
   including an August 1 copy-on-write structural-sharing scenario; evidence is in
   `post-evidence-paged-csf-core.txt`.
@@ -102,7 +102,7 @@ performance claims.
 - Observation: independent decoding alone exposed a second O(page-count) search tax that the original profile hid.
   Evidence: after row-key FOR encoding and prefix-offset storage, `CsfShard.floorPage` still consumed 4.69% of the
   JMH worker. A lookup-cursor page-interval cache reduced it to 0.03% and made 256 paged finds 1,682.779 ns/op versus
-  5,069.407 ns/op for the matched legacy base.
+  5,069.407 ns/op for the matched retired implementation.
 - Observation: after search was removed, bulk FOR extraction became the next bounded optimization target.
   Evidence: the pre-streaming steady profile attributed 5.74% self CPU to `readLittleEndian`, 3.07% to `readBits`,
   and 2.58% to `decodeNativeRange`. An adjacent old/new bulk control measured 162.750 versus 152.632 ns/op, a 6.22%
@@ -303,7 +303,7 @@ untracked evidence artifacts and must be kept.
 
 No supported RDF4J public API, persistent LMDB format, or dependency changes. New CSF types are internal even where
 Java visibility must be public across the `lmdb` and `lmdb.csf` packages. The only operational switch is
-`org.eclipse.rdf4j.sail.lmdb.directAdjacency.legacyBase`; absent or false means paged, true means legacy. The in-memory
+`removed direct-adjacency rollback selector`; absent or false means paged, true means legacy. The in-memory
 page format is versioned and validated. Target the repository's JDK 25 environment and the existing `Unsafe`
 convention.
 

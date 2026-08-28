@@ -193,11 +193,11 @@ final class LmdbAdjacencyDeltaApplier {
 	private int planeOf(int event, boolean outgoingDirection) {
 		boolean explicit = sealed.explicitOf(event);
 		if (outgoingDirection) {
-			return explicit ? LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
-					: LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED;
+			return explicit ? LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+					: LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED;
 		}
-		return explicit ? LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT
-				: LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED;
+		return explicit ? LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT
+				: LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED;
 	}
 
 	private int compareEvents(int a, int b, boolean outgoingDirection) {

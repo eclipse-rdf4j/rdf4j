@@ -68,7 +68,7 @@ public class ParallelAggregationBenchmark {
 	private static final int P2_FANOUT = 20;
 	private static final int P2_DISTINCT_VALUES = 5_000;
 	private static final String PARALLEL_FLAG = "rdf4j.lmdb.parallel.enabled";
-	private static final String PARALLEL_THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minRootEstimate";
+	private static final String PARALLEL_THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minWorkEstimate";
 
 	@Param({
 			"countHub",

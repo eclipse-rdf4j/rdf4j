@@ -108,6 +108,8 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	private final long[] partitionRowCounts;
 	private final long[] partitionQuadCounts;
 	private final CsfShard[] shards;
+	private final long[] partitionShardRadixDescriptors;
+	private final int[] partitionShardRadixBounds;
 	private final long[] shardFirstRowOrdinals;
 	private final int[] shardFirstPageIds;
 	private final int[] pageShardHints;
@@ -134,6 +136,9 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		this.partitionQuadCounts = partitionQuadCounts;
 		this.shards = shards;
 		this.indexReservation = Objects.requireNonNull(indexReservation, "indexReservation");
+		this.partitionShardRadixDescriptors = new long[partitionShardStarts.length];
+		this.partitionShardRadixBounds = new int[CsfRadixDirectory.totalBoundsLength(partitionShardCounts)];
+		buildPartitionShardRadixDirectories();
 		this.shardFirstRowOrdinals = new long[shards.length];
 		this.shardFirstPageIds = new int[shards.length];
 		long nativeTotal = 0;
@@ -162,7 +167,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		this.pageCount = Math.toIntExact(pages);
 		this.nativeBytes = nativeTotal;
 		this.usedPageBytes = usedTotal;
-		this.modeledJavaBytes = modeledIndexBytes(predicateCount, shards.length, pageCount);
+		this.modeledJavaBytes = modeledIndexBytes(predicateCount, partitionShardCounts, shards.length, pageCount);
 		this.pageShardHints = buildPageShardHints(shardFirstPageIds, shards, pageCount);
 	}
 
@@ -253,7 +258,8 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		Objects.requireNonNull(fragments, "fragments");
 		Objects.requireNonNull(budget, "budget");
 		MemoryReservation rootReservation = requireReservation(budget.reserve(0,
-				modeledIndexBytes(mergedPlan.predicateCount, mergedPlan.shardPlans.length,
+				modeledIndexBytes(mergedPlan.predicateCount, mergedPlan.partitionShardCounts,
+						mergedPlan.shardPlans.length,
 						Math.toIntExact(mergedPlan.totalPageCount))));
 		CsfShard[] mergedShards = new CsfShard[mergedPlan.shardPlans.length];
 		int retained = 0;
@@ -376,12 +382,9 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		}
 		if (!cursor.covers(this, partition, rawRowId)) {
 			int start = partitionShardStarts[partition];
-			int floor = floorShard(start, count, rawRowId);
+			int floor = count == 1 ? floorSingleShard(start, rawRowId) : floorShard(partition, start, count, rawRowId);
 			if (floor < start) {
 				return 0;
-			}
-			while (floor > start && shards[floor - 1].firstRow() == rawRowId) {
-				floor--;
 			}
 			CsfShard shard = shards[floor];
 			int localPage = shard.floorPage(rawRowId);
@@ -479,12 +482,9 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			localPage = cursor.localPage;
 		} else {
 			int start = partitionShardStarts[partition];
-			floor = floorShard(start, count, rawRowId);
+			floor = count == 1 ? floorSingleShard(start, rawRowId) : floorShard(partition, start, count, rawRowId);
 			if (floor < start) {
 				return 0;
-			}
-			while (floor > start && shards[floor - 1].firstRow() == rawRowId) {
-				floor--;
 			}
 			CsfShard shard = shards[floor];
 			localPage = shard.floorPage(rawRowId);
@@ -616,6 +616,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		long finalShardCountLong = 0;
 		long finalPageCountLong = 0;
 		int replacedShardCount = 0;
+		int[] newCounts = new int[newPartitionCount];
 		for (int partition = 0; partition < newPartitionCount; partition++) {
 			List<RewriteGroup> groups = rewriteGroups(partition, updateStarts[partition], updateEnds[partition],
 					updates);
@@ -623,10 +624,12 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			for (RewriteGroup group : groups) {
 				if (group.affected()) {
 					planReplacement(group, updates);
+					newCounts[partition] = Math.addExact(newCounts[partition], group.replacementShardCount());
 					finalShardCountLong = Math.addExact(finalShardCountLong, group.replacementShardCount());
 					finalPageCountLong = Math.addExact(finalPageCountLong, group.replacementPageCount());
 					replacedShardCount = Math.addExact(replacedShardCount, group.oldShardCount());
 				} else {
+					newCounts[partition] = Math.addExact(newCounts[partition], group.oldShardCount());
 					finalShardCountLong = Math.addExact(finalShardCountLong, group.oldShardCount());
 					for (int shard = group.oldShardFrom; shard < group.oldShardTo; shard++) {
 						finalPageCountLong = Math.addExact(finalPageCountLong, shards[shard].pageCount());
@@ -637,10 +640,9 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		int finalShardCount = Math.toIntExact(finalShardCountLong);
 		int finalPageCount = Math.toIntExact(finalPageCountLong);
 		MemoryReservation rootReservation = requireReservation(
-				budget.reserve(0, modeledIndexBytes(newPredicateCount, finalShardCount, finalPageCount)));
+				budget.reserve(0, modeledIndexBytes(newPredicateCount, newCounts, finalShardCount, finalPageCount)));
 
 		int[] newStarts = new int[newPartitionCount];
-		int[] newCounts = new int[newPartitionCount];
 		long[] newRows = new long[newPartitionCount];
 		long[] newQuads = new long[newPartitionCount];
 		CsfShard[] newShards = new CsfShard[finalShardCount];
@@ -676,7 +678,10 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 						}
 					}
 				}
-				newCounts[partition] = output - newStarts[partition];
+				if (newCounts[partition] != output - newStarts[partition]) {
+					throw new IllegalStateException(
+							"CSF rewrite changed planned shard count for partition " + partition);
+				}
 			}
 			if (output != finalShardCount) {
 				throw new IllegalStateException("CSF rewrite produced " + output + " of " + finalShardCount
@@ -1335,6 +1340,23 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		return maximum;
 	}
 
+	long routingDirectoryBytesForTest() {
+		long bytes = rootRoutingDirectoryBytesForTest(predicateCount, partitionShardCounts);
+		for (CsfShard shard : shards) {
+			bytes = Math.addExact(bytes, shard.routingLayoutBytesForTest());
+		}
+		return bytes;
+	}
+
+	static long rootRoutingDirectoryBytesForTest(int predicateCount, int[] partitionShardCounts) {
+		long partitions = Math.multiplyExact((long) predicateCount, PLANE_COUNT);
+		if (partitionShardCounts.length != partitions) {
+			throw new IllegalArgumentException("partition shard count length does not match predicate count");
+		}
+		return Math.addExact(arrayBytes(partitions, Long.BYTES),
+				arrayBytes(CsfRadixDirectory.totalBoundsLength(partitionShardCounts), Integer.BYTES));
+	}
+
 	private int partitionIndex(long predicateOrdinal, int plane) {
 		if (predicateOrdinal < 0 || predicateOrdinal >= predicateCount) {
 			throw new IllegalArgumentException("predicate ordinal out of range: " + predicateOrdinal);
@@ -1345,21 +1367,32 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		return Math.toIntExact(predicateOrdinal * PLANE_COUNT + plane);
 	}
 
-	private int floorShard(int start, int count, long row) {
-		int low = start;
-		int high = start + count - 1;
-		int floor = start - 1;
-		while (low <= high) {
-			int mid = (low + high) >>> 1;
-			int comparison = Long.compareUnsigned(shards[mid].firstRow(), row);
-			if (comparison <= 0) {
-				floor = mid;
-				low = mid + 1;
-			} else {
-				high = mid - 1;
+	private int floorSingleShard(int start, long row) {
+		return Long.compareUnsigned(row, shards[start].firstRow()) < 0 ? start - 1 : start;
+	}
+
+	private int floorShard(int partition, int start, int count, long row) {
+		return CsfRadixDirectory.floorShards(shards, start, count, row, partitionShardRadixBounds,
+				partitionShardRadixDescriptors[partition]);
+	}
+
+	private void buildPartitionShardRadixDirectories() {
+		int boundsOffset = 0;
+		for (int partition = 0; partition < partitionShardCounts.length; partition++) {
+			int count = partitionShardCounts[partition];
+			if (count >= 2) {
+				int start = partitionShardStarts[partition];
+				long descriptor = CsfRadixDirectory.descriptor(boundsOffset, count, shards[start].firstRow(),
+						shards[start + count - 1].firstRow());
+				partitionShardRadixDescriptors[partition] = descriptor;
+				CsfRadixDirectory.buildShardBounds(shards, start, count, partitionShardRadixBounds, boundsOffset,
+						descriptor);
+				boundsOffset = Math.addExact(boundsOffset, CsfRadixDirectory.boundsLength(count));
 			}
 		}
-		return floor;
+		if (boundsOffset != partitionShardRadixBounds.length) {
+			throw new IllegalStateException("partition shard radix sizing mismatch");
+		}
 	}
 
 	private void page(int globalPageId, CompactCsfPageReader target) {
@@ -1431,11 +1464,17 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		return (int) (localReference & LOCAL_ROW_MASK);
 	}
 
-	private static long modeledIndexBytes(int predicates, int shards, int pages) {
+	private static long modeledIndexBytes(int predicates, int[] partitionShardCounts, int shards, int pages) {
 		long partitions = Math.multiplyExact((long) predicates, PLANE_COUNT);
+		if (partitionShardCounts.length != partitions) {
+			throw new IllegalArgumentException("partition shard count length does not match predicate count");
+		}
 		long bytes = MODELED_INDEX_FIXED_BYTES;
 		bytes = Math.addExact(bytes, arrayBytes(partitions, Integer.BYTES) * 2);
 		bytes = Math.addExact(bytes, arrayBytes(partitions, Long.BYTES) * 2);
+		bytes = Math.addExact(bytes, arrayBytes(partitions, Long.BYTES));
+		bytes = Math.addExact(bytes,
+				arrayBytes(CsfRadixDirectory.totalBoundsLength(partitionShardCounts), Integer.BYTES));
 		bytes = Math.addExact(bytes, arrayBytes(shards, 8) * 3);
 		bytes = Math.addExact(bytes, arrayBytes(((long) pages + (1L << PAGE_HINT_SHIFT) - 1) >>> PAGE_HINT_SHIFT,
 				Integer.BYTES));
@@ -1481,8 +1520,10 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			this.totalPageCount = pages;
 			this.nativeBytes = nativeTotal;
 			this.usedPageBytes = usedTotal;
-			this.modeledJavaBytes = Math.addExact(modeledIndexBytes(predicateCount, shardPlans.length,
-					Math.toIntExact(pages)), Math.multiplyExact((long) shardPlans.length, CsfShard.MODELED_JAVA_BYTES));
+			this.modeledJavaBytes = Math.addExact(
+					modeledIndexBytes(predicateCount, partitionShardCounts, shardPlans.length,
+							Math.toIntExact(pages)),
+					Math.multiplyExact((long) shardPlans.length, CsfShard.MODELED_JAVA_BYTES));
 		}
 
 		public int predicateCount() {
@@ -1514,11 +1555,6 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			return nativeBytes - pageCapacityBytes();
 		}
 
-		/** Retained for compatibility; shard directories contain the page-address table. */
-		public long pageTableBytes() {
-			return 0;
-		}
-
 		public long nativeBytes() {
 			return nativeBytes;
 		}
@@ -1547,14 +1583,6 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				total = Math.addExact(total, shardPlans[start + i].pageCount);
 			}
 			return total;
-		}
-
-		/** Compatibility diagnostic: counts pages by the 256-byte capacity class. */
-		public long[] pageClassCountsCopy() {
-			long[] counts = new long[NativeSlabAllocator.CLASS_COUNT];
-			// Exact class sequence is deliberately not retained in the compact plan. Reconstructing it would require
-			// four bytes per page; callers should use capacity/used totals for production sizing.
-			return counts;
 		}
 
 		private int partition(long predicateOrdinal, int plane) {
@@ -4494,7 +4522,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			this.writers = new CsfShard.Writer[plan.partitionShardStarts.length];
 			this.shardFirstGlobalOrdinals = new long[plan.partitionShardStarts.length];
 			this.indexReservation = requireReservation(budget.reserve(0,
-					modeledIndexBytes(plan.predicateCount, plan.shardPlans.length,
+					modeledIndexBytes(plan.predicateCount, plan.partitionShardCounts, plan.shardPlans.length,
 							Math.toIntExact(plan.totalPageCount))));
 		}
 

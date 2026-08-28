@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
@@ -197,6 +199,30 @@ public class TxnManagerTest {
 				for (int i = transactions.length - 1; i >= 0; i--) {
 					transactions[i].close();
 				}
+			}
+			mdb_env_close(env);
+		}
+	}
+
+	@Test
+	public void pinnedReadTxnClosesWhenRevisionSupplierThrows(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, 1);
+		TxnManager.Txn replacementTxn = null;
+
+		try {
+			TxnManager txnManager = new TxnManager(env, TxnManager.Mode.RESET);
+			IllegalStateException revisionFailure = new IllegalStateException("synthetic revision failure");
+
+			assertSame(revisionFailure,
+					assertThrows(IllegalStateException.class,
+							() -> txnManager.createReadTxnPinned(() -> {
+								throw revisionFailure;
+							})));
+
+			replacementTxn = txnManager.createReadTxn();
+		} finally {
+			if (replacementTxn != null) {
+				replacementTxn.close();
 			}
 			mdb_env_close(env);
 		}

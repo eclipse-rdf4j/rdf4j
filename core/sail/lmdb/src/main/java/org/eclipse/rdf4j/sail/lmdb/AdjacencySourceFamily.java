@@ -24,7 +24,7 @@ interface AdjacencySourceFamily extends AutoCloseable {
 
 	/** Number of thread-confined scanners that may be used concurrently by a range build. */
 	default int workerScannerCount() {
-		return LmdbReferenceNodeLocator.PLANE_COUNT;
+		return LmdbAdjacencyPlane.PLANE_COUNT;
 	}
 
 	/** Returns the scanner owned exclusively by one range worker for the duration of a pass. */
@@ -37,7 +37,7 @@ interface AdjacencySourceFamily extends AutoCloseable {
 
 	/** Whether a logical plane contains source rows at this pinned snapshot. */
 	default boolean isPlaneActive(int plane) {
-		if (plane < 0 || plane >= LmdbReferenceNodeLocator.PLANE_COUNT) {
+		if (plane < 0 || plane >= LmdbAdjacencyPlane.PLANE_COUNT) {
 			throw new IllegalArgumentException("plane out of range: " + plane);
 		}
 		return true;

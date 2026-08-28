@@ -63,7 +63,6 @@ final class LmdbNativeParallelPipelines {
 	/** Smallest worthwhile partition; below ~8 morsels the per-partition open cost dominates. */
 	static final long MIN_PARTITION_ROWS = 8192;
 	static final String MIN_WORK_ESTIMATE_PROPERTY = "rdf4j.lmdb.parallel.minWorkEstimate";
-	private static final String LEGACY_MIN_ROOT_ESTIMATE_PROPERTY = "rdf4j.lmdb.parallel.minRootEstimate";
 
 	private static final AtomicInteger THREAD_IDS = new AtomicInteger();
 	private static final AtomicInteger RESERVED_TASKS = new AtomicInteger();
@@ -309,13 +308,9 @@ final class LmdbNativeParallelPipelines {
 
 	/**
 	 * The default gate is the measured scheduling intercept in the same work units as {@link MultiJoinPlan#estimate}.
-	 * The old root-estimate property remains a compatibility alias, but its value is now interpreted as total work.
 	 */
 	static double minimumWorkEstimate() {
 		String configured = System.getProperty(MIN_WORK_ESTIMATE_PROPERTY);
-		if (configured == null) {
-			configured = System.getProperty(LEGACY_MIN_ROOT_ESTIMATE_PROPERTY);
-		}
 		if (configured == null) {
 			return LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST;
 		}

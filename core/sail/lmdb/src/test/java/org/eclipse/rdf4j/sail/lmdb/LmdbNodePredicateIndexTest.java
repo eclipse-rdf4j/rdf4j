@@ -35,15 +35,15 @@ class LmdbNodePredicateIndexTest {
 		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
 		try (LmdbInMemoryAdjacencyIndex base = LmdbPagedCsfBaseBuilder.build(new ProjectionScanner(),
 				LmdbAdjacencyCoverage.full(), account, 1L << 20, 1L << 16)) {
-			assertThat(base.supportsPredicateEnumeration(LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT)).isTrue();
-			assertThat(base.supportsPredicateEnumeration(LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED)).isTrue();
-			assertThat(base.supportsPredicateEnumeration(LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT)).isFalse();
+			assertThat(base.supportsPredicateEnumeration(LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT)).isTrue();
+			assertThat(base.supportsPredicateEnumeration(LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED)).isTrue();
+			assertThat(base.supportsPredicateEnumeration(LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT)).isFalse();
 
 			LmdbNodePredicateIndex index = base.nodePredicateIndex();
-			assertThat(index.rowCount(LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT)).isEqualTo(3);
-			assertThat(index.incidenceCount(LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT)).isEqualTo(4);
-			assertThat(index.rowCount(LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED)).isEqualTo(1);
-			assertThat(index.incidenceCount(LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED)).isEqualTo(2);
+			assertThat(index.rowCount(LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT)).isEqualTo(3);
+			assertThat(index.incidenceCount(LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT)).isEqualTo(4);
+			assertThat(index.rowCount(LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED)).isEqualTo(1);
+			assertThat(index.incidenceCount(LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED)).isEqualTo(2);
 			assertThat(index.nativeBytes()).isPositive();
 
 			assertThat(predicates(index, 0, S10)).containsExactly(P5, P9);
@@ -60,7 +60,7 @@ class LmdbNodePredicateIndexTest {
 		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
 		try (LmdbInMemoryAdjacencyIndex base = LmdbPagedCsfBaseBuilder.build(new EmptyScanner(),
 				LmdbAdjacencyCoverage.full(), account, 1L << 20, 1L << 16)) {
-			assertThat(base.supportsPredicateEnumeration(LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT)).isTrue();
+			assertThat(base.supportsPredicateEnumeration(LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT)).isTrue();
 			assertThat(base.nodePredicateIndex().rowCount(0)).isZero();
 			assertThat(base.nodePredicateIndex().incidenceCount(0)).isZero();
 		}
@@ -102,13 +102,13 @@ class LmdbNodePredicateIndexTest {
 			LmdbNodePredicateIndex index = base.nodePredicateIndex();
 			ImmutablePagedQuadCsfIndex.LookupCursor cursor = new ImmutablePagedQuadCsfIndex.LookupCursor();
 
-			assertThatThrownBy(() -> index.findLocalReference(LmdbReferenceNodeLocator.PLANE_INCOMING_EXPLICIT, S10,
+			assertThatThrownBy(() -> index.findLocalReference(LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT, S10,
 					cursor)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("plane");
-			assertThatThrownBy(() -> index.findLocalReference(LmdbReferenceNodeLocator.PLANE_INCOMING_INFERRED, S10,
+			assertThatThrownBy(() -> index.findLocalReference(LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED, S10,
 					cursor)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("plane");
 
 			// A supported plane with a genuinely absent row still answers zero.
-			assertThat(index.findLocalReference(LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT, id(1, 999), cursor))
+			assertThat(index.findLocalReference(LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, id(1, 999), cursor))
 					.isZero();
 		}
 		assertThat(account.totalChargedBytes()).isZero();
@@ -141,7 +141,7 @@ class LmdbNodePredicateIndexTest {
 		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
 		try (LmdbInMemoryAdjacencyIndex base = LmdbPagedCsfBaseBuilder.build(new ProjectionScanner(),
 				LmdbAdjacencyCoverage.selected(new long[] { P5 }, Set.of()), account, 1L << 20, 1L << 16)) {
-			assertThat(base.supportsPredicateEnumeration(LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT)).isFalse();
+			assertThat(base.supportsPredicateEnumeration(LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT)).isFalse();
 			assertThatThrownBy(base::nodePredicateIndex).isInstanceOf(IllegalStateException.class);
 		}
 		assertThat(account.totalChargedBytes()).isZero();

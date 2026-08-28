@@ -41,8 +41,8 @@ final class LmdbDirectAdjacencyPredicatePrefixRunCursor implements LmdbPrefixRun
 		this.statistics = view.state().planeStatistics();
 		this.explicit = explicit;
 		this.countRunRows = countRunRows;
-		this.plane = explicit ? LmdbReferenceNodeLocator.PLANE_OUTGOING_EXPLICIT
-				: LmdbReferenceNodeLocator.PLANE_OUTGOING_INFERRED;
+		this.plane = explicit ? LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+				: LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED;
 		this.predicates = statistics.activePredicates(plane);
 		view.retainLease();
 		boolean success = false;

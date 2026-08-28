@@ -70,7 +70,7 @@ public class LmdbNativeStrategyPriorityTest {
 	private static final String ADAPTIVE_FILTER_FLAG = "rdf4j.lmdb.adaptiveFilterPlacement.enabled";
 	private static final String MERGE_MIN_ROWS_FLAG = "rdf4j.lmdb.mergeJoin.minRows";
 	private static final String HASH_MIN_ROWS_FLAG = "rdf4j.lmdb.nativeHashJoin.minRows";
-	private static final String PARALLEL_THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minRootEstimate";
+	private static final String PARALLEL_THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minWorkEstimate";
 	private static final String PARALLEL_THREADS_FLAG = "rdf4j.lmdb.parallel.threads";
 	private static final String PARALLEL_TASKS_FLAG = "rdf4j.lmdb.parallel.maxTasks";
 	private static final String STRATEGY_DECLINES_METRIC = "nativeStrategyDeclines";

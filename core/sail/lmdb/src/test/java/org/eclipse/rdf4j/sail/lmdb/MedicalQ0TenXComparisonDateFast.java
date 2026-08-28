@@ -247,8 +247,7 @@ public final class MedicalQ0TenXComparisonDateFast {
 	}
 
 	static LmdbDecodedNativeAdjacency light(ImmutablePagedQuadCsfIndex x) {
-		return new LmdbDecodedNativeAdjacency(x, x.sharedPartitionLookup(0, 0),
-				LmdbAdjacencyKeyIndex.fromCsf(x.keyDomain(0, 0)));
+		return new LmdbDecodedNativeAdjacency(x, x.sharedPartitionLookup(0, 0), x.keyDomain(0, 0));
 	}
 
 	static void promote(ImmutablePagedQuadCsfIndex x) {
