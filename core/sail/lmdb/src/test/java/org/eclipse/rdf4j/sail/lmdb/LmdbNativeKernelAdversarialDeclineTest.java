@@ -173,7 +173,7 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 		// `{n,m}` path ranges are not SPARQL 1.1 and RDF4J's parser rejects them, so the adversarial cases in that
 		// neighbourhood are the ones a user can actually write: a negated property set, and an explicit two-hop.
 		CORPUS.put("path-negated-set",
-				"SELECT ?a ?b WHERE { ?a !(soc:follows) ?b } LIMIT 100");
+				"SELECT ?a ?b WHERE { ?a !(soc:follows) ?b } ORDER BY ?a ?b LIMIT 100");
 		CORPUS.put("path-two-hop",
 				"SELECT ?a ?b WHERE { ?a soc:follows/soc:follows ?b }");
 		CORPUS.put("path-plus-bound-start",

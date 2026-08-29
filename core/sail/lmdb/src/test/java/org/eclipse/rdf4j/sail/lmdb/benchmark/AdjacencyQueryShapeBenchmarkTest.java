@@ -24,17 +24,22 @@ class AdjacencyQueryShapeBenchmarkTest {
 	void everyBenchmarkMethodProducesRowsAtUnitScale() throws IOException {
 		String previousNative = System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
 		AdjacencyQueryShapeBenchmark benchmark = new AdjacencyQueryShapeBenchmark();
-		benchmark.peopleCount = 300;
+		int peopleCount = Integer.getInteger("rdf4j.lmdb.adjacencyQueryShapeBenchmark.smokePeopleCount", 300);
+		benchmark.peopleCount = peopleCount;
 		benchmark.cliquePercentage = 30;
 		benchmark.minCliqueSize = 3;
 		benchmark.maxCliqueSize = 6;
-		benchmark.randomKnowsEdges = 900;
+		benchmark.randomKnowsEdges = Math.multiplyExact(peopleCount, 3);
 		benchmark.seed = 12345L;
 		benchmark.engineMode = FoafCliqueQueryBenchmark.MODE_NATIVE;
 		try {
 			benchmark.setup();
 
 			assertThat(benchmark.fullPredicateScan()).isGreaterThan(0);
+			assertThat(benchmark.allUnboundPattern()).isGreaterThan(0);
+			assertThat(benchmark.variablePredicateDoublyBound()).isGreaterThan(0);
+			assertThat(benchmark.orderedContext()).isGreaterThan(0);
+			assertThat(benchmark.rangedScan()).isEqualTo(2L * Math.max(0L, peopleCount - 4900L));
 			assertThat(benchmark.distinctSubjects()).isGreaterThan(0);
 			assertThat(benchmark.countOnePredicate()).isEqualTo(1);
 			assertThat(benchmark.degreePerSubject()).isGreaterThan(0);

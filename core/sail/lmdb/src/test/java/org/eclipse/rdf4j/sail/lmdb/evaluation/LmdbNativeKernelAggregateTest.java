@@ -631,10 +631,12 @@ public class LmdbNativeKernelAggregateTest {
 		assertTrue(telemetry.contains("strategy: SEQUENTIAL_FALLBACK[reason=FLOATING_SUM_OR_AVG]"), telemetry);
 		assertTrue(telemetry.contains("janino:\n      used: false\n"
 				+ "      reason: ENCOUNTER_ORDER_REQUIRES_LMDB[reason=FLOATING_SUM_OR_AVG]"), telemetry);
-		assertTrue(telemetry.contains("adjacencyAccess:\n      used: false\n"
-				+ "      attempts:\n        0:\n          source: LMDB\n"
-				+ "          outcome: DECLINED_TO_LMDB\n"
-				+ "          reason: ENCOUNTER_ORDER_REQUIRES_LMDB[index=posc]"), telemetry);
+		assertTrue(telemetry.contains("adjacencyAccess:\n      used: true"), telemetry);
+		assertTrue(telemetry.contains("source: IN_MEMORY_ADJACENCY\n          outcome: CANDIDATE"), telemetry);
+		assertTrue(telemetry.contains("source: LMDB\n          outcome: CANDIDATE"), telemetry);
+		assertTrue(telemetry.contains("source: LMDB\n          outcome: OUTRANKED"), telemetry);
+		assertTrue(telemetry.contains("source: IN_MEMORY_ADJACENCY\n          outcome: SELECTED"), telemetry);
+		assertFalse(telemetry.contains("outcome: DECLINED_TO_LMDB"), telemetry);
 		assertFalse(telemetry.contains("reason: ROOT_SCAN"), telemetry);
 	}
 

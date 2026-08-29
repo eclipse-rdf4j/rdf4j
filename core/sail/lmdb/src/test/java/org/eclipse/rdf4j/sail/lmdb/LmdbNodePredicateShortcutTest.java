@@ -167,11 +167,11 @@ class LmdbNodePredicateShortcutTest {
 
 	/**
 	 * The projection orders rows by unsigned key then unsigned predicate and the iterator picks the smallest predicate
-	 * across base and generations, so the stream is predicate-major. Object order is a different claim — it holds only
-	 * within one predicate group — and stays refused.
+	 * across base and generations, so the stream is predicate-major. Object order uses the general primitive k-way
+	 * merge when the projection itself cannot stream that order.
 	 */
 	@Test
-	void predicateOrderIsServedAndObjectOrderIsStillRefused() throws Exception {
+	void predicateAndObjectOrdersAreServed() throws Exception {
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
 			RecordIterator ordered = store.tryOpenOrdered(view, null, StatementOrder.P, S1, -1, -1, -1, true);
 			assertThat(ordered).as("predicate order must be served").isNotNull();
@@ -186,9 +186,18 @@ class LmdbNodePredicateShortcutTest {
 			}
 			assertThat(predicates).containsExactly(P_A, P_A, P_A, P_B, P_ONLY_IN_G1);
 
-			assertThat(store.tryOpenOrdered(view, null, StatementOrder.O, S1, -1, -1, -1, true))
-					.as("object order holds only within one predicate group")
-					.isNull();
+			RecordIterator objectOrdered = store.tryOpenOrdered(view, null, StatementOrder.O, S1, -1, -1, -1, true);
+			assertThat(objectOrdered).as("the universal merge supplies complete object order").isNotNull();
+			List<Long> objects = new ArrayList<>();
+			try {
+				long[] quad;
+				while ((quad = objectOrdered.next()) != null) {
+					objects.add(quad[TripleIndex.OBJ_IDX]);
+				}
+			} finally {
+				objectOrdered.close();
+			}
+			assertThat(objects).containsExactly(O1, O1, O1, O2, O2);
 		}
 	}
 

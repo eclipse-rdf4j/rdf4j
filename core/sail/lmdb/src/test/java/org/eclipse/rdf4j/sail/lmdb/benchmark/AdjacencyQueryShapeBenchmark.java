@@ -19,12 +19,16 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -49,9 +53,9 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * dataset is the FOAF clique store used by {@link FoafCliqueQueryBenchmark} so results are comparable with the WCOJ
  * work on the same branch.
  *
- * These shapes are the ones the adjacency-usage census ({@code LmdbAdjacencyUsageCensusTest}) shows falling back to
- * LMDB today (ROOT_SCAN, DOUBLY_BOUND, PREDICATE_ENUMERATION_INCOMPLETE) even though the in-memory structures hold the
- * answer; each benchmark method is the baseline for the corresponding future adjacency-served path.
+ * The adjacency-usage census ({@code LmdbAdjacencyUsageCensusTest}) historically identified these shapes as structural
+ * declines. They now exercise universal exact-full candidate coverage and the statement-access arbiter, with an
+ * explicit LMDB-only mode retained as a diagnostic comparison arm.
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 3, time = 2, timeUnit = TimeUnit.SECONDS)
@@ -71,7 +75,16 @@ public class AdjacencyQueryShapeBenchmark {
 	private static final String SELECTIVE_LEAF_PREDICATE = "<" + SHAPE_NAMESPACE + "selectiveLeaf>";
 	private static final String DENSE_PREDICATE = "<" + SHAPE_NAMESPACE + "dense>";
 	private static final String DENSE_LEAF_PREDICATE = "<" + SHAPE_NAMESPACE + "denseLeaf>";
+	private static final String ALL_UNBOUND_QUERY = "SELECT ?s ?p ?o WHERE { ?s ?p ?o }";
+	private static final String VARIABLE_PREDICATE_DOUBLY_BOUND_QUERY = "SELECT ?p WHERE { " + SEED_PERSON
+			+ " ?p " + SEED_PERSON_TARGET + " }";
+	private static final String ORDERED_CONTEXT_QUERY = "SELECT ?g ?s ?p ?o WHERE { GRAPH ?g { ?s ?p ?o } } "
+			+ "ORDER BY ?g ?s ?p ?o";
+	private static final String RANGED_QUERY = "SELECT (COUNT(*) AS ?count) WHERE { ?s " + ROOT_PREDICATE
+			+ " ?middle . ?s <" + SHAPE_NAMESPACE + "rank> ?rank . FILTER(?rank >= 4900) }";
 	private static final String PRINT_TELEMETRY_PROPERTY = "rdf4j.lmdb.adjacencyQueryShapeBenchmark.printTelemetry";
+	private static final String SOURCE_ARBITER = "arbiter";
+	private static final String SOURCE_LMDB = "lmdb";
 	private static final String SELECTIVE_SIP_QUERY = "SELECT ?s ?leaf WHERE { ?s " + ROOT_PREDICATE
 			+ " ?middle . ?middle " + SELECTIVE_PREDICATE + " ?value . ?value " + SELECTIVE_LEAF_PREDICATE
 			+ " ?leaf }";
@@ -99,6 +112,9 @@ public class AdjacencyQueryShapeBenchmark {
 	@Param({ FoafCliqueQueryBenchmark.MODE_NATIVE })
 	public String engineMode;
 
+	@Param({ SOURCE_ARBITER })
+	public String sourceMode = SOURCE_ARBITER;
+
 	private File dataDir;
 	private SailRepository repository;
 
@@ -113,7 +129,7 @@ public class AdjacencyQueryShapeBenchmark {
 	public void setup() throws IOException {
 		FoafCliqueQueryBenchmark.applyEngineMode(engineMode);
 		dataDir = Files.createTempDirectory("rdf4j-lmdb-adjacency-shapes").toFile();
-		repository = FoafCliqueQueryBenchmark.createRepository(dataDir);
+		repository = createRepository(dataDir, sourceMode);
 		repository.init();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -121,13 +137,19 @@ public class AdjacencyQueryShapeBenchmark {
 					seed).populate(connection);
 			populateSipMaskShapes(connection);
 		}
-		awaitDirectAdjacency();
+		if (SOURCE_ARBITER.equals(sourceMode)) {
+			awaitDirectAdjacency();
+		}
 	}
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
 		if (repository != null) {
 			if (Boolean.getBoolean(PRINT_TELEMETRY_PROPERTY)) {
+				printTelemetry("allUnboundPattern", ALL_UNBOUND_QUERY);
+				printTelemetry("variablePredicateDoublyBound", VARIABLE_PREDICATE_DOUBLY_BOUND_QUERY);
+				printTelemetry("orderedContext", ORDERED_CONTEXT_QUERY);
+				printTelemetry("rangedScan", RANGED_QUERY);
 				printTelemetry("selectiveAdjacencySipChain", SELECTIVE_SIP_QUERY);
 				printTelemetry("denseAdjacencySipChain", DENSE_SIP_QUERY);
 			}
@@ -141,6 +163,26 @@ public class AdjacencyQueryShapeBenchmark {
 	@Benchmark
 	public long fullPredicateScan() {
 		return executeCount(PREFIXES + "SELECT ?s ?o WHERE { ?s foaf:knows ?o }");
+	}
+
+	@Benchmark
+	public long allUnboundPattern() {
+		return executeCount(ALL_UNBOUND_QUERY);
+	}
+
+	@Benchmark
+	public long variablePredicateDoublyBound() {
+		return executeCount(VARIABLE_PREDICATE_DOUBLY_BOUND_QUERY);
+	}
+
+	@Benchmark
+	public long orderedContext() {
+		return executeCount(ORDERED_CONTEXT_QUERY);
+	}
+
+	@Benchmark
+	public long rangedScan() {
+		return executeSingleLong(RANGED_QUERY, "count");
 	}
 
 	@Benchmark
@@ -254,11 +296,16 @@ public class AdjacencyQueryShapeBenchmark {
 		IRI selectiveLeafPredicate = vf.createIRI(SHAPE_NAMESPACE, "selectiveLeaf");
 		IRI densePredicate = vf.createIRI(SHAPE_NAMESPACE, "dense");
 		IRI denseLeafPredicate = vf.createIRI(SHAPE_NAMESPACE, "denseLeaf");
+		IRI rankPredicate = vf.createIRI(SHAPE_NAMESPACE, "rank");
+		IRI doublyBoundPredicate = vf.createIRI(SHAPE_NAMESPACE, "doublyBound");
 		connection.begin();
 		for (int person = 0; person < peopleCount; person++) {
 			IRI subject = vf.createIRI(SHAPE_NAMESPACE, "subject/" + person);
 			IRI middle = vf.createIRI(SHAPE_NAMESPACE, "middle/" + person);
+			IRI graph = vf.createIRI(SHAPE_NAMESPACE, "graph/" + (person & 7));
 			connection.add(subject, rootPredicate, middle);
+			connection.add(subject, rootPredicate, middle, graph);
+			connection.add(subject, rankPredicate, vf.createLiteral(person));
 			for (int edge = 0; edge < 2; edge++) {
 				IRI value = vf.createIRI(SHAPE_NAMESPACE, "denseValue/" + person + "/" + edge);
 				connection.add(middle, densePredicate, value);
@@ -274,7 +321,25 @@ public class AdjacencyQueryShapeBenchmark {
 				}
 			}
 		}
+		connection.add(vf.createIRI(PERSON_NAMESPACE, "0"), doublyBoundPredicate,
+				vf.createIRI(PERSON_NAMESPACE, "1"));
 		connection.commit();
+	}
+
+	private static SailRepository createRepository(File dataDir, String sourceMode) {
+		LmdbStoreConfig config = FoafCliqueQueryBenchmark.createBenchmarkConfig();
+		switch (sourceMode) {
+		case SOURCE_ARBITER:
+			config.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER);
+			config.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.FULL);
+			break;
+		case SOURCE_LMDB:
+			config.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
+			break;
+		default:
+			throw new IllegalArgumentException("Unknown statement source mode: " + sourceMode);
+		}
+		return new SailRepository(new LmdbStore(dataDir, config));
 	}
 
 	private void awaitDirectAdjacency() throws IOException {
@@ -294,6 +359,21 @@ public class AdjacencyQueryShapeBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			try (TupleQueryResult evaluate = connection.prepareTupleQuery(query).evaluate()) {
 				return evaluate.stream().count();
+			}
+		}
+	}
+
+	private long executeSingleLong(String query, String binding) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+				if (!result.hasNext()) {
+					throw new IllegalStateException("aggregate query produced no result");
+				}
+				Literal value = (Literal) result.next().getValue(binding);
+				if (result.hasNext()) {
+					throw new IllegalStateException("aggregate query produced more than one result");
+				}
+				return value.longValue();
 			}
 		}
 	}

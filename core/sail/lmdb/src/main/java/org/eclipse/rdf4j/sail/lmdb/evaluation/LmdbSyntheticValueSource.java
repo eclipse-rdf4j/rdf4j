@@ -296,6 +296,15 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public RecordIterator statementsInEncounterOrder(long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer) throws IOException {
+		if (anySynthetic(subj, pred, obj, context)) {
+			return EMPTY;
+		}
+		return delegate.statementsInEncounterOrder(subj, pred, obj, context, observer);
+	}
+
+	@Override
 	public RecordIterator lmdbStatements(long subj, long pred, long obj, long context,
 			AdjacencyAccessObserver observer) throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
@@ -454,10 +463,17 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	@Override
 	public boolean has(long subj, long pred, long obj, long context) throws IOException {
+		return has(subj, pred, obj, context, null);
+	}
+
+	@Override
+	public boolean has(long subj, long pred, long obj, long context, AdjacencyAccessObserver observer)
+			throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
 			return false;
 		}
-		return delegate.has(subj, pred, obj, context);
+		return observer == null ? delegate.has(subj, pred, obj, context)
+				: delegate.has(subj, pred, obj, context, observer);
 	}
 
 	@Override

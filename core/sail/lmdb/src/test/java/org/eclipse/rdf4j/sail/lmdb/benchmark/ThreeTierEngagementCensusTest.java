@@ -86,16 +86,11 @@ class ThreeTierEngagementCensusTest {
 
 	/**
 	 * Cells the adjacency tier is known to serve today, recorded from the baseline census run of 2026-08-04: every
-	 * generated-dataset cell except the {@code <s> ?p ?o} node edge dump.
+	 * generated-dataset cell.
 	 *
 	 * <p>
-	 * That exception used to be a statement about capability — the compact base kept no node-to-all-predicates
-	 * directory, so the shape could not be answered at all. It is now a statement about configuration. A paged base can
-	 * answer it out of the node-predicate projection, but that projection ships behind switches that all default to
-	 * off, and the census deliberately measures the default configuration. Turn on
-	 * {@code rdf4j.lmdb.directAdjacency.nodePredicateProjection.enabled} together with its {@code .serve.enabled}
-	 * companion and this cell serves; leave them alone and it declines with {@code PREDICATE_ENUMERATION_INCOMPLETE},
-	 * which is what this baseline records.
+	 * Node-predicate projections remain optional accelerators. With their switches off, the universal predicate-domain
+	 * traversal serves the same shapes and records no structural decline.
 	 *
 	 * <p>
 	 * The theme cells are absent because the theme half of the census is opt-in and has no recorded baseline yet.
@@ -106,8 +101,6 @@ class ThreeTierEngagementCensusTest {
 		Set<ThreeTierParityCorpus> served = EnumSet.noneOf(ThreeTierParityCorpus.class);
 		served.addAll(ThreeTierParityCorpus.of(Dataset.FOAF));
 		served.addAll(ThreeTierParityCorpus.of(Dataset.CORRELATED));
-		// Declines by configuration, not by capability; see the field comment above.
-		served.remove(ThreeTierParityCorpus.NODE_EDGE_DUMP);
 		// The node-predicate cells are governed by the route ledger instead, which pins their route exactly in both
 		// configurations rather than only asserting "served today, must still serve tomorrow". Calling the factory
 		// rather than reading ROUTE_LEDGER keeps this independent of static initialisation order.
@@ -164,20 +157,19 @@ class ThreeTierEngagementCensusTest {
 		// half engages the planes either way, so the route alone says nothing here — what moves is the decline count,
 		// which is one per matching instance while the switches are off and zero once they are on.
 		ledger.put(ThreeTierParityCorpus.CLASS_PREDICATE_MATRIX,
-				new Ledger(Route.ADJACENCY, Route.ADJACENCY, true));
-		// What moves is that the dump stops declining and starts reading the planes.
+				new Ledger(Route.ADJACENCY, Route.ADJACENCY, false));
 		ledger.put(ThreeTierParityCorpus.REPEATED_NODE_DUMP,
-				new Ledger(Route.LMDB_ONLY, Route.ADJACENCY, true));
+				new Ledger(Route.ADJACENCY, Route.ADJACENCY, false));
 		ledger.put(ThreeTierParityCorpus.VARIABLE_PREDICATE_JOIN,
-				new Ledger(Route.ADJACENCY, Route.ADJACENCY, true));
+				new Ledger(Route.ADJACENCY, Route.ADJACENCY, false));
 		// The reverse direction additionally needs the incoming planes, which are their own switch. It stays
 		// interpreted even when it serves: a lone triple pattern is one scan, and the compiled tier only takes shapes
 		// with something to fuse.
 		ledger.put(ThreeTierParityCorpus.INCOMING_EDGE_DUMP,
-				new Ledger(Route.LMDB_ONLY, Route.ADJACENCY, true));
-		// The control. All three positions unbound, so there is no key to look up: the projection must never be
-		// consulted and nothing may compile through it, in either configuration. Its route must not move either — a
-		// shape the projection does not serve must not become slower or differently routed because it exists.
+				new Ledger(Route.ADJACENCY, Route.ADJACENCY, false));
+		// The all-unbound control offers the universal predicate sweep, but LMDB strictly dominates its aggregate scan
+		// cost in this fixture. Pin that arbiter win separately from structural eligibility: the zero-decline assertion
+		// below proves that this is not a missing adjacency candidate.
 		ledger.put(ThreeTierParityCorpus.OUT_DEGREE_HISTOGRAM,
 				new Ledger(Route.LMDB_ONLY, Route.LMDB_ONLY, false));
 		return ledger;
@@ -419,10 +411,17 @@ class ThreeTierEngagementCensusTest {
 					cell.benchmarkMethodName()
 							+ " took an unexpected adjacency-tier route with the projection switches "
 							+ (projectionOn ? "on" : "off"));
-			if (!projectionOn && ledger.declinesWhileOff()) {
-				assertTrue(adjacency.enumerationDeclineDelta() > 0,
-						cell.benchmarkMethodName() + " must record a PREDICATE_ENUMERATION_INCOMPLETE fallback while"
-								+ " the projection is off; recording none means the shape never even asked");
+			if (!projectionOn) {
+				if (ledger.declinesWhileOff()) {
+					assertTrue(adjacency.enumerationDeclineDelta() > 0,
+							cell.benchmarkMethodName()
+									+ " must record a PREDICATE_ENUMERATION_INCOMPLETE fallback while"
+									+ " the projection is off; recording none means the shape never even asked");
+				} else {
+					assertEquals(0L, adjacency.enumerationDeclineDelta(),
+							cell.benchmarkMethodName()
+									+ " must not structurally decline adjacency while the projection is off");
+				}
 			}
 			if (projectionOn) {
 				assertEquals(0L, adjacency.enumerationDeclineDelta(),

@@ -813,7 +813,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 
 	List<BindingSet> evaluateSequentialFallback(RowState speculativeRow, EncounterOrderFallback.Reason reason) {
 		RowState row = new RowState(source, layout, base, explainTarget, cancellation);
-		row.lmdbScanOnly = true;
+		row.encounterOrderRequired = true;
 		row.runtimePlan = speculativeRow.runtimePlan;
 		if (row.runtimePlan != null) {
 			row.runtimePlan.restartWithEncounterOrderFallback(reason, arg);

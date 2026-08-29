@@ -172,6 +172,8 @@ final class LmdbNativeRuntimePlan {
 		private List<String> generatedOrder = List.of();
 		private boolean adjacencyAccessUsed;
 		private final Map<AdjacencyAccessKey, AdjacencyAccess> adjacencyAccesses = new LinkedHashMap<>();
+		private final AdjacencyMeasurement adjacencyMeasurement = new AdjacencyMeasurement("IN_MEMORY_ADJACENCY");
+		private final AdjacencyMeasurement lmdbMeasurement = new AdjacencyMeasurement("LMDB");
 		private boolean adjacencyUsed;
 		private String adjacencyState = "NOT_CONSIDERED";
 		private String adjacencyReason = "NOT_ATTEMPTED[no adjacency SIP activation point reached]";
@@ -275,6 +277,8 @@ final class LmdbNativeRuntimePlan {
 				generatedOrder = List.of();
 				adjacencyAccessUsed = false;
 				adjacencyAccesses.clear();
+				adjacencyMeasurement.clear();
+				lmdbMeasurement.clear();
 				adjacencyUsed = false;
 				adjacencyState = "NOT_CONSIDERED";
 				adjacencyReason = renderedReason;
@@ -334,25 +338,81 @@ final class LmdbNativeRuntimePlan {
 		}
 
 		NativeLmdbQuerySource.AdjacencyAccessObserver adjacencyAccessAt(String where) {
-			return (used, reason, requestedOrder, subj, pred, obj, context) -> {
-				boolean publish;
-				synchronized (this) {
-					adjacencyAccessUsed |= used;
-					AdjacencyAccessKey key = new AdjacencyAccessKey(used, reason, requestedOrder, subj > 0L,
-							pred > 0L, obj > 0L, context > 0L, where);
-					AdjacencyAccess matched = adjacencyAccesses.get(key);
-					if (matched == null) {
-						adjacencyAccesses.put(key,
-								new AdjacencyAccess(used, reason, requestedOrder, subj, pred, obj, context, where));
-						publish = true;
-					} else {
-						publish = matched.incrementAndShouldPublish();
-					}
+			return new NativeLmdbQuerySource.AdjacencyAccessObserver() {
+				@Override
+				public void access(boolean used, String reason, StatementOrder requestedOrder, long subj, long pred,
+						long obj, long context) {
+					recordAdjacencyAccess("ADJACENCY", used ? "SELECTED" : "INELIGIBLE", used, reason,
+							requestedOrder, subj, pred, obj, context, where);
 				}
-				if (publish && publishAllowed()) {
-					owner.publish();
+
+				@Override
+				public void candidate(String source, String reason, StatementOrder requestedOrder, long subj,
+						long pred, long obj, long context) {
+					recordAdjacencyAccess(source, "CANDIDATE", false, reason, requestedOrder, subj, pred, obj,
+							context, where);
+				}
+
+				@Override
+				public void selected(boolean adjacency, String reason, StatementOrder requestedOrder, long subj,
+						long pred, long obj, long context) {
+					recordAdjacencyAccess(adjacency ? "ADJACENCY" : "LMDB", "SELECTED", adjacency, reason,
+							requestedOrder, subj, pred, obj, context, where);
+				}
+
+				@Override
+				public void outranked(String source, String reason, StatementOrder requestedOrder, long subj,
+						long pred, long obj, long context) {
+					recordAdjacencyAccess(source, "OUTRANKED", false, reason, requestedOrder, subj, pred, obj,
+							context, where);
+				}
+
+				@Override
+				public void ineligible(String reason, StatementOrder requestedOrder, long subj, long pred, long obj,
+						long context) {
+					recordAdjacencyAccess("ADJACENCY", "INELIGIBLE", false, reason, requestedOrder, subj, pred, obj,
+							context, where);
+				}
+
+				@Override
+				public void measurement(boolean adjacency, long scannedRows, long matchedRows, long filteredRows,
+						boolean censored) {
+					recordAdjacencyMeasurement(adjacency, scannedRows, matchedRows, filteredRows, censored);
 				}
 			};
+		}
+
+		private void recordAdjacencyMeasurement(boolean adjacency, long scannedRows, long matchedRows,
+				long filteredRows, boolean censored) {
+			boolean publish;
+			synchronized (this) {
+				publish = (adjacency ? adjacencyMeasurement : lmdbMeasurement)
+						.add(scannedRows, matchedRows, filteredRows, censored);
+			}
+			if (publish && publishAllowed()) {
+				owner.publish();
+			}
+		}
+
+		private void recordAdjacencyAccess(String source, String outcome, boolean used, String reason,
+				StatementOrder requestedOrder, long subj, long pred, long obj, long context, String where) {
+			boolean publish;
+			synchronized (this) {
+				adjacencyAccessUsed |= used;
+				AdjacencyAccessKey key = new AdjacencyAccessKey(source, outcome, reason, requestedOrder, subj > 0L,
+						pred > 0L, obj > 0L, context > 0L, where);
+				AdjacencyAccess matched = adjacencyAccesses.get(key);
+				if (matched == null) {
+					adjacencyAccesses.put(key, new AdjacencyAccess(source, outcome, reason, requestedOrder, subj, pred,
+							obj, context, where));
+					publish = true;
+				} else {
+					publish = matched.incrementAndShouldPublish();
+				}
+			}
+			if (publish && publishAllowed()) {
+				owner.publish();
+			}
 		}
 
 		void adjacencyDecision(String state, String reason, String where) {
@@ -466,6 +526,13 @@ final class LmdbNativeRuntimePlan {
 				for (AdjacencyAccess access : adjacencyAccesses.values()) {
 					access.render(out, accessIndex++);
 				}
+			}
+			out.append("\n      measurements:");
+			if (adjacencyMeasurement.total() == 0L && lmdbMeasurement.total() == 0L) {
+				out.append("\n        <none; reason=NO_MEASURED_STATEMENT_ACCESS_COMPLETED>");
+			} else {
+				adjacencyMeasurement.render(out);
+				lmdbMeasurement.render(out);
 			}
 			out.append("\n    adjacencySIP:")
 					.append("\n      used: ")
@@ -690,7 +757,8 @@ final class LmdbNativeRuntimePlan {
 		}
 
 		private static final class AdjacencyAccess {
-			private final boolean used;
+			private final String source;
+			private final String outcome;
 			private final String reason;
 			private final StatementOrder requestedOrder;
 			private final long subj;
@@ -700,9 +768,10 @@ final class LmdbNativeRuntimePlan {
 			private final String where;
 			private long count = 1L;
 
-			private AdjacencyAccess(boolean used, String reason, StatementOrder requestedOrder, long subj, long pred,
-					long obj, long context, String where) {
-				this.used = used;
+			private AdjacencyAccess(String source, String outcome, String reason, StatementOrder requestedOrder,
+					long subj, long pred, long obj, long context, String where) {
+				this.source = source;
+				this.outcome = outcome;
 				this.reason = reason;
 				this.requestedOrder = requestedOrder;
 				this.subj = subj;
@@ -722,9 +791,9 @@ final class LmdbNativeRuntimePlan {
 						.append(index)
 						.append(":")
 						.append("\n          source: ")
-						.append(used ? "IN_MEMORY_ADJACENCY" : "LMDB")
+						.append("ADJACENCY".equals(source) ? "IN_MEMORY_ADJACENCY" : source)
 						.append("\n          outcome: ")
-						.append(used ? "SERVED" : "DECLINED_TO_LMDB")
+						.append(outcome)
 						.append("\n          reason: ")
 						.append(reason)
 						.append("\n          where: ")
@@ -753,7 +822,63 @@ final class LmdbNativeRuntimePlan {
 			}
 		}
 
-		private record AdjacencyAccessKey(boolean used, String reason, StatementOrder requestedOrder,
+		private static final class AdjacencyMeasurement {
+			private final String source;
+			private long completed;
+			private long censored;
+			private long scannedRows;
+			private long matchedRows;
+			private long filteredRows;
+
+			private AdjacencyMeasurement(String source) {
+				this.source = source;
+			}
+
+			private boolean add(long scannedRows, long matchedRows, long filteredRows, boolean censored) {
+				if (censored) {
+					this.censored++;
+				} else {
+					completed++;
+				}
+				this.scannedRows += scannedRows;
+				this.matchedRows += matchedRows;
+				this.filteredRows += filteredRows;
+				long total = total();
+				return (total & (total - 1L)) == 0L;
+			}
+
+			private long total() {
+				return completed + censored;
+			}
+
+			private void clear() {
+				completed = 0L;
+				censored = 0L;
+				scannedRows = 0L;
+				matchedRows = 0L;
+				filteredRows = 0L;
+			}
+
+			private void render(StringBuilder out) {
+				if (total() == 0L) {
+					return;
+				}
+				out.append("\n        ")
+						.append(source)
+						.append(":\n          completed: ")
+						.append(completed)
+						.append("\n          censored: ")
+						.append(censored)
+						.append("\n          rowsScannedActual: ")
+						.append(scannedRows)
+						.append("\n          rowsMatchedActual: ")
+						.append(matchedRows)
+						.append("\n          rowsFilteredActual: ")
+						.append(filteredRows);
+			}
+		}
+
+		private record AdjacencyAccessKey(String source, String outcome, String reason, StatementOrder requestedOrder,
 				boolean subjectBound, boolean predicateBound, boolean objectBound, boolean contextBound, String where) {
 		}
 	}

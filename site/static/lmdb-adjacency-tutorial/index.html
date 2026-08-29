@@ -249,7 +249,7 @@
 
         .step-list {
             display: grid;
-            grid-template-columns: repeat(7, minmax(40px, 1fr));
+            grid-template-columns: repeat(9, minmax(32px, 1fr));
             gap: 5px;
         }
 
@@ -604,6 +604,104 @@
         .packed-bits { margin-top: 9px; padding: 9px; border-radius: 6px; background: #292925; color: white; font: 10px/1.55 var(--mono); overflow-wrap: anywhere; }
         .packed-bits strong { color: #ffae76; }
 
+        .vector-selector { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+        .vector-selector button {
+            padding: 7px 9px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: white;
+            color: var(--muted);
+            cursor: pointer;
+            font: 700 9px/1 var(--mono);
+        }
+        .vector-selector button:hover { border-color: #e49a67; color: var(--ink); }
+        .vector-selector button[aria-pressed="true"] { border-color: var(--orange); background: var(--orange-soft); color: var(--orange-dark); }
+        .vector-anatomy, .delta-stage-detail {
+            overflow: hidden;
+            border: 1px solid #cfcac0;
+            border-radius: 11px;
+            background: white;
+        }
+        .vector-anatomy-head, .delta-stage-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 18px;
+            padding: 15px 17px;
+            border-bottom: 1px solid var(--line);
+            background: linear-gradient(115deg, #fff8f2, #fff 58%);
+        }
+        .vector-anatomy-head h3, .delta-stage-head h3 { margin: 4px 0 0; font-size: 17px; }
+        .vector-anatomy-head p, .delta-stage-head p { max-width: 720px; margin: 6px 0 0; color: var(--muted); font-size: 11px; }
+        .vector-total { flex: 0 0 auto; color: var(--orange-dark); font: 850 13px/1 var(--mono); }
+        .vector-byte-line { display: flex; min-height: 78px; margin: 16px; overflow: hidden; border: 1px solid #77736a; border-radius: 7px; }
+        .vector-region { min-width: 74px; padding: 10px 8px; display: grid; align-content: center; border-right: 1px solid rgba(255, 255, 255, .72); color: #2f302d; }
+        .vector-region:last-child { border-right: 0; }
+        .vector-region strong { font: 800 10px/1.2 var(--mono); }
+        .vector-region span { margin-top: 5px; font: 8px/1.35 var(--mono); }
+        .vector-region.vector-header { background: #3f403b; color: white; }
+        .vector-region.directory { background: #dce8e7; }
+        .vector-region.block-header { background: #e4dfec; }
+        .vector-region.payload { flex: 1 1 auto; background: repeating-linear-gradient(135deg, #f7c39f 0 9px, #ffd9bf 9px 18px); }
+        .decode-route, .mode-ledger { display: grid; gap: 9px; padding: 0 16px 16px; }
+        .decode-route { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .decode-step { position: relative; min-width: 0; padding: 12px; border-top: 2px solid var(--line-strong); background: #faf9f5; }
+        .decode-step:not(:last-child)::after { content: "\2192"; position: absolute; top: 21px; right: -8px; z-index: 2; color: var(--orange-dark); font: 850 15px/1 var(--mono); }
+        .decode-step b { display: block; color: var(--orange-dark); font: 850 9px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+        .decode-step code { display: block; margin-top: 7px; color: var(--ink); font: 700 9px/1.45 var(--mono); overflow-wrap: anywhere; }
+        .mode-ledger { grid-template-columns: repeat(4, minmax(0, 1fr)); padding-top: 16px; border-top: 1px solid var(--line); }
+        .mode-item { min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 7px; background: #faf9f5; }
+        .mode-item.selected { border: 2px solid var(--orange); padding: 10px; background: var(--orange-soft); }
+        .mode-item strong { display: block; font: 800 10px/1.2 var(--mono); }
+        .mode-item span { display: block; margin-top: 6px; color: var(--muted); font-size: 9px; }
+        .efficiency-equation { margin-top: 14px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+        .efficiency-equation div { padding: 13px; border-right: 1px solid var(--line); background: white; }
+        .efficiency-equation div:last-child { border-right: 0; background: #eef8f1; }
+        .efficiency-equation span { display: block; color: var(--muted); font: 700 8px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+        .efficiency-equation strong { display: block; margin-top: 7px; font: 850 14px/1.2 var(--mono); }
+
+        .delta-pipeline { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 13px; }
+        .delta-stage-button { position: relative; min-width: 0; padding: 11px 9px; border: 1px solid var(--line); border-radius: 7px; background: white; color: var(--muted); text-align: left; cursor: pointer; }
+        .delta-stage-button:hover { border-color: #e49a67; color: var(--ink); }
+        .delta-stage-button[aria-pressed="true"] { border-color: var(--orange); background: var(--orange-soft); color: var(--ink); }
+        .delta-stage-button b { display: block; color: var(--orange-dark); font: 850 9px/1 var(--mono); }
+        .delta-stage-button span { display: block; margin-top: 5px; font: 700 9px/1.25 var(--mono); }
+        .delta-stage-body { padding: 16px; }
+        .delta-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+        .delta-column { min-width: 0; padding: 12px; border-top: 2px solid var(--line-strong); background: #faf9f5; }
+        .delta-column.accent { border-color: var(--orange); background: var(--orange-soft); }
+        .delta-column h4 { margin: 0 0 8px; font-size: 11px; }
+        .pair-line { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font: 9px/1.35 var(--mono); }
+        .pair-line:last-child { border-bottom: 0; }
+        .pair-line .remove { color: var(--danger); }
+        .pair-line .add { color: var(--green); }
+        .generation-directory { display: grid; grid-template-columns: 1.3fr .7fr 1.3fr 1fr; overflow: hidden; border: 1px solid var(--line); border-radius: 7px; }
+        .directory-cell { min-width: 0; padding: 9px; border-right: 1px solid var(--line); background: #faf9f5; font: 700 9px/1.35 var(--mono); overflow-wrap: anywhere; }
+        .directory-cell:last-child { border-right: 0; }
+        .directory-cell b { display: block; margin-bottom: 5px; color: var(--muted); font: 750 8px/1 var(--mono); text-transform: uppercase; }
+        .run-byte-ribbon { display: flex; flex-wrap: wrap; gap: 3px; margin: 13px 0 5px; padding: 10px; border-radius: 7px; background: #292925; }
+        .run-byte { width: 29px; padding: 7px 2px; border-radius: 4px; color: white; text-align: center; font: 750 9px/1 var(--mono); }
+        .run-byte.header { background: #56564f; }
+        .run-byte.neighbor { background: #28605c; }
+        .run-byte.context { background: #8a4a21; }
+        .run-byte-legend { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font: 9px/1.3 var(--mono); }
+        .codec-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 15px; }
+        .codec-item { padding: 11px; border: 1px solid var(--line); border-radius: 7px; background: #faf9f5; }
+        .codec-item strong { display: block; font: 800 10px/1.2 var(--mono); }
+        .codec-item span { display: block; margin-top: 6px; color: var(--muted); font-size: 9px; }
+        .snapshot-probe { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; }
+        .probe-stop { position: relative; padding: 12px 8px; border: 1px solid var(--line); border-radius: 7px; background: #faf9f5; text-align: center; }
+        .probe-stop:not(:last-child)::after { content: "\2192"; position: absolute; top: 50%; right: -8px; z-index: 2; color: var(--orange-dark); transform: translateY(-50%); }
+        .probe-stop.active { border: 2px solid var(--orange); padding: 11px 7px; background: var(--orange-soft); }
+        .probe-stop strong { display: block; font: 800 9px/1.2 var(--mono); }
+        .probe-stop span { display: block; margin-top: 5px; color: var(--muted); font-size: 8px; }
+        .rewrite-flow { display: grid; grid-template-columns: 1fr auto 1.2fr auto 1fr; align-items: stretch; gap: 8px; }
+        .rewrite-node { padding: 13px; border: 1px solid var(--line); border-radius: 7px; background: #faf9f5; }
+        .rewrite-node.result { border-color: #9bc2aa; background: #eef8f1; }
+        .rewrite-node strong { display: block; font: 800 10px/1.3 var(--mono); }
+        .rewrite-node span { display: block; margin-top: 7px; color: var(--muted); font-size: 9px; }
+        .rewrite-arrow { display: grid; place-items: center; color: var(--orange-dark); font: 850 20px/1 var(--mono); }
+
         .hex-shell { margin-top: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: #242421; color: #f5f3ed; }
         .hex-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
         .hex-heading h3 { margin: 0; color: white; }
@@ -636,6 +734,8 @@
             .lookup-spine { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .lookup-layer:nth-child(2)::after { content: "\2193"; top: auto; right: calc(50% - 9px); bottom: -23px; transform: none; }
             .helper-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .decode-route, .mode-ledger { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .decode-step:nth-child(2)::after { content: "\2193"; top: auto; right: calc(50% - 7px); bottom: -10px; }
         }
 
         @media (max-width: 820px) {
@@ -653,6 +753,9 @@
             .scale-scenario { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .scale-stat:nth-child(2) { border-right: 0; }
             .scale-stat:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
+            .delta-pipeline { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+            .delta-columns, .codec-strip { grid-template-columns: 1fr; }
+            .snapshot-probe { grid-template-columns: repeat(5, minmax(100px, 1fr)); overflow-x: auto; padding-bottom: 5px; }
         }
 
         @media (max-width: 520px) {
@@ -683,6 +786,20 @@
                 transform: none;
             }
             .snapshot-route { margin-top: 9px; text-align: left; }
+            .vector-anatomy-head, .delta-stage-head { display: block; }
+            .vector-total { display: block; margin-top: 9px; }
+            .vector-byte-line { overflow-x: auto; }
+            .vector-region { flex: 0 0 100px; }
+            .decode-route, .mode-ledger, .efficiency-equation { grid-template-columns: 1fr; }
+            .decode-step:not(:last-child)::after,
+            .decode-step:nth-child(2)::after { content: "\2193"; top: auto; right: calc(50% - 7px); bottom: -10px; }
+            .efficiency-equation div { border-right: 0; border-bottom: 1px solid var(--line); }
+            .efficiency-equation div:last-child { border-bottom: 0; }
+            .generation-directory { grid-template-columns: 1fr; }
+            .directory-cell { border-right: 0; border-bottom: 1px solid var(--line); }
+            .directory-cell:last-child { border-bottom: 0; }
+            .rewrite-flow { grid-template-columns: 1fr; }
+            .rewrite-arrow { transform: rotate(90deg); }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -696,7 +813,7 @@
             <div class="brand-mark" aria-hidden="true">R4</div>
             <div>
                 <div class="brand-name">RDF4J adjacency laboratory</div>
-                <div class="brand-subtitle">quad → nested CSR → compact CSF → bytes</div>
+                <div class="brand-subtitle">quad → nested CSR → packed vectors → delta generations → bytes</div>
             </div>
         </div>
         <div class="status-badges" aria-label="Tutorial properties">
@@ -744,9 +861,11 @@
                     </div>
                     <div class="control-group">
                         <span class="control-label">View</span>
-                        <div class="segmented" aria-label="Logical or physical view">
+                        <div class="segmented" aria-label="Logical, vector, physical, or delta view">
                             <button type="button" data-control="view" data-value="logical" aria-pressed="true">logical</button>
+                            <button type="button" data-control="view" data-value="vectors" aria-pressed="false">vectors</button>
                             <button type="button" data-control="view" data-value="physical" aria-pressed="false">physical</button>
+                            <button type="button" data-control="view" data-value="deltas" aria-pressed="false">deltas</button>
                         </div>
                     </div>
                 </div>
@@ -755,7 +874,7 @@
 
             <nav class="step-deck" aria-label="Tutorial steps">
                 <button class="step-arrow" id="previous-step" type="button" aria-label="Previous step">←</button>
-                <div class="step-list" id="step-list" role="tablist" aria-label="Seven encoding steps"></div>
+                <div class="step-list" id="step-list" role="tablist" aria-label="Nine encoding steps"></div>
                 <button class="step-arrow" id="next-step" type="button" aria-label="Next step">→</button>
             </nav>
 
@@ -1122,6 +1241,92 @@
             });
         }
 
+        function encodeRunUnsigned(value) {
+            const numeric = BigInt(value);
+            if (numeric < 0n || numeric > 0xffffffffffffffffn) {
+                throw new RangeError("run varints require an unsigned 64-bit value");
+            }
+            if (numeric <= 240n) {
+                return [Number(numeric)];
+            }
+            if (numeric <= 2287n) {
+                const adjusted = numeric - 240n;
+                return [Number((adjusted >> 8n) + 241n), Number(adjusted & 0xffn)];
+            }
+            if (numeric <= 67823n) {
+                const adjusted = numeric - 2288n;
+                return [249, Number(adjusted >> 8n), Number(adjusted & 0xffn)];
+            }
+            let payloadBytes = 1;
+            while (numeric >= 1n << BigInt(payloadBytes * 8)) {
+                payloadBytes++;
+            }
+            const encoded = [247 + payloadBytes];
+            for (let byte = payloadBytes - 1; byte >= 0; byte--) {
+                encoded.push(Number((numeric >> BigInt(byte * 8)) & 0xffn));
+            }
+            return encoded;
+        }
+
+        function encodeSmallRun(pairs, allOrderedInteger = false) {
+            if (!Array.isArray(pairs) || pairs.length < 1 || pairs.length > 15) {
+                throw new RangeError("SMALL_VARINT requires 1..15 sorted incidences");
+            }
+            const normalized = pairs.map((pair) => Object.freeze({
+                neighbor: BigInt(pair.neighbor),
+                rawContext: BigInt(pair.rawContext),
+                contextOrdinal: BigInt(pair.contextOrdinal)
+            }));
+            normalized.forEach((pair, index) => {
+                if (pair.neighbor < 0n || pair.rawContext < 0n || pair.contextOrdinal < 0n) {
+                    throw new RangeError("the tutorial run encoder accepts non-negative IDs and ordinals");
+                }
+                if ((pair.rawContext === 0n) !== (pair.contextOrdinal === 0n)) {
+                    throw new RangeError("only the default graph may use context ordinal zero");
+                }
+                if (index > 0) {
+                    const previous = normalized[index - 1];
+                    const ordered = compareUnsigned(previous.neighbor, pair.neighbor) < 0
+                        || (previous.neighbor === pair.neighbor
+                            && compareUnsigned(previous.rawContext, pair.rawContext) < 0);
+                    if (!ordered) {
+                        throw new RangeError("run incidences must be strictly unsigned (neighbor, rawContext) sorted");
+                    }
+                }
+            });
+
+            const anyContext = normalized.some((pair) => pair.rawContext !== 0n);
+            const neighborBytes = [];
+            normalized.forEach((pair, index) => {
+                const encoded = encodeRunUnsigned(index === 0 ? pair.neighbor
+                    : pair.neighbor - normalized[index - 1].neighbor);
+                neighborBytes.push(...encoded);
+            });
+            const contextBytes = anyContext
+                ? normalized.flatMap((pair) => encodeRunUnsigned(pair.contextOrdinal))
+                : [];
+            const usedBytes = 8 + neighborBytes.length + contextBytes.length;
+            const bytes = new Uint8Array((usedBytes + 7) & -8);
+            const view = new DataView(bytes.buffer);
+            const tag = (anyContext ? 1 << 2 : 0) | (allOrderedInteger ? 1 << 3 : 0);
+            view.setUint8(0, tag);
+            view.setUint8(1, normalized.length);
+            view.setUint16(2, neighborBytes.length, true);
+            view.setUint16(4, contextBytes.length, true);
+            view.setUint16(6, 0, true);
+            bytes.set(neighborBytes, 8);
+            bytes.set(contextBytes, 8 + neighborBytes.length);
+            return Object.freeze({
+                bytes,
+                tag,
+                count: normalized.length,
+                neighborByteLength: neighborBytes.length,
+                contextByteLength: contextBytes.length,
+                usedBytes,
+                alignedBytes: bytes.length
+            });
+        }
+
         function base64ToBytes(source) {
             const clean = source.replace(/\s+/g, "");
             if (typeof atob === "function") {
@@ -1392,6 +1597,7 @@
             termForId,
             formatNumber,
             displayId,
+            encodeSmallRun,
             defaultPhysicalLane,
             vectorLane
         });
@@ -1412,7 +1618,9 @@
             { short: "Fibres", title: "Rows and fibres" },
             { short: "CSR", title: "Nested CSR" },
             { short: "CSF", title: "Compact columns" },
-            { short: "Bytes", title: "Physical page" }
+            { short: "Vectors", title: "Packed vector anatomy" },
+            { short: "Bytes", title: "Physical page" },
+            { short: "Deltas", title: "Commit delta generations" }
         ]);
         /* FIXTURE:PAGE_FLAG_HELP_V1 */
         const PAGE_FLAG_HELP = Object.freeze({
@@ -1461,13 +1669,37 @@
                 clear: "The current writer always uses this state. No dataset-sized cumulative sidecar is emitted inside new vectors."
             })
         });
+        /* FIXTURE:DELTA_GENERATION_DEEP_DIVE_V1 */
+        const DELTA_DEMO = (() => {
+            const oldPairs = Object.freeze([
+                Object.freeze({ neighbor: core.TERMS.bob, context: core.TERMS.friends, contextOrdinal: 1n }),
+                Object.freeze({ neighbor: core.TERMS.bob, context: core.TERMS.work, contextOrdinal: 2n }),
+                Object.freeze({ neighbor: core.TERMS.carol, context: core.TERMS.friends, contextOrdinal: 1n })
+            ]);
+            const operations = Object.freeze([
+                Object.freeze({ ordinal: 0, add: false, neighbor: core.TERMS.bob, context: core.TERMS.friends }),
+                Object.freeze({ ordinal: 1, add: true, neighbor: core.TERMS.carol, context: core.TERMS.work })
+            ]);
+            const mergedPairs = Object.freeze([
+                Object.freeze({ neighbor: core.TERMS.bob, context: core.TERMS.work, contextOrdinal: 2n }),
+                Object.freeze({ neighbor: core.TERMS.carol, context: core.TERMS.friends, contextOrdinal: 1n }),
+                Object.freeze({ neighbor: core.TERMS.carol, context: core.TERMS.work, contextOrdinal: 2n })
+            ]);
+            const run = core.encodeSmallRun(mergedPairs.map((pair) => ({
+                neighbor: pair.neighbor.rawId,
+                rawContext: pair.context.rawId,
+                contextOrdinal: pair.contextOrdinal
+            })));
+            return Object.freeze({ oldPairs, operations, mergedPairs, run });
+        })();
         const state = {
             statementIndex: 0,
             direction: "outgoing",
             termMode: "labels",
             numberMode: "decimal",
             step: 0,
-            selectedSection: null
+            selectedSection: null,
+            deltaStage: 0
         };
 
         const statementList = document.getElementById("statement-list");
@@ -1565,7 +1797,8 @@
                 const selected = group === "direction" ? state.direction === button.dataset.value
                     : group === "terms" ? state.termMode === button.dataset.value
                         : group === "numbers" ? state.numberMode === button.dataset.value
-                            : group === "view" ? (button.dataset.value === "physical" ? state.step === 6 : state.step !== 6)
+                            : group === "view" ? ({ logical: state.step <= 5, vectors: state.step === 6,
+                                physical: state.step === 7, deltas: state.step === 8 })[button.dataset.value]
                                 : false;
                 button.setAttribute("aria-pressed", String(selected));
             });
@@ -1602,7 +1835,7 @@
 
         function frame(kicker, title, lead, body) {
             return `<div class="lesson-frame" data-tutorial-step="${state.step + 1}">
-                <p class="lesson-kicker">Step ${state.step + 1} / 7 · ${escapeHtml(kicker)}</p>
+                <p class="lesson-kicker">Step ${state.step + 1} / ${steps.length} · ${escapeHtml(kicker)}</p>
                 <h2>${title}</h2>
                 <p class="lesson-lead">${lead}</p>
                 ${body}
@@ -1856,6 +2089,124 @@
                 </div>
                 <div class="callout info">
                     Homogeneous generic-ID blocks may use <strong>typed-payload packing</strong>, which stores the shared type once. Mixed legal row or context types use generic raw packing. That decision is made per 256-lane block from actual values—not from an assumed “subject alphabet.”
+                </div>`
+            );
+        }
+
+        function selectedVector(model, preferred = "firstNeighbors") {
+            const available = model.page.sections.filter((section) => section.vector);
+            if (!state.selectedSection || !available.some((section) => section.name === state.selectedSection)) {
+                state.selectedSection = available.some((section) => section.name === preferred)
+                    ? preferred : available[0].name;
+            }
+            const section = available.find((candidate) => candidate.name === state.selectedSection);
+            const tracedLane = model.trace.physicalLanes[section.name];
+            const lane = Number.isInteger(tracedLane) && tracedLane >= 0 && tracedLane < section.vector.count
+                ? tracedLane : 0;
+            return { section, primary: core.vectorLane(model.page, section.name, lane), available };
+        }
+
+        function vectorSelector(available, selectedName) {
+            return `<div class="vector-selector" aria-label="Packed vector column">
+                ${available.map((section) => `<button type="button" data-action="section" data-section="${section.name}"
+                    aria-pressed="${section.name === selectedName}">${section.name} · ${section.vector.count}</button>`).join("")}
+            </div>`;
+        }
+
+        function modeFormula(block) {
+            const typeSuffix = block.typed ? `, then restore type ${block.type}: payload &lt;&lt; 7 | type &lt;&lt; 1` : "";
+            if (block.delta) {
+                return `value[i] = base + sum(delta[0 .. i))${typeSuffix}`;
+            }
+            return `value[i] = base + residual[i]${typeSuffix}`;
+        }
+
+        function renderVectorAnatomy(section, primary) {
+            const vector = section.vector;
+            const selected = primary.block;
+            const metadataBytes = vector.directory[0] - core.FORMAT.VECTOR_HEADER_BYTES
+                - (vector.blockCount + 1) * 4;
+            const blockRegions = vector.blocks.map((block) => {
+                const payloadBytes = block.byteLength - core.FORMAT.BLOCK_HEADER_BYTES;
+                const selectedClass = block.blockIndex === selected.blockIndex ? " selected" : "";
+                return `<div class="vector-region block-header${selectedClass}" style="flex:${Math.max(4, core.FORMAT.BLOCK_HEADER_BYTES)} 1 0">
+                        <strong>block ${block.blockIndex} header</strong><span>12 B · mode/type · width · count · base</span>
+                    </div>
+                    <div class="vector-region payload${selectedClass}" style="flex:${Math.max(4, payloadBytes)} 1 0">
+                        <strong>${payloadBytes} B payload</strong><span>${block.count} value${block.count === 1 ? "" : "s"} · ${block.width} bits/lane</span>
+                    </div>`;
+            }).join("");
+            const metadataRegion = metadataBytes > 0
+                ? `<div class="vector-region directory" style="flex:${metadataBytes} 1 0"><strong>optional metadata</strong><span>${metadataBytes} B</span></div>`
+                : "";
+            const lane = primary.lane;
+            const packedOrdinal = selected.delta ? Math.max(0, lane.lane - 1) : lane.lane;
+            const payloadBytes = selected.byteLength - core.FORMAT.BLOCK_HEADER_BYTES;
+            const modeNames = ["FOR raw", "FOR typed payload", "delta raw", "delta typed payload"];
+            const modes = modeNames.map((name, mode) => {
+                const explanations = [
+                    "Unsorted or random-access values: unsigned minimum base plus one residual per value.",
+                    "Same compound type: strip the repeated seven low tag bits, pack payload residuals, restore the type on decode.",
+                    "Sorted sequential IDs: the first value is the base and only adjacent gaps are packed.",
+                    "Sorted, same-type IDs: combine tag stripping with adjacent payload gaps."
+                ];
+                return `<div class="mode-item ${mode === selected.mode ? "selected" : ""}">
+                    <strong>${name}${mode === selected.mode ? " · selected" : ""}</strong><span>${explanations[mode]}</span>
+                </div>`;
+            }).join("");
+            return `<!-- FIXTURE:PACKED_VECTOR_DEEP_DIVE_V1 -->
+            <figure class="vector-anatomy" data-testid="vector-deep-dive" aria-labelledby="vector-anatomy-title">
+                <div class="vector-anatomy-head">
+                    <div><span class="card-label">Exact decoded fixture · ${section.name}</span>
+                        <h3 id="vector-anatomy-title">A tiny directory in front of independently decodable blocks</h3>
+                        <p>The diagram is byte-accurate for the selected embedded production fixture. Every offset is section-relative until the page address is added.</p>
+                    </div>
+                    <span class="vector-total">${section.length} B total @${section.offset}</span>
+                </div>
+                <div class="vector-byte-line" aria-label="Packed vector byte regions">
+                    <div class="vector-region vector-header" style="flex:8 1 0"><strong>vector header</strong><span>8 B · u32 count + flagged u32 block count</span></div>
+                    <div class="vector-region directory" style="flex:${(vector.blockCount + 1) * 4} 1 0"><strong>terminal directory</strong><span>${vector.blockCount + 1} × u32 · [${vector.directory.join(", ")}]</span></div>
+                    ${metadataRegion}${blockRegions}
+                </div>
+                <div class="decode-route" aria-label="Random lane decode route">
+                    <div class="decode-step"><b>01 · split ordinal</b><code>${lane.globalLane} &gt;&gt;&gt; 8 = block ${selected.blockIndex}<br>${lane.globalLane} &amp; 255 = lane ${lane.lane}</code></div>
+                    <div class="decode-step"><b>02 · load u32 offset</b><code>directory[${selected.blockIndex}] = ${selected.at}<br>page byte = ${selected.pageAt}</code></div>
+                    <div class="decode-step"><b>03 · read 12-byte header</b><code>${selected.modeName}<br>width ${selected.width} · count ${selected.count}<br>base ${formatNumber(selected.base)}</code></div>
+                    <div class="decode-step"><b>04 · reconstruct lane</b><code>packed lane ${packedOrdinal} · residual ${formatNumber(lane.residual)}<br>${modeFormula(selected)}<br>= ${escapeHtml(displayId(lane.value))}</code></div>
+                </div>
+                <div class="mode-ledger" aria-label="Packed vector modes">${modes}</div>
+                <figcaption class="diagram-takeaway"><strong>Why the block boundary matters:</strong> one random access reads a directory entry and one block; it never inflates the whole vector. At most 256 values share the 12-byte block header, and a packed lane is extracted from an eight-byte little-endian word plus one tail byte only when it straddles that word.</figcaption>
+            </figure>
+            <div class="efficiency-equation" aria-label="Illustrative packed size calculation">
+                <div><span>256 unpacked long values</span><strong>2,048 B</strong></div>
+                <div><span>7-bit residual payload</span><strong>224 B</strong></div>
+                <div><span>header + directory + block</span><strong>252 B · 87.7% less</strong></div>
+            </div>
+            <p class="card-note">Illustrative one-block calculation: 8-byte vector header + two u32 directory entries + 12-byte block header + ceil(256 × 7 / 8) payload bytes. Actual width is chosen independently per block; tiny fixture vectors may be header-dominated.</p>
+            <div class="callout info"><strong>Selection is cost-based and local.</strong> The encoder measures raw FOR, typed-payload FOR, and—only for sorted sequential-ID columns—the two delta forms. It writes the smallest block plan. The current writer keeps the historical vector-level search/prefix flags clear; optional accelerators live in page slack or measured hot cursors instead of taxing every vector.</div>`;
+        }
+
+        function renderVectorStep(model) {
+            const { section, primary, available } = selectedVector(model);
+            return frame(
+                "bound random access",
+                "Packed vectors stay compressed all the way to the selected lane.",
+                "Each CSF column is its own vector. A terminal offset directory jumps to one 256-value block; the block header explains exactly how to recover a lane from its tightly packed residual bits.",
+                `${vectorSelector(available, section.name)}
+                ${renderVectorAnatomy(section, primary)}
+                <div class="physical-grid">
+                    <div class="physical-column">${renderVector(section, primary)}</div>
+                    <div class="physical-column">
+                        <div class="byte-inspector">
+                            <div class="inspector-title"><h3>What is deliberately absent</h3><span>no object graph</span></div>
+                            <div class="pair-line"><span>Per-value Java objects</span><strong>0</strong></div>
+                            <div class="pair-line"><span>Per-value 64-bit slots</span><strong>0 unless width = 64</strong></div>
+                            <div class="pair-line"><span>Whole-vector decode for one lookup</span><strong>not required</strong></div>
+                            <div class="pair-line"><span>Repeated RDF type tags</span><strong>one per homogeneous block</strong></div>
+                            <div class="pair-line"><span>Block search</span><strong>ordinal &gt;&gt;&gt; 8 + one u32 offset</strong></div>
+                        </div>
+                        <div class="callout success"><strong>The practical result:</strong> compact, contiguous off-heap bytes with bounded decode work. Range copies advance through packed words; random row searches compare directly against native blocks; width zero consumes no payload at all.</div>
+                    </div>
                 </div>`
             );
         }
@@ -2151,11 +2502,7 @@
         function renderPhysicalStep(model) {
             const { trace, page } = model;
             const defaultLane = core.defaultPhysicalLane(page, trace);
-            if (!state.selectedSection || !page.sections.some((section) => section.name === state.selectedSection && section.vector)) {
-                state.selectedSection = defaultLane.sectionName;
-            }
-            const primary = core.vectorLane(page, defaultLane.sectionName, defaultLane.lane);
-            const selectedSection = page.sections.find((section) => section.name === state.selectedSection);
+            const { section: selectedSection, primary } = selectedVector(model, defaultLane.sectionName);
             const slack = page.header.capacity - page.header.usedBytes;
             return frame(
                 "route at scale, then decode one page",
@@ -2193,8 +2540,112 @@
             );
         }
 
+        const DELTA_STAGES = Object.freeze([
+            Object.freeze({ short: "capture", title: "Primitive commit events", note: "authoritative write path" }),
+            Object.freeze({ short: "reconcile", title: "One complete row version", note: "last operation wins" }),
+            Object.freeze({ short: "encode", title: "Directory + packed run", note: "immutable generation" }),
+            Object.freeze({ short: "read", title: "Newest visible version", note: "stop after one row" }),
+            Object.freeze({ short: "fold", title: "Copy-on-write consolidation", note: "share untouched pages" })
+        ]);
+
+        function renderPair(pair, prefix = "") {
+            return `<div class="pair-line"><span>${prefix}${escapeHtml(pair.neighbor.label)}</span><strong>${escapeHtml(pair.context.label)}</strong></div>`;
+        }
+
+        function renderDeltaStageBody(stage) {
+            if (stage === 0) {
+                return `<div class="table-wrap"><table>
+                    <thead><tr><th>event ordinal</th><th>operation</th><th>authoritative quad mutation</th><th>flags byte</th></tr></thead>
+                    <tbody>
+                        <tr><td class="mono">0</td><td><span class="illegal">remove</span></td><td class="mono">:alice :knows :bob :friends</td><td class="mono">0b01 · explicit</td></tr>
+                        <tr><td class="mono">1</td><td><span class="legal">add</span></td><td class="mono">:alice :knows :carol :work</td><td class="mono">0b11 · explicit + add</td></tr>
+                    </tbody>
+                </table></div>
+                <div class="callout info"><strong>Capture is columnar and temporary.</strong> Subject, predicate, object, context, and flags live in primitive arrays. Each event contributes an outgoing and incoming touched-row key, then those keys are unsigned-sorted and deduplicated. If the derived-state reservation is refused, the LMDB statement commit still succeeds and adjacency falls back/rebuilds rather than risking authoritative data.</div>`;
+            }
+            if (stage === 1) {
+                return `<div class="delta-columns" data-testid="delta-row-merge">
+                    <div class="delta-column"><h4>Previous complete row</h4>${DELTA_DEMO.oldPairs.map((pair) => renderPair(pair)).join("")}</div>
+                    <div class="delta-column"><h4>Sorted row operations</h4>${DELTA_DEMO.operations.map((operation) => renderPair(operation, `<span class="${operation.add ? "add" : "remove"}">${operation.add ? "+ " : "− "}</span>`)).join("")}</div>
+                    <div class="delta-column accent"><h4>New complete row</h4>${DELTA_DEMO.mergedPairs.map((pair) => renderPair(pair)).join("")}</div>
+                </div>
+                <div class="callout"><strong>The generation does not store an operation log.</strong> For each touched row, the applier streams the previous sorted pair set and this commit’s sorted mutations together. Equal pairs use the greatest event ordinal, absent removes vanish, repeated adds collapse, and a net-neutral row emits nothing. An emptied row emits a tombstone.</div>
+                <div class="formula">row key = unsigned(rawKey, plane, rawPredicateId)<br>
+                    pair order = unsigned(rawNeighborId, rawContextId)<br>
+                    <span class="accent">published version</span> = complete replacement run | tombstone | nothing when unchanged</div>`;
+            }
+            if (stage === 2) {
+                const run = DELTA_DEMO.run;
+                const bytes = [...run.bytes].map((byte, index) => {
+                    const group = index < 8 ? "header" : index < 8 + run.neighborByteLength ? "neighbor" : "context";
+                    return `<span class="run-byte ${group}" title="run byte ${index}">${byte.toString(16).padStart(2, "0")}</span>`;
+                }).join("");
+                return `<div class="generation-directory" data-testid="delta-generation-directory">
+                    <div class="directory-cell"><b>rowKeys[] · u64</b>${formatNumber(core.TERMS.alice.rawId)}</div>
+                    <div class="directory-cell"><b>rowPlanes[] · u8</b>0 · outgoing explicit</div>
+                    <div class="directory-cell"><b>rowPredicates[] · u64</b>${formatNumber(core.TERMS.knows.rawId)}</div>
+                    <div class="directory-cell"><b>runRefs[] · local u40</b>arena ref · 0 means tombstone</div>
+                </div>
+                <p class="card-note">The four parallel arrays are strictly unsigned (rawKey, plane, rawPredicateId) sorted. A generation lookup uses raw predicate IDs directly, so no predicate-catalog translation is needed.</p>
+                <div class="run-byte-ribbon" aria-label="Exact SMALL_VARINT run bytes">${bytes}</div>
+                <div class="run-byte-legend"><span>gray · 8-byte header</span><span>teal · neighbor absolute + deltas</span><span>orange · context catalog ordinals</span></div>
+                <div class="field-grid" style="margin-top:12px">
+                    <div class="field"><span class="field-name">tag · u8 @0</span><span class="field-value">0x${run.tag.toString(16).padStart(2, "0")}</span><span class="field-offset">codec 0 · contexts present · general ID domain</span></div>
+                    <div class="field"><span class="field-name">edge count · u8 @1</span><span class="field-value">${run.count}</span><span class="field-offset">complete post-commit row</span></div>
+                    <div class="field"><span class="field-name">neighbor bytes · u16 @2</span><span class="field-value">${run.neighborByteLength}</span><span class="field-offset">386, +256, +0 → f1 92 · f1 10 · 00</span></div>
+                    <div class="field"><span class="field-name">context bytes · u16 @4</span><span class="field-value">${run.contextByteLength}</span><span class="field-offset">snapshot catalog ordinals 2 · 1 · 2</span></div>
+                    <div class="field" style="grid-column:1/-1"><span class="field-name">reserved · u16 @6 / payload @8</span><span class="field-value">${run.usedBytes} used B · ${run.alignedBytes} aligned B</span><span class="field-offset">one contiguous 8-byte-aligned arena allocation</span></div>
+                </div>
+                <div class="codec-strip" aria-label="Delta run codec choices">
+                    <div class="codec-item"><strong>SMALL_VARINT · 1..15 incidences</strong><span>8-byte header; first neighbor absolute, later neighbor deltas; optional context ordinals; whole run aligns to 8 bytes.</span></div>
+                    <div class="codec-item"><strong>BLOCK_FOR · ordinary rows</strong><span>24-byte run header + terminal u32 block offsets. Each 128-lane block stores lane count, neighbor/context widths, bases, then bit-packed residuals.</span></div>
+                    <div class="codec-item"><strong>CHUNK_DIRECTORY · supernodes</strong><span>Above 1,048,575 incidences, ordered ~65,536-edge child runs are fenced by 40-byte entries containing first pair, edge range, arena slot, and u40 ref.</span></div>
+                </div>`;
+            }
+            if (stage === 3) {
+                return `<div class="snapshot-probe" data-testid="delta-read-path">
+                    <div class="probe-stop"><strong>pending proof</strong><span>touched at snapshot → authoritative fallback</span></div>
+                    <div class="probe-stop"><strong>generation r44</strong><span>newer than snapshot r43 · skip</span></div>
+                    <div class="probe-stop active"><strong>generation r43</strong><span>directory hit · complete run wins</span></div>
+                    <div class="probe-stop"><strong>generation r42</strong><span>not probed after hit</span></div>
+                    <div class="probe-stop"><strong>paged CSF base</strong><span>used only when no visible generation has the row</span></div>
+                </div>
+                <div class="callout info"><strong>Newest visible version wins.</strong> A read-view lease pins one immutable publication and walks applicable generations newest-first. A run is the whole row, so the query stops immediately; a tombstone is also terminal and means empty. Only NO_VERSION continues toward an older generation or the base.</div>
+                <div class="callout success"><strong>That is the read-time payoff:</strong> commits pay once to reconcile operations. Queries perform directory search plus one normal run decode—not a per-query merge of every add/remove event since the base.</div>`;
+            }
+            return `<div class="rewrite-flow" data-testid="delta-consolidation">
+                <div class="rewrite-node"><strong>immutable paged-CSF base</strong><span>share untouched pages and shards by retained reference</span></div>
+                <div class="rewrite-arrow">+</div>
+                <div class="rewrite-node"><strong>revision-ordered generations</strong><span>newest complete version for every affected row</span></div>
+                <div class="rewrite-arrow">→</div>
+                <div class="rewrite-node result"><strong>new published base</strong><span>only affected page windows are merged and re-encoded</span></div>
+            </div>
+            <div class="callout"><strong>A full page is not mutated in place.</strong> The rewrite emits replacement pages from complete-row prefixes. If one logical row is too large, continuation pages split first across neighbor fibres and then at context-coordinate boundaries. Shards are resliced when page growth requires it; unaffected pages remain structurally shared.</div>
+            <div class="callout info"><strong>Publication is failure-atomic.</strong> The replacement is published only if the base/overlay identities and applied revision are still current. Memory refusal or an interleaving leaves the old exact base + overlays authoritative; bounded overlay-only coalescing is the fallback. Pinned older snapshots keep their retained pages until release.</div>`;
+        }
+
+        function renderDeltaStep() {
+            const selected = DELTA_STAGES[state.deltaStage];
+            const pipeline = DELTA_STAGES.map((stage, index) => `<button class="delta-stage-button" type="button"
+                data-action="delta-stage" data-delta-stage="${index}" aria-pressed="${index === state.deltaStage}">
+                <b>0${index + 1}</b><span>${stage.short}</span></button>`).join("");
+            return frame(
+                "commit without rewriting the base",
+                "Deltas publish complete changed rows, then disappear into copy-on-write pages.",
+                "The fast path is a short immutable overlay, not a mutable patch list. Walk one fixture-derived commit from primitive events through row reconciliation, exact bytes, snapshot lookup, and eventual paged-CSF consolidation.",
+                `<div class="delta-pipeline" aria-label="Delta lifecycle">${pipeline}</div>
+                <section class="delta-stage-detail" data-testid="delta-deep-dive">
+                    <div class="delta-stage-head"><div><span class="card-label">Delta lifecycle · ${state.deltaStage + 1} / ${DELTA_STAGES.length}</span>
+                        <h3>${selected.title}</h3><p>${selected.note}</p></div><span class="scale-note">revision-stable</span></div>
+                    <div class="delta-stage-body">${renderDeltaStageBody(state.deltaStage)}</div>
+                </section>
+                <div class="callout success"><strong>Why this division is efficient:</strong> mutable transaction work stays in short-lived primitive arrays; each published generation is compact, immutable, exactly sized, and independently searchable; the large CSF base stays untouched until enough generations justify a localized copy-on-write rewrite.</div>`
+            );
+        }
+
         function renderLesson(model) {
-            const renderers = [renderRoleStep, renderIdStep, renderPlaneStep, renderTreeStep, renderCsrStep, renderCompactStep, renderPhysicalStep];
+            const renderers = [renderRoleStep, renderIdStep, renderPlaneStep, renderTreeStep, renderCsrStep,
+                renderCompactStep, renderVectorStep, renderPhysicalStep, renderDeltaStep];
             lesson.innerHTML = renderers[state.step](model);
         }
 
@@ -2211,7 +2662,7 @@
 
         function setStep(step, focusTab = false) {
             state.step = Math.max(0, Math.min(steps.length - 1, step));
-            if (state.step !== 6) {
+            if (state.step !== 6 && state.step !== 7) {
                 state.selectedSection = null;
             }
             render(true);
@@ -2290,7 +2741,7 @@
             } else if (control === "numbers") {
                 state.numberMode = value;
             } else if (control === "view") {
-                state.step = value === "physical" ? 6 : 4;
+                state.step = ({ logical: 4, vectors: 6, physical: 7, deltas: 8 })[value];
                 state.selectedSection = null;
             }
             render(true);
@@ -2308,6 +2759,10 @@
             } else if (action.dataset.action === "section") {
                 state.selectedSection = action.dataset.section;
                 render(false);
+            } else if (action.dataset.action === "delta-stage") {
+                state.deltaStage = Math.max(0, Math.min(DELTA_STAGES.length - 1,
+                    Number(action.dataset.deltaStage)));
+                render(false);
             }
         });
 
@@ -2317,6 +2772,10 @@
             getCurrentModel: current,
             selectStatement: (index) => selectStatement(index),
             setStep: (index) => setStep(index),
+            setDeltaStage: (index) => {
+                state.deltaStage = Math.max(0, Math.min(DELTA_STAGES.length - 1, Number(index)));
+                render(true);
+            },
             setDirection: (direction) => {
                 state.direction = direction;
                 state.selectedSection = null;

@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -184,6 +185,236 @@ class LmdbDirectAdjacencyQueryTest {
 
 	private void openPreferStore() throws IOException {
 		openStore(DirectAdjacencyMode.PREFER, null, null);
+	}
+
+	@Test
+	void exactFullAccessReportsCandidateAndArbiterSelection() throws Exception {
+		openPreferStore();
+		List<String> outcomes = new ArrayList<>();
+		NativeLmdbQuerySource.AdjacencyAccessObserver observer = new NativeLmdbQuerySource.AdjacencyAccessObserver() {
+			@Override
+			public void access(boolean used, String reason, StatementOrder order, long subj, long pred, long obj,
+					long context) {
+				outcomes.add(reason);
+			}
+
+			@Override
+			public void candidate(String source, String reason, StatementOrder order, long subj, long pred, long obj,
+					long context) {
+				outcomes.add(reason);
+			}
+		};
+		try (CloseableDataset dataset = dataset()) {
+			try (RecordIterator iterator = dataset.source.statements(-1, -1, -1, -1, observer)) {
+				while (iterator.next() != null) {
+					// exhaust so the selected arm contributes completed, rather than censored, evidence
+				}
+			}
+		}
+
+		assertThat(outcomes).anyMatch(reason -> reason.startsWith("CANDIDATE_ADJACENCY"));
+		assertThat(outcomes).anyMatch(reason -> reason.startsWith("SELECTED_ADJACENCY"));
+		assertThat(outcomes).noneMatch(reason -> reason.startsWith("INELIGIBLE_ADJACENCY"));
+	}
+
+	@Test
+	void exactFullParallelAccessUsesTheSameArbiterContract() throws Exception {
+		openPreferStore();
+		List<String> outcomes = new ArrayList<>();
+		NativeLmdbQuerySource.AdjacencyAccessObserver observer = recordingObserver(outcomes);
+		try (CloseableDataset dataset = dataset()) {
+			NativeLmdbQuerySource.ParallelSource[] sources = dataset.source.openParallelSources(1);
+			assertThat(sources).hasSize(1);
+			try (NativeLmdbQuerySource.ParallelSource source = sources[0];
+					RecordIterator iterator = source.statements(-1, -1, -1, -1, observer)) {
+				while (iterator.next() != null) {
+					// exhaust the selected arm
+				}
+			}
+		}
+
+		assertThat(outcomes).anyMatch(reason -> reason.startsWith("CANDIDATE_ADJACENCY"));
+		assertThat(outcomes).anyMatch(reason -> reason.startsWith("SELECTED_ADJACENCY"));
+	}
+
+	@Test
+	void exactFullRangeOffersAdjacencyCandidate() throws Exception {
+		openPreferStore();
+		List<String> outcomes = new ArrayList<>();
+		NativeLmdbQuerySource.AdjacencyAccessObserver observer = recordingObserver(outcomes);
+		try (CloseableDataset dataset = dataset()) {
+			String indexName = dataset.source.indexName(-1, -1, -1, -1);
+			LmdbKeyRange completeRange = new LmdbKeyRange(null, null, indexName);
+			try (RecordIterator iterator = dataset.source.statements(-1, -1, -1, -1, completeRange, observer)) {
+				while (iterator.next() != null) {
+					// exhaust the selected arm
+				}
+			}
+		}
+
+		assertThat(outcomes).anyMatch(reason -> reason.startsWith("CANDIDATE_ADJACENCY"));
+		assertThat(outcomes).noneMatch(reason -> reason.startsWith("INELIGIBLE_ADJACENCY"));
+	}
+
+	@Test
+	void boundedAdjacencyRangeMatchesNativeIndexSequence() throws Exception {
+		openPreferStore();
+		String indexName = backing.getTripleStore().getIndexName(-1, -1, -1, -1);
+		long lowSubject = Long.compareUnsigned(s1, s2) < 0 ? s1 : s2;
+		long highSubject = lowSubject == s1 ? s2 : s1;
+		LmdbKeyRange range = new LmdbKeyRange(
+				TripleIndex.encodeKey(indexName, lowSubject, 0, 0, 0),
+				TripleIndex.encodeKey(indexName, highSubject, 0, 0, 0), indexName);
+
+		List<long[]> expected;
+		try (TxnManager.Txn txn = backing.getTripleStore().getTxnManager().createReadTxn()) {
+			expected = CloseableDataset.collect(
+					backing.getTripleStore().getTriplesRange(txn, -1, -1, -1, -1, true, range));
+		}
+		List<long[]> actual;
+		try (LmdbAdjacencyReadView view = direct.acquire(backing.getTripleStore().getDataRevision())) {
+			actual = CloseableDataset.collect(direct.tryOpenRange(view, range, -1, -1, -1, -1, true));
+		}
+
+		assertThat(actual).usingElementComparator(ROW_ORDER).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	void opaqueRangeRetainsExactRawResidual() throws Exception {
+		openPreferStore();
+		String indexName = backing.getTripleStore().getIndexName(-1, -1, -1, -1);
+		byte[] exactKey = TripleIndex.encodeKey(indexName, s1, p1, o1, 0);
+		byte[] nonCanonicalLow = Arrays.copyOf(exactKey, exactKey.length + 1);
+		LmdbKeyRange range = new LmdbKeyRange(nonCanonicalLow, null, indexName);
+		assertThat(range.decodedBounds()).isNull();
+
+		List<long[]> expected;
+		try (TxnManager.Txn txn = backing.getTripleStore().getTxnManager().createReadTxn()) {
+			expected = CloseableDataset.collect(
+					backing.getTripleStore().getTriplesRange(txn, -1, -1, -1, -1, true, range));
+		}
+		List<long[]> actual;
+		try (LmdbAdjacencyReadView view = direct.acquire(backing.getTripleStore().getDataRevision())) {
+			actual = CloseableDataset.collect(direct.tryOpenRange(view, range, -1, -1, -1, -1, true));
+		}
+
+		assertThat(actual).usingElementComparator(ROW_ORDER).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	void exactFullParallelRangeOffersAdjacencyCandidate() throws Exception {
+		openPreferStore();
+		List<String> outcomes = new ArrayList<>();
+		NativeLmdbQuerySource.AdjacencyAccessObserver observer = recordingObserver(outcomes);
+		try (CloseableDataset dataset = dataset()) {
+			String indexName = backing.getTripleStore().getIndexName(-1, -1, -1, -1);
+			LmdbKeyRange completeRange = new LmdbKeyRange(null, null, indexName);
+			NativeLmdbQuerySource.ParallelSource[] sources = dataset.source.openParallelSources(1);
+			try (NativeLmdbQuerySource.ParallelSource source = sources[0];
+					RecordIterator iterator = source.statements(-1, -1, -1, -1, completeRange, observer)) {
+				while (iterator.next() != null) {
+					// exhaust the selected arm
+				}
+			}
+		}
+
+		assertThat(outcomes).anyMatch(reason -> reason.startsWith("CANDIDATE_ADJACENCY"));
+		assertThat(outcomes).noneMatch(reason -> reason.startsWith("INELIGIBLE_ADJACENCY"));
+	}
+
+	@Test
+	void exactFullReusableProbeOffersBothCandidates() throws Exception {
+		openPreferStore();
+		List<String> outcomes = new ArrayList<>();
+		try (CloseableDataset dataset = dataset();
+				NativeLmdbQuerySource.NativeProbe probe = dataset.source.newProbe();
+				RecordIterator iterator = probe.open(-1, -1, -1, -1, recordingObserver(outcomes))) {
+			while (iterator.next() != null) {
+				// exhaust the selected arm
+			}
+		}
+
+		assertThat(outcomes).anyMatch(reason -> reason.startsWith("CANDIDATE_ADJACENCY"));
+		assertThat(outcomes).anyMatch(reason -> reason.startsWith("CANDIDATE_LMDB"));
+	}
+
+	@Test
+	void exactFullExistenceCanUseUniversalAdjacencyCandidate() throws Exception {
+		openPreferStore();
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+		try (CloseableDataset dataset = dataset()) {
+			assertThat(dataset.source.has(-1, -1, -1, -1)).isTrue();
+		}
+		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+	}
+
+	@Test
+	void exactFullExistenceOffersAdjacencyForEveryBindingMask() throws Exception {
+		openPreferStore();
+		try (CloseableDataset dataset = dataset()) {
+			for (int mask = 0; mask < 16; mask++) {
+				long subject = (mask & 1) == 0 ? -1L : s1;
+				long predicate = (mask & 2) == 0 ? -1L : p1;
+				long object = (mask & 4) == 0 ? -1L : o1;
+				long context = (mask & 8) == 0 ? -1L : 0L;
+				boolean expected = !dataset.rows(subject, predicate, object, context).isEmpty();
+				List<String> outcomes = new ArrayList<>();
+
+				assertThat(dataset.source.has(subject, predicate, object, context, recordingObserver(outcomes)))
+						.as("existence binding mask %s", Integer.toBinaryString(mask))
+						.isEqualTo(expected);
+				assertThat(outcomes)
+						.as("existence binding mask %s candidates", Integer.toBinaryString(mask))
+						.anyMatch(reason -> reason.startsWith("CANDIDATE_ADJACENCY"))
+						.noneMatch(reason -> reason.startsWith("INELIGIBLE_ADJACENCY"));
+			}
+		}
+	}
+
+	@Test
+	void exactFullParallelSourceOffersAdjacencyForEveryMaskAndOrder() throws Exception {
+		openPreferStore();
+		try (CloseableDataset dataset = dataset()) {
+			NativeLmdbQuerySource.ParallelSource[] sources = dataset.source.openParallelSources(1);
+			assertThat(sources).hasSize(1);
+			try (NativeLmdbQuerySource.ParallelSource source = sources[0]) {
+				for (int mask = 0; mask < 16; mask++) {
+					long subject = (mask & 1) == 0 ? -1L : s1;
+					long predicate = (mask & 2) == 0 ? -1L : p1;
+					long object = (mask & 4) == 0 ? -1L : o1;
+					long context = (mask & 8) == 0 ? -1L : 0L;
+					for (StatementOrder order : StatementOrder.values()) {
+						List<String> outcomes = new ArrayList<>();
+						try (RecordIterator iterator = source.statements(order, subject, predicate, object, context,
+								recordingObserver(outcomes))) {
+							while (iterator.next() != null) {
+								// exhaust the selected arm
+							}
+						}
+						assertThat(outcomes)
+								.as("parallel mask %s in %s order", Integer.toBinaryString(mask), order)
+								.anyMatch(reason -> reason.startsWith("CANDIDATE_ADJACENCY"))
+								.noneMatch(reason -> reason.startsWith("INELIGIBLE_ADJACENCY"));
+					}
+				}
+			}
+		}
+	}
+
+	private static NativeLmdbQuerySource.AdjacencyAccessObserver recordingObserver(List<String> outcomes) {
+		return new NativeLmdbQuerySource.AdjacencyAccessObserver() {
+			@Override
+			public void access(boolean used, String reason, StatementOrder order, long subj, long pred, long obj,
+					long context) {
+				outcomes.add(reason);
+			}
+
+			@Override
+			public void candidate(String source, String reason, StatementOrder order, long subj, long pred, long obj,
+					long context) {
+				outcomes.add(reason);
+			}
+		};
 	}
 
 	@Test
@@ -487,7 +718,7 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
-	void nativeProbeRetainsOwnershipAcrossDirectAndLmdbTransitions() throws IOException {
+	void nativeProbeRetainsOwnershipAcrossUniversalShapeTransitions() throws IOException {
 		System.setProperty(LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY, "false");
 		openPreferStore();
 		RecordIterator firstDirect = null;
@@ -505,20 +736,22 @@ class LmdbDirectAdjacencyQueryTest {
 				assertThat(secondDirect).as("one resettable direct iterator belongs to the retained probe")
 						.isSameAs(firstDirect);
 
-				RecordIterator firstFallback = probe.open(-1, p1, -1, -1);
-				assertThat(probe.adjacencyCacheBacked()).isFalse();
-				assertThat(firstFallback.next()).isNotNull();
+				RecordIterator universalRoot = probe.open(-1, p1, -1, -1);
+				assertThat(probe.adjacencyCacheBacked()).isTrue();
+				assertThat(universalRoot).as("disabling the root specialization retains the probe-owned wrapper")
+						.isSameAs(firstDirect);
+				assertThat(universalRoot.next()).isNotNull();
 
 				callerClosedDirect = probe.open(s1, p1, -1, -1);
 				assertThat(probe.adjacencyCacheBacked()).isTrue();
-				assertThat(callerClosedDirect).as("the direct iterator survives an LMDB fallback transition")
+				assertThat(callerClosedDirect).as("the direct iterator survives a universal traversal transition")
 						.isSameAs(firstDirect);
 				callerClosedDirect.close();
 
-				RecordIterator reusedFallback = probe.open(-1, p1, -1, -1);
-				assertThat(probe.adjacencyCacheBacked()).isFalse();
-				assertThat(reusedFallback).isSameAs(firstFallback);
-				assertThat(CloseableDataset.collect(reusedFallback)).hasSize(3);
+				RecordIterator reusedUniversalRoot = probe.open(-1, p1, -1, -1);
+				assertThat(probe.adjacencyCacheBacked()).isTrue();
+				assertThat(reusedUniversalRoot).isSameAs(universalRoot);
+				assertThat(CloseableDataset.collect(reusedUniversalRoot)).hasSize(3);
 			}
 			assertThat(direct.snapshotMetrics().activeViews).isZero();
 		} finally {
@@ -583,22 +816,26 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
-	void disabledParallelRowPathKeepsWorkerKernelAdjacencyAvailable() throws IOException {
+	void disabledParallelRowSpecializationKeepsUniversalCandidateAvailable() throws IOException {
 		System.setProperty(LmdbDirectAdjacencyStore.PARALLEL_ROW_PATH_PROPERTY, "false");
 		openPreferStore();
+		List<String> outcomes = new ArrayList<>();
 		try (var dataset = dataset()) {
 			NativeLmdbQuerySource.ParallelSource[] sources = dataset.source.openParallelSources(1);
 			assertThat(sources).hasSize(1).doesNotContainNull();
 			try (NativeLmdbQuerySource.ParallelSource source = sources[0];
 					NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
 				long hitsBefore = direct.snapshotMetrics().lookupHits;
-				assertThat(CloseableDataset.collect(source.statements(s1, p1, -1, -1))).hasSize(2);
-				assertThat(CloseableDataset.collect(probe.open(s1, p1, -1, -1))).hasSize(2);
-				assertThat(probe.adjacencyCacheBacked()).isFalse();
+				assertThat(CloseableDataset.collect(source.statements(-1, -1, -1, -1,
+						recordingObserver(outcomes)))).hasSize(5);
+				assertThat(CloseableDataset.collect(probe.open(s1, p1, -1, -1,
+						recordingObserver(outcomes)))).hasSize(2);
+				assertThat(probe.adjacencyCacheBacked()).isTrue();
 				assertThat(source.count(s1, p1, -1, -1)).isEqualTo(2);
 				assertThat(source.has(s1, p1, o1, -1)).isTrue();
 				assertThat(source.exactDegree(p1, s1, true)).isEmpty();
-				assertThat(direct.snapshotMetrics().lookupHits).isEqualTo(hitsBefore);
+				assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+				assertThat(outcomes).anyMatch(reason -> reason.startsWith("CANDIDATE_ADJACENCY"));
 
 				NativeLmdbQuerySource.NativeAdjacency adjacency = probe.adjacency(p1, true);
 				assertThat(adjacency).isNotNull();
@@ -703,7 +940,7 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
-	void unboundPredicateInlineObjectFallsBackWithoutIncomingProjection() throws IOException {
+	void unboundPredicateInlineObjectUsesUniversalSweepWithoutIncomingProjection() throws IOException {
 		openPreferStore();
 		long fallbackBefore = direct.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
 		long hitsBefore = direct.snapshotMetrics().lookupHits;
@@ -712,8 +949,8 @@ class LmdbDirectAdjacencyQueryTest {
 					new long[] { s1, p3, inline42, 0 }));
 		}
 		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE))
-				.isEqualTo(fallbackBefore + 1);
-		assertThat(direct.snapshotMetrics().lookupHits).isEqualTo(hitsBefore);
+				.isEqualTo(fallbackBefore);
+		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
 	}
 
 	@Test
@@ -1083,21 +1320,20 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
-	void disabledRootScanFallsBackWithItsOwnReason() throws IOException {
+	void disabledRootScanSpecializationRetainsUniversalCandidate() throws IOException {
 		System.setProperty(LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY, "false");
 		openPreferStore();
 		long hitsBefore = direct.snapshotMetrics().lookupHits;
 		FallbackReason rootScan = FallbackReason.valueOf("ROOT_SCAN");
 		long fallbacksBefore = direct.snapshotMetrics().fallbacks(rootScan);
 		try (var dataset = dataset()) {
-			assertThat(dataset.source.indexName(-1, p1, -1, -1)).doesNotStartWith("direct-");
 			assertSameRows(dataset.rows(-1, p1, -1, -1), List.of(
 					new long[] { s1, p1, o1, 0 },
 					new long[] { s1, p1, o2, g1 },
 					new long[] { s2, p1, o1, 0 }));
 		}
-		assertThat(direct.snapshotMetrics().lookupHits).isEqualTo(hitsBefore);
-		assertThat(direct.snapshotMetrics().fallbacks(rootScan)).isEqualTo(fallbacksBefore + 1);
+		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+		assertThat(direct.snapshotMetrics().fallbacks(rootScan)).isEqualTo(fallbacksBefore);
 	}
 
 	@Test
@@ -1297,15 +1533,17 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
-	void disabledDoublyBoundOpenFallsBackWithItsOwnReason() throws IOException {
+	void disabledDoublyBoundSpecializationRetainsUniversalCandidate() throws IOException {
 		System.setProperty(LmdbDirectAdjacencyStore.BOUND_PROBE_PROPERTY, "false");
 		openPreferStore();
 		FallbackReason doublyBound = FallbackReason.valueOf("DOUBLY_BOUND");
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
 		long fallbacksBefore = direct.snapshotMetrics().fallbacks(doublyBound);
 		try (var dataset = dataset()) {
 			assertSameRows(dataset.rows(s1, p1, o1, -1), List.of(new long[] { s1, p1, o1, 0 }));
 		}
-		assertThat(direct.snapshotMetrics().fallbacks(doublyBound)).isEqualTo(fallbacksBefore + 1);
+		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+		assertThat(direct.snapshotMetrics().fallbacks(doublyBound)).isEqualTo(fallbacksBefore);
 	}
 
 	@Test
@@ -1350,7 +1588,7 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
-	void orderedCompatibleSeekServesIncompatibleOrderFallsBack() throws IOException {
+	void orderedShapesUseCompatibleFastPathOrUniversalCandidate() throws IOException {
 		openPreferStore();
 		try (var dataset = dataset()) {
 			long hitsBefore = direct.snapshotMetrics().lookupHits;
@@ -1360,11 +1598,13 @@ class LmdbDirectAdjacencyQueryTest {
 			assertThat(Long.compareUnsigned(byObject.get(0)[2], byObject.get(1)[2])).isNegative();
 
 			long incompatibleBefore = direct.snapshotMetrics().fallbacks(FallbackReason.INDEX_ORDER_INCOMPATIBLE);
+			long universalBefore = direct.snapshotMetrics().lookupHits;
 			assertSameRows(dataset.rows(StatementOrder.S, s1, p1, -1, -1), List.of(
 					new long[] { s1, p1, o1, 0 },
 					new long[] { s1, p1, o2, g1 }));
 			assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.INDEX_ORDER_INCOMPATIBLE))
-					.isGreaterThan(incompatibleBefore);
+					.isEqualTo(incompatibleBefore);
+			assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(universalBefore);
 
 			long subjectOrderIncoming = direct.snapshotMetrics().lookupHits;
 			List<long[]> bySubject = dataset.rows(StatementOrder.S, -1, p1, o1, -1);

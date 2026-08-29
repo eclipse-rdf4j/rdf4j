@@ -53,9 +53,8 @@ import org.junit.jupiter.api.io.TempDir;
  * node edge dumps, multi-hop joins, star joins, object-object joins, triangles (WCOJ), VALUES-batched lookups, property
  * paths, semijoins, and unbound-predicate statistics queries.
  *
- * This is a census harness, not a behavior contract: it asserts only that every catalog query executes and produces the
- * expected row count. Counter expectations deliberately stay unasserted so the census keeps working as adjacency
- * consumption grows.
+ * Every query also asserts that exact-full coverage records no structural adjacency fallback. An LMDB arm may still win
+ * arbitration; that is an eligible candidate losing on cost, not a fallback-counter event.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class LmdbAdjacencyUsageCensusTest {
@@ -237,6 +236,10 @@ class LmdbAdjacencyUsageCensusTest {
 				assertEquals(scenario.expectedRows(), rows, scenario.name() + " row count");
 			} else {
 				assertTrue(rows > 0, scenario.name() + " must produce rows under the native engine");
+			}
+			for (FallbackReason reason : FallbackReason.values()) {
+				assertEquals(before.fallbacks(reason), after.fallbacks(reason),
+						scenario.name() + " exact-full access must not structurally decline for " + reason);
 			}
 		}
 	}

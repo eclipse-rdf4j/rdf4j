@@ -406,10 +406,11 @@ class LmdbNodePredicateEnumerationParityTest {
 	/**
 	 * With the incoming switch off the incoming planes must cost nothing at all — not merely go unpublished. A plane
 	 * outside the mask is skipped before any key-domain cursor, merge pass or page is created, so the whole projection
-	 * is strictly smaller than the same fixture with incoming on, and the reverse direction declines.
+	 * is strictly smaller than the same fixture with incoming on. The general predicate sweep still serves the reverse
+	 * direction from the primary incoming adjacency planes, so disabling this specialization cannot remove adjacency.
 	 */
 	@Test
-	void incomingPlanesCostNothingWhenDisabled() throws Exception {
+	void incomingProjectionCostsNothingWhenDisabledButGeneralTraversalRemains() throws Exception {
 		loadBaseFixture();
 		assertThat(store.buildNowForTest()).isTrue();
 		LmdbNodePredicateIndex outgoingOnly = store.publishedStateForTest().base().nodePredicateIndex();
@@ -419,7 +420,10 @@ class LmdbNodePredicateEnumerationParityTest {
 		long outgoingOnlyBytes = store.memoryAccount()
 				.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.NODE_PREDICATE_NATIVE);
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			assertThat(fromAdjacencyIncoming(txn, O1, -1, true)).as("the reverse direction must decline").isNull();
+			assertThat(fromAdjacencyIncoming(txn, O1, -1, true))
+					.as("the universal incoming traversal remains available")
+					.usingElementComparator(ROW_ORDER)
+					.containsExactlyElementsOf(fromDiskTreesIncoming(txn, O1, -1, true));
 		}
 
 		openStore(true);

@@ -19,6 +19,7 @@ import java.util.concurrent.Executor;
 
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.OrderedIntegerDomain;
 
 /**
  * Long-handle {@link NativeLmdbQuerySource.NativeAdjacency} over the direct index for one
@@ -95,6 +96,8 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	/** One non-shared group-search hint for this operator-owned adjacency request. */
 	private final LmdbAdjacencyLookupContext searchContext = new LmdbAdjacencyLookupContext();
 	private final LmdbAdjacencyRunCodec.RunCursor runCursor = new LmdbAdjacencyRunCodec.RunCursor();
+	/** Allocated only when the range planner asks for an ordered-integer proof. */
+	private ImmutablePagedQuadCsfIndex.RowCursor orderedDomainRowCursor;
 
 	/** Single-threaded probe scope (probe contract): one materialized run cached per adapter. */
 	private long cachedHandle = Long.MIN_VALUE;
@@ -616,6 +619,60 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		ImmutablePagedQuadCsfIndex.KeyCursor baseCursor = baseKeys == null ? null
 				: baseKeys.cursor(merged ? 0 : fromOrdinal, merged ? baseCount : toOrdinal);
 		return new RootScanCursor(baseCursor, fromOrdinal, toOrdinal, merged);
+	}
+
+	/**
+	 * Proves and bounds the ordered-integer value domain of this exact predicate plane. The proof walks one compact row
+	 * header per authoritative key, including retained-generation replacements, and reads only the two endpoint values
+	 * of each run; it never materializes the predicate's edges.
+	 */
+	OrderedIntegerDomain orderedIntegerDomain(String indexName) {
+		ensureOpen();
+		long minimum = Long.MAX_VALUE;
+		long maximum = Long.MIN_VALUE;
+		boolean found = false;
+		RootScanCursor cursor = rootScanCursor();
+		while (cursor.advance()) {
+			long size;
+			long first;
+			long last;
+			if (cursor.directBaseRun) {
+				ImmutablePagedQuadCsfIndex.RowCursor row = orderedDomainRowCursor;
+				if (row == null) {
+					row = new ImmutablePagedQuadCsfIndex.RowCursor();
+					orderedDomainRowCursor = row;
+				}
+				baseCsf.resolve(cursor.baseCursor.localReference(), row);
+				if (!row.orderedIntegerDomain()) {
+					return null;
+				}
+				size = row.edgeCount();
+				if (size == 0) {
+					continue;
+				}
+				first = row.neighborAt(0);
+				last = row.neighborAt(size - 1);
+			} else {
+				LmdbAdjacencyArenaCatalog catalog = catalogOf(cursor.run);
+				long localRun = localOf(cursor.run);
+				if (!LmdbAdjacencyRunCodec.orderedIntegerDomain(catalog, localRun)) {
+					return null;
+				}
+				size = LmdbAdjacencyRunCodec.edgeCount(catalog, localRun);
+				if (size == 0) {
+					continue;
+				}
+				first = LmdbAdjacencyRunCodec.neighborAt(catalog, localRun, 0);
+				last = LmdbAdjacencyRunCodec.neighborAt(catalog, localRun, size - 1);
+			}
+			if (!ValueIds.isOrderedInteger(first) || !ValueIds.isOrderedInteger(last)) {
+				return null;
+			}
+			minimum = Math.min(minimum, ValueIds.orderedIntegerValue(first));
+			maximum = Math.max(maximum, ValueIds.orderedIntegerValue(last));
+			found = true;
+		}
+		return found ? new OrderedIntegerDomain(indexName, minimum, maximum) : null;
 	}
 
 	/**

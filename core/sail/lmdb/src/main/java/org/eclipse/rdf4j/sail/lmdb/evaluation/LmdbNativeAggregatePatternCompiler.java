@@ -156,7 +156,7 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		double estimate = rangedEstimate(base.staticEstimate, domain.minValue(), domain.maxValue(),
 				filter.operator, filter.constant);
 		return new PatternPlan(base.s, base.p, base.o, base.c, base.contexts, base.namedContextScope,
-				base.statementOrder, base.indexName, range, estimate);
+				base.statementOrder, domain.indexFieldSeq(), range, estimate);
 	}
 
 	/**

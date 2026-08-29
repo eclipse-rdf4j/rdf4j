@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.AdjacencyAccessObserver;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.OrderedIntegerDomain;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -1952,8 +1953,22 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		boolean predicateBound = predicate > 0;
 		LmdbAdjacencyPublishedState state = view.state();
 		LmdbInMemoryAdjacencyIndex base = state.base();
+		if (order != null && exactFullSnapshot(view)) {
+			RecordIterator universalOrdered = openUniversalOrdered(view, order, subject, predicate, object, context,
+					explicit);
+			if (universalOrdered != null) {
+				metrics.recordHit();
+				observe(observer, true, "UNIVERSAL_ORDER_" + order, order, subject, predicate, object, context);
+				return universalOrdered;
+			}
+		}
 
 		if (predicateBound && subjectBound && objectBound) {
+			if (exactFullSnapshot(view) && !boundProbeEnabled()) {
+				RecordIterator universal = tryOpenUniversal(view, order, subject, predicate, object, context, explicit);
+				observe(observer, true, "UNIVERSAL_BOUND_PROBE", order, subject, predicate, object, context);
+				return universal;
+			}
 			return openBoundProbe(view, subject, predicate, object, context, explicit, searchContext, reusableIterator,
 					observer, order);
 		}
@@ -2011,6 +2026,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			int plane = plane(subjectBound, explicit);
 			FallbackReason enumerationDecline = nodePredicateDecline(view, key, plane);
 			if (enumerationDecline != null) {
+				if (exactFullSnapshot(view)) {
+					metrics.recordHit();
+					observe(observer, true, "PREDICATE_SWEEP", order, subject, predicate, object, context);
+					return new LmdbDirectAdjacencyPredicateSweepIterator(this, view, subject, object, context,
+							explicit, order);
+				}
 				metrics.recordFallback(enumerationDecline);
 				observe(observer, false, enumerationDecline.name(), order, subject, predicate, object, context);
 				return null;
@@ -2039,14 +2060,211 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 
 		if (predicateBound && !subjectBound && !objectBound) {
+			if (exactFullSnapshot(view) && !rootScanEnabled()) {
+				RecordIterator universal = tryOpenUniversal(view, order, subject, predicate, object, context, explicit);
+				observe(observer, true, "UNIVERSAL_ROOT_SCAN", order, subject, predicate, object, context);
+				return universal;
+			}
 			return openRootScan(view, order, predicate, context, explicit, observer, subject, object);
 		}
 
-		// Unbound-predicate root scans and doubly-bound probes remain visible in the decline census.
+		if (!predicateBound && exactFullSnapshot(view) && (order == null || order == StatementOrder.P)) {
+			metrics.recordHit();
+			observe(observer, true, "PREDICATE_SWEEP", order, subject, predicate, object, context);
+			return new LmdbDirectAdjacencyPredicateSweepIterator(this, view, subject, object, context, explicit, order);
+		}
+
 		FallbackReason fallback = subjectBound && objectBound ? FallbackReason.DOUBLY_BOUND : FallbackReason.ROOT_SCAN;
 		metrics.recordFallback(fallback);
 		observe(observer, false, fallback.name(), order, subject, predicate, object, context);
 		return null;
+	}
+
+	private RecordIterator openUniversalOrdered(LmdbAdjacencyReadView view, StatementOrder order, long subject,
+			long predicate, long object, long context, boolean explicit) {
+		if (predicate > 0) {
+			RecordIterator slice = openCompletePredicateSlice(view, subject, predicate, object, context, explicit,
+					order == StatementOrder.C ? null : order);
+			return order == StatementOrder.C ? new LmdbDirectAdjacencySpillSortIterator(slice, order) : slice;
+		}
+		if (order == StatementOrder.S || order == StatementOrder.O) {
+			return new LmdbDirectAdjacencyOrderedMergeIterator(this, view, subject, object, context, explicit, order);
+		}
+		if (order == StatementOrder.C) {
+			RecordIterator sweep = new LmdbDirectAdjacencyPredicateSweepIterator(this, view, subject, object, context,
+					explicit, null);
+			return new LmdbDirectAdjacencySpillSortIterator(sweep, order);
+		}
+		// P keeps the node-to-predicate projection as its cheaper specialization; all other P shapes reach the
+		// complete predicate sweep below.
+		return null;
+	}
+
+	boolean offersUniversalCandidate(LmdbAdjacencyReadView view) {
+		return exactFullSnapshot(view);
+	}
+
+	RecordIterator tryOpenUniversal(LmdbAdjacencyReadView view, StatementOrder order, long subject, long predicate,
+			long object, long context, boolean explicit) {
+		if (!exactFullSnapshot(view)) {
+			return null;
+		}
+		RecordIterator result;
+		if (order == null || order == StatementOrder.P) {
+			result = predicate > 0
+					? openCompletePredicateSlice(view, subject, predicate, object, context, explicit, order)
+					: new LmdbDirectAdjacencyPredicateSweepIterator(this, view, subject, object, context, explicit,
+							order);
+		} else {
+			result = openUniversalOrdered(view, order, subject, predicate, object, context, explicit);
+		}
+		if (result != null) {
+			metrics.recordHit();
+		}
+		return result;
+	}
+
+	RecordIterator tryOpenRange(LmdbAdjacencyReadView view, LmdbKeyRange range, long subject, long predicate,
+			long object, long context, boolean explicit) {
+		if (!exactFullSnapshot(view)) {
+			return null;
+		}
+		RecordIterator broad = predicate > 0
+				? openCompletePredicateSlice(view, subject, predicate, object, context, explicit, null)
+				: new LmdbDirectAdjacencyPredicateSweepIterator(this, view, subject, object, context, explicit, null);
+		RecordIterator ordered = new LmdbDirectAdjacencySpillSortIterator(broad, range.indexFieldSeq());
+		return new LmdbKeyRangeFilteringIterator(ordered, range);
+	}
+
+	double estimateRangeWork(LmdbAdjacencyReadView view, LmdbKeyRange range, long subject, long predicate,
+			long object, long context, boolean explicit) {
+		double broad = estimateUniversalWork(view, null, subject, predicate, object, context, explicit);
+		if (!Double.isFinite(broad) || broad <= 0D) {
+			return broad;
+		}
+		double sort = broad * (Math.log(Math.max(2D, broad)) / Math.log(2D));
+		double residual = range.decodedBounds() == null ? broad : broad * 0.125D;
+		return broad + sort + residual;
+	}
+
+	double estimateUniversalWork(LmdbAdjacencyReadView view, StatementOrder order, long subject, long predicate,
+			long object, long context, boolean explicit) {
+		double rows = estimateResultRows(view, subject, predicate, object, explicit);
+		if (!Double.isFinite(rows) || rows <= 0D) {
+			return rows;
+		}
+		LmdbAdjacencyPlaneStatistics.PredicateDomain domain = view.state().planeStatistics().predicateDomain();
+		double work = rows;
+		if (predicate <= 0) {
+			work += domain.size();
+		}
+		if (order == StatementOrder.S || order == StatementOrder.O) {
+			if (predicate <= 0 && domain.size() > 1) {
+				work += domain.size() * (Math.log(domain.size()) / Math.log(2D));
+			}
+		} else if (order == StatementOrder.C) {
+			work += rows * (Math.log(Math.max(2D, rows)) / Math.log(2D));
+		}
+		if (context >= 0) {
+			// Context filtering still decodes the broad adjacency run; the requested rows may be fewer, but the sweep
+			// work above is the quantity the arbiter must compare.
+			work += rows * 0.125D;
+		}
+		return work;
+	}
+
+	double estimateResultRows(LmdbAdjacencyReadView view, long subject, long predicate, long object,
+			boolean explicit) {
+		if (!exactFullSnapshot(view) || view.snapshotRevision() != view.state().appliedRevision()) {
+			return Double.NaN;
+		}
+		LmdbAdjacencyPlaneStatistics statistics = view.state().planeStatistics();
+		LmdbAdjacencyPlaneStatistics.PredicateDomain domain = statistics.predicateDomain();
+		double rows = 0D;
+		if (predicate > 0) {
+			rows = estimatePredicateRows(view, predicate, subject, object, explicit, statistics);
+		} else if (subject > 0 || object > 0) {
+			boolean bySubject = subject > 0;
+			long key = bySubject ? subject : object;
+			int plane = plane(bySubject, explicit);
+			for (int ordinal = 0; ordinal < domain.size(); ordinal++) {
+				ResolvedRow row = resolveRow(view, key, plane, domain.predicateAt(ordinal));
+				if (row.handle > 0) {
+					rows += LmdbAdjacencyRunCodec.edgeCount(row.catalog, row.handle);
+				}
+			}
+		} else {
+			int plane = plane(true, explicit);
+			for (int ordinal = 0; ordinal < domain.size(); ordinal++) {
+				rows += statistics.quadCount(domain.predicateAt(ordinal), plane);
+			}
+		}
+		return rows;
+	}
+
+	private double estimatePredicateRows(LmdbAdjacencyReadView view, long predicate, long subject, long object,
+			boolean explicit, LmdbAdjacencyPlaneStatistics statistics) {
+		if (subject <= 0 && object <= 0) {
+			return statistics.quadCount(predicate, plane(true, explicit));
+		}
+		boolean bySubject = subject > 0;
+		long key = bySubject ? subject : object;
+		ResolvedRow row = resolveRow(view, key, plane(bySubject, explicit), predicate);
+		return row.handle > 0 ? LmdbAdjacencyRunCodec.edgeCount(row.catalog, row.handle) : 0D;
+	}
+
+	private boolean exactFullSnapshot(LmdbAdjacencyReadView view) {
+		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER
+				|| writeTransactionBlocksAdjacency()) {
+			return false;
+		}
+		LmdbAdjacencyPublishedState state = view.state();
+		if (state.base() == null || !state.base().coverage().isFull()
+				|| view.snapshotRevision() > state.appliedRevision()) {
+			return false;
+		}
+		for (PendingTable pending : state.pending()) {
+			if (pending.revision() <= view.snapshotRevision()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Opens one fixed-predicate slice after {@link #exactFullSnapshot} proved the parent sweep restart-free. */
+	RecordIterator openCompletePredicateSlice(LmdbAdjacencyReadView view, long subject, long predicate, long object,
+			long context, boolean explicit, StatementOrder order) {
+		boolean subjectBound = subject > 0;
+		boolean objectBound = object > 0;
+		if (!subjectBound && !objectBound) {
+			boolean bySubject = order != StatementOrder.O;
+			LmdbDirectNativeAdjacency adjacency = bindCompleteAdjacency(view, predicate, bySubject, explicit);
+			if (adjacency == null) {
+				throw new IllegalStateException(
+						"exact FULL predicate sweep observed an incomplete predicate: " + predicate);
+			}
+			return new LmdbDirectAdjacencyRootIterator(view, adjacency, predicate, context, bySubject);
+		}
+		boolean bySubject = subjectBound;
+		long key = subjectBound ? subject : object;
+		long boundNeighbor = subjectBound && objectBound ? object : -1L;
+		ResolvedRow row = resolveRow(view, key, plane(bySubject, explicit), predicate, null);
+		if (row.handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
+			throw new IllegalStateException("exact FULL predicate sweep observed an uncovered row: " + predicate);
+		}
+		if (row.handle == LmdbInMemoryAdjacencyIndex.NOT_FOUND) {
+			return EmptyRecordIterator.INSTANCE;
+		}
+		LmdbDirectAdjacencyIterator iterator = new LmdbDirectAdjacencyIterator();
+		if (boundNeighbor > 0) {
+			iterator.initBoundNeighbor(view, row.catalog, view.state().contextCatalog(), row.handle, key, predicate,
+					boundNeighbor, context, LmdbDirectAdjacencyIterator.BY_SUBJECT, "direct");
+		} else {
+			iterator.init(view, row.catalog, view.state().contextCatalog(), row.handle, key, predicate, context,
+					bySubject ? LmdbDirectAdjacencyIterator.BY_SUBJECT : LmdbDirectAdjacencyIterator.BY_OBJECT,
+					"direct");
+		}
+		return iterator;
 	}
 
 	private RecordIterator openBoundProbe(LmdbAdjacencyReadView view, long subject, long predicate, long object,
@@ -2710,6 +2928,22 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		metrics.recordHit();
 		return OptionalLong.of(LmdbAdjacencyRunCodec.edgeCount(row.catalog, row.handle));
+	}
+
+	OrderedIntegerDomain orderedIntegerDomain(LmdbAdjacencyReadView view, long subject, long predicate, long object,
+			long context, int varyingField, boolean explicit) {
+		if (varyingField != TripleIndex.OBJ_IDX || predicate <= 0 || object > 0 || !offersUniversalCandidate(view)) {
+			return null;
+		}
+		LmdbDirectNativeAdjacency adjacency = bindCompleteAdjacency(view, predicate, true, explicit);
+		if (adjacency == null) {
+			return null;
+		}
+		try {
+			return adjacency.orderedIntegerDomain(tripleStore.getIndexName(subject, predicate, object, context));
+		} finally {
+			adjacency.close();
+		}
 	}
 
 	@Override

@@ -108,10 +108,11 @@ class LmdbNodePredicateSwitchTest {
 
 	/**
 	 * The shipped default. Nothing is built, nothing is charged, the base is a paged base that reports it cannot
-	 * enumerate predicates, and the query declines to LMDB with the stable reason rather than answering wrongly.
+	 * enumerate predicates. The general predicate-domain sweep still answers the query without charging the optional
+	 * projection.
 	 */
 	@Test
-	void constructionDefaultsOffAndCostsNothing(@TempDir File dataDir) throws Exception {
+	void constructionDefaultsOffAndGeneralTraversalCostsNothingExtra(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
 		LmdbDirectAdjacencyOptions defaults = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30, name -> null, 4);
 		assertThat(defaults.nodePredicateProjectionEnabled()).isFalse();
@@ -128,26 +129,25 @@ class LmdbNodePredicateSwitchTest {
 		assertThat(base.supportsPredicateEnumeration(LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT)).isFalse();
 
 		long before = store.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
-		assertThat(rowsFor(S1)).as("must decline to LMDB, not answer").isNull();
+		assertThat(rowsFor(S1)).as("the general adjacency traversal remains available").hasSize(2);
 		assertThat(store.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE))
-				.isGreaterThan(before);
+				.isEqualTo(before);
 	}
 
 	/**
-	 * The per-call gate must be able to stop a store that is already open. A build-time option resolved once during
-	 * base construction cannot do that, and the risk this feature carries is wrong answers rather than slowness.
+	 * The per-call gate stops the projection specialization immediately, without removing the universal traversal.
 	 */
 	@Test
-	void servingSwitchStopsAnAlreadyBuiltProjectionWithoutARebuild(@TempDir File dataDir) throws Exception {
+	void servingSwitchStopsOnlyTheProjectionWithoutARebuild(@TempDir File dataDir) throws Exception {
 		open(dataDir, true, true);
 		assertThat(store.publishedStateForTest().base().nodePredicateIndexOrNull()).isNotNull();
 		assertThat(rowsFor(S1)).hasSize(2);
 
 		System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, "false");
 		long before = store.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
-		assertThat(rowsFor(S1)).as("the serving gate must take effect on the very next call").isNull();
+		assertThat(rowsFor(S1)).as("the general traversal replaces the disabled specialization").hasSize(2);
 		assertThat(store.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE))
-				.isGreaterThan(before);
+				.isEqualTo(before);
 
 		// ...and back on again, still without a rebuild: the structure was never destroyed, only bypassed.
 		System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, "true");

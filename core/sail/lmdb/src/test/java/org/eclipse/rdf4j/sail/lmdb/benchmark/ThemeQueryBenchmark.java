@@ -70,9 +70,9 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 10)
+@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 15)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G" })
+@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true" })
 @Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
@@ -120,32 +120,32 @@ public class ThemeQueryBenchmark {
 
 	@Param({
 			"0",
-			"1",
-			"2",
+//			"1",
+//			"2",
 			"3",
-			"4",
-			"5",
-			"6",
+//			"4",
+//			"5",
+//			"6",
 			"7",
 			"8",
-			"9",
-			"10",
+//			"9",
+//			"10",
 //			"11",
 //			"12"
 	})
 	public int z_queryIndex;
 
 	@Param({
-			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
-			"LIBRARY",
-			"ENGINEERING",
+//			"MEDICAL_RECORDS",
+//			"SOCIAL_MEDIA",
+//			"LIBRARY",
+//			"ENGINEERING",
 //			"HIGHLY_CONNECTED",
 //			"TRAIN",
 //			"ELECTRICAL_GRID",
 //			"PHARMA",
 //			"ADAPTIVE_FILTER_PLACEMENT",
-//			"ANALYTICS"
+			"ANALYTICS"
 	})
 	public String themeName;
 
@@ -174,6 +174,7 @@ public class ThemeQueryBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
+		StopWatch stopWatch = StopWatch.createStarted();
 		theme = Theme.valueOf(themeName);
 		File storeDirectory = storeDirectory();
 		System.out.println(storeDirectory.getAbsolutePath());
@@ -193,20 +194,27 @@ public class ThemeQueryBenchmark {
 			store = new LmdbStore(storeDirectory, storeConfig);
 			repository = new SailRepository(store);
 			ensureDataLoadedAndValidated();
+			System.out.println("ensureDataLoadedAndValidated: " + stopWatch);
 			ensureSketchesAvailable(storeDirectory);
+			System.out.println("ensureSketchesAvailable: " + stopWatch);
+
 			waitForSketchesIfEnabled();
+			System.out.println("waitForSketchesIfEnabled: " + stopWatch);
+
 			waitForDirectAdjacencyIfEnabled();
+			System.out.println("waitForDirectAdjacencyIfEnabled: " + stopWatch);
+
 			if (QueryPlanCapture.isCaptureEnabled()) {
 				captureQueryPlanSnapshot();
 			}
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
-				tupleQuery.setMaxExecutionTime(1);
-				try (TupleQueryResult evaluate = tupleQuery.evaluate()) {
-					evaluate.stream().count();
-				}
-			}
-			Thread.sleep(4000);
+//			try (SailRepositoryConnection connection = repository.getConnection()) {
+//				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+//				tupleQuery.setMaxExecutionTime(1);
+//				try (TupleQueryResult evaluate = tupleQuery.evaluate()) {
+//					evaluate.stream().count();
+//				}
+//				System.out.println(connection.size() + " statements in store after setup");
+//			}
 
 		} catch (IOException | RuntimeException e) {
 			if (repository != null) {
@@ -214,9 +222,9 @@ public class ThemeQueryBenchmark {
 			}
 			restoreJaninoCodegenProperties();
 			throw e;
-		} catch (InterruptedException e) {
-			throw new RuntimeException(e);
 		}
+
+		System.out.println("ThemeQueryBenchmark setup completed in " + stopWatch);
 
 	}
 

@@ -39,7 +39,8 @@ final class RowState implements LmdbNativeSlotReader {
 	final long[] trailOldValues;
 	LmdbNativeRuntimePlan.Invocation runtimePlan;
 	PathResultMemo pathEstimateMemos;
-	boolean lmdbScanOnly;
+	/** Preserve the authoritative complete index sequence without mandating a particular physical source. */
+	boolean encounterOrderRequired;
 	int trailSize;
 	long boundMask;
 	/**

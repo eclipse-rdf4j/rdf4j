@@ -374,18 +374,36 @@ public class LmdbNativeQueryExplanationTest {
 				+ "SELECT ?s ?price WHERE { ?s ex:price ?price }";
 
 		String rendered = explain(Explanation.Level.Telemetry, query).toString();
+		String accesses = planSection(rendered, "    adjacencyAccess:\n", "    adjacencySIP:\n");
 
-		assertThat(rendered)
-				.contains("    adjacencyAccess:\n"
-						+ "      used: true\n"
-						+ "      attempts:\n"
-						+ "        0:\n"
-						+ "          source: IN_MEMORY_ADJACENCY\n"
-						+ "          outcome: SERVED\n"
-						+ "          reason: ROOT_SCAN\n")
-				.contains("          where: Pattern(")
-				.contains("          requestedOrder: <default>\n")
-				.contains("          predicate: BOUND[");
+		assertThat(accesses)
+				.contains("source: IN_MEMORY_ADJACENCY\noutcome: CANDIDATE")
+				.contains("source: LMDB\noutcome: CANDIDATE")
+				.contains("source: IN_MEMORY_ADJACENCY\noutcome: SELECTED")
+				.contains("source: LMDB\noutcome: OUTRANKED")
+				.contains("measurements:\nIN_MEMORY_ADJACENCY:\ncompleted: 1\ncensored: 0\nrowsScannedActual: 4\n"
+						+ "rowsMatchedActual: 4\nrowsFilteredActual: 0")
+				.contains("where: Pattern(")
+				.contains("requestedOrder: <default>\n")
+				.contains("predicate: BOUND[")
+				.doesNotContain("outcome: INELIGIBLE");
+	}
+
+	@Test
+	public void telemetrySeparatesStatementAccessCandidatesFromSelection() throws Exception {
+		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s ?price WHERE { ?s ex:price ?price }";
+
+		String accesses = planSection(explain(Explanation.Level.Telemetry, query).toString(),
+				"    adjacencyAccess:\n", "    adjacencySIP:\n");
+
+		assertThat(accesses)
+				.contains("source: IN_MEMORY_ADJACENCY\noutcome: CANDIDATE")
+				.contains("source: LMDB\noutcome: CANDIDATE")
+				.contains("outcome: SELECTED")
+				.contains("outcome: OUTRANKED")
+				.doesNotContain("DECLINED_TO_LMDB");
 	}
 
 	@Test
@@ -431,8 +449,8 @@ public class LmdbNativeQueryExplanationTest {
 		}
 
 		assertThat(rendered)
-				.contains("          source: LMDB\n"
-						+ "          outcome: DECLINED_TO_LMDB\n"
+				.contains("          source: IN_MEMORY_ADJACENCY\n"
+						+ "          outcome: INELIGIBLE\n"
 						+ "          reason: FEATURE_DISABLED["
 						+ "rdf4j.lmdb.nativePath.adjacencySeeds.enabled=false]\n"
 						+ "          where: Path.seed\n")
@@ -449,11 +467,14 @@ public class LmdbNativeQueryExplanationTest {
 		String accesses = planSection(rendered, "    adjacencyAccess:\n", "    adjacencySIP:\n");
 
 		assertThat(accesses)
-				.as("one root scan plus one repeated bound-row shape should be reported")
+				.as("two physical shapes should each report the two candidates, selected arm, and outranked arm")
 				.contains("0:")
-				.contains("1:")
+				.contains("7:")
 				.contains("opens: 4")
-				.doesNotContain("2:");
+				.contains("outcome: CANDIDATE")
+				.contains("outcome: SELECTED")
+				.contains("outcome: OUTRANKED")
+				.doesNotContain("outcome: INELIGIBLE");
 	}
 
 	@Test
@@ -466,17 +487,16 @@ public class LmdbNativeQueryExplanationTest {
 				+ "{ ?s ex:price ?price } UNION { ?s ex:price ?price } }";
 
 		String rendered = explain(Explanation.Level.Telemetry, query).toString();
+		String accesses = planSection(rendered, "    adjacencyAccess:\n", "    adjacencySIP:\n");
 
-		assertThat(rendered)
-				.contains("    adjacencyAccess:\n"
-						+ "      used: true\n"
-						+ "      attempts:\n"
-						+ "        0:\n"
-						+ "          source: IN_MEMORY_ADJACENCY\n"
-						+ "          outcome: SERVED\n"
-						+ "          reason: ROOT_SCAN\n")
-				.contains("          where: Pattern(")
-				.contains("          requestedOrder: O\n");
+		assertThat(accesses)
+				.contains("source: IN_MEMORY_ADJACENCY\noutcome: CANDIDATE")
+				.contains("source: LMDB\noutcome: CANDIDATE")
+				.contains("source: IN_MEMORY_ADJACENCY\noutcome: SELECTED")
+				.contains("source: LMDB\noutcome: OUTRANKED")
+				.contains("where: Pattern(")
+				.contains("requestedOrder: O\n")
+				.doesNotContain("outcome: INELIGIBLE");
 	}
 
 	@Test

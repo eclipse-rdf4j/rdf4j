@@ -2501,12 +2501,6 @@ final class LmdbNativeKernelLowering {
 					|| !pattern.indexName.equals(pattern.range.indexFieldSeq())) {
 				return false;
 			}
-			// All variable positions must still be fresh at this producer. That retains the exact bound mask used
-			// when the range's index was selected; a correlated or entry-bound position gets the interpreted route.
-			if (!rangeTermStable(pattern.s) || !rangeTermStable(pattern.p) || !rangeTermStable(pattern.o)
-					|| pattern.c.hasSlot() && !slotFresh(pattern.c.slot)) {
-				return false;
-			}
 			int expectedFirst = pattern.range.firstVaryingField();
 			if (expectedFirst < 0) {
 				return true;
@@ -2530,7 +2524,10 @@ final class LmdbNativeKernelLowering {
 				default -> throw new IllegalStateException("invalid quad field " + field);
 				};
 				if (!(term.isConstant() && !term.hasSlot())) {
-					return field == expectedFirst;
+					// The varying value itself must still be produced by this scan. Bindings of later index fields do
+					// not
+					// alter the planned prefix or half-open interval and remain ordinary exact scan predicates.
+					return field == expectedFirst && rangeTermStable(term);
 				}
 			}
 			return false;

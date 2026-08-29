@@ -31,6 +31,7 @@ final class LmdbAdjacencyPlaneStatistics {
 	private final long[] baseQuadCounts;
 	private final long[] baseKeyCounts;
 	private final Update[] updates;
+	private volatile PredicateDomain predicateDomain;
 
 	private LmdbAdjacencyPlaneStatistics(long[] basePredicates, long[] baseQuadCounts, long[] baseKeyCounts,
 			Update[] updates) {
@@ -144,6 +145,42 @@ final class LmdbAdjacencyPlaneStatistics {
 			}
 		}
 		return Arrays.copyOf(active, count);
+	}
+
+	/**
+	 * Immutable unsigned-sorted superset of every predicate represented by this retained statistics history.
+	 * <p>
+	 * A superset is intentional: a state retained for an older snapshot may include a later update that removes the
+	 * predicate's final quad. Filtering the flattened catalog by current positive counts would then hide a predicate
+	 * that the older snapshot still needs. Opening the predicate against the read view applies the snapshot boundary
+	 * and turns predicates that are not visible there into exact-empty groups.
+	 */
+	PredicateDomain predicateDomain() {
+		PredicateDomain cached = predicateDomain;
+		if (cached != null) {
+			return cached;
+		}
+		LmdbAdjacencyPlaneStatistics flat = flattened();
+		PredicateDomain created = new PredicateDomain(flat.basePredicates);
+		predicateDomain = created;
+		return created;
+	}
+
+	/** Primitive immutable view; the backing array remains owned by immutable plane statistics. */
+	static final class PredicateDomain {
+		private final long[] predicates;
+
+		private PredicateDomain(long[] predicates) {
+			this.predicates = predicates;
+		}
+
+		int size() {
+			return predicates.length;
+		}
+
+		long predicateAt(int ordinal) {
+			return predicates[ordinal];
+		}
 	}
 
 	private long count(long rawPredicate, int plane, boolean quads) {

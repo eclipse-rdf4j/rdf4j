@@ -18,11 +18,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
@@ -164,6 +166,23 @@ class LmdbNativeKernelRangeTest {
 		assertThat(nativeRows(query)).containsExactlyElementsOf(expected);
 		// Context-bearing generated scans may conservatively decline. Either execution route must retain GRAPH scope;
 		// this case prevents a future range-aware scanner from widening the graph at the same time as the key range.
+	}
+
+	@Test
+	void exactFullOrderedDomainProducesNativeKeyRange() throws Exception {
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		String query = prefixes()
+				+ "SELECT (COUNT(*) AS ?c) WHERE {\n"
+				+ "  ?s ex:kind ex:Item .\n"
+				+ "  ?s ex:score ?score .\n"
+				+ "  FILTER(?score >= 3)\n"
+				+ "}";
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			assertThat(connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized).toString())
+					.contains("range=posc[low=");
+		}
 	}
 
 	private long genericCount(String query) {

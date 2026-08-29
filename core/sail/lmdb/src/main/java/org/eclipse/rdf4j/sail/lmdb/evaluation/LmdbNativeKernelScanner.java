@@ -174,13 +174,11 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 	}
 
 	private void verifyRange(LmdbKeyRange range, long subj, long pred, long obj, long context) {
-		String selectedIndex = source.indexName(subj, pred, obj, context);
 		int selectedFirst = firstVaryingField(range.indexFieldSeq(), subj, pred, obj, context);
-		if (!range.indexFieldSeq().equals(selectedIndex)
-				|| range.firstVaryingField() >= 0 && range.firstVaryingField() != selectedFirst) {
+		if (range.firstVaryingField() >= 0 && range.firstVaryingField() != selectedFirst) {
 			throw new QueryEvaluationException(
 					"Generated range scan no longer matches its planned access path: planned="
-							+ range + ", selectedIndex=" + selectedIndex + ", firstVaryingField=" + selectedFirst);
+							+ range + ", firstVaryingField=" + selectedFirst);
 		}
 	}
 

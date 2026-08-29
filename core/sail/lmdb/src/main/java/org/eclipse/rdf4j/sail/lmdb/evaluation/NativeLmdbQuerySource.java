@@ -130,11 +130,43 @@ public interface NativeLmdbQuerySource {
 
 		void access(boolean used, String reason, StatementOrder requestedOrder, long subj, long pred, long obj,
 				long context);
+
+		default void candidate(String source, String reason, StatementOrder requestedOrder, long subj, long pred,
+				long obj, long context) {
+		}
+
+		default void selected(boolean adjacency, String reason, StatementOrder requestedOrder, long subj, long pred,
+				long obj, long context) {
+			access(adjacency, reason, requestedOrder, subj, pred, obj, context);
+		}
+
+		default void outranked(String source, String reason, StatementOrder requestedOrder, long subj, long pred,
+				long obj, long context) {
+		}
+
+		default void ineligible(String reason, StatementOrder requestedOrder, long subj, long pred, long obj,
+				long context) {
+			access(false, reason, requestedOrder, subj, pred, obj, context);
+		}
+
+		default void measurement(boolean adjacency, long scannedRows, long matchedRows, long filteredRows,
+				boolean censored) {
+		}
 	}
 
 	default RecordIterator statements(long subj, long pred, long obj, long context,
 			AdjacencyAccessObserver observer) throws IOException {
 		return statements(subj, pred, obj, context);
+	}
+
+	/**
+	 * Opens a scan preserving this source's complete authoritative encounter order. This is a semantic order request,
+	 * not a source mandate: implementations with several physical sources may arbitrate among any candidate capable of
+	 * reproducing the same complete index sequence.
+	 */
+	default RecordIterator statementsInEncounterOrder(long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer) throws IOException {
+		return statements(subj, pred, obj, context, observer);
 	}
 
 	/**
@@ -851,6 +883,11 @@ public interface NativeLmdbQuerySource {
 	long count(long subj, long pred, long obj, long context) throws IOException;
 
 	boolean has(long subj, long pred, long obj, long context) throws IOException;
+
+	default boolean has(long subj, long pred, long obj, long context, AdjacencyAccessObserver observer)
+			throws IOException {
+		return has(subj, pred, obj, context);
+	}
 
 	double estimate(long subj, long pred, long obj, long context);
 

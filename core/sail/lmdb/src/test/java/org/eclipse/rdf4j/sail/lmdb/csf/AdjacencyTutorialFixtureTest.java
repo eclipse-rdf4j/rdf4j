@@ -100,6 +100,15 @@ class AdjacencyTutorialFixtureTest {
 				.contains("data-layer=\"packed-vector\"")
 				.contains("data-layer=\"snapshot-overlay\"")
 				.contains("12 predicates", "48 partition slots", "2,000 named graphs", "256 lanes");
+
+		assertThat(html)
+				.contains("FIXTURE:PACKED_VECTOR_DEEP_DIVE_V1")
+				.contains("data-testid=\"vector-deep-dive\"")
+				.contains("terminal directory", "12-byte block header", "FOR typed payload", "delta typed payload")
+				.contains("FIXTURE:DELTA_GENERATION_DEEP_DIVE_V1")
+				.contains("data-testid=\"delta-deep-dive\"")
+				.contains("complete replacement run", "SMALL_VARINT", "BLOCK_FOR", "CHUNK_DIRECTORY")
+				.contains("Newest visible version wins", "Copy-on-write consolidation");
 	}
 
 	private static Map<String, byte[]> embeddedPages(String html) {

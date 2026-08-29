@@ -116,7 +116,7 @@ final class PatternCursor implements AutoCloseable {
 	long[] contexts;
 	LmdbKeyRange range;
 	NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver;
-	boolean lmdbScanOnly;
+	boolean encounterOrderRequired;
 	int contextIndex;
 	RecordIterator current;
 	long[] syntheticRow;
@@ -140,8 +140,8 @@ final class PatternCursor implements AutoCloseable {
 
 	PatternCursor(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
 			long pred, long obj, long[] contexts, LmdbKeyRange range,
-			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean lmdbScanOnly) {
-		configure(source, probe, subj, pred, obj, contexts, range, accessObserver, lmdbScanOnly);
+			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean encounterOrderRequired) {
+		configure(source, probe, subj, pred, obj, contexts, range, accessObserver, encounterOrderRequired);
 	}
 
 	/** Reinitializes this caller-owned cursor without allocating another wrapper for every join probe. */
@@ -154,9 +154,9 @@ final class PatternCursor implements AutoCloseable {
 
 	PatternCursor resetContexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
 			long pred, long obj, long[] contexts, LmdbKeyRange range,
-			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean lmdbScanOnly) {
+			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean encounterOrderRequired) {
 		prepareReset();
-		configure(source, probe, subj, pred, obj, contexts, range, accessObserver, lmdbScanOnly);
+		configure(source, probe, subj, pred, obj, contexts, range, accessObserver, encounterOrderRequired);
 		return this;
 	}
 
@@ -186,7 +186,7 @@ final class PatternCursor implements AutoCloseable {
 
 	private void configure(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe, long subj,
 			long pred, long obj, long[] contexts, LmdbKeyRange range,
-			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean lmdbScanOnly) {
+			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean encounterOrderRequired) {
 		this.source = source;
 		this.probe = probe;
 		this.subj = subj;
@@ -195,7 +195,7 @@ final class PatternCursor implements AutoCloseable {
 		this.contexts = contexts;
 		this.range = range;
 		this.accessObserver = accessObserver;
-		this.lmdbScanOnly = lmdbScanOnly;
+		this.encounterOrderRequired = encounterOrderRequired;
 		this.contextIndex = 0;
 		this.closed = false;
 	}
@@ -228,16 +228,17 @@ final class PatternCursor implements AutoCloseable {
 
 	static PatternCursor contexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
 			long subj, long pred, long obj, long[] contexts, LmdbKeyRange range,
-			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean lmdbScanOnly) {
-		return new PatternCursor(source, probe, subj, pred, obj, contexts, range, accessObserver, lmdbScanOnly);
+			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean encounterOrderRequired) {
+		return new PatternCursor(source, probe, subj, pred, obj, contexts, range, accessObserver,
+				encounterOrderRequired);
 	}
 
 	RecordIterator openIterator(long context) throws IOException {
 		if (range != null) {
 			return source.statements(subj, pred, obj, context, range, accessObserver);
 		}
-		if (lmdbScanOnly) {
-			return source.lmdbStatements(subj, pred, obj, context, accessObserver);
+		if (encounterOrderRequired) {
+			return source.statementsInEncounterOrder(subj, pred, obj, context, accessObserver);
 		}
 		return probe != null ? probe.open(subj, pred, obj, context, accessObserver)
 				: source.statements(subj, pred, obj, context, accessObserver);
