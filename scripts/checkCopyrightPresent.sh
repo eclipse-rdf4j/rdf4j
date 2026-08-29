@@ -120,11 +120,17 @@ while IFS= read -r -d '' i; do
     continue
   fi
 
-  echo "$i"
   # only look in non test files but make sure src/main exists.
   # and not in package-info
-  dir="${i/pom.xml/}src/"
+  module_dir="${i%/pom.xml}"
+  dir="${module_dir}/src/"
   if [ -d "$dir" ]; then
+    problem_count_before=$((
+      ${#filesWithOutCopyright[@]}
+        + ${#filesWithOutSPDX[@]}
+        + ${#filesWithInvalidHeader[@]}
+        + ${#filesWithAdunaYearAfter2020[@]}
+    ))
     while IFS= read -r -d '' c; do
       read_header_lines "$c"
 
@@ -211,6 +217,16 @@ while IFS= read -r -d '' i; do
         filesWithOutSPDX+=("$c")
       fi
     done < <(find "${dir}" -name "*.java" -not -name "package-info.java" -print0)
+
+    problem_count_after=$((
+      ${#filesWithOutCopyright[@]}
+        + ${#filesWithOutSPDX[@]}
+        + ${#filesWithInvalidHeader[@]}
+        + ${#filesWithAdunaYearAfter2020[@]}
+    ))
+    if [ "$problem_count_after" -eq "$problem_count_before" ]; then
+      echo "✓ ${module_dir}"
+    fi
   fi
 done < <(find "${repo_root}" -type d -name target -prune -o -type f -name "pom.xml" -print0)
 

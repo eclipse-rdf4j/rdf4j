@@ -1,0 +1,249 @@
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.DC;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+
+/**
+ * Creates a deliberately complex RDF4J 5.3.x LMDB store to be used as a read-only compatibility fixture by RDF4J 6.0.
+ *
+ * <p>
+ * The generated store exercises the parts of the on-disk format that the 6.0 legacy-compatibility layer has to
+ * reinterpret: legacy {@code (ordinal << 2) | type} IDs, legacy value-record prefixes, the 5.3.x literal layout, the
+ * {@code spoc}/{@code spoc-inf} database naming, non-default configured indexes, namespace IDs, the long-value hash
+ * lookup path, the free-ID list, and inferred statements.
+ */
+public class MakeLegacyStore {
+
+	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+
+	/** Enough entities for every configured index to span many LMDB pages, without bloating the committed fixture. */
+	private static final int BULK_ENTITIES = 600;
+
+	private static final String EX = "http://example.org/legacy/";
+	private static final String LONG_NS = "http://example.org/a-deliberately-long-namespace-that-exceeds-any-short-"
+			+ "value-inlining-threshold-and-forces-the-hash-based-lookup-path-to-be-used-for-resolution/";
+
+	public static void main(String[] args) throws Exception {
+		Path dir = Path.of(args[0]);
+		if (Files.exists(dir)) {
+			throw new IllegalStateException("refusing to overwrite " + dir);
+		}
+		Files.createDirectories(dir);
+
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		// Non-default index set: exercises configurable statement indexes and their legacy database names.
+		config.setTripleIndexes("spoc,posc,ospc,cspo");
+		// Keep the fixture small enough to commit; LMDB files are sparse but the map size caps them.
+		config.setTripleDBSize(64L * 1024 * 1024);
+		config.setValueDBSize(64L * 1024 * 1024);
+		config.setForceSync(true);
+		config.setAutoGrow(false);
+
+		LmdbStore store = new LmdbStore(dir.toFile(), config);
+		store.init();
+		try {
+			int explicit;
+			int inferred;
+			try (LmdbStoreConnection conn = (LmdbStoreConnection) store.getConnection()) {
+				conn.begin();
+				conn.setNamespace("ex", EX);
+				conn.setNamespace("long", LONG_NS);
+				conn.setNamespace("foaf", FOAF.NAMESPACE);
+				conn.setNamespace("dc", DC.NAMESPACE);
+				conn.setNamespace("rdfs", RDFS.NAMESPACE);
+				conn.commit();
+
+				conn.begin();
+				explicit = addExplicit(conn);
+				inferred = addInferred(conn);
+				conn.commit();
+
+				// Delete a slice so that value garbage collection populates the legacy free-ID list. Reopening in
+				// legacy mode must recover next-id from the remaining records and reuse the freed IDs.
+				conn.begin();
+				conn.removeStatements(VF.createIRI(EX, "doomed-subject"), null, null);
+				conn.commit();
+			}
+
+			// Reopen and write once more so the store also contains records allocated after a free-list existed.
+			try (LmdbStoreConnection conn = (LmdbStoreConnection) store.getConnection()) {
+				conn.begin();
+				conn.addStatement(VF.createIRI(EX, "post-gc"), RDFS.LABEL,
+						VF.createLiteral("written after garbage collection"));
+				conn.addStatement(VF.createIRI(EX, "post-gc"), RDF.TYPE, VF.createIRI(EX, "Reopened"));
+				conn.commit();
+			}
+
+			System.out.println("explicit=" + explicit + " inferred=" + inferred);
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	private static int addExplicit(LmdbStoreConnection conn) {
+		int count = 0;
+		IRI graphA = VF.createIRI(EX, "graph/a");
+		IRI graphB = VF.createIRI(EX, "graph/b");
+		BNode graphC = VF.createBNode("graph-c");
+
+		// Literals whose 6.0 counterparts would be inlined into the ID. In legacy mode every one of these must be a
+		// dictionary entry with a legacy record instead.
+		List<Literal> inlineCandidates = List.of(
+				VF.createLiteral(0),
+				VF.createLiteral(1),
+				VF.createLiteral(-1),
+				VF.createLiteral(42),
+				VF.createLiteral(Integer.MAX_VALUE),
+				VF.createLiteral(Integer.MIN_VALUE),
+				VF.createLiteral(Long.MAX_VALUE),
+				VF.createLiteral(Long.MIN_VALUE),
+				VF.createLiteral(0.0d),
+				VF.createLiteral(3.141592653589793d),
+				VF.createLiteral(-2.5e-17d),
+				VF.createLiteral(Double.MAX_VALUE),
+				VF.createLiteral(1.5f),
+				VF.createLiteral(true),
+				VF.createLiteral(false),
+				VF.createLiteral((byte) 7),
+				VF.createLiteral((short) 300));
+
+		for (int i = 0; i < inlineCandidates.size(); i++) {
+			IRI s = VF.createIRI(EX, "inline/" + i);
+			conn.addStatement(s, VF.createIRI(EX, "numeric"), inlineCandidates.get(i));
+			count++;
+		}
+
+		// Typed literals across a spread of datatypes, including a custom one.
+		List<Literal> typed = List.of(
+				VF.createLiteral("1234567890123456789012345678901234567890", XSD.INTEGER),
+				VF.createLiteral("123.456", XSD.DECIMAL),
+				VF.createLiteral("2026-08-07T12:34:56.789Z", XSD.DATETIME),
+				VF.createLiteral("2026-08-07", XSD.DATE),
+				VF.createLiteral("12:34:56", XSD.TIME),
+				VF.createLiteral("P1Y2M3DT4H5M6S", XSD.DURATION),
+				VF.createLiteral("deadbeef", XSD.HEXBINARY),
+				VF.createLiteral("a plain typed string", XSD.STRING),
+				VF.createLiteral("custom", VF.createIRI(EX, "customDatatype")),
+				VF.createLiteral("custom-long", VF.createIRI(LONG_NS, "anotherCustomDatatype")));
+		for (int i = 0; i < typed.size(); i++) {
+			conn.addStatement(VF.createIRI(EX, "typed/" + i), VF.createIRI(EX, "typedValue"), typed.get(i));
+			count++;
+		}
+
+		// Language-tagged literals, including non-ASCII labels and a long language tag.
+		List<Literal> langs = List.of(
+				VF.createLiteral("hello", "en"),
+				VF.createLiteral("hallo", "de"),
+				VF.createLiteral("hei", "no"),
+				VF.createLiteral("bokmål", "nb-NO"),
+				VF.createLiteral("こんにちは", "ja"),
+				VF.createLiteral("Здравствуйте", "ru"),
+				VF.createLiteral("مرحبا", "ar"),
+				VF.createLiteral("emoji 😀 label", "en-US"),
+				VF.createLiteral("variant", "en-US-x-lvariant-abc-def-ghi"));
+		for (int i = 0; i < langs.size(); i++) {
+			conn.addStatement(VF.createIRI(EX, "lang/" + i), RDFS.LABEL, langs.get(i));
+			count++;
+		}
+
+		// A plain (xsd:string) literal repeated so the record is shared, plus a very long literal that must be
+		// resolved through the hash index rather than the direct value record.
+		Literal shared = VF.createLiteral("shared plain literal");
+		StringBuilder big = new StringBuilder();
+		while (big.length() < 8192) {
+			big.append("The quick brown fox jumps over the lazy dog. 0123456789. ");
+		}
+		Literal huge = VF.createLiteral(big.toString());
+		Literal hugeLang = VF.createLiteral(big.toString(), "en");
+		Literal hugeTyped = VF.createLiteral(big.toString(), VF.createIRI(EX, "customDatatype"));
+
+		for (int i = 0; i < 5; i++) {
+			conn.addStatement(VF.createIRI(EX, "shared/" + i), DC.DESCRIPTION, shared);
+			count++;
+		}
+		conn.addStatement(VF.createIRI(EX, "huge"), DC.DESCRIPTION, huge);
+		conn.addStatement(VF.createIRI(EX, "huge"), DC.DESCRIPTION, hugeLang);
+		conn.addStatement(VF.createIRI(EX, "huge"), DC.DESCRIPTION, hugeTyped);
+		conn.addStatement(VF.createIRI(LONG_NS, "huge-subject-in-a-long-namespace"), DC.DESCRIPTION, huge);
+		count += 4;
+
+		// Blank nodes in subject and object position, in the default graph and in a blank-node-named graph.
+		List<BNode> bnodes = new ArrayList<>();
+		for (int i = 0; i < 20; i++) {
+			bnodes.add(VF.createBNode("legacy-bnode-" + i));
+		}
+		for (int i = 0; i < bnodes.size(); i++) {
+			BNode b = bnodes.get(i);
+			conn.addStatement(b, RDF.TYPE, FOAF.PERSON);
+			conn.addStatement(b, FOAF.NAME, VF.createLiteral("Anonymous " + i));
+			conn.addStatement(VF.createIRI(EX, "holder/" + i), FOAF.KNOWS, b, graphC);
+			count += 3;
+		}
+
+		// Bulk statements spread over several named graphs and predicates so every configured index holds many pages.
+		Resource[] graphs = { null, graphA, graphB, graphC };
+		for (int i = 0; i < BULK_ENTITIES; i++) {
+			IRI s = VF.createIRI(EX, "person/" + i);
+			IRI p = VF.createIRI(EX, "prop/" + (i % 17));
+			Value o = (i % 3 == 0)
+					? VF.createIRI(EX, "person/" + ((i * 7 + 3) % BULK_ENTITIES))
+					: VF.createLiteral("value " + i + " for person " + i);
+			Resource g = graphs[i % graphs.length];
+			if (g == null) {
+				conn.addStatement(s, p, o);
+			} else {
+				conn.addStatement(s, p, o, g);
+			}
+			count++;
+
+			conn.addStatement(s, RDF.TYPE, FOAF.PERSON);
+			conn.addStatement(s, FOAF.NAME, VF.createLiteral("Person " + i, "en"));
+			conn.addStatement(s, VF.createIRI(EX, "age"), VF.createLiteral(20 + (i % 60)));
+			count += 3;
+		}
+
+		// A subject that is deleted afterwards, to leave freed value IDs behind.
+		IRI doomed = VF.createIRI(EX, "doomed-subject");
+		for (int i = 0; i < 50; i++) {
+			conn.addStatement(doomed, VF.createIRI(EX, "doomedProp/" + i),
+					VF.createLiteral("value that will be garbage collected " + i));
+			count++;
+		}
+
+		return count;
+	}
+
+	private static int addInferred(LmdbStoreConnection conn) {
+		int count = 0;
+		IRI inferredGraph = VF.createIRI(EX, "graph/inferred");
+		for (int i = 0; i < BULK_ENTITIES / 2; i++) {
+			IRI s = VF.createIRI(EX, "person/" + i);
+			conn.addInferredStatement(s, RDF.TYPE, FOAF.AGENT);
+			count++;
+			if (i % 2 == 0) {
+				conn.addInferredStatement(s, RDFS.LABEL, VF.createLiteral("inferred label " + i, "en"),
+						inferredGraph);
+				count++;
+			}
+		}
+		conn.addInferredStatement(VF.createIRI(EX, "huge"), RDF.TYPE, RDFS.RESOURCE, inferredGraph);
+		return count + 1;
+	}
+}

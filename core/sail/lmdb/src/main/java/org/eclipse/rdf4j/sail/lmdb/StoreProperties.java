@@ -116,6 +116,10 @@ class StoreProperties {
 		return loaded;
 	}
 
+	boolean isLegacy() {
+		return false;
+	}
+
 	String getVersion() {
 		return version;
 	}

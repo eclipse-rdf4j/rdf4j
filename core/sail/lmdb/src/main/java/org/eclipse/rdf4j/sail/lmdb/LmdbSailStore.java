@@ -318,7 +318,9 @@ class LmdbSailStore implements SailStore {
 		boolean initialized = false;
 		try {
 			namespaceStore = new NamespaceStore(dataDir);
-			var valueStore = new ValueStore(new File(dataDir, "values"), properties, config);
+			ValueStore valueStore = properties.isLegacy()
+					? new LegacyValueStore(new File(dataDir, "values"), properties, config)
+					: new ValueStore(new File(dataDir, "values"), properties, config);
 			this.valueStore = valueStore;
 			tripleStore = new TripleStore(new File(dataDir, "triples"), properties, config, valueStore);
 			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
@@ -846,6 +848,9 @@ class LmdbSailStore implements SailStore {
 	 */
 	CloseableIteration<? extends TripleTerm> createTripleTermIterator(Resource subj, IRI pred, Value obj)
 			throws IOException {
+		if (!valueStore.supportsTripleTerms()) {
+			return new EmptyIteration<>();
+		}
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
 			subjID = valueStore.getId(subj);
@@ -1468,7 +1473,7 @@ class LmdbSailStore implements SailStore {
 							}
 						}
 						for (long id : quad) {
-							if (id != 0L && !ValueIds.isInlined(id)) {
+							if (id != 0L && !valueStore.isInlined(id)) {
 								// only add references, exclude inlined values
 								unusedIds.add(id);
 							}
