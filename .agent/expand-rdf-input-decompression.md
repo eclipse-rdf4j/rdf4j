@@ -19,6 +19,12 @@ The change is deliberately input-only. HTTP `Content-Encoding` negotiation and r
 - [x] (2026-08-29 21:44Z) Extended Workbench URL imports through the dispatcher and reran the focused servlet class: 20 tests passed.
 - [x] (2026-08-29 21:53Z) Completed formatting, copyright, packaged-WAR inspection, and retained-log verification for all six requested modules with zero failures or errors.
 - [x] (2026-08-29 21:56Z) Completed the final JDK 25 root quick clean install (`BUILD SUCCESS`, 27.407 seconds) and clean diff audit.
+- [x] (2026-08-29 22:28Z) Reopened verification to exercise every supported codec and archive form through the WAR server, Workbench upload servlet, and Spring Boot HTTP server.
+- [x] (2026-08-29 22:29Z) Captured a fresh JDK 25 root clean-install baseline; `maven-build.log` records `BUILD SUCCESS` in 26.153 seconds.
+- [x] (2026-08-29 22:38Z) Added the shared 18-case input matrix and exercised it through the WAR server, Workbench Add servlet with a real repository, and Spring Boot; initial focused reports were preserved before the production dependency change.
+- [x] (2026-08-29 22:38Z) Added missing Brotli/native and Zstandard runtime libraries to the standalone Workbench WAR; the identical Workbench selector now passes 18 tests and the dependency-placement selector passes.
+- [x] (2026-08-29 22:43Z) Reran full server-spring (128), Workbench (407), WAR server (57 with one platform skip), and Spring Boot (45) verification with zero failures or errors; inspected all three packaged applications for every decoder library and Brotli native artifact.
+- [x] (2026-08-29 22:46Z) Rechecked formatting, all three packaged applications, and the complete diff; the final JDK 25 root quick clean install passed in 26.296 seconds.
 
 ## Surprises & Discoveries
 
@@ -42,6 +48,10 @@ The change is deliberately input-only. HTTP `Content-Encoding` negotiation and r
   Evidence: their first broad attempts failed only with `java.net.SocketException: Operation not permitted`; identical permitted reruns completed with zero failures and errors.
 - Observation: the requested dependency versions are current project releases and fit the runtime baseline.
   Evidence: Apache lists Commons Compress 1.28.0 as its current Java 8+ feature/maintenance release, and Tukaani lists XZ for Java 1.12 as the current Java 8-compatible release fixing a significant 1.10/1.11 bug.
+- Observation: packaged-entry-point coverage is narrower than dispatcher coverage.
+  Evidence: `ProtocolIT` and `Rdf4jServerWorkbenchApplicationTest` each upload only BZip2, while `AddServletCoverageTest` covers gzip and TAR but not the other codecs.
+- Observation: the standalone Workbench artifact did not package the retained Brotli and Zstandard decoders even though its documentation claimed those upload formats.
+  Evidence: the new Workbench matrix failed with `Compression library is not available: com.github.luben.zstd.Zstd`, and the dependency-placement test listed every Brotli artifact plus `zstd-jni` as missing. The unchanged WAR server and Spring Boot matrices both passed all 18 cases.
 
 ## Decision Log
 
@@ -63,10 +73,13 @@ The change is deliberately input-only. HTTP `Content-Encoding` negotiation and r
 - Decision: Keep Commons IO at default compile scope in server-spring and runtime scope in Workbench.
   Rationale: server-spring production code already directly imports Commons IO, while both scopes package the library for server deployment; Workbench only needs it reflectively at runtime.
   Date/Author: 2026-08-29 / Codex
+- Decision: Prove the same named format matrix at every packaged ingestion boundary, using a filename-bearing archive member for codecs such as LZMA that cannot be identified reliably from a bare request body.
+  Rationale: direct server requests have no source filename, so reliable signatures should be tested directly while suffix-only detection must be exercised through ZIP or TAR member names; Workbench uploads can test both because their submitted filename is available.
+  Date/Author: 2026-08-29 / Codex
 
 ## Outcomes & Retrospective
 
-Implementation and verification are complete. The dispatcher covers the six added codecs, recursive ZIP/TAR traversal, mixed member formats, fallback selection, unread tails, nesting, archive-entry limits, and decoder-memory limits. RDFLoader, Workbench stream and URL uploads, the HTTP filter, and both RDF upload controllers are integrated. Focused red-to-green tests, real WAR and Spring Boot uploads, formatting, copyright checks, packaged dependency inspection, all six requested retained-log module runs, and the final JDK 25 root quick clean install passed. Existing `RioCompression` enum membership and HTTP content-coding negotiation were not expanded, and core has no new non-test Commons/XZ dependencies.
+Implementation and endpoint acceptance verification are complete. The dispatcher covers the six added codecs, recursive ZIP/TAR traversal, mixed member formats, fallback selection, unread tails, nesting, archive-entry limits, and decoder-memory limits. RDFLoader, Workbench stream and URL uploads, the HTTP filter, and both RDF upload controllers are integrated. A shared 18-case matrix now proves plain RDF, every supported compression codec, ZIP/TAR, and all required compressed-TAR forms through the WAR server, Workbench Add servlet, and Spring Boot HTTP server. The matrix exposed and fixed the standalone Workbench WAR's missing Brotli and Zstandard runtime libraries. All focused selectors and the full server-spring (128 tests), Workbench (407), WAR server (57 with one platform skip), and Spring Boot (45) suites passed, as did formatting, copyright, packaged dependency inspection, and the final JDK 25 root quick clean install. Existing `RioCompression` enum membership and HTTP content-coding negotiation remain unchanged, and core has no new non-test Commons/XZ dependencies.
 
 ## Context and Orientation
 
@@ -93,6 +106,8 @@ Then simplify `RDFLoader` to create the dispatcher with its `ParserConfig` and p
 Add Commons Compress 1.28.0, Commons IO, and XZ for Java 1.12 to root dependency management. Add direct runtime dependencies to server-spring and Workbench, and test-only dependencies to core/rio/api and core/repository/api. Extend dependency-placement tests so an accidental compile/runtime dependency in core fails and both packaged ingestion paths are proven complete. Update the relevant server/Workbench documentation with supported formats, server-only optional-library availability, TAR member selection, nested limits, and the decoder-memory property.
 
 Finally, run the focused selectors that were red, then module verification for core/rio/api and core/repository/api, Workbench transaction tests, server filter tests, WAR and Spring Boot upload tests, and retained-log verification for every module in scope. Run copyright and formatting checks, inspect the dependency trees or packaged archives for exact placement, rerun the root JDK 25 quick clean install, and audit the diff for API/HTTP compatibility.
+
+For the reopened endpoint-matrix milestone, define one canonical set of small Turtle payload fixtures covering plain input, gzip, zlib/deflate, Brotli, Zstandard, BZip2, XZ, LZMA, framed LZ4, framed Snappy, Unix compress, ZIP, TAR, and the required compressed-TAR variants. Exercise that set through `tools/server/src/test/java/org/eclipse/rdf4j/http/server/ProtocolIT.java`, `tools/workbench/src/test/java/org/eclipse/rdf4j/workbench/commands/AddServletCoverageTest.java`, and `tools/server-boot/src/test/java/org/eclipse/rdf4j/tools/serverboot/Rdf4jServerWorkbenchApplicationTest.java`. A bare server request can test formats with reliable signatures; suffix-only formats must be placed in a named ZIP or TAR member so the same production suffix logic is exercised without inventing a new HTTP content coding. Workbench supplies a submitted filename and therefore tests top-level suffix detection directly. Each invocation must import a format-specific subject so stale repository state cannot make another case pass.
 
 ## Concrete Steps
 
@@ -123,7 +138,7 @@ Focused codec tests must prove every added format works by signature where relia
 
 Loader tests must import a plain TAR, every required compressed TAR alias, mixed RDF formats, and nested ZIP/TAR combinations. They must show unknown terminal members and TAR special files are skipped without preventing recognized RDF members from loading, explicit fallback formats parse unnamed/unknown regular members, archives without any RDF fail, unread member tails are drained, nesting limits apply, and one 50,000-entry aggregate counter spans ZIP and TAR while the old ZIP limit remains effective.
 
-Workbench tests must observe one `RepositoryConnection.add` call per recognized member, a single commit after all succeed, and rollback with no commit when a later member fails. Server filter tests must observe signature-based RDF request decompression while `Content-Encoding: bzip2`, `xz`, or another newly added file codec still returns 415. WAR and Spring Boot tests must upload representative compressed and archived RDF through their real request paths and see imported statements.
+Workbench tests must observe one `RepositoryConnection.add` call per recognized member, a single commit after all succeed, and rollback with no commit when a later member fails. Server filter tests must observe signature-based RDF request decompression while `Content-Encoding: bzip2`, `xz`, or another newly added file codec still returns 415. WAR, Workbench, and Spring Boot tests must each exercise plain RDF, gzip, zlib/deflate, Brotli, Zstandard, BZip2, XZ, LZMA, framed LZ4, framed Snappy, Unix compress, ZIP, TAR, and required compressed-TAR forms through their real production dispatch path and observe the format-specific statement.
 
 Every listed mvnf module run must finish with zero Surefire/Failsafe failures and retained logs. Dependency inspection must show no new non-test Commons/XZ dependency in core/rio/api or core/repository/api, and direct packaged dependencies in server-spring and Workbench. The final root quick install must report `BUILD SUCCESS` under JDK 25.
 
@@ -173,3 +188,9 @@ Revision note (2026-08-29 21:37Z, Codex): Updated progress after the reflective 
 Revision note (2026-08-29 21:53Z, Codex): Recorded Workbench URL integration, the successful six-module verification matrix, sandbox-only socket failures and permitted reruns, dependency health and packaged-WAR evidence, and the final remaining root gate.
 
 Revision note (2026-08-29 21:56Z, Codex): Marked the ExecPlan complete after the final root quick clean install and compatibility/diff audit passed.
+
+Revision note (2026-08-29 22:28Z, Codex): Reopened the plan after the user requested proof that every supported format works from the WAR server, Workbench, and Spring Boot; added the complete endpoint matrix and the filename-bearing-container rule for suffix-only codecs.
+
+Revision note (2026-08-29 22:38Z, Codex): Recorded the red Workbench packaging evidence, the narrow runtime-dependency fix, and green 18-case focused matrices for all three requested ingestion paths.
+
+Revision note (2026-08-29 22:46Z, Codex): Completed the endpoint acceptance milestone after full module verification, packaged artifact inspection, formatting, diff audit, and the final JDK 25 root quick clean install.

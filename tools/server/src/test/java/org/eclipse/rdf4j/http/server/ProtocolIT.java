@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -26,7 +27,6 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -36,6 +36,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import org.apache.http.HttpEntity;
 import org.apache.http.NameValuePair;
@@ -61,10 +62,14 @@ import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.helpers.RDFInputTestFixtures;
+import org.eclipse.rdf4j.rio.helpers.RDFInputTestFixtures.RDFInputFixture;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
@@ -108,17 +113,19 @@ public class ProtocolIT {
 		putFile(Protocol.getStatementsLocation(TestServer.REPOSITORY_URL), "/testcases/default-graph-1.ttl");
 	}
 
-	@Test
-	public void testAutoDetectedBzip2RepositoryPut() throws Exception {
-		byte[] compressed = Base64.getDecoder()
-				.decode("QlpoOTFBWSZTWT1rwn8AAAOZgEABABUOA9oAIAAxTAABXlGjCPSMDI1nFdl6S4Q3iosPFj4u5IpwoSB614T+");
-
-		putBytes(Protocol.getStatementsLocation(TestServer.REPOSITORY_URL), compressed, RDFFormat.TURTLE);
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("supportedRdfInputs")
+	public void testEverySupportedRdfInputFromWarServer(RDFInputFixture fixture) throws Exception {
+		putBytes(Protocol.getStatementsLocation(TestServer.REPOSITORY_URL), fixture.unnamedInput(), RDFFormat.TURTLE);
 
 		try (TupleQueryResult result = evaluateTupleQuery(TestServer.REPOSITORY_URL,
-				"SELECT * WHERE { <urn:compressed> <urn:p> <urn:o> }", QueryLanguage.SPARQL)) {
+				"SELECT * WHERE { <" + fixture.subjectIri() + "> <urn:p> <urn:o> }", QueryLanguage.SPARQL)) {
 			assertTrue(result.hasNext());
 		}
+	}
+
+	private static Stream<RDFInputFixture> supportedRdfInputs() throws IOException {
+		return RDFInputTestFixtures.all().stream();
 	}
 
 	/**

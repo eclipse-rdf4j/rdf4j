@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import java.util.zip.GZIPOutputStream;
 
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
@@ -45,11 +46,17 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
+import org.eclipse.rdf4j.rio.helpers.RDFInputTestFixtures;
+import org.eclipse.rdf4j.rio.helpers.RDFInputTestFixtures.RDFInputFixture;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
@@ -425,6 +432,42 @@ class AddServletCoverageTest {
 		servlet.doPost(request, response, "/transform");
 
 		verify(response).sendRedirect("summary");
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("supportedRdfInputs")
+	void doPostAcceptsEverySupportedRdfInput(RDFInputFixture fixture) throws Exception {
+		AddServlet servlet = new AddServlet();
+		SailRepository repository = new SailRepository(new MemoryStore());
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+
+		repository.init();
+		try {
+			servlet.setRepository(repository);
+			when(request.getParameter("baseURI")).thenReturn("https://example.org/base");
+			when(request.getParameter("Content-Type")).thenReturn("autodetect");
+			when(request.getParameter(ISOLATION_PARAM)).thenReturn("READ_COMMITTED");
+			when(request.isParameterPresent("context")).thenReturn(false);
+			when(request.isParameterPresent("url")).thenReturn(false);
+			when(request.getContentParameter()).thenReturn(new ByteArrayInputStream(fixture.namedInput()));
+			when(request.getContentFileName()).thenReturn(fixture.sourceName());
+
+			servlet.doPost(request, response, "/transform");
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				assertThat(connection.hasStatement(SimpleValueFactory.getInstance().createIRI(fixture.subjectIri()),
+						SimpleValueFactory.getInstance().createIRI("urn:p"),
+						SimpleValueFactory.getInstance().createIRI("urn:o"), false)).isTrue();
+			}
+			verify(response).sendRedirect("summary");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static Stream<RDFInputFixture> supportedRdfInputs() throws IOException {
+		return RDFInputTestFixtures.all().stream();
 	}
 
 	@Test

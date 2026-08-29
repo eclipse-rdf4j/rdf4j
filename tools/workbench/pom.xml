@@ -55,6 +55,66 @@
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>brotli4j</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-aarch64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-armv7</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-ppc64le</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-riscv64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-s390x</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-linux-x86_64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-osx-aarch64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-osx-x86_64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-windows-aarch64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.aayushatharva.brotli4j</groupId>
+			<artifactId>native-windows-x86_64</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.github.luben</groupId>
+			<artifactId>zstd-jni</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
 			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-compress</artifactId>
 			<scope>runtime</scope>
@@ -68,6 +128,13 @@
 			<groupId>org.tukaani</groupId>
 			<artifactId>xz</artifactId>
 			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-rio-api</artifactId>
+			<version>${project.version}</version>
+			<type>test-jar</type>
+			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.mockito</groupId>

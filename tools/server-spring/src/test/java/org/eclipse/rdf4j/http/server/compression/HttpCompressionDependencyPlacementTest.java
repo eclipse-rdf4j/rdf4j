@@ -48,12 +48,14 @@ class HttpCompressionDependencyPlacementTest {
 			"org.tukaani:xz");
 
 	@Test
-	void brotliAndZstdDependenciesBelongToServerSpringNotRioApi() throws Exception {
+	void brotliAndZstdDependenciesBelongToPackagedIngestionPathsNotRioApi() throws Exception {
 		Path root = findRepositoryRoot();
 
 		assertThat(directDependencyKeys(root.resolve("core/rio/api/pom.xml")))
 				.doesNotContainAnyElementsOf(HTTP_COMPRESSION_DEPENDENCIES);
 		assertThat(directDependencyKeys(root.resolve("tools/server-spring/pom.xml")))
+				.containsAll(HTTP_COMPRESSION_DEPENDENCIES);
+		assertThat(directDependencyKeys(root.resolve("tools/workbench/pom.xml")))
 				.containsAll(HTTP_COMPRESSION_DEPENDENCIES);
 	}
 
