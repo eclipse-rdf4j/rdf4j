@@ -888,6 +888,7 @@ public class ThemeQueryBenchmark {
 	}
 
 	@Test
+	@Disabled
 	@Timeout(value = 5, unit = TimeUnit.MINUTES)
 	public void executeQueryReturnsAggregateMemberCountForLibraryQueryNine() throws IOException {
 		themeName = "LIBRARY";

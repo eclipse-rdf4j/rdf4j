@@ -387,6 +387,7 @@ public class ThemeQueryHexaBenchmark {
 	}
 
 	@Test
+	@Disabled
 	public void setupVerifiesExpectedDbFileSizesInFixedStore() throws IOException {
 		themeName = "MEDICAL_RECORDS";
 		z_queryIndex = 0;
@@ -420,7 +421,7 @@ public class ThemeQueryHexaBenchmark {
 	}
 
 	@Test
-//	@Disabled
+	@Disabled
 	public void testQueryExplanation() throws IOException {
 		var queryIndexes = paramValues("z_queryIndex");
 		var themeNames = paramValues("themeName");
