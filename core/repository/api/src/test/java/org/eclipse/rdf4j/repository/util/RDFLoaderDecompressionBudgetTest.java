@@ -46,6 +46,68 @@ class RDFLoaderDecompressionBudgetTest {
 			"application/x-early-terminating-test", StandardCharsets.UTF_8, "early", false, false, false);
 
 	@Test
+	void acceptsPlainStreamPastConfiguredExpandedByteLimit() {
+		ParserConfig config = new ParserConfig()
+				.set(RDFLoaderSettings.MAX_EXPANDED_BYTES, 64L)
+				.set(RDFLoaderSettings.MAX_EXPANSION_RATIO, Long.MAX_VALUE)
+				.set(RDFLoaderSettings.EXPANSION_RATIO_GRACE_BYTES, Long.MAX_VALUE);
+		byte[] input = ("<urn:s> <urn:p> \"" + "a".repeat(1024) + "\" .").getBytes(StandardCharsets.UTF_8);
+
+		assertThatCode(() -> load(config, input)).doesNotThrowAnyException();
+	}
+
+	@Test
+	void acceptsSingleCompressionLayerPastConfiguredExpandedByteLimit() throws Exception {
+		ParserConfig config = new ParserConfig()
+				.set(RDFLoaderSettings.MAX_EXPANDED_BYTES, 64L)
+				.set(RDFLoaderSettings.MAX_EXPANSION_RATIO, Long.MAX_VALUE)
+				.set(RDFLoaderSettings.EXPANSION_RATIO_GRACE_BYTES, Long.MAX_VALUE);
+		byte[] input = gzip(("<urn:s> <urn:p> \"" + "a".repeat(1024) + "\" .")
+				.getBytes(StandardCharsets.UTF_8));
+
+		assertThatCode(() -> load(config, input)).doesNotThrowAnyException();
+	}
+
+	@Test
+	void acceptsSingleArchivePastConfiguredExpandedByteLimit() throws Exception {
+		ParserConfig config = new ParserConfig()
+				.set(RDFLoaderSettings.MAX_EXPANDED_BYTES, 64L)
+				.set(RDFLoaderSettings.MAX_EXPANSION_RATIO, Long.MAX_VALUE)
+				.set(RDFLoaderSettings.EXPANSION_RATIO_GRACE_BYTES, Long.MAX_VALUE);
+		byte[] input = zip(Map.of("data.ttl", "<urn:s> <urn:p> \"" + "a".repeat(1024) + "\" ."));
+
+		assertThatCode(() -> load(config, input)).doesNotThrowAnyException();
+	}
+
+	@Test
+	void acceptsSingleCompressionLayerPastConfiguredExpansionRatio() throws Exception {
+		ParserConfig config = new ParserConfig()
+				.set(RDFLoaderSettings.MAX_EXPANDED_BYTES, Long.MAX_VALUE)
+				.set(RDFLoaderSettings.MAX_EXPANSION_RATIO, 2L)
+				.set(RDFLoaderSettings.EXPANSION_RATIO_GRACE_BYTES, 0L);
+		byte[] input = gzip(("<urn:s> <urn:p> \"" + "a".repeat(16_384) + "\" .")
+				.getBytes(StandardCharsets.UTF_8));
+
+		assertThatCode(() -> load(config, input)).doesNotThrowAnyException();
+	}
+
+	@Test
+	void doesNotChargeOuterLayerExpansionToNestedByteLimit() throws Exception {
+		ByteArrayOutputStream intermediate = new ByteArrayOutputStream();
+		byte[] emptyMember = gzip(new byte[0]);
+		for (int i = 0; i < 32; i++) {
+			intermediate.writeBytes(emptyMember);
+		}
+		intermediate.writeBytes(gzip(TURTLE.getBytes(StandardCharsets.UTF_8)));
+		ParserConfig config = new ParserConfig()
+				.set(RDFLoaderSettings.MAX_EXPANDED_BYTES, 64L)
+				.set(RDFLoaderSettings.MAX_EXPANSION_RATIO, Long.MAX_VALUE)
+				.set(RDFLoaderSettings.EXPANSION_RATIO_GRACE_BYTES, Long.MAX_VALUE);
+
+		assertThatCode(() -> load(config, gzip(intermediate.toByteArray()))).doesNotThrowAnyException();
+	}
+
+	@Test
 	void rejectsAggregateZipEntryCount() throws Exception {
 		ParserConfig config = new ParserConfig().set(RDFLoaderSettings.MAX_ZIP_ENTRIES, 1L);
 		byte[] input = zip(Map.of("first.ttl", TURTLE, "second.ttl", TURTLE));
@@ -62,13 +124,13 @@ class RDFLoaderDecompressionBudgetTest {
 	}
 
 	@Test
-	void rejectsExpansionRatioAfterGraceWindow() throws Exception {
+	void rejectsNestedExpansionRatioAfterGraceWindow() throws Exception {
 		ParserConfig config = new ParserConfig()
 				.set(RDFLoaderSettings.MAX_EXPANDED_BYTES, 64L * 1024)
 				.set(RDFLoaderSettings.MAX_EXPANSION_RATIO, 2L)
 				.set(RDFLoaderSettings.EXPANSION_RATIO_GRACE_BYTES, 0L);
-		byte[] input = gzip(("<urn:s> <urn:p> \"" + "a".repeat(16_384) + "\" .")
-				.getBytes(StandardCharsets.UTF_8));
+		byte[] input = gzip(gzip(("<urn:s> <urn:p> \"" + "a".repeat(16_384) + "\" .")
+				.getBytes(StandardCharsets.UTF_8)));
 
 		assertBudgetFailure(config, input, "expansion ratio exceeds 2:1 after 0 grace bytes");
 	}
@@ -105,12 +167,12 @@ class RDFLoaderDecompressionBudgetTest {
 	}
 
 	@Test
-	void acceptsExactExpandedByteBoundary() throws Exception {
+	void acceptsExactNestedExpandedByteBoundary() throws Exception {
 		byte[] body = TURTLE.getBytes(StandardCharsets.UTF_8);
 		ParserConfig config = new ParserConfig().set(RDFLoaderSettings.MAX_EXPANDED_BYTES, (long) body.length);
 		RDFLoader loader = new RDFLoader(config, getValueFactory());
 
-		assertThatCode(() -> loader.load(new ByteArrayInputStream(zip(Map.of("data.ttl", TURTLE))), "urn:base",
+		assertThatCode(() -> loader.load(new ByteArrayInputStream(gzip(zip(Map.of("data.ttl", TURTLE)))), "urn:base",
 				RDFFormat.TURTLE, new AbstractRDFHandler() {
 				})).doesNotThrowAnyException();
 	}
@@ -127,7 +189,7 @@ class RDFLoaderDecompressionBudgetTest {
 
 		try {
 			assertThatThrownBy(() -> new RDFLoader(config, getValueFactory()).load(
-					new ByteArrayInputStream(zipBytes(Map.of("data.early", paddedInput))), "urn:base",
+					new ByteArrayInputStream(gzip(zipBytes(Map.of("data.early", paddedInput)))), "urn:base",
 					EARLY_TERMINATING_FORMAT, new AbstractRDFHandler() {
 					}))
 							.isInstanceOf(RDFParseException.class)

@@ -41,23 +41,43 @@ class HttpCompressionFilterTest {
 	private static final String DISABLED_ENCODINGS_PROPERTY = HttpCompressionEncoding.DISABLED_ENCODINGS_PROPERTY;
 
 	@Test
-	void rejectsExpandedRequestAboveConfiguredLimit() throws Exception {
-		HttpCompressionFilter filter = new HttpCompressionFilter();
-		MockFilterConfig config = new MockFilterConfig();
-		config.addInitParameter("maxExpandedRequestBytes", "1024");
-		config.addInitParameter("maxExpandedFormBytes", "1024");
-		config.addInitParameter("maxExpansionRatio", "1000");
-		config.addInitParameter("expansionRatioGraceBytes", "1024");
-		filter.init(config);
-		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/statements");
-		request.addHeader("Content-Encoding", "gzip");
-		request.setContent(gzip("a".repeat(1025)));
+	void streamsExplicitEncodingPastConfiguredExpandedByteLimit() throws Exception {
+		HttpCompressionFilter filter = configuredFilter(32, 32, 1000, 32);
+		MockHttpServletRequest request = encodedRequest(HttpCompressionEncoding.GZIP, "a".repeat(33));
 		MockHttpServletResponse response = new MockHttpServletResponse();
 
-		filter.doFilter(request, response, (servletRequest, servletResponse) -> servletRequest.getInputStream()
-				.readAllBytes());
+		filter.doFilter(request, response,
+				(servletRequest, servletResponse) -> assertThat(servletRequest.getInputStream().readAllBytes())
+						.hasSize(33));
 
-		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+	}
+
+	@Test
+	void streamsExplicitEncodingPastConfiguredExpansionRatio() throws Exception {
+		HttpCompressionFilter filter = configuredFilter(1024, 1024, 1, 0);
+		MockHttpServletRequest request = encodedRequest(HttpCompressionEncoding.GZIP, "a".repeat(256));
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		filter.doFilter(request, response,
+				(servletRequest, servletResponse) -> assertThat(servletRequest.getInputStream().readAllBytes())
+						.hasSize(256));
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+	}
+
+	@Test
+	void streamsAutoDetectedCompressionPastConfiguredLimits() throws Exception {
+		HttpCompressionFilter filter = configuredFilter(32, 32, 1, 0);
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/statements");
+		request.setContent(gzip("a".repeat(256)));
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		filter.doFilter(request, response,
+				(servletRequest, servletResponse) -> assertThat(servletRequest.getInputStream().readAllBytes())
+						.hasSize(256));
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
 	}
 
 	@Test
@@ -66,23 +86,12 @@ class HttpCompressionFilterTest {
 	}
 
 	@Test
-	void enforcesFormAndRatioLimitsAndMapsMalformedCompression() throws Exception {
+	void enforcesBufferedFormLimitAndMapsMalformedCompression() throws Exception {
 		HttpCompressionFilter formFilter = configuredFilter(1024, 12, 1000, 1024);
-		MockHttpServletRequest form = new MockHttpServletRequest("POST", "/query");
-		form.setContentType("application/x-www-form-urlencoded");
-		form.addHeader("Content-Encoding", "gzip");
-		form.setContent(gzip("query=" + "a".repeat(20)));
+		MockHttpServletRequest form = compressedFormRequest("query=" + "a".repeat(20));
 		MockHttpServletResponse formResponse = new MockHttpServletResponse();
 		formFilter.doFilter(form, formResponse, (request, response) -> request.getParameter("query"));
 		assertThat(formResponse.getStatus()).isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
-
-		HttpCompressionFilter ratioFilter = configuredFilter(1024, 1024, 2, 10);
-		MockHttpServletRequest ratio = new MockHttpServletRequest("POST", "/statements");
-		ratio.addHeader("Content-Encoding", "gzip");
-		ratio.setContent(gzip("a".repeat(256)));
-		MockHttpServletResponse ratioResponse = new MockHttpServletResponse();
-		ratioFilter.doFilter(ratio, ratioResponse, (request, response) -> request.getInputStream().readAllBytes());
-		assertThat(ratioResponse.getStatus()).isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
 
 		HttpCompressionFilter malformedFilter = configuredFilter(1024, 1024, 1000, 1024);
 		MockHttpServletRequest malformed = new MockHttpServletRequest("POST", "/statements");
@@ -95,21 +104,7 @@ class HttpCompressionFilterTest {
 	}
 
 	@Test
-	void excludesGraceBytesFromExpansionRatioNumerator() throws Exception {
-		HttpCompressionFilter filter = configuredFilter(1024, 1024, 2, 100);
-		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/statements");
-		request.addHeader("Content-Encoding", "gzip");
-		request.setContent(gzip("a".repeat(120)));
-		MockHttpServletResponse response = new MockHttpServletResponse();
-
-		filter.doFilter(request, response, (servletRequest, servletResponse) -> servletRequest.getInputStream()
-				.readAllBytes());
-
-		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
-	}
-
-	@Test
-	void appliesExactAndExceededLimitsToEveryRequestEncoding() throws Exception {
+	void streamsEveryRequestEncodingPastFormerLimit() throws Exception {
 		for (HttpCompressionEncoding encoding : HttpCompressionEncoding.values()) {
 			HttpCompressionFilter filter = configuredFilter(128, 128, 1000, 128);
 			MockHttpServletRequest exact = encodedRequest(encoding, "a".repeat(128));
@@ -121,29 +116,28 @@ class HttpCompressionFilterTest {
 			MockHttpServletRequest exceeded = encodedRequest(encoding, "a".repeat(129));
 			MockHttpServletResponse exceededResponse = new MockHttpServletResponse();
 			filter.doFilter(exceeded, exceededResponse,
-					(request, response) -> request.getInputStream().readAllBytes());
-			assertThat(exceededResponse.getStatus()).as(encoding.name())
-					.isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+					(request, response) -> assertThat(request.getInputStream().readAllBytes()).hasSize(129));
+			assertThat(exceededResponse.getStatus()).as(encoding.name()).isEqualTo(HttpServletResponse.SC_OK);
 		}
 	}
 
 	@Test
 	void abortsLimitFailureAfterResponseIsCommitted() throws Exception {
 		HttpCompressionFilter filter = configuredFilter(32, 32, 1000, 32);
-		MockHttpServletRequest request = encodedRequest(HttpCompressionEncoding.GZIP, "a".repeat(33));
+		MockHttpServletRequest request = compressedFormRequest("query=" + "a".repeat(33));
 		MockHttpServletResponse response = new MockHttpServletResponse();
 
 		assertThatThrownBy(() -> filter.doFilter(request, response, (servletRequest, servletResponse) -> {
 			((HttpServletResponse) servletResponse).flushBuffer();
-			servletRequest.getInputStream().readAllBytes();
+			servletRequest.getParameter("query");
 		})).isInstanceOf(IOException.class)
-				.hasMessageContaining("HTTP request decompression limit exceeded");
+				.hasMessageContaining("HTTP request decompression limit exceeded: expanded form bytes");
 	}
 
 	@Test
 	void limitFailureDiscardsUncommittedCompressedResponse() throws Exception {
 		HttpCompressionFilter filter = configuredFilter(32, 32, 1000, 32);
-		MockHttpServletRequest request = encodedRequest(HttpCompressionEncoding.GZIP, "a".repeat(33));
+		MockHttpServletRequest request = compressedFormRequest("query=" + "a".repeat(33));
 		request.addHeader("Accept-Encoding", "gzip");
 		MockHttpServletResponse response = new MockHttpServletResponse();
 
@@ -151,7 +145,7 @@ class HttpCompressionFilterTest {
 			HttpServletResponse httpResponse = (HttpServletResponse) servletResponse;
 			httpResponse.setContentType("text/plain");
 			httpResponse.getOutputStream().write("partial".getBytes(StandardCharsets.UTF_8));
-			servletRequest.getInputStream().readAllBytes();
+			servletRequest.getParameter("query");
 		});
 
 		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
@@ -162,52 +156,20 @@ class HttpCompressionFilterTest {
 	@Test
 	void rejectsInvalidLimitConfigurationAtStartupWithoutCheckedException() {
 		MockFilterConfig invalidNumber = new MockFilterConfig();
-		invalidNumber.addInitParameter("maxExpandedRequestBytes", "not-a-number");
+		invalidNumber.addInitParameter("maxExpandedFormBytes", "not-a-number");
 		assertThatThrownBy(() -> new HttpCompressionFilter().init(invalidNumber))
 				.isInstanceOf(IllegalArgumentException.class);
 
-		MockFilterConfig inconsistent = new MockFilterConfig();
-		inconsistent.addInitParameter("maxExpandedRequestBytes", "10");
-		inconsistent.addInitParameter("maxExpandedFormBytes", "11");
-		assertThatThrownBy(() -> new HttpCompressionFilter().init(inconsistent))
+		MockFilterConfig nonPositive = new MockFilterConfig();
+		nonPositive.addInitParameter("maxExpandedFormBytes", "0");
+		assertThatThrownBy(() -> new HttpCompressionFilter().init(nonPositive))
 				.isInstanceOf(IllegalArgumentException.class);
-	}
 
-	@Test
-	void markResetDoesNotDoubleChargeExpandedRequestBytes() throws Exception {
-		RequestDecompressionBudget budget = new RequestDecompressionBudget(3, Double.MAX_VALUE, Long.MAX_VALUE);
-		InputStream input = budget.expandedStream(new ByteArrayInputStream(new byte[3]));
-
-		input.mark(3);
-		assertThat(input.readAllBytes()).hasSize(3);
-		input.reset();
-
-		assertThatCode(input::readAllBytes).doesNotThrowAnyException();
-	}
-
-	@Test
-	void markResetCannotInflateCompressedBytesToBypassRatioLimit() throws Exception {
-		RequestDecompressionBudget budget = new RequestDecompressionBudget(10, 1, 0);
-		InputStream compressed = budget.compressedSource(new ByteArrayInputStream(new byte[2]));
-
-		compressed.mark(2);
-		assertThat(compressed.readAllBytes()).hasSize(2);
-		compressed.reset();
-		assertThat(compressed.readAllBytes()).hasSize(2);
-
-		assertThatThrownBy(() -> budget.expandedStream(new ByteArrayInputStream(new byte[3])).readAllBytes())
-				.isInstanceOf(RequestDecompressionBudget.DecompressionLimitException.class)
-				.hasMessage("HTTP request decompression limit exceeded: expansion ratio");
-	}
-
-	@Test
-	void skippedExpandedBytesCountTowardRequestLimit() {
-		RequestDecompressionBudget budget = new RequestDecompressionBudget(2, Double.MAX_VALUE, Long.MAX_VALUE);
-		InputStream input = budget.expandedStream(new ByteArrayInputStream(new byte[3]));
-
-		assertThatThrownBy(() -> input.skip(3))
-				.isInstanceOf(RequestDecompressionBudget.DecompressionLimitException.class)
-				.hasMessage("HTTP request decompression limit exceeded: expanded request bytes");
+		MockFilterConfig formerStreamingLimits = new MockFilterConfig();
+		formerStreamingLimits.addInitParameter("maxExpandedRequestBytes", "not-a-number");
+		formerStreamingLimits.addInitParameter("maxExpansionRatio", "not-a-number");
+		formerStreamingLimits.addInitParameter("expansionRatioGraceBytes", "not-a-number");
+		assertThatCode(() -> new HttpCompressionFilter().init(formerStreamingLimits)).doesNotThrowAnyException();
 	}
 
 	@Test
@@ -404,6 +366,14 @@ class HttpCompressionFilterTest {
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/statements");
 		request.addHeader("Content-Encoding", encoding.headerValue());
 		request.setContent(compressed.toByteArray());
+		return request;
+	}
+
+	private static MockHttpServletRequest compressedFormRequest(String body) throws IOException {
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/query");
+		request.setContentType("application/x-www-form-urlencoded");
+		request.addHeader("Content-Encoding", "gzip");
+		request.setContent(gzip(body));
 		return request;
 	}
 

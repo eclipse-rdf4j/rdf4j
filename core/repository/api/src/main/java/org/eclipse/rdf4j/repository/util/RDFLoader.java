@@ -249,11 +249,12 @@ public class RDFLoader {
 			if (decompressedInput != compressedInput) {
 				long compressionDepth = depth + 1;
 				budget.enterCompressionLayer(compressionDepth);
-				load(budget.expanded(decompressedInput), baseURI, dataFormat, rdfHandler, budget, compressionDepth,
-						true);
+				InputStream nestedInput = compressionDepth > 1
+						? budget.expanded(decompressedInput)
+						: decompressedInput;
+				load(nestedInput, baseURI, dataFormat, rdfHandler, budget, compressionDepth, true);
 			} else {
-				InputStream parserInput = expandedAccountingActive ? in : budget.expanded(compressedInput);
-				loadInputStreamOrReader(parserInput, baseURI, dataFormat, rdfHandler);
+				loadInputStreamOrReader(compressedInput, baseURI, dataFormat, rdfHandler);
 			}
 		}
 	}
@@ -285,7 +286,10 @@ public class RDFLoader {
 		try (ZipInputStream zipIn = new ZipInputStream(compressedInput)) {
 			for (ZipEntry entry = zipIn.getNextEntry(); entry != null; entry = zipIn.getNextEntry()) {
 				budget.enterZipEntry();
-				InputStream expandedEntry = budget.expanded(new UncloseableInputStream(zipIn));
+				InputStream expandedEntry = new UncloseableInputStream(zipIn);
+				if (depth > 1) {
+					expandedEntry = budget.expanded(expandedEntry);
+				}
 				if (entry.isDirectory()) {
 					drainZipEntry(expandedEntry);
 					zipIn.closeEntry();

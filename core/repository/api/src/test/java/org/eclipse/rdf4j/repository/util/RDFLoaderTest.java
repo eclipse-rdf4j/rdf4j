@@ -184,9 +184,9 @@ public class RDFLoaderTest {
 		String previous = System.getProperty(property);
 		System.setProperty(property, "80");
 		try {
-			byte[] archive = zip(Map.of(
+			byte[] archive = gzip(zip(Map.of(
 					"first.ttl", "<urn:first> <urn:p> \"" + "a".repeat(30) + "\" .",
-					"second.ttl", "<urn:second> <urn:p> \"" + "b".repeat(30) + "\" ."));
+					"second.ttl", "<urn:second> <urn:p> \"" + "b".repeat(30) + "\" .")));
 			RDFLoader loader = new RDFLoader(new ParserConfig(), getValueFactory());
 
 			assertThatThrownBy(() -> loader.load(new ByteArrayInputStream(archive), "urn:base", RDFFormat.TURTLE,
