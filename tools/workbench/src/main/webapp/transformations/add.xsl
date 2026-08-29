@@ -147,6 +147,9 @@
 						</th>
 						<td>
 							<input type="file" id="file" name="content" onchange="workbench.add.enabledInput('file')" />
+							<div class="hint">
+								<xsl:value-of select="$upload-file.hint" />
+							</div>
 						</td>
 						<td></td>
 					</tr>
