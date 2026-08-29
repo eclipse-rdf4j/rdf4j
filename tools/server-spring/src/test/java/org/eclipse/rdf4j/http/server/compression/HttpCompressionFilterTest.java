@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -39,6 +40,7 @@ import jakarta.servlet.http.HttpServletResponse;
 class HttpCompressionFilterTest {
 
 	private static final String DISABLED_ENCODINGS_PROPERTY = HttpCompressionEncoding.DISABLED_ENCODINGS_PROPERTY;
+	private static final int MAX_FIXED_BUFFER_BYTES = 4 * 1024 * 1024;
 
 	@Test
 	void streamsExplicitEncodingPastConfiguredExpandedByteLimit() throws Exception {
@@ -101,6 +103,96 @@ class HttpCompressionFilterTest {
 		malformedFilter.doFilter(malformed, malformedResponse,
 				(request, response) -> request.getInputStream().readAllBytes());
 		assertThat(malformedResponse.getStatus()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
+	}
+
+	@Test
+	void boundsDefaultBufferedFormAtFourMiB() throws Exception {
+		HttpCompressionFilter filter = new HttpCompressionFilter();
+		MockHttpServletRequest exact = repeatedCompressedFormRequest(MAX_FIXED_BUFFER_BYTES);
+		MockHttpServletResponse exactResponse = new MockHttpServletResponse();
+
+		filter.doFilter(exact, exactResponse,
+				(request, response) -> assertThat(request.getParameter("query")).hasSize(
+						MAX_FIXED_BUFFER_BYTES - "query=".length()));
+
+		assertThat(exactResponse.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+
+		MockHttpServletRequest exceeded = repeatedCompressedFormRequest(MAX_FIXED_BUFFER_BYTES + 1);
+		MockHttpServletResponse exceededResponse = new MockHttpServletResponse();
+
+		filter.doFilter(exceeded, exceededResponse, (request, response) -> request.getParameter("query"));
+
+		assertThat(exceededResponse.getStatus()).isEqualTo(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+	}
+
+	@Test
+	void rejectsConfiguredFormBufferAboveFourMiB() {
+		MockFilterConfig exact = new MockFilterConfig();
+		exact.addInitParameter("maxExpandedFormBytes", Integer.toString(MAX_FIXED_BUFFER_BYTES));
+		assertThatCode(() -> new HttpCompressionFilter().init(exact)).doesNotThrowAnyException();
+
+		MockFilterConfig exceeded = new MockFilterConfig();
+		exceeded.addInitParameter("maxExpandedFormBytes", Integer.toString(MAX_FIXED_BUFFER_BYTES + 1));
+		assertThatThrownBy(() -> new HttpCompressionFilter().init(exceeded))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("maxExpandedFormBytes must not exceed " + MAX_FIXED_BUFFER_BYTES);
+
+		String property = "org.eclipse.rdf4j.http.decompression.maxExpandedFormBytes";
+		String previous = System.getProperty(property);
+		System.setProperty(property, Integer.toString(MAX_FIXED_BUFFER_BYTES + 1));
+		try {
+			assertThatThrownBy(() -> new HttpCompressionFilter().init(new MockFilterConfig()))
+					.isInstanceOf(IllegalArgumentException.class)
+					.hasMessage("maxExpandedFormBytes must not exceed " + MAX_FIXED_BUFFER_BYTES);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
+	}
+
+	@Test
+	void streamsCompressionAndDecompressionBeyondFourMiB() throws Exception {
+		for (HttpCompressionEncoding encoding : HttpCompressionEncoding.values()) {
+			byte[] encoded = encodeRepeated(encoding, MAX_FIXED_BUFFER_BYTES + 1);
+			try (InputStream input = encoding.decompressedInputStream(new ByteArrayInputStream(encoded))) {
+				assertThat(countBytes(input)).as(encoding.name()).isEqualTo(MAX_FIXED_BUFFER_BYTES + 1L);
+			}
+
+			MockHttpServletRequest request = encodedRequest(encoding, encoded);
+			MockHttpServletResponse response = new MockHttpServletResponse();
+
+			new HttpCompressionFilter().doFilter(request, response,
+					(servletRequest, servletResponse) -> assertThat(countBytes(servletRequest.getInputStream()))
+							.isEqualTo(MAX_FIXED_BUFFER_BYTES + 1L));
+
+			assertThat(response.getStatus()).as(encoding.name()).isEqualTo(HttpServletResponse.SC_OK);
+		}
+
+		for (HttpCompressionEncoding encoding : HttpCompressionEncoding.values()) {
+			MockHttpServletRequest request = new MockHttpServletRequest("GET", "/statements");
+			request.addHeader("Accept-Encoding", encoding.headerValue());
+			MockHttpServletResponse response = new MockHttpServletResponse();
+
+			new HttpCompressionFilter().doFilter(request, response, (servletRequest, servletResponse) -> {
+				byte[] chunk = new byte[8192];
+				long remaining = MAX_FIXED_BUFFER_BYTES + 1L;
+				while (remaining > 0) {
+					int count = (int) Math.min(chunk.length, remaining);
+					servletResponse.getOutputStream().write(chunk, 0, count);
+					remaining -= count;
+				}
+			});
+
+			assertThat(response.getHeader("Content-Encoding")).as(encoding.name())
+					.isEqualTo(encoding.headerValue());
+			try (InputStream input = encoding.decompressedInputStream(
+					new ByteArrayInputStream(response.getContentAsByteArray()))) {
+				assertThat(countBytes(input)).as(encoding.name()).isEqualTo(MAX_FIXED_BUFFER_BYTES + 1L);
+			}
+		}
 	}
 
 	@Test
@@ -363,9 +455,13 @@ class HttpCompressionFilterTest {
 		OutputStream output = encoding.compressedOutputStream(compressed);
 		output.write(body.getBytes(StandardCharsets.UTF_8));
 		encoding.finish(output);
+		return encodedRequest(encoding, compressed.toByteArray());
+	}
+
+	private static MockHttpServletRequest encodedRequest(HttpCompressionEncoding encoding, byte[] body) {
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/statements");
 		request.addHeader("Content-Encoding", encoding.headerValue());
-		request.setContent(compressed.toByteArray());
+		request.setContent(body);
 		return request;
 	}
 
@@ -374,6 +470,19 @@ class HttpCompressionFilterTest {
 		request.setContentType("application/x-www-form-urlencoded");
 		request.addHeader("Content-Encoding", "gzip");
 		request.setContent(gzip(body));
+		return request;
+	}
+
+	private static MockHttpServletRequest repeatedCompressedFormRequest(int expandedBytes) throws IOException {
+		ByteArrayOutputStream compressed = new ByteArrayOutputStream();
+		try (GZIPOutputStream output = new GZIPOutputStream(compressed)) {
+			output.write("query=".getBytes(StandardCharsets.UTF_8));
+			writeRepeated(output, (byte) 'a', expandedBytes - "query=".length());
+		}
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/query");
+		request.setContentType("application/x-www-form-urlencoded");
+		request.addHeader("Content-Encoding", "gzip");
+		request.setContent(compressed.toByteArray());
 		return request;
 	}
 
@@ -394,6 +503,33 @@ class HttpCompressionFilterTest {
 			outputStream.write(body.getBytes(StandardCharsets.UTF_8));
 		}
 		return buffer.toByteArray();
+	}
+
+	private static byte[] encodeRepeated(HttpCompressionEncoding encoding, int expandedBytes) throws IOException {
+		ByteArrayOutputStream compressed = new ByteArrayOutputStream();
+		OutputStream output = encoding.compressedOutputStream(compressed);
+		writeRepeated(output, (byte) 'a', expandedBytes);
+		encoding.finish(output);
+		return compressed.toByteArray();
+	}
+
+	private static void writeRepeated(OutputStream output, byte value, int count) throws IOException {
+		byte[] buffer = new byte[8192];
+		Arrays.fill(buffer, value);
+		while (count > 0) {
+			int written = Math.min(buffer.length, count);
+			output.write(buffer, 0, written);
+			count -= written;
+		}
+	}
+
+	private static long countBytes(InputStream input) throws IOException {
+		byte[] buffer = new byte[8192];
+		long count = 0;
+		for (int read; (read = input.read(buffer)) >= 0;) {
+			count += read;
+		}
+		return count;
 	}
 
 	private static String gunzip(byte[] body) throws IOException {

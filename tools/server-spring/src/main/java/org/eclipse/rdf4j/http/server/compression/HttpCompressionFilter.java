@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.http.server.compression;
 
 import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -24,6 +23,7 @@ import java.net.URLDecoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -64,7 +64,8 @@ public class HttpCompressionFilter implements Filter {
 	private static final String FORM_CONTENT_TYPE = "application/x-www-form-urlencoded";
 	private static final String MAX_EXPANDED_FORM_BYTES = "maxExpandedFormBytes";
 	private static final String PROPERTY_PREFIX = "org.eclipse.rdf4j.http.decompression.";
-	private static final long DEFAULT_MAX_FORM_BYTES = 16L * 1024 * 1024;
+	private static final long MAX_BUFFERED_FORM_BYTES = 4L * 1024 * 1024;
+	private static final long DEFAULT_MAX_FORM_BYTES = MAX_BUFFERED_FORM_BYTES;
 	private static final Set<String> DEFAULT_EXCLUDED_CONTENT_TYPES = Set.of(
 			"application/x-binary-rdf",
 			"application/x-binary-rdf-results-table");
@@ -86,6 +87,9 @@ public class HttpCompressionFilter implements Filter {
 			excludedContentTypes = Collections.unmodifiableSet(parsedTypes);
 		}
 		maxExpandedFormBytes = positiveLong(filterConfig, MAX_EXPANDED_FORM_BYTES, DEFAULT_MAX_FORM_BYTES);
+		if (maxExpandedFormBytes > MAX_BUFFERED_FORM_BYTES) {
+			throw new IllegalArgumentException(MAX_EXPANDED_FORM_BYTES + " must not exceed " + MAX_BUFFERED_FORM_BYTES);
+		}
 	}
 
 	@Override
@@ -335,17 +339,23 @@ public class HttpCompressionFilter implements Filter {
 		}
 
 		private static byte[] readBounded(InputStream input, long maximum) throws IOException {
-			ByteArrayOutputStream output = new ByteArrayOutputStream();
-			byte[] buffer = new byte[8192];
-			long count = 0;
-			for (int read; (read = input.read(buffer)) >= 0;) {
-				if (count > maximum - read) {
+			int maximumBufferSize = Math.toIntExact(Math.min(maximum, MAX_BUFFERED_FORM_BYTES));
+			byte[] result = new byte[Math.min(8192, maximumBufferSize)];
+			byte[] inputBuffer = new byte[8192];
+			int count = 0;
+			for (int read; (read = input.read(inputBuffer)) >= 0;) {
+				if (count > maximumBufferSize - read) {
 					throw new DecompressionLimitException("expanded form bytes");
 				}
-				count += read;
-				output.write(buffer, 0, read);
+				int required = count + read;
+				if (required > result.length) {
+					int expanded = Math.max(required, result.length * 2);
+					result = Arrays.copyOf(result, Math.min(maximumBufferSize, expanded));
+				}
+				System.arraycopy(inputBuffer, 0, result, count, read);
+				count = required;
 			}
-			return output.toByteArray();
+			return count == result.length ? result : Arrays.copyOf(result, count);
 		}
 
 		private Charset requestCharset() {

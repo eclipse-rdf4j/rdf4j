@@ -41,7 +41,10 @@ import org.junit.jupiter.api.Test;
 
 class RDFLoaderDecompressionBudgetTest {
 
+	private static final int MAX_FIXED_BUFFER_BYTES = 4 * 1024 * 1024;
 	private static final String TURTLE = "<urn:subject> <urn:predicate> <urn:object> .";
+	private static final byte[] TURTLE_LINE = (TURTLE + "\n").getBytes(StandardCharsets.UTF_8);
+	private static final int LARGE_DOCUMENT_REPETITIONS = MAX_FIXED_BUFFER_BYTES / TURTLE_LINE.length + 1;
 	private static final RDFFormat EARLY_TERMINATING_FORMAT = new RDFFormat("Early terminating test format",
 			"application/x-early-terminating-test", StandardCharsets.UTF_8, "early", false, false, false);
 
@@ -51,7 +54,7 @@ class RDFLoaderDecompressionBudgetTest {
 				.set(RDFLoaderSettings.MAX_EXPANDED_BYTES, 64L)
 				.set(RDFLoaderSettings.MAX_EXPANSION_RATIO, Long.MAX_VALUE)
 				.set(RDFLoaderSettings.EXPANSION_RATIO_GRACE_BYTES, Long.MAX_VALUE);
-		byte[] input = ("<urn:s> <urn:p> \"" + "a".repeat(1024) + "\" .").getBytes(StandardCharsets.UTF_8);
+		InputStream input = largeTurtleDocument();
 
 		assertThatCode(() -> load(config, input)).doesNotThrowAnyException();
 	}
@@ -62,8 +65,7 @@ class RDFLoaderDecompressionBudgetTest {
 				.set(RDFLoaderSettings.MAX_EXPANDED_BYTES, 64L)
 				.set(RDFLoaderSettings.MAX_EXPANSION_RATIO, Long.MAX_VALUE)
 				.set(RDFLoaderSettings.EXPANSION_RATIO_GRACE_BYTES, Long.MAX_VALUE);
-		byte[] input = gzip(("<urn:s> <urn:p> \"" + "a".repeat(1024) + "\" .")
-				.getBytes(StandardCharsets.UTF_8));
+		byte[] input = gzip(largeTurtleDocument());
 
 		assertThatCode(() -> load(config, input)).doesNotThrowAnyException();
 	}
@@ -74,7 +76,7 @@ class RDFLoaderDecompressionBudgetTest {
 				.set(RDFLoaderSettings.MAX_EXPANDED_BYTES, 64L)
 				.set(RDFLoaderSettings.MAX_EXPANSION_RATIO, Long.MAX_VALUE)
 				.set(RDFLoaderSettings.EXPANSION_RATIO_GRACE_BYTES, Long.MAX_VALUE);
-		byte[] input = zip(Map.of("data.ttl", "<urn:s> <urn:p> \"" + "a".repeat(1024) + "\" ."));
+		byte[] input = zip("data.ttl", largeTurtleDocument());
 
 		assertThatCode(() -> load(config, input)).doesNotThrowAnyException();
 	}
@@ -270,15 +272,39 @@ class RDFLoaderDecompressionBudgetTest {
 	}
 
 	private static void load(ParserConfig config, byte[] input) throws Exception {
-		new RDFLoader(config, getValueFactory()).load(new ByteArrayInputStream(input), "urn:base", RDFFormat.TURTLE,
-				new AbstractRDFHandler() {
-				});
+		load(config, new ByteArrayInputStream(input));
+	}
+
+	private static void load(ParserConfig config, InputStream input) throws Exception {
+		try (input) {
+			new RDFLoader(config, getValueFactory()).load(input, "urn:base", RDFFormat.TURTLE,
+					new AbstractRDFHandler() {
+					});
+		}
+	}
+
+	private static InputStream largeTurtleDocument() {
+		return new RepeatingInputStream(TURTLE_LINE, LARGE_DOCUMENT_REPETITIONS);
 	}
 
 	private static byte[] gzip(byte[] input) throws Exception {
+		return gzip(new ByteArrayInputStream(input));
+	}
+
+	private static byte[] gzip(InputStream input) throws Exception {
 		ByteArrayOutputStream output = new ByteArrayOutputStream();
-		try (GZIPOutputStream gzip = new GZIPOutputStream(output)) {
-			gzip.write(input);
+		try (input; GZIPOutputStream gzip = new GZIPOutputStream(output)) {
+			input.transferTo(gzip);
+		}
+		return output.toByteArray();
+	}
+
+	private static byte[] zip(String name, InputStream input) throws Exception {
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		try (input; ZipOutputStream zip = new ZipOutputStream(output)) {
+			zip.putNextEntry(new ZipEntry(name));
+			input.transferTo(zip);
+			zip.closeEntry();
 		}
 		return output.toByteArray();
 	}
@@ -314,6 +340,53 @@ class RDFLoaderDecompressionBudgetTest {
 			} else {
 				System.setProperty(key, previous);
 			}
+		}
+	}
+
+	private static final class RepeatingInputStream extends InputStream {
+
+		private final byte[] pattern;
+		private int repetitions;
+		private int patternOffset;
+
+		private RepeatingInputStream(byte[] pattern, int repetitions) {
+			this.pattern = pattern;
+			this.repetitions = repetitions;
+		}
+
+		@Override
+		public int read() {
+			if (repetitions == 0) {
+				return -1;
+			}
+			int value = Byte.toUnsignedInt(pattern[patternOffset++]);
+			if (patternOffset == pattern.length) {
+				patternOffset = 0;
+				repetitions--;
+			}
+			return value;
+		}
+
+		@Override
+		public int read(byte[] bytes, int offset, int length) {
+			if (length == 0) {
+				return 0;
+			}
+			if (repetitions == 0) {
+				return -1;
+			}
+			int read = 0;
+			while (read < length && repetitions > 0) {
+				int copied = Math.min(length - read, pattern.length - patternOffset);
+				System.arraycopy(pattern, patternOffset, bytes, offset + read, copied);
+				patternOffset += copied;
+				read += copied;
+				if (patternOffset == pattern.length) {
+					patternOffset = 0;
+					repetitions--;
+				}
+			}
+			return read;
 		}
 	}
 
