@@ -213,6 +213,92 @@ class PackedPlanCacheTest {
 	}
 
 	@Test
+	void detachedRefreshResumesAuthenticatedCheckpointAndFallsBackCleanly() throws Exception {
+		TupleExpr source = threeFactorConnectedJoin();
+		OptimizationGoal budgeted = OptimizationGoal.root().asBudgeted(null, 1);
+		PackedPlanCache.Context originalEvidence = context(11L);
+		AtomicInteger uninterruptedProviderCalls = new AtomicInteger();
+		PackedPlanningResult uninterrupted = PackedCascadesPlanner.optimize(source.clone(), OptimizationGoal.root(),
+				countingFrontierCostModel(uninterruptedProviderCalls));
+
+		PackedPlanCache resumableCache = new PackedPlanCache(8, 1);
+		PackedPlanningResult resumableSeed = PackedCascadesPlanner.optimize(source.clone(), budgeted, resumableCache,
+				originalEvidence, frontierCostModel());
+		PackedPlanRefreshWork resumableWork = PackedCascadesPlanner
+				.detachedRefreshWork(source, OptimizationGoal.root(), resumableSeed.decisionSummary())
+				.orElseThrow();
+		AtomicInteger resumedProviderCalls = new AtomicInteger();
+		PackedPlanRefreshResult resumedRefresh = PackedCascadesPlanner.refresh(resumableWork, resumableCache,
+				originalEvidence, countingFrontierCostModel(resumedProviderCalls), null);
+		PackedPlanningResult resumed = resumedRefresh.refreshedPlan();
+
+		assertEquals(uninterrupted.selectedPlan(), resumed.selectedPlan());
+		assertTrue(resumed.selectedPlan().getDoubleMetricPlanned("optimizer.planCacheResumedWorkUnits") > 0.0d,
+				"a structurally authenticated current-evidence entry must resume its detached checkpoint");
+		assertTrue(resumed.metrics().workUnits() < uninterrupted.metrics().workUnits(),
+				"detached refresh must not repeat completed deterministic search work");
+		assertTrue(resumedProviderCalls.get() < uninterruptedProviderCalls.get(),
+				"detached refresh must replay current evidence only for retained work");
+		assertEquals(resumed.decisionSummary(), resumedRefresh.selectedSummary());
+
+		PackedPlanCache changedEvidenceCache = new PackedPlanCache(8, 1);
+		PackedPlanningResult changedEvidenceSeed = PackedCascadesPlanner.optimize(source.clone(), budgeted,
+				changedEvidenceCache, originalEvidence, frontierCostModel());
+		PackedPlanRefreshWork changedEvidenceWork = PackedCascadesPlanner
+				.detachedRefreshWork(source, OptimizationGoal.root(), changedEvidenceSeed.decisionSummary())
+				.orElseThrow();
+		AtomicInteger changedEvidenceProviderCalls = new AtomicInteger();
+		PackedPlanningResult changedEvidenceFallback = PackedCascadesPlanner.refresh(changedEvidenceWork,
+				changedEvidenceCache, context(12L), countingFrontierCostModel(changedEvidenceProviderCalls), null)
+				.refreshedPlan();
+		assertEquals(uninterrupted.selectedPlan(), changedEvidenceFallback.selectedPlan(),
+				"changed evidence must discard the old checkpoint and plan from a fresh memo");
+		assertEquals(uninterrupted.metrics().workUnits(), changedEvidenceFallback.metrics().workUnits(),
+				"changed-evidence fallback must not inherit deterministic work from the old checkpoint");
+		assertEquals(uninterruptedProviderCalls.get(), changedEvidenceProviderCalls.get(),
+				"changed-evidence fallback must obtain every estimate from the current provider session");
+
+		PackedPlanCache corruptCache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context corruptEvidence = context(21L);
+		PackedPlanningResult corruptSeedResult = PackedCascadesPlanner.optimize(source.clone(), budgeted, corruptCache,
+				corruptEvidence, frontierCostModel());
+		PackedPlanRefreshWork corruptWork = PackedCascadesPlanner
+				.detachedRefreshWork(source, OptimizationGoal.root(), corruptSeedResult.decisionSummary())
+				.orElseThrow();
+		PackedPlannerLimits workLimited = new PackedPlannerLimits(1L, Long.MAX_VALUE);
+		PackedPlanCache.PlanEntry corruptEntry = corruptCache.findPlan(corruptCache.fingerprint(source),
+				corruptEvidence,
+				source, PackedQueryCacheIdentity.create(source), workLimited);
+		PackedPlanContinuationSeed corruptSeed = corruptEntry.optimizationDecision()
+				.searchCheckpoint()
+				.continuationRecipe()
+				.continuationSeed();
+		var requiredPropertiesField = PackedPlanContinuationSeed.class.getDeclaredField("requiredPropertyIds");
+		requiredPropertiesField.setAccessible(true);
+		int[] requiredProperties = (int[]) requiredPropertiesField.get(corruptSeed);
+		requiredProperties[corruptSeed.rootRecipeId()] = Integer.MAX_VALUE;
+
+		AtomicInteger corruptProviderCalls = new AtomicInteger();
+		PackedPlanningResult corruptFallback = PackedCascadesPlanner.refresh(corruptWork, corruptCache,
+				corruptEvidence, countingFrontierCostModel(corruptProviderCalls), null).refreshedPlan();
+		assertEquals(uninterrupted.selectedPlan(), corruptFallback.selectedPlan(),
+				"a corrupt checkpoint must fall back to an ordinary fresh memo");
+		assertEquals(uninterrupted.metrics().workUnits(), corruptFallback.metrics().workUnits(),
+				"checkpoint rejection must not leak partially restored memo state into fresh planning");
+		assertEquals(uninterruptedProviderCalls.get(), corruptProviderCalls.get(),
+				"checkpoint rejection must obtain every estimate from a clean provider session");
+
+		PackedPlanCache evictedCache = new PackedPlanCache(8, 1);
+		AtomicInteger evictedProviderCalls = new AtomicInteger();
+		PackedPlanningResult evictedFallback = PackedCascadesPlanner.refresh(resumableWork, evictedCache,
+				context(31L), countingFrontierCostModel(evictedProviderCalls), null).refreshedPlan();
+		assertEquals(uninterrupted.selectedPlan(), evictedFallback.selectedPlan(),
+				"an evicted checkpoint is an optimization miss, never a correctness dependency");
+		assertEquals(uninterrupted.metrics().workUnits(), evictedFallback.metrics().workUnits());
+		assertEquals(uninterruptedProviderCalls.get(), evictedProviderCalls.get());
+	}
+
+	@Test
 	void detachedCheckpointResumesFilterJoinLogicalAlternativesWithoutRepeatingCompletedWork() {
 		PackedPlanCache cache = new PackedPlanCache(8, 1);
 		PackedPlanCache.Context context = context(11L);

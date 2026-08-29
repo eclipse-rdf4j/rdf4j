@@ -271,25 +271,139 @@ class LmdbStatisticsServiceTest {
 		service = openService();
 		FrontierStatisticsManifest core = writeGeneration(
 				1L, -1L, 7L, FIRST_PROBE_SHARD, 41L, true);
-		FrontierStatisticsShardDescriptor optional = new FrontierStatisticsShardDescriptor(
-				9_999, FrontierStatisticsTier.ADAPTIVE_REFINEMENTS, false,
-				"missing-optional.fs2s", FrontierStatisticsShard.HEADER_BYTES, 0L);
-		ArrayList<FrontierStatisticsShardDescriptor> descriptors = new ArrayList<>(core.shards());
-		descriptors.add(optional);
-		FrontierStatisticsManifest withOptional = new FrontierStatisticsManifest(
-				core.generationId(), core.previousGenerationId(), core.baseEpoch(), core.coveredEpoch(),
-				core.coveredSequence(), core.createdAtMillis(), core.maximumTermId(),
-				descriptors);
+		FrontierStatisticsManifest withOptional = withMissingOptionalShard(core);
 
 		service.publish(withOptional);
 
 		assertEquals(FrontierStatisticsAvailability.READY, service.status().availability());
 		assertEquals(FrontierFallbackReason.NONE, service.status().fallbackReason());
 		assertTrue(service.status().lastFailure().contains("missing-optional.fs2s"));
+		assertTrue(service.rebuildRequired(), "a degraded optional shard must request repair");
 		try (FrontierStatisticsLease lease = service.acquire(7L)) {
 			assertEquals(core.shards().size(), lease.shards().size());
-			assertFalse(lease.shards().containsKey(optional.shardId()));
+			assertFalse(lease.shards().containsKey(9_999));
 		}
+	}
+
+	@Test
+	void optionalShardFailureKeepsCurrentGenerationReadyAfterRestart() throws Exception {
+		service = openService();
+		FrontierStatisticsManifest core = writeGeneration(
+				1L, -1L, 7L, FIRST_PROBE_SHARD, 41L, true);
+		service.publish(withMissingOptionalShard(core));
+		service.close();
+		service = null;
+
+		service = openService();
+
+		assertEquals(FrontierStatisticsAvailability.READY, service.status().availability());
+		assertEquals(FrontierFallbackReason.NONE, service.status().fallbackReason());
+		assertEquals(1L, service.status().generationId());
+		assertTrue(service.status().lastFailure().contains("missing-optional.fs2s"));
+		assertTrue(service.rebuildRequired(), "startup must request repair without invalidating mandatory state");
+		assertTrue(Files.exists(directory.resolve("CURRENT.fs2")));
+		try (FrontierStatisticsLease lease = service.acquire(7L)) {
+			assertTrue(lease.ready());
+			assertEquals(41L, lease.shard(FIRST_PROBE_SHARD).column(0).value(0L));
+			assertFalse(lease.shards().containsKey(9_999));
+		}
+	}
+
+	@Test
+	void rollbackAcceptsPredecessorWithOptionalShardFailure() throws Exception {
+		service = openService();
+		FrontierStatisticsManifest generationOne = withMissingOptionalShard(writeGeneration(
+				1L, -1L, 7L, FIRST_PROBE_SHARD, 41L, true));
+		service.publish(generationOne);
+		FrontierStatisticsManifest generationTwo = writeGeneration(
+				2L, 1L, 8L, SECOND_PROBE_SHARD, 82L, true);
+		service.publish(generationTwo);
+		service.close();
+		service = null;
+
+		Path corruptShard = directory.resolve(generationTwo.shards()
+				.stream()
+				.filter(descriptor -> descriptor.shardId() == SECOND_PROBE_SHARD)
+				.findFirst()
+				.orElseThrow()
+				.fileName());
+		Files.write(corruptShard, new byte[] { 0 });
+
+		service = openService();
+
+		assertEquals(FrontierStatisticsAvailability.READY, service.status().availability());
+		assertEquals(1L, service.status().generationId());
+		assertTrue(service.rebuildRequired());
+		assertTrue(service.status().lastFailure().contains("missing-optional.fs2s"));
+		assertTrue(service.status().lastFailure().contains("generation 2"));
+		try (FrontierStatisticsLease lease = service.acquire(7L)) {
+			assertEquals(41L, lease.shard(FIRST_PROBE_SHARD).column(0).value(0L));
+		}
+		assertFalse(Files.exists(corruptShard));
+		assertFalse(Files.exists(directory.resolve("manifest-%019d.fs2m".formatted(2L))));
+	}
+
+	@Test
+	void missingCurrentResetsUnpublishedManifestAndOwnedShards() throws Exception {
+		service = openService();
+		FrontierStatisticsManifest unpublished = writeGeneration(
+				1L, -1L, 7L, FIRST_PROBE_SHARD, 41L, true);
+		service.publish(unpublished);
+		service.close();
+		service = null;
+		Path manifest = directory.resolve("manifest-%019d.fs2m".formatted(1L));
+		List<Path> shards = unpublished.shards()
+				.stream()
+				.map(descriptor -> directory.resolve(descriptor.fileName()))
+				.toList();
+		Path foreign = directory.resolve("keep-user-diagnostic.txt");
+		Files.writeString(foreign, "keep");
+		Files.delete(directory.resolve("CURRENT.fs2"));
+
+		service = openService();
+
+		assertEquals(FrontierStatisticsAvailability.NO_GENERATION, service.status().availability());
+		assertTrue(service.rebuildRequired());
+		assertFalse(Files.exists(manifest));
+		for (Path shard : shards) {
+			assertFalse(Files.exists(shard), () -> "unpublished owned shard survived: " + shard.getFileName());
+		}
+		assertTrue(Files.isRegularFile(foreign));
+	}
+
+	@Test
+	void missingCurrentResetsOwnedOrphansWithoutManifest() throws Exception {
+		Path orphanShard = directory.resolve("generation-42-shard-17.fs2s");
+		Path orphanShardTemporary = directory.resolve("generation-43-shard-18.fs2s.tmp");
+		Path orphanManifestTemporary = directory.resolve("manifest-0000000000000000044.fs2m.tmp");
+		Path interruptedSort = directory.resolve("omni-sort-unpublished");
+		Path foreign = directory.resolve("generation-not-owned-shard-17.fs2s");
+		Files.write(orphanShard, new byte[] { 1 });
+		Files.write(orphanShardTemporary, new byte[] { 2 });
+		Files.write(orphanManifestTemporary, new byte[] { 3 });
+		Files.createDirectory(interruptedSort);
+		Files.writeString(interruptedSort.resolve("run-0.bin"), "partial");
+		Files.writeString(foreign, "keep");
+
+		service = openService();
+
+		assertEquals(FrontierStatisticsAvailability.NO_GENERATION, service.status().availability());
+		assertTrue(service.rebuildRequired());
+		assertTrue(service.status().lastFailure().contains("without a current pointer"));
+		assertFalse(Files.exists(orphanShard));
+		assertFalse(Files.exists(orphanShardTemporary));
+		assertFalse(Files.exists(orphanManifestTemporary));
+		assertFalse(Files.exists(interruptedSort));
+		assertTrue(Files.isRegularFile(foreign));
+	}
+
+	@Test
+	void missingCurrentInEmptyDirectoryIsNoOp() throws Exception {
+		service = openService();
+
+		assertEquals(FrontierStatisticsAvailability.NO_GENERATION, service.status().availability());
+		assertFalse(service.rebuildRequired());
+		assertTrue(service.status().lastFailure().isEmpty());
 	}
 
 	@Test
@@ -518,6 +632,17 @@ class LmdbStatisticsServiceTest {
 				shardId, FrontierStatisticsTier.EXACT_AND_LINEAR, mandatory, fileName, Files.size(shardPath), 1L);
 		ArrayList<FrontierStatisticsShardDescriptor> descriptors = new ArrayList<>(core.shards());
 		descriptors.add(descriptor);
+		return new FrontierStatisticsManifest(
+				core.generationId(), core.previousGenerationId(), core.baseEpoch(), core.coveredEpoch(),
+				core.coveredSequence(), core.createdAtMillis(), core.maximumTermId(), descriptors);
+	}
+
+	private static FrontierStatisticsManifest withMissingOptionalShard(FrontierStatisticsManifest core) {
+		FrontierStatisticsShardDescriptor optional = new FrontierStatisticsShardDescriptor(
+				9_999, FrontierStatisticsTier.ADAPTIVE_REFINEMENTS, false,
+				"missing-optional.fs2s", FrontierStatisticsShard.HEADER_BYTES, 0L);
+		ArrayList<FrontierStatisticsShardDescriptor> descriptors = new ArrayList<>(core.shards());
+		descriptors.add(optional);
 		return new FrontierStatisticsManifest(
 				core.generationId(), core.previousGenerationId(), core.baseEpoch(), core.coveredEpoch(),
 				core.coveredSequence(), core.createdAtMillis(), core.maximumTermId(), descriptors);

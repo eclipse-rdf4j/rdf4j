@@ -79,7 +79,8 @@ final class JoinMetricsTracking {
 				accumulator.probeClosed(rightSide, 0L);
 				return base;
 			}
-			return wrapper.bind(base);
+			CloseableIteration<BindingSet> rebound = wrapper.bindIfAvailable(base);
+			return rebound == null ? new DeferredSideIteration(accumulator, rightSide).bind(base) : rebound;
 		};
 	}
 
@@ -326,13 +327,14 @@ final class JoinMetricsTracking {
 		}
 
 		private CloseableIteration<BindingSet> bind(CloseableIteration<BindingSet> delegate) {
-			if (active) {
-				throw new IllegalStateException("A join telemetry side cannot have overlapping evaluations");
-			}
 			this.delegate = delegate;
 			consumedBindings = 0L;
 			active = true;
 			return this;
+		}
+
+		private CloseableIteration<BindingSet> bindIfAvailable(CloseableIteration<BindingSet> delegate) {
+			return active ? null : bind(delegate);
 		}
 
 		@Override

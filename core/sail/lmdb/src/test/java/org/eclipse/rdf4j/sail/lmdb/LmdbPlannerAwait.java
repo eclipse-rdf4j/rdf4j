@@ -12,15 +12,19 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.awaitility.Awaitility.await;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import org.awaitility.core.ConditionTimeoutException;
 import org.awaitility.core.ThrowingRunnable;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 
@@ -116,6 +120,42 @@ public final class LmdbPlannerAwait {
 		awaitPlannerAssertion("LMDB optimizer pipeline", atMost,
 				() -> assertInstanceOf(LmdbEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory(),
 						"Expected ready sketches to select the LMDB optimizer pipeline"));
+	}
+
+	public static Explanation awaitDetachedPlanRefresh(Supplier<Explanation> explanation) {
+		AtomicReference<Explanation> current = new AtomicReference<>();
+		awaitPlannerAssertion("LMDB detached plan refresh", () -> {
+			Explanation candidate = explanation.get();
+			TupleExpr plan = (TupleExpr) candidate.tupleExpr();
+			assertEquals("USE", plan.getStringMetricPlanned("optimizer.planCacheLookupOutcome"),
+					() -> detachedRefreshDiagnostic(plan, candidate.toString()));
+			current.set(candidate);
+		});
+		return current.get();
+	}
+
+	public static TupleExpr awaitDetachedPlanRefreshPlan(Supplier<TupleExpr> planSupplier) {
+		AtomicReference<TupleExpr> current = new AtomicReference<>();
+		awaitPlannerAssertion("LMDB detached plan refresh", () -> {
+			TupleExpr candidate = planSupplier.get();
+			assertEquals("USE", candidate.getStringMetricPlanned("optimizer.planCacheLookupOutcome"),
+					() -> detachedRefreshDiagnostic(candidate, candidate.toString()));
+			current.set(candidate);
+		});
+		return current.get();
+	}
+
+	private static String detachedRefreshDiagnostic(TupleExpr plan, String renderedPlan) {
+		return "Detached plan refresh has not published current-evidence reuse"
+				+ " [outcome=" + plan.getStringMetricPlanned("optimizer.planCacheLookupOutcome")
+				+ ", family=" + plan.getDoubleMetricPlanned("optimizer.planCacheFamily")
+				+ ", variant=" + plan.getDoubleMetricPlanned("optimizer.planCacheVariant")
+				+ ", planVersion=" + plan.getDoubleMetricPlanned("optimizer.planCachePlanVersion")
+				+ ", evidenceEpoch=" + plan.getDoubleMetricPlanned("optimizer.planCacheEvidenceEpoch")
+				+ ", completion=" + plan.getStringMetricPlanned("optimizer.planCacheSearchCompletion")
+				+ ", bound=" + plan.getStringMetricPlanned("optimizer.planCacheSearchBoundKind")
+				+ ", envelope=" + plan.getStringMetricPlanned("optimizer.planCacheStabilityEnvelopeResult")
+				+ "]:\n" + renderedPlan;
 	}
 
 	private static Exception conditionFailure(Throwable throwable) throws Exception {

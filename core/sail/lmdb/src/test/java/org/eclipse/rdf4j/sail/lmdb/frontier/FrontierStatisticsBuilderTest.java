@@ -236,9 +236,8 @@ class FrontierStatisticsBuilderTest {
 				.stream()
 				.anyMatch(shard -> shard.kind() == FrontierStatisticsShardKind.PROJECTED_DISTINCT));
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			Class<?> probeType = Class.forName(
 					"org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe");
 			Constructor<?> probeConstructor = probeType.getConstructor(
@@ -329,9 +328,8 @@ class FrontierStatisticsBuilderTest {
 						&& (int) shard.logicalKey() == 1),
 				"predicate-specific Fast-AGMS projections are deterministic and must not consume builder memory");
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			FrontierLeafProbe defaultPredicate = new FrontierLeafProbe(
 					FrontierLeafProbe.BOTH_PLANES,
 					FrontierLeafProbe.PREDICATE | FrontierLeafProbe.CONTEXT,
@@ -359,9 +357,8 @@ class FrontierStatisticsBuilderTest {
 		FrontierStatisticsManifest manifest = FrontierStatisticsBuilder.build(
 				directory, 1L, -1L, snapshot, governor, config);
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			assertExactRows(service, snapshot.snapshotEpoch(), new FrontierLeafProbe(
 					FrontierLeafProbe.EXPLICIT,
 					FrontierLeafProbe.PREDICATE | FrontierLeafProbe.CONTEXT,
@@ -415,9 +412,8 @@ class FrontierStatisticsBuilderTest {
 		assertTrue(manifest.shards()
 				.stream()
 				.anyMatch(shard -> shard.kind().name().equals("NAMED_PROJECTED_DISTINCT")));
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			assertProjectedDistinctNear(service, snapshot.snapshotEpoch(), FrontierLeafProbe.EXPLICIT, 2.0d);
 			assertProjectedDistinctNear(service, snapshot.snapshotEpoch(), FrontierLeafProbe.INFERRED, 2.0d);
 			assertProjectedDistinctNear(service, snapshot.snapshotEpoch(), FrontierLeafProbe.BOTH_PLANES, 3.0d);
@@ -469,9 +465,8 @@ class FrontierStatisticsBuilderTest {
 		FrontierStatisticsManifest manifest = FrontierStatisticsBuilder.build(
 				directory, 1L, -1L, snapshot, governor, config);
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			FrontierLeafProbe left = new FrontierLeafProbe(
 					FrontierLeafProbe.EXPLICIT, FrontierLeafProbe.PREDICATE, 0L, 7L, 0L, 0L);
 			FrontierLeafProbe right = new FrontierLeafProbe(
@@ -508,9 +503,8 @@ class FrontierStatisticsBuilderTest {
 		FrontierLeafProbe right = new FrontierLeafProbe(
 				FrontierLeafProbe.EXPLICIT, FrontierLeafProbe.PREDICATE, 0L, 8L, 0L, 0L);
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			for (int leftComponent = 0; leftComponent < 4; leftComponent++) {
 				for (int rightComponent = 0; rightComponent < 4; rightComponent++) {
 					long exact = snapshot.exactPredicateJoin(7L, leftComponent, 8L, rightComponent);
@@ -549,9 +543,8 @@ class FrontierStatisticsBuilderTest {
 				FrontierLeafProbe.EXPLICIT, defaultGraphPredicate, 0L, 8L, 0L, 0L);
 		long exact = snapshot.exactPredicateJoin(7L, 0, 8L, 0);
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			FrontierJoinEstimate estimate = service.estimateJoin(snapshot.snapshotEpoch(),
 					new FrontierJoinProbe(left, 0, right, 0));
 
@@ -584,9 +577,8 @@ class FrontierStatisticsBuilderTest {
 		FrontierLeafProbe right = new FrontierLeafProbe(
 				FrontierLeafProbe.EXPLICIT, FrontierLeafProbe.PREDICATE, 0L, 8L, 0L, 0L);
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			FrontierJoinEstimate estimate = service.estimateJoin(
 					snapshot.snapshotEpoch(), new FrontierJoinProbe(left, 0, right, 0));
 
@@ -613,9 +605,8 @@ class FrontierStatisticsBuilderTest {
 		FrontierLeafProbe predicate = new FrontierLeafProbe(
 				FrontierLeafProbe.EXPLICIT, FrontierLeafProbe.PREDICATE, 0L, 7L, 0L, 0L);
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			FrontierLeafEstimate estimate = service.estimateLeaf(snapshot.snapshotEpoch(), predicate);
 
 			assertEquals(4_096.0d, estimate.pointRows(), 0.0d,
@@ -661,9 +652,8 @@ class FrontierStatisticsBuilderTest {
 		assertTrue(joinDomains.stream().allMatch(shard -> shard.minimumKey() == Long.MAX_VALUE),
 				joinDomains::toString);
 		assertCenterPredicatePostings(directory, joinDomains);
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			FrontierJoinEstimate estimate = service.estimateJoin(
 					snapshot.snapshotEpoch(), new FrontierJoinProbe(departments, 0, memberships, 2));
 
@@ -707,9 +697,8 @@ class FrontierStatisticsBuilderTest {
 				FrontierLeafProbe.EXPLICIT, FrontierLeafProbe.PREDICATE, 0L, 7L, 0L, 0L);
 		FrontierLeafProbe predicateEight = new FrontierLeafProbe(
 				FrontierLeafProbe.EXPLICIT, FrontierLeafProbe.PREDICATE, 0L, 8L, 0L, 0L);
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			FrontierJoinEstimate estimate = service.estimateJoin(
 					1L, new FrontierJoinProbe(predicateSeven, 0, predicateEight, 0));
 
@@ -738,9 +727,8 @@ class FrontierStatisticsBuilderTest {
 		FrontierStatisticsManifest manifest = FrontierStatisticsBuilder.build(
 				directory, 1L, -1L, snapshot, governor, config);
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 64L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 64L * 1024L * 1024L, 60_000L, manifest)) {
 			for (int subject = 1; subject <= 512; subject++) {
 				FrontierLeafEstimate estimate = service.estimateLeaf(snapshot.snapshotEpoch(), new FrontierLeafProbe(
 						FrontierLeafProbe.EXPLICIT,
@@ -790,9 +778,8 @@ class FrontierStatisticsBuilderTest {
 						2, 0, 3, 0
 				});
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 64L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 64L * 1024L * 1024L, 60_000L, manifest)) {
 			FrontierJoinEstimate estimate = service.estimateSubgraph(snapshot.snapshotEpoch(), program);
 
 			assertEquals(FrontierFallbackReason.NONE, estimate.fallbackReason(), estimate::toString);
@@ -818,9 +805,8 @@ class FrontierStatisticsBuilderTest {
 				directory, 1L, -1L, snapshot, governor, config);
 		int predicateAndDefaultGraph = FrontierLeafProbe.PREDICATE | FrontierLeafProbe.CONTEXT;
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			FrontierLeafEstimate repeated = service.estimateLeaf(snapshot.snapshotEpoch(),
 					new FrontierLeafProbe(FrontierLeafProbe.EXPLICIT, predicateAndDefaultGraph,
 							0L, 7L, 0L, 0L, FrontierLeafProbe.SUBJECT_OBJECT_EQUAL));
@@ -864,9 +850,8 @@ class FrontierStatisticsBuilderTest {
 		int sharedSubjectAndObject = FrontierJoinProbe.componentPairMask(0, 0)
 				| FrontierJoinProbe.componentPairMask(2, 2);
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			FrontierJoinEstimate estimate = service.estimateJoin(snapshot.snapshotEpoch(),
 					new FrontierJoinProbe(left, 0, right, 0, sharedSubjectAndObject));
 
@@ -923,9 +908,8 @@ class FrontierStatisticsBuilderTest {
 						1, 0, 4, 0
 				});
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			FrontierJoinEstimate estimate = service.estimateSubgraph(snapshot.snapshotEpoch(), program);
 
 			assertEquals(FrontierFallbackReason.NONE, estimate.fallbackReason());
@@ -972,9 +956,8 @@ class FrontierStatisticsBuilderTest {
 						3, 0, 4, 0
 				});
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			FrontierJoinEstimate estimate = service.estimateSubgraph(snapshot.snapshotEpoch(), program);
 
 			assertEquals(FrontierFallbackReason.NONE, estimate.fallbackReason());
@@ -1019,9 +1002,8 @@ class FrontierStatisticsBuilderTest {
 						3, 0, 1, 0
 				});
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			FrontierJoinEstimate estimate = service.estimateSubgraph(snapshot.snapshotEpoch(), program);
 
 			assertEquals(FrontierFallbackReason.NONE, estimate.fallbackReason());
@@ -1048,9 +1030,8 @@ class FrontierStatisticsBuilderTest {
 				FrontierLeafProbe.SUBJECT | FrontierLeafProbe.PREDICATE,
 				1L, 7L, 0L, 0L);
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			FrontierLeafEstimate estimate = service.estimateLeaf(77L, subjectOnePredicateSeven);
 			assertEquals("frontier-v2-omni", estimate.source());
 			assertTrue(estimate.lowerRows() <= 60.0d && 60.0d <= estimate.upperRows(), estimate::toString);
@@ -1122,9 +1103,8 @@ class FrontierStatisticsBuilderTest {
 		FrontierStatisticsManifest manifest = FrontierStatisticsBuilder.build(
 				directory, 1L, -1L, snapshot, governor, config);
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			for (int planeMask : new int[] {
 					FrontierLeafProbe.EXPLICIT, FrontierLeafProbe.INFERRED, FrontierLeafProbe.BOTH_PLANES }) {
 				long[] tuple = planeMask == FrontierLeafProbe.INFERRED
@@ -1329,9 +1309,8 @@ class FrontierStatisticsBuilderTest {
 		assertTrue(tuples < postings / 2L,
 				"coordinated witnesses must be stored once and referenced from multiple cell postings");
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			FrontierLeafEstimate estimate = service.estimateLeaf(snapshot.snapshotEpoch(), new FrontierLeafProbe(
 					FrontierLeafProbe.EXPLICIT,
 					FrontierLeafProbe.SUBJECT | FrontierLeafProbe.PREDICATE,
@@ -1354,9 +1333,8 @@ class FrontierStatisticsBuilderTest {
 				FrontierLeafProbe.SUBJECT | FrontierLeafProbe.PREDICATE,
 				1L, 7L, 0L, 0L);
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			try (FrontierStatisticsHeapGovernor.Lease pressure = governor.tryAcquire(
 					FrontierStatisticsMemoryPurpose.QUERY, governor.maximumQueryBytes())) {
 				assertEquals(FrontierFallbackReason.MEMORY_PRESSURE,
@@ -1394,9 +1372,8 @@ class FrontierStatisticsBuilderTest {
 
 		FrontierLeafProbe predicateSeven = new FrontierLeafProbe(
 				FrontierLeafProbe.EXPLICIT, FrontierLeafProbe.PREDICATE, 0L, 7L, 0L, 0L);
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(base);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, base)) {
 			service.publish(delta);
 			double expectedDeleteDebt = 1.0d / (snapshot.rowCount(true) + snapshot.rowCount(false));
 			assertEquals(expectedDeleteDebt, service.status().deleteDebt(), 0.0d,
@@ -1433,9 +1410,8 @@ class FrontierStatisticsBuilderTest {
 		FrontierLeafProbe predicateSeven = new FrontierLeafProbe(
 				FrontierLeafProbe.EXPLICIT, FrontierLeafProbe.PREDICATE, 0L, 7L, 0L, 0L);
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(base);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, base)) {
 			Method openView = LmdbStatisticsService.class.getMethod("openCurrentView");
 			Object view = openView.invoke(service);
 			try {
@@ -1478,9 +1454,8 @@ class FrontierStatisticsBuilderTest {
 		FrontierLeafProbe right = new FrontierLeafProbe(
 				FrontierLeafProbe.EXPLICIT, FrontierLeafProbe.PREDICATE, 0L, 8L, 0L, 0L);
 		FrontierJoinProbe probe = new FrontierJoinProbe(left, 0, right, 0);
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(base);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, base)) {
 			service.publish(delta);
 			FrontierJoinEstimate estimate = service.estimateJoin(78L, probe);
 			assertEquals(FrontierFallbackReason.NONE, estimate.fallbackReason());
@@ -1539,9 +1514,8 @@ class FrontierStatisticsBuilderTest {
 						3, 0, 4, 0
 				});
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(base);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, base)) {
 			service.publish(delta);
 		}
 		try (LmdbStatisticsService reopened = LmdbStatisticsService.open(
@@ -1591,9 +1565,8 @@ class FrontierStatisticsBuilderTest {
 				FrontierLeafProbe.EXPLICIT, FrontierLeafProbe.PREDICATE | FrontierLeafProbe.CONTEXT,
 				0L, deltaPredicate, 0L, 0L);
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(base);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, base)) {
 			service.publish(delta);
 			double estimate = service.estimateProjectedDistinct(101L, predicate, 0);
 			assertTrue(estimate >= insertedSubjects / 2.0d && estimate <= insertedSubjects * 2.0d,
@@ -1630,9 +1603,8 @@ class FrontierStatisticsBuilderTest {
 				FrontierLeafProbe.PREDICATE | FrontierLeafProbe.OBJECT | FrontierLeafProbe.CONTEXT,
 				0L, 7L, 10L, 0L);
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(base);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, base)) {
 			service.publish(signedOnly);
 			assertEquals(3.0d, service.estimateProjectedDistinct(11L, oneFreeSubject, 0), 0.0d,
 					"one free term identifies one statement per key even when sampling overlays are unavailable");
@@ -1663,9 +1635,8 @@ class FrontierStatisticsBuilderTest {
 		FrontierStatisticsManifest manifest = FrontierStatisticsBuilder.build(
 				directory, 1L, -1L, snapshot, governor, config);
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, manifest)) {
 			assertEquals(2.0d, service.estimateProjectedDistinct(12L, new FrontierLeafProbe(
 					FrontierLeafProbe.EXPLICIT,
 					FrontierLeafProbe.PREDICATE | FrontierLeafProbe.OBJECT | FrontierLeafProbe.CONTEXT,
@@ -1733,9 +1704,8 @@ class FrontierStatisticsBuilderTest {
 						3, 0, 4, 0
 				});
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(base);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, base)) {
 			service.publish(first);
 			service.publish(second);
 			assertEquals(2.0d, service.estimateProjectedDistinct(12L, predicateSeven, 0), 0.0d);
@@ -1761,9 +1731,8 @@ class FrontierStatisticsBuilderTest {
 				directory, 1L, -1L, snapshot, governor, config);
 		int scansAfterBase = snapshot.scanCalls;
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 64L * 1024L * 1024L, 60_000L)) {
-			service.publish(manifest);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 64L * 1024L * 1024L, 60_000L, manifest)) {
 			for (long sequence = 11L; sequence <= 75L; sequence++) {
 				try {
 					manifest = service.publishDelta(List.of(new FrontierMutation(
@@ -1841,9 +1810,8 @@ class FrontierStatisticsBuilderTest {
 				.orElseThrow();
 		assertEquals(16_386L, tuples.rowCount());
 		assertTrue(tuples.rowCount() > FrontierOmniDeltaBuilder.MAXIMUM_MUTATIONS_PER_LAYER);
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 256L * 1024L * 1024L, 60_000L)) {
-			service.publish(base);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 256L * 1024L * 1024L, 60_000L, base)) {
 			service.publish(first);
 			service.publish(compacted);
 			FrontierLeafEstimate estimate = service.estimateLeafCurrent(new FrontierLeafProbe(
@@ -1875,9 +1843,8 @@ class FrontierStatisticsBuilderTest {
 				.stream()
 				.filter(shard -> shard.kind() == FrontierStatisticsShardKind.SIGNED_DELTA)
 				.count());
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 64L * 1024L * 1024L, 60_000L)) {
-			service.publish(base);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 64L * 1024L * 1024L, 60_000L, base)) {
 			service.publish(deleted);
 			service.publish(restored);
 			FrontierLeafEstimate estimate = service.estimateLeafCurrent(new FrontierLeafProbe(
@@ -1945,9 +1912,8 @@ class FrontierStatisticsBuilderTest {
 		FrontierStatisticsManifest mixed = FrontierStatisticsDeltaBuilder.build(directory, signedOnly,
 				List.of(new FrontierMutation(12L, 12L, true, true, 3L, 7L, 30L, 0L)), governor, config);
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 64L * 1024L * 1024L, 60_000L)) {
-			service.publish(base);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 64L * 1024L * 1024L, 60_000L, base)) {
 			service.publish(signedOnly);
 			service.publish(mixed);
 			FrontierLeafEstimate estimate = service.estimateLeafCurrent(new FrontierLeafProbe(
@@ -2000,9 +1966,8 @@ class FrontierStatisticsBuilderTest {
 				0L, 7L, 0L, 0L);
 		double exact = 200.0d - retainedSubjects.size();
 
-		try (LmdbStatisticsService service = LmdbStatisticsService.open(
-				directory, governor, 32L * 1024L * 1024L, 60_000L)) {
-			service.publish(base);
+		try (LmdbStatisticsService service = openPublished(
+				directory, governor, 32L * 1024L * 1024L, 60_000L, base)) {
 			service.publish(delta);
 			FrontierLeafEstimate estimate = service.estimateLeaf(21L, predicate);
 			assertEquals(FrontierFallbackReason.NONE, estimate.fallbackReason(), estimate::toString);
@@ -2011,6 +1976,13 @@ class FrontierStatisticsBuilderTest {
 			assertTrue(Double.isNaN(service.estimateProjectedDistinct(21L, predicate, 0)),
 					"a cell below its authoritative K must not expose projected-distinct witness evidence");
 		}
+	}
+
+	private static LmdbStatisticsService openPublished(Path directory,
+			FrontierStatisticsHeapGovernor governor, long mappedByteBudget, long cleanupWaitMillis,
+			FrontierStatisticsManifest manifest) throws IOException {
+		new FrontierStatisticsManifestStore(directory, NioFrontierFileOps.INSTANCE).publish(manifest);
+		return LmdbStatisticsService.open(directory, governor, mappedByteBudget, cleanupWaitMillis);
 	}
 
 	private static void assertBatchedOmniMatchesScalar(Path directory, int rowsPerPlane,

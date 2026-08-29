@@ -136,6 +136,10 @@ final class PackedOptimizationDecision {
 		return candidate(candidate).physicalIdentity().fingerprint();
 	}
 
+	String candidatePhysicalCanonicalForm(int candidate) {
+		return candidate(candidate).physicalIdentity().canonicalForm();
+	}
+
 	EstimatedCostInterval candidateEstimatedCost(int candidate) {
 		return candidate(candidate).estimatedCost();
 	}
@@ -146,6 +150,10 @@ final class PackedOptimizationDecision {
 
 	PackedPlanRecipe championRecipe() {
 		return candidates[0].recipe();
+	}
+
+	long selectedRuleProofMask() {
+		return candidates[0].recipe().ruleProofMask();
 	}
 
 	TupleExpr materializeCandidate(int candidate, PackedQueryFamilyIdentity invocation) {

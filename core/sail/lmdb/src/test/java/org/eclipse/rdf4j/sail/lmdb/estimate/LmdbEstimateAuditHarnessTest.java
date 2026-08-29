@@ -388,18 +388,20 @@ class LmdbEstimateAuditHarnessTest {
 			assertTrue(dirtyFallback || currentExactGeneration, dirtyExplanation::toString);
 			LmdbPlannerAwait.awaitPlannerAssertion("Frontier calibration background consolidation",
 					() -> assertTrue(!Files.exists(insertionMarker)));
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				Explanation recoveredExplanation = connection.prepareTupleQuery("""
-						SELECT ?subject
-						WHERE { ?subject <urn:frontier:calibration:predicate> ?object }
-						""")
-						.explain(Explanation.Level.Optimized);
-				assertTrue(StatementPatternCollector.process((TupleExpr) recoveredExplanation.tupleExpr())
-						.stream()
-						.anyMatch(pattern -> "lmdb-frontier"
-								.equals(pattern.getStringMetricPlanned("plannedEstimateSource"))),
-						recoveredExplanation::toString);
-			}
+			LmdbPlannerAwait.awaitPlannerAssertion("Frontier calibration detached plan refresh", () -> {
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					Explanation recoveredExplanation = connection.prepareTupleQuery("""
+							SELECT ?subject
+							WHERE { ?subject <urn:frontier:calibration:predicate> ?object }
+							""")
+							.explain(Explanation.Level.Optimized);
+					assertTrue(StatementPatternCollector.process((TupleExpr) recoveredExplanation.tupleExpr())
+							.stream()
+							.anyMatch(pattern -> "lmdb-frontier"
+									.equals(pattern.getStringMetricPlanned("plannedEstimateSource"))),
+							recoveredExplanation::toString);
+				}
+			});
 			long durableBytes;
 			try (var paths = Files.walk(dataDir.toPath().resolve("frontier-synopsis"))) {
 				durableBytes = paths.filter(Files::isRegularFile)

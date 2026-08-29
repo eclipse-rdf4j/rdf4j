@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
@@ -29,9 +30,13 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanDecisionSummary;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedSearchCompletionStatus;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 
@@ -105,14 +110,22 @@ final class LmdbPipelinePlanCache {
 	Result getOrCompute(TupleExpr source, Context context, Supplier<Revision> currentRevision,
 			Supplier<TupleExpr> computer) {
 		Objects.requireNonNull(computer, "computer");
+		return getOrComputePlan(source, context, currentRevision,
+				() -> PlanComputation.nonRefreshable(
+						Objects.requireNonNull(computer.get(), "pipeline plan computation")));
+	}
+
+	Result getOrComputePlan(TupleExpr source, Context context, Supplier<Revision> currentRevision,
+			PlanComputer computer) {
+		Objects.requireNonNull(computer, "computer");
 		if (!enabled || source == null || context == null || currentRevision == null
 				|| !context.revision().equals(currentRevision.get()) || !hasReusableInputs(source)) {
-			return new Result(Objects.requireNonNull(computer.get(), "pipeline plan computation"), false);
+			return new Result(compute(computer).plan(), false);
 		}
 
 		PackedPlanCache.StructuralKey query = PackedPlanCache.structuralKey(source);
 		if (query == null) {
-			return new Result(Objects.requireNonNull(computer.get(), "pipeline plan computation"), false);
+			return new Result(compute(computer).plan(), false);
 		}
 		long fingerprint = fingerprintStrategy.fingerprint(context, query);
 		CacheKey key = new CacheKey(fingerprint, context, query);
@@ -127,8 +140,12 @@ final class LmdbPipelinePlanCache {
 			return new Result(annotateDecision(use.plan().materialize(), use), true);
 		}
 		if (decision instanceof LmdbPlanDecisionCache.UseAndRefresh useAndRefresh) {
-			hits.incrementAndGet();
-			return new Result(annotateDecision(useAndRefresh.plan().materialize(), useAndRefresh), true);
+			LmdbPlanDecisionCache.RefreshSubmission submission = decisionCache.submitRefresh(useAndRefresh);
+			if (submission == LmdbPlanDecisionCache.RefreshSubmission.SUBMITTED
+					|| submission == LmdbPlanDecisionCache.RefreshSubmission.ALREADY_IN_FLIGHT) {
+				hits.incrementAndGet();
+				return new Result(annotateDecision(useAndRefresh.plan().materialize(), useAndRefresh), true);
+			}
 		}
 		Segment segment = segments[(int) mix64(fingerprint) & segmentMask];
 		Flight owner = null;
@@ -148,27 +165,32 @@ final class LmdbPipelinePlanCache {
 			}
 		}
 		if (bypass) {
-			return new Result(Objects.requireNonNull(computer.get(), "pipeline plan computation"), false);
+			return new Result(compute(computer).plan(), false);
 		}
 		if (shared != null) {
 			TupleExpr template = shared.join();
 			if (template != null && context.revision().equals(currentRevision.get())) {
 				return new Result(template.clone(), true);
 			}
-			return new Result(Objects.requireNonNull(computer.get(), "pipeline plan computation"), false);
+			return new Result(compute(computer).plan(), false);
 		}
 
-		TupleExpr computed;
+		PlanComputation computation;
 		try {
-			computed = Objects.requireNonNull(computer.get(), "pipeline plan computation");
+			computation = compute(computer);
 		} catch (RuntimeException | Error failure) {
 			abandon(segment, owner, failure);
 			throw failure;
 		}
 		boolean stable = context.revision().equals(currentRevision.get());
+		TupleExpr computed = computation.plan();
 		TupleExpr template = stable && retainable(computed) ? detachedTemplate(computed) : null;
-		publish(segment, owner, template);
+		publish(segment, owner, template, computation);
 		return new Result(computed, false);
+	}
+
+	private static PlanComputation compute(PlanComputer computer) {
+		return Objects.requireNonNull(computer.compute(), "pipeline plan computation");
 	}
 
 	int entryCount() {
@@ -207,7 +229,7 @@ final class LmdbPipelinePlanCache {
 		decisionCache.close();
 	}
 
-	private void publish(Segment segment, Flight flight, TupleExpr template) {
+	private void publish(Segment segment, Flight flight, TupleExpr template, PlanComputation computation) {
 		long entryBytes = template == null
 				? Long.MAX_VALUE
 				: saturatedAdd(ENTRY_OBJECT_BYTES, saturatedAdd(
@@ -220,7 +242,7 @@ final class LmdbPipelinePlanCache {
 		if (!owned) {
 			throw new IllegalStateException("pipeline plan cache flight is no longer owned");
 		}
-		boolean retained = template != null && publishDecision(flight.key, template, entryBytes);
+		boolean retained = template != null && publishDecision(flight.key, template, entryBytes, computation);
 		flight.result.complete(retained ? template : null);
 	}
 
@@ -234,21 +256,58 @@ final class LmdbPipelinePlanCache {
 		}
 	}
 
-	private boolean publishDecision(CacheKey key, TupleExpr template, long entryBytes) {
+	private boolean publishDecision(CacheKey key, TupleExpr template, long entryBytes,
+			PlanComputation computation) {
 		LmdbPlanDecisionCache.EvidenceSnapshot evidence = evidence(key.context());
-		LmdbPlanDecisionCache.BuildPublication publication = new LmdbPlanDecisionCache.BuildPublication(
-				familyKey(key), exactInvocationKey(key), semanticDependencies(key.context()), evidence, evidence,
-				template,
-				Long.toUnsignedString(key.fingerprint(), 16), LmdbPlanDecisionCache.EstimatedCostInterval.unbounded(),
-				new LmdbPlanDecisionCache.SearchCertificate(LmdbPlanDecisionCache.SearchCompletion.EXACT_COMPLETE,
+		PackedPlanDecisionSummary summary = computation.decisionSummary();
+		LmdbPlanDecisionCache.SemanticDependencies semanticDependencies = semanticDependencies(key.context());
+		if (summary == null || !summary.semanticDependencies()
+				.contains(PackedPlanDecisionSummary.SemanticDependency.PREDICATE_RANGE_DATA)) {
+			semanticDependencies = semanticDependencies.withoutIndexGenerationDependency();
+		}
+		String physicalFingerprint = summary == null
+				? "unsupported-" + Long.toUnsignedString(key.fingerprint(), 16)
+				: summary.physicalFingerprint();
+		LmdbPlanDecisionCache.EstimatedCostInterval interval = summary == null
+				? LmdbPlanDecisionCache.EstimatedCostInterval.unbounded()
+				: new LmdbPlanDecisionCache.EstimatedCostInterval(summary.selectedCostInterval().lower(),
+						summary.selectedCostInterval().upper());
+		LmdbPlanDecisionCache.SearchCertificate certificate = summary == null
+				? new LmdbPlanDecisionCache.SearchCertificate(
+						LmdbPlanDecisionCache.SearchCompletion.UNSUPPORTED_SEMANTICS,
 						LmdbPlanDecisionCache.BoundKind.BEST_KNOWN_UNBOUNDED, Double.NaN,
-						evidence.globalEpoch(), evidence.globalEpoch(), 0.0d, 0L),
-				entryBytes, 0L);
+						evidence.globalEpoch(), evidence.globalEpoch(), 0.0d, 0L)
+				: certificate(summary, evidence.globalEpoch());
+		LmdbPlanDecisionCache.BuildPublication publication = new LmdbPlanDecisionCache.BuildPublication(
+				familyKey(key), exactInvocationKey(key), semanticDependencies, evidence, evidence,
+				template, physicalFingerprint, interval, certificate, entryBytes, 1L,
+				computation.detachedRefreshWork());
 		try {
 			return decisionCache.publishBuild(publication);
 		} catch (RuntimeException cacheFailure) {
 			return false;
 		}
+	}
+
+	static LmdbPlanDecisionCache.SearchCertificate certificate(PackedPlanDecisionSummary summary,
+			long evidenceEpoch) {
+		LmdbPlanDecisionCache.BoundKind boundKind = summary
+				.boundKind() == PackedPlanDecisionSummary.BoundKind.VALID_LOWER_BOUND
+						? LmdbPlanDecisionCache.BoundKind.VALID_LOWER_BOUND
+						: LmdbPlanDecisionCache.BoundKind.BEST_KNOWN_UNBOUNDED;
+		return new LmdbPlanDecisionCache.SearchCertificate(searchCompletion(summary.searchCompletion()), boundKind,
+				summary.searchLowerBound(), evidenceEpoch, evidenceEpoch, 0.0d,
+				summary.deterministicWorkUnits());
+	}
+
+	private static LmdbPlanDecisionCache.SearchCompletion searchCompletion(PackedSearchCompletionStatus completion) {
+		return switch (completion) {
+		case EXACT_COMPLETE -> LmdbPlanDecisionCache.SearchCompletion.EXACT_COMPLETE;
+		case INCOMPLETE_WORK_LIMIT -> LmdbPlanDecisionCache.SearchCompletion.INCOMPLETE_WORK_LIMIT;
+		case INCOMPLETE_DEADLINE -> LmdbPlanDecisionCache.SearchCompletion.INCOMPLETE_DEADLINE;
+		case INCOMPLETE_RESOURCE_LIMIT -> LmdbPlanDecisionCache.SearchCompletion.INCOMPLETE_RESOURCE_LIMIT;
+		case UNSUPPORTED_SEMANTICS -> LmdbPlanDecisionCache.SearchCompletion.UNSUPPORTED_SEMANTICS;
+		};
 	}
 
 	private static TupleExpr annotateDecision(TupleExpr plan, LmdbPlanDecisionCache.LookupDecision decision) {
@@ -329,12 +388,16 @@ final class LmdbPipelinePlanCache {
 				Boolean.toString(context.preserveObservationOrder()),
 				context.queryEvaluationMode() + ':' + context.trackResultSize() + ':' + context.trackTime() + ':'
 						+ context.runtimeTelemetry(),
-				0L, 0L, 0L, 0L, 0L, context.configuration(), null);
+				0L, context.predicateRangeIdentity(), true, 0L, 0L, 0L, 0L, context.configuration(),
+				new PhysicalProviderIdentity(context.revision().predicateRangeVersion()));
 	}
 
 	private static LmdbPlanDecisionCache.EvidenceSnapshot evidence(Context context) {
-		LmdbEstimatorRuntime.PlanningRevisions revisions = context.revision().planningRevisions();
-		return new LmdbPlanDecisionCache.EvidenceSnapshot(0L, revisions.dataRevision(),
+		return evidence(context.revision().planningRevisions());
+	}
+
+	static LmdbPlanDecisionCache.EvidenceSnapshot evidence(LmdbEstimatorRuntime.PlanningRevisions revisions) {
+		return new LmdbPlanDecisionCache.EvidenceSnapshot(revisions.learnedEvidenceRevision(), revisions.dataRevision(),
 				revisions.frontierRevision(), revisions.leoRevision(), revisions.learnedEvidenceRevision(), 0L,
 				Set.of(
 						new LmdbPlanDecisionCache.EvidenceDependency(LmdbPlanDecisionCache.EvidenceKind.GLOBAL_DATA,
@@ -406,7 +469,35 @@ final class LmdbPipelinePlanCache {
 		long fingerprint(Context context, PackedPlanCache.StructuralKey query);
 	}
 
-	record Revision(LmdbEstimatorRuntime.PlanningRevisions planningRevisions, boolean adaptiveEvidenceAllowed) {
+	@FunctionalInterface
+	interface PlanComputer {
+		PlanComputation compute();
+	}
+
+	record PlanComputation(TupleExpr plan, PackedPlanDecisionSummary decisionSummary,
+			LmdbPlanDecisionCache.DetachedRefreshWork detachedRefreshWork) {
+
+		PlanComputation {
+			Objects.requireNonNull(plan, "plan");
+			if (detachedRefreshWork != null && decisionSummary == null) {
+				throw new IllegalArgumentException("detached refresh work requires a packed decision summary");
+			}
+		}
+
+		static PlanComputation nonRefreshable(TupleExpr plan) {
+			return new PlanComputation(plan, null, null);
+		}
+	}
+
+	record Revision(LmdbEstimatorRuntime.PlanningRevisions planningRevisions, long predicateRangeVersion,
+			boolean adaptiveEvidenceAllowed) {
+
+		Revision(LmdbEstimatorRuntime.PlanningRevisions planningRevisions, boolean adaptiveEvidenceAllowed) {
+			this(planningRevisions, 0L, adaptiveEvidenceAllowed);
+		}
+	}
+
+	private record PhysicalProviderIdentity(long predicateRangeVersion) {
 	}
 
 	record DatasetIdentity(boolean present, Set<IRI> defaultRemoveGraphs, IRI defaultInsertGraph,
@@ -442,20 +533,106 @@ final class LmdbPipelinePlanCache {
 			}
 			return new BindingIdentity(List.copyOf(values));
 		}
+
+		Value value(String name) {
+			if (name == null) {
+				return null;
+			}
+			for (BoundValue boundValue : values) {
+				if (name.equals(boundValue.name())) {
+					return boundValue.value();
+				}
+			}
+			return null;
+		}
+	}
+
+	record PredicateRangeEntry(IRI predicate, RdfTermDomain domain) {
+
+		PredicateRangeEntry {
+			Objects.requireNonNull(predicate, "predicate");
+			Objects.requireNonNull(domain, "domain");
+		}
+	}
+
+	record PredicateRangeIdentity(List<PredicateRangeEntry> entries) {
+
+		PredicateRangeIdentity {
+			entries = List.copyOf(entries);
+		}
+
+		static PredicateRangeIdentity capture(TupleExpr source, BindingIdentity bindings,
+				LmdbEstimatorRuntime runtime) {
+			Objects.requireNonNull(bindings, "bindings");
+			Objects.requireNonNull(runtime, "runtime");
+			if (source == null) {
+				return new PredicateRangeIdentity(List.of());
+			}
+			Map<String, IRI> predicates = new TreeMap<>();
+			source.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(StatementPattern pattern) {
+					Var predicateVariable = pattern.getPredicateVar();
+					Value predicateValue = predicateVariable.getValue();
+					if (predicateValue == null) {
+						predicateValue = bindings.value(predicateVariable.getName());
+					}
+					if (predicateValue instanceof IRI predicate) {
+						predicates.put(predicate.stringValue(), predicate);
+					}
+				}
+			});
+			List<PredicateRangeEntry> entries = new ArrayList<>(predicates.size());
+			for (IRI predicate : predicates.values()) {
+				entries.add(entry(predicate, runtime));
+			}
+			return new PredicateRangeIdentity(entries);
+		}
+
+		static PredicateRangeIdentity capture(List<IRI> predicates, LmdbEstimatorRuntime runtime) {
+			Objects.requireNonNull(predicates, "predicates");
+			Objects.requireNonNull(runtime, "runtime");
+			List<PredicateRangeEntry> entries = new ArrayList<>(predicates.size());
+			for (IRI predicate : predicates) {
+				entries.add(entry(predicate, runtime));
+			}
+			return new PredicateRangeIdentity(entries);
+		}
+
+		private static PredicateRangeEntry entry(IRI predicate, LmdbEstimatorRuntime runtime) {
+			RdfTermDomain domain = runtime.rdfTermDomain(predicate);
+			return new PredicateRangeEntry(predicate, domain == null ? RdfTermDomain.UNRESTRICTED : domain);
+		}
+
+		List<IRI> predicates() {
+			return entries.stream().map(PredicateRangeEntry::predicate).toList();
+		}
 	}
 
 	record Context(Revision revision, boolean executionSnapshotPresent, long executionSnapshotEpoch,
-			DatasetIdentity dataset, BindingIdentity bindings, String configuration, boolean preserveObservationOrder,
-			boolean trackResultSize, boolean trackTime, String queryEvaluationMode, boolean runtimeTelemetry) {
+			DatasetIdentity dataset, BindingIdentity bindings, PredicateRangeIdentity predicateRangeIdentity,
+			String configuration, boolean preserveObservationOrder, boolean trackResultSize, boolean trackTime,
+			String queryEvaluationMode, boolean runtimeTelemetry) {
+
+		Context(Revision revision, boolean executionSnapshotPresent, long executionSnapshotEpoch,
+				DatasetIdentity dataset, BindingIdentity bindings, String configuration,
+				boolean preserveObservationOrder, boolean trackResultSize, boolean trackTime,
+				String queryEvaluationMode, boolean runtimeTelemetry) {
+			this(revision, executionSnapshotPresent, executionSnapshotEpoch, dataset, bindings,
+					new PredicateRangeIdentity(List.of()), configuration, preserveObservationOrder, trackResultSize,
+					trackTime, queryEvaluationMode, runtimeTelemetry);
+		}
 
 		private long routingHash() {
 			long hash = revision.planningRevisions().dataRevision();
 			hash = mix64(hash ^ revision.planningRevisions().frontierRevision());
 			hash = mix64(hash ^ revision.planningRevisions().leoRevision());
 			hash = mix64(hash ^ revision.planningRevisions().learnedEvidenceRevision());
+			hash = mix64(hash ^ revision.predicateRangeVersion());
 			hash = mix64(hash ^ executionSnapshotEpoch);
 			hash = mix64(hash ^ dataset.defaultGraphs().size() ^ Long.rotateLeft(dataset.namedGraphs().size(), 17));
-			hash = mix64(hash ^ bindings.values().size() ^ configuration.hashCode());
+			hash = mix64(hash ^ bindings.values().size() ^ predicateRangeIdentity.hashCode()
+					^ configuration.hashCode());
 			return hash;
 		}
 	}

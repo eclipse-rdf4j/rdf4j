@@ -131,11 +131,8 @@ class LmdbOperatorFeedbackPlanningTest {
 				assertEquals(EXPECTED_LEFT_JOIN_ROWS, count(connection, leftJoinFanoutQuery()));
 				connection.prepareTupleQuery(leftJoinFanoutQuery()).explain(Explanation.Level.Telemetry);
 
-				String trainedPlan = connection.prepareTupleQuery(leftJoinFanoutQuery())
-						.explain(Explanation.Level.Optimized)
-						.toString();
-
-				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
+				awaitFusedOperatorCostPath(connection, leftJoinFanoutQuery(),
+						LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
 						"Second plan should apply completed-query operator feedback through the cost model "
 								+ "to the bound OPTIONAL fanout");
 			}
@@ -160,10 +157,7 @@ class LmdbOperatorFeedbackPlanningTest {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				assertEquals(EXPECTED_LEFT_JOIN_ROWS, count(connection, leftJoinFanoutQuery()));
 				connection.prepareTupleQuery(leftJoinFanoutQuery()).explain(Explanation.Level.Telemetry);
-				assertFusedOperatorCostPath(
-						connection.prepareTupleQuery(leftJoinFanoutQuery())
-								.explain(Explanation.Level.Optimized)
-								.toString(),
+				awaitFusedOperatorCostPath(connection, leftJoinFanoutQuery(),
 						LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
 						"Expected operator feedback before restart");
 			}
@@ -277,11 +271,8 @@ class LmdbOperatorFeedbackPlanningTest {
 				assertEquals(EXPECTED_LEFT_JOIN_ROWS, count(connection, leftJoinFanoutQuery()));
 				connection.prepareTupleQuery(leftJoinFanoutQuery()).explain(Explanation.Level.Telemetry);
 
-				String trainedPlan = connection.prepareTupleQuery(leftJoinFanoutQuery())
-						.explain(Explanation.Level.Optimized)
-						.toString();
-
-				assertFusedOperatorCostPath(trainedPlan, LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
+				String trainedPlan = awaitFusedOperatorCostPath(connection, leftJoinFanoutQuery(),
+						LmdbOperatorFeedbackStats.LEARNED_LEFT_JOIN_SURFACE,
 						"Operator feedback must still be selected for the trained OPTIONAL fanout");
 				assertTrue(trainedPlan.contains("plannedOperatorFeedbackRowQErrorMean="),
 						"Trained plans must expose learned row q-error:\n" + trainedPlan);
@@ -472,6 +463,19 @@ class LmdbOperatorFeedbackPlanningTest {
 		assertTrue(containsFusedOperatorCostPath(plan, expectedSource),
 				message + ":\n" + plan);
 		assertSelectedPlannerCostPath(plan);
+	}
+
+	private static String awaitFusedOperatorCostPath(SailRepositoryConnection connection, String query,
+			String expectedSource, String message) {
+		AtomicReference<String> current = new AtomicReference<>();
+		LmdbPlannerAwait.awaitPlannerAssertion(message, () -> {
+			String plan = connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.toString();
+			assertFusedOperatorCostPath(plan, expectedSource, message);
+			current.set(plan);
+		});
+		return current.get();
 	}
 
 	private static void assertFusedOperatorOrFiniteFilterCostPath(String plan, String expectedSource, String message) {

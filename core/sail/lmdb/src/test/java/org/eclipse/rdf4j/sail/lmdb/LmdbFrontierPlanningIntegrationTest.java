@@ -559,7 +559,8 @@ class LmdbFrontierPlanningIntegrationTest {
 							store.getBackingStore().frontierSynopsisStatus()));
 
 			try (var connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(QUERY).explain(Explanation.Level.Optimized);
+				Explanation explanation = LmdbPlannerAwait.awaitDetachedPlanRefresh(
+						() -> connection.prepareTupleQuery(QUERY).explain(Explanation.Level.Optimized));
 				StatementPattern pattern = findPattern((TupleExpr) explanation.tupleExpr(), PREDICATE);
 				assertNotNull(pattern, explanation::toString);
 				assertEquals("lmdb-frontier", pattern.getStringMetricPlanned(
@@ -675,6 +676,9 @@ class LmdbFrontierPlanningIntegrationTest {
 		try {
 			addPredicateFixture(repository);
 			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics()).estimatorRuntime();
+			disablePipelinePlanCache(runtime);
 
 			try (var connection = repository.getConnection()) {
 				TupleExpr cold = (TupleExpr) connection.prepareTupleQuery(QUERY)
@@ -686,8 +690,6 @@ class LmdbFrontierPlanningIntegrationTest {
 				assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
 				assertTrue(Boolean.parseBoolean(exactHit.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
 			}
-			LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getBackingStore()
-					.getEvaluationStatistics()).estimatorRuntime();
 			assertTrue(retainedCacheEvidenceBytes(runtime.cascadesPlanCache()) > 0L,
 					"the exact same-generation hit must retain detached evidence for stale validation");
 			long leoRevision = runtime.leoRevision();
@@ -722,7 +724,7 @@ class LmdbFrontierPlanningIntegrationTest {
 	}
 
 	@Test
-	void unchangedSampledCandidateEvidenceCertifiesPairedReuse(@TempDir Path dataDirectory) {
+	void detachedRefreshUsesPrivateSnapshotForCurrentFrontierSampling(@TempDir Path dataDirectory) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
 				.setFrontierSynopsisBudgetBytes(16L * 1024L);
@@ -738,6 +740,8 @@ class LmdbFrontierPlanningIntegrationTest {
 				}
 			}
 			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics()).estimatorRuntime();
 
 			try (var connection = repository.getConnection()) {
 				TupleExpr cold = (TupleExpr) connection.prepareTupleQuery(QUERY)
@@ -756,20 +760,24 @@ class LmdbFrontierPlanningIntegrationTest {
 						values.createIRI("urn:frontier:cache-unrelated-predicate"),
 						values.createIRI("urn:frontier:cache-unrelated-object"));
 			}
+			long currentEvidenceEpoch = runtime.capturePlanningRevisions().learnedEvidenceRevision();
 
 			try (var connection = repository.getConnection()) {
-				TupleExpr validated = (TupleExpr) connection.prepareTupleQuery(QUERY)
-						.explain(Explanation.Level.Optimized)
+				TupleExpr refreshed = (TupleExpr) LmdbPlannerAwait.awaitDetachedPlanRefresh(
+						() -> connection.prepareTupleQuery(QUERY).explain(Explanation.Level.Optimized))
 						.tupleExpr();
-				assertTrue(Boolean.parseBoolean(validated.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")),
-						() -> validated + "\nvalidation reason: " + findPlannedStringMetric(validated,
-								"optimizer.planCacheValidationReason"));
-				assertEquals("certified-reuse", findPlannedStringMetric(validated,
-						"optimizer.planCacheValidationResult"), validated::toString);
-				assertEquals("paired-cost-events-certified", findPlannedStringMetric(validated,
-						"optimizer.planCacheValidationReason"), validated::toString);
-				assertEquals(0.99d, validated.getDoubleMetricPlanned("optimizer.planCacheValidationConfidence"),
-						1.0e-12d, validated::toString);
+				assertTrue(Boolean.parseBoolean(refreshed.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")),
+						refreshed::toString);
+				assertEquals("USE", refreshed.getStringMetricPlanned("optimizer.planCacheLookupOutcome"),
+						refreshed::toString);
+				assertEquals((double) currentEvidenceEpoch,
+						refreshed.getDoubleMetricPlanned("optimizer.planCacheEvidenceEpoch"), 0.0d,
+						"The detached publication must be stamped with the current store-owned evidence epoch");
+				StatementPattern refreshedPattern = findPattern(refreshed, PREDICATE);
+				assertNotNull(refreshedPattern, refreshed::toString);
+				assertEquals("measure_unbiased",
+						refreshedPattern.getStringMetricPlanned("plannedFrontierGuarantee"), refreshed::toString);
+				assertEquals(96, QueryResults.asList(connection.prepareTupleQuery(QUERY).evaluate()).size());
 			}
 		} finally {
 			repository.shutDown();
@@ -793,6 +801,8 @@ class LmdbFrontierPlanningIntegrationTest {
 				}
 			}
 			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			disablePipelinePlanCache(((LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics()).estimatorRuntime());
 			try (var connection = repository.getConnection()) {
 				TupleExpr cold = (TupleExpr) connection.prepareTupleQuery(QUERY)
 						.explain(Explanation.Level.Optimized)
@@ -841,6 +851,10 @@ class LmdbFrontierPlanningIntegrationTest {
 			retained += retainedField.getLong(segment);
 		}
 		return retained;
+	}
+
+	private static void disablePipelinePlanCache(LmdbEstimatorRuntime runtime) {
+		runtime.frontierSettings().pipelinePlanCache().close();
 	}
 
 	@Test
@@ -2084,8 +2098,8 @@ class LmdbFrontierPlanningIntegrationTest {
 			}
 
 			try (var connection = repository.getConnection()) {
-				Explanation insertedExplanation = connection.prepareTupleQuery(absentQuery)
-						.explain(Explanation.Level.Optimized);
+				Explanation insertedExplanation = LmdbPlannerAwait.awaitDetachedPlanRefresh(
+						() -> connection.prepareTupleQuery(absentQuery).explain(Explanation.Level.Optimized));
 				StatementPattern insertedPattern = findPattern(
 						(TupleExpr) insertedExplanation.tupleExpr(), absentPredicate);
 				assertNotNull(insertedPattern, insertedExplanation::toString);
@@ -3834,8 +3848,8 @@ class LmdbFrontierPlanningIntegrationTest {
 			assertEquals(LearningGateDecision.Outcome.APPLICABLE, trained.gate().outcome());
 
 			try (var connection = repository.getConnection()) {
-				Explanation calibratedExplanation = connection.prepareTupleQuery(query)
-						.explain(Explanation.Level.Optimized);
+				Explanation calibratedExplanation = LmdbPlannerAwait.awaitDetachedPlanRefresh(
+						() -> connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized));
 				Join calibrated = findJoin((TupleExpr) calibratedExplanation.tupleExpr());
 				assertNotNull(calibrated, calibratedExplanation::toString);
 				assertNotNull(calibrated.getRuntimeFeedbackContract(), calibratedExplanation::toString);
@@ -3972,8 +3986,8 @@ class LmdbFrontierPlanningIntegrationTest {
 					"The recorded logical posterior must move the prefix toward its smaller completed cardinality");
 
 			try (var connection = repository.getConnection()) {
-				Explanation calibratedExplanation = connection.prepareTupleQuery(query)
-						.explain(Explanation.Level.Optimized);
+				Explanation calibratedExplanation = LmdbPlannerAwait.awaitDetachedPlanRefresh(
+						() -> connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized));
 				List<Join> calibratedJoins = findJoins((TupleExpr) calibratedExplanation.tupleExpr());
 				Join calibratedPrefix = calibratedJoins.stream()
 						.filter(join -> join.getDoubleMetricPlanned("plannedFrontierFactorCount") == 2.0d
@@ -4537,8 +4551,8 @@ class LmdbFrontierPlanningIntegrationTest {
 			Filter learnedFilterPlan;
 			double learnedFilterRows;
 			try (var connection = repository.getConnection()) {
-				Explanation learnedFilterExplanation = connection.prepareTupleQuery(query)
-						.explain(Explanation.Level.Optimized);
+				Explanation learnedFilterExplanation = LmdbPlannerAwait.awaitDetachedPlanRefresh(
+						() -> connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized));
 				Filter learnedFilter = findFilter((TupleExpr) learnedFilterExplanation.tupleExpr());
 				assertNotNull(learnedFilter, learnedFilterExplanation::toString);
 				assertEquals("lmdb-frontier+learned-filter", learnedFilter.getStringMetricPlanned(
@@ -4582,8 +4596,8 @@ class LmdbFrontierPlanningIntegrationTest {
 			}
 
 			try (var connection = repository.getConnection()) {
-				Explanation calibratedExplanation = connection.prepareTupleQuery(query)
-						.explain(Explanation.Level.Optimized);
+				Explanation calibratedExplanation = LmdbPlannerAwait.awaitDetachedPlanRefresh(
+						() -> connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized));
 				Filter calibrated = findFilter((TupleExpr) calibratedExplanation.tupleExpr());
 				assertNotNull(calibrated, calibratedExplanation::toString);
 				assertEquals("lmdb-frontier+learned-filter+leo", calibrated.getStringMetricPlanned(
@@ -4754,6 +4768,8 @@ class LmdbFrontierPlanningIntegrationTest {
 				}
 			}
 			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			disablePipelinePlanCache(((LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics()).estimatorRuntime());
 			String query = """
 					SELECT ?person WHERE {
 					  ?person <urn:frontier:semi-leo:memberOf> ?organization .
@@ -4846,7 +4862,8 @@ class LmdbFrontierPlanningIntegrationTest {
 
 			Filter calibratedPlan;
 			try (var connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+				Explanation explanation = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized);
 				TupleExpr calibratedRoot = (TupleExpr) explanation.tupleExpr();
 				Filter calibrated = findSemiAntiFilter(calibratedRoot);
 				assertNotNull(calibrated, explanation::toString);
@@ -7018,8 +7035,8 @@ class LmdbFrontierPlanningIntegrationTest {
 							FrontierCostDimension.OUTPUT_ROWS));
 
 			try (var connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(query)
-						.explain(Explanation.Level.Optimized);
+				Explanation explanation = LmdbPlannerAwait.awaitDetachedPlanRefresh(
+						() -> connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized));
 				Union calibrated = findUnion((TupleExpr) explanation.tupleExpr());
 				assertNotNull(calibrated, explanation::toString);
 				assertEquals("lmdb-frontier+leo", calibrated.getStringMetricPlanned(
@@ -7118,7 +7135,8 @@ class LmdbFrontierPlanningIntegrationTest {
 	void sampledOptionalAppliesLeoAfterRawFrontierTransform(@TempDir Path dataDirectory) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
-				.setFrontierSynopsisBudgetBytes(16L * 1024L);
+				.setFrontierSynopsisBudgetBytes(16L * 1024L)
+				.setFrontierCacheEvidenceBudgetBytes(0L);
 		LmdbStore store = new LmdbStore(dataDirectory.toFile(), config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -7180,12 +7198,28 @@ class LmdbFrontierPlanningIntegrationTest {
 							FrontierCostDimension.OUTPUT_ROWS);
 			assertNotNull(learned, "Completed Optional observations must reach their typed logical cell");
 			assertEquals(LEO_CALIBRATION_OBSERVATIONS, learned.exactEvidenceCount());
+			FrontierLearningModel.DimensionDecision learnedDecision = statistics.estimatorRuntime()
+					.feedback()
+					.logicalDimensionDecision(observedDescriptor.logicalKey(), observedDescriptor.applicability(),
+							FrontierCostDimension.OUTPUT_ROWS, observedDescriptor.featureEnvelope(), rawRows);
+			assertEquals(LearningGateDecision.Outcome.APPLICABLE, learnedDecision.gate().outcome(),
+					"Detached planning must see the same admissible typed evidence as request-bound planning");
 
 			try (var connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(query)
 						.explain(Explanation.Level.Optimized);
 				LeftJoin calibrated = findLeftJoin((TupleExpr) explanation.tupleExpr());
 				assertNotNull(calibrated, explanation::toString);
+				assertTrue(calibrated.getRuntimeFeedbackContract()
+						.descriptor() instanceof LmdbRuntimeFeedbackDescriptor, explanation::toString);
+				LmdbRuntimeFeedbackDescriptor calibratedDescriptor = (LmdbRuntimeFeedbackDescriptor) calibrated
+						.getRuntimeFeedbackContract()
+						.descriptor();
+				assertEquals(observedDescriptor.logicalKey(), calibratedDescriptor.logicalKey(), explanation::toString);
+				assertEquals(observedDescriptor.applicability(), calibratedDescriptor.applicability(),
+						explanation::toString);
+				assertEquals(observedDescriptor.featureEnvelope(), calibratedDescriptor.featureEnvelope(),
+						explanation::toString);
 				assertEquals("lmdb-frontier+leo", calibrated.getStringMetricPlanned(
 						TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE), explanation::toString);
 				assertEquals("learned_calibrated",
@@ -8127,8 +8161,8 @@ class LmdbFrontierPlanningIntegrationTest {
 			}
 
 			try (var connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(query)
-						.explain(Explanation.Level.Optimized);
+				Explanation explanation = LmdbPlannerAwait.awaitDetachedPlanRefresh(
+						() -> connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized));
 				Difference calibrated = findDifference((TupleExpr) explanation.tupleExpr());
 				assertNotNull(calibrated, explanation::toString);
 				assertEquals("lmdb-frontier+leo", calibrated.getStringMetricPlanned(
@@ -8263,7 +8297,8 @@ class LmdbFrontierPlanningIntegrationTest {
 	void libraryQ10ShapeKeepsFiveKeysThroughUnionOptionalAndBoundedAntiJoin(@TempDir Path dataDirectory) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
-				.setFrontierSynopsisBudgetBytes(16L * 1024L);
+				.setFrontierSynopsisBudgetBytes(16L * 1024L)
+				.setFrontierCacheEvidenceBudgetBytes(0L);
 		LmdbStore store = new LmdbStore(dataDirectory.toFile(), config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -8789,8 +8824,8 @@ class LmdbFrontierPlanningIntegrationTest {
 					"A single-invocation completed observation must mint the group fact");
 
 			try (var connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(query)
-						.explain(Explanation.Level.Optimized);
+				Explanation explanation = LmdbPlannerAwait.awaitDetachedPlanRefresh(
+						() -> connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized));
 				TupleExpr pinned = findMinusFraming((TupleExpr) explanation.tupleExpr());
 				assertNotNull(pinned, explanation::toString);
 				assertEquals("exact-fact",
@@ -8809,8 +8844,8 @@ class LmdbFrontierPlanningIntegrationTest {
 						values.createIRI("urn:frontier:fact-minus-extra-object"));
 			}
 			try (var connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(query)
-						.explain(Explanation.Level.Optimized);
+				Explanation explanation = LmdbPlannerAwait.awaitDetachedPlanRefresh(
+						() -> connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized));
 				TupleExpr demoted = findMinusFraming((TupleExpr) explanation.tupleExpr());
 				assertNotNull(demoted, explanation::toString);
 				assertNotEquals("exact-fact",
@@ -8983,8 +9018,8 @@ class LmdbFrontierPlanningIntegrationTest {
 					"The completed framing must mint the fact under the unioned group key");
 
 			try (var connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(query)
-						.explain(Explanation.Level.Optimized);
+				Explanation explanation = LmdbPlannerAwait.awaitDetachedPlanRefresh(
+						() -> connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized));
 				TupleExpr pinned = findMinusFraming((TupleExpr) explanation.tupleExpr());
 				assertNotNull(pinned, explanation::toString);
 				assertEquals(groupKey, pinned.getStringMetricPlanned("optimizer.frontierLogicalGroupKey"),
@@ -9092,8 +9127,8 @@ class LmdbFrontierPlanningIntegrationTest {
 			}
 
 			try (var connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(query)
-						.explain(Explanation.Level.Optimized);
+				Explanation explanation = LmdbPlannerAwait.awaitDetachedPlanRefresh(
+						() -> connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized));
 				Filter antiJoin = findSemiAntiFilter((TupleExpr) explanation.tupleExpr());
 				assertNotNull(antiJoin, explanation::toString);
 				double outerRows = antiJoin.getDoubleMetricPlanned("plannedCorrelationOuterRows");
@@ -9119,8 +9154,8 @@ class LmdbFrontierPlanningIntegrationTest {
 				completeLeoOperator(completed, 1L, rawScanRows, rawScanRows, 1.0d);
 				statistics.estimatorRuntime().feedback().recordOperatorOutcome(completed);
 				try (var connection = repository.getConnection()) {
-					Explanation explanation = connection.prepareTupleQuery(query)
-							.explain(Explanation.Level.Optimized);
+					Explanation explanation = LmdbPlannerAwait.awaitDetachedPlanRefresh(
+							() -> connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized));
 					Filter antiJoin = findSemiAntiFilter((TupleExpr) explanation.tupleExpr());
 					assertNotNull(antiJoin, explanation::toString);
 					double outerRows = antiJoin.getDoubleMetricPlanned("plannedCorrelationOuterRows");

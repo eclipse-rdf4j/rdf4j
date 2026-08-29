@@ -177,10 +177,12 @@ class LmdbPackedPlanCacheTest {
 					values.createIRI("urn:object"));
 
 			TupleExpr revised = optimized(connection, query);
-			TupleExpr revisedHot = optimized(connection, query);
+			TupleExpr revisedHot = LmdbPlannerAwait.awaitDetachedPlanRefreshPlan(() -> optimized(connection, query));
 			assertTrue(Boolean.parseBoolean(revised.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
 			assertEquals("USE_AND_REFRESH", revised.getStringMetricPlanned("optimizer.planCacheLookupOutcome"));
 			assertTrue(Boolean.parseBoolean(revisedHot.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+			assertEquals("USE", revisedHot.getStringMetricPlanned("optimizer.planCacheLookupOutcome"),
+					"a completed current-evidence refresh must revalidate the served champion");
 			try (var result = connection.prepareTupleQuery(query).evaluate()) {
 				assertTrue(result.hasNext());
 				assertEquals(values.createIRI("urn:subject"), result.next().getValue("subject"));

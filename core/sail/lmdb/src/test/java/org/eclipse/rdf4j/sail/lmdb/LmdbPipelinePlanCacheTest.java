@@ -40,6 +40,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanDecisionSummary;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedSearchCompletionStatus;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -109,16 +111,100 @@ class LmdbPipelinePlanCacheTest {
 		AtomicInteger computations = new AtomicInteger();
 		QueryRoot source = query("_anon_1", "urn:left");
 
-		LmdbPipelinePlanCache.Result cold = cache.getOrCompute(source, initial, initial::revision,
-				() -> planned(source, computations));
-		LmdbPipelinePlanCache.Result reused = cache.getOrCompute(query("_anon_2", "urn:left"), revised,
-				revised::revision, () -> planned(query("_anon_2", "urn:left"), computations));
+		LmdbPlanDecisionCache.DetachedRefreshWork refreshWork = refreshWork(source, revised, new AtomicInteger(),
+				null, null, null);
+		LmdbPipelinePlanCache.Result cold = cache.getOrComputePlan(source, initial, initial::revision,
+				() -> refreshablePlan(source, computations, refreshWork));
+		LmdbPipelinePlanCache.Result reused = cache.getOrComputePlan(query("_anon_2", "urn:left"), revised,
+				revised::revision,
+				() -> refreshablePlan(query("_anon_2", "urn:left"), computations, refreshWork));
 
 		assertFalse(cold.cacheHit());
 		assertTrue(reused.cacheHit(), "committed-data drift must not hard-invalidate an executable recipe");
 		assertEquals("USE_AND_REFRESH", reused.plan().getStringMetricPlanned("optimizer.planCacheLookupOutcome"));
 		assertEquals("OUTSIDE", reused.plan().getStringMetricPlanned("optimizer.planCacheStabilityEnvelopeResult"));
 		assertEquals(1, computations.get(), "quality drift should schedule refresh instead of synchronous replanning");
+		assertEquals(1L, refreshTaskCount(cache), "USE_AND_REFRESH must submit detached refresh work");
+		cache.close();
+	}
+
+	@Test
+	void useAndRefreshSchedulesDetachedSingleFlightAndReturnsChampionImmediately() throws Exception {
+		LmdbPipelinePlanCache cache = new LmdbPipelinePlanCache(8, 1, 1024 * 1024L);
+		LmdbPipelinePlanCache.Context initial = context(17L);
+		LmdbPipelinePlanCache.Context revised = context(18L);
+		AtomicInteger computations = new AtomicInteger();
+		AtomicInteger refreshes = new AtomicInteger();
+		CountDownLatch refreshStarted = new CountDownLatch(1);
+		CountDownLatch releaseRefresh = new CountDownLatch(1);
+		CountDownLatch refreshCompleted = new CountDownLatch(1);
+		QueryRoot source = query("_anon_1", "urn:left");
+		LmdbPlanDecisionCache.DetachedRefreshWork refreshWork = refreshWork(source, revised, refreshes,
+				refreshStarted, releaseRefresh, refreshCompleted);
+		cache.getOrComputePlan(source, initial, initial::revision,
+				() -> refreshablePlan(source, computations, refreshWork));
+
+		LmdbPipelinePlanCache.Result first = cache.getOrComputePlan(query("_anon_2", "urn:left"), revised,
+				revised::revision,
+				() -> refreshablePlan(query("_anon_2", "urn:left"), computations, refreshWork));
+		assertTrue(refreshStarted.await(Duration.ofSeconds(5).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS));
+		assertTrue(first.cacheHit());
+		assertEquals("USE_AND_REFRESH", first.plan().getStringMetricPlanned("optimizer.planCacheLookupOutcome"));
+		assertEquals(1L, releaseRefresh.getCount(), "the champion must return while detached work remains blocked");
+
+		ExecutorService callers = Executors.newFixedThreadPool(2);
+		try {
+			Future<LmdbPipelinePlanCache.Result> second = callers.submit(() -> cache.getOrComputePlan(
+					query("_anon_3", "urn:left"), revised, revised::revision,
+					() -> refreshablePlan(query("_anon_3", "urn:left"), computations, refreshWork)));
+			Future<LmdbPipelinePlanCache.Result> third = callers.submit(() -> cache.getOrComputePlan(
+					query("_anon_4", "urn:left"), revised, revised::revision,
+					() -> refreshablePlan(query("_anon_4", "urn:left"), computations, refreshWork)));
+			assertTrue(second.get().cacheHit());
+			assertTrue(third.get().cacheHit());
+			assertEquals(1, refreshes.get(), "one family/variant may execute only one detached refresh");
+			assertEquals(1, computations.get(), "detached hits must never invoke the request-bound computer");
+		} finally {
+			callers.shutdownNow();
+			releaseRefresh.countDown();
+		}
+		assertTrue(refreshCompleted.await(Duration.ofSeconds(5).toMillis(),
+				java.util.concurrent.TimeUnit.MILLISECONDS));
+		long refreshDeadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+		while (refreshCompletedTaskCount(cache) == 0L && System.nanoTime() < refreshDeadline) {
+			Thread.onSpinWait();
+		}
+		assertEquals(1L, refreshCompletedTaskCount(cache));
+
+		LmdbPipelinePlanCache.Result current = cache.getOrComputePlan(query("_anon_5", "urn:left"), revised,
+				revised::revision,
+				() -> refreshablePlan(query("_anon_5", "urn:left"), computations, refreshWork));
+		assertTrue(current.cacheHit());
+		assertEquals("USE", current.plan().getStringMetricPlanned("optimizer.planCacheLookupOutcome"));
+		assertEquals(1, computations.get());
+		cache.close();
+	}
+
+	@Test
+	void rejectedDetachedSubmissionFallsBackToSynchronousReplan() throws Exception {
+		LmdbPipelinePlanCache cache = new LmdbPipelinePlanCache(8, 1, 1024 * 1024L);
+		LmdbPipelinePlanCache.Context initial = context(17L);
+		LmdbPipelinePlanCache.Context revised = context(18L);
+		AtomicInteger computations = new AtomicInteger();
+		QueryRoot source = query("_anon_1", "urn:left");
+		LmdbPlanDecisionCache.DetachedRefreshWork refreshWork = refreshWork(source, revised, new AtomicInteger(),
+				null, null, null);
+		cache.getOrComputePlan(source, initial, initial::revision,
+				() -> refreshablePlan(source, computations, refreshWork));
+		refreshExecutor(cache).shutdownNow();
+
+		LmdbPipelinePlanCache.Result replanned = cache.getOrComputePlan(query("_anon_2", "urn:left"), revised,
+				revised::revision,
+				() -> refreshablePlan(query("_anon_2", "urn:left"), computations, refreshWork));
+
+		assertFalse(replanned.cacheHit(), "an unavailable refresh submission must replan on the request thread");
+		assertEquals(2, computations.get());
+		cache.close();
 	}
 
 	@Test
@@ -286,10 +372,13 @@ class LmdbPipelinePlanCacheTest {
 		QueryRoot coldSource = query("_anon_1", "urn:left");
 		statementPattern(coldSource).setRuntimeFeedbackContract(runtimeFeedbackContract());
 
-		cache.getOrCompute(coldSource, context, context::revision, () -> planned(coldSource, computations));
+		cache.getOrComputePlan(coldSource, context, context::revision,
+				() -> new LmdbPipelinePlanCache.PlanComputation(
+						planned(coldSource, computations), decisionSummary(), null));
 		QueryRoot hotSource = query("_anon_2", "urn:left");
-		LmdbPipelinePlanCache.Result hot = cache.getOrCompute(hotSource, context, context::revision,
-				() -> planned(hotSource, computations));
+		LmdbPipelinePlanCache.Result hot = cache.getOrComputePlan(hotSource, context, context::revision,
+				() -> new LmdbPipelinePlanCache.PlanComputation(
+						planned(hotSource, computations), decisionSummary(), null));
 		LmdbRuntimeFeedbackDescriptor descriptor = (LmdbRuntimeFeedbackDescriptor) statementPattern(hot.plan())
 				.getRuntimeFeedbackContract()
 				.descriptor();
@@ -298,10 +387,11 @@ class LmdbPipelinePlanCacheTest {
 		assertTrue(hot.cacheHit());
 		assertNotNull(token);
 		assertEquals("EXACT_COMPLETE", hot.plan().getStringMetricPlanned("optimizer.planCacheSearchCompletion"));
-		assertEquals("BEST_KNOWN_UNBOUNDED",
+		assertEquals("VALID_LOWER_BOUND",
 				hot.plan().getStringMetricPlanned("optimizer.planCacheSearchBoundKind"));
 		assertEquals("WITHIN", hot.plan().getStringMetricPlanned("optimizer.planCacheStabilityEnvelopeResult"));
-		assertEquals(0.0d, hot.plan().getDoubleMetricPlanned("optimizer.planCacheEvidenceEpoch"), 0.0d);
+		assertEquals(context.revision().planningRevisions().learnedEvidenceRevision(),
+				(long) hot.plan().getDoubleMetricPlanned("optimizer.planCacheEvidenceEpoch"));
 		assertEquals((long) hot.plan().getDoubleMetricPlanned("optimizer.planCachePlanVersion"),
 				(long) token.getClass().getDeclaredMethod("planVersion").invoke(token));
 		assertEquals(false, token.getClass().getDeclaredMethod("canary").invoke(token));
@@ -365,6 +455,57 @@ class LmdbPipelinePlanCacheTest {
 		return plan;
 	}
 
+	private static LmdbPipelinePlanCache.PlanComputation refreshablePlan(TupleExpr plan,
+			AtomicInteger computations, LmdbPlanDecisionCache.DetachedRefreshWork refreshWork) {
+		TupleExpr executable = planned(plan, computations);
+		return new LmdbPipelinePlanCache.PlanComputation(executable, decisionSummary(), refreshWork);
+	}
+
+	private static PackedPlanDecisionSummary decisionSummary() {
+		PackedPlanDecisionSummary.CostInterval interval = new PackedPlanDecisionSummary.CostInterval(1.0d, 1.0d,
+				1.0d);
+		return new PackedPlanDecisionSummary("test-physical", interval,
+				List.of(new PackedPlanDecisionSummary.CandidateSummary("test-physical", interval)),
+				Set.of(),
+				PackedSearchCompletionStatus.EXACT_COMPLETE,
+				PackedPlanDecisionSummary.BoundKind.VALID_LOWER_BOUND, 1.0d, 0L, 10L, 256L);
+	}
+
+	private static LmdbPlanDecisionCache.DetachedRefreshWork refreshWork(TupleExpr template,
+			LmdbPipelinePlanCache.Context refreshedContext, AtomicInteger refreshes, CountDownLatch started,
+			CountDownLatch release, CountDownLatch completed) {
+		TupleExpr detached = template.clone();
+		return new LmdbPlanDecisionCache.DetachedRefreshWork() {
+			@Override
+			public LmdbPlanDecisionCache.RefreshComputation execute() {
+				refreshes.incrementAndGet();
+				if (started != null) {
+					started.countDown();
+				}
+				if (release != null) {
+					await(release);
+				}
+				TupleExpr refreshed = detached.clone();
+				refreshed.setStringMetricPlanned(LmdbCascadesOptimizer.APPLIED_METRIC, "true");
+				LmdbPlanDecisionCache.EvidenceSnapshot evidence = LmdbPipelinePlanCache
+						.evidence(refreshedContext.revision().planningRevisions());
+				if (completed != null) {
+					completed.countDown();
+				}
+				return new LmdbPlanDecisionCache.RefreshComputation(evidence, evidence, refreshed,
+						"test-physical", new LmdbPlanDecisionCache.EstimatedCostInterval(1.0d, 1.0d),
+						new LmdbPlanDecisionCache.EstimatedCostInterval(1.0d, 1.0d),
+						LmdbPipelinePlanCache.certificate(decisionSummary(), evidence.globalEpoch()),
+						LmdbPlanDecisionCache.PlanStabilityEnvelope.exact(evidence), 1024L, 1L, true, this);
+			}
+
+			@Override
+			public long retainedBytes() {
+				return 0L;
+			}
+		};
+	}
+
 	private static QueryRoot valuesQuery(Iterable<BindingSet> rows) {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(Set.of("value"));
@@ -388,5 +529,31 @@ class LmdbPipelinePlanCacheTest {
 				new LmdbPipelinePlanCache.Revision(planning, true), false, 0L,
 				LmdbPipelinePlanCache.DatasetIdentity.of(null), LmdbPipelinePlanCache.BindingIdentity.of(null), "",
 				false, false, false, "STANDARD", false);
+	}
+
+	private static long refreshTaskCount(LmdbPipelinePlanCache cache) {
+		try {
+			return refreshExecutor(cache).getTaskCount();
+		} catch (ReflectiveOperationException failure) {
+			throw new AssertionError("could not inspect the store-owned refresh executor", failure);
+		}
+	}
+
+	private static long refreshCompletedTaskCount(LmdbPipelinePlanCache cache) {
+		try {
+			return refreshExecutor(cache).getCompletedTaskCount();
+		} catch (ReflectiveOperationException failure) {
+			throw new AssertionError("could not inspect completed store-owned refresh tasks", failure);
+		}
+	}
+
+	private static java.util.concurrent.ThreadPoolExecutor refreshExecutor(LmdbPipelinePlanCache cache)
+			throws ReflectiveOperationException {
+		var decisionCacheField = LmdbPipelinePlanCache.class.getDeclaredField("decisionCache");
+		decisionCacheField.setAccessible(true);
+		LmdbPlanDecisionCache decisionCache = (LmdbPlanDecisionCache) decisionCacheField.get(cache);
+		var executorField = LmdbPlanDecisionCache.class.getDeclaredField("refreshExecutor");
+		executorField.setAccessible(true);
+		return (java.util.concurrent.ThreadPoolExecutor) executorField.get(decisionCache);
 	}
 }

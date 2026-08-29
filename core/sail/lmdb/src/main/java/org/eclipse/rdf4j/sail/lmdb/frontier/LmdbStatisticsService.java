@@ -110,12 +110,9 @@ public final class LmdbStatisticsService implements AutoCloseable {
 		try {
 			candidate = FrontierStatisticsGeneration.open(manifestStore, manifest, fileOps, heapGovernor, old);
 			manifestStore.publish(manifest);
-			current = candidate;
-			rebuildRequired = false;
+			installGeneration(candidate, false, "");
 			mutationTail = mutationTail.after(manifest.coveredSequence());
-			buildMetrics = buildMetrics.withDeleteDebt(current.deleteDebt());
 			candidate = null;
-			lastFailure = optionalFailureSummary(current);
 			buildPhase = FrontierStatisticsBuildPhase.IDLE;
 			if (latestStoreSequence <= manifest.coveredSequence()) {
 				firstUncoveredMutationMillis = -1L;
@@ -169,11 +166,9 @@ public final class LmdbStatisticsService implements AutoCloseable {
 				manifestStore, previous, fileOps, heapGovernor, old);
 		try {
 			manifestStore.switchCurrent(previous.generationId());
-			current = replacement;
+			installGeneration(replacement, false, "");
 			mutationTail = FrontierMutationTail.EMPTY;
-			buildMetrics = buildMetrics.withDeleteDebt(current.deleteDebt());
 			replacement = null;
-			lastFailure = optionalFailureSummary(current);
 			old.release();
 			return true;
 		} finally {
@@ -689,13 +684,6 @@ public final class LmdbStatisticsService implements AutoCloseable {
 	}
 
 	private void loadPublishedGeneration() {
-		try {
-			manifestStore.cleanupTemporaryArtifacts();
-		} catch (IOException cleanupFailure) {
-			lastFailure = "Could not clean interrupted Frontier statistics artifacts: "
-					+ failureMessage(cleanupFailure);
-		}
-
 		FrontierStatisticsManifest manifest;
 		try {
 			manifest = manifestStore.loadCurrent();
@@ -705,16 +693,22 @@ public final class LmdbStatisticsService implements AutoCloseable {
 		}
 		if (manifest == null) {
 			try {
-				if (manifestStore.cleanupUnpublishedManifests()) {
+				if (manifestStore.resetOwnedArtifacts()) {
 					rebuildRequired = true;
-					lastFailure = "Removed unpublished Frontier statistics manifests without a current pointer";
+					lastFailure = "Removed unpublished Frontier statistics artifacts without a current pointer";
 				}
 			} catch (IOException cleanupFailure) {
 				rebuildRequired = true;
-				lastFailure = "Could not clean unpublished Frontier statistics manifests: "
+				lastFailure = "Could not clean unpublished Frontier statistics artifacts: "
 						+ failureMessage(cleanupFailure);
 			}
 			return;
+		}
+		try {
+			manifestStore.cleanupTemporaryArtifacts();
+		} catch (IOException cleanupFailure) {
+			lastFailure = "Could not clean interrupted Frontier statistics artifacts: "
+					+ failureMessage(cleanupFailure);
 		}
 		try {
 			if (manifest.byteLength() > diskBudgetBytes) {
@@ -723,14 +717,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 			}
 			FrontierStatisticsGeneration loaded = FrontierStatisticsGeneration.open(
 					manifestStore, manifest, fileOps, heapGovernor);
-			if (!loaded.optionalFailures().isEmpty()) {
-				String optionalFailures = optionalFailureSummary(loaded);
-				loaded.release();
-				recoverInvalidGeneration(manifest, new IOException(optionalFailures));
-				return;
-			}
-			current = loaded;
-			buildMetrics = buildMetrics.withDeleteDebt(current.deleteDebt());
+			installGeneration(loaded, false, lastFailure);
 		} catch (FrontierStatisticsException failure) {
 			if (failure.fallbackReason() == FrontierFallbackReason.MEMORY_PRESSURE) {
 				lastFailure = failureMessage(failure);
@@ -751,16 +738,18 @@ public final class LmdbStatisticsService implements AutoCloseable {
 			try {
 				previousManifest = manifestStore.load(invalidManifest.previousGenerationId());
 				previous = FrontierStatisticsGeneration.open(manifestStore, previousManifest, fileOps, heapGovernor);
-				if (!previous.optionalFailures().isEmpty()) {
-					throw new IOException(optionalFailureSummary(previous));
-				}
-				manifestStore.discardGeneration(invalidManifest);
 				manifestStore.switchCurrent(previousManifest.generationId());
-				current = previous;
-				previous = null;
-				lastFailure = "Rolled back and removed invalid Frontier statistics generation "
+				String recoveryDiagnosis = "Rolled back and removed invalid Frontier statistics generation "
 						+ invalidManifest.generationId() + ": " + failureMessage(currentFailure);
-				buildMetrics = buildMetrics.withDeleteDebt(current.deleteDebt());
+				try {
+					manifestStore.discardGeneration(invalidManifest);
+				} catch (IOException cleanupFailure) {
+					recoveryDiagnosis = appendDiagnosis(recoveryDiagnosis,
+							"Could not completely remove invalid generation " + invalidManifest.generationId()
+									+ ": " + failureMessage(cleanupFailure));
+				}
+				installGeneration(previous, true, recoveryDiagnosis);
+				previous = null;
 				return;
 			} catch (FrontierStatisticsException rollbackFailure) {
 				if (rollbackFailure.fallbackReason() == FrontierFallbackReason.MEMORY_PRESSURE
@@ -810,6 +799,25 @@ public final class LmdbStatisticsService implements AutoCloseable {
 				? ""
 				: "Optional Frontier statistics shards unavailable: "
 						+ String.join("; ", generation.optionalFailures());
+	}
+
+	private void installGeneration(FrontierStatisticsGeneration generation, boolean repairRequired,
+			String lifecycleDiagnosis) {
+		current = Objects.requireNonNull(generation, "generation");
+		buildMetrics = buildMetrics.withDeleteDebt(generation.deleteDebt());
+		String optionalFailures = optionalFailureSummary(generation);
+		rebuildRequired = repairRequired || !optionalFailures.isEmpty();
+		lastFailure = appendDiagnosis(lifecycleDiagnosis, optionalFailures);
+	}
+
+	private static String appendDiagnosis(String first, String second) {
+		if (first == null || first.isBlank()) {
+			return second == null ? "" : second;
+		}
+		if (second == null || second.isBlank()) {
+			return first;
+		}
+		return first + "; " + second;
 	}
 
 	private boolean hasCompleteMutationTail() {

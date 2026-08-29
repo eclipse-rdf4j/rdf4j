@@ -71,6 +71,7 @@ import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.BackingSailSource;
 import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
@@ -1497,9 +1498,22 @@ class LmdbSailStore implements SailStore {
 
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
-		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats,
+		return new LmdbStoreEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator,
+				filterSelectivityStats,
 				operatorFeedbackStats, statementPatternCardinalitySource, cascadesPlanCache, frontierSynopsisService,
-				frontierPlannerSettings, () -> mayHaveInferred, () -> adaptiveEvidenceAllowed, statisticsService);
+				frontierPlannerSettings, () -> mayHaveInferred, () -> adaptiveEvidenceAllowed, statisticsService,
+				this::openDetachedPlanningSnapshot);
+	}
+
+	private LmdbDetachedPlanningSnapshot openDetachedPlanningSnapshot() {
+		LmdbSailDataset dataset = new LmdbSailDataset(true, false);
+		try {
+			return new LmdbDetachedPlanningSnapshot(dataset,
+					new SailDatasetTripleTermSource(valueStore, dataset));
+		} catch (RuntimeException | Error failure) {
+			dataset.close();
+			throw failure;
+		}
 	}
 
 	@Override

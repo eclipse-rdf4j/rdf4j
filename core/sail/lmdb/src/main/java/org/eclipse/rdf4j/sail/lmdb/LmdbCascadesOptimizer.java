@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -130,13 +131,34 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		this.rangeProvider = runtime == null ? null : new LmdbPackedPredicateRangeProvider(runtime);
 	}
 
+	LmdbCascadesOptimizer(LmdbEstimatorRuntime runtime, boolean trackResultSize,
+			boolean preserveSerializableObservationOrder) {
+		this.statistics = null;
+		this.trackResultSize = trackResultSize;
+		this.preserveSerializableObservationOrder = preserveSerializableObservationOrder;
+		this.evaluationStrategy = null;
+		this.runtime = Objects.requireNonNull(runtime, "runtime");
+		this.packedPlanCache = runtime.cascadesPlanCache();
+		this.frontierStatementSource = null;
+		this.executionSnapshotEpoch = OptionalLong.empty();
+		this.rangeProvider = new LmdbPackedPredicateRangeProvider(runtime);
+	}
+
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		optimizeWithResult(tupleExpr, dataset, bindings);
+	}
+
+	PlanningOutcome optimizeWithResult(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		if (tupleExpr == null) {
-			return;
+			return new PlanningOutcome(null, null, null, null, null);
 		}
 		TupleExpr installedRoot = tupleExpr;
 		boolean runtimeTelemetry = trackResultSize || tupleExpr.isRuntimeTelemetryEnabled();
+		Mode mode = configuredMode();
+		OptimizationGoal goal = configuredGoal(tupleExpr, bindings, mode);
+		TupleExpr detachedPreparedSource;
+		CascadesPlan selectedPlan;
 		if (!datasetUsesStoreDefaults(dataset)) {
 			// FROM/FROM NAMED restrict the data a query sees, but legacy operator keys carry no dataset identity —
 			// evidence recorded under a restricted dataset would calibrate unrestricted queries (and vice versa).
@@ -145,12 +167,10 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			tupleExpr.setStringMetricPlanned("optimizer.datasetRestricted", "true");
 		}
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = beginQueryOptimizationScope()) {
-			Mode mode = configuredMode();
-			OptimizationGoal goal = configuredGoal(tupleExpr, bindings, mode);
 			annotateDistinctPhysicalRequirements(tupleExpr);
-			CascadesPlan plan;
+			detachedPreparedSource = tupleExpr.clone();
 			try {
-				plan = plan(tupleExpr, dataset, bindings, goal);
+				selectedPlan = plan(tupleExpr, dataset, bindings, goal);
 			} catch (IllegalStateException internalInvariantFailure) {
 				// A packed-planner invariant breach (e.g. PackedMemoInvariantException) means the memo state is
 				// unusable, not that the query is invalid. Planning has not mutated the input tree yet, so the
@@ -159,26 +179,42 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				logger.warn("Packed cascades planning failed; falling back to the pipeline-normalized plan: {}",
 						internalInvariantFailure.getMessage(), internalInvariantFailure);
 				annotateCascadesFallback(tupleExpr, internalInvariantFailure);
-				plan = null;
+				selectedPlan = null;
 			}
-			if (plan != null) {
-				installedRoot = replaceRoot(tupleExpr, plan.tupleExpr());
-				CascadesPlanProvenanceAnnotator.annotate(installedRoot, plan.provenance(), PLANNER_ID);
-				annotatePlanningMetrics(installedRoot, mode, plan);
-				TupleExpr observableRoot = observablePlanRoot(installedRoot);
-				if (observableRoot != installedRoot) {
-					annotatePlanningMetrics(observableRoot, mode, plan);
-					copyCacheValidationMetrics(installedRoot, observableRoot);
-				}
-				annotateObjectGuarantees(installedRoot);
-				annotateCartesianFallback(installedRoot);
-				annotateCertifiedExactZero(installedRoot, plan);
-				verifyInstalledCostingContexts(installedRoot);
+			if (selectedPlan != null) {
+				installedRoot = installSelectedPlan(tupleExpr, selectedPlan, mode);
 			}
 		}
 		if (runtimeTelemetry) {
 			enableRuntimeTelemetry(installedRoot);
 		}
+		return new PlanningOutcome(installedRoot, selectedPlan, detachedPreparedSource, goal, mode);
+	}
+
+	TupleExpr installDetachedPlan(TupleExpr preparedSource, CascadesPlan plan, Mode mode,
+			boolean runtimeTelemetry) {
+		TupleExpr installed = installSelectedPlan(Objects.requireNonNull(preparedSource, "preparedSource"),
+				Objects.requireNonNull(plan, "plan"), Objects.requireNonNull(mode, "mode"));
+		if (runtimeTelemetry) {
+			enableRuntimeTelemetry(installed);
+		}
+		return installed;
+	}
+
+	private TupleExpr installSelectedPlan(TupleExpr source, CascadesPlan plan, Mode mode) {
+		TupleExpr installedRoot = replaceRoot(source, plan.tupleExpr());
+		CascadesPlanProvenanceAnnotator.annotate(installedRoot, plan.provenance(), PLANNER_ID);
+		annotatePlanningMetrics(installedRoot, mode, plan);
+		TupleExpr observableRoot = observablePlanRoot(installedRoot);
+		if (observableRoot != installedRoot) {
+			annotatePlanningMetrics(observableRoot, mode, plan);
+			copyCacheValidationMetrics(installedRoot, observableRoot);
+		}
+		annotateObjectGuarantees(installedRoot);
+		annotateCartesianFallback(installedRoot);
+		annotateCertifiedExactZero(installedRoot, plan);
+		verifyInstalledCostingContexts(installedRoot);
+		return installedRoot;
 	}
 
 	private static TupleExpr observablePlanRoot(TupleExpr installedRoot) {
@@ -311,21 +347,21 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	private PackedPlanCache.Context cacheContext(Dataset dataset, BindingSet bindings, OptimizationGoal goal,
 			LmdbPackedCostModel packedCostModel) {
-		long dataRevision = statistics instanceof LmdbEstimatorRuntimeProvider provider
-				? provider.estimatorRuntime().snapshotVersion()
-				: 0L;
+		return cacheContext(dataset, bindings, goal, packedCostModel, rangeProvider, runtime);
+	}
+
+	static PackedPlanCache.Context cacheContext(Dataset dataset, BindingSet bindings, OptimizationGoal goal,
+			LmdbPackedCostModel packedCostModel, LmdbPackedPredicateRangeProvider rangeProvider,
+			LmdbEstimatorRuntime runtime) {
+		long dataRevision = runtime == null ? 0L : runtime.snapshotVersion();
 		long datasetFingerprint = unsignedHash(dataset);
 		long bindingShapeFingerprint = bindings == null ? 0L : unsignedHash(bindings.getBindingNames());
 		long parameterVariant = bindingFingerprint(bindings);
 		long goalFingerprint = goalFingerprint(goal);
 		long providerVersion = packedCostModel == null ? 0L : packedCostModel.providerVersion();
 		long predicateRangeVersion = rangeProvider == null ? 0L : rangeProvider.predicateRangeVersion();
-		long leoRevision = statistics instanceof LmdbEstimatorRuntimeProvider provider
-				? provider.estimatorRuntime().leoRevision()
-				: 0L;
-		long frontierRevision = statistics instanceof LmdbEstimatorRuntimeProvider provider
-				? provider.estimatorRuntime().frontierPlanningRevision()
-				: 0L;
+		long leoRevision = runtime == null ? 0L : runtime.leoRevision();
+		long frontierRevision = runtime == null ? 0L : runtime.frontierPlanningRevision();
 		return new PackedPlanCache.Context(datasetFingerprint, bindingShapeFingerprint, parameterVariant,
 				goalFingerprint, 1L, providerVersion, dataRevision, predicateRangeVersion, leoRevision,
 				frontierRevision);
@@ -887,7 +923,11 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		}
 	}
 
-	private enum Mode {
+	record PlanningOutcome(TupleExpr installedPlan, CascadesPlan cascadesPlan, TupleExpr detachedPreparedSource,
+			OptimizationGoal goal, Mode mode) {
+	}
+
+	enum Mode {
 		AUTO,
 		EXACT,
 		BUDGETED

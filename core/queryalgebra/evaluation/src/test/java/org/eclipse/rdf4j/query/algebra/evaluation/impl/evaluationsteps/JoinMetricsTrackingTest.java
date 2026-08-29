@@ -166,6 +166,25 @@ class JoinMetricsTrackingTest {
 		second.close();
 	}
 
+	@Test
+	void deferredTelemetrySupportsOverlappingSideEvaluations() {
+		Join joinNode = new Join(new SingletonSet(), new SingletonSet());
+		joinNode.setRuntimeTelemetryEnabled(true);
+		joinNode.setQueryModelMetadata(RootCloseTelemetryRegistrar.METADATA_KEY,
+				(Consumer<Runnable>) publisher -> {
+				});
+		JoinMetricsTracking.Accumulator accumulator = JoinMetricsTracking.deferredAccumulator(joinNode,
+				joinNode.getLeftArg(), joinNode.getRightArg(), true);
+		QueryEvaluationStep wrapped = JoinMetricsTracking.wrapRightInput(delegateProducing(1), accumulator);
+
+		try (CloseableIteration<BindingSet> first = wrapped.evaluate(EmptyBindingSet.getInstance());
+				CloseableIteration<BindingSet> second = wrapped.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(second).isNotSameAs(first);
+			consume(first);
+			consume(second);
+		}
+	}
+
 	private static QueryEvaluationStep delegateProducing(int rowCount) {
 		List<BindingSet> rows = Collections.nCopies(rowCount, EmptyBindingSet.getInstance());
 		return bindings -> new CloseableIteratorIteration<>(rows.iterator());

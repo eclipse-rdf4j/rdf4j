@@ -17,22 +17,34 @@ import java.lang.reflect.RecordComponent;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanDecisionSummary;
 import org.junit.jupiter.api.Test;
 
 class PackedPlannerBoundaryTest {
 
 	@Test
-	void publicResultContainsOnlyDetachedSelectedPlanState() throws ReflectiveOperationException {
+	void publicResultContainsOnlyDetachedSelectedPlanAndDecisionSummaryState() throws ReflectiveOperationException {
 		CascadesPlan plan = new CascadesPlanner().optimize(new SingletonSet(), OptimizationGoal.root());
 
 		assertThat(Arrays.stream(CascadesPlan.class.getRecordComponents())
 				.map(RecordComponent::getName))
-						.containsExactly("tupleExpr", "cost", "searchStatus", "provenance", "metrics");
+						.containsExactly("tupleExpr", "cost", "searchStatus", "provenance", "metrics",
+								"decisionSummary");
 		assertThat(plan.tupleExpr()).isNotNull();
 		assertThat(plan.cost()).isNotNull();
 		assertThat(plan.searchStatus()).isNotNull();
 		assertThat(plan.provenance()).isNotNull();
 		assertThat(componentValue(plan, "metrics")).isNotNull();
+		assertThat(plan.decisionSummary()).isNotNull();
+		assertThat(Arrays.stream(PackedPlanDecisionSummary.class.getRecordComponents())
+				.map(RecordComponent::getName))
+						.containsExactly("physicalFingerprint", "selectedCostInterval", "candidates",
+								"semanticDependencies", "searchCompletion", "boundKind", "searchLowerBound",
+								"evidenceEpoch", "deterministicWorkUnits", "retainedBytes");
+		assertThat(Arrays.stream(PackedPlanDecisionSummary.class.getRecordComponents())
+				.map(component -> component.getType().getSimpleName()))
+						.noneMatch(type -> type.contains("Memo") || type.contains("Recipe")
+								|| type.contains("Session") || type.contains("Checkpoint"));
 	}
 
 	@Test

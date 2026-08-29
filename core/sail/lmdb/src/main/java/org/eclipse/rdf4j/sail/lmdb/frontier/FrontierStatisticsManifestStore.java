@@ -140,34 +140,6 @@ final class FrontierStatisticsManifestStore {
 		return deleteOwnedPaths(false, true);
 	}
 
-	synchronized boolean cleanupUnpublishedManifests() throws IOException {
-		IOException failure = null;
-		boolean changed = false;
-		for (Path path : fileOps.list(directory).stream().sorted(Comparator.naturalOrder()).toList()) {
-			String name = path.getFileName().toString();
-			if (name.endsWith(".tmp") || !MANIFEST_FILE.matcher(name).matches()) {
-				continue;
-			}
-			try {
-				fileOps.deleteIfExists(path);
-				changed = true;
-			} catch (IOException current) {
-				failure = append(failure, current);
-			}
-		}
-		if (changed) {
-			try {
-				fileOps.forceDirectory(directory);
-			} catch (IOException current) {
-				failure = append(failure, current);
-			}
-		}
-		if (failure != null) {
-			throw failure;
-		}
-		return changed;
-	}
-
 	synchronized void discardGeneration(FrontierStatisticsManifest manifest) throws IOException {
 		Objects.requireNonNull(manifest, "manifest");
 		IOException failure = null;

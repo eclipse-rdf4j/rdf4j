@@ -74,10 +74,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 4)
+@Warmup(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "--add-modules=jdk.incubator.vector" })
-@Measurement(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 3)
+@Measurement(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
@@ -116,8 +116,8 @@ public class ThemeQueryBenchmark {
 
 	@Param({
 			"MEDICAL_RECORDS",
-//			"SOCIAL_MEDIA",
-//			"LIBRARY",
+			"SOCIAL_MEDIA",
+			"LIBRARY",
 //			"ENGINEERING",
 //			"HIGHLY_CONNECTED",
 //			"TRAIN",
@@ -130,7 +130,7 @@ public class ThemeQueryBenchmark {
 	@Param({ "false" })
 	public boolean sketchEstimatorEnabled;
 
-	@Param({ "Timed" })
+	@Param({ "Telemetry" })
 	public String queryExplanationLevel;
 
 	boolean loadOnlySelectedTheme;
@@ -165,7 +165,7 @@ public class ThemeQueryBenchmark {
 		File storeDirectory = storeDirectory();
 		System.out.println(storeDirectory.getAbsolutePath());
 		query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
-		System.out.println("### Original Query ###");
+		System.out.println("\n### Original Query ###");
 		System.out.println(query);
 		System.out.println();
 
@@ -205,8 +205,12 @@ public class ThemeQueryBenchmark {
 
 		if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				System.out.println("### Timed Query ###");
-				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Timed);
+				if (queryExplanationLevel == null || queryExplanationLevel.isBlank()) {
+					queryExplanationLevel = "Telemetry";
+				}
+				System.out.println("\n### " + queryExplanationLevel + " Query ###");
+				Explanation explain = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.valueOf(queryExplanationLevel));
 				System.out.println(explain);
 				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
 				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
@@ -379,7 +383,7 @@ public class ThemeQueryBenchmark {
 				tupleQuery.setMaxExecutionTime(maxExecutionTimeSeconds);
 				Explanation explain = tupleQuery.explain(level);
 				System.out.println();
-				System.out.println("### Query Explanation After Benchmark"
+				System.out.println("\n### Query Explanation After Benchmark"
 						+ " theme=" + themeName
 						+ " queryIndex=" + z_queryIndex
 						+ " timedOut=" + timedOut

@@ -484,6 +484,10 @@ public final class PackedPlanCache {
 			return completionStatus == PackedSearchCompletionStatus.EXACT_COMPLETE;
 		}
 
+		boolean supportsStaleValidation() {
+			return exactComplete() && recipe.hasDetachedEvidence();
+		}
+
 		private boolean reusableFor(PackedPlannerLimits requestedLimits) {
 			if (exactComplete()) {
 				return true;
@@ -503,8 +507,9 @@ public final class PackedPlanCache {
 
 		private boolean structurallyMatches(Fingerprint candidateFingerprint, Context candidateContext,
 				TupleExpr source, PackedQueryCacheIdentity candidateIdentity) {
-			return exactComplete()
-					&& recipe.hasDetachedEvidence()
+			boolean staleValidationCandidate = supportsStaleValidation();
+			boolean resumableSearch = optimizationDecision.searchCheckpoint() != null;
+			return (staleValidationCandidate || resumableSearch)
 					&& fingerprint.equals(candidateFingerprint)
 					&& context.structurallyMatches(candidateContext)
 					&& sameSource(sourceSnapshot, sourceIdentity, source, candidateIdentity, candidateContext);

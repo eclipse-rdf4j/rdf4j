@@ -69,6 +69,12 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		REPLAN_BEFORE_USE
 	}
 
+	enum RefreshSubmission {
+		SUBMITTED,
+		ALREADY_IN_FLIGHT,
+		UNAVAILABLE
+	}
+
 	enum SearchCompletion {
 		EXACT_COMPLETE,
 		INCOMPLETE_WORK_LIMIT,
@@ -194,6 +200,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 
 	record SemanticDependencies(Object datasetIdentity, Object initialBindingSchema,
 			String requiredResultProperties, String evaluationProperties, long indexGeneration,
+			Object indexIdentity, boolean indexGenerationDependent,
 			long physicalCapabilityGeneration, long optimizerRuleGeneration, long packedRecipeGeneration,
 			long evaluationStrategyGeneration, String optimizerConfiguration, Object physicalProviderIdentity) {
 
@@ -203,6 +210,62 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			Objects.requireNonNull(requiredResultProperties, "requiredResultProperties");
 			Objects.requireNonNull(evaluationProperties, "evaluationProperties");
 			Objects.requireNonNull(optimizerConfiguration, "optimizerConfiguration");
+			if (indexGeneration < 0L) {
+				throw new IllegalArgumentException("semantic index generation must be nonnegative");
+			}
+			if (indexGenerationDependent) {
+				Objects.requireNonNull(indexIdentity, "semantic index identity");
+			} else if (indexGeneration != 0L || indexIdentity != null) {
+				throw new IllegalArgumentException("non-dependent semantic index identity must be empty");
+			}
+		}
+
+		SemanticDependencies(Object datasetIdentity, Object initialBindingSchema,
+				String requiredResultProperties, String evaluationProperties, long indexGeneration,
+				long physicalCapabilityGeneration, long optimizerRuleGeneration, long packedRecipeGeneration,
+				long evaluationStrategyGeneration, String optimizerConfiguration, Object physicalProviderIdentity) {
+			this(datasetIdentity, initialBindingSchema, requiredResultProperties, evaluationProperties, indexGeneration,
+					Long.valueOf(indexGeneration), true, physicalCapabilityGeneration, optimizerRuleGeneration,
+					packedRecipeGeneration,
+					evaluationStrategyGeneration, optimizerConfiguration, physicalProviderIdentity);
+		}
+
+		SemanticDependencies withoutIndexGenerationDependency() {
+			return !indexGenerationDependent && indexGeneration == 0L
+					? this
+					: new SemanticDependencies(datasetIdentity, initialBindingSchema, requiredResultProperties,
+							evaluationProperties, 0L, null, false, physicalCapabilityGeneration,
+							optimizerRuleGeneration,
+							packedRecipeGeneration, evaluationStrategyGeneration, optimizerConfiguration,
+							physicalProviderIdentity);
+		}
+
+		SemanticDependencies withIndexGenerationDependency(long currentIndexGeneration, Object currentIndexIdentity) {
+			Objects.requireNonNull(currentIndexIdentity, "currentIndexIdentity");
+			return indexGenerationDependent && indexGeneration == currentIndexGeneration
+					&& indexIdentity.equals(currentIndexIdentity)
+							? this
+							: new SemanticDependencies(datasetIdentity, initialBindingSchema, requiredResultProperties,
+									evaluationProperties, currentIndexGeneration, currentIndexIdentity, true,
+									physicalCapabilityGeneration,
+									optimizerRuleGeneration, packedRecipeGeneration, evaluationStrategyGeneration,
+									optimizerConfiguration, physicalProviderIdentity);
+		}
+
+		boolean matchesCurrent(SemanticDependencies current) {
+			Objects.requireNonNull(current, "current");
+			return Objects.equals(datasetIdentity, current.datasetIdentity)
+					&& Objects.equals(initialBindingSchema, current.initialBindingSchema)
+					&& Objects.equals(requiredResultProperties, current.requiredResultProperties)
+					&& Objects.equals(evaluationProperties, current.evaluationProperties)
+					&& (!indexGenerationDependent || indexGeneration == current.indexGeneration
+							&& Objects.equals(indexIdentity, current.indexIdentity))
+					&& physicalCapabilityGeneration == current.physicalCapabilityGeneration
+					&& optimizerRuleGeneration == current.optimizerRuleGeneration
+					&& packedRecipeGeneration == current.packedRecipeGeneration
+					&& evaluationStrategyGeneration == current.evaluationStrategyGeneration
+					&& Objects.equals(optimizerConfiguration, current.optimizerConfiguration)
+					&& Objects.equals(physicalProviderIdentity, current.physicalProviderIdentity);
 		}
 	}
 
@@ -448,6 +511,57 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		long retainedBytes();
 	}
 
+	/** Store-safe work that opens its own current-evidence planning session when executed. */
+	interface DetachedRefreshWork {
+
+		RefreshComputation execute();
+
+		long retainedBytes();
+	}
+
+	record RefreshComputation(EvidenceSnapshot buildEvidence, EvidenceSnapshot currentEvidence,
+			TupleExpr executableTemplate, String physicalFingerprint,
+			EstimatedCostInterval selectedCostInterval,
+			EstimatedCostInterval recalibratedIncumbentCostInterval,
+			SearchCertificate searchCertificate, PlanStabilityEnvelope stabilityEnvelope,
+			long retainedPlanBytes, long optimizerGeneration, boolean promote,
+			long indexGeneration, Object indexIdentity, boolean indexGenerationDependent,
+			DetachedRefreshWork nextRefreshWork) {
+
+		RefreshComputation {
+			Objects.requireNonNull(buildEvidence, "buildEvidence");
+			Objects.requireNonNull(currentEvidence, "currentEvidence");
+			Objects.requireNonNull(executableTemplate, "executableTemplate");
+			Objects.requireNonNull(physicalFingerprint, "physicalFingerprint");
+			Objects.requireNonNull(selectedCostInterval, "selectedCostInterval");
+			Objects.requireNonNull(searchCertificate, "searchCertificate");
+			Objects.requireNonNull(stabilityEnvelope, "stabilityEnvelope");
+			if (retainedPlanBytes < 0L) {
+				throw new IllegalArgumentException("refreshed plan retained bytes must be nonnegative");
+			}
+			if (indexGeneration < 0L) {
+				throw new IllegalArgumentException("refreshed semantic index generation must be nonnegative");
+			}
+			if (indexGenerationDependent) {
+				Objects.requireNonNull(indexIdentity, "refreshed semantic index identity");
+			} else if (indexGeneration != 0L || indexIdentity != null) {
+				throw new IllegalArgumentException("non-dependent refreshed semantic index identity must be empty");
+			}
+		}
+
+		RefreshComputation(EvidenceSnapshot buildEvidence, EvidenceSnapshot currentEvidence,
+				TupleExpr executableTemplate, String physicalFingerprint,
+				EstimatedCostInterval selectedCostInterval,
+				EstimatedCostInterval recalibratedIncumbentCostInterval,
+				SearchCertificate searchCertificate, PlanStabilityEnvelope stabilityEnvelope,
+				long retainedPlanBytes, long optimizerGeneration, boolean promote,
+				DetachedRefreshWork nextRefreshWork) {
+			this(buildEvidence, currentEvidence, executableTemplate, physicalFingerprint, selectedCostInterval,
+					recalibratedIncumbentCostInterval, searchCertificate, stabilityEnvelope, retainedPlanBytes,
+					optimizerGeneration, promote, 0L, null, false, nextRefreshWork);
+		}
+	}
+
 	private static final class ExactTupleRecipe implements ExecutableRecipe {
 
 		private final TupleExpr template;
@@ -471,7 +585,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 
 	record PlanVersion(long version, ExecutableRecipe physicalRecipe, String physicalFingerprint,
 			EstimatedCostInterval estimatedCostInterval, DeploymentRole deploymentRole, long buildEvidenceEpoch,
-			long optimizerGeneration) {
+			long optimizerGeneration, DetachedRefreshWork detachedRefreshWork) {
 
 		PlanVersion {
 			if (version <= 0L) {
@@ -487,10 +601,17 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			return physicalRecipe.materialize();
 		}
 
+		PlanVersion(long version, ExecutableRecipe physicalRecipe, String physicalFingerprint,
+				EstimatedCostInterval estimatedCostInterval, DeploymentRole deploymentRole, long buildEvidenceEpoch,
+				long optimizerGeneration) {
+			this(version, physicalRecipe, physicalFingerprint, estimatedCostInterval, deploymentRole,
+					buildEvidenceEpoch, optimizerGeneration, null);
+		}
+
 		PlanVersion withDeploymentRole(DeploymentRole role) {
 			return role == deploymentRole ? this
 					: new PlanVersion(version, physicalRecipe, physicalFingerprint, estimatedCostInterval, role,
-							buildEvidenceEpoch, optimizerGeneration);
+							buildEvidenceEpoch, optimizerGeneration, detachedRefreshWork);
 		}
 	}
 
@@ -710,7 +831,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			SemanticDependencies semanticDependencies, EvidenceSnapshot buildEvidence,
 			EvidenceSnapshot currentEvidence, TupleExpr executableTemplate, String physicalFingerprint,
 			EstimatedCostInterval estimatedCostInterval, SearchCertificate searchCertificate, long retainedBytes,
-			long optimizerGeneration) {
+			long optimizerGeneration, DetachedRefreshWork detachedRefreshWork) {
 
 		BuildPublication {
 			Objects.requireNonNull(familyKey, "familyKey");
@@ -728,14 +849,50 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 				throw new IllegalArgumentException("retained bytes must be nonnegative");
 			}
 		}
+
+		BuildPublication(PlanFamilyKey familyKey, ExactInvocationKey exactInvocationKey,
+				SemanticDependencies semanticDependencies, EvidenceSnapshot buildEvidence,
+				EvidenceSnapshot currentEvidence, TupleExpr executableTemplate, String physicalFingerprint,
+				EstimatedCostInterval estimatedCostInterval, SearchCertificate searchCertificate, long retainedBytes,
+				long optimizerGeneration) {
+			this(familyKey, exactInvocationKey, semanticDependencies, buildEvidence, currentEvidence,
+					executableTemplate, physicalFingerprint, estimatedCostInterval, searchCertificate, retainedBytes,
+					optimizerGeneration, null);
+		}
 	}
 
 	record RefreshPublication(PlanFamilyKey familyKey, long expectedFamilyVersion,
 			SemanticDependencies semanticDependencies, EvidenceSnapshot buildEvidence,
 			EvidenceSnapshot currentEvidence, long variantId, TupleExpr executableTemplate,
 			String physicalFingerprint, EstimatedCostInterval estimatedCostInterval,
-			SearchCertificate searchCertificate, PlanStabilityEnvelope stabilityEnvelope, long retainedBytes,
-			long optimizerGeneration, boolean promote) {
+			EstimatedCostInterval recalibratedIncumbentCostInterval, SearchCertificate searchCertificate,
+			PlanStabilityEnvelope stabilityEnvelope, long retainedBytes, long optimizerGeneration, boolean promote,
+			boolean indexGenerationDependent, long indexGeneration, Object indexIdentity,
+			DetachedRefreshWork detachedRefreshWork) {
+
+		RefreshPublication {
+			if (indexGeneration < 0L) {
+				throw new IllegalArgumentException("refreshed semantic index generation must be nonnegative");
+			}
+			if (indexGenerationDependent) {
+				Objects.requireNonNull(indexIdentity, "refreshed semantic index identity");
+			} else if (indexGeneration != 0L || indexIdentity != null) {
+				throw new IllegalArgumentException("non-dependent refreshed semantic index identity must be empty");
+			}
+		}
+
+		RefreshPublication(PlanFamilyKey familyKey, long expectedFamilyVersion,
+				SemanticDependencies semanticDependencies, EvidenceSnapshot buildEvidence,
+				EvidenceSnapshot currentEvidence, long variantId, TupleExpr executableTemplate,
+				String physicalFingerprint, EstimatedCostInterval estimatedCostInterval,
+				SearchCertificate searchCertificate, PlanStabilityEnvelope stabilityEnvelope, long retainedBytes,
+				long optimizerGeneration, boolean promote) {
+			this(familyKey, expectedFamilyVersion, semanticDependencies, buildEvidence, currentEvidence, variantId,
+					executableTemplate, physicalFingerprint, estimatedCostInterval, null, searchCertificate,
+					stabilityEnvelope, retainedBytes, optimizerGeneration, promote,
+					semanticDependencies.indexGenerationDependent(), semanticDependencies.indexGeneration(),
+					semanticDependencies.indexIdentity(), null);
+		}
 	}
 
 	record VariantPublication(PlanFamilyKey familyKey, long expectedFamilyVersion,
@@ -843,12 +1000,17 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		private final RefreshRequest request;
 		private final PlanFamily family;
 		private final AtomicBoolean claim;
+		private final long expectedFamilyVersion;
+		private final long expectedCacheEpoch;
 		private final long sequence;
 
-		private PrioritizedRefreshTask(RefreshRequest request, PlanFamily family, AtomicBoolean claim) {
+		private PrioritizedRefreshTask(RefreshRequest request, PlanFamily family, AtomicBoolean claim,
+				long expectedFamilyVersion, long expectedCacheEpoch) {
 			this.request = request;
 			this.family = family;
 			this.claim = claim;
+			this.expectedFamilyVersion = expectedFamilyVersion;
+			this.expectedCacheEpoch = expectedCacheEpoch;
 			sequence = refreshTaskSequence.incrementAndGet();
 		}
 
@@ -865,7 +1027,9 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 					return;
 				}
 				FamilyVersion current = family.current().get();
-				boolean variantPresent = current.semanticValidity() == SemanticValidity.VALID
+				boolean variantPresent = current.version() == expectedFamilyVersion
+						&& globalEvidenceEpoch.get() == expectedCacheEpoch
+						&& current.semanticValidity() == SemanticValidity.VALID
 						&& current.dispatcher()
 								.variants()
 								.stream()
@@ -949,7 +1113,11 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 	}
 
 	boolean publishBuild(BuildPublication publication) {
-		if (!enabled() || publication.retainedBytes() > maximumRetainedBytes
+		long refreshWorkBytes = publication.detachedRefreshWork() == null
+				? 0L
+				: publication.detachedRefreshWork().retainedBytes();
+		long publicationBytes = saturatedAdd(publication.retainedBytes(), refreshWorkBytes);
+		if (!enabled() || publicationBytes > maximumRetainedBytes
 				|| !publication.familyKey().equals(publication.exactInvocationKey().familyKey())) {
 			return false;
 		}
@@ -975,7 +1143,8 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		PlanVersion champion = new PlanVersion(planVersionId,
 				new ExactTupleRecipe(publication.executableTemplate(), publication.retainedBytes()),
 				publication.physicalFingerprint(), publication.estimatedCostInterval(), DeploymentRole.CHAMPION,
-				publication.buildEvidence().globalEpoch(), publication.optimizerGeneration());
+				publication.buildEvidence().globalEpoch(), publication.optimizerGeneration(),
+				publication.detachedRefreshWork());
 		PlanVariant variant = new PlanVariant(1L, ApplicabilityGuard.robust(), champion, List.of(), List.of(),
 				publication.searchCertificate(), publication.buildEvidence(),
 				PlanStabilityEnvelope.exact(publication.buildEvidence()), RuntimePosterior.empty(),
@@ -984,7 +1153,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		FamilyVersion familyVersion = new FamilyVersion(familyVersionId, SemanticValidity.VALID,
 				publication.semanticDependencies(), new VariantDispatcher(List.of(variant)), null,
 				Map.of(publication.exactInvocationKey(), alias), globalEvidenceEpoch.get(),
-				publication.retainedBytes());
+				publicationBytes);
 
 		synchronized (admissionLock) {
 			if (!enabled()) {
@@ -1000,9 +1169,9 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 				}
 			}
 			long previousBytes = existing == null ? 0L : existing.current().get().retainedBytes();
-			makeRoom(publication.familyKey(), publication.retainedBytes(), previousBytes);
+			makeRoom(publication.familyKey(), publicationBytes, previousBytes);
 			if (families.size() >= maximumFamilies && existing == null
-					|| retainedBytes.get() - previousBytes > maximumRetainedBytes - publication.retainedBytes()) {
+					|| retainedBytes.get() - previousBytes > maximumRetainedBytes - publicationBytes) {
 				return false;
 			}
 			if (existing == null) {
@@ -1013,7 +1182,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			}
 			exactAliases.put(publication.exactInvocationKey(), alias);
 			recency.put(publication.familyKey(), System.nanoTime());
-			retainedBytes.addAndGet(publication.retainedBytes() - previousBytes);
+			retainedBytes.addAndGet(publicationBytes - previousBytes);
 			publications.incrementAndGet();
 		}
 		indexEvidence(publication.familyKey(), publication.buildEvidence());
@@ -1069,13 +1238,12 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 	boolean publishRefresh(RefreshPublication publication) {
 		Objects.requireNonNull(publication, "publication");
 		PlanFamily family = families.get(publication.familyKey());
-		if (!enabled() || family == null || !publication.semanticDependencies()
-				.equals(
-						family.current().get().semanticDependencies())) {
+		if (!enabled() || family == null) {
 			return false;
 		}
 		FamilyVersion observed = family.current().get();
-		if (observed.version() != publication.expectedFamilyVersion()) {
+		if (observed.version() != publication.expectedFamilyVersion()
+				|| !publication.semanticDependencies().equals(observed.semanticDependencies())) {
 			stalePublications.incrementAndGet();
 			return false;
 		}
@@ -1091,19 +1259,39 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		if (oldVariant == null) {
 			return false;
 		}
-		long planVersionId = planVersionSequence.incrementAndGet();
-		PlanVersion candidate = new PlanVersion(planVersionId,
+		DetachedRefreshWork candidateRefreshWork = publication.detachedRefreshWork() == null
+				? oldVariant.champion().detachedRefreshWork()
+				: publication.detachedRefreshWork();
+		PlanVersion candidate = new PlanVersion(planVersionSequence.incrementAndGet(),
 				new ExactTupleRecipe(publication.executableTemplate(), publication.retainedBytes()),
 				publication.physicalFingerprint(), publication.estimatedCostInterval(),
 				DeploymentRole.CHALLENGER,
-				publication.buildEvidence().globalEpoch(), publication.optimizerGeneration());
-		boolean promote = publication.promote() && calibratedPromotionDominates(candidate, oldVariant.champion());
-		PlanVersion champion = promote ? candidate.withDeploymentRole(DeploymentRole.CHAMPION) : oldVariant.champion();
-		List<PlanVersion> challengers = promote ? oldVariant.challengers()
-				: appendChallenger(
-						oldVariant.challengers(), candidate);
+				publication.buildEvidence().globalEpoch(), publication.optimizerGeneration(), candidateRefreshWork);
+		boolean samePhysical = oldVariant.champion()
+				.physicalFingerprint()
+				.equals(candidate.physicalFingerprint());
+		EstimatedCostInterval incumbentInterval = publication.recalibratedIncumbentCostInterval() == null
+				? oldVariant.champion().estimatedCostInterval()
+				: publication.recalibratedIncumbentCostInterval();
+		PlanVersion recalibratedIncumbent = samePhysical
+				? candidate.withDeploymentRole(DeploymentRole.CHAMPION)
+				: new PlanVersion(planVersionSequence.incrementAndGet(), oldVariant.champion().physicalRecipe(),
+						oldVariant.champion().physicalFingerprint(), incumbentInterval, DeploymentRole.CHAMPION,
+						publication.buildEvidence().globalEpoch(), publication.optimizerGeneration(),
+						oldVariant.champion().detachedRefreshWork());
+		boolean promote = !samePhysical && publication.promote()
+				&& calibratedPromotionDominates(candidate, recalibratedIncumbent);
+		PlanVersion champion = promote ? candidate.withDeploymentRole(DeploymentRole.CHAMPION)
+				: recalibratedIncumbent;
+		List<PlanVersion> retainedOldChallengers = oldVariant.challengers()
+				.stream()
+				.filter(challenger -> !challenger.physicalFingerprint().equals(candidate.physicalFingerprint()))
+				.toList();
+		List<PlanVersion> challengers = samePhysical || promote
+				? retainedOldChallengers
+				: appendChallenger(retainedOldChallengers, candidate);
 		List<PlanVersion> rollbacks = promote
-				? prependRollback(oldVariant.champion().withDeploymentRole(DeploymentRole.RETIRED),
+				? prependRollback(recalibratedIncumbent.withDeploymentRole(DeploymentRole.RETIRED),
 						oldVariant.rollbackVersions())
 				: oldVariant.rollbackVersions();
 		Map<Long, RuntimePosterior> challengerPosteriors = retainedChallengerPosteriors(oldVariant, challengers);
@@ -1122,7 +1310,6 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		long replacementBytes = variantRetainedBytes(replacement);
 		long refreshedRetainedBytes = saturatedAdd(observed.retainedBytes() - oldVariantBytes, replacementBytes);
 		if (refreshedRetainedBytes > maximumRetainedBytes) {
-			family.refreshClaim(publication.variantId()).set(false);
 			return false;
 		}
 		long familyVersionId = familyVersionSequence.incrementAndGet();
@@ -1135,8 +1322,12 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			aliases.put(entry.getKey(),
 					new ExactAlias(familyVersionId, oldAlias.variantId(), retainedPlanVersion));
 		}
+		SemanticDependencies refreshedDependencies = publication.indexGenerationDependent()
+				? observed.semanticDependencies()
+						.withIndexGenerationDependency(publication.indexGeneration(), publication.indexIdentity())
+				: observed.semanticDependencies().withoutIndexGenerationDependency();
 		FamilyVersion refreshed = new FamilyVersion(familyVersionId, SemanticValidity.VALID,
-				observed.semanticDependencies(), new VariantDispatcher(variants),
+				refreshedDependencies, new VariantDispatcher(variants),
 				observed.retainedStructuralCheckpoint(),
 				aliases,
 				globalEvidenceEpoch.get(), refreshedRetainedBytes);
@@ -1156,7 +1347,6 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			recency.put(publication.familyKey(), System.nanoTime());
 			publications.incrementAndGet();
 		}
-		family.refreshClaim(publication.variantId()).set(false);
 		return true;
 	}
 
@@ -1234,9 +1424,64 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		return true;
 	}
 
+	RefreshSubmission submitRefresh(UseAndRefresh decision) {
+		Objects.requireNonNull(decision, "decision");
+		DetachedRefreshWork work = decision.plan().detachedRefreshWork();
+		if (!enabled() || work == null) {
+			return RefreshSubmission.UNAVAILABLE;
+		}
+		PlanFamily family = families.get(decision.familyKey());
+		if (family == null) {
+			return RefreshSubmission.UNAVAILABLE;
+		}
+		FamilyVersion current = family.current().get();
+		if (current.version() != decision.familyVersion() || current.semanticValidity() != SemanticValidity.VALID
+				|| current.dispatcher()
+						.variants()
+						.stream()
+						.noneMatch(variant -> variant.variantId() == decision.variantId())) {
+			return RefreshSubmission.UNAVAILABLE;
+		}
+		long expectedCacheEpoch = globalEvidenceEpoch.get();
+		RefreshRequest request = new RefreshRequest(decision.familyKey(), decision.variantId(), 0.0d,
+				Math.max(0.0d, current.dispatcher()
+						.variants()
+						.stream()
+						.filter(variant -> variant.variantId() == decision.variantId())
+						.findFirst()
+						.orElseThrow()
+						.runtimePosterior()
+						.expectedRegret()),
+				0.0d, Math.max(1.0d, decision.searchCertificate().deterministicWorkUnits()),
+				() -> executeDetachedRefresh(decision, current.semanticDependencies(), expectedCacheEpoch, work));
+		return submitRefreshRequest(request, family, decision.familyVersion(), expectedCacheEpoch);
+	}
+
+	private void executeDetachedRefresh(UseAndRefresh decision, SemanticDependencies semanticDependencies,
+			long expectedCacheEpoch, DetachedRefreshWork work) {
+		RefreshComputation computation = Objects.requireNonNull(work.execute(), "detached refresh computation");
+		PlanFamily family = families.get(decision.familyKey());
+		if (!enabled() || family == null || globalEvidenceEpoch.get() != expectedCacheEpoch) {
+			return;
+		}
+		FamilyVersion current = family.current().get();
+		if (current.version() != decision.familyVersion()
+				|| !current.semanticDependencies().equals(semanticDependencies)) {
+			return;
+		}
+		publishRefresh(new RefreshPublication(decision.familyKey(), decision.familyVersion(), semanticDependencies,
+				computation.buildEvidence(), computation.currentEvidence(), decision.variantId(),
+				computation.executableTemplate(), computation.physicalFingerprint(),
+				computation.selectedCostInterval(), computation.recalibratedIncumbentCostInterval(),
+				computation.searchCertificate(), computation.stabilityEnvelope(), computation.retainedPlanBytes(),
+				computation.optimizerGeneration(), computation.promote(), computation.indexGenerationDependent(),
+				computation.indexGeneration(), computation.indexIdentity(),
+				computation.nextRefreshWork()));
+	}
+
 	boolean scheduleRefresh(RefreshRequest request) {
 		Objects.requireNonNull(request, "request");
-		if (!enabled() || !(request.priority() > 0.0d)) {
+		if (!enabled()) {
 			return false;
 		}
 		PlanFamily family = families.get(request.familyKey());
@@ -1250,16 +1495,23 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 				.noneMatch(variant -> variant.variantId() == request.variantId())) {
 			return false;
 		}
+		return submitRefreshRequest(request, family, current.version(),
+				globalEvidenceEpoch.get()) == RefreshSubmission.SUBMITTED;
+	}
+
+	private RefreshSubmission submitRefreshRequest(RefreshRequest request, PlanFamily family,
+			long expectedFamilyVersion, long expectedCacheEpoch) {
 		AtomicBoolean claim = family.refreshClaim(request.variantId());
 		if (!claim.compareAndSet(false, true)) {
-			return false;
+			return RefreshSubmission.ALREADY_IN_FLIGHT;
 		}
 		try {
-			refreshExecutor.execute(new PrioritizedRefreshTask(request, family, claim));
-			return true;
+			refreshExecutor.execute(new PrioritizedRefreshTask(request, family, claim, expectedFamilyVersion,
+					expectedCacheEpoch));
+			return RefreshSubmission.SUBMITTED;
 		} catch (RejectedExecutionException rejected) {
 			claim.set(false);
-			return false;
+			return RefreshSubmission.UNAVAILABLE;
 		}
 	}
 
@@ -1307,14 +1559,12 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 					old.lifecycleBlocked() || observation.lifecycleBlocked(),
 					old.resourceGuardBreached() || observation.resourceGuardBreached());
 			variants.set(index, variant.withPosterior(observation.planVersion(), posterior));
-			long familyVersionId = familyVersionSequence.incrementAndGet();
-			FamilyVersion updated = new FamilyVersion(familyVersionId,
+			FamilyVersion updated = new FamilyVersion(observed.version(),
 					observed.semanticValidity(), observed.semanticDependencies(), new VariantDispatcher(variants),
 					observed.retainedStructuralCheckpoint(),
-					reversionAliases(observed.exactAliases(), familyVersionId),
+					observed.exactAliases(),
 					observed.publicationEvidenceEpoch(), observed.retainedBytes());
 			if (family.current().compareAndSet(observed, updated)) {
-				replaceAliases(observed, updated);
 				return;
 			}
 		}
@@ -1389,7 +1639,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		if (version.semanticValidity() == SemanticValidity.HARD_INVALID) {
 			return replan("hard-dependency-invalid");
 		}
-		if (!version.semanticDependencies().equals(request.semanticDependencies())) {
+		if (!version.semanticDependencies().matchesCurrent(request.semanticDependencies())) {
 			return replan("semantic-dependency-mismatch");
 		}
 		if (!request.executableRecipeCompatible()) {
@@ -1426,6 +1676,9 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		boolean robustFamilyFallback = requestedVariantId == 0L && variant.applicabilityGuard().robustFallback()
 				&& version.dispatcher().variants().size() > 1;
 		if (robustFamilyFallback && posterior.expectedRegret() <= request.maximumExpectedRegret()) {
+			if (plan.detachedRefreshWork() == null) {
+				return replan("detached-refresh-unavailable");
+			}
 			refreshUses.incrementAndGet();
 			touch(key);
 			return new UseAndRefresh(key, version.version(), variant.variantId(), plan, QualityState.SUSPECT,
@@ -1446,6 +1699,9 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 					variant.searchCertificate(), variant.evidenceSnapshot().globalEpoch(), true);
 		}
 		if (posterior.expectedRegret() <= request.maximumExpectedRegret()) {
+			if (plan.detachedRefreshWork() == null) {
+				return replan("detached-refresh-unavailable");
+			}
 			refreshUses.incrementAndGet();
 			touch(key);
 			QualityState effectiveQuality = evidenceStable ? variant.qualityState() : QualityState.SUSPECT;
@@ -1547,7 +1803,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 				if (!variant.rollbackVersions().isEmpty()) {
 					List<PlanVersion> rollbacks = new ArrayList<>(variant.rollbackVersions());
 					PlanVersion removed = rollbacks.remove(rollbacks.size() - 1);
-					releasedBytes = removed.physicalRecipe().retainedBytes();
+					releasedBytes = retainedPlanBytes(removed, new HashSet<>());
 					variants.set(index, new PlanVariant(variant.variantId(), variant.applicabilityGuard(),
 							variant.champion(), variant.challengers(), rollbacks, variant.searchCertificate(),
 							variant.evidenceSnapshot(), variant.stabilityEnvelope(), variant.runtimePosterior(),
@@ -1561,7 +1817,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 				if (!variant.challengers().isEmpty()) {
 					List<PlanVersion> challengers = new ArrayList<>(variant.challengers());
 					PlanVersion removed = challengers.remove(challengers.size() - 1);
-					releasedBytes = removed.physicalRecipe().retainedBytes();
+					releasedBytes = retainedPlanBytes(removed, new HashSet<>());
 					Map<Long, RuntimePosterior> posteriors = new LinkedHashMap<>(variant.challengerPosteriors());
 					posteriors.remove(removed.version());
 					variants.set(index, new PlanVariant(variant.variantId(), variant.applicabilityGuard(),
@@ -1676,7 +1932,11 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 	}
 
 	private static long retainedPlanBytes(PlanVersion plan, Set<Long> counted) {
-		return counted.add(plan.version()) ? plan.physicalRecipe().retainedBytes() : 0L;
+		if (!counted.add(plan.version())) {
+			return 0L;
+		}
+		long refreshBytes = plan.detachedRefreshWork() == null ? 0L : plan.detachedRefreshWork().retainedBytes();
+		return saturatedAdd(plan.physicalRecipe().retainedBytes(), refreshBytes);
 	}
 
 	private static Map<Long, RuntimePosterior> retainedChallengerPosteriors(PlanVariant oldVariant,
@@ -1745,7 +2005,7 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		List<PlanVersion> result = new ArrayList<>(3);
 		result.add(new PlanVersion(champion.version(), champion.physicalRecipe(), champion.physicalFingerprint(),
 				champion.estimatedCostInterval(), DeploymentRole.RETIRED, champion.buildEvidenceEpoch(),
-				champion.optimizerGeneration()));
+				champion.optimizerGeneration(), champion.detachedRefreshWork()));
 		result.addAll(existing);
 		return List.copyOf(result.subList(0, Math.min(2, result.size())));
 	}

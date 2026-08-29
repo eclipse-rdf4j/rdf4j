@@ -67,6 +67,15 @@ public final class CascadesPlanner {
 		return plan(request, result);
 	}
 
+	/** Adapts an already completed packed planning operation to the public Cascades result boundary. */
+	public static CascadesPlan fromPackedResult(OptimizationGoal goal, PackedPlanningResult result) {
+		PackedPlanningResult packed = Objects.requireNonNull(result, "packed planning result");
+		OptimizationGoal request = goal == null
+				? OptimizationGoal.root(packed.selectedPlan(), PhysicalProperties.ANY)
+				: goal;
+		return plan(request, packed);
+	}
+
 	private static CascadesPlan plan(OptimizationGoal goal, PackedPlanningResult result) {
 		CostVector cost = new CostVector(result.outputRows(), result.totalCost(), 0.0d, 0.0d, 0.0d,
 				1.0d, 1.0d, 1.0d, 1.0d, 0.0d, 1.0d, 0.0d);
@@ -79,7 +88,8 @@ public final class CascadesPlanner {
 				List.of(), null, cost, goal.requiredProperties(), goal.requiredProperties(), List.of(),
 				PackedRuleProofs.materialize(result.ruleProofMask()),
 				status.approximate(), reason);
-		return new CascadesPlan(result.selectedPlan(), cost, status, provenance, result.metrics());
+		return new CascadesPlan(result.selectedPlan(), cost, status, provenance, result.metrics(),
+				result.decisionSummary());
 	}
 
 	private static OptimizationSearchStatus searchStatus(PackedPlanningResult result) {

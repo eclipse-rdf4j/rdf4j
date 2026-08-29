@@ -46,7 +46,7 @@ The reactor reported `BUILD SUCCESS`, total time `50.669 s`. This is a compile/p
 - [x] (2026-08-24) Implement packed family authentication, parameter schema/vector, structural parameter references, detached publication identity, family single flight, and recipe materialization against the current concrete query. Existing 40-test packed cache class remains green.
 - [x] (2026-08-24) Add focused failing tests for immutable LMDB family versions and all lookup decisions, including semantic invalidation, quality drift, stale publication, lifecycle/resource guards, close, and zero-budget failure fallback.
 - [x] (2026-08-24) Implement the immutable `LmdbPlanDecisionCache` owner with orthogonal state, exact aliases, guarded family lookup, atomic publication, evidence events, runtime observations, and two-version rollback retention. Six direct cache tests are green.
-- [ ] Finish moving packed and exact entries beneath the unified family owner while preserving compatibility metrics; the current pipeline class is now a transitional facade but packed publication still needs the shared portfolio/checkpoint owner.
+- [ ] (in progress) Finish moving packed and exact entries beneath the unified family owner while preserving compatibility metrics; the current pipeline class is now a transitional facade but packed publication still needs the shared portfolio/checkpoint owner.
 - [x] (2026-08-24) Add focused failing tests for bounded materializable portfolios and LMDB feature dispatch, robust fallback, deterministic merge, and the default four-variant budget.
 - [ ] Complete portfolio recosting and calibrated promotion. Detached champion plus up to three executable, stratum-diverse challengers, conservative interval state, guarded dispatch, robust fallback, deterministic adjacent merge, interval-gated promotion, two retired rollback versions, and deterministic guarded canary selection are implemented.
 - [x] (2026-08-24) Add and round-trip bounded variant, refresh-thread, and canary-fraction configuration; add a store-owned priority executor with per-family/variant single flight and daemon shutdown.
@@ -55,8 +55,11 @@ The reactor reported `BUILD SUCCESS`, total time `50.669 s`. This is a compile/p
 - [x] (2026-08-24) Add focused failing tests for plan-version runtime tokens, complete/censored publication, guarded deterministic canaries, interval promotion, rollback, refresh alias/checkpoint preservation, generation-stable fine-grained evidence routing, configured scheduler shutdown, and aggregate planner budget accounting.
 - [ ] Finish feedback/scheduler/diagnostic integration. Existing LMDB feedback publication now deduplicates plan tokens, classifies complete versus censored executions, and updates the variant posterior; cache configuration owns scheduler lifecycle; canary and lifecycle gates are implemented. Cache-hit explanations now propagate search completion, bound kind, evidence epoch, and stability-envelope result from the selected immutable variant. Detached automatic refresh submission, complete JFR coverage, and tiered eviction remain.
 - [x] (2026-08-25) Profile and repair the MEDICAL_RECORDS repeated-query regression. Preserve aggregate decision-cache admission across routing segments and consult the authoritative lifecycle policy before hard-blocking a plan from runtime feedback. Q3 returned from 1.45 seconds to 86.6 milliseconds and Q0 to 35.6 milliseconds in the short controlled benchmark; the post-diagnostic cache/feedback group is green with 52 tests.
-- [ ] Remove duplicate serving policy and run focused, module, integration, benchmark, allocation, and JFR acceptance checks.
-- [ ] Audit final diff/status, record exact verification boundaries, and complete the retrospective. Do not stage or publish without a separate user request.
+- [x] (2026-08-26) Revalidate the branch and preservation boundary, then run the required root quick-install baseline. The first offline attempt stopped on missing `log4j-to-slf4j:2.25.5`; the one permitted online retry seeded it and completed successfully in 38.423 seconds. The unrelated tracked `ThemeQueryBenchmark.java` edit and untracked corpus remain user-owned.
+- [x] (2026-08-26) Implement the approved detached automatic-refresh milestone test-first. The structured computation now carries a real packed decision and an immutable detached blueprint; `USE_AND_REFRESH` submits store-owned, single-flight work and returns the champion immediately; unavailable work falls through to synchronous replanning. Focused checkpoint, same-physical, non-dominating, scheduler-priority, and asynchronous facade gates are green.
+- [x] (2026-08-26) Repair Frontier restart recovery test-first. Every successfully opened generation now crosses one installation boundary; optional-shard failures retain mandatory service and request repair at publication, startup, and predecessor recovery. An absent `CURRENT.fs2` resets the complete owned filename grammar. The four primary regressions plus orphan-only and empty-directory variants pass individually.
+- [x] (2026-08-26) Complete the detached-refresh and Frontier-recovery continuation, including focused, module, integration, and benchmark acceptance checks. The stable-hit point deltas stayed below five percent, so the plan's conditional JFR investigation was not triggered.
+- [x] (2026-08-26) Audit final diff/status, record exact verification boundaries, and complete this continuation's retrospective. Nothing was staged or published; the unrelated Theme benchmark edit and all untracked artifacts remain in place.
 
 ## Surprises & Discoveries
 
@@ -89,6 +92,42 @@ The reactor reported `BUILD SUCCESS`, total time `50.669 s`. This is a compile/p
 
 - Observation: the current pipeline cache's planning callback closes over `LmdbQueryOptimizerPipeline`, whose fields include the connection-owned `TripleSource` and `EvaluationStrategy`. Submitting that callback to the store daemon would retain transaction-bound state after lookup returns, even if the `TupleExpr` itself were cloned.
   Evidence: the focused refresh-facade test proved that no background continuation is currently submitted; source inspection of `LmdbQueryOptimizerPipeline.optimize` and its captured fields proves that directly submitting the existing callback would violate the detached-publication invariant. Automatic refresh must therefore resume a detached packed checkpoint or use a fresh store-owned planning context.
+
+- Observation: the 2026-08-26 prescribed offline baseline could not resolve `org.apache.logging.log4j:log4j-to-slf4j:2.25.5` from `.m2_repo`.
+  Evidence: the offline reactor stopped in `rdf4j-spring-components`; the exact one-time online retry completed the full quick reactor with `BUILD SUCCESS` in 38.423 seconds. Subsequent verification returns to offline mode.
+
+- Observation: publishing a mandatory-valid generation with a missing optional shard records the optional failure but clears the service repair request.
+  Evidence: `LmdbStatisticsServiceTest#optionalShardFailureDoesNotInvalidateMandatoryCore` failed unchanged with `expected: <true> but was: <false>` at the new `rebuildRequired()` assertion. Surefire reported 1 test, 1 failure, 0 errors in `core/sail/lmdb/target/surefire-reports/org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsServiceTest.txt`; retained Maven output is `logs/mvnf/20260825-234257-verify.log`.
+
+- Observation: reopening that same mandatory-valid/optional-degraded generation converts it to `NO_GENERATION`.
+  Evidence: `LmdbStatisticsServiceTest#optionalShardFailureKeepsCurrentGenerationReadyAfterRestart` failed with `expected: <READY> but was: <NO_GENERATION>`; Surefire reported 1 test, 1 failure, 0 errors and retained output is `logs/mvnf/20260825-234416-verify.log`.
+
+- Observation: startup recovery also rejects a mandatory-valid predecessor solely because that predecessor has an optional-shard failure, then resets every generation.
+  Evidence: `LmdbStatisticsServiceTest#rollbackAcceptsPredecessorWithOptionalShardFailure` failed with `expected: <READY> but was: <NO_GENERATION>`; Surefire reported 1 test, 1 failure, 0 errors and retained output is `logs/mvnf/20260825-234521-verify.log`.
+
+- Observation: absent-pointer startup deletes the final manifest but not its owned final shards.
+  Evidence: `LmdbStatisticsServiceTest#missingCurrentResetsUnpublishedManifestAndOwnedShards` failed on surviving `generation-0000000000000000001-shard-00000.fs2s`; Surefire reported 1 test, 1 failure, 0 errors and retained output is `logs/mvnf/20260825-234618-verify.log`.
+
+- Observation: one validity rule is sufficient for live publication, startup, explicit rollback, and invalid-current recovery: if `FrontierStatisticsGeneration.open()` returns, the mandatory view is usable; `optionalFailures()` is repair state, not an invalidity predicate.
+  Evidence: the unchanged primary regressions pass individually after routing all four installation paths through `installGeneration`: retained outputs are `logs/mvnf/20260826-002802-verify.log`, `logs/mvnf/20260826-002856-verify.log`, `logs/mvnf/20260826-002945-verify.log`, and `logs/mvnf/20260826-003036-verify.log`. Surefire reported 1 test, 0 failures, and 0 errors in each run.
+
+- Observation: resetting the owned filename grammar directly is both safer and more complete than attempting to decode an unpublished manifest when no publication pointer exists.
+  Evidence: `missingCurrentResetsOwnedOrphansWithoutManifest` removes final and temporary shard-shaped paths, temporary manifests, and interrupted sort directories while preserving a foreign diagnostic; `missingCurrentInEmptyDirectoryIsNoOp` leaves repair state clear. Retained outputs are `logs/mvnf/20260826-003208-verify.log` and `logs/mvnf/20260826-003257-verify.log`.
+
+- Observation: `USE_AND_REFRESH` remains a label at the pipeline facade; no work reaches the store-owned executor.
+  Evidence: `LmdbPipelinePlanCacheTest#committedDataRevisionKeepsExecutableChampionAndRequestsRefresh` returned the cached plan with the expected outcome and left the original computation counter at one, but failed `expected: <1> but was: <0>` for executor task count. Surefire reported 1 test, 1 failure, 0 errors and retained output is `logs/mvnf/20260825-234907-verify.log`.
+
+- Observation: scheduler priority is currently also an eligibility gate.
+  Evidence: `LmdbPlanDecisionCacheTest#zeroPriorityRefreshStillRunsBecausePriorityOnlyOrdersEligibleWork` failed because `scheduleRefresh` returned false for a valid family/variant with zero-valued ordering inputs. Surefire reported 1 test, 1 failure, 0 errors and retained output is `logs/mvnf/20260825-235003-verify.log`.
+
+- Observation: same-physical refresh publication leaves the incumbent stamped with stale evidence and creates a duplicate challenger.
+  Evidence: `LmdbPlanDecisionCacheTest#samePhysicalRefreshRevalidatesChampionAtCurrentEvidence` failed because the champion retained its old evidence/version instead of being replaced by the current-evidence calibration. Surefire reported 1 test, 1 failure, 0 errors and retained output is `logs/mvnf/20260825-235057-verify.log`.
+
+- Observation: a completed non-dominating refresh retains its challenger but leaves the served incumbent on its old plan version and evidence stamp.
+  Evidence: `LmdbPlanDecisionCacheTest#nonDominatingRefreshRecalibratesIncumbentAndRetainsChallenger` failed at the incumbent-version assertion. Surefire reported 1 test, 1 failure, 0 errors and retained output is `logs/mvnf/20260825-235832-verify.log`.
+
+- Observation: stale packed-cache lookup authenticates a retained structural entry but ignores its detached checkpoint and repeats an ordinary fresh search.
+  Evidence: `PackedPlanCacheTest#detachedRefreshResumesAuthenticatedCheckpointAndFallsBackCleanly` failed because the refreshed plan had no positive `optimizer.planCacheResumedWorkUnits`. Surefire reported 1 test, 1 failure, 0 errors and retained output is `logs/mvnf/20260825-235921-verify.log`.
 
 - Observation: the first checkpoint implementation authenticated and rebound correctly but repeated all deterministic work. A selected winner DAG is sufficient to avoid replaying canonical scalar costing even before the larger frontier snapshot exists: recipe rows are child-before-parent, so detached goal/cost columns can reconstruct the incumbent in a new memo and enumeration can continue from that phase.
   Evidence: `detachedCheckpointReentryMatchesUninterruptedExactWinner` first failed with `resumed=14, uninterrupted=14, checkpoint=5`; the unchanged assertion now passes and the full 43-test `PackedPlanCacheTest` class is green. Provider-backed state still deliberately takes the fresh path because replaying old evidence-sensitive costs without recosting would be unsound.
@@ -126,11 +165,18 @@ The reactor reported `BUILD SUCCESS`, total time `50.669 s`. This is a compile/p
 - Observation: diagnostic values cannot be reconstructed reliably from the final materialized `TupleExpr`; they are properties of the selected immutable variant and its publication epoch. The transitional facade previously stamped feedback identity but silently dropped search completion, bound kind, evidence epoch, and stability-envelope coverage.
   Evidence: `materializedCacheHitStampsValueOnlyPlanVersionFeedbackToken` first failed with `expected: <EXACT_COMPLETE> but was: <null>`. The lookup decisions now carry the selected certificate metadata, and both the cache-hit and committed-data-drift envelope tests pass; the complete 12-test pipeline-cache class is green.
 
+- Observation: posterior-only execution observations advanced the structural family version. A frequently completed cached query could therefore change version after each detached submission but before publication, making every refresh stale even though the plan portfolio, semantic dependencies, and evidence snapshot were unchanged.
+  Evidence: `LmdbPlanDecisionCacheTest#runtimeObservationDuringDetachedRefreshDoesNotStarvePublication` failed with `expected: <2> but was: <1>` publications; Surefire reported 1 test, 1 failure, 0 errors in `core/sail/lmdb/target/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPlanDecisionCacheTest.txt`, with retained output at `logs/mvnf/20260826-041557-verify.log`. A property-gated diagnostic, removed immediately after use, showed each completed task rejected as `current=N+1, expected=N` while build and current evidence snapshots were identical.
+
 ## Decision Log
 
 - Decision: use Routine D and retain test-first milestone gates even though Routine D does not require pre/post evidence snippets.
   Rationale: this is a cross-module behavioral feature with concurrency, lifecycle, memory, and query-correctness risk. Small failing tests before each behavior surface make each transition reviewable and protect the old serving path until the replacement is safe.
   Date/Author: 2026-08-24 / Codex.
+
+- Decision: posterior-only observations update the immutable family cell with compare-and-set but retain the structural family version and exact aliases. Evidence, semantic, portfolio, and deployment changes continue to advance the version and invalidate stale detached work.
+  Rationale: runtime observations must remain visible and race-safe, but they do not change the structural authority authenticated by detached refresh. Preserving the structural version lets refresh outlive the serving query while the publication CAS rebases on the latest posterior; genuine family changes still fail the expected-version checks.
+  Date/Author: 2026-08-26 / Codex.
 
 - Decision: preserve a single logical cache policy while allowing a temporary internal adapter during construction.
   Rationale: callers need a safe migration path, but exposing two modes would create permanent validity ambiguity. The old exact and packed caches cease to make independent serving decisions by the final milestone.
@@ -151,6 +197,18 @@ The reactor reported `BUILD SUCCESS`, total time `50.669 s`. This is a compile/p
 - Decision: immutable publication plus compare-and-set is the concurrency boundary.
   Rationale: active executions can safely retain old Java object graphs without cache locks; refresh can run outside the serving lock; stale work cannot overwrite a newer family version.
   Date/Author: 2026-08-24 / user and Codex.
+
+- Decision: detached refresh work contains only an immutable packed restart description plus store-owned runtime access; it never retains a request optimizer, pipeline, evaluation strategy, triple source, transaction, cost session, or open Frontier view.
+  Rationale: a query must be free to close its connection as soon as the cached champion is returned. Each background execution captures current store evidence, opens a private cost session, resumes an authenticated checkpoint when possible, and otherwise performs ordinary fresh packed planning.
+  Date/Author: 2026-08-26 / user and Codex.
+
+- Decision: `CURRENT.fs2` is the sole durable Frontier publication authority.
+  Rationale: without the pointer there is no defensible way to choose among final manifests. Resetting every strictly owned manifest, shard, temporary path, and sort directory closes the manifest-to-pointer crash window without touching foreign diagnostics.
+  Date/Author: 2026-08-26 / user and Codex.
+
+- Decision: optional Frontier shard failures are diagnostic repair state, never a second generation-validity test.
+  Rationale: `FrontierStatisticsGeneration.open()` already fails for a missing or corrupt mandatory shard. Reclassifying a returned generation as invalid discarded a query-usable mandatory view and contradicted live publication semantics.
+  Date/Author: 2026-08-26 / user and Codex.
 
 - Decision: wall-clock latency remains diagnostic/benchmark evidence for this delivery.
   Rationale: normalized cardinality, work, access, and peak-memory observations already have typed contracts and are less environmentally noisy. Promotion and poisoning must not hinge solely on elapsed time.
@@ -207,6 +265,18 @@ The reactor reported `BUILD SUCCESS`, total time `50.669 s`. This is a compile/p
 - Decision: carry search-completion, bound, publication-epoch, and envelope state on `LookupDecision` rather than infer them in the pipeline facade.
   Rationale: lookup selects the family version and variant under one immutable snapshot. Re-reading mutable owner state or reverse-engineering the final algebra could report metadata for a different publication and would make exact aliases diagnostically misleading.
   Date/Author: 2026-08-25 / Codex.
+
+- Decision: a `USE_AND_REFRESH` decision is valid only when its immutable plan version owns detached refresh work that the scheduler submitted or already has in flight; otherwise the lookup degrades to synchronous `REPLAN_BEFORE_USE`.
+  Rationale: the serving decision is a behavioral promise, not a diagnostic label. A zero-valued priority may order work last but must not suppress eligible refresh. The detached work may retain immutable packed input and a checkpoint locator, but never the pipeline callback, `EvaluationStrategy`, `TripleSource`, transaction, estimator session, or open statistics view.
+  Date/Author: 2026-08-26 / user and Codex.
+
+- Decision: a Frontier generation returned by `FrontierStatisticsGeneration.open()` is mandatory-query usable even when it reports optional-shard failures, including on startup and as a rollback predecessor.
+  Rationale: optional failure is a degraded repair condition, not generation invalidity. The service remains `READY`, exposes the optional failure, and requests a coalesced base repair; only mandatory-open failure enters invalid-generation recovery.
+  Date/Author: 2026-08-26 / user and Codex.
+
+- Decision: `CURRENT.fs2` is the sole publication authority. If it is absent at startup, reset every path matching the store-owned artifact grammar instead of deleting manifests alone or guessing which final manifest was intended.
+  Rationale: a crash after the final manifest rename but before the current-pointer rename leaves final shards whose ownership is lost when only the manifest is deleted. With no published pointer there is no generation to preserve, and the existing owned-path grammar keeps the reset isolated from foreign files.
+  Date/Author: 2026-08-26 / user and Codex.
 
 ## Architecture and invariants
 
@@ -483,7 +553,15 @@ Likely integration points include `PackedQueryCodec`, `PackedPlanRecipe`, `Packe
 
 ## Outcomes & Retrospective
 
-Implementation is in progress. On completion, summarize the final cache ownership model, exact and family hot paths, semantic/quality behavior, resume semantics, feedback/canary safety, retained-memory accounting, files changed, focused and broad verification, benchmark/profile evidence, remaining limitations, and any deviations from this plan. If a milestone remains incomplete, state it explicitly rather than implying the full design shipped.
+The 2026-08-26 lifecycle continuation is complete. `USE_AND_REFRESH` now has executable meaning: a cache hit claims and submits immutable detached packed work, returns the cached champion immediately, and falls back to request-thread replanning only when detached work cannot be submitted. Detached execution creates a fresh store-owned statistics/evaluation context, authenticates and resumes a retained packed checkpoint when possible, falls back to ordinary fresh optimization otherwise, and publishes real physical fingerprints, intervals, certificates, evidence epochs, work counts, and retained-byte estimates. Same-physical refreshes recalibrate the incumbent; non-dominating alternatives remain challengers while the incumbent receives current-evidence calibration. Posterior-only runtime observations no longer invalidate the structural family publication authority, so completed cached queries cannot starve the refresh they triggered.
+
+Frontier startup, live publication, and rollback now share one installation invariant: every generation that `FrontierStatisticsGeneration.open()` returns successfully is query-usable even when optional shards failed. Such a generation remains `READY`, retains its mandatory view, exposes aggregated optional diagnostics, and requests repair. Mandatory-invalid generations still recover through a predecessor or reset. When `CURRENT.fs2` is absent, the pointer remains the sole durable publication authority and `resetOwnedArtifacts()` removes every owned manifest, shard, and temporary file together while preserving foreign files.
+
+Focused cache, checkpoint, integration, Frontier, architecture, feedback, and benchmark-support selections are green. Under the requested Temurin 25.0.1 runtime, the full query-evaluation module is green with 1,446 tests. The final JDK 25 full LMDB module executed 2,301 tests and is broad red with exactly two failures, zero errors, and seven skips; both failures are caused by the preserved unrelated `ThemeQueryBenchmark.java` default changes. Stable-hit and end-to-end estimate benchmark point deltas were 0.56 percent and 1.3 percent respectively with overlapping uncertainty; no meaningful regression or improvement is claimed. The held-in-flight serving benchmark added about 223 ns/op while proving optimizer work remains detached and single-flight.
+
+Formatting completed and `git diff --check` is clean. The repository-wide copyright script was attempted but aborted because its unrestricted filesystem walk entered the preserved `.mvnf/workspaces` corpus; a direct audit of every touched/new Java source found the required BSD-3-Clause header and Codex attribution. No tracked or untracked user artifact was deleted, staged, committed, or pushed.
+
+The broader historical ExecPlan is not complete. In particular, fully collapsing transitional packed/exact ownership, completing the general resumable packed phase machine, and the older allocation/JFR/tiered-eviction milestones remain open; this continuation does not imply those unrelated milestones shipped.
 
 ## Revision note
 
@@ -512,3 +590,19 @@ Implementation is in progress. On completion, summarize the final cache ownershi
 2026-08-25: The first post-checkpoint full evaluation-module run completed 1,444 tests with one deterministic-work regression: ordinary search reported 194 rather than 191 units because the restored-incumbent shortcut also affected non-resumed planning. Scoped that shortcut to checkpoint re-entry; the unchanged ordinary-search and logical-resume tests pass together, and the complete affected `PackedSearchTest` plus `PackedPlanCacheTest` selection is green with 139 tests. The full module has not been rerun after this final narrowing. The post-install LMDB owner/pipeline/feedback/budget/config selection is green with 58 tests.
 
 2026-08-25: Rebuilt the current JMH jar and repeated the reported MEDICAL_RECORDS regression cell with two two-second warmups, three two-second measurements, and one fork. Normal-policy Q3 measured 99.588 milliseconds per operation and Q0 measured 29.851, restoring the user's same-plan references (~97 and 37) from the >1,000 millisecond regression. Q1 triggered the 512.1M-versus-100M Cartesian-work risk guard; an explicitly guard-disabled diagnostic measured 123.214 milliseconds per operation. The guard process exited before timed execution but did not terminate its JMH child, which later wrote a separate `q1.json`; that orphaned result is not accepted. The pre-fix Q3 JFR attributes 28.75 percent of execution samples to `FrontierStatisticsShard.BlockReader.mappedData` and 24.67 percent to `FrontierCenterIndex.matches`, confirming repeated Frontier planning rather than a changed physical execution plan.
+
+2026-08-26: Resumed the plan for three confirmed lifecycle defects. Recorded the approved detached-continuation architecture, the mandatory-valid/optional-degraded generation invariant, and pointer-authoritative unpublished-artifact reset. The required baseline needed one online dependency-seeding retry and then passed; no production or test source had been changed at this stopping point.
+
+2026-08-26: Broad LMDB integration exposed refresh starvation under completed cached queries: posterior observations advanced the family version between detached execution and publication. Added a focused red regression and retained its output at `logs/mvnf/20260826-041557-verify.log`; the implementation now separates posterior cell revisions from structural family authority while keeping true stale-version rejection covered by an evidence-version change.
+
+2026-08-26: Post-fix broad query-evaluation verification is green. `python3 .codex/skills/mvnf/scripts/mvnf.py core/queryalgebra/evaluation --retain-logs` completed 1,446 tests with zero failures, errors, or skips in 570.253 seconds; the retained Maven log is `logs/mvnf/20260826-042935-verify.log`, and the corresponding reports are under `core/queryalgebra/evaluation/target/surefire-reports/`. The arbitrary-width packed proof remained within its unchanged 120-second preemptive timeout.
+
+2026-08-26: The first post-fix full LMDB module run is classified broad red: `logs/mvnf/20260826-043954-verify.log` reports 2,300 tests, eight failures, zero errors, and seven skips. Two failures are pre-existing architecture line budgets crossed by the initial detached-snapshot placement, three learned-feedback failures and one Frontier-consolidation failure raced the deliberately asynchronous serving contract, and two failures come from the preserved unrelated `ThemeQueryBenchmark.java` defaults. Detached snapshot ownership was moved into a store-specific statistics adapter/provider; `LmdbEstimatorArchitectureTest` is green with six tests at `logs/mvnf/20260826-045541-verify.log`. Existing feedback assertions now await detached publication without sleeps or widened timeouts; `LmdbOperatorFeedbackPlanningTest` is green with seven tests, three skipped, at `logs/mvnf/20260826-045712-verify.log`, and the focused Frontier calibration method is green at `logs/mvnf/20260826-045803-verify.log`. The two user-owned Theme failures remain intentionally untouched and will be classified separately in the final rerun.
+
+2026-08-26: Added the benchmark-only `LmdbPipelinePlanCacheBenchmark` and a package bridge whose focused test proves stable and held-in-flight hits never invoke request-bound planning and execute exactly one detached refresh; the test is green at `logs/mvnf/20260826-050217-verify.log`. All JMH comparisons used Temurin 25.0.1, one one-second warmup, three one-second measurements, one fork, and the supported `scripts/run-single-benchmark.sh` harness. A clean `HEAD` source archive measured `LmdbFrontierPlanningBenchmark.estimateMultiBridge` at `0.156 +/- 0.084 ms/op`; the working tree measured `0.158 +/- 0.029 ms/op`, a 1.3 percent point increase with overlapping uncertainty. The equivalent clean-`HEAD` stable pipeline-cache fixture measured `1958.294 +/- 24.457 ns/op`; the working-tree `stableHit` measured `1969.209 +/- 370.365 ns/op`, a 0.56 percent point increase with overlapping uncertainty. `useAndRefreshHitWhileRefreshInFlight` measured `2192.443 +/- 231.119 ns/op`, about 223 ns/op above the working-tree stable point while the detached task remained blocked. No statistically meaningful stable-hit regression was detected, no improvement is claimed, and the point deltas did not cross the five-percent JFR threshold.
+
+2026-08-26: The final post-format LMDB module rerun is classified broad red only because of the preserved unrelated `ThemeQueryBenchmark.java` defaults. `python3 .codex/skills/mvnf/scripts/mvnf.py core/sail/lmdb --retain-logs` completed all 2,301 tests with two failures, zero errors, and seven skips in 11:30; the retained Maven log is `logs/mvnf/20260826-051606-verify.log`. The only failures are `ThemeQueryBenchmarkExplanationTest#defaultQueryExplanationLevelIsTimed` and `ThemeQueryBenchmarkSparseParamTest#defaultThemeParametersIncludeSparseTheme`. All plan-cache, packed-refresh, Frontier recovery, architecture, feedback, and benchmark-support tests in that same module run passed. The mandated offline formatter completed successfully, `git diff --check` is clean, the temporary refresh trace switches are absent, and the enforced architecture budgets remain at 698 lines for `LmdbEstimatorRuntime` and 500 lines for `LmdbEvaluationStatistics`.
+
+2026-08-26: Final preservation and header audit completed on branch `GH-0000-lmdb-predicate-guarantees` at `4de91c7adfdc185f6751d94fbd13402d9c302769`. The index is empty, the user-owned `ThemeQueryBenchmark.java` diff is unchanged, and all 37,232 untracked paths remain present. Ten new Java files belong to this continuation; every new and modified implementation Java file has the required SPDX header and `Some portions generated by Codex` attribution. The broad copyright helper itself remains classified aborted because it traverses preserved `.mvnf/workspaces` build copies and has no scoped-path option.
+
+2026-08-26: The final log audit found that the default Maven runtime was Java 26 even though the acceptance criteria requested JDK 25. Repeated both broad gates with `JAVA_HOME` and `PATH` pinned to Temurin 25.0.1. `core/queryalgebra/evaluation` passed all 1,446 tests with zero failures, errors, or skips in 586.259 seconds; retained log `logs/mvnf/20260826-053309-verify.log`. `core/sail/lmdb` executed all 2,301 tests with two failures, zero errors, and seven skips in 11:38; retained log `logs/mvnf/20260826-054338-verify.log`. The only two failures remain the preserved `ThemeQueryBenchmarkExplanationTest#defaultQueryExplanationLevelIsTimed` and `ThemeQueryBenchmarkSparseParamTest#defaultThemeParametersIncludeSparseTheme` defaults. This supersedes the Java 26 broad runs as the acceptance evidence.

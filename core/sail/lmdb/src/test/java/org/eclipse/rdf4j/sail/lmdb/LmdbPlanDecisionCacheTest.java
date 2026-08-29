@@ -27,7 +27,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -287,6 +289,244 @@ class LmdbPlanDecisionCacheTest {
 	}
 
 	@Test
+	void zeroPriorityRefreshStillRunsBecausePriorityOnlyOrdersEligibleWork() throws Exception {
+		LmdbPlanDecisionCache cache = new LmdbPlanDecisionCache(8, 1024 * 1024L);
+		Fixture fixture = fixture(1L);
+		assertTrue(cache.publishBuild(fixture.publication(fixture.evidence())));
+		CountDownLatch completed = new CountDownLatch(1);
+
+		assertTrue(scheduleRefresh(cache, fixture, 0.0d, 0.0d, 0.0d, 1.0d, completed::countDown));
+		assertTrue(completed.await(5L, TimeUnit.SECONDS));
+		cache.close();
+	}
+
+	@Test
+	void versionWithoutDetachedRefreshCapabilityReplansBeforeUse() {
+		LmdbPlanDecisionCache cache = new LmdbPlanDecisionCache(8, 1024 * 1024L);
+		Fixture fixture = fixture(1L);
+		assertTrue(cache.publishBuild(buildPublication(fixture, "non-refreshable", 100.0d, null)));
+
+		assertReplan(cache.lookupExact(fixture.exactKey(), fixture.request(evidence(2L))),
+				"detached-refresh-unavailable");
+		cache.close();
+	}
+
+	@Test
+	void executorRejectionReleasesDetachedSingleFlightClaim() throws Exception {
+		LmdbPlanDecisionCache cache = new LmdbPlanDecisionCache(8, 1024 * 1024L);
+		Fixture fixture = fixture(1L);
+		assertTrue(cache.publishBuild(fixture.publication(fixture.evidence())));
+		LmdbPlanDecisionCache.UseAndRefresh stale = assertInstanceOf(LmdbPlanDecisionCache.UseAndRefresh.class,
+				cache.lookupExact(fixture.exactKey(), fixture.request(evidence(2L))));
+		refreshExecutor(cache).shutdownNow();
+
+		assertEquals(LmdbPlanDecisionCache.RefreshSubmission.UNAVAILABLE, cache.submitRefresh(stale));
+		assertEquals(LmdbPlanDecisionCache.RefreshSubmission.UNAVAILABLE, cache.submitRefresh(stale),
+				"executor rejection must release the claim instead of reporting a phantom in-flight refresh");
+		cache.close();
+	}
+
+	@Test
+	void refreshFailureLeavesChampionAndAllowsRetry() throws Exception {
+		LmdbPlanDecisionCache cache = new LmdbPlanDecisionCache(8, 1024 * 1024L);
+		Fixture fixture = fixture(1L);
+		AtomicInteger attempts = new AtomicInteger();
+		LmdbPlanDecisionCache.DetachedRefreshWork failingWork = new LmdbPlanDecisionCache.DetachedRefreshWork() {
+			@Override
+			public LmdbPlanDecisionCache.RefreshComputation execute() {
+				attempts.incrementAndGet();
+				throw new IllegalStateException("detached refresh failed");
+			}
+
+			@Override
+			public long retainedBytes() {
+				return 0L;
+			}
+		};
+		assertTrue(cache.publishBuild(buildPublication(fixture, "champion", 100.0d, failingWork)));
+
+		LmdbPlanDecisionCache.UseAndRefresh first = assertInstanceOf(LmdbPlanDecisionCache.UseAndRefresh.class,
+				cache.lookupExact(fixture.exactKey(), fixture.request(evidence(2L))));
+		assertEquals(LmdbPlanDecisionCache.RefreshSubmission.SUBMITTED, cache.submitRefresh(first));
+		awaitCompletedRefreshTasks(cache, 1L);
+		assertEquals(fixture.template(), first.plan().materialize(),
+				"advisory refresh failure must not damage the executable champion");
+
+		LmdbPlanDecisionCache.UseAndRefresh retry = assertInstanceOf(LmdbPlanDecisionCache.UseAndRefresh.class,
+				cache.lookupExact(fixture.exactKey(), fixture.request(evidence(2L))));
+		assertEquals(LmdbPlanDecisionCache.RefreshSubmission.SUBMITTED, cache.submitRefresh(retry));
+		awaitCompletedRefreshTasks(cache, 2L);
+		assertEquals(2, attempts.get());
+		cache.close();
+	}
+
+	@Test
+	void staleFamilyVersionDiscardsCompletedDetachedRefresh() throws Exception {
+		LmdbPlanDecisionCache cache = new LmdbPlanDecisionCache(8, 1024 * 1024L);
+		Fixture fixture = fixture(1L);
+		LmdbPlanDecisionCache.EvidenceSnapshot refreshedEvidence = evidence(2L);
+		CountDownLatch started = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		LmdbPlanDecisionCache.DetachedRefreshWork work = new LmdbPlanDecisionCache.DetachedRefreshWork() {
+			@Override
+			public LmdbPlanDecisionCache.RefreshComputation execute() {
+				started.countDown();
+				try {
+					assertTrue(release.await(5L, TimeUnit.SECONDS));
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError("detached refresh was interrupted", interrupted);
+				}
+				return refreshedComputation(fixture, refreshedEvidence, this);
+			}
+
+			@Override
+			public long retainedBytes() {
+				return 0L;
+			}
+		};
+		assertTrue(cache.publishBuild(buildPublication(fixture, "champion", 100.0d, work)));
+		LmdbPlanDecisionCache.UseAndRefresh stale = assertInstanceOf(LmdbPlanDecisionCache.UseAndRefresh.class,
+				cache.lookupExact(fixture.exactKey(), fixture.request(refreshedEvidence)));
+		assertEquals(LmdbPlanDecisionCache.RefreshSubmission.SUBMITTED, cache.submitRefresh(stale));
+		assertTrue(started.await(5L, TimeUnit.SECONDS));
+
+		cache.markEvidenceChanged(new LmdbPlanDecisionCache.EvidenceChange(
+				fixture.capabilityDependency(), false, false));
+		release.countDown();
+		awaitCompletedRefreshTasks(cache, 1L);
+
+		assertEquals(1L, cache.statistics().publications(),
+				"work for an obsolete family version must not publish over the newer family state");
+		assertInstanceOf(LmdbPlanDecisionCache.UseAndRefresh.class,
+				cache.lookupExact(fixture.exactKey(), fixture.request(refreshedEvidence)));
+		cache.close();
+	}
+
+	@Test
+	void runtimeObservationDuringDetachedRefreshDoesNotStarvePublication() throws Exception {
+		LmdbPlanDecisionCache cache = new LmdbPlanDecisionCache(8, 1024 * 1024L);
+		Fixture fixture = fixture(1L);
+		LmdbPlanDecisionCache.EvidenceSnapshot refreshedEvidence = evidence(2L);
+		CountDownLatch started = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		LmdbPlanDecisionCache.DetachedRefreshWork work = new LmdbPlanDecisionCache.DetachedRefreshWork() {
+			@Override
+			public LmdbPlanDecisionCache.RefreshComputation execute() {
+				started.countDown();
+				try {
+					assertTrue(release.await(5L, TimeUnit.SECONDS));
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError("detached refresh was interrupted", interrupted);
+				}
+				return refreshedComputation(fixture, refreshedEvidence, this);
+			}
+
+			@Override
+			public long retainedBytes() {
+				return 0L;
+			}
+		};
+		assertTrue(cache.publishBuild(buildPublication(fixture, "champion", 100.0d, work)));
+		LmdbPlanDecisionCache.UseAndRefresh stale = assertInstanceOf(LmdbPlanDecisionCache.UseAndRefresh.class,
+				cache.lookupExact(fixture.exactKey(), fixture.request(refreshedEvidence)));
+		assertEquals(LmdbPlanDecisionCache.RefreshSubmission.SUBMITTED, cache.submitRefresh(stale));
+		assertTrue(started.await(5L, TimeUnit.SECONDS));
+
+		cache.observeExecution(new LmdbPlanDecisionCache.ExecutionObservation(
+				fixture.familyKey(), stale.variantId(), stale.plan().version(), true, false, 1.0d, 0L, false, false));
+		release.countDown();
+		awaitCompletedRefreshTasks(cache, 1L);
+
+		assertEquals(2L, cache.statistics().publications(),
+				"a posterior-only observation must not make detached refresh work structurally stale");
+		assertInstanceOf(LmdbPlanDecisionCache.Use.class,
+				cache.lookupExact(fixture.exactKey(), fixture.request(refreshedEvidence)));
+		LmdbPlanDecisionCache.RuntimePosterior posterior = currentFamilyVersion(cache, fixture.familyKey())
+				.dispatcher()
+				.variants()
+				.getFirst()
+				.runtimePosterior();
+		assertEquals(1L, posterior.completeObservations(),
+				"refresh publication must retain the concurrent runtime observation");
+		cache.close();
+	}
+
+	@Test
+	void samePhysicalRefreshRevalidatesChampionAtCurrentEvidence() throws Exception {
+		LmdbPlanDecisionCache cache = new LmdbPlanDecisionCache(8, 1024 * 1024L);
+		Fixture fixture = fixture(1L);
+		assertTrue(cache.publishBuild(buildPublication(fixture, "champion-100", 100.0d)));
+		LmdbPlanDecisionCache.EvidenceSnapshot refreshedEvidence = evidence(2L);
+		LmdbPlanDecisionCache.UseAndRefresh stale = assertInstanceOf(LmdbPlanDecisionCache.UseAndRefresh.class,
+				cache.lookupExact(fixture.exactKey(), fixture.request(refreshedEvidence)));
+		LmdbPlanDecisionCache.SearchCertificate refreshedCertificate = new LmdbPlanDecisionCache.SearchCertificate(
+				LmdbPlanDecisionCache.SearchCompletion.EXACT_COMPLETE,
+				LmdbPlanDecisionCache.BoundKind.BEST_KNOWN_UNBOUNDED, Double.NaN,
+				refreshedEvidence.globalEpoch(), refreshedEvidence.globalEpoch(), 0.0d, 12L);
+
+		assertTrue(cache.publishRefresh(new LmdbPlanDecisionCache.RefreshPublication(
+				fixture.familyKey(), stale.familyVersion(), fixture.dependencies(), refreshedEvidence,
+				refreshedEvidence,
+				stale.variantId(), fixture.template(), stale.plan().physicalFingerprint(),
+				new LmdbPlanDecisionCache.EstimatedCostInterval(95.0d, 105.0d), refreshedCertificate,
+				LmdbPlanDecisionCache.PlanStabilityEnvelope.exact(refreshedEvidence), 1024L, 1L, false)));
+
+		LmdbPlanDecisionCache.Use refreshed = assertInstanceOf(LmdbPlanDecisionCache.Use.class,
+				cache.lookupExact(fixture.exactKey(), fixture.request(refreshedEvidence)));
+		LmdbPlanDecisionCache.PlanVariant variant = currentFamilyVersion(cache, fixture.familyKey())
+				.dispatcher()
+				.variants()
+				.get(0);
+		assertTrue(refreshed.plan().version() > stale.plan().version(),
+				"same-physical refresh must replace the incumbent's evidence version");
+		assertEquals(new LmdbPlanDecisionCache.EstimatedCostInterval(95.0d, 105.0d),
+				refreshed.plan().estimatedCostInterval());
+		assertTrue(variant.challengers().isEmpty(), "same physical identity must not be retained as a challenger");
+		cache.close();
+	}
+
+	@Test
+	void nonDominatingRefreshRecalibratesIncumbentAndRetainsChallenger() throws Exception {
+		LmdbPlanDecisionCache cache = new LmdbPlanDecisionCache(8, 1024 * 1024L);
+		Fixture fixture = fixture(1L);
+		assertTrue(cache.publishBuild(buildPublication(fixture, "champion-100", 100.0d)));
+		LmdbPlanDecisionCache.EvidenceSnapshot refreshedEvidence = new LmdbPlanDecisionCache.EvidenceSnapshot(
+				2L, 2L, 2L, 2L, 2L, 2L, fixture.evidence().dependencies());
+		LmdbPlanDecisionCache.UseAndRefresh stale = assertInstanceOf(LmdbPlanDecisionCache.UseAndRefresh.class,
+				cache.lookupExact(fixture.exactKey(), fixture.request(refreshedEvidence)));
+		LmdbPlanDecisionCache.SearchCertificate refreshedCertificate = new LmdbPlanDecisionCache.SearchCertificate(
+				LmdbPlanDecisionCache.SearchCompletion.EXACT_COMPLETE,
+				LmdbPlanDecisionCache.BoundKind.VALID_LOWER_BOUND, 98.0d,
+				refreshedEvidence.globalEpoch(), refreshedEvidence.globalEpoch(), 0.0d, 18L);
+
+		assertTrue(cache.publishRefresh(new LmdbPlanDecisionCache.RefreshPublication(
+				fixture.familyKey(), stale.familyVersion(), fixture.dependencies(), refreshedEvidence,
+				refreshedEvidence, stale.variantId(), fixture.template(), "candidate-110",
+				new LmdbPlanDecisionCache.EstimatedCostInterval(108.0d, 112.0d), refreshedCertificate,
+				LmdbPlanDecisionCache.PlanStabilityEnvelope.exact(refreshedEvidence), 1024L, 1L, true)));
+
+		LmdbPlanDecisionCache.Use refreshed = assertInstanceOf(LmdbPlanDecisionCache.Use.class,
+				cache.lookupExact(fixture.exactKey(), fixture.request(refreshedEvidence)));
+		LmdbPlanDecisionCache.PlanVariant variant = currentFamilyVersion(cache, fixture.familyKey())
+				.dispatcher()
+				.variants()
+				.get(0);
+		assertEquals("champion-100", refreshed.plan().physicalFingerprint(),
+				"a non-dominating candidate must not replace the incumbent");
+		assertTrue(refreshed.plan().version() > stale.plan().version(),
+				"completed refresh must restamp the incumbent at current evidence");
+		assertEquals(refreshedEvidence.globalEpoch(), refreshed.plan().buildEvidenceEpoch());
+		assertEquals(List.of("candidate-110"), variant.challengers()
+				.stream()
+				.map(LmdbPlanDecisionCache.PlanVersion::physicalFingerprint)
+				.toList());
+		assertEquals(refreshedCertificate, variant.searchCertificate());
+		cache.close();
+	}
+
+	@Test
 	void promotionRequiresIntervalDominationAndRetainsTwoRetiredRollbacks() throws Exception {
 		LmdbPlanDecisionCache cache = new LmdbPlanDecisionCache(8, 1024 * 1024L);
 		Fixture fixture = fixture(1L);
@@ -445,9 +685,42 @@ class LmdbPlanDecisionCacheTest {
 
 	private static LmdbPlanDecisionCache.BuildPublication buildPublication(Fixture fixture, String fingerprint,
 			double cost) {
+		return buildPublication(fixture, fingerprint, cost, testRefreshWork());
+	}
+
+	private static LmdbPlanDecisionCache.BuildPublication buildPublication(Fixture fixture, String fingerprint,
+			double cost, LmdbPlanDecisionCache.DetachedRefreshWork refreshWork) {
 		return new LmdbPlanDecisionCache.BuildPublication(fixture.familyKey(), fixture.exactKey(),
 				fixture.dependencies(), fixture.evidence(), fixture.evidence(), fixture.template(), fingerprint,
-				new LmdbPlanDecisionCache.EstimatedCostInterval(cost, cost), certificate(fixture), 1024L, 1L);
+				new LmdbPlanDecisionCache.EstimatedCostInterval(cost, cost), certificate(fixture), 1024L, 1L,
+				refreshWork);
+	}
+
+	private static LmdbPlanDecisionCache.RefreshComputation refreshedComputation(Fixture fixture,
+			LmdbPlanDecisionCache.EvidenceSnapshot evidence,
+			LmdbPlanDecisionCache.DetachedRefreshWork nextRefreshWork) {
+		return new LmdbPlanDecisionCache.RefreshComputation(evidence, evidence, fixture.template().clone(),
+				"champion", new LmdbPlanDecisionCache.EstimatedCostInterval(95.0d, 105.0d),
+				new LmdbPlanDecisionCache.EstimatedCostInterval(95.0d, 105.0d),
+				new LmdbPlanDecisionCache.SearchCertificate(LmdbPlanDecisionCache.SearchCompletion.EXACT_COMPLETE,
+						LmdbPlanDecisionCache.BoundKind.VALID_LOWER_BOUND, 95.0d, evidence.globalEpoch(),
+						evidence.globalEpoch(), 0.0d, 12L),
+				LmdbPlanDecisionCache.PlanStabilityEnvelope.exact(evidence), 1024L, 1L, true,
+				nextRefreshWork);
+	}
+
+	private static LmdbPlanDecisionCache.DetachedRefreshWork testRefreshWork() {
+		return new LmdbPlanDecisionCache.DetachedRefreshWork() {
+			@Override
+			public LmdbPlanDecisionCache.RefreshComputation execute() {
+				throw new UnsupportedOperationException("decision-only fixture does not execute detached planning");
+			}
+
+			@Override
+			public long retainedBytes() {
+				return 0L;
+			}
+		};
 	}
 
 	private static LmdbPlanDecisionCache.RefreshPublication refreshPublication(Fixture fixture,
@@ -510,6 +783,21 @@ class LmdbPlanDecisionCacheTest {
 		Object request = constructor.newInstance(fixture.familyKey(), 1L, requestRate, expectedRegret,
 				probabilitySearchHelps, remainingCost, task);
 		return (boolean) method.invoke(cache, request);
+	}
+
+	private static ThreadPoolExecutor refreshExecutor(LmdbPlanDecisionCache cache) throws Exception {
+		var field = LmdbPlanDecisionCache.class.getDeclaredField("refreshExecutor");
+		field.setAccessible(true);
+		return (ThreadPoolExecutor) field.get(cache);
+	}
+
+	private static void awaitCompletedRefreshTasks(LmdbPlanDecisionCache cache, long expected) throws Exception {
+		ThreadPoolExecutor executor = refreshExecutor(cache);
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5L);
+		while (executor.getCompletedTaskCount() < expected && System.nanoTime() < deadline) {
+			Thread.onSpinWait();
+		}
+		assertEquals(expected, executor.getCompletedTaskCount(), "detached refresh did not complete");
 	}
 
 	private static long familyVersion(LmdbPlanDecisionCache cache, Fixture fixture, double cardinality) {
@@ -616,7 +904,7 @@ class LmdbPlanDecisionCacheTest {
 							LmdbPlanDecisionCache.SearchCompletion.EXACT_COMPLETE,
 							LmdbPlanDecisionCache.BoundKind.BEST_KNOWN_UNBOUNDED, Double.NaN, evidence.globalEpoch(),
 							evidence.globalEpoch(), 0.0d, 10L),
-					1024L, 1L);
+					1024L, 1L, testRefreshWork());
 		}
 	}
 }

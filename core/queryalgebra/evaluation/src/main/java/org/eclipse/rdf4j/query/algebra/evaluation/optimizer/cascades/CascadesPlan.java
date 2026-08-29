@@ -15,11 +15,12 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanDecisionSummary;
 
 /** Detached result of one packed Cascades planning call. */
 @Experimental
 public record CascadesPlan(TupleExpr tupleExpr, CostVector cost, OptimizationSearchStatus searchStatus,
-		PlanProvenance provenance, PlanningMetrics metrics) {
+		PlanProvenance provenance, PlanningMetrics metrics, PackedPlanDecisionSummary decisionSummary) {
 
 	public CascadesPlan {
 		tupleExpr = Objects.requireNonNull(tupleExpr, "selected tuple expression");
@@ -27,5 +28,10 @@ public record CascadesPlan(TupleExpr tupleExpr, CostVector cost, OptimizationSea
 		searchStatus = Objects.requireNonNull(searchStatus, "search status");
 		provenance = Objects.requireNonNull(provenance, "plan provenance");
 		metrics = Objects.requireNonNull(metrics, "planning metrics");
+	}
+
+	public CascadesPlan(TupleExpr tupleExpr, CostVector cost, OptimizationSearchStatus searchStatus,
+			PlanProvenance provenance, PlanningMetrics metrics) {
+		this(tupleExpr, cost, searchStatus, provenance, metrics, null);
 	}
 }

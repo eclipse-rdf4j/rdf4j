@@ -42,6 +42,10 @@ public final class PackedRuleProofs {
 	private PackedRuleProofs() {
 	}
 
+	static boolean dependsOnPredicateRangeData(long ruleMask) {
+		return (ruleMask & (PREDICATE_RANGE_EMPTY | PREDICATE_RANGE_TAUTOLOGY | PREDICATE_RANGE_ANCHOR)) != 0L;
+	}
+
 	static long requiredMaskForDescriptor(int descriptorId) {
 		return switch (descriptorId) {
 		case 1001 -> FINITE_FILTER_VALUES;
