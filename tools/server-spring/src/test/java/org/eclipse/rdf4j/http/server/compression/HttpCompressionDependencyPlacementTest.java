@@ -42,6 +42,10 @@ class HttpCompressionDependencyPlacementTest {
 			"com.aayushatharva.brotli4j:native-windows-aarch64",
 			"com.aayushatharva.brotli4j:native-windows-x86_64",
 			"com.github.luben:zstd-jni");
+	private static final List<String> ARCHIVE_COMPRESSION_DEPENDENCIES = List.of(
+			"org.apache.commons:commons-compress",
+			"commons-io:commons-io",
+			"org.tukaani:xz");
 
 	@Test
 	void brotliAndZstdDependenciesBelongToServerSpringNotRioApi() throws Exception {
@@ -53,7 +57,32 @@ class HttpCompressionDependencyPlacementTest {
 				.containsAll(HTTP_COMPRESSION_DEPENDENCIES);
 	}
 
+	@Test
+	void archiveCompressionDependenciesAreRuntimeOnlyOutsideCore() throws Exception {
+		Path root = findRepositoryRoot();
+
+		assertThat(nonTestDependencyKeys(root.resolve("core/rio/api/pom.xml")))
+				.doesNotContainAnyElementsOf(ARCHIVE_COMPRESSION_DEPENDENCIES);
+		assertThat(nonTestDependencyKeys(root.resolve("core/repository/api/pom.xml")))
+				.doesNotContainAnyElementsOf(ARCHIVE_COMPRESSION_DEPENDENCIES);
+		assertThat(directDependencyKeys(root.resolve("tools/server-spring/pom.xml")))
+				.containsAll(ARCHIVE_COMPRESSION_DEPENDENCIES);
+		assertThat(directDependencyKeys(root.resolve("tools/workbench/pom.xml")))
+				.containsAll(ARCHIVE_COMPRESSION_DEPENDENCIES);
+	}
+
 	private static Set<String> directDependencyKeys(Path pom) throws Exception {
+		return dependencies(pom).stream().map(Dependency::key).collect(Collectors.toSet());
+	}
+
+	private static Set<String> nonTestDependencyKeys(Path pom) throws Exception {
+		return dependencies(pom).stream()
+				.filter(dependency -> !"test".equals(dependency.scope()))
+				.map(Dependency::key)
+				.collect(Collectors.toSet());
+	}
+
+	private static List<Dependency> dependencies(Path pom) throws Exception {
 		DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
 		factory.setNamespaceAware(false);
 		factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -65,9 +94,10 @@ class HttpCompressionDependencyPlacementTest {
 		return IntStream.range(0, dependencies.getLength())
 				.mapToObj(dependencies::item)
 				.map(Element.class::cast)
-				.map(dependency -> dependencyValue(dependency, "groupId") + ":" + dependencyValue(dependency,
-						"artifactId"))
-				.collect(Collectors.toSet());
+				.map(dependency -> new Dependency(
+						dependencyValue(dependency, "groupId") + ":" + dependencyValue(dependency, "artifactId"),
+						dependencyValue(dependency, "scope")))
+				.toList();
 	}
 
 	private static Path findRepositoryRoot() {
@@ -85,6 +115,10 @@ class HttpCompressionDependencyPlacementTest {
 	}
 
 	private static String dependencyValue(Element dependency, String tagName) {
-		return dependency.getElementsByTagName(tagName).item(0).getTextContent();
+		NodeList elements = dependency.getElementsByTagName(tagName);
+		return elements.getLength() == 0 ? "" : elements.item(0).getTextContent();
+	}
+
+	private record Dependency(String key, String scope) {
 	}
 }

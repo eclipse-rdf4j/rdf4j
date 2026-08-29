@@ -19,6 +19,7 @@ import java.io.StringReader;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 
@@ -64,7 +65,11 @@ import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.test.annotation.DirtiesContext;
@@ -329,6 +334,24 @@ class Rdf4jServerWorkbenchApplicationTest {
 				assertThat(result.hasNext()).isFalse();
 			}
 		});
+	}
+
+	@Test
+	void serverAcceptsAutoDetectedBzip2RdfUpload() throws Exception {
+		String repoId = registerRepository("compressed", new MemoryStoreConfig());
+		byte[] compressed = Base64.getDecoder()
+				.decode("QlpoOTFBWSZTWT1rwn8AAAOZgEABABUOA9oAIAAxTAABXlGjCPSMDI1nFdl6S4Q3iosPFj4u5IpwoSB614T+");
+		HttpHeaders headers = new HttpHeaders();
+		headers.setContentType(MediaType.parseMediaType(RDFFormat.TURTLE.getDefaultMIMEType()));
+
+		ResponseEntity<Void> response = restTemplate.exchange(
+				serverUrl() + "/repositories/" + repoId + "/statements", HttpMethod.PUT,
+				new HttpEntity<>(compressed, headers), Void.class);
+
+		assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+		withRepositoryConnection(repoId, connection -> assertThat(connection.hasStatement(
+				valueFactory.createIRI("urn:compressed"), valueFactory.createIRI("urn:p"),
+				valueFactory.createIRI("urn:o"), false)).isTrue());
 	}
 
 	@Test

@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.rio.helpers;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.FilterInputStream;
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -106,7 +107,13 @@ public enum RioCompression {
 	};
 
 	public static final String DISABLED_ENCODINGS_PROPERTY = "org.eclipse.rdf4j.rio.compression.disabledEncodings";
-	private static final int SIGNATURE_LENGTH = 4;
+
+	/** System property that limits decoder memory for codecs that advertise their memory requirements, in KiB. */
+	public static final String MAX_DECODER_MEMORY_KIB_PROPERTY = "org.eclipse.rdf4j.rio.compression.maxDecoderMemoryKiB";
+
+	/** Default decoder-memory limit: 64 MiB, expressed in KiB. */
+	public static final int DEFAULT_MAX_DECODER_MEMORY_KIB = 64 * 1024;
+	private static final int SIGNATURE_LENGTH = 12;
 
 	private final String contentEncoding;
 	private final Set<String> fileExtensions;
@@ -146,22 +153,44 @@ public enum RioCompression {
 	}
 
 	public static InputStream decompressIfDetected(InputStream inputStream) throws IOException {
+		return decompressIfDetected(inputStream, null, configuredDecoderMemoryLimitKiB());
+	}
+
+	public static InputStream decompressIfDetected(InputStream inputStream, String fileName) throws IOException {
+		return decompressIfDetected(inputStream, fileName, configuredDecoderMemoryLimitKiB());
+	}
+
+	static InputStream decompressIfDetected(InputStream inputStream, String fileName, int decoderMemoryLimitKiB)
+			throws IOException {
 		Objects.requireNonNull(inputStream, "inputStream must not be null");
+		if (decoderMemoryLimitKiB <= 0) {
+			throw new IllegalArgumentException(MAX_DECODER_MEMORY_KIB_PROPERTY + " must be greater than zero");
+		}
 		InputStream source = markable(inputStream);
 		Optional<RioCompression> compression = forStreamSignature(source);
 		if (compression.isPresent()) {
 			return compression.get().decompress(source);
 		}
-		return source;
-	}
-
-	public static InputStream decompressIfDetected(InputStream inputStream, String fileName) throws IOException {
-		Objects.requireNonNull(inputStream, "inputStream must not be null");
-		Optional<RioCompression> compression = forFileName(fileName);
-		if (compression.isPresent()) {
-			return compression.get().decompress(inputStream);
+		Optional<AdditionalCompression> additionalCompression = AdditionalCompression.detectSignature(source);
+		if (additionalCompression.isPresent() && CommonsCompressSupport.isAvailable()) {
+			return CommonsCompressSupport.decompress(additionalCompression.get(), source, decoderMemoryLimitKiB);
 		}
-		return decompressIfDetected(inputStream);
+
+		compression = forFileName(fileName);
+		String extension = extension(fileName);
+		if (compression.isEmpty() && "tgz".equals(extension) && GZIP.isAvailable()) {
+			compression = Optional.of(GZIP);
+		} else if (compression.isEmpty() && "tzst".equals(extension) && ZSTD.isAvailable()) {
+			compression = Optional.of(ZSTD);
+		}
+		if (compression.isPresent()) {
+			return compression.get().decompress(source);
+		}
+		additionalCompression = AdditionalCompression.forExtension(extension);
+		if (additionalCompression.isPresent() && CommonsCompressSupport.isAvailable()) {
+			return CommonsCompressSupport.decompress(additionalCompression.get(), source, decoderMemoryLimitKiB);
+		}
+		return source;
 	}
 
 	public static Optional<RioCompression> forContentEncoding(String contentEncoding) {
@@ -238,6 +267,67 @@ public enum RioCompression {
 		return inputStream.markSupported() ? inputStream : new BufferedInputStream(inputStream, SIGNATURE_LENGTH);
 	}
 
+	static String removeCompressionExtension(String sourceName) {
+		if (sourceName == null) {
+			return null;
+		}
+		int suffixEnd = suffixEnd(sourceName);
+		String extension = extension(sourceName);
+		if (extension == null) {
+			return sourceName;
+		}
+		if ("tgz".equals(extension)) {
+			return sourceName.substring(0, suffixEnd - extension.length() - 1) + ".tar"
+					+ sourceName.substring(suffixEnd);
+		}
+		if (Set.of("tbz", "tbz2", "txz", "tlz", "tlz4", "tsz", "tzst").contains(extension)) {
+			return sourceName.substring(0, suffixEnd - extension.length() - 1) + ".tar"
+					+ sourceName.substring(suffixEnd);
+		}
+		if (forFileName(sourceName).isPresent() || AdditionalCompression.forExtension(extension).isPresent()) {
+			return sourceName.substring(0, suffixEnd - extension.length() - 1) + sourceName.substring(suffixEnd);
+		}
+		return sourceName;
+	}
+
+	private static int configuredDecoderMemoryLimitKiB() {
+		String configured = System.getProperty(MAX_DECODER_MEMORY_KIB_PROPERTY);
+		if (configured == null) {
+			return DEFAULT_MAX_DECODER_MEMORY_KIB;
+		}
+		try {
+			int value = Integer.parseInt(configured.trim());
+			if (value <= 0) {
+				throw new IllegalArgumentException(MAX_DECODER_MEMORY_KIB_PROPERTY + " must be greater than zero");
+			}
+			return value;
+		} catch (NumberFormatException e) {
+			throw new IllegalArgumentException(MAX_DECODER_MEMORY_KIB_PROPERTY + " is not a valid integer", e);
+		}
+	}
+
+	private static String extension(String fileName) {
+		if (fileName == null || fileName.isBlank()) {
+			return null;
+		}
+		int end = suffixEnd(fileName);
+		int separator = Math.max(fileName.lastIndexOf('/', end - 1), fileName.lastIndexOf('\\', end - 1));
+		int dot = fileName.lastIndexOf('.', end - 1);
+		if (dot <= separator || dot == end - 1) {
+			return null;
+		}
+		return fileName.substring(dot + 1, end).toLowerCase(Locale.ROOT);
+	}
+
+	private static int suffixEnd(String fileName) {
+		int query = fileName.indexOf('?');
+		int fragment = fileName.indexOf('#');
+		if (query < 0) {
+			return fragment < 0 ? fileName.length() : fragment;
+		}
+		return fragment < 0 ? query : Math.min(query, fragment);
+	}
+
 	private static boolean isGzip(byte[] signature) {
 		return signature.length >= 2 && (signature[0] & 0xff) == 0x1f && (signature[1] & 0xff) == 0x8b;
 	}
@@ -257,6 +347,189 @@ public enum RioCompression {
 		int cmf = signature[0] & 0xff;
 		int flg = signature[1] & 0xff;
 		return (cmf & 0x0f) == 8 && (cmf >> 4) <= 7 && ((cmf << 8) + flg) % 31 == 0;
+	}
+
+	private enum AdditionalCompression {
+		BZIP2("bzip2", Set.of("bz2", "bzip2", "tbz", "tbz2")),
+		XZ("xz", Set.of("xz", "txz")),
+		LZMA("lzma", Set.of("lzma", "tlz")),
+		LZ4("lz4-framed", Set.of("lz4", "tlz4")),
+		SNAPPY("snappy-framed", Set.of("sz", "snappy", "tsz")),
+		Z("z", Set.of("z"));
+
+		private final String commonsName;
+		private final Set<String> extensions;
+
+		AdditionalCompression(String commonsName, Set<String> extensions) {
+			this.commonsName = commonsName;
+			this.extensions = extensions;
+		}
+
+		private static Optional<AdditionalCompression> detectSignature(InputStream inputStream) throws IOException {
+			inputStream.mark(SIGNATURE_LENGTH);
+			byte[] signature = inputStream.readNBytes(SIGNATURE_LENGTH);
+			inputStream.reset();
+			if (startsWith(signature, 0x42, 0x5a, 0x68)) {
+				return Optional.of(BZIP2);
+			}
+			if (startsWith(signature, 0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00)) {
+				return Optional.of(XZ);
+			}
+			if (startsWith(signature, 0x04, 0x22, 0x4d, 0x18)) {
+				return Optional.of(LZ4);
+			}
+			if (startsWith(signature, 0xff, 0x06, 0x00, 0x00, 0x73, 0x4e, 0x61, 0x50, 0x70, 0x59)) {
+				return Optional.of(SNAPPY);
+			}
+			if (startsWith(signature, 0x1f, 0x9d)) {
+				return Optional.of(Z);
+			}
+			return Optional.empty();
+		}
+
+		private static Optional<AdditionalCompression> forExtension(String extension) {
+			if (extension == null) {
+				return Optional.empty();
+			}
+			for (AdditionalCompression compression : values()) {
+				if (compression.extensions.contains(extension)) {
+					return Optional.of(compression);
+				}
+			}
+			return Optional.empty();
+		}
+	}
+
+	private static boolean startsWith(byte[] actual, int... expected) {
+		if (actual.length < expected.length) {
+			return false;
+		}
+		for (int i = 0; i < expected.length; i++) {
+			if ((actual[i] & 0xff) != expected[i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static final class CommonsCompressSupport {
+
+		private static final String FACTORY = "org.apache.commons.compress.compressors.CompressorStreamFactory";
+		private static final String MEMORY_LIMIT_EXCEPTION = "org.apache.commons.compress.MemoryLimitException";
+		private static volatile Constructor<?> factoryConstructor;
+		private static volatile Method createInputStreamMethod;
+
+		private static InputStream decompress(AdditionalCompression compression, InputStream inputStream,
+				int decoderMemoryLimitKiB) throws IOException {
+			try {
+				Object factory = factoryConstructor().newInstance(true, decoderMemoryLimitKiB);
+				InputStream decompressed = (InputStream) createInputStreamMethod().invoke(factory,
+						compression.commonsName, inputStream, true);
+				return new MemoryLimitTranslatingInputStream(decompressed, decoderMemoryLimitKiB);
+			} catch (ReflectiveOperationException e) {
+				throw translate(compression.commonsName, e, decoderMemoryLimitKiB);
+			}
+		}
+
+		private static Constructor<?> factoryConstructor() throws ReflectiveOperationException {
+			Constructor<?> constructor = factoryConstructor;
+			if (constructor == null) {
+				constructor = Class.forName(FACTORY).getConstructor(boolean.class, int.class);
+				factoryConstructor = constructor;
+			}
+			return constructor;
+		}
+
+		private static Method createInputStreamMethod() throws ReflectiveOperationException {
+			Method method = createInputStreamMethod;
+			if (method == null) {
+				method = Class.forName(FACTORY)
+						.getMethod("createCompressorInputStream", String.class, InputStream.class, boolean.class);
+				createInputStreamMethod = method;
+			}
+			return method;
+		}
+
+		private static boolean isAvailable() {
+			try {
+				Class.forName(FACTORY, false, RioCompression.class.getClassLoader());
+				return true;
+			} catch (ClassNotFoundException | LinkageError e) {
+				return false;
+			}
+		}
+
+		private static IOException translate(String name, Throwable failure, int configuredLimitKiB) {
+			Throwable cause = failure;
+			while (cause instanceof InvocationTargetException && cause.getCause() != null) {
+				cause = cause.getCause();
+			}
+			Throwable memoryLimit = findCause(cause, MEMORY_LIMIT_EXCEPTION);
+			if (memoryLimit != null) {
+				try {
+					long required = ((Number) memoryLimit.getClass()
+							.getMethod("getMemoryNeededInKb")
+							.invoke(memoryLimit)).longValue();
+					int limit = ((Number) memoryLimit.getClass()
+							.getMethod("getMemoryLimitInKb")
+							.invoke(memoryLimit)).intValue();
+					return new RDFInputDecoderMemoryLimitException(required, limit, memoryLimit);
+				} catch (ReflectiveOperationException ignored) {
+					return new RDFInputDecoderMemoryLimitException(-1, configuredLimitKiB, memoryLimit);
+				}
+			}
+			if (cause instanceof IOException) {
+				return (IOException) cause;
+			}
+			return new IOException("Could not decompress " + name + " RDF input", cause);
+		}
+
+		private static Throwable findCause(Throwable cause, String className) {
+			while (cause != null) {
+				if (className.equals(cause.getClass().getName())) {
+					return cause;
+				}
+				cause = cause.getCause();
+			}
+			return null;
+		}
+
+		private static final class MemoryLimitTranslatingInputStream extends FilterInputStream {
+
+			private final int decoderMemoryLimitKiB;
+
+			private MemoryLimitTranslatingInputStream(InputStream inputStream, int decoderMemoryLimitKiB) {
+				super(inputStream);
+				this.decoderMemoryLimitKiB = decoderMemoryLimitKiB;
+			}
+
+			@Override
+			public int read() throws IOException {
+				try {
+					return super.read();
+				} catch (IOException e) {
+					throw translate("compressed", e, decoderMemoryLimitKiB);
+				}
+			}
+
+			@Override
+			public int read(byte[] bytes, int offset, int length) throws IOException {
+				try {
+					return super.read(bytes, offset, length);
+				} catch (IOException e) {
+					throw translate("compressed", e, decoderMemoryLimitKiB);
+				}
+			}
+
+			@Override
+			public long skip(long count) throws IOException {
+				try {
+					return super.skip(count);
+				} catch (IOException e) {
+					throw translate("compressed", e, decoderMemoryLimitKiB);
+				}
+			}
+		}
 	}
 
 	private static Class<?> compressionClass(String className) throws IOException {
