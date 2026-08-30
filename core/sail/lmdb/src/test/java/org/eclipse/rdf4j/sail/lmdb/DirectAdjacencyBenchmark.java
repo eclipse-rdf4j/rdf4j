@@ -79,6 +79,7 @@ public class DirectAdjacencyBenchmark {
 	private NativeLmdbQuerySource.NativeAdjacency adjacency;
 	private long targetPredicate;
 	private final long[] keys = new long[KEY_COUNT];
+	private final long[] runHandles = new long[KEY_COUNT];
 	private final long[] neighborCopy = new long[4096];
 	private final long[] smallRunNeighbors = new long[8];
 	private int keyCursor;
@@ -195,6 +196,16 @@ public class DirectAdjacencyBenchmark {
 		blackhole.consume(digest);
 	}
 
+	/** Counts from an already-resolved run handle without comparing or decoding any root, neighbor, or context ID. */
+	@Benchmark
+	public void metadataOnlyRunSize(Blackhole blackhole) {
+		long total = 0;
+		for (int i = 0; i < 256; i++) {
+			total += adjacency.size(runHandles[i & (KEY_COUNT - 1)]);
+		}
+		blackhole.consume(total);
+	}
+
 	@Benchmark
 	public void bulkTraversal(Blackhole blackhole) {
 		int key = nextKey();
@@ -274,6 +285,7 @@ public class DirectAdjacencyBenchmark {
 	void verifyFixture() {
 		for (int key = 0; key < KEY_COUNT; key++) {
 			long run = adjacency.find(keys[key]);
+			runHandles[key] = run;
 			if (run <= 0 || adjacency.size(run) != degree) {
 				throw new IllegalStateException("wrong run size for key " + key);
 			}

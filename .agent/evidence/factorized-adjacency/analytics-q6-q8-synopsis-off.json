@@ -1,0 +1,182 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/26-zulu/zulu-26.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms1G",
+            "-Xmx16G",
+            "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true",
+            "-Drdf4j.lmdb.directAdjacency.synopsis.enabled=false",
+            "-Drdf4j.lmdb.vectorBackend=scalar",
+            "-Drdf4j.lmdb.themeQueryBenchmark.typeMatrixMetrics=true"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35",
+        "warmupIterations" : 2,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 3,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "themeName" : "ANALYTICS",
+            "z_queryIndex" : "6",
+            "z_z_janinoEnabled" : "false"
+        },
+        "primaryMetric" : {
+            "score" : 6.229036449115934,
+            "scoreError" : 3.4872974864934685,
+            "scoreConfidence" : [
+                2.741738962622465,
+                9.716333935609402
+            ],
+            "scorePercentiles" : {
+                "0.0" : 6.029092011904762,
+                "50.0" : 6.2480445,
+                "90.0" : 6.409972835443038,
+                "95.0" : 6.409972835443038,
+                "99.0" : 6.409972835443038,
+                "99.9" : 6.409972835443038,
+                "99.99" : 6.409972835443038,
+                "99.999" : 6.409972835443038,
+                "99.9999" : 6.409972835443038,
+                "100.0" : 6.409972835443038
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    6.409972835443038,
+                    6.2480445,
+                    6.029092011904762
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/26-zulu/zulu-26.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms1G",
+            "-Xmx16G",
+            "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true",
+            "-Drdf4j.lmdb.directAdjacency.synopsis.enabled=false",
+            "-Drdf4j.lmdb.vectorBackend=scalar",
+            "-Drdf4j.lmdb.themeQueryBenchmark.typeMatrixMetrics=true"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35",
+        "warmupIterations" : 2,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 3,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "themeName" : "ANALYTICS",
+            "z_queryIndex" : "7",
+            "z_z_janinoEnabled" : "false"
+        },
+        "primaryMetric" : {
+            "score" : 9.123990056675254,
+            "scoreError" : 4.682101465726661,
+            "scoreConfidence" : [
+                4.441888590948593,
+                13.806091522401914
+            ],
+            "scorePercentiles" : {
+                "0.0" : 8.888619885964912,
+                "50.0" : 9.085740330357142,
+                "90.0" : 9.397609953703704,
+                "95.0" : 9.397609953703704,
+                "99.0" : 9.397609953703704,
+                "99.9" : 9.397609953703704,
+                "99.99" : 9.397609953703704,
+                "99.999" : 9.397609953703704,
+                "99.9999" : 9.397609953703704,
+                "100.0" : 9.397609953703704
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    9.397609953703704,
+                    9.085740330357142,
+                    8.888619885964912
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Users/havardottestad/.sdkman/candidates/java/26-zulu/zulu-26.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Xms1G",
+            "-Xmx16G",
+            "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true",
+            "-Drdf4j.lmdb.directAdjacency.synopsis.enabled=false",
+            "-Drdf4j.lmdb.vectorBackend=scalar",
+            "-Drdf4j.lmdb.themeQueryBenchmark.typeMatrixMetrics=true"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35",
+        "warmupIterations" : 2,
+        "warmupTime" : "500 ms",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 3,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "themeName" : "ANALYTICS",
+            "z_queryIndex" : "8",
+            "z_z_janinoEnabled" : "false"
+        },
+        "primaryMetric" : {
+            "score" : 37.049163874338625,
+            "scoreError" : 6.071828741534927,
+            "scoreConfidence" : [
+                30.9773351328037,
+                43.120992615873554
+            ],
+            "scorePercentiles" : {
+                "0.0" : 36.81895982142857,
+                "50.0" : 36.89776635714286,
+                "90.0" : 37.43076544444445,
+                "95.0" : 37.43076544444445,
+                "99.0" : 37.43076544444445,
+                "99.9" : 37.43076544444445,
+                "99.99" : 37.43076544444445,
+                "99.999" : 37.43076544444445,
+                "99.9999" : 37.43076544444445,
+                "100.0" : 37.43076544444445
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    37.43076544444445,
+                    36.89776635714286,
+                    36.81895982142857
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]

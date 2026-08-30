@@ -69,6 +69,18 @@ The performance objective is at least a 10x geometric-mean improvement for ANALY
   benchmark validation and exceeding the user-provided historical five-times-faster gates.
 - [x] (2026-08-30 09:39Z) Ran final formatting and the JDK 25 LMDB module gate: 4,274 tests, zero failures,
   zero errors, and 103 skipped tests. No retained benchmark, corpus, or evidence artifact was deleted.
+- [x] (2026-08-30 09:47Z) Reopened the Vector API milestone at the user's request, read the JDK 26 and local
+  performance/JIT guidance, and passed a fresh root quick clean install in 34.274 seconds.
+- [x] (2026-08-30 10:12Z) Completed the production-source census across all 406 LMDB sources and classified packed
+  decode, page traits, root/fiber batches, IR/Janino filters, hashes, aggregates, set kernels, value IDs, and ingest.
+- [x] (2026-08-30 10:24Z) Extended the unsigned scalar/vector oracle and matched AArch64 JMH matrix across byte/short/
+  int/long widths, masked tails, mixed/uniform IDs, ranges, equality, transitions, sums, masks, hashes, and decoding.
+- [x] (2026-08-30 10:55Z) Applied the 1.50x plus materiality gate. Exact delimiter search won by 3.27x to 4.94x, but
+  changed the full 10,000-row long-literal load by only 0.23 percent; exact page classification was 2.04x to 2.26x
+  slower through the production facade. No operation qualified, so the optional production provider was removed.
+- [x] (2026-08-30 10:58Z) Added live-delta and metadata-only controls. A 4,096-fiber overlay made full traversal 17.9
+  percent slower, while 256 cached-handle metadata counts remained decode/comparison-free at 2.78 to 4.16 us total.
+  Re-ran scalar/vector parity, JDK 25 focused contracts, q0 followed by q1, and no-synopsis q6/q7/q8 gates.
 
 ## Surprises & Discoveries
 
@@ -92,6 +104,12 @@ The performance objective is at least a 10x geometric-mean improvement for ANALY
 
 - Observation: Oracle's JDK 26 Vector API documentation confirms optimized AArch64 support is NEON, not SVE, and describes masked operations as blends on platforms without native general masking.
   Evidence: this narrows the experiment to full-lane blocks and scalar tails; masked short tails are not assumed wins.
+
+- Observation: the first AArch64 microbenchmark already exceeds the new 1.50x threshold for three allocation-free
+  heap-array operations at 8,192 lanes: adjacent transition counting is 1.98x faster, multiplicity summation is 1.85x
+  faster, and unsigned range counting is 1.56x faster. Dense word intersection is only 1.09x faster.
+  Evidence: `.agent/evidence/factorized-adjacency/vector-scalar-resolved-jdk26-aarch64.txt` and
+  `vector-forced-jdk26-aarch64.txt`. These are microkernel facts, not yet proof of material end-to-end impact.
 
 - Observation: matched JDK 26 corpus runs validate q3's root-metadata architecture but reject the current q7/q8 architecture. q3 is exact at 0.136 ms/op; q7 is exact at 101.834 ms/op; q8 is exact at 3,912.597 ms/op.
   Evidence: `.agent/evidence/factorized-adjacency/analytics-q3-current-jdk26.txt`, `analytics-q7-current-jdk26.txt`, and `analytics-q8-current-jdk26.txt`.
@@ -260,6 +278,15 @@ The performance objective is at least a 10x geometric-mean improvement for ANALY
   required statistically credible end-to-end improvement.
   Date/Author: 2026-08-30 / Codex.
 
+- Decision: Reopen the earlier Vector API rejection and perform a branch-wide second investigation using a stricter
+  but simpler promotion rule. A kernel qualifies only when matched JDK 26 AArch64 measurements show at least 1.50x
+  speedup and the operation is materially relevant: it accounts for at least five percent of a representative CPU
+  profile or improves an affected end-to-end query/build benchmark by at least three percent without a regression.
+  Rationale: the user explicitly requires optional Vector API support for every decently impactful operation that is
+  fifty percent or more faster. The materiality condition prevents shipping SIMD code for an isolated loop that does
+  not affect real execution, while the scalar fallback and same-query benchmark prevent microbenchmark-only claims.
+  Date/Author: 2026-08-30 / Codex.
+
 - Decision: Treat page traits as a physical proof scoped to one immutable page and one column, not as a general fact
   about a logical run or overlay-composed snapshot. Hoist a check to page grain only when the consumer can preserve
   exact bag/DISTINCT multiplicity and the visible source proves the trait remains authoritative.
@@ -271,7 +298,8 @@ The performance objective is at least a 10x geometric-mean improvement for ANALY
 
 ## Outcomes & Retrospective
 
-Implementation is complete. Every q0-q12 analytical shape has an adjacency lowering, and the acceptance measurements
+The factorized adjacency implementation and the reopened exhaustive Vector API milestone are complete. Every q0-q12
+analytical shape has an adjacency lowering, and the acceptance measurements
 use `rdf4j.lmdb.directAdjacency.synopsis.enabled=false`. q0/q1 run together at 0.037/0.058 ms. The matched q3-q12
 geometric-mean speedup is 3,183.2x over forced LMDB; every individual query wins, q7/q8 return exactly 125/56 groups,
 and q6/q7/q8 satisfy their historical five-times-faster ceilings at 5.988/8.197/40.454 ms in the complete sweep.
@@ -284,8 +312,16 @@ embed a stable datatype tag in their ID when the ordinal fits; legacy/custom lit
 or batched ValueStore header lookup.
 
 The matched AArch64 Vector API experiment found useful isolated speedups but did not satisfy the complete production
-promotion contract, so the shipping path remains scalar. Final JDK 25 verification passed 4,176 tests with no failures
-or errors (103 skipped). The protected corpus and all benchmark, profiling, and first-failure artifacts remain intact.
+promotion contract, so the shipping path remains scalar. Final JDK 25 verification passed 4,274 tests in 604.869
+seconds with no failures or errors (103 skipped). The protected corpus and all benchmark, profiling, and first-failure
+artifacts remain intact.
+
+The reopened exhaustive screen reached the same production conclusion with broader evidence. The exact parser byte
+kernel is 3.27x to 4.94x faster at 32 through 8,192 bytes, but the affected long-literal bulk load improved only 0.23
+percent. The initially promising mixed page classifier became 2.04x to 2.26x slower through the actual facade and was
+demoted. Consequently no production source or build descriptor references `jdk.incubator.vector`; the scalar path and
+all page-header optimizations remain unchanged. The benchmark-only prototypes and matched JSON results document every
+promotion/rejection decision.
 
 ## Context and Orientation
 
@@ -333,6 +369,23 @@ ValueStore-header resolution at page grain. Retain a change only if repeated mat
 expected workload without regressing affected alternatives; otherwise revert that candidate while preserving the
 benchmark evidence and audit conclusion.
 
+Milestone 10 revisits SIMD across the complete LMDB implementation rather than only the four original adjacency batch
+operations. First produce a census that maps each primitive loop to its physical source, element width, ordering,
+alignment, typical batch length, branch/selectivity pattern, caller, and representative workload. Cover
+`PackedLongVector` encode/decode/search/range-sum paths, `CompactCsfPageReader` root/fiber copies, CSF build and rewrite,
+delta run codecs, LMDB bulk staging, term-kind and ID transforms, native row and factorized batches, merge/gallop and
+dense-mask operations, hash/probe loops, aggregate reductions, IR interpreter loops, emitted Janino loops, and
+generated-runtime helpers. Reject irregular pointer chasing, scatters, tiny loops, and already metadata-reduced work in
+the census unless a profile demonstrates a vector-friendly reformulation.
+
+For every credible entry, add the smallest scalar oracle and benchmark-only vector prototype without changing
+production behavior. Exercise full lanes and scalar tails at realistic sizes and distributions. Run module-unresolved
+scalar, module-resolved forced scalar, and module-resolved forced vector in separate forks. A production promotion
+requires at least 1.50x isolated speedup, real-workload materiality, exact oracle parity, zero steady-state allocation,
+and JIT evidence showing AArch64 NEON instructions. Promoted operations use one isolated backend selected once per JVM;
+Janino-generated source calls a stable scalar facade and never imports incubator types. When the module is absent or
+unresolved, provider loading fails closed to scalar without changing query results or startup behavior.
+
 ## Concrete Steps
 
 Run all commands from `/Users/havardottestad/Documents/Programming/rdf4j`. Tests use the repository runner, never Maven `-am` or `-q`:
@@ -364,6 +417,14 @@ accepted only when the expected query is repeatably faster, all affected semanti
 zero decode counts remain visible rather than being treated as unset, and no affected matched query regresses beyond
 measurement noise.
 
+For Milestone 10, the census is complete only when every primitive-array or native-contiguous loop in the named LMDB,
+adjacency, native-engine, IR, and Janino surfaces has a recorded disposition: benchmark, profile-only, structurally
+ineligible, already intrinsic/auto-vectorized, or dominated by a coarser algorithm. Every promoted operation must be at
+least 1.50x faster in matched isolated JMH, cover at least five percent of a representative CPU profile or improve its
+end-to-end workload by at least three percent, allocate nothing in steady state, and preserve exact results in forced
+scalar, forced vector, auto-with-module, and auto-without-module modes. No affected workload may regress by more than
+two percent outside overlapping confidence intervals.
+
 ## Idempotence and Recovery
 
 Focused tests and builds are repeatable. `mvnf` performs the required install and keeps logs when requested. Never run `git clean`, `git reset --hard`, broad restore, or a manual stash. If a test overwrites a Surefire report, retain the first red evidence in `initial-evidence.txt` and the full log under `logs/mvnf`. If a benchmark process is active, wait rather than rebuilding or replacing its target. The preserved corpus in `/private/tmp` is read-only source evidence; never delete it.
@@ -376,6 +437,19 @@ Initial build evidence is `maven-build.log`. The canonical preserved corpus is `
 
 `NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor` gains an authoritative-or-unknown distinct-neighbor count and allocation-free root-batch fill. `NativeAdjacency.BoundRunCursor` gains the corresponding bound-run metadata where available. `LmdbNativeKernelIr` gains `Grain` plus plane/root/fiber producers that bind resources from the existing `KernelContext`. Scalar algorithms use only JDK primitive arrays and existing repository primitive maps. No new dependency or public RDF4J API is introduced. The only persisted-format change is the explicit, versioned core-datatype reference-ID capability; existing stores retain their legacy encoding and remain readable.
 
-The optional Vector API provider may reference `jdk.incubator.vector` only in an isolated package and only after the benchmark promotion gates pass. Scalar code must have no static linkage to incubator classes. On AArch64, automatic selection requires the module to be present in `ModuleLayer.boot()` and the specific operation to have passed the recorded promotion gate.
+A future optional Vector API provider may reference `jdk.incubator.vector` only in an isolated package and only after
+the benchmark promotion gates pass. Scalar code must have no static linkage to incubator classes. If a later AArch64
+operation qualifies, automatic selection must require the module in `ModuleLayer.boot()` and certification of that
+specific operation and batch size. Milestone 10 promoted nothing, so this revision ships no provider, backend property,
+incubator-module compiler option, or Janino linkage.
 
 Revision note: 2026-08-29 initial implementation plan created from the approved factorized-adjacency design. It incorporates the existing bidirectional aggregation work, the 10 percent memory limit, exact q7/q8 gates, root/fiber morsels, and an evidence-gated AArch64 Vector API investigation. The same day, the first root-metadata regression passed without a persisted-format change. Revised 2026-08-30 to add the branch-wide page-header consumer audit, strict snapshot-authority rules, test-first implementation, and matched before/after promotion gate requested after the initial q0-q12 completion.
+
+Revision note: 2026-08-30 reopened the Vector API work as Milestone 10 after the user requested an exhaustive audit of
+adjacency, LMDB, native engine, IR, and Janino paths and production support for materially relevant operations that
+improve by at least fifty percent. The earlier rejection remains historical evidence rather than the final decision.
+
+Revision note: 2026-08-30 completed Milestone 10. The broad scalar/vector oracle rejected packed widening, fixed-width
+decode, range/equality selection, hashes, masks, ordered checks, sums, and exact page classification. Delimiter search
+won by 3.27x to 4.94x but moved its affected end-to-end load by only 0.23 percent, so it also failed materiality. The
+production prototype was removed, live-delta/comparison-free controls were added, and the shipping path remains scalar.
