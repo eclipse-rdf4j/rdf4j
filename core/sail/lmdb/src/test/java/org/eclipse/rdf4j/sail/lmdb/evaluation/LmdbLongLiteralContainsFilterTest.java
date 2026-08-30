@@ -37,14 +37,14 @@ import org.junit.jupiter.api.io.TempDir;
  */
 public class LmdbLongLiteralContainsFilterTest {
 
-	private static final String BB = "http://bloomberg#";
+	private static final String EX = "http://company#";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 
-	private static final String QUERY = "PREFIX bb: <http://bloomberg#>\n"
+	private static final String QUERY = "PREFIX ex: <http://company#>\n"
 			+ "SELECT ?cmp ?name ?brands WHERE {\n"
-			+ "  ?cmp a bb:Company .\n"
-			+ "  ?cmp bb:name ?name .\n"
-			+ "  ?cmp bb:brands ?brands .\n"
+			+ "  ?cmp a ex:Company .\n"
+			+ "  ?cmp ex:name ?name .\n"
+			+ "  ?cmp ex:brands ?brands .\n"
 			+ "  FILTER(CONTAINS(LCASE(?brands), \"gemini\"))\n"
 			+ "}";
 
@@ -66,13 +66,13 @@ public class LmdbLongLiteralContainsFilterTest {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			conn.begin();
 			ValueFactory vf = conn.getValueFactory();
-			IRI company = vf.createIRI(BB, "Company");
-			IRI name = vf.createIRI(BB, "name");
-			IRI brands = vf.createIRI(BB, "brands");
+			IRI company = vf.createIRI(EX, "Company");
+			IRI name = vf.createIRI(EX, "name");
+			IRI brands = vf.createIRI(EX, "brands");
 			IRI type = vf.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
 
 			for (int i = 0; i < COMPANIES; i++) {
-				IRI cmp = vf.createIRI(BB, "company" + i);
+				IRI cmp = vf.createIRI(EX, "company" + i);
 				conn.add(cmp, type, company);
 				conn.add(cmp, name, vf.createLiteral("Company Number " + i));
 				conn.add(cmp, brands, vf.createLiteral(brandsLiteral(i)));

@@ -38,22 +38,13 @@ import org.junit.jupiter.api.io.TempDir;
  */
 public class SmallTransactionsTest {
 
-	private static final String BB = "http://bloomberg#";
-	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
-
-	private static final String QUERY = "PREFIX bb: <http://bloomberg#>\n"
-			+ "SELECT ?cmp ?name ?brands WHERE {\n"
-			+ "  ?cmp a bb:Company .\n"
-			+ "  ?cmp bb:name ?name .\n"
-			+ "  ?cmp bb:brands ?brands .\n"
-			+ "  FILTER(CONTAINS(LCASE(?brands), \"gemini\"))\n"
-			+ "}";
+	private static final String BB = "http://company#";
 
 	/**
 	 * Large enough that the row-count gated plans engage: native hash join and merge join both require
 	 * {@code minRows=4096} before they are considered.
 	 */
-	private static final int COMPANIES = 30000;
+	private static final int COMPANIES = 50000;
 	private static final int MATCHING = 5_000;
 
 	@TempDir
