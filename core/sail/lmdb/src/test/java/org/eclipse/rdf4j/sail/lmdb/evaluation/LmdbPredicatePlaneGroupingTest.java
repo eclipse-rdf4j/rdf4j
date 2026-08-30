@@ -79,6 +79,16 @@ public class LmdbPredicatePlaneGroupingTest {
 			}
 			assertThat(rows).containsExactly(EX + "a/=4=2", EX + "b#=2=1", EX + "end/=1=1");
 			assertThat(executionPath(connection, NAMESPACE_COUNTS)).isEqualTo("predicatePlaneGroups");
+			assertThat(connection.prepareTupleQuery(NAMESPACE_COUNTS)
+					.explain(Explanation.Level.Telemetry)
+					.toString())
+							.contains(
+									"nativeAdjacencyOptimizationSummary=grain=PLANE;directions=SOC+OSC;pageHeaders=NOT_USED")
+							.contains("source=PREDICATE_PLANE_METADATA")
+							.contains("nativeAdjacencyPlanesVisitedActual=4")
+							.contains("nativeAdjacencyRootIdsDecodedActual=0")
+							.contains("nativeAdjacencyNeighborIdsDecodedActual=0")
+							.contains("nativeAdjacencyContextIdsDecodedActual=0");
 		}
 	}
 

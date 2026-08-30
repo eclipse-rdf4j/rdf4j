@@ -464,7 +464,8 @@ final class LmdbNativeOrderPlanner {
 				return new NativeOrderedPlan(plan, NativeSlotOrder.NONE);
 			}
 			NativeOrderedPlan child = best(filter.arg, requested, row);
-			return new NativeOrderedPlan(new FilterPlan(child.plan, filter.filter, filter.filterMask), child.order);
+			return new NativeOrderedPlan(
+					new FilterPlan(child.plan, filter.filter, filter.filterMask, filter.termKindFilter), child.order);
 		}
 		if (plan instanceof ExtensionPlan) {
 			ExtensionPlan extension = (ExtensionPlan) plan;

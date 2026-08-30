@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -87,6 +88,17 @@ public class LmdbRunCountHistogramTest {
 		long before = rootMerges.get();
 		assertThat(histogramRows(OUT_DEGREE_HISTOGRAM)).containsExactly("1=3", "2=1", "3=1");
 		assertThat(rootMerges.get()).isGreaterThan(before);
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			assertThat(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM)
+					.explain(Explanation.Level.Telemetry)
+					.toString())
+							.contains(
+									"nativeAdjacencyOptimizationSummary=grain=ROOT;directions=SOC;pageHeaders=NOT_USED")
+							.contains("source=SOC_ROOT_DOMAIN_MERGE")
+							.contains("setKernel=UNSIGNED_MERGE")
+							.contains("nativeAdjacencyNeighborIdsDecodedActual=0")
+							.contains("nativeAdjacencyContextIdsDecodedActual=0");
+		}
 	}
 
 	@Test

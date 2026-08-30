@@ -88,6 +88,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	static final AtomicLong RADIX_TARGET_BREAKERS = new AtomicLong();
 	static final AtomicLong SIDEWAYS_REVERSE_RUNS = new AtomicLong();
 	static final AtomicLong NON_RESOURCE_PLANES_PRUNED = new AtomicLong();
+	static final AtomicLong HEADER_REJECTED_EDGE_PAGES = new AtomicLong();
+	static final AtomicLong SIDEWAYS_ARBITER_WINS = new AtomicLong();
+	static final AtomicLong PAGE_MORSEL_ARBITER_WINS = new AtomicLong();
 	static final AtomicLong TARGET_TYPE_BATCH_LOOKUPS = new AtomicLong();
 	static final AtomicLong EDGE_FIBERS_VISITED = new AtomicLong();
 	static final AtomicLong UNIQUE_TARGETS_RESOLVED = new AtomicLong();
@@ -125,6 +128,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		RADIX_TARGET_BREAKERS.set(0);
 		SIDEWAYS_REVERSE_RUNS.set(0);
 		NON_RESOURCE_PLANES_PRUNED.set(0);
+		HEADER_REJECTED_EDGE_PAGES.set(0);
+		SIDEWAYS_ARBITER_WINS.set(0);
+		PAGE_MORSEL_ARBITER_WINS.set(0);
 		TARGET_TYPE_BATCH_LOOKUPS.set(0);
 		EDGE_FIBERS_VISITED.set(0);
 		UNIQUE_TARGETS_RESOLVED.set(0);
@@ -140,6 +146,8 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	private static final int ROOT_MORSEL_ROWS = 8_192;
 	private static final int FIBER_MORSEL_ROWS = 65_536;
 	private static final int PAGE_MORSEL_PAGES = 8;
+	private static final String SIDEWAYS_MORSEL_CANDIDATE = "typeMatrix(sidewaysTypeMorsels)";
+	private static final String PAGE_MORSEL_CANDIDATE = "typeMatrix(pageMorsels)";
 
 	private final NativeLmdbQuerySource source;
 	/** Constant predicate id of the subject-side type pattern. */
@@ -181,6 +189,11 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		return objectTypePredicate != UNKNOWN;
 	}
 
+	private static boolean resourceTermKind(int termKind) {
+		return termKind == ValueIds.TERM_KIND_IRI || termKind == ValueIds.TERM_KIND_BNODE
+				|| termKind == ValueIds.TERM_KIND_TRIPLE;
+	}
+
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		if (!bindings.isEmpty()) {
@@ -196,10 +209,21 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			return genericStep().evaluate(bindings);
 		}
 		try {
-			List<BindingSet> adjacency = tryAdjacencyScan(acceptedPredicates);
+			LmdbAdjacencyOptimizationTelemetry optimization = LmdbAdjacencyOptimizationTelemetry.create(originalExpr,
+					LmdbAdjacencyOptimizationTelemetry.Grain.PLANE,
+					linkageMode() ? LmdbAdjacencyOptimizationTelemetry.Direction.BOTH
+							: LmdbAdjacencyOptimizationTelemetry.Direction.SOC);
+			if (optimization != null) {
+				optimization.grain(LmdbAdjacencyOptimizationTelemetry.Grain.ROOT);
+				optimization.grain(LmdbAdjacencyOptimizationTelemetry.Grain.FIBER);
+			}
+			List<BindingSet> adjacency = tryAdjacencyScan(acceptedPredicates, optimization);
 			if (adjacency != null) {
 				RUNS.incrementAndGet();
 				ADJACENCY_RUNS.incrementAndGet();
+				if (optimization != null) {
+					optimization.publish(originalExpr);
+				}
 				LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX);
 				return new CloseableIteratorIteration<>(adjacency.iterator());
 			}
@@ -292,7 +316,11 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	}
 
 	/** Preferred OSC/SOC implementation. Returns {@code null} before output when the complete views are unavailable. */
-	private List<BindingSet> tryAdjacencyScan(LongHashSet acceptedPredicates) throws IOException {
+	private List<BindingSet> tryAdjacencyScan(LongHashSet acceptedPredicates,
+			LmdbAdjacencyOptimizationTelemetry optimization) throws IOException {
+		if (optimization != null) {
+			optimization.trackPayloadDecodes();
+		}
 		long[] predicateCatalog = predicateCatalog();
 		if (predicateCatalog == null) {
 			return null;
@@ -301,7 +329,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			NodePredicates outgoingPredicates = probe.nodePredicates(true);
 			if (outgoingPredicates == null) {
 				List<BindingSet> planeMorsels = tryPlaneMorselAdjacencyScan(probe, acceptedPredicates,
-						predicateCatalog);
+						predicateCatalog, optimization);
 				if (planeMorsels != null) {
 					return planeMorsels;
 				}
@@ -337,14 +365,25 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				RunMerge targetMerge = linkageMode() ? new RunMerge(outgoingRuns) : null;
 				while (typeRoots.advance()) {
 					TYPE_ROOTS_VISITED.incrementAndGet();
+					if (optimization != null) {
+						optimization.rootsVisited(1L);
+						optimization.rootIdDecoded();
+						optimization.rootMetadataRead();
+					}
 					long sourceType = typeRoots.key();
 					LongCountMap counters = new LongCountMap();
 					try {
 						long runSize = typeRoots.runSize();
 						for (long offset = 0L; offset < runSize;) {
 							long instance = typeRoots.neighborAt(offset);
+							if (optimization != null) {
+								optimization.neighborIdsDecoded(1L);
+							}
 							long next = offset + 1L;
 							while (next < runSize && typeRoots.neighborAt(next) == instance) {
+								if (optimization != null) {
+									optimization.neighborIdsDecoded(1L);
+								}
 								next++;
 							}
 							long sourceTypeMultiplicity = next - offset;
@@ -363,6 +402,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 						counters.close();
 					}
 				}
+				if (optimization != null) {
+					optimization.source("NODE_PREDICATE_ROOT_SCAN");
+				}
 				return results;
 			}
 		}
@@ -373,10 +415,13 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	 * resolve source types, and in linkage mode consume ordered target fibers before batch-resolving target types.
 	 */
 	private List<BindingSet> tryPlaneMorselAdjacencyScan(NativeLmdbQuerySource.NativeProbe probe,
-			LongHashSet acceptedPredicates, long[] predicateCatalog) throws IOException {
+			LongHashSet acceptedPredicates, long[] predicateCatalog,
+			LmdbAdjacencyOptimizationTelemetry optimization) throws IOException {
 		LongHashSet eligiblePredicates = acceptedPredicates;
+		ResourcePageAdmission pageAdmission = null;
 		if (linkageMode()) {
-			eligiblePredicates = resourceNeighborPredicates(probe, acceptedPredicates, predicateCatalog);
+			pageAdmission = resourceNeighborPredicates(probe, acceptedPredicates, predicateCatalog, optimization);
+			eligiblePredicates = pageAdmission.eligiblePredicates;
 			if (eligiblePredicates.size == 0) {
 				return List.of();
 			}
@@ -424,18 +469,26 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				sidewaysRoots = incomingRoots;
 			}
 		}
-		List<BindingSet> sidewaysMorsels = tryParallelSidewaysTypeMorselAdjacencyScan(eligiblePredicates,
-				predicateCatalog, sidewaysRoots, reverseLinkage);
-		if (sidewaysMorsels != null) {
-			return sidewaysMorsels;
-		}
-		List<BindingSet> pageMorsels = tryParallelPageMorselAdjacencyScan(probe, eligiblePredicates, predicateCatalog,
-				acceptedRoots);
-		if (pageMorsels != null) {
-			return pageMorsels;
+		if (linkageMode() && pageAdmission != null && pageAdmission.completePageStatistics) {
+			List<BindingSet> selected = arbitrateLinkageMorselKernel(probe, eligiblePredicates, predicateCatalog,
+					acceptedRoots, sidewaysRoots, reverseLinkage, pageAdmission, optimization);
+			if (selected != null) {
+				return selected;
+			}
+		} else {
+			List<BindingSet> sidewaysMorsels = tryParallelSidewaysTypeMorselAdjacencyScan(eligiblePredicates,
+					predicateCatalog, sidewaysRoots, reverseLinkage, optimization);
+			if (sidewaysMorsels != null) {
+				return sidewaysMorsels;
+			}
+			List<BindingSet> pageMorsels = tryParallelPageMorselAdjacencyScan(probe, eligiblePredicates,
+					predicateCatalog, acceptedRoots, optimization);
+			if (pageMorsels != null) {
+				return pageMorsels;
+			}
 		}
 		List<BindingSet> parallel = tryParallelPlaneMorselAdjacencyScan(eligiblePredicates, predicateCatalog,
-				planeRootCounts, acceptedRoots);
+				planeRootCounts, acceptedRoots, optimization);
 		if (parallel != null) {
 			return parallel;
 		}
@@ -498,7 +551,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			if (linkage != null) {
 				linkage.flush(targetTypes, counters);
 			}
-			telemetry.commit(false);
+			telemetry.commit(false, optimization);
 			PLANE_MORSEL_RUNS.incrementAndGet();
 			return emitPairCounters(counters);
 		}
@@ -511,7 +564,8 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	 * handles, so linkage consumes the corresponding target fibers without a second root lookup.
 	 */
 	private List<BindingSet> tryParallelSidewaysTypeMorselAdjacencyScan(LongHashSet acceptedPredicates,
-			long[] predicateCatalog, long acceptedRoots, boolean reverse) throws IOException {
+			long[] predicateCatalog, long acceptedRoots, boolean reverse,
+			LmdbAdjacencyOptimizationTelemetry optimization) throws IOException {
 		long threshold = Long.getLong(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY,
 				LmdbNativeParallelPrefixRuns.DEFAULT_PARALLEL_MIN_ESTIMATE);
 		if (threshold > 0L && acceptedRoots < threshold) {
@@ -616,7 +670,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				if (!supported) {
 					return null;
 				}
-				telemetry.commit(true);
+				telemetry.commit(true, optimization);
 				if (reverse) {
 					SIDEWAYS_REVERSE_RUNS.incrementAndGet();
 				}
@@ -629,56 +683,162 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		}
 	}
 
-	private static LongHashSet resourceNeighborPredicates(NativeLmdbQuerySource.NativeProbe probe,
-			LongHashSet acceptedPredicates, long[] predicateCatalog) throws IOException {
-		LongHashSet eligible = new LongHashSet(Math.max(4, predicateCatalog.length));
+	private List<BindingSet> arbitrateLinkageMorselKernel(NativeLmdbQuerySource.NativeProbe probe,
+			LongHashSet eligiblePredicates, long[] predicateCatalog, long acceptedRoots, long sidewaysRoots,
+			boolean reverseLinkage, ResourcePageAdmission pageAdmission,
+			LmdbAdjacencyOptimizationTelemetry optimization) throws IOException {
+		OptionalLong typeRootCount = source.adjacencyKeyDomainCardinality(
+				reverseLinkage ? objectTypePredicate : subjectTypePredicate, true);
+		LmdbNativeWork sidewaysWork = typeRootCount.isPresent()
+				? morselWork(sidewaysWorkRows(sidewaysRoots, typeRootCount.getAsLong(), pageAdmission))
+				: LmdbNativeWork.UNKNOWN;
+		LmdbNativeWork pageWork = morselWork(pageWorkRows(pageAdmission));
+		String winner;
+		List<BindingSet> selected;
+		try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter.forExpr(originalExpr)) {
+			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(
+					() -> tryParallelSidewaysTypeMorselAdjacencyScan(eligiblePredicates, predicateCatalog,
+							sidewaysRoots, reverseLinkage, optimization),
+					sidewaysWork, SIDEWAYS_MORSEL_CANDIDATE, () -> {
+					}));
+			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(
+					() -> tryParallelPageMorselAdjacencyScan(probe, eligiblePredicates, predicateCatalog,
+							acceptedRoots, optimization),
+					pageWork, PAGE_MORSEL_CANDIDATE, () -> {
+					}));
+			selected = arbiter.select();
+			winner = arbiter.winningTag();
+		}
+		if (SIDEWAYS_MORSEL_CANDIDATE.equals(winner)) {
+			SIDEWAYS_ARBITER_WINS.incrementAndGet();
+		} else if (PAGE_MORSEL_CANDIDATE.equals(winner)) {
+			PAGE_MORSEL_ARBITER_WINS.incrementAndGet();
+		}
+		recordMorselArbitration(winner, sidewaysWork, pageWork, pageAdmission);
+		return selected;
+	}
+
+	private void recordMorselArbitration(String winner, LmdbNativeWork sidewaysWork, LmdbNativeWork pageWork,
+			ResourcePageAdmission pageAdmission) {
+		if (originalExpr == null || !originalExpr.isRuntimeTelemetryEnabled()) {
+			return;
+		}
+		String rendered = "winner=" + (winner == null ? "NONE" : winner)
+				+ ";sidewaysWork=" + renderWork(sidewaysWork)
+				+ ";pageWork=" + renderWork(pageWork)
+				+ ";eligiblePages=" + pageAdmission.eligiblePages
+				+ ";rejectablePages=" + pageAdmission.rejectablePages
+				+ ";eligibleRootRows=" + pageAdmission.eligibleRootRows
+				+ ";rejectableRootRows=" + pageAdmission.rejectableRootRows
+				+ ";eligibleFiberUpperBound=" + pageAdmission.eligibleFibers
+				+ ";rejectableFibers=" + pageAdmission.rejectableFibers;
+		LmdbNativeExplain.setRuntimeMetric(originalExpr, "nativeTypeMatrixMorselArbitration", rendered);
+	}
+
+	private static String renderWork(LmdbNativeWork work) {
+		return work.known() ? work.low() + ".." + work.high() : "UNKNOWN";
+	}
+
+	private static LmdbNativeWork morselWork(double workRows) {
+		if (!Double.isFinite(workRows) || workRows < 0D) {
+			return LmdbNativeWork.UNKNOWN;
+		}
+		return LmdbNativeWork.between(workRows * 0.75D, workRows * 1.25D);
+	}
+
+	private static double sidewaysWorkRows(long sidewaysRoots, long typeRoots,
+			ResourcePageAdmission pageAdmission) {
+		double typedFraction = sidewaysRoots == 0L ? 0D
+				: Math.min(1D, (double) typeRoots / (double) sidewaysRoots);
+		double typeMorsels = Math.ceil((double) typeRoots / ROOT_MORSEL_ROWS);
+		double predicateProbeWork = typeMorsels * pageAdmission.eligiblePredicates.size * LmdbNativeWork.SEEK;
+		return typeRoots + (double) sidewaysRoots + pageAdmission.eligibleFibers * typedFraction
+				+ predicateProbeWork;
+	}
+
+	private static double pageWorkRows(ResourcePageAdmission pageAdmission) {
+		long retainedRoots = pageAdmission.eligibleRootRows - pageAdmission.rejectableRootRows;
+		long retainedFibers = pageAdmission.eligibleFibers - pageAdmission.rejectableFibers;
+		long retainedPages = pageAdmission.eligiblePages - pageAdmission.rejectablePages;
+		return retainedRoots * 2D + retainedFibers + retainedPages * (1D + LmdbNativeWork.SEEK);
+	}
+
+	private static ResourcePageAdmission resourceNeighborPredicates(NativeLmdbQuerySource.NativeProbe probe,
+			LongHashSet acceptedPredicates, long[] predicateCatalog,
+			LmdbAdjacencyOptimizationTelemetry optimization) throws IOException {
+		ResourcePageAdmission admission = new ResourcePageAdmission(
+				new LongHashSet(Math.max(4, predicateCatalog.length)));
+		if (optimization != null) {
+			optimization.trackPageHeaderFastPaths();
+		}
 		for (long predicate : predicateCatalog) {
 			if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
 				continue;
 			}
-			if (planeMayContainResourceNeighbor(probe, predicate, true)) {
-				eligible.add(predicate);
+			if (optimization != null) {
+				optimization.planeVisited();
+			}
+			ResourcePlanePages plane = inspectResourceNeighborPages(probe, predicate, true, optimization);
+			if (plane.mayContainResource) {
+				admission.eligiblePredicates.add(predicate);
+				admission.addEligible(plane);
 			} else {
 				NON_RESOURCE_PLANES_PRUNED.incrementAndGet();
+				if (optimization != null) {
+					optimization.headerRejectedPages(plane.rejectablePages);
+				}
 			}
 		}
-		return eligible;
+		return admission;
 	}
 
 	/**
 	 * Uses only immutable CSF page traits plus one representative neighbor per uniform page. A null page cursor or a
 	 * mixed-kind page cannot prove absence, so overlays and mixed pages remain conservatively eligible.
 	 */
-	private static boolean planeMayContainResourceNeighbor(NativeLmdbQuerySource.NativeProbe probe, long predicate,
-			boolean outgoing) throws IOException {
+	private static ResourcePlanePages inspectResourceNeighborPages(NativeLmdbQuerySource.NativeProbe probe,
+			long predicate,
+			boolean outgoing, LmdbAdjacencyOptimizationTelemetry optimization) throws IOException {
 		try (NativeAdjacency adjacency = probe.adjacency(predicate, outgoing)) {
 			if (adjacency == null) {
-				return true;
+				return ResourcePlanePages.incomplete();
 			}
+			ResourcePlanePages result = ResourcePlanePages.forAdjacency(adjacency);
 			try (NativeAdjacency.AdjacencyPageCursor pages = adjacency.openPageCursor()) {
-				if (pages == null) {
-					return true;
+				if (pages == null || !result.complete) {
+					return ResourcePlanePages.incomplete();
 				}
 				while (pages.advance()) {
+					if (optimization != null) {
+						optimization.pageVisited();
+					}
 					if (pages.fiberCount() == 0) {
 						continue;
 					}
-					if (!pages.uniformNeighborTermKind()) {
-						return true;
+					boolean uniformNeighborKind = pages.uniformNeighborTermKind();
+					if (optimization != null) {
+						optimization.neighborKindHeader(uniformNeighborKind);
 					}
-					for (int row = 0; row < pages.rowCount(); row++) {
-						if (pages.rowFiberCount(row) == 0) {
-							continue;
-						}
-						int termKind = ValueIds.termKind(pages.neighborAt(row, 0));
-						if (termKind == ValueIds.TERM_KIND_IRI || termKind == ValueIds.TERM_KIND_BNODE
-								|| termKind == ValueIds.TERM_KIND_TRIPLE) {
-							return true;
-						}
-						break;
+					if (!uniformNeighborKind) {
+						result.mayContainResource = true;
+						return result;
+					}
+					int termKind = pageRepresentativeNeighborKind(pages);
+					if (optimization != null) {
+						optimization.neighborIdsDecoded(1L);
+					}
+					if (resourceTermKind(termKind)) {
+						result.mayContainResource = true;
+						return result;
+					} else {
+						result.rejectablePages++;
+						result.rejectableRootRows = Math.addExact(result.rejectableRootRows,
+								pages.rowCount());
+						result.rejectableFibers = Math.addExact(result.rejectableFibers,
+								pages.fiberCount());
 					}
 				}
-				return false;
+				return result;
 			}
 		}
 	}
@@ -859,7 +1019,8 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	 * discarded before output and reruns through the exact root-cursor kernel.
 	 */
 	private List<BindingSet> tryParallelPageMorselAdjacencyScan(NativeLmdbQuerySource.NativeProbe probe,
-			LongHashSet acceptedPredicates, long[] predicateCatalog, long acceptedRoots) throws IOException {
+			LongHashSet acceptedPredicates, long[] predicateCatalog, long acceptedRoots,
+			LmdbAdjacencyOptimizationTelemetry optimization) throws IOException {
 		long threshold = Long.getLong(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY,
 				LmdbNativeParallelPrefixRuns.DEFAULT_PARALLEL_MIN_ESTIMATE);
 		if (threshold > 0L && acceptedRoots < threshold) {
@@ -975,7 +1136,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				if (!supported) {
 					return null;
 				}
-				telemetry.commit(true);
+				telemetry.commit(true, optimization);
 				PARALLEL_RUNS.incrementAndGet();
 				PLANE_MORSEL_RUNS.incrementAndGet();
 				return emitPairCounters(counters);
@@ -1028,6 +1189,20 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 							return new ParallelPlaneResult(counters, telemetry, false);
 						}
 						while (pages.advance()) {
+							if (linkageMode()) {
+								boolean uniformNeighborKind = pages.uniformNeighborTermKind();
+								telemetry.neighborKindHeaderChecks++;
+								if (uniformNeighborKind) {
+									telemetry.neighborKindHeaderHits++;
+									int representativeKind = pageRepresentativeNeighborKind(pages);
+									telemetry.headerNeighborIdsDecoded++;
+									if (!resourceTermKind(representativeKind)) {
+										telemetry.headerRejectedPages++;
+										telemetry.morsels++;
+										continue;
+									}
+								}
+							}
 							int rootCount = pages.rowCount();
 							if (rootCount > rootIds.length) {
 								throw new IllegalStateException("CSF page exceeds the root-morsel contract");
@@ -1053,6 +1228,15 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			}
 		}
 		return new ParallelPlaneResult(counters, telemetry, true);
+	}
+
+	private static int pageRepresentativeNeighborKind(NativeAdjacency.AdjacencyPageCursor page) {
+		for (int row = 0; row < page.rowCount(); row++) {
+			if (page.rowFiberCount(row) > 0) {
+				return ValueIds.termKind(page.neighborAt(row, 0));
+			}
+		}
+		throw new IllegalStateException("non-empty adjacency page has no representative neighbor");
 	}
 
 	private void accumulatePageMorsel(NativeAdjacency sourceTypes, NativeAdjacency targetTypes,
@@ -1107,7 +1291,8 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 
 	/** Runs disjoint predicate/root-ordinal morsels over same-snapshot sibling sources. */
 	private List<BindingSet> tryParallelPlaneMorselAdjacencyScan(LongHashSet acceptedPredicates,
-			long[] predicateCatalog, long[] planeRootCounts, long acceptedRoots) throws IOException {
+			long[] predicateCatalog, long[] planeRootCounts, long acceptedRoots,
+			LmdbAdjacencyOptimizationTelemetry optimization) throws IOException {
 		long threshold = Long.getLong(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY,
 				LmdbNativeParallelPrefixRuns.DEFAULT_PARALLEL_MIN_ESTIMATE);
 		if (threshold > 0L && acceptedRoots < threshold) {
@@ -1197,7 +1382,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				if (!supported) {
 					return null;
 				}
-				telemetry.commit(true);
+				telemetry.commit(true, optimization);
 				PARALLEL_RUNS.incrementAndGet();
 				PLANE_MORSEL_RUNS.incrementAndGet();
 				return emitPairCounters(counters);
@@ -3034,6 +3219,58 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	private record TypeDomainMorsel(long fromOrdinal, long toOrdinal) {
 	}
 
+	private static final class ResourcePageAdmission {
+		private final LongHashSet eligiblePredicates;
+		private boolean completePageStatistics = true;
+		private long eligiblePages;
+		private long rejectablePages;
+		private long eligibleRootRows;
+		private long rejectableRootRows;
+		private long eligibleFibers;
+		private long rejectableFibers;
+
+		private ResourcePageAdmission(LongHashSet eligiblePredicates) {
+			this.eligiblePredicates = eligiblePredicates;
+		}
+
+		private void addEligible(ResourcePlanePages plane) {
+			completePageStatistics &= plane.complete;
+			eligiblePages = Math.addExact(eligiblePages, plane.pages);
+			rejectablePages = Math.addExact(rejectablePages, plane.rejectablePages);
+			eligibleRootRows = Math.addExact(eligibleRootRows, plane.rootRows);
+			rejectableRootRows = Math.addExact(rejectableRootRows, plane.rejectableRootRows);
+			eligibleFibers = Math.addExact(eligibleFibers, plane.fibers);
+			rejectableFibers = Math.addExact(rejectableFibers, plane.rejectableFibers);
+		}
+	}
+
+	private static final class ResourcePlanePages {
+		private boolean mayContainResource;
+		private boolean complete = true;
+		private long pages;
+		private long rejectablePages;
+		private long rootRows;
+		private long rejectableRootRows;
+		private long fibers;
+		private long rejectableFibers;
+
+		private static ResourcePlanePages forAdjacency(NativeAdjacency adjacency) {
+			ResourcePlanePages result = new ResourcePlanePages();
+			result.pages = adjacency.pageCount();
+			result.rootRows = adjacency.keyCount();
+			result.fibers = adjacency.quadCount();
+			result.complete = result.pages >= 0L && result.rootRows >= 0L && result.fibers >= 0L;
+			return result;
+		}
+
+		private static ResourcePlanePages incomplete() {
+			ResourcePlanePages result = new ResourcePlanePages();
+			result.mayContainResource = true;
+			result.complete = false;
+			return result;
+		}
+	}
+
 	private record PageMorsel(int predicateOrdinal, long fromPage, long toPage, long firstRoot) {
 	}
 
@@ -3064,6 +3301,10 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		private long labelSynopsisSlices;
 		private long morsels;
 		private long steals;
+		private long neighborKindHeaderChecks;
+		private long neighborKindHeaderHits;
+		private long headerRejectedPages;
+		private long headerNeighborIdsDecoded;
 
 		void mergeFrom(PlaneMorselTelemetry other) {
 			predicateRoots = Math.addExact(predicateRoots, other.predicateRoots);
@@ -3088,9 +3329,13 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			labelSynopsisSlices = Math.addExact(labelSynopsisSlices, other.labelSynopsisSlices);
 			morsels = Math.addExact(morsels, other.morsels);
 			steals = Math.addExact(steals, other.steals);
+			neighborKindHeaderChecks = Math.addExact(neighborKindHeaderChecks, other.neighborKindHeaderChecks);
+			neighborKindHeaderHits = Math.addExact(neighborKindHeaderHits, other.neighborKindHeaderHits);
+			headerRejectedPages = Math.addExact(headerRejectedPages, other.headerRejectedPages);
+			headerNeighborIdsDecoded = Math.addExact(headerNeighborIdsDecoded, other.headerNeighborIdsDecoded);
 		}
 
-		void commit(boolean parallel) {
+		void commit(boolean parallel, LmdbAdjacencyOptimizationTelemetry optimization) {
 			PREDICATE_ROOTS_VISITED.addAndGet(predicateRoots);
 			EDGE_FIBERS_VISITED.addAndGet(edgeFibers);
 			BULK_NEIGHBORS_DECODED.addAndGet(bulkNeighborsDecoded);
@@ -3111,9 +3356,37 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			PEAK_MORSEL_FIBERS.accumulateAndGet(peakMorselFibers, Math::max);
 			BORROWED_TYPE_SLICES.addAndGet(borrowedTypeSlices);
 			LABEL_SYNOPSIS_SLICES.addAndGet(labelSynopsisSlices);
+			HEADER_REJECTED_EDGE_PAGES.addAndGet(headerRejectedPages);
 			if (parallel) {
 				PARALLEL_ADJACENCY_MORSELS.addAndGet(morsels);
 				PARALLEL_ADJACENCY_STEALS.addAndGet(steals);
+			}
+			if (optimization != null) {
+				optimization.trackPageHeaderFastPaths();
+				optimization.neighborKindHeaders(neighborKindHeaderChecks, neighborKindHeaderHits);
+				optimization.headerRejectedPages(headerRejectedPages);
+				String source = sidewaysTypeMorsels > 0L ? "SIDEWAYS_TYPE_MORSELS" : "PLANE_MORSELS";
+				if (borrowedTypeSlices > 0L) {
+					source += "+BORROWED_TYPE_SLICES";
+				}
+				optimization.source(source);
+				optimization.rootsVisited(predicateRoots);
+				optimization.rootIdsDecoded(predicateRoots);
+				optimization.fibersVisited(edgeFibers);
+				optimization.neighborIdsDecoded(Math.addExact(headerNeighborIdsDecoded,
+						Math.addExact(bulkNeighborsDecoded, targetTypeRunsDecoded)));
+				optimization.rootMetadataReads(sidewaysRootCountBatches);
+				optimization.fiberMetadataReads(edgeFibers);
+				optimization.sipWindows(sidewaysTypeMorsels, sidewaysSubjects);
+				optimization.morsels(morsels);
+				optimization.steals(steals);
+				if (denseTargetBreakers > 0L && radixTargetBreakers > 0L) {
+					optimization.setKernel("DENSE_MASK+RADIX");
+				} else if (denseTargetBreakers > 0L) {
+					optimization.setKernel("DENSE_MASK");
+				} else if (radixTargetBreakers > 0L) {
+					optimization.setKernel("RADIX");
+				}
 			}
 		}
 	}

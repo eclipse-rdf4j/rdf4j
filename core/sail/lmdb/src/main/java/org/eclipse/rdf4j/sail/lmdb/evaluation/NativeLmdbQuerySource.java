@@ -680,6 +680,11 @@ public interface NativeLmdbQuerySource {
 			return -1L;
 		}
 
+		/** Exact quad count for this complete visible predicate plane, or {@code -1} when unavailable. */
+		default long quadCount() {
+			return -1L;
+		}
+
 		/** Bounded physical-page traversal, or {@code null} when this visible view cannot expose exact page morsels. */
 		default AdjacencyPageCursor openPageCursor(long fromPage, long toPage) {
 			return null;

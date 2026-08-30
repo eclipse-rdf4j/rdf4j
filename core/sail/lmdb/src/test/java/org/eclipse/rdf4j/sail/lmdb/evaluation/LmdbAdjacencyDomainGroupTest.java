@@ -112,6 +112,18 @@ public class LmdbAdjacencyDomainGroupTest {
 		assertThat(domainRuns.get())
 				.as("eligible=%s unavailable=%s", eligible.get(), unavailable.get())
 				.isGreaterThan(before);
+		assertThat(telemetry(HIGH_IN_DEGREE))
+				.contains("nativeAdjacencyOptimizationSummary=grain=ROOT;directions=OSC;pageHeaders=USED")
+				.contains("nativeAdjacencyRootKindHeaderChecksActual=")
+				.contains("nativeAdjacencyRootKindHeaderHitsActual=")
+				.contains("nativeAdjacencyHeaderRejectedPagesActual=")
+				.contains("nativeAdjacencyRootIdsDecodedActual=");
+	}
+
+	private String telemetry(String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+		}
 	}
 
 	private String executionPath(String query) {

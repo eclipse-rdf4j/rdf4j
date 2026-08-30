@@ -82,7 +82,7 @@ final class NativeFilterLease {
 			return borrow(multiJoin);
 		}
 		if (plan instanceof FilterPlan filter) {
-			return new FilterPlan(borrow(filter.arg), borrow(filter.filter), filter.filterMask);
+			return new FilterPlan(borrow(filter.arg), borrow(filter.filter), filter.filterMask, filter.termKindFilter);
 		}
 		if (plan instanceof EntryBindingCompatibilityPlan entry) {
 			return new EntryBindingCompatibilityPlan(borrow(entry.arg), entry.slots, entry.ids, entry.restoredMask);

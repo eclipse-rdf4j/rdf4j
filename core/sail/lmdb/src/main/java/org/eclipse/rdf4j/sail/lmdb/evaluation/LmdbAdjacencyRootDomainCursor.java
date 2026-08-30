@@ -17,6 +17,7 @@ import java.util.Arrays;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
 
 /**
@@ -30,10 +31,151 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 	private static final long UNKNOWN = LmdbNativeAggregateCompiler.UNKNOWN;
 	private static final int ROOT_WINDOW_SIZE = 256;
 
+	private interface PlaneRootCursor extends AutoCloseable {
+		int fillRootCounts(long[] roots, long[] multiplicities, int maximum);
+
+		@Override
+		void close();
+	}
+
+	private static final class KeyPlaneRootCursor implements PlaneRootCursor {
+		private final NativeAdjacency.KeyRunCursor cursor;
+		private final LmdbAdjacencyOptimizationTelemetry telemetry;
+
+		private KeyPlaneRootCursor(NativeAdjacency.KeyRunCursor cursor,
+				LmdbAdjacencyOptimizationTelemetry telemetry) {
+			this.cursor = cursor;
+			this.telemetry = telemetry;
+		}
+
+		@Override
+		public int fillRootCounts(long[] roots, long[] multiplicities, int maximum) {
+			int copied = cursor.fillRootCounts(roots, 0, multiplicities, 0, maximum);
+			if (telemetry != null) {
+				telemetry.rootsVisited(copied);
+				telemetry.rootIdsDecoded(copied);
+			}
+			return copied;
+		}
+
+		@Override
+		public void close() {
+			cursor.close();
+		}
+	}
+
+	/** Exact page-grain root prefilter. Consecutive continuation rows are coalesced into one logical root. */
+	private static final class PagePlaneRootCursor implements PlaneRootCursor {
+		private final NativeAdjacency.AdjacencyPageCursor pages;
+		private final LmdbNativeTermKindFilter filter;
+		private final LmdbAdjacencyOptimizationTelemetry telemetry;
+		private int rowIndex;
+		private int rowCount;
+		private boolean pageReady;
+		private boolean pageUniformAccepted;
+		private boolean buffered;
+		private long bufferedRoot;
+		private long bufferedMultiplicity;
+
+		private PagePlaneRootCursor(NativeAdjacency.AdjacencyPageCursor pages,
+				LmdbNativeTermKindFilter filter, LmdbAdjacencyOptimizationTelemetry telemetry) {
+			this.pages = pages;
+			this.filter = filter;
+			this.telemetry = telemetry;
+		}
+
+		@Override
+		public int fillRootCounts(long[] roots, long[] multiplicities, int maximum) {
+			int copied = 0;
+			while (copied < maximum) {
+				if (!buffered && !nextAcceptedRow()) {
+					break;
+				}
+				long root = bufferedRoot;
+				long multiplicity = bufferedMultiplicity;
+				buffered = false;
+				while (nextAcceptedRow()) {
+					if (bufferedRoot != root) {
+						break;
+					}
+					multiplicity = Math.addExact(multiplicity, bufferedMultiplicity);
+					buffered = false;
+				}
+				roots[copied] = root;
+				multiplicities[copied] = multiplicity;
+				copied++;
+				if (telemetry != null) {
+					telemetry.rootsVisited(1L);
+				}
+			}
+			return copied;
+		}
+
+		private boolean nextAcceptedRow() {
+			if (buffered) {
+				return true;
+			}
+			while (true) {
+				if (!pageReady || rowIndex == rowCount) {
+					if (!advancePage()) {
+						return false;
+					}
+				}
+				long root = pages.rowAt(rowIndex);
+				long multiplicity = pages.rowQuadCount(rowIndex++);
+				if (telemetry != null) {
+					telemetry.rootIdDecoded();
+				}
+				if (pageUniformAccepted || filter.accepts(ValueIds.termKind(root))) {
+					bufferedRoot = root;
+					bufferedMultiplicity = multiplicity;
+					buffered = true;
+					return true;
+				}
+			}
+		}
+
+		private boolean advancePage() {
+			while (pages.advance()) {
+				if (telemetry != null) {
+					telemetry.pageVisited();
+				}
+				rowIndex = 0;
+				rowCount = pages.rowCount();
+				boolean uniform = pages.uniformRowTermKind();
+				if (telemetry != null) {
+					telemetry.rootKindHeader(uniform);
+				}
+				pageUniformAccepted = false;
+				if (uniform) {
+					long representative = pages.firstRow();
+					if (telemetry != null) {
+						telemetry.rootIdDecoded();
+					}
+					if (!filter.accepts(ValueIds.termKind(representative))) {
+						if (telemetry != null) {
+							telemetry.headerRejectedPage();
+						}
+						continue;
+					}
+					pageUniformAccepted = true;
+				}
+				pageReady = true;
+				return true;
+			}
+			return false;
+		}
+
+		@Override
+		public void close() {
+			pages.close();
+		}
+	}
+
 	private static final class Plane implements AutoCloseable {
 		final long predicate;
 		final NativeAdjacency adjacency;
-		final NativeAdjacency.KeyRunCursor cursor;
+		final PlaneRootCursor cursor;
 		final long[] roots = new long[ROOT_WINDOW_SIZE];
 		final long[] multiplicities = new long[ROOT_WINDOW_SIZE];
 		int windowIndex;
@@ -41,7 +183,7 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 		long root;
 		long multiplicity;
 
-		private Plane(long predicate, NativeAdjacency adjacency, NativeAdjacency.KeyRunCursor cursor) {
+		private Plane(long predicate, NativeAdjacency adjacency, PlaneRootCursor cursor) {
 			this.predicate = predicate;
 			this.adjacency = adjacency;
 			this.cursor = cursor;
@@ -97,8 +239,19 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 		return open(source, bySubject, false, 0L, false, 0L);
 	}
 
+	static LmdbAdjacencyRootDomainCursor open(NativeLmdbQuerySource source, boolean bySubject,
+			LmdbNativeTermKindFilter rootKindFilter, LmdbAdjacencyOptimizationTelemetry telemetry) throws IOException {
+		return open(source, bySubject, false, 0L, false, 0L, rootKindFilter, telemetry);
+	}
+
 	static LmdbAdjacencyRootDomainCursor open(NativeLmdbQuerySource source, boolean bySubject, boolean hasLowerBound,
 			long lowerBound, boolean hasUpperBound, long upperBound) throws IOException {
+		return open(source, bySubject, hasLowerBound, lowerBound, hasUpperBound, upperBound, null, null);
+	}
+
+	private static LmdbAdjacencyRootDomainCursor open(NativeLmdbQuerySource source, boolean bySubject,
+			boolean hasLowerBound, long lowerBound, boolean hasUpperBound, long upperBound,
+			LmdbNativeTermKindFilter rootKindFilter, LmdbAdjacencyOptimizationTelemetry telemetry) throws IOException {
 		long[] predicates = predicateCatalog(source);
 		if (predicates == null) {
 			return null;
@@ -108,6 +261,9 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 		int count = 0;
 		try {
 			for (long predicate : predicates) {
+				if (telemetry != null) {
+					telemetry.planeVisited();
+				}
 				NativeAdjacency adjacency = probe.adjacency(predicate, bySubject);
 				if (adjacency == null || !adjacency.supportsKeyEnumeration() || !adjacency.keysImplyNonEmptyRuns()) {
 					closeAdjacency(adjacency);
@@ -115,9 +271,21 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 					probe.close();
 					return null;
 				}
-				long from = hasLowerBound ? adjacency.lowerBoundKeyOrdinal(lowerBound) : 0L;
-				long to = hasUpperBound ? adjacency.lowerBoundKeyOrdinal(upperBound) : adjacency.keyCount();
-				NativeAdjacency.KeyRunCursor cursor = adjacency.openKeyRunCursor(from, to);
+				PlaneRootCursor cursor = null;
+				if (rootKindFilter != null && !hasLowerBound && !hasUpperBound) {
+					NativeAdjacency.AdjacencyPageCursor pages = adjacency.openPageCursor();
+					if (pages != null) {
+						cursor = new PagePlaneRootCursor(pages, rootKindFilter, telemetry);
+					}
+				}
+				if (cursor == null) {
+					long from = hasLowerBound ? adjacency.lowerBoundKeyOrdinal(lowerBound) : 0L;
+					long to = hasUpperBound ? adjacency.lowerBoundKeyOrdinal(upperBound) : adjacency.keyCount();
+					NativeAdjacency.KeyRunCursor keyRuns = adjacency.openKeyRunCursor(from, to);
+					if (keyRuns != null) {
+						cursor = new KeyPlaneRootCursor(keyRuns, telemetry);
+					}
+				}
 				if (cursor == null) {
 					adjacency.close();
 					closePlanes(opened, count, null);
@@ -125,6 +293,9 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 					return null;
 				}
 				opened[count++] = new Plane(predicate, adjacency, cursor);
+			}
+			if (telemetry != null) {
+				telemetry.mergeWidth(count);
 			}
 			return new LmdbAdjacencyRootDomainCursor(probe, Arrays.copyOf(opened, count));
 		} catch (IOException | RuntimeException | Error failure) {
@@ -195,8 +366,7 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 	private boolean advancePlane(int index) {
 		Plane plane = planes[index];
 		while (plane.windowIndex == plane.windowSize) {
-			plane.windowSize = plane.cursor.fillRootCounts(plane.roots, 0, plane.multiplicities, 0,
-					ROOT_WINDOW_SIZE);
+			plane.windowSize = plane.cursor.fillRootCounts(plane.roots, plane.multiplicities, ROOT_WINDOW_SIZE);
 			plane.windowIndex = 0;
 			if (plane.windowSize == 0) {
 				return false;

@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
@@ -100,6 +101,137 @@ public class LmdbTypeMatrixTest {
 		long before = LmdbNativeTypeMatrix.RUNS.get();
 		assertThat(matrix(LINKAGE_MATRIX, "sourceType", "targetType", "links")).isEqualTo(expected);
 		assertThat(LmdbNativeTypeMatrix.RUNS.get()).isGreaterThan(before);
+	}
+
+	@Test
+	public void linkageTelemetryReportsHeaderSipAndMorselChoices() {
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		openRepository(4000, true);
+
+		String telemetry;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			telemetry = connection.prepareTupleQuery(LINKAGE_MATRIX)
+					.explain(Explanation.Level.Telemetry)
+					.toString();
+		}
+
+		assertThat(telemetry)
+				.contains("nativeExecutionPath=typeMatrix")
+				.contains("nativeTypeMatrixMorselArbitration=winner=")
+				.contains("rejectablePages=")
+				.contains("rejectableFibers=")
+				.contains("nativeAdjacencyOptimizationSummary=grain=PLANE+ROOT+FIBER;directions=SOC+OSC")
+				.contains("pageHeaders=USED")
+				.contains("nativeAdjacencyNeighborKindHeaderChecksActual=")
+				.contains("nativeAdjacencyNeighborKindHeaderHitsActual=")
+				.contains("nativeAdjacencyHeaderRejectedPagesActual=")
+				.contains("nativeAdjacencyFibersVisitedActual=")
+				.contains("nativeAdjacencyNeighborIdsDecodedActual=")
+				.contains("nativeAdjacencySipWindowsActual=")
+				.contains("nativeAdjacencyMorselsActual=")
+				.contains("nativeAdjacencyStealsActual=");
+	}
+
+	@Test
+	public void linkageRejectsUniformLiteralNeighborPagesAfterMixedPlaneAdmission() throws Exception {
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		LmdbStoreConfig loadConfig = new LmdbStoreConfig("spoc,posc,ospc,psoc")
+				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
+		LmdbStore store = new LmdbStore(dataDir, loadConfig);
+		repository = new SailRepository(store);
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI sourceType = vf.createIRI(EX, "SourceType");
+			IRI targetType = vf.createIRI(EX, "TargetType");
+			IRI predicate = vf.createIRI(EX, "mixed-edge");
+			connection.begin();
+			for (int i = 0; i < 1_400; i++) {
+				IRI source = vf.createIRI(EX, "mixed-source-" + i);
+				connection.add(source, RDF.TYPE, sourceType);
+				if (i < 1_100) {
+					connection.add(source, predicate, vf.createLiteral("literal-target-" + i));
+				} else {
+					IRI target = vf.createIRI(EX, "mixed-target-" + i);
+					connection.add(source, predicate, target);
+					connection.add(target, RDF.TYPE, targetType);
+				}
+			}
+			connection.commit();
+		}
+		repository.shutDown();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,psoc")
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyMaxBytes(1L << 30);
+		store = new LmdbStore(dataDir, config);
+		repository = new SailRepository(store);
+		repository.init();
+		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+
+		AtomicLong rejectedPages = metric("HEADER_REJECTED_EDGE_PAGES");
+		long rejectedBefore = rejectedPages.get();
+		long sidewaysBefore = metric("SIDEWAYS_TYPE_MORSELS").get();
+		long planeBefore = metric("PLANE_MORSEL_RUNS").get();
+		assertThat(matrix(LINKAGE_MATRIX, "sourceType", "targetType", "links"))
+				.containsExactlyEntriesOf(Map.of(EX + "SourceType|" + EX + "TargetType", 300L));
+		assertThat(rejectedPages.get())
+				.as("the admitted mixed predicate must reject its uniform literal-only CSF pages from page traits; "
+						+ "sideways morsels %s -> %s, plane runs %s -> %s", sidewaysBefore,
+						metric("SIDEWAYS_TYPE_MORSELS").get(), planeBefore, metric("PLANE_MORSEL_RUNS").get())
+				.isGreaterThan(rejectedBefore);
+	}
+
+	@Test
+	public void linkageArbiterPrefersPageMorselsWhenHeadersRejectMostEdgePages() throws Exception {
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		System.setProperty("rdf4j.lmdb.parallel.maxTasks", "2");
+		LmdbStoreConfig loadConfig = new LmdbStoreConfig("spoc,posc,ospc,psoc")
+				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
+		LmdbStore store = new LmdbStore(dataDir, loadConfig);
+		repository = new SailRepository(store);
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI sourceType = vf.createIRI(EX, "SourceType");
+			IRI targetType = vf.createIRI(EX, "TargetType");
+			IRI predicate = vf.createIRI(EX, "mostly-literal-edge");
+			connection.begin();
+			for (int i = 0; i < 17_000; i++) {
+				IRI source = vf.createIRI(EX, "selective-source-" + i);
+				connection.add(source, RDF.TYPE, sourceType);
+				if (i < 15_000) {
+					connection.add(source, predicate, vf.createLiteral("literal-target-" + i));
+				} else {
+					IRI target = vf.createIRI(EX, "selective-target-" + i);
+					connection.add(source, predicate, target);
+					connection.add(target, RDF.TYPE, targetType);
+				}
+			}
+			connection.commit();
+		}
+		repository.shutDown();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,psoc")
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyMaxBytes(1L << 30);
+		store = new LmdbStore(dataDir, config);
+		repository = new SailRepository(store);
+		repository.init();
+		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+
+		long sidewaysBefore = metric("SIDEWAYS_TYPE_MORSELS").get();
+		long rejectedBefore = metric("HEADER_REJECTED_EDGE_PAGES").get();
+		long pageWinsBefore = metric("PAGE_MORSEL_ARBITER_WINS").get();
+		assertThat(matrix(LINKAGE_MATRIX, "sourceType", "targetType", "links"))
+				.containsExactlyEntriesOf(Map.of(EX + "SourceType|" + EX + "TargetType", 2_000L));
+		assertThat(metric("SIDEWAYS_TYPE_MORSELS").get())
+				.as("page-header selectivity must let the arbiter outrank sideways type morsels")
+				.isEqualTo(sidewaysBefore);
+		assertThat(metric("HEADER_REJECTED_EDGE_PAGES").get())
+				.as("the selected page-morsel candidate must reject uniform literal pages")
+				.isGreaterThan(rejectedBefore);
+		assertThat(metric("PAGE_MORSEL_ARBITER_WINS").get()).isGreaterThan(pageWinsBefore);
 	}
 
 	@Test

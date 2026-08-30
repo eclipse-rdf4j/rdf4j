@@ -1,0 +1,16 @@
+ANALYTICS q7 final adjacency check, synopsis disabled, JDK 26 AArch64
+
+ThemeQueryBenchmark.executeQuery ANALYTICS q7 avgt 5 10.071 +/- 2.983 ms/op
+
+Matched controls
+- Corpus: core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+- JVM: Zulu OpenJDK 26, -Xms1G -Xmx16G
+- Warmup: 2 x 10 s
+- Measurement: 5 x 5 s
+- Forks: 1
+- rdf4j.lmdb.directAdjacency.synopsis.enabled=false
+- rdf4j.lmdb.themeQueryBenchmark.typeMatrixMetrics=false
+
+Result
+- Query completed with benchmark result validation enabled.
+- 6.63x faster than the user-provided 66.785 ms/op historical result.

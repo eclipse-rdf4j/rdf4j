@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -137,6 +138,33 @@ public class LmdbDatatypeHistogramTest {
 		assertThat(planeRoots.get())
 				.as("the additive datatype aggregate must sweep predicate planes without a global root-domain merge")
 				.isGreaterThan(planeRootsBefore);
+	}
+
+	@Test
+	public void telemetryReportsPageHeaderAndPayloadOptimizationChoices() {
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		openMixedRepository(0);
+
+		String telemetry;
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			telemetry = conn.prepareTupleQuery(DATATYPE_HISTOGRAM)
+					.explain(Explanation.Level.Telemetry)
+					.toString();
+		}
+
+		assertThat(telemetry)
+				.contains("nativeExecutionPath=datatypeHistogram")
+				.contains("nativeAdjacencyOptimizationSummary=grain=PLANE;directions=OSC;pageHeaders=USED")
+				.contains("nativeAdjacencyPagesVisitedActual=")
+				.contains("nativeAdjacencyRootKindHeaderChecksActual=")
+				.contains("nativeAdjacencyRootKindHeaderHitsActual=")
+				.contains("nativeAdjacencyRootDatatypeHeaderChecksActual=")
+				.contains("nativeAdjacencyRootDatatypeHeaderHitsActual=")
+				.contains("nativeAdjacencyHeaderBulkCountPagesActual=")
+				.contains("nativeAdjacencyRootIdsDecodedActual=")
+				.contains("nativeAdjacencyNeighborIdsDecodedActual=0")
+				.contains("nativeAdjacencyContextIdsDecodedActual=0");
 	}
 
 	@Test

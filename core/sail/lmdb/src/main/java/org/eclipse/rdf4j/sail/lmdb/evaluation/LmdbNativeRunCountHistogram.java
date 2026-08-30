@@ -105,9 +105,15 @@ final class LmdbNativeRunCountHistogram implements QueryEvaluationStep {
 			// correlated evaluation could constrain inner variables; the run-counting scan cannot honor that
 			return genericStep().evaluate(bindings);
 		}
-		LongHistogram histogram = tryParallelHistogram();
+		LmdbAdjacencyOptimizationTelemetry telemetry = LmdbAdjacencyOptimizationTelemetry.create(originalExpr,
+				LmdbAdjacencyOptimizationTelemetry.Grain.ROOT,
+				LmdbAdjacencyOptimizationTelemetry.Direction.SOC);
+		if (telemetry != null) {
+			telemetry.trackPayloadDecodes();
+		}
+		LongHistogram histogram = tryParallelHistogram(telemetry);
 		if (histogram == null) {
-			histogram = sequentialHistogram();
+			histogram = sequentialHistogram(telemetry);
 		}
 		if (histogram == null) {
 			return genericStep().evaluate(bindings);
@@ -125,6 +131,9 @@ final class LmdbNativeRunCountHistogram implements QueryEvaluationStep {
 			rows.add(row);
 		}
 		RUNS.incrementAndGet();
+		if (telemetry != null) {
+			telemetry.publish(originalExpr);
+		}
 		LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM);
 		return new CloseableIteratorIteration<>(rows.iterator());
 	}
@@ -136,9 +145,9 @@ final class LmdbNativeRunCountHistogram implements QueryEvaluationStep {
 		return genericStep;
 	}
 
-	private LongHistogram sequentialHistogram() {
+	private LongHistogram sequentialHistogram(LmdbAdjacencyOptimizationTelemetry telemetry) {
 		if (adjacencyEligible()) {
-			LongHistogram adjacencyHistogram = adjacencyHistogram(source, false, 0L, false, 0L);
+			LongHistogram adjacencyHistogram = adjacencyHistogram(source, false, 0L, false, 0L, telemetry);
 			if (adjacencyHistogram != null) {
 				return adjacencyHistogram;
 			}
@@ -150,6 +159,9 @@ final class LmdbNativeRunCountHistogram implements QueryEvaluationStep {
 			}
 			LongHistogram histogram = new LongHistogram();
 			collect(cursor, histogram);
+			if (telemetry != null) {
+				telemetry.source("PREFIX_RUN_COUNTS");
+			}
 			return histogram;
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
@@ -157,7 +169,8 @@ final class LmdbNativeRunCountHistogram implements QueryEvaluationStep {
 	}
 
 	private LongHistogram adjacencyHistogram(NativeLmdbQuerySource cursorSource, boolean hasLowerBound,
-			long lowerBound, boolean hasUpperBound, long upperBound) {
+			long lowerBound, boolean hasUpperBound, long upperBound,
+			LmdbAdjacencyOptimizationTelemetry telemetry) {
 		try (LmdbAdjacencyRootDomainCursor cursor = LmdbAdjacencyRootDomainCursor.open(cursorSource, true,
 				hasLowerBound, lowerBound, hasUpperBound, upperBound)) {
 			if (cursor == null) {
@@ -165,6 +178,12 @@ final class LmdbNativeRunCountHistogram implements QueryEvaluationStep {
 			}
 			LongHistogram histogram = new LongHistogram();
 			long roots = collect(cursor, histogram);
+			if (telemetry != null) {
+				telemetry.source("SOC_ROOT_DOMAIN_MERGE");
+				telemetry.rootsVisited(roots);
+				telemetry.rootMetadataReads(roots);
+				telemetry.setKernel("UNSIGNED_MERGE");
+			}
 			ADJACENCY_ROOTS.addAndGet(roots);
 			ADJACENCY_ROOT_MERGES.incrementAndGet();
 			return histogram;
@@ -197,7 +216,7 @@ final class LmdbNativeRunCountHistogram implements QueryEvaluationStep {
 	}
 
 	/** Parallel partitioned run counting with run-aligned boundaries, or null to fall back to sequential. */
-	private LongHistogram tryParallelHistogram() {
+	private LongHistogram tryParallelHistogram(LmdbAdjacencyOptimizationTelemetry telemetry) {
 		boolean adjacency = adjacencyEligible();
 		long[] adjacencyPredicates = null;
 		if (adjacency) {
@@ -325,6 +344,15 @@ final class LmdbNativeRunCountHistogram implements QueryEvaluationStep {
 					PARALLEL_ADJACENCY_MERGES.incrementAndGet();
 					DENSE_ROOT_MORSELS.addAndGet(denseRanges);
 					ROOT_MERGE_FALLBACK_RANGES.addAndGet(fallbackRanges);
+					if (telemetry != null) {
+						telemetry.source("SOC_PARALLEL_ROOT_MORSELS");
+						telemetry.rootsVisited(adjacencyRoots);
+						telemetry.rootMetadataReads(adjacencyRoots);
+						telemetry.morsels(Math.addExact(denseRanges, fallbackRanges));
+						telemetry.setKernel(denseRanges > 0L ? "DENSE_MASK+UNSIGNED_MERGE" : "UNSIGNED_MERGE");
+					}
+				} else if (telemetry != null) {
+					telemetry.source("PREFIX_RUNS_PARALLEL");
 				}
 				PARALLEL_RUNS.incrementAndGet();
 				return merged;

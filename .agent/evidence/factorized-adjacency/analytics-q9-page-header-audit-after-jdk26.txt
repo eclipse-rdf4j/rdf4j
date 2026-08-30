@@ -1,0 +1,15 @@
+ANALYTICS q9 OSC root-page kind pruning, JDK 26 AArch64
+
+Matched baseline: 36.521 +/- 0.325 ms/op
+Page-header result: 27.824 +/- 0.563 ms/op
+Speedup: 1.313x (23.8% lower average time)
+
+Selected source: ROOT_DOMAIN_MERGE
+Direction/grain: OSC / ROOT
+Root-kind header checks/hits: 5,714 / 5,714
+Uniform disallowed pages rejected: 1,939
+Neighbor/context payload decodes: 0 / 0
+Predicate merge width: 100
+
+The filter is evaluated at root-page grain. Uniform non-IRI pages are rejected after one representative root decode;
+mixed pages retain exact scalar filtering and overlay/range views retain the generic exact cursor.

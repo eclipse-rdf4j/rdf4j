@@ -1033,7 +1033,7 @@ public class GenericPlanNode {
 			for (Map.Entry<String, Long> entry : visibleLongMetrics.entrySet()) {
 				String metricName = entry.getKey();
 				Long metricValue = entry.getValue();
-				if (metricValue == null || metricValue <= 0 && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+				if (metricValue == null || metricValue < 0 && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
 					continue;
 				}
 				if (!isMetricApplicableToNode(metricName) || metrics.containsKey(metricName)) {

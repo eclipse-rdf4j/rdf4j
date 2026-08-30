@@ -99,11 +99,19 @@ final class FilterPlan implements SlotPlan {
 	final NativeBooleanFilter filter;
 	/** Slots the condition can read, or -1 when the filter must stay exactly where the algebra put it. */
 	final long filterMask;
+	/** Optional exact term-kind condition retained from the filter algebra for page-grain prefiltering. */
+	final LmdbNativeTermKindFilter termKindFilter;
 
 	FilterPlan(SlotPlan arg, NativeBooleanFilter filter, long filterMask) {
+		this(arg, filter, filterMask, null);
+	}
+
+	FilterPlan(SlotPlan arg, NativeBooleanFilter filter, long filterMask,
+			LmdbNativeTermKindFilter termKindFilter) {
 		this.arg = arg;
 		this.filter = filter;
 		this.filterMask = filterMask;
+		this.termKindFilter = termKindFilter;
 	}
 
 	@Override
@@ -143,6 +151,22 @@ final class FilterPlan implements SlotPlan {
 	@Override
 	public long producedMask() {
 		return arg.producedMask();
+	}
+}
+
+/** Exact, single-slot SPARQL term-kind condition that can safely prefilter immutable page domains. */
+@Experimental
+final class LmdbNativeTermKindFilter {
+	final int slot;
+	final int acceptedKinds;
+
+	LmdbNativeTermKindFilter(int slot, int acceptedKinds) {
+		this.slot = slot;
+		this.acceptedKinds = acceptedKinds;
+	}
+
+	boolean accepts(int termKind) {
+		return termKind >= 0 && termKind < Integer.SIZE && (acceptedKinds & 1 << termKind) != 0;
 	}
 }
 

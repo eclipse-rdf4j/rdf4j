@@ -277,13 +277,18 @@ interface SlotPlan {
 	}
 
 	static SlotPlan filter(SlotPlan arg, NativeBooleanFilter filter, long filterMask) {
+		return filter(arg, filter, filterMask, null);
+	}
+
+	static SlotPlan filter(SlotPlan arg, NativeBooleanFilter filter, long filterMask,
+			LmdbNativeTermKindFilter termKindFilter) {
 		if (arg == EmptyPlan.INSTANCE) {
 			return arg;
 		}
 		if (filterMask >= 0L && arg instanceof MultiJoinPlan) {
 			return ((MultiJoinPlan) arg).withFilter(filter, filterMask);
 		}
-		return new FilterPlan(arg, filter, filterMask);
+		return new FilterPlan(arg, filter, filterMask, termKindFilter);
 	}
 
 	static SlotPlan extension(SlotPlan arg, CopyBinding[] copies) {

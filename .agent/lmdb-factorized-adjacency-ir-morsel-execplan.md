@@ -52,6 +52,23 @@ The performance objective is at least a 10x geometric-mean improvement for ANALY
   0.037/0.058 ms per operation.
 - [x] (2026-08-30 04:46Z) Passed the full JDK 25 LMDB module gate with 4,176 tests, zero failures, zero errors, and
   103 skipped tests; audited formatting, headers, debug output, and whitespace without deleting retained artifacts.
+- [x] (2026-08-30 07:43Z) Started the post-implementation page-header consumer sweep, confirmed the protected
+  10 GiB corpus, JDK 25/JDK 26 AArch64 runtimes, and passed the mandatory root quick clean install in 35.718 seconds.
+- [x] Inventory every production CSF page/root/fiber consumer and classify whether each root/neighbor term-kind or
+  literal-datatype header can reject, bulk-count, specialize, or cannot legally answer its operation.
+- [x] Capture matched no-synopsis JDK 26 baselines for every analytical query whose current execution decodes values
+  that an authoritative page header could avoid.
+- [x] Add the smallest failing instrumentation and semantic regressions before changing each selected consumer.
+- [x] Push q9's `isIRI` predicate to OSC root pages; matched no-synopsis execution improves from 36.521 +/- 0.325
+  to 27.824 +/- 0.563 ms/op while preserving the exact residual filter.
+- [x] Give q8 complete sideways-type and page-morsel candidates, cost them from exact CSF plane/page/root/fiber
+  metadata, and arbitrate per dataset. The literal-heavy regression selects page morsels; ANALYTICS selects sideways.
+- [x] Reject physical fiber-copy header propagation after its ten-iteration 46.792 +/- 0.970 ms/op result failed to
+  beat the 47.119 +/- 2.431 ms/op control; remove the candidate rather than retain unproven hot-loop complexity.
+- [x] Re-run q7/q8 with synopsis disabled: 10.071 +/- 2.983 and 43.125 +/- 0.727 ms/op, respectively, preserving
+  benchmark validation and exceeding the user-provided historical five-times-faster gates.
+- [x] (2026-08-30 09:39Z) Ran final formatting and the JDK 25 LMDB module gate: 4,274 tests, zero failures,
+  zero errors, and 103 skipped tests. No retained benchmark, corpus, or evidence artifact was deleted.
 
 ## Surprises & Discoveries
 
@@ -140,6 +157,17 @@ The performance objective is at least a 10x geometric-mean improvement for ANALY
   Evidence: `.agent/evidence/factorized-adjacency/q3-q12-matched-speedups.txt` and the paired current/forced-LMDB JSON
   result files in the same directory.
 
+- Observation: q8 has two legitimately different winners. Sideways type morsels win when resource edges dominate;
+  page morsels win when uniform literal pages let header pruning remove most work before type lookup. A single
+  unconditional dispatch is therefore architecturally wrong even though both candidates read the same SOC planes.
+  Evidence: `LmdbTypeMatrixTest.linkageArbiterPrefersPageMorselsWhenHeadersRejectMostEdgePages` selects the page
+  candidate and returns exactly 2,000 links, while ANALYTICS telemetry selects sideways and measures 43.125 ms/op.
+
+- Observation: not every available page header is a profitable hot-loop operation. Passing a neighbor-kind trait
+  through every q8 physical fiber copy replaced one scalar ID-kind test with roughly one header action on the corpus's
+  predominantly one-fiber runs; the longer measurement was statistically indistinguishable from the control.
+  Evidence: `.agent/evidence/factorized-adjacency/analytics-q8-arbiter-final-jdk26.txt` records both rejected variants.
+
 ## Decision Log
 
 - Decision: Extend the current `LmdbNativeKernelIr` and `NativeLmdbQuerySource.NativeAdjacency` contracts rather than create another query-index specialist.
@@ -165,6 +193,14 @@ The performance objective is at least a 10x geometric-mean improvement for ANALY
 - Decision: Preserve LMDB as a costed physical alternative and report adjacency as selected, outranked, or ineligible. Every supported analytical shape must still receive a complete adjacency candidate.
   Rationale: availability proves correctness eligibility, not lower cost for every density or transaction state.
   Date/Author: 2026-08-29 / Codex.
+
+- Decision: Arbitrate q8's sideways-type and page-morsel adjacency kernels from exact, snapshot-authoritative work
+  bounds. Prefer the incumbent sideways kernel when intervals overlap; select page morsels only when page-header
+  rejection makes its whole interval cheaper. Publish the winner and both estimates in query telemetry.
+  Rationale: query text alone cannot determine the winner. Predicate density, type-domain density, and the number of
+  uniform non-resource pages vary by dataset, while conservative interval domination keeps uncertain estimates from
+  causing broad routing regressions.
+  Date/Author: 2026-08-30 / Codex.
 
 - Decision: Replace the projection-free q7/q8 subject heap with plane-major root morsels. Scan each accepted SOC plane in root batches, batch-resolve source `rdf:type` runs, consume edge fibers from retained run handles, and batch-resolve target type runs. q8 aggregates a bounded target batch before lookup; later morsel parallelism partitions planes/root ordinals without global atomics.
   Rationale: this uses the order already present in each SOC plane, removes O(log predicate-count) coordination per root, avoids the over-budget node-predicate projection, and turns millions of scalar type probes into sorted `findBatch` calls against the existing CSF partition lookup.
@@ -224,6 +260,15 @@ The performance objective is at least a 10x geometric-mean improvement for ANALY
   required statistically credible end-to-end improvement.
   Date/Author: 2026-08-30 / Codex.
 
+- Decision: Treat page traits as a physical proof scoped to one immutable page and one column, not as a general fact
+  about a logical run or overlay-composed snapshot. Hoist a check to page grain only when the consumer can preserve
+  exact bag/DISTINCT multiplicity and the visible source proves the trait remains authoritative.
+  Rationale: a uniform root or neighbor term kind can safely reject or accept a complete base page, and a uniform
+  literal datatype can bulk-count literal multiplicity after one representative lookup. A replacement run, tombstone,
+  context restriction, or continuation can change the logical population, so blindly reusing the base flag would be a
+  correctness bug rather than an optimization.
+  Date/Author: 2026-08-30 / Codex.
+
 ## Outcomes & Retrospective
 
 Implementation is complete. Every q0-q12 analytical shape has an adjacency lowering, and the acceptance measurements
@@ -274,6 +319,20 @@ Milestone 7 investigates the Vector API. First add benchmark-only implementation
 
 Milestone 8 completes arbitration and verification. Cost plane, root, fiber, quad decode, value lookup, merge width, and scheduling overhead. Telemetry records grain, direction, metadata hits, payload decodes, set algorithm, morsels, steals, skew splits, scratch, and vector backend. Run focused regressions, the full JDK 25 LMDB module gate, matched JDK 26 q0-q12 JMH, allocation profiling, and plan snapshots. Retire old specialist code only after sequential, parallel, overlay, context, and fallback parity.
 
+Milestone 9 audits and exploits the four independent CSF page traits across the rest of the branch. Build a source
+matrix covering every production call that opens a `CompactCsfPageReader`, consumes `KeyRunCursor`/`BoundRunCursor`
+root or fiber batches, copies neighbor IDs, or classifies RDF terms. For each consumer, record its physical grain,
+column, predicate, whether the base-page trait remains authoritative for its visible snapshot, current decode count,
+and the exact legal optimization: reject the page, accept the page, bulk-count its multiplicity, select a narrower
+kernel, or no optimization. Headers must never be consulted as authoritative across an overlay replacement unless the
+composed cursor supplies an exact composed trait. Capture no-synopsis JDK 26 JMH baselines before production edits.
+For each selected consumer, add an instrumented regression that fails because the relevant header check or fast-path
+counter is absent while preserving result parity for mixed pages, legacy literal IDs, encoded-core literal IDs,
+continuation pages, and overlays. Implement the header check once outside the lane loop and keep representative ID or
+ValueStore-header resolution at page grain. Retain a change only if repeated matched query measurements improve the
+expected workload without regressing affected alternatives; otherwise revert that candidate while preserving the
+benchmark evidence and audit conclusion.
+
 ## Concrete Steps
 
 Run all commands from `/Users/havardottestad/Documents/Programming/rdf4j`. Tests use the repository runner, never Maven `-am` or `-q`:
@@ -298,6 +357,13 @@ All ANALYTICS results must match the generic engine. q7 and q8 must produce 125 
 
 On the preserved corpus and matched JDK 26 settings, q3 through q12 must achieve at least 10x geometric-mean speedup over forced LMDB. Every candidate must be faster than its control, q7/q8 must improve at least 5x, and q0-q2 must remain below 0.2 milliseconds. Fixed-P aggregation must allocate no object per statement. Scratch remains bounded by worker count, morsel limits, active predicates, and unavoidable output groups. New retained metadata must keep total direct-adjacency memory at or below 110 percent of the baseline.
 
+For Milestone 9, compare each changed query against a same-revision pre-change benchmark built from the current dirty
+worktree, with the same preserved corpus, JDK 26, heap, synopsis-disabled property, maintenance mode, warmup,
+measurement, forks, and query parameters. Report the score and uncertainty before and after. The optimization is
+accepted only when the expected query is repeatably faster, all affected semantic and telemetry tests pass, explicit
+zero decode counts remain visible rather than being treated as unset, and no affected matched query regresses beyond
+measurement noise.
+
 ## Idempotence and Recovery
 
 Focused tests and builds are repeatable. `mvnf` performs the required install and keeps logs when requested. Never run `git clean`, `git reset --hard`, broad restore, or a manual stash. If a test overwrites a Surefire report, retain the first red evidence in `initial-evidence.txt` and the full log under `logs/mvnf`. If a benchmark process is active, wait rather than rebuilding or replacing its target. The preserved corpus in `/private/tmp` is read-only source evidence; never delete it.
@@ -312,4 +378,4 @@ Initial build evidence is `maven-build.log`. The canonical preserved corpus is `
 
 The optional Vector API provider may reference `jdk.incubator.vector` only in an isolated package and only after the benchmark promotion gates pass. Scalar code must have no static linkage to incubator classes. On AArch64, automatic selection requires the module to be present in `ModuleLayer.boot()` and the specific operation to have passed the recorded promotion gate.
 
-Revision note: 2026-08-29 initial implementation plan created from the approved factorized-adjacency design. It incorporates the existing bidirectional aggregation work, the 10 percent memory limit, exact q7/q8 gates, root/fiber morsels, and an evidence-gated AArch64 Vector API investigation. The same day, the first root-metadata regression passed without a persisted-format change.
+Revision note: 2026-08-29 initial implementation plan created from the approved factorized-adjacency design. It incorporates the existing bidirectional aggregation work, the 10 percent memory limit, exact q7/q8 gates, root/fiber morsels, and an evidence-gated AArch64 Vector API investigation. The same day, the first root-metadata regression passed without a persisted-format change. Revised 2026-08-30 to add the branch-wide page-header consumer audit, strict snapshot-authority rules, test-first implementation, and matched before/after promotion gate requested after the initial q0-q12 completion.

@@ -68,6 +68,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 	final boolean prefixCountRunRows;
 	final boolean prefixDistinctRuns;
 	final NativeBooleanFilter prefixRunFilter;
+	final LmdbNativeTermKindFilter prefixRootKindFilter;
 	final long prefixMinRunCount;
 	final LmdbNativeExistsIntersection existsIntersection;
 	LmdbAdjacencyAggregatePlan adjacencyAggregate;
@@ -85,6 +86,18 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
 			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter, long prefixMinRunCount,
 			LmdbNativeExistsIntersection existsIntersection, ValueExpr havingCondition) {
+		this(source, arg, layout, groupSlots, aggregates, strictCompare, strategy, originalExpr, context,
+				optionalOnlyNames, prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns,
+				prefixRunFilter, null, prefixMinRunCount, existsIntersection, havingCondition);
+	}
+
+	NativeGroupStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] groupSlots,
+			AggregateSpec[] aggregates, boolean strictCompare, LmdbNativeEvaluationStrategy strategy,
+			TupleExpr originalExpr, QueryEvaluationContext context, Set<String> optionalOnlyNames,
+			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
+			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter,
+			LmdbNativeTermKindFilter prefixRootKindFilter, long prefixMinRunCount,
+			LmdbNativeExistsIntersection existsIntersection, ValueExpr havingCondition) {
 		this.source = source;
 		this.arg = arg;
 		this.layout = layout;
@@ -101,6 +114,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 		this.prefixCountRunRows = prefixCountRunRows;
 		this.prefixDistinctRuns = prefixDistinctRuns;
 		this.prefixRunFilter = prefixRunFilter;
+		this.prefixRootKindFilter = prefixRootKindFilter;
 		this.prefixMinRunCount = prefixMinRunCount;
 		this.existsIntersection = existsIntersection;
 		this.havingCondition = havingCondition;
@@ -145,7 +159,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 			initializeQueryBase(evalSource, bindings);
 			CloseableIteration<BindingSet> iteration = new NativeGroupIteration(evalSource, variant.wrap(arg), layout,
 					groupSlots, aggregates,
-					strictCompare, variant.filteredBase, null, null, false, false, null, 0L, null,
+					strictCompare, variant.filteredBase, null, null, false, false, null, null, 0L, null,
 					null, havingCondition, originalExpr);
 			return applyScopedHaving(withContextLifetime(iteration, evalSource), evalSource, havingDescriptor);
 		}
@@ -154,7 +168,8 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 		CloseableIteration<BindingSet> iteration = new NativeGroupIteration(evalSource, arg, layout, groupSlots,
 				aggregates, strictCompare, bindings,
 				prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns, prefixRunFilter,
-				prefixMinRunCount, existsIntersection, adjacencyAggregate, havingCondition, originalExpr);
+				prefixRootKindFilter, prefixMinRunCount, existsIntersection, adjacencyAggregate, havingCondition,
+				originalExpr);
 		return applyScopedHaving(withContextLifetime(iteration, evalSource), evalSource, havingDescriptor);
 	}
 
@@ -301,6 +316,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	final boolean prefixCountRunRows;
 	final boolean prefixDistinctRuns;
 	final NativeBooleanFilter prefixRunFilter;
+	final LmdbNativeTermKindFilter prefixRootKindFilter;
 	final long prefixMinRunCount;
 	final LmdbNativeExistsIntersection existsIntersection;
 	final LmdbAdjacencyAggregatePlan adjacencyAggregate;
@@ -318,7 +334,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
 			TupleExpr explainTarget) {
 		this(source, arg, layout, groupSlots, aggregates, strictCompare, base, prefixPattern, prefixRunPlan,
-				prefixCountRunRows, false, null, 0L, null, null, null, explainTarget);
+				prefixCountRunRows, false, null, null, 0L, null, null, null, explainTarget);
 	}
 
 	NativeGroupIteration(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
@@ -327,7 +343,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter, long prefixMinRunCount,
 			LmdbNativeExistsIntersection existsIntersection, TupleExpr explainTarget) {
 		this(source, arg, layout, groupSlots, aggregates, strictCompare, base, prefixPattern, prefixRunPlan,
-				prefixCountRunRows, prefixDistinctRuns, prefixRunFilter, prefixMinRunCount, existsIntersection, null,
+				prefixCountRunRows, prefixDistinctRuns, prefixRunFilter, null, prefixMinRunCount, existsIntersection,
+				null,
 				null,
 				explainTarget);
 	}
@@ -339,14 +356,27 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			LmdbNativeExistsIntersection existsIntersection, LmdbAdjacencyAggregatePlan adjacencyAggregate,
 			ValueExpr havingCondition, TupleExpr explainTarget) {
 		this(source, arg, layout, groupSlots, aggregates, strictCompare, base, prefixPattern, prefixRunPlan,
-				prefixCountRunRows, prefixDistinctRuns, prefixRunFilter, prefixMinRunCount, existsIntersection,
+				prefixCountRunRows, prefixDistinctRuns, prefixRunFilter, null, prefixMinRunCount, existsIntersection,
 				adjacencyAggregate, havingCondition, explainTarget, new NativeCancellationToken());
+	}
+
+	NativeGroupIteration(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
+			int[] groupSlots, AggregateSpec[] aggregates, boolean strictCompare, BindingSet base,
+			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
+			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter,
+			LmdbNativeTermKindFilter prefixRootKindFilter, long prefixMinRunCount,
+			LmdbNativeExistsIntersection existsIntersection, LmdbAdjacencyAggregatePlan adjacencyAggregate,
+			ValueExpr havingCondition, TupleExpr explainTarget) {
+		this(source, arg, layout, groupSlots, aggregates, strictCompare, base, prefixPattern, prefixRunPlan,
+				prefixCountRunRows, prefixDistinctRuns, prefixRunFilter, prefixRootKindFilter, prefixMinRunCount,
+				existsIntersection, adjacencyAggregate, havingCondition, explainTarget, new NativeCancellationToken());
 	}
 
 	private NativeGroupIteration(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
 			int[] groupSlots, AggregateSpec[] aggregates, boolean strictCompare, BindingSet base,
 			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
-			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter, long prefixMinRunCount,
+			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter,
+			LmdbNativeTermKindFilter prefixRootKindFilter, long prefixMinRunCount,
 			LmdbNativeExistsIntersection existsIntersection, LmdbAdjacencyAggregatePlan adjacencyAggregate,
 			ValueExpr havingCondition, TupleExpr explainTarget,
 			NativeCancellationToken cancellation) {
@@ -366,6 +396,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		this.prefixCountRunRows = prefixCountRunRows;
 		this.prefixDistinctRuns = prefixDistinctRuns;
 		this.prefixRunFilter = prefixRunFilter;
+		this.prefixRootKindFilter = prefixRootKindFilter;
 		this.prefixMinRunCount = prefixMinRunCount;
 		this.existsIntersection = existsIntersection;
 		this.adjacencyAggregate = adjacencyAggregate;
@@ -588,7 +619,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	private NativeGroupIteration withArg(SlotPlan attemptArg) {
 		return new NativeGroupIteration(source, attemptArg, layout, groupSlots, aggregates, strictCompare, base,
 				prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns, prefixRunFilter,
-				prefixMinRunCount, existsIntersection, adjacencyAggregate, havingCondition, explainTarget,
+				prefixRootKindFilter, prefixMinRunCount, existsIntersection, adjacencyAggregate, havingCondition,
+				explainTarget,
 				cancellation);
 	}
 
@@ -1255,6 +1287,15 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			return null;
 		}
 		ADJACENCY_DOMAIN_GROUP_ELIGIBLE.incrementAndGet();
+		LmdbAdjacencyOptimizationTelemetry optimization = LmdbAdjacencyOptimizationTelemetry.create(explainTarget,
+				LmdbAdjacencyOptimizationTelemetry.Grain.ROOT,
+				bySubject ? LmdbAdjacencyOptimizationTelemetry.Direction.SOC
+						: LmdbAdjacencyOptimizationTelemetry.Direction.OSC);
+		if (optimization != null) {
+			optimization.trackPageHeaderFastPaths();
+			optimization.trackPayloadDecodes();
+			optimization.source("ROOT_DOMAIN_MERGE");
+		}
 		try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
 			NativeLmdbQuerySource.NodeDomainSynopsis synopsis = probe.nodeDomainSynopsis(bySubject);
 			if (synopsis != null) {
@@ -1268,12 +1309,17 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							results);
 				}
 				ADJACENCY_DOMAIN_GROUP_RUNS.incrementAndGet();
+				if (optimization != null) {
+					optimization.source("ROOT_DOMAIN_SYNOPSIS");
+					optimization.publish(explainTarget);
+				}
 				return results;
 			}
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
-		try (LmdbAdjacencyRootDomainCursor roots = LmdbAdjacencyRootDomainCursor.open(source, bySubject)) {
+		try (LmdbAdjacencyRootDomainCursor roots = LmdbAdjacencyRootDomainCursor.open(source, bySubject,
+				prefixRootKindFilter, optimization)) {
 			if (roots == null) {
 				ADJACENCY_DOMAIN_GROUP_UNAVAILABLE.incrementAndGet();
 				return null;
@@ -1286,6 +1332,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				appendDomainGroup(row, rootTerm, roots.root(), roots.quadMultiplicity(), orderedContext, results);
 			}
 			ADJACENCY_DOMAIN_GROUP_RUNS.incrementAndGet();
+			if (optimization != null) {
+				optimization.publish(explainTarget);
+			}
 			return results;
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);

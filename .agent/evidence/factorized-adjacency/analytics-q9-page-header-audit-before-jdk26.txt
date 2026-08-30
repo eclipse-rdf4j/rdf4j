@@ -1,0 +1,33 @@
+Maven packaging skipped by --no-build.
+Running benchmark with jar /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/jmh-benchmarks.jar
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-zulu/zulu-26.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G -Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true -Xms1G -Xmx16G -Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true -Drdf4j.lmdb.directAdjacency.synopsis.enabled=false -Drdf4j.lmdb.themeQueryBenchmark.typeMatrixMetrics=true --enable-native-access=ALL-UNNAMED
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 2 iterations, 10 s each
+# Measurement: 5 iterations, 5 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = ANALYTICS, z_queryIndex = 9, z_z_janinoEnabled = false)
+# Run progress: 0.00% complete, ETA 00:00:45
+# Fork: 1 of 1
+# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+### Original Query ###
+ThemeQueryBenchmark setup completed in 00:00:00.151
+47.778 ms/op
+# Warmup Iteration   2: 36.718 ms/op
+Iteration   1: 36.660 ms/op
+Iteration   2: 36.485 ms/op
+Iteration   3: 36.472 ms/op
+Iteration   4: 36.450 ms/op
+### Telemetry Query ###
+### Type Matrix Metrics ###
+36.538 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+  36.521 ±(99.9%) 0.325 ms/op [Average]
+# Run complete. Total time: 00:00:45
+Benchmark                         (themeName)  (z_queryIndex)  (z_z_janinoEnabled)  Mode  Cnt   Score   Error  Units
+ThemeQueryBenchmark.executeQuery    ANALYTICS               9                false  avgt    5  36.521 ± 0.325  ms/op

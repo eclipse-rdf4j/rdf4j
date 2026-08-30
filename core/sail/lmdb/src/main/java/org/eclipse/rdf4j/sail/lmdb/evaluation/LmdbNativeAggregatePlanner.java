@@ -47,7 +47,11 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.IsBNode;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
+import org.eclipse.rdf4j.query.algebra.IsResource;
+import org.eclipse.rdf4j.query.algebra.IsTriple;
+import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
@@ -80,6 +84,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 
 @Experimental
 final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler {
@@ -321,6 +326,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				strategy, originalExpr, context, optionalOnlyNames, prefixRun == null ? null : prefixRun.pattern,
 				prefixRun == null ? null : prefixRun.plan, prefixRun != null && prefixRun.countRunRows,
 				prefixRun != null && prefixRun.distinctRuns, prefixRun == null ? null : prefixRun.runFilter,
+				prefixRun == null ? null : prefixRun.rootKindFilter,
 				prefixRun == null ? 0L : prefixRun.minRunCount, existsIntersection, havingCondition);
 		groupStep.adjacencyAggregate = adjacencyAggregate;
 		groupStep.rootEvaluationScoped = rootEvaluationScoped;
@@ -753,7 +759,14 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			plan = plan.asWholePlaneCount();
 		}
 		long minRunCount = countRunRows ? minimumHavingCount(havingCondition, aggregates) : 0L;
-		return new PrefixRunGroupCandidate(pattern, plan, countRunRows, distinctRuns, runFilter, minRunCount);
+		LmdbNativeTermKindFilter rootKindFilter = arg instanceof FilterPlan
+				? ((FilterPlan) arg).termKindFilter
+				: null;
+		if (rootKindFilter != null && !slotContained(prefixSlots, rootKindFilter.slot)) {
+			rootKindFilter = null;
+		}
+		return new PrefixRunGroupCandidate(pattern, plan, countRunRows, distinctRuns, runFilter, rootKindFilter,
+				minRunCount);
 	}
 
 	/**
@@ -1364,6 +1377,34 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				&& !pattern.hasRepeatedSlot() && !pattern.rejectsNullContextAtBind();
 	}
 
+	private LmdbNativeTermKindFilter termKindFilter(ValueExpr expression) {
+		ValueExpr argument;
+		int acceptedKinds;
+		if (expression instanceof IsURI typeTest) {
+			argument = typeTest.getArg();
+			acceptedKinds = 1 << ValueIds.TERM_KIND_IRI;
+		} else if (expression instanceof IsResource typeTest) {
+			argument = typeTest.getArg();
+			acceptedKinds = 1 << ValueIds.TERM_KIND_IRI | 1 << ValueIds.TERM_KIND_BNODE;
+		} else if (expression instanceof IsLiteral typeTest) {
+			argument = typeTest.getArg();
+			acceptedKinds = 1 << ValueIds.TERM_KIND_LITERAL;
+		} else if (expression instanceof IsBNode typeTest) {
+			argument = typeTest.getArg();
+			acceptedKinds = 1 << ValueIds.TERM_KIND_BNODE;
+		} else if (expression instanceof IsTriple typeTest) {
+			argument = typeTest.getArg();
+			acceptedKinds = 1 << ValueIds.TERM_KIND_TRIPLE;
+		} else {
+			return null;
+		}
+		if (!(argument instanceof Var variable) || variable.hasValue()) {
+			return null;
+		}
+		int slot = existingSlot(variable.getName());
+		return slot < 0 ? null : new LmdbNativeTermKindFilter(slot, acceptedKinds);
+	}
+
 	private int[] prefixFields(PatternPlan pattern, int[] slots) {
 		if (slots.length == 0 || slots.length > 3) {
 			return null;
@@ -1402,15 +1443,18 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		final boolean countRunRows;
 		final boolean distinctRuns;
 		final NativeBooleanFilter runFilter;
+		final LmdbNativeTermKindFilter rootKindFilter;
 		final long minRunCount;
 
 		PrefixRunGroupCandidate(PatternPlan pattern, LmdbPrefixRunPlan plan, boolean countRunRows,
-				boolean distinctRuns, NativeBooleanFilter runFilter, long minRunCount) {
+				boolean distinctRuns, NativeBooleanFilter runFilter, LmdbNativeTermKindFilter rootKindFilter,
+				long minRunCount) {
 			this.pattern = pattern;
 			this.plan = plan;
 			this.countRunRows = countRunRows;
 			this.distinctRuns = distinctRuns;
 			this.runFilter = runFilter;
+			this.rootKindFilter = rootKindFilter;
 			this.minRunCount = minRunCount;
 		}
 	}
@@ -1955,7 +1999,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				return island(filter);
 			}
 			return SlotPlan.filter(arg, recordFilterOutcomes(filter, condition),
-					placeableFilterMask(filter));
+					placeableFilterMask(filter), termKindFilter(filter.getCondition()));
 		}
 		if (expr instanceof Extension) {
 			Extension extension = (Extension) expr;

@@ -1,0 +1,19 @@
+Factorized adjacency IR with morsel parallelism
+Matched JDK 26 AArch64, synopsis disabled
+
+q	adjacency_ms	forced_lmdb_ms	speedup
+3	0.137	1427.384	10403.0x
+4	0.105	4197.932	39912.0x
+5	0.123	1046.737	8475.9x
+6	5.988	4544.515	759.0x
+7	8.197	3299.128	402.5x
+8	40.454	7831.827	193.6x
+9	35.132	4149.967	118.1x
+10	29.819	7920.500	265.6x
+11	0.109	5975.989	54943.8x
+12	0.036	10669.972	297694.4x
+
+Geometric mean: 3183.2x
+
+Adjacency: q3-q12-current-no-synopsis-matched.json
+Control: q3-q12-forced-lmdb-matched.json

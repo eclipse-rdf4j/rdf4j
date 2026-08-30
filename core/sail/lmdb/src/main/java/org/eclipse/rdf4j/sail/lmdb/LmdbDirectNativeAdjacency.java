@@ -614,6 +614,12 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	}
 
 	@Override
+	public long quadCount() {
+		ensureOpen();
+		return baseOnly && baseCsf != null ? baseCsf.quadCount(basePredicateOrdinal, plane) : -1L;
+	}
+
+	@Override
 	public NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor openPageCursor(long fromPage, long toPage) {
 		ensureOpen();
 		if (!baseOnly || baseKeys == null) {

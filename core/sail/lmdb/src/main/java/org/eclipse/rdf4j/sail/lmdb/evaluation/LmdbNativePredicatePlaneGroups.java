@@ -104,9 +104,15 @@ final class LmdbNativePredicatePlaneGroups implements QueryEvaluationStep {
 		if (!bindings.isEmpty()) {
 			return genericStep().evaluate(bindings);
 		}
+		LmdbAdjacencyOptimizationTelemetry telemetry = LmdbAdjacencyOptimizationTelemetry.create(originalExpr,
+				LmdbAdjacencyOptimizationTelemetry.Grain.PLANE,
+				LmdbAdjacencyOptimizationTelemetry.Direction.BOTH);
+		if (telemetry != null) {
+			telemetry.trackPayloadDecodes();
+		}
 		Map<Literal, GroupState> groups;
 		try {
-			groups = collectGroups();
+			groups = collectGroups(telemetry);
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
@@ -124,11 +130,14 @@ final class LmdbNativePredicatePlaneGroups implements QueryEvaluationStep {
 			rows.add(row);
 		}
 		RUNS.incrementAndGet();
+		if (telemetry != null) {
+			telemetry.publish(originalExpr);
+		}
 		LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS);
 		return new CloseableIteratorIteration<>(rows.iterator());
 	}
 
-	private Map<Literal, GroupState> collectGroups() throws IOException {
+	private Map<Literal, GroupState> collectGroups(LmdbAdjacencyOptimizationTelemetry telemetry) throws IOException {
 		PlaneBatch batch = new PlaneBatch(PLANE_BATCH_CAPACITY);
 		Map<Literal, GroupState> groups = new LinkedHashMap<>();
 		try (LmdbPrefixRunCursor cursor = source.prefixRuns(plan, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, true)) {
@@ -136,8 +145,15 @@ final class LmdbNativePredicatePlaneGroups implements QueryEvaluationStep {
 				return null;
 			}
 			while (fill(cursor, batch)) {
+				if (telemetry != null) {
+					telemetry.planesVisited(batch.size());
+					telemetry.planeMetadataReads(batch.size());
+				}
 				consume(batch, groups);
 			}
+		}
+		if (telemetry != null) {
+			telemetry.source("PREDICATE_PLANE_METADATA");
 		}
 		return groups;
 	}
