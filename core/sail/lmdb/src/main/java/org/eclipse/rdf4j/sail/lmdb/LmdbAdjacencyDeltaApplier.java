@@ -105,6 +105,7 @@ final class LmdbAdjacencyDeltaApplier {
 		int events = sealed.eventCount;
 		int[] outgoing = sortedOrder(true);
 		int[] incoming = sortedOrder(false);
+		LmdbAdjacencyRunCodec.PairCursor oldCursor = new LmdbAdjacencyRunCodec.PairCursor();
 
 		// previously unseen nonzero contexts, sorted unsigned
 		long[] newContexts = collectNewContexts();
@@ -112,50 +113,78 @@ final class LmdbAdjacencyDeltaApplier {
 				: new ExtendedView(previousContexts, newContexts);
 
 		// ---------------- subpass A: prove changed rows and exact bytes ----------------
-		RowPlan plan = new RowPlan();
-		mergeDirection(outgoing, true, sizingContexts, plan, plan, null);
-		mergeDirection(incoming, false, sizingContexts, plan, plan, null);
+		RowPlan plan = new RowPlan(arenaRegionBytes);
+		mergeDirection(outgoing, true, sizingContexts, plan, plan, null, oldCursor);
+		mergeDirection(incoming, false, sizingContexts, plan, plan, null, oldCursor);
 		if (plan.changedRows == 0) {
 			return new Result(null, previousContexts, extraSelectedAfter, planeStatistics.build());
 		}
 
-		long contextExtensionBytes = newContexts.length == 0 ? 0 : (long) newContexts.length * Long.BYTES + 8;
-		long totalBytes = Math.addExact(plan.changedRunBytes, contextExtensionBytes);
-		long reservedBytes = Math.multiplyExact((totalBytes + arenaRegionBytes - 1) / arenaRegionBytes,
-				arenaRegionBytes);
+		// Replay only the rows proven to change through the planning encoder. Context extensions have their own exact
+		// catalog-owned allocations, so this plan contains only the generation's run allocation order and final tail.
+		LmdbAdjacencyArenaSizingPlan sizingPlan = new LmdbAdjacencyArenaSizingPlan(arenaRegionBytes);
+		RowPlan planned = new RowPlan(0);
+		planDirection(outgoing, true, sizingContexts, plan, planned, sizingPlan, oldCursor);
+		planDirection(incoming, false, sizingContexts, plan, planned, sizingPlan, oldCursor);
+		if (planned.changedRows != plan.changedRows || planned.changedRunBytes != plan.changedRunBytes
+				|| plan.cursor != plan.size || plan.cachedChangedRowCursor != plan.cachedChangedRowCount) {
+			throw new IllegalStateException("planning replay emitted " + planned.changedRows + " rows/"
+					+ planned.changedRunBytes + " bytes over " + plan.cursor + " visited rows and consumed "
+					+ plan.cachedChangedRowCursor + " cached changed rows, but subpass A predicted "
+					+ plan.changedRows + "/" + plan.changedRunBytes + " over " + plan.size + " rows and "
+					+ plan.cachedChangedRowCount + " cached changed rows");
+		}
+		if (sizingPlan.allocatedBytes() != plan.changedRunBytes) {
+			throw new IllegalStateException("planning replay allocated " + sizingPlan.allocatedBytes()
+					+ " logical bytes, but the sizing pass predicted " + plan.changedRunBytes);
+		}
+		plan.rewind();
+		sizingPlan.seal();
+		long reservedBytes = sizingPlan.capacityBytes();
 		Charge reservation = account.tryCharge(MemoryKind.DELTA, reservedBytes);
 		if (reservation == null) {
 			throw new LmdbAdjacencyMemoryRefusedException(
 					"delta generation reservation of " + reservedBytes + " bytes refused");
 		}
+		long metadataBytes = LmdbAdjacencyDeltaGeneration.modeledJavaBytes(plan.changedRows);
+		Charge metadataReservation = account.tryCharge(MemoryKind.JAVA_METADATA, metadataBytes);
+		if (metadataReservation == null) {
+			reservation.close();
+			throw new LmdbAdjacencyMemoryRefusedException(
+					"delta generation directory metadata reservation of " + metadataBytes + " bytes refused");
+		}
 		LmdbAdjacencyArena arena = null;
+		LmdbAdjacencyContextCatalog extendedContexts = previousContexts;
+		boolean ownsExtendedContexts = false;
 		boolean success = false;
-		try (reservation) {
-			arena = new LmdbAdjacencyArena(arenaRegionBytes);
-			LmdbAdjacencyContextCatalog extendedContexts = newContexts.length == 0 ? previousContexts
-					: previousContexts.extend(arena, newContexts);
+		try (reservation; metadataReservation) {
+			if (newContexts.length > 0) {
+				extendedContexts = previousContexts.extend(account, arenaRegionBytes, newContexts);
+				ownsExtendedContexts = true;
+			}
+			arena = new LmdbAdjacencyArena(sizingPlan);
 
 			// ---------------- subpass B: replay identical merges into the reserved arena ----------------
-			RowPlan emit = new RowPlan();
+			RowPlan emit = new RowPlan(0);
 			EmitState emitState = new EmitState(arena, extendedContexts);
-			mergeDirection(outgoing, true, extendedContexts, emit, plan, emitState);
-			mergeDirection(incoming, false, extendedContexts, emit, plan, emitState);
+			mergeDirection(outgoing, true, extendedContexts, emit, plan, emitState, oldCursor);
+			mergeDirection(incoming, false, extendedContexts, emit, plan, emitState, oldCursor);
 			if (emit.changedRows != plan.changedRows || emit.changedRunBytes != plan.changedRunBytes
-					|| plan.cursor != plan.size || plan.cachedOldRunCursor != plan.cachedOldRunCount) {
+					|| plan.cursor != plan.size || plan.cachedChangedRowCursor != plan.cachedChangedRowCount) {
 				throw new IllegalStateException("subpass B emitted " + emit.changedRows + " rows/"
 						+ emit.changedRunBytes + " bytes over " + plan.cursor + " visited rows and consumed "
-						+ plan.cachedOldRunCursor + " cached old runs, but subpass A predicted " + plan.changedRows
-						+ "/" + plan.changedRunBytes + " over " + plan.size + " rows and " + plan.cachedOldRunCount
-						+ " cached old runs");
+						+ plan.cachedChangedRowCursor + " cached changed rows, but subpass A predicted "
+						+ plan.changedRows + "/" + plan.changedRunBytes + " over " + plan.size + " rows and "
+						+ plan.cachedChangedRowCount + " cached changed rows");
 			}
 
 			// merge the two direction-sorted directory slices into one strictly sorted directory
 			Directory directory = emitState.directory.sortedCopy();
 
 			long actualBytes = arena.capacityBytes();
-			if (!reservation.adjustTo(actualBytes)) {
-				throw new LmdbAdjacencyMemoryRefusedException(
-						"delta generation exceeded its reservation by " + (actualBytes - reservedBytes) + " bytes");
+			if (actualBytes != reservedBytes) {
+				throw new IllegalStateException("delta generation materialized " + actualBytes
+						+ " native bytes, but its sealed sizing plan reserved " + reservedBytes);
 			}
 
 			LmdbAdjacencyArenaCatalog slotZero = base.arenaCatalog().baseOnlyCopy();
@@ -166,14 +195,19 @@ final class LmdbAdjacencyDeltaApplier {
 				slotZero.close();
 			}
 			Charge generationCharge = reservation.transfer();
+			Charge generationMetadataCharge = metadataReservation.transfer();
 			LmdbAdjacencyDeltaGeneration generation = new LmdbAdjacencyDeltaGeneration(sealed.revision(), arena,
-					catalog, generationCharge, directory.keys, directory.planes, directory.predicates,
+					catalog, generationCharge, generationMetadataCharge, directory.keys, directory.planes,
+					directory.predicates,
 					directory.runRefs);
 			success = true;
 			return new Result(generation, extendedContexts, extraSelectedAfter, planeStatistics.build());
 		} finally {
 			if (!success && arena != null) {
 				arena.close();
+			}
+			if (!success && ownsExtendedContexts) {
+				extendedContexts.release();
 			}
 		}
 	}
@@ -303,13 +337,19 @@ final class LmdbAdjacencyDeltaApplier {
 		static final byte TOMBSTONE = 2;
 
 		byte[] outcomes = new byte[16];
-		OldRun[] cachedOldRuns;
+		ChangedRow[] cachedChangedRows;
+		final long preparedRunBudgetBytes;
 		int size;
 		int cursor;
-		int cachedOldRunCount;
-		int cachedOldRunCursor;
+		int cachedChangedRowCount;
+		int cachedChangedRowCursor;
 		long changedRows;
 		long changedRunBytes;
+		long preparedRunBytes;
+
+		RowPlan(long preparedRunBudgetBytes) {
+			this.preparedRunBudgetBytes = preparedRunBudgetBytes;
+		}
 
 		void record(byte outcome) {
 			if (size == outcomes.length) {
@@ -318,14 +358,19 @@ final class LmdbAdjacencyDeltaApplier {
 			outcomes[size++] = outcome;
 		}
 
-		void recordChanged(OldRun old) {
+		void recordChanged(OldRun old, LmdbAdjacencyRunCodec.PreparedRun preparedRun) {
 			record(CHANGED);
-			if (cachedOldRuns == null) {
-				cachedOldRuns = new OldRun[16];
-			} else if (cachedOldRunCount == cachedOldRuns.length) {
-				cachedOldRuns = Arrays.copyOf(cachedOldRuns, cachedOldRuns.length * 2);
+			if (preparedRun != null && preparedRun.totalBytes() <= preparedRunBudgetBytes - preparedRunBytes) {
+				preparedRunBytes = Math.addExact(preparedRunBytes, preparedRun.totalBytes());
+			} else {
+				preparedRun = null;
 			}
-			cachedOldRuns[cachedOldRunCount++] = old;
+			if (cachedChangedRows == null) {
+				cachedChangedRows = new ChangedRow[16];
+			} else if (cachedChangedRowCount == cachedChangedRows.length) {
+				cachedChangedRows = Arrays.copyOf(cachedChangedRows, cachedChangedRows.length * 2);
+			}
+			cachedChangedRows[cachedChangedRowCount++] = new ChangedRow(old, preparedRun);
 		}
 
 		byte consume() {
@@ -335,13 +380,26 @@ final class LmdbAdjacencyDeltaApplier {
 			return outcomes[cursor++];
 		}
 
-		OldRun consumeChangedOldRun() {
-			if (cachedOldRunCursor >= cachedOldRunCount) {
+		ChangedRow consumeChangedRow() {
+			if (cachedChangedRowCursor >= cachedChangedRowCount) {
 				throw new IllegalStateException("subpass B consumed more changed rows than subpass A cached");
 			}
-			OldRun old = cachedOldRuns[cachedOldRunCursor];
-			cachedOldRuns[cachedOldRunCursor++] = null;
-			return old;
+			return cachedChangedRows[cachedChangedRowCursor++];
+		}
+
+		void rewind() {
+			cursor = 0;
+			cachedChangedRowCursor = 0;
+		}
+	}
+
+	private static final class ChangedRow {
+		final OldRun old;
+		final LmdbAdjacencyRunCodec.PreparedRun preparedRun;
+
+		ChangedRow(OldRun old, LmdbAdjacencyRunCodec.PreparedRun preparedRun) {
+			this.old = old;
+			this.preparedRun = preparedRun;
 		}
 	}
 
@@ -411,7 +469,7 @@ final class LmdbAdjacencyDeltaApplier {
 	}
 
 	private void mergeDirection(int[] order, boolean outgoingDirection, ContextCatalog encodeContexts, RowPlan plan,
-			RowPlan recorded, EmitState emitState) {
+			RowPlan recorded, EmitState emitState, LmdbAdjacencyRunCodec.PairCursor oldCursor) {
 		int i = 0;
 		while (i < order.length) {
 			int first = order[i];
@@ -428,8 +486,8 @@ final class LmdbAdjacencyDeltaApplier {
 				if (emitState == null) {
 					// subpass A: resolve once, size the merged row, and retain changed rows for subpass B
 					OldRun old = previousRows.find(key, plane, predicate);
-					mergeRow(order, i, end, key, plane, predicate, outgoingDirection, old,
-							LmdbAdjacencyRunCodec.sizingEncoder(encodeContexts), plan, null);
+					mergeRow(order, i, end, key, plane, predicate, outgoingDirection, old, oldCursor,
+							LmdbAdjacencyRunCodec.preparingEncoder(encodeContexts), plan, null);
 				} else {
 					// subpass B: consume subpass A's outcome; only a CHANGED row creates a writing encoder
 					byte outcome = recorded.consume();
@@ -437,10 +495,54 @@ final class LmdbAdjacencyDeltaApplier {
 						plan.changedRows++;
 						emitState.directory.add(key, plane, predicate, 0);
 					} else if (outcome == RowPlan.CHANGED) {
-						OldRun old = recorded.consumeChangedOldRun();
-						mergeRow(order, i, end, key, plane, predicate, outgoingDirection, old,
-								LmdbAdjacencyRunCodec.writingEncoder(emitState.contexts, emitState.arena), plan,
-								emitState);
+						ChangedRow changed = recorded.consumeChangedRow();
+						if (changed.preparedRun != null) {
+							LmdbAdjacencyRunCodec.Encoder.Result result = changed.preparedRun.write(emitState.arena);
+							plan.changedRows++;
+							plan.changedRunBytes = Math.addExact(plan.changedRunBytes, result.totalBytes);
+							emitState.directory.add(key, plane, predicate, result.rootRef);
+						} else {
+							mergeRow(order, i, end, key, plane, predicate, outgoingDirection, changed.old,
+									oldCursor,
+									LmdbAdjacencyRunCodec.writingEncoder(emitState.contexts, emitState.arena),
+									plan, emitState);
+						}
+					}
+				}
+			}
+			i = end;
+		}
+	}
+
+	/** Replays only rows that subpass A proved changed, recording their exact native allocation sequence. */
+	private void planDirection(int[] order, boolean outgoingDirection, ContextCatalog encodeContexts, RowPlan recorded,
+			RowPlan planned, LmdbAdjacencyArenaSizingPlan sizingPlan, LmdbAdjacencyRunCodec.PairCursor oldCursor) {
+		int i = 0;
+		while (i < order.length) {
+			int first = order[i];
+			long key = keyOf(first, outgoingDirection);
+			int plane = planeOf(first, outgoingDirection);
+			long predicate = sealed.predicates[first];
+			int end = i;
+			while (end < order.length && keyOf(order[end], outgoingDirection) == key
+					&& planeOf(order[end], outgoingDirection) == plane
+					&& sealed.predicates[order[end]] == predicate) {
+				end++;
+			}
+			if (covered.test(predicate)) {
+				byte outcome = recorded.consume();
+				if (outcome == RowPlan.TOMBSTONE) {
+					planned.changedRows++;
+				} else if (outcome == RowPlan.CHANGED) {
+					ChangedRow changed = recorded.consumeChangedRow();
+					if (changed.preparedRun != null) {
+						LmdbAdjacencyRunCodec.Encoder.Result result = changed.preparedRun.plan(sizingPlan);
+						planned.changedRows++;
+						planned.changedRunBytes = Math.addExact(planned.changedRunBytes, result.totalBytes);
+					} else {
+						mergeRow(order, i, end, key, plane, predicate, outgoingDirection, changed.old, oldCursor,
+								LmdbAdjacencyRunCodec.planningEncoder(encodeContexts, sizingPlan), planned, null,
+								true);
 					}
 				}
 			}
@@ -453,25 +555,42 @@ final class LmdbAdjacencyDeltaApplier {
 	 * last-operation-wins per pair (invariant I10). Records nothing when the final set equals the old set.
 	 */
 	private void mergeRow(int[] order, int from, int end, long key, int plane, long predicate,
-			boolean outgoingDirection, OldRun old, LmdbAdjacencyRunCodec.Encoder encoder, RowPlan plan,
-			EmitState emitState) {
-		long oldCount = old == null ? 0 : LmdbAdjacencyRunCodec.edgeCount(old.catalog, old.handle);
+			boolean outgoingDirection, OldRun old, LmdbAdjacencyRunCodec.PairCursor oldCursor,
+			LmdbAdjacencyRunCodec.Encoder encoder, RowPlan plan, EmitState emitState) {
+		mergeRow(order, from, end, key, plane, predicate, outgoingDirection, old, oldCursor, encoder, plan, emitState,
+				false);
+	}
+
+	private void mergeRow(int[] order, int from, int end, long key, int plane, long predicate,
+			boolean outgoingDirection, OldRun old, LmdbAdjacencyRunCodec.PairCursor oldCursor,
+			LmdbAdjacencyRunCodec.Encoder encoder, RowPlan plan, EmitState emitState, boolean planningReplay) {
+		long oldCount = 0;
+		if (old != null) {
+			oldCursor.reset(old.catalog, old.contexts, old.handle);
+			oldCount = oldCursor.edgeCount();
+		}
 
 		boolean anyChange = false;
 		long emitted = 0;
 		long oldPos = 0;
+		boolean oldLoaded = false;
 		int mut = from;
 		while (oldPos < oldCount || mut < end) {
 			long oldNeighbor = 0;
 			long oldContext = 0;
 			if (oldPos < oldCount) {
-				oldNeighbor = LmdbAdjacencyRunCodec.neighborAt(old.catalog, old.handle, oldPos);
-				oldContext = LmdbAdjacencyRunCodec.contextAt(old.catalog, old.contexts, old.handle, oldPos);
+				if (!oldLoaded && !oldCursor.next()) {
+					throw new IllegalStateException("old row ended before its encoded edge count");
+				}
+				oldLoaded = true;
+				oldNeighbor = oldCursor.neighbor();
+				oldContext = oldCursor.context();
 			}
 			if (mut >= end) {
 				encoder.accept(oldNeighbor, oldContext);
 				emitted++;
 				oldPos++;
+				oldLoaded = false;
 				continue;
 			}
 			int event = order[mut];
@@ -483,6 +602,7 @@ final class LmdbAdjacencyDeltaApplier {
 				encoder.accept(oldNeighbor, oldContext);
 				emitted++;
 				oldPos++;
+				oldLoaded = false;
 				continue;
 			}
 			// group equal mutation pairs; the greatest event ordinal wins
@@ -506,6 +626,7 @@ final class LmdbAdjacencyDeltaApplier {
 					anyChange = true;
 				}
 				oldPos++;
+				oldLoaded = false;
 			} else {
 				if (finalAdd) {
 					encoder.accept(mutNeighbor, mutContext);
@@ -515,18 +636,21 @@ final class LmdbAdjacencyDeltaApplier {
 				// remove of an absent pair is a no-op
 			}
 		}
-		if (emitState != null && !anyChange) {
-			throw new IllegalStateException("subpass B merged a row that subpass A recorded as changed");
+		if ((emitState != null || planningReplay) && !anyChange) {
+			throw new IllegalStateException("replay merged a row that subpass A recorded as changed");
 		}
 		if (!anyChange) {
 			plan.record(RowPlan.UNCHANGED);
 			return;
 		}
-		if (emitState == null) {
+		if (emitState == null && !planningReplay) {
 			long keyDelta = oldCount == 0 ? 1 : emitted == 0 ? -1 : 0;
 			planeStatistics.add(predicate, plane, Math.subtractExact(emitted, oldCount), keyDelta);
 		}
 		if (emitted == 0) {
+			if (planningReplay) {
+				throw new IllegalStateException("planning replay received a tombstone row");
+			}
 			// removal emptied the row: tombstone, no run allocation
 			plan.changedRows++;
 			if (emitState == null) {
@@ -539,9 +663,9 @@ final class LmdbAdjacencyDeltaApplier {
 		LmdbAdjacencyRunCodec.Encoder.Result result = encoder.finish();
 		plan.changedRows++;
 		plan.changedRunBytes = Math.addExact(plan.changedRunBytes, result.totalBytes);
-		if (emitState == null) {
-			plan.recordChanged(old);
-		} else {
+		if (emitState == null && !planningReplay) {
+			plan.recordChanged(old, result.preparedRun);
+		} else if (emitState != null) {
 			emitState.directory.add(key, plane, predicate, result.rootRef);
 		}
 	}

@@ -196,8 +196,14 @@ class LmdbAdjacencyDeltaGenerationSearchTest {
 			if (charge == null) {
 				throw new IllegalStateException("test generation charge refused");
 			}
-			generation = new LmdbAdjacencyDeltaGeneration(8, deltaArena, generationCatalog, charge, keys, planes,
-					predicates, runRefs);
+			Charge metadataCharge = account.tryCharge(MemoryKind.JAVA_METADATA,
+					LmdbAdjacencyDeltaGeneration.modeledJavaBytes(keys.length));
+			if (metadataCharge == null) {
+				charge.close();
+				throw new IllegalStateException("test generation metadata charge refused");
+			}
+			generation = new LmdbAdjacencyDeltaGeneration(8, deltaArena, generationCatalog, charge, metadataCharge,
+					keys, planes, predicates, runRefs);
 		}
 
 		@Override

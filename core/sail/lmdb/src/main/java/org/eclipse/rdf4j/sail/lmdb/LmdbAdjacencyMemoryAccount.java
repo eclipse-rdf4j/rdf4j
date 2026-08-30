@@ -82,6 +82,10 @@ final class LmdbAdjacencyMemoryAccount {
 		this.refusedKindForTest = kind;
 	}
 
+	void clearRefusalForTest() {
+		this.refusedKindForTest = null;
+	}
+
 	/**
 	 * One exclusive owner of a live memory charge. The owner follows the allocation through reservation adjustment,
 	 * kind reclassification, and publication; closing it releases exactly its current charge.

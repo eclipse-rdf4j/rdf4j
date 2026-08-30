@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyDeltaApplier.OldRun;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyDeltaApplier.Result;
+import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
 import org.eclipse.rdf4j.sail.lmdb.LmdbDirectAdjacencyCommitDelta.SealedDirectDelta;
 import org.junit.jupiter.api.Test;
 
@@ -28,6 +29,144 @@ class LmdbAdjacencyDeltaApplierTest {
 	private static final long BASE_REGION_BYTES = 1L << 20;
 	private static final long BASE_BUILD_WORKSPACE_REGION_BYTES = 1L << 17;
 	private static final long WORKSPACE_REGION_BYTES = 1L << 12;
+	private static final long LARGE_WORKSPACE_REGION_BYTES = 128L << 20;
+
+	@Test
+	void tinyDeltaUsesExactPlannedCapacity() throws IOException {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
+		long subject = uri(1);
+		long predicate = uri(10);
+		long object = uri(2);
+
+		LmdbDirectAdjacencyCommitDelta delta = new LmdbDirectAdjacencyCommitDelta(account, 1L << 20);
+		delta.begin(7);
+		delta.recordAdd(subject, predicate, object, 0, true);
+		SealedDirectDelta sealed = delta.seal(8);
+
+		try (LmdbInMemoryAdjacencyIndex base = emptyBase(account)) {
+			Result result = null;
+			try {
+				result = LmdbAdjacencyDeltaApplier.apply(sealed, base, base.contextCatalog(),
+						(key, plane, rawPredicateId) -> null, ignored -> true, new long[0], account,
+						LARGE_WORKSPACE_REGION_BYTES);
+
+				assertThat(result.generation).isNotNull();
+				assertThat(result.generation.chargedBytes()).isPositive().isLessThan(LARGE_WORKSPACE_REGION_BYTES);
+			} finally {
+				if (result != null && result.generation != null) {
+					result.generation.release();
+				}
+				sealed.close();
+			}
+		}
+
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@Test
+	void multiRegionDeltaUsesFullRegionsAndAnExactTail() throws IOException {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
+		long predicate = uri(10);
+
+		LmdbDirectAdjacencyCommitDelta delta = new LmdbDirectAdjacencyCommitDelta(account, 1L << 20);
+		delta.begin(7);
+		for (int i = 0; i < 150; i++) {
+			delta.recordAdd(uri(i + 1), predicate, uri(10_000 + i), 0, true);
+		}
+		SealedDirectDelta sealed = delta.seal(8);
+
+		try (LmdbInMemoryAdjacencyIndex base = emptyBase(account)) {
+			Result result = null;
+			try {
+				result = LmdbAdjacencyDeltaApplier.apply(sealed, base, base.contextCatalog(),
+						(key, plane, rawPredicateId) -> null, ignored -> true, new long[0], account,
+						WORKSPACE_REGION_BYTES);
+
+				assertThat(result.generation).isNotNull();
+				long chargedBytes = result.generation.chargedBytes();
+				assertThat(chargedBytes).isGreaterThan(WORKSPACE_REGION_BYTES);
+				assertThat(chargedBytes % WORKSPACE_REGION_BYTES).isNotZero();
+				assertThat(chargedBytes).isLessThan(2 * WORKSPACE_REGION_BYTES);
+			} finally {
+				if (result != null && result.generation != null) {
+					result.generation.release();
+				}
+				sealed.close();
+			}
+		}
+
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@Test
+	void contextExtensionOutlivesItsGeneratingRunArena() throws Exception {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
+		long context = uri(99);
+		LmdbDirectAdjacencyCommitDelta delta = new LmdbDirectAdjacencyCommitDelta(account, 1L << 20);
+		delta.begin(7);
+		delta.recordAdd(uri(1), uri(10), uri(2), context, true);
+		SealedDirectDelta sealed = delta.seal(8);
+		LmdbAdjacencyContextCatalog extended = null;
+		boolean generationReleased = false;
+
+		try (LmdbInMemoryAdjacencyIndex base = emptyBase(account)) {
+			Result result = null;
+			try {
+				result = LmdbAdjacencyDeltaApplier.apply(sealed, base, base.contextCatalog(),
+						(key, plane, rawPredicateId) -> null, ignored -> true, new long[0], account,
+						WORKSPACE_REGION_BYTES);
+				extended = result.contextCatalog;
+				long ordinal = extended.ordinalForRaw(context);
+				assertThat(ordinal).isPositive();
+
+				result.generation.release();
+				generationReleased = true;
+				assertThat(extended.rawForOrdinal(ordinal)).isEqualTo(context);
+			} finally {
+				if (result != null && result.generation != null && !generationReleased) {
+					result.generation.release();
+				}
+				sealed.close();
+			}
+		}
+		closeIfOwned(extended);
+
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@Test
+	void generationDirectoryMetadataIsChargedUntilFinalRelease() throws IOException {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
+		LmdbDirectAdjacencyCommitDelta delta = new LmdbDirectAdjacencyCommitDelta(account, 1L << 20);
+		delta.begin(7);
+		delta.recordAdd(uri(1), uri(10), uri(2), 0, true);
+		SealedDirectDelta sealed = delta.seal(8);
+
+		try (LmdbInMemoryAdjacencyIndex base = emptyBase(account)) {
+			long baseMetadataBytes = account.chargedBytes(MemoryKind.JAVA_METADATA);
+			Result result = null;
+			try {
+				result = LmdbAdjacencyDeltaApplier.apply(sealed, base, base.contextCatalog(),
+						(key, plane, rawPredicateId) -> null, ignored -> true, new long[0], account,
+						WORKSPACE_REGION_BYTES);
+
+				assertThat(account.chargedBytes(MemoryKind.JAVA_METADATA)).isGreaterThan(baseMetadataBytes);
+				result.generation.retain();
+				result.generation.release();
+				assertThat(account.chargedBytes(MemoryKind.JAVA_METADATA)).isGreaterThan(baseMetadataBytes);
+				result.generation.release();
+				result = null;
+				assertThat(account.chargedBytes(MemoryKind.JAVA_METADATA)).isEqualTo(baseMetadataBytes);
+			} finally {
+				if (result != null && result.generation != null) {
+					result.generation.release();
+				}
+				sealed.close();
+			}
+		}
+
+		assertThat(account.totalChargedBytes()).isZero();
+	}
 
 	@Test
 	void changedRowsResolvePreviousRunOnlyDuringSizing() throws IOException {
@@ -127,6 +266,12 @@ class LmdbAdjacencyDeltaApplierTest {
 
 	private static long uri(long payload) {
 		return ValueIds.createId(ValueIds.T_URI, payload);
+	}
+
+	private static void closeIfOwned(Object owner) throws Exception {
+		if (owner instanceof AutoCloseable closeable) {
+			closeable.close();
+		}
 	}
 
 	private record Row(long key, int plane, long predicate) {

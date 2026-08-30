@@ -146,8 +146,14 @@ public class LmdbAdjacencyDeltaGenerationBenchmark {
 		if (charge == null) {
 			throw new IllegalStateException("benchmark generation charge refused");
 		}
-		return new LmdbAdjacencyDeltaGeneration(generationIndex + 1L, deltaArena, catalog, charge, keys, planes,
-				predicates, runRefs);
+		Charge metadataCharge = account.tryCharge(MemoryKind.JAVA_METADATA,
+				LmdbAdjacencyDeltaGeneration.modeledJavaBytes(keys.length));
+		if (metadataCharge == null) {
+			charge.close();
+			throw new IllegalStateException("benchmark generation metadata charge refused");
+		}
+		return new LmdbAdjacencyDeltaGeneration(generationIndex + 1L, deltaArena, catalog, charge, metadataCharge,
+				keys, planes, predicates, runRefs);
 	}
 
 	private long resolveStateless(int query) {

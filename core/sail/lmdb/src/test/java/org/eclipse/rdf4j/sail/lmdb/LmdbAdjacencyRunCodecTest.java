@@ -130,6 +130,98 @@ class LmdbAdjacencyRunCodecTest {
 	}
 
 	@Test
+	void preparedRunReplaysExactAllocationWithoutReencodingPairs() {
+		LmdbAdjacencyArena contextArena = newArena(1 << 20);
+		long[][] pairs = new long[4_096][2];
+		for (int i = 0; i < pairs.length; i++) {
+			pairs[i][0] = 10_000L + i * 7L;
+			pairs[i][1] = i % 5 == 0 ? 91L : 0L;
+		}
+		LmdbAdjacencyContextCatalog contexts = catalogFor(contextArena, pairs);
+		LmdbAdjacencyRunCodec.Encoder encoder = LmdbAdjacencyRunCodec.preparingEncoder(contexts);
+		for (long[] pair : pairs) {
+			encoder.accept(pair[0], pair[1]);
+		}
+		LmdbAdjacencyRunCodec.Encoder.Result prepared = encoder.finish();
+
+		LmdbAdjacencyArenaSizingPlan sizingPlan = new LmdbAdjacencyArenaSizingPlan(1 << 20);
+		LmdbAdjacencyRunCodec.Encoder.Result planned = prepared.preparedRun.plan(sizingPlan);
+		assertThat(planned.totalBytes).isEqualTo(prepared.totalBytes);
+		assertThat(sizingPlan.allocatedBytes()).isEqualTo(prepared.totalBytes);
+		sizingPlan.seal();
+
+		LmdbAdjacencyArena target = new LmdbAdjacencyArena(sizingPlan);
+		toClose.add(target);
+		long targetRef = prepared.preparedRun.write(target).rootRef;
+		LmdbAdjacencyArenaCatalog targetCatalog = newCatalog(target);
+		long targetHandle = targetCatalog.packHandle(0, targetRef);
+		assertThat(target.capacityBytes()).isEqualTo(sizingPlan.capacityBytes());
+		assertThat(LmdbAdjacencyRunCodec.edgeCount(targetCatalog, targetHandle)).isEqualTo(pairs.length);
+		for (int i : new int[] { 0, 127, 128, 2_047, pairs.length - 1 }) {
+			assertThat(LmdbAdjacencyRunCodec.neighborAt(targetCatalog, targetHandle, i)).isEqualTo(pairs[i][0]);
+			assertThat(LmdbAdjacencyRunCodec.contextAt(targetCatalog, contexts, targetHandle, i))
+					.isEqualTo(pairs[i][1]);
+		}
+	}
+
+	@Test
+	void compactionCopiesOrdinaryEncodedRunAsOneExactAllocation() {
+		LmdbAdjacencyArena sourceArena = newArena(1 << 20);
+		long[][] pairs = new long[4_096][2];
+		for (int i = 0; i < pairs.length; i++) {
+			pairs[i][0] = 50_000L + i * 11L;
+			pairs[i][1] = i % 7 == 0 ? 123L : 0L;
+		}
+		LmdbAdjacencyContextCatalog contexts = catalogFor(sourceArena, pairs);
+		long sourceRef = LmdbAdjacencyRunCodec.encode(source(pairs), contexts, sourceArena);
+		LmdbAdjacencyArenaCatalog sourceCatalog = newCatalog(sourceArena);
+		long sourceHandle = sourceCatalog.packHandle(0, sourceRef);
+
+		LmdbAdjacencyArenaSizingPlan sizingPlan = new LmdbAdjacencyArenaSizingPlan(1 << 20);
+		LmdbAdjacencyRunCodec.Encoder.Result planned = LmdbAdjacencyRunCodec.planEncodedCopy(sourceCatalog, contexts,
+				sourceHandle, sizingPlan);
+		assertThat(sizingPlan.allocatedBytes()).isEqualTo(planned.totalBytes);
+		sizingPlan.seal();
+		LmdbAdjacencyArena targetArena = new LmdbAdjacencyArena(sizingPlan);
+		toClose.add(targetArena);
+		long targetRef = LmdbAdjacencyRunCodec.writeEncodedCopy(sourceCatalog, contexts, sourceHandle,
+				targetArena).rootRef;
+		LmdbAdjacencyArenaCatalog targetCatalog = newCatalog(targetArena);
+		long targetHandle = targetCatalog.packHandle(0, targetRef);
+
+		assertThat(targetArena.allocatedBytes()).isEqualTo(planned.totalBytes);
+		assertThat(LmdbAdjacencyRunCodec.edgeCount(targetCatalog, targetHandle)).isEqualTo(pairs.length);
+		for (int i : new int[] { 0, 127, 128, 2_047, pairs.length - 1 }) {
+			assertThat(LmdbAdjacencyRunCodec.neighborAt(targetCatalog, targetHandle, i)).isEqualTo(pairs[i][0]);
+			assertThat(LmdbAdjacencyRunCodec.contextAt(targetCatalog, contexts, targetHandle, i))
+					.isEqualTo(pairs[i][1]);
+		}
+	}
+
+	@Test
+	void sequentialPairCursorReadsBlockRunAcrossBoundaries() {
+		LmdbAdjacencyArena arena = newArena(1 << 20);
+		long[][] pairs = new long[4_096][2];
+		for (int i = 0; i < pairs.length; i++) {
+			pairs[i][0] = 70_000L + i * 13L;
+			pairs[i][1] = i % 11 == 0 ? 321L : 0L;
+		}
+		LmdbAdjacencyContextCatalog contexts = catalogFor(arena, pairs);
+		long ref = LmdbAdjacencyRunCodec.encode(source(pairs), contexts, arena);
+		LmdbAdjacencyArenaCatalog catalog = newCatalog(arena);
+		LmdbAdjacencyRunCodec.PairCursor cursor = new LmdbAdjacencyRunCodec.PairCursor();
+		cursor.reset(catalog, contexts, catalog.packHandle(0, ref));
+
+		assertThat(cursor.edgeCount()).isEqualTo(pairs.length);
+		for (long[] pair : pairs) {
+			assertThat(cursor.next()).isTrue();
+			assertThat(cursor.neighbor()).isEqualTo(pair[0]);
+			assertThat(cursor.context()).isEqualTo(pair[1]);
+		}
+		assertThat(cursor.next()).isFalse();
+	}
+
+	@Test
 	void tagByteIsPhysicalAndFirstForEveryCodec() {
 		LmdbAdjacencyArena arena = newArena(1 << 20);
 		LmdbAdjacencyArenaCatalog catalog = newCatalog(arena);

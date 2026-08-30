@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
 final class LmdbAdjacencyDeltaGeneration {
 
 	private static final int LOCAL_SCAN_ROWS = 8;
+	private static final long GENERATION_OBJECT_BYTES = 112;
 
 	static final long NO_VERSION = -3L;
 	static final long ROW_TOMBSTONE = -4L;
@@ -36,7 +37,9 @@ final class LmdbAdjacencyDeltaGeneration {
 	private final long revision;
 	private final LmdbAdjacencyArena arena;
 	private final LmdbAdjacencyArenaCatalog catalog; // slot 0 = base arena, slot 1 = this generation's arena
-	private final Charge charge;
+	private final Charge nativeCharge;
+	private final Charge metadataCharge;
+	private final long compactionWeightBytes;
 
 	// sorted by unsigned (rawKey, plane, rawPredicateId); runRefs[i] == 0 means tombstone
 	private final long[] rowKeys;
@@ -82,16 +85,27 @@ final class LmdbAdjacencyDeltaGeneration {
 	LmdbAdjacencyDeltaGeneration(long revision, LmdbAdjacencyArena arena, LmdbAdjacencyArenaCatalog catalog,
 			LmdbAdjacencyMemoryAccount account, long chargedBytes, long[] rowKeys, byte[] rowPlanes,
 			long[] rowPredicates, long[] runRefs) {
-		this(revision, arena, catalog, account.adoptCharge(MemoryKind.DELTA, chargedBytes), rowKeys, rowPlanes,
+		this(revision, arena, catalog, adoptCharges(account, chargedBytes, rowKeys.length), rowKeys, rowPlanes,
 				rowPredicates, runRefs);
 	}
 
 	LmdbAdjacencyDeltaGeneration(long revision, LmdbAdjacencyArena arena, LmdbAdjacencyArenaCatalog catalog,
-			Charge charge, long[] rowKeys, byte[] rowPlanes, long[] rowPredicates, long[] runRefs) {
+			Charge nativeCharge, Charge metadataCharge, long[] rowKeys, byte[] rowPlanes, long[] rowPredicates,
+			long[] runRefs) {
+		this(revision, arena, catalog, nativeCharge, metadataCharge,
+				saturatingAdd(nativeCharge.bytes(), metadataCharge.bytes()), rowKeys, rowPlanes, rowPredicates,
+				runRefs);
+	}
+
+	LmdbAdjacencyDeltaGeneration(long revision, LmdbAdjacencyArena arena, LmdbAdjacencyArenaCatalog catalog,
+			Charge nativeCharge, Charge metadataCharge, long compactionWeightBytes, long[] rowKeys, byte[] rowPlanes,
+			long[] rowPredicates, long[] runRefs) {
 		this.revision = revision;
 		this.arena = arena;
 		this.catalog = catalog;
-		this.charge = charge;
+		this.nativeCharge = nativeCharge;
+		this.metadataCharge = metadataCharge;
+		this.compactionWeightBytes = compactionWeightBytes;
 		this.rowKeys = rowKeys;
 		this.rowPlanes = rowPlanes;
 		this.rowPredicates = rowPredicates;
@@ -121,7 +135,45 @@ final class LmdbAdjacencyDeltaGeneration {
 	}
 
 	long chargedBytes() {
-		return charge.bytes();
+		return nativeCharge.bytes();
+	}
+
+	long nativeBytes() {
+		return nativeCharge.bytes();
+	}
+
+	long metadataBytes() {
+		return metadataCharge.bytes();
+	}
+
+	long retainedBytes() {
+		return Math.addExact(nativeBytes(), metadataBytes());
+	}
+
+	long compactionWeightBytes() {
+		return compactionWeightBytes;
+	}
+
+	long referenceCount() {
+		return Math.max(0, refs.get());
+	}
+
+	void publishCompactionOutput() {
+		nativeCharge.reclassify(MemoryKind.DELTA);
+		metadataCharge.reclassify(MemoryKind.JAVA_METADATA);
+	}
+
+	void retireFromCurrentOverlay() {
+		nativeCharge.reclassify(MemoryKind.RETAINED_SNAPSHOT);
+		metadataCharge.reclassify(MemoryKind.RETAINED_SNAPSHOT);
+	}
+
+	static long modeledJavaBytes(long rowCount) {
+		long bytes = GENERATION_OBJECT_BYTES;
+		bytes = Math.addExact(bytes, arrayBytes(rowCount, Long.BYTES));
+		bytes = Math.addExact(bytes, arrayBytes(rowCount, Byte.BYTES));
+		bytes = Math.addExact(bytes, arrayBytes(rowCount, Long.BYTES));
+		return Math.addExact(bytes, arrayBytes(rowCount, Long.BYTES));
 	}
 
 	/** Decode catalog for run handles returned by {@link #find}: slot 1 is this generation's arena. */
@@ -285,14 +337,47 @@ final class LmdbAdjacencyDeltaGeneration {
 		if (remaining == 0) {
 			catalog.close();
 			arena.close();
-			charge.close();
+			metadataCharge.close();
+			nativeCharge.close();
 		}
 	}
 
 	private void closeAfterConstructionFailure(Throwable failure) {
 		closeSuppressing(catalog, failure);
 		closeSuppressing(arena, failure);
-		closeSuppressing(charge, failure);
+		closeSuppressing(metadataCharge, failure);
+		closeSuppressing(nativeCharge, failure);
+	}
+
+	private LmdbAdjacencyDeltaGeneration(long revision, LmdbAdjacencyArena arena,
+			LmdbAdjacencyArenaCatalog catalog, GenerationCharges charges, long[] rowKeys, byte[] rowPlanes,
+			long[] rowPredicates, long[] runRefs) {
+		this(revision, arena, catalog, charges.nativeCharge, charges.metadataCharge, rowKeys, rowPlanes, rowPredicates,
+				runRefs);
+	}
+
+	private static GenerationCharges adoptCharges(LmdbAdjacencyMemoryAccount account, long nativeBytes,
+			long rowCount) {
+		Charge nativeCharge = account.adoptCharge(MemoryKind.DELTA, nativeBytes);
+		Charge metadataCharge = account.tryCharge(MemoryKind.JAVA_METADATA, modeledJavaBytes(rowCount));
+		if (metadataCharge == null) {
+			nativeCharge.close();
+			throw new LmdbAdjacencyMemoryRefusedException(
+					"generation directory metadata reservation of " + modeledJavaBytes(rowCount) + " bytes refused");
+		}
+		return new GenerationCharges(nativeCharge, metadataCharge);
+	}
+
+	private static long arrayBytes(long length, long width) {
+		return Math.addExact(16, Math.multiplyExact(length, width)) + 7 & -8L;
+	}
+
+	private static long saturatingAdd(long left, long right) {
+		long result = left + right;
+		return result < 0 || result < left ? Long.MAX_VALUE : result;
+	}
+
+	private record GenerationCharges(Charge nativeCharge, Charge metadataCharge) {
 	}
 
 	private static void closeSuppressing(AutoCloseable closeable, Throwable failure) {

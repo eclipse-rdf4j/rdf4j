@@ -95,7 +95,16 @@ final class LmdbAdjacencyRunCodec {
 	 * {@link Encoder#accept(long, long)} and read {@link Encoder#finish()}.
 	 */
 	static Encoder sizingEncoder(ContextCatalog contexts) {
-		return new Encoder(contexts, null, null, null);
+		return new Encoder(contexts, null, null, null, null);
+	}
+
+	/**
+	 * Creates a push-mode encoder that materializes the encoded allocations once on heap. The resulting
+	 * {@link PreparedRun} can replay the exact allocation sequence into a sizing plan and then copy the already encoded
+	 * bytes into the final arena without decoding and re-encoding the input row.
+	 */
+	static Encoder preparingEncoder(ContextCatalog contexts) {
+		return new Encoder(contexts, null, null, null, new PreparedRunBuilder());
 	}
 
 	/**
@@ -103,21 +112,166 @@ final class LmdbAdjacencyRunCodec {
 	 * materializing memory.
 	 */
 	static Encoder planningEncoder(ContextCatalog contexts, LmdbAdjacencyArenaSizingPlan sizingPlan) {
-		return new Encoder(contexts, null, null, sizingPlan);
+		return new Encoder(contexts, null, null, sizingPlan, null);
 	}
 
 	/**
 	 * Creates a push-mode writing encoder targeting the given arena.
 	 */
 	static Encoder writingEncoder(ContextCatalog contexts, LmdbAdjacencyArena target) {
-		return new Encoder(contexts, target, null, null);
+		return new Encoder(contexts, target, null, null, null);
 	}
 
 	/**
 	 * Creates a push-mode writer for one deterministic region-disjoint arena partition.
 	 */
 	static Encoder writingEncoder(ContextCatalog contexts, LmdbAdjacencyArena.Partition target) {
-		return new Encoder(contexts, null, target, null);
+		return new Encoder(contexts, null, target, null, null);
+	}
+
+	/**
+	 * Replays the allocation for an immutable encoded run during exact compaction sizing. Ordinary arena runs are
+	 * copied as one opaque allocation; virtual/chunk-directory runs fall back to semantic re-encoding because their
+	 * child references are not self-contained in one byte range.
+	 */
+	static Encoder.Result planEncodedCopy(LmdbAdjacencyArenaCatalog catalog, ContextCatalog contexts, long runHandle,
+			LmdbAdjacencyArenaSizingPlan target) {
+		RunCursor cursor = new RunCursor();
+		resolve(catalog, runHandle, cursor);
+		if (cursor.codec == CODEC_SMALL_VARINT || cursor.codec == CODEC_BLOCK_FOR) {
+			Encoder.Result result = new Encoder.Result();
+			result.rootRef = target.allocate(cursor.encodedBytes, 8);
+			result.totalBytes = cursor.encodedBytes;
+			result.edgeCount = cursor.edgeCount;
+			return result;
+		}
+		return reencode(cursor, contexts, planningEncoder(contexts, target));
+	}
+
+	/** Writes the exact counterpart of {@link #planEncodedCopy} into the final compaction arena. */
+	static Encoder.Result writeEncodedCopy(LmdbAdjacencyArenaCatalog catalog, ContextCatalog contexts, long runHandle,
+			LmdbAdjacencyArena target) {
+		RunCursor cursor = new RunCursor();
+		resolve(catalog, runHandle, cursor);
+		if (cursor.codec == CODEC_SMALL_VARINT || cursor.codec == CODEC_BLOCK_FOR) {
+			long ref = target.allocateRef(cursor.encodedBytes, 8);
+			MemorySegment destination = target.slice(ref, cursor.encodedBytes);
+			MemorySegment.copy(cursor.segment, cursor.baseOffset, destination, 0, cursor.encodedBytes);
+			Encoder.Result result = new Encoder.Result();
+			result.rootRef = ref;
+			result.totalBytes = cursor.encodedBytes;
+			result.edgeCount = cursor.edgeCount;
+			return result;
+		}
+		return reencode(cursor, contexts, writingEncoder(contexts, target));
+	}
+
+	private static Encoder.Result reencode(RunCursor cursor, ContextCatalog contexts, Encoder encoder) {
+		for (long i = 0; i < cursor.edgeCount; i++) {
+			encoder.accept(neighborAt(cursor, i), contextAt(contexts, cursor, i));
+		}
+		return encoder.finish();
+	}
+
+	/** One row's encoded allocation sequence, prepared once and replayed without pair decoding. */
+	static final class PreparedRun {
+
+		private final byte[][] allocations;
+		private final int rootAllocation;
+		private final long totalBytes;
+		private final long edgeCount;
+
+		private PreparedRun(byte[][] allocations, int rootAllocation, long totalBytes, long edgeCount) {
+			this.allocations = allocations;
+			this.rootAllocation = rootAllocation;
+			this.totalBytes = totalBytes;
+			this.edgeCount = edgeCount;
+		}
+
+		long totalBytes() {
+			return totalBytes;
+		}
+
+		Encoder.Result plan(LmdbAdjacencyArenaSizingPlan target) {
+			return replay(target, null);
+		}
+
+		Encoder.Result write(LmdbAdjacencyArena target) {
+			return replay(null, target);
+		}
+
+		private Encoder.Result replay(LmdbAdjacencyArenaSizingPlan sizingTarget, LmdbAdjacencyArena writingTarget) {
+			long[] refs = new long[allocations.length];
+			for (int i = 0; i < allocations.length; i++) {
+				byte[] allocation = allocations[i];
+				long ref = sizingTarget != null ? sizingTarget.allocate(allocation.length, 8)
+						: writingTarget.allocateRef(allocation.length, 8);
+				refs[i] = ref;
+				if (writingTarget != null) {
+					MemorySegment source = MemorySegment.ofArray(allocation);
+					MemorySegment destination = writingTarget.slice(ref, allocation.length);
+					MemorySegment.copy(source, 0, destination, 0, allocation.length);
+					patchPreparedReferences(source, destination, refs, i);
+				}
+			}
+			Encoder.Result result = new Encoder.Result();
+			result.totalBytes = totalBytes;
+			result.rootRef = refs[rootAllocation];
+			result.edgeCount = edgeCount;
+			return result;
+		}
+
+		private static void patchPreparedReferences(MemorySegment source, MemorySegment destination, long[] refs,
+				int allocationIndex) {
+			int codec = Byte.toUnsignedInt(source.get(LmdbAdjacencyArena.U8, 0)) & 0x3;
+			if (codec != CODEC_CHUNK_DIRECTORY) {
+				return;
+			}
+			int chunks = source.get(LmdbAdjacencyArena.U32_LE, 4);
+			for (int i = 0; i < chunks; i++) {
+				long at = DIRECTORY_HEADER_BYTES + (long) DIRECTORY_ENTRY_BYTES * i;
+				long preparedRef = LmdbAdjacencyArena.readU40(source, at + 33);
+				int childAllocation = Math.toIntExact(preparedRef - 1);
+				if (childAllocation < 0 || childAllocation >= allocationIndex) {
+					throw new IllegalStateException("prepared chunk reference does not select an earlier allocation: "
+							+ preparedRef);
+				}
+				LmdbAdjacencyArena.writeU40(destination, at + 33, refs[childAllocation]);
+			}
+		}
+	}
+
+	private static final class PreparedRunBuilder {
+
+		private byte[][] allocations = new byte[4][];
+		private int size;
+
+		long allocate(long bytes) {
+			if (bytes > Integer.MAX_VALUE) {
+				throw new IllegalStateException("prepared run allocation exceeds heap array limit: " + bytes);
+			}
+			if (size == allocations.length) {
+				allocations = Arrays.copyOf(allocations, allocations.length * 2);
+			}
+			allocations[size] = new byte[Math.toIntExact(bytes)];
+			return ++size;
+		}
+
+		MemorySegment slice(long preparedRef, long bytes) {
+			int index = Math.toIntExact(preparedRef - 1);
+			if (index < 0 || index >= size || allocations[index].length != bytes) {
+				throw new IllegalArgumentException("invalid prepared allocation reference: " + preparedRef);
+			}
+			return MemorySegment.ofArray(allocations[index]);
+		}
+
+		PreparedRun finish(long preparedRootRef, long totalBytes, long edgeCount) {
+			int root = Math.toIntExact(preparedRootRef - 1);
+			if (root < 0 || root >= size) {
+				throw new IllegalStateException("prepared root does not select an allocation: " + preparedRootRef);
+			}
+			return new PreparedRun(Arrays.copyOf(allocations, size), root, totalBytes, edgeCount);
+		}
 	}
 
 	/**
@@ -131,6 +285,7 @@ final class LmdbAdjacencyRunCodec {
 		private final LmdbAdjacencyArena target;
 		private final LmdbAdjacencyArena.Partition partitionTarget;
 		private final LmdbAdjacencyArenaSizingPlan sizingTarget;
+		private final PreparedRunBuilder preparedTarget;
 
 		private long[] neighbors = new long[16];
 		private long[] ordinals = new long[16];
@@ -155,21 +310,24 @@ final class LmdbAdjacencyRunCodec {
 		private int chunkCount;
 
 		Encoder(ContextCatalog contexts, LmdbAdjacencyArena target) {
-			this(contexts, target, null, null);
+			this(contexts, target, null, null, null);
 		}
 
 		private Encoder(ContextCatalog contexts, LmdbAdjacencyArena target,
-				LmdbAdjacencyArena.Partition partitionTarget, LmdbAdjacencyArenaSizingPlan sizingTarget) {
+				LmdbAdjacencyArena.Partition partitionTarget, LmdbAdjacencyArenaSizingPlan sizingTarget,
+				PreparedRunBuilder preparedTarget) {
 			this.contexts = contexts;
 			this.target = target;
 			this.partitionTarget = partitionTarget;
 			this.sizingTarget = sizingTarget;
+			this.preparedTarget = preparedTarget;
 		}
 
 		static final class Result {
 			long totalBytes;
 			long rootRef;
 			long edgeCount;
+			PreparedRun preparedRun;
 		}
 
 		/**
@@ -191,6 +349,9 @@ final class LmdbAdjacencyRunCodec {
 				result.rootRef = emitDirectory();
 			}
 			result.totalBytes = totalBytes;
+			if (preparedTarget != null) {
+				result.preparedRun = preparedTarget.finish(result.rootRef, result.totalBytes, result.edgeCount);
+			}
 			return result;
 		}
 
@@ -539,11 +700,11 @@ final class LmdbAdjacencyRunCodec {
 		}
 
 		private boolean allocates() {
-			return target != null || partitionTarget != null || sizingTarget != null;
+			return target != null || partitionTarget != null || sizingTarget != null || preparedTarget != null;
 		}
 
 		private boolean writes() {
-			return target != null || partitionTarget != null;
+			return target != null || partitionTarget != null || preparedTarget != null;
 		}
 
 		private long allocateRef(long bytes) {
@@ -553,11 +714,14 @@ final class LmdbAdjacencyRunCodec {
 			if (partitionTarget != null) {
 				return partitionTarget.allocateRef(bytes, 8);
 			}
-			return sizingTarget.allocate(bytes, 8);
+			return sizingTarget != null ? sizingTarget.allocate(bytes, 8) : preparedTarget.allocate(bytes);
 		}
 
 		private MemorySegment slice(long ref, long bytes) {
-			return target != null ? target.slice(ref, bytes) : partitionTarget.slice(ref, bytes);
+			if (target != null) {
+				return target.slice(ref, bytes);
+			}
+			return partitionTarget != null ? partitionTarget.slice(ref, bytes) : preparedTarget.slice(ref, bytes);
 		}
 	}
 
@@ -586,6 +750,7 @@ final class LmdbAdjacencyRunCodec {
 		private long blockCount;
 		private long blockPayloadStart;
 		private long blockPayloadBytes;
+		private long encodedBytes;
 		private long currentBlockEnd;
 		private RunCursor child;
 
@@ -602,6 +767,93 @@ final class LmdbAdjacencyRunCodec {
 				child = new RunCursor();
 			}
 			return child;
+		}
+	}
+
+	/** Sequential pair reader used by writers that scan a complete immutable run in ordinal order. */
+	static final class PairCursor {
+
+		private final RunCursor run = new RunCursor();
+		private ContextCatalog contexts;
+		private long ordinal;
+		private long neighbor;
+		private long context;
+		private long currentBlockIndex = -1;
+		private int currentBlockLanes;
+		private int currentNeighborWidth;
+		private int currentContextWidth;
+		private long currentNeighborBase;
+		private long currentContextBase;
+		private long currentNeighborLanesAt;
+		private long currentContextLanesAt;
+
+		void reset(LmdbAdjacencyArenaCatalog catalog, ContextCatalog contexts, long runHandle) {
+			resolve(catalog, runHandle, run);
+			this.contexts = contexts;
+			ordinal = 0;
+			currentBlockIndex = -1;
+		}
+
+		long edgeCount() {
+			return run.edgeCount;
+		}
+
+		boolean next() {
+			if (ordinal >= run.edgeCount) {
+				return false;
+			}
+			if (run.codec == CODEC_BLOCK_FOR) {
+				readBlockPair();
+			} else {
+				neighbor = neighborAt(run, ordinal);
+				context = contextAt(contexts, run, ordinal);
+			}
+			ordinal++;
+			return true;
+		}
+
+		long neighbor() {
+			return neighbor;
+		}
+
+		long context() {
+			return context;
+		}
+
+		private void readBlockPair() {
+			long blockIndex = ordinal >>> BLOCK_SHIFT;
+			if (currentBlockIndex != blockIndex) {
+				prepareBlock(blockIndex);
+			}
+			int lane = (int) (ordinal & (BLOCK_LANES - 1));
+			if (lane >= currentBlockLanes) {
+				throw new IllegalStateException("lane out of range: " + lane + " of " + currentBlockLanes);
+			}
+			neighbor = currentNeighborBase
+					+ readLane(run.segment, currentNeighborLanesAt, lane, currentNeighborWidth);
+			if (!run.contextsPresent) {
+				context = 0;
+				return;
+			}
+			long contextOrdinal = currentContextBase
+					+ readLane(run.segment, currentContextLanesAt, lane, currentContextWidth);
+			context = contextOrdinal == 0 ? 0 : contexts.rawForOrdinal(contextOrdinal);
+		}
+
+		private void prepareBlock(long blockIndex) {
+			long blockAt = blockPayloadAt(run, blockIndex);
+			validateBlockLayout(run, blockAt);
+			currentBlockLanes = Byte.toUnsignedInt(run.segment.get(LmdbAdjacencyArena.U8, blockAt)) + 1;
+			currentNeighborWidth = Byte.toUnsignedInt(run.segment.get(LmdbAdjacencyArena.U8, blockAt + 1));
+			currentContextWidth = Byte.toUnsignedInt(run.segment.get(LmdbAdjacencyArena.U8, blockAt + 2));
+			currentNeighborBase = run.segment.get(LmdbAdjacencyArena.U64_LE, blockAt + 4);
+			currentNeighborLanesAt = blockAt + (run.contextsPresent ? 20 : 12);
+			if (run.contextsPresent) {
+				currentContextBase = run.segment.get(LmdbAdjacencyArena.U64_LE, blockAt + 12);
+				currentContextLanesAt = currentNeighborLanesAt
+						+ packedBytes(currentBlockLanes, currentNeighborWidth);
+			}
+			currentBlockIndex = blockIndex;
 		}
 	}
 
@@ -625,6 +877,7 @@ final class LmdbAdjacencyRunCodec {
 			target.blockCount = 0;
 			target.blockPayloadStart = 0;
 			target.blockPayloadBytes = 0;
+			target.encodedBytes = 0;
 			target.currentBlockEnd = 0;
 			return;
 		}
@@ -704,6 +957,7 @@ final class LmdbAdjacencyRunCodec {
 		target.blockCount = blockCount;
 		target.blockPayloadStart = target.baseOffset + blockPayloadStart;
 		target.blockPayloadBytes = blockPayloadBytes;
+		target.encodedBytes = totalLength;
 		target.currentBlockEnd = 0;
 	}
 

@@ -61,6 +61,11 @@ final class LmdbAdjacencyMetrics {
 	private final LongAdder shadowComparisons = new LongAdder();
 	private final LongAdder shadowMismatches = new LongAdder();
 	private final LongAdder nodePredicateInconsistencies = new LongAdder();
+	private final LongAdder deltaMerges = new LongAdder();
+	private final LongAdder baseFolds = new LongAdder();
+	private final LongAdder compactionCandidateRetries = new LongAdder();
+	private final LongAdder compactionBytesRead = new LongAdder();
+	private final LongAdder compactionBytesWritten = new LongAdder();
 	private final AtomicLong activeBuildThreads = new AtomicLong();
 	private final AtomicLong desiredBuildThreads = new AtomicLong();
 	private final AtomicLong lastBuildThreads = new AtomicLong();
@@ -213,11 +218,32 @@ final class LmdbAdjacencyMetrics {
 		shadowMismatches.increment();
 	}
 
+	void recordDeltaMerge(long bytesRead, long bytesWritten) {
+		requireNonNegative("delta merge bytes read", bytesRead);
+		requireNonNegative("delta merge bytes written", bytesWritten);
+		deltaMerges.increment();
+		compactionBytesRead.add(bytesRead);
+		compactionBytesWritten.add(bytesWritten);
+	}
+
+	void recordBaseFold(long bytesRead, long bytesWritten) {
+		requireNonNegative("base fold bytes read", bytesRead);
+		requireNonNegative("base fold bytes written", bytesWritten);
+		baseFolds.increment();
+		compactionBytesRead.add(bytesRead);
+		compactionBytesWritten.add(bytesWritten);
+	}
+
+	void recordCompactionCandidateRetry() {
+		compactionCandidateRetries.increment();
+	}
+
 	Snapshot snapshot(String state, long baseRevision, long appliedRevision, long currentDataRevision,
 			long gapFromRevision, long emergencyGapFromRevision, long activeViews, long baseBytes,
 			long buildCounterBytes, long buildOutputBytes, long javaMetadataBytes, long totalChargedBytes,
 			long highWaterBytes, long configuredMaxBytes, long detectedMemoryLimitBytes, long effectiveMaxBytes,
-			long nodePredicateNativeBytes, long nodePredicateJavaBytes) {
+			long nodePredicateNativeBytes, long nodePredicateJavaBytes, long overlayGenerationCount,
+			long overlayNativeBytes, long overlayMetadataBytes, long retainedOldGenerationBytes) {
 		EnumMap<FallbackReason, Long> byReason = new EnumMap<>(FallbackReason.class);
 		for (FallbackReason reason : REASONS) {
 			long count = fallbacks.get(reason.ordinal());
@@ -238,7 +264,20 @@ final class LmdbAdjacencyMetrics {
 				cursorRowsMatched.get(), cursorRowsSkipped.get(), cursorSeeks.get(),
 				pass1SourceVisits.get(), pass1Nanos.get(), pass3SourceVisits.get(), pass3Nanos.get(),
 				buildElapsedNanos.get(), projectedBuildNanos.get(), nodePredicateNativeBytes, nodePredicateJavaBytes,
-				nodePredicateInconsistencies.sum());
+				nodePredicateInconsistencies.sum(), overlayGenerationCount, overlayNativeBytes, overlayMetadataBytes,
+				retainedOldGenerationBytes, deltaMerges.sum(), baseFolds.sum(), compactionCandidateRetries.sum(),
+				compactionBytesRead.sum(), compactionBytesWritten.sum());
+	}
+
+	Snapshot snapshot(String state, long baseRevision, long appliedRevision, long currentDataRevision,
+			long gapFromRevision, long emergencyGapFromRevision, long activeViews, long baseBytes,
+			long buildCounterBytes, long buildOutputBytes, long javaMetadataBytes, long totalChargedBytes,
+			long highWaterBytes, long configuredMaxBytes, long detectedMemoryLimitBytes, long effectiveMaxBytes,
+			long nodePredicateNativeBytes, long nodePredicateJavaBytes) {
+		return snapshot(state, baseRevision, appliedRevision, currentDataRevision, gapFromRevision,
+				emergencyGapFromRevision, activeViews, baseBytes, buildCounterBytes, buildOutputBytes,
+				javaMetadataBytes, totalChargedBytes, highWaterBytes, configuredMaxBytes, detectedMemoryLimitBytes,
+				effectiveMaxBytes, nodePredicateNativeBytes, nodePredicateJavaBytes, 0, 0, 0, 0);
 	}
 
 	static long sourceVisitsForStatements(long statementCount) {
@@ -322,6 +361,15 @@ final class LmdbAdjacencyMetrics {
 		final long nodePredicateJavaBytes;
 		/** Times the projection was proven inconsistent with the authoritative rows; one per detection. */
 		final long nodePredicateInconsistencies;
+		final long overlayGenerationCount;
+		final long overlayNativeBytes;
+		final long overlayMetadataBytes;
+		final long retainedOldGenerationBytes;
+		final long deltaMerges;
+		final long baseFolds;
+		final long compactionCandidateRetries;
+		final long compactionBytesRead;
+		final long compactionBytesWritten;
 
 		private Snapshot(String state, long baseRevision, long appliedRevision, long currentDataRevision,
 				long gapFromRevision, long emergencyGapFromRevision, long activeViews, long baseBytes,
@@ -335,7 +383,10 @@ final class LmdbAdjacencyMetrics {
 				long buildScratchHighWaterBytes, long cursorRowsScanned, long cursorRowsMatched,
 				long cursorRowsSkipped, long cursorSeeks, long pass1SourceVisits, long pass1Nanos,
 				long pass3SourceVisits, long pass3Nanos, long buildElapsedNanos, long projectedBuildNanos,
-				long nodePredicateNativeBytes, long nodePredicateJavaBytes, long nodePredicateInconsistencies) {
+				long nodePredicateNativeBytes, long nodePredicateJavaBytes, long nodePredicateInconsistencies,
+				long overlayGenerationCount, long overlayNativeBytes, long overlayMetadataBytes,
+				long retainedOldGenerationBytes, long deltaMerges, long baseFolds, long compactionCandidateRetries,
+				long compactionBytesRead, long compactionBytesWritten) {
 			this.state = state;
 			this.baseRevision = baseRevision;
 			this.appliedRevision = appliedRevision;
@@ -381,6 +432,15 @@ final class LmdbAdjacencyMetrics {
 			this.nodePredicateNativeBytes = nodePredicateNativeBytes;
 			this.nodePredicateJavaBytes = nodePredicateJavaBytes;
 			this.nodePredicateInconsistencies = nodePredicateInconsistencies;
+			this.overlayGenerationCount = overlayGenerationCount;
+			this.overlayNativeBytes = overlayNativeBytes;
+			this.overlayMetadataBytes = overlayMetadataBytes;
+			this.retainedOldGenerationBytes = retainedOldGenerationBytes;
+			this.deltaMerges = deltaMerges;
+			this.baseFolds = baseFolds;
+			this.compactionCandidateRetries = compactionCandidateRetries;
+			this.compactionBytesRead = compactionBytesRead;
+			this.compactionBytesWritten = compactionBytesWritten;
 		}
 
 		long fallbacks(FallbackReason reason) {

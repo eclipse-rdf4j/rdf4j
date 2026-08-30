@@ -15,6 +15,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicLong;
+
+import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.Charge;
+import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
 
 /**
  * Base plus append-only extension context-ordinal catalog (plan 27, invariant I12).
@@ -26,7 +30,7 @@ import java.util.Objects;
  * copy-on-write: an old catalog is never mutated. Consolidation copies live extension arrays into a new arena while
  * preserving segment boundaries and first ordinals.
  */
-final class LmdbAdjacencyContextCatalog implements ContextCatalog {
+final class LmdbAdjacencyContextCatalog implements ContextCatalog, AutoCloseable {
 
 	private static final long CATALOG_OBJECT_BYTES = 32;
 	private static final long SEGMENT_OBJECT_BYTES = 48;
@@ -76,9 +80,23 @@ final class LmdbAdjacencyContextCatalog implements ContextCatalog {
 	private final Segment[] segments;
 
 	private final long size;
+	private final LmdbAdjacencyContextCatalog retainedParent;
+	private final LmdbAdjacencyArena ownedArena;
+	private final Charge nativeCharge;
+	private final Charge metadataCharge;
+	private final AtomicLong refs = new AtomicLong(1);
 
 	private LmdbAdjacencyContextCatalog(Segment[] segments) {
+		this(segments, null, null, null, null);
+	}
+
+	private LmdbAdjacencyContextCatalog(Segment[] segments, LmdbAdjacencyContextCatalog retainedParent,
+			LmdbAdjacencyArena ownedArena, Charge nativeCharge, Charge metadataCharge) {
 		this.segments = segments;
+		this.retainedParent = retainedParent;
+		this.ownedArena = ownedArena;
+		this.nativeCharge = nativeCharge;
+		this.metadataCharge = metadataCharge;
 		long nextOrdinal = 1;
 		for (Segment segment : segments) {
 			if (segment.firstOrdinal != nextOrdinal) {
@@ -123,6 +141,66 @@ final class LmdbAdjacencyContextCatalog implements ContextCatalog {
 		Segment[] copy = Arrays.copyOf(segments, segments.length + 1);
 		copy[segments.length] = new Segment(size, sortedNewRawContextIds.length, slice, false);
 		return new LmdbAdjacencyContextCatalog(copy);
+	}
+
+	/**
+	 * Copy-appends one extension into its own exact native allocation. The returned catalog owns one reference; its
+	 * parent is retained independently from every generation arena, so replacing any generation range cannot invalidate
+	 * context decoding.
+	 */
+	LmdbAdjacencyContextCatalog extend(LmdbAdjacencyMemoryAccount account, long regionBytes,
+			long[] sortedNewRawContextIds) {
+		Objects.requireNonNull(account, "account");
+		Objects.requireNonNull(sortedNewRawContextIds, "sortedNewRawContextIds");
+		if (sortedNewRawContextIds.length == 0) {
+			retain();
+			return this;
+		}
+		validateExtension(sortedNewRawContextIds);
+
+		long byteLength = Math.multiplyExact((long) sortedNewRawContextIds.length, Long.BYTES);
+		LmdbAdjacencyArenaSizingPlan plan = new LmdbAdjacencyArenaSizingPlan(regionBytes);
+		plan.allocate(byteLength, 8);
+		plan.seal();
+		Charge reservedNative = account.tryCharge(MemoryKind.DELTA, plan.capacityBytes());
+		if (reservedNative == null) {
+			throw new LmdbAdjacencyMemoryRefusedException(
+					"context extension reservation of " + plan.capacityBytes() + " bytes refused");
+		}
+		long modeledMetadataBytes = modeledJavaBytes(segments.length + 1);
+		Charge reservedMetadata = account.tryCharge(MemoryKind.JAVA_METADATA, modeledMetadataBytes);
+		if (reservedMetadata == null) {
+			reservedNative.close();
+			throw new LmdbAdjacencyMemoryRefusedException(
+					"context extension metadata reservation of " + modeledMetadataBytes + " bytes refused");
+		}
+
+		LmdbAdjacencyArena extensionArena = null;
+		boolean parentRetained = false;
+		boolean success = false;
+		try {
+			extensionArena = new LmdbAdjacencyArena(plan);
+			MemorySegment slice = writeSegmentArray(extensionArena, sortedNewRawContextIds);
+			Segment[] copy = Arrays.copyOf(segments, segments.length + 1);
+			copy[segments.length] = new Segment(size, sortedNewRawContextIds.length, slice, false);
+			retain();
+			parentRetained = true;
+			LmdbAdjacencyContextCatalog extended = new LmdbAdjacencyContextCatalog(copy, this, extensionArena,
+					reservedNative, reservedMetadata);
+			success = true;
+			return extended;
+		} finally {
+			if (!success) {
+				if (parentRetained) {
+					release();
+				}
+				if (extensionArena != null) {
+					extensionArena.close();
+				}
+				reservedMetadata.close();
+				reservedNative.close();
+			}
+		}
 	}
 
 	/**
@@ -172,8 +250,12 @@ final class LmdbAdjacencyContextCatalog implements ContextCatalog {
 	}
 
 	long modeledJavaBytes() {
-		return Math.addExact(Math.addExact(CATALOG_OBJECT_BYTES, arrayBytes(segments.length, Long.BYTES)),
-				Math.multiplyExact((long) segments.length, SEGMENT_OBJECT_BYTES));
+		return modeledJavaBytes(segments.length);
+	}
+
+	private static long modeledJavaBytes(int segmentCount) {
+		return Math.addExact(Math.addExact(CATALOG_OBJECT_BYTES, arrayBytes(segmentCount, Long.BYTES)),
+				Math.multiplyExact((long) segmentCount, SEGMENT_OBJECT_BYTES));
 	}
 
 	@Override
@@ -214,6 +296,58 @@ final class LmdbAdjacencyContextCatalog implements ContextCatalog {
 
 	int segmentCount() {
 		return segments.length;
+	}
+
+	void retain() {
+		long current;
+		do {
+			current = refs.get();
+			if (current <= 0) {
+				throw new IllegalStateException("context catalog already released");
+			}
+		} while (!refs.compareAndSet(current, current + 1));
+	}
+
+	void release() {
+		long remaining = refs.decrementAndGet();
+		if (remaining < 0) {
+			throw new IllegalStateException("context catalog released more times than retained");
+		}
+		if (remaining == 0) {
+			if (ownedArena != null) {
+				ownedArena.close();
+			}
+			if (metadataCharge != null) {
+				metadataCharge.close();
+			}
+			if (nativeCharge != null) {
+				nativeCharge.close();
+			}
+			if (retainedParent != null) {
+				retainedParent.release();
+			}
+		}
+	}
+
+	@Override
+	public void close() {
+		release();
+	}
+
+	private void validateExtension(long[] sortedNewRawContextIds) {
+		for (int i = 0; i < sortedNewRawContextIds.length; i++) {
+			long rawId = sortedNewRawContextIds[i];
+			if (rawId == 0) {
+				throw new IllegalArgumentException("raw context zero is always ordinal zero and is never stored");
+			}
+			if (i > 0 && Long.compareUnsigned(sortedNewRawContextIds[i - 1], rawId) >= 0) {
+				throw new IllegalArgumentException(
+						"raw context IDs must be strictly unsigned ascending within a segment");
+			}
+			if (ordinalForRaw(rawId) >= 0) {
+				throw new IllegalArgumentException("raw context already has an ordinal: " + rawId);
+			}
+		}
 	}
 
 	private static MemorySegment writeSegmentArray(LmdbAdjacencyArena arena, long[] sortedRawIds) {

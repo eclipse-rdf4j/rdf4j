@@ -52,6 +52,7 @@ class LmdbDirectAdjacencyConsolidationTest {
 
 	private static final long S1 = uri(1);
 	private static final long P1 = uri(100);
+	private static final long P2 = uri(101);
 	private static final long O_BASE = uri(1000);
 	private static final long O_KEEP = uri(1001);
 	private static final long G1 = uri(9001);
@@ -101,7 +102,11 @@ class LmdbDirectAdjacencyConsolidationTest {
 	}
 
 	private List<long[]> probe(LmdbAdjacencyReadView view, long s, long p) throws IOException {
-		RecordIterator it = store.tryOpen(view, null, s, p, -1, -1, true);
+		return probe(view, s, p, true);
+	}
+
+	private List<long[]> probe(LmdbAdjacencyReadView view, long s, long p, boolean explicit) throws IOException {
+		RecordIterator it = store.tryOpen(view, null, s, p, -1, -1, explicit);
 		assertThat(it).as("probe %d/%d must be served", s, p).isNotNull();
 		List<long[]> rows = new ArrayList<>();
 		try {
@@ -128,6 +133,13 @@ class LmdbDirectAdjacencyConsolidationTest {
 		assertThat(state.overlays()).isNotNull();
 		assertThat(state.overlays().generationCount())
 				.isLessThanOrEqualTo(store.options().maxDeltaGenerations());
+		LmdbAdjacencyMetrics.Snapshot metrics = store.snapshotMetrics();
+		assertThat(metrics.overlayGenerationCount).isEqualTo(state.overlays().generationCount());
+		assertThat(metrics.overlayNativeBytes).isEqualTo(state.overlays().nativeBytes());
+		assertThat(metrics.overlayMetadataBytes).isEqualTo(state.overlays().metadataBytes());
+		assertThat(metrics.deltaMerges).isPositive();
+		assertThat(metrics.baseFolds).isZero();
+		assertThat(metrics.retainedOldGenerationBytes).isZero();
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
 			assertThat(view.isExact())
 					.as("fallback=%s maintenance=%s applied=%d data=%d min=%d", view.fallbackReason(),
@@ -135,6 +147,31 @@ class LmdbDirectAdjacencyConsolidationTest {
 							state.minSnapshotRevision())
 					.isTrue();
 			assertThat(probe(view, S1, P1)).hasSize(13);
+		}
+	}
+
+	@Test
+	void generationCountAloneCompactsDeltasWithoutFoldingThePagedBase() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+		LmdbInMemoryAdjacencyIndex originalBase = store.publishedStateForTest().base();
+		long originalBaseRevision = originalBase.baseRevision();
+
+		int commits = store.options().maxDeltaGenerations() + 1;
+		for (int i = 1; i <= commits; i++) {
+			commitAdd(S1, P1, uri(10_000 + i));
+			store.pauseApplierForTest(false);
+		}
+
+		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
+		assertThat(state.base()).isSameAs(originalBase);
+		assertThat(state.base().baseRevision()).isEqualTo(originalBaseRevision);
+		assertThat(state.overlays()).isNotNull();
+		assertThat(state.overlays().generationCount())
+				.isLessThanOrEqualTo(store.options().maxDeltaGenerations());
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, S1, P1)).hasSize(commits + 1);
 		}
 	}
 
@@ -148,6 +185,7 @@ class LmdbDirectAdjacencyConsolidationTest {
 			commitAdd(S1, P1, uri(1000 + i));
 			store.pauseApplierForTest(false);
 		}
+		store.consolidateNowForTest();
 
 		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
 		assertThat(state.overlays()).isNull();
@@ -223,6 +261,7 @@ class LmdbDirectAdjacencyConsolidationTest {
 			commitAdd(uri(100 + i), P1, uri(4_000 + i));
 			store.pauseApplierForTest(false);
 		}
+		store.consolidateNowForTest();
 
 		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
 		assertThat(state.overlays()).isNull();
@@ -249,7 +288,119 @@ class LmdbDirectAdjacencyConsolidationTest {
 	}
 
 	@Test
-	void publicationRaceDiscardsCandidateBuiltFromOlderOverlayIdentities() throws Exception {
+	void blockedDeltaCompactorDoesNotBlockCommitAndPreservesConcurrentAppend() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+		LmdbInMemoryAdjacencyIndex originalBase = store.publishedStateForTest().base();
+		for (int i = 1; i <= 3; i++) {
+			commitAdd(S1, P1, uri(2_000 + i));
+			store.pauseApplierForTest(false);
+		}
+
+		CountDownLatch candidateReady = new CountDownLatch(1);
+		CountDownLatch allowPublication = new CountDownLatch(1);
+		store.beforeDeltaCompactionPublicationForTest = () -> {
+			store.beforeDeltaCompactionPublicationForTest = null;
+			candidateReady.countDown();
+			try {
+				if (!allowPublication.await(10, TimeUnit.SECONDS)) {
+					throw new AssertionError("test did not release delta-compaction publication");
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(e);
+			}
+		};
+
+		commitAdd(S1, P1, uri(2_004));
+		assertThat(candidateReady.await(10, TimeUnit.SECONDS)).isTrue();
+		CompletableFuture<Void> concurrentCommit = CompletableFuture.runAsync(() -> {
+			try {
+				commitAdd(S1, P1, uri(2_005));
+			} catch (IOException e) {
+				throw new UncheckedIOException(e);
+			}
+		});
+		try {
+			concurrentCommit.get(5, TimeUnit.SECONDS);
+		} finally {
+			allowPublication.countDown();
+		}
+		store.awaitCompactionForTest();
+
+		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
+		assertThat(state.base()).isSameAs(originalBase);
+		assertThat(state.overlays()).isNotNull();
+		assertThat(state.overlays().generationCount()).isEqualTo(2);
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, S1, P1)).hasSize(6);
+		}
+	}
+
+	@Test
+	void partialMergePreservesTombstonesInferredRowsPredicatesAndContexts() throws Exception {
+		long inferredObject = uri(4_000);
+		long contextualObject = uri(4_001);
+		commitAdd(S1, P1, O_BASE);
+		commitAdd(S1, P1, O_KEEP);
+		assertThat(store.buildNowForTest()).isTrue();
+		LmdbInMemoryAdjacencyIndex originalBase = store.publishedStateForTest().base();
+
+		commitRemove(S1, P1, O_BASE, -1, true);
+		store.pauseApplierForTest(false);
+		commitAdd(S1, P2, contextualObject, G1, true);
+		store.pauseApplierForTest(false);
+		commitAdd(S1, P1, inferredObject, 0, false);
+		store.pauseApplierForTest(false);
+		commitRemove(S1, P1, O_KEEP, -1, true);
+		store.pauseApplierForTest(false);
+
+		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
+		assertThat(state.base()).isSameAs(originalBase);
+		assertThat(state.overlays()).isNotNull();
+		assertThat(state.overlays().generationCount()).isEqualTo(1);
+		assertThat(state.contextCatalog().ordinalForRaw(G1)).isPositive();
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(probe(view, S1, P1)).isEmpty();
+			assertThat(probe(view, S1, P1, false)).extracting(row -> row[2]).containsExactly(inferredObject);
+			List<long[]> contextual = probe(view, S1, P2);
+			assertThat(contextual).hasSize(1);
+			assertThat(contextual.get(0)[2]).isEqualTo(contextualObject);
+			assertThat(contextual.get(0)[3]).isEqualTo(G1);
+		}
+	}
+
+	@Test
+	void refusedDeltaMergeLeavesExactOverlayAndRetriesAfterHeadroomReturns() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+		for (int i = 1; i <= 3; i++) {
+			commitAdd(S1, P1, uri(3_000 + i));
+			store.pauseApplierForTest(false);
+		}
+
+		store.memoryAccount().refuseKindForTest(MemoryKind.CONSOLIDATION_OUTPUT);
+		commitAdd(S1, P1, uri(3_004));
+		store.awaitCompactionForTest();
+		LmdbAdjacencyPublishedState refused = store.publishedStateForTest();
+		assertThat(refused.overlays()).isNotNull();
+		assertThat(refused.overlays().generationCount()).isEqualTo(4);
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, S1, P1)).hasSize(5);
+		}
+
+		store.memoryAccount().clearRefusalForTest();
+		store.requestCompactionForTest();
+		LmdbAdjacencyPublishedState retried = store.publishedStateForTest();
+		assertThat(retried.overlays()).isNotNull();
+		assertThat(retried.overlays().generationCount()).isEqualTo(1);
+		assertThat(store.snapshotMetrics().deltaMerges).isEqualTo(1);
+	}
+
+	@Test
+	void pagedFoldPreservesAConcurrentAppendedSuffix() throws Exception {
 		commitAdd(S1, P1, O_BASE);
 		assertThat(store.buildNowForTest()).isTrue();
 		commitAdd(S1, P1, uri(1_001));
@@ -286,9 +437,10 @@ class LmdbDirectAdjacencyConsolidationTest {
 		store.beforePagedCsfPublicationForTest = null;
 
 		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
-		assertThat(state.base()).isSameAs(originalBase);
+		assertThat(state.base()).isNotSameAs(originalBase);
+		assertThat(state.base().baseRevision()).isEqualTo(state.appliedRevision() - 1);
 		assertThat(state.overlays()).isNotNull();
-		assertThat(state.overlays().generationCount()).isEqualTo(3);
+		assertThat(state.overlays().generationCount()).isEqualTo(1);
 		assertThat(store.memoryAccount().totalChargedBytes()).isLessThan(chargedWithCandidateAndCommit);
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
 			assertThat(probe(view, S1, P1)).hasSize(4);
@@ -333,7 +485,7 @@ class LmdbDirectAdjacencyConsolidationTest {
 		commitAdd(S1, P1, uri(1002));
 		store.pauseApplierForTest(false);
 		long pinnedRevision = tripleStore.getDataRevision();
-		long deltaBytesWhilePinned;
+		long generationBytesWhilePinned;
 		LmdbAdjacencyReadView pinned = store.acquire(pinnedRevision);
 		try {
 			assertThat(pinned.isExact()).isTrue();
@@ -348,12 +500,16 @@ class LmdbDirectAdjacencyConsolidationTest {
 			try (LmdbAdjacencyReadView latest = store.acquire(tripleStore.getDataRevision())) {
 				assertThat(probe(latest, S1, P1)).hasSize(15);
 			}
-			deltaBytesWhilePinned = store.memoryAccount().chargedBytes(MemoryKind.DELTA);
+			generationBytesWhilePinned = store.memoryAccount().chargedBytes(MemoryKind.DELTA)
+					+ store.memoryAccount().chargedBytes(MemoryKind.RETAINED_SNAPSHOT);
+			assertThat(store.memoryAccount().chargedBytes(MemoryKind.RETAINED_SNAPSHOT)).isPositive();
 		} finally {
 			pinned.close();
 		}
-		long deltaBytesAfterRelease = store.memoryAccount().chargedBytes(MemoryKind.DELTA);
-		assertThat(deltaBytesAfterRelease).isLessThan(deltaBytesWhilePinned);
+		long generationBytesAfterRelease = store.memoryAccount().chargedBytes(MemoryKind.DELTA)
+				+ store.memoryAccount().chargedBytes(MemoryKind.RETAINED_SNAPSHOT);
+		assertThat(generationBytesAfterRelease).isLessThan(generationBytesWhilePinned);
+		assertThat(store.memoryAccount().chargedBytes(MemoryKind.RETAINED_SNAPSHOT)).isZero();
 	}
 
 	@Test

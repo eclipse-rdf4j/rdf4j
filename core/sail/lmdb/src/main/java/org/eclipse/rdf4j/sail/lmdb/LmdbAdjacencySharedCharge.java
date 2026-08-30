@@ -26,6 +26,10 @@ final class LmdbAdjacencySharedCharge implements AutoCloseable {
 		this.charge = Objects.requireNonNull(charge, "charge");
 	}
 
+	long bytes() {
+		return charge.bytes();
+	}
+
 	void retain() {
 		long current;
 		do {

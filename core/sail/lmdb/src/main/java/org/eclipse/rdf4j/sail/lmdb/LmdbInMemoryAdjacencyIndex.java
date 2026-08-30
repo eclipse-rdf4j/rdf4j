@@ -113,6 +113,20 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 		return sharedBaseCharge;
 	}
 
+	long retainedBytes() {
+		long bytes = saturatingAdd(csfBase.nativeBytes(), csfBase.modeledJavaBytes());
+		bytes = saturatingAdd(bytes, sharedBaseCharge.bytes());
+		for (Charge charge : ownedNativeCharges) {
+			bytes = saturatingAdd(bytes, charge.bytes());
+		}
+		bytes = saturatingAdd(bytes, metadataCharge.bytes());
+		if (nodePredicateIndex != null) {
+			bytes = saturatingAdd(bytes, nodePredicateIndex.nativeBytes());
+			bytes = saturatingAdd(bytes, nodePredicateIndex.modeledJavaBytes());
+		}
+		return bytes;
+	}
+
 	/** Returns whether this base can enumerate every predicate for a bound node in {@code plane}. */
 	boolean supportsPredicateEnumeration(int plane) {
 		return nodePredicateIndex != null && nodePredicateIndex.supportsPlane(plane);
@@ -461,6 +475,10 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 			}
 			metadataCharge.close();
 		}
+	}
+
+	private static long saturatingAdd(long left, long right) {
+		return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
 	}
 
 	private final AtomicLong refs = new AtomicLong(1);

@@ -88,8 +88,26 @@ public class LmdbStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void commitInternal() throws SailException {
+		LmdbDirectAdjacencyStore adjacency = lmdbStore.getBackingStore().directAdjacencyStore();
 		try {
-			super.commitInternal();
+			if (adjacency != null) {
+				adjacency.beginLogicalCommitBatch();
+			}
+			try {
+				super.commitInternal();
+			} catch (RuntimeException | Error failure) {
+				if (adjacency != null) {
+					try {
+						adjacency.endLogicalCommitBatch();
+					} catch (RuntimeException | Error maintenanceFailure) {
+						failure.addSuppressed(maintenanceFailure);
+					}
+				}
+				throw failure;
+			}
+			if (adjacency != null) {
+				adjacency.endLogicalCommitBatch();
+			}
 		} finally {
 			if (txnLock != null && txnLock.isActive()) {
 				txnLock.release();
