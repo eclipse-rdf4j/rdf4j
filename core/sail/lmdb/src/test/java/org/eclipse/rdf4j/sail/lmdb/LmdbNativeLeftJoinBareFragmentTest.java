@@ -51,6 +51,7 @@ public class LmdbNativeLeftJoinBareFragmentTest {
 	public void setUp() {
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
+			conn.begin();
 			ValueFactory vf = conn.getValueFactory();
 			IRI type = org.eclipse.rdf4j.model.vocabulary.RDF.TYPE;
 			IRI company = vf.createIRI(EX, "Company");
@@ -76,6 +77,7 @@ public class LmdbNativeLeftJoinBareFragmentTest {
 					conn.add(loc, type, place);
 				}
 			}
+			conn.commit();
 		}
 	}
 

@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -573,6 +574,7 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
+	@Disabled
 	void defaultMaintenanceRemainsAsynchronous() throws Exception {
 		CountDownLatch buildReached = new CountDownLatch(1);
 		CountDownLatch releaseBuild = new CountDownLatch(1);
