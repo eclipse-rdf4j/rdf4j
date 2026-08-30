@@ -19,10 +19,12 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.OptionalLong;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.time.StopWatch;
@@ -70,10 +72,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 15)
+@Warmup(iterations = 3, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 500)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true" })
-@Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
+@Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
@@ -100,6 +102,7 @@ public class ThemeQueryBenchmark {
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
 	private static final String TRIPLE_INDEXES_PROPERTY = "triple.indexes";
 	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
+	private static final String TYPE_MATRIX_METRICS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.typeMatrixMetrics";
 	private static final String JANINO_CODEGEN_ENABLED_PROPERTY = "rdf4j.lmdb.janinoCodegen.enabled";
 	private static final String JANINO_CODEGEN_THRESHOLD_ROWS_PROPERTY = "rdf4j.lmdb.janinoCodegen.thresholdRows";
 	private static final String JANINO_CODEGEN_SYNCHRONOUS_PROPERTY = "rdf4j.lmdb.janinoCodegen.synchronous";
@@ -115,28 +118,29 @@ public class ThemeQueryBenchmark {
 	 * Matched control for the query execution engine. The trial pins the Janino activation threshold to zero and uses
 	 * deterministic compilation in {@link #setup()} so both measured and telemetry shapes are ready on first use.
 	 */
-	@Param({ "false", "true" })
+	@Param({ "true" })
+//	@Param({ "false", "true" })
 	public String z_z_janinoEnabled;
 
 	@Param({
 			"0",
-//			"1",
-//			"2",
+			"1",
+			"2",
 			"3",
-//			"4",
-//			"5",
-//			"6",
+			"4",
+			"5",
+			"6",
 			"7",
 			"8",
-//			"9",
-//			"10",
-//			"11",
-//			"12"
+			"9",
+			"10",
+			"11",
+			"12"
 	})
 	public int z_queryIndex;
 
 	@Param({
-//			"MEDICAL_RECORDS",
+			"MEDICAL_RECORDS",
 //			"SOCIAL_MEDIA",
 //			"LIBRARY",
 //			"ENGINEERING",
@@ -145,7 +149,7 @@ public class ThemeQueryBenchmark {
 //			"ELECTRICAL_GRID",
 //			"PHARMA",
 //			"ADAPTIVE_FILTER_PLACEMENT",
-			"ANALYTICS"
+//			"ANALYTICS"
 	})
 	public String themeName;
 
@@ -612,6 +616,7 @@ public class ThemeQueryBenchmark {
 				System.out.println();
 			}
 		}
+		printTypeMatrixMetricsIfEnabled();
 		if (repository != null) {
 			repository.shutDown();
 			repository = null;
@@ -620,6 +625,86 @@ public class ThemeQueryBenchmark {
 		storeConfig = null;
 		restoreJaninoCodegenProperties();
 //		restoreBenchmarkEstimatorProperties();
+	}
+
+	private void printTypeMatrixMetricsIfEnabled() {
+		if (!Boolean.getBoolean(TYPE_MATRIX_METRICS_PROPERTY)) {
+			return;
+		}
+		try {
+			Class<?> matrix = Class.forName("org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeTypeMatrix");
+			System.out.println("### Type Matrix Metrics ###");
+			for (String name : new String[] { "PLANE_MORSEL_RUNS", "PREDICATE_ROOTS_VISITED",
+					"EDGE_FIBERS_VISITED", "UNIQUE_TARGETS_RESOLVED", "TARGET_TYPE_RUNS_DECODED",
+					"SOURCE_TYPE_CACHE_HITS", "SOURCE_TYPE_CACHE_MISSES", "BORROWED_TYPE_SLICES",
+					"SIDEWAYS_TYPE_MORSELS", "SIDEWAYS_SUBJECTS", "SIDEWAYS_EDGE_PROBES",
+					"SIDEWAYS_EDGE_MATCHES", "SIDEWAYS_ROOT_COUNT_BATCHES", "LABEL_SYNOPSIS_SLICES",
+					"PARALLEL_ADJACENCY_MORSELS",
+					"PARALLEL_ADJACENCY_STEALS", "DENSE_TARGET_BREAKERS", "RADIX_TARGET_BREAKERS",
+					"SIDEWAYS_REVERSE_RUNS", "NON_RESOURCE_PLANES_PRUNED" }) {
+				Field field = matrix.getDeclaredField(name);
+				field.setAccessible(true);
+				System.out.println(name + "=" + ((AtomicLong) field.get(null)).get());
+			}
+			Class<?> datatypeHistogram = Class
+					.forName("org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeDatatypeHistogram");
+			for (String name : new String[] { "ADJACENCY_DOMAIN_RUNS", "ADJACENCY_PLANE_ROOTS", "ADJACENCY_PAGES",
+					"PAGE_LITERAL_DATATYPE_FAST_PATHS", "PAGE_ROOT_IDS_DECODED",
+					"BULK_LITERAL_HEADER_BATCHES", "SCALAR_LITERAL_HEADER_LOOKUPS",
+					"UNIFORM_LITERAL_DATATYPE_BATCHES" }) {
+				Field field = datatypeHistogram.getDeclaredField(name);
+				field.setAccessible(true);
+				System.out.println("DATATYPE_HISTOGRAM_" + name + "=" + ((AtomicLong) field.get(null)).get());
+			}
+			Class<?> intersection = Class
+					.forName("org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeExistsIntersection");
+			for (String name : new String[] { "DOMAIN_SYNOPSIS_INTERSECTIONS", "DOMAIN_PRESENCE_INTERSECTIONS",
+					"DOMAIN_SYNOPSIS_STREAMING_INTERSECTIONS", "ADJACENCY_ROOT_INTERSECTIONS",
+					"ADJACENCY_ROOTS_VISITED", "DOMAIN_SYNOPSIS_EVALUATION_NANOS",
+					"DOMAIN_SYNOPSIS_PREPARATIONS" }) {
+				Field field = intersection.getDeclaredField(name);
+				field.setAccessible(true);
+				System.out.println(name + "=" + ((AtomicLong) field.get(null)).get());
+			}
+			Class<?> runCountHistogram = Class
+					.forName("org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeRunCountHistogram");
+			for (String name : new String[] { "DENSE_ROOT_MORSELS", "ROOT_MERGE_FALLBACK_RANGES" }) {
+				Field field = runCountHistogram.getDeclaredField(name);
+				field.setAccessible(true);
+				System.out.println("RUN_COUNT_HISTOGRAM_" + name + "=" + ((AtomicLong) field.get(null)).get());
+			}
+			Method getBackingStore = LmdbStore.class.getDeclaredMethod("getBackingStore");
+			getBackingStore.setAccessible(true);
+			Object backingStore = getBackingStore.invoke(store);
+			Method directAdjacencyStore = backingStore.getClass().getDeclaredMethod("directAdjacencyStore");
+			directAdjacencyStore.setAccessible(true);
+			Object adjacencyStore = directAdjacencyStore.invoke(backingStore);
+			Method memoryAccount = adjacencyStore.getClass().getDeclaredMethod("memoryAccount");
+			memoryAccount.setAccessible(true);
+			Object account = memoryAccount.invoke(adjacencyStore);
+			Method memoryUsageSummary = account.getClass().getDeclaredMethod("memoryUsageSummary");
+			memoryUsageSummary.setAccessible(true);
+			System.out.println("DIRECT_ADJACENCY_" + memoryUsageSummary.invoke(account));
+			Class<?> domainSynopsis = Class.forName("org.eclipse.rdf4j.sail.lmdb.LmdbNodeDomainSynopsis");
+			Method domainDiagnostic = domainSynopsis.getDeclaredMethod("lastBuildDiagnostic");
+			domainDiagnostic.setAccessible(true);
+			System.out.println("DOMAIN_SYNOPSIS_BUILD=" + domainDiagnostic.invoke(null));
+			Class<?> domainPresence = Class.forName("org.eclipse.rdf4j.sail.lmdb.LmdbNodeDomainPresence");
+			Method presenceDiagnostic = domainPresence.getDeclaredMethod("lastBuildDiagnostic");
+			presenceDiagnostic.setAccessible(true);
+			System.out.println("DOMAIN_PRESENCE_BUILD=" + presenceDiagnostic.invoke(null));
+			for (String name : new String[] { "INTERSECTION_CALLS", "INTERSECTION_NANOS" }) {
+				Field field = domainPresence.getDeclaredField(name);
+				field.setAccessible(true);
+				System.out.println("DOMAIN_PRESENCE_" + name + "=" + ((AtomicLong) field.get(null)).get());
+			}
+			Class<?> adaptiveMemory = Class.forName("org.eclipse.rdf4j.sail.lmdb.csf.CsfAdaptiveMemory");
+			Method claimedBytes = adaptiveMemory.getDeclaredMethod("claimedBytes");
+			claimedBytes.setAccessible(true);
+			System.out.println("CSF_ADAPTIVE_CLAIMED_BYTES=" + claimedBytes.invoke(null));
+		} catch (ReflectiveOperationException e) {
+			throw new IllegalStateException("Unable to read type-matrix benchmark metrics", e);
+		}
 	}
 
 	@Test

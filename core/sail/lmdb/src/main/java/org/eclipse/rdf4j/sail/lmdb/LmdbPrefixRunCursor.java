@@ -104,7 +104,24 @@ public interface LmdbPrefixRunCursor extends AutoCloseable {
 
 	long[] quad();
 
+	/**
+	 * Returns one field from the current prefix without requiring non-prefix columns to be decoded. Implementations
+	 * backed by ordinary statement indexes may use their representative quad; adjacency implementations override this
+	 * for root and nested-run keys.
+	 */
+	default long prefixValue(int field) {
+		return quad()[field];
+	}
+
 	long runRowCount();
+
+	/**
+	 * Returns the distinct neighbor-fiber count represented by the current root prefix without decoding the payload, or
+	 * {@code -1} when the cursor cannot prove it from physical metadata.
+	 */
+	default long distinctNeighborCount() {
+		return -1L;
+	}
 
 	long getSourceRowsScannedActual();
 

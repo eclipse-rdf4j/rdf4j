@@ -1350,7 +1350,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				logger.info("Creating in-memory adjacency structures: format=paged-csf, snapshotRevision={}, {}",
 						baseRevision, account.memoryUsageSummary());
 				index = LmdbPagedCsfBaseBuilder.build(sourceFamily, coverage, account, baseArenaRegionBytes,
-						workspaceRegionBytes, options.buildThreads(), metrics, nodePredicateOptions());
+						workspaceRegionBytes, options.buildThreads(), metrics, nodePredicateOptions(),
+						valueStore == null ? ImmutablePagedQuadCsfIndex.LiteralDatatypeLookup.NONE
+								: valueStore::literalDatatypeIds);
 			}
 			Runnable interleave = afterBuildScanForTest;
 			if (interleave != null) {
@@ -2625,6 +2627,71 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return bindRetainedAdjacency(view, predicate, basePredicateOrdinal, bySubject, explicit);
 	}
 
+	/**
+	 * Binds a bounded, immutable label-pattern synopsis only when the retained base alone is authoritative for the
+	 * requested fixed-predicate plane. Overlay-visible snapshots retain the exact adjacency path because a synopsis
+	 * must never hide additions or tombstones.
+	 */
+	NativeLmdbQuerySource.LabelSynopsis labelSynopsis(LmdbAdjacencyReadView view, long predicate,
+			boolean bySubject, boolean explicit) {
+		if (!LmdbRuntimeProperties.adjacencySynopsisEnabled()) {
+			return null;
+		}
+		long basePredicateOrdinal = completeBasePredicateOrdinal(view, predicate);
+		if (basePredicateOrdinal < 0L) {
+			return null;
+		}
+		LmdbAdjacencyPublishedState state = view.state();
+		if (hasApplicableOverlay(state.overlays(), view.snapshotRevision())) {
+			return null;
+		}
+		return state.base().labelSynopsis(basePredicateOrdinal, plane(bySubject, explicit), account);
+	}
+
+	/**
+	 * Binds the exact all-predicate SOC/OSC root domain only when the retained base is complete for the snapshot.
+	 * Overlay-visible snapshots keep the streaming merge/fallback because additions and tombstones must not be hidden.
+	 */
+	NativeLmdbQuerySource.NodeDomainSynopsis nodeDomainSynopsis(LmdbAdjacencyReadView view, boolean bySubject,
+			boolean explicit) {
+		if (!LmdbRuntimeProperties.adjacencySynopsisEnabled()) {
+			return null;
+		}
+		LmdbAdjacencyPublishedState state = view.state();
+		if (!state.base().coverage().isFull()
+				|| hasApplicableOverlay(state.overlays(), view.snapshotRevision())) {
+			return null;
+		}
+		return state.base().nodeDomainSynopsis(plane(bySubject, explicit), account);
+	}
+
+	NativeLmdbQuerySource.NodeDomainPresence nodeDomainPresence(LmdbAdjacencyReadView view, boolean bySubject,
+			boolean explicit) {
+		if (!LmdbRuntimeProperties.adjacencySynopsisEnabled()) {
+			return null;
+		}
+		LmdbAdjacencyPublishedState state = view.state();
+		if (!state.base().coverage().isFull()
+				|| hasApplicableOverlay(state.overlays(), view.snapshotRevision())) {
+			return null;
+		}
+		return state.base().nodeDomainPresence(plane(bySubject, explicit), account);
+	}
+
+	NativeLmdbQuerySource.DatatypeSummary nodeDomainDatatypeSummary(LmdbAdjacencyReadView view, boolean bySubject,
+			boolean explicit, LmdbNodeDomainSynopsis.LiteralDatatypeLookup lookup,
+			NativeLmdbQuerySource.DatatypeSummaryBuildObserver observer) throws IOException {
+		if (!LmdbRuntimeProperties.adjacencySynopsisEnabled()) {
+			return null;
+		}
+		LmdbAdjacencyPublishedState state = view.state();
+		if (!state.base().coverage().isFull()
+				|| hasApplicableOverlay(state.overlays(), view.snapshotRevision())) {
+			return null;
+		}
+		return state.base().nodeDomainDatatypeSummary(plane(bySubject, explicit), account, lookup, observer);
+	}
+
 	private static boolean hasApplicableOverlay(LmdbAdjacencyOverlaySet overlays, long snapshotRevision) {
 		if (overlays == null || overlays.generationCount() == 0) {
 			return false;
@@ -2737,17 +2804,30 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	LmdbPrefixRunPlan tryPrefixRunPlan(LmdbAdjacencyReadView view, int[] prefixFields, long subject, long predicate,
 			long object, long context) {
 		if (!LmdbPrefixRunPlan.isEnabled() || !scanAggregatesEnabled() || prefixFields == null
-				|| prefixFields.length != 1 || subject > 0 || object > 0
+				|| prefixFields.length < 1 || prefixFields.length > 2 || subject > 0 || object > 0
 				|| context >= 0) {
 			return null;
 		}
-		if (prefixFields[0] == TripleIndex.SUBJ_IDX && predicate > 0) {
+		if (predicate > 0 && prefixFields[0] == TripleIndex.SUBJ_IDX
+				&& (prefixFields.length == 1 || prefixFields[1] == TripleIndex.OBJ_IDX)) {
 			return completeBasePredicateOrdinal(view, predicate) == LmdbInMemoryAdjacencyIndex.NOT_COVERED
 					? null
-					: LmdbPrefixRunPlan.adjacencySubject(prefixFields);
+					: LmdbPrefixRunPlan.adjacencyOutgoing(prefixFields);
 		}
-		if (prefixFields[0] == TripleIndex.PRED_IDX && predicate <= 0 && exactCurrentFullCoverage(view)) {
-			return LmdbPrefixRunPlan.adjacencyPredicate(prefixFields);
+		if (predicate > 0 && prefixFields[0] == TripleIndex.OBJ_IDX
+				&& (prefixFields.length == 1 || prefixFields[1] == TripleIndex.SUBJ_IDX)) {
+			return completeBasePredicateOrdinal(view, predicate) == LmdbInMemoryAdjacencyIndex.NOT_COVERED
+					? null
+					: LmdbPrefixRunPlan.adjacencyIncoming(prefixFields);
+		}
+		if (prefixFields.length == 1 && prefixFields[0] == TripleIndex.PRED_IDX) {
+			if (predicate <= 0 && exactCurrentFullCoverage(view)) {
+				return LmdbPrefixRunPlan.adjacencyPredicate(prefixFields);
+			}
+			if (predicate > 0 && view.snapshotRevision() == view.state().appliedRevision()
+					&& completeBasePredicateOrdinal(view, predicate) != LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
+				return LmdbPrefixRunPlan.adjacencyPredicate(prefixFields);
+			}
 		}
 		return null;
 	}
@@ -2758,26 +2838,35 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				|| context >= 0) {
 			return null;
 		}
-		int[] prefixFields = plan.prefixFields();
-		if (prefixFields.length != 1) {
-			return null;
+		if (plan.rejectsEveryContext()) {
+			return LmdbPrefixRunCursor.EMPTY;
 		}
-		if (prefixFields[0] == TripleIndex.PRED_IDX) {
-			if (predicate > 0 || !exactCurrentFullCoverage(view)) {
+		if (plan.adjacencyKind() == LmdbPrefixRunPlan.AdjacencyKind.PREDICATE) {
+			if (predicate <= 0 && !exactCurrentFullCoverage(view)
+					|| predicate > 0 && (view.snapshotRevision() != view.state().appliedRevision()
+							|| completeBasePredicateOrdinal(view,
+									predicate) == LmdbInMemoryAdjacencyIndex.NOT_COVERED)) {
 				return null;
 			}
 			metrics.recordHit();
-			return new LmdbDirectAdjacencyPredicatePrefixRunCursor(this, view, explicit, countRunRows);
+			return new LmdbDirectAdjacencyPredicatePrefixRunCursor(view, explicit, countRunRows, predicate);
 		}
-		if (prefixFields[0] != TripleIndex.SUBJ_IDX || predicate <= 0) {
+		if (predicate <= 0) {
 			return null;
 		}
-		LmdbDirectNativeAdjacency adjacency = bindCompleteAdjacency(view, predicate, true, explicit);
+		boolean outgoing = plan.adjacencyKind() == LmdbPrefixRunPlan.AdjacencyKind.OUTGOING_ROOT
+				|| plan.adjacencyKind() == LmdbPrefixRunPlan.AdjacencyKind.OUTGOING_NEIGHBOR;
+		boolean incoming = plan.adjacencyKind() == LmdbPrefixRunPlan.AdjacencyKind.INCOMING_ROOT
+				|| plan.adjacencyKind() == LmdbPrefixRunPlan.AdjacencyKind.INCOMING_NEIGHBOR;
+		if (!outgoing && !incoming) {
+			return null;
+		}
+		LmdbDirectNativeAdjacency adjacency = bindCompleteAdjacency(view, predicate, outgoing, explicit);
 		if (adjacency == null) {
 			return null;
 		}
 		long wholePlaneRows = -1;
-		if (plan.wholePlaneCount()) {
+		if (plan.wholePlaneCount() && !plan.hasContextFilter()) {
 			if (view.snapshotRevision() != view.state().appliedRevision()) {
 				adjacency.close();
 				return null;
@@ -2785,7 +2874,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			wholePlaneRows = view.state().planeStatistics().quadCount(predicate, plane(true, explicit));
 		}
 		metrics.recordHit();
-		return new LmdbDirectAdjacencyPrefixRunCursor(view, adjacency, predicate, countRunRows, wholePlaneRows);
+		if (plan.prefixLength() == 2) {
+			return new LmdbDirectAdjacencyNestedPrefixRunCursor(view, adjacency, predicate, outgoing, countRunRows,
+					plan);
+		}
+		return new LmdbDirectAdjacencyPrefixRunCursor(view, adjacency, predicate, outgoing, countRunRows,
+				wholePlaneRows, plan);
 	}
 
 	private boolean exactCurrentFullCoverage(LmdbAdjacencyReadView view) {

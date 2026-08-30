@@ -167,11 +167,11 @@ class ThreeTierEngagementCensusTest {
 		// with something to fuse.
 		ledger.put(ThreeTierParityCorpus.INCOMING_EDGE_DUMP,
 				new Ledger(Route.ADJACENCY, Route.ADJACENCY, false));
-		// The all-unbound control offers the universal predicate sweep, but LMDB strictly dominates its aggregate scan
-		// cost in this fixture. Pin that arbiter win separately from structural eligibility: the zero-decline assertion
-		// below proves that this is not a missing adjacency candidate.
+		// The all-unbound aggregate now sweeps directional adjacency roots and predicate metadata instead of
+		// statements.
+		// It does not depend on the optional node-predicate projections, so both configurations take the same route.
 		ledger.put(ThreeTierParityCorpus.OUT_DEGREE_HISTOGRAM,
-				new Ledger(Route.LMDB_ONLY, Route.LMDB_ONLY, false));
+				new Ledger(Route.ADJACENCY, Route.ADJACENCY, false));
 		return ledger;
 	}
 

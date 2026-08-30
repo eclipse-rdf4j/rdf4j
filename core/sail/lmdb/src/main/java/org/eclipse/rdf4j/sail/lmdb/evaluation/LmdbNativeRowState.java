@@ -481,18 +481,34 @@ final class LongCountMap {
 	}
 
 	void increment(long key) {
-		if (!tryIncrement(key)) {
+		if (!tryAdd(key, 1L)) {
 			throw new IllegalStateException("unbudgeted long count map cannot refuse an increment");
 		}
 	}
 
 	boolean tryIncrement(long key) {
+		return tryAdd(key, 1L);
+	}
+
+	void add(long key, long delta) {
+		if (!tryAdd(key, delta)) {
+			throw new IllegalStateException("unbudgeted long count map cannot refuse an addition");
+		}
+	}
+
+	boolean tryAdd(long key, long delta) {
+		if (delta < 0L) {
+			throw new IllegalArgumentException("counter delta must be non-negative");
+		}
+		if (delta == 0L) {
+			return true;
+		}
 		if (keys == null) {
 			return false;
 		}
 		int existing = find(key);
 		if (existing >= 0) {
-			counts[existing]++;
+			counts[existing] = Math.addExact(counts[existing], delta);
 			return true;
 		}
 		if ((size + 1L) * 4L > keys.length * 3L && !grow()) {
@@ -505,7 +521,7 @@ final class LongCountMap {
 		}
 		markUsed(used, usedBits, idx);
 		keys[idx] = key;
-		counts[idx] = 1;
+		counts[idx] = delta;
 		size++;
 		return true;
 	}

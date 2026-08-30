@@ -71,6 +71,7 @@ final class LmdbNativeStrategyPreference {
 			// The narrow legacy aggregate compiler was a direct rung before every speculative aggregate strategy.
 			LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE,
 			// Row-count reducers: one index position per distinct value.
+			LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
 			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
 			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
 			// Worst-case-optimal join: bounded below any pairwise plan on cyclic shapes.
@@ -160,6 +161,16 @@ final class LmdbNativeStrategyPreference {
 		int candidateRank = rank(candidate);
 		int incumbentRank = rank(incumbent);
 		return candidateRank != Integer.MAX_VALUE && candidateRank < incumbentRank;
+	}
+
+	/**
+	 * Whether a strategy answers the complete query from exact structural information. Once one of these strategies has
+	 * completed, executing a never-tried general engine arm cannot discover a better access path: it can only repeat
+	 * the answer by enumerating a strictly finer grain. Bounded probes remain available while the structural strategy
+	 * is still being learned; this classification only suppresses the otherwise unbounded mandatory trial.
+	 */
+	static boolean answersWholeQueryStructurally(String family) {
+		return LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION.equals(family);
 	}
 
 	/**

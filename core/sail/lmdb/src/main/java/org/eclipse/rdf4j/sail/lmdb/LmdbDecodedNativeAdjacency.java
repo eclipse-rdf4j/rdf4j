@@ -89,6 +89,11 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 	}
 
 	@Override
+	public boolean supportsBorrowedNeighbors() {
+		return true;
+	}
+
+	@Override
 	public NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor openBoundRunCursor() {
 		return openDecodedBoundRunCursor();
 	}
@@ -328,6 +333,11 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 		@Override
 		public long runSize() {
 			return cursor.edgeCount();
+		}
+
+		@Override
+		public long distinctNeighborCount() {
+			return cursor.distinctNeighborCount();
 		}
 
 		@Override

@@ -54,11 +54,13 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 		File root = normalized.toFile();
 		properties = new StoreProperties(root)
 				.setVersion(String.valueOf(LmdbStore.VERSION))
+				.setLiteralReferenceEncoding(StoreProperties.LITERAL_REFERENCE_ENCODING_CORE_V1)
 				.setInlineLiterals(config.getInlineLiterals())
 				.setCanonicalLanguageTags(StoreProperties.CANONICAL_LANGUAGE_TAGS_LOWERCASE_V1);
 		if (config.getOrderedNumericIds()) {
 			properties.setNumericIdEncoding(StoreProperties.NUMERIC_ID_ENCODING_ORDERED_V1);
 		}
+		LmdbStore.writeCoreLiteralReferenceMarker(normalized);
 		NamespaceStore openedNamespaces = null;
 		ValueStore openedValues = null;
 		TripleStore openedTriples = null;

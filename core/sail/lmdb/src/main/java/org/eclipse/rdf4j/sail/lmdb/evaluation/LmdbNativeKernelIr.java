@@ -44,6 +44,14 @@ final class LmdbNativeKernelIr {
 	static final int OP_GT = 4;
 	static final int OP_GE = 5;
 
+	/** Physical granularity consumed or produced by a native kernel operator. */
+	enum Grain {
+		PLANE,
+		ROOT,
+		FIBER,
+		QUAD
+	}
+
 	private LmdbNativeKernelIr() {
 	}
 
@@ -98,6 +106,11 @@ final class LmdbNativeKernelIr {
 	// ------------------------------------------------------------------
 
 	abstract static class Node {
+
+		/** Existing row-oriented operators consume or produce complete quads unless a node overrides this contract. */
+		Grain grain() {
+			return Grain.QUAD;
+		}
 
 		/**
 		 * Filter placement metadata is deliberately outside the canonical shape. The generated program is already

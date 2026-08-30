@@ -96,6 +96,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public int literalDatatypeIds(long[] ids, int offset, int length, long[] target, int targetOffset) {
+		return sources.get(0).literalDatatypeIds(ids, offset, length, target, targetOffset);
+	}
+
+	@Override
 	public Object idSpace() {
 		return idSpace;
 	}
@@ -337,6 +342,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 					closePrefixRunCursors(cursors, null);
 					return null;
 				}
+				memberPlan = memberPlan.withConstraintsOf(plan);
 				LmdbPrefixRunCursor cursor = source.prefixRuns(memberPlan, subj, pred, obj, context, countRunRows,
 						observer);
 				if (cursor == null) {
@@ -519,6 +525,8 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		private final boolean countRunRows;
 		private final String indexName;
 		private final long[][] heads;
+		private final boolean[] headReady;
+		private final long[] emittedPrefix;
 		private final long[] quad = new long[4];
 		private boolean closed;
 		private long runRowCount;
@@ -530,7 +538,9 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			this.orderedPrefixFields = orderedPrefixFields(plan);
 			this.countRunRows = countRunRows;
 			this.indexName = plan.indexName();
-			this.heads = new long[cursors.size()][];
+			this.heads = new long[cursors.size()][orderedPrefixFields.length];
+			this.headReady = new boolean[cursors.size()];
+			this.emittedPrefix = new long[orderedPrefixFields.length];
 		}
 
 		@Override
@@ -539,8 +549,8 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 				return false;
 			}
 			for (int i = 0; i < cursors.size(); i++) {
-				if (heads[i] == null && cursors.get(i).next()) {
-					heads[i] = copyQuad(cursors.get(i).quad());
+				if (!headReady[i] && cursors.get(i).next()) {
+					copyPrefix(i);
 				}
 			}
 
@@ -550,15 +560,17 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 				return false;
 			}
 
-			long[] emittedPrefix = heads[first];
+			System.arraycopy(heads[first], 0, emittedPrefix, 0, emittedPrefix.length);
 			if (stopPrefix != null && comparePrefixTo(emittedPrefix, stopPrefix) >= 0) {
 				close();
 				return false;
 			}
-			System.arraycopy(emittedPrefix, 0, quad, 0, quad.length);
+			for (int i = 0; i < orderedPrefixFields.length; i++) {
+				quad[orderedPrefixFields[i]] = emittedPrefix[i];
+			}
 			long mergedRunRowCount = 0L;
 			for (int i = 0; i < heads.length; i++) {
-				if (heads[i] != null && samePrefix(emittedPrefix, heads[i])) {
+				if (headReady[i] && samePrefix(emittedPrefix, heads[i])) {
 					if (countRunRows) {
 						mergedRunRowCount = addSaturated(mergedRunRowCount, cursors.get(i).runRowCount());
 					}
@@ -572,7 +584,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		private int firstHead() {
 			int first = -1;
 			for (int i = 0; i < heads.length; i++) {
-				if (heads[i] == null) {
+				if (!headReady[i]) {
 					continue;
 				}
 				if (first < 0 || comparePrefix(heads[i], heads[first]) < 0) {
@@ -583,8 +595,8 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		private int comparePrefix(long[] left, long[] right) {
-			for (int field : orderedPrefixFields) {
-				int compared = Long.compareUnsigned(left[field], right[field]);
+			for (int i = 0; i < orderedPrefixFields.length; i++) {
+				int compared = Long.compareUnsigned(left[i], right[i]);
 				if (compared != 0) {
 					return compared;
 				}
@@ -595,7 +607,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		private int comparePrefixTo(long[] head, long[] prefixValues) {
 			int length = Math.min(orderedPrefixFields.length, prefixValues.length);
 			for (int i = 0; i < length; i++) {
-				int compared = Long.compareUnsigned(head[orderedPrefixFields[i]], prefixValues[i]);
+				int compared = Long.compareUnsigned(head[i], prefixValues[i]);
 				if (compared != 0) {
 					return compared;
 				}
@@ -610,10 +622,19 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		private void headNext(int index) throws IOException {
 			LmdbPrefixRunCursor cursor = cursors.get(index);
 			if (cursor.next()) {
-				heads[index] = copyQuad(cursor.quad());
+				copyPrefix(index);
 				return;
 			}
-			heads[index] = null;
+			headReady[index] = false;
+		}
+
+		private void copyPrefix(int index) {
+			LmdbPrefixRunCursor cursor = cursors.get(index);
+			long[] head = heads[index];
+			for (int i = 0; i < orderedPrefixFields.length; i++) {
+				head[i] = cursor.prefixValue(orderedPrefixFields[i]);
+			}
+			headReady[index] = true;
 		}
 
 		@Override
@@ -621,14 +642,14 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			if (closed) {
 				return false;
 			}
-			int streamedField = orderedPrefixFields[orderedPrefixFields.length - 1];
+			int streamedPosition = orderedPrefixFields.length - 1;
 			boolean any = false;
 			for (int i = 0; i < cursors.size(); i++) {
 				long[] head = heads[i];
-				if (head != null && Long.compareUnsigned(head[streamedField], value) >= 0) {
+				if (headReady[i] && Long.compareUnsigned(head[streamedPosition], value) >= 0) {
 					any = true;
 				} else {
-					heads[i] = null;
+					headReady[i] = false;
 					any |= cursors.get(i).seekTo(value);
 				}
 			}
@@ -643,10 +664,10 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			boolean any = false;
 			for (int i = 0; i < cursors.size(); i++) {
 				long[] head = heads[i];
-				if (head != null && comparePrefixTo(head, prefixValues) >= 0) {
+				if (headReady[i] && comparePrefixTo(head, prefixValues) >= 0) {
 					any = true;
 				} else {
-					heads[i] = null;
+					headReady[i] = false;
 					any |= cursors.get(i).seekTo(prefixValues);
 				}
 			}
@@ -667,6 +688,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public long[] quad() {
 			return quad;
+		}
+
+		@Override
+		public long prefixValue(int field) {
+			return quad[field];
 		}
 
 		@Override
@@ -714,12 +740,6 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			}
 			closed = true;
 			closePrefixRunCursors(cursors, null);
-		}
-
-		private static long[] copyQuad(long[] source) {
-			long[] copy = new long[4];
-			System.arraycopy(source, 0, copy, 0, copy.length);
-			return copy;
 		}
 
 		private static int[] orderedPrefixFields(LmdbPrefixRunPlan plan) {
@@ -913,6 +933,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public long literalDatatypeId(long id) {
 			return delegate.literalDatatypeId(id);
+		}
+
+		@Override
+		public int literalDatatypeIds(long[] ids, int offset, int length, long[] target, int targetOffset) {
+			return delegate.literalDatatypeIds(ids, offset, length, target, targetOffset);
 		}
 
 		@Override

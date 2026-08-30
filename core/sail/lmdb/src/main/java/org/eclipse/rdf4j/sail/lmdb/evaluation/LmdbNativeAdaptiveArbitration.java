@@ -143,6 +143,11 @@ final class LmdbNativeAdaptiveArbitration {
 		if (!model.configuration().enabled()) {
 			return new DispatchPlan.Normal<>(incumbent, incumbentPrediction, "adaptive dispatch disabled");
 		}
+		if (LmdbNativeStrategyPreference
+				.answersWholeQueryStructurally(incumbent.estimate.variantKey().strategyFamily())) {
+			return new DispatchPlan.Normal<>(incumbent, incumbentPrediction,
+					"authoritative whole-query structural answer");
+		}
 
 		// Every arm is priced arm-locally: an unpriceable arm quotes ORDINAL_ONLY and simply cannot win or lose on
 		// cost — the old whole-set "not uniformly priceable" bailout is gone.
@@ -210,6 +215,10 @@ final class LmdbNativeAdaptiveArbitration {
 	 */
 	static <T> Priced<T> mustTryUnexecuted(List<Priced<T>> priced, Priced<T> winner,
 			LmdbNativeAdaptiveCostModel model) {
+		if (LmdbNativeStrategyPreference
+				.answersWholeQueryStructurally(winner.candidate.estimate.variantKey().strategyFamily())) {
+			return null;
+		}
 		LmdbNativeProbeScheduler scheduler = model.store().probeScheduler();
 		LmdbNativeRegimeKey regime = model.currentRegime();
 		long epoch = model.store().regimeTracker().epoch();

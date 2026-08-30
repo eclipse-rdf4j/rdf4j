@@ -60,6 +60,7 @@ class LmdbNativeKernelInterpreterParityTest {
 			"rdf4j.lmdb.nativeBatch.enabled",
 			"rdf4j.lmdb.packedFtree.enabled",
 			"rdf4j.lmdb.prefixRun.enabled",
+			"rdf4j.lmdb.directAdjacency.scanAggregates.enabled",
 			"rdf4j.lmdb.parallel.enabled",
 			"rdf4j.lmdb.parallel.threads",
 			"rdf4j.lmdb.irAggregateParallel.enabled",
@@ -89,6 +90,7 @@ class LmdbNativeKernelInterpreterParityTest {
 		System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");
 		System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
 		System.setProperty("rdf4j.lmdb.prefixRun.enabled", "false");
+		System.setProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "false");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "1");
 		System.setProperty("rdf4j.lmdb.irAggregateParallel.enabled", "false");

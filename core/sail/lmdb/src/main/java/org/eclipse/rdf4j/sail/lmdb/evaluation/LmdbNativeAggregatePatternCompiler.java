@@ -75,6 +75,13 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		for (int i = 0; i < copies.length; i++) {
 			ExtensionElem elem = extension.getElements().get(i);
 			ValueExpr expression = elem.getExpr();
+			if (expression instanceof ValueConstant valueConstant) {
+				long id = idOf(valueConstant.getValue());
+				if (id != UNKNOWN) {
+					copies[i] = CopyBinding.constant(slot(elem.getName()), id);
+					continue;
+				}
+			}
 			if (expression instanceof Var) {
 				Var sourceVar = (Var) expression;
 				if (sourceVar.hasValue()) {

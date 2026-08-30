@@ -40,6 +40,7 @@ public final class ValueStoreRecordCodec {
 	public static final byte ID_KEY = 5;
 	public static final byte HASH_KEY = 6;
 	public static final byte HASHID_KEY = 7;
+	public static final byte NEXT_ID_KEY = 8;
 	public static final int MAX_INLINE_KEY_BYTES = 16;
 
 	private ValueStoreRecordCodec() {

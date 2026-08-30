@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 
 /**
@@ -67,6 +68,22 @@ public interface NativeLmdbQuerySource {
 	 */
 	default long literalDatatypeId(long id) {
 		return -1L;
+	}
+
+	/**
+	 * Bulk form of {@link #literalDatatypeId(long)}. Implementations backed by a transactional value store should keep
+	 * one read transaction and reusable native key/value handles for the complete batch. The default preserves exact
+	 * source semantics and is intentionally scalar.
+	 *
+	 * @return number of populated target lanes, always {@code length} for a successful call
+	 */
+	default int literalDatatypeIds(long[] ids, int offset, int length, long[] target, int targetOffset) {
+		Objects.checkFromIndexSize(offset, length, ids.length);
+		Objects.checkFromIndexSize(targetOffset, length, target.length);
+		for (int i = 0; i < length; i++) {
+			target[targetOffset + i] = literalDatatypeId(ids[offset + i]);
+		}
+		return length;
 	}
 
 	default LmdbNativeValueCodec nativeValueCodec() {
@@ -311,6 +328,46 @@ public interface NativeLmdbQuerySource {
 		}
 
 		/**
+		 * Returns an exact, immutable mapping from root IDs to the complete ordered neighbor-label pattern of one fixed
+		 * predicate plane, or {@code null} when the snapshot cannot be represented by a retained bounded synopsis. The
+		 * returned slices preserve duplicate contexts as repeated labels, so consumers can retain SPARQL bag
+		 * multiplicity without decoding adjacency payloads. The mapping belongs to the retained base behind this probe
+		 * and is valid until the probe closes.
+		 */
+		default LabelSynopsis labelSynopsis(long predicate, boolean bySubject) throws IOException {
+			return null;
+		}
+
+		/**
+		 * Returns the exact all-predicate root domain for this direction, or {@code null} when no bounded retained
+		 * synopsis represents the complete visible snapshot. The returned view is borrowed from this probe's retained
+		 * base and remains valid until the probe closes.
+		 */
+		default NodeDomainSynopsis nodeDomainSynopsis(boolean bySubject) throws IOException {
+			return null;
+		}
+
+		/**
+		 * Returns exact all-predicate root membership for this direction, or {@code null} when no bounded retained
+		 * representation covers the complete visible snapshot. Unlike {@link #nodeDomainSynopsis(boolean)}, this view
+		 * intentionally carries neither root-order multiplicity nor an enumeration cursor.
+		 */
+		default NodeDomainPresence nodeDomainPresence(boolean bySubject) throws IOException {
+			return null;
+		}
+
+		/**
+		 * Returns exact datatype-group multiplicities for the complete immutable root domain in this direction, or
+		 * {@code null} when no bounded retained summary represents the visible snapshot. The observer is notified only
+		 * for literal-header batches actually read while constructing a previously absent summary; consuming an already
+		 * retained summary performs no header reads.
+		 */
+		default DatatypeSummary nodeDomainDatatypeSummary(boolean bySubject, DatatypeSummaryBuildObserver observer)
+				throws IOException {
+			return null;
+		}
+
+		/**
 		 * A borrowed, revision-valid view of every node's predicate row for this direction, or {@code null} when the
 		 * projection cannot serve the complete probe stage. The returned object belongs to this probe, is invalid once
 		 * it closes, and must never be cached in a plan or a reusable kernel object: a fresh instance is allocated per
@@ -348,6 +405,82 @@ public interface NativeLmdbQuerySource {
 
 		@Override
 		void close();
+	}
+
+	/** Exact fixed-predicate root-to-label-pattern projection used by factorized analytical kernels. */
+	interface LabelSynopsis {
+
+		/**
+		 * Binds {@code target} to the root's complete ordered label pattern. Returns {@code true} for both a present
+		 * pattern and an exact-empty root; {@code false} means this synopsis cannot classify the supplied ID.
+		 */
+		boolean borrowLabels(long rootId, NativeAdjacency.NeighborSlice target);
+	}
+
+	/** Exact root IDs and their all-predicate quad multiplicities for one SOC/OSC plane. */
+	interface NodeDomainPresence {
+
+		long cardinality();
+
+		boolean contains(long rootId);
+
+		/**
+		 * Counts the exact intersection without scalar root enumeration, or returns {@code -1} when the physical
+		 * representations do not provide a compatible set-level kernel.
+		 */
+		default long intersectionCardinality(NodeDomainPresence other) {
+			return -1L;
+		}
+	}
+
+	/** Exact root IDs and their all-predicate quad multiplicities for one SOC/OSC plane. */
+	interface NodeDomainSynopsis extends NodeDomainPresence {
+
+		@Override
+		long cardinality();
+
+		@Override
+		boolean contains(long rootId);
+
+		RootCursor cursor();
+
+		/** Allocation-free cursor over every root retained by the synopsis. Ordering is intentionally unspecified. */
+		interface RootCursor {
+
+			boolean next();
+
+			long rootId();
+
+			long quadMultiplicity();
+		}
+	}
+
+	/** Build telemetry for a lazily retained datatype summary. */
+	interface DatatypeSummaryBuildObserver {
+
+		void literalHeaderBatch(boolean uniformDatatype);
+	}
+
+	/** Exact datatype groups and their all-predicate quad multiplicities for one immutable SOC/OSC root domain. */
+	interface DatatypeSummary {
+
+		GroupCursor cursor();
+
+		/** Allocation-free cursor over the retained datatype groups. */
+		interface GroupCursor {
+
+			boolean next();
+
+			/** A literal ID whose decoded datatype represents this group. */
+			long representativeId();
+
+			/** Header datatype ID for a legacy referenced literal, undefined unless {@link #referenced()} is true. */
+			long datatypeId();
+
+			boolean referenced();
+
+			long quadMultiplicity();
+		}
 	}
 
 	/**
@@ -493,6 +626,443 @@ public interface NativeLmdbQuerySource {
 		long NOT_COVERED = -2L;
 
 		/**
+		 * Forward-only physical CSF page traversal. Header counts and trait bits do not decode vector payloads; row and
+		 * fiber access remains page-local and allocation-free.
+		 */
+		interface AdjacencyPageCursor extends AutoCloseable {
+			boolean advance();
+
+			int rowCount();
+
+			int fiberCount();
+
+			long quadCount();
+
+			long firstRow();
+
+			long rowAt(int rowIndex);
+
+			long rowQuadCount(int rowIndex);
+
+			int rowFiberCount(int rowIndex);
+
+			long neighborAt(int rowIndex, int localFiber);
+
+			long fiberContextCount(int rowIndex, int localFiber);
+
+			/**
+			 * Bulk-decodes distinct neighbor fibers and their accepted-context multiplicities from one page-local row.
+			 * Returns zero at the end of the row.
+			 */
+			int copyRowFibers(int rowIndex, int fromFiber, int length, long[] neighborTarget, int neighborOffset,
+					long[] multiplicityTarget, int multiplicityOffset);
+
+			boolean uniformRowTermKind();
+
+			boolean uniformRowLiteralDatatype();
+
+			boolean uniformNeighborTermKind();
+
+			boolean uniformNeighborLiteralDatatype();
+
+			@Override
+			default void close() {
+			}
+		}
+
+		/** Physical page traversal, or {@code null} when this visible view is not an exact immutable base. */
+		default AdjacencyPageCursor openPageCursor() {
+			return null;
+		}
+
+		/** Number of physical pages in an exact immutable view, or {@code -1} when page partitioning is unavailable. */
+		default long pageCount() {
+			return -1L;
+		}
+
+		/** Bounded physical-page traversal, or {@code null} when this visible view cannot expose exact page morsels. */
+		default AdjacencyPageCursor openPageCursor(long fromPage, long toPage) {
+			return null;
+		}
+
+		/** Fixed-capacity primitive batch of predicate-plane metadata. */
+		final class PlaneBatch {
+			private final long[] predicates;
+			private final long[] quadCounts;
+			private final long[] socRootCounts;
+			private final long[] oscRootCounts;
+			private int size;
+
+			public PlaneBatch(int capacity) {
+				if (capacity <= 0) {
+					throw new IllegalArgumentException("plane batch capacity must be positive");
+				}
+				predicates = new long[capacity];
+				quadCounts = new long[capacity];
+				socRootCounts = new long[capacity];
+				oscRootCounts = new long[capacity];
+			}
+
+			public int capacity() {
+				return predicates.length;
+			}
+
+			public int size() {
+				return size;
+			}
+
+			public long[] predicates() {
+				return predicates;
+			}
+
+			public long[] quadCounts() {
+				return quadCounts;
+			}
+
+			public long[] socRootCounts() {
+				return socRootCounts;
+			}
+
+			public long[] oscRootCounts() {
+				return oscRootCounts;
+			}
+
+			public void clear() {
+				size = 0;
+			}
+
+			public void append(long predicate, long quadCount, long socRootCount, long oscRootCount) {
+				if (size == capacity()) {
+					throw new IllegalStateException("plane batch is full");
+				}
+				predicates[size] = predicate;
+				quadCounts[size] = quadCount;
+				socRootCounts[size] = socRootCount;
+				oscRootCounts[size] = oscRootCount;
+				size++;
+			}
+		}
+
+		/** Fixed-capacity primitive batch of SOC/OSC roots and their lazy run coordinates. */
+		final class RootBatch {
+			public static final int DISTINCT_NEIGHBOR_COUNT_AVAILABLE = 1;
+			public static final int UNIFORM_CONTEXT = 1 << 1;
+			public static final int EMPTY_ID_TYPE = Integer.MAX_VALUE;
+			public static final int MIXED_ID_TYPES = Integer.MIN_VALUE;
+			public static final int EMPTY_TERM_KIND = Integer.MAX_VALUE;
+			public static final int MIXED_TERM_KINDS = Integer.MIN_VALUE;
+			public static final int EMPTY_CORE_DATATYPE_TAG = Integer.MAX_VALUE;
+
+			private final long[] rootIds;
+			private final int[] predicateOrdinals;
+			private final long[] runHandles;
+			private final long[] quadMultiplicities;
+			private final long[] distinctNeighborCounts;
+			private final int[] flags;
+			private int size;
+			private int uniformRootIdType = EMPTY_ID_TYPE;
+			private int uniformRootTermKind = EMPTY_TERM_KIND;
+			private int uniformRootCoreDatatypeTag = EMPTY_CORE_DATATYPE_TAG;
+
+			public RootBatch(int capacity) {
+				if (capacity <= 0) {
+					throw new IllegalArgumentException("root batch capacity must be positive");
+				}
+				rootIds = new long[capacity];
+				predicateOrdinals = new int[capacity];
+				runHandles = new long[capacity];
+				quadMultiplicities = new long[capacity];
+				distinctNeighborCounts = new long[capacity];
+				flags = new int[capacity];
+			}
+
+			public int capacity() {
+				return rootIds.length;
+			}
+
+			public int size() {
+				return size;
+			}
+
+			public long[] rootIds() {
+				return rootIds;
+			}
+
+			public int[] predicateOrdinals() {
+				return predicateOrdinals;
+			}
+
+			public long[] runHandles() {
+				return runHandles;
+			}
+
+			public long[] quadMultiplicities() {
+				return quadMultiplicities;
+			}
+
+			public long[] distinctNeighborCounts() {
+				return distinctNeighborCounts;
+			}
+
+			public int[] flags() {
+				return flags;
+			}
+
+			/** Exact {@link ValueIds} type shared by every root lane, or an empty/mixed sentinel. */
+			public int uniformRootIdType() {
+				return uniformRootIdType;
+			}
+
+			/** RDF term kind shared by every root lane, or an empty/mixed sentinel. */
+			public int uniformRootTermKind() {
+				return uniformRootTermKind;
+			}
+
+			/**
+			 * Stable tag shared by all literal lanes, zero when mixed/unknown, or the empty sentinel when none exist.
+			 */
+			public int uniformRootCoreDatatypeTag() {
+				return uniformRootCoreDatatypeTag;
+			}
+
+			public void clear() {
+				size = 0;
+				uniformRootIdType = EMPTY_ID_TYPE;
+				uniformRootTermKind = EMPTY_TERM_KIND;
+				uniformRootCoreDatatypeTag = EMPTY_CORE_DATATYPE_TAG;
+			}
+
+			public void append(long rootId, int predicateOrdinal, long runHandle, long quadMultiplicity,
+					long distinctNeighborCount, int rowFlags) {
+				if (size == capacity()) {
+					throw new IllegalStateException("root batch is full");
+				}
+				int rootIdType = ValueIds.getIdType(rootId);
+				int rootTermKind = ValueIds.termKind(rootId);
+				if (size == 0) {
+					uniformRootIdType = rootIdType;
+					uniformRootTermKind = rootTermKind;
+				} else if (uniformRootIdType != rootIdType) {
+					uniformRootIdType = MIXED_ID_TYPES;
+				}
+				if (size != 0 && uniformRootTermKind != rootTermKind) {
+					uniformRootTermKind = MIXED_TERM_KINDS;
+				}
+				if (rootTermKind == ValueIds.TERM_KIND_LITERAL) {
+					int datatypeTag = ValueIds.encodedCoreDatatypeTag(rootId);
+					if (uniformRootCoreDatatypeTag == EMPTY_CORE_DATATYPE_TAG) {
+						uniformRootCoreDatatypeTag = datatypeTag;
+					} else if (uniformRootCoreDatatypeTag != datatypeTag) {
+						uniformRootCoreDatatypeTag = 0;
+					}
+				}
+				rootIds[size] = rootId;
+				predicateOrdinals[size] = predicateOrdinal;
+				runHandles[size] = runHandle;
+				quadMultiplicities[size] = quadMultiplicity;
+				distinctNeighborCounts[size] = distinctNeighborCount;
+				flags[size] = rowFlags;
+				size++;
+			}
+		}
+
+		/**
+		 * Fixed-capacity primitive batch of ordered distinct neighbors. Each lane carries the number of accepted
+		 * context rows represented by that fiber. The cursor state is retained in this reusable object between fills.
+		 */
+		final class FiberBatch {
+			private static final int DECODE_CAPACITY = 1_024;
+			public static final int EMPTY_ID_TYPE = Integer.MAX_VALUE;
+			public static final int MIXED_ID_TYPES = Integer.MIN_VALUE;
+			public static final int EMPTY_TERM_KIND = Integer.MAX_VALUE;
+			public static final int MIXED_TERM_KINDS = Integer.MIN_VALUE;
+			public static final int EMPTY_CORE_DATATYPE_TAG = Integer.MAX_VALUE;
+
+			private final long[] neighborIds;
+			private final long[] contextMultiplicities;
+			private final long[] decodedNeighbors = new long[DECODE_CAPACITY];
+			private int size;
+			private Object runOwner;
+			private long rootId;
+			private long runHandle;
+			private long runSize;
+			private long nextRunOffset;
+			private long loadedRunOffset;
+			private int decodedIndex;
+			private int decodedCount;
+			private boolean pendingFiber;
+			private long pendingNeighbor;
+			private long pendingMultiplicity;
+			private int uniformNeighborIdType = EMPTY_ID_TYPE;
+			private int uniformNeighborTermKind = EMPTY_TERM_KIND;
+			private int uniformNeighborCoreDatatypeTag = EMPTY_CORE_DATATYPE_TAG;
+
+			public FiberBatch(int capacity) {
+				if (capacity <= 0) {
+					throw new IllegalArgumentException("fiber batch capacity must be positive");
+				}
+				neighborIds = new long[capacity];
+				contextMultiplicities = new long[capacity];
+				runHandle = Long.MIN_VALUE;
+			}
+
+			public int capacity() {
+				return neighborIds.length;
+			}
+
+			public int size() {
+				return size;
+			}
+
+			public long[] neighborIds() {
+				return neighborIds;
+			}
+
+			public long[] contextMultiplicities() {
+				return contextMultiplicities;
+			}
+
+			public long nextRunOffset() {
+				return nextRunOffset;
+			}
+
+			/** Exact {@link ValueIds} type shared by every neighbor lane, or an empty/mixed sentinel. */
+			public int uniformNeighborIdType() {
+				return uniformNeighborIdType;
+			}
+
+			/** RDF term kind shared by every neighbor lane, or an empty/mixed sentinel. */
+			public int uniformNeighborTermKind() {
+				return uniformNeighborTermKind;
+			}
+
+			/**
+			 * Stable tag shared by all literal lanes, zero when mixed/unknown, or the empty sentinel when none exist.
+			 */
+			public int uniformNeighborCoreDatatypeTag() {
+				return uniformNeighborCoreDatatypeTag;
+			}
+
+			private void prepare(Object currentRunOwner, long currentRootId, long currentRunHandle,
+					long currentRunSize) {
+				size = 0;
+				uniformNeighborIdType = EMPTY_ID_TYPE;
+				uniformNeighborTermKind = EMPTY_TERM_KIND;
+				uniformNeighborCoreDatatypeTag = EMPTY_CORE_DATATYPE_TAG;
+				if (runOwner != currentRunOwner || rootId != currentRootId || runHandle != currentRunHandle
+						|| runSize != currentRunSize) {
+					runOwner = currentRunOwner;
+					rootId = currentRootId;
+					runHandle = currentRunHandle;
+					runSize = currentRunSize;
+					nextRunOffset = 0;
+					loadedRunOffset = 0;
+					decodedIndex = 0;
+					decodedCount = 0;
+					pendingFiber = false;
+					pendingNeighbor = 0L;
+					pendingMultiplicity = 0L;
+				}
+			}
+
+			/**
+			 * Starts a fill whose payload will be written by the physical run cursor directly into this batch. The
+			 * cursor remains the lifetime owner: page or vector addresses never escape into the reusable batch.
+			 */
+			public void preparePhysical(Object currentRunOwner, long currentRootId, long currentRunHandle,
+					long currentRunSize) {
+				prepare(currentRunOwner, currentRootId, currentRunHandle, currentRunSize);
+			}
+
+			/**
+			 * Commits fibers already copied into the batch arrays by a physical cursor and advances the represented
+			 * quad offset by their context multiplicities.
+			 */
+			public void commitPhysical(int copied) {
+				commitPhysical(copied, true);
+			}
+
+			/** Commits a physical copy while optionally deriving batch-wide term traits. */
+			public void commitPhysical(int copied, boolean classifyTermTraits) {
+				if (copied < 0 || copied > capacity()) {
+					throw new IllegalArgumentException("invalid physical fiber count: " + copied);
+				}
+				if (!classifyTermTraits) {
+					for (int i = 0; i < copied; i++) {
+						long multiplicity = contextMultiplicities[i];
+						if (multiplicity <= 0L || nextRunOffset > runSize - multiplicity) {
+							throw new IllegalStateException("physical fiber exceeds its declared run");
+						}
+						nextRunOffset += multiplicity;
+					}
+					size = copied;
+					return;
+				}
+				for (int i = 0; i < copied; i++) {
+					long neighbor = neighborIds[i];
+					long multiplicity = contextMultiplicities[i];
+					if (multiplicity <= 0L || nextRunOffset > runSize - multiplicity) {
+						throw new IllegalStateException("physical fiber exceeds its declared run");
+					}
+					append(neighbor, multiplicity);
+					nextRunOffset += multiplicity;
+				}
+			}
+
+			private void append(long neighborId, long contextMultiplicity) {
+				int neighborIdType = ValueIds.getIdType(neighborId);
+				int neighborTermKind = ValueIds.termKind(neighborId);
+				if (size == 0) {
+					uniformNeighborIdType = neighborIdType;
+					uniformNeighborTermKind = neighborTermKind;
+				} else if (uniformNeighborIdType != neighborIdType) {
+					uniformNeighborIdType = MIXED_ID_TYPES;
+				}
+				if (size != 0 && uniformNeighborTermKind != neighborTermKind) {
+					uniformNeighborTermKind = MIXED_TERM_KINDS;
+				}
+				if (neighborTermKind == ValueIds.TERM_KIND_LITERAL) {
+					int datatypeTag = ValueIds.encodedCoreDatatypeTag(neighborId);
+					if (uniformNeighborCoreDatatypeTag == EMPTY_CORE_DATATYPE_TAG) {
+						uniformNeighborCoreDatatypeTag = datatypeTag;
+					} else if (uniformNeighborCoreDatatypeTag != datatypeTag) {
+						uniformNeighborCoreDatatypeTag = 0;
+					}
+				}
+				neighborIds[size] = neighborId;
+				contextMultiplicities[size] = contextMultiplicity;
+				size++;
+			}
+
+			private boolean ensureDecoded(RunView view, long currentRunHandle) {
+				if (decodedIndex < decodedCount) {
+					return true;
+				}
+				if (loadedRunOffset >= runSize) {
+					return false;
+				}
+				int requested = (int) Math.min(decodedNeighbors.length, runSize - loadedRunOffset);
+				int copied = view.copyNeighbors(currentRunHandle, loadedRunOffset, requested, decodedNeighbors, 0);
+				if (copied <= 0) {
+					throw new IllegalStateException("adjacency fiber run ended before its declared size");
+				}
+				loadedRunOffset += copied;
+				decodedIndex = 0;
+				decodedCount = copied;
+				return true;
+			}
+
+			private long peekDecoded() {
+				return decodedNeighbors[decodedIndex];
+			}
+
+			private void consumeDecoded() {
+				decodedIndex++;
+				nextRunOffset++;
+			}
+		}
+
+		/**
 		 * Borrowed immutable array slice for a bound run. The backing array belongs to the immutable adjacency
 		 * generation and remains valid for the lifetime of the view that supplied it. Implementations return false when
 		 * their packed representation cannot expose a zero-copy slice; callers then retain the exact copy fallback.
@@ -567,6 +1137,8 @@ public interface NativeLmdbQuerySource {
 		 * already has instead of converting that coordinate to a key and immediately searching the same index again.
 		 */
 		interface KeyRunCursor extends AutoCloseable {
+			/** Metadata is unavailable from this cursor without decoding the run. */
+			long DISTINCT_NEIGHBOR_COUNT_UNKNOWN = -1L;
 
 			boolean advance();
 
@@ -591,11 +1163,124 @@ public interface NativeLmdbQuerySource {
 				return copied;
 			}
 
+			/**
+			 * Bulk-copies successive roots and their exact quad multiplicities. A physical cursor can override this to
+			 * retain its page/vector coordinate while filling both columns, without materializing run handles.
+			 */
+			default int fillRootCounts(long[] rootTarget, int rootOffset, long[] countTarget, int countOffset,
+					int maximum) {
+				Objects.requireNonNull(rootTarget, "rootTarget");
+				Objects.requireNonNull(countTarget, "countTarget");
+				if (rootOffset < 0 || countOffset < 0 || maximum < 0 || rootOffset > rootTarget.length - maximum
+						|| countOffset > countTarget.length - maximum) {
+					throw new IllegalArgumentException("invalid root-count batch target range");
+				}
+				int copied = 0;
+				while (copied < maximum && advance()) {
+					rootTarget[rootOffset + copied] = key();
+					countTarget[countOffset + copied] = runSize();
+					copied++;
+				}
+				return copied;
+			}
+
+			/**
+			 * Fills root metadata without touching neighbor or context payloads unless the physical cursor must derive
+			 * a requested metadata field. The batch is cleared before use.
+			 */
+			default int fillRoots(int predicateOrdinal, RootBatch target) {
+				return fillRoots(predicateOrdinal, target, true);
+			}
+
+			/**
+			 * Fills root coordinates and only the metadata requested by the consumer. Kernels that will consume fibers
+			 * do not need to count distinct neighbors while building the root batch.
+			 */
+			default int fillRoots(int predicateOrdinal, RootBatch target, boolean includeDistinctNeighborCount) {
+				Objects.requireNonNull(target, "target");
+				target.clear();
+				while (target.size() < target.capacity() && advance()) {
+					long distinct = includeDistinctNeighborCount ? distinctNeighborCount()
+							: DISTINCT_NEIGHBOR_COUNT_UNKNOWN;
+					int flags = distinct >= 0L ? RootBatch.DISTINCT_NEIGHBOR_COUNT_AVAILABLE : 0;
+					target.append(key(), predicateOrdinal, runHandle(), runSize(), distinct, flags);
+				}
+				return target.size();
+			}
+
 			long key();
 
 			long runHandle();
 
 			long runSize();
+
+			/**
+			 * Number of distinct neighbor fibers in the current run, or {@link #DISTINCT_NEIGHBOR_COUNT_UNKNOWN} when
+			 * the physical view cannot answer from row metadata.
+			 */
+			default long distinctNeighborCount() {
+				return DISTINCT_NEIGHBOR_COUNT_UNKNOWN;
+			}
+
+			/**
+			 * Groups the current ordered run into distinct-neighbor fibers. Reusing the same batch continues from the
+			 * prior fill; moving the cursor to another root restarts it. Context values remain undecoded because
+			 * unrestricted context multiplicity is the number of adjacent equal-neighbor rows.
+			 */
+			default int fillFibers(FiberBatch target) {
+				Objects.requireNonNull(target, "target");
+				long currentRunSize = runSize();
+				target.prepare(this, key(), runHandle(), currentRunSize);
+				while (target.size() < target.capacity() && target.nextRunOffset < currentRunSize) {
+					long neighbor = neighborAt(target.nextRunOffset);
+					long start = target.nextRunOffset++;
+					while (target.nextRunOffset < currentRunSize
+							&& neighborAt(target.nextRunOffset) == neighbor) {
+						target.nextRunOffset++;
+					}
+					target.append(neighbor, target.nextRunOffset - start);
+				}
+				return target.size();
+			}
+
+			/**
+			 * Physical fiber fill with an explicit trait requirement. Consumers that already classify each neighbor can
+			 * avoid deriving the same batch-wide term traits a second time.
+			 */
+			default int fillFibers(FiberBatch target, boolean classifyTermTraits) {
+				return fillFibers(target);
+			}
+
+			/**
+			 * Copies distinct neighbor fibers from the current run directly into consumer-owned primitive lanes. The
+			 * offset is expressed in represented quad rows and must be at a fiber boundary. Physical implementations
+			 * may decode from their already-bound page/vector coordinate; the address and its lease never escape this
+			 * cursor.
+			 */
+			default int copyFibers(long runOffset, int length, long[] neighborTarget, int neighborOffset,
+					long[] multiplicityTarget, int multiplicityOffset) {
+				Objects.requireNonNull(neighborTarget, "neighborTarget");
+				Objects.requireNonNull(multiplicityTarget, "multiplicityTarget");
+				long currentRunSize = runSize();
+				if (runOffset < 0L || runOffset > currentRunSize || length < 0 || neighborOffset < 0
+						|| multiplicityOffset < 0 || neighborOffset > neighborTarget.length - length
+						|| multiplicityOffset > multiplicityTarget.length - length) {
+					throw new IllegalArgumentException("invalid key-run fiber-copy range");
+				}
+				int copied = 0;
+				long offset = runOffset;
+				while (copied < length && offset < currentRunSize) {
+					long neighbor = neighborAt(offset);
+					long start = offset++;
+					while (offset < currentRunSize && neighborAt(offset) == neighbor) {
+						offset++;
+					}
+					neighborTarget[neighborOffset + copied] = neighbor;
+					multiplicityTarget[multiplicityOffset + copied] = offset - start;
+					copied++;
+				}
+				return copied;
+			}
 
 			long neighborAt(long runOffset);
 
@@ -619,6 +1304,11 @@ public interface NativeLmdbQuerySource {
 		default boolean borrowNeighbors(long key, NeighborSlice target) {
 			Objects.requireNonNull(target, "target");
 			target.clear();
+			return false;
+		}
+
+		/** True when every key can be bound through {@link #borrowNeighbors(long, NeighborSlice)}. */
+		default boolean supportsBorrowedNeighbors() {
 			return false;
 		}
 
@@ -686,6 +1376,37 @@ public interface NativeLmdbQuerySource {
 				}
 			}
 			return found;
+		}
+
+		/**
+		 * Groups an ordered run retained in a {@link RootBatch} into distinct-neighbor fibers. Reusing the same target
+		 * continues the run without looking its root up again.
+		 */
+		default int fillFibers(long rootId, long runHandle, FiberBatch target) {
+			Objects.requireNonNull(target, "target");
+			if (runHandle <= 0L) {
+				throw new IllegalArgumentException("fiber scan requires a positive run handle");
+			}
+			long currentRunSize = size(runHandle);
+			target.prepare(this, rootId, runHandle, currentRunSize);
+			while (target.size() < target.capacity()) {
+				if (!target.pendingFiber) {
+					if (!target.ensureDecoded(this, runHandle)) {
+						break;
+					}
+					target.pendingNeighbor = target.peekDecoded();
+					target.pendingMultiplicity = 0L;
+					target.pendingFiber = true;
+				}
+				while (target.ensureDecoded(this, runHandle)
+						&& target.peekDecoded() == target.pendingNeighbor) {
+					target.consumeDecoded();
+					target.pendingMultiplicity++;
+				}
+				target.append(target.pendingNeighbor, target.pendingMultiplicity);
+				target.pendingFiber = false;
+			}
+			return target.size();
 		}
 
 		/** True when this view can enumerate its distinct keys through {@link #keyCount()} and {@link #keyAt(long)}. */
@@ -846,6 +1567,11 @@ public interface NativeLmdbQuerySource {
 				@Override
 				public long runSize() {
 					return delegate.runSize();
+				}
+
+				@Override
+				public long distinctNeighborCount() {
+					return delegate.distinctNeighborCount();
 				}
 
 				@Override

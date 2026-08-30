@@ -27,6 +27,7 @@ import java.util.stream.Collectors;
  */
 public final class LmdbRuntimeProperties {
 	private static final String HOT_COUNTERS = "rdf4j.lmdb.hotCounters";
+	private static final String ADJACENCY_SYNOPSIS = "rdf4j.lmdb.directAdjacency.synopsis.enabled";
 
 	private static final Parsing BOOLEAN = (value, defaultEnabled) -> value == null ? defaultEnabled
 			: Boolean.parseBoolean(value);
@@ -111,6 +112,8 @@ public final class LmdbRuntimeProperties {
 					"Serve eligible root scans from direct adjacency.", BOOLEAN),
 			on("Direct adjacency", "rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "Scan aggregates",
 					"Use direct-adjacency aggregate shortcuts for eligible scans.", BOOLEAN),
+			off("Direct adjacency", ADJACENCY_SYNOPSIS, "Retained adjacency synopses",
+					"Retain exact global label and root-domain summaries in addition to SOC/OSC storage.", BOOLEAN),
 
 			on("Factorization", "rdf4j.lmdb.bareFragments.enabled", "Bare native fragments",
 					"Compile projection-less basic graph pattern fragments natively.", UNLESS_FALSE),
@@ -275,6 +278,15 @@ public final class LmdbRuntimeProperties {
 	/** A volatile hot-path gate updated by {@link #set(String, boolean)} without a per-event property lookup. */
 	public static boolean hotCountersEnabled() {
 		return hotCountersEnabled;
+	}
+
+	/**
+	 * Returns whether queries may build or consume retained global adjacency synopses. This does not disable intrinsic
+	 * SOC/OSC plane, root, fiber, or multiplicity metadata. The value is sampled at the query access boundary so the
+	 * runtime property remains live.
+	 */
+	public static boolean adjacencySynopsisEnabled() {
+		return Boolean.parseBoolean(System.getProperty(ADJACENCY_SYNOPSIS));
 	}
 
 	private static Property on(String group, String name, String label, String description, Parsing parsing) {

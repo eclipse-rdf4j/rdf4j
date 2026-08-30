@@ -30,6 +30,7 @@ class LmdbRuntimePropertiesTest {
 	private static final String NATIVE_ENGINE = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String COST_CALIBRATION = "rdf4j.lmdb.costCalibration.enabled";
 	private static final String ADAPTIVE_PROBE = "rdf4j.lmdb.adaptiveProbe.enabled";
+	private static final String ADJACENCY_SYNOPSIS = "rdf4j.lmdb.directAdjacency.synopsis.enabled";
 
 	@Test
 	void catalogListsStableAllowlistedStateAndAppliesCanonicalBooleans() throws Exception {
@@ -79,6 +80,30 @@ class LmdbRuntimePropertiesTest {
 			assertThat(System.getProperty(unknown)).isEqualTo(previous);
 		} finally {
 			restore(unknown, previous);
+		}
+	}
+
+	@Test
+	void retainedAdjacencySynopsesDefaultOffAndCanBeEnabledLive() throws Exception {
+		Class<?> catalog = Class.forName("org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties");
+		Method list = catalog.getMethod("list");
+		Method set = catalog.getMethod("set", String.class, boolean.class);
+		Method enabled = catalog.getMethod("adjacencySynopsisEnabled");
+		String previous = System.getProperty(ADJACENCY_SYNOPSIS);
+		try {
+			System.clearProperty(ADJACENCY_SYNOPSIS);
+			Object defaultState = stateByName(invokeList(list), ADJACENCY_SYNOPSIS);
+			assertThat(booleanValue(defaultState, "defaultEnabled")).isFalse();
+			assertThat(booleanValue(defaultState, "enabled")).isFalse();
+			assertThat(booleanValue(defaultState, "explicitlySet")).isFalse();
+			assertThat(enabled.invoke(null)).isEqualTo(false);
+
+			set.invoke(null, ADJACENCY_SYNOPSIS, true);
+			assertThat(enabled.invoke(null)).isEqualTo(true);
+			set.invoke(null, ADJACENCY_SYNOPSIS, false);
+			assertThat(enabled.invoke(null)).isEqualTo(false);
+		} finally {
+			restore(ADJACENCY_SYNOPSIS, previous);
 		}
 	}
 

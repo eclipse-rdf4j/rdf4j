@@ -17,9 +17,59 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.junit.jupiter.api.Test;
 
 class CompactCsfPageTest {
+
+	@Test
+	void pageTraitsDescribeRootAndNeighborKindsAndLiteralDatatypesIndependently() {
+		CsfPageData data = new CsfPageData();
+		data.appendRow(id(ValueIds.T_URI, 1), new long[] { id(ValueIds.T_URI, 101) }, new int[] { 0 },
+				new int[] { 2 }, new long[] { 0, id(ValueIds.T_URI, 1_001) }, 1, 2);
+		data.appendRow(id(ValueIds.T_SHORTSTRING, 2), new long[] { id(ValueIds.T_SHORTSTRING, 102) },
+				new int[] { 0 }, new int[] { 1 }, new long[] { 0 }, 1, 1);
+		data.appendRow(id(ValueIds.T_BNODE, 3), new long[] { id(ValueIds.T_BNODE, 103) }, new int[] { 0 },
+				new int[] { 1 }, new long[] { 0 }, 1, 1);
+		data.appendRow(id(ValueIds.T_SHORTSTRING, 4), new long[] { id(ValueIds.T_SHORTSTRING, 104) },
+				new int[] { 0 }, new int[] { 2 }, new long[] { 0, id(ValueIds.T_URI, 1_004) }, 1, 2);
+
+		CompactCsfPageEncoder.PageImage image = new CompactCsfPageEncoder().tryEncode(data, false, 23);
+		int flags = LeBytes.getUnsignedShort(image.bytes(), CompactCsfPageFormat.FLAGS_AT);
+
+		assertThat(flags & 1 << 6).as("mixed root term kinds").isZero();
+		assertThat(flags & 1 << 7).as("all literal roots are xsd:string").isNotZero();
+		assertThat(flags & 1 << 8).as("mixed neighbor term kinds").isZero();
+		assertThat(flags & 1 << 9).as("all literal neighbors are xsd:string").isNotZero();
+	}
+
+	@Test
+	void legacyLiteralPageTraitsUseBatchedDatatypeHeadersForBothColumns() {
+		CsfPageData data = new CsfPageData();
+		data.appendRow(id(ValueIds.T_URI, 1), new long[] { id(ValueIds.T_URI, 101) }, new int[] { 0 },
+				new int[] { 1 }, new long[] { 0 }, 1, 1);
+		data.appendRow(id(ValueIds.T_LITERAL, 2), new long[] { id(ValueIds.T_LITERAL, 102) }, new int[] { 0 },
+				new int[] { 2 }, new long[] { 0, id(ValueIds.T_URI, 1_002) }, 1, 2);
+		data.appendRow(id(ValueIds.T_BNODE, 3), new long[] { id(ValueIds.T_BNODE, 103) }, new int[] { 0 },
+				new int[] { 1 }, new long[] { 0 }, 1, 1);
+		data.appendRow(id(ValueIds.T_LITERAL, 4), new long[] { id(ValueIds.T_LITERAL, 104) }, new int[] { 0 },
+				new int[] { 1 }, new long[] { 0 }, 1, 1);
+		int[] lookupCalls = new int[1];
+		CompactCsfPageEncoder encoder = new CompactCsfPageEncoder((ids, offset, length, target, targetOffset) -> {
+			lookupCalls[0]++;
+			Arrays.fill(target, targetOffset, targetOffset + length, id(ValueIds.T_URI, 9_999));
+			return length;
+		});
+
+		CompactCsfPageEncoder.PageImage image = encoder.tryEncode(data, false, 24);
+		int flags = LeBytes.getUnsignedShort(image.bytes(), CompactCsfPageFormat.FLAGS_AT);
+
+		assertThat(flags & 1 << 6).isZero();
+		assertThat(flags & 1 << 7).isNotZero();
+		assertThat(flags & 1 << 8).isZero();
+		assertThat(flags & 1 << 9).isNotZero();
+		assertThat(lookupCalls[0]).as("one batch for each literal-bearing column").isEqualTo(2);
+	}
 
 	@Test
 	void fixedHeaderOmitsRedundantColumnsAndUsesCapacityClasses() {

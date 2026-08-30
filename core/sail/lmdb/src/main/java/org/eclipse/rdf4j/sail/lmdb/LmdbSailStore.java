@@ -3445,6 +3445,15 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public int literalDatatypeIds(long[] ids, int offset, int length, long[] target, int targetOffset) {
+			try {
+				return valueStore.literalDatatypeIds(ids, offset, length, target, targetOffset);
+			} catch (IOException e) {
+				throw new QueryEvaluationException(e);
+			}
+		}
+
+		@Override
 		public Value lazyValue(long id) throws QueryEvaluationException {
 			try {
 				// no open-check — see idOf
@@ -3930,6 +3939,53 @@ class LmdbSailStore implements SailStore {
 						ownedAdjacencies = direct.attachToProbe(ownedAdjacencies);
 					}
 					return result;
+				}
+
+				@Override
+				public NativeLmdbQuerySource.LabelSynopsis labelSynopsis(long predicate, boolean bySubject)
+						throws IOException {
+					checkOpen();
+					if (!hasStatementsInSource()) {
+						return null;
+					}
+					LmdbAdjacencyReadView view = exactAdjacencyView(false);
+					return view == null ? null
+							: directAdjacency.labelSynopsis(view, predicate, bySubject, explicit);
+				}
+
+				@Override
+				public NativeLmdbQuerySource.NodeDomainSynopsis nodeDomainSynopsis(boolean bySubject)
+						throws IOException {
+					checkOpen();
+					if (!hasStatementsInSource()) {
+						return null;
+					}
+					LmdbAdjacencyReadView view = variablePredicateView();
+					return view == null ? null : directAdjacency.nodeDomainSynopsis(view, bySubject, explicit);
+				}
+
+				@Override
+				public NativeLmdbQuerySource.NodeDomainPresence nodeDomainPresence(boolean bySubject)
+						throws IOException {
+					checkOpen();
+					if (!hasStatementsInSource()) {
+						return null;
+					}
+					LmdbAdjacencyReadView view = variablePredicateView();
+					return view == null ? null : directAdjacency.nodeDomainPresence(view, bySubject, explicit);
+				}
+
+				@Override
+				public NativeLmdbQuerySource.DatatypeSummary nodeDomainDatatypeSummary(boolean bySubject,
+						NativeLmdbQuerySource.DatatypeSummaryBuildObserver observer) throws IOException {
+					checkOpen();
+					if (!hasStatementsInSource()) {
+						return null;
+					}
+					LmdbAdjacencyReadView view = variablePredicateView();
+					return view == null ? null
+							: directAdjacency.nodeDomainDatatypeSummary(view, bySubject, explicit,
+									valueStore::literalDatatypeIds, observer);
 				}
 
 				@Override
@@ -4523,6 +4579,15 @@ class LmdbSailStore implements SailStore {
 		public long literalDatatypeId(long id) {
 			try {
 				return valueStore.literalDatatypeId(id);
+			} catch (IOException e) {
+				throw new QueryEvaluationException(e);
+			}
+		}
+
+		@Override
+		public int literalDatatypeIds(long[] ids, int offset, int length, long[] target, int targetOffset) {
+			try {
+				return valueStore.literalDatatypeIds(ids, offset, length, target, targetOffset);
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
 			}
@@ -5134,6 +5199,38 @@ class LmdbSailStore implements SailStore {
 					close();
 					throw failure;
 				}
+			}
+
+			@Override
+			public NativeLmdbQuerySource.LabelSynopsis labelSynopsis(long predicate, boolean bySubject)
+					throws IOException {
+				if (!variablePredicateEligible()) {
+					return null;
+				}
+				return directAdjacency.labelSynopsis(adjacencyView, predicate, bySubject, explicit);
+			}
+
+			@Override
+			public NativeLmdbQuerySource.NodeDomainSynopsis nodeDomainSynopsis(boolean bySubject) throws IOException {
+				return variablePredicateEligible()
+						? directAdjacency.nodeDomainSynopsis(adjacencyView, bySubject, explicit)
+						: null;
+			}
+
+			@Override
+			public NativeLmdbQuerySource.NodeDomainPresence nodeDomainPresence(boolean bySubject) throws IOException {
+				return variablePredicateEligible()
+						? directAdjacency.nodeDomainPresence(adjacencyView, bySubject, explicit)
+						: null;
+			}
+
+			@Override
+			public NativeLmdbQuerySource.DatatypeSummary nodeDomainDatatypeSummary(boolean bySubject,
+					NativeLmdbQuerySource.DatatypeSummaryBuildObserver observer) throws IOException {
+				return variablePredicateEligible()
+						? directAdjacency.nodeDomainDatatypeSummary(adjacencyView, bySubject, explicit,
+								valueStore::literalDatatypeIds, observer)
+						: null;
 			}
 
 			@Override

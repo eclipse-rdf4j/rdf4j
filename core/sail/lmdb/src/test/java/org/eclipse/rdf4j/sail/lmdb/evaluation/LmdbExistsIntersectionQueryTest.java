@@ -18,6 +18,8 @@ import java.io.File;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -42,6 +44,7 @@ import org.junit.jupiter.api.io.TempDir;
 public class LmdbExistsIntersectionQueryTest {
 
 	private static final String EX = "http://example.com/";
+	private static final String SYNOPSIS_PROPERTY = "rdf4j.lmdb.directAdjacency.synopsis.enabled";
 
 	private static final String SUBJECTS_ALSO_OBJECTS = "SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {\n"
 			+ "  ?node ?p ?o .\n"
@@ -57,6 +60,7 @@ public class LmdbExistsIntersectionQueryTest {
 	File dataDir;
 
 	private SailRepository repository;
+	private LmdbStore store;
 
 	@BeforeEach
 	public void resetCostCalibration() {
@@ -65,6 +69,7 @@ public class LmdbExistsIntersectionQueryTest {
 
 	@AfterEach
 	public void tearDown() {
+		System.clearProperty(SYNOPSIS_PROPERTY);
 		if (repository != null) {
 			repository.shutDown();
 		}
@@ -77,6 +82,53 @@ public class LmdbExistsIntersectionQueryTest {
 		long before = LmdbNativeExistsIntersection.OPENED.get();
 		assertThat(count(SUBJECTS_ALSO_OBJECTS)).isEqualTo(6L);
 		assertThat(LmdbNativeExistsIntersection.OPENED.get()).isGreaterThan(before);
+	}
+
+	@Test
+	public void subjectsAlsoObjectsUsesSocOscRootIntersection() throws ReflectiveOperationException {
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		openRepository("spoc,ospc,psoc,posc", 2000);
+
+		AtomicLong rootIntersections = metric("ADJACENCY_ROOT_INTERSECTIONS");
+		AtomicLong rootsVisited = metric("ADJACENCY_ROOTS_VISITED");
+		AtomicLong synopsisIntersections = metric("DOMAIN_SYNOPSIS_INTERSECTIONS");
+		AtomicLong streamingIntersections = metric("DOMAIN_SYNOPSIS_STREAMING_INTERSECTIONS");
+		AtomicLong presenceIntersections = metric("DOMAIN_PRESENCE_INTERSECTIONS");
+		AtomicLong preparations = metric("DOMAIN_SYNOPSIS_PREPARATIONS");
+		long before = rootIntersections.get();
+		long rootsVisitedBefore = rootsVisited.get();
+		long synopsisBefore = synopsisIntersections.get();
+		long streamingBefore = streamingIntersections.get();
+		long presenceBefore = presenceIntersections.get();
+		long preparationsBefore = preparations.get();
+		assertThat(count(SUBJECTS_ALSO_OBJECTS)).isEqualTo(6L);
+		assertThat(rootIntersections.get()).isEqualTo(before);
+		assertThat(rootsVisited.get()).isEqualTo(rootsVisitedBefore);
+		assertThat(synopsisIntersections.get()).isGreaterThan(synopsisBefore);
+		assertThat(streamingIntersections.get()).isEqualTo(streamingBefore);
+		assertThat(presenceIntersections.get()).isGreaterThan(presenceBefore);
+		assertThat(preparations.get()).isGreaterThan(preparationsBefore);
+	}
+
+	@Test
+	public void retainedSynopsesDefaultOffAndUseStreamingSocOscRootIntersection()
+			throws ReflectiveOperationException {
+		openRepository("spoc,ospc,psoc,posc", 2000);
+
+		AtomicLong rootIntersections = metric("ADJACENCY_ROOT_INTERSECTIONS");
+		AtomicLong rootsVisited = metric("ADJACENCY_ROOTS_VISITED");
+		AtomicLong synopsisIntersections = metric("DOMAIN_SYNOPSIS_INTERSECTIONS");
+		AtomicLong presenceIntersections = metric("DOMAIN_PRESENCE_INTERSECTIONS");
+		long rootBefore = rootIntersections.get();
+		long rootsVisitedBefore = rootsVisited.get();
+		long synopsisBefore = synopsisIntersections.get();
+		long presenceBefore = presenceIntersections.get();
+
+		assertThat(count(SUBJECTS_ALSO_OBJECTS)).isEqualTo(6L);
+		assertThat(rootIntersections.get()).isGreaterThan(rootBefore);
+		assertThat(rootsVisited.get()).isGreaterThan(rootsVisitedBefore);
+		assertThat(synopsisIntersections.get()).isEqualTo(synopsisBefore);
+		assertThat(presenceIntersections.get()).isEqualTo(presenceBefore);
 	}
 
 	@Test
@@ -181,10 +233,14 @@ public class LmdbExistsIntersectionQueryTest {
 		try {
 			openEmptyRepository("spoc,ospc,psoc,posc");
 			long expected = addRandomGraph();
+			awaitAdjacency();
 
 			long parallelBefore = LmdbNativeExistsIntersection.PARALLEL_RUNS.get();
+			long adjacencyBefore = LmdbNativeExistsIntersection.PARALLEL_ADJACENCY_INTERSECTIONS.get();
 			assertThat(count(SUBJECTS_ALSO_OBJECTS)).isEqualTo(expected);
 			assertThat(LmdbNativeExistsIntersection.PARALLEL_RUNS.get()).isGreaterThan(parallelBefore);
+			assertThat(LmdbNativeExistsIntersection.PARALLEL_ADJACENCY_INTERSECTIONS.get())
+					.isGreaterThan(adjacencyBefore);
 		} finally {
 			System.clearProperty(LmdbNativeExistsIntersection.PARALLEL_MIN_ESTIMATE_PROPERTY);
 		}
@@ -234,6 +290,10 @@ public class LmdbExistsIntersectionQueryTest {
 	}
 
 	private void openRepository(String indexes) {
+		openRepository(indexes, 0);
+	}
+
+	private void openRepository(String indexes, int synopsisBudgetPadding) {
 		openEmptyRepository(indexes);
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
@@ -260,12 +320,23 @@ public class LmdbExistsIntersectionQueryTest {
 			conn.add(h, knows, h);
 			// duplicate in a named graph: must not change any distinct count
 			conn.add(a, knows, b, vf.createIRI(EX, "g1"));
+			// Grow the immutable base while adding only one new incoming root. This lets the synopsis-path test obey
+			// the
+			// same ten-percent production memory ratio without changing the six-node subject/object intersection.
+			Literal paddingObject = vf.createLiteral("domain-synopsis-budget-padding");
+			for (int i = 0; i < synopsisBudgetPadding; i++) {
+				conn.add(vf.createIRI(EX, "padding-subject-" + i), tag, paddingObject);
+			}
+		}
+		if (indexes.contains("ospc")) {
+			awaitAdjacency();
 		}
 	}
 
 	private void openEmptyRepository(String indexes) {
 		LmdbNativeExistsIntersection.resetMetrics();
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig(indexes)));
+		store = new LmdbStore(dataDir, new LmdbStoreConfig(indexes));
+		repository = new SailRepository(store);
 	}
 
 	private long count(String query) {
@@ -273,6 +344,19 @@ public class LmdbExistsIntersectionQueryTest {
 			List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
 			assertThat(result).hasSize(1);
 			return ((Literal) result.get(0).getValue("count")).longValue();
+		}
+	}
+
+	private static AtomicLong metric(String name) throws ReflectiveOperationException {
+		return (AtomicLong) LmdbNativeExistsIntersection.class.getDeclaredField(name).get(null);
+	}
+
+	private void awaitAdjacency() {
+		try {
+			assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError("interrupted while waiting for direct adjacency", e);
 		}
 	}
 }

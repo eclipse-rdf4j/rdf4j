@@ -147,7 +147,7 @@ public class LmdbOrderedNumericIdsTest {
 		}
 		StoreProperties properties = new StoreProperties(dataDir);
 		properties.load();
-		assertThat(properties.getVersion()).isEqualTo("3");
+		assertThat(properties.getVersion()).isEqualTo("4");
 		assertThat(properties.usesOrderedNumericIds()).isTrue();
 	}
 
@@ -182,7 +182,7 @@ public class LmdbOrderedNumericIdsTest {
 
 		StoreProperties reloaded = new StoreProperties(dataDir);
 		reloaded.load();
-		assertThat(reloaded.getVersion()).as("version upgrades in place").isEqualTo("3");
+		assertThat(reloaded.getVersion()).as("version upgrades in place").isEqualTo("4");
 		assertThat(reloaded.usesOrderedNumericIds())
 				.as("an upgraded legacy store must never adopt the ordered encoding")
 				.isFalse();

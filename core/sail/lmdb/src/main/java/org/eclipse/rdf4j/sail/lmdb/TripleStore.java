@@ -2944,6 +2944,7 @@ class TripleStore implements Closeable {
 									switch (ValueIds.getIdType(id)) {
 									case ValueIds.T_DOUBLE:
 									case ValueIds.T_LITERAL:
+									case ValueIds.T_CORE_LITERAL:
 										// id is a literal, don't test it
 										continue;
 									}

@@ -15,8 +15,8 @@ package org.eclipse.rdf4j.sail.lmdb.csf;
 final class CompactCsfPageFormat {
 
 	static final int MAGIC = 0x50435346; // PCSF
-	static final int VERSION = 3;
-	static final int FORMAT_HASH = 0x72b9c4e1;
+	static final int VERSION = 4;
+	static final int FORMAT_HASH = 0x2dc970b6;
 	static final int HEADER_BYTES = 160;
 
 	static final int FLAG_CONTINUATION = 1;
@@ -25,8 +25,14 @@ final class CompactCsfPageFormat {
 	static final int FLAG_CONTEXT_COUNT_ONE = 1 << 3;
 	static final int FLAG_COMMON_CONTEXT = 1 << 4;
 	static final int FLAG_ALL_ORDERED_INTEGER_NEIGHBORS = 1 << 5;
+	static final int FLAG_UNIFORM_ROW_TERM_KIND = 1 << 6;
+	static final int FLAG_UNIFORM_ROW_LITERAL_DATATYPE = 1 << 7;
+	static final int FLAG_UNIFORM_NEIGHBOR_TERM_KIND = 1 << 8;
+	static final int FLAG_UNIFORM_NEIGHBOR_LITERAL_DATATYPE = 1 << 9;
 	static final int KNOWN_FLAGS = FLAG_CONTINUATION | FLAG_ROW_NEIGHBOR_ONE | FLAG_ROW_QUAD_EQUALS_NEIGHBOR
-			| FLAG_CONTEXT_COUNT_ONE | FLAG_COMMON_CONTEXT | FLAG_ALL_ORDERED_INTEGER_NEIGHBORS;
+			| FLAG_CONTEXT_COUNT_ONE | FLAG_COMMON_CONTEXT | FLAG_ALL_ORDERED_INTEGER_NEIGHBORS
+			| FLAG_UNIFORM_ROW_TERM_KIND | FLAG_UNIFORM_ROW_LITERAL_DATATYPE
+			| FLAG_UNIFORM_NEIGHBOR_TERM_KIND | FLAG_UNIFORM_NEIGHBOR_LITERAL_DATATYPE;
 
 	static final int MAGIC_AT = 0;
 	static final int VERSION_AT = 4; // u16

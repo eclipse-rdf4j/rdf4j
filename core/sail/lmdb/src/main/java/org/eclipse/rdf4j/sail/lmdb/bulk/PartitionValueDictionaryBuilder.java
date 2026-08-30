@@ -391,7 +391,7 @@ final class PartitionValueDictionaryBuilder {
 			long plannedId = predicateIdPlan.idFor(canonicalKey);
 			yield plannedId == 0L ? idAllocator.next(ValueIds.T_URI) : plannedId;
 		}
-		case Literal ignored -> idAllocator.next(ValueIds.T_LITERAL);
+		case Literal literal -> idAllocator.nextLiteral(literal);
 		case BNode ignored -> idAllocator.next(ValueIds.T_BNODE);
 		case TripleTerm ignored -> idAllocator.next(ValueIds.T_TRIPLE);
 		default -> throw new IllegalArgumentException("Unsupported RDF value type " + value.getClass().getName());
@@ -513,6 +513,12 @@ final class PartitionValueDictionaryBuilder {
 
 		private long next(int type) {
 			return ValueIds.createId(type, nextByType[type]++);
+		}
+
+		private long nextLiteral(Literal literal) {
+			long ordinal = nextByType[ValueIds.T_LITERAL]++;
+			long encoded = ValueIds.createCoreLiteralReferenceId(ordinal, literal.getCoreDatatype());
+			return encoded == 0L ? ValueIds.createId(ValueIds.T_LITERAL, ordinal) : encoded;
 		}
 
 	}

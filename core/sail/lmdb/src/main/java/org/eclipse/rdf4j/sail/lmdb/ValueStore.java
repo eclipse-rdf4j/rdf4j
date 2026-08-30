@@ -68,6 +68,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -400,6 +401,7 @@ public class ValueStore extends AbstractValueFactory {
 	private static final byte HASH_KEY = ValueStoreRecordCodec.HASH_KEY;
 
 	private static final byte HASHID_KEY = ValueStoreRecordCodec.HASHID_KEY;
+	private static final byte NEXT_ID_KEY = ValueStoreRecordCodec.NEXT_ID_KEY;
 
 	/***
 	 * Maximum size of keys before hashing is used (size of two long values)
@@ -525,6 +527,8 @@ public class ValueStore extends AbstractValueFactory {
 	 * The next ID that is associated with a stored value
 	 */
 	private long nextId = 1;
+	/** Keeps the high-sorting counter key out of the database until an MDB_APPEND stream has finished. */
+	private boolean deferNextIdPersistence;
 	private boolean freeIdsAvailable;
 
 	private ValueStoreHashFile hashFile;
@@ -547,6 +551,7 @@ public class ValueStore extends AbstractValueFactory {
 	private final boolean inlineLiterals;
 	private final boolean orderedNumericIds;
 	private final boolean canonicalLanguageTags;
+	private final boolean coreDatatypeLiteralReferences;
 
 	private final ThreadLocal<Boolean> hasReadLock = new ThreadLocal<>();
 
@@ -574,6 +579,7 @@ public class ValueStore extends AbstractValueFactory {
 		// legacy ZigZag ids; LmdbStore records ordered-v1 at store creation when the config enables it
 		this.orderedNumericIds = properties.usesOrderedNumericIds();
 		this.canonicalLanguageTags = properties.usesCanonicalLanguageTags();
+		this.coreDatatypeLiteralReferences = properties.usesCoreDatatypeLiteralReferences();
 
 		int cacheSets = nextPowerOfTwo(Math.max(1, (config.getValueCacheSize() + VALUE_CACHE_WAYS - 1)
 				/ VALUE_CACHE_WAYS));
@@ -612,6 +618,15 @@ public class ValueStore extends AbstractValueFactory {
 	private void initializeIdsAndTermIndexes(LmdbStoreConfig config) throws IOException {
 		// read maximum id from store
 		readTransaction(env, (stack, txn) -> {
+			if (coreDatatypeLiteralReferences) {
+				MDBVal counterKey = MDBVal.calloc(stack);
+				counterKey.mv_data(stack.bytes(new byte[] { NEXT_ID_KEY }));
+				MDBVal counterValue = MDBVal.calloc(stack);
+				if (mdb_get(txn, dbi, counterKey, counterValue) == MDB_SUCCESS) {
+					nextId = Math.max(nextId, Varint.readUnsigned(counterValue.mv_data()));
+					return null;
+				}
+			}
 			long cursor = 0;
 			PointerBuffer pp = stack.mallocPointer(1);
 
@@ -636,7 +651,7 @@ public class ValueStore extends AbstractValueFactory {
 						// recover the VALUE part of the compound id (nextId is the value-space counter that
 						// createId() combines with a 6-bit type + 1 double-flag bit); shifting by anything less
 						// than the full 7 low bits inflates the counter ~32x on every reopen
-						nextId = Math.max(nextId, ValueIds.getValue(data2id(keyData.mv_data())) + 1);
+						nextId = Math.max(nextId, ValueIds.referenceOrdinal(data2id(keyData.mv_data())) + 1);
 					}
 				} finally {
 					if (cursor != 0) {
@@ -981,6 +996,10 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private long nextId(byte valueType) throws IOException {
+		return nextId(valueType, CoreDatatype.NONE);
+	}
+
+	private long nextId(byte valueType, CoreDatatype coreDatatype) throws IOException {
 		int idType = valueIdType(valueType);
 		if (freeIdsAvailable) {
 			// next id from store
@@ -999,7 +1018,7 @@ public class ValueStore extends AbstractValueFactory {
 						clearStoredHash(freedId);
 
 						// unpack value from compound id
-						long value = ValueIds.getValue(freedId);
+						long value = ValueIds.referenceOrdinal(freedId);
 						// delete entry
 						E(mdb_cursor_del(cursor, 0));
 						return value;
@@ -1013,19 +1032,33 @@ public class ValueStore extends AbstractValueFactory {
 				}
 			});
 			if (reusedId != null) {
-				return ValueIds.createId(idType, reusedId);
+				return referenceId(idType, reusedId, coreDatatype);
 			}
 		}
 		long result = nextId;
 		nextId++;
-		return ValueIds.createId(idType, result);
+		return referenceId(idType, result, coreDatatype);
 	}
 
 	private long nextFreshId(FreshValueSession session, byte valueType) {
+		return nextFreshId(session, valueType, CoreDatatype.NONE);
+	}
+
+	private long nextFreshId(FreshValueSession session, byte valueType, CoreDatatype coreDatatype) {
 		int idType = valueIdType(valueType);
 		long result = session.nextIdValueByType[idType]++;
 		nextId = Math.max(nextId, result + 1);
-		return ValueIds.createId(idType, result);
+		return referenceId(idType, result, coreDatatype);
+	}
+
+	private long referenceId(int idType, long ordinal, CoreDatatype coreDatatype) {
+		if (coreDatatypeLiteralReferences && idType == ValueIds.T_LITERAL) {
+			long encoded = ValueIds.createCoreLiteralReferenceId(ordinal, coreDatatype);
+			if (encoded != 0L) {
+				return encoded;
+			}
+		}
+		return ValueIds.createId(idType, ordinal);
 	}
 
 	private long nextFreshPredicateId(FreshValueSession session) {
@@ -1199,6 +1232,34 @@ public class ValueStore extends AbstractValueFactory {
 		return datatypeId == null ? -1L : datatypeId;
 	}
 
+	/** Reads a sorted or unsorted literal-id batch under one read transaction and one native key/value pair. */
+	int literalDatatypeIds(long[] ids, int offset, int length, long[] target, int targetOffset) throws IOException {
+		Objects.checkFromIndexSize(offset, length, ids.length);
+		Objects.checkFromIndexSize(targetOffset, length, target.length);
+		return readTransaction(env, (stack, txn) -> {
+			ByteBuffer idBytes = idBuffer(stack);
+			MDBVal keyData = MDBVal.calloc(stack);
+			MDBVal valueData = MDBVal.calloc(stack);
+			for (int i = 0; i < length; i++) {
+				long id = ids[offset + i];
+				long datatypeId = -1L;
+				if (ValueIds.getIdType(id) == ValueIds.T_LITERAL) {
+					idBytes.clear();
+					LmdbUtil.setMDBValData(keyData, id2data(idBytes, id).flip());
+					if (mdb_get(txn, dbi, keyData, valueData) == MDB_SUCCESS) {
+						long address = LmdbUtil.mdbValDataAddress(valueData);
+						long valueLength = LmdbUtil.mdbValSize(valueData);
+						if (valueLength >= 2 && org.lwjgl.system.MemoryUtil.memGetByte(address) == LITERAL_VALUE) {
+							datatypeId = Varint.readUnsigned(address + 1);
+						}
+					}
+				}
+				target[targetOffset + i] = datatypeId;
+			}
+			return length;
+		});
+	}
+
 	@InternalUseOnly
 	public <T> T withData(long id, ValueDataReader<T> reader) throws IOException {
 		return readTransaction(env, (stack, txn) -> {
@@ -1344,6 +1405,7 @@ public class ValueStore extends AbstractValueFactory {
 				break;
 			case ValueIds.T_DOUBLE:
 			case ValueIds.T_LITERAL:
+			case ValueIds.T_CORE_LITERAL:
 				resultValue = new LmdbLiteral(lazyRevision, id);
 				break;
 			case ValueIds.T_BNODE:
@@ -1622,6 +1684,10 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private long findId(byte[] data, boolean create) throws IOException {
+		return findId(data, create, CoreDatatype.NONE);
+	}
+
+	private long findId(byte[] data, boolean create, CoreDatatype coreDatatype) throws IOException {
 		Long id = readTransaction(env, (stack, txn) -> {
 			if (data.length <= MAX_KEY_SIZE) {
 				MDBVal dataVal = MDBVal.calloc(stack);
@@ -1636,7 +1702,7 @@ public class ValueStore extends AbstractValueFactory {
 				// id was not found, create a new one
 				resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
 
-				long newId = nextId(data[0]);
+				long newId = nextId(data[0], coreDatatype);
 				writeTransaction((stack2, writeTxn) -> {
 					idVal.mv_data(id2data(idBuffer(stack), newId).flip());
 
@@ -1678,7 +1744,7 @@ public class ValueStore extends AbstractValueFactory {
 
 					resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
 
-					long newId = nextId(data[0]);
+					long newId = nextId(data[0], coreDatatype);
 					writeTransaction((stack2, writeTxn) -> {
 						dataVal.mv_size(data.length);
 						idVal.mv_data(id2data(idBuffer(stack), newId).flip());
@@ -1736,7 +1802,7 @@ public class ValueStore extends AbstractValueFactory {
 				// id was not found, create a new one
 				resizeMap(txn, 1 + Long.BYTES + maxHashKeyLength + 2L * data.length);
 
-				long newId = nextId(data[0]);
+				long newId = nextId(data[0], coreDatatype);
 				writeTransaction((stack2, writeTxn) -> {
 					// encode ID
 					ByteBuffer idBb = id2data(idBuffer(stack), newId).flip();
@@ -1769,27 +1835,28 @@ public class ValueStore extends AbstractValueFactory {
 		return id != null ? id : LmdbValue.UNKNOWN_ID;
 	}
 
-	private void findIds(byte[][] data, int[] indexes, long[] ids, int count) throws IOException {
+	private void findIds(byte[][] data, CoreDatatype[] coreDatatypes, int[] indexes, long[] ids, int count)
+			throws IOException {
 		int[] order = count > 1 ? sortedStoreOrder(data, count) : null;
 		if (writeTxn == 0) {
 			writeTransaction((stack, txn) -> {
-				findIds(data, indexes, ids, count, order, stack, txn);
+				findIds(data, coreDatatypes, indexes, ids, count, order, stack, txn);
 				return null;
 			});
 			return;
 		}
 		readTransaction(env, (stack, txn) -> {
-			findIds(data, indexes, ids, count, order, stack, txn);
+			findIds(data, coreDatatypes, indexes, ids, count, order, stack, txn);
 			return null;
 		});
 	}
 
-	private void findIds(byte[][] data, int[] indexes, long[] ids, int count, int[] order, MemoryStack stack, long txn)
-			throws IOException {
+	private void findIds(byte[][] data, CoreDatatype[] coreDatatypes, int[] indexes, long[] ids, int count,
+			int[] order, MemoryStack stack, long txn) throws IOException {
 		BatchIdStorer storer = new BatchIdStorer(stack, txn);
 		for (int i = 0; i < count; i++) {
 			int dataIndex = order == null ? i : order[i];
-			ids[indexes[dataIndex]] = storer.findId(data[dataIndex]);
+			ids[indexes[dataIndex]] = storer.findId(data[dataIndex], coreDatatypes[dataIndex]);
 		}
 	}
 
@@ -1861,19 +1928,19 @@ public class ValueStore extends AbstractValueFactory {
 			hashBuffer = stack.malloc(2 + 2 * Long.BYTES + 2);
 		}
 
-		private long findId(byte[] data) throws IOException {
+		private long findId(byte[] data, CoreDatatype coreDatatype) throws IOException {
 			stack.push();
 			try {
 				if (data.length <= MAX_KEY_SIZE) {
-					return findSmallId(data);
+					return findSmallId(data, coreDatatype);
 				}
-				return findLargeId(data);
+				return findLargeId(data, coreDatatype);
 			} finally {
 				stack.pop();
 			}
 		}
 
-		private long findSmallId(byte[] data) throws IOException {
+		private long findSmallId(byte[] data, CoreDatatype coreDatatype) throws IOException {
 			dataVal.mv_data(stack.bytes(data));
 			if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
 				return data2id(idVal.mv_data());
@@ -1881,7 +1948,7 @@ public class ValueStore extends AbstractValueFactory {
 
 			resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
 
-			long newId = nextId(data[0]);
+			long newId = nextId(data[0], coreDatatype);
 			idBuffer.clear();
 			idVal.mv_data(id2data(idBuffer, newId).flip());
 			long activeWriteTxn = currentWriteTxn(txn);
@@ -1891,7 +1958,7 @@ public class ValueStore extends AbstractValueFactory {
 			return newId;
 		}
 
-		private long findLargeId(byte[] data) throws IOException {
+		private long findLargeId(byte[] data, CoreDatatype coreDatatype) throws IOException {
 			long dataHash = hash(data);
 			hashBuffer.clear();
 			hashBuffer.put(HASH_KEY);
@@ -1906,7 +1973,7 @@ public class ValueStore extends AbstractValueFactory {
 					return data2id(idVal.mv_data());
 				}
 			} else {
-				return storeFirstLargeId(data);
+				return storeFirstLargeId(data, coreDatatype);
 			}
 
 			hashBuffer.put(0, HASHID_KEY);
@@ -1939,13 +2006,13 @@ public class ValueStore extends AbstractValueFactory {
 				}
 			}
 
-			return storeHashCollisionId(data, hashLength);
+			return storeHashCollisionId(data, hashLength, coreDatatype);
 		}
 
-		private long storeFirstLargeId(byte[] data) throws IOException {
+		private long storeFirstLargeId(byte[] data, CoreDatatype coreDatatype) throws IOException {
 			resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
 
-			long newId = nextId(data[0]);
+			long newId = nextId(data[0], coreDatatype);
 			idBuffer.clear();
 			idVal.mv_data(id2data(idBuffer, newId).flip());
 			dataVal.mv_size(data.length);
@@ -1957,10 +2024,10 @@ public class ValueStore extends AbstractValueFactory {
 			return newId;
 		}
 
-		private long storeHashCollisionId(byte[] data, int hashLength) throws IOException {
+		private long storeHashCollisionId(byte[] data, int hashLength, CoreDatatype coreDatatype) throws IOException {
 			resizeMap(txn, 1 + Long.BYTES + hashBuffer.capacity() + 2L * data.length);
 
-			long newId = nextId(data[0]);
+			long newId = nextId(data[0], coreDatatype);
 			idBuffer.clear();
 			ByteBuffer idBb = id2data(idBuffer, newId).flip();
 			idVal.mv_data(idBb);
@@ -2125,11 +2192,28 @@ public class ValueStore extends AbstractValueFactory {
 			}
 		} else {
 			try {
-				return LmdbUtil.transaction(env, transaction);
+				return LmdbUtil.transaction(env, (stack, txn) -> {
+					T result = transaction.exec(stack, txn);
+					persistNextId(stack, txn);
+					return result;
+				});
 			} finally {
 				txnManager.reset();
 			}
 		}
+	}
+
+	private void persistNextId(MemoryStack stack, long txn) throws IOException {
+		if (!coreDatatypeLiteralReferences || deferNextIdPersistence) {
+			return;
+		}
+		MDBVal key = MDBVal.calloc(stack);
+		key.mv_data(stack.bytes(new byte[] { NEXT_ID_KEY }));
+		ByteBuffer encoded = stack.malloc(Long.BYTES + 1);
+		Varint.writeUnsigned(encoded, nextId);
+		MDBVal value = MDBVal.calloc(stack);
+		value.mv_data(encoded.flip());
+		E(mdb_put(txn, dbi, key, value, 0));
 	}
 
 	int compareRegion(ByteBuffer array1, int startIdx1, ByteBuffer array2, int startIdx2, int length) {
@@ -2229,7 +2313,10 @@ public class ValueStore extends AbstractValueFactory {
 					// not inlined or ID not cached, search in index
 					byte[] data = value2data(value, create);
 					if (data != null) {
-						id = findId(data, create);
+						CoreDatatype coreDatatype = value instanceof Literal literal
+								? literal.getCoreDatatype()
+								: CoreDatatype.NONE;
+						id = findId(data, create, coreDatatype);
 					}
 				}
 			}
@@ -2373,9 +2460,10 @@ public class ValueStore extends AbstractValueFactory {
 			id = nextFreshId(session, BNODE_VALUE);
 			break;
 		case Value.Type.Literal:
-			IRI datatype = ((Literal) value).getDatatype();
+			Literal literal = (Literal) value;
+			IRI datatype = literal.getDatatype();
 			referencedId = datatype == null ? 0 : assignFreshValue(session, datatype);
-			id = nextFreshId(session, LITERAL_VALUE);
+			id = nextFreshId(session, LITERAL_VALUE, literal.getCoreDatatype());
 			break;
 		default:
 			throw new IllegalArgumentException("Unsupported fresh value type " + value.getType());
@@ -2484,6 +2572,7 @@ public class ValueStore extends AbstractValueFactory {
 
 		byte[] data;
 		long referencedId = 0;
+		CoreDatatype coreDatatype = CoreDatatype.NONE;
 		switch (value.getType()) {
 		case Value.Type.IRI:
 			IRI iri = (IRI) value;
@@ -2496,6 +2585,7 @@ public class ValueStore extends AbstractValueFactory {
 			break;
 		case Value.Type.Literal:
 			Literal literal = (Literal) value;
+			coreDatatype = literal.getCoreDatatype();
 			IRI datatype = literal.getDatatype();
 			long datatypeId = datatype == null ? 0 : prepareFreshValue(session, prepared, datatype);
 			data = literal2data(literal, datatypeId);
@@ -2505,7 +2595,7 @@ public class ValueStore extends AbstractValueFactory {
 			throw new IllegalArgumentException("Unsupported fresh value type " + value.getType());
 		}
 
-		long id = nextFreshId(session, data[0]);
+		long id = nextFreshId(session, data[0], coreDatatype);
 		session.valueIds.put(value, id);
 		session.provisionalValues.add(value);
 		addPreparedValueRecord(session, prepared, value, null, id, data);
@@ -2696,6 +2786,7 @@ public class ValueStore extends AbstractValueFactory {
 		}
 
 		byte[][] unresolvedData = null;
+		CoreDatatype[] unresolvedCoreDatatypes = null;
 		int[] unresolvedIndexes = null;
 		int unresolvedCount = 0;
 		boolean[] cacheAfterLookup = new boolean[count];
@@ -2725,9 +2816,13 @@ public class ValueStore extends AbstractValueFactory {
 				if (data != null) {
 					if (unresolvedData == null) {
 						unresolvedData = new byte[count][];
+						unresolvedCoreDatatypes = new CoreDatatype[count];
 						unresolvedIndexes = new int[count];
 					}
 					unresolvedData[unresolvedCount] = data;
+					unresolvedCoreDatatypes[unresolvedCount] = value instanceof Literal literal
+							? literal.getCoreDatatype()
+							: CoreDatatype.NONE;
 					unresolvedIndexes[unresolvedCount] = i;
 					unresolvedCount++;
 					cacheAfterLookup[i] = true;
@@ -2735,7 +2830,7 @@ public class ValueStore extends AbstractValueFactory {
 			}
 
 			if (unresolvedCount > 0) {
-				findIds(unresolvedData, unresolvedIndexes, ids, unresolvedCount);
+				findIds(unresolvedData, unresolvedCoreDatatypes, unresolvedIndexes, ids, unresolvedCount);
 			}
 
 			for (int i = 0; i < count; i++) {
@@ -3210,6 +3305,9 @@ public class ValueStore extends AbstractValueFactory {
 	private void endTransactionInternal(boolean commit, boolean autoGrow) throws IOException {
 		if (writeTxn != 0) {
 			if (commit) {
+				try (MemoryStack stack = stackPush()) {
+					persistNextId(stack, writeTxn);
+				}
 				if (!autoGrow) {
 					try (MemoryStack stack = stackPush()) {
 						updateRefCounts(stack, writeTxn);
@@ -3289,29 +3387,42 @@ public class ValueStore extends AbstractValueFactory {
 		if (maxTransactionRecords <= 0 || maxTransactionBytes <= 0L) {
 			throw new IllegalArgumentException("Bulk transaction bounds must be positive");
 		}
-		byte[] previousKey = null;
-		BulkRecord pending = source.next();
-		while (pending != null) {
-			ArrayList<BulkRecord> batch = new ArrayList<>(Math.min(maxTransactionRecords, 4096));
-			long batchBytes = 0L;
-			while (pending != null && batch.size() < maxTransactionRecords) {
-				long recordBytes = Math.addExact((long) pending.key().length, pending.value().length);
-				if (!batch.isEmpty() && batchBytes + recordBytes > maxTransactionBytes) {
-					break;
+		boolean appendingMainRecords = targetDbi == dbi && coreDatatypeLiteralReferences;
+		if (appendingMainRecords) {
+			deferNextIdPersistence = true;
+		}
+		try {
+			byte[] previousKey = null;
+			BulkRecord pending = source.next();
+			while (pending != null) {
+				ArrayList<BulkRecord> batch = new ArrayList<>(Math.min(maxTransactionRecords, 4096));
+				long batchBytes = 0L;
+				while (pending != null && batch.size() < maxTransactionRecords) {
+					long recordBytes = Math.addExact((long) pending.key().length, pending.value().length);
+					if (!batch.isEmpty() && batchBytes + recordBytes > maxTransactionBytes) {
+						break;
+					}
+					if (previousKey != null && Arrays.compareUnsigned(previousKey, pending.key()) >= 0) {
+						throw new IOException("ValueStore bulk records are not strictly increasing");
+					}
+					if (targetDbi == dbi && pending.key().length > 1 && pending.key()[0] == ID_KEY) {
+						nextId = Math.max(nextId,
+								Math.addExact(ValueIds.referenceOrdinal(data2id(ByteBuffer.wrap(pending.key()))), 1L));
+					}
+					previousKey = pending.key().clone();
+					batch.add(pending);
+					batchBytes = Math.addExact(batchBytes, recordBytes);
+					pending = source.next();
 				}
-				if (previousKey != null && Arrays.compareUnsigned(previousKey, pending.key()) >= 0) {
-					throw new IOException("ValueStore bulk records are not strictly increasing");
-				}
-				if (targetDbi == dbi && pending.key().length > 1 && pending.key()[0] == ID_KEY) {
-					nextId = Math.max(nextId,
-							Math.addExact(ValueIds.getValue(data2id(ByteBuffer.wrap(pending.key()))), 1L));
-				}
-				previousKey = pending.key().clone();
-				batch.add(pending);
-				batchBytes = Math.addExact(batchBytes, recordBytes);
-				pending = source.next();
+				appendBulkBatch(targetDbi, batch, batchBytes);
 			}
-			appendBulkBatch(targetDbi, batch, batchBytes);
+		} finally {
+			if (appendingMainRecords) {
+				deferNextIdPersistence = false;
+			}
+		}
+		if (appendingMainRecords) {
+			writeTransaction((stack, txn) -> null);
 		}
 	}
 

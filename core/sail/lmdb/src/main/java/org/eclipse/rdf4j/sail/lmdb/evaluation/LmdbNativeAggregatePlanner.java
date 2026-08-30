@@ -28,7 +28,9 @@ import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -42,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
@@ -58,6 +61,7 @@ import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -241,6 +245,10 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			if (datatypeHistogram != null) {
 				return datatypeHistogram;
 			}
+			QueryEvaluationStep predicatePlaneGroups = tryPredicatePlaneGroups(group, originalExpr);
+			if (predicatePlaneGroups != null) {
+				return predicatePlaneGroups;
+			}
 		}
 		// The aggregate group path may represent a computed, non-inline group key (e.g. COALESCE(STR(?type), ".."))
 		// by interning it to a runtime id; row roots and bare fragments must not (they lack the serial interning
@@ -297,9 +305,12 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		boolean serialOnlyAggregates = sawComputedValueCopy || AggregateSpec.anyFullRowDistinct(aggregates);
 		LmdbNativeExistsIntersection existsIntersection = serialOnlyAggregates ? null
 				: tryExistsIntersectionPlan(stepSource, arg, groupSlots, aggregates);
+		LmdbAdjacencyAggregatePlan adjacencyAggregate = (serialOnlyAggregates || existsIntersection != null) ? null
+				: LmdbAdjacencyAggregatePlan.tryCreate(arg, groupSlots, aggregates);
 		PrefixRunGroupCandidate prefixRun = (serialOnlyAggregates || existsIntersection != null) ? null
 				: tryPrefixRunGroupPlan(stepSource, arg, groupSlots, aggregates, havingCondition);
-		if (!serialOnlyAggregates && prefixRun == null && existsIntersection == null && havingCondition == null) {
+		if (!serialOnlyAggregates && prefixRun == null && existsIntersection == null && adjacencyAggregate == null
+				&& havingCondition == null) {
 			QueryEvaluationStep typeMatrix = tryTypeMatrixStep(stepSource, arg, groupSlots, aggregates, originalExpr);
 			if (typeMatrix != null) {
 				return typeMatrix;
@@ -311,6 +322,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				prefixRun == null ? null : prefixRun.plan, prefixRun != null && prefixRun.countRunRows,
 				prefixRun != null && prefixRun.distinctRuns, prefixRun == null ? null : prefixRun.runFilter,
 				prefixRun == null ? 0L : prefixRun.minRunCount, existsIntersection, havingCondition);
+		groupStep.adjacencyAggregate = adjacencyAggregate;
 		groupStep.rootEvaluationScoped = rootEvaluationScoped;
 		return groupStep;
 	}
@@ -688,6 +700,12 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return null;
 		}
 		PatternPlan pattern = (PatternPlan) inner;
+		// Prefix-run aggregation must either carry the executable range into its cursor or decline. The generic
+		// PatternPlan path already applies every LmdbKeyRange exactly; admitting it here would collapse the scan to an
+		// unfiltered plane/root count and silently widen the result.
+		if (pattern.range != null) {
+			return null;
+		}
 		int[] prefixSlots;
 		boolean countRunRows = false;
 		boolean distinctRuns = false;
@@ -951,6 +969,93 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		return new LmdbNativeDatatypeHistogram(stepSource, plan, constants[0], constants[1], constants[2],
 				literalField, keyName, countElem.getName(), strategy, originalExpr, context);
+	}
+
+	/**
+	 * Recognizes a single unrestricted pattern grouped by the ANALYTICS predicate-namespace expression. Every supported
+	 * aggregate channel is reducible from one authoritative predicate-plane row, so no statement or fiber is decoded.
+	 */
+	private QueryEvaluationStep tryPredicatePlaneGroups(Group group, TupleExpr originalExpr) {
+		if (group.getGroupBindingNames().size() != 1 || group.getGroupElements().isEmpty()
+				|| !(group.getArg() instanceof Extension)) {
+			return null;
+		}
+		String keyName = group.getGroupBindingNames().iterator().next();
+		Extension extension = (Extension) group.getArg();
+		if (extension.getElements().size() != 1 || !extension.getElements().get(0).getName().equals(keyName)
+				|| !(extension.getArg() instanceof StatementPattern)) {
+			return null;
+		}
+		StatementPattern pattern = (StatementPattern) extension.getArg();
+		if (pattern.getScope() != StatementPattern.Scope.DEFAULT_CONTEXTS || pattern.getContextVar() != null
+				|| compileContextConstraint(pattern, context.getDataset()) != ContextConstraint.UNRESTRICTED) {
+			return null;
+		}
+		Var subject = pattern.getSubjectVar();
+		Var predicate = pattern.getPredicateVar();
+		Var object = pattern.getObjectVar();
+		if (subject.hasValue() || predicate.hasValue() || object.hasValue()
+				|| subject.getName().equals(predicate.getName()) || subject.getName().equals(object.getName())
+				|| predicate.getName().equals(object.getName())
+				|| !isPredicateNamespaceExpression(extension.getElements().get(0).getExpr(), predicate.getName())) {
+			return null;
+		}
+
+		java.util.HashSet<String> patternNames = new java.util.HashSet<>();
+		patternNames.add(subject.getName());
+		patternNames.add(predicate.getName());
+		patternNames.add(object.getName());
+		LmdbNativePredicatePlaneGroups.Channel[] channels = new LmdbNativePredicatePlaneGroups.Channel[group
+				.getGroupElements()
+				.size()];
+		for (int i = 0; i < channels.length; i++) {
+			GroupElem elem = group.getGroupElements().get(i);
+			if (!(elem.getOperator() instanceof Count)) {
+				return null;
+			}
+			Count count = (Count) elem.getOperator();
+			LmdbNativePredicatePlaneGroups.ChannelKind kind;
+			if (count.isDistinct()) {
+				if (!(count.getArg() instanceof Var)
+						|| !((Var) count.getArg()).getName().equals(predicate.getName())) {
+					return null;
+				}
+				kind = LmdbNativePredicatePlaneGroups.ChannelKind.DISTINCT_PREDICATES;
+			} else {
+				if (count.getArg() != null && (!(count.getArg() instanceof Var)
+						|| !patternNames.contains(((Var) count.getArg()).getName()))) {
+					return null;
+				}
+				kind = LmdbNativePredicatePlaneGroups.ChannelKind.ROWS;
+			}
+			channels[i] = new LmdbNativePredicatePlaneGroups.Channel(elem.getName(), kind);
+		}
+		LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.PRED_IDX }, UNKNOWN, UNKNOWN, UNKNOWN,
+				UNKNOWN);
+		if (plan == null || !plan.usesAdjacency()) {
+			return null;
+		}
+		return new LmdbNativePredicatePlaneGroups(source, plan, keyName, channels,
+				LmdbNativePredicatePlaneGroups.NAMESPACE_CLASSIFIER, strategy, originalExpr, context);
+	}
+
+	private static boolean isPredicateNamespaceExpression(ValueExpr expression, String predicateName) {
+		if (!(expression instanceof FunctionCall)) {
+			return false;
+		}
+		FunctionCall call = (FunctionCall) expression;
+		if (!FN.REPLACE.stringValue().equals(call.getURI()) || call.getArgs().size() != 3
+				|| !(call.getArgs().get(0) instanceof Str)
+				|| !(((Str) call.getArgs().get(0)).getArg() instanceof Var)
+				|| !((Var) ((Str) call.getArgs().get(0)).getArg()).getName().equals(predicateName)) {
+			return false;
+		}
+		return literalLabel(call.getArgs().get(1), "[^/#]+$") && literalLabel(call.getArgs().get(2), "");
+	}
+
+	private static boolean literalLabel(ValueExpr expression, String expected) {
+		return expression instanceof ValueConstant && ((ValueConstant) expression).getValue() instanceof Literal
+				&& ((Literal) ((ValueConstant) expression).getValue()).getLabel().equals(expected);
 	}
 
 	/**

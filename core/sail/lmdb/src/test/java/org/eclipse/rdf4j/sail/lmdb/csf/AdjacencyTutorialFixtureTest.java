@@ -87,7 +87,9 @@ class AdjacencyTutorialFixtureTest {
 				.contains("Set (1):")
 				.contains("Clear (0):")
 				.contains("CONTINUATION", "ROW_NEIGHBOR_ONE", "ROW_QUAD_EQUALS_NEIGHBOR",
-						"CONTEXT_COUNT_ONE", "COMMON_CONTEXT", "ALL_ORDERED_INTEGER_NEIGHBORS");
+						"CONTEXT_COUNT_ONE", "COMMON_CONTEXT", "ALL_ORDERED_INTEGER_NEIGHBORS",
+						"UNIFORM_ROW_TERM_KIND", "UNIFORM_ROW_LITERAL_DATATYPE",
+						"UNIFORM_NEIGHBOR_TERM_KIND", "UNIFORM_NEIGHBOR_LITERAL_DATATYPE");
 
 		assertThat(html)
 				.contains("FIXTURE:SCALE_LOOKUP_DIAGRAM_V1")
@@ -218,11 +220,16 @@ class AdjacencyTutorialFixtureTest {
 		assertThat(LeBytes.getInt(bytes, CompactCsfPageFormat.CAPACITY_AT)).isEqualTo(fixture.image.capacity());
 		assertThat(fixture.image.capacity() % NativeSlabAllocator.PAGE_GRANULARITY).isZero();
 
-		int expectedFlags = key.equals("0:0") || key.equals("0:1") ? 0
+		int structuralFlags = key.equals("0:0") || key.equals("0:1") ? 0
 				: CompactCsfPageFormat.FLAG_ROW_NEIGHBOR_ONE
 						| CompactCsfPageFormat.FLAG_ROW_QUAD_EQUALS_NEIGHBOR
 						| CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE
 						| CompactCsfPageFormat.FLAG_COMMON_CONTEXT;
+		int traitFlags = key.equals("0:0") ? CompactCsfPageFormat.FLAG_UNIFORM_NEIGHBOR_TERM_KIND
+				: key.equals("0:1") ? CompactCsfPageFormat.FLAG_UNIFORM_ROW_TERM_KIND
+						: CompactCsfPageFormat.FLAG_UNIFORM_ROW_TERM_KIND
+								| CompactCsfPageFormat.FLAG_UNIFORM_NEIGHBOR_TERM_KIND;
+		int expectedFlags = structuralFlags | traitFlags;
 		assertThat(LeBytes.getUnsignedShort(bytes, CompactCsfPageFormat.FLAGS_AT)).isEqualTo(expectedFlags);
 		assertSectionBoundaries(bytes);
 

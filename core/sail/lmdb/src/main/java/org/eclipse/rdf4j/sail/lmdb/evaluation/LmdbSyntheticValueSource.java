@@ -269,6 +269,17 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public int literalDatatypeIds(long[] ids, int offset, int length, long[] target, int targetOffset) {
+		int populated = delegate.literalDatatypeIds(ids, offset, length, target, targetOffset);
+		for (int i = 0; i < length; i++) {
+			if (synthetic(ids[offset + i])) {
+				target[targetOffset + i] = -1L;
+			}
+		}
+		return populated;
+	}
+
+	@Override
 	public boolean supportsTripleTermScan() {
 		return delegate.supportsTripleTermScan();
 	}
@@ -434,6 +445,27 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 					return null;
 				}
 				return inner.adjacency(predicate, bySubject, observer);
+			}
+
+			@Override
+			public LabelSynopsis labelSynopsis(long predicate, boolean bySubject) throws IOException {
+				return synthetic(predicate) ? null : inner.labelSynopsis(predicate, bySubject);
+			}
+
+			@Override
+			public NodeDomainSynopsis nodeDomainSynopsis(boolean bySubject) throws IOException {
+				return inner.nodeDomainSynopsis(bySubject);
+			}
+
+			@Override
+			public NodeDomainPresence nodeDomainPresence(boolean bySubject) throws IOException {
+				return inner.nodeDomainPresence(bySubject);
+			}
+
+			@Override
+			public DatatypeSummary nodeDomainDatatypeSummary(boolean bySubject,
+					DatatypeSummaryBuildObserver observer) throws IOException {
+				return inner.nodeDomainDatatypeSummary(bySubject, observer);
 			}
 
 			@Override

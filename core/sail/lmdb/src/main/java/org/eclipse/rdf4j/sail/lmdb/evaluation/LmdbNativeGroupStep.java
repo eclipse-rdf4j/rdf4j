@@ -70,6 +70,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 	final NativeBooleanFilter prefixRunFilter;
 	final long prefixMinRunCount;
 	final LmdbNativeExistsIntersection existsIntersection;
+	LmdbAdjacencyAggregatePlan adjacencyAggregate;
 	/** The HAVING condition the caller enforces above this step, offered to the kernel as a sinkable pre-filter. */
 	final ValueExpr havingCondition;
 	final NativeAggregateDistinctPlan distinctPlan;
@@ -145,7 +146,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 			CloseableIteration<BindingSet> iteration = new NativeGroupIteration(evalSource, variant.wrap(arg), layout,
 					groupSlots, aggregates,
 					strictCompare, variant.filteredBase, null, null, false, false, null, 0L, null,
-					havingCondition, originalExpr);
+					null, havingCondition, originalExpr);
 			return applyScopedHaving(withContextLifetime(iteration, evalSource), evalSource, havingDescriptor);
 		}
 		NativeLmdbQuerySource evalSource = evaluationSource();
@@ -153,7 +154,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 		CloseableIteration<BindingSet> iteration = new NativeGroupIteration(evalSource, arg, layout, groupSlots,
 				aggregates, strictCompare, bindings,
 				prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns, prefixRunFilter,
-				prefixMinRunCount, existsIntersection, havingCondition, originalExpr);
+				prefixMinRunCount, existsIntersection, adjacencyAggregate, havingCondition, originalExpr);
 		return applyScopedHaving(withContextLifetime(iteration, evalSource), evalSource, havingDescriptor);
 	}
 
@@ -267,6 +268,9 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 					.append(existsIntersection.existsPlan.indexName())
 					.append(")");
 		}
+		if (adjacencyAggregate != null) {
+			sb.append(", adjacencyAggregate=true");
+		}
 		return sb.append(")").toString();
 	}
 }
@@ -277,6 +281,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	static final AtomicLong PRIMITIVE_COUNT_GROUP_ROWS = new AtomicLong();
 	static final AtomicLong ORDERED_GROUP_ROWS = new AtomicLong();
 	static final AtomicLong ORDERED_GROUPS = new AtomicLong();
+	static final AtomicLong ADJACENCY_DOMAIN_GROUP_RUNS = new AtomicLong();
+	static final AtomicLong ADJACENCY_DOMAIN_GROUP_ELIGIBLE = new AtomicLong();
+	static final AtomicLong ADJACENCY_DOMAIN_GROUP_UNAVAILABLE = new AtomicLong();
 
 	final NativeLmdbQuerySource source;
 	final SlotPlan arg;
@@ -296,6 +303,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	final NativeBooleanFilter prefixRunFilter;
 	final long prefixMinRunCount;
 	final LmdbNativeExistsIntersection existsIntersection;
+	final LmdbAdjacencyAggregatePlan adjacencyAggregate;
 	/** The externally enforced HAVING condition, offered to the aggregate kernel as a sinkable pre-filter. */
 	final ValueExpr havingCondition;
 	/** Compiled expression to stamp with the executed-strategy explain metric; may be null in tests. */
@@ -310,7 +318,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
 			TupleExpr explainTarget) {
 		this(source, arg, layout, groupSlots, aggregates, strictCompare, base, prefixPattern, prefixRunPlan,
-				prefixCountRunRows, false, null, 0L, null, null, explainTarget);
+				prefixCountRunRows, false, null, 0L, null, null, null, explainTarget);
 	}
 
 	NativeGroupIteration(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
@@ -320,6 +328,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			LmdbNativeExistsIntersection existsIntersection, TupleExpr explainTarget) {
 		this(source, arg, layout, groupSlots, aggregates, strictCompare, base, prefixPattern, prefixRunPlan,
 				prefixCountRunRows, prefixDistinctRuns, prefixRunFilter, prefixMinRunCount, existsIntersection, null,
+				null,
 				explainTarget);
 	}
 
@@ -327,17 +336,19 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			int[] groupSlots, AggregateSpec[] aggregates, boolean strictCompare, BindingSet base,
 			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
 			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter, long prefixMinRunCount,
-			LmdbNativeExistsIntersection existsIntersection, ValueExpr havingCondition, TupleExpr explainTarget) {
+			LmdbNativeExistsIntersection existsIntersection, LmdbAdjacencyAggregatePlan adjacencyAggregate,
+			ValueExpr havingCondition, TupleExpr explainTarget) {
 		this(source, arg, layout, groupSlots, aggregates, strictCompare, base, prefixPattern, prefixRunPlan,
 				prefixCountRunRows, prefixDistinctRuns, prefixRunFilter, prefixMinRunCount, existsIntersection,
-				havingCondition, explainTarget, new NativeCancellationToken());
+				adjacencyAggregate, havingCondition, explainTarget, new NativeCancellationToken());
 	}
 
 	private NativeGroupIteration(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
 			int[] groupSlots, AggregateSpec[] aggregates, boolean strictCompare, BindingSet base,
 			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
 			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter, long prefixMinRunCount,
-			LmdbNativeExistsIntersection existsIntersection, ValueExpr havingCondition, TupleExpr explainTarget,
+			LmdbNativeExistsIntersection existsIntersection, LmdbAdjacencyAggregatePlan adjacencyAggregate,
+			ValueExpr havingCondition, TupleExpr explainTarget,
 			NativeCancellationToken cancellation) {
 		this.source = source;
 		this.arg = arg;
@@ -357,6 +368,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		this.prefixRunFilter = prefixRunFilter;
 		this.prefixMinRunCount = prefixMinRunCount;
 		this.existsIntersection = existsIntersection;
+		this.adjacencyAggregate = adjacencyAggregate;
 		this.havingCondition = havingCondition;
 		this.explainTarget = explainTarget;
 		this.cancellation = cancellation;
@@ -576,7 +588,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	private NativeGroupIteration withArg(SlotPlan attemptArg) {
 		return new NativeGroupIteration(source, attemptArg, layout, groupSlots, aggregates, strictCompare, base,
 				prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns, prefixRunFilter,
-				prefixMinRunCount, existsIntersection, havingCondition, explainTarget, cancellation);
+				prefixMinRunCount, existsIntersection, adjacencyAggregate, havingCondition, explainTarget,
+				cancellation);
 	}
 
 	private static void throwRealFailureSuppressedBy(EncounterOrderFallback fallback) {
@@ -614,11 +627,24 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				: FactorizedTail.select(directMultiJoin, row, groupSlots, aggregates, metrics.child());
 		FactorizedTail factorized = factorizedSelection == null ? null : factorizedSelection.tail;
 		MultiJoinPlan factorizedPlan = directMultiJoin;
+		if (existsIntersection != null) {
+			existsIntersection.prepare(source, row);
+		}
 
 		try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter
 				.<List<BindingSet>>forExpr(explainTarget, source)
 				.probeHarness(LmdbNativeProbeHarness.blocking())
 				.hedgeSupport(hedgeSupport())) {
+			if (adjacencyAggregate != null && adjacencyAggregate.handles(row)) {
+				arbiter.offer(() -> estimatedProposal(() -> {
+					List<BindingSet> result = adjacencyAggregate.evaluate(this, row);
+					if (result != null) {
+						metrics.deferStrategy(explainTarget,
+								LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE);
+					}
+					return result;
+				}, LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE, adjacencyAggregate.estimateWork(row)));
+			}
 			if (existsIntersection != null) {
 				arbiter.offer(() -> estimatedProposal(() -> {
 					List<BindingSet> result = existsIntersection.evaluate(source, row);
@@ -1076,6 +1102,10 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	 * without anyone remembering to add another guard.
 	 */
 	private boolean moreSpecializedStrategyHandlesRow(String candidate, RowState row) {
+		if (adjacencyAggregate != null && adjacencyAggregate.handles(row) && LmdbNativeStrategyPreference
+				.prefers(LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE, candidate)) {
+			return true;
+		}
 		if (prefixRunHandlesRow(row) && LmdbNativeStrategyPreference
 				.prefers(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS, candidate)) {
 			return true;
@@ -1087,6 +1117,10 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	List<BindingSet> evaluatePrefixRuns(RowState row) {
 		if (!prefixRunHandlesRow(row)) {
 			return null;
+		}
+		List<BindingSet> domainGroups = tryEvaluateDomainGroups(row);
+		if (domainGroups != null) {
+			return domainGroups;
 		}
 		List<BindingSet> parallel = LmdbNativeParallelPrefixRuns.tryEvaluate(this, row);
 		if (parallel != null) {
@@ -1189,6 +1223,92 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			return results;
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
+		}
+	}
+
+	/**
+	 * Evaluates an unrestricted all-predicate GROUP S/O count from a retained SOC/OSC root domain. The prefix-run
+	 * planner has already proved that every aggregate counts every matching row and that the optional filter reads only
+	 * the group prefix, so one root binding plus its exact multiplicity is semantically equivalent to its entire run.
+	 */
+	private List<BindingSet> tryEvaluateDomainGroups(RowState row) {
+		if (!prefixCountRunRows || prefixDistinctRuns || groupSlots.length != 1 || prefixRunPlan.hasKeyRange()
+				|| prefixRunPlan.acceptedContexts() != null || prefixRunPlan.namedContextsOnly()) {
+			return null;
+		}
+		long subj = prefixPattern.s.lookup(row.slots);
+		long pred = prefixPattern.p.lookup(row.slots);
+		long obj = prefixPattern.o.lookup(row.slots);
+		long context = prefixPattern.c.lookup(row.slots);
+		if (subj != UNKNOWN || pred != UNKNOWN || obj != UNKNOWN || context != UNKNOWN) {
+			return null;
+		}
+		boolean bySubject;
+		Term rootTerm;
+		if (prefixPattern.s.hasSlot() && prefixPattern.s.slot == groupSlots[0]) {
+			bySubject = true;
+			rootTerm = prefixPattern.s;
+		} else if (prefixPattern.o.hasSlot() && prefixPattern.o.slot == groupSlots[0]) {
+			bySubject = false;
+			rootTerm = prefixPattern.o;
+		} else {
+			return null;
+		}
+		ADJACENCY_DOMAIN_GROUP_ELIGIBLE.incrementAndGet();
+		try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+			NativeLmdbQuerySource.NodeDomainSynopsis synopsis = probe.nodeDomainSynopsis(bySubject);
+			if (synopsis != null) {
+				ArrayList<BindingSet> results = new ArrayList<>();
+				AggContext orderedContext = new AggContext(source, strictCompare, true);
+				NativeLmdbQuerySource.NodeDomainSynopsis.RootCursor roots = synopsis.cursor();
+				int pollTick = 0;
+				while (roots.next()) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					appendDomainGroup(row, rootTerm, roots.rootId(), roots.quadMultiplicity(), orderedContext,
+							results);
+				}
+				ADJACENCY_DOMAIN_GROUP_RUNS.incrementAndGet();
+				return results;
+			}
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+		try (LmdbAdjacencyRootDomainCursor roots = LmdbAdjacencyRootDomainCursor.open(source, bySubject)) {
+			if (roots == null) {
+				ADJACENCY_DOMAIN_GROUP_UNAVAILABLE.incrementAndGet();
+				return null;
+			}
+			ArrayList<BindingSet> results = new ArrayList<>();
+			AggContext orderedContext = new AggContext(source, strictCompare, true);
+			int pollTick = 0;
+			while (roots.advance()) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				appendDomainGroup(row, rootTerm, roots.root(), roots.quadMultiplicity(), orderedContext, results);
+			}
+			ADJACENCY_DOMAIN_GROUP_RUNS.incrementAndGet();
+			return results;
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+	}
+
+	private void appendDomainGroup(RowState row, Term rootTerm, long rootId, long multiplicity,
+			AggContext orderedContext, ArrayList<BindingSet> results) {
+		if (multiplicity < prefixMinRunCount) {
+			return;
+		}
+		int mark = row.mark();
+		try {
+			if (!prefixPattern.bindTerm(rootTerm, rootId, row) || !acceptRun(row)) {
+				return;
+			}
+			AggState state = new AggState(aggregates, 16, orderedContext, sequentialDistinctChannels);
+			for (int i = 0; i < aggregates.length; i++) {
+				state.counts[i] = multiplicity;
+			}
+			results.add(toBindingSet(groupKey(row), state, true));
+		} finally {
+			row.rollback(mark);
 		}
 	}
 

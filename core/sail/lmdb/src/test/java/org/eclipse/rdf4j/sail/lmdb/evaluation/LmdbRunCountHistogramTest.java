@@ -20,6 +20,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -78,9 +80,20 @@ public class LmdbRunCountHistogramTest {
 	}
 
 	@Test
-	public void histogramMatchesOnLargerRandomDatasetInParallel() {
+	public void unboundPredicateHistogramUsesSocRootDomainMerge() throws ReflectiveOperationException {
+		openRepository();
+
+		AtomicLong rootMerges = metric("ADJACENCY_ROOT_MERGES");
+		long before = rootMerges.get();
+		assertThat(histogramRows(OUT_DEGREE_HISTOGRAM)).containsExactly("1=3", "2=1", "3=1");
+		assertThat(rootMerges.get()).isGreaterThan(before);
+	}
+
+	@Test
+	public void histogramMatchesOnLargerRandomDatasetInParallel() throws InterruptedException {
 		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
+		repository = new SailRepository(store);
 		Map<String, Integer> degrees = new HashMap<>();
 		Random random = new Random(13);
 		try (SailRepositoryConnection conn = repository.getConnection()) {
@@ -98,14 +111,18 @@ public class LmdbRunCountHistogramTest {
 			}
 			conn.commit();
 		}
+		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
 		Map<Long, Long> expected = new HashMap<>();
 		degrees.values().forEach(degree -> expected.merge((long) degree, 1L, Long::sum));
 		List<String> expectedRows = new ArrayList<>();
 		expected.keySet().stream().sorted().forEach(degree -> expectedRows.add(degree + "=" + expected.get(degree)));
 
 		long before = LmdbNativeRunCountHistogram.RUNS.get();
+		long parallelAdjacencyBefore = LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get();
 		assertThat(histogramRows(OUT_DEGREE_HISTOGRAM)).containsExactlyElementsOf(expectedRows);
 		assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isGreaterThan(before);
+		assertThat(LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get())
+				.isGreaterThan(parallelAdjacencyBefore);
 	}
 
 	@Test
@@ -129,7 +146,8 @@ public class LmdbRunCountHistogramTest {
 	}
 
 	private void openRepository() {
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
+		repository = new SailRepository(store);
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI knows = vf.createIRI(EX, "knows");
@@ -144,6 +162,12 @@ public class LmdbRunCountHistogramTest {
 			conn.add(vf.createIRI(EX, "s5"), likes, vf.createIRI(EX, "g"));
 			conn.add(vf.createIRI(EX, "s5"), tag, vf.createIRI(EX, "h"));
 		}
+		try {
+			assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError("interrupted while waiting for direct adjacency", e);
+		}
 	}
 
 	private List<String> histogramRows(String query) {
@@ -155,5 +179,9 @@ public class LmdbRunCountHistogramTest {
 			}
 		}
 		return rows;
+	}
+
+	private static AtomicLong metric(String name) throws ReflectiveOperationException {
+		return (AtomicLong) LmdbNativeRunCountHistogram.class.getDeclaredField(name).get(null);
 	}
 }

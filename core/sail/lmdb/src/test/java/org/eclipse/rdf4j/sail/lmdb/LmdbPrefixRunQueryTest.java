@@ -56,6 +56,7 @@ public class LmdbPrefixRunQueryTest {
 		disable("rdf4j.lmdb.packedFtree.enabled");
 		disable("rdf4j.lmdb.factorizedTail.enabled");
 		disable("rdf4j.lmdb.parallel.enabled");
+		disable(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY);
 		previousProperties.put(LmdbPrefixRunPlan.ENABLED_PROPERTY,
 				System.getProperty(LmdbPrefixRunPlan.ENABLED_PROPERTY));
 	}

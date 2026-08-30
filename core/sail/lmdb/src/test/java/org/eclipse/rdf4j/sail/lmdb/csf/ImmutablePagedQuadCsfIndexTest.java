@@ -22,10 +22,38 @@ import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.junit.jupiter.api.Test;
 
 class ImmutablePagedQuadCsfIndexTest {
 	private static final String SHARD_TARGET_PAGES_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.directAdjacency.csfShardTargetPages";
+
+	@Test
+	void physicalPageCursorExposesHeaderCountsAndBothColumnTraits() {
+		List<Row> rows = List.of(
+				new Row(id(ValueIds.T_SHORTSTRING, 1),
+						new long[] { id(ValueIds.T_URI, 101), id(ValueIds.T_URI, 101) },
+						new long[] { 0, id(ValueIds.T_URI, 1_001) }),
+				new Row(id(ValueIds.T_SHORTSTRING, 2), new long[] { id(ValueIds.T_URI, 102) },
+						new long[] { 0 }));
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows)) {
+			ImmutablePagedQuadCsfIndex.PageCursor pages = index.keyDomain(0, 0).pageCursor();
+
+			assertThat(pages.advance()).isTrue();
+			assertThat(pages.roots()).isEqualTo(2);
+			assertThat(pages.fibers()).isEqualTo(2);
+			assertThat(pages.quads()).isEqualTo(3);
+			assertThat(pages.firstRoot()).isEqualTo(rows.get(0).row);
+			assertThat(pages.rowsHaveUniformTermKind()).isTrue();
+			assertThat(pages.rowsHaveUniformLiteralDatatype()).isTrue();
+			assertThat(pages.neighborsHaveUniformTermKind()).isTrue();
+			assertThat(pages.neighborsHaveUniformLiteralDatatype()).isFalse();
+			assertThat(pages.rootQuadCount(0)).isEqualTo(2);
+			assertThat(pages.neighborAt(0, 0)).isEqualTo(id(ValueIds.T_URI, 101));
+			assertThat(pages.neighborContextCount(0, 0)).isEqualTo(2);
+			assertThat(pages.advance()).isFalse();
+		}
+	}
 
 	@Test
 	void factorizesNeighbourAndContextFibres() {
@@ -201,6 +229,77 @@ class ImmutablePagedQuadCsfIndexTest {
 				assertThat(neighbours).containsExactly(expected.neighbours);
 				assertThat(contexts).containsExactly(expected.contexts);
 			}
+			assertThat(cursor.advance()).isFalse();
+		}
+	}
+
+	@Test
+	void keyCursorBulkRootCountsStayExactAcrossPagesWindowsAndContinuations() {
+		int rowCount = 2_500;
+		int supernodeOrdinal = 1_271;
+		int supernodeEdges = 80_000;
+		List<Row> rows = new ArrayList<>(rowCount);
+		for (int row = 0; row < rowCount; row++) {
+			int edges = row == supernodeOrdinal ? supernodeEdges : row % 3 + 1;
+			long[] neighbors = new long[edges];
+			long[] contexts = new long[edges];
+			for (int edge = 0; edge < edges; edge++) {
+				neighbors[edge] = id(1, 1_000_000L + row * 100_000L + edge);
+				contexts[edge] = edge % 3 == 0 ? 0 : id(1, edge + 1L);
+			}
+			rows.add(new Row(id(1, row * 5L + 1), neighbors, contexts));
+		}
+
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows)) {
+			assertThat(index.pageCount()).isGreaterThan(2);
+			long from = 733;
+			long to = 1_809;
+			ImmutablePagedQuadCsfIndex.KeyCursor cursor = index.keyDomain(0, 0).cursor(from, to);
+			long[] roots = new long[263];
+			long[] counts = new long[263];
+			long expectedOrdinal = from;
+			int copied;
+			do {
+				Arrays.fill(roots, -1L);
+				Arrays.fill(counts, -1L);
+				copied = cursor.fillRootCounts(roots, 3, counts, 3, 257);
+				for (int lane = 0; lane < copied; lane++) {
+					Row expected = rows.get(Math.toIntExact(expectedOrdinal++));
+					assertThat(roots[3 + lane]).isEqualTo(expected.row);
+					assertThat(counts[3 + lane]).isEqualTo(expected.neighbours.length);
+				}
+				assertThat(roots[2]).isEqualTo(-1L);
+				assertThat(counts[2]).isEqualTo(-1L);
+				assertThat(roots[3 + copied]).isEqualTo(-1L);
+				assertThat(counts[3 + copied]).isEqualTo(-1L);
+			} while (copied != 0);
+			assertThat(expectedOrdinal).isEqualTo(to);
+		}
+	}
+
+	@Test
+	void keyCursorCountsDistinctNeighborsAcrossContinuationPages() {
+		int repeatedContexts = 70_000;
+		int trailingNeighbors = 10_000;
+		long repeatedNeighbor = id(1, 1_000_000);
+		long[] neighbors = new long[repeatedContexts + trailingNeighbors];
+		long[] contexts = new long[neighbors.length];
+		for (int i = 0; i < repeatedContexts; i++) {
+			neighbors[i] = repeatedNeighbor;
+			long coordinate = i + 1L;
+			contexts[i] = id(1, coordinate * coordinate);
+		}
+		for (int i = 0; i < trailingNeighbors; i++) {
+			neighbors[repeatedContexts + i] = id(1, 1_000_001L + i);
+		}
+
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0,
+				List.of(new Row(id(1, 77), neighbors, contexts)))) {
+			assertThat(index.pageCount()).isGreaterThan(1);
+			ImmutablePagedQuadCsfIndex.KeyCursor cursor = index.keyDomain(0, 0).cursor();
+			assertThat(cursor.advance()).isTrue();
+			assertThat(cursor.edgeCount()).isEqualTo(neighbors.length);
+			assertThat(cursor.distinctNeighborCount()).isEqualTo(trailingNeighbors + 1L);
 			assertThat(cursor.advance()).isFalse();
 		}
 	}

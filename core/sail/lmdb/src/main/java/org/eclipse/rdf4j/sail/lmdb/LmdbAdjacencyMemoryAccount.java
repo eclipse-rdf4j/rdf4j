@@ -46,7 +46,11 @@ final class LmdbAdjacencyMemoryAccount {
 		 */
 		NODE_PREDICATE_NATIVE,
 		/** Modelled Java metadata of the node-predicate projection, kept apart from {@link #JAVA_METADATA}. */
-		NODE_PREDICATE_JAVA
+		NODE_PREDICATE_JAVA,
+		/** Bit-packed fixed-predicate root-to-label-pattern synopses and their routing metadata. */
+		LABEL_SYNOPSIS,
+		/** Bit-packed all-predicate root-domain synopses and their exact quad multiplicities. */
+		DOMAIN_SYNOPSIS
 	}
 
 	private final long maxBytes;

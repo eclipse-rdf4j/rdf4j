@@ -78,8 +78,18 @@ final class LmdbPagedCsfBaseBuilder {
 			LmdbAdjacencyMemoryAccount account, long baseArenaRegionBytes, long ignoredWorkspaceRegionBytes,
 			int requestedBuildThreads, LmdbAdjacencyMetrics metrics, LmdbNodePredicateOptions nodePredicateOptions)
 			throws IOException {
+		return build(sourceFamily, coverage, account, baseArenaRegionBytes, ignoredWorkspaceRegionBytes,
+				requestedBuildThreads, metrics, nodePredicateOptions,
+				ImmutablePagedQuadCsfIndex.LiteralDatatypeLookup.NONE);
+	}
+
+	static LmdbInMemoryAdjacencyIndex build(AdjacencySourceFamily sourceFamily, LmdbAdjacencyCoverage coverage,
+			LmdbAdjacencyMemoryAccount account, long baseArenaRegionBytes, long ignoredWorkspaceRegionBytes,
+			int requestedBuildThreads, LmdbAdjacencyMetrics metrics, LmdbNodePredicateOptions nodePredicateOptions,
+			ImmutablePagedQuadCsfIndex.LiteralDatatypeLookup literalDatatypeLookup) throws IOException {
 		Objects.requireNonNull(sourceFamily, "sourceFamily");
 		Objects.requireNonNull(nodePredicateOptions, "nodePredicateOptions");
+		Objects.requireNonNull(literalDatatypeLookup, "literalDatatypeLookup");
 		Objects.requireNonNull(coverage, "coverage");
 		Objects.requireNonNull(account, "account");
 		if (requestedBuildThreads <= 0) {
@@ -89,7 +99,7 @@ final class LmdbPagedCsfBaseBuilder {
 		boolean telemetryFinished = false;
 		try {
 			LmdbInMemoryAdjacencyIndex result = buildInternal(sourceFamily, coverage, account, baseArenaRegionBytes,
-					metrics, started, requestedBuildThreads, nodePredicateOptions);
+					metrics, started, requestedBuildThreads, nodePredicateOptions, literalDatatypeLookup);
 			telemetryFinished = true;
 			return result;
 		} finally {
@@ -102,7 +112,8 @@ final class LmdbPagedCsfBaseBuilder {
 	private static LmdbInMemoryAdjacencyIndex buildInternal(AdjacencySourceFamily sourceFamily,
 			LmdbAdjacencyCoverage coverage, LmdbAdjacencyMemoryAccount account, long baseArenaRegionBytes,
 			LmdbAdjacencyMetrics metrics, long started, int requestedBuildThreads,
-			LmdbNodePredicateOptions nodePredicateOptions) throws IOException {
+			LmdbNodePredicateOptions nodePredicateOptions,
+			ImmutablePagedQuadCsfIndex.LiteralDatatypeLookup literalDatatypeLookup) throws IOException {
 		long baseRevision = validateSourceFamily(sourceFamily);
 		AdjacencySourceScanner primary = Objects.requireNonNull(sourceFamily.primary(), "sourceFamily.primary()");
 
@@ -143,7 +154,7 @@ final class LmdbPagedCsfBaseBuilder {
 			ImmutablePagedQuadCsfIndex.BuildPlan csfPlan;
 			long pass1Started = System.nanoTime();
 			SizingPass sizing = sizeRanges(sourceFamily, scanPlan, sortedPredicates, predicateOrdinals,
-					effectiveBuildThreads);
+					effectiveBuildThreads, literalDatatypeLookup);
 			sizingTotals = sizing.totals;
 			fragmentPlans = sizing.fragmentPlans;
 			csfPlan = ImmutablePagedQuadCsfIndex.mergeBuildPlans(fragmentPlans);
@@ -213,7 +224,7 @@ final class LmdbPagedCsfBaseBuilder {
 				MaterializationPass materialization;
 				try {
 					materialization = materializeRanges(sourceFamily, scanPlan, predicateOrdinals,
-							fragmentPlans, effectiveBuildThreads, csfBudget);
+							fragmentPlans, effectiveBuildThreads, csfBudget, literalDatatypeLookup);
 					emittedTotals = materialization.totals;
 					fragments = materialization.fragments;
 					csf = ImmutablePagedQuadCsfIndex.mergeMaterializedFragments(csfPlan, fragments, csfBudget);
@@ -310,14 +321,15 @@ final class LmdbPagedCsfBaseBuilder {
 	}
 
 	private static SizingPass sizeRanges(AdjacencySourceFamily sourceFamily, ScanPlan scanPlan,
-			long[] sortedPredicates, PredicateOrdinalMap predicateOrdinals, int workerCount) throws IOException {
+			long[] sortedPredicates, PredicateOrdinalMap predicateOrdinals, int workerCount,
+			ImmutablePagedQuadCsfIndex.LiteralDatatypeLookup literalDatatypeLookup) throws IOException {
 		ScanRange[] ranges = scanPlan.ranges;
 		ImmutablePagedQuadCsfIndex.BuildPlan[] plans = new ImmutablePagedQuadCsfIndex.BuildPlan[ranges.length];
 		ScanTotals[] rangeTotals = new ScanTotals[ranges.length];
 		RangeExecution execution = runRangeTasks(sourceFamily, workerCount, ranges, (range, scanner, cancelled) -> {
 			log.debug("Sizing adjacency range {} in plane {}", range.ordinal, range.plane);
 			try (ImmutablePagedQuadCsfIndex.Builder builder = ImmutablePagedQuadCsfIndex
-					.sizingBuilder(sortedPredicates.length)) {
+					.sizingBuilder(sortedPredicates.length, literalDatatypeLookup)) {
 				rangeTotals[range.ordinal] = scanPlane(scanner, range.plane, range.coverage, range.sourceRange,
 						predicateOrdinals, builder, cancelled);
 				plans[range.ordinal] = builder.finishPlan();
@@ -329,7 +341,8 @@ final class LmdbPagedCsfBaseBuilder {
 	private static MaterializationPass materializeRanges(AdjacencySourceFamily sourceFamily, ScanPlan scanPlan,
 			PredicateOrdinalMap predicateOrdinals,
 			ImmutablePagedQuadCsfIndex.BuildPlan[] fragmentPlans, int workerCount,
-			LmdbAdjacencyCsfMemoryBudget budget) throws IOException {
+			LmdbAdjacencyCsfMemoryBudget budget,
+			ImmutablePagedQuadCsfIndex.LiteralDatatypeLookup literalDatatypeLookup) throws IOException {
 		ScanRange[] ranges = scanPlan.ranges;
 		ImmutablePagedQuadCsfIndex[] fragments = new ImmutablePagedQuadCsfIndex[ranges.length];
 		ScanTotals[] rangeTotals = new ScanTotals[ranges.length];
@@ -341,7 +354,8 @@ final class LmdbPagedCsfBaseBuilder {
 					(range, scanner, cancelled) -> {
 						log.debug("Materializing adjacency range {} in plane {}", range.ordinal, range.plane);
 						try (ImmutablePagedQuadCsfIndex.Builder builder = ImmutablePagedQuadCsfIndex
-								.materializingBuilder(fragmentPlans[range.ordinal], shardOnlyBudget)) {
+								.materializingBuilder(fragmentPlans[range.ordinal], shardOnlyBudget,
+										literalDatatypeLookup)) {
 							rangeTotals[range.ordinal] = scanPlane(scanner, range.plane, range.coverage,
 									range.sourceRange, predicateOrdinals, builder, cancelled);
 							fragments[range.ordinal] = builder.finishIndex();

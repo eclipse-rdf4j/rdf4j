@@ -94,6 +94,34 @@ public final class LmdbKeyRange {
 		return decodedBounds;
 	}
 
+	/** True when evaluating this range may inspect the supplied decoded quad field. */
+	boolean usesField(int field) {
+		if (decodedBounds == null) {
+			return true;
+		}
+		return prefixUsesField(decodedBounds.lowPrefix, field)
+				|| prefixUsesField(decodedBounds.highPrefixExclusive, field);
+	}
+
+	/**
+	 * Extracts exact half-open root/run bounds for an SOC or OSC cursor when the range's first varying field is the
+	 * cursor root or neighbor. The residual decoded/raw comparison remains authoritative; these bounds only skip
+	 * prefixes that cannot match.
+	 */
+	DirectionalBounds directionalBounds(long predicate, boolean outgoing) {
+		if (decodedBounds == null) {
+			return DirectionalBounds.NONE;
+		}
+		int rootField = outgoing ? TripleIndex.SUBJ_IDX : TripleIndex.OBJ_IDX;
+		int neighborField = outgoing ? TripleIndex.OBJ_IDX : TripleIndex.SUBJ_IDX;
+		if (firstVaryingField != rootField && firstVaryingField != neighborField) {
+			return DirectionalBounds.NONE;
+		}
+		long[] low = directionalBound(decodedBounds.lowPrefix, predicate, rootField, neighborField);
+		long[] high = directionalBound(decodedBounds.highPrefixExclusive, predicate, rootField, neighborField);
+		return low == null && high == null ? DirectionalBounds.NONE : new DirectionalBounds(low, high);
+	}
+
 	/** Applies this half-open raw index range to one decoded quad. */
 	boolean includes(long[] quad) {
 		if (decodedBounds != null) {
@@ -137,6 +165,61 @@ public final class LmdbKeyRange {
 			return null;
 		}
 		return Arrays.copyOf(decoded, size);
+	}
+
+	private boolean prefixUsesField(long[] prefix, int field) {
+		if (prefix == null) {
+			return false;
+		}
+		for (int ordinal = 0; ordinal < prefix.length; ordinal++) {
+			if (component(indexFieldSeq.charAt(ordinal)) == field) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private long[] directionalBound(long[] prefix, long predicate, int rootField, int neighborField) {
+		if (prefix == null) {
+			return null;
+		}
+		int varyingOrdinal = -1;
+		int rootOrdinal = -1;
+		for (int ordinal = 0; ordinal < prefix.length; ordinal++) {
+			int field = component(indexFieldSeq.charAt(ordinal));
+			if (field == TripleIndex.PRED_IDX && prefix[ordinal] != predicate) {
+				return null;
+			}
+			if (field == rootField) {
+				rootOrdinal = ordinal;
+			}
+			if (field == firstVaryingField) {
+				varyingOrdinal = ordinal;
+			}
+		}
+		// A shorter or longer raw prefix cannot be represented as the same exact directional half-open boundary.
+		if (varyingOrdinal < 0 || prefix.length != varyingOrdinal + 1) {
+			return null;
+		}
+		if (firstVaryingField == rootField) {
+			return new long[] { prefix[varyingOrdinal] };
+		}
+		if (firstVaryingField == neighborField && rootOrdinal >= 0 && rootOrdinal < varyingOrdinal) {
+			return new long[] { prefix[rootOrdinal], prefix[varyingOrdinal] };
+		}
+		return null;
+	}
+
+	static final class DirectionalBounds {
+		static final DirectionalBounds NONE = new DirectionalBounds(null, null);
+
+		final long[] lowInclusive;
+		final long[] highExclusive;
+
+		private DirectionalBounds(long[] lowInclusive, long[] highExclusive) {
+			this.lowInclusive = lowInclusive;
+			this.highExclusive = highExclusive;
+		}
 	}
 
 	static final class DecodedBounds {

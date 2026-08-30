@@ -21,6 +21,7 @@ import javax.xml.datatype.XMLGregorianCalendar;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 
@@ -205,8 +206,8 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	@Override
 	public IRI getDatatype() {
 		if (!initialized) {
-			CoreDatatype.XSD inlinedDatatype = inlinedCoreDatatype();
-			if (inlinedDatatype != null) {
+			CoreDatatype encodedDatatype = encodedCoreDatatype();
+			if (encodedDatatype != null) {
 				return datatype;
 			}
 			init();
@@ -221,7 +222,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 			return coreDatatype;
 		}
 		if (!initialized) {
-			coreDatatype = inlinedCoreDatatype();
+			coreDatatype = encodedCoreDatatype();
 			if (coreDatatype != null) {
 				return coreDatatype;
 			}
@@ -236,9 +237,15 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	 * Inlined literal ids encode their XSD core datatype in the id's type bits, so the datatype is known without
 	 * resolving the value. Returns {@code null} (leaving the fields untouched) when the id is not an inlined id.
 	 */
-	private CoreDatatype.XSD inlinedCoreDatatype() {
+	private CoreDatatype encodedCoreDatatype() {
 		if (internalID == UNKNOWN_ID) {
 			return null;
+		}
+		CoreDatatype referenceDatatype = ValueIds.coreDatatypeOfCoreLiteral(internalID);
+		if (referenceDatatype != CoreDatatype.NONE) {
+			datatype = referenceDatatype.getIri();
+			coreDatatype = referenceDatatype;
+			return referenceDatatype;
 		}
 		CoreDatatype.XSD inlinedDatatype = Values.coreDatatypeOfInlined(internalID);
 		if (inlinedDatatype != null) {

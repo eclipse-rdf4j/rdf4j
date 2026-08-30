@@ -31,37 +31,85 @@ public final class LmdbPrefixRunPlan {
 	static final AtomicLong RUN_ROWS_COUNTED = new AtomicLong();
 	static final AtomicLong ADJACENCY_OPENED = new AtomicLong();
 	static final AtomicLong ADJACENCY_PREFIXES_EMITTED = new AtomicLong();
+	static final AtomicLong OUTGOING_ADJACENCY_OPENED = new AtomicLong();
+	static final AtomicLong INCOMING_ADJACENCY_OPENED = new AtomicLong();
+	static final AtomicLong ROOTS_VISITED = new AtomicLong();
+	static final AtomicLong RUNS_VISITED = new AtomicLong();
+	static final AtomicLong METADATA_COUNTS = new AtomicLong();
+	static final AtomicLong OUTGOING_METADATA_COUNTS = new AtomicLong();
+	static final AtomicLong INCOMING_METADATA_COUNTS = new AtomicLong();
+	static final AtomicLong NEIGHBOR_VALUES_DECODED = new AtomicLong();
+	static final AtomicLong CONTEXT_VALUES_DECODED = new AtomicLong();
+	static final AtomicLong MERGE_WIDTH_PEAK = new AtomicLong();
+	static final AtomicLong RANGE_BOUNDED_EXECUTIONS = new AtomicLong();
 
 	private final TripleIndex index;
 	private final int[] prefixFields;
 	private final int prefixLength;
 	private final char[] fieldSequence;
 	private final String indexName;
-	private final boolean adjacency;
+	private final AdjacencyKind adjacencyKind;
 	private final boolean wholePlaneCount;
+	private final long[] acceptedContexts;
+	private final boolean namedContextsOnly;
+	private final LmdbKeyRange keyRange;
+
+	enum AdjacencyKind {
+		NONE,
+		OUTGOING_ROOT,
+		OUTGOING_NEIGHBOR,
+		INCOMING_ROOT,
+		INCOMING_NEIGHBOR,
+		PREDICATE
+	}
 
 	LmdbPrefixRunPlan(TripleIndex index, int[] prefixFields, int prefixLength) {
-		this(index, prefixFields, prefixLength, index.getFieldSeq(), index.getName(false), false, false);
+		this(index, prefixFields, prefixLength, index.getFieldSeq(), index.getName(false), AdjacencyKind.NONE, false,
+				null, false, null);
 	}
 
 	private LmdbPrefixRunPlan(TripleIndex index, int[] prefixFields, int prefixLength, char[] fieldSequence,
-			String indexName, boolean adjacency, boolean wholePlaneCount) {
+			String indexName, AdjacencyKind adjacencyKind, boolean wholePlaneCount, long[] acceptedContexts,
+			boolean namedContextsOnly, LmdbKeyRange keyRange) {
 		this.index = index;
 		this.prefixFields = Arrays.copyOf(prefixFields, prefixFields.length);
 		this.prefixLength = prefixLength;
 		this.fieldSequence = Arrays.copyOf(fieldSequence, fieldSequence.length);
 		this.indexName = indexName;
-		this.adjacency = adjacency;
+		this.adjacencyKind = adjacencyKind;
 		this.wholePlaneCount = wholePlaneCount;
+		this.acceptedContexts = acceptedContexts == null ? null
+				: Arrays.copyOf(acceptedContexts, acceptedContexts.length);
+		this.namedContextsOnly = namedContextsOnly;
+		this.keyRange = keyRange;
 		PLANNED.incrementAndGet();
 	}
 
+	static LmdbPrefixRunPlan adjacencyOutgoing(int[] prefixFields) {
+		return adjacencyDirectional(prefixFields, TripleIndex.SUBJ_IDX, TripleIndex.OBJ_IDX,
+				new char[] { 's', 'o', 'c' }, AdjacencyKind.OUTGOING_ROOT,
+				AdjacencyKind.OUTGOING_NEIGHBOR);
+	}
+
+	/** Compatibility name retained for existing package-level cursor tests. */
 	static LmdbPrefixRunPlan adjacencySubject(int[] prefixFields) {
-		if (prefixFields == null || prefixFields.length != 1 || prefixFields[0] != TripleIndex.SUBJ_IDX) {
-			throw new IllegalArgumentException("adjacency subject runs require the subject as their only prefix field");
+		return adjacencyOutgoing(prefixFields);
+	}
+
+	static LmdbPrefixRunPlan adjacencyIncoming(int[] prefixFields) {
+		return adjacencyDirectional(prefixFields, TripleIndex.OBJ_IDX, TripleIndex.SUBJ_IDX,
+				new char[] { 'o', 's', 'c' }, AdjacencyKind.INCOMING_ROOT,
+				AdjacencyKind.INCOMING_NEIGHBOR);
+	}
+
+	private static LmdbPrefixRunPlan adjacencyDirectional(int[] prefixFields, int rootField, int neighborField,
+			char[] fieldSequence, AdjacencyKind rootKind, AdjacencyKind neighborKind) {
+		if (prefixFields == null || prefixFields.length < 1 || prefixFields.length > 2
+				|| prefixFields[0] != rootField || prefixFields.length == 2 && prefixFields[1] != neighborField) {
+			throw new IllegalArgumentException("directional adjacency runs require [root] or [root, neighbor]");
 		}
-		return new LmdbPrefixRunPlan(null, prefixFields, 1, new char[] { 's', 'p', 'o', 'c' },
-				"direct-adjacency", true, false);
+		return new LmdbPrefixRunPlan(null, prefixFields, prefixFields.length, fieldSequence,
+				"direct-adjacency", prefixFields.length == 1 ? rootKind : neighborKind, false, null, false, null);
 	}
 
 	static LmdbPrefixRunPlan adjacencyPredicate(int[] prefixFields) {
@@ -70,15 +118,49 @@ public final class LmdbPrefixRunPlan {
 					"adjacency predicate runs require the predicate as their only prefix field");
 		}
 		return new LmdbPrefixRunPlan(null, prefixFields, 1, new char[] { 'p', 's', 'o', 'c' },
-				"direct-adjacency", true, false);
+				"direct-adjacency", AdjacencyKind.PREDICATE, false, null, false, null);
 	}
 
 	@InternalUseOnly
 	public LmdbPrefixRunPlan asWholePlaneCount() {
-		if (!adjacency) {
+		if (!usesAdjacency()) {
 			throw new IllegalStateException("whole-plane counts require a direct-adjacency prefix plan");
 		}
-		return new LmdbPrefixRunPlan(index, prefixFields, prefixLength, fieldSequence, indexName, true, true);
+		return new LmdbPrefixRunPlan(index, prefixFields, prefixLength, fieldSequence, indexName, adjacencyKind, true,
+				acceptedContexts, namedContextsOnly, keyRange);
+	}
+
+	/** Returns the same physical scan constrained to the accepted context ids and/or named contexts. */
+	@InternalUseOnly
+	public LmdbPrefixRunPlan withContextFilter(long[] contexts, boolean namedOnly) {
+		if (!usesAdjacency()) {
+			throw new IllegalStateException("context-filtered prefix runs require direct adjacency");
+		}
+		return new LmdbPrefixRunPlan(index, prefixFields, prefixLength, fieldSequence, indexName, adjacencyKind,
+				false, contexts, namedOnly, keyRange);
+	}
+
+	/** Returns the same physical adjacency scan with an exact residual key-range constraint. */
+	@InternalUseOnly
+	public LmdbPrefixRunPlan withKeyRange(LmdbKeyRange range) {
+		if (!usesAdjacency() || adjacencyKind == AdjacencyKind.PREDICATE) {
+			throw new IllegalStateException("key-ranged prefix runs require a directional adjacency plan");
+		}
+		return new LmdbPrefixRunPlan(index, prefixFields, prefixLength, fieldSequence, indexName, adjacencyKind,
+				false, acceptedContexts, namedContextsOnly, range);
+	}
+
+	/** Copies context and key-range constraints from a compatible composite plan. */
+	@InternalUseOnly
+	public LmdbPrefixRunPlan withConstraintsOf(LmdbPrefixRunPlan source) {
+		LmdbPrefixRunPlan constrained = this;
+		if (source.acceptedContexts != null || source.namedContextsOnly) {
+			constrained = constrained.withContextFilter(source.acceptedContexts, source.namedContextsOnly);
+		}
+		if (source.keyRange != null) {
+			constrained = constrained.withKeyRange(source.keyRange);
+		}
+		return constrained;
 	}
 
 	static boolean isEnabled() {
@@ -93,6 +175,36 @@ public final class LmdbPrefixRunPlan {
 		RUN_ROWS_COUNTED.set(0);
 		ADJACENCY_OPENED.set(0);
 		ADJACENCY_PREFIXES_EMITTED.set(0);
+		OUTGOING_ADJACENCY_OPENED.set(0);
+		INCOMING_ADJACENCY_OPENED.set(0);
+		ROOTS_VISITED.set(0);
+		RUNS_VISITED.set(0);
+		METADATA_COUNTS.set(0);
+		OUTGOING_METADATA_COUNTS.set(0);
+		INCOMING_METADATA_COUNTS.set(0);
+		NEIGHBOR_VALUES_DECODED.set(0);
+		CONTEXT_VALUES_DECODED.set(0);
+		MERGE_WIDTH_PEAK.set(0);
+		RANGE_BOUNDED_EXECUTIONS.set(0);
+	}
+
+	/** Records the maximum number of simultaneously active predicate cursors in one aggregate merge. */
+	@InternalUseOnly
+	public static void recordMergeWidth(long width) {
+		MERGE_WIDTH_PEAK.accumulateAndGet(width, Math::max);
+	}
+
+	/** Records one aggregate count answered directly from adjacency row metadata. */
+	@InternalUseOnly
+	public static void recordMetadataCount() {
+		METADATA_COUNTS.incrementAndGet();
+	}
+
+	/** Records one exact SOC/OSC root-domain cardinality answered without opening a payload cursor. */
+	@InternalUseOnly
+	public static void recordDirectionalMetadataCount(boolean outgoing) {
+		recordMetadataCount();
+		(outgoing ? OUTGOING_METADATA_COUNTS : INCOMING_METADATA_COUNTS).incrementAndGet();
 	}
 
 	@InternalUseOnly
@@ -115,12 +227,68 @@ public final class LmdbPrefixRunPlan {
 
 	@InternalUseOnly
 	public boolean usesAdjacency() {
-		return adjacency;
+		return adjacencyKind != AdjacencyKind.NONE;
+	}
+
+	AdjacencyKind adjacencyKind() {
+		return adjacencyKind;
 	}
 
 	@InternalUseOnly
 	public boolean wholePlaneCount() {
 		return wholePlaneCount;
+	}
+
+	boolean hasContextFilter() {
+		return acceptedContexts != null || namedContextsOnly;
+	}
+
+	boolean rejectsEveryContext() {
+		return acceptedContexts != null && acceptedContexts.length == 0;
+	}
+
+	boolean acceptsContext(long context) {
+		if (namedContextsOnly && context == 0L) {
+			return false;
+		}
+		if (acceptedContexts == null) {
+			return true;
+		}
+		for (long accepted : acceptedContexts) {
+			if (accepted == context) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	@InternalUseOnly
+	public boolean hasKeyRange() {
+		return keyRange != null;
+	}
+
+	boolean rangeUsesField(int field) {
+		return keyRange != null && keyRange.usesField(field);
+	}
+
+	boolean acceptsQuad(long[] quad) {
+		return keyRange == null || keyRange.includes(quad);
+	}
+
+	LmdbKeyRange.DirectionalBounds directionalBounds(long predicate, boolean outgoing) {
+		return keyRange == null ? LmdbKeyRange.DirectionalBounds.NONE
+				: keyRange.directionalBounds(predicate, outgoing);
+	}
+
+	/** Copies the accepted context ids, or returns {@code null} for an unrestricted id set. */
+	@InternalUseOnly
+	public long[] acceptedContexts() {
+		return acceptedContexts == null ? null : Arrays.copyOf(acceptedContexts, acceptedContexts.length);
+	}
+
+	@InternalUseOnly
+	public boolean namedContextsOnly() {
+		return namedContextsOnly;
 	}
 
 	@InternalUseOnly

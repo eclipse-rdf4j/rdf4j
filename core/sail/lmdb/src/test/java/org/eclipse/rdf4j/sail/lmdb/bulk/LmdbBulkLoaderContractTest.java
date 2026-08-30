@@ -42,6 +42,7 @@ import java.util.zip.GZIPOutputStream;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -958,6 +959,26 @@ class LmdbBulkLoaderContractTest {
 		load(reverseTarget, config, reverseOrder);
 
 		assertThat(readValueIds(firstTarget, config)).isEqualTo(readValueIds(reverseTarget, config));
+	}
+
+	@Test
+	void bulkWriterEncodesOnlyEligibleCoreDatatypeLiteralReferences() throws Exception {
+		String input = """
+				<urn:core:s> <urn:p> "007"^^<http://www.w3.org/2001/XMLSchema#integer> .
+				<urn:custom:s> <urn:p> "custom"^^<urn:test:datatype> .
+				""";
+		Path target = temporaryDirectory.resolve("core-literal-reference-store");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,psoc").setInlineLiterals(false);
+		load(target, config, input);
+
+		Map<String, Long> ids = readValueIds(target, config);
+		long coreId = ids.get("\"007\"^^<http://www.w3.org/2001/XMLSchema#integer>");
+		long customId = ids.get("\"custom\"^^<urn:test:datatype>");
+		assertThat(ValueIds.getIdType(coreId)).isEqualTo(ValueIds.T_CORE_LITERAL);
+		assertThat(ValueIds.coreDatatypeOfCoreLiteral(coreId)).isSameAs(CoreDatatype.XSD.INTEGER);
+		assertThat(ValueIds.getIdType(customId)).isEqualTo(ValueIds.T_LITERAL);
+		assertThat(Files.readString(target.resolve("lmdbrdf.ver")))
+				.isEqualTo("rdf4j-lmdb-core-literal-reference-v1\n");
 	}
 
 	@Test

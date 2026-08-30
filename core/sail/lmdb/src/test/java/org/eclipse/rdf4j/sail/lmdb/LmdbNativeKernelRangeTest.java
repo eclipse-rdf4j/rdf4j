@@ -185,6 +185,50 @@ class LmdbNativeKernelRangeTest {
 		}
 	}
 
+	@ParameterizedTest(name = "adjacency aggregate preserves range {0} {1}")
+	@CsvSource({ ">=,2,6", ">,2,4", "<=,2,6", "<,2,4", ">,4,0", ">=,4,2", "<=,0,2" })
+	void singlePatternAdjacencyAggregatePreservesRange(String operator, int boundary, long expectedCount)
+			throws Exception {
+		assertThat(((LmdbStore) repository.getSail()).awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		String query = prefixes()
+				+ "SELECT (COUNT(*) AS ?c) WHERE {\n"
+				+ "  ?s ex:score ?score .\n"
+				+ "  FILTER(?score " + operator + " " + boundary + ")\n"
+				+ "}";
+
+		assertThat(genericCount(query)).isEqualTo(expectedCount);
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(nativeCount(query))
+				.as("the prefix aggregate must not replace a ranged plane with its unfiltered row total")
+				.isEqualTo(expectedCount);
+		assertThat(LmdbPrefixRunPlan.INCOMING_ADJACENCY_OPENED.get())
+				.as("the object range must bound the incoming OSC root stream")
+				.isPositive();
+		assertThat(LmdbPrefixRunPlan.OUTGOING_ADJACENCY_OPENED.get()).isZero();
+		assertThat(LmdbPrefixRunPlan.NEIGHBOR_VALUES_DECODED.get()).isZero();
+		assertThat(LmdbPrefixRunPlan.CONTEXT_VALUES_DECODED.get()).isZero();
+		assertThat(LmdbPrefixRunPlan.RANGE_BOUNDED_EXECUTIONS.get()).isPositive();
+	}
+
+	@Test
+	void groupedSubjectAdjacencyAggregateStreamsNeighborRangeResidual() throws Exception {
+		assertThat(((LmdbStore) repository.getSail()).awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		String query = prefixes()
+				+ "SELECT ?s (COUNT(*) AS ?c) WHERE {\n"
+				+ "  ?s ex:score ?score .\n"
+				+ "  FILTER(?score > 2)\n"
+				+ "} GROUP BY ?s";
+
+		List<String> expected = genericRows(query);
+		assertThat(expected).containsExactly(EX + "item3=2", EX + "item4=2");
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(nativeRows(query)).containsExactlyElementsOf(expected);
+		assertThat(LmdbPrefixRunPlan.OUTGOING_ADJACENCY_OPENED.get()).isPositive();
+		assertThat(LmdbPrefixRunPlan.INCOMING_ADJACENCY_OPENED.get()).isZero();
+		assertThat(LmdbPrefixRunPlan.NEIGHBOR_VALUES_DECODED.get()).isPositive();
+		assertThat(LmdbPrefixRunPlan.RANGE_BOUNDED_EXECUTIONS.get()).isPositive();
+	}
+
 	private long genericCount(String query) {
 		return count(query, false);
 	}
@@ -214,7 +258,7 @@ class LmdbNativeKernelRangeTest {
 
 	private static String render(BindingSet bindings) {
 		List<String> values = new ArrayList<>(bindings.size());
-		for (String name : List.of("s", "score", "g")) {
+		for (String name : List.of("s", "score", "g", "c")) {
 			if (bindings.hasBinding(name)) {
 				values.add(bindings.getValue(name).stringValue());
 			}

@@ -241,6 +241,7 @@ public class LmdbNativeKernelAggregateTest {
 		save(NATIVE_FLAG, "true");
 		save(WCOJ_FLAG, "false");
 		save("rdf4j.lmdb.prefixRun.enabled", "false");
+		save("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "false");
 		save("rdf4j.lmdb.chunkPipeline.enabled", "false");
 		save("rdf4j.lmdb.factorizedRows.enabled", "false");
 		save("rdf4j.lmdb.factorizedTail.enabled", "false");

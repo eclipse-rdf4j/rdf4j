@@ -599,6 +599,30 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	}
 
 	@Override
+	public NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor openPageCursor() {
+		ensureOpen();
+		if (!baseOnly || baseKeys == null) {
+			return null;
+		}
+		return new DirectPageCursor(baseKeys.pageCursor());
+	}
+
+	@Override
+	public long pageCount() {
+		ensureOpen();
+		return baseOnly && baseKeys != null ? baseKeys.pageCount() : -1L;
+	}
+
+	@Override
+	public NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor openPageCursor(long fromPage, long toPage) {
+		ensureOpen();
+		if (!baseOnly || baseKeys == null) {
+			return null;
+		}
+		return new DirectPageCursor(baseKeys.pageCursor(fromPage, toPage));
+	}
+
+	@Override
 	public NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor openKeyRunCursor(long fromOrdinal, long toOrdinal) {
 		long count = keyCount();
 		if (fromOrdinal < 0 || toOrdinal < fromOrdinal || toOrdinal > count) {
@@ -619,6 +643,92 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		ImmutablePagedQuadCsfIndex.KeyCursor baseCursor = baseKeys == null ? null
 				: baseKeys.cursor(merged ? 0 : fromOrdinal, merged ? baseCount : toOrdinal);
 		return new RootScanCursor(baseCursor, fromOrdinal, toOrdinal, merged);
+	}
+
+	private static final class DirectPageCursor
+			implements NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor {
+		private final ImmutablePagedQuadCsfIndex.PageCursor delegate;
+
+		private DirectPageCursor(ImmutablePagedQuadCsfIndex.PageCursor delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		public boolean advance() {
+			return delegate.advance();
+		}
+
+		@Override
+		public int rowCount() {
+			return delegate.roots();
+		}
+
+		@Override
+		public int fiberCount() {
+			return delegate.fibers();
+		}
+
+		@Override
+		public long quadCount() {
+			return delegate.quads();
+		}
+
+		@Override
+		public long firstRow() {
+			return delegate.firstRoot();
+		}
+
+		@Override
+		public long rowAt(int rowIndex) {
+			return delegate.rootAt(rowIndex);
+		}
+
+		@Override
+		public long rowQuadCount(int rowIndex) {
+			return delegate.rootQuadCount(rowIndex);
+		}
+
+		@Override
+		public int rowFiberCount(int rowIndex) {
+			return delegate.rootFiberCount(rowIndex);
+		}
+
+		@Override
+		public long neighborAt(int rowIndex, int localFiber) {
+			return delegate.neighborAt(rowIndex, localFiber);
+		}
+
+		@Override
+		public long fiberContextCount(int rowIndex, int localFiber) {
+			return delegate.neighborContextCount(rowIndex, localFiber);
+		}
+
+		@Override
+		public int copyRowFibers(int rowIndex, int fromFiber, int length, long[] neighborTarget, int neighborOffset,
+				long[] multiplicityTarget, int multiplicityOffset) {
+			return delegate.copyRootFibers(rowIndex, fromFiber, length, neighborTarget, neighborOffset,
+					multiplicityTarget, multiplicityOffset);
+		}
+
+		@Override
+		public boolean uniformRowTermKind() {
+			return delegate.rowsHaveUniformTermKind();
+		}
+
+		@Override
+		public boolean uniformRowLiteralDatatype() {
+			return delegate.rowsHaveUniformLiteralDatatype();
+		}
+
+		@Override
+		public boolean uniformNeighborTermKind() {
+			return delegate.neighborsHaveUniformTermKind();
+		}
+
+		@Override
+		public boolean uniformNeighborLiteralDatatype() {
+			return delegate.neighborsHaveUniformLiteralDatatype();
+		}
 	}
 
 	/**
@@ -791,6 +901,21 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		}
 
 		@Override
+		public int fillRootCounts(long[] rootTarget, int rootOffset, long[] countTarget, int countOffset,
+				int maximum) {
+			if (merged) {
+				return NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor.super.fillRootCounts(rootTarget, rootOffset,
+						countTarget, countOffset, maximum);
+			}
+			if (baseCursor == null) {
+				return 0;
+			}
+			int copied = baseCursor.fillRootCounts(rootTarget, rootOffset, countTarget, countOffset, maximum);
+			emittedOrdinal += copied;
+			return copied;
+		}
+
+		@Override
 		public long runHandle() {
 			return run;
 		}
@@ -807,6 +932,11 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 				size = current;
 			}
 			return current;
+		}
+
+		@Override
+		public long distinctNeighborCount() {
+			return directBaseRun ? baseCursor.distinctNeighborCount() : DISTINCT_NEIGHBOR_COUNT_UNKNOWN;
 		}
 
 		long size() {
@@ -843,6 +973,36 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 			return directBaseRun ? baseCursor.contextAt(runOffset)
 					: LmdbDirectNativeAdjacency.this.contextAt(run, runOffset);
 		}
+
+		@Override
+		public int fillFibers(NativeLmdbQuerySource.NativeAdjacency.FiberBatch target) {
+			return fillFibers(target, true);
+		}
+
+		@Override
+		public int fillFibers(NativeLmdbQuerySource.NativeAdjacency.FiberBatch target, boolean classifyTermTraits) {
+			if (!directBaseRun) {
+				return NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor.super.fillFibers(target);
+			}
+			long currentRunSize = runSize();
+			target.preparePhysical(this, key, run, currentRunSize);
+			int copied = baseCursor.copyFibers(target.nextRunOffset(), target.capacity(), target.neighborIds(), 0,
+					target.contextMultiplicities(), 0);
+			target.commitPhysical(copied, classifyTermTraits);
+			return target.size();
+		}
+
+		@Override
+		public int copyFibers(long runOffset, int length, long[] neighborTarget, int neighborOffset,
+				long[] multiplicityTarget, int multiplicityOffset) {
+			if (!directBaseRun) {
+				return NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor.super.copyFibers(runOffset, length,
+						neighborTarget, neighborOffset, multiplicityTarget, multiplicityOffset);
+			}
+			return baseCursor.copyFibers(runOffset, length, neighborTarget, neighborOffset, multiplicityTarget,
+					multiplicityOffset);
+		}
+
 	}
 
 	private void checkElementOffset(long runOffset) {

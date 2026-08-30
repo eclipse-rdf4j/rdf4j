@@ -570,20 +570,24 @@ public final class LmdbNativeExpressionCompiler {
 			} else if (expr instanceof IsResource) {
 				result = type == ValueIds.T_URI || type == ValueIds.T_BNODE;
 			} else if (expr instanceof IsLiteral) {
-				result = type == ValueIds.T_LITERAL || ValueIds.isInlined(id);
+				result = ValueIds.isLiteralReference(id) || ValueIds.isInlined(id);
 			} else if (expr instanceof IsBNode) {
 				result = type == ValueIds.T_BNODE;
 			} else if (expr instanceof IsTriple) {
 				result = type == ValueIds.T_TRIPLE;
 			} else if (numericType(type)) {
 				result = true;
-			} else if (type == ValueIds.T_LITERAL && decodedForNumeric != null) {
+			} else if (ValueIds.isLiteralReference(id) && decodedForNumeric != null) {
 				// numeric literals with non-canonical lexical forms ("007"^^xsd:integer) live as dictionary
 				// records, not inline ids; the generic isNumeric decides by DATATYPE alone, so decode and
 				// mirror that (an invalid lexical form with a numeric datatype is still numeric there)
-				LmdbNativeValueCodec.DecodedValue decoded = decodedForNumeric.evaluator.eval(row);
-				CoreDatatype.XSD xsd = decoded.error() ? null
-						: decoded.coreDatatype().asXSDDatatypeOrNull();
+				CoreDatatype coreDatatype = ValueIds.coreDatatypeOfCoreLiteral(id);
+				LmdbNativeValueCodec.DecodedValue decoded = coreDatatype == CoreDatatype.NONE
+						? decodedForNumeric.evaluator.eval(row)
+						: null;
+				CoreDatatype.XSD xsd = coreDatatype != CoreDatatype.NONE
+						? coreDatatype.asXSDDatatypeOrNull()
+						: decoded.error() ? null : decoded.coreDatatype().asXSDDatatypeOrNull();
 				result = xsd != null && xsd.isNumericDatatype();
 			} else {
 				result = false;

@@ -73,11 +73,12 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 * The current version of the LMDB store.
 	 */
 	/**
-	 * Version 3 adds the optional value-ordered inlined-numeric id encoding (recorded in {@code store.properties} as
-	 * {@code numeric-id-encoding=ordered-v1} on newly created stores). Version 2 stores open unchanged and keep the
-	 * legacy ZigZag encoding; ids are self-describing so no data migration exists or is needed.
+	 * Version 4 adds core-datatype tags to eligible non-inline literal reference IDs in newly created stores. Existing
+	 * stores upgrade their version marker but retain the absent writer capability and continue minting legacy IDs.
 	 */
-	static final int VERSION = 3;
+	static final int VERSION = 4;
+	static final String CORE_LITERAL_REFERENCE_MARKER_FILE = "lmdbrdf.ver";
+	static final String CORE_LITERAL_REFERENCE_MARKER = "rdf4j-lmdb-core-literal-reference-v1\n";
 
 	/**
 	 * Specifies which triple indexes this lmdb store must use.
@@ -349,10 +350,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 		try {
 			StoreProperties properties = new StoreProperties(dataDir);
-			// ensure that it is an error if an unsupported version of LmdbStore already exists
-			if (new File(dataDir, "lmdbrdf.ver").exists()) {
-				throw new SailException("Directory contains data from an older unsupported version of LmdbStore");
-			}
+			File compatibilityMarker = new File(dataDir, CORE_LITERAL_REFERENCE_MARKER_FILE);
+			boolean coreLiteralMarker = acceptsCoreLiteralReferenceMarker(compatibilityMarker);
 			boolean updateVersion = false;
 			if (properties.load()) {
 				if (!String.valueOf(VERSION).equals(properties.getVersion())) {
@@ -360,8 +359,14 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				}
 				// existing stores keep their recorded numeric-id encoding (absent = legacy ZigZag) — never rewritten
 				enforceInlineLiterals(properties, config);
+				if (properties.usesCoreDatatypeLiteralReferences() != coreLiteralMarker) {
+					throw new SailException(
+							"The core-literal reference encoding property and compatibility marker do not "
+									+ "agree. Restore both files from the same store generation or rebuild the store.");
+				}
 			} else {
 				properties.setVersion(String.valueOf(VERSION));
+				properties.setLiteralReferenceEncoding(StoreProperties.LITERAL_REFERENCE_ENCODING_CORE_V1);
 				if (config.getOrderedNumericIds()) {
 					// newly created store: record that writers use the value-ordered inlined-numeric encoding
 					properties.setNumericIdEncoding(StoreProperties.NUMERIC_ID_ENCODING_ORDERED_V1);
@@ -369,6 +374,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				// record the inlining setting so later opens can refuse to change it (see enforceInlineLiterals)
 				properties.setInlineLiterals(config.getInlineLiterals());
 				properties.setCanonicalLanguageTags(StoreProperties.CANONICAL_LANGUAGE_TAGS_LOWERCASE_V1);
+				writeCoreLiteralReferenceMarker(dataDir.toPath());
 			}
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
@@ -384,7 +390,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				@Override
 				protected LmdbSailStore createSailStore(File dataDir) throws IOException, SailException {
 					// Model can't fit into memory, use another LmdbSailStore to store delta
-					LmdbSailStore lmdbSailStore = new LmdbSailStore(dataDir, new StoreProperties(), config,
+					StoreProperties overflowProperties = new StoreProperties()
+							.setLiteralReferenceEncoding(StoreProperties.LITERAL_REFERENCE_ENCODING_CORE_V1);
+					LmdbSailStore lmdbSailStore = new LmdbSailStore(dataDir, overflowProperties, config,
 							useSketchBasedJoinEstimator);
 					lmdbSailStore.enableMultiThreading = false;
 					return lmdbSailStore;
@@ -736,8 +744,43 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	private boolean upgradeStore(File dataDir, String version) throws SailException {
-		// nothing to do, just update version number
-		return true;
+		final int storedVersion;
+		try {
+			storedVersion = Integer.parseInt(version);
+		} catch (NumberFormatException e) {
+			throw new SailException("Unsupported LmdbStore version: " + version, e);
+		}
+		if (storedVersion < 1 || storedVersion > VERSION) {
+			throw new SailException("Unsupported LmdbStore version: " + storedVersion + " (reader supports through "
+					+ VERSION + ")");
+		}
+		return storedVersion < VERSION;
+	}
+
+	private static boolean acceptsCoreLiteralReferenceMarker(File marker) throws SailException {
+		if (!marker.exists()) {
+			return false;
+		}
+		try {
+			if (CORE_LITERAL_REFERENCE_MARKER.equals(Files.readString(marker.toPath()))) {
+				return true;
+			}
+		} catch (IOException e) {
+			throw new SailException("Unable to read LmdbStore compatibility marker " + marker, e);
+		}
+		throw new SailException("Directory contains data from an older unsupported version of LmdbStore");
+	}
+
+	static void writeCoreLiteralReferenceMarker(Path directory) throws IOException {
+		Path marker = directory.resolve(CORE_LITERAL_REFERENCE_MARKER_FILE);
+		if (Files.exists(marker)) {
+			String existing = Files.readString(marker);
+			if (!CORE_LITERAL_REFERENCE_MARKER.equals(existing)) {
+				throw new IOException("Refusing to overwrite an incompatible LmdbStore marker at " + marker);
+			}
+			return;
+		}
+		Files.writeString(marker, CORE_LITERAL_REFERENCE_MARKER);
 	}
 
 	@Override
