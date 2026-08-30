@@ -1,6 +1,0 @@
-Evidence:
-Command: python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNativeKernelLoweringTest#aggregateRungSupportsAvgDistinctWithoutPlanBridge --retain-logs
-Report: core/sail/lmdb/target/surefire-reports/org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelLoweringTest.txt
-Snippet:
-Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.078 s <<< FAILURE!
-AVG(DISTINCT) needs a generated distinct set before exact accumulation ==> expected: not <null>

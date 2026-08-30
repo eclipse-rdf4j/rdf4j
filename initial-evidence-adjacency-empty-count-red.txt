@@ -1,6 +1,0 @@
-Evidence:
-Command: python3 .codex/skills/mvnf/scripts/mvnf.py 'LmdbDirectAdjacencyQueryTest#flaggedEmptyPlaneCountUsesExactZeroWithoutScanningLmdb+flaggedLegacyBaseServesExactCountAndPredicateAnalytics' --retain-logs
-Reports: core/sail/lmdb/target/surefire-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbDirectAdjacencyQueryTest.xml, core/sail/lmdb/target/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbDirectAdjacencyQueryTest.txt
-Summary: tests=2, failures=1, errors=0, skipped=0, time=0.472s
-Failure: org.eclipse.rdf4j.sail.lmdb.LmdbDirectAdjacencyQueryTest.flaggedEmptyPlaneCountUsesExactZeroWithoutScanningLmdb: failure: Expecting actual: 0L to be greater than: 0L
-Log: logs/mvnf/20260803-143804-verify.log

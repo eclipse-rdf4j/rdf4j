@@ -1,8 +1,0 @@
-Description: Use both exact adjacency planes for bound-endpoint property-path existence after the M9 10x frontier gate was met.
-Command: python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNativePropertyPathTest#boundExistenceUsesBidirectionalAdjacencySearch --retain-logs
-Report: core/sail/lmdb/target/surefire-reports/org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePropertyPathTest.txt
-Snippet:
-Tests run: 1, Failures: 1, Errors: 0, Skipped: 0
-LmdbNativePropertyPathTest.boundExistenceUsesBidirectionalAdjacencySearch
-Current telemetry: nativePathExpansionsActual=85, nativePathCsrFrontierLevelsActual=4
-Expected runtime metric nativePathBidirectionalSearchesActual=1 was absent.

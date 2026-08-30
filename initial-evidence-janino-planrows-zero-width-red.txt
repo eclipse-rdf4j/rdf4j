@@ -1,6 +1,0 @@
-Evidence:
-Command: python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNativeKernelIrEmitterTest --retain-logs
-Report: core/sail/lmdb/target/surefire-reports/org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIrEmitterTest.txt
-Snippet:
-Tests run: 44, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 0.490 s <<< FAILURE!
-enginePlanRowsPreserveZeroWidthEmptyAndSingletonSemantics: IllegalArgumentException: emit needs at least one column

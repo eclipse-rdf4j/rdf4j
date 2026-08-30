@@ -1,6 +1,0 @@
-Evidence:
-Command: python3 .codex/skills/mvnf/scripts/mvnf.py LmdbDirectAdjacencyQueryTest#flaggedPlannerFanOutUsesExactPlaneCounts --retain-logs
-Reports: core/sail/lmdb/target/surefire-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbDirectAdjacencyQueryTest.xml, core/sail/lmdb/target/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbDirectAdjacencyQueryTest.txt
-Summary: tests=1, failures=1, errors=0, skipped=0, time=0.297s
-Failure: org.eclipse.rdf4j.sail.lmdb.LmdbDirectAdjacencyQueryTest.flaggedPlannerFanOutUsesExactPlaneCounts: failure: expected: 1.5 but was: 1.4764384837306268
-Log: logs/mvnf/20260803-150721-verify.log

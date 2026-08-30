@@ -1,4 +1,0 @@
-Evidence:
-Command: python3 .codex/skills/mvnf/scripts/mvnf.py LmdbWcojStreamingFrontierTest
-Reports: core/sail/lmdb/target/surefire-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbWcojStreamingFrontierTest.xml, core/sail/lmdb/target/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbWcojStreamingFrontierTest.txt
-Summary: tests=5, failures=0, errors=0, skipped=0, time=1.328s

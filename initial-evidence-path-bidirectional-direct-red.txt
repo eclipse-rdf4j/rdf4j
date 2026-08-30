@@ -1,8 +1,0 @@
-Description: Bound direct property-path existence must avoid reverse-view and bidirectional-set setup.
-Command: python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNativePropertyPathTest#boundDirectExistenceAvoidsBackwardSearchSetup --retain-logs
-Report: core/sail/lmdb/target/surefire-reports/org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePropertyPathTest.txt
-Snippet:
-Tests run: 1, Failures: 1, Errors: 0, Skipped: 0
-Expected nativePathBidirectionalDirectHitsActual=1, but the executed physical plan opened both
-PATH_BIDIRECTIONAL_FORWARD_ADJACENCY and PATH_BIDIRECTIONAL_BACKWARD_ADJACENCY and reported
-nativePathBidirectionalSearchesActual=1.

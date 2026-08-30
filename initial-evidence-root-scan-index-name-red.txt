@@ -1,8 +1,0 @@
-Evidence:
-Command: python3 .codex/skills/mvnf/scripts/mvnf.py LmdbDirectAdjacencyQueryTest#rootScanServesFromDirectAdjacencyByDefault --retain-logs
-Report: core/sail/lmdb/target/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbDirectAdjacencyQueryTest.txt
-Snippet:
-Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.351 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbDirectAdjacencyQueryTest
-org.eclipse.rdf4j.sail.lmdb.LmdbDirectAdjacencyQueryTest.rootScanServesFromDirectAdjacencyByDefault -- Time elapsed: 0.331 s <<< FAILURE!
-expected: "direct-spoc"
- but was: "posc"
