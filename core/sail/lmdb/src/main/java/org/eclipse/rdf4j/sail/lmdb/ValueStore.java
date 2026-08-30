@@ -82,6 +82,7 @@ import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
@@ -418,7 +419,7 @@ class ValueStore extends AbstractValueFactory {
 			return null;
 		});
 
-		txnManager.closeReadTxn();
+		txnManager.reset();
 
 		// open unused IDs database
 		unusedDbi = openDatabase(env, "unused_ids", MDB_CREATE);
@@ -1290,7 +1291,17 @@ class ValueStore extends AbstractValueFactory {
 	public RecordIterator getTripleTerms(long subj, long pred, long obj) throws IOException {
 		TripleIndex index = TripleIndex.getBestIndex(tripleTermIndexes, subj, pred, obj, -1);
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, -1) > 0;
-		return new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, -1, true, txnManager.getReadTxn());
+		Txn txn = txnManager.createReadTxn();
+		return new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, -1, true, txn) {
+			@Override
+			public void close() {
+				try {
+					super.close();
+				} finally {
+					txn.close();
+				}
+			}
+		};
 	}
 
 	TxnManager getTxnManager() {
@@ -1307,8 +1318,8 @@ class ValueStore extends AbstractValueFactory {
 				long stamp = lockManager.readLock();
 				hasReadLock.set(Boolean.TRUE);
 				try {
-					try (MemoryStack stack = stackPush()) {
-						return transaction.exec(stack, txnManager.getReadTxn().get());
+					try (Txn txn = txnManager.createReadTxn(); MemoryStack stack = stackPush()) {
+						return transaction.exec(stack, txn.get());
 					}
 				} finally {
 					hasReadLock.remove();
@@ -1331,9 +1342,31 @@ class ValueStore extends AbstractValueFactory {
 			}
 		} else {
 			try {
-				return LmdbUtil.transaction(env, transaction);
+				return LmdbUtil.writeTransaction(env, transaction);
 			} finally {
-				txnManager.reset();
+				var lockManager = txnManager.lockManager();
+				boolean readLocked = hasReadLock.get() != null;
+				if (readLocked) {
+					lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
+				}
+				long stamp = 0;
+				try {
+					stamp = lockManager.writeLock();
+					txnManager.reset();
+				} catch (InterruptedException e) {
+					throw new IOException(e);
+				} finally {
+					if (stamp != 0) {
+						lockManager.unlockWrite(stamp);
+					}
+					if (readLocked) {
+						try {
+							lockManager.readLock();
+						} catch (InterruptedException e) {
+							throw new IOException(e);
+						}
+					}
+				}
 			}
 		}
 	}
