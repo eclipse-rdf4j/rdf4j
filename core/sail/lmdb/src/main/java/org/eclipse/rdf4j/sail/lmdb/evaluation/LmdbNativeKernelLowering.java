@@ -4221,6 +4221,17 @@ final class LmdbNativeKernelLowering {
 
 		private boolean lowerWitnessPatternPlan(PatternPlan pattern, WitnessColumns witnessCols,
 				List<Node> pipeline) {
+			if (pattern.range != null) {
+				// The compiled range has replaced the original FILTER, so it is part of the witness semantics. Carry
+				// the exact planned bounds into a witness-local ScanQuad instead of widening the pattern to an
+				// unrestricted adjacency probe.
+				if (witnessRangeScanCompatible(pattern, witnessCols)
+						&& lowerWitnessPatternAsScan(pattern, witnessCols, pipeline)) {
+					return true;
+				}
+				reason = "agg:witness-" + rangeDeclineReason(pattern).substring(reasonPrefix.length());
+				return false;
+			}
 			if (pattern.namedContextScope || !pattern.p.isConstant() || pattern.p.hasSlot() || pattern.c.hasSlot()
 					|| pattern.c.isConstant() || pattern.contexts.isFixed() || pattern.s.bindConstant
 					|| pattern.o.bindConstant) {
@@ -4242,6 +4253,122 @@ final class LmdbNativeKernelLowering {
 				return false;
 			}
 			return lowerWitnessPattern(pattern.s, pattern.p.constant, pattern.o, witnessCols, pipeline);
+		}
+
+		/**
+		 * Lowers a range-bearing witness pattern as the same exact raw-key scan used by an ordinary range pattern.
+		 * Fresh witness variables are scratch outputs; outer or earlier witness variables are scan operands. Repeated
+		 * fresh variables are projected independently and tied together with equality guards because no output column
+		 * is readable until the scan has produced a row.
+		 */
+		private boolean lowerWitnessPatternAsScan(PatternPlan pattern, WitnessColumns witnessCols,
+				List<Node> pipeline) {
+			if (!scanSourcesEnabled() || pattern.contexts.isFixed() || pattern.c.isConstant()
+					|| pattern.s.bindConstant || pattern.o.bindConstant || pattern.p.bindConstant
+					|| pattern.namedContextScope && !pattern.c.hasSlot()) {
+				return false;
+			}
+			Operand[] terms = new Operand[4];
+			int[] outCols = { -1, -1, -1, -1 };
+			int[] claimedSlots = { -1, -1, -1, -1 };
+			List<Node> repeats = new ArrayList<>(0);
+			if (!witnessScanTerm(pattern.s, LmdbNativeKernelIr.ScanQuad.SUBJ, terms, outCols, claimedSlots,
+					repeats, witnessCols)
+					|| !witnessScanTerm(pattern.p, LmdbNativeKernelIr.ScanQuad.PRED, terms, outCols,
+							claimedSlots, repeats, witnessCols)
+					|| !witnessScanTerm(pattern.o, LmdbNativeKernelIr.ScanQuad.OBJ, terms, outCols, claimedSlots,
+							repeats, witnessCols)
+					|| !witnessScanTerm(pattern.c, LmdbNativeKernelIr.ScanQuad.CTX, terms, outCols, claimedSlots,
+							repeats, witnessCols)) {
+				return false;
+			}
+			boolean writes = false;
+			for (int column : outCols) {
+				writes |= column >= 0;
+			}
+			if (!writes) {
+				return false;
+			}
+			pipeline.add(new LmdbNativeKernelIr.ScanQuad(scan(pattern.statementOrder, pattern.range), terms, outCols));
+			pipeline.addAll(repeats);
+			if (pattern.namedContextScope) {
+				int contextColumn = outCols[LmdbNativeKernelIr.ScanQuad.CTX];
+				if (contextColumn >= 0) {
+					pipeline.add(new LmdbNativeKernelIr.FilterCompareId(true, Operand.col(contextColumn),
+							Operand.constant(constantIndex(LmdbNativeAggregateCompiler.NULL_CONTEXT_ID))));
+				}
+			}
+			return true;
+		}
+
+		private boolean witnessRangeScanCompatible(PatternPlan pattern, WitnessColumns witnessCols) {
+			if (!scanSourcesEnabled() || pattern.statementOrder != null || pattern.indexName == null
+					|| !pattern.indexName.equals(pattern.range.indexFieldSeq())) {
+				return false;
+			}
+			int expectedFirst = pattern.range.firstVaryingField();
+			if (expectedFirst < 0) {
+				return true;
+			}
+			for (int i = 0; i < pattern.indexName.length(); i++) {
+				int field = switch (pattern.indexName.charAt(i)) {
+				case 's' -> TripleIndex.SUBJ_IDX;
+				case 'p' -> TripleIndex.PRED_IDX;
+				case 'o' -> TripleIndex.OBJ_IDX;
+				case 'c' -> TripleIndex.CONTEXT_IDX;
+				default -> -1;
+				};
+				if (field < 0) {
+					return false;
+				}
+				Term term = switch (field) {
+				case TripleIndex.SUBJ_IDX -> pattern.s;
+				case TripleIndex.PRED_IDX -> pattern.p;
+				case TripleIndex.OBJ_IDX -> pattern.o;
+				case TripleIndex.CONTEXT_IDX -> pattern.c;
+				default -> throw new IllegalStateException("invalid quad field " + field);
+				};
+				if (!(term.isConstant() && !term.hasSlot())) {
+					// Binding the varying term would change the selected index prefix and invalidate the planned range.
+					// Later index fields may still be correlated: the scanner applies those as exact residual bindings.
+					return field == expectedFirst && term.hasSlot() && witnessOperand(term, witnessCols) == null
+							&& !witnessCols.nullableOuterCorrelation;
+				}
+			}
+			return false;
+		}
+
+		private boolean witnessScanTerm(Term term, int position, Operand[] terms, int[] outCols,
+				int[] claimedSlots, List<Node> repeats, WitnessColumns witnessCols) {
+			if (term.hasSlot()) {
+				for (int earlier = 0; earlier < position; earlier++) {
+					if (claimedSlots[earlier] == term.slot) {
+						int repeatColumn = scratchColumn();
+						outCols[position] = repeatColumn;
+						claimedSlots[position] = term.slot;
+						repeats.add(new LmdbNativeKernelIr.FilterCompareId(false,
+								Operand.col(outCols[earlier]), Operand.col(repeatColumn)));
+						return true;
+					}
+				}
+			}
+			Operand operand = witnessOperand(term, witnessCols);
+			if (operand != null) {
+				terms[position] = operand;
+				return true;
+			}
+			if (witnessCols.nullableOuterCorrelation) {
+				return false;
+			}
+			if (!term.hasSlot()) {
+				// An anonymous witness position is scanned but does not need to survive as a column.
+				return true;
+			}
+			int column = scratchColumn();
+			outCols[position] = column;
+			claimedSlots[position] = term.slot;
+			witnessCols.put(term.slot, column);
+			return true;
 		}
 
 		/**

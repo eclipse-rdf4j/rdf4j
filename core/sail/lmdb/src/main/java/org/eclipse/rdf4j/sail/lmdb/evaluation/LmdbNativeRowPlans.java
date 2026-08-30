@@ -517,16 +517,9 @@ final class MinusCursor implements RowCursor {
 		// Compatibility depends on the left values even when the right plan's own read mask does not mention them
 		// (notably a UNION branch that binds none of the shared variables).
 		this.memoSlots = readMask < 0L ? null : slotsOf(readMask | compatibilityMask);
-		this.membershipProbe = right instanceof PatternPlan
-				? PatternMembershipProbe.tryCreate(((PatternPlan) right).s, ((PatternPlan) right).p,
-						((PatternPlan) right).o, ((PatternPlan) right).c, ((PatternPlan) right).contexts,
-						((PatternPlan) right).namedContextScope)
-				: null;
-		this.adjacencyProbe = right instanceof PatternPlan
-				? AdjacencyIntersectionProbe.tryCreate(((PatternPlan) right).s, ((PatternPlan) right).p,
-						((PatternPlan) right).o, ((PatternPlan) right).c, ((PatternPlan) right).contexts,
-						((PatternPlan) right).namedContextScope)
-				: null;
+		PatternPlan rightPattern = right instanceof PatternPlan ? (PatternPlan) right : null;
+		this.membershipProbe = PatternMembershipProbe.tryCreate(rightPattern);
+		this.adjacencyProbe = AdjacencyIntersectionProbe.tryCreate(rightPattern);
 		// The mark table reproduces the independent-evaluation verdict, which is only memoizable at all when the
 		// right plan's read set is known — the same gate the per-key memo uses.
 		this.markProbe = memoSlots != null && row.lexicalInputMask == row.baseBindingMask

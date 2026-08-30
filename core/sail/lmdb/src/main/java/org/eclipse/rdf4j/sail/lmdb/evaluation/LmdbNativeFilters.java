@@ -880,12 +880,8 @@ final class ExistsFilter implements NativeBooleanFilter {
 
 		State() {
 			PatternPlan pattern = subPlan instanceof PatternPlan ? (PatternPlan) subPlan : null;
-			membershipProbe = pattern == null ? null
-					: PatternMembershipProbe.tryCreate(pattern.s, pattern.p, pattern.o, pattern.c, pattern.contexts,
-							pattern.namedContextScope);
-			adjacencyProbe = pattern == null ? null
-					: AdjacencyIntersectionProbe.tryCreate(pattern.s, pattern.p, pattern.o, pattern.c, pattern.contexts,
-							pattern.namedContextScope);
+			membershipProbe = PatternMembershipProbe.tryCreate(pattern);
+			adjacencyProbe = AdjacencyIntersectionProbe.tryCreate(pattern);
 			markProbe = memoSlots != null ? SubplanMarkProbe.tryCreateExists(subPlan, memoSlots) : null;
 		}
 

@@ -55,6 +55,13 @@ final class PatternMembershipProbe {
 						Integer.getInteger("rdf4j.lmdb.membership.missThreshold", MINIMUM_PROBES)));
 	}
 
+	static PatternMembershipProbe tryCreate(PatternPlan pattern) {
+		if (pattern == null || pattern.range != null) {
+			return null;
+		}
+		return tryCreate(pattern.s, pattern.p, pattern.o, pattern.c, pattern.contexts, pattern.namedContextScope);
+	}
+
 	static PatternMembershipProbe tryCreate(Term s, Term p, Term o, Term c, ContextConstraint contexts,
 			boolean namedContextScope) {
 		if ("off".equals(System.getProperty("rdf4j.lmdb.membership.impl", "hash"))) {
@@ -333,6 +340,13 @@ final class AdjacencyIntersectionProbe implements java.io.Closeable {
 	static void resetMetrics() {
 		ANSWERED.set(0L);
 		CACHED_RUN_PROBES.set(0L);
+	}
+
+	static AdjacencyIntersectionProbe tryCreate(PatternPlan pattern) {
+		if (pattern == null || pattern.range != null) {
+			return null;
+		}
+		return tryCreate(pattern.s, pattern.p, pattern.o, pattern.c, pattern.contexts, pattern.namedContextScope);
 	}
 
 	static AdjacencyIntersectionProbe tryCreate(Term s, Term p, Term o, Term c, ContextConstraint contexts,

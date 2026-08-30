@@ -92,11 +92,16 @@ class LmdbNativeKernelRangeTest {
 			IRI kind = vf.createIRI(EX, "kind");
 			IRI item = vf.createIRI(EX, "Item");
 			IRI graph = vf.createIRI(EX, "graph");
+			IRI observation = vf.createIRI(EX, "observation");
+			IRI observationValue = vf.createIRI(EX, "observationValue");
 			for (int i = 0; i < 5; i++) {
 				IRI subject = vf.createIRI(EX, "item" + i);
+				IRI observed = vf.createIRI(EX, "observation" + i);
 				connection.add(subject, kind, item);
 				connection.add(subject, score, vf.createLiteral(i));
 				connection.add(subject, score, vf.createLiteral(i), graph);
+				connection.add(subject, observation, observed);
+				connection.add(observed, observationValue, vf.createLiteral(i));
 			}
 		}
 	}
@@ -227,6 +232,118 @@ class LmdbNativeKernelRangeTest {
 		assertThat(LmdbPrefixRunPlan.INCOMING_ADJACENCY_OPENED.get()).isZero();
 		assertThat(LmdbPrefixRunPlan.NEIGHBOR_VALUES_DECODED.get()).isPositive();
 		assertThat(LmdbPrefixRunPlan.RANGE_BOUNDED_EXECUTIONS.get()).isPositive();
+	}
+
+	@Test
+	void aggregateMinusWitnessPreservesRange() throws Exception {
+		assertThat(((LmdbStore) repository.getSail()).awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		String query = prefixes()
+				+ "SELECT (COUNT(*) AS ?c) WHERE {\n"
+				+ "  ?s ex:kind ex:Item .\n"
+				+ "  MINUS {\n"
+				+ "    ?s ex:score ?score .\n"
+				+ "    FILTER(?score < 2)\n"
+				+ "  }\n"
+				+ "}";
+
+		assertThat(genericCount(query)).isEqualTo(3);
+		KernelExecutionTestAccess.resetMetrics();
+		assertThat(nativeCount(query)).isEqualTo(3);
+		assertThat(KernelExecutionTestAccess.aggOpened())
+				.as("the ranged MINUS witness must execute in the aggregate kernel")
+				.isPositive();
+	}
+
+	@Test
+	void aggregateMinusRangeFallbackPreservesRangeWhenKernelScanIsUnavailable() throws Exception {
+		assertThat(((LmdbStore) repository.getSail()).awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		System.setProperty("rdf4j.lmdb.janinoCodegen.scanSources", "false");
+		String query = prefixes()
+				+ "SELECT (COUNT(*) AS ?c) WHERE {\n"
+				+ "  ?s ex:kind ex:Item .\n"
+				+ "  MINUS {\n"
+				+ "    ?s ex:score ?score .\n"
+				+ "    FILTER(?score < 2)\n"
+				+ "  }\n"
+				+ "}";
+
+		assertThat(genericCount(query)).isEqualTo(3);
+		KernelExecutionTestAccess.resetMetrics();
+		assertThat(nativeCount(query)).isEqualTo(3);
+		assertThat(KernelExecutionTestAccess.aggOpened())
+				.as("the test must exercise the exact plan fallback, not a ranged kernel scan")
+				.isZero();
+	}
+
+	@ParameterizedTest(name = "aggregate multi-pattern MINUS preserves range with codegen={0}")
+	@CsvSource({ "true", "false" })
+	void aggregateMultiPatternMinusWitnessPreservesRange(boolean codegen) throws Exception {
+		assertThat(((LmdbStore) repository.getSail()).awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		String query = prefixes()
+				+ "SELECT (COUNT(*) AS ?c) WHERE {\n"
+				+ "  ?s ex:kind ex:Item .\n"
+				+ "  MINUS {\n"
+				+ "    ?s ex:observation ?observation .\n"
+				+ "    ?observation ex:observationValue ?value .\n"
+				+ "    FILTER(?value < 2)\n"
+				+ "  }\n"
+				+ "}";
+
+		assertThat(genericCount(query)).isEqualTo(3);
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(codegen));
+		KernelExecutionTestAccess.resetMetrics();
+		assertThat(nativeCount(query)).isEqualTo(3);
+		assertThat(KernelExecutionTestAccess.aggOpened())
+				.as("the ranged multi-pattern MINUS witness must execute in the aggregate kernel")
+				.isPositive();
+	}
+
+	@ParameterizedTest(name = "aggregate {0} witness preserves range with codegen={2}")
+	@CsvSource({ "EXISTS,2,true", "NOT EXISTS,3,true", "EXISTS,2,false", "NOT EXISTS,3,false" })
+	void aggregateExistenceWitnessPreservesRange(String existenceOperator, long expectedCount, boolean codegen)
+			throws Exception {
+		assertThat(((LmdbStore) repository.getSail()).awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		String query = prefixes()
+				+ "SELECT (COUNT(*) AS ?c) WHERE {\n"
+				+ "  ?s ex:kind ex:Item .\n"
+				+ "  FILTER " + existenceOperator + " {\n"
+				+ "    ?s ex:observation ?observation .\n"
+				+ "    ?observation ex:observationValue ?value .\n"
+				+ "    FILTER(?value < 2)\n"
+				+ "  }\n"
+				+ "}";
+
+		assertThat(genericCount(query)).isEqualTo(expectedCount);
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(codegen));
+		KernelExecutionTestAccess.resetMetrics();
+		assertThat(nativeCount(query)).isEqualTo(expectedCount);
+		assertThat(KernelExecutionTestAccess.aggOpened())
+				.as("the ranged " + existenceOperator + " witness must execute in the aggregate kernel")
+				.isPositive();
+	}
+
+	@ParameterizedTest(name = "aggregate {0} fallback preserves range")
+	@CsvSource({ "EXISTS,2", "NOT EXISTS,3" })
+	void aggregateExistenceRangeFallbackPreservesRangeWhenKernelScanIsUnavailable(String existenceOperator,
+			long expectedCount) throws Exception {
+		assertThat(((LmdbStore) repository.getSail()).awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		System.setProperty("rdf4j.lmdb.janinoCodegen.scanSources", "false");
+		String query = prefixes()
+				+ "SELECT (COUNT(*) AS ?c) WHERE {\n"
+				+ "  ?s ex:kind ex:Item .\n"
+				+ "  FILTER " + existenceOperator + " {\n"
+				+ "    ?s ex:observation ?observation .\n"
+				+ "    ?observation ex:observationValue ?value .\n"
+				+ "    FILTER(?value < 2)\n"
+				+ "  }\n"
+				+ "}";
+
+		assertThat(genericCount(query)).isEqualTo(expectedCount);
+		KernelExecutionTestAccess.resetMetrics();
+		assertThat(nativeCount(query)).isEqualTo(expectedCount);
+		assertThat(KernelExecutionTestAccess.aggOpened())
+				.as("the test must exercise the exact plan fallback, not a ranged kernel scan")
+				.isZero();
 	}
 
 	private long genericCount(String query) {
