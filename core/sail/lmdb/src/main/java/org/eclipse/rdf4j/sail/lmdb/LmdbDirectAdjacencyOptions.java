@@ -145,7 +145,7 @@ final class LmdbDirectAdjacencyOptions {
 		boolean nodePredicateProjection = booleanProperty(properties, NODE_PREDICATE_PROJECTION_PROPERTY, false);
 		boolean nodePredicateProjectionIncoming = nodePredicateProjection
 				&& booleanProperty(properties, NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY, false);
-		boolean synchronousMaintenance = booleanProperty(properties, SYNCHRONOUS_MAINTENANCE_PROPERTY, false);
+		boolean synchronousMaintenance = booleanProperty(properties, SYNCHRONOUS_MAINTENANCE_PROPERTY, true);
 		boolean failOnMaintenanceError = booleanProperty(properties, FAIL_ON_MAINTENANCE_ERROR_PROPERTY, false);
 
 		return new LmdbDirectAdjacencyOptions(config.getDirectAdjacencyMode(), config.getDirectAdjacencyCoverage(),
