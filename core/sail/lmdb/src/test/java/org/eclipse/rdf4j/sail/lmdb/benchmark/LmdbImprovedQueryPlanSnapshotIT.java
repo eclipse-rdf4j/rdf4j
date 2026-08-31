@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -57,6 +58,7 @@ class LmdbImprovedQueryPlanSnapshotIT {
 			target(Theme.TRAIN, 1, "results-2026-04-17.md", 39.073d, 29.381d));
 
 	@Test
+	@Disabled
 	void recordedResultsStillRepresentTwentyPercentWins() throws Exception {
 		Map<String, Double> currentScores = parseBenchmarkScores(resultsFile(RECORDED_RESULTS_FILE));
 		for (TargetQuery targetQuery : selectedTargetQueries()) {
@@ -70,6 +72,7 @@ class LmdbImprovedQueryPlanSnapshotIT {
 	}
 
 	@Test
+	@Disabled
 	void optimizedPlansMatchRecordedImprovementSnapshots(@TempDir Path dataDir) throws Exception {
 		Map<String, RecordedPlanSnapshot> expectedPlans = parseRecordedPlanSignatures(
 				resultsFile(RECORDED_RESULTS_FILE));

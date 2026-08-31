@@ -432,7 +432,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	 * Write out the opening tag of the subject or object of a statement up to (but not including) the end of the tag.
 	 * Used both in writeStartSubject and writeEmptySubject.
 	 */
-	private void writeNodeStartOfStartTag(Node node) throws IOException, RDFHandlerException {
+	protected void writeNodeStartOfStartTag(Node node) throws IOException, RDFHandlerException {
 		Boolean inlineBlankNodes = getWriterConfig().get(BasicWriterSettings.INLINE_BLANK_NODES);
 		Value value = node.getValue();
 

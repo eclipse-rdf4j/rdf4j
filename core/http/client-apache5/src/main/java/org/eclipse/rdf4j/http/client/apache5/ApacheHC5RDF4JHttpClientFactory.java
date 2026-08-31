@@ -79,6 +79,7 @@ public class ApacheHC5RDF4JHttpClientFactory implements RDF4JHttpClientFactory {
 	public RDF4JHttpClient create(RDF4JHttpClientConfig config) {
 		// Build connection manager
 		PoolingHttpClientConnectionManagerBuilder cmBuilder = PoolingHttpClientConnectionManagerBuilder.create()
+				.useSystemProperties()
 				.setMaxConnPerRoute(config.getMaxConnectionsPerRoute())
 				.setMaxConnTotal(config.getMaxConnectionsTotal())
 				.setDefaultSocketConfig(SocketConfig.custom()

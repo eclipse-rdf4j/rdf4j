@@ -41,7 +41,7 @@ On top of these core databases, RDF4J offers a number of functional extensions. 
 
 The core RDF4J databases are mainly intended for small to medium-sized datasets. However, RDF4J-compatible databases are developed by several third parties, both open-source/free and commercial, and they often offer better scalability or other extended features. Because these triplestores are compatible with the RDF4J APIs, you will be able to switch your project to a different database with a minimal amount of code changes. Here, we list a few options, in no particular order of preference.
 
-#### Ontotext GraphDB
+#### Graphwise GraphDB
 
 [Graphwise GraphDB](https://graphwise.ai/components/graphdb/) is an enterprise semantic database that unifies complex, interconnected data into an AI-ready environment. Built to handle relationships where traditional databases struggle, it integrates directly into AI workflows to improve LLM accuracy while guaranteeing high availability and zero data loss.
 
