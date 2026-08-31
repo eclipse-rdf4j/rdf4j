@@ -12,14 +12,13 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.deleteFromMergedValue;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.merge;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
-import static org.eclipse.rdf4j.sail.lmdb.Varint.firstToLength;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
-import static org.lwjgl.util.lmdb.LMDB.MDB_APPENDDUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
-import static org.lwjgl.util.lmdb.LMDB.MDB_DUPSORT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_GET_BOTH_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
@@ -28,22 +27,17 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_LAST_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
-import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NORDAHEAD;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
-import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
-import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
-import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
-import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dcmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
@@ -65,11 +59,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.Closeable;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
@@ -81,7 +71,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
@@ -1035,167 +1024,6 @@ class TripleStore implements Closeable {
 	static LongAdder statementsAdded = new LongAdder();
 	static long lastLogTime = System.currentTimeMillis();
 	int localCount = 0;
-
-	private int merge(long cursor, int elements, MDBVal keyVal, MDBVal dataVal,
-			ByteBuffer newValueBuf, ByteBuffer target) throws IOException {
-		dataVal.mv_data(newValueBuf);
-		int rc = E(mdb_cursor_put(cursor, keyVal, dataVal, MDB_NOOVERWRITE));
-		if (rc == MDB_SUCCESS) {
-			return MDB_SUCCESS;
-		}
-		rc = E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_GET_BOTH_RANGE));
-		int newValuesSize = 0;
-		if (rc == MDB_SUCCESS) {
-			ByteBuffer existing = dataVal.mv_data();
-
-			newValuesSize = newValueBuf.remaining();
-			int existingValuesSize = existing.remaining();
-			int diff = -1;
-			while (existing.hasRemaining() &&
-					(diff = compareRegion(newValueBuf, 0, existing, existing.position(),
-							Math.min(newValuesSize, existing.remaining()))) > 0) {
-				for (int i = 0; i < elements; i++) {
-					skipVarint(existing);
-				}
-			}
-			if (diff == 0) {
-				return MDB_KEYEXIST;
-			}
-			int insertPos = existing.position();
-			if (insertPos > 0) {
-				// copy existing elements and insert new elements in between
-				target.clear();
-				target.put(existing.duplicate().flip());
-				target.put(newValueBuf);
-				if (existing.hasRemaining()) {
-					target.put(existing);
-				}
-				// delete existing entry
-				E(mdb_cursor_del(cursor, 0));
-				// store one or more new entries
-				int totalSize = target.position();
-				target.flip();
-				if (insertPos + newValuesSize > 500) {
-					target.limit(insertPos);
-					dataVal.mv_data(target);
-					E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
-					target.position(insertPos);
-					target.limit(totalSize);
-				}
-				if (target.remaining() > 500) {
-					target.limit(insertPos + newValuesSize);
-					dataVal.mv_data(target);
-					E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
-					target.position(insertPos + newValuesSize);
-					target.limit(totalSize);
-				}
-				if (target.hasRemaining()) {
-					dataVal.mv_data(target);
-					E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
-				}
-			} else {
-				// prepend to value
-				if (existingValuesSize + newValuesSize <= 500) {
-					target.clear();
-					target.put(newValueBuf);
-					target.put(existing);
-					target.flip();
-					dataVal.mv_data(target);
-					E(mdb_cursor_del(cursor, 0));
-					E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
-				} else {
-					dataVal.mv_data(newValueBuf);
-					E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
-				}
-			}
-			return MDB_SUCCESS;
-		} else {
-			if (E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET)) == MDB_SUCCESS) {
-				if (E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_LAST_DUP)) == MDB_SUCCESS) {
-					ByteBuffer existing = dataVal.mv_data();
-					if (existing.remaining() + newValuesSize <= 500) {
-						// append to last existing value
-						target.clear();
-						target.put(existing);
-						target.put(newValueBuf);
-						target.flip();
-						E(mdb_cursor_del(cursor, 0));
-						dataVal.mv_data(target);
-						E(mdb_cursor_put(cursor, keyVal, dataVal, MDB_APPENDDUP));
-						return MDB_SUCCESS;
-					}
-				}
-			}
-		}
-		dataVal.mv_data(newValueBuf);
-		E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
-		return MDB_SUCCESS;
-	}
-
-	private boolean deleteFromMergedValue(long cursor, int elements, MDBVal keyVal, MDBVal dataVal,
-			ByteBuffer valueToDelete, ByteBuffer target) throws IOException {
-		int rc = E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_GET_BOTH_RANGE));
-		if (rc != MDB_SUCCESS) {
-			return false;
-		}
-
-		ByteBuffer existing = dataVal.mv_data();
-		int valueToDeleteSize = valueToDelete.remaining();
-		if (valueToDeleteSize == 0 || existing.remaining() < valueToDeleteSize) {
-			return false;
-		}
-
-		while (existing.hasRemaining()) {
-			int entryStart = existing.position();
-			int compareLength = Math.min(valueToDeleteSize, existing.remaining());
-			int diff = compareRegion(valueToDelete, 0, existing, entryStart, compareLength);
-			if (diff < 0) {
-				return false;
-			}
-			if (diff == 0 && existing.remaining() >= valueToDeleteSize) {
-				int originalLimit = existing.limit();
-				int entryEnd = entryStart + valueToDeleteSize;
-				target.clear();
-				if (entryStart > 0) {
-					existing.limit(entryStart);
-					target.put(existing.duplicate().flip());
-				}
-				if (entryEnd < originalLimit) {
-					existing.limit(originalLimit);
-					existing.position(entryEnd);
-					target.put(existing);
-				}
-				E(mdb_cursor_del(cursor, 0));
-				if (target.position() > 0) {
-					target.flip();
-					dataVal.mv_data(target);
-					E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
-				}
-				return true;
-			}
-			existing.position(entryStart);
-			for (int i = 0; i < elements; i++) {
-				skipVarint(existing);
-			}
-		}
-		return false;
-	}
-
-	static int compareRegion(ByteBuffer bb1, int startIdx1, ByteBuffer bb2, int startIdx2, int length) {
-		int result = 0;
-		for (int i = 0; result == 0 && i < length; i++) {
-			result = (bb1.get(startIdx1 + i) & 0xff) - (bb2.get(startIdx2 + i) & 0xff);
-		}
-		return result;
-	}
-
-	static void skipVarint(ByteBuffer other) {
-		int i = firstToLength(other.get()) - 1;
-		assert i >= 0;
-		if (i > 0) {
-			other.position(i + other.position());
-		}
-	}
 
 	public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
 		TripleIndex mainIndex = indexes.getFirst();

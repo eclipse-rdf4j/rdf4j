@@ -255,7 +255,7 @@ class LmdbRecordIterator implements RecordIterator {
 					if (keyDiff > 0) {
 						break;
 					}
-					int valueDiff = TripleStore.compareRegion(state.valueBuf, state.valueBuf.position(),
+					int valueDiff = LmdbUtil.compareRegion(state.valueBuf, state.valueBuf.position(),
 							state.maxValueBuf, 0,
 							Math.min(state.valueBuf.remaining(), state.maxValueBuf.remaining()));
 					if (valueDiff > 0) {
@@ -283,7 +283,7 @@ class LmdbRecordIterator implements RecordIterator {
 					state.valueBuf.position(valueBufPos);
 					int skip = 4 - state.index.getIndexSplitPosition();
 					for (int i = 0; i < skip; i++) {
-						TripleStore.skipVarint(state.valueBuf);
+						LmdbUtil.skipVarint(state.valueBuf);
 					}
 					continue;
 				}
