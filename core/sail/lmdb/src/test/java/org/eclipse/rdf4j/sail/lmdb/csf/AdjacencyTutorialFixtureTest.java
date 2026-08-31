@@ -54,6 +54,10 @@ class AdjacencyTutorialFixtureTest {
 	private static final long ALICE_KNOWS_BOB = id(TRIPLE, 12);
 	private static final long META = id(URI, 13);
 
+	/** Key of the synthetic multi-block fixture; deliberately not a "predicateOrdinal:plane" string. */
+	private static final String SCALE_KEY = "scale";
+	private static final int SCALE_ROWS = 600;
+
 	private static final Pattern FIXTURE_BLOCK = Pattern.compile(
 			"<script\\s+id=\"csf-page-fixtures\"\\s+type=\"text/plain\">\\s*(.*?)\\s*</script>",
 			Pattern.DOTALL);
@@ -175,8 +179,40 @@ class AdjacencyTutorialFixtureTest {
 			pages.put(entry.getKey().key(), new ExpectedPage(data, image));
 			pageId++;
 		}
-		assertThat(pages.keySet()).containsExactly("0:0", "0:1", "0:2", "0:3", "1:0", "1:1");
+
+		/*
+		 * The eight-statement story produces only tiny single-block vectors. This extra synthetic partition is not part
+		 * of that story; it exists so the tutorial can show a vector that really spans several 256-value blocks, with a
+		 * multi-entry offset directory and an independently chosen bit width per block.
+		 */
+		CsfPageData scale = scalePageData();
+		/* continuation=false: this page stands alone, so it must not claim its first row continues another page. */
+		CompactCsfPageEncoder.PageImage scaleImage = Objects.requireNonNull(
+				new CompactCsfPageEncoder().tryEncode(scale, false, pageId),
+				"the scale fixture must fit one page");
+		pages.put(SCALE_KEY, new ExpectedPage(scale, scaleImage));
+
+		assertThat(pages.keySet()).containsExactly("0:0", "0:1", "0:2", "0:3", "1:0", "1:1", SCALE_KEY);
 		return pages;
+	}
+
+	/**
+	 * One neighbour and one default-graph context per row: 600 rows, which makes each packed vector span three
+	 * 256-value blocks. To regenerate the Base64 after changing this shape, temporarily print
+	 * {@code Base64.getEncoder().encodeToString(scaleImage.bytes())} from {@link #expectedPages()} and replace the
+	 * {@code scale|...} line in the tutorial's {@code csf-page-fixtures} block. The page id must stay in step with the
+	 * six statement pages, because it is stored in the header and therefore changes the bytes.
+	 */
+	private static CsfPageData scalePageData() {
+		CsfPageData data = new CsfPageData();
+		for (int row = 0; row < SCALE_ROWS; row++) {
+			long[] neighbors = { id(URI, 1_000_000 + row) };
+			int[] contextStarts = { 0 };
+			int[] contextCounts = { 1 };
+			long[] contexts = { 0 };
+			data.appendRow(id(URI, 1 + row), neighbors, contextStarts, contextCounts, contexts, 1, 1);
+		}
+		return data;
 	}
 
 	private static void add(Map<Partition, TreeMap<Long, TreeMap<Long, TreeSet<Long>>>> partitions,
@@ -231,7 +267,7 @@ class AdjacencyTutorialFixtureTest {
 								| CompactCsfPageFormat.FLAG_UNIFORM_NEIGHBOR_TERM_KIND;
 		int expectedFlags = structuralFlags | traitFlags;
 		assertThat(LeBytes.getUnsignedShort(bytes, CompactCsfPageFormat.FLAGS_AT)).isEqualTo(expectedFlags);
-		assertSectionBoundaries(bytes);
+		assertSectionBoundaries(bytes, key.equals(SCALE_KEY));
 
 		long address = UnsafeAccess.allocateZeroed(fixture.image.capacity() + PackedLongVector.READ_TAIL_PADDING);
 		try {
@@ -259,7 +295,7 @@ class AdjacencyTutorialFixtureTest {
 		}
 	}
 
-	private static void assertSectionBoundaries(byte[] page) {
+	private static void assertSectionBoundaries(byte[] page, boolean expectAccelerators) {
 		int[] offsetFields = { CompactCsfPageFormat.ROW_IDS_OFFSET_AT,
 				CompactCsfPageFormat.ROW_FIBER_STARTS_OFFSET_AT,
 				CompactCsfPageFormat.ROW_QUAD_COUNTS_OFFSET_AT,
@@ -282,10 +318,23 @@ class AdjacencyTutorialFixtureTest {
 			assertThat(offset + length).isLessThanOrEqualTo(page.length);
 			previousEnd = offset + length;
 		}
-		assertThat(LeBytes.getInt(page, CompactCsfPageFormat.ACCELERATOR_DESCRIPTOR_AT)).isZero();
-		assertThat(LeBytes.getInt(page, CompactCsfPageFormat.ACCELERATOR_OFFSET_AT)).isZero();
-		assertThat(LeBytes.getInt(page, CompactCsfPageFormat.ACCELERATOR_LENGTH_AT)).isZero();
-		assertThat(LeBytes.align8(previousEnd)).isEqualTo(page.length);
+		int descriptor = LeBytes.getInt(page, CompactCsfPageFormat.ACCELERATOR_DESCRIPTOR_AT);
+		int acceleratorOffset = LeBytes.getInt(page, CompactCsfPageFormat.ACCELERATOR_OFFSET_AT);
+		int acceleratorLength = LeBytes.getInt(page, CompactCsfPageFormat.ACCELERATOR_LENGTH_AT);
+		if (expectAccelerators) {
+			/*
+			 * Large pages earn a row-lookup accelerator, which the encoder writes into slab bytes past the encoded
+			 * image. The small tutorial pages never do, so this branch only covers the synthetic scale fixture.
+			 */
+			assertThat(descriptor).isPositive();
+			assertThat(acceleratorOffset).isGreaterThanOrEqualTo(LeBytes.align8(previousEnd));
+			assertThat(acceleratorLength).isPositive();
+		} else {
+			assertThat(descriptor).isZero();
+			assertThat(acceleratorOffset).isZero();
+			assertThat(acceleratorLength).isZero();
+			assertThat(LeBytes.align8(previousEnd)).isEqualTo(page.length);
+		}
 	}
 
 	private static List<Quad> tutorialQuads() {
