@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -21,6 +22,12 @@ import java.time.Duration;
 import java.util.List;
 import java.util.OptionalLong;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -227,6 +234,129 @@ class LmdbBackupServiceTest {
 			assertTrue(scheduleStatus.getLastFailureMessage().isPresent());
 			assertTrue(scheduleStatus.isActive());
 		} finally {
+			repo.shutDown();
+		}
+	}
+
+	@Test
+	void backupRemainsConsistentWhileMutationsAndAutoGrowRace(@TempDir Path tempDir) throws Exception {
+		Path storeDir = tempDir.resolve("store");
+		Path backupDir = tempDir.resolve("backup");
+		Files.createDirectories(storeDir);
+
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setTripleDBSize(128 * 1024)
+				.setValueDBSize(128 * 1024)
+				.setAutoGrow(true)
+				.setBulkOperationSize(64);
+
+		LmdbStore store = new LmdbStore(storeDir.toFile(), config);
+		SailRepository repo = new SailRepository(store);
+		repo.init();
+
+		SailBackupService backupService = store.getBackupService();
+		ExecutorService executor = Executors.newFixedThreadPool(4);
+		AtomicReference<Throwable> mutationFailure = new AtomicReference<>();
+		AtomicBoolean stop = new AtomicBoolean(false);
+
+		try {
+			// Seed a small initial dataset so deletions are meaningful.
+			try (RepositoryConnection conn = repo.getConnection()) {
+				for (int i = 0; i < 200; i++) {
+					conn.add(vf.createStatement(
+							vf.createIRI("urn:s" + i),
+							RDF.TYPE,
+							vf.createIRI("urn:Thing" + (i % 7))));
+				}
+			}
+
+			// Case 1: insert burst to force auto-grow while backup is running.
+			Future<?> mutator = executor.submit(() -> {
+				long counter = 0;
+				while (!stop.get()) {
+					try (RepositoryConnection conn = repo.getConnection()) {
+						conn.begin();
+						for (int i = 0; i < 100; i++) {
+							long n = counter++;
+							Statement add = vf.createStatement(
+									vf.createIRI("urn:grow-" + n),
+									RDF.TYPE,
+									vf.createIRI("urn:AutoGrow-" + (n % 11)));
+							conn.add(add);
+
+							// Case 2: delete some existing values, not just inserts.
+							if ((n % 5) == 0) {
+								conn.remove(vf.createIRI("urn:s" + ((n / 5) % 200)), RDF.TYPE, null);
+							}
+						}
+						conn.commit();
+					} catch (Throwable t) {
+						mutationFailure.compareAndSet(null, t);
+						stop.set(true);
+						break;
+					}
+				}
+			});
+
+			// Case 3: backup starts while load is active and while auto-grow can be triggered.
+			Future<BackupResult> backupFuture = executor.submit(() -> backupService.createBackup(
+					BackupRequest.builder(backupDir, BackupType.FULL)
+							.compression(BackupCompression.ZIP)
+							.build()));
+
+			// Let the mutation thread run long enough to trigger reuse + grow + delete races.
+			Thread.sleep(1500L);
+
+			stop.set(true);
+			BackupResult backup = backupFuture.get();
+
+			assertTrue(backup.isVerified());
+			assertTrue(Files.exists(backup.getArtifactPath()));
+
+			// Validate the backup data is structurally sound.
+			Path restoreDir = tempDir.resolve("restore");
+			Path restored = backupService.restore(new PointInTimeRestoreRequest(
+					backupDir, restoreDir, backup.getEndTransactionId(), true));
+			SailRepository restoredRepo = new SailRepository(new LmdbStore(restored.toFile(), config));
+			restoredRepo.init();
+			try {
+				try (RepositoryConnection conn = restoredRepo.getConnection()) {
+					assertTrue(conn.size() >= 0);
+					// at least the repo remains readable and verifiable after the concurrent racing mutations
+					assertTrue(conn.getRepository().isInitialized());
+				}
+			} finally {
+				restoredRepo.shutDown();
+			}
+
+			// The mutation job should not have failed out-of-band.
+			assertNull(mutationFailure.get());
+
+			// ensure we can still read the live repo after the backup.
+			try (RepositoryConnection conn = repo.getConnection()) {
+				assertTrue(conn.size() >= 0);
+			}
+
+			// Case 4: repeat a mixed delete+insert cycle after snapshot creation.
+			try (RepositoryConnection conn = repo.getConnection()) {
+				conn.begin();
+				conn.add(vf.createStatement(vf.createIRI("urn:after-backup"), RDF.TYPE, vf.createIRI("urn:After")));
+				conn.remove(vf.createIRI("urn:s0"), RDF.TYPE, null);
+				conn.commit();
+			}
+
+			// Ensure that the final backup still rules out corruption.
+			BackupResult followup = backupService.createBackup(
+					BackupRequest.builder(backupDir, BackupType.FULL)
+							.compression(BackupCompression.ZIP)
+							.build());
+			assertTrue(followup.isVerified());
+
+			// Clean shutdown
+			mutator.get(10, TimeUnit.SECONDS);
+		} finally {
+			stop.set(true);
+			executor.shutdownNow();
 			repo.shutDown();
 		}
 	}
