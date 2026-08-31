@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -25,6 +26,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
@@ -84,13 +86,112 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 	}
 
 	@Test
-	void mismatchedSourceSignaturesDoNotClaimExactOrder() {
+	void mismatchedSourceSignaturesClaimOnlyTheRequestedLogicalOrder() {
 		Object idSpace = new Object();
 		NativeLmdbQuerySource source = CompositeNativeLmdbQuerySource.combine(List.of(
 				new OrderedSource(idSpace, "ospc", new long[0][]),
 				new OrderedSource(idSpace, "opsc", new long[0][])));
 
+		assertThat(source.indexName(StatementOrder.O, -1, -1, -1, -1)).isEqualTo("merged-o");
+	}
+
+	@Test
+	void everyMergedSourceMustProvideTheRequestedLogicalOrder() {
+		Object idSpace = new Object();
+		NativeLmdbQuerySource source = CompositeNativeLmdbQuerySource.combine(List.of(
+				new OrderedSource(idSpace, "ospc", new long[0][]),
+				new OrderedSource(idSpace, "opsc", new long[0][]),
+				new OrderedSource(idSpace, "", new long[0][])));
+
 		assertThat(source.indexName(StatementOrder.O, -1, -1, -1, -1)).isEmpty();
+	}
+
+	@Test
+	void mixedExplicitAndInferredMergeReportsOnlyItsRequestedLogicalOrder() throws IOException {
+		Object idSpace = new Object();
+		NativeLmdbQuerySource source = CompositeNativeLmdbQuerySource.combine(List.of(
+				new OrderedSource(idSpace, "ospc", new long[][] {
+						{ 90, 5, 10, 1 },
+						{ 80, 5, 20, 1 }
+				}),
+				new OrderedSource(idSpace, "opsc", new long[][] {
+						{ 10, 6, 10, 1 },
+						{ 20, 6, 20, 1 }
+				})));
+
+		try (RecordIterator iterator = source.statements(StatementOrder.O, -1, -1, -1, -1)) {
+			assertThat(iterator.getIndexName()).isEqualTo("merged-o");
+		}
+	}
+
+	@Test
+	void nestedExplicitAndInferredMultiContextMergeNeverPromotesAChildSuffix() throws IOException {
+		Object idSpace = new Object();
+		NativeLmdbQuerySource firstContext = CompositeNativeLmdbQuerySource.combine(List.of(
+				new OrderedSource(idSpace, "ospc", new long[][] { { 90, 5, 10, 1 } }),
+				new OrderedSource(idSpace, "opsc", new long[][] { { 10, 6, 10, 1 } })));
+		NativeLmdbQuerySource secondContext = CompositeNativeLmdbQuerySource.combine(List.of(
+				new OrderedSource(idSpace, "ospc", new long[][] { { 80, 5, 10, 2 } }),
+				new OrderedSource(idSpace, "opsc", new long[][] { { 20, 6, 10, 2 } })));
+		List<RecordIterator> unowned = new ArrayList<>(2);
+		try {
+			unowned.add(firstContext.statements(StatementOrder.O, -1, -1, -1, 1));
+			unowned.add(secondContext.statements(StatementOrder.O, -1, -1, -1, 2));
+			assertThat(unowned.get(0).getIndexName()).isEqualTo("merged-o");
+			assertThat(unowned.get(1).getIndexName()).isEqualTo("merged-o");
+
+			List<RecordIterator> children = List.copyOf(unowned);
+			unowned.clear();
+			try (RecordIterator merged = OrderedRecordIterator.merge(children, StatementOrder.O)) {
+				assertThat(merged.getIndexName()).isEqualTo("merged-o");
+				ArrayList<String> rows = new ArrayList<>();
+				long[] row;
+				while ((row = merged.next()) != null) {
+					rows.add(row[2] + ":" + row[0] + ":" + row[3]);
+				}
+				assertThat(rows).containsExactly("10:90:1", "10:10:1", "10:80:2", "10:20:2");
+			}
+		} finally {
+			unowned.forEach(RecordIterator::close);
+		}
+	}
+
+	@Test
+	void mergedOrderWitnessContributesOnlyItsRequestedSlotToNativePlanning() {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "o", 1), null);
+		layout.freeze(List.of("s", "o"));
+		NativeLmdbQuerySource source = new OrderedSource(new Object(), "merged-o", new long[0][]);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		row.slots[0] = NativeLmdbQuerySource.UNKNOWN_ID;
+		row.slots[1] = NativeLmdbQuerySource.UNKNOWN_ID;
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1D);
+
+		NativeTupleDistinctPlan ordered = LmdbNativeOrderPlanner.tuple(pattern, new int[] { 1, 0 }, row);
+
+		assertThat(ordered.strategy).isEqualTo(NativeDistinctStrategy.PARTITIONED_HASH);
+		assertThat(ordered.partitionSlots).containsExactly(1);
+		assertThat(ordered.residualSlots).containsExactly(0);
+	}
+
+	@Test
+	void rawPartialIndexNameNeverProvesALogicalOrderPrefix() {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "o", 1), null);
+		layout.freeze(List.of("s", "o"));
+		NativeLmdbQuerySource source = new OrderedSource(new Object(), "o", new long[0][]);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		row.slots[0] = NativeLmdbQuerySource.UNKNOWN_ID;
+		row.slots[1] = NativeLmdbQuerySource.UNKNOWN_ID;
+		row.recomputeBoundMask();
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1D);
+
+		NativeTupleDistinctPlan ordered = LmdbNativeOrderPlanner.tuple(pattern, new int[] { 1, 0 }, row);
+
+		assertThat(ordered.strategy).isEqualTo(NativeDistinctStrategy.GLOBAL_HASH);
+		assertThat(ordered.partitionSlots).isEmpty();
+		assertThat(ordered.residualSlots).containsExactly(1, 0);
 	}
 
 	@Test

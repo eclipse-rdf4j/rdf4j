@@ -17,6 +17,8 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -56,11 +58,13 @@ class SailSourceModel extends AbstractModel {
 	private final class StatementIterator implements Iterator<Statement> {
 
 		final CloseableIteration<? extends Statement> stmts;
+		private final AtomicBoolean closed = new AtomicBoolean();
 
 		Statement last;
 
 		StatementIterator(CloseableIteration<? extends Statement> closeableIteration) {
 			this.stmts = closeableIteration;
+			openStatementIterators.add(this);
 		}
 
 		@Override
@@ -69,7 +73,7 @@ class SailSourceModel extends AbstractModel {
 				if (stmts.hasNext()) {
 					return true;
 				}
-				stmts.close();
+				close();
 				return false;
 			} catch (SailException e) {
 				throw new ModelException(e);
@@ -81,7 +85,7 @@ class SailSourceModel extends AbstractModel {
 			try {
 				last = stmts.next();
 				if (last == null) {
-					stmts.close();
+					close();
 				}
 				return last;
 			} catch (SailException e) {
@@ -97,6 +101,16 @@ class SailSourceModel extends AbstractModel {
 			SailSourceModel.this.remove(last);
 			last = null;
 		}
+
+		void close() {
+			if (closed.compareAndSet(false, true)) {
+				try {
+					stmts.close();
+				} finally {
+					openStatementIterators.remove(this);
+				}
+			}
+		}
 	}
 
 	final SailSource source;
@@ -104,6 +118,8 @@ class SailSourceModel extends AbstractModel {
 	SailDataset dataset;
 
 	SailSink sink;
+
+	private final Set<StatementIterator> openStatementIterators = ConcurrentHashMap.newKeySet();
 
 	private long size;
 
@@ -122,7 +138,7 @@ class SailSourceModel extends AbstractModel {
 		super.closeIterator(iter);
 		if (iter instanceof StatementIterator) {
 			try {
-				((StatementIterator) iter).stmts.close();
+				((StatementIterator) iter).close();
 			} catch (SailException e) {
 				throw new ModelException(e);
 			}
@@ -355,7 +371,7 @@ class SailSourceModel extends AbstractModel {
 	}
 
 	@Override
-	public Iterator<Statement> iterator() {
+	public synchronized Iterator<Statement> iterator() {
 		try {
 			return new StatementIterator(dataset().getStatements(null, null, null));
 		} catch (SailException e) {
@@ -397,10 +413,12 @@ class SailSourceModel extends AbstractModel {
 
 			@Override
 			public Iterator<Statement> iterator() {
-				try {
-					return new StatementIterator(dataset().getStatements(subj, pred, obj, contexts));
-				} catch (SailException e) {
-					throw new ModelException(e);
+				synchronized (SailSourceModel.this) {
+					try {
+						return new StatementIterator(dataset().getStatements(subj, pred, obj, contexts));
+					} catch (SailException e) {
+						throw new ModelException(e);
+					}
 				}
 			}
 
@@ -441,21 +459,65 @@ class SailSourceModel extends AbstractModel {
 
 	private synchronized SailDataset dataset() throws SailException {
 		if (sink != null) {
+			Throwable failure = closeOpenStatementIterators();
 			try {
 				sink.flush();
-			} finally {
+			} catch (RuntimeException | Error e) {
+				failure = suppress(failure, e);
+			}
+			try {
 				sink.close();
+			} catch (RuntimeException | Error e) {
+				failure = suppress(failure, e);
+			} finally {
 				sink = null;
 			}
 			if (dataset != null) {
-				dataset.close();
-				dataset = null;
+				try {
+					dataset.close();
+				} catch (RuntimeException | Error e) {
+					failure = suppress(failure, e);
+				} finally {
+					dataset = null;
+				}
+			}
+			if (failure != null) {
+				rethrow(failure);
 			}
 		}
 		if (dataset == null) {
 			dataset = source.dataset(level);
 		}
 		return dataset;
+	}
+
+	private Throwable closeOpenStatementIterators() {
+		Throwable failure = null;
+		for (StatementIterator iterator : openStatementIterators.toArray(StatementIterator[]::new)) {
+			try {
+				iterator.close();
+			} catch (RuntimeException | Error e) {
+				failure = suppress(failure, e);
+			}
+		}
+		return failure;
+	}
+
+	private static Throwable suppress(Throwable first, Throwable next) {
+		if (first == null) {
+			return next;
+		}
+		if (first != next) {
+			first.addSuppressed(next);
+		}
+		return first;
+	}
+
+	private static void rethrow(Throwable failure) {
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		throw (Error) failure;
 	}
 
 	private boolean contains(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource... contexts)

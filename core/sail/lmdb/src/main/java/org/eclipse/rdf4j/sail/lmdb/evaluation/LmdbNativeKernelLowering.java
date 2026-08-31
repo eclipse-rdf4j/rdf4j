@@ -1466,7 +1466,11 @@ final class LmdbNativeKernelLowering {
 		}
 
 		private int scan(StatementOrder order, LmdbKeyRange range) {
-			scanSites.add(new LmdbNativeKernelBindings.ScanSite(order, range));
+			return scan(order, range, false);
+		}
+
+		private int scan(StatementOrder order, LmdbKeyRange range, boolean forceLmdb) {
+			scanSites.add(new LmdbNativeKernelBindings.ScanSite(order, range, forceLmdb));
 			return scanSites.size() - 1;
 		}
 
@@ -2480,8 +2484,10 @@ final class LmdbNativeKernelLowering {
 			if (pattern.s.hasSlot()) {
 				assuredMask |= 1L << pattern.s.slot;
 			}
-			currentDepthNodes()
-					.add(new LmdbNativeKernelIr.ScanQuad(scan(pattern.statementOrder, pattern.range), terms, outCols));
+			boolean forceLmdb = isMeasuredNamedContextLmdbScan(pattern, terms);
+			currentDepthNodes().add(
+					new LmdbNativeKernelIr.ScanQuad(scan(pattern.statementOrder, pattern.range, forceLmdb), terms,
+							outCols));
 			// The equality guards belong with the scan, at the same depth, so they run per scanned quad.
 			currentDepthNodes().addAll(repeats);
 			if (pattern.namedContextScope) {
@@ -2492,6 +2498,19 @@ final class LmdbNativeKernelLowering {
 				currentDepthNodes().add(new LmdbNativeKernelIr.FilterCompareId(true,
 						Operand.col(outCols[LmdbNativeKernelIr.ScanQuad.CTX]),
 						Operand.constant(constantIndex(LmdbNativeAggregateCompiler.NULL_CONTEXT_ID))));
+			}
+			return true;
+		}
+
+		private static boolean isMeasuredNamedContextLmdbScan(PatternPlan pattern, Operand[] terms) {
+			if (!pattern.namedContextScope || pattern.contexts != ContextConstraint.UNRESTRICTED
+					|| pattern.statementOrder != null || pattern.range != null) {
+				return false;
+			}
+			for (Operand term : terms) {
+				if (term != null) {
+					return false;
+				}
 			}
 			return true;
 		}
@@ -4289,7 +4308,9 @@ final class LmdbNativeKernelLowering {
 			if (!writes) {
 				return false;
 			}
-			pipeline.add(new LmdbNativeKernelIr.ScanQuad(scan(pattern.statementOrder, pattern.range), terms, outCols));
+			boolean forceLmdb = isMeasuredNamedContextLmdbScan(pattern, terms);
+			pipeline.add(new LmdbNativeKernelIr.ScanQuad(
+					scan(pattern.statementOrder, pattern.range, forceLmdb), terms, outCols));
 			pipeline.addAll(repeats);
 			if (pattern.namedContextScope) {
 				int contextColumn = outCols[LmdbNativeKernelIr.ScanQuad.CTX];

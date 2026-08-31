@@ -120,6 +120,7 @@ class LmdbQueryReadyBulkLoadTest {
 		File storeDir = new File(dataDir, "fresh-session-rollback");
 		Model initial = statements();
 		Model provisional = additionalStatements(2046, BATCH_SIZE);
+		Model committedAfterRollback = additionalStatements(2046 + BATCH_SIZE, 1);
 		LmdbStoreConfig config = config();
 		LmdbStore store = new LmdbStore(storeDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -141,9 +142,17 @@ class LmdbQueryReadyBulkLoadTest {
 						"rollback must retain values committed by earlier fresh batches");
 
 				connection.begin(IsolationLevels.NONE);
+				connection.add(committedAfterRollback);
+				connection.commit();
+				long postRollbackCount = initial.size() + committedAfterRollback.size();
+				assertQueryReady(store, connection, postRollbackCount);
+				assertFalse(connection.hasStatement(provisional.iterator().next(), true),
+						"a later disjoint commit must not publish the rolled-back batch");
+
+				connection.begin(IsolationLevels.NONE);
 				connection.add(provisional);
 				connection.commit();
-				long committedCount = initial.size() + provisional.size();
+				long committedCount = initial.size() + committedAfterRollback.size() + provisional.size();
 				assertQueryReady(store, connection, committedCount);
 
 				connection.begin(IsolationLevels.NONE);
@@ -160,8 +169,10 @@ class LmdbQueryReadyBulkLoadTest {
 		reopenedRepository.init();
 		try {
 			try (RepositoryConnection connection = reopenedRepository.getConnection()) {
-				assertQueryReady(reopenedStore, connection, initial.size() + provisional.size());
+				assertQueryReady(reopenedStore, connection,
+						initial.size() + committedAfterRollback.size() + provisional.size());
 				assertTrue(connection.hasStatement(provisional.iterator().next(), true));
+				assertTrue(connection.hasStatement(committedAfterRollback.iterator().next(), true));
 			}
 		} finally {
 			reopenedRepository.shutDown();

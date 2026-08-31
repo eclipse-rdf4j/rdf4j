@@ -29,18 +29,22 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Query-level tests for the exists-intersection specialization: {@code COUNT(DISTINCT ?x)} over a single pattern
  * filtered by a single-pattern {@code FILTER EXISTS} correlated only on {@code ?x} runs as a leapfrog merge of two
  * prefix-run distinct-value streams.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbExistsIntersectionQueryTest {
 
 	private static final String EX = "http://example.com/";
@@ -61,18 +65,39 @@ public class LmdbExistsIntersectionQueryTest {
 
 	private SailRepository repository;
 	private LmdbStore store;
+	private final Map<String, String> previousProperties = new HashMap<>();
 
 	@BeforeEach
 	public void resetCostCalibration() {
+		captureProperty(SYNOPSIS_PROPERTY);
+		captureProperty(LmdbNativeExistsIntersection.PARALLEL_MIN_ESTIMATE_PROPERTY);
 		LmdbNativeCostCalibration.reset();
 	}
 
 	@AfterEach
 	public void tearDown() {
-		System.clearProperty(SYNOPSIS_PROPERTY);
-		if (repository != null) {
-			repository.shutDown();
+		try {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		} finally {
+			restoreProperties();
 		}
+	}
+
+	private void captureProperty(String property) {
+		previousProperties.put(property, System.getProperty(property));
+	}
+
+	private void restoreProperties() {
+		previousProperties.forEach((property, value) -> {
+			if (value == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, value);
+			}
+		});
+		previousProperties.clear();
 	}
 
 	@Test
@@ -108,6 +133,24 @@ public class LmdbExistsIntersectionQueryTest {
 		assertThat(streamingIntersections.get()).isEqualTo(streamingBefore);
 		assertThat(presenceIntersections.get()).isGreaterThan(presenceBefore);
 		assertThat(preparations.get()).isGreaterThan(preparationsBefore);
+	}
+
+	@Test
+	public void retainedSynopsesStayExactForOverlayTombstones() throws InterruptedException {
+		System.setProperty(SYNOPSIS_PROPERTY, "true");
+		openRepository("spoc,ospc,psoc,posc", 2000);
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			IRI h = vf.createIRI(EX, "h");
+			conn.remove(h, vf.createIRI(EX, "knows"), h);
+		}
+		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS))
+				.as(store.getDirectAdjacencyReadinessDescription())
+				.isTrue();
+
+		long openedBefore = LmdbNativeExistsIntersection.OPENED.get();
+		assertThat(count(SUBJECTS_ALSO_OBJECTS)).isEqualTo(5L);
+		assertThat(LmdbNativeExistsIntersection.OPENED.get()).isGreaterThan(openedBefore);
 	}
 
 	@Test
@@ -218,32 +261,24 @@ public class LmdbExistsIntersectionQueryTest {
 	@Test
 	public void parallelMergeMatchesHandComputedCount() {
 		System.setProperty(LmdbNativeExistsIntersection.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
-		try {
-			openRepository("spoc,ospc,psoc,posc");
+		openRepository("spoc,ospc,psoc,posc");
 
-			assertThat(count(SUBJECTS_ALSO_OBJECTS)).isEqualTo(6L);
-		} finally {
-			System.clearProperty(LmdbNativeExistsIntersection.PARALLEL_MIN_ESTIMATE_PROPERTY);
-		}
+		assertThat(count(SUBJECTS_ALSO_OBJECTS)).isEqualTo(6L);
 	}
 
 	@Test
 	public void parallelMergeCountsLargerRandomDataset() {
 		System.setProperty(LmdbNativeExistsIntersection.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
-		try {
-			openEmptyRepository("spoc,ospc,psoc,posc");
-			long expected = addRandomGraph();
-			awaitAdjacency();
+		openEmptyRepository("spoc,ospc,psoc,posc");
+		long expected = addRandomGraph();
+		buildAdjacencyNow();
 
-			long parallelBefore = LmdbNativeExistsIntersection.PARALLEL_RUNS.get();
-			long adjacencyBefore = LmdbNativeExistsIntersection.PARALLEL_ADJACENCY_INTERSECTIONS.get();
-			assertThat(count(SUBJECTS_ALSO_OBJECTS)).isEqualTo(expected);
-			assertThat(LmdbNativeExistsIntersection.PARALLEL_RUNS.get()).isGreaterThan(parallelBefore);
-			assertThat(LmdbNativeExistsIntersection.PARALLEL_ADJACENCY_INTERSECTIONS.get())
-					.isGreaterThan(adjacencyBefore);
-		} finally {
-			System.clearProperty(LmdbNativeExistsIntersection.PARALLEL_MIN_ESTIMATE_PROPERTY);
-		}
+		long parallelBefore = LmdbNativeExistsIntersection.PARALLEL_RUNS.get();
+		long adjacencyBefore = LmdbNativeExistsIntersection.PARALLEL_ADJACENCY_INTERSECTIONS.get();
+		assertThat(count(SUBJECTS_ALSO_OBJECTS)).isEqualTo(expected);
+		assertThat(LmdbNativeExistsIntersection.PARALLEL_RUNS.get()).isGreaterThan(parallelBefore);
+		assertThat(LmdbNativeExistsIntersection.PARALLEL_ADJACENCY_INTERSECTIONS.get())
+				.isGreaterThan(adjacencyBefore);
 	}
 
 	/** Adds a deterministic pseudo-random graph and returns the expected "subjects that are also objects" count. */
@@ -329,7 +364,7 @@ public class LmdbExistsIntersectionQueryTest {
 			}
 		}
 		if (indexes.contains("ospc")) {
-			awaitAdjacency();
+			buildAdjacencyNow();
 		}
 	}
 
@@ -351,12 +386,9 @@ public class LmdbExistsIntersectionQueryTest {
 		return (AtomicLong) LmdbNativeExistsIntersection.class.getDeclaredField(name).get(null);
 	}
 
-	private void awaitAdjacency() {
-		try {
-			assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new AssertionError("interrupted while waiting for direct adjacency", e);
-		}
+	private void buildAdjacencyNow() {
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+				.as(store.getDirectAdjacencyReadinessDescription())
+				.isTrue();
 	}
 }

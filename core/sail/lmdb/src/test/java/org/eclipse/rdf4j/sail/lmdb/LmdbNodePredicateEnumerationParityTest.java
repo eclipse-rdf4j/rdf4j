@@ -29,6 +29,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Gate A milestone A4: the answers served out of the node-predicate projection are the answers the authoritative disk
@@ -45,6 +47,7 @@ import org.junit.jupiter.api.io.TempDir;
  * buffer, and a node with more than {@code CHUNK_EDGES} predicates is the only way to exercise chunk refill and buffer
  * growth. The comparison runs at four lifecycle points because the structure is materially different at each.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNodePredicateEnumerationParityTest {
 
 	/** Must exceed LmdbDirectNodeIterator.CHUNK_EDGES (256) so the predicate row spans several chunks. */
@@ -52,6 +55,7 @@ class LmdbNodePredicateEnumerationParityTest {
 
 	private TripleStore tripleStore;
 	private LmdbDirectAdjacencyStore store;
+	private String previousNodePredicateServe;
 
 	private static long uri(long payload) {
 		return ValueIds.createId(ValueIds.T_URI, payload);
@@ -89,6 +93,7 @@ class LmdbNodePredicateEnumerationParityTest {
 
 	@BeforeEach
 	void setUp(@TempDir File dataDir) throws Exception {
+		previousNodePredicateServe = System.getProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
 		this.dataDir = dataDir;
 		openStore(false);
 	}
@@ -122,12 +127,23 @@ class LmdbNodePredicateEnumerationParityTest {
 
 	@AfterEach
 	void tearDown() throws Exception {
-		System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
-		if (store != null) {
-			store.close();
-		}
-		if (tripleStore != null) {
-			tripleStore.close();
+		try {
+			if (store != null) {
+				store.close();
+			}
+		} finally {
+			try {
+				if (tripleStore != null) {
+					tripleStore.close();
+				}
+			} finally {
+				if (previousNodePredicateServe == null) {
+					System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
+				} else {
+					System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY,
+							previousNodePredicateServe);
+				}
+			}
 		}
 	}
 
@@ -275,15 +291,24 @@ class LmdbNodePredicateEnumerationParityTest {
 		int servedAtBase = assertParity("freshly built base");
 		assertThat(servedAtBase).as("the comparison must not be vacuous").isPositive();
 
-		// 2. Live overlay generations: the iterator merges base rows with every applicable generation.
+		// 2. Live overlay state: tier compaction may coalesce generations, but additions and tombstones must remain
+		// exact.
 		commit(() -> add(S_OVERLAY_ONLY, P_A, O1, G2, true));
 		commit(() -> add(S_MIXED, P_POST_BASE, O2, 0, true));
 		commit(() -> remove(S_TOMBSTONED, P_TOMBSTONED, O1, 0, true));
 		commit(() -> add(S_ONE_PREDICATE, P_ONLY, O2, G1, true));
 		assertThat(store.publishedStateForTest().overlays()).as("overlays must still be live").isNotNull();
-		assertThat(store.publishedStateForTest().overlays().generationCount())
-				.as("the merge inside the iterator needs more than one generation to be exercised")
-				.isGreaterThan(1);
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			assertThat(fromAdjacency(txn, S_OVERLAY_ONLY, G2, true))
+					.as("an overlay-only node must be served directly")
+					.isNotNull()
+					.usingElementComparator(ROW_ORDER)
+					.containsExactlyElementsOf(fromDiskTrees(txn, S_OVERLAY_ONLY, G2, true));
+			assertThat(fromAdjacency(txn, S_TOMBSTONED, -1, true))
+					.as("a base row removed by an overlay tombstone must be served as exact-empty")
+					.isNotNull()
+					.isEmpty();
+		}
 		assertThat(assertParity("live overlays")).isPositive();
 
 		// 3. Forced fold-down: the projection is rewritten, including a predicate first seen after the base.

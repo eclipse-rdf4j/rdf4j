@@ -14,7 +14,9 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -23,31 +25,52 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Differential tests for the native OPTIONAL cursor. Replay-specific cases also assert the observability counter so
  * result parity alone cannot pass on the old dependent nested-loop implementation.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbNativeLeftJoinCursorTest {
 
 	private static final String EX = "http://example.com/";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String REPLAY_FLAG = "rdf4j.lmdb.leftjoin.replay.enabled";
+	private static final String JANINO_FLAG = "rdf4j.lmdb.janinoCodegen.enabled";
+	private static final String KERNEL_INTERPRETER_FLAG = "rdf4j.lmdb.kernelInterpreter.enabled";
+	private static final String EXACT_EMPTY_PRUNING_FLAG = "rdf4j.lmdb.directAdjacency.exactEmptyPruning.enabled";
 
 	@TempDir
 	File dataDir;
 
 	private SailRepository repository;
+	private LmdbStore store;
+	private final Map<String, String> previousProperties = new LinkedHashMap<>();
 
 	@BeforeEach
 	public void setUp() {
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		remember(NATIVE_FLAG);
+		remember(REPLAY_FLAG);
+		remember(JANINO_FLAG);
+		remember(KERNEL_INTERPRETER_FLAG);
+		remember(EXACT_EMPTY_PRUNING_FLAG);
+		System.clearProperty(EXACT_EMPTY_PRUNING_FLAG);
+		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.FULL)
+				.setDirectAdjacencyMaxBytes(1L << 30));
+		repository = new SailRepository(store);
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI type = vf.createIRI(EX, "type");
@@ -64,12 +87,16 @@ public class LmdbNativeLeftJoinCursorTest {
 			conn.add(vf.createIRI(EX, "global"), tag, vf.createIRI(EX, "tagA"));
 			conn.add(vf.createIRI(EX, "global"), tag, vf.createIRI(EX, "tagB"));
 		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
 	}
 
 	@AfterEach
 	public void tearDown() {
-		repository.shutDown();
-		System.clearProperty(REPLAY_FLAG);
+		try {
+			repository.shutDown();
+		} finally {
+			previousProperties.forEach(LmdbNativeLeftJoinCursorTest::restore);
+		}
 	}
 
 	@Test
@@ -85,17 +112,11 @@ public class LmdbNativeLeftJoinCursorTest {
 		// This case pins the replay path for an EMPTY uncorrelated right side. Exact-empty pruning (default on
 		// since Milestone 3 of the three-tier plan) folds the constant-endpoint right to an empty plan at compile
 		// time, so the replay machinery is legitimately never reached — disable it here to keep exercising replay.
-		String pruningFlag = "rdf4j.lmdb.directAdjacency.exactEmptyPruning.enabled";
-		String previous = System.getProperty(pruningFlag);
-		try {
-			System.setProperty(pruningFlag, "false");
-			assertAllModesAgree(q("SELECT ?s ?tag WHERE {\n"
-					+ "  ?s ex:type ex:Item .\n"
-					+ "  OPTIONAL { ex:global ex:probe ?tag }\n"
-					+ "}"), true);
-		} finally {
-			restore(pruningFlag, previous);
-		}
+		System.setProperty(EXACT_EMPTY_PRUNING_FLAG, "false");
+		assertAllModesAgree(q("SELECT ?s ?tag WHERE {\n"
+				+ "  ?s ex:type ex:Item .\n"
+				+ "  OPTIONAL { ex:global ex:probe ?tag }\n"
+				+ "}"), true);
 	}
 
 	@Test
@@ -126,37 +147,65 @@ public class LmdbNativeLeftJoinCursorTest {
 				+ "}"), false);
 	}
 
-	private void assertAllModesAgree(String query, boolean expectReplay) {
-		String previousNative = System.getProperty(NATIVE_FLAG);
-		String previousReplay = System.getProperty(REPLAY_FLAG);
-		try {
-			System.setProperty(NATIVE_FLAG, "false");
-			List<String> generic = rows(query);
+	private void assertAllModesAgree(String query, boolean expectFallbackReplay) {
+		System.setProperty(NATIVE_FLAG, "false");
+		List<String> generic = rows(query);
 
-			System.setProperty(NATIVE_FLAG, "true");
-			System.setProperty(REPLAY_FLAG, "false");
-			long disabledBefore = LmdbNativeAggregateCompiler.LEFTJOIN_REPLAY_MATERIALIZATIONS.get();
-			assertThat(rows(query)).as("native replay disabled vs generic for:\n" + query).isEqualTo(generic);
-			assertThat(LmdbNativeAggregateCompiler.LEFTJOIN_REPLAY_MATERIALIZATIONS.get())
-					.as("replay disabled should not materialize:\n" + query)
-					.isEqualTo(disabledBefore);
-
-			System.setProperty(REPLAY_FLAG, "true");
-			long compiledBefore = LmdbNativeAggregateCompiler.COMPILED.get();
-			long replayBefore = LmdbNativeAggregateCompiler.LEFTJOIN_REPLAY_MATERIALIZATIONS.get();
-			assertThat(rows(query)).as("native replay enabled vs generic for:\n" + query).isEqualTo(generic);
-			assertThat(LmdbNativeAggregateCompiler.COMPILED.get())
-					.as("native compiler should accept:\n" + query)
-					.isGreaterThan(compiledBefore);
-			if (expectReplay) {
-				assertThat(LmdbNativeAggregateCompiler.LEFTJOIN_REPLAY_MATERIALIZATIONS.get())
-						.as("uncorrelated OPTIONAL should materialize for replay:\n" + query)
-						.isGreaterThan(replayBefore);
-			}
-		} finally {
-			restore(NATIVE_FLAG, previousNative);
-			restore(REPLAY_FLAG, previousReplay);
+		// Exercise the production-default adjacency IR ladder first. Replay is a fallback implementation detail and
+		// must not be required when a higher adjacency-backed tier handles the OPTIONAL.
+		System.setProperty(NATIVE_FLAG, "true");
+		System.clearProperty(JANINO_FLAG);
+		System.clearProperty(KERNEL_INTERPRETER_FLAG);
+		System.clearProperty(REPLAY_FLAG);
+		long defaultAdjacencyBefore = adjacencyAccesses();
+		long compiledBefore = LmdbNativeAggregateCompiler.COMPILED.get();
+		assertThat(rows(query)).as("default native execution vs generic for:\n" + query).isEqualTo(generic);
+		assertThat(LmdbNativeAggregateCompiler.COMPILED.get())
+				.as("native compiler should accept:\n" + query)
+				.isGreaterThan(compiledBefore);
+		if (expectFallbackReplay) {
+			assertThat(adjacencyAccesses())
+					.as("the production-default OPTIONAL should use available adjacency:\n" + query)
+					.isGreaterThan(defaultAdjacencyBefore);
 		}
+
+		// Disable only the two IR rungs that supersede the nested cursor, then compare its replay switch directly.
+		System.setProperty(JANINO_FLAG, "false");
+		System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
+		System.setProperty(REPLAY_FLAG, "false");
+		long disabledAdjacencyBefore = adjacencyLookupsAndMisses();
+		long disabledBefore = LmdbNativeAggregateCompiler.LEFTJOIN_REPLAY_MATERIALIZATIONS.get();
+		assertThat(rows(query)).as("native fallback with replay disabled vs generic for:\n" + query).isEqualTo(generic);
+		assertThat(LmdbNativeAggregateCompiler.LEFTJOIN_REPLAY_MATERIALIZATIONS.get())
+				.as("replay disabled should not materialize:\n" + query)
+				.isEqualTo(disabledBefore);
+		if (expectFallbackReplay) {
+			assertThat(adjacencyLookupsAndMisses())
+					.as("the replay-disabled nested cursor should retain adjacency-backed statement access:\n"
+							+ query)
+					.isGreaterThan(disabledAdjacencyBefore);
+		}
+
+		System.setProperty(REPLAY_FLAG, "true");
+		long replayAdjacencyBefore = adjacencyLookupsAndMisses();
+		long replayBefore = LmdbNativeAggregateCompiler.LEFTJOIN_REPLAY_MATERIALIZATIONS.get();
+		assertThat(rows(query)).as("native fallback with replay enabled vs generic for:\n" + query).isEqualTo(generic);
+		if (expectFallbackReplay) {
+			assertThat(LmdbNativeAggregateCompiler.LEFTJOIN_REPLAY_MATERIALIZATIONS.get())
+					.as("isolated uncorrelated OPTIONAL fallback should materialize once for replay:\n" + query)
+					.isGreaterThan(replayBefore);
+			assertThat(adjacencyLookupsAndMisses())
+					.as("the isolated nested cursor should retain adjacency-backed statement access:\n" + query)
+					.isGreaterThan(replayAdjacencyBefore);
+		}
+	}
+
+	private long adjacencyAccesses() {
+		return adjacencyLookupsAndMisses() + AdjacencyEngagementTestAccess.kernelViewsServed();
+	}
+
+	private long adjacencyLookupsAndMisses() {
+		return AdjacencyEngagementTestAccess.lookupHits(store) + AdjacencyEngagementTestAccess.exactMisses(store);
 	}
 
 	private List<String> rows(String query) {
@@ -188,5 +237,9 @@ public class LmdbNativeLeftJoinCursorTest {
 		} else {
 			System.setProperty(key, value);
 		}
+	}
+
+	private void remember(String key) {
+		previousProperties.put(key, System.getProperty(key));
 	}
 }

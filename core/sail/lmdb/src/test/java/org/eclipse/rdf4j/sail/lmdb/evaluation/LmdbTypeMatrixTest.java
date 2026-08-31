@@ -36,13 +36,17 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Query-level tests for the type-matrix specializations: class predicate usage (GROUP BY type, predicate) and class
  * linkage (GROUP BY source type, target type) collapse into one subject-ordered co-scan instead of a join.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbTypeMatrixTest {
 
 	private static final String EX = "http://example.com/";
@@ -71,18 +75,42 @@ public class LmdbTypeMatrixTest {
 	File dataDir;
 
 	private SailRepository repository;
+	private final Map<String, String> previousProperties = new HashMap<>();
+
+	@BeforeEach
+	public void captureProperties() {
+		captureProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY);
+		captureProperty("rdf4j.lmdb.parallel.threads");
+		captureProperty("rdf4j.lmdb.parallel.maxTasks");
+		captureProperty("rdf4j.lmdb.directAdjacency.nodePredicateProjection.enabled");
+		captureProperty(AdjacencyEngagementTestAccess.NODE_PREDICATE_SERVE_PROPERTY);
+		captureProperty(SYNOPSIS_PROPERTY);
+	}
 
 	@AfterEach
 	public void tearDown() {
-		System.clearProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY);
-		System.clearProperty("rdf4j.lmdb.parallel.threads");
-		System.clearProperty("rdf4j.lmdb.parallel.maxTasks");
-		System.clearProperty("rdf4j.lmdb.directAdjacency.nodePredicateProjection.enabled");
-		System.clearProperty(AdjacencyEngagementTestAccess.NODE_PREDICATE_SERVE_PROPERTY);
-		System.clearProperty(SYNOPSIS_PROPERTY);
-		if (repository != null) {
-			repository.shutDown();
+		try {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		} finally {
+			restoreProperties();
 		}
+	}
+
+	private void captureProperty(String property) {
+		previousProperties.put(property, System.getProperty(property));
+	}
+
+	private void restoreProperties() {
+		previousProperties.forEach((property, value) -> {
+			if (value == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, value);
+			}
+		});
+		previousProperties.clear();
 	}
 
 	@Test
@@ -420,11 +448,11 @@ public class LmdbTypeMatrixTest {
 
 	@Test
 	public void matricesRemainExactWithDirectAdjacencyPreferred() throws Exception {
+		forceProjectionFreeSubjectSweep();
 		Expected expected = openRepository(0, true);
 
 		long before = LmdbNativeTypeMatrix.RUNS.get();
 		long adjacencyBefore = LmdbNativeTypeMatrix.ADJACENCY_RUNS.get();
-		long outrankedBefore = LmdbNativeTypeMatrix.ADJACENCY_OUTRANKED.get();
 		long predicateRootsBefore = LmdbNativeTypeMatrix.PREDICATE_ROOTS_VISITED.get();
 		assertThat(matrix(USAGE_MATRIX, "type", "p", "statements")).isEqualTo(expected.usage);
 		assertThat(matrix(LINKAGE_MATRIX, "sourceType", "targetType", "links")).isEqualTo(expected.linkage);
@@ -432,32 +460,35 @@ public class LmdbTypeMatrixTest {
 				.as("direct adjacency must serve the type matrices without relying on an unordered statement scan")
 				.isGreaterThan(before + 1);
 		assertThat(LmdbNativeTypeMatrix.ADJACENCY_RUNS.get())
-				.as("a broad sparse matrix should retain the faster subject-ordered LMDB alternative")
-				.isEqualTo(adjacencyBefore);
-		assertThat(LmdbNativeTypeMatrix.ADJACENCY_OUTRANKED.get())
-				.as("the complete SOC candidate must be reported as cost-outranked, not ineligible")
-				.isGreaterThan(outrankedBefore + 1L);
+				.as("an available exact SOC view remains preferred when LMDB has no measured clear win")
+				.isGreaterThan(adjacencyBefore + 1L);
 		assertThat(LmdbNativeTypeMatrix.PREDICATE_ROOTS_VISITED.get())
-				.as("metadata costing must outrank a broad SOC candidate before any root cursor is opened")
-				.isEqualTo(predicateRootsBefore);
+				.as("the projection-free adjacency path must merge the available SOC roots")
+				.isGreaterThan(predicateRootsBefore);
 		assertThat(LmdbNativeTypeMatrix.DYNAMIC_PREDICATE_SWEEPS.get())
 				.as("projection-free matrices must merge existing SOC roots, never sweep every predicate per subject")
 				.isZero();
 	}
 
 	@Test
-	public void parallelMatricesRemainExactWhenAdjacencyIsOutranked() throws Exception {
+	public void parallelConfigurationKeepsAvailableAdjacencyWithoutAClearLmdbWin() throws Exception {
+		forceProjectionFreeSubjectSweep();
 		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
 		System.setProperty("rdf4j.lmdb.parallel.maxTasks", "2");
 		Expected expected = openRepository(0, true);
 
 		long parallelBefore = LmdbNativeTypeMatrix.PARALLEL_RUNS.get();
-		long outrankedBefore = LmdbNativeTypeMatrix.ADJACENCY_OUTRANKED.get();
+		long adjacencyBefore = LmdbNativeTypeMatrix.ADJACENCY_RUNS.get();
 		assertThat(matrix(USAGE_MATRIX, "type", "p", "statements")).isEqualTo(expected.usage);
 		assertThat(matrix(LINKAGE_MATRIX, "sourceType", "targetType", "links")).isEqualTo(expected.linkage);
-		assertThat(LmdbNativeTypeMatrix.PARALLEL_RUNS.get()).isGreaterThan(parallelBefore + 1L);
-		assertThat(LmdbNativeTypeMatrix.ADJACENCY_OUTRANKED.get()).isGreaterThan(outrankedBefore + 1L);
+		assertThat(LmdbNativeTypeMatrix.PARALLEL_RUNS.get()).isEqualTo(parallelBefore);
+		assertThat(LmdbNativeTypeMatrix.ADJACENCY_RUNS.get()).isGreaterThan(adjacencyBefore + 1L);
+	}
+
+	private static void forceProjectionFreeSubjectSweep() {
+		System.setProperty("rdf4j.lmdb.directAdjacency.nodePredicateProjection.enabled", "false");
+		System.setProperty(AdjacencyEngagementTestAccess.NODE_PREDICATE_SERVE_PROPERTY, "false");
 	}
 
 	@Test
@@ -613,12 +644,9 @@ public class LmdbTypeMatrixTest {
 			}
 		}
 		if (preferAdjacency) {
-			try {
-				assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new AssertionError("interrupted while waiting for direct adjacency", e);
-			}
+			assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+					.as(store.getDirectAdjacencyReadinessDescription())
+					.isTrue();
 		}
 		for (String[] edge : edges) {
 			for (String sourceType : typesOf.getOrDefault(edge[0], List.of())) {

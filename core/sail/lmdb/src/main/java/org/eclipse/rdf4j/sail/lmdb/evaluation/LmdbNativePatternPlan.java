@@ -252,8 +252,21 @@ final class PatternPlan implements SlotPlan {
 		if (encounterOrderRequired) {
 			return source.statementsInEncounterOrder(subj, pred, obj, context, accessObserver);
 		}
+		if (isMeasuredNamedContextLmdbScan(subj, pred, obj, context)) {
+			return source.lmdbStatements(subj, pred, obj, context, accessObserver);
+		}
 		return probe != null ? probe.open(subj, pred, obj, context, accessObserver)
 				: source.statements(subj, pred, obj, context, accessObserver);
+	}
+
+	/**
+	 * The matched named-context benchmarks establish a clear LMDB win for the complete four-position scan. Keep this
+	 * exception exact: any bound component, fixed dataset, requested order, or range remains candidate-capable so an
+	 * available adjacency structure stays the default source.
+	 */
+	private boolean isMeasuredNamedContextLmdbScan(long subj, long pred, long obj, long context) {
+		return namedContextScope && contexts == ContextConstraint.UNRESTRICTED && subj == UNKNOWN && pred == UNKNOWN
+				&& obj == UNKNOWN && context == UNKNOWN;
 	}
 
 	private PatternCursor openContexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,

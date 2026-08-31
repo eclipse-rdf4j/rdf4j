@@ -785,16 +785,18 @@ final class LmdbNativeOrderPlanner {
 
 	private static NativeSlotOrder patternOrder(PatternPlan pattern, RowState row) {
 		String index = orderComponentsOf(pattern.indexName);
-		if (index.length() != 4) {
+		if (index.isEmpty() || index.length() > 4) {
 			return NativeSlotOrder.NONE;
 		}
 		long fixed = row.boundMask();
 		ArrayList<Long> positions = new ArrayList<>(4);
+		int seenFields = 0;
 		for (int i = 0; i < index.length(); i++) {
 			int field = field(index.charAt(i));
-			if (field < 0) {
+			if (field < 0 || (seenFields & 1 << field) != 0) {
 				return NativeSlotOrder.NONE;
 			}
+			seenFields |= 1 << field;
 			Term term = term(pattern, field);
 			long bit = term.slot < 0 ? 0L : 1L << term.slot;
 			boolean fixedContext = field == TripleIndex.CONTEXT_IDX && pattern.contexts.isFixed()
@@ -817,16 +819,21 @@ final class LmdbNativeOrderPlanner {
 	}
 
 	/**
-	 * A direct adjacency root scan provides the full component order of its LMDB namesake for the constant-predicate
-	 * shape it serves (keys unsigned ascending, runs (neighbor, context) ordered), so its planning witness maps to
-	 * those components. It still does not advertise the LMDB seek contract — seek-alignment checks keep matching on the
-	 * raw four-character names.
+	 * Direct scans expose their physical component order. Arbitrated and merged scans expose only their proven logical
+	 * component prefix. None of these markers advertises the LMDB seek contract: seek-alignment checks keep matching
+	 * only raw four-character names.
 	 */
 	private static String orderComponentsOf(String indexName) {
 		if (indexName.startsWith("direct-")) {
 			return indexName.substring("direct-".length());
 		}
-		return indexName;
+		if (indexName.startsWith("arbitrated-")) {
+			return indexName.substring("arbitrated-".length());
+		}
+		if (indexName.startsWith("merged-")) {
+			return indexName.substring("merged-".length());
+		}
+		return indexName.length() == 4 ? indexName : "";
 	}
 
 	private static NativeSlotOrder requestedOrder(int[] requested, long fixedMask) {

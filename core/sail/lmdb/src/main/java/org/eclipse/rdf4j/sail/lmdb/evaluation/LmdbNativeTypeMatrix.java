@@ -66,7 +66,6 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	static final AtomicLong RUNS = new AtomicLong();
 	static final AtomicLong PARALLEL_RUNS = new AtomicLong();
 	static final AtomicLong ADJACENCY_RUNS = new AtomicLong();
-	static final AtomicLong ADJACENCY_OUTRANKED = new AtomicLong();
 	static final AtomicLong TYPE_ROOTS_VISITED = new AtomicLong();
 	static final AtomicLong NODE_PREDICATE_ROWS_VISITED = new AtomicLong();
 	static final AtomicLong DYNAMIC_PREDICATE_SWEEPS = new AtomicLong();
@@ -106,7 +105,6 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		RUNS.set(0);
 		PARALLEL_RUNS.set(0);
 		ADJACENCY_RUNS.set(0);
-		ADJACENCY_OUTRANKED.set(0);
 		TYPE_ROOTS_VISITED.set(0);
 		NODE_PREDICATE_ROWS_VISITED.set(0);
 		DYNAMIC_PREDICATE_SWEEPS.set(0);
@@ -333,13 +331,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				if (planeMorsels != null) {
 					return planeMorsels;
 				}
-				double adjacencyWork = metadataSubjectMajorAdjacencyWork(predicateCatalog, acceptedPredicates);
-				double lmdbWork = source.estimate(UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN);
-				if (Double.isFinite(lmdbWork)
-						&& (!Double.isFinite(adjacencyWork) || adjacencyWork >= lmdbWork)) {
-					ADJACENCY_OUTRANKED.incrementAndGet();
-					return null;
-				}
+				// This operator has no matched runtime evidence comparing its projection-free SOC merge with the
+				// subject-ordered LMDB co-scan. Static row estimates alone do not establish a clear LMDB win, so an
+				// available exact adjacency route retains the structural preference.
 				return trySubjectMajorAdjacencyScan(probe, acceptedPredicates, predicateCatalog);
 			}
 			NativeAdjacency sourceTypes = probe.adjacency(subjectTypePredicate, false);
@@ -1654,33 +1648,6 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		return Arrays.copyOf(predicates, size);
 	}
 
-	/** Costs the complete SOC candidate from exact root-domain metadata without opening any payload cursor. */
-	private double metadataSubjectMajorAdjacencyWork(long[] predicateCatalog, LongHashSet acceptedPredicates) {
-		long predicateRootCount = 0L;
-		int acceptedPlaneCount = 0;
-		for (long predicate : predicateCatalog) {
-			if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
-				continue;
-			}
-			OptionalLong planeRoots = source.adjacencyKeyDomainCardinality(predicate, true);
-			if (planeRoots.isEmpty()) {
-				return Double.NaN;
-			}
-			long roots = planeRoots.getAsLong();
-			if (roots < 0L || predicateRootCount > Long.MAX_VALUE - roots) {
-				return Double.POSITIVE_INFINITY;
-			}
-			predicateRootCount += roots;
-			acceptedPlaneCount++;
-		}
-		OptionalLong typeRootCount = source.adjacencyKeyDomainCardinality(subjectTypePredicate, true);
-		if (typeRootCount.isEmpty()) {
-			return Double.NaN;
-		}
-		return SubjectPredicateSweep.estimatedMergeWork(predicateRootCount, acceptedPlaneCount,
-				typeRootCount.getAsLong(), source.estimate(UNKNOWN, subjectTypePredicate, UNKNOWN, UNKNOWN));
-	}
-
 	/** Projection-independent SOC evaluation: one root cursor per accepted predicate, merged by subject. */
 	private List<BindingSet> trySubjectMajorAdjacencyScan(NativeLmdbQuerySource.NativeProbe probe,
 			LongHashSet acceptedPredicates, long[] predicateCatalog) throws IOException {
@@ -1696,15 +1663,6 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		if (subjectSweep == null) {
 			closeAdjacency(sourceTypes);
 			closeAdjacency(targetTypes);
-			return null;
-		}
-		double adjacencyWork = subjectSweep.estimatedMergeWork(sourceTypes.keyCount(),
-				source.estimate(UNKNOWN, subjectTypePredicate, UNKNOWN, UNKNOWN));
-		double lmdbWork = source.estimate(UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN);
-		if (Double.isFinite(lmdbWork) && (!Double.isFinite(adjacencyWork) || adjacencyWork >= lmdbWork)) {
-			try (sourceTypes; targetTypes; subjectSweep) {
-				ADJACENCY_OUTRANKED.incrementAndGet();
-			}
 			return null;
 		}
 		try (sourceTypes;
@@ -2808,15 +2766,13 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		private final Plane[] planes;
 		private final int[] heap;
 		private final int[] active;
-		private final long rootCount;
 		private int heapSize;
 		private int activeSize;
 		private long subject;
 		private boolean closed;
 
-		private SubjectPredicateSweep(Plane[] planes, long rootCount) {
+		private SubjectPredicateSweep(Plane[] planes) {
 			this.planes = planes;
-			this.rootCount = rootCount;
 			heap = new int[planes.length];
 			active = new int[planes.length];
 			for (int i = 0; i < planes.length; i++) {
@@ -2830,7 +2786,6 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				LongHashSet acceptedPredicates) throws IOException {
 			Plane[] opened = new Plane[predicateCatalog.length];
 			int count = 0;
-			long rootCount = 0L;
 			try {
 				for (long predicate : predicateCatalog) {
 					if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
@@ -2842,12 +2797,6 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 						closePlanes(opened, count, null);
 						return null;
 					}
-					long planeRootCount = adjacency.keyCount();
-					if (planeRootCount < 0L || rootCount > Long.MAX_VALUE - planeRootCount) {
-						rootCount = -1L;
-					} else if (rootCount >= 0L) {
-						rootCount += planeRootCount;
-					}
 					NativeAdjacency.KeyRunCursor cursor = adjacency.openKeyRunCursor();
 					if (cursor == null) {
 						adjacency.close();
@@ -2856,7 +2805,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 					}
 					opened[count++] = new Plane(predicate, adjacency, cursor);
 				}
-				return new SubjectPredicateSweep(Arrays.copyOf(opened, count), rootCount);
+				return new SubjectPredicateSweep(Arrays.copyOf(opened, count));
 			} catch (IOException | RuntimeException | Error failure) {
 				closePlanes(opened, count, failure);
 				throw failure;
@@ -2888,20 +2837,6 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 
 		int activeSize() {
 			return activeSize;
-		}
-
-		double estimatedMergeWork(long typeRootCount, double typeRowCount) {
-			return estimatedMergeWork(rootCount, planes.length, typeRootCount, typeRowCount);
-		}
-
-		static double estimatedMergeWork(long rootCount, int planeCount, long typeRootCount, double typeRowCount) {
-			if (rootCount < 0L || typeRootCount < 0L || !Double.isFinite(typeRowCount) || typeRowCount < 0.0) {
-				return Double.POSITIVE_INFINITY;
-			}
-			int heapLevels = planeCount <= 1 ? 0
-					: Integer.SIZE - Integer.numberOfLeadingZeros(planeCount - 1);
-			double rootMergeWork = rootCount * (1.0 + heapLevels);
-			return rootMergeWork + typeRootCount + typeRowCount;
 		}
 
 		Plane activePlane(int index) {

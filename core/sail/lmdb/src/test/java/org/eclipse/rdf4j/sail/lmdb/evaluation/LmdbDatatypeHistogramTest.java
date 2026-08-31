@@ -21,7 +21,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Random;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -33,18 +32,23 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Query-level tests for the literal datatype histogram specialization: GROUP BY DATATYPE(?o) with COUNT(*) under
  * FILTER(isLiteral(?o)) collapses into one prefix-run counting scan with per-distinct-value datatype resolution.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbDatatypeHistogramTest {
 
 	private static final String EX = "http://example.com/";
@@ -64,15 +68,39 @@ public class LmdbDatatypeHistogramTest {
 
 	private SailRepository repository;
 	private LmdbStore store;
+	private final Map<String, String> previousProperties = new HashMap<>();
+
+	@BeforeEach
+	public void captureProperties() {
+		captureProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY);
+		captureProperty(SYNOPSIS_PROPERTY);
+		captureProperty(NATIVE_ENGINE_PROPERTY);
+	}
 
 	@AfterEach
 	public void tearDown() {
-		System.clearProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY);
-		System.clearProperty(SYNOPSIS_PROPERTY);
-		System.clearProperty(NATIVE_ENGINE_PROPERTY);
-		if (repository != null) {
-			repository.shutDown();
+		try {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		} finally {
+			restoreProperties();
 		}
+	}
+
+	private void captureProperty(String property) {
+		previousProperties.put(property, System.getProperty(property));
+	}
+
+	private void restoreProperties() {
+		previousProperties.forEach((property, value) -> {
+			if (value == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, value);
+			}
+		});
+		previousProperties.clear();
 	}
 
 	@Test
@@ -193,6 +221,21 @@ public class LmdbDatatypeHistogramTest {
 		assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isEqualTo(before);
 	}
 
+	@Test
+	public void histogramIncludesExactOverlayCommittedAfterBaseBuild() {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		Map<String, Long> expected = openMixedRepository(0);
+
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			Literal overlayLiteral = vf.createLiteral("literal committed after the deterministic base build");
+			conn.add(vf.createIRI(EX, "overlay-subject"), vf.createIRI(EX, "p"), overlayLiteral);
+			expected.merge(overlayLiteral.getDatatype().stringValue(), 1L, Long::sum);
+		}
+
+		assertThat(histogram(DATATYPE_HISTOGRAM)).isEqualTo(expected);
+	}
+
 	/** Loads mixed-datatype data plus non-literal objects and returns the expected per-datatype statement counts. */
 	private Map<String, Long> openMixedRepository(int extraRandomStatements) {
 		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
@@ -231,12 +274,9 @@ public class LmdbDatatypeHistogramTest {
 				expected.merge(literal.getDatatype().stringValue(), 1L, Long::sum);
 			}
 		}
-		try {
-			assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new AssertionError("interrupted while waiting for direct adjacency", e);
-		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+				.as("mixed-datatype optimization fixtures require a compacted adjacency base")
+				.isTrue();
 		return expected;
 	}
 
@@ -274,7 +314,9 @@ public class LmdbDatatypeHistogramTest {
 						.isEqualTo(ValueIds.T_LITERAL);
 			}
 		}
-		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+				.as("legacy-header optimization fixtures require a compacted adjacency base")
+				.isTrue();
 		return expected;
 	}
 

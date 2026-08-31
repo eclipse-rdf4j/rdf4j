@@ -15,20 +15,24 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.BenchmarkRouteTelemetry;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -76,14 +80,23 @@ public class AdjacencyQueryShapeBenchmark {
 	private static final String DENSE_PREDICATE = "<" + SHAPE_NAMESPACE + "dense>";
 	private static final String DENSE_LEAF_PREDICATE = "<" + SHAPE_NAMESPACE + "denseLeaf>";
 	private static final String ALL_UNBOUND_QUERY = "SELECT ?s ?p ?o WHERE { ?s ?p ?o }";
+	private static final String PREDICATE_OBJECT_DISTINCT_SUBJECTS_QUERY = "SELECT ?p ?o "
+			+ "(COUNT(DISTINCT ?s) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p ?o";
 	private static final String VARIABLE_PREDICATE_DOUBLY_BOUND_QUERY = "SELECT ?p WHERE { " + SEED_PERSON
 			+ " ?p " + SEED_PERSON_TARGET + " }";
 	private static final String ORDERED_CONTEXT_QUERY = "SELECT ?g ?s ?p ?o WHERE { GRAPH ?g { ?s ?p ?o } } "
 			+ "ORDER BY ?g ?s ?p ?o";
+	private static final String CONTEXT_ORDER_ONLY_QUERY = "SELECT ?g ?s ?p ?o WHERE { GRAPH ?g { ?s ?p ?o } } "
+			+ "ORDER BY ?g";
+	private static final String CONTEXT_HISTOGRAM_QUERY = "SELECT ?g (COUNT(*) AS ?count) WHERE { "
+			+ "GRAPH ?g { ?s ?p ?o } } GROUP BY ?g";
 	private static final String RANGED_QUERY = "SELECT (COUNT(*) AS ?count) WHERE { ?s " + ROOT_PREDICATE
 			+ " ?middle . ?s <" + SHAPE_NAMESPACE + "rank> ?rank . FILTER(?rank >= 4900) }";
 	private static final String PRINT_TELEMETRY_PROPERTY = "rdf4j.lmdb.adjacencyQueryShapeBenchmark.printTelemetry";
+	private static final String FIXTURE_FOAF = "foaf";
+	private static final String FIXTURE_PRIMITIVE_GROUPING = "primitiveGrouping";
 	private static final String SOURCE_ARBITER = "arbiter";
+	private static final String SOURCE_SELECTED_HYBRID = "selectedHybrid";
 	private static final String SOURCE_LMDB = "lmdb";
 	private static final String SELECTIVE_SIP_QUERY = "SELECT ?s ?leaf WHERE { ?s " + ROOT_PREDICATE
 			+ " ?middle . ?middle " + SELECTIVE_PREDICATE + " ?value . ?value " + SELECTIVE_LEAF_PREDICATE
@@ -112,11 +125,24 @@ public class AdjacencyQueryShapeBenchmark {
 	@Param({ FoafCliqueQueryBenchmark.MODE_NATIVE })
 	public String engineMode;
 
+	@Param({ FIXTURE_FOAF })
+	public String fixtureMode = FIXTURE_FOAF;
+
 	@Param({ SOURCE_ARBITER })
 	public String sourceMode = SOURCE_ARBITER;
 
 	private File dataDir;
 	private SailRepository repository;
+	private long selectiveRows;
+	private long denseRows;
+	private long rangedRows;
+	private long orderedContextRows;
+	private long contextOrderOnlyRows;
+	private ContextHistogramStats contextHistogramStats;
+	private PredicateObjectDistinctSubjectsStats primitiveGroupingStats;
+	private BenchmarkRouteTelemetry.Snapshot validationRoute;
+	private BenchmarkRouteTelemetry.Snapshot timedRouteBaseline;
+	private long adjacencyLookupBaseline;
 
 	public static void main(String[] args) throws RunnerException {
 		new Runner(new OptionsBuilder()
@@ -128,35 +154,133 @@ public class AdjacencyQueryShapeBenchmark {
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
 		FoafCliqueQueryBenchmark.applyEngineMode(engineMode);
-		dataDir = Files.createTempDirectory("rdf4j-lmdb-adjacency-shapes").toFile();
-		repository = createRepository(dataDir, sourceMode);
-		repository.init();
+		try {
+			dataDir = Files.createTempDirectory("rdf4j-lmdb-adjacency-shapes").toFile();
+			repository = createRepository(dataDir, sourceMode);
+			repository.init();
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			new FoafCliqueDataGenerator(peopleCount, cliquePercentage, minCliqueSize, maxCliqueSize, randomKnowsEdges,
-					seed).populate(connection);
-			populateSipMaskShapes(connection);
-		}
-		if (SOURCE_ARBITER.equals(sourceMode)) {
-			awaitDirectAdjacency();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				switch (fixtureMode) {
+				case FIXTURE_FOAF:
+					new FoafCliqueDataGenerator(peopleCount, cliquePercentage, minCliqueSize, maxCliqueSize,
+							randomKnowsEdges, seed).populate(connection);
+					populateSipMaskShapes(connection);
+					break;
+				case FIXTURE_PRIMITIVE_GROUPING:
+					populatePrimitiveGroupingShape(connection);
+					break;
+				default:
+					throw new IllegalArgumentException("Unknown adjacency-query fixture: " + fixtureMode);
+				}
+			}
+			if (!SOURCE_LMDB.equals(sourceMode)) {
+				awaitDirectAdjacency();
+			}
+			if (FIXTURE_FOAF.equals(fixtureMode)) {
+				orderedContextRows = executeCount(ORDERED_CONTEXT_QUERY);
+				assertResultCount("ordered context", orderedContextRows, peopleCount);
+				contextOrderOnlyRows = executeCount(CONTEXT_ORDER_ONLY_QUERY);
+				assertResultCount("context-only order", contextOrderOnlyRows, peopleCount);
+				contextHistogramStats = readContextHistogramStats();
+				long expectedContextGroups = Math.min(8L, Math.max(0L, peopleCount));
+				long expectedMinimumCount = expectedContextGroups == 0L ? 0L : peopleCount / expectedContextGroups;
+				long expectedMaximumCount = expectedContextGroups == 0L ? 0L
+						: (peopleCount + expectedContextGroups - 1L) / expectedContextGroups;
+				assertResultCount("context histogram groups", contextHistogramStats.groups(), expectedContextGroups);
+				assertResultCount("context histogram count sum", contextHistogramStats.countSum(), peopleCount);
+				assertResultCount("context histogram minimum count", contextHistogramStats.minCount(),
+						expectedMinimumCount);
+				assertResultCount("context histogram maximum count", contextHistogramStats.maxCount(),
+						expectedMaximumCount);
+				BenchmarkRouteTelemetry.Snapshot validationBefore = BenchmarkRouteTelemetry.snapshot();
+				selectiveRows = executeCount(SELECTIVE_SIP_QUERY);
+				denseRows = executeCount(DENSE_SIP_QUERY);
+				assertResultCount("selective adjacency SIP chain", selectiveRows,
+						Math.multiplyExact((peopleCount + 63L) / 64L, 400L));
+				assertResultCount("dense adjacency SIP chain", denseRows, Math.multiplyExact(peopleCount, 4L));
+				validationRoute = BenchmarkRouteTelemetry.snapshot().minus(validationBefore);
+				rangedRows = executeSingleLong(RANGED_QUERY, "count");
+				assertResultCount("ranged scan", rangedRows,
+						Math.multiplyExact(Math.max(0L, peopleCount - 4900L), 2L));
+				timedRouteBaseline = BenchmarkRouteTelemetry.snapshot();
+				adjacencyLookupBaseline = AdjacencyEngagementTestAccess.lookupHits((LmdbStore) repository.getSail());
+			} else if (FIXTURE_PRIMITIVE_GROUPING.equals(fixtureMode)) {
+				primitiveGroupingStats = readPredicateObjectDistinctSubjectsStats();
+				assertResultCount("primitive grouping rows", primitiveGroupingStats.rows(), 15L);
+				assertResultCount("primitive grouping count sum", primitiveGroupingStats.countSum(), 600L);
+				assertResultCount("primitive grouping minimum count", primitiveGroupingStats.minCount(), 40L);
+				assertResultCount("primitive grouping maximum count", primitiveGroupingStats.maxCount(), 40L);
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			releaseResourcesAfterFailure(failure);
+			throw failure;
 		}
 	}
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
-		if (repository != null) {
-			if (Boolean.getBoolean(PRINT_TELEMETRY_PROPERTY)) {
+		try {
+			if (repository != null && Boolean.getBoolean(PRINT_TELEMETRY_PROPERTY)) {
+				printSipResultAndRouteSummary();
+				printOrderedContextResultSummary();
+				printPredicateObjectDistinctSubjectsSummary();
 				printTelemetry("allUnboundPattern", ALL_UNBOUND_QUERY);
+				printTelemetry("predicateObjectDistinctSubjects", PREDICATE_OBJECT_DISTINCT_SUBJECTS_QUERY);
 				printTelemetry("variablePredicateDoublyBound", VARIABLE_PREDICATE_DOUBLY_BOUND_QUERY);
 				printTelemetry("orderedContext", ORDERED_CONTEXT_QUERY);
+				printTelemetry("contextOrderOnly", CONTEXT_ORDER_ONLY_QUERY);
+				printTelemetry("contextHistogram", CONTEXT_HISTOGRAM_QUERY);
 				printTelemetry("rangedScan", RANGED_QUERY);
 				printTelemetry("selectiveAdjacencySipChain", SELECTIVE_SIP_QUERY);
 				printTelemetry("denseAdjacencySipChain", DENSE_SIP_QUERY);
 			}
-			repository.shutDown();
+		} finally {
+			releaseResources();
 		}
-		if (dataDir != null && dataDir.exists()) {
-			FileUtils.deleteDirectory(dataDir);
+	}
+
+	private void releaseResourcesAfterFailure(Throwable failure) {
+		try {
+			releaseResources();
+		} catch (IOException | RuntimeException | Error cleanupFailure) {
+			if (cleanupFailure != failure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+		}
+	}
+
+	private void releaseResources() throws IOException {
+		SailRepository ownedRepository = repository;
+		File ownedDataDir = dataDir;
+		repository = null;
+		dataDir = null;
+		Throwable failure = null;
+		try {
+			if (ownedRepository != null) {
+				ownedRepository.shutDown();
+			}
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+		}
+		try {
+			if (ownedDataDir != null && ownedDataDir.exists()) {
+				FileUtils.deleteDirectory(ownedDataDir);
+			}
+		} catch (IOException | RuntimeException | Error problem) {
+			if (failure == null) {
+				failure = problem;
+			} else if (failure != problem) {
+				failure.addSuppressed(problem);
+			}
+		}
+		if (failure instanceof IOException) {
+			throw (IOException) failure;
+		}
+		if (failure instanceof RuntimeException) {
+			throw (RuntimeException) failure;
+		}
+		if (failure != null) {
+			throw (Error) failure;
 		}
 	}
 
@@ -178,6 +302,16 @@ public class AdjacencyQueryShapeBenchmark {
 	@Benchmark
 	public long orderedContext() {
 		return executeCount(ORDERED_CONTEXT_QUERY);
+	}
+
+	@Benchmark
+	public long contextOrderOnly() {
+		return executeCount(CONTEXT_ORDER_ONLY_QUERY);
+	}
+
+	@Benchmark
+	public long contextHistogram() {
+		return executeCount(CONTEXT_HISTOGRAM_QUERY);
 	}
 
 	@Benchmark
@@ -203,6 +337,11 @@ public class AdjacencyQueryShapeBenchmark {
 	@Benchmark
 	public long predicateHistogram() {
 		return executeCount("SELECT ?p (COUNT(*) AS ?count) WHERE { ?s ?p ?o } GROUP BY ?p");
+	}
+
+	@Benchmark
+	public long predicateObjectDistinctSubjects() {
+		return executeCount(PREDICATE_OBJECT_DISTINCT_SUBJECTS_QUERY);
 	}
 
 	@Benchmark
@@ -326,12 +465,31 @@ public class AdjacencyQueryShapeBenchmark {
 		connection.commit();
 	}
 
+	/** Reproduces the two-key distinct-grouping fixture from {@code LmdbNativePrimitiveGroupingTest}. */
+	private void populatePrimitiveGroupingShape(SailRepositoryConnection connection) {
+		ValueFactory vf = connection.getValueFactory();
+		connection.begin();
+		for (int row = 0; row < 600; row++) {
+			IRI subject = vf.createIRI(SHAPE_NAMESPACE, "groupingSubject/" + row);
+			IRI predicate = vf.createIRI(SHAPE_NAMESPACE, "groupingPredicate/" + (row % 3));
+			IRI object = vf.createIRI(SHAPE_NAMESPACE, "groupingObject/" + (row % 5));
+			connection.add(subject, predicate, object);
+		}
+		connection.commit();
+	}
+
 	private static SailRepository createRepository(File dataDir, String sourceMode) {
 		LmdbStoreConfig config = FoafCliqueQueryBenchmark.createBenchmarkConfig();
 		switch (sourceMode) {
 		case SOURCE_ARBITER:
 			config.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER);
 			config.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.FULL);
+			break;
+		case SOURCE_SELECTED_HYBRID:
+			config.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER);
+			config.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.SELECTED);
+			config.setDirectAdjacencyPredicates(Set.of(Values.iri(SHAPE_NAMESPACE, "selective"),
+					Values.iri(SHAPE_NAMESPACE, "dense")));
 			break;
 		case SOURCE_LMDB:
 			config.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
@@ -376,6 +534,104 @@ public class AdjacencyQueryShapeBenchmark {
 				return value.longValue();
 			}
 		}
+	}
+
+	private static void assertResultCount(String workload, long actual, long expected) {
+		if (actual != expected) {
+			throw new IllegalStateException(workload + " produced " + actual + " rows; expected " + expected);
+		}
+	}
+
+	private void printSipResultAndRouteSummary() {
+		if (!FIXTURE_FOAF.equals(fixtureMode)) {
+			return;
+		}
+		LmdbStore store = (LmdbStore) repository.getSail();
+		BenchmarkRouteTelemetry.Snapshot timedRoute = BenchmarkRouteTelemetry.snapshot().minus(timedRouteBaseline);
+		long timedAdjacencyLookups = AdjacencyEngagementTestAccess.lookupHits(store) - adjacencyLookupBaseline;
+		System.out.println("adjacencySip result summary: sourceMode=" + sourceMode + ", selectiveRows="
+				+ selectiveRows + ", selectiveExpected=" + Math.multiplyExact((peopleCount + 63L) / 64L, 400L)
+				+ ", denseRows=" + denseRows + ", denseExpected=" + Math.multiplyExact(peopleCount, 4L)
+				+ ", rangedRows=" + rangedRows + ", rangedExpected="
+				+ Math.multiplyExact(Math.max(0L, peopleCount - 4900L), 2L));
+		System.out.println("adjacencySip route summary: validation=" + validationRoute + ", timed=" + timedRoute
+				+ ", timedAdjacencyLookupHits=" + timedAdjacencyLookups + ", adjacencyState="
+				+ AdjacencyEngagementTestAccess.state(store) + ", adjacencyFallbacks="
+				+ AdjacencyEngagementTestAccess.fallbackSummary(store));
+	}
+
+	private void printPredicateObjectDistinctSubjectsSummary() {
+		PredicateObjectDistinctSubjectsStats stats = primitiveGroupingStats != null ? primitiveGroupingStats
+				: readPredicateObjectDistinctSubjectsStats();
+		System.out.println("predicateObjectDistinctSubjects result summary: rows=" + stats.rows() + ", countSum="
+				+ stats.countSum() + ", minCount=" + stats.minCount() + ", maxCount=" + stats.maxCount());
+	}
+
+	private void printOrderedContextResultSummary() {
+		if (FIXTURE_FOAF.equals(fixtureMode)) {
+			long expectedContextGroups = Math.min(8L, Math.max(0L, peopleCount));
+			System.out.println("orderedContext result summary: rows=" + orderedContextRows + ", expected="
+					+ peopleCount);
+			System.out.println("contextOrderOnly result summary: rows=" + contextOrderOnlyRows + ", expected="
+					+ peopleCount);
+			System.out.println("contextHistogram result summary: groups=" + contextHistogramStats.groups()
+					+ ", expectedGroups=" + expectedContextGroups + ", countSum=" + contextHistogramStats.countSum()
+					+ ", expectedCountSum=" + peopleCount + ", minCount=" + contextHistogramStats.minCount()
+					+ ", maxCount=" + contextHistogramStats.maxCount());
+		}
+	}
+
+	private ContextHistogramStats readContextHistogramStats() {
+		long groups = 0;
+		long countSum = 0;
+		long minCount = Long.MAX_VALUE;
+		long maxCount = Long.MIN_VALUE;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (TupleQueryResult result = connection.prepareTupleQuery(CONTEXT_HISTOGRAM_QUERY).evaluate()) {
+				while (result.hasNext()) {
+					long count = ((Literal) result.next().getValue("count")).longValue();
+					groups++;
+					countSum += count;
+					minCount = Math.min(minCount, count);
+					maxCount = Math.max(maxCount, count);
+				}
+			}
+		}
+		if (groups == 0) {
+			minCount = 0;
+			maxCount = 0;
+		}
+		return new ContextHistogramStats(groups, countSum, minCount, maxCount);
+	}
+
+	private PredicateObjectDistinctSubjectsStats readPredicateObjectDistinctSubjectsStats() {
+		long rows = 0;
+		long countSum = 0;
+		long minCount = Long.MAX_VALUE;
+		long maxCount = Long.MIN_VALUE;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (TupleQueryResult result = connection.prepareTupleQuery(PREDICATE_OBJECT_DISTINCT_SUBJECTS_QUERY)
+					.evaluate()) {
+				while (result.hasNext()) {
+					long count = ((Literal) result.next().getValue("c")).longValue();
+					rows++;
+					countSum += count;
+					minCount = Math.min(minCount, count);
+					maxCount = Math.max(maxCount, count);
+				}
+			}
+		}
+		if (rows == 0) {
+			minCount = 0;
+			maxCount = 0;
+		}
+		return new PredicateObjectDistinctSubjectsStats(rows, countSum, minCount, maxCount);
+	}
+
+	private record PredicateObjectDistinctSubjectsStats(long rows, long countSum, long minCount, long maxCount) {
+	}
+
+	private record ContextHistogramStats(long groups, long countSum, long minCount, long maxCount) {
 	}
 
 	private void printTelemetry(String benchmark, String query) {

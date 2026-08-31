@@ -26,12 +26,14 @@ final class OrderedRecordIterator implements RecordIterator {
 	private final List<RecordIterator> iterators;
 	private final PriorityQueue<Head> heads;
 	private final int[] components;
+	private final String indexName;
 	private Head pendingAdvance;
 	private boolean closed;
 
-	private OrderedRecordIterator(List<RecordIterator> iterators, int[] components) {
+	private OrderedRecordIterator(List<RecordIterator> iterators, MergeOrder order) {
 		this.iterators = iterators;
-		this.components = components;
+		this.components = order.components;
+		this.indexName = order.indexName;
 		this.heads = new PriorityQueue<>((left, right) -> compare(left, right, components));
 		try {
 			for (int i = 0; i < iterators.size(); i++) {
@@ -54,14 +56,14 @@ final class OrderedRecordIterator implements RecordIterator {
 			return iterators.getFirst();
 		}
 		List<RecordIterator> owned = new ArrayList<>(iterators);
-		int[] components;
+		MergeOrder mergeOrder;
 		try {
-			components = components(owned, order);
+			mergeOrder = mergeOrder(owned, order);
 		} catch (RuntimeException | Error e) {
 			closeIterators(owned, e);
 			throw e;
 		}
-		return new OrderedRecordIterator(owned, components);
+		return new OrderedRecordIterator(owned, mergeOrder);
 	}
 
 	private static int compare(Head left, Head right, int[] components) {
@@ -74,15 +76,15 @@ final class OrderedRecordIterator implements RecordIterator {
 		return Integer.compare(left.ordinal, right.ordinal);
 	}
 
-	private static int[] components(List<RecordIterator> iterators, StatementOrder fallback) {
+	private static MergeOrder mergeOrder(List<RecordIterator> iterators, StatementOrder fallback) {
 		String index = iterators.getFirst().getIndexName();
 		for (int i = 1; i < iterators.size(); i++) {
 			if (!index.equals(iterators.get(i).getIndexName())) {
-				return new int[] { component(fallback) };
+				return requestedOrder(fallback);
 			}
 		}
-		if (index.length() != 4) {
-			return new int[] { component(fallback) };
+		if (!isPhysicalIndexName(index)) {
+			return requestedOrder(fallback);
 		}
 		int[] components = new int[4];
 		for (int i = 0; i < components.length; i++) {
@@ -91,10 +93,39 @@ final class OrderedRecordIterator implements RecordIterator {
 			case 'p' -> TripleIndex.PRED_IDX;
 			case 'o' -> TripleIndex.OBJ_IDX;
 			case 'c' -> TripleIndex.CONTEXT_IDX;
-			default -> component(fallback);
+			default -> throw new AssertionError(index);
 			};
 		}
-		return components;
+		return new MergeOrder(components, index);
+	}
+
+	private static MergeOrder requestedOrder(StatementOrder order) {
+		return new MergeOrder(new int[] { component(order) }, mergedIndexName(order));
+	}
+
+	static String mergedIndexName(StatementOrder order) {
+		return "merged-" + Character.toLowerCase(order.name().charAt(0));
+	}
+
+	static boolean isPhysicalIndexName(String index) {
+		if (index.length() != 4) {
+			return false;
+		}
+		int seen = 0;
+		for (int i = 0; i < index.length(); i++) {
+			int field = switch (index.charAt(i)) {
+			case 's' -> 1;
+			case 'p' -> 2;
+			case 'o' -> 4;
+			case 'c' -> 8;
+			default -> 0;
+			};
+			if (field == 0 || (seen & field) != 0) {
+				return false;
+			}
+			seen |= field;
+		}
+		return seen == 15;
 	}
 
 	private static int component(StatementOrder order) {
@@ -134,7 +165,7 @@ final class OrderedRecordIterator implements RecordIterator {
 
 	@Override
 	public String getIndexName() {
-		return iterators.isEmpty() ? "" : iterators.getFirst().getIndexName();
+		return indexName;
 	}
 
 	@Override
@@ -241,6 +272,9 @@ final class OrderedRecordIterator implements RecordIterator {
 			}
 		}
 		return failure;
+	}
+
+	private record MergeOrder(int[] components, String indexName) {
 	}
 
 	private static final class Head {

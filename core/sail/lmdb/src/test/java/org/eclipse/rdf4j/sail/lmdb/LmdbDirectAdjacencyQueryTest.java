@@ -32,9 +32,12 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -50,8 +53,11 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.JoinDispatchTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Level;
@@ -64,9 +70,29 @@ import ch.qos.logback.core.read.ListAppender;
  * equal the LMDB result for the same probe, exact-empty must be served (not declined), and every ineligible shape must
  * fall back with its closed-enum reason while results stay correct.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbDirectAdjacencyQueryTest {
 
 	private static final ValueFactory F = SimpleValueFactory.getInstance();
+	private static final String[] MUTATED_PROPERTIES = {
+			LmdbDirectAdjacencyOptions.SHADOW_SAMPLE_EVERY_PROPERTY,
+			LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY,
+			LmdbDirectAdjacencyStore.BOUND_PROBE_PROPERTY,
+			LmdbDirectAdjacencyStore.CLEAN_TXN_READS_PROPERTY,
+			LmdbDirectAdjacencyStore.PARALLEL_ROW_PATH_PROPERTY,
+			LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY,
+			LmdbDirectAdjacencyStore.PLANNER_STATS_PROPERTY,
+			"rdf4j.lmdb.nativeQueryEngine.enabled",
+			"rdf4j.lmdb.wcoj.enabled",
+			"rdf4j.lmdb.janinoCodegen.enabled",
+			"rdf4j.lmdb.janinoCodegen.thresholdRows",
+			"rdf4j.lmdb.janinoCodegen.unionSources",
+			"rdf4j.lmdb.janinoCodegen.scanSources",
+			LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY,
+			LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY,
+			LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY,
+			LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY
+	};
 
 	private static final IRI S1 = F.createIRI("http://example.org/s1");
 	private static final IRI S2 = F.createIRI("http://example.org/s2");
@@ -108,6 +134,7 @@ class LmdbDirectAdjacencyQueryTest {
 	private LmdbStore sail;
 	private LmdbSailStore backing;
 	private LmdbDirectAdjacencyStore direct;
+	private Map<String, String> previousSystemProperties;
 
 	// resolved raw ids
 	private long s1;
@@ -120,32 +147,38 @@ class LmdbDirectAdjacencyQueryTest {
 	private long g1;
 	private long inline42;
 
+	@BeforeEach
+	void captureSystemProperties() {
+		previousSystemProperties = new HashMap<>();
+		for (String property : MUTATED_PROPERTIES) {
+			previousSystemProperties.put(property, System.getProperty(property));
+		}
+	}
+
 	@AfterEach
 	void tearDown() {
-		if (repo != null) {
-			repo.shutDown();
+		try {
+			if (repo != null) {
+				repo.shutDown();
+			}
+		} finally {
+			restoreProperties(previousSystemProperties);
 		}
-		System.clearProperty(LmdbDirectAdjacencyOptions.SHADOW_SAMPLE_EVERY_PROPERTY);
-		System.clearProperty(LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY);
-		System.clearProperty(LmdbDirectAdjacencyStore.BOUND_PROBE_PROPERTY);
-		System.clearProperty(LmdbDirectAdjacencyStore.CLEAN_TXN_READS_PROPERTY);
-		System.clearProperty(LmdbDirectAdjacencyStore.PARALLEL_ROW_PATH_PROPERTY);
-		System.clearProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY);
-		System.clearProperty(LmdbDirectAdjacencyStore.PLANNER_STATS_PROPERTY);
-		System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
-		System.clearProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY);
-		System.clearProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY);
-		System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
 	}
 
 	private void openStore(DirectAdjacencyMode mode, DirectAdjacencyCoverage coverage, List<IRI> selected)
 			throws IOException {
+		openStore("spoc,posc", mode, coverage, selected);
+	}
+
+	private void openStore(String tripleIndexes, DirectAdjacencyMode mode, DirectAdjacencyCoverage coverage,
+			List<IRI> selected) throws IOException {
 		// The node-predicate projection ships off by default (both the build-time and the per-call switch), so every
 		// test in this class that exercises bound-node/unbound-predicate serving turns it on here rather than
 		// individually. Tests that need it off set the properties themselves after this helper returns.
 		System.setProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY, "true");
 		System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, "true");
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+		LmdbStoreConfig config = new LmdbStoreConfig(tripleIndexes)
 				.setDirectAdjacencyMode(mode)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		if (coverage != null) {
@@ -167,7 +200,7 @@ class LmdbDirectAdjacencyQueryTest {
 		backing = sail.getBackingStore();
 		direct = backing.directAdjacencyStore();
 		assertThat(direct).isNotNull();
-		assertThat(direct.buildNowForTest()).isTrue();
+		awaitDirectAdjacencyReady();
 
 		try (var dataset = dataset()) {
 			s1 = dataset.idOf(S1);
@@ -183,8 +216,23 @@ class LmdbDirectAdjacencyQueryTest {
 		assertThat(ValueIds.isReference(inline42)).as("42 must be an inlined object id").isFalse();
 	}
 
+	private void awaitDirectAdjacencyReady() {
+		try {
+			assertThat(sail.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS))
+					.as(sail.getDirectAdjacencyReadinessDescription())
+					.isTrue();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError("interrupted while waiting for direct adjacency", e);
+		}
+	}
+
 	private void openPreferStore() throws IOException {
 		openStore(DirectAdjacencyMode.PREFER, null, null);
+	}
+
+	private void openPreferStore(String tripleIndexes) throws IOException {
+		openStore(tripleIndexes, DirectAdjacencyMode.PREFER, null, null);
 	}
 
 	@Test
@@ -215,6 +263,269 @@ class LmdbDirectAdjacencyQueryTest {
 		assertThat(outcomes).anyMatch(reason -> reason.startsWith("CANDIDATE_ADJACENCY"));
 		assertThat(outcomes).anyMatch(reason -> reason.startsWith("SELECTED_ADJACENCY"));
 		assertThat(outcomes).noneMatch(reason -> reason.startsWith("INELIGIBLE_ADJACENCY"));
+	}
+
+	@Test
+	void genericSailDatasetUnorderedStatementsUseAdjacencyWhenAvailable() throws IOException {
+		openPreferStore();
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+
+		try (CloseableDataset dataset = dataset()) {
+			assertThat(collectStatements(dataset.dataset.getStatements(S1, P1, null)))
+					.containsExactlyInAnyOrder(
+							F.createStatement(S1, P1, O1),
+							F.createStatement(S1, P1, O2, G1));
+		}
+
+		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@Test
+	void genericSailDatasetUnorderedStatementsUseSelectedAdjacencyWhenAvailable() throws IOException {
+		openStore(DirectAdjacencyMode.PREFER, DirectAdjacencyCoverage.SELECTED, List.of(P1));
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+
+		try (CloseableDataset dataset = dataset()) {
+			assertThat(collectStatements(dataset.dataset.getStatements(S1, P1, null)))
+					.containsExactlyInAnyOrder(
+							F.createStatement(S1, P1, O1),
+							F.createStatement(S1, P1, O2, G1));
+			long allContextsHits = direct.snapshotMetrics().lookupHits;
+			assertThat(allContextsHits).isGreaterThan(hitsBefore);
+
+			assertThat(collectStatements(dataset.dataset.getStatements(S1, P1, null, G1)))
+					.containsExactly(F.createStatement(S1, P1, O2, G1));
+			long namedContextHits = direct.snapshotMetrics().lookupHits;
+			assertThat(namedContextHits).isGreaterThan(allContextsHits);
+
+			assertThat(collectStatements(dataset.dataset.getStatements(S1, P2, null)))
+					.containsExactly(F.createStatement(S1, P2, O1));
+			assertThat(direct.snapshotMetrics().lookupHits)
+					.as("an uncovered predicate remains correct through LMDB fallback")
+					.isEqualTo(namedContextHits);
+		}
+
+		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@Test
+	void genericSailDatasetCountAndHasUseAdjacencyWhenAvailable() throws IOException {
+		openPreferStore();
+
+		try (CloseableDataset dataset = dataset()) {
+			long countHitsBefore = direct.snapshotMetrics().lookupHits;
+			assertThat(dataset.dataset.getStatementCount(S1, P1, null)).isEqualTo(2);
+			assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(countHitsBefore);
+
+			long hasHitsBefore = direct.snapshotMetrics().lookupHits;
+			assertThat(dataset.dataset.hasStatements(S1, P1, O2, G1)).isTrue();
+			assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hasHitsBefore);
+
+			assertThat(dataset.dataset.getStatementCount(S1, P1, null, (Resource) null)).isEqualTo(1);
+			assertThat(dataset.dataset.getStatementCount(S1, P1, null, G1)).isEqualTo(1);
+			assertThat(dataset.dataset.getStatementCount(S1, P1, null, null, G1)).isEqualTo(2);
+			assertThat(dataset.dataset.hasStatements(S1, P1, O2, (Resource) null)).isFalse();
+		}
+
+		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@Test
+	void genericSailDatasetRequestedOrderUsesAdjacencyAndRemainsMonotonic() throws IOException {
+		openPreferStore();
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+
+		try (CloseableDataset dataset = dataset()) {
+			List<Statement> statements = collectStatements(
+					dataset.dataset.getStatements(StatementOrder.O, S1, P1, null));
+			assertThat(statements)
+					.containsExactlyInAnyOrder(
+							F.createStatement(S1, P1, O1),
+							F.createStatement(S1, P1, O2, G1))
+					.isSortedAccordingTo(StatementOrder.O.getComparator(dataset.dataset.getComparator()));
+		}
+
+		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@Test
+	void genericSailDatasetMultiContextSelectionPreservesDefaultAndNamedParity() throws IOException {
+		openPreferStore();
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.add(S1, P1, O1, G2);
+		}
+		awaitDirectAdjacencyReady();
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+
+		try (CloseableDataset dataset = dataset()) {
+			List<Statement> selected = collectStatements(
+					dataset.dataset.getStatements(S1, P1, null, null, G1));
+			List<Statement> separatelySelected = new ArrayList<>(collectStatements(
+					dataset.dataset.getStatements(S1, P1, null, (Resource) null)));
+			separatelySelected.addAll(collectStatements(dataset.dataset.getStatements(S1, P1, null, G1)));
+			assertThat(selected).containsExactlyInAnyOrder(
+					F.createStatement(S1, P1, O1),
+					F.createStatement(S1, P1, O2, G1));
+			assertThat(selected).containsExactlyInAnyOrderElementsOf(separatelySelected);
+			assertThat(selected).doesNotContain(F.createStatement(S1, P1, O1, G2));
+			assertThat(collectStatements(dataset.dataset.getStatements(S1, P1, null)))
+					.containsExactlyInAnyOrderElementsOf(List.of(
+							F.createStatement(S1, P1, O1),
+							F.createStatement(S1, P1, O2, G1),
+							F.createStatement(S1, P1, O1, G2)));
+		}
+
+		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThanOrEqualTo(hitsBefore + 3);
+		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@Test
+	void genericSailDatasetMultiContextIteratorRetainsAndReleasesItsAdjacencyLease() throws IOException {
+		openPreferStore();
+		org.eclipse.rdf4j.sail.base.SailDataset dataset = backing.getExplicitSailSource()
+				.dataset(IsolationLevels.SNAPSHOT);
+		try {
+			long hitsBefore = direct.snapshotMetrics().lookupHits;
+			try (CloseableIteration<? extends Statement> statements = dataset.getStatements(
+					S1, P1, null, null, G1)) {
+				assertThat(statements.hasNext()).isTrue();
+				assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+				assertThat(direct.snapshotMetrics().activeViews)
+						.as("the open generic iterator shares the dataset's retained adjacency view")
+						.isEqualTo(1);
+			}
+			assertThat(direct.snapshotMetrics().activeViews)
+					.as("closing the iterator releases its lease while the dataset retains the owning lease")
+					.isEqualTo(1);
+		} finally {
+			dataset.close();
+		}
+		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@Test
+	void genericSailDatasetSerializableIsolationStillBypassesAdjacency() throws IOException {
+		openPreferStore();
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+
+		try (CloseableDataset dataset = new CloseableDataset(
+				backing.getExplicitSailSource().dataset(IsolationLevels.SERIALIZABLE))) {
+			assertThat(collectStatements(dataset.dataset.getStatements(S1, P1, null))).hasSize(2);
+			assertThat(dataset.dataset.getStatementCount(S1, P1, null)).isEqualTo(2);
+			assertThat(dataset.dataset.hasStatements(S1, P1, O1)).isTrue();
+			assertThat(collectStatements(
+					dataset.dataset.getStatements(StatementOrder.O, S1, P1, null)))
+							.isSortedAccordingTo(StatementOrder.O.getComparator(dataset.dataset.getComparator()));
+		}
+
+		assertThat(direct.snapshotMetrics().lookupHits).isEqualTo(hitsBefore);
+		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@Test
+	void orderedArbiterCostsThePhysicalLmdbIndexItWillOpen() throws Exception {
+		openPreferStore("spoc,posc,cspo");
+		addOrderedCostingRows();
+		assertThat(backing.getTripleStore().getIndexName(s1, p1, -1, -1)).isEqualTo("spoc");
+		assertThat(backing.getTripleStore().getIndexName(StatementOrder.C, s1, p1, -1, -1)).isEqualTo("cspo");
+
+		List<String> outcomes = new ArrayList<>();
+		List<long[]> rows;
+		try (CloseableDataset dataset = dataset()) {
+			rows = CloseableDataset.collect(dataset.source.statements(StatementOrder.C, s1, p1, -1, -1,
+					recordingObserver(outcomes)));
+		}
+
+		assertThat(rows).hasSize(8)
+				.isSortedAccordingTo((left, right) -> Long.compareUnsigned(
+						left[TripleIndex.CONTEXT_IDX], right[TripleIndex.CONTEXT_IDX]));
+		assertThat(outcomes).anyMatch(reason -> reason.startsWith("CANDIDATE_LMDB[")
+				&& reason.contains("cost=102.0..170.0"));
+		assertThat(outcomes).anyMatch(reason -> reason.startsWith("SELECTED_ADJACENCY"));
+	}
+
+	@Test
+	void rangeArbiterCostsThePhysicalLmdbIndexItWillOpen() throws Exception {
+		openPreferStore("spoc,posc,cspo");
+		addOrderedCostingRows();
+		LmdbKeyRange range = new LmdbKeyRange(null, null, "cspo");
+		List<String> outcomes = new ArrayList<>();
+
+		List<long[]> rows;
+		try (CloseableDataset dataset = dataset()) {
+			rows = CloseableDataset.collect(
+					dataset.source.statements(s1, p1, -1, -1, range, recordingObserver(outcomes)));
+		}
+
+		assertThat(rows).hasSize(8)
+				.isSortedAccordingTo((left, right) -> Long.compareUnsigned(
+						left[TripleIndex.CONTEXT_IDX], right[TripleIndex.CONTEXT_IDX]));
+		assertThat(outcomes).anyMatch(reason -> reason.startsWith("CANDIDATE_LMDB[")
+				&& reason.contains("cost=102.0..170.0"));
+		assertThat(outcomes).anyMatch(reason -> reason.startsWith("SELECTED_ADJACENCY"));
+	}
+
+	private void addOrderedCostingRows() throws IOException {
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.begin();
+			for (int index = 0; index < 6; index++) {
+				connection.add(S1, P1, F.createIRI("http://example.org/cost-object-" + index),
+						F.createIRI("http://example.org/cost-context-" + index));
+			}
+			connection.commit();
+		}
+		awaitDirectAdjacencyReady();
+	}
+
+	@Test
+	void exactFullUsesUniversalAdjacencyWhenLmdbCannotHonorTheRequestedOrder() throws Exception {
+		openPreferStore();
+		try (LmdbStoreConnection connection = (LmdbStoreConnection) sail.getConnection()) {
+			connection.begin();
+			connection.addInferredStatement(S1, P1, O2);
+			connection.addInferredStatement(S1, P2, O1, G2);
+			connection.commit();
+		}
+		direct.pauseApplierForTest(false);
+
+		assertThat(backing.getTripleStore().getIndexName(StatementOrder.O, -1, -1, -1, -1)).isEmpty();
+		assertThat(backing.getTripleStore().getIndexName(StatementOrder.C, s1, -1, -1, -1)).isEmpty();
+		try (CloseableDataset explicit = dataset(); CloseableDataset inferred = inferredDataset()) {
+			assertDirectOnlyOrder(explicit.source, StatementOrder.O, -1, -1, -1, -1, 5);
+			assertDirectOnlyOrder(inferred.source, StatementOrder.O, -1, -1, -1, -1, 2);
+			assertDirectOnlyOrder(explicit.source, StatementOrder.C, s1, -1, -1, -1, 4);
+			assertDirectOnlyOrder(inferred.source, StatementOrder.C, s1, -1, -1, -1, 2);
+
+			NativeLmdbQuerySource.ParallelSource[] sources = explicit.source.openParallelSources(1);
+			assertThat(sources).hasSize(1);
+			try (NativeLmdbQuerySource.ParallelSource parallel = sources[0]) {
+				assertDirectOnlyOrder(parallel, StatementOrder.C, s1, -1, -1, -1, 4);
+			}
+		}
+	}
+
+	private static void assertDirectOnlyOrder(NativeLmdbQuerySource source, StatementOrder order, long subject,
+			long predicate, long object, long context, int expectedRows) throws IOException {
+		List<String> outcomes = new ArrayList<>();
+		assertThat(source.indexName(order, subject, predicate, object, context))
+				.isEqualTo("direct-" + Character.toLowerCase(order.name().charAt(0)));
+		List<long[]> rows = CloseableDataset.collect(
+				source.statements(order, subject, predicate, object, context, recordingObserver(outcomes)));
+		int component = switch (order) {
+		case S -> TripleIndex.SUBJ_IDX;
+		case P -> TripleIndex.PRED_IDX;
+		case O -> TripleIndex.OBJ_IDX;
+		case C -> TripleIndex.CONTEXT_IDX;
+		};
+
+		assertThat(rows).hasSize(expectedRows)
+				.isSortedAccordingTo(
+						(left, right) -> Long.compareUnsigned(left[component], right[component]));
+		assertThat(outcomes).anyMatch(reason -> reason.startsWith("CANDIDATE_ADJACENCY"));
+		assertThat(outcomes).anyMatch(reason -> reason.startsWith("SELECTED_ADJACENCY"));
+		assertThat(outcomes).noneMatch(reason -> reason.startsWith("CANDIDATE_LMDB"));
 	}
 
 	@Test
@@ -254,6 +565,24 @@ class LmdbDirectAdjacencyQueryTest {
 
 		assertThat(outcomes).anyMatch(reason -> reason.startsWith("CANDIDATE_ADJACENCY"));
 		assertThat(outcomes).noneMatch(reason -> reason.startsWith("INELIGIBLE_ADJACENCY"));
+	}
+
+	@Test
+	void boundedSyntheticOrderWitnessFallsBackWithoutDroppingRows() throws Exception {
+		openPreferStore();
+		try (CloseableDataset dataset = dataset()) {
+			String orderWitness = dataset.source.indexName(-1, -1, -1, -1);
+			assertThat(orderWitness).doesNotMatch("[spoc]{4}");
+			LmdbKeyRange boundedRange = new LmdbKeyRange(new byte[] { 1 }, null, orderWitness);
+			List<long[]> expected = dataset.rows(-1, -1, -1, -1);
+			List<String> outcomes = new ArrayList<>();
+
+			List<long[]> actual = CloseableDataset.collect(
+					dataset.source.statements(-1, -1, -1, -1, boundedRange, recordingObserver(outcomes)));
+
+			assertSameRows(actual, expected);
+			assertThat(outcomes).anyMatch(reason -> reason.startsWith("CANDIDATE_ADJACENCY"));
+		}
 	}
 
 	@Test
@@ -498,6 +827,10 @@ class LmdbDirectAdjacencyQueryTest {
 		return new CloseableDataset(backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT));
 	}
 
+	private CloseableDataset inferredDataset() {
+		return new CloseableDataset(backing.getInferredSailSource().dataset(IsolationLevels.SNAPSHOT));
+	}
+
 	/** Typed wrapper: the dataset class is private, but its query surface is {@link NativeLmdbQuerySource}. */
 	private static final class CloseableDataset implements AutoCloseable {
 		final NativeLmdbQuerySource source;
@@ -558,6 +891,16 @@ class LmdbDirectAdjacencyQueryTest {
 
 	private static void assertSameRows(List<long[]> actual, List<long[]> expected) {
 		assertThat(sorted(actual)).usingElementComparator(ROW_ORDER).containsExactlyElementsOf(sorted(expected));
+	}
+
+	private static List<Statement> collectStatements(CloseableIteration<? extends Statement> iteration) {
+		try (iteration) {
+			List<Statement> statements = new ArrayList<>();
+			while (iteration.hasNext()) {
+				statements.add(iteration.next());
+			}
+			return statements;
+		}
 	}
 
 	private List<String> queryRows(String query) {
@@ -637,13 +980,7 @@ class LmdbDirectAdjacencyQueryTest {
 			assertThat(direct.snapshotMetrics().activeViews).isZero();
 		} finally {
 			Thread.interrupted();
-			if (direct.snapshotMetrics().activeViews != 0) {
-				// The failed close made the private dataset view unreachable. Avoid repeating the intentional
-				// unbounded shutdown wait on the red path; the isolated Surefire process reclaims the resources.
-				repo = null;
-			} else {
-				dataset.close();
-			}
+			dataset.close();
 		}
 	}
 
@@ -950,39 +1287,28 @@ class LmdbDirectAdjacencyQueryTest {
 
 	@Test
 	void irAggregateQueryReleasesDirectProbeViews() throws IOException {
-		Map<String, String> previous = new HashMap<>();
 		IR_AGGREGATE_PROPERTIES.forEach((property, value) -> {
-			previous.put(property, System.getProperty(property));
 			System.setProperty(property, value);
 		});
-		try {
-			openPreferStore();
-			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
-			List<String> expected = queryRows(IR_AGGREGATE_QUERY);
-			assertThat(expected).containsExactly(S1.stringValue() + "=4", S2.stringValue() + "=1");
+		openPreferStore();
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = queryRows(IR_AGGREGATE_QUERY);
+		assertThat(expected).containsExactly(S1.stringValue() + "=4", S2.stringValue() + "=1");
 
-			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
-			KernelExecutionTestAccess.resetMetrics();
-			long hitsBefore = direct.snapshotMetrics().lookupHits;
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		KernelExecutionTestAccess.resetMetrics();
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
 
-			for (int round = 0; round < 300 && KernelExecutionTestAccess.aggOpened() == 0; round++) {
-				List<String> actual = queryRows(IR_AGGREGATE_QUERY);
-				long activeViews = direct.snapshotMetrics().activeViews;
-				if (activeViews != 0) {
-					// A leaked iterator is no longer reachable. Avoid entering the store's intentional unbounded
-					// shutdown wait on the failure path; the isolated Surefire process will reclaim native resources.
-					repo = null;
-				}
-				assertThat(actual).containsExactlyElementsOf(expected);
-				assertThat(activeViews).isZero();
-			}
-
-			assertThat(KernelExecutionTestAccess.aggOpened()).isGreaterThan(0);
-			assertThat(KernelExecutionTestAccess.aggRows()).isGreaterThan(0);
-			assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
-		} finally {
-			restoreProperties(previous);
+		for (int round = 0; round < 300 && KernelExecutionTestAccess.aggOpened() == 0; round++) {
+			List<String> actual = queryRows(IR_AGGREGATE_QUERY);
+			long activeViews = direct.snapshotMetrics().activeViews;
+			assertThat(actual).containsExactlyElementsOf(expected);
+			assertThat(activeViews).isZero();
 		}
+
+		assertThat(KernelExecutionTestAccess.aggOpened()).isGreaterThan(0);
+		assertThat(KernelExecutionTestAccess.aggRows()).isGreaterThan(0);
+		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
 	}
 
 	@Test
@@ -1687,12 +2013,39 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
-	void rootScanServesFromDirectAdjacencyByDefault() throws IOException {
+	void exactFullArbiterAdvertisesOnlyCrossSourceOrderGuarantees() throws IOException {
+		openPreferStore();
+		try (var dataset = dataset()) {
+			assertThat(dataset.source.indexName(-1, -1, -1, -1)).isEmpty();
+			assertThat(dataset.source.indexName(StatementOrder.P, -1, -1, -1, -1))
+					.isEqualTo("arbitrated-p");
+			assertThat(dataset.source.indexName(StatementOrder.P, -1, p1, -1, -1)).isEmpty();
+			assertThat(dataset.source.indexName(StatementOrder.S, -1, -1, -1, -1))
+					.isEqualTo("arbitrated-s");
+			assertThat(dataset.source.indexName(StatementOrder.O, -1, -1, -1, -1))
+					.isEqualTo("direct-o");
+			assertThat(dataset.source.indexName(StatementOrder.C, -1, -1, -1, -1))
+					.isEqualTo("direct-c");
+			assertThat(dataset.source.indexName(StatementOrder.O, -1, p1, -1, -1))
+					.isEqualTo("arbitrated-o");
+			assertThat(dataset.source.indexName(StatementOrder.C, s1, p1, o1, -1))
+					.isEqualTo("arbitrated-c");
+
+			assertThat(dataset.source.indexName(s1, -1, -1, -1)).isEqualTo("arbitrated-poc");
+			assertThat(dataset.source.indexName(s1, -1, -1, g1)).isEqualTo("arbitrated-po");
+			assertThat(dataset.source.indexName(-1, p1, -1, -1)).isEmpty();
+			assertThat(dataset.source.indexName(s1, p1, -1, -1)).isEqualTo("arbitrated-oc");
+			assertThat(dataset.source.indexName(-1, -1, o1, -1)).isEmpty();
+		}
+	}
+
+	@Test
+	void rootScanServesFromDirectAdjacencyWithoutUnsafeOrderWitness() throws IOException {
 		openPreferStore();
 		long hitsBefore = direct.snapshotMetrics().lookupHits;
 		long fallbacksBefore = direct.snapshotMetrics().fallbacks(FallbackReason.ROOT_SCAN);
 		try (var dataset = dataset()) {
-			assertThat(dataset.source.indexName(-1, p1, -1, -1)).isEqualTo("direct-spoc");
+			assertThat(dataset.source.indexName(-1, p1, -1, -1)).isEmpty();
 			assertSameRows(dataset.rows(-1, p1, -1, -1), List.of(
 					new long[] { s1, p1, o1, 0 },
 					new long[] { s1, p1, o2, g1 },
@@ -1700,6 +2053,79 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
 		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.ROOT_SCAN)).isEqualTo(fallbacksBefore);
+	}
+
+	@Test
+	void pendingUnrelatedRevisionDoesNotExposeLmdbOrderBeforeNodeAdjacencySelection() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
+		System.setProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY, "true");
+		openPreferStore();
+		direct.pauseApplierForTest(true);
+		try {
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.add(F.createIRI("http://example.org/unrelated"), P2, O2);
+			}
+			try (var dataset = dataset()) {
+				assertThat(dataset.source.indexName(-1, -1, o1, -1)).isEqualTo("direct-psoc");
+				long hitsBefore = direct.snapshotMetrics().lookupHits;
+				assertThat(CloseableDataset.collect(dataset.source.statements(-1, -1, o1, -1))).hasSize(3);
+				assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+			}
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.add(F.createIRI("http://example.org/touches-o1"), P3, O1);
+			}
+			try (var touched = dataset()) {
+				assertThat(touched.source.indexName(-1, -1, o1, -1))
+						.isEqualTo(backing.getTripleStore().getIndexName(-1, -1, o1, -1));
+			}
+		} finally {
+			direct.pauseApplierForTest(false);
+		}
+	}
+
+	@Test
+	void pendingUnrelatedRevisionAdvertisesDefiniteDirectRowOrder() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
+		openPreferStore("spco,spoc,posc");
+		direct.pauseApplierForTest(true);
+		try {
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.add(F.createIRI("http://example.org/unrelated"), P2, O2);
+			}
+			try (var dataset = dataset()) {
+				assertThat(backing.getTripleStore().getIndexName(s1, p1, -1, -1)).isEqualTo("spco");
+				assertThat(dataset.source.indexName(s1, p1, -1, -1)).isEqualTo("direct-spoc");
+				assertThat(dataset.source.indexName(StatementOrder.O, s1, p1, -1, -1)).isEqualTo("direct-o");
+				long hitsBefore = direct.snapshotMetrics().lookupHits;
+				assertThat(CloseableDataset.collect(dataset.source.statements(s1, p1, -1, -1))).hasSize(2);
+				assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+			}
+		} finally {
+			direct.pauseApplierForTest(false);
+		}
+	}
+
+	@Test
+	void disabledParallelRowPathDoesNotExposeDirectRootOrderForPendingRevision() throws Exception {
+		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
+		System.setProperty(LmdbDirectAdjacencyStore.PARALLEL_ROW_PATH_PROPERTY, "false");
+		openPreferStore();
+		direct.pauseApplierForTest(true);
+		try {
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.add(F.createIRI("http://example.org/unrelated"), P2, O2);
+			}
+			try (var dataset = dataset()) {
+				NativeLmdbQuerySource.ParallelSource[] sources = dataset.source.openParallelSources(1);
+				assertThat(sources).hasSize(1);
+				try (NativeLmdbQuerySource.ParallelSource source = sources[0]) {
+					assertThat(source.indexName(-1, p1, -1, -1))
+							.isEqualTo(backing.getTripleStore().getIndexName(-1, p1, -1, -1));
+				}
+			}
+		} finally {
+			direct.pauseApplierForTest(false);
+		}
 	}
 
 	@Test

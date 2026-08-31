@@ -142,7 +142,15 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 			}
 			LmdbNativeKernelBindings.ScanSite site = scanSites[scanId];
 			LmdbKeyRange range = site.range();
-			if (range != null) {
+			if (site.forceLmdb()) {
+				RecordIterator previous = orderedIterators[scanId];
+				if (previous != null) {
+					previous.close();
+				}
+				RecordIterator current = source.lmdbStatements(subj, pred, obj, context, observer);
+				orderedIterators[scanId] = current;
+				cursor.reset(current);
+			} else if (range != null) {
 				verifyRange(range, subj, pred, obj, context);
 				RecordIterator previous = orderedIterators[scanId];
 				if (previous != null) {

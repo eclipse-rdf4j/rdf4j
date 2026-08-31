@@ -283,14 +283,27 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public String indexName(StatementOrder order, long subj, long pred, long obj, long context) {
 		String common = null;
+		boolean mismatched = false;
 		for (NativeLmdbQuerySource source : activeSources) {
 			String indexName = source.indexName(order, subj, pred, obj, context);
-			if (indexName.isEmpty() || common != null && !common.equals(indexName)) {
+			if (indexName.isEmpty()) {
 				return "";
 			}
-			common = indexName;
+			if (common != null && !common.equals(indexName)) {
+				mismatched = true;
+			} else if (common == null) {
+				common = indexName;
+			}
 		}
-		return common == null ? "" : common;
+		if (common == null) {
+			return "";
+		}
+		if (mismatched) {
+			return OrderedRecordIterator.mergedIndexName(order);
+		}
+		return activeSources.size() > 1 && !OrderedRecordIterator.isPhysicalIndexName(common)
+				? OrderedRecordIterator.mergedIndexName(order)
+				: common;
 	}
 
 	@Override

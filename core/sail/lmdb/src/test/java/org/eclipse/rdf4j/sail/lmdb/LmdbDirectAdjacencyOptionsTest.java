@@ -206,7 +206,7 @@ class LmdbDirectAdjacencyOptionsTest {
 		assertThat(options.buildTargetMillis()).isEqualTo(43_200_000L);
 		assertThat(options.buildRetryMillis()).isEqualTo(60_000L);
 		assertThat(options.shadowSampleEvery()).isEqualTo(10_000L);
-		assertThat(options.synchronousMaintenance()).isFalse();
+		assertThat(options.synchronousMaintenance()).isTrue();
 		assertThat(options.failOnMaintenanceError()).isFalse();
 	}
 
@@ -226,7 +226,7 @@ class LmdbDirectAdjacencyOptionsTest {
 	}
 
 	@Test
-	void strictMaintenanceCanBeEnabledIndependently() {
+	void strictMaintenanceCanBeEnabledWhileSynchronousMaintenanceUsesItsDefault() {
 		Map<String, String> strictOnly = Map.of(
 				LmdbDirectAdjacencyOptions.FAIL_ON_MAINTENANCE_ERROR_PROPERTY, "true");
 		LmdbStoreConfig enabled = new LmdbStoreConfig()
@@ -234,12 +234,12 @@ class LmdbDirectAdjacencyOptionsTest {
 				.setDirectAdjacencyMaxBytes(GIB);
 		LmdbDirectAdjacencyOptions enabledOptions = LmdbDirectAdjacencyOptions.resolve(enabled, 8 * GIB,
 				strictOnly::get, 8);
-		assertThat(enabledOptions.synchronousMaintenance()).isFalse();
+		assertThat(enabledOptions.synchronousMaintenance()).isTrue();
 		assertThat(enabledOptions.failOnMaintenanceError()).isTrue();
 
 		LmdbStoreConfig disabled = new LmdbStoreConfig().setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
 		LmdbDirectAdjacencyOptions ignored = LmdbDirectAdjacencyOptions.resolve(disabled, 8 * GIB, strictOnly::get, 8);
-		assertThat(ignored.synchronousMaintenance()).isFalse();
+		assertThat(ignored.synchronousMaintenance()).isTrue();
 		assertThat(ignored.failOnMaintenanceError()).isTrue();
 	}
 

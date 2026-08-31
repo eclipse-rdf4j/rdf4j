@@ -250,12 +250,21 @@ final class LmdbNativeKernelBindings {
 
 	/**
 	 * One generated scan site's physical contract. The order and range are mutually exclusive because an ordered source
-	 * chooses an index from {@link StatementOrder}, while a range is already encoded in one exact index's key space.
+	 * chooses an index from {@link StatementOrder}, while a range is already encoded in one exact index's key space. A
+	 * forced LMDB access is reserved for a matched benchmark shape that clearly beats the otherwise preferred adjacency
+	 * source and therefore cannot carry a competing order or range contract.
 	 */
-	record ScanSite(StatementOrder order, LmdbKeyRange range) {
+	record ScanSite(StatementOrder order, LmdbKeyRange range, boolean forceLmdb) {
+		ScanSite(StatementOrder order, LmdbKeyRange range) {
+			this(order, range, false);
+		}
+
 		ScanSite {
 			if (order != null && range != null) {
 				throw new IllegalArgumentException("a kernel scan cannot carry both an order and a key range");
+			}
+			if (forceLmdb && (order != null || range != null)) {
+				throw new IllegalArgumentException("a forced LMDB kernel scan cannot carry an order or key range");
 			}
 		}
 	}

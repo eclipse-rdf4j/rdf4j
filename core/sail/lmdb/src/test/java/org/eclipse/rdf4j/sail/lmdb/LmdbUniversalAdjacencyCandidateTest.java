@@ -158,6 +158,34 @@ class LmdbUniversalAdjacencyCandidateTest {
 	}
 
 	@Test
+	void admittedUniversalIteratorsKeepTheirRetainedSnapshotWhenAWriterBecomesDirty() throws Exception {
+		List<List<Long>> expected = List.of(
+				List.of(S1, P1, O1, 0L),
+				List.of(S1, P2, O1, 0L),
+				List.of(S2, P1, O2, 0L));
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			for (StatementOrder order : new StatementOrder[] { null, StatementOrder.S, StatementOrder.O }) {
+				RecordIterator admitted = order == null
+						? store.tryOpen(view, null, -1, -1, -1, -1, true)
+						: store.tryOpenOrdered(view, null, order, -1, -1, -1, -1, true);
+				store.storeTxnStartedFlag().set(true);
+				store.storeTxnDirtyFlag().set(true);
+				try {
+					assertThat(rows(admitted))
+							.as("an admitted %s universal iterator owns its immutable read view", order)
+							.containsExactlyInAnyOrderElementsOf(expected);
+					assertThat(store.tryOpen(view, null, -1, -1, -1, -1, true))
+							.as("a new universal iterator must still honor the dirty-writer gate")
+							.isNull();
+				} finally {
+					store.storeTxnDirtyFlag().set(false);
+					store.storeTxnStartedFlag().set(false);
+				}
+			}
+		}
+	}
+
+	@Test
 	void exactFullOffersEveryBindingMaskInEveryPrimaryOrder() throws Exception {
 		List<List<Long>> all = List.of(
 				List.of(S1, P1, O1, 0L),

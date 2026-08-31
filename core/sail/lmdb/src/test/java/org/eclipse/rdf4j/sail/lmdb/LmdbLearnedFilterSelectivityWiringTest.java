@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 import java.io.File;
 
@@ -33,32 +34,42 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
- * End-to-end proof that the filter-selectivity wire is terminated.
+ * End-to-end proof that the residual-filter selectivity wire is terminated.
  * <p>
- * The engine has always measured how many rows each FILTER passes and rejects — {@code RecordingNativeBooleanFilter}
- * reports them to {@code LmdbEvaluationStatistics.recordFilterOutcome} when its cursor closes — but the only store
- * behind that sink lived inside the sketch-based join estimator's lifecycle, and that estimator is off by default. The
- * measurement therefore happened on every query and was discarded.
+ * {@code RecordingNativeBooleanFilter} measures how many rows an evaluated FILTER passes and rejects and reports them
+ * to {@code LmdbEvaluationStatistics.recordFilterOutcome} when its cursor closes. Physical range and exact-value
+ * pushdowns deliberately have no residual filter and no rejected-row stream, so this class disables range pushdown to
+ * isolate the feedback wire it owns instead of fabricating a counterfactual denominator.
  * <p>
  * These tests execute a genuinely selective filter and assert that the observation now survives the query and shapes
  * the next plan's estimate. The sketch estimator is left at its default (off) throughout, which is the whole point.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbLearnedFilterSelectivityWiringTest {
 
 	private static final String EX = "http://example.com/";
+	private static final String RANGE_PUSHDOWN_PROPERTY = "rdf4j.lmdb.native.rangePushdown";
 	private static final String SELECTIVE_QUERY = "PREFIX ex: <" + EX + "> "
 			+ "SELECT ?s WHERE { ?s ex:value ?v . FILTER(?v < 20) }";
+	private static final String REVERSED_OPERAND_QUERY = "PREFIX ex: <" + EX + "> "
+			+ "SELECT ?s WHERE { ?s ex:value ?v . FILTER(20 > ?v) }";
+	private static final String INCLUSIVE_OPPOSITE_RANGE_QUERY = "PREFIX ex: <" + EX + "> "
+			+ "SELECT ?s WHERE { ?s ex:value ?v . FILTER(?v >= 980) }";
 
 	@TempDir
 	File dataDir;
 
 	private SailRepository repository;
 	private LmdbStore store;
+	private String previousRangePushdown;
 
 	@BeforeEach
 	public void setUp() {
+		previousRangePushdown = System.setProperty(RANGE_PUSHDOWN_PROPERTY, "false");
 		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
 		repository = new SailRepository(store);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -76,8 +87,16 @@ public class LmdbLearnedFilterSelectivityWiringTest {
 
 	@AfterEach
 	public void tearDown() {
-		if (repository != null) {
-			repository.shutDown();
+		try {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		} finally {
+			if (previousRangePushdown == null) {
+				System.clearProperty(RANGE_PUSHDOWN_PROPERTY);
+			} else {
+				System.setProperty(RANGE_PUSHDOWN_PROPERTY, previousRangePushdown);
+			}
 		}
 	}
 
@@ -93,34 +112,24 @@ public class LmdbLearnedFilterSelectivityWiringTest {
 		}
 
 		assertThat(learned.size())
-				.as("the pass/reject counts the engine already measured must now survive the query; before this "
+				.as("the pass/reject counts the residual filter measured must now survive the query; before this "
 						+ "wiring they were reported to a sink that discarded them")
 				.isPositive();
 	}
 
 	@Test
 	public void theLearnedRatioReachesTheNextPlansEstimate() {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			QueryResults.asList(connection.prepareTupleQuery(SELECTIVE_QUERY).evaluate());
-		}
+		assertQueryTeachesRatio(SELECTIVE_QUERY, 20);
+	}
 
-		// A fresh parse of the same query: selectivity keys are derived structurally, so the estimate found here is
-		// the one a subsequent planning pass would see.
-		Filter filter = firstFilter(QueryParserUtil.parseQuery(QueryLanguage.SPARQL, SELECTIVE_QUERY, null)
-				.getTupleExpr());
-		assertThat(filter).as("fixture precondition: the query contains a Filter node").isNotNull();
+	@Test
+	public void aReversedRangeOperandTeachesTheStore() {
+		assertQueryTeachesRatio(REVERSED_OPERAND_QUERY, 20);
+	}
 
-		EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
-		FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
-
-		assertThat(estimate.getSource())
-				.as("the estimate must come from what was observed, not from the heuristic fallback")
-				.isIn(FilterPassEstimate.Source.LEARNED_FILTER, FilterPassEstimate.Source.LEARNED_TEMPLATE,
-						FilterPassEstimate.Source.LEARNED_PATTERN);
-		assertThat(estimate.getPassRatio())
-				.as("roughly 20 of 1000 rows survive; before this wiring the planner assumed all 1000 did")
-				.isLessThan(0.5d)
-				.isGreaterThanOrEqualTo(0.0d);
+	@Test
+	public void anInclusiveOppositeRangeTeachesTheStore() {
+		assertQueryTeachesRatio(INCLUSIVE_OPPOSITE_RANGE_QUERY, 20);
 	}
 
 	@Test
@@ -135,6 +144,30 @@ public class LmdbLearnedFilterSelectivityWiringTest {
 		assertThat(estimate.getSource())
 				.as("with nothing observed the planner must keep its conservative default rather than invent a ratio")
 				.isIn(FilterPassEstimate.Source.UNKNOWN, FilterPassEstimate.Source.HEURISTIC);
+	}
+
+	private void assertQueryTeachesRatio(String query, int expectedRows) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			assertThat(QueryResults.asList(connection.prepareTupleQuery(query).evaluate()))
+					.as("fixture precondition: the filter has the expected selectivity")
+					.hasSize(expectedRows);
+		}
+
+		// A fresh parse of the same query: selectivity keys are derived structurally, so the estimate found here is
+		// the one a subsequent planning pass would see.
+		Filter filter = firstFilter(QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr());
+		assertThat(filter).as("fixture precondition: the query contains a Filter node").isNotNull();
+
+		EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+		FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
+
+		assertThat(estimate.getSource())
+				.as("the estimate must come from what was observed, not from the heuristic fallback")
+				.isIn(FilterPassEstimate.Source.LEARNED_FILTER, FilterPassEstimate.Source.LEARNED_TEMPLATE,
+						FilterPassEstimate.Source.LEARNED_PATTERN);
+		assertThat(estimate.getPassRatio())
+				.as("the learned ratio must use the filter's actual pass and reject counts")
+				.isCloseTo((double) expectedRows / 1000.0d, within(1.0e-12d));
 	}
 
 	private static Filter firstFilter(TupleExpr expr) {

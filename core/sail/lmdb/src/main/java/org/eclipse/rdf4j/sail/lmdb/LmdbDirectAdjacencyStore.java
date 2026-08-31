@@ -73,6 +73,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	static final String SCAN_AGGREGATES_PROPERTY = "rdf4j.lmdb.directAdjacency.scanAggregates.enabled";
 	static final String PLANNER_STATS_PROPERTY = "rdf4j.lmdb.directAdjacency.plannerStats.enabled";
 	static final String NODE_PREDICATE_SERVE_PROPERTY = "rdf4j.lmdb.directAdjacency.nodePredicateProjection.serve.enabled";
+	private static final String ARBITRATED_INDEX_PREFIX = "arbitrated-";
+	private static final String DIRECT_INDEX_PREFIX = "direct-";
 	private static final int MAX_PENDING_TABLES = 64;
 	/** Kernel adjacency views served; one increment per successful operator bind, never per row lookup. */
 	static final AtomicLong KERNEL_VIEWS_SERVED = new AtomicLong();
@@ -2792,7 +2794,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		boolean objectBound = object > 0;
 		if (!subjectBound && !objectBound) {
 			boolean bySubject = order != StatementOrder.O;
-			LmdbDirectNativeAdjacency adjacency = bindCompleteAdjacency(view, predicate, bySubject, explicit);
+			LmdbDirectNativeAdjacency adjacency = bindAdmittedCompleteAdjacency(view, predicate, bySubject, explicit);
 			if (adjacency == null) {
 				throw new IllegalStateException(
 						"exact FULL predicate sweep observed an incomplete predicate: " + predicate);
@@ -2877,9 +2879,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					object, context);
 			return null;
 		}
-		if (context > 0L && view.state().overlays() == null
-				&& view.state().contextCatalog().ordinalForRaw(context) < 0) {
-			// a bound context absent from the read view's catalog proves no row can match
+		if (context > 0L && view.state().contextCatalog().ordinalForRaw(context) < 0) {
+			// The published catalog contains the base plus every overlay extension. Once the complete-adjacency bind
+			// above has proved all revisions through this snapshot applied, absence from that catalog proves no row can
+			// match even when the snapshot is served by overlay generations.
 			adjacency.close();
 			metrics.recordExactMiss();
 			observe(observer, true, "EXACT_EMPTY", order, subject, predicate, object, context);
@@ -2906,6 +2909,147 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		return order == StatementOrder.O ? LmdbDirectAdjacencyRootIterator.INCOMING_INDEX_NAME
 				: LmdbDirectAdjacencyRootIterator.INDEX_NAME;
+	}
+
+	/**
+	 * Returns the order that is safe regardless of which arm the statement-access arbiter selects. A requested
+	 * {@link StatementOrder} promises only its leading varying field: the direct and LMDB arms may use different suffix
+	 * orders. For an unordered request, retain the common varying prefix of the two physical walks. {@code null} means
+	 * that no universal adjacency candidate participates and the caller may expose its ordinary single-source witness;
+	 * an empty string means that arbitration is active but the two arms share no useful order.
+	 */
+	String arbitratedIndexName(LmdbAdjacencyReadView view, StatementOrder order, long subject, long predicate,
+			long object, long context, String lmdbIndexName) {
+		if (!offersUniversalCandidate(view)) {
+			return null;
+		}
+		if (order != null) {
+			char field = orderField(order);
+			if (fieldBound(field, subject, predicate, object, context)) {
+				return "";
+			}
+			return (lmdbIndexName == null || lmdbIndexName.isEmpty() ? DIRECT_INDEX_PREFIX : ARBITRATED_INDEX_PREFIX)
+					+ field;
+		}
+		if (lmdbIndexName == null || lmdbIndexName.isEmpty()) {
+			return "";
+		}
+		String directIndexName = predicate > 0L && subject <= 0L && object > 0L ? "ospc"
+				: predicate > 0L ? "spoc" : "psoc";
+		String common = commonVaryingOrder(directIndexName, lmdbIndexName, subject, predicate, object, context);
+		return common.isEmpty() ? "" : ARBITRATED_INDEX_PREFIX + common;
+	}
+
+	/**
+	 * Returns the physical order of a non-universal direct access that is guaranteed to open before LMDB, or
+	 * {@code null} when the row path can still decline. Unlike {@link #arbitratedIndexName}, this witness may expose
+	 * the direct order because the eligibility checks below mirror the corresponding {@link #open} branches and prove
+	 * that LMDB cannot become the selected source. Unordered single-source scans expose their full physical order;
+	 * explicitly ordered scans expose only the requested varying field because higher-level explicit/inferred and
+	 * context merges guarantee no common suffix beyond that field.
+	 */
+	String definiteDirectIndexName(LmdbAdjacencyReadView view, StatementOrder order, long subject, long predicate,
+			long object, long context, boolean explicit) {
+		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER
+				|| writeTransactionBlocksAdjacency() || exactFullSnapshot(view)) {
+			return null;
+		}
+		boolean subjectBound = subject > 0L;
+		boolean predicateBound = predicate > 0L;
+		boolean objectBound = object > 0L;
+		if (predicateBound && subjectBound && objectBound) {
+			if (!boundProbeEnabled()) {
+				return null;
+			}
+			ResolvedRow row = resolveRow(view, subject, plane(true, explicit), predicate);
+			return row.handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED ? null
+					: directOrderWitness(order, "direct-spoc", subject, predicate, object, context);
+		}
+		if (predicateBound && subjectBound != objectBound) {
+			if (order != null && !orderCompatible(order, subjectBound)) {
+				return null;
+			}
+			long key = subjectBound ? subject : object;
+			ResolvedRow row = resolveRow(view, key, plane(subjectBound, explicit), predicate);
+			if (row.handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
+				return null;
+			}
+			return directOrderWitness(order, subjectBound ? "direct-spoc" : "direct-ospc", subject, predicate,
+					object, context);
+		}
+		if (!predicateBound && subjectBound != objectBound) {
+			if (order != null && order != StatementOrder.P) {
+				return null;
+			}
+			long key = subjectBound ? subject : object;
+			return nodePredicateDecline(view, key, plane(subjectBound, explicit)) == null
+					? directOrderWitness(order, "direct-psoc", subject, predicate, object, context)
+					: null;
+		}
+		if (predicateBound && !subjectBound && !objectBound) {
+			String root = rootScanIndexName(view, order, subject, predicate, object, context);
+			return root == null ? null : directOrderWitness(order, root, subject, predicate, object, context);
+		}
+		return null;
+	}
+
+	private static String directOrderWitness(StatementOrder order, String physicalIndexName, long subject,
+			long predicate, long object, long context) {
+		if (order == null) {
+			return physicalIndexName;
+		}
+		char field = orderField(order);
+		return fieldBound(field, subject, predicate, object, context) ? "" : DIRECT_INDEX_PREFIX + field;
+	}
+
+	private static String commonVaryingOrder(String directIndexName, String lmdbIndexName, long subject,
+			long predicate, long object, long context) {
+		StringBuilder common = new StringBuilder(4);
+		int directAt = 0;
+		int lmdbAt = 0;
+		while (true) {
+			while (directAt < directIndexName.length()
+					&& fieldBound(directIndexName.charAt(directAt), subject, predicate, object, context)) {
+				directAt++;
+			}
+			while (lmdbAt < lmdbIndexName.length()
+					&& fieldBound(lmdbIndexName.charAt(lmdbAt), subject, predicate, object, context)) {
+				lmdbAt++;
+			}
+			if (directAt >= directIndexName.length() || lmdbAt >= lmdbIndexName.length()) {
+				break;
+			}
+			char directField = directIndexName.charAt(directAt++);
+			char lmdbField = lmdbIndexName.charAt(lmdbAt++);
+			if (!indexField(directField) || !indexField(lmdbField) || directField != lmdbField) {
+				break;
+			}
+			common.append(directField);
+		}
+		return common.toString();
+	}
+
+	private static char orderField(StatementOrder order) {
+		return switch (order) {
+		case S -> 's';
+		case P -> 'p';
+		case O -> 'o';
+		case C -> 'c';
+		};
+	}
+
+	private static boolean indexField(char field) {
+		return field == 's' || field == 'p' || field == 'o' || field == 'c';
+	}
+
+	private static boolean fieldBound(char field, long subject, long predicate, long object, long context) {
+		return switch (field) {
+		case 's' -> subject > 0L;
+		case 'p' -> predicate > 0L;
+		case 'o' -> object > 0L;
+		case 'c' -> context >= 0L;
+		default -> false;
+		};
 	}
 
 	private String completeAdjacencyDeclineReason(LmdbAdjacencyReadView view, long predicate) {
@@ -3443,6 +3587,21 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private LmdbDirectNativeAdjacency bindCompleteAdjacency(LmdbAdjacencyReadView view, long predicate,
 			boolean bySubject, boolean explicit) {
 		long basePredicateOrdinal = completeBasePredicateOrdinal(view, predicate);
+		if (basePredicateOrdinal == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
+			return null;
+		}
+		return bindRetainedAdjacency(view, predicate, basePredicateOrdinal, bySubject, explicit);
+	}
+
+	/**
+	 * Binds one slice of a universal iterator after {@link #exactFullSnapshot} admitted that iterator. The retained
+	 * view is immutable and owns the complete snapshot proof; rechecking the store-global writer flags here would let a
+	 * concurrent writer invalidate a lazy sweep after rows have already escaped.
+	 */
+	private LmdbDirectNativeAdjacency bindAdmittedCompleteAdjacency(LmdbAdjacencyReadView view, long predicate,
+			boolean bySubject, boolean explicit) {
+		LmdbInMemoryAdjacencyIndex base = view.state().base();
+		long basePredicateOrdinal = base.bindPredicate(predicate);
 		if (basePredicateOrdinal == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
 			return null;
 		}

@@ -33,8 +33,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /** Multi-column GROUP BY must keep keys and common COUNT state in primitive dense tables. */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbNativePrimitiveGroupingTest {
 
 	private static final String EX = "http://example.com/";
@@ -120,15 +123,20 @@ public class LmdbNativePrimitiveGroupingTest {
 
 	@AfterEach
 	public void tearDown() {
-		repository.shutDown();
-		previousProperties.forEach((property, value) -> {
-			if (value == null) {
-				System.clearProperty(property);
-			} else {
-				System.setProperty(property, value);
+		try {
+			if (repository != null) {
+				repository.shutDown();
 			}
-		});
-		previousProperties.clear();
+		} finally {
+			previousProperties.forEach((property, value) -> {
+				if (value == null) {
+					System.clearProperty(property);
+				} else {
+					System.setProperty(property, value);
+				}
+			});
+			previousProperties.clear();
+		}
 	}
 
 	private void disable(String property) {
@@ -168,13 +176,11 @@ public class LmdbNativePrimitiveGroupingTest {
 	}
 
 	@Test
-	public void twoKeyDistinctCountsStreamWhenIndexCoversGroupAndArgument() {
-		Map<String, Long> counts = groupedCounts("COUNT(DISTINCT ?s)");
+	public void twoKeyDistinctCountsRemainCorrectAcrossArbitratedSourceOrders() {
+		String query = "SELECT ?p ?o (COUNT(DISTINCT ?s) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p ?o";
+		Map<String, Long> counts = groupedCountsQuery(query);
 
 		assertThat(counts).hasSize(15).allSatisfy((key, count) -> assertThat(count).isEqualTo(40L));
-		assertThat(NativeGroupIteration.PRIMITIVE_COUNT_GROUP_ROWS.get()).isZero();
-		assertThat(NativeGroupIteration.PRIMITIVE_TUPLE_GROUP_ROWS.get()).isZero();
-		assertThat(PrimitiveTupleTable.INSERTIONS.get()).isZero();
 	}
 
 	@Test
@@ -322,25 +328,25 @@ public class LmdbNativePrimitiveGroupingTest {
 
 	private String strategy(SailRepository target, String query) {
 		try (SailRepositoryConnection connection = target.getConnection()) {
-			String strategy = findStrategy(connection.prepareTupleQuery(query)
+			String strategy = findMetric(connection.prepareTupleQuery(query)
 					.explain(Explanation.Level.Telemetry)
-					.toGenericPlanNode());
+					.toGenericPlanNode(), "nativeExecutionPath", true);
 			assertThat(strategy).as("expected a nativeExecutionPath metric in the explanation").isNotNull();
 			return strategy;
 		}
 	}
 
-	private static String findStrategy(GenericPlanNode node) {
+	private static String findMetric(GenericPlanNode node, String metric, boolean actual) {
 		if (node == null) {
 			return null;
 		}
-		String value = node.getStringMetricActual("nativeExecutionPath");
+		String value = actual ? node.getStringMetricActual(metric) : node.getStringMetricPlanned(metric);
 		if (value != null) {
 			return value;
 		}
 		if (node.getPlans() != null) {
 			for (GenericPlanNode child : node.getPlans()) {
-				String found = findStrategy(child);
+				String found = findMetric(child, metric, actual);
 				if (found != null) {
 					return found;
 				}
@@ -350,9 +356,13 @@ public class LmdbNativePrimitiveGroupingTest {
 	}
 
 	private Map<String, Long> groupedCounts(String aggregate) {
+		return groupedCountsQuery(
+				"SELECT ?p ?o (" + aggregate + " AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p ?o");
+	}
+
+	private Map<String, Long> groupedCountsQuery(String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			List<BindingSet> rows = QueryResults.asList(connection.prepareTupleQuery(
-					"SELECT ?p ?o (" + aggregate + " AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p ?o").evaluate());
+			List<BindingSet> rows = QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
 			Map<String, Long> counts = new HashMap<>();
 			for (BindingSet row : rows) {
 				counts.put(row.getValue("p").stringValue() + "|" + row.getValue("o").stringValue(),

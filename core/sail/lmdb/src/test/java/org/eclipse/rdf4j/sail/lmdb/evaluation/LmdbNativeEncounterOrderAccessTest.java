@@ -26,11 +26,7 @@ class LmdbNativeEncounterOrderAccessTest {
 	@Test
 	void encounterOrderFallbackUsesCandidateCapableSourceRequest() throws Exception {
 		TrackingSource source = new TrackingSource();
-		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "o", 1), null);
-		layout.freeze(java.util.List.of("s", "o"));
-		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
-		Arrays.fill(row.slots, LmdbNativeAggregateCompiler.UNKNOWN);
-		row.recomputeBoundMask();
+		RowState row = unknownRow(source, Map.of("s", 0, "o", 1));
 		requireEncounterOrder(row);
 		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7L), Term.slot(1), Term.unbound(),
 				ContextConstraint.UNRESTRICTED, false, 1D);
@@ -42,6 +38,60 @@ class LmdbNativeEncounterOrderAccessTest {
 
 		assertThat(source.candidateRequests).isEqualTo(1);
 		assertThat(source.forcedLmdbRequests).isZero();
+	}
+
+	@Test
+	void allUnboundNamedContextScanUsesMeasuredLmdbException() throws Exception {
+		TrackingSource source = new TrackingSource();
+		RowState row = unknownRow(source, Map.of("s", 0, "p", 1, "o", 2, "g", 3));
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.slot(3),
+				ContextConstraint.UNRESTRICTED, true, 1D);
+
+		try (PatternCursor ignored = pattern.openRaw(row)) {
+			// Opening is enough to observe the physical source selection.
+		}
+
+		assertThat(source.candidateRequests).isZero();
+		assertThat(source.forcedLmdbRequests).isEqualTo(1);
+	}
+
+	@Test
+	void allUnboundDefaultContextScanRemainsCandidateCapable() throws Exception {
+		TrackingSource source = new TrackingSource();
+		RowState row = unknownRow(source, Map.of("s", 0, "p", 1, "o", 2, "g", 3));
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.slot(3),
+				ContextConstraint.UNRESTRICTED, false, 1D);
+
+		try (PatternCursor ignored = pattern.openRaw(row)) {
+			// Opening is enough to observe the physical source selection.
+		}
+
+		assertThat(source.candidateRequests).isEqualTo(1);
+		assertThat(source.forcedLmdbRequests).isZero();
+	}
+
+	@Test
+	void boundNamedContextScanRemainsCandidateCapable() throws Exception {
+		TrackingSource source = new TrackingSource();
+		RowState row = unknownRow(source, Map.of("s", 0, "o", 1, "g", 2));
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(7L), Term.slot(1), Term.slot(2),
+				ContextConstraint.UNRESTRICTED, true, 1D);
+
+		try (PatternCursor ignored = pattern.openRaw(row)) {
+			// Opening is enough to observe the physical source selection.
+		}
+
+		assertThat(source.candidateRequests).isEqualTo(1);
+		assertThat(source.forcedLmdbRequests).isZero();
+	}
+
+	private static RowState unknownRow(TrackingSource source, Map<String, Integer> slots) {
+		NativeSlotLayout layout = new NativeSlotLayout(slots, null);
+		layout.freeze(java.util.List.copyOf(slots.keySet()));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, LmdbNativeAggregateCompiler.UNKNOWN);
+		row.recomputeBoundMask();
+		return row;
 	}
 
 	private static void requireEncounterOrder(RowState row) throws ReflectiveOperationException {

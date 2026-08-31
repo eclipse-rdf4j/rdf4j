@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.EmptyRecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
@@ -204,6 +205,24 @@ class LmdbNativeKernelLoweringTest {
 		assertTrue(key.contains("SQ(s0,"), key);
 		assertEquals(1, lowered.kernel.requirements.scans, "one scan site");
 		assertEquals(0, lowered.bindings.adjacencies.length, "a scan needs no adjacency view");
+	}
+
+	@Test
+	void allUnboundNamedContextKernelScanUsesMeasuredLmdbException() {
+		PatternPlan named = new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.slot(3),
+				ContextConstraint.UNRESTRICTED, true, 10D);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { named }, new MaskedFilter[0]);
+		LmdbNativeKernelLowering.Lowered lowered = lowerWithScans(plan);
+		RouteTrackingSource source = new RouteTrackingSource();
+
+		assertNotNull(lowered);
+		try (LmdbNativeKernelScanner scanner = new LmdbNativeKernelScanner(source, lowered.bindings.scanSites)) {
+			scanner.open(0, LmdbNativeAggregateCompiler.UNKNOWN, LmdbNativeAggregateCompiler.UNKNOWN,
+					LmdbNativeAggregateCompiler.UNKNOWN, LmdbNativeAggregateCompiler.UNKNOWN);
+		}
+
+		assertEquals(0, source.candidateRequests);
+		assertEquals(1, source.forcedLmdbRequests);
 	}
 
 	/** With the flag off the same pattern still declines, so the default path is unchanged. */
@@ -1731,6 +1750,25 @@ class LmdbNativeKernelLoweringTest {
 		@Override
 		public boolean hasStatementsInSource() {
 			return false;
+		}
+	}
+
+	private static final class RouteTrackingSource extends StubSource {
+
+		private int candidateRequests;
+		private int forcedLmdbRequests;
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context) {
+			candidateRequests++;
+			return EmptyRecordIterator.INSTANCE;
+		}
+
+		@Override
+		public RecordIterator lmdbStatements(long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) {
+			forcedLmdbRequests++;
+			return EmptyRecordIterator.INSTANCE;
 		}
 	}
 }

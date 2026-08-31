@@ -51,6 +51,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -795,6 +796,7 @@ class LmdbSailStore implements SailStore {
 	 * done.
 	 */
 	private final ReentrantLock sinkStoreAccessLock = new ReentrantLock();
+	private final Condition storeTransactionFinished = sinkStoreAccessLock.newCondition();
 
 	/**
 	 * Boolean indicating whether any {@link LmdbSailSink} has started a transaction on the {@link TripleStore}.
@@ -802,6 +804,9 @@ class LmdbSailStore implements SailStore {
 	private final AtomicBoolean storeTxnStarted = new AtomicBoolean(false);
 	/** True after the active store transaction records its first genuine statement mutation. */
 	private final AtomicBoolean storeTxnDirty = new AtomicBoolean(false);
+	/** Identity and generation of the one physical LMDB writer transaction. Guarded by sinkStoreAccessLock. */
+	private Object storeTxnOwner;
+	private long storeTxnGeneration;
 	private final AtomicBoolean estimatorTouchedSinceStoreTxnStart = new AtomicBoolean(false);
 
 	/**
@@ -1078,46 +1083,96 @@ class LmdbSailStore implements SailStore {
 	}
 
 	void rollback() throws SailException {
+		rollback(null, 0L, false);
+	}
+
+	private void rollback(Object expectedOwner, long expectedGeneration) throws SailException {
+		rollback(expectedOwner, expectedGeneration, true);
+	}
+
+	private void rollback(Object expectedOwner, long expectedGeneration, boolean requireMatchingGeneration)
+			throws SailException {
 		sinkStoreAccessLock.lock();
+		InterruptedException interrupted = null;
 		try {
+			if (!storeTxnStarted.get()
+					|| requireMatchingGeneration
+							&& (storeTxnOwner != expectedOwner || storeTxnGeneration != expectedGeneration)) {
+				return;
+			}
 			try {
 				valueStore.rollback();
 			} finally {
 				if (multiThreadingActive) {
-					if (tripleStoreException != null) {
-						cancelQueuedOperations();
-						tripleStore.rollback();
-					} else {
+					if (asyncTransactionCompletion.getCount() > 0L && tripleStoreException == null) {
 						int spins = 0;
 						while (!enqueueOperation(ROLLBACK_TRANSACTION)) {
 							if (tripleStoreException != null) {
-								cancelQueuedOperations();
-								tripleStore.rollback();
 								break;
 							}
 							idleSpin(spins++);
 						}
 					}
+					interrupted = awaitAsyncTransactionCompletion();
+					if (tripleStoreException != null) {
+						// The worker has finished its catch path before the latch opens, so this thread is once again
+						// the
+						// sole operation-queue consumer and may safely finish aborting the native transaction.
+						cancelQueuedOperations();
+						tripleStore.rollback();
+					}
 				} else {
 					tripleStore.rollback();
 				}
+			}
+			if (interrupted != null) {
+				Thread.currentThread().interrupt();
+				throw new InterruptedSailException(interrupted);
 			}
 		} catch (Exception e) {
 			logger.warn("Failed to rollback LMDB transaction", e);
 			throw e instanceof SailException ? (SailException) e : new SailException(e);
 		} finally {
-			valueStore.rollbackFreshValueTransaction(freshValueSession);
-			pendingFreshValueBatches.clear();
-			if (freshValueSessionInvalidated) {
-				valueStore.discardFreshValueSession(freshValueSession);
-				freshValueSession = null;
+			if (storeTxnStarted.get()
+					&& (!requireMatchingGeneration
+							|| storeTxnOwner == expectedOwner && storeTxnGeneration == expectedGeneration)) {
+				valueStore.rollbackFreshValueTransaction(freshValueSession);
+				pendingFreshValueBatches.clear();
+				if (freshValueSessionInvalidated) {
+					valueStore.discardFreshValueSession(freshValueSession);
+					freshValueSession = null;
+				}
+				discardEstimatorStateTouchedByOpenTransaction();
+				completeStoreTransaction();
 			}
-			tripleStoreException = null;
-			discardEstimatorStateTouchedByOpenTransaction();
-			storeTxnDirty.set(false);
-			storeTxnStarted.set(false);
 			sinkStoreAccessLock.unlock();
 		}
+	}
+
+	private void completeStoreTransaction() {
+		tripleStoreException = null;
+		multiThreadingActive = false;
+		nextTransactionAsync = false;
+		storeTxnDirty.set(false);
+		storeTxnStarted.set(false);
+		storeTxnOwner = null;
+		storeTransactionFinished.signalAll();
+	}
+
+	/** Waits for the asynchronous transaction fate before any caller can observe cleared transaction flags. */
+	private InterruptedException awaitAsyncTransactionCompletion() {
+		InterruptedException interrupted = null;
+		while (true) {
+			try {
+				asyncTransactionCompletion.await();
+				break;
+			} catch (InterruptedException e) {
+				if (interrupted == null) {
+					interrupted = e;
+				}
+			}
+		}
+		return interrupted;
 	}
 
 	private void invalidateFreshValueSession() {
@@ -1382,9 +1437,17 @@ class LmdbSailStore implements SailStore {
 		return new LmdbSailSource(true);
 	}
 
+	SailSource getExplicitSailSource(Object transactionOwner) {
+		return new LmdbSailSource(true, transactionOwner);
+	}
+
 	@Override
 	public SailSource getInferredSailSource() {
 		return new LmdbSailSource(false);
+	}
+
+	SailSource getInferredSailSource(Object transactionOwner) {
+		return new LmdbSailSource(false, transactionOwner);
 	}
 
 	TripleStore getTripleStore() {
@@ -1402,8 +1465,8 @@ class LmdbSailStore implements SailStore {
 	 * @return A StatementIterator that can be used to iterate over the statements that match the specified pattern.
 	 */
 	CloseableIteration<? extends Statement> createStatementIterator(
-			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
-		if (!explicit && !mayHaveInferred) {
+			LmdbSailDataset source, Resource subj, IRI pred, Value obj, Resource... contexts) throws IOException {
+		if (!source.explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
 			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
 		}
@@ -1433,41 +1496,48 @@ class LmdbSailStore implements SailStore {
 		}
 
 		if (contexts.length == 0) {
-			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, LmdbValue.UNKNOWN_ID, explicit);
+			RecordIterator records = source.statements(subjID, predID, objID, LmdbValue.UNKNOWN_ID,
+					(AdjacencyAccessObserver) null);
 			return new LmdbStatementIterator(records, valueStore);
 		}
 
 		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contexts.length);
-		for (Resource context : contexts) {
-			long contextID;
-			if (context == null) {
-				contextID = 0L;
-			} else if (!context.isTripleTerm()) {
-				contextID = valueStore.getId(context);
-				if (contextID == LmdbValue.UNKNOWN_ID) {
+		try {
+			for (Resource context : contexts) {
+				long contextID;
+				if (context == null) {
+					contextID = 0L;
+				} else if (!context.isTripleTerm()) {
+					contextID = valueStore.getId(context);
+					if (contextID == LmdbValue.UNKNOWN_ID) {
+						continue;
+					}
+				} else {
 					continue;
 				}
-			} else {
-				continue;
+
+				RecordIterator records = source.statements(subjID, predID, objID, contextID,
+						(AdjacencyAccessObserver) null);
+				perContextIterList.add(new LmdbStatementIterator(records, valueStore));
 			}
 
-			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
-			perContextIterList.add(new LmdbStatementIterator(records, valueStore));
+			if (perContextIterList.isEmpty()) {
+				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+			}
+			if (perContextIterList.size() == 1) {
+				return perContextIterList.getFirst();
+			}
+			return new UnionIteration<>(perContextIterList);
+		} catch (IOException | RuntimeException | Error failure) {
+			closeStatementIterations(perContextIterList, failure);
+			throw failure;
 		}
-
-		if (perContextIterList.isEmpty()) {
-			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
-		}
-		if (perContextIterList.size() == 1) {
-			return perContextIterList.getFirst();
-		}
-		return new UnionIteration<>(perContextIterList);
 	}
 
 	CloseableIteration<? extends Statement> createOrderedStatementIterator(
-			Txn txn, StatementOrder statementOrder, Resource subj, IRI pred, Value obj, boolean explicit,
+			LmdbSailDataset source, StatementOrder statementOrder, Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws IOException {
-		if (!explicit && !mayHaveInferred) {
+		if (!source.explicit && !mayHaveInferred) {
 			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
 		}
 
@@ -1487,36 +1557,66 @@ class LmdbSailStore implements SailStore {
 		if (contexts.length <= 1) {
 			long contextID = orderedContextId(contexts);
 			if (contexts.length == 1 && contexts[0] != null) {
+				if (contexts[0].isTripleTerm()) {
+					return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+				}
 				contextID = valueStore.getId(contexts[0]);
 				if (contextID == LmdbValue.UNKNOWN_ID) {
 					return CloseableIteration.EMPTY_STATEMENT_ITERATION;
 				}
 			}
 			return new LmdbStatementIterator(
-					tripleStore.getTriples(txn, statementOrder, subjID, predID, objID, contextID, explicit),
+					source.statements(statementOrder, subjID, predID, objID, contextID, null),
 					valueStore, statementOrder, subjID, predID, objID, contextID);
 		}
 
 		CloseableIteration<? extends Statement> iterator = CloseableIteration.EMPTY_STATEMENT_ITERATION;
 		Comparator<Statement> statementComparator = statementOrder.getComparator(comparator);
-		for (Resource context : contexts) {
-			long contextID;
-			if (context == null) {
-				contextID = 0L;
-			} else if (!context.isTripleTerm()) {
-				contextID = valueStore.getId(context);
-				if (contextID == LmdbValue.UNKNOWN_ID) {
+		try {
+			for (Resource context : contexts) {
+				long contextID;
+				if (context == null) {
+					contextID = 0L;
+				} else if (!context.isTripleTerm()) {
+					contextID = valueStore.getId(context);
+					if (contextID == LmdbValue.UNKNOWN_ID) {
+						continue;
+					}
+				} else {
 					continue;
 				}
-			} else {
-				continue;
+				CloseableIteration<? extends Statement> contextIterator = new LmdbStatementIterator(
+						source.statements(statementOrder, subjID, predID, objID, contextID, null),
+						valueStore, statementOrder, subjID, predID, objID, contextID);
+				try {
+					iterator = DualUnionIteration.getWildcardInstance(statementComparator, iterator, contextIterator);
+				} catch (RuntimeException | Error failure) {
+					closeStatementIteration(contextIterator, failure);
+					throw failure;
+				}
 			}
-			CloseableIteration<? extends Statement> contextIterator = new LmdbStatementIterator(
-					tripleStore.getTriples(txn, statementOrder, subjID, predID, objID, contextID, explicit),
-					valueStore);
-			iterator = DualUnionIteration.getWildcardInstance(statementComparator, iterator, contextIterator);
+			return iterator;
+		} catch (IOException | RuntimeException | Error failure) {
+			closeStatementIteration(iterator, failure);
+			throw failure;
 		}
-		return iterator;
+	}
+
+	private static void closeStatementIterations(List<? extends CloseableIteration<?>> iterations,
+			Throwable failure) {
+		for (CloseableIteration<?> iteration : iterations) {
+			closeStatementIteration(iteration, failure);
+		}
+	}
+
+	private static void closeStatementIteration(CloseableIteration<?> iteration, Throwable failure) {
+		try {
+			iteration.close();
+		} catch (RuntimeException | Error cleanupFailure) {
+			if (cleanupFailure != failure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+		}
 	}
 
 	private long valueIdOrUnknown(Value value) throws IOException {
@@ -1531,8 +1631,8 @@ class LmdbSailStore implements SailStore {
 	}
 
 	long countStatementIterator(
-			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
-		if (!explicit && !mayHaveInferred) {
+			LmdbSailDataset source, Resource subj, IRI pred, Value obj, Resource... contexts) throws IOException {
+		if (!source.explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
 			return 0;
 		}
@@ -1562,7 +1662,7 @@ class LmdbSailStore implements SailStore {
 		}
 
 		if (contexts.length == 0) {
-			return tripleStore.countTriples(txn, subjID, predID, objID, LmdbValue.UNKNOWN_ID, explicit);
+			return source.count(subjID, predID, objID, LmdbValue.UNKNOWN_ID);
 		}
 
 		long count = 0;
@@ -1578,14 +1678,14 @@ class LmdbSailStore implements SailStore {
 			} else {
 				continue;
 			}
-			count += tripleStore.countTriples(txn, subjID, predID, objID, contextID, explicit);
+			count += source.count(subjID, predID, objID, contextID);
 		}
 		return count;
 	}
 
 	boolean hasStatementIterator(
-			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
-		if (!explicit && !mayHaveInferred) {
+			LmdbSailDataset source, Resource subj, IRI pred, Value obj, Resource... contexts) throws IOException {
+		if (!source.explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
 			return false;
 		}
@@ -1615,7 +1715,7 @@ class LmdbSailStore implements SailStore {
 		}
 
 		if (contexts.length == 0) {
-			return tripleStore.hasTriples(txn, subjID, predID, objID, LmdbValue.UNKNOWN_ID, explicit);
+			return source.has(subjID, predID, objID, LmdbValue.UNKNOWN_ID);
 		}
 
 		for (Resource context : contexts) {
@@ -1630,7 +1730,7 @@ class LmdbSailStore implements SailStore {
 			} else {
 				continue;
 			}
-			if (tripleStore.hasTriples(txn, subjID, predID, objID, contextID, explicit)) {
+			if (source.has(subjID, predID, objID, contextID)) {
 				return true;
 			}
 		}
@@ -1706,9 +1806,15 @@ class LmdbSailStore implements SailStore {
 	private final class LmdbSailSource extends BackingSailSource {
 
 		private final boolean explicit;
+		private final Object transactionOwner;
 
 		public LmdbSailSource(boolean explicit) {
+			this(explicit, new Object());
+		}
+
+		private LmdbSailSource(boolean explicit, Object transactionOwner) {
 			this.explicit = explicit;
+			this.transactionOwner = Objects.requireNonNull(transactionOwner);
 		}
 
 		@Override
@@ -1727,7 +1833,7 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public SailSink sink(IsolationLevel level) throws SailException {
-			return new LmdbSailSink(explicit, level);
+			return new LmdbSailSink(explicit, level, transactionOwner);
 		}
 
 		@Override
@@ -1753,6 +1859,7 @@ class LmdbSailStore implements SailStore {
 	private final class LmdbSailSink implements SailSink {
 
 		private final boolean explicit;
+		private final Object transactionOwner;
 		private final boolean adaptiveBulkWrites;
 		private final boolean freshImportEligible;
 		private PreparedStatementBatch.Builder pendingPreparedApprovals;
@@ -1770,9 +1877,12 @@ class LmdbSailStore implements SailStore {
 		private ObjectIntHashMap<Value> pendingApproveValueIndexes;
 		private int pendingApproveCount;
 		private volatile boolean estimatorTouchedInTransaction;
+		private long backingTransactionGeneration;
+		private boolean closed;
 
-		public LmdbSailSink(boolean explicit, IsolationLevel level) throws SailException {
+		public LmdbSailSink(boolean explicit, IsolationLevel level, Object transactionOwner) throws SailException {
 			this.explicit = explicit;
+			this.transactionOwner = transactionOwner;
 			this.adaptiveBulkWrites = bulkOperationSize > 0 && sketchBasedJoinEstimator == null
 					&& IsolationLevels.NONE.isCompatibleWith(level);
 			this.freshImportEligible = explicit
@@ -1828,13 +1938,37 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
 			cancelPendingBulkAdd();
 			pendingApproveSubjects = null;
 			pendingApprovePredicates = null;
 			pendingApproveObjects = null;
 			pendingApproveContexts = null;
-			if (storeTxnStarted.get()) {
-				discardEstimatorUpdatesIfTouched();
+			if (backingTransactionGeneration != 0L) {
+				rollbackBackingTransaction();
+			}
+		}
+
+		private void startBackingTransaction(boolean preferThreading) throws SailException {
+			backingTransactionGeneration = startTransaction(preferThreading, transactionOwner);
+		}
+
+		private void startBackingTransaction(boolean preferThreading, PreparedStatementBatch prepared)
+				throws SailException {
+			backingTransactionGeneration = startTransaction(preferThreading, prepared, transactionOwner);
+		}
+
+		private void rollbackBackingTransaction() {
+			long generation = backingTransactionGeneration;
+			try {
+				if (generation != 0L) {
+					LmdbSailStore.this.rollback(transactionOwner, generation);
+				}
+			} finally {
+				backingTransactionGeneration = 0L;
 			}
 		}
 
@@ -1924,14 +2058,20 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void flush() throws SailException {
 			sinkStoreAccessLock.lock();
-			boolean activeTxn = false;
+			InterruptedException interrupted = null;
 			try {
-				if (pendingBulkAdd != null && !storeTxnStarted.get()) {
-					startTransaction(true);
+				if (pendingBulkAdd != null && !ownsActiveBackingTransaction()) {
+					startBackingTransaction(true);
 				}
 				flushPendingBulkAdd();
-				activeTxn = storeTxnStarted.get();
-				if (multiThreadingActive) {
+				namespaceStore.sync();
+				if (!ownsActiveBackingTransaction()) {
+					backingTransactionGeneration = 0L;
+					return;
+				}
+
+				boolean asyncCommit = multiThreadingActive;
+				if (asyncCommit) {
 					int spins = 0;
 					while (!enqueueOperation(COMMIT_TRANSACTION)) {
 						if (tripleStoreException != null) {
@@ -1940,75 +2080,68 @@ class LmdbSailStore implements SailStore {
 							idleSpin(spins++);
 						}
 					}
-				}
-
-				try {
-					namespaceStore.sync();
-				} finally {
-					if (multiThreadingActive) {
-						try {
-							asyncTransactionCompletion.await();
-						} catch (InterruptedException e) {
-							Thread.currentThread().interrupt();
-							throw new InterruptedSailException(e);
-						}
-						if (tripleStoreException != null) {
-							throw wrapTripleStoreException();
-						}
+					interrupted = awaitAsyncTransactionCompletion();
+					if (tripleStoreException != null) {
+						throw wrapTripleStoreException();
 					}
-					if (activeTxn) {
-						if (!multiThreadingActive) {
-							tripleStore.commit();
-							filterUsedIdsInTripleStore();
-						}
-						handleRemovedIdsInValueStore();
-						valueStore.commit();
-						valueStore.commitFreshValueTransaction(freshValueSession);
-						for (ValueStore.PreparedValueBatch preparedValues : pendingFreshValueBatches) {
-							valueStore.publishPreparedValues(preparedValues);
-						}
-						pendingFreshValueBatches.clear();
-						if (freshValueSessionInvalidated) {
-							valueStore.discardFreshValueSession(freshValueSession);
-							freshValueSession = null;
-						}
-						if (directAdjacency != null) {
-							// the pending marker is already published; the sealed delta now feeds the applier
-							directAdjacency.applyCommitted(tripleStore.drainDirectAdjacencyCommitDelta());
-						}
-						storeTxnDirty.set(false);
-						storeTxnStarted.set(false);
-						estimatorTouchedInTransaction = false;
-						estimatorTouchedSinceStoreTxnStart.set(false);
-						costModelDataGeneration.incrementAndGet();
-						if (filterSelectivityStats != null) {
-							filterSelectivityStats.recordStoreMutation();
-						}
-						if (sketchBasedJoinEstimator != null || filterSelectivityStats != null) {
-							try {
-								scheduleEstimatorPersist();
-							} catch (RuntimeException e) {
-								logger.warn("Failed to schedule join estimator persistence after commit", e);
-							}
-						}
+				} else {
+					tripleStore.commit();
+					filterUsedIdsInTripleStore();
+				}
+				handleRemovedIdsInValueStore();
+				valueStore.commit();
+				valueStore.commitFreshValueTransaction(freshValueSession);
+				for (ValueStore.PreparedValueBatch preparedValues : pendingFreshValueBatches) {
+					valueStore.publishPreparedValues(preparedValues);
+				}
+				pendingFreshValueBatches.clear();
+				if (freshValueSessionInvalidated) {
+					valueStore.discardFreshValueSession(freshValueSession);
+					freshValueSession = null;
+				}
+				if (directAdjacency != null) {
+					// the pending marker is already published; the sealed delta now feeds the applier
+					directAdjacency.applyCommitted(tripleStore.drainDirectAdjacencyCommitDelta());
+				}
+				estimatorTouchedInTransaction = false;
+				estimatorTouchedSinceStoreTxnStart.set(false);
+				costModelDataGeneration.incrementAndGet();
+				if (filterSelectivityStats != null) {
+					filterSelectivityStats.recordStoreMutation();
+				}
+				if (sketchBasedJoinEstimator != null || filterSelectivityStats != null) {
+					try {
+						scheduleEstimatorPersist();
+					} catch (RuntimeException e) {
+						logger.warn("Failed to schedule join estimator persistence after commit", e);
 					}
 				}
+				completeStoreTransaction();
+				backingTransactionGeneration = 0L;
 			} catch (IOException e) {
-				rollback();
+				rollbackBackingTransaction();
 				discardEstimatorUpdatesIfTouched();
 				running.set(false);
 				logger.error("Encountered an unexpected problem while trying to commit", e);
 				throw new SailException(e);
 			} catch (RuntimeException e) {
-				rollback();
+				rollbackBackingTransaction();
 				discardEstimatorUpdatesIfTouched();
 				running.set(false);
 				logger.error("Encountered an unexpected problem while trying to commit", e);
 				throw e;
 			} finally {
-				multiThreadingActive = false;
 				sinkStoreAccessLock.unlock();
 			}
+			if (interrupted != null) {
+				Thread.currentThread().interrupt();
+				throw new InterruptedSailException(interrupted);
+			}
+		}
+
+		private boolean ownsActiveBackingTransaction() {
+			return backingTransactionGeneration != 0L && storeTxnStarted.get()
+					&& storeTxnOwner == transactionOwner && storeTxnGeneration == backingTransactionGeneration;
 		}
 
 		@Override
@@ -2100,7 +2233,7 @@ class LmdbSailStore implements SailStore {
 		private void approveBuffered(Resource subj, IRI pred, Value obj, Resource context) throws SailException {
 			sinkStoreAccessLock.lock();
 			try {
-				startTransaction(true);
+				startBackingTransaction(true);
 				if (pendingBulkAdd == null) {
 					pendingBulkAdd = newBulkAddQuadsOperation(explicit);
 					ensurePendingApproveCapacity(pendingBulkAdd.capacity);
@@ -2119,12 +2252,12 @@ class LmdbSailStore implements SailStore {
 				}
 			} catch (IOException e) {
 				cancelPendingBulkAdd();
-				rollback();
+				rollbackBackingTransaction();
 				discardEstimatorUpdatesIfTouched();
 				throw new SailException(e);
 			} catch (RuntimeException e) {
 				cancelPendingBulkAdd();
-				rollback();
+				rollbackBackingTransaction();
 				discardEstimatorUpdatesIfTouched();
 				logger.error("Encountered an unexpected problem while buffering a statement", e);
 				throw e;
@@ -2161,7 +2294,7 @@ class LmdbSailStore implements SailStore {
 				if (!preparedBuilder.isEmpty()) {
 					PreparedStatementBatch prepared = preparedBuilder.build();
 					nextPreparedBatchCapacity = Math.max(PREPARED_BATCH_MIN_STATEMENTS, prepared.size());
-					startTransaction(true, prepared);
+					startBackingTransaction(true, prepared);
 					storePreparedStatements(prepared);
 					if (prepared.size() < PREPARED_BATCH_MIN_STATEMENTS) {
 						invalidateFreshValueSession();
@@ -2264,9 +2397,9 @@ class LmdbSailStore implements SailStore {
 			sinkStoreAccessLock.lock();
 			try {
 				if (prepared != null && !storeTxnStarted.get()) {
-					startTransaction(true, prepared);
+					startBackingTransaction(true, prepared);
 				} else {
-					startTransaction(true);
+					startBackingTransaction(true);
 				}
 				flushPendingBulkAdd();
 				if (prepared != null) {
@@ -2349,7 +2482,7 @@ class LmdbSailStore implements SailStore {
 				if (bulk != null) {
 					bulk.cancel();
 				}
-				rollback();
+				rollbackBackingTransaction();
 				discardEstimatorUpdatesIfTouched();
 				if (multiThreadingActive) {
 					logger.error("Encountered an unexpected problem while trying to add a statement.", e);
@@ -2623,7 +2756,7 @@ class LmdbSailStore implements SailStore {
 
 			sinkStoreAccessLock.lock();
 			try {
-				startTransaction(true);
+				startBackingTransaction(true);
 
 				HashMap<IRI, Long> predicateCache = new HashMap<>();
 				HashMap<Resource, Long> contextCache = new HashMap<>();
@@ -2696,7 +2829,7 @@ class LmdbSailStore implements SailStore {
 					}
 				}
 			} catch (IOException | RuntimeException e) {
-				rollback();
+				rollbackBackingTransaction();
 				discardEstimatorUpdatesIfTouched();
 				if (multiThreadingActive) {
 					logger.error("Encountered an unexpected problem while trying to add a statement.", e);
@@ -2726,13 +2859,27 @@ class LmdbSailStore implements SailStore {
 		 *
 		 * @throws SailException if a transaction could not be started.
 		 */
-		private void startTransaction(boolean preferThreading) throws SailException {
-			startTransaction(preferThreading, null);
+		private long startTransaction(boolean preferThreading, Object transactionOwner) throws SailException {
+			return startTransaction(preferThreading, null, transactionOwner);
 		}
 
-		private void startTransaction(boolean preferThreading, PreparedStatementBatch prepared) throws SailException {
+		private long startTransaction(boolean preferThreading, PreparedStatementBatch prepared, Object transactionOwner)
+				throws SailException {
+			while (storeTxnStarted.get() && storeTxnOwner != transactionOwner) {
+				try {
+					storeTransactionFinished.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new InterruptedSailException(e);
+				}
+			}
 			synchronized (storeTxnStarted) {
 				if (storeTxnStarted.compareAndSet(false, true)) {
+					storeTxnOwner = transactionOwner;
+					storeTxnGeneration++;
+					if (storeTxnGeneration == 0L) {
+						storeTxnGeneration++;
+					}
 					storeTxnDirty.set(false);
 					resetBulkOperationCapacity();
 					multiThreadingActive = preferThreading && enableMultiThreading;
@@ -2780,7 +2927,10 @@ class LmdbSailStore implements SailStore {
 													if (!running.get()) {
 														logger.warn(
 																"LmdbSailStore was closed while active transaction was waiting for the next operation. Forcing a rollback!");
-														rollback();
+														tripleStore.rollback();
+														nextTransactionAsync = false;
+														asyncTransactionCompletion.countDown();
+														break;
 													} else {
 														opQueueSignal.acquire();
 													}
@@ -2810,11 +2960,16 @@ class LmdbSailStore implements SailStore {
 							valueStore.startTransaction(true);
 						}
 					} catch (Exception e) {
+						storeTxnOwner = null;
+						multiThreadingActive = false;
+						nextTransactionAsync = false;
 						storeTxnDirty.set(false);
 						storeTxnStarted.set(false);
+						storeTransactionFinished.signalAll();
 						throw new SailException(e);
 					}
 				}
+				return storeTxnGeneration;
 			}
 		}
 
@@ -2831,7 +2986,7 @@ class LmdbSailStore implements SailStore {
 			invalidateFreshValueSession();
 			sinkStoreAccessLock.lock();
 			try {
-				startTransaction(true);
+				startBackingTransaction(true);
 
 				AddQuadOperation q = new AddQuadOperation();
 				q.s = valueStore.storeValue(subj);
@@ -2847,11 +3002,11 @@ class LmdbSailStore implements SailStore {
 
 				submitOperation(q);
 			} catch (IOException e) {
-				rollback();
+				rollbackBackingTransaction();
 				discardEstimatorUpdatesIfTouched();
 				throw new SailException(e);
 			} catch (RuntimeException e) {
-				rollback();
+				rollbackBackingTransaction();
 				discardEstimatorUpdatesIfTouched();
 				logger.error("Encountered an unexpected problem while trying to add a statement", e);
 				throw e;
@@ -2926,7 +3081,7 @@ class LmdbSailStore implements SailStore {
 				if (pendingBulkAdd != null && pendingApproveValueIndexes == null) {
 					ensurePendingApproveCapacity(pendingBulkAdd.capacity);
 				}
-				startTransaction(false);
+				startBackingTransaction(false);
 				flushPendingBulkAdd();
 				final long subjID;
 				if (subj != null) {
@@ -3008,11 +3163,11 @@ class LmdbSailStore implements SailStore {
 					return removeStatements(subjID, predID, objID, explicit, contextIds);
 				}
 			} catch (IOException e) {
-				rollback();
+				rollbackBackingTransaction();
 				discardEstimatorUpdatesIfTouched();
 				throw new SailException(e);
 			} catch (RuntimeException e) {
-				rollback();
+				rollbackBackingTransaction();
 				discardEstimatorUpdatesIfTouched();
 				logger.error("Encountered an unexpected problem while trying to remove statements", e);
 				throw e;
@@ -3098,8 +3253,32 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private boolean rangeApplies(LmdbKeyRange range, long subj, long pred, long obj, long context) {
+		if (!isPhysicalIndexFieldSequence(range.indexFieldSeq())) {
+			return false;
+		}
 		return range.firstVaryingField() < 0
 				|| firstVaryingField(range.indexFieldSeq(), subj, pred, obj, context) == range.firstVaryingField();
+	}
+
+	private static boolean isPhysicalIndexFieldSequence(String indexName) {
+		if (indexName.length() != 4) {
+			return false;
+		}
+		int fields = 0;
+		for (int ordinal = 0; ordinal < indexName.length(); ordinal++) {
+			int field = switch (indexName.charAt(ordinal)) {
+			case 's' -> 1;
+			case 'p' -> 2;
+			case 'o' -> 4;
+			case 'c' -> 8;
+			default -> 0;
+			};
+			if (field == 0 || (fields & field) != 0) {
+				return false;
+			}
+			fields |= field;
+		}
+		return fields == 15;
 	}
 
 	private static int firstVaryingField(String indexName, long subj, long pred, long obj, long context) {
@@ -3143,10 +3322,22 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private double lmdbStatementWork(long subj, long pred, long obj, long context, double expectedRows) {
-		if (!Double.isFinite(expectedRows) || expectedRows < 0D) {
+		return lmdbStatementWork(tripleStore.getIndexName(subj, pred, obj, context), subj, pred, obj, context,
+				expectedRows);
+	}
+
+	private double lmdbStatementWork(StatementOrder order, long subj, long pred, long obj, long context,
+			double expectedRows) {
+		String index = order == null ? tripleStore.getIndexName(subj, pred, obj, context)
+				: tripleStore.getIndexName(order, subj, pred, obj, context);
+		return lmdbStatementWork(index, subj, pred, obj, context, expectedRows);
+	}
+
+	private double lmdbStatementWork(String index, long subj, long pred, long obj, long context,
+			double expectedRows) {
+		if (index.isEmpty() || !Double.isFinite(expectedRows) || expectedRows < 0D) {
 			return Double.NaN;
 		}
-		String index = tripleStore.getIndexName(subj, pred, obj, context);
 		int prefix = 0;
 		while (prefix < index.length() && bound(index.charAt(prefix), subj, pred, obj, context)) {
 			prefix++;
@@ -3166,7 +3357,7 @@ class LmdbSailStore implements SailStore {
 
 	private double lmdbRangeWork(long subj, long pred, long obj, long context, LmdbKeyRange range,
 			double expectedRows) {
-		double complete = lmdbStatementWork(subj, pred, obj, context, expectedRows);
+		double complete = lmdbStatementWork(range.indexFieldSeq(), subj, pred, obj, context, expectedRows);
 		if (!Double.isFinite(complete)) {
 			return complete;
 		}
@@ -3499,14 +3690,30 @@ class LmdbSailStore implements SailStore {
 				double adjacencyRows = directAdjacency.estimateResultRows(view, subj, pred, obj, explicit);
 				double adjacencyWork = directAdjacency.estimateUniversalWork(view, order, subj, pred, obj, context,
 						explicit);
-				double lmdbWork = lmdbStatementWork(subj, pred, obj, context, adjacencyRows);
 				int adjacencyKey = LmdbStatementAccessArbiter.variantKey(
 						LmdbStatementAccessArbiter.Source.ADJACENCY, subj, pred, obj, context, order, false,
 						adjacencyTraversal(order, subj, pred, obj));
-				int lmdbKey = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.LMDB, subj,
-						pred, obj, context, order, false, LmdbStatementAccessArbiter.TRAVERSAL_NATIVE_INDEX);
 				double adjacencyLow = workLow(adjacencyWork);
 				double adjacencyHigh = workHigh(adjacencyWork);
+				if (order != null && tripleStore.getIndexName(order, subj, pred, obj, context).isEmpty()) {
+					observeCandidate(observer, "ADJACENCY", adjacencyLow, adjacencyHigh, adjacencyKey, order, subj,
+							pred, obj, context);
+					long started = System.nanoTime();
+					RecordIterator direct = directAdjacency.tryOpenUniversal(view, order, subj, pred, obj, context,
+							explicit);
+					long openNanos = System.nanoTime() - started;
+					if (direct == null) {
+						throw new IllegalStateException(
+								"Universal adjacency declined unsupported LMDB statement order " + order);
+					}
+					observeSelected(observer, LmdbStatementAccessArbiter.Source.ADJACENCY, adjacencyKey, order, subj,
+							pred, obj, context);
+					return LmdbStatementAccessArbiter.measured(direct, statementAccessEvidence, evidenceRegime(view),
+							adjacencyKey, openNanos, adjacencyWork, observer, true);
+				}
+				double lmdbWork = lmdbStatementWork(order, subj, pred, obj, context, adjacencyRows);
+				int lmdbKey = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.LMDB, subj,
+						pred, obj, context, order, false, LmdbStatementAccessArbiter.TRAVERSAL_NATIVE_INDEX);
 				double lmdbLow = workLow(lmdbWork);
 				double lmdbHigh = workHigh(lmdbWork);
 				observeCandidate(observer, "ADJACENCY", adjacencyLow, adjacencyHigh, adjacencyKey, order, subj, pred,
@@ -3550,13 +3757,6 @@ class LmdbSailStore implements SailStore {
 			}
 			return order == null ? tripleStore.getTriples(txn, subj, pred, obj, context, explicit)
 					: tripleStore.getTriples(txn, order, subj, pred, obj, context, explicit);
-		}
-
-		@Override
-		public RecordIterator statementsInEncounterOrder(long subj, long pred, long obj, long context,
-				AdjacencyAccessObserver observer) throws IOException {
-			String indexName = tripleStore.getIndexName(subj, pred, obj, context);
-			return statements(subj, pred, obj, context, new LmdbKeyRange(null, null, indexName), observer);
 		}
 
 		@Override
@@ -3697,25 +3897,45 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public String indexName(long subj, long pred, long obj, long context) {
 			checkOpen();
-			LmdbAdjacencyReadView view = exactAdjacencyView(false);
-			String direct = view == null ? null
-					: directAdjacency.rootScanIndexName(view, null, subj, pred, obj, context);
-			if (direct != null) {
-				return direct;
+			String lmdb = tripleStore.getIndexName(subj, pred, obj, context);
+			LmdbAdjacencyReadView universalView = exactAdjacencyView(false);
+			if (universalView != null) {
+				String arbitrated = directAdjacency.arbitratedIndexName(universalView, null, subj, pred, obj, context,
+						lmdb);
+				if (arbitrated != null) {
+					return arbitrated;
+				}
 			}
-			return tripleStore.getIndexName(subj, pred, obj, context);
+			LmdbAdjacencyReadView rowView = exactAdjacencyView(true);
+			if (rowView != null) {
+				String direct = directAdjacency.definiteDirectIndexName(rowView, null, subj, pred, obj, context,
+						explicit);
+				if (direct != null) {
+					return direct;
+				}
+			}
+			return lmdb;
 		}
 
 		@Override
 		public String indexName(StatementOrder order, long subj, long pred, long obj, long context) {
 			checkOpen();
-			LmdbAdjacencyReadView view = exactAdjacencyView(true);
-			String direct = view == null ? null
-					: directAdjacency.rootScanIndexName(view, order, subj, pred, obj, context);
+			String lmdb = tripleStore.getIndexName(order, subj, pred, obj, context);
+			LmdbAdjacencyReadView universalView = exactAdjacencyView(false);
+			if (universalView != null) {
+				String arbitrated = directAdjacency.arbitratedIndexName(universalView, order, subj, pred, obj,
+						context, lmdb);
+				if (arbitrated != null) {
+					return arbitrated;
+				}
+			}
+			LmdbAdjacencyReadView rowView = exactAdjacencyView(true);
+			String direct = rowView == null ? null
+					: directAdjacency.definiteDirectIndexName(rowView, order, subj, pred, obj, context, explicit);
 			if (direct != null) {
 				return direct;
 			}
-			return tripleStore.getIndexName(order, subj, pred, obj, context);
+			return lmdb;
 		}
 
 		@Override
@@ -4642,15 +4862,31 @@ class LmdbSailStore implements SailStore {
 							explicit);
 					double adjacencyWork = directAdjacency.estimateUniversalWork(adjacencyView, order, subj, pred,
 							obj, context, explicit);
-					double lmdbWork = lmdbStatementWork(subj, pred, obj, context, adjacencyRows);
 					int adjacencyKey = LmdbStatementAccessArbiter.variantKey(
 							LmdbStatementAccessArbiter.Source.ADJACENCY, subj, pred, obj, context, order, false,
 							adjacencyTraversal(order, subj, pred, obj));
+					double adjacencyLow = workLow(adjacencyWork);
+					double adjacencyHigh = workHigh(adjacencyWork);
+					if (order != null && tripleStore.getIndexName(order, subj, pred, obj, context).isEmpty()) {
+						observeCandidate(observer, "ADJACENCY", adjacencyLow, adjacencyHigh, adjacencyKey, order,
+								subj, pred, obj, context);
+						long started = System.nanoTime();
+						RecordIterator direct = directAdjacency.tryOpenUniversal(adjacencyView, order, subj, pred, obj,
+								context, explicit);
+						long openNanos = System.nanoTime() - started;
+						if (direct == null) {
+							throw new IllegalStateException(
+									"Universal adjacency declined unsupported LMDB statement order " + order);
+						}
+						observeSelected(observer, LmdbStatementAccessArbiter.Source.ADJACENCY, adjacencyKey, order,
+								subj, pred, obj, context);
+						return LmdbStatementAccessArbiter.measured(direct, statementAccessEvidence,
+								evidenceRegime(adjacencyView), adjacencyKey, openNanos, adjacencyWork, observer, true);
+					}
+					double lmdbWork = lmdbStatementWork(order, subj, pred, obj, context, adjacencyRows);
 					int lmdbKey = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.LMDB,
 							subj, pred, obj, context, order, false,
 							LmdbStatementAccessArbiter.TRAVERSAL_NATIVE_INDEX);
-					double adjacencyLow = workLow(adjacencyWork);
-					double adjacencyHigh = workHigh(adjacencyWork);
 					double lmdbLow = workLow(lmdbWork);
 					double lmdbHigh = workHigh(lmdbWork);
 					observeCandidate(observer, "ADJACENCY", adjacencyLow, adjacencyHigh, adjacencyKey, order, subj,
@@ -4705,13 +4941,6 @@ class LmdbSailStore implements SailStore {
 					nativeSourceLock.unlockRead(readStamp);
 				}
 			}
-		}
-
-		@Override
-		public RecordIterator statementsInEncounterOrder(long subj, long pred, long obj, long context,
-				AdjacencyAccessObserver observer) throws IOException {
-			String indexName = tripleStore.getIndexName(subj, pred, obj, context);
-			return statements(subj, pred, obj, context, new LmdbKeyRange(null, null, indexName), observer);
 		}
 
 		@Override
@@ -4893,13 +5122,20 @@ class LmdbSailStore implements SailStore {
 			long readStamp = acquireNativeSourceReadLockUnchecked();
 			try {
 				assertNativeSourceOpen();
+				String lmdb = tripleStore.getIndexName(subj, pred, obj, context);
 				if (directEligible()) {
-					String direct = directAdjacency.rootScanIndexName(adjacencyView, null, subj, pred, obj, context);
+					String arbitrated = directAdjacency.arbitratedIndexName(adjacencyView, null, subj, pred, obj,
+							context, lmdb);
+					if (arbitrated != null) {
+						return arbitrated;
+					}
+					String direct = directAdjacency.definiteDirectIndexName(adjacencyView, null, subj, pred, obj,
+							context, explicit);
 					if (direct != null) {
 						return direct;
 					}
 				}
-				return tripleStore.getIndexName(subj, pred, obj, context);
+				return lmdb;
 			} finally {
 				nativeSourceLock.unlockRead(readStamp);
 			}
@@ -4910,13 +5146,20 @@ class LmdbSailStore implements SailStore {
 			long readStamp = acquireNativeSourceReadLockUnchecked();
 			try {
 				assertNativeSourceOpen();
+				String lmdb = tripleStore.getIndexName(order, subj, pred, obj, context);
 				if (directEligible()) {
-					String direct = directAdjacency.rootScanIndexName(adjacencyView, order, subj, pred, obj, context);
+					String arbitrated = directAdjacency.arbitratedIndexName(adjacencyView, order, subj, pred, obj,
+							context, lmdb);
+					if (arbitrated != null) {
+						return arbitrated;
+					}
+					String direct = directAdjacency.definiteDirectIndexName(adjacencyView, order, subj, pred, obj,
+							context, explicit);
 					if (direct != null) {
 						return direct;
 					}
 				}
-				return tripleStore.getIndexName(order, subj, pred, obj, context);
+				return lmdb;
 			} finally {
 				nativeSourceLock.unlockRead(readStamp);
 			}
@@ -5997,13 +6240,13 @@ class LmdbSailStore implements SailStore {
 				Resource... contexts) throws SailException {
 			ensureSnapshot();
 			try {
-				return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
+				return createStatementIterator(this, subj, pred, obj, contexts);
 			} catch (IOException e) {
 				try {
 					logger.warn("Failed to get statements, retrying", e);
 					// try once more before giving up
 					Thread.yield();
-					return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
+					return createStatementIterator(this, subj, pred, obj, contexts);
 				} catch (IOException e2) {
 					throw new SailException("Unable to get statements", e);
 				}
@@ -6014,13 +6257,13 @@ class LmdbSailStore implements SailStore {
 		public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 			ensureSnapshot();
 			try {
-				return countStatementIterator(txn, subj, pred, obj, explicit, contexts);
+				return countStatementIterator(this, subj, pred, obj, contexts);
 			} catch (IOException e) {
 				try {
 					logger.warn("Failed to count statements, retrying", e);
 					// try once more before giving up
 					Thread.yield();
-					return countStatementIterator(txn, subj, pred, obj, explicit, contexts);
+					return countStatementIterator(this, subj, pred, obj, contexts);
 				} catch (IOException e2) {
 					throw new SailException("Unable to count statements", e);
 				}
@@ -6031,13 +6274,13 @@ class LmdbSailStore implements SailStore {
 		public boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 			ensureSnapshot();
 			try {
-				return hasStatementIterator(txn, subj, pred, obj, explicit, contexts);
+				return hasStatementIterator(this, subj, pred, obj, contexts);
 			} catch (IOException e) {
 				try {
 					logger.warn("Failed to check statements, retrying", e);
 					// try once more before giving up
 					Thread.yield();
-					return hasStatementIterator(txn, subj, pred, obj, explicit, contexts);
+					return hasStatementIterator(this, subj, pred, obj, contexts);
 				} catch (IOException e2) {
 					throw new SailException("Unable to check statements", e);
 				}
@@ -6049,12 +6292,12 @@ class LmdbSailStore implements SailStore {
 				IRI pred, Value obj, Resource... contexts) throws SailException {
 			ensureSnapshot();
 			try {
-				return createOrderedStatementIterator(txn, statementOrder, subj, pred, obj, explicit, contexts);
+				return createOrderedStatementIterator(this, statementOrder, subj, pred, obj, contexts);
 			} catch (IOException e) {
 				try {
 					logger.warn("Failed to get ordered statements, retrying", e);
 					Thread.yield();
-					return createOrderedStatementIterator(txn, statementOrder, subj, pred, obj, explicit, contexts);
+					return createOrderedStatementIterator(this, statementOrder, subj, pred, obj, contexts);
 				} catch (IOException e2) {
 					throw new SailException("Unable to get ordered statements", e2);
 				}

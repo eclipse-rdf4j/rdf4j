@@ -18,22 +18,28 @@ import java.io.File;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * The batched flat-prefix pipeline must produce exactly the generic evaluator's bag of solutions while actually
@@ -41,6 +47,7 @@ import org.junit.jupiter.api.io.TempDir;
  * dataset is a chain with hub-blocked subjects: five adjacent subjects share each hub, so the second prefix stage sees
  * runs of identical probe keys — the access shape the pipeline accelerates.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbNativeChunkPipelineTest {
 	private static final Map<String, String> PREVIOUS_PROPERTIES = new LinkedHashMap<>();
 
@@ -331,11 +338,10 @@ public class LmdbNativeChunkPipelineTest {
 					.as("root rows without the star leg should be dropped by the mask")
 					.isGreaterThan(maskedBefore);
 		} finally {
-			star.shutDown();
-			if (previousParallel == null) {
-				System.clearProperty("rdf4j.lmdb.parallel.enabled");
-			} else {
-				System.setProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
+			try {
+				star.shutDown();
+			} finally {
+				restoreProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
 			}
 		}
 	}
@@ -409,16 +415,11 @@ public class LmdbNativeChunkPipelineTest {
 					.as("dead (?a,?p) root pairs should be dropped by the ?a projection mask")
 					.isGreaterThan(maskedBefore);
 		} finally {
-			multi.shutDown();
-			if (previousMerge == null) {
-				System.clearProperty("rdf4j.lmdb.chunkPipeline.merge.enabled");
-			} else {
-				System.setProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", previousMerge);
-			}
-			if (previousParallel == null) {
-				System.clearProperty("rdf4j.lmdb.parallel.enabled");
-			} else {
-				System.setProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
+			try {
+				multi.shutDown();
+			} finally {
+				restoreProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", previousMerge);
+				restoreProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
 			}
 		}
 	}
@@ -488,16 +489,11 @@ public class LmdbNativeChunkPipelineTest {
 					.as("masked-out key runs on the root's leading field should be crossed with seeks")
 					.isGreaterThan(seeksBefore);
 		} finally {
-			sparse.shutDown();
-			if (previousMerge == null) {
-				System.clearProperty("rdf4j.lmdb.chunkPipeline.merge.enabled");
-			} else {
-				System.setProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", previousMerge);
-			}
-			if (previousParallel == null) {
-				System.clearProperty("rdf4j.lmdb.parallel.enabled");
-			} else {
-				System.setProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
+			try {
+				sparse.shutDown();
+			} finally {
+				restoreProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", previousMerge);
+				restoreProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
 			}
 		}
 	}
@@ -565,16 +561,11 @@ public class LmdbNativeChunkPipelineTest {
 					.as("a distinct-key flood over a small pattern range should flip to a hash build")
 					.isGreaterThan(buildsBefore);
 		} finally {
-			flood.shutDown();
-			if (previousParallel == null) {
-				System.clearProperty("rdf4j.lmdb.parallel.enabled");
-			} else {
-				System.setProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
-			}
-			if (previousMerge == null) {
-				System.clearProperty("rdf4j.lmdb.chunkPipeline.merge.enabled");
-			} else {
-				System.setProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", previousMerge);
+			try {
+				flood.shutDown();
+			} finally {
+				restoreProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
+				restoreProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", previousMerge);
 			}
 		}
 	}
@@ -594,23 +585,28 @@ public class LmdbNativeChunkPipelineTest {
 	@Test
 	public void adjacencyKeyDomainMasksSelectiveChainBeforeHashBuild() throws Exception {
 		String adjacencyMaskProperty = LmdbNativeChunkPipeline.ADJACENCY_SIP_MASK_PROPERTY;
-		String directRootScanProperty = "rdf4j.lmdb.directAdjacency.rootScan.enabled";
 		String previousAdjacencyMask = System.getProperty(adjacencyMaskProperty);
-		String previousDirectRootScan = System.getProperty(directRootScanProperty);
 		String previousMerge = System.getProperty("rdf4j.lmdb.chunkPipeline.merge.enabled");
 		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
-		// This test isolates adjacency-domain SIP over a seekable LMDB root. A direct-spoc root is already an
-		// in-memory adjacency consumer and deliberately does not advertise the LMDB seek contract.
-		System.setProperty(directRootScanProperty, "false");
-		System.setProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", "false");
-		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
-		File maskDir = new File(dataDir, "adjacency-domain-mask");
-		LmdbStore store = new LmdbStore(maskDir,
-				new LmdbStoreConfig("spoc,posc,ospc")
-						.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
-						.setDirectAdjacencyMaxBytes(1L << 30));
-		SailRepository selective = new SailRepository(store);
+		SailRepository selective = null;
 		try {
+			System.setProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", "false");
+			System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
+			File maskDir = new File(dataDir, "adjacency-domain-mask");
+			// The root predicate is deliberately outside SELECTED coverage, so LMDB is necessary for the seekable root.
+			// Every covered probe remains adjacency-first; this isolates cross-source SIP without overriding
+			// arbitration.
+			LmdbStore store = new LmdbStore(maskDir,
+					new LmdbStoreConfig("spoc,posc,ospc")
+							.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+							.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.SELECTED)
+							.setDirectAdjacencyPredicates(Set.of(
+									Values.iri(EX, "maskSelective"),
+									Values.iri(EX, "maskLeaf"),
+									Values.iri(EX, "maskDense"),
+									Values.iri(EX, "maskDenseLeaf")))
+							.setDirectAdjacencyMaxBytes(1L << 30));
+			selective = new SailRepository(store);
 			try (SailRepositoryConnection conn = selective.getConnection()) {
 				ValueFactory vf = conn.getValueFactory();
 				IRI rootPredicate = vf.createIRI(EX, "maskRoot");
@@ -644,6 +640,7 @@ public class LmdbNativeChunkPipelineTest {
 					+ "SELECT ?s ?leaf WHERE { ?s ex:maskRoot ?middle . "
 					+ "?middle ex:maskSelective ?value . ?value ex:maskLeaf ?leaf }";
 			System.setProperty(adjacencyMaskProperty, "false");
+			long adjacencyLookupsBefore = AdjacencyEngagementTestAccess.lookupHits(store);
 			long masksBefore = LmdbNativeChunkPipeline.SIP_MASKS.get();
 			long maskedBefore = LmdbNativeChunkPipeline.SIP_MASKED_ROWS.get();
 			long engagedBefore = LmdbNativeChunkPipeline.ENGAGED.get();
@@ -651,6 +648,9 @@ public class LmdbNativeChunkPipelineTest {
 			List<String> disabledRows = snapshotRows(selective, query);
 			String disabledTelemetry = telemetry(selective, query);
 			assertThat(disabledRows).hasSize(32 * 200);
+			assertThat(AdjacencyEngagementTestAccess.lookupHits(store))
+					.as("covered probe predicates should remain adjacency-served")
+					.isGreaterThan(adjacencyLookupsBefore);
 			assertThat(LmdbNativeChunkPipeline.SIP_MASKS.get()).isEqualTo(masksBefore);
 			assertThat(LmdbNativeChunkPipeline.SIP_MASKED_ROWS.get()).isEqualTo(maskedBefore);
 			assertThat(LmdbNativeChunkPipeline.ENGAGED.get()).isGreaterThan(engagedBefore);
@@ -696,11 +696,15 @@ public class LmdbNativeChunkPipelineTest {
 					.contains("      reason: STATIC_COST_REJECTED[")
 					.contains("domainCardinality=2048");
 		} finally {
-			selective.shutDown();
-			restoreProperty(adjacencyMaskProperty, previousAdjacencyMask);
-			restoreProperty(directRootScanProperty, previousDirectRootScan);
-			restoreProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", previousMerge);
-			restoreProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
+			try {
+				if (selective != null) {
+					selective.shutDown();
+				}
+			} finally {
+				restoreProperty(adjacencyMaskProperty, previousAdjacencyMask);
+				restoreProperty("rdf4j.lmdb.chunkPipeline.merge.enabled", previousMerge);
+				restoreProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
+			}
 		}
 	}
 

@@ -177,9 +177,10 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/**
-	 * Opens a scan preserving this source's complete authoritative encounter order. This is a semantic order request,
-	 * not a source mandate: implementations with several physical sources may arbitrate among any candidate capable of
-	 * reproducing the same complete index sequence.
+	 * Opens a scan preserving the ordinary candidate-capable encounter order exposed by
+	 * {@link #statements(long, long, long, long, AdjacencyAccessObserver)}. Order-sensitive native attempts use this to
+	 * replay the same row order as generic evaluation after speculation declines. This is not a source mandate:
+	 * implementations may still select adjacency or LMDB, but must not substitute a different physical index order.
 	 */
 	default RecordIterator statementsInEncounterOrder(long subj, long pred, long obj, long context,
 			AdjacencyAccessObserver observer) throws IOException {
@@ -187,10 +188,9 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/**
-	 * Opens the persistent LMDB index directly, bypassing derived in-memory adjacency. Encounter-order-sensitive
-	 * fallbacks use this after a speculative native plan discovers that changing the authoritative index order can
-	 * change a floating-point or representative-term aggregate. Sources without a derived layer may delegate to
-	 * {@link #statements(long, long, long, long, AdjacencyAccessObserver)}.
+	 * Opens the persistent LMDB index directly, bypassing derived in-memory adjacency. This is reserved for measured
+	 * LMDB exceptions and callers that require the persistent index specifically. Sources without a derived layer may
+	 * delegate to {@link #statements(long, long, long, long, AdjacencyAccessObserver)}.
 	 */
 	default RecordIterator lmdbStatements(long subj, long pred, long obj, long context,
 			AdjacencyAccessObserver observer) throws IOException {

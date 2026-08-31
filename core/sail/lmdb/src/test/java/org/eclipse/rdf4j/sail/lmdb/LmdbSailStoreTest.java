@@ -42,6 +42,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntConsumer;
 
@@ -68,9 +69,11 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
+import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.junit.jupiter.api.AfterEach;
@@ -286,16 +289,30 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
-	public void orderedNativeLmdbWrapperDelegatesIndexName() throws Exception {
+	public void orderedNativeSourceSeparatesPlannerWitnessFromSelectedIndex() throws Exception {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();
 		try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
 			NativeLmdbQuerySource nativeSource = (NativeLmdbQuerySource) dataset;
 			long predicateId = nativeSource.idOf(RDFS.LABEL);
-			String expectedIndex = nativeSource.indexName(StatementOrder.O, -1L, predicateId, -1L, -1L);
+			String orderWitness = nativeSource.indexName(StatementOrder.O, -1L, predicateId, -1L, -1L);
+			assertEquals("arbitrated-o", orderWitness);
 			try (RecordIterator iterator = nativeSource.statements(StatementOrder.O, -1L, predicateId, -1L, -1L)) {
-				assertEquals(expectedIndex, iterator.getIndexName());
-				assertTrue(iterator.next() != null);
+				long previousObject = 0L;
+				boolean first = true;
+				int rows = 0;
+				long[] row;
+				while ((row = iterator.next()) != null) {
+					long object = row[TripleIndex.OBJ_IDX];
+					if (!first) {
+						assertTrue("The selected source must preserve the advertised object order",
+								Long.compareUnsigned(previousObject, object) <= 0);
+					}
+					previousObject = object;
+					first = false;
+					rows++;
+				}
+				assertEquals(3, rows);
 			}
 		}
 	}
@@ -407,7 +424,7 @@ public class LmdbSailStoreTest {
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.add(F.createIRI("urn:materialize"), F.createIRI("urn:materialize-predicate"),
 					F.createIRI("urn:materialize-object"));
-			String actual = conn.prepareTupleQuery("select * { ?s <" + RDFS.LABEL + "> ?o }")
+			String actual = conn.prepareTupleQuery("select * { <" + S0.getSubject() + "> <" + RDFS.LABEL + "> ?o }")
 					.explain(Explanation.Level.Executed)
 					.toString();
 
@@ -1044,6 +1061,173 @@ public class LmdbSailStoreTest {
 			assertEquals(2, Iterations.asList(statements).size());
 		}
 		assertEquals(0, backingStore.reservedAlignedWriteStatements());
+	}
+
+	@Test
+	void staleSinkCannotRollbackANewerBackingTransactionGeneration() {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		backingStore.enableMultiThreading = false;
+		Statement committed = F.createStatement(F.createIRI("urn:generation:committed"),
+				F.createIRI("urn:generation:predicate"), F.createIRI("urn:generation:object:committed"));
+		Statement discarded = F.createStatement(F.createIRI("urn:generation:discarded"),
+				F.createIRI("urn:generation:predicate"), F.createIRI("urn:generation:object:discarded"));
+		Statement next = F.createStatement(F.createIRI("urn:generation:next"),
+				F.createIRI("urn:generation:predicate"), F.createIRI("urn:generation:object:next"));
+		SailSource firstTransaction = backingStore.getExplicitSailSource();
+		SailSink committing = firstTransaction.sink(IsolationLevels.NONE);
+		SailSink stale = firstTransaction.sink(IsolationLevels.NONE);
+
+		try (SailSink nextGeneration = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			committing.approve(committed);
+			stale.approve(discarded);
+			committing.flush();
+			nextGeneration.approveAll(Set.of(next));
+			stale.close();
+			nextGeneration.flush();
+		} finally {
+			committing.close();
+			stale.close();
+		}
+
+		try (RepositoryConnection connection = repo.getConnection()) {
+			assertTrue(connection.hasStatement(committed, false));
+			assertFalse(connection.hasStatement(discarded, false));
+			assertTrue(connection.hasStatement(next, false));
+		}
+	}
+
+	@Test
+	void distinctSourcesDoNotSharePhysicalRollbackFate() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		backingStore.enableMultiThreading = false;
+		Statement committed = F.createStatement(F.createIRI("urn:owner:committed"),
+				F.createIRI("urn:owner:predicate"), F.createIRI("urn:owner:object:committed"));
+		Statement discarded = F.createStatement(F.createIRI("urn:owner:discarded"),
+				F.createIRI("urn:owner:predicate"), F.createIRI("urn:owner:object:discarded"));
+		SailSink first = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE);
+		SailSink second = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE);
+		CountDownLatch attempted = new CountDownLatch(1);
+		CountDownLatch completed = new CountDownLatch(1);
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+
+		first.approveAll(Set.of(committed));
+		Thread secondWriter = Thread.startVirtualThread(() -> {
+			try {
+				attempted.countDown();
+				second.approveAll(Set.of(discarded));
+			} catch (Throwable t) {
+				failure.set(t);
+			} finally {
+				completed.countDown();
+			}
+		});
+		assertTrue(attempted.await(1, TimeUnit.SECONDS));
+		boolean sharedTransaction = completed.await(250, TimeUnit.MILLISECONDS);
+		try {
+			first.flush();
+			assertTrue(completed.await(1, TimeUnit.SECONDS));
+			assertNull(failure.get());
+			second.close();
+		} finally {
+			first.close();
+			second.close();
+			secondWriter.join();
+		}
+
+		assertFalse("a different source must wait for the current physical writer", sharedTransaction);
+		try (RepositoryConnection connection = repo.getConnection()) {
+			assertTrue(connection.hasStatement(committed, false));
+			assertFalse(connection.hasStatement(discarded, false));
+		}
+	}
+
+	@Test
+	void asyncRollbackDoesNotLeaveACommitMarkerForTheNextTransaction() {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		backingStore.enableMultiThreading = true;
+		Statement discarded = F.createStatement(F.createIRI("urn:async-rollback:discarded"),
+				F.createIRI("urn:async-rollback:predicate"), F.createIRI("urn:async-rollback:object:discarded"));
+		Statement committed = F.createStatement(F.createIRI("urn:async-rollback:committed"),
+				F.createIRI("urn:async-rollback:predicate"), F.createIRI("urn:async-rollback:object:committed"));
+
+		SailSink rolledBack = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE);
+		rolledBack.approveAll(Set.of(discarded));
+		rolledBack.close();
+		try (SailSink noOp = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			noOp.flush();
+		}
+		try (SailSink next = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			next.approveAll(Set.of(committed));
+			next.flush();
+		}
+
+		try (RepositoryConnection connection = repo.getConnection()) {
+			assertFalse(connection.hasStatement(discarded, false));
+			assertTrue(connection.hasStatement(committed, false));
+		}
+	}
+
+	@Test
+	void interruptedAsyncFlushCompletesOneConsistentCommitFate() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		backingStore.enableMultiThreading = true;
+		Statement interruptedCommit = F.createStatement(F.createIRI("urn:interrupted-commit:first"),
+				F.createIRI("urn:interrupted-commit:predicate"), F.createIRI("urn:interrupted-commit:object:first"));
+		Statement laterCommit = F.createStatement(F.createIRI("urn:interrupted-commit:second"),
+				F.createIRI("urn:interrupted-commit:predicate"), F.createIRI("urn:interrupted-commit:object:second"));
+		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+		tripleStoreField.setAccessible(true);
+		TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
+		TripleStore tripleStoreSpy = spy(originalTripleStore);
+		CountDownLatch commitStarted = new CountDownLatch(1);
+		CountDownLatch allowCommit = new CountDownLatch(1);
+		AtomicBoolean blockFirstCommit = new AtomicBoolean(true);
+
+		doAnswer(invocation -> {
+			if (blockFirstCommit.compareAndSet(true, false)) {
+				commitStarted.countDown();
+				if (!allowCommit.await(1, TimeUnit.SECONDS)) {
+					throw new AssertionError("Timed out waiting to finish the interrupted commit");
+				}
+			}
+			return invocation.callRealMethod();
+		}).when(tripleStoreSpy).commit();
+
+		tripleStoreField.set(backingStore, tripleStoreSpy);
+		try (SailSink interrupted = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			interrupted.approveAll(Set.of(interruptedCommit));
+			AtomicReference<Throwable> flushFailure = new AtomicReference<>();
+			Thread flusher = Thread.startVirtualThread(() -> {
+				try {
+					interrupted.flush();
+				} catch (Throwable t) {
+					flushFailure.set(t);
+				}
+			});
+			assertTrue(commitStarted.await(1, TimeUnit.SECONDS));
+			flusher.interrupt();
+			allowCommit.countDown();
+			flusher.join(2000);
+			assertFalse("interrupted flush must finish after its published commit resolves", flusher.isAlive());
+			assertTrue(flushFailure.get() instanceof InterruptedSailException);
+
+			try (SailSink later = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				later.approveAll(Set.of(laterCommit));
+				later.flush();
+			}
+		} finally {
+			allowCommit.countDown();
+			tripleStoreField.set(backingStore, originalTripleStore);
+		}
+
+		try (RepositoryConnection connection = repo.getConnection()) {
+			assertTrue(connection.hasStatement(interruptedCommit, false));
+			assertTrue(connection.hasStatement(laterCommit, false));
+		}
 	}
 
 	@Test

@@ -15,14 +15,24 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class AdjacencyQueryShapeBenchmarkTest {
+	private static final String NATIVE_ENGINE_PROPERTY = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final String WCOJ_PROPERTY = "rdf4j.lmdb.wcoj.enabled";
+	private static final String[] PRIMITIVE_GROUPING_STRATEGY_FLAGS = { "rdf4j.lmdb.prefixRun.enabled",
+			"rdf4j.lmdb.janinoCodegen.enabled", "rdf4j.lmdb.kernelInterpreter.enabled",
+			"rdf4j.lmdb.packedFtree.enabled", "rdf4j.lmdb.factorizedTail.enabled" };
 
 	@Test
 	void everyBenchmarkMethodProducesRowsAtUnitScale() throws IOException {
-		String previousNative = System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+		Map<String, String> previousProperties = captureProperties(NATIVE_ENGINE_PROPERTY, WCOJ_PROPERTY);
 		AdjacencyQueryShapeBenchmark benchmark = new AdjacencyQueryShapeBenchmark();
 		int peopleCount = Integer.getInteger("rdf4j.lmdb.adjacencyQueryShapeBenchmark.smokePeopleCount", 300);
 		benchmark.peopleCount = peopleCount;
@@ -44,6 +54,7 @@ class AdjacencyQueryShapeBenchmarkTest {
 			assertThat(benchmark.countOnePredicate()).isEqualTo(1);
 			assertThat(benchmark.degreePerSubject()).isGreaterThan(0);
 			assertThat(benchmark.predicateHistogram()).isGreaterThan(0);
+			assertThat(benchmark.predicateObjectDistinctSubjects()).isGreaterThan(0);
 			assertThat(benchmark.pointLookupOut()).isGreaterThan(0);
 			assertThat(benchmark.pointLookupIn()).isGreaterThan(0);
 			assertThat(benchmark.nodeEdgeDump()).isGreaterThan(0);
@@ -59,12 +70,66 @@ class AdjacencyQueryShapeBenchmarkTest {
 			// The doubly-bound probe depends on a specific edge existing; assert it executes, not its cardinality.
 			assertThat(benchmark.doublyBoundProbe()).isGreaterThanOrEqualTo(0);
 		} finally {
+			tearDownAndRestore(benchmark, previousProperties);
+		}
+	}
+
+	@Test
+	void primitiveGroupingFixtureProducesFifteenGroupsThroughLmdb() throws IOException {
+		Map<String, String> previousProperties = captureProperties(NATIVE_ENGINE_PROPERTY, WCOJ_PROPERTY);
+		AdjacencyQueryShapeBenchmark benchmark = new AdjacencyQueryShapeBenchmark();
+		benchmark.engineMode = FoafCliqueQueryBenchmark.MODE_NATIVE;
+		benchmark.fixtureMode = "primitiveGrouping";
+		benchmark.sourceMode = "lmdb";
+		try {
+			benchmark.setup();
+
+			assertThat(benchmark.predicateObjectDistinctSubjects()).isEqualTo(15);
+		} finally {
+			tearDownAndRestore(benchmark, previousProperties);
+		}
+	}
+
+	@Test
+	void primitiveGroupingFixtureProducesFifteenGroupsThroughArbiter() throws IOException {
+		Map<String, String> previousFlags = captureProperties(NATIVE_ENGINE_PROPERTY, WCOJ_PROPERTY);
+		for (String property : PRIMITIVE_GROUPING_STRATEGY_FLAGS) {
+			previousFlags.put(property, System.getProperty(property));
+			System.setProperty(property, "false");
+		}
+		AdjacencyQueryShapeBenchmark benchmark = new AdjacencyQueryShapeBenchmark();
+		benchmark.engineMode = FoafCliqueQueryBenchmark.MODE_NATIVE;
+		benchmark.fixtureMode = "primitiveGrouping";
+		benchmark.sourceMode = "arbiter";
+		try {
+			benchmark.setup();
+
+			assertThat(benchmark.predicateObjectDistinctSubjects()).isEqualTo(15);
+		} finally {
+			tearDownAndRestore(benchmark, previousFlags);
+		}
+	}
+
+	private static Map<String, String> captureProperties(String... properties) {
+		Map<String, String> previous = new HashMap<>();
+		for (String property : properties) {
+			previous.put(property, System.getProperty(property));
+		}
+		return previous;
+	}
+
+	private static void tearDownAndRestore(AdjacencyQueryShapeBenchmark benchmark,
+			Map<String, String> previousProperties) throws IOException {
+		try {
 			benchmark.tearDown();
-			if (previousNative == null) {
-				System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
-			} else {
-				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previousNative);
-			}
+		} finally {
+			previousProperties.forEach((property, previous) -> {
+				if (previous == null) {
+					System.clearProperty(property);
+				} else {
+					System.setProperty(property, previous);
+				}
+			});
 		}
 	}
 }
