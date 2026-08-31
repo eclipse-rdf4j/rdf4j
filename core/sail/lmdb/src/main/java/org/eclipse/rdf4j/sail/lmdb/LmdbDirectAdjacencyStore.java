@@ -133,6 +133,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final ExecutorService compactionExecutor;
 	private final AtomicBoolean compactionRequested = new AtomicBoolean();
 	private final AtomicBoolean compactionTaskScheduled = new AtomicBoolean();
+	/**
+	 * Monotone cutover bit. A populated store's initial build and commits captured before first exact publication stay
+	 * asynchronous. An empty store activates before its initial build submission. Once set, configured synchronous
+	 * maintenance remains in force across later gaps and rebuilds.
+	 */
+	private final AtomicBoolean synchronousUpdatesActivated = new AtomicBoolean();
+	private volatile long lastCutoverNanos;
+	private volatile long lastCutoverRevisions;
+	private volatile int lastCutoverQueuedCommits;
 	private final Object rebuildSubmissionLock = new Object();
 	private final AtomicBoolean rebuildPending = new AtomicBoolean();
 	private volatile Future<?> rebuildFuture;
@@ -388,6 +397,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				return;
 			}
 			applyQueue.addLast(sealed);
+			applyQueue.notifyAll();
 		}
 		Future<?> drain;
 		try {
@@ -478,7 +488,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	private void awaitSynchronousMaintenance(Future<?> future, String operation) {
-		if (!options.synchronousMaintenance() || future == null || Thread.currentThread() == maintenanceThread) {
+		if (!options.synchronousMaintenance() || !synchronousUpdatesActivated.get() || future == null
+				|| Thread.currentThread() == maintenanceThread) {
 			return;
 		}
 		try {
@@ -1696,16 +1707,43 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	int queuedCommitsForTest() {
+		return queuedCommitCount();
+	}
+
+	int queuedCommitCount() {
 		synchronized (applyQueue) {
 			return applyQueue.size();
 		}
+	}
+
+	boolean synchronousUpdatesActivatedForTest() {
+		return synchronousUpdatesActivated.get();
+	}
+
+	boolean synchronousUpdatesActivated() {
+		return synchronousUpdatesActivated.get();
+	}
+
+	long lastCutoverNanos() {
+		return lastCutoverNanos;
+	}
+
+	long lastCutoverRevisions() {
+		return lastCutoverRevisions;
+	}
+
+	int lastCutoverQueuedCommits() {
+		return lastCutoverQueuedCommits;
 	}
 
 	// ------------------------------------------------------------------
 	// lifecycle
 	// ------------------------------------------------------------------
 
-	/** Schedules a serialized build/rebuild and optionally awaits this submission in validation mode. */
+	/**
+	 * Schedules a serialized build/rebuild. Empty stores synchronously publish their initial empty base; populated
+	 * stores return after submission and activate synchronous commit maintenance only at their first exact cutover.
+	 */
 	void triggerBuild() {
 		throwIfStrictMaintenanceFailed();
 		Future<?> future;
@@ -1713,8 +1751,29 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			if (closed || options.memoryRefused()) {
 				return;
 			}
-			if (rebuildPending.compareAndSet(false, true)) {
-				try {
+			var lockManager = tripleStore.getTxnManager().lockManager();
+			Long bootstrapFence = null;
+			boolean rebuildClaimed = false;
+			try {
+				if (options.synchronousMaintenance() && !synchronousUpdatesActivated.get()) {
+					try {
+						bootstrapFence = lockManager.readLock();
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new IllegalStateException(
+								"interrupted while checking direct adjacency bootstrap state", e);
+					}
+					try {
+						if (tripleStore.isEmpty()) {
+							synchronousUpdatesActivated.set(true);
+						}
+					} catch (IOException e) {
+						throw new IllegalStateException(
+								"failed to check whether direct adjacency can bootstrap synchronously", e);
+					}
+				}
+				if (rebuildPending.compareAndSet(false, true)) {
+					rebuildClaimed = true;
 					future = submitMaintenance(() -> {
 						synchronized (rebuildSubmissionLock) {
 							rebuildPending.set(false);
@@ -1722,15 +1781,21 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 						buildOnce();
 					});
 					rebuildFuture = future;
-				} catch (RuntimeException e) {
-					rebuildPending.set(false);
-					if (!closed) {
-						throw e;
-					}
-					return;
+				} else {
+					future = rebuildFuture;
 				}
-			} else {
-				future = rebuildFuture;
+			} catch (RuntimeException e) {
+				if (rebuildClaimed) {
+					rebuildPending.set(false);
+				}
+				if (!closed) {
+					throw e;
+				}
+				return;
+			} finally {
+				if (bootstrapFence != null) {
+					lockManager.unlockRead(bootstrapFence);
+				}
 			}
 		}
 		awaitSynchronousMaintenance(future, "build");
@@ -1776,7 +1841,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					return true;
 				}
 				if (result == ReadinessProbe.UNAVAILABLE) {
-					return false;
+					// Publication and the maintenance-state transition are separate volatile writes. If the probe
+					// observed their boundary, prefer the exact published state over a transient unavailable verdict.
+					return servesCurrentRevisionExactly();
 				}
 			} catch (TimeoutException e) {
 				return false;
@@ -1949,6 +2016,19 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		long[] extraSelected = new long[0];
 		LmdbAdjacencyPlaneStatistics planeStatistics = index.planeStatistics();
 		long appliedRevision = baseRevision;
+		var lockManager = tripleStore.getTxnManager().lockManager();
+		long cutoverStamp;
+		long cutoverStartedNanos = System.nanoTime();
+		try {
+			// The base scan is complete. Fence new physical commits before consuming its finite startup backlog;
+			// otherwise a writer faster than delta encoding can grow the queue without bound and starve readiness.
+			cutoverStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			return false;
+		}
+		int cutoverQueuedCommits = queuedCommitCount();
+		long cutoverRevisions = Math.max(0L, tripleStore.getDataRevision() - baseRevision);
 		boolean success = false;
 		try {
 			while (true) {
@@ -1963,87 +2043,65 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					head = applyQueue.peekFirst();
 				}
 				if (head == null) {
-					var lockManager = tripleStore.getTxnManager().lockManager();
-					long stamp;
-					try {
-						stamp = lockManager.readLock();
-					} catch (InterruptedException e) {
-						Thread.currentThread().interrupt();
-						return false;
-					}
-					try {
-						boolean queueEmpty;
-						synchronized (applyQueue) {
-							queueEmpty = applyQueue.isEmpty();
-						}
-						long dataRevision = tripleStore.getDataRevision();
-						if (queueEmpty && dataRevision == appliedRevision) {
-							publicationLock.lock();
-							try {
-								if (closed) {
-									return false;
-								}
-								if ((capturedGap.fromRevision() != Long.MAX_VALUE
-										&& capturedGap.fromRevision() > baseRevision)
-										|| emergencyGap.get() != capturedGap) {
-									return false;
-								}
-								LmdbAdjacencyPublishedState current = published.get();
-								// carry forward pending markers beyond what this build applied
-								List<PendingTable> carried = new ArrayList<>();
-								for (PendingTable pending : current.pending()) {
-									if (pending.revision() > appliedRevision) {
-										carried.add(pending);
-									}
-								}
-								LmdbAdjacencyOverlaySet overlays;
-								if (generations.isEmpty() && contextCatalog == index.contextCatalog()
-										&& extraSelected.length == 0) {
-									overlays = null;
-								} else {
-									if (!ownsContextCatalog) {
-										contextCatalog.retain();
-									}
-									overlays = new LmdbAdjacencyOverlaySet(
-											generations.toArray(new LmdbAdjacencyDeltaGeneration[0]), contextCatalog,
-											extraSelected);
-									ownsContextCatalog = false;
-								}
-								publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), index, overlays,
-										carried.toArray(new PendingTable[0]), appliedRevision, Long.MAX_VALUE,
-										AdjacencyServingState.ROW_EXACT, index.baseRevision(), planeStatistics));
-								GapMarker clearedGap = new GapMarker(Long.MAX_VALUE, capturedGap.sequence());
-								if (emergencyGap.compareAndSet(capturedGap, clearedGap)) {
-									maintenanceState = MaintenanceState.ACTIVE;
-								} else {
-									maintenanceState = MaintenanceState.DEGRADED_GAP;
-									scheduleQuiescentRebuild();
-								}
-								success = true;
-								return true;
-							} finally {
-								publicationLock.unlock();
+					long targetRevision = tripleStore.getDataRevision();
+					if (appliedRevision == targetRevision) {
+						publicationLock.lock();
+						try {
+							if (closed) {
+								return false;
 							}
+							if ((capturedGap.fromRevision() != Long.MAX_VALUE
+									&& capturedGap.fromRevision() > baseRevision)
+									|| emergencyGap.get() != capturedGap) {
+								return false;
+							}
+							LmdbAdjacencyPublishedState current = published.get();
+							List<PendingTable> carried = new ArrayList<>();
+							for (PendingTable pending : current.pending()) {
+								if (pending.revision() > appliedRevision) {
+									carried.add(pending);
+								}
+							}
+							LmdbAdjacencyOverlaySet overlays;
+							if (generations.isEmpty() && contextCatalog == index.contextCatalog()
+									&& extraSelected.length == 0) {
+								overlays = null;
+							} else {
+								if (!ownsContextCatalog) {
+									contextCatalog.retain();
+								}
+								overlays = new LmdbAdjacencyOverlaySet(
+										generations.toArray(new LmdbAdjacencyDeltaGeneration[0]), contextCatalog,
+										extraSelected);
+								ownsContextCatalog = false;
+							}
+							publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), index, overlays,
+									carried.toArray(new PendingTable[0]), appliedRevision, Long.MAX_VALUE,
+									AdjacencyServingState.ROW_EXACT, index.baseRevision(), planeStatistics));
+							GapMarker clearedGap = new GapMarker(Long.MAX_VALUE, capturedGap.sequence());
+							if (emergencyGap.compareAndSet(capturedGap, clearedGap)) {
+								// This cutover happens while physical commits are fenced. A commit that acquires the
+								// write lock after release is therefore the first synchronous update.
+								if (synchronousUpdatesActivated.compareAndSet(false, true)) {
+									lastCutoverQueuedCommits = cutoverQueuedCommits;
+									lastCutoverRevisions = cutoverRevisions;
+									lastCutoverNanos = Math.max(0L, System.nanoTime() - cutoverStartedNanos);
+								}
+								maintenanceState = MaintenanceState.ACTIVE;
+							} else {
+								maintenanceState = MaintenanceState.DEGRADED_GAP;
+								scheduleQuiescentRebuild();
+							}
+							success = true;
+							return true;
+						} finally {
+							publicationLock.unlock();
 						}
-						if (emergencyGap.get().sequence() != capturedGap.sequence()) {
-							// A later gap event, including an overflow hidden by an older effective minimum, means
-							// this generation cannot prove continuity.
-							return false;
-						}
-						// otherwise a commit landed between the queue drain and the lock: it will be enqueued
-						// after the sail-store commit completes; wait for it outside the lock
-					} finally {
-						lockManager.unlockRead(stamp);
 					}
-					Runnable waitHook = catchUpWaitForTest;
-					if (waitHook != null) {
-						waitHook.run();
+					if (targetRevision < appliedRevision) {
+						throw new IllegalStateException("adjacency catch-up advanced past its target revision");
 					}
-					// bounded spin: the missing sealed delta arrives via applyCommitted after commit completion
-					try {
-						Thread.sleep(1);
-					} catch (InterruptedException e) {
-						Thread.currentThread().interrupt();
+					if (!awaitCatchUpQueue(capturedGap)) {
 						return false;
 					}
 					continue;
@@ -2082,6 +2140,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				removeHead(head).close();
 			}
 		} finally {
+			lockManager.unlockRead(cutoverStamp);
 			if (!success) {
 				for (LmdbAdjacencyDeltaGeneration generation : generations) {
 					generation.release();
@@ -2090,6 +2149,25 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					contextCatalog.release();
 				}
 			}
+		}
+	}
+
+	private boolean awaitCatchUpQueue(GapMarker capturedGap) {
+		Runnable waitHook = catchUpWaitForTest;
+		if (waitHook != null) {
+			waitHook.run();
+		}
+		synchronized (applyQueue) {
+			while (applyQueue.isEmpty() && !closed
+					&& emergencyGap.get().sequence() == capturedGap.sequence()) {
+				try {
+					applyQueue.wait();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					return false;
+				}
+			}
+			return !closed && emergencyGap.get().sequence() == capturedGap.sequence();
 		}
 	}
 
@@ -2199,6 +2277,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		synchronized (applyQueue) {
 			// Admission barrier: an enqueuer that observed the pre-close state is now either visible in the queue or
 			// done.
+			applyQueue.notifyAll();
 		}
 		maintenanceExecutor.shutdown();
 		compactionExecutor.shutdown();

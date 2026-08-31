@@ -617,6 +617,11 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		LmdbAdjacencyMetrics.Snapshot snapshot = adjacency.snapshotMetrics();
 		return "state=" + snapshot.state + ", baseRevision=" + snapshot.baseRevision + ", appliedRevision="
 				+ snapshot.appliedRevision + ", currentDataRevision=" + snapshot.currentDataRevision
+				+ ", synchronousUpdatesActivated=" + adjacency.synchronousUpdatesActivated()
+				+ ", queuedCommits=" + adjacency.queuedCommitCount()
+				+ ", lastCutoverRevisions=" + adjacency.lastCutoverRevisions()
+				+ ", lastCutoverQueuedCommits=" + adjacency.lastCutoverQueuedCommits()
+				+ ", lastCutoverMillis=" + TimeUnit.NANOSECONDS.toMillis(adjacency.lastCutoverNanos())
 				+ ", gapFromRevision=" + snapshot.gapFromRevision + ", emergencyGapFromRevision="
 				+ snapshot.emergencyGapFromRevision + ", buildsStarted=" + snapshot.buildsStarted
 				+ ", buildsCompleted=" + snapshot.buildsCompleted + ", buildsAborted=" + snapshot.buildsAborted

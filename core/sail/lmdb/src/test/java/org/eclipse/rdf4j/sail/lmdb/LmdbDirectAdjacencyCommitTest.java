@@ -24,6 +24,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMetrics.FallbackReason;
@@ -435,6 +438,80 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
+	void continuousStartupWritesCannotStarveExactCutover() throws Exception {
+		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
+		recreateStore(Map.of(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "true"));
+
+		CountDownLatch scanComplete = new CountDownLatch(1);
+		CountDownLatch releaseScan = new CountDownLatch(1);
+		store.afterBuildScanForTest = () -> {
+			store.afterBuildScanForTest = null;
+			scanComplete.countDown();
+			try {
+				releaseScan.await();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(e);
+			}
+		};
+
+		store.triggerBuild();
+		assertThat(scanComplete.await(30, TimeUnit.SECONDS)).isTrue();
+		AtomicBoolean stop = new AtomicBoolean();
+		AtomicInteger committed = new AtomicInteger();
+		AtomicLong lastSubject = new AtomicLong();
+		AtomicReference<Throwable> writerFailure = new AtomicReference<>();
+		CompletableFuture<Void> writer = CompletableFuture.runAsync(() -> {
+			try {
+				while (!stop.get()) {
+					int sequence = committed.get() + 1;
+					long subject = uri(10_000L + sequence);
+					commitQuads(new long[][] {
+							add(subject, sequence % 2 == 0 ? P1 : P2, uri(100_000L + sequence),
+									sequence % 3 == 0 ? G1 : 0, sequence % 5 != 0)
+					});
+					lastSubject.set(subject);
+					committed.incrementAndGet();
+				}
+			} catch (Throwable failure) {
+				writerFailure.set(failure);
+			}
+		});
+
+		try {
+			long backlogDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+			while (committed.get() < 25 && writerFailure.get() == null) {
+				if (System.nanoTime() >= backlogDeadline) {
+					throw new AssertionError("startup writer did not create the catch-up backlog");
+				}
+				Thread.onSpinWait();
+			}
+			releaseScan.countDown();
+
+			long cutoverDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+			while (!store.synchronousUpdatesActivatedForTest() && writerFailure.get() == null) {
+				if (System.nanoTime() >= cutoverDeadline) {
+					throw new AssertionError("continuous commits starved adjacency cutover");
+				}
+				Thread.onSpinWait();
+			}
+		} finally {
+			stop.set(true);
+			releaseScan.countDown();
+		}
+		writer.get(30, TimeUnit.SECONDS);
+		assertThat(writerFailure.get()).isNull();
+		assertThat(committed.get()).isGreaterThanOrEqualTo(25);
+		assertThat(store.awaitCurrentRevisionReady(30, TimeUnit.SECONDS)).isTrue();
+		assertThat(store.queuedCommitsForTest()).isZero();
+		assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(tripleStore.getDataRevision());
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, lastSubject.get(), -1, -1, -1, committed.get() % 5 != 0)).hasSize(1);
+		}
+	}
+
+	@Test
 	void closeReleasesEveryCharge() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true), add(S1, P1, O2, G1, true) });
 		assertThat(store.buildNowForTest()).isTrue();
@@ -490,7 +567,50 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
-	void synchronousMaintenanceWaitsForStartupBuildAndCommitDrain() throws Exception {
+	void emptyStoreDefaultsToSynchronousMaintenanceBeforeStartupReturns() throws Exception {
+		recreateStore(Map.of());
+
+		CountDownLatch buildReached = new CountDownLatch(1);
+		CountDownLatch releaseBuild = new CountDownLatch(1);
+		store.afterBuildScanForTest = () -> {
+			store.afterBuildScanForTest = null;
+			buildReached.countDown();
+			try {
+				releaseBuild.await();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(e);
+			}
+		};
+		CompletableFuture<Void> startup = CompletableFuture.runAsync(store::triggerBuild);
+		CompletableFuture<Void> firstCommit = null;
+		try {
+			assertThat(buildReached.await(30, TimeUnit.SECONDS)).isTrue();
+			assertThat(store.synchronousUpdatesActivatedForTest()).isTrue();
+			assertThatThrownBy(() -> startup.get(1, TimeUnit.SECONDS))
+					.isInstanceOf(java.util.concurrent.TimeoutException.class);
+
+			tripleStore.startTransaction();
+			tripleStore.storeTriple(S1, P1, O1, 0, true);
+			tripleStore.commit();
+			LmdbDirectAdjacencyCommitDelta.SealedDirectDelta firstDelta = tripleStore
+					.drainDirectAdjacencyCommitDelta();
+			firstCommit = CompletableFuture.runAsync(() -> store.applyCommitted(firstDelta));
+			CompletableFuture<Void> pendingFirstCommit = firstCommit;
+			assertThatThrownBy(() -> pendingFirstCommit.get(1, TimeUnit.SECONDS))
+					.isInstanceOf(java.util.concurrent.TimeoutException.class);
+		} finally {
+			releaseBuild.countDown();
+		}
+		startup.get(30, TimeUnit.SECONDS);
+		assertThat(firstCommit).isNotNull();
+		firstCommit.get(30, TimeUnit.SECONDS);
+		assertThat(store.awaitCurrentRevisionReady(30, TimeUnit.SECONDS)).isTrue();
+		assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(tripleStore.getDataRevision());
+	}
+
+	@Test
+	void synchronousMaintenanceStartsAsynchronouslyAndWaitsAfterFirstExactPublication() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		recreateStore(Map.of(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "true"));
 
@@ -507,15 +627,32 @@ class LmdbDirectAdjacencyCommitTest {
 			}
 		};
 		CompletableFuture<Void> startup = CompletableFuture.runAsync(store::triggerBuild);
+		CompletableFuture<Void> startupCommit = null;
 		try {
 			assertThat(buildReached.await(30, TimeUnit.SECONDS)).isTrue();
-			assertThatThrownBy(() -> startup.get(1, TimeUnit.SECONDS))
-					.isInstanceOf(java.util.concurrent.TimeoutException.class);
+			startup.get(1, TimeUnit.SECONDS);
+			assertThat(store.synchronousUpdatesActivatedForTest()).isFalse();
+
+			tripleStore.startTransaction();
+			tripleStore.storeTriple(S2, P1, O2, G1, true);
+			tripleStore.commit();
+			LmdbDirectAdjacencyCommitDelta.SealedDirectDelta startupDelta = tripleStore
+					.drainDirectAdjacencyCommitDelta();
+			startupCommit = CompletableFuture.runAsync(() -> store.applyCommitted(startupDelta));
+			startupCommit.get(1, TimeUnit.SECONDS);
+			assertThat(store.queuedCommitsForTest()).isEqualTo(1);
 		} finally {
 			releaseBuild.countDown();
 		}
-		startup.get(30, TimeUnit.SECONDS);
+		assertThat(startupCommit).isNotNull();
+		startupCommit.get(30, TimeUnit.SECONDS);
+		assertThat(store.awaitCurrentRevisionReady(30, TimeUnit.SECONDS)).isTrue();
+		assertThat(store.synchronousUpdatesActivatedForTest()).isTrue();
 		assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(tripleStore.getDataRevision());
+		try (LmdbAdjacencyReadView ready = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(ready.isExact()).isTrue();
+			assertThat(probe(ready, S2, P1, O2, G1, true)).hasSize(1);
+		}
 
 		CountDownLatch drainReached = new CountDownLatch(1);
 		CountDownLatch releaseDrain = new CountDownLatch(1);
@@ -593,7 +730,7 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
-	void defaultMaintenanceWaitsForStartupBuildAndPublishesCurrentExactState() throws Exception {
+	void defaultMaintenanceReturnsDuringStartupAndActivatesAtReadiness() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		recreateStore(Map.of());
 
@@ -612,12 +749,17 @@ class LmdbDirectAdjacencyCommitTest {
 		CompletableFuture<Void> startup = CompletableFuture.runAsync(store::triggerBuild);
 		try {
 			assertThat(buildReached.await(30, TimeUnit.SECONDS)).isTrue();
-			assertThat(startup).as("the synchronous default must not return before the startup build is published")
-					.isNotDone();
+			startup.get(1, TimeUnit.SECONDS);
+			assertThat(store.synchronousUpdatesActivatedForTest()).isFalse();
+			try (LmdbAdjacencyReadView building = store.acquire(tripleStore.getDataRevision())) {
+				assertThat(building.isExact()).isFalse();
+				assertThat(building.fallbackReason()).isEqualTo(FallbackReason.BUILDING);
+			}
 		} finally {
 			releaseBuild.countDown();
 		}
-		startup.get(30, TimeUnit.SECONDS);
+		assertThat(store.awaitCurrentRevisionReady(30, TimeUnit.SECONDS)).isTrue();
+		assertThat(store.synchronousUpdatesActivatedForTest()).isTrue();
 
 		long currentRevision = tripleStore.getDataRevision();
 		assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(currentRevision);
@@ -628,7 +770,7 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
-	void strictSynchronousMaintenancePropagatesUnexpectedBuildFailure() throws Exception {
+	void strictSynchronousMaintenanceReportsBackgroundBuildFailureOnNextAccess() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		recreateStore(Map.of(
 				LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "true",
@@ -638,7 +780,9 @@ class LmdbDirectAdjacencyCommitTest {
 			throw new IllegalStateException("injected unexpected build failure");
 		};
 
-		assertThatThrownBy(store::triggerBuild)
+		store.triggerBuild();
+		assertThat(store.awaitCurrentRevisionReady(30, TimeUnit.SECONDS)).isFalse();
+		assertThatThrownBy(() -> store.acquire(tripleStore.getDataRevision()))
 				.isInstanceOf(IllegalStateException.class)
 				.hasRootCauseMessage("injected unexpected build failure");
 	}
