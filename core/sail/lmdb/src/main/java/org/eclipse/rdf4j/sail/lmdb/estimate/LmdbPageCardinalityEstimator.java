@@ -40,7 +40,7 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		}
 
 		LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta);
-		RangeCountResult result = counter.countRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher);
+		RangeCountResult result = counter.estimateRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher);
 		return result.entries;
 	}
 

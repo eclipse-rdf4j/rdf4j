@@ -652,7 +652,7 @@ class TripleStore implements Closeable {
 		try {
 			return cardinalityUsingPageEstimator(index, subj, pred, obj, context);
 		} catch (IOException | RuntimeException e) {
-			logger.warn("Page-walk cardinality estimator failed for index {}, falling back to sampling",
+			logger.warn("Page cardinality estimator failed for index {}, falling back to sampling",
 					new String(index.getFieldSeq()), e);
 			return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
 		}
@@ -686,7 +686,10 @@ class TripleStore implements Closeable {
 			maxKeyBuffer.flip();
 			byte[] maxKey = toArray(maxKeyBuffer);
 
-			GroupMatcher matcher = index.createMatcher(subj, pred, obj, context);
+			int boundFields = (subj >= 0 ? 1 : 0) + (pred >= 0 ? 1 : 0) + (obj >= 0 ? 1 : 0)
+					+ (context >= 0 ? 1 : 0);
+			GroupMatcher matcher = relevantParts == boundFields ? null
+					: index.createMatcher(subj, pred, obj, context);
 			long explicitCount = estimator.estimateEntries(txnId, explicitDbName, minKey, minKey.length, maxKey,
 					maxKey.length, matcher);
 			long inferredCount = estimator.estimateEntries(txnId, inferredDbName, minKey, minKey.length, maxKey,

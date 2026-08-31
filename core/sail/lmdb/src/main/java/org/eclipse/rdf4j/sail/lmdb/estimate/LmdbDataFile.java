@@ -28,6 +28,7 @@ final class LmdbDataFile implements Closeable {
 
 	private final File dataFile;
 	private final FileChannel channel;
+	private volatile FileFormat fileFormat;
 
 	LmdbDataFile(File dataFile) throws IOException {
 		this.dataFile = dataFile;
@@ -35,10 +36,9 @@ final class LmdbDataFile implements Closeable {
 	}
 
 	LmdbMeta readMetaForTxn(long pinnedTxnId) throws IOException {
-		ByteOrder order = detectByteOrder();
-		int pageSize = probePageSize(order);
-		LmdbMeta meta0 = readMetaPage(0, pageSize, order);
-		LmdbMeta meta1 = readMetaPage(1, pageSize, order);
+		FileFormat format = fileFormat();
+		LmdbMeta meta0 = readMetaPage(0, format.pageSize, format.byteOrder);
+		LmdbMeta meta1 = readMetaPage(1, format.pageSize, format.byteOrder);
 
 		LmdbMeta selected = null;
 		for (LmdbMeta candidate : new LmdbMeta[] { meta0, meta1 }) {
@@ -106,6 +106,22 @@ final class LmdbDataFile implements Closeable {
 		return pageSize;
 	}
 
+	private FileFormat fileFormat() throws IOException {
+		FileFormat cached = fileFormat;
+		if (cached != null) {
+			return cached;
+		}
+		synchronized (this) {
+			cached = fileFormat;
+			if (cached == null) {
+				ByteOrder byteOrder = detectByteOrder();
+				cached = new FileFormat(byteOrder, probePageSize(byteOrder));
+				fileFormat = cached;
+			}
+		}
+		return cached;
+	}
+
 	private ByteOrder detectByteOrder() throws IOException {
 		ByteBuffer magicBytes = readAt(0, META_PROBE_BYTES, ByteOrder.BIG_ENDIAN);
 		int beMagic = magicBytes.getInt(META_BASE_OFFSET + LmdbFormat.META_MAGIC_OFFSET);
@@ -130,6 +146,9 @@ final class LmdbDataFile implements Closeable {
 		}
 		buffer.flip();
 		return buffer;
+	}
+
+	private record FileFormat(ByteOrder byteOrder, int pageSize) {
 	}
 
 }

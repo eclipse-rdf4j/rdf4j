@@ -14,11 +14,19 @@ package org.eclipse.rdf4j.sail.lmdb.estimate;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 
 final class LmdbBtreeRangeCounter {
+
+	private static final int EXACT_RANGE_LEAF_BUDGET = 32;
+	private static final int SAMPLE_LEAF_BUDGET = 16;
+	private static final int RESIDUAL_SAMPLE_LEAF_BUDGET = 32;
+	private static final long SAMPLER_VERSION = 1L;
+	private static final long MIX_GAMMA = 0x9e3779b97f4a7c15L;
 
 	private final LmdbDataFile dataFile;
 	private final LmdbMeta meta;
@@ -28,44 +36,60 @@ final class LmdbBtreeRangeCounter {
 		this.meta = meta;
 	}
 
-	RangeCountResult countRange(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
+	RangeCountResult estimateRange(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
 			GroupMatcher matcher) throws IOException {
 		RangeCountResult result = new RangeCountResult();
 		if (db.isEmpty()) {
 			return result;
 		}
 
-		SeekCursor cursor = seek(db, minKey, minKeyLength, result);
-		if (cursor == null) {
+		Map<Long, LmdbPage> pageCache = new HashMap<>();
+		SeekCursor lower = seekRaw(db, minKey, minKeyLength, false, pageCache, result);
+		SeekCursor upper = seekRaw(db, maxKey, maxKeyLength, true, pageCache, result);
+
+		if (sameLeaf(lower, upper)) {
+			if (lower.leafIndex < upper.leafIndex) {
+				result.entries = countBoundarySlice(lower.leafPage, lower.leafIndex, upper.leafIndex, matcher,
+						pageCache, result);
+			}
+			return result;
+		}
+		if (comparePaths(lower.branchPath, upper.branchPath) >= 0) {
 			return result;
 		}
 
-		while (true) {
-			while (cursor.leafIndex < cursor.leafPage.numKeys) {
-				LmdbNode node = cursor.leafPage.node(cursor.leafIndex);
-				int cmpMax = LmdbKeyComparator.compare(cursor.leafPage.buffer, node.keyOffset(), node.keySize(), maxKey,
-						maxKeyLength);
-				if (cmpMax > 0) {
-					return result;
-				}
-				if (matcher == null || matches(node, cursor.leafPage.buffer, matcher)) {
-					result.entries += countNodeEntries(node, cursor.leafPage, result);
-				}
-				cursor.leafIndex++;
-			}
-
-			if (!advanceToNextLeaf(cursor, result)) {
-				return result;
-			}
+		if (matcher == null && coversWholeDatabase(lower, upper)) {
+			result.entries = db.entries();
+			return result;
 		}
+
+		List<SiblingSpan> spans = decomposeRange(lower, upper);
+		long boundaryEntries = countBoundarySlice(lower.leafPage, lower.leafIndex, lower.leafPage.numKeys,
+				matcher, pageCache, result)
+				+ countBoundarySlice(upper.leafPage, 0, upper.leafIndex, matcher, pageCache, result);
+
+		int directLeafPages = directLeafPageCount(spans);
+		if (directLeafPages <= EXACT_RANGE_LEAF_BUDGET - 2) {
+			result.entries = Math.min(db.entries(), boundaryEntries + countDirectLeafSpans(spans, matcher, pageCache,
+					result));
+			return result;
+		}
+
+		double estimate = boundaryEntries
+				+ estimateSpans(db, spans, minKey, minKeyLength, maxKey, maxKeyLength, matcher, pageCache, result);
+		long rounded = Math.round(Math.clamp(estimate, 0.0d, (double) db.entries()));
+		long minimum = boundaryEntries > 0 ? boundaryEntries : 1;
+		result.entries = Math.min(db.entries(), Math.max(minimum, rounded));
+		return result;
 	}
 
 	byte[] findValueByExactKey(LmdbDb db, byte[] key, int keyLength, RangeCountResult ioStats) throws IOException {
 		if (db.isEmpty()) {
 			return null;
 		}
-		SeekCursor cursor = seek(db, key, keyLength, ioStats);
-		if (cursor == null || cursor.leafIndex >= cursor.leafPage.numKeys) {
+		Map<Long, LmdbPage> pageCache = new HashMap<>();
+		SeekCursor cursor = seekRaw(db, key, keyLength, false, pageCache, ioStats);
+		if (cursor.leafIndex >= cursor.leafPage.numKeys) {
 			return null;
 		}
 
@@ -82,16 +106,10 @@ final class LmdbBtreeRangeCounter {
 		return value;
 	}
 
-	private SeekCursor seek(LmdbDb db, byte[] searchKey, int searchKeyLength, RangeCountResult stats)
-			throws IOException {
+	private SeekCursor seekRaw(LmdbDb db, byte[] searchKey, int searchKeyLength, boolean strictUpperBound,
+			Map<Long, LmdbPage> pageCache, RangeCountResult stats) throws IOException {
 		List<BranchFrame> branchPath = new ArrayList<>();
-		LmdbPage page = dataFile.readPage(db.rootPgno(), meta);
-		if (page.isBranch()) {
-			stats.branchPagesRead++;
-		}
-		if (page.isLeaf() || page.isLeaf2()) {
-			stats.leafPagesRead++;
-		}
+		LmdbPage page = readPage(db.rootPgno(), pageCache, stats);
 
 		while (page.isBranch()) {
 			if (page.numKeys == 0) {
@@ -110,15 +128,8 @@ final class LmdbBtreeRangeCounter {
 			if (childIndex < 0 || childIndex >= page.numKeys) {
 				throw new IOException("Corrupt branch descent index " + childIndex + " for page " + page.expectedPgno);
 			}
-			LmdbNode branchNode = page.node(childIndex);
 			branchPath.add(new BranchFrame(page, childIndex));
-			page = dataFile.readPage(branchNode.branchPgno(), meta);
-			if (page.isBranch()) {
-				stats.branchPagesRead++;
-			}
-			if (page.isLeaf() || page.isLeaf2()) {
-				stats.leafPagesRead++;
-			}
+			page = readPage(page.node(childIndex).branchPgno(), pageCache, stats);
 		}
 
 		if (!page.isLeaf() && !page.isLeaf2()) {
@@ -126,53 +137,295 @@ final class LmdbBtreeRangeCounter {
 		}
 
 		SearchResult leafSearch = findFirstGreaterOrEqual(page, searchKey, searchKeyLength, true);
-		SeekCursor cursor = new SeekCursor(page, leafSearch.index, branchPath);
-		if (cursor.leafIndex >= cursor.leafPage.numKeys && !advanceToNextLeaf(cursor, stats)) {
-			return null;
-		}
-		return cursor;
+		int leafIndex = leafSearch.index + (strictUpperBound && leafSearch.exact ? 1 : 0);
+		return new SeekCursor(page, leafIndex, branchPath);
 	}
 
-	private boolean advanceToNextLeaf(SeekCursor cursor, RangeCountResult stats) throws IOException {
-		while (!cursor.branchPath.isEmpty()) {
-			BranchFrame last = cursor.branchPath.getLast();
-			int nextChild = last.childIndex + 1;
-			if (nextChild < last.page.numKeys) {
-				last.childIndex = nextChild;
-				LmdbNode nextNode = last.page.node(nextChild);
-				LmdbPage page = dataFile.readPage(nextNode.branchPgno(), meta);
-				if (page.isBranch()) {
-					stats.branchPagesRead++;
-				}
-				if (page.isLeaf() || page.isLeaf2()) {
-					stats.leafPagesRead++;
-				}
-
-				while (page.isBranch()) {
-					if (page.numKeys == 0) {
-						throw new IOException("Corrupt branch page with zero keys: " + page.expectedPgno);
-					}
-					cursor.branchPath.add(new BranchFrame(page, 0));
-					LmdbNode firstNode = page.node(0);
-					page = dataFile.readPage(firstNode.branchPgno(), meta);
-					if (page.isBranch()) {
-						stats.branchPagesRead++;
-					}
-					if (page.isLeaf() || page.isLeaf2()) {
-						stats.leafPagesRead++;
-					}
-				}
-
-				if (!page.isLeaf() && !page.isLeaf2()) {
-					throw new IOException("Expected leaf page while advancing, found flags=" + page.flags);
-				}
-				cursor.leafPage = page;
-				cursor.leafIndex = 0;
-				return true;
-			}
-			cursor.branchPath.removeLast();
+	private List<SiblingSpan> decomposeRange(SeekCursor lower, SeekCursor upper) throws IOException {
+		List<BranchFrame> lowerPath = lower.branchPath;
+		List<BranchFrame> upperPath = upper.branchPath;
+		if (lowerPath.size() != upperPath.size()) {
+			throw new IOException("Boundary paths have different depths");
 		}
-		return false;
+
+		int divergence = -1;
+		for (int level = 0; level < lowerPath.size(); level++) {
+			BranchFrame lowerFrame = lowerPath.get(level);
+			BranchFrame upperFrame = upperPath.get(level);
+			if (lowerFrame.page.expectedPgno != upperFrame.page.expectedPgno) {
+				throw new IOException("Boundary paths diverged without a shared parent at level " + level);
+			}
+			if (lowerFrame.childIndex != upperFrame.childIndex) {
+				divergence = level;
+				break;
+			}
+		}
+		if (divergence < 0) {
+			throw new IOException("Different boundary leaves have identical branch paths");
+		}
+
+		List<SiblingSpan> spans = new ArrayList<>(lowerPath.size() * 2 - 1);
+		int lastLevel = lowerPath.size() - 1;
+		for (int level = lastLevel; level > divergence; level--) {
+			BranchFrame frame = lowerPath.get(level);
+			addSpan(spans, frame.page, frame.childIndex + 1, frame.page.numKeys, lastLevel - level);
+		}
+
+		BranchFrame sharedParent = lowerPath.get(divergence);
+		addSpan(spans, sharedParent.page, sharedParent.childIndex + 1,
+				upperPath.get(divergence).childIndex, lastLevel - divergence);
+
+		for (int level = divergence + 1; level <= lastLevel; level++) {
+			BranchFrame frame = upperPath.get(level);
+			addSpan(spans, frame.page, 0, frame.childIndex, lastLevel - level);
+		}
+		return spans;
+	}
+
+	private void addSpan(List<SiblingSpan> spans, LmdbPage parent, int fromInclusive, int toExclusive,
+			int remainingBranchLevels) {
+		if (fromInclusive < toExclusive) {
+			spans.add(new SiblingSpan(parent, fromInclusive, toExclusive, remainingBranchLevels));
+		}
+	}
+
+	private int directLeafPageCount(List<SiblingSpan> spans) {
+		int leafPages = 0;
+		for (SiblingSpan span : spans) {
+			if (span.remainingBranchLevels != 0) {
+				return Integer.MAX_VALUE;
+			}
+			leafPages += span.width();
+			if (leafPages > EXACT_RANGE_LEAF_BUDGET - 2) {
+				return leafPages;
+			}
+		}
+		return leafPages;
+	}
+
+	private long countDirectLeafSpans(List<SiblingSpan> spans, GroupMatcher matcher,
+			Map<Long, LmdbPage> pageCache, RangeCountResult stats) throws IOException {
+		long entries = 0;
+		for (SiblingSpan span : spans) {
+			for (int childIndex = span.fromInclusive; childIndex < span.toExclusive; childIndex++) {
+				LmdbPage leaf = readPage(span.parent.node(childIndex).branchPgno(), pageCache, stats);
+				ensureLeaf(leaf);
+				entries += countBoundarySlice(leaf, 0, leaf.numKeys, matcher, pageCache, stats);
+			}
+		}
+		return entries;
+	}
+
+	private double estimateSpans(LmdbDb db, List<SiblingSpan> spans, byte[] minKey, int minKeyLength,
+			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, Map<Long, LmdbPage> pageCache,
+			RangeCountResult stats) throws IOException {
+		int sampleLeafBudget = matcher == null ? SAMPLE_LEAF_BUDGET : RESIDUAL_SAMPLE_LEAF_BUDGET;
+		int[] probesPerSpan = allocateProbes(db, spans, sampleLeafBudget);
+		long baseSeed = samplingSeed(db, minKey, minKeyLength, maxKey, maxKeyLength);
+		double estimate = 0.0d;
+
+		for (int spanIndex = 0; spanIndex < spans.size(); spanIndex++) {
+			SiblingSpan span = spans.get(spanIndex);
+			int probeCount = probesPerSpan[spanIndex];
+			int bandCount = Math.min(probeCount, span.width());
+			int probesPerBand = probeCount / bandCount;
+			int bandsWithExtraProbe = probeCount % bandCount;
+
+			for (int bandIndex = 0; bandIndex < bandCount; bandIndex++) {
+				int bandStart = span.fromInclusive + bandIndex * span.width() / bandCount;
+				int bandEnd = span.fromInclusive + (bandIndex + 1) * span.width() / bandCount;
+				int bandProbes = probesPerBand + (bandIndex < bandsWithExtraProbe ? 1 : 0);
+				double bandEstimate = 0.0d;
+				for (int probe = 0; probe < bandProbes; probe++) {
+					long seed = probeSeed(baseSeed, span, spanIndex, bandStart, bandEnd, bandIndex, probe);
+					bandEstimate += sampleBand(span, bandStart, bandEnd, seed, matcher, pageCache, stats);
+				}
+				estimate += bandEstimate / bandProbes;
+			}
+		}
+		return estimate;
+	}
+
+	private int[] allocateProbes(LmdbDb db, List<SiblingSpan> spans, int totalBudget) {
+		int spanCount = spans.size();
+		totalBudget = Math.max(totalBudget, spanCount);
+		int[] probes = new int[spanCount];
+		double[] logSizes = new double[spanCount];
+		double[] remainders = new double[spanCount];
+		double averageFanout = globalAverageFanout(db);
+		double maxLogSize = Double.NEGATIVE_INFINITY;
+
+		for (int span = 0; span < spanCount; span++) {
+			probes[span] = 1;
+			SiblingSpan siblingSpan = spans.get(span);
+			logSizes[span] = Math.log(siblingSpan.width())
+					+ siblingSpan.remainingBranchLevels * Math.log(averageFanout);
+			maxLogSize = Math.max(maxLogSize, logSizes[span]);
+		}
+
+		int remaining = totalBudget - spanCount;
+		if (remaining == 0) {
+			return probes;
+		}
+
+		double weightSum = 0.0d;
+		for (double logSize : logSizes) {
+			weightSum += Math.exp(logSize - maxLogSize);
+		}
+		int allocated = 0;
+		for (int span = 0; span < spanCount; span++) {
+			double share = remaining * Math.exp(logSizes[span] - maxLogSize) / weightSum;
+			int wholeProbes = (int) Math.floor(share);
+			probes[span] += wholeProbes;
+			allocated += wholeProbes;
+			remainders[span] = share - wholeProbes;
+		}
+
+		for (int extra = allocated; extra < remaining; extra++) {
+			int selected = 0;
+			for (int span = 1; span < spanCount; span++) {
+				if (remainders[span] > remainders[selected]) {
+					selected = span;
+				}
+			}
+			probes[selected]++;
+			remainders[selected] = -1.0d;
+		}
+		return probes;
+	}
+
+	private double globalAverageFanout(LmdbDb db) {
+		if (db.branchPages() <= 0) {
+			return 1.0d;
+		}
+		double childPages = (double) db.branchPages() + db.leafPages() - 1.0d;
+		return Math.max(1.0d, childPages / db.branchPages());
+	}
+
+	private double sampleBand(SiblingSpan span, int bandStart, int bandEnd, long seed, GroupMatcher matcher,
+			Map<Long, LmdbPage> pageCache, RangeCountResult stats) throws IOException {
+		int childIndex = bandStart + deterministicIndex(seed, bandEnd - bandStart);
+		double weight = bandEnd - bandStart;
+		LmdbPage page = readPage(span.parent.node(childIndex).branchPgno(), pageCache, stats);
+		long randomState = seed;
+
+		while (page.isBranch()) {
+			if (page.numKeys == 0) {
+				throw new IOException("Corrupt branch page with zero keys: " + page.expectedPgno);
+			}
+			weight *= page.numKeys;
+			randomState += MIX_GAMMA;
+			int nextChild = deterministicIndex(randomState, page.numKeys);
+			page = readPage(page.node(nextChild).branchPgno(), pageCache, stats);
+		}
+
+		ensureLeaf(page);
+		return weight * countMatchingLeafEntries(page, matcher);
+	}
+
+	private long countMatchingLeafEntries(LmdbPage leaf, GroupMatcher matcher) throws IOException {
+		if (matcher == null) {
+			return leaf.numKeys;
+		}
+
+		long matchingEntries = 0;
+		for (int index = 0; index < leaf.numKeys; index++) {
+			if (matches(leaf.node(index), leaf.buffer, matcher)) {
+				matchingEntries++;
+			}
+		}
+		return matchingEntries;
+	}
+
+	private long samplingSeed(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength) {
+		long seed = mix64(SAMPLER_VERSION ^ meta.txnId());
+		seed = mix64(seed ^ db.rootPgno());
+		seed = mix64(seed ^ db.entries());
+		seed = mix64(seed ^ db.leafPages());
+		seed = hashBytes(seed, minKey, minKeyLength);
+		return hashBytes(seed, maxKey, maxKeyLength);
+	}
+
+	private long probeSeed(long baseSeed, SiblingSpan span, int spanIndex, int bandStart, int bandEnd,
+			int bandIndex, int probeOrdinal) {
+		long seed = mix64(baseSeed ^ span.parent.expectedPgno);
+		seed = mix64(seed ^ ((long) span.fromInclusive << 32) ^ span.toExclusive);
+		seed = mix64(seed ^ ((long) span.remainingBranchLevels << 32) ^ spanIndex);
+		seed = mix64(seed ^ ((long) bandStart << 32) ^ bandEnd);
+		return mix64(seed ^ ((long) bandIndex << 32) ^ probeOrdinal);
+	}
+
+	private long hashBytes(long seed, byte[] bytes, int length) {
+		for (int index = 0; index < length; index++) {
+			seed = mix64(seed ^ Byte.toUnsignedLong(bytes[index]));
+		}
+		return mix64(seed ^ length);
+	}
+
+	private int deterministicIndex(long seed, int bound) {
+		if (bound <= 0) {
+			throw new IllegalArgumentException("Bound must be positive: " + bound);
+		}
+		long state = seed;
+		int candidate = (int) (mix64(state) >>> 33);
+		int mask = bound - 1;
+		if ((bound & mask) == 0) {
+			return (int) ((bound * (long) candidate) >> 31);
+		}
+
+		int result = candidate % bound;
+		while (candidate - result + mask < 0) {
+			state += MIX_GAMMA;
+			candidate = (int) (mix64(state) >>> 33);
+			result = candidate % bound;
+		}
+		return result;
+	}
+
+	private long mix64(long value) {
+		value = (value ^ (value >>> 30)) * 0xbf58476d1ce4e5b9L;
+		value = (value ^ (value >>> 27)) * 0x94d049bb133111ebL;
+		return value ^ (value >>> 31);
+	}
+
+	private int comparePaths(List<BranchFrame> left, List<BranchFrame> right) throws IOException {
+		if (left.size() != right.size()) {
+			throw new IOException("Boundary paths have different depths");
+		}
+		for (int level = 0; level < left.size(); level++) {
+			int comparison = Integer.compare(left.get(level).childIndex, right.get(level).childIndex);
+			if (comparison != 0) {
+				return comparison;
+			}
+		}
+		return 0;
+	}
+
+	private boolean coversWholeDatabase(SeekCursor lower, SeekCursor upper) {
+		if (lower.leafIndex != 0 || upper.leafIndex != upper.leafPage.numKeys) {
+			return false;
+		}
+		for (BranchFrame frame : lower.branchPath) {
+			if (frame.childIndex != 0) {
+				return false;
+			}
+		}
+		for (BranchFrame frame : upper.branchPath) {
+			if (frame.childIndex != frame.page.numKeys - 1) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private boolean sameLeaf(SeekCursor lower, SeekCursor upper) {
+		return lower.leafPage.expectedPgno == upper.leafPage.expectedPgno;
+	}
+
+	private void ensureLeaf(LmdbPage page) throws IOException {
+		if (!page.isLeaf() && !page.isLeaf2()) {
+			throw new IOException("Expected leaf page, found flags=" + page.flags + " on page " + page.expectedPgno);
+		}
 	}
 
 	private SearchResult findFirstGreaterOrEqual(LmdbPage page, byte[] key, int keyLength, boolean leafSearch)
@@ -181,37 +434,34 @@ final class LmdbBtreeRangeCounter {
 			return new SearchResult(0, false);
 		}
 
-		int low;
+		int low = leafSearch || page.isLeaf() ? 0 : 1;
 		int high = page.numKeys - 1;
-		if (leafSearch || page.isLeaf()) {
-			low = 0;
-		} else {
-			low = 1;
-		}
-		int index = 0;
-		int rc = -1;
-
 		while (low <= high) {
-			index = (low + high) >>> 1;
+			int index = (low + high) >>> 1;
 			LmdbNode node = page.node(index);
-			rc = LmdbKeyComparator.compare(key, keyLength, page.buffer, node.keyOffset(), node.keySize());
-			if (rc == 0) {
+			int comparison = LmdbKeyComparator.compare(key, keyLength, page.buffer, node.keyOffset(), node.keySize());
+			if (comparison == 0) {
 				return new SearchResult(index, true);
 			}
-			if (rc > 0) {
+			if (comparison > 0) {
 				low = index + 1;
 			} else {
 				high = index - 1;
 			}
 		}
+		return new SearchResult(low, false);
+	}
 
-		if (rc > 0) {
-			index++;
+	private long countBoundarySlice(LmdbPage page, int fromInclusive, int toExclusive, GroupMatcher matcher,
+			Map<Long, LmdbPage> pageCache, RangeCountResult stats) throws IOException {
+		long entries = 0;
+		for (int index = fromInclusive; index < toExclusive; index++) {
+			LmdbNode node = page.node(index);
+			if (matcher == null || matches(node, page.buffer, matcher)) {
+				entries += countNodeEntries(node, page, pageCache, stats);
+			}
 		}
-		if (low > high) {
-			index = low;
-		}
-		return new SearchResult(index, false);
+		return entries;
 	}
 
 	private boolean matches(LmdbNode node, ByteBuffer pageBuffer, GroupMatcher matcher) {
@@ -224,21 +474,19 @@ final class LmdbBtreeRangeCounter {
 		return matcher.matches(keyView);
 	}
 
-	private long countNodeEntries(LmdbNode node, LmdbPage page, RangeCountResult stats) throws IOException {
+	private long countNodeEntries(LmdbNode node, LmdbPage page, Map<Long, LmdbPage> pageCache,
+			RangeCountResult stats) throws IOException {
 		if ((node.nodeFlags() & LmdbFormat.F_SUBDATA) != 0 && node.valueSize() >= LmdbFormat.META_DB_SIZE) {
-			ByteBuffer dup = page.buffer.duplicate();
-			dup.order(page.buffer.order());
-			dup.position(node.valueOffset());
-			LmdbDb subDb = LmdbDb.parse(dup, node.valueOffset());
-			return subDb.entries();
+			ByteBuffer duplicate = page.buffer.duplicate();
+			duplicate.order(page.buffer.order());
+			duplicate.position(node.valueOffset());
+			return LmdbDb.parse(duplicate, node.valueOffset()).entries();
 		}
 		if ((node.nodeFlags() & LmdbFormat.F_DUPDATA) != 0 && node.valueSize() >= LmdbFormat.PAGE_HEADER_SIZE) {
 			return countSubPageEntries(page.buffer, node.valueOffset(), node.valueSize());
 		}
 		if ((node.nodeFlags() & LmdbFormat.F_BIGDATA) != 0 && node.valueSize() >= Long.BYTES) {
-			long overflowPgno = page.buffer.getLong(node.valueOffset());
-			LmdbPage overflowPage = dataFile.readPage(overflowPgno, meta);
-			stats.overflowPagesRead += Math.max(overflowPage.overflowPages, 1);
+			readPage(page.buffer.getLong(node.valueOffset()), pageCache, stats);
 		}
 		return 1;
 	}
@@ -260,29 +508,38 @@ final class LmdbBtreeRangeCounter {
 		return Math.max(LmdbFormat.numKeys(lower), 0);
 	}
 
+	private LmdbPage readPage(long pageNumber, Map<Long, LmdbPage> pageCache, RangeCountResult stats)
+			throws IOException {
+		LmdbPage existing = pageCache.get(pageNumber);
+		if (existing != null) {
+			return existing;
+		}
+
+		LmdbPage loaded = dataFile.readPage(pageNumber, meta);
+		pageCache.put(pageNumber, loaded);
+		if (loaded.isBranch()) {
+			stats.branchPagesRead++;
+		} else if (loaded.isLeaf() || loaded.isLeaf2()) {
+			stats.leafPagesRead++;
+		} else if (loaded.isOverflow()) {
+			stats.overflowPagesRead += Math.max(loaded.overflowPages, 1);
+		}
+		return loaded;
+	}
+
 	private record SearchResult(int index, boolean exact) {
 	}
 
-	private static final class BranchFrame {
-		final LmdbPage page;
-		int childIndex;
-
-		BranchFrame(LmdbPage page, int childIndex) {
-			this.page = page;
-			this.childIndex = childIndex;
-		}
+	private record BranchFrame(LmdbPage page, int childIndex) {
 	}
 
-	private static final class SeekCursor {
-		LmdbPage leafPage;
-		int leafIndex;
-		final List<BranchFrame> branchPath;
-
-		SeekCursor(LmdbPage leafPage, int leafIndex, List<BranchFrame> branchPath) {
-			this.leafPage = leafPage;
-			this.leafIndex = leafIndex;
-			this.branchPath = branchPath;
-		}
+	private record SeekCursor(LmdbPage leafPage, int leafIndex, List<BranchFrame> branchPath) {
 	}
 
+	private record SiblingSpan(LmdbPage parent, int fromInclusive, int toExclusive, int remainingBranchLevels) {
+
+		int width() {
+			return toExclusive - fromInclusive;
+		}
+	}
 }
