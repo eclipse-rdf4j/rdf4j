@@ -479,6 +479,11 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			}
 
 			@Override
+			public WildcardAdjacency wildcardAdjacency(boolean bySubject) throws IOException {
+				return inner.wildcardAdjacency(bySubject);
+			}
+
+			@Override
 			public void close() {
 				inner.close();
 			}

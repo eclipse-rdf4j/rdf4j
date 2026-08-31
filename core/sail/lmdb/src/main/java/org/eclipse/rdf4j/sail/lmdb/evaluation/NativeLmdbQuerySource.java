@@ -387,6 +387,17 @@ public interface NativeLmdbQuerySource {
 		}
 
 		/**
+		 * Returns one exact, revision-valid wildcard-predicate view for this direction, or {@code null} when the
+		 * predicate domain and every fixed-predicate plane cannot be served from the same retained snapshot. The view
+		 * owns one mutable predicate-plane cursor: callers bind predicate ordinals sequentially and must consume or
+		 * copy every returned run before binding another ordinal. This keeps wildcard batch execution at one cursor per
+		 * worker instead of one adjacency adapter per predicate per input batch.
+		 */
+		default WildcardAdjacency wildcardAdjacency(boolean bySubject) throws IOException {
+			return null;
+		}
+
+		/**
 		 * Observer-aware form of {@link #adjacency(long, boolean)}. Implementations with richer eligibility state
 		 * should override this method and publish the exact reason the complete view was served or declined.
 		 */
@@ -611,6 +622,72 @@ public interface NativeLmdbQuerySource {
 		default double meanPredicateDegree() {
 			return Double.NaN;
 		}
+	}
+
+	/**
+	 * Exact predicate-domain view over the fixed-predicate SOC/OSC planes of one snapshot. Predicate ordinals are
+	 * stable for the lifetime of the view and enumerate an unsigned-ascending snapshot superset; a bound plane with no
+	 * visible roots reports a zero key count and can be retired immediately.
+	 */
+	interface WildcardAdjacency extends RunView, AutoCloseable {
+
+		int predicateCount();
+
+		long predicateAt(int predicateOrdinal);
+
+		/**
+		 * Unsigned binary lookup in the retained predicate candidate domain, or {@code -1} when absent. Binding the
+		 * returned ordinal applies the exact snapshot visibility rules; a candidate may therefore bind to an empty plane.
+		 */
+		default int predicateOrdinal(long predicateId) {
+			int low = 0;
+			int high = predicateCount() - 1;
+			while (low <= high) {
+				int middle = low + (high - low >>> 1);
+				int comparison = Long.compareUnsigned(predicateAt(middle), predicateId);
+				if (comparison < 0) {
+					low = middle + 1;
+				} else if (comparison > 0) {
+					high = middle - 1;
+				} else {
+					return middle;
+				}
+			}
+			return -1;
+		}
+
+		/** Binds the reusable plane cursor to {@code predicateOrdinal}. */
+		void bind(int predicateOrdinal);
+
+		int boundPredicateOrdinal();
+
+		long keyCount();
+
+		/** Largest unsigned root in the bound plane, or zero when the visible plane is empty. */
+		long maximumKey();
+
+		long keyAt(long keyOrdinal);
+
+		int findBatch(long[] keys, int keyOffset, int count, long[] runHandles, int runOffset);
+
+		/**
+		 * Resolves the batch and returns the first matching lane relative to {@code keyOffset}, or {@code -1}. Positive
+		 * handles remain in {@code runHandles} for consumers that must inspect a context or opposite endpoint.
+		 */
+		default int anyBatch(long[] keys, int keyOffset, int count, long[] runHandles, int runOffset) {
+			findBatch(keys, keyOffset, count, runHandles, runOffset);
+			for (int lane = 0; lane < count; lane++) {
+				if (runHandles[runOffset + lane] > 0L) {
+					return lane;
+				}
+			}
+			return -1;
+		}
+
+		NativeAdjacency.KeyRunCursor openKeyRunCursor();
+
+		@Override
+		void close();
 	}
 
 	/**

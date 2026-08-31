@@ -176,6 +176,11 @@ final class LmdbFusedSipFactorizedRuntime {
 			}
 		}
 
+		/** Query-ledger bytes not currently claimed; advisory because sibling workers may claim concurrently. */
+		long remainingBytes() {
+			return noop ? Long.MAX_VALUE : Math.max(0L, maximumBytes - shared.usedBytes.get());
+		}
+
 		void release(long bytes) {
 			if (!noop && bytes > 0) {
 				shared.usedBytes.addAndGet(-bytes);

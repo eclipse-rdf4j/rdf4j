@@ -105,6 +105,27 @@ final class LeftJoinPlan implements SlotPlan {
 	}
 
 	@Override
+	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		if (lexicalSharedSlots != null || lexicalProblemSlots != null) {
+			return null;
+		}
+		if (right instanceof PatternPlan pattern) {
+			BatchCursor wildcard = LmdbWildcardPredicateBatch.tryOpenOptional(left, pattern, row, capacity);
+			if (wildcard != null) {
+				return wildcard;
+			}
+		}
+		BatchCursor batch = left.openBatch(row, capacity);
+		if (batch == null) {
+			return null;
+		}
+		RowCursor rows = LmdbWildcardPredicateBatch.asRows(batch, row, capacity);
+		return rows == null ? null
+				: new RowBatchCursor(new LeftJoinCursor(rows, right, row, left.producedMask(), Double.NaN, Double.NaN,
+						Double.NaN), row);
+	}
+
+	@Override
 	public long producedMask() {
 		return producedMask;
 	}
@@ -402,7 +423,7 @@ final class LexicalLeftJoinCursor implements RowCursor {
 }
 
 @Experimental
-final class LeftJoinCursor implements RowCursor {
+final class LeftJoinCursor implements FactorizedRowCursor {
 	final RowCursor leftCursor;
 	final SlotPlan right;
 	final RowState row;
@@ -436,6 +457,8 @@ final class LeftJoinCursor implements RowCursor {
 	/** M-F1: path-under-OPTIONAL memo — same lifecycle and eligibility as JoinCursor's. */
 	PathResultMemo pathMemo;
 	boolean pathMemoInitialized;
+	long leftMultiplicity = 1L;
+	long currentMultiplicity = 1L;
 
 	LeftJoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask,
 			double expectedProbes, double perProbeRows, double sweepEstimate) {
@@ -462,6 +485,7 @@ final class LeftJoinCursor implements RowCursor {
 			if (patternRightActive) {
 				if (nextPatternRight()) {
 					matchedCurrentLeft = true;
+					currentMultiplicity = leftMultiplicity;
 					if (payloadProbe != null) {
 						payloadProbe.recordDirectMatch();
 					}
@@ -480,6 +504,8 @@ final class LeftJoinCursor implements RowCursor {
 			} else if (rightCursor != null) {
 				if (rightCursor.next()) {
 					matchedCurrentLeft = true;
+					currentMultiplicity = Math.multiplyExact(leftMultiplicity,
+							rightCursor instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L);
 					if (!rightCursorFromPayload && payloadProbe != null) {
 						payloadProbe.recordDirectMatch();
 					}
@@ -498,11 +524,15 @@ final class LeftJoinCursor implements RowCursor {
 			}
 			if (nullExtendedPending) {
 				nullExtendedPending = false;
+				currentMultiplicity = leftMultiplicity;
 				return true;
 			}
 			if (!leftCursor.next()) {
 				return false;
 			}
+			leftMultiplicity = leftCursor instanceof FactorizedRowCursor factorized
+					? factorized.multiplicity()
+					: 1L;
 			matchedCurrentLeft = false;
 			rightCursor = openRight();
 			if (replaySlots != null && !rightMaterialized && !replayDisabled) {
@@ -528,6 +558,7 @@ final class LeftJoinCursor implements RowCursor {
 		}
 		if (nullExtendedPending) {
 			nullExtendedPending = false;
+			currentMultiplicity = leftMultiplicity;
 			return true;
 		}
 		return replayNext();
@@ -665,21 +696,31 @@ final class LeftJoinCursor implements RowCursor {
 					if (bindReplay(rowIndex)) {
 						replayMatchedCurrentLeft = true;
 						replayMark = mark;
+						currentMultiplicity = leftMultiplicity;
 						return true;
 					}
 					row.rollback(mark);
 				}
 				replayIndex = -1;
 				if (!replayMatchedCurrentLeft) {
+					currentMultiplicity = leftMultiplicity;
 					return true;
 				}
 			}
 			if (!leftCursor.next()) {
 				return false;
 			}
+			leftMultiplicity = leftCursor instanceof FactorizedRowCursor factorized
+					? factorized.multiplicity()
+					: 1L;
 			replayMatchedCurrentLeft = false;
 			replayIndex = 0;
 		}
+	}
+
+	@Override
+	public long multiplicity() {
+		return currentMultiplicity;
 	}
 
 	boolean bindReplay(int rowIndex) {

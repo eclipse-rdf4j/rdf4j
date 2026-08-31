@@ -83,7 +83,11 @@ final class MultiJoinPlan implements SlotPlan {
 	}
 
 	@Override
-	public BatchCursor openBatch(RowState row, int capacity) {
+	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		BatchCursor wildcard = LmdbWildcardPredicateBatch.tryOpenPayload(this, row, capacity);
+		if (wildcard != null) {
+			return wildcard;
+		}
 		BatchCursor mergeJoin = LmdbNativeMergeJoin.tryOpen(this, row, capacity);
 		if (mergeJoin != null) {
 			return mergeJoin;
@@ -705,6 +709,24 @@ final class LateralPlan implements SlotPlan {
 	}
 
 	@Override
+	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		if (right instanceof PatternPlan pattern) {
+			BatchCursor wildcard = LmdbWildcardPredicateBatch.tryOpenLateral(left, pattern, rightInputMask, row,
+					capacity);
+			if (wildcard != null) {
+				return wildcard;
+			}
+		}
+		BatchCursor batch = left.openBatch(row, capacity);
+		if (batch == null) {
+			return null;
+		}
+		RowCursor rows = LmdbWildcardPredicateBatch.asRows(batch, row, capacity);
+		return rows == null ? null
+				: new RowBatchCursor(new LateralCursor(rows, right, rightInputMask | row.boundMask(), row), row);
+	}
+
+	@Override
 	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
 		return LmdbNativeWork.probeChain(left, right, row, boundMask);
 	}
@@ -732,7 +754,7 @@ final class LateralPlan implements SlotPlan {
  * are restored before each merged row is exposed and before control returns to the outer plan.
  */
 @Experimental
-final class LateralCursor implements RowCursor {
+final class LateralCursor implements FactorizedRowCursor {
 	private final RowCursor left;
 	private final SlotPlan rightPlan;
 	private final long visibleInputMask;
@@ -859,6 +881,13 @@ final class LateralCursor implements RowCursor {
 			throw error;
 		}
 	}
+
+	@Override
+	public long multiplicity() {
+		long leftMultiplicity = left instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L;
+		long rightMultiplicity = right instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L;
+		return Math.multiplyExact(leftMultiplicity, rightMultiplicity);
+	}
 }
 
 @Experimental
@@ -908,9 +937,25 @@ final class JoinPlan implements SlotPlan {
 
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		if (right instanceof PatternPlan pattern) {
+			BatchCursor wildcard = LmdbWildcardPredicateBatch.tryOpenPayload(left, pattern, row, capacity);
+			if (wildcard != null) {
+				return wildcard;
+			}
+		}
 		// Bushy runtime build (three-tier parity ExecPlan M6): a pattern beside a sub-plan whose sweep is
 		// input-independent drains the sub-plan once into the primitive hash table instead of nested-looping it.
-		return LmdbNativeHashJoin.tryOpenBushy(this, row, capacity);
+		BatchCursor bushy = LmdbNativeHashJoin.tryOpenBushy(this, row, capacity);
+		if (bushy != null) {
+			return bushy;
+		}
+		BatchCursor leftBatch = left.openBatch(row, capacity);
+		if (leftBatch == null) {
+			return null;
+		}
+		RowCursor leftRows = LmdbWildcardPredicateBatch.asRows(leftBatch, row, capacity);
+		return leftRows == null ? null
+				: new RowBatchCursor(new JoinCursor(leftRows, right, row, left.producedMask()), row);
 	}
 
 	RowCursor open(RowState row, PathTargetSet targets, boolean ownsTargets) throws IOException {
@@ -957,7 +1002,7 @@ final class JoinPlan implements SlotPlan {
 }
 
 @Experimental
-final class JoinCursor implements RowCursor {
+final class JoinCursor implements FactorizedRowCursor {
 	/** Abandon materialization beyond this many rows and fall back to re-opening the right side per left row. */
 	static final int MAX_MATERIALIZED_ROWS = 1 << 16;
 	static final int SCALAR_PATTERN_ROWS = 2;
@@ -1027,6 +1072,17 @@ final class JoinCursor implements RowCursor {
 				? RightMemoProbe.tryCreateSweepOnly(right, leftProducedMask, readMask, row, expectedProbes,
 						perProbeRows, sweepEstimate)
 				: null;
+	}
+
+	@Override
+	public long multiplicity() {
+		long leftMultiplicity = leftCursor instanceof FactorizedRowCursor factorized
+				? factorized.multiplicity()
+				: 1L;
+		long rightMultiplicity = rightCursor instanceof FactorizedRowCursor factorized
+				? factorized.multiplicity()
+				: 1L;
+		return Math.multiplyExact(leftMultiplicity, rightMultiplicity);
 	}
 
 	@Override

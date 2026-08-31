@@ -74,6 +74,8 @@ final class LmdbNativeStrategyPreference {
 			LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
 			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
 			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
+			// Predicate-plane batch merge, including witness-only and weighted aggregate row-count reducers.
+			LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED,
 			// Worst-case-optimal join: bounded below any pairwise plan on cyclic shapes.
 			LmdbNativeAttemptMetrics.PATH_WCOJ,
 			// Packed arbitrary f-trees remove sibling Cartesian products while retaining vectorized execution.
@@ -97,6 +99,7 @@ final class LmdbNativeStrategyPreference {
 			LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL,
 			LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS,
 			// Set-at-a-time execution over the same row count.
+			LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_BATCH,
 			LmdbNativeAttemptMetrics.PATH_BATCH,
 			LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION,
 			LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES,

@@ -66,16 +66,16 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	private final long lifetimeId;
 	private final int applicableGenerationCount;
 	private final boolean baseOnly;
-	private final boolean baseAbsent;
-	private final long predicate;
-	private final long basePredicateOrdinal;
+	private boolean baseAbsent;
+	private long predicate;
+	private long basePredicateOrdinal;
 	private final int plane;
-	private final ImmutablePagedQuadCsfIndex.KeyDomain baseKeys;
+	private ImmutablePagedQuadCsfIndex.KeyDomain baseKeys;
 	/** Index 0 is the base catalog; index i+1 is generation i's catalog of the retained state. */
 	private final LmdbAdjacencyArenaCatalog[] sources;
 	private final ContextCatalog contexts;
 	/** CSF base eligible for batch/frontier lookup; null only when the predicate is absent from the base. */
-	private final ImmutablePagedQuadCsfIndex baseCsf;
+	private ImmutablePagedQuadCsfIndex baseCsf;
 	/** Store-owned executor; expensive shared verification/decode never runs on the query thread. */
 	private final Executor adaptiveExecutor;
 	/** Allocated only by a genuine batch/frontier request; scalar probes retain the page-local parent path. */
@@ -139,15 +139,29 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		this.lifetimeId = view.lifetimeId();
 		this.applicableGenerationCount = applicableGenerationCount(overlays, snapshotRevision);
 		this.baseOnly = applicableGenerationCount == 0;
-		this.baseAbsent = basePredicateOrdinal < 0;
-		this.predicate = predicate;
-		this.basePredicateOrdinal = basePredicateOrdinal;
 		this.plane = plane;
-		this.baseKeys = base.keyDomain(basePredicateOrdinal, plane);
 		this.sources = sources;
 		this.contexts = contexts;
-		this.baseCsf = baseAbsent ? null : base.csfBase();
 		this.adaptiveExecutor = Objects.requireNonNull(adaptiveExecutor, "adaptiveExecutor");
+		bindPredicateState(predicate, basePredicateOrdinal);
+	}
+
+	/** Rebinds the worker-confined adapter to another predicate in the same retained snapshot and direction. */
+	void rebind(long newPredicate, long newBasePredicateOrdinal) {
+		ensureOpen();
+		if (predicate == newPredicate && basePredicateOrdinal == newBasePredicateOrdinal) {
+			return;
+		}
+		releasePredicateState();
+		bindPredicateState(newPredicate, newBasePredicateOrdinal);
+	}
+
+	private void bindPredicateState(long newPredicate, long newBasePredicateOrdinal) {
+		predicate = newPredicate;
+		basePredicateOrdinal = newBasePredicateOrdinal;
+		baseAbsent = newBasePredicateOrdinal < 0L;
+		baseKeys = base.keyDomain(newBasePredicateOrdinal, plane);
+		baseCsf = baseAbsent ? null : base.csfBase();
 	}
 
 	private static int applicableGenerationCount(LmdbAdjacencyOverlaySet overlays, long snapshotRevision) {
@@ -332,37 +346,45 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	@Override
 	public void close() {
 		if (!closed) {
+			releasePredicateState();
 			closed = true;
-			long probes = observedBaseProbes;
-			observedBaseProbes = 0L;
-			if (probes >= MIN_SHARED_OBSERVATION && baseOnly && baseCsf != null) {
-				baseCsf.sharedPartitionLookup(basePredicateOrdinal, plane)
-						.observeQuery(probes, lifetimeId, adaptiveExecutor);
-			}
-			ImmutablePagedQuadCsfIndex.PartitionLookup lookup = basePartitionLookup;
-			basePartitionLookup = null;
-			if (lookup != null) {
-				lookup.close();
-			}
-			searchContext.close();
-			memoValid = false;
-			domainChangeKeys = null;
-			domainChangeRuns = null;
-			domainCountDeltaPrefix = null;
 			neighborBuf = null;
 			contextBuf = null;
-			// disarm the resolve cache so every post-close read takes the slow path and hits ensureOpen()
-			// instead of NPE-ing on a nulled buffer or touching a released arena (gap-analysis S11)
-			cachedHandle = Long.MIN_VALUE;
-			cachedSize = -1;
-			cachedCount = -1;
-			neighborsMaterialized = false;
-			contextsMaterialized = false;
-			neighborWindowStart = -1;
-			neighborWindowCount = 0;
-			contextWindowStart = -1;
-			contextWindowCount = 0;
 		}
+	}
+
+	private void releasePredicateState() {
+		long probes = observedBaseProbes;
+		observedBaseProbes = 0L;
+		if (probes >= MIN_SHARED_OBSERVATION && baseOnly && baseCsf != null) {
+			baseCsf.sharedPartitionLookup(basePredicateOrdinal, plane)
+					.observeQuery(probes, lifetimeId, adaptiveExecutor);
+		}
+		ImmutablePagedQuadCsfIndex.PartitionLookup lookup = basePartitionLookup;
+		basePartitionLookup = null;
+		if (lookup != null) {
+			lookup.close();
+		}
+		searchContext.close();
+		memoValid = false;
+		domainChangeKeys = null;
+		domainChangeRuns = null;
+		domainCountDeltaPrefix = null;
+		domainKeyCount = 0L;
+		enumeratedOrdinal = -1L;
+		enumerationBaseOrdinal = 0L;
+		enumerationChangeIndex = 0;
+		orderedDomainRowCursor = null;
+		// Disarm the resolve cache before another predicate is bound or close releases the buffers.
+		cachedHandle = Long.MIN_VALUE;
+		cachedSize = -1L;
+		cachedCount = -1;
+		neighborsMaterialized = false;
+		contextsMaterialized = false;
+		neighborWindowStart = -1L;
+		neighborWindowCount = 0;
+		contextWindowStart = -1L;
+		contextWindowCount = 0;
 	}
 
 	/** Links this newly-created view into one probe-owned intrusive list and returns the new list head. */

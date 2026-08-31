@@ -130,6 +130,17 @@ final class EntryBindingCompatibilityPlan implements SlotPlan {
 	}
 
 	@Override
+	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		BatchCursor batch = arg.openBatch(row, capacity);
+		if (batch == null) {
+			return null;
+		}
+		RowCursor rows = LmdbWildcardPredicateBatch.asRows(batch, row, capacity);
+		return rows == null ? null
+				: new RowBatchCursor(new EntryBindingCompatibilityCursor(rows, row, slots, ids), row);
+	}
+
+	@Override
 	public long producedMask() {
 		return arg.producedMask() | restoredMask;
 	}
@@ -151,7 +162,7 @@ final class EntryBindingCompatibilityPlan implements SlotPlan {
 }
 
 @Experimental
-final class EntryBindingCompatibilityCursor implements RowCursor {
+final class EntryBindingCompatibilityCursor implements FactorizedRowCursor {
 	final RowCursor arg;
 	final RowState row;
 	final int[] slots;
@@ -203,6 +214,11 @@ final class EntryBindingCompatibilityCursor implements RowCursor {
 		} finally {
 			arg.close();
 		}
+	}
+
+	@Override
+	public long multiplicity() {
+		return arg instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L;
 	}
 
 	private void releaseRestoredBindings() {

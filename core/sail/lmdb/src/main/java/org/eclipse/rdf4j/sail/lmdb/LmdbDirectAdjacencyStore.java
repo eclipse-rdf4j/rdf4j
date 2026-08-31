@@ -3525,6 +3525,28 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				state.contextCatalog(), plane, this::onNodePredicateInconsistency);
 	}
 
+	/** Binds the projection-independent predicate domain and its reusable fixed-plane cursor. */
+	NativeLmdbQuerySource.WildcardAdjacency bindWildcardAdjacency(LmdbAdjacencyReadView view, boolean bySubject,
+			boolean explicit, AdjacencyAccessObserver observer) {
+		if (!exactFullSnapshot(view) || !view.state().base().coverage().isFull()) {
+			observeWildcardPredicate(observer, false, "WILDCARD_ADJACENCY_REQUIRES_EXACT_FULL_SNAPSHOT", bySubject);
+			return null;
+		}
+		metrics.recordHit();
+		if (LmdbRuntimeProperties.hotCountersEnabled()) {
+			KERNEL_VIEWS_SERVED.incrementAndGet();
+		}
+		observeWildcardPredicate(observer, true, "WILDCARD_ADJACENCY_VIEW", bySubject);
+		return new LmdbDirectWildcardAdjacency(view, plane(bySubject, explicit), this::scheduleAdaptiveAcceleration);
+	}
+
+	private void observeWildcardPredicate(AdjacencyAccessObserver observer, boolean used, String reason,
+			boolean bySubject) {
+		observe(observer, used, reason, bySubject ? StatementOrder.S : StatementOrder.O,
+				NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID,
+				NativeLmdbQuerySource.UNKNOWN_ID);
+	}
+
 	/** The stable reason a variable-predicate view cannot be bound, or {@code null} when it can. */
 	private String variablePredicateDeclineReason(LmdbAdjacencyReadView view, int plane, boolean needsProjection) {
 		if (view == null || !view.servesSnapshot() || closed) {

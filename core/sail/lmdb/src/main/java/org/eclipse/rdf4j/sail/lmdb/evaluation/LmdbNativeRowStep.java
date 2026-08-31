@@ -1228,23 +1228,31 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			return inputProposal(() -> openDirectBatch(row, capacity), LmdbNativeAttemptMetrics.PATH_BATCH,
 					arg.estimateWork(row, row.boundMask()), estimatedRows(row));
 		}
-		LmdbNativeStrategyProposal<BatchCursor> proposal = multiJoin.proposeBatch(row, capacity);
+		LmdbNativeStrategyProposal<BatchCursor> proposal = LmdbWildcardPredicateBatch.propose(multiJoin,
+				row, capacity, distinct, sourceSlots, orderSlots);
+		if (proposal == null) {
+			proposal = multiJoin.proposeBatch(row, capacity);
+		}
 		if (proposal == null) {
 			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_BATCH,
 					"cursor-unavailable");
 			return null;
 		}
+		LmdbNativeStrategyProposal<BatchCursor> selectedProposal = proposal;
+		String strategy = selectedProposal.tag;
 		return new LmdbNativeStrategyProposal<>(() -> {
 			try {
-				return acceptBatch(row, proposal.open(), capacity);
+				return acceptBatch(row, selectedProposal.open(), capacity, strategy);
 			} finally {
-				proposal.close();
+				selectedProposal.close();
 			}
-		}, proposal.work, proposal.startupWork, proposal.estRows, proposal.tag, proposal::close);
+		}, selectedProposal.work, selectedProposal.startupWork, selectedProposal.estRows, selectedProposal.tag,
+				selectedProposal::close);
 	}
 
 	private NativeUnorderedInput openDirectBatch(RowState row, int capacity) throws IOException {
-		NativeUnorderedInput input = acceptBatch(row, arg.openBatch(row, capacity), capacity);
+		NativeUnorderedInput input = acceptBatch(row, arg.openBatch(row, capacity), capacity,
+				LmdbNativeAttemptMetrics.PATH_BATCH);
 		if (input == null) {
 			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_BATCH,
 					"cursor-unavailable");
@@ -1402,15 +1410,19 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		return (double) NativeSliceMath.limitPlusOffset(limit, offset);
 	}
 
-	private NativeUnorderedInput acceptBatch(RowState row, BatchCursor candidate, int capacity) {
+	private NativeUnorderedInput acceptBatch(RowState row, BatchCursor candidate, int capacity, String strategy) {
 		if (candidate == null) {
 			return null;
 		}
 		NativeBatch.ROOT_ITERATIONS.incrementAndGet();
-		LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_BATCH);
-		activateOrder(row, LmdbNativeAttemptMetrics.PATH_BATCH,
+		LmdbNativeExplain.recordExecutionPath(originalExpr, strategy);
+		activateOrder(row, strategy,
 				arg instanceof MultiJoinPlan ? (MultiJoinPlan) arg : null);
-		return NativeUnorderedInput.batch(row, candidate, capacity);
+		NativeUnorderedInput input = NativeUnorderedInput.batch(row, candidate, capacity);
+		if (LmdbWildcardPredicateBatch.handlesDistinct(candidate)) {
+			input.dedupMode = NativeUnorderedInput.DedupMode.HANDLED;
+		}
+		return input;
 	}
 
 	private NativeUnorderedInput acceptParallel(RowState row, RowCursor candidate) {
