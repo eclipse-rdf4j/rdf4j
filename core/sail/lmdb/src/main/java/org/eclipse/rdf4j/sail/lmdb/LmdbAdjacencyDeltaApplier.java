@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.function.LongPredicate;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.Charge;
@@ -29,6 +30,8 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbDirectAdjacencyCommitDelta.SealedDirectDe
  * order; subpass B replays the identical merges into the reserved arena and asserts the predicted counts/bytes.
  */
 final class LmdbAdjacencyDeltaApplier {
+	private static final long DEFAULT_PERSISTENT_ROW_EDGES = 4_096L;
+	private static final long DEFAULT_PERSISTENT_LEAF_BYTES = 64L << 10;
 
 	/**
 	 * Resolves complete row state at the previous revision. Calls are nondecreasing in unsigned
@@ -58,14 +61,22 @@ final class LmdbAdjacencyDeltaApplier {
 		final LmdbAdjacencyContextCatalog contextCatalog;
 		final long[] extraSelectedAfter;
 		final LmdbAdjacencyPlaneStatistics.Update planeStatisticsUpdate;
+		final StructuralStats structuralStats;
 
 		Result(LmdbAdjacencyDeltaGeneration generation, LmdbAdjacencyContextCatalog contextCatalog,
-				long[] extraSelectedAfter, LmdbAdjacencyPlaneStatistics.Update planeStatisticsUpdate) {
+				long[] extraSelectedAfter, LmdbAdjacencyPlaneStatistics.Update planeStatisticsUpdate,
+				StructuralStats structuralStats) {
 			this.generation = generation;
 			this.contextCatalog = contextCatalog;
 			this.extraSelectedAfter = extraSelectedAfter;
 			this.planeStatisticsUpdate = planeStatisticsUpdate;
+			this.structuralStats = structuralStats;
 		}
+	}
+
+	record StructuralStats(long rows, long reusedLeaves, long rewrittenLeaves, long fenceProbes, long decodedPairs,
+			long encodedPairs, long directoryBytes, long sharedLogicalBytes) {
+		static final StructuralStats EMPTY = new StructuralStats(0, 0, 0, 0, 0, 0, 0, 0);
 	}
 
 	private final SealedDirectDelta sealed;
@@ -75,11 +86,17 @@ final class LmdbAdjacencyDeltaApplier {
 	private final LongPredicate covered;
 	private final LmdbAdjacencyMemoryAccount account;
 	private final long arenaRegionBytes;
+	private final long supernodeEdges;
+	private final long supernodeChunkEdges;
+	private final long supernodeTargetBytes;
+	private final MemoryKind nativeOutputKind;
+	private final MemoryKind metadataOutputKind;
 	private final LmdbAdjacencyPlaneStatistics.UpdateBuilder planeStatistics = new LmdbAdjacencyPlaneStatistics.UpdateBuilder();
 
 	private LmdbAdjacencyDeltaApplier(SealedDirectDelta sealed, LmdbInMemoryAdjacencyIndex base,
 			LmdbAdjacencyContextCatalog previousContexts, PreviousRows previousRows, LongPredicate covered,
-			LmdbAdjacencyMemoryAccount account, long arenaRegionBytes) {
+			LmdbAdjacencyMemoryAccount account, long arenaRegionBytes, long supernodeEdges, long supernodeChunkEdges,
+			long supernodeTargetBytes, MemoryKind nativeOutputKind, MemoryKind metadataOutputKind) {
 		this.sealed = sealed;
 		this.base = base;
 		this.previousContexts = previousContexts;
@@ -87,6 +104,11 @@ final class LmdbAdjacencyDeltaApplier {
 		this.covered = covered;
 		this.account = account;
 		this.arenaRegionBytes = arenaRegionBytes;
+		this.supernodeEdges = supernodeEdges;
+		this.supernodeChunkEdges = supernodeChunkEdges;
+		this.supernodeTargetBytes = supernodeTargetBytes;
+		this.nativeOutputKind = nativeOutputKind;
+		this.metadataOutputKind = metadataOutputKind;
 	}
 
 	/**
@@ -97,8 +119,28 @@ final class LmdbAdjacencyDeltaApplier {
 	static Result apply(SealedDirectDelta sealed, LmdbInMemoryAdjacencyIndex base,
 			LmdbAdjacencyContextCatalog previousContexts, PreviousRows previousRows, LongPredicate covered,
 			long[] extraSelectedAfter, LmdbAdjacencyMemoryAccount account, long arenaRegionBytes) {
+		return apply(sealed, base, previousContexts, previousRows, covered, extraSelectedAfter, account,
+				arenaRegionBytes, DEFAULT_PERSISTENT_ROW_EDGES, DEFAULT_PERSISTENT_ROW_EDGES,
+				DEFAULT_PERSISTENT_LEAF_BYTES);
+	}
+
+	static Result apply(SealedDirectDelta sealed, LmdbInMemoryAdjacencyIndex base,
+			LmdbAdjacencyContextCatalog previousContexts, PreviousRows previousRows, LongPredicate covered,
+			long[] extraSelectedAfter, LmdbAdjacencyMemoryAccount account, long arenaRegionBytes, long supernodeEdges,
+			long supernodeChunkEdges, long supernodeTargetBytes) {
 		return new LmdbAdjacencyDeltaApplier(sealed, base, previousContexts, previousRows, covered, account,
-				arenaRegionBytes).run(extraSelectedAfter);
+				arenaRegionBytes, supernodeEdges, supernodeChunkEdges, supernodeTargetBytes, MemoryKind.DELTA,
+				MemoryKind.JAVA_METADATA).run(extraSelectedAfter);
+	}
+
+	static Result apply(SealedDirectDelta sealed, LmdbInMemoryAdjacencyIndex base,
+			LmdbAdjacencyContextCatalog previousContexts, PreviousRows previousRows, LongPredicate covered,
+			long[] extraSelectedAfter, LmdbAdjacencyMemoryAccount account, long arenaRegionBytes, long supernodeEdges,
+			long supernodeChunkEdges, long supernodeTargetBytes, MemoryKind nativeOutputKind,
+			MemoryKind metadataOutputKind) {
+		return new LmdbAdjacencyDeltaApplier(sealed, base, previousContexts, previousRows, covered, account,
+				arenaRegionBytes, supernodeEdges, supernodeChunkEdges, supernodeTargetBytes, nativeOutputKind,
+				metadataOutputKind).run(extraSelectedAfter);
 	}
 
 	private Result run(long[] extraSelectedAfter) {
@@ -117,7 +159,8 @@ final class LmdbAdjacencyDeltaApplier {
 		mergeDirection(outgoing, true, sizingContexts, plan, plan, null, oldCursor);
 		mergeDirection(incoming, false, sizingContexts, plan, plan, null, oldCursor);
 		if (plan.changedRows == 0) {
-			return new Result(null, previousContexts, extraSelectedAfter, planeStatistics.build());
+			return new Result(null, previousContexts, extraSelectedAfter, planeStatistics.build(),
+					StructuralStats.EMPTY);
 		}
 
 		// Replay only the rows proven to change through the planning encoder. Context extensions have their own exact
@@ -141,32 +184,37 @@ final class LmdbAdjacencyDeltaApplier {
 		plan.rewind();
 		sizingPlan.seal();
 		long reservedBytes = sizingPlan.capacityBytes();
-		Charge reservation = account.tryCharge(MemoryKind.DELTA, reservedBytes);
+		Charge reservation = account.tryCharge(nativeOutputKind, reservedBytes);
 		if (reservation == null) {
 			throw new LmdbAdjacencyMemoryRefusedException(
 					"delta generation reservation of " + reservedBytes + " bytes refused");
 		}
 		long metadataBytes = LmdbAdjacencyDeltaGeneration.modeledJavaBytes(plan.changedRows);
-		Charge metadataReservation = account.tryCharge(MemoryKind.JAVA_METADATA, metadataBytes);
+		Charge metadataReservation = account.tryCharge(metadataOutputKind, metadataBytes);
 		if (metadataReservation == null) {
 			reservation.close();
 			throw new LmdbAdjacencyMemoryRefusedException(
 					"delta generation directory metadata reservation of " + metadataBytes + " bytes refused");
 		}
 		LmdbAdjacencyArena arena = null;
+		LmdbAdjacencyDeltaArenaOwner arenaOwner = null;
+		LmdbAdjacencyArenaCatalog catalog = null;
 		LmdbAdjacencyContextCatalog extendedContexts = previousContexts;
 		boolean ownsExtendedContexts = false;
 		boolean success = false;
 		try (reservation; metadataReservation) {
 			if (newContexts.length > 0) {
-				extendedContexts = previousContexts.extend(account, arenaRegionBytes, newContexts);
+				extendedContexts = previousContexts.extend(account, arenaRegionBytes, newContexts, nativeOutputKind,
+						metadataOutputKind);
 				ownsExtendedContexts = true;
 			}
 			arena = new LmdbAdjacencyArena(sizingPlan);
+			arenaOwner = new LmdbAdjacencyDeltaArenaOwner(arena, reservation.transfer());
+			catalog = LmdbAdjacencyArenaCatalog.composed(base.arenaCatalog(), arenaOwner, plan.reusedSlices());
 
 			// ---------------- subpass B: replay identical merges into the reserved arena ----------------
 			RowPlan emit = new RowPlan(0);
-			EmitState emitState = new EmitState(arena, extendedContexts);
+			EmitState emitState = new EmitState(arena, catalog, extendedContexts);
 			mergeDirection(outgoing, true, extendedContexts, emit, plan, emitState, oldCursor);
 			mergeDirection(incoming, false, extendedContexts, emit, plan, emitState, oldCursor);
 			if (emit.changedRows != plan.changedRows || emit.changedRunBytes != plan.changedRunBytes
@@ -187,23 +235,28 @@ final class LmdbAdjacencyDeltaApplier {
 						+ " native bytes, but its sealed sizing plan reserved " + reservedBytes);
 			}
 
-			LmdbAdjacencyArenaCatalog slotZero = base.arenaCatalog().baseOnlyCopy();
-			LmdbAdjacencyArenaCatalog catalog;
-			try {
-				catalog = slotZero.appendRetained(arena);
-			} finally {
-				slotZero.close();
-			}
-			Charge generationCharge = reservation.transfer();
 			Charge generationMetadataCharge = metadataReservation.transfer();
-			LmdbAdjacencyDeltaGeneration generation = new LmdbAdjacencyDeltaGeneration(sealed.revision(), arena,
-					catalog, generationCharge, generationMetadataCharge, directory.keys, directory.planes,
-					directory.predicates,
-					directory.runRefs);
+			LmdbAdjacencyDeltaGeneration generation;
+			try {
+				generation = new LmdbAdjacencyDeltaGeneration(sealed.revision(), arenaOwner, catalog,
+						generationMetadataCharge, directory.keys, directory.planes, directory.predicates,
+						directory.runRefs);
+			} catch (RuntimeException | Error failure) {
+				// The generation constructor owns and closes all transferred resources if validation fails.
+				catalog = null;
+				arenaOwner = null;
+				throw failure;
+			}
 			success = true;
-			return new Result(generation, extendedContexts, extraSelectedAfter, planeStatistics.build());
+			return new Result(generation, extendedContexts, extraSelectedAfter, planeStatistics.build(),
+					plan.structuralStats());
 		} finally {
-			if (!success && arena != null) {
+			if (!success && catalog != null) {
+				catalog.close();
+			}
+			if (!success && arenaOwner != null) {
+				arenaOwner.close();
+			} else if (!success && arena != null) {
 				arena.close();
 			}
 			if (!success && ownsExtendedContexts) {
@@ -346,6 +399,14 @@ final class LmdbAdjacencyDeltaApplier {
 		long changedRows;
 		long changedRunBytes;
 		long preparedRunBytes;
+		long structuralRows;
+		long reusedLeaves;
+		long rewrittenLeaves;
+		long fenceProbes;
+		long decodedPairs;
+		long encodedPairs;
+		long directoryBytes;
+		long sharedLogicalBytes;
 
 		RowPlan(long preparedRunBudgetBytes) {
 			this.preparedRunBudgetBytes = preparedRunBudgetBytes;
@@ -358,7 +419,8 @@ final class LmdbAdjacencyDeltaApplier {
 			outcomes[size++] = outcome;
 		}
 
-		void recordChanged(OldRun old, LmdbAdjacencyRunCodec.PreparedRun preparedRun) {
+		void recordChanged(OldRun old, LmdbAdjacencyRunCodec.PreparedRun preparedRun,
+				LmdbAdjacencySupernodeRewriter.RewritePlan rewritePlan) {
 			record(CHANGED);
 			if (preparedRun != null && preparedRun.totalBytes() <= preparedRunBudgetBytes - preparedRunBytes) {
 				preparedRunBytes = Math.addExact(preparedRunBytes, preparedRun.totalBytes());
@@ -370,7 +432,7 @@ final class LmdbAdjacencyDeltaApplier {
 			} else if (cachedChangedRowCount == cachedChangedRows.length) {
 				cachedChangedRows = Arrays.copyOf(cachedChangedRows, cachedChangedRows.length * 2);
 			}
-			cachedChangedRows[cachedChangedRowCount++] = new ChangedRow(old, preparedRun);
+			cachedChangedRows[cachedChangedRowCount++] = new ChangedRow(old, preparedRun, rewritePlan);
 		}
 
 		byte consume() {
@@ -391,25 +453,57 @@ final class LmdbAdjacencyDeltaApplier {
 			cursor = 0;
 			cachedChangedRowCursor = 0;
 		}
+
+		List<LmdbAdjacencyRunCodec.SourceSlice> reusedSlices() {
+			java.util.ArrayList<LmdbAdjacencyRunCodec.SourceSlice> slices = new java.util.ArrayList<>();
+			for (int i = 0; i < cachedChangedRowCount; i++) {
+				if (cachedChangedRows[i].rewritePlan != null) {
+					slices.addAll(cachedChangedRows[i].rewritePlan.reusedSlices());
+				}
+			}
+			return slices;
+		}
+
+		void recordStructural(LmdbAdjacencySupernodeRewriter.RewritePlan rewrite) {
+			structuralRows++;
+			reusedLeaves = Math.addExact(reusedLeaves, rewrite.reusedLeafCount());
+			rewrittenLeaves = Math.addExact(rewrittenLeaves, rewrite.rewrittenLeafCount());
+			fenceProbes = Math.addExact(fenceProbes, rewrite.fenceProbes());
+			decodedPairs = Math.addExact(decodedPairs, rewrite.decodedPairs());
+			encodedPairs = Math.addExact(encodedPairs, rewrite.encodedPairs());
+			directoryBytes = Math.addExact(directoryBytes, rewrite.directoryBytes());
+			sharedLogicalBytes = Math.addExact(sharedLogicalBytes, rewrite.sharedLogicalBytes());
+		}
+
+		StructuralStats structuralStats() {
+			return new StructuralStats(structuralRows, reusedLeaves, rewrittenLeaves, fenceProbes, decodedPairs,
+					encodedPairs, directoryBytes, sharedLogicalBytes);
+		}
 	}
 
 	private static final class ChangedRow {
 		final OldRun old;
 		final LmdbAdjacencyRunCodec.PreparedRun preparedRun;
+		final LmdbAdjacencySupernodeRewriter.RewritePlan rewritePlan;
 
-		ChangedRow(OldRun old, LmdbAdjacencyRunCodec.PreparedRun preparedRun) {
+		ChangedRow(OldRun old, LmdbAdjacencyRunCodec.PreparedRun preparedRun,
+				LmdbAdjacencySupernodeRewriter.RewritePlan rewritePlan) {
 			this.old = old;
 			this.preparedRun = preparedRun;
+			this.rewritePlan = rewritePlan;
 		}
 	}
 
 	private static final class EmitState {
 		final LmdbAdjacencyArena arena;
+		final LmdbAdjacencyArenaCatalog catalog;
 		final LmdbAdjacencyContextCatalog contexts;
 		final Directory directory = new Directory();
 
-		EmitState(LmdbAdjacencyArena arena, LmdbAdjacencyContextCatalog contexts) {
+		EmitState(LmdbAdjacencyArena arena, LmdbAdjacencyArenaCatalog catalog,
+				LmdbAdjacencyContextCatalog contexts) {
 			this.arena = arena;
+			this.catalog = catalog;
 			this.contexts = contexts;
 		}
 	}
@@ -486,8 +580,14 @@ final class LmdbAdjacencyDeltaApplier {
 				if (emitState == null) {
 					// subpass A: resolve once, size the merged row, and retain changed rows for subpass B
 					OldRun old = previousRows.find(key, plane, predicate);
-					mergeRow(order, i, end, key, plane, predicate, outgoingDirection, old, oldCursor,
-							LmdbAdjacencyRunCodec.preparingEncoder(encodeContexts), plan, null);
+					if (old != null && (LmdbAdjacencyRunCodec.edgeCount(old.catalog, old.handle) >= supernodeEdges
+							|| LmdbAdjacencyRunCodec.structurallySliced(old.catalog, old.handle))) {
+						planSupernodeRow(order, i, end, key, plane, predicate, outgoingDirection, old,
+								encodeContexts, plan);
+					} else {
+						mergeRow(order, i, end, key, plane, predicate, outgoingDirection, old, oldCursor,
+								LmdbAdjacencyRunCodec.preparingEncoder(encodeContexts), plan, null);
+					}
 				} else {
 					// subpass B: consume subpass A's outcome; only a CHANGED row creates a writing encoder
 					byte outcome = recorded.consume();
@@ -496,7 +596,13 @@ final class LmdbAdjacencyDeltaApplier {
 						emitState.directory.add(key, plane, predicate, 0);
 					} else if (outcome == RowPlan.CHANGED) {
 						ChangedRow changed = recorded.consumeChangedRow();
-						if (changed.preparedRun != null) {
+						if (changed.rewritePlan != null) {
+							long ref = changed.rewritePlan.write(emitState.arena, emitState.catalog);
+							plan.changedRows++;
+							plan.changedRunBytes = Math.addExact(plan.changedRunBytes,
+									changed.rewritePlan.totalBytes());
+							emitState.directory.add(key, plane, predicate, ref);
+						} else if (changed.preparedRun != null) {
 							LmdbAdjacencyRunCodec.Encoder.Result result = changed.preparedRun.write(emitState.arena);
 							plan.changedRows++;
 							plan.changedRunBytes = Math.addExact(plan.changedRunBytes, result.totalBytes);
@@ -535,7 +641,12 @@ final class LmdbAdjacencyDeltaApplier {
 					planned.changedRows++;
 				} else if (outcome == RowPlan.CHANGED) {
 					ChangedRow changed = recorded.consumeChangedRow();
-					if (changed.preparedRun != null) {
+					if (changed.rewritePlan != null) {
+						changed.rewritePlan.plan(sizingPlan);
+						planned.changedRows++;
+						planned.changedRunBytes = Math.addExact(planned.changedRunBytes,
+								changed.rewritePlan.totalBytes());
+					} else if (changed.preparedRun != null) {
 						LmdbAdjacencyRunCodec.Encoder.Result result = changed.preparedRun.plan(sizingPlan);
 						planned.changedRows++;
 						planned.changedRunBytes = Math.addExact(planned.changedRunBytes, result.totalBytes);
@@ -664,9 +775,76 @@ final class LmdbAdjacencyDeltaApplier {
 		plan.changedRows++;
 		plan.changedRunBytes = Math.addExact(plan.changedRunBytes, result.totalBytes);
 		if (emitState == null && !planningReplay) {
-			plan.recordChanged(old, result.preparedRun);
+			plan.recordChanged(old, result.preparedRun, null);
 		} else if (emitState != null) {
 			emitState.directory.add(key, plane, predicate, result.rootRef);
+		}
+	}
+
+	private void planSupernodeRow(int[] order, int from, int end, long key, int plane, long predicate,
+			boolean outgoingDirection, OldRun old, ContextCatalog contexts, RowPlan plan) {
+		RowMutations mutations = new RowMutations(order, from, end, outgoingDirection);
+		LmdbAdjacencySupernodeRewriter.RewritePlan rewrite = LmdbAdjacencySupernodeRewriter.plan(old, mutations,
+				contexts, supernodeChunkEdges, supernodeTargetBytes);
+		if (!rewrite.changed()) {
+			plan.record(RowPlan.UNCHANGED);
+			return;
+		}
+		long oldCount = LmdbAdjacencyRunCodec.edgeCount(old.catalog, old.handle);
+		planeStatistics.add(predicate, plane, rewrite.edgeCount() - oldCount, rewrite.edgeCount() == 0 ? -1 : 0);
+		plan.changedRows++;
+		if (rewrite.tombstone()) {
+			plan.record(RowPlan.TOMBSTONE);
+			return;
+		}
+		plan.changedRunBytes = Math.addExact(plan.changedRunBytes, rewrite.totalBytes());
+		plan.recordStructural(rewrite);
+		plan.recordChanged(old, null, rewrite);
+	}
+
+	private final class RowMutations implements LmdbAdjacencySupernodeRewriter.SortedMutationSource {
+		private final long[] neighbors;
+		private final long[] contexts;
+		private final boolean[] adds;
+		private final int size;
+
+		RowMutations(int[] order, int from, int end, boolean outgoing) {
+			neighbors = new long[end - from];
+			contexts = new long[end - from];
+			adds = new boolean[end - from];
+			int size = 0;
+			for (int i = from; i < end;) {
+				int event = order[i];
+				long neighbor = neighborOf(event, outgoing);
+				long context = sealed.contexts[event];
+				boolean add = sealed.addOf(event);
+				int next = i + 1;
+				while (next < end && neighborOf(order[next], outgoing) == neighbor
+						&& sealed.contexts[order[next]] == context) {
+					add = sealed.addOf(order[next++]);
+				}
+				neighbors[size] = neighbor;
+				contexts[size] = context;
+				adds[size++] = add;
+				i = next;
+			}
+			this.size = size;
+		}
+
+		public int size() {
+			return size;
+		}
+
+		public long neighborAt(int index) {
+			return neighbors[index];
+		}
+
+		public long contextAt(int index) {
+			return contexts[index];
+		}
+
+		public boolean addAt(int index) {
+			return adds[index];
 		}
 	}
 

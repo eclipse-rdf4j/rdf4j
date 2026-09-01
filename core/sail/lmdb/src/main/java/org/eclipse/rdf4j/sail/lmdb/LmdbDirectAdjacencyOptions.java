@@ -133,9 +133,9 @@ final class LmdbDirectAdjacencyOptions {
 		long commitMaxBytes = resolveCommitMaxBytes(properties.apply(COMMIT_MAX_BYTES_PROPERTY), effectiveMaxBytes);
 		long sealWarnMillis = positiveLongProperty(properties, SEAL_WARN_MILLIS_PROPERTY, 1000L);
 		int maxDeltaGenerations = boundedIntProperty(properties, MAX_DELTA_GENERATIONS_PROPERTY, 8, 1, 64);
-		long supernodeEdges = positiveLongProperty(properties, SUPERNODE_EDGES_PROPERTY, 1_048_576L);
-		long supernodeChunkEdges = positiveLongProperty(properties, SUPERNODE_CHUNK_EDGES_PROPERTY, 65_536L);
-		long supernodeTargetBytes = positiveLongProperty(properties, SUPERNODE_TARGET_BYTES_PROPERTY, 67_108_864L);
+		long supernodeEdges = positiveLongProperty(properties, SUPERNODE_EDGES_PROPERTY, 4_096L);
+		long supernodeChunkEdges = positiveLongProperty(properties, SUPERNODE_CHUNK_EDGES_PROPERTY, 4_096L);
+		long supernodeTargetBytes = positiveLongProperty(properties, SUPERNODE_TARGET_BYTES_PROPERTY, 65_536L);
 		int visibleProcessors = Math.max(1, availableProcessors);
 		int buildThreads = boundedIntProperty(properties, BUILD_THREADS_PROPERTY,
 				Math.max(1, visibleProcessors - 1), 1, visibleProcessors);

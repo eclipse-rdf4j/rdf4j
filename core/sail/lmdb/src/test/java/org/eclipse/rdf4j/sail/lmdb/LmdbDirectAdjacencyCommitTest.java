@@ -47,6 +47,185 @@ import org.junit.jupiter.api.parallel.Resources;
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbDirectAdjacencyCommitTest {
 
+	@Test
+	void commitListenerExposesPrepareFinalizeAndAbortPhases() {
+		assertThat(java.util.Arrays.stream(TripleStore.DirectAdjacencyCommitListener.class.getDeclaredMethods())
+				.map(java.lang.reflect.Method::getName))
+						.contains("prepare", "finalizeCommit", "abort");
+	}
+
+	@Test
+	void synchronousCommitOverlapsPhysicalCommitAndPublishesBeforeRevisionVisibility() throws Exception {
+		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
+		assertThat(store.buildNowForTest()).isTrue();
+		long previousRevision = tripleStore.getDataRevision();
+
+		CountDownLatch preparationStarted = new CountDownLatch(1);
+		CountDownLatch releasePreparation = new CountDownLatch(1);
+		CountDownLatch physicalCommitCompleted = new CountDownLatch(1);
+		setRunnableField("beforePreparationForTest", () -> {
+			preparationStarted.countDown();
+			await(releasePreparation);
+		});
+		setRunnableField("beforePreparedFinalizeWaitForTest", physicalCommitCompleted::countDown);
+
+		CompletableFuture<Void> commit = CompletableFuture.runAsync(() -> {
+			try {
+				commitQuads(new long[][] { add(S2, P1, O2, G1, true) });
+			} catch (IOException e) {
+				throw new AssertionError(e);
+			}
+		});
+		try {
+			assertThat(preparationStarted.await(30, TimeUnit.SECONDS)).isTrue();
+			assertThat(physicalCommitCompleted.await(30, TimeUnit.SECONDS))
+					.as("LMDB must commit while adjacency preparation is still blocked")
+					.isTrue();
+			assertThat(tripleStore.getDataRevision()).isEqualTo(previousRevision);
+			assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(previousRevision);
+			assertThat(commit.isDone()).isFalse();
+		} finally {
+			releasePreparation.countDown();
+		}
+		commit.get(30, TimeUnit.SECONDS);
+
+		long revision = previousRevision + 1;
+		assertThat(tripleStore.getDataRevision()).isEqualTo(revision);
+		assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(revision);
+		assertThat(tripleStore.drainDirectAdjacencyCommitDelta()).isNull();
+		try (LmdbAdjacencyReadView view = store.acquire(revision)) {
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, S2, P1, O2, G1, true)).hasSize(1);
+		}
+		LmdbAdjacencyMetrics.PhaseTimings timings = store.phaseTimings();
+		assertThat(timings.preparationCount()).isPositive();
+		assertThat(timings.publicationCount()).isPositive();
+		assertThat(timings.preparationNanos()).isPositive();
+		assertThat(timings.publicationNanos()).isPositive();
+	}
+
+	@Test
+	void failedPhysicalCommitAbortsPreparedAdjacencyAndLeavesRevisionUnchanged() throws Exception {
+		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
+		assertThat(store.buildNowForTest()).isTrue();
+		long previousRevision = tripleStore.getDataRevision();
+		CountDownLatch preparedOutputReady = new CountDownLatch(1);
+		setRunnableField("afterPreparationForTest", preparedOutputReady::countDown);
+		setTripleStoreRunnableField("beforePhysicalCommitForTest", () -> {
+			await(preparedOutputReady);
+			throw new IllegalStateException("injected physical commit failure");
+		});
+
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(S2, P1, O2, 0, true);
+		assertThatThrownBy(tripleStore::commit)
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("injected physical commit failure");
+
+		assertThat(tripleStore.getDataRevision()).isEqualTo(previousRevision);
+		assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(previousRevision);
+		assertThat(store.memoryAccount().chargedBytes(MemoryKind.PREPARATION_OUTPUT)).isZero();
+		try (TxnManager.Txn txn = tripleStore.getTxnManager().createReadTxn();
+				RecordIterator statements = tripleStore.getTriples(txn, S2, P1, O2, 0, true)) {
+			assertThat(statements.next()).isNull();
+		}
+	}
+
+	@Test
+	void failedPreparationAfterPhysicalCommitPublishesGapAndReleasesSpeculation() throws Exception {
+		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
+		assertThat(store.buildNowForTest()).isTrue();
+		long previousRevision = tripleStore.getDataRevision();
+		setRunnableField("afterPreparationForTest", () -> {
+			throw new IllegalStateException("injected preparation failure");
+		});
+
+		try (LmdbAdjacencyReadView held = store.acquire(previousRevision)) {
+			commitQuads(new long[][] { add(S2, P1, O2, 0, true) });
+			long committedRevision = previousRevision + 1;
+			assertThat(tripleStore.getDataRevision()).isEqualTo(committedRevision);
+			assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(previousRevision);
+			assertThat(store.snapshotMetrics().emergencyGapFromRevision).isEqualTo(committedRevision);
+			assertThat(store.memoryAccount().chargedBytes(MemoryKind.PREPARATION_OUTPUT)).isZero();
+			try (LmdbAdjacencyReadView fallback = store.acquire(committedRevision)) {
+				assertThat(fallback.isExact()).isFalse();
+			}
+			try (TxnManager.Txn txn = tripleStore.getTxnManager().createReadTxn();
+					RecordIterator statements = tripleStore.getTriples(txn, S2, P1, O2, 0, true)) {
+				assertThat(statements.next()).isNotNull();
+			}
+		}
+	}
+
+	@Test
+	void strictPreparationFailureReportsErrorWithoutPretendingLmdbRolledBack() throws Exception {
+		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
+		recreateStore(Map.of(
+				LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "true",
+				LmdbDirectAdjacencyOptions.FAIL_ON_MAINTENANCE_ERROR_PROPERTY, "true"));
+		assertThat(store.buildNowForTest()).isTrue();
+		long previousRevision = tripleStore.getDataRevision();
+		setRunnableField("afterPreparationForTest", () -> {
+			throw new IllegalStateException("injected strict preparation failure");
+		});
+
+		try (LmdbAdjacencyReadView held = store.acquire(previousRevision)) {
+			tripleStore.startTransaction();
+			tripleStore.storeTriple(S2, P1, O2, 0, true);
+			assertThatThrownBy(tripleStore::commit)
+					.isInstanceOf(IllegalStateException.class)
+					.hasRootCauseMessage("injected strict preparation failure");
+
+			long committedRevision = previousRevision + 1;
+			assertThat(tripleStore.getDataRevision()).isEqualTo(committedRevision);
+			assertThat(store.snapshotMetrics().emergencyGapFromRevision).isEqualTo(committedRevision);
+			assertThat(store.memoryAccount().chargedBytes(MemoryKind.PREPARATION_OUTPUT)).isZero();
+			try (TxnManager.Txn txn = tripleStore.getTxnManager().createReadTxn();
+					RecordIterator statements = tripleStore.getTriples(txn, S2, P1, O2, 0, true)) {
+				assertThat(statements.next()).isNotNull();
+			}
+		}
+	}
+
+	@Test
+	void interruptedFinalizeWaitReleasesPreparedOutputAndPreservesInterrupt() throws Exception {
+		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
+		assertThat(store.buildNowForTest()).isTrue();
+		long previousRevision = tripleStore.getDataRevision();
+		CountDownLatch preparationReached = new CountDownLatch(1);
+		CountDownLatch releasePreparation = new CountDownLatch(1);
+		setRunnableField("beforePreparationForTest", () -> {
+			preparationReached.countDown();
+			await(releasePreparation);
+		});
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		AtomicBoolean interrupted = new AtomicBoolean();
+		Thread commitThread = new Thread(() -> {
+			try {
+				commitQuads(new long[][] { add(S2, P1, O2, 0, true) });
+			} catch (Throwable caught) {
+				failure.set(caught);
+			} finally {
+				interrupted.set(Thread.currentThread().isInterrupted());
+			}
+		}, "interrupted-adjacency-commit-test");
+		commitThread.start();
+		try {
+			assertThat(preparationReached.await(30, TimeUnit.SECONDS)).isTrue();
+			commitThread.interrupt();
+		} finally {
+			releasePreparation.countDown();
+		}
+		commitThread.join(TimeUnit.SECONDS.toMillis(30));
+
+		assertThat(commitThread.isAlive()).isFalse();
+		assertThat(failure.get()).isNull();
+		assertThat(interrupted).isTrue();
+		assertThat(tripleStore.getDataRevision()).isEqualTo(previousRevision + 1);
+		assertThat(store.snapshotMetrics().emergencyGapFromRevision).isEqualTo(previousRevision + 1);
+		assertThat(store.memoryAccount().chargedBytes(MemoryKind.PREPARATION_OUTPUT)).isZero();
+	}
+
 	private TripleStore tripleStore;
 	private LmdbDirectAdjacencyStore store;
 	private String previousNodePredicateServe;
@@ -105,6 +284,29 @@ class LmdbDirectAdjacencyCommitTest {
 			System.clearProperty(property);
 		} else {
 			System.setProperty(property, value);
+		}
+	}
+
+	private void setRunnableField(String name, Runnable value) throws ReflectiveOperationException {
+		java.lang.reflect.Field field = LmdbDirectAdjacencyStore.class.getDeclaredField(name);
+		field.setAccessible(true);
+		field.set(store, value);
+	}
+
+	private void setTripleStoreRunnableField(String name, Runnable value) throws ReflectiveOperationException {
+		java.lang.reflect.Field field = TripleStore.class.getDeclaredField(name);
+		field.setAccessible(true);
+		field.set(tripleStore, value);
+	}
+
+	private static void await(CountDownLatch latch) {
+		try {
+			if (!latch.await(30, TimeUnit.SECONDS)) {
+				throw new AssertionError("timed out waiting for deterministic commit interleaving");
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError(e);
 		}
 	}
 
@@ -173,7 +375,14 @@ class LmdbDirectAdjacencyCommitTest {
 
 	private void assertDeclined(LmdbAdjacencyReadView view, long s, long p, long o, long c, boolean explicit)
 			throws IOException {
-		assertThat(store.tryOpen(view, null, s, p, o, c, explicit)).isNull();
+		RecordIterator iterator = store.tryOpen(view, null, s, p, o, c, explicit);
+		try {
+			assertThat(iterator).isNull();
+		} finally {
+			if (iterator != null) {
+				iterator.close();
+			}
+		}
 	}
 
 	// ------------------------------------------------------------------
@@ -214,6 +423,7 @@ class LmdbDirectAdjacencyCommitTest {
 	@Test
 	void pendingWindowFallsBackOnlyForTouchedRows() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true), add(S2, P1, O1, 0, true) });
+		recreateStore(Map.of(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false"));
 		assertThat(store.buildNowForTest()).isTrue();
 
 		store.pauseApplierForTest(true);
@@ -654,31 +864,28 @@ class LmdbDirectAdjacencyCommitTest {
 			assertThat(probe(ready, S2, P1, O2, G1, true)).hasSize(1);
 		}
 
-		CountDownLatch drainReached = new CountDownLatch(1);
-		CountDownLatch releaseDrain = new CountDownLatch(1);
-		store.beforeApplyDrainForTest = () -> {
-			store.beforeApplyDrainForTest = null;
-			drainReached.countDown();
+		CountDownLatch preparationReached = new CountDownLatch(1);
+		CountDownLatch releasePreparation = new CountDownLatch(1);
+		store.beforePreparationForTest = () -> {
+			store.beforePreparationForTest = null;
+			preparationReached.countDown();
+			await(releasePreparation);
+		};
+		CompletableFuture<Void> committing = CompletableFuture.runAsync(() -> {
 			try {
-				releaseDrain.await();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
+				commitQuads(new long[][] { add(S2, P1, O2, 0, true) });
+			} catch (IOException e) {
 				throw new AssertionError(e);
 			}
-		};
-		tripleStore.startTransaction();
-		tripleStore.storeTriple(S2, P1, O2, 0, true);
-		tripleStore.commit();
-		LmdbDirectAdjacencyCommitDelta.SealedDirectDelta sealed = tripleStore.drainDirectAdjacencyCommitDelta();
-		CompletableFuture<Void> applying = CompletableFuture.runAsync(() -> store.applyCommitted(sealed));
+		});
 		try {
-			assertThat(drainReached.await(30, TimeUnit.SECONDS)).isTrue();
-			assertThatThrownBy(() -> applying.get(1, TimeUnit.SECONDS))
+			assertThat(preparationReached.await(30, TimeUnit.SECONDS)).isTrue();
+			assertThatThrownBy(() -> committing.get(1, TimeUnit.SECONDS))
 					.isInstanceOf(java.util.concurrent.TimeoutException.class);
 		} finally {
-			releaseDrain.countDown();
+			releasePreparation.countDown();
 		}
-		applying.get(30, TimeUnit.SECONDS);
+		committing.get(30, TimeUnit.SECONDS);
 		assertThat(store.queuedCommitsForTest()).isZero();
 		assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(tripleStore.getDataRevision());
 	}

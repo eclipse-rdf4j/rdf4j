@@ -96,6 +96,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	/** One non-shared group-search hint for this operator-owned adjacency request. */
 	private final LmdbAdjacencyLookupContext searchContext = new LmdbAdjacencyLookupContext();
 	private final LmdbAdjacencyRunCodec.RunCursor runCursor = new LmdbAdjacencyRunCodec.RunCursor();
+	private final LmdbAdjacencyOverlaySet.LatestRowLookup latestRowLookup = new LmdbAdjacencyOverlaySet.LatestRowLookup();
 	/** Allocated only when the range planner asks for an ordered-integer proof. */
 	private ImmutablePagedQuadCsfIndex.RowCursor orderedDomainRowCursor;
 
@@ -210,13 +211,24 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	}
 
 	private long findUnmemoized(long key) {
-		for (int i = applicableGenerationCount - 1; i >= 0; i--) {
-			long found = overlays.generation(i).find(key, plane, predicate);
-			if (found == LmdbAdjacencyDeltaGeneration.ROW_TOMBSTONE) {
+		if (overlays != null && applicableGenerationCount == overlays.generationCount()) {
+			if (overlays.findLatest(key, plane, predicate, latestRowLookup)) {
+				long handle = latestRowLookup.generation().handleAt(latestRowLookup.rowIndex());
+				return handle == LmdbAdjacencyDeltaGeneration.ROW_TOMBSTONE ? NOT_FOUND
+						: packHandle(latestRowLookup.generationIndex() + 1, handle);
+			}
+			if (baseAbsent) {
 				return NOT_FOUND;
 			}
-			if (found != LmdbAdjacencyDeltaGeneration.NO_VERSION) {
-				return packHandle(i + 1, found);
+		} else {
+			for (int i = applicableGenerationCount - 1; i >= 0; i--) {
+				long found = overlays.generation(i).find(key, plane, predicate);
+				if (found == LmdbAdjacencyDeltaGeneration.ROW_TOMBSTONE) {
+					return NOT_FOUND;
+				}
+				if (found != LmdbAdjacencyDeltaGeneration.NO_VERSION) {
+					return packHandle(i + 1, found);
+				}
 			}
 		}
 		if (baseAbsent) {
@@ -1135,12 +1147,18 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 			return;
 		}
 
-		int candidateCount = 0;
-		for (int generationIndex = 0; generationIndex < applicableGenerationCount; generationIndex++) {
-			LmdbAdjacencyDeltaGeneration generation = overlays.generation(generationIndex);
-			for (int row = 0; row < generation.rowCount(); row++) {
-				if (generation.rowPlaneAt(row) == plane && generation.rowPredicateAt(row) == predicate) {
-					candidateCount = Math.incrementExact(candidateCount);
+		boolean latestSnapshot = applicableGenerationCount == overlays.generationCount();
+		int candidateCount;
+		if (latestSnapshot) {
+			candidateCount = overlays.latestRowCount(plane, predicate);
+		} else {
+			candidateCount = 0;
+			for (int generationIndex = 0; generationIndex < applicableGenerationCount; generationIndex++) {
+				LmdbAdjacencyDeltaGeneration generation = overlays.generation(generationIndex);
+				for (int row = 0; row < generation.rowCount(); row++) {
+					if (generation.rowPlaneAt(row) == plane && generation.rowPredicateAt(row) == predicate) {
+						candidateCount = Math.incrementExact(candidateCount);
+					}
 				}
 			}
 		}
@@ -1153,16 +1171,25 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		}
 
 		long[] candidates = new long[candidateCount];
-		int candidate = 0;
-		for (int generationIndex = 0; generationIndex < applicableGenerationCount; generationIndex++) {
-			LmdbAdjacencyDeltaGeneration generation = overlays.generation(generationIndex);
-			for (int row = 0; row < generation.rowCount(); row++) {
+		if (latestSnapshot) {
+			int[] candidate = { 0 };
+			overlays.forEachLatestRow((generation, generationIndex, row) -> {
 				if (generation.rowPlaneAt(row) == plane && generation.rowPredicateAt(row) == predicate) {
-					candidates[candidate++] = generation.rowKeyAt(row);
+					candidates[candidate[0]++] = generation.rowKeyAt(row);
+				}
+			});
+		} else {
+			int candidate = 0;
+			for (int generationIndex = 0; generationIndex < applicableGenerationCount; generationIndex++) {
+				LmdbAdjacencyDeltaGeneration generation = overlays.generation(generationIndex);
+				for (int row = 0; row < generation.rowCount(); row++) {
+					if (generation.rowPlaneAt(row) == plane && generation.rowPredicateAt(row) == predicate) {
+						candidates[candidate++] = generation.rowKeyAt(row);
+					}
 				}
 			}
+			sortUnsigned(candidates);
 		}
-		sortUnsigned(candidates);
 
 		long[] changedKeys = new long[candidates.length];
 		long[] changedRuns = new long[candidates.length];

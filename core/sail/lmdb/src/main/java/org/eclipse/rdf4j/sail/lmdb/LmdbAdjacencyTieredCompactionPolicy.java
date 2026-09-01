@@ -17,50 +17,113 @@ final class LmdbAdjacencyTieredCompactionPolicy {
 	static final int FANOUT = 4;
 	static final long MAX_WEIGHT_SKEW = 2;
 
-	record GenerationInfo(long revision, long retainedBytes, long compactionWeightBytes, long referenceCount) {
-	}
+	static final class Candidate {
+		private int fromInclusive;
+		private int toExclusive;
+		private boolean normal;
+		private boolean selected;
 
-	record Candidate(int fromInclusive, int toExclusive, boolean normal) {
+		int fromInclusive() {
+			ensureSelected();
+			return fromInclusive;
+		}
+
+		int toExclusive() {
+			ensureSelected();
+			return toExclusive;
+		}
+
+		boolean normal() {
+			ensureSelected();
+			return normal;
+		}
+
 		int size() {
+			ensureSelected();
 			return toExclusive - fromInclusive;
+		}
+
+		boolean selected() {
+			return selected;
+		}
+
+		private void set(int fromInclusive, int toExclusive, boolean normal) {
+			this.fromInclusive = fromInclusive;
+			this.toExclusive = toExclusive;
+			this.normal = normal;
+			this.selected = true;
+		}
+
+		private void clear() {
+			fromInclusive = 0;
+			toExclusive = 0;
+			normal = false;
+			selected = false;
+		}
+
+		private void ensureSelected() {
+			if (!selected) {
+				throw new IllegalStateException("no compaction candidate is selected");
+			}
 		}
 	}
 
 	private LmdbAdjacencyTieredCompactionPolicy() {
 	}
 
-	static Candidate select(GenerationInfo[] generations, int targetGenerationCount) {
-		if (generations == null) {
-			throw new NullPointerException("generations");
+	static boolean select(LmdbAdjacencyOverlaySet generations, int targetGenerationCount, Candidate result) {
+		if (generations == null || result == null) {
+			throw new NullPointerException(generations == null ? "generations" : "result");
 		}
 		if (targetGenerationCount < 1) {
 			throw new IllegalArgumentException("targetGenerationCount must be positive");
 		}
-		for (GenerationInfo generation : generations) {
-			validate(generation);
+		result.clear();
+		int generationCount = generations.generationCount();
+		for (int i = 0; i < generationCount; i++) {
+			validate(generations.generation(i));
 		}
-		for (int from = 0; from + FANOUT <= generations.length; from++) {
+		for (int from = 0; from + FANOUT <= generationCount; from++) {
 			if (withinNormalBand(generations, from, from + FANOUT)) {
-				return new Candidate(from, from + FANOUT, true);
+				result.set(from, from + FANOUT, true);
+				return true;
 			}
 		}
-		if (generations.length <= targetGenerationCount) {
-			return null;
+		if (generationCount <= targetGenerationCount) {
+			return false;
 		}
 
-		Candidate best = null;
-		CandidateScore bestScore = null;
-		for (int size = 2; size <= Math.min(FANOUT, generations.length); size++) {
-			for (int from = 0; from + size <= generations.length; from++) {
-				Candidate candidate = new Candidate(from, from + size, false);
-				CandidateScore score = score(generations, candidate);
-				if (bestScore == null || score.compareTo(bestScore) < 0) {
-					best = candidate;
-					bestScore = score;
+		boolean bestReclaimable = false;
+		double bestSkew = 0;
+		long bestRetainedBytes = 0;
+		long bestOldestRevision = 0;
+		for (int size = 2; size <= Math.min(FANOUT, generationCount); size++) {
+			for (int from = 0; from + size <= generationCount; from++) {
+				int to = from + size;
+				boolean reclaimable = true;
+				long minimumWeight = Long.MAX_VALUE;
+				long maximumWeight = 0;
+				long retainedBytes = 0;
+				for (int i = from; i < to; i++) {
+					LmdbAdjacencyDeltaGeneration generation = generations.generation(i);
+					reclaimable &= generation.referenceCount() == 1;
+					minimumWeight = Math.min(minimumWeight, generation.compactionWeightBytes());
+					maximumWeight = Math.max(maximumWeight, generation.compactionWeightBytes());
+					retainedBytes = saturatingAdd(retainedBytes, generation.retainedBytes());
+				}
+				double skew = (double) maximumWeight / minimumWeight;
+				long oldestRevision = generations.generation(from).revision();
+				if (!result.selected() || betterScore(reclaimable, skew, retainedBytes, oldestRevision,
+						bestReclaimable, bestSkew, bestRetainedBytes, bestOldestRevision)) {
+					result.set(from, to, false);
+					bestReclaimable = reclaimable;
+					bestSkew = skew;
+					bestRetainedBytes = retainedBytes;
+					bestOldestRevision = oldestRevision;
 				}
 			}
 		}
-		return best;
+		return result.selected();
 	}
 
 	static long baseFoldThreshold(long workspaceRegionBytes, long baseRetainedBytes) {
@@ -78,11 +141,24 @@ final class LmdbAdjacencyTieredCompactionPolicy {
 		return overlayRetainedBytes >= baseFoldThreshold(workspaceRegionBytes, baseRetainedBytes);
 	}
 
-	private static boolean withinNormalBand(GenerationInfo[] generations, int from, int to) {
+	static boolean shouldPhysicallyFlatten(long retainedPhysicalBytes, long liveLogicalBytes,
+			long workspaceRegionBytes) {
+		if (retainedPhysicalBytes < 0 || liveLogicalBytes < 0 || workspaceRegionBytes < 0) {
+			throw new IllegalArgumentException("byte counts must not be negative");
+		}
+		if (liveLogicalBytes > Long.MAX_VALUE / 2) {
+			return false;
+		}
+		long twiceLive = liveLogicalBytes * 2;
+		return retainedPhysicalBytes >= twiceLive
+				&& retainedPhysicalBytes - liveLogicalBytes >= workspaceRegionBytes;
+	}
+
+	private static boolean withinNormalBand(LmdbAdjacencyOverlaySet generations, int from, int to) {
 		long minimum = Long.MAX_VALUE;
 		long maximum = 0;
 		for (int i = from; i < to; i++) {
-			long weight = generations[i].compactionWeightBytes;
+			long weight = generations.generation(i).compactionWeightBytes();
 			minimum = Math.min(minimum, weight);
 			maximum = Math.max(maximum, weight);
 		}
@@ -91,53 +167,35 @@ final class LmdbAdjacencyTieredCompactionPolicy {
 		return maximum <= maximumAllowed;
 	}
 
-	private static CandidateScore score(GenerationInfo[] generations, Candidate candidate) {
-		boolean allImmediatelyReclaimable = true;
-		long minimumWeight = Long.MAX_VALUE;
-		long maximumWeight = 0;
-		long retainedBytes = 0;
-		for (int i = candidate.fromInclusive; i < candidate.toExclusive; i++) {
-			GenerationInfo generation = generations[i];
-			allImmediatelyReclaimable &= generation.referenceCount == 1;
-			minimumWeight = Math.min(minimumWeight, generation.compactionWeightBytes);
-			maximumWeight = Math.max(maximumWeight, generation.compactionWeightBytes);
-			retainedBytes = saturatingAdd(retainedBytes, generation.retainedBytes);
-		}
-		return new CandidateScore(allImmediatelyReclaimable, (double) maximumWeight / minimumWeight, retainedBytes,
-				generations[candidate.fromInclusive].revision);
-	}
-
-	private static void validate(GenerationInfo generation) {
+	private static void validate(LmdbAdjacencyDeltaGeneration generation) {
 		if (generation == null) {
 			throw new NullPointerException("generation");
 		}
-		if (generation.retainedBytes < 0 || generation.compactionWeightBytes <= 0 || generation.referenceCount < 1) {
-			throw new IllegalArgumentException("invalid generation compaction measurements: " + generation);
+		if (generation.retainedBytes() < 0 || generation.compactionWeightBytes() <= 0
+				|| generation.referenceCount() < 1) {
+			throw new IllegalArgumentException("invalid generation compaction measurements at revision "
+					+ generation.revision());
 		}
+	}
+
+	private static boolean betterScore(boolean reclaimable, double skew, long retainedBytes, long oldestRevision,
+			boolean bestReclaimable, double bestSkew, long bestRetainedBytes, long bestOldestRevision) {
+		if (reclaimable != bestReclaimable) {
+			return reclaimable;
+		}
+		int comparison = Double.compare(skew, bestSkew);
+		if (comparison != 0) {
+			return comparison < 0;
+		}
+		comparison = Long.compare(retainedBytes, bestRetainedBytes);
+		if (comparison != 0) {
+			return comparison < 0;
+		}
+		return Long.compare(oldestRevision, bestOldestRevision) < 0;
 	}
 
 	private static long saturatingAdd(long left, long right) {
 		return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
 	}
 
-	private record CandidateScore(boolean allImmediatelyReclaimable, double skew, long retainedBytes,
-			long oldestRevision) implements Comparable<CandidateScore> {
-
-		@Override
-		public int compareTo(CandidateScore other) {
-			int comparison = Boolean.compare(other.allImmediatelyReclaimable, allImmediatelyReclaimable);
-			if (comparison != 0) {
-				return comparison;
-			}
-			comparison = Double.compare(skew, other.skew);
-			if (comparison != 0) {
-				return comparison;
-			}
-			comparison = Long.compare(retainedBytes, other.retainedBytes);
-			if (comparison != 0) {
-				return comparison;
-			}
-			return Long.compare(oldestRevision, other.oldestRevision);
-		}
-	}
 }

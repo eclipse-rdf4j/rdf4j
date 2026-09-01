@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -29,8 +30,10 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.LongPredicate;
 
@@ -127,12 +130,16 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final AtomicLong shadowProbes = new AtomicLong();
 
 	/** Protects writer-side state transitions and ownership transfer; readers never take it. */
-	private final ReentrantLock publicationLock = new ReentrantLock();
+	private final ReentrantLock publicationLock = new ReentrantLock(true);
+	private final Condition noPreparationsInFlight = publicationLock.newCondition();
 
 	private final ExecutorService maintenanceExecutor;
+	private final ExecutorService preparationExecutor;
 	private final ExecutorService compactionExecutor;
+	private final AtomicInteger preparationsInFlight = new AtomicInteger();
 	private final AtomicBoolean compactionRequested = new AtomicBoolean();
 	private final AtomicBoolean compactionTaskScheduled = new AtomicBoolean();
+	private final LmdbAdjacencyTieredCompactionPolicy.Candidate compactionCandidate = new LmdbAdjacencyTieredCompactionPolicy.Candidate();
 	/**
 	 * Monotone cutover bit. A populated store's initial build and commits captured before first exact publication stay
 	 * asynchronous. An empty store activates before its initial build submission. Once set, configured synchronous
@@ -175,6 +182,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	volatile Runnable beforeApplyQueueAdmissionForTest;
 	/** Test-only interleaving hook: runs after a queued commit is observed and before it is applied. */
 	volatile Runnable beforeApplyDrainForTest;
+	/** Test-only interleaving hook: runs on the preparation executor before any prepared output is built. */
+	volatile Runnable beforePreparationForTest;
+	/** Test-only interleaving hook: runs after prepared output is complete but before its future becomes visible. */
+	volatile Runnable afterPreparationForTest;
+	/** Test-only observation hook: runs after LMDB commit succeeds and before the caller waits for preparation. */
+	volatile Runnable beforePreparedFinalizeWaitForTest;
 	/** Test-only interleaving hook: runs after an exact state is validated and before the view is returned. */
 	volatile Runnable beforeExactViewReturnForTest;
 	/** Test-only observation hook: runs after view quiescence and before replacement construction starts. */
@@ -208,6 +221,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			Thread thread = new Thread(runnable, "lmdb-direct-adjacency-maintenance");
 			thread.setDaemon(true);
 			maintenanceThread = thread;
+			return thread;
+		});
+		this.preparationExecutor = Executors.newSingleThreadExecutor(runnable -> {
+			Thread thread = new Thread(runnable, "lmdb-direct-adjacency-preparation");
+			thread.setDaemon(true);
 			return thread;
 		});
 		this.compactionExecutor = Executors.newSingleThreadExecutor(runnable -> {
@@ -284,10 +302,269 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 
 			@Override
+			public PreparedCommit prepare(SealedDirectDelta sealed, long nextRevision) {
+				PreparedAdjacencyCommit prepared = prepareSynchronousCommit(sealed, nextRevision);
+				return prepared != null ? prepared
+						: TripleStore.DirectAdjacencyCommitListener.super.prepare(sealed, nextRevision);
+			}
+
+			@Override
+			public SealedDirectDelta finalizeCommit(PreparedCommit prepared) {
+				if (prepared instanceof PreparedAdjacencyCommit adjacencyCommit) {
+					return finalizeSynchronousCommit(adjacencyCommit);
+				}
+				return TripleStore.DirectAdjacencyCommitListener.super.finalizeCommit(prepared);
+			}
+
+			@Override
+			public void abort(PreparedCommit prepared) {
+				if (prepared instanceof PreparedAdjacencyCommit adjacencyCommit) {
+					abortSynchronousCommit(adjacencyCommit);
+				} else {
+					TripleStore.DirectAdjacencyCommitListener.super.abort(prepared);
+				}
+			}
+
+			@Override
 			public void physicalCommitFailedBeforeRevisionBump(long nextRevision) {
 				markGap(nextRevision);
 			}
 		};
+	}
+
+	private final class PreparedAdjacencyCommit implements TripleStore.DirectAdjacencyCommitListener.PreparedCommit {
+		final SealedDirectDelta sealed;
+		final LmdbAdjacencyPublishedState predecessor;
+		final Future<PreparedApply> future;
+		final AtomicBoolean completed = new AtomicBoolean();
+
+		PreparedAdjacencyCommit(SealedDirectDelta sealed, LmdbAdjacencyPublishedState predecessor,
+				Future<PreparedApply> future) {
+			this.sealed = sealed;
+			this.predecessor = predecessor;
+			this.future = future;
+		}
+
+		void completeOwnership() {
+			if (!completed.compareAndSet(false, true)) {
+				return;
+			}
+			try {
+				sealed.close();
+			} finally {
+				try {
+					predecessor.release();
+				} finally {
+					completePreparationReservation();
+				}
+			}
+		}
+	}
+
+	private static final class PreparedApply implements AutoCloseable {
+		final LmdbAdjacencyDeltaGeneration generation;
+		final LmdbAdjacencyContextCatalog contextCatalog;
+		final boolean ownsContextCatalog;
+		final long[] extraSelected;
+		final LmdbAdjacencyPlaneStatistics.Update planeStatisticsUpdate;
+		final LmdbAdjacencyDeltaApplier.StructuralStats structuralStats;
+		private boolean transferred;
+
+		PreparedApply(LmdbAdjacencyDeltaGeneration generation, LmdbAdjacencyContextCatalog contextCatalog,
+				boolean ownsContextCatalog, long[] extraSelected,
+				LmdbAdjacencyPlaneStatistics.Update planeStatisticsUpdate,
+				LmdbAdjacencyDeltaApplier.StructuralStats structuralStats) {
+			this.generation = generation;
+			this.contextCatalog = contextCatalog;
+			this.ownsContextCatalog = ownsContextCatalog;
+			this.extraSelected = extraSelected;
+			this.planeStatisticsUpdate = planeStatisticsUpdate;
+			this.structuralStats = structuralStats;
+		}
+
+		void transfer() {
+			transferred = true;
+		}
+
+		@Override
+		public void close() {
+			if (transferred) {
+				return;
+			}
+			if (generation != null) {
+				generation.release();
+			}
+			if (ownsContextCatalog) {
+				contextCatalog.release();
+			}
+			transferred = true;
+		}
+	}
+
+	private PreparedAdjacencyCommit prepareSynchronousCommit(SealedDirectDelta sealed, long nextRevision) {
+		if (!options.synchronousMaintenance() || !synchronousUpdatesActivated.get() || sealed == null
+				|| sealed.isOverflowed() || sealed.revision() != nextRevision || closed) {
+			return null;
+		}
+		publicationLock.lock();
+		try {
+			LmdbAdjacencyPublishedState predecessor = published.get();
+			if (predecessor.base() == null || predecessor.servingState() != AdjacencyServingState.ROW_EXACT
+					|| predecessor.appliedRevision() + 1 != nextRevision
+					|| predecessor.gapFromRevision() <= nextRevision || !predecessor.tryRetain()) {
+				return null;
+			}
+			long[] resolvedSelected = sealed.hasCapturedCoverage()
+					? sealed.resolvedSelectedPredicates()
+					: captureResolvedSelectedPredicates(predecessor);
+			preparationsInFlight.incrementAndGet();
+			try {
+				Future<PreparedApply> future = preparationExecutor.submit(() -> {
+					long started = System.nanoTime();
+					try {
+						Runnable interleave = beforePreparationForTest;
+						if (interleave != null) {
+							interleave.run();
+						}
+						PreparedApply prepared = prepareApply(sealed, predecessor, resolvedSelected, true);
+						try {
+							interleave = afterPreparationForTest;
+							if (interleave != null) {
+								interleave.run();
+							}
+							return prepared;
+						} catch (RuntimeException | Error failure) {
+							prepared.close();
+							throw failure;
+						}
+					} finally {
+						metrics.recordPreparation(Math.max(0L, System.nanoTime() - started));
+					}
+				});
+				return new PreparedAdjacencyCommit(sealed, predecessor, future);
+			} catch (RuntimeException failure) {
+				completePreparationReservation();
+				predecessor.release();
+				return null;
+			}
+		} finally {
+			publicationLock.unlock();
+		}
+	}
+
+	private void completePreparationReservation() {
+		publicationLock.lock();
+		try {
+			int remaining = preparationsInFlight.decrementAndGet();
+			if (remaining < 0) {
+				throw new IllegalStateException("adjacency preparation reservation underflow");
+			}
+			if (remaining == 0) {
+				noPreparationsInFlight.signalAll();
+			}
+		} finally {
+			publicationLock.unlock();
+		}
+	}
+
+	private SealedDirectDelta finalizeSynchronousCommit(PreparedAdjacencyCommit preparedCommit) {
+		PreparedApply prepared = null;
+		boolean publishedCommit = false;
+		try {
+			Runnable interleave = beforePreparedFinalizeWaitForTest;
+			if (interleave != null) {
+				interleave.run();
+			}
+			prepared = preparedCommit.future.get();
+			long publicationStarted = System.nanoTime();
+			try {
+				publishPrepared(preparedCommit.sealed, preparedCommit.predecessor, prepared, true);
+			} finally {
+				metrics.recordPublication(Math.max(0L, System.nanoTime() - publicationStarted));
+			}
+			publishedCommit = true;
+			return null;
+		} catch (InterruptedException interrupted) {
+			prepared = awaitPreparedUninterruptibly(preparedCommit.future);
+			Thread.currentThread().interrupt();
+			RuntimeException failure = preparedCommitFailure(preparedCommit.sealed.revision(),
+					"interrupted commit preparation", interrupted);
+			if (failure != null) {
+				throw failure;
+			}
+			return null;
+		} catch (ExecutionException | CancellationException failure) {
+			Throwable cause = failure instanceof ExecutionException && failure.getCause() != null
+					? failure.getCause()
+					: failure;
+			RuntimeException reported = preparedCommitFailure(preparedCommit.sealed.revision(), "commit preparation",
+					cause);
+			if (reported != null) {
+				throw reported;
+			}
+			return null;
+		} catch (RuntimeException failure) {
+			RuntimeException reported = preparedCommitFailure(preparedCommit.sealed.revision(),
+					"commit publication", failure);
+			if (reported != null) {
+				throw reported;
+			}
+			return null;
+		} catch (Error failure) {
+			markGap(preparedCommit.sealed.revision());
+			throw failure;
+		} finally {
+			if (prepared != null) {
+				prepared.close();
+			}
+			preparedCommit.completeOwnership();
+			if (publishedCommit) {
+				requestCompactionIfNeeded(published.get());
+			}
+		}
+	}
+
+	private void abortSynchronousCommit(PreparedAdjacencyCommit preparedCommit) {
+		PreparedApply prepared = awaitPreparedUninterruptibly(preparedCommit.future);
+		try {
+			if (prepared != null) {
+				prepared.close();
+			}
+		} finally {
+			preparedCommit.completeOwnership();
+		}
+	}
+
+	private static PreparedApply awaitPreparedUninterruptibly(Future<PreparedApply> future) {
+		boolean interrupted = false;
+		try {
+			while (true) {
+				try {
+					return future.get();
+				} catch (InterruptedException e) {
+					interrupted = true;
+				} catch (ExecutionException | CancellationException ignored) {
+					return null;
+				}
+			}
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
+	private RuntimeException preparedCommitFailure(long revision, String phase, Throwable cause) {
+		markGap(revision);
+		maintenanceState = MaintenanceState.DEGRADED_GAP;
+		scheduleQuiescentRebuild();
+		RuntimeException failure = unexpectedMaintenanceFailure(phase, cause);
+		if (options.failOnMaintenanceError()) {
+			return failure;
+		}
+		logger.warn("Direct adjacency {} failed after authoritative LMDB commit; revision {} uses fallback", phase,
+				revision, cause);
+		return null;
 	}
 
 	private void beforeRevisionBump(SealedDirectDelta sealed, long nextRevision) {
@@ -330,7 +607,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				}
 				PendingTable[] appended = Arrays.copyOf(pending, pending.length + 1);
 				appended[pending.length] = sealed.pendingTable();
-				publish(replacementState(current, appended, current.appliedRevision()));
+				publish(replacementState(current, appended, current.appliedRevision()),
+						LmdbAdjacencyGenerationTransition.noChange());
 			} finally {
 				publicationLock.unlock();
 			}
@@ -623,94 +901,133 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (retainedState == null) {
 			throw new IllegalStateException("could not retain a stable publication for delta apply");
 		}
+		long[] resolvedSelected = sealed.hasCapturedCoverage()
+				? sealed.resolvedSelectedPredicates()
+				: captureResolvedSelectedPredicates(retainedState);
+		try (PreparedApply prepared = prepareApply(sealed, retainedState, resolvedSelected, false)) {
+			publishPrepared(sealed, retainedState, prepared, false);
+			requestCompactionIfNeeded(published.get());
+		} finally {
+			retainedState.release();
+		}
+	}
+
+	private PreparedApply prepareApply(SealedDirectDelta sealed, LmdbAdjacencyPublishedState state,
+			long[] resolvedSelected, boolean speculative) {
+		LmdbInMemoryAdjacencyIndex base = state.base();
+		LmdbAdjacencyDeltaGeneration generation = null;
+		LmdbAdjacencyContextCatalog contextCatalog = state.contextCatalog();
+		boolean ownsContextCatalog = false;
+		long[] extraSelected = state.overlays() == null ? new long[0] : state.overlays().extraSelectedSnapshot();
+		LmdbAdjacencyPlaneStatistics.Update planeStatisticsUpdate = null;
+		LmdbAdjacencyDeltaApplier.StructuralStats structuralStats = LmdbAdjacencyDeltaApplier.StructuralStats.EMPTY;
 		try {
-			LmdbAdjacencyPublishedState state = retainedState;
-			LmdbInMemoryAdjacencyIndex base = state.base();
-			long revision = sealed.revision();
-
-			LmdbAdjacencyDeltaGeneration generation = null;
-			LmdbAdjacencyContextCatalog contextCatalog = state.contextCatalog();
-			boolean ownsContextCatalog = false;
-			long[] extraSelected = state.overlays() == null ? new long[0] : state.overlays().extraSelectedSnapshot();
-			LmdbAdjacencyPlaneStatistics.Update planeStatisticsUpdate = null;
-
 			if (!sealed.isEmpty()) {
-				long[] mergedExtra = classifySelected(extraSelected, sealed);
+				long[] mergedExtra = classifySelected(extraSelected, sealed, base, resolvedSelected);
 				LongPredicate covered = coveredPredicate(base, mergedExtra);
+				LmdbAdjacencyMemoryAccount.MemoryKind nativeOutputKind = speculative
+						? LmdbAdjacencyMemoryAccount.MemoryKind.PREPARATION_OUTPUT
+						: LmdbAdjacencyMemoryAccount.MemoryKind.DELTA;
+				LmdbAdjacencyMemoryAccount.MemoryKind metadataOutputKind = speculative
+						? LmdbAdjacencyMemoryAccount.MemoryKind.PREPARATION_OUTPUT
+						: LmdbAdjacencyMemoryAccount.MemoryKind.JAVA_METADATA;
 				LmdbAdjacencyDeltaApplier.Result result = LmdbAdjacencyDeltaApplier.apply(sealed, base, contextCatalog,
-						previousRows(state), covered, mergedExtra, account, workspaceRegionBytes);
+						previousRows(state), covered, mergedExtra, account, workspaceRegionBytes,
+						options.supernodeEdges(), options.supernodeChunkEdges(), options.supernodeTargetBytes(),
+						nativeOutputKind, metadataOutputKind);
 				generation = result.generation;
 				contextCatalog = result.contextCatalog;
 				ownsContextCatalog = contextCatalog != state.contextCatalog();
 				extraSelected = result.extraSelectedAfter;
 				planeStatisticsUpdate = result.planeStatisticsUpdate;
+				structuralStats = result.structuralStats;
 			}
+			return new PreparedApply(generation, contextCatalog, ownsContextCatalog, extraSelected,
+					planeStatisticsUpdate, structuralStats);
+		} catch (RuntimeException | Error failure) {
+			if (generation != null) {
+				generation.release();
+			}
+			if (ownsContextCatalog) {
+				contextCatalog.release();
+			}
+			throw failure;
+		}
+	}
 
-			publicationLock.lock();
+	private void publishPrepared(SealedDirectDelta sealed, LmdbAdjacencyPublishedState predecessor,
+			PreparedApply prepared, boolean exactPredecessor) {
+		publicationLock.lock();
+		try {
+			LmdbAdjacencyPublishedState current = published.get();
+			if (current != predecessor) {
+				if (exactPredecessor || current.base() != predecessor.base()
+						|| current.appliedRevision() != predecessor.appliedRevision()) {
+					throw new IllegalStateException("published predecessor changed during delta preparation");
+				}
+			}
+			PendingTable[] remaining = removePending(current.pending(), sealed.revision());
+			LmdbInMemoryAdjacencyIndex sharedBase = current.base();
+			if (sharedBase != null) {
+				sharedBase.retain();
+			}
+			LmdbAdjacencyOverlaySet newOverlays = null;
+			LmdbAdjacencyPublishedState replacement = null;
+			boolean publishedReplacement = false;
 			try {
-				LmdbAdjacencyPublishedState current = published.get();
-				if (current != state) {
-					// only pending-append swaps can interleave with the single-threaded applier; re-read is safe
-					// because
-					// base/overlays/applied are unchanged by them, but verify to keep the invariant executable
-					if (current.base() != base || current.appliedRevision() != state.appliedRevision()) {
-						if (generation != null) {
-							generation.release();
-						}
-						if (ownsContextCatalog) {
-							contextCatalog.release();
-							ownsContextCatalog = false;
-						}
-						throw new IllegalStateException("published base/applied revision changed during delta apply");
-					}
-					state = current;
-				}
-				// remove this revision's pending entry and advance the applied revision in the same swap
-				PendingTable[] pending = state.pending();
-				PendingTable[] remaining = removePending(pending, revision);
-				LmdbInMemoryAdjacencyIndex sharedBase = state.base();
-				if (sharedBase != null) {
-					sharedBase.retain();
-				}
-				LmdbAdjacencyOverlaySet newOverlays;
-				if (generation == null && state.overlays() == null) {
-					newOverlays = null;
-				} else {
-					LmdbAdjacencyDeltaGeneration[] oldGenerations = state.overlays() == null
-							? new LmdbAdjacencyDeltaGeneration[0]
-							: state.overlays().generationsSnapshot();
-					LmdbAdjacencyDeltaGeneration[] generations;
-					if (generation != null) {
-						generations = Arrays.copyOf(oldGenerations, oldGenerations.length + 1);
-						generations[oldGenerations.length] = generation;
-					} else {
-						generations = oldGenerations;
-					}
-					for (LmdbAdjacencyDeltaGeneration shared : oldGenerations) {
-						shared.retain();
-					}
-					if (!ownsContextCatalog) {
-						contextCatalog.retain();
-					}
+				if (prepared.generation != null || current.overlays() != null) {
+					prepared.contextCatalog.retain();
+					long liveLogicalBytes = current.overlays() == null
+							? prepared.generation == null ? 0 : prepared.generation.logicalBytes()
+							: prepared.generation == null ? current.overlays().liveLogicalBytes()
+									: current.overlays().liveLogicalBytesAfterAppend(prepared.generation);
 					try {
-						newOverlays = new LmdbAdjacencyOverlaySet(generations, contextCatalog, extraSelected);
-						ownsContextCatalog = false;
+						if (current.overlays() == null) {
+							prepared.generation.retain();
+							newOverlays = new LmdbAdjacencyOverlaySet(
+									new LmdbAdjacencyDeltaGeneration[] { prepared.generation },
+									prepared.contextCatalog, prepared.extraSelected, liveLogicalBytes);
+						} else if (prepared.generation == null) {
+							prepared.contextCatalog.release();
+							current.overlays().retain();
+							newOverlays = current.overlays();
+						} else {
+							newOverlays = current.overlays()
+									.appendRetained(prepared.generation,
+											prepared.contextCatalog, prepared.extraSelected, liveLogicalBytes);
+						}
 					} catch (RuntimeException | Error failure) {
-						contextCatalog.release();
-						ownsContextCatalog = false;
+						prepared.contextCatalog.release();
 						throw failure;
 					}
 				}
-				publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), sharedBase, newOverlays, remaining,
-						revision, state.gapFromRevision(), state.servingState(), state.minSnapshotRevision(),
-						state.planeStatistics().with(planeStatisticsUpdate)));
+				if (prepared.ownsContextCatalog) {
+					prepared.contextCatalog.reclassifyOwned(LmdbAdjacencyMemoryAccount.MemoryKind.DELTA,
+							LmdbAdjacencyMemoryAccount.MemoryKind.JAVA_METADATA);
+				}
+				replacement = new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), sharedBase, newOverlays,
+						remaining, sealed.revision(), current.gapFromRevision(), current.servingState(),
+						current.minSnapshotRevision(), current.planeStatistics().with(prepared.planeStatisticsUpdate));
+				publish(replacement, prepared.generation == null ? LmdbAdjacencyGenerationTransition.noChange()
+						: LmdbAdjacencyGenerationTransition.append(newOverlays.generationCount() - 1));
+				publishedReplacement = true;
+				replacement = null;
+				metrics.recordStructuralRewrite(prepared.structuralStats);
 				maintenanceState = MaintenanceState.ACTIVE;
 			} finally {
-				publicationLock.unlock();
+				if (replacement != null) {
+					replacement.release();
+				} else if (!publishedReplacement) {
+					if (newOverlays != null) {
+						newOverlays.release();
+					}
+					if (sharedBase != null) {
+						sharedBase.close();
+					}
+				}
 			}
-			requestCompactionIfNeeded(published.get());
 		} finally {
-			retainedState.release();
+			publicationLock.unlock();
 		}
 	}
 
@@ -721,6 +1038,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		if (overlays.generationCount() >= LmdbAdjacencyTieredCompactionPolicy.FANOUT
 				|| overlays.generationCount() > options.maxDeltaGenerations()
+				|| !state.base().arenaCatalog().hasSourceCapacityFor(2)
 				|| LmdbAdjacencyTieredCompactionPolicy.shouldFoldBase(overlays.retainedBytes(), workspaceRegionBytes,
 						state.base().retainedBytes())) {
 			requestCompaction();
@@ -748,9 +1066,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private void runCompactionLoop() {
 		try {
 			while (!closed && compactionRequested.getAndSet(false)) {
-				boolean progressed = compactOneDeltaRange();
-				if (!progressed) {
-					progressed = foldBaseUnderPressure();
+				long started = System.nanoTime();
+				boolean progressed;
+				try {
+					progressed = compactOneDeltaRange();
+					if (!progressed) {
+						progressed = foldBaseUnderPressure();
+					}
+				} finally {
+					metrics.recordCompaction(Math.max(0L, System.nanoTime() - started));
 				}
 				if (progressed) {
 					// A successful merge may have exposed another tier candidate. A stale candidate similarly needs
@@ -759,9 +1083,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				}
 			}
 		} catch (RuntimeException failure) {
-			logger.warn("Direct adjacency background delta compaction failed; the exact published state remains in use",
-					failure);
-			if (options.failOnMaintenanceError()) {
+			if (!closed) {
+				logger.warn(
+						"Direct adjacency background delta compaction failed; the exact published state remains in use",
+						failure);
+			}
+			if (!closed && options.failOnMaintenanceError()) {
 				rememberUnexpectedMaintenanceFailure(unexpectedMaintenanceFailure("delta compaction", failure));
 			}
 		} finally {
@@ -773,15 +1100,24 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	private boolean foldBaseUnderPressure() {
+		if (preparationsInFlight.get() != 0) {
+			return false;
+		}
 		LmdbAdjacencyPublishedState state = retainPublishedState();
 		if (state == null) {
 			return false;
 		}
 		try {
 			LmdbAdjacencyOverlaySet overlays = state.overlays();
-			if (overlays == null || state.base() == null
-					|| !LmdbAdjacencyTieredCompactionPolicy.shouldFoldBase(overlays.retainedBytes(),
-							workspaceRegionBytes, state.base().retainedBytes())) {
+			if (overlays == null || state.base() == null) {
+				return false;
+			}
+			boolean capacityExhausted = !state.base().arenaCatalog().hasSourceCapacityFor(2);
+			boolean basePressure = LmdbAdjacencyTieredCompactionPolicy.shouldFoldBase(overlays.retainedBytes(),
+					workspaceRegionBytes, state.base().retainedBytes());
+			boolean retainedDebt = LmdbAdjacencyTieredCompactionPolicy.shouldPhysicallyFlatten(overlays.nativeBytes(),
+					overlays.liveLogicalBytes(), workspaceRegionBytes);
+			if (!capacityExhausted && !basePressure && !retainedDebt) {
 				return false;
 			}
 			try {
@@ -811,10 +1147,14 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			if (overlays == null || overlays.generationCount() < 2 || state.base() == null) {
 				return false;
 			}
-			LmdbAdjacencyTieredCompactionPolicy.Candidate candidate = selectCompactionCandidate(overlays);
-			if (candidate == null) {
+			if (!state.base().arenaCatalog().hasSourceCapacityFor(1)) {
 				return false;
 			}
+			if (!LmdbAdjacencyTieredCompactionPolicy.select(overlays, options.maxDeltaGenerations(),
+					compactionCandidate)) {
+				return false;
+			}
+			LmdbAdjacencyTieredCompactionPolicy.Candidate candidate = compactionCandidate;
 
 			LmdbAdjacencyDeltaGeneration merged;
 			long inputRetainedBytes = 0;
@@ -836,7 +1176,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				interleave.run();
 			}
 			boolean transferred = false;
-			publicationLock.lock();
+			if (!lockCompactionPublication()) {
+				merged.release();
+				return false;
+			}
 			try {
 				LmdbAdjacencyPublishedState current = published.get();
 				LmdbAdjacencyOverlaySet currentOverlays = current.overlays();
@@ -864,7 +1207,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				LmdbAdjacencyOverlaySet replacementOverlays;
 				try {
 					replacementOverlays = new LmdbAdjacencyOverlaySet(replacement, contexts,
-							currentOverlays.extraSelectedSnapshot());
+							currentOverlays.extraSelectedSnapshot(), currentOverlays.liveLogicalBytes());
 				} catch (RuntimeException | Error failure) {
 					contexts.release();
 					for (LmdbAdjacencyDeltaGeneration generation : replacement) {
@@ -877,15 +1220,13 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				LmdbInMemoryAdjacencyIndex base = current.base();
 				base.retain();
 				try {
-					merged.publishCompactionOutput();
 					long newestMergedRevision = overlays.generation(candidate.toExclusive() - 1).revision();
 					publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), base, replacementOverlays,
 							current.pending(), current.appliedRevision(), current.gapFromRevision(),
 							current.servingState(), Math.max(current.minSnapshotRevision(), newestMergedRevision),
-							current.planeStatistics()));
-					for (int i = candidate.fromInclusive(); i < candidate.toExclusive(); i++) {
-						overlays.generation(i).retireFromCurrentOverlay();
-					}
+							current.planeStatistics()),
+							LmdbAdjacencyGenerationTransition.rangeReplacement(
+									candidate.fromInclusive(), candidate.size(), 1));
 					metrics.recordDeltaMerge(inputRetainedBytes, merged.retainedBytes());
 					transferred = true;
 					maintenanceState = MaintenanceState.ACTIVE;
@@ -907,6 +1248,33 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 	}
 
+	/**
+	 * Waits off the commit path until an already-built logical compaction can take the next exact publication turn. The
+	 * fair publication lock gives the queued compactor precedence over a later preparation admission, while the
+	 * expensive merge remains entirely on the compaction executor.
+	 */
+	private boolean lockCompactionPublication() {
+		boolean locked = false;
+		try {
+			publicationLock.lockInterruptibly();
+			locked = true;
+			while (!closed && preparationsInFlight.get() != 0) {
+				noPreparationsInFlight.await();
+			}
+			if (closed) {
+				publicationLock.unlock();
+				return false;
+			}
+			return true;
+		} catch (InterruptedException interrupted) {
+			if (locked) {
+				publicationLock.unlock();
+			}
+			Thread.currentThread().interrupt();
+			return false;
+		}
+	}
+
 	private LmdbAdjacencyPublishedState retainPublishedState() {
 		for (int attempt = 0; attempt < 3; attempt++) {
 			LmdbAdjacencyPublishedState state = published.get();
@@ -921,29 +1289,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return null;
 	}
 
-	private LmdbAdjacencyTieredCompactionPolicy.Candidate selectCompactionCandidate(
-			LmdbAdjacencyOverlaySet overlays) {
-		LmdbAdjacencyTieredCompactionPolicy.GenerationInfo[] information = new LmdbAdjacencyTieredCompactionPolicy.GenerationInfo[overlays
-				.generationCount()];
-		for (int i = 0; i < information.length; i++) {
-			LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
-			information[i] = new LmdbAdjacencyTieredCompactionPolicy.GenerationInfo(generation.revision(),
-					generation.retainedBytes(), generation.compactionWeightBytes(), generation.referenceCount());
-		}
-		return LmdbAdjacencyTieredCompactionPolicy.select(information, options.maxDeltaGenerations());
-	}
-
 	private static boolean hasGenerationPrefix(LmdbAdjacencyOverlaySet current,
 			LmdbAdjacencyOverlaySet expectedPrefix) {
-		if (current == null || current.generationCount() < expectedPrefix.generationCount()) {
-			return false;
-		}
-		for (int i = 0; i < expectedPrefix.generationCount(); i++) {
-			if (current.generation(i) != expectedPrefix.generation(i)) {
-				return false;
-			}
-		}
-		return true;
+		return current != null && current.hasGenerationPrefix(expectedPrefix);
 	}
 
 	/**
@@ -955,12 +1303,14 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		LmdbAdjacencyContextCatalog contexts = state.contextCatalog();
 		LmdbAdjacencyArenaSizingPlan sizingPlan = new LmdbAdjacencyArenaSizingPlan(workspaceRegionBytes);
 		int[] rowCount = { 0 };
+		List<LmdbAdjacencyRunCodec.SourceSlice> retainedSources = new ArrayList<>();
 		forEachMergedRow(overlays, from, to, (sourceIndex, rowIndex) -> {
 			rowCount[0] = Math.incrementExact(rowCount[0]);
 			LmdbAdjacencyDeltaGeneration source = overlays.generation(sourceIndex);
 			if (!source.tombstoneAt(rowIndex)) {
-				LmdbAdjacencyRunCodec.planEncodedCopy(source.catalog(), contexts, source.handleAt(rowIndex),
-						sizingPlan);
+				retainedSources.add(LmdbAdjacencyRunCodec.wholePersistentSource(source.catalog(), contexts,
+						source.handleAt(rowIndex)));
+				sizingPlan.allocate(LmdbAdjacencyRunCodec.persistentNodeBytes(1), 8);
 			}
 		});
 		sizingPlan.seal();
@@ -981,16 +1331,21 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 
 		LmdbAdjacencyArena arena = null;
+		LmdbAdjacencyDeltaArenaOwner arenaOwner = null;
 		LmdbAdjacencyArenaCatalog catalog = null;
 		boolean constructorOwnsResources = false;
 		try {
 			arena = new LmdbAdjacencyArena(sizingPlan);
+			arenaOwner = new LmdbAdjacencyDeltaArenaOwner(arena, nativeCharge.transfer());
+			catalog = LmdbAdjacencyArenaCatalog.composed(state.base().arenaCatalog(), arenaOwner, retainedSources);
 			long[] keys = new long[rowCount[0]];
 			byte[] planes = new byte[rowCount[0]];
 			long[] predicates = new long[rowCount[0]];
 			long[] runRefs = new long[rowCount[0]];
 			int[] output = { 0 };
+			int[] retained = { 0 };
 			LmdbAdjacencyArena outputArena = arena;
+			LmdbAdjacencyArenaCatalog outputCatalog = catalog;
 			forEachMergedRow(overlays, from, to, (sourceIndex, rowIndex) -> {
 				int target = output[0]++;
 				LmdbAdjacencyDeltaGeneration source = overlays.generation(sourceIndex);
@@ -998,30 +1353,35 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				planes[target] = (byte) source.rowPlaneAt(rowIndex);
 				predicates[target] = source.rowPredicateAt(rowIndex);
 				if (!source.tombstoneAt(rowIndex)) {
-					runRefs[target] = LmdbAdjacencyRunCodec
-							.writeEncodedCopy(source.catalog(), contexts, source.handleAt(rowIndex),
-									outputArena).rootRef;
+					LmdbAdjacencyRunCodec.SourceSlice retainedSource = retainedSources.get(retained[0]++);
+					LmdbAdjacencyRunCodec.PersistentChild child = new LmdbAdjacencyRunCodec.PersistentChild(
+							retainedSource.firstNeighbor, retainedSource.firstContext, retainedSource.count,
+							retainedSource.sourceOrdinal, retainedSource.sourceId, retainedSource.sourceRef,
+							retainedSource.kind);
+					int level = retainedSource.kind == LmdbAdjacencyRunCodec.PERSISTENT_CHILD_NODE
+							? LmdbAdjacencyRunCodec.persistentNode(retainedSource.registry,
+									retainedSource.sourceId, retainedSource.sourceRef).level() + 1
+							: 0;
+					runRefs[target] = LmdbAdjacencyRunCodec.writePersistentSingletonNode(outputArena,
+							outputCatalog.sourceRegistry(), level, child,
+							LmdbAdjacencyRunCodec.contextsPresent(retainedSource),
+							LmdbAdjacencyRunCodec.orderedIntegerDomain(retainedSource));
 				}
 			});
 			if (arena.capacityBytes() != nativeBytes) {
 				throw new IllegalStateException("delta compaction planned " + nativeBytes + " native bytes but wrote "
 						+ arena.capacityBytes());
 			}
-			LmdbAdjacencyArenaCatalog slotZero = state.base().arenaCatalog().baseOnlyCopy();
-			try {
-				catalog = slotZero.appendRetained(arena);
-			} finally {
-				slotZero.close();
-			}
 			long weight = 0;
 			for (int i = from; i < to; i++) {
 				weight = saturatingAdd(weight, overlays.generation(i).compactionWeightBytes());
 			}
-			LmdbAdjacencyMemoryAccount.Charge generationNativeCharge = nativeCharge.transfer();
 			LmdbAdjacencyMemoryAccount.Charge generationMetadataCharge = metadataCharge.transfer();
 			constructorOwnsResources = true;
-			return new LmdbAdjacencyDeltaGeneration(overlays.generation(to - 1).revision(), arena, catalog,
-					generationNativeCharge, generationMetadataCharge, weight, keys, planes, predicates, runRefs);
+			LmdbAdjacencyDeltaGeneration generation = new LmdbAdjacencyDeltaGeneration(
+					overlays.generation(to - 1).revision(), arenaOwner, catalog,
+					generationMetadataCharge, weight, keys, planes, predicates, runRefs);
+			return generation;
 		} finally {
 			nativeCharge.close();
 			metadataCharge.close();
@@ -1029,7 +1389,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				if (catalog != null) {
 					catalog.close();
 				}
-				if (arena != null) {
+				if (arenaOwner != null) {
+					arenaOwner.close();
+				} else if (arena != null) {
 					arena.close();
 				}
 			}
@@ -1141,6 +1503,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		boolean publishedReplacement = false;
 		publicationLock.lock();
 		try {
+			if (preparationsInFlight.get() != 0) {
+				metrics.recordCompactionCandidateRetry();
+				return;
+			}
 			LmdbAdjacencyPublishedState current = published.get();
 			// A commit appended after the fold snapshot is retained as an unchanged suffix. Any changed folded-prefix
 			// identity or base invalidates this speculative rewrite.
@@ -1173,10 +1539,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), result.base(), suffix,
 						current.pending(), current.appliedRevision(), current.gapFromRevision(), current.servingState(),
 						Math.max(current.minSnapshotRevision(), state.appliedRevision()),
-						suffix == null ? result.base().planeStatistics() : current.planeStatistics()));
-				for (int i = 0; i < overlays.generationCount(); i++) {
-					overlays.generation(i).retireFromCurrentOverlay();
-				}
+						suffix == null ? result.base().planeStatistics() : current.planeStatistics()),
+						LmdbAdjacencyGenerationTransition.prefixRemoval(overlays.generationCount()));
 				metrics.recordBaseFold(overlays.retainedBytes(), result.base().retainedBytes());
 			} catch (RuntimeException | Error failure) {
 				if (suffix != null) {
@@ -1220,6 +1584,16 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			LmdbAdjacencyDeltaGeneration merged = mergeGenerations(state);
 			publicationLock.lock();
 			try {
+				if (preparationsInFlight.get() != 0) {
+					merged.release();
+					if (consolidatedContextCatalog != null
+							&& consolidatedContextCatalog != overlays.contextCatalog()) {
+						consolidatedContextCatalog.release();
+					}
+					consolidatedContextCatalog = null;
+					metrics.recordCompactionCandidateRetry();
+					return;
+				}
 				LmdbAdjacencyPublishedState current = published.get();
 				// pending-append swaps share the same overlay set; any other interleaving abandons this attempt
 				if (current.overlays() != overlays || current.base() == null) {
@@ -1242,10 +1616,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				}
 				LmdbAdjacencyOverlaySet consolidated = new LmdbAdjacencyOverlaySet(
 						new LmdbAdjacencyDeltaGeneration[] { merged }, mergedContexts,
-						overlays.extraSelectedSnapshot());
+						overlays.extraSelectedSnapshot(), merged.logicalBytes());
 				publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), base, consolidated,
 						current.pending(), current.appliedRevision(), current.gapFromRevision(),
-						current.servingState(), current.appliedRevision(), current.planeStatistics().flattened()));
+						current.servingState(), current.appliedRevision(), current.planeStatistics().flattened()),
+						LmdbAdjacencyGenerationTransition.rebuildInstall(overlays.generationCount(), 1));
 				maintenanceState = MaintenanceState.ACTIVE;
 			} finally {
 				publicationLock.unlock();
@@ -1525,7 +1900,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				// pending markers carry so the replacement build keeps its continuity evidence
 				publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), null, null, current.pending(),
 						current.appliedRevision(), current.gapFromRevision(), AdjacencyServingState.UNAVAILABLE, -1,
-						LmdbAdjacencyPlaneStatistics.empty()));
+						LmdbAdjacencyPlaneStatistics.empty()),
+						LmdbAdjacencyGenerationTransition
+								.closeReset(current.overlays() == null ? 0 : current.overlays().generationCount()));
 			}
 		} finally {
 			publicationLock.unlock();
@@ -1573,22 +1950,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 * to a captured raw predicate ID becomes selected; its base-domain absence is proven by the base dictionary (plan's
 	 * absence proof), so its first commit merges against empty rows.
 	 */
-	private long[] classifySelected(long[] extraSelected, SealedDirectDelta sealed) {
-		LmdbAdjacencyPublishedState state = published.get();
-		LmdbInMemoryAdjacencyIndex base = state.base();
+	private long[] classifySelected(long[] extraSelected, SealedDirectDelta sealed,
+			LmdbInMemoryAdjacencyIndex base, long[] resolvedSelected) {
 		LmdbAdjacencyCoverage coverage = base.coverage();
-		if (coverage.isFull() || coverage.unresolvedConfiguredIris().isEmpty() || valueStore == null) {
+		if (coverage.isFull() || resolvedSelected.length == 0) {
 			return extraSelected;
 		}
 		long[] merged = extraSelected;
-		for (IRI unresolved : coverage.unresolvedConfiguredIris()) {
-			long id;
-			try {
-				id = valueStore.getId(unresolved);
-			} catch (IOException e) {
-				continue;
-			}
-			if (id == LmdbValue.UNKNOWN_ID || id <= 0 || unsignedContains(merged, id)) {
+		for (long id : resolvedSelected) {
+			if (id == LmdbValue.UNKNOWN_ID || id <= 0 || coverage.covers(id) || unsignedContains(merged, id)) {
 				continue;
 			}
 			boolean captured = false;
@@ -1611,26 +1981,67 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return merged;
 	}
 
+	private long[] captureResolvedSelectedPredicates(LmdbAdjacencyPublishedState state) {
+		LmdbInMemoryAdjacencyIndex base = state.base();
+		if (base == null) {
+			return new long[0];
+		}
+		LmdbAdjacencyCoverage coverage = base.coverage();
+		if (coverage.isFull() || coverage.unresolvedConfiguredIris().isEmpty() || valueStore == null) {
+			return new long[0];
+		}
+		long[] resolved = new long[coverage.unresolvedConfiguredIris().size()];
+		int count = 0;
+		for (IRI unresolved : coverage.unresolvedConfiguredIris()) {
+			try {
+				long id = valueStore.getId(unresolved);
+				if (id != LmdbValue.UNKNOWN_ID && id > 0) {
+					resolved[count++] = id;
+				}
+			} catch (IOException ignored) {
+				// An unresolved predicate remains outside the captured coverage for this commit.
+			}
+		}
+		resolved = Arrays.copyOf(resolved, count);
+		sortUnsigned(resolved);
+		return resolved;
+	}
+
+	long[] captureCommitCoverageMetadata() {
+		if (options.coverage() != DirectAdjacencyCoverage.SELECTED || valueStore == null) {
+			return new long[0];
+		}
+		long[] resolved = new long[options.selectedPredicates().size()];
+		int count = 0;
+		for (IRI selected : options.selectedPredicates()) {
+			try {
+				long id = valueStore.getId(selected);
+				if (id != LmdbValue.UNKNOWN_ID && id > 0) {
+					resolved[count++] = id;
+				}
+			} catch (IOException ignored) {
+				// The immutable commit metadata simply leaves this still-unresolved predicate absent.
+			}
+		}
+		resolved = Arrays.copyOf(resolved, count);
+		sortUnsigned(resolved);
+		return resolved;
+	}
+
 	private LmdbAdjacencyDeltaApplier.PreviousRows previousRows(LmdbAdjacencyPublishedState state) {
 		LmdbAdjacencyOverlaySet overlays = state.overlays();
-		int generationCount = overlays == null ? 0 : overlays.generationCount();
-		SearchContext[] generationSearches = new SearchContext[generationCount];
-		for (int i = 0; i < generationCount; i++) {
-			generationSearches[i] = new SearchContext();
-		}
+		LmdbAdjacencyOverlaySet.LatestRowLookup overlaySearch = new LmdbAdjacencyOverlaySet.LatestRowLookup();
 		LmdbAdjacencyContextCatalog overlayContexts = state.contextCatalog();
 		LmdbInMemoryAdjacencyIndex base = state.base();
 		LmdbAdjacencyLookupContext baseSearch = new LmdbAdjacencyLookupContext();
 		return (rawKey, plane, rawPredicateId) -> {
-			for (int i = generationCount - 1; i >= 0; i--) {
-				LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
-				long found = generation.find(rawKey, plane, rawPredicateId, generationSearches[i]);
-				if (found == LmdbAdjacencyDeltaGeneration.ROW_TOMBSTONE) {
+			if (overlays != null && overlays.findLatest(rawKey, plane, rawPredicateId, overlaySearch)) {
+				LmdbAdjacencyDeltaGeneration generation = overlaySearch.generation();
+				if (generation.tombstoneAt(overlaySearch.rowIndex())) {
 					return null;
 				}
-				if (found != LmdbAdjacencyDeltaGeneration.NO_VERSION) {
-					return new OldRun(generation.catalog(), overlayContexts, found);
-				}
+				return new OldRun(generation.catalog(), overlayContexts,
+						generation.handleAt(overlaySearch.rowIndex()));
 			}
 			long handle = base.findRun(rawKey, plane, rawPredicateId, baseSearch);
 			if (handle == LmdbInMemoryAdjacencyIndex.NOT_FOUND
@@ -1689,15 +2100,21 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (Thread.currentThread() == compactionThread) {
 			return;
 		}
-		try {
-			compactionExecutor.submit(() -> {
-			}).get();
-		} catch (RejectedExecutionException e) {
-			if (!closed) {
-				throw e;
+		while (true) {
+			try {
+				compactionExecutor.submit(() -> {
+				}).get();
+				if (!compactionTaskScheduled.get() && !compactionRequested.get()) {
+					return;
+				}
+			} catch (RejectedExecutionException e) {
+				if (!closed) {
+					throw e;
+				}
+				return;
+			} catch (Exception e) {
+				throw new IllegalStateException("direct adjacency compaction barrier failed", e);
 			}
-		} catch (Exception e) {
-			throw new IllegalStateException("direct adjacency compaction barrier failed", e);
 		}
 	}
 
@@ -2077,7 +2494,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 							}
 							publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), index, overlays,
 									carried.toArray(new PendingTable[0]), appliedRevision, Long.MAX_VALUE,
-									AdjacencyServingState.ROW_EXACT, index.baseRevision(), planeStatistics));
+									AdjacencyServingState.ROW_EXACT, index.baseRevision(), planeStatistics),
+									LmdbAdjacencyGenerationTransition.rebuildInstall(
+											current.overlays() == null ? 0 : current.overlays().generationCount(),
+											overlays == null ? 0 : overlays.generationCount()));
 							GapMarker clearedGap = new GapMarker(Long.MAX_VALUE, capturedGap.sequence());
 							if (emergencyGap.compareAndSet(capturedGap, clearedGap)) {
 								// This cutover happens while physical commits are fenced. A commit that acquires the
@@ -2121,7 +2541,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					LongPredicate covered = coveredPredicate(index, mergedExtra);
 					LmdbAdjacencyDeltaApplier.Result result = LmdbAdjacencyDeltaApplier.apply(head, index,
 							contextCatalog, catchUpPreviousRows(index, generations, contextCatalog), covered,
-							mergedExtra, account, workspaceRegionBytes);
+							mergedExtra, account, workspaceRegionBytes, options.supernodeEdges(),
+							options.supernodeChunkEdges(), options.supernodeTargetBytes());
 					if (result.generation != null) {
 						generations.add(result.generation);
 					}
@@ -2254,8 +2675,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	/** Publishes a replacement state and retires the old publisher reference. Caller holds {@link #publicationLock}. */
-	private void publish(LmdbAdjacencyPublishedState state) {
-		LmdbAdjacencyPublishedState old = published.getAndSet(state);
+	private void publish(LmdbAdjacencyPublishedState state, LmdbAdjacencyGenerationTransition transition) {
+		LmdbAdjacencyPublishedState old = published.get();
+		transition.validate(old.overlays(), state.overlays());
+		transition.activateAdditions(state.overlays());
+		if (!published.compareAndSet(old, state)) {
+			transition.rollbackAdditions(state.overlays());
+			throw new IllegalStateException("published adjacency state changed while publication lock was held");
+		}
+		transition.deactivateRemovals(old.overlays());
 		old.release();
 	}
 
@@ -2267,6 +2695,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				return;
 			}
 			closed = true;
+			noPreparationsInFlight.signalAll();
 			maintenanceState = MaintenanceState.CLOSED;
 		} finally {
 			publicationLock.unlock();
@@ -2280,7 +2709,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			applyQueue.notifyAll();
 		}
 		maintenanceExecutor.shutdown();
-		compactionExecutor.shutdown();
+		preparationExecutor.shutdown();
+		compactionExecutor.shutdownNow();
 		boolean interrupted = false;
 		while (!maintenanceExecutor.isTerminated()) {
 			try {
@@ -2292,6 +2722,18 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			} catch (InterruptedException e) {
 				interrupted = true;
 				maintenanceExecutor.shutdownNow();
+			}
+		}
+		while (!preparationExecutor.isTerminated()) {
+			try {
+				if (!preparationExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
+					logger.warn("Direct adjacency preparation executor did not terminate within 60 seconds; "
+							+ "interrupting prepared work before continuing close");
+					preparationExecutor.shutdownNow();
+				}
+			} catch (InterruptedException e) {
+				interrupted = true;
+				preparationExecutor.shutdownNow();
 			}
 		}
 		while (!compactionExecutor.isTerminated()) {
@@ -2311,8 +2753,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		publicationLock.lock();
 		try {
+			LmdbAdjacencyPublishedState current = published.get();
 			publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), null, -1, Long.MAX_VALUE,
-					AdjacencyServingState.CLOSED));
+					AdjacencyServingState.CLOSED),
+					LmdbAdjacencyGenerationTransition
+							.closeReset(current.overlays() == null ? 0 : current.overlays().generationCount()));
 			// A task that was already running when close began may have completed a final publication.
 			maintenanceState = MaintenanceState.CLOSED;
 		} finally {
@@ -4064,5 +4509,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				overlays == null ? 0 : overlays.generationCount(), overlays == null ? 0 : overlays.nativeBytes(),
 				overlays == null ? 0 : overlays.metadataBytes(),
 				account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.RETAINED_SNAPSHOT));
+	}
+
+	LmdbAdjacencyMetrics.PhaseTimings phaseTimings() {
+		return metrics.phaseTimings();
 	}
 }

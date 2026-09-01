@@ -21,6 +21,8 @@ import java.util.List;
 import java.util.Random;
 import java.util.TreeMap;
 
+import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
+import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -528,6 +530,117 @@ class LmdbAdjacencyRunCodecTest {
 	}
 
 	@Test
+	void compositeRunSlicesOrdinarySourcesWithoutNesting() {
+		LmdbAdjacencyArena arena = newArena(1 << 20);
+		LmdbAdjacencyArenaCatalog catalog = newCatalog(arena);
+		LmdbAdjacencyContextCatalog contexts = LmdbAdjacencyContextCatalog.base(arena, new long[0]);
+		long oldRef = LmdbAdjacencyRunCodec.encode(
+				source(new long[][] { { 100, 0 }, { 200, 0 }, { 300, 0 }, { 400, 0 } }), contexts, arena);
+		long insertedRef = LmdbAdjacencyRunCodec.encode(source(new long[][] { { 250, 0 } }), contexts, arena);
+
+		long directoryBytes = 24 + 3L * 48;
+		long directoryRef = arena.allocateRef(directoryBytes, 8);
+		MemorySegment directory = arena.slice(directoryRef, directoryBytes);
+		directory.set(LmdbAdjacencyArena.U8, 0, (byte) 3);
+		directory.set(LmdbAdjacencyArena.U8, 1, (byte) 1);
+		directory.set(LmdbAdjacencyArena.U16_LE, 2, (short) 0);
+		directory.set(LmdbAdjacencyArena.U32_LE, 4, 3);
+		directory.set(LmdbAdjacencyArena.U64_LE, 8, directoryBytes);
+		directory.set(LmdbAdjacencyArena.U64_LE, 16, 5);
+		writeCompositeLeaf(directory, 0, 100, 0, 0, 0, 2, oldRef);
+		writeCompositeLeaf(directory, 1, 250, 0, 2, 0, 1, insertedRef);
+		writeCompositeLeaf(directory, 2, 300, 0, 3, 2, 2, oldRef);
+
+		long handle = catalog.packHandle(0, directoryRef);
+		assertThat(LmdbAdjacencyRunCodec.edgeCount(catalog, handle)).isEqualTo(5);
+		long[] expected = { 100, 200, 250, 300, 400 };
+		for (int i = 0; i < expected.length; i++) {
+			assertThat(LmdbAdjacencyRunCodec.neighborAt(catalog, handle, i)).isEqualTo(expected[i]);
+			assertThat(LmdbAdjacencyRunCodec.contextAt(catalog, contexts, handle, i)).isZero();
+		}
+		long[] copied = new long[4];
+		assertThat(LmdbAdjacencyRunCodec.copy(catalog, contexts, handle, 1, 4, copied, 0, null, 0)).isEqualTo(4);
+		assertThat(copied).containsExactly(200, 250, 300, 400);
+		assertThat(LmdbAdjacencyRunCodec.lowerBound(catalog, contexts, handle, 1, 275, 0)).isEqualTo(3);
+	}
+
+	@Test
+	void compositeCatalogResolvesTwoHistoricalCsfRoots() {
+		LmdbAdjacencyArena baseArena = new LmdbAdjacencyArena(1 << 20);
+		LmdbAdjacencyContextCatalog contexts = LmdbAdjacencyContextCatalog.base(baseArena, new long[0]);
+		ImmutablePagedQuadCsfIndex first = csfRow(100, 200);
+		ImmutablePagedQuadCsfIndex second = csfRow(300, 400);
+		LmdbAdjacencyArenaCatalog firstCatalog = LmdbAdjacencyArenaCatalog.of(baseArena, first);
+		LmdbAdjacencyArenaCatalog secondCatalog = LmdbAdjacencyArenaCatalog.of(baseArena, second);
+		long firstHandle = firstCatalog.packCsfHandle(first.findLocalReference(0, 0, 1));
+		long secondHandle = secondCatalog.packCsfHandle(second.findLocalReference(0, 0, 1));
+		List<LmdbAdjacencyRunCodec.SourceSlice> leaves = new ArrayList<>();
+		leaves.addAll(LmdbAdjacencyRunCodec.directSlices(firstCatalog, contexts, firstHandle, 16));
+		leaves.addAll(LmdbAdjacencyRunCodec.directSlices(secondCatalog, contexts, secondHandle, 16));
+
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1 << 20);
+		LmdbAdjacencyArena targetArena = new LmdbAdjacencyArena(4096);
+		LmdbAdjacencyDeltaArenaOwner owner = new LmdbAdjacencyDeltaArenaOwner(targetArena,
+				account.tryCharge(MemoryKind.DELTA, 4096));
+		LmdbAdjacencyArenaCatalog compositeCatalog = LmdbAdjacencyArenaCatalog.composed(firstCatalog, owner, leaves);
+		try {
+			long ref = LmdbAdjacencyRunCodec.writeComposite(targetArena, compositeCatalog, leaves, true, false);
+			long handle = compositeCatalog.packHandle(1, ref);
+			long[] neighbors = new long[4];
+			long[] rawContexts = new long[4];
+			assertThat(LmdbAdjacencyRunCodec.copy(compositeCatalog, contexts, handle, 0, 4, neighbors, 0,
+					rawContexts, 0)).isEqualTo(4);
+			assertThat(neighbors).containsExactly(100, 200, 300, 400);
+			assertThat(rawContexts).containsOnly(0);
+		} finally {
+			compositeCatalog.close();
+			owner.close();
+			secondCatalog.close();
+			firstCatalog.close();
+			second.close();
+			first.close();
+			contexts.close();
+			baseArena.close();
+		}
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	private static ImmutablePagedQuadCsfIndex csfRow(long... neighbors) {
+		ImmutablePagedQuadCsfIndex.BuildPlan plan;
+		try (ImmutablePagedQuadCsfIndex.Builder sizing = ImmutablePagedQuadCsfIndex.sizingBuilder(1)) {
+			emitCsfRow(sizing, neighbors);
+			plan = sizing.finishPlan();
+		}
+		try (ImmutablePagedQuadCsfIndex.Builder materializing = ImmutablePagedQuadCsfIndex
+				.materializingBuilder(plan)) {
+			emitCsfRow(materializing, neighbors);
+			return materializing.finishIndex();
+		}
+	}
+
+	private static void emitCsfRow(ImmutablePagedQuadCsfIndex.Builder builder, long[] neighbors) {
+		builder.beginRow(0, 0, 1);
+		for (long neighbor : neighbors) {
+			builder.pair(neighbor, 0);
+		}
+		builder.endRow();
+	}
+
+	private static void writeCompositeLeaf(MemorySegment directory, int index, long neighbor, long context,
+			long edgeStart, long sourceOrdinal, long count, long sourceRef) {
+		long at = 24 + 48L * index;
+		directory.set(LmdbAdjacencyArena.U64_LE, at, neighbor);
+		directory.set(LmdbAdjacencyArena.U64_LE, at + 8, context);
+		directory.set(LmdbAdjacencyArena.U64_LE, at + 16, edgeStart);
+		directory.set(LmdbAdjacencyArena.U64_LE, at + 24, count);
+		directory.set(LmdbAdjacencyArena.U64_LE, at + 32, sourceOrdinal);
+		directory.set(LmdbAdjacencyArena.U8, at + 40, (byte) 0);
+		LmdbAdjacencyArena.writeU40(directory, at + 41, sourceRef);
+		directory.set(LmdbAdjacencyArena.U8, at + 46, (byte) 0);
+		directory.set(LmdbAdjacencyArena.U8, at + 47, (byte) 0);
+	}
+
+	@Test
 	void malformedTagsAndTruncatedHeadersAreRejected() {
 		LmdbAdjacencyArena arena = newArena(1 << 20);
 		LmdbAdjacencyArenaCatalog catalog = newCatalog(arena);
@@ -537,9 +650,9 @@ class LmdbAdjacencyRunCodecTest {
 		long goodHandle = catalog.packHandle(0, goodRef);
 		assertThat(LmdbAdjacencyRunCodec.edgeCount(catalog, goodHandle)).isEqualTo(2);
 
-		// reserved codec value 3
+		// composite codec with a truncated/malformed header
 		long reservedRef = arena.allocateRef(16, 8);
-		arena.slice(reservedRef, 16).set(LmdbAdjacencyArena.U8, 0, (byte) LmdbAdjacencyRunCodec.CODEC_RESERVED);
+		arena.slice(reservedRef, 16).set(LmdbAdjacencyArena.U8, 0, (byte) LmdbAdjacencyRunCodec.CODEC_COMPOSITE);
 		assertThatThrownBy(() -> LmdbAdjacencyRunCodec.edgeCount(catalog, catalog.packHandle(0, reservedRef)))
 				.isInstanceOf(IllegalStateException.class);
 

@@ -39,6 +39,8 @@ final class LmdbAdjacencyMemoryAccount {
 		RETAINED_SNAPSHOT,
 		BUILD_COUNTERS,
 		BUILD_OUTPUT,
+		/** Native and modelled Java output owned by an unpublished prepared commit. */
+		PREPARATION_OUTPUT,
 		CONSOLIDATION_OUTPUT,
 		JAVA_METADATA,
 		/**

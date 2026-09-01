@@ -151,6 +151,24 @@ class LmdbDirectAdjacencyConsolidationTest {
 	}
 
 	@Test
+	void continuousSynchronousCommitsKeepTheGenerationBacklogBounded() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+
+		int maximumGenerationCount = 0;
+		for (int i = 1; i <= 1_000; i++) {
+			commitAdd(S1, P1, uri(100_000 + i));
+			maximumGenerationCount = Math.max(maximumGenerationCount,
+					store.publishedStateForTest().overlays().generationCount());
+		}
+		store.awaitCompactionForTest();
+
+		assertThat(maximumGenerationCount).isLessThanOrEqualTo(64);
+		assertThat(store.publishedStateForTest().overlays().generationCount())
+				.isLessThanOrEqualTo(store.options().maxDeltaGenerations());
+	}
+
+	@Test
 	void generationCountAloneCompactsDeltasWithoutFoldingThePagedBase() throws Exception {
 		commitAdd(S1, P1, O_BASE);
 		assertThat(store.buildNowForTest()).isTrue();
@@ -176,6 +194,49 @@ class LmdbDirectAdjacencyConsolidationTest {
 	}
 
 	@Test
+	void generationCountCompactionRetainsImmutableRunSources() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+
+		int commits = store.options().maxDeltaGenerations() + 1;
+		for (int i = 1; i <= commits; i++) {
+			commitAdd(S1, P1, uri(20_000 + i));
+			store.pauseApplierForTest(false);
+		}
+		store.awaitCompactionForTest();
+
+		LmdbAdjacencyOverlaySet overlays = store.publishedStateForTest().overlays();
+		assertThat(overlays).isNotNull();
+		LmdbAdjacencyDeltaGeneration oldest = overlays.generation(0);
+		long retainedRoot = oldest.find(S1, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, P1);
+		assertThat(retainedRoot).isPositive();
+		assertThat(LmdbAdjacencyRunCodec.persistentComposite(oldest.catalog(), retainedRoot)).isTrue();
+	}
+
+	@Test
+	void repeatedLogicalCompactionDoesNotIncreasePersistentRowDepth() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+
+		for (int i = 1; i <= 20; i++) {
+			commitAdd(S1, P1, uri(30_000 + i));
+			store.pauseApplierForTest(false);
+		}
+		store.awaitCompactionForTest();
+
+		LmdbAdjacencyOverlaySet overlays = store.publishedStateForTest().overlays();
+		assertThat(overlays).isNotNull();
+		for (int i = 0; i < overlays.generationCount(); i++) {
+			LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
+			long root = generation.find(S1, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, P1);
+			assertThat(root).isPositive();
+			assertThat(LmdbAdjacencyRunCodec.persistentNode(generation.catalog(), root).level())
+					.as("generation %d at revision %d", i, generation.revision())
+					.isZero();
+		}
+	}
+
+	@Test
 	void pagedConsolidationFoldsOverlaysIntoANewBaseRevision() throws Exception {
 		commitAdd(S1, P1, O_BASE);
 		assertThat(store.buildNowForTest()).isTrue();
@@ -194,6 +255,36 @@ class LmdbDirectAdjacencyConsolidationTest {
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
 			assertThat(view.isExact()).isTrue();
 			assertThat(probe(view, S1, P1)).hasSize(commits + 1);
+		}
+	}
+
+	@Test
+	void sourceCapacityFoldInstallsFreshRegistryAndKeepsPinnedSnapshotReadable() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+		commitAdd(S1, P1, uri(1_001));
+		store.pauseApplierForTest(false);
+		commitAdd(S1, P1, uri(1_002));
+		store.pauseApplierForTest(false);
+
+		LmdbAdjacencyPublishedState before = store.publishedStateForTest();
+		assertThat(before.overlays()).isNotNull();
+		LmdbAdjacencySourceRegistry oldRegistry = before.base().arenaCatalog().sourceRegistry();
+		LmdbAdjacencyReadView pinned = store.acquire(tripleStore.getDataRevision());
+		try {
+			oldRegistry.limitSourceIdsForTest(oldRegistry.highestAssignedSourceId());
+			store.requestCompactionForTest();
+
+			LmdbAdjacencyPublishedState after = store.publishedStateForTest();
+			assertThat(after.base().arenaCatalog().sourceRegistry()).isNotSameAs(oldRegistry);
+			assertThat(after.base().arenaCatalog().hasSourceCapacityFor(2)).isTrue();
+			assertThat(after.overlays()).isNull();
+			assertThat(probe(pinned, S1, P1)).hasSize(3);
+			try (LmdbAdjacencyReadView latest = store.acquire(tripleStore.getDataRevision())) {
+				assertThat(probe(latest, S1, P1)).hasSize(3);
+			}
+		} finally {
+			pinned.close();
 		}
 	}
 

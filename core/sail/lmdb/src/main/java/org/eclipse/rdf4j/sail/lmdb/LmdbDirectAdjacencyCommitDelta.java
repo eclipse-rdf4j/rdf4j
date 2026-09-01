@@ -58,6 +58,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 	private long startRevision;
 	private boolean begun;
 	private boolean overflowed;
+	private volatile long[] resolvedSelectedPredicates;
 
 	private long[] subjects = new long[0];
 	private long[] predicates = new long[0];
@@ -86,6 +87,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 		this.begun = true;
 		this.overflowed = false;
 		this.count = 0;
+		this.resolvedSelectedPredicates = null;
 		this.transactionDirty.set(false);
 	}
 
@@ -99,6 +101,13 @@ final class LmdbDirectAdjacencyCommitDelta {
 
 	int eventCount() {
 		return count;
+	}
+
+	void captureResolvedSelectedPredicates(long[] resolvedPredicateIds) {
+		if (!begun) {
+			return;
+		}
+		resolvedSelectedPredicates = Arrays.copyOf(resolvedPredicateIds, resolvedPredicateIds.length);
 	}
 
 	void recordAdd(long subject, long predicate, long object, long context, boolean explicit) {
@@ -195,7 +204,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 		try {
 			PendingTable pending = buildPendingTable(sortStrategy);
 			SealedDirectDelta sealed = new SealedDirectDelta(account, committedRevision, subjects, predicates, objects,
-					contexts, flags, count, pending, chargedBytes + sealScratchBytes);
+					contexts, flags, count, pending, chargedBytes + sealScratchBytes, resolvedSelectedPredicates);
 			// ownership transferred to the sealed delta
 			subjects = new long[0];
 			predicates = new long[0];
@@ -204,6 +213,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 			flags = new byte[0];
 			count = 0;
 			chargedBytes = 0;
+			resolvedSelectedPredicates = null;
 			return sealed;
 		} catch (RuntimeException e) {
 			account.release(MemoryKind.PENDING, sealScratchBytes);
@@ -937,6 +947,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 		begun = false;
 		overflowed = false;
 		transactionDirty.set(false);
+		resolvedSelectedPredicates = null;
 		releaseArrays();
 	}
 
@@ -1064,11 +1075,12 @@ final class LmdbDirectAdjacencyCommitDelta {
 		final int eventCount;
 		private final PendingTable pending;
 		private final boolean overflowed;
+		private final long[] resolvedSelectedPredicates;
 		private long chargedBytes;
 
 		private SealedDirectDelta(LmdbAdjacencyMemoryAccount account, long revision, long[] subjects,
 				long[] predicates, long[] objects, long[] contexts, byte[] flags, int eventCount,
-				PendingTable pending, long chargedBytes) {
+				PendingTable pending, long chargedBytes, long[] resolvedSelectedPredicates) {
 			this.account = account;
 			this.revision = revision;
 			this.subjects = subjects;
@@ -1079,6 +1091,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 			this.eventCount = eventCount;
 			this.pending = pending;
 			this.overflowed = false;
+			this.resolvedSelectedPredicates = resolvedSelectedPredicates;
 			this.chargedBytes = chargedBytes;
 			if (pending != null) {
 				pending.stampRevision(revision);
@@ -1096,6 +1109,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 			this.eventCount = 0;
 			this.pending = null;
 			this.overflowed = overflowed;
+			this.resolvedSelectedPredicates = null;
 			this.chargedBytes = 0;
 		}
 
@@ -1121,6 +1135,14 @@ final class LmdbDirectAdjacencyCommitDelta {
 
 		PendingTable pendingTable() {
 			return pending;
+		}
+
+		boolean hasCapturedCoverage() {
+			return resolvedSelectedPredicates != null;
+		}
+
+		long[] resolvedSelectedPredicates() {
+			return resolvedSelectedPredicates == null ? new long[0] : resolvedSelectedPredicates;
 		}
 
 		boolean explicitOf(int event) {

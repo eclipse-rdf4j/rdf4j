@@ -1263,7 +1263,7 @@ final class LmdbWildcardPredicateBatch {
 				return null;
 			}
 			for (int wildcardIndex = 0; wildcardIndex < join.children.length; wildcardIndex++) {
-				if (!(join.children[wildcardIndex] instanceof PatternPlan wildcard)
+				if (!(join.children[wildcardIndex]instanceof PatternPlan wildcard)
 						|| !batchEligible(wildcard)) {
 					continue;
 				}
@@ -1285,7 +1285,7 @@ final class LmdbWildcardPredicateBatch {
 				return new Shape(prefix, wildcard, nodeSlot, predicateSlot, bySubject, adaptiveDirection, false,
 						join.filters, demand);
 			}
-			if (join.children.length == 1 && join.children[0] instanceof PatternPlan wildcard
+			if (join.children.length == 1 && join.children[0]instanceof PatternPlan wildcard
 					&& batchEligible(wildcard)) {
 				long subjectBit = wildcard.s.hasSlot() ? 1L << wildcard.s.slot : 0L;
 				long objectBit = wildcard.o.hasSlot() ? 1L << wildcard.o.slot : 0L;
@@ -2274,9 +2274,8 @@ final class LmdbWildcardPredicateBatch {
 				BITMAP_TILES.incrementAndGet();
 				return;
 			}
-			for (int predicateOrdinal = 0;
-					predicateOrdinal < adjacency.predicateCount() && unresolvedCount > 0;
-					predicateOrdinal++) {
+			for (int predicateOrdinal = 0; predicateOrdinal < adjacency.predicateCount()
+					&& unresolvedCount > 0; predicateOrdinal++) {
 				if (row.cancellation.isCancellationRequested()) {
 					return;
 				}
@@ -2625,8 +2624,8 @@ final class LmdbWildcardPredicateBatch {
 	}
 
 	/**
-	 * One weighted row per input-node/predicate pair. Unrestricted contexts use the exact run size; constrained runs are
-	 * counted in place without retaining or exposing dead neighbor/context payload.
+	 * One weighted row per input-node/predicate pair. Unrestricted contexts use the exact run size; constrained runs
+	 * are counted in place without retaining or exposing dead neighbor/context payload.
 	 */
 	private static final class PairMultiplicityCursor implements WeightedBatchCursor {
 		private final Shape shape;
@@ -3875,9 +3874,9 @@ final class LmdbWildcardPredicateBatch {
 	}
 
 	/**
-	 * Batched, weight-preserving correlated wildcard pattern. Matches are produced predicate-major from sorted root ids;
-	 * in outer mode one bitmap records which left factors matched so null-extension happens only after every visible
-	 * predicate has been checked. Inner mode skips that final null-extension pass.
+	 * Batched, weight-preserving correlated wildcard pattern. Matches are produced predicate-major from sorted root
+	 * ids; in outer mode one bitmap records which left factors matched so null-extension happens only after every
+	 * visible predicate has been checked. Inner mode skips that final null-extension pass.
 	 */
 	private static final class WeightedWildcardPatternCursor implements FactorizedRowCursor {
 		private final FactorizedRowCursor left;
@@ -3969,7 +3968,8 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private static WeightedWildcardPatternCursor open(FactorizedRowCursor left, PatternPlan right, RowState row,
-				long leftAssuredMask, long liveMask, boolean outer, long constraintMask, long preservedMask, int capacity)
+				long leftAssuredMask, long liveMask, boolean outer, long constraintMask, long preservedMask,
+				int capacity)
 				throws IOException {
 			if (!Shape.isWildcardPredicate(right) || right.statementOrder != null || right.range != null) {
 				return null;
@@ -4629,7 +4629,8 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private static ParallelPredicateTiles tryOpen(Shape shape, boolean bySubject, boolean storageOnlyNodeAny,
-				RowState row, int capacity, int wordsPerBatch, int requestedTileWidth, int predicateCount, int nodeCount,
+				RowState row, int capacity, int wordsPerBatch, int requestedTileWidth, int predicateCount,
+				int nodeCount,
 				boolean nodePartition, boolean multiplicities, boolean payloadPages) throws IOException {
 			if (!LmdbNativeParallelPipelines.enabled() || predicateCount < 1 || nodeCount < (nodePartition ? 2 : 1)
 					|| !nodePartition && (requestedTileWidth < 2 || predicateCount < 2)) {
@@ -4648,8 +4649,8 @@ final class LmdbWildcardPredicateBatch {
 			}
 			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
 			boolean memoryRefused = false;
-			for (int candidateWidth = maximumTileWidth; candidateWidth >= 2;
-					candidateWidth = candidateWidth == 2 ? 1 : Math.max(2, candidateWidth >>> 1)) {
+			for (int candidateWidth = maximumTileWidth; candidateWidth >= 2; candidateWidth = candidateWidth == 2 ? 1
+					: Math.max(2, candidateWidth >>> 1)) {
 				int desiredWorkers = Math.min(configuredWorkers, nodePartition ? nodeCount : candidateWidth);
 				while (desiredWorkers >= 2) {
 					LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines
@@ -4680,7 +4681,8 @@ final class LmdbWildcardPredicateBatch {
 							return null;
 						}
 						parallel = new ParallelPredicateTiles(shape, bySubject, storageOnlyNodeAny, row, capacity,
-								wordsPerBatch, candidateWidth, multiplicities, payloadPages, sources, reservation, memory,
+								wordsPerBatch, candidateWidth, multiplicities, payloadPages, sources, reservation,
+								memory,
 								requiredBytes);
 						parallel.start(predicateCount);
 						WORKERS.addAndGet(grantedWorkers);
@@ -4839,7 +4841,8 @@ final class LmdbWildcardPredicateBatch {
 			if (!payloadPages) {
 				throw new IllegalStateException("wildcard payload pages were not admitted");
 			}
-			payloadRound = dispatch(Operation.PAYLOAD, uniqueNodes, uniqueNodeCount, predicateFrom, predicateCount, null,
+			payloadRound = dispatch(Operation.PAYLOAD, uniqueNodes, uniqueNodeCount, predicateFrom, predicateCount,
+					null,
 					groupOffsets, inputRows, physicalNodeCount, constraintBatch, generation);
 			int rows = 0;
 			for (WorkerResult result : payloadRound.results) {
@@ -4938,7 +4941,8 @@ final class LmdbWildcardPredicateBatch {
 
 		private Round dispatch(Operation operation, long[] nodes, int nodeCount, int predicateFrom,
 				int predicateCount, long[] retiredPredicates) throws IOException {
-			return dispatch(operation, nodes, nodeCount, predicateFrom, predicateCount, retiredPredicates, null, null, 0,
+			return dispatch(operation, nodes, nodeCount, predicateFrom, predicateCount, retiredPredicates, null, null,
+					0,
 					null, 0L);
 		}
 
@@ -5529,9 +5533,8 @@ final class LmdbWildcardPredicateBatch {
 				long matched = 0L;
 				long exhausted = 0L;
 				long payloadRows = 0L;
-				for (int predicateOrdinal = 0;
-						predicateOrdinal < round.predicateCount && unresolvedCount > 0;
-						predicateOrdinal++) {
+				for (int predicateOrdinal = 0; predicateOrdinal < round.predicateCount
+						&& unresolvedCount > 0; predicateOrdinal++) {
 					if (workerRow.cancellation.isCancellationRequested()) {
 						break;
 					}
@@ -5648,7 +5651,8 @@ final class LmdbWildcardPredicateBatch {
 					long[] retiredPredicates, long[] rowSlots, long lexicalInputMask, int lexicalScopeDepth,
 					long logicalSolutionIdentity, boolean encounterOrderRequired, int workers) {
 				this(operation, nodes, nodeCount, predicateFrom, predicateCount, retiredPredicates, rowSlots,
-						lexicalInputMask, lexicalScopeDepth, logicalSolutionIdentity, encounterOrderRequired, null, null, 0,
+						lexicalInputMask, lexicalScopeDepth, logicalSolutionIdentity, encounterOrderRequired, null,
+						null, 0,
 						null, 0L, workers);
 			}
 
@@ -6186,7 +6190,8 @@ final class LmdbWildcardPredicateBatch {
 			return Math.addExact(Math.addExact(handles, localBitmaps),
 					Math.addExact(Math.addExact(localMatches, workerRows),
 							Math.addExact(Math.addExact(unresolvedRoots, unresolvedLanes),
-									Math.addExact(Math.addExact(multiplicityMatrices, payloadPageArrays), coordinator))));
+									Math.addExact(Math.addExact(multiplicityMatrices, payloadPageArrays),
+											coordinator))));
 		} catch (ArithmeticException overflow) {
 			return Long.MAX_VALUE;
 		}
@@ -6263,7 +6268,8 @@ final class LmdbWildcardPredicateBatch {
 			long rowAndPredicateOrdinals = Math.multiplyExact(2L, arrayBytes(capacity, Integer.BYTES));
 			long groupOffsets = arrayBytes(capacity + 1, Integer.BYTES);
 			long bitmap = arrayBytes(words(capacity), Long.BYTES);
-			return Math.addExact(Math.addExact(longArrays, Math.addExact(rowAndPredicateOrdinals, groupOffsets)), bitmap);
+			return Math.addExact(Math.addExact(longArrays, Math.addExact(rowAndPredicateOrdinals, groupOffsets)),
+					bitmap);
 		} catch (ArithmeticException overflow) {
 			return Long.MAX_VALUE;
 		}

@@ -66,6 +66,21 @@ final class LmdbAdjacencyMetrics {
 	private final LongAdder compactionCandidateRetries = new LongAdder();
 	private final LongAdder compactionBytesRead = new LongAdder();
 	private final LongAdder compactionBytesWritten = new LongAdder();
+	private final LongAdder structurallySharedRows = new LongAdder();
+	private final LongAdder reusedLeaves = new LongAdder();
+	private final LongAdder rewrittenLeaves = new LongAdder();
+	private final LongAdder fenceProbes = new LongAdder();
+	private final LongAdder decodedRepairPairs = new LongAdder();
+	private final LongAdder encodedRepairPairs = new LongAdder();
+	private final LongAdder compositeDirectoryBytes = new LongAdder();
+	private final LongAdder sharedLogicalBytes = new LongAdder();
+	private final LongAdder selfContainedFlattenOperations = new LongAdder();
+	private final LongAdder preparationNanos = new LongAdder();
+	private final LongAdder preparationCount = new LongAdder();
+	private final LongAdder publicationNanos = new LongAdder();
+	private final LongAdder publicationCount = new LongAdder();
+	private final LongAdder compactionNanos = new LongAdder();
+	private final LongAdder compactionCount = new LongAdder();
 	private final AtomicLong activeBuildThreads = new AtomicLong();
 	private final AtomicLong desiredBuildThreads = new AtomicLong();
 	private final AtomicLong lastBuildThreads = new AtomicLong();
@@ -238,6 +253,53 @@ final class LmdbAdjacencyMetrics {
 		compactionCandidateRetries.increment();
 	}
 
+	void recordPreparation(long nanos) {
+		requireNonNegative("preparation nanos", nanos);
+		preparationNanos.add(nanos);
+		preparationCount.increment();
+	}
+
+	void recordPublication(long nanos) {
+		requireNonNegative("publication nanos", nanos);
+		publicationNanos.add(nanos);
+		publicationCount.increment();
+	}
+
+	void recordCompaction(long nanos) {
+		requireNonNegative("compaction nanos", nanos);
+		compactionNanos.add(nanos);
+		compactionCount.increment();
+	}
+
+	PhaseTimings phaseTimings() {
+		return new PhaseTimings(preparationNanos.sum(), preparationCount.sum(), publicationNanos.sum(),
+				publicationCount.sum(), compactionNanos.sum(), compactionCount.sum());
+	}
+
+	record PhaseTimings(long preparationNanos, long preparationCount, long publicationNanos, long publicationCount,
+			long compactionNanos, long compactionCount) {
+	}
+
+	void recordStructuralRewrite(LmdbAdjacencyDeltaApplier.StructuralStats stats) {
+		structurallySharedRows.add(stats.rows());
+		reusedLeaves.add(stats.reusedLeaves());
+		rewrittenLeaves.add(stats.rewrittenLeaves());
+		fenceProbes.add(stats.fenceProbes());
+		decodedRepairPairs.add(stats.decodedPairs());
+		encodedRepairPairs.add(stats.encodedPairs());
+		compositeDirectoryBytes.add(stats.directoryBytes());
+		sharedLogicalBytes.add(stats.sharedLogicalBytes());
+	}
+
+	void recordSelfContainedFlatten() {
+		selfContainedFlattenOperations.increment();
+	}
+
+	void recordSelfContainedFlatten(long operations) {
+		requireNonNegative("self-contained flatten operations", operations);
+		selfContainedFlattenOperations.add(operations);
+	}
+
 	Snapshot snapshot(String state, long baseRevision, long appliedRevision, long currentDataRevision,
 			long gapFromRevision, long emergencyGapFromRevision, long activeViews, long baseBytes,
 			long buildCounterBytes, long buildOutputBytes, long javaMetadataBytes, long totalChargedBytes,
@@ -266,7 +328,10 @@ final class LmdbAdjacencyMetrics {
 				buildElapsedNanos.get(), projectedBuildNanos.get(), nodePredicateNativeBytes, nodePredicateJavaBytes,
 				nodePredicateInconsistencies.sum(), overlayGenerationCount, overlayNativeBytes, overlayMetadataBytes,
 				retainedOldGenerationBytes, deltaMerges.sum(), baseFolds.sum(), compactionCandidateRetries.sum(),
-				compactionBytesRead.sum(), compactionBytesWritten.sum());
+				compactionBytesRead.sum(), compactionBytesWritten.sum(), structurallySharedRows.sum(),
+				reusedLeaves.sum(),
+				rewrittenLeaves.sum(), fenceProbes.sum(), decodedRepairPairs.sum(), encodedRepairPairs.sum(),
+				compositeDirectoryBytes.sum(), sharedLogicalBytes.sum(), selfContainedFlattenOperations.sum());
 	}
 
 	Snapshot snapshot(String state, long baseRevision, long appliedRevision, long currentDataRevision,
@@ -370,6 +435,15 @@ final class LmdbAdjacencyMetrics {
 		final long compactionCandidateRetries;
 		final long compactionBytesRead;
 		final long compactionBytesWritten;
+		final long structurallySharedRows;
+		final long reusedLeaves;
+		final long rewrittenLeaves;
+		final long fenceProbes;
+		final long decodedRepairPairs;
+		final long encodedRepairPairs;
+		final long compositeDirectoryBytes;
+		final long sharedLogicalBytes;
+		final long selfContainedFlattenOperations;
 
 		private Snapshot(String state, long baseRevision, long appliedRevision, long currentDataRevision,
 				long gapFromRevision, long emergencyGapFromRevision, long activeViews, long baseBytes,
@@ -386,7 +460,9 @@ final class LmdbAdjacencyMetrics {
 				long nodePredicateNativeBytes, long nodePredicateJavaBytes, long nodePredicateInconsistencies,
 				long overlayGenerationCount, long overlayNativeBytes, long overlayMetadataBytes,
 				long retainedOldGenerationBytes, long deltaMerges, long baseFolds, long compactionCandidateRetries,
-				long compactionBytesRead, long compactionBytesWritten) {
+				long compactionBytesRead, long compactionBytesWritten, long structurallySharedRows, long reusedLeaves,
+				long rewrittenLeaves, long fenceProbes, long decodedRepairPairs, long encodedRepairPairs,
+				long compositeDirectoryBytes, long sharedLogicalBytes, long selfContainedFlattenOperations) {
 			this.state = state;
 			this.baseRevision = baseRevision;
 			this.appliedRevision = appliedRevision;
@@ -441,6 +517,15 @@ final class LmdbAdjacencyMetrics {
 			this.compactionCandidateRetries = compactionCandidateRetries;
 			this.compactionBytesRead = compactionBytesRead;
 			this.compactionBytesWritten = compactionBytesWritten;
+			this.structurallySharedRows = structurallySharedRows;
+			this.reusedLeaves = reusedLeaves;
+			this.rewrittenLeaves = rewrittenLeaves;
+			this.fenceProbes = fenceProbes;
+			this.decodedRepairPairs = decodedRepairPairs;
+			this.encodedRepairPairs = encodedRepairPairs;
+			this.compositeDirectoryBytes = compositeDirectoryBytes;
+			this.sharedLogicalBytes = sharedLogicalBytes;
+			this.selfContainedFlattenOperations = selfContainedFlattenOperations;
 		}
 
 		long fallbacks(FallbackReason reason) {

@@ -24,10 +24,18 @@ final class LmdbAdjacencyOverlaySet {
 
 	private static final LmdbAdjacencyDeltaGeneration[] NO_GENERATIONS = {};
 	private static final long[] NO_PREDICATES = {};
+	private static final int GENERATION_CHUNK_SHIFT = 6;
+	private static final int GENERATION_CHUNK_SIZE = 1 << GENERATION_CHUNK_SHIFT;
+	private static final int GENERATION_LEVELS = Integer.SIZE;
 
-	private final LmdbAdjacencyDeltaGeneration[] generations; // ascending revision; each retained by this set
+	private final GenerationSequence generations;
 	private final LmdbAdjacencyContextCatalog contextCatalog;
 	private final long[] extraSelectedRawPredicateIds; // sorted unsigned; classified selected after the base
+	private final long liveLogicalBytes;
+	private final long metadataBytes;
+	private final LmdbAdjacencySourceRegistry sourceRegistry;
+	private final Object appendLineage;
+	private final LatestRowNode latestRows;
 	private final AtomicLong refs = new AtomicLong(1);
 
 	/**
@@ -36,47 +44,140 @@ final class LmdbAdjacencyOverlaySet {
 	 */
 	LmdbAdjacencyOverlaySet(LmdbAdjacencyDeltaGeneration[] generations, LmdbAdjacencyContextCatalog contextCatalog,
 			long[] extraSelectedRawPredicateIds) {
-		this.generations = generations == null || generations.length == 0 ? NO_GENERATIONS : generations;
+		this(generations, contextCatalog, extraSelectedRawPredicateIds, -1);
+	}
+
+	LmdbAdjacencyOverlaySet(LmdbAdjacencyDeltaGeneration[] generations, LmdbAdjacencyContextCatalog contextCatalog,
+			long[] extraSelectedRawPredicateIds, long liveLogicalBytes) {
+		LmdbAdjacencyDeltaGeneration[] owned = generations == null ? NO_GENERATIONS : generations;
+		validateAscending(owned);
+		this.generations = GenerationSequence.fromOwned(owned);
 		this.contextCatalog = contextCatalog;
 		this.extraSelectedRawPredicateIds = extraSelectedRawPredicateIds == null
 				|| extraSelectedRawPredicateIds.length == 0 ? NO_PREDICATES : extraSelectedRawPredicateIds;
-		for (int i = 1; i < this.generations.length; i++) {
-			if (this.generations[i - 1].revision() >= this.generations[i].revision()) {
-				throw new IllegalStateException("generations must be revision ascending");
-			}
-		}
+		this.liveLogicalBytes = liveLogicalBytes >= 0 ? liveLogicalBytes
+				: computeLiveLogicalBytes(owned);
+		this.metadataBytes = computeMetadataBytes(owned);
+		this.sourceRegistry = owned.length == 0 ? null : sourceRegistry(owned[owned.length - 1]);
+		this.appendLineage = new Object();
+		this.latestRows = latestRows(owned);
+	}
+
+	private LmdbAdjacencyOverlaySet(GenerationSequence generations, LmdbAdjacencyContextCatalog contextCatalog,
+			long[] extraSelectedRawPredicateIds, long liveLogicalBytes, long metadataBytes,
+			LmdbAdjacencySourceRegistry sourceRegistry, Object appendLineage, LatestRowNode latestRows) {
+		this.generations = generations;
+		this.contextCatalog = contextCatalog;
+		this.extraSelectedRawPredicateIds = extraSelectedRawPredicateIds == null
+				|| extraSelectedRawPredicateIds.length == 0 ? NO_PREDICATES : extraSelectedRawPredicateIds;
+		this.liveLogicalBytes = liveLogicalBytes;
+		this.metadataBytes = metadataBytes;
+		this.sourceRegistry = sourceRegistry;
+		this.appendLineage = appendLineage;
+		this.latestRows = latestRows;
 	}
 
 	int generationCount() {
-		return generations.length;
+		return generations.size;
 	}
 
 	LmdbAdjacencyDeltaGeneration generation(int index) {
-		return generations[index];
+		return generations.get(index);
 	}
 
 	LmdbAdjacencyDeltaGeneration[] generationsSnapshot() {
-		return generations.clone();
+		LmdbAdjacencyDeltaGeneration[] snapshot = new LmdbAdjacencyDeltaGeneration[generations.size];
+		generations.copyTo(snapshot);
+		return snapshot;
+	}
+
+	LmdbAdjacencyOverlaySet appendRetained(LmdbAdjacencyDeltaGeneration generation,
+			LmdbAdjacencyContextCatalog contextCatalog, long[] extraSelectedRawPredicateIds, long liveLogicalBytes) {
+		if (generationCount() > 0 && generation(generationCount() - 1).revision() >= generation.revision()) {
+			throw new IllegalStateException("generations must be revision ascending");
+		}
+		LmdbAdjacencySourceRegistry appendedRegistry = sourceRegistry(generation);
+		if (sourceRegistry != null && appendedRegistry != null && sourceRegistry != appendedRegistry) {
+			throw new IllegalStateException("appended generation belongs to another source registry");
+		}
+		return new LmdbAdjacencyOverlaySet(generations.appendRetained(generation), contextCatalog,
+				extraSelectedRawPredicateIds, liveLogicalBytes,
+				saturatingAdd(metadataBytes, generation.metadataBytes()),
+				sourceRegistry == null ? appendedRegistry : sourceRegistry, appendLineage,
+				with(latestRows, generation, generationCount()));
+	}
+
+	boolean hasGenerationPrefix(LmdbAdjacencyOverlaySet expectedPrefix) {
+		return expectedPrefix != null && generationCount() >= expectedPrefix.generationCount()
+				&& appendLineage == expectedPrefix.appendLineage;
 	}
 
 	long nativeBytes() {
-		long total = 0;
-		for (LmdbAdjacencyDeltaGeneration generation : generations) {
-			total = saturatingAdd(total, generation.nativeBytes());
-		}
-		return total;
+		return sourceRegistry == null ? 0 : sourceRegistry.currentDeltaPhysicalBytes();
 	}
 
 	long metadataBytes() {
-		long total = 0;
-		for (LmdbAdjacencyDeltaGeneration generation : generations) {
-			total = saturatingAdd(total, generation.metadataBytes());
-		}
-		return total;
+		return metadataBytes;
 	}
 
 	long retainedBytes() {
 		return saturatingAdd(nativeBytes(), metadataBytes());
+	}
+
+	long liveLogicalBytes() {
+		return liveLogicalBytes;
+	}
+
+	long liveLogicalBytesAfterAppend(LmdbAdjacencyDeltaGeneration appended) {
+		long updated = liveLogicalBytes;
+		LatestRowLookup previous = new LatestRowLookup();
+		for (int row = 0; row < appended.rowCount(); row++) {
+			boolean found = findLatest(appended.rowKeyAt(row), appended.rowPlaneAt(row),
+					appended.rowPredicateAt(row), previous);
+			long previousBytes = !found || previous.generation.tombstoneAt(previous.rowIndex) ? 0
+					: previous.generation.logicalBytesAt(previous.rowIndex);
+			if (previousBytes > updated) {
+				throw new IllegalStateException("adjacency logical-byte accounting underflow");
+			}
+			updated -= previousBytes;
+			updated = saturatingAdd(updated, appended.logicalBytesAt(row));
+		}
+		return updated;
+	}
+
+	boolean findLatest(long rawKey, int plane, long rawPredicateId, LatestRowLookup result) {
+		return findLatest(latestRows, rawKey, plane, rawPredicateId, result);
+	}
+
+	int latestRowCount() {
+		return latestRows == null ? 0 : latestRows.size;
+	}
+
+	void forEachLatestRow(LatestRowConsumer consumer) {
+		forEachLatestRow(latestRows, consumer);
+	}
+
+	int latestRowCount(int plane, long rawPredicateId) {
+		return latestRowCount(latestRows, plane, rawPredicateId);
+	}
+
+	private static int latestRowCount(LatestRowNode node, int plane, long rawPredicateId) {
+		if (node == null) {
+			return 0;
+		}
+		int count = node.generation.rowPlaneAt(node.rowIndex) == plane
+				&& node.generation.rowPredicateAt(node.rowIndex) == rawPredicateId ? 1 : 0;
+		return Math.addExact(count, Math.addExact(latestRowCount(node.left, plane, rawPredicateId),
+				latestRowCount(node.right, plane, rawPredicateId)));
+	}
+
+	private static void forEachLatestRow(LatestRowNode node, LatestRowConsumer consumer) {
+		if (node == null) {
+			return;
+		}
+		forEachLatestRow(node.left, consumer);
+		consumer.accept(node.generation, node.generationIndex, node.rowIndex);
+		forEachLatestRow(node.right, consumer);
 	}
 
 	LmdbAdjacencyContextCatalog contextCatalog() {
@@ -124,14 +225,498 @@ final class LmdbAdjacencyOverlaySet {
 			throw new IllegalStateException("overlay set released more times than retained");
 		}
 		if (remaining == 0) {
-			for (LmdbAdjacencyDeltaGeneration generation : generations) {
-				generation.release();
-			}
+			generations.release();
 			contextCatalog.release();
 		}
 	}
 
 	private static long saturatingAdd(long left, long right) {
 		return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
+	}
+
+	private static long computeLiveLogicalBytes(LmdbAdjacencyDeltaGeneration[] generations) {
+		long total = 0;
+		for (int generationIndex = 0; generationIndex < generations.length; generationIndex++) {
+			LmdbAdjacencyDeltaGeneration generation = generations[generationIndex];
+			for (int row = 0; row < generation.rowCount(); row++) {
+				boolean shadowed = false;
+				for (int newer = generationIndex + 1; newer < generations.length; newer++) {
+					if (generations[newer].find(generation.rowKeyAt(row), generation.rowPlaneAt(row),
+							generation.rowPredicateAt(row)) != LmdbAdjacencyDeltaGeneration.NO_VERSION) {
+						shadowed = true;
+						break;
+					}
+				}
+				if (!shadowed && !generation.tombstoneAt(row)) {
+					total = saturatingAdd(total, generation.logicalBytesAt(row));
+				}
+			}
+		}
+		return total;
+	}
+
+	private static long computeMetadataBytes(LmdbAdjacencyDeltaGeneration[] generations) {
+		long total = 0;
+		for (LmdbAdjacencyDeltaGeneration generation : generations) {
+			total = saturatingAdd(total, generation.metadataBytes());
+		}
+		return total;
+	}
+
+	private static LmdbAdjacencySourceRegistry sourceRegistry(LmdbAdjacencyDeltaGeneration generation) {
+		LmdbAdjacencyArenaCatalog catalog = generation.catalog();
+		return catalog == null ? null : catalog.sourceRegistry();
+	}
+
+	private static void validateAscending(LmdbAdjacencyDeltaGeneration[] generations) {
+		for (int i = 1; i < generations.length; i++) {
+			if (generations[i - 1].revision() >= generations[i].revision()) {
+				throw new IllegalStateException("generations must be revision ascending");
+			}
+		}
+	}
+
+	static final class LatestRowLookup {
+		private LmdbAdjacencyDeltaGeneration generation;
+		private int rowIndex;
+		private int generationIndex;
+
+		LmdbAdjacencyDeltaGeneration generation() {
+			return generation;
+		}
+
+		int rowIndex() {
+			return rowIndex;
+		}
+
+		int generationIndex() {
+			return generationIndex;
+		}
+	}
+
+	@FunctionalInterface
+	interface LatestRowConsumer {
+		void accept(LmdbAdjacencyDeltaGeneration generation, int generationIndex, int rowIndex);
+	}
+
+	private static boolean findLatest(LatestRowNode node, long rawKey, int plane, long rawPredicateId,
+			LatestRowLookup result) {
+		while (node != null) {
+			int comparison = compare(rawKey, plane, rawPredicateId, node.generation, node.rowIndex);
+			if (comparison < 0) {
+				node = node.left;
+			} else if (comparison > 0) {
+				node = node.right;
+			} else {
+				result.generation = node.generation;
+				result.generationIndex = node.generationIndex;
+				result.rowIndex = node.rowIndex;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static LatestRowNode latestRows(LmdbAdjacencyDeltaGeneration[] generations) {
+		LatestRowNode root = null;
+		for (int generationIndex = 0; generationIndex < generations.length; generationIndex++) {
+			root = with(root, generations[generationIndex], generationIndex);
+		}
+		return root;
+	}
+
+	private static LatestRowNode with(LatestRowNode root, LmdbAdjacencyDeltaGeneration generation,
+			int generationIndex) {
+		for (int row = 0; row < generation.rowCount(); row++) {
+			root = put(root, generation, generationIndex, row);
+		}
+		return root;
+	}
+
+	private static LatestRowNode put(LatestRowNode node, LmdbAdjacencyDeltaGeneration generation,
+			int generationIndex, int rowIndex) {
+		if (node == null) {
+			return new LatestRowNode(generation, generationIndex, rowIndex, null, null);
+		}
+		int comparison = compare(generation.rowKeyAt(rowIndex), generation.rowPlaneAt(rowIndex),
+				generation.rowPredicateAt(rowIndex), node.generation, node.rowIndex);
+		if (comparison < 0) {
+			return balance(new LatestRowNode(node.generation, node.generationIndex, node.rowIndex,
+					put(node.left, generation, generationIndex, rowIndex), node.right));
+		}
+		if (comparison > 0) {
+			return balance(new LatestRowNode(node.generation, node.generationIndex, node.rowIndex, node.left,
+					put(node.right, generation, generationIndex, rowIndex)));
+		}
+		return new LatestRowNode(generation, generationIndex, rowIndex, node.left, node.right);
+	}
+
+	private static LatestRowNode balance(LatestRowNode node) {
+		int balance = height(node.left) - height(node.right);
+		if (balance > 1) {
+			LatestRowNode left = node.left;
+			if (height(left.left) < height(left.right)) {
+				left = rotateLeft(left);
+			}
+			return rotateRight(
+					new LatestRowNode(node.generation, node.generationIndex, node.rowIndex, left, node.right));
+		}
+		if (balance < -1) {
+			LatestRowNode right = node.right;
+			if (height(right.right) < height(right.left)) {
+				right = rotateRight(right);
+			}
+			return rotateLeft(
+					new LatestRowNode(node.generation, node.generationIndex, node.rowIndex, node.left, right));
+		}
+		return node;
+	}
+
+	private static LatestRowNode rotateLeft(LatestRowNode node) {
+		LatestRowNode right = node.right;
+		LatestRowNode moved = new LatestRowNode(node.generation, node.generationIndex, node.rowIndex, node.left,
+				right.left);
+		return new LatestRowNode(right.generation, right.generationIndex, right.rowIndex, moved, right.right);
+	}
+
+	private static LatestRowNode rotateRight(LatestRowNode node) {
+		LatestRowNode left = node.left;
+		LatestRowNode moved = new LatestRowNode(node.generation, node.generationIndex, node.rowIndex, left.right,
+				node.right);
+		return new LatestRowNode(left.generation, left.generationIndex, left.rowIndex, left.left, moved);
+	}
+
+	private static int compare(long rawKey, int plane, long rawPredicateId,
+			LmdbAdjacencyDeltaGeneration generation, int rowIndex) {
+		int comparison = Long.compareUnsigned(rawKey, generation.rowKeyAt(rowIndex));
+		if (comparison != 0) {
+			return comparison;
+		}
+		comparison = Integer.compare(plane, generation.rowPlaneAt(rowIndex));
+		return comparison != 0 ? comparison
+				: Long.compareUnsigned(rawPredicateId, generation.rowPredicateAt(rowIndex));
+	}
+
+	private static int height(LatestRowNode node) {
+		return node == null ? 0 : node.height;
+	}
+
+	private static final class LatestRowNode {
+		final LmdbAdjacencyDeltaGeneration generation;
+		final int generationIndex;
+		final int rowIndex;
+		final LatestRowNode left;
+		final LatestRowNode right;
+		final int height;
+		final int size;
+
+		LatestRowNode(LmdbAdjacencyDeltaGeneration generation, int generationIndex, int rowIndex, LatestRowNode left,
+				LatestRowNode right) {
+			this.generation = generation;
+			this.generationIndex = generationIndex;
+			this.rowIndex = rowIndex;
+			this.left = left;
+			this.right = right;
+			this.height = Math.max(height(left), height(right)) + 1;
+			this.size = Math.addExact(1, Math.addExact(left == null ? 0 : left.size, right == null ? 0 : right.size));
+		}
+	}
+
+	/** Persistent binary-carry sequence of 64-generation leaves and a structurally shared open tail. */
+	private static final class GenerationSequence {
+		private final GenerationNode[] levels;
+		private final GenerationTail tail;
+		private final int size;
+
+		private GenerationSequence(GenerationNode[] levels, GenerationTail tail, int size) {
+			this.levels = levels;
+			this.tail = tail;
+			this.size = size;
+		}
+
+		static GenerationSequence fromOwned(LmdbAdjacencyDeltaGeneration[] generations) {
+			GenerationNode[] levels = new GenerationNode[GENERATION_LEVELS];
+			int full = generations.length & ~(GENERATION_CHUNK_SIZE - 1);
+			for (int from = 0; from < full; from += GENERATION_CHUNK_SIZE) {
+				GenerationNode carry = new GenerationLeaf(
+						java.util.Arrays.copyOfRange(generations, from, from + GENERATION_CHUNK_SIZE));
+				for (int level = 0; carry != null; level++) {
+					if (levels[level] == null) {
+						levels[level] = carry;
+						carry = null;
+					} else {
+						carry = new GenerationBranch(levels[level], carry);
+						levels[level] = null;
+					}
+				}
+			}
+			GenerationTail tail = null;
+			for (int i = full; i < generations.length; i++) {
+				tail = new GenerationTail(tail, generations[i]);
+			}
+			return new GenerationSequence(levels, tail, generations.length);
+		}
+
+		GenerationSequence appendRetained(LmdbAdjacencyDeltaGeneration generation) {
+			GenerationNode[] copy = new GenerationNode[levels.length];
+			for (int i = 0; i < levels.length; i++) {
+				if (levels[i] != null) {
+					levels[i].retain();
+					copy[i] = levels[i];
+				}
+			}
+			if (tail == null || tail.size < GENERATION_CHUNK_SIZE) {
+				if (tail != null) {
+					tail.retain();
+				}
+				generation.retain();
+				return new GenerationSequence(copy, new GenerationTail(tail, generation), Math.incrementExact(size));
+			}
+
+			GenerationNode carry = tail.toLeafRetained();
+			for (int level = 0; carry != null; level++) {
+				if (copy[level] == null) {
+					copy[level] = carry;
+					carry = null;
+				} else {
+					GenerationNode left = copy[level];
+					copy[level] = null;
+					carry = new GenerationBranch(left, carry);
+				}
+			}
+			generation.retain();
+			return new GenerationSequence(copy, new GenerationTail(null, generation),
+					Math.incrementExact(size));
+		}
+
+		LmdbAdjacencyDeltaGeneration get(int index) {
+			if (index < 0 || index >= size) {
+				throw new IndexOutOfBoundsException(index);
+			}
+			if (index == 0) {
+				for (int level = levels.length - 1; level >= 0; level--) {
+					if (levels[level] != null) {
+						return levels[level].first();
+					}
+				}
+				return tail.first();
+			}
+			if (index == size - 1) {
+				if (tail != null) {
+					return tail.last();
+				}
+				for (int level = 0; level < levels.length; level++) {
+					if (levels[level] != null) {
+						return levels[level].last();
+					}
+				}
+			}
+			int remaining = index;
+			for (int level = levels.length - 1; level >= 0; level--) {
+				GenerationNode node = levels[level];
+				if (node == null) {
+					continue;
+				}
+				if (remaining < node.size) {
+					return node.get(remaining);
+				}
+				remaining -= node.size;
+			}
+			return tail.get(remaining);
+		}
+
+		void copyTo(LmdbAdjacencyDeltaGeneration[] target) {
+			int offset = 0;
+			for (int level = levels.length - 1; level >= 0; level--) {
+				GenerationNode node = levels[level];
+				if (node != null) {
+					node.copyTo(target, offset);
+					offset += node.size;
+				}
+			}
+			if (tail != null) {
+				tail.copyTo(target, offset);
+				offset += tail.size;
+			}
+			if (offset != size) {
+				throw new IllegalStateException("generation sequence copy size mismatch");
+			}
+		}
+
+		void release() {
+			for (GenerationNode level : levels) {
+				if (level != null) {
+					level.release();
+				}
+			}
+			if (tail != null) {
+				tail.release();
+			}
+		}
+	}
+
+	private abstract static class GenerationNode {
+		final int size;
+		private final AtomicLong references = new AtomicLong(1);
+
+		GenerationNode(int size) {
+			this.size = size;
+		}
+
+		abstract LmdbAdjacencyDeltaGeneration get(int index);
+
+		abstract LmdbAdjacencyDeltaGeneration first();
+
+		abstract LmdbAdjacencyDeltaGeneration last();
+
+		abstract void copyTo(LmdbAdjacencyDeltaGeneration[] target, int offset);
+
+		abstract void closeOwned();
+
+		void retain() {
+			long current;
+			do {
+				current = references.get();
+				if (current <= 0 || current == Long.MAX_VALUE) {
+					throw new IllegalStateException("generation sequence node cannot be retained");
+				}
+			} while (!references.compareAndSet(current, current + 1));
+		}
+
+		void release() {
+			long remaining = references.decrementAndGet();
+			if (remaining < 0) {
+				throw new IllegalStateException("generation sequence node released more times than retained");
+			}
+			if (remaining == 0) {
+				closeOwned();
+			}
+		}
+	}
+
+	private static final class GenerationLeaf extends GenerationNode {
+		private final LmdbAdjacencyDeltaGeneration[] generations;
+
+		GenerationLeaf(LmdbAdjacencyDeltaGeneration[] generations) {
+			super(generations.length);
+			this.generations = generations;
+		}
+
+		@Override
+		LmdbAdjacencyDeltaGeneration get(int index) {
+			return generations[index];
+		}
+
+		@Override
+		LmdbAdjacencyDeltaGeneration first() {
+			return generations[0];
+		}
+
+		@Override
+		LmdbAdjacencyDeltaGeneration last() {
+			return generations[generations.length - 1];
+		}
+
+		@Override
+		void copyTo(LmdbAdjacencyDeltaGeneration[] target, int offset) {
+			System.arraycopy(generations, 0, target, offset, generations.length);
+		}
+
+		@Override
+		void closeOwned() {
+			for (LmdbAdjacencyDeltaGeneration generation : generations) {
+				generation.release();
+			}
+		}
+	}
+
+	/** An append-only tail capped at one leaf. Each append owns one predecessor node, not all generations in it. */
+	private static final class GenerationTail extends GenerationNode {
+		private final GenerationTail previous;
+		private final LmdbAdjacencyDeltaGeneration generation;
+
+		GenerationTail(GenerationTail previous, LmdbAdjacencyDeltaGeneration generation) {
+			super(previous == null ? 1 : Math.incrementExact(previous.size));
+			this.previous = previous;
+			this.generation = generation;
+		}
+
+		@Override
+		LmdbAdjacencyDeltaGeneration get(int index) {
+			return index == size - 1 ? generation : previous.get(index);
+		}
+
+		@Override
+		LmdbAdjacencyDeltaGeneration first() {
+			return previous == null ? generation : previous.first();
+		}
+
+		@Override
+		LmdbAdjacencyDeltaGeneration last() {
+			return generation;
+		}
+
+		@Override
+		void copyTo(LmdbAdjacencyDeltaGeneration[] target, int offset) {
+			if (previous != null) {
+				previous.copyTo(target, offset);
+			}
+			target[offset + size - 1] = generation;
+		}
+
+		GenerationLeaf toLeafRetained() {
+			LmdbAdjacencyDeltaGeneration[] generations = new LmdbAdjacencyDeltaGeneration[size];
+			copyTo(generations, 0);
+			for (LmdbAdjacencyDeltaGeneration retained : generations) {
+				retained.retain();
+			}
+			return new GenerationLeaf(generations);
+		}
+
+		@Override
+		void closeOwned() {
+			generation.release();
+			if (previous != null) {
+				previous.release();
+			}
+		}
+	}
+
+	private static final class GenerationBranch extends GenerationNode {
+		private final GenerationNode left;
+		private final GenerationNode right;
+
+		GenerationBranch(GenerationNode left, GenerationNode right) {
+			super(Math.addExact(left.size, right.size));
+			this.left = left;
+			this.right = right;
+		}
+
+		@Override
+		LmdbAdjacencyDeltaGeneration get(int index) {
+			return index < left.size ? left.get(index) : right.get(index - left.size);
+		}
+
+		@Override
+		LmdbAdjacencyDeltaGeneration first() {
+			return left.first();
+		}
+
+		@Override
+		LmdbAdjacencyDeltaGeneration last() {
+			return right.last();
+		}
+
+		@Override
+		void copyTo(LmdbAdjacencyDeltaGeneration[] target, int offset) {
+			left.copyTo(target, offset);
+			right.copyTo(target, offset + left.size);
+		}
+
+		@Override
+		void closeOwned() {
+			right.release();
+			left.release();
+		}
 	}
 }

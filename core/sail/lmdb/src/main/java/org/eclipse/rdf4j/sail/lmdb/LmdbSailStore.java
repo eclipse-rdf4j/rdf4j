@@ -2088,6 +2088,9 @@ class LmdbSailStore implements SailStore {
 					backingTransactionGeneration = 0L;
 					return;
 				}
+				if (directAdjacency != null) {
+					tripleStore.captureDirectAdjacencyCoverage(directAdjacency.captureCommitCoverageMetadata());
+				}
 
 				boolean asyncCommit = multiThreadingActive;
 				if (asyncCommit) {

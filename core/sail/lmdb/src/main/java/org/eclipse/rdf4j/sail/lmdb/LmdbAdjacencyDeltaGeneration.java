@@ -36,10 +36,11 @@ final class LmdbAdjacencyDeltaGeneration {
 
 	private final long revision;
 	private final LmdbAdjacencyArena arena;
+	private final LmdbAdjacencyDeltaArenaOwner arenaOwner;
 	private final LmdbAdjacencyArenaCatalog catalog; // slot 0 = base arena, slot 1 = this generation's arena
-	private final Charge nativeCharge;
 	private final Charge metadataCharge;
 	private final long compactionWeightBytes;
+	private final long logicalBytes;
 
 	// sorted by unsigned (rawKey, plane, rawPredicateId); runRefs[i] == 0 means tombstone
 	private final long[] rowKeys;
@@ -48,6 +49,7 @@ final class LmdbAdjacencyDeltaGeneration {
 	private final long[] runRefs;
 
 	private final AtomicLong refs = new AtomicLong(1);
+	private boolean current;
 
 	/**
 	 * Caller-owned cursor for an ascending batch of row lookups. Targets must be nondecreasing independently within
@@ -92,24 +94,39 @@ final class LmdbAdjacencyDeltaGeneration {
 	LmdbAdjacencyDeltaGeneration(long revision, LmdbAdjacencyArena arena, LmdbAdjacencyArenaCatalog catalog,
 			Charge nativeCharge, Charge metadataCharge, long[] rowKeys, byte[] rowPlanes, long[] rowPredicates,
 			long[] runRefs) {
-		this(revision, arena, catalog, nativeCharge, metadataCharge,
+		this(revision, new LmdbAdjacencyDeltaArenaOwner(arena, nativeCharge), catalog, metadataCharge,
 				saturatingAdd(nativeCharge.bytes(), metadataCharge.bytes()), rowKeys, rowPlanes, rowPredicates,
 				runRefs);
+	}
+
+	LmdbAdjacencyDeltaGeneration(long revision, LmdbAdjacencyDeltaArenaOwner arenaOwner,
+			LmdbAdjacencyArenaCatalog catalog, Charge metadataCharge, long[] rowKeys, byte[] rowPlanes,
+			long[] rowPredicates, long[] runRefs) {
+		this(revision, arenaOwner, catalog, metadataCharge,
+				saturatingAdd(arenaOwner.bytes(), metadataCharge.bytes()), rowKeys, rowPlanes, rowPredicates, runRefs);
 	}
 
 	LmdbAdjacencyDeltaGeneration(long revision, LmdbAdjacencyArena arena, LmdbAdjacencyArenaCatalog catalog,
 			Charge nativeCharge, Charge metadataCharge, long compactionWeightBytes, long[] rowKeys, byte[] rowPlanes,
 			long[] rowPredicates, long[] runRefs) {
+		this(revision, new LmdbAdjacencyDeltaArenaOwner(arena, nativeCharge), catalog, metadataCharge,
+				compactionWeightBytes, rowKeys, rowPlanes, rowPredicates, runRefs);
+	}
+
+	LmdbAdjacencyDeltaGeneration(long revision, LmdbAdjacencyDeltaArenaOwner arenaOwner,
+			LmdbAdjacencyArenaCatalog catalog, Charge metadataCharge, long compactionWeightBytes, long[] rowKeys,
+			byte[] rowPlanes, long[] rowPredicates, long[] runRefs) {
 		this.revision = revision;
-		this.arena = arena;
+		this.arenaOwner = arenaOwner;
+		this.arena = arenaOwner.arena();
 		this.catalog = catalog;
-		this.nativeCharge = nativeCharge;
 		this.metadataCharge = metadataCharge;
 		this.compactionWeightBytes = compactionWeightBytes;
 		this.rowKeys = rowKeys;
 		this.rowPlanes = rowPlanes;
 		this.rowPredicates = rowPredicates;
 		this.runRefs = runRefs;
+		long computedLogicalBytes = 0;
 		try {
 			if (rowKeys.length != rowPlanes.length || rowKeys.length != rowPredicates.length
 					|| rowKeys.length != runRefs.length) {
@@ -120,10 +137,17 @@ final class LmdbAdjacencyDeltaGeneration {
 					throw new IllegalStateException("generation row directory is not strictly sorted at " + i);
 				}
 			}
+			for (int i = 0; i < runRefs.length; i++) {
+				if (runRefs[i] != 0) {
+					computedLogicalBytes = saturatingAdd(computedLogicalBytes,
+							logicalPairBytes(catalog, catalog.packHandle(1, runRefs[i])));
+				}
+			}
 		} catch (RuntimeException | Error failure) {
 			closeAfterConstructionFailure(failure);
 			throw failure;
 		}
+		this.logicalBytes = computedLogicalBytes;
 	}
 
 	long revision() {
@@ -135,11 +159,11 @@ final class LmdbAdjacencyDeltaGeneration {
 	}
 
 	long chargedBytes() {
-		return nativeCharge.bytes();
+		return arenaOwner.bytes();
 	}
 
 	long nativeBytes() {
-		return nativeCharge.bytes();
+		return arenaOwner.bytes();
 	}
 
 	long metadataBytes() {
@@ -154,18 +178,78 @@ final class LmdbAdjacencyDeltaGeneration {
 		return compactionWeightBytes;
 	}
 
+	long logicalBytesAt(int row) {
+		long handle = handleAt(row);
+		return handle == ROW_TOMBSTONE ? 0 : logicalPairBytes(catalog, handle);
+	}
+
+	long logicalBytes() {
+		return logicalBytes;
+	}
+
+	long logicalBytesForHandle(long handle) {
+		return handle == ROW_TOMBSTONE ? 0 : logicalPairBytes(catalog, handle);
+	}
+
+	private static long logicalPairBytes(LmdbAdjacencyArenaCatalog catalog, long handle) {
+		long pairs = LmdbAdjacencyRunCodec.edgeCount(catalog, handle);
+		return pairs > Long.MAX_VALUE / (Long.BYTES * 2L) ? Long.MAX_VALUE : pairs * Long.BYTES * 2L;
+	}
+
 	long referenceCount() {
 		return Math.max(0, refs.get());
 	}
 
-	void publishCompactionOutput() {
-		nativeCharge.reclassify(MemoryKind.DELTA);
-		metadataCharge.reclassify(MemoryKind.JAVA_METADATA);
+	synchronized void activateCurrent() {
+		if (current) {
+			throw new IllegalStateException("generation is already current: " + revision);
+		}
+		boolean separateOwner = !catalog.directlyOwns(arenaOwner);
+		boolean catalogActivated = false;
+		boolean ownerActivated = false;
+		try {
+			catalog.activateCurrentSources();
+			catalogActivated = true;
+			if (separateOwner) {
+				arenaOwner.activateCurrent();
+				ownerActivated = true;
+			}
+			metadataCharge.reclassify(MemoryKind.JAVA_METADATA);
+			current = true;
+		} catch (RuntimeException | Error failure) {
+			if (ownerActivated) {
+				arenaOwner.deactivateCurrent();
+			}
+			if (catalogActivated) {
+				catalog.deactivateCurrentSources();
+			}
+			throw failure;
+		}
 	}
 
-	void retireFromCurrentOverlay() {
-		nativeCharge.reclassify(MemoryKind.RETAINED_SNAPSHOT);
+	synchronized void deactivateCurrent() {
+		if (!current) {
+			throw new IllegalStateException("generation is not current: " + revision);
+		}
+		if (!catalog.directlyOwns(arenaOwner)) {
+			arenaOwner.deactivateCurrent();
+		}
+		catalog.deactivateCurrentSources();
 		metadataCharge.reclassify(MemoryKind.RETAINED_SNAPSHOT);
+		current = false;
+	}
+
+	LmdbAdjacencyDeltaArenaOwner[] uniqueDeltaOwners() {
+		LmdbAdjacencyDeltaArenaOwner[] catalogOwners = catalog.uniqueDeltaOwners();
+		for (LmdbAdjacencyDeltaArenaOwner owner : catalogOwners) {
+			if (owner == arenaOwner) {
+				return catalogOwners;
+			}
+		}
+		LmdbAdjacencyDeltaArenaOwner[] owners = new LmdbAdjacencyDeltaArenaOwner[catalogOwners.length + 1];
+		owners[0] = arenaOwner;
+		System.arraycopy(catalogOwners, 0, owners, 1, catalogOwners.length);
+		return owners;
 	}
 
 	static long modeledJavaBytes(long rowCount) {
@@ -336,24 +420,22 @@ final class LmdbAdjacencyDeltaGeneration {
 		}
 		if (remaining == 0) {
 			catalog.close();
-			arena.close();
+			arenaOwner.close();
 			metadataCharge.close();
-			nativeCharge.close();
 		}
 	}
 
 	private void closeAfterConstructionFailure(Throwable failure) {
 		closeSuppressing(catalog, failure);
-		closeSuppressing(arena, failure);
+		closeSuppressing(arenaOwner, failure);
 		closeSuppressing(metadataCharge, failure);
-		closeSuppressing(nativeCharge, failure);
 	}
 
 	private LmdbAdjacencyDeltaGeneration(long revision, LmdbAdjacencyArena arena,
 			LmdbAdjacencyArenaCatalog catalog, GenerationCharges charges, long[] rowKeys, byte[] rowPlanes,
 			long[] rowPredicates, long[] runRefs) {
-		this(revision, arena, catalog, charges.nativeCharge, charges.metadataCharge, rowKeys, rowPlanes, rowPredicates,
-				runRefs);
+		this(revision, new LmdbAdjacencyDeltaArenaOwner(arena, charges.nativeCharge), catalog, charges.metadataCharge,
+				rowKeys, rowPlanes, rowPredicates, runRefs);
 	}
 
 	private static GenerationCharges adoptCharges(LmdbAdjacencyMemoryAccount account, long nativeBytes,

@@ -253,6 +253,98 @@ class LmdbAdjacencyDeltaApplierTest {
 		assertThat(account.totalChargedBytes()).isZero();
 	}
 
+	@Test
+	void mediumRowMutationHasBoundedWork() throws IOException {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
+		long predicate = uri(10);
+		long commonObject = uri(20_000);
+		long addedSubject = uri(4_097);
+
+		LmdbDirectAdjacencyCommitDelta delta = new LmdbDirectAdjacencyCommitDelta(account, 1L << 20);
+		delta.begin(7);
+		delta.recordAdd(addedSubject, predicate, commonObject, 0, true);
+		SealedDirectDelta sealed = delta.seal(8);
+
+		try (LmdbInMemoryAdjacencyIndex base = baseWithIncomingRow(account, predicate, commonObject, 4_096)) {
+			Result result = null;
+			try {
+				result = LmdbAdjacencyDeltaApplier.apply(sealed, base, base.contextCatalog(),
+						(key, plane, rawPredicateId) -> {
+							long handle = base.findRun(key, plane, rawPredicateId);
+							return handle < 0 ? null : new OldRun(base.arenaCatalog(), base.contextCatalog(), handle);
+						}, ignored -> true, new long[0], account, BASE_REGION_BYTES);
+
+				assertThat(result.structuralStats.rows()).isEqualTo(1);
+				assertThat(result.structuralStats.rewrittenLeaves()).isBetween(1L, 2L);
+				assertThat(result.structuralStats.decodedPairs()).isLessThanOrEqualTo(8_193);
+				assertThat(result.structuralStats.encodedPairs()).isLessThanOrEqualTo(8_193);
+
+				long incoming = result.generation.find(commonObject,
+						LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT, predicate);
+				assertThat(LmdbAdjacencyRunCodec.edgeCount(result.generation.catalog(), incoming)).isEqualTo(4_097);
+				assertThat(LmdbAdjacencyRunCodec.neighborAt(result.generation.catalog(), incoming, 2_048))
+						.isEqualTo(addedSubject);
+			} finally {
+				if (result != null && result.generation != null) {
+					result.generation.release();
+				}
+				sealed.close();
+			}
+		}
+
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@Test
+	void secondMediumRowMutationDoesLogarithmicDirectoryWork() throws IOException {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(8L << 30);
+		long predicate = uri(10);
+		long commonObject = uri(200_000);
+		long firstAddedSubject = uri(50_001);
+		long secondAddedSubject = uri(50_003);
+
+		try (LmdbInMemoryAdjacencyIndex base = baseWithIncomingRow(account, predicate, commonObject, 50_000)) {
+			Result first = null;
+			Result second = null;
+			SealedDirectDelta firstSealed = sealedAdd(account, 7, 8, firstAddedSubject, predicate, commonObject);
+			SealedDirectDelta secondSealed = null;
+			try {
+				first = LmdbAdjacencyDeltaApplier.apply(firstSealed, base, base.contextCatalog(),
+						(key, plane, rawPredicateId) -> oldRun(base, key, plane, rawPredicateId), ignored -> true,
+						new long[0], account, BASE_REGION_BYTES);
+				LmdbAdjacencyDeltaGeneration predecessor = first.generation;
+				LmdbAdjacencyContextCatalog predecessorContexts = first.contextCatalog;
+				secondSealed = sealedAdd(account, 8, 9, secondAddedSubject, predicate, commonObject);
+				second = LmdbAdjacencyDeltaApplier.apply(secondSealed, base, predecessorContexts,
+						(key, plane, rawPredicateId) -> {
+							long handle = predecessor.find(key, plane, rawPredicateId);
+							return handle > 0 ? new OldRun(predecessor.catalog(), predecessorContexts, handle)
+									: oldRun(base, key, plane, rawPredicateId);
+						}, ignored -> true, new long[0], account, BASE_REGION_BYTES);
+
+				assertThat(second.structuralStats.rows()).isEqualTo(1);
+				assertThat(second.structuralStats.fenceProbes()).isLessThanOrEqualTo(4);
+				assertThat(second.structuralStats.rewrittenLeaves()).isBetween(1L, 2L);
+				long incoming = second.generation.find(commonObject,
+						LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT, predicate);
+				assertThat(LmdbAdjacencyRunCodec.edgeCount(second.generation.catalog(), incoming)).isEqualTo(50_002);
+			} finally {
+				if (second != null && second.generation != null) {
+					second.generation.release();
+				}
+				if (secondSealed != null) {
+					secondSealed.close();
+				}
+				if (first != null && first.generation != null) {
+					first.generation.release();
+				}
+				firstSealed.close();
+			}
+		}
+
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
 	private static LmdbInMemoryAdjacencyIndex emptyBase(LmdbAdjacencyMemoryAccount account) throws IOException {
 		return LmdbPagedCsfBaseBuilder.build(new EmptyScanner(), LmdbAdjacencyCoverage.full(), account,
 				BASE_REGION_BYTES, WORKSPACE_REGION_BYTES);
@@ -262,6 +354,25 @@ class LmdbAdjacencyDeltaApplierTest {
 			long predicate, long object) throws IOException {
 		return LmdbPagedCsfBaseBuilder.build(new SingleStatementScanner(subject, predicate, object),
 				LmdbAdjacencyCoverage.full(), account, BASE_REGION_BYTES, BASE_BUILD_WORKSPACE_REGION_BYTES);
+	}
+
+	private static LmdbInMemoryAdjacencyIndex baseWithIncomingRow(LmdbAdjacencyMemoryAccount account, long predicate,
+			long object, int edgeCount) throws IOException {
+		return LmdbPagedCsfBaseBuilder.build(new IncomingRowScanner(predicate, object, edgeCount),
+				LmdbAdjacencyCoverage.full(), account, BASE_REGION_BYTES, BASE_BUILD_WORKSPACE_REGION_BYTES);
+	}
+
+	private static SealedDirectDelta sealedAdd(LmdbAdjacencyMemoryAccount account, long fromRevision, long toRevision,
+			long subject, long predicate, long object) {
+		LmdbDirectAdjacencyCommitDelta delta = new LmdbDirectAdjacencyCommitDelta(account, 1L << 20);
+		delta.begin(fromRevision);
+		delta.recordAdd(subject, predicate, object, 0, true);
+		return delta.seal(toRevision);
+	}
+
+	private static OldRun oldRun(LmdbInMemoryAdjacencyIndex base, long key, int plane, long predicate) {
+		long handle = base.findRun(key, plane, predicate);
+		return handle < 0 ? null : new OldRun(base.arenaCatalog(), base.contextCatalog(), handle);
 	}
 
 	private static long uri(long payload) {
@@ -308,6 +419,46 @@ class LmdbAdjacencyDeltaApplierTest {
 			if (explicit) {
 				consumer.begin(object, predicate, LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT);
 				consumer.pair(subject, 0);
+				consumer.end();
+			}
+		}
+	}
+
+	private static final class IncomingRowScanner extends EmptyScanner {
+
+		private final long predicate;
+		private final long object;
+		private final int edgeCount;
+
+		private IncomingRowScanner(long predicate, long object, int edgeCount) {
+			this.predicate = predicate;
+			this.object = object;
+			this.edgeCount = edgeCount;
+		}
+
+		@Override
+		public void scanPredicates(PredicateConsumer consumer) {
+			consumer.predicate(predicate);
+		}
+
+		@Override
+		public void scanOutgoing(boolean explicit, GroupConsumer consumer) {
+			if (explicit) {
+				for (int i = 0; i < edgeCount; i++) {
+					consumer.begin(uri(2L * i + 2), predicate, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT);
+					consumer.pair(object, 0);
+					consumer.end();
+				}
+			}
+		}
+
+		@Override
+		public void scanIncoming(boolean explicit, GroupConsumer consumer) {
+			if (explicit) {
+				consumer.begin(object, predicate, LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT);
+				for (int i = 0; i < edgeCount; i++) {
+					consumer.pair(uri(2L * i + 2), 0);
+				}
 				consumer.end();
 			}
 		}

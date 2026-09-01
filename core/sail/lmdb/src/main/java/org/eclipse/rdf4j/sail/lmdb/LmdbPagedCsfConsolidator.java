@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
+import java.util.concurrent.CancellationException;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.Charge;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
@@ -28,6 +29,12 @@ import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 final class LmdbPagedCsfConsolidator {
 
 	private static final long FIXED_WORKSPACE_BYTES = 16L << 20;
+
+	private static void checkCancellation() {
+		if (Thread.currentThread().isInterrupted()) {
+			throw new CancellationException("paged adjacency consolidation interrupted");
+		}
+	}
 
 	/**
 	 * Modelled transient workspace per overlay source row, charged before any of it is allocated (invariant I17).
@@ -69,6 +76,7 @@ final class LmdbPagedCsfConsolidator {
 
 		long sourceRows = 0;
 		for (int i = 0; i < overlays.generationCount(); i++) {
+			checkCancellation();
 			sourceRows = Math.addExact(sourceRows, overlays.generation(i).rowCount());
 		}
 		long workspaceBytes = Math.addExact(FIXED_WORKSPACE_BYTES,
@@ -143,7 +151,7 @@ final class LmdbPagedCsfConsolidator {
 					contexts = oldContexts.copyExtensions(contextArena);
 				}
 
-				catalog = oldBase.arenaCatalog().baseOnlyWithCsf(newCsf);
+				catalog = oldBase.arenaCatalog().freshBaseWithCsf(newCsf);
 				if (contextArena != null) {
 					LmdbAdjacencyArenaCatalog withContexts = catalog.appendRetained(contextArena);
 					catalog.close();
@@ -268,7 +276,7 @@ final class LmdbPagedCsfConsolidator {
 		long[] keys;
 		byte[] planes;
 		long[] predicates;
-		int[] generations;
+		LmdbAdjacencyDeltaGeneration[] generations;
 		int[] generationRows;
 		int size;
 		final LmdbAdjacencyOverlaySet overlays;
@@ -278,60 +286,17 @@ final class LmdbPagedCsfConsolidator {
 			keys = new long[Math.max(1, capacity)];
 			planes = new byte[keys.length];
 			predicates = new long[keys.length];
-			generations = new int[keys.length];
+			generations = new LmdbAdjacencyDeltaGeneration[keys.length];
 			generationRows = new int[keys.length];
 		}
 
 		static LatestRows collect(LmdbAdjacencyOverlaySet overlays) {
-			long maximum = 0;
-			for (int i = 0; i < overlays.generationCount(); i++) {
-				maximum = Math.addExact(maximum, overlays.generation(i).rowCount());
-			}
-			LatestRows result = new LatestRows(overlays, Math.toIntExact(maximum));
-			int count = overlays.generationCount();
-			int[] positions = new int[count];
-			while (true) {
-				int chosen = -1;
-				long key = 0;
-				int plane = 0;
-				long predicate = 0;
-				for (int generation = 0; generation < count; generation++) {
-					LmdbAdjacencyDeltaGeneration candidate = overlays.generation(generation);
-					int position = positions[generation];
-					if (position >= candidate.rowCount()) {
-						continue;
-					}
-					long candidateKey = candidate.rowKeyAt(position);
-					int candidatePlane = candidate.rowPlaneAt(position);
-					long candidatePredicate = candidate.rowPredicateAt(position);
-					if (chosen < 0
-							|| compare(candidateKey, candidatePlane, candidatePredicate, key, plane, predicate) < 0) {
-						chosen = generation;
-						key = candidateKey;
-						plane = candidatePlane;
-						predicate = candidatePredicate;
-					}
-				}
-				if (chosen < 0) {
-					break;
-				}
-				int newest = -1;
-				int newestRow = -1;
-				for (int generation = count - 1; generation >= 0; generation--) {
-					LmdbAdjacencyDeltaGeneration candidate = overlays.generation(generation);
-					int position = positions[generation];
-					if (position < candidate.rowCount() && candidate.rowKeyAt(position) == key
-							&& candidate.rowPlaneAt(position) == plane
-							&& candidate.rowPredicateAt(position) == predicate) {
-						if (newest < 0) {
-							newest = generation;
-							newestRow = position;
-						}
-						positions[generation]++;
-					}
-				}
-				result.add(key, plane, predicate, newest, newestRow);
-			}
+			LatestRows result = new LatestRows(overlays, overlays.latestRowCount());
+			overlays.forEachLatestRow((generation, generationIndex, row) -> {
+				checkCancellation();
+				result.add(generation.rowKeyAt(row), generation.rowPlaneAt(row), generation.rowPredicateAt(row),
+						generation, row);
+			});
 			return result;
 		}
 
@@ -411,18 +376,19 @@ final class LmdbPagedCsfConsolidator {
 		}
 
 		boolean tombstone(int record) {
-			return overlays.generation(generations[record]).tombstoneAt(generationRows[record]);
+			return generations[record].tombstoneAt(generationRows[record]);
 		}
 
 		LmdbAdjacencyDeltaGeneration generation(int record) {
-			return overlays.generation(generations[record]);
+			return generations[record];
 		}
 
 		int generationRow(int record) {
 			return generationRows[record];
 		}
 
-		private void add(long key, int plane, long predicate, int generation, int generationRow) {
+		private void add(long key, int plane, long predicate, LmdbAdjacencyDeltaGeneration generation,
+				int generationRow) {
 			keys[size] = key;
 			planes[size] = (byte) plane;
 			predicates[size] = predicate;

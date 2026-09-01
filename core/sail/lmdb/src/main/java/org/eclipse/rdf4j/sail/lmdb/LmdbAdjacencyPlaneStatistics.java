@@ -30,15 +30,15 @@ final class LmdbAdjacencyPlaneStatistics {
 	private final long[] basePredicates;
 	private final long[] baseQuadCounts;
 	private final long[] baseKeyCounts;
-	private final Update[] updates;
+	private final Update[] summaryLevels;
 	private volatile PredicateDomain predicateDomain;
 
 	private LmdbAdjacencyPlaneStatistics(long[] basePredicates, long[] baseQuadCounts, long[] baseKeyCounts,
-			Update[] updates) {
+			Update[] summaryLevels) {
 		this.basePredicates = basePredicates;
 		this.baseQuadCounts = baseQuadCounts;
 		this.baseKeyCounts = baseKeyCounts;
-		this.updates = updates;
+		this.summaryLevels = summaryLevels;
 	}
 
 	static LmdbAdjacencyPlaneStatistics empty() {
@@ -83,24 +83,45 @@ final class LmdbAdjacencyPlaneStatistics {
 		if (update == null || update.isEmpty()) {
 			return this;
 		}
-		Update[] extended = Arrays.copyOf(updates, updates.length + 1);
-		extended[updates.length] = update;
-		return new LmdbAdjacencyPlaneStatistics(basePredicates, baseQuadCounts, baseKeyCounts, extended);
+		Update carry = update;
+		Update[] levels = summaryLevels.clone();
+		int level = 0;
+		while (!carry.isEmpty()) {
+			if (level == levels.length) {
+				if (level >= Long.SIZE) {
+					throw new IllegalStateException("plane-statistics summary exceeds 64 binary levels");
+				}
+				levels = Arrays.copyOf(levels, level + 1);
+			}
+			Update existing = levels[level];
+			if (existing == null) {
+				levels[level] = carry;
+				break;
+			}
+			levels[level] = null;
+			carry = Update.merge(existing, carry);
+			level++;
+		}
+		return new LmdbAdjacencyPlaneStatistics(basePredicates, baseQuadCounts, baseKeyCounts, trimLevels(levels));
 	}
 
 	LmdbAdjacencyPlaneStatistics flattened() {
-		if (updates.length == 0) {
+		if (summaryLevels.length == 0) {
 			return this;
 		}
 		int totalPredicates = basePredicates.length;
-		for (Update update : updates) {
-			totalPredicates = Math.addExact(totalPredicates, update.predicates.length);
+		for (Update update : summaryLevels) {
+			if (update != null) {
+				totalPredicates = Math.addExact(totalPredicates, update.predicates.length);
+			}
 		}
 		long[] candidates = Arrays.copyOf(basePredicates, totalPredicates);
 		int cursor = basePredicates.length;
-		for (Update update : updates) {
-			System.arraycopy(update.predicates, 0, candidates, cursor, update.predicates.length);
-			cursor += update.predicates.length;
+		for (Update update : summaryLevels) {
+			if (update != null) {
+				System.arraycopy(update.predicates, 0, candidates, cursor, update.predicates.length);
+				cursor += update.predicates.length;
+			}
 		}
 		sortUnsigned(candidates);
 		int unique = 0;
@@ -186,14 +207,29 @@ final class LmdbAdjacencyPlaneStatistics {
 	private long count(long rawPredicate, int plane, boolean quads) {
 		checkPlane(plane);
 		long total = countIn(basePredicates, quads ? baseQuadCounts : baseKeyCounts, rawPredicate, plane);
-		for (Update update : updates) {
-			total = Math.addExact(total,
-					countIn(update.predicates, quads ? update.quadDeltas : update.keyDeltas, rawPredicate, plane));
+		for (Update update : summaryLevels) {
+			if (update != null) {
+				total = Math.addExact(total,
+						countIn(update.predicates, quads ? update.quadDeltas : update.keyDeltas, rawPredicate,
+								plane));
+			}
 		}
 		if (total < 0) {
 			throw new IllegalStateException("negative plane count for predicate " + rawPredicate + ", plane " + plane);
 		}
 		return total;
+	}
+
+	int summaryLevelCount() {
+		return summaryLevels.length;
+	}
+
+	private static Update[] trimLevels(Update[] levels) {
+		int length = levels.length;
+		while (length > 0 && levels[length - 1] == null) {
+			length--;
+		}
+		return length == levels.length ? levels : Arrays.copyOf(levels, length);
 	}
 
 	private static long countIn(long[] predicates, long[] counts, long rawPredicate, int plane) {
@@ -216,6 +252,62 @@ final class LmdbAdjacencyPlaneStatistics {
 
 		boolean isEmpty() {
 			return predicates.length == 0;
+		}
+
+		private static Update merge(Update left, Update right) {
+			long[] predicates = new long[Math.addExact(left.predicates.length, right.predicates.length)];
+			long[] quads = new long[Math.multiplyExact(predicates.length, PLANE_COUNT)];
+			long[] keys = new long[quads.length];
+			int leftAt = 0;
+			int rightAt = 0;
+			int output = 0;
+			while (leftAt < left.predicates.length || rightAt < right.predicates.length) {
+				int comparison = leftAt >= left.predicates.length ? 1
+						: rightAt >= right.predicates.length ? -1
+								: Long.compareUnsigned(left.predicates[leftAt], right.predicates[rightAt]);
+				long predicate;
+				boolean nonzero = false;
+				if (comparison < 0) {
+					predicate = left.predicates[leftAt];
+					for (int plane = 0; plane < PLANE_COUNT; plane++) {
+						long quad = left.quadDeltas[leftAt * PLANE_COUNT + plane];
+						long key = left.keyDeltas[leftAt * PLANE_COUNT + plane];
+						quads[output * PLANE_COUNT + plane] = quad;
+						keys[output * PLANE_COUNT + plane] = key;
+						nonzero |= quad != 0 || key != 0;
+					}
+					leftAt++;
+				} else if (comparison > 0) {
+					predicate = right.predicates[rightAt];
+					for (int plane = 0; plane < PLANE_COUNT; plane++) {
+						long quad = right.quadDeltas[rightAt * PLANE_COUNT + plane];
+						long key = right.keyDeltas[rightAt * PLANE_COUNT + plane];
+						quads[output * PLANE_COUNT + plane] = quad;
+						keys[output * PLANE_COUNT + plane] = key;
+						nonzero |= quad != 0 || key != 0;
+					}
+					rightAt++;
+				} else {
+					predicate = left.predicates[leftAt];
+					for (int plane = 0; plane < PLANE_COUNT; plane++) {
+						long quad = Math.addExact(left.quadDeltas[leftAt * PLANE_COUNT + plane],
+								right.quadDeltas[rightAt * PLANE_COUNT + plane]);
+						long key = Math.addExact(left.keyDeltas[leftAt * PLANE_COUNT + plane],
+								right.keyDeltas[rightAt * PLANE_COUNT + plane]);
+						quads[output * PLANE_COUNT + plane] = quad;
+						keys[output * PLANE_COUNT + plane] = key;
+						nonzero |= quad != 0 || key != 0;
+					}
+					leftAt++;
+					rightAt++;
+				}
+				if (nonzero) {
+					predicates[output++] = predicate;
+				}
+			}
+			return output == 0 ? EMPTY
+					: new Update(Arrays.copyOf(predicates, output), Arrays.copyOf(quads, output * PLANE_COUNT),
+							Arrays.copyOf(keys, output * PLANE_COUNT));
 		}
 	}
 

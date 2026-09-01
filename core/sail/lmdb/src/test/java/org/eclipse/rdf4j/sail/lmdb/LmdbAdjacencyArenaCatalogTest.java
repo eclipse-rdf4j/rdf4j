@@ -142,4 +142,80 @@ class LmdbAdjacencyArenaCatalogTest {
 		assertThatThrownBy(() -> catalog.appendRetained(base)).isInstanceOf(IllegalStateException.class);
 		base.close();
 	}
+
+	@Test
+	void sourceRegistryTracksCapacityAndPhysicalOwnershipWithoutReusingIds() {
+		LmdbAdjacencyArena first = new LmdbAdjacencyArena(TEST_REGION_BYTES);
+		LmdbAdjacencyArena second = new LmdbAdjacencyArena(TEST_REGION_BYTES);
+		LmdbAdjacencySourceRegistry registry = new LmdbAdjacencySourceRegistry();
+		int firstId = registry.registerArena(first, null, null);
+		try {
+			assertThat(registry.physicalBytes(firstId)).isEqualTo(first.capacityBytes());
+			assertThat(registry.logicalBytes(firstId)).isEqualTo(first.capacityBytes());
+			registry.limitSourceIdsForTest(firstId);
+			assertThat(registry.hasCapacityFor(0)).isTrue();
+			assertThat(registry.hasCapacityFor(1)).isFalse();
+			assertThatThrownBy(() -> registry.registerArena(second, null, null))
+					.hasMessageContaining("source ID space exhausted");
+		} finally {
+			registry.release(firstId);
+			first.close();
+			second.close();
+		}
+	}
+
+	@Test
+	void sourceRegistryTracksCurrentDeltaBytesAcrossSharedDependencies() {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1 << 20);
+		LmdbAdjacencySourceRegistry registry = new LmdbAdjacencySourceRegistry();
+		LmdbAdjacencyDeltaArenaOwner dependency = owner(account, 4096);
+		LmdbAdjacencyDeltaArenaOwner first = owner(account, 8192);
+		LmdbAdjacencyDeltaArenaOwner second = owner(account, 16384);
+		int dependencyId = registry.registerArena(dependency.arena(), dependency, null);
+		int firstId = registry.registerArena(first.arena(), first, new int[] { dependencyId });
+		int secondId = registry.registerArena(second.arena(), second, new int[] { dependencyId });
+		try {
+			assertThat(registry.currentDeltaPhysicalBytes()).isZero();
+
+			registry.activateCurrent(firstId);
+			assertThat(registry.currentDeltaPhysicalBytes()).isEqualTo(4096 + 8192);
+
+			registry.activateCurrent(secondId);
+			assertThat(registry.currentDeltaPhysicalBytes()).isEqualTo(4096 + 8192 + 16384);
+
+			registry.deactivateCurrent(firstId);
+			assertThat(registry.currentDeltaPhysicalBytes()).isEqualTo(4096 + 16384);
+
+			registry.deactivateCurrent(secondId);
+			assertThat(registry.currentDeltaPhysicalBytes()).isZero();
+		} finally {
+			registry.release(secondId);
+			registry.release(firstId);
+			registry.release(dependencyId);
+			second.close();
+			first.close();
+			dependency.close();
+		}
+	}
+
+	@Test
+	void physicalBaseReplacementUsesAFreshSourceRegistry() {
+		LmdbAdjacencyArena base = new LmdbAdjacencyArena(TEST_REGION_BYTES);
+		try (LmdbAdjacencyArenaCatalog first = LmdbAdjacencyArenaCatalog.of(base)) {
+			LmdbAdjacencySourceRegistry oldRegistry = first.sourceRegistry();
+			oldRegistry.limitSourceIdsForTest(oldRegistry.highestAssignedSourceId());
+			try (LmdbAdjacencyArenaCatalog replacement = first.freshBaseWithCsf(null)) {
+				assertThat(replacement.sourceRegistry()).isNotSameAs(oldRegistry);
+				assertThat(replacement.hasSourceCapacityFor(2)).isTrue();
+				assertThat(first.hasSourceCapacityFor(1)).isFalse();
+			}
+		} finally {
+			base.close();
+		}
+	}
+
+	private static LmdbAdjacencyDeltaArenaOwner owner(LmdbAdjacencyMemoryAccount account, long bytes) {
+		return new LmdbAdjacencyDeltaArenaOwner(new LmdbAdjacencyArena(bytes),
+				account.tryCharge(LmdbAdjacencyMemoryAccount.MemoryKind.RETAINED_SNAPSHOT, bytes));
+	}
 }

@@ -86,6 +86,29 @@ class LmdbAdjacencyMemoryAccountTest {
 	}
 
 	@Test
+	void sharedDeltaArenaTracksCurrentAndSnapshotOnlyOwnership() {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1 << 20);
+		LmdbAdjacencyArena arena = new LmdbAdjacencyArena(4096);
+		LmdbAdjacencyDeltaArenaOwner owner = new LmdbAdjacencyDeltaArenaOwner(arena,
+				account.tryCharge(MemoryKind.RETAINED_SNAPSHOT, 4096));
+		owner.retain();
+
+		owner.activateCurrent();
+		assertThat(account.chargedBytes(MemoryKind.DELTA)).isEqualTo(4096);
+		assertThat(account.chargedBytes(MemoryKind.RETAINED_SNAPSHOT)).isZero();
+
+		owner.deactivateCurrent();
+		assertThat(account.chargedBytes(MemoryKind.DELTA)).isZero();
+		assertThat(account.chargedBytes(MemoryKind.RETAINED_SNAPSHOT)).isEqualTo(4096);
+		owner.close();
+		assertThat(arena.isClosed()).isFalse();
+		owner.close();
+
+		assertThat(arena.isClosed()).isTrue();
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@Test
 	void overReleaseAndOverReclassifyFailFast() {
 		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1000);
 		account.tryReserve(MemoryKind.PENDING, 100);

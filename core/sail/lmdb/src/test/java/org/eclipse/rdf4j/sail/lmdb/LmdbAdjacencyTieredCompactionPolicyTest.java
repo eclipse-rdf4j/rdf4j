@@ -12,43 +12,52 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyTieredCompactionPolicy.Candidate;
-import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyTieredCompactionPolicy.GenerationInfo;
 import org.junit.jupiter.api.Test;
 
 class LmdbAdjacencyTieredCompactionPolicyTest {
 
 	@Test
-	void selectsOldestFourWayRunWithinTheTwoTimesWeightBand() {
-		Candidate candidate = LmdbAdjacencyTieredCompactionPolicy.select(
-				infos(100, 150, 200, 199, 50, 60, 70, 80), 8);
+	void candidateSelectionUsesReusableMutableState() {
+		assertThat(Candidate.class.isRecord()).isFalse();
+		assertThat(java.util.Arrays.stream(LmdbAdjacencyTieredCompactionPolicy.class.getDeclaredClasses())
+				.map(Class::getSimpleName))
+						.doesNotContain("GenerationInfo", "CandidateScore");
+	}
 
-		assertThat(candidate).isEqualTo(new Candidate(0, 4, true));
-		assertThat(LmdbAdjacencyTieredCompactionPolicy.select(infos(100, 201, 100, 100), 8)).isNull();
+	@Test
+	void selectsOldestFourWayRunWithinTheTwoTimesWeightBand() {
+		Candidate candidate = select(8, 100, 150, 200, 199, 50, 60, 70, 80);
+
+		assertThat(candidate.fromInclusive()).isZero();
+		assertThat(candidate.toExclusive()).isEqualTo(4);
+		assertThat(candidate.normal()).isTrue();
+		assertThat(select(8, 100, 201, 100, 100).selected()).isFalse();
 	}
 
 	@Test
 	void historicalWeightKeepsDeduplicatedOutputOutOfFreshTinyTier() {
-		Candidate candidate = LmdbAdjacencyTieredCompactionPolicy.select(
-				infos(400, 20, 20, 20, 20), 8);
+		Candidate candidate = select(8, 400, 20, 20, 20, 20);
 
-		assertThat(candidate).isEqualTo(new Candidate(1, 5, true));
+		assertThat(candidate.fromInclusive()).isEqualTo(1);
+		assertThat(candidate.toExclusive()).isEqualTo(5);
+		assertThat(candidate.normal()).isTrue();
 	}
 
 	@Test
 	void countPressureChoosesUnpinnedThenLeastSkewedLeastCostOldestWindow() {
-		GenerationInfo[] generations = {
-				info(1, 900, 10, 2),
-				info(2, 100, 40, 1),
-				info(3, 100, 50, 1),
-				info(4, 100, 10, 1),
-				info(5, 100, 100, 1)
-		};
+		LmdbAdjacencyOverlaySet generations = overlays(
+				info(1, 900, 10, 2), info(2, 100, 40, 1), info(3, 100, 50, 1),
+				info(4, 100, 10, 1), info(5, 100, 100, 1));
+		Candidate candidate = new Candidate();
+		assertThat(LmdbAdjacencyTieredCompactionPolicy.select(generations, 4, candidate)).isTrue();
 
-		Candidate candidate = LmdbAdjacencyTieredCompactionPolicy.select(generations, 4);
-
-		assertThat(candidate).isEqualTo(new Candidate(1, 3, false));
+		assertThat(candidate.fromInclusive()).isEqualTo(1);
+		assertThat(candidate.toExclusive()).isEqualTo(3);
+		assertThat(candidate.normal()).isFalse();
 	}
 
 	@Test
@@ -61,15 +70,38 @@ class LmdbAdjacencyTieredCompactionPolicyTest {
 		assertThat(LmdbAdjacencyTieredCompactionPolicy.shouldFoldBase(128, 128, 400)).isTrue();
 	}
 
-	private static GenerationInfo[] infos(long... weights) {
-		GenerationInfo[] infos = new GenerationInfo[weights.length];
+	@Test
+	void physicalFlatteningRequiresBothTwoToOneRetentionAndOneRegionOfDebt() throws Exception {
+		var policy = LmdbAdjacencyTieredCompactionPolicy.class.getDeclaredMethod("shouldPhysicallyFlatten",
+				long.class, long.class, long.class);
+		policy.setAccessible(true);
+
+		assertThat(policy.invoke(null, 8_191L, 4_096L, 4_096L)).isEqualTo(false);
+		assertThat(policy.invoke(null, 8_192L, 4_096L, 4_096L)).isEqualTo(true);
+		assertThat(policy.invoke(null, 8_192L, 4_097L, 4_096L)).isEqualTo(false);
+		assertThat(policy.invoke(null, Long.MAX_VALUE, Long.MAX_VALUE / 2 + 1, 1L)).isEqualTo(false);
+	}
+
+	private static Candidate select(int targetGenerationCount, long... weights) {
+		LmdbAdjacencyDeltaGeneration[] infos = new LmdbAdjacencyDeltaGeneration[weights.length];
 		for (int i = 0; i < weights.length; i++) {
 			infos[i] = info(i + 1, weights[i], weights[i], 1);
 		}
-		return infos;
+		Candidate candidate = new Candidate();
+		LmdbAdjacencyTieredCompactionPolicy.select(overlays(infos), targetGenerationCount, candidate);
+		return candidate;
 	}
 
-	private static GenerationInfo info(long revision, long retainedBytes, long weight, long references) {
-		return new GenerationInfo(revision, retainedBytes, weight, references);
+	private static LmdbAdjacencyDeltaGeneration info(long revision, long retainedBytes, long weight, long references) {
+		LmdbAdjacencyDeltaGeneration generation = mock(LmdbAdjacencyDeltaGeneration.class);
+		when(generation.revision()).thenReturn(revision);
+		when(generation.retainedBytes()).thenReturn(retainedBytes);
+		when(generation.compactionWeightBytes()).thenReturn(weight);
+		when(generation.referenceCount()).thenReturn(references);
+		return generation;
+	}
+
+	private static LmdbAdjacencyOverlaySet overlays(LmdbAdjacencyDeltaGeneration... generations) {
+		return new LmdbAdjacencyOverlaySet(generations, mock(LmdbAdjacencyContextCatalog.class), new long[0]);
 	}
 }

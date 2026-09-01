@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -33,12 +34,28 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 	static final int MAX_SLOTS = CSF_SLOT; // ordinary slots are 0..0xfd
 
 	private final LmdbAdjacencyArena[] arenas;
+	private final LmdbAdjacencyDeltaArenaOwner[] deltaOwners;
+	private final ImmutablePagedQuadCsfIndex[] csfDependencies;
 	private final ImmutablePagedQuadCsfIndex csfBase;
+	private final LmdbAdjacencySourceRegistry sourceRegistry;
+	private final int[] ownedSourceIds;
 	private final AtomicBoolean closed = new AtomicBoolean();
 
-	private LmdbAdjacencyArenaCatalog(LmdbAdjacencyArena[] arenas, ImmutablePagedQuadCsfIndex csfBase) {
+	private LmdbAdjacencyArenaCatalog(LmdbAdjacencyArena[] arenas, ImmutablePagedQuadCsfIndex csfBase,
+			LmdbAdjacencySourceRegistry sourceRegistry, int[] ownedSourceIds) {
+		this(arenas, new LmdbAdjacencyDeltaArenaOwner[arenas.length],
+				new ImmutablePagedQuadCsfIndex[arenas.length], csfBase, sourceRegistry, ownedSourceIds);
+	}
+
+	private LmdbAdjacencyArenaCatalog(LmdbAdjacencyArena[] arenas,
+			LmdbAdjacencyDeltaArenaOwner[] deltaOwners, ImmutablePagedQuadCsfIndex[] csfDependencies,
+			ImmutablePagedQuadCsfIndex csfBase, LmdbAdjacencySourceRegistry sourceRegistry, int[] ownedSourceIds) {
 		this.arenas = arenas;
+		this.deltaOwners = deltaOwners;
+		this.csfDependencies = csfDependencies;
 		this.csfBase = csfBase;
+		this.sourceRegistry = sourceRegistry;
+		this.ownedSourceIds = ownedSourceIds;
 	}
 
 	/** Creates a legacy-only catalog with the base arena in slot zero. */
@@ -49,15 +66,27 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 	/** Creates a catalog with a tiny dictionary/overlay arena and an optional immutable CSF base. */
 	static LmdbAdjacencyArenaCatalog of(LmdbAdjacencyArena baseArena, ImmutablePagedQuadCsfIndex csfBase) {
 		Objects.requireNonNull(baseArena, "baseArena");
+		LmdbAdjacencySourceRegistry registry = new LmdbAdjacencySourceRegistry();
 		baseArena.retainOwner();
 		boolean csfRetained = false;
+		int baseSourceId = 0;
+		int csfSourceId = 0;
 		try {
+			baseSourceId = registry.registerArena(baseArena, null, null);
 			if (csfBase != null) {
 				csfBase.retain();
 				csfRetained = true;
+				csfSourceId = registry.registerCsf(csfBase, null);
 			}
-			return new LmdbAdjacencyArenaCatalog(new LmdbAdjacencyArena[] { baseArena }, csfBase);
+			return new LmdbAdjacencyArenaCatalog(new LmdbAdjacencyArena[] { baseArena }, csfBase, registry,
+					csfSourceId == 0 ? new int[] { baseSourceId } : new int[] { baseSourceId, csfSourceId });
 		} catch (RuntimeException | Error e) {
+			if (csfSourceId != 0) {
+				registry.release(csfSourceId);
+			}
+			if (baseSourceId != 0) {
+				registry.release(baseSourceId);
+			}
 			baseArena.close();
 			if (csfRetained) {
 				csfBase.close();
@@ -89,7 +118,7 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 
 	LmdbAdjacencyArena arena(int unsignedSlot) {
 		checkOpen();
-		if (unsignedSlot < 0 || unsignedSlot >= arenas.length) {
+		if (unsignedSlot < 0 || unsignedSlot >= arenas.length || arenas[unsignedSlot] == null) {
 			throw new IllegalArgumentException("ordinary arena slot out of range: " + unsignedSlot);
 		}
 		return arenas[unsignedSlot];
@@ -98,7 +127,7 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 	/** Packs an ordinary arena slot and nonzero local u40 reference into a positive opaque run handle. */
 	long packHandle(int unsignedSlot, long localU40Ref) {
 		checkOpen();
-		if (unsignedSlot < 0 || unsignedSlot >= arenas.length) {
+		if (unsignedSlot < 0 || unsignedSlot >= arenas.length || arenas[unsignedSlot] == null) {
 			throw new IllegalArgumentException("arena slot out of range: " + unsignedSlot);
 		}
 		if (localU40Ref <= 0 || localU40Ref > LmdbAdjacencyArena.MAX_U40_VALUE) {
@@ -109,11 +138,38 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 
 	/** Packs a CSF local page/row coordinate into the reserved virtual slot. */
 	long packCsfHandle(long localU40Ref) {
+		return packCsfHandle(CSF_SLOT, localU40Ref);
+	}
+
+	long packCsfHandle(int unsignedSlot, long localU40Ref) {
 		checkOpen();
-		if (csfBase == null) {
-			throw new IllegalStateException("catalog has no paged CSF base");
+		csfSource(unsignedSlot);
+		if (localU40Ref <= 0 || localU40Ref > LmdbAdjacencyArena.MAX_U40_VALUE) {
+			throw new IllegalArgumentException("invalid CSF local reference: " + localU40Ref);
 		}
-		return csfBase.packHandle(localU40Ref);
+		return (long) unsignedSlot << 40 | localU40Ref;
+	}
+
+	ImmutablePagedQuadCsfIndex csfSource(int unsignedSlot) {
+		checkOpen();
+		if (unsignedSlot == CSF_SLOT) {
+			if (csfBase == null) {
+				throw new IllegalArgumentException("catalog has no primary CSF source");
+			}
+			return csfBase;
+		}
+		if (unsignedSlot < 0 || unsignedSlot >= csfDependencies.length
+				|| csfDependencies[unsignedSlot] == null) {
+			throw new IllegalArgumentException("CSF dependency slot out of range: " + unsignedSlot);
+		}
+		return csfDependencies[unsignedSlot];
+	}
+
+	boolean isCsfSourceSlot(int unsignedSlot) {
+		checkOpen();
+		return unsignedSlot == CSF_SLOT ? csfBase != null
+				: unsignedSlot >= 0 && unsignedSlot < csfDependencies.length
+						&& csfDependencies[unsignedSlot] != null;
 	}
 
 	int unpackSlot(long runHandle) {
@@ -140,19 +196,47 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 		LmdbAdjacencyArena base = arenas[0];
 		base.retainOwner();
 		boolean csfRetained = false;
+		int baseSourceId = 0;
+		int csfSourceId = 0;
 		try {
+			baseSourceId = sourceRegistry.sourceIdForArena(base);
+			sourceRegistry.retain(baseSourceId);
 			if (replacementCsf != null) {
 				replacementCsf.retain();
 				csfRetained = true;
+				try {
+					csfSourceId = sourceRegistry.sourceIdForCsf(replacementCsf);
+					sourceRegistry.retain(csfSourceId);
+				} catch (IllegalArgumentException missing) {
+					csfSourceId = sourceRegistry.registerCsf(replacementCsf, null);
+				}
 			}
-			return new LmdbAdjacencyArenaCatalog(new LmdbAdjacencyArena[] { base }, replacementCsf);
+			return new LmdbAdjacencyArenaCatalog(new LmdbAdjacencyArena[] { base }, replacementCsf, sourceRegistry,
+					csfSourceId == 0 ? new int[] { baseSourceId } : new int[] { baseSourceId, csfSourceId });
 		} catch (RuntimeException | Error e) {
+			if (csfSourceId != 0) {
+				sourceRegistry.release(csfSourceId);
+			}
+			if (baseSourceId != 0) {
+				sourceRegistry.release(baseSourceId);
+			}
 			base.close();
 			if (csfRetained) {
 				replacementCsf.close();
 			}
 			throw e;
 		}
+	}
+
+	/** Re-roots the physical base in a fresh source-ID domain after flattening all persistent dependencies. */
+	LmdbAdjacencyArenaCatalog freshBaseWithCsf(ImmutablePagedQuadCsfIndex replacementCsf) {
+		checkOpen();
+		return of(arenas[0], replacementCsf);
+	}
+
+	boolean hasSourceCapacityFor(int additionalSources) {
+		checkOpen();
+		return sourceRegistry.hasCapacityFor(additionalSources);
 	}
 
 	/** Copy-appends one retained ordinary arena while preserving the CSF owner. */
@@ -165,21 +249,46 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 		}
 		LmdbAdjacencyArena[] copy = Arrays.copyOf(arenas, arenas.length + 1);
 		copy[arenas.length] = arena;
+		LmdbAdjacencyDeltaArenaOwner[] ownerCopy = Arrays.copyOf(deltaOwners, copy.length);
+		ImmutablePagedQuadCsfIndex[] csfCopy = Arrays.copyOf(csfDependencies, copy.length);
 		int retained = 0;
 		boolean csfRetained = false;
+		int[] sourceIds = new int[copy.length + (csfBase == null ? 0 : 1)];
+		int sourceCount = 0;
 		try {
-			for (LmdbAdjacencyArena member : copy) {
-				member.retainOwner();
+			for (int i = 0; i < copy.length; i++) {
+				if (ownerCopy[i] != null) {
+					ownerCopy[i].retain();
+				} else if (csfCopy[i] != null) {
+					csfCopy[i].retain();
+				} else {
+					copy[i].retainOwner();
+				}
 				retained++;
+				int sourceId = csfCopy[i] != null ? acquireCsfSource(sourceRegistry, csfCopy[i])
+						: acquireArenaSource(sourceRegistry, copy[i], ownerCopy[i]);
+				sourceIds[sourceCount++] = sourceId;
 			}
 			if (csfBase != null) {
 				csfBase.retain();
 				csfRetained = true;
+				int sourceId = acquireCsfSource(sourceRegistry, csfBase);
+				sourceIds[sourceCount++] = sourceId;
 			}
-			return new LmdbAdjacencyArenaCatalog(copy, csfBase);
+			return new LmdbAdjacencyArenaCatalog(copy, ownerCopy, csfCopy, csfBase, sourceRegistry,
+					Arrays.copyOf(sourceIds, sourceCount));
 		} catch (RuntimeException | Error e) {
+			for (int i = sourceCount - 1; i >= 0; i--) {
+				sourceRegistry.release(sourceIds[i]);
+			}
 			for (int i = 0; i < retained; i++) {
-				copy[i].close();
+				if (ownerCopy[i] != null) {
+					ownerCopy[i].close();
+				} else if (csfCopy[i] != null) {
+					csfCopy[i].close();
+				} else {
+					copy[i].close();
+				}
 			}
 			if (csfRetained) {
 				csfBase.close();
@@ -188,16 +297,272 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 		}
 	}
 
+	static LmdbAdjacencyArenaCatalog composed(LmdbAdjacencyArenaCatalog baseCatalog,
+			LmdbAdjacencyDeltaArenaOwner ownOwner,
+			List<LmdbAdjacencyRunCodec.SourceSlice> slices) {
+		baseCatalog.checkOpen();
+		LmdbAdjacencyArena[] collected = new LmdbAdjacencyArena[MAX_SLOTS];
+		LmdbAdjacencyDeltaArenaOwner[] collectedOwners = new LmdbAdjacencyDeltaArenaOwner[MAX_SLOTS];
+		ImmutablePagedQuadCsfIndex[] collectedCsf = new ImmutablePagedQuadCsfIndex[MAX_SLOTS];
+		int count = 0;
+		collected[count++] = baseCatalog.arenas[0];
+		collected[count] = ownOwner.arena();
+		collectedOwners[count++] = ownOwner;
+		ImmutablePagedQuadCsfIndex primaryCsf = baseCatalog.csfBase;
+		for (LmdbAdjacencyRunCodec.SourceSlice slice : slices) {
+			if (slice.persistentSource()) {
+				if (slice.registry != baseCatalog.sourceRegistry) {
+					throw new IllegalArgumentException("persistent adjacency source belongs to another registry");
+				}
+				continue;
+			}
+			int oldSlot = slice.catalog.unpackSlot(slice.handle);
+			if (slice.kind == LmdbAdjacencyRunCodec.LEAF_CSF_SLICE) {
+				ImmutablePagedQuadCsfIndex source = slice.catalog.csfSource(oldSlot);
+				if (source == primaryCsf) {
+					continue;
+				}
+				boolean found = false;
+				for (int i = 0; i < count; i++) {
+					found |= collectedCsf[i] == source;
+				}
+				if (!found) {
+					if (count >= MAX_SLOTS) {
+						throw new IllegalStateException("composite dependency catalog is full");
+					}
+					collectedCsf[count++] = source;
+				}
+				continue;
+			}
+			LmdbAdjacencyArena source = slice.catalog.arena(oldSlot);
+			boolean found = false;
+			for (int i = 0; i < count; i++) {
+				found |= collected[i] == source;
+			}
+			if (!found) {
+				if (count >= MAX_SLOTS) {
+					throw new IllegalStateException("composite dependency catalog is full");
+				}
+				collected[count] = source;
+				collectedOwners[count] = slice.catalog.deltaOwners[oldSlot];
+				count++;
+			}
+		}
+		LmdbAdjacencyArena[] arenas = Arrays.copyOf(collected, count);
+		LmdbAdjacencyDeltaArenaOwner[] owners = Arrays.copyOf(collectedOwners, count);
+		ImmutablePagedQuadCsfIndex[] csfDependencies = Arrays.copyOf(collectedCsf, count);
+		int retained = 0;
+		boolean csfRetained = false;
+		int ownSourceId = 0;
+		int[] acquiredDependencyIds = null;
+		try {
+			for (int i = 0; i < arenas.length; i++) {
+				if (owners[i] != null) {
+					owners[i].retain();
+				} else if (csfDependencies[i] != null) {
+					csfDependencies[i].retain();
+				} else {
+					arenas[i].retainOwner();
+				}
+				retained++;
+			}
+			if (primaryCsf != null) {
+				primaryCsf.retain();
+				csfRetained = true;
+			}
+			acquiredDependencyIds = acquireSourceIdsForSlices(baseCatalog.sourceRegistry, slices);
+			ownSourceId = baseCatalog.sourceRegistry.registerArena(ownOwner.arena(), ownOwner, acquiredDependencyIds);
+			releaseSourceIds(baseCatalog.sourceRegistry, acquiredDependencyIds);
+			acquiredDependencyIds = null;
+			return new LmdbAdjacencyArenaCatalog(arenas, owners, csfDependencies, primaryCsf,
+					baseCatalog.sourceRegistry, new int[] { ownSourceId });
+		} catch (RuntimeException | Error failure) {
+			if (acquiredDependencyIds != null) {
+				releaseSourceIds(baseCatalog.sourceRegistry, acquiredDependencyIds);
+			}
+			if (ownSourceId != 0) {
+				baseCatalog.sourceRegistry.release(ownSourceId);
+			}
+			for (int i = 0; i < retained; i++) {
+				if (owners[i] != null) {
+					owners[i].close();
+				} else if (csfDependencies[i] != null) {
+					csfDependencies[i].close();
+				} else {
+					arenas[i].close();
+				}
+			}
+			if (csfRetained) {
+				primaryCsf.close();
+			}
+			throw failure;
+		}
+	}
+
+	LmdbAdjacencySourceRegistry sourceRegistry() {
+		checkOpen();
+		return sourceRegistry;
+	}
+
+	int sourceIdFor(long sourceHandle, int leafKind) {
+		checkOpen();
+		int sourceSlot = unpackSlot(sourceHandle);
+		return leafKind == LmdbAdjacencyRunCodec.LEAF_CSF_SLICE
+				? sourceRegistry.sourceIdForCsf(csfSource(sourceSlot))
+				: sourceRegistry.sourceIdForArena(arena(sourceSlot));
+	}
+
+	int slotFor(LmdbAdjacencyArenaCatalog sourceCatalog, long sourceHandle, int leafKind) {
+		checkOpen();
+		int sourceSlot = sourceCatalog.unpackSlot(sourceHandle);
+		if (leafKind == LmdbAdjacencyRunCodec.LEAF_CSF_SLICE) {
+			ImmutablePagedQuadCsfIndex source = sourceCatalog.csfSource(sourceSlot);
+			if (source == csfBase) {
+				return CSF_SLOT;
+			}
+			for (int i = 0; i < csfDependencies.length; i++) {
+				if (csfDependencies[i] == source) {
+					return i;
+				}
+			}
+			throw new IllegalArgumentException("composite CSF source is unavailable");
+		}
+		LmdbAdjacencyArena source = sourceCatalog.arena(sourceSlot);
+		for (int i = 0; i < arenas.length; i++) {
+			if (arenas[i] == source) {
+				return i;
+			}
+		}
+		throw new IllegalArgumentException("composite run source is unavailable");
+	}
+
 	@Override
 	public void close() {
 		if (!closed.compareAndSet(false, true)) {
 			return;
 		}
-		for (LmdbAdjacencyArena arena : arenas) {
-			arena.close();
+		for (int i = 0; i < arenas.length; i++) {
+			if (deltaOwners[i] != null) {
+				deltaOwners[i].close();
+			} else if (csfDependencies[i] != null) {
+				csfDependencies[i].close();
+			} else {
+				arenas[i].close();
+			}
 		}
 		if (csfBase != null) {
 			csfBase.close();
+		}
+		for (int i = ownedSourceIds.length - 1; i >= 0; i--) {
+			sourceRegistry.release(ownedSourceIds[i]);
+		}
+	}
+
+	private static int[] acquireSourceIdsForSlices(LmdbAdjacencySourceRegistry registry,
+			List<LmdbAdjacencyRunCodec.SourceSlice> slices) {
+		int[] ids = new int[slices.size()];
+		int count = 0;
+		for (LmdbAdjacencyRunCodec.SourceSlice slice : slices) {
+			int id;
+			if (slice.persistentSource()) {
+				if (slice.registry != registry) {
+					throw new IllegalArgumentException("persistent adjacency source belongs to another registry");
+				}
+				id = slice.sourceId;
+				registry.retain(id);
+			} else {
+				int slot = slice.catalog.unpackSlot(slice.handle);
+				id = slice.kind == LmdbAdjacencyRunCodec.LEAF_CSF_SLICE
+						? acquireCsfSource(registry, slice.catalog.csfSource(slot))
+						: acquireArenaSource(registry, slice.catalog.arena(slot), slice.catalog.deltaOwners[slot]);
+			}
+			boolean seen = false;
+			for (int i = 0; i < count; i++) {
+				seen |= ids[i] == id;
+			}
+			if (!seen) {
+				ids[count++] = id;
+			} else {
+				registry.release(id);
+			}
+		}
+		return Arrays.copyOf(ids, count);
+	}
+
+	private static int acquireArenaSource(LmdbAdjacencySourceRegistry registry, LmdbAdjacencyArena arena,
+			LmdbAdjacencyDeltaArenaOwner owner) {
+		try {
+			int sourceId = registry.sourceIdForArena(arena);
+			registry.retain(sourceId);
+			return sourceId;
+		} catch (IllegalArgumentException missing) {
+			return registry.registerArena(arena, owner, null);
+		}
+	}
+
+	private static int acquireCsfSource(LmdbAdjacencySourceRegistry registry, ImmutablePagedQuadCsfIndex csf) {
+		try {
+			int sourceId = registry.sourceIdForCsf(csf);
+			registry.retain(sourceId);
+			return sourceId;
+		} catch (IllegalArgumentException missing) {
+			return registry.registerCsf(csf, null);
+		}
+	}
+
+	private static void releaseSourceIds(LmdbAdjacencySourceRegistry registry, int[] sourceIds) {
+		for (int i = sourceIds.length - 1; i >= 0; i--) {
+			registry.release(sourceIds[i]);
+		}
+	}
+
+	LmdbAdjacencyDeltaArenaOwner[] uniqueDeltaOwners() {
+		checkOpen();
+		LmdbAdjacencyDeltaArenaOwner[] unique = new LmdbAdjacencyDeltaArenaOwner[deltaOwners.length];
+		int count = 0;
+		for (LmdbAdjacencyDeltaArenaOwner owner : deltaOwners) {
+			if (owner == null) {
+				continue;
+			}
+			boolean seen = false;
+			for (int i = 0; i < count; i++) {
+				seen |= unique[i] == owner;
+			}
+			if (!seen) {
+				unique[count++] = owner;
+			}
+		}
+		return Arrays.copyOf(unique, count);
+	}
+
+	boolean directlyOwns(LmdbAdjacencyDeltaArenaOwner owner) {
+		for (LmdbAdjacencyDeltaArenaOwner candidate : deltaOwners) {
+			if (candidate == owner) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	void activateCurrentSources() {
+		checkOpen();
+		int activated = 0;
+		try {
+			for (; activated < ownedSourceIds.length; activated++) {
+				sourceRegistry.activateCurrent(ownedSourceIds[activated]);
+			}
+		} catch (RuntimeException | Error failure) {
+			while (activated > 0) {
+				sourceRegistry.deactivateCurrent(ownedSourceIds[--activated]);
+			}
+			throw failure;
+		}
+	}
+
+	void deactivateCurrentSources() {
+		checkOpen();
+		for (int i = ownedSourceIds.length - 1; i >= 0; i--) {
+			sourceRegistry.deactivateCurrent(ownedSourceIds[i]);
 		}
 	}
 
@@ -214,7 +579,9 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 		}
 		int slot = (int) (runHandle >>> 40);
 		long local = runHandle & LmdbAdjacencyArena.MAX_U40_VALUE;
-		if (local == 0 || (slot == CSF_SLOT ? csfBase == null : slot < 0 || slot >= arenas.length)) {
+		if (local == 0 || (slot == CSF_SLOT ? csfBase == null
+				: slot < 0 || slot >= arenas.length
+						|| arenas[slot] == null && csfDependencies[slot] == null)) {
 			throw new IllegalArgumentException("run handle selects an unavailable slot: " + runHandle);
 		}
 	}

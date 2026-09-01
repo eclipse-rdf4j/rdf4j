@@ -200,8 +200,9 @@ class LmdbDirectAdjacencyOptionsTest {
 		assertThat(options.sealWarnMillis()).isEqualTo(2000L);
 		assertThat(options.maxDeltaGenerations()).isEqualTo(4);
 		assertThat(options.buildThreads()).isEqualTo(2);
-		assertThat(options.supernodeEdges()).isEqualTo(1_048_576L);
-		assertThat(options.supernodeChunkEdges()).isEqualTo(65_536L);
+		assertThat(options.supernodeEdges()).isEqualTo(4_096L);
+		assertThat(options.supernodeChunkEdges()).isEqualTo(4_096L);
+		assertThat(options.supernodeTargetBytes()).isEqualTo(65_536L);
 		assertThat(options.supernodeTargetBytes()).isEqualTo(67_108_864L);
 		assertThat(options.buildTargetMillis()).isEqualTo(43_200_000L);
 		assertThat(options.buildRetryMillis()).isEqualTo(60_000L);

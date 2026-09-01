@@ -150,8 +150,15 @@ final class LmdbAdjacencyContextCatalog implements ContextCatalog, AutoCloseable
 	 */
 	LmdbAdjacencyContextCatalog extend(LmdbAdjacencyMemoryAccount account, long regionBytes,
 			long[] sortedNewRawContextIds) {
+		return extend(account, regionBytes, sortedNewRawContextIds, MemoryKind.DELTA, MemoryKind.JAVA_METADATA);
+	}
+
+	LmdbAdjacencyContextCatalog extend(LmdbAdjacencyMemoryAccount account, long regionBytes,
+			long[] sortedNewRawContextIds, MemoryKind nativeKind, MemoryKind metadataKind) {
 		Objects.requireNonNull(account, "account");
 		Objects.requireNonNull(sortedNewRawContextIds, "sortedNewRawContextIds");
+		Objects.requireNonNull(nativeKind, "nativeKind");
+		Objects.requireNonNull(metadataKind, "metadataKind");
 		if (sortedNewRawContextIds.length == 0) {
 			retain();
 			return this;
@@ -162,13 +169,13 @@ final class LmdbAdjacencyContextCatalog implements ContextCatalog, AutoCloseable
 		LmdbAdjacencyArenaSizingPlan plan = new LmdbAdjacencyArenaSizingPlan(regionBytes);
 		plan.allocate(byteLength, 8);
 		plan.seal();
-		Charge reservedNative = account.tryCharge(MemoryKind.DELTA, plan.capacityBytes());
+		Charge reservedNative = account.tryCharge(nativeKind, plan.capacityBytes());
 		if (reservedNative == null) {
 			throw new LmdbAdjacencyMemoryRefusedException(
 					"context extension reservation of " + plan.capacityBytes() + " bytes refused");
 		}
 		long modeledMetadataBytes = modeledJavaBytes(segments.length + 1);
-		Charge reservedMetadata = account.tryCharge(MemoryKind.JAVA_METADATA, modeledMetadataBytes);
+		Charge reservedMetadata = account.tryCharge(metadataKind, modeledMetadataBytes);
 		if (reservedMetadata == null) {
 			reservedNative.close();
 			throw new LmdbAdjacencyMemoryRefusedException(
@@ -200,6 +207,15 @@ final class LmdbAdjacencyContextCatalog implements ContextCatalog, AutoCloseable
 				reservedMetadata.close();
 				reservedNative.close();
 			}
+		}
+	}
+
+	void reclassifyOwned(MemoryKind nativeKind, MemoryKind metadataKind) {
+		if (nativeCharge != null) {
+			nativeCharge.reclassify(nativeKind);
+		}
+		if (metadataCharge != null) {
+			metadataCharge.reclassify(metadataKind);
 		}
 	}
 

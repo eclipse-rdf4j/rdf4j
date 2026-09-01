@@ -216,16 +216,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		// would systematically under-cost it, so it carries the interpreted row feature explicitly (and thereby
 		// derives ExecutionMode.INTERPRETED, separating its variant keys from the compiled tier's).
 		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED -> LmdbNativeCostVector.Feature.INTERPRETED_ROW;
-		case LmdbNativeAttemptMetrics.PATH_BATCH,
-				LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_BATCH,
-				LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED,
-				LmdbNativeAttemptMetrics.PATH_CHUNK_PIPELINE,
-				LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS,
-				LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL,
-				LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_SORT,
-				LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K,
-				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES,
-				LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION -> LmdbNativeCostVector.Feature.BATCH_ROW;
+		case LmdbNativeAttemptMetrics.PATH_BATCH, LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_BATCH, LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED, LmdbNativeAttemptMetrics.PATH_CHUNK_PIPELINE, LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS, LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL, LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_SORT, LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION -> LmdbNativeCostVector.Feature.BATCH_ROW;
 		default -> LmdbNativeCostVector.Feature.INTERPRETED_ROW;
 		};
 	}

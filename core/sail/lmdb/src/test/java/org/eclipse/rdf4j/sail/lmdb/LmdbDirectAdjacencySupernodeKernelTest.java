@@ -38,6 +38,7 @@ class LmdbDirectAdjacencySupernodeKernelTest {
 
 	private TripleStore tripleStore;
 	private LmdbDirectAdjacencyStore store;
+	private LmdbDirectAdjacencyOptions options;
 
 	private static long uri(long payload) {
 		return ValueIds.createId(ValueIds.T_URI, payload);
@@ -56,7 +57,7 @@ class LmdbDirectAdjacencySupernodeKernelTest {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
-		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30, name -> null, 4);
+		options = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30, name -> null, 4);
 		store = new LmdbDirectAdjacencyStore(tripleStore, null, new AtomicBoolean(false), options);
 		tripleStore.setDirectAdjacencyCommitHooks(store.commitListener(), store.newCommitDelta());
 	}
@@ -188,6 +189,64 @@ class LmdbDirectAdjacencySupernodeKernelTest {
 			assertThat(adjacency.neighborAt(run, 0)).isEqualTo(FIRST_NEIGHBOR + 1);
 			assertThat(adjacency.neighborAt(run, SUPERNODE_EDGES - 3)).isEqualTo(last + 1000);
 		}
+	}
+
+	@Test
+	void incomingCommonTypeRowSharesAcrossSuccessiveSnapshots() throws Exception {
+		commit(() -> {
+			for (long i = 0; i < SUPERNODE_EDGES; i++) {
+				addQuiet(FIRST_NEIGHBOR + i, P1, O1);
+			}
+		});
+		assertThat(store.buildNowForTest()).isTrue();
+		long r0 = tripleStore.getDataRevision();
+		long middle = FIRST_NEIGHBOR + SUPERNODE_EDGES / 2;
+		long appended = FIRST_NEIGHBOR + SUPERNODE_EDGES + 1000;
+
+		commit(() -> {
+			removeQuiet(middle, P1, O1);
+			addQuiet(appended, P1, O1);
+		});
+		long r1 = tripleStore.getDataRevision();
+		long secondRemoved = FIRST_NEIGHBOR + 1;
+		long secondAppended = appended + 1000;
+		commit(() -> {
+			removeQuiet(secondRemoved, P1, O1);
+			addQuiet(secondAppended, P1, O1);
+		});
+		long r2 = tripleStore.getDataRevision();
+
+		try (LmdbAdjacencyReadView original = store.acquire(r0);
+				LmdbAdjacencyReadView first = store.acquire(r1);
+				LmdbAdjacencyReadView second = store.acquire(r2)) {
+			NativeLmdbQuerySource.NativeAdjacency originalIncoming = store.adjacency(original, P1, false, true);
+			NativeLmdbQuerySource.NativeAdjacency firstIncoming = store.adjacency(first, P1, false, true);
+			NativeLmdbQuerySource.NativeAdjacency secondIncoming = store.adjacency(second, P1, false, true);
+			long originalRun = originalIncoming.find(O1);
+			long firstRun = firstIncoming.find(O1);
+			long secondRun = secondIncoming.find(O1);
+
+			assertThat(originalIncoming.size(originalRun)).isEqualTo(SUPERNODE_EDGES);
+			assertThat(originalIncoming.lowerBound(originalRun, 0, middle, 0)).isEqualTo(SUPERNODE_EDGES / 2);
+			assertThat(firstIncoming.size(firstRun)).isEqualTo(SUPERNODE_EDGES);
+			assertThat(firstIncoming.lowerBound(firstRun, 0, middle, 0)).isEqualTo(SUPERNODE_EDGES / 2);
+			assertThat(firstIncoming.neighborAt(firstRun, SUPERNODE_EDGES / 2)).isEqualTo(middle + 1);
+			assertThat(firstIncoming.neighborAt(firstRun, SUPERNODE_EDGES - 1)).isEqualTo(appended);
+			assertThat(secondIncoming.size(secondRun)).isEqualTo(SUPERNODE_EDGES);
+			assertThat(secondIncoming.neighborAt(secondRun, 0)).isEqualTo(FIRST_NEIGHBOR);
+			assertThat(secondIncoming.neighborAt(secondRun, 1)).isEqualTo(FIRST_NEIGHBOR + 2);
+			assertThat(secondIncoming.neighborAt(secondRun, SUPERNODE_EDGES - 1)).isEqualTo(secondAppended);
+		}
+		LmdbAdjacencyMetrics.Snapshot metrics = store.snapshotMetrics();
+		assertThat(metrics.structurallySharedRows).isGreaterThanOrEqualTo(2);
+		assertThat(metrics.reusedLeaves).isPositive();
+		assertThat(metrics.rewrittenLeaves).isPositive();
+		assertThat(metrics.decodedRepairPairs).isLessThanOrEqualTo(8 * optionsChunkEdges() + 4);
+		assertThat(metrics.encodedRepairPairs).isLessThanOrEqualTo(8 * optionsChunkEdges() + 4);
+	}
+
+	private long optionsChunkEdges() {
+		return Math.min(options.supernodeChunkEdges(), options.supernodeTargetBytes() / (Long.BYTES * 2));
 	}
 
 	@Test

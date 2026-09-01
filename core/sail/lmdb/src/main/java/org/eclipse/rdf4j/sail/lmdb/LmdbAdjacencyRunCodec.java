@@ -13,7 +13,9 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.lang.foreign.MemorySegment;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 
@@ -37,7 +39,7 @@ final class LmdbAdjacencyRunCodec {
 	static final int CODEC_SMALL_VARINT = 0;
 	static final int CODEC_BLOCK_FOR = 1;
 	static final int CODEC_CHUNK_DIRECTORY = 2;
-	static final int CODEC_RESERVED = 3;
+	static final int CODEC_COMPOSITE = 3;
 	/** Internal cursor-only codec discriminator for the virtual paged CSF handle slot. */
 	static final int CODEC_PAGED_CSF = 4;
 
@@ -55,6 +57,14 @@ final class LmdbAdjacencyRunCodec {
 	private static final int BLOCK_HEADER_BYTES = 24; // tag..blockPayloadByteLength
 	private static final int DIRECTORY_HEADER_BYTES = 24; // tag..totalEdgeCount
 	private static final int DIRECTORY_ENTRY_BYTES = 40;
+	static final int COMPOSITE_VERSION = 1;
+	static final int PERSISTENT_COMPOSITE_VERSION = 2;
+	static final int PERSISTENT_FANOUT = 64;
+	static final int COMPOSITE_HEADER_BYTES = 24;
+	static final int COMPOSITE_ENTRY_BYTES = 48;
+	static final int LEAF_RUN_SLICE = 0;
+	static final int LEAF_CSF_SLICE = 1;
+	static final int PERSISTENT_CHILD_NODE = 2;
 
 	/** Chunk arena-slot sentinel: the child lives in the same arena as its directory, whatever slot that is. */
 	static final int CHUNK_SLOT_SELF = 255;
@@ -120,6 +130,323 @@ final class LmdbAdjacencyRunCodec {
 	 */
 	static Encoder writingEncoder(ContextCatalog contexts, LmdbAdjacencyArena target) {
 		return new Encoder(contexts, target, null, null, null);
+	}
+
+	static final class SourceSlice {
+		final LmdbAdjacencyArenaCatalog catalog;
+		final long handle;
+		final LmdbAdjacencySourceRegistry registry;
+		final int sourceId;
+		final long sourceRef;
+		final long sourceOrdinal;
+		final long count;
+		final long firstNeighbor;
+		final long firstContext;
+		final int kind;
+
+		SourceSlice(LmdbAdjacencyArenaCatalog catalog, long handle, long sourceOrdinal, long count,
+				long firstNeighbor, long firstContext, int kind) {
+			this.catalog = catalog;
+			this.handle = handle;
+			this.registry = null;
+			this.sourceId = 0;
+			this.sourceRef = 0;
+			this.sourceOrdinal = sourceOrdinal;
+			this.count = count;
+			this.firstNeighbor = firstNeighbor;
+			this.firstContext = firstContext;
+			this.kind = kind;
+		}
+
+		SourceSlice(LmdbAdjacencySourceRegistry registry, int sourceId, long sourceRef, long sourceOrdinal, long count,
+				long firstNeighbor, long firstContext, int kind) {
+			this.catalog = null;
+			this.handle = 0;
+			this.registry = registry;
+			this.sourceId = sourceId;
+			this.sourceRef = sourceRef;
+			this.sourceOrdinal = sourceOrdinal;
+			this.count = count;
+			this.firstNeighbor = firstNeighbor;
+			this.firstContext = firstContext;
+			this.kind = kind;
+		}
+
+		boolean persistentSource() {
+			return registry != null;
+		}
+	}
+
+	static List<SourceSlice> directSlices(LmdbAdjacencyArenaCatalog catalog, ContextCatalog contexts, long handle,
+			long targetEdges) {
+		if (targetEdges < 1) {
+			throw new IllegalArgumentException("targetEdges must be positive");
+		}
+		ArrayList<SourceSlice> result = new ArrayList<>();
+		appendDirectSlices(catalog, contexts, handle, targetEdges, result);
+		return result;
+	}
+
+	private static void appendDirectSlices(LmdbAdjacencyArenaCatalog catalog, ContextCatalog contexts, long handle,
+			long targetEdges, List<SourceSlice> result) {
+		RunCursor cursor = new RunCursor();
+		resolve(catalog, handle, cursor);
+		if (cursor.codec == CODEC_SMALL_VARINT || cursor.codec == CODEC_BLOCK_FOR || cursor.codec == CODEC_PAGED_CSF) {
+			int kind = cursor.codec == CODEC_PAGED_CSF ? LEAF_CSF_SLICE : LEAF_RUN_SLICE;
+			for (long from = 0; from < cursor.edgeCount; from += targetEdges) {
+				long count = Math.min(targetEdges, cursor.edgeCount - from);
+				result.add(new SourceSlice(catalog, handle, from, count, neighborAt(cursor, from),
+						contextAt(contexts, cursor, from), kind));
+			}
+			return;
+		}
+		if (cursor.codec == CODEC_CHUNK_DIRECTORY) {
+			long chunks = Integer.toUnsignedLong(cursor.segment.get(LmdbAdjacencyArena.U32_LE, cursor.baseOffset + 4));
+			for (long i = 0; i < chunks; i++) {
+				long at = cursor.baseOffset + DIRECTORY_HEADER_BYTES + DIRECTORY_ENTRY_BYTES * i;
+				int slot = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, at + 32));
+				long ref = LmdbAdjacencyArena.readU40(cursor.segment, at + 33);
+				appendDirectSlices(catalog, contexts,
+						catalog.packHandle(slot == CHUNK_SLOT_SELF ? cursor.arenaSlot : slot, ref), targetEdges,
+						result);
+			}
+			return;
+		}
+		if (cursor.compositeVersion == PERSISTENT_COMPOSITE_VERSION) {
+			appendPersistentSlices(contexts, cursor, targetEdges, result);
+			return;
+		}
+		long leaves = Integer.toUnsignedLong(cursor.segment.get(LmdbAdjacencyArena.U32_LE, cursor.baseOffset + 4));
+		for (long i = 0; i < leaves; i++) {
+			long at = cursor.baseOffset + COMPOSITE_HEADER_BYTES + COMPOSITE_ENTRY_BYTES * i;
+			RunCursor child = resolveCompositeChild(cursor, at);
+			long sourceOrdinal = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 32);
+			long count = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 24);
+			int sourceSlot = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, at + 40));
+			long sourceRef = LmdbAdjacencyArena.readU40(cursor.segment, at + 41);
+			int kind = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, at + 46));
+			int slot = sourceSlot == CHUNK_SLOT_SELF ? cursor.arenaSlot : sourceSlot;
+			long childHandle = kind == LEAF_CSF_SLICE ? catalog.packCsfHandle(slot, sourceRef)
+					: catalog.packHandle(slot, sourceRef);
+			for (long from = 0; from < count; from += targetEdges) {
+				long take = Math.min(targetEdges, count - from);
+				long ordinal = sourceOrdinal + from;
+				result.add(new SourceSlice(catalog, childHandle, ordinal, take, neighborAt(child, ordinal),
+						contextAt(contexts, child, ordinal), kind));
+			}
+		}
+	}
+
+	private static void appendPersistentSlices(ContextCatalog contexts, RunCursor node, long targetEdges,
+			List<SourceSlice> result) {
+		int children = node.segment.get(LmdbAdjacencyArena.U32_LE, node.baseOffset + 4);
+		for (int i = 0; i < children; i++) {
+			PersistentChild child = persistentChild(node, i);
+			RunCursor resolved = resolvePersistentChild(node, child);
+			if (child.kind == PERSISTENT_CHILD_NODE) {
+				appendPersistentSlices(contexts, resolved, targetEdges, result);
+				continue;
+			}
+			for (long from = 0; from < child.count; from += targetEdges) {
+				long take = Math.min(targetEdges, child.count - from);
+				long ordinal = child.sourceOrdinal + from;
+				result.add(new SourceSlice(node.registry, child.sourceId, child.sourceRef, ordinal, take,
+						neighborAt(resolved, ordinal), contextAt(contexts, resolved, ordinal), child.kind));
+			}
+		}
+	}
+
+	static long compositeBytes(int leaves) {
+		if (leaves < 1) {
+			throw new IllegalArgumentException("composite must have leaves");
+		}
+		return Math.addExact(COMPOSITE_HEADER_BYTES, Math.multiplyExact((long) COMPOSITE_ENTRY_BYTES, leaves));
+	}
+
+	static long persistentNodeBytes(int children) {
+		if (children < 1 || children > PERSISTENT_FANOUT) {
+			throw new IllegalArgumentException("persistent node child count must be in [1, 64]: " + children);
+		}
+		return Math.addExact(COMPOSITE_HEADER_BYTES, Math.multiplyExact((long) COMPOSITE_ENTRY_BYTES, children));
+	}
+
+	static final class PersistentChild {
+		final long firstNeighbor;
+		final long firstContext;
+		final long count;
+		final long sourceOrdinal;
+		final int sourceId;
+		final long sourceRef;
+		final int kind;
+
+		PersistentChild(long firstNeighbor, long firstContext, long count, long sourceOrdinal, int sourceId,
+				long sourceRef, int kind) {
+			this.firstNeighbor = firstNeighbor;
+			this.firstContext = firstContext;
+			this.count = count;
+			this.sourceOrdinal = sourceOrdinal;
+			this.sourceId = sourceId;
+			this.sourceRef = sourceRef;
+			this.kind = kind;
+		}
+	}
+
+	static final class PersistentNode {
+		final RunCursor cursor;
+
+		private PersistentNode(RunCursor cursor) {
+			this.cursor = cursor;
+		}
+
+		int level() {
+			return cursor.persistentLevel;
+		}
+
+		int childCount() {
+			return cursor.segment.get(LmdbAdjacencyArena.U32_LE, cursor.baseOffset + 4);
+		}
+
+		long edgeCount() {
+			return cursor.edgeCount;
+		}
+
+		PersistentChild child(int index) {
+			return persistentChild(cursor, index);
+		}
+	}
+
+	static boolean persistentComposite(LmdbAdjacencyArenaCatalog catalog, long handle) {
+		RunCursor cursor = new RunCursor();
+		resolve(catalog, handle, cursor);
+		return cursor.codec == CODEC_COMPOSITE && cursor.compositeVersion == PERSISTENT_COMPOSITE_VERSION;
+	}
+
+	static PersistentNode persistentNode(LmdbAdjacencyArenaCatalog catalog, long handle) {
+		RunCursor cursor = new RunCursor();
+		resolve(catalog, handle, cursor);
+		if (cursor.codec != CODEC_COMPOSITE || cursor.compositeVersion != PERSISTENT_COMPOSITE_VERSION) {
+			throw new IllegalArgumentException("run is not a persistent composite");
+		}
+		return new PersistentNode(cursor);
+	}
+
+	static PersistentNode persistentNode(LmdbAdjacencySourceRegistry registry, int sourceId, long sourceRef) {
+		RunCursor cursor = new RunCursor();
+		resolvePersistentSource(registry, sourceId, sourceRef, PERSISTENT_CHILD_NODE, cursor);
+		return new PersistentNode(cursor);
+	}
+
+	static long writePersistentNode(LmdbAdjacencyArena target, LmdbAdjacencySourceRegistry registry, int level,
+			List<PersistentChild> children, boolean contextsPresent, boolean orderedIntegerDomain) {
+		long bytes = persistentNodeBytes(children.size());
+		long ref = target.allocateRef(bytes, 8);
+		MemorySegment node = target.slice(ref, bytes);
+		int tag = CODEC_COMPOSITE | (contextsPresent ? TAG_CONTEXT_PRESENT : 0)
+				| (orderedIntegerDomain ? TAG_ORDERED_INTEGER : 0);
+		node.set(LmdbAdjacencyArena.U8, 0, (byte) tag);
+		node.set(LmdbAdjacencyArena.U8, 1, (byte) PERSISTENT_COMPOSITE_VERSION);
+		node.set(LmdbAdjacencyArena.U8, 2, (byte) level);
+		node.set(LmdbAdjacencyArena.U8, 3, (byte) 0);
+		node.set(LmdbAdjacencyArena.U32_LE, 4, children.size());
+		node.set(LmdbAdjacencyArena.U64_LE, 8, bytes);
+		long total = 0;
+		for (PersistentChild child : children) {
+			total = Math.addExact(total, child.count);
+		}
+		node.set(LmdbAdjacencyArena.U64_LE, 16, total);
+		for (int i = 0; i < children.size(); i++) {
+			PersistentChild child = children.get(i);
+			if (child.count < 1 || child.sourceId <= 0 || child.sourceRef <= 0
+					|| child.sourceRef > LmdbAdjacencyArena.MAX_U40_VALUE
+					|| child.kind < LEAF_RUN_SLICE || child.kind > PERSISTENT_CHILD_NODE) {
+				throw new IllegalArgumentException("invalid persistent child");
+			}
+			if (child.kind == LEAF_CSF_SLICE != registry.isCsf(child.sourceId)) {
+				throw new IllegalArgumentException("persistent child kind does not match source type");
+			}
+			long at = COMPOSITE_HEADER_BYTES + (long) COMPOSITE_ENTRY_BYTES * i;
+			node.set(LmdbAdjacencyArena.U64_LE, at, child.firstNeighbor);
+			node.set(LmdbAdjacencyArena.U64_LE, at + 8, child.firstContext);
+			node.set(LmdbAdjacencyArena.U64_LE, at + 16, child.count);
+			node.set(LmdbAdjacencyArena.U64_LE, at + 24, child.sourceOrdinal);
+			node.set(LmdbAdjacencyArena.U32_LE, at + 32, child.sourceId);
+			LmdbAdjacencyArena.writeU40(node, at + 36, child.sourceRef);
+			node.set(LmdbAdjacencyArena.U8, at + 41, (byte) child.kind);
+			node.set(LmdbAdjacencyArena.U16_LE, at + 42, (short) 0);
+			node.set(LmdbAdjacencyArena.U32_LE, at + 44, 0);
+		}
+		return ref;
+	}
+
+	static long writePersistentSingletonNode(LmdbAdjacencyArena target, LmdbAdjacencySourceRegistry registry,
+			int level, PersistentChild child, boolean contextsPresent, boolean orderedIntegerDomain) {
+		long bytes = persistentNodeBytes(1);
+		long ref = target.allocateRef(bytes, 8);
+		MemorySegment node = target.slice(ref, bytes);
+		int tag = CODEC_COMPOSITE | (contextsPresent ? TAG_CONTEXT_PRESENT : 0)
+				| (orderedIntegerDomain ? TAG_ORDERED_INTEGER : 0);
+		node.set(LmdbAdjacencyArena.U8, 0, (byte) tag);
+		node.set(LmdbAdjacencyArena.U8, 1, (byte) PERSISTENT_COMPOSITE_VERSION);
+		node.set(LmdbAdjacencyArena.U8, 2, (byte) level);
+		node.set(LmdbAdjacencyArena.U8, 3, (byte) 0);
+		node.set(LmdbAdjacencyArena.U32_LE, 4, 1);
+		node.set(LmdbAdjacencyArena.U64_LE, 8, bytes);
+		node.set(LmdbAdjacencyArena.U64_LE, 16, child.count);
+		if (child.count < 1 || child.sourceId <= 0 || child.sourceRef <= 0
+				|| child.sourceRef > LmdbAdjacencyArena.MAX_U40_VALUE
+				|| child.kind < LEAF_RUN_SLICE || child.kind > PERSISTENT_CHILD_NODE) {
+			throw new IllegalArgumentException("invalid persistent child");
+		}
+		if (child.kind == LEAF_CSF_SLICE != registry.isCsf(child.sourceId)) {
+			throw new IllegalArgumentException("persistent child kind does not match source type");
+		}
+		long at = COMPOSITE_HEADER_BYTES;
+		node.set(LmdbAdjacencyArena.U64_LE, at, child.firstNeighbor);
+		node.set(LmdbAdjacencyArena.U64_LE, at + 8, child.firstContext);
+		node.set(LmdbAdjacencyArena.U64_LE, at + 16, child.count);
+		node.set(LmdbAdjacencyArena.U64_LE, at + 24, child.sourceOrdinal);
+		node.set(LmdbAdjacencyArena.U32_LE, at + 32, child.sourceId);
+		LmdbAdjacencyArena.writeU40(node, at + 36, child.sourceRef);
+		node.set(LmdbAdjacencyArena.U8, at + 41, (byte) child.kind);
+		node.set(LmdbAdjacencyArena.U16_LE, at + 42, (short) 0);
+		node.set(LmdbAdjacencyArena.U32_LE, at + 44, 0);
+		return ref;
+	}
+
+	static long writeComposite(LmdbAdjacencyArena target, LmdbAdjacencyArenaCatalog targetCatalog,
+			List<SourceSlice> leaves, boolean contextsPresent, boolean orderedIntegerDomain) {
+		long bytes = compositeBytes(leaves.size());
+		long ref = target.allocateRef(bytes, 8);
+		MemorySegment directory = target.slice(ref, bytes);
+		int tag = CODEC_COMPOSITE | (contextsPresent ? TAG_CONTEXT_PRESENT : 0)
+				| (orderedIntegerDomain ? TAG_ORDERED_INTEGER : 0);
+		directory.set(LmdbAdjacencyArena.U8, 0, (byte) tag);
+		directory.set(LmdbAdjacencyArena.U8, 1, (byte) COMPOSITE_VERSION);
+		directory.set(LmdbAdjacencyArena.U16_LE, 2, (short) 0);
+		directory.set(LmdbAdjacencyArena.U32_LE, 4, leaves.size());
+		directory.set(LmdbAdjacencyArena.U64_LE, 8, bytes);
+		long edgeStart = 0;
+		for (SourceSlice leaf : leaves) {
+			edgeStart = Math.addExact(edgeStart, leaf.count);
+		}
+		directory.set(LmdbAdjacencyArena.U64_LE, 16, edgeStart);
+		edgeStart = 0;
+		for (int i = 0; i < leaves.size(); i++) {
+			SourceSlice leaf = leaves.get(i);
+			long at = COMPOSITE_HEADER_BYTES + (long) COMPOSITE_ENTRY_BYTES * i;
+			directory.set(LmdbAdjacencyArena.U64_LE, at, leaf.firstNeighbor);
+			directory.set(LmdbAdjacencyArena.U64_LE, at + 8, leaf.firstContext);
+			directory.set(LmdbAdjacencyArena.U64_LE, at + 16, edgeStart);
+			directory.set(LmdbAdjacencyArena.U64_LE, at + 24, leaf.count);
+			directory.set(LmdbAdjacencyArena.U64_LE, at + 32, leaf.sourceOrdinal);
+			int slot = targetCatalog.slotFor(leaf.catalog, leaf.handle, leaf.kind);
+			directory.set(LmdbAdjacencyArena.U8, at + 40, (byte) slot);
+			LmdbAdjacencyArena.writeU40(directory, at + 41, leaf.catalog.unpackLocalRef(leaf.handle));
+			directory.set(LmdbAdjacencyArena.U8, at + 46, (byte) leaf.kind);
+			directory.set(LmdbAdjacencyArena.U8, at + 47, (byte) 0);
+			edgeStart += leaf.count;
+		}
+		return ref;
 	}
 
 	/**
@@ -752,6 +1079,10 @@ final class LmdbAdjacencyRunCodec {
 		private long blockPayloadBytes;
 		private long encodedBytes;
 		private long currentBlockEnd;
+		private LmdbAdjacencySourceRegistry registry;
+		private int persistentSourceId;
+		private int compositeVersion;
+		private int persistentLevel;
 		private RunCursor child;
 
 		long edgeCount() {
@@ -772,10 +1103,15 @@ final class LmdbAdjacencyRunCodec {
 
 	/** Sequential pair reader used by writers that scan a complete immutable run in ordinal order. */
 	static final class PairCursor {
+		private static final int BULK_BUFFER_PAIRS = 1024;
 
 		private final RunCursor run = new RunCursor();
+		private final long[] bufferedNeighbors = new long[BULK_BUFFER_PAIRS];
+		private final long[] bufferedContexts = new long[BULK_BUFFER_PAIRS];
 		private ContextCatalog contexts;
 		private long ordinal;
+		private int bufferedIndex;
+		private int bufferedCount;
 		private long neighbor;
 		private long context;
 		private long currentBlockIndex = -1;
@@ -791,6 +1127,8 @@ final class LmdbAdjacencyRunCodec {
 			resolve(catalog, runHandle, run);
 			this.contexts = contexts;
 			ordinal = 0;
+			bufferedIndex = 0;
+			bufferedCount = 0;
 			currentBlockIndex = -1;
 		}
 
@@ -804,6 +1142,18 @@ final class LmdbAdjacencyRunCodec {
 			}
 			if (run.codec == CODEC_BLOCK_FOR) {
 				readBlockPair();
+			} else if (run.codec == CODEC_COMPOSITE || run.codec == CODEC_PAGED_CSF) {
+				if (bufferedIndex == bufferedCount) {
+					bufferedCount = copy(contexts, run, ordinal,
+							(int) Math.min(BULK_BUFFER_PAIRS, run.edgeCount - ordinal), bufferedNeighbors, 0,
+							bufferedContexts, 0);
+					bufferedIndex = 0;
+					if (bufferedCount == 0) {
+						throw new IllegalStateException("bulk pair cursor made no progress");
+					}
+				}
+				neighbor = bufferedNeighbors[bufferedIndex];
+				context = bufferedContexts[bufferedIndex++];
 			} else {
 				neighbor = neighborAt(run, ordinal);
 				context = contextAt(contexts, run, ordinal);
@@ -863,8 +1213,8 @@ final class LmdbAdjacencyRunCodec {
 		}
 		int slot = catalog.unpackSlot(runHandle);
 		long localRef = runHandle & LmdbAdjacencyArena.MAX_U40_VALUE;
-		if (slot == LmdbAdjacencyArenaCatalog.CSF_SLOT) {
-			catalog.csfBase().resolve(localRef, target.csf);
+		if (catalog.isCsfSourceSlot(slot)) {
+			catalog.csfSource(slot).resolve(localRef, target.csf);
 			target.catalog = catalog;
 			target.runHandle = runHandle;
 			target.arenaSlot = slot;
@@ -879,6 +1229,10 @@ final class LmdbAdjacencyRunCodec {
 			target.blockPayloadBytes = 0;
 			target.encodedBytes = 0;
 			target.currentBlockEnd = 0;
+			target.registry = catalog.sourceRegistry();
+			target.persistentSourceId = catalog.sourceIdFor(runHandle, LEAF_CSF_SLICE);
+			target.compositeVersion = 0;
+			target.persistentLevel = 0;
 			return;
 		}
 		LmdbAdjacencyArena arena = catalog.arena(slot);
@@ -887,7 +1241,7 @@ final class LmdbAdjacencyRunCodec {
 		long headerAt = target.memory.baseOffset();
 		int tag = Byte.toUnsignedInt(header.get(LmdbAdjacencyArena.U8, headerAt));
 		int codec = tag & 0x3;
-		if (codec == CODEC_RESERVED || (tag & ~0xF) != 0) {
+		if ((tag & ~0xF) != 0) {
 			throw new IllegalStateException("malformed run tag: " + tag);
 		}
 		long totalLength;
@@ -926,7 +1280,7 @@ final class LmdbAdjacencyRunCodec {
 			totalLength = Math.addExact(blockPayloadStart, payloadBytes);
 			break;
 		}
-		default: {
+		case CODEC_CHUNK_DIRECTORY: {
 			arena.expand(localRef, DIRECTORY_HEADER_BYTES, target.memory);
 			MemorySegment directoryHeader = target.memory.segment();
 			long chunkCount = Integer
@@ -943,6 +1297,38 @@ final class LmdbAdjacencyRunCodec {
 			totalLength = directoryByteLength;
 			break;
 		}
+		case CODEC_COMPOSITE: {
+			arena.expand(localRef, COMPOSITE_HEADER_BYTES, target.memory);
+			MemorySegment compositeHeader = target.memory.segment();
+			int version = Byte.toUnsignedInt(compositeHeader.get(LmdbAdjacencyArena.U8, headerAt + 1));
+			int level = version == PERSISTENT_COMPOSITE_VERSION
+					? Byte.toUnsignedInt(compositeHeader.get(LmdbAdjacencyArena.U8, headerAt + 2))
+					: 0;
+			if (version != COMPOSITE_VERSION && version != PERSISTENT_COMPOSITE_VERSION
+					|| version == COMPOSITE_VERSION
+							&& Short.toUnsignedInt(compositeHeader.get(LmdbAdjacencyArena.U16_LE, headerAt + 2)) != 0
+					|| version == PERSISTENT_COMPOSITE_VERSION
+							&& Byte.toUnsignedInt(compositeHeader.get(LmdbAdjacencyArena.U8, headerAt + 3)) != 0) {
+				throw new IllegalStateException("malformed composite version or reserved field");
+			}
+			long leafCount = Integer.toUnsignedLong(
+					compositeHeader.get(LmdbAdjacencyArena.U32_LE, headerAt + 4));
+			long directoryByteLength = compositeHeader.get(LmdbAdjacencyArena.U64_LE, headerAt + 8);
+			if (leafCount < 1 || version == PERSISTENT_COMPOSITE_VERSION && leafCount > PERSISTENT_FANOUT
+					|| directoryByteLength != COMPOSITE_HEADER_BYTES + COMPOSITE_ENTRY_BYTES * leafCount) {
+				throw new IllegalStateException("malformed composite directory length: " + directoryByteLength);
+			}
+			edgeCount = compositeHeader.get(LmdbAdjacencyArena.U64_LE, headerAt + 16);
+			if (edgeCount < 1) {
+				throw new IllegalStateException("malformed composite edge count: " + edgeCount);
+			}
+			totalLength = directoryByteLength;
+			target.compositeVersion = version;
+			target.persistentLevel = level;
+			break;
+		}
+		default:
+			throw new IllegalStateException("unknown run codec: " + codec);
 		}
 		arena.expand(localRef, totalLength, target.memory);
 		target.catalog = catalog;
@@ -959,12 +1345,24 @@ final class LmdbAdjacencyRunCodec {
 		target.blockPayloadBytes = blockPayloadBytes;
 		target.encodedBytes = totalLength;
 		target.currentBlockEnd = 0;
+		target.registry = catalog.sourceRegistry();
+		target.persistentSourceId = catalog.sourceIdFor(runHandle, LEAF_RUN_SLICE);
+		if (codec != CODEC_COMPOSITE) {
+			target.compositeVersion = 0;
+			target.persistentLevel = 0;
+		}
 	}
 
 	static long edgeCount(LmdbAdjacencyArenaCatalog catalog, long runHandle) {
 		RunCursor cursor = new RunCursor();
 		resolve(catalog, runHandle, cursor);
 		return cursor.edgeCount;
+	}
+
+	static boolean structurallySliced(LmdbAdjacencyArenaCatalog catalog, long runHandle) {
+		RunCursor cursor = new RunCursor();
+		resolve(catalog, runHandle, cursor);
+		return cursor.codec == CODEC_CHUNK_DIRECTORY || cursor.codec == CODEC_COMPOSITE;
 	}
 
 	/**
@@ -997,6 +1395,11 @@ final class LmdbAdjacencyRunCodec {
 		if (cursor.codec == CODEC_PAGED_CSF) {
 			return cursor.csf.contextAt(ordinal);
 		}
+		if (cursor.codec == CODEC_COMPOSITE) {
+			return cursor.compositeVersion == PERSISTENT_COMPOSITE_VERSION
+					? inPersistent(contexts, cursor, ordinal, true)
+					: inComposite(contexts, cursor, ordinal, true);
+		}
 		long contextOrdinal = contextOrdinalAt(cursor, ordinal);
 		return contextOrdinal == 0 ? 0 : contexts.rawForOrdinal(contextOrdinal);
 	}
@@ -1011,6 +1414,67 @@ final class LmdbAdjacencyRunCodec {
 		resolve(catalog, runHandle, cursor);
 		return copy(contexts, cursor, fromOrdinal, length, neighborTarget, neighborOffset, contextTarget,
 				contextOffset);
+	}
+
+	static int copy(SourceSlice slice, ContextCatalog contexts, long fromOrdinal, int length, long[] neighborTarget,
+			int neighborOffset, long[] contextTarget, int contextOffset) {
+		if (!slice.persistentSource()) {
+			return copy(slice.catalog, contexts, slice.handle, fromOrdinal, length, neighborTarget, neighborOffset,
+					contextTarget, contextOffset);
+		}
+		RunCursor cursor = new RunCursor();
+		resolvePersistentSource(slice.registry, slice.sourceId, slice.sourceRef, slice.kind, cursor);
+		return copy(contexts, cursor, fromOrdinal, length, neighborTarget, neighborOffset, contextTarget,
+				contextOffset);
+	}
+
+	static boolean orderedIntegerDomain(SourceSlice slice) {
+		if (!slice.persistentSource()) {
+			return orderedIntegerDomain(slice.catalog, slice.handle);
+		}
+		RunCursor cursor = new RunCursor();
+		resolvePersistentSource(slice.registry, slice.sourceId, slice.sourceRef, slice.kind, cursor);
+		return cursor.codec == CODEC_PAGED_CSF ? cursor.csf.orderedIntegerDomain()
+				: (cursor.tag & TAG_ORDERED_INTEGER) != 0;
+	}
+
+	static boolean contextsPresent(SourceSlice slice) {
+		RunCursor cursor = new RunCursor();
+		if (slice.persistentSource()) {
+			resolvePersistentSource(slice.registry, slice.sourceId, slice.sourceRef, slice.kind, cursor);
+		} else {
+			resolve(slice.catalog, slice.handle, cursor);
+		}
+		return cursor.contextsPresent;
+	}
+
+	static SourceSlice wholePersistentSource(LmdbAdjacencyArenaCatalog catalog, ContextCatalog contexts,
+			long runHandle) {
+		RunCursor cursor = new RunCursor();
+		resolve(catalog, runHandle, cursor);
+		LmdbAdjacencySourceRegistry registry = catalog.sourceRegistry();
+		int kind = cursor.codec == CODEC_PAGED_CSF ? LEAF_CSF_SLICE
+				: cursor.codec == CODEC_COMPOSITE && cursor.compositeVersion == PERSISTENT_COMPOSITE_VERSION
+						? PERSISTENT_CHILD_NODE
+						: LEAF_RUN_SLICE;
+		int sourceId = catalog.sourceIdFor(runHandle, kind);
+		long sourceRef = catalog.unpackLocalRef(runHandle);
+		long sourceOrdinal = 0;
+		long count = cursor.edgeCount;
+		while (kind == PERSISTENT_CHILD_NODE
+				&& cursor.segment.get(LmdbAdjacencyArena.U32_LE, cursor.baseOffset + 4) == 1) {
+			PersistentChild only = persistentChild(cursor, 0);
+			if (only.count != cursor.edgeCount) {
+				break;
+			}
+			sourceId = only.sourceId;
+			sourceRef = only.sourceRef;
+			sourceOrdinal = only.sourceOrdinal;
+			kind = only.kind;
+			cursor = resolvePersistentChild(cursor, only);
+		}
+		return new SourceSlice(registry, sourceId, sourceRef, sourceOrdinal, count,
+				neighborAt(cursor, sourceOrdinal), contextAt(contexts, cursor, sourceOrdinal), kind);
 	}
 
 	static int copy(ContextCatalog contexts, RunCursor cursor, long fromOrdinal, int length, long[] neighborTarget,
@@ -1034,10 +1498,16 @@ final class LmdbAdjacencyRunCodec {
 			copyBlocks(contexts, cursor, fromOrdinal, copied, neighborTarget, neighborOffset, contextTarget,
 					contextOffset);
 			break;
-		default:
+		case CODEC_CHUNK_DIRECTORY:
 			copyChunks(contexts, cursor, fromOrdinal, copied, neighborTarget, neighborOffset, contextTarget,
 					contextOffset);
 			break;
+		case CODEC_COMPOSITE:
+			copyComposite(contexts, cursor, fromOrdinal, copied, neighborTarget, neighborOffset, contextTarget,
+					contextOffset);
+			break;
+		default:
+			throw new IllegalStateException("unsupported copy codec: " + cursor.codec);
 		}
 		return copied;
 	}
@@ -1061,6 +1531,11 @@ final class LmdbAdjacencyRunCodec {
 		if (cursor.codec == CODEC_PAGED_CSF) {
 			return cursor.csf.lowerBound(fromOrdinal, neighbor, rawContext);
 		}
+		if (cursor.codec == CODEC_COMPOSITE) {
+			return cursor.compositeVersion == PERSISTENT_COMPOSITE_VERSION
+					? lowerBoundPersistent(contexts, cursor, fromOrdinal, neighbor, rawContext)
+					: lowerBoundComposite(contexts, cursor, fromOrdinal, neighbor, rawContext);
+		}
 		long low = fromOrdinal;
 		long high = cursor.edgeCount;
 		while (low < high) {
@@ -1079,6 +1554,44 @@ final class LmdbAdjacencyRunCodec {
 			}
 		}
 		return low;
+	}
+
+	private static long lowerBoundComposite(ContextCatalog contexts, RunCursor cursor, long fromOrdinal,
+			long neighbor, long rawContext) {
+		if (fromOrdinal == cursor.edgeCount) {
+			return fromOrdinal;
+		}
+		int leafCount = cursor.segment.get(LmdbAdjacencyArena.U32_LE, cursor.baseOffset + 4);
+		int low = 0;
+		int high = leafCount - 1;
+		int fenceLeaf = 0;
+		while (low <= high) {
+			int mid = (low + high) >>> 1;
+			long at = cursor.baseOffset + COMPOSITE_HEADER_BYTES + (long) COMPOSITE_ENTRY_BYTES * mid;
+			long firstNeighbor = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at);
+			long firstContext = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 8);
+			if (comparePairsUnsigned(firstNeighbor, firstContext, neighbor, rawContext) <= 0) {
+				fenceLeaf = mid;
+				low = mid + 1;
+			} else {
+				high = mid - 1;
+			}
+		}
+		int fromLeaf = Math.toIntExact(findCompositeLeaf(cursor, fromOrdinal));
+		for (int leaf = Math.max(fromLeaf, fenceLeaf); leaf < leafCount; leaf++) {
+			long at = cursor.baseOffset + COMPOSITE_HEADER_BYTES + (long) COMPOSITE_ENTRY_BYTES * leaf;
+			long edgeStart = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 16);
+			long edgeCount = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 24);
+			long sourceOrdinal = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 32);
+			RunCursor child = resolveCompositeChild(cursor, at);
+			long childFrom = sourceOrdinal + (leaf == fromLeaf ? Math.max(0, fromOrdinal - edgeStart) : 0);
+			long childResult = lowerBound(contexts, child, childFrom, neighbor, rawContext);
+			long sourceEnd = sourceOrdinal + edgeCount;
+			if (childResult < sourceEnd) {
+				return edgeStart + childResult - sourceOrdinal;
+			}
+		}
+		return cursor.edgeCount;
 	}
 
 	private static void checkOrdinal(RunCursor cursor, long ordinal) {
@@ -1118,9 +1631,15 @@ final class LmdbAdjacencyRunCodec {
 			long lanesAt = blockAt + (cursor.contextsPresent ? 20 : 12);
 			return base + readLane(cursor.segment, lanesAt, lane, width);
 		}
-		default: {
+		case CODEC_CHUNK_DIRECTORY: {
 			return inChunk(cursor, ordinal, false);
 		}
+		case CODEC_COMPOSITE:
+			return cursor.compositeVersion == PERSISTENT_COMPOSITE_VERSION
+					? inPersistent(null, cursor, ordinal, false)
+					: inComposite(null, cursor, ordinal, false);
+		default:
+			throw new IllegalStateException("unsupported neighbor codec: " + cursor.codec);
 		}
 	}
 
@@ -1284,6 +1803,361 @@ final class LmdbAdjacencyRunCodec {
 			ordinal += take;
 			output += take;
 		}
+	}
+
+	private static void copyComposite(ContextCatalog contexts, RunCursor cursor, long fromOrdinal, int copied,
+			long[] neighborTarget, int neighborOffset, long[] contextTarget, int contextOffset) {
+		if (cursor.compositeVersion == PERSISTENT_COMPOSITE_VERSION) {
+			copyPersistent(contexts, cursor, fromOrdinal, copied, neighborTarget, neighborOffset, contextTarget,
+					contextOffset);
+			return;
+		}
+		long ordinal = fromOrdinal;
+		long endOrdinal = fromOrdinal + copied;
+		int output = 0;
+		while (ordinal < endOrdinal) {
+			long leaf = findCompositeLeaf(cursor, ordinal);
+			long at = cursor.baseOffset + COMPOSITE_HEADER_BYTES + COMPOSITE_ENTRY_BYTES * leaf;
+			long edgeStart = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 16);
+			long edgeCount = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 24);
+			long sourceOrdinal = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 32);
+			RunCursor child = resolveCompositeChild(cursor, at);
+			long leafOrdinal = ordinal - edgeStart;
+			int take = (int) Math.min(endOrdinal - ordinal, edgeCount - leafOrdinal);
+			int childCopied = copy(contexts, child, sourceOrdinal + leafOrdinal, take, neighborTarget,
+					neighborTarget == null ? 0 : neighborOffset + output, contextTarget,
+					contextTarget == null ? 0 : contextOffset + output);
+			if (childCopied != take) {
+				throw new IllegalStateException("composite copy returned " + childCopied + " of " + take);
+			}
+			ordinal += take;
+			output += take;
+		}
+	}
+
+	private static void copyPersistent(ContextCatalog contexts, RunCursor node, long fromOrdinal, int copied,
+			long[] neighborTarget, int neighborOffset, long[] contextTarget, int contextOffset) {
+		long ordinal = fromOrdinal;
+		long endOrdinal = fromOrdinal + copied;
+		int output = 0;
+		while (ordinal < endOrdinal) {
+			int childIndex = findPersistentChildByOrdinal(node, ordinal);
+			long childStart = persistentChildStart(node, childIndex);
+			PersistentChild child = persistentChild(node, childIndex);
+			RunCursor resolved = resolvePersistentChild(node, child);
+			long localOrdinal = ordinal - childStart;
+			int take = (int) Math.min(endOrdinal - ordinal, child.count - localOrdinal);
+			int actual;
+			if (child.kind == PERSISTENT_CHILD_NODE) {
+				copyPersistent(contexts, resolved, localOrdinal, take, neighborTarget,
+						neighborTarget == null ? 0 : neighborOffset + output, contextTarget,
+						contextTarget == null ? 0 : contextOffset + output);
+				actual = take;
+			} else {
+				actual = copy(contexts, resolved, child.sourceOrdinal + localOrdinal, take, neighborTarget,
+						neighborTarget == null ? 0 : neighborOffset + output, contextTarget,
+						contextTarget == null ? 0 : contextOffset + output);
+			}
+			if (actual != take) {
+				throw new IllegalStateException("persistent copy returned " + actual + " of " + take);
+			}
+			ordinal += take;
+			output += take;
+		}
+	}
+
+	private static long inComposite(ContextCatalog contexts, RunCursor cursor, long ordinal, boolean context) {
+		long leaf = findCompositeLeaf(cursor, ordinal);
+		long at = cursor.baseOffset + COMPOSITE_HEADER_BYTES + COMPOSITE_ENTRY_BYTES * leaf;
+		long edgeStart = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 16);
+		long sourceOrdinal = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 32);
+		RunCursor child = resolveCompositeChild(cursor, at);
+		long childOrdinal = sourceOrdinal + ordinal - edgeStart;
+		return context ? contextAt(contexts, child, childOrdinal) : neighborAt(child, childOrdinal);
+	}
+
+	private static long inPersistent(ContextCatalog contexts, RunCursor node, long ordinal, boolean context) {
+		int childIndex = findPersistentChildByOrdinal(node, ordinal);
+		long childStart = persistentChildStart(node, childIndex);
+		PersistentChild child = persistentChild(node, childIndex);
+		RunCursor resolved = resolvePersistentChild(node, child);
+		long childOrdinal = ordinal - childStart;
+		if (child.kind == PERSISTENT_CHILD_NODE) {
+			return inPersistent(contexts, resolved, childOrdinal, context);
+		}
+		long sourceOrdinal = child.sourceOrdinal + childOrdinal;
+		return context ? contextAt(contexts, resolved, sourceOrdinal) : neighborAt(resolved, sourceOrdinal);
+	}
+
+	private static long lowerBoundPersistent(ContextCatalog contexts, RunCursor node, long fromOrdinal,
+			long neighbor, long rawContext) {
+		long low = fromOrdinal;
+		long high = node.edgeCount;
+		while (low < high) {
+			long mid = (low + high) >>> 1;
+			long midNeighbor = inPersistent(contexts, node, mid, false);
+			int cmp = Long.compareUnsigned(midNeighbor, neighbor);
+			if (cmp == 0) {
+				cmp = Long.compareUnsigned(inPersistent(contexts, node, mid, true), rawContext);
+			}
+			if (cmp < 0) {
+				low = mid + 1;
+			} else {
+				high = mid;
+			}
+		}
+		return low;
+	}
+
+	private static int findPersistentChildByOrdinal(RunCursor node, long ordinal) {
+		int children = node.segment.get(LmdbAdjacencyArena.U32_LE, node.baseOffset + 4);
+		long start = 0;
+		for (int i = 0; i < children; i++) {
+			long count = persistentChild(node, i).count;
+			if (ordinal < start + count) {
+				return i;
+			}
+			start = Math.addExact(start, count);
+		}
+		throw new IllegalStateException("persistent directory does not contain ordinal " + ordinal);
+	}
+
+	private static long persistentChildStart(RunCursor node, int childIndex) {
+		long start = 0;
+		for (int i = 0; i < childIndex; i++) {
+			start = Math.addExact(start, persistentChild(node, i).count);
+		}
+		return start;
+	}
+
+	private static RunCursor resolveCompositeChild(RunCursor cursor, long at) {
+		long edgeCount = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 24);
+		long sourceOrdinal = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 32);
+		int sourceSlot = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, at + 40));
+		long sourceRef = LmdbAdjacencyArena.readU40(cursor.segment, at + 41);
+		int leafKind = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, at + 46));
+		int reserved = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, at + 47));
+		if (edgeCount < 1 || sourceRef == 0 || reserved != 0
+				|| leafKind != LEAF_RUN_SLICE && leafKind != LEAF_CSF_SLICE) {
+			throw new IllegalStateException("malformed composite leaf");
+		}
+		int resolvedSlot = sourceSlot == CHUNK_SLOT_SELF ? cursor.arenaSlot : sourceSlot;
+		long childHandle;
+		if (leafKind == LEAF_CSF_SLICE) {
+			if (!cursor.catalog.isCsfSourceSlot(resolvedSlot)) {
+				throw new IllegalStateException("composite CSF leaf selects non-CSF slot " + resolvedSlot);
+			}
+			childHandle = cursor.catalog.packCsfHandle(resolvedSlot, sourceRef);
+		} else {
+			if (cursor.catalog.isCsfSourceSlot(resolvedSlot)) {
+				throw new IllegalStateException("composite run leaf selects CSF slot");
+			}
+			childHandle = cursor.catalog.packHandle(resolvedSlot, sourceRef);
+		}
+		RunCursor child = cursor.child();
+		resolve(cursor.catalog, childHandle, child);
+		if (leafKind == LEAF_RUN_SLICE
+				&& child.codec != CODEC_SMALL_VARINT && child.codec != CODEC_BLOCK_FOR
+				|| leafKind == LEAF_CSF_SLICE && child.codec != CODEC_PAGED_CSF) {
+			throw new IllegalStateException(
+					"composite leaf selects a mismatched or nested source codec " + child.codec);
+		}
+		if (sourceOrdinal < 0 || sourceOrdinal > child.edgeCount || edgeCount > child.edgeCount - sourceOrdinal) {
+			throw new IllegalStateException("composite source slice is out of range");
+		}
+		return child;
+	}
+
+	private static PersistentChild persistentChild(RunCursor cursor, int index) {
+		if (cursor.codec != CODEC_COMPOSITE || cursor.compositeVersion != PERSISTENT_COMPOSITE_VERSION) {
+			throw new IllegalArgumentException("cursor is not a persistent composite node");
+		}
+		int children = cursor.segment.get(LmdbAdjacencyArena.U32_LE, cursor.baseOffset + 4);
+		if (index < 0 || index >= children) {
+			throw new IllegalArgumentException("persistent child index out of range: " + index);
+		}
+		long at = cursor.baseOffset + COMPOSITE_HEADER_BYTES + (long) COMPOSITE_ENTRY_BYTES * index;
+		long firstNeighbor = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at);
+		long firstContext = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 8);
+		long count = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 16);
+		long sourceOrdinal = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 24);
+		int sourceId = cursor.segment.get(LmdbAdjacencyArena.U32_LE, at + 32);
+		long sourceRef = LmdbAdjacencyArena.readU40(cursor.segment, at + 36);
+		int kind = Byte.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U8, at + 41));
+		if (count < 1 || sourceId <= 0 || sourceRef <= 0
+				|| kind < LEAF_RUN_SLICE || kind > PERSISTENT_CHILD_NODE
+				|| Short.toUnsignedInt(cursor.segment.get(LmdbAdjacencyArena.U16_LE, at + 42)) != 0
+				|| cursor.segment.get(LmdbAdjacencyArena.U32_LE, at + 44) != 0
+				|| kind == PERSISTENT_CHILD_NODE && sourceOrdinal != 0
+				|| kind == LEAF_CSF_SLICE != cursor.registry.isCsf(sourceId)) {
+			throw new IllegalStateException("malformed persistent child at index " + index);
+		}
+		if (index > 0) {
+			long previous = cursor.baseOffset + COMPOSITE_HEADER_BYTES
+					+ (long) COMPOSITE_ENTRY_BYTES * (index - 1);
+			long previousNeighbor = cursor.segment.get(LmdbAdjacencyArena.U64_LE, previous);
+			long previousContext = cursor.segment.get(LmdbAdjacencyArena.U64_LE, previous + 8);
+			if (comparePairsUnsigned(previousNeighbor, previousContext, firstNeighbor, firstContext) >= 0) {
+				throw new IllegalStateException("persistent child fences are not strictly ordered");
+			}
+		}
+		return new PersistentChild(firstNeighbor, firstContext, count, sourceOrdinal, sourceId, sourceRef, kind);
+	}
+
+	private static RunCursor resolvePersistentChild(RunCursor parent, PersistentChild child) {
+		RunCursor resolved = parent.child();
+		resolvePersistentSource(parent.registry, child.sourceId, child.sourceRef, child.kind, resolved);
+		if (child.kind == PERSISTENT_CHILD_NODE) {
+			if (resolved.codec != CODEC_COMPOSITE
+					|| resolved.compositeVersion != PERSISTENT_COMPOSITE_VERSION
+					|| resolved.persistentLevel + 1 != parent.persistentLevel
+					|| resolved.edgeCount != child.count) {
+				throw new IllegalStateException("persistent directory child has inconsistent level or count");
+			}
+		} else if (child.sourceOrdinal < 0 || child.sourceOrdinal > resolved.edgeCount
+				|| child.count > resolved.edgeCount - child.sourceOrdinal) {
+			throw new IllegalStateException("persistent leaf source slice is out of range");
+		}
+		return resolved;
+	}
+
+	private static void resolvePersistentSource(LmdbAdjacencySourceRegistry registry, int sourceId, long sourceRef,
+			int kind, RunCursor target) {
+		if (kind == LEAF_CSF_SLICE) {
+			registry.csf(sourceId).resolve(sourceRef, target.csf);
+			target.catalog = null;
+			target.runHandle = Long.MIN_VALUE;
+			target.arenaSlot = -1;
+			target.segment = null;
+			target.baseOffset = 0;
+			target.tag = target.csf.orderedIntegerDomain() ? TAG_ORDERED_INTEGER : 0;
+			target.codec = CODEC_PAGED_CSF;
+			target.contextsPresent = true;
+			target.edgeCount = target.csf.edgeCount();
+			target.blockCount = 0;
+			target.blockPayloadStart = 0;
+			target.blockPayloadBytes = 0;
+			target.encodedBytes = 0;
+			target.currentBlockEnd = 0;
+			target.registry = registry;
+			target.persistentSourceId = sourceId;
+			target.compositeVersion = 0;
+			target.persistentLevel = 0;
+			return;
+		}
+
+		LmdbAdjacencyArena arena = registry.arena(sourceId);
+		arena.resolve(sourceRef, 8, target.memory);
+		MemorySegment header = target.memory.segment();
+		long headerAt = target.memory.baseOffset();
+		int tag = Byte.toUnsignedInt(header.get(LmdbAdjacencyArena.U8, headerAt));
+		int codec = tag & 0x3;
+		if ((tag & ~0xF) != 0) {
+			throw new IllegalStateException("malformed persistent source tag: " + tag);
+		}
+		long totalLength;
+		long edgeCount;
+		long blockCount = 0;
+		long blockPayloadStart = 0;
+		long blockPayloadBytes = 0;
+		int version = 0;
+		int level = 0;
+		if (kind == PERSISTENT_CHILD_NODE) {
+			if (codec != CODEC_COMPOSITE) {
+				throw new IllegalStateException("persistent node selects non-composite codec " + codec);
+			}
+			arena.expand(sourceRef, COMPOSITE_HEADER_BYTES, target.memory);
+			header = target.memory.segment();
+			version = Byte.toUnsignedInt(header.get(LmdbAdjacencyArena.U8, headerAt + 1));
+			level = Byte.toUnsignedInt(header.get(LmdbAdjacencyArena.U8, headerAt + 2));
+			long children = Integer.toUnsignedLong(header.get(LmdbAdjacencyArena.U32_LE, headerAt + 4));
+			totalLength = header.get(LmdbAdjacencyArena.U64_LE, headerAt + 8);
+			edgeCount = header.get(LmdbAdjacencyArena.U64_LE, headerAt + 16);
+			if (version != PERSISTENT_COMPOSITE_VERSION
+					|| Byte.toUnsignedInt(header.get(LmdbAdjacencyArena.U8, headerAt + 3)) != 0
+					|| children < 1 || children > PERSISTENT_FANOUT
+					|| totalLength != COMPOSITE_HEADER_BYTES + COMPOSITE_ENTRY_BYTES * children
+					|| edgeCount < 1) {
+				throw new IllegalStateException("malformed persistent directory node");
+			}
+		} else if (codec == CODEC_SMALL_VARINT) {
+			edgeCount = Byte.toUnsignedInt(header.get(LmdbAdjacencyArena.U8, headerAt + 1));
+			int neighborBytes = Short.toUnsignedInt(header.get(LmdbAdjacencyArena.U16_LE, headerAt + 2));
+			int contextBytes = Short.toUnsignedInt(header.get(LmdbAdjacencyArena.U16_LE, headerAt + 4));
+			if (edgeCount < 1 || edgeCount > SMALL_MAX_EDGES
+					|| Short.toUnsignedInt(header.get(LmdbAdjacencyArena.U16_LE, headerAt + 6)) != 0) {
+				throw new IllegalStateException("malformed persistent SMALL_VARINT leaf");
+			}
+			totalLength = alignUp(8L + neighborBytes + contextBytes, 8);
+		} else if (codec == CODEC_BLOCK_FOR) {
+			arena.expand(sourceRef, BLOCK_HEADER_BYTES, target.memory);
+			header = target.memory.segment();
+			edgeCount = header.get(LmdbAdjacencyArena.U64_LE, headerAt + 8);
+			blockCount = Integer.toUnsignedLong(header.get(LmdbAdjacencyArena.U32_LE, headerAt + 16));
+			blockPayloadBytes = Integer.toUnsignedLong(header.get(LmdbAdjacencyArena.U32_LE, headerAt + 20));
+			blockPayloadStart = alignUp(BLOCK_HEADER_BYTES + 4L * (blockCount + 1), 8);
+			totalLength = Math.addExact(blockPayloadStart, blockPayloadBytes);
+			if (Byte.toUnsignedInt(header.get(LmdbAdjacencyArena.U8, headerAt + 1)) != BLOCK_SHIFT
+					|| edgeCount < 1 || blockCount != (edgeCount + BLOCK_LANES - 1) >>> BLOCK_SHIFT) {
+				throw new IllegalStateException("malformed persistent BLOCK_FOR leaf");
+			}
+		} else {
+			throw new IllegalStateException("persistent leaf selects unsupported codec " + codec);
+		}
+		arena.expand(sourceRef, totalLength, target.memory);
+		target.catalog = null;
+		target.runHandle = Long.MIN_VALUE;
+		target.arenaSlot = -1;
+		target.segment = target.memory.segment();
+		target.baseOffset = target.memory.baseOffset();
+		target.tag = tag;
+		target.codec = codec;
+		target.contextsPresent = (tag & TAG_CONTEXT_PRESENT) != 0;
+		target.edgeCount = edgeCount;
+		target.blockCount = blockCount;
+		target.blockPayloadStart = target.baseOffset + blockPayloadStart;
+		target.blockPayloadBytes = blockPayloadBytes;
+		target.encodedBytes = totalLength;
+		target.currentBlockEnd = 0;
+		target.registry = registry;
+		target.persistentSourceId = sourceId;
+		target.compositeVersion = version;
+		target.persistentLevel = level;
+	}
+
+	private static long findCompositeLeaf(RunCursor cursor, long ordinal) {
+		long leafCount = Integer.toUnsignedLong(
+				cursor.segment.get(LmdbAdjacencyArena.U32_LE, cursor.baseOffset + 4));
+		long low = 0;
+		long high = leafCount - 1;
+		while (low <= high) {
+			long mid = (low + high) >>> 1;
+			long at = cursor.baseOffset + COMPOSITE_HEADER_BYTES + COMPOSITE_ENTRY_BYTES * mid;
+			long edgeStart = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 16);
+			long edgeCount = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 24);
+			if (edgeCount < 1 || edgeStart > cursor.edgeCount || edgeCount > cursor.edgeCount - edgeStart) {
+				throw new IllegalStateException("malformed composite edge range");
+			}
+			if (ordinal < edgeStart) {
+				high = mid - 1;
+			} else if (ordinal >= edgeStart + edgeCount) {
+				low = mid + 1;
+			} else {
+				if (mid == 0 && edgeStart != 0 || mid > 0 && previousCompositeEnd(cursor, mid) != edgeStart
+						|| mid + 1 == leafCount && edgeStart + edgeCount != cursor.edgeCount) {
+					throw new IllegalStateException("composite leaves are not contiguous");
+				}
+				return mid;
+			}
+		}
+		throw new IllegalStateException("composite directory does not contain ordinal " + ordinal);
+	}
+
+	private static long previousCompositeEnd(RunCursor cursor, long leaf) {
+		long previous = cursor.baseOffset + COMPOSITE_HEADER_BYTES + COMPOSITE_ENTRY_BYTES * (leaf - 1);
+		long start = cursor.segment.get(LmdbAdjacencyArena.U64_LE, previous + 16);
+		long count = cursor.segment.get(LmdbAdjacencyArena.U64_LE, previous + 24);
+		return Math.addExact(start, count);
 	}
 
 	/**

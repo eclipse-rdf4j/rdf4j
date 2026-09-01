@@ -188,6 +188,8 @@ class TripleStore implements Closeable {
 	private final boolean pageCardinalityEstimator;
 	private long mapSize;
 	private long bulkMapGrowthCount;
+	/** Test-only fault-injection hook: runs immediately before LMDB consumes the live write transaction. */
+	volatile Runnable beforePhysicalCommitForTest;
 	private final TxnManager txnManager;
 	private final LeadingFieldSortAlgorithm leadingFieldSortAlgorithm = LeadingFieldSortAlgorithm.LSD_RADIX;
 	private long[] explicitAlignedWriteCursors = new long[0];
@@ -3442,7 +3444,34 @@ class TripleStore implements Closeable {
 	 */
 	interface DirectAdjacencyCommitListener {
 
+		interface PreparedCommit {
+		}
+
+		final class DeferredPreparedCommit implements PreparedCommit {
+			final LmdbDirectAdjacencyCommitDelta.SealedDirectDelta delta;
+			final long revision;
+
+			DeferredPreparedCommit(LmdbDirectAdjacencyCommitDelta.SealedDirectDelta delta, long revision) {
+				this.delta = delta;
+				this.revision = revision;
+			}
+		}
+
 		void beforeRevisionBump(LmdbDirectAdjacencyCommitDelta.SealedDirectDelta delta, long nextRevision);
+
+		default PreparedCommit prepare(LmdbDirectAdjacencyCommitDelta.SealedDirectDelta delta, long nextRevision) {
+			return new DeferredPreparedCommit(delta, nextRevision);
+		}
+
+		default LmdbDirectAdjacencyCommitDelta.SealedDirectDelta finalizeCommit(PreparedCommit prepared) {
+			DeferredPreparedCommit deferred = (DeferredPreparedCommit) prepared;
+			beforeRevisionBump(deferred.delta, deferred.revision);
+			return deferred.delta;
+		}
+
+		default void abort(PreparedCommit prepared) {
+			((DeferredPreparedCommit) prepared).delta.close();
+		}
 
 		default void physicalCommitFailedBeforeRevisionBump(long nextRevision) {
 			beforeRevisionBump(LmdbDirectAdjacencyCommitDelta.SealedDirectDelta.overflowed(nextRevision),
@@ -3454,6 +3483,12 @@ class TripleStore implements Closeable {
 			LmdbDirectAdjacencyCommitDelta collector) {
 		this.directAdjacencyCommitListener = listener;
 		this.directAdjacencyCommitDelta = listener != null ? collector : null;
+	}
+
+	void captureDirectAdjacencyCoverage(long[] resolvedSelectedPredicates) {
+		if (directAdjacencyCommitDelta != null) {
+			directAdjacencyCommitDelta.captureResolvedSelectedPredicates(resolvedSelectedPredicates);
+		}
 	}
 
 	/**
@@ -4191,6 +4226,10 @@ class TripleStore implements Closeable {
 		if (transaction == 0) {
 			throw new IllegalStateException("no live LMDB write transaction to commit");
 		}
+		Runnable beforePhysicalCommit = beforePhysicalCommitForTest;
+		if (beforePhysicalCommit != null) {
+			beforePhysicalCommit.run();
+		}
 		// LMDB consumes a write transaction handle whether commit succeeds or fails. Clear ownership first so no
 		// exception path can abort or commit the same native handle twice.
 		writeTxn = 0;
@@ -4310,6 +4349,7 @@ class TripleStore implements Closeable {
 					}
 					CommitProgress commitProgress = new CommitProgress(dataRevision.get() + 1);
 					LmdbDirectAdjacencyCommitDelta.SealedDirectDelta sealedDirect = null;
+					DirectAdjacencyCommitListener.PreparedCommit preparedDirect = null;
 					try {
 						// seal event pages and the touched-row table before the authoritative LMDB commit; later
 						// record calls (none exist: updateFromCache never records) would fail fast (plan 27)
@@ -4323,6 +4363,11 @@ class TripleStore implements Closeable {
 								sealedDirect = LmdbDirectAdjacencyCommitDelta.SealedDirectDelta
 										.overflowed(commitProgress.nextRevision);
 							}
+						}
+						if (directAdjacencyCommitListener != null && sealedDirect != null) {
+							preparedDirect = directAdjacencyCommitListener.prepare(sealedDirect,
+									commitProgress.nextRevision);
+							sealedDirect = null;
 						}
 						commitWriteTransaction(commitProgress);
 						if (recordCache != null) {
@@ -4353,23 +4398,34 @@ class TripleStore implements Closeable {
 							// otherwise iterators won't see the updated data
 							txnManager.reset();
 						}
-						if (directAdjacencyCommitListener != null && sealedDirect != null) {
-							// publishes the pending marker (or the gap) before readers can observe the revision
-							directAdjacencyCommitListener.beforeRevisionBump(sealedDirect,
-									commitProgress.nextRevision);
+						if (directAdjacencyCommitListener != null && preparedDirect != null) {
+							// Publishes either the exact prepared generation or the legacy pending marker before
+							// readers can
+							// observe the revision. The returned delta is non-null only for the apply-queue path.
+							LmdbDirectAdjacencyCommitDelta.SealedDirectDelta drainable = directAdjacencyCommitListener
+									.finalizeCommit(preparedDirect);
+							preparedDirect = null;
 							if (sealedDirectAdjacencyDelta != null) {
 								// an earlier sealed delta was never drained (a failed sail-store commit step);
 								// its revision gap is detected by the applier — release only the charge here
 								sealedDirectAdjacencyDelta.close();
 							}
-							sealedDirectAdjacencyDelta = sealedDirect;
-							sealedDirect = null;
+							sealedDirectAdjacencyDelta = drainable;
 						}
 						dataRevision.set(commitProgress.nextRevision);
 						fanOutStatsDirty = false;
 					} catch (IOException | RuntimeException | Error e) {
 						abortWriteTransactionIfLive();
 						clearFanOutStatsIfDirty();
+						if (preparedDirect != null) {
+							try {
+								directAdjacencyCommitListener.abort(preparedDirect);
+							} catch (RuntimeException | Error abortFailure) {
+								e.addSuppressed(abortFailure);
+							} finally {
+								preparedDirect = null;
+							}
+						}
 						if (commitProgress.physicalCommitSucceeded) {
 							try {
 								if (directAdjacencyCommitListener != null) {
