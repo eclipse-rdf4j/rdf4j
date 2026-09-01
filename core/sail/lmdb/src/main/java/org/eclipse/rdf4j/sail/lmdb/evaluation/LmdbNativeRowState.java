@@ -306,7 +306,7 @@ final class RowState implements LmdbNativeSlotReader {
 
 /** Counts rows consumed by an aggregate without adding a telemetry branch to the normal cursor loop. */
 @Experimental
-final class ExactValuesAggregateCursor implements RowCursor {
+final class ExactValuesAggregateCursor implements FactorizedRowCursor {
 	private final RowCursor delegate;
 	private final ExactValuesRuntimeMetrics metrics;
 
@@ -320,13 +320,19 @@ final class ExactValuesAggregateCursor implements RowCursor {
 		if (!delegate.next()) {
 			return false;
 		}
-		metrics.recordMatchedRows(1L);
+		metrics.recordMatchedRows(
+				delegate instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L);
 		return true;
 	}
 
 	@Override
 	public void close() {
 		delegate.close();
+	}
+
+	@Override
+	public long multiplicity() {
+		return delegate instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L;
 	}
 }
 
@@ -756,6 +762,20 @@ final class CopyBinding {
 					: UNKNOWN;
 		}
 		return computed != null ? computed.id(row) : sourceSlot >= 0 ? row.slots[sourceSlot] : constant;
+	}
+
+	/** Slots read to produce this binding, or {@code -1} when the semantic evaluator has no native read mask. */
+	long requiredMask() {
+		if (semanticValue != null) {
+			return -1L;
+		}
+		if (computedValue != null) {
+			return computedValue.requiredMask;
+		}
+		if (computed != null) {
+			return computed.requiredMask();
+		}
+		return sourceSlot < 0 ? 0L : 1L << sourceSlot;
 	}
 }
 

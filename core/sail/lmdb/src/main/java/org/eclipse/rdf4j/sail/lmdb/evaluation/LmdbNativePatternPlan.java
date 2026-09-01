@@ -92,6 +92,10 @@ final class PatternPlan implements SlotPlan {
 
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		BatchCursor wildcard = LmdbWildcardPredicateBatch.tryOpenPayload(this, row, capacity);
+		if (wildcard != null) {
+			return wildcard;
+		}
 		PatternCursor cursor = openRaw(row);
 		return cursor == PatternCursor.EMPTY ? EmptyBatchCursor.INSTANCE
 				: new PatternBatchCursor(this, row, cursor, capacity);

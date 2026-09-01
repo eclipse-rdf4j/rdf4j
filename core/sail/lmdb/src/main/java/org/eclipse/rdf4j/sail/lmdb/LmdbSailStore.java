@@ -1794,6 +1794,25 @@ class LmdbSailStore implements SailStore {
 		return failure;
 	}
 
+	/** Closes the intrusive list of query-owned wildcard views without allocating ownership wrappers. */
+	private static Throwable closeProbeAdjacencies(LmdbDirectWildcardAdjacency adjacency, Throwable failure) {
+		LmdbDirectWildcardAdjacency current = adjacency;
+		while (current != null) {
+			LmdbDirectWildcardAdjacency next = current.probeNext();
+			try {
+				current.close();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
+			}
+			current = next;
+		}
+		return failure;
+	}
+
 	private static void rethrowProbeCloseFailure(Throwable failure) {
 		if (failure instanceof Error) {
 			throw (Error) failure;
@@ -4011,6 +4030,7 @@ class LmdbSailStore implements SailStore {
 				private LmdbRecordIterator retained;
 				private RecordIterator currentSelection;
 				private LmdbDirectNativeAdjacency ownedAdjacencies;
+				private LmdbDirectWildcardAdjacency ownedWildcardAdjacencies;
 				private boolean servedDirect;
 				private boolean closed;
 
@@ -4224,6 +4244,21 @@ class LmdbSailStore implements SailStore {
 							: directAdjacency.bindDynamicAdjacency(view, bySubject, explicit, null);
 				}
 
+				@Override
+				public NativeLmdbQuerySource.WildcardAdjacency wildcardAdjacency(boolean bySubject) throws IOException {
+					checkOpen();
+					LmdbAdjacencyReadView view = variablePredicateView();
+					if (view == null) {
+						return null;
+					}
+					NativeLmdbQuerySource.WildcardAdjacency result = directAdjacency.bindWildcardAdjacency(view,
+							bySubject, explicit, null);
+					if (result instanceof LmdbDirectWildcardAdjacency direct) {
+						ownedWildcardAdjacencies = direct.attachToProbe(ownedWildcardAdjacencies);
+					}
+					return result;
+				}
+
 				private LmdbAdjacencyReadView variablePredicateView() throws IOException {
 					return !hasStatementsInSource() || directAdjacency == null ? null : exactAdjacencyView(false);
 				}
@@ -4265,6 +4300,8 @@ class LmdbSailStore implements SailStore {
 					}
 					failure = closeProbeAdjacencies(ownedAdjacencies, failure);
 					ownedAdjacencies = null;
+					failure = closeProbeAdjacencies(ownedWildcardAdjacencies, failure);
+					ownedWildcardAdjacencies = null;
 					try {
 						searchContext.close();
 					} catch (RuntimeException | Error problem) {
@@ -5269,6 +5306,7 @@ class LmdbSailStore implements SailStore {
 			private LmdbRecordIterator retained;
 			private RecordIterator currentSelection;
 			private LmdbDirectNativeAdjacency ownedAdjacencies;
+			private LmdbDirectWildcardAdjacency ownedWildcardAdjacencies;
 			private boolean closed;
 			private boolean servedDirect;
 			private long adjacencyDomainPredicate;
@@ -5490,6 +5528,19 @@ class LmdbSailStore implements SailStore {
 						: null;
 			}
 
+			@Override
+			public NativeLmdbQuerySource.WildcardAdjacency wildcardAdjacency(boolean bySubject) throws IOException {
+				if (!variablePredicateEligible()) {
+					return null;
+				}
+				NativeLmdbQuerySource.WildcardAdjacency result = directAdjacency.bindWildcardAdjacency(adjacencyView,
+						bySubject, explicit, null);
+				if (result instanceof LmdbDirectWildcardAdjacency direct) {
+					ownedWildcardAdjacencies = direct.attachToProbe(ownedWildcardAdjacencies);
+				}
+				return result;
+			}
+
 			/**
 			 * Same gate the fixed-predicate view uses, hoisted so both variable-predicate views observe it. The read
 			 * stamp is taken here for the same reason it is taken there: the view must stay valid for this probe's
@@ -5554,6 +5605,8 @@ class LmdbSailStore implements SailStore {
 				}
 				failure = closeProbeAdjacencies(ownedAdjacencies, failure);
 				ownedAdjacencies = null;
+				failure = closeProbeAdjacencies(ownedWildcardAdjacencies, failure);
+				ownedWildcardAdjacencies = null;
 				try {
 					searchContext.close();
 				} catch (RuntimeException | Error problem) {

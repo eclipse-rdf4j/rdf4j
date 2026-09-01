@@ -39,6 +39,33 @@ final class UnionPlan implements SlotPlan {
 	}
 
 	@Override
+	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		BatchCursor leftBatch = left.openBatch(row, capacity);
+		BatchCursor rightBatch = null;
+		try {
+			rightBatch = right.openBatch(row, capacity);
+			if (leftBatch == null && rightBatch == null) {
+				return null;
+			}
+			if (leftBatch == null) {
+				leftBatch = new RowBatchCursor(left.open(row), row);
+			}
+			if (rightBatch == null) {
+				rightBatch = new RowBatchCursor(right.open(row), row);
+			}
+			return new UnionBatchCursor(leftBatch, rightBatch);
+		} catch (IOException | RuntimeException | Error failure) {
+			if (leftBatch != null) {
+				leftBatch.close();
+			}
+			if (rightBatch != null) {
+				rightBatch.close();
+			}
+			throw failure;
+		}
+	}
+
+	@Override
 	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
 		// Both arms run once against the same entry bindings; neither probes the other.
 		return left.estimateWork(row, boundMask).plus(right.estimateWork(row, boundMask));
@@ -55,6 +82,53 @@ final class UnionPlan implements SlotPlan {
 	@Override
 	public long producedMask() {
 		return producedMask;
+	}
+}
+
+@Experimental
+final class UnionBatchCursor implements BatchCursor {
+	private final BatchCursor left;
+	private final BatchCursor right;
+	private BatchCursor current;
+	private boolean rightActive;
+	private boolean leftClosed;
+	private boolean closed;
+
+	UnionBatchCursor(BatchCursor left, BatchCursor right) {
+		this.left = left;
+		this.right = right;
+		this.current = left;
+	}
+
+	@Override
+	public int fill(NativeBatch batch) throws IOException {
+		if (closed) {
+			batch.clear();
+			return 0;
+		}
+		int count = current.fill(batch);
+		if (count > 0 || rightActive) {
+			return count;
+		}
+		left.close();
+		leftClosed = true;
+		rightActive = true;
+		current = right;
+		return current.fill(batch);
+	}
+
+	@Override
+	public void close() {
+		if (!closed) {
+			closed = true;
+			try {
+				if (!leftClosed) {
+					left.close();
+				}
+			} finally {
+				right.close();
+			}
+		}
 	}
 }
 
@@ -206,7 +280,7 @@ final class MaskedFilter {
 }
 
 @Experimental
-final class FilterCursor implements RowCursor {
+final class FilterCursor implements FactorizedRowCursor {
 	final RowCursor arg;
 	final NativeBooleanFilter filter;
 	final RowState row;
@@ -260,6 +334,11 @@ final class FilterCursor implements RowCursor {
 			throw error;
 		}
 	}
+
+	@Override
+	public long multiplicity() {
+		return arg instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L;
+	}
 }
 
 @Experimental
@@ -281,6 +360,16 @@ final class ExtensionPlan implements SlotPlan {
 	@Override
 	public RowCursor open(RowState row) throws IOException {
 		return new ExtensionCursor(arg.open(row), copies, row);
+	}
+
+	@Override
+	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		BatchCursor batch = arg.openBatch(row, capacity);
+		if (batch == null) {
+			return null;
+		}
+		RowCursor rows = LmdbWildcardPredicateBatch.asRows(batch, row, capacity);
+		return rows == null ? null : new RowBatchCursor(new ExtensionCursor(rows, copies, row), row);
 	}
 
 	@Override
@@ -307,7 +396,7 @@ final class ExtensionPlan implements SlotPlan {
 }
 
 @Experimental
-final class ExtensionCursor implements RowCursor {
+final class ExtensionCursor implements FactorizedRowCursor {
 	final RowCursor arg;
 	final CopyBinding[] copies;
 	final RowState row;
@@ -376,6 +465,11 @@ final class ExtensionCursor implements RowCursor {
 			activeMark = -1;
 		}
 	}
+
+	@Override
+	public long multiplicity() {
+		return arg instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L;
+	}
 }
 
 /**
@@ -395,7 +489,28 @@ final class RowDistinctPlan implements SlotPlan {
 
 	@Override
 	public RowCursor open(RowState row) throws IOException {
-		RowCursor inner = arg.open(row);
+		return distinct(arg.open(row), row);
+	}
+
+	@Override
+	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		BatchCursor batch = arg instanceof MultiJoinPlan join
+				? LmdbWildcardPredicateBatch.tryOpenDistinct(join, row, capacity, slots)
+				: null;
+		if (batch == null) {
+			batch = arg.openBatch(row, capacity);
+		}
+		if (batch == null) {
+			return null;
+		}
+		if (LmdbWildcardPredicateBatch.handlesDistinct(batch)) {
+			return batch;
+		}
+		RowCursor rows = LmdbWildcardPredicateBatch.asRows(batch, row, capacity);
+		return rows == null ? null : new RowBatchCursor(distinct(rows, row), row);
+	}
+
+	private RowCursor distinct(RowCursor inner, RowState row) {
 		NativeDistinctTracker tracker = new NativeDistinctTracker(slots, row.termAuthority());
 		return new RowCursor() {
 			int probePollTick;
@@ -450,7 +565,23 @@ final class MinusPlan implements SlotPlan {
 
 	@Override
 	public RowCursor open(RowState row) throws IOException {
+		if (right instanceof PatternPlan pattern) {
+			RowCursor vectorized = LmdbWildcardPredicateBatch.tryOpenMinus(left, pattern, sharedMask, row);
+			if (vectorized != null) {
+				return vectorized;
+			}
+		}
 		return new MinusCursor(left.open(row), right, sharedMask, row);
+	}
+
+	@Override
+	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		BatchCursor batch = left.openBatch(row, capacity);
+		if (batch == null) {
+			return null;
+		}
+		RowCursor rows = LmdbWildcardPredicateBatch.asRows(batch, row, capacity);
+		return rows == null ? null : new RowBatchCursor(new MinusCursor(rows, right, sharedMask, row), row);
 	}
 
 	@Override
@@ -472,7 +603,7 @@ final class MinusPlan implements SlotPlan {
 }
 
 @Experimental
-final class MinusCursor implements RowCursor {
+final class MinusCursor implements FactorizedRowCursor {
 	final RowCursor leftCursor;
 	final SlotPlan right;
 	final long sharedMask;
@@ -545,6 +676,11 @@ final class MinusCursor implements RowCursor {
 			adjacencyProbe.close();
 		}
 		leftCursor.close();
+	}
+
+	@Override
+	public long multiplicity() {
+		return leftCursor instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L;
 	}
 
 	boolean hasCompatibleRight() throws IOException {

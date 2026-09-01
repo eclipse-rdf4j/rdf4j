@@ -116,6 +116,12 @@ interface BatchCursor extends AutoCloseable {
 	void close();
 }
 
+/** A batch row may represent several identical logical solution rows. */
+@Experimental
+interface WeightedBatchCursor extends BatchCursor {
+	long weight(int physicalRow);
+}
+
 @Experimental
 final class EmptyBatchCursor implements BatchCursor {
 	static final EmptyBatchCursor INSTANCE = new EmptyBatchCursor();
@@ -131,7 +137,7 @@ final class EmptyBatchCursor implements BatchCursor {
 	}
 }
 
-/** Materializing adapter used only when a batch fast path abandons before emitting its first row. */
+/** Materializing row-to-batch adapter which restores the last active row before a refill or close. */
 @Experimental
 final class RowBatchCursor implements BatchCursor {
 	final RowCursor delegate;
@@ -157,7 +163,7 @@ final class RowBatchCursor implements BatchCursor {
 			batch.copyFromRow(row.slots, count++);
 		}
 		batch.finishRows(count);
-		if (count == batch.capacity) {
+		if (count > 0) {
 			activeBatch = batch;
 			activeRow = count - 1;
 		}
@@ -331,7 +337,7 @@ final class ValuesBatchCursor implements BatchCursor {
 
 /** Applies a native boolean filter to the child batch by editing only the selection vector. */
 @Experimental
-final class FilterBatchCursor implements BatchCursor {
+final class FilterBatchCursor implements WeightedBatchCursor {
 	final BatchCursor arg;
 	final NativeBooleanFilter filter;
 	final RowState row;
@@ -377,6 +383,11 @@ final class FilterBatchCursor implements BatchCursor {
 		}
 		close();
 		return 0;
+	}
+
+	@Override
+	public long weight(int physicalRow) {
+		return arg instanceof WeightedBatchCursor weighted ? weighted.weight(physicalRow) : 1L;
 	}
 
 	@Override

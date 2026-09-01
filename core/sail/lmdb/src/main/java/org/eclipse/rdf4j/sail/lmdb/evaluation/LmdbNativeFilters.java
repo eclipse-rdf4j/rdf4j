@@ -476,14 +476,18 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 
 	@Override
 	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
-		if (varyingSlots.length < 2 || varyingSlots.length > 4) {
-			return NativeBooleanFilter.super.selectBatch(batch, sel, n, scratch);
-		}
 		NativeExecutionContext execution = executionContext(scratch);
 		State state = execution == null ? new State() : execution.nativeState(this, State::new);
-		KeyedMatches memo = state.memo();
-		memo.prepareBatch(batch, sel, n, varyingSlots);
 		try {
+			int wildcard = state.selectWildcard(batch, sel, n, scratch, false);
+			if (wildcard >= 0) {
+				return wildcard;
+			}
+			if (varyingSlots.length < 2 || varyingSlots.length > 4) {
+				return selectBatchScalar(batch, sel, n, scratch, state, false);
+			}
+			KeyedMatches memo = state.memo();
+			memo.prepareBatch(batch, sel, n, varyingSlots);
 			int accepted = 0;
 			for (int i = 0; i < n; i++) {
 				int physicalRow = sel[i];
@@ -499,6 +503,36 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 				state.close();
 			}
 		}
+	}
+
+	int selectBatchNegated(NativeBatch batch, int[] sel, int n, RowState scratch) {
+		NativeExecutionContext execution = executionContext(scratch);
+		State state = execution == null ? new State() : execution.nativeState(this, State::new);
+		try {
+			int wildcard = state.selectWildcard(batch, sel, n, scratch, true);
+			if (wildcard >= 0) {
+				return wildcard;
+			}
+			return selectBatchScalar(batch, sel, n, scratch, state, true);
+		} finally {
+			if (execution == null) {
+				state.close();
+			}
+		}
+	}
+
+	private int selectBatchScalar(NativeBatch batch, int[] selection, int count, RowState scratch, State state,
+			boolean negated) {
+		int accepted = 0;
+		for (int i = 0; i < count; i++) {
+			int physicalRow = selection[i];
+			batch.copyToRow(physicalRow, scratch.slots);
+			scratch.recomputeBoundMask();
+			if (accept(scratch, state) != negated) {
+				selection[accepted++] = physicalRow;
+			}
+		}
+		return accepted;
 	}
 
 	private boolean acceptPrepared(NativeBatch batch, int physicalRow, int preparedIndex, RowState row, State state) {
@@ -571,6 +605,18 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 		for (int slot : varyingSlots) {
 			if (row.slots[slot] == NULL_CONTEXT_ID) {
 				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean hasUnboundMarker(NativeBatch batch, int[] selection, int count) {
+		for (int i = 0; i < count; i++) {
+			int physicalRow = selection[i];
+			for (int slot : varyingSlots) {
+				if (batch.get(slot, physicalRow) == NULL_CONTEXT_ID) {
+					return true;
+				}
 			}
 		}
 		return false;
@@ -658,7 +704,21 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 		final AdjacencyIntersectionProbe adjacencyProbe = AdjacencyIntersectionProbe.tryCreate(s, p, o, c, contexts,
 				namedContextScope);
 		KeyedMatches memo;
+		LmdbWildcardPredicateBatch.ExistenceBatch wildcardBatch;
+		boolean wildcardAttempted;
 		byte constantResult;
+
+		int selectWildcard(NativeBatch batch, int[] selection, int count, RowState row, boolean negated) {
+			if (hasUnboundMarker(batch, selection, count)) {
+				return -1;
+			}
+			if (!wildcardAttempted) {
+				wildcardAttempted = true;
+				wildcardBatch = LmdbWildcardPredicateBatch.ExistenceBatch.tryCreate(s, p, o, c, contexts,
+						namedContextScope, row, batch.capacity);
+			}
+			return wildcardBatch == null ? -1 : wildcardBatch.select(batch, selection, count, negated);
+		}
 
 		KeyedMatches memo() {
 			if (memo == null) {
@@ -671,6 +731,9 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 		public void close() {
 			if (adjacencyProbe != null) {
 				adjacencyProbe.close();
+			}
+			if (wildcardBatch != null) {
+				wildcardBatch.close();
 			}
 		}
 	}
@@ -1260,6 +1323,14 @@ final class NegatedNativeBooleanFilter implements NativeBooleanFilter {
 	@Override
 	public boolean accept(RowState row) {
 		return !delegate.accept(row);
+	}
+
+	@Override
+	public int selectBatch(NativeBatch batch, int[] selection, int count, RowState scratch) {
+		if (delegate instanceof StatementPatternExistsFilter exists) {
+			return exists.selectBatchNegated(batch, selection, count, scratch);
+		}
+		return NativeBooleanFilter.super.selectBatch(batch, selection, count, scratch);
 	}
 
 	@Override

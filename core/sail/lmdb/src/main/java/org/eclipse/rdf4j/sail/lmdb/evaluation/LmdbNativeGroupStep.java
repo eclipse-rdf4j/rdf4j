@@ -712,6 +712,12 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				}, LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS,
 						orderedDistinct.arg.estimateWork(row, row.boundMask())));
 			}
+			if (LmdbWildcardPredicateBatch.weightedAggregateCandidate(arg, aggregates)) {
+				arbiter.offer(() -> estimatedProposal(
+						() -> evaluateWildcardWeighted(row, new AggContext(source, strictCompare, true), metrics),
+						LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED,
+						arg.estimateWork(row, row.boundMask())));
+			}
 			if (wcojHandlesRow(row)) {
 				arbiter.offer(() -> estimatedProposal(() -> evaluateWcoj(row),
 						LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.UNKNOWN));
@@ -892,13 +898,39 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			int probePollTick1 = 0;
 			while (advance(cursor)) {
 				LmdbNativeProbeDeadline.poll(++probePollTick1);
-				table.add(row);
+				table.add(row,
+						cursor instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L);
 			}
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
 		List<BindingSet> results = table.results(this, metrics);
 		metrics.deferStrategy(explainTarget, table.strategyName());
+		return results;
+	}
+
+	private List<BindingSet> evaluateWildcardWeighted(RowState row, AggContext context,
+			LmdbNativeAttemptMetrics metrics) {
+		NativeGroupTable table = NativeGroupTable.create(groupSlots, aggregates, context,
+				sequentialDistinctChannels, true, true);
+		try {
+			RowCursor weighted = LmdbWildcardPredicateBatch.openWeightedAggregate(arg, row, groupSlots, aggregates,
+					NativeBatch.configuredRows());
+			if (weighted == null) {
+				return null;
+			}
+			try (RowCursor cursor = row.aggregateInput(weighted)) {
+				int probePollTick = 0;
+				while (advance(cursor)) {
+					LmdbNativeProbeDeadline.poll(++probePollTick);
+					table.add(row, ((FactorizedRowCursor) cursor).multiplicity());
+				}
+			}
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+		List<BindingSet> results = table.results(this, metrics);
+		metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED);
 		return results;
 	}
 
