@@ -131,7 +131,7 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 	}
 
 	@Test
-	void versionThirteenRetainsLogicalButNotIncompletePhysicalFeedback(@TempDir File dataDir) throws Exception {
+	void versionThirteenFeedbackIsSafelyInvalidated(@TempDir File dataDir) throws Exception {
 		LmdbStore writer = initializedStore(dataDir);
 		try {
 			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) writer.getBackingStore()
@@ -159,17 +159,15 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 					.getEvaluationStatistics();
 			LmdbOperatorFeedbackStats.SemiAntiEstimate estimate = statistics.estimatorRuntime()
 					.semiAntiFeedback(filter(), "NOT_EXISTS", "materialized-hash");
-			assertNotNull(estimate);
-			assertEquals(1L, estimate.observationCount());
-			assertEquals(0L, longAccessor(estimate, "physicalObservationCount"));
-			assertEquals(0L, longAccessor(estimate, "rhsSourceRowsScanned"));
+			assertNull(estimate,
+					"Stampless operator evidence is ambiguous after the mutation coordinate changed and must be relearned");
 		} finally {
 			reader.shutDown();
 		}
 	}
 
 	@Test
-	void versionFourteenRetainsCompletePhysicalFeedback(@TempDir File dataDir) throws Exception {
+	void versionFourteenFeedbackIsSafelyInvalidated(@TempDir File dataDir) throws Exception {
 		LmdbStore writer = initializedStore(dataDir);
 		try {
 			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) writer.getBackingStore()
@@ -197,10 +195,8 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 					.getEvaluationStatistics();
 			LmdbOperatorFeedbackStats.SemiAntiEstimate estimate = statistics.estimatorRuntime()
 					.semiAntiFeedback(filter(), "NOT_EXISTS", "materialized-hash");
-			assertNotNull(estimate);
-			assertEquals(1L, estimate.observationCount());
-			assertEquals(1L, longAccessor(estimate, "physicalObservationCount"));
-			assertEquals(143_700L, longAccessor(estimate, "rhsSourceRowsScanned"));
+			assertNull(estimate,
+					"Stampless operator evidence is ambiguous after the mutation coordinate changed and must be relearned");
 		} finally {
 			reader.shutDown();
 		}
@@ -232,16 +228,16 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 		return legacy;
 	}
 
-	private static byte[] withoutLogicalPhysicalAndLifecycleTail(byte[] versionTwentyTwo) {
-		assertEquals(22, ByteBuffer.wrap(versionTwentyTwo).getInt());
+	private static byte[] withoutLogicalPhysicalAndLifecycleTail(byte[] versionTwentyThree) {
+		assertEquals(23, ByteBuffer.wrap(versionTwentyThree).getInt());
 		/*
 		 * These fixtures contain no typed logical/physical, LEO-plus calibration/censoring, or lifecycle records. V20
 		 * adds two empty typed-map counts before the v17 exact-fact count plus an empty lifecycle tail; V21 adds three
 		 * empty LEO-plus map counts at the same boundary. Remove only those bytes so the historical downgrade helper
 		 * receives the genuine v17 payload it describes.
 		 */
-		return Arrays.copyOf(versionTwentyTwo,
-				versionTwentyTwo.length - Long.BYTES - 8 * Integer.BYTES);
+		return Arrays.copyOf(versionTwentyThree,
+				versionTwentyThree.length - Long.BYTES - 8 * Integer.BYTES);
 	}
 
 	@Test

@@ -103,9 +103,22 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			CoreDatatype.XSD.UNSIGNED_BYTE);
 
 	private final EvaluationStatistics statistics;
+	private final boolean committedEvidenceUsable;
 
 	LmdbFilterSimplifierOptimizer(EvaluationStatistics statistics) {
+		this(statistics, true);
+	}
+
+	/**
+	 * @param committedEvidenceUsable whether committed-store evidence (predicate-object domain guarantees, exact
+	 *                                stored-term enumerations) may drive constraining rewrites. Must be false when
+	 *                                planning for a transaction with uncommitted changes: that evidence describes
+	 *                                committed data only, and the anchors it produces enumerate value sets the
+	 *                                transaction's own uncommitted rows may fall outside of.
+	 */
+	LmdbFilterSimplifierOptimizer(EvaluationStatistics statistics, boolean committedEvidenceUsable) {
 		this.statistics = statistics;
+		this.committedEvidenceUsable = committedEvidenceUsable;
 	}
 
 	@Override
@@ -399,6 +412,11 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 
 	private BindingSetAssignment exactStoredTermFilterAnchor(Filter filter, ValueExpr condition,
 			BindingSetAssignment queryTermAnchor, Set<String> assuredBindings) {
+		// The stored-term enumeration is COMPLETE only for the committed snapshot; an uncommitted matching term
+		// would fall outside the anchor and its row would be lost.
+		if (!committedEvidenceUsable) {
+			return null;
+		}
 		if (queryTermAnchor == null || queryTermAnchor.getBindingNames().size() != 1
 				|| !(filter.getArg() instanceof StatementPattern)) {
 			return null;
@@ -1290,7 +1308,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	}
 
 	private Optional<RdfTermDomain> knownRdfTermDomain(StatementPattern pattern) {
-		if (!(statistics instanceof LmdbPredicateObjectDomainSource guaranteeSource)) {
+		if (!committedEvidenceUsable || !(statistics instanceof LmdbPredicateObjectDomainSource guaranteeSource)) {
 			return Optional.empty();
 		}
 		IRI predicate = constantPredicate(pattern);

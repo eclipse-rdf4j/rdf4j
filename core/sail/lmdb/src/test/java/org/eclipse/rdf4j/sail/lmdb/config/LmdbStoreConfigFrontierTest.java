@@ -178,6 +178,12 @@ class LmdbStoreConfigFrontierTest {
 	}
 
 	@Test
+	void frontierConfidenceBoundsRoundTripIndependentOfParseOrder() throws Exception {
+		assertConfidenceRoundTrip(0.3d, 0.2d, 0.4d);
+		assertConfidenceRoundTrip(0.9995d, 0.9994d, 0.9999d);
+	}
+
+	@Test
 	void frontierConfigurationRejectsUnsoundOrUnboundedValues() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig();
 
@@ -222,6 +228,28 @@ class LmdbStoreConfigFrontierTest {
 	private static void assertContains(Model model, Resource node, String localName) {
 		IRI property = Values.iri(LmdbStoreSchema.NAMESPACE, localName);
 		assertTrue(model.contains(node, property, null), () -> "Missing exported Frontier property " + property);
+	}
+
+	private static void assertConfidenceRoundTrip(double initial, double minimum, double maximum) throws Exception {
+		LmdbStoreConfig source = new LmdbStoreConfig();
+		if (initial < source.getFrontierCacheInitialConfidence()) {
+			source.setFrontierCacheMinimumConfidence(minimum);
+			source.setFrontierCacheInitialConfidence(initial);
+			source.setFrontierCacheMaximumConfidence(maximum);
+		} else {
+			source.setFrontierCacheMaximumConfidence(maximum);
+			source.setFrontierCacheInitialConfidence(initial);
+			source.setFrontierCacheMinimumConfidence(minimum);
+		}
+
+		Model model = new LinkedHashModel();
+		Resource node = source.export(model);
+		LmdbStoreConfig restored = new LmdbStoreConfig();
+		restored.parse(model, node);
+
+		assertEquals(initial, restored.getFrontierCacheInitialConfidence(), 0.0d);
+		assertEquals(minimum, restored.getFrontierCacheMinimumConfidence(), 0.0d);
+		assertEquals(maximum, restored.getFrontierCacheMaximumConfidence(), 0.0d);
 	}
 
 	private static void assertIllegalArgument(LmdbStoreConfig config, String methodName, Class<?> parameterType,

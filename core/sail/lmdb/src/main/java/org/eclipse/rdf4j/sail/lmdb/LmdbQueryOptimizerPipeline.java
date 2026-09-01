@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConjunctiveConstrain
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.RegexAsStringFunctionOptimizer;
@@ -58,6 +59,7 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private static final SameTermFilterOptimizer SAME_TERM_FILTER_OPTIMIZER = new SameTermFilterOptimizer();
 	private static final UnionScopeChangeOptimizer UNION_SCOPE_CHANGE_OPTIMIZER = new UnionScopeChangeOptimizer();
 	private static final QueryModelNormalizerOptimizer QUERY_MODEL_NORMALIZER = new QueryModelNormalizerOptimizer();
+	private static final OrderLimitOptimizer ORDER_LIMIT_OPTIMIZER = new OrderLimitOptimizer();
 
 	private final EvaluationStrategy strategy;
 	private final TripleSource tripleSource;
@@ -113,10 +115,10 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		}
 		LmdbCascadesOptimizer cascades = cascadesOptimizer();
 		LmdbCascadesOptimizer.PlanningOutcome outcome = cascades.optimizeWithResult(tupleExpr, dataset, bindings);
+		TupleExpr optimized = finalizeOrderAndLimit(outcome.installedPlan(), dataset, bindings);
 		if (assertsEnabled) {
-			new ParentReferenceChecker(cascades).optimize(outcome.installedPlan(), dataset, bindings);
+			new ParentReferenceChecker(ORDER_LIMIT_OPTIMIZER).optimize(optimized, dataset, bindings);
 		}
-		TupleExpr optimized = outcome.installedPlan();
 		annotatePipelineCacheHit(optimized, false);
 		PackedPlanDecisionSummary summary = outcome.cascadesPlan() == null
 				? null
@@ -132,7 +134,8 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 										context.trackResultSize(), context.preserveObservationOrder(),
 										context.runtimeTelemetry(), strategy.getQueryEvaluationMode(), outcome.mode(),
 										context.revision().predicateRangeVersion(),
-										context.predicateRangeIdentity().predicates()))
+										context.predicateRangeIdentity().predicates(),
+										executionSnapshotEpoch.isPresent()))
 								.orElse(null);
 		return new LmdbPipelinePlanCache.PlanComputation(optimized, summary, refreshWork);
 	}
@@ -143,6 +146,13 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		}
 		for (QueryOptimizer optimizer : getOptimizers()) {
 			optimizer.optimize(tupleExpr, dataset, bindings);
+		}
+		return tupleExpr;
+	}
+
+	static TupleExpr finalizeOrderAndLimit(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		if (tupleExpr != null) {
+			ORDER_LIMIT_OPTIMIZER.optimize(tupleExpr, dataset, bindings);
 		}
 		return tupleExpr;
 	}
@@ -222,6 +232,7 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	public Iterable<QueryOptimizer> getOptimizers() {
 		List<QueryOptimizer> optimizers = requestBoundOptimizerList();
 		optimizers.add(cascadesOptimizer());
+		optimizers.add(ORDER_LIMIT_OPTIMIZER);
 		return withParentChecks(optimizers);
 	}
 
@@ -250,7 +261,7 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		if (!preserveSerializableObservationOrder) {
 			optimizers.add(new LmdbSetSemanticsOptimizer());
 		}
-		optimizers.add(new LmdbFilterSimplifierOptimizer(evaluationStatistics));
+		optimizers.add(new LmdbFilterSimplifierOptimizer(evaluationStatistics, executionSnapshotEpoch.isPresent()));
 		optimizers.add(new LmdbFilterHoistOptimizer());
 		return optimizers;
 	}

@@ -71,7 +71,7 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
-	void toStringAndJsonSuppressLegacyEstimatesWithoutPlannerUsage() {
+	void toStringAndJsonIncludeLegacyEstimatesWithoutPlannerUsage() {
 		GenericPlanNode node = new GenericPlanNode("Join");
 		node.setCostEstimate(12.0);
 		node.setResultSizeEstimate(34.0);
@@ -80,16 +80,16 @@ class GenericPlanNodeTest {
 		String text = node.toString();
 		String json = new ExplanationImpl(node, false, null).toJson();
 
-		assertFalse(text.contains("costEstimate="), text);
-		assertFalse(text.contains("resultSizeEstimate="), text);
+		assertTrue(text.contains("costEstimate=12"), text);
+		assertTrue(text.contains("resultSizeEstimate=34"), text);
 		assertTrue(text.contains("resultSizeActual=21"), text);
-		assertFalse(json.contains("\"costEstimate\""), json);
-		assertFalse(json.contains("\"resultSizeEstimate\""), json);
+		assertTrue(json.contains("\"costEstimate\""), json);
+		assertTrue(json.contains("\"resultSizeEstimate\""), json);
 		assertTrue(json.contains("\"resultSizeActual\""), json);
 	}
 
 	@Test
-	void toStringRendersPlannerUsedCardinalityAndCostVectorInsteadOfLegacyScalars() {
+	void toStringRendersLegacyScalarsAndPlannerUsedCardinalityAndCostVector() {
 		GenericPlanNode node = new GenericPlanNode("Join");
 		node.setCostEstimate(12.0);
 		node.setResultSizeEstimate(34.0);
@@ -106,8 +106,8 @@ class GenericPlanNodeTest {
 
 		String actual = node.toString();
 
-		assertFalse(actual.contains("costEstimate="), actual);
-		assertFalse(actual.contains("resultSizeEstimate="), actual);
+		assertTrue(actual.contains("costEstimate=12"), actual);
+		assertTrue(actual.contains("resultSizeEstimate=34"), actual);
 		assertTrue(actual.contains("plannedEstimateUsage=join_order_candidate"), actual);
 		assertTrue(actual.contains("plannedEstimateDecisionId=join-order:abc123"), actual);
 		assertTrue(actual.contains("plannedCardinalityShape=range"), actual);

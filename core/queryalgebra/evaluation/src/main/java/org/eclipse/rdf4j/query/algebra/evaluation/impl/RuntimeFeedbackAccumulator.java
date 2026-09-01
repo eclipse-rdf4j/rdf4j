@@ -16,7 +16,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.evaluation.DistinctBindingFeedback;
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 
 /** Fixed-size execution-local implementation of {@link RuntimeFeedbackTarget}. */
 @Experimental

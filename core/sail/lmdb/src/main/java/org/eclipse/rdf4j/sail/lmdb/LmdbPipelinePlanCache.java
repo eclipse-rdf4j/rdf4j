@@ -33,10 +33,10 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanDecisionSummary;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedSearchCompletionStatus;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 

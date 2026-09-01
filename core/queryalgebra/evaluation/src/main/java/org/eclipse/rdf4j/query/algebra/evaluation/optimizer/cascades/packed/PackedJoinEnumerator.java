@@ -13,9 +13,9 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
 
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /** Dense connected-subset join enumeration for one maximal inner-join region. */

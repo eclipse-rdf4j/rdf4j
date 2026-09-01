@@ -94,6 +94,7 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierMutation;
@@ -145,6 +146,11 @@ class TripleStore implements Closeable {
 	private static final String FRONTIER_MUTATION_JOURNAL_DB = "frontier-statistics-mutation-journal";
 	private static final int FRONTIER_MUTATION_JOURNAL_VERSION = 1;
 	private static final int FRONTIER_MUTATION_JOURNAL_BYTES = Integer.BYTES * 2 + Long.BYTES * 5;
+	private static final long FRONTIER_MUTATION_JOURNAL_METADATA_MAGIC = 0x464d4a5354415445L;
+	private static final int FRONTIER_MUTATION_JOURNAL_METADATA_VERSION = 1;
+	private static final int FRONTIER_MUTATION_JOURNAL_METADATA_BYTES = Integer.BYTES * 2 + Long.BYTES * 5;
+	// Persisted metadata v1 contract. Changing this capacity requires a metadata-version migration.
+	private static final int FRONTIER_MUTATION_JOURNAL_CAPACITY = 16_384;
 	private static final String PREDICATE_OBJECT_DOMAINS_VERSION = "rdf-term-domain-v4";
 	private static final long PREDICATE_OBJECT_DOMAIN_ENCODING_MAGIC = 0x52444654444f4d31L;
 	private static final int PREDICATE_OBJECT_DOMAIN_BYTES = Long.BYTES * 4;
@@ -179,8 +185,13 @@ class TripleStore implements Closeable {
 	private final int predicateObjectDomainsDbi;
 	private final int predicateObjectDomainDegradationsDbi;
 	private final int frontierMutationJournalDbi;
+	private final boolean frontierMutationJournalEnabled;
 	private long frontierJournalSequence;
-	private boolean frontierJournalSequenceDirty;
+	private long frontierJournalGapThroughSequence;
+	private long frontierJournalAcknowledgedThroughSequence;
+	private long frontierJournalRetainedMutationCount;
+	private boolean frontierJournalMetadataDirty;
+	private boolean frontierJournalDisabledMutationRecorded;
 	private int pageSize;
 	private final boolean autoGrow;
 	private final boolean pageCardinalityEstimator;
@@ -227,6 +238,7 @@ class TripleStore implements Closeable {
 		this.predicateGuaranteeIndexEnabled = config.getPredicateGuaranteeIndexEnabled();
 		this.predicateGuaranteeIndexAutoRebuild = config.getPredicateGuaranteeIndexAutoRebuild();
 		this.predicateGuaranteeExcludedPredicates = config.getPredicateGuaranteeExcludedPredicateSet();
+		this.frontierMutationJournalEnabled = config.getFrontierEstimatorMode() != FrontierEstimatorMode.OFF;
 		// create directory if it not exists
 		this.dir.mkdirs();
 
@@ -2105,9 +2117,30 @@ class TripleStore implements Closeable {
 
 	private void recordFrontierMutation(boolean insertion, boolean explicit, long subject, long predicate, long object,
 			long context) throws IOException {
-		if (recordCache == null) {
+		if (!frontierMutationJournalEnabled) {
+			recordDisabledFrontierMutation();
+		} else if (recordCache == null) {
 			appendFrontierMutation(insertion, explicit, subject, predicate, object, context);
 		}
+	}
+
+	private void recordDisabledFrontierMutation() throws IOException {
+		if (frontierJournalDisabledMutationRecorded) {
+			return;
+		}
+		if (writeTxn == 0L) {
+			throw new IOException("Frontier mutation must be recorded in an active LMDB write transaction");
+		}
+		try {
+			frontierJournalSequence = Math.incrementExact(frontierJournalSequence);
+		} catch (ArithmeticException overflow) {
+			throw new IOException("Frontier mutation sequence exhausted", overflow);
+		}
+		E(mdb_drop(writeTxn, frontierMutationJournalDbi, false));
+		frontierJournalGapThroughSequence = frontierJournalSequence;
+		frontierJournalRetainedMutationCount = 0L;
+		frontierJournalMetadataDirty = true;
+		frontierJournalDisabledMutationRecorded = true;
 	}
 
 	private void appendFrontierMutation(boolean insertion, boolean explicit, long subject, long predicate, long object,
@@ -2148,10 +2181,58 @@ class TripleStore implements Closeable {
 			}
 		}
 		frontierJournalSequence = sequence;
-		frontierJournalSequenceDirty = true;
+		try {
+			frontierJournalRetainedMutationCount = Math.incrementExact(frontierJournalRetainedMutationCount);
+		} catch (ArithmeticException overflow) {
+			throw new IOException("Frontier mutation journal retained-row count overflow", overflow);
+		}
+		trimFrontierMutationJournalToCapacity();
+		frontierJournalMetadataDirty = true;
 	}
 
-	private long readFrontierJournalSequence(MemoryStack stack, long txn) throws IOException {
+	private FrontierMutationJournalState readFrontierMutationJournalState(MemoryStack stack, long txn)
+			throws IOException {
+		MDBVal metadataKey = MDBVal.malloc(stack);
+		ByteBuffer metadataKeyBytes = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+		metadataKeyBytes.putLong(0L).flip();
+		metadataKey.mv_data(metadataKeyBytes);
+		MDBVal metadataValue = MDBVal.malloc(stack);
+		int metadataRc = mdb_get(txn, frontierMutationJournalDbi, metadataKey, metadataValue);
+		if (metadataRc != MDB_SUCCESS && metadataRc != MDB_NOTFOUND) {
+			throw new IOException(mdb_strerror(metadataRc));
+		}
+		if (metadataRc == MDB_SUCCESS) {
+			ByteBuffer metadata = metadataValue.mv_data();
+			if (metadata == null) {
+				throw new IOException("Frontier mutation journal metadata is corrupt");
+			}
+			metadata = metadata.order(ByteOrder.BIG_ENDIAN);
+			int position = metadata.position();
+			if (metadata.remaining() == FRONTIER_MUTATION_JOURNAL_METADATA_BYTES
+					&& metadata.getLong(position) == FRONTIER_MUTATION_JOURNAL_METADATA_MAGIC) {
+				int version = metadata.getInt(position + Long.BYTES);
+				int reserved = metadata.getInt(position + Long.BYTES + Integer.BYTES);
+				long latest = metadata.getLong(position + Long.BYTES + Integer.BYTES * 2);
+				long gapThrough = metadata.getLong(position + Long.BYTES * 2 + Integer.BYTES * 2);
+				long acknowledgedThrough = metadata.getLong(position + Long.BYTES * 3 + Integer.BYTES * 2);
+				long retained = metadata.getLong(position + Long.BYTES * 4 + Integer.BYTES * 2);
+				if (version != FRONTIER_MUTATION_JOURNAL_METADATA_VERSION || reserved != 0
+						|| latest < 0L || gapThrough < 0L || acknowledgedThrough < 0L
+						|| gapThrough > latest || acknowledgedThrough > latest || retained < 0L
+						|| retained > FRONTIER_MUTATION_JOURNAL_CAPACITY
+						|| retained > latest - Math.max(gapThrough, acknowledgedThrough)) {
+					throw new IOException("Frontier mutation journal metadata is corrupt");
+				}
+				return new FrontierMutationJournalState(latest, gapThrough, acknowledgedThrough, retained, false);
+			}
+			if (metadata.remaining() != Long.BYTES) {
+				throw new IOException("Frontier mutation journal metadata is corrupt");
+			}
+		}
+
+		long latest = metadataRc == MDB_SUCCESS
+				? metadataValue.mv_data().order(ByteOrder.BIG_ENDIAN).getLong(metadataValue.mv_data().position())
+				: 0L;
 		PointerBuffer cursorPointer = stack.mallocPointer(1);
 		E(mdb_cursor_open(txn, frontierMutationJournalDbi, cursorPointer));
 		long cursor = cursorPointer.get(0);
@@ -2160,7 +2241,7 @@ class TripleStore implements Closeable {
 		try {
 			int rc = mdb_cursor_get(cursor, key, value, MDB_LAST);
 			if (rc == MDB_NOTFOUND) {
-				return 0L;
+				return new FrontierMutationJournalState(latest, 0L, 0L, 0L, true);
 			}
 			if (rc != MDB_SUCCESS) {
 				throw new IOException(mdb_strerror(rc));
@@ -2169,14 +2250,25 @@ class TripleStore implements Closeable {
 			if (bytes == null || bytes.remaining() != Long.BYTES) {
 				throw new IOException("Frontier mutation journal key is corrupt");
 			}
-			long sequence = bytes.order(ByteOrder.BIG_ENDIAN).getLong(bytes.position());
-			if (sequence < 0L) {
+			long lastKey = bytes.order(ByteOrder.BIG_ENDIAN).getLong(bytes.position());
+			if (lastKey < 0L || latest < 0L) {
 				throw new IOException("Frontier mutation journal sequence is negative");
 			}
-			return sequence;
+			latest = Math.max(latest, lastKey);
 		} finally {
 			mdb_cursor_close(cursor);
 		}
+		MDBStat stat = MDBStat.malloc(stack);
+		E(mdb_stat(txn, frontierMutationJournalDbi, stat));
+		long retained = stat.ms_entries() - (metadataRc == MDB_SUCCESS ? 1L : 0L);
+		if (retained < 0L || retained > latest) {
+			throw new IOException("Legacy Frontier mutation journal metadata is corrupt");
+		}
+		return new FrontierMutationJournalState(latest, 0L, 0L, retained, true);
+	}
+
+	private long readFrontierJournalSequence(MemoryStack stack, long txn) throws IOException {
+		return readFrontierMutationJournalState(stack, txn).latestSequence();
 	}
 
 	long latestFrontierMutationSequence(Txn txn) throws IOException {
@@ -2194,22 +2286,194 @@ class TripleStore implements Closeable {
 		return txnManager.doWith((stack, txn) -> readFrontierJournalSequence(stack, txn));
 	}
 
-	private void flushFrontierJournalSequence() throws IOException {
-		if (!frontierJournalSequenceDirty) {
+	private void flushFrontierJournalMetadata() throws IOException {
+		if (!frontierJournalMetadataDirty) {
+			return;
+		}
+		try (MemoryStack stack = stackPush()) {
+			writeFrontierJournalMetadata(stack, writeTxn, new FrontierMutationJournalState(
+					frontierJournalSequence, frontierJournalGapThroughSequence,
+					frontierJournalAcknowledgedThroughSequence, frontierJournalRetainedMutationCount, false));
+		}
+		frontierJournalMetadataDirty = false;
+	}
+
+	private void writeFrontierJournalMetadata(MemoryStack stack, long txn, FrontierMutationJournalState state)
+			throws IOException {
+		validateFrontierJournalMetadata(state);
+		MDBVal key = MDBVal.malloc(stack);
+		ByteBuffer keyBytes = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+		keyBytes.putLong(0L).flip();
+		key.mv_data(keyBytes);
+		MDBVal value = MDBVal.malloc(stack);
+		ByteBuffer valueBytes = stack.malloc(FRONTIER_MUTATION_JOURNAL_METADATA_BYTES).order(ByteOrder.BIG_ENDIAN);
+		valueBytes.putLong(FRONTIER_MUTATION_JOURNAL_METADATA_MAGIC);
+		valueBytes.putInt(FRONTIER_MUTATION_JOURNAL_METADATA_VERSION);
+		valueBytes.putInt(0);
+		valueBytes.putLong(state.latestSequence());
+		valueBytes.putLong(state.gapThroughSequence());
+		valueBytes.putLong(state.acknowledgedThroughSequence());
+		valueBytes.putLong(state.retainedMutationCount());
+		valueBytes.flip();
+		value.mv_data(valueBytes);
+		E(mdb_put(txn, frontierMutationJournalDbi, key, value, 0));
+	}
+
+	private static void validateFrontierJournalMetadata(FrontierMutationJournalState state) throws IOException {
+		long unavailableThrough = Math.max(state.gapThroughSequence(), state.acknowledgedThroughSequence());
+		if (state.legacyMetadata()
+				|| state.latestSequence() < 0L || state.gapThroughSequence() < 0L
+				|| state.acknowledgedThroughSequence() < 0L || state.retainedMutationCount() < 0L
+				|| state.gapThroughSequence() > state.latestSequence()
+				|| state.acknowledgedThroughSequence() > state.latestSequence()
+				|| state.retainedMutationCount() > FRONTIER_MUTATION_JOURNAL_CAPACITY
+				|| state.retainedMutationCount() > state.latestSequence() - unavailableThrough) {
+			throw new IOException("Frontier mutation journal metadata is invalid");
+		}
+	}
+
+	private void trimFrontierMutationJournalToCapacity() throws IOException {
+		long overflow = frontierJournalRetainedMutationCount - FRONTIER_MUTATION_JOURNAL_CAPACITY;
+		if (overflow <= 0L) {
+			return;
+		}
+		long firstRetainedSequence = frontierJournalSequence - frontierJournalRetainedMutationCount + 1L;
+		long lastPrunedSequence = Math.addExact(firstRetainedSequence, overflow - 1L);
+		deleteFrontierMutationRows(writeTxn, firstRetainedSequence, lastPrunedSequence);
+		frontierJournalRetainedMutationCount -= overflow;
+		frontierJournalGapThroughSequence = Math.max(frontierJournalGapThroughSequence, lastPrunedSequence);
+	}
+
+	private FrontierMutationJournalState compactLegacyFrontierMutationJournalToCapacity(
+			long txn, FrontierMutationJournalState state) throws IOException {
+		if (!state.legacyMetadata() || state.retainedMutationCount() <= FRONTIER_MUTATION_JOURNAL_CAPACITY) {
+			return state;
+		}
+		long firstRetainedSequence = state.latestSequence() - FRONTIER_MUTATION_JOURNAL_CAPACITY + 1L;
+		ArrayList<byte[]> retainedRows = new ArrayList<>(FRONTIER_MUTATION_JOURNAL_CAPACITY);
+		try (MemoryStack stack = stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			MDBVal value = MDBVal.malloc(stack);
+			ByteBuffer keyBytes = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+			for (long sequence = firstRetainedSequence;; sequence++) {
+				keyBytes.clear();
+				keyBytes.putLong(sequence).flip();
+				key.mv_data(keyBytes);
+				int rc = mdb_get(txn, frontierMutationJournalDbi, key, value);
+				ByteBuffer row = value.mv_data();
+				if (rc != MDB_SUCCESS || row == null || row.remaining() != FRONTIER_MUTATION_JOURNAL_BYTES) {
+					throw new IOException("Legacy Frontier mutation journal retained range is corrupt");
+				}
+				byte[] copy = new byte[FRONTIER_MUTATION_JOURNAL_BYTES];
+				row.duplicate().get(copy);
+				retainedRows.add(copy);
+				if (sequence == state.latestSequence()) {
+					break;
+				}
+			}
+
+			E(mdb_drop(txn, frontierMutationJournalDbi, false));
+			for (int index = 0; index < retainedRows.size(); index++) {
+				stack.push();
+				try {
+					ByteBuffer retainedKeyBytes = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+					retainedKeyBytes.putLong(firstRetainedSequence + index).flip();
+					key.mv_data(retainedKeyBytes);
+					ByteBuffer retainedValueBytes = stack.malloc(FRONTIER_MUTATION_JOURNAL_BYTES);
+					retainedValueBytes.put(retainedRows.get(index)).flip();
+					value.mv_data(retainedValueBytes);
+					E(mdb_put(txn, frontierMutationJournalDbi, key, value, MDB_NOOVERWRITE));
+				} finally {
+					stack.pop();
+				}
+			}
+		}
+		return new FrontierMutationJournalState(
+				state.latestSequence(), Math.max(state.gapThroughSequence(), firstRetainedSequence - 1L),
+				state.acknowledgedThroughSequence(), FRONTIER_MUTATION_JOURNAL_CAPACITY, true);
+	}
+
+	private void deleteFrontierMutationRows(long txn, long firstSequence, long lastSequence) throws IOException {
+		if (firstSequence > lastSequence) {
 			return;
 		}
 		try (MemoryStack stack = stackPush()) {
 			MDBVal key = MDBVal.malloc(stack);
 			ByteBuffer keyBytes = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
-			keyBytes.putLong(0L).flip();
-			key.mv_data(keyBytes);
-			MDBVal value = MDBVal.malloc(stack);
-			ByteBuffer valueBytes = stack.malloc(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
-			valueBytes.putLong(frontierJournalSequence).flip();
-			value.mv_data(valueBytes);
-			E(mdb_put(writeTxn, frontierMutationJournalDbi, key, value, 0));
+			for (long sequence = firstSequence;; sequence++) {
+				keyBytes.clear();
+				keyBytes.putLong(sequence).flip();
+				key.mv_data(keyBytes);
+				int rc = mdb_del(txn, frontierMutationJournalDbi, key, null);
+				if (rc != MDB_SUCCESS) {
+					throw new IOException(rc == MDB_NOTFOUND
+							? "Frontier mutation journal retained range is corrupt"
+							: mdb_strerror(rc));
+				}
+				if (sequence == lastSequence) {
+					break;
+				}
+			}
 		}
-		frontierJournalSequenceDirty = false;
+	}
+
+	FrontierMutationJournalState frontierMutationJournalState() throws IOException {
+		return txnManager.doWith(this::readFrontierMutationJournalState);
+	}
+
+	void acknowledgeFrontierMutationsThrough(long coveredSequence) throws IOException {
+		if (coveredSequence < 0L) {
+			throw new IllegalArgumentException("Frontier publication coverage cannot be negative");
+		}
+		FrontierMutationJournalState observed = frontierMutationJournalState();
+		if (coveredSequence > observed.latestSequence()) {
+			throw new IllegalArgumentException("Frontier publication cannot cover future mutations");
+		}
+		if (!observed.acknowledgementChangesState(coveredSequence)) {
+			return;
+		}
+		/*
+		 * LMDB admits exactly one write transaction at a time. Starting this independent writer before taking the
+		 * TxnManager write lock is intentional: a main store writer owns its LMDB transaction for the whole Sail
+		 * transaction and takes that lock only while committing, so reversing the order could deadlock. LMDB orders the
+		 * two writers; after this commit, the write lock plus reset invalidates every reusable tracked read snapshot.
+		 */
+		transaction(env, (stack, txn) -> {
+			FrontierMutationJournalState state = readFrontierMutationJournalState(stack, txn);
+			if (coveredSequence > state.latestSequence()) {
+				throw new IllegalArgumentException("Frontier publication cannot cover future mutations");
+			}
+			state = compactLegacyFrontierMutationJournalToCapacity(txn, state);
+			long firstRetainedSequence = state.latestSequence() - state.retainedMutationCount() + 1L;
+			long lastPrunedSequence = Math.min(coveredSequence, state.latestSequence());
+			long pruned = lastPrunedSequence >= firstRetainedSequence
+					? lastPrunedSequence - firstRetainedSequence + 1L
+					: 0L;
+			deleteFrontierMutationRows(txn, firstRetainedSequence, lastPrunedSequence);
+			long gapThrough = state.gapThroughSequence() <= coveredSequence ? 0L : state.gapThroughSequence();
+			writeFrontierJournalMetadata(stack, txn, new FrontierMutationJournalState(
+					state.latestSequence(), gapThrough,
+					Math.max(state.acknowledgedThroughSequence(), coveredSequence),
+					state.retainedMutationCount() - pruned, false));
+			return null;
+		});
+		resetReadersAfterIndependentWrite();
+	}
+
+	private void resetReadersAfterIndependentWrite() throws IOException {
+		var lockManager = txnManager.lockManager();
+		long stamp;
+		try {
+			stamp = lockManager.writeLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while publishing Frontier journal acknowledgement", e);
+		}
+		try {
+			txnManager.reset();
+		} finally {
+			lockManager.unlockWrite(stamp);
+		}
 	}
 
 	List<FrontierMutation> readFrontierMutationsAfter(long afterSequence, int limit) throws IOException {
@@ -2220,6 +2484,12 @@ class TripleStore implements Closeable {
 			return List.of();
 		}
 		return txnManager.doWith((stack, txn) -> {
+			FrontierMutationJournalState state = readFrontierMutationJournalState(stack, txn);
+			if (frontierMutationJournalEnabled
+					&& Math.max(state.gapThroughSequence(), state.acknowledgedThroughSequence()) > afterSequence) {
+				throw new IOException("Frontier mutation journal no longer retains all mutations after sequence "
+						+ afterSequence);
+			}
 			ArrayList<FrontierMutation> mutations = new ArrayList<>(Math.min(limit, 1024));
 			PointerBuffer cursorPointer = stack.mallocPointer(1);
 			E(mdb_cursor_open(txn, frontierMutationJournalDbi, cursorPointer));
@@ -2802,8 +3072,7 @@ class TripleStore implements Closeable {
 				while ((r = it.next()) != null) {
 					if (requiresResize()) {
 						// resize map if required
-						flushFrontierJournalSequence();
-						E(mdb_txn_commit(writeTxn));
+						commitDurableStatementBatch();
 						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
 						E(mdb_env_set_mapsize(env, mapSize));
 						logger.debug("resized map to {}", mapSize);
@@ -2832,12 +3101,23 @@ class TripleStore implements Closeable {
 							decrementContext(stack, r.quad[TripleIndex.CONTEXT_IDX]);
 						}
 					}
-					appendFrontierMutation(r.add, explicit, r.quad[SUBJ_IDX], r.quad[PRED_IDX], r.quad[OBJ_IDX],
-							r.quad[CONTEXT_IDX]);
+					if (frontierMutationJournalEnabled) {
+						appendFrontierMutation(r.add, explicit, r.quad[SUBJ_IDX], r.quad[PRED_IDX], r.quad[OBJ_IDX],
+								r.quad[CONTEXT_IDX]);
+					} else {
+						recordDisabledFrontierMutation();
+					}
 				}
 			}
 		}
 		recordCache.close();
+	}
+
+	private void commitDurableStatementBatch() throws IOException {
+		flushPendingRdfTermDomains();
+		flushFrontierJournalMetadata();
+		E(mdb_txn_commit(writeTxn));
+		applyPendingRdfTermDomainCacheUpdates();
 	}
 
 	public void startTransaction() throws IOException {
@@ -2846,8 +3126,19 @@ class TripleStore implements Closeable {
 			PointerBuffer pp = stack.mallocPointer(1);
 			E(mdb_txn_begin(env, NULL, 0, pp));
 			writeTxn = pp.get(0);
-			frontierJournalSequence = readFrontierJournalSequence(stack, writeTxn);
-			frontierJournalSequenceDirty = false;
+			FrontierMutationJournalState persistedState = readFrontierMutationJournalState(stack, writeTxn);
+			FrontierMutationJournalState state = compactLegacyFrontierMutationJournalToCapacity(
+					writeTxn, persistedState);
+			frontierJournalSequence = state.latestSequence();
+			frontierJournalGapThroughSequence = state.gapThroughSequence();
+			frontierJournalAcknowledgedThroughSequence = state.acknowledgedThroughSequence();
+			frontierJournalRetainedMutationCount = state.retainedMutationCount();
+			frontierJournalMetadataDirty = state.legacyMetadata();
+			frontierJournalDisabledMutationRecorded = false;
+			trimFrontierMutationJournalToCapacity();
+			if (persistedState.retainedMutationCount() != frontierJournalRetainedMutationCount) {
+				frontierJournalMetadataDirty = true;
+			}
 		}
 	}
 
@@ -2867,11 +3158,7 @@ class TripleStore implements Closeable {
 						throw new SailException(e);
 					}
 					try {
-						if (recordCache == null) {
-							flushPendingRdfTermDomains();
-						}
-						flushFrontierJournalSequence();
-						E(mdb_txn_commit(writeTxn));
+						commitDurableStatementBatch();
 						if (recordCache != null) {
 							try {
 								txnManager.deactivate();
@@ -2885,11 +3172,8 @@ class TripleStore implements Closeable {
 									writeTxn = pp.get(0);
 								}
 								updateFromCache();
-								flushPendingRdfTermDomains();
-								flushFrontierJournalSequence();
 								// finally, commit write transaction
-								E(mdb_txn_commit(writeTxn));
-								applyPendingRdfTermDomainCacheUpdates();
+								commitDurableStatementBatch();
 							} finally {
 								recordCache = null;
 								txnManager.activate();
@@ -2924,8 +3208,31 @@ class TripleStore implements Closeable {
 				pendingRdfTermDomains.clear();
 				clearPendingRdfTermDomainCacheUpdates();
 				frontierJournalSequence = 0L;
-				frontierJournalSequenceDirty = false;
+				frontierJournalGapThroughSequence = 0L;
+				frontierJournalAcknowledgedThroughSequence = 0L;
+				frontierJournalRetainedMutationCount = 0L;
+				frontierJournalMetadataDirty = false;
+				frontierJournalDisabledMutationRecorded = false;
 			}
+		}
+	}
+
+	record FrontierMutationJournalState(long latestSequence, long gapThroughSequence,
+			long acknowledgedThroughSequence, long retainedMutationCount, boolean legacyMetadata) {
+
+		long unavailableThroughSequence() {
+			return Math.max(gapThroughSequence, acknowledgedThroughSequence);
+		}
+
+		boolean requiresBaseRebuildAfter(long coveredSequence) {
+			return unavailableThroughSequence() > coveredSequence;
+		}
+
+		boolean acknowledgementChangesState(long coveredSequence) {
+			long firstRetainedSequence = latestSequence - retainedMutationCount + 1L;
+			return coveredSequence > acknowledgedThroughSequence
+					|| gapThroughSequence > 0L && gapThroughSequence <= coveredSequence
+					|| retainedMutationCount > 0L && firstRetainedSequence <= coveredSequence;
 		}
 	}
 

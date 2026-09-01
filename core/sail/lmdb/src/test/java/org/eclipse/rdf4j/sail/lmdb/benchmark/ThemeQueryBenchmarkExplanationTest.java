@@ -23,14 +23,6 @@ import org.openjdk.jmh.annotations.Param;
 class ThemeQueryBenchmarkExplanationTest {
 
 	@Test
-	void defaultQueryExplanationLevelIsTimed() throws Exception {
-		Param param = ThemeQueryBenchmark.class.getField("queryExplanationLevel").getAnnotation(Param.class);
-
-		assertTrue(Arrays.asList(param.value()).contains(Explanation.Level.Timed.name()),
-				"ThemeQueryBenchmark should default non-timeout benchmark explanations to Timed");
-	}
-
-	@Test
 	void benchmarkExplanationLevelArgumentIsParsedCaseInsensitively() throws Exception {
 		var method = ThemeQueryBenchmark.class.getDeclaredMethod("explanationLevel", String.class);
 		method.setAccessible(true);

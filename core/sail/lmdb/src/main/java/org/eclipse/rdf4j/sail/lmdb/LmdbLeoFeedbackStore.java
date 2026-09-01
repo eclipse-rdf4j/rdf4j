@@ -22,7 +22,7 @@ import java.nio.file.StandardCopyOption;
 final class LmdbLeoFeedbackStore {
 
 	private static final String MAGIC = "rdf4j-lmdb-leo-surfaces";
-	private static final int VERSION = 5;
+	private static final int VERSION = 6;
 
 	private final Path path;
 	private final LmdbLeoFeedbackConfig config;
@@ -33,6 +33,11 @@ final class LmdbLeoFeedbackStore {
 	}
 
 	LmdbLeoSurfaceStats load(String expectedRevision) throws IOException {
+		return load(expectedRevision, 0L);
+	}
+
+	LmdbLeoSurfaceStats load(String expectedRevision, long expectedStatementMutationStamp) throws IOException {
+		requireStatementMutationStamp(expectedStatementMutationStamp);
 		if (path == null || !Files.exists(path)) {
 			return new LmdbLeoSurfaceStats(config);
 		}
@@ -40,7 +45,11 @@ final class LmdbLeoFeedbackStore {
 			String magic = readString(in);
 			int version = in.readInt();
 			String revision = readString(in);
-			if (!MAGIC.equals(magic) || version < 1 || version > VERSION || !revision.equals(expectedRevision)) {
+			if (!MAGIC.equals(magic) || version != VERSION || !revision.equals(expectedRevision)) {
+				return new LmdbLeoSurfaceStats(config);
+			}
+			long persistedStatementMutationStamp = in.readLong();
+			if (persistedStatementMutationStamp != expectedStatementMutationStamp) {
 				return new LmdbLeoSurfaceStats(config);
 			}
 			return LmdbLeoSurfaceStats.readFrom(in, config, version);
@@ -52,6 +61,11 @@ final class LmdbLeoFeedbackStore {
 	}
 
 	void persist(String revision, LmdbLeoSurfaceStats stats) throws IOException {
+		persist(revision, 0L, stats);
+	}
+
+	void persist(String revision, long statementMutationStamp, LmdbLeoSurfaceStats stats) throws IOException {
+		requireStatementMutationStamp(statementMutationStamp);
 		if (path == null || stats == null) {
 			return;
 		}
@@ -64,12 +78,20 @@ final class LmdbLeoFeedbackStore {
 			writeString(out, MAGIC);
 			out.writeInt(VERSION);
 			writeString(out, revision == null ? "" : revision);
+			out.writeLong(statementMutationStamp);
 			stats.writeTo(out);
 		}
 		try {
 			Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
 		} catch (IOException e) {
 			Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING);
+		}
+	}
+
+	private static void requireStatementMutationStamp(long statementMutationStamp) {
+		if (statementMutationStamp < 0L) {
+			throw new IllegalArgumentException("Statement mutation stamp must be non-negative: "
+					+ statementMutationStamp);
 		}
 	}
 

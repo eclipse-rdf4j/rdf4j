@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackTarget;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
@@ -46,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanCandidate
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRanking;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRankingAdvice;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;

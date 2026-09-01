@@ -91,7 +91,7 @@ public class QueryModelTreeToGenericPlanNodeTest {
 	}
 
 	@Test
-	public void converterSuppressesLegacyEstimatesWithoutPlannerUsage() {
+	public void converterIncludesLegacyEstimatesWithoutPlannerUsage() {
 		Join tupleExpr = new Join(
 				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
 				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
@@ -103,9 +103,9 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		tupleExpr.visit(converter);
 		GenericPlanNode root = converter.getGenericPlanNode();
 
-		assertThat(root.getCostEstimate()).isNull();
-		assertThat(root.getResultSizeEstimate()).isNull();
-		assertThat(root.toString()).doesNotContain("costEstimate=", "resultSizeEstimate=");
+		assertThat(root.getCostEstimate()).isEqualTo(12.0d);
+		assertThat(root.getResultSizeEstimate()).isEqualTo(34.0d);
+		assertThat(root.toString()).contains("costEstimate=12", "resultSizeEstimate=34");
 	}
 
 	@Test
@@ -385,6 +385,7 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		join.setRuntimeTelemetryEnabled(true);
 		join.setSourceRowsScannedActual(99);
 		join.setLongMetricActual("optimizer.candidateCount", 3L);
+		join.setLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL, 1L);
 		join.setDoubleMetricActual("optimizer.score", 12.5);
 		join.setStringMetricActual("optimizer.strategy", "greedy");
 		join.setStringMetricActual("optimizer.thresholds", "DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT=8");
@@ -396,7 +397,9 @@ public class QueryModelTreeToGenericPlanNodeTest {
 
 		GenericPlanNode root = converter.getGenericPlanNode();
 		assertThat(root.getSourceRowsScannedActual()).isNull();
-		assertThat(root.getLongMetricsActual()).containsEntry("optimizer.candidateCount", 3L);
+		assertThat(root.getLongMetricsActual())
+				.containsEntry("optimizer.candidateCount", 3L)
+				.doesNotContainKey(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL);
 		assertThat(root.getDoubleMetricsActual()).containsEntry("optimizer.score", 12.5);
 		assertThat(root.getStringMetricsActual())
 				.containsEntry("optimizer.strategy", "greedy")

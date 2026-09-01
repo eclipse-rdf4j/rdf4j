@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
@@ -454,6 +455,27 @@ public class HashJoinIterationTest {
 
 		assertEquals(leftJoinIterator(left, right),
 				join(left, right, contract, HashJoinIteration.BuildSide.RIGHT, null, true));
+	}
+
+	@Test
+	public void testLegacyLeftJoinAttributesIncludeUnassuredSharedBindings() throws QueryEvaluationException {
+		BindingSetAssignment leftBase = assignment(row("s", "S", "v", "V"));
+		BindingSetAssignment leftOptional = assignment(row("s", "S", "x", "left"));
+		BindingSetAssignment rightBase = assignment(row("s", "S", "y", "Y"));
+		BindingSetAssignment rightOptional = assignment(row("s", "S", "x", "right"));
+		LeftJoin leftShape = new LeftJoin(leftBase, leftOptional);
+		LeftJoin rightShape = new LeftJoin(rightBase, rightOptional);
+		LeftJoin fedXShape = new LeftJoin(leftShape, rightShape);
+		String[] legacyAttributes = HashJoinIteration.hashJoinAttributeNames(fedXShape);
+
+		assertEquals(Set.of("s", "x"), Set.of(legacyAttributes));
+
+		BindingSetAssignment leftRows = assignment(row("s", "S", "v", "V", "x", "left"));
+		BindingSetAssignment rightRows = assignment(row("s", "S", "x", "right", "y", "Y"));
+		List<String> actual = join(leftRows, rightRows, HashJoinBindingContract.legacy(legacyAttributes),
+				HashJoinIteration.BuildSide.RIGHT, null, true);
+
+		assertEquals(List.of("s=S,v=V,x=left"), actual);
 	}
 
 	@Test

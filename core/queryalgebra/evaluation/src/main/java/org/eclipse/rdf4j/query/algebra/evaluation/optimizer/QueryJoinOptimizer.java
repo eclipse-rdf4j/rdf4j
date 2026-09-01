@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
@@ -403,6 +404,34 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			};
 
 			while (!tupleExprs.isEmpty()) {
+				if (!estimatorReorderableFactor(tupleExprs.getFirst())) {
+					ret.addLast(tupleExprs.removeFirst());
+					continue;
+				}
+
+				int segmentSize = 1;
+				while (segmentSize < tupleExprs.size()
+						&& estimatorReorderableFactor(tupleExprs.get(segmentSize))) {
+					segmentSize++;
+				}
+				List<TupleExpr> segment = new ArrayList<>(tupleExprs.subList(0, segmentSize));
+				tupleExprs.subList(0, segmentSize).clear();
+				ret.addAll(reorderEstimatorSegment(segment, getCard));
+			}
+
+			return ret;
+		}
+
+		/**
+		 * Reorders one maximal run of estimator-eligible statement patterns and property paths. Paths participate
+		 * because they can be the only binding bridge between otherwise disconnected statement-pattern components.
+		 * Every other join factor remains a fence in the outer list, preserving the binding and scope context on each
+		 * side of VALUES, subqueries, all-variable patterns, and other non-eligible factors.
+		 */
+		private Deque<TupleExpr> reorderEstimatorSegment(List<TupleExpr> tupleExprs,
+				BiFunction<TupleExpr, TupleExpr, Double> getCard) {
+			Deque<TupleExpr> ret = new ArrayDeque<>();
+			while (!tupleExprs.isEmpty()) {
 				if (ret.isEmpty()) {
 					TupleExpr bestStart = selectBestStartingExpr(tupleExprs, getCard);
 					if (bestStart != null) {
@@ -421,14 +450,21 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				TupleExpr bestCandidate = null;
 				double bestCost = Double.MAX_VALUE;
 				boolean connectedCandidateAvailable = tupleExprs.stream()
-						.anyMatch(candidate -> sharesBindingWithAny(candidate, ret));
+						.filter(QueryJoinOptimizer::estimatorReorderableFactor)
+						.anyMatch(candidate -> sharesBindingWithAnyReorderable(candidate, ret));
 				for (TupleExpr cand : tupleExprs) {
-					if (connectedCandidateAvailable && !sharesBindingWithAny(cand, ret)) {
+					if (!estimatorReorderableFactor(cand)) {
+						continue;
+					}
+					if (connectedCandidateAvailable && !sharesBindingWithAnyReorderable(cand, ret)) {
 						continue;
 					}
 
 					// compute the minimum join‐cost between cand and anything in ret
 					for (TupleExpr prev : ret) {
+						if (!estimatorReorderableFactor(prev)) {
+							continue;
+						}
 						if (connectedCandidateAvailable && !sharesBinding(prev, cand)) {
 							continue;
 						}
@@ -525,6 +561,16 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private boolean sharesBindingWithAny(TupleExpr candidate, Iterable<TupleExpr> tupleExprs) {
 			for (TupleExpr tupleExpr : tupleExprs) {
 				if (candidate != tupleExpr && sharesBinding(candidate, tupleExpr)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private boolean sharesBindingWithAnyReorderable(TupleExpr candidate, Iterable<TupleExpr> tupleExprs) {
+			for (TupleExpr tupleExpr : tupleExprs) {
+				if (candidate != tupleExpr && estimatorReorderableFactor(tupleExpr)
+						&& sharesBinding(candidate, tupleExpr)) {
 					return true;
 				}
 			}
@@ -1053,6 +1099,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						&& ((StatementPattern) cand).getObjectVar().hasValue())
 				|| (((StatementPattern) cand).getContextVar() != null
 						&& ((StatementPattern) cand).getContextVar().hasValue()));
+	}
+
+	private static boolean estimatorReorderableFactor(TupleExpr candidate) {
+		return statementPatternWithMinimumOneConstant(candidate)
+				|| candidate instanceof ArbitraryLengthPath
+				|| candidate instanceof ZeroLengthPath;
 	}
 
 	private static int getUnionSize(Set<String> currentListNames, Set<String> candidateBindingNames) {

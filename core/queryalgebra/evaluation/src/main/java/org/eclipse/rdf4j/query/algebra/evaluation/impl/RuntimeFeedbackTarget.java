@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.evaluation.DistinctBindingFeedback;
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 
 /** Direct, pre-resolved destination and execution-local primitive recorder. */
 @Experimental

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
 
@@ -24,8 +25,10 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -220,6 +223,40 @@ public class TripleStoreAutoGrowTest {
 		}
 	}
 
+	@Test
+	void recordCacheFailureAfterFirstCommitPersistsPredicateGuaranteeWidening() throws Exception {
+		File storeDir = new File(dataDir, "predicate-guarantee-first-commit");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		var valueFactory = SimpleValueFactory.getInstance();
+		long predicateId = 702L;
+
+		try (FailingCacheReplayTripleStore store = new FailingCacheReplayTripleStore(storeDir, config)) {
+			store.startTransaction();
+			assertTrue(store.storeTriple(101L, predicateId, 201L, 0L, true));
+			store.recordRdfTermDomain(predicateId, valueFactory.createIRI("urn:test:iri"));
+			store.commit();
+
+			store.startTransaction();
+			assertTrue(store.storeTriple(102L, predicateId, 202L, 0L, true));
+			store.recordRdfTermDomain(predicateId, valueFactory.createLiteral("literal"));
+			forceRecordCache(store);
+
+			IOException failure = assertThrows(IOException.class, store::commit);
+			assertEquals("simulated record-cache replay failure", failure.getMessage());
+		}
+
+		try (TripleStore reopened = new TripleStore(storeDir, config, null);
+				Txn txn = reopened.getTxnManager().createReadTxn()) {
+			assertEquals(1, count(reopened.getTriples(txn, 102L, predicateId, 202L, 0L, true)),
+					"the first overflow commit is already durable when cache replay fails");
+			RdfTermDomain persisted = readPersistedRdfTermDomains(reopened).get(predicateId);
+			assertTrue(persisted != null, "the durable predicate-domain row must survive reopen");
+			assertTrue(persisted.has(RdfTermDomain.Fact.IRI));
+			assertTrue(persisted.has(RdfTermDomain.Fact.LITERAL),
+					"every durable statement batch must atomically persist its conservative domain widening");
+		}
+	}
+
 	private static StatementBatch createBatchExceedingRemainingCapacity(File dataDir, LmdbStoreConfig config,
 			long targetRemainingCapacity)
 			throws Exception {
@@ -298,6 +335,13 @@ public class TripleStoreAutoGrowTest {
 		File cacheDir = new File(getFileField(store, "dir"), "forced-record-cache");
 		assertTrue(cacheDir.mkdirs() || cacheDir.isDirectory());
 		recordCacheField.set(store, new TxnRecordCache(cacheDir));
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<Long, RdfTermDomain> readPersistedRdfTermDomains(TripleStore store) throws Exception {
+		Method method = TripleStore.class.getDeclaredMethod("readAllRdfTermDomains");
+		method.setAccessible(true);
+		return (Map<Long, RdfTermDomain>) method.invoke(store);
 	}
 
 	private static File getFileField(TripleStore store, String fieldName) throws Exception {
@@ -382,6 +426,18 @@ public class TripleStoreAutoGrowTest {
 				throw new IOException("MDB_MAP_FULL: Environment mapsize limit reached");
 			}
 			super.incrementAlignedContext(stack, context, amount);
+		}
+	}
+
+	private static final class FailingCacheReplayTripleStore extends TripleStore {
+
+		private FailingCacheReplayTripleStore(File dir, LmdbStoreConfig config) throws IOException {
+			super(dir, config, null);
+		}
+
+		@Override
+		protected void updateFromCache() throws IOException {
+			throw new IOException("simulated record-cache replay failure");
 		}
 	}
 

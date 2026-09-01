@@ -30,10 +30,10 @@ final class ColdFilterSynopsis {
 	static final int MAX_CAPACITY = 6_144;
 
 	private static final int MAGIC = 0x43465331;
-	private static final int VERSION = 1;
+	private static final int VERSION = 2;
 	private static final int ARRAY_COUNT = 6;
 	private static final int ROW_BYTES = ARRAY_COUNT * Long.BYTES;
-	private static final int PAYLOAD_FIXED_BYTES = 3 * Long.BYTES + 2 * Integer.BYTES + Long.BYTES;
+	private static final int PAYLOAD_FIXED_BYTES = 4 * Long.BYTES + 2 * Integer.BYTES + Long.BYTES;
 	private static final int SERIALIZED_FIXED_BYTES = 3 * Integer.BYTES + PAYLOAD_FIXED_BYTES + Integer.BYTES;
 	private static final long RANK_SEED = 0x243f6a8885a308d3L;
 	private static final long TIE_BREAK_SEED = 0x13198a2e03707344L;
@@ -118,11 +118,17 @@ final class ColdFilterSynopsis {
 	}
 
 	byte[] serialize(SketchSnapshotIdentity identity) throws IOException {
+		return serialize(identity, 0L);
+	}
+
+	byte[] serialize(SketchSnapshotIdentity identity, long statementMutationStamp) throws IOException {
 		Objects.requireNonNull(identity, "identity");
+		requireStatementMutationStamp(statementMutationStamp);
 		ByteArrayOutputStream payloadBytes = new ByteArrayOutputStream(
 				PAYLOAD_FIXED_BYTES + retainedRows() * ROW_BYTES);
 		try (DataOutputStream payload = new DataOutputStream(payloadBytes)) {
 			identity.writeTo(payload);
+			payload.writeLong(statementMutationStamp);
 			payload.writeInt(capacity);
 			payload.writeInt(retainedRows());
 			payload.writeLong(totalRows);
@@ -153,8 +159,14 @@ final class ColdFilterSynopsis {
 
 	static ColdFilterSynopsis deserialize(byte[] serialized, SketchSnapshotIdentity expectedIdentity,
 			int configuredCapacity) throws IOException {
+		return deserialize(serialized, expectedIdentity, 0L, configuredCapacity);
+	}
+
+	static ColdFilterSynopsis deserialize(byte[] serialized, SketchSnapshotIdentity expectedIdentity,
+			long expectedStatementMutationStamp, int configuredCapacity) throws IOException {
 		Objects.requireNonNull(serialized, "serialized");
 		Objects.requireNonNull(expectedIdentity, "expectedIdentity");
+		requireStatementMutationStamp(expectedStatementMutationStamp);
 		if (configuredCapacity < 0 || configuredCapacity > MAX_CAPACITY) {
 			throw new IOException("Invalid configured cold synopsis capacity: " + configuredCapacity);
 		}
@@ -187,18 +199,22 @@ final class ColdFilterSynopsis {
 			if ((int) checksum.getValue() != expectedChecksum) {
 				throw new IOException("Cold synopsis checksum mismatch");
 			}
-			return deserializePayload(payload, expectedIdentity, configuredCapacity);
+			return deserializePayload(payload, expectedIdentity, expectedStatementMutationStamp, configuredCapacity);
 		} catch (IllegalArgumentException e) {
 			throw new IOException("Invalid cold synopsis payload", e);
 		}
 	}
 
 	private static ColdFilterSynopsis deserializePayload(byte[] payload, SketchSnapshotIdentity expectedIdentity,
-			int configuredCapacity) throws IOException {
+			long expectedStatementMutationStamp, int configuredCapacity) throws IOException {
 		try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(payload))) {
 			SketchSnapshotIdentity persistedIdentity = SketchSnapshotIdentity.readFrom(in);
 			if (!persistedIdentity.equals(expectedIdentity)) {
 				throw new IOException("Cold synopsis snapshot identity mismatch");
+			}
+			long persistedStatementMutationStamp = in.readLong();
+			if (persistedStatementMutationStamp != expectedStatementMutationStamp) {
+				throw new IOException("Cold synopsis statement mutation stamp mismatch");
 			}
 			int capacity = in.readInt();
 			int retainedRows = in.readInt();
@@ -228,6 +244,13 @@ final class ColdFilterSynopsis {
 			}
 			return new ColdFilterSynopsis(capacity, totalRows, ranks, tieBreaks, subjects, predicates, objects,
 					contexts);
+		}
+	}
+
+	private static void requireStatementMutationStamp(long statementMutationStamp) {
+		if (statementMutationStamp < 0L) {
+			throw new IllegalArgumentException("Statement mutation stamp must be non-negative: "
+					+ statementMutationStamp);
 		}
 	}
 

@@ -52,7 +52,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -401,9 +400,6 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 
 		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
 			optimizer.optimize(root, null, EmptyBindingSet.getInstance());
-			if (optimizer instanceof QueryJoinOptimizer) {
-				break;
-			}
 		}
 
 		Filter notExistsFilter = findFirst(root, Filter.class,
@@ -414,7 +410,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 				.toList();
 
 		assertThat(groupFilters)
-				.as("The in-scope IN filter should be pushed into the join group before join ordering")
+				.as("The in-scope IN filter should be pushed into the final join group")
 				.singleElement()
 				.satisfies(filter -> {
 					assertThat(filter.getCondition()).isInstanceOf(ListMemberOperator.class);

@@ -19,8 +19,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.OptionalDouble;
 
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.InvocationAggregateView;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 
 /** Hierarchical Normal-Inverse-Gamma learning over logical truths and physical cost residuals. */
 final class FrontierLearningModel {

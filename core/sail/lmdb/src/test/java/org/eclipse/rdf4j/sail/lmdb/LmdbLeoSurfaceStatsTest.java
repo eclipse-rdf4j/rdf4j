@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoEvidence;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
@@ -105,7 +106,7 @@ class LmdbLeoSurfaceStatsTest {
 		store.persist("revision-a", stats);
 
 		byte[] bytes = Files.readAllBytes(path);
-		assertEquals(5, persistedVersion(bytes), "new LEO evidence must use the version-five format");
+		assertEquals(6, persistedVersion(bytes), "new LEO evidence must use the statement-stamped format");
 
 		LmdbLeoSurfaceStats loaded = store.load("revision-a");
 		assertTrue(loaded.estimateFanout(3L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 70L).isPresent());
@@ -115,7 +116,23 @@ class LmdbLeoSurfaceStatsTest {
 	}
 
 	@Test
-	void storeReadsVersionFourAsLegacyFallback(@TempDir Path tempDir) throws Exception {
+	void persistedSurfaceRejectsAStatementMutationOutsideItsSnapshotIdentity(@TempDir Path tempDir) throws Exception {
+		Path estimatorPath = estimatorPath(tempDir);
+		AtomicLong committedStatementMutationStamp = new AtomicLong(1L);
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath,
+				() -> TEST_SNAPSHOT_IDENTITY, () -> true, committedStatementMutationStamp::get);
+		stats.recordFanout(5L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 90L, 44L, 1L);
+		stats.persistIfDirty();
+
+		committedStatementMutationStamp.set(2L);
+		LmdbOperatorFeedbackStats reloaded = new LmdbOperatorFeedbackStats(estimatorPath,
+				() -> TEST_SNAPSHOT_IDENTITY, () -> true, committedStatementMutationStamp::get);
+		assertTrue(reloaded.evidence(LeoSurfaceKey.fanout(5L, "subject", 90L)).isEmpty(),
+				"LEO surfaces must not survive a statement mutation merely because the sketch identity is unchanged");
+	}
+
+	@Test
+	void storeRejectsVersionFourWithoutAStatementStamp(@TempDir Path tempDir) throws Exception {
 		Path path = tempDir.resolve("leo-surfaces.bin");
 		LmdbLeoFeedbackStore store = new LmdbLeoFeedbackStore(path, LmdbLeoFeedbackConfig.defaultConfig());
 		LmdbLeoSurfaceStats stats = new LmdbLeoSurfaceStats(LmdbLeoFeedbackConfig.defaultConfig());
@@ -127,7 +144,7 @@ class LmdbLeoSurfaceStatsTest {
 		Files.write(path, bytes);
 
 		LmdbLeoSurfaceStats loaded = store.load("revision-a");
-		assertTrue(loaded.estimateFanout(3L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 70L).isPresent());
+		assertFalse(loaded.estimateFanout(3L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 70L).isPresent());
 	}
 
 	@Test

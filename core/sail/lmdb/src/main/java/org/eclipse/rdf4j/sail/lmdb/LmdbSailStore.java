@@ -454,9 +454,18 @@ class LmdbSailStore implements SailStore {
 					statisticsService = LmdbStatisticsService.open(
 							frontierStatisticsDirectory, statisticsHeapGovernor,
 							config.getFrontierSynopsisBudgetBytes(), config.getFrontierStatisticsMaxLagMillis());
-					long latestSequence = tripleStore.latestFrontierMutationSequence();
+					TripleStore.FrontierMutationJournalState journalState = tripleStore
+							.frontierMutationJournalState();
+					long latestSequence = journalState.latestSequence();
+					StoreSnapshotCoordinates storeSnapshot = currentStoreSnapshotCoordinates();
 					statisticsService.recordStoreCommit(
-							learnedSidecarDataStamp(), latestSequence, System.currentTimeMillis());
+							storeSnapshot.physicalSnapshotEpoch(), latestSequence, System.currentTimeMillis());
+					FrontierStatisticsStatus status = statisticsService.status();
+					if (status.availability() == FrontierStatisticsAvailability.READY
+							&& !journalState.requiresBaseRebuildAfter(status.coveredSequence())) {
+						acknowledgeFrontierCoverage(
+								Math.min(status.coveredSequence(), latestSequence));
+					}
 					installCurrentFrontierMutationTail(latestSequence);
 				} catch (IllegalArgumentException | IOException failure) {
 					logger.warn("Frontier Statistics V2 cannot open; conventional estimates remain available", failure);
@@ -468,10 +477,13 @@ class LmdbSailStore implements SailStore {
 			initialized = true;
 			if (statisticsService != null) {
 				FrontierStatisticsStatus status = statisticsService.status();
-				long latestSequence = tripleStore.latestFrontierMutationSequence();
+				TripleStore.FrontierMutationJournalState journalState = tripleStore
+						.frontierMutationJournalState();
+				long latestSequence = journalState.latestSequence();
 				if (statisticsService.rebuildRequired()
 						|| status.availability() != FrontierStatisticsAvailability.READY
-						|| status.coveredSequence() < latestSequence) {
+						|| status.coveredSequence() < latestSequence
+						|| journalState.requiresBaseRebuildAfter(status.coveredSequence())) {
 					requestFrontierRebuild();
 				}
 			}
@@ -492,14 +504,15 @@ class LmdbSailStore implements SailStore {
 						config.getOptimizerSamplingEnabled(), config.getOptimizerSamplingMaxMillis(),
 						config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled(),
 						identitySupplier,
-						config.getSketchEstimatorColdSynopsisCapacity(), () -> adaptiveEvidenceAllowed);
+						config.getSketchEstimatorColdSynopsisCapacity(), () -> adaptiveEvidenceAllowed,
+						this::statementMutationStamp);
 				if (sketchBasedJoinEstimator != null) {
 					sketchBasedJoinEstimator.setRebuildObserver(filterSelectivityStats.coldSynopsisRebuildObserver());
 				}
 				operatorFeedbackStats = new LmdbOperatorFeedbackStats(estimatorPath,
 						identitySupplier,
 						() -> adaptiveEvidenceAllowed,
-						this::learnedSidecarDataStamp);
+						this::statementMutationStamp);
 				operatorFeedbackStats.setPlanExecutionObserver(
 						frontierPlannerSettings.pipelinePlanCache()::observeExecution);
 				startBackgroundFilterSampling();
@@ -689,16 +702,27 @@ class LmdbSailStore implements SailStore {
 						config.getSketchEstimatorStrategy(), SketchBasedJoinEstimator.SketchStrategy.UNIFIED));
 	}
 
-	/**
-	 * The LMDB write-transaction id: a persistent, monotonic data version used to reject learned sidecars whose
-	 * evidence predates data that changed after the sketch identity was last published (the crash window between a
-	 * mutating commit and the asynchronous synopsis rebuild).
-	 */
-	private long learnedSidecarDataStamp() {
+	private StoreSnapshotCoordinates currentStoreSnapshotCoordinates() throws IOException {
+		Txn txn = tripleStore.getTxnManager().getReadTxn();
+		return new StoreSnapshotCoordinates(
+				LmdbFrontierSnapshotSource.snapshotEpoch(txn), tripleStore.latestFrontierMutationSequence(txn));
+	}
+
+	private long statementMutationStamp() {
 		try {
-			return LmdbFrontierSnapshotSource.snapshotEpoch(tripleStore.getTxnManager().getReadTxn());
-		} catch (IOException | RuntimeException e) {
-			return 0L;
+			return tripleStore.latestFrontierMutationSequence();
+		} catch (IOException e) {
+			throw new UncheckedIOException("Could not read the LMDB statement mutation stamp", e);
+		}
+	}
+
+	private void acknowledgeFrontierCoverage(long coveredSequence) throws IOException {
+		tripleStore.acknowledgeFrontierMutationsThrough(coveredSequence);
+		LmdbStatisticsService service = statisticsService;
+		if (service != null) {
+			StoreSnapshotCoordinates currentSnapshot = currentStoreSnapshotCoordinates();
+			service.recordMetadataOnlySnapshotAdvance(
+					currentSnapshot.physicalSnapshotEpoch(), currentSnapshot.statementMutationStamp());
 		}
 	}
 
@@ -706,15 +730,13 @@ class LmdbSailStore implements SailStore {
 		if (storeId == null) {
 			return null;
 		}
-		try {
-			long snapshotEpoch = LmdbFrontierSnapshotSource.snapshotEpoch(tripleStore.getTxnManager().getReadTxn());
-			return new SketchSnapshotIdentity(
-					storeId.getMostSignificantBits(),
-					storeId.getLeastSignificantBits(),
-					snapshotEpoch);
-		} catch (IOException | RuntimeException e) {
-			return null;
-		}
+		return new SketchSnapshotIdentity(
+				storeId.getMostSignificantBits(),
+				storeId.getLeastSignificantBits(),
+				statementMutationStamp());
+	}
+
+	private record StoreSnapshotCoordinates(long physicalSnapshotEpoch, long statementMutationStamp) {
 	}
 
 	private LmdbStorePathEvent beginLmdbStorePathEvent(String phase, boolean preferThreading, int statementCount,
@@ -1249,8 +1271,14 @@ class LmdbSailStore implements SailStore {
 			return DeltaRefreshResult.BASE_REBUILD_REQUIRED;
 		}
 		try {
-			long latestSequence = tripleStore.latestFrontierMutationSequence();
+			TripleStore.FrontierMutationJournalState journalState = tripleStore
+					.frontierMutationJournalState();
+			if (journalState.requiresBaseRebuildAfter(before.coveredSequence())) {
+				return DeltaRefreshResult.BASE_REBUILD_REQUIRED;
+			}
+			long latestSequence = journalState.latestSequence();
 			if (latestSequence <= before.coveredSequence()) {
+				acknowledgeFrontierCoverage(latestSequence);
 				service.recordBuildProgress(FrontierStatisticsBuildPhase.IDLE, 0.0d, -1L,
 						before.deleteDebt(), before.auditLeafQError(), before.auditJoinQError());
 				return DeltaRefreshResult.COMPLETE;
@@ -1268,6 +1296,7 @@ class LmdbSailStore implements SailStore {
 			service.recordBuildProgress(FrontierStatisticsBuildPhase.APPLYING_DELTAS, 0.0d, -1L,
 					before.deleteDebt(), before.auditLeafQError(), before.auditJoinQError());
 			FrontierStatisticsManifest manifest = service.publishDelta(publishable, buildConfig);
+			acknowledgeFrontierCoverage(manifest.coveredSequence());
 			long currentSequence = tripleStore.latestFrontierMutationSequence();
 			double deleteDebt = service.status().deleteDebt();
 			service.recordBuildProgress(FrontierStatisticsBuildPhase.IDLE, 0.0d,
@@ -1304,6 +1333,13 @@ class LmdbSailStore implements SailStore {
 				return;
 			}
 			long coveredSequence = status.coveredSequence();
+			TripleStore.FrontierMutationJournalState journalState = tripleStore
+					.frontierMutationJournalState();
+			if (journalState.requiresBaseRebuildAfter(coveredSequence)) {
+				service.clearMutationTail();
+				frontierMutationTailSequence = latestSequence;
+				return;
+			}
 			if (latestSequence <= coveredSequence) {
 				service.installMutationTail(List.of());
 				frontierMutationTailSequence = latestSequence;
@@ -1329,6 +1365,13 @@ class LmdbSailStore implements SailStore {
 			}
 			FrontierStatisticsStatus status = service.status();
 			if (status.availability() != FrontierStatisticsAvailability.READY) {
+				service.clearMutationTail();
+				frontierMutationTailSequence = latestSequence;
+				return;
+			}
+			TripleStore.FrontierMutationJournalState journalState = tripleStore
+					.frontierMutationJournalState();
+			if (journalState.requiresBaseRebuildAfter(status.coveredSequence())) {
 				service.clearMutationTail();
 				frontierMutationTailSequence = latestSequence;
 				return;
@@ -1413,6 +1456,7 @@ class LmdbSailStore implements SailStore {
 			service.recordBuildProgress(FrontierStatisticsBuildPhase.PUBLISHING, 0.0d, -1L,
 					0.0d, Double.NaN, Double.NaN);
 			service.publish(manifest);
+			acknowledgeFrontierCoverage(manifest.coveredSequence());
 			installCurrentFrontierMutationTail(tripleStore.latestFrontierMutationSequence());
 			long elapsedNanos = Math.max(1L, System.nanoTime() - started);
 			double rowsPerSecond = 2.0d * totalRows(manifest) * 1_000_000_000.0d / elapsedNanos;
@@ -1543,11 +1587,12 @@ class LmdbSailStore implements SailStore {
 
 	CloseableIteration<? extends Statement> createStatementIterator(Txn txn, StatementPattern statementPattern,
 			Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
-		return createStatementIterator(txn, statementPattern, null, subj, pred, obj, explicit, contexts);
+		return createStatementIterator(txn, statementPattern, null, 0L, subj, pred, obj, explicit, contexts);
 	}
 
 	private CloseableIteration<? extends Statement> createStatementIterator(Txn txn, StatementPattern statementPattern,
-			Map<StatementLookupCacheKey, StatementLookupCacheEntry> exactStatementLookupCache, Resource subj, IRI pred,
+			Map<StatementLookupCacheKey, StatementLookupCacheEntry> exactStatementLookupCache, long cacheTxnVersion,
+			Resource subj, IRI pred,
 			Value obj, boolean explicit, Resource... contexts) throws IOException {
 		if (!explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
@@ -1614,7 +1659,7 @@ class LmdbSailStore implements SailStore {
 			long contextID = contextIDList.get(i);
 			StatementLookupCacheKey cacheKey = null;
 			if (canUseDirectStatementLookup && exactStatementLookupCache != null) {
-				cacheKey = new StatementLookupCacheKey(subjID, predID, objID, contextID, explicit);
+				cacheKey = new StatementLookupCacheKey(cacheTxnVersion, subjID, predID, objID, contextID, explicit);
 				StatementLookupCacheEntry cachedLookup = exactStatementLookupCache.get(cacheKey);
 				if (cachedLookup != null) {
 					perContextIterList.add(new CachedStatementIteration(cachedLookup));
@@ -1631,6 +1676,20 @@ class LmdbSailStore implements SailStore {
 				perContextIterList.add(cacheExactStatementLookup(exactStatementLookupCache, cacheKey, iterator));
 			} else {
 				perContextIterList.add(iterator);
+			}
+		}
+		if (canUseDirectStatementLookup && exactStatementLookupCache != null) {
+			try {
+				requireSnapshotVersion(txn, cacheTxnVersion);
+			} catch (IOException snapshotFailure) {
+				for (CloseableIteration<? extends Statement> iteration : perContextIterList) {
+					try {
+						iteration.close();
+					} catch (RuntimeException closeFailure) {
+						snapshotFailure.addSuppressed(closeFailure);
+					}
+				}
+				throw snapshotFailure;
 			}
 		}
 
@@ -1682,11 +1741,12 @@ class LmdbSailStore implements SailStore {
 
 	long countStatementIterator(Txn txn, StatementPattern statementPattern,
 			Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
-		return countStatementIterator(txn, statementPattern, null, subj, pred, obj, explicit, contexts);
+		return countStatementIterator(txn, statementPattern, null, 0L, subj, pred, obj, explicit, contexts);
 	}
 
 	private long countStatementIterator(Txn txn, StatementPattern statementPattern,
-			Map<StatementCountCacheKey, Long> exactStatementCountCache, Resource subj, IRI pred, Value obj,
+			Map<StatementCountCacheKey, Long> exactStatementCountCache, long cacheTxnVersion, Resource subj, IRI pred,
+			Value obj,
 			boolean explicit, Resource... contexts) throws IOException {
 		if (!explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
@@ -1738,7 +1798,8 @@ class LmdbSailStore implements SailStore {
 		LmdbValueIdFilter idFilter = LmdbValueIdFilter.fromStatementPattern(statementPattern);
 		if (canUseDirectStatementCount(subjID, predID, objID, contextIDList, idFilter)) {
 			for (long contextID : contextIDList) {
-				long statementCount = exactStatementCount(txn, exactStatementCountCache, subjID, predID, objID,
+				long statementCount = exactStatementCount(txn, exactStatementCountCache, cacheTxnVersion, subjID,
+						predID, objID,
 						contextID, explicit);
 				if (statementCount >= 0) {
 					count += statementCount;
@@ -1746,6 +1807,9 @@ class LmdbSailStore implements SailStore {
 					return countStatementIteratorFallback(txn, statementPattern, subjID, predID, objID, contextIDList,
 							explicit, idFilter);
 				}
+			}
+			if (exactStatementCountCache != null) {
+				requireSnapshotVersion(txn, cacheTxnVersion);
 			}
 			if (statementPattern != null) {
 				statementPattern.setStringMetricActual(COUNT_RUNTIME_METRIC, "direct-lookup");
@@ -1756,12 +1820,14 @@ class LmdbSailStore implements SailStore {
 				idFilter);
 	}
 
-	private long exactStatementCount(Txn txn, Map<StatementCountCacheKey, Long> exactStatementCountCache, long subjID,
+	private long exactStatementCount(Txn txn, Map<StatementCountCacheKey, Long> exactStatementCountCache,
+			long cacheTxnVersion, long subjID,
 			long predID, long objID, long contextID, boolean explicit) throws IOException {
 		if (exactStatementCountCache == null) {
 			return tripleStore.exactStatementCount(txn, subjID, predID, objID, contextID, explicit);
 		}
-		StatementCountCacheKey cacheKey = new StatementCountCacheKey(subjID, predID, objID, contextID, explicit);
+		StatementCountCacheKey cacheKey = new StatementCountCacheKey(cacheTxnVersion, subjID, predID, objID, contextID,
+				explicit);
 		Long cachedCount = exactStatementCountCache.get(cacheKey);
 		if (cachedCount != null) {
 			return cachedCount;
@@ -1842,13 +1908,32 @@ class LmdbSailStore implements SailStore {
 		return count;
 	}
 
-	private record StatementCountCacheKey(long subjID, long predID, long objID, long contextID, boolean explicit) {
+	private record StatementCountCacheKey(long txnVersion, long subjID, long predID, long objID, long contextID,
+			boolean explicit) {
 	}
 
-	private record StatementLookupCacheKey(long subjID, long predID, long objID, long contextID, boolean explicit) {
+	private record StatementLookupCacheKey(long txnVersion, long subjID, long predID, long objID, long contextID,
+			boolean explicit) {
 	}
 
 	private record StatementLookupCacheEntry(List<Statement> statements, String indexName) {
+	}
+
+	private static final class SnapshotVersionChangedException extends IOException {
+
+		private static final long serialVersionUID = 1L;
+
+		private SnapshotVersionChangedException(long expectedVersion, long actualVersion) {
+			super("LMDB snapshot version changed during exact cache access: " + expectedVersion + " -> "
+					+ actualVersion);
+		}
+	}
+
+	private static void requireSnapshotVersion(Txn txn, long expectedVersion) throws IOException {
+		long actualVersion = LmdbFrontierSnapshotSource.snapshotEpochAndVersion(txn)[1];
+		if (actualVersion != expectedVersion) {
+			throw new SnapshotVersionChangedException(expectedVersion, actualVersion);
+		}
 	}
 
 	private static final class CachedStatementIteration extends CloseableIteratorIteration<Statement>
@@ -2316,12 +2401,23 @@ class LmdbSailStore implements SailStore {
 						}
 						// The triple/value stores are authoritative once both commits succeed.
 						storeTxnStarted.set(false);
+						StoreSnapshotCoordinates committedSnapshot = currentStoreSnapshotCoordinates();
+						estimatorTouchedInTransaction = false;
+						estimatorTouchedSinceStoreTxnStart.set(false);
+						if (filterSelectivityStats != null) {
+							filterSelectivityStats.recordStoreMutation(
+									committedSnapshot.statementMutationStamp());
+						}
+						if (operatorFeedbackStats != null) {
+							operatorFeedbackStats.recordStoreMutation(committedSnapshot.statementMutationStamp(),
+									learnedOptimizerTouchedPredicates());
+							clearLeoTouchedPredicates();
+						}
 						if (statisticsService != null) {
-							long committedEpoch = learnedSidecarDataStamp();
-							long committedSequence = tripleStore.latestFrontierMutationSequence();
 							statisticsService.recordStoreCommit(
-									committedEpoch, committedSequence, System.currentTimeMillis());
-							appendCurrentFrontierMutationTail(committedSequence);
+									committedSnapshot.physicalSnapshotEpoch(),
+									committedSnapshot.statementMutationStamp(), System.currentTimeMillis());
+							appendCurrentFrontierMutationTail(committedSnapshot.statementMutationStamp());
 							try {
 								requestFrontierRebuild();
 							} catch (RuntimeException e) {
@@ -2335,15 +2431,6 @@ class LmdbSailStore implements SailStore {
 							} catch (RuntimeException e) {
 								logger.warn("Failed to schedule Frontier synopsis rebuild after commit", e);
 							}
-						}
-						estimatorTouchedInTransaction = false;
-						estimatorTouchedSinceStoreTxnStart.set(false);
-						if (filterSelectivityStats != null) {
-							filterSelectivityStats.recordStoreMutation();
-						}
-						if (operatorFeedbackStats != null) {
-							operatorFeedbackStats.recordStoreMutation(learnedOptimizerTouchedPredicates());
-							clearLeoTouchedPredicates();
 						}
 						if (sketchBasedJoinEstimator != null || filterSelectivityStats != null
 								|| operatorFeedbackStats != null) {
@@ -3253,7 +3340,12 @@ class LmdbSailStore implements SailStore {
 
 		private final boolean explicit;
 		private final Txn txn;
-		private final long snapshotEpoch;
+		// A tracked txn is reset+renewed onto the newest LMDB snapshot on every commit (TxnManager#reset), while this
+		// dataset can stay pinned for the branch lifetime. The snapshot epoch and the exact-lookup/count caches are
+		// therefore only valid for one txn version: the caches key on the version so a renewed txn can never serve
+		// pre-commit answers, and refreshSnapshotState() re-reads the epoch and drops superseded entries.
+		private volatile long snapshotEpoch;
+		private volatile long snapshotTxnVersion;
 		private final Map<StatementCountCacheKey, Long> exactStatementCountCache = new ConcurrentHashMap<>();
 		private final Map<StatementLookupCacheKey, StatementLookupCacheEntry> exactStatementLookupCache = new ConcurrentHashMap<>();
 
@@ -3264,7 +3356,9 @@ class LmdbSailStore implements SailStore {
 				TxnManager txnManager = tripleStore.getTxnManager();
 				openedTxn = trackActiveTxn ? txnManager.createReadTxn()
 						: txnManager.createReadTxnUntracked();
-				snapshotEpoch = LmdbFrontierSnapshotSource.snapshotEpoch(openedTxn);
+				long[] epochAndVersion = LmdbFrontierSnapshotSource.snapshotEpochAndVersion(openedTxn);
+				snapshotEpoch = epochAndVersion[0];
+				snapshotTxnVersion = epochAndVersion[1];
 				txn = openedTxn;
 			} catch (IOException e) {
 				if (openedTxn != null) {
@@ -3274,8 +3368,35 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		/**
+		 * Re-reads the txn's current snapshot identity, invalidating the epoch and exact-answer caches when the txn has
+		 * been renewed onto a newer LMDB snapshot since they were captured.
+		 *
+		 * @return the txn version the returned/served answers belong to
+		 */
+		private long refreshSnapshotState() throws SailException {
+			try {
+				long[] epochAndVersion = LmdbFrontierSnapshotSource.snapshotEpochAndVersion(txn);
+				long currentVersion = epochAndVersion[1];
+				if (currentVersion != snapshotTxnVersion) {
+					synchronized (this) {
+						if (currentVersion > snapshotTxnVersion) {
+							exactStatementLookupCache.clear();
+							exactStatementCountCache.clear();
+							snapshotEpoch = epochAndVersion[0];
+							snapshotTxnVersion = currentVersion;
+						}
+					}
+				}
+				return currentVersion;
+			} catch (IOException e) {
+				throw new SailException("Unable to read the LMDB snapshot state", e);
+			}
+		}
+
 		@Override
 		public OptionalLong getSnapshotEpoch() {
+			refreshSnapshotState();
 			return OptionalLong.of(snapshotEpoch);
 		}
 
@@ -3313,18 +3434,20 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern, Resource subj,
 				IRI pred, Value obj, Resource... contexts) throws SailException {
-			try {
-				return createStatementIterator(txn, statementPattern, exactStatementLookupCache, subj, pred, obj,
-						explicit, contexts);
-			} catch (IOException e) {
+			int ioFailures = 0;
+			while (true) {
+				long cacheTxnVersion = refreshSnapshotState();
 				try {
+					return createStatementIterator(txn, statementPattern, exactStatementLookupCache, cacheTxnVersion,
+							subj, pred, obj, explicit, contexts);
+				} catch (SnapshotVersionChangedException e) {
+					// A concurrent commit renewed the tracked txn. Refresh and restart without consuming the IO retry.
+				} catch (IOException e) {
+					if (ioFailures++ > 0) {
+						throw new SailException("Unable to get statements", e);
+					}
 					logger.warn("Failed to get statements, retrying", e);
-					// try once more before giving up
 					Thread.yield();
-					return createStatementIterator(txn, statementPattern, exactStatementLookupCache, subj, pred, obj,
-							explicit, contexts);
-				} catch (IOException e2) {
-					throw new SailException("Unable to get statements", e);
 				}
 			}
 		}
@@ -3337,19 +3460,20 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public long getStatementCount(StatementPattern statementPattern, Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws SailException {
-			try {
-				return countStatementIterator(txn, statementPattern, exactStatementCountCache, subj, pred, obj,
-						explicit,
-						contexts);
-			} catch (IOException e) {
+			int ioFailures = 0;
+			while (true) {
+				long cacheTxnVersion = refreshSnapshotState();
 				try {
+					return countStatementIterator(txn, statementPattern, exactStatementCountCache, cacheTxnVersion,
+							subj, pred, obj, explicit, contexts);
+				} catch (SnapshotVersionChangedException e) {
+					// A concurrent commit renewed the tracked txn. Refresh and restart without consuming the IO retry.
+				} catch (IOException e) {
+					if (ioFailures++ > 0) {
+						throw new SailException("Unable to count statements", e);
+					}
 					logger.warn("Failed to count statements, retrying", e);
-					// try once more before giving up
 					Thread.yield();
-					return countStatementIterator(txn, statementPattern, exactStatementCountCache, subj, pred, obj,
-							explicit, contexts);
-				} catch (IOException e2) {
-					throw new SailException("Unable to count statements", e);
 				}
 			}
 		}

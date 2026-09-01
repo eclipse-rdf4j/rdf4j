@@ -194,7 +194,6 @@ public class GenericPlanNode {
 	 *
 	 * @return a cost estimate as a double value
 	 */
-	@JsonIgnore
 	public Double getCostEstimate() {
 		return costEstimate;
 	}
@@ -210,7 +209,6 @@ public class GenericPlanNode {
 	 *
 	 * @return result size estimate
 	 */
-	@JsonIgnore
 	public Double getResultSizeEstimate() {
 		return resultSizeEstimate;
 	}
@@ -448,7 +446,7 @@ public class GenericPlanNode {
 	}
 
 	public Long getLongMetricActual(String metricName) {
-		if (!runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+		if (!runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerExplainMetric(metricName)) {
 			return null;
 		}
 		Long metricValue = longMetricsActual.get(metricName);
@@ -477,7 +475,7 @@ public class GenericPlanNode {
 	}
 
 	public Double getDoubleMetricActual(String metricName) {
-		if (!runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+		if (!runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerExplainMetric(metricName)) {
 			return null;
 		}
 		return doubleMetricsActual.get(metricName);
@@ -865,6 +863,8 @@ public class GenericPlanNode {
 		Long sourceRowsFiltered = sourceRowsFilteredForDisplay();
 		Map<String, String> metrics = new LinkedHashMap<>();
 
+		putIfKnown(metrics, "costEstimate", toHumanReadableNumber(getCostEstimate()));
+		putIfKnown(metrics, "resultSizeEstimate", toHumanReadableNumber(getResultSizeEstimate()));
 		putIfKnown(metrics, "resultSizeActual", toHumanReadableNumber(getResultSizeActual()));
 		putIfKnown(metrics, "totalTimeActual", toHumanReadableTime(getTotalTimeActual()));
 		putIfKnown(metrics, "selfTimeActual", toHumanReadableTime(getSelfTimeActual()));
@@ -1171,7 +1171,7 @@ public class GenericPlanNode {
 			}
 		}
 		for (Map.Entry<String, String> entry : stringMetricsActual.entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+			if (TelemetryMetricNames.isOptimizerExplainMetric(entry.getKey())
 					&& entry.getValue() != null
 					&& !entry.getValue().isEmpty()) {
 				visible.put(entry.getKey(), entry.getValue());
@@ -1218,7 +1218,8 @@ public class GenericPlanNode {
 	}
 
 	private static boolean isVisibleWithoutRuntimeTelemetry(String metricName) {
-		return isPreferredExplainAnnotationMetric(metricName) || TelemetryMetricNames.isOptimizerMetric(metricName);
+		return isPreferredExplainAnnotationMetric(metricName)
+				|| TelemetryMetricNames.isOptimizerExplainMetric(metricName);
 	}
 
 	private static <T> Map<String, T> optimizerMetrics(Map<String, T> metrics) {
@@ -1227,7 +1228,7 @@ public class GenericPlanNode {
 		}
 		Map<String, T> visible = new LinkedHashMap<>();
 		for (Map.Entry<String, T> entry : metrics.entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+			if (TelemetryMetricNames.isOptimizerExplainMetric(entry.getKey())) {
 				visible.put(entry.getKey(), entry.getValue());
 			}
 		}
@@ -1581,6 +1582,9 @@ public class GenericPlanNode {
 				+ StringEscapeUtils.escapeHtml4(type) + "</U></td></tr>");
 		rows.add("<tr><td>Algorithm</td><td>" + (algorithm != null ? algorithm : UNKNOWN) + "</td></tr>");
 		rows.add("<tr><td><B>New scope</B></td><td>" + (newScope != null && newScope ? "<B>true</B>" : UNKNOWN)
+				+ "</td></tr>");
+		rows.add("<tr><td>Cost estimate</td><td>" + toHumanReadableNumber(getCostEstimate()) + "</td></tr>");
+		rows.add("<tr><td>Result size estimate</td><td>" + toHumanReadableNumber(getResultSizeEstimate())
 				+ "</td></tr>");
 		rows.add("<tr><td >Result size actual</td><td>" + toHumanReadableNumber(getResultSizeActual())
 				+ "</td></tr>");

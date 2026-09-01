@@ -16,10 +16,13 @@ import java.time.Duration;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -793,6 +796,20 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	private void setFrontierCacheConfidenceBounds(double initialConfidence, double minimumConfidence,
+			double maximumConfidence) {
+		requireProbability(initialConfidence, "Frontier cache initial confidence");
+		requireProbability(minimumConfidence, "Frontier cache minimum confidence");
+		requireProbability(maximumConfidence, "Frontier cache maximum confidence");
+		if (minimumConfidence > initialConfidence || initialConfidence > maximumConfidence) {
+			throw new IllegalArgumentException(
+					"Frontier cache confidence bounds must satisfy minimum <= initial <= maximum");
+		}
+		frontierCacheInitialConfidence = initialConfidence;
+		frontierCacheMinimumConfidence = minimumConfidence;
+		frontierCacheMaximumConfidence = maximumConfidence;
+	}
+
 	public double getFrontierCacheMaximumExpectedRegret() {
 		return frontierCacheMaximumExpectedRegret;
 	}
@@ -1553,38 +1570,38 @@ public class LmdbStoreConfig extends BaseSailConfig {
 						}
 					});
 
-			Models.objectLiteral(
-					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_CACHE_INITIAL_CONFIDENCE, null))
-					.ifPresent(lit -> {
-						try {
-							setFrontierCacheInitialConfidence(
-									parseDouble(lit, LmdbStoreSchema.FRONTIER_CACHE_INITIAL_CONFIDENCE));
-						} catch (IllegalArgumentException e) {
-							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_CACHE_INITIAL_CONFIDENCE, lit, e);
-						}
-					});
-
-			Models.objectLiteral(
-					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_CACHE_MINIMUM_CONFIDENCE, null))
-					.ifPresent(lit -> {
-						try {
-							setFrontierCacheMinimumConfidence(
-									parseDouble(lit, LmdbStoreSchema.FRONTIER_CACHE_MINIMUM_CONFIDENCE));
-						} catch (IllegalArgumentException e) {
-							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_CACHE_MINIMUM_CONFIDENCE, lit, e);
-						}
-					});
-
-			Models.objectLiteral(
-					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_CONFIDENCE, null))
-					.ifPresent(lit -> {
-						try {
-							setFrontierCacheMaximumConfidence(
-									parseDouble(lit, LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_CONFIDENCE));
-						} catch (IllegalArgumentException e) {
-							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_CONFIDENCE, lit, e);
-						}
-					});
+			var initialConfidenceLiteral = Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_CACHE_INITIAL_CONFIDENCE, null));
+			var minimumConfidenceLiteral = Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_CACHE_MINIMUM_CONFIDENCE, null));
+			var maximumConfidenceLiteral = Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_CONFIDENCE, null));
+			if (initialConfidenceLiteral.isPresent() || minimumConfidenceLiteral.isPresent()
+					|| maximumConfidenceLiteral.isPresent()) {
+				double initialConfidence = parseFrontierConfidence(initialConfidenceLiteral,
+						LmdbStoreSchema.FRONTIER_CACHE_INITIAL_CONFIDENCE,
+						"Frontier cache initial confidence", frontierCacheInitialConfidence);
+				double minimumConfidence = parseFrontierConfidence(minimumConfidenceLiteral,
+						LmdbStoreSchema.FRONTIER_CACHE_MINIMUM_CONFIDENCE,
+						"Frontier cache minimum confidence", frontierCacheMinimumConfidence);
+				double maximumConfidence = parseFrontierConfidence(maximumConfidenceLiteral,
+						LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_CONFIDENCE,
+						"Frontier cache maximum confidence", frontierCacheMaximumConfidence);
+				try {
+					setFrontierCacheConfidenceBounds(initialConfidence, minimumConfidence, maximumConfidence);
+				} catch (IllegalArgumentException e) {
+					if (initialConfidenceLiteral.isPresent()) {
+						throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_CACHE_INITIAL_CONFIDENCE,
+								initialConfidenceLiteral.get(), e);
+					}
+					if (minimumConfidenceLiteral.isPresent()) {
+						throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_CACHE_MINIMUM_CONFIDENCE,
+								minimumConfidenceLiteral.get(), e);
+					}
+					throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_CONFIDENCE,
+							maximumConfidenceLiteral.orElseThrow(), e);
+				}
+			}
 
 			Models.objectLiteral(
 					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET, null))
@@ -1732,6 +1749,20 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			return lit.doubleValue();
 		} catch (NumberFormatException e) {
 			throw new SailConfigException("Double value required for " + property + " property, found " + lit);
+		}
+	}
+
+	private static double parseFrontierConfidence(Optional<Literal> literal, IRI property, String name,
+			double defaultValue) {
+		if (literal.isEmpty()) {
+			return defaultValue;
+		}
+		try {
+			double value = parseDouble(literal.get(), property);
+			requireProbability(value, name);
+			return value;
+		} catch (IllegalArgumentException e) {
+			throw invalidFrontierValue(property, literal.get(), e);
 		}
 	}
 

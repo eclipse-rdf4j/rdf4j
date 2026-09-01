@@ -148,6 +148,56 @@ class LmdbFrontierStoreLifecycleTest {
 	}
 
 	@Test
+	void offModeMutationForcesFreshBaseWhenAuthoritativeModeReturns(@TempDir Path dataDirectory) throws Exception {
+		LmdbStoreConfig authoritative = config(FrontierEstimatorMode.AUTHORITATIVE, 32L * 1024L * 1024L);
+		long originalBaseEpoch;
+		long originalGeneration;
+		long originalCoveredSequence;
+		LmdbStore initial = new LmdbStore(dataDirectory.toFile(), authoritative);
+		try {
+			initial.init();
+			LmdbSailStore backingStore = initial.getBackingStore();
+			assertTrue(awaitStatisticsReady(backingStore, 10_000L));
+			FrontierStatisticsStatus status = frontierStatisticsStatus(backingStore);
+			originalBaseEpoch = status.baseEpoch();
+			originalGeneration = status.generationId();
+			originalCoveredSequence = status.coveredSequence();
+		} finally {
+			initial.shutDown();
+		}
+
+		LmdbStore disabled = new LmdbStore(dataDirectory.toFile(),
+				config(FrontierEstimatorMode.OFF, 32L * 1024L * 1024L));
+		try {
+			disabled.init();
+			try (NotifyingSailConnection connection = disabled.getConnection()) {
+				connection.begin();
+				connection.addStatement(
+						disabled.getValueFactory().createIRI("urn:frontier:off-subject"),
+						disabled.getValueFactory().createIRI("urn:frontier:off-predicate"),
+						disabled.getValueFactory().createLiteral("off-object"));
+				connection.commit();
+			}
+		} finally {
+			disabled.shutDown();
+		}
+
+		LmdbStore restarted = new LmdbStore(dataDirectory.toFile(), authoritative);
+		try {
+			restarted.init();
+			LmdbSailStore backingStore = restarted.getBackingStore();
+			assertTrue(awaitStatisticsReady(backingStore, 10_000L));
+			assertTrue(awaitStatisticsCoveredSequence(backingStore, originalCoveredSequence + 1L, 10_000L));
+			FrontierStatisticsStatus rebuilt = frontierStatisticsStatus(backingStore);
+			assertTrue(rebuilt.generationId() > originalGeneration);
+			assertTrue(rebuilt.baseEpoch() > originalBaseEpoch,
+					"an OFF-mode journal gap cannot be repaired by replaying a nonexistent signed delta");
+		} finally {
+			restarted.shutDown();
+		}
+	}
+
+	@Test
 	void deletionDebtAtRebuildThresholdPublishesFreshBase(@TempDir Path dataDirectory) throws Exception {
 		LmdbStore store = new LmdbStore(dataDirectory.toFile(),
 				config(FrontierEstimatorMode.AUTHORITATIVE, 32L * 1024L * 1024L));
@@ -288,6 +338,28 @@ class LmdbFrontierStoreLifecycleTest {
 			assertEquals(FrontierStatisticsAvailability.READY,
 					frontierStatisticsStatus(store.getBackingStore()).availability());
 			assertTrue(Files.isRegularFile(dataDirectory.resolve("frontier-statistics-v2").resolve("CURRENT.fs2")));
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void metadataOnlyCommitDoesNotRepublishEquivalentFrontierGeneration(@TempDir Path dataDirectory)
+			throws Exception {
+		LmdbStore store = new LmdbStore(dataDirectory.toFile(),
+				config(FrontierEstimatorMode.AUTHORITATIVE, 32L * 1024L * 1024L));
+		try {
+			store.init();
+			LmdbSailStore backingStore = store.getBackingStore();
+			assertTrue(awaitStatisticsReady(backingStore, 10_000L));
+			FrontierStatisticsStatus original = frontierStatisticsStatus(backingStore);
+
+			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+
+			FrontierStatisticsStatus unchanged = frontierStatisticsStatus(backingStore);
+			assertEquals(original.generationId(), unchanged.generationId(),
+					"derived-state metadata commits must not replace a logically current Frontier generation");
+			assertEquals(original.coveredSequence(), unchanged.coveredSequence());
 		} finally {
 			store.shutDown();
 		}

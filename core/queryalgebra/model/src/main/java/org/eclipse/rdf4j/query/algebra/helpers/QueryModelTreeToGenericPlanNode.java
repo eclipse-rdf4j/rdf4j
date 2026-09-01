@@ -99,6 +99,10 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		}
 		if (top != null) {
 			top.applyExplanationLevel(level);
+			if (!containsPlannerEstimateUsage(topTupleExpr)
+					&& !hasPlannerEstimateUsage(optimizerMetricWrapper)) {
+				disableEstimateStabilityMetrics(top);
+			}
 		}
 		return top;
 	}
@@ -112,10 +116,8 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 
 	private GenericPlanNode buildPlanNode(QueryModelNode node, Set<String> incomingBindings) {
 		GenericPlanNode genericPlanNode = new GenericPlanNode(node.getSignature());
-		if (hasPlannerEstimateUsage(node)) {
-			genericPlanNode.setCostEstimate(node.getCostEstimate());
-			genericPlanNode.setResultSizeEstimate(node.getResultSizeEstimate());
-		}
+		genericPlanNode.setCostEstimate(node.getCostEstimate());
+		genericPlanNode.setResultSizeEstimate(node.getResultSizeEstimate());
 		genericPlanNode.setResultSizeActual(node.getResultSizeActual());
 		genericPlanNode.setHasNextCallCountActual(runtimeTelemetryMetric(node.getHasNextCallCountActual()));
 		genericPlanNode.setHasNextTrueCountActual(runtimeTelemetryMetric(node.getHasNextTrueCountActual()));
@@ -165,12 +167,6 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		return genericPlanNode;
 	}
 
-	private boolean hasPlannerEstimateUsage(QueryModelNode node) {
-		String usage = node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
-		return usage != null && !usage.isEmpty()
-				&& !TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED.equals(usage);
-	}
-
 	private long runtimeTelemetryMetric(long value) {
 		if (level.includesRuntimeTelemetry()) {
 			return Math.max(0, value);
@@ -178,19 +174,55 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		return -1;
 	}
 
+	private static boolean containsPlannerEstimateUsage(QueryModelNode node) {
+		if (node == null) {
+			return false;
+		}
+		final boolean[] found = { false };
+		node.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode candidate) {
+				if (!found[0] && hasPlannerEstimateUsage(candidate)) {
+					found[0] = true;
+				}
+				if (!found[0]) {
+					super.meetNode(candidate);
+				}
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean hasPlannerEstimateUsage(QueryModelNode node) {
+		if (node == null) {
+			return false;
+		}
+		String usage = node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
+		return usage != null && !usage.isEmpty()
+				&& !TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED.equals(usage);
+	}
+
+	private static void disableEstimateStabilityMetrics(GenericPlanNode node) {
+		node.setEstimateStabilityMetricsEnabled(false);
+		List<GenericPlanNode> childPlans = node.getPlans();
+		if (childPlans != null) {
+			childPlans.forEach(QueryModelTreeToGenericPlanNode::disableEstimateStabilityMetrics);
+		}
+	}
+
 	private static void copyOptimizerMetrics(QueryModelNode node, GenericPlanNode genericPlanNode) {
 		for (Map.Entry<String, Long> entry : node.getLongMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+			if (TelemetryMetricNames.isOptimizerExplainMetric(entry.getKey())) {
 				genericPlanNode.setLongMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 		for (Map.Entry<String, Double> entry : node.getDoubleMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+			if (TelemetryMetricNames.isOptimizerExplainMetric(entry.getKey())) {
 				genericPlanNode.setDoubleMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 		for (Map.Entry<String, String> entry : node.getStringMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+			if (TelemetryMetricNames.isOptimizerExplainMetric(entry.getKey())) {
 				genericPlanNode.setStringMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
@@ -198,19 +230,19 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 
 	private static void copyOptimizerMetricsIfAbsent(QueryModelNode node, GenericPlanNode genericPlanNode) {
 		for (Map.Entry<String, Long> entry : node.getLongMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+			if (TelemetryMetricNames.isOptimizerExplainMetric(entry.getKey())
 					&& genericPlanNode.getLongMetricActual(entry.getKey()) == null) {
 				genericPlanNode.setLongMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 		for (Map.Entry<String, Double> entry : node.getDoubleMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+			if (TelemetryMetricNames.isOptimizerExplainMetric(entry.getKey())
 					&& genericPlanNode.getDoubleMetricActual(entry.getKey()) == null) {
 				genericPlanNode.setDoubleMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 		for (Map.Entry<String, String> entry : node.getStringMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+			if (TelemetryMetricNames.isOptimizerExplainMetric(entry.getKey())
 					&& genericPlanNode.getStringMetricActual(entry.getKey()) == null) {
 				genericPlanNode.setStringMetricActual(entry.getKey(), entry.getValue());
 			}

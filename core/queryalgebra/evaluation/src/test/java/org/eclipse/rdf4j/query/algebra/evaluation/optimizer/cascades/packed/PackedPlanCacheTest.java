@@ -50,8 +50,6 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateRef;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateSummary;
@@ -59,6 +57,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenc
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierLayout;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateArena;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor;
 import org.junit.jupiter.api.Test;
 
 class PackedPlanCacheTest {

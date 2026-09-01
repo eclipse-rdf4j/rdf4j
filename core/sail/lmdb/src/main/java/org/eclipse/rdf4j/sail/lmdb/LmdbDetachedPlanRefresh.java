@@ -56,6 +56,7 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 	private final LmdbCascadesOptimizer.Mode mode;
 	private final long predicateRangeVersion;
 	private final List<IRI> predicateRangePredicates;
+	private final boolean predicateRangeProofsAllowed;
 	private final long retainedBytes;
 
 	LmdbDetachedPlanRefresh(LmdbEstimatorRuntime runtime,
@@ -64,7 +65,7 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 			LmdbPipelinePlanCache.BindingIdentity bindingIdentity, boolean trackResultSize,
 			boolean preserveObservationOrder, boolean runtimeTelemetry, QueryEvaluationMode queryEvaluationMode,
 			LmdbCascadesOptimizer.Mode mode,
-			long predicateRangeVersion, List<IRI> predicateRangePredicates) {
+			long predicateRangeVersion, List<IRI> predicateRangePredicates, boolean predicateRangeProofsAllowed) {
 		this.runtime = java.util.Objects.requireNonNull(runtime, "runtime");
 		this.detachedPlanningSnapshots = java.util.Objects.requireNonNull(detachedPlanningSnapshots,
 				"detachedPlanningSnapshots");
@@ -78,6 +79,7 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 		this.mode = java.util.Objects.requireNonNull(mode, "mode");
 		this.predicateRangeVersion = predicateRangeVersion;
 		this.predicateRangePredicates = List.copyOf(predicateRangePredicates);
+		this.predicateRangeProofsAllowed = predicateRangeProofsAllowed;
 		this.retainedBytes = retainedBytes(packedWork, this.predicateRangePredicates);
 	}
 
@@ -109,7 +111,11 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 		evaluationStrategy.setQueryEvaluationMode(queryEvaluationMode);
 		LmdbPackedCostModel costModel = new LmdbPackedCostModel(runtime, detachedSnapshotEpoch, storeDefaults,
 				tripleSource, evaluationStrategy, !preserveObservationOrder);
-		LmdbPackedPredicateRangeProvider rangeProvider = new LmdbPackedPredicateRangeProvider(runtime);
+		// A family planned without predicate-range proofs (dirty-txn planning) must refresh without them too:
+		// the refreshed plan is served back to the same family, and the packed cache context must stay coherent.
+		LmdbPackedPredicateRangeProvider rangeProvider = predicateRangeProofsAllowed
+				? new LmdbPackedPredicateRangeProvider(runtime)
+				: null;
 		PackedPlanCache.Context packedContext = LmdbCascadesOptimizer.cacheContext(dataset, bindings,
 				packedWork.optimizationGoal(), costModel, rangeProvider, runtime);
 		PackedPlanRefreshResult refreshed;
@@ -124,6 +130,7 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 				preserveObservationOrder);
 		TupleExpr executable = annotator.installDetachedPlan(refreshed.refreshedPlan().selectedPlan(), cascadesPlan,
 				mode, runtimeTelemetry);
+		LmdbQueryOptimizerPipeline.finalizeOrderAndLimit(executable, dataset, bindings);
 		LmdbEstimatorRuntime.PlanningRevisions currentRevisions = runtime.capturePlanningRevisions();
 		LmdbPipelinePlanCache.PredicateRangeIdentity currentRangeIdentity = LmdbPipelinePlanCache.PredicateRangeIdentity
 				.capture(predicateRangePredicates, runtime);
@@ -146,7 +153,7 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 		LmdbDetachedPlanRefresh nextRefresh = new LmdbDetachedPlanRefresh(runtime, detachedPlanningSnapshots,
 				packedWork.forIncumbent(summary), datasetIdentity, bindingIdentity, trackResultSize,
 				preserveObservationOrder, runtimeTelemetry, queryEvaluationMode, mode, predicateRangeVersion,
-				predicateRangePredicates);
+				predicateRangePredicates, predicateRangeProofsAllowed);
 		return new LmdbPlanDecisionCache.RefreshComputation(buildEvidence, currentEvidence, executable,
 				summary.physicalFingerprint(), selectedInterval, incumbentInterval,
 				LmdbPipelinePlanCache.certificate(summary, buildEvidence.globalEpoch()),

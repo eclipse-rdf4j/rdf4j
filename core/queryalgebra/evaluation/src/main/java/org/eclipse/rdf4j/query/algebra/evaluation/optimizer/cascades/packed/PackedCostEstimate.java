@@ -18,9 +18,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 
 /** Reusable primitive output slot for one context-sensitive physical factor estimate. */
 @Experimental

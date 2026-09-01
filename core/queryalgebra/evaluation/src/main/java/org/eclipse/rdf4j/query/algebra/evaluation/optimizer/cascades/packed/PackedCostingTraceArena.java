@@ -15,9 +15,9 @@ import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Objects;
 
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 
 /** Query-local primitive append-only journal for candidate-costing events. */
 @PackedHotPath

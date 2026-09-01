@@ -25,6 +25,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.atMost;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -33,13 +34,16 @@ import static org.mockito.Mockito.verify;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntConsumer;
@@ -53,6 +57,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -342,6 +347,30 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
+	void statementMutationStampReadFailureDoesNotBecomeAValidZeroStamp() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+		tripleStoreField.setAccessible(true);
+		TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
+		TripleStore tripleStoreSpy = spy(originalTripleStore);
+		doThrow(new IOException("simulated journal coordinate read failure"))
+				.when(tripleStoreSpy)
+				.latestFrontierMutationSequence();
+		tripleStoreField.set(backingStore, tripleStoreSpy);
+
+		try {
+			Method statementMutationStamp = LmdbSailStore.class.getDeclaredMethod("statementMutationStamp");
+			statementMutationStamp.setAccessible(true);
+			InvocationTargetException failure = assertThrows(InvocationTargetException.class,
+					() -> statementMutationStamp.invoke(backingStore));
+			assertTrue(failure.getCause() instanceof UncheckedIOException);
+		} finally {
+			tripleStoreField.set(backingStore, originalTripleStore);
+		}
+	}
+
+	@Test
 	void getStatementsMemoizesFullyBoundDirectLookupByResolvedIds() throws Exception {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		ValueFactory valueFactory = sail.getValueFactory();
@@ -391,6 +420,164 @@ public class LmdbSailStoreTest {
 					any(LmdbValueIdFilter.class));
 		} finally {
 			tripleStoreField.set(backingStore, originalTripleStore);
+		}
+	}
+
+	@Test
+	void pinnedDatasetDropsExactLookupAndCountCachesWhenTxnIsRenewedOntoNewerSnapshot() {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		ValueFactory valueFactory = sail.getValueFactory();
+		IRI subject = valueFactory.createIRI("urn:renewed-snapshot:subject");
+		IRI predicate = valueFactory.createIRI("urn:renewed-snapshot:predicate");
+		IRI object = valueFactory.createIRI("urn:renewed-snapshot:object");
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.add(subject, predicate, object);
+			// keep every value referenced by another statement so the delete cannot garbage-collect the value IDs
+			conn.add(subject, predicate, valueFactory.createIRI("urn:renewed-snapshot:keeper-object"));
+			conn.add(valueFactory.createIRI("urn:renewed-snapshot:keeper-subject"), predicate, object);
+		}
+
+		LmdbSailStore backingStore = sail.getBackingStore();
+		StatementPattern statementPattern = new StatementPattern(Var.of("s", subject), Var.of("p", predicate),
+				Var.of("o", object));
+		try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+			long epochBefore = dataset.getSnapshotEpoch().orElseThrow();
+
+			// populate the exact lookup and count caches while the statement exists
+			try (CloseableIteration<? extends Statement> iteration = dataset.getStatements(statementPattern, subject,
+					predicate, object)) {
+				assertTrue("statement should be visible before the delete commits", iteration.hasNext());
+			}
+			assertEquals(1L, dataset.getStatementCount(statementPattern, subject, predicate, object, (Resource) null));
+
+			// the commit resets+renews the tracked read txn onto the post-commit snapshot
+			try (RepositoryConnection conn = repo.getConnection()) {
+				conn.remove(subject, predicate, object);
+			}
+
+			try (CloseableIteration<? extends Statement> iteration = dataset.getStatements(statementPattern, subject,
+					predicate, object)) {
+				assertFalse("deleted statement must not be served from the exact lookup cache", iteration.hasNext());
+			}
+			assertEquals(0L, dataset.getStatementCount(statementPattern, subject, predicate, object, (Resource) null));
+
+			long epochAfter = dataset.getSnapshotEpoch().orElseThrow();
+			assertTrue("snapshot epoch should advance once the txn observes the newer snapshot",
+					epochAfter > epochBefore);
+		}
+	}
+
+	@Test
+	void pinnedDatasetRechecksTxnVersionBeforeServingExactLookupCacheHit() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		ValueFactory valueFactory = sail.getValueFactory();
+		IRI subject = valueFactory.createIRI("urn:renewed-lookup-race:subject");
+		IRI predicate = valueFactory.createIRI("urn:renewed-lookup-race:predicate");
+		IRI object = valueFactory.createIRI("urn:renewed-lookup-race:object");
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.add(subject, predicate, object);
+			conn.add(subject, predicate, valueFactory.createIRI("urn:renewed-lookup-race:keeper-object"));
+			conn.add(valueFactory.createIRI("urn:renewed-lookup-race:keeper-subject"), predicate, object);
+		}
+
+		LmdbSailStore backingStore = sail.getBackingStore();
+		try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+			StatementPattern primingPattern = new StatementPattern(Var.of("s", subject), Var.of("p", predicate),
+					Var.of("o", object));
+			try (CloseableIteration<? extends Statement> iteration = dataset.getStatements(primingPattern, subject,
+					predicate, object)) {
+				assertTrue("the exact lookup cache must be primed before the race", iteration.hasNext());
+			}
+
+			BlockingIRI blockingSubject = new BlockingIRI(subject.stringValue());
+			StatementPattern contestedPattern = new StatementPattern(Var.of("s", blockingSubject),
+					Var.of("p", predicate), Var.of("o", object));
+			AtomicReference<Boolean> staleHit = new AtomicReference<>();
+			AtomicReference<Throwable> readerFailure = new AtomicReference<>();
+			Thread reader = new Thread(() -> {
+				try (CloseableIteration<? extends Statement> iteration = dataset.getStatements(contestedPattern,
+						blockingSubject, predicate, object)) {
+					staleHit.set(iteration.hasNext());
+				} catch (Throwable failure) {
+					readerFailure.set(failure);
+				}
+			}, "lmdb-exact-lookup-cache-race");
+
+			blockingSubject.arm();
+			try {
+				reader.start();
+				assertTrue("reader must pause after capturing the old txn version", blockingSubject.awaitEntered());
+				try (RepositoryConnection conn = repo.getConnection()) {
+					conn.remove(subject, predicate, object);
+				}
+			} finally {
+				blockingSubject.release();
+				reader.join(TimeUnit.SECONDS.toMillis(10L));
+			}
+
+			assertFalse("reader must terminate after the blocked lookup is released", reader.isAlive());
+			if (readerFailure.get() != null) {
+				throw new AssertionError("contested exact lookup failed", readerFailure.get());
+			}
+			assertFalse("a renewed tracked txn must not serve the old exact lookup cache entry", staleHit.get());
+		}
+	}
+
+	@Test
+	void pinnedDatasetRechecksTxnVersionBeforeServingExactCountCacheHit() throws Exception {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		ValueFactory valueFactory = sail.getValueFactory();
+		IRI subject = valueFactory.createIRI("urn:renewed-count-race:subject");
+		IRI predicate = valueFactory.createIRI("urn:renewed-count-race:predicate");
+		IRI object = valueFactory.createIRI("urn:renewed-count-race:object");
+
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.add(subject, predicate, object);
+			conn.add(subject, predicate, valueFactory.createIRI("urn:renewed-count-race:keeper-object"));
+			conn.add(valueFactory.createIRI("urn:renewed-count-race:keeper-subject"), predicate, object);
+		}
+
+		LmdbSailStore backingStore = sail.getBackingStore();
+		try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+			StatementPattern primingPattern = new StatementPattern(Var.of("s", subject), Var.of("p", predicate),
+					Var.of("o", object));
+			assertEquals("the exact count cache must be primed before the race", 1L,
+					dataset.getStatementCount(primingPattern, subject, predicate, object, (Resource) null));
+
+			BlockingIRI blockingSubject = new BlockingIRI(subject.stringValue());
+			StatementPattern contestedPattern = new StatementPattern(Var.of("s", blockingSubject),
+					Var.of("p", predicate), Var.of("o", object));
+			AtomicReference<Long> staleCount = new AtomicReference<>();
+			AtomicReference<Throwable> readerFailure = new AtomicReference<>();
+			Thread reader = new Thread(() -> {
+				try {
+					staleCount.set(dataset.getStatementCount(contestedPattern, blockingSubject, predicate, object,
+							(Resource) null));
+				} catch (Throwable failure) {
+					readerFailure.set(failure);
+				}
+			}, "lmdb-exact-count-cache-race");
+
+			blockingSubject.arm();
+			try {
+				reader.start();
+				assertTrue("reader must pause after capturing the old txn version", blockingSubject.awaitEntered());
+				try (RepositoryConnection conn = repo.getConnection()) {
+					conn.remove(subject, predicate, object);
+				}
+			} finally {
+				blockingSubject.release();
+				reader.join(TimeUnit.SECONDS.toMillis(10L));
+			}
+
+			assertFalse("reader must terminate after the blocked count is released", reader.isAlive());
+			if (readerFailure.get() != null) {
+				throw new AssertionError("contested exact count failed", readerFailure.get());
+			}
+			assertEquals("a renewed tracked txn must not serve the old exact count cache entry", Long.valueOf(0L),
+					staleCount.get());
 		}
 	}
 
@@ -1011,6 +1198,47 @@ public class LmdbSailStoreTest {
 			Thread.onSpinWait();
 		}
 		return false;
+	}
+
+	private static final class BlockingIRI extends SimpleIRI {
+
+		private static final long serialVersionUID = 1L;
+
+		private final AtomicBoolean armed = new AtomicBoolean();
+		private final CountDownLatch entered = new CountDownLatch(1);
+		private final CountDownLatch release = new CountDownLatch(1);
+
+		private BlockingIRI(String iri) {
+			super(iri);
+		}
+
+		private void arm() {
+			armed.set(true);
+		}
+
+		private boolean awaitEntered() throws InterruptedException {
+			return entered.await(10L, TimeUnit.SECONDS);
+		}
+
+		private void release() {
+			release.countDown();
+		}
+
+		@Override
+		public int hashCode() {
+			if (armed.compareAndSet(true, false)) {
+				entered.countDown();
+				try {
+					if (!release.await(10L, TimeUnit.SECONDS)) {
+						throw new AssertionError("Timed out waiting to release the blocked IRI lookup");
+					}
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError("Interrupted while blocking the IRI lookup", e);
+				}
+			}
+			return super.hashCode();
+		}
 	}
 
 	@AfterEach

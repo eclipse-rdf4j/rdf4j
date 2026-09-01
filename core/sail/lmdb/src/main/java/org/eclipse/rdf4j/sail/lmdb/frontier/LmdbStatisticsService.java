@@ -533,7 +533,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 		recordStoreCommit(epoch, inferredSequence, committedAtMillis);
 	}
 
-	public void recordStoreCommit(long epoch, long sequence, long committedAtMillis) {
+	public synchronized void recordStoreCommit(long epoch, long sequence, long committedAtMillis) {
 		if (epoch < 0L || sequence < 0L || committedAtMillis < 0L) {
 			throw new IllegalArgumentException("Frontier store commit coordinates must be nonnegative");
 		}
@@ -544,6 +544,24 @@ public final class LmdbStatisticsService implements AutoCloseable {
 				&& firstUncoveredMutationMillis < 0L) {
 			firstUncoveredMutationMillis = committedAtMillis;
 		}
+	}
+
+	/**
+	 * Advances only the physical LMDB snapshot coordinate after a metadata-only commit, such as pruning acknowledged
+	 * mutation-journal rows. The sequence guard prevents an interleaved statement commit from pairing an epoch that
+	 * includes new statements with the older in-memory mutation tail.
+	 *
+	 * @return {@code true} when the epoch was accepted for the supplied unchanged journal sequence
+	 */
+	public synchronized boolean recordMetadataOnlySnapshotAdvance(long epoch, long unchangedSequence) {
+		if (epoch < 0L || unchangedSequence < 0L) {
+			throw new IllegalArgumentException("Frontier metadata-only snapshot coordinates must be nonnegative");
+		}
+		if (unchangedSequence != latestStoreSequence) {
+			return false;
+		}
+		latestStoreEpoch = Math.max(latestStoreEpoch, epoch);
+		return true;
 	}
 
 	/** Replaces the fixed-size committed overlay used until the next immutable delta publication. */

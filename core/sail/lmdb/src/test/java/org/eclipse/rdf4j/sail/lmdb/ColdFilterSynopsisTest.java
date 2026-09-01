@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchFootprint;
@@ -98,6 +99,8 @@ class ColdFilterSynopsisTest {
 		builder.offer(5L, 6L, 7L, 8L);
 		ColdFilterSynopsis expected = builder.build();
 		byte[] serialized = expected.serialize(IDENTITY);
+		assertEquals(2, ByteBuffer.wrap(serialized).getInt(Integer.BYTES),
+				"Persisted cold synopses must declare the statement-stamped format");
 
 		ColdFilterSynopsis actual = ColdFilterSynopsis.deserialize(serialized, IDENTITY, 2);
 		assertEquals(expected.retainedRows(), actual.retainedRows());

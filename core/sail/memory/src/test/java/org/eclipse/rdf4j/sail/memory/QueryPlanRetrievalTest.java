@@ -313,19 +313,19 @@ public class QueryPlanRetrievalTest {
 					"      ║        Var (name=x)\n" +
 					"      ╚══ ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
 					"      Union\n" +
-					"      ╠══ Filter\n" +
+					"      ╠══ Filter (new scope)\n" +
 					"      ║  ├── Not\n" +
 					"      ║  │     Bound\n" +
 					"      ║  │        Var (name=g)\n" +
 					"      ║  └── Join (JoinIterator)\n" +
-					"      ║     ╠══ Filter (new scope) [left]\n" +
+					"      ║     ╠══ Filter [left]\n" +
 					"      ║     ║  ├── And\n" +
-					"      ║     ║  │  ╠══ Bound\n" +
-					"      ║     ║  │  ║     Var (name=s)\n" +
-					"      ║     ║  │  ╚══ Compare (>)\n" +
-					"      ║     ║  │        Var (name=o)\n" +
-					"      ║     ║  │        ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"      ║     ║  │  ╠══ Compare (>)\n" +
+					"      ║     ║  │  ║     Var (name=o)\n" +
+					"      ║     ║  │  ║     ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
+					"      ║     ║  │  ╚══ Bound\n" +
+					"      ║     ║  │        Var (name=s)\n" +
 					"      ║     ║  └── StatementPattern (costEstimate=2.50, resultSizeEstimate=0)\n" +
 					"      ║     ║        s: Var (name=s)\n" +
 					"      ║     ║        p: Var (name=_const_c03ab50c_uri, value=http://example.com/p, anonymous)\n" +
@@ -459,7 +459,7 @@ public class QueryPlanRetrievalTest {
 					"      ║  │              o: Var (name=_const_36758e_lit_eeeee601, value=\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>, anonymous)\n"
 					+
 					"      ║  └── SingletonSet\n" +
-					"      ╚══ Join (JoinIterator) [right]\n" +
+					"      ╚══ Join (HashJoinIteration) [right]\n" +
 					"         ├── Filter [left]\n" +
 					"         │  ╠══ Compare (!=)\n" +
 					"         │  ║     Var (name=o)\n" +
@@ -468,20 +468,20 @@ public class QueryPlanRetrievalTest {
 					"         │        s: Var (name=s)\n" +
 					"         │        p: Var (name=_const_efd45947_uri, value=http://example.com/prop, anonymous)\n" +
 					"         │        o: Var (name=o)\n" +
-					"         └── LeftJoin [right]\n" +
+					"         └── LeftJoin (new scope) [right]\n" +
 					"            ╠══ Join (HashJoinIteration) [left]\n" +
-					"            ║  ├── Filter (new scope) [left]\n" +
+					"            ║  ├── Filter [left]\n" +
 					"            ║  │  ╠══ And\n" +
-					"            ║  │  ║  ├── Compare (>)\n" +
-					"            ║  │  ║  │     Var (name=score)\n" +
-					"            ║  │  ║  │     ValueConstant (value=\"10\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"            ║  │  ║  ├── Compare (!=)\n" +
+					"            ║  │  ║  │  ╠══ MathExpr (-)\n" +
+					"            ║  │  ║  │  ║     Var (name=score)\n" +
+					"            ║  │  ║  │  ║     ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"            ║  │  ║  └── Compare (!=)\n" +
-					"            ║  │  ║     ╠══ MathExpr (-)\n" +
-					"            ║  │  ║     ║     Var (name=score)\n" +
-					"            ║  │  ║     ║     ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"            ║  │  ║  │  ╚══ ValueConstant (value=\"0\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"            ║  │  ║     ╚══ ValueConstant (value=\"0\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"            ║  │  ║  └── Compare (>)\n" +
+					"            ║  │  ║        Var (name=score)\n" +
+					"            ║  │  ║        ValueConstant (value=\"10\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
 					"            ║  │  ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
 					"            ║  │        s: Var (name=s)\n" +

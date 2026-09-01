@@ -62,12 +62,13 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
@@ -3067,6 +3068,28 @@ class PackedSearchTest {
 
 		assertEquals(1, query.maskCardinality(query.relOutputMaskId(query.rootRelId())));
 		assertEquals(0, query.maskCardinality(query.relAssuredMaskId(query.rootRelId())));
+	}
+
+	@Test
+	void bindingAssignmentAssuredMaskTreatsParserUndefAsUnbound() {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		List<String> names = List.of("node", "threshold");
+		ListBindingSet complete = new ListBindingSet(names,
+				new Value[] { values.createIRI("urn:node:1"), values.createLiteral(3) });
+		ListBindingSet parserUndef = new ListBindingSet(names,
+				new Value[] { values.createIRI("urn:node:2"), null });
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(new LinkedHashSet<>(names));
+		assignment.setBindingSets(List.of(complete, parserUndef));
+
+		assertEquals(Set.of("node"), assignment.getAssuredBindingNames());
+		assertEquals(Set.of("node", "threshold"), parserUndef.getBindingNames());
+		assertFalse(parserUndef.hasBinding("threshold"));
+
+		PackedQuery query = PackedQueryCodec.encode(assignment);
+
+		assertEquals(2, query.maskCardinality(query.relOutputMaskId(query.rootRelId())));
+		assertEquals(1, query.maskCardinality(query.relAssuredMaskId(query.rootRelId())));
 	}
 
 	@Test

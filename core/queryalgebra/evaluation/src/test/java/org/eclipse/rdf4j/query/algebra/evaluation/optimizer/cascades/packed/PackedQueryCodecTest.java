@@ -385,6 +385,39 @@ class PackedQueryCodecTest {
 	}
 
 	@Test
+	void rebindsOriginalValuesRowsUsingDeclaredNullableSchema() {
+		MapBindingSet coldComplete = new MapBindingSet(2);
+		coldComplete.setBinding("person", VF.createIRI("urn:person:1"));
+		coldComplete.setBinding("score", VF.createLiteral(10));
+		MapBindingSet coldUndef = new MapBindingSet(1);
+		coldUndef.setBinding("person", VF.createIRI("urn:person:2"));
+		BindingSetAssignment cold = new BindingSetAssignment();
+		cold.setBindingNames(new LinkedHashSet<>(List.of("person", "score")));
+		cold.setBindingSets(List.of(coldComplete, coldUndef));
+		PackedQuery template = PackedQueryCodec.encode(cold).withoutOriginalBindingSets();
+
+		MapBindingSet currentComplete = new MapBindingSet(2);
+		currentComplete.setBinding("person", VF.createIRI("urn:person:1"));
+		currentComplete.setBinding("score", VF.createLiteral(10));
+		MapBindingSet currentUndef = new MapBindingSet(1);
+		currentUndef.setBinding("person", VF.createIRI("urn:person:2"));
+		BindingSetAssignment current = new BindingSetAssignment();
+		current.setBindingNames(new LinkedHashSet<>(List.of("person", "score")));
+		current.setBindingSets(List.of(currentComplete, currentUndef));
+
+		assertEquals(Set.of("person", "score"), current.getBindingNames());
+		assertEquals(Set.of("person"), current.getAssuredBindingNames());
+
+		PackedQuery rebound = PackedQueryCodec.rebindOriginalBindingSets(template, current);
+		BindingSetAssignment materialized = (BindingSetAssignment) PackedPlanMaterializer.materialize(rebound,
+				rebound.rootRelId());
+		Iterator<BindingSet> materializedRows = materialized.getBindingSets().iterator();
+		assertSame(currentComplete, materializedRows.next());
+		assertSame(currentUndef, materializedRows.next());
+		assertFalse(materializedRows.hasNext());
+	}
+
+	@Test
 	void queryViewMaterializesAnExactLogicalRelationOnTheColdBoundary() {
 		TupleExpr source = new Join(
 				new StatementPattern(Var.of("subject"), Var.of("predicate"), Var.of("object")),

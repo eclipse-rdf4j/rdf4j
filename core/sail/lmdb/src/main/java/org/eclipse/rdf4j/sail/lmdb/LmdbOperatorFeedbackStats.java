@@ -32,6 +32,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -62,7 +63,6 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.DistinctBindingFeedback;
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics.InvocationAggregateObservation;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics.SemiAntiOutcomeObservation;
@@ -84,6 +84,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRankingAd
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoRolloutProfile;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoRuleHint;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchSnapshotIdentity;
@@ -120,13 +121,14 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private static final int SEMI_ANTI_PERSIST_VERSION = 13;
 	private static final int PHYSICAL_SEMI_ANTI_PERSIST_VERSION = 14;
 	private static final int FRONTIER_PERSIST_VERSION = 15;
-	private static final int DATA_STAMP_PERSIST_VERSION = 16;
+	private static final int RAW_TRANSACTION_STAMP_PERSIST_VERSION = 16;
 	private static final int INVOCATION_AGGREGATE_PERSIST_VERSION = 17;
 	private static final int LOGICAL_PHYSICAL_PERSIST_VERSION = 18;
 	private static final int PLAN_LIFECYCLE_PERSIST_VERSION = 19;
 	private static final int ABSOLUTE_LOGICAL_PERSIST_VERSION = 20;
 	private static final int LEO_PLUS_PERSIST_VERSION = 21;
-	private static final int PERSIST_VERSION = 22;
+	private static final int TYPED_SEMI_ANTI_DISTINCT_PERSIST_VERSION = 22;
+	private static final int PERSIST_VERSION = 23;
 	static final String SIDECAR_DATA_STAMP_CHECK_PROPERTY = "rdf4j.optimizer.lmdb.sidecarDataStampCheck";
 	private static final int MAX_ENTRIES = 2048;
 	private static final double MIN_CORRECTION_RATIO = 0.0001d;
@@ -203,7 +205,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private final Path sidecarPath;
 	private final Path leoSurfacePath;
 	private final Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier;
-	private java.util.function.LongSupplier dataStampSupplier = () -> 0L;
+	private final LongSupplier statementMutationStampSupplier;
 	private final BooleanSupplier adaptiveEvidenceAllowedSupplier;
 	private final boolean estimateTraceEnabled;
 	private final LmdbLeoFeedbackConfig leoFeedbackConfig;
@@ -221,24 +223,24 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	/**
 	 * Observed output cardinality of a top-level, uncorrelated logical relation, valid only while the store's LMDB
-	 * write-txn data stamp still matches {@code dataStamp}. Facts beat estimates and learned corrections for every
-	 * physical alternative sharing the logical group key; a single write demotes them silently.
+	 * statement-mutation stamp still matches {@code statementMutationStamp}. Facts beat estimates and learned
+	 * corrections for every physical alternative sharing the logical group key; a single write demotes them silently.
 	 */
 	private static final class ExactCardinalityCell {
 		private double rows = Double.NaN;
-		private long dataStamp = -1L;
+		private long statementMutationStamp = -1L;
 		private int leases;
 
 		private ExactCardinalityCell() {
 		}
 
-		private ExactCardinalityCell(double rows, long dataStamp) {
+		private ExactCardinalityCell(double rows, long statementMutationStamp) {
 			this.rows = rows;
-			this.dataStamp = dataStamp;
+			this.statementMutationStamp = statementMutationStamp;
 		}
 
 		private boolean hasFact() {
-			return isFiniteNonNegative(rows) && dataStamp >= 0L;
+			return isFiniteNonNegative(rows) && statementMutationStamp >= 0L;
 		}
 	}
 
@@ -254,6 +256,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private long runtimeTargetGeneration;
 	private long ruleSteeringCooldownUntilEpoch;
 	private int ruleSteeringBadMisses;
+	private long appliedStatementMutationStamp;
 	private boolean dirty;
 	private boolean surfaceDirty;
 
@@ -275,14 +278,16 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	LmdbOperatorFeedbackStats(Path estimatorPath,
 			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier,
 			BooleanSupplier adaptiveEvidenceAllowedSupplier,
-			java.util.function.LongSupplier dataStampSupplier) {
+			LongSupplier statementMutationStampSupplier) {
 		Objects.requireNonNull(estimatorPath, "estimatorPath");
 		this.sidecarPath = estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + SIDECAR_SUFFIX);
 		this.snapshotIdentitySupplier = Objects.requireNonNull(snapshotIdentitySupplier, "snapshotIdentitySupplier");
 		this.adaptiveEvidenceAllowedSupplier = Objects.requireNonNull(adaptiveEvidenceAllowedSupplier,
 				"adaptiveEvidenceAllowedSupplier");
 		this.estimateTraceEnabled = Boolean.getBoolean(ESTIMATE_TRACE_PROPERTY);
-		this.dataStampSupplier = Objects.requireNonNull(dataStampSupplier, "dataStampSupplier");
+		this.statementMutationStampSupplier = Objects.requireNonNull(statementMutationStampSupplier,
+				"statementMutationStampSupplier");
+		this.appliedStatementMutationStamp = requireStatementMutationStamp(statementMutationStampSupplier.getAsLong());
 		this.leoFeedbackConfig = LmdbLeoFeedbackConfig.defaultConfig();
 		this.leoSurfacePath = estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + LEO_SURFACE_SUFFIX);
 		this.leoFeedbackStore = new LmdbLeoFeedbackStore(leoSurfacePath, leoFeedbackConfig);
@@ -503,7 +508,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		if (destination.exactFact != null && observation.exactLogicalCardinality()
 				&& observation.opens() == 1L) {
 			destination.exactFact.rows = observation.actualRowsSum();
-			destination.exactFact.dataStamp = dataStampSupplier.getAsLong();
+			destination.exactFact.statementMutationStamp = appliedStatementMutationStamp;
 			if (estimateTraceEnabled
 					&& destination.contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor) {
 				System.err.println("[lmdb-operator-feedback-trace] event=publish-runtime-exact-fact"
@@ -625,10 +630,19 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	synchronized void recordStoreMutation() {
-		recordStoreMutation(Set.of());
+		recordStoreMutation(statementMutationStampSupplier.getAsLong(), Set.of());
 	}
 
 	synchronized void recordStoreMutation(Set<Long> predicateIds) {
+		recordStoreMutation(statementMutationStampSupplier.getAsLong(), predicateIds);
+	}
+
+	synchronized void recordStoreMutation(long committedStatementMutationStamp) {
+		recordStoreMutation(committedStatementMutationStamp, Set.of());
+	}
+
+	synchronized void recordStoreMutation(long committedStatementMutationStamp, Set<Long> predicateIds) {
+		advanceAppliedStatementMutationStamp(committedStatementMutationStamp);
 		if (!adaptiveEvidenceAllowed()) {
 			return;
 		}
@@ -1307,7 +1321,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			ExactCardinalityCell exactFact = exactCardinalityCell(exactFactKey, false);
 			if (exactFact != null) {
 				exactFact.rows = observation.actualRows();
-				exactFact.dataStamp = dataStampSupplier.getAsLong();
+				exactFact.statementMutationStamp = appliedStatementMutationStamp;
 			}
 			trace("record-frontier-exact-fact", node, null,
 					"groupKey=" + logicalGroupKey + ", rows=" + observation.actualRows());
@@ -1618,7 +1632,16 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return Double.NaN;
 		}
 		ExactCardinalityCell fact = exactCardinalityFacts.get(groupKey);
-		return fact != null && fact.dataStamp == dataStampSupplier.getAsLong() ? fact.rows : Double.NaN;
+		if (fact == null) {
+			return Double.NaN;
+		}
+		/*
+		 * A statement commit becomes authoritative before its post-commit feedback callback can acquire this monitor.
+		 * The applied stamp must continue to own mutation decay and persistence so old evidence is never relabelled
+		 * with a newer data version, but theorem-strength exact facts are valid solely at their live store coordinate.
+		 */
+		long currentStatementMutationStamp = requireStatementMutationStamp(statementMutationStampSupplier.getAsLong());
+		return fact.statementMutationStamp == currentStatementMutationStamp ? fact.rows : Double.NaN;
 	}
 
 	synchronized double exactCardinalityFact(LogicalLearningKey logicalKey,
@@ -1658,7 +1681,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		while (iterator.hasNext()) {
 			ExactCardinalityCell candidate = iterator.next().getValue();
 			if (candidate.leases == 0
-					&& (!candidate.hasFact() || candidate.dataStamp != dataStampSupplier.getAsLong())) {
+					&& (!candidate.hasFact()
+							|| candidate.statementMutationStamp != appliedStatementMutationStamp)) {
 				iterator.remove();
 				return true;
 			}
@@ -1736,7 +1760,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		return true;
 	}
 
-	private void recordPlanShadow(TupleExpr root, InvocationAggregateObservation aggregate) {
+	private synchronized void recordPlanShadow(TupleExpr root, InvocationAggregateObservation aggregate) {
 		if (root == null || isPlanFeedbackRecorded(root)) {
 			return;
 		}
@@ -2317,9 +2341,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(tempPath))) {
 			out.writeInt(PERSIST_VERSION);
 			snapshotIdentity.writeTo(out);
-			// The sketch identity only changes when the async synopsis rebuild publishes; the LMDB write-txn id is
-			// a persistent monotonic data version that closes the crash window between a commit and that publish.
-			out.writeLong(dataStampSupplier.getAsLong());
+			// The sketch identity only changes when the async synopsis rebuild publishes. The journal sequence closes
+			// the intervening statement-commit window without treating metadata-only LMDB commits as data mutations.
+			out.writeLong(appliedStatementMutationStamp);
 			out.writeLong(feedbackEpoch);
 			out.writeLong(ruleSteeringCooldownUntilEpoch);
 			out.writeInt(ruleSteeringBadMisses);
@@ -2359,7 +2383,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				if (cell.hasFact()) {
 					out.writeUTF(entry.getKey());
 					out.writeDouble(cell.rows);
-					out.writeLong(cell.dataStamp);
+					out.writeLong(cell.statementMutationStamp);
 				}
 			}
 			planLifecycle.writeTo(out);
@@ -2389,7 +2413,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	private boolean persistLeoSurfaces(SketchSnapshotIdentity snapshotIdentity) {
 		try {
-			leoFeedbackStore.persist(snapshotIdentity.token(), leoSurfaceStats);
+			leoFeedbackStore.persist(snapshotIdentity.token(), appliedStatementMutationStamp, leoSurfaceStats);
 			return true;
 		} catch (IOException e) {
 			return false;
@@ -2402,7 +2426,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return new LmdbLeoSurfaceStats(leoFeedbackConfig);
 		}
 		try {
-			return leoFeedbackStore.load(currentIdentity.token());
+			return leoFeedbackStore.load(currentIdentity.token(), appliedStatementMutationStamp);
 		} catch (IOException | RuntimeException e) {
 			return new LmdbLeoSurfaceStats(leoFeedbackConfig);
 		}
@@ -2431,28 +2455,17 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		int loadedSteeringBadMisses = 0;
 		try (DataInputStream in = new DataInputStream(Files.newInputStream(sidecarPath))) {
 			int version = in.readInt();
-			if (version != LEGACY_PERSIST_VERSION
-					&& version != SEMI_ANTI_PERSIST_VERSION
-					&& version != PHYSICAL_SEMI_ANTI_PERSIST_VERSION
-					&& version != FRONTIER_PERSIST_VERSION
-					&& version != DATA_STAMP_PERSIST_VERSION
-					&& version != INVOCATION_AGGREGATE_PERSIST_VERSION
-					&& version != LOGICAL_PHYSICAL_PERSIST_VERSION
-					&& version != PLAN_LIFECYCLE_PERSIST_VERSION
-					&& version != ABSOLUTE_LOGICAL_PERSIST_VERSION
-					&& version != LEO_PLUS_PERSIST_VERSION
-					&& version != PERSIST_VERSION) {
+			if (version != PERSIST_VERSION) {
 				return;
 			}
 			SketchSnapshotIdentity persistedIdentity = SketchSnapshotIdentity.readFrom(in);
 			if (!persistedIdentity.equals(currentIdentity)) {
 				return;
 			}
-			if (version >= DATA_STAMP_PERSIST_VERSION) {
-				long persistedDataStamp = in.readLong();
-				if (sidecarDataStampCheckEnabled() && persistedDataStamp != dataStampSupplier.getAsLong()) {
-					return;
-				}
+			long persistedStatementMutationStamp = in.readLong();
+			if (sidecarDataStampCheckEnabled()
+					&& persistedStatementMutationStamp != appliedStatementMutationStamp) {
+				return;
 			}
 			if (version >= 10) {
 				loadedEpoch = Math.max(0L, in.readLong());
@@ -2508,9 +2521,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				for (int i = 0; i < factCount; i++) {
 					String factKey = in.readUTF();
 					double rows = in.readDouble();
-					long dataStamp = in.readLong();
+					long statementMutationStamp = in.readLong();
 					if (version >= ABSOLUTE_LOGICAL_PERSIST_VERSION && isFiniteNonNegative(rows)) {
-						loadedExactFacts.put(factKey, new ExactCardinalityCell(rows, dataStamp));
+						loadedExactFacts.put(factKey, new ExactCardinalityCell(rows, statementMutationStamp));
 					}
 				}
 				if (version >= PLAN_LIFECYCLE_PERSIST_VERSION) {
@@ -3754,6 +3767,23 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		} catch (RuntimeException e) {
 			return null;
 		}
+	}
+
+	private void advanceAppliedStatementMutationStamp(long committedStatementMutationStamp) {
+		long requiredStamp = requireStatementMutationStamp(committedStatementMutationStamp);
+		if (requiredStamp < appliedStatementMutationStamp) {
+			throw new IllegalArgumentException("Statement mutation stamp cannot move backwards: " + requiredStamp
+					+ " < " + appliedStatementMutationStamp);
+		}
+		appliedStatementMutationStamp = requiredStamp;
+	}
+
+	private static long requireStatementMutationStamp(long statementMutationStamp) {
+		if (statementMutationStamp < 0L) {
+			throw new IllegalArgumentException("Statement mutation stamp must be non-negative: "
+					+ statementMutationStamp);
+		}
+		return statementMutationStamp;
 	}
 
 	private boolean adaptiveEvidenceAllowed() {

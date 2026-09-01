@@ -208,7 +208,7 @@ final class PackedQueryCodec {
 
 	private static boolean assignmentMatches(PackedQuery query, int relationId, BindingSetAssignment assignment) {
 		int payloadId = query.relPayload(relationId);
-		Set<String> names = assignment.getAssuredBindingNames();
+		Set<String> names = assignment.getBindingNames();
 		int nameSetId = query.payloadPrimary(payloadId);
 		if (names.size() != query.payloadChildCount(nameSetId)) {
 			return false;
@@ -807,7 +807,7 @@ final class PackedQueryCodec {
 		}
 
 		private int bindingSetAssignment(BindingSetAssignment assignment, int nodeFlags) {
-			Set<String> outputNames = assignment.getAssuredBindingNames();
+			Set<String> outputNames = assignment.getBindingNames();
 			int names = nameSetPayload(outputNames);
 			Iterable<BindingSet> rows = assignment.getBindingSets();
 			if (rows == null) {
@@ -824,16 +824,12 @@ final class PackedQueryCodec {
 			Set<String> assuredNames = null;
 			for (BindingSet row : rows) {
 				if (assuredNames == null) {
-					assuredNames = new LinkedHashSet<>(row.getBindingNames());
-				} else {
-					assuredNames.retainAll(row.getBindingNames());
+					assuredNames = new LinkedHashSet<>(outputNames);
 				}
+				assuredNames.removeIf(name -> !row.hasBinding(name));
 				int slot = reserveScratch(1);
 				scratch[slot] = bindingRow(row, count);
 				count++;
-			}
-			if (assuredNames != null) {
-				assuredNames.retainAll(outputNames);
 			}
 			int assured = assuredNames == null ? 0 : nameSetPayload(assuredNames);
 			int payload = payloads.internCanonical(PackedPayloadOp.BINDING_SET_ASSIGNMENT, names, assured, 1,

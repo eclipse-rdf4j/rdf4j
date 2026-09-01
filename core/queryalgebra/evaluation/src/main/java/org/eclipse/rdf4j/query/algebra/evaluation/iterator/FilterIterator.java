@@ -38,13 +38,17 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
@@ -61,12 +65,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -249,6 +254,7 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		if (containsVariableScopeChange(subQuery, assuredSharedMinus)) {
 			return declineMaterializedExists(filter, algorithmHint, "subquery-scope-boundary");
 		}
+		boolean requiresPerProbeSubstitution = requiresPerProbeExistsSubstitution(subQuery);
 		if (containsSubQueryValueOperator(subQuery)) {
 			return declineMaterializedExists(filter, algorithmHint, "nested-subquery-value-operator");
 		}
@@ -285,13 +291,18 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		RuntimeFeedbackContract feedbackContract = filter.getRuntimeFeedbackContract();
 		boolean recordLegacyFilterOutcomes = recordFilterOutcomes && evaluationStatistics != null
 				&& !evaluationStatistics.requiresPreboundRuntimeFeedback();
-		int strategyMode = STREAMING_CORRELATED.equals(algorithmHint)
+		int strategyMode = requiresPerProbeSubstitution
 				? MaterializedExistsFilterIteration.STREAMING
-				: MEMOIZED_CORRELATED.equals(algorithmHint)
-						? MaterializedExistsFilterIteration.MEMOIZED
-						: MATERIALIZED_HASH.equals(algorithmHint)
-								? MaterializedExistsFilterIteration.MATERIALIZED
-								: MaterializedExistsFilterIteration.ADAPTIVE;
+				: STREAMING_CORRELATED.equals(algorithmHint)
+						? MaterializedExistsFilterIteration.STREAMING
+						: MEMOIZED_CORRELATED.equals(algorithmHint)
+								? MaterializedExistsFilterIteration.MEMOIZED
+								: MATERIALIZED_HASH.equals(algorithmHint)
+										? MaterializedExistsFilterIteration.MATERIALIZED
+										: MaterializedExistsFilterIteration.ADAPTIVE;
+		Function<BindingSet, CloseableIteration<BindingSet>> existsProbeFunction = requiresPerProbeSubstitution
+				? bindings -> evaluateSubstitutedExists(subQuery, strategy, context, bindings)
+				: existsArg::evaluate;
 		// One probe budget for the whole step: joins re-instantiate this filter once per outer row, and a
 		// per-instance budget would keep every instance probing forever instead of amortizing into
 		// materialization (see MaterializedExistsFilterIteration.PROBE_LIMIT).
@@ -317,12 +328,19 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		recordMaterializedExistsDisposition(filter, algorithmHint, "compiled-specialized");
 		return bindings -> new MaterializedExistsFilterIteration(filter, arg.evaluate(bindings),
 				existsArg::evaluate,
-				existsArg::evaluate, sharedBindingArray, correlationKeyBindingArray,
+				existsProbeFunction, sharedBindingArray, correlationKeyBindingArray,
 				materializationParameterBindingArray, subQuery, evaluationStatistics, recordFilterOutcomes,
 				sharedProbeBudget, sharedProbeCache, sharedProbeCacheEntries, sharedProbeCacheCapacity,
 				distinctBindings, materializationCache, recordLegacyFilterOutcomes, filter.isRuntimeTelemetryEnabled(),
 				feedbackContract == null ? RuntimeFeedbackContract.Algorithm.UNKNOWN : feedbackContract.algorithm(),
 				feedbackContract == null ? 0 : feedbackContract.physicalImplementationId(), strategyMode, negated);
+	}
+
+	private static CloseableIteration<BindingSet> evaluateSubstitutedExists(TupleExpr subQuery,
+			EvaluationStrategy strategy, QueryEvaluationContext context, BindingSet bindings) {
+		TupleExpr substitutedSubQuery = subQuery.clone();
+		new BindingAssignerOptimizer().optimize(substitutedSubQuery, null, bindings);
+		return strategy.precompile(substitutedSubQuery, context).evaluate(bindings);
 	}
 
 	private static int plannedSemiAntiCacheCapacity(Filter filter) {
@@ -392,6 +410,41 @@ public class FilterIterator extends FilterIteration<BindingSet>
 				return true;
 			}
 			queue.addAll(TupleExprs.getChildren(current));
+		}
+		return false;
+	}
+
+	private static boolean requiresPerProbeExistsSubstitution(TupleExpr subQuery) {
+		return !isCompatibilitySelectionSafe(subQuery);
+	}
+
+	private static boolean isCompatibilitySelectionSafe(TupleExpr expression) {
+		// Shared materialization is correct only when correlation can do no more than select compatible rows from
+		// the uncorrelated result. Keep this as a proven-safe allowlist: new or extension tuple operators default to
+		// per-probe correlated evaluation until their equivalence has been established explicitly.
+		if (expression instanceof StatementPattern || expression instanceof BindingSetAssignment
+				|| expression instanceof SingletonSet || expression instanceof EmptySet) {
+			return true;
+		}
+		if (expression instanceof Join join) {
+			return isCompatibilitySelectionSafe(join.getLeftArg())
+					&& isCompatibilitySelectionSafe(join.getRightArg());
+		}
+		if (expression instanceof Union union) {
+			return isCompatibilitySelectionSafe(union.getLeftArg())
+					&& isCompatibilitySelectionSafe(union.getRightArg());
+		}
+		if (expression instanceof QueryRoot queryRoot) {
+			return isCompatibilitySelectionSafe(queryRoot.getArg());
+		}
+		if (expression instanceof Distinct distinct) {
+			return isCompatibilitySelectionSafe(distinct.getArg());
+		}
+		if (expression instanceof Reduced reduced) {
+			return isCompatibilitySelectionSafe(reduced.getArg());
+		}
+		if (expression instanceof Order order) {
+			return isCompatibilitySelectionSafe(order.getArg());
 		}
 		return false;
 	}

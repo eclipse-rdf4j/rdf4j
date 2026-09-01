@@ -59,7 +59,6 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 	private final LeftJoin leftJoin;
 	private final Set<String> optionalVars;
 	private final QueryEvaluationStep wellDesignedRightEvaluationStep;
-	private final boolean positiveRightSubtree;
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context) {
@@ -77,39 +76,6 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 				? JoinMetricsTracking.wrapRightInput(rightRaw, leftJoin, leftJoin.getRightArg(),
 						runtimeTelemetryTrackingActive)
 				: JoinMetricsTracking.wrapRightInput(rightRaw, deferredTelemetry);
-		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
-			HashJoinBindingContract contract = HashJoinBindingContract.from(leftJoin.getLeftArg(),
-					leftJoin.getRightArg());
-			return bs -> new HashJoinIteration(left, right, bs, true, contract, context,
-					HashJoinIteration.BuildSide.RIGHT, leftJoin);
-		}
-		if (!leftJoin.hasCondition()
-				&& isPositiveBindingSubtree(leftJoin.getRightArg())
-				&& "memoized".equals(leftJoin.getStringMetricPlanned("optimizer.leftJoinAlgorithmHint"))) {
-			List<String> correlationNames = List.copyOf(new TreeSet<>(leftJoin.getRightArg().getBindingNames()));
-			long maxMemoizedKeys = maxMemoizedEntries(MAX_MEMOIZED_KEYS_PROPERTY, DEFAULT_MAX_MEMOIZED_KEYS);
-			long maxMemoizedRows = maxMemoizedEntries(MAX_MEMOIZED_ROWS_PROPERTY, DEFAULT_MAX_MEMOIZED_ROWS);
-			if (maxMemoizedKeys > 0L) {
-				return bindings -> new MemoizedLeftJoinIteration(
-						left, right, bindings, correlationNames, leftJoin, maxMemoizedKeys, maxMemoizedRows);
-			}
-		}
-		if (!leftJoin.hasCondition()
-				&& isPositiveBindingSubtree(leftJoin.getRightArg())
-				&& (containsUnion(leftJoin.getRightArg())
-						|| "hash".equals(leftJoin.getStringMetricPlanned("optimizer.joinAlgorithmHint")))) {
-			HashJoinBindingContract contract = HashJoinBindingContract.from(leftJoin.getLeftArg(),
-					leftJoin.getRightArg());
-			long maxMaterializedRightRows = maxMaterializedRightRows();
-			return bindings -> new AdaptiveHashLeftJoinIteration(
-					left,
-					right,
-					bindings,
-					contract,
-					context,
-					leftJoin,
-					maxMaterializedRightRows);
-		}
 
 		// Check whether optional join is "well designed" as defined in section
 		// 4.2 of "Semantics and Complexity of SPARQL", 2006, Jorge Pérez et al.
@@ -122,7 +88,46 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		} else {
 			condition = null;
 		}
-		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector.getVarNames());
+		LeftJoinQueryEvaluationStep standard = new LeftJoinQueryEvaluationStep(
+				right, condition, left, leftJoin, optionalVarCollector.getVarNames());
+
+		if (!leftJoin.hasCondition() && TupleExprs.containsSubquery(leftJoin.getRightArg())) {
+			HashJoinBindingContract contract = HashJoinBindingContract.from(leftJoin.getLeftArg(),
+					leftJoin.getRightArg());
+			QueryEvaluationStep optimized = bs -> new HashJoinIteration(left, right, bs, true, contract, context,
+					HashJoinIteration.BuildSide.RIGHT, leftJoin);
+			return standard.whenWellDesigned(optimized);
+		}
+		if (!leftJoin.hasCondition()
+				&& isPositiveBindingSubtree(leftJoin.getRightArg())
+				&& "memoized".equals(leftJoin.getStringMetricPlanned("optimizer.leftJoinAlgorithmHint"))) {
+			List<String> correlationNames = List.copyOf(new TreeSet<>(leftJoin.getRightArg().getBindingNames()));
+			long maxMemoizedKeys = maxMemoizedEntries(MAX_MEMOIZED_KEYS_PROPERTY, DEFAULT_MAX_MEMOIZED_KEYS);
+			long maxMemoizedRows = maxMemoizedEntries(MAX_MEMOIZED_ROWS_PROPERTY, DEFAULT_MAX_MEMOIZED_ROWS);
+			if (maxMemoizedKeys > 0L) {
+				QueryEvaluationStep optimized = bindings -> new MemoizedLeftJoinIteration(
+						left, right, bindings, correlationNames, leftJoin, maxMemoizedKeys, maxMemoizedRows);
+				return standard.whenWellDesigned(optimized);
+			}
+		}
+		if (!leftJoin.hasCondition()
+				&& isIndependentEvaluationSafe(leftJoin.getRightArg())
+				&& (containsUnion(leftJoin.getRightArg())
+						|| "hash".equals(leftJoin.getStringMetricPlanned("optimizer.joinAlgorithmHint")))) {
+			HashJoinBindingContract contract = HashJoinBindingContract.from(leftJoin.getLeftArg(),
+					leftJoin.getRightArg());
+			long maxMaterializedRightRows = maxMaterializedRightRows();
+			QueryEvaluationStep optimized = bindings -> new AdaptiveHashLeftJoinIteration(
+					left,
+					right,
+					bindings,
+					contract,
+					context,
+					leftJoin,
+					maxMaterializedRightRows);
+			return standard.whenWellDesigned(optimized);
+		}
+		return standard;
 	}
 
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
@@ -150,7 +155,6 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		}
 
 		this.optionalVars = optionalVars;
-		this.positiveRightSubtree = isPositiveBindingSubtree(leftJoin.getRightArg());
 		this.wellDesignedRightEvaluationStep = determineRightEvaluationStep(
 				leftJoin,
 				right,
@@ -160,17 +164,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-
-		boolean containsNone = true;
-		Set<String> bindingNames = bindings.getBindingNames();
-		for (String optionalVar : optionalVars) {
-			if (bindingNames.contains(optionalVar)) {
-				containsNone = false;
-				break;
-			}
-		}
-
-		if (containsNone) {
+		if (isWellDesignedFor(bindings)) {
 			// left join is "well designed"
 			leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
 			return LeftJoinIterator.getInstance(left, bindings, wellDesignedRightEvaluationStep);
@@ -180,18 +174,29 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 			leftJoin.setAlgorithm(BadlyDesignedLeftJoinIterator.class.getSimpleName());
 			var rightEvaluationStep = determineRightEvaluationStep(leftJoin, right, condition, problemVars);
-			Set<String> earlyBoundProblemVars = positiveRightSubtree ? problemVars : Set.of();
 			return new BadlyDesignedLeftJoinIterator(
-					left, bindings, problemVars, earlyBoundProblemVars, rightEvaluationStep);
+					left, bindings, problemVars, rightEvaluationStep);
 		}
 	}
 
+	private QueryEvaluationStep whenWellDesigned(QueryEvaluationStep optimized) {
+		return bindings -> isWellDesignedFor(bindings) ? optimized.evaluate(bindings) : evaluate(bindings);
+	}
+
+	private boolean isWellDesignedFor(BindingSet bindings) {
+		Set<String> bindingNames = bindings.getBindingNames();
+		for (String optionalVar : optionalVars) {
+			if (bindingNames.contains(optionalVar)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	/**
-	 * Positive graph-pattern trees are monotone under a compatible input binding: evaluating them with that binding is
-	 * equivalent to evaluating them unbound and retaining compatible mappings. This lets badly-designed OPTIONAL
-	 * evaluation bind problem variables at the earliest RHS probe without changing its fallback semantics. Any operator
-	 * that can observe boundness, hide scope, assign values, aggregate, limit, or subtract mappings remains on the
-	 * conservative compatibility-filtering path.
+	 * Positive graph-pattern trees can reuse a memoized result for the same complete set of RHS-visible correlations.
+	 * Any operator that can observe boundness, hide scope, assign values, aggregate, limit, or subtract mappings
+	 * remains on the conservative evaluation path.
 	 */
 	private static boolean isPositiveBindingSubtree(TupleExpr expression) {
 		if (expression instanceof StatementPattern || expression instanceof SingletonSet
@@ -208,6 +213,27 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		}
 		if (expression instanceof Union union) {
 			return isPositiveBindingSubtree(union.getLeftArg()) && isPositiveBindingSubtree(union.getRightArg());
+		}
+		return false;
+	}
+
+	/**
+	 * An independently evaluated OPTIONAL build must also be monotone under the bindings supplied by its outer left
+	 * row. A nested OPTIONAL is not: binding one of its right-side variables can turn a successful extension into the
+	 * nested left row, so evaluating it once without that correlation and probing by compatibility changes results.
+	 */
+	private static boolean isIndependentEvaluationSafe(TupleExpr expression) {
+		if (expression instanceof StatementPattern || expression instanceof SingletonSet
+				|| expression instanceof EmptySet) {
+			return true;
+		}
+		if (expression instanceof Join join) {
+			return isIndependentEvaluationSafe(join.getLeftArg())
+					&& isIndependentEvaluationSafe(join.getRightArg());
+		}
+		if (expression instanceof Union union) {
+			return isIndependentEvaluationSafe(union.getLeftArg())
+					&& isIndependentEvaluationSafe(union.getRightArg());
 		}
 		return false;
 	}

@@ -110,7 +110,7 @@ class LmdbLearnedFilterSurfaceTest {
 	}
 
 	@Test
-	void filterSidecarUsesVersionSevenAndReadsVersionFive(@TempDir File dataDir) throws IOException {
+	void filterSidecarUsesVersionEightAndRejectsStamplessVersionFive(@TempDir File dataDir) throws IOException {
 		LmdbStore writer = initializedStore(dataDir);
 		try {
 			writer.getBackingStore().getEvaluationStatistics().recordFilterOutcome(filter("5"), 20L, 80L);
@@ -125,7 +125,7 @@ class LmdbLearnedFilterSurfaceTest {
 					.orElseThrow();
 		}
 		byte[] bytes = Files.readAllBytes(sidecar);
-		assertEquals(7, ByteBuffer.wrap(bytes).getInt(), "new filter evidence must use the version-seven format");
+		assertEquals(8, ByteBuffer.wrap(bytes).getInt(), "new filter evidence must use the version-eight format");
 
 		// A version-5 file has no data stamp after the 24-byte identity — drop it along with the version.
 		byte[] versionFive = new byte[bytes.length - Long.BYTES];
@@ -138,8 +138,8 @@ class LmdbLearnedFilterSurfaceTest {
 			EvaluationStatistics.FilterPassEstimate estimate = reader.getBackingStore()
 					.getEvaluationStatistics()
 					.estimateFilterPass(filter("6"));
-			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, estimate.getSource());
-			assertEquals(0.2d, estimate.getPassRatio(), 0.000_001d);
+			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, estimate.getSource(),
+					"Stampless evidence is ambiguous after the mutation coordinate changed and must be relearned");
 		} finally {
 			reader.shutDown();
 		}

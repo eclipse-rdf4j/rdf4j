@@ -31,14 +31,14 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackDescriptor;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierMemoryLimitException;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierMemoryPurpose;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateArena;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor;
 import org.junit.jupiter.api.Test;
 
 class PackedCostSessionLifecycleTest {

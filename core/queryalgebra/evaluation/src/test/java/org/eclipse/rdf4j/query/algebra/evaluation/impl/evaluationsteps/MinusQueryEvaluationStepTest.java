@@ -12,16 +12,26 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -77,7 +87,7 @@ class MinusQueryEvaluationStepTest {
 				result = drain(iteration);
 			}
 			assertThat(result).extracting(row -> row.getValue("x")).containsExactly(missed);
-			assertThat(rightEvaluations).hasValueGreaterThan(1);
+			assertThat(rightEvaluations).hasValue(1);
 			assertThat(rightEvaluationsWithLeftBinding).hasValue(0);
 		} finally {
 			if (previousLimit == null) {
@@ -88,10 +98,216 @@ class MinusQueryEvaluationStepTest {
 		}
 	}
 
+	@Test
+	void materializedRightOverflowPreservesLeftOrderAndDuplicatesAcrossBlocks() {
+		Value matchedEarly = SimpleValueFactory.getInstance().createIRI("urn:matched:early");
+		Value matchedLate = SimpleValueFactory.getInstance().createIRI("urn:matched:late");
+		Value missed = SimpleValueFactory.getInstance().createIRI("urn:missed");
+		Value separateDomain = SimpleValueFactory.getInstance().createIRI("urn:separate-domain");
+		List<BindingSet> leftRows = List.of(
+				row("order", SimpleValueFactory.getInstance().createLiteral(1), "x", matchedEarly),
+				row("order", SimpleValueFactory.getInstance().createLiteral(2), "x", matchedLate),
+				row("order", SimpleValueFactory.getInstance().createLiteral(3), "x", missed),
+				row("order", SimpleValueFactory.getInstance().createLiteral(3), "x", missed),
+				row("other", separateDomain));
+		List<BindingSet> rightRows = List.of(
+				row("x", matchedEarly),
+				row("x", matchedLate),
+				row("x", SimpleValueFactory.getInstance().createIRI("urn:unrelated")));
+		AtomicInteger rightEvaluations = new AtomicInteger();
+		QueryEvaluationStep left = ignored -> new CloseableIteratorIteration<>(leftRows.iterator());
+		QueryEvaluationStep right = ignored -> {
+			rightEvaluations.incrementAndGet();
+			return new CloseableIteratorIteration<>(rightRows.iterator());
+		};
+		MinusQueryEvaluationStep step = new MinusQueryEvaluationStep(left, right, 1, 2);
+
+		List<BindingSet> result;
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			result = drain(iteration);
+		}
+
+		assertThat(result).containsExactly(leftRows.get(2), leftRows.get(3), leftRows.get(4));
+		assertThat(rightEvaluations).hasValue(1);
+	}
+
+	@Test
+	void materializedRightOverflowConsumesStatefulRightExactlyOnce() {
+		Value matchedEarly = SimpleValueFactory.getInstance().createIRI("urn:matched:early");
+		Value matchedLate = SimpleValueFactory.getInstance().createIRI("urn:matched:late");
+		Value missed = SimpleValueFactory.getInstance().createIRI("urn:missed");
+		List<BindingSet> leftRows = List.of(row("x", matchedLate), row("x", missed));
+		List<BindingSet> rightRows = List.of(row("x", matchedEarly), row("x", matchedLate));
+		AtomicInteger rightEvaluations = new AtomicInteger();
+		QueryEvaluationStep left = ignored -> new CloseableIteratorIteration<>(leftRows.iterator());
+		QueryEvaluationStep statefulRight = ignored -> {
+			assertThat(rightEvaluations.incrementAndGet()).as("RHS evaluations").isEqualTo(1);
+			return new CloseableIteratorIteration<>(rightRows.iterator());
+		};
+		MinusQueryEvaluationStep step = new MinusQueryEvaluationStep(left, statefulRight, 1, 1);
+
+		List<BindingSet> result;
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			result = drain(iteration);
+		}
+
+		assertThat(result).containsExactly(leftRows.get(1));
+		assertThat(rightEvaluations).hasValue(1);
+	}
+
+	@Test
+	void materializedRightOverflowConsumesAllRightRowsBeforeReturningOrFailing() {
+		Value matched = SimpleValueFactory.getInstance().createIRI("urn:matched");
+		QueryEvaluationException expected = new QueryEvaluationException("late RHS failure");
+		AtomicInteger rightEvaluations = new AtomicInteger();
+		QueryEvaluationStep left = ignored -> new CloseableIteratorIteration<>(List.<BindingSet>of(row("x", matched))
+				.iterator());
+		QueryEvaluationStep failingRight = ignored -> {
+			rightEvaluations.incrementAndGet();
+			return new LookAheadIteration<>() {
+				private int index;
+
+				@Override
+				protected BindingSet getNextElement() {
+					if (index++ == 0) {
+						return row("x", matched);
+					}
+					throw expected;
+				}
+
+				@Override
+				protected void handleClose() {
+				}
+			};
+		};
+		MinusQueryEvaluationStep step = new MinusQueryEvaluationStep(left, failingRight, 0, 1);
+
+		assertThatThrownBy(() -> {
+			try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+				drain(iteration);
+			}
+		}).isSameAs(expected);
+		assertThat(rightEvaluations).hasValue(1);
+	}
+
+	@Test
+	void productionLeftBufferLimitIsIndependentOfRightMaterializationLimit() {
+		assertThat(MinusQueryEvaluationStep.maxBufferedLeftRows(1))
+				.isEqualTo(MinusQueryEvaluationStep.maxBufferedLeftRows(1_000_000));
+		assertThat(MinusQueryEvaluationStep.maxBufferedLeftRows(Long.MAX_VALUE)).isEqualTo(4_096);
+	}
+
+	@Test
+	void materializedRightPrefixExcludesLaterBlockWithoutReopening() {
+		Value prefixMatch = SimpleValueFactory.getInstance().createIRI("urn:prefix-match");
+		Value firstMiss = SimpleValueFactory.getInstance().createIRI("urn:first-miss");
+		Value secondMiss = SimpleValueFactory.getInstance().createIRI("urn:second-miss");
+		List<BindingSet> leftRows = List.of(
+				row("x", firstMiss),
+				row("x", secondMiss),
+				row("x", prefixMatch),
+				row("x", prefixMatch));
+		List<BindingSet> rightRows = List.of(
+				row("x", prefixMatch),
+				row("x", SimpleValueFactory.getInstance().createIRI("urn:overflow")));
+		AtomicInteger rightEvaluations = new AtomicInteger();
+		QueryEvaluationStep left = ignored -> new CloseableIteratorIteration<>(leftRows.iterator());
+		QueryEvaluationStep right = ignored -> {
+			rightEvaluations.incrementAndGet();
+			return new CloseableIteratorIteration<>(rightRows.iterator());
+		};
+		MinusQueryEvaluationStep step = new MinusQueryEvaluationStep(left, right, 1, 2);
+
+		List<BindingSet> result;
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			result = drain(iteration);
+		}
+
+		assertThat(result).containsExactly(leftRows.get(0), leftRows.get(1));
+		assertThat(rightEvaluations).hasValue(1);
+	}
+
+	@Test
+	void closeWhileOverflowProbeStartsDoesNotDereferenceReleasedSpill() throws Exception {
+		Value shared = SimpleValueFactory.getInstance().createIRI("urn:shared");
+		BlockingCompatibilityBindingSet blockingPrefix = new BlockingCompatibilityBindingSet();
+		blockingPrefix.addBinding("x", shared);
+		List<BindingSet> rightRows = List.of(
+				blockingPrefix,
+				row("x", SimpleValueFactory.getInstance().createIRI("urn:overflow")));
+		QueryEvaluationStep left = ignored -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(row("x", shared)).iterator());
+		QueryEvaluationStep right = ignored -> new CloseableIteratorIteration<>(rightRows.iterator());
+		MinusQueryEvaluationStep step = new MinusQueryEvaluationStep(left, right, 1, 1);
+		CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance());
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Future<Boolean> hasNext = executor.submit(iteration::hasNext);
+
+		try {
+			assertThat(blockingPrefix.awaitCompatibilityCheck()).isTrue();
+			iteration.close();
+			blockingPrefix.releaseCompatibilityCheck();
+			assertThat(hasNext.get(5, TimeUnit.SECONDS)).isFalse();
+			iteration.close();
+		} finally {
+			blockingPrefix.releaseCompatibilityCheck();
+			iteration.close();
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void closeDuringOverflowScanClosesActiveInputAndTerminatesCleanly() throws Exception {
+		Value shared = SimpleValueFactory.getInstance().createIRI("urn:shared");
+		CountDownLatch leftClosed = new CountDownLatch(1);
+		BlockingReadValue blockingOverflowValue = BlockingReadValue.prepare();
+		QueryEvaluationStep left = ignored -> new LookAheadIteration<>() {
+			private BindingSet next = row("x", shared);
+
+			@Override
+			protected BindingSet getNextElement() {
+				BindingSet current = next;
+				next = null;
+				return current;
+			}
+
+			@Override
+			protected void handleClose() {
+				leftClosed.countDown();
+			}
+		};
+		QueryEvaluationStep right = ignored -> new CloseableIteratorIteration<>(List.<BindingSet>of(
+				row("x", SimpleValueFactory.getInstance().createIRI("urn:prefix-miss")),
+				row("x", blockingOverflowValue)).iterator());
+		MinusQueryEvaluationStep step = new MinusQueryEvaluationStep(left, right, 1, 1);
+		CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance());
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		Future<Boolean> hasNext = executor.submit(iteration::hasNext);
+
+		try {
+			assertThat(BlockingReadValue.awaitRead()).isTrue();
+			Future<?> close = executor.submit(iteration::close);
+			assertThat(leftClosed.await(5, TimeUnit.SECONDS)).isTrue();
+			BlockingReadValue.releaseRead();
+			close.get(5, TimeUnit.SECONDS);
+			assertThat(hasNext.get(5, TimeUnit.SECONDS)).isFalse();
+		} finally {
+			BlockingReadValue.releaseRead();
+			iteration.close();
+			executor.shutdownNow();
+		}
+	}
+
 	private static QueryBindingSet row(String name1, Value value1, String name2, Value value2) {
 		QueryBindingSet bindings = new QueryBindingSet();
 		bindings.addBinding(name1, value1);
 		bindings.addBinding(name2, value2);
+		return bindings;
+	}
+
+	private static QueryBindingSet row(String name, Value value) {
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding(name, value);
 		return bindings;
 	}
 
@@ -101,5 +317,76 @@ class MinusQueryEvaluationStepTest {
 			result.add(iteration.next());
 		}
 		return result;
+	}
+
+	private static final class BlockingCompatibilityBindingSet extends QueryBindingSet {
+		private static final long serialVersionUID = 1L;
+
+		private final CountDownLatch compatibilityCheckEntered = new CountDownLatch(1);
+		private final CountDownLatch compatibilityCheckReleased = new CountDownLatch(1);
+
+		@Override
+		public boolean isCompatible(BindingSet bindings) {
+			compatibilityCheckEntered.countDown();
+			try {
+				if (!compatibilityCheckReleased.await(5, TimeUnit.SECONDS)) {
+					throw new AssertionError("timed out waiting to release compatibility check");
+				}
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError("compatibility check interrupted", interrupted);
+			}
+			return false;
+		}
+
+		private boolean awaitCompatibilityCheck() throws InterruptedException {
+			return compatibilityCheckEntered.await(5, TimeUnit.SECONDS);
+		}
+
+		private void releaseCompatibilityCheck() {
+			compatibilityCheckReleased.countDown();
+		}
+	}
+
+	private static final class BlockingReadValue implements Value {
+		private static final long serialVersionUID = 1L;
+
+		private static volatile CountDownLatch readEntered;
+		private static volatile CountDownLatch readReleased;
+
+		private static BlockingReadValue prepare() {
+			readEntered = new CountDownLatch(1);
+			readReleased = new CountDownLatch(1);
+			return new BlockingReadValue();
+		}
+
+		private static boolean awaitRead() throws InterruptedException {
+			return readEntered.await(5, TimeUnit.SECONDS);
+		}
+
+		private static void releaseRead() {
+			CountDownLatch release = readReleased;
+			if (release != null) {
+				release.countDown();
+			}
+		}
+
+		private void readObject(ObjectInputStream input) throws IOException, ClassNotFoundException {
+			input.defaultReadObject();
+			readEntered.countDown();
+			try {
+				if (!readReleased.await(5, TimeUnit.SECONDS)) {
+					throw new IOException("timed out waiting to release spill deserialization");
+				}
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw new IOException("spill deserialization interrupted", interrupted);
+			}
+		}
+
+		@Override
+		public String stringValue() {
+			return "urn:blocking-overflow";
+		}
 	}
 }

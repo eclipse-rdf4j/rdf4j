@@ -923,7 +923,7 @@ class FilterIteratorTelemetryTest {
 	}
 
 	@Test
-	void materializedNotExistsPartitionsOuterOnlyCorrelationValues() throws Exception {
+	void materializedNotExistsFallsBackToSubstitutedStreamingForOuterOnlyCorrelationValues() throws Exception {
 		Value first = SimpleValueFactory.getInstance().createIRI("urn:first");
 		Value second = SimpleValueFactory.getInstance().createIRI("urn:second");
 		Value low = SimpleValueFactory.getInstance().createLiteral(1);
@@ -943,6 +943,7 @@ class FilterIteratorTelemetryTest {
 		filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", "materialized-hash");
 		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
 		AtomicInteger rightEvaluations = new AtomicInteger();
+		AtomicInteger substitutedCompilations = new AtomicInteger();
 		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(left.getBindingSets().iterator());
 		QueryEvaluationStep rightStep = bindings -> {
 			rightEvaluations.incrementAndGet();
@@ -951,8 +952,30 @@ class FilterIteratorTelemetryTest {
 		};
 		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
-		doReturn(leftStep).when(strategy).precompile(eq((TupleExpr) left), eq(context));
-		doReturn(rightStep).when(strategy).precompile(eq((TupleExpr) subquery), eq(context));
+		when(strategy.precompile(any(TupleExpr.class), eq(context))).thenAnswer(invocation -> {
+			TupleExpr expression = invocation.getArgument(0);
+			if (expression == left) {
+				return leftStep;
+			}
+			if (expression == subquery) {
+				return rightStep;
+			}
+
+			assertThat(expression).isInstanceOf(Filter.class).isNotSameAs(subquery);
+			Compare substitutedCondition = (Compare) ((Filter) expression).getCondition();
+			assertThat(substitutedCondition.getLeftArg()).isInstanceOf(Var.class);
+			Value substitutedThreshold = ((Var) substitutedCondition.getLeftArg()).getValue();
+			assertThat(substitutedThreshold).isIn(low, high);
+			substitutedCompilations.incrementAndGet();
+			return (QueryEvaluationStep) bindings -> {
+				rightEvaluations.incrementAndGet();
+				Value matched = low.equals(substitutedThreshold) ? first : second;
+				if (!matched.equals(bindings.getValue("x"))) {
+					return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
+				}
+				return new CloseableIteratorIteration<>(List.of(singleBindingSet("x", matched)).iterator());
+			};
+		});
 		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) notExists), eq(context));
 
 		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context);
@@ -965,7 +988,8 @@ class FilterIteratorTelemetryTest {
 		assertThat(results).containsExactly(
 				bindingSet("x", second, "threshold", low),
 				bindingSet("x", first, "threshold", high));
-		assertThat(rightEvaluations).hasValue(2);
+		assertThat(substitutedCompilations).hasValue(4);
+		assertThat(rightEvaluations).hasValue(4);
 	}
 
 	@Test

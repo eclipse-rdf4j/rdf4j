@@ -722,13 +722,13 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 
 	public static String[] hashJoinAttributeNames(Join join) {
 		return HashJoinBindingContract.from(join.getLeftArg(), join.getRightArg())
-				.lookupBindings()
+				.compatibilityBindings()
 				.toArray(String[]::new);
 	}
 
 	public static String[] hashJoinAttributeNames(LeftJoin join) {
 		return HashJoinBindingContract.from(join.getLeftArg(), join.getRightArg())
-				.lookupBindings()
+				.compatibilityBindings()
 				.toArray(String[]::new);
 	}
 }

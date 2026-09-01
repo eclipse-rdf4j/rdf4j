@@ -77,6 +77,17 @@ final class LmdbFrontierSnapshotSource implements FrontierSnapshotSource {
 	}
 
 	static long snapshotEpoch(Txn txn) throws IOException {
+		return snapshotEpochAndVersion(txn)[0];
+	}
+
+	/**
+	 * Reads the transaction's snapshot epoch together with its renewal version as one consistent pair. The version
+	 * changes whenever the transaction is reset/renewed onto a newer LMDB snapshot, so callers can use it to detect
+	 * that answers captured earlier no longer describe the transaction's current snapshot.
+	 *
+	 * @return {@code {epoch, version}}
+	 */
+	static long[] snapshotEpochAndVersion(Txn txn) throws IOException {
 		Objects.requireNonNull(txn, "txn");
 		StampedLongAdderLockManager lockManager = txn.lockManager();
 		long stamp = acquireReadLock(lockManager, "reading the LMDB snapshot epoch");
@@ -90,7 +101,7 @@ final class LmdbFrontierSnapshotSource implements FrontierSnapshotSource {
 			if (txn.version() != version || txn.get() != handle) {
 				throw new IOException("LMDB read transaction changed while reading its snapshot epoch");
 			}
-			return epoch;
+			return new long[] { epoch, version };
 		} finally {
 			lockManager.unlockRead(stamp);
 		}

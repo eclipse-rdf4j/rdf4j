@@ -58,6 +58,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
@@ -74,6 +75,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -322,8 +324,8 @@ class LmdbOptimizerPipelineTest {
 		assertFalse(optimizers.subList(cascadesIndex + 1, optimizers.size())
 				.stream()
 				.anyMatch(IterativeEvaluationOptimizer.class::isInstance));
-		assertTrue(nonCheckerOptimizerTypesAfter(optimizers, cascadesIndex).isEmpty(),
-				"The materialized packed winner is the final plan and must not enter a compatibility finalizer");
+		assertEquals(List.of(OrderLimitOptimizer.class), nonCheckerOptimizerTypesAfter(optimizers, cascadesIndex),
+				"Only the algebra-equivalent ORDER/LIMIT finalizer may run after the materialized packed winner");
 		assertFalse(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
 	}
 
@@ -343,17 +345,17 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lmdbPipelineHasNoPostCascadesOrderLimitPass() {
+	void lmdbPipelineFinalizesOrderLimitAfterCascades() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		List<QueryOptimizer> optimizers = optimizers(
 				new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
 		int cascadesIndex = indexOf(optimizers, LmdbCascadesOptimizer.class);
 
-		assertFalse(optimizers.subList(cascadesIndex + 1, optimizers.size())
+		assertTrue(optimizers.subList(cascadesIndex + 1, optimizers.size())
 				.stream()
 				.anyMatch(OrderLimitOptimizer.class::isInstance),
-				"ORDER/LIMIT alternatives are saturated, costed, and extracted by the unified memo");
+				"the final algebra pass must expose bounded top-k through width-preserving projections");
 	}
 
 	@Test
@@ -392,6 +394,41 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
+	void widthPreservingProjectionRetainsBoundedTopKAfterCascades() {
+		QueryRoot root = new QueryRoot(new Slice(
+				new Projection(new Order(wideOrderValues(128), new OrderElem(new Var("o"))), allOrderValueNames(),
+						false),
+				0L, 10L));
+
+		optimizeWithLmdbPipeline(root);
+
+		Slice selectedSlice = assertInstanceOf(Slice.class, root.getArg());
+		Order selectedOrder = assertInstanceOf(Order.class, selectedSlice.getArg(),
+				"the bounded slice must remain visible above ORDER through a width-preserving projection");
+		Projection selectedInput = assertInstanceOf(Projection.class, selectedOrder.getArg());
+		assertInstanceOf(BindingSetAssignment.class, selectedInput.getArg());
+	}
+
+	@Test
+	void distinctWidthPreservingProjectionRetainsBoundedTopKAfterCascades() {
+		QueryRoot root = new QueryRoot(new Slice(
+				new Distinct(
+						new Projection(new Order(wideOrderValues(128), new OrderElem(new Var("o"))),
+								allOrderValueNames(), false)),
+				0L, 10L));
+
+		optimizeWithLmdbPipeline(root);
+
+		Slice selectedSlice = assertInstanceOf(Slice.class, root.getArg());
+		Reduced selectedReduced = assertInstanceOf(
+				Reduced.class, selectedSlice.getArg(),
+				"DISTINCT above a reordered top-k must become REDUCED to preserve bounded execution");
+		Order selectedOrder = assertInstanceOf(Order.class, selectedReduced.getArg());
+		Projection selectedInput = assertInstanceOf(Projection.class, selectedOrder.getArg());
+		assertInstanceOf(BindingSetAssignment.class, selectedInput.getArg());
+	}
+
+	@Test
 	void lmdbPipelineDelegatesCommonUnionPrefixFactoringToUnifiedMemoSearch() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
@@ -419,7 +456,7 @@ class LmdbOptimizerPipelineTest {
 
 			assertTrue(cascadesIndex >= 0, optimizers.toString());
 			assertTrue(filterSimplifierIndex < cascadesIndex, optimizers.toString());
-			assertFalse(optimizers.contains("OrderLimitOptimizer"), optimizers.toString());
+			assertTrue(optimizers.indexOf("OrderLimitOptimizer") > cascadesIndex, optimizers.toString());
 			assertFalse(optimizers.contains("LmdbSketchJoinOptimizer"), optimizers.toString());
 		} finally {
 			restoreProperty("rdf4j.optimizer.lmdb.cascades.mode", previousMode);
@@ -1861,6 +1898,20 @@ class LmdbOptimizerPipelineTest {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingSets(rows);
 		return assignment;
+	}
+
+	private static ProjectionElemList allOrderValueNames() {
+		return new ProjectionElemList(
+				new ProjectionElem("s"),
+				new ProjectionElem("p"),
+				new ProjectionElem("o"));
+	}
+
+	private static void optimizeWithLmdbPipeline(QueryRoot root) {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics())
+				.optimize(root, null, EmptyBindingSet.getInstance());
 	}
 
 	private static EvaluationStrategyFactory capturedEvaluationStrategyFactory(NotifyingSailConnection connection)

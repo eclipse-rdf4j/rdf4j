@@ -17,6 +17,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
@@ -131,7 +132,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep.ConstantQueryValueEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
@@ -183,6 +183,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
@@ -2643,11 +2644,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 		private static long joinCount(QueryModelNode node, int counterIndex, long publishedCount) {
 			Object deferred = node.getQueryModelMetadata(DEFERRED_JOIN_COUNTERS_METADATA);
-			if (!(deferred instanceof long[] counters) || counterIndex < 0 || counterIndex >= counters.length) {
+			if (counterIndex < 0) {
+				return publishedCount;
+			}
+			long local;
+			if (deferred instanceof AtomicLongArray counters && counterIndex < counters.length()) {
+				local = Math.max(0L, counters.get(counterIndex));
+			} else if (deferred instanceof long[] counters && counterIndex < counters.length) {
+				local = Math.max(0L, counters[counterIndex]);
+			} else {
 				return publishedCount;
 			}
 			long published = Math.max(0L, publishedCount);
-			long local = Math.max(0L, counters[counterIndex]);
 			return published > Long.MAX_VALUE - local ? Long.MAX_VALUE : published + local;
 		}
 

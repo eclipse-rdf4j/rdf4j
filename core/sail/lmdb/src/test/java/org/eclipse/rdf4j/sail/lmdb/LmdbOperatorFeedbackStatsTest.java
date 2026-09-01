@@ -27,6 +27,15 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -39,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -46,7 +56,6 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.DistinctBindingFeedback;
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackTarget;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorLearningPolicy;
@@ -54,6 +63,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanCandidate
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRanking;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoRolloutProfile;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchSnapshotIdentity;
@@ -70,7 +80,28 @@ class LmdbOperatorFeedbackStatsTest {
 	private static final IRI P3 = VF.createIRI("urn:test:operator-feedback:p3");
 
 	@Test
-	void approximateSemiAntiDistinctFeedbackRoundTripsVersion22(@TempDir Path tempDir) throws Exception {
+	void persistenceCannotStampEvidenceWithAnUnappliedStatementMutation(@TempDir Path tempDir) throws Exception {
+		Path estimatorPath = estimatorPath(tempDir);
+		AtomicLong committedStatementMutationStamp = new AtomicLong(1L);
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath,
+				() -> TEST_SNAPSHOT_IDENTITY, () -> true, committedStatementMutationStamp::get);
+		Join observed = join("s", "x", "o");
+		complete(observed, 100L, 10.0d, 20.0d);
+		observed.setJoinLeftBindingsConsumedActual(50L);
+		observed.setJoinRightBindingsConsumedActual(100L);
+		stats.recordOperatorOutcome(observed);
+
+		committedStatementMutationStamp.set(2L);
+		stats.persistIfDirty();
+
+		LmdbOperatorFeedbackStats reloaded = new LmdbOperatorFeedbackStats(estimatorPath,
+				() -> TEST_SNAPSHOT_IDENTITY, () -> true, committedStatementMutationStamp::get);
+		assertNull(reloaded.estimate(join("s", "x", "o"), 200.0d, 100.0d, 10.0d, 20.0d),
+				"Evidence not yet invalidated for the committed statement mutation must retain its older stamp");
+	}
+
+	@Test
+	void approximateSemiAntiDistinctFeedbackRoundTripsVersion23(@TempDir Path tempDir) throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
 		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
 		LogicalLearningKey logical = LogicalLearningKey.of(
@@ -103,7 +134,7 @@ class LmdbOperatorFeedbackStatsTest {
 		stats.persistIfDirty();
 
 		Path sidecar = estimatorPath.resolveSibling(estimatorPath.getFileName() + ".operators");
-		assertEquals(22, ByteBuffer.wrap(Files.readAllBytes(sidecar)).getInt());
+		assertEquals(23, ByteBuffer.wrap(Files.readAllBytes(sidecar)).getInt());
 		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
 		Method estimateMethod = LmdbOperatorFeedbackStats.class.getDeclaredMethod("typedSemiAntiDistinctEstimate",
 				LogicalLearningKey.class, PhysicalResidualKey.class, LearningApplicability.class);
@@ -170,7 +201,7 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
-	void frontierLearningRoutesRuntimeDimensionsByOriginKeyAndPersistsVersionTwentyTwo(@TempDir Path tempDir)
+	void frontierLearningRoutesRuntimeDimensionsByOriginKeyAndPersistsVersionTwentyThree(@TempDir Path tempDir)
 			throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
 		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
@@ -195,18 +226,19 @@ class LmdbOperatorFeedbackStatsTest {
 
 		stats.persistIfDirty();
 		Path sidecar = estimatorPath.resolveSibling(estimatorPath.getFileName() + ".operators");
-		byte[] versionTwentyTwo = Files.readAllBytes(sidecar);
-		assertEquals(22, ByteBuffer.wrap(versionTwentyTwo).getInt());
+		byte[] versionTwentyThree = Files.readAllBytes(sidecar);
+		assertEquals(23, ByteBuffer.wrap(versionTwentyThree).getInt());
 		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
 		assertTrue(frontierCorrection(reloaded, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d,
-				false) < 1_000.0d, "Version-22 feedback must preserve the compatibility posterior");
+				false) < 1_000.0d, "Version-23 feedback must preserve the compatibility posterior");
 
-		byte[] versionTwentyOne = Arrays.copyOf(versionTwentyTwo, versionTwentyTwo.length - Integer.BYTES);
-		ByteBuffer.wrap(versionTwentyOne).putInt(21);
-		Files.write(sidecar, versionTwentyOne);
+		byte[] versionTwentyTwo = Arrays.copyOf(versionTwentyThree, versionTwentyThree.length);
+		ByteBuffer.wrap(versionTwentyTwo).putInt(22);
+		Files.write(sidecar, versionTwentyTwo);
 		LmdbOperatorFeedbackStats legacyReloaded = persistentStats(estimatorPath);
-		assertTrue(frontierCorrection(legacyReloaded, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d,
-				false) < 1_000.0d, "Version-21 feedback must load as exact legacy evidence");
+		assertTrue(frontierCorrectionMissing(legacyReloaded, key,
+				FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d, false),
+				"Version-22's raw LMDB transaction stamp must not be reinterpreted as a statement-mutation stamp");
 	}
 
 	@Test
@@ -333,7 +365,7 @@ class LmdbOperatorFeedbackStatsTest {
 			assertEquals(PlanLifecycleStore.State.QUARANTINED,
 					stats.planLifecycleDecision(logical, physical, applicability, planned).state());
 			stats.persistIfDirty();
-			assertEquals(22, ByteBuffer.wrap(Files.readAllBytes(
+			assertEquals(23, ByteBuffer.wrap(Files.readAllBytes(
 					estimatorPath.resolveSibling(estimatorPath.getFileName() + ".operators"))).getInt());
 
 			LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
@@ -425,7 +457,7 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
-	void versionSixteenFrontierModelIsDiscardedOnLoad(@TempDir Path tempDir) throws Exception {
+	void versionSixteenRawTransactionStampSidecarIsDiscardedOnLoad(@TempDir Path tempDir) throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
 		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
 		Union survivor = new Union(sp("s", P1, "o1"), sp("s", P2, "o2"));
@@ -451,8 +483,8 @@ class LmdbOperatorFeedbackStatsTest {
 		Files.write(sidecar, versionSixteen);
 
 		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
-		assertNotNull(reloaded.estimate(new Union(sp("s", P1, "o1"), sp("s", P2, "o2")), 72_000, 72_000, 7, 7),
-				"Operator counts must survive the v16 upgrade");
+		assertNull(reloaded.estimate(new Union(sp("s", P1, "o1"), sp("s", P2, "o2")), 72_000, 72_000, 7, 7),
+				"The v16 raw transaction stamp cannot establish freshness under statement-mutation semantics");
 		assertTrue(frontierCorrectionMissing(reloaded, key, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false),
 				"A version-16 frontier model pairs cumulative actuals with per-invocation predictions for"
 						+ " re-invoked operators and predates the group-canonical OUTPUT_ROWS families; partially"
@@ -1756,7 +1788,7 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
-	void readsGenuineVersionTwelveThroughFourteenOperatorSidecars(@TempDir Path tempDir) throws Exception {
+	void rejectsGenuineVersionTwelveThroughFourteenOperatorSidecars(@TempDir Path tempDir) throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
 		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
 		Union observed = new Union(sp("s", P1, "o1"), sp("s", P2, "o2"));
@@ -1766,16 +1798,12 @@ class LmdbOperatorFeedbackStatsTest {
 
 		Path sidecar = estimatorPath.resolveSibling(estimatorPath.getFileName() + ".operators");
 		byte[] versionSeventeen = withoutLogicalPhysicalAndLifecycleTail(Files.readAllBytes(sidecar));
-		FrontierLearningKey currentUnionKey = FrontierLearningKey.of(
-				"union", "UNION", 31L, 0L, "union", "none", "none");
 		for (int version = 12; version <= 14; version++) {
 			Files.write(sidecar, emptyFrontierTailRemoved(versionSeventeen, version));
 			LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
-			assertNotNull(reloaded.estimate(
+			assertNull(reloaded.estimate(
 					new Union(sp("s", P1, "o1"), sp("s", P2, "o2")), 72_000, 72_000, 7, 7),
-					"Version " + version + " must load its complete historical payload through exact EOF");
-			assertTrue(frontierCorrection(reloaded, currentUnionKey, FrontierCostDimension.OUTPUT_ROWS, 7.0d,
-					false) > 7.0d, "Version " + version + " scalar rows must import only as a family-level prior");
+					"Version " + version + " lacks an unambiguous statement-mutation coordinate");
 		}
 	}
 
@@ -1800,16 +1828,16 @@ class LmdbOperatorFeedbackStatsTest {
 		return legacy;
 	}
 
-	private static byte[] withoutLogicalPhysicalAndLifecycleTail(byte[] versionTwentyTwo) {
-		assertEquals(22, ByteBuffer.wrap(versionTwentyTwo).getInt());
+	private static byte[] withoutLogicalPhysicalAndLifecycleTail(byte[] versionTwentyThree) {
+		assertEquals(23, ByteBuffer.wrap(versionTwentyThree).getInt());
 		/*
 		 * These compatibility fixtures contain no typed logical/physical entries, LEO-plus calibration/censoring state,
 		 * or lifecycle entries. V21 adds five empty model-map counts before the v17 exact-fact count, plus an empty
 		 * lifecycle tail consisting of a revision, entry count, and history count. Remove only those bytes to recover
 		 * the genuine v17 payload.
 		 */
-		return Arrays.copyOf(versionTwentyTwo,
-				versionTwentyTwo.length - Long.BYTES - 8 * Integer.BYTES);
+		return Arrays.copyOf(versionTwentyThree,
+				versionTwentyThree.length - Long.BYTES - 8 * Integer.BYTES);
 	}
 
 	@Test
@@ -2267,6 +2295,93 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
+	void recorderFirstPlanShadowCompletesBeforeBlockedPersistence(@TempDir Path tempDir) throws Exception {
+		Path estimatorPath = estimatorPath(tempDir);
+		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
+		CountDownLatch recorderInsidePlanShadow = new CountDownLatch(1);
+		CountDownLatch releaseRecorder = new CountDownLatch(1);
+		SingletonSet completedRoot = new BlockingPlanMetricSingletonSet(
+				recorderInsidePlanShadow, releaseRecorder);
+		complete(completedRoot, 1L, 1.0d, 1.0d);
+
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<?> recorder = executor.submit(() -> stats.recordCompletedQuery(completedRoot));
+			assertTrue(recorderInsidePlanShadow.await(10L, TimeUnit.SECONDS));
+
+			AtomicReference<Thread> persistenceThread = new AtomicReference<>();
+			CountDownLatch persistenceStarted = new CountDownLatch(1);
+			Future<?> persistence = executor.submit(() -> {
+				persistenceThread.set(Thread.currentThread());
+				persistenceStarted.countDown();
+				stats.persistIfDirty();
+			});
+			assertTrue(persistenceStarted.await(10L, TimeUnit.SECONDS));
+			assertThreadBlocked(persistenceThread.get(), persistence,
+					"Persistence must wait while the recorder owns the shared statistics monitor");
+
+			releaseRecorder.countDown();
+			recorder.get(10L, TimeUnit.SECONDS);
+			persistence.get(10L, TimeUnit.SECONDS);
+		} finally {
+			releaseRecorder.countDown();
+			executor.shutdownNow();
+		}
+
+		assertTrue(persistentStats(estimatorPath).planningRevision() > 0L,
+				"Persistence entering second must include the completed plan-shadow mutation");
+	}
+
+	@Test
+	void persistenceFirstPlanShadowRemainsDirtyForNextPersistence(@TempDir Path tempDir) throws Exception {
+		Path estimatorPath = estimatorPath(tempDir);
+		CountDownLatch persistenceInsideIdentity = new CountDownLatch(1);
+		CountDownLatch releasePersistence = new CountDownLatch(1);
+		BlockingSnapshotIdentitySupplier identitySupplier = new BlockingSnapshotIdentitySupplier(
+				persistenceInsideIdentity, releasePersistence);
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(
+				estimatorPath, identitySupplier, () -> true, () -> 0L);
+		Join seed = join("s", "x", "o");
+		complete(seed, 100L, 10.0d, 20.0d);
+		seed.setJoinLeftBindingsConsumedActual(50L);
+		seed.setJoinRightBindingsConsumedActual(100L);
+		stats.recordOperatorOutcome(seed);
+
+		SingletonSet completedRoot = new SingletonSet();
+		complete(completedRoot, 1L, 1.0d, 1.0d);
+		identitySupplier.arm();
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<?> persistence = executor.submit(stats::persistIfDirty);
+			assertTrue(persistenceInsideIdentity.await(10L, TimeUnit.SECONDS));
+
+			AtomicReference<Thread> recorderThread = new AtomicReference<>();
+			CountDownLatch recorderStarted = new CountDownLatch(1);
+			Future<?> recorder = executor.submit(() -> {
+				recorderThread.set(Thread.currentThread());
+				recorderStarted.countDown();
+				stats.recordCompletedQuery(completedRoot);
+			});
+			assertTrue(recorderStarted.await(10L, TimeUnit.SECONDS));
+			assertThreadBlocked(recorderThread.get(), recorder,
+					"The plan-shadow recorder must wait while persistence owns the shared statistics monitor");
+
+			releasePersistence.countDown();
+			persistence.get(10L, TimeUnit.SECONDS);
+			recorder.get(10L, TimeUnit.SECONDS);
+		} finally {
+			releasePersistence.countDown();
+			executor.shutdownNow();
+		}
+
+		long revisionAfterRecorder = stats.planningRevision();
+		assertTrue(persistentStats(estimatorPath).planningRevision() < revisionAfterRecorder,
+				"Persistence entering first must not clear the later recorder's dirty mutation");
+		stats.persistIfDirty();
+		assertEquals(revisionAfterRecorder, persistentStats(estimatorPath).planningRevision());
+	}
+
+	@Test
 	void sliceCappedPlansDoNotPoisonOperatorFeedback(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 		Join join = join("s", "x", "o");
@@ -2277,6 +2392,75 @@ class LmdbOperatorFeedbackStatsTest {
 		stats.recordCompletedQuery(slice);
 
 		assertNull(stats.estimate(join("s", "x", "o"), 100, 100, 1000, 1000));
+	}
+
+	private static void assertThreadBlocked(Thread thread, Future<?> future, String message) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10L);
+		while (System.nanoTime() < deadline && !future.isDone()) {
+			if (thread != null && thread.getState() == Thread.State.BLOCKED) {
+				return;
+			}
+			Thread.onSpinWait();
+		}
+		assertEquals(Thread.State.BLOCKED, thread == null ? null : thread.getState(), message);
+	}
+
+	private static final class BlockingPlanMetricSingletonSet extends SingletonSet {
+		private static final long serialVersionUID = 1L;
+
+		private final CountDownLatch entered;
+		private final CountDownLatch release;
+		private final AtomicBoolean blockOnce = new AtomicBoolean(true);
+
+		private BlockingPlanMetricSingletonSet(CountDownLatch entered, CountDownLatch release) {
+			this.entered = entered;
+			this.release = release;
+		}
+
+		@Override
+		public long getLongMetricActual(String metricName) {
+			if ("optimizer.leoPlanFeedbackRecordedActual".equals(metricName)
+					&& blockOnce.compareAndSet(true, false)) {
+				entered.countDown();
+				awaitRelease(release);
+			}
+			return super.getLongMetricActual(metricName);
+		}
+	}
+
+	private static final class BlockingSnapshotIdentitySupplier implements Supplier<SketchSnapshotIdentity> {
+		private final CountDownLatch entered;
+		private final CountDownLatch release;
+		private final AtomicBoolean armed = new AtomicBoolean();
+
+		private BlockingSnapshotIdentitySupplier(CountDownLatch entered, CountDownLatch release) {
+			this.entered = entered;
+			this.release = release;
+		}
+
+		private void arm() {
+			armed.set(true);
+		}
+
+		@Override
+		public SketchSnapshotIdentity get() {
+			if (armed.compareAndSet(true, false)) {
+				entered.countDown();
+				awaitRelease(release);
+			}
+			return TEST_SNAPSHOT_IDENTITY;
+		}
+	}
+
+	private static void awaitRelease(CountDownLatch release) {
+		try {
+			if (!release.await(10L, TimeUnit.SECONDS)) {
+				throw new AssertionError("Timed out waiting for the deterministic concurrency test release");
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError("Interrupted while waiting for the deterministic concurrency test release", e);
+		}
 	}
 
 	private static Path estimatorPath(Path tempDir) throws Exception {

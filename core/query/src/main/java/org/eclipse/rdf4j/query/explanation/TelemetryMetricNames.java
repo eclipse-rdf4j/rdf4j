@@ -224,6 +224,18 @@ public final class TelemetryMetricNames {
 		return metricName != null && metricName.startsWith(OPTIMIZER_PREFIX);
 	}
 
+	/**
+	 * Returns whether an optimizer-prefixed runtime metric is suitable for ordinary plan explanations. Feedback
+	 * coherence markers use the optimizer prefix so they can be recorded without full telemetry, but they describe
+	 * evaluation lifecycle rather than the optimizer's plan decision and are only useful at telemetry level.
+	 */
+	public static boolean isOptimizerExplainMetric(String metricName) {
+		return isOptimizerMetric(metricName)
+				&& !CANCELLED_COUNT_ACTUAL.equals(metricName)
+				&& !ABORTED_COUNT_ACTUAL.equals(metricName)
+				&& !EXHAUSTED_CLOSE_COUNT_ACTUAL.equals(metricName);
+	}
+
 	public static boolean isPlannerEstimateMetric(String metricName) {
 		if (metricName == null) {
 			return false;

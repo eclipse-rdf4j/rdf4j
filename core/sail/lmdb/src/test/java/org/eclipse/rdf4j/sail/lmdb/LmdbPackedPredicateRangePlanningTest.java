@@ -331,6 +331,120 @@ class LmdbPackedPredicateRangePlanningTest {
 		}
 	}
 
+	@Test
+	void uncommittedWritesSuspendContradictionProofsInTheWritingTransaction(@TempDir File dataDir) throws Exception {
+		String query = """
+				SELECT ?s WHERE {
+				  ?s <http://example.com/intValued> ?o .
+				  FILTER(?o = 9)
+				}
+				""";
+		SailRepository repository = repository(dataDir);
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(VF.createIRI("http://example.com/s1"), INT_PREDICATE, VF.createLiteral("7", XSD.INT));
+			}
+			makeLmdbOptimizerReady(repository);
+			assertTrue(explainOptimized(repository, query).contains("EmptySet"));
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				connection.add(VF.createIRI("http://example.com/s2"), INT_PREDICATE, VF.createLiteral("9", XSD.INT));
+
+				String dirtyPlan = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized).toString();
+				assertFalse(dirtyPlan.contains("EmptySet"),
+						"The committed [7, 7] guarantee does not describe this transaction's uncommitted 9; a "
+								+ "contradiction proof would hide the connection's own write\n" + dirtyPlan);
+				try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+					assertTrue(result.hasNext(),
+							"The writing transaction must read its own uncommitted matching statement");
+					result.next();
+					assertFalse(result.hasNext());
+				}
+				connection.rollback();
+			}
+
+			assertTrue(explainOptimized(repository, query).contains("EmptySet"),
+					"After rollback the committed guarantee is authoritative again");
+			assertEquals(0, countResults(repository, query));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void uncommittedWritesSuspendTautologyProofsInTheWritingTransaction(@TempDir File dataDir) throws Exception {
+		String query = """
+				SELECT ?s WHERE {
+				  ?s <http://example.com/intValued> ?o .
+				  FILTER(datatype(?o) = <http://www.w3.org/2001/XMLSchema#int>)
+				}
+				""";
+		SailRepository repository = repository(dataDir);
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(VF.createIRI("http://example.com/s1"), INT_PREDICATE, VF.createLiteral("7", XSD.INT));
+			}
+			makeLmdbOptimizerReady(repository);
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				connection.add(VF.createIRI("http://example.com/s2"), INT_PREDICATE, VF.createLiteral("not an int"));
+
+				try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+					int count = 0;
+					while (result.hasNext()) {
+						result.next();
+						count++;
+					}
+					assertEquals(1, count,
+							"The committed int-only guarantee must not drop the datatype filter for a transaction "
+									+ "whose uncommitted string literal violates it");
+				}
+				connection.rollback();
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void uncommittedWritesSuspendGuaranteeNarrowedAnchorsInTheWritingTransaction(@TempDir File dataDir)
+			throws Exception {
+		String query = """
+				SELECT ?s WHERE {
+				  ?s <http://example.com/intValued> ?o .
+				  FILTER(?o = 7)
+				}
+				""";
+		SailRepository repository = repository(dataDir);
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(VF.createIRI("http://example.com/s1"), INT_PREDICATE, VF.createLiteral("7", XSD.INT));
+			}
+			makeLmdbOptimizerReady(repository);
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				connection.add(VF.createIRI("http://example.com/s2"), INT_PREDICATE, VF.createLiteral("7", XSD.LONG));
+
+				try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+					int count = 0;
+					while (result.hasNext()) {
+						result.next();
+						count++;
+					}
+					assertEquals(2, count,
+							"An equality anchor narrowed to the committed int-only guarantee must not lose this "
+									+ "transaction's value-equal uncommitted xsd:long");
+				}
+				connection.rollback();
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	private static SailRepository repository(File dataDir) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setOptimizerSamplingEnabled(false)

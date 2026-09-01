@@ -36,7 +36,6 @@ public class BadlyDesignedLeftJoinIterator extends LookAheadIteration<BindingSet
 	private final BindingSet inputBindings;
 
 	private final Set<String> problemVars;
-	private final Set<String> earlyBoundProblemVars;
 
 	private final CloseableIteration<BindingSet> leftIter;
 
@@ -60,7 +59,6 @@ public class BadlyDesignedLeftJoinIterator extends LookAheadIteration<BindingSet
 		join.setAlgorithm(this);
 		this.inputBindings = inputBindings;
 		this.problemVars = problemVars;
-		this.earlyBoundProblemVars = Set.of();
 	}
 
 	/*---------*
@@ -72,21 +70,11 @@ public class BadlyDesignedLeftJoinIterator extends LookAheadIteration<BindingSet
 			Set<String> problemVars,
 			QueryEvaluationStep rightEvaluationStep)
 			throws QueryEvaluationException {
-		this(left, inputBindings, problemVars, Set.of(), rightEvaluationStep);
-	}
-
-	public BadlyDesignedLeftJoinIterator(QueryEvaluationStep left,
-			BindingSet inputBindings,
-			Set<String> problemVars,
-			Set<String> earlyBoundProblemVars,
-			QueryEvaluationStep rightEvaluationStep)
-			throws QueryEvaluationException {
 		leftIter = left.evaluate(getFilteredBindings(inputBindings, problemVars));
 		this.rightEvaluationStep = rightEvaluationStep;
 		rightIter = null;
 		this.inputBindings = inputBindings;
 		this.problemVars = problemVars;
-		this.earlyBoundProblemVars = Set.copyOf(earlyBoundProblemVars);
 	}
 
 	@Override
@@ -140,7 +128,7 @@ public class BadlyDesignedLeftJoinIterator extends LookAheadIteration<BindingSet
 					if (leftIter.hasNext()) {
 						// Use left arg's bindings in case join fails
 						leftBindings = leftIter.next();
-						nextRightIter = rightIter = rightEvaluationStep.evaluate(rightBindings(leftBindings));
+						nextRightIter = rightIter = rightEvaluationStep.evaluate(leftBindings);
 					} else {
 						return null;
 					}
@@ -149,7 +137,7 @@ public class BadlyDesignedLeftJoinIterator extends LookAheadIteration<BindingSet
 					leftBindings = leftIter.next();
 
 					nextRightIter.close();
-					nextRightIter = rightIter = rightEvaluationStep.evaluate(rightBindings(leftBindings));
+					nextRightIter = rightIter = rightEvaluationStep.evaluate(leftBindings);
 				}
 
 				if (nextRightIter == QueryEvaluationStep.EMPTY_ITERATION) {
@@ -173,19 +161,6 @@ public class BadlyDesignedLeftJoinIterator extends LookAheadIteration<BindingSet
 		}
 
 		return null;
-	}
-
-	private BindingSet rightBindings(BindingSet leftBindings) {
-		QueryBindingSet extendedBindings = null;
-		for (String problemVar : earlyBoundProblemVars) {
-			if (!leftBindings.hasBinding(problemVar) && inputBindings.hasBinding(problemVar)) {
-				if (extendedBindings == null) {
-					extendedBindings = new QueryBindingSet(leftBindings);
-				}
-				extendedBindings.addBinding(problemVar, inputBindings.getValue(problemVar));
-			}
-		}
-		return extendedBindings == null ? leftBindings : extendedBindings;
 	}
 
 	@Override

@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Objects;
 
-import org.eclipse.rdf4j.query.algebra.evaluation.RuntimeFeedbackDescriptor;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor;
 
 /** Typed LMDB planning identity. Mutable posterior and lifecycle cells are deliberately resolved later. */
 record LmdbRuntimeFeedbackDescriptor(FrontierLearningKey legacyLogicalKey,

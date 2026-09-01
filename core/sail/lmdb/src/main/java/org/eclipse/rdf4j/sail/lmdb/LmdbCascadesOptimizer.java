@@ -128,7 +128,13 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		this.executionSnapshotEpoch = frontierStatementSource == null
 				? OptionalLong.empty()
 				: frontierStatementSource.getSnapshotEpoch();
-		this.rangeProvider = runtime == null ? null : new LmdbPackedPredicateRangeProvider(runtime);
+		// Predicate-range guarantees describe committed data only. A triple source without a snapshot epoch reads
+		// through an uncommitted changeset overlay (or an unknown wrapper), where guarantee-seeded proof rewrites
+		// (filter drops, empty-set alternatives) would be unsound for the rows the query actually sees.
+		boolean committedSnapshotOnly = tripleSource == null || executionSnapshotEpoch.isPresent();
+		this.rangeProvider = runtime == null || !committedSnapshotOnly
+				? null
+				: new LmdbPackedPredicateRangeProvider(runtime);
 	}
 
 	LmdbCascadesOptimizer(LmdbEstimatorRuntime runtime, boolean trackResultSize,

@@ -22,23 +22,28 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
@@ -51,7 +56,7 @@ class LeftJoinQueryEvaluationStepTest {
 	private static final SimpleValueFactory VALUE_FACTORY = SimpleValueFactory.getInstance();
 
 	@Test
-	void positiveRightSubtreeReceivesCompatibleProblemBindingEarly() {
+	void positiveRightSubtreeKeepsProblemBindingOutOfRightProbe() {
 		Value member = VALUE_FACTORY.createIRI("urn:member");
 		Value book = VALUE_FACTORY.createIRI("urn:book");
 		QueryBindingSet input = new QueryBindingSet(2);
@@ -82,8 +87,38 @@ class LeftJoinQueryEvaluationStepTest {
 			assertFalse(iteration.hasNext());
 		}
 
-		assertEquals(book, rightInput.get().getValue("book"));
+		assertFalse(rightInput.get().hasBinding("book"));
 		assertEquals(book, result.getValue("book"));
+	}
+
+	@Test
+	void badlyDesignedOptionalDeclinesIndependentEvaluationAlgorithms() {
+		StatementPattern plannedHash = statementPattern("outside", "plannedHashValue");
+		assertBottomUpSemantics(plannedHash,
+				leftJoin -> leftJoin.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash"));
+
+		StatementPattern memoized = statementPattern("outside", "memoizedValue");
+		assertBottomUpSemantics(memoized,
+				leftJoin -> leftJoin.setStringMetricPlanned("optimizer.leftJoinAlgorithmHint", "memoized"));
+
+		Projection subquery = new Projection(statementPattern("outside", "subqueryValue"));
+		assertBottomUpSemantics(subquery, ignored -> {
+		});
+
+		String property = LeftJoinQueryEvaluationStep.MAX_MATERIALIZED_RIGHT_ROWS_PROPERTY;
+		String previousValue = System.setProperty(property, "0");
+		try {
+			Union overflowingUnion = new Union(statementPattern("outside", "firstUnionValue"),
+					statementPattern("outside", "secondUnionValue"));
+			assertBottomUpSemantics(overflowingUnion, ignored -> {
+			});
+		} finally {
+			if (previousValue == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previousValue);
+			}
+		}
 	}
 
 	@Test
@@ -187,6 +222,31 @@ class LeftJoinQueryEvaluationStepTest {
 		assertEquals(2, results.size());
 		assertEquals(1, rightEvaluations.get());
 		assertEquals(HashJoinIteration.class.getSimpleName(), leftJoin.getAlgorithmName());
+	}
+
+	@Test
+	void plannedHashDeclinesRightSideContainingNestedOptional() {
+		LeftJoin nestedOptional = new LeftJoin(statementPattern("a", "aValue"), statementPattern("x", "z"));
+		assertNestedOptionalUsesCorrelatedEvaluation(nestedOptional,
+				leftJoin -> leftJoin.setStringMetricPlanned("optimizer.joinAlgorithmHint", "hash"));
+	}
+
+	@Test
+	void unionHashDeclinesRightSideContainingNestedOptional() {
+		LeftJoin nestedOptional = new LeftJoin(statementPattern("a", "aValue"), statementPattern("x", "z"));
+		Union rightArg = new Union(nestedOptional, statementPattern("unused", "unusedValue"));
+		assertNestedOptionalUsesCorrelatedEvaluation(rightArg, ignored -> {
+		});
+	}
+
+	@Test
+	void subqueryOptionalWithFalseConditionDeclinesHashJoin() {
+		assertSubqueryOptionalConditionUsesStandardEvaluation(ignored -> BooleanLiteral.FALSE);
+	}
+
+	@Test
+	void subqueryOptionalWithConditionErrorDeclinesHashJoin() {
+		assertSubqueryOptionalConditionUsesStandardEvaluation(new QueryValueEvaluationStep.Fail("condition error"));
 	}
 
 	@Test
@@ -405,6 +465,109 @@ class LeftJoinQueryEvaluationStepTest {
 		doReturn(left).when(strategy).precompile(eq((TupleExpr) leftArg), eq(context));
 		doReturn(right).when(strategy).precompile(eq((TupleExpr) rightArg), eq(context));
 		return LeftJoinQueryEvaluationStep.supply(strategy, leftJoin, context);
+	}
+
+	private static void assertBottomUpSemantics(TupleExpr rightArg, Consumer<LeftJoin> configure) {
+		Value inputValue = VALUE_FACTORY.createIRI("urn:outside:input");
+		Value foreignValue = VALUE_FACTORY.createIRI("urn:outside:foreign");
+		QueryBindingSet input = new QueryBindingSet(1);
+		input.addBinding("outside", inputValue);
+		StatementPattern leftArg = statementPattern("member", "memberName");
+		LeftJoin leftJoin = new LeftJoin(leftArg, rightArg);
+		configure.accept(leftJoin);
+
+		QueryEvaluationStep left = ignored -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(row("member", VALUE_FACTORY.createIRI("urn:member"))).iterator());
+		QueryEvaluationStep right = ignored -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(row("outside", foreignValue)).iterator());
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		doReturn(left).when(strategy).precompile(eq((TupleExpr) leftArg), eq(context));
+		doReturn(right).when(strategy).precompile(eq(rightArg), eq(context));
+		QueryEvaluationStep step = LeftJoinQueryEvaluationStep.supply(strategy, leftJoin, context);
+
+		List<BindingSet> results = new ArrayList<>();
+		try (var iteration = step.evaluate(input)) {
+			while (iteration.hasNext()) {
+				results.add(iteration.next());
+			}
+		}
+
+		assertEquals(List.of(), results,
+				"incompatible bottom-up right rows must suppress the bare left row for " + rightArg.getClass());
+	}
+
+	private static void assertNestedOptionalUsesCorrelatedEvaluation(TupleExpr rightArg,
+			Consumer<LeftJoin> configure) {
+		Value outerX = VALUE_FACTORY.createIRI("urn:x:outer");
+		Value foreignX = VALUE_FACTORY.createIRI("urn:x:foreign");
+		Value a = VALUE_FACTORY.createIRI("urn:a");
+		StatementPattern leftArg = statementPattern("root", "x");
+		LeftJoin leftJoin = new LeftJoin(leftArg, rightArg);
+		configure.accept(leftJoin);
+
+		QueryEvaluationStep left = ignored -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(row("x", outerX)).iterator());
+		QueryEvaluationStep right = bindings -> {
+			QueryBindingSet result = new QueryBindingSet(bindings);
+			result.addBinding("a", a);
+			if (!bindings.hasBinding("x")) {
+				result.addBinding("x", foreignX);
+				result.addBinding("z", VALUE_FACTORY.createIRI("urn:z"));
+			}
+			return new CloseableIteratorIteration<>(List.<BindingSet>of(result).iterator());
+		};
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		doReturn(left).when(strategy).precompile(eq((TupleExpr) leftArg), eq(context));
+		doReturn(right).when(strategy).precompile(eq(rightArg), eq(context));
+		QueryEvaluationStep step = LeftJoinQueryEvaluationStep.supply(strategy, leftJoin, context);
+
+		List<BindingSet> results = new ArrayList<>();
+		try (var iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			while (iteration.hasNext()) {
+				results.add(iteration.next());
+			}
+		}
+
+		assertEquals(1, results.size());
+		assertEquals(outerX, results.getFirst().getValue("x"));
+		assertEquals(a, results.getFirst().getValue("a"),
+				"nested OPTIONAL must retain its left-side binding under the outer correlation");
+		assertEquals(LeftJoinIterator.class.getSimpleName(), leftJoin.getAlgorithmName());
+	}
+
+	private static void assertSubqueryOptionalConditionUsesStandardEvaluation(
+			QueryValueEvaluationStep conditionStep) {
+		Value root = VALUE_FACTORY.createIRI("urn:root");
+		StatementPattern leftArg = statementPattern("root", "leftValue");
+		Projection rightArg = new Projection(statementPattern("root", "detail"));
+		ValueConstant condition = new ValueConstant(BooleanLiteral.FALSE);
+		LeftJoin leftJoin = new LeftJoin(leftArg, rightArg, condition);
+		QueryBindingSet leftRow = new QueryBindingSet(row("root", root));
+		leftRow.addBinding("leftValue", VALUE_FACTORY.createLiteral("left"));
+		QueryBindingSet rightRow = new QueryBindingSet(row("root", root));
+		rightRow.addBinding("detail", VALUE_FACTORY.createLiteral("right"));
+		QueryEvaluationStep left = ignored -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(leftRow).iterator());
+		QueryEvaluationStep right = ignored -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(rightRow).iterator());
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		doReturn(left).when(strategy).precompile(eq((TupleExpr) leftArg), eq(context));
+		doReturn(right).when(strategy).precompile(eq((TupleExpr) rightArg), eq(context));
+		doReturn(conditionStep).when(strategy).precompile(eq(condition), eq(context));
+		QueryEvaluationStep step = LeftJoinQueryEvaluationStep.supply(strategy, leftJoin, context);
+
+		List<BindingSet> results = new ArrayList<>();
+		try (var iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			while (iteration.hasNext()) {
+				results.add(iteration.next());
+			}
+		}
+
+		assertEquals(List.of(leftRow), results);
+		assertEquals(LeftJoinIterator.class.getSimpleName(), leftJoin.getAlgorithmName());
 	}
 
 	private static BindingSet row(String bindingName, Value value) {

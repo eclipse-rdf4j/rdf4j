@@ -178,6 +178,7 @@ public class ThemeQueryBenchmark {
 		repository = new SailRepository(store);
 		ensureDataLoadedAndValidated();
 		waitForSketchesIfEnabled();
+		recordInitializedDbFileSizes();
 		if (QueryPlanCapture.isCaptureEnabled()) {
 			captureQueryPlanSnapshot();
 		}
@@ -480,6 +481,19 @@ public class ThemeQueryBenchmark {
 				DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS);
 		BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "theme benchmark setup", timeoutSeconds,
 				TimeUnit.SECONDS);
+	}
+
+	private void recordInitializedDbFileSizes() throws IOException {
+		/*
+		 * The triples environment also owns derived-state metadata. Frontier publication can therefore allocate LMDB
+		 * pages without changing a single RDF statement. Capture the reusable-store baseline only after all mandatory
+		 * derived state is ready; otherwise the next trial mistakes that metadata-only allocation for a dataset change
+		 * and destroys valid learned sidecars while rebuilding an unchanged store.
+		 */
+		DbFileSizes initializedSizes = currentDbFileSizes();
+		if (!initializedSizes.equals(readExpectedDbFileSizes())) {
+			writeExpectedDbFileSizes(initializedSizes);
+		}
 	}
 
 	private void rebuildStoreFromScratch() throws IOException {

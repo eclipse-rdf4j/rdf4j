@@ -31,6 +31,7 @@ import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -87,10 +88,7 @@ class LmdbFilterSelectivityStats
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String SIDECAR_SUFFIX = ".filters";
 	private static final String COLD_SYNOPSIS_SUFFIX = ".cold";
-	private static final int LEGACY_PERSIST_VERSION = 4;
-	private static final int SURFACE_PERSIST_VERSION = 5;
-	private static final int STAMPLESS_PERSIST_VERSION = 6;
-	private static final int PERSIST_VERSION = 7;
+	private static final int PERSIST_VERSION = 8;
 	private static final int SAMPLE_RESERVOIR_SIZE = 256;
 	private static final int ZERO_HIT_SAMPLE_MIN_EVIDENCE = SAMPLE_RESERVOIR_SIZE;
 	private static final int MIN_SAMPLED_EVIDENCE_TO_OUTRANK_HEURISTIC = 33;
@@ -110,6 +108,7 @@ class LmdbFilterSelectivityStats
 	private final Path sidecarPath;
 	private final Path coldSynopsisPath;
 	private final Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier;
+	private final LongSupplier statementMutationStampSupplier;
 	private final boolean adaptiveEvidenceAllowed;
 	private final int coldSynopsisCapacity;
 	private final boolean optimizerSamplingEnabled;
@@ -131,8 +130,10 @@ class LmdbFilterSelectivityStats
 			LmdbFilterSelectivityStats::distinctFilterCacheWeight);
 
 	private boolean dirty;
+	private long appliedStatementMutationStamp;
 	private ColdFilterSynopsis coldSynopsis;
 	private long coldSynopsisMutationVersion = -1L;
+	private long coldSynopsisStatementMutationStamp = -1L;
 	private boolean coldSynopsisDirty;
 	private long backgroundSamplingSequence;
 	private long planningRevision;
@@ -191,11 +192,24 @@ class LmdbFilterSelectivityStats
 			boolean backgroundRawSamplingEnabled,
 			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier, int coldSynopsisCapacity,
 			BooleanSupplier adaptiveEvidenceAllowedSupplier) {
+		this(estimatorPath, tripleStore, valueStore, optimizerSamplingEnabled, optimizerSamplingMaxMillis,
+				optimizerSamplingMaxRows, backgroundRawSamplingEnabled, snapshotIdentitySupplier, coldSynopsisCapacity,
+				adaptiveEvidenceAllowedSupplier, () -> latestStatementMutationStamp(tripleStore));
+	}
+
+	LmdbFilterSelectivityStats(Path estimatorPath, TripleStore tripleStore, ValueStore valueStore,
+			boolean optimizerSamplingEnabled, long optimizerSamplingMaxMillis, int optimizerSamplingMaxRows,
+			boolean backgroundRawSamplingEnabled,
+			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier, int coldSynopsisCapacity,
+			BooleanSupplier adaptiveEvidenceAllowedSupplier, LongSupplier statementMutationStampSupplier) {
 		Objects.requireNonNull(estimatorPath, "estimatorPath");
 		this.sidecarPath = estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + SIDECAR_SUFFIX);
 		this.coldSynopsisPath = estimatorPath.resolveSibling(
 				estimatorPath.getFileName().toString() + COLD_SYNOPSIS_SUFFIX);
 		this.snapshotIdentitySupplier = Objects.requireNonNull(snapshotIdentitySupplier, "snapshotIdentitySupplier");
+		this.statementMutationStampSupplier = Objects.requireNonNull(statementMutationStampSupplier,
+				"statementMutationStampSupplier");
+		this.appliedStatementMutationStamp = requireStatementMutationStamp(statementMutationStampSupplier.getAsLong());
 		this.adaptiveEvidenceAllowed = readAdaptiveEvidenceAllowed(adaptiveEvidenceAllowedSupplier);
 		this.coldSynopsisCapacity = Math.clamp(coldSynopsisCapacity, 0, ColdFilterSynopsis.MAX_CAPACITY);
 		this.tripleStore = Objects.requireNonNull(tripleStore, "tripleStore");
@@ -229,6 +243,7 @@ class LmdbFilterSelectivityStats
 		expectedRuntimeRowsByPattern.clear();
 		coldSynopsis = null;
 		coldSynopsisMutationVersion = -1L;
+		coldSynopsisStatementMutationStamp = -1L;
 		if (hasColdSynopsis) {
 			coldSynopsisDirty = true;
 			deleteColdSynopsisSidecar();
@@ -296,6 +311,11 @@ class LmdbFilterSelectivityStats
 	}
 
 	void recordStoreMutation() {
+		recordStoreMutation(statementMutationStampSupplier.getAsLong());
+	}
+
+	synchronized void recordStoreMutation(long committedStatementMutationStamp) {
+		advanceAppliedStatementMutationStamp(committedStatementMutationStamp);
 		reset();
 	}
 
@@ -306,7 +326,8 @@ class LmdbFilterSelectivityStats
 	synchronized Optional<SketchFootprint> coldSynopsisFootprint() {
 		SketchSnapshotIdentity identity = currentSnapshotIdentity();
 		if (coldSynopsis == null || identity == null
-				|| identity.mutationVersion() != coldSynopsisMutationVersion) {
+				|| identity.mutationVersion() != coldSynopsisMutationVersion
+				|| coldSynopsisStatementMutationStamp != appliedStatementMutationStamp) {
 			return Optional.empty();
 		}
 		return Optional.of(coldSynopsis.footprint());
@@ -619,7 +640,8 @@ class LmdbFilterSelectivityStats
 		SketchSnapshotIdentity identity = currentSnapshotIdentity();
 		synchronized (this) {
 			if (coldSynopsis == null || identity == null
-					|| identity.mutationVersion() != coldSynopsisMutationVersion) {
+					|| identity.mutationVersion() != coldSynopsisMutationVersion
+					|| coldSynopsisStatementMutationStamp != appliedStatementMutationStamp) {
 				return unknownFilterPassEstimate();
 			}
 			synopsis = coldSynopsis;
@@ -936,7 +958,7 @@ class LmdbFilterSelectivityStats
 		try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(tempPath))) {
 			out.writeInt(PERSIST_VERSION);
 			snapshotIdentity.writeTo(out);
-			out.writeLong(dataStamp());
+			out.writeLong(appliedStatementMutationStamp);
 			out.writeInt(learnedByFilter.size());
 			for (var entry : learnedByFilter.entrySet()) {
 				entry.getKey().writeTo(out);
@@ -969,16 +991,18 @@ class LmdbFilterSelectivityStats
 	}
 
 	private boolean persistColdSynopsis(SketchSnapshotIdentity snapshotIdentity) {
-		if (coldSynopsis == null || coldSynopsisMutationVersion != snapshotIdentity.mutationVersion()) {
+		if (coldSynopsis == null || coldSynopsisMutationVersion != snapshotIdentity.mutationVersion()
+				|| coldSynopsisStatementMutationStamp != appliedStatementMutationStamp) {
 			coldSynopsis = null;
 			coldSynopsisMutationVersion = -1L;
+			coldSynopsisStatementMutationStamp = -1L;
 			deleteColdSynopsisSidecar();
 			return true;
 		}
 
 		Path tempPath = coldSynopsisPath.resolveSibling(coldSynopsisPath.getFileName().toString() + ".tmp");
 		try {
-			byte[] serialized = coldSynopsis.serialize(snapshotIdentity);
+			byte[] serialized = coldSynopsis.serialize(snapshotIdentity, coldSynopsisStatementMutationStamp);
 			Files.write(tempPath, serialized);
 		} catch (IOException e) {
 			try {
@@ -1038,23 +1062,18 @@ class LmdbFilterSelectivityStats
 		int persistedVersion;
 		try (DataInputStream in = new DataInputStream(Files.newInputStream(sidecarPath))) {
 			persistedVersion = in.readInt();
-			if (persistedVersion != LEGACY_PERSIST_VERSION
-					&& persistedVersion != SURFACE_PERSIST_VERSION
-					&& persistedVersion != STAMPLESS_PERSIST_VERSION
-					&& persistedVersion != PERSIST_VERSION) {
+			if (persistedVersion != PERSIST_VERSION) {
 				return;
 			}
 			SketchSnapshotIdentity persistedIdentity = SketchSnapshotIdentity.readFrom(in);
 			if (!persistedIdentity.equals(currentIdentity)) {
 				return;
 			}
-			if (persistedVersion >= PERSIST_VERSION) {
-				// LMDB write-txn id: rejects evidence persisted before data that changed without the (async)
-				// sketch identity republishing — the crash window the identity check alone cannot see.
-				long persistedDataStamp = in.readLong();
-				if (sidecarDataStampCheckEnabled() && persistedDataStamp != dataStamp()) {
-					return;
-				}
+			// The journal sequence changes with statements, but not with metadata-only acknowledgement commits.
+			long persistedStatementMutationStamp = in.readLong();
+			if (sidecarDataStampCheckEnabled()
+					&& persistedStatementMutationStamp != appliedStatementMutationStamp) {
+				return;
 			}
 
 			int learnedEntries = in.readInt();
@@ -1082,23 +1101,21 @@ class LmdbFilterSelectivityStats
 			int sampledEntries = in.readInt();
 			for (int i = 0; i < sampledEntries; i++) {
 				PatternFilterKey key = PatternFilterKey.readFrom(in);
-				SampledPassRatio sampled = SampledPassRatio.readFrom(in, persistedVersion);
+				SampledPassRatio sampled = SampledPassRatio.readFrom(in, PERSIST_VERSION);
 				if (!isUsableSampledPassRatio(sampled)) {
 					continue;
 				}
 				loadedSampled.put(key, sampled);
 			}
-			if (persistedVersion >= SURFACE_PERSIST_VERSION) {
-				int surfaceEntries = in.readInt();
-				if (surfaceEntries < 0 || surfaceEntries > MAX_BACKGROUND_SAMPLING_REQUESTS) {
-					throw new IOException("Invalid learned filter surface count: " + surfaceEntries);
-				}
-				for (int i = 0; i < surfaceEntries; i++) {
-					FilterSurfaceKey key = FilterSurfaceKey.readFrom(in);
-					LearnedCounts counts = LearnedCounts.readFrom(in);
-					if (counts.total() > 0L) {
-						loadedSurfaces.put(key, counts);
-					}
+			int surfaceEntries = in.readInt();
+			if (surfaceEntries < 0 || surfaceEntries > MAX_BACKGROUND_SAMPLING_REQUESTS) {
+				throw new IOException("Invalid learned filter surface count: " + surfaceEntries);
+			}
+			for (int i = 0; i < surfaceEntries; i++) {
+				FilterSurfaceKey key = FilterSurfaceKey.readFrom(in);
+				LearnedCounts counts = LearnedCounts.readFrom(in);
+				if (counts.total() > 0L) {
+					loadedSurfaces.put(key, counts);
 				}
 			}
 		} catch (IOException | RuntimeException e) {
@@ -1116,7 +1133,7 @@ class LmdbFilterSelectivityStats
 			learnedBySurface.putAll(loadedSurfaces);
 			sampledByFilter.clear();
 			sampledByFilter.putAll(loadedSampled);
-			dirty = persistedVersion != PERSIST_VERSION;
+			dirty = false;
 		}
 	}
 
@@ -1134,10 +1151,11 @@ class LmdbFilterSelectivityStats
 				return;
 			}
 			ColdFilterSynopsis loaded = ColdFilterSynopsis.deserialize(Files.readAllBytes(coldSynopsisPath), identity,
-					coldSynopsisCapacity);
+					appliedStatementMutationStamp, coldSynopsisCapacity);
 			synchronized (this) {
 				coldSynopsis = loaded;
 				coldSynopsisMutationVersion = identity.mutationVersion();
+				coldSynopsisStatementMutationStamp = appliedStatementMutationStamp;
 				coldSynopsisDirty = false;
 			}
 		} catch (IOException | RuntimeException e) {
@@ -1423,10 +1441,9 @@ class LmdbFilterSelectivityStats
 		}
 	}
 
-	/** The LMDB write-transaction id — a persistent monotonic data version independent of the sketch identity. */
-	private long dataStamp() {
+	private static long latestStatementMutationStamp(TripleStore tripleStore) {
 		try {
-			return LmdbFrontierSnapshotSource.snapshotEpoch(tripleStore.getTxnManager().getReadTxn());
+			return tripleStore.latestFrontierMutationSequence();
 		} catch (IOException | RuntimeException e) {
 			return 0L;
 		}
@@ -1854,10 +1871,14 @@ class LmdbFilterSelectivityStats
 	private final class ColdSynopsisRebuildObservation implements SketchRebuildObserver.RebuildObservation {
 
 		private final ColdFilterSynopsis.Builder builder = ColdFilterSynopsis.builder(coldSynopsisCapacity);
+		private final long statementMutationStampAtStart;
 		private boolean finished;
 
 		private ColdSynopsisRebuildObservation(long startingMutationVersion) {
 			// The estimator supplies the publication version to complete after proving that this version did not drift.
+			synchronized (LmdbFilterSelectivityStats.this) {
+				statementMutationStampAtStart = appliedStatementMutationStamp;
+			}
 		}
 
 		@Override
@@ -1880,8 +1901,13 @@ class LmdbFilterSelectivityStats
 			}
 			ColdFilterSynopsis completed = builder.build();
 			synchronized (LmdbFilterSelectivityStats.this) {
+				if (statementMutationStampAtStart != appliedStatementMutationStamp) {
+					finished = true;
+					return;
+				}
 				coldSynopsis = completed;
 				coldSynopsisMutationVersion = publishedMutationVersion;
+				coldSynopsisStatementMutationStamp = statementMutationStampAtStart;
 				coldSynopsisDirty = true;
 				planningRevision++;
 			}
@@ -1892,6 +1918,23 @@ class LmdbFilterSelectivityStats
 		public void abort() {
 			finished = true;
 		}
+	}
+
+	private void advanceAppliedStatementMutationStamp(long committedStatementMutationStamp) {
+		long requiredStamp = requireStatementMutationStamp(committedStatementMutationStamp);
+		if (requiredStamp < appliedStatementMutationStamp) {
+			throw new IllegalArgumentException("Statement mutation stamp cannot move backwards: " + requiredStamp
+					+ " < " + appliedStatementMutationStamp);
+		}
+		appliedStatementMutationStamp = requiredStamp;
+	}
+
+	private static long requireStatementMutationStamp(long statementMutationStamp) {
+		if (statementMutationStamp < 0L) {
+			throw new IllegalArgumentException("Statement mutation stamp must be non-negative: "
+					+ statementMutationStamp);
+		}
+		return statementMutationStamp;
 	}
 
 	private SketchSnapshotIdentity currentSnapshotIdentity() {

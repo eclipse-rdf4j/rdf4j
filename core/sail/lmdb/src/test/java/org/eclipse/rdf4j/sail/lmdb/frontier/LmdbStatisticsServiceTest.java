@@ -479,6 +479,28 @@ class LmdbStatisticsServiceTest {
 	}
 
 	@Test
+	void metadataOnlyEpochAdvanceKeepsCompleteRemainingMutationTailQueryable() throws Exception {
+		service = openService();
+		service.publish(writeGeneration(1L, -1L, 7L, FIRST_PROBE_SHARD, 41L, true));
+		List<FrontierMutation> mutations = List.of(
+				new FrontierMutation(8L, 8L, true, true, 108L, 22L, 208L, 0L),
+				new FrontierMutation(9L, 9L, true, true, 109L, 22L, 209L, 0L),
+				new FrontierMutation(10L, 10L, true, true, 110L, 22L, 210L, 0L));
+		service.recordStoreCommit(10L, 10L, System.currentTimeMillis());
+		service.installMutationTail(mutations);
+		service.publishDelta(mutations.subList(0, 2), FrontierStatisticsBuildConfig.testing(
+				32L * 1024L * 1024L, 64, 32, 256, 2L * 1024L * 1024L));
+
+		assertFalse(service.recordMetadataOnlySnapshotAdvance(11L, 9L),
+				"An interleaved statement coordinate must not advance the physical epoch");
+		assertTrue(service.recordMetadataOnlySnapshotAdvance(11L, 10L));
+
+		FrontierLeafEstimate estimate = service.estimateLeaf(11L, predicateProbe(22L));
+		assertEquals(FrontierFallbackReason.NONE, estimate.fallbackReason());
+		assertEquals(3.0d, estimate.pointRows(), 0.0d);
+	}
+
+	@Test
 	void committedMemoryTailRejectsASequenceGap() throws Exception {
 		service = openService();
 		service.publish(writeGeneration(1L, -1L, 7L, FIRST_PROBE_SHARD, 41L, true));
