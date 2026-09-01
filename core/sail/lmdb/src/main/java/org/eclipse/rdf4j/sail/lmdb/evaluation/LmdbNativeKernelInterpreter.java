@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateDomain
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateEntry;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumeratePredicates;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateTerms;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Exists;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterCompareId;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterDateCompare;
@@ -51,7 +52,9 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeClose;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeVariable;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ScanQuad;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
@@ -162,8 +165,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 			} else if (!(node instanceof EnumerateAdjKeys || node instanceof EnumerateDomain
 					|| node instanceof EnumerateEntry || node instanceof EnumerateTerms
-					|| node instanceof EnumeratePredicates || node instanceof Probe || node instanceof ProbeVariable
+					|| node instanceof EnumeratePredicates || node instanceof EnumerateWildcard
+					|| node instanceof Probe || node instanceof ProbeVariable
 					|| node instanceof ProbeClose || node instanceof SipDomainProbe || node instanceof SipKeyProbe
+					|| node instanceof SipDomainWildcard || node instanceof SipKeyWildcard
 					|| node instanceof ScanQuad || node instanceof PlanRows || node instanceof Intersect
 					|| node instanceof LeftProbe || node instanceof PathExpand || node instanceof HashProbe
 					|| node instanceof BindAlias || node instanceof BindHook || node instanceof FilterCompareId
@@ -564,6 +569,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (node instanceof EnumeratePredicates) {
 			return buildEnumeratePredicates((EnumeratePredicates) node, next);
 		}
+		if (node instanceof EnumerateWildcard) {
+			return buildEnumerateWildcard((EnumerateWildcard) node, next);
+		}
 		if (node instanceof Probe) {
 			return buildProbe((Probe) node, next);
 		}
@@ -578,6 +586,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}
 		if (node instanceof SipKeyProbe) {
 			return buildSipKeyProbe((SipKeyProbe) node, next);
+		}
+		if (node instanceof SipDomainWildcard) {
+			return buildSipDomainWildcard((SipDomainWildcard) node, next);
+		}
+		if (node instanceof SipKeyWildcard) {
+			return buildSipKeyWildcard((SipKeyWildcard) node, next);
 		}
 		if (node instanceof ScanQuad) {
 			return buildScanQuad((ScanQuad) node, next);
@@ -647,6 +661,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private Op buildEnumerateAdjKeys(EnumerateAdjKeys enumerate, Op next) {
+		if (enumerate.wildcard) {
+			return buildEnumerateWildcardKeys(enumerate, next);
+		}
 		NativeLmdbQuerySource.NativeAdjacency adjacency = context.adjacencies[enumerate.adjacency];
 		NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor[] slot = keyCursorSlot();
 		int implicitSipSite = telemetry && enumerate.sipDriven ? registerImplicitSipDriven(enumerate) : -1;
@@ -719,6 +736,55 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		};
 	}
 
+	private Op buildEnumerateWildcardKeys(EnumerateAdjKeys enumerate, Op next) {
+		NativeLmdbQuerySource.WildcardAdjacency wildcard = context.wildcardAdjacencies[enumerate.adjacency];
+		NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor[] slot = keyCursorSlot();
+		boolean ctxActive = enumerate.ctxActive();
+		return () -> {
+			long rawPredicate = read(enumerate.runtimePredicate);
+			if (rawPredicate == -1L) {
+				return false;
+			}
+			int predicateOrdinal = wildcard.predicateOrdinal(rawPredicate);
+			if (predicateOrdinal < 0) {
+				return false;
+			}
+			wildcard.bind(predicateOrdinal);
+			NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor = wildcard.openKeyRunCursor();
+			if (cursor == null) {
+				throw new IllegalStateException("wildcard plane refused key enumeration after bind");
+			}
+			slot[0] = cursor;
+			try {
+				while (cursor.advance()) {
+					poll();
+					v[enumerate.keyCol] = cursor.key();
+					long end = cursor.runSize();
+					for (long runOffset = 0L; runOffset < end; runOffset++) {
+						poll();
+						if (ctxActive) {
+							long contextId = cursor.contextAt(runOffset);
+							if (!ctxAccepted(contextId, enumerate.ctxMatch, enumerate.ctxExcludeDefault)) {
+								continue;
+							}
+							if (enumerate.ctxCol >= 0) {
+								v[enumerate.ctxCol] = contextId;
+							}
+						}
+						v[enumerate.valueCol] = cursor.neighborAt(runOffset);
+						if (next.run()) {
+							return true;
+						}
+					}
+				}
+			} finally {
+				cursor.close();
+				slot[0] = null;
+			}
+			return false;
+		};
+	}
+
 	private Op buildEnumerateDomain(EnumerateDomain enumerate, Op next) {
 		long[] dom = context.keyDomains[enumerate.domain];
 		int domO = context.keyDomainOffsets[enumerate.domain];
@@ -775,6 +841,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private Op buildEnumeratePredicates(EnumeratePredicates enumerate, Op next) {
+		if (enumerate.wildcard) {
+			return buildEnumerateWildcardPredicates(enumerate, next);
+		}
 		NativeLmdbQuerySource.NodePredicates np = context.nodePredicates[enumerate.view];
 		long[] predicates = new long[PREDICATE_CHUNK];
 		long[] runs = new long[PREDICATE_CHUNK];
@@ -823,6 +892,185 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		};
 	}
 
+	private Op buildEnumerateWildcardPredicates(EnumeratePredicates enumerate, Op next) {
+		NativeLmdbQuerySource.WildcardAdjacency wildcard = context.wildcardAdjacencies[enumerate.view];
+		long[] keys = new long[1];
+		long[] runs = new long[1];
+		boolean ctxActive = enumerate.ctxActive();
+		return () -> {
+			long key = read(enumerate.key);
+			long target = enumerate.target == null ? -1L : read(enumerate.target);
+			if (key == -1L) {
+				return false;
+			}
+			if (enumerate.target != null && target == -1L) {
+				return false;
+			}
+			keys[0] = key;
+			int predicateCount = wildcard.predicateCount();
+			for (int predicateOrdinal = 0; predicateOrdinal < predicateCount; predicateOrdinal++) {
+				poll();
+				wildcard.bind(predicateOrdinal);
+				wildcard.findBatch(keys, 0, 1, runs, 0);
+				long run = runs[0];
+				if (run <= 0L) {
+					continue;
+				}
+				long end = wildcard.size(run);
+				if (enumerate.demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY
+						|| enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PREDICATE_ANY
+						|| enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PAIR_PRESENCE) {
+					if (!hasAcceptedWildcardRun(wildcard, run, end, target, enumerate)) {
+						continue;
+					}
+					if (enumerate.demand != LmdbWildcardPhysicalDemand.Demand.NODE_ANY) {
+						v[enumerate.predicateCol] = wildcard.predicateAt(predicateOrdinal);
+					}
+					if (next.run()) {
+						return true;
+					}
+					if (enumerate.demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY) {
+						return false;
+					}
+					continue;
+				}
+				v[enumerate.predicateCol] = wildcard.predicateAt(predicateOrdinal);
+				for (long i = 0L; i < end; i++) {
+					poll();
+					if (ctxActive) {
+						long ctx = wildcard.contextAt(run, i);
+						if (!ctxAccepted(ctx, enumerate.ctxMatch, enumerate.ctxExcludeDefault)) {
+							continue;
+						}
+						if (enumerate.ctxCol >= 0) {
+							v[enumerate.ctxCol] = ctx;
+						}
+					}
+					if (enumerate.target != null || enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+						long neighbor = wildcard.neighborAt(run, i);
+						if (enumerate.target != null && neighbor != target) {
+							continue;
+						}
+						if (enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD
+								&& enumerate.valueCol >= 0) {
+							v[enumerate.valueCol] = neighbor;
+						}
+					}
+					if (next.run()) {
+						return true;
+					}
+				}
+			}
+			return false;
+		};
+	}
+
+	private boolean hasAcceptedWildcardRun(NativeLmdbQuerySource.WildcardAdjacency wildcard, long run, long end,
+			long target, EnumeratePredicates enumerate) {
+		if (enumerate.target == null && !enumerate.ctxActive()) {
+			return end > 0L;
+		}
+		for (long runOffset = 0L; runOffset < end; runOffset++) {
+			poll();
+			if (enumerate.target != null && wildcard.neighborAt(run, runOffset) != target) {
+				continue;
+			}
+			if (enumerate.ctxActive()
+					&& !ctxAccepted(wildcard.contextAt(run, runOffset), enumerate.ctxMatch,
+							enumerate.ctxExcludeDefault)) {
+				continue;
+			}
+			return true;
+		}
+		return false;
+	}
+
+	private Op buildEnumerateWildcard(EnumerateWildcard enumerate, Op next) {
+		NativeLmdbQuerySource.WildcardAdjacency wildcard = context.wildcardAdjacencies[enumerate.view];
+		NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor[] slot = keyCursorSlot();
+		boolean ctxActive = enumerate.ctxActive();
+		return () -> {
+			int predicateCount = wildcard.predicateCount();
+			for (int predicateOrdinal = 0; predicateOrdinal < predicateCount; predicateOrdinal++) {
+				poll();
+				wildcard.bind(predicateOrdinal);
+				NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor = wildcard.openKeyRunCursor();
+				if (cursor == null) {
+					throw new IllegalStateException("wildcard plane refused key enumeration after bind");
+				}
+				slot[0] = cursor;
+				try {
+					while (cursor.advance()) {
+						poll();
+						long end = cursor.runSize();
+						if (end <= 0L) {
+							continue;
+						}
+						if (enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PREDICATE_ANY
+								|| enumerate.demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY) {
+							if (!ctxActive || hasAcceptedContext(cursor, end, enumerate.ctxMatch,
+									enumerate.ctxExcludeDefault)) {
+								if (enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PREDICATE_ANY) {
+									v[enumerate.predicateCol] = wildcard.predicateAt(predicateOrdinal);
+								}
+								if (next.run()) {
+									return true;
+								}
+								if (enumerate.demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY) {
+									return false;
+								}
+								break;
+							}
+							continue;
+						}
+						v[enumerate.keyCol] = cursor.key();
+						v[enumerate.predicateCol] = wildcard.predicateAt(predicateOrdinal);
+						if (enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PAIR_PRESENCE) {
+							if ((!ctxActive || hasAcceptedContext(cursor, end, enumerate.ctxMatch,
+									enumerate.ctxExcludeDefault)) && next.run()) {
+								return true;
+							}
+							continue;
+						}
+						for (long runOffset = 0L; runOffset < end; runOffset++) {
+							poll();
+							if (ctxActive) {
+								long contextId = cursor.contextAt(runOffset);
+								if (!ctxAccepted(contextId, enumerate.ctxMatch, enumerate.ctxExcludeDefault)) {
+									continue;
+								}
+								if (enumerate.ctxCol >= 0) {
+									v[enumerate.ctxCol] = contextId;
+								}
+							}
+							if (enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+								v[enumerate.valueCol] = cursor.neighborAt(runOffset);
+							}
+							if (next.run()) {
+								return true;
+							}
+						}
+					}
+				} finally {
+					cursor.close();
+					slot[0] = null;
+				}
+			}
+			return false;
+		};
+	}
+
+	private boolean hasAcceptedContext(NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor, long end,
+			Operand ctxMatch, boolean ctxExcludeDefault) {
+		for (long runOffset = 0L; runOffset < end; runOffset++) {
+			poll();
+			if (ctxAccepted(cursor.contextAt(runOffset), ctxMatch, ctxExcludeDefault)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private Op buildProbe(Probe probe, Op next) {
 		NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor cursor = context.adjacencies[probe.adjacency]
 				.openBoundRunCursor();
@@ -867,6 +1115,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				return false;
 			}
 			long rh = view.runFor(key, pred);
+			if (rh == NativeLmdbQuerySource.DynamicAdjacency.NOT_COVERED) {
+				throw new IllegalStateException("dynamic adjacency refused a runtime predicate after kernel bind");
+			}
 			if (rh <= 0L) {
 				return false;
 			}
@@ -892,7 +1143,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private Op buildProbeClose(ProbeClose close, Op next, boolean booleanMode) {
-		NativeLmdbQuerySource.NativeAdjacency adjacency = context.adjacencies[close.adjacency];
+		NativeLmdbQuerySource.RunView view = close.dynamic ? context.dynamicAdjacencies[close.adjacency]
+				: context.adjacencies[close.adjacency];
 		return () -> {
 			long key = read(close.key);
 			long target = read(close.target);
@@ -900,24 +1152,36 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				// -1 matches nothing, never a wildcard.
 				return false;
 			}
-			long rh = adjacency.find(key);
+			long rh;
+			if (close.dynamic) {
+				long predicate = read(close.predicate);
+				if (predicate == -1L) {
+					return false;
+				}
+				rh = context.dynamicAdjacencies[close.adjacency].runFor(key, predicate);
+				if (rh == NativeLmdbQuerySource.DynamicAdjacency.NOT_COVERED) {
+					throw new IllegalStateException("dynamic adjacency refused a runtime predicate after kernel bind");
+				}
+			} else {
+				rh = context.adjacencies[close.adjacency].find(key);
+			}
 			if (rh <= 0L) {
 				return false;
 			}
 			long m = 0;
-			long end = adjacency.size(rh);
+			long end = view.size(rh);
 			if (close.seek) {
-				long off = adjacency.lowerBound(rh, 0L, target, 0L);
+				long off = view.lowerBound(rh, 0L, target, 0L);
 				if (off >= 0L) {
 					// Runs are (neighbor, context)-ordered: the target's occurrences are one contiguous block.
-					for (long i = off; i < end && adjacency.neighborAt(rh, i) == target; i++) {
+					for (long i = off; i < end && view.neighborAt(rh, i) == target; i++) {
 						poll();
 						m++;
 					}
 				} else {
 					for (long i = 0; i < end; i++) {
 						poll();
-						if (adjacency.neighborAt(rh, i) == target) {
+						if (view.neighborAt(rh, i) == target) {
 							m++;
 						}
 					}
@@ -925,7 +1189,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			} else {
 				for (long i = 0; i < end; i++) {
 					poll();
-					if (adjacency.neighborAt(rh, i) == target) {
+					if (view.neighborAt(rh, i) == target) {
 						m++;
 					}
 				}
@@ -1045,6 +1309,185 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			}
 			return false;
 		};
+	}
+
+	private Op buildSipDomainWildcard(SipDomainWildcard probe, Op next) {
+		NativeLmdbQuerySource.WildcardAdjacency wildcard = context.wildcardAdjacencies[probe.wildcardView];
+		long[] domain = context.keyDomains[probe.domain];
+		int offset = context.keyDomainOffsets[probe.domain];
+		int length = context.keyDomainLengths[probe.domain];
+		long[] handles = new long[KEY_CHUNK];
+		return () -> {
+			for (int predicateOrdinal = 0; predicateOrdinal < wildcard.predicateCount(); predicateOrdinal++) {
+				poll();
+				wildcard.bind(predicateOrdinal);
+				boolean predicateSatisfied = false;
+				for (int base = 0; base < length && !predicateSatisfied; base += KEY_CHUNK) {
+					int count = Math.min(KEY_CHUNK, length - base);
+					wildcard.findBatch(domain, offset + base, count, handles, 0);
+					int status = runWildcardSipBatch(probe, wildcard, domain, offset + base, count, handles,
+							predicateOrdinal, probe.demand, probe.keyCol, probe.predicateCol, probe.valueCol,
+							probe.ctxCol, probe.ctxMatch, probe.ctxExcludeDefault, next);
+					if (status == 2) {
+						return true;
+					}
+					predicateSatisfied = status == 1;
+				}
+				if (predicateSatisfied && probe.demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY) {
+					return false;
+				}
+			}
+			return false;
+		};
+	}
+
+	private Op buildSipKeyWildcard(SipKeyWildcard probe, Op next) {
+		NativeLmdbQuerySource.NativeAdjacency domain = context.adjacencies[probe.domainAdjacency];
+		NativeLmdbQuerySource.WildcardAdjacency wildcard = context.wildcardAdjacencies[probe.wildcardView];
+		NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor[] slot = keyCursorSlot();
+		long[] keys = new long[KEY_CHUNK];
+		long[] handles = new long[KEY_CHUNK];
+		return () -> {
+			for (int predicateOrdinal = 0; predicateOrdinal < wildcard.predicateCount(); predicateOrdinal++) {
+				poll();
+				wildcard.bind(predicateOrdinal);
+				NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor = domain.openKeyRunCursor();
+				if (cursor == null) {
+					return false;
+				}
+				slot[0] = cursor;
+				boolean predicateSatisfied = false;
+				try {
+					int count;
+					while (!predicateSatisfied && (count = cursor.fillKeys(keys, 0, KEY_CHUNK)) > 0) {
+						wildcard.findBatch(keys, 0, count, handles, 0);
+						int status = runWildcardSipBatch(probe, wildcard, keys, 0, count, handles, predicateOrdinal,
+								probe.demand, probe.keyCol, probe.predicateCol, probe.valueCol, probe.ctxCol,
+								probe.ctxMatch, probe.ctxExcludeDefault, next);
+						if (status == 2) {
+							return true;
+						}
+						predicateSatisfied = status == 1;
+					}
+				} finally {
+					cursor.close();
+					slot[0] = null;
+				}
+				if (predicateSatisfied && probe.demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY) {
+					return false;
+				}
+			}
+			return false;
+		};
+	}
+
+	/** 0 = continue, 1 = current predicate/global witness satisfied, 2 = boolean continuation satisfied. */
+	private int runWildcardSipBatch(Node producer, NativeLmdbQuerySource.WildcardAdjacency wildcard, long[] keys,
+			int keyOffset,
+			int count, long[] handles, int predicateOrdinal, LmdbWildcardPhysicalDemand.Demand demand, int keyCol,
+			int predicateCol, int valueCol, int ctxCol, Operand ctxMatch, boolean ctxExcludeDefault, Op next) {
+		boolean ctxActive = ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault;
+		for (int lane = 0; lane < count; lane++) {
+			long run = handles[lane];
+			if (run == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
+				throw new IllegalStateException("wildcard adjacency refused a SIP plane after kernel bind");
+			}
+			if (run <= 0L) {
+				continue;
+			}
+			long end = wildcard.size(run);
+			v[keyCol] = keys[keyOffset + lane];
+			if (demand == LmdbWildcardPhysicalDemand.Demand.PAIR_MULTIPLICITY
+					&& wildcardMultiplicityTail(producer)) {
+				v[predicateCol] = wildcard.predicateAt(predicateOrdinal);
+				updateTerminalBy(end);
+				continue;
+			}
+			if (demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY
+					|| demand == LmdbWildcardPhysicalDemand.Demand.PREDICATE_ANY
+					|| demand == LmdbWildcardPhysicalDemand.Demand.PAIR_PRESENCE) {
+				if (ctxActive && !hasAcceptedWildcardSipContext(wildcard, run, end, ctxMatch, ctxExcludeDefault)) {
+					continue;
+				}
+				if (demand != LmdbWildcardPhysicalDemand.Demand.NODE_ANY) {
+					v[predicateCol] = wildcard.predicateAt(predicateOrdinal);
+				}
+				if (next.run()) {
+					return 2;
+				}
+				if (demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY
+						|| demand == LmdbWildcardPhysicalDemand.Demand.PREDICATE_ANY) {
+					return 1;
+				}
+				continue;
+			}
+			v[predicateCol] = wildcard.predicateAt(predicateOrdinal);
+			for (long runOffset = 0L; runOffset < end; runOffset++) {
+				poll();
+				if (ctxActive) {
+					long contextId = wildcard.contextAt(run, runOffset);
+					if (!ctxAccepted(contextId, ctxMatch, ctxExcludeDefault)) {
+						continue;
+					}
+					if (ctxCol >= 0) {
+						v[ctxCol] = contextId;
+					}
+				}
+				if (demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+					v[valueCol] = wildcard.neighborAt(run, runOffset);
+				}
+				if (next.run()) {
+					return 2;
+				}
+			}
+		}
+		return 0;
+	}
+
+	private boolean wildcardMultiplicityTail(Node producer) {
+		if (aggregate == null || kernel.pipeline.isEmpty()
+				|| kernel.pipeline.get(kernel.pipeline.size() - 1) != producer) {
+			return false;
+		}
+		int valueCol;
+		int ctxCol;
+		if (producer instanceof SipDomainWildcard wildcard
+				&& wildcard.demand == LmdbWildcardPhysicalDemand.Demand.PAIR_MULTIPLICITY
+				&& !wildcard.ctxActive()) {
+			valueCol = wildcard.valueCol;
+			ctxCol = wildcard.ctxCol;
+		} else if (producer instanceof SipKeyWildcard wildcard
+				&& wildcard.demand == LmdbWildcardPhysicalDemand.Demand.PAIR_MULTIPLICITY
+				&& !wildcard.ctxActive()) {
+			valueCol = wildcard.valueCol;
+			ctxCol = wildcard.ctxCol;
+		} else {
+			return false;
+		}
+		for (int groupCol : aggregate.groupCols) {
+			if (groupCol == valueCol || groupCol == ctxCol) {
+				return false;
+			}
+		}
+		for (AggregateOutput output : aggregate.outputs) {
+			if (output.kind != LmdbNativeKernelIr.AGG_COUNT_STAR
+					&& (output.kind != LmdbNativeKernelIr.AGG_COUNT
+							|| output.col == valueCol || output.col == ctxCol)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private boolean hasAcceptedWildcardSipContext(NativeLmdbQuerySource.WildcardAdjacency wildcard, long run,
+			long end, Operand ctxMatch, boolean ctxExcludeDefault) {
+		for (long runOffset = 0L; runOffset < end; runOffset++) {
+			poll();
+			if (ctxAccepted(wildcard.contextAt(run, runOffset), ctxMatch, ctxExcludeDefault)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private long[] scanBuffer(int scan) {
@@ -1696,6 +2139,61 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			updateHashed();
 		}
 		return false;
+	}
+
+	/** Bulk counterpart of {@link #updateTerminal()}, used only by a proven multiplicity-only producer tail. */
+	private void updateTerminalBy(long multiplicity) {
+		if (multiplicity <= 0L) {
+			return;
+		}
+		if (streamingGroups()) {
+			long key = v[aggregate.groupCols[0]];
+			if (!sgSeen) {
+				sgSeen = true;
+				sgKey = key;
+			} else if (!hooks.sameRdfTerm(sgKey, key)) {
+				emitStreamingGroup();
+				for (int i = 0; i < aggregate.outputs.length; i++) {
+					sgC[i] = 0L;
+					sgB[i] = false;
+					sgL[i] = -1L;
+				}
+				sgKey = key;
+			}
+			for (int i = 0; i < aggregate.outputs.length; i++) {
+				AggregateOutput output = aggregate.outputs[i];
+				if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR) {
+					sgC[i] += multiplicity;
+				} else if (output.kind == LmdbNativeKernelIr.AGG_COUNT && v[output.col] != -1L) {
+					sgC[i] += multiplicity;
+				} else if (output.kind != LmdbNativeKernelIr.AGG_COUNT) {
+					throw new IllegalStateException("non-count output in multiplicity tail");
+				}
+			}
+			return;
+		}
+		int group;
+		if (aggregate.groupCols.length == 0) {
+			group = 0;
+		} else if (aggregate.groupCols.length == 1) {
+			group = groups.getOrInsert(v[aggregate.groupCols[0]]);
+		} else {
+			for (int i = 0; i < aggregate.groupCols.length; i++) {
+				groupScratch[i] = v[aggregate.groupCols[i]];
+			}
+			group = groupKeys.internOrGet(groupScratch, 0);
+		}
+		ensure(group);
+		for (int i = 0; i < aggregate.outputs.length; i++) {
+			AggregateOutput output = aggregate.outputs[i];
+			if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR) {
+				agC[i][group] += multiplicity;
+			} else if (output.kind == LmdbNativeKernelIr.AGG_COUNT && v[output.col] != -1L) {
+				agC[i][group] += multiplicity;
+			} else if (output.kind != LmdbNativeKernelIr.AGG_COUNT) {
+				throw new IllegalStateException("non-count output in multiplicity tail");
+			}
+		}
 	}
 
 	private void updateHashed() {

@@ -526,10 +526,7 @@ final class LmdbNativeKernelLowering {
 		// Value ordering runs through hooks.compareValues, so the engine must construct the hook sidecar even when no
 		// filter or bind hook asked for it.
 		LmdbNativeKernelBindings sunk = keyCount == 0 ? bindings
-				: new LmdbNativeKernelBindings(bindings.adjacencies, bindings.constants, bindings.entrySlotIds,
-						bindings.keyDomains, bindings.filterHooks, bindings.bindHooks, bindings.columnEngineSlots,
-						bindings.residualFilters, bindings.scanSites, bindings.planRequests, bindings.groupLayout,
-						true, bindings.distinctExpected);
+				: bindings.withAdjacenciesAndColumns(bindings.adjacencies, bindings.columnEngineSlots, true);
 		OUTPUT_MODS_LOWERINGS.incrementAndGet();
 		return new Lowered(kernel, sunk, null, strictCompare);
 	}
@@ -587,8 +584,11 @@ final class LmdbNativeKernelLowering {
 			if (pipeline.get(i) instanceof LmdbNativeKernelIr.ProbeClose) {
 				LmdbNativeKernelIr.ProbeClose close = (LmdbNativeKernelIr.ProbeClose) pipeline.get(i);
 				if (close.multiplicity) {
-					pipeline.set(i, new LmdbNativeKernelIr.ProbeClose(close.adjacency, close.key, close.target, false,
-							close.seek));
+					pipeline.set(i, close.dynamic
+							? new LmdbNativeKernelIr.ProbeClose(close.adjacency, close.bySubject, close.predicate,
+									close.key, close.target, false, close.seek)
+							: new LmdbNativeKernelIr.ProbeClose(close.adjacency, close.key, close.target, false,
+									close.seek));
 				}
 			}
 		}
@@ -635,14 +635,23 @@ final class LmdbNativeKernelLowering {
 				if (LmdbNativeKernelIr.Kernel.pipelineTouchesColumn(pipeline, i, keys.valueCol)) {
 					continue;
 				}
-				pipeline.set(i, new LmdbNativeKernelIr.EnumerateAdjKeys(keys.adjacency, keys.keyCol, -1, -1, null,
-						false, keys.sipDriven, keys.sipConsumer));
-				if (adjacencyRequests == bindings.adjacencies) {
-					adjacencyRequests = adjacencyRequests.clone();
+				if (keys.wildcard) {
+					pipeline.set(i, new LmdbNativeKernelIr.EnumerateAdjKeys(keys.adjacency, keys.bySubject,
+							keys.runtimePredicate, keys.keyCol, -1, -1, null, false, keys.sipDriven,
+							keys.sipConsumer));
+				} else {
+					pipeline.set(i, new LmdbNativeKernelIr.EnumerateAdjKeys(keys.adjacency, keys.keyCol, -1, -1,
+							null, false, keys.sipDriven, keys.sipConsumer));
+					if (adjacencyRequests == bindings.adjacencies) {
+						adjacencyRequests = adjacencyRequests.clone();
+					}
+					adjacencyRequests[keys.adjacency] = adjacencyRequests[keys.adjacency].withNonEmptyKeys();
 				}
-				adjacencyRequests[keys.adjacency] = adjacencyRequests[keys.adjacency].withNonEmptyKeys();
 			}
 		}
+		int[] demandColumns = keyCols.stream().mapToInt(Integer::intValue).toArray();
+		specializeWildcardDemands(pipeline,
+				LmdbWildcardPhysicalDemand.projection(true, demandColumns, new int[0]));
 		// The aligned prefix: walking the loop producers outermost-in, a chain of sorted-producer columns that are
 		// all distinct keys emits its value combinations GROUPED (equal prefixes adjacent). Two ways a producer ends
 		// the chain: an unsorted producer or a non-key loop column breaks grouping outright, and a sorted producer
@@ -721,11 +730,122 @@ final class LmdbNativeKernelLowering {
 		for (int i = 0; i < emitCols.length; i++) {
 			sunkSlots[i] = emittedSlots[emitCols[i]];
 		}
-		LmdbNativeKernelBindings sunk = new LmdbNativeKernelBindings(adjacencyRequests, bindings.constants,
-				bindings.entrySlotIds, bindings.keyDomains, bindings.filterHooks, bindings.bindHooks, sunkSlots,
-				bindings.residualFilters, bindings.scanSites, bindings.planRequests, bindings.groupLayout,
-				bindings.hooksRequired, bindings.distinctExpected);
+		LmdbNativeKernelBindings sunk = bindings.withAdjacenciesAndColumns(adjacencyRequests, sunkSlots,
+				bindings.hooksRequired);
 		return new Lowered(kernel, sunk, lowered.planBridgeReason);
+	}
+
+	private static void specializeWildcardDemands(List<Node> pipeline,
+			LmdbWildcardPhysicalDemand physicalDemand) {
+		if (physicalDemand.ordered()
+				|| physicalDemand.duplicatePolicy == LmdbWildcardPhysicalDemand.DuplicatePolicy.EXPANDED) {
+			return;
+		}
+		for (int i = 0; i < pipeline.size(); i++) {
+			Node node = pipeline.get(i);
+			if (node instanceof LmdbNativeKernelIr.Exists exists) {
+				ArrayList<Node> nested = new ArrayList<>(exists.pipeline);
+				specializeWildcardDemands(nested, physicalDemand);
+				pipeline.set(i, new LmdbNativeKernelIr.Exists(exists.negated, nested));
+				continue;
+			}
+			if (node instanceof LmdbNativeKernelIr.LeftGroup group) {
+				ArrayList<Node> nested = new ArrayList<>(group.arm);
+				specializeWildcardDemands(nested, physicalDemand);
+				pipeline.set(i, new LmdbNativeKernelIr.LeftGroup(nested));
+				continue;
+			}
+			if (node instanceof LmdbNativeKernelIr.LexicalFrameLeftJoin lexical) {
+				ArrayList<Node> left = new ArrayList<>(lexical.left);
+				ArrayList<Node> right = new ArrayList<>(lexical.right);
+				specializeWildcardDemands(left, physicalDemand);
+				specializeWildcardDemands(right, physicalDemand);
+				pipeline.set(i, new LmdbNativeKernelIr.LexicalFrameLeftJoin(left, right, lexical.problemCols));
+				continue;
+			}
+			if (node instanceof LmdbNativeKernelIr.Union union) {
+				ArrayList<List<Node>> branches = new ArrayList<>(union.branches.size());
+				for (List<Node> branch : union.branches) {
+					ArrayList<Node> nested = new ArrayList<>(branch);
+					specializeWildcardDemands(nested, physicalDemand);
+					branches.add(nested);
+				}
+				pipeline.set(i, new LmdbNativeKernelIr.Union(branches));
+				continue;
+			}
+			if (node instanceof LmdbNativeKernelIr.EnumeratePredicates enumerate && enumerate.wildcard
+					&& enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+				boolean payloadLive = columnLive(physicalDemand, enumerate.valueCol)
+						|| columnLive(physicalDemand, enumerate.ctxCol)
+						|| enumerate.valueCol >= 0
+								&& LmdbNativeKernelIr.Kernel.pipelineTouchesColumn(pipeline, i, enumerate.valueCol)
+						|| enumerate.ctxCol >= 0
+								&& LmdbNativeKernelIr.Kernel.pipelineTouchesColumn(pipeline, i, enumerate.ctxCol);
+				if (!payloadLive) {
+					LmdbWildcardPhysicalDemand.Demand demand;
+					switch (physicalDemand.duplicatePolicy) {
+					case WEIGHTED:
+						demand = LmdbWildcardPhysicalDemand.Demand.PAIR_MULTIPLICITY;
+						break;
+					case DISTINCT:
+						demand = columnLive(physicalDemand, enumerate.predicateCol)
+								? LmdbWildcardPhysicalDemand.Demand.PREDICATE_ANY
+								: LmdbWildcardPhysicalDemand.Demand.NODE_ANY;
+						break;
+					default:
+						demand = LmdbWildcardPhysicalDemand.Demand.NODE_ANY;
+						break;
+					}
+					pipeline.set(i, enumerate.withDemand(demand));
+				}
+				continue;
+			}
+			if (node instanceof LmdbNativeKernelIr.EnumerateWildcard enumerate
+					&& enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+				boolean payloadLive = columnLive(physicalDemand, enumerate.valueCol)
+						|| columnLive(physicalDemand, enumerate.ctxCol)
+						|| LmdbNativeKernelIr.Kernel.pipelineTouchesColumn(pipeline, i, enumerate.valueCol)
+						|| enumerate.ctxCol >= 0
+								&& LmdbNativeKernelIr.Kernel.pipelineTouchesColumn(pipeline, i, enumerate.ctxCol);
+				if (!payloadLive) {
+					boolean keyLive = columnLive(physicalDemand, enumerate.keyCol);
+					boolean predicateLive = columnLive(physicalDemand, enumerate.predicateCol);
+					LmdbWildcardPhysicalDemand.Demand demand;
+					if (physicalDemand.duplicatePolicy == LmdbWildcardPhysicalDemand.DuplicatePolicy.WEIGHTED) {
+						demand = LmdbWildcardPhysicalDemand.Demand.PAIR_MULTIPLICITY;
+					} else if (predicateLive && !keyLive) {
+						demand = LmdbWildcardPhysicalDemand.Demand.PREDICATE_ANY;
+					} else if (keyLive || predicateLive) {
+						demand = LmdbWildcardPhysicalDemand.Demand.PAIR_PRESENCE;
+					} else {
+						demand = LmdbWildcardPhysicalDemand.Demand.NODE_ANY;
+					}
+					pipeline.set(i, enumerate.withDemand(demand));
+				}
+			}
+		}
+	}
+
+	private static boolean columnLive(LmdbWildcardPhysicalDemand demand, int column) {
+		return column >= 0 && column < Long.SIZE && (demand.liveMask >>> column & 1L) != 0L;
+	}
+
+	private static LmdbWildcardPhysicalDemand aggregateWildcardDemand(int[] groupCols,
+			LmdbNativeKernelIr.AggregateOutput[] outputs) {
+		long liveMask = 0L;
+		for (int groupCol : groupCols) {
+			liveMask |= 1L << groupCol;
+		}
+		for (LmdbNativeKernelIr.AggregateOutput output : outputs) {
+			if (output.kind != LmdbNativeKernelIr.AGG_COUNT_STAR
+					&& output.kind != LmdbNativeKernelIr.AGG_COUNT) {
+				return null;
+			}
+			if (output.kind == LmdbNativeKernelIr.AGG_COUNT) {
+				liveMask |= 1L << output.col;
+			}
+		}
+		return LmdbWildcardPhysicalDemand.weighted(liveMask);
 	}
 
 	/**
@@ -1369,6 +1489,7 @@ final class LmdbNativeKernelLowering {
 		final List<LmdbNativeKernelBindings.AdjacencyRequest> adjacencies = new ArrayList<>();
 		final List<LmdbNativeKernelBindings.NodePredicateRequest> nodePredicateRequests = new ArrayList<>();
 		final List<LmdbNativeKernelBindings.DynamicRequest> dynamicRequests = new ArrayList<>();
+		final List<LmdbNativeKernelBindings.WildcardRequest> wildcardRequests = new ArrayList<>();
 		final List<LmdbNativeKernelBindings.FilterHook> filterHooks = new ArrayList<>();
 		final List<LmdbNativeKernelBindings.BindHook> bindHooks = new ArrayList<>();
 		final List<Integer> columnEngineSlots = new ArrayList<>();
@@ -1459,10 +1580,17 @@ final class LmdbNativeKernelLowering {
 			return dynamicRequests.size() - 1;
 		}
 
+		/** Wildcard plane views are mutable and therefore never deduplicated across IR operators. */
+		private int wildcardView(boolean bySubject) {
+			wildcardRequests.add(new LmdbNativeKernelBindings.WildcardRequest(bySubject));
+			return wildcardRequests.size() - 1;
+		}
+
 		private LmdbNativeKernelBindings withVariablePredicateRequests(LmdbNativeKernelBindings bindings) {
 			return bindings.withVariablePredicateRequests(
 					nodePredicateRequests.toArray(new LmdbNativeKernelBindings.NodePredicateRequest[0]),
-					dynamicRequests.toArray(new LmdbNativeKernelBindings.DynamicRequest[0]));
+					dynamicRequests.toArray(new LmdbNativeKernelBindings.DynamicRequest[0]),
+					wildcardRequests.toArray(new LmdbNativeKernelBindings.WildcardRequest[0]));
 		}
 
 		private int scan(StatementOrder order, LmdbKeyRange range) {
@@ -2341,17 +2469,18 @@ final class LmdbNativeKernelLowering {
 		 * Lowers a pattern whose predicate is a variable, or returns false so the caller falls through to a scan and
 		 * then to a stable decline.
 		 * <p>
-		 * Two shapes only, and both need exactly one endpoint available. When the predicate variable is still fresh the
-		 * pattern becomes an enumeration of the node's predicate row; when it has already been assigned a column or
-		 * arrives through the initial bindings, it becomes a dynamic probe. Everything else — both endpoints bound,
-		 * both endpoints fresh, a predicate term that is simultaneously a constant and a variable, and every repeated
-		 * variable, which {@code hasRepeatedSlot} has already excluded — declines, because taking the "fresh variable"
-		 * branch for any of them would overwrite a binding that already exists.
+		 * Fresh predicates use a node-predicate row when one endpoint is known and that optional projection is
+		 * explicitly enabled; otherwise they use a probe-owned wildcard plane view. Runtime-bound predicates retain the
+		 * dynamic point-probe for one-known-endpoint shapes and use a wildcard-bound key cursor only when both
+		 * endpoints are fresh. Repeated-variable aliases are excluded by the caller and continue through the exact scan
+		 * fallback.
 		 */
 		private boolean lowerVariablePredicatePattern(PatternPlan pattern, boolean ctxLowerable) {
-			if (!LmdbNativeKernelIr.nodePredicatesEnabled()) {
-				return false;
-			}
+			boolean projection = LmdbNativeKernelIr.nodePredicatesEnabled();
+			// Wildcard IR is the projection-free semantic implementation, not a generated-code feature. The
+			// rdf4j.lmdb.janinoCodegen.wildcardPredicates switch is consulted only when choosing between Janino and
+			// the interpreter after this lowering has produced a kernel.
+			boolean wildcard = true;
 			if (pattern.p.isConstant() || !pattern.p.hasSlot()) {
 				// A predicate term that is both a constant and a variable means something the pattern plan owns, not
 				// the adjacency layer; a predicate that is neither cannot be written anywhere.
@@ -2375,30 +2504,32 @@ final class LmdbNativeKernelLowering {
 			boolean ctxActive = ctxMatch != null || ctxProject || ctxExclude;
 			Operand subject = operandOf(pattern.s);
 			Operand object = operandOf(pattern.o);
-			// Exactly one endpoint available; the other must be a fresh variable this node will write.
-			boolean bySubject;
-			Operand key;
-			int valueSlot;
-			if (subject != null && object == null && pattern.o.hasSlot() && slotFresh(pattern.o.slot)) {
-				bySubject = true;
-				key = subject;
-				valueSlot = pattern.o.slot;
-			} else if (object != null && subject == null && pattern.s.hasSlot() && slotFresh(pattern.s.slot)) {
-				bySubject = false;
-				key = object;
-				valueSlot = pattern.s.slot;
-			} else {
-				return false;
-			}
 			Operand predicate = slotOperand(pattern.p.slot);
 			if (predicate != null) {
-				// Already bound: one dynamic probe, the fixed-predicate probe with the predicate read at run time.
-				int view = dynamicView(bySubject);
-				int valueColumn = newColumn(valueSlot);
-				currentDepthNodes().add(new LmdbNativeKernelIr.ProbeVariable(view, key, predicate, valueColumn,
-						ctxProject ? newColumn(pattern.c.slot) : -1, ctxMatch, ctxExclude));
-				if (!bySubject) {
+				if (subject != null && object == null && pattern.o.hasSlot() && slotFresh(pattern.o.slot)) {
+					int view = dynamicView(true);
+					currentDepthNodes().add(new LmdbNativeKernelIr.ProbeVariable(view, true, subject, predicate,
+							newColumn(pattern.o.slot), ctxProject ? newColumn(pattern.c.slot) : -1, ctxMatch,
+							ctxExclude));
+				} else if (object != null && subject == null && pattern.s.hasSlot() && slotFresh(pattern.s.slot)) {
+					int view = dynamicView(false);
+					currentDepthNodes().add(new LmdbNativeKernelIr.ProbeVariable(view, false, object, predicate,
+							newColumn(pattern.s.slot), ctxProject ? newColumn(pattern.c.slot) : -1, ctxMatch,
+							ctxExclude));
 					assuredMask |= 1L << pattern.s.slot;
+				} else if (subject != null && object != null && !ctxActive) {
+					int view = dynamicView(true);
+					currentDepthNodes().add(new LmdbNativeKernelIr.ProbeClose(view, true, predicate, subject, object,
+							true, LmdbNativeKernelIr.probeCloseSeekEnabled()));
+				} else if (subject == null && object == null && pattern.s.hasSlot() && pattern.o.hasSlot()
+						&& slotFresh(pattern.s.slot) && slotFresh(pattern.o.slot) && wildcard) {
+					int view = wildcardView(true);
+					currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateAdjKeys(view, true, predicate,
+							newColumn(pattern.s.slot), newColumn(pattern.o.slot),
+							ctxProject ? newColumn(pattern.c.slot) : -1, ctxMatch, ctxExclude, false, null));
+					assuredMask |= 1L << pattern.s.slot;
+				} else {
+					return false;
 				}
 				witnessCtxLowering(ctxActive);
 				VARIABLE_PREDICATE_LOWERINGS.incrementAndGet();
@@ -2409,13 +2540,37 @@ final class LmdbNativeKernelLowering {
 				// take the fresh branch and overwrite it.
 				return false;
 			}
-			int view = nodePredicateView(bySubject);
-			int predicateColumn = newColumn(pattern.p.slot);
-			int valueColumn = newColumn(valueSlot);
-			currentDepthNodes().add(new LmdbNativeKernelIr.EnumeratePredicates(view, key, predicateColumn, valueColumn,
-					ctxProject ? newColumn(pattern.c.slot) : -1, ctxMatch, ctxExclude));
-			if (!bySubject) {
+			if (subject != null && object == null && pattern.o.hasSlot() && slotFresh(pattern.o.slot)) {
+				int predicateColumn = newColumn(pattern.p.slot);
+				boolean useProjection = projection;
+				int view = useProjection ? nodePredicateView(true) : wildcardView(true);
+				currentDepthNodes().add(new LmdbNativeKernelIr.EnumeratePredicates(view, !useProjection, true,
+						LmdbWildcardPhysicalDemand.Demand.PAYLOAD, subject, null, predicateColumn,
+						newColumn(pattern.o.slot), ctxProject ? newColumn(pattern.c.slot) : -1, ctxMatch, ctxExclude));
+			} else if (object != null && subject == null && pattern.s.hasSlot() && slotFresh(pattern.s.slot)) {
+				int predicateColumn = newColumn(pattern.p.slot);
+				boolean useProjection = projection;
+				int view = useProjection ? nodePredicateView(false) : wildcardView(false);
+				currentDepthNodes().add(new LmdbNativeKernelIr.EnumeratePredicates(view, !useProjection, false,
+						LmdbWildcardPhysicalDemand.Demand.PAYLOAD, object, null, predicateColumn,
+						newColumn(pattern.s.slot), ctxProject ? newColumn(pattern.c.slot) : -1, ctxMatch, ctxExclude));
 				assuredMask |= 1L << pattern.s.slot;
+			} else if (subject != null && object != null && wildcard) {
+				int predicateColumn = newColumn(pattern.p.slot);
+				int view = wildcardView(true);
+				currentDepthNodes().add(new LmdbNativeKernelIr.EnumeratePredicates(view, true, true,
+						LmdbWildcardPhysicalDemand.Demand.PAYLOAD, subject, object, predicateColumn, -1,
+						ctxProject ? newColumn(pattern.c.slot) : -1, ctxMatch, ctxExclude));
+			} else if (subject == null && object == null && pattern.s.hasSlot() && pattern.o.hasSlot()
+					&& slotFresh(pattern.s.slot) && slotFresh(pattern.o.slot) && wildcard) {
+				int predicateColumn = newColumn(pattern.p.slot);
+				int view = wildcardView(true);
+				currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateWildcard(view, true,
+						LmdbWildcardPhysicalDemand.Demand.PAYLOAD, newColumn(pattern.s.slot), predicateColumn,
+						newColumn(pattern.o.slot), ctxProject ? newColumn(pattern.c.slot) : -1, ctxMatch, ctxExclude));
+				assuredMask |= 1L << pattern.s.slot;
+			} else {
+				return false;
 			}
 			witnessCtxLowering(ctxActive);
 			VARIABLE_PREDICATE_LOWERINGS.incrementAndGet();
@@ -3039,15 +3194,24 @@ final class LmdbNativeKernelLowering {
 								consumer, enumerate.sortedKeys));
 					} else {
 						LmdbNativeKernelIr.EnumerateAdjKeys enumerate = (LmdbNativeKernelIr.EnumerateAdjKeys) node;
-						pipeline.set(at, new LmdbNativeKernelIr.EnumerateAdjKeys(enumerate.adjacency,
-								enumerate.keyCol, enumerate.valueCol, enumerate.ctxCol, enumerate.ctxMatch,
-								enumerate.ctxExcludeDefault, true, consumer));
+						pipeline.set(at, enumerate.wildcard
+								? new LmdbNativeKernelIr.EnumerateAdjKeys(enumerate.adjacency,
+										enumerate.bySubject, enumerate.runtimePredicate, enumerate.keyCol,
+										enumerate.valueCol, enumerate.ctxCol, enumerate.ctxMatch,
+										enumerate.ctxExcludeDefault, true, consumer)
+								: new LmdbNativeKernelIr.EnumerateAdjKeys(enumerate.adjacency,
+										enumerate.keyCol, enumerate.valueCol, enumerate.ctxCol,
+										enumerate.ctxMatch, enumerate.ctxExcludeDefault, true, consumer));
 					}
 				}
 			}
 		}
 
 		private static String domainConsumer(Node node, java.util.BitSet aliases) {
+			if (node instanceof LmdbNativeKernelIr.EnumeratePredicates enumerate && enumerate.wildcard
+					&& operandIn(enumerate.key, aliases)) {
+				return "EnumerateWildcard(view=" + enumerate.view + ")";
+			}
 			if (node instanceof LmdbNativeKernelIr.Probe probe && operandIn(probe.key, aliases)) {
 				return "Probe(adjacency=" + probe.adjacency + ")";
 			}
@@ -3146,6 +3310,29 @@ final class LmdbNativeKernelLowering {
 			ArrayList<Node> fused = new ArrayList<>(nested.size());
 			for (int at = 0; at < nested.size(); at++) {
 				Node producer = nested.get(at);
+				if (at + 1 < nested.size()
+						&& nested.get(at + 1)instanceof LmdbNativeKernelIr.EnumeratePredicates wildcard
+						&& wildcard.wildcard && wildcard.target == null
+						&& wildcard.key.kind == LmdbNativeKernelIr.Operand.COL) {
+					if (producer instanceof LmdbNativeKernelIr.EnumerateDomain domain
+							&& domain.col == wildcard.key.index && domain.sipDriven) {
+						fused.add(new LmdbNativeKernelIr.SipDomainWildcard(domain.domain, wildcard.view,
+								wildcard.bySubject, wildcard.demand, domain.col, wildcard.predicateCol,
+								wildcard.valueCol, wildcard.ctxCol, wildcard.ctxMatch,
+								wildcard.ctxExcludeDefault));
+						at++;
+						continue;
+					}
+					if (producer instanceof LmdbNativeKernelIr.EnumerateAdjKeys keys && !keys.wildcard
+							&& keys.valueCol < 0 && keys.keyCol == wildcard.key.index && keys.sipDriven) {
+						fused.add(new LmdbNativeKernelIr.SipKeyWildcard(keys.adjacency, wildcard.view,
+								wildcard.bySubject, wildcard.demand, keys.keyCol, wildcard.predicateCol,
+								wildcard.valueCol, wildcard.ctxCol, wildcard.ctxMatch,
+								wildcard.ctxExcludeDefault));
+						at++;
+						continue;
+					}
+				}
 				if (at + 1 < nested.size() && nested.get(at + 1)instanceof LmdbNativeKernelIr.Probe probe
 						&& probe.key.kind == LmdbNativeKernelIr.Operand.COL) {
 					if (producer instanceof LmdbNativeKernelIr.EnumerateDomain domain
@@ -4761,6 +4948,10 @@ final class LmdbNativeKernelLowering {
 				terminal = terminal.having(having.outputIndex, having.op, having.threshold);
 				HAVING_SINKS.incrementAndGet();
 			}
+			LmdbWildcardPhysicalDemand aggregateDemand = aggregateWildcardDemand(groupCols, outputs);
+			if (aggregateDemand != null) {
+				specializeWildcardDemands(pipeline, aggregateDemand);
+			}
 			// Let the semantic Kernel constructor first fold COUNT(DISTINCT root) into its existential fast shape —
 			// on unannotated nodes, so SIP marks cannot make structurally equal enumerations look different to the
 			// fold (the union-root collapse compares branch heads). SIP marking and batching are then applied to the
@@ -4817,6 +5008,7 @@ final class LmdbNativeKernelLowering {
 			}
 			pipeline.addAll(terminalCompatibility);
 			markDomainDrivenEnumerations(pipeline);
+			pipeline = new ArrayList<>(fuseSipBatchProbes(pipeline));
 			int[] emitColumns = new int[columnEngineSlots.size()];
 			for (int i = 0; i < emitColumns.length; i++) {
 				emitColumns[i] = i;

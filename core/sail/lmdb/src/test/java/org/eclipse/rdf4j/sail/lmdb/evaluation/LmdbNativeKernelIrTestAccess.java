@@ -29,6 +29,13 @@ public final class LmdbNativeKernelIrTestAccess {
 		return LmdbNativeKernelIr.nodePredicatesEnabled();
 	}
 
+	/** Gates projection-free wildcard-predicate IR and generated kernels. */
+	public static final String WILDCARD_PREDICATES_PROPERTY = LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY;
+
+	public static boolean wildcardPredicatesEnabled() {
+		return LmdbNativeKernelIr.wildcardPredicatesEnabled();
+	}
+
 	/** Patterns with a variable predicate that reached a compiled enumeration or dynamic probe. Process-wide. */
 	public static long variablePredicateLowerings() {
 		return LmdbNativeKernelLowering.VARIABLE_PREDICATE_LOWERINGS.get();

@@ -724,7 +724,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				arbiter.offer(() -> estimatedProposal(
 						() -> evaluateWildcardWeighted(row, new AggContext(source, strictCompare, true), metrics),
 						LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED,
-						arg.estimateWork(row, row.boundMask())));
+						LmdbWildcardPredicateBatch.estimateWeightedAggregateWork(arg, row, groupSlots, aggregates)));
 			}
 			if (wcojHandlesRow(row)) {
 				arbiter.offer(() -> estimatedProposal(() -> evaluateWcoj(row),
@@ -757,10 +757,13 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			// when janino codegen is enabled, the interpreted tag when only the interpreter tier is available. This
 			// kills the janino-off phantom round and keeps each tier's cost evidence under its own variant keys.
 			// tryEvaluateAggregate picks the execution tier internally either way.
-			String irAggregateTag = LmdbNativeJaninoCodegen.enabled()
-					? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE
+			boolean wildcardIr = LmdbNativeKernelExecution.wildcardIrCandidate(arg);
+			String irAggregateTag = LmdbNativeKernelExecution.janinoAdmitted(arg)
+					? (wildcardIr ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD
+							: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE)
 					: LmdbNativeKernelInterpreter.enabled()
-							? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED
+							? (wildcardIr ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED
+									: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED)
 							: null;
 			if (irAggregateTag != null && !moreSpecializedStrategyHandlesRow(irAggregateTag, row)) {
 				arbiter.offer(() -> estimatedProposal(() -> {

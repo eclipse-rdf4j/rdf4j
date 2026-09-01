@@ -53,6 +53,8 @@ public final class KernelContext {
 	public final NativeLmdbQuerySource.NodePredicates[] nodePredicates;
 	/** Dynamic {@code (node, runtime predicate)} probes in generator order; empty when the kernel needs none. */
 	public final NativeLmdbQuerySource.DynamicAdjacency[] dynamicAdjacencies;
+	/** Mutable projection-free predicate-plane views; each array element is owned by one generated operator. */
+	public final NativeLmdbQuerySource.WildcardAdjacency[] wildcardAdjacencies;
 	/** Optional packed f-tree chunk for topology-specialized factorized kernels. */
 	public PackedFtreeContext packedFtree;
 	/**
@@ -72,6 +74,7 @@ public final class KernelContext {
 
 	private static final NativeLmdbQuerySource.NodePredicates[] NO_NODE_PREDICATES = {};
 	private static final NativeLmdbQuerySource.DynamicAdjacency[] NO_DYNAMIC_ADJACENCIES = {};
+	private static final NativeLmdbQuerySource.WildcardAdjacency[] NO_WILDCARD_ADJACENCIES = {};
 	private static final long[][] NO_KEY_DOMAINS = {};
 
 	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
@@ -97,15 +100,24 @@ public final class KernelContext {
 	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
 			long[][] keyDomains, KernelHooks hooks, KernelScanner scanner, KernelPlan[] plans, int distinctExpected) {
 		this(adjacencies, constants, entrySlots, keyDomains, hooks, scanner, plans, distinctExpected,
-				NO_NODE_PREDICATES, NO_DYNAMIC_ADJACENCIES);
+				NO_NODE_PREDICATES, NO_DYNAMIC_ADJACENCIES, NO_WILDCARD_ADJACENCIES);
 	}
 
 	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
 			long[][] keyDomains, KernelHooks hooks, KernelScanner scanner, KernelPlan[] plans, int distinctExpected,
 			NativeLmdbQuerySource.NodePredicates[] nodePredicates,
 			NativeLmdbQuerySource.DynamicAdjacency[] dynamicAdjacencies) {
+		this(adjacencies, constants, entrySlots, keyDomains, hooks, scanner, plans, distinctExpected, nodePredicates,
+				dynamicAdjacencies, NO_WILDCARD_ADJACENCIES);
+	}
+
+	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
+			long[][] keyDomains, KernelHooks hooks, KernelScanner scanner, KernelPlan[] plans, int distinctExpected,
+			NativeLmdbQuerySource.NodePredicates[] nodePredicates,
+			NativeLmdbQuerySource.DynamicAdjacency[] dynamicAdjacencies,
+			NativeLmdbQuerySource.WildcardAdjacency[] wildcardAdjacencies) {
 		this(adjacencies, constants, entrySlots, keyDomains, wholeOffsets(keyDomains), wholeLengths(keyDomains), hooks,
-				scanner, plans, distinctExpected, nodePredicates, dynamicAdjacencies);
+				scanner, plans, distinctExpected, nodePredicates, dynamicAdjacencies, wildcardAdjacencies);
 	}
 
 	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
@@ -113,8 +125,19 @@ public final class KernelContext {
 			KernelScanner scanner, KernelPlan[] plans, int distinctExpected,
 			NativeLmdbQuerySource.NodePredicates[] nodePredicates,
 			NativeLmdbQuerySource.DynamicAdjacency[] dynamicAdjacencies) {
+		this(adjacencies, constants, entrySlots, keyDomains, keyDomainOffsets, keyDomainLengths, hooks, scanner, plans,
+				distinctExpected, nodePredicates, dynamicAdjacencies, NO_WILDCARD_ADJACENCIES);
+	}
+
+	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
+			long[][] keyDomains, int[] keyDomainOffsets, int[] keyDomainLengths, KernelHooks hooks,
+			KernelScanner scanner, KernelPlan[] plans, int distinctExpected,
+			NativeLmdbQuerySource.NodePredicates[] nodePredicates,
+			NativeLmdbQuerySource.DynamicAdjacency[] dynamicAdjacencies,
+			NativeLmdbQuerySource.WildcardAdjacency[] wildcardAdjacencies) {
 		this.nodePredicates = nodePredicates == null ? NO_NODE_PREDICATES : nodePredicates;
 		this.dynamicAdjacencies = dynamicAdjacencies == null ? NO_DYNAMIC_ADJACENCIES : dynamicAdjacencies;
+		this.wildcardAdjacencies = wildcardAdjacencies == null ? NO_WILDCARD_ADJACENCIES : wildcardAdjacencies;
 		this.adjacencies = adjacencies;
 		this.constants = constants;
 		this.entrySlots = entrySlots;

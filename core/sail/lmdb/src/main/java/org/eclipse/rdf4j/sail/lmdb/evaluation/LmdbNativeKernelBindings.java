@@ -248,6 +248,10 @@ final class LmdbNativeKernelBindings {
 	record DynamicRequest(boolean bySubject) {
 	}
 
+	/** One mutable projection-free predicate-plane view, owned by exactly one IR operator. */
+	record WildcardRequest(boolean bySubject) {
+	}
+
 	/**
 	 * One generated scan site's physical contract. The order and range are mutually exclusive because an ordered source
 	 * chooses an index from {@link StatementOrder}, while a range is already encoded in one exact index's key space. A
@@ -271,10 +275,12 @@ final class LmdbNativeKernelBindings {
 
 	private static final NodePredicateRequest[] NO_NODE_PREDICATE_REQUESTS = {};
 	private static final DynamicRequest[] NO_DYNAMIC_REQUESTS = {};
+	private static final WildcardRequest[] NO_WILDCARD_REQUESTS = {};
 
 	final AdjacencyRequest[] adjacencies;
 	final NodePredicateRequest[] nodePredicateRequests;
 	final DynamicRequest[] dynamicRequests;
+	final WildcardRequest[] wildcardRequests;
 	final long[] constants;
 	final int[] entrySlotIds;
 	final DomainRequest[] keyDomains;
@@ -354,7 +360,7 @@ final class LmdbNativeKernelBindings {
 			MaskedFilter[] kernelResiduals) {
 		this(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, bindHooks, columnEngineSlots,
 				residualFilters, scanOrders, planRequests, groupLayout, hooksRequired, distinctExpected,
-				kernelResiduals, NO_NODE_PREDICATE_REQUESTS, NO_DYNAMIC_REQUESTS);
+				kernelResiduals, NO_NODE_PREDICATE_REQUESTS, NO_DYNAMIC_REQUESTS, NO_WILDCARD_REQUESTS);
 	}
 
 	LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
@@ -362,10 +368,10 @@ final class LmdbNativeKernelBindings {
 			List<MaskedFilter> residualFilters, StatementOrder[] scanOrders, PlanRequest[] planRequests,
 			KernelGroupLayout groupLayout, boolean hooksRequired, int distinctExpected,
 			MaskedFilter[] kernelResiduals, NodePredicateRequest[] nodePredicateRequests,
-			DynamicRequest[] dynamicRequests) {
+			DynamicRequest[] dynamicRequests, WildcardRequest[] wildcardRequests) {
 		this(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, bindHooks, columnEngineSlots,
 				residualFilters, scanSites(scanOrders), planRequests, groupLayout, hooksRequired, distinctExpected,
-				kernelResiduals, nodePredicateRequests, dynamicRequests);
+				kernelResiduals, nodePredicateRequests, dynamicRequests, wildcardRequests);
 	}
 
 	LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
@@ -374,7 +380,7 @@ final class LmdbNativeKernelBindings {
 			KernelGroupLayout groupLayout, boolean hooksRequired, int distinctExpected) {
 		this(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, bindHooks, columnEngineSlots,
 				residualFilters, scanSites, planRequests, groupLayout, hooksRequired, distinctExpected,
-				new MaskedFilter[0], NO_NODE_PREDICATE_REQUESTS, NO_DYNAMIC_REQUESTS);
+				new MaskedFilter[0], NO_NODE_PREDICATE_REQUESTS, NO_DYNAMIC_REQUESTS, NO_WILDCARD_REQUESTS);
 	}
 
 	LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
@@ -384,7 +390,7 @@ final class LmdbNativeKernelBindings {
 			MaskedFilter[] kernelResiduals) {
 		this(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, bindHooks, columnEngineSlots,
 				residualFilters, scanSites, planRequests, groupLayout, hooksRequired, distinctExpected,
-				kernelResiduals, NO_NODE_PREDICATE_REQUESTS, NO_DYNAMIC_REQUESTS);
+				kernelResiduals, NO_NODE_PREDICATE_REQUESTS, NO_DYNAMIC_REQUESTS, NO_WILDCARD_REQUESTS);
 	}
 
 	private LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
@@ -392,9 +398,10 @@ final class LmdbNativeKernelBindings {
 			List<MaskedFilter> residualFilters, ScanSite[] scanSites, PlanRequest[] planRequests,
 			KernelGroupLayout groupLayout, boolean hooksRequired, int distinctExpected,
 			MaskedFilter[] kernelResiduals, NodePredicateRequest[] nodePredicateRequests,
-			DynamicRequest[] dynamicRequests) {
+			DynamicRequest[] dynamicRequests, WildcardRequest[] wildcardRequests) {
 		this.nodePredicateRequests = nodePredicateRequests;
 		this.dynamicRequests = dynamicRequests;
+		this.wildcardRequests = wildcardRequests;
 		this.adjacencies = adjacencies;
 		this.constants = constants;
 		this.entrySlotIds = entrySlotIds;
@@ -433,13 +440,22 @@ final class LmdbNativeKernelBindings {
 	 * shared across parallel workers and every open of the same plan; nothing about them may become per-open state.
 	 */
 	LmdbNativeKernelBindings withVariablePredicateRequests(NodePredicateRequest[] nodePredicates,
-			DynamicRequest[] dynamics) {
-		if (nodePredicates.length == 0 && dynamics.length == 0) {
+			DynamicRequest[] dynamics, WildcardRequest[] wildcards) {
+		if (nodePredicates.length == 0 && dynamics.length == 0 && wildcards.length == 0) {
 			return this;
 		}
 		return new LmdbNativeKernelBindings(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, bindHooks,
 				columnEngineSlots, residualFilters, scanSites, planRequests, groupLayout, hooksRequired,
-				distinctExpected, kernelResiduals, nodePredicates, dynamics);
+				distinctExpected, kernelResiduals, nodePredicates, dynamics, wildcards);
+	}
+
+	/** Rebuilds a sink-specific binding descriptor without dropping any variable-predicate view requests. */
+	LmdbNativeKernelBindings withAdjacenciesAndColumns(AdjacencyRequest[] sinkAdjacencies, int[] sinkColumns,
+			boolean sinkHooksRequired) {
+		return new LmdbNativeKernelBindings(sinkAdjacencies, constants, entrySlotIds, keyDomains, filterHooks,
+				bindHooks,
+				sinkColumns, residualFilters, scanSites, planRequests, groupLayout, sinkHooksRequired, distinctExpected,
+				kernelResiduals, nodePredicateRequests, dynamicRequests, wildcardRequests);
 	}
 
 	/**
@@ -451,7 +467,8 @@ final class LmdbNativeKernelBindings {
 	 */
 	static VariablePredicateViews requestVariablePredicateViews(LmdbNativeKernelBindings bindings,
 			NativeLmdbQuerySource.NativeProbe probe) throws java.io.IOException {
-		if (bindings.nodePredicateRequests.length == 0 && bindings.dynamicRequests.length == 0) {
+		if (bindings.nodePredicateRequests.length == 0 && bindings.dynamicRequests.length == 0
+				&& bindings.wildcardRequests.length == 0) {
 			return VariablePredicateViews.NONE;
 		}
 		NativeLmdbQuerySource.NodePredicates[] nodePredicates = new NativeLmdbQuerySource.NodePredicates[bindings.nodePredicateRequests.length];
@@ -468,15 +485,24 @@ final class LmdbNativeKernelBindings {
 				return null;
 			}
 		}
-		return new VariablePredicateViews(nodePredicates, dynamics);
+		NativeLmdbQuerySource.WildcardAdjacency[] wildcards = new NativeLmdbQuerySource.WildcardAdjacency[bindings.wildcardRequests.length];
+		for (int i = 0; i < wildcards.length; i++) {
+			wildcards[i] = probe.wildcardAdjacency(bindings.wildcardRequests[i].bySubject());
+			if (wildcards[i] == null) {
+				return null;
+			}
+		}
+		return new VariablePredicateViews(nodePredicates, dynamics, wildcards);
 	}
 
 	/** The resolved views for one open; owned by the probe that produced them and never cached in a plan. */
 	record VariablePredicateViews(NativeLmdbQuerySource.NodePredicates[] nodePredicates,
-			NativeLmdbQuerySource.DynamicAdjacency[] dynamics) {
+			NativeLmdbQuerySource.DynamicAdjacency[] dynamics,
+			NativeLmdbQuerySource.WildcardAdjacency[] wildcards) {
 
 		static final VariablePredicateViews NONE = new VariablePredicateViews(
-				new NativeLmdbQuerySource.NodePredicates[0], new NativeLmdbQuerySource.DynamicAdjacency[0]);
+				new NativeLmdbQuerySource.NodePredicates[0], new NativeLmdbQuerySource.DynamicAdjacency[0],
+				new NativeLmdbQuerySource.WildcardAdjacency[0]);
 	}
 
 	boolean needsHooks() {
@@ -679,7 +705,8 @@ final class LmdbNativeKernelBindings {
 		}
 		return new KernelContext(views, constants, entrySlots, domains.values, domains.offsets, domains.lengths,
 				hooks, scanner, plans, distinctExpected,
-				variablePredicateViews.nodePredicates(), variablePredicateViews.dynamics())
+				variablePredicateViews.nodePredicates(), variablePredicateViews.dynamics(),
+				variablePredicateViews.wildcards())
 						.withCancellation(LmdbNativeProbeDeadline
 								.currentKernelCancellation(row.cancellation::isCancellationRequested,
 										workerCancellation));

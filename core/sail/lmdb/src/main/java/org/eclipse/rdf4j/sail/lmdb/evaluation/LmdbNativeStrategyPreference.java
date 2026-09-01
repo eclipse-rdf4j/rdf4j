@@ -84,6 +84,8 @@ final class LmdbNativeStrategyPreference {
 			// Whole-stage aggregate fusion followed the prefix-run and WCOJ guards in the previous ladder. The
 			// parallel rung sits directly below its serial sibling (gap-analysis C11): the day it becomes a
 			// proposal it must not rank below nestedLoop merely for being absent from this ladder.
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
 			// The interpreted tier of the same IR kernel sits directly below its compiled sibling (compiled preferred
 			// when both are somehow present); like the C11 note above, the day it becomes a proposal it must not rank
@@ -111,6 +113,8 @@ final class LmdbNativeStrategyPreference {
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
 			// Row-side constant-factor reducer: same rows, cheaper per row (parallel rung directly below, C11).
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
 			// The interpreted tier of the row kernel sits directly below its compiled sibling, same as the
 			// aggregate pair above (kernel-interpreter plan, D1/M4).
@@ -193,9 +197,13 @@ final class LmdbNativeStrategyPreference {
 		switch (family) {
 		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE:
 		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED:
+		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD:
+		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED:
 		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED:
+		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD:
+		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED:

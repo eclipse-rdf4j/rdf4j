@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateAdjKey
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateDomain;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateEntry;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumeratePredicates;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Exists;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterCompareId;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterDateCompare;
@@ -50,7 +51,9 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeClose;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeVariable;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ScanQuad;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
 
 /**
@@ -88,7 +91,7 @@ final class LmdbNativeKernelEmitter {
 		private final List<LexicalFrameLeftJoin> lexicalFrames = new ArrayList<>();
 		private int nextPredicateEnumId;
 		private int nextKeyRunCursorId;
-		private final IdentityHashMap<EnumerateAdjKeys, Integer> keyRunCursorIds = new IdentityHashMap<>();
+		private final IdentityHashMap<Node, Integer> keyRunCursorIds = new IdentityHashMap<>();
 		private int nextBoundRunCursorId;
 		private final IdentityHashMap<Node, Integer> boundRunCursorIds = new IdentityHashMap<>();
 		private final List<Node> boundRunCursorNodes = new ArrayList<>();
@@ -187,13 +190,13 @@ final class LmdbNativeKernelEmitter {
 			return LmdbNativeGeneratedSourceOptimizer.optimize(source.toString(), telemetryEnabled());
 		}
 
-		private int keyRunCursorId(EnumerateAdjKeys enumerate) {
-			Integer existing = keyRunCursorIds.get(enumerate);
+		private int keyRunCursorId(Node producer) {
+			Integer existing = keyRunCursorIds.get(producer);
 			if (existing != null) {
 				return existing;
 			}
 			int id = nextKeyRunCursorId++;
-			keyRunCursorIds.put(enumerate, id);
+			keyRunCursorIds.put(producer, id);
 			return id;
 		}
 
@@ -647,6 +650,21 @@ final class LmdbNativeKernelEmitter {
 			for (int i = 0; i < kernel.requirements.dynamicViews; i++) {
 				source.append("    private NativeLmdbQuerySource.DynamicAdjacency dy").append(i).append(";\n");
 			}
+			for (int i = 0; i < kernel.requirements.wildcardViews; i++) {
+				source.append("    private NativeLmdbQuerySource.WildcardAdjacency wa")
+						.append(i)
+						.append(";\n")
+						.append("    private final long[] waK")
+						.append(i)
+						.append(" = new long[")
+						.append(KEY_CHUNK)
+						.append("];\n")
+						.append("    private final long[] waR")
+						.append(i)
+						.append(" = new long[")
+						.append(KEY_CHUNK)
+						.append("];\n");
+			}
 			// Scratch is per enumerating node, never per view: two nested enumerations share a view, and a shared
 			// buffer would let the inner one overwrite predicates the outer has not processed yet.
 			for (int i = 0; i < nextPredicateEnumId; i++) {
@@ -790,13 +808,14 @@ final class LmdbNativeKernelEmitter {
 						.append("    private int cap;\n")
 						.append("    private boolean full;\n")
 						.append("    private boolean done;\n");
-				// Three saved counters per pipeline position cover the deepest streaming node (key index, run
-				// position, offset within the current vector slice). -1 means "not started", which is also what a
+				// Four saved counters per pipeline position cover the deepest streaming node (predicate, batch, lane,
+				// run position). -1 means "not started", which is also what a
 				// node restores when its own loop finishes, so the next outer value starts it afresh.
 				for (int i = 0; i < nextStateId; i++) {
 					source.append("    private long stA").append(i).append(" = -1L;\n");
 					source.append("    private long stB").append(i).append(" = -1L;\n");
 					source.append("    private long stC").append(i).append(" = -1L;\n");
+					source.append("    private long stD").append(i).append(" = -1L;\n");
 				}
 			}
 			if (isDistinct()) {
@@ -977,6 +996,13 @@ final class LmdbNativeKernelEmitter {
 				source.append("        dy")
 						.append(i)
 						.append(" = context.dynamicAdjacencies[")
+						.append(i)
+						.append("];\n");
+			}
+			for (int i = 0; i < kernel.requirements.wildcardViews; i++) {
+				source.append("        wa")
+						.append(i)
+						.append(" = context.wildcardAdjacencies[")
 						.append(i)
 						.append("];\n");
 			}
@@ -2253,19 +2279,28 @@ final class LmdbNativeKernelEmitter {
 			int valueCol;
 			int keyCol = -1;
 			String keyToken = null;
+			String predicateToken = null;
+			boolean dynamic = false;
 			EnumerateAdjKeys keyEnumeration = null;
 			if (producer instanceof Probe) {
 				Probe probe = (Probe) producer;
 				adjacency = probe.adjacency;
 				valueCol = probe.valueCol;
 				keyToken = probe.key.token();
+			} else if (producer instanceof ProbeVariable) {
+				ProbeVariable probe = (ProbeVariable) producer;
+				adjacency = probe.view;
+				valueCol = probe.valueCol;
+				keyToken = probe.key.token();
+				predicateToken = probe.predicate.token();
+				dynamic = true;
 			} else {
 				keyEnumeration = (EnumerateAdjKeys) producer;
 				adjacency = keyEnumeration.adjacency;
 				valueCol = keyEnumeration.valueCol;
 				keyCol = keyEnumeration.keyCol;
 			}
-			String a = "a" + adjacency;
+			String a = (dynamic ? "dy" : "a") + adjacency;
 			String keyRunCursor = keyEnumeration == null ? null : "ak" + keyRunCursorId(keyEnumeration);
 			// Probe pauses at (run position, slice offset). Key enumeration retains its physical key/run cursor and
 			// uses the same two counters; stA remains reserved so the state layout stays stable across kernel shapes.
@@ -2288,8 +2323,23 @@ final class LmdbNativeKernelEmitter {
 			String runSizeExpression;
 			if (keyToken != null) {
 				body.append(indent).append("long key = ").append(keyToken).append(";\n");
-				body.append(indent).append("if (key != -1L) {\n");
-				body.append(indent).append("    long rh = ").append(a).append(".find(key);\n");
+				if (dynamic) {
+					body.append(indent).append("long pred = ").append(predicateToken).append(";\n");
+				}
+				body.append(indent)
+						.append("if (key != -1L")
+						.append(dynamic ? " && pred != -1L" : "")
+						.append(") {\n");
+				body.append(indent)
+						.append("    long rh = ")
+						.append(a)
+						.append(dynamic ? ".runFor(key, pred);\n" : ".find(key);\n");
+				if (dynamic) {
+					body.append(indent).append("    if (rh == NativeLmdbQuerySource.DynamicAdjacency.NOT_COVERED) {\n");
+					body.append(indent)
+							.append("        throw new IllegalStateException(\"dynamic adjacency refused a runtime predicate after kernel bind\");\n");
+					body.append(indent).append("    }\n");
+				}
 				body.append(indent).append("    if (rh > 0L) {\n");
 				open = indent + "        ";
 				runSizeExpression = a + ".size(rh)";
@@ -2483,12 +2533,20 @@ final class LmdbNativeKernelEmitter {
 			int keyCol = -1;
 			String keyToken = null;
 			boolean leftProbe = producer instanceof LeftProbe;
+			boolean dynamic = producer instanceof ProbeVariable;
+			String predicateToken = null;
 			EnumerateAdjKeys keyEnumeration = null;
 			if (producer instanceof Probe) {
 				Probe probe = (Probe) producer;
 				adjacency = probe.adjacency;
 				valueCol = probe.valueCol;
 				keyToken = probe.key.token();
+			} else if (dynamic) {
+				ProbeVariable probe = (ProbeVariable) producer;
+				adjacency = probe.view;
+				valueCol = probe.valueCol;
+				keyToken = probe.key.token();
+				predicateToken = probe.predicate.token();
 			} else if (leftProbe) {
 				LeftProbe probe = (LeftProbe) producer;
 				adjacency = probe.adjacency;
@@ -2500,7 +2558,7 @@ final class LmdbNativeKernelEmitter {
 				valueCol = keyEnumeration.valueCol;
 				keyCol = keyEnumeration.keyCol;
 			}
-			String a = "a" + adjacency;
+			String a = (dynamic ? "dy" : "a") + adjacency;
 			String keyRunCursor = keyEnumeration == null ? null : "ak" + keyRunCursorId(keyEnumeration);
 
 			List<Node> vectorized = new ArrayList<>();
@@ -2521,8 +2579,23 @@ final class LmdbNativeKernelEmitter {
 			}
 			if (keyToken != null) {
 				body.append(indent).append("long key = ").append(keyToken).append(";\n");
-				body.append(indent).append("if (key != -1L) {\n");
-				body.append(indent).append("    long rh = ").append(a).append(".find(key);\n");
+				if (dynamic) {
+					body.append(indent).append("long pred = ").append(predicateToken).append(";\n");
+				}
+				body.append(indent)
+						.append("if (key != -1L")
+						.append(dynamic ? " && pred != -1L" : "")
+						.append(") {\n");
+				body.append(indent)
+						.append("    long rh = ")
+						.append(a)
+						.append(dynamic ? ".runFor(key, pred);\n" : ".find(key);\n");
+				if (dynamic) {
+					body.append(indent).append("    if (rh == NativeLmdbQuerySource.DynamicAdjacency.NOT_COVERED) {\n");
+					body.append(indent)
+							.append("        throw new IllegalStateException(\"dynamic adjacency refused a runtime predicate after kernel bind\");\n");
+					body.append(indent).append("    }\n");
+				}
 				body.append(indent).append("    if (rh > 0L) {\n");
 				open = indent + "        ";
 				runSizeExpression = a + ".size(rh)";
@@ -2959,11 +3032,20 @@ final class LmdbNativeKernelEmitter {
 			if (node instanceof SipKeyProbe) {
 				return ((SipKeyProbe) node).ctxActive();
 			}
+			if (node instanceof SipDomainWildcard) {
+				return ((SipDomainWildcard) node).ctxActive();
+			}
+			if (node instanceof SipKeyWildcard) {
+				return ((SipKeyWildcard) node).ctxActive();
+			}
 			if (node instanceof EnumerateAdjKeys) {
 				return ((EnumerateAdjKeys) node).ctxActive();
 			}
 			if (node instanceof EnumeratePredicates) {
 				return ((EnumeratePredicates) node).ctxActive();
+			}
+			if (node instanceof EnumerateWildcard) {
+				return ((EnumerateWildcard) node).ctxActive();
 			}
 			if (node instanceof ProbeVariable) {
 				return ((ProbeVariable) node).ctxActive();
@@ -2981,8 +3063,17 @@ final class LmdbNativeKernelEmitter {
 			if (node instanceof SipKeyProbe) {
 				return ((SipKeyProbe) node).ctxCol;
 			}
+			if (node instanceof SipDomainWildcard) {
+				return ((SipDomainWildcard) node).ctxCol;
+			}
+			if (node instanceof SipKeyWildcard) {
+				return ((SipKeyWildcard) node).ctxCol;
+			}
 			if (node instanceof EnumeratePredicates) {
 				return ((EnumeratePredicates) node).ctxCol;
+			}
+			if (node instanceof EnumerateWildcard) {
+				return ((EnumerateWildcard) node).ctxCol;
 			}
 			if (node instanceof ProbeVariable) {
 				return ((ProbeVariable) node).ctxCol;
@@ -3006,9 +3097,18 @@ final class LmdbNativeKernelEmitter {
 			} else if (node instanceof SipKeyProbe) {
 				match = ((SipKeyProbe) node).ctxMatch;
 				exclude = ((SipKeyProbe) node).ctxExcludeDefault;
+			} else if (node instanceof SipDomainWildcard) {
+				match = ((SipDomainWildcard) node).ctxMatch;
+				exclude = ((SipDomainWildcard) node).ctxExcludeDefault;
+			} else if (node instanceof SipKeyWildcard) {
+				match = ((SipKeyWildcard) node).ctxMatch;
+				exclude = ((SipKeyWildcard) node).ctxExcludeDefault;
 			} else if (node instanceof EnumeratePredicates) {
 				match = ((EnumeratePredicates) node).ctxMatch;
 				exclude = ((EnumeratePredicates) node).ctxExcludeDefault;
+			} else if (node instanceof EnumerateWildcard) {
+				match = ((EnumerateWildcard) node).ctxMatch;
+				exclude = ((EnumerateWildcard) node).ctxExcludeDefault;
 			} else if (node instanceof ProbeVariable) {
 				match = ((ProbeVariable) node).ctxMatch;
 				exclude = ((ProbeVariable) node).ctxExcludeDefault;
@@ -3099,6 +3199,31 @@ final class LmdbNativeKernelEmitter {
 			return indent;
 		}
 
+		private static void emitOpenKeyCursor(StringBuilder body, String indent, EnumerateAdjKeys enumerate,
+				String view, String cursor) {
+			if (enumerate.wildcard) {
+				body.append(indent)
+						.append("long rawPredicate = ")
+						.append(enumerate.runtimePredicate.token())
+						.append(";\n");
+				body.append(indent)
+						.append("int predicateOrdinal = rawPredicate != -1L ? ")
+						.append(view)
+						.append(".predicateOrdinal(rawPredicate) : -1;\n");
+				body.append(indent).append("if (predicateOrdinal >= 0) {\n");
+				body.append(indent).append("    ").append(view).append(".bind(predicateOrdinal);\n");
+				body.append(indent)
+						.append("    ")
+						.append(cursor)
+						.append(" = ")
+						.append(view)
+						.append(".openKeyRunCursor();\n");
+				body.append(indent).append("}\n");
+			} else {
+				body.append(indent).append(cursor).append(" = ").append(view).append(".openKeyRunCursor();\n");
+			}
+		}
+
 		/** Closes the guard block {@link #emitCtxEntry} opened, if any. */
 		private static void closeCtxEntry(StringBuilder body, String indent, Node node) {
 			if (ctxActive(node) && ctxCondition(node) != null) {
@@ -3116,12 +3241,456 @@ final class LmdbNativeKernelEmitter {
 			body.append(indent).append("}\n");
 		}
 
+		private void emitResumableSipDomainWildcard(StringBuilder body, SipDomainWildcard probe, String nextTemplate,
+				String predicateState, String batchState, String laneState, String runState, boolean tailmost) {
+			String indent = "        ";
+			String view = "wa" + probe.wildcardView;
+			String runs = "waR" + probe.wildcardView;
+			body.append(indent)
+					.append("long[] sipDomain = dom")
+					.append(probe.domain)
+					.append(";\n")
+					.append(indent)
+					.append("int sipDomainOffset = domO")
+					.append(probe.domain)
+					.append(";\n")
+					.append(indent)
+					.append("int sipDomainLength = domL")
+					.append(probe.domain)
+					.append(";\n")
+					.append(indent)
+					.append("if (")
+					.append(predicateState)
+					.append(" < 0L) {\n")
+					.append(indent)
+					.append("    ")
+					.append(predicateState)
+					.append(" = 0L;\n")
+					.append(indent)
+					.append("    ")
+					.append(batchState)
+					.append(" = 0L;\n")
+					.append(indent)
+					.append("    ")
+					.append(laneState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("    ")
+					.append(runState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("}\n")
+					.append(indent)
+					.append("while (")
+					.append(predicateState)
+					.append(" < ")
+					.append(view)
+					.append(".predicateCount()) {\n")
+					.append(indent)
+					.append("    while (")
+					.append(batchState)
+					.append(" < sipDomainLength) {\n")
+					.append(indent)
+					.append("        int sipCount = Math.min(")
+					.append(KEY_CHUNK)
+					.append(", sipDomainLength - (int) ")
+					.append(batchState)
+					.append(");\n")
+					.append(indent)
+					.append("        if (")
+					.append(laneState)
+					.append(" < 0L) {\n")
+					.append(indent)
+					.append("            KernelRuntime.checkCancelled(cancel);\n")
+					.append(indent)
+					.append("            ")
+					.append(view)
+					.append(".bind((int) ")
+					.append(predicateState)
+					.append(");\n")
+					.append(indent)
+					.append("            ")
+					.append(view)
+					.append(".findBatch(sipDomain, sipDomainOffset + (int) ")
+					.append(batchState)
+					.append(", sipCount, ")
+					.append(runs)
+					.append(", 0);\n")
+					.append(indent)
+					.append("            ")
+					.append(laneState)
+					.append(" = 0L;\n")
+					.append(indent)
+					.append("        }\n")
+					.append(indent)
+					.append("        for (; ")
+					.append(laneState)
+					.append(" < sipCount; ")
+					.append(laneState)
+					.append("++) {\n")
+					.append(indent)
+					.append("            long rh = ")
+					.append(runs)
+					.append("[(int) ")
+					.append(laneState)
+					.append("];\n")
+					.append(indent)
+					.append("            if (rh == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {\n")
+					.append(indent)
+					.append("                throw new IllegalStateException(\"wildcard adjacency refused a SIP plane after kernel bind\");\n")
+					.append(indent)
+					.append("            }\n")
+					.append(indent)
+					.append("            if (rh > 0L) {\n")
+					.append(indent)
+					.append("                long end = ")
+					.append(view)
+					.append(".size(rh);\n")
+					.append(indent)
+					.append("                if (")
+					.append(runState)
+					.append(" < 0L) { ")
+					.append(runState)
+					.append(" = 0L; }\n")
+					.append(indent)
+					.append("                v")
+					.append(probe.keyCol)
+					.append(" = sipDomain[sipDomainOffset + (int) ")
+					.append(batchState)
+					.append(" + (int) ")
+					.append(laneState)
+					.append("];\n")
+					.append(indent)
+					.append("                v")
+					.append(probe.predicateCol)
+					.append(" = ")
+					.append(view)
+					.append(".predicateAt((int) ")
+					.append(predicateState)
+					.append(");\n")
+					.append(indent)
+					.append("                for (; ")
+					.append(runState)
+					.append(" < end; ")
+					.append(runState)
+					.append("++) {\n")
+					.append(indent)
+					.append("                    if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+			String inner = emitCtxEntry(body, indent + "                    ", probe, view, runState);
+			body.append(inner)
+					.append("v")
+					.append(probe.valueCol)
+					.append(" = ")
+					.append(view)
+					.append(".neighborAt(rh, ")
+					.append(runState)
+					.append(");\n")
+					.append(next(nextTemplate, inner));
+			closeCtxEntry(body, indent + "                    ", probe);
+			emitPause(body, indent + "                    ", runState, tailmost);
+			body.append(indent)
+					.append("                }\n")
+					.append(indent)
+					.append("            }\n")
+					.append(indent)
+					.append("            ")
+					.append(runState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("        }\n")
+					.append(indent)
+					.append("        ")
+					.append(laneState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("        ")
+					.append(batchState)
+					.append(" += sipCount;\n")
+					.append(indent)
+					.append("    }\n")
+					.append(indent)
+					.append("    ")
+					.append(batchState)
+					.append(" = 0L;\n")
+					.append(indent)
+					.append("    ")
+					.append(laneState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("    ")
+					.append(runState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("    ")
+					.append(predicateState)
+					.append("++;\n")
+					.append(indent)
+					.append("}\n")
+					.append(indent)
+					.append(predicateState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append(batchState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append(laneState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append(runState)
+					.append(" = -1L;\n");
+		}
+
+		private void emitResumableSipKeyWildcard(StringBuilder body, SipKeyWildcard probe, String nextTemplate,
+				String predicateState, String laneState, String countState, String runState, boolean tailmost) {
+			String indent = "        ";
+			String view = "wa" + probe.wildcardView;
+			String runs = "waR" + probe.wildcardView;
+			int cursorId = keyRunCursorId(probe);
+			String cursor = "ak" + cursorId;
+			String keys = "akb" + cursorId;
+			body.append(indent)
+					.append("if (")
+					.append(predicateState)
+					.append(" < 0L) {\n")
+					.append(indent)
+					.append("    ")
+					.append(predicateState)
+					.append(" = 0L;\n")
+					.append(indent)
+					.append("    ")
+					.append(laneState)
+					.append(" = 0L;\n")
+					.append(indent)
+					.append("    ")
+					.append(countState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("    ")
+					.append(runState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("}\n")
+					.append(indent)
+					.append("while (")
+					.append(predicateState)
+					.append(" < ")
+					.append(view)
+					.append(".predicateCount()) {\n")
+					.append(indent)
+					.append("    if (")
+					.append(cursor)
+					.append(" == null) {\n")
+					.append(indent)
+					.append("        ")
+					.append(cursor)
+					.append(" = a")
+					.append(probe.domainAdjacency)
+					.append(".openKeyRunCursor();\n")
+					.append(indent)
+					.append("        if (")
+					.append(cursor)
+					.append(" == null) {\n")
+					.append(indent)
+					.append("            ")
+					.append(predicateState)
+					.append(" = ")
+					.append(view)
+					.append(".predicateCount();\n")
+					.append(indent)
+					.append("            break;\n")
+					.append(indent)
+					.append("        }\n")
+					.append(indent)
+					.append("    }\n")
+					.append(indent)
+					.append("    while (true) {\n")
+					.append(indent)
+					.append("        if (")
+					.append(countState)
+					.append(" < 0L) {\n")
+					.append(indent)
+					.append("            KernelRuntime.checkCancelled(cancel);\n")
+					.append(indent)
+					.append("            ")
+					.append(countState)
+					.append(" = ")
+					.append(cursor)
+					.append(".fillKeys(")
+					.append(keys)
+					.append(", 0, ")
+					.append(keys)
+					.append(".length);\n")
+					.append(indent)
+					.append("            if (")
+					.append(countState)
+					.append(" <= 0L) { break; }\n")
+					.append(indent)
+					.append("            ")
+					.append(view)
+					.append(".bind((int) ")
+					.append(predicateState)
+					.append(");\n")
+					.append(indent)
+					.append("            ")
+					.append(view)
+					.append(".findBatch(")
+					.append(keys)
+					.append(", 0, (int) ")
+					.append(countState)
+					.append(", ")
+					.append(runs)
+					.append(", 0);\n")
+					.append(indent)
+					.append("            ")
+					.append(laneState)
+					.append(" = 0L;\n")
+					.append(indent)
+					.append("        }\n")
+					.append(indent)
+					.append("        for (; ")
+					.append(laneState)
+					.append(" < ")
+					.append(countState)
+					.append("; ")
+					.append(laneState)
+					.append("++) {\n")
+					.append(indent)
+					.append("            long rh = ")
+					.append(runs)
+					.append("[(int) ")
+					.append(laneState)
+					.append("];\n")
+					.append(indent)
+					.append("            if (rh == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {\n")
+					.append(indent)
+					.append("                throw new IllegalStateException(\"wildcard adjacency refused a SIP plane after kernel bind\");\n")
+					.append(indent)
+					.append("            }\n")
+					.append(indent)
+					.append("            if (rh > 0L) {\n")
+					.append(indent)
+					.append("                long end = ")
+					.append(view)
+					.append(".size(rh);\n")
+					.append(indent)
+					.append("                if (")
+					.append(runState)
+					.append(" < 0L) { ")
+					.append(runState)
+					.append(" = 0L; }\n")
+					.append(indent)
+					.append("                v")
+					.append(probe.keyCol)
+					.append(" = ")
+					.append(keys)
+					.append("[(int) ")
+					.append(laneState)
+					.append("];\n")
+					.append(indent)
+					.append("                v")
+					.append(probe.predicateCol)
+					.append(" = ")
+					.append(view)
+					.append(".predicateAt((int) ")
+					.append(predicateState)
+					.append(");\n")
+					.append(indent)
+					.append("                for (; ")
+					.append(runState)
+					.append(" < end; ")
+					.append(runState)
+					.append("++) {\n")
+					.append(indent)
+					.append("                    if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+			String inner = emitCtxEntry(body, indent + "                    ", probe, view, runState);
+			body.append(inner)
+					.append("v")
+					.append(probe.valueCol)
+					.append(" = ")
+					.append(view)
+					.append(".neighborAt(rh, ")
+					.append(runState)
+					.append(");\n")
+					.append(next(nextTemplate, inner));
+			closeCtxEntry(body, indent + "                    ", probe);
+			emitPause(body, indent + "                    ", runState, tailmost);
+			body.append(indent)
+					.append("                }\n")
+					.append(indent)
+					.append("            }\n")
+					.append(indent)
+					.append("            ")
+					.append(runState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("        }\n")
+					.append(indent)
+					.append("        ")
+					.append(laneState)
+					.append(" = 0L;\n")
+					.append(indent)
+					.append("        ")
+					.append(countState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("    }\n")
+					.append(indent)
+					.append("    ")
+					.append(cursor)
+					.append(".close();\n")
+					.append(indent)
+					.append("    ")
+					.append(cursor)
+					.append(" = null;\n")
+					.append(indent)
+					.append("    ")
+					.append(laneState)
+					.append(" = 0L;\n")
+					.append(indent)
+					.append("    ")
+					.append(countState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("    ")
+					.append(runState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("    ")
+					.append(predicateState)
+					.append("++;\n")
+					.append(indent)
+					.append("}\n")
+					.append(indent)
+					.append(predicateState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append(laneState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append(countState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append(runState)
+					.append(" = -1L;\n");
+		}
+
 		private boolean emitResumableProducer(StringBuilder body, Node node, String nextTemplate, int stateIndex) {
 			String indent = "        ";
 			String a = "stA" + stateIndex;
 			String b = "stB" + stateIndex;
 			String c = "stC" + stateIndex;
+			String d = "stD" + stateIndex;
 			boolean tailmost = tailmostStateIds.get(stateIndex);
+			if (node instanceof SipDomainWildcard wildcard
+					&& wildcard.demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+				emitResumableSipDomainWildcard(body, wildcard, nextTemplate, a, b, c, d, tailmost);
+				return true;
+			}
+			if (node instanceof SipKeyWildcard wildcard
+					&& wildcard.demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+				emitResumableSipKeyWildcard(body, wildcard, nextTemplate, a, b, c, d, tailmost);
+				return true;
+			}
 			if (node instanceof LeftProbe) {
 				LeftProbe probe = (LeftProbe) node;
 				String cursor = "ar" + boundRunCursorId(probe);
@@ -3281,18 +3850,33 @@ final class LmdbNativeKernelEmitter {
 			}
 			if (node instanceof ProbeClose) {
 				ProbeClose close = (ProbeClose) node;
-				String view = "a" + close.adjacency;
+				String view = (close.dynamic ? "dy" : "a") + close.adjacency;
 				// Both endpoints are known, so this node produces no column — it only decides how many times the
 				// continuation runs. That count is a pure function of the key, the target and the (immutable) view, so
 				// it is recomputed on every entry rather than saved: nothing about it can go stale across a pause.
 				// Multiplicity and semi mode differ only in the count, which lets one loop serve both.
 				body.append(indent).append("long key = ").append(close.key.token()).append(";\n");
 				body.append(indent).append("long target = ").append(close.target.token()).append(";\n");
+				if (close.dynamic) {
+					body.append(indent).append("long pred = ").append(close.predicate.token()).append(";\n");
+				}
 				body.append(indent).append("long reps = 0L;\n");
 				// A -1 operand means "no such term", which matches nothing — never a wildcard, as it would be in a
 				// quad scan term.
-				body.append(indent).append("if (key != -1L && target != -1L) {\n");
-				body.append(indent).append("    long rh = ").append(view).append(".find(key);\n");
+				body.append(indent)
+						.append("if (key != -1L && target != -1L")
+						.append(close.dynamic ? " && pred != -1L" : "")
+						.append(") {\n");
+				body.append(indent)
+						.append("    long rh = ")
+						.append(view)
+						.append(close.dynamic ? ".runFor(key, pred);\n" : ".find(key);\n");
+				if (close.dynamic) {
+					body.append(indent).append("    if (rh == NativeLmdbQuerySource.DynamicAdjacency.NOT_COVERED) {\n");
+					body.append(indent)
+							.append("        throw new IllegalStateException(\"dynamic adjacency refused a runtime predicate after kernel bind\");\n");
+					body.append(indent).append("    }\n");
+				}
 				body.append(indent).append("    if (rh > 0L) {\n");
 				body.append(indent).append("        long m = 0L;\n");
 				body.append(indent).append("        long end = ").append(view).append(".size(rh);\n");
@@ -3453,19 +4037,282 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append(b).append(" = -1;\n");
 				return true;
 			}
+			if (node instanceof EnumeratePredicates) {
+				EnumeratePredicates enumerate = (EnumeratePredicates) node;
+				if (enumerate.demand != LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+					return false;
+				}
+				String view = (enumerate.wildcard ? "wa" : "np") + enumerate.view;
+				body.append(indent).append("long key = ").append(enumerate.key.token()).append(";\n");
+				if (enumerate.target != null) {
+					body.append(indent).append("long target = ").append(enumerate.target.token()).append(";\n");
+				}
+				body.append(indent)
+						.append("if (key != -1L")
+						.append(enumerate.target == null ? "" : " && target != -1L")
+						.append(") {\n");
+				if (enumerate.wildcard) {
+					String keys = "waK" + enumerate.view;
+					String runs = "waR" + enumerate.view;
+					body.append(indent).append("    if (").append(a).append(" < 0) {\n");
+					body.append(indent).append("        ").append(a).append(" = 0L;\n");
+					body.append(indent).append("    }\n");
+					body.append(indent).append("    ").append(keys).append("[0] = key;\n");
+					body.append(indent)
+							.append("    while (")
+							.append(a)
+							.append(" < ")
+							.append(view)
+							.append(".predicateCount()) {\n");
+					body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+					body.append(indent).append("        ").append(view).append(".bind((int) ").append(a).append(");\n");
+					body.append(indent)
+							.append("        ")
+							.append(view)
+							.append(".findBatch(")
+							.append(keys)
+							.append(", 0, 1, ")
+							.append(runs)
+							.append(", 0);\n");
+					body.append(indent).append("        long rh = ").append(runs).append("[0];\n");
+					body.append(indent)
+							.append("        if (rh == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {\n");
+					body.append(indent)
+							.append("            throw new IllegalStateException(\"wildcard adjacency refused a bound plane after kernel bind\");\n");
+					body.append(indent).append("        }\n");
+					body.append(indent).append("        if (rh > 0L) {\n");
+					body.append(indent)
+							.append("            v")
+							.append(enumerate.predicateCol)
+							.append(" = ")
+							.append(view)
+							.append(".predicateAt((int) ")
+							.append(a)
+							.append(");\n");
+					body.append(indent).append("            long end = ").append(view).append(".size(rh);\n");
+					body.append(indent).append("            if (").append(b).append(" < 0) {\n");
+					body.append(indent).append("                ").append(b).append(" = 0L;\n");
+					body.append(indent).append("            }\n");
+					body.append(indent)
+							.append("            for (; ")
+							.append(b)
+							.append(" < end; ")
+							.append(b)
+							.append("++) {\n");
+					body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+					String inner = indent + "                ";
+					if (enumerate.target != null) {
+						body.append(inner)
+								.append("long neighbor = ")
+								.append(view)
+								.append(".neighborAt(rh, ")
+								.append(b)
+								.append(");\n");
+						body.append(inner).append("if (neighbor == target) {\n");
+						inner += "    ";
+					}
+					inner = emitCtxEntry(body, inner, enumerate, view, b);
+					if (enumerate.valueCol >= 0) {
+						body.append(inner)
+								.append("v")
+								.append(enumerate.valueCol)
+								.append(" = ")
+								.append(enumerate.target == null ? view + ".neighborAt(rh, " + b + ")" : "neighbor")
+								.append(";\n");
+					}
+					body.append(next(nextTemplate, inner));
+					closeCtxEntry(body, indent + "                ", enumerate);
+					if (enumerate.target != null) {
+						body.append(indent).append("                }\n");
+					}
+					emitPause(body, indent + "                ", b, tailmost);
+					body.append(indent).append("            }\n");
+					body.append(indent).append("        }\n");
+					body.append(indent).append("        ").append(b).append(" = -1L;\n");
+					body.append(indent).append("        ").append(a).append("++;\n");
+					body.append(indent).append("    }\n");
+				} else {
+					int scratch = nextPredicateEnumId++;
+					String predicates = "epP" + scratch;
+					String runs = "epR" + scratch;
+					body.append(indent).append("    long rowH = ").append(view).append(".find(key);\n");
+					body.append(indent).append("    if (rowH == NativeLmdbQuerySource.NodePredicates.NOT_COVERED) {\n");
+					body.append(indent)
+							.append("        throw new IllegalStateException(\"node-predicate projection refused a node after kernel bind\");\n");
+					body.append(indent).append("    }\n");
+					body.append(indent).append("    if (rowH > 0L) {\n");
+					body.append(indent).append("        long rowSize = ").append(view).append(".rowSize(rowH);\n");
+					body.append(indent).append("        if (").append(a).append(" < 0) {\n");
+					body.append(indent).append("            ").append(a).append(" = 0L;\n");
+					body.append(indent).append("        }\n");
+					body.append(indent).append("        while (").append(a).append(" < rowSize) {\n");
+					body.append(indent)
+							.append("            int rn = ")
+							.append(view)
+							.append(".copyRow(key, rowH, ")
+							.append(a)
+							.append(", ")
+							.append(PREDICATE_CHUNK)
+							.append(", ")
+							.append(predicates)
+							.append(", 0, ")
+							.append(runs)
+							.append(", 0);\n");
+					body.append(indent).append("            if (rn <= 0) { break; }\n");
+					body.append(indent)
+							.append("            if (")
+							.append(b)
+							.append(" < 0) { ")
+							.append(b)
+							.append(" = 0L; }\n");
+					body.append(indent)
+							.append("            for (; ")
+							.append(b)
+							.append(" < rn; ")
+							.append(b)
+							.append("++) {\n");
+					body.append(indent)
+							.append("                v")
+							.append(enumerate.predicateCol)
+							.append(" = ")
+							.append(predicates)
+							.append("[(int) ")
+							.append(b)
+							.append("];\n");
+					body.append(indent)
+							.append("                long rh = ")
+							.append(runs)
+							.append("[(int) ")
+							.append(b)
+							.append("];\n");
+					body.append(indent).append("                long end = ").append(view).append(".size(rh);\n");
+					body.append(indent)
+							.append("                if (")
+							.append(c)
+							.append(" < 0) { ")
+							.append(c)
+							.append(" = 0L; }\n");
+					body.append(indent)
+							.append("                for (; ")
+							.append(c)
+							.append(" < end; ")
+							.append(c)
+							.append("++) {\n");
+					body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+					String inner = emitCtxEntry(body, indent + "                    ", enumerate, view, c);
+					body.append(inner)
+							.append("v")
+							.append(enumerate.valueCol)
+							.append(" = ")
+							.append(view)
+							.append(".neighborAt(rh, ")
+							.append(c)
+							.append(");\n");
+					body.append(next(nextTemplate, inner));
+					closeCtxEntry(body, indent + "                    ", enumerate);
+					emitPause(body, indent + "                    ", c, tailmost);
+					body.append(indent).append("                }\n");
+					body.append(indent).append("                ").append(c).append(" = -1L;\n");
+					body.append(indent).append("            }\n");
+					body.append(indent).append("            ").append(a).append(" += rn;\n");
+					body.append(indent).append("            ").append(b).append(" = -1L;\n");
+					body.append(indent).append("        }\n");
+					body.append(indent).append("    }\n");
+				}
+				body.append(indent).append("}\n");
+				body.append(indent).append(a).append(" = -1L;\n");
+				body.append(indent).append(b).append(" = -1L;\n");
+				body.append(indent).append(c).append(" = -1L;\n");
+				return true;
+			}
+			if (node instanceof EnumerateWildcard) {
+				EnumerateWildcard enumerate = (EnumerateWildcard) node;
+				if (enumerate.demand != LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+					return false;
+				}
+				String view = "wa" + enumerate.view;
+				String cursor = "ak" + keyRunCursorId(enumerate);
+				body.append(indent).append("if (").append(a).append(" < 0) {\n");
+				body.append(indent).append("    ").append(a).append(" = 0;\n");
+				body.append(indent).append("}\n");
+				body.append(indent)
+						.append("while (")
+						.append(a)
+						.append(" < ")
+						.append(view)
+						.append(".predicateCount()) {\n");
+				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+				body.append(indent).append("    if (").append(cursor).append(" == null) {\n");
+				body.append(indent).append("        ").append(view).append(".bind((int) ").append(a).append(");\n");
+				body.append(indent)
+						.append("        ")
+						.append(cursor)
+						.append(" = ")
+						.append(view)
+						.append(".openKeyRunCursor();\n");
+				body.append(indent).append("        if (").append(cursor).append(" == null) {\n");
+				body.append(indent)
+						.append("            throw new IllegalStateException(\"wildcard plane refused key enumeration after bind\");\n");
+				body.append(indent).append("        }\n");
+				body.append(indent).append("        ").append(b).append(" = -1L;\n");
+				body.append(indent).append("    }\n");
+				body.append(indent).append("    while (true) {\n");
+				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+				body.append(indent).append("        if (").append(b).append(" < 0) {\n");
+				body.append(indent).append("            if (!").append(cursor).append(".advance()) {\n");
+				body.append(indent).append("                break;\n");
+				body.append(indent).append("            }\n");
+				body.append(indent).append("            ").append(b).append(" = 0L;\n");
+				body.append(indent).append("        }\n");
+				body.append(indent)
+						.append("        v")
+						.append(enumerate.keyCol)
+						.append(" = ")
+						.append(cursor)
+						.append(".key();\n");
+				body.append(indent)
+						.append("        v")
+						.append(enumerate.predicateCol)
+						.append(" = ")
+						.append(view)
+						.append(".predicateAt((int) ")
+						.append(a)
+						.append(");\n");
+				body.append(indent).append("        long end = ").append(cursor).append(".runSize();\n");
+				body.append(indent).append("        for (; ").append(b).append(" < end; ").append(b).append("++) {\n");
+				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+				String enumInner = emitKeyRunCtxEntry(body, indent + "            ", enumerate, cursor, b);
+				body.append(enumInner)
+						.append("v")
+						.append(enumerate.valueCol)
+						.append(" = ")
+						.append(cursor)
+						.append(".neighborAt(")
+						.append(b)
+						.append(");\n");
+				body.append(next(nextTemplate, enumInner));
+				closeCtxEntry(body, indent + "            ", enumerate);
+				emitPause(body, indent + "            ", b, tailmost);
+				body.append(indent).append("        }\n");
+				body.append(indent).append("        ").append(b).append(" = -1L;\n");
+				body.append(indent).append("    }\n");
+				body.append(indent).append("    ").append(cursor).append(".close();\n");
+				body.append(indent).append("    ").append(cursor).append(" = null;\n");
+				body.append(indent).append("    ").append(a).append("++;\n");
+				body.append(indent).append("    ").append(b).append(" = -1L;\n");
+				body.append(indent).append("}\n");
+				body.append(indent).append(a).append(" = -1L;\n");
+				body.append(indent).append(b).append(" = -1L;\n");
+				return true;
+			}
 			if (node instanceof EnumerateAdjKeys) {
 				EnumerateAdjKeys enumerate = (EnumerateAdjKeys) node;
 				int implicitSipSite = implicitSipDrivenSite(enumerate);
-				String view = "a" + enumerate.adjacency;
+				String view = (enumerate.wildcard ? "wa" : "a") + enumerate.adjacency;
 				String cursor = "ak" + keyRunCursorId(enumerate);
 				if (enumerate.valueCol < 0) {
 					body.append(indent).append("if (").append(cursor).append(" == null) {\n");
-					body.append(indent)
-							.append("    ")
-							.append(cursor)
-							.append(" = ")
-							.append(view)
-							.append(".openKeyRunCursor();\n");
+					emitOpenKeyCursor(body, indent + "    ", enumerate, view, cursor);
 					body.append(indent).append("}\n");
 					body.append(indent).append("if (").append(cursor).append(" != null) {\n");
 					body.append(indent).append("    while (true) {\n");
@@ -3504,12 +4351,7 @@ final class LmdbNativeKernelEmitter {
 					return true;
 				}
 				body.append(indent).append("if (").append(cursor).append(" == null) {\n");
-				body.append(indent)
-						.append("    ")
-						.append(cursor)
-						.append(" = ")
-						.append(view)
-						.append(".openKeyRunCursor();\n");
+				emitOpenKeyCursor(body, indent + "    ", enumerate, view, cursor);
 				body.append(indent).append("}\n");
 				body.append(indent).append("if (").append(cursor).append(" != null) {\n");
 				body.append(indent).append("    while (true) {\n");
@@ -3639,6 +4481,9 @@ final class LmdbNativeKernelEmitter {
 			if (producer instanceof Probe) {
 				return ((Probe) producer).valueCol;
 			}
+			if (producer instanceof ProbeVariable) {
+				return ((ProbeVariable) producer).valueCol;
+			}
 			if (producer instanceof LeftProbe) {
 				return ((LeftProbe) producer).valueCol;
 			}
@@ -3657,7 +4502,13 @@ final class LmdbNativeKernelEmitter {
 		 * the same value once is indistinguishable from adding it {@code cnt} times.
 		 */
 		private boolean bulkCountTail() {
-			if (kernel.vectorTailIndex < 0 || !(kernel.terminal instanceof Aggregate)) {
+			if (!(kernel.terminal instanceof Aggregate)) {
+				return false;
+			}
+			if (wildcardMultiplicityTail()) {
+				return true;
+			}
+			if (kernel.vectorTailIndex < 0) {
 				return false;
 			}
 			Node producer = kernel.pipeline.get(kernel.vectorTailIndex);
@@ -3686,6 +4537,58 @@ final class LmdbNativeKernelEmitter {
 					return false;
 				}
 				if (output.kind != LmdbNativeKernelIr.AGG_COUNT_STAR && output.col == valueCol) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private boolean wildcardMultiplicityTail() {
+			if (kernel.pipeline.isEmpty()) {
+				return false;
+			}
+			return wildcardMultiplicityTail(kernel.pipeline.get(kernel.pipeline.size() - 1));
+		}
+
+		private boolean wildcardMultiplicityTail(Node producer) {
+			if (!(kernel.terminal instanceof Aggregate aggregate)
+					|| kernel.pipeline.isEmpty() || kernel.pipeline.get(kernel.pipeline.size() - 1) != producer) {
+				return false;
+			}
+			int valueCol;
+			int ctxCol;
+			if (producer instanceof EnumeratePredicates enumerate && enumerate.wildcard
+					&& enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PAIR_MULTIPLICITY
+					&& enumerate.target == null && !enumerate.ctxActive()) {
+				valueCol = enumerate.valueCol;
+				ctxCol = enumerate.ctxCol;
+			} else if (producer instanceof EnumerateWildcard enumerate
+					&& enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PAIR_MULTIPLICITY
+					&& !enumerate.ctxActive()) {
+				valueCol = enumerate.valueCol;
+				ctxCol = enumerate.ctxCol;
+			} else if (producer instanceof SipDomainWildcard wildcard
+					&& wildcard.demand == LmdbWildcardPhysicalDemand.Demand.PAIR_MULTIPLICITY
+					&& !wildcard.ctxActive()) {
+				valueCol = wildcard.valueCol;
+				ctxCol = wildcard.ctxCol;
+			} else if (producer instanceof SipKeyWildcard wildcard
+					&& wildcard.demand == LmdbWildcardPhysicalDemand.Demand.PAIR_MULTIPLICITY
+					&& !wildcard.ctxActive()) {
+				valueCol = wildcard.valueCol;
+				ctxCol = wildcard.ctxCol;
+			} else {
+				return false;
+			}
+			for (int groupCol : aggregate.groupCols) {
+				if (groupCol == valueCol || groupCol == ctxCol) {
+					return false;
+				}
+			}
+			for (AggregateOutput output : aggregate.outputs) {
+				if (output.kind != LmdbNativeKernelIr.AGG_COUNT_STAR
+						&& (output.kind != LmdbNativeKernelIr.AGG_COUNT
+								|| output.col == valueCol || output.col == ctxCol)) {
 					return false;
 				}
 			}
@@ -3989,6 +4892,598 @@ final class LmdbNativeKernelEmitter {
 					.append("}\n");
 		}
 
+		private void emitSipDomainWildcard(StringBuilder body, SipDomainWildcard probe, String nextTemplate) {
+			String indent = "        ";
+			String view = "wa" + probe.wildcardView;
+			String runs = "waR" + probe.wildcardView;
+			boolean stopPerPredicate = probe.demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY
+					|| probe.demand == LmdbWildcardPhysicalDemand.Demand.PREDICATE_ANY;
+			body.append(indent)
+					.append("long[] sipDomain = dom")
+					.append(probe.domain)
+					.append(";\n")
+					.append(indent)
+					.append("int sipDomainOffset = domO")
+					.append(probe.domain)
+					.append(";\n")
+					.append(indent)
+					.append("int sipDomainLength = domL")
+					.append(probe.domain)
+					.append(";\n")
+					.append(indent)
+					.append("boolean wildcardDone = false;\n")
+					.append(indent)
+					.append("for (int po = 0; po < ")
+					.append(view)
+					.append(".predicateCount() && !wildcardDone; po++) {\n")
+					.append(indent)
+					.append("    KernelRuntime.checkCancelled(cancel);\n")
+					.append(indent)
+					.append("    ")
+					.append(view)
+					.append(".bind(po);\n")
+					.append(indent)
+					.append("    boolean predicateSatisfied = false;\n")
+					.append(indent)
+					.append("    for (int sipBase = 0; sipBase < sipDomainLength")
+					.append(stopPerPredicate ? " && !predicateSatisfied" : "")
+					.append("; sipBase += ")
+					.append(KEY_CHUNK)
+					.append(") {\n")
+					.append(indent)
+					.append("        int sipCount = Math.min(")
+					.append(KEY_CHUNK)
+					.append(", sipDomainLength - sipBase);\n")
+					.append(indent)
+					.append("        ")
+					.append(view)
+					.append(".findBatch(sipDomain, sipDomainOffset + sipBase, sipCount, ")
+					.append(runs)
+					.append(", 0);\n")
+					.append(indent)
+					.append("        for (int sipLane = 0; sipLane < sipCount")
+					.append(stopPerPredicate ? " && !predicateSatisfied" : "")
+					.append("; sipLane++) {\n")
+					.append(indent)
+					.append("            long rh = ")
+					.append(runs)
+					.append("[sipLane];\n")
+					.append(indent)
+					.append("            if (rh == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {\n")
+					.append(indent)
+					.append("                throw new IllegalStateException(\"wildcard adjacency refused a SIP plane after kernel bind\");\n")
+					.append(indent)
+					.append("            }\n")
+					.append(indent)
+					.append("            if (rh > 0L) {\n");
+			emitWildcardSipRun(body, indent + "                ", probe, probe.demand, view,
+					"sipDomain[sipDomainOffset + sipBase + sipLane]", "po", nextTemplate);
+			body.append(indent)
+					.append("            }\n")
+					.append(indent)
+					.append("        }\n")
+					.append(indent)
+					.append("    }\n");
+			if (probe.demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY) {
+				body.append(indent).append("    wildcardDone = predicateSatisfied;\n");
+			}
+			body.append(indent).append("}\n");
+		}
+
+		private void emitSipKeyWildcard(StringBuilder body, SipKeyWildcard probe, String nextTemplate) {
+			String indent = "        ";
+			String view = "wa" + probe.wildcardView;
+			String runs = "waR" + probe.wildcardView;
+			int cursorId = keyRunCursorId(probe);
+			String cursor = "ak" + cursorId;
+			String keys = "akb" + cursorId;
+			boolean stopPerPredicate = probe.demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY
+					|| probe.demand == LmdbWildcardPhysicalDemand.Demand.PREDICATE_ANY;
+			body.append(indent)
+					.append("boolean wildcardDone = false;\n")
+					.append(indent)
+					.append("for (int po = 0; po < ")
+					.append(view)
+					.append(".predicateCount() && !wildcardDone; po++) {\n")
+					.append(indent)
+					.append("    KernelRuntime.checkCancelled(cancel);\n")
+					.append(indent)
+					.append("    ")
+					.append(view)
+					.append(".bind(po);\n")
+					.append(indent)
+					.append("    boolean predicateSatisfied = false;\n")
+					.append(indent)
+					.append("    ")
+					.append(cursor)
+					.append(" = a")
+					.append(probe.domainAdjacency)
+					.append(".openKeyRunCursor();\n")
+					.append(indent)
+					.append("    if (")
+					.append(cursor)
+					.append(" != null) {\n")
+					.append(indent)
+					.append("        int sipCount;\n")
+					.append(indent)
+					.append("        while (")
+					.append(stopPerPredicate ? "!predicateSatisfied && " : "")
+					.append("(sipCount = ")
+					.append(cursor)
+					.append(".fillKeys(")
+					.append(keys)
+					.append(", 0, ")
+					.append(keys)
+					.append(".length)) > 0) {\n")
+					.append(indent)
+					.append("            KernelRuntime.checkCancelled(cancel);\n")
+					.append(indent)
+					.append("            ")
+					.append(view)
+					.append(".findBatch(")
+					.append(keys)
+					.append(", 0, sipCount, ")
+					.append(runs)
+					.append(", 0);\n")
+					.append(indent)
+					.append("            for (int sipLane = 0; sipLane < sipCount")
+					.append(stopPerPredicate ? " && !predicateSatisfied" : "")
+					.append("; sipLane++) {\n")
+					.append(indent)
+					.append("                long rh = ")
+					.append(runs)
+					.append("[sipLane];\n")
+					.append(indent)
+					.append("                if (rh == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {\n")
+					.append(indent)
+					.append("                    throw new IllegalStateException(\"wildcard adjacency refused a SIP plane after kernel bind\");\n")
+					.append(indent)
+					.append("                }\n")
+					.append(indent)
+					.append("                if (rh > 0L) {\n");
+			emitWildcardSipRun(body, indent + "                    ", probe, probe.demand, view,
+					keys + "[sipLane]", "po", nextTemplate);
+			body.append(indent)
+					.append("                }\n")
+					.append(indent)
+					.append("            }\n")
+					.append(indent)
+					.append("        }\n")
+					.append(indent)
+					.append("        ")
+					.append(cursor)
+					.append(".close();\n")
+					.append(indent)
+					.append("        ")
+					.append(cursor)
+					.append(" = null;\n")
+					.append(indent)
+					.append("    }\n");
+			if (probe.demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY) {
+				body.append(indent).append("    wildcardDone = predicateSatisfied;\n");
+			}
+			body.append(indent).append("}\n");
+		}
+
+		private void emitWildcardSipRun(StringBuilder body, String indent, Node probe,
+				LmdbWildcardPhysicalDemand.Demand demand, String view, String key, String predicateOrdinal,
+				String nextTemplate) {
+			int keyCol;
+			int predicateCol;
+			int valueCol;
+			if (probe instanceof SipDomainWildcard wildcard) {
+				keyCol = wildcard.keyCol;
+				predicateCol = wildcard.predicateCol;
+				valueCol = wildcard.valueCol;
+			} else {
+				SipKeyWildcard wildcard = (SipKeyWildcard) probe;
+				keyCol = wildcard.keyCol;
+				predicateCol = wildcard.predicateCol;
+				valueCol = wildcard.valueCol;
+			}
+			body.append(indent)
+					.append("long end = ")
+					.append(view)
+					.append(".size(rh);\n")
+					.append(indent)
+					.append("v")
+					.append(keyCol)
+					.append(" = ")
+					.append(key)
+					.append(";\n");
+			if (demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY
+					|| demand == LmdbWildcardPhysicalDemand.Demand.PREDICATE_ANY
+					|| demand == LmdbWildcardPhysicalDemand.Demand.PAIR_PRESENCE) {
+				emitWildcardSipPresence(body, indent, probe, demand, view, predicateCol, predicateOrdinal,
+						nextTemplate);
+				return;
+			}
+			body.append(indent)
+					.append("v")
+					.append(predicateCol)
+					.append(" = ")
+					.append(view)
+					.append(".predicateAt(")
+					.append(predicateOrdinal)
+					.append(");\n");
+			if (demand == LmdbWildcardPhysicalDemand.Demand.PAIR_MULTIPLICITY
+					&& wildcardMultiplicityTail(probe)) {
+				body.append(indent).append("updateBy(end);\n");
+				return;
+			}
+			body.append(indent)
+					.append("for (long i = 0L; i < end; i++) {\n")
+					.append(indent)
+					.append("    if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+			String inner = emitCtxEntry(body, indent + "    ", probe, view, "i");
+			if (demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+				body.append(inner)
+						.append("v")
+						.append(valueCol)
+						.append(" = ")
+						.append(view)
+						.append(".neighborAt(rh, i);\n");
+			}
+			body.append(next(nextTemplate, inner));
+			closeCtxEntry(body, indent + "    ", probe);
+			body.append(indent).append("}\n");
+		}
+
+		private static void emitWildcardSipPresence(StringBuilder body, String indent, Node probe,
+				LmdbWildcardPhysicalDemand.Demand demand, String view, int predicateCol, String predicateOrdinal,
+				String nextTemplate) {
+			String condition = ctxCondition(probe);
+			int ctxCol = ctxColOf(probe);
+			body.append(indent).append("boolean accepted = end > 0L;\n");
+			if (ctxActive(probe)) {
+				body.append(indent)
+						.append("long acceptedCtx = 0L;\n")
+						.append(indent)
+						.append("accepted = false;\n")
+						.append(indent)
+						.append("for (long ci = 0L; ci < end; ci++) {\n")
+						.append(indent)
+						.append("    long ctx = ")
+						.append(view)
+						.append(".contextAt(rh, ci);\n")
+						.append(indent)
+						.append("    if (")
+						.append(condition == null ? "true" : condition)
+						.append(") {\n")
+						.append(indent)
+						.append("        accepted = true;\n")
+						.append(indent)
+						.append("        acceptedCtx = ctx;\n")
+						.append(indent)
+						.append("        break;\n")
+						.append(indent)
+						.append("    }\n")
+						.append(indent)
+						.append("}\n");
+			}
+			body.append(indent).append("if (accepted) {\n");
+			String inner = indent + "    ";
+			if (demand != LmdbWildcardPhysicalDemand.Demand.NODE_ANY) {
+				body.append(inner)
+						.append("v")
+						.append(predicateCol)
+						.append(" = ")
+						.append(view)
+						.append(".predicateAt(")
+						.append(predicateOrdinal)
+						.append(");\n");
+			}
+			if (ctxCol >= 0) {
+				body.append(inner).append("v").append(ctxCol).append(" = acceptedCtx;\n");
+			}
+			body.append(next(nextTemplate, inner));
+			if (demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY
+					|| demand == LmdbWildcardPhysicalDemand.Demand.PREDICATE_ANY) {
+				body.append(inner).append("predicateSatisfied = true;\n");
+			}
+			body.append(indent).append("}\n");
+		}
+
+		private void emitBoundWildcardDemand(StringBuilder body, EnumeratePredicates enumerate, String nextTemplate) {
+			String indent = "        ";
+			String view = "wa" + enumerate.view;
+			String keys = "waK" + enumerate.view;
+			String runs = "waR" + enumerate.view;
+			boolean nodeAny = enumerate.demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY;
+			body.append(indent).append("long key = ").append(enumerate.key.token()).append(";\n");
+			if (enumerate.target != null) {
+				body.append(indent).append("long target = ").append(enumerate.target.token()).append(";\n");
+			}
+			body.append(indent)
+					.append("if (key != -1L")
+					.append(enumerate.target == null ? "" : " && target != -1L")
+					.append(") {\n");
+			if (nodeAny) {
+				body.append(indent).append("    boolean wildcardAny = false;\n");
+			}
+			body.append(indent)
+					.append("    ")
+					.append(keys)
+					.append("[0] = key;\n")
+					.append(indent)
+					.append("    int pc = ")
+					.append(view)
+					.append(".predicateCount();\n")
+					.append(indent)
+					.append("    for (int po = 0; po < pc")
+					.append(nodeAny ? " && !wildcardAny" : "")
+					.append("; po++) {\n")
+					.append(indent)
+					.append("        if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
+					.append(indent)
+					.append("        ")
+					.append(view)
+					.append(".bind(po);\n")
+					.append(indent)
+					.append("        ")
+					.append(view)
+					.append(".findBatch(")
+					.append(keys)
+					.append(", 0, 1, ")
+					.append(runs)
+					.append(", 0);\n")
+					.append(indent)
+					.append("        long rh = ")
+					.append(runs)
+					.append("[0];\n")
+					.append(indent)
+					.append("        if (rh == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {\n")
+					.append(indent)
+					.append("            throw new IllegalStateException(\"wildcard adjacency refused a bound plane after kernel bind\");\n")
+					.append(indent)
+					.append("        }\n")
+					.append(indent)
+					.append("        if (rh > 0L) {\n")
+					.append(indent)
+					.append("            long end = ")
+					.append(view)
+					.append(".size(rh);\n");
+			if (enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PAIR_MULTIPLICITY) {
+				body.append(indent)
+						.append("            v")
+						.append(enumerate.predicateCol)
+						.append(" = ")
+						.append(view)
+						.append(".predicateAt(po);\n");
+				if (wildcardMultiplicityTail(enumerate)) {
+					body.append(indent).append("            updateBy(end);\n");
+					body.append(indent)
+							.append("        }\n")
+							.append(indent)
+							.append("    }\n")
+							.append(indent)
+							.append("}\n");
+					return;
+				}
+				body.append(indent)
+						.append("            for (long i = 0L; i < end; i++) {\n")
+						.append(indent)
+						.append("                if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+				String inner = indent + "                ";
+				if (enumerate.target != null) {
+					body.append(inner)
+							.append("if (")
+							.append(view)
+							.append(".neighborAt(rh, i) != target) { continue; }\n");
+				}
+				if (enumerate.ctxActive()) {
+					body.append(inner)
+							.append("long ctx = ")
+							.append(view)
+							.append(".contextAt(rh, i);\n")
+							.append(inner)
+							.append("if (!(")
+							.append(ctxCondition(enumerate))
+							.append(")) { continue; }\n");
+				}
+				body.append(next(nextTemplate, inner));
+				body.append(indent).append("            }\n");
+			} else {
+				body.append(indent).append("            boolean accepted = end > 0L;\n");
+				if (enumerate.target != null || enumerate.ctxActive()) {
+					body.append(indent)
+							.append("            accepted = false;\n")
+							.append(indent)
+							.append("            for (long i = 0L; i < end; i++) {\n");
+					String inner = indent + "                ";
+					if (enumerate.target != null) {
+						body.append(inner)
+								.append("if (")
+								.append(view)
+								.append(".neighborAt(rh, i) != target) { continue; }\n");
+					}
+					if (enumerate.ctxActive()) {
+						body.append(inner)
+								.append("long ctx = ")
+								.append(view)
+								.append(".contextAt(rh, i);\n")
+								.append(inner)
+								.append("if (!(")
+								.append(ctxCondition(enumerate))
+								.append(")) { continue; }\n");
+					}
+					body.append(inner)
+							.append("accepted = true;\n")
+							.append(inner)
+							.append("break;\n")
+							.append(indent)
+							.append("            }\n");
+				}
+				body.append(indent).append("            if (accepted) {\n");
+				if (!nodeAny) {
+					body.append(indent)
+							.append("                v")
+							.append(enumerate.predicateCol)
+							.append(" = ")
+							.append(view)
+							.append(".predicateAt(po);\n");
+				} else {
+					body.append(indent).append("                wildcardAny = true;\n");
+				}
+				body.append(next(nextTemplate, indent + "                "));
+				body.append(indent).append("            }\n");
+			}
+			body.append(indent)
+					.append("        }\n")
+					.append(indent)
+					.append("    }\n")
+					.append(indent)
+					.append("}\n");
+		}
+
+		private void emitEnumerateWildcard(StringBuilder body, EnumerateWildcard enumerate, String nextTemplate) {
+			String indent = "        ";
+			String view = "wa" + enumerate.view;
+			String cursor = "ak" + keyRunCursorId(enumerate);
+			boolean nodeAny = enumerate.demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY;
+			boolean predicateAny = enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PREDICATE_ANY;
+			if (nodeAny) {
+				body.append(indent).append("boolean wildcardAny = false;\n");
+			}
+			body.append(indent)
+					.append("for (int po = 0; po < ")
+					.append(view)
+					.append(".predicateCount()")
+					.append(nodeAny ? " && !wildcardAny" : "")
+					.append("; po++) {\n");
+			body.append(indent).append("    if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+			body.append(indent).append("    ").append(view).append(".bind(po);\n");
+			body.append(indent)
+					.append("    ")
+					.append(cursor)
+					.append(" = ")
+					.append(view)
+					.append(".openKeyRunCursor();\n");
+			body.append(indent).append("    if (").append(cursor).append(" == null) {\n");
+			body.append(indent)
+					.append("        throw new IllegalStateException(\"wildcard plane refused key enumeration after bind\");\n");
+			body.append(indent).append("    }\n");
+			if (predicateAny) {
+				body.append(indent).append("    boolean predicateAny = false;\n");
+			}
+			body.append(indent)
+					.append("    while (")
+					.append(cursor)
+					.append(".advance()")
+					.append(predicateAny ? " && !predicateAny" : "")
+					.append(nodeAny ? " && !wildcardAny" : "")
+					.append(") {\n");
+			body.append(indent)
+					.append("        if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+			body.append(indent).append("        long end = ").append(cursor).append(".runSize();\n");
+			switch (enumerate.demand) {
+			case NODE_ANY:
+			case PREDICATE_ANY:
+			case PAIR_PRESENCE:
+				emitWildcardAcceptance(body, indent + "        ", enumerate, cursor, "end");
+				body.append(indent).append("        if (accepted) {\n");
+				if (enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PAIR_PRESENCE) {
+					body.append(indent)
+							.append("            v")
+							.append(enumerate.keyCol)
+							.append(" = ")
+							.append(cursor)
+							.append(".key();\n");
+				}
+				if (!nodeAny) {
+					body.append(indent)
+							.append("            v")
+							.append(enumerate.predicateCol)
+							.append(" = ")
+							.append(view)
+							.append(".predicateAt(po);\n");
+				}
+				if (nodeAny) {
+					body.append(indent).append("            wildcardAny = true;\n");
+				} else if (predicateAny) {
+					body.append(indent).append("            predicateAny = true;\n");
+				}
+				body.append(next(nextTemplate, indent + "            "));
+				body.append(indent).append("        }\n");
+				break;
+			case PAIR_MULTIPLICITY:
+				body.append(indent)
+						.append("        v")
+						.append(enumerate.keyCol)
+						.append(" = ")
+						.append(cursor)
+						.append(".key();\n");
+				body.append(indent)
+						.append("        v")
+						.append(enumerate.predicateCol)
+						.append(" = ")
+						.append(view)
+						.append(".predicateAt(po);\n");
+				if (wildcardMultiplicityTail(enumerate)) {
+					body.append(indent).append("        updateBy(end);\n");
+					break;
+				}
+				body.append(indent).append("        for (long i = 0L; i < end; i++) {\n");
+				body.append(indent)
+						.append("            if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+				String enumInner = emitKeyRunCtxEntry(body, indent + "            ", enumerate, cursor, "i");
+				body.append(next(nextTemplate, enumInner));
+				closeCtxEntry(body, indent + "            ", enumerate);
+				body.append(indent).append("        }\n");
+				break;
+			case PAYLOAD:
+				body.append(indent)
+						.append("        v")
+						.append(enumerate.keyCol)
+						.append(" = ")
+						.append(cursor)
+						.append(".key();\n");
+				body.append(indent)
+						.append("        v")
+						.append(enumerate.predicateCol)
+						.append(" = ")
+						.append(view)
+						.append(".predicateAt(po);\n");
+				body.append(indent).append("        for (long i = 0L; i < end; i++) {\n");
+				body.append(indent)
+						.append("            if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+				String payloadInner = emitKeyRunCtxEntry(body, indent + "            ", enumerate, cursor, "i");
+				body.append(payloadInner)
+						.append("v")
+						.append(enumerate.valueCol)
+						.append(" = ")
+						.append(cursor)
+						.append(".neighborAt(i);\n");
+				body.append(next(nextTemplate, payloadInner));
+				closeCtxEntry(body, indent + "            ", enumerate);
+				body.append(indent).append("        }\n");
+				break;
+			default:
+				throw new IllegalStateException("unknown wildcard demand " + enumerate.demand);
+			}
+			body.append(indent).append("    }\n");
+			body.append(indent).append("    ").append(cursor).append(".close();\n");
+			body.append(indent).append("    ").append(cursor).append(" = null;\n");
+			body.append(indent).append("}\n");
+		}
+
+		private static void emitWildcardAcceptance(StringBuilder body, String indent, EnumerateWildcard enumerate,
+				String cursor, String end) {
+			String condition = ctxCondition(enumerate);
+			body.append(indent).append("boolean accepted = ").append(end).append(" > 0L;\n");
+			if (condition == null) {
+				return;
+			}
+			body.append(indent).append("accepted = false;\n");
+			body.append(indent).append("for (long ci = 0L; ci < ").append(end).append("; ci++) {\n");
+			body.append(indent).append("    long ctx = ").append(cursor).append(".contextAt(ci);\n");
+			body.append(indent).append("    if (").append(condition).append(") {\n");
+			body.append(indent).append("        accepted = true;\n");
+			body.append(indent).append("        break;\n");
+			body.append(indent).append("    }\n");
+			body.append(indent).append("}\n");
+		}
+
 		private void emitNode(StringBuilder body, Node node, String nextTemplate, boolean booleanMode, int stateIndex) {
 			String indent = "        ";
 			if (stateIndex >= 0 && emitResumableProducer(body, node, nextTemplate, stateIndex)) {
@@ -4059,18 +5554,26 @@ final class LmdbNativeKernelEmitter {
 				emitSipKeyProbe(body, (SipKeyProbe) node, nextTemplate);
 				return;
 			}
+			if (node instanceof SipDomainWildcard) {
+				emitSipDomainWildcard(body, (SipDomainWildcard) node, nextTemplate);
+				return;
+			}
+			if (node instanceof SipKeyWildcard) {
+				emitSipKeyWildcard(body, (SipKeyWildcard) node, nextTemplate);
+				return;
+			}
+			if (node instanceof EnumerateWildcard) {
+				emitEnumerateWildcard(body, (EnumerateWildcard) node, nextTemplate);
+				return;
+			}
 			if (node instanceof EnumerateAdjKeys) {
 				EnumerateAdjKeys enumerate = (EnumerateAdjKeys) node;
 				int implicitSipSite = implicitSipDrivenSite(enumerate);
-				String adjacency = "a" + enumerate.adjacency;
+				String adjacency = (enumerate.wildcard ? "wa" : "a") + enumerate.adjacency;
 				String cursor = "ak" + keyRunCursorId(enumerate);
 				if (enumerate.valueCol < 0) {
 					String keyBuffer = "akb" + keyRunCursorId(enumerate);
-					body.append(indent)
-							.append(cursor)
-							.append(" = ")
-							.append(adjacency)
-							.append(".openKeyRunCursor();\n");
+					emitOpenKeyCursor(body, indent, enumerate, adjacency, cursor);
 					body.append(indent).append("if (").append(cursor).append(" != null) {\n");
 					body.append(indent).append("    int kn;\n");
 					body.append(indent)
@@ -4103,7 +5606,7 @@ final class LmdbNativeKernelEmitter {
 					body.append(indent).append("}\n");
 					return;
 				}
-				body.append(indent).append(cursor).append(" = ").append(adjacency).append(".openKeyRunCursor();\n");
+				emitOpenKeyCursor(body, indent, enumerate, adjacency, cursor);
 				body.append(indent).append("if (").append(cursor).append(" != null) {\n");
 				body.append(indent).append("    while (").append(cursor).append(".advance()) {\n");
 				body.append(indent)
@@ -4202,90 +5705,184 @@ final class LmdbNativeKernelEmitter {
 						.append("}\n");
 			} else if (node instanceof EnumeratePredicates) {
 				EnumeratePredicates enumerate = (EnumeratePredicates) node;
-				String v = "np" + enumerate.view;
-				int scratch = nextPredicateEnumId++;
-				String predicates = "epP" + scratch;
-				String runs = "epR" + scratch;
-				body.append(indent)
-						.append("long key = ")
-						.append(enumerate.key.token())
-						.append(";\n")
-						.append(indent)
-						.append("if (key != -1L) {\n")
-						.append(indent)
-						.append("    long rowH = ")
-						.append(v)
-						.append(".find(key);\n")
-						.append(indent)
-						.append("    if (rowH > 0L) {\n")
-						.append(indent)
-						.append("        long rowSize = ")
-						.append(v)
-						.append(".rowSize(rowH);\n")
-						.append(indent)
-						// The row is read in bounded chunks, never as one array the size of the row: a pathological
-						// node must not force a large uncharged allocation inside every parallel worker, and the row
-						// length is a long that has no business being narrowed to an array size.
-						.append("        for (long ro = 0L; ro < rowSize; ) {\n")
-						.append(indent)
-						.append("            int rn = ")
-						.append(v)
-						.append(".copyRow(key, rowH, ro, ")
-						.append(PREDICATE_CHUNK)
-						.append(", ")
-						.append(predicates)
-						.append(", 0, ")
-						.append(runs)
-						.append(", 0);\n")
-						.append(indent)
-						.append("            if (rn <= 0) {\n")
-						.append(indent)
-						.append("                break;\n")
-						.append(indent)
-						.append("            }\n")
-						.append(indent)
-						.append("            for (int pi = 0; pi < rn; pi++) {\n")
-						.append(indent)
-						.append("                v")
-						.append(enumerate.predicateCol)
-						.append(" = ")
-						.append(predicates)
-						.append("[pi];\n")
-						// Total resolution: copyRow raises rather than returning a non-positive handle, so there is
-						// deliberately no branch here that would skip a predicate and under-report.
-						.append(indent)
-						.append("                long rh = ")
-						.append(runs)
-						.append("[pi];\n")
-						.append(indent)
-						.append("                long end = ")
-						.append(v)
-						.append(".size(rh);\n")
-						.append(indent)
-						.append("                for (long i = 0L; i < end; i++) {\n");
-				body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
-				String enumInner = indent + "                    ";
-				enumInner = emitCtxEntry(body, enumInner, enumerate, v, "i");
-				body.append(enumInner)
-						.append("v")
-						.append(enumerate.valueCol)
-						.append(" = ")
-						.append(v)
-						.append(".neighborAt(rh, i);\n")
-						.append(next(nextTemplate, enumInner));
-				closeCtxEntry(body, indent + "                    ", enumerate);
-				body.append(indent)
-						.append("                }\n")
-						.append(indent)
-						.append("            }\n")
-						.append(indent)
-						.append("            ro += rn;\n")
-						.append(indent)
-						.append("        }\n")
-						.append(indent)
-						.append("    }\n")
-						.append(indent)
-						.append("}\n");
+				if (enumerate.wildcard) {
+					if (enumerate.demand != LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+						emitBoundWildcardDemand(body, enumerate, nextTemplate);
+						return;
+					}
+					String v = "wa" + enumerate.view;
+					String keys = "waK" + enumerate.view;
+					String runs = "waR" + enumerate.view;
+					body.append(indent)
+							.append("long key = ")
+							.append(enumerate.key.token())
+							.append(";\n");
+					if (enumerate.target != null) {
+						body.append(indent).append("long target = ").append(enumerate.target.token()).append(";\n");
+					}
+					body.append(indent)
+							.append(indent)
+							.append("if (key != -1L")
+							.append(enumerate.target == null ? "" : " && target != -1L")
+							.append(") {\n")
+							.append(indent)
+							.append("    ")
+							.append(keys)
+							.append("[0] = key;\n")
+							.append(indent)
+							.append("    int pc = ")
+							.append(v)
+							.append(".predicateCount();\n")
+							.append(indent)
+							.append("    for (int po = 0; po < pc; po++) {\n")
+							.append(indent)
+							.append("        if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
+							.append(indent)
+							.append("        ")
+							.append(v)
+							.append(".bind(po);\n")
+							.append(indent)
+							.append("        ")
+							.append(v)
+							.append(".findBatch(")
+							.append(keys)
+							.append(", 0, 1, ")
+							.append(runs)
+							.append(", 0);\n")
+							.append(indent)
+							.append("        long rh = ")
+							.append(runs)
+							.append("[0];\n")
+							.append(indent)
+							.append("        if (rh > 0L) {\n")
+							.append(indent)
+							.append("            v")
+							.append(enumerate.predicateCol)
+							.append(" = ")
+							.append(v)
+							.append(".predicateAt(po);\n")
+							.append(indent)
+							.append("            long end = ")
+							.append(v)
+							.append(".size(rh);\n")
+							.append(indent)
+							.append("            for (long i = 0L; i < end; i++) {\n");
+					body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+					String enumInner = indent + "                ";
+					if (enumerate.target != null) {
+						body.append(enumInner).append("long neighbor = ").append(v).append(".neighborAt(rh, i);\n");
+						body.append(enumInner).append("if (neighbor == target) {\n");
+						enumInner += "    ";
+					}
+					enumInner = emitCtxEntry(body, enumInner, enumerate, v, "i");
+					if (enumerate.valueCol >= 0) {
+						body.append(enumInner)
+								.append("v")
+								.append(enumerate.valueCol)
+								.append(" = ")
+								.append(enumerate.target == null ? v + ".neighborAt(rh, i)" : "neighbor")
+								.append(";\n");
+					}
+					body.append(next(nextTemplate, enumInner));
+					closeCtxEntry(body, indent + "                ", enumerate);
+					if (enumerate.target != null) {
+						body.append(indent).append("                }\n");
+					}
+					body.append(indent)
+							.append("            }\n")
+							.append(indent)
+							.append("        }\n")
+							.append(indent)
+							.append("    }\n")
+							.append(indent)
+							.append("}\n");
+				} else {
+					String v = "np" + enumerate.view;
+					int scratch = nextPredicateEnumId++;
+					String predicates = "epP" + scratch;
+					String runs = "epR" + scratch;
+					body.append(indent)
+							.append("long key = ")
+							.append(enumerate.key.token())
+							.append(";\n")
+							.append(indent)
+							.append("if (key != -1L) {\n")
+							.append(indent)
+							.append("    long rowH = ")
+							.append(v)
+							.append(".find(key);\n")
+							.append(indent)
+							.append("    if (rowH > 0L) {\n")
+							.append(indent)
+							.append("        long rowSize = ")
+							.append(v)
+							.append(".rowSize(rowH);\n")
+							.append(indent)
+							// The row is read in bounded chunks, never as one array the size of the row: a pathological
+							// node must not force a large uncharged allocation inside every parallel worker, and the
+							// row
+							// length is a long that has no business being narrowed to an array size.
+							.append("        for (long ro = 0L; ro < rowSize; ) {\n")
+							.append(indent)
+							.append("            int rn = ")
+							.append(v)
+							.append(".copyRow(key, rowH, ro, ")
+							.append(PREDICATE_CHUNK)
+							.append(", ")
+							.append(predicates)
+							.append(", 0, ")
+							.append(runs)
+							.append(", 0);\n")
+							.append(indent)
+							.append("            if (rn <= 0) {\n")
+							.append(indent)
+							.append("                break;\n")
+							.append(indent)
+							.append("            }\n")
+							.append(indent)
+							.append("            for (int pi = 0; pi < rn; pi++) {\n")
+							.append(indent)
+							.append("                v")
+							.append(enumerate.predicateCol)
+							.append(" = ")
+							.append(predicates)
+							.append("[pi];\n")
+							// Total resolution: copyRow raises rather than returning a non-positive handle, so there is
+							// deliberately no branch here that would skip a predicate and under-report.
+							.append(indent)
+							.append("                long rh = ")
+							.append(runs)
+							.append("[pi];\n")
+							.append(indent)
+							.append("                long end = ")
+							.append(v)
+							.append(".size(rh);\n")
+							.append(indent)
+							.append("                for (long i = 0L; i < end; i++) {\n");
+					body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+					String enumInner = indent + "                    ";
+					enumInner = emitCtxEntry(body, enumInner, enumerate, v, "i");
+					body.append(enumInner)
+							.append("v")
+							.append(enumerate.valueCol)
+							.append(" = ")
+							.append(v)
+							.append(".neighborAt(rh, i);\n")
+							.append(next(nextTemplate, enumInner));
+					closeCtxEntry(body, indent + "                    ", enumerate);
+					body.append(indent)
+							.append("                }\n")
+							.append(indent)
+							.append("            }\n")
+							.append(indent)
+							.append("            ro += rn;\n")
+							.append(indent)
+							.append("        }\n")
+							.append(indent)
+							.append("    }\n")
+							.append(indent)
+							.append("}\n");
+				}
 			} else if (node instanceof ProbeVariable) {
 				ProbeVariable probe = (ProbeVariable) node;
 				String v = "dy" + probe.view;
@@ -4303,6 +5900,12 @@ final class LmdbNativeKernelEmitter {
 						.append("    long rh = ")
 						.append(v)
 						.append(".runFor(key, pred);\n")
+						.append(indent)
+						.append("    if (rh == NativeLmdbQuerySource.DynamicAdjacency.NOT_COVERED) {\n")
+						.append(indent)
+						.append("        throw new IllegalStateException(\"dynamic adjacency refused a runtime predicate after kernel bind\");\n")
+						.append(indent)
+						.append("    }\n")
 						.append(indent)
 						.append("    if (rh > 0L) {\n")
 						.append(indent)
@@ -4330,7 +5933,7 @@ final class LmdbNativeKernelEmitter {
 						.append("}\n");
 			} else if (node instanceof ProbeClose) {
 				ProbeClose close = (ProbeClose) node;
-				String a = "a" + close.adjacency;
+				String a = (close.dynamic ? "dy" : "a") + close.adjacency;
 				body.append(indent)
 						.append("long key = ")
 						.append(close.key.token())
@@ -4338,14 +5941,25 @@ final class LmdbNativeKernelEmitter {
 						.append(indent)
 						.append("long target = ")
 						.append(close.target.token())
-						.append(";\n")
-						.append(indent)
-						.append("if (key != -1L && target != -1L) {\n")
+						.append(";\n");
+				if (close.dynamic) {
+					body.append(indent).append("long pred = ").append(close.predicate.token()).append(";\n");
+				}
+				body.append(indent)
+						.append("if (key != -1L && target != -1L")
+						.append(close.dynamic ? " && pred != -1L" : "")
+						.append(") {\n")
 						.append(indent)
 						.append("    long rh = ")
 						.append(a)
-						.append(".find(key);\n")
-						.append(indent)
+						.append(close.dynamic ? ".runFor(key, pred);\n" : ".find(key);\n");
+				if (close.dynamic) {
+					body.append(indent).append("    if (rh == NativeLmdbQuerySource.DynamicAdjacency.NOT_COVERED) {\n");
+					body.append(indent)
+							.append("        throw new IllegalStateException(\"dynamic adjacency refused a runtime predicate after kernel bind\");\n");
+					body.append(indent).append("    }\n");
+				}
+				body.append(indent)
 						.append("    if (rh > 0L) {\n")
 						.append(indent)
 						.append("        long m = 0L;\n")

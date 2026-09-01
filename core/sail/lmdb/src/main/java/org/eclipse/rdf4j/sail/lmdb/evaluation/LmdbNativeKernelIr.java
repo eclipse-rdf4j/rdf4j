@@ -149,6 +149,7 @@ final class LmdbNativeKernelIr {
 		int plans;
 		int nodePredicateViews;
 		int dynamicViews;
+		int wildcardViews;
 		boolean hooks;
 
 		void nodePredicateView(int index) {
@@ -157,6 +158,10 @@ final class LmdbNativeKernelIr {
 
 		void dynamicView(int index) {
 			dynamicViews = Math.max(dynamicViews, index + 1);
+		}
+
+		void wildcardView(int index) {
+			wildcardViews = Math.max(wildcardViews, index + 1);
 		}
 
 		void adjacency(int index) {
@@ -191,6 +196,12 @@ final class LmdbNativeKernelIr {
 	/** Enumerate the key domain of a CSR view; optionally also expand each key's neighbor run in the same loop. */
 	static final class EnumerateAdjKeys extends Node {
 		final int adjacency;
+		/** True when {@link #adjacency} indexes a mutable wildcard plane view. */
+		final boolean wildcard;
+		/** Runtime predicate used to bind the wildcard plane; null for a fixed-predicate adjacency. */
+		final Operand runtimePredicate;
+		/** Structural direction, included in the cache key even though the loop body is direction-neutral. */
+		final boolean bySubject;
 		final int keyCol;
 		final int valueCol; // -1 = keys only
 		/** Destination column for the run entry's context id, or -1 when the context is not projected. */
@@ -214,10 +225,30 @@ final class LmdbNativeKernelIr {
 
 		EnumerateAdjKeys(int adjacency, int keyCol, int valueCol, int ctxCol, Operand ctxMatch,
 				boolean ctxExcludeDefault, boolean sipDriven, String sipConsumer) {
+			this(adjacency, false, null, true, keyCol, valueCol, ctxCol, ctxMatch, ctxExcludeDefault, sipDriven,
+					sipConsumer);
+		}
+
+		EnumerateAdjKeys(int wildcardView, boolean bySubject, Operand runtimePredicate, int keyCol, int valueCol,
+				int ctxCol, Operand ctxMatch, boolean ctxExcludeDefault, boolean sipDriven, String sipConsumer) {
+			this(wildcardView, true, runtimePredicate, bySubject, keyCol, valueCol, ctxCol, ctxMatch,
+					ctxExcludeDefault, sipDriven, sipConsumer);
+		}
+
+		private EnumerateAdjKeys(int adjacency, boolean wildcard, Operand runtimePredicate, boolean bySubject,
+				int keyCol, int valueCol, int ctxCol, Operand ctxMatch, boolean ctxExcludeDefault, boolean sipDriven,
+				String sipConsumer) {
 			if (valueCol < 0 && (ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault)) {
 				throw new IllegalArgumentException("context access needs the neighbor run expanded");
 			}
+			if (wildcard != (runtimePredicate != null)) {
+				throw new IllegalArgumentException(
+						"runtime predicate is required exactly for wildcard key enumeration");
+			}
 			this.adjacency = adjacency;
+			this.wildcard = wildcard;
+			this.runtimePredicate = runtimePredicate;
+			this.bySubject = bySubject;
 			this.keyCol = keyCol;
 			this.valueCol = valueCol;
 			this.ctxCol = ctxCol;
@@ -233,7 +264,12 @@ final class LmdbNativeKernelIr {
 
 		@Override
 		void key(StringBuilder key) {
-			key.append("EA(a").append(adjacency).append(",k").append(keyCol).append(",x").append(valueCol);
+			key.append(wildcard ? "EA(w" : "EA(a")
+					.append(adjacency);
+			if (wildcard) {
+				key.append(bySubject ? ",S," : ",O,").append(runtimePredicate.token());
+			}
+			key.append(",k").append(keyCol).append(",x").append(valueCol);
 			if (ctxActive()) {
 				key.append(",g")
 						.append(ctxCol)
@@ -260,7 +296,12 @@ final class LmdbNativeKernelIr {
 
 		@Override
 		void requirements(Requirements requirements) {
-			requirements.adjacency(adjacency);
+			if (wildcard) {
+				requirements.wildcardView(adjacency);
+				requirements.operand(runtimePredicate);
+			} else {
+				requirements.adjacency(adjacency);
+			}
 			if (ctxMatch != null) {
 				requirements.operand(ctxMatch);
 			}
@@ -624,6 +665,161 @@ final class LmdbNativeKernelIr {
 		}
 	}
 
+	/** Predicate-major wildcard SIP over one binding-owned domain. */
+	static final class SipDomainWildcard extends Node {
+		final int domain;
+		final int wildcardView;
+		final boolean bySubject;
+		final LmdbWildcardPhysicalDemand.Demand demand;
+		final int keyCol;
+		final int predicateCol;
+		final int valueCol;
+		final int ctxCol;
+		final Operand ctxMatch;
+		final boolean ctxExcludeDefault;
+
+		SipDomainWildcard(int domain, int wildcardView, boolean bySubject,
+				LmdbWildcardPhysicalDemand.Demand demand, int keyCol, int predicateCol, int valueCol, int ctxCol,
+				Operand ctxMatch, boolean ctxExcludeDefault) {
+			this.domain = domain;
+			this.wildcardView = wildcardView;
+			this.bySubject = bySubject;
+			this.demand = demand;
+			this.keyCol = keyCol;
+			this.predicateCol = predicateCol;
+			this.valueCol = valueCol;
+			this.ctxCol = ctxCol;
+			this.ctxMatch = ctxMatch;
+			this.ctxExcludeDefault = ctxExcludeDefault;
+		}
+
+		boolean ctxActive() {
+			return ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("SDW(d")
+					.append(domain)
+					.append("->w")
+					.append(wildcardView)
+					.append(bySubject ? ",S,d" : ",O,d")
+					.append(demand.ordinal())
+					.append(",k")
+					.append(keyCol)
+					.append("->p")
+					.append(predicateCol)
+					.append(",x")
+					.append(valueCol);
+			appendWildcardContextKey(key, ctxCol, ctxMatch, ctxExcludeDefault);
+			key.append(");");
+		}
+
+		@Override
+		void produced(BitSet columns) {
+			produceWildcardSip(columns, demand, keyCol, predicateCol, valueCol, ctxCol);
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.domain(domain);
+			requirements.wildcardView(wildcardView);
+			if (ctxMatch != null) {
+				requirements.operand(ctxMatch);
+			}
+		}
+	}
+
+	/** Predicate-major wildcard SIP over the key set of one fixed-predicate adjacency. */
+	static final class SipKeyWildcard extends Node {
+		final int domainAdjacency;
+		final int wildcardView;
+		final boolean bySubject;
+		final LmdbWildcardPhysicalDemand.Demand demand;
+		final int keyCol;
+		final int predicateCol;
+		final int valueCol;
+		final int ctxCol;
+		final Operand ctxMatch;
+		final boolean ctxExcludeDefault;
+
+		SipKeyWildcard(int domainAdjacency, int wildcardView, boolean bySubject,
+				LmdbWildcardPhysicalDemand.Demand demand, int keyCol, int predicateCol, int valueCol, int ctxCol,
+				Operand ctxMatch, boolean ctxExcludeDefault) {
+			this.domainAdjacency = domainAdjacency;
+			this.wildcardView = wildcardView;
+			this.bySubject = bySubject;
+			this.demand = demand;
+			this.keyCol = keyCol;
+			this.predicateCol = predicateCol;
+			this.valueCol = valueCol;
+			this.ctxCol = ctxCol;
+			this.ctxMatch = ctxMatch;
+			this.ctxExcludeDefault = ctxExcludeDefault;
+		}
+
+		boolean ctxActive() {
+			return ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("SKW(a")
+					.append(domainAdjacency)
+					.append("->w")
+					.append(wildcardView)
+					.append(bySubject ? ",S,d" : ",O,d")
+					.append(demand.ordinal())
+					.append(",k")
+					.append(keyCol)
+					.append("->p")
+					.append(predicateCol)
+					.append(",x")
+					.append(valueCol);
+			appendWildcardContextKey(key, ctxCol, ctxMatch, ctxExcludeDefault);
+			key.append(");");
+		}
+
+		@Override
+		void produced(BitSet columns) {
+			produceWildcardSip(columns, demand, keyCol, predicateCol, valueCol, ctxCol);
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.adjacency(domainAdjacency);
+			requirements.wildcardView(wildcardView);
+			if (ctxMatch != null) {
+				requirements.operand(ctxMatch);
+			}
+		}
+	}
+
+	private static void appendWildcardContextKey(StringBuilder key, int ctxCol, Operand ctxMatch,
+			boolean ctxExcludeDefault) {
+		if (ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault) {
+			key.append(",g")
+					.append(ctxCol)
+					.append(',')
+					.append(ctxMatch == null ? "_" : ctxMatch.token())
+					.append(ctxExcludeDefault ? ",n" : "");
+		}
+	}
+
+	private static void produceWildcardSip(BitSet columns, LmdbWildcardPhysicalDemand.Demand demand, int keyCol,
+			int predicateCol, int valueCol, int ctxCol) {
+		columns.set(keyCol);
+		if (demand != LmdbWildcardPhysicalDemand.Demand.NODE_ANY) {
+			columns.set(predicateCol);
+		}
+		if (demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+			columns.set(valueCol);
+			if (ctxCol >= 0) {
+				columns.set(ctxCol);
+			}
+		}
+	}
+
 	static final class Probe extends Node {
 		final int adjacency;
 		final Operand key;
@@ -700,7 +896,15 @@ final class LmdbNativeKernelIr {
 	 */
 	static final class EnumeratePredicates extends Node {
 		final int view;
+		/** True when {@link #view} indexes projection-free wildcard predicate planes rather than NodePredicates. */
+		final boolean wildcard;
+		/** Structural direction, included in the shape key so SOC and OSC requests never alias. */
+		final boolean bySubject;
+		/** Compile-time storage demand. Node-predicate projection supports payload demand only. */
+		final LmdbWildcardPhysicalDemand.Demand demand;
 		final Operand key;
+		/** Optional already-bound far endpoint; non-null turns the node into predicate enumeration plus close probe. */
+		final Operand target;
 		/** Destination column for the raw predicate id. */
 		final int predicateCol;
 		/** Destination column for the far endpoint (object when keyed by subject, subject when keyed by object). */
@@ -713,19 +917,41 @@ final class LmdbNativeKernelIr {
 		final boolean ctxExcludeDefault;
 
 		EnumeratePredicates(int view, Operand key, int predicateCol, int valueCol) {
-			this(view, key, predicateCol, valueCol, -1, null, false);
+			this(view, false, true, LmdbWildcardPhysicalDemand.Demand.PAYLOAD, key, null, predicateCol, valueCol, -1,
+					null, false);
 		}
 
 		EnumeratePredicates(int view, Operand key, int predicateCol, int valueCol, int ctxCol, Operand ctxMatch,
 				boolean ctxExcludeDefault) {
-			if (predicateCol < 0 || valueCol < 0) {
+			this(view, false, true, LmdbWildcardPhysicalDemand.Demand.PAYLOAD, key, null, predicateCol, valueCol,
+					ctxCol, ctxMatch, ctxExcludeDefault);
+		}
+
+		EnumeratePredicates(int view, boolean wildcard, Operand key, int predicateCol, int valueCol, int ctxCol,
+				Operand ctxMatch, boolean ctxExcludeDefault) {
+			this(view, wildcard, true, LmdbWildcardPhysicalDemand.Demand.PAYLOAD, key, null, predicateCol, valueCol,
+					ctxCol, ctxMatch, ctxExcludeDefault);
+		}
+
+		EnumeratePredicates(int view, boolean wildcard, boolean bySubject,
+				LmdbWildcardPhysicalDemand.Demand demand, Operand key, Operand target, int predicateCol, int valueCol,
+				int ctxCol, Operand ctxMatch, boolean ctxExcludeDefault) {
+			if (predicateCol < 0
+					|| valueCol < 0 && target == null && demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
 				throw new IllegalArgumentException("predicate enumeration must write both the predicate and the value");
 			}
-			if (predicateCol == valueCol) {
+			if (valueCol >= 0 && predicateCol == valueCol) {
 				throw new IllegalArgumentException("predicate and value cannot share a column");
 			}
+			if (!wildcard && (demand != LmdbWildcardPhysicalDemand.Demand.PAYLOAD || target != null)) {
+				throw new IllegalArgumentException("node-predicate enumeration only supports payload demand");
+			}
 			this.view = view;
+			this.wildcard = wildcard;
+			this.bySubject = bySubject;
+			this.demand = java.util.Objects.requireNonNull(demand, "demand");
 			this.key = key;
+			this.target = target;
 			this.predicateCol = predicateCol;
 			this.valueCol = valueCol;
 			this.ctxCol = ctxCol;
@@ -739,10 +965,14 @@ final class LmdbNativeKernelIr {
 
 		@Override
 		void key(StringBuilder key) {
-			key.append("EP(n")
+			key.append(wildcard ? "EP(w" : "EP(n")
 					.append(view)
+					.append(bySubject ? ",S," : ",O,")
+					.append('d')
+					.append(demand.ordinal())
 					.append(',')
 					.append(this.key.token())
+					.append(target == null ? "" : ",t" + target.token())
 					.append("->p")
 					.append(predicateCol)
 					.append(",x")
@@ -759,20 +989,119 @@ final class LmdbNativeKernelIr {
 
 		@Override
 		void produced(BitSet columns) {
-			columns.set(predicateCol);
-			columns.set(valueCol);
-			if (ctxCol >= 0) {
+			if (demand != LmdbWildcardPhysicalDemand.Demand.NODE_ANY) {
+				columns.set(predicateCol);
+			}
+			if (demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD && valueCol >= 0) {
+				columns.set(valueCol);
+			}
+			if (demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD && ctxCol >= 0) {
 				columns.set(ctxCol);
 			}
 		}
 
 		@Override
 		void requirements(Requirements requirements) {
-			requirements.nodePredicateView(view);
+			if (wildcard) {
+				requirements.wildcardView(view);
+			} else {
+				requirements.nodePredicateView(view);
+			}
 			requirements.operand(key);
+			if (target != null) {
+				requirements.operand(target);
+			}
 			if (ctxMatch != null) {
 				requirements.operand(ctxMatch);
 			}
+		}
+
+		EnumeratePredicates withDemand(LmdbWildcardPhysicalDemand.Demand demand) {
+			return this.demand == demand ? this
+					: new EnumeratePredicates(view, wildcard, bySubject, demand, key, target, predicateCol, valueCol,
+							ctxCol, ctxMatch, ctxExcludeDefault);
+		}
+	}
+
+	/** Predicate-major wildcard producer for a pattern whose subject, predicate and object are all fresh. */
+	static final class EnumerateWildcard extends Node {
+		final int view;
+		final boolean bySubject;
+		final LmdbWildcardPhysicalDemand.Demand demand;
+		final int keyCol;
+		final int predicateCol;
+		final int valueCol;
+		final int ctxCol;
+		final Operand ctxMatch;
+		final boolean ctxExcludeDefault;
+
+		EnumerateWildcard(int view, boolean bySubject, LmdbWildcardPhysicalDemand.Demand demand, int keyCol,
+				int predicateCol, int valueCol, int ctxCol, Operand ctxMatch, boolean ctxExcludeDefault) {
+			this.view = view;
+			this.bySubject = bySubject;
+			this.demand = java.util.Objects.requireNonNull(demand, "demand");
+			this.keyCol = keyCol;
+			this.predicateCol = predicateCol;
+			this.valueCol = valueCol;
+			this.ctxCol = ctxCol;
+			this.ctxMatch = ctxMatch;
+			this.ctxExcludeDefault = ctxExcludeDefault;
+		}
+
+		boolean ctxActive() {
+			return ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("EW(w")
+					.append(view)
+					.append(bySubject ? ",S,d" : ",O,d")
+					.append(demand.ordinal())
+					.append(",k")
+					.append(keyCol)
+					.append(",p")
+					.append(predicateCol)
+					.append(",x")
+					.append(valueCol);
+			if (ctxActive()) {
+				key.append(",g")
+						.append(ctxCol)
+						.append(',')
+						.append(ctxMatch == null ? "_" : ctxMatch.token())
+						.append(ctxExcludeDefault ? ",n" : "");
+			}
+			key.append(");");
+		}
+
+		@Override
+		void produced(BitSet columns) {
+			if (demand != LmdbWildcardPhysicalDemand.Demand.PREDICATE_ANY) {
+				columns.set(keyCol);
+			}
+			if (demand != LmdbWildcardPhysicalDemand.Demand.NODE_ANY) {
+				columns.set(predicateCol);
+			}
+			if (demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+				columns.set(valueCol);
+				if (ctxCol >= 0) {
+					columns.set(ctxCol);
+				}
+			}
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.wildcardView(view);
+			if (ctxMatch != null) {
+				requirements.operand(ctxMatch);
+			}
+		}
+
+		EnumerateWildcard withDemand(LmdbWildcardPhysicalDemand.Demand demand) {
+			return this.demand == demand ? this
+					: new EnumerateWildcard(view, bySubject, demand, keyCol, predicateCol, valueCol, ctxCol, ctxMatch,
+							ctxExcludeDefault);
 		}
 	}
 
@@ -784,6 +1113,7 @@ final class LmdbNativeKernelIr {
 	 */
 	static final class ProbeVariable extends Node {
 		final int view;
+		final boolean bySubject;
 		final Operand key;
 		final Operand predicate;
 		final int valueCol;
@@ -792,12 +1122,18 @@ final class LmdbNativeKernelIr {
 		final boolean ctxExcludeDefault;
 
 		ProbeVariable(int view, Operand key, Operand predicate, int valueCol) {
-			this(view, key, predicate, valueCol, -1, null, false);
+			this(view, true, key, predicate, valueCol, -1, null, false);
 		}
 
 		ProbeVariable(int view, Operand key, Operand predicate, int valueCol, int ctxCol, Operand ctxMatch,
 				boolean ctxExcludeDefault) {
+			this(view, true, key, predicate, valueCol, ctxCol, ctxMatch, ctxExcludeDefault);
+		}
+
+		ProbeVariable(int view, boolean bySubject, Operand key, Operand predicate, int valueCol, int ctxCol,
+				Operand ctxMatch, boolean ctxExcludeDefault) {
 			this.view = view;
+			this.bySubject = bySubject;
 			this.key = key;
 			this.predicate = predicate;
 			this.valueCol = valueCol;
@@ -814,7 +1150,7 @@ final class LmdbNativeKernelIr {
 		void key(StringBuilder key) {
 			key.append("PV(d")
 					.append(view)
-					.append(',')
+					.append(bySubject ? ",S," : ",O,")
 					.append(this.key.token())
 					.append(',')
 					.append(predicate.token())
@@ -855,6 +1191,9 @@ final class LmdbNativeKernelIr {
 	 */
 	static final class ProbeClose extends Node {
 		final int adjacency;
+		final boolean dynamic;
+		final boolean bySubject;
+		final Operand predicate;
 		final Operand key;
 		final Operand target;
 		final boolean multiplicity;
@@ -871,7 +1210,20 @@ final class LmdbNativeKernelIr {
 		}
 
 		ProbeClose(int adjacency, Operand key, Operand target, boolean multiplicity, boolean seek) {
+			this(adjacency, false, true, null, key, target, multiplicity, seek);
+		}
+
+		ProbeClose(int dynamicView, boolean bySubject, Operand predicate, Operand key, Operand target,
+				boolean multiplicity, boolean seek) {
+			this(dynamicView, true, bySubject, predicate, key, target, multiplicity, seek);
+		}
+
+		private ProbeClose(int adjacency, boolean dynamic, boolean bySubject, Operand predicate, Operand key,
+				Operand target, boolean multiplicity, boolean seek) {
 			this.adjacency = adjacency;
+			this.dynamic = dynamic;
+			this.bySubject = bySubject;
+			this.predicate = predicate;
 			this.key = key;
 			this.target = target;
 			this.multiplicity = multiplicity;
@@ -880,10 +1232,13 @@ final class LmdbNativeKernelIr {
 
 		@Override
 		void key(StringBuilder key) {
-			key.append("C(a")
+			key.append(dynamic ? "C(d" : "C(a")
 					.append(adjacency)
-					.append(',')
-					.append(this.key.token())
+					.append(',');
+			if (dynamic) {
+				key.append(bySubject ? "S," : "O,").append(predicate.token()).append(',');
+			}
+			key.append(this.key.token())
 					.append(',')
 					.append(target.token())
 					.append(multiplicity ? ",m" : ",s")
@@ -893,7 +1248,12 @@ final class LmdbNativeKernelIr {
 
 		@Override
 		void requirements(Requirements requirements) {
-			requirements.adjacency(adjacency);
+			if (dynamic) {
+				requirements.dynamicView(adjacency);
+				requirements.operand(predicate);
+			} else {
+				requirements.adjacency(adjacency);
+			}
 			requirements.operand(key);
 			requirements.operand(target);
 		}
@@ -2174,6 +2534,16 @@ final class LmdbNativeKernelIr {
 	}
 
 	/**
+	 * Admits projection-free wildcard-predicate IR to Janino. When false, the same IR remains available through the
+	 * interpreter; this is a code-generation kill switch, not a semantic lowering switch.
+	 */
+	static final String WILDCARD_PREDICATES_PROPERTY = "rdf4j.lmdb.janinoCodegen.wildcardPredicates";
+
+	static boolean wildcardPredicatesEnabled() {
+		return Boolean.parseBoolean(System.getProperty(WILDCARD_PREDICATES_PROPERTY, "false"));
+	}
+
+	/**
 	 * A pipeline can stream when its terminal writes plain rows with no post-pass over the whole result — ordering and
 	 * limits need every row in hand before the first can be served — and when every node either carries no state across
 	 * a pause (straight-line guards and aliases) or carries state the emitter knows how to save and restore (the
@@ -2227,6 +2597,15 @@ final class LmdbNativeKernelIr {
 		return isStatelessRowNode(node)
 				|| node instanceof EnumerateDomain || node instanceof Probe
 				|| node instanceof ScanQuad || node instanceof PlanRows || node instanceof ProbeClose
+				|| node instanceof ProbeVariable
+				|| node instanceof EnumeratePredicates
+						&& ((EnumeratePredicates) node).demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD
+				|| node instanceof EnumerateWildcard
+						&& ((EnumerateWildcard) node).demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD
+				|| node instanceof SipDomainWildcard
+						&& ((SipDomainWildcard) node).demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD
+				|| node instanceof SipKeyWildcard
+						&& ((SipKeyWildcard) node).demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD
 				|| node instanceof EnumerateAdjKeys && ((EnumerateAdjKeys) node).valueCol >= 0;
 	}
 
@@ -2374,6 +2753,20 @@ final class LmdbNativeKernelIr {
 			} else if (root instanceof SipKeyProbe probe) {
 				rootKeyCol = probe.keyCol;
 				rootValueCol = probe.valueCol;
+			} else if (root instanceof EnumeratePredicates enumerate) {
+				// Predicate enumeration is predicate-major: every row for one predicate is contiguous. Do not claim
+				// monotonic payload values here; only the grouping prefix itself is structural.
+				rootKeyCol = enumerate.predicateCol;
+				rootValueCol = -1;
+			} else if (root instanceof EnumerateWildcard enumerate) {
+				rootKeyCol = enumerate.predicateCol;
+				rootValueCol = -1;
+			} else if (root instanceof SipDomainWildcard probe) {
+				rootKeyCol = probe.predicateCol;
+				rootValueCol = -1;
+			} else if (root instanceof SipKeyWildcard probe) {
+				rootKeyCol = probe.predicateCol;
+				rootValueCol = -1;
 			} else {
 				return AggregateProperties.hashed(terminal);
 			}
@@ -2683,7 +3076,8 @@ final class LmdbNativeKernelIr {
 				return reads(probe.key, columns);
 			}
 			if (node instanceof ProbeClose probe) {
-				return reads(probe.key, columns) || reads(probe.target, columns);
+				return reads(probe.key, columns) || reads(probe.target, columns)
+						|| probe.dynamic && reads(probe.predicate, columns);
 			}
 			if (node instanceof Intersect intersect) {
 				for (Operand key : intersect.keys) {
@@ -2768,7 +3162,8 @@ final class LmdbNativeKernelIr {
 				return false;
 			}
 			if (node instanceof EnumerateAdjKeys keys) {
-				return keys.ctxMatch != null && reads(keys.ctxMatch, columns);
+				return keys.wildcard && reads(keys.runtimePredicate, columns)
+						|| keys.ctxMatch != null && reads(keys.ctxMatch, columns);
 			}
 			if (node instanceof EnumerateDomain || node instanceof EnumerateTerms || node instanceof EnumerateEntry) {
 				return false;
@@ -2779,9 +3174,19 @@ final class LmdbNativeKernelIr {
 			if (node instanceof SipKeyProbe probe) {
 				return probe.ctxMatch != null && reads(probe.ctxMatch, columns);
 			}
+			if (node instanceof SipDomainWildcard probe) {
+				return probe.ctxMatch != null && reads(probe.ctxMatch, columns);
+			}
+			if (node instanceof SipKeyWildcard probe) {
+				return probe.ctxMatch != null && reads(probe.ctxMatch, columns);
+			}
 			if (node instanceof EnumeratePredicates predicates) {
 				return reads(predicates.key, columns)
+						|| predicates.target != null && reads(predicates.target, columns)
 						|| (predicates.ctxMatch != null && reads(predicates.ctxMatch, columns));
+			}
+			if (node instanceof EnumerateWildcard wildcard) {
+				return wildcard.ctxMatch != null && reads(wildcard.ctxMatch, columns);
 			}
 			if (node instanceof ProbeVariable probe) {
 				return reads(probe.key, columns) || reads(probe.predicate, columns)
@@ -2908,8 +3313,9 @@ final class LmdbNativeKernelIr {
 			int candidate = -1;
 			for (int i = 0; i < pipeline.size(); i++) {
 				Node node = pipeline.get(i);
-				if (node instanceof Probe || node instanceof LeftProbe
-						|| node instanceof EnumerateAdjKeys && ((EnumerateAdjKeys) node).valueCol >= 0) {
+				if (node instanceof Probe || node instanceof ProbeVariable || node instanceof LeftProbe
+						|| node instanceof EnumerateAdjKeys && !((EnumerateAdjKeys) node).wildcard
+								&& ((EnumerateAdjKeys) node).valueCol >= 0) {
 					candidate = i;
 				}
 			}

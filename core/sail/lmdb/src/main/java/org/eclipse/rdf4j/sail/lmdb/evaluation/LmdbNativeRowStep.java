@@ -676,7 +676,9 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				return null;
 			}
 			try (RowCursor ordered = cursor) {
-				LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
+				String route = LmdbNativeKernelExecution.openedRowRoute(ordered);
+				LmdbNativeExplain.recordExecutionPath(originalExpr,
+						route == null ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL : route);
 				ArrayList<BindingSet> results = new ArrayList<>();
 				while (row.advance(ordered)) {
 					results.add(project(row.slots, values));
@@ -1315,7 +1317,9 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		if (cursor == null) {
 			return null;
 		}
-		LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
+		String route = LmdbNativeKernelExecution.openedRowRoute(cursor);
+		LmdbNativeExplain.recordExecutionPath(originalExpr,
+				route == null ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL : route);
 		return NativeUnorderedInput.rows(row, cursor);
 	}
 
@@ -1327,9 +1331,12 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		if (cursor == null) {
 			return null;
 		}
+		String route = LmdbNativeKernelExecution.openedRowRoute(cursor);
 		LmdbNativeExplain.recordExecutionPath(originalExpr,
-				LmdbNativeJaninoCodegen.enabled() ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT
-						: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED);
+				route == null
+						? LmdbNativeJaninoCodegen.enabled() ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT
+								: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED
+						: route);
 		NativeUnorderedInput input = NativeUnorderedInput.rows(row, cursor);
 		input.dedupMode = NativeUnorderedInput.DedupMode.HANDLED;
 		return input;

@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -78,7 +79,7 @@ class LmdbNativeKernelLoweringTest {
 		String previous = System.getProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY);
 		System.setProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, "true");
 		try {
-			return LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
+			return LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null, true);
 		} finally {
 			if (previous == null) {
 				System.clearProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY);
@@ -225,11 +226,11 @@ class LmdbNativeKernelLoweringTest {
 		assertEquals(1, source.forcedLmdbRequests);
 	}
 
-	/** With the flag off the same pattern still declines, so the default path is unchanged. */
+	/** A repeated-variable shape still needs its exact scan fallback; it declines when scan sources are disabled. */
 	@Test
-	void variablePredicatePatternDeclinesWhileScanSourcesAreOff() {
+	void repeatedVariablePredicatePatternDeclinesWhileScanSourcesAreOff() {
 		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] {
-				quadPattern(Term.slot(0), Term.slot(1), Term.slot(2), Term.unbound(),
+				quadPattern(Term.slot(0), Term.slot(1), Term.slot(1), Term.unbound(),
 						ContextConstraint.UNRESTRICTED) },
 				new MaskedFilter[0]);
 		// Set the flag explicitly rather than leaning on its default: a test that encodes the ambient default starts
@@ -247,14 +248,18 @@ class LmdbNativeKernelLoweringTest {
 		}
 	}
 
-	/** Named-graph scoping still lives in {@code PatternPlan.bind}, so a plain scan must not erase it. */
+	/** A plain scan must not erase named-graph scoping; after its refusal, wildcard IR carries the context column. */
 	@Test
-	void scanLoweringRefusesNamedGraphSemantics() {
+	void scanRefusalFallsThroughToWildcardNamedGraphSemantics() {
 		MultiJoinPlan named = new MultiJoinPlan(new SlotPlan[] {
 				new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.unbound(),
 						ContextConstraint.UNRESTRICTED, true, 10D) },
 				new MaskedFilter[0]);
-		assertNull(lowerWithScans(named), "named-graph scoping must not be lowered to a plain scan");
+		LmdbNativeKernelLowering.Lowered lowered = lowerWithScans(named);
+		assertNotNull(lowered, "wildcard IR should retain named-graph semantics after the scan refuses");
+		assertEquals(0, lowered.kernel.requirements.scans, lowered.kernel.shapeKey());
+		assertEquals(1, lowered.kernel.requirements.wildcardViews, lowered.kernel.shapeKey());
+		assertTrue(lowered.kernel.shapeKey().contains("EW("), lowered.kernel.shapeKey());
 	}
 
 	/** An ordered pattern must retain its index-order promise when it is lowered to a kernel scan. */
@@ -331,7 +336,7 @@ class LmdbNativeKernelLoweringTest {
 				new SlotPlan[] { values, pattern(Term.slot(0), Term.slot(1)) }, new MaskedFilter[0]);
 		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
 		assertNotNull(lowered);
-		assertTrue(lowered.kernel.shapeKey().contains("ED(d0,k0"), lowered.kernel.shapeKey());
+		assertTrue(lowered.kernel.shapeKey().contains("SDP(d0->a"), lowered.kernel.shapeKey());
 		assertArrayEquals(new long[] { 100L, 200L }, lowered.bindings.keyDomains[0].literal);
 	}
 
@@ -1667,6 +1672,203 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	@Test
+	void distinctSinkPreservesWildcardPredicateRequests() {
+		String wildcard = System.getProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY);
+		String projection = System.getProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY);
+		System.setProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY, "false");
+		try {
+			PatternPlan plan = new PatternPlan(Term.constant(PRED2), Term.slot(0), Term.slot(1), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 10D);
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerDistinctRows(plan, freshRow(),
+					null, false, new int[] { 0 });
+			assertNotNull(lowered);
+			assertEquals(1, lowered.bindings.wildcardRequests.length, lowered.kernel.shapeKey());
+			assertTrue(lowered.kernel.shapeKey().contains("EP(w"), lowered.kernel.shapeKey());
+			assertTrue(lowered.kernel.pipeline.stream()
+					.anyMatch(node -> node instanceof LmdbNativeKernelIr.EnumeratePredicates enumerate
+							&& enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PREDICATE_ANY),
+					lowered.kernel.shapeKey());
+		} finally {
+			restoreProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY, wildcard);
+			restoreProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY, projection);
+		}
+	}
+
+	@Test
+	void wildcardShapeKeysAreStructuralAndSeparateDirectionAndDemand() {
+		String wildcard = System.getProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY);
+		String projection = System.getProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY);
+		System.setProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY, "false");
+		try {
+			PatternPlan first = new PatternPlan(Term.constant(PRED2), Term.slot(0), Term.slot(1), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 10D);
+			PatternPlan second = new PatternPlan(Term.constant(PRED3), Term.slot(0), Term.slot(1), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 10D);
+			PatternPlan incoming = new PatternPlan(Term.slot(1), Term.slot(0), Term.constant(PRED2), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 10D);
+			LmdbNativeKernelLowering.Lowered firstLowered = LmdbNativeKernelLowering.lowerRows(first, freshRow(), null);
+			LmdbNativeKernelLowering.Lowered secondLowered = LmdbNativeKernelLowering.lowerRows(second, freshRow(),
+					null);
+			LmdbNativeKernelLowering.Lowered incomingLowered = LmdbNativeKernelLowering.lowerRows(incoming, freshRow(),
+					null);
+			assertNotNull(firstLowered);
+			assertNotNull(secondLowered);
+			assertNotNull(incomingLowered);
+			assertEquals(firstLowered.kernel.shapeKey(), secondLowered.kernel.shapeKey(),
+					"RDF IDs belong in bind constants, never the generated-class cache key");
+			assertArrayEquals(new long[] { PRED2 }, firstLowered.bindings.constants);
+			assertArrayEquals(new long[] { PRED3 }, secondLowered.bindings.constants);
+			assertNotEquals(firstLowered.kernel.shapeKey(), incomingLowered.kernel.shapeKey(),
+					"subject-to-object and object-to-subject wildcard planes must not alias");
+
+			LmdbNativeKernelIr.Kernel payload = new LmdbNativeKernelIr.Kernel(2,
+					java.util.List.of(new LmdbNativeKernelIr.EnumeratePredicates(0, true, true,
+							LmdbWildcardPhysicalDemand.Demand.PAYLOAD, LmdbNativeKernelIr.Operand.constant(0), null,
+							0, 1, -1, null, false)),
+					new LmdbNativeKernelIr.Emit(new int[] { 0 }, false, LmdbNativeKernelIr.OutputMods.none()));
+			LmdbNativeKernelIr.Kernel predicateOnly = new LmdbNativeKernelIr.Kernel(2,
+					java.util.List.of(new LmdbNativeKernelIr.EnumeratePredicates(0, true, true,
+							LmdbWildcardPhysicalDemand.Demand.PREDICATE_ANY,
+							LmdbNativeKernelIr.Operand.constant(0), null, 0, 1, -1, null, false)),
+					new LmdbNativeKernelIr.Emit(new int[] { 0 }, false, LmdbNativeKernelIr.OutputMods.none()));
+			assertNotEquals(payload.shapeKey(), predicateOnly.shapeKey(),
+					"compile-time physical demand must select a distinct generated loop");
+		} finally {
+			restoreProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY, wildcard);
+			restoreProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY, projection);
+		}
+	}
+
+	@Test
+	void wildcardLoweringKeepsAliasDatasetAndOrderingFallbacksExact() {
+		String wildcard = System.getProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY);
+		String projection = System.getProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY);
+		System.setProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY, "false");
+		try {
+			PatternPlan alias = new PatternPlan(Term.constant(PRED2), Term.slot(0), Term.slot(0), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 10D);
+			LmdbNativeKernelLowering.Lowered aliasFallback = lowerWithScans(alias);
+			assertNotNull(aliasFallback);
+			assertEquals(0, aliasFallback.bindings.wildcardRequests.length,
+					"a repeated predicate/object variable must not bind a wildcard plane");
+			assertEquals(1, aliasFallback.kernel.requirements.scans);
+
+			PatternPlan fixedDataset = new PatternPlan(Term.constant(PRED2), Term.slot(0), Term.slot(1),
+					Term.unbound(), new ContextConstraint(new long[] { 17L, 19L }), false, 10D);
+			assertNull(lowerWithScans(fixedDataset),
+					"fixed dataset membership lives outside both wildcard planes and plain generated scans");
+
+			PatternPlan ordered = new PatternPlan(Term.constant(PRED2), Term.slot(0), Term.slot(1), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, StatementOrder.S, "", 10D);
+			LmdbNativeKernelLowering.Lowered orderedFallback = lowerWithScans(ordered);
+			assertNotNull(orderedFallback);
+			assertEquals(0, orderedFallback.bindings.wildcardRequests.length,
+					"a statement-order promise must use the order-preserving scanner");
+			assertEquals(1, orderedFallback.kernel.requirements.scans);
+			assertArrayEquals(new StatementOrder[] { StatementOrder.S }, orderedFallback.bindings.scanOrders);
+		} finally {
+			restoreProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY, wildcard);
+			restoreProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY, projection);
+		}
+	}
+
+	@Test
+	void distinctSinkUsesPairPresenceForAllUnboundWildcard() {
+		String wildcard = System.getProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY);
+		String projection = System.getProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY);
+		System.setProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY, "false");
+		try {
+			PatternPlan plan = new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 10D);
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerDistinctRows(plan, freshRow(),
+					null, false, new int[] { 0, 1 });
+			assertNotNull(lowered);
+			assertTrue(lowered.kernel.pipeline.stream()
+					.anyMatch(node -> node instanceof LmdbNativeKernelIr.EnumerateWildcard enumerate
+							&& enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PAIR_PRESENCE),
+					lowered.kernel.shapeKey());
+		} finally {
+			restoreProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY, wildcard);
+			restoreProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY, projection);
+		}
+	}
+
+	@Test
+	void countOnlyAggregateUsesWildcardPairMultiplicity() {
+		String wildcard = System.getProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY);
+		String projection = System.getProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY);
+		System.setProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY, "false");
+		try {
+			PatternPlan plan = new PatternPlan(Term.constant(PRED2), Term.slot(0), Term.slot(1), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 10D);
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(plan, freshRow(),
+					new int[0], new AggregateSpec[] { AggregateSpec.slot("count", 0, false, AggKind.COUNT) }, null);
+			assertNotNull(lowered);
+			assertTrue(lowered.kernel.pipeline.stream()
+					.anyMatch(node -> node instanceof LmdbNativeKernelIr.EnumeratePredicates enumerate
+							&& enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PAIR_MULTIPLICITY),
+					lowered.kernel.shapeKey());
+		} finally {
+			restoreProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY, wildcard);
+			restoreProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY, projection);
+		}
+	}
+
+	@Test
+	void domainDrivenWildcardEnumerationFusesPredicateMajor() {
+		String wildcard = System.getProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY);
+		String projection = System.getProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY);
+		System.setProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY, "false");
+		try {
+			StubSource source = new StubSource();
+			PatternPlan fallback = new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 10D);
+			MultiValuePatternPlan plan = new MultiValuePatternPlan(source, 0, new long[] { PRED2, PRED3 },
+					new PatternPlan[0], fallback);
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(plan, freshRow(source),
+					new int[0], new AggregateSpec[] { AggregateSpec.slot("count", 1, false, AggKind.COUNT) }, null);
+			assertNotNull(lowered);
+			assertTrue(lowered.kernel.shapeKey().contains("SDW("), lowered.kernel.shapeKey());
+		} finally {
+			restoreProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY, wildcard);
+			restoreProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY, projection);
+		}
+	}
+
+	@Test
+	void distinctSinkPreservesDynamicCloseMode() {
+		String wildcard = System.getProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY);
+		String projection = System.getProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY);
+		System.setProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY, "false");
+		try {
+			PatternPlan bindPredicate = new PatternPlan(Term.constant(PRED2), Term.slot(0), Term.constant(PRED3),
+					Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+			PatternPlan close = new PatternPlan(Term.constant(PRED3), Term.slot(0), Term.constant(PRED2),
+					Term.unbound(), ContextConstraint.UNRESTRICTED, false, 100D);
+			MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { bindPredicate, close }, new MaskedFilter[0]);
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerDistinctRows(plan, freshRow(),
+					null, false, new int[] { 0 });
+			assertNotNull(lowered);
+			assertEquals(1, lowered.bindings.wildcardRequests.length, lowered.kernel.shapeKey());
+			assertEquals(1, lowered.bindings.dynamicRequests.length, lowered.kernel.shapeKey());
+			assertTrue(lowered.kernel.pipeline.stream()
+					.anyMatch(node -> node instanceof LmdbNativeKernelIr.ProbeClose probe
+							&& probe.dynamic && !probe.multiplicity),
+					lowered.kernel.shapeKey());
+		} finally {
+			restoreProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY, wildcard);
+			restoreProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY, projection);
+		}
+	}
+
+	@Test
 	void pipelineTouchesColumnSeparatesReadsWritesAndPrivateColumns() {
 		java.util.List<LmdbNativeKernelIr.Node> pipeline = java.util.List.of(
 				new LmdbNativeKernelIr.EnumerateAdjKeys(0, 0, 1),
@@ -1683,6 +1885,13 @@ class LmdbNativeKernelLoweringTest {
 				new LmdbNativeKernelIr.EnumerateAdjKeys(1, 1, 3));
 		assertTrue(LmdbNativeKernelIr.Kernel.pipelineTouchesColumn(rewritten, 0, 1),
 				"a column another node produces is a join coordinate, not a private value");
+		java.util.List<LmdbNativeKernelIr.Node> wildcardSip = java.util.List.of(
+				new LmdbNativeKernelIr.SipDomainWildcard(0, 0, true,
+						LmdbWildcardPhysicalDemand.Demand.PAYLOAD, 0, 1, 2, -1, null, false),
+				new LmdbNativeKernelIr.SipKeyWildcard(0, 1, true,
+						LmdbWildcardPhysicalDemand.Demand.PAYLOAD, 3, 4, 5, -1, null, false));
+		assertFalse(LmdbNativeKernelIr.Kernel.pipelineTouchesColumn(wildcardSip, 0, 2),
+				"an unrelated wildcard SIP node must not conservatively read every column");
 	}
 
 	/** Minimal synthetic source: ids never resolve, no statements — the lowering must not need any of it. */

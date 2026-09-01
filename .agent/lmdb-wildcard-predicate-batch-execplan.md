@@ -54,9 +54,20 @@ rows must remain zero for a pure `DISTINCT ?p` query.
   tiles; same-snapshot worker groups for `NODE_ANY`, `PREDICATE_ANY`, `PAIR_PRESENCE`, unrestricted and constrained
   `PAIR_MULTIPLICITY`, and `PAYLOAD`; coordinator barriers; worker-first then tile-width memory reduction; and
   worker-owned bounded primitive payload pages that never transfer view-local run handles.
-- [ ] Add semantic corpus, telemetry, benchmark shapes, and route assertions.
-- [ ] Run focused, module, profile, and paired benchmark verification.
-- [ ] Audit final diff and record measured outcomes.
+- [x] (2026-09-01 09:05Z) Capture a failing all-unbound helper-route test in `initial-evidence.txt` before production
+  edits; the serial predicate-major answers were correct but the helper counter remained zero.
+- [x] (2026-09-01 09:58Z) Add explicit row ownership, nested-source suppression, retryable all-unbound admission,
+  range-mode helper reservation, dynamically claimed over-partitioned predicate chunks, and round-scoped cleanup.
+- [x] (2026-09-01 10:06Z) Route all-unbound predicate domain, node/predicate presence, multiplicity aggregation, and
+  payload through predicate-range rounds; the identical focused selector now passes all four parity/activation checks.
+- [x] (2026-09-01 11:38Z) Verify prefix-bound presence, unrestricted and constrained multiplicity, payload, and local
+  wildcard EXISTS activation; local unbound predicate terms now enter the all-predicate existence schedule.
+- [ ] Add semantic corpus, telemetry, benchmark shapes, and route assertions (completed: stable decline labels,
+  query-local executed metrics, process counters, and four all-unbound route assertions; remaining: deterministic
+  contention fixture and JMH class).
+- [ ] Run focused, module, profile, and paired benchmark verification (completed: two focused route selectors and
+  formatting; intentionally deferred in the expedited pass: module suite and paired JMH/JFR).
+- [x] (2026-09-01 11:41Z) Audit the final diff, preserve unrelated tracked/untracked work, and record measured outcomes.
 
 ## Surprises & Discoveries
 
@@ -198,7 +209,45 @@ rows must remain zero for a pure `DISTINCT ?p` query.
   Evidence: `LmdbDirectWildcardAdjacency.attachToProbe(...)` and both native-probe implementations close every owned
   wildcard view at probe shutdown.
 
+- Observation: root-level all-unbound DISTINCT and GROUP queries were claimed by cheaper ordinary native rows,
+  prefix-run, or adjacency-aggregate proposals before wildcard batch admission could run. A round-scoped producer must
+  own this subtree before the general cost arbiter when the existing parallel work threshold is met.
+  Evidence: the red test explained `NativeDistinct`/`NativeGroup` plans with zero wildcard helpers; after explicit
+  ownership, the same four queries increment helper telemetry and retain generic/native parity.
+
+- Observation: predicate-major cursors had previously only been entered beneath a row producer, so their mutable
+  `RowState` happened to be restored by an enclosing adapter. Making them root producers exposed that a short output
+  page left the final emitted binding in the shared row and constrained the next page.
+  Evidence: the first ownership implementation returned only the initial page; snapshotting and restoring entry slots
+  at every fill and close restored complete parity.
+
+- Observation: a singleton reduced wildcard aggregate was offered as a `PatternPlan`, while the weighted wildcard
+  opener accepted only `MultiJoinPlan`. The candidate therefore returned null and the prefix aggregate won even after
+  all-unbound row routing was repaired.
+  Evidence: the final red assertion was grouped multiplicity only; normalizing the singleton to a one-child
+  `MultiJoinPlan` made the identical selector green.
+
 ## Decision Log
+
+- Decision: an all-unbound wildcard whose estimate meets the existing parallel threshold owns its row or aggregate
+  subtree before the ordinary strategy arbiter; if pre-work helper admission declines, that wildcard cursor executes
+  its exact serial primitive path.
+  Rationale: task contention must not hand the subtree back to a nested outer engine, and fallback before output must
+  remain deterministic and retryable at a later cursor round.
+  Date/Author: 2026-09-01 / Codex.
+
+- Decision: tag `RowState` with query, outer-pipeline, or wildcard-helper ownership and reject outer/nested attempts
+  before task or memory reservation. Keep `ParallelSnapshotSource.openParallelSources` unsupported.
+  Rationale: explicit ownership prevents grandchildren, pool starvation, and misleading task-budget failures without
+  changing the public source API.
+  Date/Author: 2026-09-01 / Codex.
+
+- Decision: all-unbound rounds use one coordinator participant plus range-mode helper permits, with more stable
+  predicate chunks than participants claimed through an atomic sequence. Results are handle-free plane states and are
+  consumed only after the round barrier and cleanup.
+  Rationale: one helper is useful, permits are released between rounds, skew can migrate among participants, and no
+  view-local run handle crosses source ownership.
+  Date/Author: 2026-09-01 / Codex.
 
 - Decision: implement one scalar batched primitive merge kernel first; do not use `jdk.incubator.vector` or introduce
   Vector API feature selection in this plan.
@@ -315,6 +364,15 @@ baseline root `Pquick` clean install passed in 36.360 seconds, including the Lmd
 performance or throughput claim has been made. Update this section at every
 milestone with the failing-before/passing-after evidence, supported demands, fallback boundaries, and measured serial
 and parallel results.
+
+The scheduler repair milestone now has failing-before/passing-after evidence for all-unbound predicate enumeration,
+pair presence, weighted multiplicity, and payload. The implementation adds query-local activation/decline metrics,
+stable decline labels, explicit outer ownership, retryable budget/memory refusal, dynamic over-partitioned predicate
+chunks, and closes sibling sources and reservations at each completed round. The focused selector passes one test with
+zero failures in 0.677 seconds. A second focused selector passes prefix-bound presence, unrestricted and constrained
+multiplicity, payload, and wildcard EXISTS parity/activation with zero failures in 0.780 seconds. Formatting and
+whitespace audit pass. The deterministic contention scheduler fixture, whole LMDB module gate, and JMH/JFR
+measurements remain unrun in this expedited pass, so no throughput claim is recorded for those items.
 
 ## Context and Orientation
 
@@ -573,3 +631,7 @@ defect without attributing a correctness failure to the current fallback.
 Revision note (2026-08-31 / Codex): generalized downstream demand after the grouped OPTIONAL/COUNT example. Live
 payload no longer automatically means expanded rows: exact multiplicity may flow as a factor weight through compatible
 operators and directly into aggregation.
+
+Revision note (2026-09-01 / Codex): revised milestone four from cursor-lifetime worker ownership to explicit
+round-scoped scheduling. Recorded the all-unbound red/green evidence, optimizer ownership discoveries, stable decline
+telemetry, range-mode retry semantics, current validation boundary, and remaining deterministic/benchmark work.

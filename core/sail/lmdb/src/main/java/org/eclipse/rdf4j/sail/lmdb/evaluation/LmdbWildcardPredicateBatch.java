@@ -24,6 +24,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbWildcardPhysicalDemand.Demand;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbWildcardPhysicalDemand.DuplicatePolicy;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbWildcardPhysicalDemand.Scope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -74,67 +77,6 @@ final class LmdbWildcardPredicateBatch {
 	static final String DECLINE_TOO_FEW_RANGES = "too-few-ranges";
 	private static final Logger log = LoggerFactory.getLogger(LmdbWildcardPredicateBatch.class);
 
-	enum Demand {
-		NODE_ANY,
-		PREDICATE_ANY,
-		PAIR_PRESENCE,
-		PAIR_MULTIPLICITY,
-		PAYLOAD
-	}
-
-	enum DuplicatePolicy {
-		ANY,
-		DISTINCT,
-		WEIGHTED,
-		EXPANDED
-	}
-
-	enum Scope {
-		GLOBAL,
-		PER_INPUT
-	}
-
-	/**
-	 * Consumer-to-storage contract. Query syntax is deliberately absent: a consumer says which primitive slots remain
-	 * observable, how duplicates are represented, whether a result can be retired globally, and which order it needs.
-	 * The wildcard stage then selects the cheapest storage demand whose omissions are unobservable.
-	 */
-	private static final class PhysicalDemand {
-		final long liveMask;
-		final DuplicatePolicy duplicatePolicy;
-		final Scope scope;
-		final int[] orderSlots;
-
-		private PhysicalDemand(long liveMask, DuplicatePolicy duplicatePolicy, Scope scope, int[] orderSlots) {
-			this.liveMask = liveMask;
-			this.duplicatePolicy = duplicatePolicy;
-			this.scope = scope;
-			this.orderSlots = orderSlots;
-		}
-
-		static PhysicalDemand projection(boolean distinct, int[] sourceSlots, int[] orderSlots) {
-			return new PhysicalDemand(Shape.mask(sourceSlots),
-					distinct ? DuplicatePolicy.DISTINCT : DuplicatePolicy.EXPANDED,
-					distinct ? Scope.GLOBAL : Scope.PER_INPUT, orderSlots);
-		}
-
-		static PhysicalDemand weighted(long liveMask) {
-			return new PhysicalDemand(liveMask, DuplicatePolicy.WEIGHTED, Scope.PER_INPUT, new int[0]);
-		}
-
-		static PhysicalDemand expanded(long liveMask) {
-			return new PhysicalDemand(liveMask, DuplicatePolicy.EXPANDED, Scope.PER_INPUT, new int[0]);
-		}
-
-		static PhysicalDemand membership(long compatibilityMask) {
-			return new PhysicalDemand(compatibilityMask, DuplicatePolicy.ANY, Scope.PER_INPUT, new int[0]);
-		}
-
-		boolean ordered() {
-			return orderSlots.length != 0;
-		}
-	}
-
 	private LmdbWildcardPredicateBatch() {
 	}
 
@@ -144,16 +86,34 @@ final class LmdbWildcardPredicateBatch {
 
 	static LmdbNativeStrategyProposal<BatchCursor> propose(MultiJoinPlan join, RowState row,
 			int capacity, boolean distinct, int[] sourceSlots, int[] orderSlots) {
-		Shape shape = Shape.match(join, row, PhysicalDemand.projection(distinct, sourceSlots, orderSlots));
+		Shape shape = Shape.match(join, row,
+				LmdbWildcardPhysicalDemand.projection(distinct, sourceSlots, orderSlots));
 		if (shape == null) {
 			return null;
 		}
-		LmdbNativeWork work = join.estimateWork(row, row.boundMask());
+		LmdbNativeWork work = estimatePhysicalWork(shape, row);
 		double rows = LmdbNativeWork.rowsOut(shape.prefix, row, row.boundMask());
 		String strategy = shape.demand == Demand.PAYLOAD ? STRATEGY : REDUCED_STRATEGY;
 		return new LmdbNativeStrategyProposal<>(() -> shape.open(row, capacity), work,
 				LmdbNativeWork.ZERO, rows, strategy, () -> {
 				});
+	}
+
+	private static LmdbNativeWork estimatePhysicalWork(Shape shape, RowState row) {
+		long boundMask = row.boundMask();
+		double rows = LmdbNativeWork.rowsOut(shape.prefix, row, boundMask);
+		LmdbNativeWork prefixWork = shape.prefix.estimateWork(row, boundMask);
+		// A variable-predicate PatternPlan has no predicate fan-out statistic and therefore falls back to the
+		// 64 * 4,096 * 256 structural pseudo-domain when one endpoint becomes bound. That describes an index scan,
+		// not the wildcard executor: its predicate planes cover at most the pattern's captured total cardinality for
+		// one prefix row. Price the physical plane sweep from that total instead of letting the unrelated pseudo-domain
+		// remove this valid proposal at the arbiter's cold-static gate.
+		LmdbNativeWork wildcardWork = Double.isFinite(shape.wildcard.staticEstimate)
+				? LmdbNativeWork.exact(LmdbNativeWork.SEEK + Math.max(0D, shape.wildcard.staticEstimate))
+				: shape.wildcard.estimateWork(row, boundMask | shape.prefix.producedMask());
+		return !Double.isNaN(rows) && prefixWork.known()
+				? prefixWork.plus(wildcardWork.times(rows))
+				: LmdbNativeWork.UNKNOWN;
 	}
 
 	static boolean handlesDistinct(BatchCursor cursor) {
@@ -179,7 +139,7 @@ final class LmdbWildcardPredicateBatch {
 		if (!enabled() || !NativeBatch.enabled()) {
 			return null;
 		}
-		Shape shape = Shape.match(join, row, PhysicalDemand.expanded(join.producedMask()));
+		Shape shape = Shape.match(join, row, LmdbWildcardPhysicalDemand.expanded(join.producedMask()));
 		return shape == null ? null : shape.open(row, capacity);
 	}
 
@@ -189,7 +149,7 @@ final class LmdbWildcardPredicateBatch {
 		if (!enabled() || !NativeBatch.enabled()) {
 			return null;
 		}
-		Shape shape = Shape.match(join, row, PhysicalDemand.projection(true, slots, new int[0]));
+		Shape shape = Shape.match(join, row, LmdbWildcardPhysicalDemand.projection(true, slots, new int[0]));
 		return shape == null ? null : shape.open(row, capacity);
 	}
 
@@ -363,7 +323,7 @@ final class LmdbWildcardPredicateBatch {
 		if (!(plan instanceof MultiJoinPlan join)) {
 			return null;
 		}
-		Shape shape = Shape.match(join, row, PhysicalDemand.projection(true, slots, new int[0]));
+		Shape shape = Shape.match(join, row, LmdbWildcardPhysicalDemand.projection(true, slots, new int[0]));
 		if (shape == null || shape.demand == Demand.PAYLOAD || shape.demand == Demand.PAIR_MULTIPLICITY) {
 			return null;
 		}
@@ -375,6 +335,28 @@ final class LmdbWildcardPredicateBatch {
 		return enabled() && NativeBatch.enabled() && supportsWeights(aggregates) && containsWildcard(plan);
 	}
 
+	/** Work in the wildcard executor's physical order, or unknown when wrappers make that order data-dependent. */
+	static LmdbNativeWork estimateWeightedAggregateWork(SlotPlan plan, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates) {
+		long liveMask = 0L;
+		for (int slot : groupSlots) {
+			liveMask |= 1L << slot;
+		}
+		for (AggregateSpec aggregate : aggregates) {
+			if (aggregate.slot >= 0) {
+				liveMask |= 1L << aggregate.slot;
+			}
+		}
+		SlotPlan weightedPlan = plan instanceof PatternPlan
+				? new MultiJoinPlan(new SlotPlan[] { plan }, new MaskedFilter[0])
+				: plan;
+		if (!(weightedPlan instanceof MultiJoinPlan join)) {
+			return LmdbNativeWork.UNKNOWN;
+		}
+		Shape shape = Shape.match(join, row, LmdbWildcardPhysicalDemand.weighted(liveMask));
+		return shape == null ? LmdbNativeWork.UNKNOWN : estimatePhysicalWork(shape, row);
+	}
+
 	/** Whether this row subtree should be owned by its round-scoped wildcard producer. */
 	static boolean ownsParallelRound(MultiJoinPlan join, RowState row, boolean distinct, int[] sourceSlots,
 			int[] orderSlots) {
@@ -382,7 +364,8 @@ final class LmdbWildcardPredicateBatch {
 				|| LmdbNativeParallelPipelines.configuredThreads() < 1) {
 			return false;
 		}
-		Shape shape = Shape.match(join, row, PhysicalDemand.projection(distinct, sourceSlots, orderSlots));
+		Shape shape = Shape.match(join, row,
+				LmdbWildcardPhysicalDemand.projection(distinct, sourceSlots, orderSlots));
 		return shape != null
 				&& shape.wildcard.estimate(row) >= LmdbNativeParallelPipelines.minimumWorkEstimate();
 	}
@@ -411,7 +394,7 @@ final class LmdbWildcardPredicateBatch {
 				liveMask |= 1L << aggregate.slot;
 			}
 		}
-		Shape shape = Shape.match(join, row, PhysicalDemand.weighted(liveMask));
+		Shape shape = Shape.match(join, row, LmdbWildcardPhysicalDemand.weighted(liveMask));
 		return shape != null
 				&& shape.wildcard.estimate(row) >= LmdbNativeParallelPipelines.minimumWorkEstimate();
 	}
@@ -429,7 +412,7 @@ final class LmdbWildcardPredicateBatch {
 		return filterPlan.arg.estimate(row) >= LmdbNativeParallelPipelines.minimumWorkEstimate();
 	}
 
-	private static boolean containsWildcard(SlotPlan plan) {
+	static boolean containsWildcard(SlotPlan plan) {
 		if (plan instanceof PatternPlan pattern) {
 			return pattern.p.hasSlot() && !pattern.p.isConstant();
 		}
@@ -600,7 +583,7 @@ final class LmdbWildcardPredicateBatch {
 		if (!(plan instanceof MultiJoinPlan join)) {
 			return null;
 		}
-		Shape shape = Shape.match(join, row, PhysicalDemand.weighted(liveMask));
+		Shape shape = Shape.match(join, row, LmdbWildcardPhysicalDemand.weighted(liveMask));
 		if (shape == null) {
 			return null;
 		}
@@ -774,7 +757,7 @@ final class LmdbWildcardPredicateBatch {
 		private final ContextConstraint contexts;
 		private final boolean namedContextScope;
 		private final RowState row;
-		private final PhysicalDemand physicalDemand;
+		private final LmdbWildcardPhysicalDemand physicalDemand;
 		private final long[] roots;
 		private final long[] uniqueRoots;
 		private final int[] inputRows;
@@ -804,7 +787,7 @@ final class LmdbWildcardPredicateBatch {
 			this.contexts = contexts;
 			this.namedContextScope = namedContextScope;
 			this.row = row;
-			this.physicalDemand = PhysicalDemand.membership(-1L);
+			this.physicalDemand = LmdbWildcardPhysicalDemand.membership(-1L);
 			this.roots = new long[capacity];
 			this.uniqueRoots = new long[capacity];
 			this.inputRows = new int[capacity];
@@ -1353,7 +1336,7 @@ final class LmdbWildcardPredicateBatch {
 			this.demand = demand;
 		}
 
-		static Shape match(MultiJoinPlan join, RowState row, PhysicalDemand physicalDemand) {
+		static Shape match(MultiJoinPlan join, RowState row, LmdbWildcardPhysicalDemand physicalDemand) {
 			if (!enabled() || physicalDemand.ordered() || join.children.length == 0) {
 				return null;
 			}
@@ -1512,7 +1495,8 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private static Demand selectDemand(MultiJoinPlan join, SlotPlan prefix, PatternPlan wildcard, RowState row,
-				PhysicalDemand physicalDemand, int predicateSlot, int nodeSlot, boolean bySubject, boolean scanAll) {
+				LmdbWildcardPhysicalDemand physicalDemand, int predicateSlot, int nodeSlot, boolean bySubject,
+				boolean scanAll) {
 			if (physicalDemand.duplicatePolicy == DuplicatePolicy.EXPANDED) {
 				return Demand.PAYLOAD;
 			}
@@ -6653,7 +6637,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 		if (wildcardPrefix != null) {
 			Shape nested = Shape.match(wildcardPrefix, row,
-					PhysicalDemand.expanded(wildcardPrefix.producedMask()));
+					LmdbWildcardPhysicalDemand.expanded(wildcardPrefix.producedMask()));
 			if (nested != null) {
 				BatchCursor vectorized = nested.open(row, capacity);
 				if (vectorized != null) {

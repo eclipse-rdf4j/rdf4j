@@ -120,6 +120,50 @@ final class LmdbNativeKernelExecution {
 		}
 	}
 
+	static boolean wildcardIrCandidate(SlotPlan plan) {
+		return !LmdbNativeKernelIr.nodePredicatesEnabled()
+				&& LmdbWildcardPredicateBatch.containsWildcard(plan);
+	}
+
+	/** Whether a structurally wildcard plan may enter Janino rather than the equivalent IR interpreter. */
+	static boolean janinoAdmitted(SlotPlan plan) {
+		return LmdbNativeJaninoCodegen.enabled()
+				&& (!wildcardIrCandidate(plan) || LmdbNativeKernelIr.wildcardPredicatesEnabled());
+	}
+
+	private static String aggregateRoute(boolean interpreted, boolean wildcard) {
+		if (wildcard) {
+			return interpreted ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED
+					: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD;
+		}
+		return interpreted ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED
+				: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE;
+	}
+
+	private static String rowRoute(boolean interpreted, boolean distinct, boolean wildcard) {
+		if (distinct) {
+			return interpreted ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED
+					: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT;
+		}
+		if (wildcard) {
+			return interpreted ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED
+					: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD;
+		}
+		return interpreted ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED
+				: LmdbNativeAttemptMetrics.PATH_IR_KERNEL;
+	}
+
+	/** Exact route carried by an opened row cursor, including fused-runtime wrappers. */
+	static String openedRowRoute(RowCursor cursor) {
+		if (cursor instanceof FusedRuntimeRowCursor fused) {
+			return openedRowRoute(fused.delegate);
+		}
+		if (cursor instanceof KernelRowCursor kernel) {
+			return kernel.route;
+		}
+		return null;
+	}
+
 	/**
 	 * Worker-kernel factory for the parallel rungs. The serving tier follows the SEQUENTIAL execution that was just
 	 * admitted — not the codegen switch: while the warm-up tier serves a pending or failed compile, the workers
@@ -150,16 +194,6 @@ final class LmdbNativeKernelExecution {
 			ValueExpr havingCondition, boolean preferScans) {
 		// With janino codegen disabled, the interpreted tier (M1 of the kernel-interpreter plan) executes the same
 		// lowered IR through LmdbNativeKernelInterpreter. Only when BOTH tiers are off does the route decline.
-		final boolean interpretedTier = !LmdbNativeJaninoCodegen.enabled();
-		if (interpretedTier && !LmdbNativeKernelInterpreter.enabled()) {
-			if (row.runtimePlan != null) {
-				row.runtimePlan.janinoDeclined("FEATURE_DISABLED[" + LmdbNativeJaninoCodegen.ENABLED_PROPERTY
-						+ "=false,route=irAggregate]");
-			}
-			LmdbNativeAttemptMetrics.recordDecline(explainTarget, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
-					"disabled");
-			return null;
-		}
 		NativeLmdbQuerySource.NativeProbe probe = null;
 		LmdbNativeKernelScanner scanner = null;
 		JaninoKernel kernel = null;
@@ -180,6 +214,18 @@ final class LmdbNativeKernelExecution {
 			final LmdbNativeKernelLowering.Lowered lowered = semantic.withTelemetry(row.runtimePlan == null
 					? LmdbNativeKernelIr.Kernel.TelemetryMode.NONE
 					: LmdbNativeKernelIr.Kernel.TelemetryMode.FULL);
+			final boolean wildcardKernel = lowered.kernel.requirements.wildcardViews > 0;
+			final boolean interpretedTier = !LmdbNativeJaninoCodegen.enabled()
+					|| wildcardKernel && !LmdbNativeKernelIr.wildcardPredicatesEnabled();
+			if (interpretedTier && !LmdbNativeKernelInterpreter.enabled()) {
+				if (row.runtimePlan != null) {
+					row.runtimePlan.janinoDeclined("FEATURE_DISABLED[route="
+							+ aggregateRoute(true, wildcardKernel) + "]");
+				}
+				LmdbNativeAttemptMetrics.recordDecline(explainTarget, aggregateRoute(true, wildcardKernel),
+						"disabled");
+				return null;
+			}
 			AGG_PLANNED.incrementAndGet();
 			String shapeKey = lowered.kernel.shapeKey();
 			if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
@@ -222,8 +268,7 @@ final class LmdbNativeKernelExecution {
 					return null;
 				}
 			}
-			final String route = interpretedExecution ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED
-					: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE;
+			final String route = aggregateRoute(interpretedExecution, lowered.kernel.requirements.wildcardViews > 0);
 			// The path tag equals the route for this rung; declines/activations below report under the tier that
 			// actually executed, keeping each tier's cost evidence separate (kernel-interpreter plan, D1/M3).
 			final String pathTag = route;
@@ -389,8 +434,13 @@ final class LmdbNativeKernelExecution {
 		// Exactly ONE of the two IR-kernel tags is proposed (kernel-interpreter plan, D1/M4): the compiled tag when
 		// janino codegen is enabled, the interpreted tag when only the interpreter tier is available. The opener is
 		// the same either way; tryOpenRows picks the execution tier internally.
-		String tag = LmdbNativeJaninoCodegen.enabled() ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL
-				: LmdbNativeKernelInterpreter.enabled() ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED
+		boolean wildcard = wildcardIrCandidate(arg);
+		String tag = janinoAdmitted(arg)
+				? (wildcard ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD
+						: LmdbNativeAttemptMetrics.PATH_IR_KERNEL)
+				: LmdbNativeKernelInterpreter.enabled()
+						? (wildcard ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED
+								: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED)
 						: null;
 		if (tag == null) {
 			if (row.runtimePlan != null) {
@@ -439,12 +489,13 @@ final class LmdbNativeKernelExecution {
 			// would double-count in the decline census.
 			return null;
 		}
-		if (!LmdbNativeJaninoCodegen.enabled() && !LmdbNativeKernelInterpreter.enabled()) {
+		boolean compiledTier = janinoAdmitted(arg);
+		if (!compiledTier && !LmdbNativeKernelInterpreter.enabled()) {
 			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
 					"disabled");
 			return null;
 		}
-		String tag = LmdbNativeJaninoCodegen.enabled() ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT
+		String tag = compiledTier ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT
 				: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED;
 		long boundMask = row.boundMask();
 		LmdbNativeWork work = estimateDistinctWork(arg, row, boundMask, distinctSlots);
@@ -662,19 +713,6 @@ final class LmdbNativeKernelExecution {
 			int[] distinctSlots, OrderedMods ordered, java.util.Set<Long> scanPredicates) throws IOException {
 		// With janino codegen disabled, the interpreted tier (M4) executes the same lowered IR through
 		// LmdbNativeKernelInterpreter.forRows. Only when BOTH tiers are off does the route decline.
-		final boolean interpretedTier = !LmdbNativeJaninoCodegen.enabled();
-		if (interpretedTier && !LmdbNativeKernelInterpreter.enabled()) {
-			if (ordered != null) {
-				return null;
-			}
-			if (row.runtimePlan != null) {
-				row.runtimePlan.janinoDeclined("FEATURE_DISABLED[" + LmdbNativeJaninoCodegen.ENABLED_PROPERTY
-						+ "=false]");
-			}
-			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL, "disabled");
-			return null;
-		}
-
 		NativeLmdbQuerySource.NativeProbe probe = null;
 		JaninoKernel kernel = null;
 		LmdbNativeKernelScanner scanner = null;
@@ -705,6 +743,20 @@ final class LmdbNativeKernelExecution {
 			final LmdbNativeKernelLowering.Lowered lowered = semantic.withTelemetry(row.runtimePlan == null
 					? LmdbNativeKernelIr.Kernel.TelemetryMode.NONE
 					: LmdbNativeKernelIr.Kernel.TelemetryMode.FULL);
+			final boolean wildcardKernel = lowered.kernel.requirements.wildcardViews > 0;
+			final boolean interpretedTier = !LmdbNativeJaninoCodegen.enabled()
+					|| wildcardKernel && !LmdbNativeKernelIr.wildcardPredicatesEnabled();
+			if (interpretedTier && !LmdbNativeKernelInterpreter.enabled()) {
+				if (ordered != null) {
+					return null;
+				}
+				String disabledRoute = rowRoute(true, distinctSlots != null, wildcardKernel);
+				if (row.runtimePlan != null) {
+					row.runtimePlan.janinoDeclined("FEATURE_DISABLED[route=" + disabledRoute + "]");
+				}
+				LmdbNativeAttemptMetrics.recordDecline(originalExpr, disabledRoute, "disabled");
+				return null;
+			}
 			PLANNED.incrementAndGet();
 			if (!lowered.kernel.resumable) {
 				// A row kernel that cannot pause must materialize its complete input before the first row escapes. Keep
@@ -772,11 +824,8 @@ final class LmdbNativeKernelExecution {
 			}
 			// The distinct sink carries its own tag pair so explain output, bind-time declines and calibration
 			// evidence never merge into the plain kernel's models (they price full-emission plans).
-			final String route = distinctSlots != null
-					? (interpretedExecution ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED
-							: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT)
-					: (interpretedExecution ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED
-							: LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
+			final String route = rowRoute(interpretedExecution, distinctSlots != null,
+					lowered.kernel.requirements.wildcardViews > 0);
 			final String pathTag = route;
 			final long observedRowsForVariants = observedRows;
 			final boolean interpretedVariants = interpretedExecution;

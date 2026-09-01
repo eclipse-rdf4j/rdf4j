@@ -58,6 +58,10 @@ public final class LmdbNativeAttemptMetrics {
 	static final String PATH_JANINO_AGGREGATE = "janinoAggregate";
 	static final String PATH_IR_KERNEL = "irKernel";
 	static final String PATH_IR_AGGREGATE = "irAggregate";
+	static final String PATH_IR_KERNEL_WILDCARD = "irKernelWildcard";
+	static final String PATH_IR_KERNEL_WILDCARD_INTERPRETED = "irKernelWildcardInterpreted";
+	static final String PATH_IR_AGGREGATE_WILDCARD = "irAggregateWildcard";
+	static final String PATH_IR_AGGREGATE_WILDCARD_INTERPRETED = "irAggregateWildcardInterpreted";
 	/**
 	 * The interpreted execution tier of the IR aggregate kernel (kernel-interpreter plan, D1): the same lowered IR
 	 * served by {@code LmdbNativeKernelInterpreter} when janino codegen is off. A distinct bare path name, because
@@ -90,7 +94,7 @@ public final class LmdbNativeAttemptMetrics {
 	 * Whole-stage codegen strategies; declines against these are logged at INFO to explain why Janino was not picked.
 	 */
 	private static final Set<String> JANINO_STRATEGIES = Set.of(PATH_JANINO_AGGREGATE,
-			PATH_IR_KERNEL, PATH_IR_AGGREGATE);
+			PATH_IR_KERNEL, PATH_IR_AGGREGATE, PATH_IR_KERNEL_WILDCARD, PATH_IR_AGGREGATE_WILDCARD);
 	static final String PATH_ORDERED_FACTORIZED_TOP_K = "orderedFactorizedTopK";
 	static final String PATH_ORDERED_FACTORIZED_SORT = "orderedFactorizedSort";
 	static final String PATH_PREFIX_RUN_GROUPS = "prefixRunGroups";
@@ -134,7 +138,9 @@ public final class LmdbNativeAttemptMetrics {
 			PATH_PRIMITIVE_TUPLE_GROUPS, PATH_HASH_GROUPS, PATH_EXISTS_INTERSECTION, PATH_RUN_COUNT_HISTOGRAM,
 			PATH_DATATYPE_HISTOGRAM, PATH_PREDICATE_PLANE_GROUPS, PATH_TYPE_MATRIX, PATH_JANINO_AGGREGATE,
 			PATH_IR_KERNEL,
-			PATH_IR_AGGREGATE, PATH_IR_AGGREGATE_INTERPRETED, PATH_IR_KERNEL_INTERPRETED, PATH_IR_KERNEL_PARALLEL,
+			PATH_IR_AGGREGATE, PATH_IR_AGGREGATE_INTERPRETED, PATH_IR_KERNEL_INTERPRETED,
+			PATH_IR_KERNEL_WILDCARD, PATH_IR_KERNEL_WILDCARD_INTERPRETED, PATH_IR_AGGREGATE_WILDCARD,
+			PATH_IR_AGGREGATE_WILDCARD_INTERPRETED, PATH_IR_KERNEL_PARALLEL,
 			PATH_IR_AGGREGATE_PARALLEL, PATH_IR_KERNEL_DISTINCT, PATH_IR_KERNEL_DISTINCT_INTERPRETED,
 			PATH_WCOJ,
 			PATH_CONSTANT_FALSE_FILTER);
