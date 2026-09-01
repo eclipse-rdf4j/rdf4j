@@ -242,8 +242,12 @@ public class LmdbNativeStrategyArbiterTest {
 				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP)).isTrue();
 		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
 				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP)).isTrue();
-		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
-				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)).isTrue();
+		// The aggregate tier now leads with its PARALLEL rung, reversing gap-analysis C11. C11 placed the parallel
+		// rung below its serial sibling on the shape of the code rather than on a measurement; the parallel arm is
+		// the one measured fastest on the reporting store, and it was losing dispatches to rivals it beat. The row
+		// tier is deliberately NOT changed with it — no row-side measurement motivated a reversal there.
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE)).isTrue();
 		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
 				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL)).isTrue();
 		// The interpreted tier of the aggregate kernel ranks directly below its compiled sibling and above the

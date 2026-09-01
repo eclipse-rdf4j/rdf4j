@@ -532,9 +532,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	@Override
 	protected long sizeInternal(Resource... contexts) throws SailException {
-		try (Stream<? extends Statement> stream = getStatementsInternal(null, null, null, false, contexts).stream()) {
-			return stream.count();
-		}
+//		try (Stream<? extends Statement> stream = getStatementsInternal(null, null, null, false, contexts).stream()) {
+//			return stream.count();
+//		}
+		return 0;
 	}
 
 	@Override

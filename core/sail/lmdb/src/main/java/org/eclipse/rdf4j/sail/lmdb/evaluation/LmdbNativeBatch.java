@@ -30,7 +30,7 @@ final class NativeBatch {
 
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.nativeBatch.enabled";
 	static final String ROWS_PROPERTY = "rdf4j.lmdb.nativeBatch.rows";
-	static final int DEFAULT_ROWS = 1024 * 32;
+	static final int DEFAULT_ROWS = 1024 * 16;
 	static final int MAX_ROWS = 1 << 16;
 
 	static final AtomicLong ROOT_ITERATIONS = new AtomicLong();

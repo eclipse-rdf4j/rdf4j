@@ -115,6 +115,11 @@ final class LmdbNativeAdaptiveArbitration {
 					.append(p.exactCompletedCount())
 					.append(",expMs=")
 					.append(String.format("%.2f", p.expectedNanos() / 1e6))
+					// The demonstrated floor, when there is one: without it the trace cannot distinguish "priced low
+					// because it ran fast once" from "priced low by a posterior that happens to sit there".
+					.append(p.bestObservedNanos() > 0L
+							? ",bestMs=" + String.format("%.2f", p.bestObservedNanos() / 1e6)
+							: "")
 					.append(p.quarantined() ? ",QUARANTINED" : "");
 		}
 		System.err.println(out);

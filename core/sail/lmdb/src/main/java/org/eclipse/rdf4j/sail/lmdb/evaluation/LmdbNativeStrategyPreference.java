@@ -35,6 +35,18 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * candidate rows; moving it ahead of code generation made an enabled Janino arm unreachable. Cost may still overrule
  * this order, but only by strict domination — that is, only when it is certain.
  * <p>
+ * <b>Packed f-trees rank below the engine's own kernel tiers.</b> They used to rank above them, on both the aggregate
+ * and the row side, and it produced the same failure this file was written to stop. A query that the Janino-compiled
+ * parallel aggregate kernel answered in roughly half the time settled permanently on {@code packedFtreeAggregate}: at a
+ * 2x gap the smoothed prices of the day could not clear the displacement margin, so nothing ever overruled position,
+ * and position said packed f-tree. Two changes together fix it. The rungs moved — note that the packed f-tree entries
+ * were pushed <em>down</em> below the kernel tiers rather than the kernel tiers being pulled up, because pulling them
+ * up would also lift them over the factorized and batch rungs, which is itself a documented past regression. And
+ * pricing changed underneath: {@link LmdbNativeBestObservedLedger} quotes each arm at the fastest time it has
+ * demonstrated for the query shape rather than at an average of its runs, so a measured 2x win now separates and this
+ * order decides progressively less as evidence accumulates. Both were needed — the ladder alone only relocates which
+ * strategy wins by position.
+ * <p>
  * <b>One qualification, from measurement.</b> Calibration (2026-07-26) showed the kernels are not <em>purely</em>
  * constant-factor reducers. The ceiling on operator fusion alone is 1.48x on an isolated cyclic shape, yet whole-query
  * kernel wins reach 5.71x; the gap means that on some shapes the kernel also does less work, through access paths the
@@ -66,61 +78,54 @@ final class LmdbNativeStrategyPreference {
 	// nanos/rows evidence (nativeBareDirect*Actual) keeps the route auditable; revisit with memoized first-call
 	// arbitration if that evidence shows losses.
 	private static final String[] ORDER = {
-			// Structural short-circuits: these answer the query from an index intersection outright.
-			LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION,
-			// The narrow legacy aggregate compiler was a direct rung before every speculative aggregate strategy.
-			LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE,
-			// Row-count reducers: one index position per distinct value.
-			LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
-			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
-			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
-			// Predicate-plane batch merge, including witness-only and weighted aggregate row-count reducers.
-			LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED,
-			// Worst-case-optimal join: bounded below any pairwise plan on cyclic shapes.
-			LmdbNativeAttemptMetrics.PATH_WCOJ,
-			// Packed arbitrary f-trees remove sibling Cartesian products while retaining vectorized execution.
-			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
-			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
-			// Whole-stage aggregate fusion followed the prefix-run and WCOJ guards in the previous ladder. The
-			// parallel rung sits directly below its serial sibling (gap-analysis C11): the day it becomes a
-			// proposal it must not rank below nestedLoop merely for being absent from this ladder.
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
-			// The interpreted tier of the same IR kernel sits directly below its compiled sibling (compiled preferred
-			// when both are somehow present); like the C11 note above, the day it becomes a proposal it must not rank
-			// below nestedLoop merely for being absent from this ladder.
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE,
+			LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION,
+			LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE,
+			LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
+			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
+			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
+			LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED,
+			LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_BATCH,
+			LmdbNativeAttemptMetrics.PATH_WCOJ,
+			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
+			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
 			LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS,
 			LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT,
 			LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS,
-			// Factorization: sums branches where a nested loop would multiply them.
 			LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K,
 			LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_SORT,
 			LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL,
 			LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS,
-			// Set-at-a-time execution over the same row count.
-			LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_BATCH,
 			LmdbNativeAttemptMetrics.PATH_BATCH,
 			LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION,
 			LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES,
 			LmdbNativeAttemptMetrics.PATH_CHUNK_PIPELINE,
-			// The DISTINCT-sinking kernel is a same-family specialization of the row kernel (it prunes emission and
-			// demotes multiplicity probes but still enumerates the driving rows), so it heads the kernel family:
-			// deliberately BELOW the row-count reducers above (factorized/batch), which a positionally captured
-			// distinct kernel used to preempt — cost must strictly dominate for it to displace them.
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
-			// Row-side constant-factor reducer: same rows, cheaper per row (parallel rung directly below, C11).
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
-			// The interpreted tier of the row kernel sits directly below its compiled sibling, same as the
-			// aggregate pair above (kernel-interpreter plan, D1/M4).
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
-			// Last resorts.
+			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
 			LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT,
 			LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,
 	};

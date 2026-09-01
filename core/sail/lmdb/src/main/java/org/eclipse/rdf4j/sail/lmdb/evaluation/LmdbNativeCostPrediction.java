@@ -25,7 +25,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 record LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double high95Nanos, double low99Nanos,
 		double high99Nanos, double latentLow99Nanos, double latentHigh99Nanos, PriceBasis priceBasis,
 		boolean learnedDominanceAllowed, boolean quarantined, double nEff, long exactCompletedCount,
-		EvidenceSource evidenceSource, Components components, String reason) {
+		long bestObservedNanos, EvidenceSource evidenceSource, Components components, String reason) {
 
 	enum PriceBasis {
 		/** Feature model plus learned residual posterior: fully comparable. */
@@ -64,7 +64,7 @@ record LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double 
 				|| low99Nanos > low95Nanos || low95Nanos > expectedNanos || expectedNanos > high95Nanos
 				|| high95Nanos > high99Nanos || latentLow99Nanos > expectedNanos
 				|| expectedNanos > latentHigh99Nanos || !Double.isFinite(nEff) || nEff < 0.0
-				|| exactCompletedCount < 0L) {
+				|| exactCompletedCount < 0L || bestObservedNanos < 0L) {
 			throw new IllegalArgumentException("invalid prediction interval");
 		}
 		if ((priceBasis == PriceBasis.ORDINAL_ONLY) != (components == null)) {
@@ -75,7 +75,7 @@ record LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double 
 
 	static LmdbNativeCostPrediction ordinalOnly(String reason) {
 		return new LmdbNativeCostPrediction(0.0, 0.0, Double.MAX_VALUE, 0.0, Double.MAX_VALUE, 0.0, Double.MAX_VALUE,
-				PriceBasis.ORDINAL_ONLY, false, false, 0.0, 0L, EvidenceSource.STRUCTURAL_ONLY, null, reason);
+				PriceBasis.ORDINAL_ONLY, false, false, 0.0, 0L, 0L, EvidenceSource.STRUCTURAL_ONLY, null, reason);
 	}
 
 	/** Transitional alias retained until the arbitration cutover (M6) rewrites its callers. */
@@ -100,12 +100,25 @@ record LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double 
 	 * family shape: exact nodes only; same regime and lane: plus both family nodes; otherwise nothing cancels and every
 	 * component (conservatively) enters. Either side lacking a numerical basis refuses displacement — that arm-locality
 	 * is what lets one unpriceable candidate coexist with a fully numerical frontier.
+	 * <p>
+	 * When <em>both</em> arms carry a demonstrated best time ({@link LmdbNativeBestObservedLedger}) the confidence
+	 * machinery is skipped and the two measured times are compared directly against the margin. This is not an
+	 * optimization, it is the point: the confidence test exists to decide whether an <em>estimate</em> of a mean is
+	 * trustworthy, and a time the strategy has actually achieved is not an estimate. Keeping the test would defeat the
+	 * ledger — even with both arms' variances pinned at their floors (0.02 exact, 0.01 family) the pairwise sigma is
+	 * 0.245, so {@code Z99 * sigma + logGamma} demands a 2.08x gap, and the regression this whole mechanism was built
+	 * for is a 2x gap. Two arms that have each proved a time need no confidence interval between them; they need a
+	 * comparison.
 	 */
 	static boolean displaces(LmdbNativeCostPrediction challenger, LmdbNativeCostPrediction incumbent,
 			double logGamma) {
 		if (challenger.priceBasis == PriceBasis.ORDINAL_ONLY || incumbent.priceBasis == PriceBasis.ORDINAL_ONLY
 				|| !challenger.learnedDominanceAllowed || challenger.quarantined) {
 			return false;
+		}
+		if (challenger.bestObservedNanos > 0L && incumbent.bestObservedNanos > 0L) {
+			return Math.log((double) challenger.bestObservedNanos)
+					- Math.log((double) incumbent.bestObservedNanos) < -logGamma;
 		}
 		return pairwiseDeltaMean(challenger, incumbent)
 				+ Z99 * Math.sqrt(pairwiseDeltaVariance(challenger, incumbent)) < -logGamma;

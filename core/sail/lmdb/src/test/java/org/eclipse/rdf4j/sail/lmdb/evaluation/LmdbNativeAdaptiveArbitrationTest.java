@@ -477,7 +477,7 @@ class LmdbNativeAdaptiveArbitrationTest {
 				sigma * sigma, 0.0);
 		return new LmdbNativeCostPrediction(low95, expected, high95, low99, high99, Math.min(low99, expected),
 				Math.max(high99, expected), LmdbNativeCostPrediction.PriceBasis.DIRECT_POSTERIOR, true, false,
-				nEff, completedCount, source, components, "test");
+				nEff, completedCount, 0L, source, components, "test");
 	}
 
 	private static LmdbNativeAdaptiveArbitration.Priced<String> pricedWithEvidence(String family, int preference,

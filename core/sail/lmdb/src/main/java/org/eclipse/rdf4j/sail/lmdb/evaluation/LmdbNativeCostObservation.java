@@ -261,6 +261,16 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 			trainingResult = model.recordCompleted(consumedEstimate, actual, elapsed, weight, regimeAtDispatch);
 			if (role != Role.PROBE) {
 				model.earnSafetyCredit(elapsed);
+				if (result == Completion.EXHAUSTED) {
+					// The only kind of run that measures what this strategy costs for this query: the whole answer,
+					// drained at full speed into the real consumer. EXPECTED_EARLY_CLOSE covers a LIMIT-truncated
+					// fraction and a PROBE stops at its private row buffer under a deadline, so neither elapsed is
+					// comparable — and because the ledger only ever moves downward, a floor set from one of those
+					// would mis-price the arm permanently. A HEDGE_BACKUP that got here did produce the user's rows,
+					// so it qualifies exactly as a normal dispatch does. Ordered after recordCompleted so the
+					// severe-miss check inside it still sees the pre-run price.
+					model.noteBestObserved(consumedEstimate, elapsed, regimeAtDispatch);
+				}
 			}
 		} else if (result == Completion.BUDGET_CENSORED) {
 			trainedFeatures = actual;
