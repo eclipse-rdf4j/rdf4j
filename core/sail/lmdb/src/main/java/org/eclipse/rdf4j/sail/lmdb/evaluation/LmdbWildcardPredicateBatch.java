@@ -20,6 +20,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -55,6 +56,22 @@ final class LmdbWildcardPredicateBatch {
 	static final AtomicLong ADAPTIVE_INCOMING_DIRECTIONS = new AtomicLong();
 	static final AtomicLong WORKERS = new AtomicLong();
 	static final AtomicLong MEMORY_REFUSALS = new AtomicLong();
+	static final AtomicLong PARALLEL_ROUNDS = new AtomicLong();
+	static final AtomicLong PARALLEL_MULTIPLICITY_ROUNDS = new AtomicLong();
+	static final AtomicLong PARALLEL_PAYLOAD_ROUNDS = new AtomicLong();
+	static final AtomicLong HELPER_TASKS = new AtomicLong();
+	static final AtomicLong COORDINATOR_CHUNKS = new AtomicLong();
+	static final AtomicLong HELPER_CHUNKS = new AtomicLong();
+	static final AtomicLong PARALLEL_RETRIES = new AtomicLong();
+	static final AtomicReference<String> LAST_PARALLEL_DECLINE = new AtomicReference<>();
+	static final String DECLINE_SCAN_ALL_UNIMPLEMENTED = "scan-all-parallel-unimplemented";
+	static final String DECLINE_BELOW_WORK = "below-work-threshold";
+	static final String DECLINE_TASK_BUDGET = "task-budget";
+	static final String DECLINE_OUTER_ACTIVE = "outer-parallel-active";
+	static final String DECLINE_NESTED_SOURCE = "nested-parallel-source";
+	static final String DECLINE_SNAPSHOT_UNAVAILABLE = "snapshot-source-unavailable";
+	static final String DECLINE_MEMORY_REFUSED = "memory-refused";
+	static final String DECLINE_TOO_FEW_RANGES = "too-few-ranges";
 	private static final Logger log = LoggerFactory.getLogger(LmdbWildcardPredicateBatch.class);
 
 	enum Demand {
@@ -144,6 +161,17 @@ final class LmdbWildcardPredicateBatch {
 			cursor = filter.arg;
 		}
 		return cursor instanceof PredicateAnyCursor || cursor instanceof PredicateDomainCursor;
+	}
+
+	static boolean isWildcardBatch(BatchCursor cursor) {
+		while (cursor instanceof FilterBatchCursor filter) {
+			cursor = filter.arg;
+		}
+		return cursor instanceof PredicateDomainCursor || cursor instanceof PredicateMajorPresenceCursor
+				|| cursor instanceof PredicateMajorMultiplicityCursor || cursor instanceof PredicateMajorPayloadCursor
+				|| cursor instanceof PredicateAnyCursor || cursor instanceof NodeAnyCursor
+				|| cursor instanceof PairPresenceCursor || cursor instanceof PairMultiplicityCursor
+				|| cursor instanceof PayloadCursor;
 	}
 
 	/** General bag-preserving wildcard candidate for an arbitrary multi-join consumer. */
@@ -297,7 +325,10 @@ final class LmdbWildcardPredicateBatch {
 				liveMask |= 1L << aggregate.slot;
 			}
 		}
-		return openWeighted(plan, row, liveMask, capacity);
+		SlotPlan weightedPlan = plan instanceof PatternPlan
+				? new MultiJoinPlan(new SlotPlan[] { plan }, new MaskedFilter[0])
+				: plan;
+		return openWeighted(weightedPlan, row, liveMask, capacity);
 	}
 
 	private static int distinctAggregateValueSlot(AggregateSpec[] aggregates) {
@@ -342,6 +373,60 @@ final class LmdbWildcardPredicateBatch {
 
 	static boolean weightedAggregateCandidate(SlotPlan plan, AggregateSpec[] aggregates) {
 		return enabled() && NativeBatch.enabled() && supportsWeights(aggregates) && containsWildcard(plan);
+	}
+
+	/** Whether this row subtree should be owned by its round-scoped wildcard producer. */
+	static boolean ownsParallelRound(MultiJoinPlan join, RowState row, boolean distinct, int[] sourceSlots,
+			int[] orderSlots) {
+		if (join == null || !LmdbNativeParallelPipelines.enabled()
+				|| LmdbNativeParallelPipelines.configuredThreads() < 1) {
+			return false;
+		}
+		Shape shape = Shape.match(join, row, PhysicalDemand.projection(distinct, sourceSlots, orderSlots));
+		return shape != null
+				&& shape.wildcard.estimate(row) >= LmdbNativeParallelPipelines.minimumWorkEstimate();
+	}
+
+	/** Whether this aggregate subtree should be owned by its round-scoped wildcard producer. */
+	static boolean ownsWeightedParallelRound(SlotPlan plan, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates) {
+		if (!LmdbNativeParallelPipelines.enabled() || LmdbNativeParallelPipelines.configuredThreads() < 1
+				|| !supportsWeights(aggregates) || distinctAggregateValueSlot(aggregates) >= 0) {
+			return false;
+		}
+		MultiJoinPlan join = plan instanceof MultiJoinPlan candidate
+				? candidate
+				: plan instanceof PatternPlan pattern
+						? new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0])
+						: null;
+		if (join == null) {
+			return false;
+		}
+		long liveMask = 0L;
+		for (int slot : groupSlots) {
+			liveMask |= 1L << slot;
+		}
+		for (AggregateSpec aggregate : aggregates) {
+			if (aggregate.slot >= 0) {
+				liveMask |= 1L << aggregate.slot;
+			}
+		}
+		Shape shape = Shape.match(join, row, PhysicalDemand.weighted(liveMask));
+		return shape != null
+				&& shape.wildcard.estimate(row) >= LmdbNativeParallelPipelines.minimumWorkEstimate();
+	}
+
+	/** Whether a batch-capable EXISTS/NOT EXISTS filter contains an eligible variable-predicate round. */
+	static boolean ownsExistenceParallelRound(SlotPlan plan, RowState row) {
+		if (!(plan instanceof FilterPlan filterPlan) || !LmdbNativeParallelPipelines.enabled()
+				|| LmdbNativeParallelPipelines.configuredThreads() < 1) {
+			return false;
+		}
+		NativeBooleanFilter filter = filterPlan.filter;
+		if (!filter.variablePredicateExists()) {
+			return false;
+		}
+		return filterPlan.arg.estimate(row) >= LmdbNativeParallelPipelines.minimumWorkEstimate();
 	}
 
 	private static boolean containsWildcard(SlotPlan plan) {
@@ -624,6 +709,7 @@ final class LmdbWildcardPredicateBatch {
 					row.recomputeBoundMask();
 					return true;
 				}
+				restoreEntryRow();
 				if (cursor.fill(batch) == 0) {
 					return false;
 				}
@@ -646,11 +732,15 @@ final class LmdbWildcardPredicateBatch {
 				try {
 					cursor.close();
 				} finally {
-					System.arraycopy(entrySlots, 0, row.slots, 0, entrySlots.length);
-					row.recomputeBoundMask();
+					restoreEntryRow();
 					memory.release(claimedBytes);
 				}
 			}
+		}
+
+		private void restoreEntryRow() {
+			System.arraycopy(entrySlots, 0, row.slots, 0, entrySlots.length);
+			row.recomputeBoundMask();
 		}
 	}
 
@@ -701,7 +791,6 @@ final class LmdbWildcardPredicateBatch {
 		private boolean directionBound;
 		private byte globalVerdict;
 		private ParallelPredicateTiles parallel;
-		private boolean parallelAdmissionChecked;
 		private boolean disabled;
 		private boolean closed;
 
@@ -730,7 +819,7 @@ final class LmdbWildcardPredicateBatch {
 
 		static ExistenceBatch tryCreate(Term s, Term p, Term o, Term c, ContextConstraint contexts,
 				boolean namedContextScope, RowState row, int capacity) {
-			if (!enabled() || !NativeBatch.enabled() || !p.hasSlot() || p.isConstant()) {
+			if (!enabled() || !NativeBatch.enabled() || p.isConstant()) {
 				return null;
 			}
 			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
@@ -869,14 +958,17 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private void admitParallel(int nodeCount) {
-			if (parallel != null || parallelAdmissionChecked) {
-				return;
+			if (parallel != null) {
+				if (!parallel.closed) {
+					return;
+				}
+				parallel = null;
+				PARALLEL_RETRIES.incrementAndGet();
 			}
 			double estimatedWork = (double) nodeCount * adjacency.predicateCount();
 			if (!(estimatedWork >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
 				return;
 			}
-			parallelAdmissionChecked = true;
 			try {
 				parallel = ParallelPredicateTiles.tryOpenStorageNodeAny(bySubject, row, roots.length,
 						adjacency.predicateCount(), nodeCount);
@@ -950,7 +1042,6 @@ final class LmdbWildcardPredicateBatch {
 						parallel.close();
 						parallel = null;
 					}
-					parallelAdmissionChecked = false;
 					if (adjacency != null) {
 						adjacency.close();
 					}
@@ -1522,12 +1613,607 @@ final class LmdbWildcardPredicateBatch {
 		}
 	}
 
+	private enum WildcardParallelAdmission {
+		STRUCTURAL_REJECTION,
+		RETRYABLE_REJECTION,
+		ACTIVE_ROUND,
+		ELIGIBLE,
+		CLOSED
+	}
+
+	/**
+	 * Round-scoped predicate-range admission shared by every all-unbound cursor. The query thread claims chunks from
+	 * the same over-partitioned queue as the helpers, and all sibling sources, futures, scratch and task permits end at
+	 * the round barrier. The byte-per-predicate result is deliberately handle-free: it is safe to retain after the
+	 * worker-owned adjacency views have closed and lets the serial primitive cursor skip empty or rejected planes.
+	 */
+	private static final class PredicateMajorParallelScan implements AutoCloseable {
+		private static final byte UNKNOWN_PLANE = 0;
+		private static final byte EMPTY_PLANE = 1;
+		private static final byte QUALIFYING_PLANE = 2;
+		private static final byte REJECTED_PLANE = 3;
+		private static final byte REJECTED_ROW = 0;
+		private static final byte ACCEPTED_ROW = 1;
+
+		private enum DataOperation {
+			MULTIPLICITY,
+			PAYLOAD
+		}
+
+		private static final class DataRound {
+			final DataOperation operation;
+			final int predicateOrdinal;
+			final long[] roots;
+			final int itemCount;
+			final long root;
+			final long runOffset;
+			final long[] multiplicities;
+			final long[] neighbors;
+			final long[] contexts;
+			final byte[] accepted;
+			final int chunkCount;
+			final AtomicInteger nextChunk = new AtomicInteger();
+
+			private DataRound(DataOperation operation, int predicateOrdinal, long[] roots, int itemCount,
+					long root, long runOffset, long[] multiplicities, long[] neighbors, long[] contexts,
+					byte[] accepted, int chunkCount) {
+				this.operation = operation;
+				this.predicateOrdinal = predicateOrdinal;
+				this.roots = roots;
+				this.itemCount = itemCount;
+				this.root = root;
+				this.runOffset = runOffset;
+				this.multiplicities = multiplicities;
+				this.neighbors = neighbors;
+				this.contexts = contexts;
+				this.accepted = accepted;
+				this.chunkCount = chunkCount;
+			}
+		}
+
+		private final Shape shape;
+		private final RowState row;
+		private final LmdbFusedSipFactorizedRuntime.Session memory;
+		private final int predicateCount;
+		private byte[] planeStates;
+		private long claimedBytes;
+		private WildcardParallelAdmission admission = WildcardParallelAdmission.ELIGIBLE;
+		private boolean retryPending;
+		private boolean prepared;
+
+		private PredicateMajorParallelScan(Shape shape, RowState row, int predicateCount) {
+			this.shape = shape;
+			this.row = row;
+			this.memory = LmdbFusedSipFactorizedRuntime.current();
+			this.predicateCount = predicateCount;
+		}
+
+		void runRound(NativeLmdbQuerySource.WildcardAdjacency coordinatorAdjacency) throws IOException {
+			if (prepared || admission == WildcardParallelAdmission.CLOSED
+					|| admission == WildcardParallelAdmission.STRUCTURAL_REJECTION) {
+				return;
+			}
+			if (retryPending) {
+				PARALLEL_RETRIES.incrementAndGet();
+				retryPending = false;
+			}
+			if (!LmdbNativeParallelPipelines.enabled()) {
+				decline(DECLINE_BELOW_WORK, true);
+				return;
+			}
+			if (row.parallelOwnership == RowState.ParallelOwnership.OUTER_PIPELINE) {
+				decline(DECLINE_OUTER_ACTIVE, true);
+				return;
+			}
+			if (row.source instanceof NativeLmdbQuerySource.ParallelSource) {
+				decline(DECLINE_NESTED_SOURCE, true);
+				return;
+			}
+			int configuredHelpers = LmdbNativeParallelPipelines.configuredThreads();
+			if (configuredHelpers < 1 || predicateCount < 2) {
+				decline(DECLINE_TOO_FEW_RANGES, true);
+				return;
+			}
+			if (!((double) predicateCount >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
+				decline(DECLINE_BELOW_WORK, true);
+				return;
+			}
+			if (planeStates == null) {
+				long bytes = arrayBytes(predicateCount, Byte.BYTES);
+				if (!memory.claim(bytes)) {
+					MEMORY_REFUSALS.incrementAndGet();
+					decline(DECLINE_MEMORY_REFUSED, false);
+					return;
+				}
+				claimedBytes = bytes;
+				planeStates = new byte[predicateCount];
+			}
+			Arrays.fill(planeStates, UNKNOWN_PLANE);
+			int participants = Math.min(predicateCount, configuredHelpers + 1);
+			int chunkCount = Math.min(predicateCount,
+					Math.max(2, participants * LmdbNativeParallelPipelines.rangePartitionFactor()));
+			int desiredHelpers = Math.min(configuredHelpers, chunkCount - 1);
+			LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines
+					.tryReserveTasks(false, desiredHelpers);
+			if (reservation == null) {
+				decline(DECLINE_TASK_BUDGET, false);
+				return;
+			}
+			int helpers = reservation.grantedWorkers();
+			NativeLmdbQuerySource.ParallelSource[] sources = null;
+			Future<?>[] futures = new Future<?>[helpers];
+			AtomicInteger nextChunk = new AtomicInteger();
+			AtomicReference<Throwable> failure = new AtomicReference<>();
+			LmdbFusedSipFactorizedRuntime.Session parentSession = LmdbFusedSipFactorizedRuntime.currentOrNull();
+			admission = WildcardParallelAdmission.ACTIVE_ROUND;
+			try {
+				sources = row.source.openParallelSources(helpers);
+				if (!validParallelSources(sources, helpers)) {
+					decline(DECLINE_SNAPSHOT_UNAVAILABLE, true);
+					return;
+				}
+				for (int helper = 0; helper < helpers; helper++) {
+					NativeLmdbQuerySource.ParallelSource source = sources[helper];
+					futures[helper] = LmdbNativeParallelPipelines.pool().submit(() -> {
+						try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
+								.inherit(parentSession)) {
+							processHelper(source, nextChunk, chunkCount);
+						} catch (Throwable problem) {
+							failure.compareAndSet(null, problem);
+						}
+					});
+				}
+				processChunks(coordinatorAdjacency, row, nextChunk, chunkCount, false);
+				await(futures, failure);
+				Throwable problem = failure.get();
+				if (problem != null) {
+					throwFailure(problem);
+				}
+				if (row.cancellation.isCancellationRequested()) {
+					Arrays.fill(planeStates, UNKNOWN_PLANE);
+					return;
+				}
+				PARALLEL_ROUNDS.incrementAndGet();
+				HELPER_TASKS.addAndGet(helpers);
+				WORKERS.addAndGet(helpers);
+				prepared = true;
+				LAST_PARALLEL_DECLINE.set(null);
+				LmdbNativeExplain.addRuntimeMetric(row.telemetryTarget, "wildcardParallelRoundsActual", 1L);
+				LmdbNativeExplain.addRuntimeMetric(row.telemetryTarget, "wildcardParallelHelperTasksActual", helpers);
+			} finally {
+				Throwable cleanup = closeSources(sources, null);
+				reservation.close();
+				admission = admission == WildcardParallelAdmission.STRUCTURAL_REJECTION
+						? admission
+						: WildcardParallelAdmission.ELIGIBLE;
+				throwUnchecked(cleanup);
+			}
+		}
+
+		boolean runMultiplicityRound(int predicateOrdinal, long[] roots, int rootCount, long[] multiplicities)
+				throws IOException {
+			Arrays.fill(multiplicities, 0, rootCount, 0L);
+			return runDataRound(DataOperation.MULTIPLICITY, predicateOrdinal, roots, rootCount, 0L, 0L,
+					multiplicities, null, null, null);
+		}
+
+		boolean runPayloadRound(int predicateOrdinal, long root, long runOffset, int length, long[] neighbors,
+				long[] contexts, byte[] accepted) throws IOException {
+			Arrays.fill(accepted, 0, length, REJECTED_ROW);
+			return runDataRound(DataOperation.PAYLOAD, predicateOrdinal, null, length, root, runOffset, null,
+					neighbors, contexts, accepted);
+		}
+
+		private boolean runDataRound(DataOperation operation, int predicateOrdinal, long[] roots, int itemCount,
+				long root, long runOffset, long[] multiplicities, long[] neighbors, long[] contexts, byte[] accepted)
+				throws IOException {
+			if (admission == WildcardParallelAdmission.CLOSED
+					|| admission == WildcardParallelAdmission.STRUCTURAL_REJECTION) {
+				return false;
+			}
+			if (retryPending) {
+				PARALLEL_RETRIES.incrementAndGet();
+				retryPending = false;
+			}
+			if (row.parallelOwnership == RowState.ParallelOwnership.OUTER_PIPELINE) {
+				decline(DECLINE_OUTER_ACTIVE, true);
+				return false;
+			}
+			if (row.source instanceof NativeLmdbQuerySource.ParallelSource) {
+				decline(DECLINE_NESTED_SOURCE, true);
+				return false;
+			}
+			int configuredHelpers = LmdbNativeParallelPipelines.configuredThreads();
+			if (!LmdbNativeParallelPipelines.enabled() || configuredHelpers < 1 || itemCount < 2) {
+				recordRoundDecline(DECLINE_TOO_FEW_RANGES, false);
+				return false;
+			}
+			if (!(shape.wildcard.estimate(row) >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
+				recordRoundDecline(DECLINE_BELOW_WORK, false);
+				return false;
+			}
+			int participants = Math.min(itemCount, configuredHelpers + 1);
+			int chunkCount = Math.min(itemCount,
+					Math.max(2, participants * LmdbNativeParallelPipelines.rangePartitionFactor()));
+			int desiredHelpers = Math.min(configuredHelpers, chunkCount - 1);
+			LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines
+					.tryReserveTasks(false, desiredHelpers);
+			if (reservation == null) {
+				recordRoundDecline(DECLINE_TASK_BUDGET, true);
+				return false;
+			}
+			int helpers = reservation.grantedWorkers();
+			long roundScratch = arrayBytes((helpers + 1) * 2, Long.BYTES);
+			if (!memory.claim(roundScratch)) {
+				reservation.close();
+				MEMORY_REFUSALS.incrementAndGet();
+				recordRoundDecline(DECLINE_MEMORY_REFUSED, true);
+				return false;
+			}
+			DataRound round = new DataRound(operation, predicateOrdinal, roots, itemCount, root, runOffset,
+					multiplicities, neighbors, contexts, accepted, chunkCount);
+			NativeLmdbQuerySource.ParallelSource[] sources = null;
+			NativeLmdbQuerySource.NativeProbe coordinatorProbe = null;
+			NativeLmdbQuerySource.WildcardAdjacency coordinatorAdjacency = null;
+			Future<?>[] futures = new Future<?>[helpers];
+			AtomicReference<Throwable> failure = new AtomicReference<>();
+			LmdbFusedSipFactorizedRuntime.Session parentSession = LmdbFusedSipFactorizedRuntime.currentOrNull();
+			admission = WildcardParallelAdmission.ACTIVE_ROUND;
+			try {
+				sources = row.source.openParallelSources(helpers);
+				if (!validParallelSources(sources, helpers)) {
+					decline(DECLINE_SNAPSHOT_UNAVAILABLE, true);
+					return false;
+				}
+				coordinatorProbe = row.source.newProbe();
+				coordinatorAdjacency = coordinatorProbe.wildcardAdjacency(shape.bySubject);
+				if (coordinatorAdjacency == null || coordinatorAdjacency.predicateCount() != predicateCount) {
+					decline(DECLINE_SNAPSHOT_UNAVAILABLE, true);
+					return false;
+				}
+				for (int helper = 0; helper < helpers; helper++) {
+					NativeLmdbQuerySource.ParallelSource source = sources[helper];
+					futures[helper] = LmdbNativeParallelPipelines.pool().submit(() -> {
+						try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
+								.inherit(parentSession)) {
+							processDataHelper(source, round);
+						} catch (Throwable problem) {
+							failure.compareAndSet(null, problem);
+						}
+					});
+				}
+				processDataChunks(coordinatorAdjacency, row, round, false);
+				await(futures, failure);
+				Throwable problem = failure.get();
+				if (problem != null) {
+					throwFailure(problem);
+				}
+				if (row.cancellation.isCancellationRequested()) {
+					return false;
+				}
+				PARALLEL_ROUNDS.incrementAndGet();
+				HELPER_TASKS.addAndGet(helpers);
+				WORKERS.addAndGet(helpers);
+				LAST_PARALLEL_DECLINE.set(null);
+				LmdbNativeExplain.addRuntimeMetric(row.telemetryTarget, "wildcardParallelRoundsActual", 1L);
+				LmdbNativeExplain.addRuntimeMetric(row.telemetryTarget, "wildcardParallelHelperTasksActual", helpers);
+				if (operation == DataOperation.PAYLOAD) {
+					PARALLEL_PAYLOAD_ROUNDS.incrementAndGet();
+					PAYLOAD_ROWS_DECODED.addAndGet(itemCount);
+				} else {
+					PARALLEL_MULTIPLICITY_ROUNDS.incrementAndGet();
+				}
+				return true;
+			} catch (Throwable problem) {
+				failure.compareAndSet(null, problem);
+				try {
+					await(futures, failure);
+				} catch (Throwable joinFailure) {
+					if (joinFailure != problem) {
+						problem.addSuppressed(joinFailure);
+					}
+				}
+				throwFailure(problem);
+				return false;
+			} finally {
+				Throwable cleanup = null;
+				if (coordinatorAdjacency != null) {
+					try {
+						coordinatorAdjacency.close();
+					} catch (RuntimeException | Error problem) {
+						cleanup = problem;
+					}
+				}
+				if (coordinatorProbe != null) {
+					try {
+						coordinatorProbe.close();
+					} catch (RuntimeException | Error problem) {
+						if (cleanup == null) {
+							cleanup = problem;
+						} else if (cleanup != problem) {
+							cleanup.addSuppressed(problem);
+						}
+					}
+				}
+				cleanup = closeSources(sources, cleanup);
+				reservation.close();
+				memory.release(roundScratch);
+				admission = admission == WildcardParallelAdmission.STRUCTURAL_REJECTION
+						? admission
+						: WildcardParallelAdmission.ELIGIBLE;
+				throwUnchecked(cleanup);
+			}
+		}
+
+		boolean knownEmpty(int predicateOrdinal) {
+			return planeStates != null && planeStates[predicateOrdinal] == EMPTY_PLANE;
+		}
+
+		boolean knownRejected(int predicateOrdinal) {
+			return shape.demand == Demand.PREDICATE_ANY && planeStates != null
+					&& planeStates[predicateOrdinal] == REJECTED_PLANE;
+		}
+
+		private void processHelper(NativeLmdbQuerySource.ParallelSource source, AtomicInteger nextChunk,
+				int chunkCount) throws IOException {
+			RowState workerRow = new RowState(source, row.layout, row.base, row.exactValuesMetrics, row.cancellation);
+			workerRow.parallelOwnership = RowState.ParallelOwnership.WILDCARD_HELPER;
+			workerRow.memoryScope = row.memoryScope;
+			workerRow.runtimePlan = row.runtimePlan;
+			System.arraycopy(row.slots, 0, workerRow.slots, 0, row.slots.length);
+			workerRow.recomputeBoundMask();
+			workerRow.lexicalInputMask = row.lexicalInputMask;
+			workerRow.lexicalScopeDepth = row.lexicalScopeDepth;
+			workerRow.logicalSolutionIdentity = row.logicalSolutionIdentity;
+			workerRow.encounterOrderRequired = row.encounterOrderRequired;
+			try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe();
+					NativeLmdbQuerySource.WildcardAdjacency adjacency = probe.wildcardAdjacency(shape.bySubject)) {
+				if (adjacency == null || adjacency.predicateCount() != predicateCount) {
+					throw new IOException("wildcard predicate snapshot unavailable");
+				}
+				processChunks(adjacency, workerRow, nextChunk, chunkCount, true);
+			}
+		}
+
+		private void processDataHelper(NativeLmdbQuerySource.ParallelSource source, DataRound round)
+				throws IOException {
+			RowState workerRow = new RowState(source, row.layout, row.base, row.exactValuesMetrics, row.cancellation);
+			workerRow.parallelOwnership = RowState.ParallelOwnership.WILDCARD_HELPER;
+			workerRow.memoryScope = row.memoryScope;
+			workerRow.runtimePlan = row.runtimePlan;
+			System.arraycopy(row.slots, 0, workerRow.slots, 0, row.slots.length);
+			workerRow.recomputeBoundMask();
+			workerRow.lexicalInputMask = row.lexicalInputMask;
+			workerRow.lexicalScopeDepth = row.lexicalScopeDepth;
+			workerRow.logicalSolutionIdentity = row.logicalSolutionIdentity;
+			workerRow.encounterOrderRequired = row.encounterOrderRequired;
+			try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe();
+					NativeLmdbQuerySource.WildcardAdjacency adjacency = probe.wildcardAdjacency(shape.bySubject)) {
+				if (adjacency == null || adjacency.predicateCount() != predicateCount) {
+					throw new IOException("wildcard predicate snapshot unavailable");
+				}
+				processDataChunks(adjacency, workerRow, round, true);
+			}
+		}
+
+		private void processDataChunks(NativeLmdbQuerySource.WildcardAdjacency adjacency, RowState localRow,
+				DataRound round, boolean helper) {
+			adjacency.bind(round.predicateOrdinal);
+			long predicate = adjacency.predicateAt(round.predicateOrdinal);
+			long[] rootKey = new long[1];
+			long[] handle = new long[1];
+			if (round.operation == DataOperation.PAYLOAD) {
+				rootKey[0] = round.root;
+				adjacency.findBatch(rootKey, 0, 1, handle, 0);
+				if (handle[0] <= 0L || adjacency.size(handle[0]) < round.runOffset + round.itemCount) {
+					throw new IllegalStateException("wildcard payload round disagreed with its pinned root run");
+				}
+			}
+			for (int chunk = round.nextChunk.getAndIncrement(); chunk < round.chunkCount; chunk = round.nextChunk
+					.getAndIncrement()) {
+				if (localRow.cancellation.isCancellationRequested()) {
+					return;
+				}
+				int from = (int) ((long) round.itemCount * chunk / round.chunkCount);
+				int to = (int) ((long) round.itemCount * (chunk + 1) / round.chunkCount);
+				if (round.operation == DataOperation.MULTIPLICITY) {
+					for (int item = from; item < to; item++) {
+						rootKey[0] = round.roots[item];
+						handle[0] = 0L;
+						adjacency.findBatch(rootKey, 0, 1, handle, 0);
+						if (handle[0] > 0L) {
+							round.multiplicities[item] = qualifyingMultiplicity(shape, localRow, adjacency,
+									rootKey[0], predicate, handle[0]);
+						}
+					}
+				} else {
+					for (int item = from; item < to; item++) {
+						long offset = round.runOffset + item;
+						long neighbor = adjacency.neighborAt(handle[0], offset);
+						long context = adjacency.contextAt(handle[0], offset);
+						round.neighbors[item] = neighbor;
+						round.contexts[item] = context;
+						long subject = shape.bySubject ? round.root : neighbor;
+						long object = shape.bySubject ? neighbor : round.root;
+						if (matchesTerms(shape.wildcard, subject, predicate, object, context, localRow)) {
+							round.accepted[item] = ACCEPTED_ROW;
+						}
+					}
+				}
+				if (helper) {
+					HELPER_CHUNKS.incrementAndGet();
+				} else {
+					COORDINATOR_CHUNKS.incrementAndGet();
+				}
+			}
+		}
+
+		private void processChunks(NativeLmdbQuerySource.WildcardAdjacency adjacency, RowState localRow,
+				AtomicInteger nextChunk, int chunkCount, boolean helper) {
+			for (int chunk = nextChunk.getAndIncrement(); chunk < chunkCount; chunk = nextChunk.getAndIncrement()) {
+				if (localRow.cancellation.isCancellationRequested()) {
+					return;
+				}
+				int from = (int) ((long) predicateCount * chunk / chunkCount);
+				int to = (int) ((long) predicateCount * (chunk + 1) / chunkCount);
+				for (int ordinal = from; ordinal < to; ordinal++) {
+					adjacency.bind(ordinal);
+					if (adjacency.keyCount() == 0L) {
+						planeStates[ordinal] = EMPTY_PLANE;
+					} else if (shape.demand != Demand.PREDICATE_ANY
+							|| predicateQualifies(shape, localRow, adjacency, adjacency.predicateAt(ordinal))) {
+						planeStates[ordinal] = QUALIFYING_PLANE;
+					} else {
+						planeStates[ordinal] = REJECTED_PLANE;
+					}
+				}
+				if (helper) {
+					HELPER_CHUNKS.incrementAndGet();
+				} else {
+					COORDINATOR_CHUNKS.incrementAndGet();
+				}
+			}
+		}
+
+		private static boolean predicateQualifies(Shape shape, RowState row,
+				NativeLmdbQuerySource.WildcardAdjacency adjacency, long predicate) {
+			if (!requiresRunInspection(shape.wildcard, row)) {
+				return true;
+			}
+			try (NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor keys = adjacency.openKeyRunCursor()) {
+				while (keys.advance()) {
+					long root = keys.key();
+					long size = keys.runSize();
+					for (long offset = 0L; offset < size; offset++) {
+						if (row.cancellation.isCancellationRequested()) {
+							return false;
+						}
+						long neighbor = keys.neighborAt(offset);
+						long context = keys.contextAt(offset);
+						if (matchesTerms(shape.wildcard, root, predicate, neighbor, context, row)) {
+							return true;
+						}
+					}
+				}
+			}
+			return false;
+		}
+
+		private void decline(String reason, boolean permanent) {
+			LAST_PARALLEL_DECLINE.set(reason);
+			LmdbNativeAttemptMetrics.recordDecline(row.telemetryTarget, STRATEGY + "-parallel", reason);
+			admission = permanent ? WildcardParallelAdmission.STRUCTURAL_REJECTION
+					: WildcardParallelAdmission.RETRYABLE_REJECTION;
+			retryPending = !permanent;
+		}
+
+		private void recordRoundDecline(String reason, boolean retryable) {
+			LAST_PARALLEL_DECLINE.set(reason);
+			LmdbNativeAttemptMetrics.recordDecline(row.telemetryTarget, STRATEGY + "-parallel", reason);
+			retryPending |= retryable;
+		}
+
+		private void await(Future<?>[] futures, AtomicReference<Throwable> failure) throws IOException {
+			boolean interrupted = false;
+			for (Future<?> future : futures) {
+				if (future == null) {
+					continue;
+				}
+				for (;;) {
+					try {
+						future.get();
+						break;
+					} catch (InterruptedException problem) {
+						interrupted = true;
+						row.cancellation.requestCancellation();
+					} catch (ExecutionException problem) {
+						failure.compareAndSet(null, problem.getCause() != null ? problem.getCause() : problem);
+						break;
+					}
+				}
+			}
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while awaiting wildcard predicate helpers");
+			}
+		}
+
+		private static boolean validParallelSources(NativeLmdbQuerySource.ParallelSource[] sources, int expected) {
+			if (sources == null || sources.length != expected) {
+				return false;
+			}
+			for (NativeLmdbQuerySource.ParallelSource source : sources) {
+				if (source == null) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private static Throwable closeSources(NativeLmdbQuerySource.ParallelSource[] sources, Throwable failure) {
+			if (sources == null) {
+				return failure;
+			}
+			for (NativeLmdbQuerySource.ParallelSource source : sources) {
+				if (source == null) {
+					continue;
+				}
+				try {
+					source.close();
+				} catch (RuntimeException | Error cleanup) {
+					if (failure == null) {
+						failure = cleanup;
+					} else if (failure != cleanup) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+			}
+			return failure;
+		}
+
+		private static void throwFailure(Throwable failure) throws IOException {
+			if (failure instanceof IOException io) {
+				throw io;
+			}
+			if (failure instanceof RuntimeException runtime) {
+				throw runtime;
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+			throw new IOException(failure);
+		}
+
+		private static void throwUnchecked(Throwable failure) {
+			if (failure instanceof RuntimeException runtime) {
+				throw runtime;
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+		}
+
+		@Override
+		public void close() {
+			if (admission != WildcardParallelAdmission.CLOSED) {
+				admission = WildcardParallelAdmission.CLOSED;
+				if (claimedBytes != 0L) {
+					memory.release(claimedBytes);
+					claimedBytes = 0L;
+				}
+				planeStates = null;
+			}
+		}
+	}
+
 	/** Predicate-only all-unbound scan: one non-empty qualifying plane produces one predicate id. */
 	private static final class PredicateDomainCursor implements BatchCursor {
 		private final Shape shape;
 		private final RowState row;
 		private final NativeLmdbQuerySource.NativeProbe probe;
 		private final NativeLmdbQuerySource.WildcardAdjacency adjacency;
+		private final PredicateMajorParallelScan parallelScan;
+		private final long[] entrySlots;
 		private int predicateOrdinal;
 		private boolean closed;
 
@@ -1537,6 +2223,8 @@ final class LmdbWildcardPredicateBatch {
 			this.row = row;
 			this.probe = probe;
 			this.adjacency = adjacency;
+			this.parallelScan = new PredicateMajorParallelScan(shape, row, adjacency.predicateCount());
+			this.entrySlots = row.slots.clone();
 		}
 
 		static PredicateDomainCursor open(Shape shape, RowState row) throws IOException {
@@ -1557,15 +2245,20 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		@Override
-		public int fill(NativeBatch target) {
+		public int fill(NativeBatch target) throws IOException {
 			target.clear();
 			if (closed || row.cancellation.isCancellationRequested()) {
 				close();
 				return 0;
 			}
+			restoreEntryRow();
+			parallelScan.runRound(adjacency);
 			int output = 0;
 			while (predicateOrdinal < adjacency.predicateCount() && output < target.capacity) {
 				int current = predicateOrdinal++;
+				if (parallelScan.knownEmpty(current) || parallelScan.knownRejected(current)) {
+					continue;
+				}
 				adjacency.bind(current);
 				PREDICATES_TESTED.incrementAndGet();
 				if (adjacency.keyCount() == 0L) {
@@ -1618,9 +2311,19 @@ final class LmdbWildcardPredicateBatch {
 		public void close() {
 			if (!closed) {
 				closed = true;
-				adjacency.close();
-				probe.close();
+				try {
+					parallelScan.close();
+				} finally {
+					adjacency.close();
+					probe.close();
+					restoreEntryRow();
+				}
 			}
+		}
+
+		private void restoreEntryRow() {
+			System.arraycopy(entrySlots, 0, row.slots, 0, entrySlots.length);
+			row.recomputeBoundMask();
 		}
 	}
 
@@ -1630,6 +2333,8 @@ final class LmdbWildcardPredicateBatch {
 		private final RowState row;
 		private final NativeLmdbQuerySource.NativeProbe probe;
 		private final NativeLmdbQuerySource.WildcardAdjacency adjacency;
+		private final PredicateMajorParallelScan parallelScan;
+		private final long[] entrySlots;
 		private final int restrictedPredicateOrdinal;
 		private final NativeLmdbQuerySource.NativeAdjacency.RootBatch roots;
 		private final LmdbFusedSipFactorizedRuntime.Session memory;
@@ -1649,6 +2354,8 @@ final class LmdbWildcardPredicateBatch {
 			this.row = row;
 			this.probe = probe;
 			this.adjacency = adjacency;
+			this.parallelScan = new PredicateMajorParallelScan(shape, row, adjacency.predicateCount());
+			this.entrySlots = row.slots.clone();
 			this.restrictedPredicateOrdinal = restrictedPredicateOrdinal;
 			this.roots = roots;
 			this.memory = memory;
@@ -1692,11 +2399,15 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		@Override
-		public int fill(NativeBatch target) {
+		public int fill(NativeBatch target) throws IOException {
 			target.clear();
 			if (closed || row.cancellation.isCancellationRequested()) {
 				close();
 				return 0;
+			}
+			restoreEntryRow();
+			if (keys == null) {
+				parallelScan.runRound(adjacency);
 			}
 			int output = 0;
 			while (output < target.capacity) {
@@ -1741,6 +2452,10 @@ final class LmdbWildcardPredicateBatch {
 				if (current < 0) {
 					return false;
 				}
+				if (parallelScan.knownEmpty(current)) {
+					PREDICATES_EXHAUSTED.incrementAndGet();
+					continue;
+				}
 				adjacency.bind(current);
 				PREDICATES_TESTED.incrementAndGet();
 				if (adjacency.keyCount() == 0L) {
@@ -1780,13 +2495,23 @@ final class LmdbWildcardPredicateBatch {
 					keys.close();
 					keys = null;
 				}
-				adjacency.close();
 				try {
-					probe.close();
+					parallelScan.close();
 				} finally {
-					memory.release(claimedBytes);
+					adjacency.close();
+					try {
+						probe.close();
+					} finally {
+						memory.release(claimedBytes);
+						restoreEntryRow();
+					}
 				}
 			}
+		}
+
+		private void restoreEntryRow() {
+			System.arraycopy(entrySlots, 0, row.slots, 0, entrySlots.length);
+			row.recomputeBoundMask();
 		}
 	}
 
@@ -1796,9 +2521,12 @@ final class LmdbWildcardPredicateBatch {
 		private final RowState row;
 		private final NativeLmdbQuerySource.NativeProbe probe;
 		private final NativeLmdbQuerySource.WildcardAdjacency adjacency;
+		private final PredicateMajorParallelScan parallelScan;
+		private final long[] entrySlots;
 		private final int restrictedPredicateOrdinal;
 		private final long[] neighbors;
 		private final long[] contexts;
+		private final byte[] accepted;
 		private final LmdbFusedSipFactorizedRuntime.Session memory;
 		private final long claimedBytes;
 		private NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor keys;
@@ -1810,14 +2538,17 @@ final class LmdbWildcardPredicateBatch {
 
 		private PredicateMajorPayloadCursor(Shape shape, RowState row, NativeLmdbQuerySource.NativeProbe probe,
 				NativeLmdbQuerySource.WildcardAdjacency adjacency, int restrictedPredicateOrdinal, long[] neighbors,
-				long[] contexts, LmdbFusedSipFactorizedRuntime.Session memory, long claimedBytes) {
+				long[] contexts, byte[] accepted, LmdbFusedSipFactorizedRuntime.Session memory, long claimedBytes) {
 			this.shape = shape;
 			this.row = row;
 			this.probe = probe;
 			this.adjacency = adjacency;
+			this.parallelScan = new PredicateMajorParallelScan(shape, row, adjacency.predicateCount());
+			this.entrySlots = row.slots.clone();
 			this.restrictedPredicateOrdinal = restrictedPredicateOrdinal;
 			this.neighbors = neighbors;
 			this.contexts = contexts;
+			this.accepted = accepted;
 			this.memory = memory;
 			this.claimedBytes = claimedBytes;
 		}
@@ -1825,7 +2556,8 @@ final class LmdbWildcardPredicateBatch {
 		static PredicateMajorPayloadCursor open(Shape shape, RowState row, int capacity) throws IOException {
 			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
 			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
-			long claimedBytes = Math.multiplyExact(2L, arrayBytes(capacity, Long.BYTES));
+			long claimedBytes = Math.addExact(Math.multiplyExact(2L, arrayBytes(capacity, Long.BYTES)),
+					arrayBytes(capacity, Byte.BYTES));
 			boolean memoryClaimed = false;
 			NativeLmdbQuerySource.WildcardAdjacency adjacency = null;
 			try {
@@ -1845,7 +2577,7 @@ final class LmdbWildcardPredicateBatch {
 				WORKERS.incrementAndGet();
 				return new PredicateMajorPayloadCursor(shape, row, probe, adjacency,
 						restrictedPredicateOrdinal(adjacency, shape.wildcard.p, row), new long[capacity],
-						new long[capacity], memory, claimedBytes);
+						new long[capacity], new byte[capacity], memory, claimedBytes);
 			} catch (IOException | RuntimeException | Error failure) {
 				if (memoryClaimed) {
 					memory.release(claimedBytes);
@@ -1859,11 +2591,15 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		@Override
-		public int fill(NativeBatch target) {
+		public int fill(NativeBatch target) throws IOException {
 			target.clear();
 			if (closed || row.cancellation.isCancellationRequested()) {
 				close();
 				return 0;
+			}
+			restoreEntryRow();
+			if (keys == null && !rootActive) {
+				parallelScan.runRound(adjacency);
 			}
 			int output = 0;
 			while (output < target.capacity && ensureRoot()) {
@@ -1871,14 +2607,23 @@ final class LmdbWildcardPredicateBatch {
 				long runSize = keys.runSize();
 				while (runOffset < runSize && output < target.capacity) {
 					int requested = (int) Math.min((long) target.capacity - output, runSize - runOffset);
-					int neighborCount = keys.copyNeighbors(runOffset, requested, neighbors, 0);
-					int contextCount = keys.copyContexts(runOffset, requested, contexts, 0);
-					if (neighborCount != contextCount || neighborCount <= 0) {
-						throw new IllegalStateException("predicate-major payload copy did not preserve run alignment");
+					boolean parallel = parallelScan.runPayloadRound(adjacency.boundPredicateOrdinal(), root, runOffset,
+							requested, neighbors, contexts, accepted);
+					int decoded = requested;
+					if (!parallel) {
+						int neighborCount = keys.copyNeighbors(runOffset, requested, neighbors, 0);
+						int contextCount = keys.copyContexts(runOffset, requested, contexts, 0);
+						if (neighborCount != contextCount || neighborCount <= 0) {
+							throw new IllegalStateException(
+									"predicate-major payload copy did not preserve run alignment");
+						}
+						decoded = neighborCount;
 					}
-					runOffset += neighborCount;
-					PAYLOAD_ROWS_DECODED.addAndGet(neighborCount);
-					for (int copied = 0; copied < neighborCount; copied++) {
+					runOffset += decoded;
+					if (!parallel) {
+						PAYLOAD_ROWS_DECODED.addAndGet(decoded);
+					}
+					for (int copied = 0; copied < decoded; copied++) {
 						if (row.cancellation.isCancellationRequested()) {
 							target.clear();
 							close();
@@ -1888,7 +2633,8 @@ final class LmdbWildcardPredicateBatch {
 						long context = contexts[copied];
 						long subject = shape.bySubject ? root : neighbor;
 						long object = shape.bySubject ? neighbor : root;
-						if (matchesTerms(shape.wildcard, subject, predicate, object, context, row)) {
+						if (parallel ? accepted[copied] == PredicateMajorParallelScan.ACCEPTED_ROW
+								: matchesTerms(shape.wildcard, subject, predicate, object, context, row)) {
 							target.copyFromRow(row.slots, output);
 							if (bind(shape.wildcard, subject, predicate, object, context, target, output)) {
 								output++;
@@ -1930,6 +2676,10 @@ final class LmdbWildcardPredicateBatch {
 				if (current < 0) {
 					return false;
 				}
+				if (parallelScan.knownEmpty(current)) {
+					PREDICATES_EXHAUSTED.incrementAndGet();
+					continue;
+				}
 				adjacency.bind(current);
 				PREDICATES_TESTED.incrementAndGet();
 				if (adjacency.keyCount() == 0L) {
@@ -1962,14 +2712,24 @@ final class LmdbWildcardPredicateBatch {
 		public void close() {
 			if (!closed) {
 				closed = true;
-				closeKeys();
-				adjacency.close();
 				try {
-					probe.close();
+					closeKeys();
+					parallelScan.close();
 				} finally {
-					memory.release(claimedBytes);
+					adjacency.close();
+					try {
+						probe.close();
+					} finally {
+						memory.release(claimedBytes);
+						restoreEntryRow();
+					}
 				}
 			}
+		}
+
+		private void restoreEntryRow() {
+			System.arraycopy(entrySlots, 0, row.slots, 0, entrySlots.length);
+			row.recomputeBoundMask();
 		}
 	}
 
@@ -1979,29 +2739,36 @@ final class LmdbWildcardPredicateBatch {
 		private final RowState row;
 		private final NativeLmdbQuerySource.NativeProbe probe;
 		private final NativeLmdbQuerySource.WildcardAdjacency adjacency;
+		private final PredicateMajorParallelScan parallelScan;
+		private final long[] entrySlots;
 		private final int restrictedPredicateOrdinal;
 		private final NativeLmdbQuerySource.NativeAdjacency.RootBatch roots;
 		private final long[] weights;
+		private final long[] rootMultiplicities;
 		private final LmdbFusedSipFactorizedRuntime.Session memory;
 		private final long claimedBytes;
 		private NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor keys;
 		private int predicateOrdinal;
 		private int rootIndex;
 		private int rootCount;
+		private boolean parallelMultiplicities;
 		private boolean predicateMatched;
 		private boolean closed;
 
 		private PredicateMajorMultiplicityCursor(Shape shape, RowState row,
 				NativeLmdbQuerySource.NativeProbe probe, NativeLmdbQuerySource.WildcardAdjacency adjacency,
 				int restrictedPredicateOrdinal, NativeLmdbQuerySource.NativeAdjacency.RootBatch roots, long[] weights,
-				LmdbFusedSipFactorizedRuntime.Session memory, long claimedBytes) {
+				long[] rootMultiplicities, LmdbFusedSipFactorizedRuntime.Session memory, long claimedBytes) {
 			this.shape = shape;
 			this.row = row;
 			this.probe = probe;
 			this.adjacency = adjacency;
+			this.parallelScan = new PredicateMajorParallelScan(shape, row, adjacency.predicateCount());
+			this.entrySlots = row.slots.clone();
 			this.restrictedPredicateOrdinal = restrictedPredicateOrdinal;
 			this.roots = roots;
 			this.weights = weights;
+			this.rootMultiplicities = rootMultiplicities;
 			this.memory = memory;
 			this.claimedBytes = claimedBytes;
 		}
@@ -2011,7 +2778,8 @@ final class LmdbWildcardPredicateBatch {
 			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
 			long claimedBytes;
 			try {
-				claimedBytes = Math.addExact(rootBatchScratchBytes(capacity), arrayBytes(capacity, Long.BYTES));
+				claimedBytes = Math.addExact(rootBatchScratchBytes(capacity),
+						Math.multiplyExact(2L, arrayBytes(capacity, Long.BYTES)));
 			} catch (ArithmeticException overflow) {
 				claimedBytes = Long.MAX_VALUE;
 			}
@@ -2034,8 +2802,8 @@ final class LmdbWildcardPredicateBatch {
 				WORKERS.incrementAndGet();
 				return new PredicateMajorMultiplicityCursor(shape, row, probe, adjacency,
 						restrictedPredicateOrdinal(adjacency, shape.wildcard.p, row),
-						new NativeLmdbQuerySource.NativeAdjacency.RootBatch(capacity), new long[capacity], memory,
-						claimedBytes);
+						new NativeLmdbQuerySource.NativeAdjacency.RootBatch(capacity), new long[capacity],
+						new long[capacity], memory, claimedBytes);
 			} catch (IOException | RuntimeException | Error failure) {
 				if (memoryClaimed) {
 					memory.release(claimedBytes);
@@ -2049,11 +2817,15 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		@Override
-		public int fill(NativeBatch target) {
+		public int fill(NativeBatch target) throws IOException {
 			target.clear();
 			if (closed || row.cancellation.isCancellationRequested()) {
 				close();
 				return 0;
+			}
+			restoreEntryRow();
+			if (keys == null) {
+				parallelScan.runRound(adjacency);
 			}
 			int output = 0;
 			while (output < target.capacity) {
@@ -2068,8 +2840,9 @@ final class LmdbWildcardPredicateBatch {
 					continue;
 				}
 				long root = roots.rootIds()[current];
-				long multiplicity = qualifyingMultiplicity(shape, row, adjacency, root, predicate,
-						roots.runHandles()[current]);
+				long multiplicity = parallelMultiplicities
+						? rootMultiplicities[current]
+						: qualifyingMultiplicity(shape, row, adjacency, root, predicate, roots.runHandles()[current]);
 				if (multiplicity == 0L) {
 					continue;
 				}
@@ -2093,12 +2866,14 @@ final class LmdbWildcardPredicateBatch {
 			return weights[physicalRow];
 		}
 
-		private boolean fillRoots() {
+		private boolean fillRoots() throws IOException {
 			for (;;) {
 				if (keys != null) {
 					rootCount = keys.fillRoots(adjacency.boundPredicateOrdinal(), roots, false);
 					rootIndex = 0;
 					if (rootCount > 0) {
+						parallelMultiplicities = parallelScan.runMultiplicityRound(
+								adjacency.boundPredicateOrdinal(), roots.rootIds(), rootCount, rootMultiplicities);
 						return true;
 					}
 					finishPredicate();
@@ -2106,6 +2881,10 @@ final class LmdbWildcardPredicateBatch {
 				int current = nextPredicateOrdinal();
 				if (current < 0) {
 					return false;
+				}
+				if (parallelScan.knownEmpty(current)) {
+					PREDICATES_EXHAUSTED.incrementAndGet();
+					continue;
 				}
 				adjacency.bind(current);
 				PREDICATES_TESTED.incrementAndGet();
@@ -2134,6 +2913,7 @@ final class LmdbWildcardPredicateBatch {
 			predicateMatched = false;
 			rootCount = 0;
 			rootIndex = 0;
+			parallelMultiplicities = false;
 			keys.close();
 			keys = null;
 		}
@@ -2146,13 +2926,23 @@ final class LmdbWildcardPredicateBatch {
 					keys.close();
 					keys = null;
 				}
-				adjacency.close();
 				try {
-					probe.close();
+					parallelScan.close();
 				} finally {
-					memory.release(claimedBytes);
+					adjacency.close();
+					try {
+						probe.close();
+					} finally {
+						memory.release(claimedBytes);
+						restoreEntryRow();
+					}
 				}
 			}
+		}
+
+		private void restoreEntryRow() {
+			System.arraycopy(entrySlots, 0, row.slots, 0, entrySlots.length);
+			row.recomputeBoundMask();
 		}
 	}
 
@@ -2174,7 +2964,6 @@ final class LmdbWildcardPredicateBatch {
 		private int resolvedCount;
 		private int emitIndex;
 		private ParallelPredicateTiles parallel;
-		private boolean parallelAdmissionChecked;
 		private boolean closed;
 
 		private NodeAnyCursor(Shape shape, RowState row, NativeLmdbQuerySource.NativeProbe probe,
@@ -2314,14 +3103,20 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private void admitParallel() throws IOException {
-			if (parallel != null || parallelAdmissionChecked || unresolvedCount < 2) {
+			if (parallel != null) {
+				if (!parallel.closed) {
+					return;
+				}
+				parallel = null;
+				PARALLEL_RETRIES.incrementAndGet();
+			}
+			if (unresolvedCount < 2) {
 				return;
 			}
 			double estimatedWork = (double) unresolvedCount * adjacency.predicateCount();
 			if (!(estimatedWork >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
 				return;
 			}
-			parallelAdmissionChecked = true;
 			parallel = ParallelPredicateTiles.tryOpenNodeAny(shape, row, prefixBatch.capacity,
 					adjacency.predicateCount(), unresolvedCount);
 		}
@@ -2392,7 +3187,6 @@ final class LmdbWildcardPredicateBatch {
 		private int emitLane;
 		private boolean tileReady;
 		private ParallelPredicateTiles parallel;
-		private boolean parallelAdmissionChecked;
 		private boolean closed;
 
 		private PairPresenceCursor(Shape shape, RowState row, NativeLmdbQuerySource.NativeProbe probe,
@@ -2564,14 +3358,20 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private void admitParallel() throws IOException {
-			if (parallel != null || parallelAdmissionChecked || tileWidth < 2) {
+			if (parallel != null) {
+				if (!parallel.closed) {
+					return;
+				}
+				parallel = null;
+				PARALLEL_RETRIES.incrementAndGet();
+			}
+			if (tileWidth < 2) {
 				return;
 			}
 			double estimatedWork = (double) nodeCount * Math.min(tileWidth, adjacency.predicateCount());
 			if (!(estimatedWork >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
 				return;
 			}
-			parallelAdmissionChecked = true;
 			parallel = ParallelPredicateTiles.tryOpen(shape, row, prefixBatch.capacity, wordsPerBatch, tileWidth,
 					adjacency.predicateCount(), nodeCount);
 		}
@@ -2658,7 +3458,6 @@ final class LmdbWildcardPredicateBatch {
 		private boolean planeContainsMultiplicities;
 		private boolean predicateMatched;
 		private ParallelPredicateTiles parallel;
-		private boolean parallelAdmissionChecked;
 		private int parallelTileStart = -1;
 		private int parallelTilePredicates;
 		private boolean parallelTileUsesPhysicalLanes;
@@ -2862,11 +3661,12 @@ final class LmdbWildcardPredicateBatch {
 			if (!allPredicates) {
 				return false;
 			}
-			admitParallel(unrestrictedRunSizes ? uniqueRootCount : rootCount);
-			if (parallel == null) {
-				return false;
-			}
-			if (parallelTileStart < 0 || predicateIndex >= parallelTileStart + parallelTilePredicates) {
+			if (parallel == null || parallelTileStart < 0
+					|| predicateIndex >= parallelTileStart + parallelTilePredicates) {
+				admitParallel(unrestrictedRunSizes ? uniqueRootCount : rootCount);
+				if (parallel == null) {
+					return false;
+				}
 				int predicates = Math.min(parallel.tileWidth(), predicateCount - predicateIndex);
 				if (predicates < parallel.workerCount()) {
 					parallelTileStart = -1;
@@ -2904,9 +3704,14 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private void admitParallel(int nodeCount) throws IOException {
-			if (parallel != null || parallelAdmissionChecked || uniqueRootCount < 1 || predicateCount < 2) {
-//				System.out.println((parallel != null) + " || " + (parallelAdmissionChecked) + " || "
-//						+ (uniqueRootCount < 1) + " || " + (predicateCount < 2));
+			if (parallel != null) {
+				if (!parallel.closed) {
+					return;
+				}
+				parallel = null;
+				PARALLEL_RETRIES.incrementAndGet();
+			}
+			if (uniqueRootCount < 1 || predicateCount < 2) {
 				return;
 			}
 			int requestedWidth = Math.min(prefixBatch.capacity, predicateCount);
@@ -2917,7 +3722,6 @@ final class LmdbWildcardPredicateBatch {
 						+ LmdbNativeParallelPipelines.minimumWorkEstimate());
 				return;
 			}
-			parallelAdmissionChecked = true;
 			parallel = ParallelPredicateTiles.tryOpenMultiplicities(shape, row, prefixBatch.capacity,
 					requestedWidth, adjacency.predicateCount(), nodeCount);
 		}
@@ -2992,7 +3796,6 @@ final class LmdbWildcardPredicateBatch {
 		private int predicateOrdinal;
 		private int matchedCount;
 		private ParallelPredicateTiles parallel;
-		private boolean parallelAdmissionChecked;
 		private boolean closed;
 
 		private PredicateAnyCursor(Shape shape, RowState row, int capacity,
@@ -3143,7 +3946,14 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private void admitParallel() throws IOException {
-			if (parallel != null || parallelAdmissionChecked || capacity < 2) {
+			if (parallel != null) {
+				if (!parallel.closed) {
+					return;
+				}
+				parallel = null;
+				PARALLEL_RETRIES.incrementAndGet();
+			}
+			if (capacity < 2) {
 				return;
 			}
 			int candidatePredicates = Math.min(capacity, adjacency.predicateCount());
@@ -3151,7 +3961,6 @@ final class LmdbWildcardPredicateBatch {
 			if (!(estimatedWork >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
 				return;
 			}
-			parallelAdmissionChecked = true;
 			parallel = ParallelPredicateTiles.tryOpen(shape, row, capacity, words(capacity), candidatePredicates,
 					adjacency.predicateCount(), nodeCount);
 		}
@@ -3293,7 +4102,6 @@ final class LmdbWildcardPredicateBatch {
 		private int rootLane;
 		private long runOffset;
 		private ParallelPredicateTiles parallel;
-		private boolean parallelAdmissionChecked;
 		private int parallelTileStart = -1;
 		private int parallelTilePredicates;
 		private long parallelGeneration;
@@ -3554,8 +4362,14 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private void admitParallel() throws IOException {
-			if (parallel != null || parallelAdmissionChecked || !allPredicates || uniqueRootCount < 1
-					|| predicateCount < 2) {
+			if (parallel != null) {
+				if (!parallel.closed || parallelPageReady) {
+					return;
+				}
+				parallel = null;
+				PARALLEL_RETRIES.incrementAndGet();
+			}
+			if (!allPredicates || uniqueRootCount < 1 || predicateCount < 2) {
 				return;
 			}
 			int requestedWidth = Math.min(prefixBatch.capacity, predicateCount);
@@ -3563,7 +4377,6 @@ final class LmdbWildcardPredicateBatch {
 			if (!(estimatedWork >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
 				return;
 			}
-			parallelAdmissionChecked = true;
 			parallel = ParallelPredicateTiles.tryOpenPayload(shape, row, prefixBatch.capacity, requestedWidth,
 					adjacency.predicateCount(), rootCount);
 		}
@@ -4571,6 +5384,7 @@ final class LmdbWildcardPredicateBatch {
 
 		private int mergedMatchCount;
 		private Round payloadRound;
+		private boolean helperTasksRecorded;
 		private boolean closed;
 
 		private ParallelPredicateTiles(Shape shape, boolean bySubject, boolean storageOnlyNodeAny, RowState parentRow,
@@ -4641,8 +5455,17 @@ final class LmdbWildcardPredicateBatch {
 				RowState row, int capacity, int wordsPerBatch, int requestedTileWidth, int predicateCount,
 				int nodeCount,
 				boolean nodePartition, boolean multiplicities, boolean payloadPages) throws IOException {
+			if (row.parallelOwnership == RowState.ParallelOwnership.OUTER_PIPELINE) {
+				recordParallelDecline(row, DECLINE_OUTER_ACTIVE);
+				return null;
+			}
+			if (row.source instanceof NativeLmdbQuerySource.ParallelSource) {
+				recordParallelDecline(row, DECLINE_NESTED_SOURCE);
+				return null;
+			}
 			if (!LmdbNativeParallelPipelines.enabled() || predicateCount < 1 || nodeCount < (nodePartition ? 2 : 1)
 					|| !nodePartition && (requestedTileWidth < 2 || predicateCount < 2)) {
+				recordParallelDecline(row, DECLINE_TOO_FEW_RANGES);
 				return null;
 			}
 			int maximumTileWidth = nodePartition
@@ -4650,10 +5473,12 @@ final class LmdbWildcardPredicateBatch {
 					: Math.min(requestedTileWidth, predicateCount);
 			double estimatedWork = (double) nodeCount * (nodePartition ? predicateCount : maximumTileWidth);
 			if (!(estimatedWork >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
+				recordParallelDecline(row, DECLINE_BELOW_WORK);
 				return null;
 			}
 			int configuredWorkers = LmdbNativeParallelPipelines.configuredThreads();
-			if (configuredWorkers < 2) {
+			if (configuredWorkers < 1) {
+				recordParallelDecline(row, DECLINE_TOO_FEW_RANGES);
 				return null;
 			}
 			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
@@ -4661,10 +5486,11 @@ final class LmdbWildcardPredicateBatch {
 			for (int candidateWidth = maximumTileWidth; candidateWidth >= 2; candidateWidth = candidateWidth == 2 ? 1
 					: Math.max(2, candidateWidth >>> 1)) {
 				int desiredWorkers = Math.min(configuredWorkers, nodePartition ? nodeCount : candidateWidth);
-				while (desiredWorkers >= 2) {
+				while (desiredWorkers >= 1) {
 					LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines
-							.tryReserveTasks(true, desiredWorkers);
+							.tryReserveTasks(false, desiredWorkers);
 					if (reservation == null) {
+						recordParallelDecline(row, DECLINE_TASK_BUDGET);
 						break;
 					}
 					int grantedWorkers = reservation.grantedWorkers();
@@ -4673,7 +5499,7 @@ final class LmdbWildcardPredicateBatch {
 					if (!memory.claim(requiredBytes)) {
 						memoryRefused = true;
 						reservation.close();
-						desiredWorkers = grantedWorkers == 2 ? 1 : Math.max(2, grantedWorkers >>> 1);
+						desiredWorkers = grantedWorkers == 1 ? 0 : Math.max(1, grantedWorkers >>> 1);
 						continue;
 					}
 					NativeLmdbQuerySource.ParallelSource[] sources = null;
@@ -4682,6 +5508,7 @@ final class LmdbWildcardPredicateBatch {
 					try {
 						sources = row.source.openParallelSources(grantedWorkers);
 						if (!validParallelSources(sources, grantedWorkers)) {
+							recordParallelDecline(row, DECLINE_SNAPSHOT_UNAVAILABLE);
 							Throwable cleanup = closeParallelSources(sources, null);
 							memory.release(requiredBytes);
 							reservation.close();
@@ -4723,8 +5550,14 @@ final class LmdbWildcardPredicateBatch {
 			}
 			if (memoryRefused) {
 				MEMORY_REFUSALS.incrementAndGet();
+				recordParallelDecline(row, DECLINE_MEMORY_REFUSED);
 			}
 			return null;
+		}
+
+		private static void recordParallelDecline(RowState row, String reason) {
+			LAST_PARALLEL_DECLINE.set(reason);
+			LmdbNativeAttemptMetrics.recordDecline(row.telemetryTarget, STRATEGY + "-parallel", reason);
 		}
 
 		private static boolean validParallelSources(NativeLmdbQuerySource.ParallelSource[] sources, int expected) {
@@ -4800,14 +5633,20 @@ final class LmdbWildcardPredicateBatch {
 
 		int findAny(int predicateFrom, int predicateCount, long[] nodes, int nodeCount,
 				long[] retiredPredicates) throws IOException {
-			Round round = dispatch(Operation.ANY, nodes, nodeCount, predicateFrom, predicateCount, retiredPredicates);
-			mergedMatchCount = 0;
-			for (WorkerResult result : round.results) {
-				System.arraycopy(result.matches, 0, mergedMatches, mergedMatchCount, result.matchCount);
-				mergedMatchCount += result.matchCount;
+			try {
+				Round round = dispatch(Operation.ANY, nodes, nodeCount, predicateFrom, predicateCount,
+						retiredPredicates);
+				mergedMatchCount = 0;
+				for (WorkerResult result : round.results) {
+					System.arraycopy(result.matches, 0, mergedMatches, mergedMatchCount, result.matchCount);
+					mergedMatchCount += result.matchCount;
+				}
+				recordRound(round);
+				recordParallelRound();
+				return mergedMatchCount;
+			} finally {
+				close();
 			}
-			recordRound(round);
-			return mergedMatchCount;
 		}
 
 		int matchedPredicate(int index) {
@@ -4819,13 +5658,19 @@ final class LmdbWildcardPredicateBatch {
 			if (mergedMultiplicities == null) {
 				throw new IllegalStateException("wildcard multiplicity scratch was not admitted");
 			}
-			Round round = dispatch(Operation.MULTIPLICITY, nodes, nodeCount, predicateFrom, predicateCount, null);
-			for (WorkerResult result : round.results) {
-				int destination = (result.predicateFrom - predicateFrom) * capacity;
-				System.arraycopy(result.multiplicities, 0, mergedMultiplicities, destination,
-						result.predicateCount * capacity);
+			try {
+				Round round = dispatch(Operation.MULTIPLICITY, nodes, nodeCount, predicateFrom, predicateCount, null);
+				for (WorkerResult result : round.results) {
+					int destination = (result.predicateFrom - predicateFrom) * capacity;
+					System.arraycopy(result.multiplicities, 0, mergedMultiplicities, destination,
+							result.predicateCount * capacity);
+				}
+				recordRound(round);
+				recordParallelRound();
+				PARALLEL_MULTIPLICITY_ROUNDS.incrementAndGet();
+			} finally {
+				close();
 			}
-			recordRound(round);
 		}
 
 		void findConstrainedMultiplicities(int predicateFrom, int predicateCount, long[] uniqueNodes,
@@ -4834,14 +5679,20 @@ final class LmdbWildcardPredicateBatch {
 			if (mergedMultiplicities == null) {
 				throw new IllegalStateException("wildcard multiplicity scratch was not admitted");
 			}
-			Round round = dispatch(Operation.CONSTRAINED_MULTIPLICITY, uniqueNodes, uniqueNodeCount, predicateFrom,
-					predicateCount, null, groupOffsets, inputRows, physicalNodeCount, constraintBatch);
-			for (WorkerResult result : round.results) {
-				int destination = (result.predicateFrom - predicateFrom) * capacity;
-				System.arraycopy(result.multiplicities, 0, mergedMultiplicities, destination,
-						result.predicateCount * capacity);
+			try {
+				Round round = dispatch(Operation.CONSTRAINED_MULTIPLICITY, uniqueNodes, uniqueNodeCount, predicateFrom,
+						predicateCount, null, groupOffsets, inputRows, physicalNodeCount, constraintBatch);
+				for (WorkerResult result : round.results) {
+					int destination = (result.predicateFrom - predicateFrom) * capacity;
+					System.arraycopy(result.multiplicities, 0, mergedMultiplicities, destination,
+							result.predicateCount * capacity);
+				}
+				recordRound(round);
+				recordParallelRound();
+				PARALLEL_MULTIPLICITY_ROUNDS.incrementAndGet();
+			} finally {
+				close();
 			}
-			recordRound(round);
 		}
 
 		int findPayloadPage(int predicateFrom, int predicateCount, long[] uniqueNodes, int uniqueNodeCount,
@@ -4858,6 +5709,10 @@ final class LmdbWildcardPredicateBatch {
 				rows = Math.addExact(rows, result.payloadRowCount);
 			}
 			recordRound(payloadRound);
+			recordParallelRound();
+			if (payloadComplete()) {
+				close();
+			}
 			return rows;
 		}
 
@@ -4899,53 +5754,81 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		int findNodes(long[] nodes, int nodeCount, int predicateCount, long[] resolved) throws IOException {
-			Round round = dispatch(Operation.NODE_ANY, nodes, nodeCount, 0, predicateCount, null);
-			int resolvedCount = 0;
-			for (int worker = 0; worker < workers.length; worker++) {
-				int from = (int) ((long) nodeCount * worker / workers.length);
-				int to = (int) ((long) nodeCount * (worker + 1) / workers.length);
-				long[] matches = round.results[worker].bitmap;
-				for (int lane = 0; lane < to - from; lane++) {
-					if ((matches[lane >>> 6] & 1L << (lane & 63)) != 0L) {
-						resolved[resolvedCount++] = nodes[from + lane];
+			try {
+				Round round = dispatch(Operation.NODE_ANY, nodes, nodeCount, 0, predicateCount, null);
+				int resolvedCount = 0;
+				for (int worker = 0; worker < workers.length; worker++) {
+					int from = (int) ((long) nodeCount * worker / workers.length);
+					int to = (int) ((long) nodeCount * (worker + 1) / workers.length);
+					long[] matches = round.results[worker].bitmap;
+					for (int lane = 0; lane < to - from; lane++) {
+						if ((matches[lane >>> 6] & 1L << (lane & 63)) != 0L) {
+							resolved[resolvedCount++] = nodes[from + lane];
+						}
 					}
 				}
+				recordRound(round);
+				NODE_LANES_PRUNED.addAndGet(resolvedCount);
+				recordParallelRound();
+				return resolvedCount;
+			} finally {
+				close();
 			}
-			recordRound(round);
-			NODE_LANES_PRUNED.addAndGet(resolvedCount);
-			return resolvedCount;
 		}
 
 		int findNodeMatches(long[] nodes, int nodeCount, int predicateCount, long[] matched) throws IOException {
-			Round round = dispatch(Operation.NODE_ANY, nodes, nodeCount, 0, predicateCount, null);
-			Arrays.fill(matched, 0L);
-			int matchedCount = 0;
-			for (int worker = 0; worker < workers.length; worker++) {
-				int from = (int) ((long) nodeCount * worker / workers.length);
-				int to = (int) ((long) nodeCount * (worker + 1) / workers.length);
-				long[] workerMatches = round.results[worker].bitmap;
-				for (int lane = 0; lane < to - from; lane++) {
-					if ((workerMatches[lane >>> 6] & 1L << (lane & 63)) != 0L) {
-						int globalLane = from + lane;
-						matched[globalLane >>> 6] |= 1L << (globalLane & 63);
-						matchedCount++;
+			try {
+				Round round = dispatch(Operation.NODE_ANY, nodes, nodeCount, 0, predicateCount, null);
+				Arrays.fill(matched, 0L);
+				int matchedCount = 0;
+				for (int worker = 0; worker < workers.length; worker++) {
+					int from = (int) ((long) nodeCount * worker / workers.length);
+					int to = (int) ((long) nodeCount * (worker + 1) / workers.length);
+					long[] workerMatches = round.results[worker].bitmap;
+					for (int lane = 0; lane < to - from; lane++) {
+						if ((workerMatches[lane >>> 6] & 1L << (lane & 63)) != 0L) {
+							int globalLane = from + lane;
+							matched[globalLane >>> 6] |= 1L << (globalLane & 63);
+							matchedCount++;
+						}
 					}
 				}
+				recordRound(round);
+				NODE_LANES_PRUNED.addAndGet(matchedCount);
+				recordParallelRound();
+				return matchedCount;
+			} finally {
+				close();
 			}
-			recordRound(round);
-			NODE_LANES_PRUNED.addAndGet(matchedCount);
-			return matchedCount;
 		}
 
 		void findPresence(int predicateFrom, int predicateCount, long[] nodes, int nodeCount, long[] bitmap)
 				throws IOException {
-			Round round = dispatch(Operation.PRESENCE, nodes, nodeCount, predicateFrom, predicateCount, null);
-			for (WorkerResult result : round.results) {
-				int destination = (result.predicateFrom - predicateFrom) * wordsPerBatch;
-				System.arraycopy(result.bitmap, 0, bitmap, destination,
-						result.predicateCount * wordsPerBatch);
+			try {
+				Round round = dispatch(Operation.PRESENCE, nodes, nodeCount, predicateFrom, predicateCount, null);
+				for (WorkerResult result : round.results) {
+					int destination = (result.predicateFrom - predicateFrom) * wordsPerBatch;
+					System.arraycopy(result.bitmap, 0, bitmap, destination,
+							result.predicateCount * wordsPerBatch);
+				}
+				recordRound(round);
+				recordParallelRound();
+			} finally {
+				close();
 			}
-			recordRound(round);
+		}
+
+		private void recordParallelRound() {
+			PARALLEL_ROUNDS.incrementAndGet();
+			HELPER_CHUNKS.addAndGet(workers.length);
+			if (!helperTasksRecorded) {
+				helperTasksRecorded = true;
+				HELPER_TASKS.addAndGet(workers.length);
+				LmdbNativeExplain.addRuntimeMetric(parentRow.telemetryTarget,
+						"wildcardParallelHelperTasksActual", workers.length);
+			}
+			LAST_PARALLEL_DECLINE.set(null);
+			LmdbNativeExplain.addRuntimeMetric(parentRow.telemetryTarget, "wildcardParallelRoundsActual", 1L);
 		}
 
 		private Round dispatch(Operation operation, long[] nodes, int nodeCount, int predicateFrom,

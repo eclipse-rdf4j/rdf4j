@@ -69,6 +69,38 @@ public final class LmdbNativeKernelIrTestAccess {
 		return LmdbWildcardPredicateBatch.WORKERS.get();
 	}
 
+	public static long wildcardParallelRounds() {
+		return LmdbWildcardPredicateBatch.PARALLEL_ROUNDS.get();
+	}
+
+	public static long wildcardParallelMultiplicityRounds() {
+		return LmdbWildcardPredicateBatch.PARALLEL_MULTIPLICITY_ROUNDS.get();
+	}
+
+	public static long wildcardParallelPayloadRounds() {
+		return LmdbWildcardPredicateBatch.PARALLEL_PAYLOAD_ROUNDS.get();
+	}
+
+	public static long wildcardHelperTasks() {
+		return LmdbWildcardPredicateBatch.HELPER_TASKS.get();
+	}
+
+	public static long wildcardCoordinatorChunks() {
+		return LmdbWildcardPredicateBatch.COORDINATOR_CHUNKS.get();
+	}
+
+	public static long wildcardHelperChunks() {
+		return LmdbWildcardPredicateBatch.HELPER_CHUNKS.get();
+	}
+
+	public static long wildcardParallelRetries() {
+		return LmdbWildcardPredicateBatch.PARALLEL_RETRIES.get();
+	}
+
+	public static String wildcardLastParallelDecline() {
+		return LmdbWildcardPredicateBatch.LAST_PARALLEL_DECLINE.get();
+	}
+
 	public static long wildcardMemoryRefusals() {
 		return LmdbWildcardPredicateBatch.MEMORY_REFUSALS.get();
 	}

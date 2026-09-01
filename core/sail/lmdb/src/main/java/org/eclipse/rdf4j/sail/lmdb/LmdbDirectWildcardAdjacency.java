@@ -116,6 +116,16 @@ final class LmdbDirectWildcardAdjacency implements NativeLmdbQuerySource.Wildcar
 	}
 
 	@Override
+	public long quadCount() {
+		return bound().quadCount();
+	}
+
+	@Override
+	public NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor openKeyRunCursor(long fromOrdinal, long toOrdinal) {
+		return bound().openKeyRunCursor(fromOrdinal, toOrdinal);
+	}
+
+	@Override
 	public long size(long runHandle) {
 		return bound().size(runHandle);
 	}

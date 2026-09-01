@@ -24,6 +24,12 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 @Experimental
 final class RowState implements LmdbNativeSlotReader {
+	enum ParallelOwnership {
+		QUERY,
+		OUTER_PIPELINE,
+		WILDCARD_HELPER
+	}
+
 	private static final AtomicLong FALLBACK_SOLUTION_IDENTITIES = new AtomicLong(1L);
 	final NativeLmdbQuerySource source;
 	final NativeSlotLayout layout;
@@ -57,6 +63,7 @@ final class RowState implements LmdbNativeSlotReader {
 	 * scratch) alias their parent's scope so byte admission draws on one per-query ledger.
 	 */
 	LmdbNativeQueryMemoryScope memoryScope = new LmdbNativeQueryMemoryScope();
+	ParallelOwnership parallelOwnership = ParallelOwnership.QUERY;
 
 	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base) {
 		this(source, layout, base, null, null, new NativeCancellationToken());

@@ -42,6 +42,11 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 interface NativeBooleanFilter {
 	boolean accept(RowState row);
 
+	/** Whether batch selection can dispatch a variable-predicate wildcard existence round. */
+	default boolean variablePredicateExists() {
+		return false;
+	}
+
 	/**
 	 * Compacts {@code sel[0..n)} in encounter order and returns the surviving count. The default is the scalar
 	 * three-valued/error boundary used before batch specialization: populate the caller-owned scratch row, then invoke
@@ -218,6 +223,11 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	}
 
 	@Override
+	public boolean variablePredicateExists() {
+		return delegate.variablePredicateExists();
+	}
+
+	@Override
 	public boolean parallelWorkerForkable() {
 		return delegate.parallelWorkerForkable();
 	}
@@ -336,6 +346,11 @@ final class CloseOnceNativeBooleanFilter implements NativeBooleanFilter {
 	}
 
 	@Override
+	public boolean variablePredicateExists() {
+		return delegate.variablePredicateExists();
+	}
+
+	@Override
 	public void close() {
 		if (closed) {
 			return;
@@ -376,6 +391,11 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 			}
 		}
 		this.varyingSlots = Arrays.copyOf(varying, n);
+	}
+
+	@Override
+	public boolean variablePredicateExists() {
+		return !p.isConstant();
 	}
 
 	@Override
@@ -1331,6 +1351,11 @@ final class NegatedNativeBooleanFilter implements NativeBooleanFilter {
 			return exists.selectBatchNegated(batch, selection, count, scratch);
 		}
 		return NativeBooleanFilter.super.selectBatch(batch, selection, count, scratch);
+	}
+
+	@Override
+	public boolean variablePredicateExists() {
+		return delegate.variablePredicateExists();
 	}
 
 	@Override

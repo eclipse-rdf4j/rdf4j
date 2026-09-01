@@ -662,6 +662,14 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		if (existsIntersection != null) {
 			existsIntersection.prepare(source, row);
 		}
+		if (LmdbWildcardPredicateBatch.weightedAggregateCandidate(arg, aggregates)
+				&& LmdbWildcardPredicateBatch.ownsWeightedParallelRound(arg, row, groupSlots, aggregates)) {
+			List<BindingSet> result = evaluateWildcardWeighted(row, new AggContext(source, strictCompare, true),
+					metrics);
+			if (result != null) {
+				return result;
+			}
+		}
 
 		try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter
 				.<List<BindingSet>>forExpr(explainTarget, source)

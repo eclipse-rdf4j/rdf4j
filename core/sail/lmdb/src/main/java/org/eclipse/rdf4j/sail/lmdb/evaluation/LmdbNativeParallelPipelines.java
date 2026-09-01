@@ -101,7 +101,7 @@ final class LmdbNativeParallelPipelines {
 
 	static int configuredMaxTasks() {
 		Integer configured = Integer.getInteger("rdf4j.lmdb.parallel.maxTasks");
-		int maxTasks = configured != null ? configured : (Runtime.getRuntime().availableProcessors()+1);
+		int maxTasks = configured != null ? configured : (Runtime.getRuntime().availableProcessors() + 1);
 		return Math.max(1, Math.min(maxTasks, MAX_POOL_TASKS));
 	}
 
@@ -813,6 +813,7 @@ final class LmdbNativeParallelPipelines {
 			NativeLmdbQuerySource source = sources[worker];
 			RowState row = new RowState(source, step.layout, consumerRow.base, consumerRow.exactValuesMetrics,
 					consumerRow.cancellation);
+			row.parallelOwnership = RowState.ParallelOwnership.OUTER_PIPELINE;
 			row.memoryScope = consumerRow.memoryScope;
 			row.runtimePlan = consumerRow.runtimePlan;
 			if (!NativeRowSeeder.seed(row.slots, step.layout, consumerRow.base, source)) {

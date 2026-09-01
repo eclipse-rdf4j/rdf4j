@@ -492,9 +492,19 @@ class LmdbNativeWildcardPredicateBatchTest {
 		List<String> genericPayload = allRows(payloadQuery);
 
 		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(NATIVE_BATCH_ROWS_PROPERTY, "16");
+		System.setProperty(PARALLEL_PROPERTY, "true");
+		System.setProperty(PARALLEL_MIN_WORK_PROPERTY, "0");
+		System.setProperty(PARALLEL_STARTUP_WORK_PROPERTY, "1.0E12");
+		System.setProperty(PARALLEL_THREADS_PROPERTY, "2");
+		System.setProperty(PARALLEL_MAX_TASKS_PROPERTY, "2");
 		long loweringsBefore = LmdbNativeKernelIrTestAccess.variablePredicateLowerings();
 		long payloadBefore = LmdbNativeKernelIrTestAccess.wildcardPayloadRowsDecoded();
+		long workersBefore = LmdbNativeKernelIrTestAccess.wildcardWorkers();
 		assertThat(rows(distinctQuery)).containsExactlyElementsOf(genericDistinct);
+		assertThat(LmdbNativeKernelIrTestAccess.wildcardWorkers())
+				.as("all-unbound predicate enumeration should use predicate-range helpers%n%s", explain(distinctQuery))
+				.isGreaterThan(workersBefore);
 		assertThat(LmdbNativeKernelIrTestAccess.wildcardPayloadRowsDecoded())
 				.as("an unrestricted predicate-domain query should not decode fibers")
 				.isEqualTo(payloadBefore);
@@ -502,11 +512,23 @@ class LmdbNativeWildcardPredicateBatchTest {
 		assertThat(LmdbNativeKernelIrTestAccess.wildcardPayloadRowsDecoded())
 				.as("all-unbound node DISTINCT should union predicate-major root coordinates")
 				.isEqualTo(payloadBefore);
+		workersBefore = LmdbNativeKernelIrTestAccess.wildcardWorkers();
 		assertThat(allRows(distinctPairQuery)).containsExactlyElementsOf(genericDistinctPairs);
+		assertThat(LmdbNativeKernelIrTestAccess.wildcardWorkers())
+				.as("all-unbound pair presence should use predicate-range helpers%n%s", explain(distinctPairQuery))
+				.isGreaterThan(workersBefore);
 		assertThat(LmdbNativeKernelIrTestAccess.wildcardPayloadRowsDecoded())
 				.as("all-unbound pair presence should consume root coordinates only")
 				.isEqualTo(payloadBefore);
+		workersBefore = LmdbNativeKernelIrTestAccess.wildcardWorkers();
+		long multiplicityRoundsBefore = LmdbNativeKernelIrTestAccess.wildcardParallelMultiplicityRounds();
 		assertThat(allRows(groupedQuery)).containsExactlyElementsOf(genericGrouped);
+		assertThat(LmdbNativeKernelIrTestAccess.wildcardWorkers())
+				.as("all-unbound multiplicity should use predicate-range helpers%n%s", explain(groupedQuery))
+				.isGreaterThan(workersBefore);
+		assertThat(LmdbNativeKernelIrTestAccess.wildcardParallelMultiplicityRounds())
+				.as("all-unbound multiplicity helpers should compute exact root-run counts")
+				.isGreaterThan(multiplicityRoundsBefore);
 		assertThat(LmdbNativeKernelIrTestAccess.wildcardPayloadRowsDecoded())
 				.as("all-unbound COUNT(*) should aggregate key-run sizes")
 				.isEqualTo(payloadBefore);
@@ -514,7 +536,15 @@ class LmdbNativeWildcardPredicateBatchTest {
 		assertThat(LmdbNativeKernelIrTestAccess.wildcardPayloadRowsDecoded())
 				.as("object-predicate grouping should select incoming roots and exact run multiplicity")
 				.isEqualTo(payloadBefore);
+		workersBefore = LmdbNativeKernelIrTestAccess.wildcardWorkers();
+		long payloadRoundsBefore = LmdbNativeKernelIrTestAccess.wildcardParallelPayloadRounds();
 		assertThat(allRows(payloadQuery)).containsExactlyElementsOf(genericPayload);
+		assertThat(LmdbNativeKernelIrTestAccess.wildcardWorkers())
+				.as("all-unbound payload should use predicate-range helpers%n%s", explain(payloadQuery))
+				.isGreaterThan(workersBefore);
+		assertThat(LmdbNativeKernelIrTestAccess.wildcardParallelPayloadRounds())
+				.as("all-unbound payload helpers should decode bounded run-offset ranges")
+				.isGreaterThan(payloadRoundsBefore);
 		assertThat(LmdbNativeKernelIrTestAccess.variablePredicateLowerings())
 				.as("all reduced and payload all-unbound demands should lower to predicate-major adjacency")
 				.isGreaterThanOrEqualTo(loweringsBefore + 6L);

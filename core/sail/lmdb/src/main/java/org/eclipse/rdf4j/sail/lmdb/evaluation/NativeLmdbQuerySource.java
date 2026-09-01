@@ -687,6 +687,25 @@ public interface NativeLmdbQuerySource {
 
 		NativeAdjacency.KeyRunCursor openKeyRunCursor();
 
+		/** Exact visible quad count for the bound plane, or {@code -1} when unavailable. */
+		default long quadCount() {
+			return -1L;
+		}
+
+		/** Opens the bound plane's root-ordinal window {@code [fromOrdinal, toOrdinal)}. */
+		default NativeAdjacency.KeyRunCursor openKeyRunCursor(long fromOrdinal, long toOrdinal) {
+			long count = keyCount();
+			if (fromOrdinal < 0L || toOrdinal < fromOrdinal || count < 0L || toOrdinal > count) {
+				throw new IllegalArgumentException(
+						"invalid wildcard key-run window: [" + fromOrdinal + ", " + toOrdinal + ") of " + count);
+			}
+			NativeAdjacency.KeyRunCursor delegate = openKeyRunCursor();
+			if (delegate == null) {
+				return null;
+			}
+			return NativeAdjacency.boundedKeyRunCursor(delegate, fromOrdinal, toOrdinal);
+		}
+
 		@Override
 		void close();
 	}
@@ -702,6 +721,72 @@ public interface NativeLmdbQuerySource {
 
 		/** This view cannot answer for the key; the caller must use the store path. */
 		long NOT_COVERED = -2L;
+
+		static KeyRunCursor boundedKeyRunCursor(KeyRunCursor delegate, long fromOrdinal, long toOrdinal) {
+			return new KeyRunCursor() {
+				private long ordinal;
+
+				@Override
+				public boolean advance() {
+					while (ordinal < fromOrdinal) {
+						if (!delegate.advance()) {
+							return false;
+						}
+						ordinal++;
+					}
+					if (ordinal >= toOrdinal || !delegate.advance()) {
+						return false;
+					}
+					ordinal++;
+					return true;
+				}
+
+				@Override
+				public long key() {
+					return delegate.key();
+				}
+
+				@Override
+				public long runHandle() {
+					return delegate.runHandle();
+				}
+
+				@Override
+				public long runSize() {
+					return delegate.runSize();
+				}
+
+				@Override
+				public long distinctNeighborCount() {
+					return delegate.distinctNeighborCount();
+				}
+
+				@Override
+				public long neighborAt(long runOffset) {
+					return delegate.neighborAt(runOffset);
+				}
+
+				@Override
+				public long contextAt(long runOffset) {
+					return delegate.contextAt(runOffset);
+				}
+
+				@Override
+				public int copyNeighbors(long runOffset, int length, long[] target, int targetOffset) {
+					return delegate.copyNeighbors(runOffset, length, target, targetOffset);
+				}
+
+				@Override
+				public int copyContexts(long runOffset, int length, long[] target, int targetOffset) {
+					return delegate.copyContexts(runOffset, length, target, targetOffset);
+				}
+
+				@Override
+				public void close() {
+					delegate.close();
+				}
+			};
+		}
 
 		/**
 		 * Forward-only physical CSF page traversal. Header counts and trait bits do not decode vector payloads; row and

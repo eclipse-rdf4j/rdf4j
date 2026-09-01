@@ -1126,6 +1126,31 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				: null;
 		boolean correlatedEntry = (arg.producedMask() & row.boundMask()) != 0L;
 		int[] retainedSlots = orderSlots.length == 0 ? sourceSlots : sortLayout.liveToPlan;
+		if (!correlatedEntry && LmdbWildcardPredicateBatch.ownsExistenceParallelRound(arg, row)) {
+			LmdbNativeStrategyProposal<NativeUnorderedInput> wildcardExists = proposeBatch(row, null, false);
+			if (wildcardExists != null) {
+				try {
+					return wildcardExists.open();
+				} finally {
+					wildcardExists.close();
+				}
+			}
+		}
+		MultiJoinPlan wildcardJoin = multiJoin;
+		if (wildcardJoin == null && distinct && arg instanceof PatternPlan pattern) {
+			wildcardJoin = new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0]);
+		}
+		if (!correlatedEntry
+				&& LmdbWildcardPredicateBatch.ownsParallelRound(wildcardJoin, row, distinct, sourceSlots, orderSlots)) {
+			LmdbNativeStrategyProposal<NativeUnorderedInput> wildcard = proposeBatch(row, wildcardJoin, false);
+			if (wildcard != null) {
+				try {
+					return wildcard.open();
+				} finally {
+					wildcard.close();
+				}
+			}
+		}
 		try (LmdbNativeStrategyArbiter<NativeUnorderedInput> arbiter = LmdbNativeStrategyArbiter
 				.<NativeUnorderedInput>forSlice(originalExpr, consumableRows(), row.source)
 				.probeHarness(new NativeProbeBufferHarness())) {
@@ -1224,12 +1249,17 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			return null;
 		}
 		int capacity = NativeBatch.configuredRows();
-		if (multiJoin == null) {
+		MultiJoinPlan batchJoin = multiJoin;
+		if (batchJoin == null && distinct && arg instanceof PatternPlan pattern) {
+			batchJoin = new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0]);
+		}
+		LmdbNativeStrategyProposal<BatchCursor> proposal = batchJoin == null ? null
+				: LmdbWildcardPredicateBatch.propose(batchJoin,
+						row, capacity, distinct, sourceSlots, orderSlots);
+		if (proposal == null && multiJoin == null) {
 			return inputProposal(() -> openDirectBatch(row, capacity), LmdbNativeAttemptMetrics.PATH_BATCH,
 					arg.estimateWork(row, row.boundMask()), estimatedRows(row));
 		}
-		LmdbNativeStrategyProposal<BatchCursor> proposal = LmdbWildcardPredicateBatch.propose(multiJoin,
-				row, capacity, distinct, sourceSlots, orderSlots);
 		if (proposal == null) {
 			proposal = multiJoin.proposeBatch(row, capacity);
 		}
@@ -1315,6 +1345,15 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		if (prefixRunPlan == null || prefixPattern == null || prefixPattern.hasRuntimeBoundSlot(row)) {
 			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
 					"not-applicable");
+			return null;
+		}
+		if (LmdbNativeParallelPipelines.enabled() && LmdbNativeParallelPipelines.configuredThreads() > 0
+				&& prefixPattern.p.hasSlot() && !prefixPattern.p.isConstant()
+				&& prefixPattern.s.lookup(row.slots) == NativeLmdbQuerySource.UNKNOWN_ID
+				&& prefixPattern.o.lookup(row.slots) == NativeLmdbQuerySource.UNKNOWN_ID
+				&& prefixPattern.estimate(row) >= LmdbNativeParallelPipelines.minimumWorkEstimate()) {
+			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
+					"wildcard-predicate-round-owner");
 			return null;
 		}
 		return inputProposal(() -> acceptPrefixRun(row, openPrefixRunCursor(row)),
@@ -1418,6 +1457,13 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		LmdbNativeExplain.recordExecutionPath(originalExpr, strategy);
 		activateOrder(row, strategy,
 				arg instanceof MultiJoinPlan ? (MultiJoinPlan) arg : null);
+		if (distinct && (LmdbWildcardPredicateBatch.isWildcardBatch(candidate)
+				|| LmdbWildcardPredicateBatch.STRATEGY.equals(strategy)
+				|| LmdbWildcardPredicateBatch.REDUCED_STRATEGY.equals(strategy))
+				&& !LmdbWildcardPredicateBatch.handlesDistinct(candidate)) {
+			RowCursor rows = LmdbWildcardPredicateBatch.asRows(candidate, row, capacity);
+			return rows == null ? null : NativeUnorderedInput.rows(row, rows);
+		}
 		NativeUnorderedInput input = NativeUnorderedInput.batch(row, candidate, capacity);
 		if (LmdbWildcardPredicateBatch.handlesDistinct(candidate)) {
 			input.dedupMode = NativeUnorderedInput.DedupMode.HANDLED;
