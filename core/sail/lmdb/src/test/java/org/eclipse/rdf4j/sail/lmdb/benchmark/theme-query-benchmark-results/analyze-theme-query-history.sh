@@ -8,14 +8,23 @@ import argparse
 import re
 import sys
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 DATED_FILE_RE = re.compile(r"results-(\d{4}-\d{2}-\d{2})(?:-(\d+))?\.md$")
+QUERY_BENCHMARK = "ThemeQueryBenchmark.executeQuery"
+PLAN_RUN_BENCHMARK = "ThemeQueryPlanRunBenchmark.runQuery"
 SUMMARY_ROW_RE = re.compile(
-    r"^ThemeQueryBenchmark\.executeQuery\s+([A-Z_]+)\s+(\d+)\s+avgt\s+(?:\d+\s+)?([0-9.]+)"
+    r"^(?P<benchmark>ThemeQuery(?:Benchmark\.executeQuery|PlanRunBenchmark\.runQuery))\s+"
+    r"(?:(?:true|false)\s+)?"
+    r"(?P<theme>[A-Z_]+)\s+"
+    r"(?P<query_index>\d+)\s+"
+    r"avgt\s+"
+    r"(?:(?:\d+)\s+)?"
+    r"(?P<score>[0-9.]+)"
 )
-PARAM_RE = re.compile(r"^# Parameters: \(themeName = ([A-Z_]+), z_queryIndex = (\d+)\)$", re.MULTILINE)
+PARAM_RE = re.compile(r"^# Parameters: \(.*themeName = ([A-Z_]+), z_queryIndex = (\d+)\)$", re.MULTILINE)
 QUERY_MARKER_RE = re.compile(r"^.*### (Optimized|Telemetry) Query ###\s*$", re.MULTILINE)
 SPARQL_START_RE = re.compile(r"^(SELECT|ASK|CONSTRUCT|DESCRIBE)\b")
 SCORE_LINE_RE = re.compile(r"^(?:Iteration\s+\d+:\s+)?[0-9.]+(?:\s+±\s+[0-9.]+)?\s+ms/op$")
@@ -70,8 +79,8 @@ class QueryContent:
 @dataclass(frozen=True)
 class ResultFile:
     path: Path
-    summary_rows: Dict[QueryKey, float]
-    summary_order: List[QueryKey]
+    benchmark_rows: Dict[str, Dict[QueryKey, float]]
+    benchmark_order: Dict[str, List[QueryKey]]
     query_content: Dict[QueryKey, QueryContent]
 
 
@@ -91,6 +100,8 @@ class QueryComparison:
     previous_best_score: Optional[float]
     direction: str
     delta_percent: float
+    baseline_stat: str = "best"
+    baseline_count: int = 0
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
@@ -115,6 +126,15 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--result-file",
         help="In query drill-down mode, only print the selected results file name.",
+    )
+    parser.add_argument(
+        "--latest-file",
+        help="Use this results file as the latest run instead of the newest dated file.",
+    )
+    parser.add_argument(
+        "--today",
+        action="store_true",
+        help="Use the newest results-YYYY-MM-DD(-N).md file for today's local date as the latest run.",
     )
     parser.add_argument(
         "--plan-kind",
@@ -149,6 +169,20 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         type=int,
         help="Only print the top N regressing queries. Implies regression sorting.",
     )
+    parser.add_argument(
+        "--baseline-start",
+        help="Only use ThemeQueryBenchmark.executeQuery rows from dated files on or after YYYY-MM-DD.",
+    )
+    parser.add_argument(
+        "--baseline-end",
+        help="Only use ThemeQueryBenchmark.executeQuery rows from dated files on or before YYYY-MM-DD.",
+    )
+    parser.add_argument(
+        "--baseline-stat",
+        choices=("best", "average"),
+        default="best",
+        help="Compare latest rows with the historical best score or the arithmetic average of baseline rows.",
+    )
     args = parser.parse_args(argv[1:] if argv else [])
     if (args.theme is None) ^ (args.query_index is None):
         parser.error("--theme and --query-index must be supplied together")
@@ -156,18 +190,31 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     query_only_flags = args.plans_only or args.result_file is not None or args.plan_kind != "all"
     if query_only_flags and not query_mode:
         parser.error("--plans-only, --result-file, and --plan-kind require --theme/--query-index")
+    if args.latest_file is not None and args.today:
+        parser.error("--latest-file and --today cannot be combined")
     if args.top is not None and args.top < 1:
         parser.error("--top must be >= 1")
     if args.min_slower_pct < 0.0 or args.min_slower_pct > 100.0:
         parser.error("--min-slower-pct must be between 0 and 100")
     if args.min_delta_ms < 0.0:
         parser.error("--min-delta-ms must be >= 0")
+    if (args.baseline_start is None) ^ (args.baseline_end is None):
+        parser.error("--baseline-start and --baseline-end must be supplied together")
+    if args.baseline_start is not None:
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", args.baseline_start):
+            parser.error("--baseline-start must use YYYY-MM-DD")
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", args.baseline_end):
+            parser.error("--baseline-end must use YYYY-MM-DD")
+        if args.baseline_start > args.baseline_end:
+            parser.error("--baseline-start must be on or before --baseline-end")
     if query_mode and (
         args.sort_regressions
         or args.top is not None
         or args.all
         or args.min_slower_pct != 20.0
         or args.min_delta_ms != 0.0
+        or args.baseline_start is not None
+        or args.baseline_stat != "best"
     ):
         parser.error("--theme/--query-index cannot be combined with overview-only flags")
     if args.all and args.sort_regressions:
@@ -190,16 +237,19 @@ def load_result_files(results_dir: Path) -> Dict[str, ResultFile]:
 
 def parse_result_file(path: Path) -> ResultFile:
     text = path.read_text(encoding="utf-8")
-    summary_rows: Dict[QueryKey, float] = {}
-    summary_order: List[QueryKey] = []
+    benchmark_rows: Dict[str, Dict[QueryKey, float]] = {}
+    benchmark_order: Dict[str, List[QueryKey]] = {}
     for line in text.splitlines():
         match = SUMMARY_ROW_RE.match(line)
         if not match:
             continue
-        key = QueryKey(match.group(1), int(match.group(2)))
-        if key not in summary_rows:
-            summary_order.append(key)
-        summary_rows[key] = float(match.group(3))
+        benchmark = match.group("benchmark")
+        key = QueryKey(match.group("theme"), int(match.group("query_index")))
+        rows = benchmark_rows.setdefault(benchmark, {})
+        order = benchmark_order.setdefault(benchmark, [])
+        if key not in rows:
+            order.append(key)
+        rows[key] = float(match.group("score"))
 
     query_content: Dict[QueryKey, QueryContent] = {}
     matches = list(PARAM_RE.finditer(text))
@@ -210,7 +260,12 @@ def parse_result_file(path: Path) -> ResultFile:
         key = QueryKey(match.group(1), int(match.group(2)))
         query_content[key] = extract_query_content(block)
 
-    return ResultFile(path=path, summary_rows=summary_rows, summary_order=summary_order, query_content=query_content)
+    return ResultFile(
+        path=path,
+        benchmark_rows=benchmark_rows,
+        benchmark_order=benchmark_order,
+        query_content=query_content,
+    )
 
 
 def extract_query_content(block: str) -> QueryContent:
@@ -281,6 +336,23 @@ def trim_block(lines: Iterable[str]) -> Optional[str]:
     return "\n".join(collected) if collected else None
 
 
+def query_benchmark_rows(result: ResultFile) -> Dict[QueryKey, float]:
+    return result.benchmark_rows.get(QUERY_BENCHMARK, {})
+
+
+def latest_rows(result: ResultFile) -> Dict[QueryKey, float]:
+    rows = query_benchmark_rows(result)
+    if rows:
+        return rows
+    return result.benchmark_rows.get(PLAN_RUN_BENCHMARK, {})
+
+
+def latest_order(result: ResultFile) -> List[QueryKey]:
+    if query_benchmark_rows(result):
+        return result.benchmark_order.get(QUERY_BENCHMARK, [])
+    return result.benchmark_order.get(PLAN_RUN_BENCHMARK, [])
+
+
 def newest_dated_file(files: Dict[str, ResultFile]) -> ResultFile:
     dated: List[Tuple[str, int, str]] = []
     for name in files:
@@ -292,20 +364,94 @@ def newest_dated_file(files: Dict[str, ResultFile]) -> ResultFile:
     return files[sorted(dated)[-1][2]]
 
 
+def newest_file_for_date(files: Dict[str, ResultFile], date_text: str) -> ResultFile:
+    dated: List[Tuple[int, str]] = []
+    for name in files:
+        match = DATED_FILE_RE.match(name)
+        if match and match.group(1) == date_text:
+            dated.append((int(match.group(2) or 0), name))
+    if not dated:
+        raise SystemExit(f"No results file found for {date_text}")
+    return files[sorted(dated)[-1][1]]
+
+
+def selected_latest_file(files: Dict[str, ResultFile], args: argparse.Namespace) -> ResultFile:
+    if args.latest_file is not None:
+        latest_name = Path(args.latest_file).name
+        if latest_name not in files:
+            raise SystemExit(f"Latest file not found in results directory: {latest_name}")
+        return files[latest_name]
+    if args.today:
+        return newest_file_for_date(files, date.today().isoformat())
+    return newest_dated_file(files)
+
+
+def dated_file_key(name: str) -> Optional[Tuple[str, int]]:
+    match = DATED_FILE_RE.match(name)
+    if not match:
+        return None
+    return match.group(1), int(match.group(2) or 0)
+
+
+def in_baseline_window(name: str, baseline_start: Optional[str], baseline_end: Optional[str]) -> bool:
+    if baseline_start is None:
+        return True
+    dated = dated_file_key(name)
+    if dated is None:
+        return False
+    date, _ = dated
+    return baseline_start <= date <= baseline_end
+
+
+def baseline_entries(
+    files: Dict[str, ResultFile],
+    latest: ResultFile,
+    key: QueryKey,
+    baseline_start: Optional[str],
+    baseline_end: Optional[str],
+) -> List[HistoricalMatch]:
+    entries: List[HistoricalMatch] = []
+    latest_score = latest_rows(latest).get(key)
+    for name, result in files.items():
+        if name == latest.path.name or not in_baseline_window(name, baseline_start, baseline_end):
+            continue
+        score = query_benchmark_rows(result).get(key)
+        if score is None:
+            continue
+        content = result.query_content.get(key, QueryContent(None, None))
+        percent_faster = 0.0
+        if latest_score is not None and latest_score != 0.0:
+            percent_faster = ((latest_score - score) / latest_score) * 100.0
+        entries.append(
+            HistoricalMatch(
+                file_name=name,
+                score=score,
+                percent_faster=percent_faster,
+                content=content,
+            )
+        )
+    return sort_matches(entries)
+
+
 def historical_matches(
     files: Dict[str, ResultFile],
     latest: ResultFile,
     key: QueryKey,
     min_slower_pct: float,
     min_delta_ms: float,
+    baseline_start: Optional[str] = None,
+    baseline_end: Optional[str] = None,
+    baseline_stat: str = "best",
 ) -> List[HistoricalMatch]:
-    latest_score = latest.summary_rows[key]
+    latest_score = latest_rows(latest)[key]
+    if baseline_stat == "average":
+        return baseline_entries(files, latest, key, baseline_start, baseline_end)
     threshold = latest_score * (1.0 - (min_slower_pct / 100.0))
     matches: List[HistoricalMatch] = []
     for name, result in files.items():
-        if name == latest.path.name:
+        if name == latest.path.name or not in_baseline_window(name, baseline_start, baseline_end):
             continue
-        score = result.summary_rows.get(key)
+        score = query_benchmark_rows(result).get(key)
         if score is None or score > threshold or latest_score - score < min_delta_ms:
             continue
         content = result.query_content.get(key, QueryContent(None, None))
@@ -320,14 +466,13 @@ def historical_matches(
     return sort_matches(matches)
 
 
-def query_runs(files: Dict[str, ResultFile], key: QueryKey) -> List[HistoricalMatch]:
+def query_runs(files: Dict[str, ResultFile], latest: ResultFile, key: QueryKey) -> List[HistoricalMatch]:
     rows: List[HistoricalMatch] = []
-    latest = newest_dated_file(files)
-    latest_score = latest.summary_rows.get(key)
+    latest_score = latest_rows(latest).get(key)
     if latest_score is None:
         raise SystemExit(f"{key.label()} not present in latest run {latest.path.name}")
     for name, result in files.items():
-        score = result.summary_rows.get(key)
+        score = latest_rows(result).get(key) if name == latest.path.name else query_benchmark_rows(result).get(key)
         if score is None:
             continue
         content = result.query_content.get(key, QueryContent(None, None))
@@ -353,11 +498,16 @@ def format_score(value: float) -> str:
     return f"{value:.3f}"
 
 
-def comparison_for_key(files: Dict[str, ResultFile], latest: ResultFile, key: QueryKey) -> QueryComparison:
-    latest_score = latest.summary_rows[key]
-    historical_scores = [
-        score for name, result in files.items() if name != latest.path.name if (score := result.summary_rows.get(key)) is not None
-    ]
+def comparison_for_key(
+    files: Dict[str, ResultFile],
+    latest: ResultFile,
+    key: QueryKey,
+    baseline_start: Optional[str],
+    baseline_end: Optional[str],
+    baseline_stat: str,
+) -> QueryComparison:
+    latest_score = latest_rows(latest)[key]
+    historical_scores = [entry.score for entry in baseline_entries(files, latest, key, baseline_start, baseline_end)]
     if not historical_scores:
         return QueryComparison(
             key=key,
@@ -366,34 +516,47 @@ def comparison_for_key(files: Dict[str, ResultFile], latest: ResultFile, key: Qu
             previous_best_score=None,
             direction="no-history",
             delta_percent=0.0,
+            baseline_stat=baseline_stat,
+            baseline_count=0,
         )
 
     previous_best_score = min(historical_scores)
-    if latest_score < previous_best_score:
+    baseline_score = (
+        sum(historical_scores) / len(historical_scores)
+        if baseline_stat == "average"
+        else previous_best_score
+    )
+    if latest_score < baseline_score:
         return QueryComparison(
             key=key,
             latest_score=latest_score,
-            fastest_score=latest_score,
-            previous_best_score=previous_best_score,
+            fastest_score=baseline_score if baseline_stat == "average" else latest_score,
+            previous_best_score=baseline_score,
             direction="faster",
-            delta_percent=((previous_best_score - latest_score) / previous_best_score) * 100.0,
+            delta_percent=((baseline_score - latest_score) / baseline_score) * 100.0,
+            baseline_stat=baseline_stat,
+            baseline_count=len(historical_scores),
         )
-    if latest_score == previous_best_score:
+    if latest_score == baseline_score:
         return QueryComparison(
             key=key,
             latest_score=latest_score,
             fastest_score=latest_score,
-            previous_best_score=previous_best_score,
+            previous_best_score=baseline_score,
             direction="same",
             delta_percent=0.0,
+            baseline_stat=baseline_stat,
+            baseline_count=len(historical_scores),
         )
     return QueryComparison(
         key=key,
         latest_score=latest_score,
-        fastest_score=previous_best_score,
-        previous_best_score=previous_best_score,
+        fastest_score=baseline_score,
+        previous_best_score=baseline_score,
         direction="slower",
-        delta_percent=((latest_score - previous_best_score) / latest_score) * 100.0,
+        delta_percent=((latest_score - baseline_score) / latest_score) * 100.0,
+        baseline_stat=baseline_stat,
+        baseline_count=len(historical_scores),
     )
 
 
@@ -410,7 +573,23 @@ def regression_sort_key(comparison: QueryComparison) -> Tuple[float, float, str,
 
 
 def summary_line(comparison: QueryComparison) -> str:
-    prefix = f"  q{comparison.key.query_index}: latest {format_score(comparison.latest_score)} ms/op | fastest {format_score(comparison.fastest_score)} ms/op | "
+    if comparison.baseline_stat == "average":
+        prefix = (
+            f"  q{comparison.key.query_index}: latest {format_score(comparison.latest_score)} ms/op | "
+            f"baseline average {format_score(comparison.fastest_score)} ms/op | "
+        )
+        if comparison.direction == "no-history":
+            return prefix + "no baseline"
+        if comparison.direction == "faster":
+            return prefix + f"{comparison.delta_percent:.1f}% faster than baseline"
+        if comparison.direction == "same":
+            return prefix + "matches baseline"
+        return prefix + f"{comparison.delta_percent:.1f}% slower than baseline"
+
+    prefix = (
+        f"  q{comparison.key.query_index}: latest {format_score(comparison.latest_score)} ms/op | "
+        f"fastest {format_score(comparison.fastest_score)} ms/op | "
+    )
     if comparison.direction == "no-history":
         return prefix + "no previous run"
     if comparison.direction == "faster":
@@ -446,6 +625,13 @@ def format_sorted_summary(comparisons: Dict[QueryKey, QueryComparison], summary_
     lines: List[str] = []
     for index, key in enumerate(summary_keys, start=1):
         comparison = comparisons[key]
+        if comparison.baseline_stat == "average":
+            lines.append(
+                f"{index}. {key.label()}: latest {format_score(comparison.latest_score)} ms/op | "
+                f"baseline average {format_score(comparison.fastest_score)} ms/op | "
+                f"{comparison.delta_percent:.1f}% slower than baseline"
+            )
+            continue
         lines.append(
             f"{index}. {key.label()}: latest {format_score(comparison.latest_score)} ms/op | "
             f"fastest {format_score(comparison.fastest_score)} ms/op | "
@@ -462,19 +648,27 @@ def format_summary(
     top_n: Optional[int],
     min_slower_pct: float,
     min_delta_ms: float,
+    baseline_start: Optional[str],
+    baseline_end: Optional[str],
+    baseline_stat: str,
 ) -> str:
-    comparisons = {key: comparison_for_key(files, latest, key) for key in latest.summary_order}
+    latest_summary_order = latest_order(latest)
+    latest_summary_rows = latest_rows(latest)
+    comparisons = {
+        key: comparison_for_key(files, latest, key, baseline_start, baseline_end, baseline_stat)
+        for key in latest_summary_order
+    }
     regression_keys = sorted_regression_keys(comparisons, min_slower_pct, min_delta_ms)
     if top_n is not None:
         regression_keys = regression_keys[:top_n]
 
     if include_all:
-        summary_keys = list(latest.summary_order)
+        summary_keys = list(latest_summary_order)
     elif sort_regressions or top_n is not None:
         summary_keys = regression_keys
     else:
         summary_keys = [
-            key for key in latest.summary_order if is_regression(comparisons[key], min_slower_pct, min_delta_ms)
+            key for key in latest_summary_order if is_regression(comparisons[key], min_slower_pct, min_delta_ms)
         ]
 
     detail_keys = (
@@ -482,7 +676,7 @@ def format_summary(
         if (sort_regressions or top_n is not None)
         else [
             key
-            for key in latest.summary_order
+            for key in latest_summary_order
             if is_regression(comparisons[key], min_slower_pct, min_delta_ms)
         ]
     )
@@ -491,6 +685,13 @@ def format_summary(
         f"Latest run: {latest.path.name}",
         f"Threshold: {min_slower_pct:.1f}%",
     ]
+    if baseline_start is not None or baseline_stat != "best":
+        window = (
+            f"from {baseline_start} to {baseline_end}"
+            if baseline_start is not None
+            else "from all historical files"
+        )
+        lines.append(f"Baseline: {baseline_stat} {QUERY_BENCHMARK} {window}")
     if min_delta_ms > 0.0:
         lines.append(f"Minimum delta: {format_score(min_delta_ms)} ms")
     lines.extend(["", "Summary"])
@@ -511,12 +712,31 @@ def format_summary(
     if detail_keys:
         lines.extend(["", "Details"])
         for key in detail_keys:
-            matches = historical_matches(files, latest, key, min_slower_pct, min_delta_ms)
+            matches = historical_matches(
+                files,
+                latest,
+                key,
+                min_slower_pct,
+                min_delta_ms,
+                baseline_start,
+                baseline_end,
+                baseline_stat,
+            )
             lines.append("")
             lines.append(key.label())
-            lines.append(f"  latest: {format_score(latest.summary_rows[key])} ms/op")
-            lines.append("  faster runs:")
+            lines.append(f"  latest: {format_score(latest_summary_rows[key])} ms/op")
+            lines.append("  baseline runs:" if baseline_stat == "average" else "  faster runs:")
             for match in matches:
+                if baseline_stat == "average":
+                    delta = delta_label(match.percent_faster)
+                    lines.append(
+                        "  - "
+                        f"{match.file_name}: {format_score(match.score)} ms/op "
+                        f"({delta}) | "
+                        f"plan {'yes' if match.content.has_plan else 'no'} | "
+                        f"query {'yes' if match.content.has_query else 'no'}"
+                    )
+                    continue
                 lines.append(
                     "  - "
                     f"{match.file_name}: {format_score(match.score)} ms/op "
@@ -536,10 +756,11 @@ def render_query_mode(
     result_file: Optional[str],
     plan_kind: str,
 ) -> str:
-    if key not in latest.summary_rows:
+    latest_summary_rows = latest_rows(latest)
+    if key not in latest_summary_rows:
         raise SystemExit(f"{key.label()} not present in latest run {latest.path.name}")
 
-    matches = query_runs(files, key)
+    matches = query_runs(files, latest, key)
     if result_file is not None:
         matches = [match for match in matches if match.file_name == result_file]
     if plans_only:
@@ -548,7 +769,7 @@ def render_query_mode(
     lines = [
         f"Latest run: {latest.path.name}",
         f"Query: {key.label()}",
-        f"Latest score: {format_score(latest.summary_rows[key])} ms/op",
+        f"Latest score: {format_score(latest_summary_rows[key])} ms/op",
     ]
     if result_file is not None:
         lines.append(f"Result file: {result_file}")
@@ -622,7 +843,7 @@ def main(argv: Sequence[str]) -> int:
     args = parse_args(argv)
     results_dir = Path(args.results_dir).resolve()
     files = load_result_files(results_dir)
-    latest = newest_dated_file(files)
+    latest = selected_latest_file(files, args)
 
     if args.theme is not None:
         output = render_query_mode(
@@ -642,6 +863,9 @@ def main(argv: Sequence[str]) -> int:
             args.top,
             args.min_slower_pct,
             args.min_delta_ms,
+            args.baseline_start,
+            args.baseline_end,
+            args.baseline_stat,
         )
 
     print(output)

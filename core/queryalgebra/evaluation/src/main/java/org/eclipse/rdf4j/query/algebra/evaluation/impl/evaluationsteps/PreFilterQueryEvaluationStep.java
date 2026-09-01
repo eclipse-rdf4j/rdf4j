@@ -24,6 +24,7 @@ public class PreFilterQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationStep wrapped;
 	private final Predicate<BindingSet> condition;
 	private final QueryModelNode metricTarget;
+	private final DeferredLongMetric rejectedRows;
 
 	public PreFilterQueryEvaluationStep(QueryEvaluationStep wrapped, QueryValueEvaluationStep condition) {
 		this(wrapped, condition, null);
@@ -34,12 +35,16 @@ public class PreFilterQueryEvaluationStep implements QueryEvaluationStep {
 		this.wrapped = wrapped;
 		this.condition = condition.asPredicate();
 		this.metricTarget = metricTarget;
+		this.rejectedRows = DeferredLongMetric.create(metricTarget,
+				TelemetryMetricNames.LEFT_JOIN_CONDITION_REJECTED_ROWS_ACTUAL);
 	}
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet leftBindings) {
 		if (!condition.test(leftBindings)) {
-			if (metricTarget != null) {
+			if (rejectedRows != null) {
+				rejectedRows.increment();
+			} else if (metricsEnabled(metricTarget)) {
 				metricTarget.setLongMetricActual(TelemetryMetricNames.LEFT_JOIN_CONDITION_REJECTED_ROWS_ACTUAL,
 						Math.max(0L,
 								metricTarget.getLongMetricActual(
@@ -51,5 +56,9 @@ public class PreFilterQueryEvaluationStep implements QueryEvaluationStep {
 		}
 
 		return wrapped.evaluate(leftBindings);
+	}
+
+	private static boolean metricsEnabled(QueryModelNode node) {
+		return node != null && (node.isRuntimeTelemetryEnabled() || node.isCostFeedbackTrackingEnabled());
 	}
 }

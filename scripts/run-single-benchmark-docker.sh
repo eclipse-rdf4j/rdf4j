@@ -68,9 +68,15 @@ strip_token_delimiters() {
 resolve_benchmark_class_source() {
         local benchmark_class="$1"
         local class_path="${benchmark_class//./\/}.java"
+        local candidate
         local -a matches
 
-        mapfile -t matches < <(find "${REPO_ROOT}" -type f -path "*/src/*/java/${class_path}" | sort)
+        matches=()
+        while IFS= read -r candidate; do
+                if [[ "${candidate}" == */src/*/java/"${class_path}" ]]; then
+                        matches+=("${candidate}")
+                fi
+        done < <(rg --files -g "${class_path##*/}" "${REPO_ROOT}" | sort)
 
         if [[ ${#matches[@]} -eq 0 ]]; then
                 echo "Error: Could not resolve benchmark class '${benchmark_class}' to a module." >&2

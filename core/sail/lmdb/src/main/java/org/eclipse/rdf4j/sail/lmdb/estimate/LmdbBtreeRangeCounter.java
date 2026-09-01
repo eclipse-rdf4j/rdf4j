@@ -22,10 +22,13 @@ final class LmdbBtreeRangeCounter {
 
 	private final LmdbDataFile dataFile;
 	private final LmdbMeta meta;
+	private final PageBuffers pageBuffers;
+	private final LmdbNode node = new LmdbNode();
 
-	LmdbBtreeRangeCounter(LmdbDataFile dataFile, LmdbMeta meta) {
+	LmdbBtreeRangeCounter(LmdbDataFile dataFile, LmdbMeta meta, PageBuffers pageBuffers) {
 		this.dataFile = dataFile;
 		this.meta = meta;
+		this.pageBuffers = pageBuffers;
 	}
 
 	RangeCountResult countRange(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
@@ -42,7 +45,7 @@ final class LmdbBtreeRangeCounter {
 
 		while (true) {
 			while (cursor.leafIndex < cursor.leafPage.numKeys) {
-				LmdbNode node = cursor.leafPage.node(cursor.leafIndex);
+				cursor.leafPage.readNode(cursor.leafIndex, node);
 				int cmpMax = LmdbKeyComparator.compare(cursor.leafPage.buffer, node.keyOffset(), node.keySize(), maxKey,
 						maxKeyLength);
 				if (cmpMax > 0) {
@@ -69,7 +72,7 @@ final class LmdbBtreeRangeCounter {
 			return null;
 		}
 
-		LmdbNode node = cursor.leafPage.node(cursor.leafIndex);
+		cursor.leafPage.readNode(cursor.leafIndex, node);
 		int cmp = LmdbKeyComparator.compare(cursor.leafPage.buffer, node.keyOffset(), node.keySize(), key, keyLength);
 		if (cmp != 0) {
 			return null;
@@ -85,7 +88,7 @@ final class LmdbBtreeRangeCounter {
 	private SeekCursor seek(LmdbDb db, byte[] searchKey, int searchKeyLength, RangeCountResult stats)
 			throws IOException {
 		List<BranchFrame> branchPath = new ArrayList<>();
-		LmdbPage page = dataFile.readPage(db.rootPgno(), meta);
+		LmdbPage page = readPage(db.rootPgno(), 0);
 		if (page.isBranch()) {
 			stats.branchPagesRead++;
 		}
@@ -110,9 +113,9 @@ final class LmdbBtreeRangeCounter {
 			if (childIndex < 0 || childIndex >= page.numKeys) {
 				throw new IOException("Corrupt branch descent index " + childIndex + " for page " + page.expectedPgno);
 			}
-			LmdbNode branchNode = page.node(childIndex);
+			page.readNode(childIndex, node);
 			branchPath.add(new BranchFrame(page, childIndex));
-			page = dataFile.readPage(branchNode.branchPgno(), meta);
+			page = readPage(node.branchPgno(), branchPath.size());
 			if (page.isBranch()) {
 				stats.branchPagesRead++;
 			}
@@ -139,8 +142,8 @@ final class LmdbBtreeRangeCounter {
 			int nextChild = last.childIndex + 1;
 			if (nextChild < last.page.numKeys) {
 				last.childIndex = nextChild;
-				LmdbNode nextNode = last.page.node(nextChild);
-				LmdbPage page = dataFile.readPage(nextNode.branchPgno(), meta);
+				last.page.readNode(nextChild, node);
+				LmdbPage page = readPage(node.branchPgno(), cursor.branchPath.size());
 				if (page.isBranch()) {
 					stats.branchPagesRead++;
 				}
@@ -153,8 +156,8 @@ final class LmdbBtreeRangeCounter {
 						throw new IOException("Corrupt branch page with zero keys: " + page.expectedPgno);
 					}
 					cursor.branchPath.add(new BranchFrame(page, 0));
-					LmdbNode firstNode = page.node(0);
-					page = dataFile.readPage(firstNode.branchPgno(), meta);
+					page.readNode(0, node);
+					page = readPage(node.branchPgno(), cursor.branchPath.size());
 					if (page.isBranch()) {
 						stats.branchPagesRead++;
 					}
@@ -175,6 +178,10 @@ final class LmdbBtreeRangeCounter {
 		return false;
 	}
 
+	private LmdbPage readPage(long pgno, int depth) throws IOException {
+		return dataFile.readPage(pgno, meta, pageBuffers.level(depth, meta.pageSize()));
+	}
+
 	private SearchResult findFirstGreaterOrEqual(LmdbPage page, byte[] key, int keyLength, boolean leafSearch)
 			throws IOException {
 		if (page.numKeys == 0) {
@@ -193,7 +200,7 @@ final class LmdbBtreeRangeCounter {
 
 		while (low <= high) {
 			index = (low + high) >>> 1;
-			LmdbNode node = page.node(index);
+			page.readNode(index, node);
 			rc = LmdbKeyComparator.compare(key, keyLength, page.buffer, node.keyOffset(), node.keySize());
 			if (rc == 0) {
 				return new SearchResult(index, true);
@@ -215,13 +222,16 @@ final class LmdbBtreeRangeCounter {
 	}
 
 	private boolean matches(LmdbNode node, ByteBuffer pageBuffer, GroupMatcher matcher) {
-		ByteBuffer keySlice = pageBuffer.duplicate();
-		keySlice.order(pageBuffer.order());
-		keySlice.position(node.keyOffset());
-		keySlice.limit(node.keyOffset() + node.keySize());
-		ByteBuffer keyView = keySlice.slice();
-		keyView.order(pageBuffer.order());
-		return matcher.matches(keyView);
+		int originalPosition = pageBuffer.position();
+		int originalLimit = pageBuffer.limit();
+		try {
+			pageBuffer.limit(node.keyOffset() + node.keySize());
+			pageBuffer.position(node.keyOffset());
+			return matcher.matches(pageBuffer);
+		} finally {
+			pageBuffer.limit(originalLimit);
+			pageBuffer.position(originalPosition);
+		}
 	}
 
 	private long countNodeEntries(LmdbNode node, LmdbPage page, RangeCountResult stats) throws IOException {
@@ -237,7 +247,7 @@ final class LmdbBtreeRangeCounter {
 		}
 		if ((node.nodeFlags() & LmdbFormat.F_BIGDATA) != 0 && node.valueSize() >= Long.BYTES) {
 			long overflowPgno = page.buffer.getLong(node.valueOffset());
-			LmdbPage overflowPage = dataFile.readPage(overflowPgno, meta);
+			LmdbPage overflowPage = dataFile.readPage(overflowPgno, meta, pageBuffers.scratch(meta.pageSize()));
 			stats.overflowPagesRead += Math.max(overflowPage.overflowPages, 1);
 		}
 		return 1;
@@ -261,6 +271,30 @@ final class LmdbBtreeRangeCounter {
 	}
 
 	private record SearchResult(int index, boolean exact) {
+	}
+
+	static final class PageBuffers {
+		private final List<ByteBuffer> levels = new ArrayList<>();
+		private ByteBuffer scratch;
+
+		ByteBuffer level(int depth, int pageSize) {
+			while (levels.size() <= depth) {
+				levels.add(null);
+			}
+			ByteBuffer buffer = levels.get(depth);
+			if (buffer == null || buffer.capacity() < pageSize) {
+				buffer = ByteBuffer.allocate(pageSize);
+				levels.set(depth, buffer);
+			}
+			return buffer;
+		}
+
+		ByteBuffer scratch(int pageSize) {
+			if (scratch == null || scratch.capacity() < pageSize) {
+				scratch = ByteBuffer.allocate(pageSize);
+			}
+			return scratch;
+		}
 	}
 
 	private static final class BranchFrame {

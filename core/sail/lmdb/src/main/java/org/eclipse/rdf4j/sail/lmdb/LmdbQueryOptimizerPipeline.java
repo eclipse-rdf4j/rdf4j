@@ -12,8 +12,16 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
+import java.util.OptionalLong;
+import java.util.Properties;
 
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
@@ -25,14 +33,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConjunctiveConstrain
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ProjectionRemovalOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.RegexAsStringFunctionOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCascadesPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanDecisionSummary;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 
 final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
@@ -50,50 +59,223 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private static final SameTermFilterOptimizer SAME_TERM_FILTER_OPTIMIZER = new SameTermFilterOptimizer();
 	private static final UnionScopeChangeOptimizer UNION_SCOPE_CHANGE_OPTIMIZER = new UnionScopeChangeOptimizer();
 	private static final QueryModelNormalizerOptimizer QUERY_MODEL_NORMALIZER = new QueryModelNormalizerOptimizer();
-	private static final ProjectionRemovalOptimizer PROJECTION_REMOVAL_OPTIMIZER = new ProjectionRemovalOptimizer();
-	private static final IterativeEvaluationOptimizer ITERATIVE_EVALUATION_OPTIMIZER = new IterativeEvaluationOptimizer();
 	private static final OrderLimitOptimizer ORDER_LIMIT_OPTIMIZER = new OrderLimitOptimizer();
 
 	private final EvaluationStrategy strategy;
 	private final TripleSource tripleSource;
 	private final EvaluationStatistics evaluationStatistics;
+	private final boolean preserveSerializableObservationOrder;
+	private final LmdbEstimatorRuntime runtime;
+	private final LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots;
+	private final LmdbPipelinePlanCache planCache;
+	private final OptionalLong executionSnapshotEpoch;
 
 	LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
+		this(strategy, tripleSource, evaluationStatistics, false);
+	}
+
+	LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+			EvaluationStatistics evaluationStatistics, boolean preserveSerializableObservationOrder) {
 		this.strategy = strategy;
 		this.tripleSource = tripleSource;
 		this.evaluationStatistics = evaluationStatistics;
+		this.preserveSerializableObservationOrder = preserveSerializableObservationOrder;
+		this.runtime = evaluationStatistics instanceof LmdbEstimatorRuntimeProvider provider
+				? provider.estimatorRuntime()
+				: null;
+		this.detachedPlanningSnapshots = evaluationStatistics instanceof LmdbDetachedPlanningSnapshotProvider provider
+				? provider
+				: null;
+		this.planCache = runtime == null ? null : runtime.frontierSettings().pipelinePlanCache();
+		this.executionSnapshotEpoch = tripleSource instanceof SailDatasetTripleTermSource source
+				? source.getSnapshotEpoch()
+				: OptionalLong.empty();
+	}
+
+	TupleExpr optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		if (tupleExpr == null || planCache == null) {
+			return optimizeUncached(tupleExpr, dataset, bindings);
+		}
+		LmdbPipelinePlanCache.Context context = context(tupleExpr, dataset, bindings);
+		LmdbPipelinePlanCache.Result result = planCache.getOrComputePlan(tupleExpr, context, this::revision,
+				() -> computePlan(tupleExpr, dataset, bindings, context));
+		if (!result.cacheHit()) {
+			return result.plan();
+		}
+		TupleExpr installed = install(tupleExpr, result.plan());
+		annotatePipelineCacheHit(installed, true);
+		return installed;
+	}
+
+	private LmdbPipelinePlanCache.PlanComputation computePlan(TupleExpr tupleExpr, Dataset dataset,
+			BindingSet bindings, LmdbPipelinePlanCache.Context context) {
+		for (QueryOptimizer optimizer : requestBoundOptimizers()) {
+			optimizer.optimize(tupleExpr, dataset, bindings);
+		}
+		LmdbCascadesOptimizer cascades = cascadesOptimizer();
+		LmdbCascadesOptimizer.PlanningOutcome outcome = cascades.optimizeWithResult(tupleExpr, dataset, bindings);
+		TupleExpr optimized = finalizeOrderAndLimit(outcome.installedPlan(), dataset, bindings);
+		if (assertsEnabled) {
+			new ParentReferenceChecker(ORDER_LIMIT_OPTIMIZER).optimize(optimized, dataset, bindings);
+		}
+		annotatePipelineCacheHit(optimized, false);
+		PackedPlanDecisionSummary summary = outcome.cascadesPlan() == null
+				? null
+				: outcome.cascadesPlan().decisionSummary();
+		LmdbPlanDecisionCache.DetachedRefreshWork refreshWork = summary == null || runtime.cascadesPlanCache() == null
+				|| detachedPlanningSnapshots == null
+						? null
+						: PackedCascadesPlanner
+								.detachedRefreshWork(outcome.detachedPreparedSource(), outcome.goal(), summary)
+								.map(work -> new LmdbDetachedPlanRefresh(runtime, detachedPlanningSnapshots, work,
+										context.dataset(),
+										context.bindings(),
+										context.trackResultSize(), context.preserveObservationOrder(),
+										context.runtimeTelemetry(), strategy.getQueryEvaluationMode(), outcome.mode(),
+										context.revision().predicateRangeVersion(),
+										context.predicateRangeIdentity().predicates(),
+										executionSnapshotEpoch.isPresent()))
+								.orElse(null);
+		return new LmdbPipelinePlanCache.PlanComputation(optimized, summary, refreshWork);
+	}
+
+	private TupleExpr optimizeUncached(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		if (tupleExpr == null) {
+			return null;
+		}
+		for (QueryOptimizer optimizer : getOptimizers()) {
+			optimizer.optimize(tupleExpr, dataset, bindings);
+		}
+		return tupleExpr;
+	}
+
+	static TupleExpr finalizeOrderAndLimit(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		if (tupleExpr != null) {
+			ORDER_LIMIT_OPTIMIZER.optimize(tupleExpr, dataset, bindings);
+		}
+		return tupleExpr;
+	}
+
+	private LmdbCascadesOptimizer cascadesOptimizer() {
+		return new LmdbCascadesOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
+				preserveSerializableObservationOrder, strategy, tripleSource);
+	}
+
+	private LmdbPipelinePlanCache.Context context(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		LmdbPipelinePlanCache.BindingIdentity bindingIdentity = LmdbPipelinePlanCache.BindingIdentity.of(bindings);
+		return new LmdbPipelinePlanCache.Context(
+				revision(), executionSnapshotEpoch.isPresent(), executionSnapshotEpoch.orElse(0L),
+				LmdbPipelinePlanCache.DatasetIdentity.of(dataset),
+				bindingIdentity,
+				LmdbPipelinePlanCache.PredicateRangeIdentity.capture(tupleExpr, bindingIdentity, runtime),
+				planningConfiguration(),
+				preserveSerializableObservationOrder, strategy.isTrackResultSize(), strategy.isTrackTime(),
+				strategy.getQueryEvaluationMode().name(), tupleExpr.isRuntimeTelemetryEnabled());
+	}
+
+	private LmdbPipelinePlanCache.Revision revision() {
+		return new LmdbPipelinePlanCache.Revision(runtime.capturePlanningRevisions(), runtime.predicateRangeVersion(),
+				runtime.adaptiveEvidenceAllowed());
+	}
+
+	private static String planningConfiguration() {
+		Properties properties = System.getProperties();
+		List<String> names = new ArrayList<>();
+		for (String name : properties.stringPropertyNames()) {
+			if (name.startsWith("rdf4j.optimizer.") || name.startsWith("org.eclipse.rdf4j.query.algebra.")) {
+				names.add(name);
+			}
+		}
+		Collections.sort(names);
+		StringBuilder signature = new StringBuilder(names.size() * 48);
+		for (String name : names) {
+			String value = properties.getProperty(name, "");
+			signature.append(name.length())
+					.append(':')
+					.append(name)
+					.append('=')
+					.append(value.length())
+					.append(':')
+					.append(value)
+					.append(';');
+		}
+		return signature.toString();
+	}
+
+	private static TupleExpr install(TupleExpr original, TupleExpr replacement) {
+		if (original.getParentNode() != null || original instanceof QueryRoot
+				|| original.getClass() == replacement.getClass()) {
+			return LmdbCascadesOptimizer.replaceRoot(original, replacement);
+		}
+		return replacement;
+	}
+
+	private static void annotatePipelineCacheHit(TupleExpr root, boolean cacheHit) {
+		if (root == null) {
+			return;
+		}
+		String value = Boolean.toString(cacheHit);
+		root.setStringMetricPlanned("optimizer.pipelinePlanCacheHit", value);
+		if (cacheHit) {
+			root.setStringMetricPlanned("optimizer.cascadesPlanCacheHit", "true");
+		}
+		if (root instanceof QueryRoot queryRoot) {
+			queryRoot.getArg().setStringMetricPlanned("optimizer.pipelinePlanCacheHit", value);
+			if (cacheHit) {
+				queryRoot.getArg().setStringMetricPlanned("optimizer.cascadesPlanCacheHit", "true");
+			}
+		}
 	}
 
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
-		List<QueryOptimizer> optimizers = List.of(
-				BINDING_ASSIGNER,
-				new ConstantOptimizer(strategy),
-				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
-				COMPARE_OPTIMIZER,
-				CONJUNCTIVE_CONSTRAINT_SPLITTER,
-				DISJUNCTIVE_CONSTRAINT_OPTIMIZER,
-				SAME_TERM_FILTER_OPTIMIZER,
-				UNION_SCOPE_CHANGE_OPTIMIZER,
-				QUERY_MODEL_NORMALIZER,
-				PROJECTION_REMOVAL_OPTIMIZER,
-				new FilterOptimizer(null, false, false),
-				ITERATIVE_EVALUATION_OPTIMIZER,
-				new LmdbFilterSimplifierOptimizer(evaluationStatistics),
-				new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()),
-				ORDER_LIMIT_OPTIMIZER);
+		List<QueryOptimizer> optimizers = requestBoundOptimizerList();
+		optimizers.add(cascadesOptimizer());
+		optimizers.add(ORDER_LIMIT_OPTIMIZER);
+		return withParentChecks(optimizers);
+	}
 
-		if (assertsEnabled) {
-			List<QueryOptimizer> checked = new ArrayList<>();
-			checked.add(new ParentReferenceChecker(null));
-			for (QueryOptimizer optimizer : optimizers) {
-				checked.add(optimizer);
-				checked.add(new ParentReferenceChecker(optimizer));
-			}
-			optimizers = checked;
+	private Iterable<QueryOptimizer> requestBoundOptimizers() {
+		return withParentChecks(requestBoundOptimizerList());
+	}
+
+	private List<QueryOptimizer> requestBoundOptimizerList() {
+		List<QueryOptimizer> optimizers = new ArrayList<>();
+		optimizers.add(BINDING_ASSIGNER);
+		optimizers.add(new ConstantOptimizer(strategy));
+		optimizers.add(new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()));
+		Optional<LmdbPlannerServices> services = LmdbPlannerServices.from(evaluationStatistics);
+		if (services.isPresent() && services.get().valueStore() != null) {
+			optimizers.add(new LmdbValueLookupOptimizer(services.get().valueStore()));
 		}
-
+		optimizers.add(COMPARE_OPTIMIZER);
+		optimizers.add(CONJUNCTIVE_CONSTRAINT_SPLITTER);
+		optimizers.add(DISJUNCTIVE_CONSTRAINT_OPTIMIZER);
+		optimizers.add(SAME_TERM_FILTER_OPTIMIZER);
+		optimizers.add(UNION_SCOPE_CHANGE_OPTIMIZER);
+		optimizers.add(QUERY_MODEL_NORMALIZER);
+		optimizers.add(new LmdbOptionalNormalFormOptimizer(evaluationStatistics));
+		optimizers.add(new FilterOptimizer(null, false, false));
+		optimizers.add(new LmdbBoundSimplifierOptimizer());
+		if (!preserveSerializableObservationOrder) {
+			optimizers.add(new LmdbSetSemanticsOptimizer());
+		}
+		optimizers.add(new LmdbFilterSimplifierOptimizer(evaluationStatistics, executionSnapshotEpoch.isPresent()));
+		optimizers.add(new LmdbFilterHoistOptimizer());
 		return optimizers;
+	}
+
+	private static List<QueryOptimizer> withParentChecks(List<QueryOptimizer> optimizers) {
+		if (!assertsEnabled) {
+			return optimizers;
+		}
+		List<QueryOptimizer> checked = new ArrayList<>();
+		checked.add(new ParentReferenceChecker(null));
+		for (QueryOptimizer optimizer : optimizers) {
+			checked.add(optimizer);
+			checked.add(new ParentReferenceChecker(optimizer));
+		}
+		return checked;
 	}
 }

@@ -72,6 +72,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	public void setFromInitializedValue(LmdbValue initializedValue) {
 		if (initializedValue instanceof LmdbBNode lmdbBNode) {
 			super.setID(lmdbBNode.getID());
+			initialized = true;
 		} else {
 			throw new IllegalArgumentException("Initialized value is not of type LmdbBNode");
 		}
@@ -102,6 +103,23 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 				initialized = true;
 			}
 		}
+	}
+
+	@Override
+	public void init(Resolver resolver) {
+		if (!initialized) {
+			synchronized (this) {
+				if (!initialized) {
+					resolver.resolve(internalID, this);
+				}
+				initialized = true;
+			}
+		}
+	}
+
+	@Override
+	public boolean isInitialized() {
+		return initialized;
 	}
 
 	@Override

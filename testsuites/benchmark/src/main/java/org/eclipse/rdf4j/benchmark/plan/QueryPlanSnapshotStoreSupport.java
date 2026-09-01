@@ -12,12 +12,26 @@
 package org.eclipse.rdf4j.benchmark.plan;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
+import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.TreeMap;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
@@ -30,10 +44,25 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
+import com.fasterxml.jackson.databind.MapperFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+
 final class QueryPlanSnapshotStoreSupport {
 
 	private static final String LMDB_FULLY_LOADED_SIZE_FILE = ".rdf4j-query-plan-cli-fully-loaded-size-bytes";
-	private static final long LMDB_SIZE_MATCH_TOLERANCE_BYTES = 1_048_576L;
+	private static final int LMDB_STORE_MANIFEST_SCHEMA_VERSION = 1;
+	private static final String THEME_DATASET_ID = "rdf4j-theme-catalog-all-v1";
+	private static final Charset MANIFEST_CHARSET = StandardCharsets.UTF_8;
+	private static final ObjectMapper MANIFEST_MAPPER = new ObjectMapper()
+			.enable(SerializationFeature.INDENT_OUTPUT)
+			.enable(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
+			.enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS);
+	private static final String THEME_BENCHMARK_TRIPLE_INDEXES = "spoc,ospc,psoc,posc";
+	private static final int THEME_SUBJECT_BUCKET_COUNT = 4096;
+	private static final int THEME_PREDICATE_BUCKET_COUNT = 64;
+	private static final int THEME_OBJECT_BUCKET_COUNT = 4096;
+	private static final int THEME_CONTEXT_BUCKET_COUNT = 16;
 
 	private QueryPlanSnapshotStoreSupport() {
 	}
@@ -53,16 +82,8 @@ final class QueryPlanSnapshotStoreSupport {
 		}
 
 		Path dataDirectory = storeRuntime.dataDirectory;
-		Long recordedSize = readRecordedFullyLoadedSize(dataDirectory);
-		long currentSize = computeLmdbDataSizeBytes(dataDirectory);
-		if (recordedSize != null && recordedSize.longValue() > 0
-				&& currentSize + LMDB_SIZE_MATCH_TOLERANCE_BYTES >= recordedSize.longValue()) {
-			return ThemeDataLoadStatus.lmdbReused(recordedSize.longValue());
-		}
-
 		loadAllThemes(storeRuntime.repository);
 		long fullyLoadedSize = computeLmdbDataSizeBytes(dataDirectory);
-		recordFullyLoadedSize(dataDirectory, fullyLoadedSize);
 		return ThemeDataLoadStatus.lmdbLoaded(fullyLoadedSize);
 	}
 
@@ -79,13 +100,321 @@ final class QueryPlanSnapshotStoreSupport {
 			dataDirectory = Files.createTempDirectory("rdf4j-lmdb-plan-cli-");
 			deleteDataDirectory = true;
 		}
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
-		config.setForceSync(false);
-		config.setValueDBSize(1_073_741_824L); // 1 GiB
-		config.setTripleDBSize(config.getValueDBSize());
+		LmdbStoreConfig config = createLmdbStoreConfig(options);
 		LmdbStore lmdbStore = new LmdbStore(dataDirectory.toFile(), config);
 		SailRepository repository = new SailRepository(lmdbStore);
 		return new StoreRuntime(repository, null, lmdbStore, config, dataDirectory, deleteDataDirectory);
+	}
+
+	static LmdbStoreConfig createLmdbStoreConfig(QueryPlanSnapshotCliOptions options) {
+		LmdbStoreConfig config = new LmdbStoreConfig(THEME_BENCHMARK_TRIPLE_INDEXES);
+		config.setForceSync(false);
+		config.setSketchEstimatorEvidenceMode(options.lmdbEvidenceMode);
+		config.setValueDBSize(1_073_741_824L); // 1 GiB
+		config.setTripleDBSize(config.getValueDBSize());
+		config.setSketchEstimatorSubjectBucketCount(THEME_SUBJECT_BUCKET_COUNT);
+		config.setSketchEstimatorPredicateBucketCount(THEME_PREDICATE_BUCKET_COUNT);
+		config.setSketchEstimatorObjectBucketCount(THEME_OBJECT_BUCKET_COUNT);
+		config.setSketchEstimatorContextBucketCount(THEME_CONTEXT_BUCKET_COUNT);
+		config.setSketchEstimatorContextPairSketchesEnabled(false);
+		if (options.lmdbFrontierQueryIndexBudgetBytes != null) {
+			config.setFrontierQueryIndexBudgetBytes(options.lmdbFrontierQueryIndexBudgetBytes);
+		}
+		return config;
+	}
+
+	static void writeLmdbStoreManifest(Path dataDirectory, Path manifestPath, LmdbStoreConfig config)
+			throws IOException {
+		LmdbStoreManifest manifest = captureLmdbStoreManifest(dataDirectory, manifestPath, config);
+		Path normalizedManifestPath = manifestPath.toAbsolutePath().normalize();
+		Path parent = normalizedManifestPath.getParent();
+		if (parent != null) {
+			Files.createDirectories(parent);
+		}
+		Path temporary = Files.createTempFile(parent, normalizedManifestPath.getFileName().toString() + '.', ".tmp");
+		try {
+			MANIFEST_MAPPER.writeValue(temporary.toFile(), manifest);
+			try {
+				Files.move(temporary, normalizedManifestPath, StandardCopyOption.ATOMIC_MOVE,
+						StandardCopyOption.REPLACE_EXISTING);
+			} catch (AtomicMoveNotSupportedException e) {
+				Files.move(temporary, normalizedManifestPath, StandardCopyOption.REPLACE_EXISTING);
+			}
+		} finally {
+			Files.deleteIfExists(temporary);
+		}
+	}
+
+	static LmdbStoreManifest validateLmdbStoreManifest(Path dataDirectory, Path manifestPath, LmdbStoreConfig config)
+			throws IOException {
+		Path normalizedManifestPath = manifestPath.toAbsolutePath().normalize();
+		LmdbStoreManifest expected = readLmdbStoreManifestHeader(normalizedManifestPath, config);
+
+		LmdbStoreManifest actual = captureLmdbStoreManifest(dataDirectory, normalizedManifestPath, config);
+
+		Map<String, LmdbStoreFile> expectedFiles = filesByPath(expected.files());
+		Map<String, LmdbStoreFile> actualFiles = filesByPath(actual.files());
+		for (Map.Entry<String, LmdbStoreFile> entry : expectedFiles.entrySet()) {
+			LmdbStoreFile actualFile = actualFiles.remove(entry.getKey());
+			if (actualFile == null) {
+				throw new IOException("LMDB store manifest file is missing: " + entry.getKey());
+			}
+			LmdbStoreFile expectedFile = entry.getValue();
+			if (expectedFile.sizeBytes() != actualFile.sizeBytes()) {
+				throw new IOException("LMDB store manifest size mismatch for " + entry.getKey() + ": expected "
+						+ expectedFile.sizeBytes() + " but got " + actualFile.sizeBytes() + ".");
+			}
+			if (!expectedFile.sha256().equals(actualFile.sha256())) {
+				throw new IOException("LMDB store manifest SHA-256 mismatch for " + entry.getKey() + ": expected "
+						+ expectedFile.sha256() + " but got " + actualFile.sha256() + ".");
+			}
+		}
+		if (!actualFiles.isEmpty()) {
+			throw new IOException(
+					"LMDB store contains unexpected persistent file: " + actualFiles.keySet().iterator().next());
+		}
+		if (expected.totalSizeBytes() != actual.totalSizeBytes()
+				|| !expected.contentSha256().equals(actual.contentSha256())) {
+			throw new IOException("LMDB store manifest aggregate digest mismatch: expected SHA-256 "
+					+ expected.contentSha256() + " but got " + actual.contentSha256() + ".");
+		}
+		return expected;
+	}
+
+	static LmdbStoreManifest readLmdbStoreManifestHeader(Path manifestPath, LmdbStoreConfig config)
+			throws IOException {
+		Path normalizedManifestPath = manifestPath.toAbsolutePath().normalize();
+		if (!Files.isRegularFile(normalizedManifestPath, LinkOption.NOFOLLOW_LINKS)) {
+			throw new IOException("LMDB store manifest does not exist: " + normalizedManifestPath);
+		}
+		LmdbStoreManifest expected = MANIFEST_MAPPER.readValue(normalizedManifestPath.toFile(),
+				LmdbStoreManifest.class);
+		if (expected.schemaVersion() != LMDB_STORE_MANIFEST_SCHEMA_VERSION) {
+			throw new IOException("Unsupported LMDB store manifest schema version " + expected.schemaVersion()
+					+ "; expected " + LMDB_STORE_MANIFEST_SCHEMA_VERSION + ".");
+		}
+		if (!THEME_DATASET_ID.equals(expected.datasetId())) {
+			throw new IOException("LMDB store manifest dataset mismatch: expected " + THEME_DATASET_ID + " but got "
+					+ expected.datasetId() + ".");
+		}
+		Map<String, String> actualConfiguration = lmdbConfiguration(config);
+		String actualConfigurationSha256 = sha256CanonicalMap(actualConfiguration);
+		if (!expected.configuration().equals(actualConfiguration)
+				|| !expected.configurationSha256().equals(actualConfigurationSha256)) {
+			throw new IOException("LMDB store manifest configuration mismatch: expected SHA-256 "
+					+ expected.configurationSha256() + " but got " + actualConfigurationSha256 + "; differences: "
+					+ configurationDifferences(expected.configuration(), actualConfiguration) + ".");
+		}
+		return expected;
+	}
+
+	private static String configurationDifferences(Map<String, String> expected, Map<String, String> actual) {
+		TreeMap<String, String> allKeys = new TreeMap<>(expected);
+		actual.forEach(allKeys::putIfAbsent);
+		List<String> differences = new ArrayList<>();
+		for (String key : allKeys.keySet()) {
+			String expectedValue = expected.get(key);
+			String actualValue = actual.get(key);
+			if (!Objects.equals(expectedValue, actualValue)) {
+				differences.add(key + "[expected=" + valueOrMissing(expected, key) + ", actual="
+						+ valueOrMissing(actual, key) + "]");
+			}
+		}
+		return String.join(", ", differences);
+	}
+
+	private static String valueOrMissing(Map<String, String> values, String key) {
+		return values.containsKey(key) ? String.valueOf(values.get(key)) : "<missing>";
+	}
+
+	private static LmdbStoreManifest captureLmdbStoreManifest(Path dataDirectory, Path manifestPath,
+			LmdbStoreConfig config) throws IOException {
+		if (dataDirectory == null) {
+			throw new IOException("LMDB data directory is required for manifest capture.");
+		}
+		Path normalizedDataDirectory = dataDirectory.toAbsolutePath().normalize();
+		if (!Files.isDirectory(normalizedDataDirectory, LinkOption.NOFOLLOW_LINKS)) {
+			throw new IOException("LMDB data directory does not exist: " + normalizedDataDirectory);
+		}
+		Path normalizedManifestPath = manifestPath == null ? null : manifestPath.toAbsolutePath().normalize();
+		List<Path> persistentFiles = new ArrayList<>();
+		try (Stream<Path> walk = Files.walk(normalizedDataDirectory)) {
+			for (Path path : walk.sorted().toList()) {
+				if (Files.isSymbolicLink(path)) {
+					throw new IOException("LMDB store manifest does not permit symbolic links: " + path);
+				}
+				if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+						|| path.toAbsolutePath().normalize().equals(normalizedManifestPath)
+						|| isLmdbLockFile(path)) {
+					continue;
+				}
+				persistentFiles.add(path);
+			}
+		}
+
+		List<LmdbStoreFile> files = new ArrayList<>(persistentFiles.size());
+		long totalSizeBytes = 0L;
+		for (Path path : persistentFiles) {
+			String relativePath = portableRelativePath(normalizedDataDirectory.relativize(path));
+			long sizeBytes = Files.size(path);
+			totalSizeBytes = Math.addExact(totalSizeBytes, sizeBytes);
+			files.add(new LmdbStoreFile(relativePath, sizeBytes, sha256(path)));
+		}
+		Map<String, String> configuration = lmdbConfiguration(config);
+		String configurationSha256 = sha256CanonicalMap(configuration);
+		String contentSha256 = sha256FileEntries(files);
+		return new LmdbStoreManifest(LMDB_STORE_MANIFEST_SCHEMA_VERSION, THEME_DATASET_ID,
+				configurationSha256, contentSha256, totalSizeBytes, List.copyOf(files), configuration);
+	}
+
+	private static boolean isLmdbLockFile(Path path) {
+		return "lock.mdb".equals(path.getFileName().toString());
+	}
+
+	private static String portableRelativePath(Path path) throws IOException {
+		String portable = path.toString().replace(path.getFileSystem().getSeparator(), "/");
+		if (portable.indexOf('\t') >= 0 || portable.indexOf('\r') >= 0 || portable.indexOf('\n') >= 0) {
+			throw new IOException("LMDB store manifest path contains an unsupported control character: " + path);
+		}
+		return portable;
+	}
+
+	private static String sha256(Path path) throws IOException {
+		MessageDigest digest = newSha256Digest();
+		byte[] buffer = new byte[1024 * 1024];
+		try (InputStream input = Files.newInputStream(path)) {
+			int read;
+			while ((read = input.read(buffer)) >= 0) {
+				if (read > 0) {
+					digest.update(buffer, 0, read);
+				}
+			}
+		}
+		return HexFormat.of().formatHex(digest.digest());
+	}
+
+	private static String sha256CanonicalMap(Map<String, String> values) {
+		MessageDigest digest = newSha256Digest();
+		values.forEach((key, value) -> updateDigestLine(digest, key, value));
+		return HexFormat.of().formatHex(digest.digest());
+	}
+
+	private static String sha256FileEntries(List<LmdbStoreFile> files) {
+		MessageDigest digest = newSha256Digest();
+		for (LmdbStoreFile file : files) {
+			updateDigestLine(digest, file.path(), Long.toString(file.sizeBytes()), file.sha256());
+		}
+		return HexFormat.of().formatHex(digest.digest());
+	}
+
+	private static void updateDigestLine(MessageDigest digest, String... fields) {
+		for (String field : fields) {
+			digest.update(field.getBytes(MANIFEST_CHARSET));
+			digest.update((byte) 0);
+		}
+		digest.update((byte) '\n');
+	}
+
+	private static MessageDigest newSha256Digest() {
+		try {
+			return MessageDigest.getInstance("SHA-256");
+		} catch (NoSuchAlgorithmException e) {
+			throw new IllegalStateException("SHA-256 is required by the Java platform.", e);
+		}
+	}
+
+	private static Map<String, LmdbStoreFile> filesByPath(List<LmdbStoreFile> files) throws IOException {
+		Map<String, LmdbStoreFile> byPath = new LinkedHashMap<>();
+		for (LmdbStoreFile file : files) {
+			if (byPath.putIfAbsent(file.path(), file) != null) {
+				throw new IOException("LMDB store manifest contains duplicate path: " + file.path());
+			}
+		}
+		return byPath;
+	}
+
+	private static Map<String, String> lmdbConfiguration(LmdbStoreConfig config) {
+		TreeMap<String, String> values = new TreeMap<>();
+		values.put("autoGrow", Boolean.toString(config.getAutoGrow()));
+		values.put("backgroundRawSamplingEnabled", Boolean.toString(config.getBackgroundRawSamplingEnabled()));
+		values.put("backgroundRawSamplingMaxMillisPerCycle",
+				Long.toString(config.getBackgroundRawSamplingMaxMillisPerCycle()));
+		values.put("bulkOperationSize", Integer.toString(config.getBulkOperationSize()));
+		values.put("forceSync", Boolean.toString(config.getForceSync()));
+		values.put("frontierAuditLanes", Integer.toString(config.getFrontierAuditLanes()));
+		values.put("frontierCacheEvidenceBudgetBytes", Long.toString(config.getFrontierCacheEvidenceBudgetBytes()));
+		values.put("frontierCacheInitialConfidence", Double.toString(config.getFrontierCacheInitialConfidence()));
+		values.put("frontierCacheMaximumConfidence", Double.toString(config.getFrontierCacheMaximumConfidence()));
+		values.put("frontierCacheMaximumExpectedRegret",
+				Double.toString(config.getFrontierCacheMaximumExpectedRegret()));
+		values.put("frontierCacheMinimumConfidence", Double.toString(config.getFrontierCacheMinimumConfidence()));
+		values.put("frontierDefensiveProposalEpsilon",
+				Double.toString(config.getFrontierDefensiveProposalEpsilon()));
+		values.put("frontierDesignLanes", Integer.toString(config.getFrontierDesignLanes()));
+		values.put("frontierEffectiveQueryIndexBudgetBytes",
+				Long.toString(config.getEffectiveFrontierQueryIndexBudgetBytes()));
+		values.put("frontierEstimatorMode", String.valueOf(config.getFrontierEstimatorMode()));
+		values.put("frontierInitialMaterializationWorkUnits",
+				Long.toString(config.getFrontierInitialMaterializationWorkUnits()));
+		values.put("frontierQueryIndexBudgetBytes", Long.toString(config.getFrontierQueryIndexBudgetBytes()));
+		values.put("frontierQueryMemoryBudgetBytes", Long.toString(config.getFrontierQueryMemoryBudgetBytes()));
+		values.put("frontierRefinementWorkUnits", Integer.toString(config.getFrontierRefinementWorkUnits()));
+		values.put("frontierSynopsisBudgetBytes", Long.toString(config.getFrontierSynopsisBudgetBytes()));
+		values.put("frontierTargetRelativeStandardError",
+				Double.toString(config.getFrontierTargetRelativeStandardError()));
+		values.put("inlineLiterals", Boolean.toString(config.getInlineLiterals()));
+		values.put("namespaceCacheSize", Integer.toString(config.getNamespaceCacheSize()));
+		values.put("namespaceIdCacheSize", Integer.toString(config.getNamespaceIDCacheSize()));
+		values.put("noReadahead", Boolean.toString(config.getNoReadahead()));
+		values.put("optimizerSamplingEnabled", Boolean.toString(config.getOptimizerSamplingEnabled()));
+		values.put("optimizerSamplingMaxMillis", Long.toString(config.getOptimizerSamplingMaxMillis()));
+		values.put("optimizerSamplingMaxRows", Integer.toString(config.getOptimizerSamplingMaxRows()));
+		values.put("pageCardinalityEstimator", Boolean.toString(config.getPageCardinalityEstimator()));
+		values.put("predicateGuaranteeExcludedPredicates", config.getPredicateGuaranteeExcludedPredicates());
+		values.put("predicateGuaranteeIndexAutoRebuild",
+				Boolean.toString(config.getPredicateGuaranteeIndexAutoRebuild()));
+		values.put("predicateGuaranteeIndexEnabled", Boolean.toString(config.getPredicateGuaranteeIndexEnabled()));
+		values.put("sketchEstimatorColdSynopsisCapacity",
+				Integer.toString(config.getSketchEstimatorColdSynopsisCapacity()));
+		values.put("sketchEstimatorContextBucketCount",
+				Integer.toString(config.getSketchEstimatorContextBucketCount()));
+		values.put("sketchEstimatorContextPairSketchesEnabled",
+				Boolean.toString(config.getSketchEstimatorContextPairSketchesEnabled()));
+		values.put("sketchEstimatorEnabled", String.valueOf(config.getSketchEstimatorEnabled()));
+		values.put("sketchEstimatorEvidenceMode", config.getSketchEstimatorEvidenceMode());
+		values.put("sketchEstimatorMemoryBudgetBytes",
+				Long.toString(config.getSketchEstimatorMemoryBudgetBytes()));
+		values.put("sketchEstimatorObjectBucketCount",
+				Integer.toString(config.getSketchEstimatorObjectBucketCount()));
+		values.put("sketchEstimatorOmniWitnessCohortBucketCount",
+				Integer.toString(config.getSketchEstimatorOmniWitnessCohortBucketCount()));
+		values.put("sketchEstimatorOmniWitnessCohortBucketIndex",
+				Integer.toString(config.getSketchEstimatorOmniWitnessCohortBucketIndex()));
+		values.put("sketchEstimatorOmniWitnessCohortMaxEntries",
+				Integer.toString(config.getSketchEstimatorOmniWitnessCohortMaxEntries()));
+		values.put("sketchEstimatorPredicateBucketCount",
+				Integer.toString(config.getSketchEstimatorPredicateBucketCount()));
+		values.put("sketchEstimatorStrategy", config.getSketchEstimatorStrategy());
+		values.put("sketchEstimatorSubjectBucketCount",
+				Integer.toString(config.getSketchEstimatorSubjectBucketCount()));
+		values.put("sketchEstimatorThrottleEveryN", Long.toString(config.getSketchEstimatorThrottleEveryN()));
+		values.put("sketchEstimatorThrottleMillis", Long.toString(config.getSketchEstimatorThrottleMillis()));
+		values.put("tripleDbSize", Long.toString(config.getTripleDBSize()));
+		values.put("tripleIndexes", config.getTripleIndexes());
+		values.put("tripleTermIndexes", String.valueOf(config.getTripleTermIndexes()));
+		values.put("valueCacheSize", Integer.toString(config.getValueCacheSize()));
+		values.put("valueDbSize", Long.toString(config.getValueDBSize()));
+		values.put("valueEvictionInterval", Long.toString(config.getValueEvictionInterval()));
+		values.put("valueHashCacheEnabled", Boolean.toString(config.getValueHashCacheEnabled()));
+		values.put("valueIdCacheSize", Integer.toString(config.getValueIDCacheSize()));
+		return Collections.unmodifiableMap(values);
+	}
+
+	static record LmdbStoreManifest(int schemaVersion, String datasetId, String configurationSha256,
+			String contentSha256, long totalSizeBytes, List<LmdbStoreFile> files, Map<String, String> configuration) {
+	}
+
+	static record LmdbStoreFile(String path, long sizeBytes, String sha256) {
 	}
 
 	private static void loadAllThemes(SailRepository repository) throws IOException {
@@ -115,35 +444,6 @@ final class QueryPlanSnapshotStoreSupport {
 		} catch (UncheckedIOException e) {
 			throw e.getCause();
 		}
-	}
-
-	private static Long readRecordedFullyLoadedSize(Path dataDirectory) throws IOException {
-		if (dataDirectory == null) {
-			return null;
-		}
-		Path marker = fullyLoadedSizeMarker(dataDirectory);
-		if (!Files.isRegularFile(marker)) {
-			return null;
-		}
-		String raw = Files.readString(marker, StandardCharsets.UTF_8).trim();
-		if (raw.isEmpty()) {
-			return null;
-		}
-		try {
-			long parsed = Long.parseLong(raw);
-			return parsed >= 0 ? parsed : null;
-		} catch (NumberFormatException ignored) {
-			return null;
-		}
-	}
-
-	private static void recordFullyLoadedSize(Path dataDirectory, long fullyLoadedSizeBytes) throws IOException {
-		if (dataDirectory == null) {
-			return;
-		}
-		Path marker = fullyLoadedSizeMarker(dataDirectory);
-		Files.writeString(marker, Long.toString(fullyLoadedSizeBytes), StandardCharsets.UTF_8,
-				StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
 	}
 
 	private static Path fullyLoadedSizeMarker(Path dataDirectory) {
@@ -201,22 +501,29 @@ final class QueryPlanSnapshotStoreSupport {
 	static final class ThemeDataLoadStatus {
 		final boolean reusedLmdbData;
 		final Long lmdbFullyLoadedSizeBytes;
+		final String lmdbManifestContentSha256;
 
-		private ThemeDataLoadStatus(boolean reusedLmdbData, Long lmdbFullyLoadedSizeBytes) {
+		private ThemeDataLoadStatus(boolean reusedLmdbData, Long lmdbFullyLoadedSizeBytes,
+				String lmdbManifestContentSha256) {
 			this.reusedLmdbData = reusedLmdbData;
 			this.lmdbFullyLoadedSizeBytes = lmdbFullyLoadedSizeBytes;
+			this.lmdbManifestContentSha256 = lmdbManifestContentSha256;
 		}
 
 		static ThemeDataLoadStatus memoryStore() {
-			return new ThemeDataLoadStatus(false, null);
+			return new ThemeDataLoadStatus(false, null, null);
 		}
 
 		static ThemeDataLoadStatus lmdbLoaded(long lmdbFullyLoadedSizeBytes) {
-			return new ThemeDataLoadStatus(false, lmdbFullyLoadedSizeBytes);
+			return new ThemeDataLoadStatus(false, lmdbFullyLoadedSizeBytes, null);
 		}
 
 		static ThemeDataLoadStatus lmdbReused(long lmdbFullyLoadedSizeBytes) {
-			return new ThemeDataLoadStatus(true, lmdbFullyLoadedSizeBytes);
+			return new ThemeDataLoadStatus(true, lmdbFullyLoadedSizeBytes, null);
+		}
+
+		static ThemeDataLoadStatus lmdbManifestValidated(LmdbStoreManifest manifest) {
+			return new ThemeDataLoadStatus(true, manifest.totalSizeBytes(), manifest.contentSha256());
 		}
 	}
 }

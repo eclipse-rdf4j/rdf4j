@@ -26,6 +26,9 @@ final class QueryPlanSnapshotCliOptions {
 	static final String QUERY_END_SENTINEL = "END";
 	private static final String STORE_MEMORY = "memory";
 	private static final String STORE_LMDB = "lmdb";
+	private static final String LMDB_EVIDENCE_MODE_ADAPTIVE = "adaptive";
+	private static final String LMDB_EVIDENCE_MODE_SNAPSHOT_ONLY = "snapshot-only";
+	private static final String DEFAULT_LMDB_STORE_MANIFEST = ".rdf4j-theme-store-manifest-v1.json";
 
 	boolean help;
 	boolean noInteractive;
@@ -35,6 +38,11 @@ final class QueryPlanSnapshotCliOptions {
 	boolean renameRunsByCommit;
 	boolean compareLatest;
 	boolean runAllThemeQueries;
+	boolean batchProcessIsolation;
+	boolean batchDataPreflight;
+	boolean batchManifestPrevalidated;
+	boolean writeLmdbStoreManifest;
+	boolean factorizedVerification;
 	boolean persist = true;
 	DiffMode diffMode = DiffMode.STRUCTURE;
 	ComparisonPair compareIndices;
@@ -51,7 +59,14 @@ final class QueryPlanSnapshotCliOptions {
 	String runName;
 	Path emitCsv;
 	Path lmdbDataDirectory;
+	Path lmdbStoreManifest;
+	Long lmdbFrontierQueryIndexBudgetBytes;
+	Path batchAuditCsv;
+	Path batchWorkerStatusFile;
 	Integer queryTimeoutSeconds;
+	Long batchHardTimeoutSeconds;
+	String lmdbEvidenceMode = LMDB_EVIDENCE_MODE_ADAPTIVE;
+	boolean lmdbEvidenceModeExplicit;
 	Integer executionRepeatMinRuns;
 	Integer executionRepeatMaxRuns;
 	Long executionRepeatSoftLimitMillis;
@@ -71,6 +86,11 @@ final class QueryPlanSnapshotCliOptions {
 		copy.renameRunsByCommit = renameRunsByCommit;
 		copy.compareLatest = compareLatest;
 		copy.runAllThemeQueries = runAllThemeQueries;
+		copy.batchProcessIsolation = batchProcessIsolation;
+		copy.batchDataPreflight = batchDataPreflight;
+		copy.batchManifestPrevalidated = batchManifestPrevalidated;
+		copy.writeLmdbStoreManifest = writeLmdbStoreManifest;
+		copy.factorizedVerification = factorizedVerification;
 		copy.persist = persist;
 		copy.diffMode = diffMode;
 		copy.compareIndices = compareIndices;
@@ -87,7 +107,14 @@ final class QueryPlanSnapshotCliOptions {
 		copy.runName = runName;
 		copy.emitCsv = emitCsv;
 		copy.lmdbDataDirectory = lmdbDataDirectory;
+		copy.lmdbStoreManifest = lmdbStoreManifest;
+		copy.lmdbFrontierQueryIndexBudgetBytes = lmdbFrontierQueryIndexBudgetBytes;
+		copy.batchAuditCsv = batchAuditCsv;
+		copy.batchWorkerStatusFile = batchWorkerStatusFile;
 		copy.queryTimeoutSeconds = queryTimeoutSeconds;
+		copy.batchHardTimeoutSeconds = batchHardTimeoutSeconds;
+		copy.lmdbEvidenceMode = lmdbEvidenceMode;
+		copy.lmdbEvidenceModeExplicit = lmdbEvidenceModeExplicit;
 		copy.executionRepeatMinRuns = executionRepeatMinRuns;
 		copy.executionRepeatMaxRuns = executionRepeatMaxRuns;
 		copy.executionRepeatSoftLimitMillis = executionRepeatSoftLimitMillis;
@@ -148,6 +175,30 @@ final class QueryPlanSnapshotCliOptions {
 			case "--all-theme-queries":
 				options.runAllThemeQueries = true;
 				break;
+			case "--batch-process-isolation":
+				options.batchProcessIsolation = true;
+				break;
+			case "--batch-data-preflight":
+				options.batchDataPreflight = true;
+				break;
+			case "--batch-manifest-prevalidated":
+				options.batchManifestPrevalidated = true;
+				break;
+			case "--write-lmdb-store-manifest":
+				options.writeLmdbStoreManifest = true;
+				break;
+			case "--factorized-verification":
+				options.factorizedVerification = true;
+				break;
+			case "--batch-hard-timeout-seconds":
+				options.batchHardTimeoutSeconds = parsePositiveLong(requireValue(args, ++i, arg), arg);
+				break;
+			case "--batch-audit-csv":
+				options.batchAuditCsv = Path.of(requireValue(args, ++i, arg));
+				break;
+			case "--batch-worker-status-file":
+				options.batchWorkerStatusFile = Path.of(requireValue(args, ++i, arg));
+				break;
 			case "--diff-mode":
 				options.diffMode = parseDiffMode(requireValue(args, ++i, arg), arg);
 				break;
@@ -200,6 +251,16 @@ final class QueryPlanSnapshotCliOptions {
 			case "--lmdb-data-dir":
 				options.lmdbDataDirectory = Path.of(requireValue(args, ++i, arg));
 				break;
+			case "--lmdb-store-manifest":
+				options.lmdbStoreManifest = Path.of(requireValue(args, ++i, arg));
+				break;
+			case "--lmdb-frontier-query-index-budget-bytes":
+				options.lmdbFrontierQueryIndexBudgetBytes = parseNonNegativeLong(requireValue(args, ++i, arg), arg);
+				break;
+			case "--lmdb-evidence-mode":
+				options.lmdbEvidenceMode = parseLmdbEvidenceMode(requireValue(args, ++i, arg), arg);
+				options.lmdbEvidenceModeExplicit = true;
+				break;
 			case "--query-timeout-seconds":
 				options.queryTimeoutSeconds = parseNonNegativeInteger(requireValue(args, ++i, arg), arg);
 				break;
@@ -232,6 +293,11 @@ final class QueryPlanSnapshotCliOptions {
 			}
 		}
 
+		if (options.store == StoreType.LMDB && options.lmdbDataDirectory != null
+				&& options.lmdbStoreManifest == null
+				&& (options.batchDataPreflight || options.batchProcessIsolation || options.writeLmdbStoreManifest)) {
+			options.lmdbStoreManifest = options.lmdbDataDirectory.resolve(DEFAULT_LMDB_STORE_MANIFEST);
+		}
 		validateCombinations(options);
 		return options;
 	}
@@ -239,6 +305,71 @@ final class QueryPlanSnapshotCliOptions {
 	private static void validateCombinations(QueryPlanSnapshotCliOptions options) {
 		if (options.help || options.listThemes || options.listQueriesTheme != null) {
 			return;
+		}
+		if (options.lmdbEvidenceModeExplicit && options.store == StoreType.MEMORY) {
+			throw new IllegalArgumentException("--lmdb-evidence-mode is only supported with --store lmdb.");
+		}
+		if (options.lmdbStoreManifest != null && options.store != StoreType.LMDB) {
+			throw new IllegalArgumentException("--lmdb-store-manifest is only supported with --store lmdb.");
+		}
+		if (options.lmdbFrontierQueryIndexBudgetBytes != null && options.store != StoreType.LMDB) {
+			throw new IllegalArgumentException(
+					"--lmdb-frontier-query-index-budget-bytes is only supported with --store lmdb.");
+		}
+		if (options.writeLmdbStoreManifest) {
+			if (options.compareExisting || options.runAllThemeQueries || options.hasQueryInput()
+					|| options.batchDataPreflight || options.batchProcessIsolation) {
+				throw new IllegalArgumentException(
+						"--write-lmdb-store-manifest is a standalone action and cannot run queries or batches.");
+			}
+			if (options.store != StoreType.LMDB || options.lmdbDataDirectory == null
+					|| options.lmdbStoreManifest == null) {
+				throw new IllegalArgumentException(
+						"--write-lmdb-store-manifest requires LMDB --lmdb-data-dir and --lmdb-store-manifest.");
+			}
+			return;
+		}
+		if (options.lmdbEvidenceModeExplicit && (options.compareExisting || options.renameRunsByCommit)) {
+			throw new IllegalArgumentException("--lmdb-evidence-mode is only supported in LMDB run mode.");
+		}
+		if (options.batchDataPreflight) {
+			if (options.compareExisting || options.runAllThemeQueries || options.hasQueryInput()) {
+				throw new IllegalArgumentException(
+						"--batch-data-preflight is an isolated single-store action and cannot run a query.");
+			}
+			if (options.store == null) {
+				throw new IllegalArgumentException("--batch-data-preflight requires --store.");
+			}
+			if (options.store == StoreType.LMDB && options.lmdbDataDirectory == null) {
+				throw new IllegalArgumentException("LMDB --batch-data-preflight requires --lmdb-data-dir.");
+			}
+			if (options.store == StoreType.LMDB && options.lmdbStoreManifest == null) {
+				throw new IllegalArgumentException("LMDB --batch-data-preflight requires --lmdb-store-manifest.");
+			}
+			return;
+		}
+		if (options.batchManifestPrevalidated) {
+			if (options.store != StoreType.LMDB || options.lmdbStoreManifest == null) {
+				throw new IllegalArgumentException(
+						"--batch-manifest-prevalidated requires LMDB --lmdb-store-manifest.");
+			}
+			if (options.batchWorkerStatusFile == null) {
+				throw new IllegalArgumentException(
+						"--batch-manifest-prevalidated is reserved for isolated workers.");
+			}
+		}
+		if (options.batchProcessIsolation && !options.runAllThemeQueries) {
+			throw new IllegalArgumentException("--batch-process-isolation requires --all-theme-queries.");
+		}
+		if (options.batchHardTimeoutSeconds != null && !options.batchProcessIsolation) {
+			throw new IllegalArgumentException(
+					"--batch-hard-timeout-seconds is only supported with --batch-process-isolation.");
+		}
+		if (options.batchAuditCsv != null && !options.batchProcessIsolation) {
+			throw new IllegalArgumentException("--batch-audit-csv is only supported with --batch-process-isolation.");
+		}
+		if (options.batchWorkerStatusFile != null && options.runAllThemeQueries) {
+			throw new IllegalArgumentException("--batch-worker-status-file is only supported by a single worker.");
 		}
 
 		if (options.compareExisting) {
@@ -285,6 +416,15 @@ final class QueryPlanSnapshotCliOptions {
 			if (options.noInteractive && options.store == null) {
 				throw new IllegalArgumentException("--no-interactive with --all-theme-queries requires --store.");
 			}
+			if (options.batchProcessIsolation && options.batchHardTimeoutSeconds == null) {
+				throw new IllegalArgumentException(
+						"--batch-process-isolation requires an explicit --batch-hard-timeout-seconds.");
+			}
+			if (options.batchProcessIsolation && options.store == StoreType.LMDB
+					&& options.lmdbDataDirectory == null) {
+				throw new IllegalArgumentException(
+						"LMDB --batch-process-isolation requires a reusable --lmdb-data-dir.");
+			}
 			return;
 		}
 
@@ -316,6 +456,9 @@ final class QueryPlanSnapshotCliOptions {
 	}
 
 	private static boolean missingRequiredRunOptions(QueryPlanSnapshotCliOptions options) {
+		if (options.batchDataPreflight || options.writeLmdbStoreManifest) {
+			return options.store == null;
+		}
 		if (options.runAllThemeQueries) {
 			return options.store == null;
 		}
@@ -334,6 +477,16 @@ final class QueryPlanSnapshotCliOptions {
 			throw new IllegalArgumentException("Invalid " + optionName + " key in value: '" + raw + "'.");
 		}
 		return new Assignment(key, value);
+	}
+
+	private static String parseLmdbEvidenceMode(String raw, String optionName) {
+		String normalized = Objects.requireNonNull(raw, "raw").trim().toLowerCase(Locale.ROOT);
+		if (LMDB_EVIDENCE_MODE_ADAPTIVE.equals(normalized)
+				|| LMDB_EVIDENCE_MODE_SNAPSHOT_ONLY.equals(normalized)) {
+			return normalized;
+		}
+		throw new IllegalArgumentException("Invalid " + optionName + " value '" + raw
+				+ "'. Expected snapshot-only or adaptive.");
 	}
 
 	private static void parseThemeQuerySelection(String value, QueryPlanSnapshotCliOptions options) {
@@ -435,6 +588,14 @@ final class QueryPlanSnapshotCliOptions {
 	}
 
 	private static long parsePositiveLong(String value, String optionName) {
+		long parsed = parseNonNegativeLong(value, optionName);
+		if (parsed < 1L) {
+			throw new IllegalArgumentException("Invalid " + optionName + " value '" + value + "'. Must be >= 1.");
+		}
+		return parsed;
+	}
+
+	private static long parseNonNegativeLong(String value, String optionName) {
 		long parsed;
 		try {
 			parsed = Long.parseLong(value.trim());
@@ -442,8 +603,8 @@ final class QueryPlanSnapshotCliOptions {
 			throw new IllegalArgumentException("Invalid " + optionName + " value '" + value + "'. Use a whole number.",
 					e);
 		}
-		if (parsed < 1L) {
-			throw new IllegalArgumentException("Invalid " + optionName + " value '" + value + "'. Must be >= 1.");
+		if (parsed < 0L) {
+			throw new IllegalArgumentException("Invalid " + optionName + " value '" + value + "'. Must be >= 0.");
 		}
 		return parsed;
 	}
@@ -532,9 +693,14 @@ final class QueryPlanSnapshotCliOptions {
 		output.println("  --theme-query <THEME:INDEX>          shortcut for themed query");
 		output.println(
 				"  --all-theme-queries                  run all queries (all themes, or only --theme if supplied)");
+		output.println("  --batch-process-isolation            isolate each all-theme query in a child JVM");
+		output.println("  --batch-hard-timeout-seconds <long>  required hard wall deadline for isolated workers");
+		output.println("  --batch-audit-csv <path>             parent-owned per-query audit CSV");
 		output.println("  --query <SPARQL>                     direct query text");
 		output.println("  --query-file <path>                  load query text from file");
 		output.println("  --query-timeout-seconds <int>=0      per-query max execution time (0 disables timeout)");
+		output.println(
+				"  --factorized-verification           compare exact algebraic bags without telemetry execution");
 		output.println("  --execution-repeat-min-runs <int>=1  minimum repeated verification runs");
 		output.println("  --execution-repeat-max-runs <int>=1  maximum repeated verification runs");
 		output.println("  --execution-repeat-soft-limit-millis <long>=1");
@@ -559,6 +725,12 @@ final class QueryPlanSnapshotCliOptions {
 		output.println("  --query-id <id>                      custom query id in run mode / compare filter");
 		output.println("  --run-name <name>                    label a run / compare filter by run label");
 		output.println("  --lmdb-data-dir <path>               optional persistent LMDB directory");
+		output.println("  --lmdb-store-manifest <path>         immutable LMDB fixture identity");
+		output.println("  --lmdb-frontier-query-index-budget-bytes <long>=0");
+		output.println("                                       explicit reproducible Frontier query-index budget");
+		output.println("  --write-lmdb-store-manifest          record a closed LMDB fixture, then exit");
+		output.println("  --lmdb-evidence-mode <snapshot-only|adaptive>");
+		output.println("                                       LMDB sketch evidence policy (default: adaptive)");
 		output.println("  --list-themes                        list available themes");
 		output.println("  --list-queries <THEME>               list query index/name for a theme");
 		output.println("  --no-interactive                     fail if required args are missing");

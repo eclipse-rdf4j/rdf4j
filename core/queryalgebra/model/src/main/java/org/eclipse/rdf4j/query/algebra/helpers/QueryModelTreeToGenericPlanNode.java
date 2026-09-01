@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<RuntimeException> {
 
 	private static final Set<String> LEFT_BOUND_RIGHT_ALGORITHMS = Set.of(
+			"BoundStatementPatternJoinIteration",
 			"JoinIterator",
 			"LeftJoinIterator",
 			"BadlyDesignedLeftJoinIterator",
@@ -57,6 +58,8 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 	private static final Set<String> INCOMING_ONLY_RIGHT_ALGORITHMS = Set.of(
 			"HashJoinIteration",
 			"InnerMergeJoinIterator");
+	private static final String OPTIMIZER_OBJECT_GUARANTEE = "optimizer.objectGuarantee";
+	private static final String OPTIMIZER_OBJECT_GUARANTEE_PREDICATE = "optimizer.objectGuaranteePredicate";
 
 	private GenericPlanNode top = null;
 	private final QueryModelNode topTupleExpr;
@@ -96,6 +99,10 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		}
 		if (top != null) {
 			top.applyExplanationLevel(level);
+			if (!containsPlannerEstimateUsage(topTupleExpr)
+					&& !hasPlannerEstimateUsage(optimizerMetricWrapper)) {
+				disableEstimateStabilityMetrics(top);
+			}
 		}
 		return top;
 	}
@@ -167,19 +174,55 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		return -1;
 	}
 
+	private static boolean containsPlannerEstimateUsage(QueryModelNode node) {
+		if (node == null) {
+			return false;
+		}
+		final boolean[] found = { false };
+		node.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode candidate) {
+				if (!found[0] && hasPlannerEstimateUsage(candidate)) {
+					found[0] = true;
+				}
+				if (!found[0]) {
+					super.meetNode(candidate);
+				}
+			}
+		});
+		return found[0];
+	}
+
+	private static boolean hasPlannerEstimateUsage(QueryModelNode node) {
+		if (node == null) {
+			return false;
+		}
+		String usage = node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
+		return usage != null && !usage.isEmpty()
+				&& !TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED.equals(usage);
+	}
+
+	private static void disableEstimateStabilityMetrics(GenericPlanNode node) {
+		node.setEstimateStabilityMetricsEnabled(false);
+		List<GenericPlanNode> childPlans = node.getPlans();
+		if (childPlans != null) {
+			childPlans.forEach(QueryModelTreeToGenericPlanNode::disableEstimateStabilityMetrics);
+		}
+	}
+
 	private static void copyOptimizerMetrics(QueryModelNode node, GenericPlanNode genericPlanNode) {
 		for (Map.Entry<String, Long> entry : node.getLongMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+			if (TelemetryMetricNames.isOptimizerExplainMetric(entry.getKey())) {
 				genericPlanNode.setLongMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 		for (Map.Entry<String, Double> entry : node.getDoubleMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+			if (TelemetryMetricNames.isOptimizerExplainMetric(entry.getKey())) {
 				genericPlanNode.setDoubleMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 		for (Map.Entry<String, String> entry : node.getStringMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+			if (TelemetryMetricNames.isOptimizerExplainMetric(entry.getKey())) {
 				genericPlanNode.setStringMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
@@ -187,19 +230,19 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 
 	private static void copyOptimizerMetricsIfAbsent(QueryModelNode node, GenericPlanNode genericPlanNode) {
 		for (Map.Entry<String, Long> entry : node.getLongMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+			if (TelemetryMetricNames.isOptimizerExplainMetric(entry.getKey())
 					&& genericPlanNode.getLongMetricActual(entry.getKey()) == null) {
 				genericPlanNode.setLongMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 		for (Map.Entry<String, Double> entry : node.getDoubleMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+			if (TelemetryMetricNames.isOptimizerExplainMetric(entry.getKey())
 					&& genericPlanNode.getDoubleMetricActual(entry.getKey()) == null) {
 				genericPlanNode.setDoubleMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 		for (Map.Entry<String, String> entry : node.getStringMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+			if (TelemetryMetricNames.isOptimizerExplainMetric(entry.getKey())
 					&& genericPlanNode.getStringMetricActual(entry.getKey()) == null) {
 				genericPlanNode.setStringMetricActual(entry.getKey(), entry.getValue());
 			}
@@ -267,6 +310,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 				genericPlanNode.setStringMetricActual(TelemetryMetricNames.BINDING_STATE,
 						incomingBindings.contains(var.getName()) ? "bound" : "unbound");
 			}
+			applyStatementPatternObjectGuarantee(var, genericPlanNode);
 		}
 
 		if (node instanceof StatementPattern) {
@@ -278,6 +322,26 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 			if (joinType != null) {
 				genericPlanNode.setStringMetricActual(TelemetryMetricNames.JOIN_TYPE, joinType);
 			}
+		}
+	}
+
+	private static void applyStatementPatternObjectGuarantee(Var var, GenericPlanNode genericPlanNode) {
+		QueryModelNode parent = var.getParentNode();
+		if (!(parent instanceof StatementPattern statementPattern) || statementPattern.getObjectVar() != var) {
+			return;
+		}
+		copyPlannedStringMetricIfAbsent(statementPattern, genericPlanNode, OPTIMIZER_OBJECT_GUARANTEE);
+		copyPlannedStringMetricIfAbsent(statementPattern, genericPlanNode, OPTIMIZER_OBJECT_GUARANTEE_PREDICATE);
+	}
+
+	private static void copyPlannedStringMetricIfAbsent(QueryModelNode source, GenericPlanNode target,
+			String metricName) {
+		if (target.getStringMetricPlanned(metricName) != null) {
+			return;
+		}
+		String metricValue = source.getStringMetricPlanned(metricName);
+		if (metricValue != null) {
+			target.setStringMetricPlanned(metricName, metricValue);
 		}
 	}
 

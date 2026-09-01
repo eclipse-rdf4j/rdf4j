@@ -21,16 +21,46 @@ import org.junit.jupiter.api.Test;
 class ThemeQueryCatalogExpectedCountTest {
 
 	@Test
+	void highlyConnectedQ11UsesAuthoritativeFactorizedCount() {
+		assertEquals(22_853_301_733_957L, ThemeQueryCatalog.expectedCountFor(Theme.HIGHLY_CONNECTED, 11));
+	}
+
+	@Test
+	void highlyConnectedQ12UsesAuthoritativeFactorizedCount() {
+		assertEquals(5_397_929_193L, ThemeQueryCatalog.expectedCountFor(Theme.HIGHLY_CONNECTED, 12));
+	}
+
+	@Test
+	void socialMediaQ12UsesAuthoritativeFactorizedCount() {
+		assertEquals(2_455_460_386L, ThemeQueryCatalog.expectedCountFor(Theme.SOCIAL_MEDIA, 12));
+	}
+
+	@Test
+	void socialMediaQ11UsesAuthoritativeFactorizedCount() {
+		assertEquals(1_141_596_126L, ThemeQueryCatalog.expectedCountFor(Theme.SOCIAL_MEDIA, 11));
+	}
+
+	@Test
+	void libraryQ12UsesAuthoritativeFactorizedCount() {
+		assertEquals(305_676_168_120L, ThemeQueryCatalog.expectedCountFor(Theme.LIBRARY, 12));
+	}
+
+	@Test
 	void expectedCountsMatchCatalogValues() {
 		Map<Theme, long[]> expectedCounts = Map.of(
 				Theme.MEDICAL_RECORDS, new long[] { 1, 1, 135, 1, 1, 1, 8335, 1, 8335, 1, 1, 199461, 347473 },
-				Theme.SOCIAL_MEDIA, new long[] { 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1 },
-				Theme.LIBRARY, new long[] { 1, 1, 3, 1, 1, 1, 5081, 1, 10, 1, 1, 1, 1 },
-				Theme.ENGINEERING, new long[] { 1, 1, 3, 1, 1, 1, 520, 1, 520, 1, 1, 1, 134229 },
-				Theme.HIGHLY_CONNECTED, new long[] { 1, 1, 36767, 1, 1, 1, 40251, 1, 1, 40251, 1, 1, 1 },
-				Theme.TRAIN, new long[] { 1, 1, 3, 1, 1, 1, 7836, 1, 1, 67388, 1, 1, 943354 },
-				Theme.ELECTRICAL_GRID, new long[] { 1, 1, 10, 1, 1, 1, 9364, 1, 0, 1, 1, 1, 621654 },
-				Theme.PHARMA, new long[] { 1, 80, 0, 2216, 1, 1, 1, 1, 1635, 1, 51, 1, 25710 }
+				Theme.SOCIAL_MEDIA,
+				new long[] { 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1_141_596_126L, 2_455_460_386L },
+				Theme.LIBRARY, new long[] { 1, 1, 3, 1, 1, 1, 5081, 1, 10, 1, 1, 20235, 305_676_168_120L },
+				Theme.ENGINEERING, new long[] { 1, 1, 3, 1, 1, 1, 520, 1, 520, 1, 1, 1557, 134229 },
+				Theme.HIGHLY_CONNECTED,
+				new long[] {
+						1, 1, 36767, 1, 1, 1, 40251, 1, 1, 40251, 1, 22_853_301_733_957L, 5_397_929_193L
+				},
+				Theme.TRAIN, new long[] { 1, 1, 3, 1, 1, 1, 7836, 1, 1, 67388, 1, 569390, 943354 },
+				Theme.ELECTRICAL_GRID, new long[] { 1, 1, 10, 1, 1, 1, 9364, 1, 0, 1, 1, 1884596, 621654 },
+				Theme.PHARMA, new long[] { 1, 80, 0, 2216, 1, 1, 1, 1, 1635, 1, 51, 46761, 25710 },
+				Theme.SPARSE, new long[] { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }
 		);
 
 		for (Map.Entry<Theme, long[]> entry : expectedCounts.entrySet()) {
@@ -49,13 +79,15 @@ class ThemeQueryCatalogExpectedCountTest {
 				Theme.MEDICAL_RECORDS, new long[] { 7571, 49835, -1, 8309, 24971, 0, -1, 0, -1, 16352, 8335,
 						-1, -1 },
 				Theme.SOCIAL_MEDIA, new long[] { 6, 2, 3, -1, 5, 480, -1, 5, 3, 11, 2, -1, -1 },
-				Theme.LIBRARY, new long[] { 128853, 0, -1, 7958, 0, 217, -1, 77295, -1, 0, 4, -1, -1 },
-				Theme.ENGINEERING, new long[] { 132672, 0, -1, 348, 2, 0, -1, 0, -1, 0, 2, -1, -1 },
+				Theme.LIBRARY, new long[] { 128853, 3, -1, 7958, 0, 217, -1, 77295, -1, 2, 4, -1, -1 },
+				Theme.ENGINEERING, new long[] { 132672, 3, -1, 348, 2, 0, -1, 0, -1, 0, 2, -1, -1 },
 				Theme.HIGHLY_CONNECTED, new long[] { 40251, 36767, -1, 39720, 770, 3279, -1, 32513, 119, -1,
 						59, -1, -1 },
-				Theme.TRAIN, new long[] { 8268, 0, -1, 67380, 2, 24, -1, 1, 9, -1, 18788, -1, -1 },
-				Theme.ELECTRICAL_GRID, new long[] { 7396, 0, -1, 59629, 5, 47, -1, 6, -1, 0, 0, -1, -1 },
-				Theme.PHARMA, new long[] { 18, -1, -1, -1, 4972, 32, -1, 2885, -1, 13, -1, -1, -1 }
+				Theme.TRAIN, new long[] { 8268, 3, -1, 67380, 2, 24, -1, 1, 9, -1, 18788, -1, -1 },
+				Theme.ELECTRICAL_GRID, new long[] { 7396, 6, -1, 59629, 5, 47, -1, 6, -1, 0, 0, -1, -1 },
+				Theme.PHARMA, new long[] { 18, -1, -1, -1, 4972, 32, -1, 2885, -1, 13, -1, -1, -1 },
+				Theme.SPARSE, new long[] { 240000, 20400, 583422360, 159781560, 5736000, 72000, 152000,
+						480000, 3000, 67350840, 321720, 6971897202L, 3720000 }
 		);
 
 		for (Map.Entry<Theme, long[]> entry : expectedCountBindingValues.entrySet()) {

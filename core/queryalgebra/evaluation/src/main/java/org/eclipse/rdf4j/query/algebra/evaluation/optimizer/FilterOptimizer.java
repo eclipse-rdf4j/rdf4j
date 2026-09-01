@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -256,7 +257,8 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Filter filter) {
-			if (filter.getCondition()instanceof And and) {
+			if (filter.getCondition()instanceof And and
+					&& ScalarEvaluationEffects.reorderingIsSafe(filter.getCondition())) {
 				filter.setCondition(and.getLeftArg().clone());
 				Filter newFilter = new Filter(filter.getArg().clone(), and.getRightArg().clone());
 				transferScopeChange(filter, newFilter); // preserve scope flag
@@ -278,7 +280,10 @@ public class FilterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			if (filter.getArg()instanceof Filter childFilter && filter.getParentNode() != null) {
+			if (filter.getArg()instanceof Filter childFilter
+					&& filter.getParentNode() != null
+					&& ScalarEvaluationEffects.reorderingIsSafe(filter.getCondition())
+					&& ScalarEvaluationEffects.reorderingIsSafe(childFilter.getCondition())) {
 
 				QueryModelNode parent = filter.getParentNode();
 				And merge = mergeConditionsInFilterOrder(childFilter.getArg(), childFilter.getCondition(),
@@ -306,7 +311,9 @@ public class FilterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost);
+			if (ScalarEvaluationEffects.reorderingIsSafe(filter.getCondition())) {
+				FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost);
+			}
 			FilterSelectivityTelemetry.annotate(filter, statistics);
 		}
 	}
@@ -326,7 +333,9 @@ public class FilterOptimizer implements QueryOptimizer {
 		}
 
 		public static void optimize(Filter filter, EvaluationStatistics statistics, boolean considerJoinPlacementCost) {
-			filter.visit(new FilterRelocator(filter, statistics, considerJoinPlacementCost));
+			if (ScalarEvaluationEffects.reorderingIsSafe(filter.getCondition())) {
+				filter.visit(new FilterRelocator(filter, statistics, considerJoinPlacementCost));
+			}
 		}
 
 		@Override
@@ -389,15 +398,9 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Difference node) {
-			Filter clone = new Filter();
-			clone.setCondition(filter.getCondition().clone());
-			transferScopeChange(filter, clone);
-
 			relocate(filter, node.getLeftArg());
-			relocate(clone, node.getRightArg());
-
 			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost);
-			FilterRelocator.optimize(clone, statistics, considerJoinPlacementCost);
+			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost);
 		}
 
 		@Override
@@ -415,7 +418,7 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Extension node) {
-			if (node.getArg().getBindingNames().containsAll(filterVars)) {
+			if (node.getArg().getBindingNames().containsAll(filterVars) && extensionEvaluationIsSafe(node)) {
 				node.getArg().visit(this);
 			} else {
 				relocate(filter, node);
@@ -431,9 +434,12 @@ public class FilterOptimizer implements QueryOptimizer {
 		}
 
 		@Override
-		public void meet(Filter filter) {
-			// Filters are commutative
-			filter.getArg().visit(this);
+		public void meet(Filter childFilter) {
+			if (ScalarEvaluationEffects.reorderingIsSafe(childFilter.getCondition())) {
+				childFilter.getArg().visit(this);
+			} else {
+				relocate(filter, childFilter);
+			}
 		}
 
 		@Override
@@ -459,8 +465,16 @@ public class FilterOptimizer implements QueryOptimizer {
 		private void relocate(Filter filter, TupleExpr newFilterArg) {
 			if (filter.getArg() != newFilterArg) {
 				if (filter.getParentNode() != null) {
+					TupleExpr formerArg = filter.getArg();
 					// Remove filter from its original location
-					filter.replaceWith(filter.getArg());
+					filter.replaceWith(formerArg);
+					if (filter.isVariableScopeChange() && formerArg instanceof VariableScopeChange scopeRoot) {
+						// The scope boundary belongs to the position, not to the relocated filter: leave it
+						// on the subtree that now roots the scope instead of planting a phantom interior
+						// boundary wherever the filter lands.
+						scopeRoot.setVariableScopeChange(true);
+						filter.setVariableScopeChange(false);
+					}
 				}
 
 				// Insert filter at the new location
@@ -495,6 +509,12 @@ public class FilterOptimizer implements QueryOptimizer {
 			double candidateInputRows = estimateFilteredInputRows(candidateArg);
 			return isFiniteNonNegative(currentInputRows) && isFiniteNonNegative(candidateInputRows)
 					&& currentInputRows < candidateInputRows;
+		}
+
+		private boolean extensionEvaluationIsSafe(Extension extension) {
+			return extension.getElements()
+					.stream()
+					.allMatch(element -> ScalarEvaluationEffects.reorderingIsSafe(element.getExpr()));
 		}
 
 		private OptionalWorkRows estimateWorkRows(JoinFactorCostModel costModel, TupleExpr tupleExpr) {

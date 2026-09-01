@@ -65,6 +65,16 @@ public class TripleStoreTest {
 	}
 
 	@Test
+	public void closeDrainsOutstandingReadTransactionsBeforeEnvironment() throws Exception {
+		Txn txn = tripleStore.getTxnManager().createReadTxn();
+
+		tripleStore.close();
+
+		assertEquals("Store close must invalidate read transactions before closing the LMDB environment",
+				0L, txn.get());
+	}
+
+	@Test
 	public void testInferredStmts() throws Exception {
 		tripleStore.startTransaction();
 		tripleStore.storeTriple(1, 2, 3, 1, false);
@@ -112,6 +122,25 @@ public class TripleStoreTest {
 						count(secondaryIndexStore.getTriples(txn, -1, 22, -1, -1, true)));
 				assertEquals("OSPC explicit row should exist", 1,
 						count(secondaryIndexStore.getTriples(txn, -1, -1, 33, -1, true)));
+			}
+		}
+	}
+
+	@Test
+	public void testWildcardScanUsesSpocWhenConfigured() throws Exception {
+		File wildcardIndexDir = new File(dataDir, "wildcard-index-store");
+		wildcardIndexDir.mkdirs();
+		try (TripleStore wildcardIndexStore = new TripleStore(wildcardIndexDir,
+				new LmdbStoreConfig("posc,spoc"),
+				null)) {
+			wildcardIndexStore.startTransaction();
+			wildcardIndexStore.storeTriple(11, 22, 33, 44, true);
+			wildcardIndexStore.commit();
+
+			try (Txn txn = wildcardIndexStore.getTxnManager().createReadTxn();
+					RecordIterator records = wildcardIndexStore.getTriples(txn, -1, -1, -1, -1, true)) {
+				assertEquals("Wildcard scans should use SPOC for subject-local iteration", "spoc",
+						records.getIndexName());
 			}
 		}
 	}
@@ -554,6 +583,69 @@ public class TripleStoreTest {
 		tripleStore.commit();
 		tripleStore.filterUsedIds(removed);
 		assertEquals(Arrays.asList(6L, 7L, 8L), removed.stream().sorted().collect(Collectors.toList()));
+	}
+
+	@Test
+	public void frontierMutationJournalIsTransactionalAndRestartSafe() throws Exception {
+		Method readJournal = TripleStore.class.getDeclaredMethod("readFrontierMutationsAfter", long.class, int.class);
+		readJournal.setAccessible(true);
+
+		tripleStore.startTransaction();
+		assertTrue(tripleStore.storeTriple(11L, 22L, 33L, 44L, true));
+		assertTrue(tripleStore.storeTriple(12L, 22L, 34L, 44L, true));
+		assertTrue(tripleStore.storeTriple(13L, 22L, 35L, 44L, true));
+		tripleStore.commit();
+		List<?> mutations = readFrontierMutations(readJournal, tripleStore, 0L);
+		assertEquals(3, mutations.size());
+		assertFrontierMutation(mutations.getFirst(), 1L, true, true, 11L, 22L, 33L, 44L);
+		assertFrontierMutation(mutations.get(1), 2L, true, true, 12L, 22L, 34L, 44L);
+		assertFrontierMutation(mutations.get(2), 3L, true, true, 13L, 22L, 35L, 44L);
+
+		tripleStore.startTransaction();
+		assertFalse(tripleStore.storeTriple(11L, 22L, 33L, 44L, true));
+		tripleStore.commit();
+		assertEquals("Duplicate statements must not create journal rows", 3,
+				readFrontierMutations(readJournal, tripleStore, 0L).size());
+
+		tripleStore.startTransaction();
+		assertTrue(tripleStore.storeTriple(55L, 66L, 77L, 88L, false));
+		tripleStore.rollback();
+		assertEquals("Rolled-back statements must not create journal rows", 3,
+				readFrontierMutations(readJournal, tripleStore, 0L).size());
+
+		tripleStore.startTransaction();
+		tripleStore.removeTriplesByContext(11L, 22L, 33L, 44L, true, ignored -> {
+		});
+		tripleStore.commit();
+		mutations = readFrontierMutations(readJournal, tripleStore, 3L);
+		assertEquals(1, mutations.size());
+		assertFrontierMutation(mutations.getFirst(), 4L, false, true, 11L, 22L, 33L, 44L);
+
+		tripleStore.close();
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
+		mutations = readFrontierMutations(readJournal, tripleStore, 0L);
+		assertEquals(4, mutations.size());
+		assertFrontierMutation(mutations.getLast(), 4L, false, true, 11L, 22L, 33L, 44L);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static List<?> readFrontierMutations(Method method, TripleStore store, long afterSequence)
+			throws Exception {
+		return (List<?>) method.invoke(store, afterSequence, 100);
+	}
+
+	private static void assertFrontierMutation(Object mutation, long sequence, boolean insertion, boolean explicit,
+			long subject, long predicate, long object, long context) throws Exception {
+		Class<?> type = mutation.getClass();
+		assertEquals(sequence, type.getMethod("sequence").invoke(mutation));
+		assertEquals(insertion, type.getMethod("insertion").invoke(mutation));
+		assertEquals(explicit, type.getMethod("explicit").invoke(mutation));
+		assertEquals(subject, type.getMethod("subjectId").invoke(mutation));
+		assertEquals(predicate, type.getMethod("predicateId").invoke(mutation));
+		assertEquals(object, type.getMethod("objectId").invoke(mutation));
+		assertEquals(context, type.getMethod("contextId").invoke(mutation));
+		assertTrue("Mutation epoch must come from its LMDB write transaction",
+				(long) type.getMethod("epoch").invoke(mutation) > 0L);
 	}
 
 	@AfterEach

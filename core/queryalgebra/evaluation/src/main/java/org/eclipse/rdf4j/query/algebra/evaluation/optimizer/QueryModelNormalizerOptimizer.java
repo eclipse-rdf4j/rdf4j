@@ -17,8 +17,11 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -96,7 +99,68 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			join.setRightArg(leftJoin.getLeftArg());
 			leftJoin.setLeftArg(join);
 			leftJoin.visit(this);
+		} else if (rightArg instanceof Extension extension && leftArg instanceof BindingSetAssignment assignment
+				&& canPushAssignmentThroughScopedExtension(assignment, extension)) {
+			// A scope-changed Extension forces a hash join whose build side is evaluated fully
+			// unbound. A constant VALUES relation can be pushed inside the scope when the BIND
+			// expressions cannot observe its bindings, turning the unbound evaluation into bound
+			// probes.
+			join.replaceWith(extension);
+			join.setRightArg(extension.getArg());
+			extension.setArg(join);
+			extension.visit(this);
+		} else if (leftArg instanceof Extension extension && rightArg instanceof BindingSetAssignment assignment
+				&& canPushAssignmentThroughScopedExtension(assignment, extension)) {
+			join.replaceWith(extension);
+			join.setLeftArg(extension.getArg());
+			extension.setArg(join);
+			extension.visit(this);
 		}
+	}
+
+	/**
+	 * A constant VALUES relation may move through a variable-scope-changing Extension when (1) it needs no input
+	 * bindings, (2) its binding names are disjoint from the names the Extension assigns, (3) every BIND expression is
+	 * insulated from the pushed bindings, and (4) the Extension argument is plain join/pattern/filter algebra whose
+	 * bound-join evaluation is equivalent to unbound evaluation plus a join.
+	 */
+	private static boolean canPushAssignmentThroughScopedExtension(BindingSetAssignment assignment,
+			Extension extension) {
+		if (!extension.isVariableScopeChange() || assignment.isVariableScopeChange()) {
+			return false;
+		}
+		Set<String> assignmentNames = assignment.getBindingNames();
+		if (assignmentNames.isEmpty() || !extension.getArg().getBindingNames().containsAll(assignmentNames)) {
+			return false;
+		}
+		for (ExtensionElem element : extension.getElements()) {
+			if (assignmentNames.contains(element.getName())) {
+				return false;
+			}
+			Set<String> expressionNames = new HashSet<>(VarNameCollector.process(element.getExpr()));
+			expressionNames.retainAll(assignmentNames);
+			if (!expressionNames.isEmpty()) {
+				return false;
+			}
+		}
+		return isPlainJoinAlgebra(extension.getArg());
+	}
+
+	private static boolean isPlainJoinAlgebra(TupleExpr tupleExpr) {
+		if (tupleExpr instanceof org.eclipse.rdf4j.query.algebra.StatementPattern) {
+			return true;
+		}
+		if (tupleExpr instanceof BindingSetAssignment assignmentArg) {
+			return !assignmentArg.isVariableScopeChange();
+		}
+		if (tupleExpr instanceof Join joinArg && !joinArg.isVariableScopeChange()) {
+			return isPlainJoinAlgebra(joinArg.getLeftArg()) && isPlainJoinAlgebra(joinArg.getRightArg());
+		}
+		if (tupleExpr instanceof Filter filterArg && !filterArg.isVariableScopeChange()) {
+			return !(filterArg.getCondition() instanceof org.eclipse.rdf4j.query.algebra.SubQueryValueOperator)
+					&& isPlainJoinAlgebra(filterArg.getArg());
+		}
+		return false;
 	}
 
 	@Override
@@ -152,8 +216,6 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			difference.replaceWith(leftArg);
 		} else if (rightArg instanceof EmptySet) {
 			difference.replaceWith(leftArg);
-		} else if (leftArg instanceof SingletonSet && rightArg instanceof SingletonSet) {
-			difference.replaceWith(new EmptySet());
 		}
 	}
 

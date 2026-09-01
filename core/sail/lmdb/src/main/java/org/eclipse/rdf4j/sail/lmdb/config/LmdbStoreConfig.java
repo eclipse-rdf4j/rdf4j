@@ -13,7 +13,16 @@
 package org.eclipse.rdf4j.sail.lmdb.config;
 
 import java.time.Duration;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.Set;
+import java.util.StringTokenizer;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -22,11 +31,15 @@ import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  *
  */
 public class LmdbStoreConfig extends BaseSailConfig {
+	private static final Logger logger = LoggerFactory.getLogger(LmdbStoreConfig.class);
+	private static final AtomicBoolean LEGACY_STRATEGY_WARNING_LOGGED = new AtomicBoolean();
 	/**
 	 * The default size of the triple database.
 	 */
@@ -61,11 +74,66 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public static final int OPTIMIZER_SAMPLING_MAX_ROWS = 4096;
 
+	public static final int SKETCH_ESTIMATOR_COLD_SYNOPSIS_MAX_CAPACITY = 6_144;
+
+	public static final boolean SKETCH_ESTIMATOR_ENABLED = false;
+
+	public static final long SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES = 256L * 1024L * 1024L;
+
+	private static final long SKETCH_ESTIMATOR_MIN_MEMORY_BUDGET_BYTES = 1024L * 1024L;
+
+	public static final FrontierEstimatorMode FRONTIER_ESTIMATOR_MODE = FrontierEstimatorMode.AUTHORITATIVE;
+
+	public static final long FRONTIER_SYNOPSIS_BUDGET_BYTES = 512L * 1024L * 1024L;
+
+	public static final long FRONTIER_HEAP_BUDGET_BYTES = Runtime.getRuntime().maxMemory() / 4L;
+
+	public static final long FRONTIER_STATISTICS_MAX_LAG_MILLIS = 60_000L;
+
+	public static final double FRONTIER_DELETE_RESERVE_FRACTION = 0.25d;
+
+	public static final long FRONTIER_QUERY_MEMORY_BUDGET_BYTES = 64L * 1024L * 1024L;
+
+	public static final long FRONTIER_QUERY_INDEX_BUDGET_BYTES = maximumFrontierQueryIndexBudgetBytes();
+
+	public static final long FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS = 262_144L;
+
+	public static final int FRONTIER_DESIGN_LANES = 2;
+
+	public static final int FRONTIER_AUDIT_LANES = 2;
+
+	public static final int FRONTIER_REFINEMENT_WORK_UNITS = 4096;
+
+	public static final double FRONTIER_TARGET_RELATIVE_STANDARD_ERROR = 0.25d;
+
+	public static final double FRONTIER_DEFENSIVE_PROPOSAL_EPSILON = 0.1d;
+
+	public static final double FRONTIER_CACHE_INITIAL_CONFIDENCE = 0.99d;
+
+	public static final double FRONTIER_CACHE_MINIMUM_CONFIDENCE = 0.51d;
+
+	public static final double FRONTIER_CACHE_MAXIMUM_CONFIDENCE = 0.999d;
+
+	public static final double FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET = 0.01d;
+
+	public static final long FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES = 64L * 1024L * 1024L;
+
+	public static final int FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS = 4;
+
+	public static final int FRONTIER_PLAN_CACHE_REFRESH_THREADS = 1;
+
+	public static final double FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION = 0.01d;
+
 	public static final long BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = 10L;
 
 	public static final long SKETCH_ESTIMATOR_THROTTLE_EVERY_N = 1024L * 1024L;
 
 	public static final long SKETCH_ESTIMATOR_THROTTLE_MILLIS = 2L;
+
+	public static final int SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT = 16;
+
+	public static final int SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX = 7;
+	public static final int SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES = 1_000_000;
 
 	/**
 	 * The default namespace id cache size.
@@ -104,7 +172,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private boolean inlineLiterals = true;
 
-	private Boolean sketchEstimatorEnabled;
+	private Boolean sketchEstimatorEnabled = SKETCH_ESTIMATOR_ENABLED;
 
 	private int sketchEstimatorSubjectBucketCount = -1;
 
@@ -114,11 +182,70 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private int sketchEstimatorContextBucketCount = -1;
 
+	private int sketchEstimatorOmniWitnessCohortBucketCount = -1;
+
+	private int sketchEstimatorOmniWitnessCohortBucketIndex = -1;
+	private int sketchEstimatorOmniWitnessCohortMaxEntries = -1;
+
 	private boolean sketchEstimatorContextPairSketchesEnabled = false;
 
 	private long sketchEstimatorThrottleEveryN = SKETCH_ESTIMATOR_THROTTLE_EVERY_N;
 
 	private long sketchEstimatorThrottleMillis = SKETCH_ESTIMATOR_THROTTLE_MILLIS;
+
+	private String sketchEstimatorStrategy = "unified";
+
+	private String sketchEstimatorEvidenceMode = "adaptive";
+
+	private int sketchEstimatorColdSynopsisCapacity;
+
+	private long sketchEstimatorMemoryBudgetBytes = SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES;
+
+	private FrontierEstimatorMode frontierEstimatorMode = FRONTIER_ESTIMATOR_MODE;
+
+	private long frontierSynopsisBudgetBytes = FRONTIER_SYNOPSIS_BUDGET_BYTES;
+
+	private long frontierHeapBudgetBytes = FRONTIER_HEAP_BUDGET_BYTES;
+
+	private boolean frontierHeapBudgetExplicitlyConfigured;
+
+	private long frontierStatisticsMaxLagMillis = FRONTIER_STATISTICS_MAX_LAG_MILLIS;
+
+	private double frontierDeleteReserveFraction = FRONTIER_DELETE_RESERVE_FRACTION;
+
+	private long frontierQueryMemoryBudgetBytes = FRONTIER_QUERY_MEMORY_BUDGET_BYTES;
+
+	private boolean frontierQueryMemoryBudgetExplicitlyConfigured;
+
+	private long frontierQueryIndexBudgetBytes = FRONTIER_QUERY_INDEX_BUDGET_BYTES;
+
+	private long frontierInitialMaterializationWorkUnits = FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS;
+
+	private int frontierDesignLanes = FRONTIER_DESIGN_LANES;
+
+	private int frontierAuditLanes = FRONTIER_AUDIT_LANES;
+
+	private int frontierRefinementWorkUnits = FRONTIER_REFINEMENT_WORK_UNITS;
+
+	private double frontierTargetRelativeStandardError = FRONTIER_TARGET_RELATIVE_STANDARD_ERROR;
+
+	private double frontierDefensiveProposalEpsilon = FRONTIER_DEFENSIVE_PROPOSAL_EPSILON;
+
+	private double frontierCacheInitialConfidence = FRONTIER_CACHE_INITIAL_CONFIDENCE;
+
+	private double frontierCacheMinimumConfidence = FRONTIER_CACHE_MINIMUM_CONFIDENCE;
+
+	private double frontierCacheMaximumConfidence = FRONTIER_CACHE_MAXIMUM_CONFIDENCE;
+
+	private double frontierCacheMaximumExpectedRegret = FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET;
+
+	private long frontierCacheEvidenceBudgetBytes = FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES;
+
+	private int frontierPlanCacheMaximumVariants = FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS;
+
+	private int frontierPlanCacheRefreshThreads = FRONTIER_PLAN_CACHE_REFRESH_THREADS;
+
+	private double frontierPlanCacheMaximumCanaryFraction = FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION;
 
 	private boolean optimizerSamplingEnabled = true;
 
@@ -129,6 +256,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private boolean backgroundRawSamplingEnabled = true;
 
 	private long backgroundRawSamplingMaxMillisPerCycle = BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE;
+
+	private boolean predicateGuaranteeIndexEnabled = true;
+
+	private boolean predicateGuaranteeIndexAutoRebuild = true;
+
+	private String predicateGuaranteeExcludedPredicates = "";
 
 	/*--------------*
 	 * Constructors *
@@ -304,7 +437,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	}
 
 	public LmdbStoreConfig setSketchEstimatorEnabled(Boolean sketchEstimatorEnabled) {
-		this.sketchEstimatorEnabled = sketchEstimatorEnabled;
+		this.sketchEstimatorEnabled = Boolean.TRUE.equals(sketchEstimatorEnabled);
 		return this;
 	}
 
@@ -344,6 +477,43 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public int getSketchEstimatorOmniWitnessCohortBucketCount() {
+		return sketchEstimatorOmniWitnessCohortBucketCount >= 0 ? sketchEstimatorOmniWitnessCohortBucketCount
+				: SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorOmniWitnessCohortBucketCount(
+			int sketchEstimatorOmniWitnessCohortBucketCount) {
+		this.sketchEstimatorOmniWitnessCohortBucketCount = Math.max(0,
+				sketchEstimatorOmniWitnessCohortBucketCount);
+		if (this.sketchEstimatorOmniWitnessCohortBucketCount == 0) {
+			this.sketchEstimatorOmniWitnessCohortBucketIndex = 0;
+		}
+		return this;
+	}
+
+	public int getSketchEstimatorOmniWitnessCohortBucketIndex() {
+		return sketchEstimatorOmniWitnessCohortBucketIndex >= 0 ? sketchEstimatorOmniWitnessCohortBucketIndex
+				: SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorOmniWitnessCohortBucketIndex(
+			int sketchEstimatorOmniWitnessCohortBucketIndex) {
+		this.sketchEstimatorOmniWitnessCohortBucketIndex = getSketchEstimatorOmniWitnessCohortBucketCount() == 0 ? 0
+				: Math.max(0, sketchEstimatorOmniWitnessCohortBucketIndex);
+		return this;
+	}
+
+	public int getSketchEstimatorOmniWitnessCohortMaxEntries() {
+		return sketchEstimatorOmniWitnessCohortMaxEntries >= 1 ? sketchEstimatorOmniWitnessCohortMaxEntries
+				: SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorOmniWitnessCohortMaxEntries(int maxEntries) {
+		this.sketchEstimatorOmniWitnessCohortMaxEntries = Math.max(1, maxEntries);
+		return this;
+	}
+
 	public boolean getSketchEstimatorContextPairSketchesEnabled() {
 		return sketchEstimatorContextPairSketchesEnabled;
 	}
@@ -370,6 +540,344 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	public LmdbStoreConfig setSketchEstimatorThrottleMillis(long sketchEstimatorThrottleMillis) {
 		this.sketchEstimatorThrottleMillis = Math.max(0L, sketchEstimatorThrottleMillis);
 		return this;
+	}
+
+	public String getSketchEstimatorStrategy() {
+		return sketchEstimatorStrategy;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorStrategy(String sketchEstimatorStrategy) {
+		this.sketchEstimatorStrategy = normalizeSketchEstimatorStrategy(sketchEstimatorStrategy);
+		return this;
+	}
+
+	public String getSketchEstimatorEvidenceMode() {
+		return sketchEstimatorEvidenceMode;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorEvidenceMode(String sketchEstimatorEvidenceMode) {
+		this.sketchEstimatorEvidenceMode = normalizeSketchEstimatorEvidenceMode(sketchEstimatorEvidenceMode);
+		return this;
+	}
+
+	public int getSketchEstimatorColdSynopsisCapacity() {
+		return sketchEstimatorColdSynopsisCapacity;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorColdSynopsisCapacity(int capacity) {
+		this.sketchEstimatorColdSynopsisCapacity = Math.clamp(capacity, 0,
+				SKETCH_ESTIMATOR_COLD_SYNOPSIS_MAX_CAPACITY);
+		return this;
+	}
+
+	public long getSketchEstimatorMemoryBudgetBytes() {
+		return sketchEstimatorMemoryBudgetBytes;
+	}
+
+	public LmdbStoreConfig setSketchEstimatorMemoryBudgetBytes(long memoryBudgetBytes) {
+		if (memoryBudgetBytes < SKETCH_ESTIMATOR_MIN_MEMORY_BUDGET_BYTES) {
+			throw new IllegalArgumentException("Sketch estimator memory budget must be at least one MiB");
+		}
+		this.sketchEstimatorMemoryBudgetBytes = memoryBudgetBytes;
+		return this;
+	}
+
+	public FrontierEstimatorMode getFrontierEstimatorMode() {
+		return frontierEstimatorMode;
+	}
+
+	public LmdbStoreConfig setFrontierEstimatorMode(FrontierEstimatorMode frontierEstimatorMode) {
+		if (frontierEstimatorMode == null) {
+			throw new IllegalArgumentException("Frontier estimator mode is required");
+		}
+		this.frontierEstimatorMode = frontierEstimatorMode;
+		return this;
+	}
+
+	public long getFrontierSynopsisBudgetBytes() {
+		return frontierSynopsisBudgetBytes;
+	}
+
+	public LmdbStoreConfig setFrontierSynopsisBudgetBytes(long frontierSynopsisBudgetBytes) {
+		if (frontierSynopsisBudgetBytes < 0L) {
+			throw new IllegalArgumentException("Frontier synopsis budget must be nonnegative");
+		}
+		this.frontierSynopsisBudgetBytes = frontierSynopsisBudgetBytes;
+		return this;
+	}
+
+	public long getFrontierHeapBudgetBytes() {
+		return frontierHeapBudgetExplicitlyConfigured
+				? frontierHeapBudgetBytes
+				: frontierQueryMemoryBudgetExplicitlyConfigured
+						? frontierQueryMemoryBudgetBytes
+						: FRONTIER_HEAP_BUDGET_BYTES;
+	}
+
+	public LmdbStoreConfig setFrontierHeapBudgetBytes(long frontierHeapBudgetBytes) {
+		if (frontierHeapBudgetBytes < 0L) {
+			throw new IllegalArgumentException("Frontier heap budget must be nonnegative");
+		}
+		this.frontierHeapBudgetBytes = frontierHeapBudgetBytes;
+		frontierHeapBudgetExplicitlyConfigured = true;
+		return this;
+	}
+
+	public long getFrontierStatisticsMaxLagMillis() {
+		return frontierStatisticsMaxLagMillis;
+	}
+
+	public LmdbStoreConfig setFrontierStatisticsMaxLagMillis(long frontierStatisticsMaxLagMillis) {
+		if (frontierStatisticsMaxLagMillis < 0L) {
+			throw new IllegalArgumentException("Frontier statistics maximum lag must be nonnegative");
+		}
+		this.frontierStatisticsMaxLagMillis = frontierStatisticsMaxLagMillis;
+		return this;
+	}
+
+	public double getFrontierDeleteReserveFraction() {
+		return frontierDeleteReserveFraction;
+	}
+
+	public LmdbStoreConfig setFrontierDeleteReserveFraction(double frontierDeleteReserveFraction) {
+		if (!Double.isFinite(frontierDeleteReserveFraction)
+				|| frontierDeleteReserveFraction <= 0.0d
+				|| frontierDeleteReserveFraction >= 1.0d) {
+			throw new IllegalArgumentException("Frontier delete reserve fraction must be finite and in (0, 1)");
+		}
+		this.frontierDeleteReserveFraction = frontierDeleteReserveFraction;
+		return this;
+	}
+
+	public long getFrontierQueryMemoryBudgetBytes() {
+		return frontierQueryMemoryBudgetBytes;
+	}
+
+	public LmdbStoreConfig setFrontierQueryMemoryBudgetBytes(long frontierQueryMemoryBudgetBytes) {
+		if (frontierQueryMemoryBudgetBytes < 0L) {
+			throw new IllegalArgumentException("Frontier query memory budget must be nonnegative");
+		}
+		this.frontierQueryMemoryBudgetBytes = frontierQueryMemoryBudgetBytes;
+		frontierQueryMemoryBudgetExplicitlyConfigured = true;
+		return this;
+	}
+
+	public long getFrontierQueryIndexBudgetBytes() {
+		return frontierQueryIndexBudgetBytes;
+	}
+
+	public long getEffectiveFrontierQueryIndexBudgetBytes() {
+		return Math.min(frontierQueryIndexBudgetBytes, maximumFrontierQueryIndexBudgetBytes());
+	}
+
+	public LmdbStoreConfig setFrontierQueryIndexBudgetBytes(long frontierQueryIndexBudgetBytes) {
+		if (frontierQueryIndexBudgetBytes < 0L) {
+			throw new IllegalArgumentException("Frontier query index budget must be nonnegative");
+		}
+		this.frontierQueryIndexBudgetBytes = frontierQueryIndexBudgetBytes;
+		return this;
+	}
+
+	private static long maximumFrontierQueryIndexBudgetBytes() {
+		return Runtime.getRuntime().maxMemory() / 4L;
+	}
+
+	public long getFrontierInitialMaterializationWorkUnits() {
+		return frontierInitialMaterializationWorkUnits;
+	}
+
+	public LmdbStoreConfig setFrontierInitialMaterializationWorkUnits(
+			long frontierInitialMaterializationWorkUnits) {
+		if (frontierInitialMaterializationWorkUnits < 0L) {
+			throw new IllegalArgumentException("Frontier initial materialization work units must be nonnegative");
+		}
+		this.frontierInitialMaterializationWorkUnits = frontierInitialMaterializationWorkUnits;
+		return this;
+	}
+
+	public int getFrontierDesignLanes() {
+		return frontierDesignLanes;
+	}
+
+	public LmdbStoreConfig setFrontierDesignLanes(int frontierDesignLanes) {
+		if (frontierDesignLanes <= 0) {
+			throw new IllegalArgumentException("Frontier design lane count must be positive");
+		}
+		this.frontierDesignLanes = frontierDesignLanes;
+		return this;
+	}
+
+	public int getFrontierAuditLanes() {
+		return frontierAuditLanes;
+	}
+
+	public LmdbStoreConfig setFrontierAuditLanes(int frontierAuditLanes) {
+		if (frontierAuditLanes <= 0) {
+			throw new IllegalArgumentException("Frontier audit lane count must be positive");
+		}
+		this.frontierAuditLanes = frontierAuditLanes;
+		return this;
+	}
+
+	public int getFrontierRefinementWorkUnits() {
+		return frontierRefinementWorkUnits;
+	}
+
+	public LmdbStoreConfig setFrontierRefinementWorkUnits(int frontierRefinementWorkUnits) {
+		if (frontierRefinementWorkUnits < 0) {
+			throw new IllegalArgumentException("Frontier refinement work units must be nonnegative");
+		}
+		this.frontierRefinementWorkUnits = frontierRefinementWorkUnits;
+		return this;
+	}
+
+	public double getFrontierTargetRelativeStandardError() {
+		return frontierTargetRelativeStandardError;
+	}
+
+	public LmdbStoreConfig setFrontierTargetRelativeStandardError(double frontierTargetRelativeStandardError) {
+		if (!Double.isFinite(frontierTargetRelativeStandardError) || frontierTargetRelativeStandardError <= 0.0d) {
+			throw new IllegalArgumentException("Frontier target relative standard error must be finite and positive");
+		}
+		this.frontierTargetRelativeStandardError = frontierTargetRelativeStandardError;
+		return this;
+	}
+
+	public double getFrontierDefensiveProposalEpsilon() {
+		return frontierDefensiveProposalEpsilon;
+	}
+
+	public LmdbStoreConfig setFrontierDefensiveProposalEpsilon(double frontierDefensiveProposalEpsilon) {
+		if (!Double.isFinite(frontierDefensiveProposalEpsilon) || frontierDefensiveProposalEpsilon <= 0.0d
+				|| frontierDefensiveProposalEpsilon > 1.0d) {
+			throw new IllegalArgumentException(
+					"Frontier defensive proposal epsilon must be finite and in the interval (0, 1]");
+		}
+		this.frontierDefensiveProposalEpsilon = frontierDefensiveProposalEpsilon;
+		return this;
+	}
+
+	public double getFrontierCacheInitialConfidence() {
+		return frontierCacheInitialConfidence;
+	}
+
+	public LmdbStoreConfig setFrontierCacheInitialConfidence(double confidence) {
+		requireProbability(confidence, "Frontier cache initial confidence");
+		if (confidence < frontierCacheMinimumConfidence || confidence > frontierCacheMaximumConfidence) {
+			throw new IllegalArgumentException("Frontier cache initial confidence must remain within its bounds");
+		}
+		frontierCacheInitialConfidence = confidence;
+		return this;
+	}
+
+	public double getFrontierCacheMinimumConfidence() {
+		return frontierCacheMinimumConfidence;
+	}
+
+	public LmdbStoreConfig setFrontierCacheMinimumConfidence(double confidence) {
+		requireProbability(confidence, "Frontier cache minimum confidence");
+		if (confidence > frontierCacheInitialConfidence) {
+			throw new IllegalArgumentException("Frontier cache minimum confidence cannot exceed the initial value");
+		}
+		frontierCacheMinimumConfidence = confidence;
+		return this;
+	}
+
+	public double getFrontierCacheMaximumConfidence() {
+		return frontierCacheMaximumConfidence;
+	}
+
+	public LmdbStoreConfig setFrontierCacheMaximumConfidence(double confidence) {
+		requireProbability(confidence, "Frontier cache maximum confidence");
+		if (confidence < frontierCacheInitialConfidence) {
+			throw new IllegalArgumentException("Frontier cache maximum confidence cannot be below the initial value");
+		}
+		frontierCacheMaximumConfidence = confidence;
+		return this;
+	}
+
+	private void setFrontierCacheConfidenceBounds(double initialConfidence, double minimumConfidence,
+			double maximumConfidence) {
+		requireProbability(initialConfidence, "Frontier cache initial confidence");
+		requireProbability(minimumConfidence, "Frontier cache minimum confidence");
+		requireProbability(maximumConfidence, "Frontier cache maximum confidence");
+		if (minimumConfidence > initialConfidence || initialConfidence > maximumConfidence) {
+			throw new IllegalArgumentException(
+					"Frontier cache confidence bounds must satisfy minimum <= initial <= maximum");
+		}
+		frontierCacheInitialConfidence = initialConfidence;
+		frontierCacheMinimumConfidence = minimumConfidence;
+		frontierCacheMaximumConfidence = maximumConfidence;
+	}
+
+	public double getFrontierCacheMaximumExpectedRegret() {
+		return frontierCacheMaximumExpectedRegret;
+	}
+
+	public LmdbStoreConfig setFrontierCacheMaximumExpectedRegret(double maximumExpectedRegret) {
+		if (!Double.isFinite(maximumExpectedRegret)
+				|| maximumExpectedRegret < 0.0d
+				|| maximumExpectedRegret > 1.0d) {
+			throw new IllegalArgumentException("Frontier cache expected-regret budget must be in [0, 1]");
+		}
+		frontierCacheMaximumExpectedRegret = maximumExpectedRegret;
+		return this;
+	}
+
+	public long getFrontierCacheEvidenceBudgetBytes() {
+		return frontierCacheEvidenceBudgetBytes;
+	}
+
+	public LmdbStoreConfig setFrontierCacheEvidenceBudgetBytes(long evidenceBudgetBytes) {
+		if (evidenceBudgetBytes < 0L) {
+			throw new IllegalArgumentException("Frontier cache evidence budget must be nonnegative");
+		}
+		frontierCacheEvidenceBudgetBytes = evidenceBudgetBytes;
+		return this;
+	}
+
+	public int getFrontierPlanCacheMaximumVariants() {
+		return frontierPlanCacheMaximumVariants;
+	}
+
+	public LmdbStoreConfig setFrontierPlanCacheMaximumVariants(int maximumVariants) {
+		requirePlanCacheCount(maximumVariants, "Frontier plan-cache maximum variants");
+		frontierPlanCacheMaximumVariants = maximumVariants;
+		return this;
+	}
+
+	public int getFrontierPlanCacheRefreshThreads() {
+		return frontierPlanCacheRefreshThreads;
+	}
+
+	public LmdbStoreConfig setFrontierPlanCacheRefreshThreads(int refreshThreads) {
+		requirePlanCacheCount(refreshThreads, "Frontier plan-cache refresh threads");
+		frontierPlanCacheRefreshThreads = refreshThreads;
+		return this;
+	}
+
+	public double getFrontierPlanCacheMaximumCanaryFraction() {
+		return frontierPlanCacheMaximumCanaryFraction;
+	}
+
+	public LmdbStoreConfig setFrontierPlanCacheMaximumCanaryFraction(double canaryFraction) {
+		if (!Double.isFinite(canaryFraction) || canaryFraction < 0.0d || canaryFraction > 0.25d) {
+			throw new IllegalArgumentException("Frontier plan-cache canary fraction must be in [0, 0.25]");
+		}
+		frontierPlanCacheMaximumCanaryFraction = canaryFraction;
+		return this;
+	}
+
+	private static void requirePlanCacheCount(int value, String name) {
+		if (value < 1 || value > 16) {
+			throw new IllegalArgumentException(name + " must be in range 1..16");
+		}
+	}
+
+	private static void requireProbability(double value, String name) {
+		if (!Double.isFinite(value) || value <= 0.0d || value >= 1.0d) {
+			throw new IllegalArgumentException(name + " must be in (0, 1)");
+		}
 	}
 
 	public boolean getOptimizerSamplingEnabled() {
@@ -415,6 +923,54 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	public LmdbStoreConfig setBackgroundRawSamplingMaxMillisPerCycle(long backgroundRawSamplingMaxMillisPerCycle) {
 		this.backgroundRawSamplingMaxMillisPerCycle = Math.max(0L, backgroundRawSamplingMaxMillisPerCycle);
 		return this;
+	}
+
+	public boolean getPredicateGuaranteeIndexEnabled() {
+		return predicateGuaranteeIndexEnabled;
+	}
+
+	public LmdbStoreConfig setPredicateGuaranteeIndexEnabled(boolean predicateGuaranteeIndexEnabled) {
+		this.predicateGuaranteeIndexEnabled = predicateGuaranteeIndexEnabled;
+		return this;
+	}
+
+	public boolean getPredicateGuaranteeIndexAutoRebuild() {
+		return predicateGuaranteeIndexAutoRebuild;
+	}
+
+	public LmdbStoreConfig setPredicateGuaranteeIndexAutoRebuild(boolean predicateGuaranteeIndexAutoRebuild) {
+		this.predicateGuaranteeIndexAutoRebuild = predicateGuaranteeIndexAutoRebuild;
+		return this;
+	}
+
+	public String getPredicateGuaranteeExcludedPredicates() {
+		return predicateGuaranteeExcludedPredicates;
+	}
+
+	public LmdbStoreConfig setPredicateGuaranteeExcludedPredicates(String predicateGuaranteeExcludedPredicates) {
+		this.predicateGuaranteeExcludedPredicates = predicateGuaranteeExcludedPredicates == null
+				? ""
+				: predicateGuaranteeExcludedPredicates.trim();
+		return this;
+	}
+
+	public Set<String> getPredicateGuaranteeExcludedPredicateSet() {
+		if (predicateGuaranteeExcludedPredicates.isEmpty()) {
+			return Collections.emptySet();
+		}
+		Set<String> excludedPredicates = new LinkedHashSet<>();
+		StringTokenizer tokenizer = new StringTokenizer(predicateGuaranteeExcludedPredicates, ", \t\r\n");
+		while (tokenizer.hasMoreTokens()) {
+			String predicate = tokenizer.nextToken().trim();
+			if (predicate.length() > 1 && predicate.charAt(0) == '<'
+					&& predicate.charAt(predicate.length() - 1) == '>') {
+				predicate = predicate.substring(1, predicate.length() - 1);
+			}
+			if (!predicate.isEmpty()) {
+				excludedPredicates.add(predicate);
+			}
+		}
+		return Collections.unmodifiableSet(excludedPredicates);
 	}
 
 	@Override
@@ -471,8 +1027,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (!inlineLiterals) {
 			m.add(implNode, LmdbStoreSchema.INLINE_LITERALS, vf.createLiteral(false));
 		}
-		if (sketchEstimatorEnabled != null) {
-			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_ENABLED, vf.createLiteral(sketchEstimatorEnabled));
+		if (Boolean.TRUE.equals(sketchEstimatorEnabled)) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_ENABLED, vf.createLiteral(true));
 		}
 		if (sketchEstimatorSubjectBucketCount >= 0) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT,
@@ -490,6 +1046,18 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT,
 					vf.createLiteral(sketchEstimatorContextBucketCount));
 		}
+		if (sketchEstimatorOmniWitnessCohortBucketCount >= 0) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT,
+					vf.createLiteral(sketchEstimatorOmniWitnessCohortBucketCount));
+		}
+		if (sketchEstimatorOmniWitnessCohortBucketIndex >= 0) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX,
+					vf.createLiteral(sketchEstimatorOmniWitnessCohortBucketIndex));
+		}
+		if (sketchEstimatorOmniWitnessCohortMaxEntries >= 1) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES,
+					vf.createLiteral(sketchEstimatorOmniWitnessCohortMaxEntries));
+		}
 		if (sketchEstimatorContextPairSketchesEnabled) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED,
 					vf.createLiteral(true));
@@ -501,6 +1069,104 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (sketchEstimatorThrottleMillis != SKETCH_ESTIMATOR_THROTTLE_MILLIS) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_THROTTLE_MILLIS,
 					vf.createLiteral(sketchEstimatorThrottleMillis));
+		}
+		if (!"unified".equals(sketchEstimatorStrategy)) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_STRATEGY, vf.createLiteral(sketchEstimatorStrategy));
+		}
+		if (!"adaptive".equals(sketchEstimatorEvidenceMode)) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_EVIDENCE_MODE,
+					vf.createLiteral(sketchEstimatorEvidenceMode));
+		}
+		if (sketchEstimatorColdSynopsisCapacity > 0) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY,
+					vf.createLiteral(sketchEstimatorColdSynopsisCapacity));
+		}
+		if (sketchEstimatorMemoryBudgetBytes != SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES) {
+			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES,
+					vf.createLiteral(sketchEstimatorMemoryBudgetBytes));
+		}
+		if (frontierEstimatorMode != FRONTIER_ESTIMATOR_MODE) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_ESTIMATOR_MODE,
+					vf.createLiteral(frontierEstimatorMode.getConfigValue()));
+		}
+		if (frontierSynopsisBudgetBytes != FRONTIER_SYNOPSIS_BUDGET_BYTES) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_SYNOPSIS_BUDGET_BYTES,
+					vf.createLiteral(frontierSynopsisBudgetBytes));
+		}
+		if (frontierHeapBudgetExplicitlyConfigured) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_HEAP_BUDGET_BYTES,
+					vf.createLiteral(frontierHeapBudgetBytes));
+		}
+		if (frontierStatisticsMaxLagMillis != FRONTIER_STATISTICS_MAX_LAG_MILLIS) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_STATISTICS_MAX_LAG_MILLIS,
+					vf.createLiteral(frontierStatisticsMaxLagMillis));
+		}
+		if (Double.compare(frontierDeleteReserveFraction, FRONTIER_DELETE_RESERVE_FRACTION) != 0) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_DELETE_RESERVE_FRACTION,
+					vf.createLiteral(frontierDeleteReserveFraction));
+		}
+		if (frontierQueryMemoryBudgetBytes != FRONTIER_QUERY_MEMORY_BUDGET_BYTES) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_QUERY_MEMORY_BUDGET_BYTES,
+					vf.createLiteral(frontierQueryMemoryBudgetBytes));
+		}
+		if (frontierQueryIndexBudgetBytes != FRONTIER_QUERY_INDEX_BUDGET_BYTES) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_QUERY_INDEX_BUDGET_BYTES,
+					vf.createLiteral(frontierQueryIndexBudgetBytes));
+		}
+		if (frontierInitialMaterializationWorkUnits != FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS,
+					vf.createLiteral(frontierInitialMaterializationWorkUnits));
+		}
+		if (frontierDesignLanes != FRONTIER_DESIGN_LANES) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_DESIGN_LANES, vf.createLiteral(frontierDesignLanes));
+		}
+		if (frontierAuditLanes != FRONTIER_AUDIT_LANES) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_AUDIT_LANES, vf.createLiteral(frontierAuditLanes));
+		}
+		if (frontierRefinementWorkUnits != FRONTIER_REFINEMENT_WORK_UNITS) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_REFINEMENT_WORK_UNITS,
+					vf.createLiteral(frontierRefinementWorkUnits));
+		}
+		if (Double.compare(frontierTargetRelativeStandardError, FRONTIER_TARGET_RELATIVE_STANDARD_ERROR) != 0) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_TARGET_RELATIVE_STANDARD_ERROR,
+					vf.createLiteral(frontierTargetRelativeStandardError));
+		}
+		if (Double.compare(frontierDefensiveProposalEpsilon, FRONTIER_DEFENSIVE_PROPOSAL_EPSILON) != 0) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_DEFENSIVE_PROPOSAL_EPSILON,
+					vf.createLiteral(frontierDefensiveProposalEpsilon));
+		}
+		if (Double.compare(frontierCacheInitialConfidence, FRONTIER_CACHE_INITIAL_CONFIDENCE) != 0) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_CACHE_INITIAL_CONFIDENCE,
+					vf.createLiteral(frontierCacheInitialConfidence));
+		}
+		if (Double.compare(frontierCacheMinimumConfidence, FRONTIER_CACHE_MINIMUM_CONFIDENCE) != 0) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_CACHE_MINIMUM_CONFIDENCE,
+					vf.createLiteral(frontierCacheMinimumConfidence));
+		}
+		if (Double.compare(frontierCacheMaximumConfidence, FRONTIER_CACHE_MAXIMUM_CONFIDENCE) != 0) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_CONFIDENCE,
+					vf.createLiteral(frontierCacheMaximumConfidence));
+		}
+		if (Double.compare(frontierCacheMaximumExpectedRegret, FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET) != 0) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET,
+					vf.createLiteral(frontierCacheMaximumExpectedRegret));
+		}
+		if (frontierCacheEvidenceBudgetBytes != FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES,
+					vf.createLiteral(frontierCacheEvidenceBudgetBytes));
+		}
+		if (frontierPlanCacheMaximumVariants != FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS,
+					vf.createLiteral(frontierPlanCacheMaximumVariants));
+		}
+		if (frontierPlanCacheRefreshThreads != FRONTIER_PLAN_CACHE_REFRESH_THREADS) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_PLAN_CACHE_REFRESH_THREADS,
+					vf.createLiteral(frontierPlanCacheRefreshThreads));
+		}
+		if (Double.compare(frontierPlanCacheMaximumCanaryFraction,
+				FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION) != 0) {
+			m.add(implNode, LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION,
+					vf.createLiteral(frontierPlanCacheMaximumCanaryFraction));
 		}
 		if (!optimizerSamplingEnabled) {
 			m.add(implNode, LmdbStoreSchema.OPTIMIZER_SAMPLING_ENABLED, vf.createLiteral(false));
@@ -518,6 +1184,16 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (backgroundRawSamplingMaxMillisPerCycle != BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE) {
 			m.add(implNode, LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE,
 					vf.createLiteral(backgroundRawSamplingMaxMillisPerCycle));
+		}
+		if (!predicateGuaranteeIndexEnabled) {
+			m.add(implNode, LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_ENABLED, vf.createLiteral(false));
+		}
+		if (!predicateGuaranteeIndexAutoRebuild) {
+			m.add(implNode, LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD, vf.createLiteral(false));
+		}
+		if (!predicateGuaranteeExcludedPredicates.isEmpty()) {
+			m.add(implNode, LmdbStoreSchema.PREDICATE_GUARANTEE_EXCLUDED_PREDICATES,
+					vf.createLiteral(predicateGuaranteeExcludedPredicates));
 		}
 		return implNode;
 	}
@@ -709,6 +1385,21 @@ public class LmdbStoreConfig extends BaseSailConfig {
 							LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT)));
 
 			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT, null))
+					.ifPresent(lit -> setSketchEstimatorOmniWitnessCohortBucketCount(parseInt(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT)));
+
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX, null))
+					.ifPresent(lit -> setSketchEstimatorOmniWitnessCohortBucketIndex(parseInt(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX)));
+
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES, null))
+					.ifPresent(lit -> setSketchEstimatorOmniWitnessCohortMaxEntries(parseInt(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES)));
+
+			Models.objectLiteral(m.getStatements(implNode,
 					LmdbStoreSchema.SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED, null))
 					.ifPresent(lit -> {
 						try {
@@ -728,6 +1419,246 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_THROTTLE_MILLIS, null))
 					.ifPresent(lit -> setSketchEstimatorThrottleMillis(parseLong(lit,
 							LmdbStoreSchema.SKETCH_ESTIMATOR_THROTTLE_MILLIS)));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_STRATEGY, null))
+					.ifPresent(lit -> setSketchEstimatorStrategy(lit.getLabel()));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_EVIDENCE_MODE, null))
+					.ifPresent(lit -> setSketchEstimatorEvidenceMode(lit.getLabel()));
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY, null))
+					.ifPresent(lit -> setSketchEstimatorColdSynopsisCapacity(parseInt(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY)));
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES, null))
+					.ifPresent(lit -> setSketchEstimatorMemoryBudgetBytes(parseLong(lit,
+							LmdbStoreSchema.SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES)));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FRONTIER_ESTIMATOR_MODE, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierEstimatorMode(FrontierEstimatorMode.fromConfigValue(lit.getLabel()));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_ESTIMATOR_MODE, lit, e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FRONTIER_SYNOPSIS_BUDGET_BYTES, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierSynopsisBudgetBytes(
+									parseLong(lit, LmdbStoreSchema.FRONTIER_SYNOPSIS_BUDGET_BYTES));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_SYNOPSIS_BUDGET_BYTES, lit, e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FRONTIER_QUERY_MEMORY_BUDGET_BYTES, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierQueryMemoryBudgetBytes(
+									parseLong(lit, LmdbStoreSchema.FRONTIER_QUERY_MEMORY_BUDGET_BYTES));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_QUERY_MEMORY_BUDGET_BYTES, lit, e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FRONTIER_HEAP_BUDGET_BYTES, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierHeapBudgetBytes(
+									parseLong(lit, LmdbStoreSchema.FRONTIER_HEAP_BUDGET_BYTES));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_HEAP_BUDGET_BYTES, lit, e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FRONTIER_STATISTICS_MAX_LAG_MILLIS, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierStatisticsMaxLagMillis(
+									parseLong(lit, LmdbStoreSchema.FRONTIER_STATISTICS_MAX_LAG_MILLIS));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(
+									LmdbStoreSchema.FRONTIER_STATISTICS_MAX_LAG_MILLIS, lit, e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FRONTIER_DELETE_RESERVE_FRACTION, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierDeleteReserveFraction(
+									parseDouble(lit, LmdbStoreSchema.FRONTIER_DELETE_RESERVE_FRACTION));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_DELETE_RESERVE_FRACTION, lit, e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FRONTIER_QUERY_INDEX_BUDGET_BYTES, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierQueryIndexBudgetBytes(parseLong(
+									lit, LmdbStoreSchema.FRONTIER_QUERY_INDEX_BUDGET_BYTES));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(
+									LmdbStoreSchema.FRONTIER_QUERY_INDEX_BUDGET_BYTES, lit, e);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierInitialMaterializationWorkUnits(parseLong(
+									lit, LmdbStoreSchema.FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(
+									LmdbStoreSchema.FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS, lit, e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FRONTIER_DESIGN_LANES, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierDesignLanes(parseInt(lit, LmdbStoreSchema.FRONTIER_DESIGN_LANES));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_DESIGN_LANES, lit, e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FRONTIER_AUDIT_LANES, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierAuditLanes(parseInt(lit, LmdbStoreSchema.FRONTIER_AUDIT_LANES));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_AUDIT_LANES, lit, e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FRONTIER_REFINEMENT_WORK_UNITS, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierRefinementWorkUnits(
+									parseInt(lit, LmdbStoreSchema.FRONTIER_REFINEMENT_WORK_UNITS));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_REFINEMENT_WORK_UNITS, lit, e);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_TARGET_RELATIVE_STANDARD_ERROR, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierTargetRelativeStandardError(
+									parseDouble(lit, LmdbStoreSchema.FRONTIER_TARGET_RELATIVE_STANDARD_ERROR));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_TARGET_RELATIVE_STANDARD_ERROR, lit,
+									e);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_DEFENSIVE_PROPOSAL_EPSILON, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierDefensiveProposalEpsilon(
+									parseDouble(lit, LmdbStoreSchema.FRONTIER_DEFENSIVE_PROPOSAL_EPSILON));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_DEFENSIVE_PROPOSAL_EPSILON, lit, e);
+						}
+					});
+
+			var initialConfidenceLiteral = Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_CACHE_INITIAL_CONFIDENCE, null));
+			var minimumConfidenceLiteral = Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_CACHE_MINIMUM_CONFIDENCE, null));
+			var maximumConfidenceLiteral = Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_CONFIDENCE, null));
+			if (initialConfidenceLiteral.isPresent() || minimumConfidenceLiteral.isPresent()
+					|| maximumConfidenceLiteral.isPresent()) {
+				double initialConfidence = parseFrontierConfidence(initialConfidenceLiteral,
+						LmdbStoreSchema.FRONTIER_CACHE_INITIAL_CONFIDENCE,
+						"Frontier cache initial confidence", frontierCacheInitialConfidence);
+				double minimumConfidence = parseFrontierConfidence(minimumConfidenceLiteral,
+						LmdbStoreSchema.FRONTIER_CACHE_MINIMUM_CONFIDENCE,
+						"Frontier cache minimum confidence", frontierCacheMinimumConfidence);
+				double maximumConfidence = parseFrontierConfidence(maximumConfidenceLiteral,
+						LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_CONFIDENCE,
+						"Frontier cache maximum confidence", frontierCacheMaximumConfidence);
+				try {
+					setFrontierCacheConfidenceBounds(initialConfidence, minimumConfidence, maximumConfidence);
+				} catch (IllegalArgumentException e) {
+					if (initialConfidenceLiteral.isPresent()) {
+						throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_CACHE_INITIAL_CONFIDENCE,
+								initialConfidenceLiteral.get(), e);
+					}
+					if (minimumConfidenceLiteral.isPresent()) {
+						throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_CACHE_MINIMUM_CONFIDENCE,
+								minimumConfidenceLiteral.get(), e);
+					}
+					throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_CONFIDENCE,
+							maximumConfidenceLiteral.orElseThrow(), e);
+				}
+			}
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierCacheMaximumExpectedRegret(
+									parseDouble(lit, LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(
+									LmdbStoreSchema.FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET, lit, e);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierCacheEvidenceBudgetBytes(
+									parseLong(lit, LmdbStoreSchema.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES, lit, e);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierPlanCacheMaximumVariants(
+									parseInt(lit, LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS, lit, e);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_PLAN_CACHE_REFRESH_THREADS, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierPlanCacheRefreshThreads(
+									parseInt(lit, LmdbStoreSchema.FRONTIER_PLAN_CACHE_REFRESH_THREADS));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_PLAN_CACHE_REFRESH_THREADS, lit, e);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION, null))
+					.ifPresent(lit -> {
+						try {
+							setFrontierPlanCacheMaximumCanaryFraction(
+									parseDouble(lit, LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION));
+						} catch (IllegalArgumentException e) {
+							throw invalidFrontierValue(LmdbStoreSchema.FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION,
+									lit, e);
+						}
+					});
 
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.OPTIMIZER_SAMPLING_ENABLED, null))
 					.ifPresent(lit -> {
@@ -763,6 +1694,35 @@ public class LmdbStoreConfig extends BaseSailConfig {
 					m.getStatements(implNode, LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE, null))
 					.ifPresent(lit -> setBackgroundRawSamplingMaxMillisPerCycle(parseLong(lit,
 							LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE)));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_ENABLED, null))
+					.ifPresent(lit -> {
+						try {
+							setPredicateGuaranteeIndexEnabled(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Boolean value required for "
+											+ LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_ENABLED
+											+ " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(
+					m.getStatements(implNode, LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD, null))
+					.ifPresent(lit -> {
+						try {
+							setPredicateGuaranteeIndexAutoRebuild(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Boolean value required for "
+											+ LmdbStoreSchema.PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD
+											+ " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.PREDICATE_GUARANTEE_EXCLUDED_PREDICATES, null))
+					.ifPresent(lit -> setPredicateGuaranteeExcludedPredicates(lit.getLabel()));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
@@ -782,5 +1742,69 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		} catch (NumberFormatException e) {
 			throw new SailConfigException("Long value required for " + property + " property, found " + lit);
 		}
+	}
+
+	private static double parseDouble(org.eclipse.rdf4j.model.Literal lit, org.eclipse.rdf4j.model.IRI property) {
+		try {
+			return lit.doubleValue();
+		} catch (NumberFormatException e) {
+			throw new SailConfigException("Double value required for " + property + " property, found " + lit);
+		}
+	}
+
+	private static double parseFrontierConfidence(Optional<Literal> literal, IRI property, String name,
+			double defaultValue) {
+		if (literal.isEmpty()) {
+			return defaultValue;
+		}
+		try {
+			double value = parseDouble(literal.get(), property);
+			requireProbability(value, name);
+			return value;
+		} catch (IllegalArgumentException e) {
+			throw invalidFrontierValue(property, literal.get(), e);
+		}
+	}
+
+	private static SailConfigException invalidFrontierValue(org.eclipse.rdf4j.model.IRI property,
+			org.eclipse.rdf4j.model.Literal literal, IllegalArgumentException cause) {
+		return new SailConfigException("Invalid value for " + property + " property, found " + literal, cause);
+	}
+
+	private static String normalizeSketchEstimatorStrategy(String value) {
+		if (value == null) {
+			throw new SailConfigException("Sketch estimator strategy value required, found null");
+		}
+		String normalized = value.trim()
+				.replace("-", "")
+				.replace("_", "")
+				.toLowerCase(Locale.ROOT);
+		return switch (normalized) {
+		case "unified" -> "unified";
+		case "omni", "fastagms", "tuple", "joinsketch", "countmin", "countmindual" -> {
+			if (LEGACY_STRATEGY_WARNING_LOGGED.compareAndSet(false, true)) {
+				logger.warn("Legacy LMDB sketch estimator strategies are deprecated; using the unified estimator");
+			}
+			yield "unified";
+		}
+		default -> throw new SailConfigException(
+				"Sketch estimator strategy value required: unified; found " + value);
+		};
+	}
+
+	private static String normalizeSketchEstimatorEvidenceMode(String value) {
+		if (value == null) {
+			throw new SailConfigException("Sketch estimator evidence mode value required, found null");
+		}
+		String normalized = value.trim()
+				.replace("-", "")
+				.replace("_", "")
+				.toLowerCase(Locale.ROOT);
+		return switch (normalized) {
+		case "snapshotonly" -> "snapshot-only";
+		case "adaptive" -> "adaptive";
+		default -> throw new SailConfigException(
+				"Sketch estimator evidence mode value required: snapshot-only or adaptive; found " + value);
+		};
 	}
 }

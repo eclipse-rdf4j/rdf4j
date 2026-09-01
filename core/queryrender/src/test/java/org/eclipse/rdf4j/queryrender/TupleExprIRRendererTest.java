@@ -47,6 +47,9 @@ import org.junit.jupiter.api.parallel.ExecutionMode;
 @Execution(ExecutionMode.SAME_THREAD)
 public class TupleExprIRRendererTest {
 
+	private static final String TEST_OUTPUT_DIRECTORY_PROPERTY = "rdf4j.test.outputDirectory";
+	private static final Path SUREFIRE_DIR = Paths.get(
+			System.getProperty(TEST_OUTPUT_DIRECTORY_PROPERTY, "target"), "surefire-reports");
 	private static final String EX = "http://ex/";
 
 	private static final String SPARQL_PREFIX = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n" +
@@ -93,7 +96,7 @@ public class TupleExprIRRendererTest {
 	}
 
 	private static void writeReportFile(String base, String label, String content) {
-		Path dir = Paths.get("target", "surefire-reports");
+		Path dir = SUREFIRE_DIR;
 		try {
 			Files.createDirectories(dir);
 			Path file = dir.resolve(base + "_" + label + ".txt");
@@ -120,7 +123,6 @@ public class TupleExprIRRendererTest {
 	}
 
 	// --- delete the four files if they exist ---
-	private static final Path SUREFIRE_DIR = Paths.get("target", "surefire-reports");
 	private static final String[] REPORT_LABELS = new String[] {
 			"SPARQL_expected",
 			"SPARQL_actual",

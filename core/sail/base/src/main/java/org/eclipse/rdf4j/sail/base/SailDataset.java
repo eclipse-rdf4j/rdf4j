@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
+import java.util.OptionalLong;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -24,6 +25,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
@@ -33,6 +35,18 @@ import org.eclipse.rdf4j.sail.SailException;
  * @author James Leigh
  */
 public interface SailDataset extends SailClosable {
+
+	/**
+	 * Returns a durable native snapshot epoch when the backing store can identify this exact read view.
+	 *
+	 * <p>
+	 * The default is empty. Derived datasets containing uncommitted overlays must keep that default unless they can
+	 * prove that the epoch also identifies the overlay.
+	 * </p>
+	 */
+	default OptionalLong getSnapshotEpoch() {
+		return OptionalLong.empty();
+	}
 
 	/**
 	 * Called when this {@link SailDataset} is no longer is used, such as when a read operation is complete. An
@@ -86,6 +100,23 @@ public interface SailDataset extends SailClosable {
 			Resource... contexts) throws SailException;
 
 	/**
+	 * Gets statements for a physical statement pattern. Stores can use optimizer metadata attached to the supplied
+	 * statement pattern; default behavior delegates to the value-only API.
+	 *
+	 * @param statementPattern The logical statement pattern being evaluated.
+	 * @param subj             A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred             A IRI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj              A Value specifying the object, or <var>null</var> for a wildcard.
+	 * @param contexts         The context(s) to get the statements from.
+	 * @return An iterator over the relevant statements.
+	 * @throws SailException If the triple source failed to get the statements.
+	 */
+	default CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern, Resource subj,
+			IRI pred, Value obj, Resource... contexts) throws SailException {
+		return getStatements(subj, pred, obj, contexts);
+	}
+
+	/**
 	 * Counts statements that have a specific subject, predicate and/or object.
 	 *
 	 * @param subj     A Resource specifying the subject, or <var>null</var> for a wildcard.
@@ -105,6 +136,23 @@ public interface SailDataset extends SailClosable {
 			}
 		}
 		return count;
+	}
+
+	/**
+	 * Counts statements for a physical statement pattern. Stores can use optimizer metadata attached to the supplied
+	 * statement pattern; default behavior delegates to the value-only API.
+	 *
+	 * @param statementPattern The logical statement pattern being evaluated.
+	 * @param subj             A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred             A IRI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj              A Value specifying the object, or <var>null</var> for a wildcard.
+	 * @param contexts         The context(s) to get the statements from.
+	 * @return The number of relevant statements.
+	 * @throws SailException If the triple source failed to count the statements.
+	 */
+	default long getStatementCount(StatementPattern statementPattern, Resource subj, IRI pred, Value obj,
+			Resource... contexts) throws SailException {
+		return getStatementCount(subj, pred, obj, contexts);
 	}
 
 	/**

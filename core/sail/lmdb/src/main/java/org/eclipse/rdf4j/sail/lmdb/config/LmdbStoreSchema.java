@@ -111,13 +111,68 @@ public class LmdbStoreSchema {
 
 	public final static IRI SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT;
 
+	public final static IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT;
+
+	public final static IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX;
+	public final static IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES;
+
 	public final static IRI SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED;
 
 	public final static IRI SKETCH_ESTIMATOR_THROTTLE_EVERY_N;
 
 	public final static IRI SKETCH_ESTIMATOR_THROTTLE_MILLIS;
 
+	public final static IRI SKETCH_ESTIMATOR_STRATEGY;
+
+	public final static IRI SKETCH_ESTIMATOR_EVIDENCE_MODE;
+
+	public final static IRI SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY;
+
+	public final static IRI SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES;
+
 	public final static IRI SKETCH_ESTIMATOR_ENABLED;
+
+	public final static IRI FRONTIER_ESTIMATOR_MODE;
+
+	public final static IRI FRONTIER_SYNOPSIS_BUDGET_BYTES;
+
+	public final static IRI FRONTIER_HEAP_BUDGET_BYTES;
+
+	public final static IRI FRONTIER_STATISTICS_MAX_LAG_MILLIS;
+
+	public final static IRI FRONTIER_DELETE_RESERVE_FRACTION;
+
+	public final static IRI FRONTIER_QUERY_MEMORY_BUDGET_BYTES;
+
+	public final static IRI FRONTIER_QUERY_INDEX_BUDGET_BYTES;
+
+	public final static IRI FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS;
+
+	public final static IRI FRONTIER_DESIGN_LANES;
+
+	public final static IRI FRONTIER_AUDIT_LANES;
+
+	public final static IRI FRONTIER_REFINEMENT_WORK_UNITS;
+
+	public final static IRI FRONTIER_TARGET_RELATIVE_STANDARD_ERROR;
+
+	public final static IRI FRONTIER_DEFENSIVE_PROPOSAL_EPSILON;
+
+	public final static IRI FRONTIER_CACHE_INITIAL_CONFIDENCE;
+
+	public final static IRI FRONTIER_CACHE_MINIMUM_CONFIDENCE;
+
+	public final static IRI FRONTIER_CACHE_MAXIMUM_CONFIDENCE;
+
+	public final static IRI FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET;
+
+	public final static IRI FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES;
+
+	public final static IRI FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS;
+
+	public final static IRI FRONTIER_PLAN_CACHE_REFRESH_THREADS;
+
+	public final static IRI FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION;
 
 	public final static IRI OPTIMIZER_SAMPLING_ENABLED;
 
@@ -128,6 +183,12 @@ public class LmdbStoreSchema {
 	public final static IRI BACKGROUND_RAW_SAMPLING_ENABLED;
 
 	public final static IRI BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE;
+
+	public final static IRI PREDICATE_GUARANTEE_INDEX_ENABLED;
+
+	public final static IRI PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD;
+
+	public final static IRI PREDICATE_GUARANTEE_EXCLUDED_PREDICATES;
 
 	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#inlineLiterals</tt>
@@ -155,17 +216,61 @@ public class LmdbStoreSchema {
 		SKETCH_ESTIMATOR_PREDICATE_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorPredicateBucketCount");
 		SKETCH_ESTIMATOR_OBJECT_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorObjectBucketCount");
 		SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorContextBucketCount");
+		SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT = factory.createIRI(NAMESPACE,
+				"sketchEstimatorOmniWitnessCohortBucketCount");
+		SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX = factory.createIRI(NAMESPACE,
+				"sketchEstimatorOmniWitnessCohortBucketIndex");
+		SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES = factory.createIRI(NAMESPACE,
+				"sketchEstimatorOmniWitnessCohortMaxEntries");
 		SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED = factory.createIRI(NAMESPACE,
 				"sketchEstimatorContextPairSketchesEnabled");
 		SKETCH_ESTIMATOR_THROTTLE_EVERY_N = factory.createIRI(NAMESPACE, "sketchEstimatorThrottleEveryN");
 		SKETCH_ESTIMATOR_THROTTLE_MILLIS = factory.createIRI(NAMESPACE, "sketchEstimatorThrottleMillis");
+		SKETCH_ESTIMATOR_STRATEGY = factory.createIRI(NAMESPACE, "sketchEstimatorStrategy");
+		SKETCH_ESTIMATOR_EVIDENCE_MODE = factory.createIRI(NAMESPACE, "sketchEstimatorEvidenceMode");
+		SKETCH_ESTIMATOR_COLD_SYNOPSIS_CAPACITY = factory.createIRI(NAMESPACE,
+				"sketchEstimatorColdSynopsisCapacity");
+		SKETCH_ESTIMATOR_MEMORY_BUDGET_BYTES = factory.createIRI(NAMESPACE,
+				"sketchEstimatorMemoryBudgetBytes");
 		SKETCH_ESTIMATOR_ENABLED = factory.createIRI(NAMESPACE, "sketchEstimatorEnabled");
+		FRONTIER_ESTIMATOR_MODE = factory.createIRI(NAMESPACE, "frontierEstimatorMode");
+		FRONTIER_SYNOPSIS_BUDGET_BYTES = factory.createIRI(NAMESPACE, "frontierSynopsisBudgetBytes");
+		FRONTIER_HEAP_BUDGET_BYTES = factory.createIRI(NAMESPACE, "frontierHeapBudgetBytes");
+		FRONTIER_STATISTICS_MAX_LAG_MILLIS = factory.createIRI(NAMESPACE, "frontierStatisticsMaxLagMillis");
+		FRONTIER_DELETE_RESERVE_FRACTION = factory.createIRI(NAMESPACE, "frontierDeleteReserveFraction");
+		FRONTIER_QUERY_MEMORY_BUDGET_BYTES = factory.createIRI(NAMESPACE, "frontierQueryMemoryBudgetBytes");
+		FRONTIER_QUERY_INDEX_BUDGET_BYTES = factory.createIRI(NAMESPACE, "frontierQueryIndexBudgetBytes");
+		FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS = factory.createIRI(
+				NAMESPACE, "frontierInitialMaterializationWorkUnits");
+		FRONTIER_DESIGN_LANES = factory.createIRI(NAMESPACE, "frontierDesignLanes");
+		FRONTIER_AUDIT_LANES = factory.createIRI(NAMESPACE, "frontierAuditLanes");
+		FRONTIER_REFINEMENT_WORK_UNITS = factory.createIRI(NAMESPACE, "frontierRefinementWorkUnits");
+		FRONTIER_TARGET_RELATIVE_STANDARD_ERROR = factory.createIRI(NAMESPACE,
+				"frontierTargetRelativeStandardError");
+		FRONTIER_DEFENSIVE_PROPOSAL_EPSILON = factory.createIRI(NAMESPACE,
+				"frontierDefensiveProposalEpsilon");
+		FRONTIER_CACHE_INITIAL_CONFIDENCE = factory.createIRI(NAMESPACE, "frontierCacheInitialConfidence");
+		FRONTIER_CACHE_MINIMUM_CONFIDENCE = factory.createIRI(NAMESPACE, "frontierCacheMinimumConfidence");
+		FRONTIER_CACHE_MAXIMUM_CONFIDENCE = factory.createIRI(NAMESPACE, "frontierCacheMaximumConfidence");
+		FRONTIER_CACHE_MAXIMUM_EXPECTED_REGRET = factory.createIRI(
+				NAMESPACE, "frontierCacheMaximumExpectedRegret");
+		FRONTIER_CACHE_EVIDENCE_BUDGET_BYTES = factory.createIRI(
+				NAMESPACE, "frontierCacheEvidenceBudgetBytes");
+		FRONTIER_PLAN_CACHE_MAXIMUM_VARIANTS = factory.createIRI(NAMESPACE, "frontierPlanCacheMaximumVariants");
+		FRONTIER_PLAN_CACHE_REFRESH_THREADS = factory.createIRI(NAMESPACE, "frontierPlanCacheRefreshThreads");
+		FRONTIER_PLAN_CACHE_MAXIMUM_CANARY_FRACTION = factory.createIRI(NAMESPACE,
+				"frontierPlanCacheMaximumCanaryFraction");
 		OPTIMIZER_SAMPLING_ENABLED = factory.createIRI(NAMESPACE, "optimizerSamplingEnabled");
 		OPTIMIZER_SAMPLING_MAX_MILLIS = factory.createIRI(NAMESPACE, "optimizerSamplingMaxMillis");
 		OPTIMIZER_SAMPLING_MAX_ROWS = factory.createIRI(NAMESPACE, "optimizerSamplingMaxRows");
 		BACKGROUND_RAW_SAMPLING_ENABLED = factory.createIRI(NAMESPACE, "backgroundRawSamplingEnabled");
 		BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = factory.createIRI(NAMESPACE,
 				"backgroundRawSamplingMaxMillisPerCycle");
+		PREDICATE_GUARANTEE_INDEX_ENABLED = factory.createIRI(NAMESPACE, "predicateGuaranteeIndexEnabled");
+		PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD = factory.createIRI(NAMESPACE,
+				"predicateGuaranteeIndexAutoRebuild");
+		PREDICATE_GUARANTEE_EXCLUDED_PREDICATES = factory.createIRI(NAMESPACE,
+				"predicateGuaranteeExcludedPredicates");
 		INLINE_LITERALS = factory.createIRI(NAMESPACE, "inlineLiterals");
 	}
 }

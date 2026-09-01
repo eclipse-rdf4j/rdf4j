@@ -21,17 +21,17 @@
 			</includes>
 		</fileSet>
 		<fileSet>
-			<directory>../target/site/apidocs</directory>
+			<directory>${rdf4j.apidocs.directory}</directory>
 			<outputDirectory>docs/apidocs</outputDirectory>
 		</fileSet>
 	</fileSets>
 	<files>
 		<file>
-			<source>../tools/server/target/rdf4j-server.war</source>
+			<source>${rdf4j.server.war}</source>
 			<outputDirectory>war</outputDirectory>
 		</file>
 		<file>
-			<source>../tools/workbench/target/rdf4j-workbench.war</source>
+			<source>${rdf4j.workbench.war}</source>
 			<outputDirectory>war</outputDirectory>
 		</file>
 		<file>

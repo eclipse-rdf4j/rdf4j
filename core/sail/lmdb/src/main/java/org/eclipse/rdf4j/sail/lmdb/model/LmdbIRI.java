@@ -93,6 +93,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 		if (initializedValue instanceof LmdbIRI initializedIRI) {
 			this.iriString = initializedIRI.iriString;
 			this.localNameIdx = initializedIRI.localNameIdx;
+			this.initialized = true;
 		} else {
 			throw new SailException("Trying to initialize LmdbIRI from non-IRI value");
 		}
@@ -157,6 +158,26 @@ public class LmdbIRI implements LmdbResource, IRI {
 				}
 			}
 		}
+	}
+
+	@Override
+	public void init(Resolver resolver) {
+		if (iriString == null && !initialized) {
+			synchronized (this) {
+				if (!initialized) {
+					boolean resolved = resolver.resolve(internalID, this);
+					if (!resolved) {
+						log.warn("Could not resolve value");
+					}
+					initialized = resolved;
+				}
+			}
+		}
+	}
+
+	@Override
+	public boolean isInitialized() {
+		return initialized || iriString != null;
 	}
 
 	@Override

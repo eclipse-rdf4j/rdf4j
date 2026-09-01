@@ -156,14 +156,32 @@ clean_stream() {
 
 extract_summary_table() {
 	awk '
-	/^Benchmark[[:space:]]+\(themeName\)[[:space:]]+\(z_queryIndex\)[[:space:]]+Mode[[:space:]]+Cnt[[:space:]]+Score/ {
-		in_table = 1
+	function is_summary_header(line) {
+		return line ~ /^Benchmark([[:space:]]|$)/ && line ~ /Units[[:space:]]*$/
+	}
+	function is_benchmark_result(line) {
+		return line ~ /^[^[:space:]]+[[:space:]]+/ \
+			&& line ~ /[[:space:]][-+]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?([[:space:]]|$)/
 	}
 	in_table {
 		if ($0 ~ /^[[:space:]]*$/) {
 			exit
 		}
 		print
+		next
+	}
+	pending_header != "" {
+		if (is_benchmark_result($0)) {
+			print pending_header
+			print
+			pending_header = ""
+			in_table = 1
+			next
+		}
+		pending_header = ""
+	}
+	is_summary_header($0) {
+		pending_header = $0
 	}
 	' "$1"
 }
@@ -179,9 +197,9 @@ synthesize_summary_table() {
 		sub(/[[:space:]]+$/, "", value)
 		return value
 	}
-	/^# Parameters: \(themeName = [A-Z_]+, z_queryIndex = [0-9]+\)$/ {
+	/^# Parameters: \(.*themeName = [A-Z_]+, z_queryIndex = [0-9]+\)$/ {
 		line = $0
-		sub(/^# Parameters: \(themeName = /, "", line)
+		sub(/^# Parameters: \(.*themeName = /, "", line)
 		sub(/\)$/, "", line)
 		split(line, parts, /, z_queryIndex = /)
 		theme = trim(parts[1])
@@ -192,11 +210,11 @@ synthesize_summary_table() {
 		expect_score = 1
 		next
 	}
-	expect_score && $0 ~ /^[[:space:]]*[0-9.]+[[:space:]]+ms\/op$/ {
+	expect_score && $0 ~ /^[[:space:]]*[0-9.]+([[:space:]]+(±|\+\/-)(\([0-9.]+%\))?[[:space:]]+[0-9.]+)?[[:space:]]+ms\/op([[:space:]]+\[Average\])?$/ {
 		line = trim($0)
 		split(line, parts, /[[:space:]]+/)
 		rows[++count] = sprintf("%-37s %15s %15s %5s %4s %10s %7s %s",
-			"ThemeQueryBenchmark.executeQuery", theme, query, "avgt", "", parts[1], "", "ms/op")
+			"ThemeQueryBenchmark.executeQuery", theme, query, "avgt", "", parts[1], parts[3], "ms/op")
 		expect_score = 0
 	}
 	END {
@@ -213,23 +231,39 @@ synthesize_summary_table() {
 
 remove_summary_table() {
 	awk '
-	BEGIN {
-		header_seen = 0
+	function is_summary_header(line) {
+		return line ~ /^Benchmark([[:space:]]|$)/ && line ~ /Units[[:space:]]*$/
 	}
-	!header_seen && /^Benchmark[[:space:]]+\(themeName\)[[:space:]]+\(z_queryIndex\)[[:space:]]+Mode[[:space:]]+Cnt[[:space:]]+Score/ {
-		header_seen = 1
-		skipping = 1
+	function is_benchmark_result(line) {
+		return line ~ /^[^[:space:]]+[[:space:]]+/ \
+			&& line ~ /[[:space:]][-+]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?([[:space:]]|$)/
+	}
+	skipping_table {
+		if ($0 ~ /^[[:space:]]*$/) {
+			skipping_table = 0
+		}
 		next
 	}
-	skipping {
-		if ($0 ~ /^[[:space:]]*$/) {
-			skipping = 0
+	pending_header != "" {
+		if (is_benchmark_result($0)) {
+			pending_header = ""
+			skipping_table = 1
 			next
 		}
+		print pending_header
+		pending_header = ""
+	}
+	is_summary_header($0) {
+		pending_header = $0
 		next
 	}
 	{
 		print
+	}
+	END {
+		if (pending_header != "") {
+			print pending_header
+		}
 	}
 	' "$1"
 }

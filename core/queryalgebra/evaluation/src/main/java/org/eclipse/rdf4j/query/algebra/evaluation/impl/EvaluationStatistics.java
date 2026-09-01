@@ -15,6 +15,7 @@ import java.util.Collection;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
@@ -33,8 +34,12 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /**
  * Supplies various query model statistics to the query engine/optimizer.
@@ -57,6 +62,20 @@ public class EvaluationStatistics {
 			sb.append(i);
 		}
 	}
+
+	private static final String COST_FEEDBACK_PLANNED_REPEATED_INVOCATIONS = "plannedRepeatedInvocations";
+	private static final Object INVOCATION_AGGREGATE_METADATA_KEY = InvocationAggregateAccumulator.class;
+	private static final Object SEMI_ANTI_OBSERVATION_METADATA_KEY = SemiAntiOutcomeObservation.class;
+
+	public static final String RAW_PREDICTED_ROWS_SUM = "optimizer.feedback.rawPredictedRowsSum";
+	public static final String APPLIED_PREDICTED_ROWS_SUM = "optimizer.feedback.appliedPredictedRowsSum";
+	public static final String ACTUAL_ROWS_SUM = "optimizer.feedback.actualRowsSum";
+	public static final String OPEN_COUNT = "optimizer.feedback.opens";
+	public static final String EXHAUSTED_OPEN_COUNT = "optimizer.feedback.exhaustedOpens";
+	public static final String PARTIAL_CLOSE_COUNT = "optimizer.feedback.partialCloses";
+	public static final String EARLY_SUCCESS_COUNT = "optimizer.feedback.earlySuccesses";
+	public static final String FAILURE_COUNT = "optimizer.feedback.failures";
+	public static final String ROOT_COMPLETED = "optimizer.feedback.rootCompleted";
 
 	private CardinalityCalculator calculator;
 
@@ -102,6 +121,909 @@ public class EvaluationStatistics {
 
 	public void recordFilterOutcome(Filter filter, long passedCount, long filteredCount) {
 		// no-op by default
+	}
+
+	public void recordFilterOutcome(Filter filter, FilterOutcomeObservation observation) {
+		if (observation == null || !observation.completed() || !observation.poisonReason().isEmpty()) {
+			return;
+		}
+		recordFilterOutcome(filter, observation.passedCount(), observation.filteredCount());
+	}
+
+	public record FilterOutcomeObservation(long passedCount, long filteredCount, boolean completed,
+			String poisonReason) {
+
+		public FilterOutcomeObservation {
+			if (passedCount < 0L || filteredCount < 0L) {
+				throw new IllegalArgumentException("Filter outcome counts must be nonnegative");
+			}
+			poisonReason = poisonReason == null ? "" : poisonReason;
+		}
+
+		public static FilterOutcomeObservation completed(long passedCount, long filteredCount) {
+			return new FilterOutcomeObservation(passedCount, filteredCount, true, "");
+		}
+
+		public static FilterOutcomeObservation incomplete(long passedCount, long filteredCount, String poisonReason) {
+			return new FilterOutcomeObservation(passedCount, filteredCount, false,
+					poisonReason == null || poisonReason.isBlank() ? "incomplete" : poisonReason);
+		}
+	}
+
+	/**
+	 * Records completed semi/anti execution separately from ordinary scalar-filter selectivity. Store-specific
+	 * implementations may use these key- and algorithm-level counters for physical-cost and correlation feedback.
+	 */
+	public void recordSemiAntiOutcome(Filter filter, SemiAntiOutcomeObservation observation) {
+		// no-op by default
+	}
+
+	public record SemiAntiOutcomeObservation(String semanticKind, String selectedAlgorithm, String actualAlgorithm,
+			long outerRows, long matchedRows, long unmatchedRows, long distinctCorrelationKeys, long matchedKeys,
+			long unmatchedKeys, long repeatedOuterRows, long rhsRowsExamined, long exhaustedFailures,
+			long iteratorOpens, long hashBuildRows, long hashProbeRows, long cacheLookups, boolean completed,
+			String exclusionReason, String strategyChangeReason, double rawPredictedRowsSum,
+			double appliedPredictedRowsSum, long firstMatchWork, long exhaustionWork, long cacheHits,
+			long cacheMisses, long cacheEvictions, long distinctBindingExposure,
+			TerminationClassification terminationClassification, boolean rootCompleted) {
+
+		public SemiAntiOutcomeObservation(String semanticKind, String selectedAlgorithm, String actualAlgorithm,
+				long outerRows, long matchedRows, long unmatchedRows, long distinctCorrelationKeys, long matchedKeys,
+				long unmatchedKeys, long repeatedOuterRows, long rhsRowsExamined, long exhaustedFailures,
+				long iteratorOpens, long hashBuildRows, long hashProbeRows, long cacheLookups, boolean completed,
+				String exclusionReason, String strategyChangeReason) {
+			this(semanticKind, selectedAlgorithm, actualAlgorithm, outerRows, matchedRows, unmatchedRows,
+					distinctCorrelationKeys, matchedKeys, unmatchedKeys, repeatedOuterRows, rhsRowsExamined,
+					exhaustedFailures, iteratorOpens, hashBuildRows, hashProbeRows, cacheLookups, completed,
+					exclusionReason, strategyChangeReason, Double.NaN, Double.NaN, matchedRows, exhaustedFailures,
+					0L, cacheLookups, 0L, distinctCorrelationKeys,
+					completed ? TerminationClassification.EXHAUSTED : TerminationClassification.PARTIAL,
+					completed);
+		}
+
+		public SemiAntiOutcomeObservation {
+			semanticKind = nonBlankOr(semanticKind, "UNKNOWN");
+			selectedAlgorithm = nonBlankOr(selectedAlgorithm, "unknown");
+			actualAlgorithm = nonBlankOr(actualAlgorithm, "unknown");
+			exclusionReason = exclusionReason == null ? "" : exclusionReason;
+			strategyChangeReason = strategyChangeReason == null ? "" : strategyChangeReason;
+			if (outerRows < 0L || matchedRows < 0L || unmatchedRows < 0L || distinctCorrelationKeys < 0L
+					|| matchedKeys < 0L || unmatchedKeys < 0L || repeatedOuterRows < 0L || rhsRowsExamined < 0L
+					|| exhaustedFailures < 0L || iteratorOpens < 0L || hashBuildRows < 0L || hashProbeRows < 0L
+					|| cacheLookups < 0L || firstMatchWork < 0L || exhaustionWork < 0L || cacheHits < 0L
+					|| cacheMisses < 0L || cacheEvictions < 0L || distinctBindingExposure < 0L) {
+				throw new IllegalArgumentException("Semi/anti outcome counts must be nonnegative");
+			}
+			if (matchedRows + unmatchedRows != outerRows || matchedKeys + unmatchedKeys > distinctCorrelationKeys
+					|| distinctCorrelationKeys + repeatedOuterRows != outerRows) {
+				throw new IllegalArgumentException("Inconsistent semi/anti row or correlation-key counts");
+			}
+			if (!finiteNonNegativeOrUnknown(rawPredictedRowsSum)
+					|| !finiteNonNegativeOrUnknown(appliedPredictedRowsSum)) {
+				throw new IllegalArgumentException("Semi/anti predicted sums must be nonnegative or unknown");
+			}
+			terminationClassification = terminationClassification == null
+					? TerminationClassification.NOT_STARTED
+					: terminationClassification;
+		}
+
+		private static String nonBlankOr(String value, String fallback) {
+			return value == null || value.isBlank() ? fallback : value;
+		}
+
+		public SemiAntiOutcomeObservation withRootCompleted(boolean completedRoot) {
+			return new SemiAntiOutcomeObservation(semanticKind, selectedAlgorithm, actualAlgorithm, outerRows,
+					matchedRows, unmatchedRows, distinctCorrelationKeys, matchedKeys, unmatchedKeys,
+					repeatedOuterRows, rhsRowsExamined, exhaustedFailures, iteratorOpens, hashBuildRows,
+					hashProbeRows, cacheLookups, completed, exclusionReason, strategyChangeReason,
+					rawPredictedRowsSum, appliedPredictedRowsSum, firstMatchWork, exhaustionWork, cacheHits,
+					cacheMisses, cacheEvictions, distinctBindingExposure, terminationClassification,
+					completedRoot);
+		}
+	}
+
+	public void recordOperatorOutcome(QueryModelNode node) {
+		// no-op by default
+	}
+
+	/**
+	 * Records one typed, invocation-aware snapshot. Existing implementations remain source-compatible because the
+	 * default delegates to the original hook.
+	 */
+	@Experimental
+	public void recordOperatorOutcome(QueryModelNode node, InvocationAggregateObservation observation) {
+		recordOperatorOutcome(node);
+	}
+
+	/** Allocation-free overload used by pre-bound runtime targets. */
+	@Experimental
+	public void recordOperatorOutcome(QueryModelNode node, InvocationAggregateView observation) {
+		if (observation instanceof InvocationAggregateObservation immutable) {
+			recordOperatorOutcome(node, immutable);
+		} else {
+			recordOperatorOutcome(node);
+		}
+	}
+
+	/**
+	 * Resolves a typed planning contract once, during query precompilation. Providers may return a target holding
+	 * direct references to current posterior and lifecycle cells. Invalid or missing contracts always compile to a
+	 * no-op.
+	 */
+	@Experimental
+	public RuntimeFeedbackTarget resolveRuntimeFeedbackTarget(QueryModelNode node,
+			RuntimeFeedbackContract contract) {
+		if (node == null || contract == null) {
+			return RuntimeFeedbackTarget.NO_OP;
+		}
+		return new RuntimeFeedbackAccumulator(contract, new RuntimeFeedbackAccumulator.Destination() {
+			@Override
+			public void publish(InvocationAggregateView observation) {
+				recordOperatorOutcome(node, observation);
+			}
+
+			@Override
+			public void release() {
+				// The generic compatibility destination owns no leased storage cells.
+			}
+		});
+	}
+
+	/** Whether compiled evaluation must refuse legacy metric/string feedback when no typed contract is present. */
+	@Experimental
+	public boolean requiresPreboundRuntimeFeedback() {
+		return false;
+	}
+
+	/** Publishes one frozen execution-local target array after the outermost iterator has closed its children. */
+	@Experimental
+	public void publishRuntimeFeedbackTargets(RuntimeFeedbackTarget[] targets, int targetCount,
+			boolean rootCompleted) {
+		if (targets == null || targetCount <= 0) {
+			return;
+		}
+		int limit = Math.min(targetCount, targets.length);
+		for (int index = 0; index < limit; index++) {
+			RuntimeFeedbackTarget target = targets[index];
+			if (target != null) {
+				target.publish(rootCompleted);
+			}
+		}
+	}
+
+	@Experimental
+	public enum TerminationClassification {
+		NOT_STARTED,
+		EXHAUSTED,
+		EARLY_SUCCESS,
+		PARTIAL,
+		CANCELLED,
+		FAILED,
+		MIXED
+	}
+
+	/** A fixed-order physical work vector. Unknown dimensions are represented by {@link Double#NaN}. */
+	@Experimental
+	public record PhysicalWorkVector(double workRows, double resultRows, double sourceRowsScanned,
+			double randomSeeks, double iteratorOpens, double expressionEvaluations, double hashBuildRows,
+			double hashProbeRows, double pathExpansions, double remoteCalls, double peakMemoryRows) {
+
+		public PhysicalWorkVector {
+			if (!finiteNonNegativeOrUnknown(workRows) || !finiteNonNegativeOrUnknown(resultRows)
+					|| !finiteNonNegativeOrUnknown(sourceRowsScanned)
+					|| !finiteNonNegativeOrUnknown(randomSeeks)
+					|| !finiteNonNegativeOrUnknown(iteratorOpens)
+					|| !finiteNonNegativeOrUnknown(expressionEvaluations)
+					|| !finiteNonNegativeOrUnknown(hashBuildRows)
+					|| !finiteNonNegativeOrUnknown(hashProbeRows)
+					|| !finiteNonNegativeOrUnknown(pathExpansions)
+					|| !finiteNonNegativeOrUnknown(remoteCalls)
+					|| !finiteNonNegativeOrUnknown(peakMemoryRows)) {
+				throw new IllegalArgumentException("Physical work dimensions must be nonnegative or unknown");
+			}
+		}
+	}
+
+	/**
+	 * Immutable view of all opens of one feedback-enabled node in one cloned query execution. Opens and probes are
+	 * exposure. {@link #statisticalSampleWeight()} is therefore never greater than one.
+	 */
+	@Experimental
+	public record InvocationAggregateObservation(double rawPredictedRowsSum, double appliedPredictedRowsSum,
+			double actualRowsSum, PhysicalWorkVector rawPredictedWorkSum,
+			PhysicalWorkVector appliedPredictedWorkSum, PhysicalWorkVector actualWorkSum, long opens,
+			long exhaustedOpens, long earlySuccesses, long partialCloses, long cancellations, long failures,
+			long hits, long misses, long firstMatchWork, long exhaustionWork, long cacheHits, long cacheMisses,
+			long cacheEvictions, long distinctBindingExposure, TerminationClassification terminationClassification,
+			boolean rootCompleted) implements InvocationAggregateView {
+
+		public InvocationAggregateObservation {
+			if (!finiteNonNegativeOrUnknown(rawPredictedRowsSum)
+					|| !finiteNonNegativeOrUnknown(appliedPredictedRowsSum)
+					|| !finiteNonNegativeOrUnknown(actualRowsSum)) {
+				throw new IllegalArgumentException("Invocation row sums must be nonnegative or unknown");
+			}
+			if (rawPredictedWorkSum == null || appliedPredictedWorkSum == null || actualWorkSum == null) {
+				throw new IllegalArgumentException("Invocation work vectors are required");
+			}
+			if (opens < 0L || exhaustedOpens < 0L || earlySuccesses < 0L || partialCloses < 0L
+					|| cancellations < 0L || failures < 0L || hits < 0L || misses < 0L
+					|| firstMatchWork < 0L || exhaustionWork < 0L || cacheHits < 0L || cacheMisses < 0L
+					|| cacheEvictions < 0L || distinctBindingExposure < 0L) {
+				throw new IllegalArgumentException("Invocation counters must be nonnegative");
+			}
+			if (saturatingAdd(exhaustedOpens,
+					saturatingAdd(earlySuccesses,
+							saturatingAdd(partialCloses, saturatingAdd(cancellations, failures)))) > opens) {
+				throw new IllegalArgumentException("Invocation termination counts exceed opens");
+			}
+			terminationClassification = terminationClassification == null
+					? TerminationClassification.NOT_STARTED
+					: terminationClassification;
+		}
+
+		public boolean exactLogicalCardinality() {
+			return rootCompleted && opens > 0L && exhaustedOpens == opens && partialCloses == 0L
+					&& cancellations == 0L && failures == 0L && Double.isFinite(rawPredictedRowsSum)
+					&& Double.isFinite(actualRowsSum);
+		}
+
+		public boolean admissiblePhysicalWork() {
+			return rootCompleted && opens > 0L && exhaustedOpens == opens && partialCloses == 0L
+					&& cancellations == 0L && failures == 0L;
+		}
+
+		public long statisticalSampleWeight() {
+			return rootCompleted && opens > 0L ? 1L : 0L;
+		}
+
+		@Override
+		public double rawPredictedWork(int dimension) {
+			return workDimension(rawPredictedWorkSum, dimension);
+		}
+
+		@Override
+		public double appliedPredictedWork(int dimension) {
+			return workDimension(appliedPredictedWorkSum, dimension);
+		}
+
+		@Override
+		public double actualWork(int dimension) {
+			return workDimension(actualWorkSum, dimension);
+		}
+
+		@Override
+		public int plannedPhysicalImplementationId() {
+			return 0;
+		}
+
+		@Override
+		public int actualPhysicalImplementationId() {
+			return 0;
+		}
+
+		private static double workDimension(PhysicalWorkVector vector, int dimension) {
+			return switch (dimension) {
+			case WORK_ROWS -> vector.workRows();
+			case RESULT_ROWS -> vector.resultRows();
+			case SOURCE_ROWS -> vector.sourceRowsScanned();
+			case RANDOM_SEEKS -> vector.randomSeeks();
+			case ITERATOR_OPENS -> vector.iteratorOpens();
+			case EXPRESSION_EVALUATIONS -> vector.expressionEvaluations();
+			case HASH_BUILD_ROWS -> vector.hashBuildRows();
+			case HASH_PROBE_ROWS -> vector.hashProbeRows();
+			case PATH_EXPANSIONS -> vector.pathExpansions();
+			case REMOTE_CALLS -> vector.remoteCalls();
+			case PEAK_MEMORY_ROWS -> vector.peakMemoryRows();
+			default -> throw new IndexOutOfBoundsException("unknown feedback work dimension " + dimension);
+			};
+		}
+	}
+
+	static void beginInvocationObservation(QueryModelNode node) {
+		if (node == null) {
+			return;
+		}
+		InvocationAggregateAccumulator accumulator = invocationAccumulator(node, true);
+		accumulator.open(node);
+	}
+
+	static void closeInvocationObservation(QueryModelNode node, long actualRows, double actualWorkRows,
+			long sourceRowsScanned, long randomSeeks, long expressionEvaluations, long hashBuildRows,
+			long hashProbeRows, long pathExpansions, long remoteCalls, long peakMemoryRows,
+			TerminationClassification terminationClassification) {
+		InvocationAggregateAccumulator accumulator = invocationAccumulator(node, false);
+		if (accumulator == null) {
+			return;
+		}
+		accumulator.close(actualRows, actualWorkRows, sourceRowsScanned, randomSeeks, expressionEvaluations,
+				hashBuildRows, hashProbeRows, pathExpansions, remoteCalls, peakMemoryRows,
+				terminationClassification);
+		accumulator.publishLegacyTelemetry(node);
+	}
+
+	/** Returns the immutable snapshot accumulated on this execution clone, or {@code null} when it was not tracked. */
+	@Experimental
+	public static InvocationAggregateObservation invocationAggregateObservation(QueryModelNode node,
+			boolean rootCompleted) {
+		InvocationAggregateAccumulator accumulator = invocationAccumulator(node, false);
+		return accumulator == null ? null : accumulator.snapshot(rootCompleted);
+	}
+
+	@Experimental
+	public static void attachSemiAntiOutcome(Filter filter, SemiAntiOutcomeObservation observation) {
+		if (filter != null && observation != null) {
+			filter.setQueryModelMetadata(SEMI_ANTI_OBSERVATION_METADATA_KEY, observation);
+		}
+	}
+
+	@Experimental
+	public static SemiAntiOutcomeObservation semiAntiOutcomeObservation(Filter filter, boolean rootCompleted) {
+		if (filter == null) {
+			return null;
+		}
+		Object value = filter.getQueryModelMetadata(SEMI_ANTI_OBSERVATION_METADATA_KEY);
+		return value instanceof SemiAntiOutcomeObservation observation
+				? observation.withRootCompleted(rootCompleted)
+				: null;
+	}
+
+	/**
+	 * Compatibility adapter for telemetry producers that predate typed accumulation. New execution code must publish an
+	 * attached accumulator instead. This adapter never divides cumulative rows: an explicit summed prediction wins;
+	 * otherwise a static one-open prediction is multiplied by observed opens.
+	 */
+	@Experimental
+	public static InvocationAggregateObservation legacyInvocationAggregateObservation(QueryModelNode node,
+			boolean rootCompleted) {
+		if (node == null) {
+			return null;
+		}
+		double actualRows = finiteOr(node.getCostFeedbackActualRows(), node.getResultSizeActual());
+		if (!isFiniteNonNegative(actualRows)) {
+			return null;
+		}
+		long opens = firstPositive(node.getCostFeedbackCloseCountActual(),
+				node.getLongMetricActual(TelemetryMetricNames.CLOSE_COUNT_ACTUAL),
+				node.getLongMetricActual(EXHAUSTED_OPEN_COUNT));
+		if (opens <= 0L) {
+			opens = 1L;
+		}
+		long exhausted = node.getLongMetricActual(EXHAUSTED_OPEN_COUNT);
+		if (exhausted < 0L) {
+			exhausted = node.getLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL);
+		}
+		if (exhausted < 0L && node.isCostFeedbackCompletedActual()) {
+			exhausted = opens;
+		}
+		exhausted = clampCount(exhausted, opens);
+		long cancellations = clampCount(node.getLongMetricActual(TelemetryMetricNames.CANCELLED_COUNT_ACTUAL), opens);
+		long failures = clampCount(node.getLongMetricActual(TelemetryMetricNames.ABORTED_COUNT_ACTUAL),
+				Math.max(0L, opens - cancellations));
+		long partial = Math.max(0L, opens - exhausted - cancellations - failures);
+
+		double eventInvocations = node.getDoubleMetricPlanned("optimizer.costEventInvocations");
+		double rawRows = node.getDoubleMetricPlanned(RAW_PREDICTED_ROWS_SUM);
+		if (!isFiniteNonNegative(rawRows)) {
+			double oneOrTotal = rawPrediction(node, "output_rows", "optimizer.costEventRows",
+					finiteOr(node.getCostFeedbackExpectedRows(), node.getResultSizeEstimate()));
+			rawRows = predictionSum(oneOrTotal, opens, eventInvocations);
+		}
+		double appliedRows = node.getDoubleMetricPlanned(APPLIED_PREDICTED_ROWS_SUM);
+		if (!isFiniteNonNegative(appliedRows)) {
+			double oneOrTotal = plannedMetric(node, "optimizer.costEventRows",
+					finiteOr(node.getCostFeedbackExpectedRows(), node.getResultSizeEstimate()));
+			appliedRows = predictionSum(oneOrTotal, opens, eventInvocations);
+		}
+
+		double rawWork = predictionSum(rawPrediction(node, "work_rows", "optimizer.costEventWorkRows",
+				finiteOr(node.getCostFeedbackExpectedWorkRows(), node.getCostEstimate())), opens, eventInvocations);
+		double appliedWork = predictionSum(plannedMetric(node, "optimizer.costEventWorkRows",
+				finiteOr(node.getCostFeedbackExpectedWorkRows(), node.getCostEstimate())), opens, eventInvocations);
+		double actualWork = finiteOr(node.getCostFeedbackActualWorkRows(), actualRows);
+		PhysicalWorkVector rawVector = legacyPredictedWorkVector(node, true, rawWork, opens, eventInvocations);
+		PhysicalWorkVector appliedVector = legacyPredictedWorkVector(node, false, appliedWork, opens,
+				eventInvocations);
+		PhysicalWorkVector actualVector = legacyActualWorkVector(node, actualWork, actualRows, opens);
+		TerminationClassification termination = classifyTermination(opens, exhausted, 0L, partial, cancellations,
+				failures);
+		return new InvocationAggregateObservation(rawRows, appliedRows, actualRows, rawVector, appliedVector,
+				actualVector, opens, exhausted, 0L, partial, cancellations, failures, 0L, 0L, 0L, 0L, 0L,
+				0L, 0L, 0L, termination, rootCompleted);
+	}
+
+	private static InvocationAggregateAccumulator invocationAccumulator(QueryModelNode node, boolean create) {
+		if (node == null) {
+			return null;
+		}
+		Object value = node.getQueryModelMetadata(INVOCATION_AGGREGATE_METADATA_KEY);
+		if (value instanceof InvocationAggregateAccumulator accumulator) {
+			return accumulator;
+		}
+		if (!create) {
+			return null;
+		}
+		InvocationAggregateAccumulator accumulator = new InvocationAggregateAccumulator();
+		node.setQueryModelMetadata(INVOCATION_AGGREGATE_METADATA_KEY, accumulator);
+		return accumulator;
+	}
+
+	private static PhysicalWorkVector legacyPredictedWorkVector(QueryModelNode node, boolean raw, double workRows,
+			long opens, double eventInvocations) {
+		return new PhysicalWorkVector(workRows,
+				predictionSum(predictedDimension(node, raw, "result_rows", "optimizer.costEventResultRows",
+						"plannedCostResultRows"), opens, eventInvocations),
+				predictionSum(predictedDimension(node, raw, "source_rows_scanned",
+						"optimizer.costEventSequentialRows", "plannedCostSequentialRows"), opens,
+						eventInvocations),
+				predictionSum(predictedDimension(node, raw, "index_seeks", "optimizer.costEventRandomSeeks",
+						"plannedCostRandomSeeks"), opens, eventInvocations),
+				predictionSum(predictedDimension(node, raw, "iterator_opens", "optimizer.costEventIteratorOpens",
+						"plannedCostIteratorOpens"), opens, eventInvocations),
+				predictionSum(predictedDimension(node, raw, "expression_evaluations",
+						"optimizer.costEventExpressionEvaluations", "plannedCostExpressionEvaluations"), opens,
+						eventInvocations),
+				predictionSum(predictedDimension(node, raw, "hash_build_rows", "optimizer.costEventHashBuildRows",
+						"plannedCostHashBuildRows"), opens, eventInvocations),
+				predictionSum(predictedDimension(node, raw, "hash_probe_rows", "optimizer.costEventHashProbeRows",
+						"plannedCostHashProbeRows"), opens, eventInvocations),
+				predictionSum(predictedDimension(node, raw, "path_expansions", "optimizer.costEventPathExpansions",
+						"plannedCostPathExpansions"), opens, eventInvocations),
+				predictionSum(predictedDimension(node, raw, "remote_calls", "optimizer.costEventRemoteCalls",
+						"plannedCostRemoteCalls"), opens, eventInvocations),
+				nonNegativeOrNaN(predictedDimension(node, raw, "peak_memory_rows",
+						"optimizer.costEventPeakMemoryRows", "plannedCostPeakMemoryRows")));
+	}
+
+	private static PhysicalWorkVector legacyActualWorkVector(QueryModelNode node, double workRows, double actualRows,
+			long opens) {
+		return new PhysicalWorkVector(Double.NaN, actualRows,
+				finiteOr(node.getSourceRowsScannedActual(), longMetricActual(node, "actualCostSequentialRows")),
+				maxFinite(longMetricActual(node, "actualCostRandomSeeks"),
+						longMetricActual(node, TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL)),
+				finiteOr(longMetricActual(node, "actualCostIteratorOpens"), opens),
+				maxFinite(longMetricActual(node, "actualCostExpressionEvaluations"),
+						longMetricActual(node, TelemetryMetricNames.EXPR_EVAL_COUNT_ACTUAL)),
+				longMetricActual(node, "actualCostHashBuildRows"),
+				longMetricActual(node, "actualCostHashProbeRows"),
+				longMetricActual(node, "actualCostPathExpansions"),
+				longMetricActual(node, "actualCostRemoteCalls"),
+				longMetricActual(node, "actualCostPeakMemoryRows"));
+	}
+
+	private static double predictedDimension(QueryModelNode node, boolean raw, String dimension,
+			String eventMetric, String legacyMetric) {
+		double fallback = plannedMetric(node, eventMetric, node.getDoubleMetricPlanned(legacyMetric));
+		return raw ? rawPrediction(node, dimension, eventMetric, fallback) : fallback;
+	}
+
+	private static double rawPrediction(QueryModelNode node, String dimension, String appliedMetric,
+			double fallback) {
+		double raw = node.getDoubleMetricPlanned("optimizer.frontierLeo." + dimension + ".raw");
+		return isFiniteNonNegative(raw) ? raw : plannedMetric(node, appliedMetric, fallback);
+	}
+
+	private static double plannedMetric(QueryModelNode node, String metric, double fallback) {
+		double value = node.getDoubleMetricPlanned(metric);
+		return isFiniteNonNegative(value) ? value : fallback;
+	}
+
+	private static double predictionSum(double value, long opens, double eventInvocations) {
+		if (!isFiniteNonNegative(value)) {
+			return Double.NaN;
+		}
+		if (isFiniteNonNegative(eventInvocations) && eventInvocations > 1.0d) {
+			return value;
+		}
+		return finiteProduct(value, Math.max(1L, opens));
+	}
+
+	private static double finiteProduct(double value, long multiplier) {
+		double product = value * multiplier;
+		return Double.isFinite(product) && product >= 0.0d ? product : Double.NaN;
+	}
+
+	private static double nonNegativeOrNaN(double value) {
+		return isFiniteNonNegative(value) ? value : Double.NaN;
+	}
+
+	private static long firstPositive(long first, long second, long third) {
+		return first > 0L ? first : second > 0L ? second : third;
+	}
+
+	private static long clampCount(long value, long maximum) {
+		return value < 0L ? 0L : Math.min(value, maximum);
+	}
+
+	private static TerminationClassification classifyTermination(long opens, long exhausted, long earlySuccesses,
+			long partial, long cancellations, long failures) {
+		if (opens <= 0L) {
+			return TerminationClassification.NOT_STARTED;
+		}
+		int classes = (exhausted > 0L ? 1 : 0) + (earlySuccesses > 0L ? 1 : 0) + (partial > 0L ? 1 : 0)
+				+ (cancellations > 0L ? 1 : 0) + (failures > 0L ? 1 : 0);
+		if (classes > 1) {
+			return TerminationClassification.MIXED;
+		}
+		if (failures > 0L) {
+			return TerminationClassification.FAILED;
+		}
+		if (cancellations > 0L) {
+			return TerminationClassification.CANCELLED;
+		}
+		if (partial > 0L) {
+			return TerminationClassification.PARTIAL;
+		}
+		if (earlySuccesses > 0L) {
+			return TerminationClassification.EARLY_SUCCESS;
+		}
+		return exhausted > 0L ? TerminationClassification.EXHAUSTED : TerminationClassification.NOT_STARTED;
+	}
+
+	private static final class InvocationAggregateAccumulator {
+		private static final int WORK_ROWS = 0;
+		private static final int RESULT_ROWS = 1;
+		private static final int SOURCE_ROWS = 2;
+		private static final int RANDOM_SEEKS = 3;
+		private static final int ITERATOR_OPENS = 4;
+		private static final int EXPRESSION_EVALUATIONS = 5;
+		private static final int HASH_BUILD_ROWS = 6;
+		private static final int HASH_PROBE_ROWS = 7;
+		private static final int PATH_EXPANSIONS = 8;
+		private static final int REMOTE_CALLS = 9;
+		private static final int PEAK_MEMORY_ROWS = 10;
+		private static final int DIMENSIONS = 11;
+
+		private final double[] rawPredictedWork = new double[DIMENSIONS];
+		private final double[] appliedPredictedWork = new double[DIMENSIONS];
+		private final double[] actualWork = new double[DIMENSIONS];
+		private final boolean[] rawKnown = allKnown();
+		private final boolean[] appliedKnown = allKnown();
+		private final boolean[] actualSeen = new boolean[DIMENSIONS];
+		private double rawPredictedRowsSum;
+		private double appliedPredictedRowsSum;
+		private double actualRowsSum;
+		private boolean rawRowsKnown = true;
+		private boolean appliedRowsKnown = true;
+		private long opens;
+		private long exhaustedOpens;
+		private long earlySuccesses;
+		private long partialCloses;
+		private long cancellations;
+		private long failures;
+		private long hits;
+		private long misses;
+		private long firstMatchWork;
+		private long exhaustionWork;
+		private long cacheHits;
+		private long cacheMisses;
+		private long cacheEvictions;
+		private long distinctBindingExposure;
+
+		private void open(QueryModelNode node) {
+			opens = saturatingAdd(opens, 1L);
+			double appliedRows = plannedMetric(node, "optimizer.costEventRows",
+					finiteOr(node.getCostFeedbackExpectedRows(), node.getResultSizeEstimate()));
+			double rawRows = rawPrediction(node, "output_rows", "optimizer.costEventRows", appliedRows);
+			rawRowsKnown = addPrediction(rawPredictedRowsSum, rawRows, rawRowsKnown, false);
+			if (rawRowsKnown) {
+				rawPredictedRowsSum += rawRows;
+			}
+			appliedRowsKnown = addPrediction(appliedPredictedRowsSum, appliedRows, appliedRowsKnown, false);
+			if (appliedRowsKnown) {
+				appliedPredictedRowsSum += appliedRows;
+			}
+
+			double appliedWork = plannedMetric(node, "optimizer.costEventWorkRows",
+					finiteOr(node.getCostFeedbackExpectedWorkRows(), node.getCostEstimate()));
+			addPredictedDimension(WORK_ROWS, rawPrediction(node, "work_rows", "optimizer.costEventWorkRows",
+					appliedWork), appliedWork, false);
+			addPredictedDimension(RESULT_ROWS,
+					rawPrediction(node, "result_rows", "optimizer.costEventResultRows",
+							node.getDoubleMetricPlanned("plannedCostResultRows")),
+					plannedMetric(node, "optimizer.costEventResultRows",
+							node.getDoubleMetricPlanned("plannedCostResultRows")),
+					false);
+			addPredictedDimension(SOURCE_ROWS,
+					rawPrediction(node, "source_rows_scanned", "optimizer.costEventSequentialRows",
+							node.getDoubleMetricPlanned("plannedCostSequentialRows")),
+					plannedMetric(node, "optimizer.costEventSequentialRows",
+							node.getDoubleMetricPlanned("plannedCostSequentialRows")),
+					false);
+			addPredictedDimension(RANDOM_SEEKS,
+					rawPrediction(node, "index_seeks", "optimizer.costEventRandomSeeks",
+							node.getDoubleMetricPlanned("plannedCostRandomSeeks")),
+					plannedMetric(node, "optimizer.costEventRandomSeeks",
+							node.getDoubleMetricPlanned("plannedCostRandomSeeks")),
+					false);
+			addPredictedDimension(ITERATOR_OPENS,
+					rawPrediction(node, "iterator_opens", "optimizer.costEventIteratorOpens",
+							node.getDoubleMetricPlanned("plannedCostIteratorOpens")),
+					plannedMetric(node, "optimizer.costEventIteratorOpens",
+							node.getDoubleMetricPlanned("plannedCostIteratorOpens")),
+					false);
+			addPredictedDimension(EXPRESSION_EVALUATIONS,
+					rawPrediction(node, "expression_evaluations", "optimizer.costEventExpressionEvaluations",
+							node.getDoubleMetricPlanned("plannedCostExpressionEvaluations")),
+					plannedMetric(node, "optimizer.costEventExpressionEvaluations",
+							node.getDoubleMetricPlanned("plannedCostExpressionEvaluations")),
+					false);
+			addPredictedDimension(HASH_BUILD_ROWS,
+					rawPrediction(node, "hash_build_rows", "optimizer.costEventHashBuildRows",
+							node.getDoubleMetricPlanned("plannedCostHashBuildRows")),
+					plannedMetric(node, "optimizer.costEventHashBuildRows",
+							node.getDoubleMetricPlanned("plannedCostHashBuildRows")),
+					false);
+			addPredictedDimension(HASH_PROBE_ROWS,
+					rawPrediction(node, "hash_probe_rows", "optimizer.costEventHashProbeRows",
+							node.getDoubleMetricPlanned("plannedCostHashProbeRows")),
+					plannedMetric(node, "optimizer.costEventHashProbeRows",
+							node.getDoubleMetricPlanned("plannedCostHashProbeRows")),
+					false);
+			addPredictedDimension(PATH_EXPANSIONS,
+					rawPrediction(node, "path_expansions", "optimizer.costEventPathExpansions",
+							node.getDoubleMetricPlanned("plannedCostPathExpansions")),
+					plannedMetric(node, "optimizer.costEventPathExpansions",
+							node.getDoubleMetricPlanned("plannedCostPathExpansions")),
+					false);
+			addPredictedDimension(REMOTE_CALLS,
+					rawPrediction(node, "remote_calls", "optimizer.costEventRemoteCalls",
+							node.getDoubleMetricPlanned("plannedCostRemoteCalls")),
+					plannedMetric(node, "optimizer.costEventRemoteCalls",
+							node.getDoubleMetricPlanned("plannedCostRemoteCalls")),
+					false);
+			addPredictedDimension(PEAK_MEMORY_ROWS,
+					rawPrediction(node, "peak_memory_rows", "optimizer.costEventPeakMemoryRows",
+							node.getDoubleMetricPlanned("plannedCostPeakMemoryRows")),
+					plannedMetric(node, "optimizer.costEventPeakMemoryRows",
+							node.getDoubleMetricPlanned("plannedCostPeakMemoryRows")),
+					true);
+		}
+
+		private void close(long rows, double workRows, long sourceRows, long randomSeeks,
+				long expressionEvaluations, long hashBuildRows, long hashProbeRows, long pathExpansions,
+				long remoteCalls, long peakMemoryRows, TerminationClassification termination) {
+			actualRowsSum += Math.max(0L, rows);
+			addActualDimension(WORK_ROWS, workRows, false);
+			addActualDimension(RESULT_ROWS, Math.max(0L, rows), false);
+			addActualDimension(SOURCE_ROWS, sourceRows, false);
+			addActualDimension(RANDOM_SEEKS, randomSeeks, false);
+			addActualDimension(ITERATOR_OPENS, 1.0d, false);
+			addActualDimension(EXPRESSION_EVALUATIONS, expressionEvaluations, false);
+			addActualDimension(HASH_BUILD_ROWS, hashBuildRows, false);
+			addActualDimension(HASH_PROBE_ROWS, hashProbeRows, false);
+			addActualDimension(PATH_EXPANSIONS, pathExpansions, false);
+			addActualDimension(REMOTE_CALLS, remoteCalls, false);
+			addActualDimension(PEAK_MEMORY_ROWS, peakMemoryRows, true);
+			switch (termination == null ? TerminationClassification.PARTIAL : termination) {
+			case EXHAUSTED -> exhaustedOpens = saturatingAdd(exhaustedOpens, 1L);
+			case EARLY_SUCCESS -> earlySuccesses = saturatingAdd(earlySuccesses, 1L);
+			case CANCELLED -> cancellations = saturatingAdd(cancellations, 1L);
+			case FAILED -> failures = saturatingAdd(failures, 1L);
+			case PARTIAL, MIXED, NOT_STARTED -> partialCloses = saturatingAdd(partialCloses, 1L);
+			}
+		}
+
+		private void addPredictedDimension(int dimension, double rawValue, double appliedValue, boolean maximum) {
+			rawKnown[dimension] = addVectorValue(rawPredictedWork, rawKnown[dimension], dimension, rawValue, maximum);
+			appliedKnown[dimension] = addVectorValue(appliedPredictedWork, appliedKnown[dimension], dimension,
+					appliedValue, maximum);
+		}
+
+		private void addActualDimension(int dimension, double value, boolean maximum) {
+			if (!isFiniteNonNegative(value)) {
+				return;
+			}
+			actualWork[dimension] = maximum ? Math.max(actualWork[dimension], value)
+					: finiteSum(actualWork[dimension], value);
+			actualSeen[dimension] = Double.isFinite(actualWork[dimension]);
+		}
+
+		private InvocationAggregateObservation snapshot(boolean rootCompleted) {
+			TerminationClassification termination = classifyTermination(opens, exhaustedOpens, earlySuccesses,
+					partialCloses, cancellations, failures);
+			return new InvocationAggregateObservation(rawRowsKnown ? rawPredictedRowsSum : Double.NaN,
+					appliedRowsKnown ? appliedPredictedRowsSum : Double.NaN, actualRowsSum,
+					vector(rawPredictedWork, rawKnown), vector(appliedPredictedWork, appliedKnown),
+					vector(actualWork, actualSeen), opens, exhaustedOpens, earlySuccesses, partialCloses,
+					cancellations, failures, hits, misses, firstMatchWork, exhaustionWork, cacheHits,
+					cacheMisses, cacheEvictions, distinctBindingExposure, termination, rootCompleted);
+		}
+
+		private void publishLegacyTelemetry(QueryModelNode node) {
+			node.setCostFeedbackActualRows((long) Math.min(Long.MAX_VALUE, actualRowsSum));
+			node.setCostFeedbackActualWorkRows(actualSeen[WORK_ROWS] ? actualWork[WORK_ROWS] : actualRowsSum);
+			node.setCostFeedbackCloseCountActual(opens);
+			node.setCostFeedbackCompletedActual(opens > 0L && exhaustedOpens == opens && partialCloses == 0L
+					&& cancellations == 0L && failures == 0L);
+			node.setDoubleMetricActual(RAW_PREDICTED_ROWS_SUM,
+					rawRowsKnown ? rawPredictedRowsSum : Double.NaN);
+			node.setDoubleMetricActual(APPLIED_PREDICTED_ROWS_SUM,
+					appliedRowsKnown ? appliedPredictedRowsSum : Double.NaN);
+			node.setDoubleMetricActual(ACTUAL_ROWS_SUM, actualRowsSum);
+			node.setLongMetricActual(OPEN_COUNT, opens);
+			node.setLongMetricActual(EXHAUSTED_OPEN_COUNT, exhaustedOpens);
+			node.setLongMetricActual(EARLY_SUCCESS_COUNT, earlySuccesses);
+			node.setLongMetricActual(PARTIAL_CLOSE_COUNT, partialCloses);
+			node.setLongMetricActual(FAILURE_COUNT, failures);
+			node.setLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL, exhaustedOpens);
+		}
+
+		private static boolean[] allKnown() {
+			boolean[] known = new boolean[DIMENSIONS];
+			for (int i = 0; i < known.length; i++) {
+				known[i] = true;
+			}
+			return known;
+		}
+
+		private static boolean addPrediction(double current, double value, boolean known, boolean maximum) {
+			if (!known || !isFiniteNonNegative(value)) {
+				return false;
+			}
+			double result = maximum ? Math.max(current, value) : current + value;
+			return Double.isFinite(result) && result >= 0.0d;
+		}
+
+		private static boolean addVectorValue(double[] vector, boolean known, int dimension, double value,
+				boolean maximum) {
+			if (!known || !isFiniteNonNegative(value)) {
+				return false;
+			}
+			double result = maximum ? Math.max(vector[dimension], value) : finiteSum(vector[dimension], value);
+			if (!Double.isFinite(result)) {
+				return false;
+			}
+			vector[dimension] = result;
+			return true;
+		}
+
+		private static double finiteSum(double left, double right) {
+			double sum = left + right;
+			return Double.isFinite(sum) && sum >= 0.0d ? sum : Double.NaN;
+		}
+
+		private static PhysicalWorkVector vector(double[] values, boolean[] known) {
+			return new PhysicalWorkVector(value(values, known, WORK_ROWS), value(values, known, RESULT_ROWS),
+					value(values, known, SOURCE_ROWS), value(values, known, RANDOM_SEEKS),
+					value(values, known, ITERATOR_OPENS), value(values, known, EXPRESSION_EVALUATIONS),
+					value(values, known, HASH_BUILD_ROWS), value(values, known, HASH_PROBE_ROWS),
+					value(values, known, PATH_EXPANSIONS), value(values, known, REMOTE_CALLS),
+					value(values, known, PEAK_MEMORY_ROWS));
+		}
+
+		private static double value(double[] values, boolean[] known, int dimension) {
+			return known[dimension] ? values[dimension] : Double.NaN;
+		}
+	}
+
+	/**
+	 * Returns whether the evaluation strategy should attach the lightweight learned-cost feedback iterator to this
+	 * node. Implementations should keep this predicate cheap; it is evaluated during query precompilation.
+	 */
+	public boolean shouldTrackCostFeedback(QueryModelNode node) {
+		return node != null && node.isCostFeedbackTrackingEnabled();
+	}
+
+	/**
+	 * Calculates a cheap actual work-row proxy for learned operator feedback. The default deliberately avoids timing
+	 * and per-row allocation: it takes the maximum of output rows, join-side rows consumed, and source rows
+	 * scanned/matched. Store-specific statistics can interpret operator-specific counters more precisely before
+	 * recording feedback.
+	 */
+	public double costFeedbackActualWorkRows(QueryModelNode node) {
+		if (node == null) {
+			return Double.NaN;
+		}
+		double existing = node.getCostFeedbackActualWorkRows();
+		if (isFiniteNonNegative(existing)) {
+			return existing;
+		}
+		double rows = finiteOr(node.getCostFeedbackActualRows(), node.getResultSizeActual());
+		double joinWork = sumFinite(node.getJoinLeftBindingsConsumedActual(),
+				node.getJoinRightBindingsConsumedActual());
+		double sourceWork = maxFinite(node.getSourceRowsScannedActual(), node.getSourceRowsMatchedActual(),
+				node.getSourceRowsFilteredActual());
+		double pathWork = pathActualWorkRows(node, rows);
+		return maxFinite(rows, joinWork, sourceWork, pathWork);
+	}
+
+	private static double pathActualWorkRows(QueryModelNode node, double rows) {
+		if (node instanceof ArbitraryLengthPath) {
+			return maxFinite(rows,
+					longMetricActual(node, PathIteration.PATH_CANDIDATE_ROWS_ACTUAL),
+					longMetricActual(node, PathIteration.PATH_QUEUE_ENQUEUE_ROWS_ACTUAL),
+					longMetricActual(node, PathIteration.PATH_EXPANSION_ITERATIONS_ACTUAL),
+					longMetricActual(node, PathIteration.PATH_RETURNED_ROWS_ACTUAL));
+		}
+		if (node instanceof ZeroLengthPath) {
+			return maxFinite(rows, longMetricActual(node, ZeroLengthPathIteration.ZERO_LENGTH_CANDIDATE_ROWS_ACTUAL));
+		}
+		return Double.NaN;
+	}
+
+	private static double longMetricActual(QueryModelNode node, String metricName) {
+		long value = node == null ? -1L : node.getLongMetricActual(metricName);
+		return value >= 0L ? value : Double.NaN;
+	}
+
+	/**
+	 * Decides whether a lightweight operator observation should be reported to learned optimizer feedback. Reporting is
+	 * gated by completion and by a q-error threshold over expected-vs-actual rows/work, which keeps the always-on LMDB
+	 * path quiet when estimates are already close.
+	 */
+	public boolean shouldReportCostFeedback(QueryModelNode node) {
+		if (node == null || !node.isCostFeedbackTrackingEnabled() || !node.isCostFeedbackCompletedActual()) {
+			return false;
+		}
+		double plannedRepeatedInvocations = node.getDoubleMetricPlanned(COST_FEEDBACK_PLANNED_REPEATED_INVOCATIONS);
+		if (isFiniteNonNegative(plannedRepeatedInvocations) && plannedRepeatedInvocations > 1.0d
+				&& node.getCostFeedbackCloseCountActual() < Math.max(1L, Math.round(plannedRepeatedInvocations))) {
+			return false;
+		}
+		double threshold = node.getCostFeedbackReportQErrorThreshold();
+		if (!Double.isFinite(threshold) || threshold < 1.0d) {
+			threshold = 4.0d;
+		}
+		double expectedRows = finiteOr(node.getCostFeedbackExpectedRows(), node.getResultSizeEstimate());
+		double expectedWorkRows = finiteOr(node.getCostFeedbackExpectedWorkRows(), node.getCostEstimate());
+		double actualRows = finiteOr(node.getCostFeedbackActualRows(), node.getResultSizeActual());
+		double actualWorkRows = finiteOr(node.getCostFeedbackActualWorkRows(), costFeedbackActualWorkRows(node));
+		return qError(actualRows, expectedRows) >= threshold || qError(actualWorkRows, expectedWorkRows) >= threshold;
+	}
+
+	private static double finiteOr(double preferred, double fallback) {
+		return isFiniteNonNegative(preferred) ? preferred : fallback;
+	}
+
+	private static double sumFinite(double left, double right) {
+		boolean hasLeft = isFiniteNonNegative(left);
+		boolean hasRight = isFiniteNonNegative(right);
+		if (!hasLeft && !hasRight) {
+			return Double.NaN;
+		}
+		return (hasLeft ? left : 0.0d) + (hasRight ? right : 0.0d);
+	}
+
+	private static double maxFinite(double first, double... rest) {
+		double max = isFiniteNonNegative(first) ? first : Double.NaN;
+		if (rest == null) {
+			return max;
+		}
+		for (double value : rest) {
+			if (isFiniteNonNegative(value)) {
+				max = isFiniteNonNegative(max) ? Math.max(max, value) : value;
+			}
+		}
+		return max;
+	}
+
+	private static double qError(double actualRows, double estimatedRows) {
+		if (!isFiniteNonNegative(actualRows) || !isFiniteNonNegative(estimatedRows)) {
+			return Double.NaN;
+		}
+		if (actualRows == 0.0d && estimatedRows == 0.0d) {
+			return 1.0d;
+		}
+		if (actualRows == 0.0d || estimatedRows == 0.0d) {
+			return Double.POSITIVE_INFINITY;
+		}
+		return Math.max(actualRows / estimatedRows, estimatedRows / actualRows);
+	}
+
+	private static boolean isFiniteNonNegative(double value) {
+		return Double.isFinite(value) && value >= 0.0d;
+	}
+
+	private static boolean finiteNonNegativeOrUnknown(double value) {
+		return Double.isNaN(value) || isFiniteNonNegative(value);
+	}
+
+	private static long saturatingAdd(long left, long right) {
+		if (left < 0L || right < 0L) {
+			throw new IllegalArgumentException("Saturating counts must be nonnegative");
+		}
+		return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
 	}
 
 	public static final class FilterPassEstimate {

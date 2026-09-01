@@ -29,6 +29,18 @@ Environment variables (can also be exported in the shell before launching):
 - `RDF4J_SPRING_CONFIG` – alternate Spring Boot `application.properties` file (default `<dist>/config/application.properties`)
 - `RDF4J_SERVER_PORT` – HTTP port injected into `application.properties` (default `8080`)
 
+Frontier Vector API batching
+----------------------------
+
+The launcher probes the selected Java runtime and resolves `jdk.incubator.vector` automatically when that module is
+available. Java prints an incubator-module warning at startup; this is expected on JDK 25. Disable SIMD while keeping
+the bit-exact scalar batching path with `-Drdf4j.frontier.vector.enabled=false`, or override the platform-adaptive
+batch crossover with `-Drdf4j.frontier.vector.minBatch=<count>` in `RDF4J_JAVA_OPTS`.
+
+Custom Java launchers and externally managed WAR containers must add `--add-modules=jdk.incubator.vector` themselves
+to enable SIMD. If the module is absent or unresolved, the same LMDB artifact remains usable and automatically uses
+the scalar implementation.
+
 `config/application.properties`
 -------------------------------
 The launcher passes `--spring.config.additional-location` so Spring Boot loads the distribution's

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.benchmark.common;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -53,6 +54,27 @@ class ThemeQueryCatalogExpansionTest {
 				"?d social:follows ?e",
 				"?e social:follows ?a"),
 				"Missing 5-clique cycle query");
+	}
+
+	@Test
+	void libraryMemberLoanCountsDoesNotCreateMemberLoanCartesianProduct() {
+		String query = ThemeQueryCatalog.queryFor(Theme.LIBRARY, 6);
+
+		assertTrue(query.contains("?loan a lib:Loan ; lib:borrowedBy ?member ."), query);
+		assertTrue(query.contains("?loan lib:loanedCopy ?copy ."), query);
+		assertFalse(query.contains("UNION\n  { ?member a lib:Member . }"),
+				"Library q6 should not let a member-only UNION branch feed the optional loan-copy lookup: "
+						+ query);
+	}
+
+	@Test
+	void sparseUnionFanoutCountUsesAntiMembershipFilterInsteadOfOptionalFanout() {
+		String query = ThemeQueryCatalog.queryFor(Theme.SPARSE, 6);
+
+		assertTrue(query.contains("FILTER NOT EXISTS { ?org schema:employee ?fanout . }"), query);
+		assertFalse(query.contains("OPTIONAL { ?org schema:employee ?optEmployee . }"),
+				"Sparse q6 should not enumerate employees that are not projected into COUNT(DISTINCT ?fanout): "
+						+ query);
 	}
 
 	private static boolean containsCycle(List<String> queries, String... fragments) {

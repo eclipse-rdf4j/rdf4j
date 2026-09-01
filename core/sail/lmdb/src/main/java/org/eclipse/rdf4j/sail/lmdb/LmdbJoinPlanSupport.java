@@ -14,12 +14,11 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -30,34 +29,35 @@ import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
-import org.eclipse.rdf4j.query.algebra.CompareAll;
-import org.eclipse.rdf4j.query.algebra.CompareAny;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StreamBindingSchema;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 final class LmdbJoinPlanSupport {
@@ -68,59 +68,37 @@ final class LmdbJoinPlanSupport {
 	private LmdbJoinPlanSupport() {
 	}
 
-	static List<DeferredFilter> buildDeferredFilters(List<Filter> filters, Set<String> scopeBindingNames,
-			EvaluationStatistics statistics) {
-		if (filters.isEmpty()) {
-			return List.of();
-		}
-
-		List<DeferredFilter> deferredFilters = new ArrayList<>(filters.size());
-		int originalIndex = 0;
-		for (Filter filter : filters) {
-			for (ValueExpr condition : splitConjuncts(filter.getCondition())) {
-				Set<String> conditionVars = DeferredFilter.conditionBindingNames(condition);
-				Set<String> requiredVars = new HashSet<>(conditionVars);
-				requiredVars.retainAll(scopeBindingNames);
-				deferredFilters
-						.add(new DeferredFilter(condition, requiredVars, conditionVars, filterConditionCost(condition),
-								originalIndex++, patternLocalBaseForFilterCondition(filter, condition),
-								FilterSelectivityKeys.originPatternsForFilter(filter),
-								estimateFilterPass(statistics, filter, condition)));
-			}
-		}
-		return deferredFilters;
-	}
-
-	static void markRedundantRequiredExistsFilters(List<TupleExpr> requiredArgs, List<DeferredFilter> filters) {
-		if (requiredArgs.isEmpty() || filters.isEmpty()) {
-			return;
-		}
-		for (DeferredFilter filter : filters) {
-			if (!filter.applied && isRedundantRequiredExistsFilter(requiredArgs, filter)) {
-				filter.applied = true;
-			}
-		}
-	}
-
-	private static boolean isRedundantRequiredExistsFilter(List<TupleExpr> requiredArgs, DeferredFilter filter) {
-		StatementPattern pattern = positiveExistsStatementPattern(filter.condition);
-		if (pattern == null) {
+	static boolean rightLocallyProducesSharedBinding(Join join) {
+		if (join == null || join.getLeftArg() == null || join.getRightArg() == null) {
 			return false;
 		}
-		for (TupleExpr arg : requiredArgs) {
-			if (containsEquivalentRequiredPattern(arg, pattern)) {
-				return true;
+		Set<String> localExtensionBindings = new HashSet<>();
+		join.getRightArg().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Extension extension) {
+				extension.getElements().forEach(element -> {
+					if (element.getName() != null) {
+						localExtensionBindings.add(element.getName());
+					}
+				});
+				super.meet(extension);
 			}
+		});
+		if (localExtensionBindings.isEmpty()) {
+			return false;
 		}
-		return false;
+		Set<String> sharedBindings = new HashSet<>(plannerBindingNames(join.getLeftArg().getAssuredBindingNames()));
+		sharedBindings.retainAll(plannerBindingNames(join.getRightArg().getBindingNames()));
+		return !Collections.disjoint(sharedBindings, localExtensionBindings);
 	}
 
-	private static StatementPattern positiveExistsStatementPattern(ValueExpr condition) {
-		if (!(condition instanceof Exists)) {
-			return null;
+	static Set<String> conditionBindingNames(ValueExpr condition) {
+		if (condition == null) {
+			return Set.of();
 		}
-		TupleExpr subQuery = ((Exists) condition).getSubQuery();
-		return subQuery instanceof StatementPattern ? (StatementPattern) subQuery : null;
+		Set<String> names = new HashSet<>(VarNameCollector.process(condition));
+		names.removeIf(name -> name == null || name.startsWith("_const_"));
+		return names.isEmpty() ? Set.of() : Set.copyOf(names);
 	}
 
 	static boolean containsEquivalentRequiredPattern(TupleExpr tupleExpr, StatementPattern expectedPattern) {
@@ -137,14 +115,20 @@ final class LmdbJoinPlanSupport {
 		if (tupleExpr instanceof Difference) {
 			return containsEquivalentRequiredPattern(((Difference) tupleExpr).getLeftArg(), expectedPattern);
 		}
-		if (tupleExpr instanceof UnaryTupleOperator) {
+		if (tupleExpr instanceof Union union) {
+			return containsEquivalentRequiredPattern(union.getLeftArg(), expectedPattern)
+					&& containsEquivalentRequiredPattern(union.getRightArg(), expectedPattern);
+		}
+		if (tupleExpr instanceof Filter || tupleExpr instanceof QueryRoot || tupleExpr instanceof Distinct
+				|| tupleExpr instanceof Reduced || tupleExpr instanceof Order || tupleExpr instanceof Slice) {
 			return containsEquivalentRequiredPattern(((UnaryTupleOperator) tupleExpr).getArg(), expectedPattern);
 		}
 		return false;
 	}
 
 	private static boolean sameStatementPattern(StatementPattern left, StatementPattern right) {
-		return samePatternVar(left.getSubjectVar(), right.getSubjectVar())
+		return left.getScope() == right.getScope()
+				&& samePatternVar(left.getSubjectVar(), right.getSubjectVar())
 				&& samePatternVar(left.getPredicateVar(), right.getPredicateVar())
 				&& samePatternVar(left.getObjectVar(), right.getObjectVar())
 				&& samePatternVar(left.getContextVar(), right.getContextVar());
@@ -178,134 +162,11 @@ final class LmdbJoinPlanSupport {
 		return result;
 	}
 
-	static List<JoinOrderPlanner.FilterConstraint> toPlannerFilterConstraints(List<DeferredFilter> deferredFilters) {
-		return toPlannerFilterConstraints(deferredFilters, false);
-	}
-
-	static List<JoinOrderPlanner.FilterConstraint> toPlannerFilterConstraints(List<DeferredFilter> deferredFilters,
-			boolean costOnly) {
-		if (deferredFilters.isEmpty()) {
-			return List.of();
-		}
-
-		List<JoinOrderPlanner.FilterConstraint> constraints = new ArrayList<>(deferredFilters.size());
-		for (DeferredFilter deferredFilter : deferredFilters) {
-			NestedTupleExpression nestedTupleExpression = nestedTupleExpression(deferredFilter.condition);
-			constraints.add(new JoinOrderPlanner.FilterConstraint(deferredFilter.requiredVars,
-					deferredFilter.passEstimate.getPassRatio(), deferredFilter.conditionCost,
-					deferredFilter.condition.toString(),
-					deferredFilter.passEstimate.getSource().name().toLowerCase(),
-					deferredFilter.passEstimate.getEvidenceCount(),
-					deferredFilter.condition.clone(),
-					nestedTupleExpression == null ? null : nestedTupleExpression.tupleExpr().clone(),
-					nestedTupleExpression != null && nestedTupleExpression.notExists(),
-					isLookupCompatibleFilter(deferredFilter.condition),
-					costOnly));
-		}
-		return constraints;
-	}
-
-	private static NestedTupleExpression nestedTupleExpression(ValueExpr condition) {
-		if (condition instanceof Exists) {
-			return new NestedTupleExpression(((Exists) condition).getSubQuery(), false);
-		}
-		if (condition instanceof Not && ((Not) condition).getArg() instanceof Exists) {
-			return new NestedTupleExpression(((Exists) ((Not) condition).getArg()).getSubQuery(), true);
-		}
-		return null;
-	}
-
-	private static boolean isLookupCompatibleFilter(ValueExpr condition) {
-		if (condition instanceof Or or) {
-			return isLookupCompatibleFilter(or.getLeftArg()) && isLookupCompatibleFilter(or.getRightArg());
-		}
-		if (condition instanceof ListMemberOperator list) {
-			List<ValueExpr> arguments = list.getArguments();
-			for (int i = 0; i < arguments.size(); i++) {
-				ValueExpr argument = arguments.get(i);
-				if (!(argument instanceof Var || argument instanceof ValueConstant)) {
-					return false;
-				}
-			}
-			return true;
-		}
-		if (condition instanceof SameTerm sameTerm) {
-			return isLookupCompatibleEquality(sameTerm.getLeftArg(), sameTerm.getRightArg());
-		}
-		if (condition instanceof Compare compare) {
-			return compare.getOperator() == Compare.CompareOp.EQ
-					&& isLookupCompatibleEquality(compare.getLeftArg(), compare.getRightArg());
-		}
-		return false;
-	}
-
-	private static boolean isLookupCompatibleEquality(ValueExpr left, ValueExpr right) {
-		return isLookupOperand(left) && isLookupOperand(right) && (left instanceof Var || right instanceof Var);
-	}
-
-	private static boolean isLookupOperand(ValueExpr valueExpr) {
-		return valueExpr instanceof Var || valueExpr instanceof ValueConstant;
-	}
-
-	static List<DeferredFilter> sortDeferredFilters(List<DeferredFilter> deferredFilters) {
-		ArrayList<DeferredFilter> sorted = new ArrayList<>(deferredFilters);
-		sorted.sort((left, right) -> {
-			int byCost = Integer.compare(left.conditionCost, right.conditionCost);
-			if (byCost != 0) {
-				return byCost;
-			}
-			boolean leftContainsExists = containsExists(left.condition);
-			boolean rightContainsExists = containsExists(right.condition);
-			if (leftContainsExists != rightContainsExists) {
-				return leftContainsExists ? 1 : -1;
-			}
-			return Integer.compare(left.originalIndex, right.originalIndex);
-		});
-		return sorted;
-	}
-
-	static List<Set<StatementPattern>> remainingPatternsAfterFactors(List<TupleExpr> orderedJoinArgs) {
-		List<Set<StatementPattern>> remainingPatterns = new ArrayList<>(orderedJoinArgs.size());
-		Set<StatementPattern> suffixPatterns = identityPatternSet();
-		for (int i = orderedJoinArgs.size() - 1; i >= 0; i--) {
-			Set<StatementPattern> after = identityPatternSet();
-			after.addAll(suffixPatterns);
-			remainingPatterns.addFirst(after);
-			suffixPatterns.addAll(collectPatternIdentities(orderedJoinArgs.get(i)));
-		}
-		return remainingPatterns;
-	}
-
-	static Set<StatementPattern> collectPatternIdentities(TupleExpr tupleExpr) {
-		Set<StatementPattern> patterns = identityPatternSet();
-		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(StatementPattern statementPattern) {
-				patterns.add(statementPattern);
-			}
-		});
-		return patterns;
-	}
-
-	static Optional<Set<String>> positionableBindingSetAssignmentNames(TupleExpr tupleExpr) {
-		if (tupleExpr instanceof BindingSetAssignment) {
-			return Optional.of(tupleExpr.getAssuredBindingNames());
-		}
-
-		BindingSetAssignment leaf = bindingSetAssignmentLeaf(tupleExpr);
-		if (leaf == null) {
-			return Optional.empty();
-		}
-
-		Set<String> bindingNames = leaf.getAssuredBindingNames();
-		Set<String> referencedNames = VarNameCollector.process(tupleExpr);
-		if (!bindingNames.containsAll(referencedNames)) {
-			return Optional.empty();
-		}
-		return Optional.of(bindingNames);
-	}
-
 	static BindingSetAssignment smallLiteralFilterAnchor(ValueExpr condition) {
+		return smallLiteralFilterAnchor(condition, LmdbJoinPlanSupport::isSafeValuesAnchorValue);
+	}
+
+	static BindingSetAssignment smallLiteralFilterAnchor(ValueExpr condition, Predicate<Value> valueFilter) {
 		if (condition instanceof ListMemberOperator) {
 			List<ValueExpr> arguments = ((ListMemberOperator) condition).getArguments();
 			if (arguments.isEmpty() || !(arguments.getFirst()instanceof Var filterVar)) {
@@ -324,7 +185,7 @@ final class LmdbJoinPlanSupport {
 					return null;
 				}
 				Value value = ((ValueConstant) argument).getValue();
-				if (!isSafeValuesAnchorValue(value)) {
+				if (!valueFilter.test(value)) {
 					return null;
 				}
 				values.add(value);
@@ -332,13 +193,13 @@ final class LmdbJoinPlanSupport {
 			return smallLiteralFilterAnchor(bindingName, values);
 		}
 		if (condition instanceof Or) {
-			return smallLiteralOrEqualityFilterAnchor((Or) condition);
+			return smallLiteralOrEqualityFilterAnchor((Or) condition, valueFilter);
 		}
 		if (condition instanceof Compare compare && ((Compare) condition).getOperator() == Compare.CompareOp.EQ) {
-			return smallLiteralFilterAnchor(compare.getLeftArg(), compare.getRightArg());
+			return smallLiteralFilterAnchor(compare.getLeftArg(), compare.getRightArg(), valueFilter);
 		}
 		if (condition instanceof SameTerm sameTerm) {
-			return smallLiteralFilterAnchor(sameTerm.getLeftArg(), sameTerm.getRightArg());
+			return smallLiteralFilterAnchor(sameTerm.getLeftArg(), sameTerm.getRightArg(), valueFilter);
 		}
 		return null;
 	}
@@ -376,7 +237,7 @@ final class LmdbJoinPlanSupport {
 		if (pattern == null || bindingName == null) {
 			return true;
 		}
-		return !bindingName.equals(unboundName(pattern.getObjectVar())) || canDriveLiteralObjectFilterAnchor(pattern);
+		return !bindingName.equals(unboundName(pattern.getObjectVar()));
 	}
 
 	static boolean containsPathContextBinding(TupleExpr tupleExpr, String bindingName) {
@@ -403,27 +264,52 @@ final class LmdbJoinPlanSupport {
 		return contains[0];
 	}
 
-	static boolean canDriveLiteralObjectFilterAnchor(StatementPattern pattern) {
-		Var predicate = pattern.getPredicateVar();
-		if (predicate == null || !predicate.hasValue() || !(predicate.getValue() instanceof IRI)) {
-			return false;
-		}
-		String iri = predicate.getValue().stringValue();
-		return iri.endsWith("/name") || iri.endsWith("/measuredValue") || iri.endsWith("/title");
-	}
-
-	static boolean isJoinOrderSeparator(TupleExpr tupleExpr) {
-		return tupleExpr instanceof Lateral || TupleExprs.isVariableScopeChange(tupleExpr)
-				|| TupleExprs.containsExtension(tupleExpr)
-				|| TupleExprs.containsSubquery(tupleExpr);
-	}
-
 	static boolean isValidPassRatio(double passRatio) {
 		return Double.isFinite(passRatio) && passRatio >= 0.0d && passRatio <= 1.0d;
 	}
 
 	static boolean isFiniteNonNegative(double value) {
 		return Double.isFinite(value) && value >= 0.0d;
+	}
+
+	static boolean isBoundLookupPattern(StatementPattern pattern, Set<String> boundNames) {
+		Set<String> patternNames = plannerBindingNames(pattern.getBindingNames());
+		if (Collections.disjoint(boundNames, patternNames)) {
+			return false;
+		}
+		if ("directLookup".equals(pattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE))) {
+			return true;
+		}
+		return isBoundVar(pattern.getSubjectVar(), boundNames)
+				&& (hasConstantValue(pattern.getPredicateVar()) || hasConstantValue(pattern.getObjectVar()))
+				|| isBoundVar(pattern.getObjectVar(), boundNames) && hasConstantValue(pattern.getPredicateVar())
+				|| isBoundVar(pattern.getSubjectVar(), boundNames) && isBoundVar(pattern.getPredicateVar(), boundNames)
+				|| isBoundVar(pattern.getPredicateVar(), boundNames) && isBoundVar(pattern.getObjectVar(), boundNames);
+	}
+
+	static Set<String> plannerBindingNames(Set<String> bindingNames) {
+		if (bindingNames == null || bindingNames.isEmpty()) {
+			return Set.of();
+		}
+		Set<String> plannerNames = new HashSet<>();
+		for (String bindingName : bindingNames) {
+			if (bindingName != null && !bindingName.startsWith("_const_")) {
+				plannerNames.add(bindingName);
+			}
+		}
+		return plannerNames;
+	}
+
+	static Set<String> runtimeBindingNames(TupleExpr tupleExpr) {
+		return tupleExpr == null ? Set.of() : plannerBindingNames(StreamBindingSchema.from(tupleExpr).possible());
+	}
+
+	private static boolean isBoundVar(Var var, Set<String> boundNames) {
+		return var != null && !var.hasValue() && boundNames.contains(var.getName());
+	}
+
+	private static boolean hasConstantValue(Var var) {
+		return var != null && var.hasValue();
 	}
 
 	static String describeBindingNames(Set<String> bindingNames) {
@@ -441,15 +327,7 @@ final class LmdbJoinPlanSupport {
 		return contains[0];
 	}
 
-	static boolean isBindingOnlyFactor(SegmentFactor factor) {
-		return factor.containedPatterns.isEmpty() && !factor.bindingNames.isEmpty();
-	}
-
-	static Set<StatementPattern> identityPatternSet() {
-		return Collections.newSetFromMap(new IdentityHashMap<>());
-	}
-
-	private static StatementPattern patternLocalBaseForFilterCondition(Filter filter, ValueExpr condition) {
+	static StatementPattern patternLocalBaseForFilterCondition(Filter filter, ValueExpr condition) {
 		Set<StatementPattern> patterns = FilterSelectivityKeys.originPatternsForFilter(filter);
 		StatementPattern match = null;
 		for (StatementPattern pattern : patterns) {
@@ -469,12 +347,16 @@ final class LmdbJoinPlanSupport {
 
 	static EvaluationStatistics.FilterPassEstimate estimateFilterPass(EvaluationStatistics statistics,
 			Filter filter, ValueExpr condition) {
-		if (statistics == null) {
+		if (statistics == null || filter == null) {
 			return new EvaluationStatistics.FilterPassEstimate(-1.0d,
 					EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN);
 		}
 		if (condition == filter.getCondition()) {
 			return statistics.estimateFilterPass(filter);
+		}
+		if (containsExists(condition)) {
+			return new EvaluationStatistics.FilterPassEstimate(-1.0d,
+					EvaluationStatistics.FilterPassEstimate.Source.UNKNOWN);
 		}
 
 		Filter splitFilter = filter.clone();
@@ -482,21 +364,8 @@ final class LmdbJoinPlanSupport {
 		return statistics.estimateFilterPass(splitFilter);
 	}
 
-	private static int filterConditionCost(ValueExpr condition) {
-		if (condition instanceof Exists || condition instanceof CompareAny || condition instanceof CompareAll) {
-			return JoinOrderPlanner.FILTER_COST_EXPENSIVE;
-		}
-		if (condition instanceof Not && ((Not) condition).getArg() instanceof Exists) {
-			return JoinOrderPlanner.FILTER_COST_EXPENSIVE;
-		}
-		if (condition instanceof And and) {
-			return Math.max(filterConditionCost(and.getLeftArg()), filterConditionCost(and.getRightArg()));
-		}
-		return JoinOrderPlanner.FILTER_COST_CHEAP;
-	}
-
-	private static BindingSetAssignment smallLiteralOrEqualityFilterAnchor(Or condition) {
-		OrEqualityAnchorCollector collector = new OrEqualityAnchorCollector();
+	private static BindingSetAssignment smallLiteralOrEqualityFilterAnchor(Or condition, Predicate<Value> valueFilter) {
+		OrEqualityAnchorCollector collector = new OrEqualityAnchorCollector(valueFilter);
 		if (!collectOrEqualityAnchorValues(condition, collector)) {
 			return null;
 		}
@@ -560,7 +429,7 @@ final class LmdbJoinPlanSupport {
 	private static boolean collectOrEqualityAnchorValue(Var filterVar, Value value,
 			OrEqualityAnchorCollector collector) {
 		String bindingName = filterVar.getName();
-		if (bindingName == null || filterVar.hasValue() || !isSafeValuesAnchorValue(value)) {
+		if (bindingName == null || filterVar.hasValue() || !collector.valueFilter.test(value)) {
 			return false;
 		}
 		if (collector.bindingName == null) {
@@ -583,23 +452,25 @@ final class LmdbJoinPlanSupport {
 		return var != null && bindingName.equals(var.getName());
 	}
 
-	private static BindingSetAssignment smallLiteralFilterAnchor(ValueExpr leftArg, ValueExpr rightArg) {
+	private static BindingSetAssignment smallLiteralFilterAnchor(ValueExpr leftArg, ValueExpr rightArg,
+			Predicate<Value> valueFilter) {
 		if (leftArg instanceof Var && rightArg instanceof ValueConstant) {
-			return smallLiteralFilterAnchor((Var) leftArg, (ValueConstant) rightArg);
+			return smallLiteralFilterAnchor((Var) leftArg, (ValueConstant) rightArg, valueFilter);
 		}
 		if (rightArg instanceof Var && leftArg instanceof ValueConstant) {
-			return smallLiteralFilterAnchor((Var) rightArg, (ValueConstant) leftArg);
+			return smallLiteralFilterAnchor((Var) rightArg, (ValueConstant) leftArg, valueFilter);
 		}
 		return null;
 	}
 
-	private static BindingSetAssignment smallLiteralFilterAnchor(Var filterVar, ValueConstant valueConstant) {
+	private static BindingSetAssignment smallLiteralFilterAnchor(Var filterVar, ValueConstant valueConstant,
+			Predicate<Value> valueFilter) {
 		String bindingName = filterVar.getName();
 		if (bindingName == null || filterVar.hasValue()) {
 			return null;
 		}
 		Value value = valueConstant.getValue();
-		if (!isSafeValuesAnchorValue(value)) {
+		if (!valueFilter.test(value)) {
 			return null;
 		}
 		LinkedHashSet<Value> values = new LinkedHashSet<>();
@@ -645,28 +516,13 @@ final class LmdbJoinPlanSupport {
 		return false;
 	}
 
-	private static BindingSetAssignment bindingSetAssignmentLeaf(TupleExpr tupleExpr) {
-		TupleExpr current = tupleExpr;
-		while (isPositionableBindingSetAssignmentWrapper(current)) {
-			current = ((UnaryTupleOperator) current).getArg();
-		}
-		if (current instanceof BindingSetAssignment) {
-			return (BindingSetAssignment) current;
-		}
-		return null;
-	}
-
-	private static boolean isPositionableBindingSetAssignmentWrapper(TupleExpr tupleExpr) {
-		return tupleExpr instanceof Filter || tupleExpr instanceof Distinct || tupleExpr instanceof Reduced
-				|| tupleExpr instanceof Slice;
-	}
-
-	private record NestedTupleExpression(TupleExpr tupleExpr, boolean notExists) {
-
-	}
-
 	private static final class OrEqualityAnchorCollector {
+		private final Predicate<Value> valueFilter;
 		private String bindingName;
 		private final LinkedHashSet<Value> values = new LinkedHashSet<>();
+
+		private OrEqualityAnchorCollector(Predicate<Value> valueFilter) {
+			this.valueFilter = valueFilter;
+		}
 	}
 }

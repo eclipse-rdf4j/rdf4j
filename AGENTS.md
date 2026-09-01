@@ -245,6 +245,9 @@ Notes
 - Keep `initial-evidence.txt` at the repository root alongside your final handoff.
 - Do not rely on `target/*-reports/` for the final report; they may be overwritten by subsequent runs.
 - Continue to include the standard Evidence block(s) in your messages as usual.
+- For a named Maven workspace, write `initial-evidence.<workspace>.txt` instead. Detailed logs live under
+  `.mvnf/workspaces/<workspace>/logs/<run-id>/`, and reports live below the selected project's full-GAV build path.
+  Preserve those exact paths in the evidence block.
 
 ---
 
@@ -276,6 +279,38 @@ Plan
 * **Maven local repo (required):** always pass `-Dmaven.repo.local=.m2_repo` on all Maven commands (install, verify, plugins, formatting). All examples in this document implicitly assume this flag, even if omitted.
 * **Network:** only to fetch missing deps/plugins; then rerun once without `-o`, and return offline.
 * **Large project:** some module test suites can take **5–10 minutes**. Prefer **targeted** runs.
+
+### Concurrent Maven workspaces (opt-in)
+
+Use a named Maven workspace when two cooperative agents must build or test concurrently in the same checkout. A
+workspace isolates Maven's writable repository head, full-GAV build trees, test reports, temporary directories, logs,
+and evidence from other workspace IDs. It does not snapshot source files; use separate Git worktrees when concurrent
+edits require stable source snapshots.
+
+* Focused test example:
+  `python3 .codex/skills/mvnf/scripts/mvnf.py --workspace query-opt CascadesRuleEngineTest#lateChildAlternativeRecostsDependentParent`
+* Lifecycle build example:
+  `python3 scripts/mvn-agent.py --workspace query-opt -- -B -ntp -o -Pquick clean install`
+* `MVNF_WORKSPACE=query-opt` may supply the ID when `--workspace` is absent. An explicit CLI value always wins.
+* Workspace Maven reactors default to one thread. Use runner option `--threads <positive-integer>` only when the
+  workspace itself is safe for reactor parallelism; do not forward Maven `-T`.
+* The runner reads through the shared `.m2_repo` tail but writes downloads and installed snapshots only to
+  `.mvnf/workspaces/<id>/repository/`.
+* Build and report paths use
+  `.mvnf/workspaces/<id>/build/<groupId>/<artifactId>/<version>/`; run logs and metadata use
+  `.mvnf/workspaces/<id>/logs/<run-id>/`; run-specific test temporary data uses
+  `.mvnf/workspaces/<id>/tmp/<run-id>/<groupId>/<artifactId>/<version>/`.
+* Workspace evidence belongs in top-level `initial-evidence.<id>.txt`. Use the exact workspace log and GAV-specific
+  Surefire/Failsafe report paths printed by `mvnf`; never reuse another workspace's reports.
+* Workspace repositories, build trees, temporary data, and logs are not automatically deleted. `mvnf` only removes
+  stale test-report directories for its selected GAV before that selection runs.
+* Raw `mvn` does not register with the cooperative lock and must not run concurrently with workspace commands. Use
+  `scripts/mvn-agent.py` for ordinary lifecycle work that needs isolation.
+* Formatting, release, deploy, and source-generator operations mutate shared source or release state. Keep them
+  serialized outside workspace mode; the workspace runners reject these routes.
+* Workspace commands are lifecycle-only. Direct plugin goals—including read-only-looking `help:*` and
+  `dependency:*` invocations—remain serialized outside workspace mode because plugins can perform arbitrary writes.
+  The runners also validate inherited `MAVEN_ARGS` and the checkout's `.mvn/maven.config` before Maven starts.
 
 ### Maven `-am` usage (house rule)
 
@@ -331,7 +366,9 @@ mvn -B -ntp \
 * If offline resolution fails due to a missing dependency or plugin, rerun the exact install command without `-o`, then return offline.
 * If it fails for any other reason, rerun the exact install command without `-T 1C`.
 * Skipping this step can lead to stale or missing artifacts during tests, producing confusing compilation or linkage errors.
-* Always use a workspace-local Maven repository: append `-Dmaven.repo.local=.m2_repo` to all Maven commands (install, verify, formatter, etc.).
+* For serialized raw Maven and workspace-less `mvnf`, always use the checkout-local repository by appending
+  `-Dmaven.repo.local=.m2_repo`. Named workspace runners inject that path as the shared read-only tail plus their own
+  private writable head; do not override either repository property.
 * Always try to run these commands first to see if they run without needing any approvals from the user w.r.t. the sandboxing.
 * If you run tests via `mvnf`, it already performs module clean + root `-Pquick` install before verify.
 

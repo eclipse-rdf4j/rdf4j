@@ -13,11 +13,13 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -29,7 +31,11 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -139,6 +145,38 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		String query = "SELECT * WHERE {?branch <urn:name> ?branchName . ?copy <urn:locatedAt> ?branch . FILTER(?branchName = \"Branch 0\") }";
 
 		testOptimizer(expectedQuery, query, new SelectiveJoinStatistics(200.0d, 100.0d, 20.0d));
+	}
+
+	@Test
+	public void distributesFilterOnlyIntoMinusLeftOperand() {
+		String expectedQuery = """
+				SELECT * WHERE {
+				  { VALUES (?x ?guard) { (1 true) } FILTER(?guard) }
+				  MINUS { VALUES ?x { 1 } }
+				}
+				""";
+		String query = """
+				SELECT * WHERE {
+				  { VALUES (?x ?guard) { (1 true) } MINUS { VALUES ?x { 1 } } }
+				  FILTER(?guard)
+				}
+				""";
+
+		testOptimizer(expectedQuery, query);
+	}
+
+	@Test
+	public void volatileExtensionStaysBeforeFilterRelocation() {
+		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		Extension extension = new Extension(pattern, new ExtensionElem(new FunctionCall("UUID"), "token"));
+		Filter filter = new Filter(extension,
+				new Compare(new Var("o"), new ValueConstant(SimpleValueFactory.getInstance().createLiteral("value"))));
+		QueryRoot root = new QueryRoot(filter);
+
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+
+		Filter retained = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(Extension.class, retained.getArg());
 	}
 
 	@Test
@@ -317,6 +355,30 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void standardPipelineKeepsOuterUnionOptionalInputSeparateFromNotExistsProbe() {
+		TupleExpr optimized = optimizeWithStandardPipeline(String.join("\n",
+				"PREFIX med: <http://example.com/theme/medical/>",
+				"SELECT (COUNT(DISTINCT ?patient) AS ?count) WHERE {",
+				"  { ?patient a med:Patient ; med:hasMedication ?med . }",
+				"  UNION",
+				"  { ?patient a med:Patient ; med:hasEncounter ?enc . ?enc med:hasObservation ?obs . }",
+				"  OPTIONAL { ?patient med:name ?optName . }",
+				"  FILTER(?optName != \"\")",
+				"  FILTER NOT EXISTS {",
+				"    ?patient med:hasMedication ?m2 . ?m2 med:code ?c .",
+				"    FILTER(?c = \"MED-1005\")",
+				"  }",
+				"}"));
+
+		Group group = findAll(optimized, Group.class).getFirst();
+
+		assertThat(group.getArg().getBindingNames())
+				.as("The aggregate input must remain the outer UNION/OPTIONAL stream, not the EXISTS probe")
+				.contains("patient", "optName")
+				.doesNotContain("m2", "c");
+	}
+
+	@Test
 	public void standardPipelineShowsInScopeFilterInsideJoinGroup() {
 		String query = String.join("\n",
 				"PREFIX med: <http://example.com/theme/medical/>",
@@ -338,9 +400,6 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 
 		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
 			optimizer.optimize(root, null, EmptyBindingSet.getInstance());
-//			if (optimizer instanceof org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer) {
-//				break;
-//			}
 		}
 
 		Filter notExistsFilter = findFirst(root, Filter.class,
@@ -351,7 +410,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 				.toList();
 
 		assertThat(groupFilters)
-				.as("The in-scope IN filter should be pushed into the join group before join ordering")
+				.as("The in-scope IN filter should be pushed into the final join group")
 				.singleElement()
 				.satisfies(filter -> {
 					assertThat(filter.getCondition()).isInstanceOf(ListMemberOperator.class);
@@ -569,7 +628,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		List<T> matches = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
-			protected void meetNode(org.eclipse.rdf4j.query.algebra.QueryModelNode node) throws RuntimeException {
+			protected void meetNode(QueryModelNode node) throws RuntimeException {
 				if (type.isInstance(node)) {
 					T candidate = type.cast(node);
 					if (predicate.test(candidate)) {
@@ -586,7 +645,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		List<T> matches = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
-			protected void meetNode(org.eclipse.rdf4j.query.algebra.QueryModelNode node) throws RuntimeException {
+			protected void meetNode(QueryModelNode node) throws RuntimeException {
 				if (type.isInstance(node)) {
 					matches.add(type.cast(node));
 				}

@@ -51,6 +51,7 @@ public class GenericPlanNode {
 	private final static String newLine = System.getProperty("line.separator");
 	private static final Pattern OFFSET_PATTERN = Pattern.compile("offset=([0-9]+)");
 	private static final Pattern LIMIT_PATTERN = Pattern.compile("limit=([0-9]+)");
+	private static final String FRONTIER_LEARNING_KEY = "optimizer.frontierLearningKey";
 	private static final Set<String> JOIN_ONLY_METRICS = Set.of(
 			TelemetryMetricNames.LEFT_ROWS_PROBED_ACTUAL,
 			TelemetryMetricNames.RIGHT_ROWS_SCANNED_ACTUAL,
@@ -102,7 +103,9 @@ public class GenericPlanNode {
 			TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL,
 			TelemetryMetricNames.INDEX_HIT_RATE_ACTUAL,
 			TelemetryMetricNames.INDEX_NAME,
-			TelemetryMetricNames.INDEX_NAMES);
+			TelemetryMetricNames.INDEX_NAMES,
+			TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL,
+			TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL);
 
 	private final String id = "UUID_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();
 
@@ -191,7 +194,6 @@ public class GenericPlanNode {
 	 *
 	 * @return a cost estimate as a double value
 	 */
-	@JsonIgnore
 	public Double getCostEstimate() {
 		return costEstimate;
 	}
@@ -207,7 +209,6 @@ public class GenericPlanNode {
 	 *
 	 * @return result size estimate
 	 */
-	@JsonIgnore
 	public Double getResultSizeEstimate() {
 		return resultSizeEstimate;
 	}
@@ -445,7 +446,7 @@ public class GenericPlanNode {
 	}
 
 	public Long getLongMetricActual(String metricName) {
-		if (!runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+		if (!runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerExplainMetric(metricName)) {
 			return null;
 		}
 		Long metricValue = longMetricsActual.get(metricName);
@@ -474,7 +475,7 @@ public class GenericPlanNode {
 	}
 
 	public Double getDoubleMetricActual(String metricName) {
-		if (!runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+		if (!runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerExplainMetric(metricName)) {
 			return null;
 		}
 		return doubleMetricsActual.get(metricName);
@@ -1052,14 +1053,16 @@ public class GenericPlanNode {
 	private void appendPlannedMapTelemetry(Map<String, String> metrics) {
 		for (Map.Entry<String, Long> entry : longMetricsPlanned.entrySet()) {
 			Long metricValue = entry.getValue();
-			if (metricValue == null || metricValue < 0 || metrics.containsKey(entry.getKey())) {
+			if (metricValue == null || metricValue < 0 || metrics.containsKey(entry.getKey())
+					|| !displayPlannedMetric(entry.getKey())) {
 				continue;
 			}
 			putIfKnown(metrics, entry.getKey(), toHumanReadableNumber(metricValue));
 		}
 		for (Map.Entry<String, Double> entry : doubleMetricsPlanned.entrySet()) {
 			Double metricValue = entry.getValue();
-			if (metricValue == null || metricValue < 0 || metrics.containsKey(entry.getKey())) {
+			if (metricValue == null || metricValue < 0 || metrics.containsKey(entry.getKey())
+					|| !displayPlannedMetric(entry.getKey())) {
 				continue;
 			}
 			putIfKnown(metrics, entry.getKey(), toHumanReadableNumber(metricValue));
@@ -1067,15 +1070,32 @@ public class GenericPlanNode {
 		for (Map.Entry<String, String> entry : orderedStringMetricsPlanned()) {
 			String metricName = entry.getKey();
 			String metricValue = entry.getValue();
-			if (metricValue == null || metricValue.isEmpty() || metrics.containsKey(metricName)) {
+			if (metricValue == null || metricValue.isEmpty() || metrics.containsKey(metricName)
+					|| FRONTIER_LEARNING_KEY.equals(metricName) || !displayPlannedMetric(metricName)) {
 				continue;
 			}
 			metrics.put(metricName, metricValue);
 		}
 	}
 
+	private boolean displayPlannedMetric(String metricName) {
+		return hasPlannerEstimateUsage() || !TelemetryMetricNames.isPlannerEstimateMetric(metricName);
+	}
+
+	private boolean hasPlannerEstimateUsage() {
+		String usage = stringMetricsPlanned.get(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
+		return usage != null && !usage.isEmpty()
+				&& !TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED.equals(usage);
+	}
+
 	private List<Map.Entry<String, String>> orderedStringMetricsPlanned() {
 		List<Map.Entry<String, String>> orderedEntries = new ArrayList<>();
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNED_ESTIMATE_USAGE);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned,
+				TelemetryMetricNames.PLANNED_ESTIMATE_DECISION_ID);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned,
+				TelemetryMetricNames.PLANNED_CARDINALITY_SHAPE);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNED_COST_SHAPE);
 		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNED_INDEX_NAME);
 		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned,
 				TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE);
@@ -1151,7 +1171,7 @@ public class GenericPlanNode {
 			}
 		}
 		for (Map.Entry<String, String> entry : stringMetricsActual.entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+			if (TelemetryMetricNames.isOptimizerExplainMetric(entry.getKey())
 					&& entry.getValue() != null
 					&& !entry.getValue().isEmpty()) {
 				visible.put(entry.getKey(), entry.getValue());
@@ -1198,7 +1218,8 @@ public class GenericPlanNode {
 	}
 
 	private static boolean isVisibleWithoutRuntimeTelemetry(String metricName) {
-		return isPreferredExplainAnnotationMetric(metricName) || TelemetryMetricNames.isOptimizerMetric(metricName);
+		return isPreferredExplainAnnotationMetric(metricName)
+				|| TelemetryMetricNames.isOptimizerExplainMetric(metricName);
 	}
 
 	private static <T> Map<String, T> optimizerMetrics(Map<String, T> metrics) {
@@ -1207,7 +1228,7 @@ public class GenericPlanNode {
 		}
 		Map<String, T> visible = new LinkedHashMap<>();
 		for (Map.Entry<String, T> entry : metrics.entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+			if (TelemetryMetricNames.isOptimizerExplainMetric(entry.getKey())) {
 				visible.put(entry.getKey(), entry.getValue());
 			}
 		}

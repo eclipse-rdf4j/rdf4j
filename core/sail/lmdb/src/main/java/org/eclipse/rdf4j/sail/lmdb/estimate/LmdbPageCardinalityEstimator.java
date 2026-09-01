@@ -24,6 +24,8 @@ import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 public final class LmdbPageCardinalityEstimator implements Closeable {
 
 	private final LmdbDataFile dataFile;
+	private final ThreadLocal<LmdbBtreeRangeCounter.PageBuffers> pageBuffers = ThreadLocal
+			.withInitial(LmdbBtreeRangeCounter.PageBuffers::new);
 	private volatile SnapshotCache lastSnapshot;
 
 	public LmdbPageCardinalityEstimator(File dataMdbFile) throws IOException {
@@ -39,7 +41,7 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 			return 0;
 		}
 
-		LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta);
+		LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta, pageBuffers.get());
 		RangeCountResult result = counter.countRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher);
 		return result.entries;
 	}
@@ -52,6 +54,7 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 
 	@Override
 	public void close() throws IOException {
+		pageBuffers.remove();
 		dataFile.close();
 	}
 
@@ -72,7 +75,7 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 			return cached;
 		}
 
-		LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta);
+		LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta, pageBuffers.get());
 		RangeCountResult lookupStats = new RangeCountResult();
 
 		byte[] key = dbName.getBytes(StandardCharsets.UTF_8);

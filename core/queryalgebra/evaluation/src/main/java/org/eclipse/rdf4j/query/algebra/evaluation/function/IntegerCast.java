@@ -11,8 +11,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.function;
 
 /**
- * A {@link org.eclipse.rdf4j.query.algebra.evaluation.function.Function} that tries to cast its argument to an
- * <var>xsd:integer</var> .
+ * A {@link Function} that tries to cast its argument to an <var>xsd:integer</var> .
  *
  * @author Arjohn Kampman
  * @deprecated use {@link org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.IntegerCast} instead

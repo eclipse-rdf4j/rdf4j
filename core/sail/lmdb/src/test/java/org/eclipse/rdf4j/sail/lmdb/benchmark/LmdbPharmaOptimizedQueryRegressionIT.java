@@ -33,9 +33,11 @@ import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
+import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbPharmaOptimizedQueryRegressionIT {
@@ -43,15 +45,180 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 	private static final Theme THEME = Theme.PHARMA;
 	private static final int MAX_QUERY_INDEX = 10;
 	private static final String QUERY_INDEXES_PROPERTY = "rdf4j.lmdb.pharmaRegression.queryIndexes";
-	private static final String PERSISTENT_STORE_KEY = "pharma-regression/all-themes";
+	private static final String PERSISTENT_STORE_KEY = "pharma-regression/pharma-only";
 	private static final String PERSISTENT_STORE_HINT = "Set -D"
 			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
 			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
-	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
-			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
+	private static final Pattern DIRECT_LOOKUP_ACCESS_WORK_ROWS = Pattern.compile(
+			"StatementPattern \\([^)]*plannedAccessWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
+	private static final Pattern PLANNED_WORK_ROWS = Pattern.compile("plannedWorkRows=([^,\\n]+)");
+	private static final Pattern STATEMENT_PATTERN_HEADER = Pattern.compile(
+			"(?m)^[^\\p{Alnum}\\n]*StatementPattern \\(");
 
 	@Test
-	@Disabled
+	@Timeout(120)
+	void pharmaQ7ExactCascadesPlanKeepsArmBindingBeforeComparatorUnion() throws Exception {
+		RunQueryPlanState state = new RunQueryPlanState();
+		state.themeName = THEME.name();
+		state.z_queryIndex = 7;
+		state.sketchEstimatorEnabled = true;
+
+		state.setup();
+		try {
+			OptimizedPlanSnapshot snapshot = state.optimizedPlanSnapshot();
+			String plan = snapshot.plan();
+			String diagnostics = snapshot.diagnostics();
+
+			assertBefore(plan,
+					"value=http://example.com/theme/pharma/hasArm",
+					"value=http://example.com/theme/pharma/armComparator",
+					"PHARMA q7 runQuery plan should bind ?arm from trial/hasArm before applying the comparator "
+							+ "union\n" + plan);
+			assertBefore(plan,
+					"value=http://example.com/theme/pharma/hasArm",
+					"value=http://example.com/theme/pharma/armDrug",
+					"PHARMA q7 runQuery plan should bind ?arm from trial/hasArm before applying the drug union\n"
+							+ plan);
+			assertTrue(diagnostics.contains("optimizer.cascadesApplied=true"),
+					"PHARMA q7 should be planned by the packed Cascades route\n" + diagnostics);
+			assertTrue(diagnostics.contains("optimizer.cascadesApproximate=false"),
+					"PHARMA q7 should produce an exact Cascades plan without needing the standard fallback\n"
+							+ diagnostics);
+			assertTrue(diagnostics.contains("optimizer.cascadesCompleteness=COMPLETE"),
+					"PHARMA q7 should retain a complete Cascades search\n" + diagnostics);
+			assertTrue(plan.contains("plannerId=lmdb-packed-cascades")
+					&& plan.contains("optimizer.costEventDigest=")
+					&& plan.contains("optimizer.costEventPhase="),
+					"PHARMA q7 should retain packed-cascades and originating-event provenance\n" + plan);
+			assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/name");
+		} finally {
+			state.tearDown();
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void pharmaQ7CascadesPlanUsesInputBoundNameLookup() throws Exception {
+		String previousPolicy = System.setProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", "off");
+		RunQueryPlanState state = new RunQueryPlanState();
+		state.themeName = THEME.name();
+		state.z_queryIndex = 7;
+		state.sketchEstimatorEnabled = true;
+
+		try {
+			state.setup();
+			try {
+				OptimizedPlanSnapshot snapshot = state.optimizedPlanSnapshot();
+				String plan = snapshot.plan();
+				String diagnostics = snapshot.diagnostics();
+
+				assertTrue(diagnostics.contains("optimizer.cascadesApplied=true")
+						&& diagnostics.contains("optimizer.cascadesCompleteness=COMPLETE")
+						&& diagnostics.contains("plannerId=lmdb-packed-cascades"),
+						"Forced Cascades policy should expose the packed Cascades q7 access path\n" + diagnostics);
+				assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/name");
+			} finally {
+				state.tearDown();
+			}
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", previousPolicy);
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void pharmaQ2UsesExactFiniteAnchorCascadesPlan() throws Exception {
+		String previousMode = System.setProperty("rdf4j.optimizer.lmdb.cascades.mode", "exact");
+		RunQueryPlanState state = new RunQueryPlanState();
+		state.themeName = THEME.name();
+		state.z_queryIndex = 2;
+		state.sketchEstimatorEnabled = true;
+
+		try {
+			state.setup();
+			try {
+				OptimizedPlanSnapshot snapshot = state.optimizedPlanSnapshot();
+				String plan = snapshot.plan();
+				String diagnostics = snapshot.diagnostics();
+
+				assertTrue(diagnostics.contains("optimizer.cascadesApplied=true"),
+						"PHARMA q2 should be planned by the packed Cascades route\n" + diagnostics);
+				assertTrue(diagnostics.contains("optimizer.cascadesApproximate=false"),
+						"PHARMA q2 should retain an exact Cascades plan\n" + diagnostics);
+				assertTrue(diagnostics.contains("optimizer.cascadesCompleteness=COMPLETE"),
+						"PHARMA q2 should retain a complete Cascades search\n" + diagnostics);
+				assertTrue(plan.contains("BindingSetAssignment")
+						&& plan.contains("disease=http://example.com/theme/pharma/disease/2")
+						&& plan.contains("disease=http://example.com/theme/pharma/disease/3"),
+						"PHARMA q2 should materialize the finite disease anchor as a BindingSetAssignment on the "
+								+ "alias source\n" + plan);
+				assertBefore(plan,
+						"BindingSetAssignment",
+						"value=http://example.com/theme/pharma/targets",
+						"PHARMA q2 should drive the disease anchor before the broader targets fanout\n" + plan);
+				assertTrue(plan.contains("ListMemberOperator"),
+						"PHARMA q2 should retain the optDisease IN filter alongside the heuristic-evidence anchor\n"
+								+ plan);
+				assertStatementPatternSeesBoundObject(plan, "http://example.com/theme/pharma/indicatedFor");
+			} finally {
+				state.tearDown();
+			}
+		} finally {
+			restoreProperty("rdf4j.optimizer.lmdb.cascades.mode", previousMode);
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void pharmaQ6BindsCombinationMembersBeforeTargetIntersection() throws Exception {
+		RunQueryPlanState state = new RunQueryPlanState();
+		state.themeName = THEME.name();
+		state.z_queryIndex = 6;
+		state.sketchEstimatorEnabled = true;
+		state.sketchEstimatorStrategy = "unified";
+		state.rebuildStoreBeforeSetup = true;
+
+		state.setup();
+		try {
+			String rendered = state.preparedPlanSnapshot().renderedSparql();
+			assertBefore(rendered,
+					"?combo a <http://example.com/theme/pharma/Combination>",
+					"?drugA <http://example.com/theme/pharma/targets> ?target",
+					"PHARMA q6 must anchor the combination before expanding the shared target domain");
+			assertBefore(rendered,
+					"?combo <http://example.com/theme/pharma/combinationOf> ?drugA",
+					"?drugA <http://example.com/theme/pharma/targets> ?target",
+					"PHARMA q6 must bind the first combination member before its target lookup");
+			assertBefore(rendered,
+					"?combo <http://example.com/theme/pharma/combinationOf> ?drugB",
+					"?drugB <http://example.com/theme/pharma/targets> ?target",
+					"PHARMA q6 must bind the second combination member before intersecting targets");
+		} finally {
+			state.disableTelemetryTeardown();
+			state.tearDown();
+		}
+	}
+
+	@Test
+	@Timeout(120)
+	void runQueryPlanCanPrepareWithoutRenderingOptimizedPlan() throws Exception {
+		RunQueryPlanState state = new RunQueryPlanState();
+		state.themeName = THEME.name();
+		state.z_queryIndex = 7;
+		state.sketchEstimatorEnabled = true;
+
+		state.setup();
+		try (LmdbBenchmarkQueryPlan plan = state.preparePlanWithoutRendering()) {
+			assertTrue(plan.bindingCount() > 0);
+			assertTrue(plan.optimizedPlan().isBlank());
+			assertTrue(plan.optimizedDiagnostics().isBlank());
+		} finally {
+			state.tearDown();
+		}
+	}
+
+	@Test
+	@Disabled("Disabled until we can verify if this test is correct or not")
 	void pharmaQueriesUsePlannerCostInvariants(@TempDir Path dataDir) throws Exception {
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(
@@ -91,13 +258,48 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 		}
 	}
 
+	@Test
+	@Timeout(120)
+	void pharmaQ7OptimizedPlanKeepsBoundLookupWorkEstimate(@TempDir Path dataDir) throws Exception {
+		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
+				.prepareThemeRegressionStore(
+						dataDir.resolve(THEME.name()),
+						PERSISTENT_STORE_KEY,
+						storeDirectory -> {
+							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+							SailRepository repository = new SailRepository(store);
+							try {
+								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+								loadData(repository);
+								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+							} finally {
+								shutdownAndRelease(repository, store);
+							}
+						});
+		Path themeDir = preparedStore.storeDirectory();
+		if (preparedStore.reused()) {
+			System.out.println("Reusing persistent store " + themeDir + " for PHARMA q7 regression. "
+					+ PERSISTENT_STORE_HINT);
+		}
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				assertQueryRegressionPasses(repository, 7);
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
 	private static void loadData(SailRepository repository) throws IOException {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			RDFInserter inserter = new RDFInserter(connection);
-			for (Theme themeDataset : Theme.values()) {
-				ThemeDataSetGenerator.generate(themeDataset, inserter);
-			}
+			ThemeDataSetGenerator.generate(THEME, inserter);
 			connection.commit();
 		}
 	}
@@ -159,23 +361,28 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 	private static void assertPlannerCostInvariants(int queryIndex, OptimizerSnapshot snapshot) {
 		String key = "PHARMA query " + queryIndex;
 		assertTrue(snapshot.renderedQuery.contains("SELECT"), key + " should still render an optimized query");
-		boolean sketchPlan = snapshot.plan.contains("plannerPath=ROBUST_USED")
-				|| snapshot.plan.contains("optimizer.logicalExploration");
+		boolean robustSketchPlan = snapshot.plan.contains("plannerPath=ROBUST_USED");
+		boolean cascadesPlan = snapshot.plan.contains("plannerId=lmdb-cascades")
+				|| snapshot.plan.contains("plannerId=lmdb-packed-cascades");
 		boolean finiteAnchorPlan = snapshot.plan.contains("plannerId=lmdb-finite-anchor");
-		assertTrue(sketchPlan || finiteAnchorPlan, key + " should use LMDB planning:\n" + snapshot.plan);
-		if (sketchPlan) {
-			assertTrue(snapshot.plan.contains("plannerPath=ROBUST_USED"),
-					key + " should use the robust planner path:\n" + snapshot.plan);
-		} else {
+		assertTrue(robustSketchPlan || cascadesPlan || finiteAnchorPlan,
+				key + " should use LMDB planning:\n" + snapshot.plan);
+		if (finiteAnchorPlan) {
 			assertTrue(snapshot.plan.contains("plannerPath=CANONICAL_FINITE_ANCHOR"),
 					key + " should mark canonical finite-anchor planning:\n" + snapshot.plan);
 			assertFalse(snapshot.plan.contains("optimizer.logicalExploration"),
 					key + " should not spend Pareto memo work on a canonical finite-anchor chain:\n"
 							+ snapshot.plan);
+		} else if (cascadesPlan) {
+			assertTrue(snapshot.plan.contains("optimizer.cascadesRule"),
+					key + " should expose the Cascades physical rule:\n" + snapshot.plan);
+		} else {
+			assertTrue(snapshot.plan.contains("plannerPath=ROBUST_USED"),
+					key + " should use the robust planner path:\n" + snapshot.plan);
 		}
 		assertFalse(snapshot.plan.contains("plannerPath=UNSUPPORTED_SHAPE"),
 				key + " should not reject supported segment shapes:\n" + snapshot.plan);
-		assertDirectLookupWorkRowsBelow(snapshot.plan, 100_000.0d, key);
+		assertDirectLookupAccessWorkRowsBelow(snapshot.plan, 100_000.0d, key);
 		if (queryIndex == 0) {
 			assertBefore(snapshot.renderedQuery, "?trial a <http://example.com/theme/pharma/ClinicalTrial> .",
 					"?trial <http://example.com/theme/pharma/hasArm> ?arm .",
@@ -183,6 +390,12 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 							+ snapshot.plan);
 		}
 		if (queryIndex == 7) {
+			// Cost-model v7 charges the correlated NOT EXISTS probe per outer row (~384K planned work rows on
+			// the pharma-only store), so the envelope pins "bounded, no cross-product blow-up" rather than the
+			// old materialized-MINUS estimate of <=30K.
+			assertPlannedWorkRowsAtMost(snapshot.plan, 500_000.0d,
+					key + " should keep repeated comparator/name lookup work inside the physical lookup envelope\n"
+							+ snapshot.plan);
 			assertBefore(snapshot.plan,
 					"value=http://example.com/theme/pharma/hasResult",
 					"value=http://example.com/theme/pharma/pValue",
@@ -191,14 +404,54 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 		}
 	}
 
-	private static void assertDirectLookupWorkRowsBelow(String plan, double maxWorkRows, String key) {
-		Matcher matcher = DIRECT_LOOKUP_WORK_ROWS.matcher(plan);
+	private static void assertPlannedWorkRowsAtMost(String plan, double maxRows, String message) {
+		Matcher matcher = PLANNED_WORK_ROWS.matcher(plan);
+		assertTrue(matcher.find(), "Expected root plannedWorkRows metric in:\n" + plan);
+		double workRows = parsePlanRows(matcher.group(1));
+		assertTrue(workRows <= maxRows,
+				message + "\nExpected plannedWorkRows <= " + maxRows + " but got " + workRows);
+	}
+
+	private static void assertDirectLookupAccessWorkRowsBelow(String plan, double maxWorkRows, String key) {
+		Matcher matcher = DIRECT_LOOKUP_ACCESS_WORK_ROWS.matcher(plan);
 		while (matcher.find()) {
 			double workRows = parsePlanRows(matcher.group(1));
 			assertTrue(workRows <= maxWorkRows,
 					key + " direct lookup plannedWorkRows should stay bounded by explicit step work, got "
 							+ matcher.group(1) + "\n" + plan);
 		}
+	}
+
+	private static void assertStatementPatternSeesBoundSubject(String plan, String predicate) {
+		String statementPattern = statementPatternContaining(plan, predicate);
+		assertTrue(statementPattern.contains("bindingState=bound"),
+				"Expected branch statement pattern to see its join subject as bound:\n" + statementPattern
+						+ "\nFull plan:\n" + plan);
+	}
+
+	private static void assertStatementPatternSeesBoundObject(String plan, String predicate) {
+		String statementPattern = statementPatternContaining(plan, predicate);
+		assertTrue(statementPattern.contains("o: Var") && statementPattern.contains("bindingState=bound"),
+				"Expected branch statement pattern to see its join object as bound:\n" + statementPattern
+						+ "\nFull plan:\n" + plan);
+	}
+
+	private static String statementPatternContaining(String plan, String predicate) {
+		int predicateIndex = plan.indexOf("value=" + predicate);
+		if (predicateIndex < 0) {
+			throw new AssertionError("Missing statement pattern for `" + predicate + "` in:\n" + plan);
+		}
+		Matcher headers = STATEMENT_PATTERN_HEADER.matcher(plan);
+		int startIndex = -1;
+		while (headers.find() && headers.start() < predicateIndex) {
+			startIndex = headers.start();
+		}
+		if (startIndex < 0) {
+			throw new AssertionError("Missing statement pattern header for `" + predicate + "` in:\n" + plan);
+		}
+		int nextIndex = headers.find() ? headers.start() : -1;
+		int endIndex = nextIndex >= 0 ? nextIndex : plan.length();
+		return plan.substring(startIndex, endIndex);
 	}
 
 	private static double parsePlanRows(String value) {
@@ -224,6 +477,14 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 				message + "\nExpected `" + first + "` before `" + second + "` in:\n" + value);
 	}
 
+	private static void restoreProperty(String property, String previousValue) {
+		if (previousValue == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, previousValue);
+		}
+	}
+
 	private static void shutdownAndRelease(SailRepository repository, LmdbStore store) throws IOException {
 		try {
 			BenchmarkJoinEstimatorSupport.releaseEstimatorMemory(store);
@@ -232,6 +493,39 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 		}
 	}
 
+	private static final class RunQueryPlanState extends ThemeQueryPlanRunBenchmark.BaseState {
+		private RunQueryPlanState() {
+			loadSelectedThemeOnly = true;
+		}
+
+		private String optimizedPlan() {
+			return optimizedPlanSnapshot().plan();
+		}
+
+		private OptimizedPlanSnapshot optimizedPlanSnapshot() {
+			try (LmdbBenchmarkQueryPlan plan = preparePlan()) {
+				return new OptimizedPlanSnapshot(plan.optimizedPlan(), plan.optimizedDiagnostics());
+			}
+		}
+
+		private LmdbBenchmarkQueryPlan.PreparedPlanSnapshot preparedPlanSnapshot() {
+			try (LmdbBenchmarkQueryPlan plan = preparePlan()) {
+				return plan.preparedPlanSnapshot();
+			}
+		}
+
+		private LmdbBenchmarkQueryPlan preparePlanWithoutRendering() {
+			return preparePlan(false);
+		}
+
+		private void disableTelemetryTeardown() {
+			query = null;
+		}
+	}
+
 	private record OptimizerSnapshot(String plan, String renderedQuery) {
+	}
+
+	private record OptimizedPlanSnapshot(String plan, String diagnostics) {
 	}
 }

@@ -16,11 +16,13 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -33,6 +35,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -40,19 +43,28 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.benchmark.common.BenchmarkQuery;
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
+import org.eclipse.rdf4j.benchmark.common.plan.FactorizedSolutionBagFingerprint;
 import org.eclipse.rdf4j.benchmark.common.plan.FeatureFlagCollector;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCapture;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCaptureContext;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanExplanation;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanSnapshot;
+import org.eclipse.rdf4j.benchmark.common.plan.SolutionBagFingerprint;
+import org.eclipse.rdf4j.benchmark.common.plan.TupleExprJsonCodec;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /**
  * Maven-runnable CLI for query-plan snapshot generation and comparison.
@@ -84,6 +96,10 @@ public final class QueryPlanSnapshotCli {
 	private static final int DEFAULT_EXECUTION_REPEAT_MIN_RUNS = 2;
 	private static final int DEFAULT_EXECUTION_REPEAT_MAX_RUNS = 128;
 	private static final long DEFAULT_BATCH_ETA_UPDATE_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(10);
+	private static final Duration DEFAULT_BATCH_TERMINATION_GRACE = Duration.ofSeconds(2);
+	private static final String DEFAULT_BATCH_AUDIT_FILENAME = "query-plan-snapshot-batch-audit.csv";
+	private static final String VERIFICATION_MODE_STREAMED_REPEATED = "streamed-repeated";
+	private static final String VERIFICATION_MODE_FACTORIZED_ALGEBRAIC = "factorized-algebraic";
 	private static final List<String> PLAN_INPUT_FEATURE_FLAG_PREFIXES = List.of(
 			"cli.",
 			"systemProperty.",
@@ -117,6 +133,8 @@ public final class QueryPlanSnapshotCli {
 	private final int executionRepeatMaxRuns;
 	private final long executionRepeatSoftLimitNanos;
 	private final long batchEtaUpdateIntervalNanos;
+	private final BatchTargetRunner batchTargetRunner;
+	private final WorkerLauncher workerLauncher;
 
 	QueryPlanSnapshotCli(BufferedReader input, PrintStream output) {
 		this(input, output, false);
@@ -137,6 +155,20 @@ public final class QueryPlanSnapshotCli {
 	QueryPlanSnapshotCli(BufferedReader input, PrintStream output, boolean useTerminalChoiceMenu,
 			int executionRepeatMinRuns, int executionRepeatMaxRuns, long executionRepeatSoftLimitNanos,
 			long batchEtaUpdateIntervalNanos) {
+		this(input, output, useTerminalChoiceMenu, executionRepeatMinRuns, executionRepeatMaxRuns,
+				executionRepeatSoftLimitNanos, batchEtaUpdateIntervalNanos, null);
+	}
+
+	QueryPlanSnapshotCli(BufferedReader input, PrintStream output, boolean useTerminalChoiceMenu,
+			int executionRepeatMinRuns, int executionRepeatMaxRuns, long executionRepeatSoftLimitNanos,
+			long batchEtaUpdateIntervalNanos, BatchTargetRunner batchTargetRunner) {
+		this(input, output, useTerminalChoiceMenu, executionRepeatMinRuns, executionRepeatMaxRuns,
+				executionRepeatSoftLimitNanos, batchEtaUpdateIntervalNanos, batchTargetRunner, null);
+	}
+
+	QueryPlanSnapshotCli(BufferedReader input, PrintStream output, boolean useTerminalChoiceMenu,
+			int executionRepeatMinRuns, int executionRepeatMaxRuns, long executionRepeatSoftLimitNanos,
+			long batchEtaUpdateIntervalNanos, BatchTargetRunner batchTargetRunner, WorkerLauncher workerLauncher) {
 		this.input = Objects.requireNonNull(input, "input");
 		this.output = Objects.requireNonNull(output, "output");
 		this.jLineChoiceMenu = useTerminalChoiceMenu ? JLineChoiceMenu.tryCreate(output) : null;
@@ -147,6 +179,8 @@ public final class QueryPlanSnapshotCli {
 		}
 		this.executionRepeatSoftLimitNanos = validateExecutionRepeatSoftLimitNanos(executionRepeatSoftLimitNanos);
 		this.batchEtaUpdateIntervalNanos = validateBatchEtaUpdateIntervalNanos(batchEtaUpdateIntervalNanos);
+		this.batchTargetRunner = batchTargetRunner == null ? this::runBatchTargetInProcess : batchTargetRunner;
+		this.workerLauncher = workerLauncher;
 	}
 
 	void run(QueryPlanSnapshotCliOptions options) throws Exception {
@@ -225,12 +259,45 @@ public final class QueryPlanSnapshotCli {
 
 	private void runCaptureMode(QueryPlanSnapshotCliOptions options) throws Exception {
 		QueryPlanSnapshotCliOptions resolved = resolveRunOptions(options);
+		writeWorkerPhase(resolved, "startup");
+		if (resolved.runAllThemeQueries && resolved.batchProcessIsolation) {
+			runAllThemeQueriesIsolated(resolved);
+			return;
+		}
 		applySystemProperties(resolved.systemProperties);
+		writeWorkerPhase(resolved, "data-load");
+		if (resolved.writeLmdbStoreManifest) {
+			writeWorkerPhase(resolved, "manifest-recording");
+			LmdbStoreConfig config = QueryPlanSnapshotStoreSupport.createLmdbStoreConfig(resolved);
+			QueryPlanSnapshotStoreSupport.writeLmdbStoreManifest(resolved.lmdbDataDirectory,
+					resolved.lmdbStoreManifest, config);
+			QueryPlanSnapshotStoreSupport.LmdbStoreManifest manifest = QueryPlanSnapshotStoreSupport
+					.validateLmdbStoreManifest(resolved.lmdbDataDirectory, resolved.lmdbStoreManifest, config);
+			output.println("LMDB store manifest written: " + resolved.lmdbStoreManifest.toAbsolutePath().normalize()
+					+ " (contentSha256=" + manifest.contentSha256() + ", totalSizeBytes="
+					+ manifest.totalSizeBytes() + ").");
+			writeWorkerPhase(resolved, "completed");
+			return;
+		}
+		if (resolved.batchDataPreflight && resolved.store == QueryPlanSnapshotCliOptions.StoreType.LMDB) {
+			writeWorkerPhase(resolved, "manifest-validation");
+			QueryPlanSnapshotStoreSupport.LmdbStoreManifest manifest = QueryPlanSnapshotStoreSupport
+					.validateLmdbStoreManifest(resolved.lmdbDataDirectory, resolved.lmdbStoreManifest,
+							QueryPlanSnapshotStoreSupport.createLmdbStoreConfig(resolved));
+			printLmdbStoreManifestValidated(manifest);
+			writeWorkerPhase(resolved, "completed");
+			return;
+		}
 
 		QueryPlanSnapshotStoreSupport.StoreRuntime storeRuntime = QueryPlanSnapshotStoreSupport
 				.createStoreRuntime(resolved);
 		try {
-			if (resolved.runAllThemeQueries) {
+			if (resolved.batchDataPreflight) {
+				QueryPlanSnapshotStoreSupport.ThemeDataLoadStatus themeDataLoadStatus = QueryPlanSnapshotStoreSupport
+						.ensureThemeDataLoaded(storeRuntime);
+				printThemeDataLoadStatus(themeDataLoadStatus);
+				writeWorkerPhase(resolved, "completed");
+			} else if (resolved.runAllThemeQueries) {
 				runAllThemeQueriesCapture(resolved, storeRuntime);
 			} else {
 				runSingleQueryCapture(resolved, storeRuntime);
@@ -242,9 +309,10 @@ public final class QueryPlanSnapshotCli {
 
 	private void runSingleQueryCapture(QueryPlanSnapshotCliOptions options,
 			QueryPlanSnapshotStoreSupport.StoreRuntime storeRuntime) throws Exception {
-		QueryPlanSnapshotStoreSupport.ThemeDataLoadStatus themeDataLoadStatus = QueryPlanSnapshotStoreSupport
-				.ensureThemeDataLoaded(storeRuntime);
+		QueryPlanSnapshotStoreSupport.ThemeDataLoadStatus themeDataLoadStatus = resolveThemeDataLoadStatus(options,
+				storeRuntime);
 		printThemeDataLoadStatus(themeDataLoadStatus);
+		writeWorkerPhase(options, "unoptimized-planning");
 		BenchmarkQuery benchmarkQuery = resolveBenchmarkQuery(options);
 		String queryText = resolveQueryText(options, benchmarkQuery);
 		String querySource = benchmarkQuery == null ? "direct" : "theme-index";
@@ -262,23 +330,25 @@ public final class QueryPlanSnapshotCli {
 		QueryPlanSnapshot currentSnapshot;
 		Path snapshotPath = null;
 		QueryExecutionVerification executionVerification;
+		int[] captureLevelIndex = { 0 };
 		try (SailRepositoryConnection connection = storeRuntime.repository.getConnection()) {
-			if (options.persist) {
-				snapshotPath = capture.captureAndWrite(context,
-						() -> prepareTupleQuery(connection, queryText, options.queryTimeoutSeconds));
-				currentSnapshot = capture.readSnapshot(snapshotPath);
-				output.println("Snapshot written: " + snapshotPath.toAbsolutePath());
-			} else {
-				currentSnapshot = capture.capture(context,
-						() -> prepareTupleQuery(connection, queryText, options.queryTimeoutSeconds));
-				output.println("Snapshot captured in-memory only (--persist=false).");
-			}
+			currentSnapshot = capture.capture(context,
+					() -> prepareTupleQueryForCapturePhase(connection, queryText, options, captureLevelIndex));
 			applySnapshotPlanDebugMetadata(currentSnapshot);
-			executionVerification = verifyRepeatedExecution(connection, queryText, options.queryTimeoutSeconds);
+			writeWorkerPhase(options, "verification");
+			executionVerification = options.factorizedVerification
+					? verifyFactorizedExecution(connection, currentSnapshot, expectedResultCount(benchmarkQuery),
+							expectedCountBindingValue(options, benchmarkQuery))
+					: verifyRepeatedExecution(connection, queryText, options.queryTimeoutSeconds,
+							expectedResultCount(benchmarkQuery),
+							expectedCountBindingValue(options, benchmarkQuery));
 		}
 		applyExecutionVerificationMetadata(currentSnapshot, executionVerification);
-		if (options.persist && snapshotPath != null) {
-			capture.writeSnapshot(snapshotPath, currentSnapshot);
+		if (options.persist) {
+			snapshotPath = capture.writeSnapshot(context, currentSnapshot);
+			output.println("Snapshot written: " + snapshotPath.toAbsolutePath());
+		} else {
+			output.println("Snapshot captured in-memory only (--persist=false).");
 		}
 
 		printResultsSection(options, queryId, queryText);
@@ -288,6 +358,217 @@ public final class QueryPlanSnapshotCli {
 		if (options.compareLatest) {
 			compareWithLatest(outputDirectory, queryId, currentSnapshot, snapshotPath, capture, options.diffMode);
 		}
+		throwIfExecutionVerificationFailed(options, executionVerification);
+		writeWorkerPhase(options, "completed");
+	}
+
+	private TupleQuery prepareTupleQueryForCapturePhase(SailRepositoryConnection connection, String queryText,
+			QueryPlanSnapshotCliOptions options, int[] captureLevelIndex) {
+		String phase = switch (captureLevelIndex[0]++) {
+		case 0 -> "unoptimized-planning";
+		case 1 -> "optimized-planning";
+		default -> "telemetry-execution";
+		};
+		try {
+			writeWorkerPhase(options, phase);
+		} catch (IOException e) {
+			throw new UncheckedIOException("Could not update isolated worker phase to " + phase + ".", e);
+		}
+		return prepareTupleQuery(connection, queryText, options.queryTimeoutSeconds);
+	}
+
+	private void runAllThemeQueriesIsolated(QueryPlanSnapshotCliOptions options) throws Exception {
+		pinIsolatedLmdbConfiguration(options);
+		Path outputDirectory = options.outputDirectory != null
+				? options.outputDirectory
+				: defaultOutputDirectory(options.store);
+		Theme[] selectedThemes = selectedBatchThemes(options);
+		List<BatchQueryTarget> batchTargets = buildBatchQueryTargets(options, selectedThemes);
+		Path auditCsv = options.batchAuditCsv != null
+				? options.batchAuditCsv
+				: outputDirectory.resolve(DEFAULT_BATCH_AUDIT_FILENAME);
+		Path workerArtifactDirectory = auditCsv.toAbsolutePath()
+				.normalize()
+				.resolveSibling(auditCsv.getFileName().toString() + ".workers");
+		WorkerLauncher launcher = workerLauncher != null ? workerLauncher : new JavaProcessWorkerLauncher();
+		QueryPlanSnapshotBatchProcessRunner runner = new QueryPlanSnapshotBatchProcessRunner(
+				launcher,
+				Duration.ofSeconds(options.batchHardTimeoutSeconds),
+				DEFAULT_BATCH_TERMINATION_GRACE,
+				auditCsv,
+				workerArtifactDirectory,
+				output);
+
+		List<QueryPlanSnapshotBatchProcessRunner.WorkerTarget> workerTargets = new ArrayList<>(batchTargets.size());
+		for (BatchQueryTarget target : batchTargets) {
+			workerTargets.add(new QueryPlanSnapshotBatchProcessRunner.WorkerTarget(target.queryId,
+					target.theme.name(), target.queryIndex, buildIsolatedQueryWorkerArguments(options, outputDirectory,
+							target)));
+		}
+		QueryPlanSnapshotBatchProcessRunner.WorkerTarget preflight = buildIsolatedPreflightTarget(options);
+		BatchRunEtaReporter etaReporter = createBatchRunEtaReporter(outputDirectory, batchTargets);
+		QueryPlanSnapshotBatchProcessRunner.Summary summary;
+		etaReporter.start();
+		try {
+			summary = runner.run(preflight, workerTargets,
+					(target, elapsedMillis) -> etaReporter.markCompleted(target.queryId(), elapsedMillis));
+		} finally {
+			etaReporter.stop();
+		}
+		IOException batchFailure = null;
+		if (summary.timedOut() > 0 || summary.failed() > 0) {
+			batchFailure = new IOException("Isolated run-all verification failed: attempted=" + summary.attempted()
+					+ ", succeeded=" + summary.succeeded() + ", timedOut=" + summary.timedOut()
+					+ ", failed=" + summary.failed() + ", audit=" + summary.auditCsv() + ".");
+		}
+		if (options.store == QueryPlanSnapshotCliOptions.StoreType.LMDB) {
+			try {
+				QueryPlanSnapshotStoreSupport.LmdbStoreManifest postflightManifest = QueryPlanSnapshotStoreSupport
+						.validateLmdbStoreManifest(options.lmdbDataDirectory, options.lmdbStoreManifest,
+								QueryPlanSnapshotStoreSupport.createLmdbStoreConfig(options));
+				output.println("LMDB postflight store manifest validated (contentSha256="
+						+ postflightManifest.contentSha256() + ").");
+			} catch (IOException manifestFailure) {
+				if (batchFailure == null) {
+					throw manifestFailure;
+				}
+				batchFailure.addSuppressed(manifestFailure);
+			}
+		}
+		if (batchFailure != null) {
+			throw batchFailure;
+		}
+
+		output.println("Completed isolated run-all mode: " + batchTargets.size() + " queries across "
+				+ selectedThemes.length + " theme" + (selectedThemes.length == 1 ? "" : "s") + ".");
+	}
+
+	private QueryPlanSnapshotBatchProcessRunner.WorkerTarget buildIsolatedPreflightTarget(
+			QueryPlanSnapshotCliOptions options) {
+		if (options.store != QueryPlanSnapshotCliOptions.StoreType.LMDB) {
+			return null;
+		}
+		List<String> arguments = new ArrayList<>();
+		arguments.add("--no-interactive");
+		arguments.add("--store");
+		arguments.add(options.store.id);
+		arguments.add("--lmdb-data-dir");
+		arguments.add(options.lmdbDataDirectory.toAbsolutePath().normalize().toString());
+		arguments.add("--lmdb-store-manifest");
+		arguments.add(options.lmdbStoreManifest.toAbsolutePath().normalize().toString());
+		addLmdbEvidenceModeArgument(arguments, options);
+		addLmdbFrontierQueryIndexBudgetArgument(arguments, options);
+		arguments.add("--batch-data-preflight");
+		addWorkerAssignments(arguments, options);
+		return new QueryPlanSnapshotBatchProcessRunner.WorkerTarget("lmdb-theme-data-preflight", "ALL", -1,
+				arguments);
+	}
+
+	private List<String> buildIsolatedQueryWorkerArguments(QueryPlanSnapshotCliOptions options, Path outputDirectory,
+			BatchQueryTarget target) {
+		List<String> arguments = new ArrayList<>();
+		arguments.add("--no-interactive");
+		arguments.add("--store");
+		arguments.add(options.store.id);
+		arguments.add("--theme");
+		arguments.add(target.theme.name());
+		arguments.add("--query-index");
+		arguments.add(Integer.toString(target.queryIndex));
+		arguments.add("--persist");
+		arguments.add(Boolean.toString(options.persist));
+		arguments.add("--output-dir");
+		arguments.add(outputDirectory.toAbsolutePath().normalize().toString());
+		if (options.lmdbDataDirectory != null) {
+			arguments.add("--lmdb-data-dir");
+			arguments.add(options.lmdbDataDirectory.toAbsolutePath().normalize().toString());
+		}
+		if (options.lmdbStoreManifest != null) {
+			arguments.add("--lmdb-store-manifest");
+			arguments.add(options.lmdbStoreManifest.toAbsolutePath().normalize().toString());
+			arguments.add("--batch-manifest-prevalidated");
+		}
+		addLmdbEvidenceModeArgument(arguments, options);
+		addLmdbFrontierQueryIndexBudgetArgument(arguments, options);
+		if (options.queryTimeoutSeconds != null) {
+			arguments.add("--query-timeout-seconds");
+			arguments.add(options.queryTimeoutSeconds.toString());
+		}
+		if (options.executionRepeatMinRuns != null) {
+			arguments.add("--execution-repeat-min-runs");
+			arguments.add(options.executionRepeatMinRuns.toString());
+		}
+		if (options.executionRepeatMaxRuns != null) {
+			arguments.add("--execution-repeat-max-runs");
+			arguments.add(options.executionRepeatMaxRuns.toString());
+		}
+		if (options.executionRepeatSoftLimitMillis != null) {
+			arguments.add("--execution-repeat-soft-limit-millis");
+			arguments.add(options.executionRepeatSoftLimitMillis.toString());
+		}
+		if (options.factorizedVerification) {
+			arguments.add("--factorized-verification");
+		}
+		if (options.runName != null && !options.runName.isBlank()) {
+			arguments.add("--run-name");
+			arguments.add(options.runName);
+		}
+		if (options.compareLatest) {
+			arguments.add("--compare-latest");
+			arguments.add("--diff-mode");
+			arguments.add(options.diffMode.id);
+		}
+		addWorkerAssignments(arguments, options);
+		return List.copyOf(arguments);
+	}
+
+	private static void addWorkerAssignments(List<String> arguments, QueryPlanSnapshotCliOptions options) {
+		options.systemProperties.forEach((key, value) -> {
+			arguments.add("--property");
+			arguments.add(key + "=" + value);
+		});
+		options.metadata.forEach((key, value) -> {
+			arguments.add("--metadata");
+			arguments.add(key + "=" + value);
+		});
+	}
+
+	private static void addLmdbEvidenceModeArgument(List<String> arguments, QueryPlanSnapshotCliOptions options) {
+		if (options.store != QueryPlanSnapshotCliOptions.StoreType.LMDB) {
+			return;
+		}
+		arguments.add("--lmdb-evidence-mode");
+		arguments.add(options.lmdbEvidenceMode);
+	}
+
+	private static void pinIsolatedLmdbConfiguration(QueryPlanSnapshotCliOptions options) {
+		if (options.store == QueryPlanSnapshotCliOptions.StoreType.LMDB
+				&& options.lmdbFrontierQueryIndexBudgetBytes == null) {
+			options.lmdbFrontierQueryIndexBudgetBytes = QueryPlanSnapshotStoreSupport
+					.createLmdbStoreConfig(options)
+					.getFrontierQueryIndexBudgetBytes();
+		}
+	}
+
+	private static void addLmdbFrontierQueryIndexBudgetArgument(List<String> arguments,
+			QueryPlanSnapshotCliOptions options) {
+		if (options.store != QueryPlanSnapshotCliOptions.StoreType.LMDB
+				|| options.lmdbFrontierQueryIndexBudgetBytes == null) {
+			return;
+		}
+		arguments.add("--lmdb-frontier-query-index-budget-bytes");
+		arguments.add(Long.toString(options.lmdbFrontierQueryIndexBudgetBytes));
+	}
+
+	private static void writeWorkerPhase(QueryPlanSnapshotCliOptions options, String phase) throws IOException {
+		if (options.batchWorkerStatusFile == null) {
+			return;
+		}
+		Path statusFile = options.batchWorkerStatusFile.toAbsolutePath().normalize();
+		Path parent = statusFile.getParent();
+		if (parent != null) {
+			Files.createDirectories(parent);
+		}
+		Files.writeString(statusFile, phase, StandardCharsets.UTF_8);
 	}
 
 	private void runAllThemeQueriesCapture(QueryPlanSnapshotCliOptions options,
@@ -295,8 +576,8 @@ public final class QueryPlanSnapshotCli {
 		Path outputDirectory = options.outputDirectory != null
 				? options.outputDirectory
 				: defaultOutputDirectory(options.store);
-		QueryPlanSnapshotStoreSupport.ThemeDataLoadStatus themeDataLoadStatus = QueryPlanSnapshotStoreSupport
-				.ensureThemeDataLoaded(storeRuntime);
+		QueryPlanSnapshotStoreSupport.ThemeDataLoadStatus themeDataLoadStatus = resolveThemeDataLoadStatus(options,
+				storeRuntime);
 		printThemeDataLoadStatus(themeDataLoadStatus);
 		QueryPlanCapture capture = new QueryPlanCapture();
 		Theme[] selectedThemes = selectedBatchThemes(options);
@@ -308,57 +589,9 @@ public final class QueryPlanSnapshotCli {
 		try {
 			for (BatchQueryTarget target : batchTargets) {
 				current++;
-				long startedNanos = System.nanoTime();
-				QueryPlanSnapshotCliOptions perQueryOptions = options.copy();
-				perQueryOptions.theme = target.theme;
-				perQueryOptions.queryIndex = target.queryIndex;
-				String querySource = "theme-index";
-				String queryId = target.queryId;
-				String queryText = target.queryText;
-				BenchmarkQuery benchmarkQuery = target.benchmarkQuery;
-
-				FeatureFlagCollector featureFlags = createFeatureFlagCollector(perQueryOptions, storeRuntime,
-						querySource, themeDataLoadStatus);
-				QueryPlanCaptureContext context = createContext(perQueryOptions, benchmarkQuery, queryText, querySource,
-						queryId, outputDirectory, featureFlags);
-
-				QueryPlanSnapshot currentSnapshot;
-				Path snapshotPath = null;
-				QueryExecutionVerification executionVerification;
-				try (SailRepositoryConnection connection = storeRuntime.repository.getConnection()) {
-					if (options.persist) {
-						snapshotPath = capture.captureAndWrite(context,
-								() -> prepareTupleQuery(connection, queryText, perQueryOptions.queryTimeoutSeconds));
-						currentSnapshot = capture.readSnapshot(snapshotPath);
-						output.println("Snapshot written: " + snapshotPath.toAbsolutePath());
-					} else {
-						currentSnapshot = capture.capture(context,
-								() -> prepareTupleQuery(connection, queryText, perQueryOptions.queryTimeoutSeconds));
-						output.println("Snapshot captured in-memory only (--persist=false).");
-					}
-					applySnapshotPlanDebugMetadata(currentSnapshot);
-					executionVerification = verifyRepeatedExecution(connection, queryText,
-							perQueryOptions.queryTimeoutSeconds);
-				}
-				applyExecutionVerificationMetadata(currentSnapshot, executionVerification);
-				if (options.persist && snapshotPath != null) {
-					capture.writeSnapshot(snapshotPath, currentSnapshot);
-				}
-				long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(Math.max(1L, System.nanoTime() - startedNanos));
-				etaReporter.markCompleted(queryId, elapsedMillis);
-
-				output.println();
-				output.println("=== Batch Query " + current + "/" + total + " ===");
-				output.println("Theme=" + target.theme + ", QueryIndex=" + target.queryIndex + ", QueryName="
-						+ benchmarkQuery.getName());
-				printResultsSection(perQueryOptions, queryId, queryText);
-				printPrettyExplanations(currentSnapshot);
-				printExecutionVerification(executionVerification);
-
-				if (options.compareLatest) {
-					compareWithLatest(outputDirectory, queryId, currentSnapshot, snapshotPath, capture,
-							options.diffMode);
-				}
+				long elapsedMillis = batchTargetRunner.run(options, storeRuntime, themeDataLoadStatus, capture,
+						outputDirectory, target, current, total);
+				etaReporter.markCompleted(target.queryId, elapsedMillis);
 			}
 		} finally {
 			etaReporter.stop();
@@ -367,6 +600,63 @@ public final class QueryPlanSnapshotCli {
 		output.println();
 		output.println("Completed run-all mode: " + total + " queries across " + selectedThemes.length + " theme"
 				+ (selectedThemes.length == 1 ? "" : "s") + ".");
+	}
+
+	private long runBatchTargetInProcess(QueryPlanSnapshotCliOptions options,
+			QueryPlanSnapshotStoreSupport.StoreRuntime storeRuntime,
+			QueryPlanSnapshotStoreSupport.ThemeDataLoadStatus themeDataLoadStatus, QueryPlanCapture capture,
+			Path outputDirectory, BatchQueryTarget target, int current, int total) throws Exception {
+		long startedNanos = System.nanoTime();
+		QueryPlanSnapshotCliOptions perQueryOptions = options.copy();
+		perQueryOptions.theme = target.theme;
+		perQueryOptions.queryIndex = target.queryIndex;
+		String querySource = "theme-index";
+		String queryId = target.queryId;
+		String queryText = target.queryText;
+		BenchmarkQuery benchmarkQuery = target.benchmarkQuery;
+
+		FeatureFlagCollector featureFlags = createFeatureFlagCollector(perQueryOptions, storeRuntime,
+				querySource, themeDataLoadStatus);
+		QueryPlanCaptureContext context = createContext(perQueryOptions, benchmarkQuery, queryText, querySource,
+				queryId, outputDirectory, featureFlags);
+
+		QueryPlanSnapshot currentSnapshot;
+		Path snapshotPath = null;
+		QueryExecutionVerification executionVerification;
+		try (SailRepositoryConnection connection = storeRuntime.repository.getConnection()) {
+			currentSnapshot = capture.capture(context,
+					() -> prepareTupleQuery(connection, queryText, perQueryOptions.queryTimeoutSeconds));
+			applySnapshotPlanDebugMetadata(currentSnapshot);
+			executionVerification = perQueryOptions.factorizedVerification
+					? verifyFactorizedExecution(connection, currentSnapshot, expectedResultCount(benchmarkQuery),
+							expectedCountBindingValue(perQueryOptions, benchmarkQuery))
+					: verifyRepeatedExecution(connection, queryText,
+							perQueryOptions.queryTimeoutSeconds,
+							expectedResultCount(benchmarkQuery),
+							expectedCountBindingValue(perQueryOptions, benchmarkQuery));
+		}
+		applyExecutionVerificationMetadata(currentSnapshot, executionVerification);
+		if (options.persist) {
+			snapshotPath = capture.writeSnapshot(context, currentSnapshot);
+			output.println("Snapshot written: " + snapshotPath.toAbsolutePath());
+		} else {
+			output.println("Snapshot captured in-memory only (--persist=false).");
+		}
+
+		output.println();
+		output.println("=== Batch Query " + current + "/" + total + " ===");
+		output.println("Theme=" + target.theme + ", QueryIndex=" + target.queryIndex + ", QueryName="
+				+ benchmarkQuery.getName());
+		printResultsSection(perQueryOptions, queryId, queryText);
+		printPrettyExplanations(currentSnapshot);
+		printExecutionVerification(executionVerification);
+
+		if (options.compareLatest) {
+			compareWithLatest(outputDirectory, queryId, currentSnapshot, snapshotPath, capture,
+					options.diffMode);
+		}
+		throwIfExecutionVerificationFailed(perQueryOptions, executionVerification);
+		return TimeUnit.NANOSECONDS.toMillis(Math.max(1L, System.nanoTime() - startedNanos));
 	}
 
 	private Theme[] selectedBatchThemes(QueryPlanSnapshotCliOptions options) {
@@ -1388,6 +1678,12 @@ public final class QueryPlanSnapshotCli {
 			throw new IllegalArgumentException(
 					"Missing required run options. Required: --store and query selection.");
 		}
+		if (options.lmdbEvidenceModeExplicit && options.store != QueryPlanSnapshotCliOptions.StoreType.LMDB) {
+			throw new IllegalArgumentException("--lmdb-evidence-mode is only supported with --store lmdb.");
+		}
+		if (options.batchDataPreflight || options.writeLmdbStoreManifest) {
+			return;
+		}
 		if (options.runAllThemeQueries) {
 			return;
 		}
@@ -1400,6 +1696,9 @@ public final class QueryPlanSnapshotCli {
 	private void fillMissingRunOptions(QueryPlanSnapshotCliOptions options) throws IOException {
 		if (options.store == null) {
 			options.store = promptStore();
+		}
+		if (options.batchDataPreflight || options.writeLmdbStoreManifest) {
+			return;
 		}
 		if (options.runAllThemeQueries) {
 			return;
@@ -1874,6 +2173,12 @@ public final class QueryPlanSnapshotCli {
 	}
 
 	private void printThemeDataLoadStatus(QueryPlanSnapshotStoreSupport.ThemeDataLoadStatus themeDataLoadStatus) {
+		if (themeDataLoadStatus.lmdbManifestContentSha256 != null) {
+			output.println("LMDB store manifest validated (contentSha256="
+					+ themeDataLoadStatus.lmdbManifestContentSha256 + ", totalSizeBytes="
+					+ themeDataLoadStatus.lmdbFullyLoadedSizeBytes + ").");
+			return;
+		}
 		if (themeDataLoadStatus.lmdbFullyLoadedSizeBytes == null) {
 			return;
 		}
@@ -1886,18 +2191,42 @@ public final class QueryPlanSnapshotCli {
 				+ " bytes.");
 	}
 
+	private void printLmdbStoreManifestValidated(QueryPlanSnapshotStoreSupport.LmdbStoreManifest manifest) {
+		output.println("LMDB store manifest validated (contentSha256=" + manifest.contentSha256()
+				+ ", totalSizeBytes=" + manifest.totalSizeBytes() + ").");
+	}
+
+	private static QueryPlanSnapshotStoreSupport.ThemeDataLoadStatus resolveThemeDataLoadStatus(
+			QueryPlanSnapshotCliOptions options, QueryPlanSnapshotStoreSupport.StoreRuntime storeRuntime)
+			throws IOException {
+		if (storeRuntime.lmdbStore == null || options.lmdbStoreManifest == null) {
+			return QueryPlanSnapshotStoreSupport.ensureThemeDataLoaded(storeRuntime);
+		}
+		QueryPlanSnapshotStoreSupport.LmdbStoreManifest manifest = options.batchManifestPrevalidated
+				? QueryPlanSnapshotStoreSupport.readLmdbStoreManifestHeader(options.lmdbStoreManifest,
+						storeRuntime.lmdbStoreConfig)
+				: QueryPlanSnapshotStoreSupport.validateLmdbStoreManifest(options.lmdbDataDirectory,
+						options.lmdbStoreManifest, storeRuntime.lmdbStoreConfig);
+		return QueryPlanSnapshotStoreSupport.ThemeDataLoadStatus.lmdbManifestValidated(manifest);
+	}
+
 	private static QueryPlanCaptureContext createContext(QueryPlanSnapshotCliOptions options,
 			BenchmarkQuery benchmarkQuery,
 			String queryText, String querySource, String queryId, Path outputDirectory,
 			FeatureFlagCollector featureFlags) {
+		List<Explanation.Level> levels = options.factorizedVerification
+				? List.of(Explanation.Level.Unoptimized, Explanation.Level.Optimized)
+				: List.of(Explanation.Level.Unoptimized, Explanation.Level.Optimized, Explanation.Level.Telemetry);
+		Set<Explanation.Level> irRenderedLevels = options.factorizedVerification
+				? Set.of(Explanation.Level.Optimized)
+				: Set.of(Explanation.Level.Optimized, Explanation.Level.Telemetry);
 		QueryPlanCaptureContext.Builder contextBuilder = QueryPlanCaptureContext.builder()
 				.outputDirectory(outputDirectory)
 				.queryId(queryId)
 				.queryString(queryText)
 				.benchmark("QueryPlanSnapshotCli")
-				.levels(List.of(Explanation.Level.Unoptimized, Explanation.Level.Optimized,
-						Explanation.Level.Telemetry))
-				.irRenderedLevels(Set.of(Explanation.Level.Optimized, Explanation.Level.Telemetry))
+				.levels(levels)
+				.irRenderedLevels(irRenderedLevels)
 				.addMetadata("store", options.store.id)
 				.addMetadata("theme", options.theme.name())
 				.addMetadata("querySource", querySource)
@@ -1935,7 +2264,8 @@ public final class QueryPlanSnapshotCli {
 				.addValue("cli.executionRepeatMinRuns", Integer.toString(resolveExecutionRepeatMinRuns(options)))
 				.addValue("cli.executionRepeatMaxRuns", Integer.toString(resolveExecutionRepeatMaxRuns(options)))
 				.addValue("cli.executionRepeatSoftLimitMillis",
-						Long.toString(TimeUnit.NANOSECONDS.toMillis(resolveExecutionRepeatSoftLimitNanos(options))));
+						Long.toString(TimeUnit.NANOSECONDS.toMillis(resolveExecutionRepeatSoftLimitNanos(options))))
+				.addValue("cli.factorizedVerification", Boolean.toString(options.factorizedVerification));
 		if (options.queryIndex != null) {
 			featureFlags.addValue("cli.queryIndex", options.queryIndex.toString());
 		}
@@ -1952,6 +2282,8 @@ public final class QueryPlanSnapshotCli {
 			featureFlags.addReflectiveGetter("lmdbStore.writable", storeRuntime.lmdbStore, "isWritable")
 					.addReflectiveGetter("lmdbConfig.tripleIndexes", storeRuntime.lmdbStoreConfig, "getTripleIndexes")
 					.addReflectiveGetter("lmdbConfig.forceSync", storeRuntime.lmdbStoreConfig, "getForceSync")
+					.addReflectiveGetter("lmdbConfig.sketchEstimatorEvidenceMode", storeRuntime.lmdbStoreConfig,
+							"getSketchEstimatorEvidenceMode")
 					.addReflectiveGetter("lmdbConfig.pageCardinalityEstimator", storeRuntime.lmdbStoreConfig,
 							"getPageCardinalityEstimator")
 					.addReflectiveField("lmdbConfig.autoGrow", storeRuntime.lmdbStoreConfig, "autoGrow")
@@ -1960,6 +2292,10 @@ public final class QueryPlanSnapshotCli {
 			if (themeDataLoadStatus.lmdbFullyLoadedSizeBytes != null) {
 				featureFlags.addValue("lmdbData.fullyLoadedSizeBytes",
 						themeDataLoadStatus.lmdbFullyLoadedSizeBytes.toString());
+			}
+			if (themeDataLoadStatus.lmdbManifestContentSha256 != null) {
+				featureFlags.addValue("lmdbData.manifestContentSha256",
+						themeDataLoadStatus.lmdbManifestContentSha256);
 			}
 			featureFlags.addValue("lmdbData.reusedWithoutReload", Boolean.toString(themeDataLoadStatus.reusedLmdbData));
 		}
@@ -1985,6 +2321,18 @@ public final class QueryPlanSnapshotCli {
 			return null;
 		}
 		return ThemeQueryCatalog.benchmarkQueryFor(options.theme, options.queryIndex);
+	}
+
+	private static OptionalLong expectedCountBindingValue(QueryPlanSnapshotCliOptions options,
+			BenchmarkQuery benchmarkQuery) {
+		if (benchmarkQuery == null || options.theme == null || options.queryIndex == null) {
+			return OptionalLong.empty();
+		}
+		return ThemeQueryCatalog.expectedCountBindingValueFor(options.theme, options.queryIndex);
+	}
+
+	private static OptionalLong expectedResultCount(BenchmarkQuery benchmarkQuery) {
+		return benchmarkQuery == null ? OptionalLong.empty() : OptionalLong.of(benchmarkQuery.getExpectedCount());
 	}
 
 	private static String resolveQueryText(QueryPlanSnapshotCliOptions options, BenchmarkQuery benchmarkQuery)
@@ -2480,9 +2828,11 @@ public final class QueryPlanSnapshotCli {
 	}
 
 	private QueryExecutionVerification verifyRepeatedExecution(SailRepositoryConnection connection, String queryText,
-			Integer queryTimeoutSeconds) {
+			Integer queryTimeoutSeconds, OptionalLong expectedResultCount, OptionalLong expectedCountBindingValue) {
 		long elapsedNanos = 0;
 		long stableResultCount = Long.MIN_VALUE;
+		SolutionBagFingerprint.Fingerprint stableResultFingerprint = null;
+		boolean resultFingerprintStable = true;
 		int runs = 0;
 		boolean softLimitReached = false;
 		long minRunNanos = Long.MAX_VALUE;
@@ -2509,10 +2859,10 @@ public final class QueryPlanSnapshotCli {
 			optimizedPlanSignatureSequence.add(optimizedPlanSignature);
 			optimizedPlanSignatures.add(optimizedPlanSignature);
 			long startedAt = System.nanoTime();
-			long currentResultCount;
+			CompletedQueryResult completedResult;
 			try {
 				try (TupleQueryResult result = tupleQuery.evaluate()) {
-					currentResultCount = result.stream().count();
+					completedResult = consumeCompletedResult(result);
 				}
 			} catch (QueryInterruptedException interrupted) {
 				softLimitReached = true;
@@ -2530,11 +2880,31 @@ public final class QueryPlanSnapshotCli {
 			maxRunNanos = Math.max(maxRunNanos, runNanos);
 			runDurationsNanos.add(runNanos);
 
+			SolutionBagFingerprint.Fingerprint currentFingerprint = completedResult.fingerprint;
+			long currentResultCount = currentFingerprint.rowCount();
 			if (stableResultCount == Long.MIN_VALUE) {
 				stableResultCount = currentResultCount;
-			} else if (stableResultCount != currentResultCount) {
+				stableResultFingerprint = currentFingerprint;
+			}
+
+			String catalogViolation = catalogResultContractViolation(expectedResultCount, expectedCountBindingValue,
+					currentResultCount, completedResult.countBindingValue);
+			if (catalogViolation != null) {
+				failure = VerificationFailure.catalogResultContractViolation(runs, optimizedPlanSignature,
+						catalogViolation);
+				break;
+			}
+
+			if (stableResultCount != currentResultCount) {
+				resultFingerprintStable = false;
 				failure = VerificationFailure.resultCountChanged(runs, stableResultCount, currentResultCount,
-						optimizedPlanSignature);
+						stableResultFingerprint.digestHex(), currentFingerprint.digestHex(), optimizedPlanSignature);
+				break;
+			}
+			if (!stableResultFingerprint.digestHex().equals(currentFingerprint.digestHex())) {
+				resultFingerprintStable = false;
+				failure = VerificationFailure.resultBagChanged(runs, stableResultCount,
+						stableResultFingerprint.digestHex(), currentFingerprint.digestHex(), optimizedPlanSignature);
 				break;
 			}
 		}
@@ -2542,12 +2912,159 @@ public final class QueryPlanSnapshotCli {
 		boolean maxRunsReached = runs >= executionRepeatMaxRuns;
 		if (runs == 0) {
 			return new QueryExecutionVerification(0, 0, 0, softLimitReached, maxRunsReached, 0, 0, List.of(),
-					List.copyOf(optimizedPlanSignatures), List.copyOf(optimizedPlanSignatureSequence), failure);
+					List.copyOf(optimizedPlanSignatures), List.copyOf(optimizedPlanSignatureSequence),
+					SolutionBagFingerprint.ALGORITHM_VERSION, "", false, failure);
 		}
 
 		return new QueryExecutionVerification(runs, elapsedNanos, stableResultCount, softLimitReached,
 				maxRunsReached, minRunNanos, maxRunNanos, List.copyOf(runDurationsNanos),
-				List.copyOf(optimizedPlanSignatures), List.copyOf(optimizedPlanSignatureSequence), failure);
+				List.copyOf(optimizedPlanSignatures), List.copyOf(optimizedPlanSignatureSequence),
+				stableResultFingerprint.algorithmVersion(), stableResultFingerprint.digestHex(),
+				resultFingerprintStable, failure);
+	}
+
+	private QueryExecutionVerification verifyFactorizedExecution(SailRepositoryConnection connection,
+			QueryPlanSnapshot snapshot, OptionalLong expectedResultCount, OptionalLong expectedCountBindingValue) {
+		TupleExprJsonCodec codec = new TupleExprJsonCodec();
+		String optimizedPlanSignature = "missing-optimized-plan";
+		try {
+			TupleExpr unoptimized = tupleExprForLevel(snapshot, "unoptimized", codec);
+			TupleExpr optimized = tupleExprForLevel(snapshot, "optimized", codec);
+			optimizedPlanSignature = codec.fingerprint(optimized);
+
+			List<String> unoptimizedBindingNames = resultBindingNames(unoptimized);
+			List<String> optimizedBindingNames = resultBindingNames(optimized);
+			if (!unoptimizedBindingNames.equals(optimizedBindingNames)) {
+				throw new IllegalStateException("Unoptimized and optimized result schemas differ: unoptimized="
+						+ unoptimizedBindingNames + ", optimized=" + optimizedBindingNames);
+			}
+
+			long unoptimizedStartedAt = System.nanoTime();
+			FactorizedTupleExprEvaluator.Evaluation unoptimizedEvaluation = new FactorizedTupleExprEvaluator(connection,
+					unoptimizedBindingNames).evaluate(unoptimized);
+			long unoptimizedNanos = Math.max(1L, System.nanoTime() - unoptimizedStartedAt);
+
+			long optimizedStartedAt = System.nanoTime();
+			FactorizedTupleExprEvaluator.Evaluation optimizedEvaluation = new FactorizedTupleExprEvaluator(connection,
+					optimizedBindingNames).evaluate(optimized);
+			long optimizedNanos = Math.max(1L, System.nanoTime() - optimizedStartedAt);
+
+			FactorizedSolutionBagFingerprint.Fingerprint unoptimizedFingerprint = unoptimizedEvaluation.fingerprint();
+			FactorizedSolutionBagFingerprint.Fingerprint optimizedFingerprint = optimizedEvaluation.fingerprint();
+			VerificationFailure failure = null;
+			boolean stable = unoptimizedFingerprint.rowCount() == optimizedFingerprint.rowCount()
+					&& unoptimizedFingerprint.digestHex().equals(optimizedFingerprint.digestHex());
+			if (unoptimizedFingerprint.rowCount() != optimizedFingerprint.rowCount()) {
+				failure = VerificationFailure.logicalResultCountChanged(unoptimizedFingerprint.rowCount(),
+						optimizedFingerprint.rowCount(), unoptimizedFingerprint.digestHex(),
+						optimizedFingerprint.digestHex(), optimizedPlanSignature);
+			} else if (!unoptimizedFingerprint.digestHex().equals(optimizedFingerprint.digestHex())) {
+				failure = VerificationFailure.logicalResultBagChanged(optimizedFingerprint.rowCount(),
+						unoptimizedFingerprint.digestHex(), optimizedFingerprint.digestHex(), optimizedPlanSignature);
+			} else {
+				String catalogViolation = catalogResultContractViolation(expectedResultCount, expectedCountBindingValue,
+						optimizedFingerprint.rowCount(), optimizedEvaluation.countBindingValue());
+				if (catalogViolation != null) {
+					failure = VerificationFailure.catalogResultContractViolation(2, optimizedPlanSignature,
+							catalogViolation);
+				}
+			}
+
+			long statementRowsScanned = Math.addExact(unoptimizedEvaluation.statementRowsScanned(),
+					optimizedEvaluation.statementRowsScanned());
+			long cacheHits = Math.addExact(unoptimizedEvaluation.cacheHits(), optimizedEvaluation.cacheHits());
+			long cacheEntries = Math.addExact(unoptimizedEvaluation.cacheEntries(), optimizedEvaluation.cacheEntries());
+			return new QueryExecutionVerification(VERIFICATION_MODE_FACTORIZED_ALGEBRAIC, 2,
+					Math.addExact(unoptimizedNanos, optimizedNanos), optimizedFingerprint.rowCount(), false, false,
+					Math.min(unoptimizedNanos, optimizedNanos), Math.max(unoptimizedNanos, optimizedNanos),
+					List.of(unoptimizedNanos, optimizedNanos), List.of(optimizedPlanSignature),
+					List.of(optimizedPlanSignature, optimizedPlanSignature), optimizedFingerprint.algorithmVersion(),
+					optimizedFingerprint.digestHex(), stable, statementRowsScanned, cacheHits, cacheEntries, failure);
+		} catch (Exception evaluationError) {
+			VerificationFailure failure = VerificationFailure.error(1, optimizedPlanSignature, evaluationError);
+			return new QueryExecutionVerification(VERIFICATION_MODE_FACTORIZED_ALGEBRAIC, 0, 0, 0, false, false,
+					0, 0, List.of(), List.of(), List.of(), FactorizedSolutionBagFingerprint.ALGORITHM_VERSION, "",
+					false, 0, 0, 0, failure);
+		}
+	}
+
+	private static TupleExpr tupleExprForLevel(QueryPlanSnapshot snapshot, String level, TupleExprJsonCodec codec) {
+		if (snapshot == null || snapshot.getExplanations() == null) {
+			throw new IllegalStateException("Snapshot has no explanations for factorized verification.");
+		}
+		QueryPlanExplanation explanation = snapshot.getExplanations().get(level);
+		if (explanation == null || explanation.getTupleExprJson() == null
+				|| explanation.getTupleExprJson().isBlank()) {
+			throw new IllegalStateException("Snapshot has no tuple-expression payload for " + level + ".");
+		}
+		return codec.fromJson(explanation.getTupleExprJson());
+	}
+
+	private static List<String> resultBindingNames(TupleExpr tupleExpr) {
+		return tupleExpr.getBindingNames()
+				.stream()
+				.filter(name -> !name.startsWith("_const_"))
+				.sorted()
+				.toList();
+	}
+
+	private static CompletedQueryResult consumeCompletedResult(TupleQueryResult result) {
+		SolutionBagFingerprint accumulator = new SolutionBagFingerprint(result.getBindingNames());
+		Value countBindingValue = null;
+		long rowCount = 0;
+		while (result.hasNext()) {
+			BindingSet solution = result.next();
+			accumulator.add(solution);
+			if (rowCount++ == 0) {
+				countBindingValue = solution.getValue("count");
+			}
+		}
+		return new CompletedQueryResult(accumulator.fingerprint(), countBindingValue);
+	}
+
+	static String catalogCountBindingViolation(OptionalLong expectedCountBindingValue, long rowCount,
+			Value countBindingValue) {
+		if (expectedCountBindingValue.isEmpty()) {
+			return null;
+		}
+		long expected = expectedCountBindingValue.getAsLong();
+		if (rowCount != 1) {
+			return "Expected exactly one result row with numeric ?count=" + expected + " but got " + rowCount
+					+ " rows.";
+		}
+		if (!(countBindingValue instanceof Literal literal)) {
+			return "Expected numeric ?count=" + expected + " but the only result row did not bind a literal ?count.";
+		}
+		CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+		if (datatype == null || !datatype.isNumericDatatype()) {
+			return "Expected numeric ?count=" + expected + " but got datatype " + literal.getDatatype() + ".";
+		}
+		long actual;
+		try {
+			actual = literal.decimalValue().longValueExact();
+		} catch (ArithmeticException | NumberFormatException invalidNumericValue) {
+			return "Expected integral ?count=" + expected + " but got " + literal + ".";
+		}
+		if (actual != expected) {
+			return "Expected authoritative ?count=" + expected + " but got " + actual + ".";
+		}
+		return null;
+	}
+
+	static String catalogResultContractViolation(OptionalLong expectedResultCount,
+			OptionalLong expectedCountBindingValue, long rowCount, Value countBindingValue) {
+		if (expectedResultCount.isPresent() && rowCount != expectedResultCount.getAsLong()) {
+			return "Expected authoritative result row count " + expectedResultCount.getAsLong() + " but got "
+					+ rowCount + ".";
+		}
+		return catalogCountBindingViolation(expectedCountBindingValue, rowCount, countBindingValue);
+	}
+
+	static String resultFingerprintStatus(int completedRuns, boolean attemptEndedWithoutCompleteResult) {
+		if (completedRuns == 0) {
+			return "unavailable";
+		}
+		return attemptEndedWithoutCompleteResult ? "incomplete" : "complete";
 	}
 
 	private static String optimizedPlanSignature(TupleQuery tupleQuery) {
@@ -2581,38 +3098,56 @@ public final class QueryPlanSnapshotCli {
 		output.println();
 		output.println("=== Execution Verification ===");
 		if (executionVerification.runs == 0) {
-			output.println("No repeated runs executed.");
-			return;
+			output.println("No repeated runs executed."
+					+ ", verificationMode=" + executionVerification.verificationMode
+					+ ", verificationStatus=" + executionVerification.verificationStatus()
+					+ ", resultFingerprintAlgorithm=" + executionVerification.resultFingerprintAlgorithm
+					+ ", resultFingerprintStatus=" + executionVerification.resultFingerprintStatus()
+					+ ", resultFingerprintDigest=" + executionVerification.resultFingerprintDigest
+					+ ", resultFingerprintStable=" + executionVerification.resultFingerprintStability());
+		} else {
+			long totalMillis = TimeUnit.NANOSECONDS.toMillis(executionVerification.elapsedNanos);
+			long averageMillis = TimeUnit.NANOSECONDS.toMillis(
+					executionVerification.elapsedNanos / executionVerification.runs);
+			long minMillis = TimeUnit.NANOSECONDS.toMillis(executionVerification.minRunNanos);
+			long maxMillis = TimeUnit.NANOSECONDS.toMillis(executionVerification.maxRunNanos);
+			output.println("runs=" + executionVerification.runs
+					+ ", verificationMode=" + executionVerification.verificationMode
+					+ ", totalMillis=" + totalMillis
+					+ ", averageMillis=" + averageMillis
+					+ ", minMillis=" + minMillis
+					+ ", maxMillis=" + maxMillis
+					+ ", verificationStatus=" + executionVerification.verificationStatus()
+					+ ", stdDevMillis=" + executionVerification.stdDevMillis()
+					+ ", coefficientOfVariationPct=" + executionVerification.coefficientOfVariationPct()
+					+ ", resultCount=" + executionVerification.resultCount
+					+ ", resultFingerprintAlgorithm=" + executionVerification.resultFingerprintAlgorithm
+					+ ", resultFingerprintStatus=" + executionVerification.resultFingerprintStatus()
+					+ ", resultFingerprintDigest=" + executionVerification.resultFingerprintDigest
+					+ ", resultFingerprintStable=" + executionVerification.resultFingerprintStability()
+					+ ", sampleMillis=" + executionVerification.sampleMillis()
+					+ ", optimizedPlanHashCount=" + executionVerification.optimizedPlanHashCount()
+					+ ", optimizedPlanHashStable=" + executionVerification.optimizedPlanHashStability()
+					+ ", optimizedPlanHashTransitionCount="
+					+ executionVerification.optimizedPlanHashTransitionCount()
+					+ ", softLimitMillis=" + TimeUnit.NANOSECONDS.toMillis(executionRepeatSoftLimitNanos)
+					+ ", softLimitReached=" + executionVerification.softLimitReached
+					+ ", maxRunsReached=" + executionVerification.maxRunsReached);
 		}
-
-		long totalMillis = TimeUnit.NANOSECONDS.toMillis(executionVerification.elapsedNanos);
-		long averageMillis = TimeUnit.NANOSECONDS.toMillis(
-				executionVerification.elapsedNanos / executionVerification.runs);
-		long minMillis = TimeUnit.NANOSECONDS.toMillis(executionVerification.minRunNanos);
-		long maxMillis = TimeUnit.NANOSECONDS.toMillis(executionVerification.maxRunNanos);
-		output.println("runs=" + executionVerification.runs
-				+ ", totalMillis=" + totalMillis
-				+ ", averageMillis=" + averageMillis
-				+ ", minMillis=" + minMillis
-				+ ", maxMillis=" + maxMillis
-				+ ", verificationStatus=" + executionVerification.verificationStatus()
-				+ ", stdDevMillis=" + executionVerification.stdDevMillis()
-				+ ", coefficientOfVariationPct=" + executionVerification.coefficientOfVariationPct()
-				+ ", resultCount=" + executionVerification.resultCount
-				+ ", sampleMillis=" + executionVerification.sampleMillis()
-				+ ", optimizedPlanHashCount=" + executionVerification.optimizedPlanHashCount()
-				+ ", optimizedPlanHashStable=" + executionVerification.optimizedPlanHashStable()
-				+ ", optimizedPlanHashTransitionCount=" + executionVerification.optimizedPlanHashTransitionCount()
-				+ ", softLimitMillis=" + TimeUnit.NANOSECONDS.toMillis(executionRepeatSoftLimitNanos)
-				+ ", softLimitReached=" + executionVerification.softLimitReached
-				+ ", maxRunsReached=" + executionVerification.maxRunsReached);
+		if (VERIFICATION_MODE_FACTORIZED_ALGEBRAIC.equals(executionVerification.verificationMode)) {
+			output.println("factorizedStatementRowsScanned=" + executionVerification.factorizedStatementRowsScanned
+					+ ", factorizedCacheHits=" + executionVerification.factorizedCacheHits
+					+ ", factorizedCacheEntries=" + executionVerification.factorizedCacheEntries);
+		}
 		if (executionVerification.hasFailure()) {
 			output.println("failure: run=" + executionVerification.failureRun()
 					+ ", class=" + executionVerification.failureClass()
 					+ ", message=" + executionVerification.failureMessage()
 					+ ", causeClass=" + executionVerification.failureCauseClass()
 					+ ", causeMessage=" + executionVerification.failureCauseMessage()
-					+ ", planHash=" + executionVerification.failurePlanHash());
+					+ ", planHash=" + executionVerification.failurePlanHash()
+					+ ", expectedDigest=" + executionVerification.failureExpectedDigest()
+					+ ", actualDigest=" + executionVerification.failureActualDigest());
 		}
 	}
 
@@ -2627,7 +3162,13 @@ public final class QueryPlanSnapshotCli {
 		}
 
 		metadata.put("execution.runs", Integer.toString(executionVerification.runs));
+		metadata.put("execution.verificationMode", executionVerification.verificationMode);
 		metadata.put("execution.resultCount", Long.toString(executionVerification.resultCount));
+		metadata.put("execution.resultFingerprintAlgorithm", executionVerification.resultFingerprintAlgorithm);
+		metadata.put("execution.resultFingerprintStatus", executionVerification.resultFingerprintStatus());
+		metadata.put("execution.resultFingerprintDigest", executionVerification.resultFingerprintDigest);
+		metadata.put("execution.resultFingerprintStable",
+				executionVerification.resultFingerprintStability());
 		metadata.put("execution.totalMillis",
 				Long.toString(TimeUnit.NANOSECONDS.toMillis(executionVerification.elapsedNanos)));
 		metadata.put("execution.averageMillis", Long.toString(executionVerification.averageMillis()));
@@ -2640,7 +3181,7 @@ public final class QueryPlanSnapshotCli {
 		metadata.put("execution.optimizedPlanHashCount",
 				Integer.toString(executionVerification.optimizedPlanHashCount()));
 		metadata.put("execution.optimizedPlanHashStable",
-				Boolean.toString(executionVerification.optimizedPlanHashStable()));
+				executionVerification.optimizedPlanHashStability());
 		metadata.put("execution.optimizedPlanHashes", executionVerification.optimizedPlanHashes());
 		metadata.put("execution.optimizedPlanHashTransitionCount",
 				Integer.toString(executionVerification.optimizedPlanHashTransitionCount()));
@@ -2651,12 +3192,43 @@ public final class QueryPlanSnapshotCli {
 		metadata.put("execution.failureCauseClass", executionVerification.failureCauseClass());
 		metadata.put("execution.failureCauseMessage", executionVerification.failureCauseMessage());
 		metadata.put("execution.failurePlanHash", executionVerification.failurePlanHash());
+		metadata.put("execution.failureExpectedDigest", executionVerification.failureExpectedDigest());
+		metadata.put("execution.failureActualDigest", executionVerification.failureActualDigest());
 		metadata.put("execution.softLimitReached", Boolean.toString(executionVerification.softLimitReached));
 		metadata.put("execution.maxRunsReached", Boolean.toString(executionVerification.maxRunsReached));
+		metadata.put("execution.factorizedStatementRowsScanned",
+				Long.toString(executionVerification.factorizedStatementRowsScanned));
+		metadata.put("execution.factorizedCacheHits", Long.toString(executionVerification.factorizedCacheHits));
+		metadata.put("execution.factorizedCacheEntries", Long.toString(executionVerification.factorizedCacheEntries));
 		snapshot.setMetadata(metadata);
 	}
 
-	private static final class BatchQueryTarget {
+	private static void throwIfExecutionVerificationFailed(QueryPlanSnapshotCliOptions options,
+			QueryExecutionVerification executionVerification) {
+		if (executionVerification == null || !executionVerification.hasFailure()) {
+			return;
+		}
+		IllegalStateException verificationFailure = new IllegalStateException(
+				"Execution verification failed: status=" + executionVerification.verificationStatus()
+						+ ", class=" + executionVerification.failureClass()
+						+ ", message=" + executionVerification.failureMessage());
+		try {
+			writeWorkerPhase(options, "verification-failed");
+		} catch (IOException statusWriteFailure) {
+			verificationFailure.addSuppressed(statusWriteFailure);
+		}
+		throw verificationFailure;
+	}
+
+	@FunctionalInterface
+	interface BatchTargetRunner {
+
+		long run(QueryPlanSnapshotCliOptions options, QueryPlanSnapshotStoreSupport.StoreRuntime storeRuntime,
+				QueryPlanSnapshotStoreSupport.ThemeDataLoadStatus themeDataLoadStatus, QueryPlanCapture capture,
+				Path outputDirectory, BatchQueryTarget target, int current, int total) throws Exception;
+	}
+
+	static final class BatchQueryTarget {
 		private final Theme theme;
 		private final int queryIndex;
 		private final BenchmarkQuery benchmarkQuery;
@@ -2882,6 +3454,16 @@ public final class QueryPlanSnapshotCli {
 		}
 	}
 
+	private static final class CompletedQueryResult {
+		private final SolutionBagFingerprint.Fingerprint fingerprint;
+		private final Value countBindingValue;
+
+		private CompletedQueryResult(SolutionBagFingerprint.Fingerprint fingerprint, Value countBindingValue) {
+			this.fingerprint = fingerprint;
+			this.countBindingValue = countBindingValue;
+		}
+	}
+
 	private static final class VerificationFailure {
 		private final String status;
 		private final int runNumber;
@@ -2890,9 +3472,12 @@ public final class QueryPlanSnapshotCli {
 		private final String errorMessage;
 		private final String causeClass;
 		private final String causeMessage;
+		private final String expectedDigest;
+		private final String actualDigest;
 
 		private VerificationFailure(String status, int runNumber, String planHash, String errorClass,
-				String errorMessage, String causeClass, String causeMessage) {
+				String errorMessage, String causeClass, String causeMessage, String expectedDigest,
+				String actualDigest) {
 			this.status = status;
 			this.runNumber = runNumber;
 			this.planHash = planHash;
@@ -2900,6 +3485,8 @@ public final class QueryPlanSnapshotCli {
 			this.errorMessage = errorMessage;
 			this.causeClass = causeClass;
 			this.causeMessage = causeMessage;
+			this.expectedDigest = expectedDigest;
+			this.actualDigest = actualDigest;
 		}
 
 		private static VerificationFailure interrupted(int runNumber, String planHash, Throwable throwable) {
@@ -2911,11 +3498,41 @@ public final class QueryPlanSnapshotCli {
 		}
 
 		private static VerificationFailure resultCountChanged(int runNumber, long expected, long actual,
-				String planHash) {
+				String expectedDigest, String actualDigest, String planHash) {
 			String message = "Result count changed between repeated runs: expected " + expected + " but got "
 					+ actual + " on run " + runNumber;
 			return new VerificationFailure("result-count-changed", runNumber, planHash, "ResultCountChanged", message,
-					"", "");
+					"", "", expectedDigest, actualDigest);
+		}
+
+		private static VerificationFailure resultBagChanged(int runNumber, long resultCount, String expectedDigest,
+				String actualDigest, String planHash) {
+			String message = "Result bag changed between repeated runs with stable row count " + resultCount
+					+ " on run " + runNumber + ": expected digest " + expectedDigest + " but got " + actualDigest;
+			return new VerificationFailure("result-bag-changed", runNumber, planHash, "ResultBagChanged", message,
+					"", "", expectedDigest, actualDigest);
+		}
+
+		private static VerificationFailure logicalResultCountChanged(long unoptimizedCount, long optimizedCount,
+				String unoptimizedDigest, String optimizedDigest, String planHash) {
+			String message = "Optimized result count differs from unoptimized algebra: expected " + unoptimizedCount
+					+ " but got " + optimizedCount;
+			return new VerificationFailure("result-count-changed", 2, planHash, "ResultCountChanged", message, "", "",
+					unoptimizedDigest, optimizedDigest);
+		}
+
+		private static VerificationFailure logicalResultBagChanged(long resultCount, String unoptimizedDigest,
+				String optimizedDigest, String planHash) {
+			String message = "Optimized result bag differs from unoptimized algebra with stable row count "
+					+ resultCount + ": expected digest " + unoptimizedDigest + " but got " + optimizedDigest;
+			return new VerificationFailure("result-bag-changed", 2, planHash, "ResultBagChanged", message, "", "",
+					unoptimizedDigest, optimizedDigest);
+		}
+
+		private static VerificationFailure catalogResultContractViolation(int runNumber, String planHash,
+				String message) {
+			return new VerificationFailure("catalog-result-contract-violation", runNumber, planHash,
+					"CatalogResultContractViolation", message, "", "", "", "");
 		}
 
 		private static VerificationFailure fromThrowable(String status, int runNumber, String planHash,
@@ -2928,7 +3545,11 @@ public final class QueryPlanSnapshotCli {
 			String causeMessage = rootCause == null || rootCause == throwable || rootCause.getMessage() == null ? ""
 					: rootCause.getMessage();
 			return new VerificationFailure(status, runNumber, planHash, errorClass, errorMessage, causeClass,
-					causeMessage);
+					causeMessage, "", "");
+		}
+
+		private boolean endedWithoutCompleteResult() {
+			return "interrupted".equals(status) || "evaluation-error".equals(status);
 		}
 
 		private static Throwable rootCause(Throwable throwable) {
@@ -2944,6 +3565,7 @@ public final class QueryPlanSnapshotCli {
 	}
 
 	private static final class QueryExecutionVerification {
+		private final String verificationMode;
 		private final int runs;
 		private final long elapsedNanos;
 		private final long resultCount;
@@ -2954,12 +3576,32 @@ public final class QueryPlanSnapshotCli {
 		private final List<Long> runDurationsNanos;
 		private final List<String> optimizedPlanSignatures;
 		private final List<String> optimizedPlanSignatureSequence;
+		private final String resultFingerprintAlgorithm;
+		private final String resultFingerprintDigest;
+		private final boolean resultFingerprintStable;
+		private final long factorizedStatementRowsScanned;
+		private final long factorizedCacheHits;
+		private final long factorizedCacheEntries;
 		private final VerificationFailure failure;
 
 		private QueryExecutionVerification(int runs, long elapsedNanos, long resultCount, boolean softLimitReached,
 				boolean maxRunsReached, long minRunNanos, long maxRunNanos, List<Long> runDurationsNanos,
 				List<String> optimizedPlanSignatures, List<String> optimizedPlanSignatureSequence,
+				String resultFingerprintAlgorithm, String resultFingerprintDigest, boolean resultFingerprintStable,
 				VerificationFailure failure) {
+			this(VERIFICATION_MODE_STREAMED_REPEATED, runs, elapsedNanos, resultCount, softLimitReached, maxRunsReached,
+					minRunNanos, maxRunNanos, runDurationsNanos, optimizedPlanSignatures,
+					optimizedPlanSignatureSequence, resultFingerprintAlgorithm, resultFingerprintDigest,
+					resultFingerprintStable, 0, 0, 0, failure);
+		}
+
+		private QueryExecutionVerification(String verificationMode, int runs, long elapsedNanos, long resultCount,
+				boolean softLimitReached, boolean maxRunsReached, long minRunNanos, long maxRunNanos,
+				List<Long> runDurationsNanos, List<String> optimizedPlanSignatures,
+				List<String> optimizedPlanSignatureSequence, String resultFingerprintAlgorithm,
+				String resultFingerprintDigest, boolean resultFingerprintStable, long factorizedStatementRowsScanned,
+				long factorizedCacheHits, long factorizedCacheEntries, VerificationFailure failure) {
+			this.verificationMode = verificationMode;
 			this.runs = runs;
 			this.elapsedNanos = elapsedNanos;
 			this.resultCount = resultCount;
@@ -2970,6 +3612,12 @@ public final class QueryPlanSnapshotCli {
 			this.runDurationsNanos = runDurationsNanos;
 			this.optimizedPlanSignatures = optimizedPlanSignatures;
 			this.optimizedPlanSignatureSequence = optimizedPlanSignatureSequence;
+			this.resultFingerprintAlgorithm = resultFingerprintAlgorithm;
+			this.resultFingerprintDigest = resultFingerprintDigest;
+			this.resultFingerprintStable = resultFingerprintStable;
+			this.factorizedStatementRowsScanned = factorizedStatementRowsScanned;
+			this.factorizedCacheHits = factorizedCacheHits;
+			this.factorizedCacheEntries = factorizedCacheEntries;
 			this.failure = failure;
 		}
 
@@ -2993,6 +3641,11 @@ public final class QueryPlanSnapshotCli {
 			return "completed";
 		}
 
+		private String resultFingerprintStatus() {
+			return QueryPlanSnapshotCli.resultFingerprintStatus(runs,
+					failure != null && failure.endedWithoutCompleteResult());
+		}
+
 		private long averageMillis() {
 			if (runs == 0) {
 				return 0;
@@ -3001,11 +3654,11 @@ public final class QueryPlanSnapshotCli {
 		}
 
 		private long minMillis() {
-			return TimeUnit.NANOSECONDS.toMillis(minRunNanos);
+			return runs == 0 ? 0 : TimeUnit.NANOSECONDS.toMillis(minRunNanos);
 		}
 
 		private long maxMillis() {
-			return TimeUnit.NANOSECONDS.toMillis(maxRunNanos);
+			return runs == 0 ? 0 : TimeUnit.NANOSECONDS.toMillis(maxRunNanos);
 		}
 
 		private long stdDevMillis() {
@@ -3059,8 +3712,18 @@ public final class QueryPlanSnapshotCli {
 			return optimizedPlanSignatures.size();
 		}
 
-		private boolean optimizedPlanHashStable() {
-			return optimizedPlanSignatures.size() <= 1;
+		private String resultFingerprintStability() {
+			if (runs < 2) {
+				return "not-assessed";
+			}
+			return Boolean.toString(resultFingerprintStable);
+		}
+
+		private String optimizedPlanHashStability() {
+			if (optimizedPlanSignatureSequence.size() < 2) {
+				return "not-assessed";
+			}
+			return Boolean.toString(optimizedPlanSignatures.size() <= 1);
 		}
 
 		private int optimizedPlanHashTransitionCount() {
@@ -3118,6 +3781,14 @@ public final class QueryPlanSnapshotCli {
 
 		private String failurePlanHash() {
 			return failure == null ? "" : failure.planHash;
+		}
+
+		private String failureExpectedDigest() {
+			return failure == null ? "" : failure.expectedDigest;
+		}
+
+		private String failureActualDigest() {
+			return failure == null ? "" : failure.actualDigest;
 		}
 	}
 

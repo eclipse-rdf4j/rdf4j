@@ -103,7 +103,7 @@
 					</webApp>
 					<contextHandlers>
 						<contextHandler implementation="org.eclipse.jetty.maven.plugin.JettyWebAppContext">
-							<war>${project.basedir}/../server/target/rdf4j-server.war</war>
+							<war>${rdf4j.server.war}</war>
 							<contextPath>/rdf4j-server</contextPath>
 						</contextHandler>
 					</contextHandlers>

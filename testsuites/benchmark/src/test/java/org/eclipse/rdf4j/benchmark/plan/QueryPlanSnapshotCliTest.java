@@ -14,11 +14,14 @@ package org.eclipse.rdf4j.benchmark.plan;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.PrintStream;
 import java.io.StringReader;
 import java.lang.reflect.Constructor;
@@ -27,18 +30,31 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCapture;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCaptureContext;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanExplanation;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanSnapshot;
+import org.eclipse.rdf4j.benchmark.common.plan.SolutionBagFingerprint;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.io.FileUtil;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 
 class QueryPlanSnapshotCliTest {
@@ -76,6 +92,56 @@ class QueryPlanSnapshotCliTest {
 		assertEquals("true", options.getSystemProperties().get("alpha"));
 		assertEquals("2", options.getSystemProperties().get("beta"));
 		assertEquals("local", options.getMetadata().get("run"));
+	}
+
+	@Test
+	void lmdbStoreRuntimeUsesThemeBenchmarkIndexAndSketchConfig() throws Exception {
+		Path lmdbDataDirectory = Files.createTempDirectory("rdf4j-cli-lmdb-config-");
+		try {
+			QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+					"--no-interactive",
+					"--store", "lmdb",
+					"--lmdb-data-dir", lmdbDataDirectory.toString(),
+					"--theme-query", "ELECTRICAL_GRID:7",
+					"--persist", "false"
+			});
+
+			try (QueryPlanSnapshotStoreSupport.StoreRuntime runtime = QueryPlanSnapshotStoreSupport
+					.createStoreRuntime(options)) {
+				LmdbStoreConfig config = runtime.lmdbStoreConfig;
+				assertEquals("spoc,ospc,psoc,posc", config.getTripleIndexes());
+				assertEquals(4096, config.getSketchEstimatorSubjectBucketCount());
+				assertEquals(64, config.getSketchEstimatorPredicateBucketCount());
+				assertEquals(4096, config.getSketchEstimatorObjectBucketCount());
+				assertEquals(16, config.getSketchEstimatorContextBucketCount());
+				assertFalse(config.getSketchEstimatorContextPairSketchesEnabled());
+				assertEquals("adaptive", config.getSketchEstimatorEvidenceMode());
+			}
+		} finally {
+			deleteDir(lmdbDataDirectory);
+		}
+	}
+
+	@Test
+	void lmdbStoreRuntimeAppliesSnapshotOnlyEvidenceMode() throws Exception {
+		Path lmdbDataDirectory = Files.createTempDirectory("rdf4j-cli-lmdb-evidence-config-");
+		try {
+			QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+					"--no-interactive",
+					"--store", "lmdb",
+					"--lmdb-data-dir", lmdbDataDirectory.toString(),
+					"--theme-query", "ELECTRICAL_GRID:7",
+					"--lmdb-evidence-mode", "snapshot-only",
+					"--persist", "false"
+			});
+
+			try (QueryPlanSnapshotStoreSupport.StoreRuntime runtime = QueryPlanSnapshotStoreSupport
+					.createStoreRuntime(options)) {
+				assertEquals("snapshot-only", runtime.lmdbStoreConfig.getSketchEstimatorEvidenceMode());
+			}
+		} finally {
+			deleteDir(lmdbDataDirectory);
+		}
 	}
 
 	@Test
@@ -195,6 +261,80 @@ class QueryPlanSnapshotCliTest {
 		assertEquals(Theme.MEDICAL_RECORDS, options.getTheme());
 		assertEquals(0, options.getQueryIndex());
 		assertEquals(15, options.queryTimeoutSeconds);
+	}
+
+	@Test
+	void factorizedVerificationComparesLogicalBagsWithoutTelemetryExecution() throws Exception {
+		Path outputDirectory = Files.createTempDirectory("rdf4j-cli-factorized-verification-");
+		try {
+			QueryPlanSnapshotCli cli = newCli("", new ByteArrayOutputStream());
+			QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+					"--no-interactive",
+					"--store", "memory",
+					"--theme", "MEDICAL_RECORDS",
+					"--query", "SELECT DISTINCT * WHERE { ?s <http://example.com/theme/medical/name> ?name }",
+					"--factorized-verification",
+					"--output-dir", outputDirectory.toString()
+			});
+
+			cli.run(options);
+
+			Path snapshotPath;
+			try (java.util.stream.Stream<Path> snapshots = Files.list(outputDirectory)) {
+				snapshotPath = snapshots
+						.filter(path -> path.getFileName().toString().endsWith(".json"))
+						.findFirst()
+						.orElseThrow();
+			}
+			QueryPlanSnapshot snapshot = new QueryPlanCapture().readSnapshot(snapshotPath);
+			assertFalse(snapshot.getExplanations().containsKey("telemetry"));
+			assertEquals("factorized-algebraic", snapshot.getMetadata().get("execution.verificationMode"));
+			assertEquals("rdf4j-factorized-solution-bag-v1",
+					snapshot.getMetadata().get("execution.resultFingerprintAlgorithm"));
+			assertEquals("completed", snapshot.getMetadata().get("execution.verificationStatus"));
+			assertFalse(snapshot.getMetadata().get("execution.resultFingerprintDigest").isBlank());
+		} finally {
+			deleteDir(outputDirectory);
+		}
+	}
+
+	@Test
+	void parsesLmdbEvidenceModeAndDefaultsToAdaptive() throws Exception {
+		QueryPlanSnapshotCliOptions snapshotOnly = QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--store", "lmdb",
+				"--theme", "MEDICAL_RECORDS",
+				"--query-index", "0",
+				"--lmdb-evidence-mode", "snapshot-only"
+		});
+		QueryPlanSnapshotCliOptions defaultMode = QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--store", "lmdb",
+				"--theme", "MEDICAL_RECORDS",
+				"--query-index", "0"
+		});
+
+		assertEquals("snapshot-only", readStringField(snapshotOnly, "lmdbEvidenceMode"));
+		assertEquals("adaptive", readStringField(defaultMode, "lmdbEvidenceMode"));
+	}
+
+	@Test
+	void rejectsInvalidOrNonLmdbEvidenceMode() {
+		IllegalArgumentException invalid = assertThrows(IllegalArgumentException.class,
+				() -> QueryPlanSnapshotCli.parseArgs(new String[] {
+						"--store", "lmdb",
+						"--theme", "MEDICAL_RECORDS",
+						"--query-index", "0",
+						"--lmdb-evidence-mode", "cold"
+				}));
+		assertTrue(invalid.getMessage().contains("Expected snapshot-only or adaptive"), invalid.getMessage());
+
+		IllegalArgumentException memory = assertThrows(IllegalArgumentException.class,
+				() -> QueryPlanSnapshotCli.parseArgs(new String[] {
+						"--store", "memory",
+						"--theme", "MEDICAL_RECORDS",
+						"--query-index", "0",
+						"--lmdb-evidence-mode", "snapshot-only"
+				}));
+		assertEquals("--lmdb-evidence-mode is only supported with --store lmdb.", memory.getMessage());
 	}
 
 	@Test
@@ -365,6 +505,193 @@ class QueryPlanSnapshotCliTest {
 	}
 
 	@Test
+	void isolatedBatchTerminatesTimedOutWorkerRecordsEveryTargetAndContinues() throws Exception {
+		Path directory = Files.createTempDirectory("rdf4j-cli-isolated-batch-");
+		try {
+			Path lmdbDataDirectory = directory.resolve("lmdb-data");
+			Path auditCsv = directory.resolve("audit.csv");
+			NeverCompletingWorker firstWorker = new NeverCompletingWorker();
+			List<List<String>> allLaunchedArguments = new ArrayList<>();
+			List<List<String>> launchedArguments = new ArrayList<>();
+			WorkerLauncher launcher = (arguments, stdoutPath, stderrPath) -> {
+				allLaunchedArguments.add(List.copyOf(arguments));
+				if (arguments.contains("--batch-data-preflight")) {
+					return new CompletedWorker();
+				}
+				launchedArguments.add(List.copyOf(arguments));
+				Files.writeString(stdoutPath, "worker stdout", StandardCharsets.UTF_8);
+				Files.writeString(stderrPath, "worker stderr", StandardCharsets.UTF_8);
+				int launchNumber = launchedArguments.size();
+				if (launchNumber == 1) {
+					return firstWorker;
+				}
+				if (launchNumber == 3) {
+					throw new IOException("launch, \"failed\"");
+				}
+				return new CompletedWorker();
+			};
+
+			ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
+			QueryPlanSnapshotCli cli = new QueryPlanSnapshotCli(
+					new BufferedReader(new StringReader("")),
+					new PrintStream(outputBuffer, true, StandardCharsets.UTF_8.name()),
+					false,
+					TEST_EXECUTION_REPEAT_MIN_RUNS,
+					TEST_EXECUTION_REPEAT_MAX_RUNS,
+					TEST_EXECUTION_REPEAT_SOFT_LIMIT_NANOS,
+					TimeUnit.MINUTES.toNanos(1),
+					null,
+					launcher);
+			QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+					"--no-interactive",
+					"--store", "lmdb",
+					"--lmdb-data-dir", lmdbDataDirectory.toString(),
+					"--all-theme-queries",
+					"--theme", "MEDICAL_RECORDS",
+					"--persist", "false",
+					"--query-timeout-seconds", "99",
+					"--lmdb-evidence-mode", "snapshot-only",
+					"--batch-process-isolation",
+					"--batch-hard-timeout-seconds", "1",
+					"--batch-audit-csv", auditCsv.toString()
+			});
+
+			IOException batchFailure = assertThrows(IOException.class, () -> cli.run(options));
+			assertTrue(batchFailure.getMessage().contains("timedOut=1"), batchFailure.getMessage());
+			assertTrue(batchFailure.getMessage().contains("failed=1"), batchFailure.getMessage());
+
+			assertEquals(ThemeQueryCatalog.QUERY_COUNT + 1, allLaunchedArguments.size());
+			assertTrue(allLaunchedArguments.get(0).contains("--batch-data-preflight"));
+			assertFalse(allLaunchedArguments.get(0).contains("--all-theme-queries"));
+			String parentQueryIndexBudget = Long.toString(QueryPlanSnapshotStoreSupport
+					.createLmdbStoreConfig(options)
+					.getFrontierQueryIndexBudgetBytes());
+			for (List<String> arguments : allLaunchedArguments) {
+				assertEquals("snapshot-only", valueFollowing(arguments, "--lmdb-evidence-mode"));
+				assertEquals(parentQueryIndexBudget,
+						valueFollowing(arguments, "--lmdb-frontier-query-index-budget-bytes"));
+			}
+			assertEquals(ThemeQueryCatalog.QUERY_COUNT, launchedArguments.size());
+			Duration executionWait = firstWorker.waitTimeouts.get(0);
+			assertTrue(executionWait.compareTo(Duration.ZERO) > 0, executionWait.toString());
+			assertTrue(executionWait.compareTo(Duration.ofSeconds(1)) <= 0, executionWait.toString());
+			assertTrue(firstWorker.destroyRequested);
+			assertTrue(firstWorker.destroyForciblyRequested);
+			assertFalse(Files.exists(lmdbDataDirectory), "The parent process must not open the LMDB runtime.");
+
+			for (int queryIndex = 0; queryIndex < launchedArguments.size(); queryIndex++) {
+				List<String> arguments = launchedArguments.get(queryIndex);
+				assertFalse(arguments.contains("--all-theme-queries"), arguments.toString());
+				assertEquals("MEDICAL_RECORDS", valueFollowing(arguments, "--theme"));
+				assertEquals(Integer.toString(queryIndex), valueFollowing(arguments, "--query-index"));
+			}
+
+			List<String> auditLines = Files.readAllLines(auditCsv, StandardCharsets.UTF_8);
+			assertEquals(ThemeQueryCatalog.QUERY_COUNT + 2, auditLines.size(), auditLines.toString());
+			assertEquals(
+					"queryId,theme,queryIndex,status,phase,termination,exitCode,elapsedMillis,stdoutPath,stderrPath,errorClass,errorMessage",
+					auditLines.get(0));
+			assertAuditRow(auditLines.get(1), "lmdb-theme-data-preflight", "succeeded", "exit", "none", "", "");
+			assertAuditRow(auditLines.get(2), "lmdb-medical_records-q0", "timed_out", "hard-wall",
+					"forcible-unknown", "", "");
+			assertAuditRow(auditLines.get(3), "lmdb-medical_records-q1", "succeeded", "exit", "none", "", "");
+			assertAuditRow(auditLines.get(4), "lmdb-medical_records-q2", "failed", "launch", "none",
+					"IOException", "launch, \"failed\"");
+
+			String printed = outputBuffer.toString(StandardCharsets.UTF_8);
+			assertTrue(printed.contains("attempted=13, succeeded=11, timedOut=1, failed=1"), printed);
+		} finally {
+			deleteDir(directory);
+		}
+	}
+
+	@Test
+	void isolatedBatchRejectsPersistentStoreMutationAfterAllWorkersFinish() throws Exception {
+		Path directory = Files.createTempDirectory("rdf4j-cli-isolated-store-mutation-");
+		try {
+			Path lmdbDataDirectory = directory.resolve("lmdb-data");
+			Path triplesDirectory = Files.createDirectories(lmdbDataDirectory.resolve("triples"));
+			Path valuesDirectory = Files.createDirectories(lmdbDataDirectory.resolve("values"));
+			Files.writeString(triplesDirectory.resolve("data.mdb"), "original-triples");
+			Path values = valuesDirectory.resolve("data.mdb");
+			Files.writeString(values, "original-values");
+			Path manifest = directory.resolve("fixture-manifest.json");
+			Path auditCsv = directory.resolve("audit.csv");
+			List<List<String>> launchedArguments = new ArrayList<>();
+			WorkerLauncher launcher = (arguments, stdoutPath, stderrPath) -> {
+				launchedArguments.add(List.copyOf(arguments));
+				if (!arguments.contains("--batch-data-preflight")
+						&& launchedArguments.stream()
+								.filter(args -> !args.contains("--batch-data-preflight"))
+								.count() == 1) {
+					Files.writeString(values, "corrupted-value");
+				}
+				return new CompletedWorker();
+			};
+			QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+					"--no-interactive",
+					"--store", "lmdb",
+					"--lmdb-data-dir", lmdbDataDirectory.toString(),
+					"--lmdb-store-manifest", manifest.toString(),
+					"--lmdb-evidence-mode", "snapshot-only",
+					"--all-theme-queries",
+					"--theme", "MEDICAL_RECORDS",
+					"--persist", "false",
+					"--output-dir", directory.resolve("snapshots").toString(),
+					"--batch-process-isolation",
+					"--batch-hard-timeout-seconds", "1",
+					"--batch-audit-csv", auditCsv.toString()
+			});
+			QueryPlanSnapshotStoreSupport.writeLmdbStoreManifest(lmdbDataDirectory, manifest,
+					QueryPlanSnapshotStoreSupport.createLmdbStoreConfig(options));
+			QueryPlanSnapshotCli cli = new QueryPlanSnapshotCli(
+					new BufferedReader(new StringReader("")),
+					new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8.name()),
+					false,
+					TEST_EXECUTION_REPEAT_MIN_RUNS,
+					TEST_EXECUTION_REPEAT_MAX_RUNS,
+					TEST_EXECUTION_REPEAT_SOFT_LIMIT_NANOS,
+					TimeUnit.MINUTES.toNanos(1),
+					null,
+					launcher);
+
+			IOException mutation = assertThrows(IOException.class, () -> cli.run(options));
+
+			assertTrue(mutation.getMessage().contains("values/data.mdb"), mutation.getMessage());
+			assertTrue(mutation.getMessage().contains("SHA-256"), mutation.getMessage());
+			assertEquals(ThemeQueryCatalog.QUERY_COUNT + 1, launchedArguments.size());
+		} finally {
+			deleteDir(directory);
+		}
+	}
+
+	@Test
+	void isolatedBatchExternalInterruptAbortsAndPreservesInterruptFlag() throws Exception {
+		Path directory = Files.createTempDirectory("rdf4j-cli-isolated-interrupt-");
+		try {
+			InterruptingWorker worker = new InterruptingWorker();
+			QueryPlanSnapshotBatchProcessRunner runner = new QueryPlanSnapshotBatchProcessRunner(
+					(arguments, stdoutPath, stderrPath) -> worker,
+					Duration.ofSeconds(1),
+					Duration.ofSeconds(1),
+					directory.resolve("audit.csv"),
+					directory.resolve("workers"),
+					new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
+			QueryPlanSnapshotBatchProcessRunner.WorkerTarget target = new QueryPlanSnapshotBatchProcessRunner.WorkerTarget(
+					"q0", "MEDICAL_RECORDS", 0, List.of("--help"));
+
+			assertThrows(InterruptedException.class, () -> runner.run(null, List.of(target), null));
+			assertTrue(Thread.currentThread().isInterrupted());
+			assertTrue(worker.destroyRequested);
+			assertTrue(worker.destroyForciblyRequested);
+			assertEquals(2, Files.readAllLines(directory.resolve("audit.csv"), StandardCharsets.UTF_8).size());
+		} finally {
+			Thread.interrupted();
+			deleteDir(directory);
+		}
+	}
+
+	@Test
 	void batchEtaRemainingEstimateUsesRemainingQueryHistoryForUnknownQueries() throws Exception {
 		Object reporter = newBatchRunEtaReporter(List.of("q1", "q2", "q3"), Map.of("q1", 900L, "q2", 100L), 10000L);
 		invokeReporterMethod(reporter, "markCompleted", new Class<?>[] { String.class, long.class }, "q1", 900L);
@@ -385,13 +712,14 @@ class QueryPlanSnapshotCliTest {
 	}
 
 	@Test
-	void lmdbRunRecordsLoadedSizeAndSkipsReloadWhenSizeMatches() throws Exception {
+	void lmdbRunReusesOnlyManifestValidatedStore() throws Exception {
 		Path lmdbDataDirectory = Files.createTempDirectory("rdf4j-cli-lmdb-reuse-");
 		try {
-			QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+			QueryPlanSnapshotCliOptions firstRunOptions = QueryPlanSnapshotCli.parseArgs(new String[] {
 					"--no-interactive",
 					"--store", "lmdb",
 					"--lmdb-data-dir", lmdbDataDirectory.toString(),
+					"--lmdb-evidence-mode", "snapshot-only",
 					"--theme", "MEDICAL_RECORDS",
 					"--query-index", "0",
 					"--persist", "false"
@@ -399,15 +727,29 @@ class QueryPlanSnapshotCliTest {
 
 			ByteArrayOutputStream firstRunOutput = new ByteArrayOutputStream();
 			QueryPlanSnapshotCli firstRunCli = newCli("", firstRunOutput);
-			firstRunCli.run(options);
+			firstRunCli.run(firstRunOptions);
+
+			Path manifest = lmdbDataDirectory.resolve(".rdf4j-theme-store-manifest-v1.json");
+			QueryPlanSnapshotStoreSupport.writeLmdbStoreManifest(lmdbDataDirectory, manifest,
+					QueryPlanSnapshotStoreSupport.createLmdbStoreConfig(firstRunOptions));
+			QueryPlanSnapshotCliOptions secondRunOptions = QueryPlanSnapshotCli.parseArgs(new String[] {
+					"--no-interactive",
+					"--store", "lmdb",
+					"--lmdb-data-dir", lmdbDataDirectory.toString(),
+					"--lmdb-store-manifest", manifest.toString(),
+					"--lmdb-evidence-mode", "snapshot-only",
+					"--theme", "MEDICAL_RECORDS",
+					"--query-index", "0",
+					"--persist", "false"
+			});
 
 			ByteArrayOutputStream secondRunOutput = new ByteArrayOutputStream();
 			QueryPlanSnapshotCli secondRunCli = newCli("", secondRunOutput);
-			secondRunCli.run(options);
+			secondRunCli.run(secondRunOptions);
 
 			String secondRunPrinted = secondRunOutput.toString(StandardCharsets.UTF_8);
-			assertTrue(secondRunPrinted.contains("LMDB data already fully loaded"),
-					"Expected second run to skip reloading LMDB data when byte size matches: " + secondRunPrinted);
+			assertTrue(secondRunPrinted.contains("LMDB store manifest validated"), secondRunPrinted);
+			assertFalse(secondRunPrinted.contains("LMDB data loaded"), secondRunPrinted);
 		} finally {
 			deleteDir(lmdbDataDirectory);
 		}
@@ -424,6 +766,7 @@ class QueryPlanSnapshotCliTest {
 					"--lmdb-data-dir", lmdbDataDirectory.toString(),
 					"--theme", "MEDICAL_RECORDS",
 					"--query-index", "0",
+					"--lmdb-evidence-mode", "snapshot-only",
 					"--output-dir", outputDirectory.toString()
 			});
 
@@ -440,6 +783,8 @@ class QueryPlanSnapshotCliTest {
 
 			QueryPlanSnapshot snapshot = new QueryPlanCapture().readSnapshot(snapshotPath);
 			assertEquals("true", snapshot.getFeatureFlags().get("lmdbConfig.pageCardinalityEstimator"));
+			assertEquals("snapshot-only",
+					snapshot.getFeatureFlags().get("lmdbConfig.sketchEstimatorEvidenceMode"));
 		} finally {
 			deleteDir(lmdbDataDirectory);
 			deleteDir(outputDirectory);
@@ -542,6 +887,184 @@ class QueryPlanSnapshotCliTest {
 		assertTrue(snapshot.getMetadata().containsKey("execution.optimizedPlanHashStable"));
 		assertTrue(snapshot.getMetadata().containsKey("execution.optimizedPlanHashTransitionCount"));
 		assertTrue(snapshot.getMetadata().containsKey("execution.optimizedPlanHashSequence"));
+		assertEquals(SolutionBagFingerprint.ALGORITHM_VERSION,
+				snapshot.getMetadata().get("execution.resultFingerprintAlgorithm"));
+		assertEquals("complete", snapshot.getMetadata().get("execution.resultFingerprintStatus"));
+		assertFalse(snapshot.getMetadata().get("execution.resultFingerprintDigest").isBlank());
+		assertEquals("not-assessed", snapshot.getMetadata().get("execution.resultFingerprintStable"));
+		assertEquals("not-assessed", snapshot.getMetadata().get("execution.optimizedPlanHashStable"));
+	}
+
+	@Test
+	void snapshotIsNotDiscoverableUntilVerificationMetadataIsFinal() throws Exception {
+		Path directory = Files.createTempDirectory("rdf4j-cli-final-snapshot-");
+		Path outputDirectory = directory.resolve("snapshots");
+		Path statusFile = directory.resolve("worker.status");
+		VerificationGateFunction function = new VerificationGateFunction(statusFile);
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Thread cliThread = null;
+
+		registry.add(function);
+		try {
+			QueryPlanSnapshotCli cli = newCli("", new ByteArrayOutputStream());
+			QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+					"--no-interactive",
+					"--store", "memory",
+					"--theme", "MEDICAL_RECORDS",
+					"--query", "SELECT (<" + function.getURI() + ">() AS ?value) WHERE { }",
+					"--output-dir", outputDirectory.toString(),
+					"--batch-worker-status-file", statusFile.toString()
+			});
+
+			cliThread = Thread.ofPlatform().start(() -> {
+				try {
+					cli.run(options);
+				} catch (Throwable e) {
+					failure.set(e);
+				}
+			});
+
+			assertTrue(function.verificationEntered.await(10, TimeUnit.SECONDS));
+			if (Files.exists(outputDirectory)) {
+				try (var files = Files.list(outputDirectory)) {
+					assertEquals(0, files.filter(path -> path.getFileName().toString().endsWith(".json")).count());
+				}
+			}
+
+			function.verificationRelease.countDown();
+			cliThread.join(TimeUnit.SECONDS.toMillis(10));
+			assertFalse(cliThread.isAlive());
+			assertNull(failure.get(), () -> String.valueOf(failure.get()));
+
+			Path snapshotPath;
+			try (var files = Files.list(outputDirectory)) {
+				List<Path> snapshots = files.filter(path -> path.getFileName().toString().endsWith(".json")).toList();
+				assertEquals(1, snapshots.size(), snapshots.toString());
+				snapshotPath = snapshots.getFirst();
+			}
+			assertEquals("1", new QueryPlanCapture().readSnapshot(snapshotPath).getMetadata().get("execution.runs"));
+		} finally {
+			function.verificationRelease.countDown();
+			if (cliThread != null) {
+				cliThread.join(TimeUnit.SECONDS.toMillis(10));
+			}
+			registry.remove(function);
+			deleteDir(directory);
+		}
+	}
+
+	@Test
+	void repeatedExecutionDetectsEqualCountDifferentBindings() throws Exception {
+		Path outputDirectory = Files.createTempDirectory("rdf4j-cli-result-bag-change-");
+		ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
+		QueryPlanSnapshotCli cli = new QueryPlanSnapshotCli(
+				new BufferedReader(new StringReader("")),
+				new PrintStream(outputBuffer, true, StandardCharsets.UTF_8.name()),
+				false,
+				2,
+				2,
+				TimeUnit.MINUTES.toNanos(1));
+		QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--no-interactive",
+				"--store", "memory",
+				"--theme", "MEDICAL_RECORDS",
+				"--query", "SELECT (STRUUID() AS ?value) WHERE { }",
+				"--output-dir", outputDirectory.toString()
+		});
+
+		IllegalStateException verificationFailure = assertThrows(IllegalStateException.class, () -> cli.run(options));
+		assertTrue(verificationFailure.getMessage().contains("result-bag-changed"),
+				verificationFailure.getMessage());
+
+		String printed = outputBuffer.toString(StandardCharsets.UTF_8);
+		assertTrue(printed.contains("verificationStatus=result-bag-changed"), printed);
+		assertTrue(printed.contains("expectedDigest="), printed);
+		assertTrue(printed.contains("actualDigest="), printed);
+
+		Path snapshotPath;
+		try (java.util.stream.Stream<Path> snapshots = Files.list(outputDirectory)) {
+			snapshotPath = snapshots
+					.filter(path -> path.getFileName().toString().endsWith(".json"))
+					.findFirst()
+					.orElseThrow();
+		}
+		Map<String, String> metadata = new QueryPlanCapture().readSnapshot(snapshotPath).getMetadata();
+		assertEquals("1", metadata.get("execution.resultCount"));
+		assertEquals("result-bag-changed", metadata.get("execution.verificationStatus"));
+		assertEquals("complete", metadata.get("execution.resultFingerprintStatus"));
+		assertEquals("false", metadata.get("execution.resultFingerprintStable"));
+		assertFalse(metadata.get("execution.failureExpectedDigest").isBlank());
+		assertFalse(metadata.get("execution.failureActualDigest").isBlank());
+		assertFalse(metadata.get("execution.failureExpectedDigest")
+				.equals(metadata.get("execution.failureActualDigest")));
+	}
+
+	@Test
+	void repeatedExecutionFingerprintIsStableAcrossRandomRowOrder() throws Exception {
+		ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
+		QueryPlanSnapshotCli cli = new QueryPlanSnapshotCli(
+				new BufferedReader(new StringReader("")),
+				new PrintStream(outputBuffer, true, StandardCharsets.UTF_8.name()),
+				false,
+				3,
+				3,
+				TimeUnit.MINUTES.toNanos(1));
+		QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--no-interactive",
+				"--store", "memory",
+				"--theme", "MEDICAL_RECORDS",
+				"--query", "SELECT ?value WHERE { VALUES ?value { 1 2 3 4 5 6 7 8 } "
+						+ "BIND(STRUUID() AS ?sortKey) } ORDER BY ?sortKey",
+				"--persist", "false"
+		});
+
+		cli.run(options);
+
+		String printed = outputBuffer.toString(StandardCharsets.UTF_8);
+		assertTrue(printed.contains("verificationStatus=max-runs-reached"), printed);
+		assertTrue(printed.contains("resultFingerprintStatus=complete"), printed);
+		assertTrue(printed.contains("resultFingerprintStable=true"), printed);
+	}
+
+	@Test
+	void catalogCountContractRequiresExactlyOneNumericAuthoritativeCount() {
+		SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+
+		assertNull(QueryPlanSnapshotCli.catalogCountBindingViolation(OptionalLong.empty(), 99, null));
+		assertNull(QueryPlanSnapshotCli.catalogCountBindingViolation(OptionalLong.of(7), 1,
+				valueFactory.createLiteral(7)));
+		assertTrue(QueryPlanSnapshotCli.catalogCountBindingViolation(OptionalLong.of(7), 2,
+				valueFactory.createLiteral(7)).contains("exactly one result row"));
+		assertTrue(QueryPlanSnapshotCli.catalogCountBindingViolation(OptionalLong.of(7), 1, null)
+				.contains("did not bind"));
+		assertTrue(QueryPlanSnapshotCli.catalogCountBindingViolation(OptionalLong.of(7), 1,
+				valueFactory.createLiteral("7")).contains("numeric"));
+		assertTrue(QueryPlanSnapshotCli.catalogCountBindingViolation(OptionalLong.of(7), 1,
+				valueFactory.createLiteral(8)).contains("authoritative"));
+	}
+
+	@Test
+	void catalogResultContractRejectsWrongRowsWithoutCountBinding() {
+		String violation = QueryPlanSnapshotCli.catalogResultContractViolation(OptionalLong.of(135),
+				OptionalLong.empty(), 134L, null);
+
+		assertNotNull(violation);
+		assertTrue(violation.contains("135"), violation);
+		assertTrue(violation.contains("134"), violation);
+		assertNull(QueryPlanSnapshotCli.catalogResultContractViolation(OptionalLong.of(135), OptionalLong.empty(),
+				135L, null));
+		assertNull(QueryPlanSnapshotCli.catalogResultContractViolation(OptionalLong.of(0), OptionalLong.empty(), 0L,
+				null));
+		assertNull(QueryPlanSnapshotCli.catalogResultContractViolation(OptionalLong.of(1), OptionalLong.of(7), 1L,
+				SimpleValueFactory.getInstance().createLiteral(7)));
+	}
+
+	@Test
+	void timeoutBeforeFirstCompleteResultLeavesFingerprintUnavailable() {
+		assertEquals("unavailable", QueryPlanSnapshotCli.resultFingerprintStatus(0, true));
+		assertEquals("incomplete", QueryPlanSnapshotCli.resultFingerprintStatus(1, true));
+		assertEquals("complete", QueryPlanSnapshotCli.resultFingerprintStatus(1, false));
 	}
 
 	@Test
@@ -1135,6 +1658,12 @@ class QueryPlanSnapshotCliTest {
 		return field.getBoolean(value);
 	}
 
+	private static String readStringField(Object value, String fieldName) throws Exception {
+		Field field = value.getClass().getDeclaredField(fieldName);
+		field.setAccessible(true);
+		return (String) field.get(value);
+	}
+
 	private static int countOccurrences(String value, String token) {
 		int count = 0;
 		int fromIndex = 0;
@@ -1145,6 +1674,160 @@ class QueryPlanSnapshotCliTest {
 			}
 			count++;
 			fromIndex = next + token.length();
+		}
+	}
+
+	private static String valueFollowing(List<String> arguments, String option) {
+		int optionIndex = arguments.indexOf(option);
+		assertTrue(optionIndex >= 0 && optionIndex + 1 < arguments.size(), arguments.toString());
+		return arguments.get(optionIndex + 1);
+	}
+
+	private static void assertAuditRow(String csvRow, String queryId, String status, String phase,
+			String termination, String errorClass, String errorMessage) {
+		List<String> values = parseCsvLine(csvRow);
+		assertEquals(12, values.size(), csvRow);
+		assertEquals(queryId, values.get(0));
+		assertEquals(status, values.get(3));
+		assertEquals(phase, values.get(4));
+		assertEquals(termination, values.get(5));
+		assertEquals(errorClass, values.get(10));
+		assertEquals(errorMessage, values.get(11));
+	}
+
+	private static final class VerificationGateFunction implements Function {
+
+		private static final String URI = "urn:rdf4j:test:query-plan-snapshot-publication-gate";
+
+		private final Path workerStatusFile;
+		private final CountDownLatch verificationEntered = new CountDownLatch(1);
+		private final CountDownLatch verificationRelease = new CountDownLatch(1);
+
+		private VerificationGateFunction(Path workerStatusFile) {
+			this.workerStatusFile = workerStatusFile;
+		}
+
+		@Override
+		public String getURI() {
+			return URI;
+		}
+
+		@Override
+		public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+			try {
+				if (Files.exists(workerStatusFile)
+						&& "verification".equals(Files.readString(workerStatusFile, StandardCharsets.UTF_8).trim())) {
+					verificationEntered.countDown();
+					if (!verificationRelease.await(10, TimeUnit.SECONDS)) {
+						throw new ValueExprEvaluationException("Timed out waiting to release verification.");
+					}
+				}
+			} catch (IOException e) {
+				throw new ValueExprEvaluationException(e);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new ValueExprEvaluationException(e);
+			}
+			return valueFactory.createLiteral("verified");
+		}
+
+		@Override
+		public boolean mustReturnDifferentResult() {
+			return true;
+		}
+	}
+
+	private static final class NeverCompletingWorker implements WorkerLauncher.WorkerProcess {
+
+		private final List<Duration> waitTimeouts = new ArrayList<>();
+		private boolean alive = true;
+		private boolean destroyRequested;
+		private boolean destroyForciblyRequested;
+
+		@Override
+		public boolean waitFor(Duration timeout) {
+			waitTimeouts.add(timeout);
+			return !alive;
+		}
+
+		@Override
+		public boolean isAlive() {
+			return alive;
+		}
+
+		@Override
+		public void destroy() {
+			destroyRequested = true;
+		}
+
+		@Override
+		public void destroyForcibly() {
+			destroyForciblyRequested = true;
+			alive = false;
+		}
+
+		@Override
+		public int exitValue() {
+			return 137;
+		}
+	}
+
+	private static final class CompletedWorker implements WorkerLauncher.WorkerProcess {
+
+		@Override
+		public boolean waitFor(Duration timeout) {
+			return true;
+		}
+
+		@Override
+		public boolean isAlive() {
+			return false;
+		}
+
+		@Override
+		public void destroy() {
+		}
+
+		@Override
+		public void destroyForcibly() {
+		}
+
+		@Override
+		public int exitValue() {
+			return 0;
+		}
+	}
+
+	private static final class InterruptingWorker implements WorkerLauncher.WorkerProcess {
+
+		private boolean alive = true;
+		private boolean destroyRequested;
+		private boolean destroyForciblyRequested;
+
+		@Override
+		public boolean waitFor(Duration timeout) throws InterruptedException {
+			throw new InterruptedException("external interrupt");
+		}
+
+		@Override
+		public boolean isAlive() {
+			return alive;
+		}
+
+		@Override
+		public void destroy() {
+			destroyRequested = true;
+		}
+
+		@Override
+		public void destroyForcibly() {
+			destroyForciblyRequested = true;
+			alive = false;
+		}
+
+		@Override
+		public int exitValue() {
+			return 137;
 		}
 	}
 

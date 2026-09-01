@@ -11,7 +11,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
 /**
- * Callback for configuring/customising a {@link org.eclipse.rdf4j.query.algebra.evaluation.QueryContext}.
+ * Callback for configuring/customising a {@link QueryContext}.
  */
 public interface QueryContextInitializer {
 

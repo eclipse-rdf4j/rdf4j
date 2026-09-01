@@ -171,3 +171,125 @@ assert_not_contains \
 	"${OPTIMIZED_OUTPUT}" \
 	"telemetry-plan-run-2" \
 	"optimized plan mode should not print telemetry query plans"
+
+TODAY_RESULTS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/theme-query-history-today.XXXXXX")"
+
+cat > "${TODAY_RESULTS_DIR}/results-2026-05-29.md" <<RESULT
+ThemeQueryBenchmark.executeQuery PHARMA 10 avgt 1.000 ms/op
+RESULT
+
+cat > "${TODAY_RESULTS_DIR}/results-2026-06-03.md" <<RESULT
+ThemeQueryPlanRunBenchmark.runQuery PHARMA 10 avgt 5.000 ms/op
+RESULT
+
+TODAY_OUTPUT="$(bash "${ANALYZER}" --results-dir "${TODAY_RESULTS_DIR}")"
+echo "${TODAY_OUTPUT}"
+
+assert_contains \
+	"${TODAY_OUTPUT}" \
+	"Latest run: results-2026-06-03.md" \
+	"overview should use today's plan-run result file as latest"
+assert_contains \
+	"${TODAY_OUTPUT}" \
+	"q10: latest 5.000 ms/op | fastest 1.000 ms/op | 80.0% slower than best" \
+	"overview should compare today's plan-run score against historical ThemeQueryBenchmark scores"
+assert_contains \
+	"${TODAY_OUTPUT}" \
+	"results-2026-05-29.md: 1.000 ms/op" \
+	"overview detail should include the historical ThemeQueryBenchmark comparison run"
+
+LATEST_FILE_RESULTS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/theme-query-history-latest-file.XXXXXX")"
+
+cat > "${LATEST_FILE_RESULTS_DIR}/results-2026-05-29.md" <<RESULT
+ThemeQueryBenchmark.executeQuery PHARMA 10 avgt 1.000 ms/op
+RESULT
+
+cat > "${LATEST_FILE_RESULTS_DIR}/results-2026-06-04.md" <<RESULT
+ThemeQueryPlanRunBenchmark.runQuery PHARMA 10 avgt 5.000 ms/op
+RESULT
+
+cat > "${LATEST_FILE_RESULTS_DIR}/results-2026-06-05.md" <<RESULT
+ThemeQueryPlanRunBenchmark.runQuery PHARMA 10 avgt 0.500 ms/op
+RESULT
+
+LATEST_FILE_OUTPUT="$(
+	bash "${ANALYZER}" --results-dir "${LATEST_FILE_RESULTS_DIR}" \
+		--latest-file results-2026-06-04.md
+)"
+echo "${LATEST_FILE_OUTPUT}"
+
+assert_contains \
+	"${LATEST_FILE_OUTPUT}" \
+	"Latest run: results-2026-06-04.md" \
+	"overview should use the explicitly selected latest result file"
+assert_contains \
+	"${LATEST_FILE_OUTPUT}" \
+	"q10: latest 5.000 ms/op | fastest 1.000 ms/op | 80.0% slower than best" \
+	"explicit latest file mode should compare plan-run scores against historical ThemeQueryBenchmark scores"
+
+DYNAMIC_TODAY_RESULTS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/theme-query-history-dynamic-today.XXXXXX")"
+TODAY_DATE="$(date +%F)"
+
+cat > "${DYNAMIC_TODAY_RESULTS_DIR}/results-1999-01-01.md" <<RESULT
+ThemeQueryBenchmark.executeQuery PHARMA 10 avgt 1.000 ms/op
+RESULT
+
+cat > "${DYNAMIC_TODAY_RESULTS_DIR}/results-${TODAY_DATE}.md" <<RESULT
+ThemeQueryPlanRunBenchmark.runQuery PHARMA 10 avgt 5.000 ms/op
+RESULT
+
+cat > "${DYNAMIC_TODAY_RESULTS_DIR}/results-${TODAY_DATE}-2.md" <<RESULT
+ThemeQueryPlanRunBenchmark.runQuery PHARMA 10 avgt 6.000 ms/op
+RESULT
+
+DYNAMIC_TODAY_OUTPUT="$(
+	bash "${ANALYZER}" --results-dir "${DYNAMIC_TODAY_RESULTS_DIR}" --today
+)"
+echo "${DYNAMIC_TODAY_OUTPUT}"
+
+assert_contains \
+	"${DYNAMIC_TODAY_OUTPUT}" \
+	"Latest run: results-${TODAY_DATE}-2.md" \
+	"--today should use the newest suffixed result file for the current local date"
+assert_contains \
+	"${DYNAMIC_TODAY_OUTPUT}" \
+	"q10: latest 6.000 ms/op | fastest 1.000 ms/op | 83.3% slower than best" \
+	"--today should compare today's plan-run score against historical ThemeQueryBenchmark scores"
+
+MAY_AVERAGE_RESULTS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/theme-query-history-may-average.XXXXXX")"
+
+cat > "${MAY_AVERAGE_RESULTS_DIR}/results-2026-05-01.md" <<RESULT
+ThemeQueryBenchmark.executeQuery PHARMA 7 avgt 10.000 ms/op
+RESULT
+
+cat > "${MAY_AVERAGE_RESULTS_DIR}/results-2026-05-02.md" <<RESULT
+ThemeQueryBenchmark.executeQuery PHARMA 7 avgt 20.000 ms/op
+RESULT
+
+cat > "${MAY_AVERAGE_RESULTS_DIR}/results-2026-05-22.md" <<RESULT
+ThemeQueryBenchmark.executeQuery PHARMA 7 avgt 1.000 ms/op
+RESULT
+
+cat > "${MAY_AVERAGE_RESULTS_DIR}/results-2026-06-03.md" <<RESULT
+ThemeQueryPlanRunBenchmark.runQuery PHARMA 7 avgt 18.000 ms/op
+RESULT
+
+MAY_AVERAGE_OUTPUT="$(
+	bash "${ANALYZER}" --results-dir "${MAY_AVERAGE_RESULTS_DIR}" \
+		--baseline-start 2026-05-01 --baseline-end 2026-05-21 --baseline-stat average \
+		--min-slower-pct 0
+)"
+echo "${MAY_AVERAGE_OUTPUT}"
+
+assert_contains \
+	"${MAY_AVERAGE_OUTPUT}" \
+	"Baseline: average ThemeQueryBenchmark.executeQuery from 2026-05-01 to 2026-05-21" \
+	"May average mode should describe the explicit benchmark baseline window"
+assert_contains \
+	"${MAY_AVERAGE_OUTPUT}" \
+	"q7: latest 18.000 ms/op | baseline average 15.000 ms/op | 16.7% slower than baseline" \
+	"May average mode should compare today's plan-run score against the May ThemeQueryBenchmark average"
+assert_not_contains \
+	"${MAY_AVERAGE_OUTPUT}" \
+	"1.000 ms/op" \
+	"May average mode should ignore ThemeQueryBenchmark rows outside the selected baseline window"

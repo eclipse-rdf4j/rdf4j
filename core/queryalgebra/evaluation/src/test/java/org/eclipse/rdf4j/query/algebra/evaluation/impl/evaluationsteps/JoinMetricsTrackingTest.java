@@ -12,9 +12,20 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -139,6 +150,261 @@ class JoinMetricsTrackingTest {
 		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL)).isLessThan(1);
 		assertThat(rightNode.getJoinLeftBindingsConsumedActual()).isEqualTo(1);
 		assertThat(rightNode.getJoinRightBindingsConsumedActual()).isEqualTo(0);
+	}
+
+	@Test
+	void deferredTelemetryUsesIndependentLeasesAcrossSequentialProbes() {
+		Join joinNode = new Join(new SingletonSet(), new SingletonSet());
+		joinNode.setRuntimeTelemetryEnabled(true);
+		joinNode.setQueryModelMetadata(RootCloseTelemetryRegistrar.METADATA_KEY,
+				(Consumer<Runnable>) publisher -> {
+				});
+		JoinMetricsTracking.Accumulator accumulator = JoinMetricsTracking.deferredAccumulator(joinNode,
+				joinNode.getLeftArg(), joinNode.getRightArg(), true);
+		QueryEvaluationStep wrapped = JoinMetricsTracking.wrapRightInput(delegateProducing(1), accumulator);
+
+		CloseableIteration<BindingSet> first = wrapped.evaluate(EmptyBindingSet.getInstance());
+		consume(first);
+		first.close();
+		CloseableIteration<BindingSet> second = wrapped.evaluate(EmptyBindingSet.getInstance());
+
+		assertThat(second)
+				.as("a stale close from one probe must not target a later probe")
+				.isNotSameAs(first);
+
+		consume(second);
+		second.close();
+	}
+
+	@Test
+	void deferredTelemetrySupportsOverlappingSideEvaluations() {
+		Join joinNode = new Join(new SingletonSet(), new SingletonSet());
+		joinNode.setRuntimeTelemetryEnabled(true);
+		joinNode.setQueryModelMetadata(RootCloseTelemetryRegistrar.METADATA_KEY,
+				(Consumer<Runnable>) publisher -> {
+				});
+		JoinMetricsTracking.Accumulator accumulator = JoinMetricsTracking.deferredAccumulator(joinNode,
+				joinNode.getLeftArg(), joinNode.getRightArg(), true);
+		QueryEvaluationStep wrapped = JoinMetricsTracking.wrapRightInput(delegateProducing(1), accumulator);
+
+		try (CloseableIteration<BindingSet> first = wrapped.evaluate(EmptyBindingSet.getInstance());
+				CloseableIteration<BindingSet> second = wrapped.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(second).isNotSameAs(first);
+			consume(first);
+			consume(second);
+		}
+	}
+
+	@Test
+	void deferredTelemetryDoesNotDereferenceDelegateAfterTimeoutClose() {
+		Join joinNode = new Join(new SingletonSet(), new SingletonSet());
+		joinNode.setRuntimeTelemetryEnabled(true);
+		joinNode.setQueryModelMetadata(RootCloseTelemetryRegistrar.METADATA_KEY,
+				(Consumer<Runnable>) publisher -> {
+				});
+		JoinMetricsTracking.Accumulator accumulator = JoinMetricsTracking.deferredAccumulator(joinNode,
+				joinNode.getLeftArg(), joinNode.getRightArg(), true);
+		AtomicInteger delegateCloses = new AtomicInteger();
+		QueryEvaluationStep wrapped = JoinMetricsTracking.wrapRightInput(bindings -> new CloseableIteration<>() {
+			private boolean closed;
+
+			@Override
+			public boolean hasNext() {
+				return !closed;
+			}
+
+			@Override
+			public BindingSet next() {
+				if (closed) {
+					throw new NoSuchElementException();
+				}
+				return EmptyBindingSet.getInstance();
+			}
+
+			@Override
+			public void remove() {
+				if (closed) {
+					throw new IllegalStateException();
+				}
+			}
+
+			@Override
+			public void close() {
+				if (!closed) {
+					closed = true;
+					delegateCloses.incrementAndGet();
+				}
+			}
+		}, accumulator);
+
+		CloseableIteration<BindingSet> iteration = wrapped.evaluate(EmptyBindingSet.getInstance());
+		iteration.close();
+
+		assertThat(delegateCloses).hasValue(1);
+		assertThat(iteration.hasNext()).isFalse();
+		assertThatThrownBy(iteration::next).isInstanceOf(NoSuchElementException.class);
+		assertThatThrownBy(iteration::remove).isInstanceOf(IllegalStateException.class);
+		iteration.close();
+		assertThat(delegateCloses).hasValue(1);
+	}
+
+	@Test
+	void deferredTelemetryDoesNotRebindWrapperWhilePreviousDelegateIsClosing() throws Exception {
+		Join joinNode = new Join(new SingletonSet(), new SingletonSet());
+		joinNode.setRuntimeTelemetryEnabled(true);
+		joinNode.setQueryModelMetadata(RootCloseTelemetryRegistrar.METADATA_KEY,
+				(Consumer<Runnable>) publisher -> {
+				});
+		JoinMetricsTracking.Accumulator accumulator = JoinMetricsTracking.deferredAccumulator(joinNode,
+				joinNode.getLeftArg(), joinNode.getRightArg(), true);
+		AtomicInteger evaluations = new AtomicInteger();
+		CountDownLatch closeStarted = new CountDownLatch(1);
+		CountDownLatch releaseClose = new CountDownLatch(1);
+		QueryEvaluationStep wrapped = JoinMetricsTracking.wrapRightInput(bindings -> {
+			int evaluation = evaluations.incrementAndGet();
+			return new CloseableIteration<>() {
+				@Override
+				public boolean hasNext() {
+					return false;
+				}
+
+				@Override
+				public BindingSet next() {
+					throw new NoSuchElementException();
+				}
+
+				@Override
+				public void remove() {
+					throw new IllegalStateException();
+				}
+
+				@Override
+				public void close() {
+					if (evaluation == 1) {
+						closeStarted.countDown();
+						try {
+							if (!releaseClose.await(5, TimeUnit.SECONDS)) {
+								throw new AssertionError("timed out waiting to finish delegate close");
+							}
+						} catch (InterruptedException e) {
+							Thread.currentThread().interrupt();
+							throw new AssertionError(e);
+						}
+					}
+				}
+			};
+		}, accumulator);
+
+		CloseableIteration<BindingSet> first = wrapped.evaluate(EmptyBindingSet.getInstance());
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Future<?> closing = executor.submit(first::close);
+		CloseableIteration<BindingSet> second = null;
+		try {
+			assertThat(closeStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			second = wrapped.evaluate(EmptyBindingSet.getInstance());
+			assertThat(second).isNotSameAs(first);
+		} finally {
+			releaseClose.countDown();
+			closing.get(5, TimeUnit.SECONDS);
+			if (second != null) {
+				second.close();
+			}
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void staleCloseFromPreviousProbeDoesNotCloseReboundProbe() {
+		Join joinNode = new Join(new SingletonSet(), new SingletonSet());
+		joinNode.setRuntimeTelemetryEnabled(true);
+		joinNode.setQueryModelMetadata(RootCloseTelemetryRegistrar.METADATA_KEY,
+				(Consumer<Runnable>) publisher -> {
+				});
+		JoinMetricsTracking.Accumulator accumulator = JoinMetricsTracking.deferredAccumulator(joinNode,
+				joinNode.getLeftArg(), joinNode.getRightArg(), true);
+		AtomicInteger delegateCloses = new AtomicInteger();
+		QueryEvaluationStep wrapped = JoinMetricsTracking.wrapRightInput(bindings -> new CloseableIteration<>() {
+			private boolean closed;
+
+			@Override
+			public boolean hasNext() {
+				return !closed;
+			}
+
+			@Override
+			public BindingSet next() {
+				if (closed) {
+					throw new NoSuchElementException();
+				}
+				return EmptyBindingSet.getInstance();
+			}
+
+			@Override
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public void close() {
+				if (!closed) {
+					closed = true;
+					delegateCloses.incrementAndGet();
+				}
+			}
+		}, accumulator);
+
+		CloseableIteration<BindingSet> first = wrapped.evaluate(EmptyBindingSet.getInstance());
+		first.close();
+		CloseableIteration<BindingSet> second = wrapped.evaluate(EmptyBindingSet.getInstance());
+
+		first.close();
+
+		assertThat(delegateCloses).hasValue(1);
+		assertThat(second.hasNext()).isTrue();
+		second.close();
+		assertThat(delegateCloses).hasValue(2);
+	}
+
+	@Test
+	void deferredTelemetryPublishesExactCountersAfterConcurrentProbeCloses() throws Exception {
+		Join joinNode = new Join(new SingletonSet(), new SingletonSet());
+		joinNode.setRuntimeTelemetryEnabled(true);
+		AtomicReference<Runnable> publisher = new AtomicReference<>();
+		joinNode.setQueryModelMetadata(RootCloseTelemetryRegistrar.METADATA_KEY,
+				(Consumer<Runnable>) publisher::set);
+		JoinMetricsTracking.Accumulator accumulator = JoinMetricsTracking.deferredAccumulator(joinNode,
+				joinNode.getLeftArg(), joinNode.getRightArg(), true);
+		QueryEvaluationStep wrapped = JoinMetricsTracking.wrapRightInput(delegateProducing(1), accumulator);
+		int probeCount = 128;
+		CountDownLatch start = new CountDownLatch(1);
+		ExecutorService executor = Executors.newFixedThreadPool(8);
+		List<Future<?>> futures = new ArrayList<>(probeCount);
+		try {
+			for (int i = 0; i < probeCount; i++) {
+				futures.add(executor.submit(() -> {
+					start.await();
+					try (CloseableIteration<BindingSet> iteration = wrapped.evaluate(EmptyBindingSet.getInstance())) {
+						consume(iteration);
+					}
+					return null;
+				}));
+			}
+			start.countDown();
+			for (Future<?> future : futures) {
+				future.get(5, TimeUnit.SECONDS);
+			}
+		} finally {
+			executor.shutdownNow();
+		}
+
+		publisher.get().run();
+
+		assertThat(joinNode.getJoinRightIteratorsCreatedActual()).isEqualTo(probeCount);
+		assertThat(joinNode.getJoinRightBindingsConsumedActual()).isEqualTo(probeCount);
+		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL))
+				.isEqualTo(probeCount);
+		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL)).isZero();
+		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.MAX_RIGHT_ROWS_PER_LEFT_ACTUAL)).isEqualTo(1L);
 	}
 
 	private static QueryEvaluationStep delegateProducing(int rowCount) {

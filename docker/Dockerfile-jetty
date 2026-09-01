@@ -16,7 +16,7 @@ LABEL org.opencontainers.image.authors="Bart Hanssens (bart.hanssens@bosa.fgov.b
 
 USER root
 
-ENV JAVA_OPTIONS="-Xmx2g -Dorg.eclipse.rdf4j.appdata.basedir=/var/rdf4j -Dorg.eclipse.rdf4j.rio.jsonld_secure_mode=false -Drdf4j.query.breaker.enabled=true"
+ENV JAVA_OPTIONS="-Xmx2g --add-modules=jdk.incubator.vector -Dorg.eclipse.rdf4j.appdata.basedir=/var/rdf4j -Dorg.eclipse.rdf4j.rio.jsonld_secure_mode=false -Drdf4j.query.breaker.enabled=true"
 ENV JETTY_MODULES="server,bytebufferpool,threadpool,http,security,ee11-servlet,ee11-webapp,ee11-ext,ee11-plus,ee11-deploy,ee11-annotations,ee11-jsp,ee11-jstl"
 
 COPY --from=temp /tmp/eclipse-rdf4j*/war/*.war /var/lib/jetty/webapps/
@@ -33,4 +33,3 @@ RUN	ln -s /usr/local/jetty/logs /var/lib/jetty/logs && \
 USER jetty
 
 EXPOSE 8080
-

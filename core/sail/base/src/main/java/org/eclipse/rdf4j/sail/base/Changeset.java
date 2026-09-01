@@ -189,7 +189,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				}
 				for (Changeset changeset : prepend) {
 					if (changeset.hasApproved(subj, pred, obj, contexts)
-							|| (changeset.hasDeprecated(subj, pred, obj, contexts))) {
+							|| changeset.hasDeprecated(subj, pred, obj, contexts)) {
 						throw new SailConflictException("Observed State has Changed");
 					}
 				}

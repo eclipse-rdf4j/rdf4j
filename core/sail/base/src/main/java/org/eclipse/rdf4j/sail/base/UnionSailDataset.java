@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.OptionalLong;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -25,6 +26,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
@@ -55,6 +57,18 @@ class UnionSailDataset implements SailDataset {
 				"dataset1=" + dataset1 +
 				", dataset2=" + dataset2 +
 				'}';
+	}
+
+	@Override
+	public OptionalLong getSnapshotEpoch() {
+		OptionalLong first = dataset1.getSnapshotEpoch();
+		if (first.isEmpty()) {
+			return OptionalLong.empty();
+		}
+		OptionalLong second = dataset2.getSnapshotEpoch();
+		return second.isPresent() && second.getAsLong() == first.getAsLong()
+				? first
+				: OptionalLong.empty();
 	}
 
 	@Override
@@ -124,12 +138,18 @@ class UnionSailDataset implements SailDataset {
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException {
+		return getStatements((StatementPattern) null, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern, Resource subj,
+			IRI pred, Value obj, Resource... contexts) throws SailException {
 
 		CloseableIteration<? extends Statement> iteration1 = null;
 		CloseableIteration<? extends Statement> iteration2 = null;
 		try {
-			iteration1 = dataset1.getStatements(subj, pred, obj, contexts);
-			iteration2 = dataset2.getStatements(subj, pred, obj, contexts);
+			iteration1 = dataset1.getStatements(statementPattern, subj, pred, obj, contexts);
+			iteration2 = dataset2.getStatements(statementPattern, subj, pred, obj, contexts);
 			return DualUnionIteration.getWildcardInstance(iteration1, iteration2);
 		} catch (Throwable t) {
 			try {
@@ -148,8 +168,14 @@ class UnionSailDataset implements SailDataset {
 
 	@Override
 	public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-		return dataset1.getStatementCount(subj, pred, obj, contexts)
-				+ dataset2.getStatementCount(subj, pred, obj, contexts);
+		return getStatementCount(null, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public long getStatementCount(StatementPattern statementPattern, Resource subj, IRI pred, Value obj,
+			Resource... contexts) throws SailException {
+		return dataset1.getStatementCount(statementPattern, subj, pred, obj, contexts)
+				+ dataset2.getStatementCount(statementPattern, subj, pred, obj, contexts);
 	}
 
 	@Override
