@@ -165,6 +165,18 @@ class LmdbNativeAdaptiveArbitrationTest {
 				"two samples are not enough evidence to overrule the ladder");
 	}
 
+	@Test
+	void oneBoundedSpecialistCompletionDoesNotRescueAnUnmeasuredIrIncumbent() {
+		LmdbNativeAdaptiveArbitration.Priced<String> ir = structuralOnly(
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD, 0);
+		LmdbNativeAdaptiveArbitration.Priced<String> fallback = pricedWithCompletions(
+				LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED, 1,
+				50_000, 100_000, 200_000, 1);
+
+		assertSame(null, LmdbNativeAdaptiveArbitration.coldStartRescue(List.of(ir, fallback)),
+				"a bounded specialist must be explored without acquiring the engine-only first-completion rescue");
+	}
+
 	/**
 	 * The completed-sample exploration quota is gone: uncertain rivals are examined through {@code maybeProbe}, which
 	 * refuses without an abort-safe harness, refuses without ledger credit, and — once financed — returns exactly one
@@ -432,6 +444,27 @@ class LmdbNativeAdaptiveArbitrationTest {
 					family + " must retain the measured winner as fallback");
 			probe.reservation().refund();
 		}
+	}
+
+	@Test
+	void specialistTrialWaitsForAnExactlyMeasuredFallback() {
+		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		LmdbNativeAdaptiveArbitration.Priced<String> ir = pricedWithFamilyEvidence(
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD, 0,
+				80_000_000, 100_000_000, 130_000_000);
+		LmdbNativeAdaptiveArbitration.Priced<String> specialist = pricedWithFamilyEvidence(
+				LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED, 1,
+				50_000_000, 90_000_000, 150_000_000);
+
+		LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<String> probe = LmdbNativeAdaptiveArbitration.maybeProbe(
+				List.of(ir, specialist), ir, model,
+				new LmdbNativeAdaptiveArbitration.ProbeContext(LmdbNativeProbeConfig.defaults(),
+						new LmdbNativeQueryProbeBudget(), true));
+
+		assertSame(null, probe,
+				"a specialist trial must retain a known exact winner, not an incumbent that has never completed");
 	}
 
 	@Test

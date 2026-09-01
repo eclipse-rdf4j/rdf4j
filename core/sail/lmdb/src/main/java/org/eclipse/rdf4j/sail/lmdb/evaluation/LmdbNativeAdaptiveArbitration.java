@@ -427,6 +427,15 @@ final class LmdbNativeAdaptiveArbitration {
 			// static-preference order wins (priced arrives sorted).
 			String family = key.strategyFamily();
 			String incumbentFamily = incumbent.candidate.estimate.variantKey().strategyFamily();
+			boolean boundedSpecialist = LmdbNativeStrategyPreference.mustTryFamily(family)
+					&& !LmdbNativeStrategyPreference.allowsUnboundedMandatoryTrial(family);
+			if (boundedSpecialist
+					&& (anchor.evidenceSource() != LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
+							|| anchor.exactCompletedCount() == 0L)) {
+				// Specialist trials promise a known-fast fallback. A family/global estimate is not that: probing here
+				// can complete the specialist before the preferred IR arm ever runs, turning exploration into capture.
+				continue;
+			}
 			boolean mustTry = LmdbNativeStrategyPreference.mustTryFamily(family)
 					&& underConfirmed(family, prediction, incumbentFamily, anchor);
 			if (mustTry) {
@@ -535,12 +544,14 @@ final class LmdbNativeAdaptiveArbitration {
 			// COMPLETED evidence only: deadline censors inflate nEff (ten 0.1-weight censors read as nEff 10)
 			// while anchoring the price near the probe deadline instead of reality — an arm that never finished
 			// a run has never been measured and cannot serve as a rescue target (HC:8 2026-08-22 lock-in). The
-			// engine's own must-try kernel tiers qualify from their FIRST completion: probe credit affords them
+			// engine's own IR tiers qualify from their FIRST completion: probe credit affords them
 			// roughly one bounded trial per twenty dispatches, first-completion seeding makes that single sample
 			// trustworthy, and demanding the full floor left the kernel arm locked out for ~100 dispatches while
-			// a measured slow rival kept the rescue.
-			long floor = LmdbNativeStrategyPreference.mustTryFamily(rival.candidate.estimate.variantKey()
-					.strategyFamily()) ? 1L : COLD_START_EVIDENCE_FLOOR;
+			// a measured slow rival kept the rescue. Bounded specialist families still require the ordinary evidence
+			// floor: making them mandatory probe targets must not let a single fallback completion rescue the choice
+			// away from an IR incumbent that was waiting for compilation.
+			long floor = LmdbNativeStrategyPreference.allowsUnboundedMandatoryTrial(
+					rival.candidate.estimate.variantKey().strategyFamily()) ? 1L : COLD_START_EVIDENCE_FLOOR;
 			if (prediction.evidenceSource() != LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
 					|| prediction.exactCompletedCount() < floor || prediction.quarantined()
 					|| !prediction.uniformlyPriceable()) {

@@ -4673,9 +4673,16 @@ final class LmdbNativeKernelEmitter {
 					body.append(indent).append("        if (").append(a).append(" < 0) {\n");
 					body.append(indent).append("            ").append(a).append(" = 0L;\n");
 					body.append(indent).append("        }\n");
-					body.append(indent).append("        while (").append(a).append(" < rowSize) {\n");
 					body.append(indent)
-							.append("            int rn = ")
+							.append("        while (")
+							.append(a)
+							.append(" < rowSize || ")
+							.append(b)
+							.append(" >= 0L) {\n");
+					body.append(indent).append("            int rn;\n");
+					body.append(indent).append("            if (").append(b).append(" < 0L) {\n");
+					body.append(indent)
+							.append("                rn = ")
 							.append(view)
 							.append(".copyRow(key, rowH, ")
 							.append(a)
@@ -4686,13 +4693,13 @@ final class LmdbNativeKernelEmitter {
 							.append(", 0, ")
 							.append(runs)
 							.append(", 0);\n");
-					body.append(indent).append("            if (rn <= 0) { break; }\n");
-					body.append(indent)
-							.append("            if (")
-							.append(b)
-							.append(" < 0) { ")
-							.append(b)
-							.append(" = 0L; }\n");
+					body.append(indent).append("                if (rn <= 0) { break; }\n");
+					body.append(indent).append("                ").append(a).append(" += rn;\n");
+					body.append(indent).append("                ").append(b).append(" = 0L;\n");
+					body.append(indent).append("                ").append(d).append(" = rn;\n");
+					body.append(indent).append("            } else {\n");
+					body.append(indent).append("                rn = (int) ").append(d).append(";\n");
+					body.append(indent).append("            }\n");
 					body.append(indent)
 							.append("            for (; ")
 							.append(b)
@@ -4742,8 +4749,8 @@ final class LmdbNativeKernelEmitter {
 					body.append(indent).append("                }\n");
 					body.append(indent).append("                ").append(c).append(" = -1L;\n");
 					body.append(indent).append("            }\n");
-					body.append(indent).append("            ").append(a).append(" += rn;\n");
 					body.append(indent).append("            ").append(b).append(" = -1L;\n");
+					body.append(indent).append("            ").append(d).append(" = -1L;\n");
 					body.append(indent).append("        }\n");
 					body.append(indent).append("    }\n");
 				}
@@ -4751,6 +4758,7 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append(a).append(" = -1L;\n");
 				body.append(indent).append(b).append(" = -1L;\n");
 				body.append(indent).append(c).append(" = -1L;\n");
+				body.append(indent).append(d).append(" = -1L;\n");
 				return true;
 			}
 			if (node instanceof EnumerateWildcard) {

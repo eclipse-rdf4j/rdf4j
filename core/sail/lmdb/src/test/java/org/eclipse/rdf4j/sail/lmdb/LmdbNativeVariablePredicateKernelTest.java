@@ -52,6 +52,7 @@ class LmdbNativeVariablePredicateKernelTest {
 
 	private static final ValueFactory F = SimpleValueFactory.getInstance();
 	private static final String NS = "http://example.org/";
+	private static final String COST_CALIBRATION_PROPERTY = "rdf4j.lmdb.costCalibration.enabled";
 	private static final IRI S1 = F.createIRI(NS, "s1");
 	private static final IRI S2 = F.createIRI(NS, "s2");
 	private static final IRI G1 = F.createIRI(NS, "g1");
@@ -89,6 +90,7 @@ class LmdbNativeVariablePredicateKernelTest {
 		System.clearProperty("rdf4j.lmdb.parallel.threads");
 		System.clearProperty("rdf4j.lmdb.irKernelParallel.enabled");
 		System.clearProperty("rdf4j.lmdb.nativeBatch.enabled");
+		System.clearProperty(COST_CALIBRATION_PROPERTY);
 	}
 
 	private static void enableProjectionFreeWildcard() {
@@ -111,6 +113,7 @@ class LmdbNativeVariablePredicateKernelTest {
 
 	private void open(File dataDir, boolean compiled, boolean nodePredicateProjection) {
 		if (compiled) {
+			System.setProperty(COST_CALIBRATION_PROPERTY, "false");
 			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
 			System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
