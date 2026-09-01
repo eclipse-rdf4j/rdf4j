@@ -14,78 +14,119 @@ package org.eclipse.rdf4j.sail.lmdb.estimate;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 
+/**
+ * Bounded range-cardinality estimator for LMDB B+trees.
+ *
+ * <p>
+ * The external range is inclusive in the outer LMDB key. DUPSORT databases count every duplicate value belonging to a
+ * selected outer key. The current API deliberately does not express a range or predicate over duplicate values. Large
+ * ranges are decomposed into exact boundary slices and complete sibling subtrees, then probed with deterministic
+ * inverse-probability paths. Work is independent of the number of selected records once the exact-leaf threshold is
+ * exceeded.
+ * </p>
+ */
 final class LmdbBtreeRangeCounter {
 
-	private static final int EXACT_RANGE_LEAF_BUDGET = 32;
-	private static final int SAMPLE_LEAF_BUDGET = 16;
-	private static final int RESIDUAL_SAMPLE_LEAF_BUDGET = 32;
-	private static final long SAMPLER_VERSION = 1L;
-	private static final long MIX_GAMMA = 0x9e3779b97f4a7c15L;
+	private static final int EXACT_RANGE_LEAF_BUDGET = property("exactLeafBudget", 32, 1, 1 << 16);
+	private static final int PHYSICAL_SAMPLE_BUDGET = property("physicalProbeBudget", 32, 1, 1 << 16);
+	private static final int DUPSORT_PHYSICAL_SAMPLE_BUDGET = property("dupSortPhysicalProbeBudget", 64, 1,
+			1 << 16);
+	private static final int RESIDUAL_PILOT_BUDGET = property("residualPilotBudget", 16, 1, 1 << 16);
+	private static final int RESIDUAL_COMMON_BUDGET = property("residualCommonBudget", 32, 1, 1 << 16);
+	private static final int RESIDUAL_MODERATE_BUDGET = property("residualModerateBudget", 64, 1, 1 << 16);
+	private static final int RESIDUAL_SELECTIVE_BUDGET = property("residualSelectiveBudget", 128, 1, 1 << 16);
+	private static final int RESIDUAL_RARE_BUDGET = property("residualRareBudget", 256, 1, 1 << 16);
+	private static final int MAX_LOCAL_PAGE_CACHE = property("localPageCacheEntries", 4_096, 64, 1 << 20);
+	private static final double COMPLEMENT_RATIO = doubleProperty("complementRatio", 0.70d, 0.05d, 0.95d);
+	private static final long SAMPLER_VERSION = 0x4c4d444245535433L; // "LMDBEST3"
+	private static final int STREAM_PHYSICAL = 0x11;
+	private static final int STREAM_COMPLEMENT_LEFT = 0x21;
+	private static final int STREAM_COMPLEMENT_RIGHT = 0x22;
+	private static final int STREAM_RESIDUAL_PILOT = 0x31;
+	private static final int STREAM_RESIDUAL_FINAL = 0x32;
+	private static final long EMPTY_PAGE = Long.MIN_VALUE;
 
 	private final LmdbDataFile dataFile;
 	private final LmdbMeta meta;
+	private final LmdbPageCache sharedCache;
+	private final long databaseIdentity;
 
 	LmdbBtreeRangeCounter(LmdbDataFile dataFile, LmdbMeta meta) {
+		this(dataFile, meta, new LmdbPageCache(0, 0), 0L);
+	}
+
+	LmdbBtreeRangeCounter(LmdbDataFile dataFile, LmdbMeta meta, LmdbPageCache sharedCache,
+			long databaseIdentity) {
 		this.dataFile = dataFile;
 		this.meta = meta;
+		this.sharedCache = sharedCache;
+		this.databaseIdentity = databaseIdentity;
 	}
 
 	RangeCountResult estimateRange(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
 			GroupMatcher matcher) throws IOException {
-		return estimateRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher, 1);
+		return estimateRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher, matcher == null ? 0 : 1, 1);
 	}
 
 	RangeCountResult estimateRange(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
 			GroupMatcher matcher, int sampleMultiplier) throws IOException {
+		return estimateRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher, matcher == null ? 0 : 1,
+				sampleMultiplier);
+	}
+
+	RangeCountResult estimateRange(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
+			GroupMatcher matcher, int residualFieldCount, int sampleMultiplier) throws IOException {
+		sampleMultiplier = Math.clamp(sampleMultiplier, 1, 64);
 		RangeCountResult result = new RangeCountResult();
 		if (db.isEmpty()) {
+			markExact(result, RangeCountResult.Mode.EXACT_EMPTY);
 			return result;
 		}
+		validateDatabase(db);
+		validateKey(minKey, minKeyLength, "minimum");
+		validateKey(maxKey, maxKeyLength, "maximum");
 
-		Map<Long, LmdbPage> pageCache = new HashMap<>();
-		SeekCursor lower = seekRaw(db, minKey, minKeyLength, false, pageCache, result);
-		SeekCursor upper = seekRaw(db, maxKey, maxKeyLength, true, pageCache, result);
-
-		if (sameLeaf(lower, upper)) {
-			if (lower.leafIndex < upper.leafIndex) {
-				result.entries = countBoundarySlice(lower.leafPage, lower.leafIndex, upper.leafIndex, matcher,
-						pageCache, result);
-			}
-			return result;
-		}
-		if (comparePaths(lower.branchPath, upper.branchPath) >= 0) {
+		boolean dupSort = db.isDupSort();
+		LocalPageCache localPages = new LocalPageCache(localCacheCapacity(db.depth(), sampleMultiplier));
+		SeekCursor lower = seekRaw(db, minKey, minKeyLength, false, localPages, result);
+		SeekCursor upper = seekRaw(db, maxKey, maxKeyLength, true, localPages, result);
+		RangePlan direct = rangePlan(lower, upper);
+		if (direct.empty) {
+			markExact(result, RangeCountResult.Mode.EXACT_EMPTY);
 			return result;
 		}
 
 		if (matcher == null && coversWholeDatabase(lower, upper)) {
 			result.entries = db.entries();
+			markExact(result, RangeCountResult.Mode.EXACT_WHOLE_DATABASE);
 			return result;
 		}
 
-		List<SiblingSpan> spans = decomposeRange(lower, upper);
-		long boundaryEntries = countBoundarySlice(lower.leafPage, lower.leafIndex, lower.leafPage.numKeys,
-				matcher, pageCache, result)
-				+ countBoundarySlice(upper.leafPage, 0, upper.leafIndex, matcher, pageCache, result);
-
-		int directLeafPages = directLeafPageCount(spans);
-		if (directLeafPages <= EXACT_RANGE_LEAF_BUDGET - 2) {
-			result.entries = Math.min(db.entries(), boundaryEntries + countDirectLeafSpans(spans, matcher, pageCache,
-					result));
+		LeafMeasurementCache directMeasurements = new LeafMeasurementCache(maxMeasurementCapacity(sampleMultiplier));
+		PreparedPlan prepared = preparePlan(direct, matcher, dupSort, directMeasurements, localPages, result);
+		if (prepared.exact) {
+			result.entries = Math.min(db.entries(), prepared.exactMeasurement.matchedEntries);
+			markExact(result, direct.sameLeaf ? RangeCountResult.Mode.EXACT_SAME_LEAF
+					: RangeCountResult.Mode.EXACT_SMALL_RANGE);
 			return result;
 		}
 
-		double estimate = boundaryEntries
-				+ estimateSpans(db, spans, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
-						Math.clamp(sampleMultiplier, 1, 64), pageCache, result);
-		long rounded = Math.round(Math.clamp(estimate, 0.0d, (double) db.entries()));
-		long minimum = boundaryEntries > 0 ? boundaryEntries : 1;
-		result.entries = Math.min(db.entries(), Math.max(minimum, rounded));
+		if (matcher == null) {
+			long estimate = estimateMatcherFree(db, direct, prepared, dupSort, minKey, minKeyLength, maxKey,
+					maxKeyLength, sampleMultiplier, localPages, result);
+			result.entries = Math.min(db.entries(), Math.max(prepared.boundary.matchedEntries, estimate));
+			return result;
+		}
+
+		long estimate = estimateResidual(db, direct, prepared, dupSort, minKey, minKeyLength, maxKey,
+				maxKeyLength, matcher, Math.max(1, residualFieldCount), sampleMultiplier, directMeasurements,
+				localPages, result);
+		result.entries = Math.min(db.entries(), Math.max(prepared.boundary.matchedEntries, estimate));
 		return result;
 	}
 
@@ -93,58 +134,235 @@ final class LmdbBtreeRangeCounter {
 		if (db.isEmpty()) {
 			return null;
 		}
-		Map<Long, LmdbPage> pageCache = new HashMap<>();
-		SeekCursor cursor = seekRaw(db, key, keyLength, false, pageCache, ioStats);
+		validateDatabase(db);
+		validateKey(key, keyLength, "lookup");
+		LocalPageCache localPages = new LocalPageCache(localCacheCapacity(db.depth()));
+		SeekCursor cursor = seekRaw(db, key, keyLength, false, localPages, ioStats);
 		if (cursor.leafIndex >= cursor.leafPage.numKeys) {
 			return null;
 		}
 
-		LmdbNode node = cursor.leafPage.node(cursor.leafIndex);
-		int cmp = LmdbKeyComparator.compare(cursor.leafPage.buffer, node.keyOffset(), node.keySize(), key, keyLength);
-		if (cmp != 0) {
+		int nodeOffset = cursor.leafPage.nodeOffset(cursor.leafIndex);
+		int keySize = cursor.leafPage.keySizeAt(nodeOffset);
+		int comparison = LmdbKeyComparator.compare(key, keyLength, cursor.leafPage.buffer,
+				cursor.leafPage.keyOffsetAt(nodeOffset), keySize, db.flags(), meta.byteOrder());
+		if (comparison != 0) {
 			return null;
 		}
 
-		byte[] value = new byte[node.valueSize()];
-		ByteBuffer duplicate = cursor.leafPage.buffer.duplicate();
-		duplicate.position(node.valueOffset());
-		duplicate.get(value, 0, node.valueSize());
+		int nodeFlags = cursor.leafPage.nodeFlagsAt(nodeOffset);
+		int logicalValueSize = cursor.leafPage.valueSizeAt(nodeOffset);
+		int storedValueSize = (nodeFlags & LmdbFormat.F_BIGDATA) != 0 ? Long.BYTES : logicalValueSize;
+		int valueOffset = cursor.leafPage.valueOffsetAt(nodeOffset, keySize);
+		if (storedValueSize < 0 || valueOffset < 0 || storedValueSize > cursor.leafPage.pageSize - valueOffset) {
+			throw new IOException("Value exceeds page bounds for exact lookup on page "
+					+ cursor.leafPage.expectedPgno);
+		}
+		byte[] value = new byte[storedValueSize];
+		ByteBuffer source = cursor.leafPage.buffer.duplicate();
+		source.position(valueOffset);
+		source.get(value);
 		return value;
 	}
 
-	private SeekCursor seekRaw(LmdbDb db, byte[] searchKey, int searchKeyLength, boolean strictUpperBound,
-			Map<Long, LmdbPage> pageCache, RangeCountResult stats) throws IOException {
-		List<BranchFrame> branchPath = new ArrayList<>();
-		LmdbPage page = readPage(db.rootPgno(), pageCache, stats);
+	private long estimateMatcherFree(LmdbDb db, RangePlan direct, PreparedPlan prepared, boolean dupSort,
+			byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength, int sampleMultiplier,
+			LocalPageCache localPages,
+			RangeCountResult result) throws IOException {
+		int budget = physicalBudget(dupSort, sampleMultiplier);
+		long baseSeed = samplingSeed(db, minKey, minKeyLength, maxKey, maxKeyLength);
 
+		if (shouldUseComplement(db, direct, prepared, dupSort, localPages, result)) {
+			SeekCursor first = extremeCursor(db, false, localPages, result);
+			SeekCursor end = extremeCursor(db, true, localPages, result);
+			RangePlan left = rangePlan(first, direct.lower);
+			RangePlan right = rangePlan(direct.upper, end);
+			double leftMass = modeledLeafMass(db, left, dupSort);
+			double rightMass = modeledLeafMass(db, right, dupSort);
+			int leftBudget = splitBudget(budget, leftMass, rightMass, true);
+			int rightBudget = splitBudget(budget, rightMass, leftMass, false);
+
+			EstimateValue leftEstimate = estimatePhysicalPlan(db, left, dupSort, leftBudget,
+					mix64(baseSeed ^ STREAM_COMPLEMENT_LEFT), localPages, result);
+			EstimateValue rightEstimate = estimatePhysicalPlan(db, right, dupSort, rightBudget,
+					mix64(baseSeed ^ STREAM_COMPLEMENT_RIGHT), localPages, result);
+			long excluded = saturatedAdd(leftEstimate.entries, rightEstimate.entries);
+			result.complementUsed = true;
+			result.mode = RangeCountResult.Mode.SAMPLED_COMPLEMENT;
+			result.exact = leftEstimate.exact && rightEstimate.exact;
+			result.exhaustive = leftEstimate.exhaustive && rightEstimate.exhaustive;
+			return excluded >= db.entries() ? 0L : db.entries() - excluded;
+		}
+
+		SampleAggregate aggregate = sampleSpans(db, direct.spans, null, dupSort, budget,
+				mix64(baseSeed ^ STREAM_PHYSICAL), new LeafMeasurementCache(maxMeasurementCapacity(sampleMultiplier)),
+				localPages, result);
+		double value = prepared.boundary.logicalEntries + aggregate.estimatedLogicalEntries;
+		result.mode = RangeCountResult.Mode.SAMPLED_DIRECT_RANGE;
+		result.exact = aggregate.exhaustive;
+		result.exhaustive = aggregate.exhaustive;
+		return finiteClampedRound(value, db.entries());
+	}
+
+	private long estimateResidual(LmdbDb db, RangePlan direct, PreparedPlan prepared, boolean dupSort,
+			byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength, GroupMatcher matcher,
+			int residualFieldCount, int sampleMultiplier, LeafMeasurementCache matcherMeasurements,
+			LocalPageCache localPages,
+			RangeCountResult result) throws IOException {
+		long baseSeed = samplingSeed(db, minKey, minKeyLength, maxKey, maxKeyLength);
+		long physicalTotal;
+		boolean physicalExact;
+		if (coversWholeDatabase(direct.lower, direct.upper)) {
+			physicalTotal = db.entries();
+			physicalExact = true;
+		} else {
+			SampleAggregate physical = sampleSpans(db, direct.spans, null, dupSort,
+					physicalBudget(dupSort, sampleMultiplier), mix64(baseSeed ^ STREAM_PHYSICAL),
+					new LeafMeasurementCache(maxMeasurementCapacity(sampleMultiplier)), localPages, result);
+			physicalTotal = finiteClampedRound(prepared.boundary.logicalEntries
+					+ physical.estimatedLogicalEntries, db.entries());
+			physicalExact = physical.exhaustive;
+		}
+
+		double middlePhysical = Math.max(0.0d, physicalTotal - prepared.boundary.logicalEntries);
+		SampleAggregate pilot = sampleSpans(db, direct.spans, matcher, dupSort,
+				residualPilotBudget(dupSort, sampleMultiplier),
+				mix64(baseSeed ^ STREAM_RESIDUAL_PILOT), matcherMeasurements, localPages, result);
+		int finalBudget = scaledBudget(chooseResidualBudget(pilot, residualFieldCount, dupSort), sampleMultiplier);
+		SampleAggregate sampled = sampleSpans(db, direct.spans, matcher, dupSort, finalBudget,
+				mix64(baseSeed ^ STREAM_RESIDUAL_FINAL), matcherMeasurements, localPages, result);
+
+		double middleMatches;
+		if (sampled.exhaustive) {
+			middleMatches = sampled.estimatedMatchedEntries;
+		} else if (sampled.estimatedLogicalEntries > 0.0d) {
+			double ratio = clampDouble(sampled.estimatedMatchedEntries / sampled.estimatedLogicalEntries, 0.0d,
+					1.0d);
+			middleMatches = middlePhysical * ratio;
+		} else {
+			middleMatches = 0.0d;
+		}
+
+		if (!sampled.exhaustive && sampled.rawMatchedEntries == 0L && middlePhysical > 0.0d) {
+			// Use sampled logical items rather than outer-key count. This is identical for ordinary statement
+			// indexes but avoids an excessively large zero-hit prior when one sampled DUPSORT key owns many values.
+			double effectiveUnits = Math.max(1.0d, sampled.rawLogicalEntries);
+			double oneHitEquivalent = Math.max(1.0d, middlePhysical / effectiveUnits);
+			double sparsePrior = Math.pow(oneHitEquivalent, 1.0d / (residualFieldCount + 1.0d));
+			// Never let the sparse prior claim more than one percent of the physical range.
+			sparsePrior = Math.min(sparsePrior, Math.max(1.0d, middlePhysical * 0.01d));
+			if (middleMatches < sparsePrior) {
+				middleMatches = sparsePrior;
+				result.sparsePriorUsed = true;
+			}
+		}
+
+		double total = prepared.boundary.matchedEntries + middleMatches;
+		result.mode = RangeCountResult.Mode.SAMPLED_RESIDUAL;
+		result.exact = sampled.exhaustive;
+		result.exhaustive = sampled.exhaustive && physicalExact;
+		return finiteClampedRound(total, physicalTotal);
+	}
+
+	private EstimateValue estimatePhysicalPlan(LmdbDb db, RangePlan plan, boolean dupSort, int budget, long seed,
+			LocalPageCache localPages, RangeCountResult result) throws IOException {
+		if (plan.empty) {
+			return new EstimateValue(0L, true, true);
+		}
+		PreparedPlan prepared = preparePlan(plan, null, dupSort,
+				new LeafMeasurementCache(measurementCapacityForBudget(budget)),
+				localPages, result);
+		if (prepared.exact) {
+			return new EstimateValue(prepared.exactMeasurement.logicalEntries, true, true);
+		}
+		SampleAggregate sampled = sampleSpans(db, plan.spans, null, dupSort, Math.max(1, budget), seed,
+				new LeafMeasurementCache(measurementCapacityForBudget(budget)), localPages, result);
+		long value = finiteClampedRound(prepared.boundary.logicalEntries + sampled.estimatedLogicalEntries,
+				db.entries());
+		return new EstimateValue(value, sampled.exhaustive, sampled.exhaustive);
+	}
+
+	private PreparedPlan preparePlan(RangePlan plan, GroupMatcher matcher, boolean dupSort,
+			LeafMeasurementCache measurements, LocalPageCache localPages, RangeCountResult result) throws IOException {
+		if (plan.empty) {
+			return new PreparedPlan(LeafMeasurement.ZERO, true, LeafMeasurement.ZERO);
+		}
+		if (plan.sameLeaf) {
+			LeafMeasurement exact = measureLeafSlice(plan.lower.leafPage, plan.lower.leafIndex,
+					plan.upper.leafIndex, matcher, dupSort, result);
+			return new PreparedPlan(exact, true, exact);
+		}
+
+		LeafMeasurement lowerBoundary = measureLeafSlice(plan.lower.leafPage, plan.lower.leafIndex,
+				plan.lower.leafPage.numKeys, matcher, dupSort, result);
+		LeafMeasurement upperBoundary = measureLeafSlice(plan.upper.leafPage, 0, plan.upper.leafIndex, matcher,
+				dupSort, result);
+		LeafMeasurement boundary = lowerBoundary.add(upperBoundary);
+		int boundaryLeaves = (plan.lower.leafIndex < plan.lower.leafPage.numKeys ? 1 : 0)
+				+ (plan.upper.leafIndex > 0 ? 1 : 0);
+		ExactLeafPlan exactLeaves = collectExactLeafPlan(plan.spans, EXACT_RANGE_LEAF_BUDGET - boundaryLeaves,
+				localPages, result);
+		if (exactLeaves == null) {
+			return new PreparedPlan(boundary, false, LeafMeasurement.ZERO);
+		}
+
+		LeafMeasurement total = boundary;
+		for (long pageNumber : exactLeaves.leafPages) {
+			LeafMeasurement measurement = measureLeafPage(pageNumber, matcher, dupSort, measurements, localPages,
+					result);
+			total = total.add(measurement);
+		}
+		return new PreparedPlan(boundary, true, total);
+	}
+
+	private RangePlan rangePlan(SeekCursor lower, SeekCursor upper) throws IOException {
+		if (sameLeaf(lower, upper)) {
+			return new RangePlan(lower, upper, List.of(), lower.leafIndex >= upper.leafIndex, true);
+		}
+		if (comparePaths(lower.branchPath, upper.branchPath) >= 0) {
+			return new RangePlan(lower, upper, List.of(), true, false);
+		}
+		return new RangePlan(lower, upper, decomposeRange(lower, upper), false, false);
+	}
+
+	private SeekCursor seekRaw(LmdbDb db, byte[] searchKey, int searchKeyLength, boolean strictUpperBound,
+			LocalPageCache localPages, RangeCountResult stats) throws IOException {
+		List<BranchFrame> branchPath = new ArrayList<>(Math.max(0, db.depth() - 1));
+		LmdbPage page = readPage(db.rootPgno(), localPages, stats);
 		while (page.isBranch()) {
 			if (page.numKeys == 0) {
 				throw new IOException("Corrupt branch page with zero keys: " + page.expectedPgno);
 			}
-			SearchResult search = findFirstGreaterOrEqual(page, searchKey, searchKeyLength, false);
-			int childIndex;
-			if (search.index >= page.numKeys) {
-				childIndex = page.numKeys - 1;
-			} else {
-				childIndex = search.index;
-				if (!search.exact) {
-					childIndex--;
-				}
-			}
+			SearchResult search = findFirstGreaterOrEqual(page, searchKey, searchKeyLength, false, db.flags());
+			int childIndex = search.index >= page.numKeys ? page.numKeys - 1
+					: search.exact ? search.index : search.index - 1;
 			if (childIndex < 0 || childIndex >= page.numKeys) {
-				throw new IOException("Corrupt branch descent index " + childIndex + " for page " + page.expectedPgno);
+				throw new IOException("Corrupt branch descent index " + childIndex + " for page "
+						+ page.expectedPgno);
 			}
 			branchPath.add(new BranchFrame(page, childIndex));
-			page = readPage(page.node(childIndex).branchPgno(), pageCache, stats);
+			page = readPage(branchChildPage(page, childIndex), localPages, stats);
 		}
-
-		if (!page.isLeaf() && !page.isLeaf2()) {
-			throw new IOException("Expected leaf page, found flags=" + page.flags + " on page " + page.expectedPgno);
-		}
-
-		SearchResult leafSearch = findFirstGreaterOrEqual(page, searchKey, searchKeyLength, true);
+		ensureOuterLeaf(page);
+		SearchResult leafSearch = findFirstGreaterOrEqual(page, searchKey, searchKeyLength, true, db.flags());
 		int leafIndex = leafSearch.index + (strictUpperBound && leafSearch.exact ? 1 : 0);
 		return new SeekCursor(page, leafIndex, branchPath);
+	}
+
+	private SeekCursor extremeCursor(LmdbDb db, boolean end, LocalPageCache localPages, RangeCountResult stats)
+			throws IOException {
+		List<BranchFrame> branchPath = new ArrayList<>(Math.max(0, db.depth() - 1));
+		LmdbPage page = readPage(db.rootPgno(), localPages, stats);
+		while (page.isBranch()) {
+			if (page.numKeys == 0) {
+				throw new IOException("Corrupt branch page with zero keys: " + page.expectedPgno);
+			}
+			int child = end ? page.numKeys - 1 : 0;
+			branchPath.add(new BranchFrame(page, child));
+			page = readPage(branchChildPage(page, child), localPages, stats);
+		}
+		ensureOuterLeaf(page);
+		return new SeekCursor(page, end ? page.numKeys : 0, branchPath);
 	}
 
 	private List<SiblingSpan> decomposeRange(SeekCursor lower, SeekCursor upper) throws IOException {
@@ -153,15 +371,14 @@ final class LmdbBtreeRangeCounter {
 		if (lowerPath.size() != upperPath.size()) {
 			throw new IOException("Boundary paths have different depths");
 		}
-
 		int divergence = -1;
 		for (int level = 0; level < lowerPath.size(); level++) {
-			BranchFrame lowerFrame = lowerPath.get(level);
-			BranchFrame upperFrame = upperPath.get(level);
-			if (lowerFrame.page.expectedPgno != upperFrame.page.expectedPgno) {
+			BranchFrame left = lowerPath.get(level);
+			BranchFrame right = upperPath.get(level);
+			if (left.page.expectedPgno != right.page.expectedPgno) {
 				throw new IOException("Boundary paths diverged without a shared parent at level " + level);
 			}
-			if (lowerFrame.childIndex != upperFrame.childIndex) {
+			if (left.childIndex != right.childIndex) {
 				divergence = level;
 				break;
 			}
@@ -170,17 +387,15 @@ final class LmdbBtreeRangeCounter {
 			throw new IOException("Different boundary leaves have identical branch paths");
 		}
 
-		List<SiblingSpan> spans = new ArrayList<>(lowerPath.size() * 2 - 1);
 		int lastLevel = lowerPath.size() - 1;
+		List<SiblingSpan> spans = new ArrayList<>(lowerPath.size() * 2 - 1);
 		for (int level = lastLevel; level > divergence; level--) {
 			BranchFrame frame = lowerPath.get(level);
 			addSpan(spans, frame.page, frame.childIndex + 1, frame.page.numKeys, lastLevel - level);
 		}
-
-		BranchFrame sharedParent = lowerPath.get(divergence);
-		addSpan(spans, sharedParent.page, sharedParent.childIndex + 1,
-				upperPath.get(divergence).childIndex, lastLevel - divergence);
-
+		BranchFrame shared = lowerPath.get(divergence);
+		addSpan(spans, shared.page, shared.childIndex + 1, upperPath.get(divergence).childIndex,
+				lastLevel - divergence);
 		for (int level = divergence + 1; level <= lastLevel; level++) {
 			BranchFrame frame = upperPath.get(level);
 			addSpan(spans, frame.page, 0, frame.childIndex, lastLevel - level);
@@ -195,205 +410,425 @@ final class LmdbBtreeRangeCounter {
 		}
 	}
 
-	private int directLeafPageCount(List<SiblingSpan> spans) {
-		int leafPages = 0;
+	private ExactLeafPlan collectExactLeafPlan(List<SiblingSpan> spans, int leafBudget,
+			LocalPageCache localPages, RangeCountResult stats) throws IOException {
+		if (leafBudget < 0) {
+			return null;
+		}
+		LeafPageCollector collector = new LeafPageCollector(leafBudget);
 		for (SiblingSpan span : spans) {
-			if (span.remainingBranchLevels != 0) {
-				return Integer.MAX_VALUE;
-			}
-			leafPages += span.width();
-			if (leafPages > EXACT_RANGE_LEAF_BUDGET - 2) {
-				return leafPages;
+			for (int child = span.fromInclusive; child < span.toExclusive; child++) {
+				if (!collectSubtreeLeaves(branchChildPage(span.parent, child), span.remainingBranchLevels,
+						collector, localPages, stats)) {
+					return null;
+				}
 			}
 		}
-		return leafPages;
+		return new ExactLeafPlan(Arrays.copyOf(collector.pages, collector.size));
 	}
 
-	private long countDirectLeafSpans(List<SiblingSpan> spans, GroupMatcher matcher,
-			Map<Long, LmdbPage> pageCache, RangeCountResult stats) throws IOException {
-		long entries = 0;
-		for (SiblingSpan span : spans) {
-			for (int childIndex = span.fromInclusive; childIndex < span.toExclusive; childIndex++) {
-				LmdbPage leaf = readPage(span.parent.node(childIndex).branchPgno(), pageCache, stats);
-				ensureLeaf(leaf);
-				entries += countBoundarySlice(leaf, 0, leaf.numKeys, matcher, pageCache, stats);
+	private boolean collectSubtreeLeaves(long pageNumber, int remainingBranchLevels, LeafPageCollector collector,
+			LocalPageCache localPages, RangeCountResult stats) throws IOException {
+		if (remainingBranchLevels == 0) {
+			return collector.add(pageNumber);
+		}
+		LmdbPage branch = readPage(pageNumber, localPages, stats);
+		if (!branch.isBranch() || branch.numKeys == 0) {
+			throw new IOException("Expected non-empty branch at remaining depth " + remainingBranchLevels
+					+ ", page=" + pageNumber + ", flags=0x" + Integer.toHexString(branch.flags));
+		}
+		for (int child = 0; child < branch.numKeys; child++) {
+			if (!collectSubtreeLeaves(branchChildPage(branch, child), remainingBranchLevels - 1, collector,
+					localPages, stats)) {
+				return false;
 			}
 		}
-		return entries;
+		return true;
 	}
 
-	private double estimateSpans(LmdbDb db, List<SiblingSpan> spans, byte[] minKey, int minKeyLength,
-			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, int sampleMultiplier,
-			Map<Long, LmdbPage> pageCache,
-			RangeCountResult stats) throws IOException {
-		int sampleLeafBudget = (matcher == null ? SAMPLE_LEAF_BUDGET : RESIDUAL_SAMPLE_LEAF_BUDGET)
-				* sampleMultiplier;
-		int[] probesPerSpan = allocateProbes(db, spans, sampleLeafBudget);
-		long baseSeed = samplingSeed(db, minKey, minKeyLength, maxKey, maxKeyLength);
-		double estimate = 0.0d;
+	private SampleAggregate sampleSpans(LmdbDb db, List<SiblingSpan> spans, GroupMatcher matcher,
+			boolean dupSort, int totalBudget, long seed, LeafMeasurementCache measurements,
+			LocalPageCache localPages, RangeCountResult stats) throws IOException {
+		if (spans.isEmpty()) {
+			return SampleAggregate.EMPTY_EXACT;
+		}
+		int[] probes = allocateProbes(db, spans, Math.max(totalBudget, spans.size()), dupSort);
+		SeenLeafSet seen = new SeenLeafSet(Math.max(16, totalBudget * 2));
+		SampleAggregate aggregate = new SampleAggregate();
+		aggregate.exhaustive = true;
 
 		for (int spanIndex = 0; spanIndex < spans.size(); spanIndex++) {
 			SiblingSpan span = spans.get(spanIndex);
-			int probeCount = probesPerSpan[spanIndex];
+			int probeCount = probes[spanIndex];
+			if (span.remainingBranchLevels == 0 && probeCount >= span.width()) {
+				for (int child = span.fromInclusive; child < span.toExclusive; child++) {
+					long pageNumber = branchChildPage(span.parent, child);
+					LeafMeasurement measurement = measureLeafPage(pageNumber, matcher, dupSort, measurements,
+							localPages, stats);
+					aggregate.addExact(measurement);
+					aggregate.addRawIfNew(pageNumber, measurement, seen);
+				}
+				continue;
+			}
+
+			aggregate.exhaustive = false;
 			int bandCount = Math.min(probeCount, span.width());
 			int probesPerBand = probeCount / bandCount;
-			int bandsWithExtraProbe = probeCount % bandCount;
-
-			for (int bandIndex = 0; bandIndex < bandCount; bandIndex++) {
-				int bandStart = span.fromInclusive + bandIndex * span.width() / bandCount;
-				int bandEnd = span.fromInclusive + (bandIndex + 1) * span.width() / bandCount;
-				int bandProbes = probesPerBand + (bandIndex < bandsWithExtraProbe ? 1 : 0);
-				double bandEstimate = 0.0d;
+			int extra = probeCount % bandCount;
+			for (int band = 0; band < bandCount; band++) {
+				int bandStart = span.fromInclusive + band * span.width() / bandCount;
+				int bandEnd = span.fromInclusive + (band + 1) * span.width() / bandCount;
+				int bandProbes = probesPerBand + (band < extra ? 1 : 0);
+				double logical = 0.0d;
+				double matched = 0.0d;
+				double outerKeys = 0.0d;
+				long bandSeed = mix64(seed ^ ((long) spanIndex << 40) ^ ((long) bandStart << 20)
+						^ bandEnd ^ band);
 				for (int probe = 0; probe < bandProbes; probe++) {
-					long seed = probeSeed(baseSeed, span, spanIndex, bandStart, bandEnd, bandIndex, probe);
-					bandEstimate += sampleBand(span, bandStart, bandEnd, seed, matcher, pageCache, stats);
+					double coordinate = lowDiscrepancyCoordinate(bandSeed, probe);
+					WeightedLeaf sampled = sampleLeaf(span, bandStart, bandEnd, coordinate, matcher, dupSort,
+							measurements, localPages, stats);
+					logical += sampled.weight * sampled.measurement.logicalEntries;
+					matched += sampled.weight * sampled.measurement.matchedEntries;
+					outerKeys += sampled.weight * sampled.measurement.outerKeys;
+					aggregate.addRawIfNew(sampled.pageNumber, sampled.measurement, seen);
+					stats.leafSampleProbes++;
 				}
-				estimate += bandEstimate / bandProbes;
+				aggregate.estimatedLogicalEntries += logical / bandProbes;
+				aggregate.estimatedMatchedEntries += matched / bandProbes;
+				aggregate.estimatedOuterKeys += outerKeys / bandProbes;
 			}
 		}
-		return estimate;
+		return aggregate;
 	}
 
-	private int[] allocateProbes(LmdbDb db, List<SiblingSpan> spans, int totalBudget) {
-		int spanCount = spans.size();
-		totalBudget = Math.max(totalBudget, spanCount);
-		int[] probes = new int[spanCount];
-		double[] logSizes = new double[spanCount];
-		double[] remainders = new double[spanCount];
-		double averageFanout = globalAverageFanout(db);
-		double maxLogSize = Double.NEGATIVE_INFINITY;
+	private WeightedLeaf sampleLeaf(SiblingSpan span, int bandStart, int bandEnd, double coordinate,
+			GroupMatcher matcher, boolean dupSort, LeafMeasurementCache measurements, LocalPageCache localPages,
+			RangeCountResult stats) throws IOException {
+		int bandWidth = bandEnd - bandStart;
+		double scaled = coordinate * bandWidth;
+		int relativeChild = Math.min((int) scaled, bandWidth - 1);
+		int child = bandStart + relativeChild;
+		double localCoordinate = scaled - relativeChild;
+		double weight = bandWidth;
+		long pageNumber = branchChildPage(span.parent, child);
 
-		for (int span = 0; span < spanCount; span++) {
-			probes[span] = 1;
-			SiblingSpan siblingSpan = spans.get(span);
-			logSizes[span] = Math.log(siblingSpan.width())
-					+ siblingSpan.remainingBranchLevels * Math.log(averageFanout);
-			maxLogSize = Math.max(maxLogSize, logSizes[span]);
+		for (int level = 0; level < span.remainingBranchLevels; level++) {
+			LmdbPage branch = readPage(pageNumber, localPages, stats);
+			if (!branch.isBranch() || branch.numKeys == 0) {
+				throw new IOException("Expected non-empty sampled branch page " + pageNumber + " at level " + level);
+			}
+			weight *= branch.numKeys;
+			double childCoordinate = localCoordinate * branch.numKeys;
+			int nextChild = Math.min((int) childCoordinate, branch.numKeys - 1);
+			localCoordinate = childCoordinate - nextChild;
+			pageNumber = branchChildPage(branch, nextChild);
 		}
 
-		int remaining = totalBudget - spanCount;
-		if (remaining == 0) {
+		LeafMeasurement measurement = measureLeafPage(pageNumber, matcher, dupSort, measurements, localPages,
+				stats);
+		return new WeightedLeaf(pageNumber, weight, measurement);
+	}
+
+	private int[] allocateProbes(LmdbDb db, List<SiblingSpan> spans, int totalBudget, boolean dupSort) {
+		int count = spans.size();
+		int[] probes = new int[count];
+		if (count == 0) {
 			return probes;
 		}
-
-		double weightSum = 0.0d;
-		for (double logSize : logSizes) {
-			weightSum += Math.exp(logSize - maxLogSize);
-		}
-		int allocated = 0;
-		for (int span = 0; span < spanCount; span++) {
-			double share = remaining * Math.exp(logSizes[span] - maxLogSize) / weightSum;
-			int wholeProbes = (int) Math.floor(share);
-			probes[span] += wholeProbes;
-			allocated += wholeProbes;
-			remainders[span] = share - wholeProbes;
+		totalBudget = Math.max(totalBudget, count);
+		double[] mass = new double[count];
+		for (int index = 0; index < count; index++) {
+			probes[index] = 1;
+			mass[index] = modeledLeafMass(db, spans.get(index), dupSort);
 		}
 
-		for (int extra = allocated; extra < remaining; extra++) {
-			int selected = 0;
-			for (int span = 1; span < spanCount; span++) {
-				if (remainders[span] > remainders[selected]) {
-					selected = span;
+		for (int remaining = totalBudget - count; remaining > 0; remaining--) {
+			int best = -1;
+			double bestGain = Double.NEGATIVE_INFINITY;
+			for (int index = 0; index < count; index++) {
+				SiblingSpan span = spans.get(index);
+				if (span.remainingBranchLevels == 0 && probes[index] >= span.width()) {
+					continue;
+				}
+				double n = probes[index];
+				double cost = span.remainingBranchLevels + 1.0d;
+				double gain = mass[index] / (n * (n + 1.0d) * Math.sqrt(cost));
+				if (gain > bestGain) {
+					bestGain = gain;
+					best = index;
 				}
 			}
-			probes[selected]++;
-			remainders[selected] = -1.0d;
+			if (best < 0) {
+				break;
+			}
+			probes[best]++;
 		}
 		return probes;
 	}
 
-	private double globalAverageFanout(LmdbDb db) {
-		if (db.branchPages() <= 0) {
+	private LeafMeasurement measureLeafPage(long pageNumber, GroupMatcher matcher, boolean dupSort,
+			LeafMeasurementCache measurements, LocalPageCache localPages, RangeCountResult stats) throws IOException {
+		LeafMeasurement cached = measurements.get(pageNumber);
+		if (cached != null) {
+			return cached;
+		}
+
+		LeafMeasurement measured;
+		if (!dupSort && matcher == null) {
+			int count = readLeafEntryCount(pageNumber, localPages, stats);
+			measured = new LeafMeasurement(count, count, count);
+		} else {
+			LmdbPage leaf = readPage(pageNumber, localPages, stats);
+			ensureOuterLeaf(leaf);
+			measured = measureLeafSlice(leaf, 0, leaf.numKeys, matcher, dupSort, stats);
+		}
+		measurements.put(pageNumber, measured);
+		return measured;
+	}
+
+	private LeafMeasurement measureLeafSlice(LmdbPage page, int fromInclusive, int toExclusive,
+			GroupMatcher matcher, boolean dupSort, RangeCountResult stats) throws IOException {
+		ensureOuterLeaf(page);
+		if (fromInclusive < 0 || fromInclusive > toExclusive || toExclusive > page.numKeys) {
+			throw new IOException("Invalid leaf slice [" + fromInclusive + ',' + toExclusive + ") for page "
+					+ page.expectedPgno + " with " + page.numKeys + " keys");
+		}
+		int outerKeys = toExclusive - fromInclusive;
+		if (outerKeys == 0) {
+			return LeafMeasurement.ZERO;
+		}
+		if (!dupSort && matcher == null) {
+			return new LeafMeasurement(outerKeys, outerKeys, outerKeys);
+		}
+
+		if (matcher != null) {
+			stats.matcherLeafScans++;
+			stats.matcherOuterKeysScanned += outerKeys;
+		}
+		ByteBuffer keyView = matcher == null ? null : page.buffer.duplicate().order(page.buffer.order());
+		long logical = 0L;
+		long matched = 0L;
+		for (int index = fromInclusive; index < toExclusive; index++) {
+			int nodeOffset = page.nodeOffset(index);
+			int keySize = page.keySizeAt(nodeOffset);
+			long multiplicity = dupSort ? duplicateMultiplicity(page, nodeOffset, keySize) : 1L;
+			logical = saturatedAdd(logical, multiplicity);
+			if (matcher == null || matches(page, nodeOffset, keySize, keyView, matcher)) {
+				matched = saturatedAdd(matched, multiplicity);
+			}
+		}
+		return new LeafMeasurement(logical, matched, outerKeys);
+	}
+
+	private boolean matches(LmdbPage page, int nodeOffset, int keySize, ByteBuffer keyView,
+			GroupMatcher matcher) {
+		int keyOffset = page.keyOffsetAt(nodeOffset);
+		keyView.clear();
+		keyView.position(keyOffset);
+		keyView.limit(keyOffset + keySize);
+		return matcher.matches(keyView);
+	}
+
+	private long duplicateMultiplicity(LmdbPage page, int nodeOffset, int keySize) throws IOException {
+		int nodeFlags = page.nodeFlagsAt(nodeOffset);
+		if ((nodeFlags & LmdbFormat.F_DUPDATA) == 0) {
+			return 1L;
+		}
+		if ((nodeFlags & LmdbFormat.F_BIGDATA) != 0) {
+			throw new IOException("Corrupt DUPSORT node combines F_DUPDATA and F_BIGDATA on page "
+					+ page.expectedPgno);
+		}
+
+		int valueSize = page.valueSizeAt(nodeOffset);
+		int valueOffset = page.valueOffsetAt(nodeOffset, keySize);
+		validateInlineValueBounds(page, valueOffset, valueSize);
+		if ((nodeFlags & LmdbFormat.F_SUBDATA) != 0) {
+			if (valueSize < LmdbFormat.META_DB_SIZE) {
+				throw new IOException("Truncated duplicate sub-database descriptor on page " + page.expectedPgno
+						+ ": " + valueSize + " bytes");
+			}
+			LmdbDb duplicateDb = LmdbDb.parse(page.buffer, valueOffset);
+			validateDuplicateSubDatabase(duplicateDb, page.expectedPgno);
+			return duplicateDb.entries();
+		}
+		return embeddedDuplicateCount(page.buffer, valueOffset, valueSize, page.expectedPgno);
+	}
+
+	private long embeddedDuplicateCount(ByteBuffer buffer, int offset, int length, long outerPageNumber)
+			throws IOException {
+		if (length < LmdbFormat.PAGE_HEADER_SIZE || offset < 0 || offset > buffer.limit()
+				|| length > buffer.limit() - offset) {
+			throw new IOException("Truncated embedded duplicate page on outer page " + outerPageNumber);
+		}
+		int flags = LmdbFormat.unsignedShort(buffer, offset + 10);
+		int structural = flags & (LmdbFormat.P_BRANCH | LmdbFormat.P_LEAF | LmdbFormat.P_OVERFLOW
+				| LmdbFormat.P_META | LmdbFormat.P_LEAF2 | LmdbFormat.P_SUBP);
+		int expected = LmdbFormat.P_LEAF | LmdbFormat.P_SUBP;
+		if (structural != expected && structural != (expected | LmdbFormat.P_LEAF2)) {
+			throw new IOException("Invalid embedded duplicate flags 0x" + Integer.toHexString(flags)
+					+ " on outer page " + outerPageNumber);
+		}
+		int lower = LmdbFormat.unsignedShort(buffer, offset + 12);
+		int upper = LmdbFormat.unsignedShort(buffer, offset + 14);
+		if (lower < LmdbFormat.PAGE_HEADER_SIZE || lower > length || upper < lower || upper > length) {
+			throw new IOException("Corrupt embedded duplicate bounds on outer page " + outerPageNumber
+					+ ": lower=" + lower + ", upper=" + upper + ", length=" + length);
+		}
+		int count = LmdbFormat.numKeys(lower);
+		if (count <= 0) {
+			throw new IOException("Empty embedded duplicate page on outer page " + outerPageNumber);
+		}
+		if ((flags & LmdbFormat.P_LEAF2) != 0) {
+			int duplicateSize = LmdbFormat.unsignedShort(buffer, offset + 8);
+			if (duplicateSize <= 0 || (long) LmdbFormat.PAGE_HEADER_SIZE + (long) count * duplicateSize > length) {
+				throw new IOException("Corrupt LEAF2 duplicate page on outer page " + outerPageNumber);
+			}
+		} else if ((long) LmdbFormat.PAGE_HEADER_SIZE + (long) count * Short.BYTES > lower) {
+			throw new IOException("Corrupt duplicate node table on outer page " + outerPageNumber);
+		}
+		return count;
+	}
+
+	private void validateInlineValueBounds(LmdbPage page, int valueOffset, int valueSize) throws IOException {
+		if (valueSize < 0 || valueOffset < 0 || valueOffset > page.pageSize
+				|| valueSize > page.pageSize - valueOffset) {
+			throw new IOException("Inline value exceeds page bounds on page " + page.expectedPgno + ": offset="
+					+ valueOffset + ", size=" + Integer.toUnsignedLong(valueSize));
+		}
+	}
+
+	private void validateDuplicateSubDatabase(LmdbDb duplicateDb, long outerPageNumber) throws IOException {
+		if (duplicateDb.entries() <= 0 || duplicateDb.depth() <= 0 || duplicateDb.leafPages() <= 0
+				|| duplicateDb.rootPgno() == LmdbFormat.P_INVALID || duplicateDb.branchPages() < 0
+				|| duplicateDb.overflowPages() < 0) {
+			throw new IOException("Invalid duplicate sub-database metadata on outer page " + outerPageNumber);
+		}
+	}
+
+	private boolean shouldUseComplement(LmdbDb db, RangePlan direct, PreparedPlan prepared, boolean dupSort,
+			LocalPageCache localPages, RangeCountResult result) throws IOException {
+		if (direct.sameLeaf || direct.spans.isEmpty()) {
+			return false;
+		}
+		SeekCursor first = extremeCursor(db, false, localPages, result);
+		SeekCursor end = extremeCursor(db, true, localPages, result);
+		RangePlan left = rangePlan(first, direct.lower);
+		RangePlan right = rangePlan(direct.upper, end);
+		double directMass = Math.max(1.0d, modeledLeafMass(db, direct, dupSort));
+		double complementMass = modeledLeafMass(db, left, dupSort) + modeledLeafMass(db, right, dupSort);
+		return complementMass < directMass * COMPLEMENT_RATIO;
+	}
+
+	private double modeledLeafMass(LmdbDb db, RangePlan plan, boolean dupSort) {
+		if (plan.empty) {
+			return 0.0d;
+		}
+		if (plan.sameLeaf) {
 			return 1.0d;
 		}
-		double childPages = (double) db.branchPages() + db.leafPages() - 1.0d;
-		return Math.max(1.0d, childPages / db.branchPages());
+		double total = (plan.lower.leafIndex < plan.lower.leafPage.numKeys ? 1.0d : 0.0d)
+				+ (plan.upper.leafIndex > 0 ? 1.0d : 0.0d);
+		for (SiblingSpan span : plan.spans) {
+			total += modeledLeafMass(db, span, dupSort);
+		}
+		return total;
 	}
 
-	private double sampleBand(SiblingSpan span, int bandStart, int bandEnd, long seed, GroupMatcher matcher,
-			Map<Long, LmdbPage> pageCache, RangeCountResult stats) throws IOException {
-		int childIndex = bandStart + deterministicIndex(seed, bandEnd - bandStart);
-		double weight = bandEnd - bandStart;
-		LmdbPage page = readPage(span.parent.node(childIndex).branchPgno(), pageCache, stats);
-		long randomState = seed;
-
-		while (page.isBranch()) {
-			if (page.numKeys == 0) {
-				throw new IOException("Corrupt branch page with zero keys: " + page.expectedPgno);
-			}
-			weight *= page.numKeys;
-			randomState += MIX_GAMMA;
-			int nextChild = deterministicIndex(randomState, page.numKeys);
-			page = readPage(page.node(nextChild).branchPgno(), pageCache, stats);
+	private double modeledLeafMass(LmdbDb db, SiblingSpan span, boolean dupSort) {
+		double averageFanout;
+		if (dupSort || db.branchPages() <= 0) {
+			averageFanout = Math.max(1.0d, span.parent.numKeys);
+		} else {
+			double global = Math.max(1.0d,
+					((double) db.branchPages() + db.leafPages() - 1.0d) / db.branchPages());
+			averageFanout = Math.sqrt(global * Math.max(1.0d, span.parent.numKeys));
 		}
-
-		ensureLeaf(page);
-		return weight * countMatchingLeafEntries(page, matcher);
-	}
-
-	private long countMatchingLeafEntries(LmdbPage leaf, GroupMatcher matcher) throws IOException {
-		if (matcher == null) {
-			return leaf.numKeys;
-		}
-
-		long matchingEntries = 0;
-		for (int index = 0; index < leaf.numKeys; index++) {
-			if (matches(leaf.node(index), leaf.buffer, matcher)) {
-				matchingEntries++;
+		double mass = span.width();
+		for (int level = 0; level < span.remainingBranchLevels; level++) {
+			mass *= averageFanout;
+			if (!Double.isFinite(mass)) {
+				return Double.MAX_VALUE;
 			}
 		}
-		return matchingEntries;
+		return mass;
 	}
 
-	private long samplingSeed(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength) {
-		long seed = mix64(SAMPLER_VERSION ^ meta.txnId());
-		seed = mix64(seed ^ db.rootPgno());
-		seed = mix64(seed ^ db.entries());
-		seed = mix64(seed ^ db.leafPages());
-		seed = hashBytes(seed, minKey, minKeyLength);
-		return hashBytes(seed, maxKey, maxKeyLength);
-	}
-
-	private long probeSeed(long baseSeed, SiblingSpan span, int spanIndex, int bandStart, int bandEnd,
-			int bandIndex, int probeOrdinal) {
-		long seed = mix64(baseSeed ^ span.parent.expectedPgno);
-		seed = mix64(seed ^ ((long) span.fromInclusive << 32) ^ span.toExclusive);
-		seed = mix64(seed ^ ((long) span.remainingBranchLevels << 32) ^ spanIndex);
-		seed = mix64(seed ^ ((long) bandStart << 32) ^ bandEnd);
-		return mix64(seed ^ ((long) bandIndex << 32) ^ probeOrdinal);
-	}
-
-	private long hashBytes(long seed, byte[] bytes, int length) {
-		for (int index = 0; index < length; index++) {
-			seed = mix64(seed ^ Byte.toUnsignedLong(bytes[index]));
+	private int chooseResidualBudget(SampleAggregate pilot, int residualFieldCount, boolean dupSort) {
+		double ratio = pilot.estimatedLogicalEntries > 0.0d
+				? pilot.estimatedMatchedEntries / pilot.estimatedLogicalEntries
+				: 0.0d;
+		int budget;
+		if (pilot.rawMatchedEntries == 0L || ratio < 0.001d) {
+			budget = RESIDUAL_RARE_BUDGET;
+		} else if (ratio < 0.02d) {
+			budget = RESIDUAL_SELECTIVE_BUDGET;
+		} else if (ratio < 0.15d) {
+			budget = RESIDUAL_MODERATE_BUDGET;
+		} else {
+			budget = RESIDUAL_COMMON_BUDGET;
 		}
-		return mix64(seed ^ length);
+		if (residualFieldCount >= 2 && budget < RESIDUAL_RARE_BUDGET) {
+			budget = Math.min(RESIDUAL_RARE_BUDGET, budget << 1);
+		}
+		if (dupSort) {
+			budget = Math.min(RESIDUAL_RARE_BUDGET, budget << 1);
+		}
+		return budget;
 	}
 
-	private int deterministicIndex(long seed, int bound) {
-		if (bound <= 0) {
-			throw new IllegalArgumentException("Bound must be positive: " + bound);
-		}
-		long state = seed;
-		int candidate = (int) (mix64(state) >>> 33);
-		int mask = bound - 1;
-		if ((bound & mask) == 0) {
-			return (int) ((bound * (long) candidate) >> 31);
-		}
-
-		int result = candidate % bound;
-		while (candidate - result + mask < 0) {
-			state += MIX_GAMMA;
-			candidate = (int) (mix64(state) >>> 33);
-			result = candidate % bound;
-		}
-		return result;
+	private int physicalBudget(boolean dupSort, int sampleMultiplier) {
+		return scaledBudget(dupSort ? DUPSORT_PHYSICAL_SAMPLE_BUDGET : PHYSICAL_SAMPLE_BUDGET, sampleMultiplier);
 	}
 
-	private long mix64(long value) {
-		value = (value ^ (value >>> 30)) * 0xbf58476d1ce4e5b9L;
-		value = (value ^ (value >>> 27)) * 0x94d049bb133111ebL;
-		return value ^ (value >>> 31);
+	private int residualPilotBudget(boolean dupSort, int sampleMultiplier) {
+		int base = dupSort ? Math.min(RESIDUAL_RARE_BUDGET, RESIDUAL_PILOT_BUDGET << 1)
+				: RESIDUAL_PILOT_BUDGET;
+		return scaledBudget(base, sampleMultiplier);
+	}
+
+	private int scaledBudget(int budget, int sampleMultiplier) {
+		return (int) Math.min(Integer.MAX_VALUE, (long) budget * Math.clamp(sampleMultiplier, 1, 64));
+	}
+
+	private int splitBudget(int total, double ownMass, double otherMass, boolean first) {
+		if (ownMass <= 0.0d) {
+			return 1;
+		}
+		if (otherMass <= 0.0d) {
+			return total;
+		}
+		double share = total * ownMass / (ownMass + otherMass);
+		int value = first ? (int) Math.ceil(share) : (int) Math.floor(share);
+		return Math.max(1, Math.min(total - 1, value));
+	}
+
+	private SearchResult findFirstGreaterOrEqual(LmdbPage page, byte[] key, int keyLength, boolean leafSearch,
+			int databaseFlags) throws IOException {
+		if (page.numKeys == 0) {
+			return new SearchResult(0, false);
+		}
+		if (page.isLeaf2()) {
+			throw new IOException("LEAF2 cannot be used as an outer database page: " + page.expectedPgno);
+		}
+		int low = leafSearch || page.isLeaf() ? 0 : 1;
+		int high = page.numKeys - 1;
+		while (low <= high) {
+			int index = (low + high) >>> 1;
+			int nodeOffset = page.nodeOffset(index);
+			int keySize = page.keySizeAt(nodeOffset);
+			int comparison = LmdbKeyComparator.compare(key, keyLength, page.buffer, page.keyOffsetAt(nodeOffset),
+					keySize, databaseFlags, meta.byteOrder());
+			if (comparison == 0) {
+				return new SearchResult(index, true);
+			}
+			if (comparison > 0) {
+				low = index + 1;
+			} else {
+				high = index - 1;
+			}
+		}
+		return new SearchResult(low, false);
 	}
 
 	private int comparePaths(List<BranchFrame> left, List<BranchFrame> right) throws IOException {
@@ -430,109 +865,197 @@ final class LmdbBtreeRangeCounter {
 		return lower.leafPage.expectedPgno == upper.leafPage.expectedPgno;
 	}
 
-	private void ensureLeaf(LmdbPage page) throws IOException {
-		if (!page.isLeaf() && !page.isLeaf2()) {
-			throw new IOException("Expected leaf page, found flags=" + page.flags + " on page " + page.expectedPgno);
+	private long branchChildPage(LmdbPage branch, int childIndex) throws IOException {
+		if (!branch.isBranch()) {
+			throw new IOException("Expected branch page, flags=0x" + Integer.toHexString(branch.flags)
+					+ ", page=" + branch.expectedPgno);
+		}
+		return branch.branchPgnoAt(branch.nodeOffset(childIndex));
+	}
+
+	private void ensureOuterLeaf(LmdbPage page) throws IOException {
+		if (!page.isLeaf() || page.isLeaf2()) {
+			throw new IOException("Expected ordinary outer leaf, flags=0x" + Integer.toHexString(page.flags)
+					+ ", page=" + page.expectedPgno);
 		}
 	}
 
-	private SearchResult findFirstGreaterOrEqual(LmdbPage page, byte[] key, int keyLength, boolean leafSearch)
+	private void validateDatabase(LmdbDb db) throws IOException {
+		int duplicateOnly = db.flags()
+				& (LmdbFormat.MDB_DUPFIXED | LmdbFormat.MDB_INTEGERDUP | LmdbFormat.MDB_REVERSEDUP);
+		if (duplicateOnly != 0 && !db.isDupSort()) {
+			throw new IOException("LMDB duplicate flags require MDB_DUPSORT: 0x"
+					+ Integer.toHexString(db.flags()));
+		}
+		if (db.entries() < 0 || db.depth() <= 0 || db.leafPages() <= 0 || db.rootPgno() == LmdbFormat.P_INVALID) {
+			throw new IOException("Invalid non-empty LMDB database metadata: " + db);
+		}
+	}
+
+	private void validateKey(byte[] key, int length, String description) throws IOException {
+		if (key == null || length < 0 || length > key.length) {
+			throw new IOException("Invalid " + description + " key length " + length);
+		}
+	}
+
+	private LmdbPage readPage(long pageNumber, LocalPageCache localPages, RangeCountResult stats)
 			throws IOException {
-		if (page.numKeys == 0) {
-			return new SearchResult(0, false);
+		LmdbPage page = localPages.get(pageNumber);
+		if (page != null) {
+			stats.pageCacheHits++;
+			return page;
 		}
-
-		int low = leafSearch || page.isLeaf() ? 0 : 1;
-		int high = page.numKeys - 1;
-		while (low <= high) {
-			int index = (low + high) >>> 1;
-			LmdbNode node = page.node(index);
-			int comparison = LmdbKeyComparator.compare(key, keyLength, page.buffer, node.keyOffset(), node.keySize());
-			if (comparison == 0) {
-				return new SearchResult(index, true);
-			}
-			if (comparison > 0) {
-				low = index + 1;
-			} else {
-				high = index - 1;
-			}
+		page = sharedCache.getPage(pageNumber);
+		if (page != null) {
+			stats.pageCacheHits++;
+			localPages.put(pageNumber, page);
+			return page;
 		}
-		return new SearchResult(low, false);
-	}
-
-	private long countBoundarySlice(LmdbPage page, int fromInclusive, int toExclusive, GroupMatcher matcher,
-			Map<Long, LmdbPage> pageCache, RangeCountResult stats) throws IOException {
-		long entries = 0;
-		for (int index = fromInclusive; index < toExclusive; index++) {
-			LmdbNode node = page.node(index);
-			if (matcher == null || matches(node, page.buffer, matcher)) {
-				entries += countNodeEntries(node, page, pageCache, stats);
-			}
-		}
-		return entries;
-	}
-
-	private boolean matches(LmdbNode node, ByteBuffer pageBuffer, GroupMatcher matcher) {
-		ByteBuffer keySlice = pageBuffer.duplicate();
-		keySlice.order(pageBuffer.order());
-		keySlice.position(node.keyOffset());
-		keySlice.limit(node.keyOffset() + node.keySize());
-		ByteBuffer keyView = keySlice.slice();
-		keyView.order(pageBuffer.order());
-		return matcher.matches(keyView);
-	}
-
-	private long countNodeEntries(LmdbNode node, LmdbPage page, Map<Long, LmdbPage> pageCache,
-			RangeCountResult stats) throws IOException {
-		if ((node.nodeFlags() & LmdbFormat.F_SUBDATA) != 0 && node.valueSize() >= LmdbFormat.META_DB_SIZE) {
-			ByteBuffer duplicate = page.buffer.duplicate();
-			duplicate.order(page.buffer.order());
-			duplicate.position(node.valueOffset());
-			return LmdbDb.parse(duplicate, node.valueOffset()).entries();
-		}
-		if ((node.nodeFlags() & LmdbFormat.F_DUPDATA) != 0 && node.valueSize() >= LmdbFormat.PAGE_HEADER_SIZE) {
-			return countSubPageEntries(page.buffer, node.valueOffset(), node.valueSize());
-		}
-		if ((node.nodeFlags() & LmdbFormat.F_BIGDATA) != 0 && node.valueSize() >= Long.BYTES) {
-			readPage(page.buffer.getLong(node.valueOffset()), pageCache, stats);
-		}
-		return 1;
-	}
-
-	private long countSubPageEntries(ByteBuffer buffer, int offset, int length) {
-		if (offset + length > buffer.limit()) {
-			return 0;
-		}
-		int flags = LmdbFormat.unsignedShort(buffer, offset + 10);
-		int lower = LmdbFormat.unsignedShort(buffer, offset + 12);
-		if ((flags & LmdbFormat.P_LEAF2) != 0) {
-			int keySize = LmdbFormat.unsignedShort(buffer, offset + 8);
-			if (keySize <= 0) {
-				return 0;
-			}
-			int bytes = Math.max(lower - LmdbFormat.PAGE_HEADER_SIZE, 0);
-			return bytes / keySize;
-		}
-		return Math.max(LmdbFormat.numKeys(lower), 0);
-	}
-
-	private LmdbPage readPage(long pageNumber, Map<Long, LmdbPage> pageCache, RangeCountResult stats)
-			throws IOException {
-		LmdbPage existing = pageCache.get(pageNumber);
-		if (existing != null) {
-			return existing;
-		}
-
-		LmdbPage loaded = dataFile.readPage(pageNumber, meta);
-		pageCache.put(pageNumber, loaded);
-		if (loaded.isBranch()) {
+		page = dataFile.readPage(pageNumber, meta);
+		page = sharedCache.putPage(pageNumber, page);
+		localPages.put(pageNumber, page);
+		if (page.isBranch()) {
 			stats.branchPagesRead++;
-		} else if (loaded.isLeaf() || loaded.isLeaf2()) {
+		} else if (page.isLeaf() || page.isLeaf2()) {
 			stats.leafPagesRead++;
-		} else if (loaded.isOverflow()) {
-			stats.overflowPagesRead += Math.max(loaded.overflowPages, 1);
+		} else if (page.isOverflow()) {
+			stats.overflowPagesRead += Math.max(page.overflowPages, 1);
 		}
-		return loaded;
+		return page;
+	}
+
+	private int readLeafEntryCount(long pageNumber, LocalPageCache localPages, RangeCountResult stats)
+			throws IOException {
+		LmdbPage fullPage = localPages.get(pageNumber);
+		if (fullPage != null) {
+			stats.pageCacheHits++;
+			ensureOuterLeaf(fullPage);
+			return fullPage.numKeys;
+		}
+		fullPage = sharedCache.getPage(pageNumber);
+		if (fullPage != null) {
+			stats.pageCacheHits++;
+			localPages.put(pageNumber, fullPage);
+			ensureOuterLeaf(fullPage);
+			return fullPage.numKeys;
+		}
+		int cached = sharedCache.getLeafEntryCount(pageNumber);
+		if (cached >= 0) {
+			stats.pageCacheHits++;
+			return cached;
+		}
+		int count = dataFile.readLeafEntryCount(pageNumber, meta);
+		stats.headerOnlyReads++;
+		sharedCache.putLeafEntryCount(pageNumber, count);
+		return count;
+	}
+
+	private long samplingSeed(LmdbDb db, byte[] minKey, int minLength, byte[] maxKey, int maxLength) {
+		long seed = mix64(SAMPLER_VERSION ^ databaseIdentity ^ ((long) db.flags() << 32) ^ db.depth());
+		seed = hashBytes(seed, minKey, minLength);
+		return hashBytes(seed, maxKey, maxLength);
+	}
+
+	private long hashBytes(long seed, byte[] bytes, int length) {
+		for (int index = 0; index < length; index++) {
+			seed ^= bytes[index] & 0xffL;
+			seed *= 0x100000001b3L;
+		}
+		return mix64(seed ^ length);
+	}
+
+	/** Digitally shifted base-2 van-der-Corput sequence. Prefixes at powers of two retain even coverage. */
+	private double lowDiscrepancyCoordinate(long scrambleSeed, int ordinal) {
+		long reversed = Long.reverse(Integer.toUnsignedLong(ordinal));
+		long scrambled = reversed ^ mix64(scrambleSeed);
+		return (scrambled >>> 11) * 0x1.0p-53;
+	}
+
+	private long mix64(long value) {
+		value = (value ^ (value >>> 30)) * 0xbf58476d1ce4e5b9L;
+		value = (value ^ (value >>> 27)) * 0x94d049bb133111ebL;
+		return value ^ (value >>> 31);
+	}
+
+	private long saturatedAdd(long left, long right) {
+		if (right <= 0) {
+			return left;
+		}
+		return left >= Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
+	}
+
+	private long finiteClampedRound(double value, long upperBound) throws IOException {
+		if (!Double.isFinite(value)) {
+			throw new IOException("Non-finite LMDB cardinality estimate: " + value);
+		}
+		if (value <= 0.0d) {
+			return 0L;
+		}
+		if (value >= upperBound) {
+			return upperBound;
+		}
+		return Math.round(value);
+	}
+
+	private void markExact(RangeCountResult result, RangeCountResult.Mode mode) {
+		result.exact = true;
+		result.exhaustive = true;
+		result.mode = mode;
+	}
+
+	private int localCacheCapacity(int depth, int sampleMultiplier) {
+		long expected = Math.max(64L,
+				(long) (scaledBudget(RESIDUAL_RARE_BUDGET, sampleMultiplier)
+						+ scaledBudget(PHYSICAL_SAMPLE_BUDGET, sampleMultiplier) + 64)
+						* Math.max(2, depth));
+		return (int) Math.min(MAX_LOCAL_PAGE_CACHE, expected);
+	}
+
+	private int localCacheCapacity(int depth) {
+		return localCacheCapacity(depth, 1);
+	}
+
+	private int maxMeasurementCapacity(int sampleMultiplier) {
+		long expected = 2L * (scaledBudget(RESIDUAL_RARE_BUDGET, sampleMultiplier)
+				+ scaledBudget(RESIDUAL_PILOT_BUDGET, sampleMultiplier)
+				+ scaledBudget(PHYSICAL_SAMPLE_BUDGET, sampleMultiplier));
+		return (int) Math.min(Integer.MAX_VALUE, Math.max(64L, expected));
+	}
+
+	private int measurementCapacityForBudget(int budget) {
+		return (int) Math.min(Integer.MAX_VALUE, Math.max(64L, (long) budget * 2L));
+	}
+
+	private static int property(String suffix, int defaultValue, int minimum, int maximum) {
+		String value = System.getProperty("org.eclipse.rdf4j.sail.lmdb.estimator." + suffix);
+		if (value == null || value.isBlank()) {
+			return defaultValue;
+		}
+		try {
+			return clampInt(Integer.parseInt(value), minimum, maximum);
+		} catch (NumberFormatException ignored) {
+			return defaultValue;
+		}
+	}
+
+	private static double doubleProperty(String suffix, double defaultValue, double minimum, double maximum) {
+		String value = System.getProperty("org.eclipse.rdf4j.sail.lmdb.estimator." + suffix);
+		if (value == null || value.isBlank()) {
+			return defaultValue;
+		}
+		try {
+			return clampDouble(Double.parseDouble(value), minimum, maximum);
+		} catch (NumberFormatException ignored) {
+			return defaultValue;
+		}
+	}
+
+	private static int clampInt(int value, int minimum, int maximum) {
+		return value < minimum ? minimum : Math.min(value, maximum);
+	}
+
+	private static double clampDouble(double value, double minimum, double maximum) {
+		return value < minimum ? minimum : Math.min(value, maximum);
 	}
 
 	private record SearchResult(int index, boolean exact) {
@@ -545,9 +1068,229 @@ final class LmdbBtreeRangeCounter {
 	}
 
 	private record SiblingSpan(LmdbPage parent, int fromInclusive, int toExclusive, int remainingBranchLevels) {
-
 		int width() {
 			return toExclusive - fromInclusive;
 		}
+	}
+
+	private record RangePlan(SeekCursor lower, SeekCursor upper, List<SiblingSpan> spans, boolean empty,
+			boolean sameLeaf) {
+	}
+
+	private record ExactLeafPlan(long[] leafPages) {
+	}
+
+	private record PreparedPlan(LeafMeasurement boundary, boolean exact, LeafMeasurement exactMeasurement) {
+	}
+
+	private record EstimateValue(long entries, boolean exact, boolean exhaustive) {
+	}
+
+	private record WeightedLeaf(long pageNumber, double weight, LeafMeasurement measurement) {
+	}
+
+	private record LeafMeasurement(long logicalEntries, long matchedEntries, long outerKeys) {
+
+		private static final LeafMeasurement ZERO = new LeafMeasurement(0L, 0L, 0L);
+
+		LeafMeasurement add(LeafMeasurement other) {
+			return new LeafMeasurement(saturating(logicalEntries, other.logicalEntries),
+					saturating(matchedEntries, other.matchedEntries), saturating(outerKeys, other.outerKeys));
+		}
+
+		private static long saturating(long left, long right) {
+			return right > 0 && left >= Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
+		}
+	}
+
+	private static final class SampleAggregate {
+		private static final SampleAggregate EMPTY_EXACT = exactEmpty();
+
+		double estimatedLogicalEntries;
+		double estimatedMatchedEntries;
+		double estimatedOuterKeys;
+		long rawLogicalEntries;
+		long rawMatchedEntries;
+		long rawOuterKeys;
+		boolean exhaustive;
+
+		void addExact(LeafMeasurement measurement) {
+			estimatedLogicalEntries += measurement.logicalEntries;
+			estimatedMatchedEntries += measurement.matchedEntries;
+			estimatedOuterKeys += measurement.outerKeys;
+		}
+
+		void addRawIfNew(long pageNumber, LeafMeasurement measurement, SeenLeafSet seen) {
+			if (seen.add(pageNumber)) {
+				rawLogicalEntries = LeafMeasurement.saturating(rawLogicalEntries, measurement.logicalEntries);
+				rawMatchedEntries = LeafMeasurement.saturating(rawMatchedEntries, measurement.matchedEntries);
+				rawOuterKeys = LeafMeasurement.saturating(rawOuterKeys, measurement.outerKeys);
+			}
+		}
+
+		private static SampleAggregate exactEmpty() {
+			SampleAggregate aggregate = new SampleAggregate();
+			aggregate.exhaustive = true;
+			return aggregate;
+		}
+	}
+
+	private static final class LeafPageCollector {
+		private final long[] pages;
+		private int size;
+
+		private LeafPageCollector(int capacity) {
+			pages = new long[Math.max(0, capacity)];
+		}
+
+		private boolean add(long pageNumber) {
+			if (size == pages.length) {
+				return false;
+			}
+			pages[size++] = pageNumber;
+			return true;
+		}
+	}
+
+	private static final class LocalPageCache {
+		private final long[] keys;
+		private final LmdbPage[] values;
+		private final int mask;
+		private int size;
+
+		private LocalPageCache(int expectedEntries) {
+			int capacity = tableCapacity(expectedEntries);
+			keys = new long[capacity];
+			Arrays.fill(keys, EMPTY_PAGE);
+			values = new LmdbPage[capacity];
+			mask = capacity - 1;
+		}
+
+		private LmdbPage get(long pageNumber) {
+			int slot = slot(pageNumber, mask);
+			for (int probes = 0; probes <= mask; probes++) {
+				long key = keys[slot];
+				if (key == pageNumber) {
+					return values[slot];
+				}
+				if (key == EMPTY_PAGE) {
+					return null;
+				}
+				slot = (slot + 1) & mask;
+			}
+			return null;
+		}
+
+		private void put(long pageNumber, LmdbPage page) {
+			if (size * 10 >= keys.length * 7) {
+				return;
+			}
+			int slot = slot(pageNumber, mask);
+			while (keys[slot] != EMPTY_PAGE && keys[slot] != pageNumber) {
+				slot = (slot + 1) & mask;
+			}
+			if (keys[slot] == EMPTY_PAGE) {
+				keys[slot] = pageNumber;
+				size++;
+			}
+			values[slot] = page;
+		}
+	}
+
+	private static final class LeafMeasurementCache {
+		private final long[] pageNumbers;
+		private final long[] logical;
+		private final long[] matched;
+		private final long[] outerKeys;
+		private final int mask;
+		private int size;
+
+		private LeafMeasurementCache(int expectedEntries) {
+			int capacity = tableCapacity(expectedEntries);
+			pageNumbers = new long[capacity];
+			Arrays.fill(pageNumbers, EMPTY_PAGE);
+			logical = new long[capacity];
+			matched = new long[capacity];
+			outerKeys = new long[capacity];
+			mask = capacity - 1;
+		}
+
+		private LeafMeasurement get(long pageNumber) {
+			int slot = slot(pageNumber, mask);
+			for (int probes = 0; probes <= mask; probes++) {
+				long key = pageNumbers[slot];
+				if (key == pageNumber) {
+					return new LeafMeasurement(logical[slot], matched[slot], outerKeys[slot]);
+				}
+				if (key == EMPTY_PAGE) {
+					return null;
+				}
+				slot = (slot + 1) & mask;
+			}
+			return null;
+		}
+
+		private void put(long pageNumber, LeafMeasurement value) {
+			if (size * 10 >= pageNumbers.length * 7) {
+				return;
+			}
+			int slot = slot(pageNumber, mask);
+			while (pageNumbers[slot] != EMPTY_PAGE && pageNumbers[slot] != pageNumber) {
+				slot = (slot + 1) & mask;
+			}
+			if (pageNumbers[slot] == EMPTY_PAGE) {
+				pageNumbers[slot] = pageNumber;
+				size++;
+			}
+			logical[slot] = value.logicalEntries;
+			matched[slot] = value.matchedEntries;
+			outerKeys[slot] = value.outerKeys;
+		}
+	}
+
+	private static final class SeenLeafSet {
+		private final long[] keys;
+		private final int mask;
+		private int size;
+
+		private SeenLeafSet(int expectedEntries) {
+			int capacity = tableCapacity(expectedEntries);
+			keys = new long[capacity];
+			Arrays.fill(keys, EMPTY_PAGE);
+			mask = capacity - 1;
+		}
+
+		private boolean add(long pageNumber) {
+			if (size * 10 >= keys.length * 7) {
+				return true; // Conservative: count it as additional coverage rather than loop forever.
+			}
+			int slot = slot(pageNumber, mask);
+			while (keys[slot] != EMPTY_PAGE) {
+				if (keys[slot] == pageNumber) {
+					return false;
+				}
+				slot = (slot + 1) & mask;
+			}
+			keys[slot] = pageNumber;
+			size++;
+			return true;
+		}
+	}
+
+	private static int tableCapacity(int expectedEntries) {
+		int required = Math.max(4, expectedEntries + (expectedEntries >>> 1) + 1);
+		int capacity = 1;
+		while (capacity < required && capacity < (1 << 30)) {
+			capacity <<= 1;
+		}
+		return capacity;
+	}
+
+	private static int slot(long pageNumber, int mask) {
+		long value = pageNumber;
+		value ^= value >>> 33;
+		value *= 0xff51afd7ed558ccdL;
+		value ^= value >>> 33;
+		return (int) value & mask;
 	}
 }

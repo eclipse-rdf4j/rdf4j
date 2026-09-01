@@ -13,7 +13,32 @@ package org.eclipse.rdf4j.sail.lmdb.estimate;
 
 import java.nio.ByteOrder;
 
+/**
+ * Immutable metadata for one LMDB snapshot.
+ *
+ * <p>
+ * The native-map fields are zero when the estimator is used through its file-only constructor. They are captured
+ * together with the selected meta page and are used only for zero-copy page views; snapshot correctness still comes
+ * from the pinned transaction id and the selected LMDB meta page.
+ * </p>
+ */
 record LmdbMeta(int metaPage, long txnId, int pageSize, long mapSize, long lastPage, LmdbDb freeDb, LmdbDb mainDb,
-		ByteOrder byteOrder) {
+		ByteOrder byteOrder, long nativeMapAddress, long nativeMappedSize) {
 
+	LmdbMeta(int metaPage, long txnId, int pageSize, long mapSize, long lastPage, LmdbDb freeDb, LmdbDb mainDb,
+			ByteOrder byteOrder) {
+		this(metaPage, txnId, pageSize, mapSize, lastPage, freeDb, mainDb, byteOrder, 0L, 0L);
+	}
+
+	boolean hasNativeMap() {
+		return nativeMapAddress != 0L && nativeMappedSize >= pageSize;
+	}
+
+	long cacheEpoch() {
+		long value = txnId ^ Long.rotateLeft(nativeMapAddress, 17) ^ Long.rotateLeft(nativeMappedSize, 31);
+		value ^= value >>> 33;
+		value *= 0xff51afd7ed558ccdL;
+		value ^= value >>> 33;
+		return value;
+	}
 }
