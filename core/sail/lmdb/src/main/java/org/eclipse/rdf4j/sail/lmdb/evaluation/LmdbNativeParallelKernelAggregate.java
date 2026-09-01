@@ -307,7 +307,8 @@ final class LmdbNativeParallelKernelAggregate {
 				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
 					try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
 							.inherit(fusedParent)) {
-						return runWorker(lowered, workerAggregate, rootAdjacency, rootDomain, rootWildcard, rootScan, domains,
+						return runWorker(lowered, workerAggregate, rootAdjacency, rootDomain, rootWildcard, rootScan,
+								domains,
 								source, emitter, ranges, scanQueue, kernelFactory, failure);
 					} catch (Throwable t) {
 						failure.compareAndSet(null, t);

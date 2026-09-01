@@ -577,8 +577,9 @@ final class LmdbNativeKernelPartitions {
 
 	/**
 	 * Predicate-ordinal window over one worker-owned wildcard view. The wrapper never owns the delegate: the worker's
-	 * probe closes it after every range has finished. Plane binding is translated to the delegate's global ordinal;
-	 * run handles are consumed before the next bind, exactly as required by {@link NativeLmdbQuerySource.WildcardAdjacency}.
+	 * probe closes it after every range has finished. Plane binding is translated to the delegate's global ordinal; run
+	 * handles are consumed before the next bind, exactly as required by
+	 * {@link NativeLmdbQuerySource.WildcardAdjacency}.
 	 */
 	static final class WildcardPredicateWindow implements NativeLmdbQuerySource.WildcardAdjacency {
 		private final NativeLmdbQuerySource.WildcardAdjacency delegate;

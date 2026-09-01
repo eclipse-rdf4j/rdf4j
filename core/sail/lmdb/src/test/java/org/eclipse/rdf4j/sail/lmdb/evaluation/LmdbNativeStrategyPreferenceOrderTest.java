@@ -59,8 +59,10 @@ class LmdbNativeStrategyPreferenceOrderTest {
 	void legacyWildcardStrategiesRemainFallbacksBehindIr() {
 		List<String> ir = List.of(
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL,
 				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED,
 				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
 				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD,
@@ -96,9 +98,11 @@ class LmdbNativeStrategyPreferenceOrderTest {
 	void everyParallelIrTierHeadsThePreferenceLadder() {
 		List<String> compiledParallel = List.of(
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL,
 				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL);
 		List<String> interpretedParallel = List.of(
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED,
 				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED);
 		List<String> remainingIr = List.of(
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,

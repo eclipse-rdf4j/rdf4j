@@ -190,6 +190,7 @@ public class LmdbNativeKernelScanPartitionTest {
 		System.setProperty("rdf4j.lmdb.janinoCodegen.wildcardPredicates", "false");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
+		System.setProperty("rdf4j.lmdb.parallel.startupWork", "0");
 		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
 
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
@@ -216,6 +217,7 @@ public class LmdbNativeKernelScanPartitionTest {
 		System.setProperty("rdf4j.lmdb.janinoCodegen.wildcardPredicates", "false");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
+		System.setProperty("rdf4j.lmdb.parallel.startupWork", "0");
 		System.setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");
 
 		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();

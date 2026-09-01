@@ -55,6 +55,10 @@ public class LmdbNativeDistinctKernelArbitrationTest {
 			"rdf4j.lmdb.kernelInterpreter.enabled",
 			"rdf4j.lmdb.costCalibration.enabled",
 			"rdf4j.lmdb.parallel.enabled",
+			"rdf4j.lmdb.parallel.threads",
+			"rdf4j.lmdb.parallel.minWorkEstimate",
+			"rdf4j.lmdb.parallel.startupWork",
+			"rdf4j.lmdb.irKernelParallel.enabled",
 			DISTINCT_KERNEL_FLAG,
 			"rdf4j.lmdb.wcoj.enabled",
 			"rdf4j.lmdb.factorizedRows.enabled",
@@ -177,6 +181,29 @@ public class LmdbNativeDistinctKernelArbitrationTest {
 		assertThat(findMetric(plan, "nativeExecutionPath"))
 				.as("with every rival disabled the distinct kernel wins under its own interpreted tag")
 				.isEqualTo("irKernelDistinctInterpreted");
+		assertThat(rows(query)).containsExactlyElementsOf(genericRows(query));
+	}
+
+	@Test
+	public void parallelDistinctKernelIsIndependentlyArbitrated() {
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
+		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
+		System.setProperty("rdf4j.lmdb.parallel.startupWork", "0");
+		System.setProperty("rdf4j.lmdb.irKernelParallel.enabled", "true");
+		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
+		System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
+		System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");
+		System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
+		System.setProperty("rdf4j.lmdb.prefixRun.enabled", "false");
+		System.setProperty("rdf4j.lmdb.adaptiveFilterPlacement.enabled", "false");
+
+		String query = distinctFanoutQuery();
+		GenericPlanNode plan = explain(query);
+		assertThat(findMetric(plan, STRATEGY_PROPOSAL_COSTS_METRIC))
+				.contains("irKernelDistinctParallelInterpreted=")
+				.contains("irKernelDistinctInterpreted=");
+		assertThat(findMetric(plan, "nativeExecutionPath")).contains("irKernelDistinctParallelInterpreted");
 		assertThat(rows(query)).containsExactlyElementsOf(genericRows(query));
 	}
 

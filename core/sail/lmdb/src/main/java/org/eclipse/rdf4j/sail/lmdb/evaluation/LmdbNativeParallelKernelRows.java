@@ -299,7 +299,8 @@ final class LmdbNativeParallelKernelRows {
 					try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
 							.inherit(fusedParent);
 							LmdbNativeProbeDeadline.Scope probeScope = LmdbNativeProbeDeadline.inherit(probeParent)) {
-						runWorker(lowered, rootAdjacency, rootDomain, rootWildcard, rootScan, domains, source, row, ranges,
+						runWorker(lowered, rootAdjacency, rootDomain, rootWildcard, rootScan, domains, source, row,
+								ranges,
 								scanQueue, output, kernelFactory, failure, cancelled, startup);
 					} catch (Throwable t) {
 						if (!cancelled.get()) {

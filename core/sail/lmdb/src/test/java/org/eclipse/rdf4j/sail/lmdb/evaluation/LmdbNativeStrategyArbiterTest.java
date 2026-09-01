@@ -276,6 +276,12 @@ public class LmdbNativeStrategyArbiterTest {
 	/** The DISTINCT-sinking tiers retain compiled/interpreted ordering inside the IR-first family. */
 	@Test
 	public void distinctKernelRungsFollowTheIrFirstTiering() {
+		assertThat(LmdbNativeStrategyPreference.prefers(
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT)).isTrue();
 		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
 				LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS)).isTrue();
 		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
@@ -287,7 +293,9 @@ public class LmdbNativeStrategyArbiterTest {
 		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
 				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP)).isTrue();
 		assertThat(LmdbNativeAttemptMetrics.EXECUTION_PATH_VOCABULARY)
-				.contains(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+				.contains(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
 						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED);
 	}
 
