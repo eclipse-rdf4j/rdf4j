@@ -1818,8 +1818,8 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             }),
             COMMON_CONTEXT: Object.freeze({
                 bit: "0x0010",
-                set: "Every single-context fibre uses the same graph. One commonContext header value replaces firstContexts.",
-                clear: "There is no page-wide common graph. Each fibre keeps its own firstContexts value."
+                set: "Every fibre on this page has exactly one context and they are all the same graph. A single commonContext header value replaces firstContexts.",
+                clear: "There is no page-wide common graph — either some fibre spans several contexts, or the single contexts differ. Each fibre keeps its own firstContexts value."
             }),
             ALL_ORDERED_INTEGER_NEIGHBORS: Object.freeze({
                 bit: "0x0020",
@@ -1828,13 +1828,13 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             }),
             UNIFORM_ROW_TERM_KIND: Object.freeze({
                 bit: "0x0040",
-                set: "Every root has one RDF term kind. Decode the first root to classify, bulk-count, or reject the page.",
-                clear: "Root term kinds are mixed, so a kind-sensitive root kernel scans root IDs."
+                set: "Every row key has one RDF term kind. Decode the first row to classify, bulk-count, or reject the page.",
+                clear: "Row term kinds are mixed, so a kind-sensitive row kernel scans row IDs."
             }),
             UNIFORM_ROW_LITERAL_DATATYPE: Object.freeze({
                 bit: "0x0080",
-                set: "All literal roots have one datatype. A legacy-ID page resolves only the first literal; tagged IDs classify directly.",
-                clear: "Literal root datatypes may differ or were not authoritatively resolved while the page was built."
+                set: "This page has at least one literal row key and every one of them carries the same datatype, so one classification describes them all.",
+                clear: "The page has no literal row keys, their datatypes differ, or at least one datatype could not be resolved while the page was built."
             }),
             UNIFORM_NEIGHBOR_TERM_KIND: Object.freeze({
                 bit: "0x0100",
@@ -1843,8 +1843,8 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             }),
             UNIFORM_NEIGHBOR_LITERAL_DATATYPE: Object.freeze({
                 bit: "0x0200",
-                set: "All literal neighbors have one datatype. A legacy-ID page resolves only the first literal; tagged IDs classify directly.",
-                clear: "Literal neighbor datatypes may differ or were not authoritatively resolved while the page was built."
+                set: "This page has at least one literal neighbor and every one of them carries the same datatype, so one classification describes them all.",
+                clear: "The page has no literal neighbors, their datatypes differ, or at least one datatype could not be resolved while the page was built."
             })
         });
         const VECTOR_FLAG_HELP = Object.freeze({
@@ -2098,8 +2098,11 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
                     <table><thead><tr><th>Position</th><th>Term</th><th>Kind</th><th>Fixture payload</th><th>Raw value ID</th></tr></thead><tbody>${rows}</tbody></table>
                 </div>
                 <div class="callout">
-                    Predicate <span class="mono">${escapeHtml(quad.predicate.label)}</span> has unsigned-sorted ordinal
-                    <strong>${trace.predicateOrdinal}</strong>. Pages are selected by this ordinal plus a plane; the predicate ID is therefore not repeated in every row.
+                    Predicate <span class="mono">${escapeHtml(quad.predicate.label)}</span> has dense ordinal
+                    <strong>${trace.predicateOrdinal}</strong>. A base assigns its ordinals in unsigned raw-ID order and never
+                    changes them for that base’s lifetime; predicates first seen afterwards are appended without renumbering,
+                    so ordinals stay stable rather than globally sorted. Pages are selected by this ordinal plus a plane, which
+                    is why the predicate ID is not repeated in every row.
                 </div>`
             );
         }
