@@ -23,7 +23,13 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
  * workers {@link #inherit(LmdbNativeProbeDeadline)} the dispatch thread's deadline. When no scope is active — every
  * normal execution — a poll is one masked increment plus a null check. Expiry throws the stackless
  * {@link LmdbNativeProbeDeadlineExceeded} singleton, whose only intended catcher is the strategy arbiter's probe
- * executor; buffer exhaustion calls {@link #trip()} and throws the same exception so both take one code path.
+ * executor.
+ * <p>
+ * Running out of private row-buffer room unwinds through that same exception, so the abort path is uniform, but it must
+ * be reported with {@link #tripCapacity()} rather than {@link #trip()}. The two are not the same fact: a timeout says
+ * the strategy is slow, whereas exhausting the buffer only says the answer has more rows than the probe was willing to
+ * withhold, which a very fast strategy reaches sooner than a slow one. The arbiter asks {@link #capacityTripped()} to
+ * tell them apart, and records a right-censored latency and a scheduler strike only for a genuine timeout.
  */
 final class LmdbNativeProbeDeadline {
 
@@ -31,6 +37,7 @@ final class LmdbNativeProbeDeadline {
 
 	private final long deadlineNanoTime;
 	private volatile boolean tripped;
+	private volatile boolean capacityTripped;
 
 	private LmdbNativeProbeDeadline(long deadlineNanoTime) {
 		this.deadlineNanoTime = deadlineNanoTime;
@@ -71,6 +78,21 @@ final class LmdbNativeProbeDeadline {
 		return CURRENT.get();
 	}
 
+	/**
+	 * The single supported way for a drain loop to report that it filled its private row buffer: marks the ambient
+	 * deadline as capacity-tripped and returns the exception to throw, so the abort path stays identical to a timeout
+	 * while the cause survives. Callers write {@code throw LmdbNativeProbeDeadline.capacityExhausted();} — routing both
+	 * steps through one call is what keeps a harness from marking the deadline plainly and having its strategy charged
+	 * a timeout it never incurred.
+	 */
+	static RuntimeException capacityExhausted() {
+		LmdbNativeProbeDeadline deadline = CURRENT.get();
+		if (deadline != null) {
+			deadline.tripCapacity();
+		}
+		return LmdbNativeProbeDeadlineExceeded.INSTANCE;
+	}
+
 	/** The ambient deadline as a kernel cancellation, or null when no probe scope is active. */
 	static KernelCancellation currentKernelCancellation() {
 		return currentKernelCancellation(null);
@@ -94,7 +116,7 @@ final class LmdbNativeProbeDeadline {
 		BooleanSupplier probeOrWorker = workerCancellation == null ? deadline::expired
 				: () -> deadline.expired() || workerCancellation.getAsBoolean();
 		return new KernelCancellation(deadline.deadlineNanoTime, probeOrWorker, queryCancellation,
-				LmdbNativeProbeConfig.system().bufferRows());
+				LmdbNativeProbeConfig.system().bufferRows(), deadline::tripCapacity);
 	}
 
 	/** Masked poll for sequential drain loops: call as {@code LmdbNativeProbeDeadline.poll(++tick)}. */
@@ -119,13 +141,27 @@ final class LmdbNativeProbeDeadline {
 		return false;
 	}
 
-	/** Manual cancellation — buffer exhaustion uses this so it shares the timeout path exactly. */
+	/** Manual cancellation for reasons other than capacity — a hedge winner cancelling the losing arm. */
 	void trip() {
+		tripped = true;
+	}
+
+	/**
+	 * Buffer exhaustion: cancels like {@link #trip()} so the abort path is shared, but records that the cause was
+	 * capacity rather than elapsed time. Two volatile writes, called at most once per probe.
+	 */
+	void tripCapacity() {
+		capacityTripped = true;
 		tripped = true;
 	}
 
 	boolean tripped() {
 		return tripped;
+	}
+
+	/** Whether this probe was cancelled because it filled its private row buffer rather than because time ran out. */
+	boolean capacityTripped() {
+		return capacityTripped;
 	}
 
 	long deadlineNanoTime() {

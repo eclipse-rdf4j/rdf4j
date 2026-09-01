@@ -637,7 +637,8 @@ public interface NativeLmdbQuerySource {
 
 		/**
 		 * Unsigned binary lookup in the retained predicate candidate domain, or {@code -1} when absent. Binding the
-		 * returned ordinal applies the exact snapshot visibility rules; a candidate may therefore bind to an empty plane.
+		 * returned ordinal applies the exact snapshot visibility rules; a candidate may therefore bind to an empty
+		 * plane.
 		 */
 		default int predicateOrdinal(long predicateId) {
 			int low = 0;

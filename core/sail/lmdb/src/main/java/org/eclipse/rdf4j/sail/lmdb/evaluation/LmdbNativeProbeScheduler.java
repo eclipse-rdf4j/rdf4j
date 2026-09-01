@@ -27,6 +27,10 @@ import java.util.function.LongSupplier;
  * epoch-scoped: a regime-epoch bump (index finished building, drift detected) revives rejected arms lazily at the next
  * lookup. Nothing here re-probes on a fixed count: further probes are justified by posterior value, never by a
  * completed-run quota.
+ * <p>
+ * One outcome deliberately carries no penalty at all: {@link #capacityExceeded} — a probe stopped by the private
+ * row-buffer ceiling rather than by the clock — rests the arm without a strike, because filling a buffer is a fact
+ * about the answer's size and not about the arm's speed.
  */
 final class LmdbNativeProbeScheduler {
 
@@ -139,6 +143,25 @@ final class LmdbNativeProbeScheduler {
 	 */
 	void censored(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch, boolean severeMiss) {
 		strike(variant, regime, epoch, severeMiss);
+	}
+
+	/**
+	 * A probe that filled its private row buffer instead of running out of time. This is deliberately NOT a strike: the
+	 * arm produced rows at whatever speed it produces them and was stopped by a capacity ceiling that a fast arm with a
+	 * large answer reaches sooner than a slow one, so it carries no evidence of slowness. The arm is rested for one
+	 * cooldown base interval — without that, an arm whose answer is permanently larger than the buffer would be
+	 * re-probed and overflow on every dispatch — but its strike count is carried forward unchanged, so this path can
+	 * never escalate to {@link State#DORMANT_UNTIL_EPOCH} or {@link State#QUARANTINED}.
+	 */
+	void capacityExceeded(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
+		Key key = new Key(variant, regime);
+		entries.compute(key, (ignored, previous) -> {
+			if (entries.size() >= MAX_ENTRIES && previous == null) {
+				return null; // bounded map: an untracked arm simply stays probe-eligible
+			}
+			int strikes = previous == null || previous.epoch < epoch ? 0 : previous.strikes;
+			return new Entry(State.COOLDOWN, wallMillis.getAsLong() + cooldownBaseMillis, strikes, epoch);
+		});
 	}
 
 	void quarantine(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {

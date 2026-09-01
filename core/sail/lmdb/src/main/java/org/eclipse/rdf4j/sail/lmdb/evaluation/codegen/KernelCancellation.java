@@ -36,6 +36,13 @@ public final class KernelCancellation {
 	private final BooleanSupplier queryCancellation;
 	/** Maximum rows a probe may privately materialize, or {@code -1} outside a bounded probe. */
 	private final int materializationRowLimit;
+	/**
+	 * Invoked at most once, when {@link #materializationRowLimit} is what stopped the probe. The dispatch layer uses it
+	 * to record that the cancellation was caused by capacity rather than by elapsed time — the two carry completely
+	 * different evidence, and conflating them makes a fast strategy with a large answer look like a slow one. Null
+	 * outside a bounded probe and in the constructors that predate the distinction.
+	 */
+	private final Runnable capacityNotifier;
 	private volatile int cancellationReason;
 
 	public KernelCancellation(long deadlineNanoTime) {
@@ -52,10 +59,16 @@ public final class KernelCancellation {
 
 	public KernelCancellation(long deadlineNanoTime, BooleanSupplier extra, BooleanSupplier queryCancellation,
 			int materializationRowLimit) {
+		this(deadlineNanoTime, extra, queryCancellation, materializationRowLimit, null);
+	}
+
+	public KernelCancellation(long deadlineNanoTime, BooleanSupplier extra, BooleanSupplier queryCancellation,
+			int materializationRowLimit, Runnable capacityNotifier) {
 		this.deadlineNanoTime = deadlineNanoTime;
 		this.extra = extra;
 		this.queryCancellation = queryCancellation;
 		this.materializationRowLimit = materializationRowLimit;
+		this.capacityNotifier = capacityNotifier;
 	}
 
 	public boolean cancelled() {
@@ -99,6 +112,11 @@ public final class KernelCancellation {
 		if (queryCancellation != null && queryCancellation.getAsBoolean()) {
 			cancellationReason = QUERY_CANCELLED;
 			return QUERY_CANCELLED;
+		}
+		if (capacityNotifier != null) {
+			// Report the cause before latching: from here on the reason reads as an ordinary probe cancellation, and
+			// the dispatch layer would otherwise charge this arm a timeout it never incurred.
+			capacityNotifier.run();
 		}
 		cancellationReason = PROBE_CANCELLED;
 		return PROBE_CANCELLED;

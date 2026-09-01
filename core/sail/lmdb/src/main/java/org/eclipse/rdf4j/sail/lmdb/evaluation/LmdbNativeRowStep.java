@@ -2259,9 +2259,11 @@ final class MaterializedUnorderedRowCursor implements RowCursor {
 /**
  * Probe discipline for the streaming row site: the trial's logical rows are drained privately into a bounded arena
  * under the ambient deadline — completion (including empty exhaustion, a valid milestone) publishes a replay input over
- * the buffer, while deadline expiry or buffer exhaustion (which trips the same deadline, taking the identical path)
- * abandons the trial with zero rows ever exposed. Row state is snapshotted before the drain and restored around both
- * outcomes, because batch-backed trials overwrite slots outside the binding trail.
+ * the buffer, while deadline expiry or buffer exhaustion abandons the trial with zero rows ever exposed. Both abandon
+ * through the same exception, but exhaustion reports itself with {@link LmdbNativeProbeDeadline#tripCapacity()} rather
+ * than {@code trip()} so the arbiter can tell "this strategy is slow" from "this answer is bigger than the buffer". Row
+ * state is snapshotted before the drain and restored around both outcomes, because batch-backed trials overwrite slots
+ * outside the binding trail.
  */
 final class NativeProbeBufferHarness implements LmdbNativeProbeHarness<NativeUnorderedInput> {
 
@@ -2272,7 +2274,6 @@ final class NativeProbeBufferHarness implements LmdbNativeProbeHarness<NativeUno
 		int slotCount = row.slots.length;
 		int mark = row.mark();
 		long[] entrySnapshot = row.slots.clone();
-		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.currentOrNull();
 		RowCursor rows = input.materializedRows();
 		try {
 			long[] arena = new long[Math.max(slotCount, Math.min(rowCap, 256) * slotCount)];
@@ -2284,11 +2285,10 @@ final class NativeProbeBufferHarness implements LmdbNativeProbeHarness<NativeUno
 				}
 				observation.addProducedRow();
 				if (buffered >= rowCap) {
-					// buffer exhaustion IS the timeout: trip the scope and throw the identical exception
-					if (deadline != null) {
-						deadline.trip();
-					}
-					throw LmdbNativeProbeDeadlineExceeded.INSTANCE;
+					// buffer exhaustion unwinds through the timeout exception so the abort path stays single, but it
+					// is reported as capacity: the answer simply has more rows than the probe may withhold, which says
+					// nothing about how fast this strategy is, and the arbiter must not charge it a timeout
+					throw LmdbNativeProbeDeadline.capacityExhausted();
 				}
 				int offset = buffered * slotCount;
 				if (offset + slotCount > arena.length) {

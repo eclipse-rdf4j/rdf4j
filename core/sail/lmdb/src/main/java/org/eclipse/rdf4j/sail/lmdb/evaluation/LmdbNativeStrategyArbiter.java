@@ -870,6 +870,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		LmdbNativeCostObservation observation = new LmdbNativeCostObservation(probe.trial().estimate(), adaptiveModel,
 				System::nanoTime, LmdbNativeCostObservation.Role.PROBE);
 		boolean timedOut = false;
+		boolean capacityExceeded = false;
 		T value = null;
 		try (LmdbNativeProbeDeadline.Scope scope = LmdbNativeProbeDeadline.enter(start + probe.deadlineNanos())) {
 			race.primaryDeadline(scope.deadline());
@@ -920,6 +921,18 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				probeHarness.discard(value);
 				value = null;
 				timedOut = false;
+			} else if (timedOut && scope.deadline().capacityTripped()) {
+				// Capacity, not the clock — kept textually parallel with the serial path in executeProbe: no timing
+				// evidence is invented and the scheduler rests the arm without a strike.
+				capacityExceeded = true;
+				observation.fallback();
+				long elapsed = System.nanoTime() - start;
+				probe.reservation().commit(hedgedCharge(elapsed, delay, race.backupEverStarted()));
+				scheduler.capacityExceeded(trialKey, probe.regime(), probe.epoch());
+				if (value != null) {
+					probeHarness.discard(value);
+					value = null;
+				}
 			} else if (timedOut) {
 				long elapsed = System.nanoTime() - start;
 				long bound = Math.min(probe.deadlineNanos(),
@@ -946,9 +959,10 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 			return adopted;
 		}
 		if (observation.isComplete()) {
-			// censored or contended-completed trial with no backup rescue: serial re-rank on the retained candidates
+			// censored, capacity-abandoned or contended-completed trial with no backup rescue: serial re-rank on the
+			// retained candidates
 			recordAdaptiveDecision(trial, new AdaptiveDecision<>(trialIndex, plan, -1, probe.reason()),
-					"PROBE_TIMEOUT");
+					capacityExceeded ? "PROBE_CAPACITY" : "PROBE_TIMEOUT");
 			candidates.remove(trialIndex);
 			trial.close();
 			return null;
@@ -1093,6 +1107,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		LmdbNativeCostObservation observation = new LmdbNativeCostObservation(plan.trial().estimate(), adaptiveModel,
 				System::nanoTime, LmdbNativeCostObservation.Role.PROBE);
 		boolean timedOut = false;
+		boolean capacityExceeded = false;
 		T value = null;
 		try (LmdbNativeProbeDeadline.Scope scope = LmdbNativeProbeDeadline.enter(start + plan.deadlineNanos())) {
 			try {
@@ -1120,6 +1135,9 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 			if (!timedOut && value == null && scope.deadline().tripped()) {
 				timedOut = true; // a parallel trial declined because its workers saw the tripped deadline
 			}
+			// the scope closes before the timeout handling below, so latch the cause while the deadline is still in
+			// hand: capacity is not a timeout and must not be recorded or penalised as one
+			capacityExceeded = timedOut && scope.deadline().capacityTripped();
 			if (!timedOut && value != null) {
 				observation.exhausted();
 				long elapsed = System.nanoTime() - start;
@@ -1137,7 +1155,21 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				return new LmdbNativeStrategySelection<>(value, observation);
 			}
 		}
-		if (timedOut) {
+		if (capacityExceeded) {
+			// The trial filled its private row buffer without running out of time. Nothing was learned about how long
+			// a full run takes, so no timing evidence is recorded at all — censoring at the deadline would assert a
+			// runtime the arm never spent, and that fabricated bound is what used to make a fast arm with a large
+			// answer look slow. The real elapsed cost is still charged, and the scheduler rests the arm without a
+			// strike so two overflows can never park it until the regime epoch changes.
+			observation.fallback();
+			plan.reservation().commit(System.nanoTime() - start);
+			scheduler.capacityExceeded(trialKey, plan.regime(), plan.epoch());
+			if (value != null) {
+				probeHarness.discard(value);
+			}
+			recordAdaptiveDecision(trial, new AdaptiveDecision<>(trialIndex, plan, -1, plan.reason()),
+					"PROBE_CAPACITY");
+		} else if (timedOut) {
 			observation.budgetCensored(plan.deadlineNanos());
 			LmdbNativeAdaptiveCostModel.CensorResult censor = observation.censorResult();
 			long elapsed = System.nanoTime() - start;
