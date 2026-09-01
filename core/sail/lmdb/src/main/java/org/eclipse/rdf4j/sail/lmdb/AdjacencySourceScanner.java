@@ -161,9 +161,26 @@ interface AdjacencySourceScanner extends AutoCloseable {
 	/**
 	 * Plans disjoint source-key ranges for one logical plane. The default returns no source plan, allowing the builder
 	 * to retain its predicate-coverage fallback for synthetic and compatibility scanners.
+	 * <p>
+	 * {@code sortedPredicates} is the builder's raw predicate catalog in unsigned ascending order — every predicate the
+	 * build will index. A source that can weigh predicates uses it to cut ranges of roughly equal statement count
+	 * instead of equal key space; a source that cannot may ignore it.
 	 */
-	default ScanRange[] planRanges(int plane, LmdbAdjacencyCoverage coverage, int targetRanges) throws IOException {
+	default ScanRange[] planRanges(int plane, LmdbAdjacencyCoverage coverage, long[] sortedPredicates,
+			int targetRanges) throws IOException {
 		return NO_SCAN_RANGES;
+	}
+
+	/**
+	 * Approximate statement counts for {@code sortedPredicates} in one plane's statement set, or {@code null} when this
+	 * source cannot weigh predicates cheaply.
+	 * <p>
+	 * The builder uses the weights to group predicates into scan ranges of roughly equal size. An implementation must
+	 * be cheap — it is called during planning, before any statement has been read — and must return {@code null} rather
+	 * than an expensive or unreliable count; the weights are an optimisation, never a correctness input.
+	 */
+	default long[] approximatePredicateStatementCounts(int plane, long[] sortedPredicates) throws IOException {
+		return null;
 	}
 
 	/** Replays one planned source range, or the complete covered plane when {@code range} is null. */

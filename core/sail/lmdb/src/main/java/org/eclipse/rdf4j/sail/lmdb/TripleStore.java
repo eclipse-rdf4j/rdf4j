@@ -2998,6 +2998,74 @@ class TripleStore implements Closeable {
 		});
 	}
 
+	/**
+	 * Approximates how many statements of one statement set each of {@code sortedPredicates} holds, without reading a
+	 * single statement, or returns {@code null} when no estimate is available.
+	 * <p>
+	 * This exists so that the parallel adjacency base build can cut its work into ranges of roughly equal statement
+	 * count instead of ranges of equal key space. On a predicate-leading index the first key of a predicate marks the
+	 * boundary between two predicates' runs, so the difference of two approximate key ranks is the approximate size of
+	 * the run between them. Ranks come from a B-tree descent over the pinned snapshot's pages
+	 * ({@link LmdbPageCardinalityEstimator#estimateEntryRanks}), which costs one page read per tree level per predicate
+	 * rather than one per statement.
+	 * <p>
+	 * {@code txnRef} is only read for its transaction id, so the estimate describes exactly the snapshot the caller is
+	 * scanning. {@code null} is returned — meaning "carry on without weights" — when the page cardinality estimator is
+	 * disabled, when no configured index is predicate-leading, or when reading the data file fails; the estimate is an
+	 * optimisation and never a correctness input.
+	 */
+	long[] approximatePredicateStatementCounts(Txn txnRef, boolean explicit, long[] sortedPredicates) {
+		LmdbPageCardinalityEstimator estimator = pageEstimator;
+		if (estimator == null || sortedPredicates == null || sortedPredicates.length == 0) {
+			return null;
+		}
+		TripleIndex predicateLeading = null;
+		for (TripleIndex candidate : indexes) {
+			if (candidate.getFieldSeq()[0] == 'p') {
+				predicateLeading = candidate;
+				break;
+			}
+		}
+		if (predicateLeading == null) {
+			return null;
+		}
+		try {
+			long txnId;
+			long readStamp = txnRef.lockManager().readLock();
+			try {
+				txnId = mdb_txn_id(txnRef.get());
+			} finally {
+				txnRef.lockManager().unlockRead(readStamp);
+			}
+			String dbName = predicateLeading.getName(explicit);
+			long total = estimator.totalEntries(txnId, dbName);
+			if (total <= 0) {
+				return new long[sortedPredicates.length];
+			}
+			byte[][] predicateStartKeys = new byte[sortedPredicates.length][];
+			ByteBuffer keyBuffer = ByteBuffer.allocate(TripleIndex.MAX_KEY_LENGTH);
+			for (int i = 0; i < sortedPredicates.length; i++) {
+				keyBuffer.clear();
+				predicateLeading.getMinKey(keyBuffer, -1, sortedPredicates[i], -1, -1);
+				keyBuffer.flip();
+				predicateStartKeys[i] = toArray(keyBuffer);
+			}
+			long[] ranks = estimator.estimateEntryRanks(txnId, dbName, predicateStartKeys);
+			long[] counts = new long[sortedPredicates.length];
+			for (int i = 0; i < counts.length; i++) {
+				long end = i + 1 < ranks.length ? ranks[i + 1] : total;
+				counts[i] = Math.max(0, end - ranks[i]);
+			}
+			return counts;
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			return null;
+		} catch (IOException | RuntimeException e) {
+			logger.debug("Approximate predicate statement counts unavailable on index {}", predicateLeading, e);
+			return null;
+		}
+	}
+
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
 		if (!pageCardinalityEstimator) {
 			return exactCardinality(subj, pred, obj, context);

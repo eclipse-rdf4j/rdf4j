@@ -68,6 +68,15 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 	private long cursorRowsSkipped;
 	private long cursorSeeks;
 
+	/** Memoized approximate per-predicate statement counts, keyed by the catalog instance they were derived from. */
+	private long[] weighedPredicates;
+	private long[] explicitWeights;
+	private long[] inferredWeights;
+	private boolean explicitWeightsResolved;
+	private boolean inferredWeightsResolved;
+	private LmdbAdjacencyCoverage weighedCoverage;
+	private long[] weighedCoveragePredicates;
+
 	LmdbAdjacencyTripleStoreScanner(TripleStore tripleStore, Txn txn, long snapshotRevision) {
 		this(tripleStore, txn, snapshotRevision, false);
 	}
@@ -100,7 +109,47 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 	}
 
 	@Override
-	public ScanRange[] planRanges(int plane, LmdbAdjacencyCoverage coverage, int targetRanges) throws IOException {
+	public long[] approximatePredicateStatementCounts(int plane, long[] sortedPredicates) {
+		if (plane < 0 || plane >= LmdbAdjacencyPlane.PLANE_COUNT) {
+			throw new IllegalArgumentException("plane out of range: " + plane);
+		}
+		boolean explicit = plane == LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+				|| plane == LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT;
+		return predicateWeights(explicit, sortedPredicates);
+	}
+
+	/**
+	 * Approximate statement counts per predicate, memoized per statement set. Outgoing and incoming planes of the same
+	 * statement set weigh the same statements, so the two planning calls share one page-descent sweep.
+	 */
+	private long[] predicateWeights(boolean explicit, long[] sortedPredicates) {
+		if (sortedPredicates == null || sortedPredicates.length == 0) {
+			return null;
+		}
+		if (weighedPredicates != sortedPredicates) {
+			weighedPredicates = sortedPredicates;
+			explicitWeights = null;
+			inferredWeights = null;
+			explicitWeightsResolved = false;
+			inferredWeightsResolved = false;
+		}
+		if (explicit) {
+			if (!explicitWeightsResolved) {
+				explicitWeightsResolved = true;
+				explicitWeights = tripleStore.approximatePredicateStatementCounts(txn, true, sortedPredicates);
+			}
+			return explicitWeights;
+		}
+		if (!inferredWeightsResolved) {
+			inferredWeightsResolved = true;
+			inferredWeights = tripleStore.approximatePredicateStatementCounts(txn, false, sortedPredicates);
+		}
+		return inferredWeights;
+	}
+
+	@Override
+	public ScanRange[] planRanges(int plane, LmdbAdjacencyCoverage coverage, long[] sortedPredicates,
+			int targetRanges) throws IOException {
 		boolean outgoing = plane == LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
 				|| plane == LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED;
 		boolean explicit = plane == LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
@@ -117,6 +166,16 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 		LmdbPrefixRunPlan prefixPlan = tripleStore.prefixRunPlan(preferred, -1, -1, -1, -1);
 		if (!coverage.isFull()) {
 			return planSelectedPredicateRanges(prefixPlan, coverage, explicit, outgoing, targetRanges);
+		}
+		// A predicate-leading plan means the predicate is the index's first key field, so a predicate boundary is a
+		// raw key boundary and the work can be cut by statement count instead of by interpolated key space. This is
+		// what keeps one worker from inheriting every rdf:type statement.
+		if (prefixPlan != null && sortedPredicates != null && sortedPredicates.length > 1) {
+			ScanRange[] weighted = planPredicateWeightedRanges(prefixPlan, explicit, outgoing, sortedPredicates,
+					targetRanges, plane);
+			if (weighted.length > 1) {
+				return weighted;
+			}
 		}
 		if (prefixPlan == null) {
 			prefixPlan = tripleStore.prefixRunPlan(fallback, -1, -1, -1, -1);
@@ -152,6 +211,114 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 		return ranges;
 	}
 
+	/**
+	 * Tiles one plane's whole key range with groups of predicates carrying roughly equal statement counts.
+	 * <p>
+	 * The group boundaries come from {@link LmdbAdjacencyPredicateWorkSplit}, which packs light predicates together and
+	 * isolates predicates too large for a single range. An isolated predicate is then subdivided at raw key boundaries
+	 * inside its own run, so even a single dominant predicate spreads across workers. Returns {@link #NO_SCAN_RANGES}
+	 * whenever no usable weights exist, leaving the caller's previous plan in charge.
+	 */
+	private ScanRange[] planPredicateWeightedRanges(LmdbPrefixRunPlan prefixPlan, boolean explicit, boolean outgoing,
+			long[] sortedPredicates, int targetRanges, int plane) throws IOException {
+		long[] weights = predicateWeights(explicit, sortedPredicates);
+		if (weights == null || weights.length != sortedPredicates.length) {
+			return NO_SCAN_RANGES;
+		}
+		LmdbAdjacencyPredicateWorkSplit.Group[] groups = LmdbAdjacencyPredicateWorkSplit.plan(weights, targetRanges);
+		if (groups.length <= 1) {
+			return NO_SCAN_RANGES;
+		}
+		String indexName = prefixPlan.index().toString();
+		List<ScanRange> ranges = new ArrayList<>(targetRanges);
+		long heaviestRangeWeight = 0;
+		long totalWeight = 0;
+		for (LmdbAdjacencyPredicateWorkSplit.Group group : groups) {
+			byte[] low = group.fromInclusive() == 0 ? null
+					: encodePrefix(new long[] { sortedPredicates[group.fromInclusive()] });
+			byte[] high = group.toExclusive() == sortedPredicates.length ? null
+					: encodePrefix(new long[] { sortedPredicates[group.toExclusive()] });
+			if (group.partitions() > 1) {
+				addWeightedPredicateSubRanges(ranges, prefixPlan, explicit, outgoing,
+						sortedPredicates[group.fromInclusive()], group.partitions(), low, high, indexName);
+			} else {
+				ranges.add(ScanRange.ordinary(new LmdbKeyRange(low, high, indexName)));
+			}
+			totalWeight = Math.addExact(totalWeight, group.weight());
+			heaviestRangeWeight = Math.max(heaviestRangeWeight, group.weight() / group.partitions());
+		}
+		ScanRange[] planned = validatedTiling(ranges, indexName);
+		if (logger.isDebugEnabled()) {
+			logger.debug(
+					"Planned {} weight-balanced adjacency ranges on {} for plane {}: ~{} statements per range, heaviest ~{}",
+					planned.length, indexName, plane, totalWeight / Math.max(1, targetRanges), heaviestRangeWeight);
+		}
+		return planned;
+	}
+
+	/**
+	 * Cuts one oversized predicate's key run into {@code partitions} sub-ranges between {@code groupLow} (inclusive)
+	 * and {@code groupHigh} (exclusive). Prefix-run boundaries are preferred because they never split a logical
+	 * {@code (predicate,row)} group; when the run is one supernode and offers no such boundary, raw ordered splits
+	 * divide it and mark the following range as a continuation so the builder resumes the row rather than restarting
+	 * it.
+	 */
+	private void addWeightedPredicateSubRanges(List<ScanRange> target, LmdbPrefixRunPlan prefixPlan, boolean explicit,
+			boolean outgoing, long predicate, int partitions, byte[] groupLow, byte[] groupHigh, String indexName)
+			throws IOException {
+		long[][] splitValues = tripleStore.planPrefixRunSplitValues(txn, prefixPlan, -1, predicate, -1, -1, explicit,
+				partitions - 1, prefixPlan.prefixLength());
+		int minimumUsefulSplits = Math.min(partitions - 1, Math.max(1, partitions / 2));
+		if (splitValues == null || splitValues.length < minimumUsefulSplits) {
+			int rowField = outgoing ? TripleIndex.SUBJ_IDX : TripleIndex.OBJ_IDX;
+			List<TripleStore.OrderedSplit> rawSplits = tripleStore.planOrderedSplits(txn, prefixPlan, -1, predicate,
+					-1, -1, explicit, partitions - 1, rowField);
+			if (!rawSplits.isEmpty()) {
+				target.addAll(Arrays.asList(rawRanges(indexName, rawSplits, groupLow, groupHigh, false, 0)));
+				return;
+			}
+		}
+		byte[] low = groupLow;
+		if (splitValues != null) {
+			for (long[] splitValue : splitValues) {
+				byte[] high = encodePrefix(splitValue);
+				if ((low == null || Arrays.compareUnsigned(low, high) < 0)
+						&& (groupHigh == null || Arrays.compareUnsigned(high, groupHigh) < 0)) {
+					target.add(ScanRange.ordinary(new LmdbKeyRange(low, high, indexName)));
+					low = high;
+				}
+			}
+		}
+		target.add(ScanRange.ordinary(new LmdbKeyRange(low, groupHigh, indexName)));
+	}
+
+	/**
+	 * Asserts that the planned ranges tile the index exactly once: open at both ends, strictly ascending, and with
+	 * every range's exclusive high bound equal to its successor's inclusive low bound. A gap here would silently drop
+	 * statements from the published adjacency index, so a broken plan must abort the build.
+	 */
+	private static ScanRange[] validatedTiling(List<ScanRange> ranges, String indexName) throws IOException {
+		ScanRange[] planned = ranges.toArray(ScanRange[]::new);
+		if (planned.length == 0) {
+			return NO_SCAN_RANGES;
+		}
+		if (planned[0].keyRange().lowKey() != null
+				|| planned[planned.length - 1].keyRange().highKeyExclusive() != null) {
+			throw new IOException("weighted adjacency range plan is not open ended on " + indexName);
+		}
+		for (int i = 0; i < planned.length; i++) {
+			byte[] low = planned[i].keyRange().lowKey();
+			byte[] high = planned[i].keyRange().highKeyExclusive();
+			if (low != null && high != null && Arrays.compareUnsigned(low, high) >= 0) {
+				throw new IOException("weighted adjacency range plan is not ascending on " + indexName);
+			}
+			if (i + 1 < planned.length && !Arrays.equals(high, planned[i + 1].keyRange().lowKey())) {
+				throw new IOException("weighted adjacency range plan leaves a gap on " + indexName);
+			}
+		}
+		return planned;
+	}
+
 	private ScanRange[] planSelectedPredicateRanges(LmdbPrefixRunPlan prefixPlan, LmdbAdjacencyCoverage coverage,
 			boolean explicit, boolean outgoing, int targetRanges) throws IOException {
 		int predicateCount = coverage.selectedPredicateCount();
@@ -159,15 +326,46 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 				|| !prefixPlan.index().toString().startsWith("p")) {
 			return NO_SCAN_RANGES;
 		}
+		long[] selected = selectedPredicateCatalog(coverage);
+		// Spread the range budget over the selected predicates by statement count. Splitting it evenly hands a
+		// predicate with a handful of statements as many workers as one with millions.
+		long[] weights = predicateWeights(explicit, selected);
+		int[] partitionsPerPredicate = weights != null && weights.length == predicateCount
+				? LmdbAdjacencyPredicateWorkSplit.apportionPartitions(weights, targetRanges)
+				: evenPartitions(predicateCount, targetRanges);
 		ArrayList<ScanRange> ranges = new ArrayList<>(targetRanges);
+		for (int ordinal = 0; ordinal < predicateCount; ordinal++) {
+			addSelectedPredicateRanges(ranges, prefixPlan, explicit, outgoing, selected[ordinal],
+					partitionsPerPredicate[ordinal]);
+		}
+		return ranges.toArray(ScanRange[]::new);
+	}
+
+	/**
+	 * Materializes a SELECTED coverage's predicate list once. The array identity is what keys the weight cache, so
+	 * rebuilding it per plane would recompute the estimate four times over.
+	 */
+	private long[] selectedPredicateCatalog(LmdbAdjacencyCoverage coverage) {
+		if (weighedCoverage != coverage) {
+			int predicateCount = coverage.selectedPredicateCount();
+			long[] selected = new long[predicateCount];
+			for (int ordinal = 0; ordinal < predicateCount; ordinal++) {
+				selected[ordinal] = coverage.selectedPredicateAt(ordinal);
+			}
+			weighedCoverage = coverage;
+			weighedCoveragePredicates = selected;
+		}
+		return weighedCoveragePredicates;
+	}
+
+	private static int[] evenPartitions(int predicateCount, int targetRanges) {
+		int[] partitions = new int[predicateCount];
 		int basePartitions = targetRanges / predicateCount;
 		int extraPartitions = targetRanges % predicateCount;
 		for (int ordinal = 0; ordinal < predicateCount; ordinal++) {
-			long predicate = coverage.selectedPredicateAt(ordinal);
-			int partitions = basePartitions + (ordinal < extraPartitions ? 1 : 0);
-			addSelectedPredicateRanges(ranges, prefixPlan, explicit, outgoing, predicate, partitions);
+			partitions[ordinal] = basePartitions + (ordinal < extraPartitions ? 1 : 0);
 		}
-		return ranges.toArray(ScanRange[]::new);
+		return partitions;
 	}
 
 	private void addSelectedPredicateRanges(List<ScanRange> target, LmdbPrefixRunPlan prefixPlan, boolean explicit,
