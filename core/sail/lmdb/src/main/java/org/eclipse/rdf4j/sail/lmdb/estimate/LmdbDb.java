@@ -20,6 +20,10 @@ record LmdbDb(int pad, int flags, int depth, long branchPages, long leafPages, l
 		return rootPgno == LmdbFormat.P_INVALID || entries == 0;
 	}
 
+	boolean isDupSort() {
+		return (flags & LmdbFormat.MDB_DUPSORT) != 0;
+	}
+
 	static LmdbDb parse(ByteBuffer buffer, int offset) {
 		int pad = buffer.getInt(offset + LmdbFormat.MDB_DB_PAD_OFFSET);
 		int flags = LmdbFormat.unsignedShort(buffer, offset + LmdbFormat.MDB_DB_FLAGS_OFFSET);

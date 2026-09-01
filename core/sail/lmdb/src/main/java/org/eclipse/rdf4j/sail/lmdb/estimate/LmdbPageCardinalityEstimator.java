@@ -22,27 +22,66 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 
+/** Bounded, snapshot-consistent LMDB range-cardinality estimator. */
 public final class LmdbPageCardinalityEstimator implements Closeable {
 
 	private final LmdbDataFile dataFile;
 	private volatile SnapshotCache lastSnapshot;
 
+	/** File-channel fallback constructor, retained for compatibility and standalone tests. */
 	public LmdbPageCardinalityEstimator(File dataMdbFile) throws IOException {
-		this.dataFile = new LmdbDataFile(dataMdbFile);
+		this(dataMdbFile, 0L);
+	}
+
+	/**
+	 * Native-map constructor used by {@code TripleStore}. The environment handle lets page reads use LMDB's existing
+	 * mapping without copying pages through {@link java.nio.channels.FileChannel}.
+	 */
+	public LmdbPageCardinalityEstimator(File dataMdbFile, long env) throws IOException {
+		this.dataFile = new LmdbDataFile(dataMdbFile, env);
 	}
 
 	public long estimateEntries(long txnId, String dbName, byte[] minKey, int minKeyLength, byte[] maxKey,
-			int maxKeyLength,
-			GroupMatcher matcher) throws IOException {
+			int maxKeyLength, GroupMatcher matcher) throws IOException {
+		return estimateEntries(txnId, dbName, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
+				matcher == null ? 0 : 1, 1);
+	}
+
+	public long estimateEntries(long txnId, String dbName, byte[] minKey, int minKeyLength, byte[] maxKey,
+			int maxKeyLength, GroupMatcher matcher, int sampleMultiplier) throws IOException {
+		return estimateEntries(txnId, dbName, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
+				matcher == null ? 0 : 1, sampleMultiplier);
+	}
+
+	public long estimateEntries(long txnId, String dbName, byte[] minKey, int minKeyLength, byte[] maxKey,
+			int maxKeyLength, GroupMatcher matcher, int residualFieldCount, int sampleMultiplier) throws IOException {
+		return estimateEntriesDetailed(txnId, dbName, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
+				residualFieldCount, sampleMultiplier).entries;
+	}
+
+	RangeCountResult estimateEntriesDetailed(long txnId, String dbName, byte[] minKey, int minKeyLength,
+			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, int residualFieldCount) throws IOException {
+		return estimateEntriesDetailed(txnId, dbName, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
+				residualFieldCount, 1);
+	}
+
+	RangeCountResult estimateEntriesDetailed(long txnId, String dbName, byte[] minKey, int minKeyLength,
+			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, int residualFieldCount, int sampleMultiplier)
+			throws IOException {
 		SnapshotCache snapshot = snapshot(txnId);
 		LmdbDb db = namedDb(snapshot, dbName);
 		if (db == null || db.isEmpty()) {
-			return 0;
+			RangeCountResult empty = new RangeCountResult();
+			empty.exact = true;
+			empty.exhaustive = true;
+			empty.mode = RangeCountResult.Mode.EXACT_EMPTY;
+			return empty;
 		}
 
-		LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta);
-		RangeCountResult result = counter.countRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher);
-		return result.entries;
+		LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta, snapshot.pageCache,
+				stableDatabaseIdentity(dbName));
+		return counter.estimateRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
+				Math.max(0, residualFieldCount), sampleMultiplier);
 	}
 
 	/**
@@ -90,7 +129,7 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 
 	private SnapshotCache snapshot(long txnId) throws IOException {
 		SnapshotCache cached = lastSnapshot;
-		if (cached != null && cached.txnId == txnId) {
+		if (cached != null && cached.txnId == txnId && dataFile.isNativeMapCurrent(cached.meta)) {
 			return cached;
 		}
 		LmdbMeta meta = dataFile.readMetaForTxn(txnId);
@@ -105,17 +144,17 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 			return cached;
 		}
 
-		LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta);
+		LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta, snapshot.pageCache,
+				stableDatabaseIdentity("<main>"));
 		RangeCountResult lookupStats = new RangeCountResult();
-
 		byte[] key = dbName.getBytes(StandardCharsets.UTF_8);
 		byte[] keyWithTerminator = new byte[key.length + 1];
 		System.arraycopy(key, 0, keyWithTerminator, 0, key.length);
 
 		byte[] value = counter.findValueByExactKey(snapshot.meta.mainDb(), key, key.length, lookupStats);
 		if (value == null) {
-			value = counter.findValueByExactKey(snapshot.meta.mainDb(), keyWithTerminator, keyWithTerminator.length,
-					lookupStats);
+			value = counter.findValueByExactKey(snapshot.meta.mainDb(), keyWithTerminator,
+					keyWithTerminator.length, lookupStats);
 		}
 		if (value == null) {
 			return null;
@@ -127,9 +166,19 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		return existing == null ? parsed : existing;
 	}
 
+	private long stableDatabaseIdentity(String dbName) {
+		long hash = 0xcbf29ce484222325L;
+		for (int index = 0; index < dbName.length(); index++) {
+			hash ^= dbName.charAt(index);
+			hash *= 0x100000001b3L;
+		}
+		return hash;
+	}
+
 	private static final class SnapshotCache {
 		final long txnId;
 		final LmdbMeta meta;
+		final LmdbPageCache pageCache = new LmdbPageCache();
 		final Map<String, LmdbDb> namedDbs = new ConcurrentHashMap<>();
 
 		SnapshotCache(long txnId, LmdbMeta meta) {
@@ -137,5 +186,4 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 			this.meta = meta;
 		}
 	}
-
 }

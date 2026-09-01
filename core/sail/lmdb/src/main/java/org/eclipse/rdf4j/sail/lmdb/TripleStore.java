@@ -288,7 +288,7 @@ class TripleStore implements Closeable {
 			return ip.get(0);
 		});
 		txnManager = new TxnManager(env, Mode.RESET);
-		pageEstimator = pageCardinalityEstimator ? new LmdbPageCardinalityEstimator(dataMdbFile) : null;
+		pageEstimator = pageCardinalityEstimator ? new LmdbPageCardinalityEstimator(dataMdbFile, env) : null;
 
 		try {
 			String indexSpecStr = config.getTripleIndexes();
@@ -2447,6 +2447,21 @@ class TripleStore implements Closeable {
 		});
 	}
 
+	long getStatementCount() throws IOException {
+		TripleIndex mainIndex = indexes.getFirst();
+		return txnManager.doWith((stack, txn) -> {
+			MDBStat explicitStat = MDBStat.malloc(stack);
+			MDBStat inferredStat = MDBStat.malloc(stack);
+			mdb_stat(txn, mainIndex.getDB(true), explicitStat);
+			mdb_stat(txn, mainIndex.getDB(false), inferredStat);
+			return Math.addExact(explicitStat.ms_entries(), inferredStat.ms_entries());
+		});
+	}
+
+	long getTransactionId() throws IOException {
+		return txnManager.doWith((stack, txn) -> mdb_txn_id(txn));
+	}
+
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
 		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn, cursorPool);
@@ -3067,56 +3082,159 @@ class TripleStore implements Closeable {
 	}
 
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
+		return cardinality(subj, pred, obj, context, 1);
+	}
+
+	protected double cardinality(long subj, long pred, long obj, long context, int sampleMultiplier)
+			throws IOException {
 		if (!pageCardinalityEstimator) {
 			return exactCardinality(subj, pred, obj, context);
 		}
 
-		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
-
+		sampleMultiplier = Math.clamp(sampleMultiplier, 1, 64);
+		TripleIndex primaryIndex = getBestPageEstimatorIndex(subj, pred, obj, context);
 		try {
-			return cardinalityUsingPageEstimator(index, subj, pred, obj, context);
+			double primary = cardinalityUsingPageEstimator(primaryIndex, subj, pred, obj, context, sampleMultiplier);
+			TripleIndex secondaryIndex = getSecondaryNoPrefixEstimatorIndex(primaryIndex, subj, pred, obj, context);
+			if (secondaryIndex == null) {
+				return primary;
+			}
+			try {
+				double secondary = cardinalityUsingPageEstimator(secondaryIndex, subj, pred, obj, context,
+						sampleMultiplier);
+				return combineIndependentLayoutEstimates(primary, secondary);
+			} catch (IOException | RuntimeException secondaryFailure) {
+				logger.debug("Secondary page cardinality estimate failed for index {}; using primary index {}",
+						new String(secondaryIndex.getFieldSeq()), new String(primaryIndex.getFieldSeq()),
+						secondaryFailure);
+				return primary;
+			}
 		} catch (IOException | RuntimeException e) {
-			logger.warn("Page-walk cardinality estimator failed for index {}, falling back to sampling",
-					new String(index.getFieldSeq()), e);
-			return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
+			logger.warn("Page cardinality estimator failed for index {}, falling back to sampling",
+					new String(primaryIndex.getFieldSeq()), e);
+			return cardinalityUsingSamplingEstimator(primaryIndex, subj, pred, obj, context);
 		}
 	}
 
-	private double cardinalityUsingPageEstimator(TripleIndex index, long subj, long pred, long obj, long context)
-			throws IOException {
+	private double cardinalityUsingPageEstimator(TripleIndex index, long subj, long pred, long obj, long context,
+			int sampleMultiplier) throws IOException {
 		LmdbPageCardinalityEstimator estimator = pageEstimator;
 		if (estimator == null) {
 			return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
 		}
-		int relevantParts = index.getPatternScore(subj, pred, obj, context);
+		int prefixLength = index.getPatternScore(subj, pred, obj, context);
+		int boundFields = countBoundFields(subj, pred, obj, context);
+		int residualFieldCount = boundFields - prefixLength;
 		final String explicitDbName = index.getName(true);
 		final String inferredDbName = index.getName(false);
 
 		return txnManager.doWith((stack, txn) -> {
 			long txnId = mdb_txn_id(txn);
-			if (relevantParts == 0) {
+			if (boundFields == 0) {
 				long explicitEntries = estimator.totalEntries(txnId, explicitDbName);
 				long inferredEntries = estimator.totalEntries(txnId, inferredDbName);
 				return (double) (explicitEntries + inferredEntries);
 			}
 
 			ByteBuffer minKeyBuffer = ByteBuffer.allocate(TripleIndex.MAX_KEY_LENGTH);
-			index.getMinKey(minKeyBuffer, subj, pred, obj, context);
+			index.getMinKeyForPrefix(minKeyBuffer, subj, pred, obj, context, prefixLength);
 			minKeyBuffer.flip();
 			byte[] minKey = toArray(minKeyBuffer);
 
 			ByteBuffer maxKeyBuffer = ByteBuffer.allocate(TripleIndex.MAX_KEY_LENGTH);
-			index.getMaxKey(maxKeyBuffer, subj, pred, obj, context);
+			index.getMaxKeyForPrefix(maxKeyBuffer, subj, pred, obj, context, prefixLength);
 			maxKeyBuffer.flip();
 			byte[] maxKey = toArray(maxKeyBuffer);
 
-			GroupMatcher matcher = index.createMatcher(subj, pred, obj, context);
+			GroupMatcher matcher = residualFieldCount == 0 ? null
+					: index.createResidualMatcher(subj, pred, obj, context, prefixLength);
 			long explicitCount = estimator.estimateEntries(txnId, explicitDbName, minKey, minKey.length, maxKey,
-					maxKey.length, matcher);
+					maxKey.length, matcher, residualFieldCount, sampleMultiplier);
 			long inferredCount = estimator.estimateEntries(txnId, inferredDbName, minKey, minKey.length, maxKey,
-					maxKey.length, matcher);
+					maxKey.length, matcher, residualFieldCount, sampleMultiplier);
 			return (double) (explicitCount + inferredCount);
 		});
+	}
+
+	private TripleIndex getBestPageEstimatorIndex(long subj, long pred, long obj, long context) {
+		TripleIndex best = null;
+		int bestPrefix = -1;
+		int bestResidualLayoutScore = Integer.MIN_VALUE;
+		for (TripleIndex candidate : indexes) {
+			int prefix = candidate.getPatternScore(subj, pred, obj, context);
+			int residualLayoutScore = residualLayoutScore(candidate, subj, pred, obj, context);
+			if (prefix > bestPrefix || prefix == bestPrefix && residualLayoutScore > bestResidualLayoutScore) {
+				best = candidate;
+				bestPrefix = prefix;
+				bestResidualLayoutScore = residualLayoutScore;
+			}
+		}
+		return Objects.requireNonNull(best, "No LMDB statement index is available");
+	}
+
+	private TripleIndex getSecondaryNoPrefixEstimatorIndex(TripleIndex primary, long subj, long pred, long obj,
+			long context) {
+		if (countBoundFields(subj, pred, obj, context) == 0
+				|| primary.getPatternScore(subj, pred, obj, context) != 0) {
+			return null;
+		}
+
+		char primaryLeadingField = primary.getFieldSeq()[0];
+		TripleIndex best = null;
+		boolean bestHasDifferentLeadingField = false;
+		int bestScore = Integer.MIN_VALUE;
+		for (TripleIndex candidate : indexes) {
+			if (candidate == primary || candidate.getPatternScore(subj, pred, obj, context) != 0) {
+				continue;
+			}
+			boolean differentLeadingField = candidate.getFieldSeq()[0] != primaryLeadingField;
+			int score = residualLayoutScore(candidate, subj, pred, obj, context);
+			if (best == null || differentLeadingField && !bestHasDifferentLeadingField
+					|| differentLeadingField == bestHasDifferentLeadingField && score > bestScore) {
+				best = candidate;
+				bestHasDifferentLeadingField = differentLeadingField;
+				bestScore = score;
+			}
+		}
+		return best;
+	}
+
+	private int residualLayoutScore(TripleIndex index, long subj, long pred, long obj, long context) {
+		int score = 0;
+		char[] fields = index.getFieldSeq();
+		for (int position = 0; position < fields.length; position++) {
+			if (isBoundField(fields[position], subj, pred, obj, context)) {
+				// Lexicographically prefer layouts that place residual bound fields earlier.
+				score += 1 << ((fields.length - position - 1) * 4);
+			}
+		}
+		return score;
+	}
+
+	private boolean isBoundField(char field, long subj, long pred, long obj, long context) {
+		return switch (field) {
+		case 's' -> subj >= 0;
+		case 'p' -> pred >= 0;
+		case 'o' -> obj >= 0;
+		case 'c' -> context >= 0;
+		default -> throw new IllegalArgumentException("Invalid index field: " + field);
+		};
+	}
+
+	private int countBoundFields(long subj, long pred, long obj, long context) {
+		return (subj >= 0 ? 1 : 0) + (pred >= 0 ? 1 : 0) + (obj >= 0 ? 1 : 0)
+				+ (context >= 0 ? 1 : 0);
+	}
+
+	private double combineIndependentLayoutEstimates(double first, double second) {
+		if (!Double.isFinite(first) || first < 0.0d) {
+			return second;
+		}
+		if (!Double.isFinite(second) || second < 0.0d) {
+			return first;
+		}
+		// Add-one geometric mean is stable in multiplicative error space and handles one exact/sample zero.
+		return Math.expm1((Math.log1p(first) + Math.log1p(second)) * 0.5d);
 	}
 
 	private static byte[] toArray(ByteBuffer buffer) {
@@ -3598,12 +3716,12 @@ class TripleStore implements Closeable {
 	}
 
 	void storePreparedTriples(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit,
-			boolean mayHaveInferred, EncodedIndexKeys preparedMainIndex,
+			boolean mayHaveInferred, IntConsumer addedIndexConsumer, EncodedIndexKeys preparedMainIndex,
 			PreparedSecondaryIndexesSupplier preparedSecondaryIndexesSupplier)
 			throws IOException {
 		try {
-			storeTriplesAligned(subj, pred, obj, context, count, explicit, mayHaveInferred, null, preparedMainIndex,
-					preparedSecondaryIndexesSupplier);
+			storeTriplesAligned(subj, pred, obj, context, count, explicit, mayHaveInferred, addedIndexConsumer,
+					preparedMainIndex, preparedSecondaryIndexesSupplier);
 		} finally {
 			if (preparedMainIndex != null) {
 				preparedMainIndex.close();
@@ -3611,10 +3729,10 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	void storeGloballyOrderedFreshTriples(int[] quads, long[] valueIds, int count,
+	int storeGloballyOrderedFreshTriples(int[] quads, long[] valueIds, int count,
 			GlobalPreparedIndexOrdersTask preparedOrders, ExecutorService encoderExecutor) throws IOException {
 		if (count == 0) {
-			return;
+			return 0;
 		}
 		if (recordCache != null || requiresResize(0)) {
 			throw new IOException("Insufficient reserved LMDB map capacity for global prepared import");
@@ -3701,6 +3819,7 @@ class TripleStore implements Closeable {
 			}
 		}
 		logAddedStatements(addedCount);
+		return addedCount;
 	}
 
 	private void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count,

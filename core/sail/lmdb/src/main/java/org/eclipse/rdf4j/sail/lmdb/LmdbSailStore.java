@@ -55,6 +55,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.IntConsumer;
 import java.util.function.Supplier;
 
 import org.eclipse.collections.impl.map.mutable.primitive.LongObjectHashMap;
@@ -469,6 +470,9 @@ class LmdbSailStore implements SailStore {
 				unusedIds.remove(c);
 			}
 			boolean added = tripleStore.storeTriple(s, p, o, c, explicit);
+			if (added) {
+				cardinalityCacheAdditions.incrementAndGet();
+			}
 			if (added && explicit && estimatorCallback != null) {
 				Statement st = valueStore.createStatement(subj, pred, obj, context);
 				estimatorCallback.accept(st);
@@ -543,21 +547,27 @@ class LmdbSailStore implements SailStore {
 				if (size == 1) {
 					boolean added = tripleStore.storeTriple(subjects[0], predicates[0], objects[0], contexts[0],
 							explicit);
+					if (added) {
+						cardinalityCacheAdditions.incrementAndGet();
+					}
 					if (added && explicit && estimatorCallback != null) {
 						estimatorCallback.accept(statements[0]);
 					}
 					return;
 				}
+				IntConsumer addedIndexConsumer = statementIndex -> {
+					cardinalityCacheAdditions.incrementAndGet();
+					if (explicit && estimatorCallback != null) {
+						estimatorCallback.accept(statements[statementIndex]);
+					}
+				};
 				if (preparedSecondaryIndexes != null) {
 					tripleStore.storePreparedTriples(subjects, predicates, objects, contexts, size, explicit,
-							LmdbSailStore.this.mayHaveInferred, null, this::awaitPreparedSecondaryIndexes);
-				} else if (explicit && estimatorCallback != null) {
-					tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, size, explicit,
-							LmdbSailStore.this.mayHaveInferred,
-							statementIndex -> estimatorCallback.accept(statements[statementIndex]));
+							LmdbSailStore.this.mayHaveInferred, addedIndexConsumer, null,
+							this::awaitPreparedSecondaryIndexes);
 				} else {
 					tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, size, explicit,
-							LmdbSailStore.this.mayHaveInferred, null);
+							LmdbSailStore.this.mayHaveInferred, addedIndexConsumer);
 				}
 			} finally {
 				releaseReservation();
@@ -667,7 +677,8 @@ class LmdbSailStore implements SailStore {
 			try {
 				TripleStore.EncodedIndexKeys preparedMainIndex = preparedSecondaryIndexes.awaitMain();
 				tripleStore.storePreparedTriples(subjects, predicates, objects, contexts, statementCount, true,
-						mayHaveInferred, preparedMainIndex, this::awaitPreparedSecondaryIndexes);
+						mayHaveInferred, ignored -> cardinalityCacheAdditions.incrementAndGet(), preparedMainIndex,
+						this::awaitPreparedSecondaryIndexes);
 			} finally {
 				try {
 					preparedSecondaryIndexes.cancel();
@@ -740,8 +751,9 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void execute() throws IOException {
 			try {
-				tripleStore.storeGloballyOrderedFreshTriples(quads, valueIds, statementCount, preparedOrders,
-						indexPreparationExecutor);
+				int added = tripleStore.storeGloballyOrderedFreshTriples(quads, valueIds, statementCount,
+						preparedOrders, indexPreparationExecutor);
+				cardinalityCacheAdditions.addAndGet(added);
 			} finally {
 				try {
 					preparedOrders.cancel();
@@ -808,6 +820,8 @@ class LmdbSailStore implements SailStore {
 	private Object storeTxnOwner;
 	private long storeTxnGeneration;
 	private final AtomicBoolean estimatorTouchedSinceStoreTxnStart = new AtomicBoolean(false);
+	private final AtomicLong cardinalityCacheAdditions = new AtomicLong();
+	private final AtomicLong cardinalityCacheRemovals = new AtomicLong();
 
 	/**
 	 * Strictly in-memory direct adjacency provider (plan 27), or {@code null} when the configured mode is DISABLED.
@@ -866,7 +880,8 @@ class LmdbSailStore implements SailStore {
 			}
 			preparedImportBudget = new AlignedWriteBudget(calculatePreparedImportStatementLimit(
 					Runtime.getRuntime().maxMemory(), tripleStore.secondaryIndexCount()));
-			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
+			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore,
+					config, dataDir.toPath(), estimatorPersistExec);
 			mayHaveInferred = tripleStore.hasTriples(false);
 			recoverRetiredValueIds();
 			LmdbDirectAdjacencyStore adjacencyForContext = directAdjacency;
@@ -1061,6 +1076,10 @@ class LmdbSailStore implements SailStore {
 		return sketchBasedJoinEstimator;
 	}
 
+	LmdbStatementPatternCardinalityCache getStatementPatternCardinalityCache() {
+		return statementPatternCardinalitySource.cache();
+	}
+
 	private static SketchBasedJoinEstimator.Config sketchEstimatorConfig(LmdbStoreConfig config) {
 		SketchBasedJoinEstimator.Config estimatorConfig = SketchBasedJoinEstimator.Config.defaults()
 				.withThrottleEveryN(config.getSketchEstimatorThrottleEveryN())
@@ -1142,6 +1161,8 @@ class LmdbSailStore implements SailStore {
 					valueStore.discardFreshValueSession(freshValueSession);
 					freshValueSession = null;
 				}
+				cardinalityCacheAdditions.set(0L);
+				cardinalityCacheRemovals.set(0L);
 				discardEstimatorStateTouchedByOpenTransaction();
 				completeStoreTransaction();
 			}
@@ -1213,6 +1234,9 @@ class LmdbSailStore implements SailStore {
 		}
 		try {
 			try {
+				if (statementPatternCardinalitySource != null) {
+					statementPatternCardinalitySource.stopRefreshAndDrain();
+				}
 				cancelAndDrainScheduledBackgroundSampling();
 				cancelAndDrainScheduledEstimatorPersist();
 				shutdownAndAwaitEstimatorPersistExecutor();
@@ -1222,6 +1246,13 @@ class LmdbSailStore implements SailStore {
 				}
 				if (filterSelectivityStats != null) {
 					filterSelectivityStats.persistIfDirty();
+				}
+				if (statementPatternCardinalitySource != null) {
+					try {
+						statementPatternCardinalitySource.persist();
+					} catch (IOException | RuntimeException e) {
+						logger.warn("Failed to persist LMDB statement-pattern cardinality cache during close", e);
+					}
 				}
 			} finally {
 				try {
@@ -2121,6 +2152,9 @@ class LmdbSailStore implements SailStore {
 					valueStore.discardFreshValueSession(freshValueSession);
 					freshValueSession = null;
 				}
+				long additions = cardinalityCacheAdditions.getAndSet(0L);
+				long removals = cardinalityCacheRemovals.getAndSet(0L);
+				statementPatternCardinalitySource.recordCommittedMutations(additions, removals);
 				if (directAdjacency != null) {
 					// the pending marker is already published; the sealed delta now feeds the applier
 					directAdjacency.applyCommitted(tripleStore.drainDirectAdjacencyCommitDelta());
@@ -2904,6 +2938,8 @@ class LmdbSailStore implements SailStore {
 					}
 					storeTxnDirty.set(false);
 					resetBulkOperationCapacity();
+					cardinalityCacheAdditions.set(0L);
+					cardinalityCacheRemovals.set(0L);
 					multiThreadingActive = preferThreading && enableMultiThreading;
 					nextTransactionAsync = multiThreadingActive;
 					asyncTransactionCompletion = new CountDownLatch(1);
@@ -3071,6 +3107,7 @@ class LmdbSailStore implements SailStore {
 				for (long contextId : contexts) {
 					tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit, quad -> {
 						removeCount[0]++;
+						cardinalityCacheRemovals.incrementAndGet();
 						if (explicit) {
 							try {
 								queueEstimatorRemove(quadToStatement(quad));

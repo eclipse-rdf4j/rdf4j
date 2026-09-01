@@ -322,14 +322,81 @@ public class TripleIndex {
 		toKey(bb, subj, pred, obj, context);
 	}
 
+	/**
+	 * Writes the inclusive lower key for the contiguous bound prefix used by this index. Components after the prefix
+	 * are forced to the lowest possible encoded value even when they are bound in the statement pattern, because such
+	 * components are residual predicates rather than part of the contiguous B-tree range.
+	 */
+	void getMinKeyForPrefix(ByteBuffer bb, long subj, long pred, long obj, long context, int prefixLength) {
+		writePrefixRangeKey(bb, subj, pred, obj, context, prefixLength, false);
+	}
+
+	/** Writes the inclusive upper key for the contiguous bound prefix used by this index. */
+	void getMaxKeyForPrefix(ByteBuffer bb, long subj, long pred, long obj, long context, int prefixLength) {
+		writePrefixRangeKey(bb, subj, pred, obj, context, prefixLength, true);
+	}
+
+	private void writePrefixRangeKey(ByteBuffer bb, long subj, long pred, long obj, long context,
+			int prefixLength, boolean upper) {
+		if (prefixLength < 0 || prefixLength > indexMap.length) {
+			throw new IllegalArgumentException("Invalid index-prefix length: " + prefixLength);
+		}
+
+		long fill = upper ? Long.MAX_VALUE : 0L;
+		long rangeSubj = subj >= 0 ? subj : fill;
+		long rangePred = pred >= 0 ? pred : fill;
+		long rangeObj = obj >= 0 ? obj : fill;
+		long rangeContext = context >= 0 ? context : fill;
+
+		for (int position = prefixLength; position < indexMap.length; position++) {
+			switch (indexMap[position]) {
+			case SUBJ_IDX:
+				rangeSubj = fill;
+				break;
+			case PRED_IDX:
+				rangePred = fill;
+				break;
+			case OBJ_IDX:
+				rangeObj = fill;
+				break;
+			case CONTEXT_IDX:
+				rangeContext = fill;
+				break;
+			default:
+				throw new IllegalStateException("Invalid index component " + indexMap[position]);
+			}
+		}
+		toKey(bb, rangeSubj, rangePred, rangeObj, rangeContext);
+	}
+
 	GroupMatcher createMatcher(long subj, long pred, long obj, long context) {
+		return createMatcher(subj, pred, obj, context, matcherFactory.create(subj, pred, obj, context));
+	}
+
+	/**
+	 * Creates a matcher for only those bound components that are not already guaranteed by the contiguous index prefix.
+	 * Returns {@code null} when no residual comparison remains.
+	 */
+	GroupMatcher createResidualMatcher(long subj, long pred, long obj, long context, int guaranteedPrefixLength) {
+		boolean[] shouldMatch = matcherFactory.create(subj, pred, obj, context);
+		int prefix = Math.max(0, Math.min(guaranteedPrefixLength, shouldMatch.length));
+		for (int position = 0; position < prefix; position++) {
+			shouldMatch[position] = false;
+		}
+		boolean hasResidual = false;
+		for (boolean match : shouldMatch) {
+			hasResidual |= match;
+		}
+		return hasResidual ? createMatcher(subj, pred, obj, context, shouldMatch) : null;
+	}
+
+	private GroupMatcher createMatcher(long subj, long pred, long obj, long context, boolean[] shouldMatch) {
 		int length = getLength(subj, pred, obj, context);
-
 		ByteBuffer bb = ByteBuffer.allocate(length);
-		toKey(bb, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj, context == -1 ? 0 : context);
+		toKey(bb, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj,
+				context == -1 ? 0 : context);
 		bb.flip();
-
-		return new GroupMatcher(bb.array(), matcherFactory.create(subj, pred, obj, context));
+		return new GroupMatcher(bb.array(), shouldMatch);
 	}
 
 	GroupMatcher createPrefixMatcher(int prefixLength, long subj, long pred, long obj, long context) {

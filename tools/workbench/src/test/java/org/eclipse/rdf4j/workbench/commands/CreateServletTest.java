@@ -382,6 +382,17 @@ public class CreateServletTest {
 						Map.entry("Optimizer sampling max rows", "11"),
 						Map.entry("Background raw sampling enabled", "false"),
 						Map.entry("Background raw sampling max millis per cycle", "13"),
+						Map.entry("Statement pattern cardinality cache size", "17"),
+						Map.entry("Statement pattern cardinality cache expiry millis", "18"),
+						Map.entry("Statement pattern cardinality cache mutation ratio", "0.25"),
+						Map.entry("Popular statement pattern cardinality cache size", "19"),
+						Map.entry("Popular statement pattern cardinality cache activation threshold", "20"),
+						Map.entry("Popular statement pattern cardinality cache activation check interval", "21"),
+						Map.entry("Popular statement pattern cardinality cache promotion accesses", "2"),
+						Map.entry("Popular statement pattern cardinality cache promotion window millis", "22"),
+						Map.entry("Popular statement pattern cardinality cache refresh millis", "23"),
+						Map.entry("Popular statement pattern cardinality cache decay half life millis", "24"),
+						Map.entry("Popular statement pattern cardinality cache refresh sample multiplier", "5"),
 						Map.entry("Query Evaluation Mode", "STRICT")));
 
 		RepositoryConfig config = servlet.updateRepositoryConfig(rendered);
@@ -429,6 +440,17 @@ public class CreateServletTest {
 				.contains("optimizerSamplingMaxRows")
 				.contains("backgroundRawSamplingEnabled")
 				.contains("backgroundRawSamplingMaxMillisPerCycle")
+				.contains("statementPatternCardinalityCacheSize")
+				.contains("statementPatternCardinalityCacheExpiryMillis")
+				.contains("statementPatternCardinalityCacheMutationRatio")
+				.contains("popularStatementPatternCardinalityCacheSize")
+				.contains("popularStatementPatternCardinalityCacheActivationThreshold")
+				.contains("popularStatementPatternCardinalityCacheActivationCheckInterval")
+				.contains("popularStatementPatternCardinalityCachePromotionAccesses")
+				.contains("popularStatementPatternCardinalityCachePromotionWindowMillis")
+				.contains("popularStatementPatternCardinalityCacheRefreshMillis")
+				.contains("popularStatementPatternCardinalityCacheDecayHalfLifeMillis")
+				.contains("popularStatementPatternCardinalityCacheRefreshSampleMultiplier")
 				.contains("defaultQueryEvaluationMode")
 				.contains("STRICT");
 
@@ -448,6 +470,25 @@ public class CreateServletTest {
 		assertThat(invokeIntGetter(sailConfig, "getOptimizerSamplingMaxRows")).isEqualTo(11);
 		assertThat(invokeBooleanGetter(sailConfig, "getBackgroundRawSamplingEnabled")).isFalse();
 		assertThat(invokeLongGetter(sailConfig, "getBackgroundRawSamplingMaxMillisPerCycle")).isEqualTo(13L);
+		assertThat(invokeIntGetter(sailConfig, "getStatementPatternCardinalityCacheSize")).isEqualTo(17);
+		assertThat(invokeLongGetter(sailConfig, "getStatementPatternCardinalityCacheExpiryMillis")).isEqualTo(18L);
+		assertThat(invokeDoubleGetter(sailConfig, "getStatementPatternCardinalityCacheMutationRatio"))
+				.isEqualTo(0.25d);
+		assertThat(invokeIntGetter(sailConfig, "getPopularStatementPatternCardinalityCacheSize")).isEqualTo(19);
+		assertThat(invokeLongGetter(sailConfig, "getPopularStatementPatternCardinalityCacheActivationThreshold"))
+				.isEqualTo(20L);
+		assertThat(invokeIntGetter(sailConfig, "getPopularStatementPatternCardinalityCacheActivationCheckInterval"))
+				.isEqualTo(21);
+		assertThat(invokeIntGetter(sailConfig, "getPopularStatementPatternCardinalityCachePromotionAccesses"))
+				.isEqualTo(2);
+		assertThat(invokeLongGetter(sailConfig, "getPopularStatementPatternCardinalityCachePromotionWindowMillis"))
+				.isEqualTo(22L);
+		assertThat(invokeLongGetter(sailConfig, "getPopularStatementPatternCardinalityCacheRefreshMillis"))
+				.isEqualTo(23L);
+		assertThat(invokeLongGetter(sailConfig, "getPopularStatementPatternCardinalityCacheDecayHalfLifeMillis"))
+				.isEqualTo(24L);
+		assertThat(invokeIntGetter(sailConfig, "getPopularStatementPatternCardinalityCacheRefreshSampleMultiplier"))
+				.isEqualTo(5);
 	}
 
 	@Test
@@ -480,6 +521,10 @@ public class CreateServletTest {
 				.contains(templateDefault(template, "Value cache size"))
 				.contains(templateDefault(template, "Namespace cache size"))
 				.contains(templateDefault(template, "Value eviction interval"))
+				.contains(templateDefault(template, "Statement pattern cardinality cache size"))
+				.contains(templateDefault(template, "Popular statement pattern cardinality cache size"))
+				.contains(templateDefault(template,
+						"Popular statement pattern cardinality cache refresh sample multiplier"))
 				.doesNotContain("Append mode (experimental)")
 				.contains(templateDefault(template, "No readahead"))
 				.contains(templateDefault(template, "Query Evaluation Mode"));
@@ -610,6 +655,15 @@ public class CreateServletTest {
 		try {
 			Method getter = target.getClass().getMethod(getterName);
 			return (long) getter.invoke(target);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Missing LMDB config getter: " + getterName, e);
+		}
+	}
+
+	private static double invokeDoubleGetter(Object target, String getterName) {
+		try {
+			Method getter = target.getClass().getMethod(getterName);
+			return (double) getter.invoke(target);
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Missing LMDB config getter: " + getterName, e);
 		}
