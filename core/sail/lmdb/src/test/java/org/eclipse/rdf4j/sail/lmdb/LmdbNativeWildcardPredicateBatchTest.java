@@ -41,6 +41,8 @@ class LmdbNativeWildcardPredicateBatchTest {
 	private static final String COST_CALIBRATION_PROPERTY = "rdf4j.lmdb.costCalibration.enabled";
 	private static final String ADAPTIVE_PROBE_PROPERTY = "rdf4j.lmdb.adaptiveProbe.enabled";
 	private static final String ADAPTIVE_HEDGE_PROPERTY = "rdf4j.lmdb.adaptiveHedge.enabled";
+	private static final String PREFIX_RUN_PROPERTY = "rdf4j.lmdb.prefixRun.enabled";
+	private static final String ADJACENCY_AGGREGATE_PROPERTY = "rdf4j.lmdb.directAdjacency.scanAggregates.enabled";
 	private static final String NATIVE_BATCH_PROPERTY = "rdf4j.lmdb.nativeBatch.enabled";
 	private static final String NATIVE_BATCH_ROWS_PROPERTY = "rdf4j.lmdb.nativeBatch.rows";
 	private static final String PARALLEL_PROPERTY = "rdf4j.lmdb.parallel.enabled";
@@ -66,6 +68,8 @@ class LmdbNativeWildcardPredicateBatchTest {
 		System.clearProperty(COST_CALIBRATION_PROPERTY);
 		System.clearProperty(ADAPTIVE_PROBE_PROPERTY);
 		System.clearProperty(ADAPTIVE_HEDGE_PROPERTY);
+		System.clearProperty(PREFIX_RUN_PROPERTY);
+		System.clearProperty(ADJACENCY_AGGREGATE_PROPERTY);
 		System.clearProperty(NATIVE_BATCH_PROPERTY);
 		System.clearProperty(NATIVE_BATCH_ROWS_PROPERTY);
 		System.clearProperty(PARALLEL_PROPERTY);
@@ -660,12 +664,14 @@ class LmdbNativeWildcardPredicateBatchTest {
 
 	private void open(File dataDir) {
 		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
-		System.setProperty(JANINO_PROPERTY, "true");
+		System.setProperty(JANINO_PROPERTY, "false");
 		System.setProperty(JANINO_THRESHOLD_PROPERTY, "0");
 		System.setProperty(KERNEL_INTERPRETER_PROPERTY, "false");
 		System.setProperty(COST_CALIBRATION_PROPERTY, "false");
 		System.setProperty(ADAPTIVE_PROBE_PROPERTY, "false");
 		System.setProperty(ADAPTIVE_HEDGE_PROPERTY, "false");
+		System.setProperty(PREFIX_RUN_PROPERTY, "false");
+		System.setProperty(ADJACENCY_AGGREGATE_PROPERTY, "false");
 		System.setProperty(NATIVE_BATCH_PROPERTY, "true");
 		System.setProperty(LmdbNativeKernelIrTestAccess.WILDCARD_BATCH_PROPERTY, "true");
 		System.setProperty(LmdbNativeKernelIrTestAccess.NODE_PREDICATES_PROPERTY, "false");

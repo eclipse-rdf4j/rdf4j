@@ -273,21 +273,17 @@ public class LmdbNativeStrategyArbiterTest {
 						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED);
 	}
 
-	/**
-	 * The DISTINCT-sinking kernel tiers head the kernel family (compiled above interpreted, both above the plain row
-	 * kernel) but sit BELOW the row-count reducers they used to preempt by ladder position — factorized or batch must
-	 * win every cost overlap, and only strict domination lets the distinct kernel displace them.
-	 */
+	/** The DISTINCT-sinking tiers retain compiled/interpreted ordering inside the IR-first family. */
 	@Test
-	public void distinctKernelRungsRankBelowRowCountReducersAndAboveThePlainKernel() {
-		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS,
-				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT)).isTrue();
-		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_BATCH,
-				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT)).isTrue();
+	public void distinctKernelRungsFollowTheIrFirstTiering() {
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+				LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+				LmdbNativeAttemptMetrics.PATH_BATCH)).isTrue();
 		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
 				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED)).isTrue();
-		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
-				LmdbNativeAttemptMetrics.PATH_IR_KERNEL)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED)).isTrue();
 		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
 				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP)).isTrue();
 		assertThat(LmdbNativeAttemptMetrics.EXECUTION_PATH_VOCABULARY)
@@ -343,9 +339,8 @@ public class LmdbNativeStrategyArbiterTest {
 				proposal(LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.between(50D, 300D)));
 
 		assertThat(winner(candidates))
-				.as("the kernel's interval is not strictly below WCOJ's, so cost has not earned the decision and "
-						+ "the row-count reducer keeps it -- this is exactly the HIGHLY_CONNECTED q8 shape")
-				.isEqualTo(LmdbNativeAttemptMetrics.PATH_WCOJ);
+				.as("overlapping costs cannot displace the explicit IR-first specialization order")
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
 	}
 
 	@Test
@@ -356,7 +351,7 @@ public class LmdbNativeStrategyArbiterTest {
 
 		assertThat(winner(candidates))
 				.as("with nothing priced, the specialization order alone decides")
-				.isEqualTo(LmdbNativeAttemptMetrics.PATH_BATCH);
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
 	}
 
 	@Test
@@ -368,7 +363,7 @@ public class LmdbNativeStrategyArbiterTest {
 		assertThat(winner(candidates))
 				.as("an unknown rival could be cheaper for all we know, so a cheap-looking candidate has not "
 						+ "dominated anything and the specialization order still decides")
-				.isEqualTo(LmdbNativeAttemptMetrics.PATH_WCOJ);
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
 	}
 
 	// ---------------------------------------------------------------- order independence
@@ -425,15 +420,15 @@ public class LmdbNativeStrategyArbiterTest {
 	}
 
 	@Test
-	public void aggregateIrStillYieldsToPrefixRunsAndWcoj() {
+	public void aggregateIrHeadsPrefixRunsAndWcojOnTies() {
 		assertThat(winner(List.of(
 				proposal(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS, 100D),
 				proposal(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 100D))))
-						.isEqualTo(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS);
+						.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
 		assertThat(winner(List.of(
 				proposal(LmdbNativeAttemptMetrics.PATH_WCOJ, 100D),
 				proposal(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 100D))))
-						.isEqualTo(LmdbNativeAttemptMetrics.PATH_WCOJ);
+						.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
 	}
 
 	@Test
@@ -592,15 +587,13 @@ public class LmdbNativeStrategyArbiterTest {
 	// ---------------------------------------------------------------- preference table
 
 	@Test
-	public void rowCountReducersOutrankConstantFactorReducers() {
-		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_WCOJ,
-				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE)).isTrue();
-		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
-				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE)).isTrue();
-		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_BATCH,
-				LmdbNativeAttemptMetrics.PATH_IR_KERNEL)).isTrue();
+	public void irKernelsOutrankTheRemainingStrategyFamilies() {
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+				LmdbNativeAttemptMetrics.PATH_WCOJ)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+				LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS)).isTrue();
 		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
-				LmdbNativeAttemptMetrics.PATH_BATCH)).isFalse();
+				LmdbNativeAttemptMetrics.PATH_BATCH)).isTrue();
 	}
 
 	@Test

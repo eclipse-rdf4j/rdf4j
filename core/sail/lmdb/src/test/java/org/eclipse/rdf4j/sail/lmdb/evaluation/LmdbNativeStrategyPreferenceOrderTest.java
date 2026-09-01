@@ -29,42 +29,10 @@ import org.junit.jupiter.api.Test;
  * <ul>
  * <li>The engine's own kernel tiers outrank the packed f-tree rungs, compiled before interpreted, on both the aggregate
  * and the row side.
- * <li>A wildcard predicate in the query selects the wildcard-predicate code: those tags head the ladder, behind only
- * the authoritative whole-query structural answer.
+ * <li>Projection-free wildcard IR stays ahead of its legacy wildcard batch fallbacks.
  * </ul>
  */
 class LmdbNativeStrategyPreferenceOrderTest {
-	/**
-	 * Every rung the wildcard-predicate tags must outrank: the whole aggregate and row kernel apparatus below them.
-	 * Deliberately spelled out rather than derived from the ladder itself — a test that reads its expectation out of
-	 * the array under test cannot fail when that array moves.
-	 */
-	private static final List<String> BELOW_WILDCARD = List.of(
-			LmdbNativeAttemptMetrics.PATH_WCOJ,
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
-			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
-			LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL,
-			LmdbNativeAttemptMetrics.PATH_BATCH,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
-			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
-			LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
-
-	/**
-	 * The rungs that stay ABOVE the wildcard tags, and why this is not an oversight. Each is a strictly more
-	 * specialized row-count reducer with its own measured justification, and each is defended by policy tests that
-	 * assert it runs: hoisting the wildcard tags over these broke ten {@code LmdbPrefixRunQueryTest} cases and seven
-	 * adjacency cases, because a query grouping or DISTINCTing on an unbound predicate is simultaneously a
-	 * wildcard-predicate query and exactly the shape prefix runs and the adjacency planes were built for.
-	 */
-	private static final List<String> ABOVE_WILDCARD = List.of(
-			LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION,
-			LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE,
-			LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
-			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
-			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN);
-
 	/**
 	 * The aggregate side of the reported regression. Compiled parallel heads the tier (it is the arm measured fastest
 	 * on the reporter's store), then compiled serial, then the interpreter, and only then the packed f-tree.
@@ -87,30 +55,28 @@ class LmdbNativeStrategyPreferenceOrderTest {
 				LmdbNativeAttemptMetrics.PATH_PACKED_FTREE);
 	}
 
-	/**
-	 * Both wildcard-predicate tags are offered only when the plan actually carries a wildcard predicate
-	 * ({@code LmdbWildcardPredicateBatch.propose} and {@code weightedAggregateCandidate} gate them structurally), so
-	 * their presence in the candidate set IS the query property, and the engine's answer to it is to run the
-	 * wildcard-predicate code. They therefore outrank every kernel tier — but not the handful of strictly more
-	 * specialized row-count reducers above them, which is the boundary {@link #ABOVE_WILDCARD} documents.
-	 */
 	@Test
-	void wildcardPredicateStrategiesOutrankEveryKernelTier() {
-		int reduced = LmdbNativeStrategyPreference.rank(LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED);
-		int batch = LmdbNativeStrategyPreference.rank(LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_BATCH);
-
-		for (String above : ABOVE_WILDCARD) {
-			int rank = LmdbNativeStrategyPreference.rank(above);
-			assertTrue(rank < reduced && rank < batch,
-					above + " (rank " + rank + ") is a more specialized row-count reducer and must stay above the "
-							+ "wildcard rungs (reduced=" + reduced + " batch=" + batch + ")");
-		}
-		for (String below : BELOW_WILDCARD) {
-			int rank = LmdbNativeStrategyPreference.rank(below);
-			assertTrue(reduced < rank,
-					"wildcardPredicateReduced (rank " + reduced + ") must outrank " + below + " (rank " + rank + ")");
-			assertTrue(batch < rank,
-					"wildcardPredicateBatch (rank " + batch + ") must outrank " + below + " (rank " + rank + ")");
+	void legacyWildcardStrategiesRemainFallbacksBehindIr() {
+		List<String> ir = List.of(
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED);
+		for (String kernel : ir) {
+			assertTrue(LmdbNativeStrategyPreference.prefers(kernel,
+					LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED));
+			assertTrue(LmdbNativeStrategyPreference.prefers(kernel,
+					LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_BATCH));
 		}
 	}
 
