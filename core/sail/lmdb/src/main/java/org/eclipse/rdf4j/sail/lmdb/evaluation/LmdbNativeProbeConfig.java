@@ -46,7 +46,7 @@ record LmdbNativeProbeConfig(
 				atLeastOne(PREFIX + "gamma", 1.25),
 				unitFraction(PREFIX + "maxSlowdownFraction", 0.8),
 				nonNegative(PREFIX + "lambdaInfo", 0.1),
-				positiveLong(PREFIX + "maxDeadlineMillis", 500L) * 1_000_000L,
+				positiveLong(PREFIX + "maxDeadlineMillis", 10000L) * 1_000_000L,
 				positiveLong(PREFIX + "minDeadlineMicros", 500L) * 1_000L,
 				positiveLong(PREFIX + "cancelBoundMillis", 10L) * 1_000_000L,
 				(int) positiveLong(PREFIX + "bufferRows", 4_096L),

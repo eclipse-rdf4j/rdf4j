@@ -25,7 +25,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	 * {@code ParallelismBenchmark.serialHashBatch} and {@code parallelOverlap} at several input sizes and fitting the
 	 * parallel intercept at the serial/parallel crossover; update this constant only with the paired JMH result.
 	 */
-	static final double PARALLEL_STARTUP_COST = 250_000D;
+	static final double PARALLEL_STARTUP_COST = 25_000D;
 	static final String PARALLEL_STARTUP_COST_PROPERTY = "rdf4j.lmdb.parallel.startupWork";
 
 	@FunctionalInterface

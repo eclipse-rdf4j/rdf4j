@@ -249,7 +249,7 @@
 
         .step-list {
             display: grid;
-            grid-template-columns: repeat(9, minmax(32px, 1fr));
+            grid-template-columns: repeat(10, minmax(30px, 1fr));
             gap: 5px;
         }
 
@@ -268,7 +268,9 @@
         .step-name { display: block; margin-top: 4px; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
         .lesson { min-height: 620px; padding: clamp(22px, 3.2vw, 42px); }
-        .lesson-frame { animation: lesson-in .24s ease both; }
+        /* Only a genuine step change animates. Re-rendering the same lesson in place (selecting a statement,
+           flipping a control, picking a column) must not shift the content the pointer is aimed at. */
+        .lesson-frame.entering { animation: lesson-in .24s ease both; }
 
         @keyframes lesson-in {
             from { opacity: .25; transform: translateY(5px); }
@@ -378,6 +380,9 @@
         .array-cell { min-width: 49px; padding: 7px 6px; border: 1px solid var(--line); border-radius: 5px; background: #faf9f5; text-align: center; font: 700 10px/1.2 var(--mono); }
         .array-cell small { display: block; margin-top: 4px; color: var(--muted); font-size: 8px; font-weight: 500; }
         .array-cell.selected { border: 2px solid var(--orange); padding: 6px 5px; background: var(--orange-soft); }
+        .array-cell.delta { min-width: 96px; border-style: dashed; border-color: var(--line-strong); }
+        .array-cell.delta.selected { border-style: solid; }
+        .array-cell .resolves { color: var(--teal); font-size: 8px; font-weight: 700; white-space: nowrap; }
         .array-index { color: var(--muted); font-size: 8px; }
 
         .compact-row { display: grid; grid-template-columns: minmax(150px, 210px) minmax(0, 1fr); gap: 12px; align-items: center; }
@@ -440,6 +445,43 @@
         .flag-tooltip-option { display: block; margin-top: 7px; }
         .vector-flag-list { position: relative; display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
         .vector-flag-list .flag { padding: 5px 7px; }
+
+        /* Same hover/focus tooltip machinery as the page flags, re-anchored inside a table header cell. */
+        th .flag-help { max-width: none; vertical-align: baseline; }
+        .head-trigger {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 0;
+            border: 0;
+            background: none;
+            font: inherit;
+            color: inherit;
+            text-align: left;
+            cursor: help;
+        }
+        .head-trigger::after {
+            content: "?";
+            width: 12px;
+            height: 12px;
+            display: inline-grid;
+            flex: 0 0 auto;
+            place-items: center;
+            border: 1px solid currentColor;
+            border-radius: 50%;
+            font: 800 8px/1 var(--mono);
+            letter-spacing: 0;
+            opacity: .72;
+        }
+        .head-tooltip {
+            left: auto;
+            right: 0;
+            width: min(340px, calc(100vw - 54px));
+            text-transform: none;
+            letter-spacing: normal;
+        }
+        /* Let the tooltip escape the scrolling table wrapper instead of forcing a scrollbar. */
+        .table-wrap:has(.head-trigger:hover), .table-wrap:has(.head-trigger:focus) { overflow: visible; }
 
         .scale-diagram {
             margin: 0 0 24px;
@@ -616,6 +658,34 @@
         }
         .vector-selector button:hover { border-color: #e49a67; color: var(--ink); }
         .vector-selector button[aria-pressed="true"] { border-color: var(--orange); background: var(--orange-soft); color: var(--orange-dark); }
+        .vector-source { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+        .vector-source button {
+            padding: 9px 11px;
+            border: 1px solid var(--line-strong);
+            border-radius: 7px;
+            background: var(--surface);
+            cursor: pointer;
+            font: 700 10px/1.2 var(--mono);
+        }
+        .vector-source button[aria-pressed="true"] { border: 2px solid var(--orange); padding: 8px 10px; background: var(--orange-soft); color: var(--orange-dark); }
+        .vector-source .dim { color: var(--muted); font-weight: 500; }
+        .read-path { display: grid; gap: 8px; margin: 18px 0; }
+        .read-step {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            gap: 12px;
+            align-items: center;
+            padding: 11px 13px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: white;
+        }
+        .read-step.rebuilt { border-style: dashed; border-color: #adc1d8; background: #edf4fb; }
+        .read-step b { color: var(--muted); font: 800 12px/1 var(--mono); }
+        .read-step strong { display: block; font-size: 12px; }
+        .read-step span { color: var(--muted); font: 10px/1.4 var(--mono); overflow-wrap: anywhere; }
+        .read-origin { color: var(--muted); font: 700 9px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
+        .read-step.rebuilt .read-origin { color: var(--blue); }
         .vector-anatomy, .delta-stage-detail {
             overflow: hidden;
             border: 1px solid #cfcac0;
@@ -652,6 +722,9 @@
         .mode-ledger { grid-template-columns: repeat(4, minmax(0, 1fr)); padding-top: 16px; border-top: 1px solid var(--line); }
         .mode-item { min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 7px; background: #faf9f5; }
         .mode-item.selected { border: 2px solid var(--orange); padding: 10px; background: var(--orange-soft); }
+        .mode-item.unavailable { border-style: dashed; background: repeating-linear-gradient(135deg, #f4f2ec, #f4f2ec 6px, #eeece4 6px, #eeece4 12px); }
+        .mode-item.unavailable strong { color: var(--muted); }
+        .mode-unreachable { display: block; margin-top: 5px; color: var(--danger); font: 700 8px/1.3 var(--mono); text-transform: uppercase; letter-spacing: .06em; }
         .mode-item strong { display: block; font: 800 10px/1.2 var(--mono); }
         .mode-item span { display: block; margin-top: 6px; color: var(--muted); font-size: 9px; }
         .efficiency-equation { margin-top: 14px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
@@ -817,7 +890,7 @@
             </div>
         </div>
         <div class="status-badges" aria-label="Tutorial properties">
-            <span class="status-badge"><strong>v3</strong> format</span>
+            <span class="status-badge"><strong id="format-badge">v4</strong> format</span>
             <span class="status-badge"><strong>6</strong> real pages</span>
             <span class="status-badge"><strong>0</strong> network calls</span>
         </div>
@@ -866,6 +939,7 @@
                             <button type="button" data-control="view" data-value="vectors" aria-pressed="false">vectors</button>
                             <button type="button" data-control="view" data-value="physical" aria-pressed="false">physical</button>
                             <button type="button" data-control="view" data-value="deltas" aria-pressed="false">deltas</button>
+                            <button type="button" data-control="view" data-value="read" aria-pressed="false">read</button>
                         </div>
                     </div>
                 </div>
@@ -874,11 +948,11 @@
 
             <nav class="step-deck" aria-label="Tutorial steps">
                 <button class="step-arrow" id="previous-step" type="button" aria-label="Previous step">←</button>
-                <div class="step-list" id="step-list" role="tablist" aria-label="Nine encoding steps"></div>
+                <div class="step-list" id="step-list" role="tablist" aria-label="Ten encoding steps"></div>
                 <button class="step-arrow" id="next-step" type="button" aria-label="Next step">→</button>
             </nav>
 
-            <article class="lesson" id="lesson-content" tabindex="-1"></article>
+            <article class="lesson" id="lesson-content" role="tabpanel" tabindex="-1"></article>
             <p class="sr-only" id="live-status" aria-live="polite"></p>
         </section>
     </main>
@@ -891,6 +965,7 @@
 0:3|RlNDUAQAXgEAAQAA4AAAAAMAAAD/////AQAAAAEAAAABAAAAAAAAAIIAAAAAAAAAggAAAAAAAACCAgAAAAAAAIICAAAAAAAAAgIAAAAAAACgAAAAHAAAAAAAAAAAAAAAAAAAAAAAAADAAAAAHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAtnDJLQAAAAAAAAAAAAAAAAEAAAABAAAAEAAAABwAAAAAAAEAggAAAAAAAAAAAAAAAQAAAAEAAAAQAAAAHAAAAAAAAQCCAgAAAAAAAAAAAAA=
 1:0|RlNDUAQAXgEAAQAA4AAAAAQAAAD/////AQAAAAEAAAABAAAAAAAAAIIBAAAAAAAAggEAAAAAAAAEBAAAAAAAAAQEAAAAAAAAggQAAAAAAACgAAAAHAAAAAAAAAAAAAAAAAAAAAAAAADAAAAAHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAtnDJLQAAAAAAAAAAAAAAAAEAAAABAAAAEAAAABwAAAAAAAEAggEAAAAAAAAAAAAAAQAAAAEAAAAQAAAAHAAAAAAAAQAEBAAAAAAAAAAAAAA=
 1:1|RlNDUAQAXgEAAQAA4AAAAAUAAAD/////AQAAAAEAAAABAAAAAAAAAAQEAAAAAAAABAQAAAAAAACCAQAAAAAAAIIBAAAAAAAAggQAAAAAAACgAAAAHAAAAAAAAAAAAAAAAAAAAAAAAADAAAAAHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAtnDJLQAAAAAAAAAAAAAAAAEAAAABAAAAEAAAABwAAAAAAAEABAQAAAAAAAAAAAAAAQAAAAEAAAAQAAAAHAAAAAAAAQCCAQAAAAAAAAAAAAA=
+scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAAACIKEHAAAAAIJLogcAAAAAAAAAAAAAAACgAAAAiQIAAAAAAAAAAAAAAAAAAAAAAAAwAwAAiQIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAtnDJLcAFAAAwAAAAAQAAAFgCAAADAAAAGAAAACQBAAAwAgAAiQIAAAUIAAEBAAAAAAAAAAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5/gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp+goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2+v8DBwsPExcbHyMnKy8zNzs/Q0dLT1NXW19jZ2tvc3d7f4OHi4+Tl5ufo6err7O3u7/Dx8vP09fb3+Pn6+/z9/v8FCAABAQEAAAAAAAAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4/QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl9gYWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXp7fH1+f4CBgoOEhYaHiImKi4yNjo+QkZKTlJWWl5iZmpucnZ6foKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr/AwcLDxMXGx8jJysvMzc7P0NHS09TV1tfY2drb3N3e3+Dh4uPk5ebn6Onq6+zt7u/w8fLz9PX29/j5+vv8/f7/BQdYAAECAAAAAAAAgIBgQCgYDoiEYsFoOB6QiGRCqVgumIxmw+l4PqCQaEQqmU6olGrFarlesJhsRqvZbricbsfr+X7AoHBILBqPyKRyyWw6n9CodEqtWq8AAAAAAAAAWAIAAAMAAAAYAAAAJAEAADACAACJAgAABQgAAUBCDwAAAAAAAAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn+AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq+wsbKztLW2t7i5uru8vb6/wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t/g4eLj5OXm5+jp6uvs7e7v8PHy8/T19vf4+fr7/P3+/wUIAAFAQw8AAAAAAAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5/gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp+goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2+v8DBwsPExcbHyMnKy8zNzs/Q0dLT1NXW19jZ2tvc3d7f4OHi4+Tl5ufo6err7O3u7/Dx8vP09fb3+Pn6+/z9/v8FB1gAQEQPAAAAAACAgGBAKBgOiIRiwWg4HpCIZEKpWC6YjGbD6Xg+oJBoRCqZTqiUasVquV6wmGxGq9luuJxux+v5fsCgcEgsGo/IpHLJbDqf0Kh0Sq1arwAAAAAAAAAAECAwQFBgcICQoLDA0ODwABAgMEBQYHCAkKCwwNDg8AAIEBggKDA4QEhQWFhYWFg=
     </script>
 
     <script id="adjacency-core">
@@ -1512,7 +1587,7 @@
                 acceleratorDescriptor: u32(156)
             });
             if (header.magic !== FORMAT.MAGIC || header.version !== FORMAT.VERSION || header.formatHash !== FORMAT.HASH) {
-                throw new Error("fixture does not match CompactCsfPage format v3");
+                throw new Error(`fixture does not match CompactCsfPage format v${FORMAT.VERSION}`);
             }
             if (header.usedBytes !== bytes.byteLength || header.usedBytes > header.capacity) {
                 throw new Error("fixture usedBytes/capacity boundary is inconsistent");
@@ -1524,6 +1599,128 @@
                 return Object.freeze({ name, descriptorAt, offset, length, end: offset + length, vector });
             });
             return Object.freeze({ bytes, header, sections: Object.freeze(sections) });
+        }
+
+        /**
+         * Reconstructs every quad stored for one row using only the decoded page: its packed vectors and its header
+         * flags. Columns the encoder omitted are rebuilt here exactly as a reader must rebuild them, and each value
+         * records where it came from so the tutorial can show the provenance rather than assert it.
+         */
+        function readRow(page, rowIndex) {
+            const header = page.header;
+            if (!Number.isInteger(rowIndex) || rowIndex < 0 || rowIndex >= header.rowCount) {
+                throw new RangeError(`row ${rowIndex} is outside this page's ${header.rowCount} rows`);
+            }
+            const vectorOf = (name) => {
+                const section = page.sections.find((candidate) => candidate.name === name);
+                return section && section.vector ? section.vector : null;
+            };
+            const rowIds = vectorOf("rowIds");
+            const rowFiberStarts = vectorOf("rowFiberStarts");
+            const firstNeighbors = vectorOf("firstNeighbors");
+            const neighborTails = vectorOf("neighborTails");
+            const contextCounts = vectorOf("contextCounts");
+            const firstContexts = vectorOf("firstContexts");
+            const contextTails = vectorOf("contextTails");
+
+            const fiberStartOf = (row) => rowFiberStarts ? Number(rowFiberStarts.values[row]) : row;
+            const fiberEndOf = (row) => row + 1 < header.rowCount ? fiberStartOf(row + 1) : header.fiberCount;
+            const contextCountOf = (fiber) => contextCounts ? Number(contextCounts.values[fiber]) : 1;
+
+            const start = fiberStartOf(rowIndex);
+            const end = fiberEndOf(rowIndex);
+
+            // Tail vectors are one flat run per page, so skip the tails belonging to earlier rows and fibres.
+            let neighborTailBase = 0;
+            for (let row = 0; row < rowIndex; row++) {
+                neighborTailBase += Math.max(0, fiberEndOf(row) - fiberStartOf(row) - 1);
+            }
+            let contextTailBase = 0;
+            for (let fiber = 0; fiber < start; fiber++) {
+                contextTailBase += Math.max(0, contextCountOf(fiber) - 1);
+            }
+
+            const steps = [];
+            const fibers = [];
+            let neighborId = firstNeighbors.values[rowIndex];
+            for (let fiber = start; fiber < end; fiber++) {
+                const local = fiber - start;
+                let neighborSource;
+                if (local === 0) {
+                    neighborSource = `firstNeighbors[${rowIndex}]`;
+                } else {
+                    const tailAt = neighborTailBase + local - 1;
+                    neighborId += neighborTails.values[tailAt];
+                    neighborSource = `previous neighbour + neighborTails[${tailAt}]`;
+                }
+                const count = contextCountOf(fiber);
+                const countSource = contextCounts
+                    ? `contextCounts[${fiber}]`
+                    : "CONTEXT_COUNT_ONE flag (column omitted)";
+                const contexts = [];
+                let contextId = firstContexts ? firstContexts.values[fiber] : header.commonContext;
+                for (let index = 0; index < count; index++) {
+                    let contextSource;
+                    if (index === 0) {
+                        contextSource = firstContexts
+                            ? `firstContexts[${fiber}]`
+                            : "COMMON_CONTEXT flag → header commonContext (column omitted)";
+                    } else {
+                        const tailAt = contextTailBase + index - 1;
+                        contextId += contextTails.values[tailAt];
+                        contextSource = `previous context + contextTails[${tailAt}]`;
+                    }
+                    contexts.push(Object.freeze({ id: contextId, source: contextSource }));
+                }
+                contextTailBase += Math.max(0, count - 1);
+                fibers.push(Object.freeze({
+                    fiberIndex: fiber,
+                    neighborId,
+                    neighborSource,
+                    contextCount: count,
+                    countSource,
+                    contexts: Object.freeze(contexts)
+                }));
+            }
+
+            steps.push(Object.freeze({
+                label: "locate the row",
+                detail: `rowIds[${rowIndex}]`,
+                omitted: false,
+                value: rowIds.values[rowIndex]
+            }));
+            steps.push(Object.freeze({
+                label: "find its fibre range",
+                detail: rowFiberStarts
+                    ? `rowFiberStarts[${rowIndex}] .. ${end}`
+                    : "ROW_NEIGHBOR_ONE flag: exactly one fibre per row, so the column is not stored",
+                omitted: !rowFiberStarts,
+                value: null
+            }));
+            steps.push(Object.freeze({
+                label: "count this row's quads",
+                detail: contextCounts
+                    ? "sum contextCounts across the row's fibres"
+                    : "CONTEXT_COUNT_ONE flag: one context per fibre, so the column is not stored",
+                omitted: !contextCounts,
+                value: null
+            }));
+
+            const quads = [];
+            fibers.forEach((fiber) => fiber.contexts.forEach((context) => quads.push(Object.freeze({
+                rowId: rowIds.values[rowIndex],
+                neighborId: fiber.neighborId,
+                contextId: context.id
+            }))));
+
+            return Object.freeze({
+                rowIndex,
+                rowId: rowIds.values[rowIndex],
+                fiberRange: Object.freeze([start, end]),
+                fibers: Object.freeze(fibers),
+                quads: Object.freeze(quads),
+                steps: Object.freeze(steps)
+            });
         }
 
         function flagNames(flags) {
@@ -1603,6 +1800,7 @@
             readBits,
             decodeVector,
             decodePage,
+            readRow,
             flagNames,
             termForId,
             formatNumber,
@@ -1630,7 +1828,8 @@
             { short: "CSF", title: "Compact columns" },
             { short: "Vectors", title: "Packed vector anatomy" },
             { short: "Bytes", title: "Physical page" },
-            { short: "Deltas", title: "Commit delta generations" }
+            { short: "Deltas", title: "Commit delta generations" },
+            { short: "Read", title: "Decode a row back to quads" }
         ]);
         /* FIXTURE:PAGE_FLAG_HELP_V1 */
         const PAGE_FLAG_HELP = Object.freeze({
@@ -1656,8 +1855,8 @@
             }),
             COMMON_CONTEXT: Object.freeze({
                 bit: "0x0010",
-                set: "Every single-context fibre uses the same graph. One commonContext header value replaces firstContexts.",
-                clear: "There is no page-wide common graph. Each fibre keeps its own firstContexts value."
+                set: "Every fibre on this page has exactly one context and they are all the same graph. A single commonContext header value replaces firstContexts.",
+                clear: "There is no page-wide common graph — either some fibre spans several contexts, or the single contexts differ. Each fibre keeps its own firstContexts value."
             }),
             ALL_ORDERED_INTEGER_NEIGHBORS: Object.freeze({
                 bit: "0x0020",
@@ -1666,13 +1865,13 @@
             }),
             UNIFORM_ROW_TERM_KIND: Object.freeze({
                 bit: "0x0040",
-                set: "Every root has one RDF term kind. Decode the first root to classify, bulk-count, or reject the page.",
-                clear: "Root term kinds are mixed, so a kind-sensitive root kernel scans root IDs."
+                set: "Every row key has one RDF term kind. Decode the first row to classify, bulk-count, or reject the page.",
+                clear: "Row term kinds are mixed, so a kind-sensitive row kernel scans row IDs."
             }),
             UNIFORM_ROW_LITERAL_DATATYPE: Object.freeze({
                 bit: "0x0080",
-                set: "All literal roots have one datatype. A legacy-ID page resolves only the first literal; tagged IDs classify directly.",
-                clear: "Literal root datatypes may differ or were not authoritatively resolved while the page was built."
+                set: "This page has at least one literal row key and every one of them carries the same datatype, so one classification describes them all.",
+                clear: "The page has no literal row keys, their datatypes differ, or at least one datatype could not be resolved while the page was built."
             }),
             UNIFORM_NEIGHBOR_TERM_KIND: Object.freeze({
                 bit: "0x0100",
@@ -1681,8 +1880,8 @@
             }),
             UNIFORM_NEIGHBOR_LITERAL_DATATYPE: Object.freeze({
                 bit: "0x0200",
-                set: "All literal neighbors have one datatype. A legacy-ID page resolves only the first literal; tagged IDs classify directly.",
-                clear: "Literal neighbor datatypes may differ or were not authoritatively resolved while the page was built."
+                set: "This page has at least one literal neighbor and every one of them carries the same datatype, so one classification describes them all.",
+                clear: "The page has no literal neighbors, their datatypes differ, or at least one datatype could not be resolved while the page was built."
             })
         });
         const VECTOR_FLAG_HELP = Object.freeze({
@@ -1729,8 +1928,12 @@
             numberMode: "decimal",
             step: 0,
             selectedSection: null,
-            deltaStage: 0
+            deltaStage: 0,
+            vectorSource: "partition"
         };
+        /* Synthetic 600-row page embedded alongside the eight-statement pages purely to show a vector that really
+           spans several 256-value blocks. It has no selected statement, so it is only offered in the vector lesson. */
+        const SCALE_PAGE = pages.get("scale");
 
         const statementList = document.getElementById("statement-list");
         const stepList = document.getElementById("step-list");
@@ -1739,6 +1942,9 @@
         const previousStep = document.getElementById("previous-step");
         const nextStep = document.getElementById("next-step");
         const liveStatus = document.getElementById("live-status");
+
+        /* Keep the masthead badge honest: it reports the format revision the decoder actually accepts. */
+        document.getElementById("format-badge").textContent = `v${core.FORMAT.VERSION}`;
 
         function escapeHtml(value) {
             return String(value)
@@ -1797,7 +2003,7 @@
 
         function renderStatementList() {
             statementList.innerHTML = core.STATEMENTS.map((quad) => `
-                <li>
+                <li role="presentation">
                     <button class="statement-button" type="button" role="option"
                             data-statement="${quad.index}" aria-selected="${quad.index === state.statementIndex}">
                         <span class="statement-number">${quad.index + 1}</span>
@@ -1828,7 +2034,7 @@
                     : group === "terms" ? state.termMode === button.dataset.value
                         : group === "numbers" ? state.numberMode === button.dataset.value
                             : group === "view" ? ({ logical: state.step <= 5, vectors: state.step === 6,
-                                physical: state.step === 7, deltas: state.step === 8 })[button.dataset.value]
+                                physical: state.step === 7, deltas: state.step === 8, read: state.step === 9 })[button.dataset.value]
                                 : false;
                 button.setAttribute("aria-pressed", String(selected));
             });
@@ -1901,6 +2107,25 @@
             );
         }
 
+        /* "Fixture payload" is jargon twice over, so the column header explains both halves on hover and on focus. */
+        function fixturePayloadHeader() {
+            return `<span class="flag-help">
+                <button class="head-trigger" type="button" aria-describedby="fixture-payload-tooltip">
+                    <span>Fixture payload</span>
+                </button>
+                <span class="flag-tooltip head-tooltip" id="fixture-payload-tooltip" role="tooltip">
+                    <span class="flag-tooltip-title"><span>Fixture payload</span><span>rawId &gt;&gt; 7</span></span>
+                    <span class="flag-tooltip-option"><strong>Payload</strong> is the term's value-store ordinal: the raw
+                        value ID with its seven low tag bits shifted off. It is the dictionary number that stands in for the
+                        term everywhere inside a page — the term's text itself never leaves the value store.</span>
+                    <span class="flag-tooltip-option"><strong>Fixture</strong> is the fixed eight-statement example embedded
+                        in this page. It hands out 1, 2, 3… in first-introduction order so the shift arithmetic stays
+                        readable. A real store reuses whatever ordinals its value store already assigned, so those numbers
+                        are larger and unordered. The default graph is the one fixed case: payload 0, raw ID 0.</span>
+                </span>
+            </span>`;
+        }
+
         function renderIdStep(model) {
             const { quad, trace } = model;
             const entries = [
@@ -1926,11 +2151,14 @@
                 `<div class="formula"><span class="accent">rawId</span> = (payload &lt;&lt; 7) | (type &lt;&lt; 1)<br>
                     <span class="dim">URI=1 · literal=2 · blank node=3 · triple term=4 · default context raw=0</span></div>
                 <div class="table-wrap" style="margin-top:14px">
-                    <table><thead><tr><th>Position</th><th>Term</th><th>Kind</th><th>Fixture payload</th><th>Raw value ID</th></tr></thead><tbody>${rows}</tbody></table>
+                    <table><thead><tr><th>Position</th><th>Term</th><th>Kind</th><th>${fixturePayloadHeader()}</th><th>Raw value ID</th></tr></thead><tbody>${rows}</tbody></table>
                 </div>
                 <div class="callout">
-                    Predicate <span class="mono">${escapeHtml(quad.predicate.label)}</span> has unsigned-sorted ordinal
-                    <strong>${trace.predicateOrdinal}</strong>. Pages are selected by this ordinal plus a plane; the predicate ID is therefore not repeated in every row.
+                    Predicate <span class="mono">${escapeHtml(quad.predicate.label)}</span> has dense ordinal
+                    <strong>${trace.predicateOrdinal}</strong>. A base assigns its ordinals in unsigned raw-ID order and never
+                    changes them for that base’s lifetime; predicates first seen afterwards are appended without renumbering,
+                    so ordinals stay stable rather than globally sorted. Pages are selected by this ordinal plus a plane, which
+                    is why the predicate ID is not repeated in every row.
                 </div>`
             );
         }
@@ -2018,12 +2246,20 @@
             );
         }
 
-        function arrayCells(values, selectedIndexes, kind) {
+        /**
+         * `resolved` turns a delta column into something readable: a tail of "256" means nothing on its own, so each
+         * cell also shows the absolute term that adding it reproduces.
+         */
+        function arrayCells(values, selectedIndexes, kind, resolved = null) {
             const selected = new Set(Array.isArray(selectedIndexes) ? selectedIndexes : [selectedIndexes]);
             return `<div class="array-values"><span class="array-bracket">[</span>${values.map((value, index) => {
-                const rendered = kind === "id" ? displayId(value) : formatNumber(value);
-                return `<span class="array-cell ${selected.has(index) ? "selected" : ""}" data-index="${index}">
-                    ${escapeHtml(rendered)}<small>${index}</small>
+                const rendered = kind === "delta" ? `+${formatNumber(value)}`
+                    : kind === "id" ? displayId(value) : formatNumber(value);
+                const target = resolved && resolved[index]
+                    ? `<small class="resolves">${escapeHtml(displayId(resolved[index].from))} → ${escapeHtml(displayId(resolved[index].id))}</small>`
+                    : "";
+                return `<span class="array-cell ${kind === "delta" ? "delta" : ""} ${selected.has(index) ? "selected" : ""}" data-index="${index}">
+                    ${escapeHtml(rendered)}${target}<small>${index}</small>
                 </span>`;
             }).join("")}<span class="array-bracket">]</span></div>`;
         }
@@ -2062,15 +2298,15 @@
             rowFiberStarts: "start only; next start/count supplies end",
             rowQuadCounts: "quads per row",
             firstNeighbors: "first neighbor per row",
-            neighborTails: "within-row neighbor deltas",
+            neighborTails: "gap to the row's next neighbour, not the neighbour itself",
             contextCounts: "contexts per neighbor fibre",
             firstContexts: "first context per fibre",
-            contextTails: "within-fibre context deltas"
+            contextTails: "gap to the fibre's next graph, not the graph itself"
         });
 
-        function compactRow(name, values, lane, kind, omittedReason) {
+        function compactRow(name, values, lane, kind, omittedReason, resolved = null) {
             const valueHtml = values === null ? `<div class="omitted"><span class="small-badge omit">omitted</span>${escapeHtml(omittedReason)}</div>`
-                : arrayCells(values, lane, kind);
+                : arrayCells(values, lane, kind, resolved);
             return `<div class="compact-row" data-column="${name}">
                 <div><span class="array-name">${name}</span><div class="array-purpose" style="margin-top:5px">${COMPACT_PURPOSES[name]}</div></div>
                 ${valueHtml}
@@ -2078,7 +2314,23 @@
         }
 
         function renderCompactStep(model) {
-            const { compact, trace, page } = model;
+            const { compact, trace, page, partition } = model;
+            /*
+             * Tail columns are one flat run per page, in the same order the reader replays them. Recording the
+             * previous value and the value each delta reproduces is what makes a bare "+256" legible.
+             */
+            const neighborTailTargets = [];
+            partition.rows.forEach((row) => {
+                for (let index = 1; index < row.fibers.length; index++) {
+                    neighborTailTargets.push({ from: row.fibers[index - 1].id, id: row.fibers[index].id });
+                }
+            });
+            const contextTailTargets = [];
+            partition.rows.flatMap((row) => row.fibers).forEach((fiber) => {
+                for (let index = 1; index < fiber.contexts.length; index++) {
+                    contextTailTargets.push({ from: fiber.contexts[index - 1].id, id: fiber.contexts[index].id });
+                }
+            });
             const omission = {
                 rowFiberStarts: "flag says every row has exactly one neighbor",
                 rowQuadCounts: "flag says each row’s quad count equals its neighbor count",
@@ -2088,24 +2340,25 @@
                 contextTails: "no fibre has a second context"
             };
             const columns = [
-                ["rowIds", compact.rowIds, "id"],
-                ["rowFiberStarts", compact.rowFiberStarts, "number"],
-                ["rowQuadCounts", compact.rowQuadCounts, "number"],
-                ["firstNeighbors", compact.firstNeighbors, "id"],
-                ["neighborTails", compact.neighborTails, "number"],
-                ["contextCounts", compact.contextCounts, "number"],
-                ["firstContexts", compact.firstContexts, "id"],
-                ["contextTails", compact.contextTails, "number"]
+                ["rowIds", compact.rowIds, "id", null],
+                ["rowFiberStarts", compact.rowFiberStarts, "number", null],
+                ["rowQuadCounts", compact.rowQuadCounts, "number", null],
+                ["firstNeighbors", compact.firstNeighbors, "id", null],
+                ["neighborTails", compact.neighborTails, "delta", neighborTailTargets],
+                ["contextCounts", compact.contextCounts, "number", null],
+                ["firstContexts", compact.firstContexts, "id", null],
+                ["contextTails", compact.contextTails, "delta", contextTailTargets]
             ];
             const enabledFlags = core.flagNames(page.header.flags)
                 .map((flag) => flagTooltip("page", flag.name, flag.enabled, PAGE_FLAG_HELP[flag.name], "data-page-flag"))
                 .join("");
-            const rowHtml = columns.map(([name, values, kind]) => compactRow(
+            const rowHtml = columns.map(([name, values, kind, resolved]) => compactRow(
                 name,
                 values,
                 trace.physicalLanes[name],
                 kind,
-                omission[name] || "not needed for this page"
+                omission[name] || "not needed for this page",
+                resolved
             )).join("");
             const materialized = columns.filter(([, values]) => values !== null).length;
             return frame(
@@ -2117,23 +2370,31 @@
                 <div class="callout success">
                     <strong>${materialized} of 8 columns are materialized</strong> in this page. Omitted columns are reconstructed from counts or header flags; they are not empty arrays.
                 </div>
+                ${compact.neighborTails || compact.contextTails ? `<div class="callout" data-testid="tails-note">
+                    <strong>The two dashed columns are gaps, not values.</strong> A tail is the unsigned distance from
+                    the previous entry, so it is meaningless read on its own — the teal line under each one shows the
+                    pair it actually reproduces. Storing the gap is the point: neighbours and graphs are already sorted,
+                    so consecutive IDs sit close together and a gap needs far fewer bits than the absolute ID would.
+                    Only the <span class="mono">first</span> value of each run is stored in full.
+                </div>` : ""}
                 <div class="callout info">
                     Homogeneous generic-ID blocks may use <strong>typed-payload packing</strong>, which stores the shared type once. Mixed legal row or context types use generic raw packing. That decision is made per 256-lane block from actual values—not from an assumed “subject alphabet.”
                 </div>`
             );
         }
 
-        function selectedVector(model, preferred = "firstNeighbors") {
-            const available = model.page.sections.filter((section) => section.vector);
+        /* `trace` is null for the scale page, which no statement points at; `fallbackLane` then decides the highlight. */
+        function selectedVector(page, trace, preferred = "firstNeighbors", fallbackLane = 0) {
+            const available = page.sections.filter((section) => section.vector);
             if (!state.selectedSection || !available.some((section) => section.name === state.selectedSection)) {
                 state.selectedSection = available.some((section) => section.name === preferred)
                     ? preferred : available[0].name;
             }
             const section = available.find((candidate) => candidate.name === state.selectedSection);
-            const tracedLane = model.trace.physicalLanes[section.name];
+            const tracedLane = trace ? trace.physicalLanes[section.name] : null;
             const lane = Number.isInteger(tracedLane) && tracedLane >= 0 && tracedLane < section.vector.count
-                ? tracedLane : 0;
-            return { section, primary: core.vectorLane(model.page, section.name, lane), available };
+                ? tracedLane : Math.min(fallbackLane, section.vector.count - 1);
+            return { section, primary: core.vectorLane(page, section.name, lane), available };
         }
 
         function vectorSelector(available, selectedName) {
@@ -2173,6 +2434,9 @@
             const packedOrdinal = selected.delta ? Math.max(0, lane.lane - 1) : lane.lane;
             const payloadBytes = selected.byteLength - core.FORMAT.BLOCK_HEADER_BYTES;
             const modeNames = ["FOR raw", "FOR typed payload", "delta raw", "delta typed payload"];
+            /* Modes 2 and 3 are defined by the format but a page column can never use them: the encoder only
+               offers the delta plans for a sorted-sequential-ID column, and no page section is one. */
+            const pageReachableModes = [true, true, false, false];
             const modes = modeNames.map((name, mode) => {
                 const explanations = [
                     "Unsorted or random-access values: unsigned minimum base plus one residual per value.",
@@ -2180,8 +2444,11 @@
                     "Sorted sequential IDs: the first value is the base and only adjacent gaps are packed.",
                     "Sorted, same-type IDs: combine tag stripping with adjacent payload gaps."
                 ];
-                return `<div class="mode-item ${mode === selected.mode ? "selected" : ""}">
-                    <strong>${name}${mode === selected.mode ? " · selected" : ""}</strong><span>${explanations[mode]}</span>
+                const reachable = pageReachableModes[mode];
+                const note = reachable ? "" :
+                    `<span class="mode-unreachable">never used by a page · reading one lane would mean replaying the lanes before it</span>`;
+                return `<div class="mode-item ${mode === selected.mode ? "selected" : ""} ${reachable ? "" : "unavailable"}">
+                    <strong>${name}${mode === selected.mode ? " · selected" : ""}</strong><span>${explanations[mode]}</span>${note}
                 </div>`;
             }).join("");
             return `<!-- FIXTURE:PACKED_VECTOR_DEEP_DIVE_V1 -->
@@ -2205,6 +2472,13 @@
                     <div class="decode-step"><b>04 · reconstruct lane</b><code>packed lane ${packedOrdinal} · residual ${formatNumber(lane.residual)}<br>${modeFormula(selected)}<br>= ${escapeHtml(displayId(lane.value))}</code></div>
                 </div>
                 <div class="mode-ledger" aria-label="Packed vector modes">${modes}</div>
+                <p class="card-note" style="padding:0 16px 16px" data-testid="mode-reachability">
+                    A block header can hold any of the four mode numbers, so a decoder must understand all of them.
+                    A <strong>page</strong>, however, only ever writes the two <span class="mono">FOR</span> forms: every
+                    page column has to answer “give me lane <span class="mono">n</span>” without touching lane
+                    <span class="mono">n−1</span>, and a delta block cannot do that. The two delta modes exist for
+                    sorted-sequential-ID vectors outside the page sections.
+                </p>
                 <figcaption class="diagram-takeaway"><strong>Why the block boundary matters:</strong> one random access reads a directory entry and one block; it never inflates the whole vector. At most 256 values share the 12-byte block header, and a packed lane is extracted from an eight-byte little-endian word plus one tail byte only when it straddles that word.</figcaption>
             </figure>
             <div class="efficiency-equation" aria-label="Illustrative packed size calculation">
@@ -2213,19 +2487,44 @@
                 <div><span>header + directory + block</span><strong>252 B · 87.7% less</strong></div>
             </div>
             <p class="card-note">Illustrative one-block calculation: 8-byte vector header + two u32 directory entries + 12-byte block header + ceil(256 × 7 / 8) payload bytes. Actual width is chosen independently per block; tiny fixture vectors may be header-dominated.</p>
-            <div class="callout info"><strong>Selection is cost-based and local.</strong> The encoder measures raw FOR, typed-payload FOR, and—only for sorted sequential-ID columns—the two delta forms. It writes the smallest block plan. The current writer keeps the historical vector-level search/prefix flags clear; optional accelerators live in page slack or measured hot cursors instead of taxing every vector.</div>`;
+            <div class="callout info"><strong>Selection is cost-based and local.</strong> For each block independently the encoder measures raw FOR against typed-payload FOR and writes whichever is smaller. The delta plans are offered only to sorted-sequential-ID columns, and no page section is one, so they never win here. The current writer also keeps the historical vector-level search/prefix flags clear; optional accelerators live in page slack or measured hot cursors instead of taxing every vector.</div>`;
+        }
+
+        function vectorSourcePicker() {
+            const options = [
+                ["partition", "this statement's page", `${current().page.header.rowCount} rows`],
+                ["scale", "600-row example page", `${SCALE_PAGE.header.rowCount} rows`]
+            ];
+            return `<div class="vector-source" aria-label="Which page to inspect">
+                ${options.map(([value, label, note]) => `<button type="button" data-action="vector-source"
+                    data-vector-source="${value}" aria-pressed="${state.vectorSource === value}">
+                    ${label} <span class="dim">· ${note}</span></button>`).join("")}
+            </div>`;
         }
 
         function renderVectorStep(model) {
-            const { section, primary, available } = selectedVector(model);
+            const useScale = state.vectorSource === "scale" && SCALE_PAGE;
+            const page = useScale ? SCALE_PAGE : model.page;
+            const trace = useScale ? null : model.trace;
+            /* Lane 255 is the last lane of block 0, so the decode route lands exactly on a block boundary. */
+            const { section, primary, available } = selectedVector(page, trace, "firstNeighbors", 255);
+            const vector = section.vector;
+            const spanNote = `<p class="card-note" data-testid="vector-span-note">
+                <strong>${section.name}</strong> holds ${vector.count} value${vector.count === 1 ? "" : "s"} in
+                ${vector.blockCount} block${vector.blockCount === 1 ? "" : "s"}
+                (${vector.blocks.map((block) => `${block.count}×${block.width} bit`).join(", ")}),
+                behind a directory of ${vector.directory.length} offsets. Each block picks its own width, so a block of
+                smaller values costs fewer bits per lane than its neighbours.</p>`;
             return frame(
                 "bound random access",
                 "Packed vectors stay compressed all the way to the selected lane.",
                 "Each CSF column is its own vector. A terminal offset directory jumps to one 256-value block; the block header explains exactly how to recover a lane from its tightly packed residual bits.",
-                `${vectorSelector(available, section.name)}
+                `${vectorSourcePicker()}
+                ${vectorSelector(available, section.name)}
+                ${spanNote}
                 ${renderVectorAnatomy(section, primary)}
                 <div class="physical-grid">
-                    <div class="physical-column">${renderVector(section, primary)}</div>
+                    <div class="physical-column">${renderVector(page, section, primary)}</div>
                     <div class="physical-column">
                         <div class="byte-inspector">
                             <div class="inspector-title"><h3>What is deliberately absent</h3><span>no object graph</span></div>
@@ -2245,7 +2544,7 @@
             const h = page.header;
             const commonEnabled = (h.flags & core.FLAGS.COMMON_CONTEXT) !== 0;
             return [
-                ["magic", "0x50435346", 0, 4],
+                ["magic", `0x${h.magic.toString(16)}`, 0, 4],
                 ["version", h.version, 4, 2],
                 ["flags", `0x${h.flags.toString(16).padStart(4, "0")}`, 6, 2],
                 ["capacity", `${h.capacity} B`, 8, 4],
@@ -2310,7 +2609,7 @@
             ].map(([name, enabled, help]) => flagTooltip("vector", name, enabled, help, "data-vector-flag")).join("");
         }
 
-        function renderVector(section, primary) {
+        function renderVector(page, section, primary) {
             const vector = section.vector;
             const selectedLane = primary && primary.section.name === section.name ? primary.lane.globalLane : null;
             const blocks = vector.blocks.map((block) => {
@@ -2325,7 +2624,7 @@
                         <span class="block-chip">base ${formatNumber(block.base)}</span>
                         <span class="block-chip">@${block.pageAt} · ${block.byteLength} B</span>
                     </div>
-                    ${laneInBlock ? renderPackedLane(section, block, laneInBlock) : ""}
+                    ${laneInBlock ? renderPackedLane(page, section, block, laneInBlock) : ""}
                 </div>`;
             }).join("");
             return `<div class="byte-inspector" data-testid="vector-inspector">
@@ -2344,18 +2643,17 @@
             </div>`;
         }
 
-        function renderPackedLane(section, block, lane) {
+        function renderPackedLane(page, section, block, lane) {
             if (!lane.bitRange) {
                 return `<div class="packed-bits" data-testid="selected-packed-lane">
                     selected lane <strong>${lane.globalLane}</strong> = ${escapeHtml(displayId(lane.value))}<br>
                     width 0: no payload bits; the value is reconstructed from block base${block.typed ? " + shared type" : ""}.
                 </div>`;
             }
+            const payloadAt = section.offset + block.at + core.FORMAT.BLOCK_HEADER_BYTES;
             const bits = [];
             for (let bit = lane.bitRange.startBit; bit <= lane.bitRange.endBit; bit++) {
-                const byteAt = section.offset + block.at + core.FORMAT.BLOCK_HEADER_BYTES + Math.floor(bit / 8);
-                const bitValue = (section.vector ? pageByte(section, byteAt) : 0) >> (bit % 8) & 1;
-                bits.push(bitValue);
+                bits.push(page.bytes[payloadAt + Math.floor(bit / 8)] >> (bit % 8) & 1);
             }
             return `<div class="packed-bits" data-testid="selected-packed-lane">
                 selected lane <strong>${lane.globalLane}</strong> = ${escapeHtml(displayId(lane.value))}<br>
@@ -2363,11 +2661,6 @@
                 · page bytes ${lane.bitRange.firstByte}..${lane.bitRange.lastByte}<br>
                 packed LSB-first: <strong>${bits.join("")}</strong>
             </div>`;
-        }
-
-        function pageByte(section, pageAt) {
-            const model = current();
-            return model.page.bytes[pageAt];
         }
 
         function pageMap(page, selectedSection) {
@@ -2532,12 +2825,12 @@
         function renderPhysicalStep(model) {
             const { trace, page } = model;
             const defaultLane = core.defaultPhysicalLane(page, trace);
-            const { section: selectedSection, primary } = selectedVector(model, defaultLane.sectionName);
+            const { section: selectedSection, primary } = selectedVector(page, trace, defaultLane.sectionName);
             const slack = page.header.capacity - page.header.usedBytes;
             return frame(
                 "route at scale, then decode one page",
                 "Millions of quads still end at one packed lane.",
-                "First follow the lookup structures that narrow a large store. Then inspect the selected fixture’s exact CompactCsfPageEncoder v3 bytes, little-endian header, and independently packed vectors.",
+                `First follow the lookup structures that narrow a large store. Then inspect the selected fixture’s exact CompactCsfPageEncoder v${page.header.version} bytes, little-endian header, and independently packed vectors.`,
                 `${renderScaleDiagram(model, primary)}
                 <div class="page-summary">
                     <div class="metric"><span>partition</span><strong>${trace.key}</strong></div>
@@ -2553,7 +2846,7 @@
                         ${renderSections(page, state.selectedSection)}
                     </div>
                     <div class="physical-column">
-                        ${renderVector(selectedSection, primary)}
+                        ${renderVector(page, selectedSection, primary)}
                         <div class="callout info">
                             <strong>Selected statement lane:</strong> ${primary.section.name}[${primary.lane.globalLane}] in block ${primary.block.blockIndex}.
                             ${primary.lane.bitRange ? `Its payload touches page byte${primary.lane.bitRange.firstByte === primary.lane.bitRange.lastByte ? "" : "s"} ${primary.lane.bitRange.firstByte}${primary.lane.bitRange.firstByte === primary.lane.bitRange.lastByte ? "" : `..${primary.lane.bitRange.lastByte}`}.` : "It has width 0, so its value is fully represented by the block base and mode/type header."}
@@ -2673,10 +2966,84 @@
             );
         }
 
+        function renderReadStep(model) {
+            const { trace, page, quad } = model;
+            const read = core.readRow(page, trace.rowIndex);
+            const rowRole = state.direction === "outgoing" ? "subject" : "object";
+            const neighborRole = state.direction === "outgoing" ? "object" : "subject";
+
+            const provenance = read.steps.map((step, index) => `
+                <div class="read-step ${step.omitted ? "rebuilt" : ""}">
+                    <b>0${index + 1}</b>
+                    <div>
+                        <strong>${escapeHtml(step.label)}</strong>
+                        <span>${escapeHtml(step.detail)}</span>
+                    </div>
+                    <span class="read-origin">${step.omitted ? "rebuilt from a flag" : "read from a column"}</span>
+                </div>`).join("");
+
+            const rows = read.fibers.flatMap((fiber) => fiber.contexts.map((context, index) => {
+                const selected = fiber.neighborId === trace.neighborId && context.id === trace.contextId;
+                return `<tr class="${selected ? "current-row" : ""}">
+                    <td class="mono">${escapeHtml(displayId(read.rowId))}</td>
+                    <td class="mono">${escapeHtml(displayId(fiber.neighborId))}</td>
+                    <td class="mono">${escapeHtml(displayId(context.id))}</td>
+                    <td>${escapeHtml(index === 0 ? fiber.neighborSource : `${fiber.neighborSource} · same fibre`)}</td>
+                    <td>${escapeHtml(context.source)}</td>
+                </tr>`;
+            })).join("");
+
+            const rebuilt = read.steps.filter((step) => step.omitted).length;
+            const storedColumns = page.sections.filter((section) => section.vector).length;
+
+            return frame(
+                "bytes back to answers",
+                "Read the row out again, rebuilding what was never stored.",
+                `Everything so far went one way: quad to bytes. Now go back. Using only this page's packed vectors and its header flags — never the logical model from the earlier steps — recover every quad stored for row ${trace.rowIndex}.`,
+                `<div class="callout info">
+                    Traversing <span class="mono">${rawWithLabel(read.rowId)}</span> in partition
+                    <strong class="mono">${trace.key}</strong>. The row key is the RDF ${rowRole}; each neighbour is
+                    an RDF ${neighborRole}. This page materializes <strong>${storedColumns} of 8</strong> columns, so
+                    <strong>${rebuilt}</strong> of the reconstruction steps below read no column at all.
+                </div>
+                <div class="read-path" data-testid="read-path">${provenance}</div>
+                <div class="table-wrap" style="margin-top:16px">
+                    <table data-testid="read-quads">
+                        <thead><tr><th>row</th><th>neighbour</th><th>graph</th><th>neighbour came from</th><th>graph came from</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+                <div class="callout success" data-testid="read-summary">
+                    <strong>${read.quads.length} quad${read.quads.length === 1 ? "" : "s"} recovered</strong> across
+                    ${read.fibers.length} distinct neighbour${read.fibers.length === 1 ? "" : "s"}. The highlighted row
+                    is statement ${quad.index + 1}, the one selected on the left. Nothing here was looked up in a Java
+                    object graph: every value came from a packed lane or from a single header bit.
+                </div>
+                ${rebuilt > 0 ? `<div class="callout" data-testid="read-omission-note">
+                    <strong>This is why the omissions are safe.</strong> A column the encoder skipped is not lost
+                    information; it is information the page can prove. <span class="mono">CONTEXT_COUNT_ONE</span> means
+                    every fibre has exactly one graph, so a stored count would repeat the same number for every fibre.
+                    The reader spends a branch instead of the bytes.
+                </div>` : `<div class="callout" data-testid="read-omission-note">
+                    <strong>This page happens to store every column.</strong> Its rows have several neighbours and
+                    several graphs, so none of the page-wide invariants hold and nothing can be left out. Select the
+                    inferred statement 8 to land on a page that omits six of the eight columns and watch the same
+                    reconstruction run mostly on header flags instead.
+                </div>`}`
+            );
+        }
+
+        let renderedStep = null;
+
         function renderLesson(model) {
             const renderers = [renderRoleStep, renderIdStep, renderPlaneStep, renderTreeStep, renderCsrStep,
-                renderCompactStep, renderVectorStep, renderPhysicalStep, renderDeltaStep];
+                renderCompactStep, renderVectorStep, renderPhysicalStep, renderDeltaStep, renderReadStep];
+            const stepChanged = renderedStep !== state.step;
+            renderedStep = state.step;
             lesson.innerHTML = renderers[state.step](model);
+            if (stepChanged) {
+                lesson.querySelector(".lesson-frame")?.classList.add("entering");
+            }
         }
 
         function render(announce = false) {
@@ -2771,7 +3138,7 @@
             } else if (control === "numbers") {
                 state.numberMode = value;
             } else if (control === "view") {
-                state.step = ({ logical: 4, vectors: 6, physical: 7, deltas: 8 })[value];
+                state.step = ({ logical: 4, vectors: 6, physical: 7, deltas: 8, read: 9 })[value];
                 state.selectedSection = null;
             }
             render(true);
@@ -2788,6 +3155,10 @@
                 setStep(state.step + 1);
             } else if (action.dataset.action === "section") {
                 state.selectedSection = action.dataset.section;
+                render(false);
+            } else if (action.dataset.action === "vector-source") {
+                state.vectorSource = action.dataset.vectorSource;
+                state.selectedSection = null;
                 render(false);
             } else if (action.dataset.action === "delta-stage") {
                 state.deltaStage = Math.max(0, Math.min(DELTA_STAGES.length - 1,

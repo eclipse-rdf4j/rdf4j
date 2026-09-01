@@ -51,6 +51,53 @@ class QueryResultTemplateTest {
 	}
 
 	@Test
+	void tupleResultsShouldShowQueryDurationAboveTheResultTable() throws Exception {
+		String html = transform("tuple.xsl", queryResultXml(), infoXml());
+
+		assertThat(html).contains("id=\"query-duration\"");
+		assertThat(html).contains("Query time:");
+		assertThat(html).contains("1.23 s");
+		assertThat(html).doesNotContain("1234");
+		assertThat(html.indexOf("id=\"query-duration\"")).isLessThan(html.indexOf("<table class=\"data\""));
+	}
+
+	@Test
+	void graphResultsShouldShowQueryDurationAboveTheResultTable() throws Exception {
+		String html = transform("graph.xsl", queryResultXml(), infoXml());
+
+		assertThat(html).contains("id=\"query-duration\"");
+		assertThat(html).contains("1.23 s");
+		assertThat(html).doesNotContain("1234");
+		assertThat(html.indexOf("id=\"query-duration\"")).isLessThan(html.indexOf("<table class=\"data\""));
+	}
+
+	@Test
+	void booleanResultsShouldShowQueryDurationWithoutLeakingWorkbenchMetadata() throws Exception {
+		String html = transform("boolean.xsl", booleanResultXml(), infoXml());
+
+		assertThat(html).contains("id=\"query-duration\"");
+		assertThat(html).contains("1.23 s");
+		assertThat(html).doesNotContain("1234");
+		assertThat(html.indexOf("id=\"query-duration\"")).isLessThan(html.indexOf("class=\"queryResult\""));
+	}
+
+	@Test
+	void subSecondQueryDurationShouldBeRenderedInMilliseconds() throws Exception {
+		String html = transform("tuple.xsl", queryResultXml("42"), infoXml());
+
+		assertThat(html).contains("42 ms");
+		assertThat(html).doesNotContain("0.04 s");
+	}
+
+	@Test
+	void resultsWithoutMeasuredDurationShouldNotRenderTheQueryDuration() throws Exception {
+		String html = transform("tuple.xsl", queryResultXml(null), infoXml());
+
+		assertThat(html).doesNotContain("id=\"query-duration\"");
+		assertThat(html).doesNotContain("Query time:");
+	}
+
+	@Test
 	void savedQueriesPageShouldCarryStoredQueryTimeoutIntoExecuteAndEditActions() throws Exception {
 		String html = transform("saved-queries.xsl", savedQueriesXml(), infoXml());
 
@@ -88,6 +135,10 @@ class QueryResultTemplateTest {
 	}
 
 	private static String queryResultXml() {
+		return queryResultXml("1234");
+	}
+
+	private static String queryResultXml(String queryDurationMillis) {
 		StringBuilder xml = new StringBuilder();
 		xml.append("<?xml version=\"1.0\"?>\n");
 		xml.append("<sparql:sparql xmlns:sparql=\"http://www.w3.org/2005/sparql-results#\" ")
@@ -105,9 +156,35 @@ class QueryResultTemplateTest {
 		xml.append("    <workbench:query-text>").append(QUERY_TEXT).append("</workbench:query-text>\n");
 		xml.append("    <workbench:infer>false</workbench:infer>\n");
 		xml.append("    <workbench:query-timeout>17</workbench:query-timeout>\n");
+		appendQueryDuration(xml, queryDurationMillis);
 		xml.append("  </workbench:metadata>\n");
 		xml.append("</sparql:sparql>\n");
 		return xml.toString();
+	}
+
+	private static String booleanResultXml() {
+		StringBuilder xml = new StringBuilder();
+		xml.append("<?xml version=\"1.0\"?>\n");
+		xml.append("<sparql:sparql xmlns:sparql=\"http://www.w3.org/2005/sparql-results#\" ")
+				.append("xmlns:workbench=\"https://rdf4j.org/schema/workbench#\">\n");
+		xml.append("  <sparql:head>\n");
+		xml.append("    <sparql:link href=\"info\"/>\n");
+		xml.append("  </sparql:head>\n");
+		xml.append("  <sparql:boolean>true</sparql:boolean>\n");
+		xml.append("  <workbench:metadata>\n");
+		appendQueryDuration(xml, "1234");
+		xml.append("  </workbench:metadata>\n");
+		xml.append("</sparql:sparql>\n");
+		return xml.toString();
+	}
+
+	private static void appendQueryDuration(StringBuilder xml, String queryDurationMillis) {
+		if (queryDurationMillis == null) {
+			return;
+		}
+		xml.append("    <workbench:query-duration>")
+				.append(queryDurationMillis)
+				.append("</workbench:query-duration>\n");
 	}
 
 	private static String savedQueriesXml() {

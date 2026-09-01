@@ -15,6 +15,7 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
@@ -68,6 +69,8 @@ public final class QueryEvaluator {
 	private static final String METADATA_INFER = "infer";
 
 	private static final String METADATA_QUERY_TIMEOUT = "query-timeout";
+
+	private static final String METADATA_QUERY_DURATION = "query-duration";
 
 	private static final int MATERIALIZATION_CHECKPOINT_INTERVAL = 128;
 
@@ -396,10 +399,12 @@ public final class QueryEvaluator {
 			throws QueryEvaluationException, QueryResultHandlerException {
 		List<BindingSet> bindings;
 		final String[] names;
+		final long startNanos = System.nanoTime();
 		try (TupleQueryResult result = query.evaluate()) {
 			names = result.getBindingNames().toArray(new String[0]);
 			bindings = collectBindingSets(result);
 		}
+		final long queryDurationMillis = elapsedMillisSince(startNanos);
 		if (writeCookie) {
 			cookies.addTotalResultCountCookie(req, resp, bindings.size());
 		}
@@ -407,6 +412,7 @@ public final class QueryEvaluator {
 		builder.start(names);
 		builder.link(List.of(INFO));
 		addWorkbenchMetadata(builder, req, responseQueryText);
+		addQueryDurationMetadata(builder, responseQueryText, queryDurationMillis);
 		final List<Object> values = new ArrayList<>(names.length);
 		if (paged && writeCookie) {
 			// Only in this case do we have paged results, but were given the full
@@ -470,7 +476,9 @@ public final class QueryEvaluator {
 			HttpServletResponse resp, CookieHandler cookies, final GraphQuery query, boolean writeCookie, boolean paged,
 			int offset, int limit, String responseQueryText)
 			throws QueryEvaluationException, QueryResultHandlerException {
+		final long startNanos = System.nanoTime();
 		List<Statement> statements = collectStatements(query);
+		final long queryDurationMillis = elapsedMillisSince(startNanos);
 		if (writeCookie) {
 			cookies.addTotalResultCountCookie(req, resp, statements.size());
 		}
@@ -478,6 +486,7 @@ public final class QueryEvaluator {
 		builder.start("subject", "predicate", "object");
 		builder.link(List.of(INFO));
 		addWorkbenchMetadata(builder, req, responseQueryText);
+		addQueryDurationMetadata(builder, responseQueryText, queryDurationMillis);
 		if (paged && writeCookie) {
 			// Only in this case do we have paged results, but were given the full
 			// query. Just-in-case parameter massaging below to avoid array index
@@ -498,9 +507,11 @@ public final class QueryEvaluator {
 		query.evaluate(writer);
 	}
 
-	private void evaluateBooleanQuery(final TupleResultBuilder builder, final BooleanQuery query)
-			throws QueryEvaluationException, QueryResultHandlerException {
+	private void evaluateBooleanQuery(final TupleResultBuilder builder, final BooleanQuery query,
+			final String responseQueryText) throws QueryEvaluationException, QueryResultHandlerException {
+		final long startNanos = System.nanoTime();
 		final boolean result = query.evaluate();
+		addQueryDurationMetadata(builder, responseQueryText, elapsedMillisSince(startNanos));
 		builder.link(List.of(INFO));
 		builder.bool(result);
 	}
@@ -527,7 +538,7 @@ public final class QueryEvaluator {
 			} else if (query instanceof BooleanQuery) {
 				builder.transform(xslPath, "boolean.xsl");
 				builder.startBoolean();
-				this.evaluateBooleanQuery(builder, (BooleanQuery) query);
+				this.evaluateBooleanQuery(builder, (BooleanQuery) query, responseQueryText);
 				builder.endBoolean();
 			} else {
 				throw new BadRequestException("Unknown query type: " + query.getClass().getSimpleName());
@@ -545,6 +556,24 @@ public final class QueryEvaluator {
 				req.isParameterPresent("infer") ? Boolean.parseBoolean(req.getParameter("infer")) : false);
 		builder.metadata(METADATA_QUERY_TIMEOUT,
 				queryTimeout == null || queryTimeout.isBlank() ? Integer.valueOf(0) : queryTimeout);
+	}
+
+	/**
+	 * Publishes how long the query took, so the workbench result page can show it. Downloads are skipped: they are
+	 * served in a plain result format that must not carry workbench metadata.
+	 *
+	 * @param responseQueryText the query text echoed back to the browser, or null when serving a download
+	 */
+	private void addQueryDurationMetadata(TupleResultBuilder builder, String responseQueryText,
+			long queryDurationMillis) {
+		if (responseQueryText == null) {
+			return;
+		}
+		builder.metadata(METADATA_QUERY_DURATION, queryDurationMillis);
+	}
+
+	private static long elapsedMillisSince(long startNanos) {
+		return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
 	}
 
 	private List<BindingSet> collectBindingSets(TupleQueryResult result) throws QueryEvaluationException {

@@ -101,7 +101,7 @@ final class LmdbNativeParallelPipelines {
 
 	static int configuredMaxTasks() {
 		Integer configured = Integer.getInteger("rdf4j.lmdb.parallel.maxTasks");
-		int maxTasks = configured != null ? configured : Runtime.getRuntime().availableProcessors();
+		int maxTasks = configured != null ? configured : (Runtime.getRuntime().availableProcessors()+1);
 		return Math.max(1, Math.min(maxTasks, MAX_POOL_TASKS));
 	}
 

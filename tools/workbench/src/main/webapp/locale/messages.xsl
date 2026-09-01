@@ -189,6 +189,9 @@
 	<variable name="result-limited.desc">
 		The results shown maybe truncated.
 	</variable>
+	<variable name="query-duration.label">Query time:</variable>
+	<variable name="milliseconds.label">ms</variable>
+	<variable name="seconds.label">s</variable>
 	<variable name="prefix.label">Prefix</variable>
 	<variable name="namespace.label">Namespace</variable>
 	<variable name="repository-type.label">Type</variable>

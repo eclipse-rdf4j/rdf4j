@@ -91,7 +91,8 @@ test('nested CSR arrays preserve rows, distinct neighbors, and context membershi
 
 test('compact columns factor first values and omit page-wide invariants', () => {
     const compact = core.compactColumns(core.PARTITIONS.get('0:0'));
-    assert.equal(compact.flags, 0);
+    assert.equal(compact.flags, core.FLAGS.UNIFORM_NEIGHBOR_TERM_KIND,
+        'rows mix URI/bnode/triple kinds, but every neighbor is an IRI');
     assert.deepEqual(numbers(compact.rowFiberStarts), [0, 2, 3, 4]);
     assert.deepEqual(numbers(compact.rowQuadCounts), [3, 1, 1, 1]);
     assert.deepEqual(numbers(compact.firstNeighbors), [386, 130, 130, 130]);
@@ -101,7 +102,9 @@ test('compact columns factor first values and omit page-wide invariants', () => 
     assert.deepEqual(numbers(compact.contextTails), [256]);
 
     const singleton = core.compactColumns(core.PARTITIONS.get('0:2'));
-    assert.equal(singleton.flags, 30);
+    assert.equal(singleton.flags,
+        core.FLAGS.ROW_NEIGHBOR_ONE | core.FLAGS.ROW_QUAD_EQUALS_NEIGHBOR | core.FLAGS.CONTEXT_COUNT_ONE
+        | core.FLAGS.COMMON_CONTEXT | core.FLAGS.UNIFORM_ROW_TERM_KIND | core.FLAGS.UNIFORM_NEIGHBOR_TERM_KIND);
     assert.equal(singleton.rowFiberStarts, null);
     assert.equal(singleton.rowQuadCounts, null);
     assert.equal(singleton.neighborTails, null);
@@ -111,23 +114,40 @@ test('compact columns factor first values and omit page-wide invariants', () => 
     assert.equal(singleton.commonContext, 514n);
 });
 
-test('embedded v3 pages decode through vector directories and packed lanes', () => {
+test('embedded v4 pages decode through vector directories and packed lanes', () => {
     const pageFixtures = fixtures(core);
-    assert.deepEqual(Array.from(pageFixtures.keys()), ['0:0', '0:1', '0:2', '0:3', '1:0', '1:1']);
+    assert.deepEqual(Array.from(pageFixtures.keys()), ['0:0', '0:1', '0:2', '0:3', '1:0', '1:1', 'scale']);
     const expectedSizes = new Map([
         ['0:0', [432, 512]],
         ['0:1', [424, 512]],
         ['0:2', [224, 256]],
         ['0:3', [224, 256]],
         ['1:0', [224, 256]],
-        ['1:1', [224, 256]]
+        ['1:1', [224, 256]],
+        ['scale', [1520, 1536]]
     ]);
 
+    // Deliberate tripwires: when the fixtures are regenerated for a new format revision, update both
+    // literals below AND the "v4" strings rendered in the tutorial masthead and physical-page lesson.
     for (const [key, bytes] of pageFixtures) {
         const page = core.decodePage(bytes);
-        assert.equal(page.header.version, 3);
-        assert.equal(page.header.formatHash, 0x72b9c4e1);
+        assert.equal(page.header.version, 4);
+        assert.equal(page.header.formatHash, 0x2dc970b6);
         assert.deepEqual([page.header.usedBytes, page.header.capacity], expectedSizes.get(key));
+
+        // Whatever the real encoder recorded in the header must agree with the columns the tutorial
+        // derives in JavaScript, for every flag bit the tutorial knows how to derive. The synthetic
+        // 'scale' page is not built from the eight statements, so it has no logical partition to compare.
+        const partition = core.PARTITIONS.get(key);
+        if (partition) {
+            const derivable = core.FLAGS.ROW_NEIGHBOR_ONE | core.FLAGS.ROW_QUAD_EQUALS_NEIGHBOR
+                | core.FLAGS.CONTEXT_COUNT_ONE | core.FLAGS.COMMON_CONTEXT
+                | core.FLAGS.UNIFORM_ROW_TERM_KIND | core.FLAGS.UNIFORM_NEIGHBOR_TERM_KIND;
+            assert.equal(page.header.flags & derivable,
+                core.compactColumns(partition).flags & derivable,
+                `page ${key} header flags must match the JS-derived compact columns`);
+        }
+
         for (const section of page.sections.filter((candidate) => candidate.vector)) {
             assert.equal(section.offset % 8, 0);
             assert.equal(section.vector.directory.at(-1), section.length);
@@ -148,6 +168,94 @@ test('embedded v3 pages decode through vector directories and packed lanes', () 
     const physical = core.defaultPhysicalLane(page, trace);
     assert.deepEqual({ sectionName: physical.sectionName, lane: physical.lane }, { sectionName: 'contextTails', lane: 0 });
     assert.equal(core.vectorLane(page, physical.sectionName, physical.lane).lane.value, 256n);
+});
+
+test('readRow rebuilds every row from page bytes alone, matching the logical model', () => {
+    const pageFixtures = fixtures(core);
+    let checkedRows = 0;
+    let checkedQuads = 0;
+
+    for (const [key, bytes] of pageFixtures) {
+        const partition = core.PARTITIONS.get(key);
+        if (!partition) {
+            continue; // the synthetic 'scale' page has no eight-statement partition to compare against
+        }
+        const page = core.decodePage(bytes);
+        assert.equal(page.header.rowCount, partition.rows.length, `row count for ${key}`);
+
+        partition.rows.forEach((row, rowIndex) => {
+            const read = core.readRow(page, rowIndex);
+            assert.equal(read.rowId, row.id, `${key} row ${rowIndex} id`);
+
+            // Neighbours must come back in order, including any rebuilt from neighborTails deltas.
+            assert.deepEqual(numbers(read.fibers.map((fiber) => fiber.neighborId)),
+                numbers(row.fibers.map((fiber) => fiber.id)), `${key} row ${rowIndex} neighbours`);
+
+            // Contexts must come back per fibre, including those rebuilt from the header's commonContext.
+            row.fibers.forEach((fiber, localFiber) => {
+                assert.deepEqual(numbers(read.fibers[localFiber].contexts.map((context) => context.id)),
+                    numbers(fiber.contexts.map((context) => context.id)),
+                    `${key} row ${rowIndex} fibre ${localFiber} contexts`);
+            });
+
+            const expectedQuads = row.fibers.reduce((sum, fiber) => sum + fiber.contexts.length, 0);
+            assert.equal(read.quads.length, expectedQuads, `${key} row ${rowIndex} quad count`);
+            checkedRows++;
+            checkedQuads += expectedQuads;
+        });
+    }
+
+    // Guard against the loop silently skipping everything.
+    assert.ok(checkedRows >= 10, `expected to check many rows, checked ${checkedRows}`);
+    assert.ok(checkedQuads >= 16, `expected to check many quads, checked ${checkedQuads}`);
+});
+
+test('readRow reports which columns were omitted and rebuilt', () => {
+    const pageFixtures = fixtures(core);
+
+    // Partition 0:0 stores every column, so nothing is reconstructed from a flag.
+    const dense = core.readRow(core.decodePage(pageFixtures.get('0:0')), 0);
+    assert.equal(dense.steps.filter((step) => step.omitted).length, 0);
+    assert.ok(dense.fibers[0].contexts[0].source.includes('firstContexts'));
+
+    // Partition 0:2 omits almost everything; its single context comes from the header, not a column.
+    const sparse = core.readRow(core.decodePage(pageFixtures.get('0:2')), 0);
+    assert.ok(sparse.steps.some((step) => step.omitted), 'expected omitted-column steps');
+    assert.ok(sparse.fibers[0].contexts[0].source.includes('commonContext'),
+        `expected header-sourced context, got ${sparse.fibers[0].contexts[0].source}`);
+
+    assert.throws(() => core.readRow(core.decodePage(pageFixtures.get('0:2')), 99), /outside this page/);
+});
+
+test('the scale fixture demonstrates what the six statement pages are too small to show', () => {
+    const page = core.decodePage(fixtures(core).get('scale'));
+    assert.equal(page.header.rowCount, 600);
+
+    const rowIds = page.sections.find((section) => section.name === 'rowIds');
+    // The whole point of this fixture: more than one 256-value block, behind a real multi-entry directory.
+    assert.equal(rowIds.vector.count, 600);
+    assert.equal(rowIds.vector.blockCount, 3);
+    assert.deepEqual(numbers(rowIds.vector.blocks.map((block) => block.count)), [256, 256, 88]);
+    assert.equal(rowIds.vector.directory.length, rowIds.vector.blockCount + 1);
+
+    // Each block chooses its own width, so a lane's cost depends on which block it lands in.
+    const widths = rowIds.vector.blocks.map((block) => block.width);
+    assert.ok(new Set(widths).size > 1, `expected differing per-block widths, got ${widths}`);
+
+    // Crossing the block boundary must be what `ordinal >>> 8` implies.
+    assert.equal(core.vectorLane(page, 'rowIds', 255).block.blockIndex, 0);
+    assert.equal(core.vectorLane(page, 'rowIds', 256).block.blockIndex, 1);
+
+    // Only a page this size earns an accelerator; on the six small pages these fields are all zero.
+    assert.ok(page.header.acceleratorDescriptor > 0);
+    assert.ok(page.header.acceleratorLength > 0);
+    assert.ok(page.header.acceleratorOffset + page.header.acceleratorLength <= page.header.usedBytes);
+
+    // A page still never contains a delta-mode block, whatever its size.
+    for (const section of page.sections.filter((candidate) => candidate.vector)) {
+        assert.ok(section.vector.blocks.every((block) => !block.delta),
+            `${section.name} must not use a delta mode`);
+    }
 });
 
 test('small delta runs encode complete sorted rows with neighbor deltas and context ordinals', () => {

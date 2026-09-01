@@ -36,6 +36,13 @@ test('loads directly from file and every statement selects its real partition', 
     await expect(page.locator('#partition-chip')).toContainText('plane 2');
     await page.locator('[data-control="direction"][data-value="incoming"]').click();
     await expect(page.locator('#partition-chip')).toContainText('plane 3');
+
+    // The masthead badge is derived from the decoder's own format constant, so it cannot drift
+    // away from the revision the embedded fixtures are actually encoded in.
+    const decodedVersion = await page.evaluate(() =>
+        window.Rdf4jAdjacencyTutorialTesting.pages.get('0:0').header.version);
+    expect(decodedVersion).toBe(4);
+    await expect(page.locator('#format-badge')).toHaveText(`v${decodedVersion}`);
 });
 
 test('steps and controls expose logical arrays and physical bytes', async ({ page }) => {
@@ -65,6 +72,10 @@ test('steps and controls expose logical arrays and physical bytes', async ({ pag
     await expect(page.locator('[data-testid="used-byte"]')).toHaveCount(432);
     await expect(page.locator('[data-testid="slack-byte"]')).toHaveCount(80);
     await expect(page.locator('[data-testid="slack-byte"]').first()).toHaveText('--');
+
+    // Header fields are read out of the decoded page rather than hard-coded in the renderer.
+    await expect(page.locator('[data-header-field="magic"]')).toContainText('0x50435346');
+    await expect(page.locator('[data-header-field="version"]')).toContainText('4');
 
     await page.locator('[data-action="section"][data-section="rowIds"]').first().click();
     await expect(page.locator('[data-testid="vector-inspector"] h3')).toHaveText('rowIds vector');
@@ -101,6 +112,99 @@ test('shared row and neighbour fibre lead to distinct context lanes', async ({ p
     await page.locator('[data-step="0"]').click();
     await expect(page.locator('[data-testid="literal-row-note"]')).toBeVisible();
     await expect(page.locator('[data-control="direction"][data-value="incoming"]')).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('tail columns show the pair each gap reproduces, not just the gap', async ({ page }) => {
+    await loadTutorial(page);
+    await page.locator('[data-statement="0"]').click();
+    await page.locator('[data-step="5"]').click();
+
+    const neighborTails = page.locator('[data-column="neighborTails"]');
+    const contextTails = page.locator('[data-column="contextTails"]');
+
+    // A bare "256" is unreadable; the cell must say which pair the gap bridges.
+    await expect(neighborTails).toContainText('+256');
+    await expect(neighborTails).toContainText(':bob → :carol');
+    await expect(contextTails).toContainText('+256');
+    await expect(contextTails).toContainText(':friends → :work');
+    await expect(page.getByTestId('tails-note')).toContainText('gaps, not values');
+
+    // Both tail columns are marked as deltas rather than plain values.
+    await expect(page.locator('[data-column="neighborTails"] .array-cell.delta')).toHaveCount(1);
+    await expect(page.locator('[data-column="contextTails"] .array-cell.delta')).toHaveCount(1);
+
+    // Statement 2 is :alice :knows :carol, the second neighbour of its row, so its neighbour is the one
+    // the neighbour tail reconstructs and that cell must be the highlighted one.
+    await page.locator('[data-statement="1"]').click();
+    await expect(page.locator('[data-column="neighborTails"] .array-cell.selected')).toHaveCount(1);
+
+    // Statement 3 is :alice :knows :bob :work, the second graph of its fibre, so the context tail is highlighted.
+    await page.locator('[data-statement="2"]').click();
+    await expect(page.locator('[data-column="contextTails"] .array-cell.selected')).toHaveCount(1);
+
+    // Raw-ID mode must still resolve, just in numbers.
+    await page.locator('[data-control="terms"][data-value="raw"]').click();
+    await expect(neighborTails).toContainText('386 → 642');
+
+    // A page with no second neighbour or graph keeps the omitted explanation instead.
+    await page.locator('[data-control="terms"][data-value="labels"]').click();
+    await page.locator('[data-statement="7"]').click();
+    await expect(neighborTails).toContainText('omitted');
+    await expect(contextTails).toContainText('omitted');
+    await expect(page.getByTestId('tails-note')).toHaveCount(0);
+});
+
+test('re-rendering the same step does not replay the entry animation', async ({ page }) => {
+    await loadTutorial(page);
+    const frame = page.locator('.lesson-frame');
+
+    // Moving to a different lesson is a real transition, so it animates in.
+    await page.locator('[data-step="3"]').click();
+    await expect(frame).toHaveClass(/entering/);
+
+    // Everything below re-renders the same lesson. Animating there shifts the content under the
+    // pointer by 5px on every click, which reads as the page bumping.
+    await page.locator('[data-statement="1"]').click();
+    await expect(frame).not.toHaveClass(/entering/);
+
+    await page.locator('[data-control="terms"][data-value="raw"]').click();
+    await expect(frame).not.toHaveClass(/entering/);
+
+    await page.locator('[data-control="numbers"][data-value="hex"]').click();
+    await expect(frame).not.toHaveClass(/entering/);
+
+    await page.locator('[data-control="direction"][data-value="incoming"]').click();
+    await expect(frame).not.toHaveClass(/entering/);
+
+    // Selecting a packed-vector column re-renders in place too.
+    await page.locator('[data-control="view"][data-value="vectors"]').click();
+    await expect(frame).toHaveClass(/entering/);
+    await page.locator('.vector-selector button').last().click();
+    await expect(frame).not.toHaveClass(/entering/);
+
+    // Stepping again still animates, so the transition is not simply gone.
+    await page.locator('#next-step').click();
+    await expect(frame).toHaveClass(/entering/);
+});
+
+test('an in-place re-render leaves the heading physically where it was', async ({ page }) => {
+    await loadTutorial(page);
+    await page.locator('[data-step="3"]').click();
+    const heading = page.locator('.lesson-frame h2');
+    await expect(heading).toBeVisible();
+    // Let the step-change animation finish before measuring the resting position.
+    await page.waitForTimeout(400);
+    const before = await heading.boundingBox();
+
+    // Toggling term display re-renders the same lesson with the same layout, so nothing should move.
+    await page.locator('[data-control="terms"][data-value="raw"]').click();
+    const immediately = await heading.boundingBox();
+    await page.waitForTimeout(400);
+    const settled = await heading.boundingBox();
+
+    // If the entry animation replays, the heading starts 5px low and slides up: immediately !== settled.
+    expect(Math.abs(immediately.y - settled.y)).toBeLessThan(0.5);
+    expect(Math.abs(settled.y - before.y)).toBeLessThan(0.5);
 });
 
 test('keyboard navigation and reduced motion remain usable', async ({ page }) => {
@@ -145,10 +249,12 @@ test('desktop uses side-by-side panels and mobile stacks them', async ({ page })
 test('all flags explain both states and the scale diagram traces memory lookup', async ({ page }) => {
     await loadTutorial(page);
 
+    // Every bit in CompactCsfPageFormat gets a button that explains both of its states.
+    const PAGE_FLAG_COUNT = 10;
     await page.locator('[data-step="5"]').click();
     const pageFlags = page.locator('[data-page-flag]');
-    await expect(pageFlags).toHaveCount(6);
-    for (let index = 0; index < 6; index++) {
+    await expect(pageFlags).toHaveCount(PAGE_FLAG_COUNT);
+    for (let index = 0; index < PAGE_FLAG_COUNT; index++) {
         const flag = pageFlags.nth(index);
         const tooltipId = await flag.getAttribute('aria-describedby');
         expect(tooltipId).toBeTruthy();
@@ -178,6 +284,43 @@ test('all flags explain both states and the scale diagram traces memory lookup',
     }
 });
 
+test('the read lesson rebuilds a row from page bytes and shows what was reconstructed', async ({ page }) => {
+    await loadTutorial(page);
+    await expect(page.locator('[data-step]')).toHaveCount(10);
+
+    await page.locator('[data-control="view"][data-value="read"]').click();
+    await expect(page.locator('[data-tutorial-step="10"]')).toBeVisible();
+    await expect(page.getByTestId('read-path')).toBeVisible();
+
+    // Statement 1 is :alice :knows :bob :friends. Its row is :alice, which in partition 0:0 has two
+    // distinct neighbours (:bob and :carol) and three quads in total.
+    await page.locator('[data-statement="0"]').click();
+    const quads = page.getByTestId('read-quads').locator('tbody tr');
+    await expect(quads).toHaveCount(3);
+    await expect(page.getByTestId('read-quads')).toContainText(':bob');
+    await expect(page.getByTestId('read-quads')).toContainText(':carol');
+    await expect(page.getByTestId('read-summary')).toContainText('3 quads recovered');
+    // Exactly one recovered quad is the selected statement.
+    await expect(page.getByTestId('read-quads').locator('tbody tr.current-row')).toHaveCount(1);
+    // Partition 0:0 stores every column, so nothing is rebuilt from a flag here.
+    await expect(page.locator('.read-step.rebuilt')).toHaveCount(0);
+    await expect(page.getByTestId('read-omission-note')).toContainText('happens to store every column');
+
+    // Statement 8 is inferred, landing in the sparse partition 0:2 where the graph is not stored
+    // per fibre at all but recovered from the header's commonContext.
+    await page.locator('[data-statement="7"]').click();
+    await expect(page.locator('#partition-chip')).toContainText('plane 2');
+    await expect(page.locator('.read-step.rebuilt').first()).toBeVisible();
+    await expect(page.getByTestId('read-quads')).toContainText('commonContext');
+    await expect(page.getByTestId('read-summary')).toContainText('1 quad recovered');
+    await expect(page.getByTestId('read-omission-note')).toContainText('omissions are safe');
+
+    // Switching direction re-reads the mirrored plane rather than reusing the outgoing answer.
+    await page.locator('[data-control="direction"][data-value="incoming"]').click();
+    await expect(page.locator('#partition-chip')).toContainText('plane 3');
+    await expect(page.getByTestId('read-path')).toBeVisible();
+});
+
 test('packed vector and delta deep dives expose exact structure and lifecycle', async ({ page }) => {
     await loadTutorial(page);
 
@@ -190,9 +333,22 @@ test('packed vector and delta deep dives expose exact structure and lifecycle', 
     await expect(vector).toContainText('12 B · mode/type · width · count · base');
     await expect(vector.locator('.mode-item')).toHaveCount(4);
     await expect(vector.locator('.mode-item.selected')).toHaveCount(1);
+    // A page can only ever write the two FOR forms; the two delta modes must be shown as unreachable.
+    await expect(vector.locator('.mode-item.unavailable')).toHaveCount(2);
+    await expect(vector.locator('.mode-item.selected.unavailable')).toHaveCount(0);
+    await expect(page.getByTestId('mode-reachability')).toContainText('only ever writes the two');
     await page.locator('.vector-selector [data-section="rowIds"]').click();
     await expect(page.getByTestId('vector-deep-dive')).toContainText('rowIds');
     await expect(page.getByTestId('vector-inspector').locator('h3')).toHaveText('rowIds vector');
+
+    // The statement pages are single-block; switching to the 600-row page must show a real multi-block vector.
+    await expect(page.getByTestId('vector-span-note')).toContainText('1 block');
+    await page.locator('[data-action="vector-source"][data-vector-source="scale"]').click();
+    await expect(page.getByTestId('vector-span-note')).toContainText('600 values in 3 blocks');
+    await expect(page.getByTestId('vector-span-note')).toContainText('88×');
+    await expect(page.locator('.vector-block')).toHaveCount(3);
+    // Lane 255 is the last lane of block 0, so the decode route must name block 0 at the boundary.
+    await expect(page.getByTestId('vector-deep-dive')).toContainText('255 >>> 8 = block 0');
 
     await page.locator('[data-control="view"][data-value="deltas"]').click();
     await expect(page.locator('[data-tutorial-step="9"]')).toBeVisible();

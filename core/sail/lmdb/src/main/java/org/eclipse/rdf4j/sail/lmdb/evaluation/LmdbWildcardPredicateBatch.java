@@ -23,6 +23,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Projection-free wildcard-predicate batching over the fixed-predicate adjacency planes.
  *
@@ -52,6 +55,7 @@ final class LmdbWildcardPredicateBatch {
 	static final AtomicLong ADAPTIVE_INCOMING_DIRECTIONS = new AtomicLong();
 	static final AtomicLong WORKERS = new AtomicLong();
 	static final AtomicLong MEMORY_REFUSALS = new AtomicLong();
+	private static final Logger log = LoggerFactory.getLogger(LmdbWildcardPredicateBatch.class);
 
 	enum Demand {
 		NODE_ANY,
@@ -2901,11 +2905,16 @@ final class LmdbWildcardPredicateBatch {
 
 		private void admitParallel(int nodeCount) throws IOException {
 			if (parallel != null || parallelAdmissionChecked || uniqueRootCount < 1 || predicateCount < 2) {
+//				System.out.println((parallel != null) + " || " + (parallelAdmissionChecked) + " || "
+//						+ (uniqueRootCount < 1) + " || " + (predicateCount < 2));
 				return;
 			}
 			int requestedWidth = Math.min(prefixBatch.capacity, predicateCount);
 			double estimatedWork = (double) nodeCount * requestedWidth;
 			if (!(estimatedWork >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
+				log.info("estimatedWork: " + estimatedWork + " nodeCount=" + nodeCount + " requestedWidth="
+						+ requestedWidth + " LmdbNativeParallelPipelines.minimumWorkEstimate()="
+						+ LmdbNativeParallelPipelines.minimumWorkEstimate());
 				return;
 			}
 			parallelAdmissionChecked = true;

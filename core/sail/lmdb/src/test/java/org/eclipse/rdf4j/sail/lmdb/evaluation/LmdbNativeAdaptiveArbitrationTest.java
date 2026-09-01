@@ -362,7 +362,7 @@ class LmdbNativeAdaptiveArbitrationTest {
 		LmdbNativeAdaptiveArbitration.Priced<String> generic = structuralOnly(
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED, 1);
 
-		assertSame(null, LmdbNativeAdaptiveArbitration.mustTryUnexecuted(List.of(intersection, generic),
+		assertSame(null, LmdbNativeAdaptiveArbitration.mustTryUnderConfirmed(List.of(intersection, generic),
 				intersection, model),
 				"an exact whole-query index intersection must not trigger an unbounded generic engine trial");
 	}

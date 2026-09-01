@@ -194,7 +194,7 @@ final class LmdbNativeAdaptiveArbitration {
 		}
 		if (winner.prediction.evidenceSource() == LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
 				&& probeStructurallyImpossible(winner.prediction, probeContext)) {
-			Priced<T> mustTry = mustTryUnexecuted(priced, winner, model);
+			Priced<T> mustTry = mustTryUnderConfirmed(priced, winner, model);
 			if (mustTry != null) {
 				return maybeGuard(new DispatchPlan.Normal<>(mustTry.candidate, mustTry.prediction,
 						"must-try exploration: never-executed engine arm at an unprobed site"), priced, hedgeContext);
@@ -210,10 +210,47 @@ final class LmdbNativeAdaptiveArbitration {
 	}
 
 	/**
-	 * The highest-static-preference must-try arm that has never executed in the current regime and is not blocked by
-	 * the scheduler, or null. {@code priced} arrives static-preference sorted, so the first hit wins.
+	 * Completed exact-variant measurements a promising must-try arm may accumulate through mandatory trials. Five is
+	 * where {@link #COLD_START_EVIDENCE_FLOOR} and the severe-miss floor already place "enough evidence to be
+	 * believed"; reusing that number keeps one notion of settled in the policy rather than three.
 	 */
-	static <T> Priced<T> mustTryUnexecuted(List<Priced<T>> priced, Priced<T> winner,
+	static final long CONFIRMATION_FLOOR = 5L;
+
+	/**
+	 * Whether this arm still owes mandatory exploration.
+	 * <p>
+	 * An arm that has never executed always does — that is the pre-existing must-try contract, and its first run is
+	 * mandatory rather than value-optional because a starved arm can never earn the evidence that would let it win.
+	 * <p>
+	 * An arm that HAS executed still does while it carries fewer than {@link #CONFIRMATION_FLOOR} completed
+	 * measurements AND those measurements price it below the incumbent (2026-09-01: a query run four times went slow,
+	 * slow, fast, slow and never regained the fast run). One measurement cannot clear the 99% displacement test in
+	 * {@link LmdbNativeCostPrediction#displaces} unless the gap is roughly elevenfold — after a single completion the
+	 * arm's own posterior variance is still near its prior — so an arm that is merely three times faster was executed
+	 * exactly once and then locked out forever, because the only gate that could have run it again asked whether it had
+	 * <em>never</em> run. Confirmation trials let a measured winner reach the evidence its own promotion requires.
+	 * <p>
+	 * An arm measured no faster than the incumbent gets exactly its one mandatory trial, as before: exploration is
+	 * spent only where the arm's own measurements say a win is plausible, so this can never turn into re-running known
+	 * losers.
+	 */
+	static boolean underConfirmed(LmdbNativeCostPrediction candidate, LmdbNativeCostPrediction incumbent) {
+		if (neverExecuted(candidate)) {
+			return true;
+		}
+		if (candidate.quarantined() || !candidate.uniformlyPriceable()
+				|| candidate.exactCompletedCount() >= CONFIRMATION_FLOOR) {
+			return false;
+		}
+		return incumbent.uniformlyPriceable() && candidate.expectedNanos() < incumbent.expectedNanos();
+	}
+
+	/**
+	 * The highest-static-preference must-try arm that still owes mandatory exploration in the current regime (see
+	 * {@link #underConfirmed}) and is not blocked by the scheduler, or null. {@code priced} arrives static-preference
+	 * sorted, so the first hit wins.
+	 */
+	static <T> Priced<T> mustTryUnderConfirmed(List<Priced<T>> priced, Priced<T> winner,
 			LmdbNativeAdaptiveCostModel model) {
 		if (LmdbNativeStrategyPreference
 				.answersWholeQueryStructurally(winner.candidate.estimate.variantKey().strategyFamily())) {
@@ -228,7 +265,8 @@ final class LmdbNativeAdaptiveArbitration {
 			}
 			LmdbNativePhysicalVariantKey key = candidate.candidate.estimate.variantKey();
 			if (LmdbNativeStrategyPreference.mustTryFamily(key.strategyFamily())
-					&& neverExecuted(candidate.prediction) && scheduler.mayProbe(key, regime, epoch)) {
+					&& underConfirmed(candidate.prediction, winner.prediction)
+					&& scheduler.mayProbe(key, regime, epoch)) {
 				return candidate;
 			}
 		}
@@ -369,13 +407,14 @@ final class LmdbNativeAdaptiveArbitration {
 			if (!scheduler.mayProbe(key, regime, epoch)) {
 				continue;
 			}
-			// Must-try arms (the engine's own kernel tiers, never executed in this regime) bypass the value and
-			// deadline-optimism gates: their first execution is mandatory, not value-optional — a starved arm can
-			// never earn the evidence that would let it win. A censoring at the deadline is itself evidence and
+			// Must-try arms (the engine's own kernel tiers still owing mandatory exploration in this regime — never
+			// executed, or measured faster than the incumbent but not yet settled; see underConfirmed) bypass the
+			// value and deadline-optimism gates: those executions are mandatory, not value-optional — a starved arm
+			// can never earn the evidence that would let it win. A censoring at the deadline is itself evidence and
 			// hands the arm to the scheduler's cooldown, so this cannot thrash. Among must-try arms the first in
 			// static-preference order wins (priced arrives sorted).
 			boolean mustTry = LmdbNativeStrategyPreference.mustTryFamily(key.strategyFamily())
-					&& neverExecuted(prediction);
+					&& underConfirmed(prediction, anchor);
 			if (mustTry) {
 				if (!bestMustTry) {
 					best = rival;

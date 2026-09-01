@@ -66,10 +66,16 @@ final class LmdbNativeSafetyLedger {
 	}
 
 	/**
-	 * Mandatory financing for a must-try arm's FIRST trial: always reserves, letting the credit balance go negative.
-	 * The debt is real — future normal completions must earn it back before {@link #tryReserve} finances any
-	 * value-optional probe — so total speculative overhead stays bounded; only the ORDER of spending changes (mandatory
-	 * exploration first). Never use this for repeat probes of an already-executed arm.
+	 * Mandatory financing for a must-try arm's trials: always reserves, letting the credit balance go negative. The
+	 * debt is real — future normal completions must earn it back before {@link #tryReserve} finances any value-optional
+	 * probe — so total speculative overhead stays bounded; only the ORDER of spending changes (mandatory exploration
+	 * first).
+	 * <p>
+	 * This covers an arm's first trial and, when the arm's own measurements price it below the incumbent, its
+	 * confirmation trials up to {@link LmdbNativeAdaptiveArbitration#CONFIRMATION_FLOOR} completed measurements per
+	 * exact variant per regime. The cap is enforced by the completed count, which only rises on an actual completion,
+	 * so the debt a single arm can open is bounded at four trials beyond the first. Never use this for repeat probes of
+	 * an arm that has already settled, or of one its own measurements price no better than the incumbent.
 	 */
 	synchronized Reservation reserveMandatory(long worstCaseNanos) {
 		outstandingNanos += Math.max(0L, worstCaseNanos);

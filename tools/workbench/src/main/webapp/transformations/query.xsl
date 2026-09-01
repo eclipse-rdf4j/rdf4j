@@ -321,7 +321,7 @@
                         <xsl:with-param name="copyButtonId">copy-explanation-compare</xsl:with-param>
                     </xsl:call-template>
                 </div>
-                <details id="lmdb-runtime-features" class="lmdb-runtime-features" open="open">
+                <details id="lmdb-runtime-features" class="lmdb-runtime-features">
                     <summary>
                         <span><xsl:value-of select="$lmdb-runtime-features.label"/></span>
                         <span class="lmdb-runtime-features__scope">

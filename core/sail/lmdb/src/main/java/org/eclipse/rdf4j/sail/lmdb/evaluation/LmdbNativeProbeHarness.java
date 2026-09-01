@@ -23,8 +23,13 @@ interface LmdbNativeProbeHarness<T> {
 
 	/**
 	 * Drains {@code value} to completion under the ambient probe deadline, returning the publishable result. Deadline
-	 * expiry or buffer exhaustion throws {@link LmdbNativeProbeDeadlineExceeded} (exhaustion trips the scope first so
-	 * both take the identical path).
+	 * expiry or buffer exhaustion throws {@link LmdbNativeProbeDeadlineExceeded}, so both take one abort path.
+	 * <p>
+	 * An implementation that runs out of buffer room MUST report it with
+	 * {@link LmdbNativeProbeDeadline#tripCapacity()}, never plain {@code trip()}. Only {@code tripCapacity} lets the
+	 * arbiter see that time did not run out; an implementation that trips plainly will have its strategy recorded as
+	 * having exceeded the whole probe deadline and struck by the probe scheduler, which is precisely wrong for a fast
+	 * strategy whose answer happens to be larger than {@code rowCap}.
 	 */
 	T drainBounded(T value, LmdbNativeCostObservation observation, int rowCap) throws IOException;
 
