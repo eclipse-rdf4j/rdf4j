@@ -33,6 +33,11 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 	public long estimateEntries(long txnId, String dbName, byte[] minKey, int minKeyLength, byte[] maxKey,
 			int maxKeyLength,
 			GroupMatcher matcher) throws IOException {
+		return estimateEntries(txnId, dbName, minKey, minKeyLength, maxKey, maxKeyLength, matcher, 1);
+	}
+
+	public long estimateEntries(long txnId, String dbName, byte[] minKey, int minKeyLength, byte[] maxKey,
+			int maxKeyLength, GroupMatcher matcher, int sampleMultiplier) throws IOException {
 		SnapshotCache snapshot = snapshot(txnId);
 		LmdbDb db = namedDb(snapshot, dbName);
 		if (db == null || db.isEmpty()) {
@@ -40,7 +45,8 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		}
 
 		LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta);
-		RangeCountResult result = counter.estimateRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher);
+		RangeCountResult result = counter.estimateRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
+				sampleMultiplier);
 		return result.entries;
 	}
 

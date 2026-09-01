@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig.VALUE_CACHE_SIZE;
 
@@ -99,6 +100,88 @@ class LmdbStoreConfigTest {
 
 		assertThat(invokeBooleanGetter(config, "getBackgroundRawSamplingEnabled")).isTrue();
 		assertThat(invokeLongGetter(config, "getBackgroundRawSamplingMaxMillisPerCycle")).isEqualTo(10L);
+	}
+
+	@Test
+	void statementPatternCardinalityCacheDefaultsAreBounded() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+
+		assertThat(config.getStatementPatternCardinalityCacheSize()).isEqualTo(8192);
+		assertThat(config.getStatementPatternCardinalityCacheExpiryMillis()).isEqualTo(10_800_000L);
+		assertThat(config.getStatementPatternCardinalityCacheMutationRatio()).isEqualTo(0.01d);
+		assertThat(config.getPopularStatementPatternCardinalityCacheSize()).isEqualTo(128);
+		assertThat(config.getPopularStatementPatternCardinalityCacheActivationThreshold()).isEqualTo(1_000_000L);
+		assertThat(config.getPopularStatementPatternCardinalityCacheActivationCheckInterval()).isEqualTo(10);
+		assertThat(config.getPopularStatementPatternCardinalityCachePromotionAccesses()).isEqualTo(3);
+		assertThat(config.getPopularStatementPatternCardinalityCachePromotionWindowMillis()).isEqualTo(10_800_000L);
+		assertThat(config.getPopularStatementPatternCardinalityCacheRefreshMillis()).isEqualTo(3_600_000L);
+		assertThat(config.getPopularStatementPatternCardinalityCacheDecayHalfLifeMillis()).isEqualTo(10_800_000L);
+		assertThat(config.getPopularStatementPatternCardinalityCacheRefreshSampleMultiplier()).isEqualTo(4);
+	}
+
+	@Test
+	void statementPatternCardinalityCacheConfigurationRoundTripsThroughRdf() {
+		LmdbStoreConfig configured = new LmdbStoreConfig()
+				.setStatementPatternCardinalityCacheSize(17)
+				.setStatementPatternCardinalityCacheExpiryMillis(18L)
+				.setStatementPatternCardinalityCacheMutationRatio(0.25d)
+				.setPopularStatementPatternCardinalityCacheSize(19)
+				.setPopularStatementPatternCardinalityCacheActivationThreshold(20L)
+				.setPopularStatementPatternCardinalityCacheActivationCheckInterval(21)
+				.setPopularStatementPatternCardinalityCachePromotionAccesses(2)
+				.setPopularStatementPatternCardinalityCachePromotionWindowMillis(22L)
+				.setPopularStatementPatternCardinalityCacheRefreshMillis(23L)
+				.setPopularStatementPatternCardinalityCacheDecayHalfLifeMillis(24L)
+				.setPopularStatementPatternCardinalityCacheRefreshSampleMultiplier(5);
+		Model model = new LinkedHashModel();
+		Resource node = configured.export(model);
+		LmdbStoreConfig parsed = new LmdbStoreConfig();
+
+		parsed.parse(model, node);
+
+		assertThat(parsed.getStatementPatternCardinalityCacheSize()).isEqualTo(17);
+		assertThat(parsed.getStatementPatternCardinalityCacheExpiryMillis()).isEqualTo(18L);
+		assertThat(parsed.getStatementPatternCardinalityCacheMutationRatio()).isEqualTo(0.25d);
+		assertThat(parsed.getPopularStatementPatternCardinalityCacheSize()).isEqualTo(19);
+		assertThat(parsed.getPopularStatementPatternCardinalityCacheActivationThreshold()).isEqualTo(20L);
+		assertThat(parsed.getPopularStatementPatternCardinalityCacheActivationCheckInterval()).isEqualTo(21);
+		assertThat(parsed.getPopularStatementPatternCardinalityCachePromotionAccesses()).isEqualTo(2);
+		assertThat(parsed.getPopularStatementPatternCardinalityCachePromotionWindowMillis()).isEqualTo(22L);
+		assertThat(parsed.getPopularStatementPatternCardinalityCacheRefreshMillis()).isEqualTo(23L);
+		assertThat(parsed.getPopularStatementPatternCardinalityCacheDecayHalfLifeMillis()).isEqualTo(24L);
+		assertThat(parsed.getPopularStatementPatternCardinalityCacheRefreshSampleMultiplier()).isEqualTo(5);
+	}
+
+	@Test
+	void statementPatternCardinalityCacheConfigurationNormalizesUnsafeValues() {
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setStatementPatternCardinalityCacheSize(-1)
+				.setStatementPatternCardinalityCacheExpiryMillis(-1L)
+				.setPopularStatementPatternCardinalityCacheSize(-1)
+				.setPopularStatementPatternCardinalityCacheActivationThreshold(-1L)
+				.setPopularStatementPatternCardinalityCacheActivationCheckInterval(0)
+				.setPopularStatementPatternCardinalityCachePromotionAccesses(99)
+				.setPopularStatementPatternCardinalityCachePromotionWindowMillis(-1L)
+				.setPopularStatementPatternCardinalityCacheRefreshMillis(-1L)
+				.setPopularStatementPatternCardinalityCacheDecayHalfLifeMillis(-1L)
+				.setPopularStatementPatternCardinalityCacheRefreshSampleMultiplier(100);
+
+		assertThat(config.getStatementPatternCardinalityCacheSize()).isZero();
+		assertThat(config.getStatementPatternCardinalityCacheExpiryMillis()).isZero();
+		assertThat(config.getPopularStatementPatternCardinalityCacheSize()).isZero();
+		assertThat(config.getPopularStatementPatternCardinalityCacheActivationThreshold()).isZero();
+		assertThat(config.getPopularStatementPatternCardinalityCacheActivationCheckInterval()).isOne();
+		assertThat(config.getPopularStatementPatternCardinalityCachePromotionAccesses()).isEqualTo(3);
+		assertThat(config.getPopularStatementPatternCardinalityCachePromotionWindowMillis()).isZero();
+		assertThat(config.getPopularStatementPatternCardinalityCacheRefreshMillis()).isZero();
+		assertThat(config.getPopularStatementPatternCardinalityCacheDecayHalfLifeMillis()).isZero();
+		assertThat(config.getPopularStatementPatternCardinalityCacheRefreshSampleMultiplier()).isEqualTo(64);
+		assertThat(config.setPopularStatementPatternCardinalityCacheRefreshSampleMultiplier(0)
+				.getPopularStatementPatternCardinalityCacheRefreshSampleMultiplier()).isOne();
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> config.setStatementPatternCardinalityCacheMutationRatio(Double.NaN));
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> config.setStatementPatternCardinalityCacheMutationRatio(-0.1d));
 	}
 
 	@Test

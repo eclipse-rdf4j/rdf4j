@@ -63,6 +63,31 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public static final long BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = 10L;
 
+	public static final int STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE = 8192;
+
+	public static final long STATEMENT_PATTERN_CARDINALITY_CACHE_EXPIRY_MILLIS = Duration.ofHours(3).toMillis();
+
+	public static final double STATEMENT_PATTERN_CARDINALITY_CACHE_MUTATION_RATIO = 0.01d;
+
+	public static final int POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE = 128;
+
+	public static final long POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_THRESHOLD = 1_000_000L;
+
+	public static final int POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_CHECK_INTERVAL = 10;
+
+	public static final int POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_ACCESSES = 3;
+
+	public static final long POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_WINDOW_MILLIS = Duration.ofHours(3)
+			.toMillis();
+
+	public static final long POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_MILLIS = Duration.ofHours(1)
+			.toMillis();
+
+	public static final long POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_DECAY_HALF_LIFE_MILLIS = Duration.ofHours(3)
+			.toMillis();
+
+	public static final int POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_SAMPLE_MULTIPLIER = 4;
+
 	public static final long SKETCH_ESTIMATOR_THROTTLE_EVERY_N = 1024L * 1024L;
 
 	public static final long SKETCH_ESTIMATOR_THROTTLE_MILLIS = 2L;
@@ -129,6 +154,28 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private boolean backgroundRawSamplingEnabled = true;
 
 	private long backgroundRawSamplingMaxMillisPerCycle = BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE;
+
+	private int statementPatternCardinalityCacheSize = STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE;
+
+	private long statementPatternCardinalityCacheExpiryMillis = STATEMENT_PATTERN_CARDINALITY_CACHE_EXPIRY_MILLIS;
+
+	private double statementPatternCardinalityCacheMutationRatio = STATEMENT_PATTERN_CARDINALITY_CACHE_MUTATION_RATIO;
+
+	private int popularStatementPatternCardinalityCacheSize = POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE;
+
+	private long popularStatementPatternCardinalityCacheActivationThreshold = POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_THRESHOLD;
+
+	private int popularStatementPatternCardinalityCacheActivationCheckInterval = POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_CHECK_INTERVAL;
+
+	private int popularStatementPatternCardinalityCachePromotionAccesses = POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_ACCESSES;
+
+	private long popularStatementPatternCardinalityCachePromotionWindowMillis = POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_WINDOW_MILLIS;
+
+	private long popularStatementPatternCardinalityCacheRefreshMillis = POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_MILLIS;
+
+	private long popularStatementPatternCardinalityCacheDecayHalfLifeMillis = POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_DECAY_HALF_LIFE_MILLIS;
+
+	private int popularStatementPatternCardinalityCacheRefreshSampleMultiplier = POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_SAMPLE_MULTIPLIER;
 
 	/*--------------*
 	 * Constructors *
@@ -417,6 +464,109 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public int getStatementPatternCardinalityCacheSize() {
+		return statementPatternCardinalityCacheSize;
+	}
+
+	public LmdbStoreConfig setStatementPatternCardinalityCacheSize(int size) {
+		this.statementPatternCardinalityCacheSize = Math.max(0, size);
+		return this;
+	}
+
+	public long getStatementPatternCardinalityCacheExpiryMillis() {
+		return statementPatternCardinalityCacheExpiryMillis;
+	}
+
+	public LmdbStoreConfig setStatementPatternCardinalityCacheExpiryMillis(long expiryMillis) {
+		this.statementPatternCardinalityCacheExpiryMillis = Math.max(0L, expiryMillis);
+		return this;
+	}
+
+	public double getStatementPatternCardinalityCacheMutationRatio() {
+		return statementPatternCardinalityCacheMutationRatio;
+	}
+
+	public LmdbStoreConfig setStatementPatternCardinalityCacheMutationRatio(double mutationRatio) {
+		if (!Double.isFinite(mutationRatio) || mutationRatio < 0.0d) {
+			throw new IllegalArgumentException(
+					"statement-pattern cache mutation ratio must be finite and non-negative");
+		}
+		this.statementPatternCardinalityCacheMutationRatio = mutationRatio;
+		return this;
+	}
+
+	public int getPopularStatementPatternCardinalityCacheSize() {
+		return popularStatementPatternCardinalityCacheSize;
+	}
+
+	public LmdbStoreConfig setPopularStatementPatternCardinalityCacheSize(int size) {
+		this.popularStatementPatternCardinalityCacheSize = Math.max(0, size);
+		return this;
+	}
+
+	public long getPopularStatementPatternCardinalityCacheActivationThreshold() {
+		return popularStatementPatternCardinalityCacheActivationThreshold;
+	}
+
+	public LmdbStoreConfig setPopularStatementPatternCardinalityCacheActivationThreshold(long threshold) {
+		this.popularStatementPatternCardinalityCacheActivationThreshold = Math.max(0L, threshold);
+		return this;
+	}
+
+	public int getPopularStatementPatternCardinalityCacheActivationCheckInterval() {
+		return popularStatementPatternCardinalityCacheActivationCheckInterval;
+	}
+
+	public LmdbStoreConfig setPopularStatementPatternCardinalityCacheActivationCheckInterval(int interval) {
+		this.popularStatementPatternCardinalityCacheActivationCheckInterval = Math.max(1, interval);
+		return this;
+	}
+
+	public int getPopularStatementPatternCardinalityCachePromotionAccesses() {
+		return popularStatementPatternCardinalityCachePromotionAccesses;
+	}
+
+	public LmdbStoreConfig setPopularStatementPatternCardinalityCachePromotionAccesses(int accesses) {
+		this.popularStatementPatternCardinalityCachePromotionAccesses = Math.clamp(accesses, 1, 3);
+		return this;
+	}
+
+	public long getPopularStatementPatternCardinalityCachePromotionWindowMillis() {
+		return popularStatementPatternCardinalityCachePromotionWindowMillis;
+	}
+
+	public LmdbStoreConfig setPopularStatementPatternCardinalityCachePromotionWindowMillis(long windowMillis) {
+		this.popularStatementPatternCardinalityCachePromotionWindowMillis = Math.max(0L, windowMillis);
+		return this;
+	}
+
+	public long getPopularStatementPatternCardinalityCacheRefreshMillis() {
+		return popularStatementPatternCardinalityCacheRefreshMillis;
+	}
+
+	public LmdbStoreConfig setPopularStatementPatternCardinalityCacheRefreshMillis(long refreshMillis) {
+		this.popularStatementPatternCardinalityCacheRefreshMillis = Math.max(0L, refreshMillis);
+		return this;
+	}
+
+	public long getPopularStatementPatternCardinalityCacheDecayHalfLifeMillis() {
+		return popularStatementPatternCardinalityCacheDecayHalfLifeMillis;
+	}
+
+	public LmdbStoreConfig setPopularStatementPatternCardinalityCacheDecayHalfLifeMillis(long halfLifeMillis) {
+		this.popularStatementPatternCardinalityCacheDecayHalfLifeMillis = Math.max(0L, halfLifeMillis);
+		return this;
+	}
+
+	public int getPopularStatementPatternCardinalityCacheRefreshSampleMultiplier() {
+		return popularStatementPatternCardinalityCacheRefreshSampleMultiplier;
+	}
+
+	public LmdbStoreConfig setPopularStatementPatternCardinalityCacheRefreshSampleMultiplier(int multiplier) {
+		this.popularStatementPatternCardinalityCacheRefreshSampleMultiplier = Math.clamp(multiplier, 1, 64);
+		return this;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -518,6 +668,50 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (backgroundRawSamplingMaxMillisPerCycle != BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE) {
 			m.add(implNode, LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE,
 					vf.createLiteral(backgroundRawSamplingMaxMillisPerCycle));
+		}
+		if (statementPatternCardinalityCacheSize != STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE) {
+			m.add(implNode, LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE,
+					vf.createLiteral(statementPatternCardinalityCacheSize));
+		}
+		if (statementPatternCardinalityCacheExpiryMillis != STATEMENT_PATTERN_CARDINALITY_CACHE_EXPIRY_MILLIS) {
+			m.add(implNode, LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_EXPIRY_MILLIS,
+					vf.createLiteral(statementPatternCardinalityCacheExpiryMillis));
+		}
+		if (statementPatternCardinalityCacheMutationRatio != STATEMENT_PATTERN_CARDINALITY_CACHE_MUTATION_RATIO) {
+			m.add(implNode, LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_MUTATION_RATIO,
+					vf.createLiteral(statementPatternCardinalityCacheMutationRatio));
+		}
+		if (popularStatementPatternCardinalityCacheSize != POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE) {
+			m.add(implNode, LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE,
+					vf.createLiteral(popularStatementPatternCardinalityCacheSize));
+		}
+		if (popularStatementPatternCardinalityCacheActivationThreshold != POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_THRESHOLD) {
+			m.add(implNode, LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_THRESHOLD,
+					vf.createLiteral(popularStatementPatternCardinalityCacheActivationThreshold));
+		}
+		if (popularStatementPatternCardinalityCacheActivationCheckInterval != POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_CHECK_INTERVAL) {
+			m.add(implNode, LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_CHECK_INTERVAL,
+					vf.createLiteral(popularStatementPatternCardinalityCacheActivationCheckInterval));
+		}
+		if (popularStatementPatternCardinalityCachePromotionAccesses != POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_ACCESSES) {
+			m.add(implNode, LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_ACCESSES,
+					vf.createLiteral(popularStatementPatternCardinalityCachePromotionAccesses));
+		}
+		if (popularStatementPatternCardinalityCachePromotionWindowMillis != POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_WINDOW_MILLIS) {
+			m.add(implNode, LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_WINDOW_MILLIS,
+					vf.createLiteral(popularStatementPatternCardinalityCachePromotionWindowMillis));
+		}
+		if (popularStatementPatternCardinalityCacheRefreshMillis != POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_MILLIS) {
+			m.add(implNode, LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_MILLIS,
+					vf.createLiteral(popularStatementPatternCardinalityCacheRefreshMillis));
+		}
+		if (popularStatementPatternCardinalityCacheDecayHalfLifeMillis != POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_DECAY_HALF_LIFE_MILLIS) {
+			m.add(implNode, LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_DECAY_HALF_LIFE_MILLIS,
+					vf.createLiteral(popularStatementPatternCardinalityCacheDecayHalfLifeMillis));
+		}
+		if (popularStatementPatternCardinalityCacheRefreshSampleMultiplier != POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_SAMPLE_MULTIPLIER) {
+			m.add(implNode, LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_SAMPLE_MULTIPLIER,
+					vf.createLiteral(popularStatementPatternCardinalityCacheRefreshSampleMultiplier));
 		}
 		return implNode;
 	}
@@ -763,6 +957,51 @@ public class LmdbStoreConfig extends BaseSailConfig {
 					m.getStatements(implNode, LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE, null))
 					.ifPresent(lit -> setBackgroundRawSamplingMaxMillisPerCycle(parseLong(lit,
 							LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE)));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE,
+					null))
+					.ifPresent(lit -> setStatementPatternCardinalityCacheSize(parseInt(lit,
+							LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_EXPIRY_MILLIS, null))
+					.ifPresent(lit -> setStatementPatternCardinalityCacheExpiryMillis(parseLong(lit,
+							LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_EXPIRY_MILLIS)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_MUTATION_RATIO, null))
+					.ifPresent(lit -> setStatementPatternCardinalityCacheMutationRatio(parseDouble(lit,
+							LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_MUTATION_RATIO)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE, null))
+					.ifPresent(lit -> setPopularStatementPatternCardinalityCacheSize(parseInt(lit,
+							LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_THRESHOLD, null))
+					.ifPresent(lit -> setPopularStatementPatternCardinalityCacheActivationThreshold(parseLong(lit,
+							LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_THRESHOLD)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_CHECK_INTERVAL, null))
+					.ifPresent(lit -> setPopularStatementPatternCardinalityCacheActivationCheckInterval(parseInt(lit,
+							LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_CHECK_INTERVAL)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_ACCESSES, null))
+					.ifPresent(lit -> setPopularStatementPatternCardinalityCachePromotionAccesses(parseInt(lit,
+							LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_ACCESSES)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_WINDOW_MILLIS, null))
+					.ifPresent(lit -> setPopularStatementPatternCardinalityCachePromotionWindowMillis(parseLong(lit,
+							LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_WINDOW_MILLIS)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_MILLIS, null))
+					.ifPresent(lit -> setPopularStatementPatternCardinalityCacheRefreshMillis(parseLong(lit,
+							LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_MILLIS)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_DECAY_HALF_LIFE_MILLIS, null))
+					.ifPresent(lit -> setPopularStatementPatternCardinalityCacheDecayHalfLifeMillis(parseLong(lit,
+							LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_DECAY_HALF_LIFE_MILLIS)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_SAMPLE_MULTIPLIER, null))
+					.ifPresent(lit -> setPopularStatementPatternCardinalityCacheRefreshSampleMultiplier(parseInt(lit,
+							LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_SAMPLE_MULTIPLIER)));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
@@ -781,6 +1020,14 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			return lit.longValue();
 		} catch (NumberFormatException e) {
 			throw new SailConfigException("Long value required for " + property + " property, found " + lit);
+		}
+	}
+
+	private static double parseDouble(org.eclipse.rdf4j.model.Literal lit, org.eclipse.rdf4j.model.IRI property) {
+		try {
+			return lit.doubleValue();
+		} catch (NumberFormatException e) {
+			throw new SailConfigException("Double value required for " + property + " property, found " + lit);
 		}
 	}
 }

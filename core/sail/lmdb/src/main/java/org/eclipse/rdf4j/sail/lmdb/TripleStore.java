@@ -490,6 +490,21 @@ class TripleStore implements Closeable {
 		});
 	}
 
+	long getStatementCount() throws IOException {
+		TripleIndex mainIndex = indexes.getFirst();
+		return txnManager.doWith((stack, txn) -> {
+			MDBStat explicitStat = MDBStat.malloc(stack);
+			MDBStat inferredStat = MDBStat.malloc(stack);
+			mdb_stat(txn, mainIndex.getDB(true), explicitStat);
+			mdb_stat(txn, mainIndex.getDB(false), inferredStat);
+			return Math.addExact(explicitStat.ms_entries(), inferredStat.ms_entries());
+		});
+	}
+
+	long getTransactionId() throws IOException {
+		return txnManager.doWith((stack, txn) -> mdb_txn_id(txn));
+	}
+
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
 		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn);
@@ -643,6 +658,11 @@ class TripleStore implements Closeable {
 	}
 
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
+		return cardinality(subj, pred, obj, context, 1);
+	}
+
+	protected double cardinality(long subj, long pred, long obj, long context, int sampleMultiplier)
+			throws IOException {
 		if (!pageCardinalityEstimator) {
 			return exactCardinality(subj, pred, obj, context);
 		}
@@ -650,7 +670,8 @@ class TripleStore implements Closeable {
 		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
 
 		try {
-			return cardinalityUsingPageEstimator(index, subj, pred, obj, context);
+			return cardinalityUsingPageEstimator(index, subj, pred, obj, context,
+					Math.clamp(sampleMultiplier, 1, 64));
 		} catch (IOException | RuntimeException e) {
 			logger.warn("Page cardinality estimator failed for index {}, falling back to sampling",
 					new String(index.getFieldSeq()), e);
@@ -658,7 +679,8 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private double cardinalityUsingPageEstimator(TripleIndex index, long subj, long pred, long obj, long context)
+	private double cardinalityUsingPageEstimator(TripleIndex index, long subj, long pred, long obj, long context,
+			int sampleMultiplier)
 			throws IOException {
 		LmdbPageCardinalityEstimator estimator = pageEstimator;
 		if (estimator == null) {
@@ -691,9 +713,9 @@ class TripleStore implements Closeable {
 			GroupMatcher matcher = relevantParts == boundFields ? null
 					: index.createMatcher(subj, pred, obj, context);
 			long explicitCount = estimator.estimateEntries(txnId, explicitDbName, minKey, minKey.length, maxKey,
-					maxKey.length, matcher);
+					maxKey.length, matcher, sampleMultiplier);
 			long inferredCount = estimator.estimateEntries(txnId, inferredDbName, minKey, minKey.length, maxKey,
-					maxKey.length, matcher);
+					maxKey.length, matcher, sampleMultiplier);
 			return (double) (explicitCount + inferredCount);
 		});
 	}

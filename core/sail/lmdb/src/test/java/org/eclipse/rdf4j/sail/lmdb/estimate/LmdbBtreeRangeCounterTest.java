@@ -19,8 +19,10 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.function.IntFunction;
 
+import org.eclipse.rdf4j.sail.lmdb.Varint;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -137,6 +139,46 @@ class LmdbBtreeRangeCounterTest {
 	}
 
 	@Test
+	void richProfileSamplesFourTimesTheContiguousLeaves(@TempDir Path tempDir) throws Exception {
+		TreeFile tree = writeSingleBranchTree(tempDir.resolve("data.mdb"), 256, 1,
+				LmdbBtreeRangeCounterTest::quadKey);
+
+		RangeCountResult result = countRange(tree, quadKey(1), quadKey(254), null, 4);
+
+		assertEquals(254, result.entries);
+		assertEquals(66, result.leafPagesRead,
+				"Expected 64 sampled leaves plus the two exact boundary leaves");
+		assertEquals(1, result.branchPagesRead);
+	}
+
+	@Test
+	void richProfileSamplesFourTimesTheResidualMatcherLeaves(@TempDir Path tempDir) throws Exception {
+		TreeFile tree = writeSingleBranchTree(tempDir.resolve("data.mdb"), 256, 1,
+				LmdbBtreeRangeCounterTest::quadKey);
+		GroupMatcher matchesAbsentSecondField = new GroupMatcher(new byte[] { 0, 2, 0, 0 },
+				new boolean[] { false, true, false, false });
+
+		RangeCountResult result = countRange(tree, quadKey(0), quadKey(255),
+				matchesAbsentSecondField, 4);
+
+		assertEquals(1, result.entries);
+		assertEquals(130, result.leafPagesRead,
+				"Expected 128 residual samples plus the two exact boundary leaves");
+		assertEquals(1, result.branchPagesRead);
+	}
+
+	@Test
+	void richProfileDoesNotChangeTheThirtyTwoLeafExactCutoff(@TempDir Path tempDir) throws Exception {
+		TreeFile tree = writeSingleBranchTree(tempDir.resolve("data.mdb"), LARGE_RANGE_LEAVES, 1,
+				LmdbBtreeRangeCounterTest::statementKey);
+
+		RangeCountResult result = countRange(tree, statementKey(5), statementKey(36), null, 64);
+
+		assertEquals(32, result.entries);
+		assertEquals(32, result.leafPagesRead);
+	}
+
+	@Test
 	void preservesExactZeroForSmallSelectiveRanges(@TempDir Path tempDir) throws Exception {
 		TreeFile tree = writeSingleBranchTree(tempDir.resolve("data.mdb"), LARGE_RANGE_LEAVES, 1,
 				LmdbBtreeRangeCounterTest::statementKey);
@@ -163,9 +205,15 @@ class LmdbBtreeRangeCounterTest {
 
 	private static RangeCountResult countRange(TreeFile tree, byte[] minKey, byte[] maxKey, GroupMatcher matcher)
 			throws IOException {
+		return countRange(tree, minKey, maxKey, matcher, 1);
+	}
+
+	private static RangeCountResult countRange(TreeFile tree, byte[] minKey, byte[] maxKey, GroupMatcher matcher,
+			int sampleMultiplier) throws IOException {
 		try (LmdbDataFile dataFile = new LmdbDataFile(tree.path.toFile())) {
 			return new LmdbBtreeRangeCounter(dataFile, tree.meta)
-					.estimateRange(tree.db, minKey, minKey.length, maxKey, maxKey.length, matcher);
+					.estimateRange(tree.db, minKey, minKey.length, maxKey, maxKey.length, matcher,
+							sampleMultiplier);
 		}
 	}
 
@@ -278,6 +326,12 @@ class LmdbBtreeRangeCounterTest {
 
 	private static byte[] statementKey(int value) {
 		return new byte[] { (byte) value, 1, 1, 1 };
+	}
+
+	private static byte[] quadKey(int value) {
+		ByteBuffer buffer = ByteBuffer.allocate(8);
+		Varint.writeListUnsigned(buffer, new long[] { value, 1, 1, 1 });
+		return Arrays.copyOf(buffer.array(), buffer.position());
 	}
 
 	private static byte[] ordinalKey(int value) {

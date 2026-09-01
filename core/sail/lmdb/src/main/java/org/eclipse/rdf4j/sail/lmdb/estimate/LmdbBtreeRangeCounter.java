@@ -38,6 +38,11 @@ final class LmdbBtreeRangeCounter {
 
 	RangeCountResult estimateRange(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
 			GroupMatcher matcher) throws IOException {
+		return estimateRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher, 1);
+	}
+
+	RangeCountResult estimateRange(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
+			GroupMatcher matcher, int sampleMultiplier) throws IOException {
 		RangeCountResult result = new RangeCountResult();
 		if (db.isEmpty()) {
 			return result;
@@ -76,7 +81,8 @@ final class LmdbBtreeRangeCounter {
 		}
 
 		double estimate = boundaryEntries
-				+ estimateSpans(db, spans, minKey, minKeyLength, maxKey, maxKeyLength, matcher, pageCache, result);
+				+ estimateSpans(db, spans, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
+						Math.clamp(sampleMultiplier, 1, 64), pageCache, result);
 		long rounded = Math.round(Math.clamp(estimate, 0.0d, (double) db.entries()));
 		long minimum = boundaryEntries > 0 ? boundaryEntries : 1;
 		result.entries = Math.min(db.entries(), Math.max(minimum, rounded));
@@ -217,9 +223,11 @@ final class LmdbBtreeRangeCounter {
 	}
 
 	private double estimateSpans(LmdbDb db, List<SiblingSpan> spans, byte[] minKey, int minKeyLength,
-			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, Map<Long, LmdbPage> pageCache,
+			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, int sampleMultiplier,
+			Map<Long, LmdbPage> pageCache,
 			RangeCountResult stats) throws IOException {
-		int sampleLeafBudget = matcher == null ? SAMPLE_LEAF_BUDGET : RESIDUAL_SAMPLE_LEAF_BUDGET;
+		int sampleLeafBudget = (matcher == null ? SAMPLE_LEAF_BUDGET : RESIDUAL_SAMPLE_LEAF_BUDGET)
+				* sampleMultiplier;
 		int[] probesPerSpan = allocateProbes(db, spans, sampleLeafBudget);
 		long baseSeed = samplingSeed(db, minKey, minKeyLength, maxKey, maxKeyLength);
 		double estimate = 0.0d;
