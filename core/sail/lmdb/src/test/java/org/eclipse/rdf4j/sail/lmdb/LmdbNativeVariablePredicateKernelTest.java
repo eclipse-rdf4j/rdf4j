@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
@@ -112,6 +113,11 @@ class LmdbNativeVariablePredicateKernelTest {
 	}
 
 	private void open(File dataDir, boolean compiled, boolean nodePredicateProjection) {
+		open(dataDir, compiled, nodePredicateProjection, DirectAdjacencyCoverage.FULL);
+	}
+
+	private void open(File dataDir, boolean compiled, boolean nodePredicateProjection,
+			DirectAdjacencyCoverage coverage) {
 		if (compiled) {
 			System.setProperty(COST_CALIBRATION_PROPERTY, "false");
 			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
@@ -129,7 +135,11 @@ class LmdbNativeVariablePredicateKernelTest {
 		}
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,cspo")
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
-				.setDirectAdjacencyMaxBytes(1L << 30);
+				.setDirectAdjacencyMaxBytes(1L << 30)
+				.setDirectAdjacencyCoverage(coverage);
+		if (coverage == DirectAdjacencyCoverage.SELECTED) {
+			config.setDirectAdjacencyPredicates(List.of(TYPE));
+		}
 		LmdbStore sail = new LmdbStore(dataDir, config);
 		repo = new SailRepository(sail);
 		repo.init();
@@ -149,6 +159,69 @@ class LmdbNativeVariablePredicateKernelTest {
 		if (compiled) {
 			assertThat(AdjacencyEngagementTestAccess.buildNow(sail)).isTrue();
 		}
+	}
+
+	@Test
+	void groupedWildcardJoinUsesMixedIrWhenOnlyTypeIsAdjacencyCovered(@TempDir File ordinaryDir,
+			@TempDir File selectedDir) throws Exception {
+		String query = "PREFIX ex: <" + NS + "> "
+				+ "SELECT ?p (COUNT(*) AS ?count) WHERE { "
+				+ "?s a ex:CommonType . ?s ?p ?o } GROUP BY ?p";
+		String rowQuery = "PREFIX ex: <" + NS + "> SELECT ?s ?p ?o WHERE { "
+				+ "?s a ex:CommonType . ?s ?p ?o }";
+
+		open(ordinaryDir, false);
+		List<String> expected;
+		List<String> expectedRows;
+		try {
+			expected = run(query);
+			expectedRows = run(rowQuery);
+		} finally {
+			repo.shutDown();
+			repo = null;
+		}
+
+		enableProjectionFreeWildcard();
+		System.setProperty(LmdbNativeKernelIrTestAccess.WILDCARD_PREDICATES_PROPERTY, "false");
+		long compiledBefore = JaninoPipelineTestAccess.openedAny();
+		open(selectedDir, true, false, DirectAdjacencyCoverage.SELECTED);
+		assertThat(run(query)).containsExactlyElementsOf(expected);
+		assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS)).isTrue();
+		for (int attempt = 0; attempt < 20 && JaninoPipelineTestAccess.openedAny() == compiledBefore; attempt++) {
+			assertThat(run(query)).containsExactlyElementsOf(expected);
+			Thread.onSpinWait();
+		}
+		String executed;
+		try (RepositoryConnection conn = repo.getConnection()) {
+			executed = conn.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+		}
+		assertThat(executed)
+				.as("the covered type scan and LMDB wildcard scan must execute as one mixed IR aggregate%n%s", executed)
+				.contains("nativeExecutionPath=irAggregate")
+				.contains("source: IN_MEMORY_ADJACENCY")
+				.doesNotContain("strategy: NOT_ACTIVATED")
+				.doesNotContain("NOT_ATTEMPTED[no Janino activation point reached]");
+		assertThat(JaninoPipelineTestAccess.openedAny())
+				.as("the LMDB-scan variant must reach a compiled IR bind")
+				.isGreaterThan(compiledBefore);
+
+		long rowCompiledBefore = JaninoPipelineTestAccess.openedAny();
+		assertThat(run(rowQuery)).containsExactlyElementsOf(expectedRows);
+		assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS)).isTrue();
+		for (int attempt = 0; attempt < 20 && JaninoPipelineTestAccess.openedAny() == rowCompiledBefore; attempt++) {
+			assertThat(run(rowQuery)).containsExactlyElementsOf(expectedRows);
+			Thread.onSpinWait();
+		}
+		try (RepositoryConnection conn = repo.getConnection()) {
+			executed = conn.prepareTupleQuery(rowQuery).explain(Explanation.Level.Telemetry).toString();
+		}
+		assertThat(executed)
+				.as("the row-producing form must use the same mixed IR fallback%n%s", executed)
+				.contains("nativeExecutionPath=irKernel")
+				.contains("source: IN_MEMORY_ADJACENCY")
+				.doesNotContain("strategy: NOT_ACTIVATED")
+				.doesNotContain("NOT_ATTEMPTED[no Janino activation point reached]");
+		assertThat(JaninoPipelineTestAccess.openedAny()).isGreaterThan(rowCompiledBefore);
 	}
 
 	@Test

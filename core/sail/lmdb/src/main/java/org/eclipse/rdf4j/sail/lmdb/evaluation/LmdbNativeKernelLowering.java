@@ -353,6 +353,12 @@ final class LmdbNativeKernelLowering {
 	 */
 	static Lowered lowerRows(SlotPlan arg, RowState row, TupleExpr declineTarget, boolean preferScans,
 			java.util.Set<Long> scanPredicates) {
+		return lowerRows(arg, row, declineTarget, preferScans, scanPredicates, false);
+	}
+
+	/** As above, with variable-predicate patterns alone lowered as scans after their shared view refuses binding. */
+	static Lowered lowerRows(SlotPlan arg, RowState row, TupleExpr declineTarget, boolean preferScans,
+			java.util.Set<Long> scanPredicates, boolean scanVariablePredicates) {
 		if (arg == EmptyPlan.INSTANCE) {
 			return lowerRowsWithPlanProducer(arg, row, null);
 		}
@@ -387,7 +393,8 @@ final class LmdbNativeKernelLowering {
 				break;
 			}
 		}
-		return lowerRowCore(arg, core, optionalArms, outerFilters, row, declineTarget, preferScans, scanPredicates);
+		return lowerRowCore(arg, core, optionalArms, outerFilters, row, declineTarget, preferScans, scanPredicates,
+				scanVariablePredicates);
 	}
 
 	/**
@@ -405,6 +412,11 @@ final class LmdbNativeKernelLowering {
 
 	static Lowered lowerDistinctRows(SlotPlan arg, RowState row, TupleExpr declineTarget, boolean preferScans,
 			int[] distinctSlots, java.util.Set<Long> scanPredicates) {
+		return lowerDistinctRows(arg, row, declineTarget, preferScans, distinctSlots, scanPredicates, false);
+	}
+
+	static Lowered lowerDistinctRows(SlotPlan arg, RowState row, TupleExpr declineTarget, boolean preferScans,
+			int[] distinctSlots, java.util.Set<Long> scanPredicates, boolean scanVariablePredicates) {
 		List<MaskedFilter> outerFilters = new ArrayList<>(0);
 		SlotPlan core = arg;
 		while (core instanceof FilterPlan) {
@@ -430,6 +442,7 @@ final class LmdbNativeKernelLowering {
 		Builder builder = new Builder(row, "");
 		builder.preferScans = preferScans;
 		builder.scanPredicates = scanPredicates;
+		builder.scanVariablePredicates = scanVariablePredicates;
 		builder.distinctRetainedMask = retained;
 		List<MaskedFilter> coreFilters = new ArrayList<>(0);
 		if (!builder.lowerJoinOperand(core, coreFilters, row)) {
@@ -475,10 +488,17 @@ final class LmdbNativeKernelLowering {
 	static Lowered lowerOrderedRows(SlotPlan arg, RowState row, boolean preferScans, int[] orderSlots,
 			boolean[] orderAscending, long limit, long offset, boolean strictCompare,
 			java.util.Set<Long> scanPredicates) {
+		return lowerOrderedRows(arg, row, preferScans, orderSlots, orderAscending, limit, offset, strictCompare,
+				scanPredicates, false);
+	}
+
+	static Lowered lowerOrderedRows(SlotPlan arg, RowState row, boolean preferScans, int[] orderSlots,
+			boolean[] orderAscending, long limit, long offset, boolean strictCompare,
+			java.util.Set<Long> scanPredicates, boolean scanVariablePredicates) {
 		if (!outputModsEnabled()) {
 			return null;
 		}
-		Lowered lowered = lowerRows(arg, row, null, preferScans, scanPredicates);
+		Lowered lowered = lowerRows(arg, row, null, preferScans, scanPredicates, scanVariablePredicates);
 		if (lowered == null || lowered.planBridgeReason != null) {
 			// Bridge-fed kernels bring no fusion win over the engine-side sort machinery; let the ladder serve.
 			declineQuiet("order-sink:" + (lowered == null ? "lowering-declined" : "plan-bridge"));
@@ -873,13 +893,29 @@ final class LmdbNativeKernelLowering {
 	 */
 	static Lowered lowerAggregate(SlotPlan arg, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
 			LmdbNativeKernelIr.Having having, TupleExpr declineTarget, boolean preferScans, boolean strictCompare) {
-		Lowered lowered = lowerAggregate(arg, row, groupSlots, aggregates, having, declineTarget, preferScans);
+		return lowerAggregate(arg, row, groupSlots, aggregates, having, declineTarget, preferScans, false,
+				strictCompare);
+	}
+
+	/** Aggregate lowering with only variable-predicate patterns forced onto exact LMDB scans. */
+	static Lowered lowerAggregate(SlotPlan arg, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
+			LmdbNativeKernelIr.Having having, TupleExpr declineTarget, boolean preferScans,
+			boolean scanVariablePredicates, boolean strictCompare) {
+		Lowered lowered = lowerAggregateInternal(arg, row, groupSlots, aggregates, having, declineTarget, preferScans,
+				scanVariablePredicates);
 		return lowered == null ? null : lowered.withStrictOrderCompare(strictCompare);
 	}
 
 	/** As above with a recognized HAVING guard to sink into the aggregate terminal when its output is count-kind. */
 	static Lowered lowerAggregate(SlotPlan arg, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
 			LmdbNativeKernelIr.Having having, TupleExpr declineTarget, boolean preferScans) {
+		return lowerAggregateInternal(arg, row, groupSlots, aggregates, having, declineTarget, preferScans, false);
+	}
+
+	private static Lowered lowerAggregateInternal(SlotPlan arg, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates,
+			LmdbNativeKernelIr.Having having, TupleExpr declineTarget, boolean preferScans,
+			boolean scanVariablePredicates) {
 		// Sticky (EXISTS-bearing) filters never flatten into a MultiJoinPlan — they arrive as FilterPlan wrappers
 		// around the producer. Peel the wrapper chain, collecting the conditions, then lower the core.
 		List<MaskedFilter> filters = new ArrayList<>();
@@ -902,6 +938,7 @@ final class LmdbNativeKernelLowering {
 		}
 		Builder builder = new Builder(row, "agg:");
 		builder.preferScans = preferScans;
+		builder.scanVariablePredicates = scanVariablePredicates;
 		if (core instanceof EmptyPlan) {
 			// Preserve empty global aggregate semantics inside the kernel. An empty domain is a real zero-row producer;
 			// dummy column mappings make aggregate/group references structurally valid, but no value can escape because
@@ -1103,10 +1140,11 @@ final class LmdbNativeKernelLowering {
 	 */
 	private static Lowered lowerRowCore(SlotPlan original, SlotPlan core, List<SlotPlan> optionalArms,
 			List<MaskedFilter> outerFilters, RowState row, TupleExpr declineTarget, boolean preferScans,
-			java.util.Set<Long> scanPredicates) {
+			java.util.Set<Long> scanPredicates, boolean scanVariablePredicates) {
 		Builder builder = new Builder(row, "");
 		builder.preferScans = preferScans;
 		builder.scanPredicates = scanPredicates;
+		builder.scanVariablePredicates = scanVariablePredicates;
 		List<MaskedFilter> coreFilters = new ArrayList<>(0);
 		if (!builder.lowerJoinOperand(core, coreFilters, row)) {
 			return rowDeclineOrBridge(original, row, declineTarget, builder.reason);
@@ -1214,6 +1252,8 @@ final class LmdbNativeKernelLowering {
 		boolean preferScans;
 		/** Predicates whose adjacency views bind time reported unavailable (M10 mixed binding); null = none. */
 		java.util.Set<Long> scanPredicates;
+		/** Bind-time fallback for incomplete wildcard coverage; fixed covered predicates retain adjacency access. */
+		boolean scanVariablePredicates;
 		long assuredMask;
 		String reason;
 
@@ -2338,6 +2378,14 @@ final class LmdbNativeKernelLowering {
 				return false;
 			}
 			if (preferScans && lowerPatternAsScan(pattern)) {
+				return true;
+			}
+			// A wildcard plane needs complete predicate coverage. If binding reports selected or otherwise incomplete
+			// coverage, keep every covered fixed-predicate adjacency and lower only the variable-predicate operators to
+			// exact retained LMDB scans. This is the mixed IR route used by e.g. an in-memory rdf:type extent joined to
+			// ?s ?p ?o; it avoids throwing the entire fused plan back to the nested evaluator.
+			if (scanVariablePredicates && !pattern.p.isConstant() && lowerPatternAsScan(pattern)) {
+				MIXED_BINDING_LOWERINGS.incrementAndGet();
 				return true;
 			}
 			// Per-pattern mixed binding (M10): only the patterns whose predicate's views bind time reported

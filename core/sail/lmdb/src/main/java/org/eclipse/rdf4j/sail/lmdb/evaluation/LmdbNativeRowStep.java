@@ -1181,11 +1181,16 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			arbiter.offer(() -> wrapCursorProposal(row, LmdbNativeParallelPipelines.propose(this, row),
 					this::acceptParallel));
 			arbiter.offer(() -> wrapCursorProposal(row,
+					LmdbNativeKernelExecution.proposeParallelRows(arg, row, originalExpr), this::acceptKernel));
+			arbiter.offer(() -> wrapCursorProposal(row,
 					LmdbNativeKernelExecution.proposeRows(arg, row, originalExpr), this::acceptKernel));
 			if (distinct && orderSlots.length == 0) {
 				// The DISTINCT-sinking kernel replaces input AND dedup in one cursor; it competes here instead of
 				// capturing by ladder position (which starved factorized/batch and generated no cost evidence). The
 				// ORDER BY materializer callers need non-distinct sort slots, hence the orderSlots gate.
+				arbiter.offer(() -> wrapCursorProposal(row,
+						LmdbNativeKernelExecution.proposeParallelDistinctRows(arg, row, originalExpr, sourceSlots),
+						this::acceptDistinctKernel));
 				arbiter.offer(() -> wrapCursorProposal(row,
 						LmdbNativeKernelExecution.proposeDistinctRows(arg, row, originalExpr, sourceSlots),
 						this::acceptDistinctKernel));

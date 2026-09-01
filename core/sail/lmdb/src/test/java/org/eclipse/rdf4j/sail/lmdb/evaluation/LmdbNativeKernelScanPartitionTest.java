@@ -81,6 +81,7 @@ public class LmdbNativeKernelScanPartitionTest {
 			LmdbNativeJaninoCodegen.ENABLED_PROPERTY,
 			"rdf4j.lmdb.nativeQueryEngine.enabled",
 			"rdf4j.lmdb.janinoCodegen.thresholdRows",
+			"rdf4j.lmdb.janinoCodegen.wildcardPredicates",
 			"rdf4j.lmdb.parallel.threads",
 			"rdf4j.lmdb.parallel.minWorkEstimate",
 			"rdf4j.lmdb.parallel.startupWork",
@@ -186,6 +187,7 @@ public class LmdbNativeKernelScanPartitionTest {
 		List<String> expected = rows("SELECT (COUNT(?o) AS ?c) WHERE { ?s ?p ?o }");
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.wildcardPredicates", "false");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
 		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
@@ -198,6 +200,9 @@ public class LmdbNativeKernelScanPartitionTest {
 		assertTrue(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() > parallelBefore,
 				"a scan-rooted aggregate must range-partition its root rather than decline to a single thread");
 		assertEquals(expected, rows("SELECT (COUNT(?o) AS ?c) WHERE { ?s ?p ?o }"));
+		String telemetry = explanation("SELECT (COUNT(?o) AS ?c) WHERE { ?s ?p ?o }");
+		assertTrue(telemetry.contains("irAggregateParallelInterpreted="), telemetry);
+		assertTrue(telemetry.contains("irAggregateWildcardInterpreted="), telemetry);
 	}
 
 	/** The rows-rung twin: the same scan root, streamed instead of aggregated. */
@@ -208,6 +213,7 @@ public class LmdbNativeKernelScanPartitionTest {
 		assertTrue(expected.size() >= STATEMENTS, "expected a populated join result");
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.wildcardPredicates", "false");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
 		System.setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");
@@ -225,6 +231,9 @@ public class LmdbNativeKernelScanPartitionTest {
 						+ LmdbNativeJaninoCodegen.COMPILATIONS.get() + ", compileFailures="
 						+ LmdbNativeJaninoCodegen.COMPILE_FAILURES.get() + ")\n" + explanation(ROWS_SCAN_JOIN));
 		assertEquals(sorted(rows(ROWS_SCAN_JOIN)), sorted(expected));
+		String telemetry = explanation(ROWS_SCAN_JOIN);
+		assertTrue(telemetry.contains("irKernelParallelInterpreted="), telemetry);
+		assertTrue(telemetry.contains("irKernelWildcardInterpreted="), telemetry);
 	}
 
 	private static List<String> sorted(List<String> rows) {

@@ -744,17 +744,20 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				arbiter.offer(() -> LmdbNativeJaninoAggregate.propose(multiJoin, row, groupSlots, aggregates, this,
 						explainTarget));
 			}
-			// Exactly ONE of the two IR-aggregate tags is offered (kernel-interpreter plan, D1): the compiled tag
-			// when janino codegen is enabled, the interpreted tag when only the interpreter tier is available. This
-			// kills the janino-off phantom round and keeps each tier's cost evidence under its own variant keys.
-			// tryEvaluateAggregate picks the execution tier internally either way.
+			// Serial and parallel IR are independent candidates. A parallel bind refusal removes only that proposal;
+			// the arbiter immediately re-ranks the serial kernel and exact fallbacks without replaying partial output.
 			boolean wildcardIr = LmdbNativeKernelExecution.wildcardIrCandidate(arg);
-			String irAggregateTag = LmdbNativeKernelExecution.janinoAdmitted(arg)
+			boolean compiledIr = LmdbNativeKernelExecution.janinoAdmitted(arg);
+			String irAggregateTag = compiledIr
 					? (wildcardIr ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD
 							: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE)
 					: LmdbNativeKernelInterpreter.enabled()
 							? (wildcardIr ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED
 									: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED)
+							: null;
+			String irParallelTag = compiledIr ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL
+					: LmdbNativeKernelInterpreter.enabled()
+							? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED
 							: null;
 			if (irAggregateTag != null && !moreSpecializedStrategyHandlesRow(irAggregateTag, row)) {
 				LmdbNativeWork candidateWork = arg.estimateWork(row, row.boundMask());
@@ -768,8 +771,15 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					}
 				}
 				final LmdbNativeWork irAggregateWork = candidateWork;
+				if (irParallelTag != null && LmdbNativeKernelExecution.aggregateParallelProposalEnabled()) {
+					arbiter.offer(() -> estimatedProposal(
+							() -> LmdbNativeKernelExecution.tryEvaluateAggregateParallel(arg, row, groupSlots,
+									aggregates, this, explainTarget, havingCondition),
+							irParallelTag, LmdbNativeKernelExecution.parallelProposalWork(irAggregateWork),
+							LmdbNativeKernelExecution.parallelStartupWork()));
+				}
 				arbiter.offer(() -> estimatedProposal(() -> {
-					List<BindingSet> result = LmdbNativeKernelExecution.tryEvaluateAggregate(arg, row, groupSlots,
+					List<BindingSet> result = LmdbNativeKernelExecution.tryEvaluateAggregateSerial(arg, row, groupSlots,
 							aggregates, this, explainTarget, havingCondition);
 					if (result != null) {
 						LmdbNativeExplain.recordExecutionPath(explainTarget, irAggregateTag);
@@ -811,6 +821,13 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	private static LmdbNativeStrategyProposal<List<BindingSet>> estimatedProposal(
 			LmdbNativeStrategyProposal.Opener<List<BindingSet>> opener, String tag, LmdbNativeWork estimatedWork) {
 		return new LmdbNativeStrategyProposal<>(opener, estimatedWork, tag, () -> {
+		});
+	}
+
+	private static LmdbNativeStrategyProposal<List<BindingSet>> estimatedProposal(
+			LmdbNativeStrategyProposal.Opener<List<BindingSet>> opener, String tag, LmdbNativeWork estimatedWork,
+			LmdbNativeWork startupWork) {
+		return new LmdbNativeStrategyProposal<>(opener, estimatedWork, startupWork, Double.NaN, tag, () -> {
 		});
 	}
 

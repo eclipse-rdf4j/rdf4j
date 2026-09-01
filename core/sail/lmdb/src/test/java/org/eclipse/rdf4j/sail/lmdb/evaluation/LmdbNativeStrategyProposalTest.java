@@ -28,7 +28,7 @@ class LmdbNativeStrategyProposalTest {
 		double parallel = invokeDouble("parallelCost", 2_000_000D, 8);
 
 		assertThat(batch).isEqualTo(2_000_000D);
-		assertThat(parallel).isEqualTo(500_000D);
+		assertThat(parallel).isEqualTo(275_000D);
 		assertThat(invokeChoice(batch, parallel)).isEqualTo("parallelPipelines");
 	}
 
@@ -37,7 +37,7 @@ class LmdbNativeStrategyProposalTest {
 		double batch = invokeDouble("batchCost", 1_000_000D, 1_000_000D);
 		double parallel = invokeDouble("parallelCost", 2_000_000D, 1);
 
-		assertThat(parallel).isEqualTo(2_250_000D);
+		assertThat(parallel).isEqualTo(2_025_000D);
 		assertThat(invokeChoice(batch, parallel)).isEqualTo("batch");
 	}
 

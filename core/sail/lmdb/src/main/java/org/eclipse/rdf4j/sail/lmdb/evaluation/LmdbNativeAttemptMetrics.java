@@ -84,6 +84,8 @@ public final class LmdbNativeAttemptMetrics {
 	static final String PATH_IR_AGGREGATE_PARALLEL = "irAggregateParallel";
 	static final String PATH_IR_KERNEL_PARALLEL_INTERPRETED = "irKernelParallelInterpreted";
 	static final String PATH_IR_AGGREGATE_PARALLEL_INTERPRETED = "irAggregateParallelInterpreted";
+	static final String PATH_IR_KERNEL_DISTINCT_PARALLEL = "irKernelDistinctParallel";
+	static final String PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED = "irKernelDistinctParallelInterpreted";
 	/**
 	 * The DISTINCT-sinking tiers of the IR row kernel (plan 32 M3/M4): the kernel emits only the distinct key columns
 	 * and owns the dedup, so it replaces input <em>and</em> dedup in one cursor. Separate tags from the plain row
@@ -144,7 +146,8 @@ public final class LmdbNativeAttemptMetrics {
 			PATH_IR_KERNEL_WILDCARD, PATH_IR_KERNEL_WILDCARD_INTERPRETED, PATH_IR_AGGREGATE_WILDCARD,
 			PATH_IR_AGGREGATE_WILDCARD_INTERPRETED, PATH_IR_KERNEL_PARALLEL,
 			PATH_IR_AGGREGATE_PARALLEL, PATH_IR_KERNEL_PARALLEL_INTERPRETED,
-			PATH_IR_AGGREGATE_PARALLEL_INTERPRETED, PATH_IR_KERNEL_DISTINCT,
+			PATH_IR_AGGREGATE_PARALLEL_INTERPRETED, PATH_IR_KERNEL_DISTINCT_PARALLEL,
+			PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED, PATH_IR_KERNEL_DISTINCT,
 			PATH_IR_KERNEL_DISTINCT_INTERPRETED,
 			PATH_WCOJ,
 			PATH_CONSTANT_FALSE_FILTER);

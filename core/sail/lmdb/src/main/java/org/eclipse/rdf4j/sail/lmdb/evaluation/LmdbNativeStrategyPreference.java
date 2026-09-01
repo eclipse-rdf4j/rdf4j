@@ -80,8 +80,10 @@ final class LmdbNativeStrategyPreference {
 			// Parallel IR is the first-class execution family: compiled workers first, then the same kernels served
 			// by the interpreter. Serial IR follows, compiled before interpreted. Cost may still displace any rung.
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD,
@@ -207,6 +209,8 @@ final class LmdbNativeStrategyPreference {
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED:
+		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL:
+		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED:
 		case LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE:
@@ -230,7 +234,9 @@ final class LmdbNativeStrategyPreference {
 		return LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL.equals(family)
 				|| LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED.equals(family)
 				|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL.equals(family)
-				|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED.equals(family);
+				|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED.equals(family)
+				|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL.equals(family)
+				|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED.equals(family);
 	}
 
 	static boolean serialIrFamily(String family) {

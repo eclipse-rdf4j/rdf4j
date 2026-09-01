@@ -20,12 +20,16 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelBindings.FilterHook;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateAdjKeys;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateDomain;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumeratePredicates;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Exists;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterInConstants;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.HashBuild;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.LeftGroup;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainWildcard;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
 
 /**
@@ -149,6 +153,92 @@ final class LmdbNativeKernelPartitions {
 	private static boolean readsDomain(List<Node> pipeline, int domain) {
 		for (Node node : pipeline) {
 			if (readsDomain(node, domain)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * The root producer's projection-free wildcard view when the pipeline is predicate-major and no other operator
+	 * reads that mutable view. Predicate ordinals are an exact partition surface: every plane belongs to one window,
+	 * while the plane's key and payload runs remain intact. {@code NODE_ANY} is deliberately excluded because its
+	 * contract emits at most one witness across the whole predicate domain, not one witness per partition.
+	 */
+	static int partitionableRootWildcard(List<Node> pipeline) {
+		int start = 0;
+		while (start < pipeline.size() && pipeline.get(start) instanceof HashBuild) {
+			start++;
+		}
+		if (start >= pipeline.size()) {
+			return -1;
+		}
+		Node root = pipeline.get(start);
+		int wildcardView;
+		LmdbWildcardPhysicalDemand.Demand demand;
+		if (root instanceof EnumerateWildcard enumerate) {
+			wildcardView = enumerate.view;
+			demand = enumerate.demand;
+			if (enumerate.ctxMatch != null && enumerate.ctxMatch.kind == LmdbNativeKernelIr.Operand.COL) {
+				return -1;
+			}
+		} else if (root instanceof EnumeratePredicates enumerate && enumerate.wildcard) {
+			wildcardView = enumerate.view;
+			demand = enumerate.demand;
+			if (enumerate.key.kind == LmdbNativeKernelIr.Operand.COL
+					|| enumerate.target != null && enumerate.target.kind == LmdbNativeKernelIr.Operand.COL
+					|| enumerate.ctxMatch != null && enumerate.ctxMatch.kind == LmdbNativeKernelIr.Operand.COL) {
+				return -1;
+			}
+		} else {
+			return -1;
+		}
+		if (demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY) {
+			return -1;
+		}
+		for (int i = 0; i < pipeline.size(); i++) {
+			if (i != start && readsWildcard(pipeline.get(i), wildcardView)) {
+				return -1;
+			}
+		}
+		return wildcardView;
+	}
+
+	private static boolean readsWildcard(Node node, int wildcardView) {
+		if (node instanceof EnumerateWildcard enumerate) {
+			return enumerate.view == wildcardView;
+		}
+		if (node instanceof EnumeratePredicates enumerate) {
+			return enumerate.wildcard && enumerate.view == wildcardView;
+		}
+		if (node instanceof SipDomainWildcard probe) {
+			return probe.wildcardView == wildcardView;
+		}
+		if (node instanceof SipKeyWildcard probe) {
+			return probe.wildcardView == wildcardView;
+		}
+		if (node instanceof HashBuild build) {
+			return readsWildcard(build.pipeline, wildcardView);
+		}
+		if (node instanceof Exists exists) {
+			return readsWildcard(exists.pipeline, wildcardView);
+		}
+		if (node instanceof LeftGroup left) {
+			return readsWildcard(left.arm, wildcardView);
+		}
+		if (node instanceof Union union) {
+			for (List<Node> branch : union.branches) {
+				if (readsWildcard(branch, wildcardView)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private static boolean readsWildcard(List<Node> pipeline, int wildcardView) {
+		for (Node node : pipeline) {
+			if (readsWildcard(node, wildcardView)) {
 				return true;
 			}
 		}
@@ -482,6 +572,130 @@ final class LmdbNativeKernelPartitions {
 		@Override
 		public boolean runsNeighborOrdered() {
 			return delegate.runsNeighborOrdered();
+		}
+	}
+
+	/**
+	 * Predicate-ordinal window over one worker-owned wildcard view. The wrapper never owns the delegate: the worker's
+	 * probe closes it after every range has finished. Plane binding is translated to the delegate's global ordinal;
+	 * run handles are consumed before the next bind, exactly as required by {@link NativeLmdbQuerySource.WildcardAdjacency}.
+	 */
+	static final class WildcardPredicateWindow implements NativeLmdbQuerySource.WildcardAdjacency {
+		private final NativeLmdbQuerySource.WildcardAdjacency delegate;
+		private final int from;
+		private final int to;
+
+		WildcardPredicateWindow(NativeLmdbQuerySource.WildcardAdjacency delegate, long from, long to) {
+			if (from < 0L || to < from || to > delegate.predicateCount() || to > Integer.MAX_VALUE) {
+				throw new IllegalArgumentException(
+						"invalid wildcard predicate window: [" + from + ", " + to + ") of "
+								+ delegate.predicateCount());
+			}
+			this.delegate = delegate;
+			this.from = (int) from;
+			this.to = (int) to;
+		}
+
+		@Override
+		public int predicateCount() {
+			return to - from;
+		}
+
+		@Override
+		public long predicateAt(int predicateOrdinal) {
+			if (predicateOrdinal < 0 || predicateOrdinal >= predicateCount()) {
+				throw new IndexOutOfBoundsException("wildcard predicate ordinal " + predicateOrdinal);
+			}
+			return delegate.predicateAt(from + predicateOrdinal);
+		}
+
+		@Override
+		public void bind(int predicateOrdinal) {
+			if (predicateOrdinal < 0 || predicateOrdinal >= predicateCount()) {
+				throw new IndexOutOfBoundsException("wildcard predicate ordinal " + predicateOrdinal);
+			}
+			delegate.bind(from + predicateOrdinal);
+		}
+
+		@Override
+		public int boundPredicateOrdinal() {
+			int ordinal = delegate.boundPredicateOrdinal();
+			return ordinal >= from && ordinal < to ? ordinal - from : -1;
+		}
+
+		@Override
+		public long keyCount() {
+			return delegate.keyCount();
+		}
+
+		@Override
+		public long maximumKey() {
+			return delegate.maximumKey();
+		}
+
+		@Override
+		public long keyAt(long keyOrdinal) {
+			return delegate.keyAt(keyOrdinal);
+		}
+
+		@Override
+		public int findBatch(long[] keys, int keyOffset, int count, long[] runHandles, int runOffset) {
+			return delegate.findBatch(keys, keyOffset, count, runHandles, runOffset);
+		}
+
+		@Override
+		public NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor openKeyRunCursor() {
+			return delegate.openKeyRunCursor();
+		}
+
+		@Override
+		public NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor openKeyRunCursor(long fromOrdinal, long toOrdinal) {
+			return delegate.openKeyRunCursor(fromOrdinal, toOrdinal);
+		}
+
+		@Override
+		public long quadCount() {
+			return delegate.quadCount();
+		}
+
+		@Override
+		public long size(long runHandle) {
+			return delegate.size(runHandle);
+		}
+
+		@Override
+		public long neighborAt(long runHandle, long runOffset) {
+			return delegate.neighborAt(runHandle, runOffset);
+		}
+
+		@Override
+		public long contextAt(long runHandle, long runOffset) {
+			return delegate.contextAt(runHandle, runOffset);
+		}
+
+		@Override
+		public int copyNeighbors(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
+			return delegate.copyNeighbors(runHandle, runOffset, length, target, targetOffset);
+		}
+
+		@Override
+		public int copyContexts(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
+			return delegate.copyContexts(runHandle, runOffset, length, target, targetOffset);
+		}
+
+		@Override
+		public long lowerBound(long runHandle, long fromOffset, long neighbor, long context) {
+			return delegate.lowerBound(runHandle, fromOffset, neighbor, context);
+		}
+
+		@Override
+		public boolean runsNeighborOrdered() {
+			return delegate.runsNeighborOrdered();
+		}
+
+		@Override
+		public void close() {
+			// The worker probe owns and closes the delegate after all of its windows have drained.
 		}
 	}
 }

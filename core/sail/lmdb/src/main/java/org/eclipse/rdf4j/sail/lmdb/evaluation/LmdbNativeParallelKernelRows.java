@@ -98,6 +98,7 @@ final class LmdbNativeParallelKernelRows {
 	 */
 	static RowCursor tryOpen(LmdbNativeKernelLowering.Lowered lowered,
 			NativeLmdbQuerySource.NativeAdjacency[] queryViews,
+			LmdbNativeKernelBindings.VariablePredicateViews queryVariableViews,
 			LmdbNativeKernelBindings.BoundDomains domains, SlotPlan arg, RowState row,
 			TupleExpr explainTarget, Function<LmdbNativeKernelIr.Kernel, JaninoKernel> kernelFactory) {
 		if (!enabled() || !LmdbNativeParallelPipelines.enabled()) {
@@ -143,12 +144,15 @@ final class LmdbNativeParallelKernelRows {
 		int rootAdjacency = LmdbNativeKernelPartitions.partitionableRootAdjacency(lowered.kernel.pipeline);
 		int rootDomain = rootAdjacency >= 0 ? -1
 				: LmdbNativeKernelPartitions.partitionableRootDomain(lowered.kernel.pipeline);
+		int rootWildcard = rootAdjacency < 0 && rootDomain < 0
+				? LmdbNativeKernelPartitions.partitionableRootWildcard(lowered.kernel.pipeline)
+				: -1;
 		// A raw scan root range-partitions instead, the way the interpreted parallel engine partitions any root
 		// pattern scan (plan 32 M3) — a kernel must not lose its parallelism merely for being lowered onto a scan.
-		int rootScan = rootAdjacency < 0 && rootDomain < 0
+		int rootScan = rootAdjacency < 0 && rootDomain < 0 && rootWildcard < 0
 				? LmdbNativeKernelPartitions.partitionableRootScan(lowered.kernel.pipeline)
 				: -1;
-		if (rootAdjacency < 0 && rootDomain < 0 && rootScan < 0) {
+		if (rootAdjacency < 0 && rootDomain < 0 && rootWildcard < 0 && rootScan < 0) {
 			return debugDecline(explainTarget, "root-not-partitionable");
 		}
 		if (rootScan >= 0 && bindings.scanOrders[rootScan] != null) {
@@ -188,8 +192,15 @@ final class LmdbNativeParallelKernelRows {
 				return debugDecline(explainTarget, "root-scan-not-splittable");
 			}
 		} else {
-			rootKeys = rootAdjacency >= 0 ? queryViews[rootAdjacency].keyCount() : domains.length(rootDomain);
-			if (rootKeys < 2L * desiredWorkers) {
+			rootKeys = rootAdjacency >= 0 ? queryViews[rootAdjacency].keyCount()
+					: rootDomain >= 0 ? domains.length(rootDomain)
+							: queryVariableViews.wildcards()[rootWildcard].predicateCount();
+			if (rootWildcard >= 0) {
+				if (rootKeys < 2L) {
+					return debugDecline(explainTarget, "root-too-small");
+				}
+				desiredWorkers = (int) Math.min(desiredWorkers, rootKeys);
+			} else if (rootKeys < 2L * desiredWorkers) {
 				return debugDecline(explainTarget, "root-too-small");
 			}
 		}
@@ -250,7 +261,8 @@ final class LmdbNativeParallelKernelRows {
 		}
 		LmdbNativeKernelIr.Kernel workerKernelFinal = workerKernel;
 		Supplier<JaninoKernel> workerFactory = () -> kernelFactory.apply(workerKernelFinal);
-		return start(lowered, rootAdjacency, rootDomain, rootScan, domains, rootKeys, scanPartitions, sources, threads,
+		return start(lowered, rootAdjacency, rootDomain, rootWildcard, rootScan, domains, rootKeys, scanPartitions,
+				sources, threads,
 				row, workerFactory, reservation, emit, hashLedger);
 	}
 
@@ -261,7 +273,7 @@ final class LmdbNativeParallelKernelRows {
 	 * page before handoff (order is a whole-result property) and returns a materialized cursor.
 	 */
 	private static RowCursor start(LmdbNativeKernelLowering.Lowered lowered, int rootAdjacency, int rootDomain,
-			int rootScan, LmdbNativeKernelBindings.BoundDomains domains, long rootKeys,
+			int rootWildcard, int rootScan, LmdbNativeKernelBindings.BoundDomains domains, long rootKeys,
 			LmdbRootScanPartition[] scanPartitions,
 			NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row,
 			Supplier<JaninoKernel> kernelFactory, LmdbNativeParallelPipelines.TaskReservation reservation, Emit emit,
@@ -287,7 +299,7 @@ final class LmdbNativeParallelKernelRows {
 					try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
 							.inherit(fusedParent);
 							LmdbNativeProbeDeadline.Scope probeScope = LmdbNativeProbeDeadline.inherit(probeParent)) {
-						runWorker(lowered, rootAdjacency, rootDomain, rootScan, domains, source, row, ranges,
+						runWorker(lowered, rootAdjacency, rootDomain, rootWildcard, rootScan, domains, source, row, ranges,
 								scanQueue, output, kernelFactory, failure, cancelled, startup);
 					} catch (Throwable t) {
 						if (!cancelled.get()) {
@@ -478,7 +490,7 @@ final class LmdbNativeParallelKernelRows {
 	}
 
 	private static void runWorker(LmdbNativeKernelLowering.Lowered lowered, int rootAdjacency, int rootDomain,
-			int rootScan, LmdbNativeKernelBindings.BoundDomains domains,
+			int rootWildcard, int rootScan, LmdbNativeKernelBindings.BoundDomains domains,
 			NativeLmdbQuerySource source, RowState consumerRow, Queue<long[]> ranges,
 			Queue<LmdbRootScanPartition> scanQueue,
 			ArrayBlockingQueue<Page> output, Supplier<JaninoKernel> kernelFactory, AtomicReference<Throwable> failure,
@@ -582,6 +594,7 @@ final class LmdbNativeParallelKernelRows {
 				try {
 					NativeLmdbQuerySource.NativeAdjacency[] windowViews = views;
 					LmdbNativeKernelBindings.BoundDomains windowDomains = domains;
+					LmdbNativeKernelBindings.VariablePredicateViews windowVariableViews = variableViews;
 					if (rootScan >= 0) {
 						// the scanner is per worker and re-aimed per unit; the generated code is untouched, exactly as
 						// a key window leaves it untouched for an adjacency root
@@ -590,11 +603,18 @@ final class LmdbNativeParallelKernelRows {
 						windowViews = views.clone();
 						windowViews[rootAdjacency] = new LmdbNativeKernelPartitions.KeyWindowView(views[rootAdjacency],
 								range[0], range[1]);
-					} else {
+					} else if (rootDomain >= 0) {
 						windowDomains = domains.window(rootDomain, range[0], range[1]);
+					} else {
+						NativeLmdbQuerySource.WildcardAdjacency[] wildcards = variableViews.wildcards().clone();
+						wildcards[rootWildcard] = new LmdbNativeKernelPartitions.WildcardPredicateWindow(
+								wildcards[rootWildcard], range[0], range[1]);
+						windowVariableViews = new LmdbNativeKernelBindings.VariablePredicateViews(
+								variableViews.nodePredicates(), variableViews.dynamics(), wildcards);
 					}
 					LmdbNativeJaninoCodegen.bind(kernel,
-							bindings.context(windowViews, windowDomains, workerRow, hooks, scanner, variableViews,
+							bindings.context(windowViews, windowDomains, workerRow, hooks, scanner,
+									windowVariableViews,
 									cancelled::get),
 							"irKernelParallel");
 					int filled;
