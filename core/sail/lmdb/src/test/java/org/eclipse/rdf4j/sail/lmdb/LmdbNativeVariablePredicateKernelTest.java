@@ -55,6 +55,8 @@ class LmdbNativeVariablePredicateKernelTest {
 	private static final IRI S1 = F.createIRI(NS, "s1");
 	private static final IRI S2 = F.createIRI(NS, "s2");
 	private static final IRI G1 = F.createIRI(NS, "g1");
+	private static final IRI TYPE = F.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+	private static final IRI COMMON_TYPE = F.createIRI(NS, "CommonType");
 
 	/** Enough rows that the compiled tier is worth engaging and the threshold is crossed. */
 	private static final int FANOUT = 40;
@@ -128,6 +130,8 @@ class LmdbNativeVariablePredicateKernelTest {
 		repo.init();
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.begin();
+			conn.add(S1, TYPE, COMMON_TYPE);
+			conn.add(S2, TYPE, COMMON_TYPE);
 			for (int i = 0; i < FANOUT; i++) {
 				conn.add(S1, F.createIRI(NS, "p" + i), F.createIRI(NS, "o" + i));
 				conn.add(S1, F.createIRI(NS, "p" + i), F.createIRI(NS, "o" + (i + 1)), G1);
@@ -140,6 +144,66 @@ class LmdbNativeVariablePredicateKernelTest {
 		if (compiled) {
 			assertThat(AdjacencyEngagementTestAccess.buildNow(sail)).isTrue();
 		}
+	}
+
+	@Test
+	void groupedWildcardJoinActivatesTheIrAggregateStrategy(@TempDir File ordinaryDir, @TempDir File compiledDir)
+			throws Exception {
+		String query = "PREFIX ex: <" + NS + "> "
+				+ "SELECT ?p (COUNT(*) AS ?count) WHERE { "
+				+ "?s a ex:CommonType . ?s ?p ?o } GROUP BY ?p";
+
+		open(ordinaryDir, false);
+		List<String> expected;
+		try {
+			expected = run(query);
+		} finally {
+			repo.shutDown();
+			repo = null;
+		}
+
+		System.setProperty(LmdbNativeKernelIrTestAccess.WILDCARD_PREDICATES_PROPERTY, "true");
+		open(compiledDir, true, false);
+		assertThat(run(query)).containsExactlyElementsOf(expected);
+		assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS))
+				.as("the grouped wildcard join must finish compiling")
+				.isTrue();
+		String executed;
+		try (RepositoryConnection conn = repo.getConnection()) {
+			executed = conn.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+		}
+		assertThat(executed)
+				.as("the grouped wildcard join must activate its IR invocation%n%s", executed)
+				.contains("nativeExecutionPath=irAggregateWildcard")
+				.contains("strategy: irAggregateWildcard");
+	}
+
+	@Test
+	void groupedWildcardJoinUsesIrInterpreterBeforeJaninoAdmission(@TempDir File ordinaryDir,
+			@TempDir File interpretedDir) {
+		String query = "PREFIX ex: <" + NS + "> "
+				+ "SELECT ?p (COUNT(*) AS ?count) WHERE { "
+				+ "?s a ex:CommonType . ?s ?p ?o } GROUP BY ?p";
+
+		open(ordinaryDir, false);
+		List<String> expected;
+		try {
+			expected = run(query);
+		} finally {
+			repo.shutDown();
+			repo = null;
+		}
+
+		open(interpretedDir, true, false);
+		assertThat(run(query)).containsExactlyElementsOf(expected);
+		String executed;
+		try (RepositoryConnection conn = repo.getConnection()) {
+			executed = conn.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+		}
+		assertThat(executed)
+				.as("the default-off Janino switch must still leave wildcard IR active%n%s", executed)
+				.contains("nativeExecutionPath=irAggregateWildcardInterpreted")
+				.contains("strategy: irAggregateWildcardInterpreted");
 	}
 
 	@Test

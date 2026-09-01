@@ -766,6 +766,17 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 									: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED)
 							: null;
 			if (irAggregateTag != null && !moreSpecializedStrategyHandlesRow(irAggregateTag, row)) {
+				LmdbNativeWork candidateWork = arg.estimateWork(row, row.boundMask());
+				if (wildcardIr) {
+					LmdbNativeWork physicalWildcardWork = LmdbWildcardPredicateBatch
+							.estimateWeightedAggregateWork(arg, row, groupSlots, aggregates);
+					if (physicalWildcardWork.known()) {
+						// The IR and fallback batch consume the same shared physical demand. Price the IR from that
+						// predicate-plane traversal instead of the generic nested-loop cardinality it replaces.
+						candidateWork = physicalWildcardWork;
+					}
+				}
+				final LmdbNativeWork irAggregateWork = candidateWork;
 				arbiter.offer(() -> estimatedProposal(() -> {
 					List<BindingSet> result = LmdbNativeKernelExecution.tryEvaluateAggregate(arg, row, groupSlots,
 							aggregates, this, explainTarget, havingCondition);
@@ -773,7 +784,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 						LmdbNativeExplain.recordExecutionPath(explainTarget, irAggregateTag);
 					}
 					return result;
-				}, irAggregateTag, arg.estimateWork(row, row.boundMask())));
+				}, irAggregateTag, irAggregateWork));
 			}
 			if (replaySafe && orderedSinglePatternHandlesRow()) {
 				arbiter.offer(() -> estimatedProposal(() -> {
