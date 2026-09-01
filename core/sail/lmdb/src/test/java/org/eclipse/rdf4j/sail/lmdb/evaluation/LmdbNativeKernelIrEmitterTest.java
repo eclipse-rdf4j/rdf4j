@@ -1426,6 +1426,27 @@ class LmdbNativeKernelIrEmitterTest {
 	}
 
 	@Test
+	void fusedSipProbesResumeAcrossSmallOutputBuffers() throws Exception {
+		NativeLmdbQuerySource.NativeAdjacency domainKeys = new FixtureAdjacency(
+				new long[][] { { 1, 100 }, { 4, 100 }, { 9, 100 } });
+		Kernel domainProbe = new Kernel(2,
+				List.of(new SipDomainProbe(0, 0, 0, 1, -1, null, false)), emit(0, 1));
+		Kernel keyProbe = new Kernel(2,
+				List.of(new SipKeyProbe(0, 1, 0, 1, -1, null, false)), emit(0, 1));
+		assertTrue(domainProbe.resumable, "domain-backed SIP probes must retain their batch and run position");
+		assertTrue(keyProbe.resumable, "key-backed SIP probes must retain their cursor, batch, and run position");
+
+		long[][] expected = { { 1, 2 }, { 1, 3 }, { 4, 5 } };
+		for (int maxRows : new int[] { 1, 2, 3, 64 }) {
+			assertRows(drain(domainProbe,
+					context().adjacencies(follows()).domains(new long[] { 1, 4, 9 }), maxRows),
+					expected, "domain SIP drained " + maxRows + " row(s) at a time");
+			assertRows(drain(keyProbe, context().adjacencies(domainKeys, follows()), maxRows),
+					expected, "key SIP drained " + maxRows + " row(s) at a time");
+		}
+	}
+
+	@Test
 	void probeCloseStreamsItsMultiplicityAcrossPauses() throws Exception {
 		// A closed edge (both endpoints known) re-emits the continuation once per matching neighbour. Those repetitions
 		// are indistinguishable rows, so a pause that loses or repeats one is invisible to a single-fill test and only

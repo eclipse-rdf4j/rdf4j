@@ -3241,6 +3241,343 @@ final class LmdbNativeKernelEmitter {
 			body.append(indent).append("}\n");
 		}
 
+		private void emitResumableSipDomainProbe(StringBuilder body, SipDomainProbe probe, String nextTemplate,
+				String batchState, String laneState, String runState, boolean tailmost) {
+			String indent = "        ";
+			int site = sipBatchProbeSite(probe);
+			String adjacency = "a" + probe.probeAdjacency;
+			String decodedCursor = "sipDR" + site;
+			body.append(indent)
+					.append("long[] sipDomain = dom")
+					.append(probe.domain)
+					.append(";\n")
+					.append(indent)
+					.append("int sipDomainOffset = domO")
+					.append(probe.domain)
+					.append(";\n")
+					.append(indent)
+					.append("int sipDomainLength = domL")
+					.append(probe.domain)
+					.append(";\n")
+					.append(indent)
+					.append("if (")
+					.append(batchState)
+					.append(" < 0L) {\n")
+					.append(indent)
+					.append("    ")
+					.append(batchState)
+					.append(" = 0L;\n")
+					.append(indent)
+					.append("    ")
+					.append(laneState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("    ")
+					.append(runState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("}\n")
+					.append(indent)
+					.append("if (sipDecoded")
+					.append(site)
+					.append(") {\n")
+					.append(indent)
+					.append("    for (; ")
+					.append(batchState)
+					.append(" < sipDomainLength; ")
+					.append(batchState)
+					.append("++) {\n")
+					.append(indent)
+					.append("        long sipKey = sipDomain[sipDomainOffset + (int) ")
+					.append(batchState)
+					.append("];\n")
+					.append(indent)
+					.append("        if (")
+					.append(laneState)
+					.append(" < 0L) {\n");
+			if (telemetryEnabled()) {
+				body.append(indent).append("            sipBatchTests").append(site).append("++;\n");
+			}
+			body.append(indent)
+					.append("            ")
+					.append(laneState)
+					.append(" = ")
+					.append(decodedCursor)
+					.append(".bindSize(sipKey);\n")
+					.append(indent)
+					.append("            ")
+					.append(runState)
+					.append(" = 0L;\n");
+			if (telemetryEnabled()) {
+				body.append(indent).append("            if (").append(laneState).append(" < 0L) {\n")
+						.append(indent).append("                sipBatchRejects").append(site).append("++;\n")
+						.append(indent).append("            }\n");
+			}
+			body.append(indent)
+					.append("        }\n")
+					.append(indent)
+					.append("        if (")
+					.append(laneState)
+					.append(" >= 0L) {\n")
+					.append(indent)
+					.append("            v")
+					.append(probe.keyCol)
+					.append(" = sipKey;\n")
+					.append(indent)
+					.append("            for (; ")
+					.append(runState)
+					.append(" < ")
+					.append(laneState)
+					.append("; ")
+					.append(runState)
+					.append("++) {\n")
+					.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+			String decodedInner = emitBoundCtxEntry(body, indent + "                ", probe, decodedCursor, runState);
+			body.append(decodedInner)
+					.append("v")
+					.append(probe.valueCol)
+					.append(" = ")
+					.append(decodedCursor)
+					.append(".neighborAtInt((int) ")
+					.append(runState)
+					.append(");\n")
+					.append(next(nextTemplate, decodedInner));
+			closeCtxEntry(body, indent + "                ", probe);
+			emitPause(body, indent + "                ", runState, tailmost);
+			body.append(indent)
+					.append("            }\n")
+					.append(indent)
+					.append("        }\n")
+					.append(indent)
+					.append("        ")
+					.append(laneState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("        ")
+					.append(runState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("    }\n")
+					.append(indent)
+					.append("} else {\n")
+					.append(indent)
+					.append("    while (")
+					.append(batchState)
+					.append(" < sipDomainLength) {\n")
+					.append(indent)
+					.append("        int sipCount = Math.min(")
+					.append(KEY_CHUNK)
+					.append(", sipDomainLength - (int) ")
+					.append(batchState)
+					.append(");\n")
+					.append(indent)
+					.append("        if (")
+					.append(laneState)
+					.append(" < 0L) {\n")
+					.append(indent)
+					.append("            int sipFound = ")
+					.append(adjacency)
+					.append(".findBatch(sipDomain, sipDomainOffset + (int) ")
+					.append(batchState)
+					.append(", sipCount, sipH")
+					.append(site)
+					.append(", 0);\n");
+			if (telemetryEnabled()) {
+				body.append(indent).append("            sipBatchTests").append(site).append(" += sipCount;\n")
+						.append(indent).append("            sipBatchRejects").append(site)
+						.append(" += sipCount - sipFound;\n");
+			}
+			body.append(indent)
+					.append("            ")
+					.append(laneState)
+					.append(" = 0L;\n")
+					.append(indent)
+					.append("        }\n")
+					.append(indent)
+					.append("        for (; ")
+					.append(laneState)
+					.append(" < sipCount; ")
+					.append(laneState)
+					.append("++) {\n")
+					.append(indent)
+					.append("            long rh = sipH")
+					.append(site)
+					.append("[(int) ")
+					.append(laneState)
+					.append("];\n")
+					.append(indent)
+					.append("            if (rh > 0L) {\n")
+					.append(indent)
+					.append("                v")
+					.append(probe.keyCol)
+					.append(" = sipDomain[sipDomainOffset + (int) ")
+					.append(batchState)
+					.append(" + (int) ")
+					.append(laneState)
+					.append("];\n")
+					.append(indent)
+					.append("                long end = ")
+					.append(adjacency)
+					.append(".size(rh);\n")
+					.append(indent)
+					.append("                if (")
+					.append(runState)
+					.append(" < 0L) { ")
+					.append(runState)
+					.append(" = 0L; }\n")
+					.append(indent)
+					.append("                for (; ")
+					.append(runState)
+					.append(" < end; ")
+					.append(runState)
+					.append("++) {\n")
+					.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+			String genericInner = emitCtxEntry(body, indent + "                    ", probe, adjacency, runState);
+			body.append(genericInner)
+					.append("v")
+					.append(probe.valueCol)
+					.append(" = ")
+					.append(adjacency)
+					.append(".neighborAt(rh, ")
+					.append(runState)
+					.append(");\n")
+					.append(next(nextTemplate, genericInner));
+			closeCtxEntry(body, indent + "                    ", probe);
+			emitPause(body, indent + "                    ", runState, tailmost);
+			body.append(indent)
+					.append("                }\n")
+					.append(indent)
+					.append("                ")
+					.append(runState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("            }\n")
+					.append(indent)
+					.append("        }\n")
+					.append(indent)
+					.append("        ")
+					.append(batchState)
+					.append(" += sipCount;\n")
+					.append(indent)
+					.append("        ")
+					.append(laneState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append("    }\n")
+					.append(indent)
+					.append("}\n")
+					.append(indent)
+					.append(batchState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append(laneState)
+					.append(" = -1L;\n")
+					.append(indent)
+					.append(runState)
+					.append(" = -1L;\n");
+		}
+
+		private void emitResumableSipKeyProbe(StringBuilder body, SipKeyProbe probe, String nextTemplate,
+				String laneState, String countState, String runState, String endState, boolean tailmost) {
+			String indent = "        ";
+			int site = sipBatchProbeSite(probe);
+			String domainAdjacency = "a" + probe.domainAdjacency;
+			String adjacency = "a" + probe.probeAdjacency;
+			String cursor = "sipC" + site;
+			String decodedCursor = "sipDR" + site;
+			body.append(indent).append("if (").append(cursor).append(" == null) {\n")
+					.append(indent).append("    ").append(cursor).append(" = ").append(domainAdjacency)
+					.append(".openKeyRunCursor();\n")
+					.append(indent).append("    ").append(laneState).append(" = -1L;\n")
+					.append(indent).append("    ").append(countState).append(" = -1L;\n")
+					.append(indent).append("    ").append(runState).append(" = -1L;\n")
+					.append(indent).append("    ").append(endState).append(" = -1L;\n")
+					.append(indent).append("}\n")
+					.append(indent).append("while (").append(cursor).append(" != null) {\n")
+					.append(indent).append("    if (").append(countState).append(" < 0L) {\n")
+					.append(indent).append("        ").append(countState).append(" = ").append(cursor)
+					.append(".fillKeys(sipK").append(site).append(", 0, sipK").append(site).append(".length);\n")
+					.append(indent).append("        if (").append(countState).append(" <= 0L) {\n")
+					.append(indent).append("            ").append(cursor).append(".close();\n")
+					.append(indent).append("            ").append(cursor).append(" = null;\n")
+					.append(indent).append("            break;\n")
+					.append(indent).append("        }\n")
+					.append(indent).append("        ").append(laneState).append(" = 0L;\n")
+					.append(indent).append("        if (!sipDecoded").append(site).append(") {\n")
+					.append(indent).append("            int sipFound = ").append(adjacency).append(".findBatch(sipK")
+					.append(site).append(", 0, (int) ").append(countState).append(", sipH").append(site)
+					.append(", 0);\n");
+			if (telemetryEnabled()) {
+				body.append(indent).append("            sipBatchTests").append(site).append(" += ").append(countState)
+						.append(";\n")
+						.append(indent).append("            sipBatchRejects").append(site).append(" += ")
+						.append(countState).append(" - sipFound;\n");
+			}
+			body.append(indent).append("        }\n")
+					.append(indent).append("    }\n")
+					.append(indent).append("    for (; ").append(laneState).append(" < ").append(countState).append("; ")
+					.append(laneState).append("++) {\n")
+					.append(indent).append("        long sipKey = sipK").append(site).append("[(int) ")
+					.append(laneState).append("];\n")
+					.append(indent).append("        if (sipDecoded").append(site).append(") {\n")
+					.append(indent).append("            if (").append(endState).append(" < 0L) {\n");
+			if (telemetryEnabled()) {
+				body.append(indent).append("                sipBatchTests").append(site).append("++;\n");
+			}
+			body.append(indent).append("                ").append(endState).append(" = ").append(decodedCursor)
+					.append(".bindSize(sipKey);\n")
+					.append(indent).append("                ").append(runState).append(" = 0L;\n");
+			if (telemetryEnabled()) {
+				body.append(indent).append("                if (").append(endState).append(" < 0L) {\n")
+						.append(indent).append("                    sipBatchRejects").append(site).append("++;\n")
+						.append(indent).append("                }\n");
+			}
+			body.append(indent).append("            }\n")
+					.append(indent).append("            if (").append(endState).append(" >= 0L) {\n")
+					.append(indent).append("                v").append(probe.keyCol).append(" = sipKey;\n")
+					.append(indent).append("                for (; ").append(runState).append(" < ").append(endState)
+					.append("; ").append(runState).append("++) {\n")
+					.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+			String decodedInner = emitBoundCtxEntry(body, indent + "                    ", probe, decodedCursor, runState);
+			body.append(decodedInner).append("v").append(probe.valueCol).append(" = ").append(decodedCursor)
+					.append(".neighborAtInt((int) ").append(runState).append(");\n")
+					.append(next(nextTemplate, decodedInner));
+			closeCtxEntry(body, indent + "                    ", probe);
+			emitPause(body, indent + "                    ", runState, tailmost);
+			body.append(indent).append("                }\n")
+					.append(indent).append("            }\n")
+					.append(indent).append("        } else {\n")
+					.append(indent).append("            long rh = sipH").append(site).append("[(int) ")
+					.append(laneState).append("];\n")
+					.append(indent).append("            if (rh > 0L) {\n")
+					.append(indent).append("                v").append(probe.keyCol).append(" = sipKey;\n")
+					.append(indent).append("                long end = ").append(adjacency).append(".size(rh);\n")
+					.append(indent).append("                if (").append(runState).append(" < 0L) { ")
+					.append(runState).append(" = 0L; }\n")
+					.append(indent).append("                for (; ").append(runState).append(" < end; ")
+					.append(runState).append("++) {\n")
+					.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+			String genericInner = emitCtxEntry(body, indent + "                    ", probe, adjacency, runState);
+			body.append(genericInner).append("v").append(probe.valueCol).append(" = ").append(adjacency)
+					.append(".neighborAt(rh, ").append(runState).append(");\n")
+					.append(next(nextTemplate, genericInner));
+			closeCtxEntry(body, indent + "                    ", probe);
+			emitPause(body, indent + "                    ", runState, tailmost);
+			body.append(indent).append("                }\n")
+					.append(indent).append("            }\n")
+					.append(indent).append("        }\n")
+					.append(indent).append("        ").append(runState).append(" = -1L;\n")
+					.append(indent).append("        ").append(endState).append(" = -1L;\n")
+					.append(indent).append("    }\n")
+					.append(indent).append("    ").append(laneState).append(" = -1L;\n")
+					.append(indent).append("    ").append(countState).append(" = -1L;\n")
+					.append(indent).append("}\n")
+					.append(indent).append(laneState).append(" = -1L;\n")
+					.append(indent).append(countState).append(" = -1L;\n")
+					.append(indent).append(runState).append(" = -1L;\n")
+					.append(indent).append(endState).append(" = -1L;\n");
+		}
+
 		private void emitResumableSipDomainWildcard(StringBuilder body, SipDomainWildcard probe, String nextTemplate,
 				String predicateState, String batchState, String laneState, String runState, boolean tailmost) {
 			String indent = "        ";
@@ -3681,6 +4018,14 @@ final class LmdbNativeKernelEmitter {
 			String c = "stC" + stateIndex;
 			String d = "stD" + stateIndex;
 			boolean tailmost = tailmostStateIds.get(stateIndex);
+			if (node instanceof SipDomainProbe probe) {
+				emitResumableSipDomainProbe(body, probe, nextTemplate, a, b, c, tailmost);
+				return true;
+			}
+			if (node instanceof SipKeyProbe probe) {
+				emitResumableSipKeyProbe(body, probe, nextTemplate, a, b, c, d, tailmost);
+				return true;
+			}
 			if (node instanceof SipDomainWildcard wildcard
 					&& wildcard.demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
 				emitResumableSipDomainWildcard(body, wildcard, nextTemplate, a, b, c, d, tailmost);

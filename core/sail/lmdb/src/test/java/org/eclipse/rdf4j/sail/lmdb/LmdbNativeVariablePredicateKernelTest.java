@@ -85,6 +85,8 @@ class LmdbNativeVariablePredicateKernelTest {
 		System.clearProperty("rdf4j.lmdb.factorizedTail.enabled");
 		System.clearProperty("rdf4j.lmdb.factorizedRows.enabled");
 		System.clearProperty("rdf4j.lmdb.parallel.enabled");
+		System.clearProperty("rdf4j.lmdb.parallel.minWorkEstimate");
+		System.clearProperty("rdf4j.lmdb.parallel.threads");
 		System.clearProperty("rdf4j.lmdb.irKernelParallel.enabled");
 		System.clearProperty("rdf4j.lmdb.nativeBatch.enabled");
 	}
@@ -175,7 +177,8 @@ class LmdbNativeVariablePredicateKernelTest {
 		assertThat(executed)
 				.as("the grouped wildcard join must activate its IR invocation%n%s", executed)
 				.contains("nativeExecutionPath=irAggregateWildcard")
-				.contains("strategy: irAggregateWildcard");
+				.contains("strategy: irAggregateWildcard")
+				.doesNotContain("strategy: NOT_ACTIVATED");
 	}
 
 	@Test
@@ -203,7 +206,43 @@ class LmdbNativeVariablePredicateKernelTest {
 		assertThat(executed)
 				.as("the default-off Janino switch must still leave wildcard IR active%n%s", executed)
 				.contains("nativeExecutionPath=irAggregateWildcardInterpreted")
-				.contains("strategy: irAggregateWildcardInterpreted");
+				.contains("strategy: irAggregateWildcardInterpreted")
+				.doesNotContain("strategy: NOT_ACTIVATED");
+	}
+
+	@Test
+	void parallelEligibleGroupedWildcardJoinStillArbitratesTheIrKernel(@TempDir File ordinaryDir,
+			@TempDir File compiledDir) throws Exception {
+		String query = "PREFIX ex: <" + NS + "> "
+				+ "SELECT ?p (COUNT(*) AS ?count) WHERE { "
+				+ "?s a ex:CommonType . ?s ?p ?o } GROUP BY ?p";
+
+		open(ordinaryDir, false);
+		List<String> expected;
+		try {
+			expected = run(query);
+		} finally {
+			repo.shutDown();
+			repo = null;
+		}
+
+		System.setProperty(LmdbNativeKernelIrTestAccess.WILDCARD_PREDICATES_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
+		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		open(compiledDir, true, false);
+		assertThat(run(query)).containsExactlyElementsOf(expected);
+		assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS)).isTrue();
+		String executed;
+		try (RepositoryConnection conn = repo.getConnection()) {
+			executed = conn.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+		}
+		assertThat(executed)
+				.as("parallel eligibility must not bypass wildcard IR arbitration%n%s", executed)
+				.contains("nativeExecutionPath=irAggregateWildcard")
+				.contains("strategy: irAggregateWildcard")
+				.doesNotContain("strategy: NOT_ACTIVATED")
+				.doesNotContain("NOT_ATTEMPTED[no Janino activation point reached]");
 	}
 
 	@Test

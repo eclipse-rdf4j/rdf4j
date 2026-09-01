@@ -662,15 +662,6 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		if (existsIntersection != null) {
 			existsIntersection.prepare(source, row);
 		}
-		if (LmdbWildcardPredicateBatch.weightedAggregateCandidate(arg, aggregates)
-				&& LmdbWildcardPredicateBatch.ownsWeightedParallelRound(arg, row, groupSlots, aggregates)) {
-			List<BindingSet> result = evaluateWildcardWeighted(row, new AggContext(source, strictCompare, true),
-					metrics);
-			if (result != null) {
-				return result;
-			}
-		}
-
 		try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter
 				.<List<BindingSet>>forExpr(explainTarget, source)
 				.probeHarness(LmdbNativeProbeHarness.blocking())
@@ -953,6 +944,12 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		}
 		List<BindingSet> results = table.results(this, metrics);
 		metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED);
+		if (row.runtimePlan != null) {
+			SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
+					? ((MultiJoinPlan) arg).derivedPlan(row).order
+					: new SlotPlan[] { arg };
+			row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED, actualOrder);
+		}
 		return results;
 	}
 

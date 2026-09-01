@@ -2596,6 +2596,7 @@ final class LmdbNativeKernelIr {
 	private static boolean isResumableProducer(Node node) {
 		return isStatelessRowNode(node)
 				|| node instanceof EnumerateDomain || node instanceof Probe
+				|| node instanceof SipDomainProbe || node instanceof SipKeyProbe
 				|| node instanceof ScanQuad || node instanceof PlanRows || node instanceof ProbeClose
 				|| node instanceof ProbeVariable
 				|| node instanceof EnumeratePredicates
