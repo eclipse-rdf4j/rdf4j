@@ -39,7 +39,7 @@ final class LmdbNativeStoreCostModel {
 	private final LmdbNativeCostModelContext context;
 	private final LmdbNativePosteriorConfig posteriorConfig;
 	private final LmdbNativeCostPosteriorStore posteriors;
-	private final LmdbNativeBestObservedLedger bestObserved = new LmdbNativeBestObservedLedger();
+	private final LmdbNativeLatestObservedLedger latestObserved = new LmdbNativeLatestObservedLedger();
 	private final LmdbNativeRegimeTracker regimeTracker;
 	private final LmdbNativeChangeDetector changeDetector;
 	private final LmdbNativeSafetyLedger safetyLedger;
@@ -109,12 +109,12 @@ final class LmdbNativeStoreCostModel {
 	}
 
 	/**
-	 * The fastest time each arm has demonstrated per query shape. Sits in front of {@link #posteriors()} at pricing
-	 * time: the posterior answers "how long will this take next time", the ledger answers "how fast has this strategy
-	 * proved it can be", and strategy selection wants the second.
+	 * The latest complete time each arm has demonstrated per query shape. Sits in front of {@link #posteriors()} at
+	 * pricing time: the posterior models a trend, while the ledger answers what the most recent comparable execution
+	 * actually cost.
 	 */
-	LmdbNativeBestObservedLedger bestObserved() {
-		return bestObserved;
+	LmdbNativeLatestObservedLedger latestObserved() {
+		return latestObserved;
 	}
 
 	LmdbNativeRegimeTracker regimeTracker() {

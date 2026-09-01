@@ -63,6 +63,7 @@ final class LmdbNativeParallelPipelines {
 	/** Smallest worthwhile partition; below ~8 morsels the per-partition open cost dominates. */
 	static final long MIN_PARTITION_ROWS = 8192;
 	static final String MIN_WORK_ESTIMATE_PROPERTY = "rdf4j.lmdb.parallel.minWorkEstimate";
+	static final double DEFAULT_MIN_WORK_ESTIMATE = 4_096D;
 
 	private static final AtomicInteger THREAD_IDS = new AtomicInteger();
 	private static final AtomicInteger RESERVED_TASKS = new AtomicInteger();
@@ -307,20 +308,22 @@ final class LmdbNativeParallelPipelines {
 	}
 
 	/**
-	 * The default gate is the measured scheduling intercept in the same work units as {@link MultiJoinPlan#estimate}.
+	 * The admission gate is deliberately lower than the measured scheduling intercept. The intercept remains part of
+	 * proposal pricing, so arbitration can still reject an uneconomic parallel route; admission merely ensures that
+	 * moderately sized plans get a chance to compete instead of being structurally hidden from the arbiter.
 	 */
 	static double minimumWorkEstimate() {
 		String configured = System.getProperty(MIN_WORK_ESTIMATE_PROPERTY);
 		if (configured == null) {
-			return LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST;
+			return DEFAULT_MIN_WORK_ESTIMATE;
 		}
 		try {
 			double parsed = Double.parseDouble(configured);
 			return Double.isFinite(parsed) && parsed >= 0D
 					? parsed
-					: LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST;
+					: DEFAULT_MIN_WORK_ESTIMATE;
 		} catch (NumberFormatException ignored) {
-			return LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST;
+			return DEFAULT_MIN_WORK_ESTIMATE;
 		}
 	}
 

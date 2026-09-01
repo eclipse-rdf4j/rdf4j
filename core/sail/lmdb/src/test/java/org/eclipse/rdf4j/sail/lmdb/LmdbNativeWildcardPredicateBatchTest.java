@@ -37,6 +37,10 @@ class LmdbNativeWildcardPredicateBatchTest {
 	private static final String NATIVE_ENGINE_PROPERTY = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String JANINO_PROPERTY = "rdf4j.lmdb.janinoCodegen.enabled";
 	private static final String JANINO_THRESHOLD_PROPERTY = "rdf4j.lmdb.janinoCodegen.thresholdRows";
+	private static final String KERNEL_INTERPRETER_PROPERTY = "rdf4j.lmdb.kernelInterpreter.enabled";
+	private static final String COST_CALIBRATION_PROPERTY = "rdf4j.lmdb.costCalibration.enabled";
+	private static final String ADAPTIVE_PROBE_PROPERTY = "rdf4j.lmdb.adaptiveProbe.enabled";
+	private static final String ADAPTIVE_HEDGE_PROPERTY = "rdf4j.lmdb.adaptiveHedge.enabled";
 	private static final String NATIVE_BATCH_PROPERTY = "rdf4j.lmdb.nativeBatch.enabled";
 	private static final String NATIVE_BATCH_ROWS_PROPERTY = "rdf4j.lmdb.nativeBatch.rows";
 	private static final String PARALLEL_PROPERTY = "rdf4j.lmdb.parallel.enabled";
@@ -58,6 +62,10 @@ class LmdbNativeWildcardPredicateBatchTest {
 		System.clearProperty(NATIVE_ENGINE_PROPERTY);
 		System.clearProperty(JANINO_PROPERTY);
 		System.clearProperty(JANINO_THRESHOLD_PROPERTY);
+		System.clearProperty(KERNEL_INTERPRETER_PROPERTY);
+		System.clearProperty(COST_CALIBRATION_PROPERTY);
+		System.clearProperty(ADAPTIVE_PROBE_PROPERTY);
+		System.clearProperty(ADAPTIVE_HEDGE_PROPERTY);
 		System.clearProperty(NATIVE_BATCH_PROPERTY);
 		System.clearProperty(NATIVE_BATCH_ROWS_PROPERTY);
 		System.clearProperty(PARALLEL_PROPERTY);
@@ -654,9 +662,13 @@ class LmdbNativeWildcardPredicateBatchTest {
 		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
 		System.setProperty(JANINO_PROPERTY, "true");
 		System.setProperty(JANINO_THRESHOLD_PROPERTY, "0");
+		System.setProperty(KERNEL_INTERPRETER_PROPERTY, "false");
+		System.setProperty(COST_CALIBRATION_PROPERTY, "false");
+		System.setProperty(ADAPTIVE_PROBE_PROPERTY, "false");
+		System.setProperty(ADAPTIVE_HEDGE_PROPERTY, "false");
 		System.setProperty(NATIVE_BATCH_PROPERTY, "true");
 		System.setProperty(LmdbNativeKernelIrTestAccess.WILDCARD_BATCH_PROPERTY, "true");
-		System.setProperty(LmdbNativeKernelIrTestAccess.NODE_PREDICATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeKernelIrTestAccess.NODE_PREDICATES_PROPERTY, "false");
 		System.setProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY, "false");
 		System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, "true");
 

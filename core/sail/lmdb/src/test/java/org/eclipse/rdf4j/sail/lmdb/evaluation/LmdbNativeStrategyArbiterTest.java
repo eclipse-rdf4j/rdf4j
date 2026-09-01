@@ -75,6 +75,7 @@ public class LmdbNativeStrategyArbiterTest {
 		System.clearProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
 		System.clearProperty(LmdbNativeCostCalibration.EXPLORATION_PROPERTY);
 		System.clearProperty(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY);
+		System.clearProperty(LmdbNativeParallelPipelines.MIN_WORK_ESTIMATE_PROPERTY);
 		System.clearProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY);
 	}
 
@@ -232,9 +233,9 @@ public class LmdbNativeStrategyArbiterTest {
 	}
 
 	/**
-	 * Gap-analysis C11: the parallel IR rungs rank directly below their serial siblings and above the last resorts, and
-	 * every execution-path tag the arbiter can select is part of the frozen vocabulary — a tag missing from the ladder
-	 * would silently rank below {@code nestedLoop} the day it becomes a proposal.
+	 * The parallel IR rungs head their families and remain part of the frozen execution-path vocabulary. every
+	 * execution-path tag the arbiter can select is part of the frozen vocabulary — a tag missing from the ladder would
+	 * silently rank below {@code nestedLoop} the day it becomes a proposal.
 	 */
 	@Test
 	public void parallelIrRungsAreRankedAndInTheVocabulary() {
@@ -242,14 +243,16 @@ public class LmdbNativeStrategyArbiterTest {
 				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP)).isTrue();
 		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
 				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP)).isTrue();
-		// The aggregate tier now leads with its PARALLEL rung, reversing gap-analysis C11. C11 placed the parallel
-		// rung below its serial sibling on the shape of the code rather than on a measurement; the parallel arm is
-		// the one measured fastest on the reporting store, and it was losing dispatches to rivals it beat. The row
-		// tier is deliberately NOT changed with it — no row-side measurement motivated a reversal there.
 		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE)).isTrue();
-		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
-				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL)).isTrue();
 		// The interpreted tier of the aggregate kernel ranks directly below its compiled sibling and above the
 		// interpreted fallback ladder (kernel-interpreter plan, D1).
 		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
@@ -264,6 +267,8 @@ public class LmdbNativeStrategyArbiterTest {
 				.contains(LmdbNativeAttemptMetrics.PATH_WCOJ,
 						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
 						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
 						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
 						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED);
 	}
@@ -316,6 +321,19 @@ public class LmdbNativeStrategyArbiterTest {
 		assertThat(LmdbNativeStrategyProposal.parallelStartupCost())
 				.as("an invalid calibration value must retain the safe production default")
 				.isEqualTo(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST);
+	}
+
+	@Test
+	public void parallelWorkAdmissionDefaultsWellBelowTheSchedulingIntercept() {
+		assertThat(LmdbNativeParallelPipelines.minimumWorkEstimate()).isEqualTo(4_096D);
+		assertThat(LmdbNativeParallelPipelines.minimumWorkEstimate())
+				.isLessThan(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST / 4D);
+
+		System.setProperty(LmdbNativeParallelPipelines.MIN_WORK_ESTIMATE_PROPERTY, "512.5");
+		assertThat(LmdbNativeParallelPipelines.minimumWorkEstimate()).isEqualTo(512.5D);
+
+		System.setProperty(LmdbNativeParallelPipelines.MIN_WORK_ESTIMATE_PROPERTY, "not-a-number");
+		assertThat(LmdbNativeParallelPipelines.minimumWorkEstimate()).isEqualTo(4_096D);
 	}
 
 	@Test

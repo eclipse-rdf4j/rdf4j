@@ -117,8 +117,8 @@ final class LmdbNativeAdaptiveArbitration {
 					.append(String.format("%.2f", p.expectedNanos() / 1e6))
 					// The demonstrated floor, when there is one: without it the trace cannot distinguish "priced low
 					// because it ran fast once" from "priced low by a posterior that happens to sit there".
-					.append(p.bestObservedNanos() > 0L
-							? ",bestMs=" + String.format("%.2f", p.bestObservedNanos() / 1e6)
+					.append(p.latestObservedNanos() > 0L
+							? ",latestMs=" + String.format("%.2f", p.latestObservedNanos() / 1e6)
 							: "")
 					.append(p.quarantined() ? ",QUARANTINED" : "");
 		}
@@ -239,13 +239,18 @@ final class LmdbNativeAdaptiveArbitration {
 	 * spent only where the arm's own measurements say a win is plausible, so this can never turn into re-running known
 	 * losers.
 	 */
-	static boolean underConfirmed(LmdbNativeCostPrediction candidate, LmdbNativeCostPrediction incumbent) {
+	static boolean underConfirmed(String candidateFamily, LmdbNativeCostPrediction candidate, String incumbentFamily,
+			LmdbNativeCostPrediction incumbent) {
 		if (neverExecuted(candidate)) {
 			return true;
 		}
 		if (candidate.quarantined() || !candidate.uniformlyPriceable()
 				|| candidate.exactCompletedCount() >= CONFIRMATION_FLOOR) {
 			return false;
+		}
+		if (LmdbNativeStrategyPreference.parallelIrFamily(candidateFamily)
+				&& LmdbNativeStrategyPreference.serialIrFamily(incumbentFamily)) {
+			return true;
 		}
 		return incumbent.uniformlyPriceable() && candidate.expectedNanos() < incumbent.expectedNanos();
 	}
@@ -269,8 +274,10 @@ final class LmdbNativeAdaptiveArbitration {
 				continue;
 			}
 			LmdbNativePhysicalVariantKey key = candidate.candidate.estimate.variantKey();
-			if (LmdbNativeStrategyPreference.mustTryFamily(key.strategyFamily())
-					&& underConfirmed(candidate.prediction, winner.prediction)
+			String family = key.strategyFamily();
+			String winnerFamily = winner.candidate.estimate.variantKey().strategyFamily();
+			if (LmdbNativeStrategyPreference.allowsUnboundedMandatoryTrial(family)
+					&& underConfirmed(family, candidate.prediction, winnerFamily, winner.prediction)
 					&& scheduler.mayProbe(key, regime, epoch)) {
 				return candidate;
 			}
@@ -418,8 +425,10 @@ final class LmdbNativeAdaptiveArbitration {
 			// can never earn the evidence that would let it win. A censoring at the deadline is itself evidence and
 			// hands the arm to the scheduler's cooldown, so this cannot thrash. Among must-try arms the first in
 			// static-preference order wins (priced arrives sorted).
-			boolean mustTry = LmdbNativeStrategyPreference.mustTryFamily(key.strategyFamily())
-					&& underConfirmed(prediction, anchor);
+			String family = key.strategyFamily();
+			String incumbentFamily = incumbent.candidate.estimate.variantKey().strategyFamily();
+			boolean mustTry = LmdbNativeStrategyPreference.mustTryFamily(family)
+					&& underConfirmed(family, prediction, incumbentFamily, anchor);
 			if (mustTry) {
 				if (!bestMustTry) {
 					best = rival;

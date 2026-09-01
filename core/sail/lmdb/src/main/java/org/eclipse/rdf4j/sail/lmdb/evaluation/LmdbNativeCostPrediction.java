@@ -25,7 +25,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 record LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double high95Nanos, double low99Nanos,
 		double high99Nanos, double latentLow99Nanos, double latentHigh99Nanos, PriceBasis priceBasis,
 		boolean learnedDominanceAllowed, boolean quarantined, double nEff, long exactCompletedCount,
-		long bestObservedNanos, EvidenceSource evidenceSource, Components components, String reason) {
+		long latestObservedNanos, EvidenceSource evidenceSource, Components components, String reason) {
 
 	enum PriceBasis {
 		/** Feature model plus learned residual posterior: fully comparable. */
@@ -64,7 +64,7 @@ record LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double 
 				|| low99Nanos > low95Nanos || low95Nanos > expectedNanos || expectedNanos > high95Nanos
 				|| high95Nanos > high99Nanos || latentLow99Nanos > expectedNanos
 				|| expectedNanos > latentHigh99Nanos || !Double.isFinite(nEff) || nEff < 0.0
-				|| exactCompletedCount < 0L || bestObservedNanos < 0L) {
+				|| exactCompletedCount < 0L || latestObservedNanos < 0L) {
 			throw new IllegalArgumentException("invalid prediction interval");
 		}
 		if ((priceBasis == PriceBasis.ORDINAL_ONLY) != (components == null)) {
@@ -101,7 +101,7 @@ record LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double 
 	 * component (conservatively) enters. Either side lacking a numerical basis refuses displacement — that arm-locality
 	 * is what lets one unpriceable candidate coexist with a fully numerical frontier.
 	 * <p>
-	 * When <em>both</em> arms carry a demonstrated best time ({@link LmdbNativeBestObservedLedger}) the confidence
+	 * When <em>both</em> arms carry a latest completed time ({@link LmdbNativeLatestObservedLedger}) the confidence
 	 * machinery is skipped and the two measured times are compared directly against the margin. This is not an
 	 * optimization, it is the point: the confidence test exists to decide whether an <em>estimate</em> of a mean is
 	 * trustworthy, and a time the strategy has actually achieved is not an estimate. Keeping the test would defeat the
@@ -116,9 +116,9 @@ record LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double 
 				|| !challenger.learnedDominanceAllowed || challenger.quarantined) {
 			return false;
 		}
-		if (challenger.bestObservedNanos > 0L && incumbent.bestObservedNanos > 0L) {
-			return Math.log((double) challenger.bestObservedNanos)
-					- Math.log((double) incumbent.bestObservedNanos) < -logGamma;
+		if (challenger.latestObservedNanos > 0L && incumbent.latestObservedNanos > 0L) {
+			return Math.log((double) challenger.latestObservedNanos)
+					- Math.log((double) incumbent.latestObservedNanos) < -logGamma;
 		}
 		return pairwiseDeltaMean(challenger, incumbent)
 				+ Z99 * Math.sqrt(pairwiseDeltaVariance(challenger, incumbent)) < -logGamma;

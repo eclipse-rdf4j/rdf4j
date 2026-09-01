@@ -34,7 +34,6 @@ import org.junit.jupiter.api.Test;
  * </ul>
  */
 class LmdbNativeStrategyPreferenceOrderTest {
-
 	/**
 	 * Every rung the wildcard-predicate tags must outrank: the whole aggregate and row kernel apparatus below them.
 	 * Deliberately spelled out rather than derived from the ladder itself — a test that reads its expectation out of
@@ -125,6 +124,45 @@ class LmdbNativeStrategyPreferenceOrderTest {
 				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD,
 				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED,
 				LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_BATCH);
+	}
+
+	@Test
+	void everyParallelIrTierHeadsThePreferenceLadder() {
+		List<String> compiledParallel = List.of(
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL);
+		List<String> interpretedParallel = List.of(
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED);
+		List<String> remainingIr = List.of(
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED);
+
+		for (String compiled : compiledParallel) {
+			for (String interpreted : interpretedParallel) {
+				assertTrue(LmdbNativeStrategyPreference.rank(compiled) < LmdbNativeStrategyPreference.rank(interpreted),
+						compiled + " must outrank interpreted parallel " + interpreted);
+			}
+		}
+		for (String interpreted : interpretedParallel) {
+			for (String serial : remainingIr) {
+				assertTrue(LmdbNativeStrategyPreference.rank(interpreted) < LmdbNativeStrategyPreference.rank(serial),
+						interpreted + " must outrank serial IR " + serial);
+			}
+		}
+		int lastIr = remainingIr.stream()
+				.mapToInt(LmdbNativeStrategyPreference::rank)
+				.max()
+				.orElseThrow();
+		assertTrue(lastIr < LmdbNativeStrategyPreference.rank(LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION));
 	}
 
 	private static void assertRanksAscending(String... tags) {

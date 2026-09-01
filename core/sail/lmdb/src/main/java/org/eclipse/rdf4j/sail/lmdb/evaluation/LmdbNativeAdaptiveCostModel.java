@@ -144,21 +144,21 @@ final class LmdbNativeAdaptiveCostModel {
 			return LmdbNativeCostPrediction.ordinalOnly("no comparable features and no timing evidence");
 		}
 		LmdbNativeCostPosteriorStore.Reading reading = quote.reading;
-		// A time this arm has actually achieved for this query shape replaces the posterior's smoothed central
-		// estimate outright (see LmdbNativeBestObservedLedger). meanLog is set so that logBase + meanLog is exactly
-		// log(best), which is the quantity pairwiseDeltaMean compares; varExact collapses to its floor because a
-		// demonstrated time carries no per-arm estimation uncertainty. The family and global variances stay as they
+		// The latest complete time for this arm and query shape replaces the posterior's smoothed central estimate
+		// outright (see LmdbNativeLatestObservedLedger). meanLog is set so that logBase + meanLog is exactly
+		// log(latest), which is the quantity pairwiseDeltaMean compares; varExact collapses to its floor because a
+		// direct time carries no per-arm estimation uncertainty. The family and global variances stay as they
 		// are: they are shared with sibling arms and cancel in pairwise comparison.
-		long bestObservedNanos = store.bestObserved().bestNanos(quote.exactKey, quote.epoch);
-		boolean latched = bestObservedNanos > 0L;
-		double meanLog = latched ? Math.log((double) bestObservedNanos) - quote.logBase : reading.meanLog();
-		double expected = latched ? bestObservedNanos : finite(Math.exp(quote.logBase + meanLog));
+		long latestObservedNanos = store.latestObserved().latestNanos(quote.exactKey, quote.epoch);
+		boolean measured = latestObservedNanos > 0L;
+		double meanLog = measured ? Math.log((double) latestObservedNanos) - quote.logBase : reading.meanLog();
+		double expected = measured ? latestObservedNanos : finite(Math.exp(quote.logBase + meanLog));
 		double structuralVariance = estimate.structuralUncertainty() * estimate.structuralUncertainty();
 		// Structural uncertainty is per-arm and lands in the exact component; the machine model's uncertainty is a
 		// SHARED base for every same-lane arm (their logBase comes from the same coefficients), so it lands in the
 		// global component where pairwise comparison cancels it — putting it per-arm would double-count shared
 		// uncertainty and re-create the "measured 100x gaps never separate" failure.
-		double varExact = latched ? store.posteriorConfig().varianceFloorExact()
+		double varExact = measured ? store.posteriorConfig().varianceFloorExact()
 				: reading.exact().epistemicVariance + structuralVariance;
 		double varFamily = reading.family().epistemicVariance;
 		double varGlobal = reading.global().epistemicVariance + quote.machineLogVariance;
@@ -177,14 +177,14 @@ final class LmdbNativeAdaptiveCostModel {
 		LmdbNativeCostPrediction.EvidenceSource source = evidenceSource(quote);
 		boolean quarantined = store.probeScheduler()
 				.quarantined(estimate.variantKey(), regime, quote.epoch);
-		// A latched arm has been directly timed to completion, so neither the machine model's readiness nor the
+		// A measured arm has been directly timed to completion, so neither the machine model's readiness nor the
 		// posterior's effective evidence is the question any more — the readiness gates exist to stop an arm priced
 		// from priors alone from displacing a measured one, and this arm IS the measurement.
 		boolean learnedAllowed = configuration.enabled && !quarantined
-				&& (latched || (quote.lane == LmdbNativeCostPosteriorStore.Lane.RESIDUAL
+				&& (measured || (quote.lane == LmdbNativeCostPosteriorStore.Lane.RESIDUAL
 						? quote.machinePrediction.adaptiveReady()
 						: reading.nEff() >= 1.0));
-		String reason = latched ? "best demonstrated execution for this query shape"
+		String reason = measured ? "latest completed execution for this query shape"
 				: quote.lane == LmdbNativeCostPosteriorStore.Lane.RESIDUAL
 						? "feature model with learned residual posterior"
 						: "direct timing posterior";
@@ -196,7 +196,7 @@ final class LmdbNativeAdaptiveCostModel {
 				: LmdbNativeCostPrediction.PriceBasis.DIRECT_POSTERIOR;
 		return new LmdbNativeCostPrediction(Math.min(low95, expected), expected, high95, Math.min(low99, low95),
 				high99, latentLow99, latentHigh99, basis, learnedAllowed, quarantined, reading.nEff(),
-				reading.exact().completedCount, bestObservedNanos, source, components, reason);
+				reading.exact().completedCount, latestObservedNanos, source, components, reason);
 	}
 
 	/**
@@ -218,7 +218,7 @@ final class LmdbNativeAdaptiveCostModel {
 		}
 		LmdbNativeCostPrediction before = predictFor(estimate, regime);
 		Quote quote = quote(estimate, regime);
-		boolean severe = !latched(quote) && before.uniformlyPriceable()
+		boolean severe = !directlyMeasured(quote) && before.uniformlyPriceable()
 				&& before.nEff() >= SEVERE_MISS_EVIDENCE_FLOOR && elapsedNanos > before.high99Nanos();
 		if (TRACE) {
 			System.err.printf(
@@ -266,7 +266,7 @@ final class LmdbNativeAdaptiveCostModel {
 		}
 		LmdbNativeCostPrediction before = predictFor(estimate, regime);
 		Quote quote = quote(estimate, regime);
-		boolean severeMiss = !latched(quote) && before.uniformlyPriceable()
+		boolean severeMiss = !directlyMeasured(quote) && before.uniformlyPriceable()
 				&& before.nEff() >= SEVERE_MISS_EVIDENCE_FLOOR && deadlineNanos > before.high99Nanos();
 		if (TRACE) {
 			System.err.printf("[cost-trace] CENSORED %s lane=%s regime=%s boundMs=%.3f beforeExpMs=%.3f nEff=%.1f%n",
@@ -296,31 +296,28 @@ final class LmdbNativeAdaptiveCostModel {
 	}
 
 	/**
-	 * Offers one execution to the best-observed ledger, which keeps it only if it beats what this arm has already
-	 * demonstrated for this query shape. Separate from {@link #recordCompleted} on purpose: the posterior trains on
-	 * every eligible completion, while the ledger accepts only a full, non-probe drain — a LIMIT-truncated close
-	 * measures a fraction of the answer and a bounded probe stops at its private row buffer, and a floor set from
-	 * either could never be corrected because the ledger only moves downward. Deciding that is the caller's job,
-	 * because only {@link LmdbNativeCostObservation} knows the completion kind and the dispatch role.
+	 * Offers one execution to the latest-observed ledger. Separate from {@link #recordCompleted} on purpose: the
+	 * posterior trains on every eligible completion, while the ledger accepts only a full, non-probe drain — a
+	 * LIMIT-truncated close measures a fraction of the answer and a bounded probe stops at its private row buffer, so
+	 * neither is comparable to a whole query. Deciding that is the caller's job, because only
+	 * {@link LmdbNativeCostObservation} knows the completion kind and the dispatch role.
 	 */
-	void noteBestObserved(LmdbNativeCostEstimate estimate, double elapsedNanos, LmdbNativeRegimeKey regime) {
+	void noteLatestObserved(LmdbNativeCostEstimate estimate, double elapsedNanos, LmdbNativeRegimeKey regime) {
 		Objects.requireNonNull(estimate, "estimate");
 		Objects.requireNonNull(regime, "regime");
 		if (!configuration.record || !Double.isFinite(elapsedNanos) || elapsedNanos <= 0.0) {
 			return;
 		}
 		Quote quote = quote(estimate, regime);
-		store.bestObserved().observe(quote.exactKey, (long) elapsedNanos, quote.epoch);
+		store.latestObserved().observe(quote.exactKey, (long) elapsedNanos, quote.epoch);
 	}
 
 	/**
-	 * Whether this arm is priced at a demonstrated floor. Such an arm exceeds its own predictive 99% bound on every
-	 * ordinary run, so the severe-miss escalation would quarantine it immediately after the fast run that earned the
-	 * floor — and a quarantined arm refuses to displace anything, which is precisely the lock-out the ledger exists to
-	 * prevent. A run slower than one the arm has already achieved is not evidence that it has degraded.
+	 * Whether this arm has a directly measured full-run price. Completed runs replace that price after posterior
+	 * training, so severe-miss quarantine must not block the ordinary update that makes a slower latest run actionable.
 	 */
-	private boolean latched(Quote quote) {
-		return store.bestObserved().bestNanos(quote.exactKey, quote.epoch) > 0L;
+	private boolean directlyMeasured(Quote quote) {
+		return store.latestObserved().latestNanos(quote.exactKey, quote.epoch) > 0L;
 	}
 
 	/**

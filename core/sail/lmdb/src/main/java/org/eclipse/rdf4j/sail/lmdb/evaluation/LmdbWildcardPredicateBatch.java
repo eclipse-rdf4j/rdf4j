@@ -1340,7 +1340,10 @@ final class LmdbWildcardPredicateBatch {
 			if (!enabled() || physicalDemand.ordered() || join.children.length == 0) {
 				return null;
 			}
-			for (int wildcardIndex = 0; wildcardIndex < join.children.length; wildcardIndex++) {
+			// Prefer the deepest eligible wildcard. Its prefix then contains the earlier wildcard stages whose
+			// outputs bind this stage's root, allowing openPrefix to vectorize the dependency chain recursively.
+			// Choosing the first eligible stage strands a later dependent wildcard in an unbound prefix.
+			for (int wildcardIndex = join.children.length - 1; wildcardIndex >= 0; wildcardIndex--) {
 				if (!(join.children[wildcardIndex]instanceof PatternPlan wildcard)
 						|| !batchEligible(wildcard)) {
 					continue;

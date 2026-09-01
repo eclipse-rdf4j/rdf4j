@@ -352,6 +352,88 @@ class LmdbNativeAdaptiveArbitrationTest {
 		probe.reservation().refund();
 	}
 
+	/**
+	 * A serial IR win must not permanently settle the parallel sibling after one slower warm-up completion. Parallel
+	 * startup, compilation and worker scheduling are exactly the effects that need a few real executions before the
+	 * latest-run comparison is meaningful, so the parallel arm remains mandatory until the shared confirmation floor.
+	 */
+	@Test
+	void serialIrWinnerRearmsUnderConfirmedParallelSibling() {
+		for (String[] pair : new String[][] {
+				{ LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE },
+				{ LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED },
+				{ LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL },
+				{ LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED }
+		}) {
+			LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+			LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
+					new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+			LmdbNativeAdaptiveArbitration.Priced<String> parallel = pricedWithCompletions(pair[0], 0,
+					150_000_000, 200_000_000, 300_000_000, 1);
+			LmdbNativeAdaptiveArbitration.Priced<String> serial = pricedWithCompletions(pair[1], 1,
+					80_000_000, 100_000_000, 130_000_000, 6);
+
+			assertSame(parallel, LmdbNativeAdaptiveArbitration.mustTryUnderConfirmed(List.of(parallel, serial), serial,
+					model), pair[1] + " must re-arm its under-confirmed parallel sibling " + pair[0]);
+		}
+	}
+
+	@Test
+	void confirmedParallelSiblingIsNotRetriedForever() {
+		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		LmdbNativeAdaptiveArbitration.Priced<String> parallel = pricedWithCompletions(
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL, 0,
+				150_000_000, 200_000_000, 300_000_000, LmdbNativeAdaptiveArbitration.CONFIRMATION_FLOOR);
+		LmdbNativeAdaptiveArbitration.Priced<String> serial = pricedWithCompletions(
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 1,
+				80_000_000, 100_000_000, 130_000_000, 6);
+
+		assertSame(null, LmdbNativeAdaptiveArbitration.mustTryUnderConfirmed(List.of(parallel, serial), serial,
+				model), "a confirmed slower parallel arm must settle until the regime changes");
+	}
+
+	/** The named specialist matrix is explored under a deadline with the known winner retained as fallback. */
+	@Test
+	void specialistFamiliesReceiveMandatoryBoundedTrialsWithFallback() {
+		for (String family : List.of(
+				LmdbNativeAttemptMetrics.PATH_WCOJ,
+				LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
+				LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
+				LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT,
+				LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS,
+				LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED)) {
+			LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+			LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
+					new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+			LmdbNativeAdaptiveArbitration.Priced<String> incumbent = pricedWithCompletions(
+					LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 0,
+					80_000_000, 100_000_000, 130_000_000, 6);
+			LmdbNativeAdaptiveArbitration.Priced<String> specialist = pricedWithFamilyEvidence(family, 1,
+					50_000_000, 90_000_000, 150_000_000);
+			assertSame(null,
+					LmdbNativeAdaptiveArbitration.mustTryUnderConfirmed(List.of(incumbent, specialist), incumbent,
+							model),
+					family + " must not replace the known winner without a bounded fallback harness");
+
+			LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<String> probe = LmdbNativeAdaptiveArbitration.maybeProbe(
+					List.of(incumbent, specialist), incumbent, model,
+					new LmdbNativeAdaptiveArbitration.ProbeContext(LmdbNativeProbeConfig.defaults(),
+							new LmdbNativeQueryProbeBudget(), true));
+
+			assertSame(specialist.candidate(), probe == null ? null : probe.trial(),
+					family + " must receive a bounded first trial");
+			assertSame(incumbent.candidate(), probe == null ? null : probe.fallback(),
+					family + " must retain the measured winner as fallback");
+			probe.reservation().refund();
+		}
+	}
+
 	@Test
 	void exactStructuralIntersectionDoesNotRunAnUnboundedEngineTrial() {
 		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();

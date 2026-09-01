@@ -42,10 +42,9 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * and position said packed f-tree. Two changes together fix it. The rungs moved — note that the packed f-tree entries
  * were pushed <em>down</em> below the kernel tiers rather than the kernel tiers being pulled up, because pulling them
  * up would also lift them over the factorized and batch rungs, which is itself a documented past regression. And
- * pricing changed underneath: {@link LmdbNativeBestObservedLedger} quotes each arm at the fastest time it has
- * demonstrated for the query shape rather than at an average of its runs, so a measured 2x win now separates and this
- * order decides progressively less as evidence accumulates. Both were needed — the ladder alone only relocates which
- * strategy wins by position.
+ * pricing changed underneath: {@link LmdbNativeLatestObservedLedger} quotes each arm at its latest complete run rather
+ * than at an average of its runs, so a measured win now separates and this order decides progressively less as evidence
+ * accumulates. Both were needed — the ladder alone only relocates which strategy wins by position.
  * <p>
  * <b>One qualification, from measurement.</b> Calibration (2026-07-26) showed the kernels are not <em>purely</em>
  * constant-factor reducers. The ceiling on operator fusion alone is 1.48x on an isolated cyclic shape, yet whole-query
@@ -78,21 +77,30 @@ final class LmdbNativeStrategyPreference {
 	// nanos/rows evidence (nativeBareDirect*Actual) keeps the route auditable; revisit with memoized first-call
 	// arbitration if that evidence shows losses.
 	private static final String[] ORDER = {
+			// Parallel IR is the first-class execution family: compiled workers first, then the same kernels served
+			// by the interpreter. Serial IR follows, compiled before interpreted. Cost may still displace any rung.
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION,
 			LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE,
 			LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
 			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
 			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED,
 			LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_BATCH,
 			LmdbNativeAttemptMetrics.PATH_WCOJ,
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
 			LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS,
 			LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT,
@@ -105,11 +113,6 @@ final class LmdbNativeStrategyPreference {
 			LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION,
 			LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES,
 			LmdbNativeAttemptMetrics.PATH_CHUNK_PIPELINE,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
 			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
 			LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT,
 			LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,
@@ -171,16 +174,23 @@ final class LmdbNativeStrategyPreference {
 	}
 
 	/**
-	 * Families the arbiter must eventually EXECUTE rather than starve behind measured rivals: the engine's own kernel
-	 * tiers (Janino-compiled and interpreted, row and aggregate, distinct rungs, and the legacy compiled aggregate). A
-	 * must-try arm that has never executed in the current regime bypasses the probe value gate — its first run is
-	 * mandatory, not value-optional — because a starved arm can never earn the evidence that would let it win. Regime
-	 * shifts re-arm these retries structurally: the adjacency store publishing, kernel compiles settling, or a
-	 * data-generation bump each change the {@link LmdbNativeRegimeKey}, whose fresh posterior nodes carry no exact
-	 * evidence, so the kernel tiers are re-tried under the new conditions (adjacency-backed, compiled) exactly once
-	 * they become available.
+	 * Families the arbiter must eventually execute rather than starve behind measured rivals. This includes the
+	 * engine's own IR tiers and the bounded specialist matrix whose applicability is expressed by whether a proposal
+	 * was offered for the current shape. A must-try arm bypasses the probe value gate because a starved arm can never
+	 * earn the evidence that would let it win. Regime shifts re-arm these retries structurally: the adjacency store
+	 * publishing, kernel compiles settling, or a data-generation bump each change the {@link LmdbNativeRegimeKey},
+	 * whose fresh posterior nodes carry no exact evidence.
 	 */
 	static boolean mustTryFamily(String family) {
+		return engineIrFamily(family) || boundedSpecialistFamily(family);
+	}
+
+	/** Engine tiers may still receive a mandatory full trial at sites that cannot host a bounded probe. */
+	static boolean allowsUnboundedMandatoryTrial(String family) {
+		return engineIrFamily(family);
+	}
+
+	private static boolean engineIrFamily(String family) {
 		if (family == null) {
 			return false;
 		}
@@ -190,11 +200,13 @@ final class LmdbNativeStrategyPreference {
 		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD:
 		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED:
 		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL:
+		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL:
+		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED:
 		case LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE:
@@ -202,5 +214,32 @@ final class LmdbNativeStrategyPreference {
 		default:
 			return false;
 		}
+	}
+
+	private static boolean boundedSpecialistFamily(String family) {
+		if (family == null) {
+			return false;
+		}
+		return switch (family) {
+		case LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE, LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT, LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS, LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED -> true;
+		default -> false;
+		};
+	}
+
+	static boolean parallelIrFamily(String family) {
+		return LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL.equals(family)
+				|| LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED.equals(family)
+				|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL.equals(family)
+				|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED.equals(family);
+	}
+
+	static boolean serialIrFamily(String family) {
+		if (family == null) {
+			return false;
+		}
+		return switch (family) {
+		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_KERNEL, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED -> true;
+		default -> false;
+		};
 	}
 }

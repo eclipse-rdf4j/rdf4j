@@ -322,14 +322,18 @@ final class LmdbNativeKernelExecution {
 							workerKernelFactory(interpretedExecution, observedRowsForVariants,
 									LmdbNativeKernelInterpreter::forAggregate));
 			if (parallel != null) {
+				String parallelRoute = interpretedExecution
+						? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED
+						: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL;
 				AGG_OPENED.incrementAndGet();
 				AGG_ROWS.addAndGet(parallel.size());
+				LmdbNativeExplain.recordExecutionPath(explainTarget, parallelRoute);
 				if (row.runtimePlan != null) {
 					SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
 							? ((MultiJoinPlan) arg).derivedPlan(row).order
 							: new SlotPlan[] { arg };
 					row.runtimePlan.janinoActivated(activationRoute(route + "Parallel", lowered), actualOrder);
-					row.runtimePlan.activate(pathTag, actualOrder);
+					row.runtimePlan.activate(parallelRoute, actualOrder);
 				}
 				return parallel;
 			}
@@ -895,10 +899,13 @@ final class LmdbNativeKernelExecution {
 					workerKernelFactory(interpretedVariants, observedRowsForVariants,
 							LmdbNativeKernelInterpreter::forRows));
 			if (parallel != null) {
+				String parallelRoute = interpretedVariants
+						? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED
+						: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL;
 				OPENED.incrementAndGet();
 				// The engaged strategy is the parallel rung, not its serial sibling: record it so explain output
 				// distinguishes a parallel capture from the serial kernel the arbiter actually priced.
-				LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL);
+				LmdbNativeExplain.recordExecutionPath(originalExpr, parallelRoute);
 				if (row.runtimePlan != null) {
 					SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
 							? ((MultiJoinPlan) arg).derivedPlan(row).order
@@ -906,7 +913,7 @@ final class LmdbNativeKernelExecution {
 					row.runtimePlan.janinoActivated(
 							activationRoute(route + (ordered == null ? "Parallel" : "ParallelTopK"), lowered),
 							actualOrder);
-					row.runtimePlan.activate(pathTag, actualOrder);
+					row.runtimePlan.activate(parallelRoute, actualOrder);
 				}
 				return parallel;
 			}
