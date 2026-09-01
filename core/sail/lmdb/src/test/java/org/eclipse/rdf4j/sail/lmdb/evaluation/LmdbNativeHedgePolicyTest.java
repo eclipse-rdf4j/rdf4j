@@ -250,7 +250,7 @@ class LmdbNativeHedgePolicyTest {
 				LmdbNativeFamilyShapeKey.of(key), 0.0, Math.log(expected), 0.0, 0.0, sigma * sigma, 0.0);
 		return new LmdbNativeCostPrediction(low95, expected, high95, low99, high99, Math.min(low99, expected),
 				Math.max(high99, expected), LmdbNativeCostPrediction.PriceBasis.DIRECT_POSTERIOR, true, false,
-				evidence, evidence, LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT, components, "test");
+				evidence, evidence, 0L, LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT, components, "test");
 	}
 
 	/** A priced prediction whose predictive log-law is exactly N(mu, s^2) for the conditional-quantile check. */
@@ -267,7 +267,7 @@ class LmdbNativeHedgePolicyTest {
 				LmdbNativeRegimeKey.STEADY, LmdbNativeCostPosteriorStore.Lane.DIRECT,
 				LmdbNativeFamilyShapeKey.of(key), 0.0, mu, 0.0, 0.0, s * s * 0.5, s * s * 0.5);
 		return new LmdbNativeCostPrediction(low95, expected, high95, low99, high99, low99, high99,
-				LmdbNativeCostPrediction.PriceBasis.DIRECT_POSTERIOR, true, false, 64.0, 64L,
+				LmdbNativeCostPrediction.PriceBasis.DIRECT_POSTERIOR, true, false, 64.0, 64L, 0L,
 				LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT, components, "test");
 	}
 

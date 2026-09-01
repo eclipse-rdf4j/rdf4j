@@ -196,7 +196,7 @@ class LmdbNativeHedgeEvidenceTest {
 				LmdbNativeFamilyShapeKey.of(key), 0.0, Math.log(expected), 0.0, 0.0, 0.01, 0.0);
 		LmdbNativeCostPrediction prediction = new LmdbNativeCostPrediction(expected * 0.8, expected, expected * 1.2,
 				expected * 0.7, expected * 1.4, expected * 0.7, expected * 1.4,
-				LmdbNativeCostPrediction.PriceBasis.DIRECT_POSTERIOR, true, quarantined, 64.0, 64L,
+				LmdbNativeCostPrediction.PriceBasis.DIRECT_POSTERIOR, true, quarantined, 64.0, 64L, 0L,
 				LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT, components, "test");
 		return new LmdbNativeAdaptiveArbitration.Priced<>(
 				new LmdbNativeAdaptiveArbitration.Candidate<>(estimate, preference, observation -> family),

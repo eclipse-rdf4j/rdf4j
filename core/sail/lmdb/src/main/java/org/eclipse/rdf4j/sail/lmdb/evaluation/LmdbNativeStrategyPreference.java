@@ -35,6 +35,18 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * candidate rows; moving it ahead of code generation made an enabled Janino arm unreachable. Cost may still overrule
  * this order, but only by strict domination — that is, only when it is certain.
  * <p>
+ * <b>Packed f-trees rank below the engine's own kernel tiers.</b> They used to rank above them, on both the aggregate
+ * and the row side, and it produced the same failure this file was written to stop. A query that the Janino-compiled
+ * parallel aggregate kernel answered in roughly half the time settled permanently on {@code packedFtreeAggregate}: at a
+ * 2x gap the smoothed prices of the day could not clear the displacement margin, so nothing ever overruled position,
+ * and position said packed f-tree. Two changes together fix it. The rungs moved — note that the packed f-tree entries
+ * were pushed <em>down</em> below the kernel tiers rather than the kernel tiers being pulled up, because pulling them
+ * up would also lift them over the factorized and batch rungs, which is itself a documented past regression. And
+ * pricing changed underneath: {@link LmdbNativeBestObservedLedger} quotes each arm at the fastest time it has
+ * demonstrated for the query shape rather than at an average of its runs, so a measured 2x win now separates and this
+ * order decides progressively less as evidence accumulates. Both were needed — the ladder alone only relocates which
+ * strategy wins by position.
+ * <p>
  * <b>One qualification, from measurement.</b> Calibration (2026-07-26) showed the kernels are not <em>purely</em>
  * constant-factor reducers. The ceiling on operator fusion alone is 1.48x on an isolated cyclic shape, yet whole-query
  * kernel wins reach 5.71x; the gap means that on some shapes the kernel also does less work, through access paths the
@@ -74,22 +86,34 @@ final class LmdbNativeStrategyPreference {
 			LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
 			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
 			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
-			// Predicate-plane batch merge, including witness-only and weighted aggregate row-count reducers.
+			// Wildcard-predicate plane merge, including witness-only and weighted aggregate row-count reducers. Both
+			// tags are offered ONLY when the plan actually carries a wildcard predicate
+			// (LmdbWildcardPredicateBatch.propose and weightedAggregateCandidate gate them structurally), so their
+			// presence in a candidate set is not a hint about the query — it IS the query property, and the engine's
+			// answer to "this query has a wildcard predicate" is to run the wildcard-predicate code. Both therefore
+			// sit above every aggregate kernel tier below; the batch tag in particular used to rank beneath the
+			// factorized and batch rungs, where it lost queries it structurally owns. They stay BELOW the row-count
+			// reducers directly above, which are more specialized still and carry their own measured justification —
+			// promoting the wildcard rungs over those broke ten prefix-run and seven adjacency policy tests. This
+			// remains a default rather than a pin: a rival that measures faster still displaces them on evidence.
 			LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED,
+			LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_BATCH,
 			// Worst-case-optimal join: bounded below any pairwise plan on cyclic shapes.
 			LmdbNativeAttemptMetrics.PATH_WCOJ,
-			// Packed arbitrary f-trees remove sibling Cartesian products while retaining vectorized execution.
-			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
-			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
-			// Whole-stage aggregate fusion followed the prefix-run and WCOJ guards in the previous ladder. The
-			// parallel rung sits directly below its serial sibling (gap-analysis C11): the day it becomes a
-			// proposal it must not rank below nestedLoop merely for being absent from this ladder.
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
-			// The interpreted tier of the same IR kernel sits directly below its compiled sibling (compiled preferred
-			// when both are somehow present); like the C11 note above, the day it becomes a proposal it must not rank
-			// below nestedLoop merely for being absent from this ladder.
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+			// The engine's own aggregate kernel tiers, compiled before interpreted. The parallel rung heads the tier
+			// rather than sitting below its serial sibling, reversing gap-analysis C11: C11 was an ordering assumed
+			// from the shape of the code, and the parallel arm is the one measured fastest on the reporting store.
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+			// The interpreted tier of the same IR kernel sits directly below its compiled siblings (compiled
+			// preferred when both are present); the day it becomes a proposal it must not rank below nestedLoop
+			// merely for being absent from this ladder.
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+			// Packed arbitrary f-trees remove sibling Cartesian products while retaining vectorized execution, but
+			// they sit BELOW the aggregate kernel tiers above. Ranking them higher captured queries the compiled
+			// kernel answered roughly twice as fast: the smoothed prices of the day could not clear the displacement
+			// margin at a 2x gap, so position decided every dispatch. See the class comment.
+			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
 			LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS,
 			LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT,
 			LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS,
@@ -99,7 +123,6 @@ final class LmdbNativeStrategyPreference {
 			LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL,
 			LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS,
 			// Set-at-a-time execution over the same row count.
-			LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_BATCH,
 			LmdbNativeAttemptMetrics.PATH_BATCH,
 			LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION,
 			LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES,
@@ -110,12 +133,18 @@ final class LmdbNativeStrategyPreference {
 			// distinct kernel used to preempt — cost must strictly dominate for it to displace them.
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
-			// Row-side constant-factor reducer: same rows, cheaper per row (parallel rung directly below, C11).
+			// Row-side constant-factor reducer: same rows, cheaper per row.
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
 			// The interpreted tier of the row kernel sits directly below its compiled sibling, same as the
-			// aggregate pair above (kernel-interpreter plan, D1/M4).
+			// aggregate tiers above (kernel-interpreter plan, D1/M4).
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
+			// The row-side packed f-tree mirrors its aggregate sibling: below the engine's own row kernel tiers.
+			// Note the side effect this necessarily has — everything already ranked above irKernelInterpreted (the
+			// factorized, batch, parallel and distinct-kernel rungs) now also outranks it. That is unavoidable once
+			// the kernel tiers must come first, and it only decides ties: a measured packed f-tree still wins on
+			// evidence.
+			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
 			// Last resorts.
 			LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT,
 			LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,

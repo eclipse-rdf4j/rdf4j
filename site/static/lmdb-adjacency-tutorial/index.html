@@ -375,15 +375,19 @@
         .array-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
         .array-name { font: 800 12px/1 var(--mono); }
         .array-purpose { color: var(--muted); font-size: 10px; }
-        .array-values { display: flex; gap: 3px; align-items: stretch; overflow-x: auto; padding: 3px 0 5px; }
-        .array-bracket { display: grid; place-items: center; color: var(--line-strong); font: 300 25px/1 var(--mono); }
-        .array-cell { min-width: 49px; padding: 7px 6px; border: 1px solid var(--line); border-radius: 5px; background: #faf9f5; text-align: center; font: 700 10px/1.2 var(--mono); }
-        .array-cell small { display: block; margin-top: 4px; color: var(--muted); font-size: 8px; font-weight: 500; }
-        .array-cell.selected { border: 2px solid var(--orange); padding: 6px 5px; background: var(--orange-soft); }
-        .array-cell.delta { min-width: 96px; border-style: dashed; border-color: var(--line-strong); }
+        .array-values { display: flex; gap: 4px; align-items: stretch; overflow-x: auto; padding: 3px 0 5px; }
+        /* Each slot is a two-row column: the ordinal caption sits directly above the cell it names. */
+        .array-slot { display: flex; flex-direction: column; gap: 3px; flex: 0 0 auto; }
+        .array-index { color: var(--muted); font: 700 10px/1 var(--mono); text-align: center; }
+        .array-slot.selected .array-index { color: var(--orange-dark); }
+        /* The bracket spans the whole slot height, so pad past the caption row to stay centred on the cells. */
+        .array-bracket { display: grid; place-items: center; padding-top: 13px; color: var(--line-strong); font: 300 25px/1 var(--mono); }
+        .array-cell { flex: 1; min-width: 58px; padding: 9px 7px; border: 1px solid var(--line); border-radius: 5px; background: #faf9f5; text-align: center; font: 750 15px/1.2 var(--mono); }
+        .array-cell small { display: block; margin-top: 5px; color: var(--muted); font-size: 9px; font-weight: 500; }
+        .array-cell.selected { border: 2px solid var(--orange); padding: 8px 6px; background: var(--orange-soft); }
+        .array-cell.delta { min-width: 108px; border-style: dashed; border-color: var(--line-strong); }
         .array-cell.delta.selected { border-style: solid; }
-        .array-cell .resolves { color: var(--teal); font-size: 8px; font-weight: 700; white-space: nowrap; }
-        .array-index { color: var(--muted); font-size: 8px; }
+        .array-cell .resolves { color: var(--teal); font-size: 9px; font-weight: 700; white-space: nowrap; }
 
         .compact-row { display: grid; grid-template-columns: minmax(150px, 210px) minmax(0, 1fr); gap: 12px; align-items: center; }
         .compact-row + .compact-row { margin-top: 8px; }
@@ -2247,6 +2251,9 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
         }
 
         /**
+         * Every value gets a slot: the array ordinal is a caption directly above the cell, leaving the cell itself
+         * free to render the value large enough to read at a glance.
+         *
          * `resolved` turns a delta column into something readable: a tail of "256" means nothing on its own, so each
          * cell also shows the absolute term that adding it reproduces.
          */
@@ -2258,8 +2265,12 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
                 const target = resolved && resolved[index]
                     ? `<small class="resolves">${escapeHtml(displayId(resolved[index].from))} → ${escapeHtml(displayId(resolved[index].id))}</small>`
                     : "";
-                return `<span class="array-cell ${kind === "delta" ? "delta" : ""} ${selected.has(index) ? "selected" : ""}" data-index="${index}">
-                    ${escapeHtml(rendered)}${target}<small>${index}</small>
+                const isSelected = selected.has(index);
+                return `<span class="array-slot ${isSelected ? "selected" : ""}">
+                    <span class="array-index">${index}</span>
+                    <span class="array-cell ${kind === "delta" ? "delta" : ""} ${isSelected ? "selected" : ""}" data-index="${index}">
+                        ${escapeHtml(rendered)}${target}
+                    </span>
                 </span>`;
             }).join("")}<span class="array-bracket">]</span></div>`;
         }
