@@ -177,9 +177,6 @@ final class LmdbStatementPatternCardinalityCache {
 			recordOrdinaryAccess(key, ordinaryEntry, now);
 			return ordinaryEntry.value.cardinality;
 		}
-		if (ordinaryEntry != null) {
-			ordinary.remove(key, ordinaryEntry);
-		}
 
 		return estimateAndAdmit(key, now);
 	}
@@ -201,7 +198,7 @@ final class LmdbStatementPatternCardinalityCache {
 				return current.value.cardinality;
 			}
 			if (current != null) {
-				ordinary.remove(key, current);
+				removeOrdinaryEntry(key, current);
 			}
 
 			double cardinality = estimator.estimate(key, 1);
@@ -220,6 +217,12 @@ final class LmdbStatementPatternCardinalityCache {
 			return cardinality;
 		} finally {
 			admissionLock.unlock();
+		}
+	}
+
+	private void removeOrdinaryEntry(Key key, OrdinaryEntry entry) {
+		if (ordinary.remove(key, entry)) {
+			ordinaryAdmissions.remove(new Admission(key, entry));
 		}
 	}
 

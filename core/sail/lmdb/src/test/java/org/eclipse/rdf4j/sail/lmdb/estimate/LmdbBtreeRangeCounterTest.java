@@ -48,6 +48,9 @@ class LmdbBtreeRangeCounterTest {
 			assertTrue(result.leafPagesRead <= 34,
 					() -> "Expected a bounded large-range estimate, but read " + result.leafPagesRead + " leaf pages");
 			assertEquals(1, result.branchPagesRead, "Expected the invocation cache to reuse the root branch page");
+			assertTrue(result.effectiveSampleSize >= 16.0d);
+			assertTrue(!result.lowEffectiveSample);
+			assertTrue(!result.additionalEvidenceUsed);
 		}
 	}
 
@@ -138,10 +141,29 @@ class LmdbBtreeRangeCounterTest {
 
 		assertTrue(result.entries > 0, "A non-exhaustive zero-hit sample must not claim an exact zero");
 		assertTrue(result.sparsePriorUsed);
+		assertTrue(result.secondaryEvidenceRecommended);
 		assertTrue(!result.exhaustive);
 		assertTrue(result.leafPagesRead <= 274,
 				() -> "Expected two boundaries, 16 pilot probes and at most 256 final probes, read "
 						+ result.leafPagesRead);
+	}
+
+	@Test
+	void doesNotCollectExtraEvidenceForWellSupportedResiduals(@TempDir Path tempDir) throws Exception {
+		int leafCount = 120;
+		TreeFile tree = writeSingleBranchTree(tempDir.resolve("data.mdb"), leafCount, 1,
+				LmdbBtreeRangeCounterTest::statementKey);
+		GroupMatcher matchesEverySecondField = new GroupMatcher(new byte[] { 0, 1, 0, 0 },
+				new boolean[] { false, true, false, false });
+
+		RangeCountResult result = countRange(tree, statementKey(0), statementKey(leafCount - 1),
+				matchesEverySecondField);
+
+		assertEquals(leafCount, result.entries);
+		assertTrue(!result.additionalEvidenceUsed, "Well-supported residuals must stay on the fast path");
+		assertTrue(!result.secondaryEvidenceRecommended, "A second index layout should not be requested");
+		assertTrue(result.effectiveSampleSize >= 16.0d);
+		assertTrue(result.disagreement <= 1.01d);
 	}
 
 	@Test

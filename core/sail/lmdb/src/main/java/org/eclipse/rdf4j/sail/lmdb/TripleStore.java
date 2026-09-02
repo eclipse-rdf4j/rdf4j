@@ -3094,20 +3094,25 @@ class TripleStore implements Closeable {
 		sampleMultiplier = Math.clamp(sampleMultiplier, 1, 64);
 		TripleIndex primaryIndex = getBestPageEstimatorIndex(subj, pred, obj, context);
 		try {
-			double primary = cardinalityUsingPageEstimator(primaryIndex, subj, pred, obj, context, sampleMultiplier);
+			PageEstimatorResult primary = cardinalityUsingPageEstimator(primaryIndex, subj, pred, obj, context,
+					sampleMultiplier);
+			if (!primary.secondaryEvidenceRecommended) {
+				return primary.entries;
+			}
+
 			TripleIndex secondaryIndex = getSecondaryNoPrefixEstimatorIndex(primaryIndex, subj, pred, obj, context);
 			if (secondaryIndex == null) {
-				return primary;
+				return primary.entries;
 			}
 			try {
-				double secondary = cardinalityUsingPageEstimator(secondaryIndex, subj, pred, obj, context,
-						sampleMultiplier);
-				return combineIndependentLayoutEstimates(primary, secondary);
+				PageEstimatorResult secondary = cardinalityUsingPageEstimator(secondaryIndex, subj, pred, obj,
+						context, sampleMultiplier);
+				return combineIndependentLayoutEstimates(primary, secondary).entries;
 			} catch (IOException | RuntimeException secondaryFailure) {
 				logger.debug("Secondary page cardinality estimate failed for index {}; using primary index {}",
 						new String(secondaryIndex.getFieldSeq()), new String(primaryIndex.getFieldSeq()),
 						secondaryFailure);
-				return primary;
+				return primary.entries;
 			}
 		} catch (IOException | RuntimeException e) {
 			logger.warn("Page cardinality estimator failed for index {}, falling back to sampling",
@@ -3116,11 +3121,11 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private double cardinalityUsingPageEstimator(TripleIndex index, long subj, long pred, long obj, long context,
-			int sampleMultiplier) throws IOException {
+	private PageEstimatorResult cardinalityUsingPageEstimator(TripleIndex index, long subj, long pred, long obj,
+			long context, int sampleMultiplier) throws IOException {
 		LmdbPageCardinalityEstimator estimator = pageEstimator;
 		if (estimator == null) {
-			return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
+			return PageEstimatorResult.unqualified(cardinalityUsingSamplingEstimator(index, subj, pred, obj, context));
 		}
 		int prefixLength = index.getPatternScore(subj, pred, obj, context);
 		int boundFields = countBoundFields(subj, pred, obj, context);
@@ -3131,29 +3136,160 @@ class TripleStore implements Closeable {
 		return txnManager.doWith((stack, txn) -> {
 			long txnId = mdb_txn_id(txn);
 			if (boundFields == 0) {
-				long explicitEntries = estimator.totalEntries(txnId, explicitDbName);
-				long inferredEntries = estimator.totalEntries(txnId, inferredDbName);
-				return (double) (explicitEntries + inferredEntries);
+				double exact = (double) estimator.totalEntries(txnId, explicitDbName)
+						+ estimator.totalEntries(txnId, inferredDbName);
+				return PageEstimatorResult.exact(exact);
 			}
 
-			ByteBuffer minKeyBuffer = ByteBuffer.allocate(TripleIndex.MAX_KEY_LENGTH);
+			ByteBuffer minKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 			index.getMinKeyForPrefix(minKeyBuffer, subj, pred, obj, context, prefixLength);
 			minKeyBuffer.flip();
 			byte[] minKey = toArray(minKeyBuffer);
 
-			ByteBuffer maxKeyBuffer = ByteBuffer.allocate(TripleIndex.MAX_KEY_LENGTH);
+			ByteBuffer maxKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 			index.getMaxKeyForPrefix(maxKeyBuffer, subj, pred, obj, context, prefixLength);
 			maxKeyBuffer.flip();
 			byte[] maxKey = toArray(maxKeyBuffer);
 
 			GroupMatcher matcher = residualFieldCount == 0 ? null
 					: index.createResidualMatcher(subj, pred, obj, context, prefixLength);
-			long explicitCount = estimator.estimateEntries(txnId, explicitDbName, minKey, minKey.length, maxKey,
-					maxKey.length, matcher, residualFieldCount, sampleMultiplier);
-			long inferredCount = estimator.estimateEntries(txnId, inferredDbName, minKey, minKey.length, maxKey,
-					maxKey.length, matcher, residualFieldCount, sampleMultiplier);
-			return (double) (explicitCount + inferredCount);
+			LmdbPageCardinalityEstimator.Estimate explicit = estimator.estimateEntriesWithQuality(txnId,
+					explicitDbName, minKey, minKey.length, maxKey, maxKey.length, matcher, residualFieldCount,
+					sampleMultiplier);
+			LmdbPageCardinalityEstimator.Estimate inferred = estimator.estimateEntriesWithQuality(txnId,
+					inferredDbName, minKey, minKey.length, maxKey, maxKey.length, matcher, residualFieldCount,
+					sampleMultiplier);
+			return combineDatabaseEstimates(explicit, inferred);
 		});
+	}
+
+	private PageEstimatorResult combineDatabaseEstimates(LmdbPageCardinalityEstimator.Estimate first,
+			LmdbPageCardinalityEstimator.Estimate second) {
+		double entries = (double) first.entries() + second.entries();
+		if (first.exact() && second.exact()) {
+			return PageEstimatorResult.exact(entries);
+		}
+
+		double hardLower = (double) first.hardLowerBound() + second.hardLowerBound();
+		double hardUpper = (double) first.hardUpperBound() + second.hardUpperBound();
+		double firstSigma = first.exact() ? 0.0d
+				: first.entries() * finiteQuality(first.relativeStandardError(), 1.0d);
+		double secondSigma = second.exact() ? 0.0d
+				: second.entries() * finiteQuality(second.relativeStandardError(), 1.0d);
+		double relativeStandardError = entries > 0.0d
+				? Math.hypot(firstSigma, secondSigma) / entries
+				: Math.max(finiteQuality(first.relativeStandardError(), 0.0d),
+						finiteQuality(second.relativeStandardError(), 0.0d));
+		double effectiveSampleSize = combinedEffectiveSampleSize(entries, first, second);
+		double effectiveSampleFraction = weightedQualityAverage(first.entries(), first.effectiveSampleFraction(),
+				second.entries(), second.effectiveSampleFraction(), 1.0d);
+		double sampledMassFraction = weightedQualityAverage(first.entries(), first.sampledMassFraction(),
+				second.entries(), second.sampledMassFraction(), 0.0d);
+		double disagreement = Math.max(first.disagreement(), second.disagreement());
+		boolean secondaryRecommended = first.secondaryEvidenceRecommended()
+				|| second.secondaryEvidenceRecommended() || first.lowEffectiveSample()
+				|| second.lowEffectiveSample() || first.disagreement() > 6.25d
+				|| second.disagreement() > 6.25d;
+		return new PageEstimatorResult(entries, false, hardLower, hardUpper, effectiveSampleSize,
+				effectiveSampleFraction, sampledMassFraction, relativeStandardError, disagreement,
+				first.additionalEvidenceUsed() || second.additionalEvidenceUsed(), secondaryRecommended);
+	}
+
+	private PageEstimatorResult combineIndependentLayoutEstimates(PageEstimatorResult first,
+			PageEstimatorResult second) {
+		if (!Double.isFinite(first.entries) || first.entries < 0.0d) {
+			return second;
+		}
+		if (!Double.isFinite(second.entries) || second.entries < 0.0d) {
+			return first;
+		}
+		if (first.exact) {
+			return first;
+		}
+		if (second.exact) {
+			return second;
+		}
+
+		double firstWeight = layoutQualityWeight(first);
+		double secondWeight = layoutQualityWeight(second);
+		double firstFraction = firstWeight + secondWeight > 0.0d
+				? firstWeight / (firstWeight + secondWeight)
+				: 0.5d;
+		double layoutDisagreement = multiplicativeLayoutDisagreement(first.entries, second.entries);
+		if (layoutDisagreement > 2.5d) {
+			// When layouts strongly disagree, do not let one uncertain layout completely erase the other.
+			firstFraction = Math.max(0.35d, Math.min(0.65d, firstFraction));
+		}
+		double combined = Math.expm1(Math.log1p(first.entries) * firstFraction
+				+ Math.log1p(second.entries) * (1.0d - firstFraction));
+
+		double hardLower = Math.max(first.hardLowerBound, second.hardLowerBound);
+		double hardUpper = Math.min(first.hardUpperBound, second.hardUpperBound);
+		if (hardLower <= hardUpper) {
+			combined = Math.max(hardLower, Math.min(hardUpper, combined));
+		} else {
+			logger.debug("Page-estimator layout hard bounds disagree: first=[{},{}], second=[{},{}]",
+					first.hardLowerBound, first.hardUpperBound, second.hardLowerBound, second.hardUpperBound);
+			return firstWeight >= secondWeight ? first : second;
+		}
+
+		double combinedEffective = firstWeight + secondWeight;
+		double combinedRse = Math.min(first.relativeStandardError, second.relativeStandardError);
+		return new PageEstimatorResult(combined, false, hardLower, hardUpper, combinedEffective,
+				Math.max(first.effectiveSampleFraction, second.effectiveSampleFraction),
+				Math.min(first.sampledMassFraction, second.sampledMassFraction), combinedRse,
+				Math.max(Math.max(first.disagreement, second.disagreement), layoutDisagreement), true, false);
+	}
+
+	private double layoutQualityWeight(PageEstimatorResult estimate) {
+		double effective = Double.isFinite(estimate.effectiveSampleSize)
+				? Math.max(1.0d, estimate.effectiveSampleSize)
+				: 1_000_000.0d;
+		double fraction = Math.max(0.05d, Math.min(1.0d, estimate.effectiveSampleFraction));
+		double rse = finiteQuality(estimate.relativeStandardError, 1.0d);
+		double disagreement = Math.max(1.0d, finiteQuality(estimate.disagreement, 100.0d));
+		double weight = effective * fraction / ((1.0d + effective * rse * rse) * Math.sqrt(disagreement));
+		if (estimate.secondaryEvidenceRecommended) {
+			weight *= 0.5d;
+		}
+		return Math.max(0.01d, weight);
+	}
+
+	private double combinedEffectiveSampleSize(double total,
+			LmdbPageCardinalityEstimator.Estimate first, LmdbPageCardinalityEstimator.Estimate second) {
+		if (total <= 0.0d) {
+			return Math.min(first.effectiveSampleSize(), second.effectiveSampleSize());
+		}
+		double denominator = effectiveVarianceDenominator(first) + effectiveVarianceDenominator(second);
+		return denominator <= 0.0d ? Double.POSITIVE_INFINITY : total * total / denominator;
+	}
+
+	private double effectiveVarianceDenominator(LmdbPageCardinalityEstimator.Estimate estimate) {
+		if (estimate.exact() || estimate.entries() <= 0L) {
+			return 0.0d;
+		}
+		double effective = Math.max(1.0d, finiteQuality(estimate.effectiveSampleSize(), 1.0d));
+		return (double) estimate.entries() * estimate.entries() / effective;
+	}
+
+	private double weightedQualityAverage(long firstEntries, double firstValue, long secondEntries,
+			double secondValue, double emptyValue) {
+		double total = (double) firstEntries + secondEntries;
+		if (total <= 0.0d) {
+			return emptyValue;
+		}
+		return (firstEntries * finiteQuality(firstValue, emptyValue)
+				+ secondEntries * finiteQuality(secondValue, emptyValue)) / total;
+	}
+
+	private double finiteQuality(double value, double fallback) {
+		return Double.isFinite(value) && value >= 0.0d ? value : fallback;
+	}
+
+	private double multiplicativeLayoutDisagreement(double first, double second) {
+		double left = Math.max(0.0d, first) + 1.0d;
+		double right = Math.max(0.0d, second) + 1.0d;
+		return Math.max(left / right, right / left);
 	}
 
 	private TripleIndex getBestPageEstimatorIndex(long subj, long pred, long obj, long context) {
@@ -3204,7 +3340,6 @@ class TripleStore implements Closeable {
 		char[] fields = index.getFieldSeq();
 		for (int position = 0; position < fields.length; position++) {
 			if (isBoundField(fields[position], subj, pred, obj, context)) {
-				// Lexicographically prefer layouts that place residual bound fields earlier.
 				score += 1 << ((fields.length - position - 1) * 4);
 			}
 		}
@@ -3226,15 +3361,20 @@ class TripleStore implements Closeable {
 				+ (context >= 0 ? 1 : 0);
 	}
 
-	private double combineIndependentLayoutEstimates(double first, double second) {
-		if (!Double.isFinite(first) || first < 0.0d) {
-			return second;
+	private record PageEstimatorResult(double entries, boolean exact, double hardLowerBound,
+			double hardUpperBound, double effectiveSampleSize, double effectiveSampleFraction,
+			double sampledMassFraction, double relativeStandardError, double disagreement,
+			boolean additionalEvidenceUsed, boolean secondaryEvidenceRecommended) {
+
+		private static PageEstimatorResult exact(double entries) {
+			return new PageEstimatorResult(entries, true, entries, entries, Double.POSITIVE_INFINITY, 1.0d,
+					0.0d, 0.0d, 1.0d, false, false);
 		}
-		if (!Double.isFinite(second) || second < 0.0d) {
-			return first;
+
+		private static PageEstimatorResult unqualified(double entries) {
+			return new PageEstimatorResult(entries, false, 0.0d, Double.POSITIVE_INFINITY, 0.0d, 0.0d,
+					1.0d, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, false, false);
 		}
-		// Add-one geometric mean is stable in multiplicative error space and handles one exact/sample zero.
-		return Math.expm1((Math.log1p(first) + Math.log1p(second)) * 0.5d);
 	}
 
 	private static byte[] toArray(ByteBuffer buffer) {

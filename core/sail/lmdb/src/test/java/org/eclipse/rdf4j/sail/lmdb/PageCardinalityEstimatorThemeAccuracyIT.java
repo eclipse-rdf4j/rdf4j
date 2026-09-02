@@ -23,6 +23,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -52,9 +53,11 @@ import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+@Disabled("Dataset-scale accuracy measurement; run manually when evaluating the estimator")
 class PageCardinalityEstimatorThemeAccuracyIT {
 
 	private static final int CHURN_ROUNDS = 5;
@@ -167,7 +170,19 @@ class PageCardinalityEstimatorThemeAccuracyIT {
 					first.queryName, first.patternIndex, first.pattern, first.patternText, first.canonicalPattern,
 					duplicates.size(), queryReferences));
 		}
-		return new PatternCatalog(parsedQueryCount, totalPatternOccurrences, List.copyOf(uniquePatterns));
+
+		HashSet<String> stringHashMap = new HashSet<>();
+
+		List<PatternOccurrence> list = uniquePatterns.stream().map(p -> {
+			String canonicalPattern = p.canonicalPattern;
+			if (stringHashMap.contains(canonicalPattern)) {
+				return null;
+			}
+			stringHashMap.add(canonicalPattern);
+			return p;
+		}).filter(Objects::nonNull).toList();
+
+		return new PatternCatalog(parsedQueryCount, totalPatternOccurrences, List.copyOf(list));
 	}
 
 	private static String queryReference(Theme theme, int queryIndex, int patternIndex) {
@@ -180,14 +195,22 @@ class PageCardinalityEstimatorThemeAccuracyIT {
 		List<Measurement> measurements = new ArrayList<>(occurrences.size());
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (PatternOccurrence occurrence : occurrences) {
+				System.out.println(occurrence.canonicalPattern);
 				long exact = exactByCanonicalPattern.computeIfAbsent(occurrence.canonicalPattern,
 						ignored -> exactCardinality(connection, occurrence.pattern));
 				double estimated = statistics.getCardinality(occurrence.pattern);
-//				System.out.println("Measured " + occurrence.patternText + " (canonical: " + occurrence.canonicalPattern
-//						+ ") for query " + occurrence.queryKey() + " pattern index " + occurrence.patternIndex
-//						+ ": exact=" + exact + ", estimated=" + estimated);
+				System.out.println("Measured " + occurrence.patternText + " (canonical: " + occurrence.canonicalPattern
+						+ ") for " + " pattern index " + occurrence.patternIndex
+						+ ": exact=" + exact + ", estimated=" + estimated);
 				assertTrue(Double.isFinite(estimated) && estimated >= 0.0d,
 						() -> "Invalid estimate " + estimated + " for " + occurrence.patternText);
+
+				// assert that we are within 10% of the exact value, or within 10 of the exact value, whichever is
+				// larger
+				assertTrue(Math.abs(estimated - exact) <= Math.max(10, exact * 0.1),
+						() -> "Estimate " + estimated + " is not within 10% or 10 of exact " + exact + " for "
+								+ occurrence.patternText);
+
 				measurements.add(new Measurement(occurrence, exact, estimated));
 			}
 		}
