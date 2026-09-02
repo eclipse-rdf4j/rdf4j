@@ -31,6 +31,7 @@ import java.util.StringTokenizer;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.util.EntryMatcher;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexEntryWriters;
+import org.eclipse.rdf4j.sail.lmdb.util.VarintTupleInput;
 
 class TripleIndex {
 	static final int MAX_KEY_LENGTH = 4 * 9;
@@ -292,121 +293,141 @@ class TripleIndex {
 		}
 	}
 
-	void entryToQuad(ByteBuffer key, ByteBuffer value, long[] originalQuad, long[] quad) {
+	void entryToQuad(VarintTupleInput key, VarintTupleInput value, long[] originalQuad, long[] quad) {
 		switch (indexSplitPosition) {
 		case 0:
 			// directly use index map to read values in to correct positions
 			if (originalQuad[indexMap[0]] != -1) {
-				Varint.skipUnsigned(value);
+				value.skip();
 			} else {
-				quad[indexMap[0]] = Varint.readUnsigned(value);
+				value.next();
+				quad[indexMap[0]] = Varint.readUnsigned(value.getBuffer());
 			}
 			if (originalQuad[indexMap[1]] != -1) {
-				Varint.skipUnsigned(value);
+				value.skip();
 			} else {
-				quad[indexMap[1]] = Varint.readUnsigned(value);
+				value.next();
+				quad[indexMap[1]] = Varint.readUnsigned(value.getBuffer());
 			}
 			if (originalQuad[indexMap[2]] != -1) {
-				Varint.skipUnsigned(value);
+				value.skip();
 			} else {
-				quad[indexMap[2]] = Varint.readUnsigned(value);
+				value.next();
+				quad[indexMap[2]] = Varint.readUnsigned(value.getBuffer());
 			}
 			if (originalQuad[indexMap[3]] != -1) {
-				Varint.skipUnsigned(value);
+				value.skip();
 			} else {
-				quad[indexMap[3]] = Varint.readUnsigned(value);
+				value.next();
+				quad[indexMap[3]] = Varint.readUnsigned(value.getBuffer());
 			}
 			break;
 		case 1:
 			// directly use index map to read values in to correct positions
 			if (originalQuad[indexMap[0]] != -1) {
-				Varint.skipUnsigned(key);
+				key.skip();
 			} else {
-				quad[indexMap[0]] = Varint.readUnsigned(key);
+				key.next();
+				quad[indexMap[0]] = Varint.readUnsigned(key.getBuffer());
 			}
 			if (originalQuad[indexMap[1]] != -1) {
-				Varint.skipUnsigned(value);
+				value.skip();
 			} else {
-				quad[indexMap[1]] = Varint.readUnsigned(value);
+				value.next();
+				quad[indexMap[1]] = Varint.readUnsigned(value.getBuffer());
 			}
 			if (originalQuad[indexMap[2]] != -1) {
-				Varint.skipUnsigned(value);
+				value.skip();
 			} else {
-				quad[indexMap[2]] = Varint.readUnsigned(value);
+				value.next();
+				quad[indexMap[2]] = Varint.readUnsigned(value.getBuffer());
 			}
 			if (originalQuad[indexMap[3]] != -1) {
-				Varint.skipUnsigned(value);
+				value.skip();
 			} else {
-				quad[indexMap[3]] = Varint.readUnsigned(value);
+				value.next();
+				quad[indexMap[3]] = Varint.readUnsigned(value.getBuffer());
 			}
 			break;
 		case 2:
 			// directly use index map to read values in to correct positions
 			if (originalQuad[indexMap[0]] != -1) {
-				Varint.skipUnsigned(key);
+				key.skip();
 			} else {
-				quad[indexMap[0]] = Varint.readUnsigned(key);
+				key.next();
+				quad[indexMap[0]] = Varint.readUnsigned(key.getBuffer());
 			}
 			if (originalQuad[indexMap[1]] != -1) {
-				Varint.skipUnsigned(key);
+				key.skip();
 			} else {
-				quad[indexMap[1]] = Varint.readUnsigned(key);
+				key.next();
+				quad[indexMap[1]] = Varint.readUnsigned(key.getBuffer());
 			}
 			if (originalQuad[indexMap[2]] != -1) {
-				Varint.skipUnsigned(value);
+				value.skip();
 			} else {
-				quad[indexMap[2]] = Varint.readUnsigned(value);
+				value.next();
+				quad[indexMap[2]] = Varint.readUnsigned(value.getBuffer());
 			}
 			if (originalQuad[indexMap[3]] != -1) {
-				Varint.skipUnsigned(value);
+				value.skip();
 			} else {
-				quad[indexMap[3]] = Varint.readUnsigned(value);
+				value.next();
+				quad[indexMap[3]] = Varint.readUnsigned(value.getBuffer());
 			}
 			break;
 		case 3:
 			// directly use index map to read values in to correct positions
 			if (originalQuad[indexMap[0]] != -1) {
-				Varint.skipUnsigned(key);
+				key.skip();
 			} else {
-				quad[indexMap[0]] = Varint.readUnsigned(key);
+				key.next();
+				quad[indexMap[0]] = Varint.readUnsigned(key.getBuffer());
 			}
 			if (originalQuad[indexMap[1]] != -1) {
-				Varint.skipUnsigned(key);
+				key.skip();
 			} else {
-				quad[indexMap[1]] = Varint.readUnsigned(key);
+				key.next();
+				quad[indexMap[1]] = Varint.readUnsigned(key.getBuffer());
 			}
 			if (originalQuad[indexMap[2]] != -1) {
-				Varint.skipUnsigned(key);
+				key.skip();
 			} else {
-				quad[indexMap[2]] = Varint.readUnsigned(key);
+				key.next();
+				quad[indexMap[2]] = Varint.readUnsigned(key.getBuffer());
 			}
 			if (originalQuad[indexMap[3]] != -1) {
-				Varint.skipUnsigned(value);
+				value.skip();
 			} else {
-				quad[indexMap[3]] = Varint.readUnsigned(value);
+				value.next();
+				quad[indexMap[3]] = Varint.readUnsigned(value.getBuffer());
 			}
 			break;
 		case 4:
 			// directly use index map to read values in to correct positions
 			if (originalQuad[indexMap[0]] != -1) {
-				Varint.skipUnsigned(key);
+				key.skip();
 			} else {
-				quad[indexMap[0]] = Varint.readUnsigned(key);
+				key.next();
+				quad[indexMap[0]] = Varint.readUnsigned(key.getBuffer());
 			}
 			if (originalQuad[indexMap[1]] != -1) {
-				Varint.skipUnsigned(key);
+				key.skip();
 			} else {
-				quad[indexMap[1]] = Varint.readUnsigned(key);
+				key.next();
+				quad[indexMap[1]] = Varint.readUnsigned(key.getBuffer());
 			}
 			if (originalQuad[indexMap[2]] != -1) {
-				Varint.skipUnsigned(key);
+				key.skip();
 			} else {
-				quad[indexMap[2]] = Varint.readUnsigned(key);
+				key.next();
+				quad[indexMap[2]] = Varint.readUnsigned(key.getBuffer());
 			}
 			if (originalQuad[indexMap[3]] != -1) {
-				Varint.skipUnsigned(key);
+				key.skip();
 			} else {
-				quad[indexMap[3]] = Varint.readUnsigned(key);
+				key.next();
+				quad[indexMap[3]] = Varint.readUnsigned(key.getBuffer());
 			}
 		}
 	}

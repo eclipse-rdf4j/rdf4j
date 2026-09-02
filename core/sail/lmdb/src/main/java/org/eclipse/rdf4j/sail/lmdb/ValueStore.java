@@ -92,6 +92,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbResource;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.util.VarintTupleInput;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
@@ -1243,7 +1244,9 @@ class ValueStore extends AbstractValueFactory {
 			dataVal.mv_data(valueBuf);
 
 			int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
-			if (rc == MDB_SUCCESS && index.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data(), dataVal.mv_data())) {
+			if (rc == MDB_SUCCESS && index.createMatcher(-1, -1, -1, id)
+					.matches(new VarintTupleInput(index.getIndexSplitPosition(), keyVal.mv_data()),
+							new VarintTupleInput(4 - index.getIndexSplitPosition(), dataVal.mv_data()))) {
 				long[] quad = new long[4];
 				index.entryToQuad(keyVal.mv_data(), dataVal.mv_data(), quad);
 				if (value != null) {
@@ -1281,8 +1284,9 @@ class ValueStore extends AbstractValueFactory {
 			dataVal.mv_data(valueBuf);
 
 			int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
-			if (rc == MDB_SUCCESS
-					&& mainIndex.createMatcher(subj, pred, obj, -1).matches(keyVal.mv_data(), dataVal.mv_data())) {
+			if (rc == MDB_SUCCESS && mainIndex.createMatcher(subj, pred, obj, -1)
+					.matches(new VarintTupleInput(mainIndex.getIndexSplitPosition(), keyVal.mv_data()),
+							new VarintTupleInput(4 - mainIndex.getIndexSplitPosition(), dataVal.mv_data()))) {
 				var bb = keyVal.mv_data();
 				return Varint.readUnsigned(bb, Varint.calcLengthUnsigned(subj) + Varint.calcLengthUnsigned(pred) +
 						Varint.calcLengthUnsigned(obj));
@@ -1585,9 +1589,11 @@ class ValueStore extends AbstractValueFactory {
 					dataVal.mv_data(valueBuf);
 
 					int rc = mdb_cursor_get(termsCursor, keyVal, dataVal, MDB_SET_RANGE);
-					if (rc == MDB_SUCCESS
-							&& tripleTermCspoIndex.createMatcher(-1, -1, -1, id)
-									.matches(keyVal.mv_data(), dataVal.mv_data())) {
+					if (rc == MDB_SUCCESS && tripleTermCspoIndex.createMatcher(-1, -1, -1, id)
+							.matches(
+									new VarintTupleInput(tripleTermCspoIndex.getIndexSplitPosition(), keyVal.mv_data()),
+									new VarintTupleInput(4 - tripleTermCspoIndex.getIndexSplitPosition(),
+											dataVal.mv_data()))) {
 						long[] quad = new long[4];
 						tripleTermCspoIndex.entryToQuad(keyVal.mv_data(), dataVal.mv_data(), quad);
 						for (int i = 0; i < 3; i++) {
@@ -1771,9 +1777,11 @@ class ValueStore extends AbstractValueFactory {
 								dataVal.mv_data(valueBuf);
 
 								int rc = mdb_cursor_get(termsCursor, keyVal, dataVal, MDB_SET_RANGE);
-								if (rc == MDB_SUCCESS &&
-										tripleTermCspoIndex.createMatcher(-1, -1, -1, id)
-												.matches(keyVal.mv_data(), dataVal.mv_data())) {
+								if (rc == MDB_SUCCESS && tripleTermCspoIndex.createMatcher(-1, -1, -1, id)
+										.matches(new VarintTupleInput(tripleTermCspoIndex.getIndexSplitPosition(),
+												keyVal.mv_data()),
+												new VarintTupleInput(4 - tripleTermCspoIndex.getIndexSplitPosition(),
+														dataVal.mv_data()))) {
 									// delete id -> triple term association
 									long[] quad = new long[4];
 									tripleTermCspoIndex.entryToQuad(keyVal.mv_data(), dataVal.mv_data(), quad);

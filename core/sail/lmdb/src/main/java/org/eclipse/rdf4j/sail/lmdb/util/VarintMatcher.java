@@ -112,13 +112,13 @@ public class VarintMatcher {
 
 	}
 
-	public boolean matches(ByteBuffer other) {
+	public boolean matches(VarintTupleInput other) {
 		return matcher.matches(other);
 	}
 
 	@FunctionalInterface
 	private interface MatchFn {
-		boolean matches(ByteBuffer other);
+		boolean matches(VarintTupleInput other);
 	}
 
 	private MatchFn selectMatcher(boolean[] shouldMatch) {
@@ -174,35 +174,48 @@ public class VarintMatcher {
 		}
 	}
 
-	private boolean match0000(ByteBuffer other) {
+	private boolean match0000(VarintTupleInput other) {
 		return true;
 	}
 
-	private boolean match0001(ByteBuffer other) {
-		byte otherFirst0 = other.get();
+	private boolean match0001(VarintTupleInput other) {
+		if (!other.next()) {
+			return false;
+		}
+		ByteBuffer otherBuffer = other.getBuffer();
+		byte otherFirst0 = otherBuffer.get();
 		if (firstByte0 == otherFirst0) {
-			return length0 == 1 || cmp0.equals(otherFirst0, other);
+			return length0 == 1 || cmp0.equals(otherFirst0, otherBuffer);
 		}
 		return false;
 	}
 
-	private boolean match0010(ByteBuffer other) {
-		skipVarint(other);
-
-		byte otherFirst1 = other.get();
+	private boolean match0010(VarintTupleInput other) {
+		if (!other.skip() || !other.next()) {
+			return false;
+		}
+		ByteBuffer otherBuffer = other.getBuffer();
+		byte otherFirst1 = otherBuffer.get();
 		if (firstByte1 == otherFirst1) {
-			return length1 == 1 || cmp1.equals(otherFirst1, other);
+			return length1 == 1 || cmp1.equals(otherFirst1, otherBuffer);
 		}
 		return false;
 	}
 
-	private boolean match0011(ByteBuffer other) {
-		byte otherFirst0 = other.get();
+	private boolean match0011(VarintTupleInput other) {
+		if (!other.next()) {
+			return false;
+		}
+		ByteBuffer otherBuffer = other.getBuffer();
+		byte otherFirst0 = otherBuffer.get();
 		if (firstByte0 == otherFirst0) {
-			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
-				byte otherFirst1 = other.get();
+			if (length0 == 1 || cmp0.equals(otherFirst0, otherBuffer)) {
+				if (!other.next()) {
+					return false;
+				}
+				byte otherFirst1 = otherBuffer.get();
 				if (firstByte1 == otherFirst1) {
-					return length1 == 1 || cmp1.equals(otherFirst1, other);
+					return length1 == 1 || cmp1.equals(otherFirst1, otherBuffer);
 				}
 			}
 		}
@@ -210,65 +223,78 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match0100(ByteBuffer other) {
-		skipVarint(other);
-		skipVarint(other);
-
-		byte otherFirst2 = other.get();
+	private boolean match0100(VarintTupleInput other) {
+		if (!other.skip() || !other.skip() || !other.next()) {
+			return false;
+		}
+		ByteBuffer otherBuffer = other.getBuffer();
+		byte otherFirst2 = otherBuffer.get();
 		if (firstByte2 == otherFirst2) {
-			return length2 == 1 || cmp2.equals(otherFirst2, other);
+			return length2 == 1 || cmp2.equals(otherFirst2, otherBuffer);
 		}
 		return false;
 	}
 
-	private boolean match0101(ByteBuffer other) {
-		byte otherFirst0 = other.get();
+	private boolean match0101(VarintTupleInput other) {
+		if (!other.next()) {
+			return false;
+		}
+		ByteBuffer otherBuffer = other.getBuffer();
+		byte otherFirst0 = otherBuffer.get();
 		if (firstByte0 == otherFirst0) {
-			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
-				skipVarint(other);
-
-				byte otherFirst2 = other.get();
+			if (length0 == 1 || cmp0.equals(otherFirst0, otherBuffer)) {
+				if (!other.skip() || !other.next()) {
+					return false;
+				}
+				byte otherFirst2 = otherBuffer.get();
 				if (firstByte2 == otherFirst2) {
-					return length2 == 1 || cmp2.equals(otherFirst2, other);
+					return length2 == 1 || cmp2.equals(otherFirst2, otherBuffer);
 				}
 			}
 		}
 		return false;
 	}
 
-	private boolean match0110(ByteBuffer other) {
-		skipVarint(other);
-
-		byte otherFirst1 = other.get();
+	private boolean match0110(VarintTupleInput other) {
+		if (!other.skip() || !other.next()) {
+			return false;
+		}
+		ByteBuffer otherBuffer = other.getBuffer();
+		byte otherFirst1 = otherBuffer.get();
 		if (firstByte1 == otherFirst1) {
-			if (length1 == 1 || cmp1.equals(otherFirst1, other)) {
-				byte otherFirst2 = other.get();
+			if (length1 == 1 || cmp1.equals(otherFirst1, otherBuffer)) {
+				if (!other.next()) {
+					return false;
+				}
+				byte otherFirst2 = otherBuffer.get();
 				if (firstByte2 == otherFirst2) {
-					return length2 == 1 || cmp2.equals(otherFirst2, other);
+					return length2 == 1 || cmp2.equals(otherFirst2, otherBuffer);
 				}
 			}
 		}
 		return false;
 	}
 
-	private void skipVarint(ByteBuffer other) {
-		int i = firstToLength(other.get()) - 1;
-		assert i >= 0;
-		if (i > 0) {
-			other.position(i + other.position());
+	private boolean match0111(VarintTupleInput other) {
+		if (!other.next()) {
+			return false;
 		}
-	}
-
-	private boolean match0111(ByteBuffer other) {
-		byte otherFirst0 = other.get();
+		ByteBuffer otherBuffer = other.getBuffer();
+		byte otherFirst0 = otherBuffer.get();
 		if (firstByte0 == otherFirst0) {
-			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
-				byte otherFirst1 = other.get();
+			if (length0 == 1 || cmp0.equals(otherFirst0, otherBuffer)) {
+				if (!other.next()) {
+					return false;
+				}
+				byte otherFirst1 = otherBuffer.get();
 				if (firstByte1 == otherFirst1) {
-					if (length1 == 1 || cmp1.equals(otherFirst1, other)) {
-						byte otherFirst2 = other.get();
+					if (length1 == 1 || cmp1.equals(otherFirst1, otherBuffer)) {
+						if (!other.next()) {
+							return false;
+						}
+						byte otherFirst2 = otherBuffer.get();
 						if (firstByte2 == otherFirst2) {
-							return length2 == 1 || cmp2.equals(otherFirst2, other);
+							return length2 == 1 || cmp2.equals(otherFirst2, otherBuffer);
 						}
 					}
 				}
@@ -277,63 +303,78 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match1000(ByteBuffer other) {
-		skipVarint(other);
-		skipVarint(other);
-		skipVarint(other);
-
-		byte otherFirst3 = other.get();
+	private boolean match1000(VarintTupleInput other) {
+		if (!other.skip() || !other.skip() || !other.skip() || !other.next()) {
+			return false;
+		}
+		ByteBuffer otherBuffer = other.getBuffer();
+		byte otherFirst3 = otherBuffer.get();
 		if (firstByte3 == otherFirst3) {
-			return length3 == 1 || cmp3.equals(otherFirst3, other);
+			return length3 == 1 || cmp3.equals(otherFirst3, otherBuffer);
 		}
 		return false;
 	}
 
-	private boolean match1001(ByteBuffer other) {
-
-		byte otherFirst0 = other.get();
+	private boolean match1001(VarintTupleInput other) {
+		if (!other.next()) {
+			return false;
+		}
+		ByteBuffer otherBuffer = other.getBuffer();
+		byte otherFirst0 = otherBuffer.get();
 		if (firstByte0 == otherFirst0) {
-			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
-				skipVarint(other);
-				skipVarint(other);
-
-				byte otherFirst3 = other.get();
+			if (length0 == 1 || cmp0.equals(otherFirst0, otherBuffer)) {
+				if (!other.skip() || !other.skip() || !other.next()) {
+					return false;
+				}
+				byte otherFirst3 = otherBuffer.get();
 				if (firstByte3 == otherFirst3) {
-					return length3 == 1 || cmp3.equals(otherFirst3, other);
+					return length3 == 1 || cmp3.equals(otherFirst3, otherBuffer);
 				}
 			}
 		}
 		return false;
 	}
 
-	private boolean match1010(ByteBuffer other) {
-		skipVarint(other);
-		byte otherFirst1 = other.get();
+	private boolean match1010(VarintTupleInput other) {
+		if (!other.skip() || !other.next()) {
+			return false;
+		}
+		ByteBuffer otherBuffer = other.getBuffer();
+		byte otherFirst1 = otherBuffer.get();
 		if (firstByte1 == otherFirst1) {
-			if (length1 == 1 || cmp1.equals(otherFirst1, other)) {
-				skipVarint(other);
-
-				byte otherFirst3 = other.get();
+			if (length1 == 1 || cmp1.equals(otherFirst1, otherBuffer)) {
+				if (!other.skip() || !other.next()) {
+					return false;
+				}
+				byte otherFirst3 = otherBuffer.get();
 				if (firstByte3 == otherFirst3) {
-					return length3 == 1 || cmp3.equals(otherFirst3, other);
+					return length3 == 1 || cmp3.equals(otherFirst3, otherBuffer);
 				}
 			}
 		}
 		return false;
 	}
 
-	private boolean match1011(ByteBuffer other) {
-		byte otherFirst0 = other.get();
+	private boolean match1011(VarintTupleInput other) {
+		if (!other.next()) {
+			return false;
+		}
+		ByteBuffer otherBuffer = other.getBuffer();
+		byte otherFirst0 = otherBuffer.get();
 		if (firstByte0 == otherFirst0) {
-			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
-				byte otherFirst1 = other.get();
+			if (length0 == 1 || cmp0.equals(otherFirst0, otherBuffer)) {
+				if (!other.next()) {
+					return false;
+				}
+				byte otherFirst1 = otherBuffer.get();
 				if (firstByte1 == otherFirst1) {
-					if (length1 == 1 || cmp1.equals(otherFirst1, other)) {
-						skipVarint(other);
-
-						byte otherFirst3 = other.get();
+					if (length1 == 1 || cmp1.equals(otherFirst1, otherBuffer)) {
+						if (!other.skip() || !other.next()) {
+							return false;
+						}
+						byte otherFirst3 = otherBuffer.get();
 						if (firstByte3 == otherFirst3) {
-							return length3 == 1 || cmp3.equals(otherFirst3, other);
+							return length3 == 1 || cmp3.equals(otherFirst3, otherBuffer);
 						}
 					}
 				}
@@ -342,34 +383,46 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match1100(ByteBuffer other) {
-		skipVarint(other);
-		skipVarint(other);
-
-		byte otherFirst2 = other.get();
+	private boolean match1100(VarintTupleInput other) {
+		if (!other.skip() || !other.skip() || !other.next()) {
+			return false;
+		}
+		ByteBuffer otherBuffer = other.getBuffer();
+		byte otherFirst2 = otherBuffer.get();
 		if (firstByte2 == otherFirst2) {
-			if (length2 == 1 || cmp2.equals(otherFirst2, other)) {
-				byte otherFirst3 = other.get();
+			if (length2 == 1 || cmp2.equals(otherFirst2, otherBuffer)) {
+				if (!other.next()) {
+					return false;
+				}
+				byte otherFirst3 = otherBuffer.get();
 				if (firstByte3 == otherFirst3) {
-					return length3 == 1 || cmp3.equals(otherFirst3, other);
+					return length3 == 1 || cmp3.equals(otherFirst3, otherBuffer);
 				}
 			}
 		}
 		return false;
 	}
 
-	private boolean match1101(ByteBuffer other) {
-		byte otherFirst0 = other.get();
+	private boolean match1101(VarintTupleInput other) {
+		if (!other.next()) {
+			return false;
+		}
+		ByteBuffer otherBuffer = other.getBuffer();
+		byte otherFirst0 = otherBuffer.get();
 		if (firstByte0 == otherFirst0) {
-			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
-				skipVarint(other);
-
-				byte otherFirst2 = other.get();
+			if (length0 == 1 || cmp0.equals(otherFirst0, otherBuffer)) {
+				if (!other.skip() || !other.next()) {
+					return false;
+				}
+				byte otherFirst2 = otherBuffer.get();
 				if (firstByte2 == otherFirst2) {
-					if (length2 == 1 || cmp2.equals(otherFirst2, other)) {
-						byte otherFirst3 = other.get();
+					if (length2 == 1 || cmp2.equals(otherFirst2, otherBuffer)) {
+						if (!other.next()) {
+							return false;
+						}
+						byte otherFirst3 = otherBuffer.get();
 						if (firstByte3 == otherFirst3) {
-							return length3 == 1 || cmp3.equals(otherFirst3, other);
+							return length3 == 1 || cmp3.equals(otherFirst3, otherBuffer);
 						}
 					}
 				}
@@ -378,18 +431,26 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match1110(ByteBuffer other) {
-		skipVarint(other);
-
-		byte otherFirst1 = other.get();
+	private boolean match1110(VarintTupleInput other) {
+		if (!other.skip() || !other.next()) {
+			return false;
+		}
+		ByteBuffer otherBuffer = other.getBuffer();
+		byte otherFirst1 = otherBuffer.get();
 		if (firstByte1 == otherFirst1) {
-			if (length1 == 1 || cmp1.equals(otherFirst1, other)) {
-				byte otherFirst2 = other.get();
+			if (length1 == 1 || cmp1.equals(otherFirst1, otherBuffer)) {
+				if (!other.next()) {
+					return false;
+				}
+				byte otherFirst2 = otherBuffer.get();
 				if (firstByte2 == otherFirst2) {
-					if (length2 == 1 || cmp2.equals(otherFirst2, other)) {
-						byte otherFirst3 = other.get();
+					if (length2 == 1 || cmp2.equals(otherFirst2, otherBuffer)) {
+						if (!other.next()) {
+							return false;
+						}
+						byte otherFirst3 = otherBuffer.get();
 						if (firstByte3 == otherFirst3) {
-							return length3 == 1 || cmp3.equals(otherFirst3, other);
+							return length3 == 1 || cmp3.equals(otherFirst3, otherBuffer);
 						}
 					}
 				}
@@ -398,19 +459,32 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match1111(ByteBuffer other) {
-		byte otherFirst0 = other.get();
+	private boolean match1111(VarintTupleInput other) {
+		if (!other.next()) {
+			return false;
+		}
+		ByteBuffer otherBuffer = other.getBuffer();
+		byte otherFirst0 = otherBuffer.get();
 		if (firstByte0 == otherFirst0) {
-			if (length0 == 1 || cmp0.equals(otherFirst0, other)) {
-				byte otherFirst1 = other.get();
+			if (length0 == 1 || cmp0.equals(otherFirst0, otherBuffer)) {
+				if (!other.next()) {
+					return false;
+				}
+				byte otherFirst1 = otherBuffer.get();
 				if (firstByte1 == otherFirst1) {
-					if (length1 == 1 || cmp1.equals(otherFirst1, other)) {
-						byte otherFirst2 = other.get();
+					if (length1 == 1 || cmp1.equals(otherFirst1, otherBuffer)) {
+						if (!other.next()) {
+							return false;
+						}
+						byte otherFirst2 = otherBuffer.get();
 						if (firstByte2 == otherFirst2) {
-							if (length2 == 1 || cmp2.equals(otherFirst2, other)) {
-								byte otherFirst3 = other.get();
+							if (length2 == 1 || cmp2.equals(otherFirst2, otherBuffer)) {
+								if (!other.next()) {
+									return false;
+								}
+								byte otherFirst3 = otherBuffer.get();
 								if (firstByte3 == otherFirst3) {
-									return length3 == 1 || cmp3.equals(otherFirst3, other);
+									return length3 == 1 || cmp3.equals(otherFirst3, otherBuffer);
 								}
 							}
 						}

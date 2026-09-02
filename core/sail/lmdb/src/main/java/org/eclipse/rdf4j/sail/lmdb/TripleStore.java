@@ -92,6 +92,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
 import org.eclipse.rdf4j.sail.lmdb.util.EntryMatcher;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexEntryWriters;
+import org.eclipse.rdf4j.sail.lmdb.util.VarintTupleInput;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
@@ -618,6 +619,8 @@ class TripleStore implements Closeable {
 										obj = component == 2 ? id : -1, context = component == 3 ? id : -1;
 
 								EntryMatcher matcher = index.createMatcher(subj, pred, obj, context);
+								int keyElements = index.getIndexSplitPosition();
+								int valueElements = 4 - keyElements;
 
 								maxKeyBuf.clear();
 								maxValueBuf.clear();
@@ -643,7 +646,8 @@ class TripleStore implements Closeable {
 									if (keyDiff > 0 || (keyDiff == 0 && mdb_dcmp(txn, dbi, valueData, maxValue) > 0)) {
 										// id was not found
 										break;
-									} else if (!matcher.matches(keyData.mv_data(), valueData.mv_data())) {
+									} else if (!matcher.matches(new VarintTupleInput(keyElements, keyData.mv_data()),
+											new VarintTupleInput(valueElements, valueData.mv_data()))) {
 										// value doesn't match search key/mask, fetch next value
 										rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 									} else {

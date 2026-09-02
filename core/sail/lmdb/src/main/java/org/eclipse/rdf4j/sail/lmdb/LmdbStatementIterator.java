@@ -70,7 +70,7 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 
 			Resource context = null;
 			long contextID = quad[TripleIndex.CONTEXT_IDX];
-			if (contextID != 0) {
+			if (contextID != ValueIds.NULL_CONTEXT) {
 				context = (Resource) valueStore.getLazyValue(contextID);
 			}
 

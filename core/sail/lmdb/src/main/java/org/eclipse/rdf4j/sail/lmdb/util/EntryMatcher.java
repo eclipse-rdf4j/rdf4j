@@ -19,9 +19,13 @@ import java.nio.ByteBuffer;
 public class EntryMatcher {
 	private final VarintMatcher keyMatcher;
 	private final VarintMatcher valueMatcher;
+	private final int keyElements;
+	private final int valueElements;
 
 	public EntryMatcher(int split, byte[] keyArray, byte[] valueArray, boolean[] shouldMatch) {
 		assert shouldMatch.length == 4;
+		this.keyElements = split;
+		this.valueElements = 4 - split;
 		boolean[] keyShouldMatch;
 		boolean[] valueShouldMatch;
 		switch (split) {
@@ -52,15 +56,19 @@ public class EntryMatcher {
 		this.valueMatcher = new VarintMatcher(valueArray, valueShouldMatch);
 	}
 
-	public boolean matches(ByteBuffer key, ByteBuffer value) {
+	public boolean matches(VarintTupleInput key, VarintTupleInput value) {
 		return keyMatcher.matches(key) && valueMatcher.matches(value);
 	}
 
-	public boolean matchesKey(ByteBuffer key) {
+	public boolean matches(ByteBuffer key, ByteBuffer value) {
+		return matches(new VarintTupleInput(keyElements, key), new VarintTupleInput(valueElements, value));
+	}
+
+	public boolean matchesKey(VarintTupleInput key) {
 		return keyMatcher.matches(key);
 	}
 
-	public boolean matchesValue(ByteBuffer value) {
+	public boolean matchesValue(VarintTupleInput value) {
 		return valueMatcher.matches(value);
 	}
 }

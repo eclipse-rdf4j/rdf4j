@@ -751,7 +751,7 @@ class LmdbSailStore implements SailStore {
 		} else {
 			for (Resource context : contexts) {
 				if (context == null) {
-					contextIDList.add(0L);
+					contextIDList.add(ValueIds.NULL_CONTEXT);
 				} else if (!context.isTripleTerm()) {
 					long contextID = valueStore.getId(context);
 
@@ -813,7 +813,7 @@ class LmdbSailStore implements SailStore {
 		} else {
 			for (Resource context : contexts) {
 				if (context == null) {
-					contextIDList.add(0L);
+					contextIDList.add(ValueIds.NULL_CONTEXT);
 				} else if (!context.isTripleTerm()) {
 					long contextID = valueStore.getId(context);
 
@@ -1162,7 +1162,7 @@ class LmdbSailStore implements SailStore {
 
 					bulk.objects[batchIndex] = valueStore.storeValue(obj);
 					if (context == null) {
-						bulk.contexts[batchIndex] = 0;
+						bulk.contexts[batchIndex] = ValueIds.NULL_CONTEXT;
 					} else {
 						Long contextId = contextCache.get(context);
 						if (contextId == null) {
@@ -1256,7 +1256,7 @@ class LmdbSailStore implements SailStore {
 					long objId = valueStore.storeValue(obj);
 					q.o = objId;
 					if (context == null) {
-						q.c = 0;
+						q.c = ValueIds.NULL_CONTEXT;
 					} else {
 						Long contextId = contextCache.get(context);
 						if (contextId == null) {
@@ -1411,7 +1411,7 @@ class LmdbSailStore implements SailStore {
 				q.s = valueStore.storeValue(subj);
 				q.p = valueStore.storeValue(pred);
 				q.o = valueStore.storeValue(obj);
-				q.c = context == null ? 0 : valueStore.storeValue(context);
+				q.c = context == null ? ValueIds.NULL_CONTEXT : valueStore.storeValue(context);
 				q.context = context;
 				q.explicit = explicit;
 				q.subj = subj;
@@ -1468,7 +1468,7 @@ class LmdbSailStore implements SailStore {
 							}
 						}
 						for (long id : quad) {
-							if (id != 0L && !ValueIds.isInlined(id)) {
+							if (id != ValueIds.NULL_CONTEXT && !ValueIds.isInlined(id)) {
 								// only add references, exclude inlined values
 								unusedIds.add(id);
 							}
@@ -1524,7 +1524,7 @@ class LmdbSailStore implements SailStore {
 					for (int i = 0; i < contexts.length; i++) {
 						Resource context = contexts[i];
 						if (context == null) {
-							contextIds[i] = 0;
+							contextIds[i] = ValueIds.NULL_CONTEXT;
 						} else {
 							long id = valueStore.getId(context);
 							// unknown_id cannot be used (would result in removal from all contexts)
@@ -1585,7 +1585,7 @@ class LmdbSailStore implements SailStore {
 			IRI pred = (IRI) valueStore.getValue(quad[1]);
 			Value obj = valueStore.getValue(quad[2]);
 			long ctxId = quad[3];
-			Resource ctx = (ctxId == 0L || ctxId == LmdbValue.UNKNOWN_ID) ? null
+			Resource ctx = (ctxId == ValueIds.NULL_CONTEXT || ctxId == LmdbValue.UNKNOWN_ID) ? null
 					: (Resource) valueStore.getValue(ctxId);
 			return valueStore.createStatement(subj, pred, obj, ctx);
 		}

@@ -15,14 +15,12 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_GET_BOTH_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT_NODUP;
-import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
-import static org.lwjgl.util.lmdb.LMDB.mdb_dcmp;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -31,6 +29,7 @@ import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.util.EntryMatcher;
+import org.eclipse.rdf4j.sail.lmdb.util.VarintTupleInput;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.lmdb.MDBVal;
 import org.slf4j.Logger;
@@ -67,7 +66,9 @@ class LmdbRecordIterator implements RecordIterator {
 
 		private final MDBVal valueData = MDBVal.malloc();
 
-		private ByteBuffer valueBuf;
+		private VarintTupleInput keyInput;
+
+		private VarintTupleInput valueInput;
 
 		private final ByteBuffer minKeyBuf = MemoryUtil.memAlloc((Long.BYTES + 1) * 4);
 
@@ -208,7 +209,7 @@ class LmdbRecordIterator implements RecordIterator {
 
 			boolean isDupValue = false;
 			if (fetchNext) {
-				if (!state.valueBuf.hasRemaining()) {
+				if (!state.valueInput.hasNext()) {
 					lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_NEXT_DUP);
 					if (lastResult != MDB_SUCCESS) {
 						// no more duplicates, move to next key
@@ -217,7 +218,10 @@ class LmdbRecordIterator implements RecordIterator {
 						isDupValue = true;
 					}
 					if (lastResult == MDB_SUCCESS) {
-						state.valueBuf = state.valueData.mv_data();
+						state.keyInput = new VarintTupleInput(state.index.getIndexSplitPosition(),
+								state.keyData.mv_data());
+						state.valueInput = new VarintTupleInput(4 - state.index.getIndexSplitPosition(),
+								state.valueData.mv_data());
 					}
 				} else {
 					lastResult = MDB_SUCCESS;
@@ -244,7 +248,9 @@ class LmdbRecordIterator implements RecordIterator {
 					lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_FIRST);
 				}
 				if (lastResult == MDB_SUCCESS) {
-					state.valueBuf = state.valueData.mv_data();
+					state.keyInput = new VarintTupleInput(state.index.getIndexSplitPosition(), state.keyData.mv_data());
+					state.valueInput = new VarintTupleInput(4 - state.index.getIndexSplitPosition(),
+							state.valueData.mv_data());
 				}
 			}
 
@@ -255,16 +261,19 @@ class LmdbRecordIterator implements RecordIterator {
 					if (keyDiff > 0) {
 						break;
 					}
-					int valueDiff = LmdbUtil.compareRegion(state.valueBuf, state.valueBuf.position(),
+					state.valueInput.next();
+					int valueDiff = LmdbUtil.compareRegion(state.valueInput.getBuffer(),
+							state.valueInput.getBuffer().position(),
 							state.maxValueBuf, 0,
-							Math.min(state.valueBuf.remaining(), state.maxValueBuf.remaining()));
+							Math.min(state.valueInput.getBuffer().remaining(), state.maxValueBuf.remaining()));
 					if (valueDiff > 0) {
 						break;
 					}
+					state.valueInput.resetTuple();
 				}
 
 				// value doesn't match search key/mask, fetch next value
-				if (!state.valueBuf.hasRemaining()) {
+				if (!state.valueInput.hasNext()) {
 					lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_NEXT_DUP);
 					if (lastResult != MDB_SUCCESS) {
 						// no more duplicates, move to next key
@@ -272,25 +281,33 @@ class LmdbRecordIterator implements RecordIterator {
 						isDupValue = false;
 					}
 					if (lastResult == MDB_SUCCESS) {
-						state.valueBuf = state.valueData.mv_data();
+						state.keyInput = new VarintTupleInput(state.index.getIndexSplitPosition(),
+								state.keyData.mv_data());
+						state.valueInput = new VarintTupleInput(4 - state.index.getIndexSplitPosition(),
+								state.valueData.mv_data());
 					} else {
 						break;
 					}
 				}
 
-				int valueBufPos = state.valueBuf.position();
-				if (notMatches(isDupValue, isDupValue ? null : state.keyData.mv_data(), state.valueBuf)) {
-					state.valueBuf.position(valueBufPos);
+				if (notMatches(isDupValue, isDupValue ? null : state.keyInput, state.valueInput)) {
+					state.keyInput.resetTuple(); // key currently only has one tuple, so reset to prepare for next key
+					state.valueInput.resetTuple();
 					int skip = 4 - state.index.getIndexSplitPosition();
 					for (int i = 0; i < skip; i++) {
-						LmdbUtil.skipVarint(state.valueBuf);
+						state.valueInput.skip();
 					}
+					state.valueInput.nextTuple();
 					continue;
 				}
-				state.valueBuf.position(valueBufPos);
+				state.keyInput.resetTuple();
+				state.valueInput.resetTuple();
 
 				// Matching value found
-				state.index.entryToQuad(state.keyData.mv_data(), state.valueBuf, state.patternQuad, state.quad);
+				state.index.entryToQuad(state.keyInput, state.valueInput, state.patternQuad, state.quad);
+				state.keyInput.resetTuple();
+				state.valueInput.nextTuple();
+
 				// fetch next value
 				fetchNext = true;
 				return state.quad;
@@ -302,14 +319,18 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 	}
 
-	private boolean notMatches(boolean testValueOnly, ByteBuffer keyBuf, ByteBuffer valueBuf) {
+	private boolean notMatches(boolean testValueOnly, VarintTupleInput keyInput, VarintTupleInput valueInput) {
 		if (state.matcher != null) {
-			return testValueOnly ? !state.matcher.matchesValue(valueBuf) : !state.matcher.matches(keyBuf, valueBuf);
+			return testValueOnly
+					? !state.matcher.matchesValue(valueInput)
+					: !state.matcher.matches(keyInput, valueInput);
 		} else if (state.matchValues) {
 			// lazy init of group matcher
 			state.matcher = state.index.createMatcher(state.patternQuad[0], state.patternQuad[1], state.patternQuad[2],
 					state.patternQuad[3]);
-			return testValueOnly ? !state.matcher.matchesValue(valueBuf) : !state.matcher.matches(keyBuf, valueBuf);
+			return testValueOnly
+					? !state.matcher.matchesValue(valueInput)
+					: !state.matcher.matches(keyInput, valueInput);
 		} else {
 			return false;
 		}
