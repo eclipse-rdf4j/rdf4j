@@ -991,6 +991,56 @@ class QueryTemplateTest {
 				+ Files.readString(Path.of("src/main/webapp/styles/query-compare.css"), StandardCharsets.UTF_8);
 	}
 
+	@Test
+	void liveLmdbRuntimePanelIsExpandedAndLoadedByDefault() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+		String compiledQueryScript = Files.readString(Path.of("src/main/webapp/scripts/query.js"),
+				StandardCharsets.UTF_8);
+
+		assertThat(queryTemplate)
+				.contains("<details id=\"lmdb-runtime-features\" class=\"lmdb-runtime-features\" open=\"open\">");
+		// The panel must load both when it is opened again and eagerly during initialization, so an
+		// open-by-default panel is populated without the user having to collapse and re-expand it.
+		assertThat(queryScript).contains("function loadLmdbRuntimePropertiesIfPanelOpen(");
+		assertThat(countOccurrences(queryScript, "loadLmdbRuntimePropertiesIfPanelOpen(details);")).isEqualTo(2);
+		assertThat(compiledQueryScript).contains("function loadLmdbRuntimePropertiesIfPanelOpen(");
+		assertThat(countOccurrences(compiledQueryScript, "loadLmdbRuntimePropertiesIfPanelOpen(details);"))
+				.isEqualTo(2);
+	}
+
+	private static int countOccurrences(String haystack, String needle) {
+		int count = 0;
+		for (int index = haystack.indexOf(needle); index >= 0; index = haystack.indexOf(needle,
+				index + needle.length())) {
+			count++;
+		}
+		return count;
+	}
+
+	@Test
+	void liveLmdbRuntimePanelIsAccessibleAndRollsBackFailedUpdates() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+		String styles = readQueryStyles();
+
+		assertThat(queryTemplate)
+				.contains("<details id=\"lmdb-runtime-features\"")
+				.contains("aria-live=\"polite\"")
+				.contains("id=\"lmdb-runtime-refresh\"");
+		assertThat(queryScript)
+				.contains("details.addEventListener('toggle'")
+				.contains("action: 'lmdb-properties'")
+				.contains("action: 'set-lmdb-property'")
+				.contains("checkbox.prop('disabled', true)")
+				.contains("checkbox.prop('checked', previous)");
+		assertThat(styles)
+				.contains(".lmdb-runtime-property")
+				.contains("@media (max-width: 42rem)");
+	}
+
 	private static String templateDefault(ConfigTemplate template, String name) {
 		return templateOptions(template, name).get(0);
 	}

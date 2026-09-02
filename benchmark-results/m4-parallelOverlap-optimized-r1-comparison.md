@@ -1,0 +1,3 @@
+| Benchmark | (inputRows) | (workersPerQuery) | Mode | Units | Score [m4-parallelOverlap-optimized-off-r1-2026-08-03] | Score [m4-parallelOverlap-optimized-on-r1-2026-08-03] | Diff Score [m4-parallelOverlap-optimized-on-r1-2026-08-03 - m4-parallelOverlap-optimized-off-r1-2026-08-03] | Diff % [m4-parallelOverlap-optimized-on-r1-2026-08-03 - m4-parallelOverlap-optimized-off-r1-2026-08-03] | Status [m4-parallelOverlap-optimized-on-r1-2026-08-03 vs m4-parallelOverlap-optimized-off-r1-2026-08-03] |
+| :--- | :--- | :--- | :--- | :--- | ---: | ---: | ---: | ---: | :--- |
+| ParallelismBenchmark.parallelOverlap | 1000000 | 7 | avgt | ms/op | 330.652 | 321.9 | -8.752 | -2.647% | improvement |

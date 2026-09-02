@@ -1,0 +1,28 @@
+ANALYTICS q8 costed morsel arbiter, synopsis disabled, JDK 26 AArch64
+
+Matched controls
+- Corpus: core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+- JVM: Zulu OpenJDK 26, -Xms1G -Xmx16G
+- Warmup: 2 x 10 s
+- Measurement: 5 x 5 s
+- Forks: 1
+- rdf4j.lmdb.directAdjacency.synopsis.enabled=false
+- rdf4j.lmdb.themeQueryBenchmark.typeMatrixMetrics=false
+
+Before arbiter
+ThemeQueryBenchmark.executeQuery ANALYTICS q8 avgt 5 47.119 +/- 2.431 ms/op
+
+After arbiter
+ThemeQueryBenchmark.executeQuery ANALYTICS q8 avgt 5 43.125 +/- 0.727 ms/op
+
+Result
+- 1.093x faster than the matched pre-arbiter build (8.48 percent lower average time).
+- The 99.9 percent intervals are separated.
+- 5.095x faster than the user-provided 219.689 ms/op historical result.
+- The ANALYTICS corpus selected typeMatrix(sidewaysTypeMorsels).
+- The selective literal-heavy regression selects typeMatrix(pageMorsels), rejects literal-only pages, and returns the exact 2,000-link result.
+
+Rejected follow-up
+- Propagating neighbor-kind headers through every physical fiber copy: 47.401 +/- 1.881 ms/op.
+- Adding a single-fiber shortcut: 44.861 +/- 1.883 ms/op in a short run, but 46.792 +/- 0.970 ms/op over ten measurements.
+- The longer interval overlaps the 47.119 ms/op control; the candidate was removed.

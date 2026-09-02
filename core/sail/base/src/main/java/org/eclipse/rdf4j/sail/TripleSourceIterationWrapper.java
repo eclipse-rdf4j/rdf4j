@@ -17,6 +17,7 @@ import java.util.Objects;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 @InternalUseOnly
@@ -108,6 +109,18 @@ public class TripleSourceIterationWrapper<T> implements CloseableIteration<T>, I
 			closed = true;
 			delegate.close();
 		}
+	}
+
+	@Override
+	public void seek(Value minValue, boolean minInclusive, Value maxValue, boolean maxInclusive) {
+		if (!closed) {
+			delegate.seek(minValue, minInclusive, maxValue, maxInclusive);
+		}
+	}
+
+	@Override
+	public boolean supportsSeek() {
+		return !closed && delegate.supportsSeek();
 	}
 
 	@Override

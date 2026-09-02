@@ -83,6 +83,11 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	}
 
 	@Override
+	public long retainedLexicalLength() {
+		return initialized ? super.getID().length() : -1L;
+	}
+
+	@Override
 	public void setID(String id) {
 		super.setID(id);
 	}

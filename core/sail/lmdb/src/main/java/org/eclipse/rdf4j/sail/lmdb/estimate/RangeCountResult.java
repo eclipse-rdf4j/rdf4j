@@ -13,13 +13,51 @@ package org.eclipse.rdf4j.sail.lmdb.estimate;
 
 final class RangeCountResult {
 
+	enum Mode {
+		EXACT_EMPTY,
+		EXACT_SAME_LEAF,
+		EXACT_SMALL_RANGE,
+		EXACT_WHOLE_DATABASE,
+		SAMPLED_DIRECT_RANGE,
+		SAMPLED_COMPLEMENT,
+		SAMPLED_RESIDUAL
+	}
+
 	long entries;
 	long branchPagesRead;
 	long leafPagesRead;
 	long overflowPagesRead;
+	long headerOnlyReads;
+	long pageCacheHits;
+	long leafSampleProbes;
+	long matcherLeafScans;
+	long matcherOuterKeysScanned;
+	long hardLowerBound;
+	long hardUpperBound = Long.MAX_VALUE;
+	int physicalProbeBudgetUsed;
+	int residualPilotProbeBudgetUsed;
+	int residualFinalProbeBudgetUsed;
+	int conditionalProbeBudgetUsed;
+	double effectiveSampleSize = Double.POSITIVE_INFINITY;
+	double effectiveSampleFraction = 1.0d;
+	double sampledMassFraction;
+	double relativeStandardError;
+	double disagreement = 1.0d;
+	double physicalPilotDisagreement = 1.0d;
+	double pilotFinalDisagreement = 1.0d;
+	double directRatioDisagreement = 1.0d;
+	boolean exact;
+	boolean exhaustive;
+	boolean complementUsed;
+	boolean sparsePriorUsed;
+	boolean lowEffectiveSample;
+	boolean disagreementDetected;
+	boolean additionalEvidenceUsed;
+	boolean secondaryEvidenceRecommended;
+	Mode mode = Mode.EXACT_EMPTY;
 
 	long estimatedBytes(int pageSize) {
-		return (branchPagesRead + leafPagesRead + overflowPagesRead) * pageSize;
+		return (branchPagesRead + leafPagesRead + overflowPagesRead) * pageSize
+				+ headerOnlyReads * LmdbFormat.PAGE_HEADER_SIZE;
 	}
-
 }

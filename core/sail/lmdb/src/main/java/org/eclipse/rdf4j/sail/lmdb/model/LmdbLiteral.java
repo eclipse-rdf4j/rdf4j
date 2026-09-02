@@ -12,13 +12,18 @@
 package org.eclipse.rdf4j.sail.lmdb.model;
 
 import java.io.ObjectStreamException;
+import java.math.BigInteger;
 import java.util.Objects;
 import java.util.Optional;
+
+import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
+import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 
 public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
@@ -59,6 +64,12 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	private long internalID;
 
 	private boolean initialized = false;
+
+	private int cachedHash;
+
+	private transient XMLGregorianCalendar cachedCalendarValue;
+
+	private transient BigInteger cachedIntegerValue;
 
 	/*--------------*
 	 * Constructors *
@@ -173,6 +184,10 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 			this.baseDirection = lmdbLiteral.baseDirection;
 			this.datatype = lmdbLiteral.datatype;
 			this.coreDatatype = lmdbLiteral.coreDatatype;
+			this.cachedHash = lmdbLiteral.cachedHash;
+			this.cachedCalendarValue = lmdbLiteral.cachedCalendarValue;
+			this.cachedIntegerValue = lmdbLiteral.cachedIntegerValue;
+			this.initialized = true;
 		} else {
 			throw new IllegalArgumentException("Initialized value is not of type LmdbLiteral");
 		}
@@ -184,28 +199,76 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	}
 
 	@Override
+	public long retainedLexicalLength() {
+		return label == null ? -1L : label.length();
+	}
+
+	@Override
 	public IRI getDatatype() {
-		init();
+		if (!initialized) {
+			CoreDatatype encodedDatatype = encodedCoreDatatype();
+			if (encodedDatatype != null) {
+				return datatype;
+			}
+			init();
+		}
 		return datatype;
 	}
 
 	@Override
 	public CoreDatatype getCoreDatatype() {
-		init();
-		if (coreDatatype == null) {
-			coreDatatype = CoreDatatype.from(datatype);
+		CoreDatatype coreDatatype = this.coreDatatype;
+		if (coreDatatype != null) {
+			return coreDatatype;
 		}
+		if (!initialized) {
+			coreDatatype = encodedCoreDatatype();
+			if (coreDatatype != null) {
+				return coreDatatype;
+			}
+			init();
+		}
+		coreDatatype = CoreDatatype.from(datatype);
+		this.coreDatatype = coreDatatype;
 		return coreDatatype;
+	}
+
+	/**
+	 * Inlined literal ids encode their XSD core datatype in the id's type bits, so the datatype is known without
+	 * resolving the value. Returns {@code null} (leaving the fields untouched) when the id is not an inlined id.
+	 */
+	private CoreDatatype encodedCoreDatatype() {
+		if (internalID == UNKNOWN_ID) {
+			return null;
+		}
+		CoreDatatype referenceDatatype = ValueIds.coreDatatypeOfCoreLiteral(internalID);
+		if (referenceDatatype != CoreDatatype.NONE) {
+			datatype = referenceDatatype.getIri();
+			coreDatatype = referenceDatatype;
+			return referenceDatatype;
+		}
+		CoreDatatype.XSD inlinedDatatype = Values.coreDatatypeOfInlined(internalID);
+		if (inlinedDatatype != null) {
+			datatype = inlinedDatatype.getIri();
+			coreDatatype = inlinedDatatype;
+		}
+		return inlinedDatatype;
 	}
 
 	public void setDatatype(IRI datatype) {
 		this.datatype = datatype;
 		coreDatatype = null;
+		cachedHash = 0;
+		cachedCalendarValue = null;
+		cachedIntegerValue = null;
 	}
 
 	public void setDatatype(CoreDatatype coreDatatype) {
 		this.coreDatatype = coreDatatype;
 		datatype = coreDatatype.getIri();
+		cachedHash = 0;
+		cachedCalendarValue = null;
+		cachedIntegerValue = null;
 	}
 
 	@Override
@@ -214,8 +277,31 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		return label;
 	}
 
+	@Override
+	public XMLGregorianCalendar calendarValue() {
+		XMLGregorianCalendar calendarValue = cachedCalendarValue;
+		if (calendarValue == null) {
+			calendarValue = super.calendarValue();
+			cachedCalendarValue = calendarValue;
+		}
+		return (XMLGregorianCalendar) calendarValue.clone();
+	}
+
+	@Override
+	public BigInteger integerValue() {
+		BigInteger integerValue = cachedIntegerValue;
+		if (integerValue == null) {
+			integerValue = super.integerValue();
+			cachedIntegerValue = integerValue;
+		}
+		return integerValue;
+	}
+
 	public void setLabel(String label) {
 		this.label = label;
+		cachedHash = 0;
+		cachedCalendarValue = null;
+		cachedIntegerValue = null;
 	}
 
 	@Override
@@ -232,10 +318,12 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	public void setBaseDirection(BaseDirection baseDirection) {
 		this.baseDirection = baseDirection;
+		cachedHash = 0;
 	}
 
 	public void setLanguage(String language) {
 		this.language = language;
+		cachedHash = 0;
 	}
 
 	public void init() {
@@ -272,15 +360,22 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	@Override
 	public int hashCode() {
+		int hash = cachedHash;
+		if (hash != 0) {
+			return hash;
+		}
+
 		if (internalID != UNKNOWN_ID) {
-			int cachedHash = revision.getStoredHash(internalID);
-			if (cachedHash != 0) {
-				return cachedHash;
+			hash = revision.getStoredHash(internalID);
+			if (hash != 0) {
+				cachedHash = hash;
+				return hash;
 			}
 		}
 
 		init();
-		int hash = super.hashCode();
+		hash = super.hashCode();
+		cachedHash = hash;
 		if (internalID != UNKNOWN_ID) {
 			revision.storeHash(internalID, hash);
 		}

@@ -13,5 +13,4 @@ package org.eclipse.rdf4j.sail.lmdb.estimate;
 
 record LmdbNode(int nodeOffset, int keyOffset, int keySize, int valueOffset, int valueSize, int nodeFlags,
 		long branchPgno) {
-
 }

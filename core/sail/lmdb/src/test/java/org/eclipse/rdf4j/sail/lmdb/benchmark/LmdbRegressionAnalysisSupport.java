@@ -18,7 +18,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.IntStream;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.common.plan.FeatureFlagCollector;
@@ -44,13 +43,6 @@ final class LmdbRegressionAnalysisSupport {
 	private static final String PERSISTENT_STORE_HINT = "Set -D"
 			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
 			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
-
-	private static final Map<Theme, int[]> LEARNED_FILTER_PRIMES = Map.of(
-			Theme.ELECTRICAL_GRID, ints(2, 4, 5),
-			Theme.LIBRARY, ints(5, 7),
-			Theme.PHARMA, IntStream.rangeClosed(0, 10).toArray(),
-			Theme.SOCIAL_MEDIA, ints(0, 2, 3, 4, 10),
-			Theme.TRAIN, ints(2, 7, 8));
 
 	private static final List<TargetQuery> TARGET_QUERIES = List.of(
 			target(Theme.ELECTRICAL_GRID, 2, "estimate-access-work-drift", "physical-refinement"),
@@ -201,12 +193,7 @@ final class LmdbRegressionAnalysisSupport {
 
 	private static PreparedThemeStore prepareThemeStore(Path dataDir, Theme theme) throws Exception {
 		LmdbStoreConfig storeConfig = ConfigUtil.createConfig();
-		int[] primeIndexes = LEARNED_FILTER_PRIMES.getOrDefault(theme, ints());
-		String primeKey = IntStream.of(primeIndexes)
-				.mapToObj(String::valueOf)
-				.collect(java.util.stream.Collectors.joining("-"));
-		String storeKey = PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/"
-				+ (primeKey.isEmpty() ? "no-prime" : primeKey);
+		String storeKey = PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/cold";
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(
 						dataDir.resolve(theme.name()),
@@ -218,7 +205,6 @@ final class LmdbRegressionAnalysisSupport {
 								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 								loadThemeData(repository, theme);
 								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-								primeLearnedFilterStats(repository, theme);
 								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
 							} finally {
 								shutdownAndRelease(repository, store);
@@ -237,31 +223,6 @@ final class LmdbRegressionAnalysisSupport {
 			RDFInserter inserter = new RDFInserter(connection);
 			ThemeDataSetGenerator.generate(theme, inserter);
 			connection.commit();
-		}
-	}
-
-	private static void primeLearnedFilterStats(SailRepository repository, Theme theme) {
-		for (int queryIndex : LEARNED_FILTER_PRIMES.getOrDefault(theme, ints())) {
-			primeLearnedFilterStats(repository, theme, queryIndex);
-		}
-	}
-
-	private static void primeLearnedFilterStats(SailRepository repository, Theme theme, int queryIndex) {
-		String query = ThemeQueryCatalog.queryFor(theme, queryIndex);
-		long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
-		long actual = executeQuery(repository, query);
-		if (actual != expected) {
-			throw new AssertionError("Unable to prime learned filter stats: theme=" + theme + ", queryIndex="
-					+ queryIndex + ", expected=" + expected + ", actual=" + actual);
-		}
-	}
-
-	private static long executeQuery(SailRepository repository, String query) {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query)
-					.evaluate()
-					.stream()
-					.count();
 		}
 	}
 
@@ -335,10 +296,6 @@ final class LmdbRegressionAnalysisSupport {
 
 	private static String nonBlank(String value) {
 		return value == null || value.isBlank() ? "<missing>" : value;
-	}
-
-	private static int[] ints(int... values) {
-		return values;
 	}
 
 	private static TargetQuery target(Theme theme, int queryIndex, String regressionClass,

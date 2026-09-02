@@ -108,6 +108,16 @@ public interface SailDataset extends SailClosable {
 	}
 
 	/**
+	 * Checks if at least one statement matches a specific subject, predicate and/or object. Implementations with native
+	 * indexes should override this to stop before materializing Statement objects.
+	 */
+	default boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		try (CloseableIteration<? extends Statement> statements = getStatements(subj, pred, obj, contexts)) {
+			return statements.hasNext();
+		}
+	}
+
+	/**
 	 * Gets all statements that have a specific subject, predicate and/or object. All three parameters may be null to
 	 * indicate wildcards. Optionally a (set of) context(s) may be specified in which case the result will be restricted
 	 * to statements matching one or more of the specified contexts.
@@ -151,6 +161,16 @@ public interface SailDataset extends SailClosable {
 	@Experimental
 	default Comparator<Value> getComparator() {
 		return null;
+	}
+
+	/**
+	 * Whether this dataset still reflects the latest committed state of its backing store. Datasets that are pinned to
+	 * a point-in-time snapshot return {@code false} once the backing store has advanced past that snapshot, signalling
+	 * that a cached instance must not be handed to new borrowers that expect the latest committed state. Datasets
+	 * without point-in-time snapshot semantics always return {@code true}.
+	 */
+	default boolean isSnapshotCurrent() {
+		return true;
 	}
 
 }

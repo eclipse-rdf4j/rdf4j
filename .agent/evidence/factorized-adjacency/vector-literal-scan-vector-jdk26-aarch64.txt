@@ -1,0 +1,239 @@
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.findLiteralDelimiter
+# Parameters: (length = 32)
+
+# Run progress: 0.00% complete, ETA 00:00:48
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 2.100 ns/op
+# Warmup Iteration   2: 2.015 ns/op
+# Warmup Iteration   3: 1.970 ns/op
+Iteration   1: 1.966 ns/op
+Iteration   2: 1.972 ns/op
+Iteration   3: 1.986 ns/op
+Iteration   4: 1.976 ns/op
+Iteration   5: 1.969 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.findLiteralDelimiter":
+  1.974 ±(99.9%) 0.029 ns/op [Average]
+  (min, avg, max) = (1.966, 1.974, 1.986), stdev = 0.008
+  CI (99.9%): [1.944, 2.003] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.findLiteralDelimiter
+# Parameters: (length = 64)
+
+# Run progress: 16.67% complete, ETA 00:00:41
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 2.956 ns/op
+# Warmup Iteration   2: 2.869 ns/op
+# Warmup Iteration   3: 2.863 ns/op
+Iteration   1: 2.860 ns/op
+Iteration   2: 2.861 ns/op
+Iteration   3: 2.859 ns/op
+Iteration   4: 2.861 ns/op
+Iteration   5: 2.863 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.findLiteralDelimiter":
+  2.861 ±(99.9%) 0.006 ns/op [Average]
+  (min, avg, max) = (2.859, 2.861, 2.863), stdev = 0.001
+  CI (99.9%): [2.855, 2.866] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.findLiteralDelimiter
+# Parameters: (length = 128)
+
+# Run progress: 33.33% complete, ETA 00:00:32
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 4.200 ns/op
+# Warmup Iteration   2: 4.052 ns/op
+# Warmup Iteration   3: 4.070 ns/op
+Iteration   1: 4.067 ns/op
+Iteration   2: 4.098 ns/op
+Iteration   3: 4.069 ns/op
+Iteration   4: 4.064 ns/op
+Iteration   5: 4.070 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.findLiteralDelimiter":
+  4.074 ±(99.9%) 0.054 ns/op [Average]
+  (min, avg, max) = (4.064, 4.074, 4.098), stdev = 0.014
+  CI (99.9%): [4.019, 4.128] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.findLiteralDelimiter
+# Parameters: (length = 256)
+
+# Run progress: 50.00% complete, ETA 00:00:24
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 6.753 ns/op
+# Warmup Iteration   2: 6.457 ns/op
+# Warmup Iteration   3: 6.520 ns/op
+Iteration   1: 6.517 ns/op
+Iteration   2: 6.502 ns/op
+Iteration   3: 6.521 ns/op
+Iteration   4: 6.513 ns/op
+Iteration   5: 6.518 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.findLiteralDelimiter":
+  6.514 ±(99.9%) 0.029 ns/op [Average]
+  (min, avg, max) = (6.502, 6.514, 6.521), stdev = 0.007
+  CI (99.9%): [6.485, 6.543] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.findLiteralDelimiter
+# Parameters: (length = 2048)
+
+# Run progress: 66.67% complete, ETA 00:00:16
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 44.842 ns/op
+# Warmup Iteration   2: 43.286 ns/op
+# Warmup Iteration   3: 43.155 ns/op
+Iteration   1: 43.768 ns/op
+Iteration   2: 43.745 ns/op
+Iteration   3: 43.770 ns/op
+Iteration   4: 43.768 ns/op
+Iteration   5: 43.756 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.findLiteralDelimiter":
+  43.762 ±(99.9%) 0.041 ns/op [Average]
+  (min, avg, max) = (43.745, 43.762, 43.770), stdev = 0.011
+  CI (99.9%): [43.720, 43.803] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.findLiteralDelimiter
+# Parameters: (length = 8192)
+
+# Run progress: 83.33% complete, ETA 00:00:08
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 173.564 ns/op
+# Warmup Iteration   2: 166.278 ns/op
+# Warmup Iteration   3: 168.594 ns/op
+Iteration   1: 165.517 ns/op
+Iteration   2: 168.129 ns/op
+Iteration   3: 170.367 ns/op
+Iteration   4: 170.192 ns/op
+Iteration   5: 168.272 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.findLiteralDelimiter":
+  168.495 ±(99.9%) 7.565 ns/op [Average]
+  (min, avg, max) = (165.517, 168.495, 170.367), stdev = 1.965
+  CI (99.9%): [160.931, 176.060] (assumes normal distribution)
+
+
+# Run complete. Total time: 00:00:49
+
+REMEMBER: The numbers below are just data. To gain reusable insights, you need to follow up on
+why the numbers are the way they are. Use profilers (see -prof, -lprof), design factorial
+experiments, perform baseline and negative tests that provide experimental control, make sure
+the benchmarking environment is safe on JVM/OS/HW level, ask for reviews from the domain experts.
+Do not assume the numbers tell you what you want them to tell.
+
+NOTE: Current JVM experimentally supports Compiler Blackholes, and they are in use. Please exercise
+extra caution when trusting the results, look into the generated code to check the benchmark still
+works, and factor in a small probability of new VM bugs. Additionally, while comparisons between
+different JVMs are already problematic, the performance difference caused by different Blackhole
+modes can be very significant. Please make sure you use the consistent Blackhole mode for comparisons.
+
+Benchmark                                            (length)  Mode  Cnt    Score   Error  Units
+VectorAdjacencyKernelBenchmark.findLiteralDelimiter        32  avgt    5    1.974 ± 0.029  ns/op
+VectorAdjacencyKernelBenchmark.findLiteralDelimiter        64  avgt    5    2.861 ± 0.006  ns/op
+VectorAdjacencyKernelBenchmark.findLiteralDelimiter       128  avgt    5    4.074 ± 0.054  ns/op
+VectorAdjacencyKernelBenchmark.findLiteralDelimiter       256  avgt    5    6.514 ± 0.029  ns/op
+VectorAdjacencyKernelBenchmark.findLiteralDelimiter      2048  avgt    5   43.762 ± 0.041  ns/op
+VectorAdjacencyKernelBenchmark.findLiteralDelimiter      8192  avgt    5  168.495 ± 7.565  ns/op
+
+Benchmark result is saved to .agent/evidence/factorized-adjacency/vector-literal-scan-vector-jdk26-aarch64.json

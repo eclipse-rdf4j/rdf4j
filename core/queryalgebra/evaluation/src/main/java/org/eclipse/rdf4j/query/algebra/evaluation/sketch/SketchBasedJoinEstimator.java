@@ -642,6 +642,26 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			dirtyTailB = -1;
 		}
 
+		private void ensureCapacityForEntries(int expectedEntries) {
+			if (expectedEntries <= 0) {
+				return;
+			}
+			ensureEntryCapacity(expectedEntries);
+			int bucketCapacity = tableSizeForLoad(expectedEntries);
+			if (bucketCapacity > buckets.length) {
+				rehash(bucketCapacity);
+			}
+		}
+
+		private static int tableSizeForLoad(int expectedEntries) {
+			long required = Math.max(256L, (((long) expectedEntries + 1L) * 10L + 6L) / 7L);
+			int capacity = 1;
+			while (capacity < required && capacity > 0) {
+				capacity <<= 1;
+			}
+			return capacity > 0 ? capacity : 1 << 30;
+		}
+
 		private int size() {
 			return size;
 		}
@@ -8812,6 +8832,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		}
 		synchronized (sketchCacheLock) {
 			cacheDirectory.clear();
+			cacheDirectory.ensureCapacityForEntries(slotAEntries.size() + slotBEntries.size());
 			loadDirectoryIndexEntries(slotAEntries);
 			loadDirectoryIndexEntries(slotBEntries);
 			indexDirty.set(false);
@@ -8832,10 +8853,8 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private void loadDirectoryIndexEntries(List<SketchEstimatorPersistenceStore.IndexEntry> entries) {
 		for (SketchEstimatorPersistenceStore.IndexEntry entry : entries) {
-			SketchAddress address = new SketchAddress(entry.recType(), entry.delete(), entry.axisA(), entry.axisB(),
-					entry.x(),
-					entry.y());
-			int entryId = cacheDirectory.findOrAdd(address);
+			int entryId = cacheDirectory.findOrAdd(entry.recType(), entry.delete(), entry.axisA(), entry.axisB(),
+					entry.x(), entry.y());
 			cacheDirectory.setPersistedRef(entryId, entry.ref().slot(), entry.ref().fileKind(), entry.ref().offset(),
 					entry.ref().length(), entry.ref().generation());
 		}

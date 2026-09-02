@@ -17,6 +17,9 @@
 *.tag text
 *.sh text
 
+# Unified diffs contain literal context markers followed by source indentation.
+core/queryparser/sparql/JavaCC/patches/*.diff -whitespace
+
 # dos batch files should retain windows line endings
 *.bat text eol=crlf
 
@@ -24,4 +27,3 @@
 *.png binary
 *.jpg binary
 *.gif binary
-

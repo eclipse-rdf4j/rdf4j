@@ -97,7 +97,7 @@ final class LmdbDeferredFilterPlacer {
 					currentPatterns, remainingPatternsAfterFactor.get(i));
 			factors.add(new SegmentFactor(optimized, currentPatterns, i));
 			groupSafePrefixBindingWindowFilters(factors, pendingFilters, boundBeforeSegment, prefixBindingNames);
-			prefixBindingNames.addAll(optimized.getBindingNames());
+			prefixBindingNames.addAll(optimized.getAssuredBindingNames());
 			updateFinitePrefixBindingNames(finitePrefixBindingNames, optimized);
 		}
 		sortBindingAssignmentRunsByOriginalOrder(factors);
@@ -195,7 +195,7 @@ final class LmdbDeferredFilterPlacer {
 			return false;
 		}
 		SegmentFactor existsFactor = factors.get(existsWindow.selectedIndexes.getFirst().intValue());
-		return existsFactor.bindingNames.size() <= existsFilter.requiredVars.size();
+		return existsFactor.assuredBindingNames.size() <= existsFilter.requiredVars.size();
 	}
 
 	private TupleExpr applyPrefixBindingDeferredFilters(TupleExpr tupleExpr,
@@ -356,7 +356,7 @@ final class LmdbDeferredFilterPlacer {
 			Set<String> boundBeforeSegment) {
 		Set<String> availableNames = new HashSet<>(boundBeforeSegment);
 		for (int i = factors.size() - 1; i >= 0; i--) {
-			availableNames.addAll(factors.get(i).bindingNames);
+			availableNames.addAll(factors.get(i).assuredBindingNames);
 			if (availableNames.containsAll(requiredVars)) {
 				return i;
 			}
@@ -510,7 +510,7 @@ final class LmdbDeferredFilterPlacer {
 	}
 
 	private boolean isCheapGuardForCorrelatedFilter(SegmentFactor factor, DeferredFilter filter) {
-		Set<String> bindingNames = plannerBindingNames(factor.bindingNames);
+		Set<String> bindingNames = plannerBindingNames(factor.assuredBindingNames);
 		if (bindingNames.isEmpty() || !filter.requiredVars.containsAll(bindingNames)
 				|| factor.containedPatterns.size() != 1) {
 			return false;
@@ -568,7 +568,7 @@ final class LmdbDeferredFilterPlacer {
 		targetIndex = expandCorrelatedFilterWindowOverLocalFilters(factors, filter, targetIndex);
 		Set<String> availableNames = new HashSet<>(boundBeforeSegment);
 		for (int i = 0; i <= targetIndex; i++) {
-			availableNames.addAll(factors.get(i).bindingNames);
+			availableNames.addAll(factors.get(i).assuredBindingNames);
 		}
 		if (!availableNames.containsAll(filter.requiredVars)) {
 			return false;
@@ -689,7 +689,7 @@ final class LmdbDeferredFilterPlacer {
 				continue;
 			}
 			Set<String> availableVars = new HashSet<>(boundBeforeSegment);
-			availableVars.addAll(factor.bindingNames);
+			availableVars.addAll(factor.assuredBindingNames);
 			if (availableVars.containsAll(requiredVars)) {
 				return new int[] { i, i };
 			}
@@ -755,7 +755,7 @@ final class LmdbDeferredFilterPlacer {
 		for (int i = 0; i < factors.size(); i++) {
 			SegmentFactor factor = factors.get(i);
 			if (LmdbJoinPlanSupport.isBindingOnlyFactor(factor)) {
-				Set<String> assignmentBindingNames = factor.bindingNames;
+				Set<String> assignmentBindingNames = factor.assuredBindingNames;
 				if (canApplyDeferredFilterToBindingPrefix(deferredFilter, prefixBindingNames, assignmentBindingNames,
 						conditionBindingNames)) {
 					TupleExpr filteredRoot = filterWrapper.wrap(factor.tupleExpr, List.of(deferredFilter),
@@ -771,9 +771,9 @@ final class LmdbDeferredFilterPlacer {
 	}
 
 	private void addPrefixVisibleBindingNames(Set<String> prefixBindingNames, SegmentFactor factor) {
-		addPlannerBindingNames(prefixBindingNames, factor.bindingNames);
+		addPlannerBindingNames(prefixBindingNames, factor.assuredBindingNames);
 		for (StatementPattern pattern : factor.containedPatterns) {
-			addPlannerBindingNames(prefixBindingNames, pattern.getBindingNames());
+			addPlannerBindingNames(prefixBindingNames, pattern.getAssuredBindingNames());
 		}
 	}
 
@@ -831,7 +831,7 @@ final class LmdbDeferredFilterPlacer {
 			if (containsExistsFilter(factor.tupleExpr)) {
 				return false;
 			}
-			coveredVars.addAll(factor.bindingNames);
+			coveredVars.addAll(factor.assuredBindingNames);
 		}
 		if (!coveredVars.containsAll(deferredFilter.requiredVars)) {
 			return false;
@@ -871,11 +871,11 @@ final class LmdbDeferredFilterPlacer {
 		for (int i = 0; i < factors.size(); i++) {
 			SegmentFactor factor = factors.get(i);
 			if (!LmdbJoinPlanSupport.isBindingOnlyFactor(factor)
-					|| Collections.disjoint(factor.bindingNames, missingVars)) {
+					|| Collections.disjoint(factor.assuredBindingNames, missingVars)) {
 				continue;
 			}
 			selectedIndexes.add(i);
-			missingVars.removeAll(factor.bindingNames);
+			missingVars.removeAll(factor.assuredBindingNames);
 			if (missingVars.isEmpty()) {
 				return new BindingAssignmentWindow(selectedIndexes);
 			}
@@ -1200,7 +1200,7 @@ final class LmdbDeferredFilterPlacer {
 			int cost = 0;
 			for (int end = start; end < factors.size(); end++) {
 				SegmentFactor factor = factors.get(end);
-				availableVars.addAll(factor.bindingNames);
+				availableVars.addAll(factor.assuredBindingNames);
 				cost += LmdbJoinPlanSupport.isBindingOnlyFactor(factor) ? 0 : 1;
 				if (availableVars.containsAll(requiredVars)) {
 					int size = end - start + 1;
@@ -1247,13 +1247,13 @@ final class LmdbDeferredFilterPlacer {
 		}
 		Set<String> availableVars = new HashSet<>(boundBeforeSegment);
 		for (int i = window[0]; i <= window[1]; i++) {
-			availableVars.addAll(factors.get(i).bindingNames);
+			availableVars.addAll(factors.get(i).assuredBindingNames);
 		}
 		if (availableVars.containsAll(requiredVars)) {
 			return window;
 		}
 		for (int end = window[1] + 1; end < factors.size(); end++) {
-			availableVars.addAll(factors.get(end).bindingNames);
+			availableVars.addAll(factors.get(end).assuredBindingNames);
 			if (availableVars.containsAll(requiredVars)) {
 				return new int[] { window[0], end };
 			}

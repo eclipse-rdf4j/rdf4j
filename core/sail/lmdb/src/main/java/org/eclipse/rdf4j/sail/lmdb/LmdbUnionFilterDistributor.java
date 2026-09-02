@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -85,6 +86,9 @@ final class LmdbUnionFilterDistributor {
 		List<DeferredFilter> branchFilters = new ArrayList<>();
 		List<DeferredFilter> postUnionFilters = new ArrayList<>();
 		for (DeferredFilter filter : filters) {
+			if (!QueryEvaluationUtility.isRepeatable(filter.condition)) {
+				return null;
+			}
 			if (branchAvailableBindings.containsAll(filter.requiredVars)) {
 				branchFilters.add(filter);
 			} else if (finalAvailableBindings.containsAll(filter.requiredVars)) {
@@ -190,6 +194,9 @@ final class LmdbUnionFilterDistributor {
 	}
 
 	private static Optional<Set<String>> finitePrefixAnchorNames(TupleExpr tupleExpr) {
+		if (!QueryEvaluationUtility.isRepeatable(tupleExpr)) {
+			return Optional.empty();
+		}
 		Optional<Set<String>> names = LmdbJoinPlanSupport.positionableBindingSetAssignmentNames(tupleExpr);
 		if (names.isPresent()) {
 			return names;
@@ -206,8 +213,9 @@ final class LmdbUnionFilterDistributor {
 	}
 
 	private static boolean isSafeDependentPrefixFactor(TupleExpr tupleExpr, Set<String> prefixBindings) {
-		if (!hasSharedBinding(tupleExpr.getBindingNames(), prefixBindings) || !tupleExpr.getAssuredBindingNames()
-				.containsAll(tupleExpr.getBindingNames())) {
+		if (!QueryEvaluationUtility.isRepeatable(tupleExpr)
+				|| !hasSharedBinding(tupleExpr.getBindingNames(), prefixBindings) || !tupleExpr.getAssuredBindingNames()
+						.containsAll(tupleExpr.getBindingNames())) {
 			return false;
 		}
 		boolean[] unsafe = { false };
@@ -255,8 +263,20 @@ final class LmdbUnionFilterDistributor {
 	}
 
 	private static boolean isSafeUnionDistributionBranch(TupleExpr branch, Set<String> prefixBindings) {
+		if (!QueryEvaluationUtility.isRepeatable(branch)) {
+			return false;
+		}
 		boolean[] unsafe = { false };
 		branch.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (!QueryEvaluationUtility.isRepeatable(node.getCondition())) {
+					unsafe[0] = true;
+					return;
+				}
+				super.meet(node);
+			}
+
 			@Override
 			public void meet(LeftJoin node) {
 				unsafe[0] = true;
@@ -280,7 +300,8 @@ final class LmdbUnionFilterDistributor {
 			@Override
 			public void meet(Extension node) {
 				for (ExtensionElem element : node.getElements()) {
-					if (prefixBindings.contains(element.getName())) {
+					if (prefixBindings.contains(element.getName())
+							|| !QueryEvaluationUtility.isRepeatable(element.getExpr())) {
 						unsafe[0] = true;
 						return;
 					}

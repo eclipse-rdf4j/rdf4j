@@ -321,6 +321,34 @@
                         <xsl:with-param name="copyButtonId">copy-explanation-compare</xsl:with-param>
                     </xsl:call-template>
                 </div>
+                <details id="lmdb-runtime-features" class="lmdb-runtime-features">
+                    <summary>
+                        <span><xsl:value-of select="$lmdb-runtime-features.label"/></span>
+                        <span class="lmdb-runtime-features__scope">
+                            <xsl:value-of select="$lmdb-runtime-features.help"/>
+                        </span>
+                    </summary>
+                    <div class="lmdb-runtime-features__toolbar">
+                        <button id="lmdb-runtime-refresh" type="button">
+                            <xsl:value-of select="$refresh.label"/>
+                        </button>
+                        <span id="lmdb-runtime-status" role="status" aria-live="polite"></span>
+                    </div>
+                    <div id="lmdb-runtime-properties" aria-busy="false"></div>
+                </details>
+                <div class="query-form__row">
+                    <label class="query-form__label" for="lmdb-forced-strategy">
+                        <xsl:value-of select="$lmdb-forced-strategy.label"/>
+                    </label>
+                    <div class="query-form__field">
+                        <select id="lmdb-forced-strategy" name="lmdb-forced-strategy"
+                                title="{$lmdb-forced-strategy.help}">
+                            <!-- The empty entry forces nothing; the script keeps it first once it loads the
+                                 catalogue, and it is what the page falls back to if that request fails. -->
+                            <option value="" selected="selected"><xsl:text></xsl:text></option>
+                        </select>
+                    </div>
+                </div>
                 <div class="query-form__row">
                     <span class="query-form__label">
                         <xsl:value-of select="$result-limit.label"/>

@@ -19,6 +19,13 @@ final class LmdbFormat {
 	static final int MDB_DATA_VERSION = 1;
 	static final int MDB_DATA_VERSION_DEVEL = 999;
 
+	static final int MDB_REVERSEKEY = 0x02;
+	static final int MDB_DUPSORT = 0x04;
+	static final int MDB_INTEGERKEY = 0x08;
+	static final int MDB_DUPFIXED = 0x10;
+	static final int MDB_INTEGERDUP = 0x20;
+	static final int MDB_REVERSEDUP = 0x40;
+
 	static final int P_BRANCH = 0x01;
 	static final int P_LEAF = 0x02;
 	static final int P_OVERFLOW = 0x04;

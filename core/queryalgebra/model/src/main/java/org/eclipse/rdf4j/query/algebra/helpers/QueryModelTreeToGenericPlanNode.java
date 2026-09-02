@@ -95,9 +95,40 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 			top = buildPlanNode(topTupleExpr, rootIncomingBindings);
 		}
 		if (top != null) {
+			applyPhysicalPlanPrelude();
 			top.applyExplanationLevel(level);
 		}
 		return top;
+	}
+
+	private void applyPhysicalPlanPrelude() {
+		String physicalPlan = null;
+		if (includesExecutionSummary()) {
+			physicalPlan = collectPhysicalPlans(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN, true);
+		}
+		if (physicalPlan == null && level.includesEvaluationAnnotations()) {
+			physicalPlan = collectPhysicalPlans(TelemetryMetricNames.PLANNED_PHYSICAL_PLAN, false);
+		}
+		top.setPhysicalPlanPrelude(physicalPlan);
+	}
+
+	private String collectPhysicalPlans(String metricName, boolean actual) {
+		List<String> plans = new ArrayList<>();
+		QueryModelNode metricRoot = optimizerMetricWrapper == null ? topTupleExpr : optimizerMetricWrapper;
+		collectPhysicalPlans(metricRoot, metricName, actual, null, plans);
+		return plans.isEmpty() ? null : String.join("\n\n", plans);
+	}
+
+	private void collectPhysicalPlans(QueryModelNode node, String metricName, boolean actual, String inheritedPlan,
+			List<String> plans) {
+		String nodePlan = actual ? node.getStringMetricActual(metricName) : node.getStringMetricPlanned(metricName);
+		if (nodePlan != null && !nodePlan.equals(inheritedPlan)) {
+			plans.add(nodePlan);
+		}
+		String inheritedByChildren = nodePlan == null ? inheritedPlan : nodePlan;
+		for (QueryModelNode child : directChildren(node)) {
+			collectPhysicalPlans(child, metricName, actual, inheritedByChildren, plans);
+		}
 	}
 
 	@Override
@@ -129,18 +160,22 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		if (level.includesRuntimeTelemetry()) {
 			genericPlanNode.setLongMetricsActual(new LinkedHashMap<>(node.getLongMetricsActual()));
 			genericPlanNode.setDoubleMetricsActual(new LinkedHashMap<>(node.getDoubleMetricsActual()));
-			genericPlanNode.setStringMetricsActual(new LinkedHashMap<>(node.getStringMetricsActual()));
+			LinkedHashMap<String, String> stringMetrics = new LinkedHashMap<>(node.getStringMetricsActual());
+			stringMetrics.remove(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN);
+			genericPlanNode.setStringMetricsActual(stringMetrics);
 			applyVariableShapeMetrics(node, genericPlanNode);
 		} else if (level.includesEvaluationAnnotations()) {
-			copyOptimizerMetrics(node, genericPlanNode);
+			copyVisibleActualMetrics(node, genericPlanNode);
 		}
 		if (level.includesEvaluationAnnotations()) {
 			genericPlanNode.setLongMetricsPlanned(new LinkedHashMap<>(node.getLongMetricsPlanned()));
 			genericPlanNode.setDoubleMetricsPlanned(new LinkedHashMap<>(node.getDoubleMetricsPlanned()));
-			genericPlanNode.setStringMetricsPlanned(new LinkedHashMap<>(node.getStringMetricsPlanned()));
+			LinkedHashMap<String, String> stringMetrics = new LinkedHashMap<>(node.getStringMetricsPlanned());
+			stringMetrics.remove(TelemetryMetricNames.PLANNED_PHYSICAL_PLAN);
+			genericPlanNode.setStringMetricsPlanned(stringMetrics);
 		}
-		if (node == topTupleExpr && optimizerMetricWrapper != null) {
-			copyOptimizerMetricsIfAbsent(optimizerMetricWrapper, genericPlanNode);
+		if (level.includesEvaluationAnnotations() && node == topTupleExpr && optimizerMetricWrapper != null) {
+			copyVisibleActualMetricsIfAbsent(optimizerMetricWrapper, genericPlanNode);
 		}
 		if (level.includesEvaluationAnnotations()) {
 			applyExplainAnnotations(node, genericPlanNode, incomingBindings);
@@ -167,43 +202,57 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		return -1;
 	}
 
-	private static void copyOptimizerMetrics(QueryModelNode node, GenericPlanNode genericPlanNode) {
+	private void copyVisibleActualMetrics(QueryModelNode node, GenericPlanNode genericPlanNode) {
 		for (Map.Entry<String, Long> entry : node.getLongMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+			if (isVisibleActualMetric(entry.getKey())) {
 				genericPlanNode.setLongMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 		for (Map.Entry<String, Double> entry : node.getDoubleMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+			if (isVisibleActualMetric(entry.getKey())) {
 				genericPlanNode.setDoubleMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 		for (Map.Entry<String, String> entry : node.getStringMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+			if (!TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN.equals(entry.getKey())
+					&& isVisibleActualMetric(entry.getKey())) {
 				genericPlanNode.setStringMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 	}
 
-	private static void copyOptimizerMetricsIfAbsent(QueryModelNode node, GenericPlanNode genericPlanNode) {
+	private void copyVisibleActualMetricsIfAbsent(QueryModelNode node, GenericPlanNode genericPlanNode) {
 		for (Map.Entry<String, Long> entry : node.getLongMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+			if (isVisibleActualMetric(entry.getKey())
 					&& genericPlanNode.getLongMetricActual(entry.getKey()) == null) {
 				genericPlanNode.setLongMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 		for (Map.Entry<String, Double> entry : node.getDoubleMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+			if (isVisibleActualMetric(entry.getKey())
 					&& genericPlanNode.getDoubleMetricActual(entry.getKey()) == null) {
 				genericPlanNode.setDoubleMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
 		for (Map.Entry<String, String> entry : node.getStringMetricsActual().entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+			if (!TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN.equals(entry.getKey())
+					&& isVisibleActualMetric(entry.getKey())
 					&& genericPlanNode.getStringMetricActual(entry.getKey()) == null) {
 				genericPlanNode.setStringMetricActual(entry.getKey(), entry.getValue());
 			}
 		}
+	}
+
+	private boolean isVisibleActualMetric(String metricName) {
+		return level.includesRuntimeTelemetry()
+				|| TelemetryMetricNames.isOptimizerMetric(metricName)
+				|| includesExecutionSummary() && TelemetryMetricNames.isExecutionSummaryMetric(metricName);
+	}
+
+	private boolean includesExecutionSummary() {
+		return level == Explanation.Level.Executed
+				|| level == Explanation.Level.Timed
+				|| level == Explanation.Level.Telemetry;
 	}
 
 	private static Explanation.Level defaultExplanationLevel(QueryModelNode node) {

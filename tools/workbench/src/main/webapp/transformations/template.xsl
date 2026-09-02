@@ -2,7 +2,8 @@
 <!DOCTYPE xsl:stylesheet>
 <xsl:stylesheet version="1.0"
 	xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
-	xmlns:sparql="http://www.w3.org/2005/sparql-results#" xmlns="http://www.w3.org/1999/xhtml">
+	xmlns:sparql="http://www.w3.org/2005/sparql-results#"
+	xmlns:workbench="https://rdf4j.org/schema/workbench#" xmlns="http://www.w3.org/1999/xhtml">
 
 	<xsl:output method="html" doctype-system="about:legacy-compat" />
 
@@ -269,6 +270,31 @@
 				</xsl:otherwise>
 			</xsl:choose>
 		</li>
+	</xsl:template>
+
+	<!-- Renders how long the query took, as measured server side. Silent when the
+	     response carries no measurement, e.g. for pages that ran no query. -->
+	<xsl:template name="query-duration">
+		<xsl:variable name="duration"
+			select="/sparql:sparql/workbench:metadata/workbench:query-duration" />
+		<xsl:if test="$duration">
+			<p id="query-duration" class="query-duration">
+				<xsl:value-of select="$query-duration.label" />
+				<xsl:text> </xsl:text>
+				<xsl:choose>
+					<xsl:when test="$duration &lt; 1000">
+						<xsl:value-of select="format-number($duration, '#,##0')" />
+						<xsl:text> </xsl:text>
+						<xsl:value-of select="$milliseconds.label" />
+					</xsl:when>
+					<xsl:otherwise>
+						<xsl:value-of select="format-number($duration div 1000, '#,##0.00')" />
+						<xsl:text> </xsl:text>
+						<xsl:value-of select="$seconds.label" />
+					</xsl:otherwise>
+				</xsl:choose>
+			</p>
+		</xsl:if>
 	</xsl:template>
 
 	<xsl:template name="limit-select">

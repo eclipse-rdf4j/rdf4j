@@ -298,6 +298,77 @@ public class SPARQLParserTest {
 	}
 
 	@Test
+	public void testOrderByStableIndexParses() {
+		String query = "SELECT * WHERE { ?a a ?type. } ORDER BY STABLE_INDEX(?a)";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testOrderByAscLmdbIndexParses() {
+		String query = "SELECT * WHERE { ?a a ?type. } ORDER BY ASC(STABLE_INDEX(?a))";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testOrderByDescLmdbIndexStillParsesForLaterValidation() {
+		String query = "SELECT * WHERE { ?a a ?type. } ORDER BY DESC(STABLE_INDEX(?a))";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testOrderByDescLmdbIndexParsesAfterHashIri() {
+		String query = "SELECT ?s ?o WHERE { ?s <http://www.w3.org/2000/01/rdf-schema#label> ?o. } ORDER BY DESC(STABLE_INDEX(?s))";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void escapedHashInPrefixedNameDoesNotHideStableIndex() {
+		String query = "PREFIX ex: <urn:>\n"
+				+ "SELECT ?s WHERE { ex:foo\\#bar ?p ?s . } ORDER BY STABLE_INDEX(?s)";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testLmdbIndexOutsideOrderByIsRejected() {
+		String query = "SELECT * WHERE { ?a a ?type. FILTER(STABLE_INDEX(?a) = 1) }";
+
+		assertThrows(MalformedQueryException.class, () -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testLmdbIndexRequiresVariableArgument() {
+		String query = "SELECT * WHERE { ?a a ?type. } ORDER BY STABLE_INDEX(1)";
+
+		assertThrows(MalformedQueryException.class, () -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testPrefixedFunctionNamedLmdbIndexIsNotRewritten() {
+		String query = "PREFIX ex: <urn:>\nSELECT * WHERE { ?a a ?type. BIND(ex:STABLE_INDEX(?a) AS ?x) }";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testPrefixedFunctionWithHyphenContainingLmdbIndexNameIsNotRewritten() {
+		String query = "PREFIX ex: <urn:>\nSELECT * WHERE { ?a a ?type. BIND(ex:foo-STABLE_INDEX(?a) AS ?x) }";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testStringContainingLmdbIndexDoesNotAffectOrderRewrite() {
+		String query = "SELECT * WHERE { ?a a \"STABLE_INDEX(?a)\". } ORDER BY STABLE_INDEX(?a)";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
 	public void testSES1927UnequalLiteralValueConstants1() {
 
 		StringBuilder qb = new StringBuilder();

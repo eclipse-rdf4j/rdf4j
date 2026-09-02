@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
@@ -83,6 +84,26 @@ public class CardinalityTest {
 			assertEquals(2, exact);
 			assertEquals((double) exact, tripleStore.cardinality(1, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, 7),
 					0.0);
+		}
+	}
+
+	@Test
+	public void testLargeNonContiguousConstraintSamplesMatcherSelectivity() throws Exception {
+		int statementCount = 5_000;
+		int expectedMatches = statementCount / 5;
+		tripleStore.startTransaction();
+		for (int index = 0; index < statementCount; index++) {
+			tripleStore.storeTriple(1, 1_000 + index, index % 5 == 0 ? 7 : 8, 9, true);
+		}
+		tripleStore.commit();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			int exact = count(tripleStore.getTriples(txn, 1, LmdbValue.UNKNOWN_ID, 7, LmdbValue.UNKNOWN_ID, true));
+			assertEquals(expectedMatches, exact);
+
+			double estimate = tripleStore.cardinality(1, LmdbValue.UNKNOWN_ID, 7, LmdbValue.UNKNOWN_ID);
+			assertTrue("Expected sampled residual matcher selectivity, got " + estimate,
+					estimate >= expectedMatches * 0.5 && estimate <= expectedMatches * 1.5);
 		}
 	}
 

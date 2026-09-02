@@ -2302,6 +2302,7 @@ var workbench;
                 workbench.addParam(url, 'limit_query');
                 workbench.addParam(url, 'query-timeout');
                 workbench.addParam(url, 'infer');
+                workbench.addParam(url, 'lmdb-forced-strategy');
                 workbench.addParam(url, 'explain');
                 workbench.addParam(url, 'explain-format');
                 var href = url.join('');
@@ -2656,6 +2657,134 @@ var workbench;
             updateCompareActionState();
         }
         query_1.refreshCompareActionState = refreshCompareActionState;
+        var lmdbRuntimePropertiesLoaded = false;
+        function runtimeToggleError(jqXHR) {
+            var response = jqXHR.responseJSON;
+            return response && response.error
+                ? response.error
+                : 'Runtime toggles are unavailable on the selected server.';
+        }
+        function renderLmdbRuntimeProperties(properties) {
+            var container = $('#lmdb-runtime-properties').empty().attr('aria-busy', 'false');
+            var currentGroup = '';
+            var groupElement = null;
+            $.each(properties, function (index, property) {
+                if (property.group !== currentGroup) {
+                    currentGroup = property.group;
+                    groupElement = $('<section class="lmdb-runtime-group"></section>')
+                        .append($('<h4></h4>').text(currentGroup))
+                        .appendTo(container);
+                }
+                var inputId = 'lmdb-runtime-property-' + index;
+                var checkbox = $('<input type="checkbox" class="lmdb-runtime-switch" />')
+                    .attr('id', inputId)
+                    .attr('aria-describedby', inputId + '-description')
+                    .prop('checked', property.enabled);
+                var row = $('<div class="lmdb-runtime-property"></div>');
+                var copy = $('<div class="lmdb-runtime-property__copy"></div>')
+                    .append($('<label></label>').attr('for', inputId).text(property.label))
+                    .append($('<code></code>').text(property.name))
+                    .append($('<span class="lmdb-runtime-property__description"></span>')
+                    .attr('id', inputId + '-description').text(property.description))
+                    .append($('<span class="lmdb-runtime-property__state"></span>').text('Default ' + (property.defaultEnabled ? 'on' : 'off') + ' · '
+                    + (property.explicitlySet ? 'explicitly set' : 'using default')));
+                checkbox.change(function () {
+                    var previous = property.enabled;
+                    var requested = checkbox.prop('checked');
+                    checkbox.prop('disabled', true);
+                    $('#lmdb-runtime-status').text('Applying ' + property.name + ' globally…');
+                    $.ajax({
+                        url: 'query',
+                        type: 'POST',
+                        dataType: 'json',
+                        data: { action: 'set-lmdb-property', name: property.name, enabled: String(requested) }
+                    }).done(function (updated) {
+                        property = updated;
+                        checkbox.prop('checked', updated.enabled);
+                        row.find('.lmdb-runtime-property__state').text('Default ' + (updated.defaultEnabled ? 'on' : 'off') + ' · explicitly set');
+                        $('#lmdb-runtime-status').text(updated.name + ' applied globally to subsequent queries.');
+                    }).fail(function (jqXHR) {
+                        checkbox.prop('checked', previous);
+                        $('#lmdb-runtime-status').text(runtimeToggleError(jqXHR));
+                    }).always(function () {
+                        checkbox.prop('disabled', false);
+                    });
+                });
+                row.append(copy).append($('<div class="lmdb-runtime-property__control"></div>').append(checkbox));
+                groupElement.append(row);
+            });
+        }
+        function loadLmdbRuntimeProperties() {
+            $('#lmdb-runtime-properties').attr('aria-busy', 'true').text('Loading runtime features…');
+            $('#lmdb-runtime-status').text('');
+            $.ajax({ url: 'query', type: 'GET', dataType: 'json', data: { action: 'lmdb-properties' } })
+                .done(function (response) {
+                lmdbRuntimePropertiesLoaded = true;
+                renderLmdbRuntimeProperties(response.properties || []);
+            })
+                .fail(function (jqXHR) {
+                $('#lmdb-runtime-properties').attr('aria-busy', 'false').text(runtimeToggleError(jqXHR));
+            });
+        }
+        query_1.loadLmdbRuntimeProperties = loadLmdbRuntimeProperties;
+        function loadLmdbRuntimePropertiesIfPanelOpen(details) {
+            if (details.open && !lmdbRuntimePropertiesLoaded) {
+                loadLmdbRuntimeProperties();
+            }
+        }
+        function initializeLmdbRuntimeFeatures() {
+            var details = document.getElementById('lmdb-runtime-features');
+            if (!details) {
+                return;
+            }
+            details.addEventListener('toggle', function () {
+                loadLmdbRuntimePropertiesIfPanelOpen(details);
+            });
+            $('#lmdb-runtime-refresh').click(function () {
+                loadLmdbRuntimeProperties();
+            });
+            // The panel is expanded by default, so load without waiting for a toggle event.
+            loadLmdbRuntimePropertiesIfPanelOpen(details);
+        }
+        query_1.initializeLmdbRuntimeFeatures = initializeLmdbRuntimeFeatures;
+        function loadLmdbForceableStrategies() {
+            var select = $('#lmdb-forced-strategy');
+            if (select.length === 0) {
+                return;
+            }
+            var preferred = select.data('preferred-value') || select.val() || '';
+            $.ajax({ url: 'query', type: 'GET', dataType: 'json', data: { action: 'lmdb-strategies' } })
+                .done(function (response) {
+                var strategies = response.strategies || [];
+                select.empty().append($('<option></option>').attr('value', ''));
+                $.each(strategies, function (index, strategy) {
+                    select.append($('<option></option>')
+                        .attr('value', strategy.name)
+                        .attr('title', strategy.description)
+                        .text(strategy.name));
+                });
+                select.val(preferred);
+                // A remembered strategy the server no longer offers leaves nothing selected: fall back to
+                // forcing nothing. Tested on selectedIndex rather than on val(), which is '' for the entry
+                // we want and so cannot be distinguished from "no match" by truthiness.
+                if (select.prop('selectedIndex') < 0) {
+                    select.val('');
+                }
+            });
+        }
+        query_1.loadLmdbForceableStrategies = loadLmdbForceableStrategies;
+        function initializeLmdbForcedStrategy() {
+            var select = $('#lmdb-forced-strategy');
+            if (select.length === 0) {
+                return;
+            }
+            var remembered = workbench.getCookie('lmdb-forced-strategy');
+            if (remembered) {
+                select.data('preferred-value', remembered);
+            }
+            loadLmdbForceableStrategies();
+        }
+        query_1.initializeLmdbForcedStrategy = initializeLmdbForcedStrategy;
         query_1.testing = {
             applyDotPanZoom: applyDotPanZoom,
             ajaxSave: ajaxSave,
@@ -2964,6 +3093,8 @@ workbench.addLoad(function queryPageLoaded() {
     workbench.query.setQueryValue($.trim(workbench.query.getQueryValue()));
     workbench.query.initializeExplanationView();
     workbench.query.initializeCompareUi();
+    workbench.query.initializeLmdbRuntimeFeatures();
+    workbench.query.initializeLmdbForcedStrategy();
     // Add click handlers identifying the clicked element in a hidden 'action'
     // form field.
     var addHandler = function (id, callback) {

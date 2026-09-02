@@ -85,6 +85,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 
@@ -232,7 +233,6 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-memoization").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
-			sharedCardinalityCache().clear();
 			loadData(repository);
 
 			EvaluationStatistics statistics = extractEvaluationStatistics(repository);
@@ -244,10 +244,10 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			statistics.getCardinality(followsB);
 			statistics.getCardinality(name);
 
-			Map<?, ?> cache = sharedCardinalityCache();
-			assertEquals(2, cache.size(), "Equivalent follows patterns should share one memoized entry");
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			assertEquals(2, sail.getBackingStore().getStatementPatternCardinalityCache().ordinarySize(),
+					"Equivalent follows patterns should share one memoized entry");
 		} finally {
-			sharedCardinalityCache().clear();
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
 		}
@@ -258,7 +258,6 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-triple-only-commit").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
-			sharedCardinalityCache().clear();
 			SimpleValueFactory vf = SimpleValueFactory.getInstance();
 			IRI follows = vf.createIRI("urn:test:follows");
 			IRI name = vf.createIRI("urn:test:name");
@@ -297,7 +296,135 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			assertEquals(2.0d, secondStatistics.getCardinality(refreshedPattern), 0.0d,
 					"Shared cardinality cache should be invalidated after triple-store commits");
 		} finally {
-			sharedCardinalityCache().clear();
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void retainsCachedCardinalityBelowOnePercentStoreChurn() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-bounded-churn").toFile();
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
+		try {
+			SimpleValueFactory vf = SimpleValueFactory.getInstance();
+			IRI follows = vf.createIRI("urn:test:follows");
+			IRI name = vf.createIRI("urn:test:name");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				for (int i = 0; i < 100; i++) {
+					IRI subject = vf.createIRI("urn:test:bounded-user:" + i);
+					connection.add(subject, follows, vf.createIRI("urn:test:bounded-user:" + ((i + 1) % 100)));
+					connection.add(subject, name, vf.createLiteral("bounded-user-" + i));
+				}
+				connection.commit();
+			}
+
+			EvaluationStatistics statistics = extractEvaluationStatistics(repository);
+			StatementPattern initial = statementPattern("SELECT * WHERE { ?s <urn:test:follows> ?o . }");
+			assertEquals(100.0d, statistics.getCardinality(initial), 0.0d);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(vf.createIRI("urn:test:bounded-user:new"), follows,
+						vf.createIRI("urn:test:bounded-user:0"));
+				connection.commit();
+			}
+
+			StatementPattern equivalent = statementPattern("SELECT * WHERE { ?x <urn:test:follows> ?y . }");
+			assertEquals(100.0d, statistics.getCardinality(equivalent), 0.0d,
+					"A cached value should remain valid while committed churn stays below one percent");
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void mutationDebtIncludesOnlyCommittedSuccessfulChanges() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-committed-mutations").toFile();
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setStatementPatternCardinalityCacheMutationRatio(1.0d)
+				.setPopularStatementPatternCardinalityCacheSize(0);
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
+		try {
+			loadData(repository);
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbStatementPatternCardinalityCache cache = sail.getBackingStore()
+					.getStatementPatternCardinalityCache();
+			assertEquals(16L, cache.mutationBaseline());
+			assertEquals(0L, cache.mutationDebt());
+
+			SimpleValueFactory vf = SimpleValueFactory.getInstance();
+			IRI follows = vf.createIRI("urn:test:follows");
+			IRI existingSubject = vf.createIRI("urn:test:user:0");
+			IRI existingObject = vf.createIRI("urn:test:user:1");
+			IRI newSubject = vf.createIRI("urn:test:committed-mutation:new");
+			IRI newObject = vf.createIRI("urn:test:committed-mutation:object");
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(existingSubject, follows, existingObject);
+				connection.commit();
+			}
+			assertEquals(0L, cache.mutationDebt(), "A duplicate add must not count as a mutation");
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(newSubject, follows, newObject);
+				connection.rollback();
+			}
+			assertEquals(0L, cache.mutationDebt(), "Rollback must discard transaction-local mutation counts");
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(newSubject, follows, newObject);
+				connection.commit();
+			}
+			assertEquals(1L, cache.mutationDebt());
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.remove(newSubject, follows, newObject);
+				connection.commit();
+			}
+			assertEquals(2L, cache.mutationDebt(), "Only the one actual committed removal should count");
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void popularCardinalitySurvivesACleanStoreRestart() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-popular-restart").toFile();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc")
+				.setPopularStatementPatternCardinalityCacheActivationThreshold(0L)
+				.setPopularStatementPatternCardinalityCacheActivationCheckInterval(1)
+				.setPopularStatementPatternCardinalityCachePromotionAccesses(3)
+				.setPopularStatementPatternCardinalityCacheRefreshMillis(0L);
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
+		try {
+			loadData(repository);
+			EvaluationStatistics statistics = extractEvaluationStatistics(repository);
+			double beforeRestart = statistics
+					.getCardinality(statementPattern("SELECT * WHERE { ?s <urn:test:follows> ?o . }"));
+			statistics.getCardinality(statementPattern("SELECT * WHERE { ?x <urn:test:follows> ?y . }"));
+			statistics.getCardinality(statementPattern("SELECT * WHERE { ?left <urn:test:follows> ?right . }"));
+			LmdbStore firstSail = (LmdbStore) repository.getSail();
+			assertEquals(1, firstSail.getBackingStore().getStatementPatternCardinalityCache().popularSize());
+			repository.shutDown();
+
+			assertTrue(Files.isRegularFile(dataDir.toPath()
+					.resolve(LmdbStatementPatternCardinalitySource.CACHE_FILE_NAME)));
+			repository = new SailRepository(new LmdbStore(dataDir, config));
+			try (SailRepositoryConnection ignored = repository.getConnection()) {
+				// Initialize the reopened store before inspecting its loaded cache.
+			}
+			LmdbStore reopenedSail = (LmdbStore) repository.getSail();
+			assertEquals(1, reopenedSail.getBackingStore().getStatementPatternCardinalityCache().popularSize());
+			assertEquals(beforeRestart, extractEvaluationStatistics(repository)
+					.getCardinality(statementPattern("SELECT * WHERE { ?a <urn:test:follows> ?b . }")), 0.0d);
+		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
 		}
@@ -764,6 +891,45 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
+	void samplesPatternLocalFilterAcrossAnOrderIndependentOfTheFilteredVariable() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-ordered-filter").toFile();
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setSketchEstimatorEnabled(true)
+				.setOptimizerSamplingMaxMillis(5_000L)
+				.setOptimizerSamplingMaxRows(16);
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
+		try {
+			loadInterleavedDateData(repository);
+
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbSailStore backingStore = sail.getBackingStore();
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
+
+			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
+			Filter filter = firstFilter("""
+					SELECT * WHERE {
+						?s <urn:test:recordedOn> ?date .
+						FILTER(?date IN (
+							"2024-01-01"^^<http://www.w3.org/2001/XMLSchema#date>,
+							"2024-02-01"^^<http://www.w3.org/2001/XMLSchema#date>
+						))
+					}
+					""");
+
+			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
+
+			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource());
+			assertTrue(estimate.getPassRatio() > 0.0d && estimate.getPassRatio() < 0.75d,
+					() -> "A bounded sample must not mistake the first object-ordered run for the population: "
+							+ estimate);
+			assertEquals(16L, estimate.getEvidenceCount());
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
 	void samplesZeroHitPatternLocalFilterPassRatioWhenLearnedStatsUnavailable() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-zero-sampled-filter").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
@@ -1216,17 +1382,17 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		backingStore.getSketchBasedJoinEstimator().rebuild();
 		assertTrue(sail.awaitSketchesReady(60, TimeUnit.SECONDS),
 				"Expected LMDB sketch estimator to be ready before planning with the LMDB optimizer");
-		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
+		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbNativeEvaluationStrategyFactory)) {
 			Thread.sleep(1000);
 		}
-		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
+		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbNativeEvaluationStrategyFactory)) {
 			Thread.sleep(10 * 1000);
 		}
-		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbEvaluationStrategyFactory)) {
+		if (!(sail.getEvaluationStrategyFactory() instanceof LmdbNativeEvaluationStrategyFactory)) {
 			Thread.sleep(60 * 1000);
 		}
-		assertInstanceOf(LmdbEvaluationStrategyFactory.class, sail.getEvaluationStrategyFactory(),
-				"Expected ready sketches to select the LMDB optimizer pipeline");
+		assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, sail.getEvaluationStrategyFactory(),
+				"Expected automatic stores to keep the native evaluation strategy factory");
 	}
 
 	private static void assertOptimizedTupleNodeAnnotated(String plan, String nodeName) {
@@ -1292,6 +1458,20 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			for (int i = 0; i < count; i++) {
 				IRI subject = vf.createIRI("urn:test:sample-user:" + i);
 				connection.add(subject, name, vf.createLiteral("sample-" + i));
+			}
+			connection.commit();
+		}
+	}
+
+	private static void loadInterleavedDateData(SailRepository repository) {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI recordedOn = vf.createIRI("urn:test:recordedOn");
+		String[] dates = { "2024-01-01", "2024-04-01", "2024-07-01", "2024-10-01" };
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < 64; i++) {
+				IRI subject = vf.createIRI(String.format("urn:test:encounter:%03d", i));
+				connection.add(subject, recordedOn, vf.createLiteral(dates[i % dates.length], XMLSchema.DATE));
 			}
 			connection.commit();
 		}
@@ -1463,12 +1643,6 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		});
 		assertNotNull(found[0], "Expected query to contain a LEFT JOIN");
 		return found[0];
-	}
-
-	private static Map<?, ?> sharedCardinalityCache() throws Exception {
-		Field field = LmdbStatementPatternCardinalitySource.class.getDeclaredField("SHARED_CARDINALITY_CACHE");
-		field.setAccessible(true);
-		return (Map<?, ?>) field.get(null);
 	}
 
 }

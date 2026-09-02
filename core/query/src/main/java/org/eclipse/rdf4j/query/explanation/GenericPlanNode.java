@@ -140,6 +140,7 @@ public class GenericPlanNode {
 	private Long sourceRowsMatchedActual;
 	private Long sourceRowsFilteredActual;
 	private boolean runtimeTelemetryEnabled = true;
+	private boolean executionSummaryEnabled = true;
 	private boolean estimateStabilityMetricsEnabled = true;
 	private Map<String, Long> longMetricsActual = new LinkedHashMap<>();
 	private Map<String, Double> doubleMetricsActual = new LinkedHashMap<>();
@@ -147,6 +148,7 @@ public class GenericPlanNode {
 	private Map<String, Long> longMetricsPlanned = new LinkedHashMap<>();
 	private Map<String, Double> doubleMetricsPlanned = new LinkedHashMap<>();
 	private Map<String, String> stringMetricsPlanned = new LinkedHashMap<>();
+	private String physicalPlanPrelude;
 
 	// true if this node introduces a new scope
 	private Boolean newScope;
@@ -191,7 +193,6 @@ public class GenericPlanNode {
 	 *
 	 * @return a cost estimate as a double value
 	 */
-	@JsonIgnore
 	public Double getCostEstimate() {
 		return costEstimate;
 	}
@@ -207,7 +208,6 @@ public class GenericPlanNode {
 	 *
 	 * @return result size estimate
 	 */
-	@JsonIgnore
 	public Double getResultSizeEstimate() {
 		return resultSizeEstimate;
 	}
@@ -408,9 +408,16 @@ public class GenericPlanNode {
 		this.runtimeTelemetryEnabled = runtimeTelemetryEnabled;
 	}
 
-	@JsonIgnore
 	public boolean isRuntimeTelemetryEnabled() {
 		return runtimeTelemetryEnabled;
+	}
+
+	public void setExecutionSummaryEnabled(boolean executionSummaryEnabled) {
+		this.executionSummaryEnabled = executionSummaryEnabled;
+	}
+
+	public boolean isExecutionSummaryEnabled() {
+		return executionSummaryEnabled;
 	}
 
 	public void setEstimateStabilityMetricsEnabled(boolean estimateStabilityMetricsEnabled) {
@@ -423,6 +430,9 @@ public class GenericPlanNode {
 		}
 
 		setRuntimeTelemetryEnabled(level.includesRuntimeTelemetry());
+		setExecutionSummaryEnabled(level == Explanation.Level.Executed
+				|| level == Explanation.Level.Timed
+				|| level == Explanation.Level.Telemetry);
 		setEstimateStabilityMetricsEnabled(level.includesEstimateStabilityMetrics());
 
 		if (plans == null) {
@@ -445,7 +455,7 @@ public class GenericPlanNode {
 	}
 
 	public Long getLongMetricActual(String metricName) {
-		if (!runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+		if (!isActualMetricVisible(metricName)) {
 			return null;
 		}
 		Long metricValue = longMetricsActual.get(metricName);
@@ -474,7 +484,7 @@ public class GenericPlanNode {
 	}
 
 	public Double getDoubleMetricActual(String metricName) {
-		if (!runtimeTelemetryEnabled && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+		if (!isActualMetricVisible(metricName)) {
 			return null;
 		}
 		return doubleMetricsActual.get(metricName);
@@ -498,7 +508,7 @@ public class GenericPlanNode {
 	}
 
 	public String getStringMetricActual(String metricName) {
-		if (!runtimeTelemetryEnabled && !isVisibleWithoutRuntimeTelemetry(metricName)) {
+		if (!isActualMetricVisible(metricName)) {
 			return null;
 		}
 		String metricValue = stringMetricsActual.get(metricName);
@@ -654,7 +664,19 @@ public class GenericPlanNode {
 	 */
 	@Override
 	public String toString() {
-		return getHumanReadable(0, isProjectionElemListNode());
+		String logical = getHumanReadable(0, isProjectionElemListNode());
+		if (physicalPlanPrelude == null || physicalPlanPrelude.isEmpty()) {
+			return logical;
+		}
+		return physicalPlanPrelude + newLine + newLine + "Query explanation" + newLine + logical;
+	}
+
+	public String getPhysicalPlanPrelude() {
+		return physicalPlanPrelude;
+	}
+
+	public void setPhysicalPlanPrelude(String physicalPlanPrelude) {
+		this.physicalPlanPrelude = physicalPlanPrelude;
 	}
 
 	/**
@@ -1011,7 +1033,7 @@ public class GenericPlanNode {
 			for (Map.Entry<String, Long> entry : visibleLongMetrics.entrySet()) {
 				String metricName = entry.getKey();
 				Long metricValue = entry.getValue();
-				if (metricValue == null || metricValue <= 0 && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+				if (metricValue == null || metricValue < 0 && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
 					continue;
 				}
 				if (!isMetricApplicableToNode(metricName) || metrics.containsKey(metricName)) {
@@ -1087,6 +1109,10 @@ public class GenericPlanNode {
 		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNER_ID);
 		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNER_ALGORITHM);
 		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned, TelemetryMetricNames.PLANNER_PATH);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned,
+				TelemetryMetricNames.PLANNED_EXECUTION_ENGINE);
+		appendPreferredStringMetric(orderedEntries, stringMetricsPlanned,
+				TelemetryMetricNames.PLANNED_EXECUTION_KIND);
 		for (Map.Entry<String, String> entry : stringMetricsPlanned.entrySet()) {
 			if (orderedEntries.stream().anyMatch(ordered -> ordered.getKey().equals(entry.getKey()))) {
 				continue;
@@ -1103,6 +1129,8 @@ public class GenericPlanNode {
 		appendPreferredStringMetric(orderedEntries, visibleStringMetrics, TelemetryMetricNames.JOIN_TYPE);
 		appendPreferredStringMetric(orderedEntries, visibleStringMetrics, TelemetryMetricNames.INDEX_NAME);
 		appendPreferredStringMetric(orderedEntries, visibleStringMetrics, TelemetryMetricNames.INDEX_NAMES);
+		appendPreferredStringMetric(orderedEntries, visibleStringMetrics,
+				TelemetryMetricNames.NATIVE_EXECUTION_PATH);
 		appendPreferredStringMetric(orderedEntries, visibleStringMetrics, TelemetryMetricNames.OPTIMIZER_PLANNER_ID);
 		appendPreferredStringMetric(orderedEntries, visibleStringMetrics, TelemetryMetricNames.OPTIMIZER_PLANNER_PATH);
 		appendPreferredStringMetric(orderedEntries, visibleStringMetrics,
@@ -1157,6 +1185,15 @@ public class GenericPlanNode {
 				visible.put(entry.getKey(), entry.getValue());
 			}
 		}
+		if (executionSummaryEnabled) {
+			for (Map.Entry<String, String> entry : stringMetricsActual.entrySet()) {
+				if (TelemetryMetricNames.isExecutionSummaryMetric(entry.getKey())
+						&& entry.getValue() != null
+						&& !entry.getValue().isEmpty()) {
+					visible.put(entry.getKey(), entry.getValue());
+				}
+			}
+		}
 		return visible;
 	}
 
@@ -1169,7 +1206,7 @@ public class GenericPlanNode {
 			return null;
 		}
 		if (!runtimeTelemetryEnabled) {
-			return optimizerMetrics(longMetricsActual);
+			return visibleSummaryMetrics(longMetricsActual);
 		}
 		Long outputRowsActual = longMetricsActual.get(TelemetryMetricNames.OUTPUT_ROWS_ACTUAL);
 		if (!Objects.equals(outputRowsActual, getResultSizeActual())) {
@@ -1187,7 +1224,7 @@ public class GenericPlanNode {
 		if (runtimeTelemetryEnabled) {
 			return doubleMetricsActual;
 		}
-		return optimizerMetrics(doubleMetricsActual);
+		return visibleSummaryMetrics(doubleMetricsActual);
 	}
 
 	private static boolean isPreferredExplainAnnotationMetric(String metricName) {
@@ -1201,13 +1238,20 @@ public class GenericPlanNode {
 		return isPreferredExplainAnnotationMetric(metricName) || TelemetryMetricNames.isOptimizerMetric(metricName);
 	}
 
-	private static <T> Map<String, T> optimizerMetrics(Map<String, T> metrics) {
+	private boolean isActualMetricVisible(String metricName) {
+		return runtimeTelemetryEnabled
+				|| isVisibleWithoutRuntimeTelemetry(metricName)
+				|| executionSummaryEnabled && TelemetryMetricNames.isExecutionSummaryMetric(metricName);
+	}
+
+	private <T> Map<String, T> visibleSummaryMetrics(Map<String, T> metrics) {
 		if (metrics == null || metrics.isEmpty()) {
 			return null;
 		}
 		Map<String, T> visible = new LinkedHashMap<>();
 		for (Map.Entry<String, T> entry : metrics.entrySet()) {
-			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+					|| executionSummaryEnabled && TelemetryMetricNames.isExecutionSummaryMetric(entry.getKey())) {
 				visible.put(entry.getKey(), entry.getValue());
 			}
 		}
@@ -1612,6 +1656,11 @@ public class GenericPlanNode {
 		appendExplainAnnotationDotRow(rows, "Join type", TelemetryMetricNames.JOIN_TYPE);
 		appendPlannedExplainAnnotationDotRow(rows, "Planned index", TelemetryMetricNames.PLANNED_INDEX_NAME);
 		appendPlannedExplainAnnotationDotRow(rows, "Planned bound vars", TelemetryMetricNames.PLANNED_BOUND_VARS);
+		appendPlannedExplainAnnotationDotRow(rows, "Planned execution engine",
+				TelemetryMetricNames.PLANNED_EXECUTION_ENGINE);
+		appendPlannedExplainAnnotationDotRow(rows, "Planned execution kind",
+				TelemetryMetricNames.PLANNED_EXECUTION_KIND);
+		appendExplainAnnotationDotRow(rows, "Native execution path", TelemetryMetricNames.NATIVE_EXECUTION_PATH);
 		if (getStringMetricActual(TelemetryMetricNames.INDEX_NAME) != null) {
 			appendExplainAnnotationDotRow(rows, "Index", TelemetryMetricNames.INDEX_NAME);
 		} else {

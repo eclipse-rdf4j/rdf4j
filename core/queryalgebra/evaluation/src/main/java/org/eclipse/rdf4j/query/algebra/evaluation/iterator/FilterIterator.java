@@ -32,11 +32,15 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -48,7 +52,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -103,7 +109,74 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			retain = Function.identity();
 		}
 
-		return (bs) -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain, evaluationStatistics);
+		QueryEvaluationStep generic = (bs) -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain,
+				evaluationStatistics);
+		QueryEvaluationStep batched = supplyBatchExistsFilter(filter, strategy, context, arg, generic);
+		return batched != null ? batched : generic;
+	}
+
+	/**
+	 * Batch-correlated seam for FILTER (NOT) EXISTS (accumulate–semijoin–probe, SEMI/ANTI modes): instead of
+	 * re-evaluating the EXISTS subquery once per source row, a capable store may accumulate the source stream, sweep
+	 * the subquery once bounded by the shared-variable key domain, and answer every row's verdict from the swept table.
+	 * Engages only when the subquery's decorrelation is an as-if rewrite: repeatable and binding-injection-safe. The
+	 * per-row evaluation this replaces can only see subquery variables through the source row, whose bindings come from
+	 * the source operand (the shared key variables, matched by the probe) or from the entry bindings — so entry
+	 * bindings that pre-bind a subquery-only variable keep the generic per-row filter.
+	 */
+	private static QueryEvaluationStep supplyBatchExistsFilter(Filter filter, EvaluationStrategy strategy,
+			QueryEvaluationContext context, QueryEvaluationStep arg, QueryEvaluationStep generic) {
+		if (filter.isRuntimeTelemetryEnabled() || strategy.isTrackResultSize() || strategy.isTrackTime()
+				|| !(strategy instanceof BatchCorrelatedJoinProvider.Host host)) {
+			return null;
+		}
+		ValueExpr conditionExpr = filter.getCondition();
+		BatchCorrelatedJoinProvider.Mode mode;
+		Exists exists;
+		if (conditionExpr instanceof Exists existsCondition) {
+			exists = existsCondition;
+			mode = BatchCorrelatedJoinProvider.Mode.SEMI;
+		} else if (conditionExpr instanceof Not not && not.getArg()instanceof Exists negatedExists) {
+			exists = negatedExists;
+			mode = BatchCorrelatedJoinProvider.Mode.ANTI;
+		} else {
+			return null;
+		}
+		BatchCorrelatedJoinProvider provider = host.batchCorrelatedJoinProvider();
+		if (provider == null) {
+			return null;
+		}
+		TupleExpr sub = exists.getSubQuery();
+		Set<String> outerNames = filter.getArg().getBindingNames();
+		Set<String> subNames = sub.getBindingNames();
+		String[] shared = outerNames.stream().filter(subNames::contains).toArray(String[]::new);
+		if (shared.length < 1 || shared.length > 4
+				|| QueryEvaluationUtility.usesMappingParameterizedEvaluation(sub)
+				|| !QueryEvaluationUtility.isRepeatable(sub)
+				|| !QueryEvaluationUtility.permitsBindingInjection(sub, outerNames)) {
+			return null;
+		}
+		QueryEvaluationStep subRaw;
+		try {
+			subRaw = strategy.precompile(sub, context);
+		} catch (QueryEvaluationException e) {
+			return null;
+		}
+		if (!provider.supports(subRaw, shared, mode, false)) {
+			return null;
+		}
+		Set<String> guardNames = new LinkedHashSet<>(subNames);
+		guardNames.removeAll(outerNames);
+		return bs -> {
+			for (String name : guardNames) {
+				if (bs.hasBinding(name)) {
+					return generic.evaluate(bs);
+				}
+			}
+			return provider.tryBatchJoin(
+					new BatchCorrelatedJoinProvider.BatchCorrelationRequest(arg.evaluate(bs), bs, shared, mode, null),
+					subRaw);
+		};
 	}
 
 	private static QueryEvaluationStep supplyFilteredBindingSetAssignmentJoin(Filter filter,
@@ -325,6 +398,8 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 				scopeBindingNames.addAll(join.getLeftArg().getBindingNames());
 			} else if (parent instanceof LeftJoin leftJoin && leftJoin.getRightArg() == child) {
 				scopeBindingNames.addAll(leftJoin.getLeftArg().getBindingNames());
+			} else if (parent instanceof Lateral lateral && lateral.getRightArg() == child) {
+				scopeBindingNames.addAll(lateral.getRightInputBindingNames());
 			}
 			child = parent;
 			parent = parent.getParentNode();

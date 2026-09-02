@@ -1,0 +1,646 @@
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.countEqual
+# Parameters: (length = 8192)
+
+# Run progress: 0.00% complete, ETA 00:02:16
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 2147.676 ns/op
+# Warmup Iteration   2: 2083.407 ns/op
+# Warmup Iteration   3: 2050.080 ns/op
+Iteration   1: 2055.654 ns/op
+Iteration   2: 2048.340 ns/op
+Iteration   3: 2048.789 ns/op
+Iteration   4: 2046.921 ns/op
+Iteration   5: 2045.300 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.countEqual":
+  2049.001 ±(99.9%) 15.254 ns/op [Average]
+  (min, avg, max) = (2045.300, 2049.001, 2055.654), stdev = 3.962
+  CI (99.9%): [2033.747, 2064.255] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.countEqualColumns
+# Parameters: (length = 8192)
+
+# Run progress: 5.88% complete, ETA 00:02:11
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 2219.521 ns/op
+# Warmup Iteration   2: 2175.805 ns/op
+# Warmup Iteration   3: 2173.249 ns/op
+Iteration   1: 2179.353 ns/op
+Iteration   2: 2172.948 ns/op
+Iteration   3: 2200.087 ns/op
+Iteration   4: 2219.265 ns/op
+Iteration   5: 2208.950 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.countEqualColumns":
+  2196.120 ±(99.9%) 75.410 ns/op [Average]
+  (min, avg, max) = (2172.948, 2196.120, 2219.265), stdev = 19.584
+  CI (99.9%): [2120.711, 2271.530] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.countMixedLiteralKind
+# Parameters: (length = 8192)
+
+# Run progress: 11.76% complete, ETA 00:02:03
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 3741.990 ns/op
+# Warmup Iteration   2: 3536.356 ns/op
+# Warmup Iteration   3: 3534.302 ns/op
+Iteration   1: 3540.441 ns/op
+Iteration   2: 3539.134 ns/op
+Iteration   3: 3535.963 ns/op
+Iteration   4: 3534.689 ns/op
+Iteration   5: 3539.227 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.countMixedLiteralKind":
+  3537.891 ±(99.9%) 9.392 ns/op [Average]
+  (min, avg, max) = (3534.689, 3537.891, 3540.441), stdev = 2.439
+  CI (99.9%): [3528.498, 3547.283] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.countParserStructuralBytes
+# Parameters: (length = 8192)
+
+# Run progress: 17.65% complete, ETA 00:01:54
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 475.077 ns/op
+# Warmup Iteration   2: 448.273 ns/op
+# Warmup Iteration   3: 467.592 ns/op
+Iteration   1: 452.571 ns/op
+Iteration   2: 453.125 ns/op
+Iteration   3: 460.429 ns/op
+Iteration   4: 448.359 ns/op
+Iteration   5: 452.901 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.countParserStructuralBytes":
+  453.477 ±(99.9%) 16.763 ns/op [Average]
+  (min, avg, max) = (448.359, 453.477, 460.429), stdev = 4.353
+  CI (99.9%): [436.714, 470.241] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.countUniformIriKind
+# Parameters: (length = 8192)
+
+# Run progress: 23.53% complete, ETA 00:01:46
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 2353.755 ns/op
+# Warmup Iteration   2: 2240.932 ns/op
+# Warmup Iteration   3: 2234.591 ns/op
+Iteration   1: 2239.451 ns/op
+Iteration   2: 2236.389 ns/op
+Iteration   3: 2237.242 ns/op
+Iteration   4: 2238.590 ns/op
+Iteration   5: 2238.348 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.countUniformIriKind":
+  2238.004 ±(99.9%) 4.614 ns/op [Average]
+  (min, avg, max) = (2236.389, 2238.004, 2239.451), stdev = 1.198
+  CI (99.9%): [2233.390, 2242.618] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.decodeLongs
+# Parameters: (length = 8192)
+
+# Run progress: 29.41% complete, ETA 00:01:38
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 1302.883 ns/op
+# Warmup Iteration   2: 1280.139 ns/op
+# Warmup Iteration   3: 1250.201 ns/op
+Iteration   1: 1309.136 ns/op
+Iteration   2: 1308.839 ns/op
+Iteration   3: 1291.002 ns/op
+Iteration   4: 1298.941 ns/op
+Iteration   5: 1301.856 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.decodeLongs":
+  1301.955 ±(99.9%) 29.074 ns/op [Average]
+  (min, avg, max) = (1291.002, 1301.955, 1309.136), stdev = 7.550
+  CI (99.9%): [1272.881, 1331.028] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.decodeUnsignedBytes
+# Parameters: (length = 8192)
+
+# Run progress: 35.29% complete, ETA 00:01:30
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 137422.652 ns/op
+# Warmup Iteration   2: 100124.905 ns/op
+# Warmup Iteration   3: 100061.238 ns/op
+Iteration   1: 99266.730 ns/op
+Iteration   2: 99542.131 ns/op
+Iteration   3: 100408.317 ns/op
+Iteration   4: 101321.808 ns/op
+Iteration   5: 102358.533 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.decodeUnsignedBytes":
+  100579.504 ±(99.9%) 4925.507 ns/op [Average]
+  (min, avg, max) = (99266.730, 100579.504, 102358.533), stdev = 1279.139
+  CI (99.9%): [95653.997, 105505.011] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.decodeUnsignedInts
+# Parameters: (length = 8192)
+
+# Run progress: 41.18% complete, ETA 00:01:22
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 1863.991 ns/op
+# Warmup Iteration   2: 1764.511 ns/op
+# Warmup Iteration   3: 1729.885 ns/op
+Iteration   1: 1825.155 ns/op
+Iteration   2: 1894.999 ns/op
+Iteration   3: 1837.755 ns/op
+Iteration   4: 1862.938 ns/op
+Iteration   5: 1739.504 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.decodeUnsignedInts":
+  1832.070 ±(99.9%) 224.212 ns/op [Average]
+  (min, avg, max) = (1739.504, 1832.070, 1894.999), stdev = 58.227
+  CI (99.9%): [1607.858, 2056.282] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.decodeUnsignedShorts
+# Parameters: (length = 8192)
+
+# Run progress: 47.06% complete, ETA 00:01:13
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 2514.152 ns/op
+# Warmup Iteration   2: 2346.116 ns/op
+# Warmup Iteration   3: 2334.251 ns/op
+Iteration   1: 2338.408 ns/op
+Iteration   2: 2336.520 ns/op
+Iteration   3: 2336.334 ns/op
+Iteration   4: 2339.774 ns/op
+Iteration   5: 2336.372 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.decodeUnsignedShorts":
+  2337.482 ±(99.9%) 5.962 ns/op [Average]
+  (min, avg, max) = (2336.334, 2337.482, 2339.774), stdev = 1.548
+  CI (99.9%): [2331.520, 2343.443] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.denseIntersectionPopcount
+# Parameters: (length = 8192)
+
+# Run progress: 52.94% complete, ETA 00:01:05
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 2081.466 ns/op
+# Warmup Iteration   2: 2020.120 ns/op
+# Warmup Iteration   3: 2027.800 ns/op
+Iteration   1: 2036.244 ns/op
+Iteration   2: 2036.019 ns/op
+Iteration   3: 2018.735 ns/op
+Iteration   4: 2022.830 ns/op
+Iteration   5: 2025.765 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.denseIntersectionPopcount":
+  2027.919 ±(99.9%) 30.430 ns/op [Average]
+  (min, avg, max) = (2018.735, 2027.919, 2036.244), stdev = 7.903
+  CI (99.9%): [1997.489, 2058.348] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.distinctTransitions
+# Parameters: (length = 8192)
+
+# Run progress: 58.82% complete, ETA 00:00:57
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 2263.822 ns/op
+# Warmup Iteration   2: 2207.160 ns/op
+# Warmup Iteration   3: 2208.856 ns/op
+Iteration   1: 2207.177 ns/op
+Iteration   2: 2206.162 ns/op
+Iteration   3: 2208.261 ns/op
+Iteration   4: 2208.396 ns/op
+Iteration   5: 2208.199 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.distinctTransitions":
+  2207.639 ±(99.9%) 3.687 ns/op [Average]
+  (min, avg, max) = (2206.162, 2207.639, 2208.396), stdev = 0.958
+  CI (99.9%): [2203.952, 2211.326] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.hashDenseThreeColumns
+# Parameters: (length = 8192)
+
+# Run progress: 64.71% complete, ETA 00:00:49
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 14872.619 ns/op
+# Warmup Iteration   2: 14424.201 ns/op
+# Warmup Iteration   3: 109210.734 ns/op
+Iteration   1: 86819.020 ns/op
+Iteration   2: 86878.849 ns/op
+Iteration   3: 86807.915 ns/op
+Iteration   4: 86218.416 ns/op
+Iteration   5: 86604.975 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.hashDenseThreeColumns":
+  86665.835 ±(99.9%) 1042.016 ns/op [Average]
+  (min, avg, max) = (86218.416, 86665.835, 86878.849), stdev = 270.608
+  CI (99.9%): [85623.819, 87707.851] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.hashIndirectThreeColumns
+# Parameters: (length = 8192)
+
+# Run progress: 70.59% complete, ETA 00:00:41
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 232170.803 ns/op
+# Warmup Iteration   2: 204299.969 ns/op
+# Warmup Iteration   3: 214957.101 ns/op
+Iteration   1: 214624.372 ns/op
+Iteration   2: 215687.020 ns/op
+Iteration   3: 213949.315 ns/op
+Iteration   4: 214945.573 ns/op
+Iteration   5: 216434.630 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.hashIndirectThreeColumns":
+  215128.182 ±(99.9%) 3701.430 ns/op [Average]
+  (min, avg, max) = (213949.315, 215128.182, 216434.630), stdev = 961.250
+  CI (99.9%): [211426.752, 218829.612] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.multiplicitySum
+# Parameters: (length = 8192)
+
+# Run progress: 76.47% complete, ETA 00:00:32
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 1167.828 ns/op
+# Warmup Iteration   2: 1149.730 ns/op
+# Warmup Iteration   3: 1147.507 ns/op
+Iteration   1: 1146.306 ns/op
+Iteration   2: 1145.543 ns/op
+Iteration   3: 1146.348 ns/op
+Iteration   4: 1149.796 ns/op
+Iteration   5: 1147.104 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.multiplicitySum":
+  1147.019 ±(99.9%) 6.343 ns/op [Average]
+  (min, avg, max) = (1145.543, 1147.019, 1149.796), stdev = 1.647
+  CI (99.9%): [1140.677, 1153.362] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.selectEqual
+# Parameters: (length = 8192)
+
+# Run progress: 82.35% complete, ETA 00:00:24
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 3807.098 ns/op
+# Warmup Iteration   2: 3819.507 ns/op
+# Warmup Iteration   3: 3123.850 ns/op
+Iteration   1: 3128.175 ns/op
+Iteration   2: 3123.396 ns/op
+Iteration   3: 3124.264 ns/op
+Iteration   4: 3123.199 ns/op
+Iteration   5: 3172.191 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.selectEqual":
+  3134.245 ±(99.9%) 82.049 ns/op [Average]
+  (min, avg, max) = (3123.199, 3134.245, 3172.191), stdev = 21.308
+  CI (99.9%): [3052.196, 3216.294] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.selectUnsignedRange
+# Parameters: (length = 8192)
+
+# Run progress: 88.24% complete, ETA 00:00:16
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 6062.802 ns/op
+# Warmup Iteration   2: 6698.117 ns/op
+# Warmup Iteration   3: 7241.709 ns/op
+Iteration   1: 7199.610 ns/op
+Iteration   2: 7168.819 ns/op
+Iteration   3: 7151.808 ns/op
+Iteration   4: 7088.903 ns/op
+Iteration   5: 7056.126 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.selectUnsignedRange":
+  7133.053 ±(99.9%) 227.218 ns/op [Average]
+  (min, avg, max) = (7056.126, 7133.053, 7199.610), stdev = 59.008
+  CI (99.9%): [6905.835, 7360.271] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 26, OpenJDK 64-Bit Server VM, 26+35
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/26-tem/bin/java
+# VM options: --add-modules=jdk.incubator.vector
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.unsignedRangeCount
+# Parameters: (length = 8192)
+
+# Run progress: 94.12% complete, ETA 00:00:08
+# Fork: 1 of 1
+WARNING: Using incubator modules: jdk.incubator.vector
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/Users/havardottestad/Documents/Programming/rdf4j/.m2_repo/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 2229.018 ns/op
+# Warmup Iteration   2: 2199.288 ns/op
+# Warmup Iteration   3: 2203.108 ns/op
+Iteration   1: 2202.682 ns/op
+Iteration   2: 2197.965 ns/op
+Iteration   3: 2191.884 ns/op
+Iteration   4: 2193.114 ns/op
+Iteration   5: 2204.808 ns/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.vectorbench.VectorAdjacencyKernelBenchmark.unsignedRangeCount":
+  2198.091 ±(99.9%) 21.911 ns/op [Average]
+  (min, avg, max) = (2191.884, 2198.091, 2204.808), stdev = 5.690
+  CI (99.9%): [2176.180, 2220.001] (assumes normal distribution)
+
+
+# Run complete. Total time: 00:02:19
+
+REMEMBER: The numbers below are just data. To gain reusable insights, you need to follow up on
+why the numbers are the way they are. Use profilers (see -prof, -lprof), design factorial
+experiments, perform baseline and negative tests that provide experimental control, make sure
+the benchmarking environment is safe on JVM/OS/HW level, ask for reviews from the domain experts.
+Do not assume the numbers tell you what you want them to tell.
+
+NOTE: Current JVM experimentally supports Compiler Blackholes, and they are in use. Please exercise
+extra caution when trusting the results, look into the generated code to check the benchmark still
+works, and factor in a small probability of new VM bugs. Additionally, while comparisons between
+different JVMs are already problematic, the performance difference caused by different Blackhole
+modes can be very significant. Please make sure you use the consistent Blackhole mode for comparisons.
+
+Benchmark                                                  (length)  Mode  Cnt       Score      Error  Units
+VectorAdjacencyKernelBenchmark.countEqual                      8192  avgt    5    2049.001 ±   15.254  ns/op
+VectorAdjacencyKernelBenchmark.countEqualColumns               8192  avgt    5    2196.120 ±   75.410  ns/op
+VectorAdjacencyKernelBenchmark.countMixedLiteralKind           8192  avgt    5    3537.891 ±    9.392  ns/op
+VectorAdjacencyKernelBenchmark.countParserStructuralBytes      8192  avgt    5     453.477 ±   16.763  ns/op
+VectorAdjacencyKernelBenchmark.countUniformIriKind             8192  avgt    5    2238.004 ±    4.614  ns/op
+VectorAdjacencyKernelBenchmark.decodeLongs                     8192  avgt    5    1301.955 ±   29.074  ns/op
+VectorAdjacencyKernelBenchmark.decodeUnsignedBytes             8192  avgt    5  100579.504 ± 4925.507  ns/op
+VectorAdjacencyKernelBenchmark.decodeUnsignedInts              8192  avgt    5    1832.070 ±  224.212  ns/op
+VectorAdjacencyKernelBenchmark.decodeUnsignedShorts            8192  avgt    5    2337.482 ±    5.962  ns/op
+VectorAdjacencyKernelBenchmark.denseIntersectionPopcount       8192  avgt    5    2027.919 ±   30.430  ns/op
+VectorAdjacencyKernelBenchmark.distinctTransitions             8192  avgt    5    2207.639 ±    3.687  ns/op
+VectorAdjacencyKernelBenchmark.hashDenseThreeColumns           8192  avgt    5   86665.835 ± 1042.016  ns/op
+VectorAdjacencyKernelBenchmark.hashIndirectThreeColumns        8192  avgt    5  215128.182 ± 3701.430  ns/op
+VectorAdjacencyKernelBenchmark.multiplicitySum                 8192  avgt    5    1147.019 ±    6.343  ns/op
+VectorAdjacencyKernelBenchmark.selectEqual                     8192  avgt    5    3134.245 ±   82.049  ns/op
+VectorAdjacencyKernelBenchmark.selectUnsignedRange             8192  avgt    5    7133.053 ±  227.218  ns/op
+VectorAdjacencyKernelBenchmark.unsignedRangeCount              8192  avgt    5    2198.091 ±   21.911  ns/op
+
+Benchmark result is saved to .agent/evidence/factorized-adjacency/vector-revisit-forced-jdk26-aarch64.json

@@ -1,0 +1,3204 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>RDF to CSF — an adjacency page laboratory</title>
+    <style>
+        :root {
+            --orange: #da5800;
+            --orange-dark: #9c3f00;
+            --orange-soft: #fff0e6;
+            --ink: #20201d;
+            --muted: #66645e;
+            --line: #d9d6ce;
+            --line-strong: #aaa69b;
+            --paper: #fffefa;
+            --surface: #f4f2ec;
+            --surface-2: #ebe8df;
+            --teal: #126e6a;
+            --blue: #315a8a;
+            --purple: #6a4c93;
+            --green: #28724f;
+            --danger: #a53326;
+            --shadow: 0 12px 34px rgba(46, 40, 31, .08);
+            --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        * { box-sizing: border-box; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            margin: 0;
+            color: var(--ink);
+            background:
+                linear-gradient(rgba(218, 88, 0, .035) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(218, 88, 0, .035) 1px, transparent 1px),
+                var(--surface);
+            background-size: 28px 28px;
+            font-family: var(--sans);
+            line-height: 1.5;
+        }
+
+        button, input { font: inherit; }
+
+        button { color: inherit; }
+
+        button:focus-visible, [tabindex]:focus-visible {
+            outline: 3px solid rgba(218, 88, 0, .42);
+            outline-offset: 3px;
+        }
+
+        .masthead {
+            min-height: 72px;
+            padding: 14px clamp(18px, 3vw, 42px);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+            border-bottom: 1px solid var(--line);
+            background: rgba(255, 254, 250, .95);
+        }
+
+        .brand { display: flex; align-items: center; gap: 13px; }
+
+        .brand-mark {
+            width: 37px;
+            height: 37px;
+            display: grid;
+            place-items: center;
+            border-radius: 9px;
+            background: var(--orange);
+            color: white;
+            font: 800 17px/1 var(--mono);
+            letter-spacing: -.08em;
+            box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .12);
+        }
+
+        .brand-name { font-size: 15px; font-weight: 780; letter-spacing: -.01em; }
+        .brand-subtitle { color: var(--muted); font: 12px/1.3 var(--mono); }
+
+        .status-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+
+        .status-badge, .eyebrow, .small-badge {
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: white;
+            color: var(--muted);
+            font: 700 10px/1 var(--mono);
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+
+        .status-badge { padding: 8px 10px; }
+        .status-badge strong { color: var(--ink); }
+
+        .lab-shell {
+            width: min(1540px, 100%);
+            margin: 0 auto;
+            padding: 22px clamp(14px, 2.5vw, 36px) 52px;
+            display: grid;
+            grid-template-columns: minmax(290px, 355px) minmax(0, 1fr);
+            gap: 20px;
+            align-items: start;
+        }
+
+        .statement-panel, .workspace {
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            background: var(--paper);
+            box-shadow: var(--shadow);
+        }
+
+        .statement-panel {
+            position: sticky;
+            top: 16px;
+            max-height: calc(100vh - 32px);
+            overflow: auto;
+        }
+
+        .panel-intro { padding: 22px 20px 15px; border-bottom: 1px solid var(--line); }
+        .panel-intro h1 { margin: 7px 0 9px; font-size: clamp(23px, 2.2vw, 31px); line-height: 1.06; letter-spacing: -.04em; }
+        .panel-intro p { margin: 0; color: var(--muted); font-size: 13px; }
+        .eyebrow { display: inline-flex; padding: 6px 8px; color: var(--orange-dark); border-color: #efb58e; background: var(--orange-soft); }
+
+        .statement-heading {
+            margin: 0;
+            padding: 14px 18px 8px;
+            color: var(--muted);
+            font: 700 11px/1 var(--mono);
+            text-transform: uppercase;
+            letter-spacing: .09em;
+        }
+
+        .statement-list { margin: 0; padding: 0 10px 13px; list-style: none; }
+
+        .statement-button {
+            position: relative;
+            width: 100%;
+            margin: 3px 0;
+            padding: 12px 12px 12px 42px;
+            display: block;
+            border: 1px solid transparent;
+            border-radius: 9px;
+            background: transparent;
+            text-align: left;
+            cursor: pointer;
+            transition: background-color .16s ease, border-color .16s ease, transform .16s ease;
+        }
+
+        .statement-button:hover { border-color: var(--line); background: var(--surface); }
+        .statement-button[aria-selected="true"] { border-color: #e49a67; background: var(--orange-soft); }
+        .statement-button[aria-selected="true"]::after {
+            content: "";
+            position: absolute;
+            inset: 8px auto 8px 0;
+            width: 4px;
+            border-radius: 0 3px 3px 0;
+            background: var(--orange);
+        }
+
+        .statement-number {
+            position: absolute;
+            left: 12px;
+            top: 12px;
+            width: 22px;
+            height: 22px;
+            display: grid;
+            place-items: center;
+            border: 1px solid var(--line-strong);
+            border-radius: 50%;
+            background: white;
+            font: 700 10px/1 var(--mono);
+        }
+
+        .statement-button[aria-selected="true"] .statement-number { border-color: var(--orange); color: var(--orange-dark); }
+        .statement-rdf { display: block; font: 600 11px/1.48 var(--mono); overflow-wrap: anywhere; }
+        .statement-meta { display: flex; gap: 6px; margin-top: 7px; align-items: center; color: var(--muted); font-size: 10px; }
+        .statement-kind { font-family: var(--mono); }
+        .inferred-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--purple); }
+        .explicit-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--teal); }
+
+        .workspace { min-width: 0; overflow: hidden; }
+
+        .control-deck {
+            padding: 14px 16px;
+            display: flex;
+            gap: 12px 20px;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            border-bottom: 1px solid var(--line);
+            background: #faf9f5;
+        }
+
+        .control-groups { display: flex; gap: 10px; flex-wrap: wrap; }
+        .control-group { display: flex; align-items: center; gap: 5px; }
+        .control-label { margin-right: 2px; color: var(--muted); font: 700 9px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+
+        .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: white; }
+        .segmented button {
+            min-height: 31px;
+            padding: 6px 9px;
+            border: 0;
+            border-right: 1px solid var(--line);
+            background: transparent;
+            color: var(--muted);
+            font: 700 10px/1 var(--mono);
+            cursor: pointer;
+        }
+        .segmented button:last-child { border-right: 0; }
+        .segmented button[aria-pressed="true"] { background: var(--ink); color: white; }
+
+        .partition-chip {
+            min-height: 31px;
+            padding: 7px 10px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: white;
+            font: 700 10px/1 var(--mono);
+        }
+
+        .partition-chip strong { color: var(--orange-dark); }
+
+        .step-deck {
+            padding: 15px 16px;
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            gap: 11px;
+            align-items: center;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .step-arrow {
+            width: 36px;
+            height: 36px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: white;
+            font: 800 18px/1 var(--mono);
+            cursor: pointer;
+        }
+        .step-arrow:disabled { opacity: .32; cursor: default; }
+
+        .step-list {
+            display: grid;
+            grid-template-columns: repeat(10, minmax(30px, 1fr));
+            gap: 5px;
+        }
+
+        .step-button {
+            min-width: 0;
+            padding: 7px 4px 6px;
+            border: 1px solid transparent;
+            border-radius: 7px;
+            background: transparent;
+            color: var(--muted);
+            cursor: pointer;
+        }
+        .step-button:hover { background: var(--surface); }
+        .step-button[aria-current="step"] { border-color: #e49a67; color: var(--ink); background: var(--orange-soft); }
+        .step-number { display: block; font: 800 12px/1 var(--mono); }
+        .step-name { display: block; margin-top: 4px; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .lesson { min-height: 620px; padding: clamp(22px, 3.2vw, 42px); }
+        /* Only a genuine step change animates. Re-rendering the same lesson in place (selecting a statement,
+           flipping a control, picking a column) must not shift the content the pointer is aimed at. */
+        .lesson-frame.entering { animation: lesson-in .24s ease both; }
+
+        @keyframes lesson-in {
+            from { opacity: .25; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .lesson-kicker { margin: 0 0 8px; color: var(--orange-dark); font: 800 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; }
+        .lesson h2 { max-width: 850px; margin: 0; font-size: clamp(25px, 3.1vw, 43px); line-height: 1.04; letter-spacing: -.045em; }
+        .lesson-lead { max-width: 820px; margin: 13px 0 27px; color: var(--muted); font-size: 15px; }
+        .lesson h3 { margin: 0 0 10px; font-size: 14px; letter-spacing: -.01em; }
+        .lesson p { margin-top: 8px; }
+
+        .callout {
+            margin: 18px 0;
+            padding: 14px 16px;
+            border: 1px solid #e9b895;
+            border-left: 4px solid var(--orange);
+            border-radius: 7px;
+            background: var(--orange-soft);
+            font-size: 13px;
+        }
+        .callout strong { color: var(--orange-dark); }
+        .callout.info { border-color: #adc1d8; border-left-color: var(--blue); background: #edf4fb; }
+        .callout.success { border-color: #acd0bc; border-left-color: var(--green); background: #eef8f1; }
+
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 11px; }
+        .card, .array-card, .tree-row, .byte-inspector, .table-wrap {
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            background: white;
+        }
+        .card { padding: 15px; }
+        .card.selected { border-color: var(--orange); box-shadow: inset 0 0 0 1px var(--orange); }
+        .card-label { color: var(--muted); font: 700 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+        .card-value { margin-top: 8px; font: 750 14px/1.45 var(--mono); overflow-wrap: anywhere; }
+        .card-note { margin: 7px 0 0; color: var(--muted); font-size: 12px; }
+        .legal { color: var(--green); }
+        .illegal { color: var(--danger); }
+
+        .term-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0 0 22px; }
+        .term-slot { padding: 11px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; background: #faf9f5; }
+        .term-position { display: block; color: var(--muted); font: 700 9px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+        .term-value { display: block; margin-top: 6px; font: 700 12px/1.35 var(--mono); overflow-wrap: anywhere; }
+        .term-slot.invalid { border-color: #e4a49d; background: #fff0ee; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { padding: 10px 11px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+        tr:last-child td { border-bottom: 0; }
+        th { color: var(--muted); background: #f8f7f2; font: 700 9px/1.2 var(--mono); text-transform: uppercase; letter-spacing: .07em; }
+        td.mono, .mono { font-family: var(--mono); }
+        .table-wrap { overflow: auto; }
+        .current-row td { background: var(--orange-soft); }
+
+        .formula {
+            padding: 12px 14px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #272724;
+            color: #fff;
+            font: 650 12px/1.7 var(--mono);
+            overflow-x: auto;
+        }
+        .formula .accent { color: #ffae76; }
+        .formula .dim { color: #aaa99f; }
+
+        .plane-grid { display: grid; grid-template-columns: repeat(4, minmax(140px, 1fr)); gap: 9px; }
+        .plane-card { position: relative; padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: white; }
+        .plane-card.selected { border: 2px solid var(--orange); padding: 13px; }
+        .plane-id { font: 850 25px/1 var(--mono); }
+        .plane-name { margin: 7px 0 0; font-weight: 760; font-size: 12px; }
+        .plane-rule { color: var(--muted); font: 10px/1.5 var(--mono); }
+        .selected-flag { position: absolute; top: 8px; right: 8px; color: var(--orange-dark); font: 800 9px/1 var(--mono); text-transform: uppercase; }
+
+        .orientation {
+            margin: 22px 0;
+            display: grid;
+            grid-template-columns: minmax(130px, 1fr) auto minmax(130px, 1fr);
+            align-items: center;
+            gap: 12px;
+        }
+        .orientation-node { min-width: 0; padding: 18px 14px; border: 1px solid var(--line); border-radius: 9px; background: white; text-align: center; }
+        .orientation-node strong { display: block; font: 750 13px/1.3 var(--mono); overflow-wrap: anywhere; }
+        .orientation-node span { color: var(--muted); font-size: 10px; }
+        .orientation-arrow { min-width: 100px; color: var(--orange-dark); text-align: center; font: 800 12px/1.3 var(--mono); }
+        .orientation-arrow::after { content: "\2192"; display: block; font-size: 30px; line-height: 1; }
+
+        .tree { display: grid; gap: 10px; }
+        .tree-row { padding: 13px; }
+        .tree-row.selected { border-color: var(--orange); background: #fffaf6; }
+        .tree-row-id { display: flex; gap: 9px; align-items: baseline; font: 760 12px/1.3 var(--mono); }
+        .tree-branch { margin: 10px 0 0 20px; padding-left: 16px; border-left: 2px solid var(--surface-2); }
+        .tree-fiber { position: relative; margin: 9px 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; background: white; }
+        .tree-fiber::before { content: ""; position: absolute; left: -18px; top: 19px; width: 16px; border-top: 2px solid var(--surface-2); }
+        .tree-fiber.selected { border-color: var(--orange); }
+        .fiber-head { font: 700 11px/1.35 var(--mono); }
+        .contexts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+        .context-pill { padding: 5px 7px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font: 650 10px/1 var(--mono); }
+        .context-pill.selected { border: 2px solid var(--orange); padding: 4px 6px; background: var(--orange-soft); }
+
+        .array-stack { display: grid; gap: 9px; }
+        .array-card { padding: 12px 13px; }
+        .array-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+        .array-name { font: 800 12px/1 var(--mono); }
+        .array-purpose { color: var(--muted); font-size: 10px; }
+        .array-values { display: flex; gap: 4px; align-items: stretch; overflow-x: auto; padding: 3px 0 5px; }
+        /* Each slot is a two-row column: the ordinal caption sits directly above the cell it names. */
+        .array-slot { display: flex; flex-direction: column; gap: 3px; flex: 0 0 auto; }
+        .array-index { color: var(--muted); font: 700 10px/1 var(--mono); text-align: center; }
+        .array-slot.selected .array-index { color: var(--orange-dark); }
+        /* The bracket spans the whole slot height, so pad past the caption row to stay centred on the cells. */
+        .array-bracket { display: grid; place-items: center; padding-top: 13px; color: var(--line-strong); font: 300 25px/1 var(--mono); }
+        .array-cell { flex: 1; min-width: 58px; padding: 9px 7px; border: 1px solid var(--line); border-radius: 5px; background: #faf9f5; text-align: center; font: 750 15px/1.2 var(--mono); }
+        .array-cell small { display: block; margin-top: 5px; color: var(--muted); font-size: 9px; font-weight: 500; }
+        .array-cell.selected { border: 2px solid var(--orange); padding: 8px 6px; background: var(--orange-soft); }
+        .array-cell.delta { min-width: 108px; border-style: dashed; border-color: var(--line-strong); }
+        .array-cell.delta.selected { border-style: solid; }
+        .array-cell .resolves { color: var(--teal); font-size: 9px; font-weight: 700; white-space: nowrap; }
+
+        .compact-row { display: grid; grid-template-columns: minmax(150px, 210px) minmax(0, 1fr); gap: 12px; align-items: center; }
+        .compact-row + .compact-row { margin-top: 8px; }
+        .omitted { padding: 10px 12px; border: 1px dashed var(--line-strong); border-radius: 7px; color: var(--muted); background: var(--surface); font-size: 11px; }
+        .small-badge { display: inline-flex; padding: 5px 7px; margin-right: 7px; }
+        .small-badge.omit { border-color: #a9c8ba; background: #f0f8f3; color: var(--green); }
+        .flag-list { position: relative; display: flex; gap: 6px; flex-wrap: wrap; margin: 13px 0; }
+        .flag-help { position: relative; display: inline-flex; max-width: 100%; }
+        .flag {
+            padding: 6px 8px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: white;
+            font: 650 9px/1.2 var(--mono);
+        }
+        .flag.on { border-color: #e49a67; background: var(--orange-soft); color: var(--orange-dark); }
+        .flag-trigger { display: inline-flex; align-items: center; gap: 6px; cursor: help; text-align: left; }
+        .flag-trigger::after {
+            content: "?";
+            width: 14px;
+            height: 14px;
+            display: inline-grid;
+            flex: 0 0 auto;
+            place-items: center;
+            border: 1px solid currentColor;
+            border-radius: 50%;
+            font: 800 8px/1 var(--mono);
+            opacity: .72;
+        }
+        .flag-tooltip {
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 0;
+            z-index: 40;
+            width: min(360px, calc(100vw - 54px));
+            padding: 12px;
+            border: 1px solid #77736a;
+            border-radius: 8px;
+            background: #272724;
+            color: #f7f5ee;
+            box-shadow: 0 12px 28px rgba(25, 24, 20, .24);
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transform: translateY(-4px);
+            transition: opacity .14s ease, transform .14s ease, visibility .14s ease;
+            font: 11px/1.45 var(--sans);
+        }
+        .flag-list > .flag-help, .vector-flag-list > .flag-help { position: static; }
+        .flag-help:hover .flag-tooltip,
+        .flag-help:focus-within .flag-tooltip {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        .flag-tooltip strong { color: #ffae76; }
+        .flag-tooltip-title { display: flex; justify-content: space-between; gap: 12px; font: 800 11px/1.25 var(--mono); }
+        .flag-tooltip-status { margin-top: 7px; color: #d8d5cb; font: 700 9px/1.3 var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+        .flag-tooltip-option { display: block; margin-top: 7px; }
+        .vector-flag-list { position: relative; display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+        .vector-flag-list .flag { padding: 5px 7px; }
+
+        /* Same hover/focus tooltip machinery as the page flags, re-anchored inside a table header cell. */
+        th .flag-help { max-width: none; vertical-align: baseline; }
+        .head-trigger {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 0;
+            border: 0;
+            background: none;
+            font: inherit;
+            color: inherit;
+            text-align: left;
+            cursor: help;
+        }
+        .head-trigger::after {
+            content: "?";
+            width: 12px;
+            height: 12px;
+            display: inline-grid;
+            flex: 0 0 auto;
+            place-items: center;
+            border: 1px solid currentColor;
+            border-radius: 50%;
+            font: 800 8px/1 var(--mono);
+            letter-spacing: 0;
+            opacity: .72;
+        }
+        .head-tooltip {
+            left: auto;
+            right: 0;
+            width: min(340px, calc(100vw - 54px));
+            text-transform: none;
+            letter-spacing: normal;
+        }
+        /* Let the tooltip escape the scrolling table wrapper instead of forcing a scrollbar. */
+        .table-wrap:has(.head-trigger:hover), .table-wrap:has(.head-trigger:focus) { overflow: visible; }
+
+        .scale-diagram {
+            margin: 0 0 24px;
+            overflow: hidden;
+            border: 1px solid #cfcac0;
+            border-radius: 12px;
+            background: white;
+            box-shadow: 0 12px 30px rgba(46, 40, 31, .07);
+        }
+        .scale-diagram-header {
+            padding: 18px 19px 15px;
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 20px;
+            border-bottom: 1px solid var(--line);
+            background: linear-gradient(115deg, #fff8f2, #fff 55%);
+        }
+        .scale-diagram-header h3 { margin: 4px 0 0; font-size: 20px; line-height: 1.1; }
+        .scale-diagram-header p { max-width: 720px; margin: 7px 0 0; color: var(--muted); font-size: 12px; }
+        .scale-note {
+            flex: 0 0 auto;
+            padding: 7px 9px;
+            border: 1px solid #efb58e;
+            border-radius: 999px;
+            background: var(--orange-soft);
+            color: var(--orange-dark);
+            font: 750 9px/1 var(--mono);
+            text-transform: uppercase;
+            letter-spacing: .07em;
+        }
+        .scale-scenario { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--line); }
+        .scale-stat { padding: 13px 15px; border-right: 1px solid var(--line); background: #faf9f5; }
+        .scale-stat:last-child { border-right: 0; }
+        .scale-stat strong { display: block; font: 850 17px/1 var(--mono); }
+        .scale-stat span { display: block; margin-top: 5px; color: var(--muted); font-size: 9px; }
+        .lookup-route-grid { padding: 15px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; background: #f7f5ef; }
+        .lookup-route {
+            position: relative;
+            padding: 13px 14px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: white;
+            min-width: 0;
+        }
+        .lookup-route.optional { border-style: dashed; }
+        .route-label { color: var(--muted); font: 800 8px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+        .lookup-route h4, .lookup-layer h4, .snapshot-layer h4 { margin: 6px 0 4px; font-size: 13px; }
+        .lookup-route p, .lookup-layer p, .snapshot-layer p { margin: 0; color: var(--muted); font-size: 10px; }
+        .route-formula { display: block; margin-top: 8px; color: var(--orange-dark); font: 750 10px/1.35 var(--mono); overflow-wrap: anywhere; }
+        .lookup-merge {
+            padding: 7px 12px 10px;
+            color: var(--orange-dark);
+            text-align: center;
+            font: 800 9px/1.2 var(--mono);
+            text-transform: uppercase;
+            letter-spacing: .07em;
+            background: #f7f5ef;
+        }
+        .lookup-merge::after { content: "\2193"; display: block; margin-top: 3px; font-size: 19px; }
+        .lookup-spine { margin: 0; padding: 0 15px 16px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 25px; list-style: none; }
+        .lookup-layer {
+            position: relative;
+            min-width: 0;
+            min-height: 195px;
+            padding: 13px;
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            background: #fff;
+        }
+        .lookup-layer:not(:last-child)::after {
+            content: "\2192";
+            position: absolute;
+            top: 50%;
+            right: -22px;
+            z-index: 2;
+            width: 18px;
+            color: var(--orange-dark);
+            text-align: center;
+            font: 850 20px/1 var(--mono);
+            transform: translateY(-50%);
+        }
+        .lookup-step { color: var(--orange-dark); font: 850 9px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+        .partition-matrix { margin-top: 10px; display: grid; grid-template-columns: repeat(12, minmax(4px, 1fr)); gap: 2px; }
+        .partition-cell { aspect-ratio: 1; border: 1px solid #d4d0c7; border-radius: 2px; background: #edeae3; }
+        .partition-cell.active { border-color: var(--orange-dark); background: var(--orange); box-shadow: 0 0 0 1px white inset; }
+        .mini-caption { display: block; margin-top: 8px; color: var(--muted); font: 8px/1.35 var(--mono); }
+        .shard-visual { margin-top: 10px; padding: 7px; border: 1px solid var(--line); border-radius: 6px; background: #f7f6f1; }
+        .shard-fence { display: flex; align-items: center; gap: 3px; }
+        .shard-fence span { height: 17px; flex: 1; border: 1px solid #b9c5ce; border-radius: 2px; background: #e8f0f5; }
+        .shard-fence span.selected { border: 2px solid var(--orange); background: var(--orange-soft); }
+        .directory-line { margin-top: 6px; display: flex; justify-content: space-between; color: var(--muted); font: 7px/1 var(--mono); }
+        .page-mini { height: 42px; margin-top: 10px; display: flex; overflow: hidden; border: 1px solid #99958c; border-radius: 5px; background: #eeeae2; }
+        .page-mini span { display: grid; place-items: center; min-width: 0; color: #34332f; font: 750 7px/1 var(--mono); }
+        .page-mini .mini-header { width: 31%; background: #484842; color: white; }
+        .page-mini .mini-vectors { width: 54%; background: #dce8e7; }
+        .page-mini .mini-slack { width: 15%; background: repeating-linear-gradient(135deg, #e2ded5 0 4px, #f5f2eb 4px 8px); }
+        .vector-mini { margin-top: 10px; display: grid; gap: 4px; }
+        .vector-directory { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; }
+        .vector-directory span { height: 10px; border-radius: 2px; background: #d5d0c6; }
+        .vector-directory span:first-child { background: var(--orange); }
+        .vector-blocks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
+        .vector-block-mini { padding: 4px; border: 1px solid #b8b3a8; border-radius: 4px; background: #f7f5ef; }
+        .lane-dots { display: grid; grid-template-columns: repeat(8, 1fr); gap: 1px; }
+        .lane-dots i { aspect-ratio: 1; border-radius: 1px; background: #c9d8d7; }
+        .lane-dots i.selected { background: var(--orange); }
+        .snapshot-layer { padding: 15px; border-top: 1px solid var(--line); background: #292925; color: white; }
+        .snapshot-layer > p { color: #cbc8be; }
+        .snapshot-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+        .snapshot-head h4 { color: white; }
+        .snapshot-route { color: #ffae76; font: 750 9px/1.4 var(--mono); text-align: right; }
+        .helper-grid { margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; list-style: none; }
+        .helper-grid li { padding: 9px; border: 1px solid #4d4c47; border-radius: 6px; background: #33332f; color: #d9d6cc; font-size: 9px; }
+        .helper-grid strong { display: block; margin-bottom: 3px; color: #ffae76; font: 750 9px/1.2 var(--mono); }
+        .diagram-takeaway { margin: 0; padding: 12px 15px; border-top: 1px solid var(--line); background: #fff8f2; font-size: 11px; }
+        .diagram-takeaway strong { color: var(--orange-dark); }
+
+        .page-summary { display: grid; grid-template-columns: repeat(5, minmax(100px, 1fr)); gap: 8px; margin-bottom: 17px; }
+        .metric { padding: 11px; border: 1px solid var(--line); border-radius: 8px; background: white; }
+        .metric span { display: block; color: var(--muted); font: 700 8px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+        .metric strong { display: block; margin-top: 6px; font: 800 15px/1 var(--mono); }
+
+        .page-map-shell { padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: white; }
+        .page-map { position: relative; height: 58px; border: 1px solid var(--line-strong); border-radius: 6px; overflow: hidden; background: repeating-linear-gradient(135deg, #eeece6 0 5px, #f6f4ef 5px 10px); }
+        .page-region { position: absolute; top: 0; bottom: 0; min-width: 2px; border-right: 1px solid rgba(255, 255, 255, .7); overflow: hidden; cursor: pointer; }
+        .page-region.header { background: #41413d; color: white; }
+        .page-region.vector { background: #dce8e7; }
+        .page-region.vector:nth-of-type(3n) { background: #e4dfec; }
+        .page-region.vector.selected { background: #f19a5f; box-shadow: inset 0 0 0 2px var(--orange-dark); z-index: 2; }
+        .page-region.slack { background: repeating-linear-gradient(135deg, #e8e5de 0 5px, #f6f4ef 5px 10px); cursor: default; }
+        .page-region-label { display: block; padding: 6px; font: 750 8px/1.2 var(--mono); white-space: nowrap; }
+        .page-map-legend { margin-top: 9px; display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font: 10px/1.3 var(--mono); }
+
+        .physical-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(300px, 1.1fr); gap: 14px; margin-top: 16px; align-items: start; }
+        .physical-column { display: grid; gap: 12px; min-width: 0; }
+        .byte-inspector { padding: 14px; min-width: 0; }
+        .inspector-title { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+        .inspector-title h3 { margin: 0; }
+        .inspector-title span { color: var(--muted); font: 9px/1 var(--mono); }
+        .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+        .field { padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: #faf9f5; min-width: 0; }
+        .field-name { color: var(--muted); font: 650 8px/1.2 var(--mono); text-transform: uppercase; }
+        .field-value { display: block; margin-top: 4px; font: 750 10px/1.3 var(--mono); overflow-wrap: anywhere; }
+        .field-offset { color: var(--muted); font-size: 8px; }
+
+        .section-table button {
+            width: 100%;
+            padding: 0;
+            border: 0;
+            background: none;
+            text-align: left;
+            cursor: pointer;
+            font: inherit;
+        }
+        .section-table tr.selected td { background: var(--orange-soft); }
+        .section-table tr.omitted-section td { color: var(--muted); }
+
+        .vector-block { padding: 11px; border: 1px solid var(--line); border-radius: 7px; background: #faf9f5; }
+        .vector-block + .vector-block { margin-top: 7px; }
+        .block-head { display: flex; gap: 7px; flex-wrap: wrap; }
+        .block-chip { padding: 5px 6px; border: 1px solid var(--line); border-radius: 5px; background: white; font: 700 9px/1 var(--mono); }
+        .packed-bits { margin-top: 9px; padding: 9px; border-radius: 6px; background: #292925; color: white; font: 10px/1.55 var(--mono); overflow-wrap: anywhere; }
+        .packed-bits strong { color: #ffae76; }
+
+        .vector-selector { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+        .vector-selector button {
+            padding: 7px 9px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: white;
+            color: var(--muted);
+            cursor: pointer;
+            font: 700 9px/1 var(--mono);
+        }
+        .vector-selector button:hover { border-color: #e49a67; color: var(--ink); }
+        .vector-selector button[aria-pressed="true"] { border-color: var(--orange); background: var(--orange-soft); color: var(--orange-dark); }
+        .vector-source { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+        .vector-source button {
+            padding: 9px 11px;
+            border: 1px solid var(--line-strong);
+            border-radius: 7px;
+            background: var(--surface);
+            cursor: pointer;
+            font: 700 10px/1.2 var(--mono);
+        }
+        .vector-source button[aria-pressed="true"] { border: 2px solid var(--orange); padding: 8px 10px; background: var(--orange-soft); color: var(--orange-dark); }
+        .vector-source .dim { color: var(--muted); font-weight: 500; }
+        .read-path { display: grid; gap: 8px; margin: 18px 0; }
+        .read-step {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            gap: 12px;
+            align-items: center;
+            padding: 11px 13px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: white;
+        }
+        .read-step.rebuilt { border-style: dashed; border-color: #adc1d8; background: #edf4fb; }
+        .read-step b { color: var(--muted); font: 800 12px/1 var(--mono); }
+        .read-step strong { display: block; font-size: 12px; }
+        .read-step span { color: var(--muted); font: 10px/1.4 var(--mono); overflow-wrap: anywhere; }
+        .read-origin { color: var(--muted); font: 700 9px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
+        .read-step.rebuilt .read-origin { color: var(--blue); }
+        .vector-anatomy, .delta-stage-detail {
+            overflow: hidden;
+            border: 1px solid #cfcac0;
+            border-radius: 11px;
+            background: white;
+        }
+        .vector-anatomy-head, .delta-stage-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 18px;
+            padding: 15px 17px;
+            border-bottom: 1px solid var(--line);
+            background: linear-gradient(115deg, #fff8f2, #fff 58%);
+        }
+        .vector-anatomy-head h3, .delta-stage-head h3 { margin: 4px 0 0; font-size: 17px; }
+        .vector-anatomy-head p, .delta-stage-head p { max-width: 720px; margin: 6px 0 0; color: var(--muted); font-size: 11px; }
+        .vector-total { flex: 0 0 auto; color: var(--orange-dark); font: 850 13px/1 var(--mono); }
+        .vector-byte-line { display: flex; min-height: 78px; margin: 16px; overflow: hidden; border: 1px solid #77736a; border-radius: 7px; }
+        .vector-region { min-width: 74px; padding: 10px 8px; display: grid; align-content: center; border-right: 1px solid rgba(255, 255, 255, .72); color: #2f302d; }
+        .vector-region:last-child { border-right: 0; }
+        .vector-region strong { font: 800 10px/1.2 var(--mono); }
+        .vector-region span { margin-top: 5px; font: 8px/1.35 var(--mono); }
+        .vector-region.vector-header { background: #3f403b; color: white; }
+        .vector-region.directory { background: #dce8e7; }
+        .vector-region.block-header { background: #e4dfec; }
+        .vector-region.payload { flex: 1 1 auto; background: repeating-linear-gradient(135deg, #f7c39f 0 9px, #ffd9bf 9px 18px); }
+        .decode-route, .mode-ledger { display: grid; gap: 9px; padding: 0 16px 16px; }
+        .decode-route { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .decode-step { position: relative; min-width: 0; padding: 12px; border-top: 2px solid var(--line-strong); background: #faf9f5; }
+        .decode-step:not(:last-child)::after { content: "\2192"; position: absolute; top: 21px; right: -8px; z-index: 2; color: var(--orange-dark); font: 850 15px/1 var(--mono); }
+        .decode-step b { display: block; color: var(--orange-dark); font: 850 9px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+        .decode-step code { display: block; margin-top: 7px; color: var(--ink); font: 700 9px/1.45 var(--mono); overflow-wrap: anywhere; }
+        .mode-ledger { grid-template-columns: repeat(4, minmax(0, 1fr)); padding-top: 16px; border-top: 1px solid var(--line); }
+        .mode-item { min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 7px; background: #faf9f5; }
+        .mode-item.selected { border: 2px solid var(--orange); padding: 10px; background: var(--orange-soft); }
+        .mode-item.unavailable { border-style: dashed; background: repeating-linear-gradient(135deg, #f4f2ec, #f4f2ec 6px, #eeece4 6px, #eeece4 12px); }
+        .mode-item.unavailable strong { color: var(--muted); }
+        .mode-unreachable { display: block; margin-top: 5px; color: var(--danger); font: 700 8px/1.3 var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+        .mode-item strong { display: block; font: 800 10px/1.2 var(--mono); }
+        .mode-item span { display: block; margin-top: 6px; color: var(--muted); font-size: 9px; }
+        .efficiency-equation { margin-top: 14px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+        .efficiency-equation div { padding: 13px; border-right: 1px solid var(--line); background: white; }
+        .efficiency-equation div:last-child { border-right: 0; background: #eef8f1; }
+        .efficiency-equation span { display: block; color: var(--muted); font: 700 8px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+        .efficiency-equation strong { display: block; margin-top: 7px; font: 850 14px/1.2 var(--mono); }
+
+        .delta-pipeline { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 13px; }
+        .delta-stage-button { position: relative; min-width: 0; padding: 11px 9px; border: 1px solid var(--line); border-radius: 7px; background: white; color: var(--muted); text-align: left; cursor: pointer; }
+        .delta-stage-button:hover { border-color: #e49a67; color: var(--ink); }
+        .delta-stage-button[aria-pressed="true"] { border-color: var(--orange); background: var(--orange-soft); color: var(--ink); }
+        .delta-stage-button b { display: block; color: var(--orange-dark); font: 850 9px/1 var(--mono); }
+        .delta-stage-button span { display: block; margin-top: 5px; font: 700 9px/1.25 var(--mono); }
+        .delta-stage-body { padding: 16px; }
+        .delta-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+        .delta-column { min-width: 0; padding: 12px; border-top: 2px solid var(--line-strong); background: #faf9f5; }
+        .delta-column.accent { border-color: var(--orange); background: var(--orange-soft); }
+        .delta-column h4 { margin: 0 0 8px; font-size: 11px; }
+        .pair-line { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font: 9px/1.35 var(--mono); }
+        .pair-line:last-child { border-bottom: 0; }
+        .pair-line .remove { color: var(--danger); }
+        .pair-line .add { color: var(--green); }
+        .generation-directory { display: grid; grid-template-columns: 1.3fr .7fr 1.3fr 1fr; overflow: hidden; border: 1px solid var(--line); border-radius: 7px; }
+        .directory-cell { min-width: 0; padding: 9px; border-right: 1px solid var(--line); background: #faf9f5; font: 700 9px/1.35 var(--mono); overflow-wrap: anywhere; }
+        .directory-cell:last-child { border-right: 0; }
+        .directory-cell b { display: block; margin-bottom: 5px; color: var(--muted); font: 750 8px/1 var(--mono); text-transform: uppercase; }
+        .run-byte-ribbon { display: flex; flex-wrap: wrap; gap: 3px; margin: 13px 0 5px; padding: 10px; border-radius: 7px; background: #292925; }
+        .run-byte { width: 29px; padding: 7px 2px; border-radius: 4px; color: white; text-align: center; font: 750 9px/1 var(--mono); }
+        .run-byte.header { background: #56564f; }
+        .run-byte.neighbor { background: #28605c; }
+        .run-byte.context { background: #8a4a21; }
+        .run-byte-legend { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font: 9px/1.3 var(--mono); }
+        .codec-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 15px; }
+        .codec-item { padding: 11px; border: 1px solid var(--line); border-radius: 7px; background: #faf9f5; }
+        .codec-item strong { display: block; font: 800 10px/1.2 var(--mono); }
+        .codec-item span { display: block; margin-top: 6px; color: var(--muted); font-size: 9px; }
+        .snapshot-probe { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; }
+        .probe-stop { position: relative; padding: 12px 8px; border: 1px solid var(--line); border-radius: 7px; background: #faf9f5; text-align: center; }
+        .probe-stop:not(:last-child)::after { content: "\2192"; position: absolute; top: 50%; right: -8px; z-index: 2; color: var(--orange-dark); transform: translateY(-50%); }
+        .probe-stop.active { border: 2px solid var(--orange); padding: 11px 7px; background: var(--orange-soft); }
+        .probe-stop strong { display: block; font: 800 9px/1.2 var(--mono); }
+        .probe-stop span { display: block; margin-top: 5px; color: var(--muted); font-size: 8px; }
+        .rewrite-flow { display: grid; grid-template-columns: 1fr auto 1.2fr auto 1fr; align-items: stretch; gap: 8px; }
+        .rewrite-node { padding: 13px; border: 1px solid var(--line); border-radius: 7px; background: #faf9f5; }
+        .rewrite-node.result { border-color: #9bc2aa; background: #eef8f1; }
+        .rewrite-node strong { display: block; font: 800 10px/1.3 var(--mono); }
+        .rewrite-node span { display: block; margin-top: 7px; color: var(--muted); font-size: 9px; }
+        .rewrite-arrow { display: grid; place-items: center; color: var(--orange-dark); font: 850 20px/1 var(--mono); }
+
+        .hex-shell { margin-top: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: #242421; color: #f5f3ed; }
+        .hex-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+        .hex-heading h3 { margin: 0; color: white; }
+        .hex-heading span { color: #aaa99f; font: 9px/1.3 var(--mono); text-align: right; }
+        .hex-grid { display: grid; grid-template-columns: 43px repeat(16, minmax(22px, 1fr)); gap: 2px; min-width: 520px; font: 9px/1 var(--mono); }
+        .hex-scroll { overflow-x: auto; padding-bottom: 5px; }
+        .hex-offset { padding: 5px 2px; color: #a9a79f; text-align: right; }
+        .byte { min-height: 23px; display: grid; place-items: center; border-radius: 3px; background: #363632; }
+        .byte.header-byte { background: #4f4f49; }
+        .byte.section-byte { background: #234e4b; }
+        .byte.selected-byte { outline: 2px solid #ffae76; outline-offset: -1px; background: #84441c; color: white; animation: byte-pulse .7s ease both; }
+        .byte.slack-byte { color: #77746d; background: repeating-linear-gradient(135deg, #302f2b 0 3px, #282824 3px 6px); }
+
+        @keyframes byte-pulse {
+            0% { transform: scale(.82); }
+            55% { transform: scale(1.12); }
+            100% { transform: scale(1); }
+        }
+
+        .lesson-footer { margin-top: 28px; padding-top: 18px; display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); }
+        .lesson-footer button { padding: 9px 12px; border: 1px solid var(--line); border-radius: 7px; background: white; cursor: pointer; }
+        .lesson-footer button.primary { border-color: var(--orange); background: var(--orange); color: white; }
+
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+        @media (max-width: 1120px) {
+            .lab-shell { grid-template-columns: minmax(270px, 315px) minmax(0, 1fr); }
+            .step-name { display: none; }
+            .physical-grid { grid-template-columns: 1fr; }
+            .lookup-spine { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .lookup-layer:nth-child(2)::after { content: "\2193"; top: auto; right: calc(50% - 9px); bottom: -23px; transform: none; }
+            .helper-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .decode-route, .mode-ledger { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .decode-step:nth-child(2)::after { content: "\2193"; top: auto; right: calc(50% - 7px); bottom: -10px; }
+        }
+
+        @media (max-width: 820px) {
+            .masthead { align-items: flex-start; }
+            .status-badges { display: none; }
+            .lab-shell { display: block; padding: 12px; }
+            .statement-panel { position: relative; top: 0; max-height: none; margin-bottom: 12px; }
+            .statement-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .workspace { border-radius: 12px; }
+            .control-deck { align-items: flex-start; }
+            .control-groups { width: 100%; }
+            .term-strip, .plane-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .page-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .compact-row { grid-template-columns: 1fr; }
+            .scale-scenario { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .scale-stat:nth-child(2) { border-right: 0; }
+            .scale-stat:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
+            .delta-pipeline { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+            .delta-columns, .codec-strip { grid-template-columns: 1fr; }
+            .snapshot-probe { grid-template-columns: repeat(5, minmax(100px, 1fr)); overflow-x: auto; padding-bottom: 5px; }
+        }
+
+        @media (max-width: 520px) {
+            .masthead { padding: 12px 14px; }
+            .lab-shell { padding: 8px; }
+            .statement-list { grid-template-columns: 1fr; }
+            .panel-intro { padding: 18px 16px 13px; }
+            .lesson { padding: 22px 15px; }
+            .control-deck, .step-deck { padding-left: 10px; padding-right: 10px; }
+            .control-group { flex-wrap: wrap; }
+            .term-strip, .plane-grid, .page-summary, .field-grid { grid-template-columns: 1fr; }
+            .orientation { grid-template-columns: 1fr; }
+            .orientation-arrow { transform: rotate(90deg); }
+            .step-list { gap: 1px; }
+            .step-button { padding-left: 2px; padding-right: 2px; }
+            .step-arrow { width: 32px; }
+            .lesson h2 { font-size: 29px; }
+            .scale-diagram-header, .snapshot-head { display: block; }
+            .scale-note { display: inline-flex; margin-top: 10px; }
+            .lookup-route-grid, .lookup-spine, .helper-grid { grid-template-columns: 1fr; }
+            .lookup-layer { min-height: 0; }
+            .lookup-layer:not(:last-child)::after,
+            .lookup-layer:nth-child(2)::after {
+                content: "\2193";
+                top: auto;
+                right: calc(50% - 9px);
+                bottom: -23px;
+                transform: none;
+            }
+            .snapshot-route { margin-top: 9px; text-align: left; }
+            .vector-anatomy-head, .delta-stage-head { display: block; }
+            .vector-total { display: block; margin-top: 9px; }
+            .vector-byte-line { overflow-x: auto; }
+            .vector-region { flex: 0 0 100px; }
+            .decode-route, .mode-ledger, .efficiency-equation { grid-template-columns: 1fr; }
+            .decode-step:not(:last-child)::after,
+            .decode-step:nth-child(2)::after { content: "\2193"; top: auto; right: calc(50% - 7px); bottom: -10px; }
+            .efficiency-equation div { border-right: 0; border-bottom: 1px solid var(--line); }
+            .efficiency-equation div:last-child { border-bottom: 0; }
+            .generation-directory { grid-template-columns: 1fr; }
+            .directory-cell { border-right: 0; border-bottom: 1px solid var(--line); }
+            .directory-cell:last-child { border-bottom: 0; }
+            .rewrite-flow { grid-template-columns: 1fr; }
+            .rewrite-arrow { transform: rotate(90deg); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+        }
+    </style>
+</head>
+<body>
+    <header class="masthead">
+        <div class="brand">
+            <div class="brand-mark" aria-hidden="true">R4</div>
+            <div>
+                <div class="brand-name">RDF4J adjacency laboratory</div>
+                <div class="brand-subtitle">quad → nested CSR → packed vectors → delta generations → bytes</div>
+            </div>
+        </div>
+        <div class="status-badges" aria-label="Tutorial properties">
+            <span class="status-badge"><strong id="format-badge">v4</strong> format</span>
+            <span class="status-badge"><strong>6</strong> real pages</span>
+            <span class="status-badge"><strong>0</strong> network calls</span>
+        </div>
+    </header>
+
+    <main class="lab-shell">
+        <aside class="statement-panel" aria-labelledby="statement-heading">
+            <div class="panel-intro">
+                <span class="eyebrow">Interactive field guide</span>
+                <h1>From RDF quads to off-heap pages</h1>
+                <p>Pick any statement. Its entire partition remains visible while the orange trace follows its row, fibre, context lane, packed bits, and physical bytes.</p>
+            </div>
+            <h2 class="statement-heading" id="statement-heading">Eight statements in the fixture</h2>
+            <!-- FIXTURE:RDF_STATEMENTS_V1 -->
+            <ol class="statement-list" id="statement-list" role="listbox" aria-label="Example RDF statements"></ol>
+        </aside>
+
+        <section class="workspace" aria-label="Encoding tutorial workspace">
+            <div class="control-deck">
+                <div class="control-groups">
+                    <div class="control-group">
+                        <span class="control-label">Direction</span>
+                        <div class="segmented" aria-label="Adjacency direction">
+                            <button type="button" data-control="direction" data-value="outgoing" aria-pressed="true">outgoing</button>
+                            <button type="button" data-control="direction" data-value="incoming" aria-pressed="false">incoming</button>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">Terms</span>
+                        <div class="segmented" aria-label="Term display">
+                            <button type="button" data-control="terms" data-value="labels" aria-pressed="true">labels</button>
+                            <button type="button" data-control="terms" data-value="raw" aria-pressed="false">raw IDs</button>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">Numbers</span>
+                        <div class="segmented" aria-label="Number format">
+                            <button type="button" data-control="numbers" data-value="decimal" aria-pressed="true">decimal</button>
+                            <button type="button" data-control="numbers" data-value="hex" aria-pressed="false">hex</button>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">View</span>
+                        <div class="segmented" aria-label="Logical, vector, physical, or delta view">
+                            <button type="button" data-control="view" data-value="logical" aria-pressed="true">logical</button>
+                            <button type="button" data-control="view" data-value="vectors" aria-pressed="false">vectors</button>
+                            <button type="button" data-control="view" data-value="physical" aria-pressed="false">physical</button>
+                            <button type="button" data-control="view" data-value="deltas" aria-pressed="false">deltas</button>
+                            <button type="button" data-control="view" data-value="read" aria-pressed="false">read</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="partition-chip" id="partition-chip" aria-live="polite"></div>
+            </div>
+
+            <nav class="step-deck" aria-label="Tutorial steps">
+                <button class="step-arrow" id="previous-step" type="button" aria-label="Previous step">←</button>
+                <div class="step-list" id="step-list" role="tablist" aria-label="Ten encoding steps"></div>
+                <button class="step-arrow" id="next-step" type="button" aria-label="Next step">→</button>
+            </nav>
+
+            <article class="lesson" id="lesson-content" role="tabpanel" tabindex="-1"></article>
+            <p class="sr-only" id="live-status" aria-live="polite"></p>
+        </section>
+    </main>
+
+    <!-- FIXTURE:COMPACT_CSF_PAGE_ENCODER_V4 -->
+    <script id="csf-page-fixtures" type="text/plain">
+0:0|RlNDUAQAAAEAAgAAsAEAAAAAAAD/////BAAAAAUAAAAGAAAAAAAAAIIAAAAAAAAACAYAAAAAAACCAQAAAAAAAIIAAAAAAAAAAAAAAAAAAACgAAAAIgAAAMgAAAAeAAAA6AAAAB0AAAAIAQAAHQAAACgBAAAcAAAASAEAAB0AAABoAQAAIwAAAJABAAAcAAAAtnDJLQAAAAAAAAAAAAAAAAQAAAABAAAAEAAAACIAAAAACwQAggAAAAAAAAAAAAghDQsAAAAAAAAEAAAAAQAAABAAAAAeAAAAAAMEAAAAAAAAAAAA0AgAAAQAAAABAAAAEAAAAB0AAAAAAgQAAQAAAAAAAAACAAAABAAAAAEAAAAQAAAAHQAAAAUCBAABAAAAAAAAAAIAAAABAAAAAQAAABAAAAAcAAAAAAABAAABAAAAAAAAAAAAAAUAAAABAAAAEAAAAB0AAAAAAQUAAQAAAAAAAAABAAAABQAAAAEAAAAQAAAAIwAAAAALBQAAAAAAAAAAAAISEAAMK2gAAAAAAAEAAAABAAAAEAAAABwAAAAAAAEAAAEAAAAAAAAAAAAA
+0:1|RlNDUAQAQAAAAgAAqAEAAAEAAAD/////AwAAAAUAAAAGAAAAAAAAAIIAAAAAAAAAggIAAAAAAACCAQAAAAAAAIIAAAAAAAAAAAAAAAAAAACgAAAAHgAAAMAAAAAeAAAA4AAAAB0AAAAAAQAAHQAAACABAAAfAAAAQAEAAB0AAABgAQAAIwAAAIgBAAAcAAAAtnDJLQAAAAAAAAAAAAAAAAMAAAABAAAAEAAAAB4AAAAFAwMAAQAAAAAAAAAQAQAAAwAAAAEAAAAQAAAAHgAAAAADAwAAAAAAAAAAABgBAAADAAAAAQAAABAAAAAdAAAAAAIDAAEAAAAAAAAABgAAAAMAAAABAAAAEAAAAB0AAAAFAgMAAQAAAAAAAAACAAAAAgAAAAEAAAAQAAAAHwAAAAAKAgACAQAAAAAAAIICAAAFAAAAAQAAABAAAAAdAAAAAAEFAAEAAAAAAAAACAAAAAUAAAABAAAAEAAAACMAAAAACwUAAAAAAAAAAAAAMKygBSQgAAAAAAABAAAAAQAAABAAAAAcAAAAAAABAAABAAAAAAAAAAAAAA==
+0:2|RlNDUAQAXgEAAQAA4AAAAAIAAAD/////AQAAAAEAAAABAAAAAAAAAIICAAAAAAAAggIAAAAAAACCAAAAAAAAAIIAAAAAAAAAAgIAAAAAAACgAAAAHAAAAAAAAAAAAAAAAAAAAAAAAADAAAAAHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAtnDJLQAAAAAAAAAAAAAAAAEAAAABAAAAEAAAABwAAAAAAAEAggIAAAAAAAAAAAAAAQAAAAEAAAAQAAAAHAAAAAAAAQCCAAAAAAAAAAAAAAA=
+0:3|RlNDUAQAXgEAAQAA4AAAAAMAAAD/////AQAAAAEAAAABAAAAAAAAAIIAAAAAAAAAggAAAAAAAACCAgAAAAAAAIICAAAAAAAAAgIAAAAAAACgAAAAHAAAAAAAAAAAAAAAAAAAAAAAAADAAAAAHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAtnDJLQAAAAAAAAAAAAAAAAEAAAABAAAAEAAAABwAAAAAAAEAggAAAAAAAAAAAAAAAQAAAAEAAAAQAAAAHAAAAAAAAQCCAgAAAAAAAAAAAAA=
+1:0|RlNDUAQAXgEAAQAA4AAAAAQAAAD/////AQAAAAEAAAABAAAAAAAAAIIBAAAAAAAAggEAAAAAAAAEBAAAAAAAAAQEAAAAAAAAggQAAAAAAACgAAAAHAAAAAAAAAAAAAAAAAAAAAAAAADAAAAAHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAtnDJLQAAAAAAAAAAAAAAAAEAAAABAAAAEAAAABwAAAAAAAEAggEAAAAAAAAAAAAAAQAAAAEAAAAQAAAAHAAAAAAAAQAEBAAAAAAAAAAAAAA=
+1:1|RlNDUAQAXgEAAQAA4AAAAAUAAAD/////AQAAAAEAAAABAAAAAAAAAAQEAAAAAAAABAQAAAAAAACCAQAAAAAAAIIBAAAAAAAAggQAAAAAAACgAAAAHAAAAAAAAAAAAAAAAAAAAAAAAADAAAAAHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAtnDJLQAAAAAAAAAAAAAAAAEAAAABAAAAEAAAABwAAAAAAAEABAQAAAAAAAAAAAAAAQAAAAEAAAAQAAAAHAAAAAAAAQCCAQAAAAAAAAAAAAA=
+scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAAACIKEHAAAAAIJLogcAAAAAAAAAAAAAAACgAAAAiQIAAAAAAAAAAAAAAAAAAAAAAAAwAwAAiQIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAtnDJLcAFAAAwAAAAAQAAAFgCAAADAAAAGAAAACQBAAAwAgAAiQIAAAUIAAEBAAAAAAAAAAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5/gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp+goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2+v8DBwsPExcbHyMnKy8zNzs/Q0dLT1NXW19jZ2tvc3d7f4OHi4+Tl5ufo6err7O3u7/Dx8vP09fb3+Pn6+/z9/v8FCAABAQEAAAAAAAAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4/QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl9gYWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXp7fH1+f4CBgoOEhYaHiImKi4yNjo+QkZKTlJWWl5iZmpucnZ6foKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr/AwcLDxMXGx8jJysvMzc7P0NHS09TV1tfY2drb3N3e3+Dh4uPk5ebn6Onq6+zt7u/w8fLz9PX29/j5+vv8/f7/BQdYAAECAAAAAAAAgIBgQCgYDoiEYsFoOB6QiGRCqVgumIxmw+l4PqCQaEQqmU6olGrFarlesJhsRqvZbricbsfr+X7AoHBILBqPyKRyyWw6n9CodEqtWq8AAAAAAAAAWAIAAAMAAAAYAAAAJAEAADACAACJAgAABQgAAUBCDwAAAAAAAAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn+AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq+wsbKztLW2t7i5uru8vb6/wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t/g4eLj5OXm5+jp6uvs7e7v8PHy8/T19vf4+fr7/P3+/wUIAAFAQw8AAAAAAAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5/gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp+goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2+v8DBwsPExcbHyMnKy8zNzs/Q0dLT1NXW19jZ2tvc3d7f4OHi4+Tl5ufo6err7O3u7/Dx8vP09fb3+Pn6+/z9/v8FB1gAQEQPAAAAAACAgGBAKBgOiIRiwWg4HpCIZEKpWC6YjGbD6Xg+oJBoRCqZTqiUasVquV6wmGxGq9luuJxux+v5fsCgcEgsGo/IpHLJbDqf0Kh0Sq1arwAAAAAAAAAAECAwQFBgcICQoLDA0ODwABAgMEBQYHCAkKCwwNDg8AAIEBggKDA4QEhQWFhYWFg=
+    </script>
+
+    <script id="adjacency-core">
+    (() => {
+        "use strict";
+
+        const TYPE = Object.freeze({ DEFAULT: 0, URI: 1, LITERAL: 2, BNODE: 3, TRIPLE: 4 });
+        const TYPE_NAMES = Object.freeze({
+            0: "default graph",
+            1: "IRI",
+            2: "literal",
+            3: "blank node",
+            4: "triple term"
+        });
+        const FLAGS = Object.freeze({
+            CONTINUATION: 1,
+            ROW_NEIGHBOR_ONE: 2,
+            ROW_QUAD_EQUALS_NEIGHBOR: 4,
+            CONTEXT_COUNT_ONE: 8,
+            COMMON_CONTEXT: 16,
+            ALL_ORDERED_INTEGER_NEIGHBORS: 32,
+            UNIFORM_ROW_TERM_KIND: 64,
+            UNIFORM_ROW_LITERAL_DATATYPE: 128,
+            UNIFORM_NEIGHBOR_TERM_KIND: 256,
+            UNIFORM_NEIGHBOR_LITERAL_DATATYPE: 512
+        });
+        const FORMAT = Object.freeze({
+            MAGIC: 0x50435346,
+            VERSION: 4,
+            HASH: 0x2dc970b6,
+            HEADER_BYTES: 160,
+            BLOCK_SIZE: 256,
+            VECTOR_HEADER_BYTES: 8,
+            BLOCK_HEADER_BYTES: 12,
+            BLOCK_COUNT_MASK: 0x0fffffff,
+            PREFIX_FLAG: 0x10000000,
+            SEARCH_FLAG: 0x80000000
+        });
+
+        function makeId(type, payload) {
+            const numericType = Number(type);
+            const numericPayload = BigInt(payload);
+            if (!Number.isInteger(numericType) || numericType < 1 || numericType > 63 || numericPayload < 0n) {
+                throw new RangeError("raw value IDs require a positive six-bit type and a non-negative payload");
+            }
+            return (numericPayload << 7n) | (BigInt(numericType) << 1n);
+        }
+
+        function rawType(rawId) {
+            return Number((BigInt(rawId) >> 1n) & 0x3fn);
+        }
+
+        function rawPayload(rawId) {
+            return BigInt(rawId) >> 7n;
+        }
+
+        function createTerm(key, label, type, payload) {
+            return Object.freeze({ key, label, type, payload: BigInt(payload), rawId: makeId(type, payload) });
+        }
+
+        const TERMS = Object.freeze({
+            alice: createTerm("alice", ":alice", TYPE.URI, 1),
+            knows: createTerm("knows", ":knows", TYPE.URI, 2),
+            bob: createTerm("bob", ":bob", TYPE.URI, 3),
+            friends: createTerm("friends", ":friends", TYPE.URI, 4),
+            carol: createTerm("carol", ":carol", TYPE.URI, 5),
+            work: createTerm("work", ":work", TYPE.URI, 6),
+            name: createTerm("name", ":name", TYPE.URI, 7),
+            bobLabel: createTerm("bobLabel", "\"Bob\"", TYPE.LITERAL, 8),
+            profiles: createTerm("profiles", ":profiles", TYPE.URI, 9),
+            team: createTerm("team", "_:team", TYPE.BNODE, 10),
+            tenant: createTerm("tenant", "_:tenant", TYPE.BNODE, 11),
+            aliceKnowsBob: createTerm("aliceKnowsBob", "<<:alice :knows :bob>>", TYPE.TRIPLE, 12),
+            meta: createTerm("meta", ":meta", TYPE.URI, 13)
+        });
+        const DEFAULT_CONTEXT = Object.freeze({
+            key: "default",
+            label: "default graph",
+            type: TYPE.DEFAULT,
+            payload: 0n,
+            rawId: 0n,
+            isDefault: true
+        });
+
+        function statement(index, subject, predicate, object, context, explicit) {
+            const graph = context || DEFAULT_CONTEXT;
+            const rdf = `${subject.label} ${predicate.label} ${object.label}${graph === DEFAULT_CONTEXT ? "" : ` ${graph.label}`}`;
+            return Object.freeze({
+                index,
+                subject,
+                predicate,
+                object,
+                context: graph,
+                explicit,
+                rdf,
+                kind: explicit ? "explicit" : "inferred"
+            });
+        }
+
+        /* FIXTURE:STATEMENT_DATA_V1 */
+        const STATEMENTS = Object.freeze([
+            statement(0, TERMS.alice, TERMS.knows, TERMS.bob, TERMS.friends, true),
+            statement(1, TERMS.alice, TERMS.knows, TERMS.carol, TERMS.friends, true),
+            statement(2, TERMS.alice, TERMS.knows, TERMS.bob, TERMS.work, true),
+            statement(3, TERMS.bob, TERMS.knows, TERMS.alice, DEFAULT_CONTEXT, true),
+            statement(4, TERMS.bob, TERMS.name, TERMS.bobLabel, TERMS.profiles, true),
+            statement(5, TERMS.team, TERMS.knows, TERMS.alice, TERMS.tenant, true),
+            statement(6, TERMS.aliceKnowsBob, TERMS.knows, TERMS.alice, TERMS.meta, true),
+            statement(7, TERMS.carol, TERMS.knows, TERMS.alice, TERMS.friends, false)
+        ]);
+
+        const TERM_BY_RAW = new Map([["0", DEFAULT_CONTEXT]]);
+        Object.values(TERMS).forEach((term) => TERM_BY_RAW.set(term.rawId.toString(), term));
+
+        function compareUnsigned(left, right) {
+            const a = BigInt.asUintN(64, BigInt(left));
+            const b = BigInt.asUintN(64, BigInt(right));
+            return a < b ? -1 : a > b ? 1 : 0;
+        }
+
+        function isValidForRole(value, role) {
+            const type = typeof value === "number" ? value : value.type;
+            switch (role) {
+                case "subject":
+                    return type === TYPE.URI || type === TYPE.BNODE || type === TYPE.TRIPLE;
+                case "predicate":
+                    return type === TYPE.URI;
+                case "object":
+                    return type === TYPE.URI || type === TYPE.LITERAL || type === TYPE.BNODE || type === TYPE.TRIPLE;
+                case "context":
+                    return type === TYPE.DEFAULT || type === TYPE.URI || type === TYPE.BNODE;
+                default:
+                    throw new RangeError(`unknown RDF role: ${role}`);
+            }
+        }
+
+        function uniqueSorted(values) {
+            return [...new Map(values.map((value) => [BigInt(value).toString(), BigInt(value)])).values()]
+                .sort(compareUnsigned);
+        }
+
+        const PREDICATE_IDS = Object.freeze(uniqueSorted(STATEMENTS.map((quad) => quad.predicate.rawId)));
+        const PREDICATE_ORDINALS = new Map(PREDICATE_IDS.map((rawId, ordinal) => [rawId.toString(), ordinal]));
+
+        function planeFor(quad, direction) {
+            if (direction !== "outgoing" && direction !== "incoming") {
+                throw new RangeError(`unknown adjacency direction: ${direction}`);
+            }
+            return (quad.explicit ? 0 : 2) + (direction === "incoming" ? 1 : 0);
+        }
+
+        function partitionKey(quad, direction) {
+            return `${PREDICATE_ORDINALS.get(quad.predicate.rawId.toString())}:${planeFor(quad, direction)}`;
+        }
+
+        function buildPartitions(quads = STATEMENTS) {
+            const mutable = new Map();
+            const add = (quad, direction) => {
+                const key = partitionKey(quad, direction);
+                const rowId = direction === "outgoing" ? quad.subject.rawId : quad.object.rawId;
+                const neighborId = direction === "outgoing" ? quad.object.rawId : quad.subject.rawId;
+                const predicateOrdinal = PREDICATE_ORDINALS.get(quad.predicate.rawId.toString());
+                let partition = mutable.get(key);
+                if (!partition) {
+                    partition = {
+                        key,
+                        predicateOrdinal,
+                        predicateId: quad.predicate.rawId,
+                        predicate: quad.predicate,
+                        plane: planeFor(quad, direction),
+                        direction,
+                        explicit: quad.explicit,
+                        rows: new Map()
+                    };
+                    mutable.set(key, partition);
+                }
+                const rowKey = rowId.toString();
+                const neighborKey = neighborId.toString();
+                const contextKey = quad.context.rawId.toString();
+                if (!partition.rows.has(rowKey)) {
+                    partition.rows.set(rowKey, { id: rowId, fibers: new Map() });
+                }
+                const row = partition.rows.get(rowKey);
+                if (!row.fibers.has(neighborKey)) {
+                    row.fibers.set(neighborKey, { id: neighborId, contexts: new Map() });
+                }
+                const fiber = row.fibers.get(neighborKey);
+                if (!fiber.contexts.has(contextKey)) {
+                    fiber.contexts.set(contextKey, { id: quad.context.rawId, statementIndexes: [] });
+                }
+                fiber.contexts.get(contextKey).statementIndexes.push(quad.index);
+            };
+
+            quads.forEach((quad) => {
+                add(quad, "outgoing");
+                add(quad, "incoming");
+            });
+
+            const ordered = [...mutable.values()]
+                .sort((left, right) => left.predicateOrdinal - right.predicateOrdinal || left.plane - right.plane)
+                .map((partition) => {
+                    const rows = [...partition.rows.values()]
+                        .sort((left, right) => compareUnsigned(left.id, right.id))
+                        .map((row) => ({
+                            id: row.id,
+                            fibers: [...row.fibers.values()]
+                                .sort((left, right) => compareUnsigned(left.id, right.id))
+                                .map((fiber) => ({
+                                    id: fiber.id,
+                                    contexts: [...fiber.contexts.values()]
+                                        .sort((left, right) => compareUnsigned(left.id, right.id))
+                                        .map((context) => ({
+                                            id: context.id,
+                                            statementIndexes: Object.freeze([...context.statementIndexes])
+                                        }))
+                                }))
+                        }));
+                    return Object.freeze({ ...partition, rows: Object.freeze(rows) });
+                });
+            return new Map(ordered.map((partition) => [partition.key, partition]));
+        }
+
+        const PARTITIONS = buildPartitions();
+
+        function nestedCsr(partition) {
+            const rowIds = [];
+            const rowPtr = [0];
+            const colIdx = [];
+            const contextPtr = [0];
+            const contextIdx = [];
+            partition.rows.forEach((row) => {
+                rowIds.push(row.id);
+                row.fibers.forEach((fiber) => {
+                    colIdx.push(fiber.id);
+                    fiber.contexts.forEach((context) => contextIdx.push(context.id));
+                    contextPtr.push(contextIdx.length);
+                });
+                rowPtr.push(colIdx.length);
+            });
+            return Object.freeze({
+                rowIds: Object.freeze(rowIds),
+                rowPtr: Object.freeze(rowPtr),
+                colIdx: Object.freeze(colIdx),
+                contextPtr: Object.freeze(contextPtr),
+                contextIdx: Object.freeze(contextIdx)
+            });
+        }
+
+        function compactColumns(partition) {
+            const csr = nestedCsr(partition);
+            const rowFiberCounts = partition.rows.map((row) => row.fibers.length);
+            const rowQuadCounts = partition.rows.map((row) => row.fibers.reduce((sum, fiber) => sum + fiber.contexts.length, 0));
+            const rowNeighborOne = rowFiberCounts.every((count) => count === 1);
+            const rowQuadEqualsNeighbor = rowQuadCounts.every((count, row) => count === rowFiberCounts[row]);
+            const fibers = partition.rows.flatMap((row) => row.fibers);
+            const contextCounts = fibers.map((fiber) => fiber.contexts.length);
+            const contextCountOne = contextCounts.every((count) => count === 1);
+            const allContexts = fibers.flatMap((fiber) => fiber.contexts.map((context) => context.id));
+            const commonContext = contextCountOne && allContexts.every((id) => id === allContexts[0]);
+            const rowKinds = partition.rows.map((row) => rawType(row.id));
+            const neighborKinds = fibers.map((fiber) => rawType(fiber.id));
+            const uniformRowTermKind = rowKinds.every((kind) => kind === rowKinds[0]);
+            const uniformNeighborTermKind = neighborKinds.every((kind) => kind === neighborKinds[0]);
+            const rowFiberStarts = [];
+            const firstNeighbors = [];
+            const neighborTails = [];
+            let fiberStart = 0;
+            partition.rows.forEach((row) => {
+                rowFiberStarts.push(fiberStart);
+                firstNeighbors.push(row.fibers[0].id);
+                for (let index = 1; index < row.fibers.length; index++) {
+                    neighborTails.push(row.fibers[index].id - row.fibers[index - 1].id);
+                }
+                fiberStart += row.fibers.length;
+            });
+            const firstContexts = [];
+            const contextTails = [];
+            fibers.forEach((fiber) => {
+                firstContexts.push(fiber.contexts[0].id);
+                for (let index = 1; index < fiber.contexts.length; index++) {
+                    contextTails.push(fiber.contexts[index].id - fiber.contexts[index - 1].id);
+                }
+            });
+            const flags = (rowNeighborOne ? FLAGS.ROW_NEIGHBOR_ONE : 0)
+                | (rowQuadEqualsNeighbor ? FLAGS.ROW_QUAD_EQUALS_NEIGHBOR : 0)
+                | (contextCountOne ? FLAGS.CONTEXT_COUNT_ONE : 0)
+                | (commonContext ? FLAGS.COMMON_CONTEXT : 0)
+                | (uniformRowTermKind ? FLAGS.UNIFORM_ROW_TERM_KIND : 0)
+                | (uniformNeighborTermKind ? FLAGS.UNIFORM_NEIGHBOR_TERM_KIND : 0);
+            return Object.freeze({
+                csr,
+                flags,
+                commonContext: commonContext ? allContexts[0] : null,
+                rowIds: csr.rowIds,
+                rowFiberStarts: rowNeighborOne ? null : Object.freeze(rowFiberStarts),
+                rowQuadCounts: rowQuadEqualsNeighbor ? null : Object.freeze(rowQuadCounts),
+                firstNeighbors: Object.freeze(firstNeighbors),
+                neighborTails: neighborTails.length ? Object.freeze(neighborTails) : null,
+                contextCounts: contextCountOne ? null : Object.freeze(contextCounts),
+                firstContexts: commonContext ? null : Object.freeze(firstContexts),
+                contextTails: contextTails.length ? Object.freeze(contextTails) : null,
+                omissions: Object.freeze({ rowNeighborOne, rowQuadEqualsNeighbor, contextCountOne, commonContext })
+            });
+        }
+
+        function traceStatement(statementIndex, direction = "outgoing") {
+            const quad = STATEMENTS[statementIndex];
+            if (!quad) {
+                throw new RangeError(`unknown tutorial statement: ${statementIndex}`);
+            }
+            const key = partitionKey(quad, direction);
+            const partition = PARTITIONS.get(key);
+            const csr = nestedCsr(partition);
+            const compact = compactColumns(partition);
+            const rowId = direction === "outgoing" ? quad.subject.rawId : quad.object.rawId;
+            const neighborId = direction === "outgoing" ? quad.object.rawId : quad.subject.rawId;
+            const rowIndex = partition.rows.findIndex((row) => row.id === rowId);
+            const row = partition.rows[rowIndex];
+            const localFiberIndex = row.fibers.findIndex((fiber) => fiber.id === neighborId);
+            const fiberIndex = csr.rowPtr[rowIndex] + localFiberIndex;
+            const fiber = row.fibers[localFiberIndex];
+            const localContextIndex = fiber.contexts.findIndex((context) => context.id === quad.context.rawId);
+            const contextIndex = csr.contextPtr[fiberIndex] + localContextIndex;
+            const neighborTailBase = partition.rows
+                .slice(0, rowIndex)
+                .reduce((sum, candidate) => sum + Math.max(0, candidate.fibers.length - 1), 0);
+            const contextTailBase = partition.rows
+                .flatMap((candidate) => candidate.fibers)
+                .slice(0, fiberIndex)
+                .reduce((sum, candidate) => sum + Math.max(0, candidate.contexts.length - 1), 0);
+            const physicalLanes = Object.freeze({
+                rowIds: rowIndex,
+                rowFiberStarts: compact.rowFiberStarts ? rowIndex : null,
+                rowQuadCounts: compact.rowQuadCounts ? rowIndex : null,
+                firstNeighbors: rowIndex,
+                neighborTails: localFiberIndex > 0 ? neighborTailBase + localFiberIndex - 1 : null,
+                contextCounts: compact.contextCounts ? fiberIndex : null,
+                firstContexts: compact.firstContexts ? fiberIndex : null,
+                contextTails: localContextIndex > 0 ? contextTailBase + localContextIndex - 1 : null
+            });
+            return Object.freeze({
+                statementIndex,
+                direction,
+                key,
+                plane: partition.plane,
+                predicateOrdinal: partition.predicateOrdinal,
+                rowId,
+                neighborId,
+                contextId: quad.context.rawId,
+                rowIndex,
+                localFiberIndex,
+                fiberIndex,
+                localContextIndex,
+                contextIndex,
+                rowSpan: Object.freeze([csr.rowPtr[rowIndex], csr.rowPtr[rowIndex + 1]]),
+                contextSpan: Object.freeze([csr.contextPtr[fiberIndex], csr.contextPtr[fiberIndex + 1]]),
+                physicalLanes
+            });
+        }
+
+        function encodeRunUnsigned(value) {
+            const numeric = BigInt(value);
+            if (numeric < 0n || numeric > 0xffffffffffffffffn) {
+                throw new RangeError("run varints require an unsigned 64-bit value");
+            }
+            if (numeric <= 240n) {
+                return [Number(numeric)];
+            }
+            if (numeric <= 2287n) {
+                const adjusted = numeric - 240n;
+                return [Number((adjusted >> 8n) + 241n), Number(adjusted & 0xffn)];
+            }
+            if (numeric <= 67823n) {
+                const adjusted = numeric - 2288n;
+                return [249, Number(adjusted >> 8n), Number(adjusted & 0xffn)];
+            }
+            let payloadBytes = 1;
+            while (numeric >= 1n << BigInt(payloadBytes * 8)) {
+                payloadBytes++;
+            }
+            const encoded = [247 + payloadBytes];
+            for (let byte = payloadBytes - 1; byte >= 0; byte--) {
+                encoded.push(Number((numeric >> BigInt(byte * 8)) & 0xffn));
+            }
+            return encoded;
+        }
+
+        function encodeSmallRun(pairs, allOrderedInteger = false) {
+            if (!Array.isArray(pairs) || pairs.length < 1 || pairs.length > 15) {
+                throw new RangeError("SMALL_VARINT requires 1..15 sorted incidences");
+            }
+            const normalized = pairs.map((pair) => Object.freeze({
+                neighbor: BigInt(pair.neighbor),
+                rawContext: BigInt(pair.rawContext),
+                contextOrdinal: BigInt(pair.contextOrdinal)
+            }));
+            normalized.forEach((pair, index) => {
+                if (pair.neighbor < 0n || pair.rawContext < 0n || pair.contextOrdinal < 0n) {
+                    throw new RangeError("the tutorial run encoder accepts non-negative IDs and ordinals");
+                }
+                if ((pair.rawContext === 0n) !== (pair.contextOrdinal === 0n)) {
+                    throw new RangeError("only the default graph may use context ordinal zero");
+                }
+                if (index > 0) {
+                    const previous = normalized[index - 1];
+                    const ordered = compareUnsigned(previous.neighbor, pair.neighbor) < 0
+                        || (previous.neighbor === pair.neighbor
+                            && compareUnsigned(previous.rawContext, pair.rawContext) < 0);
+                    if (!ordered) {
+                        throw new RangeError("run incidences must be strictly unsigned (neighbor, rawContext) sorted");
+                    }
+                }
+            });
+
+            const anyContext = normalized.some((pair) => pair.rawContext !== 0n);
+            const neighborBytes = [];
+            normalized.forEach((pair, index) => {
+                const encoded = encodeRunUnsigned(index === 0 ? pair.neighbor
+                    : pair.neighbor - normalized[index - 1].neighbor);
+                neighborBytes.push(...encoded);
+            });
+            const contextBytes = anyContext
+                ? normalized.flatMap((pair) => encodeRunUnsigned(pair.contextOrdinal))
+                : [];
+            const usedBytes = 8 + neighborBytes.length + contextBytes.length;
+            const bytes = new Uint8Array((usedBytes + 7) & -8);
+            const view = new DataView(bytes.buffer);
+            const tag = (anyContext ? 1 << 2 : 0) | (allOrderedInteger ? 1 << 3 : 0);
+            view.setUint8(0, tag);
+            view.setUint8(1, normalized.length);
+            view.setUint16(2, neighborBytes.length, true);
+            view.setUint16(4, contextBytes.length, true);
+            view.setUint16(6, 0, true);
+            bytes.set(neighborBytes, 8);
+            bytes.set(contextBytes, 8 + neighborBytes.length);
+            return Object.freeze({
+                bytes,
+                tag,
+                count: normalized.length,
+                neighborByteLength: neighborBytes.length,
+                contextByteLength: contextBytes.length,
+                usedBytes,
+                alignedBytes: bytes.length
+            });
+        }
+
+        function base64ToBytes(source) {
+            const clean = source.replace(/\s+/g, "");
+            if (typeof atob === "function") {
+                const binary = atob(clean);
+                return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+            }
+            if (typeof Buffer !== "undefined") {
+                return Uint8Array.from(Buffer.from(clean, "base64"));
+            }
+            throw new Error("this runtime does not provide a Base64 decoder");
+        }
+
+        function parseFixtures(source) {
+            const pages = new Map();
+            source.split(/\r?\n/).forEach((sourceLine) => {
+                const line = sourceLine.trim();
+                if (!line || line.startsWith("#")) {
+                    return;
+                }
+                const separator = line.indexOf("|");
+                if (separator < 1) {
+                    throw new Error(`malformed page fixture: ${line}`);
+                }
+                const key = line.slice(0, separator);
+                if (pages.has(key)) {
+                    throw new Error(`duplicate page fixture: ${key}`);
+                }
+                pages.set(key, base64ToBytes(line.slice(separator + 1)));
+            });
+            return pages;
+        }
+
+        function readBits(bytes, payloadAt, bitOffset, width) {
+            let value = 0n;
+            for (let bit = 0; bit < width; bit++) {
+                const absolute = bitOffset + bit;
+                const byte = bytes[payloadAt + Math.floor(absolute / 8)];
+                value |= BigInt((byte >> (absolute % 8)) & 1) << BigInt(bit);
+            }
+            return value;
+        }
+
+        function decodeVector(bytes, pageOffset = 0) {
+            const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+            if (bytes.byteLength < 12) {
+                throw new Error("packed vector is shorter than its header and terminal directory entry");
+            }
+            const count = view.getUint32(0, true);
+            const storedBlockCount = view.getUint32(4, true);
+            const blockCount = storedBlockCount & FORMAT.BLOCK_COUNT_MASK;
+            const searchIndexed = (storedBlockCount & FORMAT.SEARCH_FLAG) !== 0;
+            const prefixIndexed = (storedBlockCount & FORMAT.PREFIX_FLAG) !== 0;
+            const radixBits = searchIndexed ? 8 + ((storedBlockCount & 0x60000000) >>> 29) : 0;
+            const directory = [];
+            for (let index = 0; index <= blockCount; index++) {
+                directory.push(view.getUint32(FORMAT.VECTOR_HEADER_BYTES + index * 4, true));
+            }
+            const blocks = [];
+            const values = [];
+            for (let blockIndex = 0; blockIndex < blockCount; blockIndex++) {
+                const at = directory[blockIndex];
+                const end = directory[blockIndex + 1];
+                const encodedMode = view.getUint8(at);
+                const mode = encodedMode & 3;
+                const type = (encodedMode >>> 2) & 0x3f;
+                const width = view.getUint8(at + 1);
+                const blockValueCount = view.getUint16(at + 2, true);
+                const base = view.getBigUint64(at + 4, true);
+                const typed = mode === 1 || mode === 3;
+                const delta = mode === 2 || mode === 3;
+                const payloadAt = at + FORMAT.BLOCK_HEADER_BYTES;
+                const lanes = [];
+                let running = base;
+                for (let lane = 0; lane < blockValueCount; lane++) {
+                    const packedLane = delta ? lane - 1 : lane;
+                    let residual = 0n;
+                    let bitRange = null;
+                    if (packedLane >= 0 && width > 0) {
+                        const startBit = packedLane * width;
+                        residual = readBits(bytes, payloadAt, startBit, width);
+                        bitRange = Object.freeze({
+                            startBit,
+                            endBit: startBit + width - 1,
+                            firstByte: pageOffset + payloadAt + Math.floor(startBit / 8),
+                            lastByte: pageOffset + payloadAt + Math.floor((startBit + width - 1) / 8)
+                        });
+                    }
+                    if (delta) {
+                        if (lane > 0) {
+                            running += residual;
+                        }
+                    } else {
+                        running = base + residual;
+                    }
+                    const value = typed ? (running << 7n) | (BigInt(type) << 1n) : running;
+                    const globalLane = blockIndex * FORMAT.BLOCK_SIZE + lane;
+                    values.push(value);
+                    lanes.push(Object.freeze({ globalLane, lane, residual, value, bitRange }));
+                }
+                blocks.push(Object.freeze({
+                    blockIndex,
+                    at,
+                    pageAt: pageOffset + at,
+                    end,
+                    byteLength: end - at,
+                    mode,
+                    modeName: ["FOR raw", "FOR typed payload", "delta raw", "delta typed payload"][mode],
+                    type,
+                    typed,
+                    delta,
+                    width,
+                    count: blockValueCount,
+                    base,
+                    lanes: Object.freeze(lanes)
+                }));
+            }
+            if (values.length !== count) {
+                throw new Error(`packed vector declared ${count} values but decoded ${values.length}`);
+            }
+            return Object.freeze({
+                count,
+                storedBlockCount,
+                blockCount,
+                searchIndexed,
+                prefixIndexed,
+                radixBits,
+                directory: Object.freeze(directory),
+                values: Object.freeze(values),
+                blocks: Object.freeze(blocks)
+            });
+        }
+
+        const SECTION_DESCRIPTORS = Object.freeze([
+            ["rowIds", 80],
+            ["rowFiberStarts", 88],
+            ["rowQuadCounts", 96],
+            ["firstNeighbors", 104],
+            ["neighborTails", 112],
+            ["contextCounts", 120],
+            ["firstContexts", 128],
+            ["contextTails", 136]
+        ]);
+
+        function decodePage(bytes) {
+            const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+            if (bytes.byteLength < FORMAT.HEADER_BYTES) {
+                throw new Error("CSF page is shorter than its 160-byte header");
+            }
+            const u32 = (at) => view.getUint32(at, true);
+            const i32 = (at) => view.getInt32(at, true);
+            const u16 = (at) => view.getUint16(at, true);
+            const u64 = (at) => view.getBigUint64(at, true);
+            const header = Object.freeze({
+                magic: u32(0),
+                version: u16(4),
+                flags: u16(6),
+                capacity: u32(8),
+                usedBytes: u32(12),
+                pageId: u32(16),
+                nextExtent: i32(20),
+                rowCount: u32(24),
+                fiberCount: u32(28),
+                quadCount: u32(32),
+                reserved: u32(36),
+                firstRow: u64(40),
+                lastRow: u64(48),
+                firstNeighbor: u64(56),
+                lastNeighbor: u64(64),
+                commonContext: u64(72),
+                formatHash: u32(144),
+                acceleratorOffset: u32(148),
+                acceleratorLength: u32(152),
+                acceleratorDescriptor: u32(156)
+            });
+            if (header.magic !== FORMAT.MAGIC || header.version !== FORMAT.VERSION || header.formatHash !== FORMAT.HASH) {
+                throw new Error(`fixture does not match CompactCsfPage format v${FORMAT.VERSION}`);
+            }
+            if (header.usedBytes !== bytes.byteLength || header.usedBytes > header.capacity) {
+                throw new Error("fixture usedBytes/capacity boundary is inconsistent");
+            }
+            const sections = SECTION_DESCRIPTORS.map(([name, descriptorAt]) => {
+                const offset = u32(descriptorAt);
+                const length = u32(descriptorAt + 4);
+                const vector = offset ? decodeVector(bytes.subarray(offset, offset + length), offset) : null;
+                return Object.freeze({ name, descriptorAt, offset, length, end: offset + length, vector });
+            });
+            return Object.freeze({ bytes, header, sections: Object.freeze(sections) });
+        }
+
+        /**
+         * Reconstructs every quad stored for one row using only the decoded page: its packed vectors and its header
+         * flags. Columns the encoder omitted are rebuilt here exactly as a reader must rebuild them, and each value
+         * records where it came from so the tutorial can show the provenance rather than assert it.
+         */
+        function readRow(page, rowIndex) {
+            const header = page.header;
+            if (!Number.isInteger(rowIndex) || rowIndex < 0 || rowIndex >= header.rowCount) {
+                throw new RangeError(`row ${rowIndex} is outside this page's ${header.rowCount} rows`);
+            }
+            const vectorOf = (name) => {
+                const section = page.sections.find((candidate) => candidate.name === name);
+                return section && section.vector ? section.vector : null;
+            };
+            const rowIds = vectorOf("rowIds");
+            const rowFiberStarts = vectorOf("rowFiberStarts");
+            const firstNeighbors = vectorOf("firstNeighbors");
+            const neighborTails = vectorOf("neighborTails");
+            const contextCounts = vectorOf("contextCounts");
+            const firstContexts = vectorOf("firstContexts");
+            const contextTails = vectorOf("contextTails");
+
+            const fiberStartOf = (row) => rowFiberStarts ? Number(rowFiberStarts.values[row]) : row;
+            const fiberEndOf = (row) => row + 1 < header.rowCount ? fiberStartOf(row + 1) : header.fiberCount;
+            const contextCountOf = (fiber) => contextCounts ? Number(contextCounts.values[fiber]) : 1;
+
+            const start = fiberStartOf(rowIndex);
+            const end = fiberEndOf(rowIndex);
+
+            // Tail vectors are one flat run per page, so skip the tails belonging to earlier rows and fibres.
+            let neighborTailBase = 0;
+            for (let row = 0; row < rowIndex; row++) {
+                neighborTailBase += Math.max(0, fiberEndOf(row) - fiberStartOf(row) - 1);
+            }
+            let contextTailBase = 0;
+            for (let fiber = 0; fiber < start; fiber++) {
+                contextTailBase += Math.max(0, contextCountOf(fiber) - 1);
+            }
+
+            const steps = [];
+            const fibers = [];
+            let neighborId = firstNeighbors.values[rowIndex];
+            for (let fiber = start; fiber < end; fiber++) {
+                const local = fiber - start;
+                let neighborSource;
+                if (local === 0) {
+                    neighborSource = `firstNeighbors[${rowIndex}]`;
+                } else {
+                    const tailAt = neighborTailBase + local - 1;
+                    neighborId += neighborTails.values[tailAt];
+                    neighborSource = `previous neighbour + neighborTails[${tailAt}]`;
+                }
+                const count = contextCountOf(fiber);
+                const countSource = contextCounts
+                    ? `contextCounts[${fiber}]`
+                    : "CONTEXT_COUNT_ONE flag (column omitted)";
+                const contexts = [];
+                let contextId = firstContexts ? firstContexts.values[fiber] : header.commonContext;
+                for (let index = 0; index < count; index++) {
+                    let contextSource;
+                    if (index === 0) {
+                        contextSource = firstContexts
+                            ? `firstContexts[${fiber}]`
+                            : "COMMON_CONTEXT flag → header commonContext (column omitted)";
+                    } else {
+                        const tailAt = contextTailBase + index - 1;
+                        contextId += contextTails.values[tailAt];
+                        contextSource = `previous context + contextTails[${tailAt}]`;
+                    }
+                    contexts.push(Object.freeze({ id: contextId, source: contextSource }));
+                }
+                contextTailBase += Math.max(0, count - 1);
+                fibers.push(Object.freeze({
+                    fiberIndex: fiber,
+                    neighborId,
+                    neighborSource,
+                    contextCount: count,
+                    countSource,
+                    contexts: Object.freeze(contexts)
+                }));
+            }
+
+            steps.push(Object.freeze({
+                label: "locate the row",
+                detail: `rowIds[${rowIndex}]`,
+                omitted: false,
+                value: rowIds.values[rowIndex]
+            }));
+            steps.push(Object.freeze({
+                label: "find its fibre range",
+                detail: rowFiberStarts
+                    ? `rowFiberStarts[${rowIndex}] .. ${end}`
+                    : "ROW_NEIGHBOR_ONE flag: exactly one fibre per row, so the column is not stored",
+                omitted: !rowFiberStarts,
+                value: null
+            }));
+            steps.push(Object.freeze({
+                label: "count this row's quads",
+                detail: contextCounts
+                    ? "sum contextCounts across the row's fibres"
+                    : "CONTEXT_COUNT_ONE flag: one context per fibre, so the column is not stored",
+                omitted: !contextCounts,
+                value: null
+            }));
+
+            const quads = [];
+            fibers.forEach((fiber) => fiber.contexts.forEach((context) => quads.push(Object.freeze({
+                rowId: rowIds.values[rowIndex],
+                neighborId: fiber.neighborId,
+                contextId: context.id
+            }))));
+
+            return Object.freeze({
+                rowIndex,
+                rowId: rowIds.values[rowIndex],
+                fiberRange: Object.freeze([start, end]),
+                fibers: Object.freeze(fibers),
+                quads: Object.freeze(quads),
+                steps: Object.freeze(steps)
+            });
+        }
+
+        function flagNames(flags) {
+            return Object.entries(FLAGS).map(([name, bit]) => Object.freeze({ name, bit, enabled: (flags & bit) !== 0 }));
+        }
+
+        function termForId(rawId) {
+            return TERM_BY_RAW.get(BigInt(rawId).toString()) || null;
+        }
+
+        function formatNumber(value, mode = "decimal") {
+            const bigint = BigInt(value);
+            return mode === "hex" ? `0x${BigInt.asUintN(64, bigint).toString(16)}` : bigint.toString(10);
+        }
+
+        function displayId(rawId, termMode = "labels", numberMode = "decimal") {
+            const term = termForId(rawId);
+            if (termMode === "labels" && term) {
+                return term.label;
+            }
+            return formatNumber(rawId, numberMode);
+        }
+
+        function defaultPhysicalLane(page, trace) {
+            const preference = [
+                "contextTails",
+                "firstContexts",
+                "contextCounts",
+                "neighborTails",
+                "firstNeighbors",
+                "rowIds"
+            ];
+            for (const sectionName of preference) {
+                const lane = trace.physicalLanes[sectionName];
+                const section = page.sections.find((candidate) => candidate.name === sectionName);
+                if (lane !== null && section && section.vector && lane < section.vector.values.length) {
+                    return Object.freeze({ sectionName, lane });
+                }
+            }
+            throw new Error("selected statement has no materialized packed-vector lane");
+        }
+
+        function vectorLane(page, sectionName, lane) {
+            const section = page.sections.find((candidate) => candidate.name === sectionName);
+            if (!section || !section.vector || lane < 0 || lane >= section.vector.values.length) {
+                return null;
+            }
+            const block = section.vector.blocks[Math.floor(lane / FORMAT.BLOCK_SIZE)];
+            return Object.freeze({ section, block, lane: block.lanes[lane % FORMAT.BLOCK_SIZE] });
+        }
+
+        globalThis.Rdf4jAdjacencyTutorialCore = Object.freeze({
+            TYPE,
+            TYPE_NAMES,
+            FLAGS,
+            FORMAT,
+            TERMS,
+            DEFAULT_CONTEXT,
+            STATEMENTS,
+            PREDICATE_IDS,
+            PREDICATE_ORDINALS,
+            PARTITIONS,
+            SECTION_DESCRIPTORS,
+            makeId,
+            rawType,
+            rawPayload,
+            compareUnsigned,
+            isValidForRole,
+            planeFor,
+            partitionKey,
+            buildPartitions,
+            nestedCsr,
+            compactColumns,
+            traceStatement,
+            base64ToBytes,
+            parseFixtures,
+            readBits,
+            decodeVector,
+            decodePage,
+            readRow,
+            flagNames,
+            termForId,
+            formatNumber,
+            displayId,
+            encodeSmallRun,
+            defaultPhysicalLane,
+            vectorLane
+        });
+    })();
+    </script>
+    <script id="adjacency-app">
+    (() => {
+        "use strict";
+
+        const core = globalThis.Rdf4jAdjacencyTutorialCore;
+        const fixtureSource = document.getElementById("csf-page-fixtures").textContent;
+        const fixtureBytes = core.parseFixtures(fixtureSource);
+        const pages = new Map([...fixtureBytes].map(([key, bytes]) => [key, core.decodePage(bytes)]));
+        const steps = Object.freeze([
+            { short: "Roles", title: "RDF term legality" },
+            { short: "IDs", title: "Raw IDs & ordinals" },
+            { short: "Planes", title: "Plane routing" },
+            { short: "Fibres", title: "Rows and fibres" },
+            { short: "CSR", title: "Nested CSR" },
+            { short: "CSF", title: "Compact columns" },
+            { short: "Vectors", title: "Packed vector anatomy" },
+            { short: "Bytes", title: "Physical page" },
+            { short: "Deltas", title: "Commit delta generations" },
+            { short: "Read", title: "Decode a row back to quads" }
+        ]);
+        /* FIXTURE:PAGE_FLAG_HELP_V1 */
+        const PAGE_FLAG_HELP = Object.freeze({
+            CONTINUATION: Object.freeze({
+                bit: "0x0001",
+                set: "This page begins with a row continued from the previous page. It cannot be returned as that row’s first lookup coordinate.",
+                clear: "The first row begins on this page, so an exact row lookup may return a local coordinate here."
+            }),
+            ROW_NEIGHBOR_ONE: Object.freeze({
+                bit: "0x0002",
+                set: "Every row has exactly one distinct neighbor. rowFiberStarts is omitted and the row-to-fibre boundary is reconstructed.",
+                clear: "A row may have multiple neighbors. rowFiberStarts is materialized to locate each row’s first fibre."
+            }),
+            ROW_QUAD_EQUALS_NEIGHBOR: Object.freeze({
+                bit: "0x0004",
+                set: "Every row’s quad count equals its distinct-neighbor count. rowQuadCounts is omitted.",
+                clear: "At least one row has more quad memberships than distinct neighbors. rowQuadCounts is materialized."
+            }),
+            CONTEXT_COUNT_ONE: Object.freeze({
+                bit: "0x0008",
+                set: "Every neighbor fibre has exactly one context. contextCounts is omitted and each fibre contributes one lane.",
+                clear: "At least one fibre spans multiple sorted contexts. contextCounts is materialized."
+            }),
+            COMMON_CONTEXT: Object.freeze({
+                bit: "0x0010",
+                set: "Every fibre on this page has exactly one context and they are all the same graph. A single commonContext header value replaces firstContexts.",
+                clear: "There is no page-wide common graph — either some fibre spans several contexts, or the single contexts differ. Each fibre keeps its own firstContexts value."
+            }),
+            ALL_ORDERED_INTEGER_NEIGHBORS: Object.freeze({
+                bit: "0x0020",
+                set: "Every neighbor is an ordered inline integer. A complete row reports the ordered-integer domain only when all continuation pages also set this bit.",
+                clear: "Neighbors use the general RDF value-ID domain; no ordered-integer domain guarantee is exposed."
+            }),
+            UNIFORM_ROW_TERM_KIND: Object.freeze({
+                bit: "0x0040",
+                set: "Every row key has one RDF term kind. Decode the first row to classify, bulk-count, or reject the page.",
+                clear: "Row term kinds are mixed, so a kind-sensitive row kernel scans row IDs."
+            }),
+            UNIFORM_ROW_LITERAL_DATATYPE: Object.freeze({
+                bit: "0x0080",
+                set: "This page has at least one literal row key and every one of them carries the same datatype, so one classification describes them all.",
+                clear: "The page has no literal row keys, their datatypes differ, or at least one datatype could not be resolved while the page was built."
+            }),
+            UNIFORM_NEIGHBOR_TERM_KIND: Object.freeze({
+                bit: "0x0100",
+                set: "Every neighbor has one RDF term kind. Decode the first neighbor to classify, bulk-count, or reject the page.",
+                clear: "Neighbor term kinds are mixed, so a kind-sensitive fiber kernel scans neighbor IDs."
+            }),
+            UNIFORM_NEIGHBOR_LITERAL_DATATYPE: Object.freeze({
+                bit: "0x0200",
+                set: "This page has at least one literal neighbor and every one of them carries the same datatype, so one classification describes them all.",
+                clear: "The page has no literal neighbors, their datatypes differ, or at least one datatype could not be resolved while the page was built."
+            })
+        });
+        const VECTOR_FLAG_HELP = Object.freeze({
+            search: Object.freeze({
+                bit: "0x80000000",
+                label: "search radix",
+                set: "A readable historical form places a per-block high-residual radix between the offset directory and block bytes.",
+                clear: "The current writer always uses this state. Searches use the packed directory plus page-slack or measured hot-path accelerators instead."
+            }),
+            prefix: Object.freeze({
+                bit: "0x10000000",
+                label: "prefix sums",
+                set: "A readable historical form stores cumulative block sums and 64-lane micro-prefix checkpoints for multi-block delta vectors.",
+                clear: "The current writer always uses this state. No dataset-sized cumulative sidecar is emitted inside new vectors."
+            })
+        });
+        /* FIXTURE:DELTA_GENERATION_DEEP_DIVE_V1 */
+        const DELTA_DEMO = (() => {
+            const oldPairs = Object.freeze([
+                Object.freeze({ neighbor: core.TERMS.bob, context: core.TERMS.friends, contextOrdinal: 1n }),
+                Object.freeze({ neighbor: core.TERMS.bob, context: core.TERMS.work, contextOrdinal: 2n }),
+                Object.freeze({ neighbor: core.TERMS.carol, context: core.TERMS.friends, contextOrdinal: 1n })
+            ]);
+            const operations = Object.freeze([
+                Object.freeze({ ordinal: 0, add: false, neighbor: core.TERMS.bob, context: core.TERMS.friends }),
+                Object.freeze({ ordinal: 1, add: true, neighbor: core.TERMS.carol, context: core.TERMS.work })
+            ]);
+            const mergedPairs = Object.freeze([
+                Object.freeze({ neighbor: core.TERMS.bob, context: core.TERMS.work, contextOrdinal: 2n }),
+                Object.freeze({ neighbor: core.TERMS.carol, context: core.TERMS.friends, contextOrdinal: 1n }),
+                Object.freeze({ neighbor: core.TERMS.carol, context: core.TERMS.work, contextOrdinal: 2n })
+            ]);
+            const run = core.encodeSmallRun(mergedPairs.map((pair) => ({
+                neighbor: pair.neighbor.rawId,
+                rawContext: pair.context.rawId,
+                contextOrdinal: pair.contextOrdinal
+            })));
+            return Object.freeze({ oldPairs, operations, mergedPairs, run });
+        })();
+        const state = {
+            statementIndex: 0,
+            direction: "outgoing",
+            termMode: "labels",
+            numberMode: "decimal",
+            step: 0,
+            selectedSection: null,
+            deltaStage: 0,
+            vectorSource: "partition"
+        };
+        /* Synthetic 600-row page embedded alongside the eight-statement pages purely to show a vector that really
+           spans several 256-value blocks. It has no selected statement, so it is only offered in the vector lesson. */
+        const SCALE_PAGE = pages.get("scale");
+
+        const statementList = document.getElementById("statement-list");
+        const stepList = document.getElementById("step-list");
+        const lesson = document.getElementById("lesson-content");
+        const partitionChip = document.getElementById("partition-chip");
+        const previousStep = document.getElementById("previous-step");
+        const nextStep = document.getElementById("next-step");
+        const liveStatus = document.getElementById("live-status");
+
+        /* Keep the masthead badge honest: it reports the format revision the decoder actually accepts. */
+        document.getElementById("format-badge").textContent = `v${core.FORMAT.VERSION}`;
+
+        function escapeHtml(value) {
+            return String(value)
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll("\"", "&quot;")
+                .replaceAll("'", "&#039;");
+        }
+
+        function flagTooltip(namespace, name, enabled, help, dataAttribute) {
+            const slug = `${namespace}-${name}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+            const tooltipId = `${slug}-tooltip`;
+            return `<span class="flag-help">
+                <button class="flag flag-trigger ${enabled ? "on" : ""}" type="button"
+                        ${dataAttribute}="${escapeHtml(name)}" aria-describedby="${tooltipId}"
+                        aria-label="${escapeHtml(name)} flag, currently ${enabled ? "set" : "clear"}">
+                    <span aria-hidden="true">${enabled ? "✓" : "×"}</span> ${escapeHtml(name)}
+                </button>
+                <span class="flag-tooltip" id="${tooltipId}" role="tooltip">
+                    <span class="flag-tooltip-title"><span>${escapeHtml(name)}</span><span>${help.bit}</span></span>
+                    <span class="flag-tooltip-status">Current page: ${enabled ? "set (1)" : "clear (0)"}</span>
+                    <span class="flag-tooltip-option"><strong>Set (1):</strong> ${escapeHtml(help.set)}</span>
+                    <span class="flag-tooltip-option"><strong>Clear (0):</strong> ${escapeHtml(help.clear)}</span>
+                </span>
+            </span>`;
+        }
+
+        function formatNumber(value) {
+            return core.formatNumber(value, state.numberMode);
+        }
+
+        function displayId(value) {
+            return core.displayId(value, state.termMode, state.numberMode);
+        }
+
+        function rawWithLabel(value) {
+            const term = core.termForId(value);
+            const raw = formatNumber(value);
+            return term ? `${escapeHtml(term.label)} <span class="dim">(${escapeHtml(raw)})</span>` : escapeHtml(raw);
+        }
+
+        function typeName(term) {
+            return core.TYPE_NAMES[term.type];
+        }
+
+        function current() {
+            const quad = core.STATEMENTS[state.statementIndex];
+            const trace = core.traceStatement(state.statementIndex, state.direction);
+            const partition = core.PARTITIONS.get(trace.key);
+            const csr = core.nestedCsr(partition);
+            const compact = core.compactColumns(partition);
+            const page = pages.get(trace.key);
+            return { quad, trace, partition, csr, compact, page };
+        }
+
+        function renderStatementList() {
+            statementList.innerHTML = core.STATEMENTS.map((quad) => `
+                <li role="presentation">
+                    <button class="statement-button" type="button" role="option"
+                            data-statement="${quad.index}" aria-selected="${quad.index === state.statementIndex}">
+                        <span class="statement-number">${quad.index + 1}</span>
+                        <span class="statement-rdf">${escapeHtml(quad.rdf)}</span>
+                        <span class="statement-meta">
+                            <span class="${quad.explicit ? "explicit-dot" : "inferred-dot"}" aria-hidden="true"></span>
+                            <span class="statement-kind">${quad.kind}${quad.context === core.DEFAULT_CONTEXT ? " · default graph" : " · named graph"}</span>
+                        </span>
+                    </button>
+                </li>`).join("");
+        }
+
+        function renderStepList() {
+            stepList.innerHTML = steps.map((step, index) => `
+                <button class="step-button" id="step-tab-${index}" type="button" role="tab"
+                        aria-controls="lesson-content" aria-selected="${index === state.step}"
+                        aria-current="${index === state.step ? "step" : "false"}" data-step="${index}"
+                        title="Step ${index + 1}: ${escapeHtml(step.title)}">
+                    <span class="step-number">${index + 1}</span>
+                    <span class="step-name">${escapeHtml(step.short)}</span>
+                </button>`).join("");
+        }
+
+        function updateControls(trace) {
+            document.querySelectorAll("[data-control]").forEach((button) => {
+                const group = button.dataset.control;
+                const selected = group === "direction" ? state.direction === button.dataset.value
+                    : group === "terms" ? state.termMode === button.dataset.value
+                        : group === "numbers" ? state.numberMode === button.dataset.value
+                            : group === "view" ? ({ logical: state.step <= 5, vectors: state.step === 6,
+                                physical: state.step === 7, deltas: state.step === 8, read: state.step === 9 })[button.dataset.value]
+                                : false;
+                button.setAttribute("aria-pressed", String(selected));
+            });
+            previousStep.disabled = state.step === 0;
+            nextStep.disabled = state.step === steps.length - 1;
+            partitionChip.innerHTML = `<span>partition</span> <strong>P${trace.predicateOrdinal} · plane ${trace.plane}</strong>`;
+        }
+
+        function termStrip(quad) {
+            const slots = [
+                ["subject", quad.subject],
+                ["predicate", quad.predicate],
+                ["object", quad.object],
+                ["context", quad.context]
+            ];
+            return `<div class="term-strip">${slots.map(([role, term]) => {
+                const valid = core.isValidForRole(term, role);
+                return `<div class="term-slot ${valid ? "" : "invalid"}">
+                    <span class="term-position">${role}</span>
+                    <span class="term-value">${escapeHtml(term.label)}</span>
+                    <span class="card-note ${valid ? "legal" : "illegal"}">${valid ? "✓" : "×"} ${escapeHtml(typeName(term))}</span>
+                </div>`;
+            }).join("")}</div>`;
+        }
+
+        function footer() {
+            return `<div class="lesson-footer">
+                <button type="button" data-action="previous" ${state.step === 0 ? "disabled" : ""}>← Previous</button>
+                <button class="primary" type="button" data-action="next" ${state.step === steps.length - 1 ? "disabled" : ""}>
+                    ${state.step === steps.length - 1 ? "End of trace" : `Next: ${escapeHtml(steps[state.step + 1].title)} →`}
+                </button>
+            </div>`;
+        }
+
+        function frame(kicker, title, lead, body) {
+            return `<div class="lesson-frame" data-tutorial-step="${state.step + 1}">
+                <p class="lesson-kicker">Step ${state.step + 1} / ${steps.length} · ${escapeHtml(kicker)}</p>
+                <h2>${title}</h2>
+                <p class="lesson-lead">${lead}</p>
+                ${body}
+                ${footer()}
+            </div>`;
+        }
+
+        function renderRoleStep(model) {
+            const { quad, trace } = model;
+            const rowTerm = core.termForId(trace.rowId);
+            const literalNote = quad.object.type === core.TYPE.LITERAL ? `
+                <div class="callout success" data-testid="literal-row-note">
+                    <strong>A literal can be an incoming row.</strong> This example is shown incoming, so the traversal row is
+                    <span class="mono">${rawWithLabel(trace.rowId)}</span>. The RDF subject is still <span class="mono">${escapeHtml(quad.subject.label)}</span>.
+                    Reversing an edge for lookup does not manufacture an illegal RDF statement.
+                </div>` : "";
+            return frame(
+                "start with RDF",
+                "Position rules come before storage orientation.",
+                "RDF constrains which terms may occupy each statement position. An adjacency index may reverse a statement for incoming lookup, but it never changes those RDF roles.",
+                `${termStrip(quad)}
+                <div class="card-grid">
+                    <div class="card"><span class="card-label">Subject</span><div class="card-value">IRI · blank node · triple term</div><p class="card-note">Never a literal. Never the default graph sentinel.</p></div>
+                    <div class="card"><span class="card-label">Predicate</span><div class="card-value">IRI only</div><p class="card-note">Its partition ordinal is stored outside each page.</p></div>
+                    <div class="card"><span class="card-label">Object</span><div class="card-value">Any RDF value</div><p class="card-note">IRI, literal, blank node, or triple term.</p></div>
+                    <div class="card"><span class="card-label">Context / graph</span><div class="card-value">default · IRI · blank node</div><p class="card-note">The tutorial uses raw ID 0 for the default graph.</p></div>
+                </div>
+                ${literalNote}
+                <div class="callout info">
+                    <strong>Current traversal row:</strong> <span class="mono">${rawWithLabel(trace.rowId)}</span> (${escapeHtml(typeName(rowTerm))}).
+                    It came from the RDF ${state.direction === "outgoing" ? "subject" : "object"} because the direction is ${state.direction}.
+                </div>`
+            );
+        }
+
+        /* "Fixture payload" is jargon twice over, so the column header explains both halves on hover and on focus. */
+        function fixturePayloadHeader() {
+            return `<span class="flag-help">
+                <button class="head-trigger" type="button" aria-describedby="fixture-payload-tooltip">
+                    <span>Fixture payload</span>
+                </button>
+                <span class="flag-tooltip head-tooltip" id="fixture-payload-tooltip" role="tooltip">
+                    <span class="flag-tooltip-title"><span>Fixture payload</span><span>rawId &gt;&gt; 7</span></span>
+                    <span class="flag-tooltip-option"><strong>Payload</strong> is the term's value-store ordinal: the raw
+                        value ID with its seven low tag bits shifted off. It is the dictionary number that stands in for the
+                        term everywhere inside a page — the term's text itself never leaves the value store.</span>
+                    <span class="flag-tooltip-option"><strong>Fixture</strong> is the fixed eight-statement example embedded
+                        in this page. It hands out 1, 2, 3… in first-introduction order so the shift arithmetic stays
+                        readable. A real store reuses whatever ordinals its value store already assigned, so those numbers
+                        are larger and unordered. The default graph is the one fixed case: payload 0, raw ID 0.</span>
+                </span>
+            </span>`;
+        }
+
+        function renderIdStep(model) {
+            const { quad, trace } = model;
+            const entries = [
+                ["subject", quad.subject],
+                ["predicate", quad.predicate],
+                ["object", quad.object],
+                ["context", quad.context]
+            ];
+            const rows = entries.map(([role, term]) => {
+                const defaultGraph = term === core.DEFAULT_CONTEXT;
+                return `<tr>
+                    <td>${role}</td>
+                    <td class="mono">${escapeHtml(term.label)}</td>
+                    <td>${escapeHtml(typeName(term))}${defaultGraph ? " sentinel" : ` · code ${term.type}`}</td>
+                    <td class="mono">${formatNumber(term.payload)}</td>
+                    <td class="mono">${formatNumber(term.rawId)}</td>
+                </tr>`;
+            }).join("");
+            return frame(
+                "dictionary tags",
+                "One raw ID carries a payload and a type tag.",
+                "The fixture assigns payloads in first-introduction order. These small payloads make the encoding legible; a real store is not guaranteed to assign the same IDs.",
+                `<div class="formula"><span class="accent">rawId</span> = (payload &lt;&lt; 7) | (type &lt;&lt; 1)<br>
+                    <span class="dim">URI=1 · literal=2 · blank node=3 · triple term=4 · default context raw=0</span></div>
+                <div class="table-wrap" style="margin-top:14px">
+                    <table><thead><tr><th>Position</th><th>Term</th><th>Kind</th><th>${fixturePayloadHeader()}</th><th>Raw value ID</th></tr></thead><tbody>${rows}</tbody></table>
+                </div>
+                <div class="callout">
+                    Predicate <span class="mono">${escapeHtml(quad.predicate.label)}</span> has dense ordinal
+                    <strong>${trace.predicateOrdinal}</strong>. A base assigns its ordinals in unsigned raw-ID order and never
+                    changes them for that base’s lifetime; predicates first seen afterwards are appended without renumbering,
+                    so ordinals stay stable rather than globally sorted. Pages are selected by this ordinal plus a plane, which
+                    is why the predicate ID is not repeated in every row.
+                </div>`
+            );
+        }
+
+        function planeDescription(plane) {
+            return [
+                ["outgoing explicit", "row = subject", "neighbor = object"],
+                ["incoming explicit", "row = object", "neighbor = subject"],
+                ["outgoing inferred", "row = subject", "neighbor = object"],
+                ["incoming inferred", "row = object", "neighbor = subject"]
+            ][plane];
+        }
+
+        function renderPlaneStep(model) {
+            const { quad, trace } = model;
+            const planes = [0, 1, 2, 3].map((plane) => {
+                const description = planeDescription(plane);
+                return `<div class="plane-card ${trace.plane === plane ? "selected" : ""}" data-plane="${plane}">
+                    ${trace.plane === plane ? '<span class="selected-flag">selected</span>' : ""}
+                    <div class="plane-id">${plane}</div>
+                    <p class="plane-name">${description[0]}</p>
+                    <div class="plane-rule">${description[1]}<br>${description[2]}</div>
+                </div>`;
+            }).join("");
+            const rowRole = state.direction === "outgoing" ? "subject" : "object";
+            const neighborRole = state.direction === "outgoing" ? "object" : "subject";
+            const literalCallout = quad.object.type === core.TYPE.LITERAL ? `
+                <div class="callout success" data-testid="literal-orientation-note">
+                    Plane ${trace.plane} is incoming: literal object <span class="mono">${rawWithLabel(quad.object.rawId)}</span> is a row key.
+                    It can never appear as an outgoing subject row because literals are not legal RDF subjects.
+                </div>` : "";
+            return frame(
+                "route once",
+                "Predicate ordinal + plane selects a shared partition.",
+                "Explicit/inferred and outgoing/incoming are four separate planes. Within a plane, every statement shares both the predicate and the orientation rule.",
+                `<div class="plane-grid">${planes}</div>
+                <div class="orientation">
+                    <div class="orientation-node"><span>row · RDF ${rowRole}</span><strong>${rawWithLabel(trace.rowId)}</strong></div>
+                    <div class="orientation-arrow">P${trace.predicateOrdinal} / plane ${trace.plane}</div>
+                    <div class="orientation-node"><span>neighbor · RDF ${neighborRole}</span><strong>${rawWithLabel(trace.neighborId)}</strong></div>
+                </div>
+                ${literalCallout}
+                <div class="callout info">
+                    Statement ${quad.index + 1} routes to key <strong class="mono">${trace.key}</strong>.
+                    ${quad.explicit ? "Explicit" : "Inferred"} data uses plane ${trace.plane}; changing direction changes only the orientation bit.
+                </div>`
+            );
+        }
+
+        function renderTreeStep(model) {
+            const { partition, trace } = model;
+            let fiberAt = 0;
+            let contextAt = 0;
+            const tree = partition.rows.map((row, rowIndex) => {
+                const fibers = row.fibers.map((fiber, localFiberIndex) => {
+                    const globalFiber = fiberAt++;
+                    const contexts = fiber.contexts.map((context, localContextIndex) => {
+                        const globalContext = contextAt++;
+                        const selected = rowIndex === trace.rowIndex && globalFiber === trace.fiberIndex && globalContext === trace.contextIndex;
+                        return `<span class="context-pill ${selected ? "selected" : ""}" data-context-index="${globalContext}">
+                            ${escapeHtml(displayId(context.id))}${selected ? " · selected" : ""}
+                        </span>`;
+                    }).join("");
+                    const selectedFiber = globalFiber === trace.fiberIndex;
+                    return `<div class="tree-fiber ${selectedFiber ? "selected" : ""}" data-fiber-index="${globalFiber}">
+                        <div class="fiber-head">neighbor ${localFiberIndex} → ${escapeHtml(displayId(fiber.id))}</div>
+                        <div class="contexts">${contexts}</div>
+                    </div>`;
+                }).join("");
+                return `<div class="tree-row ${rowIndex === trace.rowIndex ? "selected" : ""}" data-row-index="${rowIndex}">
+                    <div class="tree-row-id"><span>row ${rowIndex}</span><span>→</span><span>${escapeHtml(displayId(row.id))}</span></div>
+                    <div class="tree-branch">${fibers}</div>
+                </div>`;
+            }).join("");
+            return frame(
+                "factor repeated prefixes",
+                "A partition is row → distinct neighbor → sorted contexts.",
+                "Statements with the same row and neighbor share one fibre. Their graph memberships become the fibre’s sorted context lane—the crucial extra level beyond ordinary CSR.",
+                `<div class="callout">
+                    Complete partition <strong>P${partition.predicateOrdinal} / plane ${partition.plane}</strong>:
+                    ${partition.rows.length} rows, ${partition.rows.reduce((sum, row) => sum + row.fibers.length, 0)} distinct neighbor fibres,
+                    ${partition.rows.reduce((sum, row) => sum + row.fibers.reduce((inner, fiber) => inner + fiber.contexts.length, 0), 0)} quads.
+                </div>
+                <div class="tree" data-testid="partition-tree">${tree}</div>`
+            );
+        }
+
+        /**
+         * Every value gets a slot: the array ordinal is a caption directly above the cell, leaving the cell itself
+         * free to render the value large enough to read at a glance.
+         *
+         * `resolved` turns a delta column into something readable: a tail of "256" means nothing on its own, so each
+         * cell also shows the absolute term that adding it reproduces.
+         */
+        function arrayCells(values, selectedIndexes, kind, resolved = null) {
+            const selected = new Set(Array.isArray(selectedIndexes) ? selectedIndexes : [selectedIndexes]);
+            return `<div class="array-values"><span class="array-bracket">[</span>${values.map((value, index) => {
+                const rendered = kind === "delta" ? `+${formatNumber(value)}`
+                    : kind === "id" ? displayId(value) : formatNumber(value);
+                const target = resolved && resolved[index]
+                    ? `<small class="resolves">${escapeHtml(displayId(resolved[index].from))} → ${escapeHtml(displayId(resolved[index].id))}</small>`
+                    : "";
+                const isSelected = selected.has(index);
+                return `<span class="array-slot ${isSelected ? "selected" : ""}">
+                    <span class="array-index">${index}</span>
+                    <span class="array-cell ${kind === "delta" ? "delta" : ""} ${isSelected ? "selected" : ""}" data-index="${index}">
+                        ${escapeHtml(rendered)}${target}
+                    </span>
+                </span>`;
+            }).join("")}<span class="array-bracket">]</span></div>`;
+        }
+
+        function arrayCard(name, values, selectedIndexes, kind, purpose) {
+            return `<div class="array-card" data-array="${name}">
+                <div class="array-head"><span class="array-name">${name}</span><span class="array-purpose">${purpose}</span></div>
+                ${arrayCells(values, selectedIndexes, kind)}
+            </div>`;
+        }
+
+        function renderCsrStep(model) {
+            const { csr, trace } = model;
+            return frame(
+                "your familiar model",
+                "CSR twice: rows point to neighbors; neighbors point to contexts.",
+                "The first rowPtr/colIdx pair is ordinary CSR. A second pointer array gives each distinct neighbor its graph-membership slice.",
+                `<div class="array-stack" data-testid="csr-arrays">
+                    ${arrayCard("rowIds", csr.rowIds, trace.rowIndex, "id", "materialized row keys")}
+                    ${arrayCard("rowPtr", csr.rowPtr, [trace.rowIndex, trace.rowIndex + 1], "number", "row → colIdx range")}
+                    ${arrayCard("colIdx", csr.colIdx, trace.fiberIndex, "id", "distinct neighbor IDs")}
+                    ${arrayCard("contextPtr", csr.contextPtr, [trace.fiberIndex, trace.fiberIndex + 1], "number", "fiber → contextIdx range")}
+                    ${arrayCard("contextIdx", csr.contextIdx, trace.contextIndex, "id", "sorted graph memberships")}
+                </div>
+                <div class="formula" style="margin-top:15px">
+                    row ${trace.rowIndex} → colIdx[${trace.rowSpan[0]} .. ${trace.rowSpan[1]})<br>
+                    fiber ${trace.fiberIndex} → contextIdx[${trace.contextSpan[0]} .. ${trace.contextSpan[1]})<br>
+                    <span class="accent">selected quad</span> → rowIds[${trace.rowIndex}], colIdx[${trace.fiberIndex}], contextIdx[${trace.contextIndex}]
+                </div>
+                <div class="callout info"><strong>Why “nested” CSR?</strong> One pointer level finds neighbors; the next finds the contexts attached to each row/neighbor pair. The terminal pointer in each array supplies the final range end.</div>`
+            );
+        }
+
+        const COMPACT_PURPOSES = Object.freeze({
+            rowIds: "one raw row ID per row",
+            rowFiberStarts: "start only; next start/count supplies end",
+            rowQuadCounts: "quads per row",
+            firstNeighbors: "first neighbor per row",
+            neighborTails: "gap to the row's next neighbour, not the neighbour itself",
+            contextCounts: "contexts per neighbor fibre",
+            firstContexts: "first context per fibre",
+            contextTails: "gap to the fibre's next graph, not the graph itself"
+        });
+
+        function compactRow(name, values, lane, kind, omittedReason, resolved = null) {
+            const valueHtml = values === null ? `<div class="omitted"><span class="small-badge omit">omitted</span>${escapeHtml(omittedReason)}</div>`
+                : arrayCells(values, lane, kind, resolved);
+            return `<div class="compact-row" data-column="${name}">
+                <div><span class="array-name">${name}</span><div class="array-purpose" style="margin-top:5px">${COMPACT_PURPOSES[name]}</div></div>
+                ${valueHtml}
+            </div>`;
+        }
+
+        function renderCompactStep(model) {
+            const { compact, trace, page, partition } = model;
+            /*
+             * Tail columns are one flat run per page, in the same order the reader replays them. Recording the
+             * previous value and the value each delta reproduces is what makes a bare "+256" legible.
+             */
+            const neighborTailTargets = [];
+            partition.rows.forEach((row) => {
+                for (let index = 1; index < row.fibers.length; index++) {
+                    neighborTailTargets.push({ from: row.fibers[index - 1].id, id: row.fibers[index].id });
+                }
+            });
+            const contextTailTargets = [];
+            partition.rows.flatMap((row) => row.fibers).forEach((fiber) => {
+                for (let index = 1; index < fiber.contexts.length; index++) {
+                    contextTailTargets.push({ from: fiber.contexts[index - 1].id, id: fiber.contexts[index].id });
+                }
+            });
+            const omission = {
+                rowFiberStarts: "flag says every row has exactly one neighbor",
+                rowQuadCounts: "flag says each row’s quad count equals its neighbor count",
+                neighborTails: "no row has a second neighbor",
+                contextCounts: "flag says every fibre has exactly one context",
+                firstContexts: `flag stores one common context in the page header: ${displayId(compact.commonContext ?? 0n)}`,
+                contextTails: "no fibre has a second context"
+            };
+            const columns = [
+                ["rowIds", compact.rowIds, "id", null],
+                ["rowFiberStarts", compact.rowFiberStarts, "number", null],
+                ["rowQuadCounts", compact.rowQuadCounts, "number", null],
+                ["firstNeighbors", compact.firstNeighbors, "id", null],
+                ["neighborTails", compact.neighborTails, "delta", neighborTailTargets],
+                ["contextCounts", compact.contextCounts, "number", null],
+                ["firstContexts", compact.firstContexts, "id", null],
+                ["contextTails", compact.contextTails, "delta", contextTailTargets]
+            ];
+            const enabledFlags = core.flagNames(page.header.flags)
+                .map((flag) => flagTooltip("page", flag.name, flag.enabled, PAGE_FLAG_HELP[flag.name], "data-page-flag"))
+                .join("");
+            const rowHtml = columns.map(([name, values, kind, resolved]) => compactRow(
+                name,
+                values,
+                trace.physicalLanes[name],
+                kind,
+                omission[name] || "not needed for this page",
+                resolved
+            )).join("");
+            const materialized = columns.filter(([, values]) => values !== null).length;
+            return frame(
+                "remove derivable columns",
+                "CSF keeps the hierarchy, then stops storing what the page can derive.",
+                "Starts replace terminal pointers, first values split from within-fibre tails, and page-wide invariants omit whole vectors. The logical quad set is unchanged.",
+                `<div class="flag-list" aria-label="Page flags">${enabledFlags}</div>
+                <div class="array-stack" data-testid="compact-columns">${rowHtml}</div>
+                <div class="callout success">
+                    <strong>${materialized} of 8 columns are materialized</strong> in this page. Omitted columns are reconstructed from counts or header flags; they are not empty arrays.
+                </div>
+                ${compact.neighborTails || compact.contextTails ? `<div class="callout" data-testid="tails-note">
+                    <strong>The two dashed columns are gaps, not values.</strong> A tail is the unsigned distance from
+                    the previous entry, so it is meaningless read on its own — the teal line under each one shows the
+                    pair it actually reproduces. Storing the gap is the point: neighbours and graphs are already sorted,
+                    so consecutive IDs sit close together and a gap needs far fewer bits than the absolute ID would.
+                    Only the <span class="mono">first</span> value of each run is stored in full.
+                </div>` : ""}
+                <div class="callout info">
+                    Homogeneous generic-ID blocks may use <strong>typed-payload packing</strong>, which stores the shared type once. Mixed legal row or context types use generic raw packing. That decision is made per 256-lane block from actual values—not from an assumed “subject alphabet.”
+                </div>`
+            );
+        }
+
+        /* `trace` is null for the scale page, which no statement points at; `fallbackLane` then decides the highlight. */
+        function selectedVector(page, trace, preferred = "firstNeighbors", fallbackLane = 0) {
+            const available = page.sections.filter((section) => section.vector);
+            if (!state.selectedSection || !available.some((section) => section.name === state.selectedSection)) {
+                state.selectedSection = available.some((section) => section.name === preferred)
+                    ? preferred : available[0].name;
+            }
+            const section = available.find((candidate) => candidate.name === state.selectedSection);
+            const tracedLane = trace ? trace.physicalLanes[section.name] : null;
+            const lane = Number.isInteger(tracedLane) && tracedLane >= 0 && tracedLane < section.vector.count
+                ? tracedLane : Math.min(fallbackLane, section.vector.count - 1);
+            return { section, primary: core.vectorLane(page, section.name, lane), available };
+        }
+
+        function vectorSelector(available, selectedName) {
+            return `<div class="vector-selector" aria-label="Packed vector column">
+                ${available.map((section) => `<button type="button" data-action="section" data-section="${section.name}"
+                    aria-pressed="${section.name === selectedName}">${section.name} · ${section.vector.count}</button>`).join("")}
+            </div>`;
+        }
+
+        function modeFormula(block) {
+            const typeSuffix = block.typed ? `, then restore type ${block.type}: payload &lt;&lt; 7 | type &lt;&lt; 1` : "";
+            if (block.delta) {
+                return `value[i] = base + sum(delta[0 .. i))${typeSuffix}`;
+            }
+            return `value[i] = base + residual[i]${typeSuffix}`;
+        }
+
+        function renderVectorAnatomy(section, primary) {
+            const vector = section.vector;
+            const selected = primary.block;
+            const metadataBytes = vector.directory[0] - core.FORMAT.VECTOR_HEADER_BYTES
+                - (vector.blockCount + 1) * 4;
+            const blockRegions = vector.blocks.map((block) => {
+                const payloadBytes = block.byteLength - core.FORMAT.BLOCK_HEADER_BYTES;
+                const selectedClass = block.blockIndex === selected.blockIndex ? " selected" : "";
+                return `<div class="vector-region block-header${selectedClass}" style="flex:${Math.max(4, core.FORMAT.BLOCK_HEADER_BYTES)} 1 0">
+                        <strong>block ${block.blockIndex} header</strong><span>12 B · mode/type · width · count · base</span>
+                    </div>
+                    <div class="vector-region payload${selectedClass}" style="flex:${Math.max(4, payloadBytes)} 1 0">
+                        <strong>${payloadBytes} B payload</strong><span>${block.count} value${block.count === 1 ? "" : "s"} · ${block.width} bits/lane</span>
+                    </div>`;
+            }).join("");
+            const metadataRegion = metadataBytes > 0
+                ? `<div class="vector-region directory" style="flex:${metadataBytes} 1 0"><strong>optional metadata</strong><span>${metadataBytes} B</span></div>`
+                : "";
+            const lane = primary.lane;
+            const packedOrdinal = selected.delta ? Math.max(0, lane.lane - 1) : lane.lane;
+            const payloadBytes = selected.byteLength - core.FORMAT.BLOCK_HEADER_BYTES;
+            const modeNames = ["FOR raw", "FOR typed payload", "delta raw", "delta typed payload"];
+            /* Modes 2 and 3 are defined by the format but a page column can never use them: the encoder only
+               offers the delta plans for a sorted-sequential-ID column, and no page section is one. */
+            const pageReachableModes = [true, true, false, false];
+            const modes = modeNames.map((name, mode) => {
+                const explanations = [
+                    "Unsorted or random-access values: unsigned minimum base plus one residual per value.",
+                    "Same compound type: strip the repeated seven low tag bits, pack payload residuals, restore the type on decode.",
+                    "Sorted sequential IDs: the first value is the base and only adjacent gaps are packed.",
+                    "Sorted, same-type IDs: combine tag stripping with adjacent payload gaps."
+                ];
+                const reachable = pageReachableModes[mode];
+                const note = reachable ? "" :
+                    `<span class="mode-unreachable">never used by a page · reading one lane would mean replaying the lanes before it</span>`;
+                return `<div class="mode-item ${mode === selected.mode ? "selected" : ""} ${reachable ? "" : "unavailable"}">
+                    <strong>${name}${mode === selected.mode ? " · selected" : ""}</strong><span>${explanations[mode]}</span>${note}
+                </div>`;
+            }).join("");
+            return `<!-- FIXTURE:PACKED_VECTOR_DEEP_DIVE_V1 -->
+            <figure class="vector-anatomy" data-testid="vector-deep-dive" aria-labelledby="vector-anatomy-title">
+                <div class="vector-anatomy-head">
+                    <div><span class="card-label">Exact decoded fixture · ${section.name}</span>
+                        <h3 id="vector-anatomy-title">A tiny directory in front of independently decodable blocks</h3>
+                        <p>The diagram is byte-accurate for the selected embedded production fixture. Every offset is section-relative until the page address is added.</p>
+                    </div>
+                    <span class="vector-total">${section.length} B total @${section.offset}</span>
+                </div>
+                <div class="vector-byte-line" aria-label="Packed vector byte regions">
+                    <div class="vector-region vector-header" style="flex:8 1 0"><strong>vector header</strong><span>8 B · u32 count + flagged u32 block count</span></div>
+                    <div class="vector-region directory" style="flex:${(vector.blockCount + 1) * 4} 1 0"><strong>terminal directory</strong><span>${vector.blockCount + 1} × u32 · [${vector.directory.join(", ")}]</span></div>
+                    ${metadataRegion}${blockRegions}
+                </div>
+                <div class="decode-route" aria-label="Random lane decode route">
+                    <div class="decode-step"><b>01 · split ordinal</b><code>${lane.globalLane} &gt;&gt;&gt; 8 = block ${selected.blockIndex}<br>${lane.globalLane} &amp; 255 = lane ${lane.lane}</code></div>
+                    <div class="decode-step"><b>02 · load u32 offset</b><code>directory[${selected.blockIndex}] = ${selected.at}<br>page byte = ${selected.pageAt}</code></div>
+                    <div class="decode-step"><b>03 · read 12-byte header</b><code>${selected.modeName}<br>width ${selected.width} · count ${selected.count}<br>base ${formatNumber(selected.base)}</code></div>
+                    <div class="decode-step"><b>04 · reconstruct lane</b><code>packed lane ${packedOrdinal} · residual ${formatNumber(lane.residual)}<br>${modeFormula(selected)}<br>= ${escapeHtml(displayId(lane.value))}</code></div>
+                </div>
+                <div class="mode-ledger" aria-label="Packed vector modes">${modes}</div>
+                <p class="card-note" style="padding:0 16px 16px" data-testid="mode-reachability">
+                    A block header can hold any of the four mode numbers, so a decoder must understand all of them.
+                    A <strong>page</strong>, however, only ever writes the two <span class="mono">FOR</span> forms: every
+                    page column has to answer “give me lane <span class="mono">n</span>” without touching lane
+                    <span class="mono">n−1</span>, and a delta block cannot do that. The two delta modes exist for
+                    sorted-sequential-ID vectors outside the page sections.
+                </p>
+                <figcaption class="diagram-takeaway"><strong>Why the block boundary matters:</strong> one random access reads a directory entry and one block; it never inflates the whole vector. At most 256 values share the 12-byte block header, and a packed lane is extracted from an eight-byte little-endian word plus one tail byte only when it straddles that word.</figcaption>
+            </figure>
+            <div class="efficiency-equation" aria-label="Illustrative packed size calculation">
+                <div><span>256 unpacked long values</span><strong>2,048 B</strong></div>
+                <div><span>7-bit residual payload</span><strong>224 B</strong></div>
+                <div><span>header + directory + block</span><strong>252 B · 87.7% less</strong></div>
+            </div>
+            <p class="card-note">Illustrative one-block calculation: 8-byte vector header + two u32 directory entries + 12-byte block header + ceil(256 × 7 / 8) payload bytes. Actual width is chosen independently per block; tiny fixture vectors may be header-dominated.</p>
+            <div class="callout info"><strong>Selection is cost-based and local.</strong> For each block independently the encoder measures raw FOR against typed-payload FOR and writes whichever is smaller. The delta plans are offered only to sorted-sequential-ID columns, and no page section is one, so they never win here. The current writer also keeps the historical vector-level search/prefix flags clear; optional accelerators live in page slack or measured hot cursors instead of taxing every vector.</div>`;
+        }
+
+        function vectorSourcePicker() {
+            const options = [
+                ["partition", "this statement's page", `${current().page.header.rowCount} rows`],
+                ["scale", "600-row example page", `${SCALE_PAGE.header.rowCount} rows`]
+            ];
+            return `<div class="vector-source" aria-label="Which page to inspect">
+                ${options.map(([value, label, note]) => `<button type="button" data-action="vector-source"
+                    data-vector-source="${value}" aria-pressed="${state.vectorSource === value}">
+                    ${label} <span class="dim">· ${note}</span></button>`).join("")}
+            </div>`;
+        }
+
+        function renderVectorStep(model) {
+            const useScale = state.vectorSource === "scale" && SCALE_PAGE;
+            const page = useScale ? SCALE_PAGE : model.page;
+            const trace = useScale ? null : model.trace;
+            /* Lane 255 is the last lane of block 0, so the decode route lands exactly on a block boundary. */
+            const { section, primary, available } = selectedVector(page, trace, "firstNeighbors", 255);
+            const vector = section.vector;
+            const spanNote = `<p class="card-note" data-testid="vector-span-note">
+                <strong>${section.name}</strong> holds ${vector.count} value${vector.count === 1 ? "" : "s"} in
+                ${vector.blockCount} block${vector.blockCount === 1 ? "" : "s"}
+                (${vector.blocks.map((block) => `${block.count}×${block.width} bit`).join(", ")}),
+                behind a directory of ${vector.directory.length} offsets. Each block picks its own width, so a block of
+                smaller values costs fewer bits per lane than its neighbours.</p>`;
+            return frame(
+                "bound random access",
+                "Packed vectors stay compressed all the way to the selected lane.",
+                "Each CSF column is its own vector. A terminal offset directory jumps to one 256-value block; the block header explains exactly how to recover a lane from its tightly packed residual bits.",
+                `${vectorSourcePicker()}
+                ${vectorSelector(available, section.name)}
+                ${spanNote}
+                ${renderVectorAnatomy(section, primary)}
+                <div class="physical-grid">
+                    <div class="physical-column">${renderVector(page, section, primary)}</div>
+                    <div class="physical-column">
+                        <div class="byte-inspector">
+                            <div class="inspector-title"><h3>What is deliberately absent</h3><span>no object graph</span></div>
+                            <div class="pair-line"><span>Per-value Java objects</span><strong>0</strong></div>
+                            <div class="pair-line"><span>Per-value 64-bit slots</span><strong>0 unless width = 64</strong></div>
+                            <div class="pair-line"><span>Whole-vector decode for one lookup</span><strong>not required</strong></div>
+                            <div class="pair-line"><span>Repeated RDF type tags</span><strong>one per homogeneous block</strong></div>
+                            <div class="pair-line"><span>Block search</span><strong>ordinal &gt;&gt;&gt; 8 + one u32 offset</strong></div>
+                        </div>
+                        <div class="callout success"><strong>The practical result:</strong> compact, contiguous off-heap bytes with bounded decode work. Range copies advance through packed words; random row searches compare directly against native blocks; width zero consumes no payload at all.</div>
+                    </div>
+                </div>`
+            );
+        }
+
+        function headerFields(page) {
+            const h = page.header;
+            const commonEnabled = (h.flags & core.FLAGS.COMMON_CONTEXT) !== 0;
+            return [
+                ["magic", `0x${h.magic.toString(16)}`, 0, 4],
+                ["version", h.version, 4, 2],
+                ["flags", `0x${h.flags.toString(16).padStart(4, "0")}`, 6, 2],
+                ["capacity", `${h.capacity} B`, 8, 4],
+                ["usedBytes", `${h.usedBytes} B`, 12, 4],
+                ["pageId", h.pageId, 16, 4],
+                ["nextExtent", h.nextExtent === -1 ? "none (-1)" : h.nextExtent, 20, 4],
+                ["rowCount", h.rowCount, 24, 4],
+                ["fiberCount", h.fiberCount, 28, 4],
+                ["quadCount", h.quadCount, 32, 4],
+                ["reserved", h.reserved, 36, 4],
+                ["firstRow", displayId(h.firstRow), 40, 8],
+                ["lastRow", displayId(h.lastRow), 48, 8],
+                ["firstNeighbor", displayId(h.firstNeighbor), 56, 8],
+                ["lastNeighbor", displayId(h.lastNeighbor), 64, 8],
+                ["commonContext", commonEnabled ? displayId(h.commonContext) : "not active", 72, 8],
+                ["formatHash", `0x${h.formatHash.toString(16)}`, 144, 4],
+                ["acceleratorOffset", h.acceleratorOffset, 148, 4],
+                ["acceleratorLength", h.acceleratorLength, 152, 4],
+                ["acceleratorDescriptor", h.acceleratorDescriptor, 156, 4]
+            ];
+        }
+
+        function renderHeader(page) {
+            return `<div class="byte-inspector">
+                <div class="inspector-title"><h3>160-byte little-endian header</h3><span>offsets are decimal bytes</span></div>
+                <div class="field-grid">${headerFields(page).map(([name, value, at, size]) => `
+                    <div class="field" data-header-field="${name}">
+                        <span class="field-name">${name}</span>
+                        <span class="field-value">${escapeHtml(value)}</span>
+                        <span class="field-offset">@${at} · ${size} B · LE</span>
+                    </div>`).join("")}</div>
+            </div>`;
+        }
+
+        function renderSections(page, selectedSection) {
+            return `<div class="byte-inspector">
+                <div class="inspector-title"><h3>Section descriptors</h3><span>eight offset/length pairs @80..143</span></div>
+                <div class="table-wrap"><table class="section-table">
+                    <thead><tr><th>Vector</th><th>Descriptor</th><th>Offset</th><th>Length</th></tr></thead>
+                    <tbody>${page.sections.map((section) => `
+                        <tr class="${section.name === selectedSection ? "selected" : ""} ${section.offset ? "" : "omitted-section"}">
+                            <td><button type="button" data-action="section" data-section="${section.name}" ${section.offset ? "" : "disabled"}>${section.name}</button></td>
+                            <td class="mono">@${section.descriptorAt}</td>
+                            <td class="mono">${section.offset || "—"}</td>
+                            <td class="mono">${section.length || "omitted"}</td>
+                        </tr>`).join("")}</tbody>
+                </table></div>
+            </div>`;
+        }
+
+        function modeType(block) {
+            if (!block.typed) {
+                return "generic raw IDs / values";
+            }
+            return `${core.TYPE_NAMES[block.type] || `type ${block.type}`} payloads`;
+        }
+
+        function vectorFlagControls(vector) {
+            return [
+                [VECTOR_FLAG_HELP.search.label, vector.searchIndexed, VECTOR_FLAG_HELP.search],
+                [VECTOR_FLAG_HELP.prefix.label, vector.prefixIndexed, VECTOR_FLAG_HELP.prefix]
+            ].map(([name, enabled, help]) => flagTooltip("vector", name, enabled, help, "data-vector-flag")).join("");
+        }
+
+        function renderVector(page, section, primary) {
+            const vector = section.vector;
+            const selectedLane = primary && primary.section.name === section.name ? primary.lane.globalLane : null;
+            const blocks = vector.blocks.map((block) => {
+                const laneInBlock = selectedLane === null ? null : block.lanes.find((lane) => lane.globalLane === selectedLane);
+                return `<div class="vector-block">
+                    <div class="block-head">
+                        <span class="block-chip">block ${block.blockIndex}</span>
+                        <span class="block-chip">${block.modeName}</span>
+                        <span class="block-chip">type ${block.type} · ${escapeHtml(modeType(block))}</span>
+                        <span class="block-chip">width ${block.width} bits</span>
+                        <span class="block-chip">count ${block.count} / 256</span>
+                        <span class="block-chip">base ${formatNumber(block.base)}</span>
+                        <span class="block-chip">@${block.pageAt} · ${block.byteLength} B</span>
+                    </div>
+                    ${laneInBlock ? renderPackedLane(page, section, block, laneInBlock) : ""}
+                </div>`;
+            }).join("");
+            return `<div class="byte-inspector" data-testid="vector-inspector">
+                <div class="inspector-title"><h3>${section.name} vector</h3><span>${section.length} bytes @${section.offset}</span></div>
+                <div class="field-grid" style="margin-bottom:9px">
+                    <div class="field"><span class="field-name">vector count · u32</span><span class="field-value">${vector.count}</span><span class="field-offset">@${section.offset}</span></div>
+                    <div class="field">
+                        <span class="field-name">stored block count · u32</span>
+                        <span class="field-value">0x${vector.storedBlockCount.toString(16)}</span>
+                        <span class="field-offset">${vector.blockCount} block${vector.blockCount === 1 ? "" : "s"}; the high bits below are flags</span>
+                        <span class="vector-flag-list" aria-label="Packed-vector flags">${vectorFlagControls(vector)}</span>
+                    </div>
+                    <div class="field" style="grid-column:1/-1"><span class="field-name">directory · (blockCount + 1) × u32</span><span class="field-value">[${vector.directory.join(", ")}]</span><span class="field-offset">section-relative block offsets, including terminal end</span></div>
+                </div>
+                ${blocks}
+            </div>`;
+        }
+
+        function renderPackedLane(page, section, block, lane) {
+            if (!lane.bitRange) {
+                return `<div class="packed-bits" data-testid="selected-packed-lane">
+                    selected lane <strong>${lane.globalLane}</strong> = ${escapeHtml(displayId(lane.value))}<br>
+                    width 0: no payload bits; the value is reconstructed from block base${block.typed ? " + shared type" : ""}.
+                </div>`;
+            }
+            const payloadAt = section.offset + block.at + core.FORMAT.BLOCK_HEADER_BYTES;
+            const bits = [];
+            for (let bit = lane.bitRange.startBit; bit <= lane.bitRange.endBit; bit++) {
+                bits.push(page.bytes[payloadAt + Math.floor(bit / 8)] >> (bit % 8) & 1);
+            }
+            return `<div class="packed-bits" data-testid="selected-packed-lane">
+                selected lane <strong>${lane.globalLane}</strong> = ${escapeHtml(displayId(lane.value))}<br>
+                residual ${formatNumber(lane.residual)} · section bits ${lane.bitRange.startBit}..${lane.bitRange.endBit}
+                · page bytes ${lane.bitRange.firstByte}..${lane.bitRange.lastByte}<br>
+                packed LSB-first: <strong>${bits.join("")}</strong>
+            </div>`;
+        }
+
+        function pageMap(page, selectedSection) {
+            const width = (length) => length / page.header.capacity * 100;
+            const left = (offset) => offset / page.header.capacity * 100;
+            const sections = page.sections.filter((section) => section.offset).map((section) => `
+                <button type="button" class="page-region vector ${section.name === selectedSection ? "selected" : ""}"
+                        style="left:${left(section.offset)}%;width:${width(section.length)}%"
+                        data-action="section" data-section="${section.name}" title="${section.name}: ${section.offset}..${section.end - 1}">
+                    <span class="page-region-label">${section.name}</span>
+                </button>`).join("");
+            return `<div class="page-map-shell">
+                <div class="page-map" aria-label="Physical page map">
+                    <div class="page-region header" style="left:0;width:${width(core.FORMAT.HEADER_BYTES)}%"><span class="page-region-label">header · 160 B</span></div>
+                    ${sections}
+                    <div class="page-region slack" style="left:${left(page.header.usedBytes)}%;width:${width(page.header.capacity - page.header.usedBytes)}%"><span class="page-region-label">unread slack</span></div>
+                </div>
+                <div class="page-map-legend">
+                    <span>0..159 header</span><span>vectors align to 8-byte boundaries</span>
+                    <span>used: 0..${page.header.usedBytes - 1}</span><span>slab: ${page.header.capacity} B</span>
+                    <span>slack: ${page.header.usedBytes}..${page.header.capacity - 1} undefined</span>
+                </div>
+            </div>`;
+        }
+
+        function byteClass(page, at, selectedSection, primary) {
+            if (at >= page.header.usedBytes) {
+                return "slack-byte";
+            }
+            let classes = at < core.FORMAT.HEADER_BYTES ? "header-byte" : "";
+            const section = page.sections.find((candidate) => candidate.offset && at >= candidate.offset && at < candidate.end);
+            if (section && section.name === selectedSection) {
+                classes += " section-byte";
+            }
+            if (primary && primary.lane.bitRange && at >= primary.lane.bitRange.firstByte && at <= primary.lane.bitRange.lastByte) {
+                classes += " selected-byte";
+            }
+            return classes;
+        }
+
+        function hexGrid(page, selectedSection, primary) {
+            const rows = [];
+            for (let start = 0; start < page.header.capacity; start += 16) {
+                const cells = [];
+                for (let offset = 0; offset < 16; offset++) {
+                    const at = start + offset;
+                    const slack = at >= page.header.usedBytes;
+                    cells.push(`<span class="byte ${byteClass(page, at, selectedSection, primary)}" data-byte-offset="${at}" data-testid="${slack ? "slack-byte" : "used-byte"}" title="byte ${at}${slack ? ": undefined / unread slack" : ""}">${slack ? "--" : page.bytes[at].toString(16).padStart(2, "0")}</span>`);
+                }
+                rows.push(`<span class="hex-offset">${start.toString(16).padStart(4, "0")}</span>${cells.join("")}`);
+            }
+            return `<div class="hex-shell" data-testid="physical-bytes">
+                <div class="hex-heading"><h3>Allocated off-heap page</h3><span>${page.header.usedBytes} defined bytes · ${page.header.capacity - page.header.usedBytes} unread bytes<br>16 bytes per row</span></div>
+                <div class="hex-scroll"><div class="hex-grid">${rows.join("")}</div></div>
+            </div>`;
+        }
+
+        function renderScaleDiagram(model, primary) {
+            const { quad, trace, page } = model;
+            const selectedPartition = trace.predicateOrdinal * 4 + trace.plane;
+            const partitionCells = Array.from({ length: 48 }, (_, index) =>
+                `<span class="partition-cell ${index === selectedPartition ? "active" : ""}" aria-hidden="true"></span>`
+            ).join("");
+            const laneDots = Array.from({ length: 24 }, (_, index) =>
+                `<i class="${index === 5 ? "selected" : ""}" aria-hidden="true"></i>`
+            ).join("");
+            return `<!-- FIXTURE:SCALE_LOOKUP_DIAGRAM_V1 -->
+            <figure class="scale-diagram" data-testid="scale-lookup-diagram" aria-labelledby="scale-diagram-title">
+                <div class="scale-diagram-header">
+                    <div>
+                        <span class="card-label">Lookup map · directories before bytes</span>
+                        <h3 id="scale-diagram-title">How millions of statements per predicate reach one lane</h3>
+                        <p>The orange trace is this selected fixture. Repeated neutral cells show how the same fixed lookup path scales; none of these example counts are format limits.</p>
+                    </div>
+                    <span class="scale-note">illustrative workload</span>
+                </div>
+                <div class="scale-scenario" aria-label="Illustrative large dataset">
+                    <div class="scale-stat"><strong>12 predicates</strong><span>dense ordinals 0..11</span></div>
+                    <div class="scale-stat"><strong>8.4M quads</strong><span>for one illustrative predicate</span></div>
+                    <div class="scale-stat"><strong>420k row values</strong><span>hundreds of thousands in one plane</span></div>
+                    <div class="scale-stat"><strong>2,000 named graphs</strong><span>plus the default graph</span></div>
+                </div>
+                <div class="lookup-route-grid">
+                    <article class="lookup-route" data-layer="predicate-catalog">
+                        <span class="route-label">Predicate is bound · normal route</span>
+                        <h4>Predicate catalog</h4>
+                        <p>An unsigned raw-ID lookup binds the predicate once to a stable dense ordinal for this base lifetime.</p>
+                        <span class="route-formula">${rawWithLabel(quad.predicate.rawId)} → ordinal ${trace.predicateOrdinal}</span>
+                    </article>
+                    <article class="lookup-route optional" data-layer="node-predicate-projection">
+                        <span class="route-label">Predicate is unbound · optional detour</span>
+                        <h4>Node → predicate projection</h4>
+                        <p>On configured FULL paged bases, a small one-predicate CSF lists raw predicates for a bound node. Each result re-enters the authoritative route.</p>
+                        <span class="route-formula">row = node · neighbor = raw predicate · context = 0</span>
+                    </article>
+                </div>
+                <div class="lookup-merge">both routes produce predicate ordinal + plane + raw row ID</div>
+                <ol class="lookup-spine" aria-label="Lookup route into off-heap memory">
+                    <li class="lookup-layer" data-layer="partition-directory">
+                        <span class="lookup-step">01 · root arrays</span>
+                        <h4>Partition directory</h4>
+                        <p><span class="mono">ordinal × 4 + plane</span> chooses one physical partition. Twelve predicates create <strong>48 partition slots</strong>; empty planes stay empty.</p>
+                        <div class="partition-matrix" aria-label="48 partition slots with selected slot ${selectedPartition}">${partitionCells}</div>
+                        <span class="mini-caption">selected: P${trace.predicateOrdinal} / plane ${trace.plane} / slot ${selectedPartition}</span>
+                    </li>
+                    <li class="lookup-layer" data-layer="shard-directory">
+                        <span class="lookup-step">02 · key-range shard</span>
+                        <h4>Shard + page directory</h4>
+                        <p>Unsigned <span class="mono">firstRow</span> fences choose a shard, then a page. A shard holds at most 4,096 page addresses; each 32-byte entry points directly to native memory.</p>
+                        <div class="shard-visual" aria-hidden="true">
+                            <div class="shard-fence"><span></span><span></span><span class="selected"></span><span></span><span></span></div>
+                            <div class="directory-line"><span>firstRow fences</span><span>… page address →</span></div>
+                        </div>
+                        <span class="mini-caption">No scan through millions of rows: two unsigned floor searches narrow the range.</span>
+                    </li>
+                    <li class="lookup-layer" data-layer="compact-page">
+                        <span class="lookup-step">03 · compact CSF page</span>
+                        <h4>Row coordinate</h4>
+                        <p>The 160-byte header finds <span class="mono">rowIds</span>. Unsigned search returns a packed page/local-row reference; optional row radix data may live only in unused slab bytes.</p>
+                        <div class="page-mini" aria-label="Current fixture page: header, packed vectors, and slack">
+                            <span class="mini-header">160 B<br>header</span><span class="mini-vectors">packed vectors</span><span class="mini-slack">slack</span>
+                        </div>
+                        <span class="mini-caption">current exact page: ${page.header.usedBytes} used / ${page.header.capacity} B capacity</span>
+                    </li>
+                    <li class="lookup-layer" data-layer="packed-vector">
+                        <span class="lookup-step">04 · block and lane</span>
+                        <h4>Packed-vector directory</h4>
+                        <p>An 8-byte vector header and terminal offset directory choose a block. Its 12-byte header supplies mode, type, width, count, and base: <strong>256 lanes max / block</strong>.</p>
+                        <div class="vector-mini" aria-hidden="true">
+                            <div class="vector-directory"><span></span><span></span><span></span><span></span><span></span></div>
+                            <div class="vector-blocks">
+                                <div class="vector-block-mini"><div class="lane-dots">${laneDots}</div></div>
+                                <div class="vector-block-mini"><div class="lane-dots">${laneDots}</div></div>
+                                <div class="vector-block-mini"><div class="lane-dots">${laneDots}</div></div>
+                            </div>
+                        </div>
+                        <span class="mini-caption">selected now: ${primary.section.name} · block ${primary.block.blockIndex} · lane ${primary.lane.globalLane}</span>
+                    </li>
+                </ol>
+                <aside class="snapshot-layer" data-layer="snapshot-overlay">
+                    <div class="snapshot-head">
+                        <div>
+                            <span class="route-label">The lookup’s safety rail</span>
+                            <h4>One snapshot-stable published state</h4>
+                            <p>A read-view lease pins one immutable publication while base pages and applicable revision-ordered delta generations are merged. Memory cannot disappear under an open iterator.</p>
+                        </div>
+                        <span class="snapshot-route">base CSF + ordered deltas<br>→ one snapshot answer</span>
+                    </div>
+                    <ul class="helper-grid" aria-label="Supporting lookup structures">
+                        <li><strong>Context catalog</strong>Proves an unknown bound graph cannot match. Paged CSF lanes themselves retain the raw context IDs that actually occur.</li>
+                        <li><strong>CSF key domain</strong>Enumerates sorted row IDs directly from compressed pages and carries direct run references, without a duplicate u64 key table.</li>
+                        <li><strong>Hot partition lookup</strong>After measured cross-query reuse, affine, bitmap, exact-hash, or decoded-neighbor helpers may bypass directory work.</li>
+                        <li><strong>Free-slab accelerators</strong>Page-local row radix and cumulative-prefix helpers use otherwise-unused slab bytes; canonical packed vectors remain authoritative.</li>
+                    </ul>
+                </aside>
+                <figcaption class="diagram-takeaway">
+                    <strong>Why 2,000 graphs do not multiply the index:</strong> graphs are sorted context lanes inside each row/neighbor fibre, not 2,000 extra partition dimensions and not a dense row × graph matrix. Only graph memberships that exist consume lanes.
+                </figcaption>
+            </figure>`;
+        }
+
+        function renderPhysicalStep(model) {
+            const { trace, page } = model;
+            const defaultLane = core.defaultPhysicalLane(page, trace);
+            const { section: selectedSection, primary } = selectedVector(page, trace, defaultLane.sectionName);
+            const slack = page.header.capacity - page.header.usedBytes;
+            return frame(
+                "route at scale, then decode one page",
+                "Millions of quads still end at one packed lane.",
+                `First follow the lookup structures that narrow a large store. Then inspect the selected fixture’s exact CompactCsfPageEncoder v${page.header.version} bytes, little-endian header, and independently packed vectors.`,
+                `${renderScaleDiagram(model, primary)}
+                <div class="page-summary">
+                    <div class="metric"><span>partition</span><strong>${trace.key}</strong></div>
+                    <div class="metric"><span>format</span><strong>v${page.header.version}</strong></div>
+                    <div class="metric"><span>used</span><strong>${page.header.usedBytes} B</strong></div>
+                    <div class="metric"><span>capacity class</span><strong>${page.header.capacity} B</strong></div>
+                    <div class="metric"><span>slack</span><strong>${slack} B</strong></div>
+                </div>
+                ${pageMap(page, state.selectedSection)}
+                <div class="physical-grid">
+                    <div class="physical-column">
+                        ${renderHeader(page)}
+                        ${renderSections(page, state.selectedSection)}
+                    </div>
+                    <div class="physical-column">
+                        ${renderVector(page, selectedSection, primary)}
+                        <div class="callout info">
+                            <strong>Selected statement lane:</strong> ${primary.section.name}[${primary.lane.globalLane}] in block ${primary.block.blockIndex}.
+                            ${primary.lane.bitRange ? `Its payload touches page byte${primary.lane.bitRange.firstByte === primary.lane.bitRange.lastByte ? "" : "s"} ${primary.lane.bitRange.firstByte}${primary.lane.bitRange.firstByte === primary.lane.bitRange.lastByte ? "" : `..${primary.lane.bitRange.lastByte}`}.` : "It has width 0, so its value is fully represented by the block base and mode/type header."}
+                        </div>
+                    </div>
+                </div>
+                ${hexGrid(page, state.selectedSection, primary)}
+                <div class="callout">
+                    <strong>Important boundary:</strong> bytes 0..${page.header.usedBytes - 1} are the encoded image. The allocator reserves a ${page.header.capacity}-byte slab slot, but bytes ${page.header.usedBytes}..${page.header.capacity - 1} are not part of the image and are rendered as <span class="mono">--</span>. Their values are undefined, not guaranteed zeroes.
+                </div>
+                <div class="callout success">
+                    <strong>What the current format exploits:</strong> the partition removes predicate and plane repetition; flags remove derivable columns; first/tail factorization removes repeated prefixes; homogeneous blocks may strip a shared type tag. Mixed legal subject or context kinds remain generic raw IDs.
+                </div>`
+            );
+        }
+
+        const DELTA_STAGES = Object.freeze([
+            Object.freeze({ short: "capture", title: "Primitive commit events", note: "authoritative write path" }),
+            Object.freeze({ short: "reconcile", title: "One complete row version", note: "last operation wins" }),
+            Object.freeze({ short: "encode", title: "Directory + packed run", note: "immutable generation" }),
+            Object.freeze({ short: "read", title: "Newest visible version", note: "stop after one row" }),
+            Object.freeze({ short: "fold", title: "Copy-on-write consolidation", note: "share untouched pages" })
+        ]);
+
+        function renderPair(pair, prefix = "") {
+            return `<div class="pair-line"><span>${prefix}${escapeHtml(pair.neighbor.label)}</span><strong>${escapeHtml(pair.context.label)}</strong></div>`;
+        }
+
+        function renderDeltaStageBody(stage) {
+            if (stage === 0) {
+                return `<div class="table-wrap"><table>
+                    <thead><tr><th>event ordinal</th><th>operation</th><th>authoritative quad mutation</th><th>flags byte</th></tr></thead>
+                    <tbody>
+                        <tr><td class="mono">0</td><td><span class="illegal">remove</span></td><td class="mono">:alice :knows :bob :friends</td><td class="mono">0b01 · explicit</td></tr>
+                        <tr><td class="mono">1</td><td><span class="legal">add</span></td><td class="mono">:alice :knows :carol :work</td><td class="mono">0b11 · explicit + add</td></tr>
+                    </tbody>
+                </table></div>
+                <div class="callout info"><strong>Capture is columnar and temporary.</strong> Subject, predicate, object, context, and flags live in primitive arrays. Each event contributes an outgoing and incoming touched-row key, then those keys are unsigned-sorted and deduplicated. If the derived-state reservation is refused, the LMDB statement commit still succeeds and adjacency falls back/rebuilds rather than risking authoritative data.</div>`;
+            }
+            if (stage === 1) {
+                return `<div class="delta-columns" data-testid="delta-row-merge">
+                    <div class="delta-column"><h4>Previous complete row</h4>${DELTA_DEMO.oldPairs.map((pair) => renderPair(pair)).join("")}</div>
+                    <div class="delta-column"><h4>Sorted row operations</h4>${DELTA_DEMO.operations.map((operation) => renderPair(operation, `<span class="${operation.add ? "add" : "remove"}">${operation.add ? "+ " : "− "}</span>`)).join("")}</div>
+                    <div class="delta-column accent"><h4>New complete row</h4>${DELTA_DEMO.mergedPairs.map((pair) => renderPair(pair)).join("")}</div>
+                </div>
+                <div class="callout"><strong>The generation does not store an operation log.</strong> For each touched row, the applier streams the previous sorted pair set and this commit’s sorted mutations together. Equal pairs use the greatest event ordinal, absent removes vanish, repeated adds collapse, and a net-neutral row emits nothing. An emptied row emits a tombstone.</div>
+                <div class="formula">row key = unsigned(rawKey, plane, rawPredicateId)<br>
+                    pair order = unsigned(rawNeighborId, rawContextId)<br>
+                    <span class="accent">published version</span> = complete replacement run | tombstone | nothing when unchanged</div>`;
+            }
+            if (stage === 2) {
+                const run = DELTA_DEMO.run;
+                const bytes = [...run.bytes].map((byte, index) => {
+                    const group = index < 8 ? "header" : index < 8 + run.neighborByteLength ? "neighbor" : "context";
+                    return `<span class="run-byte ${group}" title="run byte ${index}">${byte.toString(16).padStart(2, "0")}</span>`;
+                }).join("");
+                return `<div class="generation-directory" data-testid="delta-generation-directory">
+                    <div class="directory-cell"><b>rowKeys[] · u64</b>${formatNumber(core.TERMS.alice.rawId)}</div>
+                    <div class="directory-cell"><b>rowPlanes[] · u8</b>0 · outgoing explicit</div>
+                    <div class="directory-cell"><b>rowPredicates[] · u64</b>${formatNumber(core.TERMS.knows.rawId)}</div>
+                    <div class="directory-cell"><b>runRefs[] · local u40</b>arena ref · 0 means tombstone</div>
+                </div>
+                <p class="card-note">The four parallel arrays are strictly unsigned (rawKey, plane, rawPredicateId) sorted. A generation lookup uses raw predicate IDs directly, so no predicate-catalog translation is needed.</p>
+                <div class="run-byte-ribbon" aria-label="Exact SMALL_VARINT run bytes">${bytes}</div>
+                <div class="run-byte-legend"><span>gray · 8-byte header</span><span>teal · neighbor absolute + deltas</span><span>orange · context catalog ordinals</span></div>
+                <div class="field-grid" style="margin-top:12px">
+                    <div class="field"><span class="field-name">tag · u8 @0</span><span class="field-value">0x${run.tag.toString(16).padStart(2, "0")}</span><span class="field-offset">codec 0 · contexts present · general ID domain</span></div>
+                    <div class="field"><span class="field-name">edge count · u8 @1</span><span class="field-value">${run.count}</span><span class="field-offset">complete post-commit row</span></div>
+                    <div class="field"><span class="field-name">neighbor bytes · u16 @2</span><span class="field-value">${run.neighborByteLength}</span><span class="field-offset">386, +256, +0 → f1 92 · f1 10 · 00</span></div>
+                    <div class="field"><span class="field-name">context bytes · u16 @4</span><span class="field-value">${run.contextByteLength}</span><span class="field-offset">snapshot catalog ordinals 2 · 1 · 2</span></div>
+                    <div class="field" style="grid-column:1/-1"><span class="field-name">reserved · u16 @6 / payload @8</span><span class="field-value">${run.usedBytes} used B · ${run.alignedBytes} aligned B</span><span class="field-offset">one contiguous 8-byte-aligned arena allocation</span></div>
+                </div>
+                <div class="codec-strip" aria-label="Delta run codec choices">
+                    <div class="codec-item"><strong>SMALL_VARINT · 1..15 incidences</strong><span>8-byte header; first neighbor absolute, later neighbor deltas; optional context ordinals; whole run aligns to 8 bytes.</span></div>
+                    <div class="codec-item"><strong>BLOCK_FOR · ordinary rows</strong><span>24-byte run header + terminal u32 block offsets. Each 128-lane block stores lane count, neighbor/context widths, bases, then bit-packed residuals.</span></div>
+                    <div class="codec-item"><strong>CHUNK_DIRECTORY · supernodes</strong><span>Above 1,048,575 incidences, ordered ~65,536-edge child runs are fenced by 40-byte entries containing first pair, edge range, arena slot, and u40 ref.</span></div>
+                </div>`;
+            }
+            if (stage === 3) {
+                return `<div class="snapshot-probe" data-testid="delta-read-path">
+                    <div class="probe-stop"><strong>pending proof</strong><span>touched at snapshot → authoritative fallback</span></div>
+                    <div class="probe-stop"><strong>generation r44</strong><span>newer than snapshot r43 · skip</span></div>
+                    <div class="probe-stop active"><strong>generation r43</strong><span>directory hit · complete run wins</span></div>
+                    <div class="probe-stop"><strong>generation r42</strong><span>not probed after hit</span></div>
+                    <div class="probe-stop"><strong>paged CSF base</strong><span>used only when no visible generation has the row</span></div>
+                </div>
+                <div class="callout info"><strong>Newest visible version wins.</strong> A read-view lease pins one immutable publication and walks applicable generations newest-first. A run is the whole row, so the query stops immediately; a tombstone is also terminal and means empty. Only NO_VERSION continues toward an older generation or the base.</div>
+                <div class="callout success"><strong>That is the read-time payoff:</strong> commits pay once to reconcile operations. Queries perform directory search plus one normal run decode—not a per-query merge of every add/remove event since the base.</div>`;
+            }
+            return `<div class="rewrite-flow" data-testid="delta-consolidation">
+                <div class="rewrite-node"><strong>immutable paged-CSF base</strong><span>share untouched pages and shards by retained reference</span></div>
+                <div class="rewrite-arrow">+</div>
+                <div class="rewrite-node"><strong>revision-ordered generations</strong><span>newest complete version for every affected row</span></div>
+                <div class="rewrite-arrow">→</div>
+                <div class="rewrite-node result"><strong>new published base</strong><span>only affected page windows are merged and re-encoded</span></div>
+            </div>
+            <div class="callout"><strong>A full page is not mutated in place.</strong> The rewrite emits replacement pages from complete-row prefixes. If one logical row is too large, continuation pages split first across neighbor fibres and then at context-coordinate boundaries. Shards are resliced when page growth requires it; unaffected pages remain structurally shared.</div>
+            <div class="callout info"><strong>Publication is failure-atomic.</strong> The replacement is published only if the base/overlay identities and applied revision are still current. Memory refusal or an interleaving leaves the old exact base + overlays authoritative; bounded overlay-only coalescing is the fallback. Pinned older snapshots keep their retained pages until release.</div>`;
+        }
+
+        function renderDeltaStep() {
+            const selected = DELTA_STAGES[state.deltaStage];
+            const pipeline = DELTA_STAGES.map((stage, index) => `<button class="delta-stage-button" type="button"
+                data-action="delta-stage" data-delta-stage="${index}" aria-pressed="${index === state.deltaStage}">
+                <b>0${index + 1}</b><span>${stage.short}</span></button>`).join("");
+            return frame(
+                "commit without rewriting the base",
+                "Deltas publish complete changed rows, then disappear into copy-on-write pages.",
+                "The fast path is a short immutable overlay, not a mutable patch list. Walk one fixture-derived commit from primitive events through row reconciliation, exact bytes, snapshot lookup, and eventual paged-CSF consolidation.",
+                `<div class="delta-pipeline" aria-label="Delta lifecycle">${pipeline}</div>
+                <section class="delta-stage-detail" data-testid="delta-deep-dive">
+                    <div class="delta-stage-head"><div><span class="card-label">Delta lifecycle · ${state.deltaStage + 1} / ${DELTA_STAGES.length}</span>
+                        <h3>${selected.title}</h3><p>${selected.note}</p></div><span class="scale-note">revision-stable</span></div>
+                    <div class="delta-stage-body">${renderDeltaStageBody(state.deltaStage)}</div>
+                </section>
+                <div class="callout success"><strong>Why this division is efficient:</strong> mutable transaction work stays in short-lived primitive arrays; each published generation is compact, immutable, exactly sized, and independently searchable; the large CSF base stays untouched until enough generations justify a localized copy-on-write rewrite.</div>`
+            );
+        }
+
+        function renderReadStep(model) {
+            const { trace, page, quad } = model;
+            const read = core.readRow(page, trace.rowIndex);
+            const rowRole = state.direction === "outgoing" ? "subject" : "object";
+            const neighborRole = state.direction === "outgoing" ? "object" : "subject";
+
+            const provenance = read.steps.map((step, index) => `
+                <div class="read-step ${step.omitted ? "rebuilt" : ""}">
+                    <b>0${index + 1}</b>
+                    <div>
+                        <strong>${escapeHtml(step.label)}</strong>
+                        <span>${escapeHtml(step.detail)}</span>
+                    </div>
+                    <span class="read-origin">${step.omitted ? "rebuilt from a flag" : "read from a column"}</span>
+                </div>`).join("");
+
+            const rows = read.fibers.flatMap((fiber) => fiber.contexts.map((context, index) => {
+                const selected = fiber.neighborId === trace.neighborId && context.id === trace.contextId;
+                return `<tr class="${selected ? "current-row" : ""}">
+                    <td class="mono">${escapeHtml(displayId(read.rowId))}</td>
+                    <td class="mono">${escapeHtml(displayId(fiber.neighborId))}</td>
+                    <td class="mono">${escapeHtml(displayId(context.id))}</td>
+                    <td>${escapeHtml(index === 0 ? fiber.neighborSource : `${fiber.neighborSource} · same fibre`)}</td>
+                    <td>${escapeHtml(context.source)}</td>
+                </tr>`;
+            })).join("");
+
+            const rebuilt = read.steps.filter((step) => step.omitted).length;
+            const storedColumns = page.sections.filter((section) => section.vector).length;
+
+            return frame(
+                "bytes back to answers",
+                "Read the row out again, rebuilding what was never stored.",
+                `Everything so far went one way: quad to bytes. Now go back. Using only this page's packed vectors and its header flags — never the logical model from the earlier steps — recover every quad stored for row ${trace.rowIndex}.`,
+                `<div class="callout info">
+                    Traversing <span class="mono">${rawWithLabel(read.rowId)}</span> in partition
+                    <strong class="mono">${trace.key}</strong>. The row key is the RDF ${rowRole}; each neighbour is
+                    an RDF ${neighborRole}. This page materializes <strong>${storedColumns} of 8</strong> columns, so
+                    <strong>${rebuilt}</strong> of the reconstruction steps below read no column at all.
+                </div>
+                <div class="read-path" data-testid="read-path">${provenance}</div>
+                <div class="table-wrap" style="margin-top:16px">
+                    <table data-testid="read-quads">
+                        <thead><tr><th>row</th><th>neighbour</th><th>graph</th><th>neighbour came from</th><th>graph came from</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+                <div class="callout success" data-testid="read-summary">
+                    <strong>${read.quads.length} quad${read.quads.length === 1 ? "" : "s"} recovered</strong> across
+                    ${read.fibers.length} distinct neighbour${read.fibers.length === 1 ? "" : "s"}. The highlighted row
+                    is statement ${quad.index + 1}, the one selected on the left. Nothing here was looked up in a Java
+                    object graph: every value came from a packed lane or from a single header bit.
+                </div>
+                ${rebuilt > 0 ? `<div class="callout" data-testid="read-omission-note">
+                    <strong>This is why the omissions are safe.</strong> A column the encoder skipped is not lost
+                    information; it is information the page can prove. <span class="mono">CONTEXT_COUNT_ONE</span> means
+                    every fibre has exactly one graph, so a stored count would repeat the same number for every fibre.
+                    The reader spends a branch instead of the bytes.
+                </div>` : `<div class="callout" data-testid="read-omission-note">
+                    <strong>This page happens to store every column.</strong> Its rows have several neighbours and
+                    several graphs, so none of the page-wide invariants hold and nothing can be left out. Select the
+                    inferred statement 8 to land on a page that omits six of the eight columns and watch the same
+                    reconstruction run mostly on header flags instead.
+                </div>`}`
+            );
+        }
+
+        let renderedStep = null;
+
+        function renderLesson(model) {
+            const renderers = [renderRoleStep, renderIdStep, renderPlaneStep, renderTreeStep, renderCsrStep,
+                renderCompactStep, renderVectorStep, renderPhysicalStep, renderDeltaStep, renderReadStep];
+            const stepChanged = renderedStep !== state.step;
+            renderedStep = state.step;
+            lesson.innerHTML = renderers[state.step](model);
+            if (stepChanged) {
+                lesson.querySelector(".lesson-frame")?.classList.add("entering");
+            }
+        }
+
+        function render(announce = false) {
+            const model = current();
+            renderStatementList();
+            renderStepList();
+            updateControls(model.trace);
+            renderLesson(model);
+            if (announce) {
+                liveStatus.textContent = `Statement ${state.statementIndex + 1}, ${state.direction}, partition ${model.trace.key}, step ${state.step + 1}: ${steps[state.step].title}.`;
+            }
+        }
+
+        function setStep(step, focusTab = false) {
+            state.step = Math.max(0, Math.min(steps.length - 1, step));
+            if (state.step !== 6 && state.step !== 7) {
+                state.selectedSection = null;
+            }
+            render(true);
+            if (focusTab) {
+                document.getElementById(`step-tab-${state.step}`).focus();
+            }
+        }
+
+        function selectStatement(index, focus = false) {
+            state.statementIndex = Math.max(0, Math.min(core.STATEMENTS.length - 1, index));
+            if (state.statementIndex === 4) {
+                state.direction = "incoming";
+            }
+            state.selectedSection = null;
+            render(true);
+            if (focus) {
+                statementList.querySelector(`[data-statement="${state.statementIndex}"]`).focus();
+            }
+        }
+
+        statementList.addEventListener("click", (event) => {
+            const button = event.target.closest("[data-statement]");
+            if (button) {
+                selectStatement(Number(button.dataset.statement));
+            }
+        });
+
+        statementList.addEventListener("keydown", (event) => {
+            const button = event.target.closest("[data-statement]");
+            if (!button) {
+                return;
+            }
+            const index = Number(button.dataset.statement);
+            const next = event.key === "ArrowDown" ? index + 1
+                : event.key === "ArrowUp" ? index - 1
+                    : event.key === "Home" ? 0
+                        : event.key === "End" ? core.STATEMENTS.length - 1
+                            : null;
+            if (next !== null) {
+                event.preventDefault();
+                selectStatement((next + core.STATEMENTS.length) % core.STATEMENTS.length, true);
+            }
+        });
+
+        stepList.addEventListener("click", (event) => {
+            const button = event.target.closest("[data-step]");
+            if (button) {
+                setStep(Number(button.dataset.step));
+            }
+        });
+
+        stepList.addEventListener("keydown", (event) => {
+            if (event.key === "ArrowRight" || event.key === "ArrowLeft" || event.key === "Home" || event.key === "End") {
+                event.preventDefault();
+                const next = event.key === "ArrowRight" ? state.step + 1
+                    : event.key === "ArrowLeft" ? state.step - 1
+                        : event.key === "Home" ? 0 : steps.length - 1;
+                setStep((next + steps.length) % steps.length, true);
+            }
+        });
+
+        previousStep.addEventListener("click", () => setStep(state.step - 1));
+        nextStep.addEventListener("click", () => setStep(state.step + 1));
+
+        document.querySelector(".control-deck").addEventListener("click", (event) => {
+            const button = event.target.closest("[data-control]");
+            if (!button) {
+                return;
+            }
+            const { control, value } = button.dataset;
+            if (control === "direction") {
+                state.direction = value;
+                state.selectedSection = null;
+            } else if (control === "terms") {
+                state.termMode = value;
+            } else if (control === "numbers") {
+                state.numberMode = value;
+            } else if (control === "view") {
+                state.step = ({ logical: 4, vectors: 6, physical: 7, deltas: 8, read: 9 })[value];
+                state.selectedSection = null;
+            }
+            render(true);
+        });
+
+        lesson.addEventListener("click", (event) => {
+            const action = event.target.closest("[data-action]");
+            if (!action || action.disabled) {
+                return;
+            }
+            if (action.dataset.action === "previous") {
+                setStep(state.step - 1);
+            } else if (action.dataset.action === "next") {
+                setStep(state.step + 1);
+            } else if (action.dataset.action === "section") {
+                state.selectedSection = action.dataset.section;
+                render(false);
+            } else if (action.dataset.action === "vector-source") {
+                state.vectorSource = action.dataset.vectorSource;
+                state.selectedSection = null;
+                render(false);
+            } else if (action.dataset.action === "delta-stage") {
+                state.deltaStage = Math.max(0, Math.min(DELTA_STAGES.length - 1,
+                    Number(action.dataset.deltaStage)));
+                render(false);
+            }
+        });
+
+        /* Page-local, read-only-by-default testing controls for the standalone artifact. */
+        globalThis.Rdf4jAdjacencyTutorialTesting = Object.freeze({
+            getState: () => Object.freeze({ ...state }),
+            getCurrentModel: current,
+            selectStatement: (index) => selectStatement(index),
+            setStep: (index) => setStep(index),
+            setDeltaStage: (index) => {
+                state.deltaStage = Math.max(0, Math.min(DELTA_STAGES.length - 1, Number(index)));
+                render(true);
+            },
+            setDirection: (direction) => {
+                state.direction = direction;
+                state.selectedSection = null;
+                render(true);
+            },
+            pages
+        });
+
+        render(false);
+        document.documentElement.dataset.tutorialReady = "true";
+    })();
+    </script>
+</body>
+</html>

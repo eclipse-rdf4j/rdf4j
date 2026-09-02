@@ -1,0 +1,39 @@
+Maven packaging skipped by --no-build.
+Running benchmark with jar /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/jmh-benchmarks.jar
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms16G -Xmx16G -XX:+UseG1GC -Drdf4j.lmdb.wcoj.streamingFrontiers.enabled=true
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 2 iterations, 2 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.FoafCliqueQueryBenchmark.cycle3
+# Parameters: (cliquePercentage = 30, engineMode = native, maxCliqueSize = 8, minCliqueSize = 3, peopleCount = 5000, randomKnowsEdges = 150000, seed = 12345)
+# Run progress: 0.00% complete, ETA 00:00:10
+# Fork: 1 of 1
+# Warmup Iteration   1: 08:22:40,121 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.37
+77.577 ms/op
+# Warmup Iteration   2: 22.586 ms/op
+Iteration   1: 22.091 ms/op
+                 gc.alloc.rate.norm: 587895838.783 B/op
+Iteration   2: 21.900 ms/op
+                 gc.alloc.rate.norm: 587862811.304 B/op
+Iteration   3: 21.568 ms/op
+                 gc.alloc.rate.norm: 588184966.796 B/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.FoafCliqueQueryBenchmark.cycle3":
+  21.853 ±(99.9%) 4.834 ms/op [Average]
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.FoafCliqueQueryBenchmark.cycle3:gc.alloc.rate":
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.FoafCliqueQueryBenchmark.cycle3:gc.alloc.rate.norm":
+  587981205.628 ±(99.9%) 3233396.263 B/op [Average]
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.FoafCliqueQueryBenchmark.cycle3:gc.count":
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.FoafCliqueQueryBenchmark.cycle3:gc.time":
+# Run complete. Total time: 00:00:11
+Benchmark                                           (cliquePercentage)  (engineMode)  (maxCliqueSize)  (minCliqueSize)  (peopleCount)  (randomKnowsEdges)  (seed)  Mode  Cnt          Score         Error   Units
+FoafCliqueQueryBenchmark.cycle3                                     30        native                8                3           5000              150000   12345  avgt    3         21.853 ±       4.834   ms/op
+FoafCliqueQueryBenchmark.cycle3:gc.alloc.rate                       30        native                8                3           5000              150000   12345  avgt    3      25471.095 ±    2080.895  MB/sec
+FoafCliqueQueryBenchmark.cycle3:gc.alloc.rate.norm                  30        native                8                3           5000              150000   12345  avgt    3  587981205.628 ± 3233396.263    B/op
+FoafCliqueQueryBenchmark.cycle3:gc.count                            30        native                8                3           5000              150000   12345  avgt    3         18.000                counts
+FoafCliqueQueryBenchmark.cycle3:gc.time                             30        native                8                3           5000              150000   12345  avgt    3         32.000                    ms

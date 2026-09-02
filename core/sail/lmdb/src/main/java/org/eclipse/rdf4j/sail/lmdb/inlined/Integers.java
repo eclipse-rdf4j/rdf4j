@@ -180,4 +180,109 @@ public class Integers {
 		return valueFactory.createLiteral(Long.toString(decoded), XSD.NON_POSITIVE_INTEGER);
 	}
 
+	// ---------------------------------------------------------------------------------------------------------
+	// Value-ORDERED (biased/offset-binary) variants: the 56-bit value field holds value + 2^55, so the value
+	// fields of two ordered ids compare as plain longs exactly like the numbers they encode. Written only by
+	// stores whose store.properties records numeric-id-encoding=ordered-v1; decoded everywhere (ids are
+	// self-describing by type code).
+	// ---------------------------------------------------------------------------------------------------------
+
+	/** Encode a signed long (within the 56-bit inline range) as its biased, order-preserving form. */
+	static long encodeBiased(long value) {
+		return value + ValueIds.ORDERED_BIAS;
+	}
+
+	/** Decode a biased value field back to the signed long. */
+	static long decodeBiased(long encoded) {
+		return encoded - ValueIds.ORDERED_BIAS;
+	}
+
+	private static long packOrderedBigInteger(Literal literal, int idType) {
+		BigInteger value = literal.integerValue();
+		if (value.compareTo(MAX_BIG_INTEGER) > 0 || value.compareTo(MIN_BIG_INTEGER) < 0) {
+			return 0L;
+		}
+		return ValueIds.createId(idType, encodeBiased(value.longValue()));
+	}
+
+	static long packOrderedInteger(Literal literal) {
+		return packOrderedBigInteger(literal, ValueIds.T_ORD_INTEGER);
+	}
+
+	static long packOrderedLong(Literal literal) {
+		long value = literal.longValue();
+		if (value > MAX_INTEGER || value < MIN_INTEGER) {
+			return 0L;
+		}
+		return ValueIds.createId(ValueIds.T_ORD_LONG, encodeBiased(value));
+	}
+
+	static long packOrderedInt(Literal literal) {
+		return ValueIds.createId(ValueIds.T_ORD_INT, encodeBiased(literal.intValue()));
+	}
+
+	static long packOrderedShort(Literal literal) {
+		return ValueIds.createId(ValueIds.T_ORD_SHORT, encodeBiased(literal.shortValue()));
+	}
+
+	static long packOrderedByte(Literal literal) {
+		return ValueIds.createId(ValueIds.T_ORD_BYTE, encodeBiased(literal.byteValue()));
+	}
+
+	static long packOrderedPositiveInteger(Literal literal) {
+		return packOrderedBigInteger(literal, ValueIds.T_ORD_POSITIVE_INTEGER);
+	}
+
+	static long packOrderedNegativeInteger(Literal literal) {
+		return packOrderedBigInteger(literal, ValueIds.T_ORD_NEGATIVE_INTEGER);
+	}
+
+	static long packOrderedNonNegativeInteger(Literal literal) {
+		return packOrderedBigInteger(literal, ValueIds.T_ORD_NON_NEGATIVE_INTEGER);
+	}
+
+	static long packOrderedNonPositiveInteger(Literal literal) {
+		return packOrderedBigInteger(literal, ValueIds.T_ORD_NON_POSITIVE_INTEGER);
+	}
+
+	static Literal unpackOrderedInteger(long value, ValueFactory valueFactory) {
+		return valueFactory.createLiteral(BigInteger.valueOf(decodeBiased(ValueIds.getValue(value))));
+	}
+
+	static Literal unpackOrderedLong(long value, ValueFactory valueFactory) {
+		return valueFactory.createLiteral(decodeBiased(ValueIds.getValue(value)));
+	}
+
+	static Literal unpackOrderedInt(long value, ValueFactory valueFactory) {
+		return valueFactory.createLiteral((int) decodeBiased(ValueIds.getValue(value)));
+	}
+
+	static Literal unpackOrderedShort(long value, ValueFactory valueFactory) {
+		return valueFactory.createLiteral((short) decodeBiased(ValueIds.getValue(value)));
+	}
+
+	static Literal unpackOrderedByte(long value, ValueFactory valueFactory) {
+		return valueFactory.createLiteral((byte) decodeBiased(ValueIds.getValue(value)));
+	}
+
+	static Literal unpackOrderedPositiveInteger(long value, ValueFactory valueFactory) {
+		return valueFactory.createLiteral(Long.toString(decodeBiased(ValueIds.getValue(value))),
+				XSD.POSITIVE_INTEGER);
+	}
+
+	static Literal unpackOrderedNegativeInteger(long value, ValueFactory valueFactory) {
+		return valueFactory.createLiteral(Long.toString(decodeBiased(ValueIds.getValue(value))),
+				XSD.NEGATIVE_INTEGER);
+	}
+
+	static Literal unpackOrderedNonNegativeInteger(long value, ValueFactory valueFactory) {
+		return valueFactory.createLiteral(Long.toString(decodeBiased(ValueIds.getValue(value))),
+				XSD.NON_NEGATIVE_INTEGER);
+	}
+
+	static Literal unpackOrderedNonPositiveInteger(long value, ValueFactory valueFactory) {
+		return valueFactory.createLiteral(Long.toString(decodeBiased(ValueIds.getValue(value))),
+				XSD.NON_POSITIVE_INTEGER);
+	}
+
 }

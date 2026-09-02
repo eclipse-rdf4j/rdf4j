@@ -156,7 +156,8 @@ clean_stream() {
 
 extract_summary_table() {
 	awk '
-	/^Benchmark[[:space:]]+\(themeName\)[[:space:]]+\(z_queryIndex\)[[:space:]]+Mode[[:space:]]+Cnt[[:space:]]+Score/ {
+	/^Benchmark[[:space:]]+/ && /\(themeName\)/ && /\(z_queryIndex\)/ \
+		&& /[[:space:]]Mode[[:space:]]+Cnt[[:space:]]+Score/ {
 		in_table = 1
 	}
 	in_table {
@@ -170,22 +171,28 @@ extract_summary_table() {
 
 synthesize_summary_table() {
 	awk '
-	BEGIN {
-		header = sprintf("%-37s %-15s %15s %5s %4s %10s %7s %s",
-			"Benchmark", "(themeName)", "(z_queryIndex)", "Mode", "Cnt", "Score", "Error", "Units")
+	function parameter(line, name, contents, count, pairs, i, prefix) {
+		contents = line
+		sub(/^# Parameters: \(/, "", contents)
+		sub(/\)$/, "", contents)
+		count = split(contents, pairs, /, /)
+		prefix = name " = "
+		for (i = 1; i <= count; i++) {
+			if (index(pairs[i], prefix) == 1) {
+				return substr(pairs[i], length(prefix) + 1)
+			}
+		}
+		return ""
 	}
 	function trim(value) {
 		sub(/^[[:space:]]+/, "", value)
 		sub(/[[:space:]]+$/, "", value)
 		return value
 	}
-	/^# Parameters: \(themeName = [A-Z_]+, z_queryIndex = [0-9]+\)$/ {
-		line = $0
-		sub(/^# Parameters: \(themeName = /, "", line)
-		sub(/\)$/, "", line)
-		split(line, parts, /, z_queryIndex = /)
-		theme = trim(parts[1])
-		query = trim(parts[2])
+	/^# Parameters: \(/ {
+		janino = parameter($0, "janinoEnabled")
+		theme = parameter($0, "themeName")
+		query = parameter($0, "z_queryIndex")
 		next
 	}
 	/^Result "org\.eclipse\.rdf4j\.sail\.lmdb\.benchmark\.ThemeQueryBenchmark\.executeQuery":$/ {
@@ -195,17 +202,37 @@ synthesize_summary_table() {
 	expect_score && $0 ~ /^[[:space:]]*[0-9.]+[[:space:]]+ms\/op$/ {
 		line = trim($0)
 		split(line, parts, /[[:space:]]+/)
-		rows[++count] = sprintf("%-37s %15s %15s %5s %4s %10s %7s %s",
-			"ThemeQueryBenchmark.executeQuery", theme, query, "avgt", "", parts[1], "", "ms/op")
+		row_count++
+		row_janino[row_count] = janino
+		row_theme[row_count] = theme
+		row_query[row_count] = query
+		row_score[row_count] = parts[1]
+		if (janino != "") {
+			has_janino = 1
+		}
 		expect_score = 0
 	}
 	END {
-		if (count == 0) {
+		if (row_count == 0) {
 			exit
 		}
-		print header
-		for (i = 1; i <= count; i++) {
-			print rows[i]
+		if (has_janino) {
+			print sprintf("%-37s %16s %-15s %15s %5s %4s %10s %7s %s",
+				"Benchmark", "(janinoEnabled)", "(themeName)", "(z_queryIndex)", "Mode", "Cnt", "Score",
+				"Error", "Units")
+			for (i = 1; i <= row_count; i++) {
+				print sprintf("%-37s %16s %15s %15s %5s %4s %10s %7s %s",
+					"ThemeQueryBenchmark.executeQuery", row_janino[i], row_theme[i], row_query[i], "avgt", "",
+					row_score[i], "", "ms/op")
+			}
+		} else {
+			print sprintf("%-37s %-15s %15s %5s %4s %10s %7s %s",
+				"Benchmark", "(themeName)", "(z_queryIndex)", "Mode", "Cnt", "Score", "Error", "Units")
+			for (i = 1; i <= row_count; i++) {
+				print sprintf("%-37s %15s %15s %5s %4s %10s %7s %s",
+					"ThemeQueryBenchmark.executeQuery", row_theme[i], row_query[i], "avgt", "", row_score[i], "",
+					"ms/op")
+			}
 		}
 	}
 	' "$1"
@@ -216,7 +243,8 @@ remove_summary_table() {
 	BEGIN {
 		header_seen = 0
 	}
-	!header_seen && /^Benchmark[[:space:]]+\(themeName\)[[:space:]]+\(z_queryIndex\)[[:space:]]+Mode[[:space:]]+Cnt[[:space:]]+Score/ {
+	!header_seen && /^Benchmark[[:space:]]+/ && /\(themeName\)/ && /\(z_queryIndex\)/ \
+		&& /[[:space:]]Mode[[:space:]]+Cnt[[:space:]]+Score/ {
 		header_seen = 1
 		skipping = 1
 		next

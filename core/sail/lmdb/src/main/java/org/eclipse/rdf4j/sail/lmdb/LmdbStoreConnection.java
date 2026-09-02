@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
@@ -87,8 +88,26 @@ public class LmdbStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void commitInternal() throws SailException {
+		LmdbDirectAdjacencyStore adjacency = lmdbStore.getBackingStore().directAdjacencyStore();
 		try {
-			super.commitInternal();
+			if (adjacency != null) {
+				adjacency.beginLogicalCommitBatch();
+			}
+			try {
+				super.commitInternal();
+			} catch (RuntimeException | Error failure) {
+				if (adjacency != null) {
+					try {
+						adjacency.endLogicalCommitBatch();
+					} catch (RuntimeException | Error maintenanceFailure) {
+						failure.addSuppressed(maintenanceFailure);
+					}
+				}
+				throw failure;
+			}
+			if (adjacency != null) {
+				adjacency.endLogicalCommitBatch();
+			}
 		} finally {
 			if (txnLock != null && txnLock.isActive()) {
 				txnLock.release();
@@ -121,6 +140,12 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	}
 
 	@Override
+	protected void bulkStatementAdded(Statement statement, Resource... contexts) {
+		// Bulk additions only need one transaction event; the sink consumes the statement fields.
+		sailChangedEvent.setStatementsAdded(true);
+	}
+
+	@Override
 	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		boolean ret = super.addInferredStatement(subj, pred, obj, contexts);
 		// assume the triple is not yet present in the triple store
@@ -138,7 +163,11 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			@Override
 			public BindingSet next() throws QueryEvaluationException {
 				BindingSet bs = super.next();
-				bs.forEach(b -> initValue(b.getValue()));
+				if (bs instanceof NativeProjectedBindingSet) {
+					((NativeProjectedBindingSet) bs).materializeAndDetach();
+				} else {
+					bs.forEach(b -> initValue(b.getValue()));
+				}
 				return bs;
 			}
 		};

@@ -13,9 +13,18 @@
 package org.eclipse.rdf4j.sail.lmdb.config;
 
 import java.time.Duration;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelException;
@@ -40,7 +49,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	/**
 	 * The default value cache size.
 	 */
-	public static final int VALUE_CACHE_SIZE = 512;
+	public static final int VALUE_CACHE_SIZE = 256 * 1024;
 
 	/**
 	 * The default value id cache size.
@@ -53,7 +62,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	public static final int NAMESPACE_CACHE_SIZE = 64;
 
 	/**
-	 * The default size of aligned bulk write batches.
+	 * The default marker that enables adaptive aligned bulk write batches.
 	 */
 	public static final int BULK_OPERATION_SIZE = 256;
 
@@ -62,6 +71,31 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	public static final int OPTIMIZER_SAMPLING_MAX_ROWS = 4096;
 
 	public static final long BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = 10L;
+
+	public static final int STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE = 8192;
+
+	public static final long STATEMENT_PATTERN_CARDINALITY_CACHE_EXPIRY_MILLIS = Duration.ofHours(3).toMillis();
+
+	public static final double STATEMENT_PATTERN_CARDINALITY_CACHE_MUTATION_RATIO = 0.01d;
+
+	public static final int POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE = 128;
+
+	public static final long POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_THRESHOLD = 1_000_000L;
+
+	public static final int POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_CHECK_INTERVAL = 10;
+
+	public static final int POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_ACCESSES = 3;
+
+	public static final long POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_WINDOW_MILLIS = Duration.ofHours(3)
+			.toMillis();
+
+	public static final long POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_MILLIS = Duration.ofHours(1)
+			.toMillis();
+
+	public static final long POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_DECAY_HALF_LIFE_MILLIS = Duration.ofHours(3)
+			.toMillis();
+
+	public static final int POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_SAMPLE_MULTIPLIER = 4;
 
 	public static final long SKETCH_ESTIMATOR_THROTTLE_EVERY_N = 1024L * 1024L;
 
@@ -104,6 +138,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private boolean inlineLiterals = true;
 
+	private boolean orderedNumericIds = true;
+
 	private Boolean sketchEstimatorEnabled;
 
 	private int sketchEstimatorSubjectBucketCount = -1;
@@ -129,6 +165,46 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private boolean backgroundRawSamplingEnabled = true;
 
 	private long backgroundRawSamplingMaxMillisPerCycle = BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE;
+
+	/**
+	 * The smallest explicit (non-AUTO) direct adjacency memory limit.
+	 */
+	public static final long DIRECT_ADJACENCY_MIN_EXPLICIT_BYTES = 256L * 1024 * 1024;
+
+	// null means unset: behaves as PREFER but is not exported
+	private DirectAdjacencyMode directAdjacencyMode;
+
+	// null means unset: behaves as FULL but is not exported
+	private DirectAdjacencyCoverage directAdjacencyCoverage;
+
+	private Set<IRI> directAdjacencyPredicates = Set.of();
+
+	private long directAdjacencyMaxBytes = 0;
+
+	// null means unset: resolves to (mode != DISABLED) and is not exported
+	private Boolean directAdjacencyBuildOnStart;
+
+	private int statementPatternCardinalityCacheSize = STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE;
+
+	private long statementPatternCardinalityCacheExpiryMillis = STATEMENT_PATTERN_CARDINALITY_CACHE_EXPIRY_MILLIS;
+
+	private double statementPatternCardinalityCacheMutationRatio = STATEMENT_PATTERN_CARDINALITY_CACHE_MUTATION_RATIO;
+
+	private int popularStatementPatternCardinalityCacheSize = POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE;
+
+	private long popularStatementPatternCardinalityCacheActivationThreshold = POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_THRESHOLD;
+
+	private int popularStatementPatternCardinalityCacheActivationCheckInterval = POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_CHECK_INTERVAL;
+
+	private int popularStatementPatternCardinalityCachePromotionAccesses = POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_ACCESSES;
+
+	private long popularStatementPatternCardinalityCachePromotionWindowMillis = POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_WINDOW_MILLIS;
+
+	private long popularStatementPatternCardinalityCacheRefreshMillis = POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_MILLIS;
+
+	private long popularStatementPatternCardinalityCacheDecayHalfLifeMillis = POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_DECAY_HALF_LIFE_MILLIS;
+
+	private int popularStatementPatternCardinalityCacheRefreshSampleMultiplier = POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_SAMPLE_MULTIPLIER;
 
 	/*--------------*
 	 * Constructors *
@@ -231,6 +307,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return bulkOperationSize >= 0 ? bulkOperationSize : BULK_OPERATION_SIZE;
 	}
 
+	/**
+	 * Enables adaptive aligned bulk writes when positive, or disables them when zero. Positive values are retained for
+	 * configuration compatibility; operation capacities are selected dynamically from the JVM maximum heap.
+	 */
 	public LmdbStoreConfig setBulkOperationSize(int bulkOperationSize) {
 		this.bulkOperationSize = bulkOperationSize;
 		return this;
@@ -299,10 +379,31 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	/**
+	 * Whether NEWLY CREATED stores inline numeric literals with the value-ordered (biased) id encoding, making
+	 * same-family numeric id comparison a raw long compare. Applies at store creation only — existing stores keep
+	 * whatever encoding their {@code store.properties} records (absent = legacy ZigZag) and are never rewritten.
+	 */
+	public boolean getOrderedNumericIds() {
+		return orderedNumericIds;
+	}
+
+	public LmdbStoreConfig setOrderedNumericIds(boolean orderedNumericIds) {
+		this.orderedNumericIds = orderedNumericIds;
+		return this;
+	}
+
 	public Boolean getSketchEstimatorEnabled() {
 		return sketchEstimatorEnabled;
 	}
 
+	/**
+	 * Setting this to false also disables the lmdb optimizer pipeline. This is done on purpose and is not meant to just
+	 * be a side effect.
+	 *
+	 * @param sketchEstimatorEnabled
+	 * @return
+	 */
 	public LmdbStoreConfig setSketchEstimatorEnabled(Boolean sketchEstimatorEnabled) {
 		this.sketchEstimatorEnabled = sketchEstimatorEnabled;
 		return this;
@@ -417,6 +518,199 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public DirectAdjacencyMode getDirectAdjacencyMode() {
+		return directAdjacencyMode != null ? directAdjacencyMode : DirectAdjacencyMode.PREFER;
+	}
+
+	public LmdbStoreConfig setDirectAdjacencyMode(DirectAdjacencyMode directAdjacencyMode) {
+		this.directAdjacencyMode = Objects.requireNonNull(directAdjacencyMode, "directAdjacencyMode");
+		return this;
+	}
+
+	public DirectAdjacencyCoverage getDirectAdjacencyCoverage() {
+		return directAdjacencyCoverage != null ? directAdjacencyCoverage : DirectAdjacencyCoverage.FULL;
+	}
+
+	public LmdbStoreConfig setDirectAdjacencyCoverage(DirectAdjacencyCoverage directAdjacencyCoverage) {
+		this.directAdjacencyCoverage = Objects.requireNonNull(directAdjacencyCoverage, "directAdjacencyCoverage");
+		return this;
+	}
+
+	/**
+	 * @return an unmodifiable copy of the selected predicate IRIs; empty for {@link DirectAdjacencyCoverage#FULL}
+	 */
+	public Set<IRI> getDirectAdjacencyPredicates() {
+		return Set.copyOf(directAdjacencyPredicates);
+	}
+
+	public LmdbStoreConfig setDirectAdjacencyPredicates(Collection<? extends IRI> predicates) {
+		Objects.requireNonNull(predicates, "predicates");
+		Set<IRI> copy = new LinkedHashSet<>();
+		for (IRI predicate : predicates) {
+			copy.add(Objects.requireNonNull(predicate, "predicate"));
+		}
+		this.directAdjacencyPredicates = Set.copyOf(copy);
+		return this;
+	}
+
+	/**
+	 * @return the direct adjacency memory limit in bytes; zero means AUTO (50% of the container-aware memory limit)
+	 */
+	public long getDirectAdjacencyMaxBytes() {
+		return directAdjacencyMaxBytes;
+	}
+
+	/**
+	 * Sets the direct adjacency memory limit in bytes. Zero means AUTO and resolves once, at store construction, to 50%
+	 * of the container-aware memory limit. A positive value below 256 MiB or a negative value is rejected.
+	 */
+	public LmdbStoreConfig setDirectAdjacencyMaxBytes(long directAdjacencyMaxBytes) {
+		if (directAdjacencyMaxBytes < 0) {
+			throw new IllegalArgumentException(
+					"directAdjacencyMaxBytes must be zero (AUTO) or positive: " + directAdjacencyMaxBytes);
+		}
+		if (directAdjacencyMaxBytes > 0 && directAdjacencyMaxBytes < DIRECT_ADJACENCY_MIN_EXPLICIT_BYTES) {
+			throw new IllegalArgumentException("explicit directAdjacencyMaxBytes must be at least "
+					+ DIRECT_ADJACENCY_MIN_EXPLICIT_BYTES + " bytes (256 MiB): " + directAdjacencyMaxBytes);
+		}
+		this.directAdjacencyMaxBytes = directAdjacencyMaxBytes;
+		return this;
+	}
+
+	/**
+	 * @return the explicit value when set; otherwise defaults to {@code true} exactly when the resolved mode is not
+	 *         {@link DirectAdjacencyMode#DISABLED}
+	 */
+	public boolean getDirectAdjacencyBuildOnStart() {
+		return directAdjacencyBuildOnStart != null ? directAdjacencyBuildOnStart
+				: getDirectAdjacencyMode() != DirectAdjacencyMode.DISABLED;
+	}
+
+	public LmdbStoreConfig setDirectAdjacencyBuildOnStart(boolean directAdjacencyBuildOnStart) {
+		this.directAdjacencyBuildOnStart = directAdjacencyBuildOnStart;
+		return this;
+	}
+
+	@Override
+	public void validate() throws SailConfigException {
+		super.validate();
+		if (getDirectAdjacencyCoverage() == DirectAdjacencyCoverage.FULL && !directAdjacencyPredicates.isEmpty()) {
+			throw new SailConfigException(
+					"directAdjacencyCoverage FULL requires an empty directAdjacencyPredicate selection");
+		}
+		if (getDirectAdjacencyCoverage() == DirectAdjacencyCoverage.SELECTED && directAdjacencyPredicates.isEmpty()) {
+			throw new SailConfigException(
+					"directAdjacencyCoverage SELECTED requires at least one directAdjacencyPredicate");
+		}
+		if (Boolean.TRUE.equals(directAdjacencyBuildOnStart)
+				&& getDirectAdjacencyMode() == DirectAdjacencyMode.DISABLED) {
+			throw new SailConfigException("directAdjacencyBuildOnStart requires a non-DISABLED directAdjacencyMode");
+		}
+	}
+
+	public int getStatementPatternCardinalityCacheSize() {
+		return statementPatternCardinalityCacheSize;
+	}
+
+	public LmdbStoreConfig setStatementPatternCardinalityCacheSize(int size) {
+		this.statementPatternCardinalityCacheSize = Math.max(0, size);
+		return this;
+	}
+
+	public long getStatementPatternCardinalityCacheExpiryMillis() {
+		return statementPatternCardinalityCacheExpiryMillis;
+	}
+
+	public LmdbStoreConfig setStatementPatternCardinalityCacheExpiryMillis(long expiryMillis) {
+		this.statementPatternCardinalityCacheExpiryMillis = Math.max(0L, expiryMillis);
+		return this;
+	}
+
+	public double getStatementPatternCardinalityCacheMutationRatio() {
+		return statementPatternCardinalityCacheMutationRatio;
+	}
+
+	public LmdbStoreConfig setStatementPatternCardinalityCacheMutationRatio(double mutationRatio) {
+		if (!Double.isFinite(mutationRatio) || mutationRatio < 0.0d) {
+			throw new IllegalArgumentException(
+					"statement-pattern cache mutation ratio must be finite and non-negative");
+		}
+		this.statementPatternCardinalityCacheMutationRatio = mutationRatio;
+		return this;
+	}
+
+	public int getPopularStatementPatternCardinalityCacheSize() {
+		return popularStatementPatternCardinalityCacheSize;
+	}
+
+	public LmdbStoreConfig setPopularStatementPatternCardinalityCacheSize(int size) {
+		this.popularStatementPatternCardinalityCacheSize = Math.max(0, size);
+		return this;
+	}
+
+	public long getPopularStatementPatternCardinalityCacheActivationThreshold() {
+		return popularStatementPatternCardinalityCacheActivationThreshold;
+	}
+
+	public LmdbStoreConfig setPopularStatementPatternCardinalityCacheActivationThreshold(long threshold) {
+		this.popularStatementPatternCardinalityCacheActivationThreshold = Math.max(0L, threshold);
+		return this;
+	}
+
+	public int getPopularStatementPatternCardinalityCacheActivationCheckInterval() {
+		return popularStatementPatternCardinalityCacheActivationCheckInterval;
+	}
+
+	public LmdbStoreConfig setPopularStatementPatternCardinalityCacheActivationCheckInterval(int interval) {
+		this.popularStatementPatternCardinalityCacheActivationCheckInterval = Math.max(1, interval);
+		return this;
+	}
+
+	public int getPopularStatementPatternCardinalityCachePromotionAccesses() {
+		return popularStatementPatternCardinalityCachePromotionAccesses;
+	}
+
+	public LmdbStoreConfig setPopularStatementPatternCardinalityCachePromotionAccesses(int accesses) {
+		this.popularStatementPatternCardinalityCachePromotionAccesses = Math.clamp(accesses, 1, 3);
+		return this;
+	}
+
+	public long getPopularStatementPatternCardinalityCachePromotionWindowMillis() {
+		return popularStatementPatternCardinalityCachePromotionWindowMillis;
+	}
+
+	public LmdbStoreConfig setPopularStatementPatternCardinalityCachePromotionWindowMillis(long windowMillis) {
+		this.popularStatementPatternCardinalityCachePromotionWindowMillis = Math.max(0L, windowMillis);
+		return this;
+	}
+
+	public long getPopularStatementPatternCardinalityCacheRefreshMillis() {
+		return popularStatementPatternCardinalityCacheRefreshMillis;
+	}
+
+	public LmdbStoreConfig setPopularStatementPatternCardinalityCacheRefreshMillis(long refreshMillis) {
+		this.popularStatementPatternCardinalityCacheRefreshMillis = Math.max(0L, refreshMillis);
+		return this;
+	}
+
+	public long getPopularStatementPatternCardinalityCacheDecayHalfLifeMillis() {
+		return popularStatementPatternCardinalityCacheDecayHalfLifeMillis;
+	}
+
+	public LmdbStoreConfig setPopularStatementPatternCardinalityCacheDecayHalfLifeMillis(long halfLifeMillis) {
+		this.popularStatementPatternCardinalityCacheDecayHalfLifeMillis = Math.max(0L, halfLifeMillis);
+		return this;
+	}
+
+	public int getPopularStatementPatternCardinalityCacheRefreshSampleMultiplier() {
+		return popularStatementPatternCardinalityCacheRefreshSampleMultiplier;
+	}
+
+	public LmdbStoreConfig setPopularStatementPatternCardinalityCacheRefreshSampleMultiplier(int multiplier) {
+		this.popularStatementPatternCardinalityCacheRefreshSampleMultiplier = Math.clamp(multiplier, 1, 64);
+		return this;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -471,6 +765,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (!inlineLiterals) {
 			m.add(implNode, LmdbStoreSchema.INLINE_LITERALS, vf.createLiteral(false));
 		}
+		if (!orderedNumericIds) {
+			m.add(implNode, LmdbStoreSchema.ORDERED_NUMERIC_IDS, vf.createLiteral(false));
+		}
 		if (sketchEstimatorEnabled != null) {
 			m.add(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_ENABLED, vf.createLiteral(sketchEstimatorEnabled));
 		}
@@ -518,6 +815,71 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (backgroundRawSamplingMaxMillisPerCycle != BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE) {
 			m.add(implNode, LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE,
 					vf.createLiteral(backgroundRawSamplingMaxMillisPerCycle));
+		}
+		if (directAdjacencyMode != null) {
+			m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_MODE, vf.createLiteral(directAdjacencyMode.name()));
+		}
+		if (directAdjacencyCoverage != null) {
+			m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_COVERAGE,
+					vf.createLiteral(directAdjacencyCoverage.name()));
+		}
+		List<IRI> lexicalPredicates = directAdjacencyPredicates.stream()
+				.sorted(Comparator.comparing(IRI::stringValue))
+				.collect(Collectors.toList());
+		for (IRI predicate : lexicalPredicates) {
+			m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_PREDICATE, predicate);
+		}
+		if (directAdjacencyMaxBytes > 0) {
+			m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_MAX_BYTES, vf.createLiteral(directAdjacencyMaxBytes));
+		}
+		if (directAdjacencyBuildOnStart != null) {
+			m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_BUILD_ON_START,
+					vf.createLiteral(directAdjacencyBuildOnStart.booleanValue()));
+		}
+
+		if (statementPatternCardinalityCacheSize != STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE) {
+			m.add(implNode, LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE,
+					vf.createLiteral(statementPatternCardinalityCacheSize));
+		}
+		if (statementPatternCardinalityCacheExpiryMillis != STATEMENT_PATTERN_CARDINALITY_CACHE_EXPIRY_MILLIS) {
+			m.add(implNode, LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_EXPIRY_MILLIS,
+					vf.createLiteral(statementPatternCardinalityCacheExpiryMillis));
+		}
+		if (statementPatternCardinalityCacheMutationRatio != STATEMENT_PATTERN_CARDINALITY_CACHE_MUTATION_RATIO) {
+			m.add(implNode, LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_MUTATION_RATIO,
+					vf.createLiteral(statementPatternCardinalityCacheMutationRatio));
+		}
+		if (popularStatementPatternCardinalityCacheSize != POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE) {
+			m.add(implNode, LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE,
+					vf.createLiteral(popularStatementPatternCardinalityCacheSize));
+		}
+		if (popularStatementPatternCardinalityCacheActivationThreshold != POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_THRESHOLD) {
+			m.add(implNode, LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_THRESHOLD,
+					vf.createLiteral(popularStatementPatternCardinalityCacheActivationThreshold));
+		}
+		if (popularStatementPatternCardinalityCacheActivationCheckInterval != POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_CHECK_INTERVAL) {
+			m.add(implNode, LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_CHECK_INTERVAL,
+					vf.createLiteral(popularStatementPatternCardinalityCacheActivationCheckInterval));
+		}
+		if (popularStatementPatternCardinalityCachePromotionAccesses != POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_ACCESSES) {
+			m.add(implNode, LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_ACCESSES,
+					vf.createLiteral(popularStatementPatternCardinalityCachePromotionAccesses));
+		}
+		if (popularStatementPatternCardinalityCachePromotionWindowMillis != POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_WINDOW_MILLIS) {
+			m.add(implNode, LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_WINDOW_MILLIS,
+					vf.createLiteral(popularStatementPatternCardinalityCachePromotionWindowMillis));
+		}
+		if (popularStatementPatternCardinalityCacheRefreshMillis != POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_MILLIS) {
+			m.add(implNode, LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_MILLIS,
+					vf.createLiteral(popularStatementPatternCardinalityCacheRefreshMillis));
+		}
+		if (popularStatementPatternCardinalityCacheDecayHalfLifeMillis != POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_DECAY_HALF_LIFE_MILLIS) {
+			m.add(implNode, LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_DECAY_HALF_LIFE_MILLIS,
+					vf.createLiteral(popularStatementPatternCardinalityCacheDecayHalfLifeMillis));
+		}
+		if (popularStatementPatternCardinalityCacheRefreshSampleMultiplier != POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_SAMPLE_MULTIPLIER) {
+			m.add(implNode, LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_SAMPLE_MULTIPLIER,
+					vf.createLiteral(popularStatementPatternCardinalityCacheRefreshSampleMultiplier));
 		}
 		return implNode;
 	}
@@ -680,6 +1042,17 @@ public class LmdbStoreConfig extends BaseSailConfig {
 						}
 					});
 
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.ORDERED_NUMERIC_IDS, null))
+					.ifPresent(lit -> {
+						try {
+							setOrderedNumericIds(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Boolean value required for " + LmdbStoreSchema.ORDERED_NUMERIC_IDS
+											+ " property, found " + lit);
+						}
+					});
+
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.SKETCH_ESTIMATOR_ENABLED, null))
 					.ifPresent(lit -> {
 						try {
@@ -763,6 +1136,114 @@ public class LmdbStoreConfig extends BaseSailConfig {
 					m.getStatements(implNode, LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE, null))
 					.ifPresent(lit -> setBackgroundRawSamplingMaxMillisPerCycle(parseLong(lit,
 							LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE)));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_MODE, null))
+					.ifPresent(lit -> {
+						try {
+							setDirectAdjacencyMode(DirectAdjacencyMode.valueOf(lit.getLabel()));
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"One of DISABLED, SHADOW or PREFER required for "
+											+ LmdbStoreSchema.DIRECT_ADJACENCY_MODE + " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_COVERAGE, null))
+					.ifPresent(lit -> {
+						try {
+							setDirectAdjacencyCoverage(DirectAdjacencyCoverage.valueOf(lit.getLabel()));
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"One of FULL or SELECTED required for "
+											+ LmdbStoreSchema.DIRECT_ADJACENCY_COVERAGE + " property, found " + lit);
+						}
+					});
+
+			Set<IRI> parsedPredicates = new LinkedHashSet<>();
+			m.getStatements(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_PREDICATE, null).forEach(st -> {
+				Value object = st.getObject();
+				if (!(object instanceof IRI)) {
+					throw new SailConfigException("IRI value required for "
+							+ LmdbStoreSchema.DIRECT_ADJACENCY_PREDICATE + " property, found " + object);
+				}
+				parsedPredicates.add((IRI) object);
+			});
+			if (!parsedPredicates.isEmpty()) {
+				setDirectAdjacencyPredicates(parsedPredicates);
+			}
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_MAX_BYTES, null))
+					.ifPresent(lit -> {
+						long parsed;
+						try {
+							parsed = lit.longValue();
+						} catch (NumberFormatException e) {
+							throw new SailConfigException(
+									"Long value required for " + LmdbStoreSchema.DIRECT_ADJACENCY_MAX_BYTES
+											+ " property, found " + lit);
+						}
+						try {
+							setDirectAdjacencyMaxBytes(parsed);
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(e.getMessage(), e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_BUILD_ON_START, null))
+					.ifPresent(lit -> {
+						try {
+							setDirectAdjacencyBuildOnStart(lit.booleanValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Boolean value required for " + LmdbStoreSchema.DIRECT_ADJACENCY_BUILD_ON_START
+											+ " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE,
+					null))
+					.ifPresent(lit -> setStatementPatternCardinalityCacheSize(parseInt(lit,
+							LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_EXPIRY_MILLIS, null))
+					.ifPresent(lit -> setStatementPatternCardinalityCacheExpiryMillis(parseLong(lit,
+							LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_EXPIRY_MILLIS)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_MUTATION_RATIO, null))
+					.ifPresent(lit -> setStatementPatternCardinalityCacheMutationRatio(parseDouble(lit,
+							LmdbStoreSchema.STATEMENT_PATTERN_CARDINALITY_CACHE_MUTATION_RATIO)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE, null))
+					.ifPresent(lit -> setPopularStatementPatternCardinalityCacheSize(parseInt(lit,
+							LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_THRESHOLD, null))
+					.ifPresent(lit -> setPopularStatementPatternCardinalityCacheActivationThreshold(parseLong(lit,
+							LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_THRESHOLD)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_CHECK_INTERVAL, null))
+					.ifPresent(lit -> setPopularStatementPatternCardinalityCacheActivationCheckInterval(parseInt(lit,
+							LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_CHECK_INTERVAL)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_ACCESSES, null))
+					.ifPresent(lit -> setPopularStatementPatternCardinalityCachePromotionAccesses(parseInt(lit,
+							LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_ACCESSES)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_WINDOW_MILLIS, null))
+					.ifPresent(lit -> setPopularStatementPatternCardinalityCachePromotionWindowMillis(parseLong(lit,
+							LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_WINDOW_MILLIS)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_MILLIS, null))
+					.ifPresent(lit -> setPopularStatementPatternCardinalityCacheRefreshMillis(parseLong(lit,
+							LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_MILLIS)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_DECAY_HALF_LIFE_MILLIS, null))
+					.ifPresent(lit -> setPopularStatementPatternCardinalityCacheDecayHalfLifeMillis(parseLong(lit,
+							LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_DECAY_HALF_LIFE_MILLIS)));
+			Models.objectLiteral(m.getStatements(implNode,
+					LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_SAMPLE_MULTIPLIER, null))
+					.ifPresent(lit -> setPopularStatementPatternCardinalityCacheRefreshSampleMultiplier(parseInt(lit,
+							LmdbStoreSchema.POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_SAMPLE_MULTIPLIER)));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
@@ -781,6 +1262,14 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			return lit.longValue();
 		} catch (NumberFormatException e) {
 			throw new SailConfigException("Long value required for " + property + " property, found " + lit);
+		}
+	}
+
+	private static double parseDouble(org.eclipse.rdf4j.model.Literal lit, org.eclipse.rdf4j.model.IRI property) {
+		try {
+			return lit.doubleValue();
+		} catch (NumberFormatException e) {
+			throw new SailConfigException("Double value required for " + property + " property, found " + lit);
 		}
 	}
 }

@@ -13,19 +13,25 @@
 package org.eclipse.rdf4j.sail.lmdb.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig.VALUE_CACHE_SIZE;
 
 import java.lang.reflect.Method;
+import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -42,6 +48,8 @@ class LmdbStoreConfigTest {
 	private static final IRI TRIPLE_TERM_INDEXES = Values.iri(LmdbStoreSchema.NAMESPACE + "tripleTermIndexes");
 
 	private static final IRI INLINE_LITERALS = Values.iri(LmdbStoreSchema.NAMESPACE + "inlineLiterals");
+
+	private static final IRI ORDERED_NUMERIC_IDS = Values.iri(LmdbStoreSchema.NAMESPACE + "orderedNumericIds");
 
 	private static final IRI SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorSubjectBucketCount");
@@ -80,6 +88,246 @@ class LmdbStoreConfigTest {
 			.iri(LmdbStoreSchema.NAMESPACE + "backgroundRawSamplingMaxMillisPerCycle");
 
 	@Test
+	void parsesAndExportsDirectAdjacencySettingsFromRawRdfProperties() {
+		final IRI modeIri = Values.iri(LmdbStoreSchema.NAMESPACE + "directAdjacencyMode");
+		final IRI coverageIri = Values.iri(LmdbStoreSchema.NAMESPACE + "directAdjacencyCoverage");
+		final IRI maxBytesIri = Values.iri(LmdbStoreSchema.NAMESPACE + "directAdjacencyMaxBytes");
+		final Literal modeValue = Values.literal("PREFER");
+		final Literal coverageValue = Values.literal("FULL");
+		final Literal maxBytesValue = Values.literal(274877906944L);
+
+		final BNode implNode = bnode();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, modeIri, modeValue)
+				.add(implNode, coverageIri, coverageValue)
+				.add(implNode, maxBytesIri, maxBytesValue)
+				.build();
+
+		final LmdbStoreConfig config = new LmdbStoreConfig();
+		config.parse(configModel, implNode);
+
+		final Model exportedModel = new LinkedHashModel();
+		final Resource exportImplNode = config.export(exportedModel);
+
+		assertThat(exportedModel.contains(exportImplNode, modeIri, modeValue)).isTrue();
+		assertThat(exportedModel.contains(exportImplNode, coverageIri, coverageValue)).isTrue();
+		assertThat(exportedModel.contains(exportImplNode, maxBytesIri, maxBytesValue)).isTrue();
+	}
+
+	@Test
+	void directAdjacencyDefaultsPreferWithBuildOnStart() {
+		final LmdbStoreConfig config = new LmdbStoreConfig();
+
+		assertThat(config.getDirectAdjacencyMode()).isEqualTo(DirectAdjacencyMode.PREFER);
+		assertThat(config.getDirectAdjacencyCoverage()).isEqualTo(DirectAdjacencyCoverage.FULL);
+		assertThat(config.getDirectAdjacencyPredicates()).isEmpty();
+		assertThat(config.getDirectAdjacencyMaxBytes()).isZero();
+		assertThat(config.getDirectAdjacencyBuildOnStart()).isTrue();
+
+		final Model exportedModel = new LinkedHashModel();
+		final Resource exportImplNode = config.export(exportedModel);
+		assertThat(exportedModel.filter(exportImplNode, LmdbStoreSchema.DIRECT_ADJACENCY_MODE, null)).isEmpty();
+		assertThat(exportedModel.filter(exportImplNode, LmdbStoreSchema.DIRECT_ADJACENCY_COVERAGE, null)).isEmpty();
+		assertThat(exportedModel.filter(exportImplNode, LmdbStoreSchema.DIRECT_ADJACENCY_PREDICATE, null)).isEmpty();
+		assertThat(exportedModel.filter(exportImplNode, LmdbStoreSchema.DIRECT_ADJACENCY_MAX_BYTES, null)).isEmpty();
+		assertThat(exportedModel.filter(exportImplNode, LmdbStoreSchema.DIRECT_ADJACENCY_BUILD_ON_START, null))
+				.isEmpty();
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "DISABLED", "SHADOW", "PREFER" })
+	void parsesAndExportsDirectAdjacencyMode(final String mode) {
+		final BNode implNode = bnode();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_MODE, Values.literal(mode))
+				.build();
+
+		final LmdbStoreConfig config = new LmdbStoreConfig();
+		config.parse(configModel, implNode);
+		assertThat(config.getDirectAdjacencyMode()).isEqualTo(DirectAdjacencyMode.valueOf(mode));
+
+		final Model exportedModel = new LinkedHashModel();
+		final Resource exportImplNode = config.export(exportedModel);
+		assertThat(exportedModel.contains(exportImplNode, LmdbStoreSchema.DIRECT_ADJACENCY_MODE,
+				Values.literal(mode))).isTrue();
+	}
+
+	@Test
+	void parsesAndExportsDirectAdjacencySelectedCoverageWithDeduplicatedLexicalPredicates() {
+		final IRI predicateB = Values.iri("http://example.org/b");
+		final IRI predicateA = Values.iri("http://example.org/a");
+		final BNode implNode = bnode();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_COVERAGE, Values.literal("SELECTED"))
+				.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_PREDICATE, predicateB)
+				.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_PREDICATE, predicateA)
+				.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_PREDICATE, predicateB)
+				.build();
+
+		final LmdbStoreConfig config = new LmdbStoreConfig();
+		config.parse(configModel, implNode);
+		assertThat(config.getDirectAdjacencyCoverage()).isEqualTo(DirectAdjacencyCoverage.SELECTED);
+		assertThat(config.getDirectAdjacencyPredicates()).containsExactlyInAnyOrder(predicateA, predicateB);
+
+		final Model exportedModel = new LinkedHashModel();
+		final Resource exportImplNode = config.export(exportedModel);
+		assertThat(exportedModel.contains(exportImplNode, LmdbStoreSchema.DIRECT_ADJACENCY_COVERAGE,
+				Values.literal("SELECTED"))).isTrue();
+		final List<Value> exportedPredicates = exportedModel
+				.filter(exportImplNode, LmdbStoreSchema.DIRECT_ADJACENCY_PREDICATE, null)
+				.stream()
+				.map(org.eclipse.rdf4j.model.Statement::getObject)
+				.collect(java.util.stream.Collectors.toList());
+		assertThat(exportedPredicates).containsExactly(predicateA, predicateB);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void parsesAndExportsDirectAdjacencyBuildOnStart(final boolean buildOnStart) {
+		final BNode implNode = bnode();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_MODE, Values.literal("PREFER"))
+				.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_BUILD_ON_START, Values.literal(buildOnStart))
+				.build();
+
+		final LmdbStoreConfig config = new LmdbStoreConfig();
+		config.parse(configModel, implNode);
+		assertThat(config.getDirectAdjacencyBuildOnStart()).isEqualTo(buildOnStart);
+
+		final Model exportedModel = new LinkedHashModel();
+		final Resource exportImplNode = config.export(exportedModel);
+		assertThat(exportedModel.contains(exportImplNode, LmdbStoreSchema.DIRECT_ADJACENCY_BUILD_ON_START,
+				Values.literal(buildOnStart))).isTrue();
+	}
+
+	@Test
+	void directAdjacencyUnknownModeLabelFailsParsing() {
+		final BNode implNode = bnode();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_MODE, Values.literal("TURBO"))
+				.build();
+
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(configModel, implNode))
+				.isInstanceOf(SailConfigException.class);
+	}
+
+	@Test
+	void directAdjacencyUnknownCoverageLabelFailsParsing() {
+		final BNode implNode = bnode();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_COVERAGE, Values.literal("PARTIAL"))
+				.build();
+
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(configModel, implNode))
+				.isInstanceOf(SailConfigException.class);
+	}
+
+	@Test
+	void directAdjacencyNonIriPredicateFailsParsing() {
+		final BNode implNode = bnode();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_PREDICATE, Values.literal("not-an-iri"))
+				.build();
+
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(configModel, implNode))
+				.isInstanceOf(SailConfigException.class);
+	}
+
+	@ParameterizedTest
+	@ValueSource(longs = { -1L, 1L, 268_435_455L })
+	void directAdjacencyInvalidMaxBytesIsRejected(final long invalidMaxBytes) {
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> new LmdbStoreConfig().setDirectAdjacencyMaxBytes(invalidMaxBytes));
+	}
+
+	@ParameterizedTest
+	@ValueSource(longs = { 0L, 268_435_456L, 274_877_906_944L })
+	void directAdjacencyValidMaxBytesIsAccepted(final long validMaxBytes) {
+		assertThat(new LmdbStoreConfig().setDirectAdjacencyMaxBytes(validMaxBytes).getDirectAdjacencyMaxBytes())
+				.isEqualTo(validMaxBytes);
+	}
+
+	@Test
+	void directAdjacencyInvalidMaxBytesInRdfFailsParsing() {
+		final BNode implNode = bnode();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_MAX_BYTES, Values.literal(-5L))
+				.build();
+
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(configModel, implNode))
+				.isInstanceOf(SailConfigException.class);
+	}
+
+	@Test
+	void directAdjacencyFullCoverageWithSelectionFailsValidation() {
+		final LmdbStoreConfig config = new LmdbStoreConfig()
+				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.FULL)
+				.setDirectAdjacencyPredicates(Set.of(Values.iri("http://example.org/p")));
+
+		assertThatThrownBy(config::validate).isInstanceOf(SailConfigException.class);
+	}
+
+	@Test
+	void directAdjacencySelectedCoverageWithoutSelectionFailsValidation() {
+		final LmdbStoreConfig config = new LmdbStoreConfig()
+				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.SELECTED);
+
+		assertThatThrownBy(config::validate).isInstanceOf(SailConfigException.class);
+	}
+
+	@Test
+	void directAdjacencyBuildOnStartWithDisabledModeFailsValidation() {
+		final LmdbStoreConfig config = new LmdbStoreConfig()
+				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED)
+				.setDirectAdjacencyBuildOnStart(true);
+
+		assertThatThrownBy(config::validate).isInstanceOf(SailConfigException.class);
+	}
+
+	@Test
+	void directAdjacencyDisabledModeSuppressesUnsetBuildOnStart() {
+		final LmdbStoreConfig config = new LmdbStoreConfig()
+				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
+
+		assertThat(config.getDirectAdjacencyBuildOnStart()).isFalse();
+		config.validate();
+	}
+
+	@Test
+	void directAdjacencyValidConfigurationsPassValidation() {
+		new LmdbStoreConfig().validate();
+		new LmdbStoreConfig()
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.SELECTED)
+				.setDirectAdjacencyPredicates(Set.of(Values.iri("http://example.org/p")))
+				.setDirectAdjacencyMaxBytes(274_877_906_944L)
+				.setDirectAdjacencyBuildOnStart(true)
+				.validate();
+	}
+
+	@Test
+	void directAdjacencyPredicatesAreCopiedOnSetAndGet() {
+		final IRI predicate = Values.iri("http://example.org/p");
+		final java.util.List<IRI> mutable = new java.util.ArrayList<>(List.of(predicate));
+		final LmdbStoreConfig config = new LmdbStoreConfig().setDirectAdjacencyPredicates(mutable);
+		mutable.clear();
+
+		final Set<IRI> selected = config.getDirectAdjacencyPredicates();
+		assertThat(selected).containsExactly(predicate);
+		assertThatThrownBy(() -> selected.add(Values.iri("http://example.org/other")))
+				.isInstanceOf(UnsupportedOperationException.class);
+	}
+
+	@Test
+	void directAdjacencyPredicatesRejectNulls() {
+		final LmdbStoreConfig config = new LmdbStoreConfig();
+		assertThatThrownBy(() -> config.setDirectAdjacencyPredicates(null))
+				.isInstanceOf(NullPointerException.class);
+		assertThatThrownBy(() -> config.setDirectAdjacencyPredicates(java.util.Collections.singletonList(null)))
+				.isInstanceOf(NullPointerException.class);
+	}
+
+	@Test
 	void pageCardinalityEstimatorDefaultsToEnabled() {
 		assertThat(new LmdbStoreConfig().getPageCardinalityEstimator()).isTrue();
 	}
@@ -99,6 +347,88 @@ class LmdbStoreConfigTest {
 
 		assertThat(invokeBooleanGetter(config, "getBackgroundRawSamplingEnabled")).isTrue();
 		assertThat(invokeLongGetter(config, "getBackgroundRawSamplingMaxMillisPerCycle")).isEqualTo(10L);
+	}
+
+	@Test
+	void statementPatternCardinalityCacheDefaultsAreBounded() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+
+		assertThat(config.getStatementPatternCardinalityCacheSize()).isEqualTo(8192);
+		assertThat(config.getStatementPatternCardinalityCacheExpiryMillis()).isEqualTo(10_800_000L);
+		assertThat(config.getStatementPatternCardinalityCacheMutationRatio()).isEqualTo(0.01d);
+		assertThat(config.getPopularStatementPatternCardinalityCacheSize()).isEqualTo(128);
+		assertThat(config.getPopularStatementPatternCardinalityCacheActivationThreshold()).isEqualTo(1_000_000L);
+		assertThat(config.getPopularStatementPatternCardinalityCacheActivationCheckInterval()).isEqualTo(10);
+		assertThat(config.getPopularStatementPatternCardinalityCachePromotionAccesses()).isEqualTo(3);
+		assertThat(config.getPopularStatementPatternCardinalityCachePromotionWindowMillis()).isEqualTo(10_800_000L);
+		assertThat(config.getPopularStatementPatternCardinalityCacheRefreshMillis()).isEqualTo(3_600_000L);
+		assertThat(config.getPopularStatementPatternCardinalityCacheDecayHalfLifeMillis()).isEqualTo(10_800_000L);
+		assertThat(config.getPopularStatementPatternCardinalityCacheRefreshSampleMultiplier()).isEqualTo(4);
+	}
+
+	@Test
+	void statementPatternCardinalityCacheConfigurationRoundTripsThroughRdf() {
+		LmdbStoreConfig configured = new LmdbStoreConfig()
+				.setStatementPatternCardinalityCacheSize(17)
+				.setStatementPatternCardinalityCacheExpiryMillis(18L)
+				.setStatementPatternCardinalityCacheMutationRatio(0.25d)
+				.setPopularStatementPatternCardinalityCacheSize(19)
+				.setPopularStatementPatternCardinalityCacheActivationThreshold(20L)
+				.setPopularStatementPatternCardinalityCacheActivationCheckInterval(21)
+				.setPopularStatementPatternCardinalityCachePromotionAccesses(2)
+				.setPopularStatementPatternCardinalityCachePromotionWindowMillis(22L)
+				.setPopularStatementPatternCardinalityCacheRefreshMillis(23L)
+				.setPopularStatementPatternCardinalityCacheDecayHalfLifeMillis(24L)
+				.setPopularStatementPatternCardinalityCacheRefreshSampleMultiplier(5);
+		Model model = new LinkedHashModel();
+		Resource node = configured.export(model);
+		LmdbStoreConfig parsed = new LmdbStoreConfig();
+
+		parsed.parse(model, node);
+
+		assertThat(parsed.getStatementPatternCardinalityCacheSize()).isEqualTo(17);
+		assertThat(parsed.getStatementPatternCardinalityCacheExpiryMillis()).isEqualTo(18L);
+		assertThat(parsed.getStatementPatternCardinalityCacheMutationRatio()).isEqualTo(0.25d);
+		assertThat(parsed.getPopularStatementPatternCardinalityCacheSize()).isEqualTo(19);
+		assertThat(parsed.getPopularStatementPatternCardinalityCacheActivationThreshold()).isEqualTo(20L);
+		assertThat(parsed.getPopularStatementPatternCardinalityCacheActivationCheckInterval()).isEqualTo(21);
+		assertThat(parsed.getPopularStatementPatternCardinalityCachePromotionAccesses()).isEqualTo(2);
+		assertThat(parsed.getPopularStatementPatternCardinalityCachePromotionWindowMillis()).isEqualTo(22L);
+		assertThat(parsed.getPopularStatementPatternCardinalityCacheRefreshMillis()).isEqualTo(23L);
+		assertThat(parsed.getPopularStatementPatternCardinalityCacheDecayHalfLifeMillis()).isEqualTo(24L);
+		assertThat(parsed.getPopularStatementPatternCardinalityCacheRefreshSampleMultiplier()).isEqualTo(5);
+	}
+
+	@Test
+	void statementPatternCardinalityCacheConfigurationNormalizesUnsafeValues() {
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setStatementPatternCardinalityCacheSize(-1)
+				.setStatementPatternCardinalityCacheExpiryMillis(-1L)
+				.setPopularStatementPatternCardinalityCacheSize(-1)
+				.setPopularStatementPatternCardinalityCacheActivationThreshold(-1L)
+				.setPopularStatementPatternCardinalityCacheActivationCheckInterval(0)
+				.setPopularStatementPatternCardinalityCachePromotionAccesses(99)
+				.setPopularStatementPatternCardinalityCachePromotionWindowMillis(-1L)
+				.setPopularStatementPatternCardinalityCacheRefreshMillis(-1L)
+				.setPopularStatementPatternCardinalityCacheDecayHalfLifeMillis(-1L)
+				.setPopularStatementPatternCardinalityCacheRefreshSampleMultiplier(100);
+
+		assertThat(config.getStatementPatternCardinalityCacheSize()).isZero();
+		assertThat(config.getStatementPatternCardinalityCacheExpiryMillis()).isZero();
+		assertThat(config.getPopularStatementPatternCardinalityCacheSize()).isZero();
+		assertThat(config.getPopularStatementPatternCardinalityCacheActivationThreshold()).isZero();
+		assertThat(config.getPopularStatementPatternCardinalityCacheActivationCheckInterval()).isOne();
+		assertThat(config.getPopularStatementPatternCardinalityCachePromotionAccesses()).isEqualTo(3);
+		assertThat(config.getPopularStatementPatternCardinalityCachePromotionWindowMillis()).isZero();
+		assertThat(config.getPopularStatementPatternCardinalityCacheRefreshMillis()).isZero();
+		assertThat(config.getPopularStatementPatternCardinalityCacheDecayHalfLifeMillis()).isZero();
+		assertThat(config.getPopularStatementPatternCardinalityCacheRefreshSampleMultiplier()).isEqualTo(64);
+		assertThat(config.setPopularStatementPatternCardinalityCacheRefreshSampleMultiplier(0)
+				.getPopularStatementPatternCardinalityCacheRefreshSampleMultiplier()).isOne();
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> config.setStatementPatternCardinalityCacheMutationRatio(Double.NaN));
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> config.setStatementPatternCardinalityCacheMutationRatio(-0.1d));
 	}
 
 	@Test
@@ -127,6 +457,20 @@ class LmdbStoreConfigTest {
 	@Test
 	void inlineLiteralsDefaultsToEnabled() {
 		assertThat(new LmdbStoreConfig().getInlineLiterals()).isTrue();
+	}
+
+	@Test
+	void orderedNumericIdsFalseSurvivesConfigurationRoundTrip() {
+		LmdbStoreConfig original = new LmdbStoreConfig().setOrderedNumericIds(false);
+		Model exportedModel = new LinkedHashModel();
+		Resource implNode = original.export(exportedModel);
+
+		assertThat(exportedModel.contains(implNode, ORDERED_NUMERIC_IDS, Values.literal(false))).isTrue();
+
+		LmdbStoreConfig parsed = new LmdbStoreConfig();
+		parsed.parse(exportedModel, implNode);
+
+		assertThat(parsed.getOrderedNumericIds()).isFalse();
 	}
 
 	@ParameterizedTest
