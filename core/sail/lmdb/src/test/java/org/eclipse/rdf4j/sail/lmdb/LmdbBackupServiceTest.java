@@ -22,6 +22,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.OptionalLong;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -356,6 +357,126 @@ class LmdbBackupServiceTest {
 			mutator.get(10, TimeUnit.SECONDS);
 		} finally {
 			stop.set(true);
+			executor.shutdownNow();
+			repo.shutDown();
+		}
+	}
+
+	@Test
+	void fullBackupMetadataMustMatchSnapshot(@TempDir Path tempDir) throws Exception {
+		Path storeDir = tempDir.resolve("store");
+		Path backupDir = tempDir.resolve("backup");
+		Path restoreDir = tempDir.resolve("restore");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		LmdbStore store = new LmdbStore(storeDir.toFile(), config);
+		SailRepository repo = new SailRepository(store);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		CountDownLatch transactionIdCaptured = new CountDownLatch(1);
+		CountDownLatch allowSnapshot = new CountDownLatch(1);
+		Statement statementB = vf.createStatement(vf.createIRI("urn:b"), RDF.TYPE, vf.createIRI("urn:Thing"));
+
+		repo.init();
+		try {
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.add(vf.createStatement(vf.createIRI("urn:a"), RDF.TYPE, vf.createIRI("urn:Thing")));
+			}
+
+			LmdbBackupServiceImpl backupService = (LmdbBackupServiceImpl) store.getBackupService();
+			backupService.setAfterFullBackupTransactionIdCaptured(() -> {
+				transactionIdCaptured.countDown();
+				try {
+					if (!allowSnapshot.await(10, TimeUnit.SECONDS)) {
+						throw new AssertionError("Timed out waiting to start the snapshot");
+					}
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError(e);
+				}
+			});
+
+			Future<BackupResult> backup = executor.submit(
+					() -> backupService.createBackup(BackupRequest.builder(backupDir, BackupType.FULL).build()));
+			assertTrue(transactionIdCaptured.await(10, TimeUnit.SECONDS));
+
+			Future<?> mutation = executor.submit(() -> {
+				try (RepositoryConnection connection = repo.getConnection()) {
+					connection.add(statementB);
+				}
+			});
+			allowSnapshot.countDown();
+			BackupResult result = backup.get(10, TimeUnit.SECONDS);
+			mutation.get(10, TimeUnit.SECONDS);
+			Path restored = backupService.restore(new PointInTimeRestoreRequest(backupDir, restoreDir,
+					result.getEndTransactionId(), true));
+
+			SailRepository restoredRepo = new SailRepository(new LmdbStore(restored.toFile(), config));
+			restoredRepo.init();
+			try {
+				try (RepositoryConnection connection = restoredRepo.getConnection()) {
+					assertFalse(connection.hasStatement(statementB, false));
+				}
+			} finally {
+				restoredRepo.shutDown();
+			}
+		} finally {
+			allowSnapshot.countDown();
+			executor.shutdownNow();
+			repo.shutDown();
+		}
+	}
+
+	@Test
+	void queriesRemainAvailableWhileSnapshotLockIsHeld(@TempDir Path tempDir) throws Exception {
+		Path storeDir = tempDir.resolve("store");
+		Path backupDir = tempDir.resolve("backup");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		LmdbStore store = new LmdbStore(storeDir.toFile(), config);
+		SailRepository repo = new SailRepository(store);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		CountDownLatch snapshotLockHeld = new CountDownLatch(1);
+		CountDownLatch allowSnapshotCopy = new CountDownLatch(1);
+		Statement knownStatement = vf.createStatement(vf.createIRI("urn:known"), RDF.TYPE, vf.createIRI("urn:Thing"));
+
+		repo.init();
+		try {
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.add(knownStatement);
+				connection.add(vf.createStatement(vf.createIRI("urn:other"), RDF.TYPE, vf.createIRI("urn:Thing")));
+			}
+
+			LmdbBackupServiceImpl backupService = (LmdbBackupServiceImpl) store.getBackupService();
+			backupService.setAfterFullBackupTransactionIdCaptured(() -> {
+				snapshotLockHeld.countDown();
+				try {
+					if (!allowSnapshotCopy.await(10, TimeUnit.SECONDS)) {
+						throw new AssertionError("Timed out waiting to start the snapshot copy");
+					}
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError(e);
+				}
+			});
+
+			Future<BackupResult> backup = executor.submit(
+					() -> backupService.createBackup(BackupRequest.builder(backupDir, BackupType.FULL).build()));
+			assertTrue(snapshotLockHeld.await(10, TimeUnit.SECONDS));
+
+			Future<Boolean> queries = executor.submit(() -> {
+				try (RepositoryConnection connection = repo.getConnection()) {
+					if (connection.size() != 2 || !connection.hasStatement(knownStatement, false)) {
+						return false;
+					}
+					try (var statements = connection.getStatements(null, RDF.TYPE, vf.createIRI("urn:Thing"))) {
+						return statements.hasNext();
+					}
+				}
+			});
+			assertTrue(queries.get(10, TimeUnit.SECONDS));
+
+			allowSnapshotCopy.countDown();
+			assertTrue(backup.get(10, TimeUnit.SECONDS).isVerified());
+		} finally {
+			allowSnapshotCopy.countDown();
 			executor.shutdownNow();
 			repo.shutDown();
 		}

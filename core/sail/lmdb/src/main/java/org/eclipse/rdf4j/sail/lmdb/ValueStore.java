@@ -4609,6 +4609,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		// publication happens to be current after that wait, and retain admission across native replacement.
 		var lockManager = txnManager.lockManager();
 		boolean readLocked = readContext.get().hasReadLock;
+		long resizeRequiredSize = requiredSize;
 		if (readLocked) {
 			lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
 		}
@@ -7569,15 +7570,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					}
 					boolean releaseGrowthOwner = retainNativeMapGrowthOwner(transaction);
 					try {
-						if (activeWriteTxn) {
-							// LMDB requires the active writer transaction to be committed before changing the map size.
-							// Notify
-							// the owning SailStore before that checkpoint can publish dictionary state ahead of its
-							// TripleStore.
-							resizeCheckpointListener.run();
-							if (shuttingDown) {
-								throw new IOException("ValueStore is closed");
-							}
+						// LMDB requires the active writer transaction to be committed before changing the map size.
+						// Notify the owning SailStore before that checkpoint can publish dictionary state ahead of its
+						// TripleStore.
+						resizeCheckpointListener.run();
+						if (shuttingDown) {
+							throw new IOException("ValueStore is closed");
 						}
 
 						var lockManager = txnManager.lockManager();
@@ -7593,9 +7591,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						}
 
 						try {
-							if (activeWriteTxn) {
-								transaction.invoke(() -> endTransaction(true, true));
-							}
+							transaction.invoke(() -> endTransaction(true, true));
 							detachStableReadSnapshots(growthAttempt);
 							txnManager.deactivate();
 
@@ -7607,7 +7603,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 							if (growthAttempt != null) {
 								growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.VALUE_STORE);
 							}
-							E(mdb_env_set_mapsize(env, grownSize));
+							withMapResizeLock(() -> E(mdb_env_set_mapsize(env, grownSize)));
 							mapSize = grownSize;
 							if (grownSize > oldMapSize) {
 								bulkMapGrowthCount++;
@@ -14919,12 +14915,32 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	void copyEnvironment(Path targetDir, boolean compact) throws IOException {
 		Files.createDirectories(targetDir);
+		withEnvironmentCopyLock(() -> {
+			E(mdb_env_copy2(env, targetDir.toAbsolutePath().toString(), compact ? MDB_CP_COMPACT : 0));
+		});
+	}
+
+	void withEnvironmentCopyLock(IoRunnable operation) throws IOException {
 		txnLock.readLock().lock();
 		try {
-			E(mdb_env_copy2(env, targetDir.toAbsolutePath().toString(), compact ? MDB_CP_COMPACT : 0));
+			operation.run();
 		} finally {
 			txnLock.readLock().unlock();
 		}
+	}
+
+	void withMapResizeLock(IoRunnable operation) throws IOException {
+		txnLock.writeLock().lock();
+		try {
+			operation.run();
+		} finally {
+			txnLock.writeLock().unlock();
+		}
+	}
+
+	@FunctionalInterface
+	interface IoRunnable {
+		void run() throws IOException;
 	}
 
 	/**
