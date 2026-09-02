@@ -160,7 +160,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 			CloseableIteration<BindingSet> iteration = new NativeGroupIteration(evalSource, variant.wrap(arg), layout,
 					groupSlots, aggregates,
 					strictCompare, variant.filteredBase, null, null, false, false, null, null, 0L, null,
-					null, havingCondition, originalExpr);
+					null, havingCondition, originalExpr, forcedExecutionStrategyName());
 			return applyScopedHaving(withContextLifetime(iteration, evalSource), evalSource, havingDescriptor);
 		}
 		NativeLmdbQuerySource evalSource = evaluationSource();
@@ -169,8 +169,18 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 				aggregates, strictCompare, bindings,
 				prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns, prefixRunFilter,
 				prefixRootKindFilter, prefixMinRunCount, existsIntersection, adjacencyAggregate, havingCondition,
-				originalExpr);
+				originalExpr, forcedExecutionStrategyName());
 		return applyScopedHaving(withContextLifetime(iteration, evalSource), evalSource, havingDescriptor);
+	}
+
+	/**
+	 * The execution strategy pinned for this query, read from the evaluation strategy that compiled this step rather
+	 * than from {@code SlowQueryContextHolder}. Both are equivalent at this moment — {@code evaluate(...)} runs inside
+	 * {@code sailCon.evaluate(...)}, while the thread-local is still set — but only this one stays correct if a
+	 * sub-plan is ever evaluated later, or on another thread. {@code strategy} is null in some unit tests.
+	 */
+	private String forcedExecutionStrategyName() {
+		return strategy == null ? null : strategy.forcedExecutionStrategyName();
 	}
 
 	private static void initializeQueryBase(NativeLmdbQuerySource source, BindingSet bindings) {
@@ -325,6 +335,13 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	/** Compiled expression to stamp with the executed-strategy explain metric; may be null in tests. */
 	final TupleExpr explainTarget;
 	final NativeCancellationToken cancellation;
+	/**
+	 * The execution strategy pinned for this query, or {@code null} for ordinary adaptive selection. Captured when this
+	 * iteration is built — which happens inside {@code sailCon.evaluate(...)} — and never re-read afterwards:
+	 * arbitration runs lazily on the first {@code hasNext()}, by which time {@code SlowQueryContextHolder} has already
+	 * been restored and the thread-local that carried the request is gone.
+	 */
+	final String forcedExecutionStrategy;
 	Iterator<BindingSet> resultIterator;
 	BindingSet next;
 	volatile boolean closed;
@@ -334,7 +351,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
 			TupleExpr explainTarget) {
 		this(source, arg, layout, groupSlots, aggregates, strictCompare, base, prefixPattern, prefixRunPlan,
-				prefixCountRunRows, false, null, null, 0L, null, null, null, explainTarget);
+				prefixCountRunRows, false, null, null, 0L, null, null, null, explainTarget,
+				LmdbNativeEvaluationStrategy.forcedExecutionStrategyForCurrentThread());
 	}
 
 	NativeGroupIteration(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
@@ -346,7 +364,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				prefixCountRunRows, prefixDistinctRuns, prefixRunFilter, null, prefixMinRunCount, existsIntersection,
 				null,
 				null,
-				explainTarget);
+				explainTarget, LmdbNativeEvaluationStrategy.forcedExecutionStrategyForCurrentThread());
 	}
 
 	NativeGroupIteration(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
@@ -357,7 +375,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			ValueExpr havingCondition, TupleExpr explainTarget) {
 		this(source, arg, layout, groupSlots, aggregates, strictCompare, base, prefixPattern, prefixRunPlan,
 				prefixCountRunRows, prefixDistinctRuns, prefixRunFilter, null, prefixMinRunCount, existsIntersection,
-				adjacencyAggregate, havingCondition, explainTarget, new NativeCancellationToken());
+				adjacencyAggregate, havingCondition, explainTarget, new NativeCancellationToken(),
+				LmdbNativeEvaluationStrategy.forcedExecutionStrategyForCurrentThread());
 	}
 
 	NativeGroupIteration(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
@@ -366,10 +385,11 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter,
 			LmdbNativeTermKindFilter prefixRootKindFilter, long prefixMinRunCount,
 			LmdbNativeExistsIntersection existsIntersection, LmdbAdjacencyAggregatePlan adjacencyAggregate,
-			ValueExpr havingCondition, TupleExpr explainTarget) {
+			ValueExpr havingCondition, TupleExpr explainTarget, String forcedExecutionStrategy) {
 		this(source, arg, layout, groupSlots, aggregates, strictCompare, base, prefixPattern, prefixRunPlan,
 				prefixCountRunRows, prefixDistinctRuns, prefixRunFilter, prefixRootKindFilter, prefixMinRunCount,
-				existsIntersection, adjacencyAggregate, havingCondition, explainTarget, new NativeCancellationToken());
+				existsIntersection, adjacencyAggregate, havingCondition, explainTarget, new NativeCancellationToken(),
+				forcedExecutionStrategy);
 	}
 
 	private NativeGroupIteration(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
@@ -379,7 +399,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			LmdbNativeTermKindFilter prefixRootKindFilter, long prefixMinRunCount,
 			LmdbNativeExistsIntersection existsIntersection, LmdbAdjacencyAggregatePlan adjacencyAggregate,
 			ValueExpr havingCondition, TupleExpr explainTarget,
-			NativeCancellationToken cancellation) {
+			NativeCancellationToken cancellation, String forcedExecutionStrategy) {
 		this.source = source;
 		this.arg = arg;
 		this.layout = layout;
@@ -403,6 +423,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		this.havingCondition = havingCondition;
 		this.explainTarget = explainTarget;
 		this.cancellation = cancellation;
+		this.forcedExecutionStrategy = forcedExecutionStrategy;
 	}
 
 	@Override
@@ -621,7 +642,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns, prefixRunFilter,
 				prefixRootKindFilter, prefixMinRunCount, existsIntersection, adjacencyAggregate, havingCondition,
 				explainTarget,
-				cancellation);
+				cancellation, forcedExecutionStrategy);
 	}
 
 	private static void throwRealFailureSuppressedBy(EncounterOrderFallback fallback) {
@@ -665,7 +686,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter
 				.<List<BindingSet>>forExpr(explainTarget, source)
 				.probeHarness(LmdbNativeProbeHarness.blocking())
-				.hedgeSupport(hedgeSupport())) {
+				.hedgeSupport(hedgeSupport())
+				.forcing(forcedExecutionStrategy, "GROUP BY dispatch")) {
 			if (adjacencyAggregate != null && adjacencyAggregate.handles(row)) {
 				arbiter.offer(() -> estimatedProposal(() -> {
 					List<BindingSet> result = adjacencyAggregate.evaluate(this, row);

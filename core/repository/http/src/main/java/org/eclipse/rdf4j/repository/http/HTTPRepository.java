@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.http.client.SessionManagerDependent;
 import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
+import org.eclipse.rdf4j.http.protocol.LmdbForceableStrategy;
 import org.eclipse.rdf4j.http.protocol.LmdbRuntimeProperty;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
@@ -224,6 +225,18 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 			return client.getLmdbRuntimeProperties();
 		} catch (IOException e) {
 			throw new RepositoryException("Could not read LMDB runtime properties", e);
+		}
+	}
+
+	/** Lists the LMDB query-execution strategies this server allows a single query to pin. */
+	public List<LmdbForceableStrategy> getLmdbForceableStrategies() throws RepositoryException {
+		if (!isInitialized()) {
+			init();
+		}
+		try (RDF4JProtocolSession client = createHTTPClient()) {
+			return client.getLmdbForceableStrategies();
+		} catch (IOException e) {
+			throw new RepositoryException("Could not read LMDB forceable execution strategies", e);
 		}
 	}
 

@@ -21,6 +21,8 @@ import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
+import org.eclipse.rdf4j.http.client.query.AbstractHTTPQuery;
+import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
@@ -33,6 +35,7 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailQuery;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -57,6 +60,8 @@ public final class QueryEvaluator {
 	private static final String EXPLAIN = "explain";
 
 	private static final String EXPLAIN_FORMAT = "explain-format";
+
+	private static final String LMDB_FORCED_STRATEGY = Protocol.LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME;
 
 	private static final String EXPLANATION = "explanation";
 
@@ -110,14 +115,20 @@ public final class QueryEvaluator {
 		private final int queryTimeoutSeconds;
 		private final Explanation.Level explainLevel;
 		private final ExplainFormat explainFormat;
+		private final String forcedLmdbExecutionStrategy;
 
 		private ExplainRequest(QueryLanguage queryLanguage, Boolean includeInferred, int queryTimeoutSeconds,
-				Explanation.Level explainLevel, ExplainFormat explainFormat) {
+				Explanation.Level explainLevel, ExplainFormat explainFormat, String forcedLmdbExecutionStrategy) {
 			this.queryLanguage = queryLanguage;
 			this.includeInferred = includeInferred;
 			this.queryTimeoutSeconds = queryTimeoutSeconds;
 			this.explainLevel = explainLevel;
 			this.explainFormat = explainFormat;
+			this.forcedLmdbExecutionStrategy = forcedLmdbExecutionStrategy;
+		}
+
+		public String getForcedLmdbExecutionStrategy() {
+			return forcedLmdbExecutionStrategy;
 		}
 
 		public QueryLanguage getQueryLanguage() {
@@ -242,7 +253,8 @@ public final class QueryEvaluator {
 				includeInferred,
 				req.getInt("query-timeout"),
 				getExplainLevel(req.getParameter(EXPLAIN)),
-				getExplainFormat(req.getParameter(EXPLAIN_FORMAT)));
+				getExplainFormat(req.getParameter(EXPLAIN_FORMAT)),
+				getForcedLmdbExecutionStrategy(req));
 	}
 
 	public ExplainQueryResult explain(final RepositoryConnection con, final String queryText,
@@ -265,18 +277,19 @@ public final class QueryEvaluator {
 		Boolean includeInferred = req.isParameterPresent("infer") ? Boolean.parseBoolean(req.getParameter("infer"))
 				: null;
 		return prepareQuery(con, queryText, QueryLanguage.valueOf(req.getParameter("queryLn")), includeInferred,
-				req.getInt("query-timeout"));
+				req.getInt("query-timeout"), getForcedLmdbExecutionStrategy(req));
 	}
 
 	private Query prepareQuery(final RepositoryConnection con, final String queryText, final ExplainRequest req)
 			throws RDF4JException {
 		return prepareQuery(con, queryText, req.getQueryLanguage(), req.getIncludeInferred(),
-				req.getQueryTimeoutSeconds());
+				req.getQueryTimeoutSeconds(), req.getForcedLmdbExecutionStrategy());
 	}
 
 	private Query prepareQuery(final RepositoryConnection con, final String queryText,
 			final QueryLanguage queryLanguage,
-			final Boolean includeInferred, final int queryTimeoutSeconds) throws RDF4JException {
+			final Boolean includeInferred, final int queryTimeoutSeconds, final String forcedLmdbExecutionStrategy)
+			throws RDF4JException {
 		Query query = QueryFactory.prepareQuery(con, queryLanguage, queryText);
 		if (includeInferred != null) {
 			query.setIncludeInferred(includeInferred);
@@ -284,7 +297,36 @@ public final class QueryEvaluator {
 		if (queryTimeoutSeconds > 0) {
 			query.setMaxExecutionTime(queryTimeoutSeconds);
 		}
+		applyForcedLmdbExecutionStrategy(query, forcedLmdbExecutionStrategy);
 		return query;
+	}
+
+	/**
+	 * Reads the strategy dropdown's value off a request, normalizing every spelling of "no strategy" — an absent
+	 * parameter, the empty entry the dropdown submits by default, and the legacy {@code NOT_ACTIVATED} sentinel — to
+	 * {@code null} ("let the store choose"), so that nothing downstream has to know about any of them.
+	 */
+	private static String getForcedLmdbExecutionStrategy(final WorkbenchRequest req) {
+		String strategy = req.getParameter(LMDB_FORCED_STRATEGY);
+		return Protocol.isLmdbForcedExecutionStrategyUnset(strategy) ? null : strategy;
+	}
+
+	/**
+	 * Pins a named LMDB execution strategy on a prepared query. Two shapes of query can reach here: a
+	 * {@link SailQuery}, when the workbench is embedded in the same JVM as the store, and an {@link AbstractHTTPQuery},
+	 * when it fronts a remote RDF4J server (which forwards the choice as a request parameter and re-applies it there).
+	 * Anything else — a plain SPARQL endpoint, say — has nowhere to put the request, so it is dropped, matching how
+	 * every other store already ignores strategy forcing.
+	 */
+	private static void applyForcedLmdbExecutionStrategy(final Query query, final String forcedLmdbExecutionStrategy) {
+		if (forcedLmdbExecutionStrategy == null) {
+			return;
+		}
+		if (query instanceof SailQuery sailQuery) {
+			sailQuery.setForcedLmdbExecutionStrategy(forcedLmdbExecutionStrategy);
+		} else if (query instanceof AbstractHTTPQuery httpQuery) {
+			httpQuery.setForcedLmdbExecutionStrategy(forcedLmdbExecutionStrategy);
+		}
 	}
 
 	private int getResultLimit(WorkbenchRequest req) throws BadRequestException {

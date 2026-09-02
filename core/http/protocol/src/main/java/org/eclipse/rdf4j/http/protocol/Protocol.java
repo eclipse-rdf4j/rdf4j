@@ -133,6 +133,34 @@ public abstract class Protocol {
 	public static final String INCLUDE_INFERRED_PARAM_NAME = "infer";
 
 	/**
+	 * Parameter name for pinning one named LMDB query-execution strategy for a single query. Honored only by an LMDB
+	 * backed repository; silently ignored by every other store. An absent parameter, a blank value, and the value
+	 * {@value org.eclipse.rdf4j.http.protocol.Protocol#LMDB_FORCED_EXECUTION_STRATEGY_NOT_ACTIVATED} all mean "do not
+	 * force anything" — see {@link #isLmdbForcedExecutionStrategyUnset(String)}.
+	 */
+	public static final String LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME = "lmdb-forced-strategy";
+
+	/**
+	 * Sentinel value of {@link #LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME} meaning "use the store's own (adaptive)
+	 * strategy selection", i.e. the behavior when the parameter is absent entirely.
+	 */
+	public static final String LMDB_FORCED_EXECUTION_STRATEGY_NOT_ACTIVATED = "NOT_ACTIVATED";
+
+	/**
+	 * Whether {@code value} of {@link #LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME} asks for no forcing at all, leaving
+	 * the store's own strategy selection alone. That is the meaning of {@code null} (no parameter sent), of a blank
+	 * value, and of {@link #LMDB_FORCED_EXECUTION_STRATEGY_NOT_ACTIVATED}.
+	 * <p>
+	 * The blank spelling is what a form sends for the empty entry of a strategy dropdown, so it has to be as ordinary
+	 * as an absent parameter rather than an unknown strategy name. This is stated once here because both ends of the
+	 * protocol have to agree on it, and neither can see the LMDB module where the same rule is applied to the store's
+	 * own API.
+	 */
+	public static boolean isLmdbForcedExecutionStrategyUnset(String value) {
+		return value == null || value.isBlank() || LMDB_FORCED_EXECUTION_STRATEGY_NOT_ACTIVATED.equals(value);
+	}
+
+	/**
 	 * Parameter name for the context parameter.
 	 */
 	public static final String CONTEXT_PARAM_NAME = "context";
@@ -331,6 +359,14 @@ public abstract class Protocol {
 	/** Returns the optional live LMDB property endpoint on an RDF4J Server. */
 	public static final String getLmdbRuntimePropertiesLocation(String serverLocation) {
 		return getServerDir(serverLocation) + "system/lmdb/properties";
+	}
+
+	/**
+	 * Returns the optional endpoint listing the LMDB query-execution strategies that may be pinned for a single query
+	 * via {@link #LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME}.
+	 */
+	public static final String getLmdbForceableStrategiesLocation(String serverLocation) {
+		return getServerDir(serverLocation) + "system/lmdb/strategies";
 	}
 
 	/**

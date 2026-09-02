@@ -148,14 +148,25 @@ final class LmdbNativeStrategyPreference {
 		if (direct != null) {
 			return direct;
 		}
-		int paren = tag.indexOf('(');
-		if (paren > 0) {
-			Integer base = RANKS.get(tag.substring(0, paren));
-			if (base != null) {
-				return base;
-			}
+		Integer base = RANKS.get(baseTag(tag));
+		if (base != null) {
+			return base;
 		}
 		return Integer.MAX_VALUE;
+	}
+
+	/**
+	 * Strips the parenthesized detail from a parameterized label (for example {@code factorizedRows(flatPrefix=1)}
+	 * becomes {@code factorizedRows}), which is the form the explain layer and the vocabulary of forceable strategy
+	 * names both use. Returns the tag unchanged when it carries no parenthesized detail, and {@code null} for a
+	 * {@code null} tag.
+	 */
+	static String baseTag(String tag) {
+		if (tag == null) {
+			return null;
+		}
+		int paren = tag.indexOf('(');
+		return paren > 0 ? tag.substring(0, paren) : tag;
 	}
 
 	/** True when {@code candidate} is strictly more specialized than {@code incumbent}. */

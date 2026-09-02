@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 public abstract class SailQuery extends AbstractParserQuery {
 
 	private final SailRepositoryConnection con;
+	private String forcedLmdbExecutionStrategy;
 
 	protected SailQuery(ParsedQuery parsedQuery, SailRepositoryConnection con) {
 		super(parsedQuery);
@@ -31,6 +32,24 @@ public abstract class SailQuery extends AbstractParserQuery {
 
 	protected SailRepositoryConnection getConnection() {
 		return con;
+	}
+
+	/**
+	 * Requests that the underlying store use one specific, named query-execution strategy for this query, instead of
+	 * its own default (possibly adaptive) selection. This is honored only by store implementations that support named
+	 * execution strategies (currently the LMDB store); other stores ignore it. Pass {@code null}, or a blank string —
+	 * what the empty entry of a strategy dropdown submits — to restore default selection.
+	 */
+	public void setForcedLmdbExecutionStrategy(String strategyOrNull) {
+		this.forcedLmdbExecutionStrategy = strategyOrNull;
+	}
+
+	/**
+	 * The execution strategy requested via {@link #setForcedLmdbExecutionStrategy(String)}, or {@code null} when none
+	 * was requested.
+	 */
+	public String getForcedLmdbExecutionStrategy() {
+		return forcedLmdbExecutionStrategy;
 	}
 
 	@Override

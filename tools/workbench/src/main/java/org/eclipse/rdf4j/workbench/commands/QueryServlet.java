@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeForceableStrategies;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.util.QueryEvaluator;
@@ -91,6 +92,10 @@ public class QueryServlet extends TransformationServlet {
 	private static final String ACTION_CANCEL_EXPLAIN = "cancel-explain";
 	private static final String ACTION_LMDB_PROPERTIES = "lmdb-properties";
 	private static final String ACTION_SET_LMDB_PROPERTY = "set-lmdb-property";
+	private static final String ACTION_LMDB_STRATEGIES = "lmdb-strategies";
+
+	/** Per-query request parameter pinning one named LMDB execution strategy; see {@code Protocol}. */
+	private static final String LMDB_FORCED_STRATEGY = "lmdb-forced-strategy";
 	private static final String ADMIN_ROLE = "rdf4j-admin";
 
 	private static final String EXPLAIN_REQUEST_ID = "explain-request-id";
@@ -147,11 +152,11 @@ public class QueryServlet extends TransformationServlet {
 
 	private String[] getCookieNames(boolean shouldWriteQueryCookie) {
 		if (shouldWriteQueryCookie) {
-			return new String[] { QUERY, REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, "total_result_count",
-					"show-datatypes" };
+			return new String[] { QUERY, REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, LMDB_FORCED_STRATEGY,
+					"total_result_count", "show-datatypes" };
 		}
-		return new String[] { REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, "total_result_count",
-				"show-datatypes" };
+		return new String[] { REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, LMDB_FORCED_STRATEGY,
+				"total_result_count", "show-datatypes" };
 	}
 
 	/**
@@ -211,6 +216,8 @@ public class QueryServlet extends TransformationServlet {
 			writeQueryTextResponse(req, resp);
 		} else if (ACTION_LMDB_PROPERTIES.equals(action)) {
 			writeLmdbRuntimeProperties(resp);
+		} else if (ACTION_LMDB_STRATEGIES.equals(action)) {
+			writeLmdbForceableStrategies(resp);
 		} else if (ACTION_SET_LMDB_PROPERTY.equals(action)) {
 			resp.setHeader("Allow", "POST");
 			writeRuntimePropertyJson(resp, HttpServletResponse.SC_METHOD_NOT_ALLOWED,
@@ -241,6 +248,27 @@ public class QueryServlet extends TransformationServlet {
 			writeRuntimePropertyJson(resp, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
 					new RuntimePropertiesResponse(false, null,
 							"Runtime toggles are unavailable on the selected server."));
+		}
+	}
+
+	/**
+	 * Serves the strategy dropdown's options. Mirrors {@link #writeLmdbRuntimeProperties(HttpServletResponse)}: read
+	 * the catalogue from the remote server when this workbench fronts one, and straight out of the in-process LMDB
+	 * module when the repository is embedded. The empty default entry is added by the page, not here, since it is the
+	 * absence of a strategy rather than one of them.
+	 */
+	private void writeLmdbForceableStrategies(HttpServletResponse resp) throws IOException {
+		try {
+			Object strategies = repository instanceof HTTPRepository
+					? ((HTTPRepository) repository).getLmdbForceableStrategies()
+					: LmdbNativeForceableStrategies.list();
+			writeRuntimePropertyJson(resp, HttpServletResponse.SC_OK,
+					new ForceableStrategiesResponse(true, strategies, null));
+		} catch (RDF4JException e) {
+			LOGGER.debug("LMDB forceable execution strategies are unavailable", e);
+			writeRuntimePropertyJson(resp, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+					new ForceableStrategiesResponse(false, null,
+							"Forced execution strategies are unavailable on the selected server."));
 		}
 	}
 
@@ -282,6 +310,9 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	private record RuntimePropertiesResponse(boolean available, Object properties, String error) {
+	}
+
+	private record ForceableStrategiesResponse(boolean available, Object strategies, String error) {
 	}
 
 	private record RuntimePropertyError(String error) {

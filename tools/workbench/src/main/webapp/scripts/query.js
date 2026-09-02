@@ -2302,6 +2302,7 @@ var workbench;
                 workbench.addParam(url, 'limit_query');
                 workbench.addParam(url, 'query-timeout');
                 workbench.addParam(url, 'infer');
+                workbench.addParam(url, 'lmdb-forced-strategy');
                 workbench.addParam(url, 'explain');
                 workbench.addParam(url, 'explain-format');
                 var href = url.join('');
@@ -2746,6 +2747,44 @@ var workbench;
             loadLmdbRuntimePropertiesIfPanelOpen(details);
         }
         query_1.initializeLmdbRuntimeFeatures = initializeLmdbRuntimeFeatures;
+        function loadLmdbForceableStrategies() {
+            var select = $('#lmdb-forced-strategy');
+            if (select.length === 0) {
+                return;
+            }
+            var preferred = select.data('preferred-value') || select.val() || '';
+            $.ajax({ url: 'query', type: 'GET', dataType: 'json', data: { action: 'lmdb-strategies' } })
+                .done(function (response) {
+                var strategies = response.strategies || [];
+                select.empty().append($('<option></option>').attr('value', ''));
+                $.each(strategies, function (index, strategy) {
+                    select.append($('<option></option>')
+                        .attr('value', strategy.name)
+                        .attr('title', strategy.description)
+                        .text(strategy.name));
+                });
+                select.val(preferred);
+                // A remembered strategy the server no longer offers leaves nothing selected: fall back to
+                // forcing nothing. Tested on selectedIndex rather than on val(), which is '' for the entry
+                // we want and so cannot be distinguished from "no match" by truthiness.
+                if (select.prop('selectedIndex') < 0) {
+                    select.val('');
+                }
+            });
+        }
+        query_1.loadLmdbForceableStrategies = loadLmdbForceableStrategies;
+        function initializeLmdbForcedStrategy() {
+            var select = $('#lmdb-forced-strategy');
+            if (select.length === 0) {
+                return;
+            }
+            var remembered = workbench.getCookie('lmdb-forced-strategy');
+            if (remembered) {
+                select.data('preferred-value', remembered);
+            }
+            loadLmdbForceableStrategies();
+        }
+        query_1.initializeLmdbForcedStrategy = initializeLmdbForcedStrategy;
         query_1.testing = {
             applyDotPanZoom: applyDotPanZoom,
             ajaxSave: ajaxSave,
@@ -3055,6 +3094,7 @@ workbench.addLoad(function queryPageLoaded() {
     workbench.query.initializeExplanationView();
     workbench.query.initializeCompareUi();
     workbench.query.initializeLmdbRuntimeFeatures();
+    workbench.query.initializeLmdbForcedStrategy();
     // Add click handlers identifying the clicked element in a hidden 'action'
     // form field.
     var addHandler = function (id, callback) {

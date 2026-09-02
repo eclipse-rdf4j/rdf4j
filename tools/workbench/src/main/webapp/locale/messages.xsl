@@ -158,6 +158,8 @@
 	<variable name="query-string.label">Query</variable>
 	<variable name="lmdb-runtime-features.label">LMDB runtime features</variable>
 	<variable name="lmdb-runtime-features.help">Changes apply globally to subsequent LMDB queries on this server.</variable>
+	<variable name="lmdb-forced-strategy.label">Forced execution strategy</variable>
+	<variable name="lmdb-forced-strategy.help">Pin one named LMDB execution strategy for this query instead of letting the store choose. Leave empty to let the store choose, as usual. The query fails with an explanation when the strategy does not apply to it.</variable>
 	<variable name="refresh.label">Refresh</variable>
 	<variable name="update-string.label">Update</variable>
 	<variable name="subject.label">Subject</variable>

@@ -2788,6 +2788,7 @@ module workbench {
                 workbench.addParam(url, 'limit_query');
                 workbench.addParam(url, 'query-timeout');
                 workbench.addParam(url, 'infer');
+                workbench.addParam(url, 'lmdb-forced-strategy');
                 workbench.addParam(url, 'explain');
                 workbench.addParam(url, 'explain-format');
                 var href = url.join('');
@@ -3261,6 +3262,56 @@ module workbench {
             loadLmdbRuntimePropertiesIfPanelOpen(details);
         }
 
+        interface LmdbForceableStrategy {
+            name: string;
+            description: string;
+        }
+
+        /**
+         * Fills the forced-strategy dropdown from the server's own catalogue, so the list cannot drift out of date as
+         * strategies are added or removed. An empty entry is always first and is the default; it is added here rather
+         * than served, because it means "no strategy" rather than naming one, and the whole stack — request parameter,
+         * server, store — reads a blank selection as "do not force anything". A selection already in the URL or in the
+         * workbench cookie is restored once the real options exist.
+         */
+        export function loadLmdbForceableStrategies() {
+            var select = $('#lmdb-forced-strategy');
+            if (select.length === 0) {
+                return;
+            }
+            var preferred = <string>select.data('preferred-value') || <string>select.val() || '';
+            $.ajax({ url: 'query', type: 'GET', dataType: 'json', data: { action: 'lmdb-strategies' } })
+                .done(function(response: any) {
+                    var strategies: LmdbForceableStrategy[] = response.strategies || [];
+                    select.empty().append($('<option></option>').attr('value', ''));
+                    $.each(strategies, function(index: number, strategy: LmdbForceableStrategy) {
+                        select.append($('<option></option>')
+                            .attr('value', strategy.name)
+                            .attr('title', strategy.description)
+                            .text(strategy.name));
+                    });
+                    select.val(preferred);
+                    // A remembered strategy the server no longer offers leaves nothing selected: fall back to
+                    // forcing nothing. Tested on selectedIndex rather than on val(), which is '' for the entry
+                    // we want and so cannot be distinguished from "no match" by truthiness.
+                    if (select.prop('selectedIndex') < 0) {
+                        select.val('');
+                    }
+                });
+        }
+
+        export function initializeLmdbForcedStrategy() {
+            var select = $('#lmdb-forced-strategy');
+            if (select.length === 0) {
+                return;
+            }
+            var remembered = workbench.getCookie('lmdb-forced-strategy');
+            if (remembered) {
+                select.data('preferred-value', remembered);
+            }
+            loadLmdbForceableStrategies();
+        }
+
         export var testing = {
             applyDotPanZoom: applyDotPanZoom,
             ajaxSave: ajaxSave,
@@ -3577,6 +3628,7 @@ workbench.addLoad(function queryPageLoaded() {
     workbench.query.initializeExplanationView();
     workbench.query.initializeCompareUi();
     workbench.query.initializeLmdbRuntimeFeatures();
+    workbench.query.initializeLmdbForcedStrategy();
 
     // Add click handlers identifying the clicked element in a hidden 'action'
     // form field.

@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
+import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPartitionedDistinctIteration;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStableOrderPlanner;
 
@@ -56,6 +57,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	private final NativeLmdbQuerySource nativeSource;
 	private final boolean nativeEnabled;
 	private final boolean forceRootGeneric;
+	private final String forcedExecutionStrategy;
 	private final EvaluationStatistics evaluationStatistics;
 	private final LmdbStableOrderPlanner stableOrderPlanner;
 	// Constructor inputs retained so the claim-suppressed sibling view can be built with identical configuration.
@@ -88,6 +90,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		this.nativeSource = extracted != null && extracted.hasCanonicalIds() ? extracted : null;
 		this.nativeEnabled = nativeEnabled;
 		this.forceRootGeneric = Boolean.getBoolean("rdf4j.lmdb.nativeQueryEngine.forceRootGeneric");
+		this.forcedExecutionStrategy = resolveForcedExecutionStrategy();
 		this.evaluationStatistics = evaluationStatistics;
 		this.stableOrderPlanner = new LmdbStableOrderPlanner(tripleSource);
 		this.tripleSourceArg = tripleSource;
@@ -96,6 +99,58 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		this.iterationCacheSyncThresholdArg = iterationCacheSyncTreshold;
 		this.trackResultSizeArg = trackResultSize;
 		this.trackResultSizeShadow = trackResultSize;
+	}
+
+	/**
+	 * Reads the execution strategy requested for the query currently being evaluated on this thread, via
+	 * {@link SlowQueryContextHolder} (set by {@code SailQuery.setForcedLmdbExecutionStrategy} before
+	 * {@code sailCon.evaluate(...)} is called, and still active for the duration of that call, which is exactly when a
+	 * fresh evaluation strategy is constructed). Returns {@code null} for "no forcing requested" — an absent context, a
+	 * blank selection and the {@link LmdbNativeForceableStrategies#NOT_ACTIVATED} sentinel all mean the same thing.
+	 * Throws immediately, before any query evaluation begins, when a name was requested that this engine can never
+	 * honor at any decision point, so a typo fails fast rather than only once (or never) reaching an arbiter.
+	 */
+	private static String resolveForcedExecutionStrategy() {
+		String requested = currentForcedExecutionStrategy();
+		if (requested != null && !LmdbNativeForceableStrategies.isForceable(requested)) {
+			throw new QueryEvaluationException("Unknown LMDB execution strategy '" + requested
+					+ "'. Valid values: (empty), " + LmdbNativeForceableStrategies.NOT_ACTIVATED + ", "
+					+ String.join(", ", LmdbNativeForceableStrategies.names()) + ".");
+		}
+		return requested;
+	}
+
+	/**
+	 * Reads {@link SlowQueryContextHolder} directly and normalizes the result: an absent context and every spelling of
+	 * "no strategy" recognized by {@link LmdbNativeForceableStrategies#isNoForcing(String)} — including the blank one a
+	 * UI's empty option sends — become {@code null} ("no forcing requested"). Does not validate the name against
+	 * {@link LmdbNativeForceableStrategies} — that already happened once, in this class's constructor, before any
+	 * evaluation of the query began.
+	 */
+	private static String currentForcedExecutionStrategy() {
+		SlowQueryContextHolder.SlowQueryContext context = SlowQueryContextHolder.get();
+		String requested = context == null ? null : context.getForcedExecutionStrategy();
+		return LmdbNativeForceableStrategies.isNoForcing(requested) ? null : requested;
+	}
+
+	/**
+	 * The execution strategy requested for this query (already validated against
+	 * {@link LmdbNativeForceableStrategies}), or {@code null} when the engine's own selection should decide as usual.
+	 */
+	String forcedExecutionStrategyName() {
+		return forcedExecutionStrategy;
+	}
+
+	/**
+	 * As {@link #forcedExecutionStrategyName()}, for evaluation machinery (such as {@code NativeGroupIteration}) that
+	 * runs synchronously on the query's original evaluating thread but does not itself hold a reference to the
+	 * {@link LmdbNativeEvaluationStrategy} that compiled its plan. If evaluation has moved to a different thread than
+	 * the one the forcing request was made on (for example inside a correlated sub-evaluation driven by a parallel
+	 * pipeline worker), this returns {@code null} — forcing then simply does not apply to that one inner decision
+	 * point, exactly as if it had not been requested, rather than throwing or using a stale value.
+	 */
+	static String forcedExecutionStrategyForCurrentThread() {
+		return currentForcedExecutionStrategy();
 	}
 
 	/**

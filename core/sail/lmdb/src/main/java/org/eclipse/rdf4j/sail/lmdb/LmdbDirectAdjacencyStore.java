@@ -3612,17 +3612,17 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	private static boolean rootScanEnabled() {
-		String configured = System.getProperty(ROOT_SCAN_PROPERTY);
+		String configured = System.getProperty(ROOT_SCAN_PROPERTY, "true");
 		return configured == null || Boolean.parseBoolean(configured);
 	}
 
 	private static boolean boundProbeEnabled() {
-		String configured = System.getProperty(BOUND_PROBE_PROPERTY);
+		String configured = System.getProperty(BOUND_PROBE_PROPERTY, "true");
 		return configured == null || Boolean.parseBoolean(configured);
 	}
 
 	private static boolean scanAggregatesEnabled() {
-		String configured = System.getProperty(SCAN_AGGREGATES_PROPERTY);
+		String configured = System.getProperty(SCAN_AGGREGATES_PROPERTY, "true");
 		return configured == null || Boolean.parseBoolean(configured);
 	}
 
@@ -3672,7 +3672,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 */
 	boolean nodePredicateServingEnabled() {
 		return !nodePredicateInconsistent.get()
-				&& Boolean.parseBoolean(System.getProperty(NODE_PREDICATE_SERVE_PROPERTY, "false"));
+				&& Boolean.parseBoolean(System.getProperty(NODE_PREDICATE_SERVE_PROPERTY, "true"));
 	}
 
 	/** The plane set a base built by this store may hold, resolved once at construction. */
@@ -3682,7 +3682,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	static boolean plannerStatsEnabled() {
-		String configured = System.getProperty(PLANNER_STATS_PROPERTY);
+		String configured = System.getProperty(PLANNER_STATS_PROPERTY, "true");
 		return configured == null || Boolean.parseBoolean(configured);
 	}
 

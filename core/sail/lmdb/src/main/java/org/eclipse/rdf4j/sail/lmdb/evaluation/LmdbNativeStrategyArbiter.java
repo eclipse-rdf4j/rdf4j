@@ -14,9 +14,13 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 
@@ -62,6 +66,11 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	private LmdbNativeHedgeSupport<T> hedgeSupport;
 	private String winningTag;
 	private double winningWork = Double.NaN;
+	private String forcedTag;
+	private String forcedDecisionPoint;
+	private boolean forcedMandatory;
+	private Map<String, String> forcedDeclineCapture;
+	private Map<String, String> previousDeclineCapture;
 
 	private LmdbNativeStrategyArbiter(TupleExpr explainTarget, double sliceRows,
 			LmdbNativeAdaptiveCostModel adaptiveModel) {
@@ -132,6 +141,56 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	 */
 	LmdbNativeStrategyArbiter<T> hedgeSupport(LmdbNativeHedgeSupport<T> support) {
 		this.hedgeSupport = support;
+		return this;
+	}
+
+	/**
+	 * Restricts this dispatch site to one named strategy, bypassing cost-based selection entirely: whichever offered
+	 * candidate's tag (matched on the part before any parenthesized detail, per {@link LmdbNativeStrategyPreference})
+	 * equals {@code tag} wins outright if it opens successfully, and every other candidate is released unopened. When
+	 * no offered candidate matches — either because none was ever offered for this query's shape, or because every
+	 * match declined at bind time — {@link #selectWithObservation()} throws a {@link QueryEvaluationException} naming
+	 * {@code tag}, {@code decisionPoint}, and (when available) the real reason a matching candidate declined.
+	 * <p>
+	 * Use this overload only at a dispatch site that is the final word on how its piece of the query runs — one that,
+	 * like every site {@code NativeRowsStep}/{@code NativeGroupStep} actually build an arbiter for today, always offers
+	 * a universal fallback candidate ({@code nestedLoop}) within the same arbiter. A site that is instead an optional
+	 * shortcut with its own separate, unconditional fallback elsewhere in the caller (for example the {@code ORDER BY}
+	 * fusion attempt, which falls back to a plain sort over {@code openUnorderedInput} when it declines) must use
+	 * {@link #forcingWhereApplicable(String, String)} instead, or a query whose forced strategy is only legal at that
+	 * later, authoritative site would fail here first for no reason.
+	 * <p>
+	 * Must be called before any {@link #offer(Proposer)} call at this site: forcing also collects, for the lifetime of
+	 * this one arbiter, the decline reason each rejected proposer reports (see
+	 * {@link LmdbNativeAttemptMetrics#installDeclineCapture(Map)}), so that a forced-but-unavailable strategy fails
+	 * with a specific reason instead of a generic one. Ordinary, unforced queries never install a capture and are
+	 * completely unaffected; the previous capture, if any, is restored in {@link #close()}.
+	 * <p>
+	 * A {@code null} tag means "do not force anything"; this is a complete no-op.
+	 */
+	LmdbNativeStrategyArbiter<T> forcing(String tag, String decisionPoint) {
+		return forcing(tag, decisionPoint, true);
+	}
+
+	/**
+	 * As {@link #forcing(String, String)}, except that when no offered candidate matches {@code tag}, this dispatch
+	 * site quietly declines (as if no candidates were ever offered at all) instead of throwing. Use this at an optional
+	 * shortcut site that has its own separate, unconditional fallback elsewhere in the caller — the forced strategy
+	 * still gets a fair, authoritative chance to succeed or to fail with a detailed reason at whichever site the caller
+	 * falls back to.
+	 */
+	LmdbNativeStrategyArbiter<T> forcingWhereApplicable(String tag, String decisionPoint) {
+		return forcing(tag, decisionPoint, false);
+	}
+
+	private LmdbNativeStrategyArbiter<T> forcing(String tag, String decisionPoint, boolean mandatory) {
+		this.forcedTag = tag;
+		this.forcedDecisionPoint = decisionPoint;
+		this.forcedMandatory = mandatory;
+		if (tag != null) {
+			forcedDeclineCapture = new HashMap<>();
+			previousDeclineCapture = LmdbNativeAttemptMetrics.installDeclineCapture(forcedDeclineCapture);
+		}
 		return this;
 	}
 
@@ -367,6 +426,89 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	 * the returned selection until exhaustion or early close; fully materializing consumers can use {@link #select()}.
 	 */
 	LmdbNativeStrategySelection<T> selectWithObservation() throws IOException {
+		if (forcedTag != null) {
+			if (!applyForcedFilter()) {
+				// no offered candidate matches: a mandatory site is authoritative and must explain why; an
+				// optional-shortcut site quietly declines so the caller's own separate fallback gets a fair try
+				if (forcedMandatory) {
+					throw forcedStrategyUnavailable();
+				}
+				return null;
+			}
+		}
+		LmdbNativeStrategySelection<T> selection = dispatch();
+		if (selection == null && forcedTag != null && forcedMandatory) {
+			throw forcedStrategyUnavailable();
+		}
+		return selection;
+	}
+
+	/**
+	 * Drops every candidate whose tag does not match {@link #forcedTag}, releasing the rejected candidates immediately.
+	 * Returns whether any candidate matched.
+	 */
+	private boolean applyForcedFilter() {
+		List<LmdbNativeStrategyProposal<T>> rejected = new ArrayList<>(candidates.size());
+		Iterator<LmdbNativeStrategyProposal<T>> it = candidates.iterator();
+		while (it.hasNext()) {
+			LmdbNativeStrategyProposal<T> candidate = it.next();
+			if (!forcedTag.equals(LmdbNativeStrategyPreference.baseTag(candidate.tag))) {
+				it.remove();
+				rejected.add(candidate);
+			}
+		}
+		for (LmdbNativeStrategyProposal<T> candidate : rejected) {
+			candidate.close();
+		}
+		return !candidates.isEmpty();
+	}
+
+	/**
+	 * Builds the detailed failure for a forced strategy that could not be honored, quoting the real decline reason
+	 * already captured by {@link LmdbNativeExplain} (forced on for this arbiter's lifetime by {@link #forcing}) when
+	 * one is available, or stating plainly that the strategy was never offered when it is not.
+	 */
+	private QueryEvaluationException forcedStrategyUnavailable() {
+		String where = forcedDecisionPoint != null ? forcedDecisionPoint : "this decision point";
+		String reason = declineReasonForForcedTag();
+		if (reason != null) {
+			return new QueryEvaluationException("LMDB execution strategy '" + forcedTag + "' could not be forced at "
+					+ where + ": it was offered and declined ('" + reason + "').");
+		}
+		return new QueryEvaluationException("LMDB execution strategy '" + forcedTag + "' could not be forced at "
+				+ where + ": it was never a candidate for this query's shape at this decision point"
+				+ " (its structural precondition was not met).");
+	}
+
+	/**
+	 * The reason a candidate tagged {@link #forcedTag} declined, read back from the decline summary {@link #forcing}
+	 * ensured was captured, or {@code null} when no such decline was recorded (the tag was never offered at all, rather
+	 * than offered and declined).
+	 */
+	private String declineReasonForForcedTag() {
+		if (forcedDeclineCapture != null) {
+			String captured = forcedDeclineCapture.get(forcedTag);
+			if (captured != null) {
+				return captured;
+			}
+		}
+		if (explainTarget == null) {
+			return null;
+		}
+		String declines = explainTarget.getStringMetricActual(LmdbNativeExplain.STRATEGY_DECLINES);
+		if (declines == null) {
+			return null;
+		}
+		for (String entry : declines.split(" \\| ")) {
+			int colon = entry.indexOf(':');
+			if (colon > 0 && forcedTag.equals(entry.substring(0, colon))) {
+				return entry.substring(colon + 1);
+			}
+		}
+		return null;
+	}
+
+	private LmdbNativeStrategySelection<T> dispatch() throws IOException {
 		recordProposalCosts();
 		while (!candidates.isEmpty()) {
 			AdaptiveDecision<T> decision;
@@ -1290,6 +1432,11 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 			candidate.close();
 		}
 		candidates.clear();
+		if (forcedDeclineCapture != null) {
+			LmdbNativeAttemptMetrics.installDeclineCapture(previousDeclineCapture);
+			forcedDeclineCapture = null;
+			previousDeclineCapture = null;
+		}
 	}
 
 	private record AdaptiveCandidate<T> (int index, LmdbNativeAdaptiveArbitration.Candidate<T> candidate) {

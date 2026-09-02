@@ -3632,7 +3632,7 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private static boolean parallelRowPathEnabled() {
-			String configured = System.getProperty(LmdbDirectAdjacencyStore.PARALLEL_ROW_PATH_PROPERTY);
+			String configured = System.getProperty(LmdbDirectAdjacencyStore.PARALLEL_ROW_PATH_PROPERTY, "true");
 			return configured == null || Boolean.parseBoolean(configured);
 		}
 

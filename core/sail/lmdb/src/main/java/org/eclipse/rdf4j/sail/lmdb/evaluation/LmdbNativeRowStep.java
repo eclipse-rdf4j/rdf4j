@@ -591,7 +591,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			// factorized specialists — which produce rows on their own sources — must not intercept such plans
 			try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter
 					.<List<BindingSet>>forExpr(originalExpr, row.source)
-					.probeHarness(LmdbNativeProbeHarness.blocking())) {
+					.probeHarness(LmdbNativeProbeHarness.blocking())
+					.forcingWhereApplicable(strategy.forcedExecutionStrategyName(), "ORDER BY dispatch")) {
 				LmdbNativeWork work = arg.estimateWork(row, row.boundMask());
 				String factorizedTag = emitCap == Long.MAX_VALUE
 						? LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_SORT
@@ -1128,7 +1129,12 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				: null;
 		boolean correlatedEntry = (arg.producedMask() & row.boundMask()) != 0L;
 		int[] retainedSlots = orderSlots.length == 0 ? sourceSlots : sortLayout.liveToPlan;
-		if (!correlatedEntry && LmdbWildcardPredicateBatch.ownsExistenceParallelRound(arg, row)) {
+		// A forced strategy must go through the arbiter below, where it can be validated and, if unavailable,
+		// reported in detail: these two fast paths open unconditionally with no cost competition and no
+		// possibility of an alternative winning, so honoring a forced strategy requires skipping them.
+		String forcedStrategy = strategy.forcedExecutionStrategyName();
+		if (forcedStrategy == null && !correlatedEntry
+				&& LmdbWildcardPredicateBatch.ownsExistenceParallelRound(arg, row)) {
 			LmdbNativeStrategyProposal<NativeUnorderedInput> wildcardExists = proposeBatch(row, null, false);
 			if (wildcardExists != null) {
 				try {
@@ -1145,7 +1151,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		if (wildcardJoin == null && distinct && arg instanceof PatternPlan pattern) {
 			wildcardJoin = new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0]);
 		}
-		if (!correlatedEntry
+		if (forcedStrategy == null && !correlatedEntry
 				&& LmdbWildcardPredicateBatch.ownsParallelRound(wildcardJoin, row, distinct, sourceSlots, orderSlots)) {
 			LmdbNativeStrategyProposal<NativeUnorderedInput> wildcard = proposeBatch(row, wildcardJoin, false);
 			if (wildcard != null) {
@@ -1161,7 +1167,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		}
 		try (LmdbNativeStrategyArbiter<NativeUnorderedInput> arbiter = LmdbNativeStrategyArbiter
 				.<NativeUnorderedInput>forSlice(originalExpr, consumableRows(), row.source)
-				.probeHarness(new NativeProbeBufferHarness())) {
+				.probeHarness(new NativeProbeBufferHarness())
+				.forcing(forcedStrategy, "row/join dispatch")) {
 			if (orderSlots.length == 0) {
 				// Emission strategy, never a sort input (the ORDER BY materializer callers all carry orderSlots).
 				arbiter.offer(() -> proposePrefixRun(row));
